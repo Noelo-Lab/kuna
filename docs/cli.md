@@ -123,8 +123,8 @@ kuna test --datatests --datatests-dir tests/stages \
 datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
 `--save-baseline PATH` re-records a baseline. Routine use: `docs/baseline-stages.json`
 when adding stage tests. `docs/baseline.json` is re-pinned only for sanctioned intentional
-changes (an upstream sync per `docs/history.md`, a DIV-recorded default flip) — never to
-absorb a regression.
+changes (an upstream sync per `docs/history.md`, or a deliberate default flip the commit
+message names) — never to absorb a regression.
 
 ## `kuna decompile` — one function
 

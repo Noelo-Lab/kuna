@@ -272,7 +272,6 @@ Three silent-merge shapes this repo has actually produced are guarded mechanical
 
 | Shape | What happened | Guard |
 |---|---|---|
-| loud conflict | a DIV number raced 55→56→57→58 | claim the number at merge, rewrite every reference |
 | **silent identical-edit** | both branches made the same `85 → 86` edit, git merged cleanly, the answer was 87 | re-derive every counter from a fresh capture on the rebased tree |
 | **silent keep-both** | a stale `data_footer: 375` against 381 real keys; a duplicated row in a README | diff every keep-both against `origin/main`: nothing removed, nothing added twice |
 
@@ -305,7 +304,7 @@ Three layers, cheapest first:
    `docs/cli.md`; `quality` touches kuna-decomp + `phases.toml` + the counters +
    `docs/options.md` + `docs/history.md` + `tests/stages/`. Disjoint sets.
 2. **Named leases** with a TTL and a dead-pid reaper: `merge`, `counter:catalog`,
-   `counter:stages-corpus`, `counter:div`, `file:phases.toml`, `file:docs/options.md`,
+   `counter:stages-corpus`, `file:phases.toml`, `file:docs/options.md`,
    `cluster:<id>`. A lease exists where a *silent wrong merge* is possible — not where a
    trivial rebase would resolve it. Because every `quality` need needs the whole counter set,
    **at most one option-adding builder is ever in flight** with no special-casing, while
@@ -771,7 +770,7 @@ worth keeping: **`select -k 3` returns TWO picks**, not three, against an 11-nee
 builder slot is unfillable at any backlog depth. 10 of the 11 open needs are `quality`, and
 
 ```python
-TRACK_RESOURCES = {"quality": ["counter:catalog", "counter:stages-corpus", "counter:div",
+TRACK_RESOURCES = {"quality": ["counter:catalog", "counter:stages-corpus",
                                "file:phases.toml", "file:docs/options.md"], ...}
 ```
 
@@ -802,10 +801,9 @@ analyze/design/code/test/docs — to protect a step that takes minutes and is pr
 
 1. Two quality builders working concurrently and merging serially, with `counters --check`
    green on main afterwards. That is the whole claim.
-2. The residual risk is not the counters but the **DIV number**: two builders each claiming
-   the next free one. `counters --fix` re-derives counts, not registry allocations. Check
-   whether the merge-time DIV claim in `docs/improvement-pipeline.md` §4 actually reallocates,
-   or only renumbers references.
+2. The residual risk used to be the **DIV number**: two builders each claiming the next
+   free one, which `counters --fix` cannot re-derive because it is an allocation, not a
+   count. That risk is gone — DIV numbers are retired and nothing claims one.
 3. `file:phases.toml` itself is probably safe to drop — two option rows in different places
    auto-merge, and adjacent ones conflict loudly, which is the safe failure.
 4. `file:docs/options.md` is regenerated from the catalog at merge and never merged, so it

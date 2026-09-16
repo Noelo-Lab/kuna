@@ -228,9 +228,9 @@ opt-in:
 
 | Ablation (option ON) | Speed (`timeit`) | Ship as |
 |---|---|---|
-| 0/675 assertions change | within budget (≤5%) | **default-ON**: keep the flipped `default =`, add a DIV row in `docs/history.md`, and say "On by default (DIV-N)" in the row's `use_when` prose |
-| 0/675 assertions change | over budget / unmeasured | default-OFF opt-in, `speed_forced_off: true` — no DIV |
-| >0 assertions change | — | default-OFF opt-in — no DIV |
+| 0/675 assertions change | within budget (≤5%) | **default-ON**: keep the flipped `default =`, and say "On by default" plus what that default now does in the row's `use_when` prose |
+| 0/675 assertions change | over budget / unmeasured | default-OFF opt-in, `speed_forced_off: true` |
+| >0 assertions change | — | default-OFF opt-in |
 
 **Never re-pin `docs/baseline.json`.** The speed gate can only demote default-ON to
 opt-in. Measure with:
@@ -289,10 +289,11 @@ re-queues violations.
    test + one `docs/features/<slug>/` bundle per PR. No drive-by changes.
 2. **End-to-end testcase.** The two-pass stage test of §3.5 — option off = the bug,
    default = the fix, over the full `binary → decompile(addr|func)` path.
-3. **Output-changing ⇒ logged + flaggable.** Any feature that can change emitted C sits
-   behind a runtime `--option <name>` (`phases.toml` settableTable + `options.rs`) and is
-   recorded in `docs/history.md` (a DIV row iff default-ON). No silent output change
-   ever reaches default.
+3. **Output-changing ⇒ described + flaggable.** Any feature that can change emitted C sits
+   behind a runtime `--option <name>` (`phases.toml` settableTable + `options.rs`), and
+   what it does is written in its `phases.toml` row and its `docs/spec/` chapter. No
+   silent output change ever reaches default. There is no divergence registry to update —
+   `docs/history.md` is frozen.
 4. **Always measure + record speed (speed is critical).** Every `record.json` carries the
    `timeit` speed block (§4). Over `KUNA_PIPELINE_SPEED_BUDGET_PCT` (default +5%) ⇒
    default-OFF opt-in. The speed gate never re-pins `docs/baseline.json`.
@@ -313,9 +314,9 @@ re-queues violations.
    and reading the diff, not by argument. A mechanism can fire, move the metric, and still
    delete a statement the program performs.
 9. **Re-measure after every rebase; never carry a number forward.** Every count in the PR
-   body — shared counters, breadth totals, before/after occurrence counts, the DIV number —
-   is re-derived on the rebased tree from a green build and run. Sibling PRs move each
-   other's before-arm: #257's placeholder count moved 2,143 → **2,142** because #254 landed
+   body — shared counters, breadth totals, before/after occurrence counts — is re-derived
+   on the rebased tree from a green build and run. Sibling PRs move each other's
+   before-arm: #257's placeholder count moved 2,143 → **2,142** because #254 landed
    underneath it, and that was caught only by re-measuring. Arithmetic on a merged counter
    is how a clean auto-merge ships a wrong number (§3.4).
 

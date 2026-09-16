@@ -1,16 +1,11 @@
-"""The three merge guards, one per failure shape this repo has actually produced.
+"""The two merge guards, one per silent failure shape this repo has actually produced.
 
 docs/decbench-loop.md, "Shared counters in a busy queue -- the merge is not the hard part":
 round 2 ran up to four output-changing PRs concurrently over the same handful of hard-coded
 counters and produced three distinct failure shapes, **only one of which announced itself**.
-This module is one guard per shape, run after the rebase and before the suite:
-
-  shape A -- LOUD conflict. The DIV number for #257 raced 55 -> 56 -> 57 -> 58 as #252/#253/
-    #254 claimed each in turn. git stops you, so the danger is not missing it: it is
-    renumbering the registry row and forgetting the other references. DIV numbers are claimed
-    at MERGE, not on the branch, so `check_div` re-derives the next free number and lists
-    every place each claimed number is referenced -- the history row, the option's `use_when`
-    prose, the spec chapter, the PR body.
+The loud one (a raced DIV number) is gone with the DIV registry itself -- `docs/history.md`
+is frozen and nothing claims a number any more. This module is one guard per SILENT shape,
+run after the rebase and before the suite:
 
   shape B -- SILENT identical-edit auto-merge. `catalog_bytecompat.rs` kept 86 because BOTH
     sides had made the identical `85 -> 86` edit; git merged cleanly, there was no conflict
@@ -51,17 +46,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import config, counters
-from .counters import line_of as _line_of
 
 REL_BASELINE = "docs/baseline.json"
 REL_BASELINE_STAGES = "docs/baseline-stages.json"
-REL_HISTORY = "docs/history.md"
 
 # The files a keep-both resolution silently corrupts: counters, tables and generated lists.
 KEEPBOTH_PATHS = (
     REL_BASELINE_STAGES,
     "tests/stages/README.md",
-    "docs/history.md",
     "docs/options.md",
     "decompiler/crates/kuna-decomp/phases.toml",
 )
@@ -113,114 +105,6 @@ def show(base_ref, rel, repo=None):
     """The base_ref content of ``rel``, or None if the ref has no such file."""
     rc, out, _ = _git(_root(repo), "show", "{}:{}".format(base_ref, rel))
     return out if rc == 0 else None
-
-
-# --- shape A: the DIV number ------------------------------------------------
-
-_DIV_ROW_RX = re.compile(r"^\|\s*DIV-(\d+)\s*\|", re.M)
-
-
-def div_rows(text):
-    """Every DIV number claimed by a registry row in ``docs/history.md``, in file order."""
-    return [int(m.group(1)) for m in _DIV_ROW_RX.finditer(text or "")]
-
-
-def next_free_div(text) -> int:
-    rows = div_rows(text)
-    return (max(rows) + 1) if rows else 1
-
-
-def div_references(num, repo=None, cap=40, width=150):
-    """Every tracked file:line mentioning DIV-<num>, so a renumber can rewrite all of them.
-
-    Trimmed hard: a single `docs/history.md` registry row is multiple KB of prose, and a
-    guard whose output nobody reads is not a guard. The file:line prefix is what the merger
-    acts on; the text after it is only there to recognise the hit.
-    """
-    rc, out, _ = _git(_root(repo), "grep", "-nE", r"DIV-{}([^0-9]|$)".format(num))
-    if rc not in (0, 1):
-        return None
-    hits = [ln for ln in out.splitlines() if ln.strip()]
-    trimmed = [(ln[:width] + " ...") if len(ln) > width else ln for ln in hits[:cap]]
-    if len(hits) > cap:
-        trimmed.append("... and {} more references".format(len(hits) - cap))
-    return trimmed
-
-
-def check_div(base_ref="origin/main", repo=None):
-    """Shape A. Re-derive the next free DIV and surface every reference to a claimed one.
-
-    The number is claimed at merge, not on the branch, so this reports rather than rewrites:
-    it prints the number the merger must use, and the exact set of lines that must change
-    with it -- the registry row, the option's `use_when` prose, the spec chapter, the code
-    comments. A number a sibling already merged is a hard reject; renumbering only the row
-    and leaving the references behind is how the 55 -> 58 race stayed broken.
-    """
-    root = _root(repo)
-    head_path = root / REL_HISTORY
-    if not head_path.exists():
-        return [Finding("A", "div-number", WARN, "history-missing", REL_HISTORY, 0,
-                        "docs/history.md not found; the DIV guard cannot run")]
-    head_text = head_path.read_text(encoding="utf-8", errors="replace")
-    head_rows = div_rows(head_text)
-    next_free = next_free_div(head_text)
-    out = [Finding("A", "div-number", INFO, "next-free-div", REL_HISTORY, 0,
-                   "next free DIV is DIV-{} ({} rows claimed, highest DIV-{})".format(
-                       next_free, len(head_rows), max(head_rows or [0])),
-                   "DIV numbers are claimed at MERGE, not on the branch. Re-check this "
-                   "number after the rebase; every number this branch claims is listed "
-                   "below with the references a renumber must rewrite.")]
-
-    def rows_at(n):
-        return [_line_of(head_text, m.start()) for m in _DIV_ROW_RX.finditer(head_text)
-                if int(m.group(1)) == n]
-
-    def renumber_detail(n):
-        refs = div_references(n, repo)
-        head = "renumber DIV-{} to DIV-{} here and in every reference:".format(n, next_free)
-        return head + "\n" + ("\n".join(refs) if refs else "(no references found)")
-
-    have_base = have_ref(base_ref, repo)
-    base_text = show(base_ref, REL_HISTORY, repo) if have_base else None
-    if base_text is None:
-        out.append(Finding("A", "div-number", WARN, "base-ref-missing", REL_HISTORY, 0,
-                           "no {} to diff against; claimed-number check skipped".format(base_ref)))
-        base_rows = head_rows
-    else:
-        base_rows = div_rows(base_text)
-
-    base_count = collections.Counter(base_rows)
-    head_count = collections.Counter(head_rows)
-    collided = set()
-
-    if base_text is not None:
-        for n in sorted(head_count):
-            if head_count[n] > base_count.get(n, 0) and base_count.get(n, 0) > 0:
-                collided.add(n)
-                out.append(Finding(
-                    "A", "div-number", REJECT, "div-collision", REL_HISTORY, rows_at(n)[-1],
-                    "a sibling already merged DIV-{} on {}; this branch claims it again "
-                    "(rows at lines {})".format(n, base_ref,
-                                                ", ".join(str(x) for x in rows_at(n))),
-                    renumber_detail(n)))
-        for n in sorted(set(head_count) - set(base_count)):
-            out.append(Finding(
-                "A", "div-number", INFO, "div-claimed-by-branch", REL_HISTORY, rows_at(n)[0],
-                "this branch claims DIV-{}; the next free number on {} is DIV-{}".format(
-                    n, base_ref, next_free_div(base_text)),
-                renumber_detail(n) if n != next_free_div(base_text)
-                else "the number is still free; confirm it after the rebase, then check "
-                     "every reference:\n" + "\n".join(div_references(n, repo) or [])))
-
-    for n in sorted(n for n, c in head_count.items() if c > 1 and n not in collided):
-        out.append(Finding("A", "div-number", WARN, "div-claimed-twice", REL_HISTORY,
-                           rows_at(n)[-1],
-                           "DIV-{} has {} registry rows (lines {})".format(
-                               n, head_count[n], ", ".join(str(x) for x in rows_at(n))),
-                           "already on {} the same way, so this is history to reconcile "
-                           "rather than a merge blocker; do not reuse either number".format(
-                               base_ref)))
-    return out
 
 
 # --- shape B: re-derive, never trust the merged value ------------------------
@@ -429,7 +313,6 @@ def run_all(base_ref="origin/main", repo=None, kuna=None, paths=None):
     """Every guard, in merge order. Any REJECT finding means: do not merge yet."""
     out = []
     out.extend(assert_baseline_untouched(base_ref, repo=repo))
-    out.extend(check_div(base_ref, repo=repo))
     out.extend(assert_rederived(repo=repo, kuna=kuna))
     for rel in (paths if paths is not None else KEEPBOTH_PATHS):
         out.extend(assert_keepboth(rel, base_ref, repo=repo))

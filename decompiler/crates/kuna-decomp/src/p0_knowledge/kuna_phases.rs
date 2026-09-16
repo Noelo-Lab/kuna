@@ -524,9 +524,9 @@ pub fn emit_catalog_markdown() -> String {
     out.push_str(
         "Set any option per run: `kuna decompile <bin> <fn> --option <name> <value>` \
          (repeatable), `kuna decompile-all <bin> --option <name> <value>`, or the \
-         console `option <name> <value>`. Defaults are the shipped values; every \
-         intentional default change is logged in `docs/history.md`. The \
-         algorithms behind these options are described in `docs/spec/`.\n\n",
+         console `option <name> <value>`. Defaults are the shipped values; what a \
+         default does is described in its row below. The algorithms behind these \
+         options are described in `docs/spec/`.\n\n",
     );
     out.push_str("Three tiers:\n\n");
     out.push_str(
