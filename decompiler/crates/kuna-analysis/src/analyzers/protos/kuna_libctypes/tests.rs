@@ -107,6 +107,23 @@ fn a_zero_width_forward_declaration_declines() {
     assert!(named_aggregate("stat", &types).is_err(), "declined, not completed");
 }
 
+/// The adopt test is metatype + declared width, NOT completeness: a struct of
+/// the right width that is still a shell is adopted exactly like a populated
+/// one. That is what keeps the table IDEMPOTENT (slot 2 of a signature meets the
+/// shell slot 1 minted) and it is what lets the DWARF importer finish populating
+/// a partially-built `stat` underneath a pointer already handed out.
+#[test]
+fn an_incomplete_struct_of_the_declared_width_is_adopted() {
+    let types = factory();
+    let shell = types.get_type_struct("stat").expect("shell");
+    let held = types
+        .set_fields_struct_raw(&shell, Vec::new(), Vec::new(), 144, 8, flags::type_incomplete)
+        .expect("a 144-byte shell somebody else is populating");
+    assert!(held.is_incomplete(), "the fixture is the incomplete case");
+    let got = named_aggregate("stat", &types).expect("adopted");
+    assert!(Rc::ptr_eq(&held, &got), "the held shell is the answer, not a second definition");
+}
+
 /// Every `NamedPtr` in either table must name a row of `NAMED_AGGREGATES` —
 /// otherwise `build_ty` has no width for it and the signature is dropped
 /// silently.
@@ -241,5 +258,27 @@ fn the_declared_lookup_follows_the_gate() {
         Some("FILE".to_string()),
         "on: the named signature"
     );
+    std::env::remove_var(kuna_decomp::kuna_libctypes::LIBCTYPES_ENV);
+}
+
+/// A declared name whose named form cannot be built degrades to the width-stable
+/// signature instead of vanishing: withholding the prototype entirely would lose
+/// the arity too, which is the part `--define-function 0x…=stat` is asked for.
+#[test]
+fn a_declined_aggregate_degrades_to_the_width_stable_signature() {
+    let types = factory();
+    kuna_decomp::kuna_libctypes::set_libctypes_env(true);
+    let shell = types.get_type_struct("stat").expect("shell");
+    let int4t = types.get_base(4, type_metatype::TYPE_INT).expect("int");
+    let field = kuna_decomp::dtype::TypeField::new(0, 0, "mine", int4t);
+    types
+        .set_fields_struct_raw(&shell, vec![field], Vec::new(), 24, 8, 0)
+        .expect("a 24-byte `stat` of the program's own");
+    assert!(named_aggregate("stat", &types).is_err(), "the fixture declines the named form");
+    let pieces = super::super::declared_libc_prototype("stat", &types, 1)
+        .expect("still answered, from the void * tables");
+    assert_eq!(pieces.intypes.len(), 2, "the shipped arity survives");
+    let p1 = pieces.intypes[1].get_ptr_to().expect("a pointer slot");
+    assert_eq!(p1.get_metatype(), type_metatype::TYPE_VOID, "degraded to void *");
     std::env::remove_var(kuna_decomp::kuna_libctypes::LIBCTYPES_ENV);
 }

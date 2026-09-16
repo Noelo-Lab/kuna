@@ -657,16 +657,39 @@ pub fn sanitize_guard(file_name: &str) -> String {
 /// to keep the exported header compilable; see there.
 ///
 /// Reads the rendered block rather than the type objects because that is what
-/// this composer is handed. A typedef line is `typedef <base> <name>;` possibly
+/// this composer is handed. A typedef line is `typedef <declarator>;` possibly
 /// followed by a `/* … */` annotation, one per line
-/// (`printc::render_type_definitions`), so the name is the last identifier
-/// before the first `;`.
+/// (`printc::render_type_definitions`), and the declared name is pulled out of
+/// the declarator by [`declarator_name`].
 fn typedef_names(types: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for line in types.lines() {
         let Some(rest) = line.trim_start().strip_prefix("typedef ") else { continue };
         let Some(decl) = rest.split(';').next() else { continue };
-        let name: String = decl
+        let name = declarator_name(decl);
+        if !name.is_empty() {
+            out.insert(name);
+        }
+    }
+    out
+}
+
+/// The identifier a C declarator declares — `X` in `struct X X`, `mystr` in
+/// `char *mystr`, but also `buf` in `char buf[8]` and `fn` in `int (*fn)(void)`,
+/// which do not END in their own name. `field_decl_text` composes all four
+/// shapes, so taking the trailing identifier alone would silently see no name in
+/// the last two.
+///
+/// Walks in from the right: an identifier there IS the name. Otherwise the
+/// trailing group is an array bound or a parameter list — drop it and keep
+/// walking — unless it is a parenthesized declarator (`(*fn)`, `(*table[4])`),
+/// recognised by the leading `*`, in which case the name is inside it. Returns
+/// "" for anything it cannot resolve, which costs only the shadowing check this
+/// feeds.
+fn declarator_name(decl: &str) -> String {
+    let mut text = decl.trim_end();
+    loop {
+        let name: String = text
             .chars()
             .rev()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -675,10 +698,38 @@ fn typedef_names(types: &str) -> BTreeSet<String> {
             .rev()
             .collect();
         if !name.is_empty() {
-            out.insert(name);
+            return name;
+        }
+        let (open, close) = match text.chars().last() {
+            Some(']') => ('[', ']'),
+            Some(')') => ('(', ')'),
+            _ => return String::new(),
+        };
+        let Some(start) = matching_open(text, open, close) else { return String::new() };
+        let inner = text[start + 1..text.len() - 1].trim();
+        text = if close == ')' && (inner.starts_with('*') || inner.starts_with('(')) {
+            inner
+        } else {
+            text[..start].trim_end()
+        };
+    }
+}
+
+/// The byte offset of the `open` matching the `close` that ends `text`, or
+/// `None` when the text is unbalanced.
+fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
+    let mut depth = 0i32;
+    for (i, c) in text.char_indices().rev() {
+        if c == close {
+            depth += 1;
+        } else if c == open {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
         }
     }
-    out
+    None
 }
 
 /// `<name>.h`: include guard + recompile prelude + user type definitions +
@@ -891,6 +942,31 @@ pub fn build_asm(
 #[cfg(test)]
 mod tests {
     use super::AssemblyScratch;
+
+    /// Every typedef shape `field_decl_text` composes must yield its name, or a
+    /// function sharing that spelling is declared next to it and the header
+    /// stops compiling. Function-pointer and array typedefs do not end in their
+    /// own name.
+    #[test]
+    fn typedef_names_reads_every_declarator_shape() {
+        let block = concat!(
+            "typedef struct stat stat;\n",
+            "typedef char *mystr;\n",
+            "typedef char buf[8];\n",
+            "typedef int (*fnptr)(void);\n",
+            "typedef void (*sighandler_t)(int); /* opaque */\n",
+            "typedef int (*table[4])(char *, int);\n",
+            "typedef int plain(void);\n",
+            "struct notatypedef { int x; };\n",
+        );
+        let got = super::typedef_names(block);
+        let want: std::collections::BTreeSet<String> =
+            ["stat", "mystr", "buf", "fnptr", "sighandler_t", "table", "plain"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        assert_eq!(got, want);
+    }
 
     fn legacy_instruction_line(addr: u64, raw: &[u8], mnem: &str, body: &str) -> String {
         let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");

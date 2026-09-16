@@ -1463,13 +1463,19 @@ moves.
   *An image with debug info already has the real thing, and gets it.* DWARF
   interns `stat`, `passwd`, `tm` and `option` under the identical bare spelling,
   with their true layouts, so this table has nothing to add there and must not
-  get in the way. It runs AFTER the DWARF importer and adopts whatever complete
+  get in the way. It runs AFTER the DWARF importer and adopts whatever
   aggregate of the declared width is already held under the name — or under the
   spelling the platform's own headers use for it, which for `FILE` is
-  `struct _IO_FILE`. A name held by anything else — a different width, an
-  incomplete shell someone else is populating, a non-struct — declines the
-  signature: this table never completes, re-keys or alters a definition it did
-  not establish.
+  `struct _IO_FILE`. Width and metatype are the whole test: a struct of the
+  declared width is adopted complete or not. That is what lets the importer
+  finish populating one underneath the pointers already built against it, and it
+  is what keeps the table idempotent — the second slot of a signature meets the
+  shell the first slot minted and has to take it, not decline it. A name held by
+  anything else — a different width, a non-struct, or the width-0 type a bare
+  forward declaration interns as — declines the signature: this table never
+  completes, re-keys or alters a definition it did not establish. A declined
+  name is not a withdrawn prototype; the width-stable signature stands, so the
+  arity survives even where the pointee does not.
 
   The order is not a preference, it is the correctness condition. A pointee is
   captured as a reference when the signature is built, and completing a struct

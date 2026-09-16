@@ -151,18 +151,28 @@ pub(super) const NAMED_AGGREGATES: &[NamedAggregate] = &[
 /// definition when the image carries one, else a named, sized, empty shell.
 ///
 /// The pass runs after `DwarfPass`, so "the platform's own" means simply
-/// "already interned". Three outcomes:
+/// "already interned". What is adopted is decided by METATYPE AND WIDTH only —
+/// a struct of the declared width is taken whether it is complete or still a
+/// shell. Three outcomes:
 ///
-/// * a COMPLETE struct of the declared width is held under `name` or under its
-///   [`NamedAggregate::dwarf_alias`] — that is the real `struct stat` the file
-///   was built against, fields and all, and it is adopted verbatim;
-/// * anything else is held under `name` — a struct of a different width, an
-///   incomplete shell somebody else is populating, a non-struct — and the whole
-///   signature is declined. This table never alters, completes or re-keys a
-///   definition it did not establish: completion mints a NEW `Rc`
-///   (`TypeFactory::set_fields_struct`), so re-keying another owner's shell
-///   would strand every pointer already minted against it;
+/// * a struct of the declared width is held under `name` or under its
+///   [`NamedAggregate::dwarf_alias`] — adopted verbatim. That covers the real
+///   `struct stat` this file was built against (complete, with its fields), a
+///   shell the DWARF importer is still populating (it completes in place, under
+///   the pointers already handed out), and the shell an earlier slot of this
+///   same table minted;
+/// * anything else is held under `name` — a struct of a DIFFERENT width, a
+///   non-struct, or the width-0 type a bare forward declaration interns as
+///   (whose pointee would survive `RulePtrsubUndo` and print as a functional
+///   `PTRSUB`) — and the whole signature is declined. This table never alters,
+///   completes or re-keys a definition it did not establish: completion mints a
+///   NEW `Rc` (`TypeFactory::set_fields_struct`), so re-keying another owner's
+///   shell would strand every pointer already minted against it;
 /// * nothing is held — mint the sized, still-incomplete shell.
+///
+/// Completeness is deliberately not part of the test. Requiring it would make
+/// slot 2 of a signature decline the shell slot 1 just minted, and the table
+/// would silently degrade to `void *` everywhere.
 ///
 /// Idempotent by construction: the second call finds the interned type by name
 /// and hands back the same `Rc`, so every `FILE *` in the table is the same

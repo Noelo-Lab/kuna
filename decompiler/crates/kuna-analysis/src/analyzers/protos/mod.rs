@@ -281,16 +281,20 @@ pub fn declared_libc_prototype(
 ) -> Option<PrototypePieces> {
     // (kuna `libctypes`) The named-aggregate form of the same signature when that
     // gate is on, so a declared `fopen` agrees with what the load-time pass parks
-    // on an imported one. Off, or a name only the width-stable tables carry, falls
-    // straight through to them.
-    let sig = match kuna_libctypes::declared_named_prototype(name) {
-        Some(sig) => sig,
-        None => LIBC
-            .iter()
-            .chain(kuna_libcsigs::LIBC_EXT.iter())
-            .find(|(n, _)| *n == name)
-            .map(|(_, sig)| sig)?,
-    };
+    // on an imported one. A named signature that cannot be built -- the image
+    // holds `stat` as its own 24-byte struct, say -- degrades to the width-stable
+    // one rather than withdrawing the prototype, which is what the load-time pass
+    // does too (it skips the named slot and the `void *` seeding still stands).
+    if let Some(sig) = kuna_libctypes::declared_named_prototype(name) {
+        if let Ok(pieces) = build_pieces(name, sig, types, word_size) {
+            return Some(pieces);
+        }
+    }
+    let sig = LIBC
+        .iter()
+        .chain(kuna_libcsigs::LIBC_EXT.iter())
+        .find(|(n, _)| *n == name)
+        .map(|(_, sig)| sig)?;
     build_pieces(name, sig, types, word_size).ok()
 }
 
