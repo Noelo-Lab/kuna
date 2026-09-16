@@ -104,7 +104,7 @@ impl AnalysisPass for ArmLibcMainPass {
 /// nothing and the commit is byte-identical to before.
 ///
 /// Visible to the sibling [`super::kuna_elfmain`], which parks the
-/// `int main(int, char **)` prototype on the name this pass installs.
+/// `int main(int, char **, char **)` prototype on the name this pass installs.
 pub(super) fn main_vma(file: &object::File, bytes: &[u8]) -> Option<u64> {
     if file.architecture() != object::Architecture::Arm {
         return None;

@@ -1289,14 +1289,16 @@ pub struct Architecture {
     /// restores the previous inventory exactly.
     pub analysis_armlibcmain: bool,
     /// (kuna) Name the ELF routine crt1 hands to `__libc_start_main` `main` and
-    /// declare it `int main(int argc, char **argv)` (`elfmain`); default **on**.
-    /// Entry oracle 4 already decodes that address on x86-64, AArch64, ARM and
-    /// RISC-V, but seeds it address-only, so a stripped ELF reports its own
-    /// starting point as one more `sub_<addr>` with whatever prototype reading
-    /// its body alone produces — `unsigned long sub_26a0(int a0,char **a1)` on a
-    /// stripped `-O2` `fmt`, where the return type is a guess (the value is
-    /// consumed outside the image) and the two slots exist only because this
-    /// `main` happens to read them. ELF only, refused on an image that names no
+    /// declare it `int main(int argc, char **argv, char **envp)` (`elfmain`);
+    /// default **on**. Entry oracle 4 already decodes that address on x86-64,
+    /// AArch64, ARM and RISC-V, but seeds it address-only, so a stripped ELF
+    /// reports its own starting point as one more `sub_<addr>` with whatever
+    /// prototype reading its body alone produces — `unsigned long sub_26a0(int
+    /// a0,char **a1)` on a stripped `-O2` `fmt`, where the return type is a
+    /// guess (the value is consumed outside the image) and the two slots exist
+    /// only because this `main` happens to read them. The declaration is applied
+    /// LOCKED, so a body-driven parameter in a register past the third is not
+    /// kept. ELF only, refused on an image that names no
     /// `__libc_start_main`, on an address that already carries a function symbol,
     /// and on one whose image already spells a symbol `main`. Off restores the
     /// `sub_<addr>` / width-only form exactly.

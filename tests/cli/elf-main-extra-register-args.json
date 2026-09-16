@@ -1,0 +1,57 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--addr",
+    "0x1026",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/elfmainextra_x86_64",
+    "binary_sha256": "7e8d5dcd8239d4b535b6d3832a8276aaed6bcd5f2a304602ba38d05318917fa7",
+    "binary_size": 13464,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elfmainextra_x86_64",
+    "selector": "0x1026",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "main"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "int main(int argc,char **argv,char **envp)"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "unsigned long v1; // r9"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "sub_1050(0x2000,argc,argv)"
+      }
+    ]
+  },
+  "notes": "The measured cost of declaring main's real prototype, pinned so it stays visible. This main forwards two argument registers past the third that nothing in its body writes: r8 as the fourth register argument of the call, r9 into a global. Reading the body alone makes both of them parameters (`unsigned long sub_1026(unsigned int a0,...,unsigned long a4,unsigned long a5)`), which is wrong in a different way - the C runtime passes three arguments, so a4/a5 are undefined reads recovery had nowhere else to put. With the three-parameter prototype locked they lose that source: the stored one becomes `unsigned long v1; // r9` with no assignment anywhere, and the forwarded one is dropped from the call (`sub_1050(0x2000,argc,argv)`, three arguments where the body passes four). Whichever way that is fixed, this probe moves."
+}

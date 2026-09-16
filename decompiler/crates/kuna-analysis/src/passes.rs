@@ -161,10 +161,11 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // more `sub_<addr>` with whatever prototype reading its body alone
         // produces. This pass applies the two things the C runtime's contract
         // states about that address -- the name `main` and the declaration
-        // `int main(int argc, char **argv)`. Registered always (the pass
-        // self-gates on an ELF that names `__libc_start_main` whose recovered
-        // `main` is unnamed, so it emits nothing anywhere else), COMMIT gated by
-        // `--option elfmain on|off` via `engine.rs::analysis_pass_enabled`. After
+        // `int main(int argc, char **argv, char **envp)`. Registered always
+        // (the pass self-gates on an ELF that names `__libc_start_main` whose
+        // recovered `main` is unnamed, so it emits nothing anywhere else),
+        // COMMIT gated by `--option elfmain on|off` via
+        // `engine.rs::analysis_pass_enabled`. After
         // ArmLibcMainPass, whose entry + name it parks the prototype on for the
         // non-PIE ARM32 shape oracle 4 cannot see.
         Box::new(crate::entry::kuna_elfmain::ElfMainPass),

@@ -55,6 +55,29 @@
 //! an `envp` dropped from a program that uses it is wrong output. So the
 //! declaration the C runtime actually makes is the one applied.
 //!
+//! ## What the lock costs
+//!
+//! The lock cuts the other way too. A `main` whose body reads an argument
+//! register PAST the third keeps that read only while the signature is
+//! body-driven: an undefined register read has nowhere else to go, so recovery
+//! makes it a parameter and fills in the slots before it to reach it. Declaring
+//! the three real ones takes that away, and the value goes one of two ways --
+//! dropped from the call site it was being handed to, or, when the body stores
+//! it, declared as a local that nothing assigns. The in-repo fixture
+//! `elfmainextra_x86_64` @0x1026 shows both at once, and the corpus says how
+//! often: 27 of the 610 stripped decbench ELFs whose `main` this pass names
+//! recover more than three parameters from the body.
+//!
+//! None of those extra slots is a real parameter -- the runtime passes three.
+//! On the two loudest cases, openssh `sftp` -O2 @0x5250 and shadow `login` -O2
+//! @0x3d20, the unstripped twin's DWARF declares `int main(int argc, char
+//! **argv)` for both, and the `r8`/`r9` the body forwards to a variadic call
+//! site is an undefined read on the path kuna sees. So the lock does not delete
+//! a parameter that exists; it stops rendering an undefined read as one. Both
+//! shapes are pinned (`tests/stages/kuna-elfmain.xml` #5-#8,
+//! `tests/cli/elf-main-extra-register-args.json`), so whichever way call-site
+//! argument recovery fixes them, it shows up as a test move.
+//!
 //! ## Where the address comes from
 //!
 //! [`super::libc_start_main_target`] — oracle 4 itself, unchanged, so this pass
@@ -264,6 +287,13 @@ mod tests {
         assert_eq!(claim("entrymain_aarch64"), Some((0x714, true)));
         assert_eq!(claim("entrymain_riscv64"), Some((0x608, true)));
         assert_eq!(claim("entrymain_arm"), Some((0x4d8, true)));
+    }
+
+    /// The fixture that carries the cost documented in the module header: a
+    /// `main` reading argument registers past the third still claims this pass.
+    #[test]
+    fn claims_a_main_that_reads_registers_past_the_third() {
+        assert_eq!(claim("elfmainextra_x86_64"), Some((0x1026, true)));
     }
 
     /// The non-PIE ARM32 shape oracle 4 cannot see: `armlibcmain` owns the entry

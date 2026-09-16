@@ -2708,6 +2708,31 @@ ignores is an unused parameter in a declaration that is true of every hosted C
 program, while an `envp` dropped from a program that uses it is a lie. The
 declaration the runtime actually makes is therefore the one applied.
 
+The lock costs something in the other direction, and the corpus says how much. A
+`main` whose body reads an argument register *past* the third keeps that read
+only while the signature is body-driven: an undefined register read has nowhere
+else to go, so recovery makes it a parameter and fills in the slots before it to
+reach one. Declaring the three real ones takes that home away, and the value goes
+one of two ways — dropped from the call site it was being handed to, or, when the
+body stores it, declared as a local that nothing assigns. Over the 775 stripped
+decbench ELFs, 645 have a `main` this pass names, 28 of those recover more than
+three parameters from the body, and 13 of the 28 render at least one such local.
+None of the extra slots is a real parameter: the runtime passes three, and on the
+two loudest cases — openssh `sftp` `-O2` @0x5250 and shadow `login` `-O2` @0x3d20
+— the unstripped twin's DWARF declares `int main(int argc, char **argv)` for
+both, the forwarded `r8`/`r9` being an undefined read a variadic call site hands
+on. So the lock does not delete a parameter that exists; it changes how an
+undefined read is rendered, and on coreutils `true`/`false` the same flip is
+plainly better, replacing the `undefined16 sub_2540(int a0,...,unsigned long a3)`
+whose body ends `return v2._0_16_ << 0x40` with `return 0`. Both shapes are
+pinned rather than only described: the in-repo fixture `elfmainextra_x86_64`
+@0x1026 reads `r8` into a call argument and stores `r9` to a global, so its
+body-driven signature is `unsigned long sub_1026(unsigned int a0,unsigned long
+a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5)` and the
+default arm shows both losses at once (`tests/stages/kuna-elfmain.xml` §§5-8,
+`tests/cli/elf-main-extra-register-args.json`). Whichever way call-site argument
+recovery removes the fabrication, those assertions move.
+
 The address is oracle 4's own (`libc_start_main_target`), never a second decode,
 so the pass cannot disagree with the entry the discovery set already contains.
 The one shape oracle 4 cannot see is the non-PIE ARM32 crt1 above, and there

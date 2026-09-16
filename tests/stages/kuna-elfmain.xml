@@ -22,6 +22,17 @@
     call glibc's `__libc_start_main` makes, because the prototype is applied
     locked and declaring two would assert that a `main` reading `envp` has no
     third parameter.
+
+    Passes 3 and 4 are the same two arms over the second fixture,
+    `elfmainextra_x86_64`, and they pin what the locked declaration COSTS. That
+    `main` forwards two argument registers past the third that nothing in its
+    body writes - `r8` as the fourth register argument of a call, `r9` into a
+    global - so reading the body alone invents six parameters, the last two of
+    them fabricated (the C runtime passes three). Locking the three real ones
+    takes the fabrications' only source away: the stored one is declared as a
+    local and assigned nowhere, and the forwarded one disappears from the call
+    site. Both arms are asserted so the class is visible in the corpus rather
+    than only described.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -42,10 +53,27 @@ c3
   <com>load function main</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfmainextra_x86_64</com>
+  <com>option elfmain off</com>
+  <com>read symbols</com>
+  <com>load function sub_1026</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfmainextra_x86_64</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="ELFMAIN #1: off, the entry is an anonymous sub with a body-driven signature" min="1" max="1">unsigned long sub_1405\(int4 a0,unsigned long \*a1\)</stringmatch>
 <stringmatch name="ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer" min="1" max="1">sub_1357\(a1\[1\]\)</stringmatch>
-<stringmatch name="ELFMAIN #3: default, the libc-start argument is named and declared" min="1" max="1">int4 main\(int4 argc,char \*\*argv,char \*\*envp\)</stringmatch>
+<stringmatch name="ELFMAIN #3: default, the libc-start argument is named and declared, in both images" min="2" max="2">int4 main\(int4 argc,char \*\*argv,char \*\*envp\)</stringmatch>
 <stringmatch name="ELFMAIN #4: default, the declared element type reaches the call site" min="1" max="1">sub_1357\(argv\[1\]\)</stringmatch>
+<stringmatch name="ELFMAIN #5: off, an argument register past the third is recovered as a parameter" min="1" max="1">unsigned long sub_1026\(unsigned int a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5\)</stringmatch>
+<stringmatch name="ELFMAIN #6: off, the fabricated slots are what the body forwards" min="1" max="1">sub_1050\(0x2000,a0,a1,a4\)</stringmatch>
+<stringmatch name="ELFMAIN #7: default, the stored register beyond the third becomes a local nothing assigns" min="1" max="1">unsigned long v1; // r9</stringmatch>
+<stringmatch name="ELFMAIN #8: default, the forwarded register beyond the third is dropped from the call" min="1" max="1">sub_1050\(0x2000,argc,argv\)</stringmatch>
 </decompilertest>
