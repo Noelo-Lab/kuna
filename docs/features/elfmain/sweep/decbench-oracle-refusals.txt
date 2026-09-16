@@ -1,0 +1,43 @@
+# Which of the 758 oracle rows the pass can fire on at all.
+#
+# main_claim() refuses when the STRIPPED image itself still defines a symbol
+# spelled `main` (the by-name park would be ambiguous) or names no
+# __libc_start_main. Both are read straight off the image's static + dynamic
+# symbol names, so this table is reproducible with readelf alone:
+#   readelf -W --syms --dyn-syms <stripped> | awk '{print $8}'
+#
+# 33 MATCH rows are refusals (listed below); 612 are the pass's own.
+# verdict<TAB>image<TAB>has_main<TAB>has___libc_start_main
+REFUSED-name-from-symtab	O0/bash/mksyntax	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/bash/psize.aux	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/bash/bash	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/bash/mkbuiltins	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/bash/bashversion	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/bash/mksignames	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/bash/man2html	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/e2fsprogs/e2fsck	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/iproute2/ip	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/iproute2/rtmon	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O0/rsyslog/rsyslogd	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/bash/bashversion	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/bash/bash	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/bash/mkbuiltins	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/bash/mksyntax	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/bash/mksignames	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/bash/man2html	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/bash/psize.aux	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/e2fsprogs/e2fsck	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/iproute2/ip	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/iproute2/rtmon	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2/rsyslog/rsyslogd	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/bash/bashversion	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/bash/bash	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/bash/mkbuiltins	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/bash/mksyntax	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/bash/mksignames	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/bash/psize.aux	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/bash/man2html	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/e2fsprogs/e2fsck	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/iproute2/ip	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/iproute2/rtmon	has_main=yes	has___libc_start_main=yes
+REFUSED-name-from-symtab	O2-noinline/rsyslog/rsyslogd	has_main=yes	has___libc_start_main=yes
