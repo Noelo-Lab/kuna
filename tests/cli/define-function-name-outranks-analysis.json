@@ -55,5 +55,5 @@
       }
     ]
   },
-  "notes": "A name the user declares on the command line outranks one an analysis pass supplies. 0x1405 is the libc-start main of this stripped image, so with `elfmain` on it carries the analysis name `main` as well as the user's `stage1` - and `main` is shorter, which is what the name ranking breaks ties on. The declared name has to win regardless, so the entry answers to `stage1` and keeps `main` as an alias."
+  "notes": "A name the user declares outranks one an analysis pass supplies. 0x1405 is the libc-start main of this stripped image, so the entry carries the analysis name `main` as well as the declared `stage1`, and `main` is shorter -- which is what the name ranking breaks ties on. The declaration wins anyway; `main` stays an alias."
 }

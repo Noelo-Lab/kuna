@@ -53,5 +53,5 @@
       }
     ]
   },
-  "notes": "The measured cost of declaring main's real prototype, pinned so it stays visible. This main forwards two argument registers past the third that nothing in its body writes: r8 as the fourth register argument of the call, r9 into a global. Reading the body alone makes both of them parameters (`unsigned long sub_1026(unsigned int a0,...,unsigned long a4,unsigned long a5)`), which is wrong in a different way - the C runtime passes three arguments, so a4/a5 are undefined reads recovery had nowhere else to put. With the three-parameter prototype locked they lose that source: the stored one becomes `unsigned long v1; // r9` with no assignment anywhere, and the forwarded one is dropped from the call (`sub_1050(0x2000,argc,argv)`, three arguments where the body passes four). Whichever way that is fixed, this probe moves."
+  "notes": "What declaring main's real prototype costs, pinned so it stays visible. This main forwards two registers past the third that nothing writes: r8 into a call argument, r9 into a global. Body-driven recovery makes both parameters; the locked three-parameter park leaves the stored one `unsigned long v1; // r9` assigned nowhere and drops the forwarded one from the call."
 }
