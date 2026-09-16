@@ -33,7 +33,8 @@
   },
   "ablation": {
     "method": "--option elfmain off on the witness and on every in-repo ELF fixture the pass fires on",
-    "result": "the previous output returns exactly: no `main` symbol, the sub_<addr> declaration and the body-driven signature, byte for byte (the whole-corpus sweep below is the proof -- 130 of 143 fixtures are byte-identical in both arms and the 13 that differ differ only in the hunks classified there)"
+    "result": "the previous output returns exactly: no `main` symbol, the sub_<addr> declaration and the body-driven signature, byte for byte (the whole-corpus sweep below is the proof -- 130 of 143 fixtures are byte-identical in both arms and the 13 that differ differ only in the hunks classified there)",
+    "cross_build_control": "`kuna decompile-all` from the branch with `--option elfmain off` is byte-identical to the same command from the base commit's own binary (809712e9) on stripped_dynamic_x86_64, aif_gap_x86_64, eh_lsda_x86_64, fmt_x86_64 and entrymain_arm -- so the only behavioural change on the branch is behind the gate."
   },
   "oracle_check": {
     "method": "kuna functions on every stripped decbench ELF that has an unstripped twin, comparing the address named `main` against the twin's `main` from nm",
