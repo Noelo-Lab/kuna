@@ -345,7 +345,7 @@ standing requirement 10 says which to run when.
 python3 -m scripts.pipeline.varcensus <binary> --json --baseline before.json
 ```
 
-Three things to know before quoting any of them:
+Four things to know before quoting any of them:
 
 * **The scored surface is the JSON `variables[]` array, not the C text** — args, stack
   symbols and `framelayout` slots. Register-resident locals are never exported, so
