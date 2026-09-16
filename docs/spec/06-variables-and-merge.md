@@ -291,7 +291,9 @@ this pass: `funcdata_block.rs (Funcdata::bb_is_complex)` — upstream
 `BlockBasic::isComplex`, the OR-clause absorb test of `blockaction.rs
 (CollapseStructure::rule_block_or)` — and `kuna_condfold.rs` read the same field
 to bound how many printed statements a condition block may carry, so
-`impliedrefs` loosens those two structure tests along with the marking. `coreaction_cleanup.rs (ActionMarkImplied)` then walks each
+`impliedrefs` loosens those two structure tests along with the marking.
+
+`coreaction_cleanup.rs (ActionMarkImplied)` then walks each
 remaining Varnode's expression tree depth-first and marks it implied unless
 inlining would be *semantically* unsafe
 (`coreaction_cleanup.rs (check_implied_cover)`): a LOAD whose cover crosses a
