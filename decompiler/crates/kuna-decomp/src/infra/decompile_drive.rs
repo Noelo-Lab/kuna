@@ -2078,7 +2078,7 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
         };
         let type_name = p
             .get_type()
-            .map(|t| crate::printc::type_to_c_string(arch, t))
+            .map(|t| crate::kuna_bytehonest::exported_type_name(arch, t))
             .unwrap_or_default();
         let size = p.get_size() as i64;
         let addr = p.get_address();
@@ -2110,7 +2110,7 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
             if category != crate::database::symbol_category::NO_CATEGORY {
                 continue; // already emitted as a parameter above
             }
-            let type_name = crate::printc::type_to_c_string(arch, &ct);
+            let type_name = crate::kuna_bytehonest::exported_type_name(arch, &ct);
             out.push(VarInfo {
                 name,
                 type_name,

@@ -94,6 +94,12 @@ fn framelayout_reports_the_frame_slots_the_final_restructure_pass_lost() {
             ovars.len(),
             nvars.len()
         );
+        // The invariant is about THIS option: sections 1 and 2 do not read
+        // `framelayout` at all. A row's `type_name` is no longer the printer's
+        // spelling in general -- `bytehonest` re-spells an uncommitted byte as
+        // `undefined1` there -- but it is set identically in both arms here,
+        // because only `framelayout` differs between them (see
+        // `verify_bytehonest.rs` for the other axis).
         for (a, b) in ovars.iter().zip(nvars.iter()) {
             assert_eq!(a.name, b.name, "{fname}: framelayout rewrote an existing variable");
             assert_eq!(a.type_name, b.type_name, "{fname}: framelayout retyped an existing variable");
