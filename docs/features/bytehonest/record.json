@@ -27,11 +27,12 @@
   "witness": {
     "binary": "results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
     "address": "0x40f0",
-    "ground_truth": "void close_stdout_set_ignore_EPIPE(_Bool ignore)",
-    "before": "\"variables\": [{\"name\": \"param_1\", \"type\": \"char\", \"kind\": \"arg\", \"size\": 1}]  (type_match 0.000)",
-    "after": "\"variables\": [{\"name\": \"param_1\", \"type\": \"undefined1\", \"kind\": \"arg\", \"size\": 1}]  (type_match 1.000)",
+    "ground_truth": "void close_stdout_set_ignore_EPIPE(_Bool ignore) (gnulib closeout)",
+    "before": "\"variables\": [{\"name\": \"param_1\", \"type\": \"char\", \"kind\": \"arg\", \"size\": 1}]",
+    "after": "\"variables\": [{\"name\": \"param_1\", \"type\": \"undefined1\", \"kind\": \"arg\", \"size\": 1}]",
     "emitted_c": "void sub_40f0(char a0) { dat_17138 = a0; }  -- byte-identical in both arms",
-    "in_repo_equivalent": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl @ 0x2260, the same coreutils function with its DWARF name (the tests/cli probe pair)"
+    "in_repo_equivalent": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl @ 0x2260, the same gnulib function carrying its DWARF name -- this is what the tests/cli probe pair pins",
+    "metric_caveat": "this function is NOT in decbench's scored set for fmt (the ground truth is fmt's own DWARF, which does not cover the gnulib objects linked into it), so no per-function type_match delta can be attributed to it. It is a BEHAVIOURAL witness; the metric evidence is the corpus sweep below."
   },
   "sweep": {
     "surface": "kuna decompile-all --json, default arm vs `--option bytehonest off`, every function of every binary compared field by field",
@@ -118,7 +119,8 @@
       "worse": 0
     },
     "note": "`improved` counts every function whose score rose, the 10 that rose to a perfect 1.000 included. 0 functions scored lower anywhere in the 5,298.",
-    "zero_regressed_is_empirical": "type_match's claim() is greedy: for each ground-truth variable, in a fixed arg -> offset -> name pass order, it takes the FIRST matching unused candidate and never reconsiders that claim (decbench/metrics/type_match.py:1041). Widening what a candidate matches can therefore in principle let one ground-truth variable consume a candidate a later one would have matched better. `0 worse` over 5,298 scored functions is a measurement, not a structural guarantee -- the metric cannot prove no such reordering exists, only that none occurred here."
+    "zero_regressed_is_empirical": "type_match's claim() is greedy: for each ground-truth variable, in a fixed arg -> offset -> name pass order, it takes the FIRST matching unused candidate and never reconsiders that claim (decbench/metrics/type_match.py:1041). Widening what a candidate matches can therefore in principle let one ground-truth variable consume a candidate a later one would have matched better. `0 worse` over 5,298 scored functions is a measurement, not a structural guarantee -- the metric cannot prove no such reordering exists, only that none occurred here.",
+    "design_lane_pilot_not_reproduced": "The brief for this item cited a pilot measurement of '1,390 scored fns, perfect 193 -> 201, 21 improved, 0 regressed' over coreutils fmt/ls/sort at O0+O2, and 'fmt O2 sub_40f0 score 0.000 -> 1.000'. Neither reproduced here: the same six slices of this tree score 536 functions, perfect 42 -> 43, 11 improved, 0 worse, and sub_40f0 is not in fmt's scored set at all. The direction and the sign of the effect are the same; the magnitudes above are this branch's own measurement over 5,298 functions and are the ones the catalog row and the default-on argument cite."
   },
   "speed": {
     "instrument_1": "scripts.pipeline.timeit --record docs/features/bytehonest/record.json --repeat 15 (kuna decompile of the witness function, medians; the speed_* fields below are its output)",
