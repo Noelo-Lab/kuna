@@ -154,7 +154,7 @@ def summarize(rows: dict) -> tuple[dict, dict]:
 
 
 def control(rows: dict, published: dict | None = None) -> dict:
-    """typesweep's two harness controls, carried into the block.
+    """typesweep's harness controls, carried into the block.
 
     Only ``identical_variables_scored_differently`` can invalidate a run. Two
     arms that handed the metric byte-identical ``variables`` — the same names,
@@ -277,7 +277,7 @@ def splice(record_path: Path, block: dict) -> None:
 
 
 class _V:
-    """The two fields a variable signature needs in the selftest."""
+    """A stand-in for decbench's VariableInfo, for the signature check below."""
 
     def __init__(self, name, type_):
         self.name, self.type = name, type_
