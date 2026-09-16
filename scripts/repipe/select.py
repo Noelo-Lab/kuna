@@ -9,7 +9,7 @@ Three layers of collision avoidance, cheapest first (docs/re-pipeline.md):
    parallel with no shared mutable state at all.
 2. **Named resource leases.** A need's track and `touches:` map to a resource set; a need
    whose set intersects a held lease is not dispatched. Because every quality need needs
-   counter:catalog + counter:stages-corpus + counter:div + file:phases.toml, this yields
+   counter:catalog + counter:stages-corpus + file:phases.toml, this yields
    "at most one option-adding builder at a time" without special-casing it.
 3. **Contracts.** What each live builder is doing is written to contracts.json and rendered
    into every sibling's prompt, so a builder that needs someone else's file stops and says
@@ -34,7 +34,7 @@ from ..pipeline import state as pstate
 # Every quality need needs the whole counter set, so "at most one option-adding builder in
 # flight" falls out of the lease algebra rather than being special-cased.
 TRACK_RESOURCES = {
-    "quality": ["counter:catalog", "counter:stages-corpus", "counter:div",
+    "quality": ["counter:catalog", "counter:stages-corpus",
                 "file:phases.toml", "file:docs/options.md"],
     "loader": [],
     "tooling": [],
@@ -54,7 +54,6 @@ PATH_RESOURCES = [
     ("decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs", "counter:catalog"),
     ("decompiler/crates/kuna-base/src/xml.rs", "counter:stages-corpus"),
     ("docs/options.md", "file:docs/options.md"),
-    ("docs/history.md", "counter:div"),
     ("docs/baseline-stages.json", "counter:stages-corpus"),
     ("tests/stages", "counter:stages-corpus"),
 ]

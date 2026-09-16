@@ -111,9 +111,10 @@ Decisions baked in:
 ## Standing requirements
 
 Rules 1–5 of `docs/improvement-pipeline.md` → *Standing requirements* apply verbatim
-(one PR per feature; end-to-end two-pass stage test; output-changing ⇒ option +
-history/DIV record; speed always measured via `scripts.pipeline.timeit` with the ≤5%
-budget; large work goes through a `[PROPOSAL]` draft PR). Plus:
+(one PR per feature; end-to-end two-pass stage test; output-changing ⇒ option, described
+in its `phases.toml` row and spec chapter; speed always measured via
+`scripts.pipeline.timeit` with the ≤5% budget; large work goes through a `[PROPOSAL]`
+draft PR). Plus:
 
 6. **Every output-changing PR records its benchmark delta.** Run
    `scripts.decbench.rescore --case <case-id> --record docs/features/<slug>/record.json`
@@ -162,12 +163,12 @@ unclassifiable ones for a human).
 This queue ran up to four output-changing PRs concurrently, and every one of them touches
 the same handful of hard-coded counters (`catalog_bytecompat.rs`, `phase_catalog.json`,
 `kuna-base/src/xml.rs`' corpus count, `docs/baseline-stages.json`, the `kuna_phases`
-count asserts, `tests/stages/README.md`, the DIV number in `docs/history.md`). Round 2
-produced **three distinct failure shapes, and only one of them announced itself**:
+count asserts, `tests/stages/README.md`). Round 2 produced **three distinct failure
+shapes, and only one of them announced itself**:
 
 | shape | what happened | why it is dangerous |
 |---|---|---|
-| **A conflict** | the DIV number for #257 raced from **55 → 56 → 57 → 58** as #252/#253/#254 claimed each in turn | the loud case — git stops you, and `docs/history.md` conflicts are obvious |
+| **A conflict** | the DIV number for #257 raced from **55 → 56 → 57 → 58** as #252/#253/#254 claimed each in turn | the loud case — git stops you. Retired with the registry itself: nothing claims a DIV number any more |
 | **A silent identical-edit auto-merge** | `catalog_bytecompat.rs` kept `86` because **both sides had made the identical `85 → 86` edit**, so git merged cleanly and the count was one short (#254) | no conflict, no diff to review, wrong answer — caught only by running the suite |
 | **A silent keep-both auto-merge** | a `docs/baseline-stages.json` auto-merge left a stale `data_footer` of `375` while the real key count was `381` (#253); and five rounds of keep-both resolution **duplicated a row in `tests/stages/README.md`** | keep-both is git's safe default and is exactly wrong for a counter or a table |
 
@@ -181,9 +182,6 @@ The rules that fall out, and that #255 then executed cleanly:
   outcomes rather than assuming them.
 - **Diff every keep-both resolution against `main` and assert you removed nothing *and*
   added nothing twice.** A duplicated table row survives every gate in this repo.
-- **DIV numbers are claimed on merge, not on branch.** Re-check the number at merge and
-  renumber the row plus every reference to it — `docs/history.md`, the option's
-  `use_when` prose, the spec chapter, the PR body.
 - Nothing here is caught by review of the *conflict*. It is caught by the build and the
   suite, so the gates must be re-run **after** the rebase, not before it.
 

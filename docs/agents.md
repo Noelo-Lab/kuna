@@ -10,7 +10,7 @@ kuna is an **agent-first decompiler written in Rust**: a decompilation engine pl
 compiler, organized around an explicit phase model whose decision points are exposed as
 per-run, flippable options — the LLM control surface is the product. It started as a Rust
 port of Ghidra's decompiler (Apache-2.0 — see `LICENSE` and `NOTICE`) and has since
-diverged on its own defaults and features; the origin story lives in `docs/history.md`, and 
+diverged on its own defaults and features; the origin story lives in `docs/history.md`, and
 is not needed for day-to-day work.
 
 ## Layout
@@ -57,7 +57,7 @@ CI, so local failures are found far sooner.
 
 - **Never re-pin `docs/baseline.json` to absorb a regression** — fix the code or make the
   change opt-in. The only sanctioned re-pins are an intentional upstream sync or a
-  DIV-recorded default change (`kuna test --save-baseline`; see `docs/history.md`).
+  deliberate default change, and the commit message says which (`kuna test --save-baseline`).
   Adding a stage test DOES re-record the stages baseline:
   `kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json`.
 - `docs/options.md` is generated — after touching option metadata:
@@ -109,8 +109,8 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   `tests/stages/kuna-catalog.xml` count assertions. Grep for the current total, or
   `make rust-test`/`make test-stages` fail opaquely.
 - **Default-ON needs evidence**: only if the flip changes 0/675 datatest assertions and
-  passes the speed budget; every default flip gets a DIV row in `docs/history.md`
-  (a `transform`-tier flip also updates the option's `phases.toml` row prose).
+  passes the speed budget. Record what the default now does in the option's `phases.toml`
+  row and its `docs/spec/` chapter — there is no separate registry to update.
 - **The spec is live**: every new feature or behavior change is described in natural-language
   prose in the owning `docs/spec/` chapter in the same PR — not just an anchor update (each
   phase folder has exactly one owning chapter; find yours via its `Anchors:` header). Run
@@ -215,4 +215,4 @@ Other rules for bodies:
 | `docs/web-integration.md` | The WASM/browser front-end and the project site. |
 | `docs/devcontainer.md` | The reproducible build container + cross-arch fixture builds. |
 | `docs/release.md` | The MAJOR.MINOR version scheme (`VERSION` file + commit count, `make version`) and the binary release CI. |
-| `docs/history.md` | The condensed project history: milestone timeline, the C++→Rust port + its verification, the DIV registry (why a default differs from upstream), vendored-tree provenance (`GHIDRA_REV`) + sync procedure. |
+| `docs/history.md` | **Rarely needed.** The far past: milestone timeline, the C++→Rust port + its verification, a frozen index for old `DIV-N` citations, vendored-tree provenance (`GHIDRA_REV`) + sync procedure. |

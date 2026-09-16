@@ -136,12 +136,12 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 - Run the full ablation: `kuna test --all --baseline docs/baseline.json`.
 - **If 0/675 upstream assertions change with the feature default-ON _and_ the speed gate passes**
   (`speed_within_budget` true, i.e. `speed_delta_pct` ≤ the budget), flip the option default to ON (set the
-  flag default in the architecture reset path, `shipped` in the `settableTable` row), add a `docs/history.md`
-  DIV row, and re-verify PARITY OK.
+  flag default in the architecture reset path, `shipped` in the `settableTable` row), say "On by default"
+  plus what that default now does in the row's `use_when` prose, and re-verify PARITY OK.
 - **If the ablation is clean but the speed gate FAILS** (over budget or unmeasured), keep it **default-OFF
   opt-in**, set `"speed_forced_off": true` in `record.json`, and note the regression in the PR body
-  (no DIV entry — output stays byte-identical).
-- **Otherwise** (ablation changes >0) keep it default-OFF (opt-in), no DIV entry.
+  (output stays byte-identical).
+- **Otherwise** (ablation changes >0) keep it default-OFF (opt-in).
 - Either way the run MUST end at **PARITY OK** (you never re-pin `docs/baseline.json`). The speed gate can only
   ever push a feature from default-ON to opt-in; it never touches the baseline.
 

@@ -169,7 +169,7 @@ opt-in on both.
 That is by design — `aggressive` is the recovery-ceiling / measurement envelope,
 not the faithful default. Use it to read maximally-recovered output or to A/B
 which options net-help; promote an option to a default only when its own ablation
-shows net-positive-zero-regression (the DIV process).
+shows net-positive-zero-regression.
 
 `returndup` used to be listed here as a known aggregate-GED regression (DIV-18).
 That is no longer true: since #137 gave it angr's const-return gate, an isolating
@@ -255,8 +255,8 @@ especially tight latency budget.
 `aggressive` and `fast` are first-class measurement levers. Run the decbench GED
 benchmark with a `kuna-aggressive` backend (or `kuna decompile-all --mode
 aggressive`) and compare against an explicit `--mode reliable` baseline to find
-options that net-help, which then become candidate default-on flips (a new
-`docs/history.md` DIV row). The omitted-mode `auto` policy intentionally changes
+options that net-help, which then become candidate default-on flips. The omitted-mode
+`auto` policy intentionally changes
 with input size and is therefore not a stable benchmark baseline.
 Use `fast` for latency-sensitive bulk export and compare its function inventory
 and output against `reliable` before adopting the coverage tradeoff.
