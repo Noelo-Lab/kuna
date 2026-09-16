@@ -28,7 +28,7 @@
     "command": "kuna decompile-all decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64 --addr 0x1405 --json",
     "before": "functions[0].name == \"sub_1405\", code `unsigned long sub_1405(int a0,unsigned long *a1)`, the argument vector untyped so `sub_1357(a1[1])`",
     "after": "functions[0].name == \"main\", code `int main(int argc,char **argv,char **envp)` and `sub_1357(argv[1])`",
-    "verify": "make test-cli => tests/cli: 172/172 passed",
+    "verify": "make test-cli => tests/cli: 174/174 passed",
     "promoted_to": "tests/cli/elf-libc-start-main-unnamed.json + tests/cli/elf-libc-start-main-drops.json"
   },
   "ablation": {
@@ -126,8 +126,8 @@
   "tests": {
     "unit": "decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_elfmain.rs (5 tests over main_claim: both x86-64 encodings, all four oracle-4 architectures, the two non-PIE ARM shapes, the unstripped-ELF refusal, the non-ELF and no-crt1 refusals)",
     "stage_test": "tests/stages/kuna-elfmain.xml (4 assertions, two-pass: `option elfmain off` = the bug, default = the fix, over the full load file -> decompile path on stripped_dynamic_x86_64)",
-    "cli": "tests/cli/elf-libc-start-main-unnamed.json (the x86-64 acceptance) and tests/cli/elf-libc-start-main-drops.json (the ARM regression the review found: a main that FORWARDS its third argument register without touching it -- a two-parameter park deleted that parameter and left `unsigned int v4; // r2` assigned nowhere, still passed to __printf_chk). make test-cli 172/172",
-    "corpus_count": "decompiler/crates/kuna-base/src/xml.rs 293 -> 294; docs/baseline-stages.json re-recorded, 1007 -> 1011 keys, purely additive",
+    "cli": "tests/cli/elf-libc-start-main-unnamed.json (the x86-64 acceptance) and tests/cli/elf-libc-start-main-drops.json (the ARM regression the review found: a main that FORWARDS its third argument register without touching it -- a two-parameter park deleted that parameter and left `unsigned int v4; // r2` assigned nowhere, still passed to __printf_chk). make test-cli 174/174",
+    "corpus_count": "decompiler/crates/kuna-base/src/xml.rs 293 -> 295 (this branch's stage test plus the one main gained in the same window); docs/baseline-stages.json re-recorded, 1013 -> 1017, purely additive (the four ELFMAIN keys, no existing assertion moved)",
     "moved_expectations": [
       "decompiler/crates/kuna-console/tests/verify_crossarch_entry_main.rs -- now runs BOTH arms: with elfmain off it is the pre-existing oracle-4 gate verbatim (sub_<addr>, return a0), and by default it is main / return argc at the same address.",
       "decompiler/crates/kuna-console/tests/verify_s1_entry.rs -- its subject is the generated sub_<addr> name format, so it runs with the option off; the default path on that same fixture is gated by tests/stages/kuna-elfmain.xml.",
@@ -138,17 +138,18 @@
     "no_cli_probe_expectation_changed": "None of the ~50 tests/cli probes pinning a literal sub_<addr> needed editing. The one that broke, no-cli-function-boundary-override, was reporting `main` for a function the caller had declared `stage1`; that is the declared-name precedence fix, not an expectation change."
   },
   "counts": {
-    "settables": "205 -> 206 (phases.toml, kuna_phases/tests.rs, catalog_bytecompat.rs, phase_catalog.json recaptured)",
-    "tiers": "(66, 78, 61) -> (66, 78, 62)",
+    "settables": "206 -> 208 after merging origin/main, which added two of its own in the same window; phases.toml, kuna_phases/tests.rs, catalog_bytecompat.rs, tests/fixtures/phase_catalog.json recaptured. `counters --rederive` agrees: settables 208, drift []",
+    "tiers": "(66, 78, 61) -> (66, 80, 62): +2 transform from origin/main, +1 analysis from this branch",
+    "catalog_rows": "205 -> 207 comma-terminated rows",
     "catalog_buckets": "unchanged (source_decompiler kuna, change_kind correctness-fix)",
     "live_value": "unchanged -- no live_field, so the PASS_GATES allowlist is the site instead"
   },
   "gates": {
     "make test": "datatests: 675/675 assertions passed / PARITY OK (docs/baseline.json NOT re-pinned)",
-    "make test-stages": "datatests: 1011/1011 assertions passed / PARITY OK (baseline re-recorded, additive only: the 4 ELFMAIN keys, no existing assertion moved)",
+    "make test-stages": "datatests: 1017/1017 assertions passed / PARITY OK (baseline re-recorded after the merge, additive only)",
     "make rust-test": "RUST_TEST_RC=0 via the serialized lane (414 `test result: ok`, 0 failures). The first round-2 lane run found exactly one failing target, `kuna-decomp --test catalog_bytecompat`, because the option's reworded summary changed the catalog bytes; the fixture was recaptured and the lane re-run green on the final tree.",
     "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
-    "make test-cli": "tests/cli: 172/172 passed",
+    "make test-cli": "tests/cli: 174/174 passed",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
     "counters --check": "no drift: every hard-coded site agrees with the derived truth",
     "docs/options.md": "byte-fresh (`kuna catalog --markdown` reproduces it)",
