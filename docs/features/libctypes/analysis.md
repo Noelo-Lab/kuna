@@ -327,8 +327,10 @@ Ground truth for both is `int get_prefix(FILE *f)` / `get_line(FILE *f, int c)`.
 
 `kuna decompile-all` over the whole `O2/coreutils/stripped/fmt`, this branch with
 `--option libctypes off` vs the main tree's own build: **0 lines differ** (4,069
-lines each). With the gate off the pass returns before it interns anything, so
-there is no named shell in the type factory for anything downstream to find.
+lines each), and the same check on `O2/coreutils/stripped/ls` is byte-identical
+too (13,677 lines each). With the gate off the pass returns before it interns
+anything, so there is no named shell in the type factory for anything downstream
+to find.
 
 ## The project export: the `.h` stays valid C, the `.c` does not
 
