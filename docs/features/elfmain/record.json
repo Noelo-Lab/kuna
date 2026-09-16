@@ -106,12 +106,14 @@
   },
   "gates": {
     "make test": "datatests: 675/675 assertions passed / PARITY OK (docs/baseline.json NOT re-pinned)",
-    "make test-stages": "PENDING",
-    "make rust-test": "PENDING",
-    "make check-spec": "check-spec OK (lenient) + check-spec OK (strict mode)",
+    "make test-stages": "datatests: 1011/1011 assertions passed / PARITY OK (baseline re-recorded, additive only: the 4 ELFMAIN keys, no existing assertion moved)",
+    "make rust-test": "RUST_TEST_RC=0 (via the serialized lane; 414 `test result: ok`, 0 failures). A first run found 5 failures in 3 files, all of them expectation moves this option makes; they are fixed in the branch and listed under tests.moved_expectations.",
+    "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
     "make test-cli": "tests/cli: 171/171 passed",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
-    "counters --check": "no drift: every hard-coded site agrees with the derived truth"
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+    "docs/options.md": "byte-fresh (`kuna catalog --markdown` reproduces it)",
+    "CI": "parity gates PASS on the branch head; full-ci label added so the cargo workspace suite runs there too"
   },
   "docs": {
     "spec": "docs/spec/01-program-prep.md -- a new section after the armlibcmain one, in prose",
