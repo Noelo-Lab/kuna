@@ -181,7 +181,7 @@
    "errors_off": 911,
    "errors_on": 969,
    "delta": 58,
-   "new_error_classes": 15,
+   "new_error_classes": "7 classes absent from the off arm, 57 errors; the remaining +1 is three pre-existing classes moving by one each. (A plain uniq -c over the raw message text reports more classes for the same 58 errors, because gcc's `did you mean` hint and each pointee spelling vary inside one class.)",
    "from_the_incomplete_shell": {
     "invalid use of incomplete typedef": 45,
     "invalid use of incomplete typedef, by name": {
@@ -194,7 +194,13 @@
     "storage size of 'vN' isn't known": 5,
     "return type is an incomplete type": 1
    },
-   "from_the_type_name_function_name_clash_in_the_body": "ls.c:177 `'sigaction' redeclared as different kind of symbol`, ls.c:558 the same for `stat`, ls.c:2375 `sigaction(v6,NULL,(sigaction *)v3);` failing to parse. The header fix in this PR resolves the clash in `build_header` only; `build_body` still emits the colliding definition.",
+   "from_the_type_name_function_name_clash_in_the_body": {
+    "'X' redeclared as different kind of symbol": 2,
+    "expected expression before ')' token": 2,
+    "expected ';' before 'vN'": 1,
+    "conflicting types for 'sub_N'": 1,
+    "sites": "ls.c:177 (sigaction), ls.c:558 (stat), ls.c:2375 `sigaction(v6,NULL,(sigaction *)v3);`, ls.c:2405. The header fix in this PR resolves the clash in `build_header` only; `build_body` still emits the colliding definition."
+   },
    "header_unaffected": "`cc -std=c99 -fsyntax-only` on the exported .h: 0 errors in BOTH arms here, and on the UNSTRIPPED ls the header fix takes the default arm from 15 header errors to 8. That claim stands; it is the .c that is not covered by it.",
    "retired_by": "the follow-up `glibc` value (public `_IO_FILE`/`stat` field layouts instead of an opaque shell) retires the three incomplete-typedef classes; the name-clash-in-the-body half is a `build_body` question this PR does not answer."
   },

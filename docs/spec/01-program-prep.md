@@ -1478,7 +1478,9 @@ moves.
   the body: the exported `.c` declares objects of a type its own `.h` says is
   incomplete, so `cc -fsyntax-only` over an exported `ls.c` gains 58 errors with
   the option on (911 to 969), 51 of them `invalid use of incomplete typedef`,
-  `storage size … isn't known` and `return type is an incomplete type`. The
+  `storage size … isn't known` and `return type is an incomplete type`; the rest
+  are the type-name/function-name clash below arriving in the body, where the
+  header's own fix does not reach. The
   exported body has never compiled; the header does, in both arms, and it is the
   header that carries the declarations everything else in the export depends
   on.

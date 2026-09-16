@@ -389,8 +389,9 @@ $ cc -std=c99 -fsyntax-only -I D D/ls.c 2>&1 | grep -c 'error:'
 969
 ```
 
-+58 errors in 15 classes that appear only with the option on. Three of them
-follow directly from the incomplete shell and are the bulk of it:
++58, of which 57 are in seven error classes that do not occur at all with the
+option off (the other +1 is three pre-existing classes moving by one each).
+Three of the seven are the incomplete shell itself and are the bulk:
 
 | class | count |
 |---|---:|
@@ -398,11 +399,14 @@ follow directly from the incomplete shell and are the bulk of it:
 | `storage size of 'vN' isn't known` | 5 |
 | `return type is an incomplete type` | 1 |
 
-The rest are the type-name/function-name clash arriving in the body, where the
-header's fix does not reach — `ls.c:177` `'sigaction' redeclared as different
-kind of symbol`, `ls.c:558` the same for `stat`, and `ls.c:2375`
-`sigaction(v6,NULL,(sigaction *)v3);` failing to parse for the same reason. The
-`.h` itself is 0 errors in BOTH arms.
+The other four are the type-name/function-name clash arriving in the BODY, where
+the header's fix does not reach: `'X' redeclared as different kind of symbol`
+(2 — `ls.c:177` `sigaction`, `ls.c:558` `stat`), `expected expression before ')'
+token` (2 — `ls.c:2375` `sigaction(v6,NULL,(sigaction *)v3);` and `ls.c:2405`),
+`expected ';' before 'vN'` (1) and `conflicting types for 'sub_N'` (1). Counting
+gcc's `did you mean` hints and each pointee spelling as its own class, as a
+plain `uniq -c` over the message text does, gives a larger class count for the
+same 58 errors. The `.h` itself is 0 errors in BOTH arms.
 
 The follow-up `glibc` value, which installs the public field layouts instead of
 an opaque shell, retires the three incomplete-typedef classes; the
