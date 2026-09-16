@@ -1,0 +1,153 @@
+{
+  "opportunity": "The `decompile-all --json` `variables` surface spelled a one-byte value the type system never committed to `char` -- what the printer emits for the residual TYPE_UNKNOWN carrier under the default `realtypes`. On a machine-readable surface that asserts an element type the recovery never established (the program's own type may as well be `_Bool`, `unsigned char`, a one-byte enum or one byte of an unsplit struct). Ghidra reports the same fact as `undefined1`, IDA as `_BYTE`, and kuna's own framelayout section already reported an uncommitted frame slot as `undefined<N>` -- so one array reported the same fact two different ways.",
+  "test_name": "kuna-console verify_bytehonest (two-pass e2e over every function of the vendored fauxware) + 5 hermetic predicate unit tests + the tests/cli two-pass probe pair",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+  "selector": "close_stdout_set_ignore_EPIPE",
+  "func_addr": "0x2260",
+  "angr_version": null,
+  "option": "bytehonest",
+  "flag": "byte_honest",
+  "element_id": null,
+  "change_kind": "presentation-default",
+  "tier": "core",
+  "source_decompiler": "kuna",
+  "inspiration": "Ghidra's `undefined1` and IDA's `_BYTE` for the same fact; kuna's own `framelayout` frame-slot speller (`undefined<N>`)",
+  "default_on": true,
+  "default_value": "on",
+  "values": "on|off",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "predicate": {
+    "rule": "metatype == TYPE_UNKNOWN && size == 1, read off the Rc<Datatype>, never off its printed spelling",
+    "sections": "extract_variables 1 (FuncProto parameters) and 2 (ScopeLocal NO_CATEGORY stack symbols); section 3 keeps its own wider framelayout rule",
+    "never": "an array of unknown (a char[264] local must keep its array-ness; `undefined264` would drop it and match nothing), any size other than 1, any committed metatype",
+    "exported_size": "unchanged -- the datatype's own size, so every re-spelled row reports size 1",
+    "realtypes_independent": "with realtypes off the same row exports the internal `xunknown1`; the predicate reads the datatype, so `undefined1` is exported there too"
+  },
+  "witness": {
+    "binary": "results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+    "address": "0x40f0",
+    "ground_truth": "void close_stdout_set_ignore_EPIPE(_Bool ignore)",
+    "before": "\"variables\": [{\"name\": \"param_1\", \"type\": \"char\", \"kind\": \"arg\", \"size\": 1}]  (type_match 0.000)",
+    "after": "\"variables\": [{\"name\": \"param_1\", \"type\": \"undefined1\", \"kind\": \"arg\", \"size\": 1}]  (type_match 1.000)",
+    "emitted_c": "void sub_40f0(char a0) { dat_17138 = a0; }  -- byte-identical in both arms",
+    "in_repo_equivalent": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl @ 0x2260, the same coreutils function with its DWARF name (the tests/cli probe pair)"
+  },
+  "sweep": {
+    "surface": "kuna decompile-all --json, default arm vs `--option bytehonest off`, every function of every binary compared field by field",
+    "binaries": "coreutils fmt/ls/sort (O0 and O2, 2157 functions) + bash O2 (2538 functions, 1.29 MiB so `--mode auto` picks `reliable`, not `aggressive`)",
+    "functions": 4695,
+    "functions_with_differing_c": 0,
+    "functions_with_differing_variable_count": 0,
+    "rows_changed": 112,
+    "rows_changed_in_any_other_way": 0,
+    "classification": {
+      "char -> undefined1 at size 1, every other field identical": 112
+    },
+    "in_repo_fixture_scan": "165 ELF/PE/Mach-O fixtures under decompiler/crates/kuna-analysis/tests/fixtures: 11 rows changed across 8 fixtures (fauxware, i386_pie_nl, cpp_mangled, cpp_noreturn, anon_namespace, fid_lib_x86_64.o, splitstorekeep, pe_void_cookie_multi_exit), every one char -> undefined1, emitted C identical in all 165",
+    "reliable_mode_check": "bash O2: 102 undefined1 rows on the surface, all at size 1 (54 of them this option's, 48 already reported by framelayout's section 3)"
+  },
+  "benchmark": {
+    "corpus": "frozen decbench C corpus (results/full_run_address_2026-09-11), O0 + O2, scored with scripts.decbench.typesweep, DECBENCH_NO_CACHE=1, KUNA_BIN pinned to this branch's release build",
+    "metric": "type_match",
+    "arms": "the sweep's `base` arm is this build's DEFAULT (bytehonest ON) and its `test` arm is `--option bytehonest off`; the fields below are relabelled accordingly (perfect_off = the OFF arm)",
+    "control": "baseline vs published type_match 5045 agree / 253 differ (95.2% agreement; the residue is kuna-build drift since the tree was scored, not this option)",
+    "projects": {
+      "grep": {
+        "n": 153,
+        "perfect_off": 23,
+        "perfect_on": 23,
+        "mean_off": 0.4033,
+        "mean_on": 0.4081,
+        "improved": 5,
+        "worse": 0
+      },
+      "gzip": {
+        "n": 233,
+        "perfect_off": 66,
+        "perfect_on": 66,
+        "mean_off": 0.5475,
+        "mean_on": 0.5475,
+        "improved": 0,
+        "worse": 0
+      },
+      "diffutils": {
+        "n": 262,
+        "perfect_off": 31,
+        "perfect_on": 31,
+        "mean_off": 0.416,
+        "mean_on": 0.4204,
+        "improved": 6,
+        "worse": 0
+      },
+      "bzip2": {
+        "n": 164,
+        "perfect_off": 14,
+        "perfect_on": 14,
+        "mean_off": 0.4359,
+        "mean_on": 0.4359,
+        "improved": 0,
+        "worse": 0
+      },
+      "findutils": {
+        "n": 500,
+        "perfect_off": 20,
+        "perfect_on": 20,
+        "mean_off": 0.1578,
+        "mean_on": 0.1593,
+        "improved": 3,
+        "worse": 0
+      },
+      "coreutils": {
+        "n": 3986,
+        "perfect_off": 412,
+        "perfect_on": 422,
+        "mean_off": 0.3044,
+        "mean_on": 0.3089,
+        "improved": 107,
+        "worse": 0
+      }
+    },
+    "pooled": {
+      "n": 5298,
+      "perfect_off": 566,
+      "perfect_on": 576,
+      "mean_off": 0.3137,
+      "mean_on": 0.3176,
+      "improved": 121,
+      "worse": 0
+    },
+    "note": "`improved` counts every function whose score rose, the 10 that rose to a perfect 1.000 included. 0 functions scored lower anywhere in the 5,298.",
+    "zero_regressed_is_empirical": "type_match's claim() is greedy: for each ground-truth variable, in a fixed arg -> offset -> name pass order, it takes the FIRST matching unused candidate and never reconsiders that claim (decbench/metrics/type_match.py:1041). Widening what a candidate matches can therefore in principle let one ground-truth variable consume a candidate a later one would have matched better. `0 worse` over 5,298 scored functions is a measurement, not a structural guarantee -- the metric cannot prove no such reordering exists, only that none occurred here."
+  },
+  "speed": {},
+  "gates": {},
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_bytehonest.rs (new)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_bytehonest/tests.rs (new)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/mod.rs",
+    "decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (extract_variables sections 1+2)",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs (byte_honest field, reset_defaults, set_kuna_option)",
+    "decompiler/crates/kuna-decomp/phases.toml ([[settable]] bytehonest)",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-console/tests/verify_bytehonest.rs (new)",
+    "tests/cli/bytehonest-uncommitted-byte-arg.json (new)",
+    "tests/cli/bytehonest-uncommitted-byte-arg-option-off.json (new)",
+    "docs/spec/06-variables-and-merge.md (\u00a76.2)",
+    "docs/options.md (generated)"
+  ],
+  "catalog_counts": {
+    "settables": "205 -> 206",
+    "tiers": "core 66 -> 67 (transform 78, analysis 61 unchanged)",
+    "catalog_json_records": "204 -> 205",
+    "option_values_live_value_present_for": "85 -> 86 (live_field = byte_honest)",
+    "phase_catalog_json_fixture": "recaptured with decomp_dbg, no program loaded",
+    "kuna_catalog_xml_buckets": "unmoved (source_decompiler kuna, change_kind presentation-default)"
+  },
+  "consumers": [
+    "kuna decompile --json / decompile-all --json (`variables`)",
+    "kuna-console/src/project.rs (`decompile-project`) -- the exported project's variable inventory reports the same spelling; the exported .c/.h text is unchanged"
+  ],
+  "notes": "The C text and the JSON surface disagree on purpose for exactly this carrier: `char a0` in the .c, `undefined1` in `variables[]`. The C text must be legal C and `undefined1` is not a C type; `variables[]` is a report of what the recovery established. Written down in docs/spec/06-variables-and-merge.md \u00a76.2.",
+  "preset_decision": "default ON in the catalog, so it is on in every preset; there is nothing for AGGRESSIVE_OVERRIDES to add."
+}
