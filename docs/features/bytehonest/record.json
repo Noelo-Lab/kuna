@@ -120,8 +120,26 @@
     "note": "`improved` counts every function whose score rose, the 10 that rose to a perfect 1.000 included. 0 functions scored lower anywhere in the 5,298.",
     "zero_regressed_is_empirical": "type_match's claim() is greedy: for each ground-truth variable, in a fixed arg -> offset -> name pass order, it takes the FIRST matching unused candidate and never reconsiders that claim (decbench/metrics/type_match.py:1041). Widening what a candidate matches can therefore in principle let one ground-truth variable consume a candidate a later one would have matched better. `0 worse` over 5,298 scored functions is a measurement, not a structural guarantee -- the metric cannot prove no such reordering exists, only that none occurred here."
   },
-  "speed": {},
-  "gates": {},
+  "speed": {
+    "instrument_1": "scripts.pipeline.timeit --record docs/features/bytehonest/record.json --repeat 15 (kuna decompile of the witness function, medians; the speed_* fields below are its output)",
+    "instrument_2": "paired interleaved A/B of `kuna decompile-all --json` over decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64 (160 functions, ~2.2 s per run), 15 ABBA-ordered pairs",
+    "paired_delta_median_pct": 0.46,
+    "delta_of_minima_pct": -0.32,
+    "off_min_ms": 2128.02,
+    "on_min_ms": 2121.24,
+    "note": "the box is shared with concurrent agents (load average 20-50 during the run): individual paired deltas span -21% to +24%, so the paired median and the min-of-15 are the statistics that mean anything. Both are flat, which is what the mechanism predicts -- one metatype+size comparison per exported variable row, on a surface that is built after the decompile is finished.",
+    "budget_pct": 5.0,
+    "within_budget": true
+  },
+  "gates": {
+    "make test": "datatests: 675/675 assertions passed / PARITY OK",
+    "make test-stages": "datatests: 1007/1007 assertions passed / PARITY OK",
+    "make rust-test": "LANE: done rc=0 (415 `test result: ok` lines, 0 failures; includes options_md_matches_the_generator_byte_for_byte)",
+    "make check-spec": "check-spec OK (lenient mode); python3 tools/check_spec.py --strict: check-spec OK (strict mode)",
+    "make test-cli": "tests/cli: 172/172 passed",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth"
+  },
   "files": [
     "decompiler/crates/kuna-decomp/src/p6_variables/kuna_bytehonest.rs (new)",
     "decompiler/crates/kuna-decomp/src/p6_variables/kuna_bytehonest/tests.rs (new)",
@@ -149,5 +167,12 @@
     "kuna-console/src/project.rs (`decompile-project`) -- the exported project's variable inventory reports the same spelling; the exported .c/.h text is unchanged"
   ],
   "notes": "The C text and the JSON surface disagree on purpose for exactly this carrier: `char a0` in the .c, `undefined1` in `variables[]`. The C text must be legal C and `undefined1` is not a C type; `variables[]` is a report of what the recovery established. Written down in docs/spec/06-variables-and-merge.md \u00a76.2.",
-  "preset_decision": "default ON in the catalog, so it is on in every preset; there is nothing for AGGRESSIVE_OVERRIDES to add."
+  "preset_decision": "default ON in the catalog, so it is on in every preset; there is nothing for AGGRESSIVE_OVERRIDES to add.",
+  "speed_off_ms": 118.95,
+  "speed_on_ms": 119.62,
+  "speed_delta_pct": 0.56,
+  "speed_samples": 15,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false
 }
