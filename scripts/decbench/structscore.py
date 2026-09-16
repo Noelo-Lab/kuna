@@ -959,7 +959,7 @@ def report(rows: list[dict]) -> str:
                          f"{l['nesting']['ground_truth']} | {l['nesting']['f1']} |")
         lines.append("")
     if any("census" in r for r in rows):
-        lines += ["## struct-candidate census (>= 2 distinct constant offsets on one base)", "",
+        lines += ["## struct-candidate census (>= 2 distinct offsets/fields on one base)", "",
                   "| binary | fns | fns with a candidate | candidates | paired to GT | "
                   "already right | GT is struct* |", "|---|---|---|---|---|---|---|"]
         for r in rows:
@@ -1093,7 +1093,8 @@ def main(argv=None) -> int:
                     help="the DWARF twin (default: /stripped/ -> /compiled/)")
     ap.add_argument("--layout", action="store_true", help="layout + nesting F1")
     ap.add_argument("--trex", action="store_true", help="TRex Fig. 6 prioritized score")
-    ap.add_argument("--census", action="store_true", help="struct-candidate census")
+    ap.add_argument("--census", action="store_true",
+                    help="struct-candidate census (>= 2 distinct offsets/fields)")
     ap.add_argument("--all", action="store_true", help="all three")
     ap.add_argument("--strict-defined", action="store_true",
                     help="score an uncommitted spelling (undefined8) as undefined")
