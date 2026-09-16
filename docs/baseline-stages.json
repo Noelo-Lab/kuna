@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1003,
-    1003
+    1007,
+    1007
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -171,6 +171,10 @@
     "data:FASTFAILNORETURN #1: the parameter is returned directly once the interrupt ends the flow (default pass only)",
     "data:FASTFAILNORETURN #2: the unbalanced stack pointer becomes a tracked variable only in the fastfailnoreturn-off pass",
     "data:FASTFAILNORETURN #3: the parameter's own stack slot degenerates into an offset off that variable only in the fastfailnoreturn-off pass",
+    "data:FLOATGROUPING #1: the right-grouped product keeps its grouping",
+    "data:FLOATGROUPING #2: exactly one of the two products prints as a flat chain",
+    "data:FLOATGROUPING #3: the right-grouped sum keeps its grouping",
+    "data:FLOATGROUPING #4: exactly one of the two sums prints as a flat chain",
     "data:FUNCBOUNDFLOW #1: default does NOT merge neighbor; only the funcboundflow-off pass shows its body (exactly one occurrence across both passes)",
     "data:FUNCBOUNDFLOW #2: both passes resolve the unnamed no-return call to fatal(), so the sole difference is the boundary truncation",
     "data:FUNCPTRALIGN #1: the SLEIGH ISA-mode bit-clear never reaches the emitted C",

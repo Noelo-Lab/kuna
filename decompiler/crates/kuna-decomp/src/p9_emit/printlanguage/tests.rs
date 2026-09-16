@@ -29,6 +29,7 @@ fn tok(
         bump: 0,
         negate: None,
         paren_before_angle: false,
+        left_to_right_only: false,
     }
 }
 
@@ -44,6 +45,7 @@ static MULT: OpToken = OpToken {
     bump: 0,
     negate: None,
     paren_before_angle: false,
+    left_to_right_only: false,
 };
 static ADD: OpToken = OpToken {
     print1: "+",
@@ -56,6 +58,7 @@ static ADD: OpToken = OpToken {
     bump: 0,
     negate: None,
     paren_before_angle: false,
+    left_to_right_only: false,
 };
 
 fn rpn(tok: &'static OpToken, visited: int4) -> ReversePolish {
@@ -106,6 +109,7 @@ fn parentheses_unary_adjacent_sign_gh2786() {
         bump: 0,
         negate: None,
         paren_before_angle: false,
+        left_to_right_only: false,
     };
     assert!(parentheses(&rpn(&NEG, 0), &NEG, None));
     // A '-' inside a '+' (different sign) does NOT need the fix; equal precedence
@@ -169,6 +173,7 @@ fn rpn_owned(t: &OpToken, visited: int4) -> ReversePolish {
         bump: t.bump,
         negate: None,
         paren_before_angle: false,
+        left_to_right_only: false,
     }));
     rpn(leaked, visited)
 }

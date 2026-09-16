@@ -142,6 +142,15 @@ pub struct OpToken {
     /// `(a + b) as T` correct. `false` for every C token, so the C path is
     /// untouched.
     pub paren_before_angle: bool,
+    /// (kuna) The operator groups left-to-right like any other binary token but
+    /// is *not* mathematically associative, so re-grouping its operands changes
+    /// the value. The IEEE-754 float tokens are what this exists for: `a * b * c`
+    /// re-reads as `(a * b) * c`, which rounds at different points than the
+    /// `a * (b * c)` the p-code actually computed. A same-token operand is
+    /// therefore left bare in the first (left) stage and parenthesised in the
+    /// second, where `associative` would leave both bare and plain
+    /// `!associative` would parenthesise both.
+    pub left_to_right_only: bool,
 }
 
 /// Context-sensitive modifiers to how tokens get emitted (C++
@@ -668,8 +677,14 @@ pub fn parentheses(top: &ReversePolish, op2: &OpToken, prev_token: Option<&OpTok
                 return false;
             }
             // C++ `topToken == op2` — pointer identity of the static singletons.
-            if top_token.associative && std::ptr::eq(top_token, op2) {
-                return false;
+            if std::ptr::eq(top_token, op2) {
+                if top_token.associative {
+                    return false;
+                }
+                // (kuna) See `OpToken::left_to_right_only`.
+                if top_token.left_to_right_only && stage == 0 {
+                    return false;
+                }
             }
             // If operators are adjacent, the operator printed first must be
             // evaluated first.  Here op2 must be evaluated first, so check if it

@@ -133,6 +133,30 @@ const fn op_token(
         bump,
         negate: None,
         paren_before_angle: false,
+        left_to_right_only: false,
+    }
+}
+
+/// Construct a `static` [`OpToken`] that spells and ranks exactly like
+/// [`op_token`] would but carries `left_to_right_only`.  Only the IEEE-754
+/// arithmetic tokens use it.
+const fn float_op_token(
+    print1: &'static str,
+    precedence: int4,
+    spacing: int4,
+) -> OpToken {
+    OpToken {
+        print1,
+        print2: "",
+        stage: 2,
+        precedence,
+        associative: false,
+        token_type: TokenType::Binary,
+        spacing,
+        bump: 0,
+        negate: None,
+        paren_before_angle: false,
+        left_to_right_only: true,
     }
 }
 
@@ -143,7 +167,7 @@ const fn op_token(
 /// the precedence/associativity/spacing/bump that define C operator
 /// parenthesization; transcribed value-for-value from the C++ table.
 pub mod tokens {
-    use super::{op_token, OpToken, TokenType};
+    use super::{float_op_token, op_token, OpToken, TokenType};
 
     /// Hidden functional (that may force parentheses) (printc.cc:24).
     pub static HIDDEN: OpToken = op_token("", "", 1, 70, false, TokenType::HiddenFunction, 0, 0);
@@ -246,6 +270,18 @@ pub mod tokens {
     pub static TYPE_EXPR_SPACE: OpToken = op_token("", "", 2, 10, false, TokenType::Space, 1, 0);
     /// Type declaration with no space (printc.cc:75).
     pub static TYPE_EXPR_NOSPACE: OpToken = op_token("", "", 2, 10, false, TokenType::Space, 0, 0);
+
+    // (kuna) IEEE-754 arithmetic, which has no row upstream: the C++ table maps
+    // the float opcodes onto the integer `*`/`+` above.  These two are spelled
+    // and ranked exactly like that pair -- `float_tokens_match_their_integer_twins_except_for_grouping`
+    // pins every field -- and differ only in not re-associating.
+
+    /// IEEE-754 multiplication: [`MULTIPLY`] that does not re-associate. See
+    /// `OpToken::left_to_right_only`.
+    pub static FLOAT_MULTIPLY: OpToken = float_op_token("*", 54, 1);
+    /// IEEE-754 addition: [`BINARY_PLUS`] that does not re-associate. See
+    /// `OpToken::left_to_right_only`.
+    pub static FLOAT_PLUS: OpToken = float_op_token("+", 50, 1);
     /// Pointer adornment for a type declaration `*` (printc.cc:76).
     pub static PTR_EXPR: OpToken = op_token("*", "", 1, 62, false, TokenType::UnaryPrefix, 0, 0);
     /// Array adornment for a type declaration `[ ]` (printc.cc:77).
@@ -1120,9 +1156,9 @@ pub fn op_emit_kind(opcode: kuna_num::opcodes::OpCode) -> OpEmitKind {
         CPUI_BOOL_AND => OpEmitKind::Binary(&BOOLEAN_AND),
         CPUI_BOOL_OR => OpEmitKind::Binary(&BOOLEAN_OR),
         // Float arithmetic (printc.hh:324-336).
-        CPUI_FLOAT_ADD => OpEmitKind::Binary(&BINARY_PLUS),
+        CPUI_FLOAT_ADD => OpEmitKind::Binary(&FLOAT_PLUS),
         CPUI_FLOAT_DIV => OpEmitKind::Binary(&DIVIDE),
-        CPUI_FLOAT_MULT => OpEmitKind::Binary(&MULTIPLY),
+        CPUI_FLOAT_MULT => OpEmitKind::Binary(&FLOAT_MULTIPLY),
         CPUI_FLOAT_SUB => OpEmitKind::Binary(&BINARY_MINUS),
         CPUI_FLOAT_NEG => OpEmitKind::Unary(&UNARY_MINUS),
         CPUI_FLOAT_NAN => OpEmitKind::Func,
