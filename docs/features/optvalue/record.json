@@ -57,7 +57,8 @@
         "setaction",
         "maxinstruction"
       ],
-      "tolerant_names_note": "upstream's own lenient parsers print a success line; unchanged here and tolerated identically by decompile-all"
+      "tolerant_names_note": "upstream's own lenient parsers print a success line; unchanged here and tolerated identically by decompile-all",
+      "static_confirmation": "IfcOption maps BOTH set_kuna_option's and OptionDatabase::set's error unconditionally to IfaceError::execution, so the prefix is always `Execution error: ` whatever the KunaError kind; and no option setter's message contains a newline (the only multi-line KunaError in kuna-decomp is p2_lift/flow.rs `Basic blocks already calculated`, not an option path). The two console parse errors (`Missing option name`, `Too many option parameters`) arrive under `Command parsing error: `, also in CONSOLE_DIAGNOSTICS."
     },
     "nothing_relied_on_the_old_behaviour": {
       "tests_cli_option_pairs_audited": 51,
@@ -77,7 +78,7 @@
   },
   "benchmark": {
     "typesweep": "not applicable -- emitted C and the --json variables[] are unchanged on every run that succeeds, so no decbench metric can move",
-    "verified": "kuna decompile <fmt O2> 0x26a0 --addr is byte-identical before and after"
+    "verified": "byte-identical output before vs after: `decompile-all` over fauxware (whole file), `decompile` over its first 20 functions, and `decompile` over fmt O2's first 40 functions plus the six named witnesses -- 0 differences in 69 comparisons"
   },
   "gates": {
     "make test": "PARITY OK (675/675)",

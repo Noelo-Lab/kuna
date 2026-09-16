@@ -258,14 +258,16 @@ fn analysis_commit_failure_is_reported_and_exits_nonzero() {
 
 /// A diagnostic belonging to a *different* command is not reported as the
 /// analysis-commit failure — the notice is attributed to the command echo above
-/// it, so an unrelated `Execution error:` leaves the exit code alone.
+/// it, so an unrelated `Execution error:` leaves the exit code alone. `rename`
+/// is the witness because no arm claims it: a failed `option`, `load file`,
+/// `read symbols` or selection each has one.
 #[test]
 fn an_unrelated_console_diagnostic_is_not_a_commit_failure() {
     let stub = stub_decomp_dbg(
         "unrelated",
         "void main(void)\n{\n  return;\n}",
-        "[decomp]> read symbols\n[decomp]> option nosuchoption on\n\
-         Execution error: Unknown option\n[decomp]> decompile\nDecompilation complete",
+        "[decomp]> read symbols\n[decomp]> decompile\nDecompilation complete\n\
+         [decomp]> rename v2 buf\nExecution error: No symbol named: v2",
         "",
     );
     let (stdout, stderr, code) = run_decompile(&stub, "main");
@@ -273,6 +275,33 @@ fn an_unrelated_console_diagnostic_is_not_a_commit_failure() {
 
     assert_eq!(code, Some(0), "an unrelated diagnostic must not be misattributed\n{stderr}");
     assert!(stdout.contains("void main(void)"), "got: {stdout}");
+}
+
+/// A refused `--option` VALUE, on the other hand, IS the run's verdict: the
+/// option never took, so the C that follows is the default decompilation and
+/// reporting success would be false evidence that the decision point does
+/// nothing. The wording is the in-process surfaces'.
+#[test]
+fn a_refused_option_value_is_reported_and_exits_nonzero() {
+    let stub = stub_decomp_dbg(
+        "optvalue",
+        "void main(void)\n{\n  return;\n}",
+        "[decomp]> load file /x/a.out\n/x/a.out successfully loaded: x86:LE:64:default:gcc\n\
+         [decomp]> option realtypes zzz\n\
+         Execution error: Must specify toggle value, on/off\n\
+         [decomp]> read symbols\n[decomp]> load function main\n\
+         [decomp]> decompile\nDecompilation complete",
+        "",
+    );
+    let (stdout, stderr, code) = run_decompile(&stub, "main");
+    let _ = std::fs::remove_file(&stub);
+
+    assert_eq!(code, Some(1), "a refused option must not report success\n{stderr}");
+    assert!(
+        stderr.contains("option realtypes: Must specify toggle value, on/off"),
+        "the in-process surfaces' wording must be reproduced verbatim, got: {stderr}"
+    );
+    assert!(!stdout.contains("void main(void)"), "the default C is not the answer: {stdout}");
 }
 
 /// A load failure with no reason printed keeps the generic wording — it is the
