@@ -237,10 +237,11 @@ in `corpus-hunk-classification.txt`. Summary:
 * The one line shape that goes measurably UP is the piece accessor
   `vN._off_size_`: 1,002 -> 1,231 over the seven binaries (+22.9%; tar
   615 -> 699, grep 79 -> 116, find 37 -> 83, diff 14 -> 58, gzip 19 -> 38, fmt
-  flat, ls 149 -> 148). It is the cost of a fieldless shell — an 8-byte slot of
-  `FILE` has no field to name, so the emitter prints the piece where it printed a
-  cast — and it is what the follow-up `glibc` value (real `_IO_FILE` field names)
-  retires. The neighbouring functional forms barely move: `SUBxy(` 214 -> 215,
+  flat, ls 149 -> 148). It is the cost of naming an aggregate that has no field
+  at the offset being touched — always true of a fieldless shell, and true of the
+  program's own on-stack aggregates once a `stat *`/`sigaction *` argument pulls
+  their scattered slots into one object — and the follow-up `glibc` value (real
+  `_IO_FILE` field names) retires the stdio half of it. The neighbouring functional forms barely move: `SUBxy(` 214 -> 215,
   `CONCATxy(` 266 -> 268 (find +2, tar -1/+2), and `PTRSUB(` stays 0 in both
   arms, which is the form the sizing rule exists to prevent.
 * 140 of 3,702 functions (3.8%) differ in the skeleton, every inspected one

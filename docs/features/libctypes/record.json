@@ -1,6 +1,6 @@
 {
  "opportunity": "kuna's built-in prototype tables share one width-stable type vocabulary, so all 108 aggregate-pointer slots in them are spelled `void *`. `void *` never matches a ground-truth `FILE *` (the metric's width-only generosity has no pointer entry), and named-struct pointers are 22.5% of matchable GT variables -- a class kuna scores 0.0% on while ida scores 432 / ghidra 382 / binja 523 TP on the same 92-binary sample. The libc/POSIX-namable slice of it is ~4.1% of matchable GT (FILE 605 occurrences, stat 255, passwd 136).",
- "test_name": "tests/stages/kuna-libctypes.xml (9 assertions over three `load file` passes on two real ELFs; #5/#6 pin that the DWARF layout of `stat` survives the option being on) + 13 table-invariant unit tests in analyzers::protos::kuna_libctypes::tests + kuna-cli/tests/decompile_project_cli.rs (header_syntax_checks_when_a_type_shares_a_name_with_a_function)",
+ "test_name": "tests/stages/kuna-libctypes.xml (9 assertions over three `load file` passes on two real ELFs; #5/#6 pin that the DWARF layout of `stat` survives the option being on) + 15 table-invariant unit tests in analyzers::protos::kuna_libctypes::tests (including the incomplete-shell adopt rule and the width-stable fall-back of a declined name) + kuna-cli/tests/decompile_project_cli.rs (header_syntax_checks_when_a_type_shares_a_name_with_a_function) + kuna-console project::tests::typedef_names_reads_every_declarator_shape",
  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
  "selector": "0x2f30",
  "func_addr": "0x2f30",
@@ -140,7 +140,7 @@
    "block skew beside a retyped slot": 1
   },
   "piece_accessor_form": {
-   "what": "`vN._off_size_`, an aggregate slot read as a sub-piece -- legal C only against a declared field, so it is a readability cost the sized fieldless shell buys: an 8-byte slot of the shell has no field to name, and the emitter falls back to the piece accessor where off it printed a cast.",
+   "what": "`vN._off_size_`, an aggregate slot read as a sub-piece. It appears wherever a value is typed as an aggregate that has no field at the offset being touched: always for the fieldless shells this option mints, and also for the program's own on-stack aggregates once a `stat *`/`sigaction *` argument pulls their scattered slots into one object. Off, the same reads are casts or separate slots.",
    "counts_off_on_by_binary": {
     "O2 coreutils fmt": [
      89,
@@ -173,7 +173,7 @@
    },
    "total_off": 1002,
    "total_on": 1231,
-   "reading": "+229 (+22.9%) over the 7 sweep binaries, concentrated in tar/grep/gzip/find/diff; ls goes DOWN by one. It is the same class as the `field_0x` count in the -g sweep -- an offset that was a cast becoming a slot of a named pointee -- and it is the strongest argument for the follow-up `glibc` value, which gives the stream shell real field names and retires most of these."
+   "reading": "+229 (+22.9%) over the 7 sweep binaries, concentrated in tar/grep/gzip/find/diff; ls goes DOWN by one. Same class as the `field_0x` count in the -g sweep -- an offset that was a cast becoming a slot of a named pointee. The follow-up `glibc` value, which gives the stream shell real field names, retires the stdio half of it."
   },
   "intrinsic_form": {
    "what": "`SUBxy(`/`CONCATxy(` -- the functional forms the printer falls back to for a sub-piece or a concatenation it cannot spell as C. Counted because `PTRSUB(` alone does not cover the class.",
@@ -254,7 +254,7 @@
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "regenerated from `kuna catalog --markdown`",
-  "make rust-test": "RUST_TEST_RC=0 (cargo test --workspace --no-fail-fast on the rebased tree; 414 `test result: ok` blocks, 0 FAILED)"
+  "make rust-test": "RUST_TEST_RC=0 on commit 33e8a41d (the lane script; log .scratch/rev3/rust-test.log, 2026-09-16T22:26:25Z -> 22:43:23Z): 414 `test result: ok` blocks, 0 `test result: FAILED`, including the three tests added this round (an_incomplete_struct_of_the_declared_width_is_adopted, a_declined_aggregate_degrades_to_the_width_stable_signature, typedef_names_reads_every_declarator_shape) and the count tests settable_count_is_208 / tier_counts_are_66_core_80_transform_62_analysis / option_values_live_value_present_for_85 / fixture_has_all_208_settables. 33e8a41d is the last commit touching code, phases.toml, docs/options.md, phase_catalog.json or docs/spec/; the commits after it change docs/features/libctypes/* only, which no cargo test reads (options_md_fresh.rs reads docs/options.md, unchanged since 33e8a41d)."
  },
  "catalog_counts": {
   "settables": 208,

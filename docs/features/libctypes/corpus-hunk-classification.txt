@@ -16,6 +16,28 @@ The buckets, in the order the classifier tries them:
                        not re-verify the offset, which is a base-type scale apart.
   OTHER                residual, dumped below with a shape histogram
 
+Whole-file counts of the non-C FUNCTIONAL forms, per binary, off -> on (the
+`PTRSUB(` this feature's sizing rule exists to prevent, plus the neighbouring
+piece and concatenation forms, which the `PTRSUB(` grep alone does not cover):
+
+  binary                 vN._o_s_      SUBxy(     CONCATxy(    PTRSUB(
+  O2 coreutils fmt         89 -> 89    25 -> 25    9 ->  9      0 -> 0
+  O2 coreutils ls         149 -> 148   30 -> 30   32 -> 32      0 -> 0
+  O2 grep grep             79 -> 116   11 -> 11   25 -> 25      0 -> 0
+  O2 gzip gzip             19 ->  38    2 ->  2   14 -> 14      0 -> 0
+  O2 tar tar              615 -> 699   69 -> 68  122 -> 124     0 -> 0
+  O0 findutils find        37 ->  83   73 -> 75   44 -> 44      0 -> 0
+  O0 diffutils diff        14 ->  58    4 ->  4   20 -> 20      0 -> 0
+  TOTAL                  1002 -> 1231 214 -> 215 266 -> 268     0 -> 0
+
+The piece accessor is the real cost of typing something as an aggregate that has
+no field at the offset being touched -- a fieldless shell always, and the
+program's own on-stack aggregates once a `stat *`/`sigaction *` argument pulls
+the scattered slots together. Off, those reads were casts or separate slots; on,
+they are `vN._24_8_`. +22.9%, and the follow-up `glibc` value (real `_IO_FILE`
+field names) retires the stdio half of it. The intrinsic forms move by 3 lines in
+3,702 functions -- the same slot read through a different decomposition.
+
 `OTHER` is not zero and is not claimed to be. What IS claimed, and is checked
 separately by the skeleton comparison (control flow + call targets + numeric
 literals per function, identifiers and types normalised away), is that no hunk
