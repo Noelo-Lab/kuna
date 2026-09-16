@@ -1463,18 +1463,25 @@ moves.
   16-byte `timespec` is returned in a register pair — and it is correct because
   the shell is SIZED. A width-0 shell in the same slot is exactly the
   hidden-return-buffer case: an aggregate return the ABI classifier cannot size
-  grows a phantom first parameter and shifts every real one. Across the sweep
-  corpus those three `gettime` wrappers are the only by-value named returns at
-  all, nothing wider than a register pair reaches a return slot, and no
-  `rethidden` appears in either arm — but the table does not forbid the wider
-  case, the width is what would answer it correctly.
+  grows a phantom first parameter and shifts every real one. Across the corpus
+  swept for this option, three copies of that same `gettime` wrapper are the
+  only by-value named returns at all, nothing wider than a register pair reaches
+  a return slot, and no `rethidden` appears in either arm — but the table does
+  not forbid the wider case; the width is what would answer it correctly.
 
   *The shells stay incomplete, and the names are bare.* `type_incomplete` stays
   set on the sized shell so the project exporter declares it
   `typedef struct FILE FILE; /* opaque */` rather than as a struct with a width
   and no members. The names are the bare DWARF spelling (`stat`, not
   `struct stat`) because that is what the printer spells for a named base and
-  what that same `typedef` makes valid C.
+  what that same `typedef` makes valid C. What that buys in the header it spends in
+  the body: the exported `.c` declares objects of a type its own `.h` says is
+  incomplete, so `cc -fsyntax-only` over an exported `ls.c` gains 58 errors with
+  the option on (911 to 969), 51 of them `invalid use of incomplete typedef`,
+  `storage size … isn't known` and `return type is an incomplete type`. The
+  exported body has never compiled; the header does, in both arms, and it is the
+  header that carries the declarations everything else in the export depends
+  on.
 
   *An image with debug info already has the real thing, and gets it.* DWARF
   interns `stat`, `passwd`, `tm` and `option` under the identical bare spelling,
