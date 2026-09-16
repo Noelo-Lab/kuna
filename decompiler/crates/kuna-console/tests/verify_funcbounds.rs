@@ -117,7 +117,7 @@ fn an_undeclared_function_keeps_its_derived_extent_and_unbounded_flow() {
     // The derived clip: `.text` ends at 0x1673 and `_DT_FINI` is the first entry
     // of the NEXT code section, so the section end wins over the neighbour.
     assert_eq!(reported_extent(&prog), 0x1673 - ENTRY);
-    let body = body_at_entry(&mut prog, "main");
+    let body = body_at_entry(&mut prog, "sub_13c9");
     assert!(
         body.contains(PAST_THE_END),
         "the unbounded follow must still reach {PAST_THE_END}, got:\n{body}"
