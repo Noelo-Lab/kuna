@@ -163,8 +163,9 @@
     "kuna_catalog_xml_buckets": "unmoved (source_decompiler kuna, change_kind presentation-default)"
   },
   "consumers": [
-    "kuna decompile --json / decompile-all --json (`variables`)",
-    "kuna-console/src/project.rs (`decompile-project`) -- the exported project's variable inventory reports the same spelling; the exported .c/.h text is unchanged"
+    "kuna decompile --json / decompile-all --json (`variables[].type`)",
+    "kuna-console/src/project.rs (`decompile-project`): the .asm per-function frame comments print the same string -- `; arg:   param_1 (undefined1)` on the fixture above (a disassembly-listing comment, which is where a width-only spelling belongs, and what IDA's stack view shows). The exported .c/.h are unchanged: the .c still declares `void close_stdout_set_ignore_EPIPE(char a0)`.",
+    "kuna-console/tests/verify_framelayout.rs: its `framelayout retyped an existing variable` assertion still holds and is kept strict -- sections 1 and 2 never read `framelayout`, so both of its arms carry the same bytehonest spelling. A comment there now records that a row's type_name is no longer the printer's spelling in general, and points at verify_bytehonest.rs for the other axis."
   ],
   "notes": "The C text and the JSON surface disagree on purpose for exactly this carrier: `char a0` in the .c, `undefined1` in `variables[]`. The C text must be legal C and `undefined1` is not a C type; `variables[]` is a report of what the recovery established. Written down in docs/spec/06-variables-and-merge.md \u00a76.2.",
   "preset_decision": "default ON in the catalog, so it is on in every preset; there is nothing for AGGRESSIVE_OVERRIDES to add.",
