@@ -802,7 +802,7 @@ def census_body(chunk: str) -> str:
     offset-0 dereference through the bare ``*B`` arm of ``ZERO_DEREF``.
     """
     lines = [l.split("//")[0] for l in chunk.split("\n")[1:]]
-    start = next((i + 1 for i, l in enumerate(lines) if l.strip() == "{"), 0)
+    start = next((i + 1 for i, l in enumerate(lines) if l.strip() == "{"), 1)
     return "\n".join(l for l in lines[start:] if not DECL_LINE.match(l))
 
 
