@@ -49,9 +49,18 @@ promotion that matters happens in the compiler reading the output, where `int` i
 4 bytes, and not on the target (the cspec says 2 on avr8gcc, avr8egcc, TI_MSP430,
 TI_MSP430X, CR16, PIC24 and x86-16).
 
-The declaration override is recorded **only when the emitter actually wrote it**
-(a mapped-symbol, array or dedup-collapse override can take it back), and only a
-recorded override authorizes dropping a cast.
+Step 6 is declaration ownership: the plan is filtered to highs whose rendered
+name is unique on the printer's candidate list, before any of the declaration
+collapses runs (`SignPlan::retain_sole_named`, called from
+`emit_local_var_decls`). Every collapse — the composite-Symbol retain,
+`collapse_symbol_decls`, `DeclDedup`, the `local_name_aliases` group suppression
+— pairs candidates that render the same name, so a sole-named entry can neither
+be suppressed by one nor absorb a sibling, and a flip can move neither a
+collapse key nor the single line a non-flipped sibling's uses read through.
+
+The declaration override is then recorded **only when the emitter actually wrote
+it** (a mapped-symbol, array or dedup-collapse override can still take it back),
+and only a recorded override authorizes dropping a cast.
 
 ## Evidence required before this can be considered for a default flip
 
@@ -64,6 +73,10 @@ recorded override authorizes dropping a cast.
 * agreement with DWARF on unstripped twins — done, see `analysis.md`; `auto`
   buys +0.1pp, which is the argument *against* flipping the default on accuracy
   grounds and for flipping it on cast-removal grounds;
+* the control that says the walk is not decoration — "declare every eligible
+  plain-integer local signed, no walk" scores 92.8% overall and **59.2%** at
+  `-O2` against `prefer-signed`'s 98.4% / 94.8%, because it turns 379 `size_t`
+  locals signed where `prefer-signed` turns 12 — done, see `analysis.md`;
 * 0/675 datatests and stages `PARITY OK` with the default flipped — done;
 * speed within +5% — done (+0.26%).
 
@@ -74,7 +87,9 @@ recorded override authorizes dropping a cast.
 * `realtypes` (default on) relabels residual `TYPE_UNKNOWN`; an `xunknownN` is
   not a plain integer, so it is never re-signed.
 * `ctypes` decides the *spelling* (`uint4` vs `unsigned int`); orthogonal.
-* `dedupvardecls` may replace a declaration line; such a high keeps its cast.
+* `dedupvardecls` may replace a declaration line; such a high is filtered out of
+  the plan before the collapse runs, so it keeps both its declaration and its
+  cast.
 * The `variables` JSON surface (`framelayout`, `bytehonest`, the prototype
   recovery lanes) is not reached at all.
 

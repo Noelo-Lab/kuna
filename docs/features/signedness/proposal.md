@@ -25,8 +25,24 @@ in exactly one of them.
 |---|---|---|---|---|---|---|---|
 | `upstream` | 0 | **93.4%** | 97.3% | 71.9% | 0 | — | — |
 | `auto` | 575 | **93.5%** | 97.3% | 72.2% | 4 | **4** | **0** |
-| `prefer-signed` | 7089 | **98.4%** | 99.0% | 94.8% | 386 | 348 | 38 |
-| `prefer-unsigned` | 13650 | **92.9%** | 97.1% | 69.6% | 41 | 4 | 37 |
+| `prefer-signed` | 7,081 | **98.4%** | 99.0% | 94.8% | 386 | 348 | 38 |
+| `prefer-unsigned` | 13,636 | **92.9%** | 97.1% | 69.7% | 40 | 4 | 36 |
+| *control:* all-signed, no walk | 15,136 | **92.8%** | 98.9% | **59.2%** | 790 | 376 | 414 |
+
+**The last row is the control, and it is the answer to "does the walk earn its
+option slot".** `prefer-signed` is `auto` plus one line — "declare an unobserved
+value signed" — so the fair question is whether the 700-line walk in front of
+that line does anything, or whether declaring *every* eligible local signed would
+score the same. It would not. The control keeps the same candidate set, the same
+width guard and the same ownership guard and deletes only the operation walk; it
+takes `-O2` agreement to **59.2%**, below leaving the declarations alone (71.9%),
+and of its 790 judged flips 376 are right and **414 are wrong**. The wrong ones
+are **379 `size_t`** locals declared `int`, against `prefer-signed`'s 12. The
+unsigned demands the walk collects — an unsigned compare, a `>>`, a `/`, a
+`ZEXT` — are exactly what holds `size_t` unsigned, and they are the whole
+difference between 98.4% and 92.8%. (Built from the same source through a
+measurement-only escape hatch that exists in `.scratch/measbin/kuna` and in no
+committed file.)
 
 **The last three columns are the measurement; the first three are context.** The
 oracle can only score a declaration kuna names the way DWARF does in the same
@@ -37,8 +53,9 @@ an `-O2` register local, which the oracle usually cannot see at all.
 | value | checkable rows `-O0` / `-O2` | flips it makes there | all flips image-wide | coverage |
 |---|---|---|---|---|
 | `auto` | 5,308 / 951 | 1 / 3 | 575 | **0.7%** |
-| `prefer-signed` | 5,308 / 951 | 134 / 252 | 7,089 | 5.4% |
-| `prefer-unsigned` | 5,308 / 951 | 13 / 28 | 13,650 | 0.3% |
+| `prefer-signed` | 5,308 / 951 | 134 / 252 | 7,081 | 5.5% |
+| `prefer-unsigned` | 5,308 / 951 | 13 / 27 | 13,636 | 0.3% |
+| *control:* all-signed | 5,308 / 951 | 143 / 647 | 15,136 | 5.2% |
 
 Read plainly: **`prefer-signed` is the only value whose fidelity is actually
 measured** (386 judged flips, 348 right; `-O2` 71.9% → 94.8%; its 38 wrong flips
@@ -47,7 +64,7 @@ are `mode_t` 18, `size_t` 12, `gid_t` 2, `uintmax_t` 2, `unsigned int` 2, `ino_t
 TRex §5.1's claim reproduced). **`auto`'s fidelity is unmeasured**: four
 observations, three of them at `-O2`, out of 575 flips; it is 4-for-4 and its
 +0.1pp on the overall rate is noise at that count. **`prefer-unsigned` is refuted
-by its own column** (4 of 41 judged flips right; `-O2` 71.9% → 69.6%). Full
+by its own column** (4 of 40 judged flips right; `-O2` 71.9% → 69.7%). Full
 method and the cases it cannot see: `analysis.md`.
 
 ## The three questions for the reviewer
@@ -74,7 +91,7 @@ and a cast token establishes the type it prints — and it can only ever decline
 flip. `INT_LEFT` is a stated preference and is discussed in the open-design list
 below.
 
-Two things the rule has to survive that the first drafts did not:
+Three things the rule has to survive that the first drafts did not:
 
 * **C's integer promotions.** Below the promotion width nothing on the neutral
   list is neutral, and re-declaring a `short` unsigned turned
@@ -90,6 +107,18 @@ Two things the rule has to survive that the first drafts did not:
   type, so they record a demand and keep walking; a comparison, a cast-printing
   extension and a carry intrinsic stop the walk because their printed result
   establishes a type of its own.
+* **Declaration ownership.** Evidence is gathered per HighVariable, but the
+  printer does not write one declaration per high — the composite-Symbol retain,
+  `collapse_symbol_decls`, `DeclDedup` and the `local_name_aliases` group
+  suppression each fold several highs onto one line. A rounded type reaching
+  those decisions could move a collapse key, splitting a declaration that used
+  to collapse, or re-sign the one line a *non*-flipped sibling's uses read
+  through. The plan is therefore filtered to highs whose name is unique on the
+  printer's candidate list before any collapse runs; every collapse pairs
+  candidates by name, so a sole-named entry can neither be suppressed by one nor
+  absorb a sibling. Cost over the 238-binary corpus: **8 declarations across 7
+  binaries** under `prefer-signed` (7,089 → 7,081 flips), 0 under `auto`, and 0
+  bytes over the `fmt`/`ls`/`sort`/`du` sweep below.
 
 Measured, not argued, over `fmt`/`ls`/`sort`/`du` at `-O0` and `-O2` (2,918
 functions):
@@ -138,7 +167,9 @@ mismatches. The two long runs were stopped; the warning oracle above covers all
 1,041 changed functions.
 
 **2. Is a readability-only option worth the option budget?** It buys **zero**
-metric. `extract_variables` exports prototype parameter types, `ScopeLocal`
+metric, and the walk that fills it is not decoration — the control row above says
+a one-line "declare it signed" tie-break scores 92.8% where the walk scores
+98.4%, and 59.2% where it scores 94.8%. `extract_variables` exports prototype parameter types, `ScopeLocal`
 stack-symbol types and `framelayout` slots — never a HighVariable declaration —
 and decbench normalizes `unsigned` away anyway. `structscore --trex`, whose last
 scoring step *is* signedness, is byte-identical with the option on (mean 1.7322,
@@ -244,3 +275,8 @@ The question for the user: is a fidelity option that scores exactly zero on
 `type_match` worth an option slot, given that the one value with a real
 measurement (`prefer-signed`, `-O2` agreement 71.9% → 94.8%, 348 right / 38 wrong
 on the flips DWARF can judge) is the one that is *not* proposed as a default?
+
+What is no longer in question is whether the rounding itself earns the slot.
+Dropping the walk and keeping only the tie-break scores **92.8%** overall and
+**59.2%** at `-O2` — worse than doing nothing — because it declares 379 `size_t`
+locals `int`. The walk is the part that knows not to.

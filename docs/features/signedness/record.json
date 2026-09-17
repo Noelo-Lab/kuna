@@ -1,6 +1,6 @@
 {
  "opportunity": "Datatype::type_order ranks SUB_UINT_PLAIN (16) ahead of SUB_INT_PLAIN (17), so in get_local_type's most-specific fold one uint vote outranks every int vote on a Varnode and nothing downstream re-decides. On -O2 x86-64 those uint votes are structural (INT_ZEXT from a 32-bit instruction widening into its 64-bit register; INT_AND/INT_RIGHT/INT_XOR from a strength-reduced loop), so a counter compiled from `int` is declared `unsigned int` and cast back to `int` at every comparison.",
- "test_name": "tests/stages/kuna-signedness.xml (two functions, 6 assertions: the masked loop bound two-pass, and the sub-int width guard reduced from findutils find -O2 sub_bac0) + tests/stages/kuna-signedness-int16.xml (two functions, 4 assertions: the same width guard on x86:LE:16:Protected Mode, whose own cspec integer_size is 2, with a 4-byte control that does flip) + 9 unit tests in p9_emit/kuna_typeround/tests.rs",
+ "test_name": "tests/stages/kuna-signedness.xml (two functions, 6 assertions: the masked loop bound two-pass, and the sub-int width guard reduced from findutils find -O2 sub_bac0) + tests/stages/kuna-signedness-int16.xml (two functions, 4 assertions: the same width guard on x86:LE:16:Protected Mode, whose own cspec integer_size is 2, with a 4-byte control that does flip) + 10 unit tests in p9_emit/kuna_typeround/tests.rs",
  "binary": "decbench full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
  "selector": "sub_3060",
  "func_addr": "0x3060",
@@ -221,7 +221,7 @@
  },
  "dwarf_accuracy": {
   "method": "238 unstripped DWARF twins (the compiled/ binaries beside the stripped images decbench scores) across coreutils, grep, gzip, diffutils, bzip2, findutils and tar at -O0 and -O2. Whole-image decompile-all once per value; every plain-integer local declaration whose name DWARF also knows INSIDE THE SAME FUNCTION, at the same width, is compared against the DWARF base type's encoding. Signedness is binary, so a declaration that differs between two values is right in exactly one of them.",
-  "harness": ".scratch/acc/dwarfsign.py (pyelftools DIE walk, follows typedef/const/volatile and DW_AT_abstract_origin) + .scratch/acc/accuracy.py",
+  "harness": ".scratch/acc/dwarfsign.py (pyelftools DIE walk, follows typedef/const/volatile and DW_AT_abstract_origin) + .scratch/acc/accuracy_r5.py",
   "binaries": 238,
   "plain_integer_declarations": 58051,
   "dwarf_named": 6510,
@@ -229,8 +229,9 @@
   "declarations_moved": {
    "upstream": 0,
    "auto": 575,
-   "prefer-signed": 7089,
-   "prefer-unsigned": 13650
+   "prefer-signed": 7081,
+   "prefer-unsigned": 13636,
+   "all-signed": 15136
   },
   "overall": {
    "upstream": {
@@ -258,12 +259,20 @@
     "wrong": 38
    },
    "prefer-unsigned": {
-    "agree": 5815,
+    "agree": 5816,
     "of": 6259,
     "rate_pct": 92.9,
-    "checkable_flips": 41,
+    "checkable_flips": 40,
     "right": 4,
-    "wrong": 37
+    "wrong": 36
+   },
+   "all-signed": {
+    "agree": 5810,
+    "of": 6259,
+    "rate_pct": 92.8,
+    "checkable_flips": 790,
+    "right": 376,
+    "wrong": 414
    }
   },
   "by_optimization": {
@@ -299,6 +308,14 @@
      "checkable_flips": 13,
      "right": 1,
      "wrong": 12
+    },
+    "all-signed": {
+     "agree": 5247,
+     "of": 5308,
+     "rate_pct": 98.9,
+     "checkable_flips": 143,
+     "right": 113,
+     "wrong": 30
     }
    },
    "O2": {
@@ -327,12 +344,20 @@
      "wrong": 17
     },
     "prefer-unsigned": {
-     "agree": 662,
+     "agree": 663,
      "of": 951,
-     "rate_pct": 69.6,
-     "checkable_flips": 28,
+     "rate_pct": 69.7,
+     "checkable_flips": 27,
      "right": 3,
-     "wrong": 25
+     "wrong": 24
+    },
+    "all-signed": {
+     "agree": 563,
+     "of": 951,
+     "rate_pct": 59.2,
+     "checkable_flips": 647,
+     "right": 263,
+     "wrong": 384
     }
    }
   },
@@ -340,8 +365,8 @@
    "mode_t": 18,
    "size_t": 12,
    "gid_t": 2,
-   "unsigned int": 2,
    "uintmax_t": 2,
+   "unsigned int": 2,
    "ino_t": 1,
    "reg_syntax_t": 1
   },
@@ -365,12 +390,46 @@
   },
   "prefer_unsigned_wrong_by_gt_spelling": {
    "int": 24,
-   "Idx": 5,
+   "Idx": 4,
    "intmax_t": 3,
    "lin": 2,
    "off_t": 1,
    "time_t": 1,
    "idx_t": 1
+  },
+  "control_all_signed": {
+   "what": "declare EVERY eligible plain-integer local signed, no operation walk at all -- same candidate set, same width guard, same declaration-ownership guard, evidence deleted. NOT a shipped value: built from the same source through the measurement-only escape hatch KUNA_MEAS_ALLSIGNED, which exists in .scratch/measbin/kuna and in no committed file (that binary is byte-identical to the shipped one with the variable unset, verified on 32 whole-image dumps).",
+   "why": "prefer-signed is auto plus one line ('declare an unobserved value signed'), so the reviewer's question is whether the walk in front of that line does anything a one-line tie-break would not.",
+   "answer": "it does. The control scores 92.8% overall and 59.2% at -O2 -- BELOW leaving the declarations alone (71.9%) -- against prefer-signed's 98.4% / 94.8%. Of its 790 DWARF-judged flips 376 are right and 414 wrong; 379 of the wrong ones are size_t locals declared int, against prefer-signed's 12. The unsigned demands the walk collects (an unsigned compare, >>, / %, ZEXT) are what holds size_t unsigned, and they are the whole difference between 98.4% and 92.8%.",
+   "right_by_gt_spelling": {
+    "int": 368,
+    "idx_t": 6,
+    "Int32": 1,
+    "Idx": 1
+   },
+   "wrong_by_gt_spelling": {
+    "size_t": 379,
+    "mode_t": 19,
+    "uintmax_t": 6,
+    "unsigned int": 4,
+    "gid_t": 2,
+    "re_hashval_t": 2,
+    "ino_t": 1,
+    "reg_syntax_t": 1
+   }
+  },
+  "declaration_ownership_guard": {
+   "what": "SignPlan::retain_sole_named -- the plan is filtered to highs whose rendered name is unique on the printer's candidate list, before any declaration collapse runs.",
+   "why": "the composite-Symbol retain, collapse_symbol_decls, DeclDedup and the local_name_aliases group suppression each fold several highs onto ONE declaration line, and each pairs candidates by NAME. A rounded type reaching those decisions could move a collapse key (splitting a declaration that used to collapse) or re-sign the single line a non-flipped sibling's uses read through. record_applied already refused the CAST drop in those cases; the declaration line was not guarded.",
+   "cost_238_binaries_prefer_signed": {
+    "declarations": 8,
+    "text_lines": 8,
+    "binaries_touched": 7,
+    "flips_all_before": 7089,
+    "flips_all_after": 7081
+   },
+   "cost_sweep_fmt_ls_sort_du_O0_O2": "0 bytes -- all 32 whole-binary dumps byte-identical to the pre-guard build under every value",
+   "cost_auto": 0
   }
  },
  "promotion_width_guard": {
@@ -412,5 +471,15 @@
   "docs/options.md": "byte-fresh",
   "make rust-test": "RUST_TEST_RC=0, 7110 passed / 0 failed (.scratch/rust-test-r8.log, single lane on the rebased tree)",
   "CI": "Tests workflow green on 17d2a7ef: parity gates + cargo workspace suite (full-ci label)"
+ },
+ "care_uint_int_claim": {
+  "corrected": "the demand set is a strict SUPERSET of the ops whose get_input_cast passes care_uint_int = true. The four ordered comparisons, / %, >> and the two extensions pass true; INT_SCARRY/INT_SBORROW/INT_CARRY, a same-width CPUI_CAST and INT_LEFT all fall through to the dispatch's DEFAULT arm, which passes false (decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs, get_input_cast).",
+  "why_it_is_still_sound": "demanding on the carry intrinsics and on a same-width cast is an over-constraint, not a gap -- a carry intrinsic spells its own signedness in its name and a cast token establishes the type it prints -- so it can only ever DECLINE a flip that upstream's own flag would have allowed. Soundness rests on the NEUTRAL list being signedness-independent at a fixed width; care_uint_int corroborates where upstream draws the same line but does not prove it.",
+  "earlier_claim_was_wrong_in": [
+   "p9_emit/kuna_typeround.rs module header",
+   "docs/spec/09-emission.md",
+   "docs/features/signedness/proposal.md",
+   "docs/features/signedness/analysis.md"
+  ]
  }
 }

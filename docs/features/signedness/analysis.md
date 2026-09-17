@@ -119,6 +119,21 @@ Three refinements were needed on top:
   and `get_input_cast_ptradd` defers that slot to the default `care_uint_int =
   false` body, so no cast is there to save it. Anything not explicitly classified
   vetoes the variable.
+* **The high has to own its declaration line.** The evidence is gathered per
+  HighVariable, but the printer does not write one declaration per high: the
+  composite-Symbol retain, `collapse_symbol_decls`, `DeclDedup` and the
+  `local_name_aliases` group suppression each fold several highs onto one line.
+  Feeding a rounded type into those decisions would let a flip move a collapse
+  key — splitting a declaration that used to collapse — or re-sign the single
+  line a *non*-flipped sibling's uses read through, which is a declaration
+  change with no evidence behind it. `SignPlan::retain_sole_named` therefore
+  drops every high whose rendered name is not unique on the printer's candidate
+  list, before any of those collapses runs; every one of them pairs candidates
+  by name, so a sole-named entry can neither be suppressed by one nor absorb a
+  sibling. `record_applied` already refused the *cast* drop in those cases; this
+  is the declaration half. It is nearly inert in practice (the measured cost is
+  in the table below), but it is what makes "which declarations exist is exactly
+  what `upstream` produces" a property of the code rather than an observation.
 
 `INT_LEFT` is on the demand side, and it is the one row there that is a
 **preference rather than a soundness requirement** — the module header says so
@@ -183,14 +198,25 @@ value, then every plain-integer local declaration whose name DWARF also knows
 encoding. 58,051 plain-integer declarations; 6,510 carry such a name, 6,259 of
 them at the same width as the DWARF type. Signedness is binary, so a
 declaration that differs between two values is right in exactly one of them.
-Harness: `.scratch/acc/{dwarfsign,accuracy}.py` on the branch.
+Harness: `.scratch/acc/{dwarfsign,accuracy_r5}.py` on the branch.
+
+The last row is a **control**, not a shipped value: "declare every eligible
+plain-integer local signed, no walk at all" — the same candidate set, the same
+width guard, the same ownership guard, and the operation walk deleted. It is what
+`prefer-signed` would collapse to if the rounding were dropped and only the
+tie-break kept, and it is the row that says whether the walk earns its keep. It
+is built from the same source through a measurement-only escape hatch
+(`KUNA_MEAS_ALLSIGNED`) that exists in `.scratch/measbin/kuna` and in no
+committed file; that binary is byte-identical to the shipped one with the
+variable unset (verified on 32 whole-image dumps).
 
 | value | declarations moved | agrees with DWARF | `-O0` | `-O2` | moved *and* DWARF-named | right | wrong |
 |---|---|---|---|---|---|---|---|
 | `upstream` | 0 | 5848/6259 = **93.4%** | 97.3% | 71.9% | 0 | — | — |
 | `auto` | 575 | 5852/6259 = **93.5%** | 97.3% | 72.2% | 4 | **4** | **0** |
-| `prefer-signed` | 7089 | 6158/6259 = **98.4%** | 99.0% | 94.8% | 386 | 348 | 38 |
-| `prefer-unsigned` | 13650 | 5815/6259 = **92.9%** | 97.1% | 69.6% | 41 | 4 | 37 |
+| `prefer-signed` | 7,081 | 6158/6259 = **98.4%** | 99.0% | 94.8% | 386 | 348 | 38 |
+| `prefer-unsigned` | 13,636 | 5816/6259 = **92.9%** | 97.1% | 69.7% | 40 | 4 | 36 |
+| *control:* all-signed, no walk | 15,136 | 5810/6259 = **92.8%** | 98.9% | **59.2%** | 790 | 376 | 414 |
 
 **Read the last three columns before the first three.** The oracle can only score
 a declaration kuna names the same way DWARF does in the same function, and those
@@ -202,8 +228,9 @@ usually cannot see. Per value:
 | value | checkable rows `-O0` / `-O2` | flips it makes there `-O0` / `-O2` | of all flips image-wide |
 |---|---|---|---|
 | `auto` | 5,308 / 951 | 1 / 3 | 575 |
-| `prefer-signed` | 5,308 / 951 | 134 / 252 | 7,089 |
-| `prefer-unsigned` | 5,308 / 951 | 13 / 28 | 13,650 |
+| `prefer-signed` | 5,308 / 951 | 134 / 252 | 7,081 |
+| `prefer-unsigned` | 5,308 / 951 | 13 / 27 | 13,636 |
+| *control:* all-signed | 5,308 / 951 | 143 / 647 | 15,136 |
 
 So `prefer-signed` is the only value with a real measurement (386 of its flips
 land where DWARF can judge them). **`auto`'s fidelity is essentially unmeasured**:
@@ -232,9 +259,20 @@ Three more things fall out of that table.
   `uintmax_t` 2, `unsigned int` 2, `ino_t` 1, `reg_syntax_t` 1; the 348 right
   ones are `int` 342, `idx_t` 5, `Idx` 1. That is TRex's §5.1 claim reproduced:
   when nothing observed settles it, C source says `int`.
-* **`prefer-unsigned` is refuted.** It moves 13,650 declarations and makes the
-  output *less* faithful than leaving them alone, in both slices (4 of its 41
+* **`prefer-unsigned` is refuted.** It moves 13,636 declarations and makes the
+  output *less* faithful than leaving them alone, in both slices (4 of its 40
   checkable flips agree). It is sound, and it is the wrong default for anything.
+* **The walk is what `prefer-signed` is made of.** Deleting it and keeping only
+  the tie-break — the control row — takes `-O2` agreement from today's 71.9%
+  down to **59.2%**, well below doing nothing, on 647 checkable `-O2` flips of
+  which 384 are wrong. Its 414 wrong flips image-wide are **379 `size_t`** (plus
+  `mode_t` 19, `uintmax_t` 6, `unsigned int` 4, `gid_t` 2, `re_hashval_t` 2,
+  `ino_t` 1, `reg_syntax_t` 1) against 376 right ones, i.e. a coin flip;
+  `prefer-signed` gets 348 right against 38 wrong and only **12** of those are
+  `size_t`. The unsigned demands the walk collects — a `LESS`/`LESSEQUAL`
+  compare, a `>>`, a `/` or `%`, a `ZEXT` — are precisely what keeps 367
+  `size_t` locals unsigned, and that is the whole difference between 98.4% and
+  92.8%. A one-line tie-break does not score the same.
 
 **0 flips on a sub-`int` declaration** under any value. That is the width rule
 holding, but note what this corpus can and cannot witness: every binary in it is
