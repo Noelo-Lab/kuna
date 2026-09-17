@@ -209,15 +209,18 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // lock: the Symbol it maps must exist before heritage creates the input); and
     // `msvcstrappend`, option-gated default-off, directly after that (S2 inlined
     // MSVC std::string append collapse: proved over the RAW p-code, and its call
-    // spec is input-locked).)
+    // spec is input-locked); and `structsynth`, option-gated default-off,
+    // directly after `infertypes` inside mainloop (P5 structure synthesis from
+    // constant-offset dereferences: it needs the settled lattice infertypes
+    // leaves and the pointer-arithmetic pools below it to render the fields).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 282,
-        "full universal tree must render 252 C++ leaves + 23 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + pebnames + msvcstrappend + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane + constspaceload) + 7 container headers"
+        nonblank, 283,
+        "full universal tree must render 252 C++ leaves + 24 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + pebnames + msvcstrappend + structsynth + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane + constspaceload) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note

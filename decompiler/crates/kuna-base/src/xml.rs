@@ -1872,6 +1872,10 @@ mod tests {
         // `indirectonly` off by default
         // and kuna-foldcallret-barrier / a call stays ahead of a write to the
         // global it reads (GH-657)
+        // and kuna-structsynth-param-struct / kuna-structsynth-overlap-layout /
+        // kuna-structsynth-hole-member / a struct synthesized from the
+        // constant-offset dereferences of a pointer parameter, the interior
+        // access that is not a field, and the hole the body names anyway
         assert_eq!(count, 306, "corpus file count drifted");
     }
 

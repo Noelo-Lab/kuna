@@ -1125,6 +1125,10 @@ pub struct ArchContext {
     /// loader's user-mode-PE fact: does
     /// [`ActionPebNames`](crate::p5_types::kuna_pebnames::ActionPebNames) act?
     pub peb_names: bool,
+    /// (kuna) `option structsynth`: over which bases may
+    /// [`ActionStructSynth`](crate::p5_types::kuna_structsynth::ActionStructSynth)
+    /// synthesize a structure from constant-offset dereferences?
+    pub struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode,
     /// (kuna) `option switchselector`: refuse a recovered lowered-switch record
     /// whose synthesized BRANCHIND would not get the switch value as its
     /// selector.  Read by
@@ -1531,6 +1535,7 @@ impl ArchContext {
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
+            struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth
             codescalar: false,           // (kuna) option codescalar
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse
             model_stack_probe_loop: false, // GH-8017 stackprobeloop

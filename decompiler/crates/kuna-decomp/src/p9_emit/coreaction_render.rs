@@ -2941,8 +2941,17 @@ impl Action for ActionInferTypes {
         // propagateAcrossReturns -> writeBack.  `writeBack` returning a change
         // bumps `localcount` (it is deliberately NOT counted as a data-flow change,
         // so `count` is left untouched).
+        // (kuna `structsynth`) `count` is deliberately not bumped, so nothing in
+        // the schedule can observe that propagation has stopped moving.  A pass
+        // that needs a decided lattice reads this plateau flag instead: set once
+        // a full pass has run and changed nothing.  A function whose first pass
+        // is already at the fixpoint is settled too -- a lattice that never
+        // needed to move is still decided.
         if crate::coreaction_infertypes::run_infer_types(data) {
             self.localcount += 1;
+            data.set_kuna_infertypes_settled(false);
+        } else {
+            data.set_kuna_infertypes_settled(true);
         }
         0
     }

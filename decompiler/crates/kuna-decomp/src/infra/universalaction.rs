@@ -651,6 +651,13 @@ pub fn universal_sched(
             act!(ActionSpacebase::boxed("base")),
             act!(ActionNonzeroMask::boxed("analysis")),
             act!(ActionInferTypes::boxed("typerecovery")),
+            // (kuna) structsynth: once propagation has settled, complete a
+            // `struct_N` over a pointer parameter dereferenced at two or more
+            // constant offsets and type-lock the parameter to it.  It sits here
+            // so the pointer-arithmetic pools below (`oppool1`'s ptr*undo,
+            // `oppool2`'s ptrarith/structoffset0) rewrite the accesses into field
+            // references on this same iteration.  Default OFF.
+            act!(crate::kuna_structsynth::ActionStructSynth::boxed("typerecovery")),
             act!(ActionRestructureVarnode::boxed("localrecovery")),
             stackstall,
             act!(ActionRedundBranch::boxed("deadcontrolflow")),

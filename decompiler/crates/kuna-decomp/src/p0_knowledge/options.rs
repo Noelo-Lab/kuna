@@ -266,6 +266,9 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "int3pad",
     "x64syscall",
     "pebnames",
+    // (kuna) synthesize `struct_N` over a pointer parameter dereferenced at two
+    // or more constant offsets. Default OFF.
+    "structsynth",
     "decodehalt",
     "msvcftol",
     "tailcalljump",
