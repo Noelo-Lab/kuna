@@ -1024,6 +1024,10 @@ pub struct Architecture {
     /// `indirectonly`, opt-in default-off: the merge it unlocks can fabricate
     /// a store into an escaped frame slot).
     pub mark_indirect_only: bool,
+    /// (kuna) Run the upstream `ActionHideShadow` body, consolidating COPY
+    /// chains that shadow one value (`hide_shadow`, option `hideshadow`,
+    /// default-off).
+    pub hide_shadow: bool,
     /// (kuna) Strip the glibc -fstack-protector canary epilogue
     /// (C++ `strip_stack_guard`).
     pub strip_stack_guard: bool,
@@ -2312,6 +2316,7 @@ impl Architecture {
             fold_call_returns: false,
             fold_call_ret_phi: false,
             mark_indirect_only: false,
+            hide_shadow: false, // (kuna) option hideshadow (default-off)
             strip_stack_guard: false,
             strip_msvc_stack_guard: false,
             strip_security_check: false,
@@ -3202,6 +3207,11 @@ impl Architecture {
             "indirectonly" => {
                 let (val, msg) = crate::kuna_indirectonly::OptionIndirectOnly.apply(p1)?;
                 self.mark_indirect_only = val;
+                Ok(msg)
+            }
+            "hideshadow" => {
+                let (val, msg) = crate::kuna_hideshadow::OptionHideShadow.apply(p1)?;
+                self.hide_shadow = val;
                 Ok(msg)
             }
             "impliedrefs" => {
@@ -4127,6 +4137,7 @@ impl Architecture {
         ctx.fold_call_returns = self.fold_call_returns; // foldcallret
         ctx.fold_call_ret_phi = self.fold_call_ret_phi; // foldcallretphi
         ctx.mark_indirect_only = self.mark_indirect_only; // indirectonly
+        ctx.hide_shadow = self.hide_shadow; // hideshadow
         ctx.strip_stack_guard = self.strip_stack_guard; // stackguard
         ctx.strip_msvc_stack_guard = self.strip_msvc_stack_guard; // msvcstackguard
         ctx.strip_security_check = self.strip_security_check; // securitycheck

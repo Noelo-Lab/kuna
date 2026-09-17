@@ -34,7 +34,7 @@
 //! | `ActionMarkIndirectOnly` | `"markindirectonly"` | `rule_onceperfunc` | `data.markIndirectOnly()` (stub) |
 //! | `ActionMergeAdjacent` | `"mergeadjacent"` | `rule_onceperfunc` | `merge.mergeAdjacent()` (stub) |
 //! | `ActionMergeType` | `"mergetype"` | `rule_onceperfunc` | `merge.mergeByDatatype(beginLoc,endLoc)` (stub) |
-//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:5085` (stub) |
+//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:4976` (option `hideshadow`) |
 //! | `ActionCopyMarker` | `"copymarker"` | `rule_onceperfunc` | `merge.markInternalCopies()` (stub) |
 //! | `ActionNameVars` | `"namevars"` | `rule_onceperfunc` | `coreaction.cc:3076` (stub) |
 //! | `ActionSetCasts` | `"setcasts"` | `rule_onceperfunc` | `coreaction.cc:2812` (stub) |
@@ -1826,16 +1826,15 @@ impl Action for ActionHideShadow {
         }
         Some(Box::new(ActionHideShadow { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:5085 — ActionHideShadow::apply
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:4976 — ActionHideShadow::apply
         //
-        // The walk visits the *written* def-set, dedups HighVariables via the
-        // high mark flag, and calls the ported `Merge::hide_shadows(ctx, high)`.
-        //
-        // STUB(W7/W8-funcdata): no `beginDef`/`endDef(flags)` def-set iterator on
-        // `Funcdata`, the HighVariable mark surface needs the high bridge, and
-        // `hideShadows` needs the `getMerge()`/`MergeContext` bridge.  Body
-        // transcribed; no change applied (count stays 0).
+        // (kuna) option `hideshadow`: OFF reproduces the historical stub exactly
+        // (no walk, no change), ON runs the upstream body.
+        if !data.get_arch().hide_shadow {
+            return 0;
+        }
+        self.base.count += crate::kuna_hideshadow::hide_shadow_copies(data);
         0
     }
 }

@@ -392,6 +392,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "foldcallret",
     "foldcallretphi",
     "indirectonly",
+    "hideshadow",
     "impliedrefs",
     "termdup",
     "stackguard",

@@ -5565,6 +5565,31 @@ live_true = "on"
 live_false = "off"
 
 # ---------------------------------------------------------------------------
+# hideshadow: the P6 shadow-copy consolidation (upstream ActionHideShadow).
+# ---------------------------------------------------------------------------
+[[settable]]
+option = "hideshadow"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P6"
+subphase = "merge-aggressiveness"
+strength = "HARD"
+rewind = "P6"
+issue = "kuna-hideshadow"
+summary = "PLACEHOLDER-SUMMARY"
+use_when = "PLACEHOLDER-USEWHEN"
+example = "option hideshadow on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra ActionHideShadow (coreaction.cc:4976) and Merge::hideShadows (merge.cc:1070), the merge-phalanx pass kuna carried as an inert stub"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "PLACEHOLDER-SYMPTOMS"
+live_field = "hide_shadow"
+live_true = "on"
+live_false = "off"
+
+# ---------------------------------------------------------------------------
 # paramcopyhoist: the P6 trim-COPY anchor for an unmodified incoming parameter.
 # ---------------------------------------------------------------------------
 [[settable]]
