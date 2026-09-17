@@ -559,5 +559,14 @@
       }
     },
     "harness_default_control": "proof that the corpora actually ran with the flip in, rather than through an Architecture that never called reset_defaults: a scratch datatest with NO `option signedness` line at all (/tmp/claude-1000/signedness-probe/probe.xml, the same 20-byte image as the stage test) asserts `int4 v1;` present and `(int4)v1` absent, and scores 2/2 through `kuna test --datatests`. The console path was checked the same way (decomp_dbg on the bare image prints `int4 v1;`), and the CLI path with `kuna decompile-all fmt --addr 0x3060` (`int v1;`, no `(int)v1`)."
+  },
+  "speed_rebase_remeasure": {
+    "what": "re-measured on the structdefs-rebased build (origin/main 75a7f6b0): interleaved min-of-15 whole-binary `decompile-all`, each iteration running `--option signedness upstream` then the default (auto) back to back (.scratch/speed-r7.sh, .scratch/speed-r7.log)",
+    "fmt_O2": "4.1534s -> 4.1945s (+0.99%)",
+    "ls_O2": "13.4207s -> 13.0642s (-2.66%)",
+    "pooled_sum_of_minima": "17.5740s -> 17.2587s (-1.79%)",
+    "budget_pct": 5,
+    "within_budget": true,
+    "note": "one arm negative again, which a pass that only adds work cannot be: the cost sits under this box's noise floor with five other agents building. The honest reading across every round is 'inside the budget and too small to separate from the noise', not a speedup"
   }
 }
