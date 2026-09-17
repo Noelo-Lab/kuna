@@ -99,6 +99,10 @@ no statement moved across a branch or a call.
 grep, gzip, find at both levels and sort/bzip2/diff/grep/gzip/find at -O0 are
 byte-identical.
 
+The OFF arm is not just "the other arm of the same build": it was compared
+against a separately built origin/main (83830e86) binary over six whole binaries
+and is byte-identical to it (`off-equals-main.txt`).
+
 No function gains a declaration; the net is **-11** across the corpus.
 
 ## 5. The witness: coreutils `ls` -O2 `main`
