@@ -282,3 +282,171 @@ fn a_declined_aggregate_degrades_to_the_width_stable_signature() {
     assert_eq!(p1.get_metatype(), type_metatype::TYPE_VOID, "degraded to void *");
     std::env::remove_var(kuna_decomp::kuna_libctypes::LIBCTYPES_ENV);
 }
+
+// -- the `glibc` field layouts ---------------------------------------------
+
+/// Every published layout names an aggregate this table knows the width of, and
+/// every field fits inside that width at an offset no other field claims. A
+/// layout that overruns or overlaps is a transcription error, and the shells are
+/// interned at `load file` where nothing would catch it.
+#[test]
+fn glibc_layouts_fit_their_aggregate() {
+    let types = factory();
+    for (name, rows) in glibc::GLIBC_LAYOUTS {
+        let agg = NAMED_AGGREGATES
+            .iter()
+            .find(|a| a.name == *name)
+            .unwrap_or_else(|| panic!("`{name}` has a layout but no width"));
+        let fields = glibc::build_fields(rows, &types, 1).expect("build the layout");
+        let mut end = 0;
+        for (row, field) in rows.iter().zip(&fields) {
+            assert!(
+                row.off >= end,
+                "{name}::{} at {:#x} overlaps the field before it",
+                row.name,
+                row.off
+            );
+            end = row.off + field.field_type.get_size();
+            assert!(
+                end <= agg.size,
+                "{name}::{} runs past the {}-byte aggregate",
+                row.name,
+                agg.size
+            );
+            assert_eq!(field.offset, row.off, "the field offset is the declared one");
+            assert_eq!(field.ident, row.off, "ident is the offset, as the DWARF importer does it");
+        }
+    }
+}
+
+/// The published layouts nest at most one level deep and no aggregate holds
+/// itself, which is what makes the recursive mint in `named_aggregate`
+/// terminate without a depth counter. `_IO_FILE::_chain` is the self-pointer
+/// this rule costs us; it is `void *` on purpose.
+#[test]
+fn glibc_layouts_nest_at_most_one_level() {
+    fn named(ty: &glibc::FTy) -> Option<&'static str> {
+        match ty {
+            glibc::FTy::Named(n) => Some(n),
+            glibc::FTy::Arr(inner, _) => named(inner),
+            _ => None,
+        }
+    }
+    for (name, rows) in glibc::GLIBC_LAYOUTS {
+        for row in rows.iter() {
+            let Some(inner) = named(&row.ty) else { continue };
+            assert_ne!(inner, *name, "{name}::{} holds its own aggregate", row.name);
+            let nested = glibc::layout_for(inner)
+                .unwrap_or_else(|| panic!("{name}::{} names `{inner}`, which has no layout", row.name));
+            for deep in nested.iter() {
+                assert!(
+                    named(&deep.ty).is_none(),
+                    "{name} -> {inner} -> {} is a second level of nesting",
+                    deep.name
+                );
+            }
+        }
+    }
+}
+
+/// The three published offsets the option exists for, end to end through the
+/// mint: the shell is complete, carries its real width, and answers at the
+/// offsets a `getc_unlocked` body reads.
+#[test]
+fn glibc_mints_a_complete_file_with_its_published_fields() {
+    let types = factory();
+    let file = named_aggregate("FILE", &types, 1, Layout::Glibc).expect("mint FILE");
+    assert_eq!(file.get_size(), 216, "the glibc x86-64 width");
+    assert!(!file.is_incomplete(), "a struct with its members is not incomplete");
+    for (off, want, size) in [(0, "_flags", 4), (8, "_IO_read_ptr", 8), (0x10, "_IO_read_end", 8), (0x70, "_fileno", 4)] {
+        let field = (0..file.num_depend())
+            .filter_map(|i| file.get_field(i))
+            .find(|f| f.offset == off)
+            .unwrap_or_else(|| panic!("no field at {off:#x}"));
+        assert_eq!(field.name, want, "the field at {off:#x}");
+        assert_eq!(field.field_type.get_size(), size, "{want} width");
+    }
+}
+
+/// `stat::st_atim` is a `timespec` BY VALUE, so the nested aggregate has to be
+/// minted first and be the same interned object the table would hand out on its
+/// own -- two `timespec`s would print as two types and break `dependent_order`'s
+/// definition-before-use walk.
+#[test]
+fn glibc_stat_nests_one_interned_timespec() {
+    let types = factory();
+    let stat = named_aggregate("stat", &types, 1, Layout::Glibc).expect("mint stat");
+    assert_eq!(stat.get_size(), 144);
+    let atim = (0..stat.num_depend())
+        .filter_map(|i| stat.get_field(i))
+        .find(|f| f.offset == 0x48)
+        .expect("st_atim");
+    assert_eq!(atim.name, "st_atim");
+    assert_eq!(atim.field_type.get_size(), 16, "a timespec by value");
+    let timespec = named_aggregate("timespec", &types, 1, Layout::Opaque).expect("find timespec");
+    assert!(
+        Rc::ptr_eq(&atim.field_type, &timespec),
+        "the nested timespec is the interned one"
+    );
+    assert_eq!(timespec.get_field(0).expect("tv_sec").name, "tv_sec");
+    assert_eq!(timespec.get_field(1).expect("tv_nsec").name, "tv_nsec");
+}
+
+/// Under `glibc` too, a definition somebody else established is ADOPTED, never
+/// overwritten: the DWARF importer runs first, and completing a struct re-keys
+/// it into a new `Rc` that the pointers already handed out would not follow.
+#[test]
+fn glibc_adopts_a_held_definition_instead_of_installing_over_it() {
+    let types = factory();
+    let shell = types.get_type_struct("stat").expect("shell");
+    let int4t = types.get_base(4, type_metatype::TYPE_INT).expect("int");
+    let field = kuna_decomp::dtype::TypeField::new(0, 0, "theirs", int4t);
+    let theirs = types
+        .set_fields_struct_raw(&shell, vec![field], Vec::new(), 144, 8, 0)
+        .expect("somebody else's 144-byte `stat`");
+    let got = named_aggregate("stat", &types, 1, Layout::Glibc).expect("adopt");
+    assert!(Rc::ptr_eq(&got, &theirs), "the held definition is the answer");
+    assert_eq!(
+        got.get_field(0).expect("their field").name,
+        "theirs",
+        "no published layout was installed over it"
+    );
+}
+
+/// An aggregate glibc publishes no usable layout for stays the sized, still
+/// incomplete shell under `glibc` -- the value adds field names, it does not
+/// invent them.
+#[test]
+fn glibc_leaves_the_layoutless_aggregates_opaque() {
+    let types = factory();
+    for name in ["DIR", "termios", "sigset_t", "pthread_mutex_t"] {
+        assert!(glibc::layout_for(name).is_none(), "`{name}` must have no layout");
+        let ct = named_aggregate(name, &types, 1, Layout::Glibc).expect("mint");
+        assert!(ct.is_incomplete(), "`{name}` stays an opaque shell");
+        assert_eq!(ct.num_depend(), 0, "`{name}` has no members");
+    }
+}
+
+/// The layouts are glibc's and x86-64's, so the pass installs them only where
+/// both are true. An ARM ELF and a PE are refused on the architecture and the
+/// format; the x86-64 ELF that the stage test decompiles is accepted on its
+/// `.dynstr`.
+#[test]
+fn only_a_glibc_x86_64_elf_takes_the_layouts() {
+    for (name, want) in [
+        ("libctypes_glibc_x86_64", true),
+        ("libctypes_stat_x86_64", true),
+        ("armlibcmain_le32", false),
+        ("win32sigs_pe_i386.exe", false),
+    ] {
+        let path = format!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/{}"), name);
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
+        let file = object::File::parse(bytes.as_slice()).unwrap_or_else(|e| panic!("parse {name}: {e}"));
+        assert_eq!(
+            glibc::target_is_glibc_x86_64(&file),
+            want,
+            "`{name}` should {} the published glibc x86-64 layouts",
+            if want { "take" } else { "refuse" }
+        );
+    }
+}

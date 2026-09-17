@@ -36,6 +36,16 @@
     that one rather than minting a second stream type beside it (#7, #8), and it
     keeps its real field layout (#9).
 
+    Passes 4 and 5 load `libctypes_glibc_x86_64`, which carries NO debug info, so
+    every named aggregate in it is minted by the table rather than adopted  -  the
+    only arm in which `option libctypes glibc` installs a field layout at all.
+    Pass 4 is `opaque` (the shipped default) and pass 5 is `glibc`, over the same
+    two functions: the `getc_unlocked` refill body, whose two stream accesses go
+    from `*(uint1 **)&amp;a0-&gt;field_0x8` to `a0-&gt;_IO_read_ptr` (#10, #11), and a
+    `stat` buffer read, which goes from a cast at an offset to `a1-&gt;st_size`
+    (#12, #13) and takes the field's SIGNED type with it, so the `-1` sentinel
+    stops printing as `0xffffffffffffffff` (#14).
+
     The script restores the default (`opaque`) in its last command: the gate is a
     process environment variable, and the corpus runs in one process, so a stale
     `off` would silently disable the table for every later test in the file.
@@ -86,6 +96,26 @@ c3
   <com>decompile</com>
   <com>print C</com>
   <com>option libctypes opaque</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_glibc_x86_64</com>
+  <com>read symbols</com>
+  <com>load function next_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function size_of</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libctypes glibc</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_glibc_x86_64</com>
+  <com>read symbols</com>
+  <com>load function next_byte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function size_of</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libctypes opaque</com>
   <com>quit</com>
 </script>
 <stringmatch name="LIBCTYPES #1: off, the stream parameter is an opaque void *" min="1" max="1">int4 fclose\(void \*a0\)</stringmatch>
@@ -93,8 +123,13 @@ c3
 <stringmatch name="LIBCTYPES #3: off, the fopen result is an opaque void *" min="1" max="1">void \* fopen\(char \*a0,char \*a1\)</stringmatch>
 <stringmatch name="LIBCTYPES #4: on, the fopen result is a minted FILE *" min="1" max="1">FILE \* fopen\(char \*a0,char \*a1\)</stringmatch>
 <stringmatch name="LIBCTYPES #5: the DWARF layout of `stat` reads the same in both passes -- the named table adopted it instead of shadowing it" min="2" max="2">st-&gt;st_mode</stringmatch>
-<stringmatch name="LIBCTYPES #6: and nothing anywhere fell back to an offset-named field" min="0" max="0">field_0x</stringmatch>
+<stringmatch name="LIBCTYPES #6: and neither aggregate a DWARF definition already described fell back to an offset-named field" min="0" max="0">(st|f)-&gt;field_0x</stringmatch>
 <stringmatch name="LIBCTYPES #7: on a binary whose DWARF DOES define the stream type, that definition is what the table points at" min="1" max="1">int4 fclose\(_IO_FILE \*a0\)</stringmatch>
 <stringmatch name="LIBCTYPES #8: including the parameter the whole option exists for" min="1" max="1">int4 get_prefix\(_IO_FILE \*f\)</stringmatch>
 <stringmatch name="LIBCTYPES #9: with its real field layout, not a shell" min="1" max="1">f-&gt;_IO_read_end &lt;= v4</stringmatch>
+<stringmatch name="LIBCTYPES #10: glibc off, a MINTED stream shell has no members, so the refill body reads an offset" min="2" max="2">\*\(uint1 \*\*\)&amp;a0-&gt;field_0x8</stringmatch>
+<stringmatch name="LIBCTYPES #11: glibc on, the same two accesses are the published field" min="2" max="2">a0-&gt;_IO_read_ptr</stringmatch>
+<stringmatch name="LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset" min="1" max="1">&amp;a1-&gt;field_0x30</stringmatch>
+<stringmatch name="LIBCTYPES #13: glibc on, that read is the field" min="1" max="1">return a1-&gt;st_size;</stringmatch>
+<stringmatch name="LIBCTYPES #14: and the value carries the FIELD's type, so the sentinel is a signed -1" min="1" max="1">return -1;</stringmatch>
 </decompilertest>
