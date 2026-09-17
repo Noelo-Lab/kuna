@@ -157,6 +157,7 @@ fn settable_count_is_219() {
     // +1 for `structsynth` (P5 struct synthesis over a pointer parameter).
     // +1 for `signedness` (P9 declared-signedness rounding).
     // +1 for `boolbyte` (P5 truth-valued byte typing).
+    // +1 for `mulblob` (P3 wide-multiply operand structuring decline).
     assert_eq!(kuna_num_settables(), 219);
     assert_eq!(SETTABLE_TABLE.len(), 219);
 }
@@ -300,6 +301,8 @@ fn tier_counts_are_69_core_87_transform_63_analysis() {
     // pointer parameter).
     // transform 85 -> 86: +1 for `signedness` (P9 declared-signedness rounding).
     // core 68 -> 69: +1 for `boolbyte` (P5 truth-valued byte typing).
+    // transform 87 -> 88: +1 for `mulblob` (P3 wide-multiply operand
+    // structuring decline).
     assert_eq!((core, transform, analysis), (69, 87, 63));
 }
 
@@ -914,7 +917,8 @@ fn option_values_live_value_present_for_89() {
     // 86 -> 87: +1 for `argclobber` (live_field = arg_clobber, opt-in).
     // 87 -> 88: +1 for `hideshadow` (live_field = hide_shadow, default-on).
     // 88 -> 89: +1 for `boolbyte` (live_field = bool_byte, opt-in).
-    assert_eq!(with_live, 89);
+    // 89 -> 90: +1 for `mulblob` (live_field = mul_blob, default-on).
+    assert_eq!(with_live, 90);
 }
 
 #[test]
@@ -1080,6 +1084,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 215 -> 216: +1 for `signedness`; its P9 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
     // 216 -> 217: +1 for `boolbyte`; its P5 row sits mid-table, so it
+    // increments it again.
+    // 217 -> 218: +1 for `mulblob`; its P3 row sits mid-table, so it
     // increments it again.
     assert_eq!(json.matches("},\n").count(), 218);
 }

@@ -18,6 +18,10 @@ Three tiers:
 | a field access like f->_flags with no layout anywhere in the output | [`structdefs`](#structdefs) |
 | you have to run decompile-project just to read the .h for one function's struct | [`structdefs`](#structdefs) |
 | a synthesized struct_N appears in a parameter type with no definition | [`structdefs`](#structdefs) |
+| a 16-byte local (`char vN [16]` / `undefined1 auVarN [16]`) is declared for every operand of an unsigned multiply | [`mulblob`](#mulblob) |
+| `vN._8_8_ = 0; vN._0_8_ = x;` pairs appear in front of a `SUB168(... * ...,0)` | [`mulblob`](#mulblob) |
+| a function with several `mul` instructions declares twice as many locals as it has values | [`mulblob`](#mulblob) |
+| the high half of a 64x64 product is read out of a blob instead of off the multiply | [`mulblob`](#mulblob) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring) |
@@ -854,6 +858,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Flip on when you are reading a function whose arguments are pointers to composites and want the layout in front of you -- `structsynth`'s synthesized `struct_N`, a DWARF struct on an unstripped binary, `libctypes`' opaque `FILE`/`DIR` shells -- instead of opening the `decompile-project` header to find it. Default OFF: it is a presentation default, and a preamble in front of every function is noise for a caller diffing bodies or feeding one function to a matcher. It changes nothing but the text above the function -- the body, its line contents and every recovered type are identical either way -- but it DOES move line numbers, so a consumer pinning a line number should read `line_mappings` rather than assume the first line is the signature. The preamble is documentation, not a compilable unit: a padding member spelled `undefined1` needs the export's recompile prelude to compile, which is one more reason the project surface keeps the definitions in the header.
 - **Where / provenance:** P9/type-definition-preamble · angr · presentation-default · kuna-structdefs
 - **Example:** `option structdefs on`
+
+### `mulblob` -- on | off, default `on`
+
+- **Symptoms:** a 16-byte local (`char vN [16]` / `undefined1 auVarN [16]`) is declared for every operand of an unsigned multiply; `vN._8_8_ = 0; vN._0_8_ = x;` pairs appear in front of a `SUB168(... * ...,0)`; a function with several `mul` instructions declares twice as many locals as it has values; the high half of a 64x64 product is read out of a blob instead of off the multiply.
+- **What it does:** Print a widened 64x64->128 multiply operand as the value it is (`SUB168(ZEXT816(x) * ZEXT816(y),8)`) instead of materialising a 16-byte local per operand and filling it in halves.
+- **When to flip:** On by default. x86-64 `MUL r64` lowers (SLEIGH `ia.sinc:4128`) to `tmp:16 = zext(RAX) * zext(rm64)`, and a 16-byte varnode has no primitive data-type, so the type factory hands it the width fallback `undefined1[16]` - an array, which `Datatype::isPieceStructured` accepts. `RulePieceStructure` (ruleaction.cc:7488) therefore rewrites each zero-extension into a `PIECE` rooted at a partial-root Varnode, and P6 gives that root a declaration of its own: every unsigned wide multiply costs two `char vN [16]` locals whose entire content is the operand (`v8._8_8_ = 0; v8._0_8_ = v29;`) before a single `SUB168` reads the product back out. The signed sibling never had this: `IMUL` lowers through `sext`, `INT_SEXT` is not in `RulePieceStructure`'s op list, and kuna already prints `SUB168(SEXT816(x) * SEXT816(y),8)`. On, the unsigned form prints the same way. The decline is narrow: the extension's output must be an anonymous unique, not addr-tied, not mapped, not covered by a Symbol, 9..16 bytes wide, typed with the width fallback (an array of exactly that many one-byte `undefined` elements) and read only by same-width integer arithmetic whose own result is read only through `SUBPIECE`. A Varnode backed by real storage or a recovered array keeps upstream's structuring in either arm. Flip off to restore the upstream `undefined1 auVarN [16]` rendering - Ghidra prints those blobs too, so this is a deliberate divergence, not a fidelity fix.
+- **Where / provenance:** P3/simplification-quiescence · kuna · presentation-default · wide-multiply-operand-blobs
+- **Example:** `option mulblob off`
 
 ### `rodatastring` -- on | off, default `on`
 

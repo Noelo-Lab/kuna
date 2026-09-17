@@ -904,6 +904,10 @@ pub struct ArchContext {
     /// walked buffer, which is recovered as one array (`endptrbound`).  Read by
     /// [`crate::p6_variables::kuna_endptrbound::gather_walks`].
     pub end_ptr_bound: bool,
+    /// (kuna) a widened multiply operand stays a value instead of being
+    /// structured into an aggregate (`mulblob`).  Read by
+    /// [`crate::p3_dataflow::kuna_mulblob::declines_zext`].
+    pub mul_blob: bool,
     /// (kuna) read the caller's own stack discipline for the argument bytes a
     /// callee pops (`calleepop`).  Read by
     /// [`StackSolver::build`](crate::coreaction_stackptr) through
@@ -1564,6 +1568,9 @@ impl ArchContext {
             // endptrbound only re-expresses an address the walk already compares
             // against, so the fixture seam carries the real default.
             end_ptr_bound: true,
+            // mulblob only declines a rewrite, so the fixture seam carries the
+            // shipped default.
+            mul_blob: true,
             // calleepop only refines a guess the solver already had to make, so
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,

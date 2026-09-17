@@ -1,0 +1,126 @@
+{
+ "opportunity": "An unsigned 64x64->128 multiply costs two 16-byte locals per site whose entire content is the operand. On coreutils fmt -O2 that is 23 of 298 non-thunk declarations (7.7%), and 20 of the 28 declarations of `xstrtoumax` alone. The signed form of the same computation has never had this, because IMUL lowers through `sext` and `INT_SEXT` is not in `RulePieceStructure`'s op list.",
+ "test_name": "tests/stages/mulblob-wide-multiply-operands.xml (5 two-pass assertions)",
+ "binary": "tests/stages bytechunk (gcc -O2 `mul rsi` body)",
+ "selector": "widemul",
+ "func_addr": "0x100000",
+ "angr_version": null,
+ "option": "mulblob",
+ "flag": "mul_blob",
+ "element_id": null,
+ "change_kind": "presentation-default",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "coreutils fmt -O2 xstrtoumax; IDA prints the same expression as one __int128 multiply",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "ablation_changed": 0,
+ "parity": "OK",
+ "root_cause": {
+  "lowering": "specs/Ghidra/Processors/x86/data/languages/ia.sinc:4128 -- `MUL rm64 { tmp:16 = zext(RAX)*zext(rm64); RDX=tmp(8); RAX=tmp(0); }`",
+  "type_fallback": "a 16-byte Varnode has no primitive type, so TypeFactory::get_base(16, TYPE_UNKNOWN) returns the width fallback undefined1[16]",
+  "gate": "Datatype::is_piece_structured is `metatype <= TYPE_ARRAY` (substrate/dtype.rs:1152), so the array qualifies",
+  "rewriter": "RulePieceStructure (p3_dataflow/ruleaction_6.rs, C++ ruleaction.cc:7488) converts the INT_ZEXT to a PIECE and marks the output a partial root; P6 base_explicit declares a proto-partial root",
+  "why_signed_is_clean": "IMUL lowers through `sext` (ia.sinc:3604) and CPUI_INT_SEXT is not in RulePieceStructure::get_op_list"
+ },
+ "witness": {
+  "binary": "decbench results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+  "function": "sub_74d0 (xstrtoumax) @ 0x74d0",
+  "before": "33 declarations, 20 of them `char vN [16]`; 268 lines; `v8._8_8_ = 0; v8._0_8_ = v29; ... v29 = SUB168(v8._0_16_ * v18._0_16_,0);`",
+  "after": "14 declarations, 1 `char v2 [16]` left (term-duplication residue); 218 lines; `v2 = ZEXT816(v10); v10 = SUB168(v2 * ZEXT816(v8),0);`",
+  "measured_on": "rebased tree at fe3abc23; the sibling PRs move both arms by the same five declarations"
+ },
+ "sweep": {
+  "tool": "kuna decompile-all, both arms, 12 binaries from the frozen decbench tree (O0/O2/O2-noinline), re-run on the rebased tree",
+  "functions_decompiled": 4535,
+  "functions_changed": 22,
+  "functions_gaining_a_declaration": 0,
+  "hunks": {
+   "bodies identical after normalizing local numbering and the widening spelling": 12,
+   "bodies that additionally name a twice-read operand once (and, twice, collapse `else { if }` to `else if`)": 10,
+   "anything else": 0
+  },
+  "pcode_control": "print raw in both arms on the 6 largest changed functions: after dropping the ops that ARE the widening representation (PIECE, the COPY #0 feeding it, the INT_ZEXT replacing them), 70 operand COPYs disappear and one rendering cast appears (ActionSetCasts, fn2). Every other core op is identical address for address -- no arithmetic, branch, load, store, call or return op differs.",
+  "blob_declarations_before": 114,
+  "blob_declarations_after": 11,
+  "declaration_multiset_delta": "exactly 103 `char V [16]` removed over the 22 functions, nothing added"
+ },
+ "oracle": {
+  "kind": "compile-and-run",
+  "fixture": "gcc -O2: widemul (both halves written) + mulcheck (the overflow-checked multiply-accumulate of the xstrtoumax idiom)",
+  "method": "decompile in both arms, transcribe both renderings back into C behind SUB168/ZEXT816/CARRY8 shims, run against the original source",
+  "cases": 10081,
+  "mismatches": 0
+ },
+ "varcensus": {
+  "fmt_O2": "declarations 371 -> 352 (-19), non-thunk 333 -> 314, blob16 23 -> 4, single_def_single_use unchanged at 78",
+  "tar_O2": "declarations 5292 -> 5258 (-34), blob16 85 -> 51 (the other 51 are genuine 16-byte SSE/composite values, out of scope)",
+  "grep_O2": "declarations 1653 -> 1648 (-5), blob16 15 -> 10"
+ },
+ "benchmark": {
+  "corpus": "frozen decbench tree results/full_run_address_2026-09-11, campaign slice set (projects coreutils grep gzip diffutils bzip2 findutils tar shadow; --opt O0 --opt O2 --opt O2-noinline), DECBENCH_NO_CACHE=1, KUNA_BIN pinned to this branch's release build; re-run on the rebased tree",
+  "metric": "type_match",
+  "flip_measured": "mulblob off (base arm = the shipped default, on)",
+  "slices_scored": 444,
+  "functions_scored": 10748,
+  "control_baseline_vs_published": "9505 agree / 1243 differ (88.44%)",
+  "pooled": {
+   "perfect_on": 959,
+   "perfect_off": 959,
+   "aggregate_on": 3037.05,
+   "aggregate_off": 3037.05,
+   "moved_onto_perfect": 0,
+   "moved_off_perfect": 0,
+   "improved": 0,
+   "worse": 0
+  },
+  "note": "Exactly neutral, as predicted: decbench scores kuna's --json variables[] (args + stack symbols + framelayout slots), and the blobs this option removes are unique-space temporaries that are never exported there. The variables[] A/B above shows the exported type and size surface is unchanged even where a name or a line number moves.",
+  "control_variables_ab": "kuna decompile-all --json in both arms over 6 binaries (O2 coreutils fmt/sort, O2 grep, O2 gzip, O2 diffutils diff, O0 coreutils factor; 1,814 functions): 14 functions have a non-identical variables[] array. In every one of them the multiset of (kind, type, size, stack_offset, arg_index) over the array is unchanged -- 0 functions differ there -- and the only fields that move are `name`, `addresses` and `line_numbers`. That is the invariant the neutral result rests on: the scored surface (type and size per exported variable) is untouched, so no function can score differently.",
+  "control_typesweep": "the sweep's own control: 10,723 of 10,748 functions have byte-identical variables[] in both arms, and 0 of the remaining 25 scored differently"
+ },
+ "speed": {
+  "method": "interleaved A/B of the same release binary, `kuna decompile-all --option mulblob off|on`, one warm-up discarded; min-of-15 per target, and an order-alternated min-of-31 for anything that read above the budget. Measured on the rebased tree (fe3abc23) while other agents were using the box.",
+  "fmt_O2_xstrtoumax_10_mul_sites": "min-of-15 290.5 -> 284.2 ms (-2.15%), median 357.7 -> 351.4 ms (-1.74%); order-alternated min-of-31 244.0 -> 241.4 ms (-1.09%), median 343.5 -> 343.5 ms (-0.01%)",
+  "fmt_O2_whole_binary_151_fns": "min-of-15 read 4271.0 -> 4664.5 ms (+9.21%) with a median of -1.92%, i.e. one outlying fast off-arm run on a loaded box; the order-alternated min-of-31 re-run puts it at 4290.1 -> 4309.4 ms (+0.45%), p10 -1.32%, median 4769.5 -> 4685.0 ms (-1.77%)",
+  "grep_O2_whole_binary_449_fns": "min-of-15 12498.3 -> 12400.8 ms (-0.78%), median 13654.3 -> 13629.9 ms (-0.18%)",
+  "worst_stable_delta_pct": 0.45,
+  "budget_pct": 5.0,
+  "within_budget": true,
+  "note": "Every stable reading is at or below +0.45%, and most are negative: the pass adds one cheap predicate to RulePieceStructure and removes ops from the graph. The single above-budget number was a min taken against an off-arm outlier under load and did not survive an order-alternated re-run at n=31."
+ },
+ "gates": {
+  "make test": "datatests: 675/675 assertions passed / PARITY OK",
+  "make test-stages": "datatests: 1118/1118 assertions passed / PARITY OK (5 newly passing = this PR's own)",
+  "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
+  "make test-cli": "tests/cli: 184/184 passed",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth (settables 218, tiers 68/87/63, stage-corpus 311)",
+  "make rust-test": "RUST_TEST_RC=0 via the serialized lane on the final tree (416 `test result: ok`, 0 FAILED)",
+  "note": "The divopt harness assertions were restated rather than loosened: the prototype-less harness gives the seventeenth divisor's dividend two readers (the division and the return), so it is named -- exactly as the signed sibling `divopti` has always rendered it, in both arms. The harness now pins sixteen recurring-LHS divisors and cross-checks the seventeenth against `divopti`'s identical statement; `tests/datatests/divopt.xml`, which binds `void divoptu(uint8 *)`, still pins `divu[16] = divu[16] / 125;` (675/675).",
+  "CI": "tests.yml on the rebased head: parity gates success, cargo workspace suite success (full-ci label)"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_mulblob.rs",
+  "decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_6.rs",
+  "decompiler/crates/kuna-decomp/src/p3_dataflow/mod.rs",
+  "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+  "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+  "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+  "decompiler/crates/kuna-decomp/phases.toml",
+  "tests/stages/mulblob-wide-multiply-operands.xml",
+  "decompiler/crates/kuna-base/src/xml.rs",
+  "docs/spec/03-ssa-and-simplification.md",
+  "docs/options.md",
+  "docs/baseline-stages.json"
+ ],
+ "catalog_counts": {
+  "settables": 219,
+  "tiers": "68 core / 88 transform / 63 analysis",
+  "stage_corpus_files": 313,
+  "live_value_present_for": 88,
+  "catalog_rows": 218
+ },
+ "notes": "Upstream Ghidra prints the same undefined1 auVarN [16] blobs, so this is a deliberate readability divergence rather than a fidelity fix -- which is why it ships behind a named option even though the p-code is unchanged.",
+ "measured_on": "origin/main fe3abc23 (signedness #656, hideshadow #670, structsynth #655) + this change. The whole-corpus sweep, the p-code control, the variables[] A/B and the typesweep were each re-run after that rebase and reproduce the numbers measured at ba79503e exactly."
+}

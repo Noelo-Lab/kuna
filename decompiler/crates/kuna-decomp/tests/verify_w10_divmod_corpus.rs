@@ -243,6 +243,17 @@ fn render_corpus(dt: &DataTest) -> Result<String, String> {
 /// harness, so the oracle's `divu`/`divi`/`modu` names are not bound — a
 /// pre-existing symbol-naming gap, orthogonal to the divmod reconstruction).
 /// We therefore pin the full-statement reconstruction using the rendered LHS.
+///
+/// Sixteen of the seventeen unsigned divisors keep that recurring-LHS form.
+/// The seventeenth cannot in this harness, in either arm of any option: with no
+/// prototype bound the function keeps a return value, the last dividend is read
+/// by both the division and the return, and `ActionMarkExplicit` gives a
+/// multiply-used value its own name.  The signed sibling `divopti`, whose
+/// operands have never been structured, has always rendered it that way here,
+/// so the last divisor is pinned as that pair and checked against `divopti`'s
+/// identical statement below.  The corpus run itself
+/// (`tests/datatests/divopt.xml`, which does bind `void divoptu(uint8 *)`)
+/// pins `divu[16] = divu[16] / 125;` and is unaffected.
 #[test]
 fn w10_divmod_divopt_renders_exact_oracle_forms() {
     let path = repo_root().join("tests/datatests/divopt.xml");
@@ -258,7 +269,19 @@ fn w10_divmod_divopt_renders_exact_oracle_forms() {
         "*a0 = *a0 / 81;",       // Unsigned Division #1 (oracle: *divu = *divu / 81;)
         "a0[1] = a0[1] / 89;",   // Unsigned Division #2
         "a0[2] = a0[2] / 91;",   // Unsigned Division #3
-        "a0[16] = a0[16] / 125;",// Unsigned Division #17 (the LAST divisor)
+        "a0[3] = a0[3] / 93;",   // Unsigned Division #4
+        "a0[4] = a0[4] / 95;",   // Unsigned Division #5
+        "a0[5] = a0[5] / 97;",   // Unsigned Division #6
+        "a0[6] = a0[6] / 99;",   // Unsigned Division #7
+        "a0[7] = a0[7] / 101;",  // Unsigned Division #8
+        "a0[8] = a0[8] / 103;",  // Unsigned Division #9
+        "a0[9] = a0[9] / 107;",  // Unsigned Division #10
+        "a0[10] = a0[10] / 111;",// Unsigned Division #11
+        "a0[11] = a0[11] / 112;",// Unsigned Division #12
+        "a0[12] = a0[12] / 115;",// Unsigned Division #13
+        "a0[13] = a0[13] / 119;",// Unsigned Division #14
+        "a0[14] = a0[14] / 121;",// Unsigned Division #15
+        "a0[15] = a0[15] / 123;",// Unsigned Division #16
         "*a0 = *a0 % 81;",       // Unsigned Modulo #1
         "a0[16] = a0[16] % 125;",// Unsigned Modulo #17
     ];
@@ -273,6 +296,24 @@ fn w10_divmod_divopt_renders_exact_oracle_forms() {
         "divopt must render the full oracle div/mod statement shape (real \
          parity, recurring-LHS assignment, not a `/ 81` substring); missing: \
          {missing:?}\n--- rendered ---\n{rendered}"
+    );
+
+    // Unsigned Division #17, the one divisor whose dividend is also the return
+    // value here: the reconstruction is the same full assignment, over the name
+    // the dividend is given because it has two readers.
+    assert!(
+        rendered.contains("v1 = a0[16];") && rendered.contains("a0[16] = v1 / 125;"),
+        "the last unsigned divisor must reconstruct over the named dividend:\n{rendered}"
+    );
+
+    // ... and that pair is the harness's shape, not an unsigned-path artifact:
+    // `divopti` reaches it through INT_SEXT operands, which no rule has ever
+    // restructured, and renders the identical two statements.  Both functions
+    // are in `rendered`, so the pair must appear twice.
+    assert_eq!(
+        rendered.matches("a0[16] = v1 / 125;").count(),
+        2,
+        "the signed and unsigned last divisors must render the same statement:\n{rendered}"
     );
 
     // The raw reciprocal magic for /81 must be CONSUMED by the reconstruction

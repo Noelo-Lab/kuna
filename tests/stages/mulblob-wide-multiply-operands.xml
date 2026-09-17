@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    mulblob: a widened 64x64-&gt;128 multiply operand is a value, not a 16-byte
+    aggregate.
+
+    x86-64 `MUL r64` lowers (SLEIGH ia.sinc:4128) to
+        tmp:16 = zext(RAX) * zext(rm64); RDX = tmp(8); RAX = tmp(0)
+    A 16-byte Varnode has no primitive data-type, so the type factory hands it
+    the width fallback `undefined1[16]`, an array, and `Datatype::isPieceStructured`
+    accepts arrays.  `RulePieceStructure` (C++ ruleaction.cc:7488) therefore
+    rewrites each `INT_ZEXT` into a `PIECE` rooted at a partial-root Varnode, and
+    P6 gives that root its own declaration: two 16-byte locals per multiply site
+    whose entire content is the operand.  The signed sibling never had this -
+    `IMUL` lowers through `sext`, and `INT_SEXT` is not in RulePieceStructure's
+    op list - so kuna already prints `SUB168(SEXT816(x) * SEXT816(y),8)`.
+
+    Source (gcc -O2, x86-64), both halves of the product used:
+
+        uint64_t widemul(uint64_t a, uint64_t b, uint64_t *hi) {
+            unsigned __int128 p = (unsigned __int128)a * (unsigned __int128)b;
+            *hi = (uint64_t)(p >> 64);
+            return (uint64_t)p;
+        }
+
+    Body: endbr64 ; mov rax,rdi ; mov r8,rdx ; mul rsi ; mov [r8],rdx ; ret
+
+    Pass 1 (`option mulblob off`) reproduces the bug: two `char vN [16]` locals,
+    each filled in halves before a single SUB168 read (asserts #1/#2).
+    Pass 2 (default, `option mulblob on`) prints the multiply over the operands
+    themselves and declares nothing (asserts #3/#4/#5).
+
+    Stage model: P3 "simplification-quiescence".
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+f30f1efa4889f84989d048f7e6498910c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="widemul"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint8 widemul(uint8 a, uint8 b, uint8 *hi);</com>
+  <com>lo fu widemul</com>
+  <com>option mulblob off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option mulblob on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MULBLOB #1: mulblob off declares a 16-byte local per operand (the bug)" min="2" max="2">char v[12] \[16\];</stringmatch>
+<stringmatch name="MULBLOB #2: mulblob off fills each blob in halves before the product is read" min="1" max="1">v1\._8_8_ = 0;</stringmatch>
+<stringmatch name="MULBLOB #3: mulblob off reads the high half out of the blob product" min="1" max="1">SUB168\(v1\._0_16_ \* v2\._0_16_,8\)</stringmatch>
+<stringmatch name="MULBLOB #4: default prints the high half over the operands themselves" min="1" max="1">\*hi = SUB168\(ZEXT816\(a\) \* ZEXT816\(b\),8\);</stringmatch>
+<stringmatch name="MULBLOB #5: default prints the low half the same way, with no blob left" min="1" max="1">return SUB168\(ZEXT816\(a\) \* ZEXT816\(b\),0\);</stringmatch>
+</decompilertest>
