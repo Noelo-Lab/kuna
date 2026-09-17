@@ -148,16 +148,19 @@ was made dense).
   extension, each prune clause, the dense layout, the rounded size, the saved
   `int[2]` pair, and the plateau latch.
 - Counters, re-derived on the rebased tree (`counters --rederive`, no drift):
-  +1 settable (**214**), tier `transform` **83**, stages corpus **305**, catalog
-  rows 213, `source_decompiler: "angr"` **35**,
+  +1 settable (**216**), tier `transform` **85**, stages corpus **308**, catalog
+  rows 215, `source_decompiler: "angr"` **36**,
   `change_kind: "structure-recovery"` **31**, `change_kind: "opt-in-tool"` 21,
   `phase_catalog.json` recaptured, `docs/options.md` regenerated,
-  `docs/baseline-stages.json` re-recorded to **1070**.
+  `docs/baseline-stages.json` re-recorded to **1088**.
 - `tests/fixtures/list_action_decompile_oracle.txt` re-recorded (two consuming
   tests: `universalaction_listing.rs` and `verify_w8x_allowlist.rs`).
 
 ## 7. What this PR deliberately does not do
 
 Nesting (a field that is itself a synthesis base), recursion, subsumptive dedup,
-locals and globals (`structsynth all`), arrays (`structarray`), and printing the
-recovered definitions above the function (`structdefs`) are each their own change.
+locals and globals (`structsynth all`) and arrays (`structarray`) are each their
+own change. Printing the recovered definitions above the function is already its
+own option, `structdefs`, and the two compose: `--option structdefs on --option
+structsynth param` prints `struct struct_0 { ... };` above the function whose
+parameter this pass retyped.

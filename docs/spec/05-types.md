@@ -693,6 +693,14 @@ program-wide under `kuna decompile-all` and `kuna decompile-project`, which load
 once; `kuna decompile` spawns one engine per function, so there each function
 numbers from `struct_0` again.
 
+The synthesized layout is printable rather than only inferable: the P9 option
+[`structdefs`](../options.md) prints the definition of every composite a
+function's C names reach, so `--option structdefs on --option structsynth param`
+puts `struct struct_0 { ... };` — filler members and all — above the function
+whose parameter this pass retyped, and carries the same text in the per-function
+`types` array of `decompile-all --json`. Neither option is on by default, so the
+pair changes nothing unless both are asked for.
+
 **The default is `off`, and it is off on evidence.** Flipping it to `param` and
 re-running the corpora moves **no** datatest assertion (675/675) and four stage
 assertions, each of them the intended rendering — `ELFMAIN #1`/`#2`, where the

@@ -497,7 +497,8 @@
    "contended": "fmt O2 +0.68%, ls O2 -1.23%, inert control +5.00%, one function -0.86%",
    "load_20": "fmt O2 -0.06%, ls O2 +1.25%, inert control +0.66%, one function +2.84%"
   },
-  "reading": "the inert control moved +2.60% on this run, and every real case sits inside it in both directions. The design's predicted +8% for the forced extra mainloop iteration does not survive measurement in any run. Speed is NOT why this ships opt-in."
+  "reading": "the inert control moved +2.60% on this run, and every real case sits inside it in both directions. The design's predicted +8% for the forced extra mainloop iteration does not survive measurement in any run. Speed is NOT why this ships opt-in.",
+  "independent_remeasurement": "re-run at review, interleaved min-of-15 on the same instrument: fmt O0 +0.17% (median 1995.2 -> 1969.1 ms), du O2 +1.30% (10161.6 -> 10090.7), inert control grep O0 -1.64%; worst_delta_pct +1.30. Read the +1.34% as 'inside the instrument's own noise floor', not as a precise figure -- across four runs the INERT control alone moved -1.83%, +0.66%, +2.60% and +5.00%. The <= 5% budget passes by a wide margin in every run."
  },
  "project_export": {
   "claim": "`kuna decompile-project` already renders the synthesized layouts in its header, holes included",
@@ -572,7 +573,9 @@
   }
  },
  "interactions_checked": {
-  "libctypes": "merged as #651, default-on since #658, and in this branch's rebased base. fmt get_prefix @0x2f30 and get_line @0x3420 print `FILE *a0` and structsynth declines them; rpl_fseeko @0x42d0 and fmt @0x3700 likewise. The precedence is NOT inert on this corpus -- it is the whole difference between the 292-parameter census on the default and the 301-parameter census with `--option libctypes off`. The guard is also proven in the console: with `parse line struct WORDX {...}` + `map function 0x3000 putword`, structsynth param still prints w->length / w->text, not field_0x8 / field_0x0."
+  "libctypes": "merged as #651, default-on since #658, and in this branch's rebased base. fmt get_prefix @0x2f30 and get_line @0x3420 print `FILE *a0` and structsynth declines them; rpl_fseeko @0x42d0 and fmt @0x3700 likewise. The precedence is NOT inert on this corpus -- it is the whole difference between the 292-parameter census on the default and the 301-parameter census with `--option libctypes off`. The guard is also proven in the console: with `parse line struct WORDX {...}` + `map function 0x3000 putword`, structsynth param still prints w->length / w->text, not field_0x8 / field_0x0.",
+  "structdefs": "merged as #661 (P9, default off) and in this branch's base. The two compose and the combination is the intended one: `kuna decompile-all /tmp/w --addr 0x11c0 --option structdefs on --option structsynth param` prints `struct struct_0 { long field_0x0; int field_0x8; char field_0xc[4]; };` above `void sub_11c0(struct_0 *a0)`, filler member included, and the same run on coreutils fmt O2 put_word @0x3000 prints `{ unsigned char *field_0x0; unsigned int field_0x8; char field_0xc[4]; }`. Under `--json` that definition also reaches the per-function `types` array #661 added (`{\"name\": \"struct_0\", \"definition\": ..., \"size\": 16}`). Neither option is on by default, so there is no default interaction; with structsynth off, structdefs prints the same preamble it prints on main (`typedef struct FILE FILE; /* opaque */`) and the body keeps `long *a0` / `a0[1]`.",
+  "indirectonly": "merged as #663 (P6, default off). No interaction measured or expected: it marks INDIRECT-only inputs for naming/merging and does not touch the type lattice. Both arms off is the default, and the off-arm identity control above is byte-identical against a build that contains it."
  },
  "default_decision": {
   "verdict": "default OFF (opt-in), and NOT in AGGRESSIVE_OVERRIDES",
@@ -583,9 +586,10 @@
    "verdict": "PASS"
   },
   "accuracy": {
-   "criterion": "444-slice perfect >= off - 0.1% (>= 958.04)",
+   "criterion": "444-slice perfect >= off - 0.1% (>= 958.04); the aggregate reading of the same rule is >= 3034.01",
    "measured": "959 -> 958 = -0.104% (aggregate 3037.05 -> 3035.55 = -0.049%)",
-   "verdict": "FAIL, by four-hundredths of a function"
+   "verdict": "FAIL on the perfect count, by four-hundredths of a function. Stated plainly because it is that close: read against the perfect COUNT the flip is -0.104% and fails; read against the AGGREGATE it is -0.049% and passes. The decision does not turn on this criterion -- the bug hunk fails independently and decisively.",
+   "independent_remeasurement": "reproduced exactly at review on a 300-slice subset (coreutils+grep+gzip x O0/O2/O2-noinline, 7,037 functions): perfect 717 -> 716, aggregate 2020.10 -> 2018.60, the same seven moved rows byte-for-byte, controls clean."
   },
   "corpora_under_the_flip": {
    "criterion": "0/675 datatests, stage moves intended and stages-only",
@@ -602,27 +606,34 @@
  },
  "gates": {
   "make test": "675/675 assertions passed, PARITY OK (and 675/675 PARITY OK with the default temporarily flipped to param)",
-  "make test-stages": "1070/1070 assertions passed, PARITY OK (1066/1070 with the default temporarily flipped: ELFMAIN #1/#2, PEBNAMES-X86 #6/#8)",
-  "make test-cli": "178/178 passed",
+  "make test-stages": "1088/1088 assertions passed, PARITY OK (with the default temporarily flipped, four assertions move: ELFMAIN #1/#2, PEBNAMES-X86 #6/#8)",
+  "make test-cli": "183/183 passed",
   "make check-spec": "OK (lenient) + OK (strict)",
   "kuna catalog --check": "OK",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
-  "docs/options.md": "regenerated from the built binary"
+  "docs/options.md": "regenerated from the built binary; byte-identical to the checked-in file",
+  "make rust-test": "see `rust_test` below"
  },
  "counters": {
-  "settables": 214,
+  "settables": 216,
   "tier_tuple": [
    68,
-   83,
+   85,
    63
   ],
-  "corpus_files": 305,
-  "catalog_rows": 213,
-  "bucket_angr": 35,
+  "corpus_files": 308,
+  "catalog_rows": 215,
+  "bucket_angr": 36,
   "bucket_structure_recovery": 31,
   "bucket_opt_in_tool": 21,
-  "baseline_stages": 1070,
-  "note": "re-derived with `scripts.repipe.counters --rederive` on the rebased, freshly built tree"
+  "baseline_stages": 1088,
+  "note": "re-derived with `scripts.repipe.counters --rederive` on the tree rebased onto 0d79b02d and freshly built; `--fix` wrote every site and `--check` then reports no drift"
  },
- "rebase": "origin/main 520443d7 -- includes #654 foldcallretphi, #659 ptrfromuse (default off), #658 libctypes default-on, #653 the instruments, #646 the campaign ledger. list_action_decompile_oracle.txt 283 -> 284 lines with `structsynth` at 0032, immediately after `infertypes`."
+ "rebase": "origin/main 0d79b02d -- on top of 520443d7 it adds #661 structdefs (P9, default off) and #663 indirectonly (P6, default off); the base itself already carried #654 foldcallretphi, #659 ptrfromuse, #658 libctypes default-on, #653 the instruments and #646 the campaign ledger. Six counter/baseline sites collided and every one was resolved by RE-DERIVATION on the freshly built tree, never by arithmetic: `counters --rederive`/`--fix`, phase_catalog.json re-captured with the console recipe, docs/options.md regenerated from the rebuilt binary, docs/baseline-stages.json re-recorded with SLEIGHHOME set. list_action_decompile_oracle.txt is still 283 -> 284 lines with `structsynth` at 0032 immediately after `infertypes` (the diff against origin/main with the line-number prefix stripped is exactly `32a33 > structsynth`), and verify_w8_fw_universalaction.rs is still base + 1 (282 -> 283): neither merged PR added a universal action.",
+ "off_arm_identity": {
+  "why": "the base moved to a commit that changes the P9 emit path (#661 structdefs) and the decompile-all --json shape, so the default-off arm has to be re-proved identical on the NEW base",
+  "method": "whole-binary `kuna decompile-all` text, this branch's release build at its defaults vs a release build of origin/main 0d79b02d in a detached control worktree",
+  "result": "byte-identical on all 8 binaries: O2 coreutils fmt 92508 / ls 320978 / sort 265348 / du 256676, O0 coreutils fmt 69725 / sort 234551, O2 grep 453132, O0 gzip 167019",
+  "json": "`decompile-all --json` on fmt O2 is byte-identical too (594801 bytes), so the per-function `types` array #661 added is unmoved at the default"
+ }
 }
