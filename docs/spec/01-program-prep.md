@@ -1413,9 +1413,11 @@ moves.
   address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
   typed even when a same-spelled export suppresses the global key; the export
   itself remains untouched.
-- **(kuna) Named libc aggregate types** (`libctypes`, values `off|opaque`,
+- **(kuna) Named libc aggregate types** (`libctypes`, values `off|opaque|glibc`,
   default opaque,
-  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs (LibcTypesPass)`):
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs (LibcTypesPass)`,
+  layouts in
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes/glibc.rs`):
   the two tables above share one type vocabulary, and that vocabulary is
   width-stable by construction, so every aggregate pointer in them is spelled
   `void *`. `fopen` returns one, `fclose` takes one, `stat` fills one,
@@ -1432,7 +1434,7 @@ moves.
   nothing else in the body says what the stream argument is, so that one
   declaration is the whole evidence for the enclosing function's first parameter.
 
-  Four decisions shape the pass.
+  Five decisions shape the pass.
 
   *The retarget is enumerated slot by slot, never applied in bulk.* The last
   `void *` of `vasprintf`, `vsnprintf`, `__vasprintf_chk`, `__vfprintf_chk`,
@@ -1526,6 +1528,50 @@ moves.
   `--define-function 0x…=fopen` agrees with what the pass parks on an imported
   `fopen`.
 
+  *`glibc` fills in the layouts the platform publishes.* A sized, fieldless
+  shell keeps the arithmetic seam honest and says nothing about what is at an
+  offset: the refill body of an inlined `getc` reads `f->field_0x8`, and the
+  value it loads is `unsigned char *` only because the cast that used to be
+  there said so. The third value installs the real x86-64 members of the nine
+  aggregates whose layout glibc publishes in an installed header and an
+  application is meant to read — `FILE`, `stat`, `timespec`, `timeval`, `tm`,
+  `passwd`, `group`, `option`, `dirent` — so the same access is
+  `f->_IO_read_ptr`, a `stat` buffer reads `st->st_size`, and the loaded value
+  takes the FIELD's type. That last part is what carries: `st_size` is a signed
+  `long`, so a wrapper that returns `-1` on failure stops printing its sentinel
+  as `0xffffffffffffffff`. `DIR`, `sigaction`, `sigset_t`, `mbstate_t`,
+  `termios`, `sockaddr` and `pthread_mutex_t` stay opaque under `glibc` too:
+  glibc publishes no layout for `DIR` at all, and the rest are reserved words no
+  caller reads by name.
+
+  A field name is a claim about what is at an offset, so `glibc` makes it only
+  where the claim is checkable. The pass installs a layout only when the image is
+  an ELF for x86-64 whose dynamic string table names glibc — the `libc.so.6`
+  soname, or a `GLIBC_2.x` symbol version, which is where `.gnu.version_r`'s
+  version names live. musl, another libc, another architecture and a statically
+  linked image all fall back to the `opaque` shells, and for a static image that
+  costs nothing, because these tables are matched against IMPORTED names only and
+  a static image has no named aggregate to lay out. Where the platform's own
+  debug info already describes the aggregate, the adoption rule above still
+  decides: a held definition of the declared width is taken whole and no
+  published layout is installed over it.
+
+  Two constraints shape the tables themselves. No field is spelled as a pointer
+  to the aggregate being filled — `_IO_FILE::_chain` and `_IO_FILE::_freeres_list`
+  are `void *` here — because completing a struct re-keys it into a new object,
+  so a self-pointer taken while the shell is being filled would strand the
+  program on two stream types; nothing reads `_chain`, and the alternative is a
+  split type. And nesting is one level deep: `stat` holds three `timespec`s by
+  value and `timespec` holds no aggregate, which is what makes the recursive mint
+  terminate by construction rather than by a depth counter, and what keeps
+  `dependent_order`'s definition-before-use walk finite. Both are unit-tested
+  properties of the tables, not conventions.
+
+  Every offset, width and alignment in those tables was measured against the
+  installed headers with `offsetof`/`sizeof`/`_Alignof`, not restated from
+  memory; the program and its output are recorded in
+  `docs/features/libctypes/glibc.md`.
+
   The default is `opaque`. No datatest loads a file, so the 675 assertions
   cannot see this tier either way; the stage corpus can, and
   `tests/stages/kuna-libctypes.xml` pins the row in both arms. The evidence for
@@ -1544,7 +1590,11 @@ moves.
   off` restores the shipped `void *` tables byte for byte, which is the ablation
   to reach for when a pointee name is in question; the cost the default carries
   is in `decompile-project`, whose exported `.c` reads fields out of a shell its
-  `.h` declares incomplete (the `.h` is unaffected).
+  `.h` declares incomplete (the `.h` is unaffected). `glibc` is measured the same
+  way against `opaque`, and its own sweep is in `docs/features/libctypes/glibc.md`:
+  across eight whole binaries it turns 483 `field_0x<hex>` accesses into 1 (a
+  padding hole inside a copied `struct tm`), leaves the functional `PTRSUB(` form
+  absent, and moves the declaration count by 11 in 27,196.
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.
