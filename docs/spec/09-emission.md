@@ -700,9 +700,7 @@ reachable from its *printed* (explicit) members and folds them into one verdict:
 is a demand for the type it casts to. `INT_LEFT` (operand 0) also pulls unsigned,
 and it is the one entry in that list which is a stated **preference rather than a
 soundness requirement**: `a << k` shifts the same bits into the same places under
-either declaration, and `INT_LEFT` takes the *default* `getInputCast` arm
-(`care_uint_int = false`), so it is not part of what makes a flip
-meaning-preserving. The rule is kept because a value the body ORs and shifts left
+either declaration, so it is not part of what makes a flip meaning-preserving. The rule is kept because a value the body ORs and shifts left
 is a bit buffer, which C source spells unsigned, and because a signed `<<` is the
 one otherwise-neutral operator `-fsanitize=undefined` reports; it is not kept
 because `negative << k` is undefined, an argument that does not separate `<<`
@@ -723,16 +721,26 @@ inference pass, no cast decision, and no prototype or symbol type — so the
 `variables` JSON surface and every recovered signature are byte-identical, and
 so is the whole output under the default `upstream`.
 
-Soundness rests on the demand set being exactly the C constructs whose meaning
-depends on an operand's signedness, which is the same set kuna's own cast
-strategy singles out: those ops, and only those, pass `care_uint_int = true` to
-`CastStrategyC::cast_standard`
-(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs
-(get_input_cast)`). Everything the pass lets through besides them is
+Soundness rests on the demand set covering every C construct whose meaning
+depends on an operand's signedness — which is to say, on the *neutral* list being
+signedness-independent. Everything the pass lets through is
 signedness-independent at a fixed width — `+ - * & | ^ == !=`, unary `~` and
 `-`, an assignment, a call argument, a `return`, a stored value, a truncation or
 a concatenation — because two's-complement arithmetic and a same-width
 conversion produce identical bits either way.
+
+kuna's own cast strategy draws the same line, which corroborates the split
+without proving it. The ordered comparisons, `/ %`, `>>` and the two extensions
+pass `care_uint_int = true` to `CastStrategyC::cast_standard`
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs
+(get_input_cast)`), and every op on the neutral list above passes `false` or
+takes no cast at all. The demand set is a strict **superset** of that
+`care_uint_int = true` set: `INT_SCARRY`, `INT_SBORROW`, `INT_CARRY`,
+`CPUI_CAST` and `INT_LEFT` all fall through to the dispatch's default arm, which
+passes `care_uint_int = false`. Demanding on them anyway is an
+over-constraint, not a gap — a carry intrinsic names its own signedness and a
+same-width cast prints a token that establishes the type — and only ever
+declines a flip that might otherwise have been made.
 
 "At a fixed width" is a precondition of that list, not a turn of phrase, and it
 is the third rule. C's integer promotions convert every operand narrower than
@@ -773,7 +781,17 @@ variable outright — a `LOAD` or `STORE` address, a `PTRADD`/`PTRSUB` index
 cast is inserted), any `FLOAT_*` operation, an indirect branch, a type-locked
 member, and a `CPUI_CAST` whose target is anything but a plain integer of the
 same width (a pointer, a float, a `char`, an enum, a typedef, a different
-width). When a high does flip, each `CPUI_CAST` on it whose target is the very
+width). A flip is written only for a high that **owns its declaration line**. The
+printer's candidate list is filtered to sole-named entries before any collapse
+runs (`retain_sole_named`), because every collapse that follows — the
+composite-Symbol retain, `collapse_symbol_decls`, `DeclDedup` and the
+`local_name_aliases` group suppression — pairs two candidates rendering the same
+name. Without that filter a flip on one high of such a group could move the
+collapse's own key, splitting a declaration that used to collapse, or re-sign
+the single line a *non*-flipped sibling's uses read through; with it, which
+declarations exist is exactly what it was under `upstream`.
+
+When a high does flip, each `CPUI_CAST` on it whose target is the very
 type now declared is a no-op token and is dropped, which is the visible half of
 the change: `if (0 <= (int)v1)` becomes `if (0 <= v1)`. The drop is authorized
 only by the declaration the emitter actually wrote, so a mapped-symbol, array or

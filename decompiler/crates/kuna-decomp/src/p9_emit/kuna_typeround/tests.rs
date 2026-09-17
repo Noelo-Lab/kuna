@@ -171,3 +171,24 @@ fn a_definition_votes_but_never_vetoes() {
     assert_eq!(def_evidence(CPUI_LOAD), Evidence::None);
     assert_eq!(def_evidence(CPUI_PTRADD), Evidence::None);
 }
+
+#[test]
+fn only_a_sole_named_declaration_keeps_its_flip() {
+    let int4 = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+    let mut plan = SignPlan::default();
+    for id in 1..=4u32 {
+        plan.decls.insert(HighVariableId(id), Rc::clone(&int4));
+    }
+    // v1 is declared once; v2 is declared by two highs (a group about to collapse
+    // onto one line); high 4 never reaches the candidate list at all (a signature
+    // parameter, or a piece suppressed before the collapses run).
+    plan.retain_sole_named([
+        (HighVariableId(1), "v1"),
+        (HighVariableId(2), "v2"),
+        (HighVariableId(3), "v2"),
+    ]);
+    assert!(plan.decl_type(HighVariableId(1)).is_some());
+    assert!(plan.decl_type(HighVariableId(2)).is_none());
+    assert!(plan.decl_type(HighVariableId(3)).is_none());
+    assert!(plan.decl_type(HighVariableId(4)).is_none());
+}

@@ -57,10 +57,22 @@ signedness-sensitive reader of the value agrees, where "signedness-sensitive" is
 the whitelist enumerated in the module header and in `docs/spec/09-emission.md`,
 the walk follows implied (inlined) results so a change of C type cannot escape
 into a surrounding expression, and any unclassified reader vetoes the variable
-outright. The whitelist is exactly the ops kuna's own cast strategy coerces with
-`care_uint_int = true`, which is upstream's own statement of where signedness
-carries meaning — plus `INT_LEFT`, which is a stated preference and is discussed
-in the open-design list below.
+outright. What the rule rests on is the *neutral* half of that split: `+ - * & |
+^ == !=`, unary `~` and `-`, an assignment, a call argument, a `return`, a
+stored value, a truncation and a concatenation all produce the same bits under
+either declaration at a fixed width.
+
+kuna's own cast strategy draws the same line, which corroborates the split but
+does not prove it, and the earlier drafts of this section overstated the
+relationship. The ordered comparisons, `/ %`, `>>` and the two extensions pass
+`care_uint_int = true` to `CastStrategyC::cast_standard`; the whitelist is a
+strict **superset** of those, because `INT_SCARRY`/`INT_SBORROW`/`INT_CARRY`, a
+same-width `CPUI_CAST` and `INT_LEFT` all take the default `get_input_cast` arm,
+which passes `care_uint_int = false`. Demanding on the first two anyway is an
+over-constraint rather than a gap — a carry intrinsic names its own signedness
+and a cast token establishes the type it prints — and it can only ever decline a
+flip. `INT_LEFT` is a stated preference and is discussed in the open-design list
+below.
 
 Two things the rule has to survive that the first drafts did not:
 
@@ -182,8 +194,7 @@ proposed as witnesses in the design note:
   41 checkable flips right; `-O2` 71.9% → 69.6%). Shipping
   `upstream|auto|prefer-signed` is a small change if the answer is no.
 * **`INT_LEFT` operand 0 is an unsigned demand, and it is a preference, not a
-  soundness rule.** `a << k` shifts the same bits either way, and `INT_LEFT`
-  takes the *default* `getInputCast` arm (`care_uint_int = false`), so it is not
+  soundness rule.** `a << k` shifts the same bits either way, so it is not
   part of what makes a flip meaning-preserving. The earlier justification — "`<<`
   on a negative value is UB" — does not separate it from `+ - *`, whose signed
   overflow is UB on the same footing and which are neutral here; that argument is

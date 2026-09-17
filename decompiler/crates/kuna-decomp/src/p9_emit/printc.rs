@@ -2986,6 +2986,13 @@ impl PrintC {
             }
             decls.push((high, name));
         }
+        // (kuna `signedness`) A rounded declaration is only written for a high
+        // that owns its declaration line.  Every collapse below pairs two
+        // candidates that render the same NAME, so restricting the plan to
+        // sole-named candidates keeps a flip from moving a collapse key or
+        // re-signing a line a non-flipped sibling reads through.
+        self.sign_plan
+            .retain_sole_named(decls.iter().map(|(h, n)| (*h, n.as_str())));
         // C++ `emitScopeVarDecls` walks the ScopeLocal *Symbol* table and emits
         // exactly one declaration per multi-entry Symbol (the `getFirstWholeMap()`
         // entry; printc.cc:2696).  The kuna printer instead walks HighVariables and

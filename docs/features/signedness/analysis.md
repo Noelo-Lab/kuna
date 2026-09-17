@@ -62,14 +62,26 @@ wrong-output case is the opposite one: an operation whose C semantics depend on
 the declared signedness and for which **no cast was emitted**, because the
 Varnode type already agreed.
 
-The signedness-sensitive C constructs are enumerable, and kuna's own cast
-strategy already enumerates them: `care_uint_int = true` is passed by exactly
+The signedness-sensitive C constructs are enumerable, and the soundness basis is
+the *neutral* half of that enumeration: `+ - * & | ^ == !=`, unary `~` and `-`,
+an assignment, a call argument, a `return`, a stored value, a truncation and a
+concatenation all produce the same bits under either declaration at a fixed
+width, so a flip is written only when every op that is not on that list agrees.
+
+kuna's own cast strategy draws the line in the same place, which corroborates the
+split rather than establishing it. `care_uint_int = true` is passed by exactly
 `INT_SLESS`/`INT_SLESSEQUAL`, `INT_LESS`/`INT_LESSEQUAL`, `INT_SDIV`/`INT_SREM`,
 `INT_DIV`/`INT_REM`, `INT_SRIGHT`/`INT_RIGHT` and `INT_ZEXT`/`INT_SEXT`
-(`p9_emit/coreaction_casts.rs (get_input_cast)`); every other op is coerced with
-`care_uint_int = false`, i.e. upstream itself treats `int` and `uint` of one
-width as interchangeable there (the one addition is `INT_LEFT`, below). That is
-the soundness basis: flip only when every one of those demands agrees.
+(`p9_emit/coreaction_casts.rs (get_input_cast)`); every op on the neutral list
+above is coerced with `care_uint_int = false`, i.e. upstream itself treats `int`
+and `uint` of one width as interchangeable there. The demand set is a strict
+**superset** of that `care_uint_int = true` set — it also demands on
+`INT_SCARRY`/`INT_SBORROW`/`INT_CARRY` and on a same-width `CPUI_CAST`, both of
+which take the default `get_input_cast` arm (`care_uint_int = false`), and on
+`INT_LEFT` (below). The first two are over-constraints, not gaps: a carry
+intrinsic names its own signedness and a cast token establishes the type it
+prints, so demanding on them can only decline a flip that upstream's own rule
+would have allowed.
 
 Three refinements were needed on top:
 
@@ -111,8 +123,7 @@ Three refinements were needed on top:
 `INT_LEFT` is on the demand side, and it is the one row there that is a
 **preference rather than a soundness requirement** — the module header says so
 too. `a << k` shifts the same bits into the same places under either
-declaration, and `INT_LEFT` takes the *default* `getInputCast` arm
-(`care_uint_int = false`), so it is not part of the set that makes a flip
+declaration, so it is not part of the set that makes a flip
 meaning-preserving. An earlier revision justified the row with "shifting a
 negative value left is undefined in C"; that does not hold up, because signed
 overflow of `+ - *` is undefined on exactly the same footing and those are

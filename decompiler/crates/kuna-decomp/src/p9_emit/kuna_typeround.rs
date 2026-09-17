@@ -57,15 +57,24 @@
 //! | a `(T)` cast | `CPUI_CAST` | the cast's own metatype, and only to a plain integer of the same width |
 //! | `<<` (operand 0) | `INT_LEFT` | unsigned - a *preference*, see below |
 //!
-//! Every row but the last is an op whose `getInputCast` passes
-//! `care_uint_int = true` in `p9_emit/coreaction_casts.rs`: the set kuna's own
-//! cast machinery already treats as signedness-carrying, and the reason a flip
-//! can never silently change what an expression means.
+//! **How this relates to `care_uint_int`.**  Seven of those rows - the four
+//! ordered comparisons, `/ %`, `>>` and the two extensions - are ops whose
+//! `getInputCast` passes `care_uint_int = true` in `p9_emit/coreaction_casts.rs`,
+//! which is upstream's own statement that `int` and `uint` differ there.  The
+//! other three do not: `INT_SCARRY`/`INT_SBORROW`/`INT_CARRY`, `CPUI_CAST` and
+//! `INT_LEFT` all fall through to that dispatch's default arm, which passes
+//! `care_uint_int = false`.  So the demand set is a strict **superset** of the
+//! `care_uint_int = true` set, and the two extra demands are safe
+//! over-constraints rather than gaps: a carry intrinsic spells its own
+//! signedness in its name (`SCARRY` is not `CARRY`), and a same-width
+//! `CPUI_CAST` prints a token that establishes the type it casts to.  What
+//! soundness actually rests on is the *neutral* list below being
+//! signedness-independent at a fixed width; `care_uint_int` corroborates where
+//! upstream draws the same line, it does not prove it.
 //!
-//! **`<<` is the exception, and it is a preference, not a soundness rule.**
-//! `INT_LEFT` takes the *default* `getInputCast` arm (`care_uint_int = false`),
-//! and rightly so: `a << k` shifts the same bits into the same places under
-//! either declaration.  An earlier revision justified the row by "shifting a
+//! **`<<` is the third of those rows, and it is a preference, not a soundness
+//! rule.** `a << k` shifts the same bits into the same places under either
+//! declaration.  An earlier revision justified the row by "shifting a
 //! negative value left is undefined in C", which does not hold up - signed
 //! overflow of `+ - *` is undefined on exactly the same footing and those are
 //! neutral here, and kuna's C models the arithmetic the binary performs rather
@@ -105,10 +114,10 @@
 //! `tests/stages/kuna-signedness-int16.xml` pins it on a target whose own `int`
 //! is 2 bytes.)
 //!
-//! At and above the promotion width the neutral list matches kuna's own cast
-//! strategy: the demanding ops are precisely the ones whose `getInputCast` passes
-//! `care_uint_int = true` (`p9_emit/coreaction_casts.rs`), i.e. the ones upstream
-//! itself considers signedness-carrying.  A width change between two integers is
+//! At and above the promotion width the neutral list is where the argument is
+//! made: each entry produces the same bits under either declaration, and every
+//! op upstream's own cast strategy coerces with `care_uint_int = true` is on the
+//! demanding side of the split rather than this one.  A width change between two integers is
 //! an explicit `INT_SEXT`/`INT_ZEXT` in p-code, so a mixed-width expression is
 //! constrained by the extension op rather than slipping through as neutral.
 //!
@@ -285,6 +294,44 @@ impl SignPlan {
         self.applied.insert(high, ty);
     }
 
+    /// Drop every planned flip whose high will not own a declaration line of its
+    /// own, leaving only the highs the printer declares *solely*.
+    ///
+    /// `decls` is the printer's candidate list, as built before any collapse runs:
+    /// a high that is not on it is not declared here at all (a signature
+    /// parameter, a partial piece of a mapped scalar), and a high whose name
+    /// repeats on it is about to share a declaration line with another high.
+    /// Every collapse the printer runs afterwards - the composite-Symbol retain,
+    /// `collapse_symbol_decls`, `DeclDedup` and the `local_name_aliases` group
+    /// suppression - pairs two entries that render the SAME NAME, so a sole-named
+    /// entry can neither be suppressed by one nor absorb a sibling into its line.
+    ///
+    /// Without this, a flip on one high of such a group would move the collapse's
+    /// key (splitting a declaration that used to collapse) or re-sign the single
+    /// line a *non*-flipped sibling's uses read through - a declaration change
+    /// with no evidence behind it.  [`Self::record_applied`] already keeps the
+    /// cast drop honest in those cases; the declaration line itself is guarded
+    /// here.
+    pub fn retain_sole_named<'a>(
+        &mut self,
+        decls: impl IntoIterator<Item = (HighVariableId, &'a str)>,
+    ) {
+        if self.decls.is_empty() {
+            return;
+        }
+        let mut name_of: HashMap<HighVariableId, &'a str> = HashMap::new();
+        let mut repeats: HashMap<&'a str, u32> = HashMap::new();
+        for (high, name) in decls {
+            name_of.insert(high, name);
+            *repeats.entry(name).or_default() += 1;
+        }
+        self.decls.retain(|high, _| {
+            name_of
+                .get(high)
+                .is_some_and(|name| repeats.get(name).copied().unwrap_or(0) == 1)
+        });
+    }
+
     /// Clear the plan between documents.
     pub fn clear(&mut self) {
         self.decls.clear();
@@ -366,9 +413,11 @@ enum ReaderClass {
 /// Classify one reader of the value at input `slot`.
 ///
 /// The demanding set is the C constructs whose *meaning* changes with the
-/// operand's signedness - the ops whose `getInputCast` passes
-/// `care_uint_int = true` in `p9_emit/coreaction_casts.rs` - plus `INT_LEFT`,
-/// which is a stated preference rather than a requirement (module header).
+/// operand's signedness.  It contains every op whose `getInputCast` passes
+/// `care_uint_int = true` in `p9_emit/coreaction_casts.rs` and three that take
+/// that dispatch's default (`care_uint_int = false`) arm: the carry intrinsics
+/// and a same-width `CPUI_CAST`, which are safe over-constraints, and
+/// `INT_LEFT`, which is a stated preference (module header).
 /// Everything not named here is `Veto`: a pointer index, a dereference, a float
 /// conversion and an indirect branch all read the value in a way this pass does
 /// not model.
