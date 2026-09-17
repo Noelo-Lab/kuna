@@ -88,7 +88,7 @@
     "make test-cli": "178/178 passed",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
-    "make rust-test": "pending"
+    "make rust-test": "green (415 test binaries, 0 failures; the first run's single failure was the aggressive-preset list test, fixed by the UNEVALUATED entry)"
   },
   "catalog_counts": {
     "settables": "209 -> 210",
