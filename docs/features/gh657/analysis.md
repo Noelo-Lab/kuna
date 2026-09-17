@@ -73,15 +73,39 @@ not reorderings:
   guard declines 233 further functions over the 16-binary sweep (all consumers),
   and `ghidra_sim_faillog_pins`' flattened-C line counts move by +4/+5.
 
-The INDIRECT half of the predicate is **not** widened. It keeps the span it has
-always had, from the call to its single use, for a measured reason: widening it
-lifts declines as often as it adds them, because a collapsed INDIRECT of the call
-itself reads that call's effect by construction. Exempting the self-copy from it
-as well makes `kuna-elfmain`'s `sub_1357(a1[1])` fold where it did not before —
-a *new* fold, which a correctness fix has no business adding.
-`foldcallretphi`, which measured five declines on the landing statement, keeps
-that clause of its own (`landing_reads_call_effect`), so its behaviour is
-unchanged.
+The INDIRECT half of the predicate is **not** widened for the default fold. It
+keeps the span it has always had, from the call to its single use, for a measured
+reason: asking it past the use changes 31 functions across `grep` O0, `tar` O0
+and `ssh` O2 and de-folds 27 of them, correcting none. The shape that dominates
+is `dat_33798 = *__errno_location();` (`grep` O0 `sub_6c53`), and the binary
+there is `call 4890 / mov (%rax),%eax / mov %eax,0x33798` — one call, one load,
+one store, in exactly the order the folded text prints. Exempting the self-copy
+from it as well makes `kuna-elfmain`'s `sub_1357(a1[1])` fold where it did not
+before — a *new* fold, which a correctness fix has no business adding.
+
+## What this got wrong first: `foldcallretphi`
+
+That span *is* `foldcallretphi`'s, and moving #654's machinery into
+`kuna_callretfold.rs` narrowed it to the landing statement alone. That widened
+the option rather than leaving it alone: with `--option foldcallretphi on` it
+then folded two calls it used to decline and recovered none.
+
+* `ssh` O2 `sub_4fd30` printed `sub_3fa80(v2,v3)` after `v5 = v2`, a copy of the
+  escaped stack slot at `0x8(%rsp)` whose address went to `sub_4f830`. The
+  binary is `4fe85 mov 0x8(%rsp),%rdi / 4fe93 call 3fa80 / 4fe98 mov
+  0x8(%rsp),%rdi / 4fe9f je 4fe4e`: the value reaching the taken branch is the
+  **post**-call load at `0x4fe98`, which is GH-181's shape.
+* `tar` O0 `sub_67494` folded three `tolower` calls into a store whose base is an
+  address-tied slot the call carries an INDIRECT over.
+
+`landing_span_reads_call_effect` asks the question over the whole span again,
+landing statement included, as #654 did. The phi-delta set — the functions where
+`foldcallretphi on` differs from `off` — is then identical to `origin/main`'s:
+68 on `ssh` O2 and 120 on `tar` O0, the same addresses (69 and 121 without the
+clause, the extras being exactly those two). Default output is byte-identical
+with the clause and without it on `ssh` O2, `tar` O0, `grep` O0 and `fmt` O2;
+the clause is reachable only from `conflict_is_self_call_effect`, which
+`check_implied_cover` calls only when the option is on.
 
 ## Witnesses
 
@@ -123,6 +147,7 @@ diffutils `diff`, bzip2, findutils `find`, plus the four ELFs in
 | `defold-dedup` | 7 |
 | `OTHER-same-calls` | 4 — read by hand, all de-folds the counter missed because the old text already bound the call to something (`v7[2] = sub_1ef10(0x40) + 0x40;`) |
 | `FLAG-call-gained-or-vanished` | **0** |
+| functions that *gain* a fold | 1 (`grep` O2 `0x6a70`, counted twice because `grep` appears as both a decbench and an in-tree ELF) |
 | call tokens | 29228 → 29221 (−7, exactly the seven duplicated emissions) |
 | emitted lines | 187182 → 187277 (+95) |
 
