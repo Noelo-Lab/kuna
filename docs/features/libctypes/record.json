@@ -783,6 +783,16 @@
    "worst_delta_pct": 1.64,
    "budget_pct": 5.0,
    "within_budget": true
+  },
+  "gates": {
+   "make test": "datatests: 675/675 assertions passed -- PARITY OK (and 0 of 83 datatests contain `load file`, so the corpus is structurally blind to this tier)",
+   "make test-stages": "datatests: 1038/1038 assertions passed -- PARITY OK; a --save-baseline re-record is byte-identical to docs/baseline-stages.json (100,769 bytes), so no assertion moved and no re-record was needed",
+   "make test-cli": "tests/cli: 178/178 passed",
+   "make check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
+   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+   "docs/options.md": "byte-fresh (`kuna catalog --markdown | diff - docs/options.md` clean)",
+   "make rust-test": "RUST_TEST_RC=0 via the lane script on the branch tip (LANE: start 2026-09-17T04:17:45Z, done rc=0 04:33:07Z): 415 `test result: ok` blocks, 0 `test result: FAILED`. The first round found the two expectations this PR moves (catalog_bytecompat's phase_catalog.json capture, ghidra_sim_faillog_pins' C-line count); both are fixed in this branch and the round-2 run is clean."
   }
  },
  "speed_flip": {
