@@ -1616,18 +1616,28 @@ moves.
   is in `decompile-project`, whose exported `.c` reads fields out of a shell its
   `.h` declares incomplete (the `.h` is unaffected). `glibc` is measured the same
   way against `opaque`, and its own sweep is in `docs/features/libctypes/glibc.md`:
-  across sixteen whole binaries it turns 651 `field_0x<hex>` accesses into 9,
-  leaves the functional `PTRSUB(` form absent, and moves the declaration count by
-  6 in 37,737. Two things that sweep is NOT evidence for are recorded there with
-  their counterexamples. A sized pointee makes an index respell an offset, and
-  where the named aggregate is only one member of a larger struct the respelling
-  is a confident mis-name — six of the ten indexed member accesses in the corpus,
-  e2fsprogs `init_resource_track` giving `brk_start` the name `tv_sec`. And the
-  by-value local count moves in both directions under one net figure: shadow
-  `useradd` `main` loses a recovered 144-byte `stat` stack symbol into a
-  `char[128]`, on the `variables[]` surface the type metric scores, and scores
-  identically in both arms — so a flat sweep means nothing regressed *that the
-  metric scores*, which is not the same claim.
+  across twenty-six whole binaries it turns 792 `field_0x<hex>` accesses into 28
+  and 2,946 piece reads into 2,429, and moves the stack declaration count by 10
+  in 14,487. Four things that sweep is NOT evidence for are recorded there with
+  their counterexamples. The functional `PTRSUB(` form is **not** absent under
+  `glibc`: giving `FILE` a member at offset 0 makes a `PTRSUB(p,0)` matching where
+  the fieldless shell let `RulePtrsubUndo` remove it, and the printer falls back
+  to the functional spelling rather than `&p->_flags` — two sites in one libselinux
+  function. That fallback is not new; it is what the engine already does for a
+  DWARF-complete struct, and `glibc` only reaches it on a stripped image. A sized
+  pointee makes an index respell an offset, and where the named aggregate is only
+  one member of a larger struct the respelling is a confident mis-name — six of
+  the ten indexed member accesses in the corpus, e2fsprogs `init_resource_track`
+  giving `brk_start` the name `tv_sec`. A frame slot can grow and swallow its
+  neighbours, and not only when an aggregate is involved: openssh `ssh-keygen`
+  `do_gen_krl` merges two `char *` locals and an 8-byte slot into one `char[24]`
+  read through `._0_8_`/`._8_8_`/`._16_8_`, and shadow `useradd` `main` loses a
+  recovered 144-byte `stat` stack symbol into a `char[128]` on the `variables[]`
+  surface the type metric scores, and scores identically in both arms — so a flat
+  sweep means nothing regressed *that the metric scores*, which is not the same
+  claim. And a load spanning two fields is now decomposed into piece writes on a
+  scalar local (`v._0_4_ = st->st_mode; v._4_4_ = st->st_uid;` for an 8-byte read
+  at `stat+0x18`) — 51 sites, against 517 piece reads the value removes.
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.
