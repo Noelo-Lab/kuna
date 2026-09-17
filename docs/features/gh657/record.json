@@ -86,7 +86,7 @@
     "make test-cli": "179/179 passed",
     "kuna catalog --check": "catalog OK",
     "counters --check": "no drift; docs/options.md byte-fresh",
-    "make rust-test": "see rust_test"
+    "make rust-test": "RUST_TEST_RC=0, 415 test binaries, 7106 passed / 0 failed (ghidra_sim_faillog_pins back on its 286/39/92 line counts)"
   },
   "stage_assertions_examined": {
     "note": "four stage assertions moved on the first version of the fix and NONE was absorbed: each pointed at a real over-decline, and the final version leaves all 1054 pre-existing assertions untouched.",
@@ -112,5 +112,6 @@
     "docs/baseline-stages.json",
     "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s}"
   ],
-  "option_off_identity": "kuna decompile-all --option foldcallret off is byte-identical between origin/main and this branch on O0 grep and libselinux.so.1: every new test is behind `Architecture::fold_call_returns`."
+  "option_off_identity": "kuna decompile-all --option foldcallret off is byte-identical between origin/main and this branch on O0 grep and libselinux.so.1: every new test is behind `Architecture::fold_call_returns`.",
+  "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree; target/debug deleted afterwards"
 }
