@@ -465,6 +465,12 @@ review's `fix2.s`, the caller's own parameter) and `repro-negative-constant.s`
 `kuna decompile-all x.elf --addr 0x401000 [--option argclobber on]`; only the
 first changes.
 
+**Every site the review named, re-checked one by one** (`decompile-all --addr`,
+option off vs on, on the shipped tree): crazyflie `cf2.elf` `0x803bec8` (the extra
+`kind: arg` deletion) and `0x80104d4` (the loop-condition rewrite), betaflight
+`0x802f5b4`, openssh `ssh` `0x20810` and u-boot `0x608715f0` are all **byte-identical
+with the option on**.
+
 **What the fixtures test now.** `tests/stages/kuna-argclobber.xml` is re-cut onto
 the real witness shape (clobber on one path, `idivl` remainder on the other) and
 asserts that the *quotient* the caller uses survives both passes while the

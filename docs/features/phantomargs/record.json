@@ -147,6 +147,16 @@
       "sysvinit init",
       "libedit O0",
       "bash O0"
-    ]
+    ],
+    "named_sites_rechecked": {
+      "method": "kuna decompile-all <bin> --addr <fn> [--option argclobber on], output compared byte for byte on the shipped tree",
+      "crazyflie cf2.elf 0x803bec8": "identical (the extra kind: arg deletion the review found is gone)",
+      "crazyflie cf2.elf 0x80104d4": "identical (the two loop-condition rewrites are gone)",
+      "betaflight 0x802f5b4": "identical",
+      "openssh ssh 0x20810": "identical",
+      "u-boot 0x608715f0": "identical",
+      "reviewer repro fix.s (mov $0x7,%edx)": "identical on and off",
+      "reviewer repro fix2.s (mov %r12,%rdx, the caller's own parameter)": "identical on and off, prototype keeps both parameters"
+    }
   }
 }
