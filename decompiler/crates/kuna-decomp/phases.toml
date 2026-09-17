@@ -689,6 +689,16 @@ latent = false
 exposure = "(kuna) option emptystrconst -> PrintC::pushPtrCharConstant literal gate"
 
 [[subphase]]
+name = "type-definition-preamble"
+phase = "P9"
+decision = "print the definitions of the composite/enum/typedef types a function's C names above it vs the bare function document"
+assertion = "structdefs on|off"
+strength = "HARD"
+rewind = "P9"
+latent = false
+exposure = "(kuna) option structdefs -> PrintC::emit_type_definition_preamble + kuna_structdefs::referenced_types"
+
+[[subphase]]
 name = "external-refinement"
 phase = "P9"
 decision = "proposed renames/retypes/summaries: an assertion writer into P0 for the next run"
@@ -946,6 +956,12 @@ surface = "option emptystrconst"
 phase = "P9"
 subphase = "empty-string-constant"
 note = "(kuna) keep the address when the string literal would be empty"
+
+[[surface]]
+surface = "option structdefs"
+phase = "P9"
+subphase = "type-definition-preamble"
+note = "(kuna) print the referenced composite definitions above the function"
 
 [[surface]]
 surface = "option returnpair"
@@ -1541,6 +1557,25 @@ inspiration = "repipe round 4 (crackmes.one 60be2ad433c5d410b8842c95, Sabloom Te
 change_kind = "correctness-fix"
 tier = "core"
 symptoms = "a pointer variable is initialised to an empty string literal and then indexed past its terminator|a data address visible in the disassembly appears nowhere in the emitted C|a blob or table pointer renders as = \"\" instead of its address|two locals are both assigned \"\" and then walked as buffers"
+
+[[settable]]
+option = "structdefs"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "type-definition-preamble"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-structdefs"
+summary = "Print the definitions of the composite, enum and typedef types a function's C names ABOVE the function. kuna recovers a layout and then does not show it: a body that reads `f->_flags` names `FILE` in its signature and nothing on the surface says what a `FILE` is, so the struct the decompiler recovered is invisible to the one surface an agent reads. The renderer has existed since `kuna decompile-project` -- `PrintC::doc_type_definitions` writes every user-defined type into the export's `.h` -- but nothing called it for a single function. When on, `kuna_structdefs::referenced_types` collects the function's semantic type surface (the prototype's return and parameter types, every Varnode data-type, every mapped Symbol type behind a HighVariable), descends through typedef bases and component types -- a pointer's pointee, an array's element, a struct's fields -- and pushes each definable type in postorder, so the list is definition-before-use over exactly the referenced subset rather than the whole factory. Those roots are a superset of the type names the printer can spell (a declaration is read off a high or its symbol, the signature off the prototype, a cast off the Varnode type it casts to), so the preamble cannot miss a definition the body refers to -- and it catches the struct behind `p->field_0x8`, whose tag name the C never prints at all. The text is the SAME `render_type_definitions` the `.h` type block is built with: the forward-declaration block, then bodies, an incomplete struct printing as `typedef struct FILE FILE; /* opaque */`, core types never. A `kuna decompile-project` export's bodies suppress the preamble, because they include the header that already carries it. `kuna decompile-all --json` carries the same set as an additive per-function `types` array (name, definition text, size) so a consumer reads the layout without parsing C."
+use_when = "Flip on when you are reading a function whose arguments are pointers to composites and want the layout in front of you -- `structsynth`'s synthesized `struct_N`, a DWARF struct on an unstripped binary, `libctypes`' opaque `FILE`/`DIR` shells -- instead of opening the `decompile-project` header to find it. Default OFF: it is a presentation default, and a preamble in front of every function is noise for a caller diffing bodies or feeding one function to a matcher. It changes nothing but the text above the function -- the body, its line contents and every recovered type are identical either way -- but it DOES move line numbers, so a consumer pinning a line number should read `line_mappings` rather than assume the first line is the signature. The preamble is documentation, not a compilable unit: a padding member spelled `undefined1` needs the export's recompile prelude to compile, which is one more reason the project surface keeps the definitions in the header."
+example = "option structdefs on"
+source_decompiler = "angr"
+inspiration = "angr's decompiler prints the typedefs a function references above it (`analyses/decompiler/structured_codegen/c.py`), which is a large part of why its output reads struct-aware; kuna had the same renderer and only a whole-project caller for it."
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "the signature says FILE * or struct_0 * and nothing says what the fields are|a field access like f->_flags with no layout anywhere in the output|you have to run decompile-project just to read the .h for one function's struct|a synthesized struct_N appears in a parameter type with no definition"
 
 [[settable]]
 option = "warnstyle"

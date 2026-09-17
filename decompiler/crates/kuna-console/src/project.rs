@@ -25,7 +25,8 @@ use std::path::Path;
 
 use kuna_base::address::Address;
 use kuna_decomp::decompile_drive::{
-    extract_variables, print_c, print_c_prototype, print_c_with_provenance, LineMapping, VarInfo,
+    extract_type_definitions, extract_variables, print_c, print_c_prototype,
+    print_c_with_provenance, LineMapping, TypeInfo, VarInfo,
 };
 use kuna_decomp::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
@@ -78,6 +79,10 @@ pub struct FuncResult {
     /// path, which does not serialize prototypes.
     pub proto: Option<String>,
     pub variables: Vec<VarInfo>,
+    /// (kuna `structdefs`) The composite/enum/typedef definitions this
+    /// function's C names, in definition-before-use order. Empty unless the
+    /// option is on — the same decision that prints them above the body.
+    pub types: Vec<TypeInfo>,
     pub line_mappings: Vec<LineMapping>,
     /// (kuna, issue #197) Every OTHER name this entry carries — a generic
     /// `sub_<addr>` placeholder, an ELF weak/strong twin, a PE
@@ -217,6 +222,18 @@ pub fn decompile_pulled(
     sink: &mut dyn FnMut(FuncResult),
 ) {
     let DecompileOptions { no_vars, want_proto, want_provenance, single_target, .. } = *opts;
+    // (kuna `structdefs`) A project export's bodies do NOT carry the
+    // type-definition preamble: they `#include` the generated header, and
+    // `build_header` renders every one of those definitions into it from the
+    // same factory through the same `render_type_definitions`. Printing them
+    // again above each body would redefine them. `want_proto` is exactly the
+    // `decompile-project` surface (it is what asks for the `.h` prototype), so
+    // the two surfaces stay consistent without a second flag. Restored on the
+    // way out so one program can drive both surfaces.
+    let preamble = prog.arch().print().options.struct_defs();
+    if want_proto && preamble {
+        prog.arch_mut().print_mut().options.set_struct_defs(false);
+    }
     let mut hints: Option<CalleeHintContext> = None;
     while let Some(FunctionEntry {
         name,
@@ -249,6 +266,7 @@ pub fn decompile_pulled(
                 error: Some(error),
                 proto: None,
                 variables: Vec::new(),
+                types: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -278,6 +296,7 @@ pub fn decompile_pulled(
                 error: None,
                 proto: None,
                 variables: Vec::new(),
+                types: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -295,6 +314,7 @@ pub fn decompile_pulled(
                 error: Some("entry address is not mapped in this input".into()),
                 proto: None,
                 variables: Vec::new(),
+                types: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -432,6 +452,10 @@ pub fn decompile_pulled(
                     let code = untrimmed.trim_matches('\n').to_string();
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
+                    // (kuna `structdefs`) The layout side of the same function:
+                    // the definitions the preamble just printed above the body,
+                    // as records. Empty unless the option is on.
+                    let types = extract_type_definitions(prog.arch(), &fd);
                     provenance.apply_to_variables(&fd, &mut variables);
                     for variable in &mut variables {
                         for address in &mut variable.addresses {
@@ -456,10 +480,10 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, proto, line_mappings, callee_hints)
+                    (code, variables, types, proto, line_mappings, callee_hints)
                 }));
                 match rendered {
-                    Ok((code, variables, proto, line_mappings, callee_hints)) => sink(FuncResult {
+                    Ok((code, variables, types, proto, line_mappings, callee_hints)) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -468,6 +492,7 @@ pub fn decompile_pulled(
                         error: None,
                         proto,
                         variables,
+                        types,
                         line_mappings,
                         aliases,
                         object_location,
@@ -482,6 +507,7 @@ pub fn decompile_pulled(
                         error: Some("panic while rendering C / extracting variables".into()),
                         proto: None,
                         variables: Vec::new(),
+                        types: Vec::new(),
                         line_mappings: Vec::new(),
                         aliases,
                         object_location,
@@ -498,12 +524,16 @@ pub fn decompile_pulled(
                 error: Some(e.explain().to_string()),
                 proto: None,
                 variables: Vec::new(),
+                types: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
             }),
         }
+    }
+    if want_proto && preamble {
+        prog.arch_mut().print_mut().options.set_struct_defs(true);
     }
 }
 

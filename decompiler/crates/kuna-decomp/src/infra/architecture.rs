@@ -2761,6 +2761,11 @@ impl Architecture {
                 self.print_mut().options.set_empty_str_const(val);
                 Ok(msg)
             }
+            "structdefs" => {
+                let (val, msg) = crate::kuna_structdefs::OptionStructDefs.apply(p1)?;
+                self.print_mut().options.set_struct_defs(val);
+                Ok(msg)
+            }
             "thumbfuncptr" => on_off!(preserve_thumb_funcptr, "Thumb function-pointer preservation"),
             "inferfuncentry" => on_off!(infer_funcentry, "Function-entry constant inference"),
             "returnpair" => {

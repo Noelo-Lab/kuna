@@ -248,6 +248,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "warnstyle",
     "arraycoverwidth",
     "emptystrconst",
+    "structdefs",
     "thumbfuncptr",
     "inferfuncentry",
     "returnpair",

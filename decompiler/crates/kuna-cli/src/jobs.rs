@@ -152,7 +152,7 @@ use std::time::{Duration, Instant};
 
 use kuna_console::engine::{EntryProvenance, ObjectLocation};
 use kuna_console::project::FuncResult;
-use kuna_decomp::decompile_drive::{LineMapping, VarInfo};
+use kuna_decomp::decompile_drive::{LineMapping, TypeInfo, VarInfo};
 
 /// Ceiling on an automatically planned chunk, when `--jobs-chunk` is omitted.
 /// A chunk is only a scheduling unit here, so this exists to keep the tail of a
@@ -572,6 +572,15 @@ impl ResultWriter {
             }
             put_u64s(&mut body, &v.addresses);
         }
+        // (kuna `structdefs`) The recovered type definitions travel with the
+        // record: a pooled worker renders the C, so the parent has no `Funcdata`
+        // left to re-derive them from.
+        put_u32(&mut body, r.types.len() as u32);
+        for t in &r.types {
+            put_str(&mut body, &t.name);
+            put_str(&mut body, &t.definition);
+            body.extend_from_slice(&t.size.to_le_bytes());
+        }
         put_u64s(&mut body, &r.callee_hints);
         self.frame(FRAME_RESULT, &body)
     }
@@ -665,6 +674,14 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             addresses,
         });
     }
+    let nt = r.u32()? as usize;
+    let mut types = r.sized(nt);
+    for _ in 0..nt {
+        let tname = r.string()?;
+        let definition = r.string()?;
+        let tsize = r.i64()?;
+        types.push(TypeInfo { name: tname, definition, size: tsize });
+    }
     let callee_hints = r.u64s()?;
     Some(FuncResult {
         name,
@@ -675,6 +692,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         error,
         proto,
         variables,
+        types,
         line_mappings,
         aliases,
         object_location,
@@ -1821,6 +1839,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         error: Some(reason.to_string()),
         proto: None,
         variables: Vec::new(),
+        types: Vec::new(),
         line_mappings: Vec::new(),
         aliases: t.aliases.clone(),
         object_location: t.object_location.clone(),

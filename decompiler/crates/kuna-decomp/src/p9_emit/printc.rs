@@ -459,6 +459,10 @@ pub struct PrintCOptions {
     /// string declines the `""` literal and prints its address instead
     /// (`option emptystrconst`).
     pub empty_str_const: bool,
+    /// (kuna) Print the definitions of the composite/enum/typedef types this
+    /// function's C names ABOVE the function (`option structdefs`).  See
+    /// [`crate::kuna_structdefs`].
+    pub struct_defs: bool,
     /// How function-declaration braces are formatted (C++ `option_brace_func`).
     pub brace_func: BraceStyle,
     /// How if/else-block braces are formatted (C++ `option_brace_ifelse`).
@@ -501,6 +505,7 @@ impl PrintCOptions {
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
             array_cover_width: true, // (kuna) no upstream equivalent
             empty_str_const: true,   // (kuna) no upstream equivalent
+            struct_defs: false,      // (kuna) no upstream equivalent; opt-in
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
@@ -570,6 +575,15 @@ impl PrintCOptions {
     /// (kuna) Current empty-string-constant flag.
     pub fn empty_str_const(&self) -> bool {
         self.empty_str_const
+    }
+    /// (kuna `structdefs`) Print the referenced type definitions above the
+    /// function.
+    pub fn set_struct_defs(&mut self, val: bool) {
+        self.struct_defs = val;
+    }
+    /// (kuna `structdefs`) Is the per-function type-definition preamble on?
+    pub fn struct_defs(&self) -> bool {
+        self.struct_defs
     }
     /// (kuna) Toggle inline warning style (`option warnstyle`, DIV-39).
     pub fn set_warn_inline(&mut self, val: bool) {
@@ -2362,6 +2376,8 @@ impl PrintC {
         self.setup_comments(fd, arch);
         let markup = MarkupRef::none();
 
+        self.emit_type_definition_preamble(fd);
+
         let id1 = self.emit.begin_function();
         // emitCommentFuncHeader(fd): the header warning comments (C++
         // printc.cc:2801) — the `Comment::warningheader` lines the analysis
@@ -2421,6 +2437,37 @@ impl PrintC {
         // (kuna) Retire the scoped fd pointer (see the field doc): it is valid
         // only for this call's dynamic extent.
         self.emit_fd = None;
+    }
+
+    /// (kuna `structdefs`) Emit the definitions of the composite/enum/typedef
+    /// types this function's C names, above the function.
+    ///
+    /// Off by default, and a no-op for a function that names none.  The text is
+    /// [`render_type_definitions`] over the referenced subset — the SAME
+    /// renderer `kuna decompile-project` builds its `.h` type block with, so a
+    /// preamble line and a header line for one type are one line.  A project
+    /// export's bodies therefore suppress it (they include that header);
+    /// see [`crate::kuna_structdefs`].
+    ///
+    /// Emitted as whole lines rather than tokens: a type definition has no
+    /// `Varnode`/`PcodeOp` to bind markup to, so there is nothing for the
+    /// markup back-end to reference beyond the line itself.
+    fn emit_type_definition_preamble(&mut self, fd: &Funcdata) {
+        if !self.options.struct_defs {
+            return;
+        }
+        let types = crate::kuna_structdefs::referenced_types(fd);
+        if types.is_empty() {
+            return;
+        }
+        let text = render_type_definitions(&types, self.rt_ctx);
+        for line in text.trim_end_matches('\n').split('\n') {
+            self.emit.tag_line();
+            if !line.is_empty() {
+                self.emit.print(line, SyntaxHighlight::NoColor);
+            }
+        }
+        self.emit.tag_line();
     }
 
     /// Emit the function prototype declaration (the `emitFunctionDeclaration`
@@ -9001,7 +9048,7 @@ pub fn type_to_c_string(
 /// `[A-Za-z0-9_]` becomes `_`, and a leading digit gains a `_` prefix.
 /// Borrowed unchanged when already valid (the caller emits a
 /// `/* renamed from "…" */` comment when it changed).
-fn sanitize_type_name(name: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn sanitize_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     let ok_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
     let clean = !name.is_empty()
         && name.chars().all(ok_char)
@@ -9082,7 +9129,7 @@ fn unsigned_c_int_of_size(size: int4) -> &'static str {
 /// best-effort as `<type> <name> : <bits>;` with padding suppressed (their
 /// byte coverage overlaps the gap computation).  Unions carry no padding.
 /// Returns `""` for a non-composite kind.
-fn compose_type_body(
+pub(crate) fn compose_type_body(
     ct: &std::rc::Rc<crate::dtype::Datatype>,
     name: &str,
     rt: RealTypeCtx,
@@ -9152,7 +9199,7 @@ fn compose_type_body(
 /// (sign-extended by the enum's byte size); the `TYPE_UINT` form prints hex.
 /// An empty namemap falls back to a plain integer typedef (an empty `enum {}`
 /// is not valid C).
-fn compose_enum_body(ct: &std::rc::Rc<crate::dtype::Datatype>, name: &str) -> String {
+pub(crate) fn compose_enum_body(ct: &std::rc::Rc<crate::dtype::Datatype>, name: &str) -> String {
     use crate::dtype::type_metatype;
     let Some(nmap) = ct.as_enum_namemap() else {
         return String::new();
@@ -9184,7 +9231,7 @@ fn compose_enum_body(ct: &std::rc::Rc<crate::dtype::Datatype>, name: &str) -> St
 /// (kuna) Render ONE typedef — `typedef <declarator around name>;` — of the
 /// typedef's immediate base type (`get_typedef()`), via the C-declarator
 /// builder (so `typedef char *mystr;` and array typedefs lay out correctly).
-fn compose_typedef_line(
+pub(crate) fn compose_typedef_line(
     base: &std::rc::Rc<crate::dtype::Datatype>,
     name: &str,
     rt: RealTypeCtx,
@@ -9198,7 +9245,7 @@ fn compose_typedef_line(
 /// shape + divergence notes): pass 1 emits the struct/union forward-declaration
 /// block, pass 2 the bodies (struct/union/enum/typedef) in dependency order.
 /// Pure over the input slice for unit-testability.
-fn render_type_definitions(
+pub(crate) fn render_type_definitions(
     deporder: &[std::rc::Rc<crate::dtype::Datatype>],
     rt: RealTypeCtx,
 ) -> String {
@@ -9331,7 +9378,7 @@ impl RealTypeCtx {
     /// out of the architecture for the duration of emission (`take_print`), so
     /// the architecture's copy is a placeholder while this runs. The printer owns
     /// the selection.
-    fn from_arch(arch: &Architecture, lang: crate::kuna_lang::OutLang) -> RealTypeCtx {
+    pub(crate) fn from_arch(arch: &Architecture, lang: crate::kuna_lang::OutLang) -> RealTypeCtx {
         RealTypeCtx {
             lang,
             enabled: arch.realtypes,
