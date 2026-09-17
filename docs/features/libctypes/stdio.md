@@ -65,6 +65,11 @@ $ gcc -O1 -shared -fPIC -o coll.so coll.c && kuna decompile-all ./coll.so
 Both tables are read: that global is `static`, so only `.symtab` carries it — and
 `.symtab` is the table the loader's data symbols are named from.
 
+The decline costs nothing measured: `readelf -sW` over all 75,662 ELF images in
+the decbench tree (stripped and unstripped, three optimisation levels) finds zero
+that spell any of the three `_ptr` names, and the four binaries the sweep below
+moves produce the same changed-line counts with the check in place as without.
+
 ```
 000000000000c088  R_X86_64_COPY      stdout@GLIBC_2.2.5 + 0   coreutils fmt, .bss
 000000000002bf38  R_X86_64_GLOB_DAT  stdout@GLIBC_2.2.5 + 0   libselinux.so.1, .got
