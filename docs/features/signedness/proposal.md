@@ -12,6 +12,30 @@ applies to it, instead of from whichever type-inference vote happened to be most
 specific. This is TRex's *type rounding* (USENIX Security 2025, §3.3.5 / §5.1)
 reduced to the one decision kuna can make without touching its type lattice.
 
+## The number the decision turns on
+
+Measured against DWARF on 238 unstripped twins (the `compiled/` binaries beside
+the stripped images decbench scores, `-O0` and `-O2`, coreutils/grep/gzip/
+diffutils/bzip2/findutils/tar): 58,653 plain-integer local declarations, 6,260
+of which carry a name DWARF also knows in the same function at the same width.
+Signedness is binary, so a declaration that differs between two values is right
+in exactly one of them.
+
+| value | declarations moved | agrees with DWARF | `-O0` | `-O2` | moved *and* DWARF-named | right | wrong |
+|---|---|---|---|---|---|---|---|
+| `upstream` | 0 | **93.4%** | 97.3% | 72.0% | 0 | — | — |
+| `auto` | 579 | **93.5%** | 97.3% | 72.3% | 4 | **4** | **0** |
+| `prefer-signed` | 7183 | **98.4%** | 99.0% | 94.9% | 386 | 348 | 38 |
+| `prefer-unsigned` | 13623 | **92.9%** | 97.1% | 69.6% | 41 | 4 | 37 |
+
+Today's declarations agree with the source 72.0% of the time at `-O2`.
+`prefer-signed` takes that to 94.9%; its 38 wrong flips are concentrated in the
+types whose operations carry no signedness at all (`mode_t` 18, `size_t` 12),
+and its 348 right ones are `int` 342, `idx_t` 5, `Idx` 1 — TRex §5.1's claim
+reproduced. `auto` is exact (4/4) but only reaches 4 checkable declarations.
+`prefer-unsigned` is refuted by its own column. Full method and the cases the
+method cannot see: `analysis.md`.
+
 ## The three questions for the reviewer
 
 **1. Is the correctness rule airtight?** The rule is: flip only when *every*
@@ -23,21 +47,37 @@ outright. The whitelist coincides with the ops kuna's own cast strategy coerces
 with `care_uint_int = true`, which is upstream's own statement of where
 signedness carries meaning.
 
-Measured, not argued: 42 functions change across `fmt`/`ls`/`sort`/`du` at `-O0`
-and `-O2`, every hunk is a declaration flip or a dropped cast and nothing else;
-15 of them build into a two-version program with stubbed callees and a shared
-memory arena, and 2,000 pseudo-random input vectors per function produce **0**
-divergences (6 run to completion, 5 fault identically in both arms, 4 are glibc
-aborts inside the harness's own `realloc`); the 27 that will not compile produce
-the identical gcc error set in both arms.
+The rule also has to survive C's *integer promotions*, which the first draft did
+not: below the promotion width nothing on the neutral list is neutral, and
+re-declaring a `short` unsigned turned `if ((v2 == v8) || (v8 == -1)) break;`
+into a dead branch (findutils `find -O2` `sub_bac0`). A declaration narrower
+than `int` is now never touched, and the reduced bytechunk is the second
+function in `tests/stages/kuna-signedness.xml`. `INT_LEFT` is an unsigned demand
+for a related reason: `<<` on a negative value is UB, and `gcc -O2
+-fsanitize=undefined` caught the first draft creating one in zlib `sub_ce20`.
+
+Measured, not argued, over `fmt`/`ls`/`sort`/`du` at `-O0` and `-O2` (2,918
+functions):
+
+| value | functions changed | declaration flips | cast-drop hunks | any other hunk |
+|---|---|---|---|---|
+| `auto` | 34 | 42 | 53 | **0** |
+| `prefer-signed` | 273 | 353 | 53 | **0** |
+| `prefer-unsigned` | 732 | 889 | 53 | **0** |
+
+Every changed function was then compiled twice, before and after, *separately*:
+the gcc diagnostic set is identical in both arms for **all 1,039** of them
+(34 + 273 + 732). The ones that compile clean build into a two-version program
+with stubbed callees and a shared memory arena; 2,000 pseudo-random input
+vectors per function produce **0** divergences.
 
 **2. Is a readability-only option worth the option budget?** It buys **zero**
 metric. `extract_variables` exports prototype parameter types, `ScopeLocal`
 stack-symbol types and `framelayout` slots — never a HighVariable declaration —
 and decbench normalizes `unsigned` away anyway. `structscore --trex`, whose last
 scoring step *is* signedness, is byte-identical with the option on (mean 1.7322,
-`c_primitive` 58/95 on `fmt -O2`). What it buys is 63 casts that stop being
-written and 52 declarations that stop contradicting their own bodies.
+`c_primitive` 58/95 on `fmt -O2`). What it buys is the DWARF agreement in the
+table above, plus 53 cast hunks that stop being written.
 
 **3. Should `auto` become the default?** It already clears the repo's bar: built
 with `auto` as the default, `make test` is 675/675 **PARITY OK** and
@@ -88,23 +128,30 @@ proposed as witnesses in the design note:
 
 ## Open design points the reviewer may want to overrule
 
+* **Ship `prefer-unsigned` at all?** It is sound, and it is the only value whose
+  own measurement says it makes output *less* faithful than doing nothing (4 of
+  41 checkable flips right; `-O2` agreement 72.0% → 69.6%). Shipping
+  `upstream|auto|prefer-signed` is a small change if the answer is no.
 * **`INT_ZEXT` as a definition is silent** (TRex's `ZeroExtendTgt => None`) while
   as a *reader* it is a hard unsigned demand. Without that asymmetry every value
   a 32-bit x86-64 instruction widens into its 64-bit register is vetoed and the
-  option does nothing. The argument is that a zero-extension describes the
-  *source* operand's type, and `int v = *p;` with an `unsigned char *p` is
-  ordinary C.
-* **`INT_SEXT`/`INT_2COMP` as definitions vote signed** but `INT_ZEXT` does not.
-  This asymmetry is TRex's (`SignExtendTgt => Some(true)`), not ours. It can only
-  ever make a flip more likely, never make output wrong, because a definition
-  never constrains the printed C.
-* **`INT_LEFT` is neutral, not unsigned.** TRex marks `LeftShift` unsigned with
-  an "XXX: should this be `None`?" comment in its own source; `<<` produces the
-  same bits either way in two's complement, so it is classified as carrying the
-  operand's type rather than demanding a signedness.
-* **1-byte values re-sign to `int1`, never `char`.** `get_base_no_char` on the
-  signed side; widening a byte into a character type is a different decision with
-  its own option. One such flip appears in the sweep, rendered `signed char`.
-* **`prefer-signed`/`prefer-unsigned` are unmeasured** beyond "they compile and
-  they only touch values with no demand at all". If the reviewer wants them
-  dropped, `auto` alone is the shippable core.
+  option does nothing. A zero-extension describes the *source* operand's type,
+  and `int v = *p;` with an `unsigned char *p` is ordinary C.
+* **`INT_SEXT`/`INT_2COMP` are silent as definitions too**, which is *not* TRex's
+  choice (`SignExtendTgt => Some(true)`). That vote is what declared `fmt::main`'s
+  `uintmax_t max` as `long` with no reader evidence at all, so only the
+  divide-and-shift family votes now.
+* **1- and 2-byte locals are never re-signed.** The promotion rule is a width
+  rule, not an operator rule, so it also gives up the narrow cases where the
+  demands really are unanimous. If that is too blunt, the alternative is to make
+  every neutral operator promotion-aware.
+* **1-byte values would re-sign to `int1`, never `char`** (`get_base_no_char`),
+  if the width rule ever allowed it; widening a byte into a character type is a
+  different decision with its own option.
+
+## The go/no-go question
+
+Ship the option at default `upstream`, with which value set — and is
+`prefer-signed`'s 72.0% → 94.9% `-O2` agreement with DWARF (348 right / 38 wrong
+on the checkable flips) worth an option slot for a feature that scores exactly
+zero on `type_match`?
