@@ -157,6 +157,16 @@ the callee could not have reached also declines. (That particular listing folds
 through default-on `foldcallret` with no discount involved — `on` and `off` emit
 the same thing — so it is GH-657's family, not this option's.)
 
+The frame half of the barrier costs nothing and is worth something. Re-swept with
+it, all three metrics report the same numbers to the digit — 1,270 folds located,
+718 mapped, 0 hazards, 9 event-set and 40 event-order diffs — and five binaries
+change, in one shape each: a local assignment that had moved across a `strlen`
+call goes back where the `off` arm puts it (`du`, `diff` ×2, `find`, `grep`,
+`tar`: `v11 = '\0'; v10 = strlen((char *)v9);` becomes
+`v10 = strlen((char *)v9); v11 = '\0';`). Neither `evalorder.py` nor
+`foldmove.py` calls a write to a local an event, so those six reorders were in
+nobody's hazard count — the barrier removes them structurally instead.
+
 The same hole is reachable through default-on `foldcallret` alone, when the call
 needs no discount at all (`v = f(7); glob = 42; use(v)`): that is GH-657, fixed
 separately because it moves default output.
