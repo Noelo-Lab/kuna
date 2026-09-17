@@ -78,7 +78,7 @@ not reorderings:
   op's output is persistent. It stores the value already there, so it is not a
   barrier (`op_is_self_copy`; a volatile location is excluded, since there the
   access itself is the effect). Without this, `gh275-spillargtrial` and
-  `kuna-libctypes` lose a fold each to an artifact. Nine unit tests in
+  `kuna-libctypes` lose a fold each to an artifact. Eight unit tests in
   `kuna_callretfold/tests.rs` pin the predicate: a constant or an arithmetic
   result written into a global is a barrier, `glob = COPY glob` is not, a copy
   between two globals or at a different width or of a volatile location is, a
