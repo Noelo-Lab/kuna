@@ -1,4 +1,9 @@
-# typesweep indirectonly=off
+# typesweep indirectonly
+
+Measured when the option still shipped default-on, so `base` is the option ON and
+`test` is the option OFF.  The option now ships OFF, which swaps the two labels;
+the arms are numerically identical in every column, so nothing in this table moves.
+
 
 slices scored: 444
 functions scored: 10748

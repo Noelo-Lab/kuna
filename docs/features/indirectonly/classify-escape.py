@@ -11,14 +11,16 @@ declaration comment -- `S[stack-0xNN]` for a frame slot, `R[reg]` for a register
 `X` for anything unnamed -- which makes the two arms comparable.  Then, per
 changed function:
 
-  1. which frame slots does the ON arm ASSIGN that the OFF arm never assigns?
-  2. is such a slot inside an object whose address escapes, i.e. is there a `&vB`
-     in the function with vB a frame slot at an offset that covers it?
+  1. which STATEMENTS does the ON arm add that assign a frame slot?  (Statement
+     level, not slot level: a slot the OFF arm already writes elsewhere can still
+     gain an extra write here.)
+  2. is that slot inside an object whose address escapes, i.e. is there a `&vB` in
+     the function with vB a frame slot at an offset that covers it?
   3. does a call reach that object's address AFTER the new write?
 
-A slot answering yes to all three is an ESCAPE-CANDIDATE: the emitted C now
-writes an escaped slot it did not write before, and something downstream can see
-it.  That is as far as the text can go.  BOTH directions of the merge produce
+A statement answering yes to all three is an ESCAPE-CANDIDATE: the emitted C now
+writes an escaped slot at a point where it did not before, and something
+downstream can see it.  That is as far as the text can go.  BOTH directions of the merge produce
 this shape -- the sound one, where the machine really does store and the OFF arm
 had simply lost the store, looks identical on the page -- so every candidate is
 settled by hand against the disassembly: if the machine has no store to that
@@ -117,32 +119,41 @@ def classify(off_lines, on_lines, label, key, report):
     if off_body == on_body:
         report.append((label, key, 'DECL-ONLY', 'decl_delta=%+d' % ndecl, []))
         return
-    off_w, on_w = written_slots(off_body), written_slots(on_body)
+    off_set = set(l.strip() for l in off_body)
+    off_w = written_slots(off_body)
     bases = escaped_bases(on_body)
+    fresh = set()
     verdicts = []
-    for tok, idx in sorted(((t, i) for t, i in on_w.items() if t not in off_w), key=lambda kv: kv[1]):
-        cov = covering(bases, slot_off(tok))
-        if not cov:
-            verdicts.append(('NEW-WRITE-NO-ESCAPE', tok))
+    for idx, l in enumerate(on_body):
+        if l.strip() in off_set:
             continue
-        after = [b for b, ls in cov if any(l > idx for l in ls)]
-        before = [b for b, ls in cov if any(l < idx for l in ls)]
-        if after:
-            verdicts.append(('ESCAPE-CANDIDATE', '%s inside %s, address passed again after the write'
-                             % (tok, ','.join(after))))
-        elif before and any(CALL.search(l) for l in on_body[idx + 1:]):
-            verdicts.append(('ESCAPE-CANDIDATE-WEAK',
-                             '%s inside %s, address escaped before the write, a call follows'
-                             % (tok, ','.join(before))))
-        else:
-            verdicts.append(('NEW-WRITE-DEAD', tok))
+        for m in ASSIGN.finditer(l):
+            tok = m.group('t')
+            cov = covering(bases, slot_off(tok))
+            if not cov:
+                verdicts.append(('NEW-WRITE-NO-ESCAPE', tok))
+                continue
+            after = [b for b, ls in cov if any(x > idx for x in ls)]
+            before = [b for b, ls in cov if any(x < idx for x in ls)]
+            if after:
+                if tok not in off_w:
+                    fresh.add(tok)
+                verdicts.append(('ESCAPE-CANDIDATE', '%s inside %s at `%s`%s'
+                                 % (tok, ','.join(sorted(after)), l.strip()[:70],
+                                    '  [slot never written in the off arm]' if tok not in off_w else '')))
+            elif before and any(CALL.search(x) for x in on_body[idx + 1:]):
+                verdicts.append(('ESCAPE-CANDIDATE-WEAK', '%s inside %s at `%s`'
+                                 % (tok, ','.join(sorted(before)), l.strip()[:70])))
+            else:
+                verdicts.append(('NEW-WRITE-DEAD', tok))
     kinds = [v[0] for v in verdicts]
     kind = 'ESCAPE-CANDIDATE' if 'ESCAPE-CANDIDATE' in kinds else \
            'ESCAPE-CANDIDATE-WEAK' if 'ESCAPE-CANDIDATE-WEAK' in kinds else \
            'NEW-WRITE' if verdicts else 'SAFE'
     diff = [l for l in difflib.unified_diff(off_body, on_body, lineterm='', n=1)
             if not l.startswith(('---', '+++'))]
-    report.append((label, key, kind, 'decl_delta=%+d new_slot_writes=%d' % (ndecl, len(verdicts)),
+    report.append((label, key, kind, 'decl_delta=%+d new_stmt_writes=%d fresh_slots=%d'
+                   % (ndecl, len(verdicts), len(fresh)),
                    ['%s %s' % v for v in verdicts] + diff))
 
 

@@ -63,9 +63,6 @@
     "changed_slices": 15,
     "changed_functions": 27,
     "declaration_delta": -19,
-    "safe": 14,
-    "escape_candidates": 10,
-    "escape_candidates_weak": 3,
     "hand_settled": [
       {
         "slice": "bzip2-O2",
@@ -90,10 +87,29 @@
         "function": "sub_429c6",
         "verdict": "FIX",
         "evidence": "`43076..43085: add [rbp-0x218],1 / sub rax,[rbp-0x218] / mov [rbp-0x200],rax` is exactly the hunk"
+      },
+      {
+        "slice": "dpkg-O0",
+        "function": "sub_2019c",
+        "verdict": "FIX",
+        "evidence": "[rbp-0x40] is stored at 2021c and at 20307 (the loop increment read back at 202f4) -- both hunk statements"
+      },
+      {
+        "slice": "e2fsck-O0",
+        "function": "sub_1680a",
+        "verdict": "FIX",
+        "evidence": "[rbp-0x48] is stored at 16b08 and incremented in memory at 16b7c (`add QWORD PTR [rbp-0x48],0x4`), which is the `&S[stack-0x50][1]` hunk"
       }
     ],
     "withdrawn_claim": "The first round reported `0 BUG hunks` over 16 slices. That claim is withdrawn: its classifier had no escape predicate, and bzip2 -O2 sub_3890 -- inside that original 16-slice set -- is confirmed wrong output.",
-    "note": "ESCAPE-CANDIDATE is not a verdict. Both directions of the merge look identical in the emitted C; only the disassembly separates a restored store from a fabricated one."
+    "note": "ESCAPE-CANDIDATE is not a verdict. Both directions of the merge look identical in the emitted C; only the disassembly separates a restored store from a fabricated one.",
+    "escape_candidates": 18,
+    "escape_candidates_weak": 6,
+    "safe": 3,
+    "escape_candidates_on_a_slot_the_off_arm_never_writes": 10,
+    "finding": "24 of the 27 changed functions write an escaped frame slot at a statement the OFF arm does not have, so no subset of the hunks is certified safe by the emitted C alone.",
+    "hand_settled_tally": "6 settled: 2 BUG (both -O2, the value lives in a register for its whole lifetime), 4 FIX (three of them -O0, where the variable really is on the frame)",
+    "stack_comment_mapping": "the printed `// stack - X` is the rbp displacement minus 8; confirmed on the stage fixture, where `stack - 0xc8` is `-0xc0(%rbp)`"
   },
   "typesweep": {
     "command": "scripts.decbench.typesweep --option indirectonly off --opt O0 --opt O2 --opt O2-noinline --project coreutils grep gzip diffutils bzip2 findutils tar shadow",
@@ -154,5 +170,17 @@
       "bzip2 -O2 sub_3890",
       "kmod -O2-noinline sub_97b0"
     ]
+  },
+  "default_off_evidence": {
+    "make_test": "675/675 assertions, PARITY OK",
+    "make_test_stages": "1067/1067 assertions, PARITY OK",
+    "default_equals_origin_main": "byte-identical decompile-all over ls-O2, tar-O2, bzip2-O2, kmod-O2-noinline, e2fsck-O0, bash-O2 against a separately built 83830e86",
+    "speed_vs_origin_main": {
+      "target": "fmt -O2 decompile-all",
+      "method": "interleaved min-of-11",
+      "main_ms": 4092.9,
+      "default_ms": 4064.2,
+      "delta_pct": -0.7
+    }
   }
 }

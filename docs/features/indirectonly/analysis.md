@@ -87,22 +87,28 @@ output `corpus-escape-classification.txt`.
 | slices | 34 (15 change anything) |
 | changed functions | 27 |
 | declarations | **-19** net, none gained |
-| SAFE | 14 |
-| ESCAPE-CANDIDATE | 10 |
-| ESCAPE-CANDIDATE-WEAK | 3 |
+| ESCAPE-CANDIDATE | 18 |
+| ESCAPE-CANDIDATE-WEAK | 6 |
+| SAFE | 3 |
 
-An ESCAPE-CANDIDATE is a function where the ON arm assigns a frame slot the OFF
-arm never assigns, that slot sits inside an object whose address escapes, and a
-call reaches that address after the write. The first round of this A/B reported
-**0 BUG hunks**; that claim is withdrawn. It was produced by a classifier with no
-escape predicate at all, and two of the ten candidates are confirmed wrong output
-— one of them, `bzip2 -O2 sub_3890`, was inside the original eight-binary sweep
-and was classified there as a plain "merge that removes a copy".
+An ESCAPE-CANDIDATE is a statement the ON arm adds that assigns a frame slot,
+where the slot sits inside an object whose address escapes and a call reaches that
+address after the write. WEAK is the same with the address escaping only before
+the write. In 10 of the 18 the slot is one the OFF arm never writes anywhere.
+
+**24 of the 27 changed functions are in that ambiguous class**, and that is the
+result: no subset of these hunks is certified safe by the emitted C alone. The
+first round reported **0 BUG hunks** over 16 slices; that claim is withdrawn. Its
+classifier had no escape predicate at all, and `bzip2 -O2 sub_3890` — inside that
+same original 16-slice set — is confirmed wrong output.
 
 ## 5. The two directions, and why the text cannot tell them apart
 
 The candidates split by what the **machine** does at the merge point, and only
-the disassembly says which:
+the disassembly says which. Six are settled — two wrong, four right — by reading
+the frame displacement out of `objdump` (the printed `// stack - X` is the rbp
+displacement minus 8, confirmed on the stage fixture where `stack - 0xc8` is
+`-0xc0(%rbp)`):
 
 **FIX** — the machine really does store into the slot, and the OFF arm had
 dropped the store. `ls -O2 main` is the witness. `ls.c` has
@@ -125,11 +131,16 @@ and the binary fills both halves before taking the address:
 With the flag dead, kuna prints the two loads into register locals and never into
 the slot, so `unsigned long v38; // stack - 0x50` is declared and **never assigned
 and never read anywhere in the function**, and `hash_delete` is handed memory the
-emitted C never wrote. With the flag set, both halves are filled. `tar -O0
-sub_429c6` is the same shape (`43076..43085` is the store the OFF arm loses).
+emitted C never wrote. With the flag set, both halves are filled.
+
+`tar -O0 sub_429c6`, `dpkg -O0 sub_2019c` and `e2fsck -O0 sub_1680a` are the same
+shape at `-O0`, where the variable lives on the frame and the compiler really does
+write it: `43076..43085`, `2021c`/`20307`, and `16b08`/`16b7c` are the stores the
+OFF arm loses.
 
 **BUG** — the machine only ever *loads* the slot, and the merge fabricates a
-store. `bzip2 -O2 sub_3890` is the clearest: the block at `[rsp+0x18..0x2c]` is a
+store. This is the `-O2` shape: the value lives in a register for its whole
+lifetime and the frame slot it came from is never written back. `bzip2 -O2 sub_3890` is the clearest: the block at `[rsp+0x18..0x2c]` is a
 set of out-params filled by callees through `lea`'d pointers, and every single
 access to it in the function is a `lea` or a `mov reg,[rsp+X]` — there is no store
 to any of those slots anywhere. The ON arm nevertheless emits
@@ -187,13 +198,15 @@ kuna's shipped default declines to.
 
 ## 7. Speed and type_match
 
-The scan is one pass over the input def-set plus a bounded worklist per illegal
-input, run once per function in an action that was already scheduled.
+With the option off the action takes one `if` and returns, so the shipped default
+costs nothing. Measured against a separately built origin/main (83830e86),
+interleaved, min-of-11, `decompile-all` on `fmt` -O2: main 4092.9 ms, this
+branch's default 4064.2 ms, **-0.70%** — noise, and the default arm's output is
+byte-identical to that build over six whole binaries (`off-equals-main.txt`).
 
-Interleaved off/on, min-of-15 per function and min-of-11 whole-binary (the
-batched-median form in `scripts.pipeline.timeit` is contention-biased on this
-box -- it read +16.8% on a loaded machine and +3.4% on a quiet one for the same
-build, so both are recorded):
+The cost of the option itself is one pass over the input def-set plus a bounded
+worklist per illegal input, in an action that was already scheduled. Interleaved
+off/on, min-of-15 per function and min-of-11 whole-binary:
 
 | target | delta |
 |---|---|
@@ -203,10 +216,14 @@ build, so both are recorded):
 | `fmt` -O2 whole binary | -0.64% |
 | `ls` -O2 whole binary | -3.18% |
 
-`typesweep` over the campaign's 444 slices is exactly neutral: 959 perfect in
-both arms, aggregate 3037.05 in both, 0 functions moved in either direction
-(`typesweep-report.md`). decbench scores the JSON `variables[]` surface, which
-this change does not touch -- 10739 of 10748 functions have byte-identical
+(The batched-median form in `scripts.pipeline.timeit` is contention-biased on this
+box: it read +16.8% on a loaded machine and +3.4% on a quiet one for the same
+build, which is why the interleaved minima are the numbers of record.)
+
+`typesweep` over the campaign's 444 slices is exactly neutral between the arms:
+959 perfect in both, aggregate 3037.05 in both, 0 functions moved in either
+direction (`typesweep-report.md`). decbench scores the JSON `variables[]` surface,
+which this change does not touch — 10739 of 10748 functions have byte-identical
 `variables` between the arms.
 
 ## 8. What ships
