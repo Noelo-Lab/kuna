@@ -48,6 +48,24 @@ struct _IO_FILE {
 int get_prefix(_IO_FILE *f)
 ```
 
+## The in-repo witness
+
+`dwarfstructs_x86_64` carries a self-referential `struct Node`, which is the case
+kuna's forward-declaration-first rendering exists for:
+
+```
+$ kuna decompile .../fixtures/dwarfstructs_x86_64 walk_list --option structdefs on
+typedef struct Node Node;
+
+struct Node {
+    int val;
+    undefined1 _pad4[4];
+    Node *next;
+};
+
+int walk_list(Node *n)
+```
+
 ## Which types, and why those
 
 The roots are the function's semantic type surface: the prototype's return and

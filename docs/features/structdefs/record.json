@@ -15,6 +15,13 @@
   "default_value": "off",
   "values": "on|off",
   "witnesses": {
+    "in_repo_repro_walk_list": {
+      "cmd": "kuna decompile decompiler/crates/kuna-analysis/tests/fixtures/dwarfstructs_x86_64 walk_list --option structdefs on",
+      "before": "int walk_list(Node *n)",
+      "after": "typedef struct Node Node; | struct Node { int val; undefined1 _pad4[4]; Node *next; }; | int walk_list(Node *n)",
+      "why": "the self-referential case: the forward declaration is what lets the body reference `Node *next` inside `struct Node`, which is the kuna divergence from upstream's anonymous `typedef struct {...} name;` form",
+      "body_bytes_changed": 0
+    },
     "unstripped_fmt_get_prefix": {
       "cmd": "kuna decompile-all <O2/coreutils/compiled/fmt> --addr 0x2f30 --option structdefs on",
       "before": "int get_prefix(_IO_FILE *f)",
