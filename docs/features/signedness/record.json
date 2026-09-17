@@ -524,7 +524,7 @@
       "rerun_on_rebase": "re-run in full on the structdefs base (.scratch/typesweep-signedness-r7): report byte-identical to the pre-rebase run -- 444 slices, 10,748 functions, byte-identical variables[] in all of them, type_match PERFECT 959 -> 959, aggregate 3037.05 -> 3037.05, 0 moved either way"
     },
     "hunk_classification": {
-      "what": "whole-binary `decompile-all` default (auto) vs `--option signedness upstream`, every changed line-pair classified mechanically (.scratch/analyze6b.py, which reads all three printer vocabularies: `unsigned int` (aggressive), `uint4` (reliable, what a binary over 500 KiB gets) and `unsigned long long` (an 8-byte local on a 32-bit target))",
+      "what": "whole-binary `decompile-all` default (auto) vs `--option signedness upstream`, every changed line-pair classified mechanically (docs/features/signedness/classify_hunks.py, which reads all three printer vocabularies: `unsigned int` (aggressive), `uint4` (reliable, what a binary over 500 KiB gets) and `unsigned long long` (an 8-byte local on a 32-bit target))",
       "binaries": "fmt, ls, sort, du (coreutils) + grep, gzip, tar, find (x86-64) + adc-dac-printf.elf (libopencm3), RTOSDemo.out (FreeRTOS), ch.elf (ChibiOS), cf2.elf (crazyflie) -- 32-bit ARM Cortex-M firmware; nine projects, -O0 and -O2",
       "functions": 15124,
       "functions_changed": 310,

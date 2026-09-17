@@ -7,9 +7,10 @@ nine projects — eight x86-64 and four 32-bit ARM (Cortex-M) firmware images:
 printed before the flip), function by function, with every changed line-pair
 classified mechanically.
 
-Classifier: `.scratch/analyze6b.py` — a pair is `decl-signedness` when it is the
-same declaration with the same name and the same base type at a different
-signedness, `cast-dropped` when the two lines are identical after deleting every
+Classifier: `classify_hunks.py`, next to this file — a pair is `decl-signedness`
+when it is the same declaration with the same name and the same base type at a
+different signedness, `cast-dropped` when the two lines are identical after
+deleting every
 integer cast token and the new one has fewer of them, `CAST-ADDED` when it has
 more, and anything else falls into an `OTHER` bucket that is reported with a
 sample. It reads all three printer vocabularies: the `aggressive` spelling
@@ -103,6 +104,6 @@ target's own `int` is 2 bytes).
 
 The stderr of each pair is identical too, so no analysis-tier decision moved.
 
-Raw dumps and the classifier output: `.scratch/dumps4`, `.scratch/dumps6`,
-`.scratch/dumps7`, `.scratch/hunks4.txt`, `.scratch/hunks6.txt`,
-`.scratch/hunks7.txt` (untracked).
+Reproduce any row with the two `decompile-all` runs the classifier's header
+shows; the raw dumps this table was built from are untracked (`.scratch/dumps4`,
+`.scratch/dumps6`, `.scratch/dumps7`).
