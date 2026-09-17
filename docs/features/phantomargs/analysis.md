@@ -457,6 +457,14 @@ functions over 33 binaries to **4 over 46** (§5). Where it went:
   `sub_80104d4` are both gone. The round-3 sweep includes them, plus nuttx,
   chibios, freertos, gnutls (4 binaries), sysvinit and bash/libedit at -O0.
 
+The three self-contained repros are checked in next to this file:
+`repro-positive.s` (the shape the option is for), `repro-negative-forward.s` (the
+review's `fix2.s`, the caller's own parameter) and `repro-negative-constant.s`
+(the review's `fix.s`, a constant). Each builds with
+`gcc -nostdlib -static -o x.elf x.s` and is read with
+`kuna decompile-all x.elf --addr 0x401000 [--option argclobber on]`; only the
+first changes.
+
 **What the fixtures test now.** `tests/stages/kuna-argclobber.xml` is re-cut onto
 the real witness shape (clobber on one path, `idivl` remainder on the other) and
 asserts that the *quotient* the caller uses survives both passes while the
