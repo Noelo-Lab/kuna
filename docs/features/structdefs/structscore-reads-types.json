@@ -1,0 +1,199 @@
+{
+  "source": "kuna decompile-all <dwarfstructs_x86_64> --json --option structdefs on, functions[].types[].definition concatenated",
+  "parser": "scripts/decbench/structscore.py header_layouts (unchanged)",
+  "structs_parsed": [
+    "Big24",
+    "Bits",
+    "Nest",
+    "Node",
+    "P8",
+    "Same",
+    "Same_16"
+  ],
+  "layouts": {
+    "P8": {
+      "name": "P8",
+      "size": 8,
+      "fields": [
+        {
+          "offset": 0,
+          "size": 4,
+          "name": "a",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 4,
+          "size": 4,
+          "name": "b",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        }
+      ],
+      "complete": true
+    },
+    "Big24": {
+      "name": "Big24",
+      "size": 24,
+      "fields": [
+        {
+          "offset": 0,
+          "size": 8,
+          "name": "x",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 8,
+          "size": 8,
+          "name": "y",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 16,
+          "size": 8,
+          "name": "z",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        }
+      ],
+      "complete": true
+    },
+    "Nest": {
+      "name": "Nest",
+      "size": 17,
+      "fields": [
+        {
+          "offset": 0,
+          "size": 1,
+          "name": "tag",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 1,
+          "size": null,
+          "name": "_pad1",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 1,
+          "size": 8,
+          "name": "inner",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 9,
+          "size": null,
+          "name": "_padc",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 9,
+          "size": 8,
+          "name": "tail",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        }
+      ],
+      "complete": false
+    },
+    "Bits": {
+      "name": "Bits",
+      "size": 0,
+      "fields": [],
+      "complete": false
+    },
+    "Node": {
+      "name": "Node",
+      "size": 12,
+      "fields": [
+        {
+          "offset": 0,
+          "size": 4,
+          "name": "val",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 4,
+          "size": null,
+          "name": "_pad4",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 4,
+          "size": 8,
+          "name": "next",
+          "kind": "pointer",
+          "ptr": 1,
+          "pointee": "Node"
+        }
+      ],
+      "complete": false
+    },
+    "Same": {
+      "name": "Same",
+      "size": 4,
+      "fields": [
+        {
+          "offset": 0,
+          "size": 4,
+          "name": "only",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        }
+      ],
+      "complete": true
+    },
+    "Same_16": {
+      "name": "Same_16",
+      "size": 16,
+      "fields": [
+        {
+          "offset": 0,
+          "size": 8,
+          "name": "first",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 8,
+          "size": 4,
+          "name": "second",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        },
+        {
+          "offset": 12,
+          "size": 4,
+          "name": "third",
+          "kind": "scalar",
+          "ptr": 0,
+          "pointee": null
+        }
+      ],
+      "complete": true
+    }
+  }
+}

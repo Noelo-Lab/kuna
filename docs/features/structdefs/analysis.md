@@ -132,6 +132,13 @@ one unstripped binary in the set, where DWARF gives most functions a real
 multi-field struct; the five stripped binaries average 117 added lines each
 (one opaque `FILE`/`option` typedef per function that touches one).
 
+**The `types` array is readable by the layout instrument as it stands.**
+`scripts/decbench/structscore.py`'s `header_layouts` — unchanged — parses the
+concatenated `functions[].types[].definition` of one `decompile-all --json` run
+over `dwarfstructs_x86_64` into seven struct layouts (`Big24`, `Bits`, `Nest`,
+`Node`, `P8`, `Same`, `Same_16`; saved in `structscore-reads-types.json`), so the
+layout side no longer needs a project export to score a binary.
+
 **Metric: neutral, by construction.** decbench's `type_match` reads the
 `--json` `variables[]` array, which this option does not touch; the C text it
 does touch is read only for functions whose `variables[]` is empty. The `types`
