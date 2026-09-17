@@ -1,6 +1,7 @@
 argclobber whole-corpus sweep, 2026-09-16 (review round 3)
 kuna decompile-all, whole binary, option off vs on, per-function diff with vN renumbering normalized.
 Corpus: decbench results/full_run_address_2026-09-11.  46 binaries, 41,258 functions.
+Re-run unchanged after the rebase onto elfmain: same 46/41,258/4/42.
 
 Supersedes the round-2 sweep (33 binaries / 27,512 functions / 45 changed).  Round 3 added
 the join clause: every input of the argument register's join that is not a clobber of that
@@ -96,6 +97,6 @@ option changes, plus four controls:
 ABLATION (default flipped ON, tree rebuilt, then reverted) -- round 2 measurement, and the
 round-3 rule is strictly narrower, so it still holds; re-confirmed on the shipped tree:
   kuna test --datatests --baseline docs/baseline.json          675/675   PARITY OK
-  kuna test --datatests-dir tests/stages --baseline ...json   1021/1021  PARITY OK
+  kuna test --datatests-dir tests/stages --baseline ...json   1029/1029  PARITY OK
 The option stays off because of the rax:rdx-return shape no clause can see, and because a
 wrong drop is a DELETED expression, not a visibly odd one.

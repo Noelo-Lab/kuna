@@ -24,7 +24,7 @@
     "declarations": "15 -> 12 locals in fmt::main"
   },
   "corpus_sweep": {
-    "method": "kuna decompile-all, whole binary, option off vs on, per-function diff with vN renumbering normalized; every changed call group then classified against the callee's OWN recovered prototype arity and, where one exists, against DWARF or the library's own header. Artifact: docs/features/phantomargs/sweep-2026-09-16.txt",
+    "method": "kuna decompile-all, whole binary, option off vs on, per-function diff with vN renumbering normalized; every changed call group then classified against the callee's OWN recovered prototype arity and, where one exists, against DWARF or the library's own header. Artifact: docs/features/phantomargs/sweep-2026-09-16.txt Re-run unchanged after the rebase onto elfmain.",
     "binaries": 46,
     "projects": [
       "coreutils (fmt/ls/sort/du, O0+O2+O2-noinline)",
@@ -123,7 +123,7 @@
     "u-boot 0x608715f0 -> sub_60871420 (r1)": "STILL FIRES, and it is correct: readelf on the decbench u-boot twin says 0x60871420 is get_ticks, DW_TAG_formal_parameter count 0, and 0x608715f0 is __udelay with ONE formal parameter (`usec`). The `kind: arg` row the review saw deleted was itself fabricated; the narrowed prototype matches DWARF.",
     "unmodelled-variadic callee (the required change)": "answered structurally by the callee clause, not by a per-function scan: u-boot's printf spills r1-r3 into the va_list save area, so proves_input holds for every one of its 1,924 sites at once."
   },
-  "ablation": "MEASURED, not asserted: with the default flipped to `true` in Architecture and ArchContext and the tree rebuilt, `kuna test --datatests --baseline docs/baseline.json` is 675/675 PARITY OK and `--datatests-dir tests/stages --baseline docs/baseline-stages.json` is 1021/1021 PARITY OK. The flip was reverted; the shipped default is off, and it is off because of the rax:rdx return shape no clause can see and because a wrong drop is a DELETED expression, not because of the corpora.",
+  "ablation": "MEASURED, not asserted: with the default flipped to `true` in Architecture and ArchContext and the tree rebuilt, `kuna test --datatests --baseline docs/baseline.json` is 675/675 PARITY OK and `--datatests-dir tests/stages --baseline docs/baseline-stages.json` is 1029/1029 PARITY OK. The flip was reverted; the shipped default is off, and it is off because of the rax:rdx return shape no clause can see and because a wrong drop is a DELETED expression, not because of the corpora.",
   "review_round3": {
     "blocker": "clobber_of_this_register_reaches put no condition on a MULTIEQUAL input whose def was not an indirect creation, so one clobber among a join's incoming values condemned the whole join. Repro (20-line .s, gcc -nostdlib -static, no corpus binary needed): a caller that forwards its own second parameter into rdx on the non-clobber path rendered `void sub_401000(long a0)` / `sub_40102f(a0,5)` with the option on, against `void sub_401000(long a0,unsigned long a1)` / `sub_40102f(a0,5,a1)` off -- both the argument and the parameter deleted, including from the scored variables[] surface.",
     "close": "the join clause (clause 4). Both reviewer repros (fix.s, the constant; fix2.s, the forwarded parameter) now render identically with the option on and off, and the fmt witness still collapses 3/2/1 -> 2/2/2.",
