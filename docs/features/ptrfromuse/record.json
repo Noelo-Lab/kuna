@@ -1,0 +1,449 @@
+{
+ "opportunity": "A function parameter the body only ever dereferences is declared as an integer, and whether it gets a pointer type depends on nothing but whether the first field the compiler reads sits at offset 0. Three lines of C under stock gcc -O2: `struct S { long pad; int a; int b; }; int sum(struct S *s) { return s->a + s->b; }` is `int sum(long a0) { return *(int *)(a0 + 8) + *(int *)(a0 + 0xc); }`, while moving `a` to offset 0 makes the same parameter `int *a0`. On coreutils fmt -O2 with `libctypes off` the same split shows on two neighbouring functions: put_word is `void sub_3000(unsigned long *a0)` and get_line is `void sub_3420(long a0, unsigned int a1)`, ground truth `FILE *` for both.",
+ "test_name": "tests/stages/kuna-ptrfromuse.xml (11 assertions, three passes, one witness and three controls) + 5 hermetic unit tests in p5_types/kuna_ptrfromuse/tests.rs",
+ "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+ "selector": "0x3420",
+ "func_addr": "0x3420",
+ "angr_version": null,
+ "option": "ptrfromuse",
+ "flag": "ptr_from_use",
+ "element_id": null,
+ "change_kind": "opt-in-tool",
+ "tier": "transform",
+ "phase": "P5",
+ "subphase": "type-propagation",
+ "source_decompiler": "angr",
+ "inspiration": "angr typehoon pointer-arithmetic closure (analyses/typehoon/simple_solver.py): anything loaded from or stored to is a pointer, and `ptr + const` is the same pointer",
+ "default_on": false,
+ "default_value": "off",
+ "values": "off|byte|void",
+ "ablation_changed": 0,
+ "parity": "OK",
+ "bisect": {
+  "method": "throwaway instrumented build, env-gated eprintln (KUNA_DBG_PTRFROMUSE, KUNA_DBG_CEILING)",
+  "function": "coreutils fmt -O2 get_line @0x3420",
+  "seed_fold_votes": {
+   "INT_ADD x3": "int8 (wins)",
+   "CALL x3 (__uflow, sub_2ea0)": "xunknown8 (type_order +1, loses)"
+  },
+  "competing_call_vote_hypothesis": "REFUTED -- the calls vote xunknown8, which is less specific than int8",
+  "propagate_to_pointer_calls_in_one_run": 117,
+  "propagate_int_add_inslot_minus_one_refusals_targeting_the_parameter": 12,
+  "conclusion": "Both halves fail independently: the fold has no pointer candidate at all (TypeOpIntAdd::getInputLocal votes int8), and the up-edge that would supply one is refused. A candidate folded into build_localtypes is order-independent; flipping the up-edge would fire on every local and its pointee would be the access width, not the GT-dominant char *."
+ },
+ "sweep": {
+  "surface": "kuna decompile-all off vs byte vs void, 16 stripped binaries (8 projects x O2 and O0), 7,523 functions, every changed function classified per hunk",
+  "binaries": "coreutils fmt, coreutils ls, grep, gzip, bzip2, dash, tar, diffutils diff -- each at O2 and at O0 (the O0 half was added in review: the statement-fold class below only shows there)",
+  "functions": 7523,
+  "byte": {
+   "functions_changed": 1038,
+   "hunks": {
+    "declaration": 1111,
+    "index-rewrite": 3049,
+    "addend-reorder": 118,
+    "cast-change+index-rewrite": 442,
+    "addend-reorder+index-rewrite": 20,
+    "cast-change+declaration": 8,
+    "decl-set": 60,
+    "OTHER": 129,
+    "stmt-fold": 11,
+    "cast-change+declaration+index-rewrite": 104,
+    "addend-reorder+cast-change+index-rewrite": 2,
+    "STATEMENT": 19,
+    "cast-change": 27
+   }
+  },
+  "void": {
+   "functions_changed": 1034,
+   "hunks": {
+    "declaration": 1094,
+    "cast-change": 3169,
+    "addend-reorder": 114,
+    "cast-change+declaration": 475,
+    "addend-reorder+cast-change": 16,
+    "decl-set": 32,
+    "addend-reorder+cast-change+declaration": 1,
+    "OTHER": 85,
+    "cast-change+index-rewrite": 20,
+    "STATEMENT": 4
+   }
+  },
+  "hand_reviewed_hunks": {
+   "byte": 159,
+   "void": 89
+  },
+  "statements_folded_or_deleted": {
+   "byte": "29 hunks in 22 functions",
+   "void": "2 hunks in 2 functions",
+   "what_they_are": "every one is a hoisted temp folded into its uses or a common subexpression recomputed at each use -- the value the vanished statement carried reappears in the statements that stay. Cited examples: O0 coreutils fmt sub_406b deletes `a1 -= *(int *)(a0 + 0x14);` and substitutes it into the two uses; O2 gzip sub_a870 turns one address temp into two recomputations inside one call; O2 gzip sub_9f80 deletes a loop-invariant bound and recomputes it in the loop; O2 tar sub_3b890 splits `*(uint4 *)(a0+0x18) | *(uint4 *)(a1+0x18)` into two temps and recomputes the `|` at both uses; O2 diffutils sub_9e40 deletes `a0 += v2;` and folds v2 into every subsequent index.",
+   "correction": "the pre-review bundle claimed `statements_moved_or_deleted: 0`, which was false: the classifier's own STATEMENT bucket was non-zero and the O2-only sweep could not see the O0 cases at all.",
+   "classifier_note": "the classifier's TYPES regex does not know `bool`, so a lone `bool vN;` declaration lands in its STATEMENT bucket; 1 byte hunk and 2 void hunks are that and are excluded from the counts above"
+  },
+  "call_text_duplication": "one consequence of the fold class, and the only structural counter that moves: O0 grep sub_eae1 gains three textual occurrences of `sub_c845(` in the byte arm (1,537 -> 1,540 over the whole binary), because the temp holding a call-bearing load is folded into its two uses. The p-code still calls once; read as C it looks like two calls. The off arm already shows the same shape elsewhere in that function.",
+  "other_classes": [
+   "index rewrite: `(p + k)` <-> `&p[k]` (RulePtrArith), and add-tree re-association once the base is a pointer",
+   "cast added or removed (the whole of the void arm's body change)",
+   "null-literal spelling: `a0 != 0` prints `a0 != NULL`, `return 0` prints `return NULL`",
+   "a `*(bool *)a0 = ...` store loses its cast",
+   "declaration only, and local renumbering that follows a class change"
+  ],
+  "structural_control": {
+   "measure": "counts of `// Function:` headers, goto, label_*:, return, while, if, and `sub_xxxx(` call sites, per binary per arm",
+   "result": "byte-identical in all three arms on all 16 binaries except the one call-text duplication above",
+   "line_and_semicolon_deltas": {
+    "O0-bzip2-bzip2": {
+     "byte": [
+      0,
+      0
+     ],
+     "void": [
+      0,
+      0
+     ]
+    },
+    "O0-coreutils-fmt": {
+     "byte": [
+      -2,
+      -1
+     ],
+     "void": [
+      0,
+      0
+     ]
+    },
+    "O0-coreutils-ls": {
+     "byte": [
+      0,
+      0
+     ],
+     "void": [
+      1,
+      1
+     ]
+    },
+    "O0-dash-dash": {
+     "byte": [
+      1,
+      1
+     ],
+     "void": [
+      1,
+      1
+     ]
+    },
+    "O0-diffutils-diff": {
+     "byte": [
+      2,
+      2
+     ],
+     "void": [
+      1,
+      1
+     ]
+    },
+    "O0-grep-grep": {
+     "byte": [
+      -6,
+      -6
+     ],
+     "void": [
+      0,
+      0
+     ]
+    },
+    "O0-gzip-gzip": {
+     "byte": [
+      0,
+      0
+     ],
+     "void": [
+      0,
+      0
+     ]
+    },
+    "O0-tar-tar": {
+     "byte": [
+      3,
+      3
+     ],
+     "void": [
+      0,
+      0
+     ]
+    },
+    "O2-bzip2-bzip2": {
+     "byte": [
+      -2,
+      -2
+     ],
+     "void": [
+      1,
+      1
+     ]
+    },
+    "O2-coreutils-fmt": {
+     "byte": [
+      0,
+      0
+     ],
+     "void": [
+      0,
+      0
+     ]
+    },
+    "O2-coreutils-ls": {
+     "byte": [
+      0,
+      0
+     ],
+     "void": [
+      0,
+      0
+     ]
+    },
+    "O2-dash-dash": {
+     "byte": [
+      -1,
+      -1
+     ],
+     "void": [
+      -1,
+      -1
+     ]
+    },
+    "O2-diffutils-diff": {
+     "byte": [
+      -1,
+      -1
+     ],
+     "void": [
+      -1,
+      -1
+     ]
+    },
+    "O2-grep-grep": {
+     "byte": [
+      -7,
+      -7
+     ],
+     "void": [
+      -2,
+      -2
+     ]
+    },
+    "O2-gzip-gzip": {
+     "byte": [
+      -4,
+      -4
+     ],
+     "void": [
+      0,
+      0
+     ]
+    },
+    "O2-tar-tar": {
+     "byte": [
+      0,
+      0
+     ],
+     "void": [
+      0,
+      0
+     ]
+    }
+   },
+   "note": "these two counters DO move (total -17 lines byte, +0 void, over 7,523 functions); the earlier bundle's control was the set of counters that happens not to move, which is why they are recorded here too"
+  }
+ },
+ "type_recovery_ceiling": {
+  "instrument": "throwaway env-gated eprintln at Funcdata::set_type_recovery_exceeded (KUNA_DBG_CEILING), reverted before the final build",
+  "result": "identical in all three arms on all 16 binaries",
+  "counts_off_byte_void": {
+   "O2-coreutils-fmt": [
+    "off=1",
+    "byte=1",
+    "void=1"
+   ],
+   "O2-coreutils-ls": [
+    "off=6",
+    "byte=6",
+    "void=6"
+   ],
+   "O2-grep-grep": [
+    "off=10",
+    "byte=10",
+    "void=10"
+   ],
+   "O2-gzip-gzip": [
+    "off=5",
+    "byte=5",
+    "void=5"
+   ],
+   "O2-bzip2-bzip2": [
+    "off=5",
+    "byte=5",
+    "void=5"
+   ],
+   "O2-dash-dash": [
+    "off=1",
+    "byte=1",
+    "void=1"
+   ],
+   "O2-tar-tar": [
+    "off=23",
+    "byte=23",
+    "void=23"
+   ],
+   "O2-diffutils-diff": [
+    "off=7",
+    "byte=7",
+    "void=7"
+   ],
+   "O0-coreutils-fmt": [
+    "off=1",
+    "byte=1",
+    "void=1"
+   ],
+   "O0-coreutils-ls": [
+    "off=2",
+    "byte=2",
+    "void=2"
+   ],
+   "O0-grep-grep": [
+    "off=1",
+    "byte=1",
+    "void=1"
+   ],
+   "O0-gzip-gzip": [
+    "off=2",
+    "byte=2",
+    "void=2"
+   ],
+   "O0-bzip2-bzip2": [
+    "off=2",
+    "byte=2",
+    "void=2"
+   ],
+   "O0-dash-dash": [
+    "off=1",
+    "byte=1",
+    "void=1"
+   ],
+   "O0-tar-tar": [
+    "off=8",
+    "byte=8",
+    "void=8"
+   ],
+   "O0-diffutils-diff": [
+    "off=2",
+    "byte=2",
+    "void=2"
+   ]
+  },
+  "history": "before the PTRADD/PTRSUB fix the byte arm ran the ceiling: fmt 1 -> 6, ls 6 -> 42, grep 10 -> 71, tar 23 -> 248"
+ },
+ "benchmark": {
+  "corpus": "frozen decbench corpus (results/full_run_address_2026-09-11), 8 projects x O0/O2/O2-noinline, DECBENCH_NO_CACHE=1, both arms the same binary",
+  "metric": "type_match",
+  "slices": 444,
+  "functions": 10748,
+  "baseline": "origin/main at 12c31465, which carries libctypes default-ON (#658); that is why the perfect base is 959 and not the 889 an earlier run against the pre-#658 main reported",
+  "controls": {
+   "baseline_vs_published_agreement": "88.44% (9505/10748)",
+   "identical_variables_scored_identically": "byte 8802 functions / 0 discrepancies; void 8803 / 0",
+   "per_variable": "from --dump-decisions, over 55,932 GT-matched variable comparisons: byte 0 regressions / 32 improvements; void 0 regressions / 165 improvements"
+  },
+  "arms": {
+   "byte": {
+    "perfect_off": 959,
+    "perfect_on": 964,
+    "aggregate_off": 3037.05,
+    "aggregate_on": 3045.57,
+    "moved_onto_perfect": 5,
+    "moved_off_perfect": 0,
+    "improved": 15,
+    "worse": 0
+   },
+   "void": {
+    "perfect_off": 959,
+    "perfect_on": 959,
+    "aggregate_off": 3037.05,
+    "aggregate_on": 3069.92,
+    "moved_onto_perfect": 0,
+    "moved_off_perfect": 0,
+    "improved": 100,
+    "worse": 0
+   }
+  },
+  "what_worse_0_does_and_does_not_mean": "every binary in this corpus is gcc-built ELF from the coreutils family, and the shape this rule has to refuse is nearly absent from it. Measured over the 16-binary corpus sweep: exactly FOUR sites spell a named global subscripted by a parameter (`dat_24580[a2]` in O0 dash, `dat_9fcd0[a2]` twice in O0 tar, `dat_1f548[a2]` in O2 dash), and all four are byte-identical in all three arms. Every other `x[aN]` in the corpus is a pointer already typed as one. The guard ablation moves only 9 of 7,523 functions, none of them scored differently. So `worse 0` is a statement about gcc-built ELF coreutils-family code with almost none of the class in it, not about the rule in general; the class is pinned by a stage control instead, and the three-line gcc repro in analysis.md is what a reader should run against their own corpus before flipping anything.",
+  "verdict": "both arms are viable as OPT-IN tools: neither has a `worse` row, neither moves a function off perfect, and neither has a per-variable regression. `void` is the larger aggregate move (+32.87, 100 improved), `byte` wins five more perfect functions. This is NOT evidence for a default flip -- see default_flip below."
+ },
+ "speed": {
+  "method": "interleaved min-of-N whole-binary decompile-all over all three arms (scripts.pipeline.timeit's off/on pair cannot express a three-valued option), re-measured on a quiet box after the review",
+  "fmt_O2_151_functions_n13": {
+   "off_min_ms": 4027.5,
+   "byte_min_ms": 4019.1,
+   "void_min_ms": 4025.7,
+   "byte_delta_pct": -0.21,
+   "void_delta_pct": -0.04
+  },
+  "ls_O2_404_functions_n11": {
+   "off_min_ms": 13170.7,
+   "byte_min_ms": 13157.7,
+   "void_min_ms": 13206.5,
+   "byte_delta_pct": -0.1,
+   "void_delta_pct": 0.27
+  },
+  "speed_budget_pct": 5,
+  "speed_within_budget": true
+ },
+ "gates": {},
+ "files": [
+  "decompiler/crates/kuna-decomp/phases.toml",
+  "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+  "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+  "decompiler/crates/kuna-decomp/src/p5_types/coreaction_infertypes.rs",
+  "decompiler/crates/kuna-decomp/src/p5_types/kuna_ptrfromuse.rs",
+  "decompiler/crates/kuna-decomp/src/p5_types/kuna_ptrfromuse/tests.rs",
+  "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+  "docs/features/ptrfromuse/analysis.md",
+  "docs/features/ptrfromuse/plan.md",
+  "docs/features/ptrfromuse/record.json",
+  "docs/spec/05-types.md",
+  "tests/stages/kuna-ptrfromuse.xml"
+ ],
+ "catalog_counts": {
+  "settables": "211 -> 212",
+  "tiers": "(68, 80, 63) -> (68, 81, 63)",
+  "catalog_json_records": "210 -> 211",
+  "kuna-catalog.xml #6 source_decompiler angr": "32 -> 33",
+  "kuna-catalog.xml #8 change_kind opt-in-tool": "20 -> 21",
+  "stage corpus files": "300 -> 301 (one new file; the review added two assertions to it, not a second file)",
+  "phase_catalog.json": "recaptured",
+  "option_values_live_value_present_for_87": "unchanged (no live reader; ptrfromuse added to the kuna_phases/tests.rs allowlist beside pebnames)"
+ },
+ "notes": "Five defects were found by the measurements and fixed before shipping. (1) The rule typed the x86-64 FS_OFFSET segment base, which is a function input but not a parameter, and that stopped `stackguard` recognising the canary on coreutils ls sub_d820 -- fixed by FuncProto::possible_input_param. (2) Not following PTRADD/PTRSUB made the candidate oscillate against the pointer-arithmetic rewrite and run the seven-pass settle ceiling. (3) Overriding a vote that is already a pointer replaced `free`'s correct `void *` with `undefined1 *` and was the entire `worse` column of the first typesweep. (4) [review] An INT_ADD whose constant addend was itself a global object address forwarded the walk, so a parameter indexing a byte table was typed `char *` and the named global was replaced in the body by its raw address. (5) [review] The first fix for (4) refused on the pointer bound alone, which cost nine correct bzFile * declarations in bzip2; it now grades the constant instead.",
+ "preset_decision": "default off, and NOT in AGGRESSIVE_OVERRIDES: it commits a parameter to a pointer, which is a claim. No default flip is recommended -- see default_flip.",
+ "rule": {
+  "candidate": "a pointer of the default data space's address size (eight bytes on the 64-bit images the option is named for, four on a 32-bit image), pointing at one unknown byte (`byte`, renders `char *`) or at void (`void`)",
+  "considered": "function INPUT varnodes only, and only storage FuncProto::possible_input_param accepts, and not type-locked",
+  "walk": "breadth-first over the transitive descendants through COPY/MULTIEQUAL/INDIRECT identity, the base slot of PTRADD/PTRSUB, and INT_ADD with a literal; visited set, ten-hop cap; accepts when a terminal use is the address operand of a LOAD or STORE. Breadth first so the cap is a property of the graph (everything within ten hops of the input is seen) rather than of the traversal order -- depth first recorded whichever path reached a shared Varnode first, so whether a refusing use just past the boundary was classified depended on pop order. Measured: the switch types one more function in the 16-binary corpus (O2 tar sub_3c8f0) and leaves the typesweep bit-identical in both arms.",
+  "refuses": "INT_MULT, INT_DIV/SDIV/REM/SREM, INT_2COMP/INT_NEGATE, any shift, PIECE, any float opcode, a comparison against a non-zero literal, a CALL whose callee prototype committed that argument to a non-pointer, and an INT_ADD whose constant addend resolves to a global object",
+  "neutral": "an INT_ADD with a variable addend, and an INT_ADD whose constant addend is address-like but names nothing",
+  "fold": "offered to get_local_type's fold by Datatype::type_order, never as a replacement seed, so libctypes' FILE * (SUB_PTR_STRUCT) and DWARF both outrank it; it also never speaks when the fold already has a pointer"
+ },
+ "constant_addend_grades": {
+  "why": "`p->field` and `table[i]` lower to the same INT_ADD of a value and a constant; only the constant says which operand is the base. The test is ActionConstantPtr::isPointer's own: the default data space's pointer bounds, resolve_constant into that space, then the global scope.",
+  "Object (a global symbol at the resolved address)": "REFUSE -- the constant is the base, so the walked value is a subscript",
+  "Maybe (address-like, names nothing)": "NEUTRAL -- same as a variable addend. A stripped image's .bss table looks like this, and so does a genuinely large struct (bzip2's 0x13f0-byte bzFile, read at +0x1394 and +0x13e8)",
+  "No (below the space's pointer lower bound)": "the walk carries on; an ordinary field offset",
+  "residual_exposure": "a parameter used ONLY to subscript an unnamed table is declined (nothing gives it a base); a parameter used both as such a subscript and as a real memory base is typed on the strength of the second use",
+  "measured_cost_of_the_refusal": "guard ablation: rebuilt with the constant test short-circuited and re-ran the byte arm over the same 16 binaries. 9 of 7,523 functions differ, all in bzip2 (bzFile *, fields at +0x1394/+0x13e8). With the flat 'at or above the bound => refuse' rule all 9 were lost; with the three grades 1 is recovered (O0 bzip2 sub_b9c1, which also dereferences its parameter at an ordinary offset) and 8 are still declined. The typesweep is bit-identical either way, so the refusal costs nothing the metric can see.",
+  "controls": "tests/stages/kuna-ptrfromuse.xml `globalindex` (Object arm) and `blindindex` (Maybe arm); each proven two-pass with a throwaway build that short-circuits its arm"
+ },
+ "default_flip": {
+  "recommendation": "none. The earlier bundle recommended flipping `void` on; that recommendation is withdrawn.",
+  "why": "the evidence attached to it is one corpus -- gcc-built ELF, coreutils family, PIE -- which contains zero instances of the shape the rule has to get right, and a decompiler option that commits a parameter to a pointer is a claim about every binary, not about this corpus. A flip PR would need, on top of the usual 0/675 + stages + speed evidence: a corpus with byte-element global tables (firmware LUTs, character-class tables, string tables), at least one non-gcc toolchain, and a non-ELF container.",
+  "what_stands": "both arms are safe to reach for by hand, which is what change_kind opt-in-tool means."
+ }
+}

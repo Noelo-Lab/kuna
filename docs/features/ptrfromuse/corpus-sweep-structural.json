@@ -1,0 +1,562 @@
+{
+ "O0-bzip2-bzip2": {
+  "off": {
+   "functions": 154,
+   "goto": 135,
+   "label": 64,
+   "return": 446,
+   "while": 128,
+   "if": 901,
+   "call_stmts": 496,
+   "lines": 6791,
+   "semicolons": 4315
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  }
+ },
+ "O0-coreutils-fmt": {
+  "off": {
+   "functions": 191,
+   "goto": 58,
+   "label": 26,
+   "return": 219,
+   "while": 20,
+   "if": 311,
+   "call_stmts": 294,
+   "lines": 2916,
+   "semicolons": 1536
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": -2,
+   "semicolons": -1
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  }
+ },
+ "O0-coreutils-ls": {
+  "off": {
+   "functions": 589,
+   "goto": 160,
+   "label": 78,
+   "return": 771,
+   "while": 105,
+   "if": 1214,
+   "call_stmts": 1221,
+   "lines": 10944,
+   "semicolons": 6017
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 1,
+   "semicolons": 1
+  }
+ },
+ "O0-dash-dash": {
+  "off": {
+   "functions": 442,
+   "goto": 142,
+   "label": 90,
+   "return": 757,
+   "while": 180,
+   "if": 1184,
+   "call_stmts": 1594,
+   "lines": 11347,
+   "semicolons": 6835
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 1,
+   "semicolons": 1
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 1,
+   "semicolons": 1
+  }
+ },
+ "O0-diffutils-diff": {
+  "off": {
+   "functions": 507,
+   "goto": 176,
+   "label": 92,
+   "return": 831,
+   "while": 181,
+   "if": 1392,
+   "call_stmts": 1053,
+   "lines": 12247,
+   "semicolons": 7123
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 2,
+   "semicolons": 2
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 1,
+   "semicolons": 1
+  }
+ },
+ "O0-grep-grep": {
+  "off": {
+   "functions": 642,
+   "goto": 201,
+   "label": 102,
+   "return": 1017,
+   "while": 175,
+   "if": 1605,
+   "call_stmts": 1515,
+   "lines": 13846,
+   "semicolons": 7945
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 3,
+   "lines": -6,
+   "semicolons": -6
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  }
+ },
+ "O0-gzip-gzip": {
+  "off": {
+   "functions": 248,
+   "goto": 7,
+   "label": 5,
+   "return": 408,
+   "while": 111,
+   "if": 697,
+   "call_stmts": 629,
+   "lines": 6370,
+   "semicolons": 3829
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  }
+ },
+ "O0-tar-tar": {
+  "off": {
+   "functions": 1570,
+   "goto": 430,
+   "label": 209,
+   "return": 3962,
+   "while": 511,
+   "if": 5752,
+   "call_stmts": 5317,
+   "lines": 44683,
+   "semicolons": 26425
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 3,
+   "semicolons": 3
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  }
+ },
+ "O2-bzip2-bzip2": {
+  "off": {
+   "functions": 114,
+   "goto": 305,
+   "label": 180,
+   "return": 307,
+   "while": 352,
+   "if": 1117,
+   "call_stmts": 247,
+   "lines": 9570,
+   "semicolons": 6669
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": -2,
+   "semicolons": -2
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 1,
+   "semicolons": 1
+  }
+ },
+ "O2-coreutils-fmt": {
+  "off": {
+   "functions": 151,
+   "goto": 171,
+   "label": 102,
+   "return": 189,
+   "while": 46,
+   "if": 408,
+   "call_stmts": 216,
+   "lines": 3821,
+   "semicolons": 2246
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  }
+ },
+ "O2-coreutils-ls": {
+  "off": {
+   "functions": 404,
+   "goto": 538,
+   "label": 342,
+   "return": 770,
+   "while": 196,
+   "if": 1737,
+   "call_stmts": 764,
+   "lines": 12953,
+   "semicolons": 7731
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  }
+ },
+ "O2-dash-dash": {
+  "off": {
+   "functions": 335,
+   "goto": 367,
+   "label": 271,
+   "return": 747,
+   "while": 278,
+   "if": 1509,
+   "call_stmts": 1417,
+   "lines": 13297,
+   "semicolons": 8388
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": -1,
+   "semicolons": -1
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": -1,
+   "semicolons": -1
+  }
+ },
+ "O2-diffutils-diff": {
+  "off": {
+   "functions": 398,
+   "goto": 678,
+   "label": 434,
+   "return": 779,
+   "while": 332,
+   "if": 1935,
+   "call_stmts": 859,
+   "lines": 15243,
+   "semicolons": 9319
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": -1,
+   "semicolons": -1
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": -1,
+   "semicolons": -1
+  }
+ },
+ "O2-grep-grep": {
+  "off": {
+   "functions": 449,
+   "goto": 625,
+   "label": 414,
+   "return": 830,
+   "while": 358,
+   "if": 2361,
+   "call_stmts": 1197,
+   "lines": 17501,
+   "semicolons": 10749
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": -7,
+   "semicolons": -7
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": -2,
+   "semicolons": -2
+  }
+ },
+ "O2-gzip-gzip": {
+  "off": {
+   "functions": 204,
+   "goto": 232,
+   "label": 158,
+   "return": 414,
+   "while": 227,
+   "if": 1129,
+   "call_stmts": 603,
+   "lines": 8991,
+   "semicolons": 5667
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": -4,
+   "semicolons": -4
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  }
+ },
+ "O2-tar-tar": {
+  "off": {
+   "functions": 1125,
+   "goto": 1956,
+   "label": 1357,
+   "return": 3370,
+   "while": 1067,
+   "if": 7311,
+   "call_stmts": 4232,
+   "lines": 54689,
+   "semicolons": 34359
+  },
+  "byte_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  },
+  "void_delta": {
+   "functions": 0,
+   "goto": 0,
+   "label": 0,
+   "return": 0,
+   "while": 0,
+   "if": 0,
+   "call_stmts": 0,
+   "lines": 0,
+   "semicolons": 0
+  }
+ }
+}

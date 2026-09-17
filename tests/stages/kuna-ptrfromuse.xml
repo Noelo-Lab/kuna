@@ -1,0 +1,126 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Type campaign, item `ptrfromuse`: a function parameter that the body only
+    ever dereferences is declared as an integer.  coreutils fmt -O2 shows the
+    split, on two functions that take the same kind of argument:
+
+        void sub_3000(unsigned long *a0)          // dereferenced at offset 0
+        void sub_3420(long a0, unsigned int a1)   // dereferenced at +8, +0x10
+
+    Root cause (P5, type propagation).  `ActionInferTypes` seeds every Varnode
+    from local op semantics and then pushes the seeds along the def-use graph,
+    and neither half can reach the second parameter.  In the seed fold
+    (`getLocalType`), every reader of `a0` is an `INT_ADD`, and
+    `TypeOpIntAdd::getInputLocal` votes `int8` for each of them, so there is no
+    pointer candidate at all.  The pointer that DOES exist (measured with an
+    instrumented build, `TypeOp::propagateToPointer` types the `a0 + 8` result
+    `undefined8 *` on every pass) never travels back to `a0`, because
+    `TypeOpIntAdd::propagateType` (typeop.cc:1217) refuses to carry a pointer
+    from an output to an input.  On the same run that refusal fires twelve times
+    with `a0` itself as the target.
+
+    Stage / sub-stage: P5 "type-propagation".  The P0 assertion
+    `option ptrfromuse off|byte|void` decides whether a use-derived pointer is
+    offered as one more vote in that fold, and what it points at.
+
+    The fixture is the same shape on SysV x86-64, plus two controls:
+
+        sumfields:   mov eax,[rdi+8]; add eax,[rdi+0x10]; ret
+                     the witness - RDI is only ever a memory base
+        scaledbase:  shl rdi,2; mov eax,[rdi+8]; ret
+                     a control - RDI is SHIFTED before it is dereferenced, which
+                     no pointer survives, so the rule must decline
+        derefzero:   mov eax,[rdi]; ret
+                     a control - an offset-0 dereference already types the
+                     parameter upstream, so nothing here may move it
+        globalindex: movsx eax,byte [rdi+0x200000]; ret
+                     a control - the same INT_ADD shape with the roles reversed:
+                     the constant is a global byte table and RDI is the subscript
+                     (`table[i]`).  Typing the subscript would both lie about the
+                     parameter and replace the named global with its raw address,
+                     so the rule must decline
+        blindindex:  movsx eax,byte [rdi+0x300000]; ret
+                     a control - the same shape with NOTHING mapped at the
+                     constant, which is what a stripped image's .bss table looks
+                     like.  Address-like with no symbol settles nothing, so the
+                     addition neither carries the walk nor refuses it, and a
+                     parameter with no other use is still declined
+
+    Pass 1 (`option ptrfromuse off`) reproduces the bug; pass 2 (`byte`) and
+    pass 3 (`void`) are the two shipped pointees.  All three controls are
+    identical in all three passes.
+-->
+<bytechunk space="ram" offset="0x100000">
+8b4708034710c300000000000000000048c1e7028b4708c300000000000000008b07c3000000000000000000000000000fbe8700002000c300000000000000000fbe8700003000c30000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="sumfields"/>
+<symbol space="ram" offset="0x100010" name="scaledbase"/>
+<symbol space="ram" offset="0x100020" name="derefzero"/>
+<symbol space="ram" offset="0x100030" name="globalindex"/>
+<symbol space="ram" offset="0x200000" name="table"/>
+<symbol space="ram" offset="0x100040" name="blindindex"/>
+</binaryimage>
+<script>
+  <com>option ptrfromuse off</com>
+  <com>lo fu sumfields</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaledbase</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu derefzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu globalindex</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu blindindex</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ptrfromuse byte</com>
+  <com>lo fu sumfields</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaledbase</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu derefzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu globalindex</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu blindindex</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ptrfromuse void</com>
+  <com>lo fu sumfields</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaledbase</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu derefzero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu globalindex</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu blindindex</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ptrfromuse #1: with the option off a parameter that is only ever dereferenced is an integer -- the bug" min="1" max="1">int4 sumfields\(int8 a0\)</stringmatch>
+<stringmatch name="ptrfromuse #2: and every field read is pointer arithmetic on that integer" min="1" max="1">\*\(int4 \*\)\(a0 \+ 8\) \+ \*\(int4 \*\)\(a0 \+ 0x10\)</stringmatch>
+<stringmatch name="ptrfromuse #3: with byte the same parameter is a byte pointer" min="1" max="1">int4 sumfields\(char \*a0\)</stringmatch>
+<stringmatch name="ptrfromuse #4: and the field reads become indexing, which is what makes this body-changing" min="1" max="1">\*\(int4 \*\)&amp;a0\[8\] \+ \*\(int4 \*\)&amp;a0\[0x10\]</stringmatch>
+<stringmatch name="ptrfromuse #5: with void the parameter is a void pointer instead" min="1" max="1">int4 sumfields\(void \*a0\)</stringmatch>
+<stringmatch name="ptrfromuse #6: and the arithmetic stays, carrying a cast" min="1" max="1">\*\(int4 \*\)\(\(int8\)a0 \+ 8\)</stringmatch>
+<stringmatch name="ptrfromuse #7: a parameter that is shifted before it is dereferenced is refused in all three passes" min="3" max="3">unsigned int scaledbase\(int8 a0\)</stringmatch>
+<stringmatch name="ptrfromuse #8: and a parameter that upstream already typed is untouched in all three" min="3" max="3">unsigned int derefzero\(unsigned int \*a0\)</stringmatch>
+<stringmatch name="ptrfromuse #9: a parameter that subscripts a global byte table is refused in all three passes" min="3" max="3">int4 globalindex\(int8 a0\)</stringmatch>
+<stringmatch name="ptrfromuse #11: an address-like constant that names nothing is ambiguous, so that parameter is refused too in all three passes" min="3" max="3">int4 blindindex\(int8 a0\)</stringmatch>
+<stringmatch name="ptrfromuse #10: and the named global it indexes survives in all three, instead of becoming a raw address" min="3" max="3">\(int4\)\(char\)table\[a0\]</stringmatch>
+</decompilertest>

@@ -358,6 +358,29 @@ fn build_localtypes(data: &mut Funcdata) {
             // No type-locked cover, or the piece floated: fall back to getLocalType.
             None => get_local_type(data, vn),
         };
+        // (kuna `ptrfromuse`) A function input whose only memory role is to be a
+        // LOAD/STORE base has no pointer candidate in the fold above, because
+        // `TypeOpIntAdd` votes `int<N>` for it and refuses to carry the pointer
+        // back from the `p + k` result.  Add that candidate as one more vote --
+        // folded by `type_order`, never as a replacement, so a callee-derived
+        // `FILE *` keeps its place.  See `kuna_ptrfromuse`.
+        let ct = {
+            let mode = data.get_arch().ptr_from_use;
+            // A vote that is ALREADY a pointer came from real evidence (a callee's
+            // locked prototype, DWARF, an offset-0 dereference), and it names a
+            // pointee this rule cannot know.  Use evidence adds nothing there, and
+            // `type_order` would prefer `undefined1 *` to the `void *` that `free`'s
+            // own prototype supplies -- so the rule only speaks where the parameter
+            // has no pointer type at all.
+            if ct.get_metatype() == type_metatype::TYPE_PTR {
+                ct
+            } else {
+                match crate::kuna_ptrfromuse::pointer_from_use(data, vn, mode) {
+                    Some(cand) if crate::kuna_ptrfromuse::folds_over(&cand, &ct) => cand,
+                    _ => ct,
+                }
+            }
+        };
         let v = data.vbank_mut().get_mut(vn).expect("build_localtypes: stale vn");
         if needs_block {
             v.set_stop_up_propagation();

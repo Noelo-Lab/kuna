@@ -314,6 +314,92 @@ stored value and print `(void)` — and nowhere else: the *pointer* keeps its ow
 `code *` type, so the indirect call still renders `(*v1)()`, and a `code **`
 load, whose pointee is a pointer, is untouched.
 
+**The dereferenced-only parameter (`ptrfromuse`).** A parameter the body only
+ever uses as a memory base is declared as an integer, and which integer it is
+depends on nothing more than whether the first field the compiler reads sits at
+offset 0. The two halves of the engine both decline it. In the seed fold, every
+reader of such a parameter is an `INT_ADD`, whose `get_input_local` is
+`get_base(size, TYPE_INT)`, so the fold's candidate set contains no pointer at
+all and the parameter comes out `int8`; an untyped callee that also takes the
+parameter votes `xunknown8`, which is *less* specific and loses. In the
+propagation, the pointer candidate does exist — `propagate_to_pointer` types the
+`a0 + 8` result from the width of the access through it — but
+`propagate_int_add` refuses to carry a pointer from an output back to an input
+(the `inslot == -1` arm, transcribed from upstream), so it never reaches the
+parameter. Both halves are measurable on one function: on coreutils `fmt` -O2 with
+`libctypes off`, `get_line` runs `propagate_to_pointer` 117 times and hits that
+refusal 12 times with its own first parameter as the target, and still prints
+`void sub_3420(long a0, unsigned int a1)`, while its sibling `put_word`, which
+dereferences the same kind of argument at offset 0, prints
+`void sub_3000(unsigned long *a0)`. (With `libctypes` at its default the same
+parameter is already named `FILE *` from the callee tables, which is why that
+pair witnesses the *engine* behaviour rather than the shipped default.)
+
+When `ptrfromuse` is `byte` or `void` (shipped `off`),
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_ptrfromuse.rs
+(pointer_from_use)` supplies the missing candidate directly. For each function
+*input* Varnode whose width equals the default data space's address size — eight
+bytes on the 64-bit images the option is named for, four on a 32-bit image, and
+the reason `get_type_pointer` is never asked to mint a pointer of the wrong
+width — and whose storage the prototype model says could carry a parameter (a
+segment-base register such as x86-64's `FS_OFFSET` is a function input too, and
+typing it defeats canary recognition), it walks the transitive descendants with a
+bounded **breadth-first** worklist — a visited set and a ten-hop cap, so a
+loop-carried MULTIEQUAL is entered once, and the cap is a property of the graph
+rather than of the pop order — through `COPY`/`MULTIEQUAL`/`INDIRECT` identity and
+through an `INT_ADD` whose other operand is a literal, and offers a pointer when
+at least one terminal use is the address operand of a `LOAD` or `STORE`. It
+refuses outright on any use no pointer survives: `INT_MULT`, the four
+divide/remainder opcodes, `INT_2COMP`/`INT_NEGATE`, any shift, a `PIECE` that
+assembles the value out of halves, any float opcode, a comparison against a
+non-zero literal, and a `CALL` whose callee prototype has already committed that
+argument to a non-pointer metatype. An `INT_ADD` with a *variable* addend is
+neutral — it neither carries the walk nor refuses it — because either operand of
+`x + y` could be the base, which is also why an induction variable used to index
+a buffer never becomes a pointer through this rule. `byte` points at one unknown
+byte, which the unknown-type rendering of §5.5 spells `char *`; `void` points at
+nothing.
+
+A literal addend is where the rule's one structural ambiguity lives, and it is
+worth stating plainly. `p->field` and `table[i]` lower to the *same* `INT_ADD`
+of a value and a constant; only the constant says which operand is the base. So
+the walk asks `ActionConstantPtr::isPointer`'s own question of the addend, in the
+same three steps: the default data space's pointer bounds, `resolve_constant`
+into that space, then the global scope. The answer has three grades, and the walk
+treats each differently.
+
+* A constant that resolves to a **global object** kuna knows about is the base,
+  so the walked value is a subscript, and the whole candidate is **refused**.
+  Without this, `char table[256]; int lookup(long i){ return table[i]; }` is
+  declared `int lookup(char *a0)` and prints `a0[0x4040]` — a wrong declaration,
+  and the named global `table` replaced in the body by its raw address.
+* A constant that is **address-like but names nothing** settles nothing, so it is
+  neutral, exactly like a variable addend: it neither carries the walk nor
+  refuses it. This is the grade a stripped image's `.bss` table falls into (no
+  symbol at all), and also the grade a genuinely large struct falls into — bzip2's
+  `bzFile` is 0x13f0 bytes and its fields are read at `+0x1394` and `+0x13e8`. A
+  parameter with no other use is declined either way; one the function *also*
+  dereferences at an ordinary field offset keeps its candidate from that use.
+* Anything below the bound is an ordinary field offset and the walk carries on.
+
+So the residual exposure is precise: a parameter used *only* to subscript an
+unnamed byte-element table would be declined (nothing tells the walk it is a
+base, but nothing gives it a base either), and a parameter used both as such a
+subscript and as a real memory base is typed on the strength of the second use.
+`tests/stages/kuna-ptrfromuse.xml` pins both grades, as `globalindex` and
+`blindindex`.
+
+The candidate is **folded** into `get_local_type`'s result by
+`Datatype::type_order`, not installed as a replacement seed. That is the whole
+reason a named type survives: a `FILE *` arriving from a callee's locked
+prototype is `SUB_PTR_STRUCT`, the candidate is `SUB_PTR`, and the fold keeps the
+more specific of the two, so `libctypes` (chapter 01) and DWARF both outrank this
+rule wherever they have an opinion. A replacement seed at the same place would
+silently win instead. Only function inputs are considered, which bounds the
+change to one declaration per function; the declaration is what moves, but the
+body moves with it, because once the parameter is a byte pointer the
+pointer-arithmetic pool rewrites `*(int *)(a0 + 8)` into `*(int *)&a0[8]`.
+
 **The Windows segment base (`pebnames`).** A Windows user-mode thread keeps its
 Thread Environment Block at the base of `GS` on x86-64 and of `FS` on x86, and
 x86 SLEIGH lowers a segment-prefixed operand to `GS_OFFSET + disp` /

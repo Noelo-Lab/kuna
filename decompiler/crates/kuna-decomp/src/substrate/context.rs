@@ -852,6 +852,12 @@ pub struct ArchContext {
     /// dereferenced value; mirrors
     /// [`Architecture::codescalar`](crate::architecture::Architecture).
     pub codescalar: bool,
+    /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be a
+    /// LOAD/STORE base as a pointer; mirrors
+    /// [`Architecture::ptr_from_use`](crate::architecture::Architecture).  Read by
+    /// `ActionInferTypes::buildLocaltypes` (`coreaction_infertypes`); the mechanism
+    /// lives in [`kuna_ptrfromuse`](crate::p5_types::kuna_ptrfromuse).
+    pub ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode,
     /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
     /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
     /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
@@ -1522,6 +1528,7 @@ impl ArchContext {
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             codescalar: false,           // (kuna) option codescalar
+            ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
             lowered_switch_labels: true, // loweredswitchlabels
