@@ -24,6 +24,7 @@ pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
 pub mod kuna_zeroidiomuse; // (kuna) a self-cancelling `xor r,r` is not a competing use of the value it eats
 pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
+pub mod kuna_argclobber; // (kuna) drop a trailing register argument a previous call's clobber put there
 pub mod kuna_calleearity; // (kuna) one callee, one argument list across its call sites
 pub mod kuna_calleearityfwd; // (kuna) reconcile against a sibling call that finalizes later
 pub mod kuna_calleearitybody; // (kuna) recover a lone call's argument list from the callee's own body

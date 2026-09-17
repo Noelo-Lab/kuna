@@ -316,6 +316,11 @@ pub fn build_input_from_trials(
     // callee does not render with two arities in one function.  Inert with the
     // option off.  See [`crate::p4_calls::kuna_calleearity`].
     crate::p4_calls::kuna_calleearity::unify_with_sibling_call(fc, data);
+    // (kuna) `argclobber`: and after it, the subtractive direction -- a trailing
+    // register argument a previous call's clobber put there is dropped, unless a
+    // sibling the additive rule above could read really passed one at that
+    // storage.  Inert with the option off.  See [`crate::p4_calls::kuna_argclobber`].
+    crate::p4_calls::kuna_argclobber::drop_clobber_tail_arg(fc, data);
 
     let stackoffset = fc.get_stackoffset();
     let num_trials = fc.get_active_input().get_num_trials();

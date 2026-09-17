@@ -421,9 +421,23 @@ mod tests {
         /// the call's argument shape; the callee body is never read. That trust is a
         /// judgement the operator makes about the binary, not one the preset should
         /// make as the default output under 500 KiB.
+        /// `argclobber` DELETES a recovered argument, on evidence that is one-sided
+        /// by construction: the register it drops is a possible *output* location of
+        /// the callee's model, which is why the INDIRECT creation it reads exists at
+        /// all. Three clauses keep it off a real argument -- the creation has to be
+        /// of the argument register itself, every other input of the argument's join
+        /// has to be a division by-product rather than a value the caller wrote, and
+        /// the callee's own body must not read those bytes before writing them -- and
+        /// the shape none of them can see is a callee that really returns a 16-byte
+        /// value in `rax:rdx` and forwards the high half into the next call. Every
+        /// wrong drop is a deleted expression, which is the kind of wrong output a
+        /// reader cannot see, so deleting an argument as the default output under
+        /// 500 KiB is the judgement the operator
+        /// makes, not the preset.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret",
-              "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend"];
+              "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
+              "argclobber"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

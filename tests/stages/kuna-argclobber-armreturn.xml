@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    The storage clause of `option argclobber`: the clobber has to be a clobber
+    of the ARGUMENT register itself, not of some other register whose value the
+    caller then moved there.
+
+    On every ABI the first return register is also killed-by-call and a
+    possible output location of the callee's model, so until the output seam
+    resolves it a preceding call's RESULT is an indirect creation exactly like a
+    clobber is. When the caller moves that result into an argument register,
+    copy propagation puts the creation straight into the argument's join, and
+    the caller-side evidence is then indistinguishable from the phantom's.
+
+    This fixture is u-boot -O2 `sub_60827fa4` reduced. There, r0 holds
+    `ofnode_read_u32_default(dev->node,"bus-width",1)`, three `cmp`s test it,
+    and a pair of predicated `mov r3,r0` carry it into
+
+        printf("%s %s: Invalid \"bus-width\" value %u!\n", dev, name, width);
+
+    as the value %u prints. Here `producer` stands in for the callee and the
+    same predicated pair carries r0 into r3:
+
+        bl   producer
+        cmp  r0, #4
+        movne r3, r0
+        moveq r3, r0
+        bl   target2
+
+    r3 at the call is a join whose indirect creation lives at r0, so the rule
+    declines: a register the caller wrote is a register the caller is passing,
+    whatever the value in it came from.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring". Both passes must render
+    the same four-argument call, so the assertion counts 2.
+-->
+<bytechunk space="ram" offset="0x100000">
+70402de90050a0e1080000eb040050e30030a0110030a0010500a0e10110a0e3
+0220a0e3050000eb7080bde8cccccccc10402de9090000eb1080bde8cccccccc
+10402de90040a0e1040000eb0400a0e11080bde8cccccccccccccccccccccccc
+1eff2fe1cccccccccccccccccccccccc
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="caller2"/>
+<symbol space="ram" offset="0x100030" name="producer"/>
+<symbol space="ram" offset="0x100040" name="target2"/>
+<symbol space="ram" offset="0x100060" name="helper"/>
+</binaryimage>
+<script>
+  <com>option argclobber off</com>
+  <com>lo fu caller2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option argclobber on</com>
+  <com>lo fu caller2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="argclobber-armreturn #1: the clobber is of r0 and the argument register is r3, so the trailing argument survives both passes" min="2" max="2">target2\(a[0-9]+,[^)]*,[^)]*,[^)]*\)</stringmatch>
+</decompilertest>

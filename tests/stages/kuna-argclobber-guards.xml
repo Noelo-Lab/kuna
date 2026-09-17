@@ -1,0 +1,54 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The callee clause of `option argclobber`: a callee that READS the argument
+    register before writing it keeps its argument, whatever the caller's side
+    looks like.
+
+    The caller here is byte-for-byte the shape the option is FOR, the same one
+    tests/stages/kuna-argclobber.xml drops: one path calls `clobber` (which
+    destroys rdx and whose own first act is a call, so `calleepreserves` cannot
+    narrow the killed set), the other leaves an `idivl` remainder in edx while
+    using only the quotient, and the two join at the call.  Every incoming value
+    for rdx is therefore one the caller did not put there for this call, and the
+    only difference from the positive fixture is the callee:
+
+        reader: mov %rdx, %rax ; ret
+
+    The caller-side evidence cannot tell this apart from the phantom, and the
+    callee settles it: bytes it reads at entry are a parameter however the
+    value got into the register. `calleedeadarg` already decodes each callee
+    once per image for the opposite claim (does it overwrite the register
+    before reading it?), so this reads the same summary's `proves_input` half.
+
+    This is the clause that answers for a callee kuna never recovered as
+    variadic. u-boot -O2 `sub_60873270` is printf, called from 1,924 sites, and
+    its prologue spilling r1-r3 into the va_list save area settles every one of
+    them at once.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring".  Both passes must
+    render the same three-argument call, so the assertion counts 2.
+-->
+<bytechunk space="ram" offset="0x100000">
+534889fb4885f67407e822000000eb0c89d899b9c8000000f7f989c34889dfbe
+05000000e8270000005bc3cccccccccce80b000000c3cccccccccccccccccccc
+c3cccccccccccccccccccccccccccccc4889d0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="caller3"/>
+<symbol space="ram" offset="0x100030" name="clobber"/>
+<symbol space="ram" offset="0x100040" name="helper"/>
+<symbol space="ram" offset="0x100050" name="reader"/>
+</binaryimage>
+<script>
+  <com>option argclobber off</com>
+  <com>lo fu caller3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option argclobber on</com>
+  <com>lo fu caller3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="argclobber-guards #1: the callee reads rdx before writing it, so the trailing argument survives both passes" min="2" max="2">reader\(a[0-9]+,5,v[0-9]+\)</stringmatch>
+</decompilertest>

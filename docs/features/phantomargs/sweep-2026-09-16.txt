@@ -1,0 +1,102 @@
+argclobber whole-corpus sweep, 2026-09-16 (review round 3)
+kuna decompile-all, whole binary, option off vs on, per-function diff with vN renumbering normalized.
+Corpus: decbench results/full_run_address_2026-09-11.  46 binaries, 41,258 functions.
+Re-run unchanged after the rebase onto elfmain: same 46/41,258/4/42.
+
+Supersedes the round-2 sweep (33 binaries / 27,512 functions / 45 changed).  Round 3 added
+the join clause: every input of the argument register's join that is not a clobber of that
+register must be a division by-product.  See docs/features/phantomargs/analysis.md section 9
+for where the yield went.
+
+PER BINARY
+binary                                                functions  changed
+O2-noinline_coreutils_stripped_fmt                          201        1
+O2_bash_stripped_bash                                      2538        1
+O2_coreutils_stripped_fmt                                   151        1
+O2_e2fsprogs_stripped_e2fsck                               1421        1
+O0_bash_stripped_bash                                      3105        0
+O0_coreutils_stripped_fmt                                   191        0
+O0_coreutils_stripped_ls                                    589        0
+O0_grep_stripped_grep                                       642        0
+O0_gzip_stripped_gzip                                       248        0
+O0_libedit_stripped_libedit.so.0.0.70                       742        0
+O2_betaflight_stripped_betaflight_STM32F405.elf            5797        0
+O2_bzip2_stripped_bzip2                                     114        0
+O2_chibios_stripped_ch.elf                                  398        0
+O2_cleanflight_stripped_cleanflight_DALRCF405.elf          2558        0
+O2_coreutils_stripped_du                                    320        0
+O2_coreutils_stripped_ls                                    404        0
+O2_coreutils_stripped_sort                                  343        0
+O2_crazyflie_stripped_cf2.elf                              1971        0
+O2_crazyflie_stripped_firmware.elf                         1971        0
+O2_cronie_stripped_crond                                    180        0
+O2_dash_stripped_dash                                       335        0
+O2_diffutils_stripped_diff                                  398        0
+O2_dpkg_stripped_dpkg                                       800        0
+O2_findutils_stripped_find                                  658        0
+O2_freertos_stripped_RTOSDemo.out                           126        0
+O2_gnutls_stripped_certtool                                 675        0
+O2_gnutls_stripped_gnutls-cli                               388        0
+O2_gnutls_stripped_gnutls-serv                              354        0
+O2_gnutls_stripped_systemkey                                522        0
+O2_grep_stripped_grep                                       449        0
+O2_gzip_stripped_gzip                                       204        0
+O2_iproute2_stripped_ip                                    1008        0
+O2_kmod_stripped_kmod                                       394        0
+O2_libedit_stripped_libedit.so.0.0.70                       664        0
+O2_mirai_stripped_mirai                                     123        0
+O2_nuttx_stripped_nuttx                                     792        0
+O2_openssh-portable_stripped_ssh                           1510        0
+O2_openssh-portable_stripped_ssh-keygen                    1042        0
+O2_openssh-portable_stripped_sshd                          1680        0
+O2_riot-os_stripped_hello-world.elf                         129        0
+O2_rsyslog_stripped_rsyslogd                               1535        0
+O2_shadow_stripped_useradd                                  427        0
+O2_sysvinit_stripped_init                                   144        0
+O2_tar_stripped_tar                                        1125        0
+O2_u-boot_stripped_u-boot                                  1727        0
+O2_zlib_stripped_minigzip                                   165        0
+
+42 binaries byte-identical off vs on; 4 changed functions total.
+
+EVERY CHANGED CALL GROUP, with the callee's OWN recovered prototype arity
+binary                                   caller       callee                   off->on    callee_proto_params
+O2_coreutils_stripped_fmt                0x26a0       sub_3700                 [1, 3]->[2] proto=2
+O2-noinline_coreutils_stripped_fmt       0x26e0       sub_3a30                 [1, 3]->[2] proto=2
+O2_e2fsprogs_stripped_e2fsck             0x27f30      ext2fs_dblist_sort2      [3]->[2]   proto=2
+O2_bash_stripped_bash                    0xe30d0      xrealloc                 [3]->[2]   proto=2
+
+4 changed call groups.  All four are one shape: the argument register's join has a call
+clobber on one path and a dead idiv remainder on the other.  All four land on the arity the
+callee's own recovered prototype has, and on an external prototype:
+  fmt(FILE *f, char const *file)           DWARF, 2 DW_TAG_formal_parameter (both -O2 twins)
+  ext2fs_dblist_sort2(dblist, sortfunc)    e2fsprogs public header, 2 parameters
+  xrealloc(void *, size_t)                 bash xmalloc.h, 2 parameters
+
+VARIABLES[] (what decbench scores), all four changed functions, vN names normalized
+  O2/coreutils/stripped/fmt          0x26a0   off=11 on=11  row-for-row identical
+  O2-noinline/coreutils/stripped/fmt 0x26e0   off=11 on=11  row-for-row identical
+  O2/e2fsprogs/stripped/e2fsck       0x27f30  off=32 on=32  row-for-row identical
+  O2/bash/stripped/bash              0xe30d0  off=32 on=32  one row changes: the uncommitted
+        undefined8 framelayout slot local_a0 becomes a typed `char *` stack variable (a gain)
+No `kind: arg` row is deleted anywhere in the sweep; no function's parameter count changes.
+
+OPTION OFF IS INERT
+Whole-binary `kuna decompile-all` with the option OFF is byte-identical to the
+pinned pre-change binary (/home/mahaloz/kwt/_baseline/kuna) on every binary the
+option changes, plus four controls:
+  O2/coreutils/stripped/fmt                        0 differing lines
+  O2/e2fsprogs/stripped/e2fsck                     0 differing lines
+  O2/bash/stripped/bash                            0 differing lines
+  O2/grep/stripped/grep                            0 differing lines
+  O2/u-boot/stripped/u-boot                        0 differing lines
+  O2/openssh-portable/stripped/ssh-keygen          0 differing lines
+  O2/crazyflie/stripped/cf2.elf                    0 differing lines
+  O2/betaflight/stripped/betaflight_STM32F405.elf  0 differing lines
+
+ABLATION (default flipped ON, tree rebuilt, then reverted) -- round 2 measurement, and the
+round-3 rule is strictly narrower, so it still holds; re-confirmed on the shipped tree:
+  kuna test --datatests --baseline docs/baseline.json          675/675   PARITY OK
+  kuna test --datatests-dir tests/stages --baseline ...json   1029/1029  PARITY OK
+The option stays off because of the rax:rdx-return shape no clause can see, and because a
+wrong drop is a DELETED expression, not a visibly odd one.

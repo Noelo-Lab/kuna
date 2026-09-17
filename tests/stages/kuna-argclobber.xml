@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Type-recovery campaign, coreutils `fmt` -O2 (stripped): `main` @0x26a0 calls
+    one static function three times and kuna renders three different arities,
+    the longest reading a local nothing assigns.
+
+        unsigned long v9;  // rdx        <- never assigned
+        unsigned long v11; // rdx        <- never assigned
+          v10 = v9;  ...  v10 = v11;
+          v12 = sub_3700(stdin,"-",v10);   // three arguments
+          v3  = sub_3700(stdin,v6);        // two
+          v12 &= sub_3700(v5);             // one
+
+    DWARF says `fmt(FILE *f, char const *name)`: two parameters.
+
+    Root cause (P4, active-input trial scoring).  `Heritage::guardCalls`
+    (heritage.cc:1444) plants an INDIRECT *creation* for a killed-by-call
+    register that is also a possible OUTPUT location of the callee's model.
+    rdx is one on x86-64, because a 16-byte value returns in rax:rdx, and
+    `AncestorRealistic::enterNode` (funcdata_varnode.cc:2043) answers
+    pop_success for exactly that op, recording `ParamTrial::setIndCreateFormed`.
+    With `onlyOpUse` satisfied the trial is active and
+    `ParamListStandard::fillinMap` marks every active trial used, so a register
+    the caller never wrote for this call becomes its trailing argument.
+    Upstream reads that same bit back on the RETURN side only
+    (`ParamListStandardOut::fillinMap`, fspec.cc:1721), which is why stock
+    Ghidra emits the identical three-argument call and names the phantom
+    `extraout_RDX`.
+
+    The fixture is the same construct, hand assembled.  rdx at the call is a
+    two-input join and NEITHER input is a value the caller put there for this
+    call: on one path `clobber` destroyed the register (and its own first act is
+    a call, so `calleepreserves` cannot narrow the killed set), on the other an
+    `idivl` left its remainder in edx while the caller went on to use only the
+    quotient.  That second half is the `% 200` term of the fmt witness, and it
+    is the only non-clobber shape the rule accepts: upstream scores a trial
+    formed by a remainder exactly like one formed by an indirect creation, on
+    the return side (`ParamListStandardOut::fillinMap`, fspec.cc:1721).
+    `target`'s first act is a call, so `calleedeadarg` cannot prove rdx dead
+    there either.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring".  The P0 assertion
+    `option argclobber on|off` decides whether the trailing argument of a call
+    may be dropped when nothing on the caller's side put a value in its
+    register.
+
+    Pass 1 (`option argclobber off`, the shipped default) reproduces the BUG:
+    `target` takes a third argument built out of the clobber and the dead
+    remainder.
+    Pass 2 (`option argclobber on`) is the FIX: the trailing argument is gone,
+    the dead remainder goes with it, and the quotient the caller really uses is
+    untouched.
+-->
+<bytechunk space="ram" offset="0x100000">
+534889fb4885f67407e822000000eb0c89d899b9c8000000f7f989c34889dfbe
+05000000e8170000005bc3cccccccccce81b000000c3cccccccccccccccccccc
+534889fbe8070000004889d85bc3ccccc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="caller"/>
+<symbol space="ram" offset="0x100030" name="clobber"/>
+<symbol space="ram" offset="0x100040" name="target"/>
+<symbol space="ram" offset="0x100050" name="helper"/>
+</binaryimage>
+<script>
+  <com>option argclobber off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option argclobber on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="argclobber #1: option off passes a third argument built out of the previous call's clobber and a dead idiv remainder (bug reproduced)" min="1" max="1">target\(a0,5,v[0-9]+\)</stringmatch>
+<stringmatch name="argclobber #2: option on drops the trailing argument, whose every incoming value is a clobber or a division by-product" min="1" max="1">target\(a0,5\)</stringmatch>
+<stringmatch name="argclobber #3: the dead remainder that fed the fabricated argument is gone with the option on (only the buggy pass computes it)" min="1" max="1">% 200</stringmatch>
+<stringmatch name="argclobber #4: the quotient the caller really uses survives both passes" min="2" max="2">/ 200</stringmatch>
+</decompilertest>

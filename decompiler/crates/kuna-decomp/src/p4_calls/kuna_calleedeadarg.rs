@@ -590,6 +590,7 @@ pub fn seed_callee_entry_dead(
 ) {
     let body_arity = arch.callee_arity && arch.callee_arity_body;
     if !arch.callee_dead_arg
+        && !arch.arg_clobber
         && !(arch.callee_arity && arch.callee_arity_live)
         && !body_arity
     {

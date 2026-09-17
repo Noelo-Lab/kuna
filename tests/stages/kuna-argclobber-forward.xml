@@ -1,0 +1,54 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The join clause of `option argclobber`: one clobber among a join's incoming
+    values does not condemn the join.  Every other incoming value has to be
+    positively classified as one the caller did not mean to write either, and
+    the only such class is a division by-product (the `% 200` term of the fmt
+    witness, which tests/stages/kuna-argclobber.xml pins).
+
+    Here the caller forwards its OWN second parameter:
+
+        caller4(a,b):  mov %rsi,%r12
+                       test %rbx,%rbx
+                       je  1f
+                       call clobber          <- destroys rdx
+                       jmp 2f
+                    1: mov %r12,%rdx         <- the caller's own parameter
+                    2: call target(a,5,rdx)
+
+    rdx at the call is a two-input join: a clobber on one path, the caller's
+    parameter on the other.  Without this clause the rule reads the clobber and
+    drops the argument, which deletes both the third argument AND `caller4`'s
+    second parameter: the call renders `target(a0,5)` and the prototype
+    becomes `void caller4(long)`.  A value the caller demonstrably wrote is an
+    argument on the path that wrote it.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring".  Both passes must
+    render the same three-argument call and the same two-parameter prototype,
+    so both assertions count 2.
+-->
+<bytechunk space="ram" offset="0x100000">
+5341544889fb4989f44885db7407e81d000000eb034c89e24889dfbe05000000
+e81b000000415c5bc3cccccccccccccce81b000000c3cccccccccccccccccccc
+534889fbe8070000004889d85bc3ccccc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="caller4"/>
+<symbol space="ram" offset="0x100030" name="clobber"/>
+<symbol space="ram" offset="0x100040" name="target"/>
+<symbol space="ram" offset="0x100050" name="helper"/>
+</binaryimage>
+<script>
+  <com>option argclobber off</com>
+  <com>lo fu caller4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option argclobber on</com>
+  <com>lo fu caller4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="argclobber-forward #1: the non-clobber path writes the caller's own parameter, so the trailing argument survives both passes" min="2" max="2">target\(a0,5,a1\)</stringmatch>
+<stringmatch name="argclobber-forward #2: and caller4 keeps the second parameter that argument reads" min="2" max="2">caller4\(.*,.*a1\)</stringmatch>
+</decompilertest>
