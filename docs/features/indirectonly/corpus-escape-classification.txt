@@ -21,9 +21,12 @@
 # restores a store the OFF arm had dropped, the unsound one fabricates a store the
 # machine never makes -- and only the disassembly separates them.
 #
-# Six hand-settled against objdump (the printed `// stack - X` is the rbp
-# displacement minus 8; confirmed on the stage fixture, where `stack - 0xc8` is
-# `-0xc0(%rbp)`):
+# Six hand-settled against objdump.  Mapping the printed `// stack - X` to a
+# machine displacement: `stack - X` is measured from the stack pointer at entry,
+# so on an rbp frame it is `-(X - 8)(%rbp)` (confirmed on the stage fixture, where
+# `stack - 0xc8` is `-0xc0(%rbp)`) and on an rsp frame it is
+# `[rsp + (total_adjustment - X)]` (confirmed on the walk.S counterexample, where
+# a 0x38-byte adjustment makes `[rsp+0]` print as `stack - 0x38`):
 #
 #   BUG  bzip2 -O2 sub_3890    every access to the [rsp+0x18..0x2c] out-param block
 #                              is a `lea` or a load -- the function contains no
