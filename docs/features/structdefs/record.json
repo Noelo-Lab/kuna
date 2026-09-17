@@ -155,7 +155,17 @@
     "line_numbers": "the preamble is emitted through the emitter before begin_function, not prepended to the finished string, so line_mappings and variables[].line_numbers count it the same way `code` does (walk_list with the option on: line_mappings[0].line_number == 13 == the `if (n) {` line)",
     "output_language": "the preamble and the JSON types array decline for a non-C output language: the renderer builds the project .h, so its output is C, and a `struct X { ... };` block in a Rust document is neither valid Rust nor readable C. decompile-project refuses a non-C language outright for the same reason. Probe: tests/cli/structdefs-declines-a-rust-document.json"
   },
-  "gates": {},
+  "gates": {
+    "make test": "PARITY OK (675/675 assertions passed)",
+    "make test-stages": "PARITY OK (1059/1059 assertions passed)",
+    "make rust-test": "RUST_TEST_RC=0 -- 7113 passed / 0 failed (lane, final tree)",
+    "make check-spec": "OK (lenient + strict)",
+    "make test-cli": "181/181 passed",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+    "docs/options.md": "byte-fresh (regenerated from the built binary)",
+    "CI": "parity gates pass; cargo workspace suite pass (full-ci label)"
+  },
   "files": [
     "decompiler/crates/kuna-decomp/src/p9_emit/kuna_structdefs.rs",
     "decompiler/crates/kuna-decomp/src/p9_emit/kuna_structdefs/tests.rs",
