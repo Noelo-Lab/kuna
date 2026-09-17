@@ -400,7 +400,7 @@ branch.
 **Shadow copies** (`kuna_hideshadow.rs (hide_shadow_copies)` driving
 `merge.rs (Merge::hide_shadows)`, scheduled as `coreaction_cleanup.rs
 (ActionHideShadow)` immediately ahead of the copy marker, option
-`hideshadow`). Two Varnodes reached from one ancestor through COPYs alone
+`hideshadow`, on by default). Two Varnodes reached from one ancestor through COPYs alone
 always hold the same value. When the two copy paths are not nested the merges
 above leave them as separate assignments of that value into one variable, and
 the C repeats the assignment: a `-O0` short-circuit condition that spills a
@@ -424,7 +424,7 @@ than it accepts. The Cover read is preceded by a
 plain read where the C++ `Varnode::getCover` rebuilds a dirtied cover on the
 spot, and the previous iteration's `op_set_input` is exactly what dirties it.
 Off, the action returns without walking anything, which is what the tree did
-before the body was wired.
+while the body was a stub.
 
 **Closing out the undefined names** (`kuna_undefname.rs
 (finish_undefined_names)`, the tail of `coreaction_cleanup.rs
