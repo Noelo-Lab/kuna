@@ -1,0 +1,103 @@
+{
+  "opportunity": "foldcallret (default-on) moves a single-use call's evaluation to where its result is printed. Its order-safety predicate stated the barrier set in opcodes (CALL/LOAD/STORE/CALLOTHER), but heritage promotes a write to a fixed address into a plain CPUI_COPY, so a call sank past a write to a global it reads and the emitted C computed a different value than the binary.",
+  "issue": "Noelo-Lab/kuna#657",
+  "test_name": "tests/stages/kuna-foldcallret-barrier.xml (single pass, defaults: target = the issue verbatim, target2 = the write after the use so the expression travels to the return) + tests/cli/foldcallret-sinks-call-past.json",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/gh657_x86_64 (hand-assembled, 5000 bytes) and a synthetic bytechunk of the same bytes in the stage test",
+  "selector": "target",
+  "func_addr": "0x4000b0",
+  "option": null,
+  "flag": null,
+  "element_id": null,
+  "change_kind": "strict correctness fix, no option: it only removes folds that reorder a call past a write it may observe. `--option foldcallret off` is still the whole pass's escape hatch.",
+  "tier": null,
+  "source_decompiler": null,
+  "inspiration": "PR #654 (foldcallretphi), which had already written the tied-storage barrier and the print-point walk for the opt-in fold; this shares them rather than copying them.",
+  "default_on": true,
+  "root_cause": "op_is_barrier tested opcodes only, and call_output_foldable's span ended at the single use. A write to a global is a CPUI_COPY whose output varnode is persistent and address-tied, and when the use op's own output is implied the expression is printed further on, so the call crossed writes on both counts.",
+  "fix": {
+    "clause_1": "op_is_barrier also stops at an op whose output varnode is_persist() || is_addr_tied() (op_writes_tied_storage, moved out of kuna_foldcallretphi.rs into kuna_callretfold.rs and shared).",
+    "clause_2": "check_implied_cover re-asks for a call output: fold_print_point_is_order_safe runs the barrier test over the span from the call to the statement the expression lands in (print_chain follows the implied chain; ActionMarkImplied classifies descendants first, so it is derivable there).",
+    "exemption_self_copy": "op_is_self_copy: a CPUI_COPY back into the storage its input already occupies (what RuleIndirectCollapse leaves behind) writes the value already there. Volatile excluded. Without it gh275-spillargtrial #3 and LIBCTYPES #9 each lose a fold to an artifact.",
+    "exemption_chain": "the ops the expression travels through are exempt from the span test: each consumes the previous one's value, so the call is evaluated before them in the folded text exactly as in the binary. Without it the guard declines 279 further functions on the sweep and ghidra_sim_faillog_pins' flattened-C line counts move (+4 sub_2620, +5 sub_3ad0).",
+    "not_widened": "the INDIRECT test keeps the call-to-use span it has always had. Exempting the self-copy from it as well (sound in itself) makes kuna-elfmain's sub_1357(a1[1]) fold where it did not before -- a NEW fold, which this fix has no business adding. foldcallretphi keeps the landing-statement clause its own sweep measured (landing_reads_call_effect), so its behaviour is unchanged."
+  },
+  "witnesses": {
+    "repro.c": "the issue verbatim; gcc -O2; binary returns 50, pre-fix C reads 91. Fixed by clause 1.",
+    "repro.c + `int u = t * 3;`": "same, because gcc schedules the global store before the arithmetic. Fixed by clause 1.",
+    "travel.s": "hand-written asm where the write lands between the use and the return; needs clause 2 (clause-1-only build still folds it).",
+    "libselinux.so.1 sub_16170": "real binary: strdup at 0x162d0, the two stack writes at 0x162d5/0x162dd. Pre-fix kuna emits `v23 = 1; v22 = 0x6666666; *(char **)(a0 + 0x50) = strdup(v12);`, now `v9 = strdup(v14);` first."
+  },
+  "corpus_sweep": {
+    "corpus": "16 binaries: decbench full_run_address_2026-09-11 O0 and O2 of coreutils fmt, grep, gzip, diffutils diff, bzip2, findutils find; plus the four in-tree ELFs tests/bug-repro/{faillog,sort,grep,libselinux.so.1}",
+    "method": "kuna decompile-all before/after, split per function on the `// Function:` banner, classified by docs/features/gh657/foldclassify.py",
+    "functions": 6207,
+    "functions_changed": 57,
+    "defold": 46,
+    "defold_dedup": 7,
+    "other_same_calls": "4, read by hand: all de-folds the counter missed because the old text already bound the call to something (`v7[2] = sub_1ef10(0x40) + 0x40;` -> `v10 = sub_1ef10(0x40); ... v7[2] = v10 + 0x40;`). One of them also gains a neighbouring fold (`v26 = strlen(strcpy(...))`), a cover-dirtying cascade, not a new hazard.",
+    "flag_call_gained_or_vanished": 0,
+    "call_tokens": "29228 -> 29221 (-7, exactly the seven duplicated emissions the dedup bucket removes)",
+    "emitted_lines": "187182 -> 187277 (+95)",
+    "dedup_example": "findutils find 0x1da6f: `v1 = v2[sub_33502(v2)]; v2[sub_33502(v2)] = 0;` -> one `v2 = sub_33502(v3);` and two uses -- the folded form was calling twice",
+    "clause_attribution": "a third build with clause 2 disabled changes 14 functions and costs 11 folds; clause 2 accounts for the other 43 changed functions"
+  },
+  "varcensus": {
+    "method": "scripts.pipeline.varcensus --text on the sweep dumps",
+    "O2-coreutils-fmt": "declarations 369 -> 371 (+2), single_def_single_use 76 -> 77",
+    "O0-grep": "declarations 1626 -> 1630 (+4), single_def_single_use 299 -> 301",
+    "tree-libselinux": "declarations 1754 -> 1758 (+4), single_def_single_use 266 -> 270",
+    "note": "every gained declaration is the temp a de-folded call binds to; params, arrays and blob16 counts are unchanged everywhere"
+  },
+  "typesweep": {
+    "method": "scripts.decbench.typesweep --baseline-only, campaign slice set (projects coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), DECBENCH_NO_CACHE=1, one run pinned to the origin/main binary and one to this branch's",
+    "slices": 444,
+    "functions_scored": 10748,
+    "perfect_main": 959,
+    "perfect_fix": 959,
+    "aggregate_main": 3037.05,
+    "aggregate_fix": 3037.05,
+    "control": "baseline vs published type_match 9505 agree / 1243 differ (88.44%) in BOTH arms",
+    "per_function": "0 of 10748 functions differ in type_match value and 0 in variable count; 69 functions across 41 slices differ only in vars_sig, which is the vN renumbering (names score zero)"
+  },
+  "speed": {
+    "method": "interleaved A/B of `kuna decompile-all`, wall clock, min and median; the A binary is origin/main (83830e86), the B binary this branch. No option to flip, so timeit's on/off harness does not apply.",
+    "fmt_O2": {"samples": 15, "min_main_s": 4.043, "min_fix_s": 4.097, "min_delta_pct": 1.31, "med_main_s": 4.298, "med_fix_s": 4.428},
+    "grep_O0": {"samples": 11, "min_main_s": 6.540, "min_fix_s": 6.538, "min_delta_pct": -0.03},
+    "budget_pct": 5.0,
+    "within_budget": true,
+    "note": "the new work is one walk of at most 8 implied ops per call output that already reached check_implied_cover; the box is contended (three rust-test lanes), so the per-sample spread is wider than the delta"
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK (no assertion moved, no re-pin)",
+    "make test-stages": "1060/1060 PARITY OK (baseline re-recorded for the six NEW assertions only)",
+    "make check-spec": "OK lenient + OK strict",
+    "make test-cli": "179/179 passed",
+    "kuna catalog --check": "catalog OK",
+    "counters --check": "no drift; docs/options.md byte-fresh",
+    "make rust-test": "see rust_test"
+  },
+  "stage_assertions_examined": {
+    "note": "four stage assertions moved on the first version of the fix and NONE was absorbed: each pointed at a real over-decline, and the final version leaves all 1054 pre-existing assertions untouched.",
+    "GH275 #3": "the second atan2 de-folded because the self-copy `dat_101000 = COPY dat_101000` at the RET was counted as a write -> op_is_self_copy",
+    "LIBCTYPES #9": "same shape, the self-copy sitting at the call's own address",
+    "condfold-newbury #3/#4": "su_euid()/su_egid() de-folded because the widened span applied the INDIRECT test to the use op itself -> the INDIRECT test stays on the call-to-use span",
+    "ELFMAIN #2": "the opposite direction: exempting the self-copy from the INDIRECT test too ADDS a fold (`sub_1357(a1[1])`), which is why that exemption is held back"
+  },
+  "hidden_count_sites": [
+    "kuna-base/src/xml.rs corpus file count 302 -> 303 (one new tests/stages file)",
+    "docs/baseline-stages.json re-recorded (1054 -> 1060 keys, all six new)",
+    "no option added, so no catalog/settable/tier/bytecompat/kuna-catalog.xml count moves (counters --check green)"
+  ],
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs",
+    "decompiler/crates/kuna-base/src/xml.rs",
+    "tests/stages/kuna-foldcallret-barrier.xml (new)",
+    "tests/cli/foldcallret-sinks-call-past.json (new)",
+    "decompiler/crates/kuna-analysis/tests/fixtures/gh657_x86_64{,.s} (new) + fixtures/README.md",
+    "docs/spec/06-variables-and-merge.md",
+    "docs/baseline-stages.json",
+    "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s}"
+  ]
+}
