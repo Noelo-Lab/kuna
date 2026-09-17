@@ -40,8 +40,8 @@
 //! operation whose *C semantics depend on the operand's signedness* is left
 //! reading the variable through a type it disagrees with.  The constructs that
 //! constrain the declaration are these - the C operators whose *meaning* depends
-//! on operand signedness, plus `<<`, whose meaning does not but whose
-//! *definedness* does:
+//! on operand signedness, plus one stated preference (`<<`, whose meaning does
+//! not depend on it at all):
 //!
 //! | C construct | p-code | demand |
 //! |---|---|---|
