@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1054,
-    1054
+    1059,
+    1059
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -379,6 +379,11 @@
     "data:KUNA-REGIONS #7: the loop's enclosing acyclic region pairs the cyclic self-loop with its 0x40a exit block",
     "data:KUNA-REGIONS #8: the cyclic self-loop region wraps exactly the single 0x3e0 block",
     "data:KUNA-RESTARTS #2: a function that never restarts reports none",
+    "data:KUNA-STRUCTDEFS #1: the struct definition is printed exactly once, by the ON pass",
+    "data:KUNA-STRUCTDEFS #2: every member of the referenced struct is spelled",
+    "data:KUNA-STRUCTDEFS #3: the tag gets the forward declaration the project header gives it",
+    "data:KUNA-STRUCTDEFS #4: the signature is unchanged by the flip",
+    "data:KUNA-STRUCTDEFS #5: the body is unchanged by the flip",
     "data:KUNA-UNMAPPEDENTRY #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x <= 8 renders identically in all three passes",
     "data:KUNA-UNMAPPEDENTRY #2: the catalog documents it as a default-on P1 code/data-partition correctness fix, live-toggled back on",
     "data:KUNA-UNMAPPEDENTRY #3: the catalog row carries the correctness-fix change_kind an agent reads to judge the flip",

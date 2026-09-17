@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+  <!--
+      kuna structdefs: print the definitions of the composite types a function's
+      C names above the function.
+
+      `readfields` takes a pointer to a three-field struct and adds two of the
+      fields.  The signature names `mystruct` and the body names two of its
+      members, and with the option off nothing in the output says what a
+      `mystruct` is: the layout the decompiler is printing field accesses
+      against exists only in the type factory (and, for a whole-binary run, in
+      `kuna decompile-project`'s header).
+
+      Two passes over the SAME decompiled function: the default (off) prints the
+      bare function document, then `option structdefs on` prints the struct
+      definition above it.  The body assertions are min=2 max=2, so the flip is
+      proven to add the preamble and change nothing else.
+  -->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+8b47080307c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="readfields"/>
+</binaryimage>
+<script>
+  <com>parse line struct mystruct { int4 a; int4 b; int4 c; };</com>
+  <com>parse line extern int4 readfields(mystruct *p);</com>
+  <com>lo fu readfields</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structdefs on</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-STRUCTDEFS #1: the struct definition is printed exactly once, by the ON pass" min="1" max="1">struct mystruct \{</stringmatch>
+<stringmatch name="KUNA-STRUCTDEFS #2: every member of the referenced struct is spelled" min="1" max="1">    int4 b;</stringmatch>
+<stringmatch name="KUNA-STRUCTDEFS #3: the tag gets the forward declaration the project header gives it" min="1" max="1">typedef struct mystruct mystruct;</stringmatch>
+<stringmatch name="KUNA-STRUCTDEFS #4: the signature is unchanged by the flip" min="2" max="2">int4 readfields\(mystruct \*p\)</stringmatch>
+<stringmatch name="KUNA-STRUCTDEFS #5: the body is unchanged by the flip" min="2" max="2">return p-&gt;c \+ p-&gt;a;</stringmatch>
+</decompilertest>
