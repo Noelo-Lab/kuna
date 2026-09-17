@@ -61,8 +61,20 @@
   },
   "speed": {
     "method": "interleaved A/B of `kuna decompile-all`, wall clock, min and median; the A binary is origin/main (83830e86), the B binary this branch. No option to flip, so timeit's on/off harness does not apply.",
-    "fmt_O2": {"samples": 15, "min_main_s": 4.043, "min_fix_s": 4.097, "min_delta_pct": 1.31, "med_main_s": 4.298, "med_fix_s": 4.428},
-    "grep_O0": {"samples": 11, "min_main_s": 6.540, "min_fix_s": 6.538, "min_delta_pct": -0.03},
+    "fmt_O2": {
+      "samples": 15,
+      "min_main_s": 4.043,
+      "min_fix_s": 4.097,
+      "min_delta_pct": 1.31,
+      "med_main_s": 4.298,
+      "med_fix_s": 4.428
+    },
+    "grep_O0": {
+      "samples": 11,
+      "min_main_s": 6.54,
+      "min_fix_s": 6.538,
+      "min_delta_pct": -0.03
+    },
     "budget_pct": 5.0,
     "within_budget": true,
     "note": "the new work is one walk of at most 8 implied ops per call output that already reached check_implied_cover; the box is contended (three rust-test lanes), so the per-sample spread is wider than the delta"
@@ -99,5 +111,6 @@
     "docs/spec/06-variables-and-merge.md",
     "docs/baseline-stages.json",
     "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s}"
-  ]
+  ],
+  "option_off_identity": "kuna decompile-all --option foldcallret off is byte-identical between origin/main and this branch on O0 grep and libselinux.so.1: every new test is behind `Architecture::fold_call_returns`."
 }
