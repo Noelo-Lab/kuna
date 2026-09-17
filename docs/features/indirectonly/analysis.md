@@ -203,11 +203,24 @@ kuna's shipped default declines to.
 
 ## 7. Speed and type_match
 
-With the option off the action takes one `if` and returns, so the shipped default
-costs nothing. Measured against a separately built origin/main (83830e86),
-interleaved, min-of-11, `decompile-all` on `fmt` -O2: main 4092.9 ms, this
-branch's default 4064.2 ms, **-0.70%** — noise, and the default arm's output is
-byte-identical to that build over six whole binaries (`off-equals-main.txt`).
+With the option off the action takes one `if` on `Architecture::mark_indirect_only`
+and returns, once per function, so the shipped default costs nothing. Measured
+against a separately built origin/main (83830e86), interleaved `decompile-all`:
+
+| target | result |
+|---|---|
+| `fmt` -O2, min-of-11 | main 4092.9 ms, default 4064.2 ms — **-0.70%** |
+| `ls` -O2, min-of-7, A/A/B | mainA 14025.1, mainB 13781.4, branch 13812.4 ms |
+
+The `ls` run puts the *same* origin/main binary in two arms, so its mainB-vs-mainA
+delta of **-1.74%** is this box's noise floor at that moment (three worktrees
+building and testing concurrently, loadavg 12). The branch's default is **+0.22%**
+against the better main arm — inside that floor. An earlier `ls` min-of-11 read
++6.64% while the workspace suite was saturating the machine at loadavg 17-22; the
+A/A control is why that reading is discarded rather than believed.
+
+The default arm's output is byte-identical to that origin/main build over six
+whole binaries (`off-equals-main.txt`).
 
 The cost of the option itself is one pass over the input def-set plus a bounded
 worklist per illegal input, in an action that was already scheduled. Interleaved

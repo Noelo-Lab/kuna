@@ -1,0 +1,6 @@
+ls n=7  load=12.27294921875
+  mainA   min=  14025.1 ms
+  mainB   min=  13781.4 ms
+  branch  min=  13812.4 ms
+  NOISE FLOOR mainB vs mainA = -1.74%
+  branch vs best-of-main     = +0.22%
