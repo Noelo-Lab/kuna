@@ -118,9 +118,10 @@ says the same thing on this feature's fixture.
 
 ## What it moves in emitted C
 
-`kuna decompile-all` over twelve stripped binaries, this branch against
-origin/main's build (`39fdc804`). Full classification, with the residue printed
-in full, in `corpus-hunk-classification-stdio.txt`.
+`kuna decompile-all` over twelve stripped binaries, this branch against a
+release build of the then-current `origin/main` (`39fdc804`). Full
+classification, with the residue printed in full, in
+`corpus-hunk-classification-stdio.txt`.
 
 | | lines |
 |---|---:|
@@ -131,10 +132,13 @@ in full, in `corpus-hunk-classification-stdio.txt`.
 | a return type becomes `FILE *` | 1 |
 | **anything else** | **0** |
 
-Ten of the twelve binaries are byte-identical end to end, and every one of those
-is a plain executable: there the type already arrived by inference from a typed
+Eight of the twelve binaries are byte-identical end to end, and every one of
+those is an executable: there the type already arrived by inference from a typed
 stdio call in the same function. The reach this step extends is the function that
-makes no such call, and the shared object, whose stream never had a name.
+makes no such call, and the shared object, whose stream never had a name — which
+is what the four that DO move are: the two shared objects, `useradd` (the mixed
+image) and `tar`, whose one changed line is a stack slot assigned the
+copy-relocated `stdout` and nothing else.
 
 The wrong-output lens, checked across all twelve: `fflush(stdout)`,
 `fputs_unlocked(s,stdout)`, `fwrite_unlocked(…,stdout)`, `putc_unlocked`'s

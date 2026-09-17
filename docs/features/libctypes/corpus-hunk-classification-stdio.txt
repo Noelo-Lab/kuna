@@ -1,7 +1,8 @@
 # libctypes stdio streams - whole-corpus hunk classification
 
-`kuna decompile-all` over 12 stripped binaries, the branch build against
-origin/main's (39fdc804). Every changed LINE is classified; the categories are
+`kuna decompile-all` over 12 stripped binaries, the branch build against a
+release build of the then-current origin/main (39fdc804). Every changed LINE is
+classified; the categories are
 produced by the script reproduced at the end and the residue is printed in full.
 
 ## Per binary
@@ -90,10 +91,13 @@ The cast is honest: `a0` is a `long` parameter and the global is a stream.
 `fflush(stdout)`, `fputs_unlocked(s,stdout)`, `fwrite_unlocked(...,stdout)`,
 `putc_unlocked`'s inlined `__overflow(stdout,c)` refill and every
 `*(char **)&stdout->field_0x28` store are byte-identical in both arms across all
-twelve binaries -- ten of which are byte-identical end to end. The eight
-executables built without a GOT-only stream produce zero changed lines: on those
-the type already arrived by inference from a typed stdio call in the same
-function, which is exactly the reach this step extends.
+twelve binaries -- EIGHT of which are byte-identical end to end, every one an
+executable: on those the type already arrived by inference from a typed stdio
+call in the same function, which is exactly the reach this step extends. The four
+that move are the two shared objects (whose streams reach the program only
+through a GOT slot that had no name at all), plus `useradd`, which is the mixed
+image, and `tar`, whose single changed line is a stack slot assigned the
+copy-relocated `stdout` and nothing else.
 
 ## The script
 

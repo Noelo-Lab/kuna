@@ -1179,9 +1179,9 @@
   },
   "scope": "linked ELF only, on the four architectures whose relocation numbering the loader knows (x86-64, AArch64, i386, ARM); a spelling occurring more than once in `.dynsym` is declined, and so is the GLOB_DAT arm when the image already spells the `<stream>_ptr` name it would mint (.symtab or .dynsym); the `FILE` is the one `named_aggregate` hands the rest of the table, so an image holding a different `FILE` contributes no stream symbol rather than a contradictory one.",
   "corpus_sweep": {
-   "method": "`kuna decompile-all` over 12 stripped binaries, this branch against a release build of origin/main (39fdc804) in its own worktree; every changed LINE classified. docs/features/libctypes/corpus-hunk-classification-stdio.txt + classify_stdio.py.",
+   "method": "`kuna decompile-all` over 12 stripped binaries, this branch against a release build of the then-current origin/main (39fdc804) in its own worktree; every changed LINE classified. docs/features/libctypes/corpus-hunk-classification-stdio.txt + classify_stdio.py.",
    "binaries": 12,
-   "byte_identical_binaries": 10,
+   "byte_identical_binaries": 8,
    "changed_lines": 45,
    "classes": {
     "got-slot-named+cast-removed": 31,
@@ -1195,7 +1195,7 @@
    "cost": "LOCAL MERGING, at more than one site. Typing a slot FILE*/FILE** stops it merging with the unrelated values a scalar local had absorbed: that adds a declaration and renumbers every local after it, so one retyped slot can account for most of a function's changed lines. Measured against the same base build on two binaries outside the twelve, with v<N> normalised so the second number is semantic hunks rather than renumbering -- O2/libedit/libedit.so.0.0.70 rl_initialize 57 changed lines / 15 normalised / 10 -> 11 declarations (a new `FILE **`), fn_complete2 2 / 2 / 36 -> 36; i386_pie_nl 294 / 72 over six functions (main, usage, close_stdout, nl_file, set_program_name, emit_bug_reporting_address), +1 declaration in main and +1 in close_stdout. The normalised residue is still only the three disclosed classes (got-slot-named, cast-removed, decl-typed-FILE); nothing moves a statement, address, call target or literal. close_stdout is the shape: one `unsigned int v3` carried BOTH stream pointers and splits into `FILE *v1`."
   },
   "benchmark": {
-   "instrument": "scripts.decbench.typesweep, decbench main's TypeMatchMetric, DECBENCH_NO_CACHE=1, --baseline-only run twice with KUNA_BIN pinned first to an origin/main (39fdc804) release build and then to this branch's.",
+   "instrument": "scripts.decbench.typesweep, decbench main's TypeMatchMetric, DECBENCH_NO_CACHE=1, --baseline-only run twice with KUNA_BIN pinned first to a then-current origin/main (39fdc804) release build and then to this branch's.",
    "corpus": "8 projects x O0 / O2 / O2-noinline = 444 slices, 10748 scored functions",
    "control": "main arm agrees with the tree's published type_match on 9505/10748 (88.44%); branch arm 9504 -- the one function that differs is the one that moved.",
    "perfect_main": 959,
@@ -1231,7 +1231,7 @@
   ],
   "doc": "docs/features/libctypes/stdio.md",
   "speed": {
-   "method": "interleaved main/branch pairs on identical commands (two release builds, origin/main 39fdc804 and this branch), MINIMUM and median of 15 pairs each, alternating which build runs first; the box was shared, so the minimum is the honest read. docs/features/libctypes/timeab_stdio.py.",
+   "method": "interleaved main/branch pairs on identical commands (two release builds, the then-current origin/main 39fdc804 and this branch), MINIMUM and median of 15 pairs each, alternating which build runs first; the box was shared, so the minimum is the honest read. docs/features/libctypes/timeab_stdio.py.",
    "budget_pct": 5.0,
    "rows": [
     {

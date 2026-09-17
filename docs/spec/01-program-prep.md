@@ -1690,8 +1690,8 @@ moves.
   45 lines move and every one of them is a GOT slot gaining its name (38, of
   which 31 also drop the `(FILE *)` cast the untyped slot needed), a declaration
   taking `FILE *`/`FILE **` (5), a cast appearing on a genuine `FILE *` global
-  (1) or a return type becoming `FILE *` (1). The eight plain executables in that
-  set are byte-identical end to end, because on those the type already arrived by
+  (1) or a return type becoming `FILE *` (1). Eight of the twelve are
+  byte-identical end to end, because on those the type already arrived by
   inference from a typed stdio call in the same function — the reach this step
   extends is the function that makes no such call, and the shared object, whose
   stream never had a name at all. The cost is local merging: a slot that takes
