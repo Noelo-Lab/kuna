@@ -118,7 +118,12 @@ The executable round trip is the third leg, and its coverage is narrow enough
 that the number belongs next to it: both texts are built into one program with
 stubbed callees and a shared arena, and 2,000 pseudo-random input vectors per
 function are compared. `auto`: **8 of 34** functions link and run, 0 mismatches
-(22 do not compile out of context, 4 crash the harness).
+(22 do not compile out of context, 4 crash the harness). `prefer-signed`: 34 of
+the first 112 run, 0 mismatches (one apparent DIFFER is `ls sub_1b525`, which
+returns a real `malloc()` pointer and reports the same DIFFER when the upstream
+text is compared against itself). `prefer-unsigned`: 28 of the first 221 run, 0
+mismatches. The two long runs were stopped; the warning oracle above covers all
+1,041 changed functions.
 
 **2. Is a readability-only option worth the option budget?** It buys **zero**
 metric. `extract_variables` exports prototype parameter types, `ScopeLocal`
@@ -130,7 +135,8 @@ table above, plus the cast hunks that stop being written.
 
 **3. Should `auto` become the default?** It clears the repo's mechanical bar —
 built with `auto` as the default, `make test` is 675/675 **PARITY OK**, stages is
-**PARITY OK**, and the speed delta is inside the +5% budget — but the fidelity
+**PARITY OK**, and the speed delta is **+0.21%** on the minimum of 42 interleaved
+whole-binary `decompile-all` runs — but the fidelity
 case for it is not there: four observations. If `auto` is ever made the default,
 the argument has to be **cast removal and the end of declaration-vs-body
 contradictions**, which is visible in every changed function, not a +0.1pp

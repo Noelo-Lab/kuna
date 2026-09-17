@@ -126,33 +126,37 @@
    "why": "the round-2 run was `gcc -fsyntax-only -w` filtered to `error:` lines. `-w` disables every warning, so it could not observe -Wsign-compare or -Wsign-conversion -- the only diagnostics this feature can move. It proved `no new compile ERROR`, which was never in dispute."
   },
   "executable_round_trip": {
-   "harness": ".scratch/roundtrip2.py -- both texts in one program (renamed apart), deterministic stubs for every undefined callee, a shared 4 MiB arena behind every synthesized global, 2000 pseudo-random input vectors per function, comparing the return value and a hash of the arena plus the stub trace",
+   "harness": ".scratch/roundtrip4.py -- both texts in one program (renamed apart), deterministic stubs for every undefined callee, a shared 4 MiB arena behind every synthesized global, 2000 pseudo-random input vectors per function, comparing the return value and a hash of the arena plus the stub trace",
    "auto": {
     "functions": 34,
-    "match": 10,
+    "attempted": 34,
+    "match": 8,
     "mismatch": 0,
-    "uncompilable": 20,
+    "uncompilable": 22,
     "harness_crash": 4
    },
    "prefer_signed": {
-    "functions_run": 161,
-    "match": 43,
+    "functions": 270,
+    "attempted": 112,
+    "match": 34,
     "mismatch": 0,
-    "uncompilable": 109,
-    "harness_crash": 7,
-    "apparent_differ": 2,
-    "apparent_differ_note": "ls sub_1b525 and du sub_141a3 report DIFFER, and BOTH report the identical DIFFER when the upstream text is compared against ITSELF: the function returns a real `malloc()` pointer, so two successive calls cannot return the same address. The arena hash is identical in both arms (50e4f77d30cef1d9). Harness artifact, not a semantic difference.",
-    "note": "the run was stopped after 161 of 273 functions; the syntax-pair check above covers all 273"
+    "uncompilable": 77,
+    "harness_crash": 0,
+    "apparent_differ": 1,
+    "apparent_differ_note": "ls sub_1b525 reports DIFFER on the RETURN VALUE only and reports the same DIFFER when the upstream text is compared against itself (round-2 control): the function returns a real malloc() pointer, so two successive calls cannot return the same address. The arena hash is 50e4f77d30cef1d9 in both arms.",
+    "note": "the run was stopped after 112 of 270 functions; the warning oracle above covers all 270"
    },
    "input_vectors_per_function": 2000,
    "prefer_unsigned": {
-    "functions_run": 86,
-    "match": 12,
+    "functions": 737,
+    "attempted": 221,
+    "match": 28,
     "mismatch": 0,
-    "uncompilable": 73,
-    "harness_crash": 1,
-    "note": "a 12-per-binary-and-optimization-level sample of the 732 changed functions; the run was stopped after 86. The syntax-pair check above covers all 732."
-   }
+    "uncompilable": 190,
+    "harness_crash": 3,
+    "note": "the run was stopped after 221 of 737 functions; the warning oracle above covers all 737"
+   },
+   "coverage_note": "this is the narrowest of the three correctness instruments and its coverage is stated with every number: most changed functions do not compile out of context at all (a Ghidra idiom like `v41._0_1_`, a dat_ global used as both scalar and pointer, a goto into another scope), identically in both arms."
   },
   "declaration_vs_cast_contradiction": "none by construction: a cast is dropped only when the emitter actually wrote the rounded type as that high's declaration and the cast target is that exact type, so the surviving expression has the same C type it had.",
   "ubsan": "gcc -O2 -fsanitize=undefined on an early draft's zlib sub_ce20 text reported `left shift of negative value` where a left-shifted `unsigned int` had been re-declared `int`. INT_LEFT operand 0 is an unsigned demand for that reason among others (see int_left_rule), and zlib's bit accumulators no longer move.",
@@ -195,14 +199,14 @@
   "stages": "1044/1044, PARITY OK",
   "note": "re-run on the rebased tree (origin/main f02365cc + this branch). The probe build was reverted and the tree rebuilt; the shipped default is `upstream`."
  },
- "speed_off_ms": 4306.6,
- "speed_on_ms": 4317.9,
- "speed_delta_pct": 0.26,
- "speed_samples": 21,
+ "speed_off_ms": 4045.6,
+ "speed_on_ms": 4054.3,
+ "speed_delta_pct": 0.21,
+ "speed_samples": 42,
  "speed_budget_pct": 5.0,
  "speed_within_budget": true,
  "speed_forced_off": false,
- "speed_note": "interleaved min-of-21 whole-binary `decompile-all` on coreutils fmt -O2: +0.26% on the minimum, -2.34% on the median. The cost is the same for every active value (`plan` walks the same candidate highs; only the tie-break differs), and `upstream` returns before the walk.",
+ "speed_note": "two interleaved min-of-21 whole-binary `decompile-all` runs on coreutils fmt -O2, pooled to min-of-42: +0.21% on the minimum. The MEDIAN is not usable on this box under other agents' load -- it came out +4.56% on the first run and -4.85% on the second, i.e. the noise is larger than anything this pass can cost. The cost is the same for every active value (`plan` walks the same candidate highs; only the tie-break differs), and `upstream` returns before the walk.",
  "count_sites": {
   "settables": 212,
   "tiers": [
@@ -396,5 +400,15 @@
   "ship at default upstream with values upstream|auto|prefer-signed",
   "drop prefer-unsigned: its own DWARF column refutes it (4 of 41 judged flips right; -O2 71.9% -> 69.6%)",
   "do NOT make auto the default on fidelity grounds -- +0.1pp on four observations; the honest case for a later default flip is cast removal, not accuracy"
- ]
+ ],
+ "gates": {
+  "make test": "675/675 PARITY OK",
+  "make test-stages": "1048/1048 PARITY OK",
+  "make test-cli": "178/178",
+  "make check-spec": "OK lenient + strict",
+  "kuna catalog --check": "OK (212 settables)",
+  "counters --check": "no drift",
+  "docs/options.md": "regenerated",
+  "make rust-test": "RUST_TEST_RC=0, 7107 passed / 0 failed (.scratch/rust-test-r6.log)"
+ }
 }
