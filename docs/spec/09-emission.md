@@ -670,6 +670,162 @@ representative still supplies the storage comment, the array adornment and the
 composite mapped-symbol override, all of which outrank this. `option
 declhightype off` restores the declaration representative's type.
 
+**(kuna) signedness — an integer local is declared at the signedness its
+operations ask for.** The declaration also states a *signedness*, and the type
+lattice decides that in a way the body often contradicts. `Datatype::type_order`
+ranks `SUB_UINT_PLAIN` (16) ahead of `SUB_INT_PLAIN` (17), so in
+`get_local_type`'s "keep the most specific" fold one `uint` vote outranks every
+`int` vote on the same Varnode, and no later phase re-decides (§5.1). On
+optimized x86-64 those `uint` votes are structural rather than semantic: a
+32-bit instruction zero-extends into its 64-bit register, and a strength-reduced
+loop bound is masked and shifted — `INT_ZEXT`, `INT_AND`, `INT_RIGHT` and
+`INT_XOR` each seed `TYPE_UINT` on both operands. A counter the source declared
+`int` is therefore declared `unsigned int`, and `ActionSetCasts` writes the
+signedness back at every comparison: `unsigned int v1;` … `if (0 <= (int)v1)` …
+`while (v4 < (int)v1)`.
+
+The option `signedness` (`upstream|auto|prefer-signed|prefer-unsigned`, default
+`auto`) decides it at the declaration seam instead, from the operations the
+body actually applies to the value
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_typeround.rs (plan)`). This is
+TRex's *type rounding* (Bosamiya, Woo and Parno, USENIX Security 2025, §3.3.5):
+signedness is not propagated, it is chosen once from the accumulated
+size-tagged operation set, with a flag for the case nothing observed settles.
+For each declared high of plain integer type the pass walks the operations
+reachable from its *printed* (explicit) members and folds them into one verdict:
+`INT_SLESS`, `INT_SLESSEQUAL`, `INT_SDIV`, `INT_SREM`, `INT_SRIGHT` (operand 0),
+`INT_SEXT`, `INT_SCARRY` and `INT_SBORROW` demand signed; `INT_LESS`,
+`INT_LESSEQUAL`, `INT_DIV`, `INT_REM`, `INT_RIGHT` (operand 0), `INT_ZEXT` and
+`INT_CARRY` demand unsigned; a `CPUI_CAST` to a plain integer of the same width
+is a demand for the type it casts to. `INT_LEFT` (operand 0) also pulls unsigned,
+and it is the one entry in that list which is a stated **preference rather than a
+soundness requirement**: `a << k` shifts the same bits into the same places under
+either declaration, so it is not part of what makes a flip meaning-preserving. The rule is kept because a value the body ORs and shifts left
+is a bit buffer, which C source spells unsigned, and because a signed `<<` is the
+one otherwise-neutral operator `-fsanitize=undefined` reports; it is not kept
+because `negative << k` is undefined, an argument that does not separate `<<`
+from `+ - *`, whose signed overflow is undefined on the same footing and which
+are neutral here. `auto` declares the value signed when every demand is signed and
+unsigned when every demand is unsigned, and leaves it alone otherwise;
+`prefer-signed` and `prefer-unsigned` additionally settle the no-demand case,
+which is TRex's observation that C programmers write `int` when the signedness
+does not matter. A *defining* operation votes but cannot veto, because a
+definition converts at a fixed width and is bit-identical either way: the
+divide-and-shift family (`INT_SDIV`, `INT_SREM`, `INT_SRIGHT` signed;
+`INT_DIV`, `INT_REM`, `INT_RIGHT` unsigned) says what kind of number came out
+and votes accordingly, while `INT_SEXT`, `INT_ZEXT` and `INT_2COMP` say nothing
+at all — an extension describes the operand it widened, not the widened value,
+so `int v = *p;` off an `unsigned char *` and `uintmax_t max = (long)(int)n;`
+off a `movslq` are both ordinary C. Nothing else changes: no Varnode type, no
+inference pass, no cast decision, and no prototype or symbol type — so the
+`variables` JSON surface and every recovered signature are byte-identical, and
+so is the whole output under `upstream`.
+
+Which arm ships. `auto` is the default: it moves a declaration only when every
+signedness-sensitive reader of the value agrees and nothing vetoes it, so the
+only text it can change is that declaration and the casts the new declaration
+makes into no-ops. That is what the evidence for the flip measures — 0 of 675
+datatest assertions, PARITY OK on the stage corpus, and over twelve binaries
+from nine projects at `-O0` and `-O2` — eight x86-64 and four 32-bit ARM
+firmware images, 15,124 functions — 377 declaration flips and 443 cast tokens
+dropped, none added, with no other hunk of any kind. `prefer-signed` is
+the more faithful arm and stays opt-in: settling the unobserved values the way C
+source does takes agreement with DWARF on 238 unstripped twins from 93.4% to
+98.4% overall and from 71.9% to 94.8% at `-O2`, but it moves 7,081 declarations
+image-wide, which is more than the datatest corpus can absorb as a default and
+more than an unanimity argument covers. `prefer-unsigned` is the opposite
+tie-break, kept as that arm's control and not recommended — 4 of its 40
+DWARF-judged flips are right. `upstream` restores the declaration type inference
+produced, byte for byte, which is what to select when diffing against upstream
+Ghidra.
+
+Soundness rests on the demand set covering every C construct whose meaning
+depends on an operand's signedness — which is to say, on the *neutral* list being
+signedness-independent. Everything the pass lets through is
+signedness-independent at a fixed width — `+ - * & | ^ == !=`, unary `~` and
+`-`, an assignment, a call argument, a `return`, a stored value, a truncation or
+a concatenation — because two's-complement arithmetic and a same-width
+conversion produce identical bits either way.
+
+kuna's own cast strategy draws the same line, which corroborates the split
+without proving it. The ordered comparisons, `/ %`, `>>` and the two extensions
+pass `care_uint_int = true` to `CastStrategyC::cast_standard`
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs
+(get_input_cast)`), and every op on the neutral list above passes `false` or
+takes no cast at all. The demand set is a **superset** of that
+`care_uint_int = true` set with one op held out: `INT_SCARRY`, `INT_SBORROW`,
+`INT_CARRY`, `CPUI_CAST` and `INT_LEFT` all fall through to the dispatch's
+default arm, which passes `care_uint_int = false`, and are demanded on anyway;
+`FLOAT_INT2FLOAT` is the converse — it passes `care_uint_int = true` whenever the
+operand's nonzero mask has its top bit set, and the pass vetoes it outright
+rather than demanding on it, which is strictly stronger. Demanding on the carry
+intrinsics and the cast anyway is an over-constraint, not a gap — a carry
+intrinsic names its own signedness and a same-width cast prints a token that
+establishes the type — and only ever declines a flip that might otherwise have
+been made; `INT_LEFT` is the stated preference described above.
+
+"At a fixed width" is a precondition of that list, not a turn of phrase, and it
+is the third rule. C's integer promotions convert every operand narrower than
+`int` to `int` *before* any of those operators runs, and which extension is
+performed is read off the declaration, so below the promotion width nothing is
+neutral: `(short)-1 == -1` is true while `(unsigned short)0xffff == -1` is a
+constant false, and `+ - * & | ^ << == !=` all diverge the same way. The pass
+therefore declines any high whose declared type is narrower than the promotion
+width, whatever the operations say — and the promotion width that decides this
+is **the `int` of the compiler that reads kuna's output, not the target's**.
+Emitted C is read and compiled where `int` is 4 bytes however small the target
+cspec's `<data_organization><integer_size>` is; that value is 2 on `avr8gcc`,
+`avr8egcc`, `TI_MSP430`, `TI_MSP430X`, `CR16`, `PIC24` and `x86-16`, and reading
+the guard off it would let a 2-byte local be re-signed on those targets and turn
+an emitted `if (v1 != -1)` into a constant-true test. The floor is therefore
+`max(4, TypeFactory::get_size_of_int())`
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_typeround.rs
+(MIN_PROMOTION_SIZE)`), pinned on x86-64 by `tests/stages/kuna-signedness.xml`
+and on a 2-byte-`int` target by `tests/stages/kuna-signedness-int16.xml`. A width change
+*between* two integers is an explicit `INT_SEXT`/`INT_ZEXT` in p-code, so a
+mixed-width expression is constrained by the extension op rather than slipping
+through as neutral.
+
+Two further rules close the gap between "this operation" and "the printed
+expression". First, the walk follows *implied* results: `v + 1 < 0` prints as
+one expression, so the C type of `v + 1`, and therefore whether the comparison
+is signed, follows `v`'s declaration; an operation that keeps carrying the
+operand's type extends the walk to its readers, and one whose result is a
+declared variable of its own ends it. Some of the *demanding* operations carry
+the operand's type as well — `>>` and `<<` print at the shiftee's promoted type
+and `/ %` at the usual-arithmetic-conversion type of their operands — so those
+record their demand and continue the walk, which is what keeps a second operator
+further out (`(v << 3) >> 2`) from disagreeing unseen, while a comparison, a
+cast-printing extension and a carry intrinsic stop it because their printed
+result establishes a type of its own. Second, anything unclassified vetoes the
+variable outright — a `LOAD` or `STORE` address, a `PTRADD`/`PTRSUB` index
+(where `base[v]` really does differ between a signed and an unsigned `v`, and no
+cast is inserted), any `FLOAT_*` operation, an indirect branch, a type-locked
+member, and a `CPUI_CAST` whose target is anything but a plain integer of the
+same width (a pointer, a float, a `char`, an enum, a typedef, a different
+width). A flip is written only for a high that **owns its declaration line**. The
+printer's candidate list is filtered to sole-named entries before any collapse
+runs (`retain_sole_named`), because every collapse that follows — the
+composite-Symbol retain, `collapse_symbol_decls`, `DeclDedup` and the
+`local_name_aliases` group suppression — pairs two candidates rendering the same
+name. Without that filter a flip on one high of such a group could move the
+collapse's own key, splitting a declaration that used to collapse, or re-sign
+the single line a *non*-flipped sibling's uses read through; with it, which
+declarations exist is exactly what it was under `upstream`.
+
+When a high does flip, each `CPUI_CAST` on it whose target is the very
+type now declared is a no-op token and is dropped, which is the visible half of
+the change: `if (0 <= (int)v1)` becomes `if (0 <= v1)`. The drop is authorized
+only by the declaration the emitter actually wrote, so a mapped-symbol, array or
+collapse override that takes the declared type back also takes the cast back.
+
+What the rule reads is the compiler's instruction selection, not the source. The
+emitted C keeps computing what the binary computes, but where a compiler proved
+a `size_t` non-negative and emitted a signed compare on it, `auto` declares that
+local signed and the source said unsigned. `docs/features/signedness/analysis.md`
+carries the measured agreement rate against DWARF on unstripped binaries, which
+is the number this option is judged on.
+
 **(kuna) paramrefdecl — an `&parameter` reference is the parameter.** Because
 the emitter walks HighVariables rather than the symbol table, it also has to
 decide for itself which highs upstream would *not* have declared:

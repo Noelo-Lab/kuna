@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1103,
-    1103
+    1113,
+    1113
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -1033,6 +1033,16 @@
     "data:short UTF-16 #2: the one-byte rendering is gone",
     "data:short UTF-16 #3: adjacent wide literal is preserved",
     "data:short UTF-16 #4: ordinary ASCII literal is preserved",
+    "data:signedness #1: the masked loop bound is declared unsigned under option signedness upstream, the declaration type inference produces (bug reproduces, once)",
+    "data:signedness #2: and every signed comparison on it carries a cast back to int4 (bug reproduces, once)",
+    "data:signedness #3: the shipped default, option signedness auto, declares it at the signedness its operations demand (fix, once)",
+    "data:signedness #4: and the cast the declaration makes a no-op is dropped (fix, once)",
+    "data:signedness #5: a local narrower than int keeps its declaration in BOTH passes, because C promotes it before every operator (once per pass)",
+    "data:signedness #6: while the int-wide locals in that same function do flip, so #5 is the width rule declining and not an inactive option (fix, once)",
+    "data:signedness-int16 #1: the 2-byte local keeps its declaration under both arms, because the reader promotes it before every operator (once per pass)",
+    "data:signedness-int16 #2: nothing 2 bytes wide is ever re-signed on this target, whose own int is 2 bytes",
+    "data:signedness-int16 #3: the 4-byte control is declared signed under option signedness upstream (once)",
+    "data:signedness-int16 #4: and prefer-unsigned does re-sign it on this same target, so #1 is the width rule declining and not an inactive option (once)",
     "data:simdlane #1: the option-off pass keeps all 32 opaque lane extractions (and the option-on pass has none)",
     "data:simdlane #2: the option-off pass declares the 16-byte shuffle result as an array temporary",
     "data:simdlane #3: the option-off pass declares the last byte-lane temporary of the second register",

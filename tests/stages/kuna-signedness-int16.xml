@@ -1,0 +1,91 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Protected Mode:default">
+<!--
+    kuna `signedness`: the width below which a declaration is never re-signed is
+    the `int` of the compiler that reads kuna's output, not the `int` of the
+    target.
+
+    C promotes anything narrower than `int` before every operator, and the
+    declaration decides which extension that is, so below the promotion width
+    even `==` and `!=` are signedness-sensitive: `(short)-1 == -1` is true while
+    `(unsigned short)0xffff == -1` is a constant false.  The sibling test
+    tests/stages/kuna-signedness.xml pins that rule on x86-64.  This one pins it
+    on a target whose own cspec says `integer_size` is 2 (the same holds for
+    avr8gcc, avr8egcc, TI_MSP430, TI_MSP430X, CR16 and PIC24): reading the guard
+    off the target would let a 2-byte local be re-signed there, and the emitted
+    `if (v1 != -1)` would become a constant-true test to every reader whose `int`
+    is 4 bytes.
+
+    `f` at 0x0 is the guarded case, a 2-byte local that nothing settles:
+
+        0000  be 00 01        MOV  SI,0x100
+        0003  8b 04           MOV  AX,[SI]        ; v1, 2 bytes wide
+        0005  8b 5c 02        MOV  BX,[SI + 0x2]
+        0008  83 f8 ff        CMP  AX,-0x1
+        000b  74 05           JZ   0x12
+        000d  01 d8           ADD  AX,BX
+        000f  89 04           MOV  [SI],AX
+        0011  c3              RET
+        0012  31 c0           XOR  AX,AX
+        0014  c3              RET
+
+    `g` at 0x100 is the control: the same situation one width up, where the
+    reader's promotions do not run and the option is free to act.
+
+        0100  be 00 02        MOV  SI,0x200
+        0103  66 8b 04        MOV  EAX,[SI]       ; v1, 4 bytes wide
+        0106  66 01 c0        ADD  EAX,EAX
+        0109  66 89 04        MOV  [SI],EAX
+        010c  66 89 44 04     MOV  [SI + 0x4],EAX
+        0110  66 89 44 08     MOV  [SI + 0x8],EAX
+        0114  c3              RET
+
+    Stage: P9 emission, sub-stage "naming-policy".  P0 assertion: `option
+    signedness upstream|auto|prefer-signed|prefer-unsigned`.
+
+    Asserts 1 and 2 are the guard: `prefer-unsigned`, the arm with the loosest
+    tie-break, leaves the 2-byte declaration exactly as upstream wrote it.  Pass
+    1 and pass 3 name `option signedness upstream` explicitly, so each arm is
+    compared against the declaration type inference produces and not against
+    whichever value happens to be the shipped default.
+    Asserts 3 and 4 are the control that makes 1 and 2 mean something: the same
+    arm does re-sign the 4-byte local in `g` on this same target, so the decline
+    above is the width rule and not an inactive option.
+
+    Assert 1 matches the declaration by SHAPE (`int2 v<n>;`, no pointer star)
+    rather than by name: which `v<n>` the 2-byte value gets depends on how many
+    locals are declared ahead of it, which is not this test's subject.  The star
+    is what keeps that honest, because a pointer local in `f` is spelled
+    `int2 *v<n>;` and does not match.
+-->
+<bytechunk space="ram" offset="0x0">
+be00018b048b5c0283f8ff740501d88904c331c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100">
+be0002668b046601c06689046689440466894408c3
+</bytechunk>
+<symbol space="ram" offset="0x0" name="f"/>
+<symbol space="ram" offset="0x100" name="g"/>
+</binaryimage>
+<script>
+  <com>option signedness upstream</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option signedness prefer-unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option signedness upstream</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option signedness prefer-unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="signedness-int16 #1: the 2-byte local keeps its declaration under both arms, because the reader promotes it before every operator (once per pass)" min="2" max="2">^  int2 v[0-9]+;$</stringmatch>
+<stringmatch name="signedness-int16 #2: nothing 2 bytes wide is ever re-signed on this target, whose own int is 2 bytes" min="0" max="0">^  uint2 </stringmatch>
+<stringmatch name="signedness-int16 #3: the 4-byte control is declared signed under option signedness upstream (once)" min="1" max="1">^  int4 v1;$</stringmatch>
+<stringmatch name="signedness-int16 #4: and prefer-unsigned does re-sign it on this same target, so #1 is the width rule declining and not an inactive option (once)" min="1" max="1">^  uint4 v1;$</stringmatch>
+</decompilertest>

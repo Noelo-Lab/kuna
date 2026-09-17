@@ -1,0 +1,103 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `signedness`: an integer local whose every comparison is signed is
+    declared unsigned, and the cast machinery writes the signedness back at each
+    use.
+
+    Datatype::type_order ranks SUB_UINT_PLAIN (16) ahead of SUB_INT_PLAIN (17),
+    so in get_local_type's "keep the most specific" fold one uint vote outranks
+    every int vote on the same Varnode, and nothing downstream re-decides.  On
+    -O2 x86-64 those uint votes are structural: a strength-reduced loop bound is
+    masked (INT_AND, which votes TYPE_UINT on both operands) even when every
+    comparison on it is signed.
+
+    Bytes at 0x1000, the reduced shape (three parameters so the masked value is
+    declared rather than inlined at each use):
+
+        1000  89 f8                 MOV  EAX,EDI
+        1002  01 f0                 ADD  EAX,ESI
+        1004  25 f8 ff ff 7f        AND  EAX,0x7ffffff8   ; the TYPE_UINT vote
+        1009  39 c2                 CMP  EDX,EAX
+        100b  7d 06                 JGE  0x1013           ; signed
+        100d  01 c2                 ADD  EDX,EAX
+        100f  39 c2                 CMP  EDX,EAX
+        1011  7c fa                 JL   0x100d           ; signed
+        1013  89 d0                 MOV  EAX,EDX
+        1015  c3                    RET
+
+    Stage: P9 emission, sub-stage "naming-policy" (the declaration seam, next
+    to kuna_declhightype).  P0 assertion: `option signedness
+    upstream|auto|prefer-signed|prefer-unsigned`.
+
+    Pass 1 sets `option signedness upstream` explicitly - the declaration type
+    inference produces, which is what this option's other values are measured
+    against - and reproduces the defect: `uint4 v1;` declared, and the two signed
+    comparisons carry a `(int4)` cast (asserts #1 and #2).
+    Pass 2 (`option signedness auto`, the shipped default) declares `int4 v1;`
+    (every signedness-sensitive reader of v1 demands signed and none demands
+    unsigned) and the cast, now a no-op against that declaration, is dropped
+    (asserts #3 and #4).
+
+    The second function `g` at 0x1100 is the width guard, reduced from
+    findutils `find -O2` sub_bac0.  C's integer promotions convert anything
+    narrower than `int` to `int` before any operator runs, and the declaration
+    decides which extension that is, so `==` and `!=`, which this pass treats
+    as signedness-independent at a fixed width, are NOT independent below the
+    promotion width: `(short)-1 == -1` is true while `(unsigned short)0xffff ==
+    -1` is a constant false.  No operation in `g` settles v2's signedness, so
+    `prefer-unsigned` would re-declare it if the pass were willing to touch a
+    narrow local (and `if ((a0 == v2) || (v2 == -1))` would then contain a
+    constant false, which is what reviewing the compiled C found).  It is not
+    willing: assert #5 pins `int2 v2;` in both passes, and assert #6 pins that
+    the same pass did re-declare the int-wide `v3`, so #5 is the width rule
+    declining rather than an inactive option.
+
+        1100  66 b8 01 00           MOV   AX,0x1
+        1104  31 c9                 XOR   ECX,ECX
+        1106  48 c7 c2 00 61 03 00  MOV   RDX,0x36100
+        110d  83 c1 01              ADD   ECX,0x1
+        1110  48 8d 72 10           LEA   RSI,[RDX + 0x10]
+        1114  66 39 c7              CMP   DI,AX
+        1117  74 0f                 JZ    0x1128
+        1119  66 83 f8 ff           CMP   AX,-0x1
+        111d  74 09                 JZ    0x1128
+        111f  66 8b 42 20           MOV   AX,word ptr [RDX + 0x20]
+        1123  48 89 f2              MOV   RDX,RSI
+        1126  eb e5                 JMP   0x110d
+        1128  89 c8                 MOV   EAX,ECX
+        112a  c3                    RET
+-->
+<bytechunk space="ram" offset="0x1000">
+89f801f025f8ffff7f39c27d0601c239c27cfa89d0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1100">
+66b8010031c948c7c20061030083c101488d72106639c7740f6683f8ff7409668b42204889f2ebe589c8c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="f"/>
+<symbol space="ram" offset="0x1100" name="g"/>
+</binaryimage>
+<script>
+  <com>option signedness upstream</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option signedness auto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option signedness upstream</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option signedness prefer-unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="signedness #1: the masked loop bound is declared unsigned under option signedness upstream, the declaration type inference produces (bug reproduces, once)" min="1" max="1">^  uint4 v1; // eax$</stringmatch>
+<stringmatch name="signedness #2: and every signed comparison on it carries a cast back to int4 (bug reproduces, once)" min="1" max="1">a2 &lt; \(int4\)v1</stringmatch>
+<stringmatch name="signedness #3: the shipped default, option signedness auto, declares it at the signedness its operations demand (fix, once)" min="1" max="1">^  int4 v1; // eax$</stringmatch>
+<stringmatch name="signedness #4: and the cast the declaration makes a no-op is dropped (fix, once)" min="1" max="1">a2 &lt; v1;</stringmatch>
+<stringmatch name="signedness #5: a local narrower than int keeps its declaration in BOTH passes, because C promotes it before every operator (once per pass)" min="2" max="2">^  int2 v2;$</stringmatch>
+<stringmatch name="signedness #6: while the int-wide locals in that same function do flip, so #5 is the width rule declining and not an inactive option (fix, once)" min="1" max="1">^  uint4 v3; // ecx$</stringmatch>
+</decompilertest>

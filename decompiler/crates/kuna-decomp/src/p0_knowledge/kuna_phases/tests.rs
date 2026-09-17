@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_217() {
+fn settable_count_is_218() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -155,12 +155,13 @@ fn settable_count_is_217() {
     // +1 for `foldcallretphi` (P6 call-result folding past the merge phalanx).
     // +1 for `ptrfromuse` (P5 use-derived parameter pointer).
     // +1 for `structsynth` (P5 struct synthesis over a pointer parameter).
-    assert_eq!(kuna_num_settables(), 217);
-    assert_eq!(SETTABLE_TABLE.len(), 217);
+    // +1 for `signedness` (P9 declared-signedness rounding).
+    assert_eq!(kuna_num_settables(), 218);
+    assert_eq!(SETTABLE_TABLE.len(), 218);
 }
 
 #[test]
-fn tier_counts_are_68_core_86_transform_63_analysis() {
+fn tier_counts_are_68_core_87_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -296,7 +297,8 @@ fn tier_counts_are_68_core_86_transform_63_analysis() {
     // transform 81 -> 82: +1 for `ptrfromuse` (P5 use-derived parameter pointer).
     // transform 84 -> 85: +1 for `structsynth` (P5 struct synthesis over a
     // pointer parameter).
-    assert_eq!((core, transform, analysis), (68, 86, 63));
+    // transform 85 -> 86: +1 for `signedness` (P9 declared-signedness rounding).
+    assert_eq!((core, transform, analysis), (68, 87, 63));
 }
 
 #[test]
@@ -823,6 +825,14 @@ fn option_values_live_value_present_for_88() {
                             // `max_term_duplication`.
                             | "impliedrefs"
                             | "termdup"
+                            // (kuna) `signedness` takes FOUR values
+                            // (`upstream|auto|prefer-signed|prefer-unsigned`)
+                            // over an enum field, which the codegen live reader
+                            // (a bool `live_true`/`live_false` pair) cannot
+                            // express -- the same reason `namestyle`,
+                            // `warnstyle` and `int3pad` are here.  Its live
+                            // value is `Architecture::signedness`.
+                            | "signedness"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -1064,7 +1074,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 211 -> 212: +1 for `ptrfromuse`; its P5 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
     // 214 -> 215: +1 for `structsynth`.
-    assert_eq!(json.matches("},\n").count(), 216);
+    // 215 -> 216: +1 for `signedness`; its P9 row sits mid-table, so it
+    // increments the comma-terminated catalog-row count.
+    assert_eq!(json.matches("},\n").count(), 217);
 }
 
 #[test]
