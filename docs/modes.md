@@ -146,12 +146,14 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   clobber is what put a value in the trailing argument register. The evidence is
   one-sided by construction: the register it drops is a possible *output* location
   of the callee's model, which is why the INDIRECT creation it reads exists at
-  all. Two clauses keep it off a real argument — the creation has to be of the
-  argument register itself, and the callee's own body must not read those bytes
-  before writing them — and what neither can see is a callee that really returns a
-  16-byte value in `rax:rdx` and forwards the high half into the next call.
-  Deleting an argument as the default rendering under 500 KiB is the operator's
-  call.
+  all. Three clauses keep it off a real argument — the creation has to be of the
+  argument register itself, every other value joining into that register has to be
+  a division by-product rather than something the caller wrote, and the callee's
+  own body must not read those bytes before writing them — and what none of them
+  can see is a callee that really returns a 16-byte value in `rax:rdx` and
+  forwards the high half into the next call. Every wrong drop is a deleted
+  expression, which is the kind of wrong output a reader cannot see, so deleting an
+  argument as the default rendering under 500 KiB is the operator's call.
 
 All six therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
 `--option dwarf_lines on`, `--option formatstring on`, `--option ifuncfpret on`,

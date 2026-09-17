@@ -120,7 +120,7 @@ The seam is `build_input_from_trials`, immediately after
 `kuna_calleearity::unify_with_sibling_call` — not `check_input_trial_use`, where
 the trials are not yet sorted or entry-assigned and "trailing" is not computable
 (`active.sort_trials()` runs at the tail of `fillin_map_standard`). Shipped as
-`p4_calls/kuna_argclobber.rs`, option **`argclobber`, default off**, with seven
+`p4_calls/kuna_argclobber.rs`, option **`argclobber`, default off**, with eight
 clauses:
 
 1. **register trial, `is_ind_create_formed()`** — the upstream return-side test,
@@ -129,16 +129,20 @@ clauses:
    creation, or a MULTIEQUAL one of whose *immediate* inputs is one;
 3. **every one of those creations is a creation of the argument register itself**
    (`clobber_of_this_register_reaches`);
-4. **the callee's body does not read those bytes before writing them**
+4. **every other input of that join is a division by-product**
+   (`is_division_byproduct`) — the value an `idiv` leaves in the remainder
+   register while the caller goes on to use only the quotient;
+5. **the callee's body does not read those bytes before writing them**
    (`CalleeEntryDead::proves_input`);
-5. **trailing** — no used trial follows it, so no argument changes position;
-6. **at least one argument remains**, since an empty list is `calleearityfwd`'s
+6. **trailing** — no used trial follows it, so no argument changes position;
+7. **at least one argument remains**, since an empty list is `calleearityfwd`'s
    failure shape;
-7. **a sibling that really used that storage wins** — no already-final call to the
+8. **a sibling that really used that storage wins** — no already-final call to the
    same callee entry in this function passed an argument there
    (`kuna_calleearity::best_witness_for`).
 
-Clauses 3 and 4 were added in review round 2; §8 is what bought them.
+Clauses 3 and 5 were added in review round 2 (§8); clause 4 in review round 3
+(§9), which is also where the corpus numbers in §5 come from.
 
 **Ordering against the additive family.** `calleearity` runs first, in the same
 function, so a slot it promoted from a sibling witness is visible to clause 7 and
@@ -166,33 +170,36 @@ immediate. Clause 2 keeps the correct drops and declines tar.
 
 ## 5. Measurements
 
-Whole-corpus `decompile-all` sweep, option off vs on, **33 stripped binaries and
-27,512 functions** from decbench `full_run_address_2026-09-11` — coreutils, grep,
+Whole-corpus `decompile-all` sweep, option off vs on, **46 stripped binaries and
+41,258 functions** from decbench `full_run_address_2026-09-11` — coreutils, grep,
 gzip, bzip2, diffutils, findutils, tar, dpkg, e2fsprogs, bash, dash, cronie, kmod,
-iproute2, libedit, rsyslog, shadow, zlib and openssh-portable on x86-64; u-boot,
-betaflight and riot-os on ARM; mirai. Full artifact:
+iproute2, libedit, rsyslog, shadow, zlib, gnutls, sysvinit and openssh-portable on
+x86-64; u-boot, betaflight, crazyflie, cleanflight, nuttx, chibios, freertos and
+riot-os on ARM; mirai. Full artifact:
 `docs/features/phantomargs/sweep-2026-09-16.txt`.
 
 | | count |
 |---|---:|
-| functions scanned | 27,512 |
-| **functions whose emitted C changes** | **45** |
-| changed call groups | 47 |
-| binaries byte-identical off vs on | 22 of 33 |
+| functions scanned | 41,258 |
+| **functions whose emitted C changes** | **4** |
+| changed call groups | 4 |
+| binaries byte-identical off vs on | 42 of 46 |
 | call sites created or destroyed | 0 |
 | statement moves / control-flow changes | 0 |
 
-Every changed site loses exactly one **trailing** argument, `3 -> 2` on x86-64 and
-`2 -> 1` on ARM, and at every one of them the arity it lands on is the arity of the
-callee's **own recovered prototype**. The three sites whose callee is a named
-import are confirmed against DWARF on the unstripped twins: `xrealloc(void *,
-size_t)`, `ext2fs_dblist_sort2(dblist, sortfunc)`,
-`e2fsck_use_inode_shortcuts(ctx, bool)`. u-boot's two are `get_ticks` (DWARF:
-**0** formal parameters) and `sub_6086752c` (one parameter, and 60+ other sites in
-the image pass one). betaflight's `sub_8032628` is called with one argument at ~40
-other sites.
+All four are **one shape**: the argument register's join has a call clobber on
+one path and a dead `idiv` remainder on the other, which is the fmt witness
+exactly. Each loses one trailing argument, `3 -> 2`, and lands on the arity its
+callee's own recovered prototype has:
 
-Per-function hunk classification on the two original witnesses:
+| caller | callee | off -> on | callee's recovered arity | external ground truth |
+|---|---|---|---|---|
+| `fmt` -O2 `0x26a0` | `sub_3700` | [1, 3] -> [2] | 2 | DWARF `fmt(FILE *f, char const *file)` — 2 `DW_TAG_formal_parameter` |
+| `fmt` -O2-noinline `0x26e0` | `sub_3a30` | [1, 3] -> [2] | 2 | same function, same DWARF |
+| `e2fsck` `0x27f30` | `ext2fs_dblist_sort2` | [3] -> [2] | 2 | e2fsprogs header: `(ext2_dblist, EXT2_QSORT_TYPE (*)(…))` |
+| `bash` `0xe30d0` | `xrealloc` | [3] -> [2] | 2 | bash `xmalloc.h`: `xrealloc(void *, size_t)` |
+
+Per-function hunk classification:
 
 * `fmt` `sub_26a0`: 3 declarations removed (`v9`/`v11`, the two phantoms, and
   `v10`, the fabricated argument's holder); the dead statements `v10 = v9;`,
@@ -202,38 +209,34 @@ Per-function hunk classification on the two original witnesses:
   recovered storage is two registers and `calleearity` reconciles the
   under-recovered site upward. All three sites now render 2 arguments, matching
   DWARF and the callee's own recovered prototype.
-* `grep` `sub_cec0` (`kwsprep`): two `sub_b420(*v,&v,v)` -> `sub_b420(*v,&v)`
-  (DWARF: 2 parameters) plus the two dead `v = v;` assignments they fed. Two
-  further over-recovered sites in the same function are left alone by clauses 2
-  and 7 — the rule is deliberately conservative, not complete.
+* `fmt` -O2-noinline `sub_26e0`: the same three hunks against `sub_3a30`.
+* `e2fsck` `sub_27f30`: the dead `(a0[0x73] << 10) % *(uint4 *)(*a0 + 0x28)`
+  remainder and its `v = v;` copy removed, `ext2fs_dblist_sort2(dblist,sortfunc,v)`
+  -> `ext2fs_dblist_sort2(dblist,sortfunc)`. The enclosing `if` loses its braces
+  because the block went from two statements to one; nothing moves.
+* `bash` `sub_e30d0`: the dead `v % _rl_screenwidth` remainder removed,
+  `xrealloc(dat_14d868,v,v)` -> `xrealloc(dat_14d868,v)`.
 
 ### What decbench actually scores
 
-The earlier record claimed the metric effect was *structurally* zero because
-register locals are never exported. That was wrong, and the review was right to
-falsify it: the pass can delete a `kind: arg` row when the dropped argument was
-the enclosing function's own parameter's only use. Measured instead, on all 45
-changed functions (`kuna decompile-all --addr <fn> --json`, `variables[]` rows
-compared off vs on):
+The pass can in principle delete a `kind: arg` row, so it is measured rather than
+argued. On all four changed functions (`kuna decompile-all --addr <fn> --json`,
+`variables[]` compared off vs on, automatic `vN` names normalized):
 
-* **43 of 45 are row-for-row identical** in `(kind, stack_offset, size, type)`.
-* u-boot `0x608715f0` loses a `kind: arg` row: its prototype narrows from
-  `(uint4, unsigned int)` to `(uint4)`. `readelf` on the decbench twin says
-  `0x608715f0` is `__udelay`, with **one** `DW_TAG_formal_parameter` (`usec`) —
-  the second parameter kuna had was itself fabricated, so this is a type_match
-  gain.
-* bash `0xe30d0` (`expand_prompt`) has one `kind: stack` row at `-160` go
-  `undefined8` -> `char *`. DWARF declares that function's `fbreg` locals at
-  `-168` and `-176` only, so `-160` is a spill slot; the change replaces an
-  untyped 8-byte slot with a typed pointer.
+* **3 of 4 are row-for-row identical** in `(kind, name-class, type)`.
+* `bash` `0xe30d0` gains one row: an uncommitted `undefined8` framelayout slot
+  (`local_a0`) becomes a typed `char *` stack variable. That is a type_match
+  gain, not a loss.
+* **No `kind: arg` row is deleted anywhere in the sweep**, and no function's
+  parameter count changes.
 
-Speed, interleaved off/on pairs, minimum of 21, on a box running the workspace
-suite throughout: fmt `main` 222.4 -> 226.9 ms (+2.03%), ls `main` (control, the
-option never fires) 319.1 -> 320.4 ms (+0.40%). Budget +5%.
+**Option OFF is inert.** Whole-binary `decompile-all` with the option off is
+byte-identical to the pinned pre-change binary on all four changed binaries plus
+four controls (grep, u-boot, ssh-keygen, crazyflie `cf2.elf`, betaflight): 0
+differing lines each.
 
-Gates on the shipped tree: `make test` PARITY OK 675/675, `make test-stages`
-PARITY OK 1018/1018, `make test-cli` 172/172, `make check-spec` + `--strict` OK,
-`kuna catalog --check` OK, `counters --check` no drift.
+Speed, interleaved off/on pairs, minimum of 21: see
+`docs/features/phantomargs/record.json`. Budget +5%.
 
 ## 6. (c) Does `protoorder` (lane A3) make this unnecessary?
 
@@ -386,3 +389,78 @@ recovered prototype, which is a stronger check than the per-callee arity
 histogram the first round used and is what makes the five u-boot regressions
 impossible to miss now: at each of them the site's *post*-drop arity would have
 been below the callee's own recovered parameter count.
+
+## 9. Review round 3 — one clobber input was condemning the whole join
+
+Round 2 left `clobber_of_this_register_reaches` with a hole the review found and
+proved with a 20-line self-contained ELF: a MULTIEQUAL input whose def was *not*
+an indirect creation was skipped outright, so one clobber among a join's incoming
+values decided the whole join. A caller that forwards its own second parameter on
+the non-clobber path lost both the argument and the parameter:
+
+```
+$ cat fix2.s      # the relevant three instructions
+  mov %rsi,%r12
+  je  1f
+  call clobber            # destroys rdx
+1: mov %r12,%rdx          # the caller's OWN second parameter
+2: call target            # target(rdi, 5, rdx)
+$ gcc -nostdlib -static -o fix2.elf fix2.s
+
+$ kuna decompile-all fix2.elf --addr 0x401000                        # default
+void sub_401000(long a0,unsigned long a1) { ... sub_40102f(a0,5,a1); }
+
+$ kuna decompile-all fix2.elf --addr 0x401000 --option argclobber on # round 2
+void sub_401000(long a0)                { ... sub_40102f(a0,5); }
+```
+
+The `variables[]` surface lost a `kind: arg` row with it. The same hole made the
+PR's own positive stage fixture vacuous: its non-clobber path was
+`ba 07 00 00 00` (`mov $0x7,%edx`), a constant the caller demonstrably writes,
+and the assertion called the deletion "the trailing argument the caller never
+wrote for this call".
+
+**Clause 4 is the close.** Every join input that is not a clobber of this register
+must be positively classified as a value nobody placed either, and the only class
+that qualifies is the **division by-product** — what an `idiv` leaves in the
+remainder register while the caller uses only the quotient. Upstream is the
+authority for scoring it that way: `ParamListStandardOut::fillinMap`
+(`fspec.cc:1721`) rejects a `isRemFormed()` piece exactly as it rejects an
+`isIndCreateFormed()` one. `is_division_byproduct` walks back through the width
+adjustments a compiler puts between the `INT_REM` and the register (a `SUBPIECE`
+of the low half, a zero or sign extension, a constant mask) and nothing else.
+
+**Yield after the tightening, measured.** The sweep fell from 45 changed
+functions over 33 binaries to **4 over 46** (§5). Where it went:
+
+* openssh (30 of round 2's 47 call groups) is gone. `ssh-keygen` `0x9b20` is the
+  representative: the non-clobber path is `v27 = "PIN incorrect"` — argument
+  setup the caller emitted for a *different* call, left in `rdx`. The drop
+  happened to agree with `read_passphrase(prompt,flags)`, but the evidence for it
+  was never there, and this is the same class the round-2 note below (§
+  "Considered and rejected") had already flagged as the reason a liveness proxy
+  declined 55 of 57 drops. That note's framing was backwards: the liveness
+  experiment was not declining correct drops for the wrong reason, it was
+  declining drops that had no caller-side evidence. Clause 4 reaches the same
+  sites from the positive direction and keeps the four that do have it.
+* betaflight (5), u-boot (2), dpkg (2), grep (1) are gone for the same reason —
+  in each the join carried a value the caller wrote on some path.
+* The three claims the review falsified are gone with the sites they described.
+  Round 2's table had 6 of 47 rows landing on an arity *different* from the
+  `proto=` column (betaflight `sub_8032628` twice, `ssh` `sub_3d9d0`, u-boot
+  `get_ticks` and `0x608715f0`) and 3 rows with `proto=None`; none of those sites
+  fires now, and all 4 that remain land on their callee's own recovered arity and
+  on an external prototype.
+* The two binaries the review swept and the PR had not — crazyflie and
+  cleanflight — now change **0** functions, so the `kind: arg` deletion at
+  crazyflie `sub_803bec8` and the loop-condition rewrite at crazyflie
+  `sub_80104d4` are both gone. The round-3 sweep includes them, plus nuttx,
+  chibios, freertos, gnutls (4 binaries), sysvinit and bash/libedit at -O0.
+
+**What the fixtures test now.** `tests/stages/kuna-argclobber.xml` is re-cut onto
+the real witness shape (clobber on one path, `idivl` remainder on the other) and
+asserts that the *quotient* the caller uses survives both passes while the
+remainder and the third argument go. `tests/stages/kuna-argclobber-guards.xml`
+uses that same caller so the only thing keeping its argument is the callee-body
+clause. `tests/stages/kuna-argclobber-forward.xml` is the review's `fix2.s`,
+asserting that both the argument and the second parameter survive both passes.

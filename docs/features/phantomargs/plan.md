@@ -16,14 +16,16 @@ evaluation order: the option is on; the spec is neither input-locked nor variadi
 the op is a live `CPUI_CALL`; there is a last `is_used()` trial and at least one
 other used trial; that trial is a register trial with `is_ind_create_formed()`;
 its argument Varnode's defining op is an indirect creation or a MULTIEQUAL with an
-immediate indirect-creation input, and every one of those creations is a creation
-of the trial's OWN register (`clobber_of_this_register_reaches`); the callee's
-entry-liveness summary does not `proves_input` those bytes; and
+immediate indirect-creation input, every one of those creations is a creation of
+the trial's OWN register and every OTHER input of that join is a division
+by-product (`clobber_of_this_register_reaches` / `is_division_byproduct`); the
+callee's entry-liveness summary does not `proves_input` those bytes; and
 `kuna_calleearity::best_witness_for` has no already-final sibling call to the same
 callee entry carrying an argument at that storage.
 
-The last two preconditions were added in review round 2; `analysis.md` §8 is the
-evidence that bought them.
+The same-register and callee preconditions were added in review round 2
+(`analysis.md` §8); the join precondition in round 3 (§9), which is also where the
+corpus numbers come from.
 
 **Why this seam, not `check_input_trial_use`**: trials are sorted and
 entry-assigned only inside `fillin_map_standard` (`active.sort_trials()` is its
@@ -56,23 +58,26 @@ never by arithmetic: 208 -> 209 settables (`kuna_phases/tests.rs` fn-name,
 catalog-json-records 207->208; `tests/catalog_bytecompat.rs`, 4 sites) and the
 captured `tests/fixtures/phase_catalog.json` (re-captured with `phase catalog`, no
 program loaded); `option_values_live_value_present_for_86` -> `_for_87` (the option
-has a `live_field`); stage corpus count `kuna-base/src/xml.rs` 294 -> 297 (three
-stage files); `docs/baseline-stages.json` re-recorded (1018 keys), not hand-merged;
+has a `live_field`); stage corpus count `kuna-base/src/xml.rs` 294 -> 298 (four
+stage files); `docs/baseline-stages.json` re-recorded (1021 keys), not hand-merged;
 `docs/options.md` regenerated.
 
 ## 4. Test
 
 `tests/stages/kuna-argclobber.xml`, two passes over one hand-assembled x86-64
-bytechunk (`caller` / `clobber` / `target` / `helper`): one path calls `clobber`
-(whose own first act is a call, so `calleepreserves` cannot narrow the killed set),
-the other writes `edx` itself; the join feeds `target(rdi, rsi)`. `target`'s first
-act is a call too, so `calleedeadarg` cannot prove `rdx` dead there.
+bytechunk (`caller` / `clobber` / `target` / `helper`), cut to the fmt witness's
+real shape: one path calls `clobber` (whose own first act is a call, so
+`calleepreserves` cannot narrow the killed set), the other runs `idivl` and leaves
+its remainder in `edx` while the caller goes on to use only the quotient; the join
+feeds `target(rdi, rsi)`. `target`'s first act is a call too, so `calleedeadarg`
+cannot prove `rdx` dead there.
 
-* pass 1, `option argclobber off` (the shipped default): `target(a0,5,v2)` plus
-  `unsigned long v1; // rdx` — the bug;
-* pass 2, `option argclobber on`: `target(a0,5)` and no `// rdx` declaration.
+* pass 1, `option argclobber off` (the shipped default): `target(a0,5,v3)` plus
+  the `% 200` remainder — the bug;
+* pass 2, `option argclobber on`: `target(a0,5)`, the remainder gone, the `/ 200`
+  quotient the caller really uses untouched.
 
-Two negative cases, one per guard clause, each asserting the SAME call in both
+Three negative cases, one per guard clause, each asserting the SAME call in both
 passes:
 
 * `tests/stages/kuna-argclobber-guards.xml` (x86-64) — the same caller shape, but
@@ -82,9 +87,14 @@ passes:
   reduced: `bl producer; cmp r0,#4; movne r3,r0; moveq r3,r0; bl target2`, so the
   creation feeding `r3` is a creation of `r0` and the same-register clause keeps
   the argument.
+* `tests/stages/kuna-argclobber-forward.xml` (x86-64) — the caller forwards its
+  own second parameter into `rdx` (`mov %r12,%rdx`) on the non-clobber path, so
+  the join clause keeps both the argument and the parameter.
 
 ## 5. Evidence required before any default-on proposal (not this PR)
 
-0/675 on the datatests with the flip, PARITY OK on stages, a clean whole-corpus
-sweep wider than the 12 binaries measured here, and a decision about the stated
-wrong-output shape (a 16-byte `rax:rdx` return forwarded as a trailing argument).
+0/675 on the datatests with the flip and PARITY OK on stages — both measured, see
+`analysis.md` and `record.json` — plus a decision about the stated wrong-output
+shape (a 16-byte `rax:rdx` return forwarded as a trailing argument), which is the
+reason it stays opt-in. The other reason is that what this pass does is DELETE an
+expression, so a wrong drop is invisible to a reader of the output.

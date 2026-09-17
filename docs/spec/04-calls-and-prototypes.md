@@ -569,7 +569,10 @@ evidence that disqualifies a return value is ignored for an argument.
 
 (kuna) `argclobber` (default **off**,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_argclobber.rs`) applies that
-same sentence to the input list, bounded by six clauses.
+same sentence to the input list, bounded by eight clauses.
+
+The trial must be a **register** trial carrying `is_ind_create_formed` — the
+upstream return-side test, read on the input list.
 
 The clobber must reach the call **directly** — the trial's defining op is the
 indirect creation, or a MULTIEQUAL one of whose immediate inputs is one — because
@@ -591,6 +594,23 @@ pair of predicated `mov r3,r0` carry it into
 `printf("%s %s: Invalid \"bus-width\" value %u!\n",dev,name,width)` as the value
 `%u` prints. A register the caller wrote is a register the caller is passing,
 whatever the value in it came from.
+
+Every **other input of that join** must be a **division by-product** — the value
+an `idiv` leaves in the remainder register while the caller goes on to use only
+the quotient, reached through the width adjustments a compiler puts between the
+`INT_REM` and the register (a `SUBPIECE` of the low half, a zero or sign
+extension, a constant mask) and nothing else. This is the same statement as the
+clause above, applied to a join rather than to a single def: one clobber among a
+phi's incoming values says nothing about the other paths, so each of them has to
+be positively classified as a value nobody placed either, and the by-product is
+the only class that qualifies. Upstream is the authority for treating it that
+way, on the return side: `fillin_map_standard_out` rejects a remainder-formed
+piece exactly as it rejects an indirect-creation-formed one. Without this clause
+a caller that forwards its own second parameter on the non-clobber path
+(`mov %r12,%rdx`, joined with a clobber) loses both the argument and the
+parameter, and `void caller(long,unsigned long)` renders as `void caller(long)` —
+a deletion that reaches the JSON `variables[]` surface as a missing `kind: arg`
+row, not just the C text.
 
 The **callee's own body** must not read those register bytes before writing them.
 That is the `proves_input` half of the per-image entry-liveness summary
@@ -614,9 +634,19 @@ definitely-not-used, so none of them puts the argument back.
 
 What no clause can see is a callee that really returns a 16-byte value in
 `rax:rdx` and forwards the high half as the next call's trailing argument: it
-writes nothing into `rdx` itself, so it keeps the phantom's shape on both counts,
+writes nothing into `rdx` itself, so it keeps the phantom's shape on every count,
 and only the callee probe can decline it — and only where the probe covers that
-callee's entry. That is why it is opt-in.
+callee's entry. That, and the fact that a wrong drop is a *deleted* expression
+rather than a visibly odd one, is why it is opt-in.
+
+Together the clauses are narrow: over 46 stripped decbench binaries and 41,258
+functions the rule fires on four functions, and all four are one shape — a call
+clobber on one path of the argument register's join and a dead `idiv` remainder
+on the other. `fmt` -O2 `main` and its `-O2-noinline` twin, `e2fsck`'s
+`ext2fs_dblist_sort2(dblist,sortfunc,…)` and `bash`'s `xrealloc(p,n,…)` each lose
+exactly one trailing argument, landing on the arity the callee's own recovered
+prototype has and, for the three that have one, on the arity DWARF or the
+library's own header gives.
 
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter
