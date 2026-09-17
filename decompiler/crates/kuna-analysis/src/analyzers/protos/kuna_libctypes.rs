@@ -34,6 +34,17 @@
 //! field or as a cast — the NAME, which is the whole point, is ABI-independent,
 //! and a wrong width can never make a pointer point at the wrong thing.
 //!
+//! ## `glibc` fills the shells in
+//!
+//! A sized, fieldless shell keeps the arithmetic seam honest and says nothing
+//! about what is at an offset. The `glibc` value installs the PUBLISHED x86-64
+//! members of the nine aggregates whose layout is part of the platform's API
+//! ([`glibc::GLIBC_LAYOUTS`]), so `f->field_0x8` reads `f->_IO_read_ptr` and the
+//! loaded value takes the FIELD's type. It is installed only on a target the
+//! layouts are true of — an x86-64 ELF whose `.dynstr` names glibc — and the
+//! shells stay opaque everywhere else. See [`glibc`] for the provenance and the
+//! two rules those tables obey.
+//!
 //! ## A `-g` image already has the real thing
 //!
 //! On an image that carries debug info the platform's own `struct stat` is
@@ -384,19 +395,17 @@ impl AnalysisPass for LibcTypesPass {
         // the type factory by `build_pieces` below, and with the gate off not one
         // of them may exist (an interned `stat` is exactly what the DWARF
         // importer would meet). Off is therefore the shipped tables, untouched.
-        if !enabled() {
-            return out;
-        }
-        let types = ctx.arch.types();
-        let (_addr_size, word_size) = ctx.arch.data_org();
+        //
         // `glibc` asks for the published field layouts; whether they are TRUE of
         // this image is a separate question, and the only one that can make a
         // field name wrong. Refused => the `opaque` shells, exactly.
         let layout = match kuna_decomp::kuna_libctypes::libctypes_layout() {
-            Layout::Glibc if glibc::target_is_glibc_x86_64(ctx.file) => Layout::Glibc,
             Layout::Off => return out,
+            Layout::Glibc if glibc::target_is_glibc_x86_64(ctx.file) => Layout::Glibc,
             _ => Layout::Opaque,
         };
+        let types = ctx.arch.types();
+        let (_addr_size, word_size) = ctx.arch.data_org();
         // IMPORTED names only, for both tables — where `LibProtoPass` also matches
         // a name the image DEFINES. A defined `fopen` is this image's own
         // function, and on a `-g` image it has a DWARF prototype that this pass,

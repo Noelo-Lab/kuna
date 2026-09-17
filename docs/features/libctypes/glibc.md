@@ -277,3 +277,34 @@ this is a small wrong answer the fieldless shell did not produce — which is
 exactly the judgement call the option model exists for. A later flip wants that
 propagation reach bounded, or this shape understood, and a sweep that is positive
 rather than flat.
+
+## What it does to a `decompile-project` export
+
+`opaque`'s shells are deliberately INCOMPLETE, so the exported `.h` declares
+`typedef struct FILE FILE; /* opaque */` and the exported `.c` then reads fields
+out of a type its own header says has none. `glibc` closes that: the header emits
+the real bodies, dependency-ordered, and they parse.
+
+```
+$ kuna decompile-project <fixture> -o D --option libctypes glibc
+$ sed -n '41,55p' D/libctypes_glibc_x86_64.h
+typedef struct FILE FILE;
+typedef struct timespec timespec;
+typedef struct stat stat;
+
+struct FILE {
+    int _flags;
+    undefined1 _pad4[4];
+    char *_IO_read_ptr;
+    char *_IO_read_end;
+    ...
+struct stat {
+    ...
+    timespec st_atim;
+```
+
+`cc -std=c99 -fsyntax-only` over the generated header: **0 errors in all three
+arms**. Over the generated `.c` (which has never compiled, in any arm) on the
+same fixture: `off` 17 errors, `opaque` 21, `glibc` **18** — the three that
+`opaque` adds are the incomplete-type reads, and filling the layout in takes them
+back out.
