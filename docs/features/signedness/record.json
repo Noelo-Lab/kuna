@@ -534,6 +534,7 @@
       "sub_int_flips": 0,
       "stderr": "identical in both arms for every binary",
       "report": "docs/features/signedness/hunks-default-auto.md"
-    }
+    },
+    "harness_default_control": "proof that the corpora actually ran with the flip in, rather than through an Architecture that never called reset_defaults: a scratch datatest with NO `option signedness` line at all (/tmp/claude-1000/signedness-probe/probe.xml, the same 20-byte image as the stage test) asserts `int4 v1;` present and `(int4)v1` absent, and scores 2/2 through `kuna test --datatests`. The console path was checked the same way (decomp_dbg on the bare image prints `int4 v1;`), and the CLI path with `kuna decompile-all fmt --addr 0x3060` (`int v1;`, no `(int)v1`)."
   }
 }
