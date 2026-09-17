@@ -216,10 +216,10 @@ the branch; the classification is reproduced in
 | piece reads (`vN._<off>_<size>_`) | 1,580 | **1,273** |
 | named reserved members (`__pad0`, `__glibc_reserved`, …) | 0 | **0** |
 
-179 of 8,290 functions change text. Nine `field_0x` accesses survive: the four
-padding bytes inside a copied `struct tm` in findutils `find`, three address
-forms in `e2fsck`, and the two diffutils offsets the reserved-row rule exists to
-keep neutral.
+179 of 8,290 functions change text. Nine `field_0x` accesses survive: one is the
+four padding bytes inside a copied `struct tm` in findutils `find`, three are
+address forms in `e2fsck`, and five are the diffutils reads at `field_0x80` and
+`field_0x88` that the reserved-row rule exists to keep neutral.
 
 ### The array-index hazard, and where it goes wrong
 
