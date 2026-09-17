@@ -1009,7 +1009,8 @@ def census_function(chunk: str) -> dict:
 
 
 def _channel() -> dict:
-    return {"functions_with_a_candidate": 0, "candidates": 0, "candidate_is_an_arg": 0, "candidate_is_a_named_local": 0,
+    return {"functions_with_a_candidate": 0, "candidates": 0,
+            "candidate_is_an_arg": 0, "candidate_is_a_named_local": 0,
             "candidate_is_a_global": 0, "candidate_not_on_the_json_surface": 0,
             "candidates_paired_with_ground_truth": 0,
             "candidates_kuna_already_types_correctly": 0,

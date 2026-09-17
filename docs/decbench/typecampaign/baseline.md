@@ -67,6 +67,11 @@ Control run against a block that already exists:
 | published (libcsigs, PR-time build) | 267 | 8 | 8 | 0.2617 | 0.2712 | 8 | 0 |
 | re-measured here (kuna @809712e9) | 267 | 14 | 15 | 0.3345 | 0.3441 | 8 | 0 |
 
+The rows this was measured from carry their own provenance (kuna
+`sha256 9aabcce8a7fc4fdc`, decbench main @625e892, both arm values, the results
+tree); a re-report under a different binary says so and still reports the corpus
+the rows cover, not the one the re-report asked for.
+
 `n`, `improved` and `worse` reproduce exactly; the absolute levels are higher
 because the pinned kuna is ~75 commits newer than the one libcsigs was measured
 on. `projects` carries the projects only — `pooled` is its own top-level key, as
