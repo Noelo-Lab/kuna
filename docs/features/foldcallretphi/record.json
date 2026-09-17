@@ -79,13 +79,13 @@
     "errors": "no new error records; function counts identical off/on in all 24 binaries"
   },
   "gates": {
-    "make test": "PARITY OK (675/675)",
-    "make test-stages": "PARITY OK (1041/1041)",
-    "make check-spec": "OK (lenient + strict)",
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "1043/1043 PARITY OK",
+    "make check-spec": "OK lenient + OK strict",
     "make test-cli": "178/178 passed",
     "kuna catalog --check": "OK",
-    "counters --check": "no drift",
-    "make rust-test": "RUST_TEST_RC=0 on the rebased tree (415 test binaries, 0 failures)"
+    "counters --check": "no drift; docs/options.md byte-fresh; tests/fixtures/phase_catalog.json recaptured",
+    "make rust-test": "RUST_TEST_RC=0, 416 test binaries, 7101 passed / 0 failed"
   },
   "catalog_counts": {
     "settables": "211 -> 212",
@@ -129,8 +129,8 @@
   },
   "default_on_ablation": {
     "method": "flip Architecture::reset_defaults_internal to fold_call_ret_phi = true, rebuild, run every gate",
-    "datatests": "675/675 assertions passed, PARITY OK (0 assertions change) -- re-run with the global-write barrier in",
-    "stages": "1043/1043 assertions passed, PARITY OK -- re-run with the global-write barrier in",
+    "datatests": "675/675 assertions passed, PARITY OK (0 assertions change) -- re-run on the final build, with the full write barrier in",
+    "stages": "1043/1043 assertions passed, PARITY OK -- re-run on the final build, with the full write barrier in",
     "check-spec": "OK (lenient + strict)",
     "speed": "no measurable cost on fmt decompile-all (min of 21 interleaved pairs: 4.200 s both arms; median +1.26%), inside the +5% budget",
     "test-cli": "177/178 -- no-cli-rename-or-prototype-override fails",
