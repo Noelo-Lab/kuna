@@ -696,12 +696,22 @@ reachable from its *printed* (explicit) members and folds them into one verdict:
 `INT_SLESS`, `INT_SLESSEQUAL`, `INT_SDIV`, `INT_SREM`, `INT_SRIGHT` (operand 0),
 `INT_SEXT`, `INT_SCARRY` and `INT_SBORROW` demand signed; `INT_LESS`,
 `INT_LESSEQUAL`, `INT_DIV`, `INT_REM`, `INT_RIGHT` (operand 0), `INT_ZEXT` and
-`INT_CARRY` demand unsigned; a `CPUI_CAST` to a plain integer of the same width
-is a demand for the type it casts to. `auto` declares the value signed when
-every demand is signed and unsigned when every demand is unsigned, and leaves it
-alone otherwise; `prefer-signed` and `prefer-unsigned` additionally settle the
-no-demand case, which is TRex's observation that C programmers write `int` when
-the signedness does not matter. Nothing else changes: no Varnode type, no
+`INT_CARRY` demand unsigned; `INT_LEFT` (operand 0) demands unsigned as well,
+not because `<<` computes a different value but because shifting a negative
+value left is undefined behaviour in C, and this pass must not manufacture it;
+a `CPUI_CAST` to a plain integer of the same width is a demand for the type it
+casts to. `auto` declares the value signed when every demand is signed and
+unsigned when every demand is unsigned, and leaves it alone otherwise;
+`prefer-signed` and `prefer-unsigned` additionally settle the no-demand case,
+which is TRex's observation that C programmers write `int` when the signedness
+does not matter. A *defining* operation votes but cannot veto, because a
+definition converts at a fixed width and is bit-identical either way: the
+divide-and-shift family (`INT_SDIV`, `INT_SREM`, `INT_SRIGHT` signed;
+`INT_DIV`, `INT_REM`, `INT_RIGHT` unsigned) says what kind of number came out
+and votes accordingly, while `INT_SEXT`, `INT_ZEXT` and `INT_2COMP` say nothing
+at all — an extension describes the operand it widened, not the widened value,
+so `int v = *p;` off an `unsigned char *` and `uintmax_t max = (long)(int)n;`
+off a `movslq` are both ordinary C. Nothing else changes: no Varnode type, no
 inference pass, no cast decision, and no prototype or symbol type — so the
 `variables` JSON surface and every recovered signature are byte-identical, and
 so is the whole output under the default `upstream`.
@@ -712,24 +722,46 @@ strategy singles out: those ops, and only those, pass `care_uint_int = true` to
 `CastStrategyC::cast_standard`
 (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs
 (get_input_cast)`). Everything the pass lets through besides them is
-signedness-independent at a fixed width — `+ - * & | ^ << == !=`, unary `~` and
+signedness-independent at a fixed width — `+ - * & | ^ == !=`, unary `~` and
 `-`, an assignment, a call argument, a `return`, a stored value, a truncation or
 a concatenation — because two's-complement arithmetic and a same-width
-conversion produce identical bits either way. Two further rules close the gap
-between "this operation" and "the printed expression". First, the walk follows
-*implied* results: `v + 1 < 0` prints as one expression, so the C type of
-`v + 1`, and therefore whether the comparison is signed, follows `v`'s
-declaration; an operation that keeps carrying the operand's type extends the
-walk to its readers, and one whose result is a declared variable of its own ends
-it. Second, anything unclassified vetoes the variable outright — a `LOAD` or
-`STORE` address, a `PTRADD`/`PTRSUB` index (where `base[v]` really does differ
-between a signed and an unsigned `v`, and no cast is inserted), any `FLOAT_*`
-operation, an indirect branch, a type-locked member. When a high does flip, each
-`CPUI_CAST` on it whose target is the very type now declared is a no-op token
-and is dropped, which is the visible half of the change:
-`if (0 <= (int)v1)` becomes `if (0 <= v1)`. The drop is authorized only by the
-declaration the emitter actually wrote, so a mapped-symbol, array or collapse
-override that takes the declared type back also takes the cast back.
+conversion produce identical bits either way.
+
+"At a fixed width" is a precondition of that list, not a turn of phrase, and it
+is the third rule. C's integer promotions convert every operand narrower than
+`int` to `int` *before* any of those operators runs, and which extension is
+performed is read off the declaration, so below the promotion width nothing is
+neutral: `(short)-1 == -1` is true while `(unsigned short)0xffff == -1` is a
+constant false, and `+ - * & | ^ << == !=` all diverge the same way. The pass
+therefore declines any high whose declared type is narrower than
+`TypeFactory::get_size_of_int()`, whatever the operations say. A width change
+*between* two integers is an explicit `INT_SEXT`/`INT_ZEXT` in p-code, so a
+mixed-width expression is constrained by the extension op rather than slipping
+through as neutral.
+
+Two further rules close the gap between "this operation" and "the printed
+expression". First, the walk follows *implied* results: `v + 1 < 0` prints as
+one expression, so the C type of `v + 1`, and therefore whether the comparison
+is signed, follows `v`'s declaration; an operation that keeps carrying the
+operand's type extends the walk to its readers, and one whose result is a
+declared variable of its own ends it. Second, anything unclassified vetoes the
+variable outright — a `LOAD` or `STORE` address, a `PTRADD`/`PTRSUB` index
+(where `base[v]` really does differ between a signed and an unsigned `v`, and no
+cast is inserted), any `FLOAT_*` operation, an indirect branch, a type-locked
+member, and a `CPUI_CAST` whose target is anything but a plain integer of the
+same width (a pointer, a float, a `char`, an enum, a typedef, a different
+width). When a high does flip, each `CPUI_CAST` on it whose target is the very
+type now declared is a no-op token and is dropped, which is the visible half of
+the change: `if (0 <= (int)v1)` becomes `if (0 <= v1)`. The drop is authorized
+only by the declaration the emitter actually wrote, so a mapped-symbol, array or
+collapse override that takes the declared type back also takes the cast back.
+
+What the rule reads is the compiler's instruction selection, not the source. The
+emitted C keeps computing what the binary computes, but where a compiler proved
+a `size_t` non-negative and emitted a signed compare on it, `auto` declares that
+local signed and the source said unsigned. `docs/features/signedness/analysis.md`
+carries the measured agreement rate against DWARF on unstripped binaries, which
+is the number this option is judged on.
 
 **(kuna) paramrefdecl — an `&parameter` reference is the parameter.** Because
 the emitter walks HighVariables rather than the symbol table, it also has to

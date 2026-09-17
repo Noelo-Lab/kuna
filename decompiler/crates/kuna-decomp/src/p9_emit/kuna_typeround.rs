@@ -52,18 +52,38 @@
 //! | widening conversion | `INT_SEXT` | signed |
 //! | widening conversion | `INT_ZEXT` | unsigned |
 //! | `SCARRY`/`SBORROW`/`CARRY` intrinsics | `INT_SCARRY`/`INT_SBORROW`/`INT_CARRY` | signed / unsigned |
-//! | a `(T)` cast to a plain integer | `CPUI_CAST` | the cast's own metatype |
+//! | `<<` (operand 0) | `INT_LEFT` | unsigned |
+//! | a `(T)` cast | `CPUI_CAST` | the cast's own metatype, and only to a plain integer of the same width |
+//!
+//! `<<` is in that table for a reason that is not about the result bits: shifting
+//! a negative value left is undefined behaviour in C, so a value the body shifts
+//! is declared unsigned or not re-declared at all.  TRex classifies `LeftShift`
+//! the same way.
 //!
 //! Everything else that this module lets through is signedness-*independent* at a
-//! fixed width - `+ - * & | ^ << == !=`, unary `~` and `-`, an assignment, a call
+//! fixed width - `+ - * & | ^ == !=`, unary `~` and `-`, an assignment, a call
 //! argument, a `return`, a stored value, a truncation or concatenation - because
 //! two's-complement arithmetic and a same-width conversion produce the same bits
-//! either way.  That list matches kuna's own cast strategy: the ops above are
-//! precisely the ones whose `getInputCast` passes `care_uint_int = true`
-//! (`p9_emit/coreaction_casts.rs`), i.e. the ones upstream itself considers
-//! signedness-carrying.
+//! either way.
 //!
-//! Two further conditions make the rule sound rather than merely plausible:
+//! **"At a fixed width" is a precondition, not a turn of phrase.**  C's integer
+//! promotions convert any operand narrower than `int` to `int` *before* the
+//! operator runs, and which extension is performed is read off the declaration:
+//! `(short)-1 == -1` is true, `(unsigned short)0xffff == -1` is false, and the
+//! two disagree at `+ - * & | ^ << == != < <= > >= / % >>` alike.  Below the
+//! promotion width no operator is neutral, so this pass simply does not touch a
+//! declaration narrower than `TypeFactory::get_size_of_int()`.  (Reduced from
+//! `findutils` `find -O2` `sub_bac0`, where re-declaring a `short` unsigned left
+//! `if ((v2 == v8) || (v8 == -1)) break;` in place and made the `break` dead.)
+//!
+//! At and above the promotion width the neutral list matches kuna's own cast
+//! strategy: the demanding ops are precisely the ones whose `getInputCast` passes
+//! `care_uint_int = true` (`p9_emit/coreaction_casts.rs`), i.e. the ones upstream
+//! itself considers signedness-carrying.  A width change between two integers is
+//! an explicit `INT_SEXT`/`INT_ZEXT` in p-code, so a mixed-width expression is
+//! constrained by the extension op rather than slipping through as neutral.
+//!
+//! Three further conditions make the rule sound rather than merely plausible:
 //!
 //! * **The walk follows implied values.** `v + 1 < 0` is printed as one
 //!   expression, so the C type of `v + 1` - and therefore whether `< 0` is a
@@ -76,11 +96,24 @@
 //!   `PTRADD`/`PTRSUB` indices (`base[v]` with a negative `v` is not the same
 //!   object as `base[(unsigned)v]`, and no cast is inserted there), every
 //!   `FLOAT_*` op, `BRANCHIND`, `CPOOLREF`, `NEW`, `SEGMENTOP`, `INSERT`,
-//!   `ZPULL`/`SPULL` - each leaves the declaration exactly as upstream chose it.
+//!   `ZPULL`/`SPULL`, and a `CPUI_CAST` whose target is anything but a plain
+//!   integer of the same width - each leaves the declaration exactly as upstream
+//!   chose it.
+//! * **The declaration is at least `int` wide** (above), so no promotion runs
+//!   before any of the neutral operators.
 //!
 //! With those in place, `auto` flips to signed only when every signedness-sensitive
 //! reader demands signed, so each surviving `(int)` cast on the variable becomes a
 //! no-op and the rest of the expression is byte-for-byte what it was.
+//!
+//! ## What this does *not* claim
+//!
+//! The rule reads the compiler's instruction selection, not the source.  Where a
+//! compiler proved a `size_t` non-negative and emitted a signed compare on it,
+//! `auto` declares it signed and the source said unsigned; the emitted C still
+//! computes what the binary computes, but the declaration is not the programmer's.
+//! `docs/features/signedness/analysis.md` carries the measured agreement rate
+//! against DWARF.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -282,12 +315,15 @@ enum ReaderClass {
 
 /// Classify one reader of the value at input `slot`.
 ///
-/// The `Demands` set is exactly the set of C constructs whose meaning changes
-/// with the operand's signedness, and it coincides with the ops whose
-/// `getInputCast` passes `care_uint_int = true` in `p9_emit/coreaction_casts.rs`.
-/// Everything not named here is `Veto`: a pointer index, a dereference, a float
-/// conversion and an indirect branch all read the value in a way this pass does
-/// not model.
+/// The `Demands` set is the set of C constructs whose *meaning* changes with the
+/// operand's signedness - which is the ops whose `getInputCast` passes
+/// `care_uint_int = true` in `p9_emit/coreaction_casts.rs` - plus `INT_LEFT`,
+/// whose meaning does not change but whose *definedness* does.  Everything not
+/// named here is `Veto`: a pointer index, a dereference, a float conversion and an
+/// indirect branch all read the value in a way this pass does not model.
+///
+/// Every classification here assumes the operand is at least `int` wide; `plan`
+/// enforces that before any of this is consulted.
 fn classify_reader(opc: OpCode, slot: int4) -> ReaderClass {
     use OpCode::*;
     use ReaderClass::*;
@@ -314,10 +350,12 @@ fn classify_reader(opc: OpCode, slot: int4) -> ReaderClass {
                 Opaque
             }
         }
-        // `<<` - the result bits do not depend on the shiftee's signedness.
+        // `<<` - the result bits do not depend on the shiftee's signedness, but
+        // shifting a negative value left is undefined in C, so the shiftee is an
+        // unsigned demand (TRex classifies `LeftShift` the same way).
         CPUI_INT_LEFT => {
             if slot == 0 {
-                Carries
+                Demands(Evidence::Unsigned)
             } else {
                 Opaque
             }
@@ -330,9 +368,9 @@ fn classify_reader(opc: OpCode, slot: int4) -> ReaderClass {
         // name, so they constrain nothing - but they still say what the value is.
         CPUI_INT_SCARRY | CPUI_INT_SBORROW => Demands(Evidence::Signed),
         CPUI_INT_CARRY => Demands(Evidence::Unsigned),
-        // `+ - * & | ^ ~` and the value-moving ops: two's complement makes these
-        // bit-identical either way, and the printed result inherits the operand's
-        // C type.
+        // `+ - * & | ^ ~` and the value-moving ops: at or above the promotion
+        // width two's complement makes these bit-identical either way, and the
+        // printed result inherits the operand's C type.
         CPUI_INT_ADD
         | CPUI_INT_SUB
         | CPUI_INT_MULT
@@ -344,9 +382,11 @@ fn classify_reader(opc: OpCode, slot: int4) -> ReaderClass {
         | CPUI_COPY
         | CPUI_MULTIEQUAL
         | CPUI_INDIRECT => Carries,
-        // `==` `!=` compare bits; a truncation, a concatenation and the bit-count
-        // intrinsics print their own type; a condition, a call argument, a return
-        // value and a stored value all convert at a fixed width.
+        // `==` `!=` compare bits at the promotion width this pass guarantees
+        // (a narrower declaration is never re-signed, see `plan`); a truncation, a
+        // concatenation and the bit-count intrinsics print their own type; a
+        // condition, a call argument, a return value and a stored value all
+        // convert at a fixed width.
         CPUI_INT_EQUAL
         | CPUI_INT_NOTEQUAL
         | CPUI_SUBPIECE
@@ -385,18 +425,23 @@ fn classify_reader(opc: OpCode, slot: int4) -> ReaderClass {
 /// either way - so it can only vote, never veto.  Reads constrain; definitions
 /// only vote.
 ///
-/// `INT_ZEXT` is deliberately silent here even though it votes `TYPE_UINT` in the
-/// type lattice: a zero-extension describes the *source* operand's type, not the
-/// widened value's, and `int v = *p;` with an `unsigned char *p` is ordinary C.
-/// That is TRex's `ZeroExtendTgt => None`, and on x86-64 it is the difference
-/// between seeing a variable at all and vetoing every value a 32-bit instruction
-/// widened into its 64-bit register.
+/// Only the divide-and-shift family votes, because only there does the operator
+/// itself say what kind of number came out: `a / b` under `INT_SDIV` is the signed
+/// quotient of two signed values and cannot be re-read as unsigned.
+///
+/// The *extension* ops are deliberately silent, in both directions.  An extension
+/// describes the operand it widened, not the widened value: `int v = *p;` with an
+/// `unsigned char *p` is ordinary C (TRex's `ZeroExtendTgt => None`, and on x86-64
+/// it is the difference between seeing a variable at all and vetoing every value a
+/// 32-bit instruction widened into its 64-bit register), and symmetrically
+/// `movslq %eax,%rdx` into a `uintmax_t` is ordinary C too - that `INT_SEXT`
+/// def-vote is what declared `fmt::main`'s `uintmax_t max` as `long` before this
+/// pass stopped counting it.  `INT_2COMP` is silent for the same reason: `-x` has
+/// the same bits whichever way `x` is read.
 fn def_evidence(opc: OpCode) -> Evidence {
     use OpCode::*;
     match opc {
-        CPUI_INT_SDIV | CPUI_INT_SREM | CPUI_INT_SRIGHT | CPUI_INT_SEXT | CPUI_INT_2COMP => {
-            Evidence::Signed
-        }
+        CPUI_INT_SDIV | CPUI_INT_SREM | CPUI_INT_SRIGHT => Evidence::Signed,
         CPUI_INT_DIV | CPUI_INT_REM | CPUI_INT_RIGHT => Evidence::Unsigned,
         _ => Evidence::None,
     }
@@ -445,9 +490,12 @@ fn evidence_for(fd: &Funcdata, high: HighVariableId) -> Evidence {
             let Some(o) = fd.obank().get(op) else { continue };
             let opc = o.code();
             if opc == OpCode::CPUI_CAST {
-                // A cast re-establishes the type, so the walk stops - but a cast to
-                // a plain integer of the same width is precisely a statement that
-                // this value is read signed (or unsigned) here.
+                // A cast re-establishes the type, so the walk stops here - but a
+                // cast to a plain integer of the same width is precisely a
+                // statement that this value is read signed (or unsigned) here.
+                // Any other target (a pointer, a float, a `char`, an enum, a
+                // typedef, a different width) converts in a way this pass does not
+                // model, so it vetoes like any other unclassified reader.
                 let insize = fd.vbank().get(vn).map(|v| v.get_size()).unwrap_or(0);
                 let cast_ev = o
                     .get_out()
@@ -458,8 +506,11 @@ fn evidence_for(fd: &Funcdata, high: HighVariableId) -> Evidence {
                         type_metatype::TYPE_INT => Evidence::Signed,
                         _ => Evidence::Unsigned,
                     })
-                    .unwrap_or(Evidence::None);
+                    .unwrap_or(Evidence::Veto);
                 verdict = verdict.join(cast_ev);
+                if verdict == Evidence::Veto {
+                    return Evidence::Veto;
+                }
                 continue;
             }
             let mut carries = false;
@@ -538,6 +589,15 @@ pub fn plan(
         }
         let Some(cur) = decl_type_of(high) else { continue };
         if !is_plain_integer(&cur) {
+            continue;
+        }
+        // C promotes anything narrower than `int` to `int` before any operator
+        // runs, and the declaration decides which extension that is - so below the
+        // promotion width every operator is signedness-sensitive, `== !=` included
+        // (`(short)-1 == -1` is true, `(unsigned short)0xffff == -1` is false).
+        // The neutral half of `classify_reader` is only neutral at a fixed width,
+        // so a narrow local is simply never re-declared.
+        if cur.get_size() < types.get_size_of_int() {
             continue;
         }
         let ev = evidence_for(fd, high);

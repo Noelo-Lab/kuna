@@ -61,6 +61,10 @@ fn the_signedness_sensitive_operators_demand_what_the_c_operator_means() {
     // Widening.
     assert_eq!(classify_reader(CPUI_INT_SEXT, 0), Demands(Evidence::Signed));
     assert_eq!(classify_reader(CPUI_INT_ZEXT, 0), Demands(Evidence::Unsigned));
+    // `<<` does not change meaning with the shiftee's signedness, but shifting a
+    // negative value left is undefined in C, so the shiftee demands unsigned.
+    assert_eq!(classify_reader(CPUI_INT_LEFT, 0), Demands(Evidence::Unsigned));
+    assert_eq!(classify_reader(CPUI_INT_LEFT, 1), Opaque);
 }
 
 #[test]
@@ -132,11 +136,18 @@ fn an_unclassified_reader_vetoes() {
 fn a_definition_votes_but_never_vetoes() {
     use OpCode::*;
     assert_eq!(def_evidence(CPUI_INT_SDIV), Evidence::Signed);
-    assert_eq!(def_evidence(CPUI_INT_SEXT), Evidence::Signed);
+    assert_eq!(def_evidence(CPUI_INT_SREM), Evidence::Signed);
+    assert_eq!(def_evidence(CPUI_INT_SRIGHT), Evidence::Signed);
     assert_eq!(def_evidence(CPUI_INT_DIV), Evidence::Unsigned);
-    // A zero-extension describes the SOURCE operand's type, not the widened
-    // value's (TRex `ZeroExtendTgt => None`).
+    assert_eq!(def_evidence(CPUI_INT_RIGHT), Evidence::Unsigned);
+    // An extension describes the SOURCE operand's type, not the widened value's,
+    // in both directions: `int v = *p;` off an `unsigned char *` and
+    // `uintmax_t max = (long)(int)n;` off a `movslq` are both ordinary C.  The
+    // INT_SEXT vote is what declared fmt::main's `uintmax_t max` as `long`.
     assert_eq!(def_evidence(CPUI_INT_ZEXT), Evidence::None);
+    assert_eq!(def_evidence(CPUI_INT_SEXT), Evidence::None);
+    // `-x` has the same bits whichever way `x` is read.
+    assert_eq!(def_evidence(CPUI_INT_2COMP), Evidence::None);
     assert_eq!(def_evidence(CPUI_LOAD), Evidence::None);
     assert_eq!(def_evidence(CPUI_PTRADD), Evidence::None);
 }
