@@ -980,7 +980,8 @@
       "verdict": "a mis-name: pointer arithmetic to the next struct file_data { int desc; char const *name; struct stat stat; ... }, not a read of st_nlink"
      },
      "what_the_reserved_row_drop_fixed": "the same function's 8 `v15[-1].__glibc_reserved[1]`/`[2]` sites (really cmp.file[N].desc and ::name) are back to *(int *)&v15[-1].field_0x80 / *(char **)&v15[-1].field_0x88, which is what opaque says; the price is 4 dpkg-statoverride padding-copy lines going from v12.__pad0 / v12.__glibc_reserved[k] back to v12._36_4_ / v12._120_8_",
-     "verdict": "the hazard is INHERENT to naming a pointee from one call site, not a bug in a table: when the object is bigger than the claim, every offset past the aggregate is mis-attributed. The reserved rows made it worse and are gone; the residue (tv_sec for brk_start) is a real cost of glibc over opaque and one of the reasons opaque stays the default."
+     "verdict": "the hazard is INHERENT to naming a pointee from one call site, not a bug in a table: when the object is bigger than the claim, every offset past the aggregate is mis-attributed. The reserved rows made it worse and are gone; the residue (tv_sec for brk_start) is a real cost of glibc over opaque and one of the reasons opaque stays the default.",
+     "dpkg_statoverride_is_not_a_misname": "a review counted dpkg-statoverride's 4 `v12.__pad0` / `v12.__glibc_reserved[k]` lines among the bad sites. They are not: v12 IS a genuine struct stat, filled by the fstat(v2,&v12) three lines above, and the source assigns the whole struct to a global, so the compiler copies the padding. Those four names were RIGHT, and the reserved-row rule costs them (v12.__pad0 -> v12._36_4_). The same is true of the other 15 truthful sites (coreutils stat, findutils find, tar). The trade is 19 zero-information padding names against 8 lies plus one worse address form, and it is worth taking."
     }
    }
   },

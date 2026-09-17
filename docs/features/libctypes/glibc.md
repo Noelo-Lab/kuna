@@ -296,9 +296,23 @@ member, so the enclosing struct's own `desc` and `name` sit at `-1` index plus
 ```
 
 and it now reads `*(int *)&v15[-1].field_0x80` / `*(char **)&v15[-1].field_0x88`,
-which is what `opaque` says too. Eight sites recovered; the same rule takes the
-four `v12.__pad0` / `v12.__glibc_reserved[k]` lines in `dpkg-statoverride` back
-to `v12._36_4_` / `v12._120_8_`, which is the price and it is a copy of padding.
+which is what `opaque` says too. Eight sites recovered.
+
+The price is the other nineteen, and they are worth naming because a review
+counted four of them as mis-names too. `dpkg-statoverride`'s `v12.__pad0` /
+`v12.__glibc_reserved[k]` lines are **not** mis-names: `v12` really is a
+`struct stat`, filled by the `fstat(v2,&v12)` three lines above, and the source
+assigns the whole struct to a global, so the compiler copies its padding as well.
+Those four names were right. The other fifteen are the same shape in coreutils
+`stat`, findutils `find` and `tar`. All nineteen go back to the offset form, and
+that is the trade — a copy of padding is the one place the name tells a reader
+nothing:
+
+```
+  dat_100c0 = v12.st_gid;
+- dat_100c4 = v12.__pad0;          + dat_100c4 = v12._36_4_;
+  dat_100c8 = v12.st_rdev;
+```
 
 **The hazard is inherent, not a bug in a table.** A pointee named from one call
 site is a claim about the whole object, and when the object is bigger than the
