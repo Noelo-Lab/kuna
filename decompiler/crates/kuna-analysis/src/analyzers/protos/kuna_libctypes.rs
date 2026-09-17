@@ -85,6 +85,13 @@
 //! O0+O2 decbench ELFs, where every name kept here has at least 17 (`rewind` 117,
 //! `__uflow` 77, `fgetc` 57; the census is in `docs/features/libctypes/`).
 //!
+//! ## The stream slots
+//!
+//! `stdin`/`stdout`/`stderr` are the one place this table types STORAGE rather
+//! than a prototype slot, because the dynamic relocation that binds them says
+//! what they hold: a copy-relocated `.bss` word is the stream pointer itself, a
+//! GOT slot on an undefined symbol holds its address. See [`streams`].
+//!
 //! The `v*printf` family is the trap this table must not fall into: the last
 //! `void *` of `vasprintf`, `vsnprintf`, `__vasprintf_chk`, `__vfprintf_chk`,
 //! `__vsnprintf_chk`, `verr` and `vwarn` is a `va_list`, not a `FILE *`. A
@@ -104,6 +111,7 @@ use super::{
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 pub(super) mod glibc;
+mod streams;
 
 /// How much of an aggregate this table says — the `libctypes` value, as the
 /// option's own gate module spells it.
@@ -421,6 +429,9 @@ impl AnalysisPass for LibcTypesPass {
         seed_resolved_prototypes(&mut out, &resolved, LIBC_NAMED, types, word_size, layout);
         seed_named_prototypes(&mut out, &imported, LIBC_EXT_NAMED, types, word_size, layout);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT_NAMED, types, word_size, layout);
+        // The stream slots themselves. Not a prototype: a data symbol whose type
+        // the dynamic relocation states outright (see `streams`).
+        out.typed_data = streams::stream_data_symbols(ctx.file, types, word_size, layout);
         out
     }
 }

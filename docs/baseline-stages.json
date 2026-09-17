@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1125,
-    1125
+    1136,
+    1136
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -398,8 +398,19 @@
     "data:LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset",
     "data:LIBCTYPES #13: glibc on, that read is the field",
     "data:LIBCTYPES #14: and the value carries the FIELD's type, so the sentinel is a signed -1",
-    "data:LIBCTYPES #15: and the offset-named fields anywhere in this file are exactly the four pass 4 is there to show",
+    "data:LIBCTYPES #15: and the lines carrying an offset-named field anywhere in this file are exactly the four of pass 4 plus the four of the opaque stream passes",
+    "data:LIBCTYPES #16: off, the copy-relocated stream slot is an untyped word and its fields are raw offsets",
+    "data:LIBCTYPES #17: off, the GOT slot of a shared object is not even named",
+    "data:LIBCTYPES #18: on, the copy-relocated slot is the stream itself, so the reads are fields of it",
+    "data:LIBCTYPES #19: on, the GOT slot holds the stream's ADDRESS, and the name and the extra indirection both say so",
     "data:LIBCTYPES #1: off, the stream parameter is an opaque void *",
+    "data:LIBCTYPES #20: a store THROUGH the stream pointer still stores to the same address",
+    "data:LIBCTYPES #21: and so does the GOT form",
+    "data:LIBCTYPES #22: a read of the stream OBJECT stays the object -- `sink\\(stdin\\)`, never `sink\\(\\*stdin\\)`",
+    "data:LIBCTYPES #23: and in the library it is the one indirection the program performs, no more",
+    "data:LIBCTYPES #24: a stream handed to a libc call the table already typed does not move",
+    "data:LIBCTYPES #25: and the library's loses the cast the untyped slot needed",
+    "data:LIBCTYPES #26: `datasyms off` still restores the raw address -- naming a data object stays that option's call",
     "data:LIBCTYPES #2: on, the same parameter is a minted FILE *",
     "data:LIBCTYPES #3: off, the fopen result is an opaque void *",
     "data:LIBCTYPES #4: on, the fopen result is a minted FILE *",

@@ -546,3 +546,150 @@ fn a_refused_target_cannot_reach_the_glibc_layouts() {
     assert!(shell.is_incomplete(), "`opaque` mints the fieldless shell");
     std::env::remove_var(LIBCTYPES_ENV);
 }
+
+/// Read one of the crate's binary fixtures.
+fn fixture_bytes(name: &str) -> Vec<u8> {
+    let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// An executable binds a stream with a copy relocation, and the `.bss` word the
+/// relocation names holds libc's own `FILE *stdout`. So the slot is typed
+/// `FILE *` and carries the stream's own name.
+#[test]
+fn a_copy_relocated_stream_slot_is_the_stream_pointer() {
+    let bytes = fixture_bytes("libctypes_streams_x86_64");
+    let file = object::File::parse(&bytes[..]).expect("parse the exe fixture");
+    let types = factory();
+    let facts = streams::stream_data_symbols(&file, &types, 1, Layout::Opaque);
+
+    let mut got: Vec<(String, u64)> =
+        facts.iter().map(|f| (f.name.clone(), f.addr)).collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec![("stdin".to_string(), 0x4020), ("stdout".to_string(), 0x4010)],
+        "the two copy-relocated slots, under the stream's own name"
+    );
+    for f in &facts {
+        let pointee = f.type_.get_ptr_to().expect("FILE *");
+        assert_eq!(pointee.get_name(), "FILE", "{}: one indirection to the stream", f.name);
+    }
+}
+
+/// A shared object cannot copy-relocate, so its GOT word holds the stream's
+/// ADDRESS, not the stream pointer. Both halves of that have to show: one more
+/// indirection in the type, and a name that does not claim to be the stream.
+#[test]
+fn a_shared_object_names_the_got_slot_as_a_pointer_to_the_stream() {
+    let bytes = fixture_bytes("libctypes_streams_so_x86_64.so");
+    let file = object::File::parse(&bytes[..]).expect("parse the .so fixture");
+    let types = factory();
+    let facts = streams::stream_data_symbols(&file, &types, 1, Layout::Opaque);
+
+    let mut got: Vec<(String, u64)> =
+        facts.iter().map(|f| (f.name.clone(), f.addr)).collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec![("stdin_ptr".to_string(), 0x3fe0), ("stdout_ptr".to_string(), 0x3fd8)],
+        "the GOT slots, named for what they hold"
+    );
+    for f in &facts {
+        let once = f.type_.get_ptr_to().expect("FILE **");
+        let twice = once.get_ptr_to().expect("the stream behind it");
+        assert_eq!(twice.get_name(), "FILE", "{}: two indirections", f.name);
+    }
+}
+
+/// The two shapes never cross: an executable's copy slot is not a `_ptr` and a
+/// library's GOT slot is never handed the stream's bare name. Getting this wrong
+/// is a silent double indirection in the emitted C.
+#[test]
+fn the_two_stream_shapes_do_not_borrow_each_others_names() {
+    let types = factory();
+    for (fixture, want_ptr) in
+        [("libctypes_streams_x86_64", false), ("libctypes_streams_so_x86_64.so", true)]
+    {
+        let bytes = fixture_bytes(fixture);
+        let file = object::File::parse(&bytes[..]).expect("parse");
+        for f in streams::stream_data_symbols(&file, &types, 1, Layout::Opaque) {
+            assert_eq!(f.name.ends_with("_ptr"), want_ptr, "{fixture}: {}", f.name);
+        }
+    }
+}
+
+/// `<stream>_ptr` is a name kuna invents, so an image that already answers to it
+/// takes it: the GOT slot keeps its address-shaped rendering rather than
+/// borrowing an identifier that also names a `.data` word somewhere else. The
+/// colliding global here is `static`, so only `.symtab` carries it — a lookup
+/// that read `.dynsym` alone would miss exactly this case. `stdin` is untouched,
+/// which is the other half: the decline is per name, not a bail.
+#[test]
+fn a_minted_stream_name_the_image_already_owns_is_declined() {
+    use object::{Object, ObjectSymbol};
+    let bytes = fixture_bytes("libctypes_streams_collide_so_x86_64.so");
+    let file = object::File::parse(&bytes[..]).expect("parse the colliding .so fixture");
+    let types = factory();
+    let facts = streams::stream_data_symbols(&file, &types, 1, Layout::Opaque);
+
+    let got: Vec<(String, u64)> = facts.iter().map(|f| (f.name.clone(), f.addr)).collect();
+    assert_eq!(
+        got,
+        vec![("stdin_ptr".to_string(), 0x3fe0)],
+        "stdout's GOT slot says nothing; stdin's is unaffected"
+    );
+    assert!(
+        object::File::parse(&bytes[..])
+            .expect("parse")
+            .symbols()
+            .any(|s| s.name() == Ok("stdout_ptr")),
+        "the fixture really does own the minted spelling"
+    );
+}
+
+/// The stream slots point at the same interned `FILE` the prototype table's own
+/// `fclose(FILE *)` does. A second definition would give the binary two stream
+/// types and make the body cast between them.
+#[test]
+fn a_stream_slot_shares_the_tables_own_file_type() {
+    let bytes = fixture_bytes("libctypes_streams_x86_64");
+    let file = object::File::parse(&bytes[..]).expect("parse");
+    let types = factory();
+    let table = named_aggregate("FILE", &types, 1, Layout::Opaque).expect("mint FILE");
+    let facts = streams::stream_data_symbols(&file, &types, 1, Layout::Opaque);
+    assert!(!facts.is_empty());
+    for f in &facts {
+        let pointee = f.type_.get_ptr_to().expect("FILE *");
+        assert!(Rc::ptr_eq(&pointee, &table), "{}: one FILE, not two", f.name);
+    }
+}
+
+/// `glibc` reaches the stream slots too: the pointee is the published layout,
+/// which is what turns `stdout->field_0x28` into `stdout->_IO_write_ptr`.
+#[test]
+fn the_glibc_layout_reaches_a_stream_slot() {
+    let bytes = fixture_bytes("libctypes_streams_x86_64");
+    let file = object::File::parse(&bytes[..]).expect("parse");
+    let types = factory();
+    let facts = streams::stream_data_symbols(&file, &types, 1, Layout::Glibc);
+    let pointee = facts[0].type_.get_ptr_to().expect("FILE *");
+    assert!(!pointee.is_incomplete(), "the published layout, not the shell");
+    assert!(pointee.num_depend() > 0, "with its members");
+}
+
+/// A relocatable object names a different address space (the `relocobjects`
+/// layout path rebases it), and a non-ELF image has no dynamic relocation to
+/// read. Both yield nothing rather than a fact at a made-up address.
+#[test]
+fn a_relocatable_or_non_elf_image_yields_no_stream_symbol() {
+    let types = factory();
+    for fixture in ["arm_thumb_le32.o", "armv4t_thumb_pe.exe"] {
+        let bytes = fixture_bytes(fixture);
+        let file = object::File::parse(&bytes[..]).expect("parse");
+        assert!(
+            streams::stream_data_symbols(&file, &types, 1, Layout::Opaque).is_empty(),
+            "{fixture}: nothing to say"
+        );
+    }
+}

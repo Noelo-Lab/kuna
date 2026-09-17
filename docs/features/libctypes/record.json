@@ -1,6 +1,6 @@
 {
  "opportunity": "kuna's built-in prototype tables share one width-stable type vocabulary, so all 108 aggregate-pointer slots in them are spelled `void *`. `void *` never matches a ground-truth `FILE *` (the metric's width-only generosity has no pointer entry), and named-struct pointers are 22.5% of matchable GT variables -- a class kuna scores 0.0% on while ida scores 432 / ghidra 382 / binja 523 TP on the same 92-binary sample. The libc/POSIX-namable slice of it is ~4.1% of matchable GT (FILE 605 occurrences, stat 255, passwd 136).",
- "test_name": "tests/stages/kuna-libctypes.xml (9 assertions over three `load file` passes on two real ELFs; #5/#6 pin that the DWARF layout of `stat` survives the option being on) + 15 table-invariant unit tests in analyzers::protos::kuna_libctypes::tests (including the incomplete-shell adopt rule and the width-stable fall-back of a declined name) + kuna-cli/tests/decompile_project_cli.rs (header_syntax_checks_when_a_type_shares_a_name_with_a_function) + kuna-console project::tests::typedef_names_reads_every_declarator_shape",
+ "test_name": "tests/stages/kuna-libctypes.xml (26 assertions over ten `load file` passes on five real ELFs; #5/#6 pin that the DWARF layout of `stat` survives the option being on, #16-#25 the stdio stream slots in both link kinds, #26 the `datasyms off` interaction) + 30 unit tests in analyzers::protos::kuna_libctypes::tests (the table invariants, the glibc layouts and the stream shapes) + kuna-cli/tests/decompile_project_cli.rs (header_syntax_checks_when_a_type_shares_a_name_with_a_function) + kuna-console project::tests::typedef_names_reads_every_declarator_shape + tests/cli/structdefs-json-types-array.json",
  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
  "selector": "0x2f30",
  "func_addr": "0x2f30",
@@ -1166,5 +1166,107 @@
    "note": "`glibc` emits the real struct bodies in the .h, dependency-ordered (timespec before stat), and they parse. The three errors `opaque` adds over `off` are the incomplete-type reads, and filling the layout in takes them back out."
   },
   "target_gate_controls": "MIPS32 glibc ELF with --define-function ADDR=fopen --option libctypes glibc: `typedef struct FILE FILE; /* opaque */` (before the fix: the full 216-byte x86-64 layout with undefined1 _padN filler between every 8-byte-spaced member). Statically linked x86-64 glibc image (no .dynstr, gate refuses): the shell too, although its own DWARF stat is field-filled. Dynamically linked x86-64 glibc image: the full layout even for a name it never imports."
+ },
+ "stdio": {
+  "what": "the stdio STREAM SLOTS as typed data symbols. The rest of the table types a stream where a CALL says what it is; the slots themselves were untyped storage (named by `datasyms`, an `undefined<size>` word) or, in a shared object, not named at all. This step emits a typed DATA symbol for each, keyed on the dynamic relocation that binds it -- which is also the evidence that the name is the C library's and not a global the program happens to spell `stdout`.",
+  "module": "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes/streams.rs",
+  "carrier": "AnalysisOutput::typed_data (new `TypedDataFact`), committed in kuna-console/src/engine.rs as arm 4b with `typelock|namelock` -- after the DWARF data globals (1a) and the string literals (4) so a richer source keeps its address, before the loader `.dynsym` data stream (4a) so its untyped naming of the same slot stands down.",
+  "shapes": {
+   "copy": "R_*_COPY on a DEFINED symbol whose st_size is the pointer width: the .bss word the run-time loader fills with libc's own `FILE *stdout`. Type `FILE *`, name `stdout`. (coreutils fmt: 0xc088 / 0xc090 / 0xc0c0.)",
+   "glob_dat_undefined": "R_*_GLOB_DAT on an UNDEFINED symbol: the GOT word holds the stream's ADDRESS. Type `FILE **`, name `stdout_ptr` -- the address is not the stream, and calling it one would make the emitted `*stdout` an indirection the program does not perform. (libselinux.so.1: 0x2bf38 / 0x2bf48 / 0x2bfe8.)",
+   "glob_dat_defined": "declined: the same image's own copy slot, in a mixed executable (shadow useradd copy-relocates stdout/stderr AND keeps a GOT slot pointing at each copy, while its stdin is undefined). The relocation fill and the RELRO constant-fold already render those.",
+  "glob_dat_name_taken": "declined: the GLOB_DAT arm MINTS `<stream>_ptr`, so it stands down when either symbol table already spells that name -- otherwise an image with its own `stdout_ptr` global would print two different addresses under one identifier ((*stdout_ptr)->field_0x28 ... + stdout_ptr). BOTH tables are read: a `static long stdout_ptr` reaches .symtab only, and .symtab is where the loader's data symbols are named from. Repro + unit test: libctypes_streams_collide_so_x86_64.so (the fixture source built a third time with -DKUNA_STREAM_NAME_COLLISION), which yields `stdin_ptr` alone. Costs nothing measured: readelf -sW over all 75662 ELF images in the decbench tree finds 0 that spell any of the three _ptr names, and the four binaries the sweep moves give the same changed-line counts with the check as without (tar 2, libselinux.so.1 68, libstdbuf.so 12, useradd 8)."
+  },
+  "scope": "linked ELF only, on the four architectures whose relocation numbering the loader knows (x86-64, AArch64, i386, ARM); a spelling occurring more than once in `.dynsym` is declined, and so is the GLOB_DAT arm when the image already spells the `<stream>_ptr` name it would mint (.symtab or .dynsym); the `FILE` is the one `named_aggregate` hands the rest of the table, so an image holding a different `FILE` contributes no stream symbol rather than a contradictory one.",
+  "corpus_sweep": {
+   "method": "`kuna decompile-all` over 12 stripped binaries, this branch against a release build of the then-current origin/main (39fdc804) in its own worktree; every changed LINE classified. docs/features/libctypes/corpus-hunk-classification-stdio.txt + classify_stdio.py.",
+   "binaries": 12,
+   "byte_identical_binaries": 8,
+   "byte_identical_binaries_note": "fmt, ls O2, ls O0, grep, gzip, find, diff, bzip2. The four that move are the two shared objects (libselinux.so.1 68, libstdbuf.so 12 changed sides), useradd (8, the mixed image) and tar (2, one stack slot assigned the copy-relocated stdout).",
+   "reverified_on_rebase": "Re-run in full after rebasing onto origin/main fe3abc23 (structsynth #655, hideshadow #670 and signedness #656 had landed since 39fdc804), against a release build of fe3abc23 in its own worktree: IDENTICAL -- same 45 changed lines, same six buckets (30/7/5/1/1/1), the same single OTHER line in libselinux, the same four movers with the same per-binary counts, the same eight byte-identical binaries. So the classification is a property of this change, not of the base it was first measured against.",
+   "changed_lines": 45,
+   "classes": {
+    "got-slot-named+cast-removed": 31,
+    "got-slot-named": 7,
+    "decl-typed-FILE": 5,
+    "cast-appears-on-a-real-FILE-global": 1,
+    "return-type-becomes-FILE": 1,
+    "anything else": 0
+   },
+   "controls_unmoved": "fflush(stdout), fputs_unlocked(s,stdout), fwrite_unlocked(...,stdout), putc_unlocked's inlined __overflow(stdout,c) refill and every *(char **)&stdout->field_0x28 store are byte-identical in both arms in all twelve. No statement, address or control-flow edge moves.",
+   "cost": "LOCAL MERGING, at more than one site. Typing a slot FILE*/FILE** stops it merging with the unrelated values a scalar local had absorbed: that adds a declaration and renumbers every local after it, so one retyped slot can account for most of a function's changed lines. Measured against the same base build on two binaries outside the twelve, with v<N> normalised so the second number is semantic hunks rather than renumbering -- O2/libedit/libedit.so.0.0.70 rl_initialize 57 changed lines / 15 normalised / 10 -> 11 declarations (a new `FILE **`), fn_complete2 2 / 2 / 36 -> 36; i386_pie_nl 294 / 72 over six functions (main, usage, close_stdout, nl_file, set_program_name, emit_bug_reporting_address), +1 declaration in main and +1 in close_stdout. The normalised residue is still only the three disclosed classes (got-slot-named, cast-removed, decl-typed-FILE); nothing moves a statement, address, call target or literal. close_stdout is the shape: one `unsigned int v3` carried BOTH stream pointers and splits into `FILE *v1`."
+  },
+  "benchmark": {
+   "instrument": "scripts.decbench.typesweep, decbench main's TypeMatchMetric, DECBENCH_NO_CACHE=1, --baseline-only run twice with KUNA_BIN pinned first to a then-current origin/main (39fdc804) release build and then to this branch's.",
+   "corpus": "8 projects x O0 / O2 / O2-noinline = 444 slices, 10748 scored functions",
+   "control": "main arm agrees with the tree's published type_match on 9505/10748 (88.44%); branch arm 9504 -- the one function that differs is the one that moved.",
+   "perfect_main": 959,
+   "perfect_branch": 959,
+   "aggregate_main": 3037.05,
+   "aggregate_branch": 3037.19,
+   "onto_perfect": 0,
+   "off_perfect": 0,
+   "improved": 1,
+   "worsened": 0,
+   "moved_rows": [
+    "coreutils::O0::join::main .7857 -> .9286 (the two `FILE *fp` stack slots; `fp = stdin` is the only thing in the function that says so)"
+   ],
+   "note": "decbench scores variables[] -- arguments and stack symbols. A global is not one and neither is the register local that carries it, so only a stream reaching a stack slot whose ground truth is a stream can score. tar's argp_parse gains `FILE *v70` on exactly such a slot and does not move the number because that function's ground truth does not describe it. The sweep is the guard, not the case: the case is the hunk classification."
+  },
+  "default": "no new option and no new value -- the stream slots ride the existing `libctypes` gate (`off` emits nothing; `opaque` and `glibc` both emit, differing only in whether the pointee has members).",
+  "tests": "tests/stages/kuna-libctypes.xml passes 6-9 (the exe and the .so built from one source, each once `off` and once `opaque`), assertions #16-#25, plus pass 10 / #26 for the `datasyms off` interaction; 7 unit tests in protos/kuna_libctypes/tests.rs (the seventh pins the minted-name decline on libctypes_streams_collide_so_x86_64.so); tests/cli/structdefs-json-types-array.json retargeted (main of i386_pie_nl now references two libc shells, so `types` carries FILE ahead of option, each pinned by name, .h text and size).",
+  "files": [
+   "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes/streams.rs",
+   "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs",
+   "decompiler/crates/kuna-analysis/src/pass.rs",
+   "decompiler/crates/kuna-console/src/engine.rs",
+   "decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_x86_64{,.c}",
+   "decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_so_x86_64.so",
+   "decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_collide_so_x86_64.so",
+   "tests/stages/kuna-libctypes.xml",
+   "tests/cli/structdefs-json-types-array.json",
+   "docs/spec/01-program-prep.md",
+   "docs/features/libctypes/stdio.md",
+   "docs/features/libctypes/corpus-hunk-classification-stdio.txt",
+   "docs/features/libctypes/classify_stdio.py",
+   "docs/features/libctypes/timeab_stdio.py"
+  ],
+  "doc": "docs/features/libctypes/stdio.md",
+  "speed": {
+   "method": "interleaved main/branch pairs on identical commands (two release builds, the then-current origin/main 39fdc804 and this branch), MINIMUM and median of 15 pairs each, alternating which build runs first; the box was shared, so the minimum is the honest read. docs/features/libctypes/timeab_stdio.py.",
+   "budget_pct": 5.0,
+   "rows": [
+    {
+     "case": "fmt decompile-all",
+     "min_main_ms": 4142.6,
+     "min_branch_ms": 4099.3,
+     "min_delta_pct": -1.04,
+     "median_delta_pct": 0.83
+    },
+    {
+     "case": "useradd decompile-all",
+     "min_main_ms": 6584.3,
+     "min_branch_ms": 6689.6,
+     "min_delta_pct": 1.6,
+     "median_delta_pct": 2.42
+    },
+    {
+     "case": "libstdbuf.so decompile-all",
+     "min_main_ms": 116.5,
+     "min_branch_ms": 116.3,
+     "min_delta_pct": -0.2,
+     "median_delta_pct": 2.78
+    },
+    {
+     "case": "fmt functions (load only)",
+     "min_main_ms": 146.5,
+     "min_branch_ms": 146.1,
+     "min_delta_pct": -0.26,
+     "median_delta_pct": -2.9
+    }
+   ],
+   "verdict": "within budget: every min delta inside +/-2%, every median inside +/-3%. The work added is one walk of the dynamic relocation table per program, filtered to three names, at load."
+  },
+  "gate": "the existing `libctypes` env bridge decides whether a stream fact is produced at all; the commit arm additionally answers to `datasyms`, whose contract is that `off` restores the raw `dat_<addr>` rendering for every global the DWARF pass does not name. Naming a data object stays that option's call and `libctypes` only decides what the named object IS -- there is no half of it to keep, because the type rides on the symbol. Pinned by kuna-console's own `option_datasyms_off_restores_dat_addr` and by pass 10 / assertion #26 of the stage test."
  }
 }
