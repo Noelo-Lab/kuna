@@ -1675,14 +1675,17 @@ impl Action for ActionMarkIndirectOnly {
         }
         Some(Box::new(ActionMarkIndirectOnly { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.hh:358 — ActionMarkIndirectOnly::apply
         //   data.markIndirectOnly(); return 0;
         //
-        // STUB(W7/W8-funcdata): `Funcdata::markIndirectOnly`
-        // (funcdata_varnode.cc) — which sets the `indirect_creation` /
-        // `indirectonly` Varnode flags by scanning the def-set — is not ported in
-        // the merged tree.  No change applied (count stays 0).
+        // (kuna, option `indirectonly`, opt-in default-off) off is the inert
+        // stub this action shipped as before the port: `indirectonly` then has
+        // no writer and both of its readers — `HighVariable::has_name` and
+        // `Merge::merge_test_adjacent` — take the more-variables branch.
+        if data.get_arch().mark_indirect_only {
+            crate::kuna_indirectonly::mark_indirect_only(data);
+        }
         0
     }
 }

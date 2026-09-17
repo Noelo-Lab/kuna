@@ -1,0 +1,708 @@
+# indirectonly -- whole-corpus A/B round 2, classified by escape
+#
+# default (off) vs --option indirectonly on, `kuna decompile-all`, 34 whole-binary
+# slices: ls sort grep gzip diff bzip2 find tar at O0+O2, and kmod e2fsck dpkg
+# dpkg-query dash bash at O0+O2+O2-noinline.  Script corpus-sweep.sh, classifier
+# classify-escape.py.
+#
+#   slices                 34   (15 change anything)
+#   changed functions      27
+#   declarations          -19 net, none gained
+#   ESCAPE-CANDIDATE       18   (the ON arm writes a frame slot, at a statement the
+#                                OFF arm does not have, inside an object whose
+#                                address reaches a later call)
+#   ESCAPE-CANDIDATE-WEAK   6   (same, but the address escaped only BEFORE the write)
+#   SAFE                    3
+#   of the 18, functions where the slot is one the OFF arm never writes at all: 10
+#
+# So 24 of the 27 changed functions land in the ambiguous class.  That is the
+# result: there is no subset of these hunks that the emitted C alone certifies as
+# safe.  Both directions of the merge look the same on the page -- the sound one
+# restores a store the OFF arm had dropped, the unsound one fabricates a store the
+# machine never makes -- and only the disassembly separates them.
+#
+# Six hand-settled against objdump.  Mapping the printed `// stack - X` to a
+# machine displacement: `stack - X` is measured from the stack pointer at entry,
+# so on an rbp frame it is `-(X - 8)(%rbp)` (confirmed on the stage fixture, where
+# `stack - 0xc8` is `-0xc0(%rbp)`) and on an rsp frame it is
+# `[rsp + (total_adjustment - X)]` (confirmed on the walk.S counterexample, where
+# a 0x38-byte adjustment makes `[rsp+0]` print as `stack - 0x38`):
+#
+#   BUG  bzip2 -O2 sub_3890    every access to the [rsp+0x18..0x2c] out-param block
+#                              is a `lea` or a load -- the function contains no
+#                              store to any of those slots, and the ON arm emits
+#                              `S[stack-0x1428] &= 0xff;`
+#   BUG  kmod -O2-noinline sub_97b0   `989d: mov r14d,DWORD PTR [rsp+0x28]` is the
+#                              only reference to that slot in the whole function
+#                              and it is a load; `97c9: lea r13,[rsp+0x20]` is the
+#                              object handed to `9964: call e270`
+#   FIX  ls -O2 main           `5922: mov [rsp+0x40],rdx` / `5927: mov [rsp+0x48],rax`
+#                              -- the machine really does fill the struct and the
+#                              OFF arm drops both stores
+#   FIX  tar -O0 sub_429c6     `43076..43085: add [rbp-0x218],1 / sub rax,[rbp-0x218]
+#                              / mov [rbp-0x200],rax` is exactly the hunk
+#   FIX  dpkg -O0 sub_2019c    [rbp-0x40] is stored at 2021c and at 20307 (the loop
+#                              increment read back at 202f4) -- both hunk statements
+#   FIX  e2fsck -O0 sub_1680a  [rbp-0x48] is stored at 16b08 and incremented in
+#                              memory at 16b7c (`add QWORD PTR [rbp-0x48],0x4`),
+#                              which is the `&S[stack-0x50][1]` hunk
+#
+#
+# ESCAPE-CANDIDATE is deliberately OVER-inclusive -- it is a safety predicate, so
+# it errs towards flagging.  Two shapes it flags that are benign on inspection:
+#   * the new write is a transient that the very next statement overwrites, with
+#     no call in between (`sort -O2 main`: `S = a ^ 1; S = X & S;` where the OFF
+#     arm used a temporary for the first half);
+#   * the slot is one the OFF arm already writes elsewhere, so the object is a
+#     real frame variable and only one more write is added (`fresh_slots=0`).
+# `fresh_slots` on each row counts the candidates whose slot the OFF arm never
+# writes at all, which is the narrower reading.
+#
+# The remaining candidates are not individually settled.
+#
+bash-O0 sub_103e7c ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=3 fresh_slots=0
+    ESCAPE-CANDIDATE S[stack-0x58] inside S[stack-0x5c],S[stack-0x60] at `S[stack-0x58] = tolower((uint4)*a2);`
+    ESCAPE-CANDIDATE S[stack-0x58] inside S[stack-0x5c],S[stack-0x60] at `S[stack-0x58] = (int4)(char)*a2;`
+    ESCAPE-CANDIDATE S[stack-0x58] inside S[stack-0x5c],S[stack-0x60] at `S[stack-0x58] = R[eax] - S[stack-0x58];`
+    @@ -44,7 +44,7 @@
+             if (*(uint2 *)((uint8)*a2 * 2 + *(int8 *)__ctype_b_loc()) & 0x100) // branch-flip
+    -          R[eax] = tolower((uint4)*a2);
+    +          S[stack-0x58] = tolower((uint4)*a2);
+             else {
+    -          R[eax] = (int4)(char)*a2;
+    +          S[stack-0x58] = (int4)(char)*a2;
+             }
+    -        S[stack-0x58] = R[eax] - R[eax];
+    +        S[stack-0x58] = R[eax] - S[stack-0x58];
+             if (((*a0 == 0x2d) || (*a0 == 0x5f)) && ((*a2 == 0x2d || (*a2 == 0x5f))))
+bash-O0 rl_redisplay ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=13 fresh_slots=0
+    ESCAPE-CANDIDATE S[stack-0x60] inside S[stack-0x60],S[stack-0xd4],S[stack-0xe0] at `S[stack-0x60] = strrchr(rl_display_prompt,10);`
+    ESCAPE-CANDIDATE S[stack-0x60] inside S[stack-0xd4],S[stack-0xe0] at `S[stack-0x60] = &S[stack-0x60][1];`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x68] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0x68] = dat_17c2cc;`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x68] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0x68] = dat_17c308;`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x68] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0x68] = dat_17c2bc - S[stack-0x68];`
+    ESCAPE-CANDIDATE-WEAK S[stack-0xa8] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0xa8] = _rl_screenwidth / 3;`
+    ESCAPE-CANDIDATE-WEAK S[stack-0xa8] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0xa8] = dat_17c2bc + S[stack-0xa8] * -2;`
+    ESCAPE-CANDIDATE-WEAK S[stack-0xa8] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0xa8] *= (dat_17c2bc + -1) / S[stack-0xa8];`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x64] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0x64] = 0;`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x64] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0x64] = dat_17c308;`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x64] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0x64] = _rl_last_c_pos - S[stack-0x64];`
+    ESCAPE-CANDIDATE-WEAK S[stack-0xac] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0xac] = sub_114ef8(*dat_171e50 + (int8)S[stack-0x78],0,S[stack`
+    ESCAPE-CANDIDATE-WEAK S[stack-0xac] inside S[stack-0xd4],S[stack-0xd8],S[stack-0xdc],S[stack-0xe0] at `S[stack-0xac] -= dat_17c304;`
+    @@ -45,5 +45,5 @@
+       if ((rl_display_prompt != rl_prompt) && (!dat_17c2e8)) {
+    -    X = strrchr(rl_display_prompt,10);
+    -    if (X) { // branch-flip
+    -      S[stack-0x60] = &X[1];
+    +    S[stack-0x60] = strrchr(rl_display_prompt,10);
+    +    if (S[stack-0x60]) { // branch-flip
+    +      S[stack-0x60] = &S[stack-0x60][1];
+           S[stack-0x9c] = (int4)S[stack-0x60] - (int4)rl_display_prompt;
+    @@ -438,10 +438,10 @@
+         if (dat_17c2cc) // branch-flip
+    -      X = dat_17c2cc;
+    -    else {
+    -      X = dat_17c308;
+    -    }
+    -    S[stack-0x68] = dat_17c2bc - X;
+    -    X = _rl_screenwidth / 3;
+    +      S[stack-0x68] = dat_17c2cc;
+    +    else {
+    +      S[stack-0x68] = dat_17c308;
+    +    }
+    +    S[stack-0x68] = dat_17c2bc - S[stack-0x68];
+    +    S[stack-0xa8] = _rl_screenwidth / 3;
+         if (_rl_screenwidth + -1 <= S[stack-0x68]) { // branch-flip
+    -      S[stack-0xa8] = dat_17c2bc + X * -2;
+    +      S[stack-0xa8] = dat_17c2bc + S[stack-0xa8] * -2;
+           if (S[stack-0xa8] <= -1)
+    @@ -455,3 +455,3 @@
+           else {
+    -        S[stack-0xa8] = X * ((dat_17c2bc + -1) / X);
+    +        S[stack-0xa8] *= (dat_17c2bc + -1) / S[stack-0xa8];
+             if (((dat_17c308) && (1 <= S[stack-0xa8])) && (S[stack-0xa8] < S[stack-0x6c]))
+    @@ -487,7 +487,7 @@
+           if (S[stack-0xa8]) // branch-flip
+    -        X = 0;
+    -      else {
+    -        X = dat_17c308;
+    -      }
+    -      S[stack-0x64] = _rl_last_c_pos - X;
+    +        S[stack-0x64] = 0;
+    +      else {
+    +        S[stack-0x64] = dat_17c308;
+    +      }
+    +      S[stack-0x64] = _rl_last_c_pos - S[stack-0x64];
+           if (S[stack-0xa8]) // branch-flip
+    @@ -612,4 +612,4 @@
+           if ((2 <= S[stack-0xa4]) && (!rl_byte_oriented)) {
+    -        X = sub_114ef8(*dat_171e50 + (int8)S[stack-0x78],0,S[stack-0xb0],1);
+    -        S[stack-0xac] = X - dat_17c304;
+    +        S[stack-0xac] = sub_114ef8(*dat_171e50 + (int8)S[stack-0x78],0,S[stack-0xb0],1);
+    +        S[stack-0xac] -= dat_17c304;
+           }
+bash-O0 history_expand ESCAPE-CANDIDATE decl_delta=-1 new_stmt_writes=13 fresh_slots=5
+    ESCAPE-CANDIDATE S[stack-0x88] inside S[stack-0xbc],S[stack-0xc0] at `S[stack-0x88] = (int4)S[stack-0x50][(int8)S[stack-0xc0] + 1];`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x84] inside S[stack-0xbc],S[stack-0xc0] at `S[stack-0x84] = ((1 <= S[stack-0xc0]) && (S[stack-0x50][(int8)S[stack-`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x9c] inside S[stack-0xbc],S[stack-0xc0] at `S[stack-0x9c] += 1;`
+    ESCAPE-CANDIDATE S[stack-0x94] inside S[stack-0xbc],S[stack-0xc0] at `for (S[stack-0x94] = 0; S[stack-0x94] <= 0xf; S[stack-0x94] = S[stack-`
+    ESCAPE-CANDIDATE S[stack-0x94] inside S[stack-0xbc],S[stack-0xc0] at `for (S[stack-0x94] = 0; S[stack-0x94] <= 0xf; S[stack-0x94] = S[stack-`
+    ESCAPE-CANDIDATE S[stack-0x90] inside S[stack-0xbc],S[stack-0xc0] at `S[stack-0x90] = (int4)S[stack-0x50][S[stack-0xc0]];`
+    ESCAPE-CANDIDATE S[stack-0x80] inside S[stack-0xbc],S[stack-0xc0] at `S[stack-0x80] = (int4)strlen(X);`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x84] inside S[stack-0xbc],S[stack-0xc0] at `S[stack-0x84] = ((1 <= S[stack-0xc0]) && (S[stack-0x50][(int8)S[stack-`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x78] inside S[stack-0xbc] at `S[stack-0x78] = (S[stack-0xc0] - S[stack-0x7c]) + 2;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x58] inside S[stack-0x58],S[stack-0xbc] at `S[stack-0x58] = (char *)xmalloc((int8)S[stack-0x78]);`
+    ESCAPE-CANDIDATE S[stack-0x88] inside S[stack-0xbc] at `S[stack-0x88] = (int4)S[stack-0x50][(int8)S[stack-0xc0] + 1];`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x64] inside S[stack-0xbc] at `S[stack-0x64] = 0x27;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x64] inside S[stack-0xbc] at `S[stack-0x64] = (S[stack-0xa8]) ? 0x22 : 0; // branch-flip`  [slot never written in the off arm]
+    @@ -43,3 +43,3 @@
+     label_122881:
+    -      X = (int4)S[stack-0x50][(int8)S[stack-0xc0] + 1];
+    +      S[stack-0x88] = (int4)S[stack-0x50][(int8)S[stack-0xc0] + 1];
+           if ((((history_comment_char) && (S[stack-0x50][S[stack-0xc0]] == history_comment_char)) && (!S[stack-0xa8])) && ((!S[stack-0xc0] || ((S[stack-0x50][(int8)S[stack-0xc0] + -1] && (R[rax] = strchr(history_word_delimiters,(int4)S[stack-0x50][(int8)S[stack-0xc0] + -1]), R[rax])))))) goto label_12293f;
+    @@ -55,5 +55,5 @@
+             else {
+    -          R[eax] = ((1 <= S[stack-0xc0]) && (S[stack-0x50][(int8)S[stack-0xc0] + -1] == '$'));
+    +          S[stack-0x84] = ((1 <= S[stack-0xc0]) && (S[stack-0x50][(int8)S[stack-0xc0] + -1] == '$'));
+               S[stack-0xc0] += 1;
+    -          sub_121254(S[stack-0x50],&S[stack-0xc0],R[eax]);
+    +          sub_121254(S[stack-0x50],&S[stack-0xc0],S[stack-0x84]);
+             }
+    @@ -88,3 +88,3 @@
+           S[stack-0x48][X + 1] = 0;
+    -      X = S[stack-0x9c] + 1;
+    +      S[stack-0x9c] += 1;
+           X += 1;
+    @@ -128,3 +128,3 @@
+             memset(X,0,0x10);
+    -        for (S[stack-0x94] = 0; S[stack-0x94] <= 0xf; X = S[stack-0x94] + 1) {
+    +        for (S[stack-0x94] = 0; S[stack-0x94] <= 0xf; S[stack-0x94] = S[stack-0x94] + 1) {
+               X[S[stack-0x94]] = (char)S[stack-0x90];
+    @@ -133,7 +133,7 @@
+               S[stack-0xc0] += 1;
+    -          X = (int4)S[stack-0x50][S[stack-0xc0]];
+    +          S[stack-0x90] = (int4)S[stack-0x50][S[stack-0xc0]];
+             }
+             if (2 <= strlen(X)) {
+    -          X = (int4)strlen(X);
+    -          X = X + X;
+    +          S[stack-0x80] = (int4)strlen(X);
+    +          X = S[stack-0x80] + X;
+               if (S[stack-0xa0] <= X) {
+    @@ -208,3 +208,3 @@
+               else {
+    -            R[eax] = ((1 <= S[stack-0xc0]) && (S[stack-0x50][(int8)S[stack-0xc0] + -1] == '$'));
+    +            S[stack-0x84] = ((1 <= S[stack-0xc0]) && (S[stack-0x50][(int8)S[stack-0xc0] + -1] == '$'));
+                 X = S[stack-0xc0] + 1;
+    @@ -212,5 +212,5 @@
+                 S[stack-0xc0] = X;
+    -            sub_121254(S[stack-0x50],&S[stack-0xc0],R[eax]);
+    -            X = (S[stack-0xc0] - S[stack-0x7c]) + 2;
+    -            S[stack-0x58] = (char *)xmalloc((int8)X);
+    +            sub_121254(S[stack-0x50],&S[stack-0xc0],S[stack-0x84]);
+    +            S[stack-0x78] = (S[stack-0xc0] - S[stack-0x7c]) + 2;
+    +            S[stack-0x58] = (char *)xmalloc((int8)S[stack-0x78]);
+                 strncpy(S[stack-0x58],&S[stack-0x50][S[stack-0x7c]],(int8)S[stack-0x78]);
+    @@ -241,4 +241,4 @@
+             case -3:
+    -          X = (int4)S[stack-0x50][(int8)S[stack-0xc0] + 1];
+    -          if (((X) && ((!X || (R[rax] = strchr(history_no_expand_chars,X), !R[rax])))) && ((!S[stack-0xa8] || (S[stack-0x88] != 0x22)))) {
+    +          S[stack-0x88] = (int4)S[stack-0x50][(int8)S[stack-0xc0] + 1];
+    +          if (((S[stack-0x88]) && ((!S[stack-0x88] || (R[rax] = strchr(history_no_expand_chars,S[stack-0x88]), !R[rax])))) && ((!S[stack-0xa8] || (S[stack-0x88] != 0x22)))) {
+                 if (history_inhibit_expansion_function) {
+    @@ -268,7 +268,7 @@
+                 if (S[stack-0xa4]) // branch-flip
+    -              R[eax] = 0x27;
+    +              S[stack-0x64] = 0x27;
+                 else {
+    -              R[eax] = (S[stack-0xa8]) ? 0x22 : 0; // branch-flip
+    -            }
+    -            X = sub_121913(S[stack-0x50],S[stack-0xc0],R[eax],&S[stack-0xbc],&S[stack-0x58],S[stack-0x48]);
+    +              S[stack-0x64] = (S[stack-0xa8]) ? 0x22 : 0; // branch-flip
+    +            }
+    +            X = sub_121913(S[stack-0x50],S[stack-0xc0],S[stack-0x64],&S[stack-0xbc],&S[stack-0x58],S[stack-0x48]);
+                 S[stack-0x60] = X;
+bash-O0 changed_functions=3 {'ESCAPE-CANDIDATE': 3}
+bash-O2 sub_41540 ESCAPE-CANDIDATE decl_delta=-1 new_stmt_writes=2 fresh_slots=1
+    ESCAPE-CANDIDATE S[stack-0x28] inside S[stack-0x28] at `S[stack-0x28] = &S[stack-0x28][1];`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE-WEAK S[stack-0x28] inside S[stack-0x28] at `S[stack-0x28] = &S[stack-0x28][1];`
+    @@ -8,7 +8,7 @@
+         if ((X == ' ') || (X == '\t')) {
+    -      R[rdx] = &S[stack-0x28][1];
+    +      S[stack-0x28] = &S[stack-0x28][1];
+           do {
+             do {
+    -          X = *R[rdx];
+    -          R[rdx] = &R[rdx][1];
+    +          X = *S[stack-0x28];
+    +          S[stack-0x28] = &S[stack-0x28][1];
+             } while (X == ' ');
+bash-O2 sub_e1660 ESCAPE-CANDIDATE-WEAK decl_delta=+0 new_stmt_writes=1 fresh_slots=0
+    ESCAPE-CANDIDATE-WEAK S[stack-0x48] inside S[stack-0x48] at `S[stack-0x48] = *(int4 *)(a0 + 0x10) + S[stack-0x48];`
+    @@ -40,5 +40,5 @@
+           memcpy((void *)(X + X),X,X);
+    -      X = *(int4 *)(a0 + 0x10) + S[stack-0x48];
+    -      *(int4 *)(a0 + 0x10) = X;
+    -      *(char *)(*(int8 *)(a0 + 8) + (int8)X) = 0;
+    +      S[stack-0x48] = *(int4 *)(a0 + 0x10) + S[stack-0x48];
+    +      *(int4 *)(a0 + 0x10) = S[stack-0x48];
+    +      *(char *)(*(int8 *)(a0 + 8) + (int8)S[stack-0x48]) = 0;
+         }
+bash-O2 changed_functions=2 {'ESCAPE-CANDIDATE': 1, 'ESCAPE-CANDIDATE-WEAK': 1}
+bash-O2-noinline legal_number ESCAPE-CANDIDATE decl_delta=-1 new_stmt_writes=2 fresh_slots=1
+    ESCAPE-CANDIDATE S[stack-0x28] inside S[stack-0x28] at `S[stack-0x28] = &S[stack-0x28][1];`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE-WEAK S[stack-0x28] inside S[stack-0x28] at `S[stack-0x28] = &S[stack-0x28][1];`
+    @@ -11,7 +11,7 @@
+           if ((X == ' ') || (X == '\t')) {
+    -        R[rdx] = &S[stack-0x28][1];
+    +        S[stack-0x28] = &S[stack-0x28][1];
+             do {
+               do {
+    -            X = *R[rdx];
+    -            R[rdx] = &R[rdx][1];
+    +            X = *S[stack-0x28];
+    +            S[stack-0x28] = &S[stack-0x28][1];
+               } while (X == ' ');
+bash-O2-noinline shtimer_select ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=3 fresh_slots=0
+    ESCAPE-CANDIDATE S[stack-0x140] inside S[stack-0x148] at `S[stack-0x140] = a0[1] - S[stack-0x158]._8_8_;`
+    ESCAPE-CANDIDATE S[stack-0x140] inside S[stack-0x148] at `S[stack-0x140] += (int8)1000000;`
+    ESCAPE-CANDIDATE S[stack-0x140] inside S[stack-0x148] at `S[stack-0x140] *= 1000;`
+    @@ -8,9 +8,9 @@
+           S[stack-0x148] = X - S[stack-0x158]._0_8_;
+    -      X = a0[1] - S[stack-0x158]._8_8_;
+    -      if (X < 0) {
+    +      S[stack-0x140] = a0[1] - S[stack-0x158]._8_8_;
+    +      if (S[stack-0x140] < 0) {
+             S[stack-0x148] -= 1;
+    -        X += (int8)1000000;
+    +        S[stack-0x140] += (int8)1000000;
+           }
+           X = (int4)a0[2];
+    -      S[stack-0x140] = X * 1000;
+    +      S[stack-0x140] *= 1000;
+           X = -1;
+bash-O2-noinline _rl_isearch_dispatch ESCAPE-CANDIDATE-WEAK decl_delta=+0 new_stmt_writes=1 fresh_slots=0
+    ESCAPE-CANDIDATE-WEAK S[stack-0x48] inside S[stack-0x48] at `S[stack-0x48] = *(int4 *)(a0 + 0x10) + S[stack-0x48];`
+    @@ -46,5 +46,5 @@
+           memcpy((void *)(X + X),X,X);
+    -      X = *(int4 *)(a0 + 0x10) + S[stack-0x48];
+    -      *(int4 *)(a0 + 0x10) = X;
+    -      *(char *)(*(int8 *)(a0 + 8) + (int8)X) = 0;
+    +      S[stack-0x48] = *(int4 *)(a0 + 0x10) + S[stack-0x48];
+    +      *(int4 *)(a0 + 0x10) = S[stack-0x48];
+    +      *(char *)(*(int8 *)(a0 + 8) + (int8)S[stack-0x48]) = 0;
+         }
+bash-O2-noinline changed_functions=3 {'ESCAPE-CANDIDATE': 2, 'ESCAPE-CANDIDATE-WEAK': 1}
+bzip2-O0 changed_functions=0 {}
+bzip2-O2 sub_3890 ESCAPE-CANDIDATE decl_delta=-1 new_stmt_writes=2 fresh_slots=1
+    ESCAPE-CANDIDATE S[stack-0x1428] inside S[stack-0x1428],S[stack-0x142c],S[stack-0x1430] at `S[stack-0x1428] &= 0xff;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x1428] inside S[stack-0x1428],S[stack-0x142c],S[stack-0x1430] at `S[stack-0x1428] = (unsigned int)*X;`  [slot never written in the off arm]
+    @@ -37,3 +37,3 @@
+                     S[stack-0x140c] = S[stack-0x1424];
+    -                R[eax] = S[stack-0x1428] & 0xff;
+    +                S[stack-0x1428] &= 0xff;
+                     X = (unsigned char *)((long)&S[stack-0x1418] + 1);
+    @@ -52,3 +52,3 @@
+                     while( true ) {
+    -                  R[xmm0_qa] = (double)R[eax] * X;
+    +                  R[xmm0_qa] = (double)S[stack-0x1428] * X;
+                       X = X * dat_13b68;
+    @@ -56,3 +56,3 @@
+                       if (X == X) break;
+    -                  R[eax] = (unsigned int)*X;
+    +                  S[stack-0x1428] = (unsigned int)*X;
+                       X = &X[1];
+bzip2-O2 changed_functions=1 {'ESCAPE-CANDIDATE': 1}
+dash-O0 changed_functions=0 {}
+dash-O2 changed_functions=0 {}
+dash-O2-noinline changed_functions=0 {}
+diff-O0 changed_functions=0 {}
+diff-O2 sub_6e20 ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=3 fresh_slots=0
+    ESCAPE-CANDIDATE S[stack-0x80] inside S[stack-0x98] at `S[stack-0x80] = sub_16a40(X * 0x10);`
+    ESCAPE-CANDIDATE S[stack-0x88] inside S[stack-0x98] at `S[stack-0x88] = S[stack-0x80] + X;`
+    ESCAPE-CANDIDATE S[stack-0x80] inside S[stack-0x98] at `S[stack-0x80] += X + X * 8;`
+    @@ -313,7 +313,7 @@
+       S[stack-0x90] = *(unsigned long *)&a0[0x8c];
+    -  X = sub_16a40(X * 0x10);
+    +  S[stack-0x80] = sub_16a40(X * 0x10);
+       X = *(long *)&a0[0x90];
+       X = X * 8 + 8;
+    -  S[stack-0x88] = X + X;
+    -  S[stack-0x80] = X + X + X * 8;
+    +  S[stack-0x88] = S[stack-0x80] + X;
+    +  S[stack-0x80] += X + X * 8;
+       S[stack-0x78] = dat_26418;
+diff-O2 changed_functions=1 {'ESCAPE-CANDIDATE': 1}
+dpkg-O0 sub_2019c ESCAPE-CANDIDATE decl_delta=-1 new_stmt_writes=3 fresh_slots=0
+    ESCAPE-CANDIDATE S[stack-0x48] inside S[stack-0x48] at `S[stack-0x48] = S[stack-0x20];`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x48] inside S[stack-0x60] at `while (S[stack-0x48] = &S[stack-0x48][2], S[stack-0x40]) {`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x48] inside S[stack-0x48],S[stack-0x60] at `S[stack-0x48] = S[stack-0x18];`
+    @@ -10,4 +10,4 @@
+         S[stack-0x40] = *(long *)(S[stack-0x50] + 0x10);
+    -    X = S[stack-0x20];
+    -    while (S[stack-0x48] = &X[2], S[stack-0x40]) {
+    +    S[stack-0x48] = S[stack-0x20];
+    +    while (S[stack-0x48] = &S[stack-0x48][2], S[stack-0x40]) {
+           S[stack-0x18] = (long *)sub_2e819(0x50);
+    @@ -33,3 +33,3 @@
+           S[stack-0x40] = *(long *)(S[stack-0x40] + 0x10);
+    -      X = S[stack-0x18];
+    +      S[stack-0x48] = S[stack-0x18];
+         }
+dpkg-O0 changed_functions=1 {'ESCAPE-CANDIDATE': 1}
+dpkg-O2 changed_functions=0 {}
+dpkg-O2-noinline changed_functions=0 {}
+dpkg-query-O0 changed_functions=0 {}
+dpkg-query-O2 changed_functions=0 {}
+dpkg-query-O2-noinline changed_functions=0 {}
+e2fsck-O0 sub_1680a ESCAPE-CANDIDATE decl_delta=-1 new_stmt_writes=2 fresh_slots=1
+    ESCAPE-CANDIDATE S[stack-0x50] inside S[stack-0x50] at `S[stack-0x50] = (uint4 *)(*(int8 *)(*a1 + 0x20) + 0x5c);`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE-WEAK S[stack-0x50] inside S[stack-0x80] at `S[stack-0x50] = &S[stack-0x50][1];`
+    @@ -31,3 +31,3 @@
+         log_out(a1,"\nFilesystem features:");
+    -    X = (uint4 *)(*(int8 *)(*a1 + 0x20) + 0x5c);
+    +    S[stack-0x50] = (uint4 *)(*(int8 *)(*a1 + 0x20) + 0x5c);
+         for (S[stack-0x80] = 0; S[stack-0x80] <= 2; S[stack-0x80] = S[stack-0x80] + 1) {
+    @@ -44,3 +44,3 @@
+           }
+    -      X = &S[stack-0x50][1];
+    +      S[stack-0x50] = &S[stack-0x50][1];
+         }
+e2fsck-O0 quota_compute_usage ESCAPE-CANDIDATE-WEAK decl_delta=-1 new_stmt_writes=2 fresh_slots=0
+    ESCAPE-CANDIDATE-WEAK S[stack-0x18] inside S[stack-0x38],S[stack-0x40] at `S[stack-0x18] = ext2fs_get_stat_i_blocks(S[stack-0x30],X);`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x18] inside S[stack-0x38],S[stack-0x40] at `S[stack-0x18] <<= 9;`
+    @@ -34,4 +34,4 @@
+             X = sub_5271f(S[stack-0x20]);
+    -        R[rax] = ext2fs_get_stat_i_blocks(S[stack-0x30],X);
+    -        S[stack-0x18] = R[rax] << 9;
+    +        S[stack-0x18] = ext2fs_get_stat_i_blocks(S[stack-0x30],X);
+    +        S[stack-0x18] <<= 9;
+             quota_data_add(a0,S[stack-0x20],S[stack-0x40],S[stack-0x18]);
+e2fsck-O0 ext2fs_reserve_super_and_bgd ESCAPE-CANDIDATE-WEAK decl_delta=+0 new_stmt_writes=2 fresh_slots=0
+    ESCAPE-CANDIDATE-WEAK S[stack-0x3c] inside S[stack-0x44] at `S[stack-0x3c] = ext2fs_blocks_count(*(unsigned long *)(a0 + 0x20));`
+    ESCAPE-CANDIDATE-WEAK S[stack-0x3c] inside S[stack-0x44] at `S[stack-0x3c] -= (int4)S[stack-0x30];`
+    @@ -18,4 +18,4 @@
+         if ((uint8)ext2fs_blocks_count(X) <= X) {
+    -      R[eax] = ext2fs_blocks_count(*(unsigned long *)(a0 + 0x20));
+    -      S[stack-0x3c] = R[eax] - (int4)S[stack-0x30];
+    +      S[stack-0x3c] = ext2fs_blocks_count(*(unsigned long *)(a0 + 0x20));
+    +      S[stack-0x3c] -= (int4)S[stack-0x30];
+         }
+e2fsck-O0 changed_functions=3 {'ESCAPE-CANDIDATE': 1, 'ESCAPE-CANDIDATE-WEAK': 2}
+e2fsck-O2 check_super_block ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=3 fresh_slots=0
+    ESCAPE-CANDIDATE S[stack-0x13c] inside S[stack-0x158],S[stack-0x1c8],S[stack-0x23c] at `S[stack-0x13c] = *(uint4 *)(X + 0x28);`
+    ESCAPE-CANDIDATE S[stack-0x138] inside S[stack-0x158],S[stack-0x1c8] at `S[stack-0x138] = (((uint8)S[stack-0x13c] - 1) + CONCAT44(S[stack-0x7c]`
+    ESCAPE-CANDIDATE S[stack-0x13c] inside S[stack-0x158],S[stack-0x1c8],S[stack-0x23c] at `S[stack-0x13c] = S[stack-0xe4] % S[stack-0x13c];`
+    @@ -529,5 +529,5 @@
+                   else {
+    -                X = *(uint4 *)(X + 0x28);
+    -                S[stack-0x138] = (((uint8)X - 1) + CONCAT44(S[stack-0x7c],S[stack-0xe4])) / (uint8)X;
+    -                S[stack-0x13c] = S[stack-0xe4] % X;
+    +                S[stack-0x13c] = *(uint4 *)(X + 0x28);
+    +                S[stack-0x138] = (((uint8)S[stack-0x13c] - 1) + CONCAT44(S[stack-0x7c],S[stack-0xe4])) / (uint8)S[stack-0x13c];
+    +                S[stack-0x13c] = S[stack-0xe4] % S[stack-0x13c];
+                   }
+e2fsck-O2 e2fsck_check_ext3_journal ESCAPE-CANDIDATE-WEAK decl_delta=+0 new_stmt_writes=1 fresh_slots=0
+    ESCAPE-CANDIDATE-WEAK S[stack-0x3c] inside S[stack-0x48],S[stack-0xc0] at `S[stack-0x3c] = S[stack-0x48] ^ S[stack-0x44] ^ S[stack-0x40] ^ S[stac`
+    @@ -53,4 +53,4 @@
+             uuid_generate(&S[stack-0x48]);
+    -        X = S[stack-0x48] ^ S[stack-0x44] ^ S[stack-0x40] ^ S[stack-0x3c];
+    -        X[6] = X >> 0x18 | (X & 0xff0000) >> 8 | (X & 0xff00) << 8 | X << 0x18;
+    +        S[stack-0x3c] = S[stack-0x48] ^ S[stack-0x44] ^ S[stack-0x40] ^ S[stack-0x3c];
+    +        X[6] = S[stack-0x3c] >> 0x18 | (S[stack-0x3c] & 0xff0000) >> 8 | (S[stack-0x3c] & 0xff00) << 8 | S[stack-0x3c] << 0x18;
+             sub_2f570(S[stack-0xc0],X);
+e2fsck-O2 ext2fs_read_bb_inode ESCAPE-CANDIDATE decl_delta=-1 new_stmt_writes=1 fresh_slots=0
+    ESCAPE-CANDIDATE S[stack-0x8c] inside S[stack-0xb8] at `S[stack-0x8c] += 0x14;`
+    @@ -15,6 +15,6 @@
+         }
+    -    R[eax] = S[stack-0x8c] + 0x14;
+    +    S[stack-0x8c] += 0x14;
+         X = 0x32;
+    -    if ((0x32 <= R[eax]) && (X = 500, R[eax] <= 50000))
+    -      X = R[eax];
+    +    if ((0x32 <= S[stack-0x8c]) && (X = 500, S[stack-0x8c] <= 50000))
+    +      X = S[stack-0x8c];
+         X = ext2fs_badblocks_list_create(a1,X,X);
+e2fsck-O2 changed_functions=3 {'ESCAPE-CANDIDATE': 2, 'ESCAPE-CANDIDATE-WEAK': 1}
+e2fsck-O2-noinline sub_30ce0 SAFE decl_delta=-1 new_stmt_writes=0 fresh_slots=0
+    @@ -11,11 +11,11 @@
+       else {
+    -    R[ax] = S[stack-0xe8][0] & 0xf000;
+    -    if (R[ax] != 0x8000) { // branch-flip
+    -      if (R[ax] != 0x4000) { // branch-flip
+    -        if (R[ax] != 0x2000) { // branch-flip
+    -          if (R[ax] != 0x6000) { // branch-flip
+    -            if (R[ax] == 0xa000)
+    +    S[stack-0xe8][0] &= 0xf000;
+    +    if (S[stack-0xe8][0] != 0x8000) { // branch-flip
+    +      if (S[stack-0xe8][0] != 0x4000) { // branch-flip
+    +        if (S[stack-0xe8][0] != 0x2000) { // branch-flip
+    +          if (S[stack-0xe8][0] != 0x6000) { // branch-flip
+    +            if (S[stack-0xe8][0] == 0xa000)
+                   return 7;
+    -            if (R[ax] != 0x1000) { // branch-flip
+    -              if (R[ax] != 0xc000) {
+    +            if (S[stack-0xe8][0] != 0x1000) { // branch-flip
+    +              if (S[stack-0xe8][0] != 0xc000) {
+                     X = -0x16;
+e2fsck-O2-noinline changed_functions=1 {'SAFE': 1}
+find-O0 changed_functions=0 {}
+find-O2 changed_functions=0 {}
+grep-O0 changed_functions=0 {}
+grep-O2 changed_functions=0 {}
+gzip-O0 changed_functions=0 {}
+gzip-O2 changed_functions=0 {}
+kmod-O0 changed_functions=0 {}
+kmod-O2 changed_functions=0 {}
+kmod-O2-noinline sub_97b0 ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=2 fresh_slots=1
+    ESCAPE-CANDIDATE S[stack-0x60] inside S[stack-0x68] at `S[stack-0x60] -= 1;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x60] inside S[stack-0x68] at `S[stack-0x60] -= 1;`  [slot never written in the off arm]
+    @@ -24,8 +24,8 @@
+       R[rax] = malloc(*(long *)(a0[1] + 0x58) + X + strlen(S[stack-0x45]) * R[rbx]);
+    -  R[ebp] = S[stack-0x60] + -1;
+    -  if (0 <= R[ebp]) { // branch-flip
+    +  S[stack-0x60] -= 1;
+    +  if (0 <= S[stack-0x60]) { // branch-flip
+         R[rbx] = 0;
+    -    X = (long)R[ebp] * 8;
+    +    X = (long)S[stack-0x60] * 8;
+         do {
+    -      R[ebp] -= 1;
+    +      S[stack-0x60] -= 1;
+           X = *(long *)(S[stack-0x68] + X);
+    @@ -39,3 +39,3 @@
+           sub_8c30(a1,*(unsigned long *)(X + 8));
+    -    } while (R[ebp] != -1);
+    +    } while (S[stack-0x60] != -1);
+         X = &R[rax][R[rbx]];
+kmod-O2-noinline changed_functions=1 {'ESCAPE-CANDIDATE': 1}
+ls-O0 sub_1dd61 ESCAPE-CANDIDATE-WEAK decl_delta=+0 new_stmt_writes=2 fresh_slots=0
+    ESCAPE-CANDIDATE-WEAK S[stack-0xa8] inside S[stack-0xf8] at `S[stack-0xa8] = sub_1da93(S[stack-0xd8],S[stack-0xc8],X,X,S[stack-0x14`
+    ESCAPE-CANDIDATE-WEAK S[stack-0xa8] inside S[stack-0xf8] at `S[stack-0xa8] += S[stack-0xf8];`
+    @@ -62,4 +62,4 @@
+               if (R[al] != '\x01') {
+    -            R[rax] = sub_1da93(S[stack-0xd8],S[stack-0xc8],X,X,S[stack-0x14c],X);
+    -            S[stack-0xa8] = R[rax] + S[stack-0xf8];
+    +            S[stack-0xa8] = sub_1da93(S[stack-0xd8],S[stack-0xc8],X,X,S[stack-0x14c],X);
+    +            S[stack-0xa8] += S[stack-0xf8];
+                 if (-0x8000000000000000 <= S[stack-0xa8]) {
+ls-O0 changed_functions=1 {'ESCAPE-CANDIDATE-WEAK': 1}
+ls-O2 main ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=2 fresh_slots=1
+    ESCAPE-CANDIDATE S[stack-0x58] inside S[stack-0x58] at `S[stack-0x58] = *(void **)(dat_260f8 + -0x10);`
+    ESCAPE-CANDIDATE S[stack-0x50] inside S[stack-0x58] at `S[stack-0x50] = *(unsigned long *)(dat_260f8 + -8);`  [slot never written in the off arm]
+    @@ -682,4 +682,4 @@
+           X = dat_260f8 + -0x10;
+    -      X = *(void **)(dat_260f8 + -0x10);
+    -      X = *(unsigned long *)(dat_260f8 + -8);
+    +      S[stack-0x58] = *(void **)(dat_260f8 + -0x10);
+    +      S[stack-0x50] = *(unsigned long *)(dat_260f8 + -8);
+           dat_260f8 = X;
+ls-O2 changed_functions=1 {'ESCAPE-CANDIDATE': 1}
+sort-O0 changed_functions=0 {}
+sort-O2 main ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=6 fresh_slots=0
+    ESCAPE-CANDIDATE S[stack-0x2a8] inside S[stack-0x2d8],S[stack-0x328],S[stack-0x398] at `S[stack-0x2a8] = (unsigned char)X[6] ^ 1;`
+    ESCAPE-CANDIDATE S[stack-0x2a8] inside S[stack-0x2d8],S[stack-0x328],S[stack-0x398] at `S[stack-0x2a8] = X & S[stack-0x2a8];`
+    ESCAPE-CANDIDATE S[stack-0x2a2] inside S[stack-0x2d8],S[stack-0x328],S[stack-0x398] at `S[stack-0x2a2] = *(unsigned char *)((long)X + 0x36) ^ 1;`
+    ESCAPE-CANDIDATE S[stack-0x2a2] inside S[stack-0x2d8],S[stack-0x328],S[stack-0x398] at `S[stack-0x2a2] = X & S[stack-0x2a2];`
+    ESCAPE-CANDIDATE S[stack-0x2a6] inside S[stack-0x2d8],S[stack-0x328],S[stack-0x398] at `S[stack-0x2a6] = *(unsigned char *)((long)X + 0x32) ^ 1;`
+    ESCAPE-CANDIDATE S[stack-0x2a6] inside S[stack-0x2d8],S[stack-0x328],S[stack-0x398] at `S[stack-0x2a6] = X & S[stack-0x2a6];`
+    @@ -825,4 +825,4 @@
+               S[stack-0x2a4] = X & (X ^ 1);
+    -          X = (unsigned char)X[6] ^ 1;
+    -          S[stack-0x2a8] = X & X;
+    +          S[stack-0x2a8] = (unsigned char)X[6] ^ 1;
+    +          S[stack-0x2a8] = X & S[stack-0x2a8];
+               X = *(unsigned char *)((long)X + 0x31) ^ 1;
+    @@ -831,7 +831,7 @@
+               S[stack-0x2a5] = X & (*(unsigned char *)((long)X + 0x33) ^ 1);
+    -          X = *(unsigned char *)((long)X + 0x36) ^ 1;
+    -          S[stack-0x2a2] = X & X;
+    +          S[stack-0x2a2] = *(unsigned char *)((long)X + 0x36) ^ 1;
+    +          S[stack-0x2a2] = X & S[stack-0x2a2];
+               S[stack-0x2a0] = X & ((unsigned char)X[7] ^ 1);
+    -          X = *(unsigned char *)((long)X + 0x32) ^ 1;
+    -          S[stack-0x2a6] = X & X;
+    +          S[stack-0x2a6] = *(unsigned char *)((long)X + 0x32) ^ 1;
+    +          S[stack-0x2a6] = X & S[stack-0x2a6];
+               X &= *(unsigned char *)((long)X + 0x37) ^ 1;
+sort-O2 changed_functions=1 {'ESCAPE-CANDIDATE': 1}
+tar-O0 sub_429c6 ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=2 fresh_slots=2
+    ESCAPE-CANDIDATE S[stack-0x208] inside S[stack-0x220],S[stack-0x230] at `S[stack-0x208] = *a4 - (int8)S[stack-0x220];`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x210] inside S[stack-0x230] at `S[stack-0x210] = *a4 - (int8)S[stack-0x220];`  [slot never written in the off arm]
+    @@ -88,4 +88,4 @@
+             S[stack-0x220] = &S[stack-0x220][1];
+    -        R[rax] = *a4 - (int8)S[stack-0x220];
+    -        X = sub_4077c(a0,X,S[stack-0x220],R[rax] & 0xffffffff,*(uint4 *)(a0 + 0x20) & 0x44 | 0x400700,1);
+    +        S[stack-0x208] = *a4 - (int8)S[stack-0x220];
+    +        X = sub_4077c(a0,X,S[stack-0x220],S[stack-0x208] & 0xffffffff,*(uint4 *)(a0 + 0x20) & 0x44 | 0x400700,1);
+             if (X)
+    @@ -125,4 +125,4 @@
+               S[stack-0x220] = &S[stack-0x220][1];
+    -          R[rax] = *a4 - (int8)S[stack-0x220];
+    -          X = sub_4077c(a0,X,S[stack-0x220],R[rax] & 0xffffffff,*(uint4 *)(a0 + 0x20) & 0x44 | 0x400700,1);
+    +          S[stack-0x210] = *a4 - (int8)S[stack-0x220];
+    +          X = sub_4077c(a0,X,S[stack-0x220],S[stack-0x210] & 0xffffffff,*(uint4 *)(a0 + 0x20) & 0x44 | 0x400700,1);
+               if (X)
+tar-O0 changed_functions=1 {'ESCAPE-CANDIDATE': 1}
+tar-O2 main SAFE decl_delta=-1 new_stmt_writes=0 fresh_slots=0
+    @@ -170,3 +170,2 @@
+       X = dat_82838;
+    -  X = S[stack-0x158];
+       if ((char)S[stack-0x158]) {
+    @@ -177,3 +176,2 @@
+           X = dat_82838;
+    -      X = S[stack-0x158];
+         }
+    @@ -182,3 +180,2 @@
+         dat_82838 = X;
+    -    S[stack-0x158] = X;
+         if (S[stack-0x188][0] >= (int4)R[rax]) break;
+    @@ -187,6 +184,5 @@
+         X = dat_82838;
+    -    X = S[stack-0x158];
+       }
+       if (!dat_82ba4) {
+    -    S[stack-0x158]._1_1_ = (char)((uint2)X >> 8);
+    +    S[stack-0x158]._1_1_ = (char)((uint2)S[stack-0x158] >> 8);
+         dat_82ba4 = (S[stack-0x158]._1_1_) ? 4 : 6; // branch-flip
+tar-O2 sub_203b0 ESCAPE-CANDIDATE decl_delta=-2 new_stmt_writes=6 fresh_slots=3
+    ESCAPE-CANDIDATE S[stack-0x68] inside S[stack-0xb8],S[stack-0xc8],S[stack-0xd0] at `S[stack-0x68] |= 2;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0xa8] inside S[stack-0xb8],S[stack-0xc8],S[stack-0xd0] at `S[stack-0xa8] = S[stack-0x98];`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0xa8] inside S[stack-0xb8],S[stack-0xc8],S[stack-0xd0] at `S[stack-0xa8] = X;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x68] inside S[stack-0xb8],S[stack-0xc8],S[stack-0xd0] at `S[stack-0x68] |= 2;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0xa0] inside S[stack-0xb8],S[stack-0xc8],S[stack-0xd0] at `S[stack-0xa0] = S[stack-0x98];`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0xa0] inside S[stack-0xb8],S[stack-0xc8],S[stack-0xd0] at `S[stack-0xa0] = X;`  [slot never written in the off arm]
+    @@ -94,7 +94,7 @@
+             if (S[stack-0xa8] == S[stack-0xa0])
+    -          X = S[stack-0x68] | 2;
+    +          S[stack-0x68] |= 2;
+             X = S[stack-0xa0] + S[stack-0x88] & ~S[stack-0x88];
+    -        X = S[stack-0x98];
+    +        S[stack-0xa8] = S[stack-0x98];
+             if (X - S[stack-0xb0] <= S[stack-0x98] - S[stack-0xb0])
+    -          X = X;
+    +          S[stack-0xa8] = X;
+             do {
+    @@ -122,7 +122,7 @@
+             if (S[stack-0xa8] == S[stack-0xa0])
+    -          X = S[stack-0x68] | 2;
+    +          S[stack-0x68] |= 2;
+             X = S[stack-0xa0] + S[stack-0x88] & ~S[stack-0x88];
+    -        X = S[stack-0x98];
+    +        S[stack-0xa0] = S[stack-0x98];
+             if (X - S[stack-0xb0] <= S[stack-0x98] - S[stack-0xb0])
+    -          X = X;
+    +          S[stack-0xa0] = X;
+             X = S[stack-0xa8];
+tar-O2 argp_parse SAFE decl_delta=-2 new_stmt_writes=0 fresh_slots=0
+    @@ -187,7 +187,2 @@
+           X = __progname;
+    -      X = S[stack-0x250]._0_16_;
+    -      X = S[stack-0x240]._0_16_;
+    -      X = S[stack-0x230]._0_16_;
+    -      X = S[stack-0x220];
+    -      X = S[stack-0x210][0];
+           X = S[stack-0x190];
+    @@ -198,7 +193,2 @@
+       X = __progname;
+    -  X = S[stack-0x250]._0_16_;
+    -  X = S[stack-0x240]._0_16_;
+    -  X = S[stack-0x230]._0_16_;
+    -  X = S[stack-0x220];
+    -  X = S[stack-0x210][0];
+       X = S[stack-0x190];
+    @@ -211,7 +201,2 @@
+       __progname = X;
+    -  S[stack-0x250]._0_16_ = X;
+    -  S[stack-0x240]._0_16_ = X;
+    -  S[stack-0x230]._0_16_ = X;
+    -  S[stack-0x220] = X;
+    -  S[stack-0x210][0] = X;
+       S[stack-0x190] = X;
+tar-O2 sub_5aa30 ESCAPE-CANDIDATE decl_delta=-5 new_stmt_writes=10 fresh_slots=5
+    ESCAPE-CANDIDATE S[stack-0x100] inside S[stack-0x108],S[stack-0x110],S[stack-0x138],S[stack-0x148],S[stack-0x150] at `S[stack-0x100] = (uint8 *******)&S[stack-0x88];`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0xe0] inside S[stack-0x108],S[stack-0x110],S[stack-0x138],S[stack-0x148],S[stack-0x150] at `S[stack-0xe0] = (uint8)S[stack-0x140] >> 0x10;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x4e] inside S[stack-0x108],S[stack-0x110],S[stack-0x138],S[stack-0x148],S[stack-0xa8],S[stack-0xd8] at `S[stack-0x4e] = *(uint1 *)&X[0x16] >> 3 & 1;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0x4f] inside S[stack-0x108],S[stack-0x110],S[stack-0x138],S[stack-0x148],S[stack-0xa8],S[stack-0xd8] at `S[stack-0x4f] = *(uint1 *)&X[0x16] >> 2 & 1;`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0xa0] inside S[stack-0x108],S[stack-0x110],S[stack-0x138],S[stack-0x148],S[stack-0xa8],S[stack-0xd8] at `S[stack-0xa0] = (uint8 *******)S[stack-0x98]._0_8_;`
+    ESCAPE-CANDIDATE S[stack-0xa0] inside S[stack-0x108],S[stack-0x110],S[stack-0x138],S[stack-0x148],S[stack-0xa8],S[stack-0xd8] at `S[stack-0xa0] = S[stack-0x80];`
+    ESCAPE-CANDIDATE S[stack-0xa0] inside S[stack-0x108],S[stack-0x110],S[stack-0x138],S[stack-0x148],S[stack-0xa8],S[stack-0xd8] at `S[stack-0xa0] = S[stack-0xa8];`
+    ESCAPE-CANDIDATE S[stack-0x120] inside S[stack-0x138],S[stack-0x148] at `S[stack-0x120] = (uint8 ******)((int8)X * 0x18);`  [slot never written in the off arm]
+    ESCAPE-CANDIDATE S[stack-0xa0] inside S[stack-0x138],S[stack-0x148],S[stack-0xa8] at `S[stack-0xa0] = &X;`
+    ESCAPE-CANDIDATE S[stack-0xd8] inside S[stack-0x138],S[stack-0x148] at `S[stack-0xd8] = (uint8 *******)((int8)X * 4);`
+    @@ -204,3 +204,3 @@
+             *(char *)&S[stack-0x148][1] = '\x01';
+    -      X = (uint8 *******)&S[stack-0x88];
+    +      S[stack-0x100] = (uint8 *******)&S[stack-0x88];
+           R[eax] = 1;
+    @@ -208,3 +208,3 @@
+           S[stack-0xe8] = NULL;
+    -      X = (uint8)S[stack-0x140] >> 0x10;
+    +      S[stack-0xe0] = (uint8)S[stack-0x140] >> 0x10;
+           X._8_8_ = 0;
+    @@ -493,5 +493,5 @@
+           R[zf] = X || X;
+    -      X = *(uint1 *)&X[0x16] >> 3 & 1;
+    +      S[stack-0x4e] = *(uint1 *)&X[0x16] >> 3 & 1;
+           S[stack-0x70] = S[stack-0x140];
+    -      X = *(uint1 *)&X[0x16] >> 2 & 1;
+    +      S[stack-0x4f] = *(uint1 *)&X[0x16] >> 2 & 1;
+           S[stack-0x78] = S[stack-0x140];
+    @@ -515,8 +515,8 @@
+             else {
+    -          X = (uint8 *******)S[stack-0x98]._0_8_;
+    +          S[stack-0xa0] = (uint8 *******)S[stack-0x98]._0_8_;
+               if (X || X) {
+                 if ((int8)S[stack-0x80] < (int8)S[stack-0x98]._0_8_)
+    -              X = S[stack-0x80];
+    -            if ((int8)X <= (int8)S[stack-0xa8]) // branch-flip
+    -              X = S[stack-0xa8];
+    +              S[stack-0xa0] = S[stack-0x80];
+    +            if ((int8)S[stack-0xa0] <= (int8)S[stack-0xa8]) // branch-flip
+    +              S[stack-0xa0] = S[stack-0xa8];
+                 else {
+    @@ -525,3 +525,3 @@
+                     S[stack-0xa8] = (uint8 *******)((int8)S[stack-0xa8] + 1);
+    -              } while (X != S[stack-0xa8]);
+    +              } while (S[stack-0xa0] != S[stack-0xa8]);
+                 }
+    @@ -878,6 +878,6 @@
+       while( true ) {
+    -    X = X;
+    -    X = (uint8 ******)X[2];
+    +    R[rax] = X;
+    +    X = (uint8 ******)R[rax][2];
+         if ((X) && (X != X)) break;
+    -    if (!(uint8 ******)*X) {
+    +    if (!(uint8 ******)*R[rax]) {
+           X = NULL;
+    @@ -886,4 +886,4 @@
+         }
+    -    X = (uint8 ******)*X;
+    -    X = X;
+    +    X = (uint8 ******)*R[rax];
+    +    X = R[rax];
+       }
+    @@ -1141,5 +1141,5 @@
+             X = 0;
+    -        X = (uint8 ******)((int8)X * 0x18);
+    -        X = *(uint8 ********)((int8)X + (int8)&X[2]);
+    -        if (0 < (int8)*(uint8 ******)((int8)X + (int8)&X[1])) {
+    +        S[stack-0x120] = (uint8 ******)((int8)X * 0x18);
+    +        X = *(uint8 ********)((int8)S[stack-0x120] + (int8)&X[2]);
+    +        if (0 < (int8)*(uint8 ******)((int8)S[stack-0x120] + (int8)&X[1])) {
+               do {
+    @@ -1359,3 +1359,3 @@
+         }
+    -    X = &X;
+    +    S[stack-0xa0] = &X;
+         S[stack-0xa8] = (uint8 *******)CONCAT44(S[stack-0xa8]._4_4_,3);
+    @@ -1437,5 +1437,5 @@
+                     X = (uint8 ******)((int8)S[stack-0xe8] * 2 + 1);
+    -                X = (uint8 *******)((int8)X * 4);
+    +                S[stack-0xd8] = (uint8 *******)((int8)X * 4);
+                     S[stack-0x150] = 0x5bf2d;
+    -                X = realloc(X[1],(uint8)X);
+    +                X = realloc(X[1],(uint8)S[stack-0xd8]);
+                     S[stack-0xf0] = X;
+tar-O2 changed_functions=4 {'SAFE': 2, 'ESCAPE-CANDIDATE': 2}

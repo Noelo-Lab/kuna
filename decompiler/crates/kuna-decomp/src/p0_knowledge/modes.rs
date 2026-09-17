@@ -445,10 +445,23 @@ mod tests {
         /// the same `typedef struct FILE FILE;`), and on an unstripped binary it is
         /// 8,071 added lines on `ls` alone. Who wants to see a layout is a reader's
         /// choice, not a size threshold's.
+        ///
+        /// `indirectonly` is the upstream `Funcdata::markIndirectOnly` body, and
+        /// turning it on lets a register merge into a frame slot whose entry value
+        /// only ever reached call INDIRECTs. That is right when the machine really
+        /// does store into the slot and wrong when it only loads it: in the second
+        /// case the emitted C mutates memory the machine never writes, and a later
+        /// call handed the enclosing object reads a value that never existed
+        /// (`bzip2` -O2 `sub_3890`, `kmod` -O2-noinline `sub_97b0`; stock Ghidra
+        /// emits the same fabricated store). Nothing at HighVariable level tells the
+        /// two apart -- a CPUI_INDIRECT is attached only where the storage is still
+        /// live in the SSA, so a slot that is dead after its last read carries no
+        /// guard at any later call -- so fabricating a store as the default output
+        /// under 500 KiB is the operator's judgement, not the preset's.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "argclobber", "structdefs"];
+              "argclobber", "structdefs", "indirectonly"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

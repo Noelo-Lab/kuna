@@ -1,0 +1,29 @@
+# 'kuna decompile-all --option indirectonly off' == a fresh origin/main build
+#
+# Control for the whole-corpus A/B: the OFF arm must be the pre-port engine, not
+# just 'the other arm of the same binary'.  Built origin/main (83830e86) separately
+# and compared whole-binary 'kuna decompile-all' output.
+#
+#   main:  /home/mahaloz/kwt/_rev-lcg-main (83830e86) decompile-all <bin>
+#   off :  this branch                      decompile-all <bin> --option indirectonly off
+
+ls     O0   byte-identical (11851 lines)
+ls     O2   byte-identical (13664 lines)
+tar    O2   byte-identical (56688 lines)
+bzip2  O2   byte-identical (9765 lines)
+diff   O2   byte-identical (15930 lines)
+sort   O2   byte-identical (11367 lines)
+
+# ROUND 2 (default flipped to off): the DEFAULT arm of this branch's release
+# build vs a separately built origin/main 83830e86
+# (/home/mahaloz/kwt/_rev-lcg-main), `kuna decompile-all`, no options:
+#
+#   IDENTICAL ls-O2
+#   IDENTICAL tar-O2
+#   IDENTICAL bzip2-O2
+#   IDENTICAL kmod-O2-noinline
+#   IDENTICAL e2fsck-O0
+#   IDENTICAL bash-O2
+#
+# and interleaved min-of-11 on fmt -O2 decompile-all: main 4092.9 ms,
+# branch default 4064.2 ms, -0.70%.

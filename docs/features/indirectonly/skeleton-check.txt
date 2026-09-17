@@ -1,0 +1,22 @@
+# Round-1 structural control (16 slices): control keywords with nesting depth and
+# the ordered callee sequence, per changed function.  Both are unchanged by this
+# option in every arm, which is why this check is blind to the defect that keeps
+# the option off -- see corpus-escape-classification.txt.
+#
+ls-O0 sub_1dd61 OK: same control skeleton, same call sequence
+ls-O0 bad=0
+tar-O0 sub_429c6 OK: same control skeleton, same call sequence
+tar-O0 bad=0
+ls-O2 main OK: same control skeleton, same call sequence
+ls-O2 bad=0
+sort-O2 main OK: same control skeleton, same call sequence
+sort-O2 bad=0
+diff-O2 sub_6e20 OK: same control skeleton, same call sequence
+diff-O2 bad=0
+bzip2-O2 sub_3890 OK: same control skeleton, same call sequence
+bzip2-O2 bad=0
+tar-O2 main OK: same control skeleton, same call sequence
+tar-O2 sub_203b0 OK: same control skeleton, same call sequence
+tar-O2 argp_parse OK: same control skeleton, same call sequence
+tar-O2 sub_5aa30 OK: same control skeleton, same call sequence
+tar-O2 bad=0

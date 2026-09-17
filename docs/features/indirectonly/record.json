@@ -1,0 +1,198 @@
+{
+  "option": "indirectonly",
+  "flag": "mark_indirect_only",
+  "phase": "P6",
+  "subphase": "merge-aggressiveness",
+  "tier": "transform",
+  "change_kind": "presentation-default",
+  "source_decompiler": "ghidra",
+  "default_on": false,
+  "opportunity": "varnode_flags::indirectonly has two readers in the merged tree -- HighVariable::has_name (variable.rs) and Merge::merge_test_adjacent (merge.rs) -- and NO writer: Funcdata::markIndirectOnly / checkIndirectUse (funcdata_varnode.cc:801-858) were never ported and ActionMarkIndirectOnly shipped as a documented no-op although universal_sched already scheduled it one slot ahead of ActionMergeAdjacent. So is_indirect_only() answered false everywhere and both readers took the strictly-more-conservative branch: kuna refused every speculative merge with an illegal input, including the ones upstream allows.",
+  "root_cause": "Both refusals are about an ILLEGAL INPUT -- an input Varnode ActionDirectWrite never reached, i.e. the leftover entry value of a frame slot the function overwrites before it reads. Refusing the merge is the right default (an uninitialized value must not be printed as a real one); upstream's exception is that when EVERY reader in the def-set is a plain CPUI_INDIRECT the leftover value is not read at all, so there is nothing to print wrongly. That exception needed the flag nothing wrote.",
+  "inspiration": "Funcdata::markIndirectOnly / Funcdata::checkIndirectUse (funcdata_varnode.cc:801-858); HighVariable::hasName (variable.cc:731-760); Merge::mergeTestAdjacent (merge.cc:185-196)",
+  "test_name": "tests/stages/kuna-indirectonly.xml (the sound direction: `take` changes off->on, the directly-read counterexample `keep` must not) + tests/stages/kuna-indirectonly-escape.xml (the unsound direction; its first pass runs the DEFAULT, so flipping the shipped default turns it red) + 8 unit tests in kuna_indirectonly/tests.rs",
+  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/date",
+  "selector": "main",
+  "func_addr": "0x4402",
+  "element_id": null,
+  "census": {
+    "method": "throwaway KUNA_IO_DEBUG instrumentation in mark_indirect_only, release build, kuna decompile-all over the decbench stripped coreutils binaries (docs/features/indirectonly/census.txt); reverted before the shipped commit",
+    "columns": "marked / register / stack / also-unaffected",
+    "fmt_O0": [
+      23,
+      0,
+      23,
+      0
+    ],
+    "ls_O0": [
+      140,
+      0,
+      140,
+      0
+    ],
+    "sort_O0": [
+      137,
+      5,
+      132,
+      0
+    ],
+    "fmt_O2": [
+      18,
+      0,
+      18,
+      0
+    ],
+    "ls_O2": [
+      109,
+      0,
+      109,
+      0
+    ],
+    "sort_O2": [
+      108,
+      0,
+      108,
+      0
+    ],
+    "finding": "no flagged input is also `unaffected`, so HighVariable::has_name's indirectonly branch never fires on x86-64 ELF and removes no declaration; the live consumer is Merge::merge_test_adjacent"
+  },
+  "corpus_sweep": {
+    "method": "kuna decompile-all, default (off) vs --option indirectonly on; script docs/features/indirectonly/corpus-sweep.sh, classifier classify-escape.py, full output corpus-escape-classification.txt",
+    "slices": 34,
+    "slice_set": "ls sort grep gzip diff bzip2 find tar at O0+O2; kmod e2fsck dpkg dpkg-query dash bash at O0+O2+O2-noinline",
+    "changed_slices": 15,
+    "changed_functions": 27,
+    "declaration_delta": -19,
+    "hand_settled": [
+      {
+        "slice": "bzip2-O2",
+        "function": "sub_3890",
+        "verdict": "BUG",
+        "evidence": "every access to the [rsp+0x18..0x2c] out-param block is a lea or a load; the function contains no store to any of those slots, and the ON arm emits `S[stack-0x1428] &= 0xff;`"
+      },
+      {
+        "slice": "kmod-O2-noinline",
+        "function": "sub_97b0",
+        "verdict": "BUG",
+        "evidence": "`989d: mov r14d,DWORD PTR [rsp+0x28]` is the only reference to that slot in the whole function and it is a load; `97c9: lea r13,[rsp+0x20]` is the object handed to `9964: call e270`"
+      },
+      {
+        "slice": "ls-O2",
+        "function": "main",
+        "verdict": "FIX",
+        "evidence": "`5922: mov [rsp+0x40],rdx` / `5927: mov [rsp+0x48],rax` -- the machine fills the struct and the OFF arm drops both stores"
+      },
+      {
+        "slice": "tar-O0",
+        "function": "sub_429c6",
+        "verdict": "FIX",
+        "evidence": "`43076..43085: add [rbp-0x218],1 / sub rax,[rbp-0x218] / mov [rbp-0x200],rax` is exactly the hunk"
+      },
+      {
+        "slice": "dpkg-O0",
+        "function": "sub_2019c",
+        "verdict": "FIX",
+        "evidence": "[rbp-0x40] is stored at 2021c and at 20307 (the loop increment read back at 202f4) -- both hunk statements"
+      },
+      {
+        "slice": "e2fsck-O0",
+        "function": "sub_1680a",
+        "verdict": "FIX",
+        "evidence": "[rbp-0x48] is stored at 16b08 and incremented in memory at 16b7c (`add QWORD PTR [rbp-0x48],0x4`), which is the `&S[stack-0x50][1]` hunk"
+      }
+    ],
+    "withdrawn_claim": "The first round reported `0 BUG hunks` over 16 slices. That claim is withdrawn: its classifier had no escape predicate, and bzip2 -O2 sub_3890 -- inside that original 16-slice set -- is confirmed wrong output.",
+    "note": "ESCAPE-CANDIDATE is not a verdict. Both directions of the merge look identical in the emitted C; only the disassembly separates a restored store from a fabricated one.",
+    "escape_candidates": 18,
+    "escape_candidates_weak": 6,
+    "safe": 3,
+    "escape_candidates_on_a_slot_the_off_arm_never_writes": 10,
+    "finding": "24 of the 27 changed functions write an escaped frame slot at a statement the OFF arm does not have, so no subset of the hunks is certified safe by the emitted C alone.",
+    "hand_settled_tally": "6 settled: 2 BUG (both -O2, the value lives in a register for its whole lifetime), 4 FIX (three of them -O0, where the variable really is on the frame)",
+    "stack_comment_mapping": "the printed `// stack - X` is the rbp displacement minus 8; confirmed on the stage fixture, where `stack - 0xc8` is `-0xc0(%rbp)`"
+  },
+  "typesweep": {
+    "command": "scripts.decbench.typesweep --option indirectonly off --opt O0 --opt O2 --opt O2-noinline --project coreutils grep gzip diffutils bzip2 findutils tar shadow",
+    "note": "the option ships default-OFF, so `base` is the shipped default (off) and `test` is the option turned on; the measurement is symmetric and the arms are numerically identical",
+    "slices": 444,
+    "functions_scored": 10748,
+    "control_agreement_pct": 88.44,
+    "control_identical_variables": "10739 functions byte-identical in both arms, 0 scored differently",
+    "perfect_base": 959,
+    "perfect_test": 959,
+    "perfect_delta": 0,
+    "aggregate_base": 3037.05,
+    "aggregate_test": 3037.05,
+    "moved_onto_perfect": 0,
+    "moved_off_perfect": 0,
+    "improved": 0,
+    "worsened": 0
+  },
+  "speed_off_ms": 325.08,
+  "speed_on_ms": 336.07,
+  "speed_delta_pct": 3.38,
+  "speed_samples": 15,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_interleaved": {
+    "method": "off/on interleaved, min-of-N (the batched-median form above is contention-biased on this box: it read +16.8% on a loaded machine and +3.4% on a quiet one for the same build)",
+    "per_function_min_of_15": {
+      "date_O0_main_0x4402": 0.31,
+      "fmt_O2_main_0x26a0": -0.46,
+      "ls_O2_0x8ae0": -0.78
+    },
+    "whole_binary_min_of_11": {
+      "fmt_O2_decompile_all": -0.64,
+      "ls_O2_decompile_all": -3.18
+    }
+  },
+  "gates": {
+    "make_test": "datatests 675/675 PARITY OK",
+    "make_test_stages": "datatests 1067/1067 PARITY OK",
+    "make_test_cli": "tests/cli 178/178 passed",
+    "make_check_spec": "OK lenient + OK strict",
+    "kuna_catalog_check": "catalog OK",
+    "counters_check": "no drift (settables 214, corpus 304)",
+    "docs_options_md": "byte-fresh against the rebuilt catalog",
+    "make_rust_test": "RUST_TEST_RC=0, 415 `test result: ok`, 0 failures (lane run 2026-09-17T14:27:46Z..14:43:45Z on the final tree)"
+  },
+  "default_off_reason": "The lifted merge_test_adjacent refusal is sound only when the illegal input is the DESTINATION of the copy (the machine really does store into the frame slot). When it is the SOURCE -- the machine loads an escaped frame slot into a register and mutates the register -- the merge makes the emitted C mutate the slot, fabricating a store a later call handed the enclosing object can read. A CPUI_INDIRECT is attached only where the storage is still live in the SSA, so a slot whose last read precedes the loop carries no INDIRECT at any later call and the cover-intersection test has nothing to intersect. Stock Ghidra 12.1.2 emits the same fabricated store on the same input (docs/features/indirectonly/counterexample.md), so this is an upstream defect the port inherits faithfully rather than a porting error; kuna declines to inherit it by default.",
+  "counterexample": {
+    "doc": "docs/features/indirectonly/counterexample.md",
+    "sources": "docs/features/indirectonly/counterexample/",
+    "synthetic": "walk.S -- an object built on the frame, filled through its address by three calls, its count loaded into r14d and counted down in the register, its address then passed to a fourth call that reads the count",
+    "ground_truth": "a_done sees n=3",
+    "kuna_default_off": "int v2; // r14d ; v2 = v3 + -1  (correct)",
+    "kuna_option_on": "int v2; // stack - 0x30 ; v2 -= 1  (fabricated store)",
+    "roundtrip": "both emitted bodies compiled against the same lib.c: walk_off prints `a_done sees n=3`, walk_on prints `a_done sees n=-1`",
+    "ghidra_12_1_2": "local_30 = local_30 + -1; -- identical fabricated store (analyzeHeadless + DecompInterface)",
+    "real_corpus": [
+      "bzip2 -O2 sub_3890",
+      "kmod -O2-noinline sub_97b0"
+    ]
+  },
+  "default_off_evidence": {
+    "make_test": "675/675 assertions, PARITY OK",
+    "make_test_stages": "1067/1067 assertions, PARITY OK",
+    "default_equals_origin_main": "byte-identical decompile-all over ls-O2, tar-O2, bzip2-O2, kmod-O2-noinline, e2fsck-O0, bash-O2 against a separately built 83830e86",
+    "speed_vs_origin_main": {
+      "method": "interleaved whole-binary `decompile-all`, min-of-N, against a separately built origin/main (83830e86). This box runs three worktrees at once, so every run carries an A/A control: the same origin/main binary in two arms measures the noise floor at that moment.",
+      "fmt_O2_min_of_11": {
+        "main_ms": 4092.9,
+        "default_ms": 4064.2,
+        "delta_pct": -0.7
+      },
+      "ls_O2_min_of_7_AAB": {
+        "mainA_ms": 14025.1,
+        "mainB_ms": 13781.4,
+        "branch_ms": 13812.4,
+        "noise_floor_pct": -1.74,
+        "branch_vs_best_main_pct": 0.22,
+        "loadavg": 12.3
+      },
+      "discarded": "an earlier ls min-of-11 read +6.64% while the workspace test suite was saturating the box (loadavg 17-22); the A/A control above puts the noise floor at 1.7% on the same binary, so that reading is contention",
+      "structural": "with the option off the action takes one `if` on `Architecture::mark_indirect_only` and returns, once per function, and the default arm's output is byte-identical to origin/main over six whole binaries"
+    }
+  }
+}

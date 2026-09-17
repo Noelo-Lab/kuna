@@ -388,6 +388,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "switchreturn",
     "foldcallret",
     "foldcallretphi",
+    "indirectonly",
     "impliedrefs",
     "termdup",
     "stackguard",

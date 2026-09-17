@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1059,
-    1059
+    1072,
+    1072
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -841,6 +841,19 @@
     "data:ifelseflatten #1: the else-bearing 3-component BlockIf is present (off plus on = 2)",
     "data:ifelseflatten #2: the else-arm constant body survives identically (no-op, not corrupted; off plus on = 2)",
     "data:ifelseflatten #3: enabling the option is byte-identical, the loop tail is unchanged (off plus on = 2)",
+    "data:indirectonly #1: off assigns the remainder across into the escaped slot",
+    "data:indirectonly #2: on folds the remainder back into that same slot",
+    "data:indirectonly #3: on computes the call result straight into the slot",
+    "data:indirectonly #4: the call result spills to a register local in take pass 1 and in both passes of keep",
+    "data:indirectonly #5: that register local is declared three times, never four",
+    "data:indirectonly #6: keep reads the slot's entry value for real, in both passes",
+    "data:indirectonly #7: so keep's remainder is assigned across in BOTH passes; a directly-read illegal input is never marked",
+    "data:indirectonly-escape #1: by default the count lives in a register local",
+    "data:indirectonly-escape #2: and the escaped slot is read, not written",
+    "data:indirectonly-escape #3: that slot is its own variable by default",
+    "data:indirectonly-escape #4: with the option on the register is merged into the slot",
+    "data:indirectonly-escape #5: so the decrement is written to memory twice instead of once",
+    "data:indirectonly-escape #6: and both arms still hand the object to the call that reads it",
     "data:inputparamgap #1: option off drops the live-in registers sitting behind a 3-register gap (bug reproduced)",
     "data:inputparamgap #2: option off leaves r9d read with nothing assigning it (bug reproduced)",
     "data:inputparamgap #3: option on recovers the callback's full ABI signature, filler parameters and all",

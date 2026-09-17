@@ -1,0 +1,69 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue `kuna-indirectonly-escape` (P6, sub-stage merge-aggressiveness).
+
+    The counterexample that keeps the `indirectonly` option OFF by default.
+
+    `kuna-indirectonly.xml` shows the sound direction: the machine stores a
+    computed value INTO an escaped frame slot, and the merge only moves where
+    that value is computed.  This is the other direction.  `walk` builds an
+    object on its own frame, hands its address to three calls that fill it, then
+    LOADS the element count out of it into r14d and counts r14d down; the slot
+    itself is never written again, and after the loop the object's address goes
+    to a fourth call:
+
+      walk: sub rsp,0x20 / mov rbp,rsp          ; the object is at [rsp+0]
+            call a_init(rbp,3) / call a_push(rbp,..) x3
+            mov r14d,[rsp+8]                    ; count = obj.n, into a REGISTER
+            sub r14d,1 / js 2f
+        1:  mov rax,[rsp] / mov rdi,[rax+r14*8] / call sink / sub r14d,1
+            cmp r14d,-1 / jne 1b
+        2:  mov rdi,rbp / call a_done           ; a_done READS obj.n
+
+    [rsp+8] is an illegal input (nothing in `walk` writes it before the load)
+    and its entry value reaches nothing but the INDIRECTs of the three filling
+    calls, so `check_indirect_use` accepts it.  With the flag set,
+    `merge_test_adjacent` stops refusing and ActionMergeAdjacent folds r14d
+    into the slot: the emitted C then decrements MEMORY the machine never writes
+    and hands it to a_done.  Compiled against a real a_done, the two bodies
+    disagree - the register form prints the count the binary passes, the merged
+    form prints -1.
+
+    The heritage pass cannot catch this.  A CPUI_INDIRECT is attached only where
+    the storage is still live in the SSA, and this slot's last read is the load
+    at the top, so there is no INDIRECT for it at `call sink` or at
+    `call a_done` and the cover-intersection test has nothing to intersect.
+    Stock Ghidra emits the same fabricated store on the same input, so kuna
+    ships the port with the option off.
+
+    Pass 1 runs the DEFAULT (no option command), so flipping the shipped default
+    to on turns this test red.  Pass 2 asks for the option explicitly and pins
+    what it costs.
+-->
+<bytechunk space="ram" offset="0x1024">
+555341564883ec204889e54889fb4889efbe03000000e8590000004889ef488b33e8590000004889ef488b7308e84d0000004889ef488b7310e841000000448b7424084183ee01781a488b04244963de488b3cd8e8320000004183ee014183feff75e64889efe81c0000004883c420415e5b5dc348c70700000000897708c348893783470801c38b4708c34889f8c3e86cfffffff4
+</bytechunk>
+<symbol space="ram" offset="0x1024" name="walk"/>
+<symbol space="ram" offset="0x1098" name="a_init"/>
+<symbol space="ram" offset="0x10a3" name="a_push"/>
+<symbol space="ram" offset="0x10ab" name="a_done"/>
+<symbol space="ram" offset="0x10af" name="sink"/>
+</binaryimage>
+<script>
+  <com>lo fu walk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option indirectonly on</com>
+  <com>lo fu walk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="indirectonly-escape #1: by default the count lives in a register local" min="1" max="1">int4 v2; // r14d</stringmatch>
+<stringmatch name="indirectonly-escape #2: and the escaped slot is read, not written" min="1" max="1">v2 = v3 \+ -1;</stringmatch>
+<stringmatch name="indirectonly-escape #3: that slot is its own variable by default" min="1" max="1">int4 v3; // stack - 0x30</stringmatch>
+<stringmatch name="indirectonly-escape #4: with the option on the register is merged into the slot" min="1" max="1">int4 v2; // stack - 0x30</stringmatch>
+<stringmatch name="indirectonly-escape #5: so the decrement is written to memory twice instead of once" min="3" max="3">v2 -= 1;</stringmatch>
+<stringmatch name="indirectonly-escape #6: and both arms still hand the object to the call that reads it" min="2" max="2">a_done\(&amp;v1\);</stringmatch>
+</decompilertest>

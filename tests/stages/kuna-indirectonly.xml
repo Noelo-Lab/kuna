@@ -1,0 +1,91 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue `kuna-indirectonly` (P6, sub-stage merge-aggressiveness).
+
+    An ILLEGAL INPUT is an input Varnode that ActionDirectWrite never reached,
+    so nothing a formal parameter feeds can be responsible for its value: on a
+    normal frame, the leftover contents of a stack slot the function overwrites
+    before it reads.  Merge::mergeTestAdjacent refuses every speculative merge
+    involving such a variable, and HighVariable::hasName refuses to name an
+    unaffected input whose members are all of that kind.  Both refusals end
+    "unless the illegal input is only used indirectly", and that exception needs
+    the `indirectonly` Varnode flag, which nothing in kuna set:
+    Funcdata::markIndirectOnly / checkIndirectUse (funcdata_varnode.cc:801-858)
+    were unported and ActionMarkIndirectOnly was a documented no-op, so
+    isIndirectOnly() answered false everywhere.
+
+    Two functions, the same shape coreutils `date` -O0 `main` has (gcc frame, a
+    `struct timespec` at -0xc0(%rbp) whose address escapes on the other branch,
+    filled from one call result by a divide and a remainder).  `take` is the
+    positive and `keep` is the counterexample:
+
+      take:  push rbp / mov rbp,rsp / sub rsp,0x120
+             mov eax,[c1] / test eax,eax / je 1f
+             lea rax,[rbp-0xc0] / mov rdi,rax / mov rsi,[str] / call parse
+             jmp 8f
+      1:     call now_ns                      ; the value, in RAX
+             mov [rbp-0xc8],rax
+             mov rdi,1000000000
+             ... idiv ... / mov [rbp-0xc0],rax ; when.tv_sec  = v / 1e9
+             ... idiv ... / mov [rbp-0xb8],rdx ; when.tv_nsec = v % 1e9
+      8:     lea rax,[rbp-0xc0] / mov rdi,rax / call use / leave / ret
+
+      keep:  identical, with 1000000007 for the divisor and ONE extra
+             instruction pair at the top:
+             mov rsi,[rbp-0xb8] / mov [c2],rsi  ; a REAL read of the entry value
+
+    `lea rbp-0xc0` escapes the struct, so both of its slots are address-tied.
+    In `take` the value each holds on entry reaches nothing but the INDIRECTs of
+    the two calls (indirect-only), and the COPY that writes the remainder into
+    `when.tv_nsec` wants to merge RAX's HighVariable, which also carries the
+    call's result, into that slot.  In `keep` the same slot's entry value is
+    read straight into a global before anything else happens, so one genuine
+    read fails checkIndirectUse for the whole def-set and the flag must NOT be
+    set: an uninitialized value must not be merged into a real variable.
+
+    Pass 1 (option indirectonly off, which is also the shipped default): the
+    merge is refused in both functions, the call result gets its own register
+    local and the slot is assigned across.  Pass 2 (option indirectonly on):
+    `take` merges: the call result is computed straight into `when.tv_nsec` and
+    the register local is gone, and `keep` is byte-identical to pass 1.
+
+    This is the direction of the merge that is SOUND - the machine really does
+    store the computed value into the slot, so the merge only moves where it is
+    computed.  `kuna-indirectonly-escape.xml` is the other direction, and the
+    reason the option ships off.
+-->
+<bytechunk space="ram" offset="0x1024">
+554889e54881ec200100008b051001000085c07418488d8540ffffff4889c7488b350b010000e8dd000000eb3fe8da00000048898538ffffff48c7c700ca9a3b488b8d38ffffff4889c8489948f7ff48898540ffffff488b8d38ffffff4889c8489948f7ff48899548ffffff488d8540ffffff4889c7e897000000c9c3554889e54881ec20010000488bb548ffffff488935930000008b058500000085c07418488d8540ffffff4889c7488b3580000000e852000000eb3fe84f00000048898538ffffff48c7c707ca9a3b488b8d38ffffff4889c8489948f7ff48898540ffffff488b8d38ffffff4889c8489948f7ff48899548ffffff488d8540ffffff4889c7e80c000000c9c34889f0c3b805000000c3488b07c3e8e5feffffe85dfffffff4000000000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1024" name="take"/>
+<symbol space="ram" offset="0x10a1" name="keep"/>
+<symbol space="ram" offset="0x112c" name="parse"/>
+<symbol space="ram" offset="0x1130" name="now_ns"/>
+<symbol space="ram" offset="0x1136" name="use"/>
+</binaryimage>
+<script>
+  <com>option indirectonly off</com>
+  <com>lo fu take</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option indirectonly on</com>
+  <com>lo fu take</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="indirectonly #1: off assigns the remainder across into the escaped slot" min="1" max="1">v3 = v1 % 1000000000;</stringmatch>
+<stringmatch name="indirectonly #2: on folds the remainder back into that same slot" min="1" max="1">v2 %= 1000000000;</stringmatch>
+<stringmatch name="indirectonly #3: on computes the call result straight into the slot" min="1" max="1">v2 = now_ns\(\);</stringmatch>
+<stringmatch name="indirectonly #4: the call result spills to a register local in take pass 1 and in both passes of keep" min="3" max="3">v1 = now_ns\(\);</stringmatch>
+<stringmatch name="indirectonly #5: that register local is declared three times, never four" min="3" max="3">int8 v1; // rax</stringmatch>
+<stringmatch name="indirectonly #6: keep reads the slot's entry value for real, in both passes" min="2" max="2">dat_114d = v3;</stringmatch>
+<stringmatch name="indirectonly #7: so keep's remainder is assigned across in BOTH passes; a directly-read illegal input is never marked" min="2" max="2">v3 = v1 % 0x3b9aca07;</stringmatch>
+</decompilertest>
