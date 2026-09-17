@@ -1649,7 +1649,12 @@ moves.
   symbol for each stream slot (`AnalysisOutput::typed_data`, committed with
   `typelock|namelock` between the string literals and the loader's own data
   symbols, so a DWARF global or a detected literal still wins the address and the
-  loader's untyped naming of the same slot stands down).
+  loader's untyped naming of the same slot stands down). It answers to
+  `datasyms` as well: that option's contract is that `off` restores the raw
+  `dat_<addr>` rendering for every global the DWARF pass does not name, and a
+  stream slot's name is a `.dynstr` string like any other, so naming a data
+  object stays that option's call and `libctypes` only decides what the named
+  object IS. There is no half of this to keep — the type rides on the symbol.
 
   Which slot, and what it holds, is read off the DYNAMIC RELOCATION that binds
   the stream — that relocation is also the evidence that the name is the C

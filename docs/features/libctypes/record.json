@@ -1211,7 +1211,7 @@
       "note": "decbench scores variables[] -- arguments and stack symbols. A global is not one and neither is the register local that carries it, so only a stream reaching a stack slot whose ground truth is a stream can score. tar's argp_parse gains `FILE *v70` on exactly such a slot and does not move the number because that function's ground truth does not describe it. The sweep is the guard, not the case: the case is the hunk classification."
     },
     "default": "no new option and no new value -- the stream slots ride the existing `libctypes` gate (`off` emits nothing; `opaque` and `glibc` both emit, differing only in whether the pointee has members).",
-    "tests": "tests/stages/kuna-libctypes.xml passes 6-9 (the exe and the .so built from one source, each once `off` and once `opaque`), assertions #16-#25; 6 unit tests in protos/kuna_libctypes/tests.rs; tests/cli/structdefs-json-types-array.json retargeted (main of i386_pie_nl now references two libc shells, so `types` carries FILE ahead of option).",
+    "tests": "tests/stages/kuna-libctypes.xml passes 6-9 (the exe and the .so built from one source, each once `off` and once `opaque`), assertions #16-#25, plus pass 10 / #26 for the `datasyms off` interaction; 6 unit tests in protos/kuna_libctypes/tests.rs; tests/cli/structdefs-json-types-array.json retargeted (main of i386_pie_nl now references two libc shells, so `types` carries FILE ahead of option).",
     "files": [
       "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes/streams.rs",
       "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs",
@@ -1262,6 +1262,7 @@
         }
       ],
       "verdict": "within budget: every min delta inside +/-2%, every median inside +/-3%. The work added is one walk of the dynamic relocation table per program, filtered to three names, at load."
-    }
+    },
+    "gate": "the existing `libctypes` env bridge decides whether a stream fact is produced at all; the commit arm additionally answers to `datasyms`, whose contract is that `off` restores the raw `dat_<addr>` rendering for every global the DWARF pass does not name. Naming a data object stays that option's call and `libctypes` only decides what the named object IS -- there is no half of it to keep, because the type rides on the symbol. Pinned by kuna-console's own `option_datasyms_off_restores_dat_addr` and by pass 10 / assertion #26 of the stage test."
   }
 }

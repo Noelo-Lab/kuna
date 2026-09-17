@@ -4231,7 +4231,17 @@ fn commit_analysis_output(
     //     claim, and the loader's own untyped `undefined8` naming of the same slot
     //     is skipped by its `occupied` guard below. The stream is empty unless the
     //     `libctypes` gate is on (`LibcTypesPass` returns before it collects).
-    for fact in &out.typed_data {
+    //
+    //     It ALSO answers to `datasyms`, whose contract is that `off` restores the
+    //     raw `dat_<addr>` rendering for every global the DWARF pass does not name
+    //     -- to see which names came from the image's own tables, or because a
+    //     hostile one plants misleading ones. A stream slot's name is a `.dynstr`
+    //     string like any other, so naming a data object stays that option's call
+    //     and `libctypes` only decides what the named object IS. There is no half
+    //     of this to keep: the type rides on the symbol, and with no symbol there
+    //     is nothing to lock a type onto.
+    let stream_syms = if prog.arch().analysis_datasyms { out.typed_data.as_slice() } else { &[] };
+    for fact in stream_syms {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         let occupied = {
             let arch = prog.arch();

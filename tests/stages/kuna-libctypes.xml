@@ -50,7 +50,7 @@
     process environment variable, and the corpus runs in one process, so a stale
     `off` would silently disable the table for every later test in the file.
 
-    Assertions span the combined output of all nine passes. `FILE \*` is a
+    Assertions span the combined output of all ten passes. `FILE \*` is a
     substring of `_IO_FILE \*`, so every stream assertion pins the text from the
     return type or the `(` onwards.
 
@@ -74,6 +74,12 @@
     never `sink(*stdin)` (#22/#23); `say` passes it to a libc call whose
     prototype already named it, which must not move at all (#24), and whose
     library form only loses the cast the untyped slot needed (#25).
+
+    Pass 10 is the option interaction: `datasyms off` restores the raw
+    `dat_<addr>` rendering for every global the DWARF pass does not name, which is
+    that option's whole contract, so a stream slot stays unnamed there too and the
+    typed symbol has nothing to install onto (#26). It runs last and restores
+    `datasyms on`, because the corpus runs in one process.
 
     #6 is narrowed to the two aggregates a DWARF definition already described
     (`st`, `f`), because pass 4 is the `opaque` arm and legitimately prints
@@ -205,6 +211,14 @@ c3
   <com>load function 0x120d</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_x86_64</com>
+  <com>option datasyms off</com>
+  <com>read symbols</com>
+  <com>load function pending</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option datasyms on</com>
   <com>option libctypes opaque</com>
   <com>quit</com>
 </script>
@@ -233,4 +247,5 @@ c3
 <stringmatch name="LIBCTYPES #23: and in the library it is the one indirection the program performs, no more" min="1" max="1">sink\(\*stdin_ptr\);</stringmatch>
 <stringmatch name="LIBCTYPES #24: a stream handed to a libc call the table already typed does not move" min="2" max="2">fputs\(a0,stdout\);</stringmatch>
 <stringmatch name="LIBCTYPES #25: and the library's loses the cast the untyped slot needed" min="1" max="1">fputs\(a0,\*stdout_ptr\);</stringmatch>
+<stringmatch name="LIBCTYPES #26: `datasyms off` still restores the raw address -- naming a data object stays that option's call" min="1" max="1">return \*\(int8 \*\)\(dat_4010 \+ 0x28\) - \*\(int8 \*\)\(dat_4010 \+ 0x20\);</stringmatch>
 </decompilertest>
