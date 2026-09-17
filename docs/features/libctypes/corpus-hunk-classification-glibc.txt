@@ -1,0 +1,227 @@
+# libctypes glibc -- whole-corpus `decompile-all` sweep, `opaque` vs `glibc`
+
+8 binaries, whole binary in both arms. Produced by .scratch/ab.sh + .scratch/classify.py.
+Locals are renumbered to vN before diffing, so a pure renumber is not counted as a change.
+
+{
+ "decl-type": 9,
+ "field-name": 389,
+ "OTHER": 140,
+ "fns-changed:O0-coreutils-ls": 8,
+ "cast-or-literal": 4,
+ "fns-changed:O0-coreutils-stat": 5,
+ "fns-changed:O0-findutils-find": 21,
+ "fns-changed:O0-tar-tar": 35,
+ "fns-changed:O2-coreutils-fmt": 10,
+ "fns-changed:O2-coreutils-ls": 19,
+ "fns-changed:O2-grep-grep": 7,
+ "fns-changed:O2-gzip-gzip": 6
+}
+
+OTHER hunks: 140
+--- O0-coreutils-ls 0x14b4a
+  -     if ((*(char *)&vN[4] == *a0) && (!strcmp((char *)&vN[4],a0))) break;
+  +     if (((char)vN[4] == *a0) && (!strcmp((char *)&vN[4],a0))) break;
+--- O0-coreutils-ls 0x14d9c
+  -     if ((*(char *)&vN[4] == *a0) && (!strcmp((char *)&vN[4],a0))) break;
+  +     if (((char)vN[4] == *a0) && (!strcmp((char *)&vN[4],a0))) break;
+--- O0-coreutils-ls 0x15fc8
+  +   bool vN;
+  +   char vN;
+  +   int vN;
+--- O0-coreutils-ls 0x15fc8
+  +   int vN;
+--- O0-coreutils-ls 0x15fc8
+  +   unsigned long vN; // stack - 0x468
+--- O0-coreutils-ls 0x15fc8
+  -   unsigned int vN;
+--- O0-coreutils-ls 0x15fc8
+  -   unsigned long vN; // stack - 0x468
+--- O0-coreutils-ls 0x15fc8
+  +   unsigned long vN; // stack - 0x460
+--- O0-coreutils-ls 0x15fc8
+  -   bool vN;
+--- O0-coreutils-ls 0x15fc8
+  +   unsigned long vN; // stack - 0x458
+--- O0-coreutils-ls 0x15fc8
+  -   unsigned long vN;
+--- O0-coreutils-ls 0x15fc8
+  +   unsigned int vN;
+--- O0-coreutils-ls 0x15fc8
+  -   unsigned long vN; // stack - 0x460
+  -   unsigned long vN; // stack - 0x458
+  -   unsigned long vN;
+--- O0-coreutils-ls 0x15fc8
+  -   unsigned long vN; // stack - 0x440
+  -   unsigned long vN; // stack - 0x438
+  +   long vN; // stack - 0x440
+  +   char *vN; // stack - 0x438
+  +   bool vN;
+  +   unsigned long vN;
+  +   unsigned long vN;
+--- O0-coreutils-ls 0x15fc8
+  -   bool vN;
+  -   char vN;
+  -   int vN;
+--- O0-coreutils-stat 0x809b
+  -   long *vN; // stack - 0x1a8
+  +   unsigned long *vN; // stack - 0x1a8
+--- O0-coreutils-stat 0x809b
+  -   long **vN; // rsp
+  +   unsigned long **vN; // rsp
+--- O0-coreutils-stat 0x809b
+  -   long **vN;
+  +   unsigned long **vN;
+--- O0-coreutils-stat 0x809b
+  -   if ((*(unsigned int *)&vN[3] & 0xf000) != 0x4000) { // branch-flip
+  +   if ((vN[3] & 0xf000) != 0x4000) { // branch-flip
+--- O0-coreutils-stat 0xa68c
+  +   bool vN;
+  +   char vN;
+  +   int vN;
+--- O0-coreutils-stat 0xa68c
+  +   int vN;
+--- O0-coreutils-stat 0xa68c
+  +   unsigned long vN; // stack - 0x468
+--- O0-coreutils-stat 0xa68c
+  -   unsigned int vN;
+--- O0-coreutils-stat 0xa68c
+  -   unsigned long vN; // stack - 0x468
+--- O0-coreutils-stat 0xa68c
+  +   unsigned long vN; // stack - 0x460
+--- O0-coreutils-stat 0xa68c
+  -   bool vN;
+--- O0-coreutils-stat 0xa68c
+  +   unsigned long vN; // stack - 0x458
+--- O0-coreutils-stat 0xa68c
+  -   unsigned long vN;
+--- O0-coreutils-stat 0xa68c
+  +   unsigned int vN;
+--- O0-coreutils-stat 0xa68c
+  -   unsigned long vN; // stack - 0x460
+  -   unsigned long vN; // stack - 0x458
+  -   unsigned long vN;
+--- O0-coreutils-stat 0xa68c
+  -   unsigned long vN; // stack - 0x440
+  -   unsigned long vN; // stack - 0x438
+  +   long vN; // stack - 0x440
+  +   char *vN; // stack - 0x438
+  +   bool vN;
+  +   unsigned long vN;
+  +   unsigned long vN;
+--- O0-coreutils-stat 0xa68c
+  -   bool vN;
+  -   char vN;
+  -   int vN;
+--- O0-findutils-find 0x10ce6
+  +   unsigned long vN;
+--- O0-findutils-find 0x11c89
+  +   unsigned int vN;
+  +   char *vN; // stack - 0x70
+  +   long vN; // stack - 0x68
+  +   unsigned long vN; // stack - 0x60
+  +   tm vN;
+  +   unsigned int vN;
+--- O0-findutils-find 0x11c89
+  -   unsigned long vN; // stack - 0x60
+  -   tm vN; // stack - 0x58
+--- O0-findutils-find 0x11c89
+  -   char *vN; // stack - 0x70
+  -   long vN; // stack - 0x68
+--- O0-findutils-find 0x14a1d
+  +   int *vN;
+--- O0-findutils-find 0x14a1d
+  -   int vN;
+  +   int vN; // edx
+--- O0-findutils-find 0x1777e
+  +   unsigned int vN; // stack - 0x12c
+  +   unsigned int vN; // stack - 0x128
+--- O0-findutils-find 0x1777e
+  -   undefined8 vN; // stack - 0x120
+  -   undefined8 vN; // stack - 0x118
+  -   undefined8 vN; // stack - 0x110
+  -   undefined8 vN; // stack - 0x108
+  -   undefined8 vN; // stack - 0x100
+  -   undefined8 vN; // stack - 0xf8
+  -   undefined8 vN; // stack - 0xf0
+  -   undefined8 vN; // stack - 0xe8
+  +   int vN; // stack - 0x124
+  +   unsigned long vN; // stack - 0x120
+  +   long vN; // stack - 0x118
+  +   long vN; // stack - 0x110
+  +   long vN; // stack - 0x108
+  +   long vN; // stack - 0x100
+--- O0-findutils-find 0x1777e
+  -   undefined8 vN; // stack - 0xe0
+  -   undefined8 vN; // stack - 0xd8
+  -   undefined8 vN; // stack - 0xd0
+  -   undefined8 vN; // stack - 0xc8
+  -   undefined8 vN; // stack - 0xc0
+  -   long vN; // stack - 0x148
+  +   long vN; // stack - 0xf8
+  +   long vN; // stack - 0xf0
+  +   long vN; // stack - 0xe8
+  +   long vN; // stack - 0xe0
+  +   long vN; // stack - 0xd8
+  +   long vN; // stack - 0xd0
+  +   long vN; // stack - 0xc8
+  +   long vN; // stack - 0xc0
+  +   unsigned long vN; // stack - 0x148
+--- O0-findutils-find 0x1777e
+  -   long vN; // stack - 0x140
+  -   undefined8 vN; // stack - 0x138
+  +   unsigned long vN; // stack - 0x140
+  +   unsigned long vN; // stack - 0x138
+--- O0-findutils-find 0x23def
+  -     if ((*(char *)&vN[4] == *a0) && (!strcmp((char *)&vN[4],a0))) break;
+  +     if (((char)vN[4] == *a0) && (!strcmp((char *)&vN[4],a0))) break;
+--- O0-findutils-find 0x24041
+  -     if ((*(char *)&vN[4] == *a0) && (!strcmp((char *)&vN[4],a0))) break;
+  +     if (((char)vN[4] == *a0) && (!strcmp((char *)&vN[4],a0))) break;
+--- O0-findutils-find 0x347a5
+  +   bool vN;
+  +   char vN;
+  +   int vN;
+--- O0-findutils-find 0x347a5
+  +   int vN;
+--- O0-findutils-find 0x347a5
+  +   unsigned long vN; // stack - 0x468
+--- O0-findutils-find 0x347a5
+  -   unsigned int vN;
+--- O0-findutils-find 0x347a5
+  -   unsigned long vN; // stack - 0x468
+--- O0-findutils-find 0x347a5
+  +   unsigned long vN; // stack - 0x460
+--- O0-findutils-find 0x347a5
+  -   bool vN;
+--- O0-findutils-find 0x347a5
+  +   unsigned long vN; // stack - 0x458
+--- O0-findutils-find 0x347a5
+  -   unsigned long vN;
+--- O0-findutils-find 0x347a5
+  +   unsigned int vN;
+--- O0-findutils-find 0x347a5
+  -   unsigned long vN; // stack - 0x460
+  -   unsigned long vN; // stack - 0x458
+  -   unsigned long vN;
+--- O0-findutils-find 0x347a5
+  -   unsigned long vN; // stack - 0x440
+  -   unsigned long vN; // stack - 0x438
+  +   long vN; // stack - 0x440
+  +   char *vN; // stack - 0x438
+  +   bool vN;
+  +   unsigned long vN;
+  +   unsigned long vN;
+--- O0-findutils-find 0x347a5
+  -   bool vN;
+  -   char vN;
+  -   int vN;
+--- O0-tar-tar 0x19ce9
+  -   undefined4 vN; // stack - 0x280
+  +   uint4 vN; // stack - 0x280
+--- O0-tar-tar 0x19ce9
+  -     vN = *(unsigned int *)&dat_9f3b8[9];
+  +     vN = *(uint4 *)&dat_9f3b8[9];
+--- O0-tar-tar 0x21eb9
+  -   int8 vN; // stack - 0x200
+  +   uint8 vN; // stack - 0x200

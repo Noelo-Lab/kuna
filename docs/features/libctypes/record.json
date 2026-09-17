@@ -11,7 +11,7 @@
  "tier": "analysis",
  "source_decompiler": "ghidra",
  "inspiration": "Ghidra ApplyDataArchiveAnalyzer applying generic_clib_64.gdt, whose FILE */struct stat * slots carry the header's own pointee; signatures reduced from `gcc -aux-info` over the platform headers (_GNU_SOURCE + _FORTIFY_SOURCE=2); widths from sizeof/_Alignof",
- "values": "off|opaque",
+ "values": "off|opaque|glibc",
  "ablation_changed": 0,
  "parity": "OK",
  "table": {
@@ -863,5 +863,189 @@
   "worst_delta_pct": 1.64,
   "budget_pct": 5.0,
   "within_budget": true
+ },
+ "glibc": {
+  "what": "the third value: the PUBLISHED glibc x86-64 field layouts of the nine aggregates whose members are part of the platform's API -- FILE, stat, timespec, timeval, tm, passwd, group, option, dirent. `opaque` gives each named aggregate a real width and no members, so a field access renders `f->field_0x8` and the loaded value keeps whatever the cast said; `glibc` installs the real members, so the same access is `f->_IO_read_ptr` and the value takes the FIELD's type.",
+  "module": "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes/glibc.rs",
+  "provenance": "every offset/width/alignment measured on this machine with offsetof/sizeof/_Alignof against the installed headers (glibc 2.35, x86-64); the program and its output are in docs/features/libctypes/glibc.md. Nothing restated from memory.",
+  "target_gate": "installed only on an ELF for x86-64 whose .dynstr names glibc (the `libc.so.6` soname or a GLIBC_2.x symbol version). musl, another libc, another architecture and a statically linked image keep the opaque shells -- and a static image loses nothing, because these tables match IMPORTED names only.",
+  "laid_out": [
+   "FILE",
+   "stat",
+   "timespec",
+   "timeval",
+   "tm",
+   "passwd",
+   "group",
+   "option",
+   "dirent"
+  ],
+  "left_opaque": [
+   "DIR",
+   "sigaction",
+   "sigset_t",
+   "mbstate_t",
+   "termios",
+   "sockaddr",
+   "pthread_mutex_t"
+  ],
+  "table_rules": {
+   "no_self_reference": "_IO_FILE::_chain and _IO_FILE::_freeres_list are void *, not FILE *: completing a struct re-keys it into a new Rc, so a self-pointer taken while the shell is being filled would strand the program on two stream types.",
+   "nesting_depth": "one level: stat holds three timespecs by value and timespec holds no aggregate, so the recursive mint terminates by construction and dependent_order's definition-before-use walk stays finite. Unit-tested.",
+   "adoption_unchanged": "a definition already held of the declared width is adopted whole; no published layout is ever installed over somebody else's."
+  },
+  "witness": {
+   "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+   "func_addr": "0x2f30",
+   "opaque": "v6 = *(unsigned char **)&a0->field_0x8;  if (*(unsigned char **)&a0->field_0x10 <= v6)",
+   "glibc": "v6 = (unsigned char *)a0->_IO_read_ptr;  if (a0->_IO_read_end <= v6)",
+   "value_type": "on the stage fixture, `return *(unsigned long *)&a1->field_0x30; return 0xffffffffffffffff;` becomes `return a1->st_size; return -1;` -- st_size is a signed long, so the sentinel stops printing as an unsigned bit pattern"
+  },
+  "corpus_sweep": {
+   "binaries": 8,
+   "functions_changed": 111,
+   "ptrsub_functional_form": {
+    "opaque": 0,
+    "glibc": 0
+   },
+   "field_0x_accesses": {
+    "opaque": 483,
+    "glibc": 1
+   },
+   "field_0x_residue": "v2._36_4_ = *(unsigned int *)&a1->field_0x24 in findutils find -- the four padding bytes inside a copied struct tm, a hole in the published layout",
+   "undefined8_declarations": {
+    "opaque": 18,
+    "glibc": 2
+   },
+   "declarations": {
+    "opaque": 27196,
+    "glibc": 27207
+   },
+   "byvalue_named_aggregate_locals": {
+    "opaque": 74,
+    "glibc": 74
+   },
+   "piece_reads": {
+    "opaque": 688,
+    "glibc": 494
+   },
+   "hunk_classes": {
+    "field-name": 389,
+    "field-name-byvalue": 140,
+    "decl-type": 9,
+    "cast-or-literal": 4,
+    "unexplained": 0
+   },
+   "one_shape_that_looked_like_a_defect": "`*(unsigned int *)&v10[3] & 0xf000` -> `v10[3] & 0xf000` once the pointee goes long -> unsigned long. Pre-existing printer behaviour: on main, `uint8 *p` prints `p[3]` where `int8 *p` prints `*(uint4 *)&p[3]`.",
+   "artifact": "docs/features/libctypes/corpus-hunk-classification-glibc.txt"
+  },
+  "benchmark": {
+   "instrument": "scripts.decbench.typesweep (decbench main's TypeMatchMetric), DECBENCH_NO_CACHE=1, KUNA_BIN pinned to this branch's release build; base arm = the shipped default `opaque`, test arm = `--option libctypes glibc`",
+   "corpus": "results/full_run_address_2026-09-11, O0 + O2 + O2-noinline, 8 projects, 444 slices, 10748 scored functions",
+   "control": "baseline arm vs the tree's published type_match: 9505 agree / 1243 differ (88.44%, the tree was scored before this campaign's merges); 10590 functions hand the metric byte-identical variables[] and 0 of them score differently",
+   "pooled": {
+    "n": 10748,
+    "perfect_opaque": 959,
+    "perfect_glibc": 959,
+    "aggregate_opaque": 3037.05,
+    "aggregate_glibc": 3037.6,
+    "moved_onto_perfect": 0,
+    "moved_off_perfect": 0,
+    "improved": 9,
+    "worse": 3
+   },
+   "moved": [
+    {
+     "direction": "better",
+     "slice": "coreutils::O0::chroot",
+     "function": "main",
+     "base": 0.7308,
+     "test": 0.7692
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O0::od",
+     "function": "skip",
+     "base": 0.5,
+     "test": 0.625
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::cp",
+     "function": "copy_internal",
+     "base": 0.09,
+     "test": 0.13
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::od",
+     "function": "skip",
+     "base": 0.0,
+     "test": 0.125
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::ginstall",
+     "function": "install_file_in_file",
+     "base": 0.16,
+     "test": 0.2
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::ginstall",
+     "function": "copy_internal",
+     "base": 0.09,
+     "test": 0.13
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::mv",
+     "function": "copy_internal",
+     "base": 0.09,
+     "test": 0.13
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2-noinline::od",
+     "function": "skip",
+     "base": 0.0,
+     "test": 0.125
+    },
+    {
+     "direction": "better",
+     "slice": "gzip::O0::gzip",
+     "function": "streamsavedir",
+     "base": 0.5714,
+     "test": 0.6429
+    },
+    {
+     "direction": "worse",
+     "slice": "coreutils::O2-noinline::cp",
+     "function": "copy_internal",
+     "base": 0.1803,
+     "test": 0.1475
+    },
+    {
+     "direction": "worse",
+     "slice": "coreutils::O2-noinline::ginstall",
+     "function": "copy_internal",
+     "base": 0.1803,
+     "test": 0.1475
+    },
+    {
+     "direction": "worse",
+     "slice": "coreutils::O2-noinline::mv",
+     "function": "copy_internal",
+     "base": 0.1803,
+     "test": 0.1475
+    }
+   ],
+   "reading": "the metric is FLAT. The surface decbench scores is variables[] -- arguments and stack symbols -- and a field NAME changes neither; what it changes is the body and the type of a loaded value, and the register locals that carry those are never exported. +0.55 aggregate over 10748 functions is noise."
+  },
+  "default_decision": {
+   "value": "opaque (unchanged)",
+   "why": "two reasons, and the first is enough. (1) The metric is flat: 959 -> 959 perfect, +0.55 aggregate, 9 improved / 3 worse, so there is no measured case for moving the default. (2) The three worse rows are one source function -- coreutils copy_internal at -O2 -fno-inline, in cp/ginstall/mv -- where the completed layout lets a `stat *` vote reach three parameters whose ground truth is `char *`: `if (*a0 != '/')` becomes `if ((char)a0->st_dev != '/')`. A pointer to a struct outranks a pointer to char in the seed fold (SUB_PTR_STRUCT 4 < SUB_PTR 6) in BOTH arms; what the fields change is how far that vote travels. That is a small wrong answer the fieldless shell did not produce, and it is exactly the kind of judgement call the option model exists for.",
+   "flip_conditions": "a later flip wants the propagation reach bounded (or the copy_internal shape understood) and a typesweep that is positive rather than flat."
+  }
  }
 }
