@@ -1,0 +1,59 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--define-function",
+    "0x1405=stage1",
+    "--filter",
+    "^stage1$",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64",
+    "binary_sha256": "f899ab7509c55cc0c5e4e2f7b2e7f781ac1fb1aac6c4f7a2e27b4dba256e1c0a",
+    "binary_size": 14480,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64",
+    "selector": "0x1405",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "stage1"
+      },
+      {
+        "path": "functions[0].address_hex",
+        "op": "eq",
+        "value": "0x1405"
+      },
+      {
+        "path": "functions[0].aliases[0]",
+        "op": "eq",
+        "value": "main"
+      }
+    ]
+  },
+  "notes": "A name the user declares outranks one an analysis pass supplies. 0x1405 is the libc-start main of this stripped image, so the entry carries the analysis name `main` as well as the declared `stage1`, and `main` is shorter -- which is what the name ranking breaks ties on. The declaration wins anyway; `main` stays an alias."
+}

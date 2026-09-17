@@ -1303,6 +1303,21 @@ pub struct Architecture {
     /// anchored on the `bl` to the PLT stub named `__libc_start_main`. Off
     /// restores the previous inventory exactly.
     pub analysis_armlibcmain: bool,
+    /// (kuna) Name the ELF routine crt1 hands to `__libc_start_main` `main` and
+    /// declare it `int main(int argc, char **argv, char **envp)` (`elfmain`);
+    /// default **on**. Entry oracle 4 already decodes that address on x86-64,
+    /// AArch64, ARM and RISC-V, but seeds it address-only, so a stripped ELF
+    /// reports its own starting point as one more `sub_<addr>` with whatever
+    /// prototype reading its body alone produces — `unsigned long sub_26a0(int
+    /// a0,char **a1)` on a stripped `-O2` `fmt`, where the return type is a
+    /// guess (the value is consumed outside the image) and the two slots exist
+    /// only because this `main` happens to read them. The declaration is applied
+    /// LOCKED, so a body-driven parameter in a register past the third is not
+    /// kept. ELF only, refused on an image that names no
+    /// `__libc_start_main`, on an address that already carries a function symbol,
+    /// and on one whose image already spells a symbol `main`. Off restores the
+    /// `sub_<addr>` / width-only form exactly.
+    pub analysis_elfmain: bool,
     /// (kuna) Reject a discovered function entry that falls strictly inside a
     /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
     /// kuna's function symbols carry no extent, so every discovery oracle can
@@ -2301,6 +2316,7 @@ impl Architecture {
             analysis_entrymainproto: false,
             analysis_machomain: false,
             analysis_armlibcmain: false,
+            analysis_elfmain: false,
             analysis_strings: false,
             analysis_widestrings: false,
             analysis_entry_disc: false,
@@ -2581,6 +2597,8 @@ impl Architecture {
         self.analysis_machomain = true;
         // (kuna) non-PIE ARM crt1 `_start`->`main` recovery -- default-ON (DIV-132).
         self.analysis_armlibcmain = true;
+        // (kuna) ELF libc-start `main` naming + prototype -- default-ON.
+        self.analysis_elfmain = true;
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
@@ -3201,6 +3219,9 @@ impl Architecture {
             }
             "armlibcmain" => {
                 on_off!(analysis_armlibcmain, "non-PIE ARM crt1 _start->main recovery")
+            }
+            "elfmain" => {
+                on_off!(analysis_elfmain, "ELF libc-start main naming + prototype")
             }
             "eh_frame_full" => {
                 on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")

@@ -476,6 +476,12 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // is never discovered and the rest of `.text` is never decoded.  Default-ON;
     // off restores the previous inventory exactly.
     "armlibcmain",
+    // (kuna) ELF libc-start `main` naming + prototype: entry oracle 4 already
+    // decodes the value crt1 hands `__libc_start_main`, but address-only, so a
+    // stripped ELF reports its own starting point as one more `sub_<addr>` with
+    // whatever prototype reading its body alone produces.  Default-ON; off
+    // restores the `sub_<addr>` / width-only form exactly.
+    "elfmain",
     // (kuna) `.eh_frame` LSDA landing-pad discovery — a sub-feature of the
     // always-on `entry_disc` pass (GccExceptionAnalyzer). Default-off
     // (output-changing: adds the discovered exception landing pads as entries).

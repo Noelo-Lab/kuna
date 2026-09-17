@@ -1,0 +1,57 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--addr",
+    "0x1405",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64",
+    "binary_sha256": "f899ab7509c55cc0c5e4e2f7b2e7f781ac1fb1aac6c4f7a2e27b4dba256e1c0a",
+    "binary_size": 14480,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64",
+    "selector": "0x1405",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "main"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "int main(int argc,char **argv,char **envp)"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "sub_1405"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "sub_1357(argv[1])"
+      }
+    ]
+  },
+  "notes": "Acceptance of elfmain on the in-repo stripped PIE fixture: crt1 hands main to __libc_start_main as `lea rdi,[rip+0x286]`, which entry oracle 4 already decoded to 0x1405. Before: `unsigned long sub_1405(int a0,unsigned long *a1)`. The third parameter is declared because the park is locked and two would delete a live envp. The last clause pins the element type reaching a call site."
+}

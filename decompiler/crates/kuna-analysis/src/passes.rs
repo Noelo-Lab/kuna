@@ -155,6 +155,20 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // After EntryDiscoveryPass, whose commit consults the `entry_names`
         // overlay this pass writes.
         Box::new(crate::entry::kuna_armlibcmain::ArmLibcMainPass),
+        // (kuna `elfmain`) S1 ELF libc-start `main` naming + prototype: entry
+        // oracle 4 already decodes the value crt1 hands `__libc_start_main`, but
+        // address-only, so a stripped ELF reports its own starting point as one
+        // more `sub_<addr>` with whatever prototype reading its body alone
+        // produces. This pass applies the two things the C runtime's contract
+        // states about that address -- the name `main` and the declaration
+        // `int main(int argc, char **argv, char **envp)`. Registered always
+        // (the pass self-gates on an ELF that names `__libc_start_main` whose
+        // recovered `main` is unnamed, so it emits nothing anywhere else),
+        // COMMIT gated by `--option elfmain on|off` via
+        // `engine.rs::analysis_pass_enabled`. After
+        // ArmLibcMainPass, whose entry + name it parks the prototype on for the
+        // non-PIE ARM32 shape oracle 4 cannot see.
+        Box::new(crate::entry::kuna_elfmain::ElfMainPass),
         // S1 widened ARM Cortex-M vector-table discovery (`cortexmvectors`): the
         // reset/exception handler seeds and the whole-image Thumb region paint of a
         // hardware vector table the always-on oracle 6 signature rejects (an A-only

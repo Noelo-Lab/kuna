@@ -1,0 +1,20 @@
+# kuna decompile-all, --option elfmain on vs off, over real STRIPPED decbench binaries
+# (the in-repo fixture sweep is one directory up; this is the same command on images
+#  whose main is a few hundred lines rather than a few statements)
+#
+# NO function other than main and the _start that passes it to __libc_start_main
+# changes in any of these images -- every changed line was attributed back to its
+# enclosing function.
+#
+# control= compares this branch's OFF arm against the base-commit binary (809712e9)
+# on the same image: IDENTICAL means the branch changes nothing outside the gate.
+#
+# binary	changed lines	functions changed	control
+CHANGED	O0_grep_grep	lines=682	main @0xa7d1 (680) + the _start call argument (2)	control=IDENTICAL
+CHANGED	O2_tar_tar	lines=496	main @0xa9f0 (494) + the _start call argument (2)	control=IDENTICAL
+CHANGED	O2-noinline_diffutils_cmp	lines=112	main @0x2940 (110) + the _start call argument (2)	control=IDENTICAL
+CHANGED	O2_gzip_gzip	lines=24	main @0x39a0 (22) + the _start call argument (2)	control=IDENTICAL
+CHANGED	O0_coreutils_ls	lines=18	main @0x6882 (16) + the _start call argument (2)	control=IDENTICAL
+CHANGED	O2_findutils_find	lines=42	main @0x7240 (40) + the _start call argument (2)	control=IDENTICAL
+CHANGED	O0_dash_dash	lines=8	main @0xfd15 (6) + the _start call argument (2)	control=IDENTICAL
+CHANGED	O2_coreutils_fmt	lines=92	main @0x26a0 (90) + the _start call argument (2)	control=IDENTICAL

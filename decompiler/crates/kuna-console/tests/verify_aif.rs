@@ -26,7 +26,7 @@
 //!    `main` calls it via `call *reg` with a volatile (unfoldable) index.
 //!
 //! So entry discovery + funcsyms + the recursive-descent Listing walk all MISS it:
-//! `main` (`sub_13c9`) renders the call as `(**(code **)(...0x3df0))(...)` (the
+//! `main` (`0x13c9`) renders the call as `(**(code **)(...0x3df0))(...)` (the
 //! target unresolved), and `0x13ae` stays an UNDEFINED gap between the last
 //! directly-called handler and `main` (`0x13c9`).
 //!
@@ -292,12 +292,14 @@ fn flags_off_does_not_discover_the_gap_function() {
         "default (AIF off) must not register the gap function {HIDDEN_FN}"
     );
     // The directly-called handlers are still discovered (entry/CALL reachability),
-    // and `main` (sub_13c9) still decompiles, with the indirect call unresolved.
-    let main_body = decompile(off, "sub_13c9");
-    eprintln!("---- main / sub_13c9 (AIF off / default) ----\n{main_body}");
+    // and `main` (0x13c9, the address crt1 hands `__libc_start_main`) still
+    // decompiles, with the indirect call unresolved.
+    let main_body = decompile(off, "main");
+    eprintln!("---- main @0x13c9 (AIF off / default) ----\n{main_body}");
     assert!(
-        main_body.contains("sub_13c9"),
-        "default main body must name sub_13c9:\n{main_body}"
+        main_body.contains("(**(code **)") && main_body.contains("0x3df0"),
+        "default main must still render the call through the 0x3df0 table as an \
+         unresolved (code **) deref:\n{main_body}"
     );
     // The hidden function is NOT named in the default main body (the indirect call
     // resolves to a `(code **)` deref, not a `sub_13ae(` call).

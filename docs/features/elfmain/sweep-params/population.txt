@@ -1,0 +1,777 @@
+# Per-image rows from the same sweep (775 stripped ELFs). Columns: class, image, main addr, body-driven parameter count.
+# LE3 = at most three; GT3 = more than three (the class the lock touches); NOMAIN = this pass names no main there.
+GT3	O2/coreutils/stripped/false	0x2540	4	-
+GT3	O2/coreutils/stripped/stty	0x37c0	6	v30 // r9
+GT3	O2/coreutils/stripped/true	0x2540	4	-
+GT3	O2-noinline/coreutils/stripped/false	0x2580	4	-
+GT3	O2-noinline/coreutils/stripped/stty	0x3800	6	v24 // r9
+GT3	O2-noinline/coreutils/stripped/true	0x2580	4	-
+GT3	O2-noinline/openssh-portable/stripped/sftp	0x5250	5	v10 // rdx;v23 // r8
+GT3	O2-noinline/openssh-portable/stripped/ssh	0xcdf0	6	v17 // rdx;v18 // rdx
+GT3	O2-noinline/openssh-portable/stripped/ssh-add	0x81a0	5	-
+GT3	O2-noinline/openssh-portable/stripped/ssh-agent	0x82e0	5	v12 // rdx;v21 // r8;v22 // r11
+GT3	O2-noinline/openssh-portable/stripped/ssh-keygen	0x9b20	6	v28 // rdx;v43 // r11
+GT3	O2-noinline/openssh-portable/stripped/ssh-pkcs11-helper	0x8420	6	v11 // r8;v12 // r9
+GT3	O2-noinline/shadow/stripped/login	0x3d20	6	v18 // r9
+GT3	O2-noinline/shadow/stripped/newusers	0x5080	6	-
+GT3	O2-noinline/shadow/stripped/usermod	0x6340	4	-
+GT3	O2/openssh-portable/stripped/sftp	0x5250	5	v10 // rdx;v23 // r8
+GT3	O2/openssh-portable/stripped/ssh	0xcdd0	6	v24 // rdx;v25 // rdx;v26 // rdx;v57 // r10
+GT3	O2/openssh-portable/stripped/ssh-add	0x81a0	6	v18 // rdx;v19 // rdx
+GT3	O2/openssh-portable/stripped/ssh-agent	0x82e0	4	v33 // r10;v34 // r11
+GT3	O2/openssh-portable/stripped/sshd	0xd000	6	v30 // rdx;v31 // rdx;v33 // rdx
+GT3	O2/openssh-portable/stripped/ssh-keygen	0x9b20	6	v31 // rdx
+GT3	O2/openssh-portable/stripped/ssh-keysign	0xa350	5	v10 // rdx;v11 // rdx;v33 // r8
+GT3	O2/openssh-portable/stripped/ssh-pkcs11-helper	0x8420	5	-
+GT3	O2/shadow/stripped/login	0x3d20	6	v22 // r9
+GT3	O2/shadow/stripped/newgrp	0x3a20	4	v21 // rcx
+GT3	O2/shadow/stripped/newusers	0x5080	6	-
+GT3	O2/shadow/stripped/usermod	0x6340	6	-
+LE3	O0/base-passwd/stripped/update-passwd	0x5733	2
+LE3	O0/bash/stripped/bash	0x31d09	3
+LE3	O0/bash/stripped/bashversion	0x125d	2
+LE3	O0/bash/stripped/man2html	0xdac7	2
+LE3	O0/bash/stripped/mkbuiltins	0x3449	2
+LE3	O0/bash/stripped/mksignames	0x1325	2
+LE3	O0/bash/stripped/mksyntax	0x19f7	2
+LE3	O0/bash/stripped/psize.aux	0x11e6	0
+LE3	O0/bzip2/stripped/bzip2	0x5a76	2
+LE3	O0/bzip2/stripped/bzip2recover	0x1930	2
+LE3	O0/coreutils/stripped/[	0x4d5f	2
+LE3	O0/coreutils/stripped/basename	0x2bdd	2
+LE3	O0/coreutils/stripped/cat	0x36b2	2
+LE3	O0/coreutils/stripped/chcon	0x3b73	2
+LE3	O0/coreutils/stripped/chgrp	0x2f33	2
+LE3	O0/coreutils/stripped/chmod	0x37b8	2
+LE3	O0/coreutils/stripped/chown	0x2ed1	2
+LE3	O0/coreutils/stripped/chroot	0x30db	2
+LE3	O0/coreutils/stripped/cksum	0x5a96	2
+LE3	O0/coreutils/stripped/comm	0x3994	2
+LE3	O0/coreutils/stripped/cp	0x6276	2
+LE3	O0/coreutils/stripped/csplit	0x5130	2
+LE3	O0/coreutils/stripped/cut	0x3514	2
+LE3	O0/coreutils/stripped/date	0x4402	2
+LE3	O0/coreutils/stripped/dd	0x732a	2
+LE3	O0/coreutils/stripped/df	0x7385	2
+LE3	O0/coreutils/stripped/dir	0x6882	2
+LE3	O0/coreutils/stripped/dircolors	0x379f	2
+LE3	O0/coreutils/stripped/dirname	0x2a8f	2
+LE3	O0/coreutils/stripped/du	0x5197	2
+LE3	O0/coreutils/stripped/echo	0x2b69	2
+LE3	O0/coreutils/stripped/env	0x4433	2
+LE3	O0/coreutils/stripped/expand	0x2db7	2
+LE3	O0/coreutils/stripped/expr	0x32c7	2
+LE3	O0/coreutils/stripped/factor	0x7e17	2
+LE3	O0/coreutils/stripped/false	0x29cc	2
+LE3	O0/coreutils/stripped/fmt	0x2bde	2
+LE3	O0/coreutils/stripped/fold	0x305a	2
+LE3	O0/coreutils/stripped/getlimits	0x2ca6	2
+LE3	O0/coreutils/stripped/ginstall	0x6f4b	2
+LE3	O0/coreutils/stripped/groups	0x2b70	2
+LE3	O0/coreutils/stripped/head	0x49e5	2
+LE3	O0/coreutils/stripped/hostid	0x29ec	2
+LE3	O0/coreutils/stripped/id	0x2cee	2
+LE3	O0/coreutils/stripped/join	0x4768	2
+LE3	O0/coreutils/stripped/kill	0x2fb7	2
+LE3	O0/coreutils/stripped/link	0x2a1c	2
+LE3	O0/coreutils/stripped/ln	0x3b8d	2
+LE3	O0/coreutils/stripped/logname	0x2a30	2
+LE3	O0/coreutils/stripped/ls	0x6882	2
+LE3	O0/coreutils/stripped/make-prime-list	0x195d	2
+LE3	O0/coreutils/stripped/mkdir	0x451e	2
+LE3	O0/coreutils/stripped/mkfifo	0x3032	2
+LE3	O0/coreutils/stripped/mknod	0x311d	2
+LE3	O0/coreutils/stripped/mktemp	0x2d50	2
+LE3	O0/coreutils/stripped/mv	0x49a5	2
+LE3	O0/coreutils/stripped/nice	0x2b76	2
+LE3	O0/coreutils/stripped/nl	0x3422	2
+LE3	O0/coreutils/stripped/nohup	0x2ba4	2
+LE3	O0/coreutils/stripped/nproc	0x2b11	2
+LE3	O0/coreutils/stripped/numfmt	0x53f8	2
+LE3	O0/coreutils/stripped/od	0x5ced	2
+LE3	O0/coreutils/stripped/paste	0x3576	2
+LE3	O0/coreutils/stripped/pathchk	0x2a70	2
+LE3	O0/coreutils/stripped/pinky	0x3da2	2
+LE3	O0/coreutils/stripped/pr	0x2f8b	2
+LE3	O0/coreutils/stripped/printenv	0x2a52	2
+LE3	O0/coreutils/stripped/printf	0x4271	2
+LE3	O0/coreutils/stripped/ptx	0x5db3	2
+LE3	O0/coreutils/stripped/pwd	0x36ee	2
+LE3	O0/coreutils/stripped/readlink	0x2b72	2
+LE3	O0/coreutils/stripped/realpath	0x2e70	2
+LE3	O0/coreutils/stripped/rm	0x2fcf	2
+LE3	O0/coreutils/stripped/rmdir	0x2f1a	2
+LE3	O0/coreutils/stripped/runcon	0x2c93	2
+LE3	O0/coreutils/stripped/seq	0x3e13	2
+LE3	O0/coreutils/stripped/shred	0x4cb7	2
+LE3	O0/coreutils/stripped/shuf	0x3726	2
+LE3	O0/coreutils/stripped/sleep	0x2b08	2
+LE3	O0/coreutils/stripped/sort	0xda8d	2
+LE3	O0/coreutils/stripped/split	0x5ba3	2
+LE3	O0/coreutils/stripped/stat	0x7c77	2
+LE3	O0/coreutils/stripped/stdbuf	0x32fe	2
+LE3	O0/coreutils/stripped/stty	0x51e2	2
+LE3	O0/coreutils/stripped/sync	0x2d56	2
+LE3	O0/coreutils/stripped/tac	0x3c57	2
+LE3	O0/coreutils/stripped/tail	0x9a14	2
+LE3	O0/coreutils/stripped/tee	0x2ba0	2
+LE3	O0/coreutils/stripped/test	0x4d5f	2
+LE3	O0/coreutils/stripped/timeout	0x3740	2
+LE3	O0/coreutils/stripped/touch	0x41f5	2
+LE3	O0/coreutils/stripped/tr	0x54af	2
+LE3	O0/coreutils/stripped/true	0x29cc	2
+LE3	O0/coreutils/stripped/truncate	0x30fe	2
+LE3	O0/coreutils/stripped/tsort	0x3769	2
+LE3	O0/coreutils/stripped/tty	0x2a69	2
+LE3	O0/coreutils/stripped/unexpand	0x2eca	2
+LE3	O0/coreutils/stripped/uniq	0x3785	2
+LE3	O0/coreutils/stripped/unlink	0x2a1c	2
+LE3	O0/coreutils/stripped/uptime	0x3347	2
+LE3	O0/coreutils/stripped/users	0x2d56	2
+LE3	O0/coreutils/stripped/vdir	0x6882	2
+LE3	O0/coreutils/stripped/wc	0x4670	2
+LE3	O0/coreutils/stripped/who	0x4210	2
+LE3	O0/coreutils/stripped/whoami	0x2a50	2
+LE3	O0/coreutils/stripped/yes	0x2a2a	2
+LE3	O0/cronie/stripped/crond	0x41bd	2
+LE3	O0/cronie/stripped/cronnext	0x36cf	2
+LE3	O0/cronie/stripped/crontab	0x3f1c	2
+LE3	O0/dash/stripped/dash	0xfd15	2
+LE3	O0/diffutils/stripped/cmp	0x2d6d	2
+LE3	O0/diffutils/stripped/diff	0x8f2f	2
+LE3	O0/diffutils/stripped/diff3	0x2b67	2
+LE3	O0/diffutils/stripped/sdiff	0x4573	2
+LE3	O0/dpkg/stripped/dpkg	0x1689e	2
+LE3	O0/dpkg/stripped/dpkg-divert	0x6cad	2
+LE3	O0/dpkg/stripped/dpkg-query	0x7045	2
+LE3	O0/dpkg/stripped/dpkg-statoverride	0x5284	2
+LE3	O0/dpkg/stripped/dpkg-trigger	0x40f4	2
+LE3	O0/e2fsprogs/stripped/e2fsck	0x1ad8a	2
+LE3	O0/findutils/stripped/find	0x88ed	2
+LE3	O0/gnutls/stripped/certtool	0xd2a5	2
+LE3	O0/gnutls/stripped/dumpcfg	0x1f89	2
+LE3	O0/gnutls/stripped/gnutls-cli	0xc048	2
+LE3	O0/gnutls/stripped/gnutls-cli-debug	0x8d23	2
+LE3	O0/gnutls/stripped/gnutls-serv	0xa9ab	2
+LE3	O0/gnutls/stripped/ocsptool	0x9b3b	2
+LE3	O0/gnutls/stripped/psktool	0x25e9	2
+LE3	O0/gnutls/stripped/srptool	0x368f	2
+LE3	O0/gnutls/stripped/systemkey	0x929b	2
+LE3	O0/grep/stripped/grep	0xa7d1	2
+LE3	O0/gzip/stripped/gzip	0x5249	2
+LE3	O0/iproute2/stripped/rtmon	0x6de7	2
+LE3	O0/kmod/stripped/kmod	0x5225	2
+LE3	O0/libacl/stripped/chacl	0x1701	2
+LE3	O0/libacl/stripped/getfacl	0x3af9	2
+LE3	O0/libacl/stripped/setfacl	0x5e1e	2
+LE3	O0/libexpat/stripped/xmlwf	0x4a58	2
+LE3	O0/mirai/stripped/mirai	0x8866	2
+LE3	O0/openssh-portable/stripped/scp	0x60c6	2
+LE3	O0/openssh-portable/stripped/sftp	0xc1ed	2
+LE3	O0/openssh-portable/stripped/sftp-server	0x102db	2
+LE3	O0/openssh-portable/stripped/ssh	0xee0a	2
+LE3	O0/openssh-portable/stripped/ssh-add	0xb180	2
+LE3	O0/openssh-portable/stripped/ssh-agent	0x10e02	2
+LE3	O0/openssh-portable/stripped/sshd	0x121e2	2
+LE3	O0/openssh-portable/stripped/ssh-keygen	0x18e72	2
+LE3	O0/openssh-portable/stripped/ssh-keyscan	0xc0ea	2
+LE3	O0/openssh-portable/stripped/ssh-keysign	0xace2	0
+LE3	O0/openssh-portable/stripped/ssh-pkcs11-helper	0x9aa8	2
+LE3	O0/openssh-portable/stripped/ssh-sk-helper	0x8402	2
+LE3	O0/rsyslog/stripped/rsyslogd	0x1b5c1	2
+LE3	O0/shadow/stripped/chage	0x6853	2
+LE3	O0/shadow/stripped/check_subid_range	0x2aa9	2
+LE3	O0/shadow/stripped/chfn	0x5301	2
+LE3	O0/shadow/stripped/chgpasswd	0x4851	2
+LE3	O0/shadow/stripped/chpasswd	0x4a94	2
+LE3	O0/shadow/stripped/chsh	0x4a1f	2
+LE3	O0/shadow/stripped/expiry	0x2a93	2
+LE3	O0/shadow/stripped/faillog	0x369b	2
+LE3	O0/shadow/stripped/free_subid_range	0x127e	2
+LE3	O0/shadow/stripped/get_subid_owners	0x12dc	2
+LE3	O0/shadow/stripped/getsubids	0x129c	2
+LE3	O0/shadow/stripped/gpasswd	0x5f0e	2
+LE3	O0/shadow/stripped/groupadd	0x5e52	2
+LE3	O0/shadow/stripped/groupdel	0x490f	2
+LE3	O0/shadow/stripped/groupmems	0x5374	2
+LE3	O0/shadow/stripped/groupmod	0x695f	2
+LE3	O0/shadow/stripped/groups	0x15e9	2
+LE3	O0/shadow/stripped/grpck	0x55ec	2
+LE3	O0/shadow/stripped/grpconv	0x3f10	2
+LE3	O0/shadow/stripped/grpunconv	0x3f10	2
+LE3	O0/shadow/stripped/id	0x13e1	2
+LE3	O0/shadow/stripped/lastlog	0x3164	2
+LE3	O0/shadow/stripped/login	0x45ba	2
+LE3	O0/shadow/stripped/logoutd	0x2902	2
+LE3	O0/shadow/stripped/newgidmap	0x417f	2
+LE3	O0/shadow/stripped/newgrp	0x4550	2
+LE3	O0/shadow/stripped/new_subid_range	0x12da	2
+LE3	O0/shadow/stripped/newuidmap	0x3e36	2
+LE3	O0/shadow/stripped/newusers	0x7152	2
+LE3	O0/shadow/stripped/nologin	0x1229	0
+LE3	O0/shadow/stripped/passwd	0x4f07	2
+LE3	O0/shadow/stripped/pwconv	0x3f90	2
+LE3	O0/shadow/stripped/pwunconv	0x3f10	2
+LE3	O0/shadow/stripped/su	0x5af8	2
+LE3	O0/shadow/stripped/sulogin	0x26e2	2
+LE3	O0/shadow/stripped/useradd	0xcad6	2
+LE3	O0/shadow/stripped/userdel	0x79f8	2
+LE3	O0/shadow/stripped/usermod	0xbfcc	2
+LE3	O0/sysvinit/stripped/bootlogd	0x37f7	2
+LE3	O0/sysvinit/stripped/fstab-decode	0x131a	2
+LE3	O0/sysvinit/stripped/halt	0x2ab5	2
+LE3	O0/sysvinit/stripped/init	0xa9eb	2
+LE3	O0/sysvinit/stripped/killall5	0x4fb3	2
+LE3	O0/sysvinit/stripped/last	0x3a55	2
+LE3	O0/sysvinit/stripped/logsave	0x1c44	2
+LE3	O0/sysvinit/stripped/readbootlog	0x152e	2
+LE3	O0/sysvinit/stripped/runlevel	0x1289	2
+LE3	O0/sysvinit/stripped/shutdown	0x39b7	2
+LE3	O0/sysvinit/stripped/sulogin	0x468f	2
+LE3	O0/sysvinit/stripped/wall	0x2729	2
+LE3	O0/tar/stripped/tar	0x39948	2
+LE3	O0/zlib/stripped/example	0x2cc4	2
+LE3	O0/zlib/stripped/example64	0x2cc4	2
+LE3	O0/zlib/stripped/examplesh	0x2e44	2
+LE3	O0/zlib/stripped/minigzip	0x1b74	2
+LE3	O0/zlib/stripped/minigzip64	0x1b74	2
+LE3	O0/zlib/stripped/minigzipsh	0x1a74	2
+LE3	O2/base-passwd/stripped/update-passwd	0x2500	2
+LE3	O2/bash/stripped/bash	0x31ca0	3
+LE3	O2/bash/stripped/bashversion	0x1140	2
+LE3	O2/bash/stripped/man2html	0x3440	2
+LE3	O2/bash/stripped/mkbuiltins	0x3390	2
+LE3	O2/bash/stripped/mksignames	0x1120	2
+LE3	O2/bash/stripped/mksyntax	0x11c0	2
+LE3	O2/bash/stripped/psize.aux	0x10c0	0
+LE3	O2/bzip2/stripped/bzip2	0x2500	2
+LE3	O2/bzip2/stripped/bzip2recover	0x1260	2
+LE3	O2/coreutils/stripped/[	0x2660	2
+LE3	O2/coreutils/stripped/basename	0x2580	2
+LE3	O2/coreutils/stripped/cat	0x26e0	2
+LE3	O2/coreutils/stripped/chcon	0x2a30	2
+LE3	O2/coreutils/stripped/chgrp	0x28d0	2
+LE3	O2/coreutils/stripped/chmod	0x27b0	2
+LE3	O2/coreutils/stripped/chown	0x2910	2
+LE3	O2/coreutils/stripped/chroot	0x2800	2
+LE3	O2/coreutils/stripped/cksum	0x3b00	2
+LE3	O2/coreutils/stripped/comm	0x2660	2
+LE3	O2/coreutils/stripped/cp	0x4050	2
+LE3	O2/coreutils/stripped/csplit	0x28a0	2
+LE3	O2/coreutils/stripped/cut	0x2740	2
+LE3	O2/coreutils/stripped/date	0x38a0	2
+LE3	O2/coreutils/stripped/dd	0x29a0	2
+LE3	O2/coreutils/stripped/df	0x3b60	2
+LE3	O2/coreutils/stripped/dir	0x4d10	2
+LE3	O2/coreutils/stripped/dircolors	0x2660	2
+LE3	O2/coreutils/stripped/dirname	0x25a0	2
+LE3	O2/coreutils/stripped/du	0x3c50	2
+LE3	O2/coreutils/stripped/echo	0x25a0	2
+LE3	O2/coreutils/stripped/env	0x2820	2
+LE3	O2/coreutils/stripped/expand	0x2640	2
+LE3	O2/coreutils/stripped/expr	0x27a0	2
+LE3	O2/coreutils/stripped/factor	0x2b00	2
+LE3	O2/coreutils/stripped/fmt	0x26a0	2
+LE3	O2/coreutils/stripped/fold	0x26a0	2
+LE3	O2/coreutils/stripped/getlimits	0x2620	2
+LE3	O2/coreutils/stripped/ginstall	0x5290	2
+LE3	O2/coreutils/stripped/groups	0x2680	2
+LE3	O2/coreutils/stripped/head	0x26e0	2
+LE3	O2/coreutils/stripped/hostid	0x2580	2
+LE3	O2/coreutils/stripped/id	0x27c0	2
+LE3	O2/coreutils/stripped/ln	0x2980	2
+LE3	O2/coreutils/stripped/ls	0x4d10	2
+LE3	O2/coreutils/stripped/make-prime-list	0x11e0	2
+LE3	O2/coreutils/stripped/mkdir	0x3c90	2
+LE3	O2/coreutils/stripped/mktemp	0x26e0	2
+LE3	O2/coreutils/stripped/mv	0x4050	2
+LE3	O2/coreutils/stripped/nl	0x2700	2
+LE3	O2/coreutils/stripped/nohup	0x26a0	2
+LE3	O2/coreutils/stripped/nproc	0x2660	2
+LE3	O2/coreutils/stripped/numfmt	0x27e0	2
+LE3	O2/coreutils/stripped/od	0x27c0	2
+LE3	O2/coreutils/stripped/paste	0x2620	2
+LE3	O2/coreutils/stripped/pathchk	0x25e0	2
+LE3	O2/coreutils/stripped/pinky	0x2840	2
+LE3	O2/coreutils/stripped/pr	0x28c0	2
+LE3	O2/coreutils/stripped/printenv	0x2580	2
+LE3	O2/coreutils/stripped/printf	0x2700	2
+LE3	O2/coreutils/stripped/ptx	0x29c0	2
+LE3	O2/coreutils/stripped/pwd	0x2700	2
+LE3	O2/coreutils/stripped/readlink	0x2680	2
+LE3	O2/coreutils/stripped/realpath	0x2680	2
+LE3	O2/coreutils/stripped/rm	0x2870	2
+LE3	O2/coreutils/stripped/rmdir	0x26c0	2
+LE3	O2/coreutils/stripped/runcon	0x27a0	2
+LE3	O2/coreutils/stripped/seq	0x2720	2
+LE3	O2/coreutils/stripped/shred	0x29c0	2
+LE3	O2/coreutils/stripped/shuf	0x2830	2
+LE3	O2/coreutils/stripped/sleep	0x2600	2
+LE3	O2/coreutils/stripped/sort	0x3ec0	2
+LE3	O2/coreutils/stripped/split	0x29e0	2
+LE3	O2/coreutils/stripped/stat	0x2b20	2
+LE3	O2/coreutils/stripped/stdbuf	0x2700	2
+LE3	O2/coreutils/stripped/sync	0x2640	2
+LE3	O2/coreutils/stripped/tac	0x27a0	2
+LE3	O2/coreutils/stripped/tail	0x2960	2
+LE3	O2/coreutils/stripped/tee	0x26c0	2
+LE3	O2/coreutils/stripped/test	0x2660	2
+LE3	O2/coreutils/stripped/timeout	0x28c0	2
+LE3	O2/coreutils/stripped/touch	0x38e0	2
+LE3	O2/coreutils/stripped/tr	0x26c0	2
+LE3	O2/coreutils/stripped/truncate	0x2660	2
+LE3	O2/coreutils/stripped/tsort	0x2660	2
+LE3	O2/coreutils/stripped/tty	0x25c0	2
+LE3	O2/coreutils/stripped/unexpand	0x2660	2
+LE3	O2/coreutils/stripped/uniq	0x2720	2
+LE3	O2/coreutils/stripped/uptime	0x2880	2
+LE3	O2/coreutils/stripped/users	0x2660	2
+LE3	O2/coreutils/stripped/vdir	0x4d10	2
+LE3	O2/coreutils/stripped/wc	0x2860	2
+LE3	O2/coreutils/stripped/who	0x2800	2
+LE3	O2/coreutils/stripped/yes	0x2580	2
+LE3	O2/cronie/stripped/crond	0x3da0	2
+LE3	O2/cronie/stripped/cronnext	0x2940	2
+LE3	O2/cronie/stripped/crontab	0x3bc0	2
+LE3	O2/dash/stripped/dash	0x4a60	2
+LE3	O2/diffutils/stripped/cmp	0x2900	2
+LE3	O2/diffutils/stripped/diff	0x4f20	2
+LE3	O2/diffutils/stripped/diff3	0x2a20	2
+LE3	O2/diffutils/stripped/sdiff	0x3b00	2
+LE3	O2/dpkg/stripped/dpkg	0x82d0	2
+LE3	O2/dpkg/stripped/dpkg-divert	0x4e30	2
+LE3	O2/dpkg/stripped/dpkg-query	0x4ef0	2
+LE3	O2/dpkg/stripped/dpkg-statoverride	0x3b90	2
+LE3	O2/dpkg/stripped/dpkg-trigger	0x3b70	2
+LE3	O2/e2fsprogs/stripped/e2fsck	0x165b0	2
+LE3	O2/findutils/stripped/find	0x7240	2
+LE3	O2/gnutls/stripped/certtool	0xd040	2
+LE3	O2/gnutls/stripped/dumpcfg	0x11e0	2
+LE3	O2/gnutls/stripped/gnutls-cli	0x9620	2
+LE3	O2/gnutls/stripped/gnutls-cli-debug	0x8ae0	2
+LE3	O2/gnutls/stripped/gnutls-serv	0x7e20	2
+LE3	O2/gnutls/stripped/psktool	0x2500	2
+LE3	O2/gnutls/stripped/srptool	0x25c0	2
+LE3	O2/gnutls/stripped/systemkey	0xa160	2
+LE3	O2/grep/stripped/grep	0x4ff0	2
+LE3	O2/gzip/stripped/gzip	0x39a0	2
+LE3	O2/iproute2/stripped/ip	0xf390	2
+LE3	O2/iproute2/stripped/rtmon	0x6a60	2
+LE3	O2/kmod/stripped/kmod	0x3ce0	2
+LE3	O2/libacl/stripped/chacl	0x1440	2
+LE3	O2/libacl/stripped/getfacl	0x2680	2
+LE3	O2/libacl/stripped/setfacl	0x2920	2
+LE3	O2/mirai/stripped/mirai	0x2670	2
+LE3	O2-noinline/base-passwd/stripped/update-passwd	0x2500	2
+LE3	O2-noinline/bash/stripped/bash	0x31cd0	3
+LE3	O2-noinline/bash/stripped/bashversion	0x1140	2
+LE3	O2-noinline/bash/stripped/man2html	0x3400	2
+LE3	O2-noinline/bash/stripped/mkbuiltins	0x3360	2
+LE3	O2-noinline/bash/stripped/mksignames	0x1120	2
+LE3	O2-noinline/bash/stripped/mksyntax	0x11c0	2
+LE3	O2-noinline/bash/stripped/psize.aux	0x10c0	0
+LE3	O2-noinline/bzip2/stripped/bzip2	0x2500	2
+LE3	O2-noinline/bzip2/stripped/bzip2recover	0x1260	2
+LE3	O2-noinline/coreutils/stripped/[	0x26a0	2
+LE3	O2-noinline/coreutils/stripped/basename	0x25c0	2
+LE3	O2-noinline/coreutils/stripped/cat	0x2720	2
+LE3	O2-noinline/coreutils/stripped/chcon	0x2a70	2
+LE3	O2-noinline/coreutils/stripped/chgrp	0x2910	2
+LE3	O2-noinline/coreutils/stripped/chmod	0x27f0	2
+LE3	O2-noinline/coreutils/stripped/chown	0x2950	2
+LE3	O2-noinline/coreutils/stripped/chroot	0x2840	2
+LE3	O2-noinline/coreutils/stripped/cksum	0x3b80	2
+LE3	O2-noinline/coreutils/stripped/comm	0x26c0	2
+LE3	O2-noinline/coreutils/stripped/cp	0x40b0	2
+LE3	O2-noinline/coreutils/stripped/csplit	0x28e0	2
+LE3	O2-noinline/coreutils/stripped/cut	0x27a0	2
+LE3	O2-noinline/coreutils/stripped/date	0x3900	2
+LE3	O2-noinline/coreutils/stripped/dd	0x2a00	2
+LE3	O2-noinline/coreutils/stripped/df	0x3be0	2
+LE3	O2-noinline/coreutils/stripped/dir	0x4dd0	2
+LE3	O2-noinline/coreutils/stripped/dircolors	0x26a0	2
+LE3	O2-noinline/coreutils/stripped/dirname	0x25e0	2
+LE3	O2-noinline/coreutils/stripped/du	0x3cd0	2
+LE3	O2-noinline/coreutils/stripped/echo	0x25e0	2
+LE3	O2-noinline/coreutils/stripped/expand	0x2680	2
+LE3	O2-noinline/coreutils/stripped/expr	0x2820	2
+LE3	O2-noinline/coreutils/stripped/factor	0x2b40	2
+LE3	O2-noinline/coreutils/stripped/fmt	0x26e0	2
+LE3	O2-noinline/coreutils/stripped/fold	0x26e0	2
+LE3	O2-noinline/coreutils/stripped/getlimits	0x2660	2
+LE3	O2-noinline/coreutils/stripped/ginstall	0x5310	2
+LE3	O2-noinline/coreutils/stripped/groups	0x26c0	2
+LE3	O2-noinline/coreutils/stripped/head	0x2720	2
+LE3	O2-noinline/coreutils/stripped/hostid	0x25c0	2
+LE3	O2-noinline/coreutils/stripped/id	0x2800	2
+LE3	O2-noinline/coreutils/stripped/kill	0x26e0	2
+LE3	O2-noinline/coreutils/stripped/ln	0x29c0	2
+LE3	O2-noinline/coreutils/stripped/ls	0x4dd0	2
+LE3	O2-noinline/coreutils/stripped/make-prime-list	0x11e0	2
+LE3	O2-noinline/coreutils/stripped/mkdir	0x3cd0	2
+LE3	O2-noinline/coreutils/stripped/mknod	0x2bb0	2
+LE3	O2-noinline/coreutils/stripped/mktemp	0x2720	2
+LE3	O2-noinline/coreutils/stripped/mv	0x40b0	2
+LE3	O2-noinline/coreutils/stripped/nl	0x2760	2
+LE3	O2-noinline/coreutils/stripped/nohup	0x26e0	2
+LE3	O2-noinline/coreutils/stripped/nproc	0x26a0	2
+LE3	O2-noinline/coreutils/stripped/numfmt	0x2850	2
+LE3	O2-noinline/coreutils/stripped/od	0x2840	2
+LE3	O2-noinline/coreutils/stripped/paste	0x2660	2
+LE3	O2-noinline/coreutils/stripped/pathchk	0x2620	2
+LE3	O2-noinline/coreutils/stripped/pinky	0x2880	2
+LE3	O2-noinline/coreutils/stripped/pr	0x2900	2
+LE3	O2-noinline/coreutils/stripped/printenv	0x25c0	2
+LE3	O2-noinline/coreutils/stripped/printf	0x2740	2
+LE3	O2-noinline/coreutils/stripped/pwd	0x2740	2
+LE3	O2-noinline/coreutils/stripped/readlink	0x26c0	2
+LE3	O2-noinline/coreutils/stripped/realpath	0x26c0	2
+LE3	O2-noinline/coreutils/stripped/rm	0x28b0	2
+LE3	O2-noinline/coreutils/stripped/rmdir	0x2700	2
+LE3	O2-noinline/coreutils/stripped/runcon	0x27e0	2
+LE3	O2-noinline/coreutils/stripped/seq	0x2760	2
+LE3	O2-noinline/coreutils/stripped/shred	0x2a00	2
+LE3	O2-noinline/coreutils/stripped/shuf	0x2890	2
+LE3	O2-noinline/coreutils/stripped/sleep	0x2640	2
+LE3	O2-noinline/coreutils/stripped/sort	0x3f80	2
+LE3	O2-noinline/coreutils/stripped/split	0x2a20	2
+LE3	O2-noinline/coreutils/stripped/stat	0x3c00	2
+LE3	O2-noinline/coreutils/stripped/stdbuf	0x2740	2
+LE3	O2-noinline/coreutils/stripped/sync	0x2680	2
+LE3	O2-noinline/coreutils/stripped/tac	0x27e0	2
+LE3	O2-noinline/coreutils/stripped/tail	0x29a0	2
+LE3	O2-noinline/coreutils/stripped/tee	0x2700	2
+LE3	O2-noinline/coreutils/stripped/test	0x26a0	2
+LE3	O2-noinline/coreutils/stripped/timeout	0x2900	2
+LE3	O2-noinline/coreutils/stripped/touch	0x3920	2
+LE3	O2-noinline/coreutils/stripped/tr	0x2700	2
+LE3	O2-noinline/coreutils/stripped/truncate	0x26a0	2
+LE3	O2-noinline/coreutils/stripped/tsort	0x26a0	2
+LE3	O2-noinline/coreutils/stripped/tty	0x2600	2
+LE3	O2-noinline/coreutils/stripped/unexpand	0x26a0	2
+LE3	O2-noinline/coreutils/stripped/uniq	0x27a0	2
+LE3	O2-noinline/coreutils/stripped/uptime	0x28c0	2
+LE3	O2-noinline/coreutils/stripped/users	0x26a0	2
+LE3	O2-noinline/coreutils/stripped/vdir	0x4dd0	2
+LE3	O2-noinline/coreutils/stripped/wc	0x28a0	2
+LE3	O2-noinline/coreutils/stripped/who	0x2840	2
+LE3	O2-noinline/coreutils/stripped/yes	0x25c0	2
+LE3	O2-noinline/cronie/stripped/crond	0x3da0	2
+LE3	O2-noinline/cronie/stripped/cronnext	0x2960	2
+LE3	O2-noinline/cronie/stripped/crontab	0x3be0	2
+LE3	O2-noinline/dash/stripped/dash	0x4a80	2
+LE3	O2-noinline/diffutils/stripped/cmp	0x2940	2
+LE3	O2-noinline/diffutils/stripped/diff	0x4fa0	2
+LE3	O2-noinline/diffutils/stripped/diff3	0x3ac0	2
+LE3	O2-noinline/diffutils/stripped/sdiff	0x3b60	2
+LE3	O2-noinline/dpkg/stripped/dpkg	0x8310	2
+LE3	O2-noinline/dpkg/stripped/dpkg-divert	0x4e30	2
+LE3	O2-noinline/dpkg/stripped/dpkg-query	0x4f10	2
+LE3	O2-noinline/dpkg/stripped/dpkg-statoverride	0x3b90	2
+LE3	O2-noinline/dpkg/stripped/dpkg-trigger	0x3b70	2
+LE3	O2-noinline/e2fsprogs/stripped/e2fsck	0x165c0	2
+LE3	O2-noinline/findutils/stripped/find	0x7370	2
+LE3	O2-noinline/gnutls/stripped/certtool	0xd0a0	2
+LE3	O2-noinline/gnutls/stripped/dumpcfg	0x11e0	2
+LE3	O2-noinline/gnutls/stripped/gnutls-cli-debug	0x8b00	2
+LE3	O2-noinline/gnutls/stripped/gnutls-serv	0x7e00	0
+LE3	O2-noinline/gnutls/stripped/ocsptool	0x8120	2
+LE3	O2-noinline/gnutls/stripped/psktool	0x2500	2
+LE3	O2-noinline/gnutls/stripped/srptool	0x25e0	2
+LE3	O2-noinline/gnutls/stripped/systemkey	0xa1c0	0
+LE3	O2-noinline/grep/stripped/grep	0x5090	2
+LE3	O2-noinline/gzip/stripped/gzip	0x39c0	2
+LE3	O2-noinline/iproute2/stripped/ip	0xf3d0	2
+LE3	O2-noinline/iproute2/stripped/rtmon	0x6aa0	2
+LE3	O2-noinline/kmod/stripped/kmod	0x3d20	2
+LE3	O2-noinline/libacl/stripped/chacl	0x1440	2
+LE3	O2-noinline/libacl/stripped/getfacl	0x2680	2
+LE3	O2-noinline/libacl/stripped/setfacl	0x2920	2
+LE3	O2-noinline/mirai/stripped/mirai	0x2670	2
+LE3	O2-noinline/openssh-portable/stripped/scp	0x5150	2
+LE3	O2-noinline/openssh-portable/stripped/sftp-server	0x5180	2
+LE3	O2-noinline/openssh-portable/stripped/sshd	0xd020	2
+LE3	O2-noinline/openssh-portable/stripped/ssh-keyscan	0x9460	2
+LE3	O2-noinline/openssh-portable/stripped/ssh-keysign	0xa370	0
+LE3	O2-noinline/openssh-portable/stripped/ssh-sk-helper	0x6e20	2
+LE3	O2-noinline/rsyslog/stripped/rsyslogd	0x18020	2
+LE3	O2-noinline/shadow/stripped/chage	0x4cc0	2
+LE3	O2-noinline/shadow/stripped/check_subid_range	0x2a00	2
+LE3	O2-noinline/shadow/stripped/chfn	0x3d20	2
+LE3	O2-noinline/shadow/stripped/chgpasswd	0x3c00	2
+LE3	O2-noinline/shadow/stripped/chpasswd	0x3d00	2
+LE3	O2-noinline/shadow/stripped/chsh	0x3ca0	2
+LE3	O2-noinline/shadow/stripped/expiry	0x2740	2
+LE3	O2-noinline/shadow/stripped/faillog	0x2620	2
+LE3	O2-noinline/shadow/stripped/free_subid_range	0x1140	2
+LE3	O2-noinline/shadow/stripped/get_subid_owners	0x1180	2
+LE3	O2-noinline/shadow/stripped/getsubids	0x1140	2
+LE3	O2-noinline/shadow/stripped/gpasswd	0x3e20	2
+LE3	O2-noinline/shadow/stripped/groupadd	0x4f60	2
+LE3	O2-noinline/shadow/stripped/groupdel	0x4f20	2
+LE3	O2-noinline/shadow/stripped/groupmems	0x3c40	2
+LE3	O2-noinline/shadow/stripped/groupmod	0x4f60	2
+LE3	O2-noinline/shadow/stripped/groups	0x13a0	2
+LE3	O2-noinline/shadow/stripped/grpck	0x3ba0	2
+LE3	O2-noinline/shadow/stripped/grpconv	0x3b40	2
+LE3	O2-noinline/shadow/stripped/grpunconv	0x3b40	2
+LE3	O2-noinline/shadow/stripped/id	0x12c0	2
+LE3	O2-noinline/shadow/stripped/lastlog	0x2700	2
+LE3	O2-noinline/shadow/stripped/logoutd	0x2580	2
+LE3	O2-noinline/shadow/stripped/newgidmap	0x3c20	2
+LE3	O2-noinline/shadow/stripped/newgrp	0x3a20	2
+LE3	O2-noinline/shadow/stripped/new_subid_range	0x1160	2
+LE3	O2-noinline/shadow/stripped/newuidmap	0x3bc0	2
+LE3	O2-noinline/shadow/stripped/passwd	0x3da0	2
+LE3	O2-noinline/shadow/stripped/pwck	0x3c00	2
+LE3	O2-noinline/shadow/stripped/pwconv	0x3bc0	2
+LE3	O2-noinline/shadow/stripped/pwunconv	0x3b40	2
+LE3	O2-noinline/shadow/stripped/su	0x3cc0	2
+LE3	O2-noinline/shadow/stripped/sulogin	0x2620	2
+LE3	O2-noinline/shadow/stripped/userdel	0x5100	2
+LE3	O2-noinline/sysvinit/stripped/bootlogd	0x2720	2
+LE3	O2-noinline/sysvinit/stripped/fstab-decode	0x10e0	2
+LE3	O2-noinline/sysvinit/stripped/halt	0x25e0	2
+LE3	O2-noinline/sysvinit/stripped/init	0x3d40	2
+LE3	O2-noinline/sysvinit/stripped/killall5	0x2760	2
+LE3	O2-noinline/sysvinit/stripped/last	0x2580	2
+LE3	O2-noinline/sysvinit/stripped/logsave	0x13c0	2
+LE3	O2-noinline/sysvinit/stripped/mesg	0x1200	2
+LE3	O2-noinline/sysvinit/stripped/readbootlog	0x1180	2
+LE3	O2-noinline/sysvinit/stripped/runlevel	0x11a0	2
+LE3	O2-noinline/sysvinit/stripped/shutdown	0x2a40	2
+LE3	O2-noinline/sysvinit/stripped/sulogin	0x2c60	2
+LE3	O2-noinline/sysvinit/stripped/utmpdump	0x1360	2
+LE3	O2-noinline/sysvinit/stripped/wall	0x2600	2
+LE3	O2-noinline/tar/stripped/tar	0xbb10	2
+LE3	O2-noinline/zlib/stripped/example	0x1320	2
+LE3	O2-noinline/zlib/stripped/example64	0x1320	2
+LE3	O2-noinline/zlib/stripped/examplesh	0x1480	2
+LE3	O2-noinline/zlib/stripped/minigzip	0x2400	2
+LE3	O2-noinline/zlib/stripped/minigzip64	0x2400	2
+LE3	O2-noinline/zlib/stripped/minigzipsh	0x1300	2
+LE3	O2/openssh-portable/stripped/scp	0x5150	2
+LE3	O2/openssh-portable/stripped/sftp-server	0x5180	2
+LE3	O2/openssh-portable/stripped/ssh-keyscan	0x9440	2
+LE3	O2/openssh-portable/stripped/ssh-sk-helper	0x6e20	2
+LE3	O2/rsyslog/stripped/rsyslogd	0x17fc0	2
+LE3	O2/shadow/stripped/chage	0x4cc0	2
+LE3	O2/shadow/stripped/check_subid_range	0x2a00	2
+LE3	O2/shadow/stripped/chfn	0x3d20	2
+LE3	O2/shadow/stripped/chgpasswd	0x3c00	2
+LE3	O2/shadow/stripped/chpasswd	0x3d00	2
+LE3	O2/shadow/stripped/chsh	0x3ca0	2
+LE3	O2/shadow/stripped/expiry	0x2740	2
+LE3	O2/shadow/stripped/faillog	0x2620	2
+LE3	O2/shadow/stripped/free_subid_range	0x1140	2
+LE3	O2/shadow/stripped/get_subid_owners	0x1180	2
+LE3	O2/shadow/stripped/getsubids	0x1140	2
+LE3	O2/shadow/stripped/gpasswd	0x3e20	2
+LE3	O2/shadow/stripped/groupadd	0x4f60	2
+LE3	O2/shadow/stripped/groupdel	0x4f20	2
+LE3	O2/shadow/stripped/groupmems	0x3c40	2
+LE3	O2/shadow/stripped/groupmod	0x4f60	2
+LE3	O2/shadow/stripped/groups	0x13a0	2
+LE3	O2/shadow/stripped/grpck	0x3ba0	2
+LE3	O2/shadow/stripped/grpconv	0x3b40	2
+LE3	O2/shadow/stripped/grpunconv	0x3b40	2
+LE3	O2/shadow/stripped/id	0x12c0	2
+LE3	O2/shadow/stripped/lastlog	0x2700	2
+LE3	O2/shadow/stripped/logoutd	0x1560	2
+LE3	O2/shadow/stripped/newgidmap	0x3c20	2
+LE3	O2/shadow/stripped/new_subid_range	0x1160	2
+LE3	O2/shadow/stripped/newuidmap	0x3bc0	2
+LE3	O2/shadow/stripped/passwd	0x3da0	2
+LE3	O2/shadow/stripped/pwck	0x3c00	2
+LE3	O2/shadow/stripped/pwconv	0x3bc0	2
+LE3	O2/shadow/stripped/pwunconv	0x3b40	2
+LE3	O2/shadow/stripped/su	0x3cc0	2
+LE3	O2/shadow/stripped/sulogin	0x2620	2
+LE3	O2/shadow/stripped/useradd	0x6480	2
+LE3	O2/shadow/stripped/userdel	0x5100	2
+LE3	O2/sysvinit/stripped/bootlogd	0x26e0	2
+LE3	O2/sysvinit/stripped/fstab-decode	0x10e0	2
+LE3	O2/sysvinit/stripped/halt	0x25e0	2
+LE3	O2/sysvinit/stripped/init	0x3d20	2
+LE3	O2/sysvinit/stripped/killall5	0x2760	2
+LE3	O2/sysvinit/stripped/last	0x2580	2
+LE3	O2/sysvinit/stripped/logsave	0x13c0	2
+LE3	O2/sysvinit/stripped/mesg	0x1200	2
+LE3	O2/sysvinit/stripped/readbootlog	0x1180	2
+LE3	O2/sysvinit/stripped/runlevel	0x11a0	2
+LE3	O2/sysvinit/stripped/shutdown	0x2a00	2
+LE3	O2/sysvinit/stripped/sulogin	0x2c30	2
+LE3	O2/sysvinit/stripped/utmpdump	0x1360	2
+LE3	O2/sysvinit/stripped/wall	0x25e0	2
+LE3	O2/tar/stripped/tar	0xa9f0	2
+LE3	O2/zlib/stripped/example	0x1320	2
+LE3	O2/zlib/stripped/example64	0x1320	2
+LE3	O2/zlib/stripped/examplesh	0x1480	2
+LE3	O2/zlib/stripped/minigzip	0x2400	2
+LE3	O2/zlib/stripped/minigzip64	0x2400	2
+LE3	O2/zlib/stripped/minigzipsh	0x1300	2
+NOMAIN	O0/betaflight/stripped/betaflight_STM32F405.elf
+NOMAIN	O0/chibios/stripped/ch.elf
+NOMAIN	O0/cleanflight/stripped/cleanflight_DALRCF405.elf
+NOMAIN	O0/coreutils/stripped/libstdbuf.so
+NOMAIN	O0/crazyflie/stripped/cf2.elf
+NOMAIN	O0/crazyflie/stripped/firmware.elf
+NOMAIN	O0/dexter/stripped/dexter.dll
+NOMAIN	O0/freertos/stripped/RTOSDemo.out
+NOMAIN	O0/libacl/stripped/libacl.so.1.1.2301
+NOMAIN	O0/libbsd/stripped/libbsd.so.0.11.7
+NOMAIN	O0/libedit/stripped/libedit.so.0.0.70
+NOMAIN	O0/libopencm3/stripped/adc-dac-printf.elf
+NOMAIN	O0/libopencm3/stripped/blink.elf
+NOMAIN	O0/libopencm3/stripped/button.elf
+NOMAIN	O0/libopencm3/stripped/cdcacm.elf
+NOMAIN	O0/libopencm3/stripped/cryptobasic.elf
+NOMAIN	O0/libopencm3/stripped/dac-dma.elf
+NOMAIN	O0/libopencm3/stripped/fancyblink.elf
+NOMAIN	O0/libopencm3/stripped/lcd-dma.elf
+NOMAIN	O0/libopencm3/stripped/lcd-serial.elf
+NOMAIN	O0/libopencm3/stripped/mandel.elf
+NOMAIN	O0/libopencm3/stripped/miniblink.elf
+NOMAIN	O0/libopencm3/stripped/msc.elf
+NOMAIN	O0/libopencm3/stripped/random.elf
+NOMAIN	O0/libopencm3/stripped/sdram.elf
+NOMAIN	O0/libopencm3/stripped/spi-mems.elf
+NOMAIN	O0/libopencm3/stripped/tick_blink.elf
+NOMAIN	O0/libopencm3/stripped/timer.elf
+NOMAIN	O0/libopencm3/stripped/usart_console.elf
+NOMAIN	O0/libopencm3/stripped/usart.elf
+NOMAIN	O0/libopencm3/stripped/usart_irq_console.elf
+NOMAIN	O0/libopencm3/stripped/usart_irq.elf
+NOMAIN	O0/libopencm3/stripped/usart-stdio.elf
+NOMAIN	O0/libopencm3/stripped/usbmidi.elf
+NOMAIN	O0/libselinux/stripped/libselinux.so.1
+NOMAIN	O0/minipig/stripped/minipig.exe
+NOMAIN	O0/mydoom/stripped/mydoom.exe
+NOMAIN	O0/nuttx/stripped/nuttx
+NOMAIN	O0/riot-os/stripped/hello-world.elf
+NOMAIN	O0/x0r-usb/stripped/x0r-usb.exe
+NOMAIN	O0/zlib/stripped/libz.so.1.2.13
+NOMAIN	O2/bash/stripped/bash.id0
+NOMAIN	O2/bash/stripped/bash.id1
+NOMAIN	O2/bash/stripped/bash.id2
+NOMAIN	O2/bash/stripped/bash.nam
+NOMAIN	O2/bash/stripped/bash.til
+NOMAIN	O2/betaflight/stripped/betaflight_STM32F405.elf
+NOMAIN	O2/chibios/stripped/ch.elf
+NOMAIN	O2/cleanflight/stripped/cleanflight_DALRCF405.elf
+NOMAIN	O2/coreutils/stripped/libstdbuf.so
+NOMAIN	O2/crazyflie/stripped/cf2.elf
+NOMAIN	O2/crazyflie/stripped/firmware.elf
+NOMAIN	O2/dexter/stripped/dexter.dll
+NOMAIN	O2/freertos/stripped/RTOSDemo.out
+NOMAIN	O2/libacl/stripped/libacl.so.1.1.2301
+NOMAIN	O2/libbsd/stripped/libbsd.so.0.11.7
+NOMAIN	O2/libedit/stripped/libedit.so.0.0.70
+NOMAIN	O2/libopencm3/stripped/adc-dac-printf.elf
+NOMAIN	O2/libopencm3/stripped/blink.elf
+NOMAIN	O2/libopencm3/stripped/button.elf
+NOMAIN	O2/libopencm3/stripped/cdcacm.elf
+NOMAIN	O2/libopencm3/stripped/cryptobasic.elf
+NOMAIN	O2/libopencm3/stripped/dac-dma.elf
+NOMAIN	O2/libopencm3/stripped/fancyblink.elf
+NOMAIN	O2/libopencm3/stripped/lcd-dma.elf
+NOMAIN	O2/libopencm3/stripped/lcd-serial.elf
+NOMAIN	O2/libopencm3/stripped/mandel.elf
+NOMAIN	O2/libopencm3/stripped/miniblink.elf
+NOMAIN	O2/libopencm3/stripped/msc.elf
+NOMAIN	O2/libopencm3/stripped/random.elf
+NOMAIN	O2/libopencm3/stripped/sdram.elf
+NOMAIN	O2/libopencm3/stripped/spi-mems.elf
+NOMAIN	O2/libopencm3/stripped/tick_blink.elf
+NOMAIN	O2/libopencm3/stripped/timer.elf
+NOMAIN	O2/libopencm3/stripped/usart_console.elf
+NOMAIN	O2/libopencm3/stripped/usart.elf
+NOMAIN	O2/libopencm3/stripped/usart_irq_console.elf
+NOMAIN	O2/libopencm3/stripped/usart_irq.elf
+NOMAIN	O2/libopencm3/stripped/usart-stdio.elf
+NOMAIN	O2/libopencm3/stripped/usbmidi.elf
+NOMAIN	O2/libselinux/stripped/libselinux.so.1
+NOMAIN	O2/minipig/stripped/minipig.exe
+NOMAIN	O2/mydoom/stripped/mydoom.exe
+NOMAIN	O2-noinline/betaflight/stripped/betaflight_STM32F405.elf
+NOMAIN	O2-noinline/chibios/stripped/ch.elf
+NOMAIN	O2-noinline/cleanflight/stripped/cleanflight_DALRCF405.elf
+NOMAIN	O2-noinline/coreutils/stripped/libstdbuf.so
+NOMAIN	O2-noinline/crazyflie/stripped/cf2.elf
+NOMAIN	O2-noinline/crazyflie/stripped/firmware.elf
+NOMAIN	O2-noinline/dexter/stripped/dexter.dll
+NOMAIN	O2-noinline/freertos/stripped/RTOSDemo.out
+NOMAIN	O2-noinline/libacl/stripped/libacl.so.1.1.2301
+NOMAIN	O2-noinline/libbsd/stripped/libbsd.so.0.11.7
+NOMAIN	O2-noinline/libedit/stripped/libedit.so.0.0.70
+NOMAIN	O2-noinline/libopencm3/stripped/adc-dac-printf.elf
+NOMAIN	O2-noinline/libopencm3/stripped/blink.elf
+NOMAIN	O2-noinline/libopencm3/stripped/button.elf
+NOMAIN	O2-noinline/libopencm3/stripped/cdcacm.elf
+NOMAIN	O2-noinline/libopencm3/stripped/cryptobasic.elf
+NOMAIN	O2-noinline/libopencm3/stripped/dac-dma.elf
+NOMAIN	O2-noinline/libopencm3/stripped/fancyblink.elf
+NOMAIN	O2-noinline/libopencm3/stripped/lcd-dma.elf
+NOMAIN	O2-noinline/libopencm3/stripped/lcd-serial.elf
+NOMAIN	O2-noinline/libopencm3/stripped/mandel.elf
+NOMAIN	O2-noinline/libopencm3/stripped/miniblink.elf
+NOMAIN	O2-noinline/libopencm3/stripped/msc.elf
+NOMAIN	O2-noinline/libopencm3/stripped/random.elf
+NOMAIN	O2-noinline/libopencm3/stripped/sdram.elf
+NOMAIN	O2-noinline/libopencm3/stripped/spi-mems.elf
+NOMAIN	O2-noinline/libopencm3/stripped/tick_blink.elf
+NOMAIN	O2-noinline/libopencm3/stripped/timer.elf
+NOMAIN	O2-noinline/libopencm3/stripped/usart_console.elf
+NOMAIN	O2-noinline/libopencm3/stripped/usart.elf
+NOMAIN	O2-noinline/libopencm3/stripped/usart_irq_console.elf
+NOMAIN	O2-noinline/libopencm3/stripped/usart_irq.elf
+NOMAIN	O2-noinline/libopencm3/stripped/usart-stdio.elf
+NOMAIN	O2-noinline/libopencm3/stripped/usbmidi.elf
+NOMAIN	O2-noinline/libselinux/stripped/libselinux.so.1
+NOMAIN	O2-noinline/minipig/stripped/minipig.exe
+NOMAIN	O2-noinline/mydoom/stripped/mydoom.exe
+NOMAIN	O2-noinline/nuttx/stripped/nuttx
+NOMAIN	O2-noinline/riot-os/stripped/hello-world.elf
+NOMAIN	O2-noinline/u-boot/stripped/u-boot
+NOMAIN	O2-noinline/x0r-usb/stripped/x0r-usb.exe
+NOMAIN	O2-noinline/zlib/stripped/libz.so.1.2.13
+NOMAIN	O2/nuttx/stripped/nuttx
+NOMAIN	O2/riot-os/stripped/hello-world.elf
+NOMAIN	O2/u-boot/stripped/u-boot
+NOMAIN	O2/x0r-usb/stripped/x0r-usb.exe
+NOMAIN	O2/zlib/stripped/libz.so.1.2.13
+GT3	O2/libexpat/stripped/xmlwf	0x2890	6	v24 // r9
+LE3	O0/coreutils/stripped/uname	0x2da8	2
+LE3	O0/iproute2/stripped/ip	0xf6b9	2
+LE3	O0/shadow/stripped/pwck	0x55e4	2
+LE3	O0/shadow/stripped/vipw	0x4e0d	2
+LE3	O0/sysvinit/stripped/mesg	0x137d	2
+LE3	O0/sysvinit/stripped/utmpdump	0x2065	2
+LE3	O2/coreutils/stripped/join	0x2760	2
+LE3	O2/coreutils/stripped/kill	0x26a0	2
+LE3	O2/coreutils/stripped/link	0x2580	2
+LE3	O2/coreutils/stripped/logname	0x25a0	2
+LE3	O2/coreutils/stripped/mkfifo	0x2af0	2
+LE3	O2/coreutils/stripped/mknod	0x2b50	2
+LE3	O2/coreutils/stripped/nice	0x2620	2
+LE3	O2/coreutils/stripped/uname	0x25a0	2
+LE3	O2/coreutils/stripped/unlink	0x2580	2
+LE3	O2/coreutils/stripped/whoami	0x25c0	2
+LE3	O2/gnutls/stripped/ocsptool	0x8100	2
+LE3	O2-noinline/coreutils/stripped/env	0x2860	2
+LE3	O2-noinline/coreutils/stripped/join	0x27c0	2
+LE3	O2-noinline/coreutils/stripped/link	0x25c0	2
+LE3	O2-noinline/coreutils/stripped/logname	0x25e0	2
+LE3	O2-noinline/coreutils/stripped/mkfifo	0x2b30	2
+LE3	O2-noinline/coreutils/stripped/nice	0x2660	2
+LE3	O2-noinline/coreutils/stripped/ptx	0x2a20	2
+LE3	O2-noinline/coreutils/stripped/uname	0x25e0	2
+LE3	O2-noinline/coreutils/stripped/unlink	0x25c0	2
+LE3	O2-noinline/coreutils/stripped/whoami	0x2600	2
+LE3	O2-noinline/gnutls/stripped/gnutls-cli	0x9640	2
+LE3	O2-noinline/libexpat/stripped/xmlwf	0x2890	2
+LE3	O2-noinline/shadow/stripped/nologin	0x1140	0
+LE3	O2-noinline/shadow/stripped/useradd	0x6480	2
+LE3	O2-noinline/shadow/stripped/vipw	0x3d60	2
+LE3	O2/shadow/stripped/nologin	0x1140	0
+LE3	O2/shadow/stripped/vipw	0x3d60	2

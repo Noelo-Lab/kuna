@@ -2662,6 +2662,113 @@ now sitting there. It is structurally inert on the PIE ARM images oracle 4 alrea
 resolves, and neither parity corpus can observe it for the reason `machomain`
 cannot: both are symbol-less ELF bytechunks with no PLT.
 
+(kuna) **The ELF libc-start `main`** (`elfmain`, default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_elfmain.rs
+(ElfMainPass)`) closes the gap the two passes above leave open. Oracle 4 already
+recovers this address on x86-64, AArch64, ARM and RISC-V — that is what it was
+written for — but it hands it to discovery as an address and nothing more, so on
+a stripped ELF the program's own starting point arrives in the inventory as one
+more `sub_<addr>` carrying whatever reading its body alone produces. On coreutils
+`fmt` built `-O2` and stripped that is `unsigned long sub_26a0(int a0,char **a1)`:
+the two slots exist because this `main` happens to read both of them, their widths
+are right, and everything a reader actually wants is absent — which function this
+is, that `a0` counts the strings `a1` points at, and that the value handed back is
+the process exit status. On a `main` that reads only `argc` the same address comes
+out `unsigned long sub_1405(int4 a0,unsigned long *a1)`, and on one that ignores
+its arguments entirely, `void sub_<addr>(void)`.
+
+The return type is the half of the declaration body-driven recovery can never
+supply, and it is the half that is visible at every call site: `main`'s value is
+consumed by `__libc_start_main`, outside the image, so nothing in the object
+constrains it and kuna types it from the widest register write it can see. The
+parameters are the half it supplies only by accident. Both are stated by the C
+runtime's contract — the first argument to `__libc_start_main` IS `main`, and what
+that runtime then calls is `main(argc, argv, envp)` — so this pass applies the
+name through the `entry_names` overlay (§1.6) and parks that prototype by it,
+exactly as `machomain` does from `LC_MAIN`, and for the same reason it spells the
+real `int`/`char **` rather than `entrymainproto`'s call-site widths: a glibc
+crt1's first argument is the POSIX `main` by definition, where a recovered PE call
+site of the same shape can be `wmain`'s `wchar_t **`.
+
+All three of those arguments are declared, including the `envp` most programs
+ignore, and the reason is that the parked prototype is applied LOCKED. Declaring
+two parameters is not a smaller claim than declaring three: it asserts that there
+is no third one, and on a `main` that does read `envp` that assertion deletes a
+parameter recovery had already found. The entry value stops being an input, the
+read of it becomes an uninitialised local, and the emitted C passes that
+undefined local on — which is what the in-tree ARM fixture `armlibcmain_le32`
+@0x103dc did under the two-argument form, rendering `unsigned int v4; // r2` with
+no assignment anywhere and still handing it to `__printf_chk`. Nothing readable at
+load time separates that `main` from one that truly ignores its third argument:
+it never touches `r2` at all, it sets up `r0`/`r1` and branches, and the only
+evidence that `r2` carries a value is the callee's own signature. So a body walk
+looking for a read of the third argument register would see nothing in either
+case, and of the two mistakes only one is wrong output — an `envp` the program
+ignores is an unused parameter in a declaration that is true of every hosted C
+program, while an `envp` dropped from a program that uses it is a lie. The
+declaration the runtime actually makes is therefore the one applied.
+
+The lock costs something in the other direction, and the corpus says how much. A
+`main` whose body reads an argument register *past* the third keeps that read
+only while the signature is body-driven: an undefined register read has nowhere
+else to go, so recovery makes it a parameter and fills in the slots before it to
+reach one. Declaring the three real ones takes that home away, and the value goes
+one of two ways — dropped from the call site it was being handed to, or, when the
+body stores it, declared as a local that nothing assigns. Over the 775 stripped
+decbench ELFs, 645 have a `main` this pass names, 28 of those recover more than
+three parameters from the body, and 13 of the 28 render at least one such local.
+On the other 15 the body also writes that register somewhere, so the demoted slot
+becomes an ordinary assigned local (shadow `usermod` @0x6340 assigns its `a5`
+from `*v13` on five paths) or goes away with the fabrication entirely.
+None of the extra slots is a real parameter: the runtime passes three, and on the
+two loudest cases — openssh `sftp` `-O2` @0x5250 and shadow `login` `-O2` @0x3d20
+— the unstripped twin's DWARF declares `int main(int argc, char **argv)` for
+both, the forwarded `r8`/`r9` being an undefined read a variadic call site hands
+on. So the lock does not delete a parameter that exists; it changes how an
+undefined read is rendered, and on coreutils `true`/`false` the same flip is
+plainly better, replacing the `undefined16 sub_2540(int a0,...,unsigned long a3)`
+whose body ends `return v2._0_16_ << 0x40` with `return 0`. Both shapes are
+pinned rather than only described: the in-repo fixture `elfmainextra_x86_64`
+@0x1026 reads `r8` into a call argument and stores `r9` to a global, so its
+body-driven signature is `unsigned long sub_1026(unsigned int a0,unsigned long
+a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5)` and the
+default arm shows both losses at once (`tests/stages/kuna-elfmain.xml` §§5-8,
+`tests/cli/elf-main-extra-register-args.json`). Whichever way call-site argument
+recovery removes the fabrication, those assertions move.
+
+The address is oracle 4's own (`libc_start_main_target`), never a second decode,
+so the pass cannot disagree with the entry the discovery set already contains.
+The one shape oracle 4 cannot see is the non-PIE ARM32 crt1 above, and there
+`armlibcmain` already emits the entry and the name; `elfmain` contributes only the
+prototype at that address, so `--option armlibcmain off` still restores that
+pass's inventory exactly and the by-name park simply finds no `main` to land on.
+
+What keeps the claim honest is that oracle 4's evidence is good enough to add a
+function entry but not, on its own, to assert that the function is the C `main` —
+its x86-64 arm matches an argument-setup encoding and a following `call`, and any
+four bytes read as an address. So the pass additionally requires the image to name
+`__libc_start_main` at all, in its static or dynamic symbol names with the GNU
+version suffix stripped; that is the C runtime's own name, and a fully stripped
+static image that states neither is refused rather than guessed at. It further
+refuses a non-ELF image, a recovered address equal to `_start` or outside every
+executable section, an address that already carries a function symbol — a
+non-stripped ELF names it `main` itself and that name wins through the commit's
+idempotent cross-scope probe, which is why no unstripped fixture and no parity
+assertion can move — and an image that already spells a symbol `main` anywhere,
+which would make the by-name park ambiguous in the way `retain_unambiguous_names`
+guards against in §1.7.
+
+Naming an address a second time makes one thing visible that was latent before it:
+`--define-function <start>[-<end>]=<name>` and a discovery pass can now reach the
+same address with different spellings, and which one is *reported* was decided by
+`entry_name_rank`'s length tie-break, so `main` would quietly displace a caller's
+`stage1`. A caller's declaration is an assertion, so it now outranks every
+discovered name at that address
+(`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`
+records the declared spelling, and both canonicalizers sort it first); the
+discovered names stay as aliases, so a name-keyed lookup still resolves through
+them.
+
 The same `entryoff`-is-not-a-VMA fact is what every *reporting* surface has to
 know, so it is stated once as
 `decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (image_entry_vma)`

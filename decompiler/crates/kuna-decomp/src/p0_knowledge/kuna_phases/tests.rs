@@ -75,7 +75,7 @@ fn surface_count_is_119() {
 }
 
 #[test]
-fn settable_count_is_208() {
+fn settable_count_is_209() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -146,12 +146,13 @@ fn settable_count_is_208() {
     // +1 for `loweredswitchvalue` (P2 re-rolled switch dispatch value, DIV-181).
     // +1 for `tiedphitrim` (P6 loop-head aliased-read trim, DIV-182).
     // +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    assert_eq!(kuna_num_settables(), 208);
-    assert_eq!(SETTABLE_TABLE.len(), 208);
+    // +1 for `bytehonest` (P6 uncommitted byte on the JSON variables surface) and +1 for `elfmain` (P1 ELF libc-start main naming + prototype).
+    assert_eq!(kuna_num_settables(), 209);
+    assert_eq!(SETTABLE_TABLE.len(), 209);
 }
 
 #[test]
-fn tier_counts_are_67_core_80_transform_61_analysis() {
+fn tier_counts_are_67_core_80_transform_62_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -277,7 +278,10 @@ fn tier_counts_are_67_core_80_transform_61_analysis() {
     // core 64 -> 65: +1 for `tiedphitrim` (P6 loop-head aliased-read trim,
     // DIV-182).
     // core 65 -> 66, transform 77 -> 78: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    assert_eq!((core, transform, analysis), (67, 80, 61));
+    // core 66 -> 67: +1 for `bytehonest` (P6 uncommitted byte on the JSON
+    // variables surface). analysis 61 -> 62: +1 for `elfmain` (P1 ELF
+    // libc-start main naming + prototype).
+    assert_eq!((core, transform, analysis), (67, 80, 62));
 }
 
 #[test]
@@ -587,6 +591,10 @@ fn option_values_live_value_present_for_86() {
         // of `machomain` above and the same seam: an analysis-tier gate with no
         // codegen live reader, read console-side via kuna_live_value. Default-ON.
         "armlibcmain",
+        // (kuna) ELF libc-start `main` naming + prototype -- the ELF counterpart of
+        // `machomain` above and the same seam: an analysis-tier gate with no
+        // codegen live reader, read console-side via kuna_live_value. Default-ON.
+        "elfmain",
         // (kuna) Unmapped-CALL-target entry suppression -- an analysis-tier gate with
         // no codegen live reader (read console-side via kuna_live_value), like the
         // discovery gates around it. Default-ON.
@@ -1001,7 +1009,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `tiedphitrim` (DIV-182); its P6 row sits mid-table beside
     // `paramcopyhoist`, so it increments the comma-terminated catalog-row count.
     // 202 -> 204: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    assert_eq!(json.matches("},\n").count(), 207);
+    assert_eq!(json.matches("},\n").count(), 208);
 }
 
 #[test]

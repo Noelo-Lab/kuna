@@ -1,0 +1,28 @@
+--- funcstart_patterns_x86_64 (option elfmain off)
++++ funcstart_patterns_x86_64 (default)
+@@ -6,10 +6,13 @@
+   (*dat_403ff8)();
+ }
+ 
+-// Function: sub_401020 @ 0x401020
+-void sub_401020(int a0,unsigned long *a1)
++// Function: main @ 0x401020
++int main(int argc,char **argv,char **envp)
+ {
+-  sub_401130((long)(*(char *)*a1 + a0));
++  char v1;
++  
++  v1 = **argv;
++  return sub_401130((long)(v1 + argc));
+ }
+ 
+ // Function: sub_401040 @ 0x401040
+@@ -18,7 +21,7 @@
+   char v1 [8];
+   unsigned long v2; // stack + 0x0
+   
+-  (*dat_403ff0)(sub_401020,v2,&Stack0000000000000008,0,0,a2,v1);
++  (*dat_403ff0)(main,v2,&Stack0000000000000008,0,0,a2,v1);
+   do {
+   } while( true );
+ }
