@@ -1520,7 +1520,7 @@ pub struct PrintC {
     /// being emitted: which integer locals the operation set says to declare
     /// signed or unsigned, and which of those declarations actually got written
     /// (the ones whose now-redundant `(int)` casts may be dropped).  Empty under
-    /// the default `signedness upstream`.  See [`crate::kuna_typeround`].
+    /// `signedness upstream`.  See [`crate::kuna_typeround`].
     sign_plan: crate::kuna_typeround::SignPlan,
 }
 

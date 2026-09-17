@@ -30,12 +30,14 @@
     to kuna_declhightype).  P0 assertion: `option signedness
     upstream|auto|prefer-signed|prefer-unsigned`.
 
-    Pass 1 (default `upstream`) reproduces it: `uint4 v1;` declared, and the two
-    signed comparisons carry a `(int4)` cast (asserts #1 and #2).
-    Pass 2 (`option signedness auto`) declares `int4 v1;` (every
-    signedness-sensitive reader of v1 demands signed and none demands unsigned)
-    and the cast, now a no-op against that declaration, is dropped (asserts #3
-    and #4).
+    Pass 1 sets `option signedness upstream` explicitly - the declaration type
+    inference produces, which is what this option's other values are measured
+    against - and reproduces the defect: `uint4 v1;` declared, and the two signed
+    comparisons carry a `(int4)` cast (asserts #1 and #2).
+    Pass 2 (`option signedness auto`, the shipped default) declares `int4 v1;`
+    (every signedness-sensitive reader of v1 demands signed and none demands
+    unsigned) and the cast, now a no-op against that declaration, is dropped
+    (asserts #3 and #4).
 
     The second function `g` at 0x1100 is the width guard, reduced from
     findutils `find -O2` sub_bac0.  C's integer promotions convert anything
@@ -92,9 +94,9 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="signedness #1: the masked loop bound is declared unsigned under the default (bug reproduces, once)" min="1" max="1">^  uint4 v1; // eax$</stringmatch>
+<stringmatch name="signedness #1: the masked loop bound is declared unsigned under option signedness upstream, the declaration type inference produces (bug reproduces, once)" min="1" max="1">^  uint4 v1; // eax$</stringmatch>
 <stringmatch name="signedness #2: and every signed comparison on it carries a cast back to int4 (bug reproduces, once)" min="1" max="1">a2 &lt; \(int4\)v1</stringmatch>
-<stringmatch name="signedness #3: option signedness auto declares it at the signedness its operations demand (fix, once)" min="1" max="1">^  int4 v1; // eax$</stringmatch>
+<stringmatch name="signedness #3: the shipped default, option signedness auto, declares it at the signedness its operations demand (fix, once)" min="1" max="1">^  int4 v1; // eax$</stringmatch>
 <stringmatch name="signedness #4: and the cast the declaration makes a no-op is dropped (fix, once)" min="1" max="1">a2 &lt; v1;</stringmatch>
 <stringmatch name="signedness #5: a local narrower than int keeps its declaration in BOTH passes, because C promotes it before every operator (once per pass)" min="2" max="2">^  int2 v2;$</stringmatch>
 <stringmatch name="signedness #6: while the int-wide locals in that same function do flip, so #5 is the width rule declining and not an inactive option (fix, once)" min="1" max="1">^  uint4 v3; // ecx$</stringmatch>

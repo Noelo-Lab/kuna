@@ -44,7 +44,10 @@
     signedness upstream|auto|prefer-signed|prefer-unsigned`.
 
     Asserts 1 and 2 are the guard: `prefer-unsigned`, the arm with the loosest
-    tie-break, leaves the 2-byte declaration exactly as upstream wrote it.
+    tie-break, leaves the 2-byte declaration exactly as upstream wrote it.  Pass
+    1 and pass 3 name `option signedness upstream` explicitly, so each arm is
+    compared against the declaration type inference produces and not against
+    whichever value happens to be the shipped default.
     Asserts 3 and 4 are the control that makes 1 and 2 mean something: the same
     arm does re-sign the 4-byte local in `g` on this same target, so the decline
     above is the width rule and not an inactive option.
@@ -77,6 +80,6 @@ be0002668b046601c06689046689440466894408c3
 </script>
 <stringmatch name="signedness-int16 #1: the 2-byte local keeps its declaration under both arms, because the reader promotes it before every operator (once per pass)" min="2" max="2">^  int2 v1;$</stringmatch>
 <stringmatch name="signedness-int16 #2: nothing 2 bytes wide is ever re-signed on this target, whose own int is 2 bytes" min="0" max="0">^  uint2 </stringmatch>
-<stringmatch name="signedness-int16 #3: the 4-byte control is declared signed under the default (once)" min="1" max="1">^  int4 v1;$</stringmatch>
+<stringmatch name="signedness-int16 #3: the 4-byte control is declared signed under option signedness upstream (once)" min="1" max="1">^  int4 v1;$</stringmatch>
 <stringmatch name="signedness-int16 #4: and prefer-unsigned does re-sign it on this same target, so #1 is the width rule declining and not an inactive option (once)" min="1" max="1">^  uint4 v1;$</stringmatch>
 </decompilertest>

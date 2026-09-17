@@ -152,6 +152,23 @@
 //! reader demands signed, so each surviving `(int)` cast on the variable becomes a
 //! no-op and the rest of the expression is byte-for-byte what it was.
 //!
+//! ## Which value ships
+//!
+//! `auto` is the default.  Because it moves a declaration only on unanimous
+//! evidence, the only text it can change is that declaration and the casts the
+//! new declaration makes no-ops: 0 of 675 datatest assertions, PARITY OK on the
+//! stage corpus, and over `fmt`/`ls`/`sort`/`du` at `-O0` and `-O2` 42
+//! declaration flips and 62 cast tokens dropped with no other hunk of any kind.
+//!
+//! [`SignPolicy::PreferSigned`] is the more faithful arm - it settles the values
+//! nothing observed decides the way C source does, and agreement with DWARF over
+//! 238 unstripped twins goes 93.4% -> 98.4% overall and 71.9% -> 94.8% at `-O2` -
+//! but it moves 7,081 declarations image-wide, which the datatest corpus pins,
+//! so it is opt-in.  [`SignPolicy::PreferUnsigned`] is its control and is not
+//! recommended: 4 of its 40 DWARF-judged flips are right.
+//! [`SignPolicy::Upstream`] restores the declaration type inference produced,
+//! byte for byte.
+//!
 //! ## What this does *not* claim
 //!
 //! The rule reads the compiler's instruction selection, not the source.  Where a

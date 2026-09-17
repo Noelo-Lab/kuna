@@ -1077,9 +1077,9 @@ pub struct Architecture {
     /// See [`crate::kuna_declhightype`].
     pub decl_high_type: bool,
     /// (kuna `signedness`) How a declared integer local's signedness is chosen:
-    /// keep what type inference produced (`upstream`, the default), or round the
-    /// declaration from the operations the body applies to the value.  See
-    /// [`crate::kuna_typeround`].
+    /// round the declaration from the operations the body applies to the value
+    /// (`auto`, the default), or keep what type inference produced
+    /// (`upstream`).  See [`crate::kuna_typeround`].
     pub signedness: crate::kuna_typeround::SignPolicy,
     /// (kuna DIV-6) Render residual `TYPE_UNKNOWN` (`xunknownN`) values as real C
     /// types by size — 1→`char`, 2/4/8→unsigned ints, pointer-to-unknown→`void *` —
@@ -2331,7 +2331,7 @@ impl Architecture {
             dedup_var_decls: false,
             param_ref_decl: false,
             decl_high_type: false,
-            signedness: crate::kuna_typeround::SignPolicy::Upstream,
+            signedness: crate::kuna_typeround::SignPolicy::Upstream, // (kuna) option signedness; reset_defaults sets the shipped default
             realtypes: false,
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
@@ -2595,7 +2595,7 @@ impl Architecture {
         self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
         self.param_ref_decl = true; // (kuna) DIV-143 default-on: an `&parameter` reference is the parameter, so it is not also declared as a body local (0/675 ablation)
         self.decl_high_type = true; // (kuna) DIV-PENDING default-on: a merged local is declared at its own HighVariable's type -- the one every cast in the body was checked against -- instead of whichever member Varnode happened to be address-tied, so the declaration can no longer widen a one-byte dereference into an eight-byte one. 0/675 byte-identical on the datatest corpus; restore the declaration-representative type with `option declhightype off`
-        self.signedness = crate::kuna_typeround::SignPolicy::Upstream; // (kuna) default `upstream`: the declared signedness is exactly what type inference produced, so the option is byte-identical to not having it
+        self.signedness = crate::kuna_typeround::SignPolicy::Auto; // (kuna) default `auto`: a declaration is re-signed only when every signedness-sensitive reader of the value agrees, which makes each surviving cast on it a no-op and leaves every other token byte-identical. 0/675 datatests and PARITY OK on stages; `option signedness upstream` restores the declaration type inference produced
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so valid C is the default RENDERING everywhere a real binary is decompiled
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions

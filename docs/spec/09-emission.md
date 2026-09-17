@@ -685,7 +685,7 @@ signedness back at every comparison: `unsigned int v1;` … `if (0 <= (int)v1)` 
 `while (v4 < (int)v1)`.
 
 The option `signedness` (`upstream|auto|prefer-signed|prefer-unsigned`, default
-`upstream`) decides it at the declaration seam instead, from the operations the
+`auto`) decides it at the declaration seam instead, from the operations the
 body actually applies to the value
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_typeround.rs (plan)`). This is
 TRex's *type rounding* (Bosamiya, Woo and Parno, USENIX Security 2025, §3.3.5):
@@ -719,7 +719,24 @@ so `int v = *p;` off an `unsigned char *` and `uintmax_t max = (long)(int)n;`
 off a `movslq` are both ordinary C. Nothing else changes: no Varnode type, no
 inference pass, no cast decision, and no prototype or symbol type — so the
 `variables` JSON surface and every recovered signature are byte-identical, and
-so is the whole output under the default `upstream`.
+so is the whole output under `upstream`.
+
+Which arm ships. `auto` is the default: it moves a declaration only when every
+signedness-sensitive reader of the value agrees and nothing vetoes it, so the
+only text it can change is that declaration and the casts the new declaration
+makes into no-ops. That is what the evidence for the flip measures — 0 of 675
+datatest assertions, PARITY OK on the stage corpus, and over `fmt`, `ls`, `sort`
+and `du` at `-O0` and `-O2` (2,918 functions) 42 declaration flips and 62 cast
+tokens dropped, none added, with no other hunk of any kind. `prefer-signed` is
+the more faithful arm and stays opt-in: settling the unobserved values the way C
+source does takes agreement with DWARF on 238 unstripped twins from 93.4% to
+98.4% overall and from 71.9% to 94.8% at `-O2`, but it moves 7,081 declarations
+image-wide, which is more than the datatest corpus can absorb as a default and
+more than an unanimity argument covers. `prefer-unsigned` is the opposite
+tie-break, kept as that arm's control and not recommended — 4 of its 40
+DWARF-judged flips are right. `upstream` restores the declaration type inference
+produced, byte for byte, which is what to select when diffing against upstream
+Ghidra.
 
 Soundness rests on the demand set covering every C construct whose meaning
 depends on an operand's signedness — which is to say, on the *neutral* list being
