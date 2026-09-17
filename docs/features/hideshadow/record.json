@@ -109,7 +109,7 @@
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
     "docs/options.md": "byte-fresh (cmp against `kuna catalog --markdown`)",
-    "make rust-test": "green: RUST_TEST_RC=0, 415 `test result: ok` lines, 0 failures on the identical code state one rebase earlier (main 0d79b02d); re-run on this head after the eb87d279 rebase"
+    "make rust-test": "green on the rebased head (main eb87d279): RUST_TEST_RC=0, 416 `test result: ok` lines, 0 failure blocks; the same suite was green on the previous rebase too"
   },
   "catalog_counts": {
     "rebase": "re-derived on main eb87d279 (#661 structdefs, #663 indirectonly, #660 libctypes glibc), each of which had already moved some of these sites; every number comes from `scripts.repipe.counters --rederive/--fix` on a freshly built tree, not arithmetic. #660 added no settable, so the counts below are unchanged from the #663 rebase.",
