@@ -963,14 +963,18 @@ each consumes the previous one's value, so the call is evaluated before them in
 the folded text exactly as it is in the binary, and a `LOAD` of the pointer a
 call has just returned is not a load the call was moved past. Without that
 exemption the same guard declines 233 further functions across the 16-binary
-sweep, all of them consumers rather than reorderings. That second span carries
-the barrier test only. The INDIRECT test stays on the span to the use, where it
-has always been: widening it would lift declines as often as it added them,
-because a collapsed INDIRECT of the call itself reads that call's effect by
-construction. (`foldcallretphi` does ask it of the landing statement, whose own
-sweep measured five declines there:
-`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
-(landing_reads_call_effect)`.)
+sweep, all of them consumers rather than reorderings.
+
+That second span carries the barrier test only; the INDIRECT test keeps the span
+to the use. Asking it past the use declines folds the binary's own order backs:
+across `grep` O0, `tar` O0 and `ssh` O2 it changes 31 functions and de-folds 27
+of them, and the shape that dominates is `dat_33798 = *__errno_location();`,
+which is `call 4890; mov (%rax),%eax; mov %eax,0x33798` in `grep` O0 `sub_6c53`
+— one call, one load, one store, in exactly that order. `foldcallretphi` does
+ask the question over the whole span, landing statement included
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(landing_span_reads_call_effect)`), because the folds that travel that far are
+the ones it released; §6.4's `foldcallretphi` entry has that half.
 Provenance: `docs/features/gh657/`.
 
 The direct call output may have one descendant even though a derived value
@@ -1022,14 +1026,28 @@ discounted. Second, a use op that itself reads an INDIRECT effect of the call
 declines, since the folded text would otherwise name the operand's high both as
 the call's argument (pre-call) and as an operand of the use (post-call).
 
-How far the call travels is not this option's question, and it does not ask it:
-the print-point span guard above is `foldcallret`'s and runs for every folded
-call output, this option on or off. Without that guard `betaflight`'s
+How far the call travels is half this option's question. The barrier half is
+`foldcallret`'s: the print-point span guard above runs for every folded call
+output, this option on or off, and since GH-657 a write to persistent or
+address-tied storage is one of its barriers. Without that guard `betaflight`'s
 `sub_8051ac4` emits its `sub_80515b4(dat_200181a4)` *after* an
 `if (dat_200019cc & 1)` that the binary evaluates after the call — a call moved
 past two global reads it may itself write; the discount is sometimes the only
 thing that was holding such a call in place, which is why the guard has to reach
 the landing statement rather than the use.
+
+The other half is this option's own and covers the same distance: no op from the
+call up to and including the landing statement may read a value the call writes
+indirectly
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(landing_span_reads_call_effect)`). `foldcallret` asks that only as far as the
+single use, for the reason given in its own entry above; here it is asked over
+the whole span, because the folds that reach that far are the ones this option
+released. Narrowing it to the landing statement alone lets `ssh` O2 `sub_4fd30`
+print `sub_3fa80(v2,v3)` after `v5 = v2`, a copy of an escaped stack slot the
+binary reloads at `0x4fe98` — GH-181's shape — and adds one such fold on `ssh`
+O2 and one on `tar` O0 to the 68 and 120 functions this option otherwise
+changes there.
 
 It ships **off** for two reasons. Flipping the default leaves both corpora at
 PARITY OK (0 of 675 datatest assertions change) and costs nothing measurable on
