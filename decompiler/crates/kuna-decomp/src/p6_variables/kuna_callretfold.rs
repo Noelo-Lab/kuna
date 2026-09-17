@@ -79,6 +79,8 @@
 //! before multiplier analysis can duplicate the implied call expression at
 //! each sink.
 
+use std::rc::Rc;
+
 use kuna_base::error::KunaResult;
 use kuna_num::opcodes::OpCode;
 
@@ -139,14 +141,11 @@ pub fn call_output_foldable(data: &Funcdata, vn: VarnodeId) -> bool {
         return false; // use must come strictly after the call in this block
     }
 
-    // (3) no side-effecting / memory op strictly between the call and its use,
-    // and none reading a value this call indirectly writes.
-    for &mid in &ops[def_idx + 1..use_idx] {
-        if op_is_barrier(data, mid) || op_reads_indirect_output_of(data, mid, def) {
-            return false;
-        }
-    }
-    true
+    // (3) no barrier strictly between the call and its use, and nothing there
+    // reading a value this call indirectly writes.
+    !ops[def_idx + 1..use_idx]
+        .iter()
+        .any(|&mid| op_is_barrier(data, mid) || op_reads_indirect_output_of(data, mid, def))
 }
 
 /// Does a derived value's printable implied expression contain a foldable call?
@@ -288,11 +287,14 @@ fn print_point(data: &Funcdata, use_op: OpId) -> Option<OpId> {
 
 /// (kuna) Does the call survive the move all the way to its print point?
 ///
-/// Re-runs [`call_output_foldable`]'s span guard over the span from the call to
-/// the statement the folded expression lands in, which is where it is evaluated
-/// at run time.  The print point itself is not a barrier — the folded expression
-/// is evaluated as its operand, before it — but its *other* operands must not
-/// read an effect of the call, so the INDIRECT test covers it too.
+/// Runs the barrier test over the span from the call to the statement the folded
+/// expression lands in, which is where it is evaluated at run time.  Only the
+/// barrier test: the INDIRECT question — whether a read of the call's own effect
+/// gets separated from it — is decided over the span to the use, where it always
+/// was, and widening it here would *lift* declines as often as it adds them (the
+/// collapsed INDIRECT of the call itself reads that effect by construction).  The
+/// print point is not itself in the span: the folded expression is evaluated as
+/// its operand, before it.
 fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
     let Some(point) = print_point(data, use_op) else {
         return false;
@@ -313,16 +315,41 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
     if pi <= ci {
         return false;
     }
-    let span_clear = !ops[ci + 1..pi]
-        .iter()
-        .any(|&mid| op_is_barrier(data, mid) || op_reads_indirect_output_of(data, mid, call));
-    span_clear && !op_reads_indirect_output_of(data, point, call)
+    !ops[ci + 1..pi].iter().any(|&mid| op_is_barrier(data, mid))
+}
+
+/// Is `op` a `CPUI_COPY` back into the storage its input already occupies?
+///
+/// `RuleIndirectCollapse` rewrites the INDIRECT a call attaches to a global it
+/// turns out not to write as `glob = COPY glob`, and the same shape survives at
+/// a `return`.  Such an op writes the value that is already there and reads only
+/// to do so, so no callee can observe it on either side of the move; counting it
+/// as a write would decline folds over a write that is not one.  A volatile
+/// location is excluded: there the access itself is the effect.
+fn op_is_self_copy(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else {
+        return false;
+    };
+    if o.code() != OpCode::CPUI_COPY {
+        return false;
+    }
+    let (Some(out), Some(inp)) = (o.get_out(), o.get_in(0)) else {
+        return false;
+    };
+    let (Some(ov), Some(iv)) = (data.vbank().get(out), data.vbank().get(inp)) else {
+        return false;
+    };
+    !ov.is_volatile()
+        && !iv.is_volatile()
+        && ov.get_size() == iv.get_size()
+        && ov.get_offset() == iv.get_offset()
+        && Rc::ptr_eq(ov.get_space(), iv.get_space())
 }
 
 /// An op whose relative order with the moved call is observable: any call, a
 /// memory-touching op (LOAD/STORE/CALLOTHER), or a write to storage the callee
 /// may read ([`op_writes_tied_storage`]).
-pub(crate) fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
+fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,
         None => return true, // stale: be conservative
@@ -369,6 +396,7 @@ fn op_writes_tied_storage(data: &Funcdata, op: OpId) -> bool {
         .get(out)
         .map(|v| v.is_persist() || v.is_addr_tied())
         .unwrap_or(true)
+        && !op_is_self_copy(data, op)
 }
 
 pub(crate) fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
