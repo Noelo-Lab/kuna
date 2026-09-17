@@ -109,7 +109,7 @@
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
     "docs/options.md": "byte-fresh (cmp against `kuna catalog --markdown`)",
-    "make rust-test": "pending on this head; see the PR comment for the lane result"
+    "make rust-test": "green on the rebased head: RUST_TEST_RC=0, 415 `test result: ok` lines, 0 failures (lane 16:43-16:58 UTC; the only commit inside that window changed one record.json the suite does not read)"
   },
   "catalog_counts": {
     "rebase": "re-derived on main 0d79b02d (#661 structdefs, then #663 indirectonly), both of which had already moved the same sites; every number below comes from `scripts.repipe.counters --rederive/--fix` on a freshly built tree, not arithmetic",
