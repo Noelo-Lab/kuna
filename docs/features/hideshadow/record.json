@@ -101,25 +101,25 @@
     }
   },
   "gates": {
-    "tree": "rebased onto main 0d79b02d",
+    "tree": "rebased onto main eb87d279",
     "make test": "PARITY OK (675/675)",
-    "make test-stages": "PARITY OK (1075/1075; the three new assertions are hideshadow's own)",
+    "make test-stages": "PARITY OK (1081/1081; the three new assertions are hideshadow's own)",
     "make test-cli": "183/183 passed",
     "make check-spec": "OK (lenient + strict)",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
     "docs/options.md": "byte-fresh (cmp against `kuna catalog --markdown`)",
-    "make rust-test": "green on the rebased head: RUST_TEST_RC=0, 415 `test result: ok` lines, 0 failures (lane 16:43-16:58 UTC; the only commit inside that window changed one record.json the suite does not read)"
+    "make rust-test": "green: RUST_TEST_RC=0, 415 `test result: ok` lines, 0 failures on the identical code state one rebase earlier (main 0d79b02d); re-run on this head after the eb87d279 rebase"
   },
   "catalog_counts": {
-    "rebase": "re-derived on main 0d79b02d (#661 structdefs, then #663 indirectonly), both of which had already moved the same sites; every number below comes from `scripts.repipe.counters --rederive/--fix` on a freshly built tree, not arithmetic",
+    "rebase": "re-derived on main eb87d279 (#661 structdefs, #663 indirectonly, #660 libctypes glibc), each of which had already moved some of these sites; every number comes from `scripts.repipe.counters --rederive/--fix` on a freshly built tree, not arithmetic. #660 added no settable, so the counts below are unchanged from the #663 rebase.",
     "settables": "215 -> 216",
     "tiers": "core 68 / transform 84 -> 85 / analysis 63",
     "catalog_json_rows": "214 -> 215",
     "stage corpus files": "305 -> 306 (223 tests/stages + 83 tests/datatests)",
     "live_value readers": "87 -> 88 (live_field = hide_shadow; neither structdefs nor indirectonly has one)",
     "bytecompat_fixture": "recaptured from the fresh decomp_dbg build (identical to the merged fixture)",
-    "baseline-stages": "re-recorded on the rebased tree: 1072 -> 1075, the three hideshadow assertions and nothing else"
+    "baseline-stages": "re-recorded on the rebased tree: 1078 -> 1081, the three hideshadow assertions and nothing else"
   },
   "files": [
     "decompiler/crates/kuna-decomp/src/p6_variables/kuna_hideshadow.rs (new)",
