@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_215() {
+fn settable_count_is_216() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -155,12 +155,12 @@ fn settable_count_is_215() {
     // +1 for `foldcallretphi` (P6 call-result folding past the merge phalanx).
     // +1 for `ptrfromuse` (P5 use-derived parameter pointer).
     // +1 for `structsynth` (P5 struct synthesis over a pointer parameter).
-    assert_eq!(kuna_num_settables(), 215);
-    assert_eq!(SETTABLE_TABLE.len(), 215);
+    assert_eq!(kuna_num_settables(), 216);
+    assert_eq!(SETTABLE_TABLE.len(), 216);
 }
 
 #[test]
-fn tier_counts_are_68_core_84_transform_63_analysis() {
+fn tier_counts_are_68_core_85_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -296,7 +296,7 @@ fn tier_counts_are_68_core_84_transform_63_analysis() {
     // transform 81 -> 82: +1 for `ptrfromuse` (P5 use-derived parameter pointer).
     // transform 84 -> 85: +1 for `structsynth` (P5 struct synthesis over a
     // pointer parameter).
-    assert_eq!((core, transform, analysis), (68, 84, 63));
+    assert_eq!((core, transform, analysis), (68, 85, 63));
 }
 
 #[test]
@@ -1063,7 +1063,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 211 -> 212: +1 for `ptrfromuse`; its P5 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
     // 214 -> 215: +1 for `structsynth`.
-    assert_eq!(json.matches("},\n").count(), 214);
+    assert_eq!(json.matches("},\n").count(), 215);
 }
 
 #[test]
