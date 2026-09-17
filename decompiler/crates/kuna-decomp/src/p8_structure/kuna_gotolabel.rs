@@ -83,6 +83,12 @@ pub(crate) fn referenced_goto_targets(graph: &BlockGraph, root: BlockId) -> std:
 /// that resolve to that same leaf, so the surviving-carrier test compares front
 /// leaves.  Comparing the named blocks dropped the label of a leaf a surviving
 /// `goto` reached through its enclosing list.
+///
+/// The clear itself addresses the block the pass names, not that block's front
+/// leaf, so a release whose target is composite leaves the flag set and the
+/// label printed.  That asymmetry is deliberate: a label no `goto` reaches is
+/// legal C, a `goto` with no label is not, and tightening the clear would
+/// remove statements rather than fix a label.
 pub(crate) fn release_converted_labels(data: &mut Funcdata, converted: &[BlockId]) {
     if converted.is_empty() {
         return;

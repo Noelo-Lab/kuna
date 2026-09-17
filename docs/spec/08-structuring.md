@@ -696,6 +696,8 @@ different enclosing nodes — a `BlockList` and the `BlockCopy` it opens with.
 The census is only ever read to *decline* a release, so it can keep a label
 the printer would otherwise drop but can never remove one.
 
+### retsplitglobal — a bound on cloning a global-writing epilogue
+
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_retsplitglobal.rs`, read by
 `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
 (Funcdata::return_split_is_splittable)` — the predicate BOTH return splitters
