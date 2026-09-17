@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1072,
-    1072
+    1078,
+    1078
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -387,12 +387,18 @@
     "data:KUNA-UNMAPPEDENTRY #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x <= 8 renders identically in all three passes",
     "data:KUNA-UNMAPPEDENTRY #2: the catalog documents it as a default-on P1 code/data-partition correctness fix, live-toggled back on",
     "data:KUNA-UNMAPPEDENTRY #3: the catalog row carries the correctness-fix change_kind an agent reads to judge the flip",
+    "data:LIBCTYPES #10: glibc off, a MINTED stream shell has no members, so the refill body reads an offset",
+    "data:LIBCTYPES #11: glibc on, the same two accesses are the published field",
+    "data:LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset",
+    "data:LIBCTYPES #13: glibc on, that read is the field",
+    "data:LIBCTYPES #14: and the value carries the FIELD's type, so the sentinel is a signed -1",
+    "data:LIBCTYPES #15: and the offset-named fields anywhere in this file are exactly the four pass 4 is there to show",
     "data:LIBCTYPES #1: off, the stream parameter is an opaque void *",
     "data:LIBCTYPES #2: on, the same parameter is a minted FILE *",
     "data:LIBCTYPES #3: off, the fopen result is an opaque void *",
     "data:LIBCTYPES #4: on, the fopen result is a minted FILE *",
     "data:LIBCTYPES #5: the DWARF layout of `stat` reads the same in both passes -- the named table adopted it instead of shadowing it",
-    "data:LIBCTYPES #6: and nothing anywhere fell back to an offset-named field",
+    "data:LIBCTYPES #6: and neither aggregate a DWARF definition already described fell back to an offset-named field",
     "data:LIBCTYPES #7: on a binary whose DWARF DOES define the stream type, that definition is what the table points at",
     "data:LIBCTYPES #8: including the parameter the whole option exists for",
     "data:LIBCTYPES #9: with its real field layout, not a shell",
