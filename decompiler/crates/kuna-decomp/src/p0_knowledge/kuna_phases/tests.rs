@@ -149,12 +149,13 @@ fn settable_count_is_211() {
     // +1 for `bytehonest` (P6 uncommitted byte on the JSON variables surface) and +1 for `elfmain` (P1 ELF libc-start main naming + prototype).
     // +1 for `argclobber` (P4 trailing clobber-argument drop).
     // +1 for `libctypes` (P1 named libc/POSIX aggregate pointers in the prototype tables).
-    assert_eq!(kuna_num_settables(), 211);
-    assert_eq!(SETTABLE_TABLE.len(), 211);
+    // +1 for `foldcallretphi` (P6 call-result folding past the merge phalanx).
+    assert_eq!(kuna_num_settables(), 212);
+    assert_eq!(SETTABLE_TABLE.len(), 212);
 }
 
 #[test]
-fn tier_counts_are_68_core_80_transform_63_analysis() {
+fn tier_counts_are_68_core_81_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -286,7 +287,8 @@ fn tier_counts_are_68_core_80_transform_63_analysis() {
     // core 67 -> 68: +1 for `argclobber` (P4 trailing clobber-argument drop).
     // analysis 62 -> 63: +1 for `libctypes` (P1 named libc/POSIX aggregate
     // pointers in the prototype tables).
-    assert_eq!((core, transform, analysis), (68, 80, 63));
+    // transform 80 -> 81: +1 for `foldcallretphi` (P6 call-result folding).
+    assert_eq!((core, transform, analysis), (68, 81, 63));
 }
 
 #[test]
@@ -735,6 +737,10 @@ fn option_values_live_value_present_for_87() {
                             | "branchflip"
                             | "namestyle"
                             | "foldcallret"
+                            // (kuna) `foldcallretphi` extends `foldcallret`'s
+                            // decision and shares its seam, so it reports its
+                            // live state the same way its sibling does.
+                            | "foldcallretphi"
                             | "gotoreduce"
                             | "ifelseflatten"
                             | "crossjumprevert"

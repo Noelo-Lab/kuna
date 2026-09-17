@@ -134,6 +134,9 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.dup_return_call_tails);
     assert!(arch.dedup_ite_tail);
     assert!(arch.fold_call_returns);
+    // (kuna) foldcallretphi ships OFF: it only relaxes the second gate for
+    // call outputs foldcallret already accepted, and wants its own evidence.
+    assert!(!arch.fold_call_ret_phi);
     assert!(arch.branch_flip);
     // (kuna) DIV-14 default-on sweep: 4 more flags default-on (3 of them REMOVE
     // CODE — stackguard/noreturn_extern/noreturn_propagate). Per-test opt-out

@@ -219,6 +219,9 @@ Three tiers:
 | call result spilled to a temp used exactly once: v5 = f(); if (v5 < 0) | [`foldcallret`](#foldcallret) |
 | single-use call return not inlined into its use site | [`foldcallret`](#foldcallret) |
 | flip off to force every call output into a named temporary (ghidra style) | [`foldcallret`](#foldcallret) |
+| single-use call result still gets its own local although the call and the use are adjacent | [`foldcallretphi`](#foldcallretphi) |
+| call takes a global (stdin/stdout/errno) as an argument and its result will not fold | [`foldcallretphi`](#foldcallretphi) |
+| foldcallret on but v3 = f(glob); use(v3) is still two statements | [`foldcallretphi`](#foldcallretphi) |
 | too many single-use temporaries: v7 = v3 + 8 declared and read once | [`impliedrefs`](#impliedrefs) |
 | a value read three times is written out three times instead of being declared | [`impliedrefs`](#impliedrefs) |
 | want to ablate the implied-expression threshold without rebuilding | [`impliedrefs`](#impliedrefs) |
@@ -1287,6 +1290,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** kuna spills a call result to a `vN = call(); use(vN)` pair that is used exactly once where angr folds the call expression into its use site. On by default (DIV-14); flip OFF to restore the upstream explicit-temporary form (Ghidra forces every call output explicit). Only folds when the single use is in the same block with no intervening call/load/store, so the call's evaluation order is preserved.
 - **Where / provenance:** P6/explicit-marking · angr · presentation-default · angr-call-return-variable-folding
 - **Example:** `option foldcallret on`
+
+### `foldcallretphi` -- on | off, default `off`
+
+- **Symptoms:** single-use call result still gets its own local although the call and the use are adjacent; call takes a global (stdin/stdout/errno) as an argument and its result will not fold; foldcallret on but v3 = f(glob); use(v3) is still two statements.
+- **What it does:** Let a call result that `foldcallret` already proved order-safe survive the second gate as well. `foldcallret` only relaxes ActionMarkExplicit's forced-explicit call arm; ActionMarkImplied then re-tests the candidate in checkImpliedCover, whose Merge::inflateTest arm forces it explicit when one of the call's operands has another live SSA version of the same HighVariable over the call output's cover. Upstream never reaches that arm with a call output (Ghidra marks every call output explicit one pass earlier), and the version it collides with is usually the CPUI_INDIRECT the call itself attaches to that operand's storage -- a call may write any global, so reading the global `stdin` as an argument is enough to make the fold look unsafe. This option discounts exactly that self-inflicted collision: the rejection is ignored only when every colliding version is an INDIRECT effect of the call being folded, the operand's high is not part of a VariableGroup, and the use op does not itself read one of those effects. foldcallret's order-safety predicate is untouched, so the call still may not cross a call, load, store or callother.
+- **When to flip:** kuna still spills a single-use call result to its own local even though the call and its use are adjacent -- typically when the call takes a global as an argument (`v3 = sub_3700(stdin,v7); v1 = 1; v12 &= v3;`). Turn on to get `v12 &= sub_3700(stdin,v7);`. Leave off for output that matches the shipped defaults; it only ever removes declarations, never reorders side effects.
+- **Where / provenance:** P6/explicit-marking · angr · presentation-default · kuna-foldcallretphi
+- **Example:** `option foldcallretphi on`
 
 ### `impliedrefs` -- 2 | 3 | 4 | <n>, default `2`
 

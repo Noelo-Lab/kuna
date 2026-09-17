@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue `kuna-foldcallretphi` (P6, sub-stage explicit-marking).
+
+    `foldcallret` (default-on) lets an order-safe single-use call output fall
+    through ActionMarkExplicit::baseExplicit's forced-explicit call arm, but
+    ActionMarkImplied re-tests the candidate in checkImpliedCover.  Its
+    Merge::inflateTest arm forces a value explicit when one of its operands has
+    another live SSA version of the same HighVariable over the candidate's
+    cover.  Upstream never reaches that arm with a call output (Ghidra marks
+    every call output explicit one pass earlier), and the version it collides
+    with here is the CPUI_INDIRECT the call ITSELF attaches to the global it
+    reads as an argument, a call may write any global.  So passing a global to
+    a call is enough to block the fold, even though the fold moves the operand
+    read and that write together.
+
+    `foldcallretphi` (default-off) discounts exactly that self-inflicted
+    collision.  foldcallret's order-safety predicate is untouched: the call
+    still may not cross a call, load, store or callother.
+
+    Synthetic minimiser (x86-64, gcc layout).  `target` reads the global `ok`
+    (0x1058) into a register, passes the global `g` (0x1050) to `helper`, writes
+    a stack byte, folds the result into `ok` with a read-modify-write, stores
+    that back, and only afterwards reads `g` again and calls `sink` (the second
+    read is what keeps the call's INDIRECT version of `g` live):
+
+      target: push rbx / sub rsp,0x10 / mov ebx,[ok] / mov rdi,[g]
+              / call helper / mov byte [rsp],1 / and ebx,eax / mov [ok],ebx
+              / movzx eax,byte [rsp] / mov [flag],al / mov rdi,[g] / call sink
+              / add rsp,0x10 / pop rbx / ret
+      helper: mov eax,5 / ret
+      sink:   xor eax,eax / ret
+
+    Control (not in the corpus): replacing `mov rdi,[g]` with `mov edi,7` makes
+    plain foldcallret fold the call with no option at all, which is what pins
+    the global operand as the blocker.
+
+    Pass 1 (option foldcallretphi off, the default): the call result spills to
+    its own statement -> assertions #1 and #2.
+    Pass 2 (option foldcallretphi on): the call is folded into the
+    read-modify-write and the spill is gone -> assertion #3.
+-->
+<bytechunk space="ram" offset="0x1000">
+534883ec108b1d4d000000488b3d3e000000e828000000c604240121c3891d350000000fb6042488052f000000488b3d1c000000e80c0000004883c4105bc3b805000000c331c0c3909090909090909000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="target"/>
+<symbol space="ram" offset="0x103f" name="helper"/>
+<symbol space="ram" offset="0x1045" name="sink"/>
+</binaryimage>
+<script>
+  <com>option foldcallretphi off</com>
+  <com>lo fu target</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option foldcallretphi on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="foldcallretphi #1: call result spilled to its own statement (only pass 1, off)" min="1" max="1">dat_1058 = helper\(dat_1050\);</stringmatch>
+<stringmatch name="foldcallretphi #2: the spill is read back by the read-modify-write (only pass 1, off)" min="1" max="1">dat_1058 = v1 &amp; dat_1058;</stringmatch>
+<stringmatch name="foldcallretphi #3: call folded into the read-modify-write (only pass 2, on)" min="1" max="1">dat_1058 = v1 &amp; helper\(dat_1050\);</stringmatch>
+</decompilertest>

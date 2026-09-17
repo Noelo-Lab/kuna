@@ -1006,6 +1006,10 @@ pub struct Architecture {
     /// (`fold_call_returns`, DIV-14 default-on; angr "call return variable
     /// folding").
     pub fold_call_returns: bool,
+    /// (kuna) Discount `Merge::inflate_test` rejections that a foldable call
+    /// causes itself, so its result folds past the merge phalanx
+    /// (`fold_call_ret_phi`, option `foldcallretphi`, default-off).
+    pub fold_call_ret_phi: bool,
     /// (kuna) Strip the glibc -fstack-protector canary epilogue
     /// (C++ `strip_stack_guard`).
     pub strip_stack_guard: bool,
@@ -2284,6 +2288,7 @@ impl Architecture {
             switch_return: false,
             recover_loop_break: false,
             fold_call_returns: false,
+            fold_call_ret_phi: false,
             strip_stack_guard: false,
             strip_msvc_stack_guard: false,
             strip_security_check: false,
@@ -3147,6 +3152,12 @@ impl Architecture {
             "foldcallret" => {
                 let (val, msg) = crate::kuna_callretfold::OptionFoldCallRet.apply(p1)?;
                 self.fold_call_returns = val;
+                Ok(msg)
+            }
+            "foldcallretphi" => {
+                let (val, msg) =
+                    crate::kuna_foldcallretphi::OptionFoldCallRetPhi.apply(p1)?;
+                self.fold_call_ret_phi = val;
                 Ok(msg)
             }
             "impliedrefs" => {
@@ -4055,6 +4066,7 @@ impl Architecture {
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         ctx.fold_call_returns = self.fold_call_returns; // foldcallret
+        ctx.fold_call_ret_phi = self.fold_call_ret_phi; // foldcallretphi
         ctx.strip_stack_guard = self.strip_stack_guard; // stackguard
         ctx.strip_msvc_stack_guard = self.strip_msvc_stack_guard; // msvcstackguard
         ctx.strip_security_check = self.strip_security_check; // securitycheck
