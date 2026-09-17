@@ -734,13 +734,16 @@ without proving it. The ordered comparisons, `/ %`, `>>` and the two extensions
 pass `care_uint_int = true` to `CastStrategyC::cast_standard`
 (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs
 (get_input_cast)`), and every op on the neutral list above passes `false` or
-takes no cast at all. The demand set is a strict **superset** of that
-`care_uint_int = true` set: `INT_SCARRY`, `INT_SBORROW`, `INT_CARRY`,
-`CPUI_CAST` and `INT_LEFT` all fall through to the dispatch's default arm, which
-passes `care_uint_int = false`. Demanding on them anyway is an
-over-constraint, not a gap — a carry intrinsic names its own signedness and a
-same-width cast prints a token that establishes the type — and only ever
-declines a flip that might otherwise have been made.
+takes no cast at all. The demand set is a **superset** of that
+`care_uint_int = true` set with one op held out: `INT_SCARRY`, `INT_SBORROW`,
+`INT_CARRY`, `CPUI_CAST` and `INT_LEFT` all fall through to the dispatch's
+default arm, which passes `care_uint_int = false`, and are demanded on anyway;
+`FLOAT_INT2FLOAT` is the converse — it passes `care_uint_int = true` whenever the
+operand's nonzero mask has its top bit set, and the pass vetoes it outright
+rather than demanding on it, which is strictly stronger. Demanding on the first
+three anyway is an over-constraint, not a gap — a carry intrinsic names its own
+signedness and a same-width cast prints a token that establishes the type — and
+only ever declines a flip that might otherwise have been made.
 
 "At a fixed width" is a precondition of that list, not a turn of phrase, and it
 is the third rule. C's integer promotions convert every operand narrower than

@@ -199,14 +199,14 @@
   "stages": "1048/1048, PARITY OK (before the foldcallretphi rebase; 1053 assertions now)",
   "note": "re-run on this tree (origin/main 12c31465 + this branch, after the width-guard fix and the new 16-bit stage test): phases.toml default flipped to `auto`, both binaries rebuilt, both corpora run against the UNCHANGED baselines, then the flip reverted and the tree rebuilt. The shipped default is `upstream`."
  },
- "speed_off_ms": 4045.6,
- "speed_on_ms": 4054.3,
- "speed_delta_pct": 0.21,
- "speed_samples": 42,
+ "speed_off_ms": 4075.5,
+ "speed_on_ms": 4082.4,
+ "speed_delta_pct": 0.17,
+ "speed_samples": 21,
  "speed_budget_pct": 5.0,
  "speed_within_budget": true,
  "speed_forced_off": false,
- "speed_note": "two interleaved min-of-21 whole-binary `decompile-all` runs on coreutils fmt -O2, pooled to min-of-42: +0.21% on the minimum. The MEDIAN is not usable on this box under other agents' load -- it came out +4.56% on the first run and -4.85% on the second, i.e. the noise is larger than anything this pass can cost. The cost is the same for every active value (`plan` walks the same candidate highs; only the tie-break differs), and `upstream` returns before the walk.",
+ "speed_note": "interleaved min-of-21 whole-binary `decompile-all` on coreutils fmt -O2, re-run on the shipped round-4 build: +0.17% on the minimum (4.0755s upstream vs 4.0824s auto); the earlier pooled min-of-42 on the round-3 build was +0.21%. The MEDIAN is not usable on this box under other agents' load (-1.58% here, +4.56% then -4.85% on the round-3 pair), i.e. the noise is larger than anything this pass can cost. On the DEFAULT path the whole pass is one `SignPolicy::is_active` test per function plus one `HashMap::is_empty` in `retain_sole_named`, and `drop_cast` short-circuits, so `upstream` costs nothing measurable.",
  "count_sites": {
   "settables": 213,
   "tiers": [

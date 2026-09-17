@@ -69,13 +69,16 @@ concatenation all produce the same bits under either declaration at a fixed
 width, so a flip is written only when every op that is not on that list agrees.
 
 kuna's own cast strategy draws the line in the same place, which corroborates the
-split rather than establishing it. `care_uint_int = true` is passed by exactly
+split rather than establishing it. `care_uint_int = true` is passed by
 `INT_SLESS`/`INT_SLESSEQUAL`, `INT_LESS`/`INT_LESSEQUAL`, `INT_SDIV`/`INT_SREM`,
-`INT_DIV`/`INT_REM`, `INT_SRIGHT`/`INT_RIGHT` and `INT_ZEXT`/`INT_SEXT`
-(`p9_emit/coreaction_casts.rs (get_input_cast)`); every op on the neutral list
-above is coerced with `care_uint_int = false`, i.e. upstream itself treats `int`
-and `uint` of one width as interchangeable there. The demand set is a strict
-**superset** of that `care_uint_int = true` set — it also demands on
+`INT_DIV`/`INT_REM`, `INT_SRIGHT`/`INT_RIGHT` and `INT_ZEXT`/`INT_SEXT`, and
+conditionally by `FLOAT_INT2FLOAT` (`p9_emit/coreaction_casts.rs
+(get_input_cast)`); every op on the neutral list above is coerced with
+`care_uint_int = false`, i.e. upstream itself treats `int` and `uint` of one
+width as interchangeable there. The demand set is a **superset** of that
+`care_uint_int = true` set except for `FLOAT_INT2FLOAT`, which the pass vetoes
+outright instead of demanding on — strictly stronger, and the reason the veto is
+unconditional where upstream's flag is conditional. It also demands on
 `INT_SCARRY`/`INT_SBORROW`/`INT_CARRY` and on a same-width `CPUI_CAST`, both of
 which take the default `get_input_cast` arm (`care_uint_int = false`), and on
 `INT_LEFT` (below). The first two are over-constraints, not gaps: a carry

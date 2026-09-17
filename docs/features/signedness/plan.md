@@ -78,7 +78,7 @@ and only a recorded override authorizes dropping a cast.
   `-O2` against `prefer-signed`'s 98.4% / 94.8%, because it turns 379 `size_t`
   locals signed where `prefer-signed` turns 12 — done, see `analysis.md`;
 * 0/675 datatests and stages `PARITY OK` with the default flipped — done;
-* speed within +5% — done (+0.26%).
+* speed within +5% — done (+0.17% on the minimum of 21 interleaved runs).
 
 ## Interactions
 

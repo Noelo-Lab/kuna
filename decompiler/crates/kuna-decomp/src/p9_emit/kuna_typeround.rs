@@ -57,14 +57,17 @@
 //! | a `(T)` cast | `CPUI_CAST` | the cast's own metatype, and only to a plain integer of the same width |
 //! | `<<` (operand 0) | `INT_LEFT` | unsigned - a *preference*, see below |
 //!
-//! **How this relates to `care_uint_int`.**  Seven of those rows - the four
-//! ordered comparisons, `/ %`, `>>` and the two extensions - are ops whose
+//! **How this relates to `care_uint_int`.**  Eight of those rows - both
+//! ordered-comparison rows, `/ %`, `>>` and the two extensions - are ops whose
 //! `getInputCast` passes `care_uint_int = true` in `p9_emit/coreaction_casts.rs`,
 //! which is upstream's own statement that `int` and `uint` differ there.  The
 //! other three do not: `INT_SCARRY`/`INT_SBORROW`/`INT_CARRY`, `CPUI_CAST` and
 //! `INT_LEFT` all fall through to that dispatch's default arm, which passes
-//! `care_uint_int = false`.  So the demand set is a strict **superset** of the
-//! `care_uint_int = true` set, and the two extra demands are safe
+//! `care_uint_int = false`.  So the demand set covers every op that can pass
+//! `care_uint_int = true` bar one - `FLOAT_INT2FLOAT` passes it whenever the
+//! operand's nonzero mask has its top bit set, and this pass does not demand on
+//! that op at all, it `Veto`s it, which is strictly stronger - and adds two
+//! demands of its own, which are safe
 //! over-constraints rather than gaps: a carry intrinsic spells its own
 //! signedness in its name (`SCARRY` is not `CARRY`), and a same-width
 //! `CPUI_CAST` prints a token that establishes the type it casts to.  What
@@ -117,7 +120,7 @@
 //! At and above the promotion width the neutral list is where the argument is
 //! made: each entry produces the same bits under either declaration, and every
 //! op upstream's own cast strategy coerces with `care_uint_int = true` is on the
-//! demanding side of the split rather than this one.  A width change between two integers is
+//! demanding or the vetoing side of the split, never this one.  A width change between two integers is
 //! an explicit `INT_SEXT`/`INT_ZEXT` in p-code, so a mixed-width expression is
 //! constrained by the extension op rather than slipping through as neutral.
 //!
@@ -414,7 +417,8 @@ enum ReaderClass {
 ///
 /// The demanding set is the C constructs whose *meaning* changes with the
 /// operand's signedness.  It contains every op whose `getInputCast` passes
-/// `care_uint_int = true` in `p9_emit/coreaction_casts.rs` and three that take
+/// `care_uint_int = true` in `p9_emit/coreaction_casts.rs` except
+/// `FLOAT_INT2FLOAT`, which is vetoed instead, and three that take
 /// that dispatch's default (`care_uint_int = false`) arm: the carry intrinsics
 /// and a same-width `CPUI_CAST`, which are safe over-constraints, and
 /// `INT_LEFT`, which is a stated preference (module header).

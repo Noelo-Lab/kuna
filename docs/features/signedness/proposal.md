@@ -83,13 +83,15 @@ kuna's own cast strategy draws the same line, which corroborates the split but
 does not prove it, and the earlier drafts of this section overstated the
 relationship. The ordered comparisons, `/ %`, `>>` and the two extensions pass
 `care_uint_int = true` to `CastStrategyC::cast_standard`; the whitelist is a
-strict **superset** of those, because `INT_SCARRY`/`INT_SBORROW`/`INT_CARRY`, a
+**superset** of those, because `INT_SCARRY`/`INT_SBORROW`/`INT_CARRY`, a
 same-width `CPUI_CAST` and `INT_LEFT` all take the default `get_input_cast` arm,
 which passes `care_uint_int = false`. Demanding on the first two anyway is an
 over-constraint rather than a gap — a carry intrinsic names its own signedness
 and a cast token establishes the type it prints — and it can only ever decline a
 flip. `INT_LEFT` is a stated preference and is discussed in the open-design list
-below.
+below. One op goes the other way: `FLOAT_INT2FLOAT` passes `care_uint_int = true`
+when the operand's nonzero mask has its top bit set, and the whitelist does not
+demand on it — it is vetoed, which is strictly stronger.
 
 Three things the rule has to survive that the first drafts did not:
 
@@ -183,7 +185,7 @@ table above, plus the cast hunks that stop being written.
 
 **3. Should `auto` become the default?** It clears the repo's mechanical bar —
 built with `auto` as the default, `make test` is 675/675 **PARITY OK**, stages is
-**PARITY OK**, and the speed delta is **+0.21%** on the minimum of 42 interleaved
+**PARITY OK**, and the speed delta is **+0.17%** on the minimum of 21 interleaved
 whole-binary `decompile-all` runs — but the fidelity
 case for it is not there: four observations. If `auto` is ever made the default,
 the argument has to be **cast removal and the end of declaration-vs-body
