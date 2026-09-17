@@ -53,23 +53,30 @@
 //!      op (the iop encoding in input 1) is this call.  Sinking the call past
 //!      such a read (e.g. the out-parameter copy `Merge::snipReads` places right
 //!      after the call, GH-181) would hand the read the *pre*-call value;
-//!   4. no **barrier** sits between the call and the statement the folded
-//!      expression is finally printed in, which is further than the use whenever
-//!      the use op's own output is implied
+//!   4. nothing that **writes state the callee may read** sits between the call
+//!      and the statement the folded expression is finally printed in, which is
+//!      further than the use whenever the use op's own output is implied
 //!      ([`fold_print_point_is_order_safe`], asked once the implied chain below
 //!      the use is classified).  The ops that chain travels through are not
 //!      barriers to it: each consumes the previous one's value, so the call is
 //!      evaluated before them either way.
 //!
-//! Only the barrier half of (3) is re-asked over that second span.  The INDIRECT
-//! half keeps the span to the use, because past the use it declines folds that
-//! are faithful: `dat_33798 = *__errno_location()` is one call, one load and one
-//! store in that order in the binary, and the call's own effect on the global is
-//! what the store performs.  Asking it there de-folds 27 functions across
-//! `grep` O0, `tar` O0 and `ssh` O2 and corrects none.  `foldcallretphi` is the
-//! option that lets a fold travel past a merge conflict at all, so it does ask
-//! the question over the whole distance, for its own folds
-//! ([`landing_span_reads_call_effect`]).
+//! (4) asks a narrower question than (3) ([`op_is_write_barrier`] against
+//! [`op_is_barrier`]: no `LOAD`), and deliberately.  Up to the use a read is
+//! still a hazard this pass can decide — the call may `STORE` what the `LOAD`
+//! reads, and the use op is the fold's textual home, so the `LOAD` is something
+//! the call is moved across.  Past the use, the reads left in the span are the
+//! ones the folded expression ends up printed *beside*, inside the one statement
+//! the whole chain collapses into, and de-folding over those moves no statement:
+//! it is `SWEEP_LOAD_FNS` functions over the 36-binary corpus, dominated by
+//! `__ctype_b_loc()` inlined into the same conditional as the loads it now sits
+//! next to.  The same reasoning keeps the INDIRECT half of (3) on the span to
+//! the use: `dat_33798 = *__errno_location()` is one call, one load and one
+//! store in exactly that order in the binary, and asking past the use de-folds
+//! 27 more functions and corrects none.  `foldcallretphi` — the option that lets
+//! a fold travel past a merge conflict at all — is what otherwise holds such
+//! calls in place, so it re-asks both questions in full over the whole distance
+//! for its own folds, exactly as it shipped.
 //!
 //! Keeping `LOAD` in the forbidden set is necessary, not redundant: the call may
 //! `STORE` memory that an intervening `LOAD` reads, so sinking the call past that
@@ -209,7 +216,7 @@ pub fn expression_contains_foldable_call(data: &Funcdata, root: VarnodeId) -> bo
 /// effect, so the call expression must not be sunk past it (GH-181).  Marker
 /// ops (a later call's own INDIRECTs chain the earlier call's versions as
 /// inputs) have no textual evaluation point and are skipped.
-fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
+pub(crate) fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,
         None => return true, // stale: be conservative
@@ -267,45 +274,6 @@ pub fn fold_print_point_is_order_safe(data: &Funcdata, vn: VarnodeId) -> bool {
     print_point_is_order_safe(data, def, use_op)
 }
 
-/// (kuna) Does anything the call would be moved past, up to and including the
-/// statement the folded expression lands in, read a value `call` writes
-/// indirectly?
-///
-/// [`call_output_foldable`] asks this over the span from the call to its single
-/// use.  Beyond the use the span belongs to whoever let the expression travel
-/// that far, and that is `foldcallretphi`: the merge rejection it discounts is
-/// what otherwise holds such a call in place, so it re-asks the question over
-/// the rest of the distance.  The landing statement is included — the folded
-/// expression is evaluated as one of its operands, but naming another operand
-/// there that is the call's own INDIRECT output puts that operand's high in the
-/// text both as the call's argument (pre-call) and beside it (post-call).  This
-/// is the span guard `foldcallretphi` shipped with, kept whole.
-pub(crate) fn landing_span_reads_call_effect(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
-    let Some(chain) = print_chain(data, use_op) else {
-        return true; // no derivable landing statement: be conservative
-    };
-    let point = *chain.last().expect("print_chain: non-empty");
-    let Some(blk) = op_parent(data, call) else {
-        return true;
-    };
-    if op_parent(data, point) != Some(blk) {
-        return true;
-    }
-    let ops = data.bb_ops(blk);
-    let (Some(ci), Some(pi)) = (
-        ops.iter().position(|&o| o == call),
-        ops.iter().position(|&o| o == point),
-    ) else {
-        return true;
-    };
-    if pi <= ci {
-        return true;
-    }
-    ops[ci + 1..=pi]
-        .iter()
-        .any(|&mid| op_reads_indirect_output_of(data, mid, call))
-}
-
 /// Longest implied chain [`print_chain`] will chase before giving up.
 const MAX_IMPLIED_CHAIN: usize = 8;
 
@@ -317,7 +285,7 @@ const MAX_IMPLIED_CHAIN: usize = 8;
 /// implied and the expression migrates into that value's own consumer, so the
 /// walk follows the implied chain.  `None` means there is no provable single
 /// print point: a marker, a fan-out, or a value not classified yet.
-fn print_chain(data: &Funcdata, use_op: OpId) -> Option<Vec<OpId>> {
+pub(crate) fn print_chain(data: &Funcdata, use_op: OpId) -> Option<Vec<OpId>> {
     let mut chain = Vec::with_capacity(MAX_IMPLIED_CHAIN);
     let mut op = use_op;
     for _ in 0..MAX_IMPLIED_CHAIN {
@@ -342,18 +310,16 @@ fn print_chain(data: &Funcdata, use_op: OpId) -> Option<Vec<OpId>> {
 
 /// (kuna) Does the call survive the move all the way to its print point?
 ///
-/// Runs the barrier test over the span from the call to the statement the folded
-/// expression lands in, which is where it is evaluated at run time.  The ops the
-/// expression travels *through* are exempt: each consumes the previous one's
-/// value, so the call is still evaluated before them in the folded text exactly
-/// as it is in the binary — a `LOAD` of the pointer a call just returned is not a
-/// load the call was moved past.
+/// Runs [`op_is_write_barrier`] over the span from the call to the statement the
+/// folded expression lands in, which is where it is evaluated at run time.  The
+/// ops the expression travels *through* are exempt: each consumes the previous
+/// one's value, so the call is still evaluated before them in the folded text
+/// exactly as it is in the binary — a `LOAD` of the pointer a call just returned
+/// is not a load the call was moved past.
 ///
-/// Only the barrier test runs here.  The INDIRECT question — whether a read of
-/// the call's own effect gets separated from it — is decided over the span to
-/// the use (the module header measures what asking it here would cost);
-/// `foldcallretphi` asks it over this span for its own folds, in
-/// [`landing_span_reads_call_effect`].
+/// Only writes are asked about here, and only opcodes — the INDIRECT question is
+/// decided over the span to the use.  The module header measures what the two
+/// wider forms of this test would cost.
 fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
     let Some(chain) = print_chain(data, use_op) else {
         return false;
@@ -377,7 +343,7 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
     }
     !ops[ci + 1..pi]
         .iter()
-        .any(|&mid| !chain.contains(&mid) && op_is_barrier(data, mid))
+        .any(|&mid| !chain.contains(&mid) && op_is_write_barrier(data, mid))
 }
 
 /// Is `op` a `CPUI_COPY` back into the storage its input already occupies?
@@ -415,10 +381,11 @@ fn op_is_self_copy(data: &Funcdata, op: OpId) -> bool {
         && Rc::ptr_eq(ov.get_space(), iv.get_space())
 }
 
-/// An op whose relative order with the moved call is observable: any call, a
-/// memory-touching op (LOAD/STORE/CALLOTHER), or a write to storage the callee
-/// may read ([`op_writes_tied_storage`]).
-fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
+/// An op whose relative order with the moved call is observable on the span from
+/// the call to its single use: any call, a memory-touching op
+/// (LOAD/STORE/CALLOTHER), or a write to storage the callee may read
+/// ([`op_writes_observable_storage`]).
+pub(crate) fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,
         None => return true, // stale: be conservative
@@ -432,7 +399,24 @@ fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     ) {
         return true;
     }
-    op_writes_tied_storage(data, op)
+    op_writes_observable_storage(data, op)
+}
+
+/// The same question past the single use, where only writes are left to ask
+/// about: any call, a `STORE` or `CALLOTHER`, or a write to storage the callee
+/// may read.  `LOAD` is not in the set — see the module header.
+fn op_is_write_barrier(data: &Funcdata, op: OpId) -> bool {
+    let o = match data.obank().get(op) {
+        Some(o) => o,
+        None => return true, // stale: be conservative
+    };
+    if o.is_call() {
+        return true;
+    }
+    if matches!(o.code(), OpCode::CPUI_STORE | OpCode::CPUI_CALLOTHER) {
+        return true;
+    }
+    op_writes_observable_storage(data, op)
 }
 
 /// (kuna) Does `op` write storage the callee could read — memory, not a register?
@@ -451,7 +435,11 @@ fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
 /// Marker ops are skipped: an INDIRECT/MULTIEQUAL performs no write of its own,
 /// it records one its effect op performs, and that op is either the call being
 /// folded or a barrier in its own right.
-fn op_writes_tied_storage(data: &Funcdata, op: OpId) -> bool {
+///
+/// This is the storage test alone; [`op_writes_observable_storage`] is the one
+/// the fold predicates use.  `foldcallretphi` composes this one, unsoftened, in
+/// the span guard it shipped with.
+pub(crate) fn op_writes_tied_storage(data: &Funcdata, op: OpId) -> bool {
     let Some(o) = data.obank().get(op) else {
         return true; // stale: be conservative
     };
@@ -465,14 +453,20 @@ fn op_writes_tied_storage(data: &Funcdata, op: OpId) -> bool {
         .get(out)
         .map(|v| v.is_persist() || v.is_addr_tied())
         .unwrap_or(true)
-        && !op_is_self_copy(data, op)
 }
 
-fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
+/// [`op_writes_tied_storage`] minus the copies that store the value already
+/// there ([`op_is_self_copy`]), which no callee can observe on either side of
+/// the move.
+fn op_writes_observable_storage(data: &Funcdata, op: OpId) -> bool {
+    op_writes_tied_storage(data, op) && !op_is_self_copy(data, op)
+}
+
+pub(crate) fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
     data.obank().get(op).map(|o| o.is_marker()).unwrap_or(true)
 }
 
-fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::context::BlockId> {
+pub(crate) fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::context::BlockId> {
     data.obank().get(op).and_then(|o| o.get_parent())
 }
 

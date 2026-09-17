@@ -37,41 +37,57 @@
 //! The discount is about *versions*, not order: the collision it forgives is
 //! one the call itself creates, and in the folded rendering the operand read and
 //! that write still happen at the same point — inside the call expression —
-//! exactly as they do in the spilled form.  Two further conditions bound it:
+//! exactly as they do in the spilled form.  Three further conditions bound it:
 //!
 //!   * the operand's high must not belong to a `VariableGroup` (the piece
 //!     intersection loop of `inflate_test` reasons about overlapping storage,
-//!     not versions, so its rejections are never discounted), and
-//!   * nothing from the call up to and including the statement the expression
-//!     lands in may read an INDIRECT effect of the call — there the folded text
-//!     would name the operand's high both as the call's argument (pre-call) and
-//!     beside it (post-call).
+//!     not versions, so its rejections are never discounted),
+//!   * the use op must not itself read an INDIRECT effect of the call — there
+//!     the folded text would name the operand's high both as the call's
+//!     argument (pre-call) and as an operand of the use (post-call), and
+//!   * the whole distance the call moves has to be order-safe
+//!     ([`print_point_is_order_safe`]).
 //!
-//! # Why this option carries its own span guard
+//! # What order-safe means here, and why it is not `foldcallret`'s span
 //!
-//! `call_output_foldable`'s span ends at the single use, which is the call's
-//! textual home only when that use op is itself a statement; when the use op's
-//! own output is implied the expression keeps travelling, and the rejection this
-//! module discounts is sometimes the only thing that was holding such a call in
-//! place.  The distance it then travels is therefore this option's to clear, and
-//! it is cleared twice over:
+//! `foldcallret`'s guard tests *opcodes*: no CALL, LOAD, STORE or CALLOTHER
+//! between the call and its use.  That set is not the whole of "writes something
+//! the callee can see".  A write to a fixed global address is heritaged into a
+//! plain `CPUI_COPY`, which the opcode test waves through, so on
 //!
-//!   * against barriers — a call, a memory opcode, or a write to persistent or
-//!     address-tied storage — by
-//!     [`fold_print_point_is_order_safe`](crate::p6_variables::kuna_callretfold),
-//!     one arm earlier in the same
-//!     [`check_implied_cover`](crate::p6_variables::coreaction_cleanup) call.
-//!     That arm runs for every folded call output, this option on or off; it is
-//!     where GH-657's tied-write barrier reaches the default fold.
-//!   * against reads of the call's own INDIRECT effects, by
-//!     [`landing_span_reads_call_effect`](crate::p6_variables::kuna_callretfold).
-//!     `foldcallret` asks that question only as far as the use, where asking it
-//!     further declines faithful folds; here it is asked over the whole
-//!     distance, because the folds that reach this far are exactly the ones the
-//!     merge machinery was holding.  Dropping it folds `ssh` O2 `sub_4fd30`'s
-//!     `sub_3fa80` past a copy of an escaped stack slot the call reloads —
-//!     GH-181's shape.
+//! ```text
+//! v2 = helper(g);   // helper returns k
+//! k = 42;           // a CPUI_COPY: no STORE, no LOAD, no call
+//! ok = v1 & v2;
+//! ```
 //!
+//! folding `helper(g)` into the last statement evaluates it *after* `k = 42` and
+//! changes what it returns.
+//! [`op_writes_tied_storage`](crate::p6_variables::kuna_callretfold::op_writes_tied_storage)
+//! is the missing barrier, and every span this module clears is tested with it —
+//! for a frame slot as well, since the callee can reach one whenever the frame
+//! address escaped into the call.  (The same hole is reachable through
+//! `foldcallret` alone, without this option, when the call takes no global
+//! operand; that is GH-657, fixed in `foldcallret`'s own two spans because it is
+//! default-on and this option is not.  This module's guard is deliberately left
+//! as it shipped: it is the wider of the two — every opcode, the storage test
+//! unsoftened, and the INDIRECT question over the whole distance — so the folds
+//! it discounts are exactly the ones it discounted before, and the only thing
+//! `--option foldcallretphi on` inherits from the GH-657 fix is what that fix
+//! changes in the default rendering.)
+//!
+//! # Where the folded call is actually printed
+//!
+//! `call_output_foldable`'s span guard ends at the single use, which is the
+//! call's textual home only when that use op is itself a statement.  If the use
+//! op's own output is *implied*, the expression keeps travelling: it is printed
+//! wherever that implied value is finally consumed, and that can be a later
+//! block behind a branch.  The rejection this module discounts is sometimes the
+//! only thing holding such a call in place, so the discount re-derives the real
+//! print point ([`print_point`]) and re-runs the span guard over the whole
+//! distance the call would move.  A print point outside the call's own block, or
+//! one with a barrier or a global write in between, declines.
+
 use kuna_base::error::KunaResult;
 use kuna_num::opcodes::OpCode;
 
@@ -104,7 +120,7 @@ pub fn conflict_is_self_call_effect(
     if op_reads_indirect_effect_of(data, use_op, call) {
         return false;
     }
-    if crate::kuna_callretfold::landing_span_reads_call_effect(data, call, use_op) {
+    if !print_point_is_order_safe(data, call, use_op) {
         return false;
     }
     let Some(high_cover) = data.high_bank().internal_cover(high).cloned() else {
@@ -135,6 +151,53 @@ pub fn conflict_is_self_call_effect(
         }
     }
     saw_conflict
+}
+
+/// (kuna) The op at whose statement the expression rooted at `use_op` is printed:
+/// the end of
+/// [`print_chain`](crate::p6_variables::kuna_callretfold::print_chain), which
+/// `foldcallret` walks for the same reason.
+fn print_point(data: &Funcdata, use_op: OpId) -> Option<OpId> {
+    crate::kuna_callretfold::print_chain(data, use_op)
+        .map(|c| *c.last().expect("print_chain: non-empty"))
+}
+
+/// (kuna) Does the call survive the move all the way to its print point?
+///
+/// `call_output_foldable` has already cleared the span from the call to
+/// `use_op`; this re-runs the same guard over the span from the call to the
+/// statement the folded expression actually lands in, which is where it is
+/// evaluated at run time, and adds the memory-write barrier
+/// [`op_writes_tied_storage`] that the opcode test misses.  The print point
+/// itself is not a barrier — the folded expression is evaluated as its operand,
+/// before it — but its *other* operands must not read an effect of the call,
+/// so the INDIRECT test covers it too.
+fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
+    let Some(point) = print_point(data, use_op) else {
+        return false;
+    };
+    let Some(blk) = crate::kuna_callretfold::op_parent(data, call) else {
+        return false;
+    };
+    if crate::kuna_callretfold::op_parent(data, point) != Some(blk) {
+        return false;
+    }
+    let ops = data.bb_ops(blk);
+    let (Some(ci), Some(pi)) = (
+        ops.iter().position(|&o| o == call),
+        ops.iter().position(|&o| o == point),
+    ) else {
+        return false;
+    };
+    if pi <= ci {
+        return false;
+    }
+    let span_clear = !ops[ci + 1..pi].iter().any(|&mid| {
+        crate::kuna_callretfold::op_is_barrier(data, mid)
+            || crate::kuna_callretfold::op_writes_tied_storage(data, mid)
+            || crate::kuna_callretfold::op_reads_indirect_output_of(data, mid, call)
+    });
+    span_clear && !crate::kuna_callretfold::op_reads_indirect_output_of(data, point, call)
 }
 
 /// Is `vn` the output of a `CPUI_INDIRECT` whose effect op (the iop encoded in
