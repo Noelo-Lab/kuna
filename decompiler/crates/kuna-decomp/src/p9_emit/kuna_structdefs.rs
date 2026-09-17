@@ -32,13 +32,14 @@
 //! types ([`Datatype::get_depend`]) — a pointer's pointee, an array's element,
 //! a struct's fields — so a struct whose field is another struct pulls in both,
 //! and the postorder push is definition-before-use by construction (the same
-//! order [`TypeFactoryImpl::dependent_order`] produces, computed over the
+//! order [`TypeFactoryImpl::dependent_order`](crate::dtype::TypeFactoryImpl::dependent_order)
+//! produces, computed over the
 //! referenced subset rather than the whole factory, which is what keeps a
 //! whole-binary run linear in the types a function actually touches).
 //!
 //! ## One rendering, two surfaces
 //!
-//! The text is [`crate::printc::render_type_definitions`], the same renderer
+//! The text is `printc::render_type_definitions`, the same renderer
 //! that builds `kuna decompile-project`'s `.h` type block, over the subset:
 //! the forward-declaration block, then bodies, with an incomplete struct
 //! printing as `typedef struct FILE FILE; /* opaque */`.  So a preamble line and
