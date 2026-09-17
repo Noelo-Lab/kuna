@@ -63,6 +63,14 @@
 //! side-effect-free guard, preferring false negatives (stay explicit) over
 //! reordering bugs.
 //!
+//! The opcode set is not complete, though: a write to a fixed global address is
+//! heritaged into a plain `CPUI_COPY`, so `v = f(); glob = 42; use(v)` folds and
+//! evaluates `f()` after the write to `glob` (GH-657).  `foldcallretphi` tests
+//! every span it clears with
+//! [`op_writes_global_storage`](crate::p6_variables::kuna_foldcallretphi); this
+//! predicate does not yet, because it is default-on and the fix moves default
+//! output.
+//!
 //! The direct call output can still have one descendant while a derived
 //! truncation or arithmetic result fans out later. If that derived expression
 //! has multiple uses, [`expression_contains_foldable_call`] makes it explicit
@@ -224,6 +232,9 @@ pub(crate) fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId)
 
 /// An op whose relative order with the moved call is observable: any call, or a
 /// memory-touching op (LOAD/STORE/CALLOTHER).
+///
+/// Opcodes only — a heritage-promoted write to a global is a `CPUI_COPY` and is
+/// not in this set (GH-657); see the module header.
 pub(crate) fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,

@@ -868,6 +868,14 @@ marker ops are skipped since a later call's own INDIRECTs chain the earlier
 call's versions without any textual evaluation point). Anything else stays
 explicit: false negatives over reordering bugs.
 
+That barrier set is stated in opcodes, and opcodes are not the whole of "writes
+something the callee can read". Heritage promotes a write to a fixed global
+address into a plain `CPUI_COPY`, which no opcode test catches, so
+`v = f(); glob = 42; use(v)` folds and evaluates `f()` after the write to
+`glob` (kuna GH-657). `foldcallretphi` below tests every span it clears for that
+write as well; this predicate does not yet, because it is default-on and the fix
+moves default output.
+
 The direct call output may have one descendant even though a derived value
 later fans out. For example, `u = (ushort)f()` gives the call one `SUBPIECE`
 descendant, while `u` can feed a loop comparison and a post-loop store. If the
@@ -908,11 +916,9 @@ colliding version is produced by the very call being moved.
 (conflict_is_self_call_effect)` discounts exactly that case: the rejection is
 ignored only when at least one instance of the operand's high collides and
 *every* colliding instance is the output of an INDIRECT whose effect op is this
-call. Two conditions keep the discount sound beside `foldcallret`'s own
-order-safety predicate, which is untouched — the call still may not cross a
-call, load, store or callother, so nothing between it and its use can write the
-operand's storage, and the folded text performs the operand read and the call's
-own write at one point, as the spilled form does. First, a high that belongs to
+call. The collision is about versions, not order: the folded text performs the
+operand read and the call's own write at one point, exactly as the spilled form
+does. Two conditions bound the discount itself. First, a high that belongs to
 a `VariableGroup` declines: `inflate_test`'s second loop reasons about
 overlapping storage rather than versions, and its rejections are never
 discounted. Second, a use op that itself reads an INDIRECT effect of the call
@@ -935,6 +941,26 @@ call/load/store/callother in between, declines. Without it, `betaflight`'s
 `sub_8051ac4` emits its `sub_80515b4(dat_200181a4)` *after* an
 `if (dat_200019cc & 1)` that the binary evaluates after the call — a call moved
 past two global reads it may itself write.
+
+That span guard also carries the barrier the opcode test misses
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
+(op_writes_global_storage)`): any op between the call and the print point whose
+output varnode is persistent — a heritage-promoted write to a global, a
+`CPUI_COPY` the opcode test waves through — declines. It is checked over the
+whole distance, which contains the call-to-use span, so every fold this option
+adds is guarded against it even though `foldcallret`'s own predicate is not
+(GH-657). A frame slot needs no barrier of its own: for the callee to read one,
+its address has to escape into the call, and an escaped slot is written through a
+`CPUI_STORE`, which is already in the opcode set. The shape the guard catches,
+with `helper` returning `k`:
+
+```c
+v2 = helper(g);        /* stays spilled: the fold would evaluate helper */
+k = 42;                /* after this write, and it reads k */
+ok = v1 & v2;
+```
+
+while the same function with a frame store in place of `k = 42` folds.
 
 It ships **off** for two reasons. Flipping the default leaves both corpora at
 PARITY OK (0 of 675 datatest assertions change) and costs +1.22% on `fmt`

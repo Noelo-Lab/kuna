@@ -34,20 +34,39 @@
 //! INDIRECT effect of this call?  If so, the rejection is discounted and the
 //! call output stays an implied candidate.
 //!
-//! Soundness rests on `foldcallret`'s own order-safety predicate, which this
-//! module does not weaken: the call and its use are in the same block with no
-//! intervening CALL/LOAD/STORE/CALLOTHER, so nothing between them can write the
-//! operand's storage.  The only writer is the call, and in the folded rendering
-//! the operand read and that write happen at the same point — inside the call
-//! expression — exactly as they do in the spilled form.  Two extra conditions
-//! keep the argument airtight:
+//! The discount is about *versions*, not order: the collision it forgives is
+//! one the call itself creates, and in the folded rendering the operand read and
+//! that write still happen at the same point — inside the call expression —
+//! exactly as they do in the spilled form.  Three further conditions bound it:
 //!
 //!   * the operand's high must not belong to a `VariableGroup` (the piece
 //!     intersection loop of `inflate_test` reasons about overlapping storage,
-//!     not versions, so its rejections are never discounted), and
+//!     not versions, so its rejections are never discounted),
 //!   * the use op must not itself read an INDIRECT effect of the call — there
 //!     the folded text would name the operand's high both as the call's
-//!     argument (pre-call) and as an operand of the use (post-call).
+//!     argument (pre-call) and as an operand of the use (post-call), and
+//!   * the whole distance the call moves has to be order-safe
+//!     ([`print_point_is_order_safe`]).
+//!
+//! # What order-safe means here, and why it is not `foldcallret`'s span
+//!
+//! `foldcallret`'s guard tests *opcodes*: no CALL, LOAD, STORE or CALLOTHER
+//! between the call and its use.  That set is not the whole of "writes something
+//! the callee can see".  A write to a fixed global address is heritaged into a
+//! plain `CPUI_COPY`, which the opcode test waves through, so on
+//!
+//! ```text
+//! v2 = helper(g);   // helper returns k
+//! k = 42;           // a CPUI_COPY: no STORE, no LOAD, no call
+//! ok = v1 & v2;
+//! ```
+//!
+//! folding `helper(g)` into the last statement evaluates it *after* `k = 42` and
+//! changes what it returns.  [`op_writes_global_storage`] is the missing
+//! barrier, and every span this module clears is tested with it.  (The same hole
+//! is reachable through `foldcallret` alone, without this option, when the call
+//! takes no global operand; that is GH-657 and is fixed separately, since
+//! `foldcallret` is default-on and this option is not.)
 //!
 //! # Where the folded call is actually printed
 //!
@@ -59,7 +78,7 @@
 //! only thing holding such a call in place, so the discount re-derives the real
 //! print point ([`print_point`]) and re-runs the span guard over the whole
 //! distance the call would move.  A print point outside the call's own block, or
-//! one with a CALL/LOAD/STORE/CALLOTHER in between, declines.
+//! one with a barrier or a global write in between, declines.
 
 use kuna_base::error::KunaResult;
 use kuna_num::opcodes::OpCode;
@@ -163,7 +182,11 @@ fn print_point(data: &Funcdata, use_op: OpId) -> Option<OpId> {
 /// `call_output_foldable` has already cleared the span from the call to
 /// `use_op`; this re-runs the same guard over the span from the call to the
 /// statement the folded expression actually lands in, which is where it is
-/// evaluated at run time.
+/// evaluated at run time, and adds the global-write barrier
+/// [`op_writes_global_storage`] that the opcode test misses.  The print point
+/// itself is not a barrier — the folded expression is evaluated as its operand,
+/// before it — but its *other* operands must not read an effect of the call,
+/// so the INDIRECT test covers it too.
 fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
     let Some(point) = print_point(data, use_op) else {
         return false;
@@ -184,10 +207,40 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
     if pi <= ci {
         return false;
     }
-    !ops[ci + 1..pi].iter().any(|&mid| {
+    let span_clear = !ops[ci + 1..pi].iter().any(|&mid| {
         crate::kuna_callretfold::op_is_barrier(data, mid)
+            || op_writes_global_storage(data, mid)
             || crate::kuna_callretfold::op_reads_indirect_output_of(data, mid, call)
-    })
+    });
+    span_clear && !crate::kuna_callretfold::op_reads_indirect_output_of(data, point, call)
+}
+
+/// (kuna) Does `op` write storage the callee reads on its own — a global?
+///
+/// A write to a fixed global address is heritaged into a plain `CPUI_COPY` (or
+/// any arithmetic op) whose output varnode is persistent, so
+/// [`op_is_barrier`](crate::p6_variables::kuna_callretfold) — which tests the
+/// opcode, CALL/LOAD/STORE/CALLOTHER — does not see it, yet a callee reads that
+/// address directly.  Moving a call past such a write hands it the new value
+/// (`kuna decompile s1 target`, GH-657).
+///
+/// A frame slot needs no test of its own: for the callee to observe one, its
+/// address has to escape into the call, and an escaped slot is written through a
+/// p-code `CPUI_STORE`, which is already a barrier.  Marker ops are skipped: an
+/// INDIRECT/MULTIEQUAL performs no write of its own, it records one its effect
+/// op performs, and that op is either the call being folded (its own INDIRECTs
+/// are what this module exists to discount) or a barrier in its own right.
+fn op_writes_global_storage(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else {
+        return true; // stale: be conservative
+    };
+    if o.is_marker() {
+        return false;
+    }
+    let Some(out) = o.get_out() else {
+        return false;
+    };
+    data.vbank().get(out).map(|v| v.is_persist()).unwrap_or(true)
 }
 
 /// Is `vn` the output of a `CPUI_INDIRECT` whose effect op (the iop encoded in
