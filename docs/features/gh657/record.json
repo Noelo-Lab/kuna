@@ -95,12 +95,12 @@
   },
   "gates": {
     "make test": "675/675 PARITY OK (no assertion moved, no re-pin)",
-    "make test-stages": "1065/1065 PARITY OK (baseline re-recorded for the six NEW assertions only; 1059 pre-existing keys untouched)",
+    "make test-stages": "1078/1078 PARITY OK (baseline re-recorded for the six NEW assertions only; 1072 pre-existing keys untouched)",
     "make check-spec": "OK lenient + OK strict",
     "make test-cli": "184/184 passed",
     "kuna catalog --check": "catalog OK",
     "counters --check": "no drift; docs/options.md byte-fresh",
-    "make rust-test": "RUST_TEST_RC=0 -- 415 test binaries, 7121 passed / 0 failed",
+    "make rust-test": "RUST_TEST_RC=0 -- 415 test binaries, 7130 passed / 0 failed",
     "stage_test_two_arm": "tests/stages/kuna-foldcallret-barrier.xml run against a build of origin/main via KUNA_DECOMP_TEST: 1/6 assertions pass (#1, #3, #4, #5, #6 fail). Against this branch: 6/6."
   },
   "stage_assertions_examined": {
@@ -133,7 +133,7 @@
     "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,cause.py,phicmp.py,sweep.sh,repro.c,travel.s}"
   ],
   "option_off_identity": "`kuna decompile-all --option foldcallret off` is byte-identical (md5) between origin/main 520443d7 and this branch on grep O0, dash O2 and libselinux.so.1: every new test is behind Architecture::fold_call_returns.",
-  "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree at the final SHA 84374587 (log .scratch/rust-test-r4.log, 2026-09-17T16:20-16:35Z); target/debug deleted afterwards. An earlier run at 6ed62f54 was also green but overlapped a variant build that patched and reverted kuna_callretfold.rs, so it was re-run clean.",
+  "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree at the final rebased SHA (log .scratch/rust-test-r5.log, 2026-09-17T16:50-17:05Z); target/debug deleted afterwards.",
   "phi_arm": {
     "acceptance_metric": "per-function CONTENT equality of the `--option foldcallretphi on` dumps, main build against this branch, split on the `// Function:` banner. The round-1 metric (equality of the phi-delta SET) could not see a content change inside the delta and is retired.",
     "main_build": "origin/main 520443d7, built fresh",
