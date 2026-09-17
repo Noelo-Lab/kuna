@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1113,
-    1113
+    1125,
+    1125
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -784,6 +784,18 @@
     "data:argclobber-forward #1: the non-clobber path writes the caller's own parameter, so the trailing argument survives both passes",
     "data:argclobber-forward #2: and caller4 keeps the second parameter that argument reads",
     "data:argclobber-guards #1: the callee reads rdx before writing it, so the trailing argument survives both passes",
+    "data:boolbyte #10: the slot both controls hand to the callee stays a character in both passes -- the INDIRECT a call leaves on it is not identity, and one byte of a bigger object is not a declaration of its own",
+    "data:boolbyte #11: with the option off a truncation whose destination a comparison already made bool prints as the raw SUB41 intrinsic -- an undeclared identifier",
+    "data:boolbyte #12: with the option on the same truncation prints as the cast it is",
+    "data:boolbyte #1: with the option off a byte that is only ever branched on is a character -- the bug",
+    "data:boolbyte #2: with the option on the same parameter is a bool",
+    "data:boolbyte #3: the witness function's body is the same in both passes -- here only the declaration moves",
+    "data:boolbyte #4: a byte that is also widened and added is refused in both passes",
+    "data:boolbyte #5: a byte tested for its low bit is a parity test, not a truth test, in both passes",
+    "data:boolbyte #6: and that test keeps its shape, with no bool cast appearing around it",
+    "data:boolbyte #7: a byte that is also stored through a pointer is refused in both passes",
+    "data:boolbyte #8: the callfill control keeps its shape in both passes",
+    "data:boolbyte #9: and so is a byte parameter copied into a slot the callee is handed the address of",
     "data:calleearity #1: option off drops the argument at the call site whose guard branches on it (bug reproduced)",
     "data:calleearity #2: option on gives both call sites of one callee the same arity",
     "data:calleearitycut #1: five of the six renderings are an empty argument list -- all three sites in pass 1 (bug reproduced) and the two discriminators again in pass 2",

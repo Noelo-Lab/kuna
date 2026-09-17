@@ -1,0 +1,145 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Type campaign, item `boolbyte`: a byte whose every use is a truth test is
+    declared `char`.  coreutils basename -O0 shows it on a scored parameter:
+
+        void sub_2b45(unsigned long a0, long a1, char a2)   // DWARF: _Bool use_nuls
+        {
+          ...
+          v1 = (a2) ? 0 : 10;
+        }
+
+    Root cause (P5, type propagation).  `TYPE_BOOL` is only ever minted as an
+    op's OUTPUT type - every `booloutput` op's `getOutputLocal` is
+    `getBase(size, TYPE_BOOL)` - and nothing mints it for the value being
+    compared: `TypeOpEqual::getInputLocal` votes `getBase(1, TYPE_INT)` for that,
+    and the cached one-byte `TYPE_INT` is the ASCII `char`, because
+    `TypeFactory::cacheCoreTypes` prefers a character type over `int1`.  So the
+    `getLocalType` fold has no bool candidate at all, and the byte comes out
+    `char` (or `uint1`, when an unsigned vote wins the same fold).
+
+    Stage / sub-stage: P5 "type-propagation".  The P0 assertion
+    `option boolbyte on|off` decides whether that candidate is offered.
+
+    The fixture is the same shape on SysV x86-64, plus three controls:
+
+        flagparam:  test dil,dil; je ...
+                    the witness - the byte is only ever branched on
+        bytearith:  test dil,dil; je ...; movzx eax,dil; add eax,3
+                    a control - the same byte is also widened and added, which
+                    no truth value is, so the rule must decline
+        lowbit:     test dil,1; je ...
+                    a control - the byte is tested for its LOW BIT, which is a
+                    parity test on an unproven byte rather than a truth test, so
+                    the rule must decline (the INT_AND against 1 counts only for
+                    a value already proven to be 0 or 1)
+        flagstore:  test dil,dil; je ...; mov [rsi],dil
+                    a control - the byte is branched on AND stored through a
+                    pointer, and a store is not a truth use, so the rule must
+                    decline
+        callfill:   mov byte [rsp+0xf],0; lea rdi,[rsp+0xf]; call touch;
+                    movzx eax,[rsp+0xf]; test al,al
+                    a control - the stack byte is provably 0 before the call and
+                    truth-tested after it, and `touch` writes 200 through the
+                    pointer it is handed.  The INDIRECT the call leaves on that
+                    storage is NOT value-preserving identity, so neither half of
+                    the walk may cross it and the rule must decline
+        callslot:   mov [rsp+0xf],dil; lea rdi,[rsp+0xf]; call touch;
+                    movzx eax,[rsp+0xf]; test al,al
+                    the same control from the parameter side - a byte parameter
+                    copied into a slot the callee is handed the address of.
+                    Crossing the INDIRECT here declares the PARAMETER bool, and
+                    a caller passing 200 then sees 1
+        touch:      mov byte [rdi],200; ret
+                    the callee the two controls hand a pointer to
+        truncjoin:  setg [rsp+7] on one path, mov [rsp+7],al (al = x>>31) on the
+                    other; cmp [rsp+7],0
+                    the RENDERING case - a stack byte a comparison already makes
+                    `bool`, whose other def truncates a four-byte value into it.
+                    `CastStrategyC::isSubpieceCast` has no TYPE_BOOL destination
+                    in its list, so the printer falls to the functional arm and
+                    emits the raw `SUB41(x,0)` p-code intrinsic - an undeclared
+                    identifier, not compilable C.  The option supplies the missing
+                    arm and the truncation prints as the `(bool)` cast it is
+
+    Pass 1 (`option boolbyte off`) reproduces the bug; pass 2 (`on`) is the fix.
+    All five controls are identical in both passes.
+-->
+<bytechunk space="ram" offset="0x100000">
+4084ff7406b82a000000c331c0c300004084ff7408400fb6c783c003c331c0c340f6c7017406b82a
+000000c331c0c3004084ff740940883eb82a000000c331c0c3000000000000000000000000000000
+4883ec18c644240f00488d7c240fe84d0000000fb644240f84c07407b80b000000eb05b80c000000
+4883c418c30f1f004883ec1840887c240f488d7c240fe81d0000000fb644240f84c07407b80b0000
+00eb05b80c0000004883c418c30f1f00c607c8c366662e0f1f84000000000090
+4883ec18897c240885f6740a83ff050f9f442407eb0b8b442408c1e81f88442407807c240700740ab80b0000004883c418c3b80c0000004883c418c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="flagparam"/>
+<symbol space="ram" offset="0x100010" name="bytearith"/>
+<symbol space="ram" offset="0x100020" name="lowbit"/>
+<symbol space="ram" offset="0x100030" name="flagstore"/>
+<symbol space="ram" offset="0x100050" name="callfill"/>
+<symbol space="ram" offset="0x100080" name="callslot"/>
+<symbol space="ram" offset="0x1000b0" name="touch"/>
+<symbol space="ram" offset="0x1000c0" name="truncjoin"/>
+</binaryimage>
+<script>
+  <com>option boolbyte off</com>
+  <com>lo fu flagparam</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bytearith</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lowbit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu flagstore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu callfill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu callslot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu truncjoin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option boolbyte on</com>
+  <com>lo fu flagparam</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bytearith</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lowbit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu flagstore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu callfill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu callslot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu truncjoin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="boolbyte #1: with the option off a byte that is only ever branched on is a character -- the bug" min="1" max="1">unsigned long flagparam\(char a0\)</stringmatch>
+<stringmatch name="boolbyte #2: with the option on the same parameter is a bool" min="1" max="1">unsigned long flagparam\(bool a0\)</stringmatch>
+<stringmatch name="boolbyte #3: the witness function&apos;s body is the same in both passes -- here only the declaration moves" min="6" max="6">    return 0x2a;</stringmatch>
+<stringmatch name="boolbyte #4: a byte that is also widened and added is refused in both passes" min="2" max="2">int4 bytearith\(uint1 a0\)</stringmatch>
+<stringmatch name="boolbyte #5: a byte tested for its low bit is a parity test, not a truth test, in both passes" min="2" max="2">unsigned long lowbit\(uint1 a0\)</stringmatch>
+<stringmatch name="boolbyte #6: and that test keeps its shape, with no bool cast appearing around it" min="2" max="2">if \(a0 &amp; 1\)</stringmatch>
+<stringmatch name="boolbyte #7: a byte that is also stored through a pointer is refused in both passes" min="2" max="2">unsigned long flagstore\(char a0,char \*a1\)</stringmatch>
+<stringmatch name="boolbyte #8: the callfill control keeps its shape in both passes" min="2" max="2">unsigned long callfill\(void\)</stringmatch>
+<stringmatch name="boolbyte #9: and so is a byte parameter copied into a slot the callee is handed the address of" min="2" max="2">unsigned long callslot\(char a0\)</stringmatch>
+<stringmatch name="boolbyte #10: the slot both controls hand to the callee stays a character in both passes -- the INDIRECT a call leaves on it is not identity, and one byte of a bigger object is not a declaration of its own" min="4" max="4">  char v1 \[9\];</stringmatch>
+<stringmatch name="boolbyte #11: with the option off a truncation whose destination a comparison already made bool prints as the raw SUB41 intrinsic -- an undeclared identifier" min="1" max="1">v1 = SUB41\(\(uint4\)a0 &gt;&gt; 0x1f,0\);</stringmatch>
+<stringmatch name="boolbyte #12: with the option on the same truncation prints as the cast it is" min="1" max="1">v1 = \(bool\)\(\(uint4\)a0 &gt;&gt; 0x1f\);</stringmatch>
+</decompilertest>
