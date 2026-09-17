@@ -187,17 +187,17 @@ table above, plus the cast hunks that stop being written.
 
 **3. Should `auto` become the default?** *Answered: yes, and it ships that way.*
 It clears the repo's mechanical bar — built with `auto` as the default,
-`make test` is 675/675 **PARITY OK** and stages is 1064/1064 **PARITY OK**, and
+`make test` is 675/675 **PARITY OK** and stages is 1069/1069 **PARITY OK**, and
 the speed delta is inside the +5% budget (interleaved min-of-15 whole-binary
 `decompile-all` on `fmt`/`ls`/`sort` `-O2`: −0.05% / −2.11% / −4.49%, i.e. below
 this box's noise floor; the tightest measurement on a quiet box, min-of-21 on
 `fmt` alone, was **+0.17%**). What it is *not* flipped for is the agreement rate:
 `auto` buys +0.1pp on four checkable observations. It is flipped for **cast
 removal and the end of declaration-vs-body contradictions**, which is visible in
-every changed function — over eight binaries from five projects at `-O0` and
-`-O2` (8,676 functions) the flip writes 182 declaration flips and 224 cast-drop
-hunks, removes 246 cast tokens, adds none, and produces **0 hunks of any other
-kind**.
+every changed function — over twelve binaries from nine projects at `-O0` and
+`-O2`, eight of them x86-64 and four 32-bit ARM firmware images (15,124
+functions), the flip writes 376 declaration flips and 421 cast-drop hunks,
+removes 443 cast tokens, adds none, and produces **0 hunks of any other kind**.
 
 ## Witnesses (coreutils `fmt` `-O2`, CLI vocabulary)
 
@@ -281,9 +281,10 @@ The user's answer, and what this PR ships:
 1. **Ship** `signedness` with `auto` as the **default**. It re-signs a
    declaration only on unanimous evidence, so the only text it can move is that
    declaration and the casts the new declaration makes into no-ops — 0 of 675
-   datatest assertions, 1064/1064 stages PARITY OK, `type_match` 959 → 959
+   datatest assertions, 1069/1069 stages PARITY OK, `type_match` 959 → 959
    perfect over 444 slices with a byte-identical `variables[]` in all 10,748
-   scored functions, and 0 non-declaration/non-cast hunks over eight binaries.
+   scored functions, and 0 non-declaration/non-cast hunks over twelve binaries
+   on two architectures.
 2. **`prefer-signed` stays opt-in.** It is the arm with the fidelity (`-O2`
    agreement 71.9% → 94.8%), and it moves 7,081 declarations image-wide against
    `auto`'s 575 — more than unanimity covers, and more than the datatest corpus

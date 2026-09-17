@@ -68,7 +68,7 @@ and only a recorded override authorizes dropping a cast.
 evidence, so the only text it can move is that declaration and the casts the new
 declaration makes into no-ops — which is what every instrument below measures,
 and why it clears the repo's default-ON bar: 0 of 675 datatest assertions, stages
-`PARITY OK` (1064/1064), speed within the +5% budget, and every hunk over eight
+`PARITY OK` (1069/1069 on the structdefs base), speed within the +5% budget, and every hunk over eight
 whole binaries classified as a declaration flip or a dropped cast.
 
 `prefer-signed` is the arm with the better DWARF agreement (98.4% overall,
