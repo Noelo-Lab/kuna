@@ -165,13 +165,20 @@ fn print_point(data: &Funcdata, use_op: OpId) -> Option<OpId> {
 /// (kuna) Does the call survive the move all the way to its print point?
 ///
 /// `call_output_foldable` has already cleared the span from the call to
-/// `use_op`; this re-runs the same guard over the span from the call to the
-/// statement the folded expression actually lands in, which is where it is
-/// evaluated at run time, and adds the memory-write barrier
-/// [`op_writes_tied_storage`] that the opcode test misses.  The print point
-/// itself is not a barrier — the folded expression is evaluated as its operand,
-/// before it — but its *other* operands must not read an effect of the call,
-/// so the INDIRECT test covers it too.
+/// `use_op`; this re-runs the guard over the span from the call to the statement
+/// the folded expression actually lands in, which is where it is evaluated at
+/// run time, and adds the memory-write barrier
+/// [`op_writes_tied_storage`](crate::p6_variables::kuna_callretfold::op_writes_tied_storage)
+/// that the opcode test misses.  The print point itself is not a barrier — the
+/// folded expression is evaluated as its operand, before it — but its *other*
+/// operands must not read an effect of the call, so the INDIRECT test covers it
+/// too.
+///
+/// This is wider than either span `foldcallret` clears — every opcode, the
+/// storage test with no self-copy exemption, no exemption for the ops the
+/// expression travels through, and the INDIRECT question over the whole distance
+/// — and stays that way on purpose: the folds it releases are ones the merge
+/// machinery was holding, so they are the ones with the furthest to travel.
 fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
     let Some(point) = print_point(data, use_op) else {
         return false;

@@ -382,10 +382,12 @@ fn op_is_self_copy(data: &Funcdata, op: OpId) -> bool {
         && Rc::ptr_eq(ov.get_space(), iv.get_space())
 }
 
-/// An op whose relative order with the moved call is observable on the span from
-/// the call to its single use: any call, a memory-touching op
-/// (LOAD/STORE/CALLOTHER), or a write to storage the callee may read
-/// ([`op_writes_observable_storage`]).
+/// An op whose relative order with the moved call is observable: any call, a
+/// memory-touching op (LOAD/STORE/CALLOTHER), or a write to storage the callee
+/// may read ([`op_writes_observable_storage`]).
+///
+/// This is the set for the span from the call to its single use.  `foldcallretphi`
+/// composes it too, over the wider span it clears for its own folds.
 pub(crate) fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,
