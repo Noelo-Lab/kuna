@@ -478,6 +478,18 @@ mod tests {
             // but preset membership is a DIV-recorded default change and the
             // measurement that would justify it needs a `/GS` corpus first.
             "msvcstackguard",
+            // `foldcallretphi`'s evaluation is done and recorded
+            // (`docs/features/foldcallretphi/`): 0/675 datatest assertions and
+            // `tests/stages` PARITY OK with the default flipped, +1.22% on `fmt`
+            // `decompile-all`, and a six-binary sweep where 36 of 1871 functions
+            // change with an identical call evaluation order in every one. What
+            // holds it out of the preset is not its own risk: folding a call
+            // removes a declaration and renumbers the remaining `vN` locals,
+            // and `--assert type vN` / `--assert name vN` address a variable by
+            // that auto-generated name, so making it the default output under
+            // 500 KiB re-points one such directive in `tests/cli`. That is a
+            // change about `--assert` ergonomics and gets its own PR.
+            "foldcallretphi",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();
