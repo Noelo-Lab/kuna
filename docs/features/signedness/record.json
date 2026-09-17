@@ -556,7 +556,8 @@
           "other_hunks": 0,
           "note": "the 32-bit side is the more active one per function (adc-dac-printf.elf -O2 changes 18 of 171 functions where grep -O2 changes 14 of 449), and it is where the `long long` spelling appears: 29 of its 194 flips are `long long -> unsigned long long`, each paired with the `(unsigned long long)` cast the flip makes a no-op"
         }
-      }
+      },
+      "rebase_spotcheck": "the sweep was taken on the structdefs build; after the indirectonly rebase one image was re-decompiled on the new build (libopencm3 adc-dac-printf.elf -O2) and its default-arm output is BYTE-IDENTICAL to the pre-rebase one, with the same classification (18 of 171 functions changed, 26 declaration flips, 36 cast-drop hunks, 0 other) -- indirectonly and structdefs both ship `default off`, so the default path they rebased under is the same one the sweep measured"
     },
     "harness_default_control": "proof that the corpora actually ran with the flip in, rather than through an Architecture that never called reset_defaults: a scratch datatest with NO `option signedness` line at all (/tmp/claude-1000/signedness-probe/probe.xml, the same 20-byte image as the stage test) asserts `int4 v1;` present and `(int4)v1` absent, and scores 2/2 through `kuna test --datatests`. The console path was checked the same way (decomp_dbg on the bare image prints `int4 v1;`), and the CLI path with `kuna decompile-all fmt --addr 0x3060` (`int v1;`, no `(int)v1`)."
   },
