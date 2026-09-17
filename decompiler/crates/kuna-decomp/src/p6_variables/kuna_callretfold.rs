@@ -195,7 +195,7 @@ pub fn expression_contains_foldable_call(data: &Funcdata, root: VarnodeId) -> bo
 /// effect, so the call expression must not be sunk past it (GH-181).  Marker
 /// ops (a later call's own INDIRECTs chain the earlier call's versions as
 /// inputs) have no textual evaluation point and are skipped.
-pub(crate) fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
+fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,
         None => return true, // stale: be conservative
@@ -425,11 +425,11 @@ fn op_writes_tied_storage(data: &Funcdata, op: OpId) -> bool {
         && !op_is_self_copy(data, op)
 }
 
-pub(crate) fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
+fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
     data.obank().get(op).map(|o| o.is_marker()).unwrap_or(true)
 }
 
-pub(crate) fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::context::BlockId> {
+fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::context::BlockId> {
     data.obank().get(op).and_then(|o| o.get_parent())
 }
 
