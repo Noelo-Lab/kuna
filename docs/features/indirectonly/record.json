@@ -1,15 +1,95 @@
 {
   "option": "indirectonly",
   "flag": "mark_indirect_only",
+  "phase": "P6",
+  "subphase": "merge-aggressiveness",
+  "tier": "transform",
+  "change_kind": "presentation-default",
+  "source_decompiler": "ghidra",
+  "default_on": true,
+  "opportunity": "varnode_flags::indirectonly has two readers in the merged tree -- HighVariable::has_name (variable.rs) and Merge::merge_test_adjacent (merge.rs) -- and NO writer: Funcdata::markIndirectOnly / checkIndirectUse (funcdata_varnode.cc:801-858) were never ported and ActionMarkIndirectOnly shipped as a documented no-op although universal_sched already scheduled it one slot ahead of ActionMergeAdjacent. So is_indirect_only() answered false everywhere and both readers took the strictly-more-conservative branch: kuna refused every speculative merge with an illegal input, including the ones upstream allows.",
+  "root_cause": "Both refusals are about an ILLEGAL INPUT -- an input Varnode ActionDirectWrite never reached, i.e. the leftover entry value of a frame slot the function overwrites before it reads. Refusing the merge is the right default (an uninitialized value must not be printed as a real one); upstream's exception is that when EVERY reader in the def-set is a plain CPUI_INDIRECT the leftover value is not read at all, so there is nothing to print wrongly. That exception needed the flag nothing wrote.",
+  "inspiration": "Funcdata::markIndirectOnly / Funcdata::checkIndirectUse (funcdata_varnode.cc:801-858); HighVariable::hasName (variable.cc:731-760); Merge::mergeTestAdjacent (merge.cc:185-196)",
+  "test_name": "tests/stages/kuna-indirectonly.xml (two functions x two passes: `take` changes off->on, the directly-read counterexample `keep` must not) + 8 unit tests in kuna_indirectonly/tests.rs",
   "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/date",
   "selector": "main",
   "func_addr": "0x4402",
-  "default_on": true,
-  "speed_off_ms": 531.03,
-  "speed_on_ms": 620.05,
-  "speed_delta_pct": 16.76,
+  "element_id": null,
+  "census": {
+    "method": "throwaway KUNA_IO_DEBUG instrumentation in mark_indirect_only, release build, kuna decompile-all over the decbench stripped coreutils binaries (docs/features/indirectonly/census.txt); reverted before the shipped commit",
+    "columns": "marked / register / stack / also-unaffected",
+    "fmt_O0": [23, 0, 23, 0],
+    "ls_O0": [140, 0, 140, 0],
+    "sort_O0": [137, 5, 132, 0],
+    "fmt_O2": [18, 0, 18, 0],
+    "ls_O2": [109, 0, 109, 0],
+    "sort_O2": [108, 0, 108, 0],
+    "finding": "no flagged input is also `unaffected`, so HighVariable::has_name's indirectonly branch never fires on x86-64 ELF and removes no declaration; the live consumer is Merge::merge_test_adjacent"
+  },
+  "corpus_sweep": {
+    "method": "kuna decompile-all, `--option indirectonly off` vs the default, 8 binaries x {O0,O2} = 16 slices (ls, sort, grep, gzip, diff, bzip2, find, tar)",
+    "slices": 16,
+    "changed_functions": 10,
+    "declaration_delta": -11,
+    "bug_hunks": 0,
+    "structural_control": "for all 10 changed functions the sequence of control keywords with their nesting depth and the ordered sequence of callees are identical in both arms (skeleton-check.txt), so no statement moved across a branch or a call",
+    "byte_identical_slices": ["sort-O0", "grep-O0", "gzip-O0", "diff-O0", "bzip2-O0", "find-O0", "grep-O2", "gzip-O2", "find-O2"],
+    "hunks": [
+      {"slice": "ls-O0", "function": "sub_1dd61", "class": "merge removes a copy", "decl_delta": 0},
+      {"slice": "tar-O0", "function": "sub_429c6", "class": "merge removes two copies", "decl_delta": 0},
+      {"slice": "ls-O2", "function": "main", "class": "wrong output fixed: both halves of a 16-byte struct on the frame are now written before its address is passed to hash_delete", "decl_delta": 0},
+      {"slice": "sort-O2", "function": "main", "class": "three temporaries merged into their slots", "decl_delta": 0},
+      {"slice": "diff-O2", "function": "sub_6e20", "class": "malloc result merged into stack-0x80", "decl_delta": 0},
+      {"slice": "bzip2-O2", "function": "sub_3890", "class": "EAX merged into stack-0x1428", "decl_delta": -1},
+      {"slice": "tar-O2", "function": "main", "class": "a vN = slot; / slot = vN; round-trip disappears (5 statements)", "decl_delta": -1},
+      {"slice": "tar-O2", "function": "sub_203b0", "class": "two slot merges", "decl_delta": -2},
+      {"slice": "tar-O2", "function": "argp_parse", "class": "a 16-byte spill round-trip disappears (10 statements)", "decl_delta": -2},
+      {"slice": "tar-O2", "function": "sub_5aa30", "class": "six slot merges, one new register name", "decl_delta": -5}
+    ]
+  },
+  "typesweep": {
+    "command": "scripts.decbench.typesweep --option indirectonly off --opt O0 --opt O2 --opt O2-noinline --project coreutils grep gzip diffutils bzip2 findutils tar shadow",
+    "note": "the option ships default-ON, so `base` is the shipped default (on) and `test` is the option turned off",
+    "slices": 444,
+    "functions_scored": 10748,
+    "control_agreement_pct": 88.44,
+    "control_identical_variables": "10739 functions byte-identical in both arms, 0 scored differently",
+    "perfect_base": 959,
+    "perfect_test": 959,
+    "perfect_delta": 0,
+    "aggregate_base": 3037.05,
+    "aggregate_test": 3037.05,
+    "moved_onto_perfect": 0,
+    "moved_off_perfect": 0,
+    "improved": 0,
+    "worsened": 0
+  },
+  "speed_off_ms": 325.08,
+  "speed_on_ms": 336.07,
+  "speed_delta_pct": 3.38,
   "speed_samples": 15,
   "speed_budget_pct": 5.0,
-  "speed_within_budget": false,
-  "speed_forced_off": false
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_interleaved": {
+    "method": "off/on interleaved, min-of-N (the batched-median form above is contention-biased on this box: it read +16.8% on a loaded machine and +3.4% on a quiet one for the same build)",
+    "per_function_min_of_15": {
+      "date_O0_main_0x4402": 0.31,
+      "fmt_O2_main_0x26a0": -0.46,
+      "ls_O2_0x8ae0": -0.78
+    },
+    "whole_binary_min_of_11": {
+      "fmt_O2_decompile_all": -0.64,
+      "ls_O2_decompile_all": -3.18
+    }
+  },
+  "gates": {
+    "make_test": "datatests 675/675 PARITY OK",
+    "make_test_stages": "datatests 1061/1061 PARITY OK",
+    "make_test_cli": "tests/cli 178/178 passed",
+    "make_check_spec": "OK lenient + OK strict",
+    "kuna_catalog_check": "catalog OK",
+    "counters_check": "no drift (settables 214)",
+    "make_rust_test": "RUST_TEST_RC=0"
+  }
 }

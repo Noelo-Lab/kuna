@@ -154,8 +154,26 @@ call, and `merge_test_required`'s cover-intersection test rejects the merge. The
 flag only lifts the *illegal-input* refusal, which is about the slot's **entry**
 value; the cover machinery is unchanged.
 
-## 7. Speed
+## 7. Speed and type_match
 
 The scan is one pass over the input def-set plus a bounded worklist per illegal
-input, run once per function in an action that was already scheduled. See
-`record.json` for the interleaved min-of-15 numbers.
+input, run once per function in an action that was already scheduled.
+
+Interleaved off/on, min-of-15 per function and min-of-11 whole-binary (the
+batched-median form in `scripts.pipeline.timeit` is contention-biased on this
+box -- it read +16.8% on a loaded machine and +3.4% on a quiet one for the same
+build, so both are recorded):
+
+| target | delta |
+|---|---|
+| `date` -O0 `main` | +0.31% |
+| `fmt` -O2 `main` | -0.46% |
+| `ls` -O2 `0x8ae0` | -0.78% |
+| `fmt` -O2 whole binary | -0.64% |
+| `ls` -O2 whole binary | -3.18% |
+
+`typesweep` over the campaign's 444 slices is exactly neutral: 959 perfect in
+both arms, aggregate 3037.05 in both, 0 functions moved in either direction
+(`typesweep-report.md`). decbench scores the JSON `variables[]` surface, which
+this change does not touch -- 10739 of 10748 functions have byte-identical
+`variables` between the arms.

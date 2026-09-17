@@ -1,0 +1,24 @@
+# indirectonly census -- which inputs get the flag
+#
+# Method: throwaway KUNA_IO_DEBUG instrumentation in mark_indirect_only (one
+# eprintln per newly-flagged Varnode), release build, 'kuna decompile-all' over
+# the decbench stripped coreutils binaries.  Reverted before the shipped commit.
+#
+# binary opt  marked  register  stack  unaffected
+fmt     O0       23         0     23           0
+ls      O0      140         0    140           0
+sort    O0      137         5    132           0
+fmt     O2       18         0     18           0
+ls      O2      109         0    109           0
+sort    O2      108         0    108           0
+
+# unaffected==0 everywhere: no flagged input is also 'unaffected', so
+# HighVariable::has_name's indirectonly branch never fires on x86-64 ELF and
+# removes no declaration.  The live consumer is Merge::merge_test_adjacent.
+
+# The five sort -O0 register hits:
+IO_MARK fn=sub_7231 space=register off=0x1100 size=10 unaff=false addrtied=false
+IO_MARK fn=sub_7231 space=register off=0x1110 size=10 unaff=false addrtied=false
+IO_MARK fn=sub_72d6 space=register off=0x1100 size=10 unaff=false addrtied=false
+IO_MARK fn=sub_72d6 space=register off=0x1110 size=10 unaff=false addrtied=false
+IO_MARK fn=sub_8002 space=register off=0x1100 size=10 unaff=false addrtied=false
