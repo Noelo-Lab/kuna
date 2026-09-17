@@ -14,6 +14,7 @@ pub mod kuna_undefname;
 pub mod varmap;
 pub mod coreaction_cleanup;
 pub mod kuna_callretfold;
+pub mod kuna_foldcallretphi;
 pub mod dynamic;
 pub mod kuna_dynamichashmax;
 pub mod coreaction_stackptr;

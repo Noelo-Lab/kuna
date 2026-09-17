@@ -1470,13 +1470,30 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
         let n = o.num_input();
         (0..n).filter_map(|i| o.get_in(i)).collect()
     };
+    // (kuna) foldcallretphi: a call output reaches the arm above only because
+    // `foldcallret` let it through `base_explicit`, and what it collides with is
+    // usually the call's own INDIRECT effect on an operand -- see
+    // `kuna_foldcallretphi` for why that collision is not a reason to refuse.
+    let self_effect_ok = data.get_arch().fold_call_ret_phi
+        && data.get_arch().fold_call_returns
+        && data.obank().get(def).map(|o| o.is_call()).unwrap_or(false)
+        && crate::kuna_callretfold::call_output_foldable(data, vn);
+    let use_op = if self_effect_ok { data.lone_descend(vn) } else { None };
     for defvn in inputs {
         if data.vbank().get(defvn).map(|v| v.is_constant()).unwrap_or(true) {
             continue;
         }
         let intersects = data.with_covermerge(|merge, data| merge.inflate_test(data, defvn, high));
         if intersects {
-            return false;
+            let discounted = match use_op {
+                Some(u) => crate::kuna_foldcallretphi::conflict_is_self_call_effect(
+                    data, def, defvn, high, u,
+                ),
+                None => false,
+            };
+            if !discounted {
+                return false;
+            }
         }
     }
     true

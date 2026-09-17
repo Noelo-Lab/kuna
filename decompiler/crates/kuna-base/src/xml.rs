@@ -1862,7 +1862,9 @@ mod tests {
         // clauses that keep a real one
         // and kuna-libctypes / named libc/POSIX aggregate pointers in the
         // built-in prototype tables
-        assert_eq!(count, 300, "corpus file count drifted");
+        // and kuna-foldcallretphi / a call's own INDIRECT effect no longer
+        // blocks folding its single-use result
+        assert_eq!(count, 301, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

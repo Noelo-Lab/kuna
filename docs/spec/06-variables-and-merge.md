@@ -868,6 +868,14 @@ marker ops are skipped since a later call's own INDIRECTs chain the earlier
 call's versions without any textual evaluation point). Anything else stays
 explicit: false negatives over reordering bugs.
 
+That barrier set is stated in opcodes, and opcodes are not the whole of "writes
+something the callee can read". Heritage promotes a write to a fixed global
+address into a plain `CPUI_COPY`, which no opcode test catches, so
+`v = f(); glob = 42; use(v)` folds and evaluates `f()` after the write to
+`glob` (kuna GH-657). `foldcallretphi` below tests every span it clears for that
+write as well; this predicate does not yet, because it is default-on and the fix
+moves default output.
+
 The direct call output may have one descendant even though a derived value
 later fans out. For example, `u = (ushort)f()` gives the call one `SUBPIECE`
 descendant, while `u` can feed a loop comparison and a post-loop store. If the
@@ -887,6 +895,92 @@ through to the ordinary implied machinery of §6.1 — the fold itself is just
 files pin that form via per-test opt-outs (DIV-14, `docs/history.md`).
 Provenance: `docs/features/call-return-variable-folding-dcde82/record.json`
 (ablation: 5 upstream assertions change; measured speed delta −3.2%).
+
+**(angr) `option foldcallretphi` — folding past the merge phalanx**
+(default **off**). `foldcallret` relaxes only the first of two gates. A call
+output it lets through is re-examined by `ActionMarkImplied` in
+`coreaction_cleanup.rs (check_implied_cover)`, whose third arm
+(`merge.rs (Merge::inflate_test)`) forces a value explicit when one of its
+operands has another live SSA version of the same HighVariable over the
+candidate's internal cover — inlining would then print an operand where a
+different version of it holds. Upstream never reaches that arm with a call
+output, because Ghidra marks every call output explicit one pass earlier, so it
+is only with `foldcallret` on that it sees this shape at all. What it finds is
+usually self-inflicted: a call may write any global, so the call carries a
+`CPUI_INDIRECT` over every global it might touch, and passing one of those
+globals as an argument (`v3 = sub_3700(stdin,v7); v1 = 1; v12 &= v3;`) is enough
+to put a second version of the operand's high over the call output's cover. The
+colliding version is produced by the very call being moved.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
+(conflict_is_self_call_effect)` discounts exactly that case: the rejection is
+ignored only when at least one instance of the operand's high collides and
+*every* colliding instance is the output of an INDIRECT whose effect op is this
+call. The collision is about versions, not order: the folded text performs the
+operand read and the call's own write at one point, exactly as the spilled form
+does. Two conditions bound the discount itself. First, a high that belongs to
+a `VariableGroup` declines: `inflate_test`'s second loop reasons about
+overlapping storage rather than versions, and its rejections are never
+discounted. Second, a use op that itself reads an INDIRECT effect of the call
+declines, since the folded text would otherwise name the operand's high both as
+the call's argument (pre-call) and as an operand of the use (post-call).
+
+A third condition is the discount's own, and it is what makes the move sound
+rather than merely plausible. `foldcallret`'s predicate guards the span from the
+call to its single use, but the use is the call's textual home only when that use
+op is itself a statement — an op with no output, or one whose output is explicit.
+When the use op's own output is *implied*, the expression keeps travelling and is
+printed wherever that implied value is finally consumed, which can be a later
+block behind a branch; the `inflate_test` rejection being discounted here is
+sometimes the only thing holding the call in place. So the discount re-derives
+the real print point by following the implied chain
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
+(print_point)`) and re-runs the span guard over the whole distance the call would
+travel: a print point outside the call's own block, or one with a
+call/load/store/callother in between, declines. Without it, `betaflight`'s
+`sub_8051ac4` emits its `sub_80515b4(dat_200181a4)` *after* an
+`if (dat_200019cc & 1)` that the binary evaluates after the call — a call moved
+past two global reads it may itself write.
+
+That span guard also carries the barrier the opcode test misses
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
+(op_writes_tied_storage)`): any op between the call and the print point whose
+output varnode is address-tied declines. Heritage promotes a write to a fixed
+address into a plain `CPUI_COPY` — a global's output is persistent, a frame
+slot's is tied to its stack address — and neither is an opcode, so the
+CALL/LOAD/STORE/CALLOTHER test waves both through. The callee can read a global
+knowing nothing but its address; it can read a frame slot whenever the frame
+address escaped into it, and an escaped slot is *not* held back as a
+`CPUI_STORE`, heritage promotes it like any other. So both are barriers, at the
+cost of declining a frame slot the callee could not have reached. The shape the
+guard catches, with `helper` returning `k`:
+
+```c
+v2 = helper(g);        /* stays spilled: the fold would evaluate helper */
+k = 42;                /* after this write, and it reads k */
+ok = v1 & v2;
+```
+
+The guard runs over the whole travel distance, which contains the call-to-use
+span, so every fold this option adds is checked even though `foldcallret`'s own
+predicate is not (GH-657).
+
+It ships **off** for two reasons. Flipping the default leaves both corpora at
+PARITY OK (0 of 675 datatest assertions change) and costs nothing measurable on
+`fmt` `decompile-all` (min of 21 interleaved pairs: 4.200 s both arms), but removing a declaration renumbers the remaining `vN` locals,
+and `--assert type vN` / `--assert name vN` address a variable by that
+auto-generated name — `tests/cli` pins one such run, whose `type v2 char[16]`
+lands on a different stack slot once a `strcmp` result folds away. And the pass
+changes where a call is evaluated, which holds only while the guards above do;
+that is a claim a default should not inherit from this chapter but re-establish
+with its own sweep. The effect is a call spill removed and its expression printed
+at the use:
+`v12 &= sub_3700(stdin,v7);`. Because marking a value implied re-dirties its
+operands' covers, a neighbouring value occasionally fails its own implied test
+and gains a statement of its own at the position its defining op already had —
+the conservative direction, and the reason the declaration count falls by less
+than the number of folds. Provenance and the corpus sweep:
+`docs/features/foldcallretphi/`.
 
 **(kuna, Ghidra issue GH-8500) `option stackalias`** (default **off**,
 destructive). The recorded gap: a store through a take-address-of-local

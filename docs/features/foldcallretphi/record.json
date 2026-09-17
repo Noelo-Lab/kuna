@@ -1,0 +1,170 @@
+{
+  "opportunity": "foldcallret proves a single-use call output order-safe to fold, but ActionMarkImplied re-tests it in check_implied_cover, whose Merge::inflate_test arm forces it explicit when an operand has another live SSA version of the same HighVariable over the call output's cover. Upstream never reaches that arm with a call output, and the version it collides with is the CPUI_INDIRECT the call itself attaches to a global it reads as an argument, so passing stdin/stdout/errno to a call is enough to block the fold.",
+  "test_name": "tests/stages/kuna-foldcallretphi.xml (pass 1 off = the spill, pass 2 on = the fold, pass 3 on = a global write in the span keeps the spill) + 3 option-parse unit tests + the architecture default assertion",
+  "binary": "synthetic bytechunk (x86:LE:64:default:gcc) in the stage test",
+  "selector": "target",
+  "func_addr": "0x1000",
+  "option": "foldcallretphi",
+  "flag": "fold_call_ret_phi",
+  "element_id": null,
+  "change_kind": "presentation-default",
+  "tier": "transform",
+  "source_decompiler": "angr",
+  "inspiration": "angr call-return variable folding (the fold angr performs unconditionally where kuna's second gate declines); foldcallret",
+  "default_on": false,
+  "root_cause": "check_implied_cover's inflate_test arm was written for ordinary expressions and only sees call outputs because of kuna's foldcallret escape. The collision it reports is produced by the call being folded: a call may write any global, so it carries a CPUI_INDIRECT over every global it touches, and that INDIRECT's output is another instance of the argument's own HighVariable, live from the call onwards.",
+  "hypothesis_refuted": "The E2 report's ceiling hypothesis (ActionMergeRequired runs before ActionMarkExplicit, so a force-merged call output fails num_instances()>1) is not what blocks the named witnesses: every one of them reports ninst=1 at base_explicit. num_instances()>1 does veto 141 other call outputs across the six sweep binaries, but those highs have 2-22 members from speculative datatype merges, not the single trim COPY a relaxation would need, so that ceiling is documented and left standing.",
+  "census": {
+    "method": "KUNA_DBG_FCR=1 instrumented build (throwaway commit 16602ca3), decompile-all over six -O2 stripped binaries",
+    "columns": "call outputs / pass call_output_foldable / folded / blocked by the self-INDIRECT inflate / blocked by cover-crosses-a-call / blocked by num_instances>1",
+    "fmt": [
+      206,
+      99,
+      80,
+      4,
+      4,
+      11
+    ],
+    "ls": [
+      888,
+      449,
+      392,
+      33,
+      5,
+      19
+    ],
+    "sort": [
+      687,
+      323,
+      268,
+      11,
+      9,
+      35
+    ],
+    "du": [
+      729,
+      334,
+      284,
+      19,
+      4,
+      27
+    ],
+    "grep": [
+      963,
+      453,
+      366,
+      33,
+      6,
+      48
+    ],
+    "gzip": [
+      423,
+      159,
+      138,
+      17,
+      2,
+      1
+    ]
+  },
+  "corpus_sweep": {
+    "corpus": "decbench full_run_address_2026-09-11, 24 binaries: x86-64 O2 (coreutils fmt/ls/sort/du, grep, gzip, bzip2, diffutils diff, findutils find, tar), x86-64 O0 (fmt, du, grep, tar), x86-64 O2-noinline (ls, fmt), ARM Cortex-M O2 (betaflight, cleanflight, chibios, crazyflie, nuttx), ARM O0 (betaflight, chibios), ARM O2-noinline (betaflight). The O0 and O2 betaflight images in this corpus are byte-identical, so that pair counts twice.",
+    "method": "kuna decompile-all off vs on, then three metrics in docs/features/foldcallretphi/: evalorder.py (the whole ordered stream of calls and memory touches per function -- needs no statement mapping, so it covers every changed function), foldmove.py (how far each folded call travelled, over the folds it can map uniquely) and callorder.py (call-to-call order). Both evalorder.py and foldmove.py flag the global-write counterexample in analysis.md when it is fed to them, so the metrics are calibrated against the defect class.",
+    "functions": 32282,
+    "functions_changed": 1008,
+    "declared_locals": "74859 -> 74285 (-574); 585 functions lose declarations, 29 gain",
+    "emitted_statements": "621047 -> 619901 (-1146)",
+    "foldmove": "1270 removed call spills located; 718 mapped to their landing statement -- 711 land on the very next statement, 7 with one intervening statement (a register or constant assignment), and none crosses a call, a memory access or a control-flow boundary. The other 552 (43%) are reported, not hidden: 167 call_text_absent (the ON body carries no line with the call text, because an argument was un-inlined), 112 landing_unmatched, 273 landing_ambiguous (the call text is not unique in the function, so the landing would be a guess). The ambiguous bucket used to be classified by guessing, which produced 65 false hazards in two tar functions whose spill text occurs twice; evalorder.py covers all 552 without needing a mapping.",
+    "evalorder": "0 functions gain or lose a call anywhere. 9 functions differ in memory-touch count and 40 in event order; all 49 were read by hand (41 distinct functions; the betaflight images repeat) and every one is an adjacent fold, a load hoisted to its own statement immediately before the call, or a decompiler-artifact intermediate store to a global disappearing (dat_x = f(); dat_x ^= 1; -> dat_x = f() ^ 1;, where the binary stores once) -- all the conservative direction.",
+    "callorder": "13 functions differ, all inside the 49 above: the script orders a multi-clause condition innermost-first, which a fold re-nests; the calls keep their order in every one.",
+    "errors": "no new error records; function counts identical off/on in all 24 binaries"
+  },
+  "gates": {
+    "make test": "675/675 PARITY OK",
+    "make test-stages": "1043/1043 PARITY OK",
+    "make check-spec": "OK lenient + OK strict",
+    "make test-cli": "178/178 passed",
+    "kuna catalog --check": "OK",
+    "counters --check": "no drift; docs/options.md byte-fresh; tests/fixtures/phase_catalog.json recaptured",
+    "make rust-test": "RUST_TEST_RC=0, 416 test binaries, 7101 passed / 0 failed"
+  },
+  "catalog_counts": {
+    "settables": "211 -> 212",
+    "tiers": "core 68 / transform 80 -> 81 / analysis 63",
+    "catalog_json_rows": "210 -> 211",
+    "angr source_decompiler bucket": "32 -> 33",
+    "stage-corpus files": "300 -> 301",
+    "bytecompat_fixture": "recaptured with no program loaded",
+    "rebased_onto": "origin/main f02365cc; every count re-derived with scripts.repipe.counters on the freshly built tree"
+  },
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs (new)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi/tests.rs (new)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/mod.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs (UNEVALUATED list entry)",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "tests/stages/kuna-foldcallretphi.xml (new)",
+    "docs/spec/06-variables-and-merge.md",
+    "docs/options.md",
+    "docs/baseline-stages.json",
+    "docs/features/foldcallretphi/{callorder,evalorder,foldmove}.py (the three sweep metrics)"
+  ],
+  "speed": {
+    "method": "interleaved off/on pairs of `kuna decompile-all` on coreutils fmt -O2 (151 functions), N=21, /usr/bin/time wall clock; min and median both reported because this box is contended",
+    "workload": "kuna decompile-all fmt (O2, stripped)",
+    "samples": 21,
+    "min_off_s": 4.2,
+    "min_on_s": 4.2,
+    "min_delta_pct": 0.0,
+    "med_off_s": 4.75,
+    "med_on_s": 4.81,
+    "med_delta_pct": 1.26,
+    "budget_pct": 5.0,
+    "within_budget": true,
+    "note": "re-measured with the global-write barrier in: the per-sample spread (4.20-5.93 s in BOTH arms, box at load 22) is wider than the delta, so the honest reading is 'no measurable cost'. The discount is only computed when the option is on and only for a call output that already reached check_implied_cover, and `Architecture::fold_call_ret_phi` is the first term of the guard, so the option OFF costs nothing at all.",
+    "first_contended_run": "an earlier 15-pair run overlapped `make test` and read -58% through `scripts.pipeline.timeit`; discarded"
+  },
+  "default_on_ablation": {
+    "method": "flip Architecture::reset_defaults_internal to fold_call_ret_phi = true, rebuild, run every gate",
+    "datatests": "675/675 assertions passed, PARITY OK (0 assertions change) -- re-run on the final build, with the full write barrier in",
+    "stages": "1043/1043 assertions passed, PARITY OK -- re-run on the final build, with the full write barrier in",
+    "check-spec": "OK (lenient + strict)",
+    "speed": "no measurable cost on fmt decompile-all (min of 21 interleaved pairs: 4.200 s both arms; median +1.26%), inside the +5% budget",
+    "test-cli": "177/178 -- no-cli-rename-or-prototype-override fails",
+    "why_held_off": "`--assert type vN` / `--assert name vN` address a variable by its auto-generated name. Folding `v1 = strcmp(pass,sneaky)` into its `if` removes a declaration and renumbers the rest, so the probe's `type v2 char[16]` retypes a different stack slot (credbuf lands at -0x10 instead of -0x18 and a separate `char v2 [8]` appears). Neither listing is unsound; the directive simply no longer names what the user meant. The flip is therefore a change about --assert ergonomics rather than about this pass, and belongs in its own PR with those directives re-read.",
+    "verdict": "shipped default-off with the flip evidence recorded"
+  },
+  "metric_neutrality": {
+    "method": "kuna decompile-all --json off vs on; decbench scores variables[] (args + stack symbols + framelayout slots), never register locals",
+    "fmt": "151 functions, 737 variables both arms, 1 function's variables[] differs",
+    "du": "320 functions, 1723 variables both arms, 5 functions differ",
+    "grep": "449 functions, 2524 variables both arms, 11 functions differ",
+    "what_differs": "only the vN name renumbering plus line_numbers/addresses; the (type, kind, stack_offset) multiset is identical in every changed function, so type_match cannot move"
+  },
+  "hidden_count_sites": [
+    "kuna_phases/tests.rs: fn-name-settables / kuna_num_settables / SETTABLE_TABLE-len / fn-name-tiers / tier-tuple / catalog-json-records (counters --fix)",
+    "kuna_phases/tests.rs option_values_live_value_present_for_86: a bool option with no live_field must be listed beside its sibling foldcallret",
+    "tests/catalog_bytecompat.rs x4 + tests/fixtures/phase_catalog.json (recaptured with no program loaded)",
+    "tests/stages/kuna-catalog.xml #6 angr bucket 32 -> 33",
+    "kuna-base/src/xml.rs corpus file count 295 -> 296",
+    "p0_knowledge/modes.rs aggressive_carries_every_default_off_option: every default-off on|off option is in AGGRESSIVE_OVERRIDES or listed with a reason"
+  ],
+  "print_point_guard": {
+    "defect": "The first version of the discount fired whenever the call's single use was order-safe, but `call_output_foldable` only guards the span up to that use. When the use op's own output is implied, the expression is printed wherever that implied value is finally consumed -- possibly a later block behind a branch -- and the inflate_test rejection the discount waives was the only thing holding the call in place.",
+    "witness": "betaflight_STM32F405.elf (O2, stripped) sub_8051ac4 @0x8051ac4: `sub_80515b4(dat_200181a4)` was emitted after `if (dat_200019cc & 1)`, while the binary calls at 0x8051b00 and first reads 0x200019cc at 0x8051b0e.",
+    "fix": "print_point() follows the implied chain from the use op to the statement the folded expression actually lands in, and print_point_is_order_safe() re-runs foldcallret's span guard (same block, strictly after, no CALL/LOAD/STORE/CALLOTHER and no read of an INDIRECT the call writes) over that whole distance.",
+    "verification": "An env-gated throwaway build (KUNA_FCRPHI_NOGUARD, reverted) reproduces the hunk exactly; with the guard the function is byte-identical to `--option foldcallretphi off`. The fmt witnesses still fold (`v11 &= sub_3700(stdin,v6);`, `if (sub_41f0(stdin))`)."
+  },
+  "related_issue": "Noelo-Lab/kuna#657 -- the pre-existing default-on foldcallret gap: a heritage-promoted global assignment is a CPUI_COPY, so op_is_barrier lets a call sink past a write to a global the callee reads. Independent of this option (same output with it on or off).",
+  "tied_write_guard": {
+    "defect": "op_is_barrier tests opcodes (CALL/LOAD/STORE/CALLOTHER), but heritage promotes a write to a fixed address into a plain CPUI_COPY, so a fold could cross one. With --option foldcallretphi on, `v2 = helper(g); k = 42; ok = v1 & v2;` became `ok = v1 & helper(g);` -- the call evaluated after the write to k that it reads. origin/main and --option foldcallretphi off emit the correct order.",
+    "witness": "synthetic x86-64 asm (target/helper/k/g/ok), reproduced verbatim from the round-3 review; compiling both renderings gives ok=1 (off, matching the binary) against ok=42 (on, before the fix)",
+    "fix": "op_writes_tied_storage declines any op between the call and the print point whose output varnode is persistent or address-tied; the guard runs over the whole travel distance, which contains foldcallret's call-to-use span, so every fold the discount adds is covered. Marker ops are skipped (an INDIRECT records a write its effect op performs). The frame half is not optional: print raw on a function that passes &loc to a callee and then writes loc shows the escaped slot promoted exactly like a global (s0xffffffffffffffe0:4 = #0x2a:4, a CPUI_COPY), so the earlier argument that an escaped slot stays a CPUI_STORE was wrong.",
+    "verification": "built without the barrier and otherwise identical: the counterexample folds again and stage assertion #5 fails; with it, on == off == origin/main. Re-swept over the 24 binaries with the full barrier: all three metrics report identical numbers (1270 located, 718 mapped, 0 hazards, 9 event-set + 40 event-order diffs), so it costs no folds, and five binaries change in one shape each -- a local assignment that had moved across a strlen call goes back to its off-arm position (du, diff x2, find, grep, tar). A write to a local is not an event for either metric, so those six reorders were in no hazard count; the barrier removes them structurally.",
+    "print_point_indirect_test": "op_reads_indirect_output_of is now applied to the statement the expression lands in as well as to the single use op -- with an implied chain longer than one hop those are different ops. It declines 5 folds on the sweep (O0/O2 grep main, O0 grep sub_828e, cleanflight sub_8017f4c, crazyflie sub_8009c74), each one a landing statement that reads a global or a frame slot the call carries an INDIRECT over.",
+    "sibling": "Noelo-Lab/kuna#657 -- the same hole through default-on foldcallret alone, fixed separately because it moves default output."
+  }
+}

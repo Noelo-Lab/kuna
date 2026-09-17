@@ -63,6 +63,15 @@
 //! side-effect-free guard, preferring false negatives (stay explicit) over
 //! reordering bugs.
 //!
+//! The opcode set is not complete, though: heritage promotes a write to a fixed
+//! address into a plain `CPUI_COPY`, so `v = f(); glob = 42; use(v)` folds and
+//! evaluates `f()` after the write to `glob` (GH-657) — and the same goes for a
+//! frame slot whose address escaped into the call.  `foldcallretphi` tests every
+//! span it clears with
+//! [`op_writes_tied_storage`](crate::p6_variables::kuna_foldcallretphi); this
+//! predicate does not yet, because it is default-on and the fix moves default
+//! output.
+//!
 //! The direct call output can still have one descendant while a derived
 //! truncation or arithmetic result fans out later. If that derived expression
 //! has multiple uses, [`expression_contains_foldable_call`] makes it explicit
@@ -186,7 +195,7 @@ pub fn expression_contains_foldable_call(data: &Funcdata, root: VarnodeId) -> bo
 /// effect, so the call expression must not be sunk past it (GH-181).  Marker
 /// ops (a later call's own INDIRECTs chain the earlier call's versions as
 /// inputs) have no textual evaluation point and are skipped.
-fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
+pub(crate) fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,
         None => return true, // stale: be conservative
@@ -224,7 +233,10 @@ fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
 
 /// An op whose relative order with the moved call is observable: any call, or a
 /// memory-touching op (LOAD/STORE/CALLOTHER).
-fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
+///
+/// Opcodes only — a heritage-promoted write to a global or to an escaped frame
+/// slot is a `CPUI_COPY` and is not in this set (GH-657); see the module header.
+pub(crate) fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,
         None => return true, // stale: be conservative
@@ -238,11 +250,11 @@ fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     )
 }
 
-fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
+pub(crate) fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
     data.obank().get(op).map(|o| o.is_marker()).unwrap_or(true)
 }
 
-fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::context::BlockId> {
+pub(crate) fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::context::BlockId> {
     data.obank().get(op).and_then(|o| o.get_parent())
 }
 

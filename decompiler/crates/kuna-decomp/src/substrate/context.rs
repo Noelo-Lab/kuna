@@ -1202,6 +1202,10 @@ pub struct ArchContext {
     /// (`fold_call_returns`, DIV-14 default-on).  Read by `base_explicit`
     /// (`ActionMarkExplicit`) via [`crate::kuna_callretfold::call_output_foldable`].
     pub fold_call_returns: bool,
+    /// (kuna) Discount a foldable call's own INDIRECT effect in
+    /// `check_implied_cover`'s inflate arm (option `foldcallretphi`,
+    /// default-off).  Read by `check_implied_cover`.
+    pub fold_call_ret_phi: bool,
     /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
     /// `strip_stack_guard`, opt-in default-off).  Read by
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
@@ -1595,6 +1599,7 @@ impl ArchContext {
             switch_return: false, // switchreturn (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (Architecture::reset_defaults sets the shipped default: on)
+            fold_call_ret_phi: false, // foldcallretphi (default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)

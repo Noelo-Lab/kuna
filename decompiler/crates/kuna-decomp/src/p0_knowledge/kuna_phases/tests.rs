@@ -75,7 +75,7 @@ fn surface_count_is_119() {
 }
 
 #[test]
-fn settable_count_is_211() {
+fn settable_count_is_212() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -149,12 +149,13 @@ fn settable_count_is_211() {
     // +1 for `bytehonest` (P6 uncommitted byte on the JSON variables surface) and +1 for `elfmain` (P1 ELF libc-start main naming + prototype).
     // +1 for `argclobber` (P4 trailing clobber-argument drop).
     // +1 for `libctypes` (P1 named libc/POSIX aggregate pointers in the prototype tables).
-    assert_eq!(kuna_num_settables(), 211);
-    assert_eq!(SETTABLE_TABLE.len(), 211);
+    // +1 for `foldcallretphi` (P6 call-result folding past the merge phalanx).
+    assert_eq!(kuna_num_settables(), 212);
+    assert_eq!(SETTABLE_TABLE.len(), 212);
 }
 
 #[test]
-fn tier_counts_are_68_core_80_transform_63_analysis() {
+fn tier_counts_are_68_core_81_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -286,7 +287,8 @@ fn tier_counts_are_68_core_80_transform_63_analysis() {
     // core 67 -> 68: +1 for `argclobber` (P4 trailing clobber-argument drop).
     // analysis 62 -> 63: +1 for `libctypes` (P1 named libc/POSIX aggregate
     // pointers in the prototype tables).
-    assert_eq!((core, transform, analysis), (68, 80, 63));
+    // transform 80 -> 81: +1 for `foldcallretphi` (P6 call-result folding).
+    assert_eq!((core, transform, analysis), (68, 81, 63));
 }
 
 #[test]
@@ -735,6 +737,10 @@ fn option_values_live_value_present_for_87() {
                             | "branchflip"
                             | "namestyle"
                             | "foldcallret"
+                            // (kuna) `foldcallretphi` extends `foldcallret`'s
+                            // decision and shares its seam, so it reports its
+                            // live state the same way its sibling does.
+                            | "foldcallretphi"
                             | "gotoreduce"
                             | "ifelseflatten"
                             | "crossjumprevert"
@@ -1023,7 +1029,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 202 -> 204: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
     // 209 -> 210: +1 for `libctypes`; its P1 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
-    assert_eq!(json.matches("},\n").count(), 210);
+    // 210 -> 211: +1 for `foldcallretphi`.
+    assert_eq!(json.matches("},\n").count(), 211);
 }
 
 #[test]
