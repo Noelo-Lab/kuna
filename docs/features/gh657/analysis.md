@@ -148,6 +148,16 @@ diffutils `diff`, bzip2, findutils `find`, plus the four ELFs in
 | `OTHER-same-calls` | 4 — read by hand, all de-folds the counter missed because the old text already bound the call to something (`v7[2] = sub_1ef10(0x40) + 0x40;`) |
 | `FLAG-call-gained-or-vanished` | **0** |
 | functions that *gain* a fold | 1 (`grep` O2 `0x6a70`, counted twice because `grep` appears as both a decbench and an in-tree ELF) |
+
+A second sweep over a **disjoint** 20 binaries (O0 and O2 of `tar`, `dash`,
+`su`, `e2fsck`, `kmod`, `ls`, `ip`, `libedit`, `libz`, `ssh`; 17,078 functions)
+changes 175: 148 `defold`, 12 `defold-dedup`, 15 read by hand, **0 FLAG**. Four
+of the 15 have a neighbouring call gain a fold — `ip` O0 `0x9a193` nets one
+(`v3 = sub_99d74(a0,sub_9845e(3));`, and objdump has `9a1ab call 9845e / 9a1bd
+call 99d74` back to back, so the folded order is the binary's), and `e2fsck` O0
+`0x6b91b`, `ip` O0 `0x8b389` and `ssh` O2 `0x20ec0` trade a de-fold for a gain in
+the same expression. The two sweeps together: 36 binaries, 23,285 functions, 232
+changed, no call gained or lost.
 | call tokens | 29228 → 29221 (−7, exactly the seven duplicated emissions) |
 | emitted lines | 187182 → 187277 (+95) |
 

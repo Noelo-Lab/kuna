@@ -41,7 +41,7 @@
     "emitted_lines": "187182 -> 187277 (+95)",
     "dedup_example": "findutils find 0x1da6f: `v1 = v2[sub_33502(v2)]; v2[sub_33502(v2)] = 0;` -> one `v2 = sub_33502(v3);` and two uses -- the folded form was calling twice",
     "clause_attribution": "a third build with clause 2 disabled changes 14 functions and costs 11 folds; clause 2 accounts for the other 43 changed functions",
-    "fold_gains": "1 distinct function gains a fold rather than losing one: grep O2 0x6a70 (it appears twice in the table because grep is both a decbench binary and an in-tree ELF). A cover-dirtying cascade -- marking one value explicit re-dirties its neighbours' covers -- not a new reorder. A wider disjoint sweep finds a handful more; see disjoint_sweep."
+    "fold_gains": "1 distinct function gains a fold rather than losing one: grep O2 0x6a70 (it appears twice in the table because grep is both a decbench binary and an in-tree ELF). A cover-dirtying cascade -- marking one value explicit re-dirties its neighbours' covers -- not a new reorder. See disjoint_sweep.fold_gains for four more."
   },
   "varcensus": {
     "method": "scripts.pipeline.varcensus --text on the sweep dumps",
@@ -134,5 +134,19 @@
     },
     "set_identity": "the phi-delta SETS (not just the counts) are identical to origin/main's on both binaries",
     "default_identity": "`kuna decompile-all` with no options is byte-identical (md5) between the narrowed and the restored build on ssh O2, tar O0, grep O0 and fmt O2, so the 16-binary sweep below is unaffected"
+  },
+  "disjoint_sweep": {
+    "why": "the reviewer's WRONG-OUTPUT lens used a corpus disjoint from the 16-binary one; re-run here so the PR's own numbers cover it",
+    "corpus": "20 binaries: O0 and O2 of tar, dash, shadow/su, e2fsprogs/e2fsck, kmod, coreutils/ls, iproute2/ip, libedit.so.0.0.70, libz.so.1.2.13, openssh/ssh (.scratch/corpus/run2.sh)",
+    "functions": 17078,
+    "functions_changed": 175,
+    "defold": 148,
+    "defold_dedup": 12,
+    "other_same_calls": 15,
+    "flag_call_gained_or_vanished": 0,
+    "call_bindings_gained": 206,
+    "duplicated_call_texts_removed": 14,
+    "fold_gains": "1 net (O0 ip 0x9a193: `v1 = sub_9845e(3); v3 = sub_99d74(a0,v1);` -> `v3 = sub_99d74(a0,sub_9845e(3));`, and objdump has `9a1ab call 9845e / 9a1bd call 99d74` back to back, so the folded order is the binary's). Three more trade a de-fold for a neighbouring gain: O0 e2fsck 0x6b91b (ext2fs_file_get_size de-folds, its CONCAT44 argument inlines), O0 ip 0x8b389 (sub_8b331 de-folds, sub_8a7a8 folds into its argument), O2 ssh 0x20ec0 (sub_3ec10 de-folds, sub_3df50 folds into its argument). All four are the cover-dirtying cascade, not a reorder.",
+    "combined_with_16_binary_sweep": "36 binaries, 23285 functions, 232 changed: 194 defold, 19 defold-dedup, 19 other-same-calls, 0 FLAG"
   }
 }
