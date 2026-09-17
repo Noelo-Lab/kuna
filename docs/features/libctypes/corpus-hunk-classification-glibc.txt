@@ -46,6 +46,13 @@ an offset.  Two shapes, 41 sites:
   member-then-index  p->d_name[k]      31 sites, all dirent::d_name, ALL BETTER
   index-then-member  p[k].member k!=0  10 sites, 4 TRUE and 6 MIS-NAMED
 
+`p[0].member` is excluded: index 0 on a by-value array (`stat v[2]`) is an
+ordinary element and carries no claim beyond the declaration.  So is
+`p[k].field_0xNN` -- that is the neutral offset form, makes no member claim, and
+is what `opaque` prints too; it accounts for the difference between the 15 raw
+matches and the 10 counted here (5 of them are the diffutils reads the
+reserved-row rule keeps neutral).
+
   e2fsprogs/e2fsck init_resource_track @0x339d0     9 sites, 4 true / 5 misnamed
     a0 is `timeval *` from gettimeofday; really `struct resource_track *`
     whose first THREE members are timevals.
