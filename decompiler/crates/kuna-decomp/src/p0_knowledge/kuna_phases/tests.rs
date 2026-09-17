@@ -746,6 +746,12 @@ fn option_values_live_value_present_for_87() {
                             // decision and shares its seam, so it reports its
                             // live state the same way its sibling does.
                             | "foldcallretphi"
+                            // (kuna) `indirectonly` gates an engine-side
+                            // Varnode flag read by `HighVariable::has_name` and
+                            // `Merge::merge_test_adjacent`, not a printer flag;
+                            // like `foldcallret` above it declares no
+                            // `live_field`, so the catalog suppresses `current`.
+                            | "indirectonly"
                             | "gotoreduce"
                             | "ifelseflatten"
                             | "crossjumprevert"

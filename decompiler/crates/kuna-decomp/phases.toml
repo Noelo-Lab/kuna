@@ -5568,6 +5568,28 @@ tier = "transform"
 symptoms = "parameter copy-shadow assignment (v6 = a1;) emitted below an earlier guard instead of at the top of the function|kuna places some parameter spill copies in the entry block and others after a guard in the same function|extra CFG nodes versus the source around a cascade of if (p && !*p) p = NULL; parameter guards|vN = aM; for an unmodified incoming parameter appearing in the middle of a guard cascade"
 
 # ---------------------------------------------------------------------------
+# indirectonly: the upstream markIndirectOnly body kuna shipped as an inert stub.
+# ---------------------------------------------------------------------------
+[[settable]]
+option = "indirectonly"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "merge-aggressiveness"
+strength = "HARD"
+rewind = "P6"
+issue = "kuna-indirectonly"
+summary = "PLACEHOLDER"
+use_when = "PLACEHOLDER"
+example = "option indirectonly off"
+source_decompiler = "ghidra"
+inspiration = "Funcdata::markIndirectOnly / Funcdata::checkIndirectUse (funcdata_varnode.cc:801-858); HighVariable::hasName (variable.cc:731-760); Merge::mergeTestAdjacent (merge.cc:192-196)"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "PLACEHOLDER"
+
+# ---------------------------------------------------------------------------
 # (kuna) Loader-tier capability (1 row): arm64e Mach-O spec selection. Like
 # `relocobjects` above, this gates a LOAD-time decision (language_id_for), so the
 # live gate is an env var the CLI exports (KUNA_MACHO_ARM64E) rather than an
