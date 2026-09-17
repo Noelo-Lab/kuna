@@ -365,13 +365,14 @@
  },
  "gates": {
   "make_test": "675/675 PARITY OK",
-  "make_test_stages": "1115/1115 PARITY OK (+12 boolbyte added, 0 removed, 0 moved)",
+  "make_test_stages": "1125/1125 PARITY OK (+12 boolbyte added, 0 removed, 0 moved)",
   "make_test_cli": "184/184 passed",
   "check_spec": "OK (lenient) + OK (strict)",
   "kuna_catalog_check": "catalog OK",
-  "counters_check": "no drift (218 settables, 311 stage-corpus files)",
+  "counters_check": "no drift (219 settables, tiers 69/87/63, 313 stage-corpus files)",
   "options_md": "byte-fresh",
-  "make_rust_test": "RUST_TEST_RC=0 (416 test binaries, 0 failures) on the tree rebased onto main ba79503e; re-run after the catalog-row edit, also RUST_TEST_RC=0 / 416"
+  "make_rust_test": "RUST_TEST_RC=0 (416 test binaries, 0 failures)",
+  "measured_on": "the branch rebased onto main fe3abc23 (signedness #656); the witness and the tar -O2 SUBnn count (4 -> 1) re-checked on that build"
  },
  "soundness": {
   "no_wider_value_inherits_bool": {
