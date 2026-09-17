@@ -696,11 +696,17 @@ reachable from its *printed* (explicit) members and folds them into one verdict:
 `INT_SLESS`, `INT_SLESSEQUAL`, `INT_SDIV`, `INT_SREM`, `INT_SRIGHT` (operand 0),
 `INT_SEXT`, `INT_SCARRY` and `INT_SBORROW` demand signed; `INT_LESS`,
 `INT_LESSEQUAL`, `INT_DIV`, `INT_REM`, `INT_RIGHT` (operand 0), `INT_ZEXT` and
-`INT_CARRY` demand unsigned; `INT_LEFT` (operand 0) demands unsigned as well,
-not because `<<` computes a different value but because shifting a negative
-value left is undefined behaviour in C, and this pass must not manufacture it;
-a `CPUI_CAST` to a plain integer of the same width is a demand for the type it
-casts to. `auto` declares the value signed when every demand is signed and
+`INT_CARRY` demand unsigned; a `CPUI_CAST` to a plain integer of the same width
+is a demand for the type it casts to. `INT_LEFT` is deliberately *not* in that
+list: the shifted bits are the same under either declaration, so `<<` is a
+neutral operator whose printed result carries the shiftee's type, and whatever
+reads the shifted value is what decides. (An earlier revision demanded unsigned
+there on the ground that `negative << k` is undefined in C. The argument does
+not separate `<<` from `+ - *`, whose signed overflow is undefined on the same
+footing and which are neutral here, so it was dropped — kuna's C models the
+arithmetic the binary performs and is not UB-free by construction — and it cost
+fidelity, being the source of every `int` → `unsigned int` flip `auto` made
+against DWARF in the corpus sweep.) `auto` declares the value signed when every demand is signed and
 unsigned when every demand is unsigned, and leaves it alone otherwise;
 `prefer-signed` and `prefer-unsigned` additionally settle the no-demand case,
 which is TRex's observation that C programmers write `int` when the signedness
@@ -733,8 +739,18 @@ is the third rule. C's integer promotions convert every operand narrower than
 performed is read off the declaration, so below the promotion width nothing is
 neutral: `(short)-1 == -1` is true while `(unsigned short)0xffff == -1` is a
 constant false, and `+ - * & | ^ << == !=` all diverge the same way. The pass
-therefore declines any high whose declared type is narrower than
-`TypeFactory::get_size_of_int()`, whatever the operations say. A width change
+therefore declines any high whose declared type is narrower than the promotion
+width, whatever the operations say — and the promotion width that decides this
+is **the `int` of the compiler that reads kuna's output, not the target's**.
+Emitted C is read and compiled where `int` is 4 bytes however small the target
+cspec's `<data_organization><integer_size>` is; that value is 2 on `avr8gcc`,
+`avr8egcc`, `TI_MSP430`, `TI_MSP430X`, `CR16`, `PIC24` and `x86-16`, and reading
+the guard off it would let a 2-byte local be re-signed on those targets and turn
+an emitted `if (v1 != -1)` into a constant-true test. The floor is therefore
+`max(4, TypeFactory::get_size_of_int())`
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_typeround.rs
+(MIN_PROMOTION_SIZE)`), pinned on x86-64 by `tests/stages/kuna-signedness.xml`
+and on a 2-byte-`int` target by `tests/stages/kuna-signedness-int16.xml`. A width change
 *between* two integers is an explicit `INT_SEXT`/`INT_ZEXT` in p-code, so a
 mixed-width expression is constrained by the extension op rather than slipping
 through as neutral.
@@ -744,7 +760,12 @@ expression". First, the walk follows *implied* results: `v + 1 < 0` prints as
 one expression, so the C type of `v + 1`, and therefore whether the comparison
 is signed, follows `v`'s declaration; an operation that keeps carrying the
 operand's type extends the walk to its readers, and one whose result is a
-declared variable of its own ends it. Second, anything unclassified vetoes the
+declared variable of its own ends it. Two of the *demanding* operations carry
+the operand's type as well — `>>` prints at the shiftee's promoted type and
+`/ %` at the usual-arithmetic-conversion type of their operands — so those
+record their demand and continue the walk, while a comparison, a
+cast-printing extension and a carry intrinsic stop it because their printed
+result establishes a type of its own. Second, anything unclassified vetoes the
 variable outright — a `LOAD` or `STORE` address, a `PTRADD`/`PTRSUB` index
 (where `base[v]` really does differ between a signed and an unsigned `v`, and no
 cast is inserted), any `FLOAT_*` operation, an indirect branch, a type-locked

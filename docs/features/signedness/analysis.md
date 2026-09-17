@@ -73,17 +73,30 @@ the soundness basis: flip only when every one of those demands agrees.
 
 Three refinements were needed on top:
 
-* **The promotion width.** "Signedness-independent at a fixed width" is a
-  precondition, not a turn of phrase. C's integer promotions convert every
-  operand narrower than `int` to `int` *before* the operator runs, and which
-  extension that is comes off the declaration, so below the promotion width
-  nothing on the neutral list is neutral: `(short)-1 == -1` is true while
-  `(unsigned short)0xffff == -1` is a constant false, and `+ - * & | ^ <<` all
-  diverge the same way. The pass therefore declines any declaration narrower
-  than `TypeFactory::get_size_of_int()`. Reduced from findutils `find -O2`
-  `sub_bac0`, where re-declaring `short v8` unsigned left
+* **The promotion width — of the reader, not the target.** "Signedness-
+  independent at a fixed width" is a precondition, not a turn of phrase. C's
+  integer promotions convert every operand narrower than `int` to `int` *before*
+  the operator runs, and which extension that is comes off the declaration, so
+  below the promotion width nothing on the neutral list is neutral:
+  `(short)-1 == -1` is true while `(unsigned short)0xffff == -1` is a constant
+  false, and `+ - * & | ^ <<` all diverge the same way. Reduced from findutils
+  `find -O2` `sub_bac0`, where re-declaring `short v8` unsigned left
   `if ((v2 == v8) || (v8 == -1)) break;` in place with a dead `break`; the
   reduced bytechunk is the second function in `tests/stages/kuna-signedness.xml`.
+
+  The width that decides it is the `int` of whoever compiles the emitted C, which
+  is 4 bytes, **not** `TypeFactory::get_size_of_int()`. Reading it off the target
+  was the first fix's own bug: the cspec `<data_organization><integer_size>` is 2
+  on `avr8gcc`, `avr8egcc`, `TI_MSP430`, `TI_MSP430X`, `CR16`, `PIC24` and
+  `x86-16`, so on those targets a 2-byte local was re-signed and the identical
+  `find` defect came straight back — on `x86:LE:16:Protected Mode`, `upstream`
+  printed `int2 v1; ... if (v1 != -1)` and `prefer-unsigned` printed
+  `uint2 v1; ... if (v1 != -1)`, a constant-true test to any reader whose `int` is
+  4 bytes. The floor is now `max(4, get_size_of_int())`, and
+  `tests/stages/kuna-signedness-int16.xml` pins it on that architecture (2 of its
+  4 assertions fail with the target-derived guard, 4/4 with this one), with a
+  4-byte local in the same image that *does* flip so the decline is visibly the
+  width rule and not an inactive option.
 * **Implied values.** `v + 1 < 0` is one printed expression, so the C type of
   `v + 1` — and therefore whether `< 0` is signed — follows `v`'s declaration
   even though `INT_ADD` is signedness-neutral. The walk follows a neutral op's
@@ -95,14 +108,38 @@ Three refinements were needed on top:
   false` body, so no cast is there to save it. Anything not explicitly classified
   vetoes the variable.
 
-`INT_LEFT` is on the demand side for a different reason: `<<` produces the same
-bits either way, but shifting a *negative* value left is undefined behaviour in
-C, so a value the body shifts is declared unsigned or not re-declared at all.
-TRex classifies `LeftShift` the same way. Without that rule `auto` turned
-defined unsigned shifts into signed-overflow UB — zlib `sub_ce20`'s
-`unsigned int v7` with `v7 = v13 | v7 << (v4 & 0x1f);` was the witness, and
-`gcc -O2 -fsanitize=undefined` printed `runtime error: left shift of negative
-value` on the re-declared text only.
+`INT_LEFT` is on the demand side, and it is the one row there that is a
+**preference rather than a soundness requirement** — the module header says so
+too. `a << k` shifts the same bits into the same places under either
+declaration, and `INT_LEFT` takes the *default* `getInputCast` arm
+(`care_uint_int = false`), so it is not part of the set that makes a flip
+meaning-preserving. An earlier revision justified the row with "shifting a
+negative value left is undefined in C"; that does not hold up, because signed
+overflow of `+ - *` is undefined on exactly the same footing and those are
+neutral here. The row is kept on two measured grounds instead:
+
+* a value the body ORs and shifts left is a bit buffer, which C source spells
+  unsigned — zlib's `deflate` bit writer (`sub_ce20`, `sub_d3c0`) is the case in
+  the corpus, and without the row `auto` declares its accumulators `int`;
+* a signed `<<` is the one otherwise-neutral operator `-fsanitize=undefined`
+  reports, and it did report it (`runtime error: left shift of negative value`,
+  zlib `sub_ce20`'s `v7 = v13 | v7 << (v4 & 0x1f);`).
+
+Its cost was measured directly, by building both rules and diffing the
+declarations: **0** declarations differ under `auto` and **8** under
+`prefer-signed` over the `fmt`/`ls`/`sort`/`du` `-O0`+`-O2` sweep (all 8
+`int` without the row, `unsigned int` with it), and the DWARF-checkable accuracy
+of every value is identical either way (`prefer-signed` 386/348/38 both times).
+So the row is nearly inert, it points the way C source does where it acts, and
+dropping it is a one-line change if a reviewer disagrees. Because it is a
+preference and not a demand it also *carries*: the walk continues into whatever
+reads the shifted value, so `(v << 3) >> 2` is decided by the `>>`. The same is
+true of `>>`, `/` and `%`, whose printed result keeps the operand's type.
+
+Across the whole sweep (and zlib), **no** variable this pass declares signed is
+ever the left operand of a `<<` in the emitted text: 29 newly-signed declarations
+under `auto`, 332 under `prefer-signed`, 10 in zlib, 0 shiftees
+(`.scratch/shiftcheck.py`).
 
 One more, from TRex: `INT_ZEXT` as a **definition** is not unsigned evidence
 (TRex's `ZeroExtendTgt => None`). A zero-extension describes the *source*
@@ -132,42 +169,67 @@ images decbench scores) across coreutils, grep, gzip, diffutils, bzip2,
 findutils and tar, at `-O0` and `-O2`. Whole-image `decompile-all` once per
 value, then every plain-integer local declaration whose name DWARF also knows
 **inside the same function** is compared against the DWARF base type's
-encoding. 58,653 plain-integer declarations; 6,511 carry such a name, 6,260 of
+encoding. 58,051 plain-integer declarations; 6,510 carry such a name, 6,259 of
 them at the same width as the DWARF type. Signedness is binary, so a
 declaration that differs between two values is right in exactly one of them.
 Harness: `.scratch/acc/{dwarfsign,accuracy}.py` on the branch.
 
 | value | declarations moved | agrees with DWARF | `-O0` | `-O2` | moved *and* DWARF-named | right | wrong |
 |---|---|---|---|---|---|---|---|
-| `upstream` | 0 | 5849/6260 = **93.4%** | 97.3% | 72.0% | 0 | — | — |
-| `auto` | 579 | 5853/6260 = **93.5%** | 97.3% | 72.3% | 4 | **4** | **0** |
-| `prefer-signed` | 7183 | 6159/6260 = **98.4%** | 99.0% | 94.9% | 386 | 348 | 38 |
-| `prefer-unsigned` | 13623 | 5816/6260 = **92.9%** | 97.1% | 69.6% | 41 | 4 | 37 |
+| `upstream` | 0 | 5848/6259 = **93.4%** | 97.3% | 71.9% | 0 | — | — |
+| `auto` | 575 | 5852/6259 = **93.5%** | 97.3% | 72.2% | 4 | **4** | **0** |
+| `prefer-signed` | 7089 | 6158/6259 = **98.4%** | 99.0% | 94.8% | 386 | 348 | 38 |
+| `prefer-unsigned` | 13650 | 5815/6259 = **92.9%** | 97.1% | 69.6% | 41 | 4 | 37 |
 
-Three things fall out of that table.
+**Read the last three columns before the first three.** The oracle can only score
+a declaration kuna names the same way DWARF does in the same function, and those
+are overwhelmingly stack locals, i.e. `-O0`: of the 6,259 comparable rows,
+**5,308 are `-O0` and 951 are `-O2`**. The flips are the other way round — the
+defect this option exists for is an `-O2` register local, which the oracle
+usually cannot see. Per value:
+
+| value | checkable rows `-O0` / `-O2` | flips it makes there `-O0` / `-O2` | of all flips image-wide |
+|---|---|---|---|
+| `auto` | 5,308 / 951 | 1 / 3 | 575 |
+| `prefer-signed` | 5,308 / 951 | 134 / 252 | 7,089 |
+| `prefer-unsigned` | 5,308 / 951 | 13 / 28 | 13,650 |
+
+So `prefer-signed` is the only value with a real measurement (386 of its flips
+land where DWARF can judge them). **`auto`'s fidelity is essentially unmeasured**:
+4 observations out of 575 flips, 0.7% coverage, and its +0.1pp on the overall
+rate is noise at that count. It is 4-for-4, which is worth knowing and is not
+worth calling validation. (This is not a DWARF type-lock artifact — on `fmt -O2`
+`auto` flips 4 of the 132 plain-integer declarations on the *unstripped* image and
+4 of the 223 on the stripped one, so it behaves the same with and without debug
+info; the oracle's mass simply sits where the flips are not.)
+
+Three more things fall out of that table.
 
 * **The deficit is an `-O2` deficit.** At `-O0` today's declarations already
-  agree with the source 97.3% of the time; at `-O2` they agree **72.0%** of the
+  agree with the source 97.3% of the time; at `-O2` they agree **71.9%** of the
   time. That is the `SUB_UINT_PLAIN < SUB_INT_PLAIN` fold meeting a compiler
   that masks, shifts and zero-extends.
-* **`auto` is exact but narrow.** It moves 579 declarations image-wide and only
+* **`auto` is exact but narrow.** It moves 575 declarations image-wide and only
   4 of them are checkable against DWARF — all 4 agree (`gzip gen_codes::len`,
   `gzip ct_init::len`, `ln main::link_errno`, `tar dump_file0::fd`, each
   `unsigned`→`int` against a source `int`). Demanding unanimity buys precision
-  and costs reach.
-* **`prefer-signed` is where the fidelity is.** It carries `-O2` from 72.0% to
-  **94.9%** — 252 checkable flips at `-O2`, 235 right — and `-O0` from 97.3% to
+  and costs reach — and, as above, leaves the arm's fidelity unmeasured.
+* **`prefer-signed` is where the fidelity is.** It carries `-O2` from 71.9% to
+  **94.8%** — 252 checkable flips at `-O2`, 235 right — and `-O0` from 97.3% to
   99.0%. Its 38 wrong flips are concentrated in exactly the types whose
   operations carry no signedness at all: `mode_t` 18, `size_t` 12, `gid_t` 2,
   `uintmax_t` 2, `unsigned int` 2, `ino_t` 1, `reg_syntax_t` 1; the 348 right
   ones are `int` 342, `idx_t` 5, `Idx` 1. That is TRex's §5.1 claim reproduced:
   when nothing observed settles it, C source says `int`.
-* **`prefer-unsigned` is refuted.** It moves 13,623 declarations and makes the
+* **`prefer-unsigned` is refuted.** It moves 13,650 declarations and makes the
   output *less* faithful than leaving them alone, in both slices (4 of its 41
   checkable flips agree). It is sound, and it is the wrong default for anything.
 
-**0 flips on a sub-`int` declaration** under any value, which is the width rule
-holding across the whole corpus.
+**0 flips on a sub-`int` declaration** under any value. That is the width rule
+holding, but note what this corpus can and cannot witness: every binary in it is
+built for a target whose `int` is 4 bytes, so it cannot distinguish a guard read
+off the target from one read off the reader. The 16-bit stage test is what
+distinguishes them.
 
 **What the method does not see.** Only names DWARF knows in the same function
 are compared. kuna also names some register locals after the parameter of the

@@ -76,15 +76,14 @@ fn the_signedness_sensitive_operators_demand_what_the_c_operator_means() {
     assert_eq!(classify_reader(CPUI_INT_ZEXT, 0), Demands(Evidence::Unsigned));
 }
 
-/// `<<` is neutral, not an unsigned demand: the shifted bits are the same under
-/// either declaration, kuna's own cast machinery takes the default
-/// `getInputCast` arm (`care_uint_int = false`) for it, and whatever reads the
-/// shifted value - reached because the reader carries - is what decides.
+/// `<<` prefers unsigned and carries: the shifted bits are the same under either
+/// declaration (so this is a preference, not a soundness requirement), and the
+/// printed result keeps the shiftee's type, so a `>>` further out still decides.
 #[test]
-fn a_left_shift_is_a_carrying_reader_not_an_unsigned_demand() {
+fn a_left_shift_prefers_unsigned_and_still_carries() {
     use OpCode::*;
     use ReaderClass::*;
-    assert_eq!(classify_reader(CPUI_INT_LEFT, 0), Carries);
+    assert_eq!(classify_reader(CPUI_INT_LEFT, 0), DemandsCarrying(Evidence::Unsigned));
     assert_eq!(classify_reader(CPUI_INT_LEFT, 1), Opaque);
 }
 

@@ -55,23 +55,34 @@
 //! | widening conversion | `INT_ZEXT` | unsigned |
 //! | `SCARRY`/`SBORROW`/`CARRY` intrinsics | `INT_SCARRY`/`INT_SBORROW`/`INT_CARRY` | signed / unsigned |
 //! | a `(T)` cast | `CPUI_CAST` | the cast's own metatype, and only to a plain integer of the same width |
+//! | `<<` (operand 0) | `INT_LEFT` | unsigned - a *preference*, see below |
 //!
-//! That is exactly the set of ops whose `getInputCast` passes
-//! `care_uint_int = true` in `p9_emit/coreaction_casts.rs` - the ops kuna's own
-//! cast machinery already considers signedness-carrying - and nothing else.  In
-//! particular `<<` is *not* in it: `INT_LEFT` takes the default `getInputCast`
-//! arm (`care_uint_int = false`), the shifted bits are the same either way, and
-//! the printed result keeps the shiftee's type, so `<<` is a neutral, carrying
-//! reader like `+`.  (An earlier revision demanded unsigned there on the ground
-//! that `negative << k` is undefined in C.  It was dropped: signed overflow of
-//! `+ - *` is undefined on exactly the same footing and those are neutral, so the
-//! argument did not separate `<<` from the rest.  kuna's C models the arithmetic
-//! the binary performs; it is not UB-free by construction.  What the rule did do
-//! was cost fidelity - it was the source of every `int -> unsigned int` flip
-//! `auto` made against DWARF in the corpus sweep.)
+//! Every row but the last is an op whose `getInputCast` passes
+//! `care_uint_int = true` in `p9_emit/coreaction_casts.rs`: the set kuna's own
+//! cast machinery already treats as signedness-carrying, and the reason a flip
+//! can never silently change what an expression means.
+//!
+//! **`<<` is the exception, and it is a preference, not a soundness rule.**
+//! `INT_LEFT` takes the *default* `getInputCast` arm (`care_uint_int = false`),
+//! and rightly so: `a << k` shifts the same bits into the same places under
+//! either declaration.  An earlier revision justified the row by "shifting a
+//! negative value left is undefined in C", which does not hold up - signed
+//! overflow of `+ - *` is undefined on exactly the same footing and those are
+//! neutral here, and kuna's C models the arithmetic the binary performs rather
+//! than being UB-free by construction.  The row is kept anyway, for two reasons
+//! that were measured rather than argued: a value the body ORs and shifts left is
+//! a bit buffer, which C source spells unsigned (zlib's `deflate` bit writer is
+//! the case in the corpus), and a signed `<<` is the one otherwise-neutral
+//! operator `-fsanitize=undefined` reports.  It costs 0 declarations under `auto`
+//! and 8 under `prefer-signed` over the `fmt`/`ls`/`sort`/`du` `-O0`+`-O2` sweep,
+//! and leaves the DWARF-checkable accuracy of every value unchanged; the numbers
+//! and the alternative are in `docs/features/signedness/proposal.md`.  Because
+//! the row is a preference and not a demand, it also *carries*: the walk
+//! continues into whatever reads the shifted value, so `(v << 3) >> 2` is decided
+//! by the `>>`.
 //!
 //! Everything else that this module lets through is signedness-*independent* at a
-//! fixed width - `+ - * & | ^ << == !=`, unary `~` and `-`, an assignment, a call
+//! fixed width - `+ - * & | ^ == !=`, unary `~` and `-`, an assignment, a call
 //! argument, a `return`, a stored value, a truncation or concatenation - because
 //! two's-complement arithmetic and a same-width conversion produce the same bits
 //! either way.
@@ -112,9 +123,9 @@
 //!   is bit-identical.  Two of the *demanding* ops propagate the operand's type
 //!   the same way - `>>` prints at the shiftee's promoted type and `/ %` at the
 //!   usual-arithmetic-conversion type of their operands - so those record their
-//!   demand *and* continue the walk ([`ReaderClass::DemandsCarrying`]); a
-//!   comparison, a cast-printing extension and a carry intrinsic do not, because
-//!   the printed result carries a type of its own.
+//!   demand *and* continue the walk ([`ReaderClass::DemandsCarrying`]), as does
+//!   `<<`; a comparison, a cast-printing extension and a carry intrinsic do not,
+//!   because the printed result carries a type of its own.
 //! * **Anything unclassified vetoes the variable.** `LOAD`/`STORE` addresses,
 //!   `PTRADD`/`PTRSUB` indices (`base[v]` with a negative `v` is not the same
 //!   object as `base[(unsigned)v]`, and no cast is inserted there), every
@@ -337,10 +348,10 @@ enum ReaderClass {
     /// The operand's signedness decides what this operator means in C, and the
     /// result prints a type of its own (a condition, a cast, an intrinsic call).
     Demands(Evidence),
-    /// The operand's signedness decides what this operator means in C *and* the
-    /// printed result keeps carrying the operand's declared type - `>> / %`.  Both
-    /// hold: the demand is recorded and the walk continues into the readers of the
-    /// result, so a second operator further out cannot disagree unseen.
+    /// The operand's signedness is constrained *and* the printed result keeps
+    /// carrying the operand's declared type - `>> / % <<`.  Both hold: the demand
+    /// is recorded and the walk continues into the readers of the result, so a
+    /// second operator further out cannot disagree unseen.
     DemandsCarrying(Evidence),
     /// Signedness-independent at a fixed width, and the result keeps carrying the
     /// operand's declared C type into the surrounding expression.
@@ -354,15 +365,13 @@ enum ReaderClass {
 
 /// Classify one reader of the value at input `slot`.
 ///
-/// The demanding set is exactly the C constructs whose *meaning* changes with the
-/// operand's signedness, which is the ops whose `getInputCast` passes
-/// `care_uint_int = true` in `p9_emit/coreaction_casts.rs`.  `INT_LEFT` is not
-/// among them, in either file: the shifted bits do not depend on the shiftee's
-/// signedness, so `<<` is a carrying reader and whatever reads the shifted value
-/// decides (see the module header on why the "`negative << k` is UB" rule was
-/// dropped).  Everything not named here is `Veto`: a pointer index, a
-/// dereference, a float conversion and an indirect branch all read the value in a
-/// way this pass does not model.
+/// The demanding set is the C constructs whose *meaning* changes with the
+/// operand's signedness - the ops whose `getInputCast` passes
+/// `care_uint_int = true` in `p9_emit/coreaction_casts.rs` - plus `INT_LEFT`,
+/// which is a stated preference rather than a requirement (module header).
+/// Everything not named here is `Veto`: a pointer index, a dereference, a float
+/// conversion and an indirect branch all read the value in a way this pass does
+/// not model.
 ///
 /// Every classification here assumes the operand is at least [`MIN_PROMOTION_SIZE`]
 /// wide; `plan` enforces that before any of this is consulted.
@@ -395,13 +404,17 @@ fn classify_reader(opc: OpCode, slot: int4) -> ReaderClass {
                 Opaque
             }
         }
-        // `<<` - the shiftee's signedness changes neither the result bits nor the
-        // C meaning at a fixed width, and the printed result keeps the shiftee's
-        // type, so this is an ordinary carrying reader: `(v << 3) >> 2` is
-        // constrained by the `>>`, not by the `<<`.
+        // `<<` - the one entry here that is a stated PREFERENCE rather than a
+        // soundness requirement, and the module header says why.  The shifted
+        // bits do not depend on the shiftee's signedness, so nothing breaks
+        // either way; the unsigned pull is kept because a value the body ORs and
+        // shifts left is a bit buffer, which C source spells unsigned, and
+        // because a signed `<<` is the one otherwise-neutral operator UBSan
+        // reports.  It carries as well as demands: the printed result keeps the
+        // shiftee's type, so `(v << 3) >> 2` is still constrained by the `>>`.
         CPUI_INT_LEFT => {
             if slot == 0 {
-                Carries
+                DemandsCarrying(Evidence::Unsigned)
             } else {
                 Opaque
             }

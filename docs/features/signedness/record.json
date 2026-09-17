@@ -1,6 +1,6 @@
 {
  "opportunity": "Datatype::type_order ranks SUB_UINT_PLAIN (16) ahead of SUB_INT_PLAIN (17), so in get_local_type's most-specific fold one uint vote outranks every int vote on a Varnode and nothing downstream re-decides. On -O2 x86-64 those uint votes are structural (INT_ZEXT from a 32-bit instruction widening into its 64-bit register; INT_AND/INT_RIGHT/INT_XOR from a strength-reduced loop), so a counter compiled from `int` is declared `unsigned int` and cast back to `int` at every comparison.",
- "test_name": "tests/stages/kuna-signedness.xml (two functions, 6 assertions: the masked loop bound two-pass, and the sub-int width guard reduced from findutils find -O2 sub_bac0) + 9 unit tests in p9_emit/kuna_typeround/tests.rs",
+ "test_name": "tests/stages/kuna-signedness.xml (two functions, 6 assertions: the masked loop bound two-pass, and the sub-int width guard reduced from findutils find -O2 sub_bac0) + tests/stages/kuna-signedness-int16.xml (two functions, 4 assertions: the same width guard on x86:LE:16:Protected Mode, whose own cspec integer_size is 2, with a 4-byte control that does flip) + 9 unit tests in p9_emit/kuna_typeround/tests.rs",
  "binary": "decbench full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
  "selector": "sub_3060",
  "func_addr": "0x3060",
@@ -72,33 +72,33 @@
    },
    "prefer-signed": {
     "functions_decompiled": 2918,
-    "functions_changed": 273,
-    "declaration_flips": 353,
+    "functions_changed": 270,
+    "declaration_flips": 345,
     "flip_directions": {
-     "unsigned long -> long": 221,
-     "unsigned int -> int": 119,
+     "unsigned long -> long": 220,
+     "unsigned int -> int": 112,
      "long -> unsigned long": 7,
      "int -> unsigned int": 6
     },
     "cast_tokens_removed_net": 62,
     "per_binary_flips": {
      "fmt.O0": 10,
-     "ls.O0": 46,
+     "ls.O0": 44,
      "sort.O0": 35,
-     "du.O0": 36,
-     "fmt.O2": 31,
-     "ls.O2": 70,
+     "du.O0": 34,
+     "fmt.O2": 30,
+     "ls.O2": 68,
      "sort.O2": 57,
-     "du.O2": 68
+     "du.O2": 67
     }
    },
    "prefer-unsigned": {
     "functions_decompiled": 2918,
-    "functions_changed": 732,
-    "declaration_flips": 889,
+    "functions_changed": 737,
+    "declaration_flips": 894,
     "flip_directions": {
-     "int -> unsigned int": 548,
-     "long -> unsigned long": 312,
+     "int -> unsigned int": 552,
+     "long -> unsigned long": 313,
      "unsigned int -> int": 20,
      "unsigned long -> long": 9
     },
@@ -106,11 +106,11 @@
     "per_binary_flips": {
      "fmt.O0": 36,
      "ls.O0": 102,
-     "sort.O0": 135,
-     "du.O0": 109,
-     "fmt.O2": 41,
-     "ls.O2": 172,
-     "sort.O2": 155,
+     "sort.O0": 136,
+     "du.O0": 110,
+     "fmt.O2": 42,
+     "ls.O2": 173,
+     "sort.O2": 156,
      "du.O2": 139
     }
    }
@@ -118,24 +118,12 @@
   "hunk_classification": "every hunk under every value is a declaration flip or a dropped cast; 0 hunks of any other kind (7 of the cast hunks drop more than one cast from one long line, which the 1:1 classifier reports as OTHER-1to1 and which were read by hand)",
   "cast_tokens_removed_net": 62,
   "cast_tokens_added": 0,
-  "note": "no sub-int flip direction appears under any value, which is the promotion width rule holding across the sweep"
+  "note": "no sub-int flip direction appears under any value. The sweep is all 4-byte-int targets, so that is the width rule holding but not evidence about which int the rule reads; see promotion_width_guard."
  },
  "correctness_evidence": {
   "syntax_pair": {
-   "method": "every function whose emitted C changed is compiled twice, before and after, SEPARATELY (`gcc -fsyntax-only`), and the normalized diagnostic sets are compared. Harness: .scratch/syntaxpair.py",
-   "changed_functions_checked": {
-    "auto": 34,
-    "prefer-signed": 273,
-    "prefer-unsigned": 732,
-    "total": 1039
-   },
-   "diagnostic_set_differs": 0,
-   "compile_clean_in_both_arms": {
-    "auto": 11,
-    "prefer-signed": 69,
-    "prefer-unsigned": 162
-   },
-   "note": "the ones that do not compile fail on Ghidra idioms the harness does not model (`v41._0_1_`, a `dat_` global used as both scalar and pointer, a `goto` into another scope) -- identically in both arms. The option introduces no new compile error under any value."
+   "superseded_by": "differential_warning_oracle",
+   "why": "the round-2 run was `gcc -fsyntax-only -w` filtered to `error:` lines. `-w` disables every warning, so it could not observe -Wsign-compare or -Wsign-conversion -- the only diagnostics this feature can move. It proved `no new compile ERROR`, which was never in dispute."
   },
   "executable_round_trip": {
    "harness": ".scratch/roundtrip2.py -- both texts in one program (renamed apart), deterministic stubs for every undefined callee, a shared 4 MiB arena behind every synthesized global, 2000 pseudo-random input vectors per function, comparing the return value and a hash of the arena plus the stub trace",
@@ -167,7 +155,37 @@
    }
   },
   "declaration_vs_cast_contradiction": "none by construction: a cast is dropped only when the emitter actually wrote the rounded type as that high's declaration and the cast target is that exact type, so the surviving expression has the same C type it had.",
-  "ubsan": "gcc -O2 -fsanitize=undefined on the first draft's zlib sub_ce20 text reported `left shift of negative value` where a left-shifted `unsigned int` had been re-declared `int`; INT_LEFT is now an unsigned demand and that declaration no longer moves."
+  "ubsan": "gcc -O2 -fsanitize=undefined on an early draft's zlib sub_ce20 text reported `left shift of negative value` where a left-shifted `unsigned int` had been re-declared `int`. INT_LEFT operand 0 is an unsigned demand for that reason among others (see int_left_rule), and zlib's bit accumulators no longer move.",
+  "differential_warning_oracle": {
+   "method": "every function whose emitted C changed is compiled before and after with the SAME synthesized extern declarations and `gcc -fsyntax-only -std=gnu89 -Wsign-compare -Wsign-conversion`, and the WARNING sets are diffed. gcc's column is used to read the operator the warning points at, so an ordered comparison is distinguished from an equality even on a line containing both. Harness: .scratch/signwarn.py",
+   "auto": {
+    "changed_functions": 34,
+    "compiled_in_both_arms": 20,
+    "sign_compare_deltas": 0,
+    "on_ordered_comparison": 0
+   },
+   "prefer-signed": {
+    "changed_functions": 270,
+    "compiled_in_both_arms": 134,
+    "sign_compare_deltas": 5,
+    "on_ordered_comparison": 0
+   },
+   "prefer-unsigned": {
+    "changed_functions": 737,
+    "compiled_in_both_arms": 231,
+    "sign_compare_deltas": 19,
+    "on_ordered_comparison": 0
+   },
+   "total": {
+    "changed_functions": 1041,
+    "compiled_in_both_arms": 385,
+    "sign_compare_deltas": 24,
+    "on_ordered_comparison": 0
+   },
+   "the_deltas": "all 24 are on `==`/`!=` -- `if (v3 == strlen(v1))`, `if (v1 != -1)`, `while (v2 != v5)`, `return a0[4] == v3;` -- which is benign at a fixed width: both operands convert to the same width and the bit patterns compared are identical. 0 are on `< <= > >=`, which is the number that would say a comparison changed meaning.",
+   "sign_conversion_deltas": "expected by construction and reported separately: re-declaring a local changes the conversion at its assignments, call arguments and returns, all same-width and therefore bit-identical. auto 58/+ 39/-, prefer-signed 295/+ 104/-, prefer-unsigned 519/+ 168/-.",
+   "left_shift_check": "no variable any value declares signed is ever the left operand of `<<` in the emitted text: 29 newly-signed declarations under auto, 332 under prefer-signed, 10 in zlib libz -O2, 0 shiftees (.scratch/shiftcheck.py)"
+  }
  },
  "ablation_changed": 0,
  "parity": "OK",
@@ -192,51 +210,51 @@
    81,
    63
   ],
-  "stage_corpus_files": 301,
+  "stage_corpus_files": 302,
   "phase_catalog_json": "recaptured",
   "catalog_exact_buckets_touched": "none (change_kind presentation-default and source_decompiler kuna are not exact-pinned buckets)"
  },
  "dwarf_accuracy": {
-  "method": "238 unstripped DWARF twins (the compiled/ binaries beside the stripped images decbench scores) across coreutils, grep, gzip, diffutils, bzip2, findutils and tar at -O0 and -O2. Whole-image `decompile-all` once per value; every plain-integer local declaration whose name DWARF also knows INSIDE THE SAME FUNCTION is compared against the DWARF base type's encoding. Signedness is binary, so a declaration that differs between two values is right in exactly one of them.",
+  "method": "238 unstripped DWARF twins (the compiled/ binaries beside the stripped images decbench scores) across coreutils, grep, gzip, diffutils, bzip2, findutils and tar at -O0 and -O2. Whole-image decompile-all once per value; every plain-integer local declaration whose name DWARF also knows INSIDE THE SAME FUNCTION, at the same width, is compared against the DWARF base type's encoding. Signedness is binary, so a declaration that differs between two values is right in exactly one of them.",
   "harness": ".scratch/acc/dwarfsign.py (pyelftools DIE walk, follows typedef/const/volatile and DW_AT_abstract_origin) + .scratch/acc/accuracy.py",
   "binaries": 238,
-  "plain_integer_declarations": 58653,
-  "dwarf_named": 6511,
-  "dwarf_named_same_width": 6260,
+  "plain_integer_declarations": 58051,
+  "dwarf_named": 6510,
+  "dwarf_named_same_width": 6259,
   "declarations_moved": {
    "upstream": 0,
-   "auto": 579,
-   "prefer-signed": 7183,
-   "prefer-unsigned": 13623
+   "auto": 575,
+   "prefer-signed": 7089,
+   "prefer-unsigned": 13650
   },
   "overall": {
    "upstream": {
-    "agree": 5849,
-    "of": 6260,
+    "agree": 5848,
+    "of": 6259,
     "rate_pct": 93.4,
     "checkable_flips": 0,
     "right": 0,
     "wrong": 0
    },
    "auto": {
-    "agree": 5853,
-    "of": 6260,
+    "agree": 5852,
+    "of": 6259,
     "rate_pct": 93.5,
     "checkable_flips": 4,
     "right": 4,
     "wrong": 0
    },
    "prefer-signed": {
-    "agree": 6159,
-    "of": 6260,
+    "agree": 6158,
+    "of": 6259,
     "rate_pct": 98.4,
     "checkable_flips": 386,
     "right": 348,
     "wrong": 38
    },
    "prefer-unsigned": {
-    "agree": 5816,
-    "of": 6260,
+    "agree": 5815,
+    "of": 6259,
     "rate_pct": 92.9,
     "checkable_flips": 41,
     "right": 4,
@@ -280,32 +298,32 @@
    },
    "O2": {
     "upstream": {
-     "agree": 685,
-     "of": 952,
-     "rate_pct": 72.0,
+     "agree": 684,
+     "of": 951,
+     "rate_pct": 71.9,
      "checkable_flips": 0,
      "right": 0,
      "wrong": 0
     },
     "auto": {
-     "agree": 688,
-     "of": 952,
-     "rate_pct": 72.3,
+     "agree": 687,
+     "of": 951,
+     "rate_pct": 72.2,
      "checkable_flips": 3,
      "right": 3,
      "wrong": 0
     },
     "prefer-signed": {
-     "agree": 903,
-     "of": 952,
-     "rate_pct": 94.9,
+     "agree": 902,
+     "of": 951,
+     "rate_pct": 94.8,
      "checkable_flips": 252,
      "right": 235,
      "wrong": 17
     },
     "prefer-unsigned": {
-     "agree": 663,
-     "of": 952,
+     "agree": 662,
+     "of": 951,
      "rate_pct": 69.6,
      "checkable_flips": 28,
      "right": 3,
@@ -334,6 +352,49 @@
    "tar dump_file0::fd"
   ],
   "sub_int_flips": 0,
-  "caveat": "Only names DWARF knows in the same function are compared. kuna also names some register locals after the parameter of the function they feed, where the ground truth can be genuinely ambiguous (ls/du save_abbr's `abbr_size` is extend_abbrs's size_t parameter, while the value's own source identity in save_abbr is the SIGNED idx_t zone_size that C converts at the call). Those are excluded rather than scored either way."
- }
+  "caveat": "Only names DWARF knows in the same function are compared. kuna also names some register locals after the parameter of the function they feed, where the ground truth can be genuinely ambiguous (ls/du save_abbr's `abbr_size` is extend_abbrs's size_t parameter, while the value's own source identity in save_abbr is the SIGNED idx_t zone_size that C converts at the call). Those are excluded rather than scored either way.",
+  "coverage_caveat": "the oracle can only score a declaration kuna names the way DWARF does in the same function, which is overwhelmingly a stack local: 5,308 of the 6,259 comparable rows are -O0 and 951 are -O2, while the defect this option exists for is an -O2 register local. auto moves 4 of them (1 at -O0, 3 at -O2) out of 575 flips image-wide -- 0.7% coverage -- so auto's fidelity is UNMEASURED and its +0.1pp is noise at that count. prefer-signed moves 386 (134 + 252) and is the only value with a real measurement. Not a DWARF type-lock artifact: on fmt -O2 auto flips 4 of 132 plain-integer declarations unstripped and 4 of 223 stripped.",
+  "checkable_rows_by_optimization": {
+   "O0": 5308,
+   "O2": 951
+  },
+  "prefer_unsigned_wrong_by_gt_spelling": {
+   "int": 24,
+   "Idx": 5,
+   "intmax_t": 3,
+   "lin": 2,
+   "off_t": 1,
+   "time_t": 1,
+   "idx_t": 1
+  }
+ },
+ "promotion_width_guard": {
+  "rule": "a declaration narrower than max(4, TypeFactory::get_size_of_int()) is never re-signed",
+  "why_not_the_target": "the promotion runs in the compiler that READS the emitted C, where int is 4 bytes. The target cspec's <data_organization><integer_size> is 2 on avr8egcc, avr8gcc, TI_MSP430, TI_MSP430X, CR16, PIC24 and x86-16, so a target-derived guard re-signed a 2-byte local there and brought the findutils find -O2 sub_bac0 defect back.",
+  "proof": "tests/stages/kuna-signedness-int16.xml scores 2/4 with the target-derived guard (`int2 v1;` becomes `uint2 v1;` under prefer-unsigned while `if (v1 != -1)` stays) and 4/4 with max(4, ...). Measured by building both, not argued.",
+  "corpus_caveat": "the 238-binary DWARF corpus is entirely 4-byte-int targets, so its `0 sub-int flips` cannot distinguish the two guards; the stage test is what distinguishes them."
+ },
+ "int_left_rule": {
+  "classification": "DemandsCarrying(Unsigned) on operand 0",
+  "status": "a stated PREFERENCE, not a soundness requirement: `a << k` shifts the same bits either way and INT_LEFT takes the default getInputCast arm (care_uint_int = false). The earlier `negative << k is UB` justification is withdrawn -- signed overflow of `+ - *` is UB on the same footing and those are neutral.",
+  "kept_because": [
+   "a value the body ORs and shifts left is a bit buffer, which C source spells unsigned (zlib deflate sub_ce20/sub_d3c0)",
+   "a signed `<<` is the one otherwise-neutral operator -fsanitize=undefined reports"
+  ],
+  "measured_cost": {
+   "method": "both rules built and the emitted declarations diffed over fmt/ls/sort/du O0+O2",
+   "auto_declarations_differing": 0,
+   "prefer_signed_declarations_differing": 8,
+   "prefer_unsigned_declarations_differing": 0,
+   "direction": "all 8 are `int` without the rule and `unsigned int` with it",
+   "dwarf_accuracy": "identical either way (prefer-signed 386 checkable flips / 348 right / 38 wrong in both builds)"
+  },
+  "review_claim_refuted": "the round-2 review attributed auto's six `int -> unsigned int` flips to this rule. They do not come from it: with the rule removed all six remain. They are ordinary unsigned demands -- du sub_6310's `(unsigned int)v1 >> 8` and sort sub_6f70's `(unsigned int)(v3 - 0x30U) <= 9`.",
+  "also_carries": "the walk continues through it, so `(v << 3) >> 2` is decided by the `>>`"
+ },
+ "recommendation": [
+  "ship at default upstream with values upstream|auto|prefer-signed",
+  "drop prefer-unsigned: its own DWARF column refutes it (4 of 41 judged flips right; -O2 71.9% -> 69.6%)",
+  "do NOT make auto the default on fidelity grounds -- +0.1pp on four observations; the honest case for a later default flip is cast removal, not accuracy"
+ ]
 }
