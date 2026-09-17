@@ -1,4 +1,4 @@
-#  == a fresh origin/main build
+# 'kuna decompile-all --option indirectonly off' == a fresh origin/main build
 #
 # Control for the whole-corpus A/B: the OFF arm must be the pre-port engine, not
 # just 'the other arm of the same binary'.  Built origin/main (83830e86) separately
