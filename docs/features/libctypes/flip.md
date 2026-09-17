@@ -190,11 +190,63 @@ accessors.
 ### The by-value question, re-checked on the flipped default
 
 `Ty::NamedPtr` is pointer-only, but propagation still reaches by-value positions.
-Over the same 9 binaries: named aggregates returned **by value** 0 → 3 (`ls`
-0x10210, `gzip` 0x10bb0, `tar` 0x43230 — the same gnulib `gettime` wrapper each
-time, all `timespec`, all correct: a 16-byte `timespec` comes back in a register
-pair). By-value named **parameters** 0 → 0. `rethidden` 0 → 0. This is the case
-the sized shells exist for, and it is still clean.
+There are three of them, and over the same 9 binaries all three were counted
+(`off` is 0 in every row by construction — with the gate off not one named shell
+is interned, so no name exists to appear by value):
+
+| by-value position | off | default |
+|---|---:|---:|
+| named aggregate **parameter** | 0 | 0 |
+| named aggregate **return** | 0 | 3 |
+| named aggregate **local declaration** | 0 | 88 |
+
+`rethidden` is 0 → 0.
+
+The 3 returns are the same gnulib `gettime` wrapper each time (`ls` 0x10210,
+`gzip` 0x10bb0, `tar` 0x43230), all `timespec`, all correct: a 16-byte `timespec`
+comes back in a register pair.
+
+The 88 locals (83 scalars plus 5 arrays of one) are the class that actually
+moves, and they are the case the sized shells exist for: a `stat *`/`sigset_t *`/
+`tm *` argument names the on-stack object the call fills, so the byte blob and
+the scattered slots above it collapse into one declaration. The offsets have to
+land exactly, and they do — `gzip` 0xea40:
+
+```
+-  long v21; // stack - 0x80
+-  long v22; // stack - 0x78
+-  long v23; // stack - 0x70
+-  long v24; // stack - 0x68
+-  char v7 [72];
++  stat v7; // stack - 0xc8
+       ...
+-        *v5 = v21;
+-        v5[1] = v22;
++        *v5 = v7._72_8_;
++        v5[1] = v7._80_8_;
+       ...
+-          v5[2] = v23;
+-          v5[3] = v24;
++          v5[2] = v7._88_8_;
++          v5[3] = v7._96_8_;
+```
+
+`v7` sits at `-0xc8`, so `-0x80`/`-0x78`/`-0x70`/`-0x68` are `+72`/`+80`/`+88`/
+`+96`: glibc x86-64 `st_atim.tv_sec`/`.tv_nsec` and `st_mtim.tv_sec`/`.tv_nsec`,
+which is exactly what the surrounding code — gzip copying the input file's
+timestamps onto the output — reads there. The `off` arm is the weaker rendering
+of the two: its `char v7 [72]` is *shorter* than the `struct stat` the `fstat`
+call fills, and the four longs above it are the rest of the same object.
+
+The locals carry two costs. One is the piece accessor `vN._off_size_` counted
+above (1,017 → 1,275). The other is in `decompile-project`: a by-value local of
+a still-incomplete shell is 5 of that export's +58 `cc` errors (`storage size of
+'vN' isn't known`). Both are what the follow-up `glibc` value — real field
+layouts instead of an opaque shell — retires.
+
+Counted by `docs/features/libctypes/byvalue.py <dir>` over the same `off`/default
+`decompile-all` dumps as the sweep above: it matches declaration lines against
+the 16 shell names and reports which of them are read through `vN._off_size_`.
 
 ## Speed
 

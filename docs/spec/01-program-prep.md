@@ -1526,16 +1526,22 @@ moves.
   `--define-function 0x…=fopen` agrees with what the pass parks on an imported
   `fopen`.
 
-  *The default is `opaque`.* This tier is structurally invisible to the XML
-  corpora — no datatest loads a file, so the usual "0 of 675 assertions move" is
-  not evidence about it either way — and the evidence for the default is
-  therefore the corpus type-recovery sweep instead: over the decbench slices at
-  `-O0`, `-O2` and `-O2 -fno-inline`, naming these pointees moves functions to a
-  better type score and none to a worse one, because the table is restating a
-  declaration rather than guessing. The whole-binary `decompile-all` sweep that
-  accompanies it moves no call target, no control-flow edge and no numeric
-  literal, and the functional `PTRSUB(` form the sizing rule exists to prevent
-  stays absent in both arms. `--option libctypes off` restores the shipped
+  *The default is `opaque`.* No datatest loads a file, so the 675 assertions
+  cannot see this tier either way; the stage corpus can, and
+  `tests/stages/kuna-libctypes.xml` pins the row in both arms. The evidence for
+  the default is therefore the corpus type-recovery sweep: over the decbench
+  slices at `-O0`, `-O2` and `-O2 -fno-inline`, naming these pointees moves 70
+  functions to a perfect type score and one to a worse one — a `hash_do_for_each`
+  callback whose own declaration spells the payload `void *` while its body only
+  ever hands it to `fwrite_unlocked`. The whole-binary `decompile-all` sweep that
+  accompanies it moves no call target at all (the call-target multiset is
+  identical in every function), but it does move numeric literals, and in three
+  PLT thunks a control-flow edge: a constant offset into a named aggregate is
+  absorbed into the field name it selects, so `*(long *)&a0[4]` becomes
+  `a0->field_0x10`, and a thunk that inherits a typed return value grows the
+  `return` it had no value to carry before. The functional `PTRSUB(` form the
+  sizing rule exists to prevent stays absent in both arms.
+  `--option libctypes off` restores the shipped
   `void *` tables byte for byte, which is the ablation to reach for when a
   pointee name is in question; the cost the default does carry is in
   `decompile-project`, whose exported `.c` reads fields out of a shell its `.h`
