@@ -1747,7 +1747,8 @@ pub fn extract_type_definitions(arch: &Architecture, fd: &Funcdata) -> Vec<TypeI
         return Vec::new();
     }
     let rt = crate::printc::RealTypeCtx::from_arch(arch, arch.print().out_lang());
-    crate::kuna_structdefs::referenced_types(fd)
+    let types = crate::kuna_structdefs::referenced_types(fd);
+    crate::kuna_structdefs::dedup_by_name(&types)
         .iter()
         .map(|ct| TypeInfo {
             name: ct.get_name().to_string(),

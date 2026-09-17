@@ -14,6 +14,10 @@ Three tiers:
 
 | If the output shows... | Try |
 |---|---|
+| the signature says FILE * or struct_0 * and nothing says what the fields are | [`structdefs`](#structdefs) |
+| a field access like f->_flags with no layout anywhere in the output | [`structdefs`](#structdefs) |
+| you have to run decompile-project just to read the .h for one function's struct | [`structdefs`](#structdefs) |
+| a synthesized struct_N appears in a parameter type with no definition | [`structdefs`](#structdefs) |
 | stack string initialisation renders as an array-typed cast such as (char[8])s_addr._0_8_ | [`rodatastring`](#rodatastring) |
 | partial-symbol slice assignments like buf._0_9_ = s_addr._16_9_ instead of the string | [`rodatastring`](#rodatastring) |
 | a recognized rodata literal never appears in the function that copies it onto the stack | [`rodatastring`](#rodatastring) |
@@ -814,6 +818,14 @@ Three tiers:
 ## Toggleable transforms
 
 The control surface: each of these can make output worse on the wrong source shape, so each stays flippable.
+
+### `structdefs` -- on | off, default `off`
+
+- **Symptoms:** the signature says FILE * or struct_0 * and nothing says what the fields are; a field access like f->_flags with no layout anywhere in the output; you have to run decompile-project just to read the .h for one function's struct; a synthesized struct_N appears in a parameter type with no definition.
+- **What it does:** Print the definitions of the composite, enum and typedef types a function's C names ABOVE the function. kuna recovers a layout and then does not show it: a body that reads `f->_flags` names `FILE` in its signature and nothing on the surface says what a `FILE` is, so the struct the decompiler recovered is invisible to the one surface an agent reads. The renderer has existed since `kuna decompile-project` -- `PrintC::doc_type_definitions` writes every user-defined type into the export's `.h` -- but nothing called it for a single function. When on, `kuna_structdefs::referenced_types` collects the function's semantic type surface (the prototype's return and parameter types, every Varnode data-type, every mapped Symbol type behind a HighVariable), descends through typedef bases and component types -- a pointer's pointee, an array's element, a struct's fields -- and pushes each definable type in postorder, so the list is definition-before-use over exactly the referenced subset rather than the whole factory. Those roots are a superset of the type names the printer can spell (a declaration is read off a high or its symbol, the signature off the prototype, a cast off the Varnode type it casts to), so the preamble cannot miss a definition the body refers to -- and it catches the struct behind `p->field_0x8`, whose tag name the C never prints at all. The text is the SAME `render_type_definitions` the `.h` type block is built with: the forward-declaration block, then bodies, an incomplete struct printing as `typedef struct FILE FILE; /* opaque */`, core types never. A `kuna decompile-project` export's bodies suppress the preamble, because they include the header that already carries it. `kuna decompile-all --json` carries the same set as an additive per-function `types` array (name, definition text, size) so a consumer reads the layout without parsing C.
+- **When to flip:** Flip on when you are reading a function whose arguments are pointers to composites and want the layout in front of you -- `structsynth`'s synthesized `struct_N`, a DWARF struct on an unstripped binary, `libctypes`' opaque `FILE`/`DIR` shells -- instead of opening the `decompile-project` header to find it. Default OFF: it is a presentation default, and a preamble in front of every function is noise for a caller diffing bodies or feeding one function to a matcher. It changes nothing but the text above the function -- the body, its line contents and every recovered type are identical either way -- but it DOES move line numbers, so a consumer pinning a line number should read `line_mappings` rather than assume the first line is the signature. The preamble is documentation, not a compilable unit: a padding member spelled `undefined1` needs the export's recompile prelude to compile, which is one more reason the project surface keeps the definitions in the header.
+- **Where / provenance:** P9/type-definition-preamble · angr · presentation-default · kuna-structdefs
+- **Example:** `option structdefs on`
 
 ### `rodatastring` -- on | off, default `on`
 

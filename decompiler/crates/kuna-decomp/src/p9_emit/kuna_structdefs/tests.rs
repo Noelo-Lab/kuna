@@ -134,3 +134,20 @@ fn a_complete_struct_defines_as_its_body() {
         "struct struct_0 {\n    undefined1 *field_0x0;\n    int4 field_0x8;\n};\n"
     );
 }
+
+/// A DWARF image holds both the forward-declared and the defined `_IO_FILE`;
+/// the machine-readable surface reports the complete one, once.
+#[test]
+fn the_complete_definition_wins_one_record_per_name() {
+    let i4 = core(4, type_metatype::TYPE_INT, "int4");
+    let fwd = opaque("_IO_FILE");
+    let full = struct_of("_IO_FILE", 216, &[(0, "_flags", Rc::clone(&i4))]);
+    let other = opaque("_IO_marker");
+    let out = dedup_by_name(&[Rc::clone(&fwd), Rc::clone(&other), Rc::clone(&full)]);
+    let names: Vec<&str> = out.iter().map(|t| t.get_name()).collect();
+    assert_eq!(names, vec!["_IO_marker", "_IO_FILE"]);
+    assert_eq!(out[1].get_size(), 216);
+    // An opaque type with no complete twin is still reported.
+    let only_fwd = dedup_by_name(&[Rc::clone(&other)]);
+    assert_eq!(only_fwd.len(), 1);
+}

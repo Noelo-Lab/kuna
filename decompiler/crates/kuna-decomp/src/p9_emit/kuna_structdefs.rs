@@ -158,6 +158,31 @@ fn visit(ct: &Rc<Datatype>, seen: &mut HashSet<*const Datatype>, order: &mut Vec
     }
 }
 
+/// One record per NAME, for the machine-readable surface.
+///
+/// The factory can hold two data-types under one name — a DWARF image carries
+/// both the forward-declared `struct _IO_FILE` and the defined one — and the
+/// rendered text already resolves that (`render_type_definitions` prints one
+/// forward declaration and one body, and drops the `/* opaque */` note when a
+/// complete definition exists somewhere).  A JSON consumer has no such rule to
+/// apply, and two records for `_IO_FILE` reporting size 0 and size 216 is a
+/// contradiction, so the complete definition wins and a repeat of an
+/// already-reported name is dropped.  Order is otherwise preserved.
+pub fn dedup_by_name(types: &[Rc<Datatype>]) -> Vec<Rc<Datatype>> {
+    let complete: HashSet<&str> = types
+        .iter()
+        .filter(|ct| !ct.is_incomplete())
+        .map(|ct| ct.get_name())
+        .collect();
+    let mut taken: HashSet<String> = HashSet::new();
+    types
+        .iter()
+        .filter(|ct| !(ct.is_incomplete() && complete.contains(ct.get_name())))
+        .filter(|ct| taken.insert(ct.get_name().to_string()))
+        .map(Rc::clone)
+        .collect()
+}
+
 /// ONE type's definition text, the line(s) `render_type_definitions` would give
 /// it in the `.h`: the body for a complete struct/union, the enum block, the
 /// `typedef <base> <name>;` line, and the forward declaration alone for an
