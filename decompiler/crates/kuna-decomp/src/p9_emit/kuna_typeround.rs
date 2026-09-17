@@ -54,16 +54,24 @@
 //! | widening conversion | `INT_SEXT` | signed |
 //! | widening conversion | `INT_ZEXT` | unsigned |
 //! | `SCARRY`/`SBORROW`/`CARRY` intrinsics | `INT_SCARRY`/`INT_SBORROW`/`INT_CARRY` | signed / unsigned |
-//! | `<<` (operand 0) | `INT_LEFT` | unsigned |
 //! | a `(T)` cast | `CPUI_CAST` | the cast's own metatype, and only to a plain integer of the same width |
 //!
-//! `<<` is in that table for a reason that is not about the result bits: shifting
-//! a negative value left is undefined behaviour in C, so a value the body shifts
-//! is declared unsigned or not re-declared at all.  TRex classifies `LeftShift`
-//! the same way.
+//! That is exactly the set of ops whose `getInputCast` passes
+//! `care_uint_int = true` in `p9_emit/coreaction_casts.rs` - the ops kuna's own
+//! cast machinery already considers signedness-carrying - and nothing else.  In
+//! particular `<<` is *not* in it: `INT_LEFT` takes the default `getInputCast`
+//! arm (`care_uint_int = false`), the shifted bits are the same either way, and
+//! the printed result keeps the shiftee's type, so `<<` is a neutral, carrying
+//! reader like `+`.  (An earlier revision demanded unsigned there on the ground
+//! that `negative << k` is undefined in C.  It was dropped: signed overflow of
+//! `+ - *` is undefined on exactly the same footing and those are neutral, so the
+//! argument did not separate `<<` from the rest.  kuna's C models the arithmetic
+//! the binary performs; it is not UB-free by construction.  What the rule did do
+//! was cost fidelity - it was the source of every `int -> unsigned int` flip
+//! `auto` made against DWARF in the corpus sweep.)
 //!
 //! Everything else that this module lets through is signedness-*independent* at a
-//! fixed width - `+ - * & | ^ == !=`, unary `~` and `-`, an assignment, a call
+//! fixed width - `+ - * & | ^ << == !=`, unary `~` and `-`, an assignment, a call
 //! argument, a `return`, a stored value, a truncation or concatenation - because
 //! two's-complement arithmetic and a same-width conversion produce the same bits
 //! either way.
@@ -73,10 +81,18 @@
 //! operator runs, and which extension is performed is read off the declaration:
 //! `(short)-1 == -1` is true, `(unsigned short)0xffff == -1` is false, and the
 //! two disagree at `+ - * & | ^ << == != < <= > >= / % >>` alike.  Below the
-//! promotion width no operator is neutral, so this pass simply does not touch a
-//! declaration narrower than `TypeFactory::get_size_of_int()`.  (Reduced from
-//! `findutils` `find -O2` `sub_bac0`, where re-declaring a `short` unsigned left
-//! `if ((v2 == v8) || (v8 == -1)) break;` in place and made the `break` dead.)
+//! promotion width no operator is neutral, so this pass does not touch a narrow
+//! declaration at all.  The promotion width that decides this is **the `int` of
+//! the compiler reading kuna's output, not the target's**: emitted C is read and
+//! compiled where `int` is 4 bytes however small the target's cspec
+//! `<data_organization><integer_size>` is (it is 2 on avr8gcc, avr8egcc,
+//! TI_MSP430, TI_MSP430X, CR16, PIC24 and x86-16).  The floor is therefore
+//! `max(4, TypeFactory::get_size_of_int())` - see [`MIN_PROMOTION_SIZE`].
+//! (Reduced from `findutils` `find -O2` `sub_bac0`, where re-declaring a `short`
+//! unsigned left `if ((v2 == v8) || (v8 == -1)) break;` in place and made the
+//! `break` dead; `tests/stages/kuna-signedness.xml` pins that case on x86-64 and
+//! `tests/stages/kuna-signedness-int16.xml` pins it on a target whose own `int`
+//! is 2 bytes.)
 //!
 //! At and above the promotion width the neutral list matches kuna's own cast
 //! strategy: the demanding ops are precisely the ones whose `getInputCast` passes
@@ -93,7 +109,12 @@
 //!   op whose output is implied (inlined) therefore extends the walk to that
 //!   output's readers.  A neutral op whose output is explicit ends the walk: the
 //!   value is assigned into a declaration of its own, and a same-width conversion
-//!   is bit-identical.
+//!   is bit-identical.  Two of the *demanding* ops propagate the operand's type
+//!   the same way - `>>` prints at the shiftee's promoted type and `/ %` at the
+//!   usual-arithmetic-conversion type of their operands - so those record their
+//!   demand *and* continue the walk ([`ReaderClass::DemandsCarrying`]); a
+//!   comparison, a cast-printing extension and a carry intrinsic do not, because
+//!   the printed result carries a type of its own.
 //! * **Anything unclassified vetoes the variable.** `LOAD`/`STORE` addresses,
 //!   `PTRADD`/`PTRSUB` indices (`base[v]` with a negative `v` is not the same
 //!   object as `base[(unsigned)v]`, and no cast is inserted there), every
@@ -101,8 +122,8 @@
 //!   `ZPULL`/`SPULL`, and a `CPUI_CAST` whose target is anything but a plain
 //!   integer of the same width - each leaves the declaration exactly as upstream
 //!   chose it.
-//! * **The declaration is at least `int` wide** (above), so no promotion runs
-//!   before any of the neutral operators.
+//! * **The declaration is at least as wide as the reader's `int`** (above), so no
+//!   promotion runs before any of the neutral operators.
 //!
 //! With those in place, `auto` flips to signed only when every signedness-sensitive
 //! reader demands signed, so each surviving `(int)` cast on the variable becomes a
@@ -127,6 +148,16 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{HighVariableId, OpId, VarnodeId};
 use crate::dtype::{sub_metatype, type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
+
+/// The narrowest declaration this pass will re-sign, in bytes.
+///
+/// C's integer promotions run before every operator, and which extension is
+/// performed is read off the declaration, so below the promotion width nothing in
+/// [`classify_reader`]'s neutral half is neutral.  The promotion width that
+/// decides that is the one of the compiler reading kuna's output - `int` is 4
+/// bytes there - and *not* the target's `<data_organization><integer_size>`, which
+/// is 2 on avr8gcc, avr8egcc, TI_MSP430, TI_MSP430X, CR16, PIC24 and x86-16.
+const MIN_PROMOTION_SIZE: int4 = 4;
 
 /// (kuna) How the declared signedness of an integer local is chosen:
 /// `signedness upstream|auto|prefer-signed|prefer-unsigned`.
@@ -303,8 +334,14 @@ fn is_plain_integer(dt: &Datatype) -> bool {
 /// How one reader of the value affects the decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReaderClass {
-    /// The operand's signedness decides what this operator means in C.
+    /// The operand's signedness decides what this operator means in C, and the
+    /// result prints a type of its own (a condition, a cast, an intrinsic call).
     Demands(Evidence),
+    /// The operand's signedness decides what this operator means in C *and* the
+    /// printed result keeps carrying the operand's declared type - `>> / %`.  Both
+    /// hold: the demand is recorded and the walk continues into the readers of the
+    /// result, so a second operator further out cannot disagree unseen.
+    DemandsCarrying(Evidence),
     /// Signedness-independent at a fixed width, and the result keeps carrying the
     /// operand's declared C type into the surrounding expression.
     Carries,
@@ -317,47 +354,54 @@ enum ReaderClass {
 
 /// Classify one reader of the value at input `slot`.
 ///
-/// The `Demands` set is the set of C constructs whose *meaning* changes with the
-/// operand's signedness - which is the ops whose `getInputCast` passes
-/// `care_uint_int = true` in `p9_emit/coreaction_casts.rs` - plus `INT_LEFT`,
-/// whose meaning does not change but whose *definedness* does.  Everything not
-/// named here is `Veto`: a pointer index, a dereference, a float conversion and an
-/// indirect branch all read the value in a way this pass does not model.
+/// The demanding set is exactly the C constructs whose *meaning* changes with the
+/// operand's signedness, which is the ops whose `getInputCast` passes
+/// `care_uint_int = true` in `p9_emit/coreaction_casts.rs`.  `INT_LEFT` is not
+/// among them, in either file: the shifted bits do not depend on the shiftee's
+/// signedness, so `<<` is a carrying reader and whatever reads the shifted value
+/// decides (see the module header on why the "`negative << k` is UB" rule was
+/// dropped).  Everything not named here is `Veto`: a pointer index, a
+/// dereference, a float conversion and an indirect branch all read the value in a
+/// way this pass does not model.
 ///
-/// Every classification here assumes the operand is at least `int` wide; `plan`
-/// enforces that before any of this is consulted.
+/// Every classification here assumes the operand is at least [`MIN_PROMOTION_SIZE`]
+/// wide; `plan` enforces that before any of this is consulted.
 fn classify_reader(opc: OpCode, slot: int4) -> ReaderClass {
     use OpCode::*;
     use ReaderClass::*;
     match opc {
-        // `<` `<=` `>` `>=` `/` `%` - both operands carry the sign.
-        CPUI_INT_SLESS | CPUI_INT_SLESSEQUAL | CPUI_INT_SDIV | CPUI_INT_SREM => {
-            Demands(Evidence::Signed)
-        }
-        CPUI_INT_LESS | CPUI_INT_LESSEQUAL | CPUI_INT_DIV | CPUI_INT_REM => {
-            Demands(Evidence::Unsigned)
-        }
-        // `>>` - only the shiftee; the count is a count.
+        // `<` `<=` `>` `>=` - both operands carry the sign; the result is a
+        // condition, which re-establishes a type of its own.
+        CPUI_INT_SLESS | CPUI_INT_SLESSEQUAL => Demands(Evidence::Signed),
+        CPUI_INT_LESS | CPUI_INT_LESSEQUAL => Demands(Evidence::Unsigned),
+        // `/` `%` - both operands carry the sign, and the quotient is printed at
+        // the usual-arithmetic-conversion type of the two, so the walk continues.
+        CPUI_INT_SDIV | CPUI_INT_SREM => DemandsCarrying(Evidence::Signed),
+        CPUI_INT_DIV | CPUI_INT_REM => DemandsCarrying(Evidence::Unsigned),
+        // `>>` - only the shiftee; the count is a count.  The printed result is
+        // the shiftee's promoted type, so the walk continues into whatever reads
+        // it (`(v >> 2) < 0` is one expression).
         CPUI_INT_SRIGHT => {
             if slot == 0 {
-                Demands(Evidence::Signed)
+                DemandsCarrying(Evidence::Signed)
             } else {
                 Opaque
             }
         }
         CPUI_INT_RIGHT => {
             if slot == 0 {
-                Demands(Evidence::Unsigned)
+                DemandsCarrying(Evidence::Unsigned)
             } else {
                 Opaque
             }
         }
-        // `<<` - the result bits do not depend on the shiftee's signedness, but
-        // shifting a negative value left is undefined in C, so the shiftee is an
-        // unsigned demand (TRex classifies `LeftShift` the same way).
+        // `<<` - the shiftee's signedness changes neither the result bits nor the
+        // C meaning at a fixed width, and the printed result keeps the shiftee's
+        // type, so this is an ordinary carrying reader: `(v << 3) >> 2` is
+        // constrained by the `>>`, not by the `<<`.
         CPUI_INT_LEFT => {
             if slot == 0 {
-                Demands(Evidence::Unsigned)
+                Carries
             } else {
                 Opaque
             }
@@ -523,6 +567,10 @@ fn evidence_for(fd: &Funcdata, high: HighVariableId) -> Evidence {
                 }
                 match classify_reader(opc, slot) {
                     ReaderClass::Demands(ev) => verdict = verdict.join(ev),
+                    ReaderClass::DemandsCarrying(ev) => {
+                        verdict = verdict.join(ev);
+                        carries = true;
+                    }
                     ReaderClass::Carries => carries = true,
                     ReaderClass::Opaque => {}
                     ReaderClass::Veto => verdict = Evidence::Veto,
@@ -599,7 +647,14 @@ pub fn plan(
         // (`(short)-1 == -1` is true, `(unsigned short)0xffff == -1` is false).
         // The neutral half of `classify_reader` is only neutral at a fixed width,
         // so a narrow local is simply never re-declared.
-        if cur.get_size() < types.get_size_of_int() {
+        //
+        // The width that matters is the `int` of whoever reads and compiles this
+        // C, not the target's: emitted C is read on a host where `int` is 4 bytes
+        // whatever `<integer_size>` the target's cspec declares (it is 2 on
+        // avr8gcc, avr8egcc, TI_MSP430, TI_MSP430X, CR16, PIC24 and x86-16).  The
+        // floor is therefore 4, raised to the target's own promotion width when
+        // that is wider.
+        if cur.get_size() < types.get_size_of_int().max(MIN_PROMOTION_SIZE) {
             continue;
         }
         let ev = evidence_for(fd, high);
