@@ -254,6 +254,10 @@ Three tiers:
 | loop exit rendered as goto label_N; plus a synthesized label instead of break; | [`loopbreak_recovery`](#loopbreak_recovery) |
 | switch-case exit gotos where break; is expected | [`loopbreak_recovery`](#loopbreak_recovery) |
 | error paths leave a loop by goto to its successor label | [`loopbreak_recovery`](#loopbreak_recovery) |
+| an -O2 counter is declared unsigned int but every comparison on it is written (int)v | [`signedness`](#signedness) |
+| unsigned long locals whose only uses are signed compares | [`signedness`](#signedness) |
+| the declared signedness contradicts the casts in the body | [`signedness`](#signedness) |
+| want C-conventional signed declarations for values no operation settles | [`signedness`](#signedness) |
 | a local is declared with three or more levels of pointer indirection | [`ptrdepthcap`](#ptrdepthcap) |
 | unsigned long long ***** or char ***** appears in the output | [`ptrdepthcap`](#ptrdepthcap) |
 | C++ std::string / ostringstream locals get absurd pointer types | [`ptrdepthcap`](#ptrdepthcap) |
@@ -1393,6 +1397,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** A loop's error/exit paths render as `goto <successor-label>;` plus a synthesized `label_NNNN:` (angr emits `break;`). On by default (DIV-10, clean ablation + converges to upstream Ghidra, which always runs scopeBreak); set OFF to restore kuna's prior byte-identical raw-goto rendering.
 - **Where / provenance:** P8/goto-quality-acceptance · angr · structure-recovery · angr-1after909-doit
 - **Example:** `option loopbreak_recovery off`
+
+### `signedness` -- upstream | auto | prefer-signed | prefer-unsigned, default `upstream`
+
+- **Symptoms:** an -O2 counter is declared unsigned int but every comparison on it is written (int)v; unsigned long locals whose only uses are signed compares; the declared signedness contradicts the casts in the body; want C-conventional signed declarations for values no operation settles.
+- **What it does:** Decide a declared integer local's signedness from the operations the body applies to it, instead of from whichever type-inference vote was most specific. Datatype::type_order ranks SUB_UINT_PLAIN (16) ahead of SUB_INT_PLAIN (17), so in get_local_type's most-specific fold a single uint vote outranks every int vote and nothing downstream re-decides; on -O2 x86-64 those uint votes are structural (INT_AND/INT_RIGHT/INT_XOR from a strength-reduced loop, INT_ZEXT from a 32-bit instruction widening into its 64-bit register), which is why a counter compiled from `int` is declared `unsigned int` and then cast back at every comparison. This pass accumulates, per declared HighVariable, the size-tagged operation set reachable from its printed members -- SLESS/SLESSEQUAL/SDIV/SREM/SRIGHT/SEXT/SCARRY/SBORROW demand signed, LESS/LESSEQUAL/DIV/REM/RIGHT/ZEXT/CARRY demand unsigned, `+ - * & | ^ << == !=` and the value-moving ops are signedness-independent at a fixed width, and anything else (a pointer index, a dereference, a float, an indirect branch) vetoes the variable -- and picks TYPE_INT or TYPE_UINT for the declaration only. `auto` flips only when the demands are unanimous, so every cast the declaration makes a no-op is dropped and every other token is byte-identical; `prefer-signed`/`prefer-unsigned` additionally settle the case where nothing observed decides. No Varnode type changes and no inference re-runs, so the type lattice, the JSON variables surface and the recovered prototypes are untouched.
+- **When to flip:** An -O2 loop counter or index is declared `unsigned int`/`unsigned long` and every comparison on it is then written `(int)v`/`(long)v`; set `auto` to declare it `int`/`long` and drop the casts. Set `prefer-signed` to also declare a value no operation settles as signed (the C convention), `prefer-unsigned` for the opposite. Default `upstream` is byte-identical to not having the option. This is a readability/fidelity option: the decbench type_match metric normalizes signedness away, so it scores exactly zero either way.
+- **Where / provenance:** P9/naming-policy · kuna · presentation-default · kuna-signedness
+- **Example:** `option signedness auto`
 
 ### `ptrdepthcap` -- on | off, default `off`
 

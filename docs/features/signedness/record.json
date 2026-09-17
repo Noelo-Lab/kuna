@@ -1,0 +1,151 @@
+{
+  "opportunity": "Datatype::type_order ranks SUB_UINT_PLAIN (16) ahead of SUB_INT_PLAIN (17), so in get_local_type's most-specific fold one uint vote outranks every int vote on a Varnode and nothing downstream re-decides. On -O2 x86-64 those uint votes are structural (INT_ZEXT from a 32-bit instruction widening into its 64-bit register; INT_AND/INT_RIGHT/INT_XOR from a strength-reduced loop), so a counter compiled from `int` is declared `unsigned int` and cast back to `int` at every comparison.",
+  "test_name": "tests/stages/kuna-signedness.xml (two-pass, 4 assertions) + 8 unit tests in p9_emit/kuna_typeround/tests.rs",
+  "binary": "decbench full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+  "selector": "sub_3060",
+  "func_addr": "0x3060",
+  "option": "signedness",
+  "flag": "signedness",
+  "element_id": null,
+  "change_kind": "presentation-default",
+  "tier": "transform",
+  "phase": "P9",
+  "subphase": "naming-policy",
+  "source_decompiler": "kuna",
+  "inspiration": "TRex (Bosamiya, Woo, Parno; USENIX Security 2025) sections 3.3.5 and 5.1 -- type rounding decides signedness after propagation from the accumulated size-tagged operation set, with a flag preferring signed for the ambiguous case",
+  "trex_code_copied": false,
+  "trex_note": "Re-derived from the paper and from reading https://github.com/secure-foundations/trex (BSD-3). No TRex code is copied, so no NOTICE entry or per-file attribution header is added. Two classification points were taken from reading trex/src/structural.rs: `ZeroExtendTgt => None` (a zero-extension describes the source operand's type, not the widened value's) and the signed/unsigned collapse preference used by `collapse_union_of_signed_and_unsigned_ints`.",
+  "default_on": false,
+  "default_value": "upstream",
+  "values": "upstream|auto|prefer-signed|prefer-unsigned",
+  "metric": {
+    "decbench_type_match": 0,
+    "why_zero": "extract_variables (infra/decompile_drive.rs) exports FuncProto param types, ScopeLocal stack-symbol types and framelayout slots; no HighVariable declaration is consulted, and this option changes no prototype, no symbol type and no Varnode type. decbench also normalizes `unsigned` away in QUALIFIERS and collapses int4/uint4 in TYPE_MAP.",
+    "structscore_trex_fmt_O2_off": {
+      "mean_0_6": 1.7322,
+      "mean_0_5": 1.5948,
+      "c_primitive": "58/95",
+      "gt_vars": 422
+    },
+    "structscore_trex_fmt_O2_auto": {
+      "mean_0_6": 1.7322,
+      "mean_0_5": 1.5948,
+      "c_primitive": "58/95",
+      "gt_vars": 422
+    },
+    "structscore_note": "byte-identical: the TRex Fig. 6 signedness step scores the exported variables[] types, which this option does not touch."
+  },
+  "corpus_sweep": {
+    "binaries": [
+      "fmt",
+      "ls",
+      "sort",
+      "du"
+    ],
+    "optimization_levels": [
+      "O0",
+      "O2"
+    ],
+    "functions_decompiled": 2918,
+    "functions_changed": 42,
+    "declaration_flips": 52,
+    "flip_directions": {
+      "unsigned int -> int": 23,
+      "unsigned long -> long": 15,
+      "long -> unsigned long": 8,
+      "int -> unsigned int": 4,
+      "unsigned char -> signed char": 1,
+      "short -> unsigned short": 1
+    },
+    "cast_tokens_removed_net": 63,
+    "cast_tokens_added": 0,
+    "hunk_classification": {
+      "decl-signedness": 52,
+      "cast-dropped": 63,
+      "other": 0
+    },
+    "per_binary_flips": {
+      "ls.O0": 5,
+      "sort.O0": 5,
+      "du.O0": 2,
+      "fmt.O0": 0,
+      "fmt.O2": 4,
+      "ls.O2": 12,
+      "sort.O2": 9,
+      "du.O2": 15
+    },
+    "varcensus_fmt_O2_declared_types": {
+      "unsigned int": [
+        33,
+        30
+      ],
+      "int": [
+        37,
+        40
+      ],
+      "unsigned long": [
+        109,
+        108
+      ],
+      "long": [
+        35,
+        36
+      ],
+      "note": "[upstream, auto]; every other row identical"
+    }
+  },
+  "correctness_evidence": {
+    "executable_round_trip": {
+      "harness": "`.scratch/roundtrip.py` -- both texts in one program (renamed apart), deterministic stubs for every callee, a shared 4 MiB arena behind every synthesized global, 2000 pseudo-random input vectors per function, comparing the return value and a hash of the arena plus the stub trace",
+      "programs_built": 15,
+      "match": 11,
+      "mismatch": 0,
+      "fully_executed": 6,
+      "fully_executed_names": [
+        "ls.O0 sub_15291",
+        "du.O0 sub_1804c",
+        "ls.O2 sub_fa20",
+        "sort.O2 sub_eb70",
+        "sort.O2 sub_11410",
+        "du.O2 sub_df90"
+      ],
+      "identically_faulting": 5,
+      "harness_crash": 4,
+      "harness_crash_note": "SIGABRT inside glibc realloc/free called with arena garbage -- a harness limitation, identical in both arms",
+      "input_vectors_per_function": 2000
+    },
+    "syntax_only": {
+      "functions_not_compilable": 27,
+      "asymmetric": 0,
+      "note": "every changed function that will not compile produces the IDENTICAL gcc error set before and after (Ghidra idioms: `v41._0_1_`, `goto` into another scope, a `dat_` global used as both scalar and pointer). The option introduces no new compile error."
+    },
+    "declaration_vs_cast_contradiction": "none by construction: a cast is dropped only when the emitter actually wrote the rounded type as that high's declaration and the cast target is that exact type, so the surviving expression has the same C type it had."
+  },
+  "ablation_changed": 0,
+  "parity": "OK",
+  "default_flip_probe": {
+    "built_with_default_auto": true,
+    "datatests": "675/675, PARITY OK",
+    "stages": "1025/1025, PARITY OK",
+    "note": "the probe build was reverted; the shipped default is `upstream`. This is the 0/675 + PARITY-OK half of the default-flip evidence, recorded for the go/no-go."
+  },
+  "speed_off_ms": 4100.0,
+  "speed_on_ms": 4106.0,
+  "speed_delta_pct": 0.13,
+  "speed_samples": 30,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_note": "two interleaved runs of min-of-15 whole-binary `decompile-all` on coreutils fmt -O2, pooled to min-of-30 per arm: +0.13% on the min, +3.91% on the median. The per-run minima are +4.29% (run 1) and +0.13% (run 2) -- the spread is the box, not the option: a `cargo test --workspace` build shared the machine throughout, and the minimum is the statistic that survives it.",
+  "count_sites": {
+    "settables": 210,
+    "tiers": [
+      67,
+      81,
+      62
+    ],
+    "stage_corpus_files": 296,
+    "phase_catalog_json": "recaptured",
+    "catalog_exact_buckets_touched": "none (change_kind presentation-default and source_decompiler kuna are not exact-pinned buckets)"
+  }
+}

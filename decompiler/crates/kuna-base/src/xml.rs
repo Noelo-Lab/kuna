@@ -1877,6 +1877,8 @@ mod tests {
         // constant-offset dereferences of a pointer parameter, the interior
         // access that is not a field, and the hole the body names anyway
         // and kuna-hideshadow / a redundant copy of one value collapses
+        // and kuna-signedness / an integer local declared at the signedness its
+        // operations ask for
         assert_eq!(count, 310, "corpus file count drifted");
     }
 

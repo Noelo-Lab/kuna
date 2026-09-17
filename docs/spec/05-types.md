@@ -49,7 +49,15 @@ budget of 10 levels; past the budget, identity falls back to the interned type
 id, so comparison of deep recursive structures terminates. A separate
 `type_order_formal` de-prioritizes partial unions and `bool` when *choosing a
 declared type* (a value that merely behaved boolean should not out-compete a
-real integer type). The third enum, `type_class`, is not a lattice at all: it
+real integer type). Note what the ranking says about signedness: `sub_metatype`
+puts `SUB_UINT_PLAIN` (16) ahead of `SUB_INT_PLAIN` (17), so `uint` is strictly
+more specific than `int` and a single unsigned vote on a Varnode outranks every
+signed one — an upstream ordering kuna transcribes verbatim and does **not**
+change, because every propagation edge and every cast decision in this chapter
+is calibrated against it. The consequence (an optimized counter declared
+`unsigned` and then cast back to `int` at each comparison) is re-decided at the
+declaration seam instead, where it changes no Varnode type and no cast: see
+`option signedness` in §9.3. The third enum, `type_class`, is not a lattice at all: it
 classifies types for parameter-storage assignment (general/float/pointer/
 hidden-return/vector, plus four architecture-specific classes) and belongs to chapter 04's prototype models.
 

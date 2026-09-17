@@ -1,0 +1,67 @@
+# `signedness` — plan
+
+## Shape
+
+| | |
+|---|---|
+| option | `signedness upstream\|auto\|prefer-signed\|prefer-unsigned`, default `upstream` |
+| phase / subphase | P9 / `naming-policy` (the declaration seam, next to `declhightype`) |
+| tier / change_kind | `transform` / `presentation-default` |
+| module | `decompiler/crates/kuna-decomp/src/p9_emit/kuna_typeround.rs` |
+| consumed at | `p9_emit/printc.rs` — `emit_function_document` (plan), `local_decl_type_and_comment` (the declaration), `emit_local_var_decls` (records what was written), `op_type_cast_ir` (drops the cast the declaration makes a no-op) |
+| spec | `docs/spec/09-emission.md` §9.3, cross-referenced from `docs/spec/05-types.md` §5.1 |
+| stage test | `tests/stages/kuna-signedness.xml` (two-pass, 4 assertions) |
+
+## Mechanism
+
+Once per emitted function, for every HighVariable the printer would declare as a
+plain integer (`SUB_INT_PLAIN`/`SUB_UINT_PLAIN`, size 1/2/4/8, not a typedef, not
+type-locked, not a prototype parameter, not mapped onto a composite symbol):
+
+1. Seed a work list with the high's **explicit** members — the ones printed by
+   name, which is where the declaration's type applies.
+2. Fold the members' *defining* ops into the verdict as votes (a definition
+   converts at a fixed width, so it can never constrain).
+3. Walk every reader. `Demands(signed|unsigned)` for the signedness-sensitive C
+   constructs; `Carries` for `+ - * & | ^ << ~` and the value-moving ops (extend
+   the walk into an implied result); `Opaque` for `== !=`, truncation,
+   concatenation, a condition, a call argument, a `return`, a stored value; a
+   same-width `CPUI_CAST` to a plain integer is a demand for what it casts to;
+   everything else is `Veto`.
+4. `auto` writes `TYPE_INT` when the fold is unanimously signed, `TYPE_UINT` when
+   unanimously unsigned, and leaves the declaration alone otherwise.
+   `prefer-signed`/`prefer-unsigned` additionally settle the no-demand case.
+5. `get_base_no_char` for the signed side, so a re-signed byte declares `int1`
+   and never `char` (widening a value into a character type is a different
+   decision with its own option).
+
+The declaration override is recorded **only when the emitter actually wrote it**
+(a mapped-symbol, array or dedup-collapse override can take it back), and only a
+recorded override authorizes dropping a cast.
+
+## Evidence required before this can be considered for a default flip
+
+* whole-corpus before/after over `fmt`/`ls`/`sort`/`du` at `-O0` and `-O2`, every
+  hunk classified — done, see `record.json`;
+* an executable round trip on the changed functions — done, 11 programs, 0
+  mismatches;
+* 0/675 datatests and stages `PARITY OK` with the default flipped — done;
+* speed within +5% — done.
+
+## Interactions
+
+* `declhightype` (default on) chooses *which member's* type is declared; this
+  chooses its signedness. It runs after, on whatever that returned.
+* `realtypes` (default on) relabels residual `TYPE_UNKNOWN`; an `xunknownN` is
+  not a plain integer, so it is never re-signed.
+* `ctypes` decides the *spelling* (`uint4` vs `unsigned int`); orthogonal.
+* `dedupvardecls` may replace a declaration line; such a high keeps its cast.
+* The `variables` JSON surface (`framelayout`, `bytehonest`, the prototype
+  recovery lanes) is not reached at all.
+
+## Not in scope
+
+* the `SUB_UINT_PLAIN < SUB_INT_PLAIN` order itself (upstream, wide blast radius);
+* width changes — `unsigned long v3; if ((int)v3)` is a `SUBPIECE` rendered as a
+  cast, a different decision, and `SUBPIECE` is `Opaque` here;
+* re-seeding inference from the verdict (that is a TRex substrate port, XL).

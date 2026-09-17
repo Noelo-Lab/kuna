@@ -155,6 +155,7 @@ fn settable_count_is_217() {
     // +1 for `foldcallretphi` (P6 call-result folding past the merge phalanx).
     // +1 for `ptrfromuse` (P5 use-derived parameter pointer).
     // +1 for `structsynth` (P5 struct synthesis over a pointer parameter).
+    // +1 for `signedness` (P9 declared-signedness rounding).
     assert_eq!(kuna_num_settables(), 217);
     assert_eq!(SETTABLE_TABLE.len(), 217);
 }
@@ -296,6 +297,7 @@ fn tier_counts_are_68_core_86_transform_63_analysis() {
     // transform 81 -> 82: +1 for `ptrfromuse` (P5 use-derived parameter pointer).
     // transform 84 -> 85: +1 for `structsynth` (P5 struct synthesis over a
     // pointer parameter).
+    // transform 85 -> 86: +1 for `signedness` (P9 declared-signedness rounding).
     assert_eq!((core, transform, analysis), (68, 86, 63));
 }
 
@@ -823,6 +825,14 @@ fn option_values_live_value_present_for_88() {
                             // `max_term_duplication`.
                             | "impliedrefs"
                             | "termdup"
+                            // (kuna) `signedness` takes FOUR values
+                            // (`upstream|auto|prefer-signed|prefer-unsigned`)
+                            // over an enum field, which the codegen live reader
+                            // (a bool `live_true`/`live_false` pair) cannot
+                            // express -- the same reason `namestyle`,
+                            // `warnstyle` and `int3pad` are here.  Its live
+                            // value is `Architecture::signedness`.
+                            | "signedness"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option

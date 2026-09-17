@@ -1516,6 +1516,12 @@ pub struct PrintC {
     /// same-named unique whole owner exists. Their references are relative to
     /// their own declared object, not the overlap group's synthetic symbol.
     local_name_standalones: std::collections::HashSet<crate::context::HighVariableId>,
+    /// (kuna `signedness`) The declared-signedness decision for the function
+    /// being emitted: which integer locals the operation set says to declare
+    /// signed or unsigned, and which of those declarations actually got written
+    /// (the ones whose now-redundant `(int)` casts may be dropped).  Empty under
+    /// the default `signedness upstream`.  See [`crate::kuna_typeround`].
+    sign_plan: crate::kuna_typeround::SignPlan,
 }
 
 impl Default for PrintC {
@@ -1546,6 +1552,7 @@ impl PrintC {
             local_name_overrides: std::collections::HashMap::new(),
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
+            sign_plan: crate::kuna_typeround::SignPlan::default(),
         }
     }
 
@@ -2359,6 +2366,21 @@ impl PrintC {
         self.local_name_overrides.clear();
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
+        // (kuna `signedness`) Round the declared signedness of this function's
+        // integer locals from the operations applied to them.  Computed before
+        // any declaration is written and consumed by
+        // `local_decl_type_and_comment` (the declaration) and `op_type_cast_ir`
+        // (the casts the new declaration makes redundant).
+        self.sign_plan = crate::kuna_typeround::plan(
+            fd,
+            arch.signedness,
+            arch.types_impl(),
+            |high| {
+                decl_type_representative(fd, arch, high)
+                    .and_then(|vn| fd.vbank().get(vn))
+                    .map(|v| v.get_type().clone())
+            },
+        );
         // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /
         // emit_op) to resolve op/varnode arena keys to the <ast> ids while markup
         // is active.  SAFETY: `fd` outlives this call; it is only ever read
@@ -3146,6 +3168,16 @@ impl PrintC {
                 decl_back = b.clone();
                 array_count = a.clone();
             }
+            // (kuna `signedness`) A cast on this local may only be dropped as
+            // redundant when the rounded type is what actually reached the
+            // declaration line - not when a Symbol/array/collapse override took
+            // it back.
+            if let Some(rounded) = self.sign_plan.decl_type(*high).cloned() {
+                let want = type_name_for_decl(&rounded, self.rt_ctx);
+                if decl_type == want.0 && decl_back == want.1 && array_count.is_none() {
+                    self.sign_plan.record_applied(*high, rounded);
+                }
+            }
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
             match self.lang().forms.decl {
@@ -3470,6 +3502,9 @@ impl PrintC {
                     .and_then(|vn| fd.vbank().get(vn))
                     .map(|tv| tv.get_type())
                     .unwrap_or_else(|| v.get_type());
+                // (kuna `signedness`) The rounded declaration, when the operation
+                // set decided one for this high.
+                let decl_ty = self.sign_plan.decl_type(high).unwrap_or(decl_ty);
                 let tn = type_name_for_decl(decl_ty, self.rt_ctx);
                 let loc = v.get_addr().clone();
                 let size = v.get_size();
@@ -5884,7 +5919,10 @@ impl PrintC {
             }
             return;
         }
-        let cast_ty = if self.options.nocasts {
+        // (kuna `signedness`) A `(int)`/`(unsigned int)` whose operand is now
+        // declared at that very type is a no-op token: dropping it leaves an
+        // expression of exactly the same C type.
+        let cast_ty = if self.options.nocasts || self.sign_plan.drop_cast(fd, op) {
             None
         } else {
             fd.obank()
@@ -9914,6 +9952,30 @@ fn lowered_switch_label_form(
     let signed = jt.kuna_has_signed_labels();
     let cast = arch.types().get_base_no_char(sz, if signed { TYPE_INT } else { TYPE_UINT }).ok();
     Some((signed, cast))
+}
+
+/// The member Varnode whose data-type `local_decl_type_and_comment` writes as a
+/// local high's declaration: the `declhightype` type representative when that
+/// option is on and the high has no Symbol of its own, else the declaration
+/// (storage) representative.
+fn decl_type_representative(
+    fd: &Funcdata,
+    arch: &Architecture,
+    high: crate::context::HighVariableId,
+) -> Option<crate::context::VarnodeId> {
+    let rep = decl_rep_varnode(fd, high)?;
+    fd.vbank().get(rep)?;
+    let type_rep = if arch.decl_high_type {
+        crate::kuna_declhightype::type_representative(fd, high)
+            .filter(|_| crate::kuna_declhightype::declares_from_high(fd, high))
+    } else {
+        None
+    };
+    Some(
+        type_rep
+            .filter(|vn| fd.vbank().get(*vn).is_some())
+            .unwrap_or(rep),
+    )
 }
 
 /// The declared type of the variable a `BRANCHIND` reads: a parameter's prototype

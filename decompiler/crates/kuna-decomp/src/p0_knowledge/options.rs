@@ -259,6 +259,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "simdlane",
     "constspaceload",
     "declhightype",
+    "signedness",
     "retsplitglobal",
     "flagcompare",
     "v850indirectbranch",

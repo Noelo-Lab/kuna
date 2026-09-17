@@ -670,6 +670,67 @@ representative still supplies the storage comment, the array adornment and the
 composite mapped-symbol override, all of which outrank this. `option
 declhightype off` restores the declaration representative's type.
 
+**(kuna) signedness — an integer local is declared at the signedness its
+operations ask for.** The declaration also states a *signedness*, and the type
+lattice decides that in a way the body often contradicts. `Datatype::type_order`
+ranks `SUB_UINT_PLAIN` (16) ahead of `SUB_INT_PLAIN` (17), so in
+`get_local_type`'s "keep the most specific" fold one `uint` vote outranks every
+`int` vote on the same Varnode, and no later phase re-decides (§5.1). On
+optimized x86-64 those `uint` votes are structural rather than semantic: a
+32-bit instruction zero-extends into its 64-bit register, and a strength-reduced
+loop bound is masked and shifted — `INT_ZEXT`, `INT_AND`, `INT_RIGHT` and
+`INT_XOR` each seed `TYPE_UINT` on both operands. A counter the source declared
+`int` is therefore declared `unsigned int`, and `ActionSetCasts` writes the
+signedness back at every comparison: `unsigned int v1;` … `if (0 <= (int)v1)` …
+`while (v4 < (int)v1)`.
+
+The option `signedness` (`upstream|auto|prefer-signed|prefer-unsigned`, default
+`upstream`) decides it at the declaration seam instead, from the operations the
+body actually applies to the value
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_typeround.rs (plan)`). This is
+TRex's *type rounding* (Bosamiya, Woo and Parno, USENIX Security 2025, §3.3.5):
+signedness is not propagated, it is chosen once from the accumulated
+size-tagged operation set, with a flag for the case nothing observed settles.
+For each declared high of plain integer type the pass walks the operations
+reachable from its *printed* (explicit) members and folds them into one verdict:
+`INT_SLESS`, `INT_SLESSEQUAL`, `INT_SDIV`, `INT_SREM`, `INT_SRIGHT` (operand 0),
+`INT_SEXT`, `INT_SCARRY` and `INT_SBORROW` demand signed; `INT_LESS`,
+`INT_LESSEQUAL`, `INT_DIV`, `INT_REM`, `INT_RIGHT` (operand 0), `INT_ZEXT` and
+`INT_CARRY` demand unsigned; a `CPUI_CAST` to a plain integer of the same width
+is a demand for the type it casts to. `auto` declares the value signed when
+every demand is signed and unsigned when every demand is unsigned, and leaves it
+alone otherwise; `prefer-signed` and `prefer-unsigned` additionally settle the
+no-demand case, which is TRex's observation that C programmers write `int` when
+the signedness does not matter. Nothing else changes: no Varnode type, no
+inference pass, no cast decision, and no prototype or symbol type — so the
+`variables` JSON surface and every recovered signature are byte-identical, and
+so is the whole output under the default `upstream`.
+
+Soundness rests on the demand set being exactly the C constructs whose meaning
+depends on an operand's signedness, which is the same set kuna's own cast
+strategy singles out: those ops, and only those, pass `care_uint_int = true` to
+`CastStrategyC::cast_standard`
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs
+(get_input_cast)`). Everything the pass lets through besides them is
+signedness-independent at a fixed width — `+ - * & | ^ << == !=`, unary `~` and
+`-`, an assignment, a call argument, a `return`, a stored value, a truncation or
+a concatenation — because two's-complement arithmetic and a same-width
+conversion produce identical bits either way. Two further rules close the gap
+between "this operation" and "the printed expression". First, the walk follows
+*implied* results: `v + 1 < 0` prints as one expression, so the C type of
+`v + 1`, and therefore whether the comparison is signed, follows `v`'s
+declaration; an operation that keeps carrying the operand's type extends the
+walk to its readers, and one whose result is a declared variable of its own ends
+it. Second, anything unclassified vetoes the variable outright — a `LOAD` or
+`STORE` address, a `PTRADD`/`PTRSUB` index (where `base[v]` really does differ
+between a signed and an unsigned `v`, and no cast is inserted), any `FLOAT_*`
+operation, an indirect branch, a type-locked member. When a high does flip, each
+`CPUI_CAST` on it whose target is the very type now declared is a no-op token
+and is dropped, which is the visible half of the change:
+`if (0 <= (int)v1)` becomes `if (0 <= v1)`. The drop is authorized only by the
+declaration the emitter actually wrote, so a mapped-symbol, array or collapse
+override that takes the declared type back also takes the cast back.
+
 **(kuna) paramrefdecl — an `&parameter` reference is the parameter.** Because
 the emitter walks HighVariables rather than the symbol table, it also has to
 decide for itself which highs upstream would *not* have declared:

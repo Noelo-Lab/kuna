@@ -1,0 +1,59 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `signedness`: an integer local whose every comparison is signed is
+    declared unsigned, and the cast machinery writes the signedness back at each
+    use.
+
+    Datatype::type_order ranks SUB_UINT_PLAIN (16) ahead of SUB_INT_PLAIN (17),
+    so in get_local_type's "keep the most specific" fold one uint vote outranks
+    every int vote on the same Varnode, and nothing downstream re-decides.  On
+    -O2 x86-64 those uint votes are structural: a strength-reduced loop bound is
+    masked (INT_AND, which votes TYPE_UINT on both operands) even when every
+    comparison on it is signed.
+
+    Bytes at 0x1000, the reduced shape (three parameters so the masked value is
+    declared rather than inlined at each use):
+
+        1000  89 f8                 MOV  EAX,EDI
+        1002  01 f0                 ADD  EAX,ESI
+        1004  25 f8 ff ff 7f        AND  EAX,0x7ffffff8   ; the TYPE_UINT vote
+        1009  39 c2                 CMP  EDX,EAX
+        100b  7d 06                 JGE  0x1013           ; signed
+        100d  01 c2                 ADD  EDX,EAX
+        100f  39 c2                 CMP  EDX,EAX
+        1011  7c fa                 JL   0x100d           ; signed
+        1013  89 d0                 MOV  EAX,EDX
+        1015  c3                    RET
+
+    Stage: P9 emission, sub-stage "naming-policy" (the declaration seam, next
+    to kuna_declhightype).  P0 assertion: `option signedness
+    upstream|auto|prefer-signed|prefer-unsigned`.
+
+    Pass 1 (default `upstream`) reproduces it: `uint4 v1;` declared, and the two
+    signed comparisons carry a `(int4)` cast (asserts #1 and #2).
+    Pass 2 (`option signedness auto`) declares `int4 v1;` (every
+    signedness-sensitive reader of v1 demands signed and none demands unsigned)
+    and the cast, now a no-op against that declaration, is dropped (asserts #3
+    and #4).
+-->
+<bytechunk space="ram" offset="0x1000">
+89f801f025f8ffff7f39c27d0601c239c27cfa89d0c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="f"/>
+</binaryimage>
+<script>
+  <com>option signedness upstream</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option signedness auto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="signedness #1: the masked loop bound is declared unsigned under the default (bug reproduces, once)" min="1" max="1">^  uint4 v1; // eax$</stringmatch>
+<stringmatch name="signedness #2: and every signed comparison on it carries a cast back to int4 (bug reproduces, once)" min="1" max="1">a2 &lt; \(int4\)v1</stringmatch>
+<stringmatch name="signedness #3: option signedness auto declares it at the signedness its operations demand (fix, once)" min="1" max="1">^  int4 v1; // eax$</stringmatch>
+<stringmatch name="signedness #4: and the cast the declaration makes a no-op is dropped (fix, once)" min="1" max="1">a2 &lt; v1;</stringmatch>
+</decompilertest>
