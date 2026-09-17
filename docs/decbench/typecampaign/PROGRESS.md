@@ -22,10 +22,11 @@ reviewer + green gates; `[PROPOSAL]` items wait for the user; port TRex/RecStruc
 | A2 | ptrfromuse (off|byte|void, default off) | A | merged 83830e86 | — | #659 | byte: 959→964 perfect, 15 improved/0 worse; void: +100 improved/0 worse; flip withdrawn (subscript-of-global ambiguity) | — |
 | A3 | protoorder [PROPOSAL] | A | running (stage2d wf) | /home/mahaloz/kwt/protoorder feat/protoorder | | | draft PR → user go/no-go |
 | B1 | phantom-locals root cause → argclobber | B | merged (PR #652) | — | #652 | review 3 rounds; sound 4-site rule (fmt main 3/2/1→2/2/2, phantom rdx locals gone); opt-in | — |
-| B2 | signedness [PROPOSAL] | B | draft PR open, review loop (stage2b wf) | /home/mahaloz/kwt/signedness feat/signedness | #656 | | user go/no-go |
-| B3 | boolbyte | B | pending | | | | |
-| B4 | foldcallretphi / hideshadow / indirectonly / charbyte / mulblob | B | foldcallretphi merged fc7c7a22 (#654); hideshadow running (stage2d wf) | /home/mahaloz/kwt/hideshadow | #654 | | indirectonly, charbyte next |
-| C2 | structsynth [PROPOSAL] | C | draft PR open, review loop (stage2b wf) | /home/mahaloz/kwt/structsynth feat/structsynth | #655 | | user go/no-go |
-| C3-C9 | struct lane follow-ons | C | pending | | | | after C2 go |
+| B2 | signedness [PROPOSAL] | B | **draft #656 awaiting user go/no-go** (5 review rounds) | /home/mahaloz/kwt/signedness | #656 | DWARF-agreement: upstream 93.4% (O2 71.9%) / auto 93.5% / prefer-signed 98.4% (O2 94.8%); all-signed control 92.8% (O2 59.2%) — the walk earns the slot; metric zero by construction | user decision |
+| B3 | boolbyte (census-gated) | B | running (stage2e wf) | /home/mahaloz/kwt/boolbyte | | | census → PR or negative result |
+| B4 | foldcallretphi / hideshadow / indirectonly / charbyte / mulblob | B | foldcallretphi merged fc7c7a22 (#654); hideshadow (stage2d) + indirectonly (stage2e) running | /home/mahaloz/kwt/{hideshadow,indirectonly} | #654 | #654 review found+fixed a fold-past-global-write hole and FILED GH-657 for the default-on sibling | charbyte, mulblob later |
+| C2 | structsynth [PROPOSAL] | C | **draft #655 awaiting user go/no-go** (4 review rounds) | /home/mahaloz/kwt/structsynth | #655 | layout precision 0.894 (704/787 fields), 14/14 exports round-trip, 292 params retyped (0 non-pointers), 1 ordinary FP (ls strmode), type_match −0.05% (4 worse: factor GMP limbs), TRex Fig.6 +109 net | user decision; next C4 ledger subsumption |
+| B5 | GH-657 foldcallret barrier fix (correctness, default output) | B | running (stage2e wf) | /home/mahaloz/kwt/gh657 | | | strict fix, no option if evidence allows |
+| C3-C9 | struct lane follow-ons | C | structdefs (C5) running (stage2e wf) | /home/mahaloz/kwt/structdefs | | | C4 subsumption after C2 go |
 
 States: pending · running · review · gates · merged · blocked · proposal-waiting · dropped.
