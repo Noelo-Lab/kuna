@@ -130,7 +130,7 @@
     "docs/spec/06-variables-and-merge.md",
     "docs/options.md",
     "docs/baseline-stages.json",
-    "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s,disjoint_sweep.sh}"
+    "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,cause.py,phicmp.py,sweep.sh,repro.c,travel.s}"
   ],
   "option_off_identity": "`kuna decompile-all --option foldcallret off` is byte-identical (md5) between origin/main 520443d7 and this branch on grep O0, dash O2 and libselinux.so.1: every new test is behind Architecture::fold_call_returns.",
   "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree at the rebased SHA 6ed62f54; target/debug deleted afterwards. The commits after that SHA touch only docs/features/gh657/ and docs/spec/06-variables-and-merge.md, and the workspace suite embeds no doc but options.md, cli.md, agents.md, phases.md and modes.md.",
