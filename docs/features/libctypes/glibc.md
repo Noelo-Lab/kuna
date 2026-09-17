@@ -214,6 +214,12 @@ so the gate refuses) also gets the shell for a declared `fopen`, although its ow
 DWARF `stat` is as field-filled as it gets; and a dynamically linked x86-64
 glibc image still gets the full layout for a name it never imported.
 
+Two tests hold it: `verify_libctypes_glibc_target.rs` declares the same name
+(`getgrnam` — imported by neither image, and the only thing that would name a
+`group`) against both real ELFs, and the MIPS arm fails against the old heuristic
+when that is reinstated. The MIPS fixture is built `-g` on purpose, because
+without debug info the old code refused it too and the test would prove nothing.
+
 The size floor an adversarial review suggested alongside this — refuse a held
 aggregate whose width is not `NAMED_AGGREGATES[name].size` — is already the
 adoption rule in `named_aggregate` (`usable()`), and would not have been enough

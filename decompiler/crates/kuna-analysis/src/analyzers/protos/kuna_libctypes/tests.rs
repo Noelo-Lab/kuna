@@ -447,9 +447,13 @@ fn only_a_glibc_x86_64_elf_takes_the_layouts() {
         ("libctypes_stat_x86_64", true),
         ("armlibcmain_le32", false),
         ("win32sigs_pe_i386.exe", false),
-        // A glibc image the layouts are NOT true of: `.dynstr` names
-        // `libc.so.6` and `GLIBC_2.34`, and every pointer in it is 4 bytes.
+        // Two glibc images the layouts are NOT true of: `.dynstr` names
+        // `libc.so.6` and a `GLIBC_2.x` version in both, and every pointer in
+        // them is 4 bytes. The second carries debug info defining `stat` and
+        // `timespec`, which is what the ARCHITECTURE half has to refuse on its
+        // own.
         ("mips_gp_le32", false),
+        ("libctypes_mips32_glibc_le32", false),
     ] {
         let path = format!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/{}"), name);
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
