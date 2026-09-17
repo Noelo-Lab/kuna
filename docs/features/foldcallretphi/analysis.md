@@ -93,18 +93,62 @@ Only the first blocked column is taken. `kuna_foldcallretphi.rs
 rejected on and discounts the rejection when *every* colliding instance is an
 INDIRECT effect of the call being folded.
 
-The argument rests on `foldcallret`'s predicate, which this change does not
-weaken: the call and its use sit in one block with no intervening
-CALL/LOAD/STORE/CALLOTHER, so nothing between them can write the operand's
-storage. The only writer is the call, and in the folded rendering the operand is
-read inside the call expression — the same point at which that write happens.
-Two extra conditions close the remaining gaps:
+The collision it forgives is about versions, not order: the operand's other live
+version is written by the call itself, and the folded rendering reads the operand
+inside the call expression, which is the same point at which that write happens.
+
+Order is the discount's own problem, because the fold it enables moves the call's
+evaluation to wherever the expression is printed. Three conditions:
 
 * a high that belongs to a `VariableGroup` declines, because `inflate_test`'s
   second loop reasons about overlapping storage rather than versions;
-* a use op that itself reads an INDIRECT effect of the call declines, so the
-  folded text never names the operand's high as both the call's argument
-  (pre-call) and an operand of the use (post-call).
+* an op that itself reads an INDIRECT effect of the call declines, so the folded
+  text never names the operand's high as both the call's argument (pre-call) and
+  an operand of the reading op (post-call). Both the single use op and the
+  statement the expression finally lands in are tested: with an implied chain
+  longer than one hop those are different ops, and the landing op's other
+  operands are just as exposed;
+* the whole span from the call to that landing statement has to be clear — same
+  block, no CALL/LOAD/STORE/CALLOTHER, and no write to a global.
+
+### The barrier the opcode set misses
+
+`foldcallret`'s span guard is stated in opcodes, and "writes something the callee
+can read" is not an opcode. Heritage promotes a write to a fixed global address
+into a plain `CPUI_COPY`, which the guard waves through:
+
+```
+target: push rbx / mov ebx,ok(%rip) / mov rdi,g(%rip) / call helper
+        / movl $42,k(%rip)          <-- a global write; helper returns k
+        / and eax,ebx / mov ok(%rip),ebx / pop rbx / ret
+```
+
+Before this guard, `--option foldcallretphi on` emitted
+
+```c
+  v1 = dat_40403c;
+  dat_404038 = 0x2a;
+  dat_40403c = v1 & helper(dat_404030);   /* helper now runs after k = 42 */
+```
+
+while the binary — and `off`, and plain `origin/main` — compute `v1 & helper(g)`
+with the *old* `k`. Compiling both renderings gives `ok=1` against `ok=42`.
+
+`op_writes_global_storage` declines any op in the span whose output varnode is
+persistent. Built without it and otherwise identical, that binary folds again and
+the stage test's assertion #5 fails; with it, `on` is identical to `off`. Over
+the 24-binary sweep the barrier declines nothing — the shape needs a call that
+both takes a global operand (so the discount fires at all) and has a global write
+before its use — so it costs no folds.
+
+A frame slot needs no barrier of its own: for the callee to read one, its address
+has to escape into the call, and an escaped slot is written through a
+`CPUI_STORE`, which is already in the opcode set. The stage-test fixture has a
+frame store (`movb $1,(%rsp)`) in exactly that position and folds.
+
+The same hole is reachable through default-on `foldcallret` alone, when the call
+needs no discount at all (`v = f(7); glob = 42; use(v)`): that is GH-657, fixed
+separately because it moves default output.
 
 ## The second ceiling, measured and deliberately not taken
 
@@ -133,7 +177,7 @@ is a separate change with a separate risk surface.
 
 ## Corpus sweep
 
-`decompile-all` off vs on over 22 binaries -- x86-64 and ARM Cortex-M, at O0,
+`decompile-all` off vs on over 24 binaries -- x86-64 and ARM Cortex-M, at O0,
 O2 and O2-noinline. (The corpus's O0 and O2 betaflight images are byte-identical,
 so that pair counts twice.)
 
@@ -143,32 +187,34 @@ so that pair counts twice.)
 | O2 ls | 404 | 4 | 1355 → 1353 | 10399 → 10386 |
 | O2 sort | 343 | 3 | 1153 → 1152 | 8625 → 8620 |
 | O2 du | 320 | 6 | 1038 → 1033 | 8450 → 8439 |
-| O2 grep | 449 | 14 | 1657 → 1648 | 14503 → 14484 |
+| O2 grep | 449 | 14 | 1659 → 1650 | 14503 → 14485 |
 | O2 gzip | 204 | 6 | 864 → 860 | 7528 → 7515 |
 | O2 bzip2 | 114 | 3 | 610 → 607 | 8623 → 8622 |
 | O2 diff | 398 | 13 | 1592 → 1583 | 12480 → 12464 |
 | O2 find | 658 | 31 | 2223 → 2207 | 15965 → 15941 |
+| O2 tar | 1125 | 69 | 5325 → 5300 | 46089 → 45994 |
 | O0 fmt | 191 | 3 | 303 → 300 | 2040 → 2036 |
 | O0 du | 441 | 13 | 992 → 980 | 6518 → 6490 |
-| O0 grep | 642 | 27 | 1648 → 1636 | 10294 → 10260 |
+| O0 grep | 642 | 26 | 1648 → 1636 | 10294 → 10261 |
+| O0 tar | 1570 | 120 | 5203 → 5131 | 34812 → 34652 |
 | O2-noinline fmt | 201 | 3 | 329 → 327 | 2832 → 2826 |
 | O2-noinline ls | 598 | 10 | 1211 → 1206 | 9744 → 9728 |
 | O2 betaflight (ARM) | 5797 | 171 | 11085 → 10988 | 96871 → 96694 |
-| O2 cleanflight (ARM) | 2558 | 62 | 4627 → 4595 | 43197 → 43139 |
+| O2 cleanflight (ARM) | 2558 | 61 | 4627 → 4596 | 43197 → 43141 |
 | O2 chibios (ARM) | 398 | 0 | 748 → 748 | 6685 → 6685 |
-| O2 crazyflie (ARM) | 1971 | 54 | 6729 → 6696 | 52913 → 52858 |
+| O2 crazyflie (ARM) | 1971 | 53 | 6729 → 6697 | 52913 → 52862 |
 | O2 nuttx (ARM) | 792 | 14 | 2488 → 2482 | 18765 → 18755 |
 | O0 betaflight (ARM) | 5797 | 171 | 11085 → 10988 | 96871 → 96694 |
 | O0 chibios (ARM) | 772 | 4 | 686 → 683 | 6591 → 6588 |
-| O2-noinline betaflight (ARM) | 6388 | 208 | 11537 → 11410 | 97253 → 97027 |
-| **total** | **29587** | **822** | **64329 → 63849 (−480)** | **−900** |
+| O2-noinline betaflight (ARM) | 6388 | 208 | 11537 → 11411 | 97253 → 97028 |
+| **total** | **32282** | **1008** | **74859 → 74285 (-574)** | **621047 → 619901 (-1146)** |
 
 ### Hunk classification
 
-Every hunk in the 822 changed functions falls into one of three classes:
+Every hunk in the 1008 changed functions falls into one of three classes:
 
 1. **The fold** — a `vN = f(...);` statement disappears and `f(...)` appears at
-   its single use. 705 sites. Example (`grep sub_7e40`):
+   its single use. 1270 sites. Example (`grep sub_7e40`):
 
    ```diff
    -  unsigned long v1; // rax
@@ -193,22 +239,36 @@ Every hunk in the 822 changed functions falls into one of three classes:
 
 A pass that moves evaluation points has to be checked against more than
 call-to-call order, because a call reordered against a memory read is invisible
-to that. Three metrics, all in this bundle, over 22 binaries -- x86-64 and ARM
-Cortex-M, at O0, O2 and O2-noinline, 29,587 functions, 822 changed:
+to that. Three metrics, all in this bundle, over 24 binaries -- x86-64 and ARM
+Cortex-M, at O0, O2 and O2-noinline, 32,282 functions, 1,008 changed. Both of the
+first two flag the global-write counterexample above when it is fed to them, so
+they are calibrated against the defect class, not just against nothing:
 
-* `foldmove.py` -- for each folded call, which statements stood between the
-  deleted spill and the statement the call expression landed in. 705 folds
-  located; 696 land on the very next statement and 8 on the one after (a
-  register or constant assignment in between). One landing the text matcher
-  could not map (crazyflie `sub_8035ebc`) was read by hand: adjacent. **No fold
-  crosses a call, a memory access or a control-flow boundary.**
 * `evalorder.py` -- the whole ordered stream of calls and memory touches per
-  function. **No function gains or loses a call anywhere.** Eight functions
-  differ in memory-touch count and 36 in event order; all 44 were read, and
-  every one is an adjacent fold, a compound assignment merged into its own
-  statement, or an operand hoisted to its own statement immediately before the
-  call, which is the conservative direction.
-* `callorder.py` -- 13 functions differ, all inside those 44: the script orders
+  function, which needs no statement mapping and so covers **every** changed
+  function. **No function gains or loses a call anywhere.** Nine functions differ
+  in memory-touch count and 40 in event order; all 49 were read by hand (41
+  distinct functions -- the betaflight images repeat), and every one is an
+  adjacent fold, a load hoisted to its own statement immediately before the call,
+  or a decompiler-artifact intermediate store to a global disappearing
+  (`dat_x = f(); dat_x ^= 1;` becoming `dat_x = f() ^ 1;`, where the binary
+  stores once). All three are the conservative direction.
+* `foldmove.py` -- how far each folded call actually travelled: the statements
+  between the deleted spill and the statement the call expression landed in.
+  This is a text matcher, so it reports its own coverage. 1,270 removed spills
+  located, of which it maps 718: **711 land on the very next statement and 7 on
+  the one after** (a register or constant assignment in between), and **none
+  crosses a call, a memory access or a control-flow boundary.** The other 552
+  (43%) are three named buckets it refuses to guess at: 167 where the ON body
+  carries no line with the call text (an argument was un-inlined, so the call
+  prints differently), 112 where no OFF statement maps onto the ON line inside
+  the diff hunk, and 273 where the call text is not unique in the function, so
+  which statement is the landing would be a guess. That last bucket is why the
+  script no longer classifies them: an older version picked a landing 8 and 74
+  statements away in two `tar` functions whose spill text occurs twice and
+  reported 65 hazards from them, all false. `evalorder.py` covers the 552 without
+  needing a mapping.
+* `callorder.py` -- 13 functions differ, all inside those 49: the script orders
   a multi-clause condition innermost-first and a fold re-nests it. The calls
   keep their order in every one.
 
@@ -235,8 +295,10 @@ Ships **off**, for two reasons.
 
 With the default flipped on, both parity gates hold: `make test` 675/675 PARITY
 OK (0 assertions change) and `make test-stages` PARITY OK. Speed on `fmt`
-`decompile-all` is +1.22% (min of 21 interleaved pairs; the per-sample spread,
-4.11-6.12 s in both arms, is wider than the delta), inside the +5% budget.
+`decompile-all` is unchanged at the minimum (21 interleaved pairs: 4.200 s off,
+4.200 s on; median 4.750 s vs 4.810 s, +1.26%, on a box at load 22 where the
+per-sample spread, 4.20-5.93 s in both arms, is wider than the delta), inside
+the +5% budget.
 
 `make test-cli` does not hold. `tests/cli/no-cli-rename-or-prototype-override`
 runs `kuna decompile fauxware authenticate --assert 'type v2 char[16]'

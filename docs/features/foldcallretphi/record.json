@@ -1,6 +1,6 @@
 {
   "opportunity": "foldcallret proves a single-use call output order-safe to fold, but ActionMarkImplied re-tests it in check_implied_cover, whose Merge::inflate_test arm forces it explicit when an operand has another live SSA version of the same HighVariable over the call output's cover. Upstream never reaches that arm with a call output, and the version it collides with is the CPUI_INDIRECT the call itself attaches to a global it reads as an argument, so passing stdin/stdout/errno to a call is enough to block the fold.",
-  "test_name": "tests/stages/kuna-foldcallretphi.xml (two-pass: off = the spill, on = the fold) + 3 option-parse unit tests + the architecture default assertion",
+  "test_name": "tests/stages/kuna-foldcallretphi.xml (pass 1 off = the spill, pass 2 on = the fold, pass 3 on = a global write in the span keeps the spill) + 3 option-parse unit tests + the architecture default assertion",
   "binary": "synthetic bytechunk (x86:LE:64:default:gcc) in the stage test",
   "selector": "target",
   "func_addr": "0x1000",
@@ -67,16 +67,16 @@
     ]
   },
   "corpus_sweep": {
-    "corpus": "decbench full_run_address_2026-09-11, 22 binaries: x86-64 O2 (coreutils fmt/ls/sort/du, grep, gzip, bzip2, diffutils diff, findutils find), x86-64 O0 (fmt, du, grep), x86-64 O2-noinline (ls, fmt), ARM Cortex-M O2 (betaflight, cleanflight, chibios, crazyflie, nuttx), ARM O0 (betaflight, chibios), ARM O2-noinline (betaflight). The O0 and O2 betaflight images in this corpus are byte-identical, so that pair counts twice.",
-    "method": "kuna decompile-all off vs on, then three metrics in docs/features/foldcallretphi/: callorder.py (call-to-call order), evalorder.py (the whole ordered stream of calls and memory touches) and foldmove.py (for each folded call, which statements stood between the deleted spill and the statement it landed in)",
-    "functions": 29587,
-    "functions_changed": 822,
-    "declared_locals": "64329 -> 63849 (-480); 486 functions lose declarations, 17 gain",
-    "emitted_statements": "540146 -> 539246 (-900)",
-    "foldmove": "705 folds located: 696 land on the very next statement, 8 with one intervening statement (a register or constant assignment), 1 landing the text matcher could not map (crazyflie sub_8035ebc -- read by hand, the fold is adjacent). No folded call crosses a call, a memory access or a control-flow boundary.",
-    "evalorder": "0 functions gain or lose a call anywhere. 8 functions differ in memory-touch count and 36 in event order; all 44 were read by hand (diffs kept in the worktree) and every one is an adjacent fold, a compound assignment merged into its own statement, or an operand hoisted to its own statement immediately before the call -- the conservative direction.",
-    "callorder": "13 functions differ, all inside the 44 above: the script orders a multi-clause condition innermost-first, which a fold re-nests; the calls keep their order in every one.",
-    "errors": "no new error records; function counts identical off/on in all 22 binaries"
+    "corpus": "decbench full_run_address_2026-09-11, 24 binaries: x86-64 O2 (coreutils fmt/ls/sort/du, grep, gzip, bzip2, diffutils diff, findutils find, tar), x86-64 O0 (fmt, du, grep, tar), x86-64 O2-noinline (ls, fmt), ARM Cortex-M O2 (betaflight, cleanflight, chibios, crazyflie, nuttx), ARM O0 (betaflight, chibios), ARM O2-noinline (betaflight). The O0 and O2 betaflight images in this corpus are byte-identical, so that pair counts twice.",
+    "method": "kuna decompile-all off vs on, then three metrics in docs/features/foldcallretphi/: evalorder.py (the whole ordered stream of calls and memory touches per function -- needs no statement mapping, so it covers every changed function), foldmove.py (how far each folded call travelled, over the folds it can map uniquely) and callorder.py (call-to-call order). Both evalorder.py and foldmove.py flag the global-write counterexample in analysis.md when it is fed to them, so the metrics are calibrated against the defect class.",
+    "functions": 32282,
+    "functions_changed": 1008,
+    "declared_locals": "74859 -> 74285 (-574); 585 functions lose declarations, 29 gain",
+    "emitted_statements": "621047 -> 619901 (-1146)",
+    "foldmove": "1270 removed call spills located; 718 mapped to their landing statement -- 711 land on the very next statement, 7 with one intervening statement (a register or constant assignment), and none crosses a call, a memory access or a control-flow boundary. The other 552 (43%) are reported, not hidden: 167 call_text_absent (the ON body carries no line with the call text, because an argument was un-inlined), 112 landing_unmatched, 273 landing_ambiguous (the call text is not unique in the function, so the landing would be a guess). The ambiguous bucket used to be classified by guessing, which produced 65 false hazards in two tar functions whose spill text occurs twice; evalorder.py covers all 552 without needing a mapping.",
+    "evalorder": "0 functions gain or lose a call anywhere. 9 functions differ in memory-touch count and 40 in event order; all 49 were read by hand (41 distinct functions; the betaflight images repeat) and every one is an adjacent fold, a load hoisted to its own statement immediately before the call, or a decompiler-artifact intermediate store to a global disappearing (dat_x = f(); dat_x ^= 1; -> dat_x = f() ^ 1;, where the binary stores once) -- all the conservative direction.",
+    "callorder": "13 functions differ, all inside the 49 above: the script orders a multi-clause condition innermost-first, which a fold re-nests; the calls keep their order in every one.",
+    "errors": "no new error records; function counts identical off/on in all 24 binaries"
   },
   "gates": {
     "make test": "PARITY OK (675/675)",
@@ -116,15 +116,15 @@
     "method": "interleaved off/on pairs of `kuna decompile-all` on coreutils fmt -O2 (151 functions), N=21, /usr/bin/time wall clock; min and median both reported because this box is contended",
     "workload": "kuna decompile-all fmt (O2, stripped)",
     "samples": 21,
-    "min_off_s": 4.11,
-    "min_on_s": 4.16,
-    "min_delta_pct": 1.22,
-    "med_off_s": 4.78,
-    "med_on_s": 4.55,
-    "med_delta_pct": -4.81,
+    "min_off_s": 4.2,
+    "min_on_s": 4.2,
+    "min_delta_pct": 0.0,
+    "med_off_s": 4.75,
+    "med_on_s": 4.81,
+    "med_delta_pct": 1.26,
     "budget_pct": 5.0,
     "within_budget": true,
-    "note": "the per-sample spread (4.11-6.12 s in BOTH arms) is wider than the delta, so the honest reading is 'no measurable cost'. The discount is only computed when the option is on and only for a call output that already reached check_implied_cover, and `Architecture::fold_call_ret_phi` is the first term of the guard, so the option OFF costs nothing at all.",
+    "note": "re-measured with the global-write barrier in: the per-sample spread (4.20-5.93 s in BOTH arms, box at load 22) is wider than the delta, so the honest reading is 'no measurable cost'. The discount is only computed when the option is on and only for a call output that already reached check_implied_cover, and `Architecture::fold_call_ret_phi` is the first term of the guard, so the option OFF costs nothing at all.",
     "first_contended_run": "an earlier 15-pair run overlapped `make test` and read -58% through `scripts.pipeline.timeit`; discarded"
   },
   "default_on_ablation": {
@@ -158,5 +158,13 @@
     "fix": "print_point() follows the implied chain from the use op to the statement the folded expression actually lands in, and print_point_is_order_safe() re-runs foldcallret's span guard (same block, strictly after, no CALL/LOAD/STORE/CALLOTHER and no read of an INDIRECT the call writes) over that whole distance.",
     "verification": "An env-gated throwaway build (KUNA_FCRPHI_NOGUARD, reverted) reproduces the hunk exactly; with the guard the function is byte-identical to `--option foldcallretphi off`. The fmt witnesses still fold (`v11 &= sub_3700(stdin,v6);`, `if (sub_41f0(stdin))`)."
   },
-  "related_issue": "Noelo-Lab/kuna#657 -- the pre-existing default-on foldcallret gap: a heritage-promoted global assignment is a CPUI_COPY, so op_is_barrier lets a call sink past a write to a global the callee reads. Independent of this option (same output with it on or off)."
+  "related_issue": "Noelo-Lab/kuna#657 -- the pre-existing default-on foldcallret gap: a heritage-promoted global assignment is a CPUI_COPY, so op_is_barrier lets a call sink past a write to a global the callee reads. Independent of this option (same output with it on or off).",
+  "global_write_guard": {
+    "defect": "op_is_barrier tests opcodes (CALL/LOAD/STORE/CALLOTHER), but heritage promotes a write to a fixed global address into a plain CPUI_COPY, so a fold could cross one. With --option foldcallretphi on, `v2 = helper(g); k = 42; ok = v1 & v2;` became `ok = v1 & helper(g);` -- the call evaluated after the write to k that it reads. origin/main and --option foldcallretphi off emit the correct order.",
+    "witness": "synthetic x86-64 asm (target/helper/k/g/ok), reproduced verbatim from the round-3 review; compiling both renderings gives ok=1 (off, matching the binary) against ok=42 (on, before the fix)",
+    "fix": "op_writes_global_storage declines any op between the call and the print point whose output varnode is persistent; the guard runs over the whole travel distance, which contains foldcallret's call-to-use span, so every fold the discount adds is covered. Marker ops are skipped (an INDIRECT records a write its effect op performs). A frame slot needs no test: for the callee to read one its address has to escape, and an escaped slot is written through a CPUI_STORE, already a barrier -- the stage-test fixture has a frame store in that position and still folds.",
+    "verification": "built without the barrier and otherwise identical: the counterexample folds again and stage assertion #5 fails; with it, on == off == origin/main. On the 24-binary sweep the barrier declines nothing (the four corpus declines this round all come from the print-point INDIRECT test), so it costs no folds.",
+    "print_point_indirect_test": "op_reads_indirect_output_of is now applied to the statement the expression lands in as well as to the single use op -- with an implied chain longer than one hop those are different ops. It declines 5 folds on the sweep (O0/O2 grep main, O0 grep sub_828e, cleanflight sub_8017f4c, crazyflie sub_8009c74), each one a landing statement that reads a global or a frame slot the call carries an INDIRECT over.",
+    "sibling": "Noelo-Lab/kuna#657 -- the same hole through default-on foldcallret alone, fixed separately because it moves default output."
+  }
 }

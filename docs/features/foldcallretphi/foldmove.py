@@ -164,6 +164,18 @@ for b in sys.argv[2:]:
                 spills[line].append(i)
         for line, idxs in spills.items():
             expr = DEF.match(line).group(1)
+            # The call text has to name one statement on each side, or which
+            # statement is the landing is a guess.  Two spills of the same call
+            # in one function (kuna prints them at different indents, so they
+            # are different lines) is the shape that makes a text matcher point
+            # at a statement far from the real landing and report everything in
+            # between as a hazard.
+            if (sum(1 for l in mo if expr in l) > 1
+                    or sum(1 for l in mn if expr in l) > 1):
+                counts["located"] += len(idxs)
+                counts["landing_ambiguous"] += len(idxs)
+                ambiguous.append((b, name, expr[:70], "call text is not unique"))
+                continue
             # An unchanged copy of the spill statement elsewhere in the ON body
             # is not a landing: it would map back onto itself.
             hosts = [l for l in mn if expr in l and l != line]

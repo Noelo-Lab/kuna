@@ -963,8 +963,8 @@ ok = v1 & v2;
 while the same function with a frame store in place of `k = 42` folds.
 
 It ships **off** for two reasons. Flipping the default leaves both corpora at
-PARITY OK (0 of 675 datatest assertions change) and costs +1.22% on `fmt`
-`decompile-all`, but removing a declaration renumbers the remaining `vN` locals,
+PARITY OK (0 of 675 datatest assertions change) and costs nothing measurable on
+`fmt` `decompile-all` (min of 21 interleaved pairs: 4.200 s both arms), but removing a declaration renumbers the remaining `vN` locals,
 and `--assert type vN` / `--assert name vN` address a variable by that
 auto-generated name — `tests/cli` pins one such run, whose `type v2 char[16]`
 lands on a different stack slot once a `strcmp` result folds away. And the pass
