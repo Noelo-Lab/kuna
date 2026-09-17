@@ -1,0 +1,120 @@
+{
+  "opportunity": "ActionHideShadow, the upstream merge-phalanx pass that consolidates two copies of one value into a single chain so the repeated assignment stops printing, was scheduled in kuna but its body was a no-op stub. Its engine half, Merge::hide_shadows, was already a complete port. The stub named three blockers -- a written def-set iterator, the HighVariable mark surface and the MergeContext bridge -- and all three exist today.",
+  "test_name": "tests/stages/kuna-hideshadow.xml (3 assertions: off = the repeated copy, on = one copy, plus a guard function whose two copies sit on exclusive branches and must survive ON) + 3 option-parse unit tests",
+  "binary": "tests/stages/kuna-hideshadow.xml bytechunk (gcc -O0 x86-64, 265 bytes)",
+  "selector": "target",
+  "func_addr": "0x1000",
+  "option": "hideshadow",
+  "flag": "hide_shadow",
+  "element_id": null,
+  "change_kind": "presentation-default",
+  "tier": "transform",
+  "source_decompiler": "ghidra-upstream",
+  "inspiration": "Ghidra ActionHideShadow (coreaction.cc:4976-4995) and Merge::hideShadows (merge.cc:1070-1100)",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "root_cause": "The action body was never wired, so hide_shadows was dead code. Wiring it is the whole change: walk the written def-set, dedup HighVariables through the bank mark bit, call Merge::hide_shadows. The one non-transcription decision is the Cover read: C++ Varnode::getCover() lazily rebuilds a dirtied cover and kuna's MergeContext::vn_cover_ref is a plain field read, while the previous iteration's op_set_input is exactly what dirties it -- so the pass calls MergeContext::bank_update_cover before each containment test. Measured: the binaries that change are byte-identical with and without that refresh, so no corpus decision depended on a stale cover.",
+  "what_changes_in_the_c": "One assignment statement disappears. No declaration disappears -- the variable survives, only the redundant write to it goes -- so varcensus reports a zero delta and this is a statement-count item, not a declaration-count item.",
+  "firing_census": {
+    "method": "instrumented build, 40 stripped ELFs at O0 and O2 (coreutils ls/sort/fmt/cp/du/dd/date/cat/head/printf, grep, gzip, diffutils x4, bzip2 x2, findutils, tar)",
+    "highs_with_more_than_one_single_copy": 9248,
+    "accepted_by_the_cover_test": 110,
+    "declined_by_the_cover_test": 9138,
+    "note": "most accepted re-points hit a COPY the printer already suppresses (the for-loop initialize/iterate ops marked non-printing by funcdata_block.rs:567,571), which is why far fewer than 110 reach the text"
+  },
+  "corpus_ab": {
+    "corpus": "444 stripped ELFs: {O0,O2,O2-noinline}/{coreutils,grep,gzip,diffutils,bzip2,findutils,tar,shadow}/stripped/* (the type-campaign slice set)",
+    "arms": "kuna decompile-all <bin> --option hideshadow off|on (explicit on both arms, so the shipped default does not affect the measurement)",
+    "byte_identical": 434,
+    "changed": 10,
+    "changed_slices": [
+      "O0 coreutils ls / dir / vdir",
+      "O2 coreutils ls / dir / vdir",
+      "O2 coreutils touch",
+      "O2 shadow usermod",
+      "O2-noinline shadow usermod",
+      "O2-noinline diffutils diff3"
+    ],
+    "hunk_classification": {
+      "copy assignment removed and value provably identical": 18,
+      "variable count delta": 0,
+      "anything else (BUG)": 0
+    },
+    "detail": "docs/features/hideshadow/corpus-classification.md, raw diffs in corpus-diffs.txt"
+  },
+  "varcensus": {
+    "method": "scripts.pipeline.varcensus, off vs on, on the binaries that change",
+    "rows": {
+      "O0 coreutils ls": "declarations 1208 -> 1208, single_def_single_use 254 -> 254",
+      "O2 coreutils ls": "declarations 1341 -> 1341, single_def_single_use 253 -> 253",
+      "O2 coreutils touch": "declarations 832 -> 832, single_def_single_use 151 -> 151",
+      "O2-noinline shadow usermod": "declarations 1037 -> 1037, single_def_single_use 232 -> 232"
+    },
+    "delta": 0,
+    "why": "the pass removes a write, never a declaration"
+  },
+  "speed": {
+    "method": "scripts.pipeline.timeit (median of 15) for the single function; interleaved off/on pairs, MINIMUM of the pairs, for whole-binary decompile-all; an off-vs-off control run on the same binary to establish the noise floor",
+    "budget_pct": 5.0,
+    "rows": {
+      "kuna decompile coreutils/ls O2 sub_7ff0 (the witness function), median of 15": "144.08 -> 140.00 ms (-2.83%)",
+      "kuna decompile-all coreutils/fmt O2, min of 11 interleaved": "4548.8 -> 4579.2 ms (+0.67%)",
+      "kuna decompile-all coreutils/ls O2, min of 9 interleaved": "13892 -> 13906 ms (+0.11%)",
+      "CONTROL kuna decompile-all coreutils/ls O2 off-vs-off, min of 9 interleaved": "13984 -> 13794 ms (-1.36%), i.e. the noise floor on this box is about +/-1.4%"
+    },
+    "worst_delta_pct": 0.67,
+    "within_budget": true,
+    "note": "an earlier ls O2 pair measured +4.63% while the box was at load 30 with a concurrent workspace test run and a 444-slice sweep; re-measured against its own off-vs-off control it is +0.11%"
+  },
+  "benchmark": {
+    "typesweep_small": {
+      "slices": "27 (grep, gzip, diffutils, bzip2, findutils at O0, O2, O2-noinline)",
+      "functions_scored": 2092,
+      "type_match_perfect": "228 -> 228 (+0)",
+      "aggregate_type_match": "656.77 -> 656.77 (+0.00)",
+      "moved_onto_perfect": 0,
+      "moved_off_perfect": 0,
+      "control_byte_identical_variables": "2092 functions, 0 scored differently"
+    },
+    "json_surface": {
+      "method": "kuna decompile-all --json off vs on on all 10 binaries whose C changes, comparing every function's variables[] field-by-field",
+      "functions_with_any_variables_difference": "8 of 3946",
+      "fields_that_differ": "line_numbers only (shifted by one, because a line was deleted)",
+      "fields_that_are_identical": "name, type, size, kind, arg_index, stack_offset, addresses -- i.e. every field type_match scores",
+      "conclusion": "structurally neutral on type_match by construction; the measured sweep agrees"
+    }
+  },
+  "gates": {
+    "make test": "PARITY OK (675/675)",
+    "make test-stages": "PARITY OK (1057/1057)",
+    "make test-cli": "178/178 passed",
+    "make check-spec": "OK (lenient + strict)",
+    "kuna catalog --check": "OK",
+    "counters --check": "no drift",
+    "make rust-test": "PENDING"
+  },
+  "catalog_counts": {
+    "settables": "213 -> 214",
+    "tiers": "core 68 / transform 82 -> 83 / analysis 63",
+    "catalog_json_rows": "212 -> 213",
+    "stage corpus files": "302 -> 303",
+    "live_value readers": "87 -> 88 (live_field = hide_shadow)",
+    "bytecompat_fixture": "recaptured from the fresh decomp_dbg build"
+  },
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_hideshadow.rs (new)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_hideshadow/tests.rs (new)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs (ActionHideShadow body)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/merge.rs (Merge::hide_shadows cover refresh)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/mod.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "tests/stages/kuna-hideshadow.xml (new)",
+    "docs/spec/06-variables-and-merge.md",
+    "docs/options.md"
+  ],
+  "notes": "The action is already in universal_sched at its upstream slot (index 0252, immediately before copymarker), so list_action_decompile_oracle.txt does not move and no oracle is re-recorded."
+}

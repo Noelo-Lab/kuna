@@ -70,3 +70,15 @@ guard cannot silently decide on one.
 444 stripped ELFs (coreutils, grep, gzip, diffutils, bzip2, findutils, tar,
 shadow at O0, O2, O2-noinline), `decompile-all` with `--option hideshadow off`
 vs `on`. See `record.json` for the table and `corpus-diffs.txt` for every hunk.
+
+
+## Result
+
+444 stripped ELFs: 434 byte-identical, 10 changed, 18 deleted lines, every one
+an assignment that an identical assignment already dominates. Zero BUG hunks,
+zero declarations moved, `type_match` unmoved (`record.json`). Speed within
+budget on every surface measured, against an off-vs-off control that puts this
+box's noise floor at about +/-1.4%. Shipped **default-on**: it is the upstream
+pass, stock Ghidra runs it unconditionally, 0/675 datatest assertions move and
+the stages corpus stays PARITY OK. `option hideshadow off` restores the stub's
+behaviour exactly.
