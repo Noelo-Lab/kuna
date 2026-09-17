@@ -31,7 +31,7 @@
   },
   "corpus_sweep": {
     "corpus": "37 binaries: decbench full_run_address_2026-09-11 O0 and O2 of coreutils fmt and ls, grep, gzip, diffutils diff, bzip2, findutils find, tar, dash, shadow/su, e2fsprogs/e2fsck, kmod, iproute2/ip, libedit.so.0.0.70, openssh/ssh; plus libz.so.1.2.13 O0, libselinux.so.1 O2, libacl.so.1.1.2301 O2 and the four in-tree ELFs tests/bug-repro/{faillog,sort,grep,libselinux.so.1}",
-    "before": "origin/main 520443d7 (the rebase brought in #661 structdefs, default-off; the rebased build's decompile-all output is byte-identical to the pre-rebase build's on O0-grep, O2-find and libselinux, so the sweep stands)",
+    "before": "origin/main 520443d7, built fresh. The branch was later rebased twice (#661 structdefs, #663 indirectonly, both default-off); the re-rebased build's decompile-all output is byte-identical to the swept one on grep O0, find O2 and libselinux.so.1, so the sweep still describes this branch.",
     "method": "kuna decompile-all before/after, split per function on the `// Function:` banner, classified by docs/features/gh657/foldclassify.py",
     "functions": 23851,
     "functions_changed": 126,
@@ -111,9 +111,9 @@
     "ELFMAIN #2": "the opposite direction: exempting the self-copy from the INDIRECT test too ADDS a fold (`sub_1357(a1[1])`), which is why that exemption is held back"
   },
   "hidden_count_sites": [
-    "kuna-base/src/xml.rs corpus file count 303 -> 304 after the #661 rebase (one new tests/stages file on top of structdefs')",
-    "docs/baseline-stages.json re-recorded on the rebased tree (1059 -> 1065 keys, all six new)",
-    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json recaptured (214 settables) -- the foldcallret/foldcallretphi row text moved, which only the workspace suite's catalog_bytecompat sees",
+    "kuna-base/src/xml.rs corpus file count 305 -> 306 after the #661 and #663 rebases (one new tests/stages file on top of theirs)",
+    "docs/baseline-stages.json re-recorded on the rebased tree (1072 -> 1078 keys, all six new)",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json recaptured (215 settables) -- the foldcallret/foldcallretphi row text moved, which only the workspace suite's catalog_bytecompat sees",
     "no option added, so no settable/tier/kuna-catalog.xml count moves (counters --check green)"
   ],
   "files": [
