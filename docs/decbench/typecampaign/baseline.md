@@ -41,7 +41,11 @@ Regression control: `mine --select 30` (base angr, metric GED) writes
 `cases.json`, `cases-missing.json`, `backlog.md` and `triage-queue.json`
 byte-identical to the pre-change tool except for the new `"metric": "ged"`
 provenance key. A non-GED pool writes `-<metric>`-suffixed siblings, so the GED
-pools cannot be overwritten by a type run.
+pools cannot be overwritten by a type run. A case id carries no metric either, so
+`triage --case` resolves one to the GED row unless `--metric type_match` asks for
+the other, and says on stderr when an id is in both — mining the type pool cannot
+re-point an id that is already in use (`rescore` pins `ged` outright, since every
+field it writes is a GED field).
 
 Margin tiers L/M/S are GED sizes, so on a 0..1 metric they are empty by
 construction and the whole queue comes from the artifact tier plus tier `X`.
@@ -142,23 +146,65 @@ they score 5, so `mean` is a lower bound by at most that many sixths:
 
 | opt | binary | GT vars | unpaired | mean 0-6 | mean 0-5 | sign? | defined | is_c_pointer | pointer_level | is_c_struct | sign_ignored | c_primitive |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| O0 | fmt | 413 | 4 | **3.884** | 3.540 | 7 | 409/413 | 294/409 | 290/294 | 260/290 | 209/260 | 142/209 |
-| O0 | ls | 1,859 | 39 | **3.541** | 3.260 | 14 | 1820/1859 | 1241/1820 | 1229/1241 | 1075/1229 | 696/1075 | 522/696 |
-| O0 | sort | 1,510 | 25 | **3.549** | 3.280 | 14 | 1485/1510 | 1023/1485 | 1007/1023 | 861/1007 | 577/861 | 406/577 |
-| O0 | du | 1,434 | 42 | **3.631** | 3.363 | 12 | 1392/1434 | 1022/1392 | 1009/1022 | 858/1009 | 542/858 | 384/542 |
-| O2 | fmt | 422 | 231 | **1.716** | 1.578 | 8 | 191/422 | 135/191 | 132/135 | 114/132 | 94/114 | 58/94 |
-| O2 | ls | 1,600 | 968 | **1.437** | 1.343 | 28 | 632/1600 | 457/632 | 441/457 | 379/441 | 239/379 | 151/239 |
-| O2 | sort | 1,214 | 672 | **1.605** | 1.485 | 18 | 542/1214 | 381/542 | 364/381 | 292/364 | 224/292 | 146/224 |
-| O2 | du | 1,177 | 673 | **1.601** | 1.486 | 19 | 504/1177 | 377/504 | 363/377 | 285/363 | 220/285 | 136/220 |
+| O0 | fmt | 413 | 4 | **3.901** | 3.557 | 8 | 409/413 | 297/409 | 293/297 | 260/293 | 210/260 | 142/210 |
+| O0 | ls | 1,859 | 39 | **3.593** | 3.312 | 33 | 1820/1859 | 1271/1820 | 1259/1271 | 1092/1259 | 715/1092 | 522/715 |
+| O0 | sort | 1,510 | 25 | **3.601** | 3.332 | 24 | 1485/1510 | 1052/1485 | 1036/1052 | 871/1036 | 587/871 | 406/587 |
+| O0 | du | 1,434 | 42 | **3.660** | 3.392 | 18 | 1392/1434 | 1037/1392 | 1024/1037 | 863/1024 | 548/863 | 384/548 |
+| O2 | fmt | 422 | 231 | **1.732** | 1.595 | 9 | 191/422 | 138/191 | 135/138 | 114/135 | 95/114 | 58/95 |
+| O2 | ls | 1,600 | 968 | **1.470** | 1.375 | 38 | 632/1600 | 473/632 | 457/473 | 388/457 | 250/388 | 152/250 |
+| O2 | sort | 1,214 | 672 | **1.623** | 1.503 | 21 | 542/1214 | 389/542 | 372/389 | 294/372 | 227/294 | 146/227 |
+| O2 | du | 1,177 | 673 | **1.627** | 1.511 | 22 | 504/1177 | 388/504 | 374/388 | 288/374 | 224/288 | 137/224 |
 
-Read the steps, not only the mean. At O0 nearly every GT variable is paired and
-the loss is concentrated in one step: `is_c_struct` → `sign_ignored_primitive`
-drops 260→209 on fmt and 1075→696 on ls, which is the pointer/struct gap the
-metric lane is already chasing. The last step is comparatively cheap once its
-ground truth is right — 142 of 209 on fmt, 68% — so **signedness is not where
-this score is lost**, and a signedness PR should expect a small `mean` move and
-no `mean 0-5` move at all. At O2 55–61% of GT variables have nothing to pair
-with and the mean collapses; the O0→O2 drop is the same shape TRex reports for
+An array is scored as its element type on both sides — kuna's `char[3]` against
+DWARF's `char[3]` is an exact match, not a pointer-vs-`char` miss — which is
+also what `type_match` does with it (`normalize_type('char[3]')` is `{'char[3]'}`,
+which no pointer form matches). Scoring the two sides by different conventions
+cost 223 points over these eight binaries, all of them on `is_c_pointer`.
+
+`GT vars` is the denominator the mean is taken over: the ground-truth variables
+of every DWARF function some kuna function resolves to, which is the set the
+metric scores as well. Two subprograms can carry the same name, so those
+variables are counted once per resolving address (O0: ls +3, sort +9, du +7 over
+the 1,856 / 1,501 / 1,427 in the raw DWARF map), and a subprogram the DIE walk
+cannot name is not counted at all (O2: fmt −1, ls −9, sort −6, du −5). Both are
+under 0.6% and the identity `denominator = raw + reached twice − never reached`
+holds on all eight.
+
+Read the loss in points, not in failure counts. The score stops at the first
+failing step, so a variable that first fails step *i* (0-based) scores *i* and
+costs `6 - i` points, and a late step can fail more often than an early one and
+still be worth a fraction of it. `structscore --trex` prints this decomposition
+(`loss` in the JSON), and it reconstructs the mean exactly — on fmt O0,
+4×6 + 112×5 + 4×4 + 33×3 + 50×2 + 68×1 = 867 points lost out of 413×6 = 2,478,
+and (2478 − 867)/413 = 3.9007:
+
+| opt | binary | points lost | defined ×6 | is_c_pointer ×5 | pointer_level ×4 | is_c_struct ×3 | sign_ignored ×2 | c_primitive ×1 |
+|---|---|---|---|---|---|---|---|---|
+| O0 | fmt | 867 | 24 (3%) | **560 (65%)** | 16 (2%) | 99 (11%) | 100 (12%) | 68 (8%) |
+| O0 | ls | 4,475 | 234 (5%) | **2,745 (61%)** | 48 (1%) | 501 (11%) | 754 (17%) | 193 (4%) |
+| O0 | sort | 3,623 | 150 (4%) | **2,165 (60%)** | 64 (2%) | 495 (14%) | 568 (16%) | 181 (5%) |
+| O0 | du | 3,356 | 252 (8%) | **1,775 (53%)** | 52 (2%) | 483 (14%) | 630 (19%) | 164 (5%) |
+| O2 | fmt | 1,801 | **1,386 (77%)** | 265 (15%) | 12 (1%) | 63 (3%) | 38 (2%) | 37 (2%) |
+| O2 | ls | 7,248 | **5,808 (80%)** | 795 (11%) | 64 (1%) | 207 (3%) | 276 (4%) | 98 (1%) |
+| O2 | sort | 5,314 | **4,032 (76%)** | 765 (14%) | 68 (1%) | 234 (4%) | 134 (3%) | 81 (2%) |
+| O2 | du | 5,147 | **4,038 (78%)** | 580 (11%) | 56 (1%) | 258 (5%) | 128 (2%) | 87 (2%) |
+
+**At O0 the score is lost at `is_c_pointer`** — 53–65% of every binary's loss,
+against 11–19% for `sign_ignored_primitive` and 4–8% for `c_primitive`. It is
+the same deficit the metric lane is chasing, and it is one-directional: of fmt's
+112 failures, 110 are kuna declining to be a pointer at all (`unsigned long` 68,
+`undefined8` 23, `long` 17) where DWARF has one — `fmt(file)` and
+`get_paragraph(f)` as `unsigned long` against `char *` and `FILE *`,
+`get_line(end_of_word)` as `undefined8` against `Word *`. So **signedness is not
+where this score is lost**: a signedness PR should expect a small `mean` move and
+no `mean 0-5` move at all, and a primitive-width PR is worth at most ~19% of the
+O0 gap.
+
+**At O2 the score is lost at `defined`** — 76–80% of the loss is GT variables
+kuna's JSON surface has nothing to pair with at all (968 of ls's 1,600), because
+at O2 the variable usually lives in a register and is never exported. A type PR
+measured on the O2 rows is mostly measuring the export surface; quote the O0
+rows for a typing claim. The O0→O2 drop is the same shape TRex reports for
 Ghidra (2.99→2.17).
 
 *Not comparable to the published TRex table* (different corpus, different

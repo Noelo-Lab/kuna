@@ -247,6 +247,8 @@ python3 -m scripts.decbench.novel --select 16             # the NOVEL pool
 
 # 2. TRIAGE — one agent per queue case; verify-first, then root-cause
 python3 -m scripts.decbench.triage --case <case-id> --also ida,ghidra
+#   a case id carries no metric, so an id in both pools resolves to the GED row
+#   unless --metric type_match asks for the other; triage says when it is in both
 #   write docs/decbench/triage/<case-id>.md (front-matter schema below)
 
 # 3. CLUSTER — group feature-candidate records by root cause
@@ -348,7 +350,7 @@ standing requirement 10 says which to run when.
 python3 -m scripts.pipeline.varcensus <binary> --json --baseline before.json
 ```
 
-Four things to know before quoting any of them:
+Five things to know before quoting any of them:
 
 * **The scored surface is the JSON `variables[]` array, not the C text** — args, stack
   symbols and `framelayout` slots. Register-resident locals are never exported, so
@@ -369,6 +371,13 @@ Four things to know before quoting any of them:
   binary (by content), the decbench commit and both arm values; a cache that disagrees
   with the run is dropped instead of re-reported, and every field of the block —
   including which projects it covers — is derived from the rows summarized.
+* **Read the TRex score's loss table, not its pass rates.** The score stops at the
+  first failing step, so a first failure at step *i* costs `6 - i` points; a step late
+  in the order can fail twice as often as an early one and be worth a third of it.
+  `--trex` prints the decomposition (`loss` in the JSON) and it reconstructs the mean
+  exactly, so the step to work on is the one holding the points. On coreutils at O0
+  that is `is_c_pointer` (53–65% of the loss); at O2 it is `defined`, i.e. the export
+  surface, at 76–80%.
 * **`structscore` reports 0 layout-F1 today by construction** — kuna synthesizes no
   structs, so the number to record before any struct work is the *denominator*: how many
   pointer-to-struct parameters and GT fields exist to be recovered at all.

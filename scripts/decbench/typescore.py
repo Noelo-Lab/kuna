@@ -498,7 +498,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Writes nothing unless --out or --write is given.")
+        epilog="A measuring run writes rows.json into --out, or into "
+               "$KUNA_TYPESCORE_CACHE (default ~/.cache/decbench/kuna-typescore/"
+               "<option>-<off>-<on>-<corpus>/) when --out is not given. Nothing "
+               "is written inside the repo or the decbench results tree; only "
+               "--write touches a tracked file, the --record it splices.")
     ap.add_argument("--record", type=Path, help="docs/features/<slug>/record.json")
     ap.add_argument("--option", help="option name (default: the record's)")
     ap.add_argument("--off-value", help="the disabled value (default: off)")

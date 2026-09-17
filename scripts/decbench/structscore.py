@@ -141,6 +141,15 @@ def parse_type(spelling: str) -> dict:
     ``kind`` is ``primitive``/``struct``/``void``/``func``/``uncommitted``/
     ``none``. Anything that is neither a known primitive nor ``void`` nor a
     function is a named composite — which is what the IsCStruct step asks.
+
+    An array is scored as its element type on BOTH sides: ``char[3]`` parses to
+    the same record as ``char``, and so does the ground truth, which decbench
+    hands back as ``['char', 'char[3]']``. Decaying ``T[N]`` to a pointer here
+    only (the earlier convention) scored an exactly correct ``char[3]`` 1 of 6,
+    and it would not agree with the metric the campaign steers by either:
+    ``normalize_type('char[3]')`` is ``{'char[3]'}``, which no pointer form
+    matches. The six predicates never ask about extents, so dropping them costs
+    nothing.
     """
     text = (spelling or "").strip()
     if not text:
@@ -149,11 +158,7 @@ def parse_type(spelling: str) -> dict:
         return {"ptr": text.count("*"), "base": "FUNCTION", "kind": "func",
                 "unsigned": False, "size": None}
     ptr = text.count("*")
-    base = text.replace("*", " ")
-    array = re.search(r"\[(\d*)\]", base)
-    base = re.sub(r"\[\d*\]", " ", base)
-    if array:
-        ptr += 1  # `T x[N]` decays to a pointer for the purposes of this score
+    base = re.sub(r"\[\d*\]", " ", text.replace("*", " "))
     unsigned = bool(UNSIGNED.search(base))
     base = QUALIFIERS.sub(" ", base)
     base = " ".join(base.split())
@@ -176,7 +181,8 @@ def gt_parse_forms(forms: list[str]) -> dict:
     The GT carries every name on the chain (a typedef **and** what it resolves
     to, ``"<pointee>*"`` for a pointer, an enum as ``[Name, "int"]``), so the
     rule is: the type is primitive when ANY form resolves to one, and composite
-    only when none does.
+    only when none does. An array arrives as both forms (``['char', 'char[3]']``)
+    and ``parse_type`` reads them identically, so which one wins is moot.
     """
     best = None
     for form in forms or []:
@@ -745,6 +751,18 @@ def measure_trex(payload: dict, gt_by_name: dict, addr2name: dict,
     ``mean`` is a lower bound and ``sign_unjudged`` says over how many variables.
     ``mean_0_5`` drops the last step entirely and is exact for every variable —
     quote it for any claim that is not about signedness.
+
+    ``loss`` is what the mean is made of, and it is the number to read before
+    picking a step to work on: a variable whose first failure is step *i*
+    (0-based) scores *i*, so that failure costs ``6 - i`` points, and
+    ``points_possible - points_lost`` is ``mean * gt_variables`` exactly. A step
+    late in the order can fail far more often than an early one and still be
+    worth a fraction of it.
+
+    ``gt_variables`` counts the ground truth of every kuna function that resolves
+    to a DWARF name, which is the set the metric scores too: a name two
+    subprograms share is counted once per resolving address, and a subprogram
+    ``dwarf_functions`` cannot name is not counted at all.
     """
     signs_by_name = signs_by_name or {}
     steps = {s: {"reached": 0, "passed": 0} for s in TREX_STEPS}
@@ -780,6 +798,12 @@ def measure_trex(payload: dict, gt_by_name: dict, addr2name: dict,
                 steps[step]["reached"] += 1
                 steps[step]["passed"] += int(ok)
                 reached = ok
+    loss, lost = {}, 0
+    for i, step in enumerate(TREX_STEPS):
+        failures = steps[step]["reached"] - steps[step]["passed"]
+        loss[step] = {"failures": failures, "weight": 6 - i,
+                      "points": failures * (6 - i)}
+        lost += failures * (6 - i)
     return {
         "gt_variables": total,
         "unmatched_gt_variables": unmatched,
@@ -790,6 +814,9 @@ def measure_trex(payload: dict, gt_by_name: dict, addr2name: dict,
         "score_histogram": {str(k): v for k, v in histogram.items()},
         "steps": {s: {**v, "rate": round(v["passed"] / v["reached"], 4) if v["reached"] else 0.0}
                   for s, v in steps.items()},
+        "points_possible": 6 * total,
+        "points_lost": lost,
+        "loss": loss,
     }
 
 
@@ -1135,6 +1162,22 @@ def report(rows: list[dict]) -> str:
             lines.append(f"| {Path(r['binary']).name} | {t['gt_variables']} | "
                          f"{t['unmatched_gt_variables']} | {t['mean']} | "
                          f"{t.get('mean_0_5')} | {t.get('sign_unjudged')} | {rates} |")
+        lines += ["", "Where the score is lost — points, and the share of this "
+                  "binary's loss. A first failure at step *i* costs `6 - i`, so "
+                  "an early step is worth several late ones and "
+                  "`points_possible - points_lost` is `mean x GT vars` exactly.", "",
+                  "| binary | points lost | " +
+                  " | ".join(f"{s} x{6 - i}" for i, s in enumerate(TREX_STEPS)) + " |",
+                  "|---|---|" + "---|" * len(TREX_STEPS)]
+        for r in rows:
+            t = r.get("trex")
+            if not t or not t.get("loss"):
+                continue
+            lost = t["points_lost"] or 1
+            cells = " | ".join(
+                f"{t['loss'][s]['points']} ({t['loss'][s]['points'] / lost:.0%})"
+                for s in TREX_STEPS)
+            lines.append(f"| {Path(r['binary']).name} | {t['points_lost']} | {cells} |")
         lines.append("")
     if any("layout" in r for r in rows):
         lines += ["## layout / nesting F1 vs DWARF (pointer-to-struct parameters)", "",
@@ -1254,7 +1297,23 @@ def pairing_checks() -> list:
                    "is_arg": False, "arg_index": None},
                   {"name": "at16", "type": ["int"], "rbp_offset": [-0x10], "size": 4,
                    "is_arg": False, "arg_index": None}]
+    # One arg kuna gets right and one stack variable it calls `undefined8`
+    # against a GT `char *`: the loss is one is_c_pointer failure, 5 points.
+    payload = {"functions": [{"address": 0x1000, "variables": [
+        {"name": "a0", "type": "char *", "size": 8, "arg_index": 0, "kind": "arg"},
+        {"name": "v1", "type": "undefined8", "size": 8, "stack_offset": -0x10}]}]}
+    gt_by_name = {"f": [
+        {"name": "p", "type": ["char *", "char*"], "rbp_offset": [], "size": 8,
+         "is_arg": True, "arg_index": 0},
+        {"name": "q", "type": ["char *", "char*"], "rbp_offset": [-0x10], "size": 8,
+         "is_arg": False, "arg_index": None}]}
+    trex = measure_trex(payload, gt_by_name, {0x1000: "f"}, False,
+                        signs_by_name={}, binary_shift=0)
     return [
+        ("the loss model reconstructs the mean exactly",
+         trex["points_possible"] - trex["points_lost"]
+         == round(trex["mean"] * trex["gt_variables"])
+         and trex["loss"]["is_c_pointer"] == {"failures": 1, "weight": 5, "points": 5}),
         ("claim() prefers the type-matching candidate over the first free one",
          pair_variables(tied, tied_gt) == {0: 1}),
         ("a binary-wide shift that aligns anything is kept",
@@ -1304,6 +1363,14 @@ def selftest() -> int:
          trex_score(trex_predicates(parse_type("long"), gt_u64, False, True)[0][:5])
          == trex_score(trex_predicates(parse_type("unsigned long"), gt_u64,
                                        False, True)[0][:5]) == 5),
+        ("an exactly right array scores 6, not 1",
+         _score("char[3]", gt_parse_forms(["char", "char[3]"]), gt_sign=False) == 6),
+        ("an array of pointers reads the same on both sides",
+         _score("char *[2]", gt_parse_forms(["char*", "char*[2]"]), gt_sign=False) == 6),
+        ("an array of a composite stays composite",
+         _score("infomap[7]", gt_parse_forms(["infomap", "infomap[7]"])) == 6),
+        ("a pointer where the truth is an array still fails IsCPointer",
+         _score("char *", gt_parse_forms(["char", "char[3]"]), gt_sign=False) == 1),
         ("GT forms prefer the resolved primitive over the typedef name",
          gt_parse_forms(["size_t", "unsigned long"])["kind"] == "primitive"),
         ("GT pointer-to-struct is composite",
@@ -1330,6 +1397,8 @@ def selftest() -> int:
          index_census["a2"] == {"offsets": ["-0x8", "0x8"], "offset_or_field": True}),
         ("f(p) is p1*(1+p2*(1+...))", trex_score([True] * 6) == 6
          and trex_score([True, True, False, True, True, True]) == 2),
+        ("a first failure at step i costs 6-i points",
+         all(trex_score([True] * i + [False] * (6 - i)) == i for i in range(7))),
     ] + pairing_checks()
     for name, ok in checks:
         print(f"[{'ok ' if ok else 'FAIL'}] {name}")
