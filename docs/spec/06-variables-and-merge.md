@@ -888,6 +888,53 @@ files pin that form via per-test opt-outs (DIV-14, `docs/history.md`).
 Provenance: `docs/features/call-return-variable-folding-dcde82/record.json`
 (ablation: 5 upstream assertions change; measured speed delta −3.2%).
 
+**(angr) `option foldcallretphi` — folding past the merge phalanx**
+(default **off**). `foldcallret` relaxes only the first of two gates. A call
+output it lets through is re-examined by `ActionMarkImplied` in
+`coreaction_cleanup.rs (check_implied_cover)`, whose third arm
+(`merge.rs (Merge::inflate_test)`) forces a value explicit when one of its
+operands has another live SSA version of the same HighVariable over the
+candidate's internal cover — inlining would then print an operand where a
+different version of it holds. Upstream never reaches that arm with a call
+output, because Ghidra marks every call output explicit one pass earlier, so it
+is only with `foldcallret` on that it sees this shape at all. What it finds is
+usually self-inflicted: a call may write any global, so the call carries a
+`CPUI_INDIRECT` over every global it might touch, and passing one of those
+globals as an argument (`v3 = sub_3700(stdin,v7); v1 = 1; v12 &= v3;`) is enough
+to put a second version of the operand's high over the call output's cover. The
+colliding version is produced by the very call being moved.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
+(conflict_is_self_call_effect)` discounts exactly that case: the rejection is
+ignored only when at least one instance of the operand's high collides and
+*every* colliding instance is the output of an INDIRECT whose effect op is this
+call. Two conditions keep the discount sound beside `foldcallret`'s own
+order-safety predicate, which is untouched — the call still may not cross a
+call, load, store or callother, so nothing between it and its use can write the
+operand's storage, and the folded text performs the operand read and the call's
+own write at one point, as the spilled form does. First, a high that belongs to
+a `VariableGroup` declines: `inflate_test`'s second loop reasons about
+overlapping storage rather than versions, and its rejections are never
+discounted. Second, a use op that itself reads an INDIRECT effect of the call
+declines, since the folded text would otherwise name the operand's high both as
+the call's argument (pre-call) and as an operand of the use (post-call).
+
+It ships **off**, not for a safety reason: flipping the default leaves both
+corpora at PARITY OK (0 of 675 datatest assertions change) and costs +1.22% on
+`fmt` `decompile-all`. What holds it back is that removing a declaration
+renumbers the remaining `vN` locals, and `--assert type vN` / `--assert name vN`
+address a variable by that auto-generated name — `tests/cli` pins one such run,
+whose `type v2 char[16]` lands on a different stack slot once a `strcmp` result
+folds away. A default flip belongs in its own change, with those directives
+re-read. The effect is a call spill removed and its expression printed at the
+use:
+`v12 &= sub_3700(stdin,v7);`. Because marking a value implied re-dirties its
+operands' covers, a neighbouring value occasionally fails its own implied test
+and gains a statement of its own at the position its defining op already had —
+the conservative direction, and the reason the declaration count falls by less
+than the number of folds. Provenance and the corpus sweep:
+`docs/features/foldcallretphi/`.
+
 **(kuna, Ghidra issue GH-8500) `option stackalias`** (default **off**,
 destructive). The recorded gap: a store through a take-address-of-local
 pointer could be dead-coded one heritage round before the aliasing LOAD

@@ -1,0 +1,147 @@
+{
+  "opportunity": "foldcallret proves a single-use call output order-safe to fold, but ActionMarkImplied re-tests it in check_implied_cover, whose Merge::inflate_test arm forces it explicit when an operand has another live SSA version of the same HighVariable over the call output's cover. Upstream never reaches that arm with a call output, and the version it collides with is the CPUI_INDIRECT the call itself attaches to a global it reads as an argument, so passing stdin/stdout/errno to a call is enough to block the fold.",
+  "test_name": "tests/stages/kuna-foldcallretphi.xml (two-pass: off = the spill, on = the fold) + 3 option-parse unit tests + the architecture default assertion",
+  "binary": "synthetic bytechunk (x86:LE:64:default:gcc) in the stage test",
+  "selector": "target",
+  "func_addr": "0x1000",
+  "option": "foldcallretphi",
+  "flag": "fold_call_ret_phi",
+  "element_id": null,
+  "change_kind": "presentation-default",
+  "tier": "transform",
+  "source_decompiler": "angr",
+  "inspiration": "angr call-return variable folding (the fold angr performs unconditionally where kuna's second gate declines); foldcallret",
+  "default_on": false,
+  "root_cause": "check_implied_cover's inflate_test arm was written for ordinary expressions and only sees call outputs because of kuna's foldcallret escape. The collision it reports is produced by the call being folded: a call may write any global, so it carries a CPUI_INDIRECT over every global it touches, and that INDIRECT's output is another instance of the argument's own HighVariable, live from the call onwards.",
+  "hypothesis_refuted": "The E2 report's ceiling hypothesis (ActionMergeRequired runs before ActionMarkExplicit, so a force-merged call output fails num_instances()>1) is not what blocks the named witnesses: every one of them reports ninst=1 at base_explicit. num_instances()>1 does veto 141 other call outputs across the six sweep binaries, but those highs have 2-22 members from speculative datatype merges, not the single trim COPY a relaxation would need, so that ceiling is documented and left standing.",
+  "census": {
+    "method": "KUNA_DBG_FCR=1 instrumented build (throwaway commit 16602ca3), decompile-all over six -O2 stripped binaries",
+    "columns": "call outputs / pass call_output_foldable / folded / blocked by the self-INDIRECT inflate / blocked by cover-crosses-a-call / blocked by num_instances>1",
+    "fmt": [
+      206,
+      99,
+      80,
+      4,
+      4,
+      11
+    ],
+    "ls": [
+      888,
+      449,
+      392,
+      33,
+      5,
+      19
+    ],
+    "sort": [
+      687,
+      323,
+      268,
+      11,
+      9,
+      35
+    ],
+    "du": [
+      729,
+      334,
+      284,
+      19,
+      4,
+      27
+    ],
+    "grep": [
+      963,
+      453,
+      366,
+      33,
+      6,
+      48
+    ],
+    "gzip": [
+      423,
+      159,
+      138,
+      17,
+      2,
+      1
+    ]
+  },
+  "corpus_sweep": {
+    "corpus": "decbench full_run_address_2026-09-11 O2 stripped: coreutils fmt/ls/sort/du, grep, gzip",
+    "method": "kuna decompile-all off vs on, every hunk classified",
+    "functions": 1871,
+    "functions_changed": 36,
+    "call_spill_statements": "1559 -> 1489 (-70)",
+    "declared_locals": "6438 -> 6415 (-23)",
+    "emitted_lines": "-95",
+    "hunk_classes": {
+      "fold of a single-use call output into its use": 70,
+      "un-inline: a previously-implied operand gains its own statement at its defining op's position": 5,
+      "variable renumbering": "the rest"
+    },
+    "call_evaluation_order_changed": "0 of 1871 functions"
+  },
+  "gates": {
+    "make test": "PARITY OK (675/675)",
+    "make test-stages": "PARITY OK",
+    "make check-spec": "OK (lenient + strict)",
+    "make test-cli": "178/178 passed",
+    "kuna catalog --check": "OK",
+    "counters --check": "no drift",
+    "make rust-test": "pending"
+  },
+  "catalog_counts": {
+    "settables": "209 -> 210",
+    "tiers": "core 67 / transform 80 -> 81 / analysis 62",
+    "catalog_json_rows": "208 -> 209",
+    "angr source_decompiler bucket": "32 -> 33",
+    "stage-corpus files": "295 -> 296",
+    "bytecompat_fixture": "recaptured with no program loaded"
+  },
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs (new)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi/tests.rs (new)",
+    "decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/mod.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "tests/stages/kuna-foldcallretphi.xml (new)",
+    "docs/spec/06-variables-and-merge.md",
+    "docs/options.md",
+    "docs/baseline-stages.json"
+  ],
+  "speed": {
+    "method": "interleaved off/on pairs of `kuna decompile-all` on coreutils fmt -O2 (151 functions), N=21, /usr/bin/time wall clock; min and median both reported because this box is contended",
+    "workload": "kuna decompile-all fmt (O2, stripped)",
+    "samples": 21,
+    "min_off_s": 4.11,
+    "min_on_s": 4.16,
+    "min_delta_pct": 1.22,
+    "med_off_s": 4.78,
+    "med_on_s": 4.55,
+    "med_delta_pct": -4.81,
+    "budget_pct": 5.0,
+    "within_budget": true,
+    "note": "the per-sample spread (4.11-6.12 s in BOTH arms) is wider than the delta, so the honest reading is 'no measurable cost'. The discount is only computed when the option is on and only for a call output that already reached check_implied_cover, and `Architecture::fold_call_ret_phi` is the first term of the guard, so the option OFF costs nothing at all.",
+    "first_contended_run": "an earlier 15-pair run overlapped `make test` and read -58% through `scripts.pipeline.timeit`; discarded"
+  },
+  "default_on_ablation": {
+    "method": "flip Architecture::reset_defaults_internal to fold_call_ret_phi = true, rebuild, run every gate",
+    "datatests": "675/675 assertions passed, PARITY OK (0 assertions change)",
+    "stages": "1024/1024 assertions passed, PARITY OK",
+    "check-spec": "OK (lenient + strict)",
+    "speed": "+1.22% min-of-21 on fmt decompile-all, inside the +5% budget",
+    "test-cli": "177/178 -- no-cli-rename-or-prototype-override fails",
+    "why_held_off": "`--assert type vN` / `--assert name vN` address a variable by its auto-generated name. Folding `v1 = strcmp(pass,sneaky)` into its `if` removes a declaration and renumbers the rest, so the probe's `type v2 char[16]` retypes a different stack slot (credbuf lands at -0x10 instead of -0x18 and a separate `char v2 [8]` appears). Neither listing is unsound; the directive simply no longer names what the user meant. The flip is therefore a change about --assert ergonomics rather than about this pass, and belongs in its own PR with those directives re-read.",
+    "verdict": "shipped default-off with the flip evidence recorded"
+  },
+  "metric_neutrality": {
+    "method": "kuna decompile-all --json off vs on; decbench scores variables[] (args + stack symbols + framelayout slots), never register locals",
+    "fmt": "151 functions, 737 variables both arms, 1 function's variables[] differs",
+    "du": "320 functions, 1723 variables both arms, 5 functions differ",
+    "grep": "449 functions, 2524 variables both arms, 11 functions differ",
+    "what_differs": "only the vN name renumbering plus line_numbers/addresses; the (type, kind, stack_offset) multiset is identical in every changed function, so type_match cannot move"
+  }
+}

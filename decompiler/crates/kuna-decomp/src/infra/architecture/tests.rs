@@ -134,8 +134,10 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.dup_return_call_tails);
     assert!(arch.dedup_ite_tail);
     assert!(arch.fold_call_returns);
-    // (kuna) foldcallretphi ships OFF: it only relaxes the second gate for
-    // call outputs foldcallret already accepted, and wants its own evidence.
+    // (kuna) foldcallretphi ships OFF.  The datatest and stages corpora are
+    // both PARITY OK with the default flipped, but the flip renumbers the
+    // auto-generated `vN` locals, and `--assert type vN`/`name vN` are
+    // positional on those names (tests/cli/no-cli-rename-or-prototype-override).
     assert!(!arch.fold_call_ret_phi);
     assert!(arch.branch_flip);
     // (kuna) DIV-14 default-on sweep: 4 more flags default-on (3 of them REMOVE
