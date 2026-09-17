@@ -974,7 +974,7 @@ which is `call 4890; mov (%rax),%eax; mov %eax,0x33798` in `grep` O0 `sub_6c53`
 ask the question over the whole span, landing statement included
 (`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
 (landing_span_reads_call_effect)`), because the folds that travel that far are
-the ones it released; §6.4's `foldcallretphi` entry has that half.
+the ones it released; the `foldcallretphi` entry below has that half.
 Provenance: `docs/features/gh657/`.
 
 The direct call output may have one descendant even though a derived value
