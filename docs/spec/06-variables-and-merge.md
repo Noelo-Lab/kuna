@@ -971,8 +971,8 @@ the call may `STORE` what it reads, and the use is where the folded text lands,
 so the `LOAD` really is something the call moved across. Past the use the reads
 left in the span are the ones the folded expression is printed *beside*, inside
 the single statement the whole implied chain collapses into, so de-folding over
-them repositions no statement: SWEEP_LOAD_TOTAL functions change and
-SWEEP_LOAD_DEFOLD de-fold, and the shape that dominates is `__ctype_b_loc()`
+them repositions no statement: counting them costs 117 further changed functions
+over the 37-binary sweep, and the shape that dominates is `__ctype_b_loc()`
 inlined into the same conditional as the loads it now sits next to. The INDIRECT
 half of the predicate stays on the span to the use for the same reason: asking it
 past the use changes 31 functions across `grep` O0, `tar` O0 and `ssh` O2 and

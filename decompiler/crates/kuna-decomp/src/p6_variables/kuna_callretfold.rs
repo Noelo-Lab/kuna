@@ -68,10 +68,11 @@
 //! the call is moved across.  Past the use, the reads left in the span are the
 //! ones the folded expression ends up printed *beside*, inside the one statement
 //! the whole chain collapses into, and de-folding over those moves no statement:
-//! it is `SWEEP_LOAD_FNS` functions over the 36-binary corpus, dominated by
-//! `__ctype_b_loc()` inlined into the same conditional as the loads it now sits
-//! next to.  The same reasoning keeps the INDIRECT half of (3) on the span to
-//! the use: `dat_33798 = *__errno_location()` is one call, one load and one
+//! it costs 117 further functions over the 37-binary corpus in
+//! `docs/features/gh657/`, dominated by `__ctype_b_loc()` inlined into the same
+//! conditional as the loads it now sits next to.  The same reasoning keeps the
+//! INDIRECT half of (3) on the span to the use: `dat_33798 =
+//! *__errno_location()` is one call, one load and one
 //! store in exactly that order in the binary, and asking past the use de-folds
 //! 27 more functions and corrects none.  `foldcallretphi` — the option that lets
 //! a fold travel past a merge conflict at all — is what otherwise holds such

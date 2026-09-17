@@ -15,12 +15,13 @@
   "default_on": true,
   "root_cause": "op_is_barrier tested opcodes only, and call_output_foldable's span ended at the single use. A write to a global is a CPUI_COPY whose output varnode is persistent and address-tied, and when the use op's own output is implied the expression is printed further on, so the call crossed writes on both counts.",
   "fix": {
-    "clause_1": "op_is_barrier also stops at an op whose output varnode is_persist() || is_addr_tied() (op_writes_tied_storage, moved out of kuna_foldcallretphi.rs into kuna_callretfold.rs and shared).",
-    "clause_2": "check_implied_cover re-asks for a call output: fold_print_point_is_order_safe runs the barrier test over the span from the call to the statement the expression lands in (print_chain follows the implied chain; ActionMarkImplied classifies descendants first, so it is derivable there).",
-    "exemption_self_copy": "op_is_self_copy: a CPUI_COPY back into the storage its input already occupies (what RuleIndirectCollapse leaves behind) writes the value already there. Volatile excluded. Without it gh275-spillargtrial #3 and LIBCTYPES #9 each lose a fold to an artifact.",
-    "exemption_chain": "the ops the expression travels through are exempt from the span test: each consumes the previous one's value, so the call is evaluated before them in the folded text exactly as in the binary. Without it the guard declines 233 further functions on the sweep (290 changed instead of 57) and ghidra_sim_faillog_pins' flattened-C line counts move (+4 sub_2620, +5 sub_3ad0).",
+    "clause_1": "op_is_barrier -- the call-to-use span -- also stops at an op whose output varnode is_persist() || is_addr_tied() (op_writes_tied_storage, moved out of kuna_foldcallretphi.rs into kuna_callretfold.rs and shared).",
+    "clause_2": "check_implied_cover re-asks for a call output: fold_print_point_is_order_safe runs the guard over the span from the call to the statement the expression lands in (print_chain follows the implied chain; ActionMarkImplied classifies descendants first, so it is derivable there).",
+    "clause_2_is_narrower": "that second span asks only about WRITES (op_is_write_barrier: a call, CPUI_STORE, CPUI_CALLOTHER, or a write to persistent/address-tied storage). CPUI_LOAD is not in it. Up to the use a LOAD is a hazard this pass can decide -- the call may STORE what it reads, and the use is where the folded text lands. Past the use the reads left in the span are the ones the folded expression is printed BESIDE, inside the one statement the implied chain collapses into, so de-folding over them repositions nothing. Measured: counting them costs 117 further changed functions on the 37-binary sweep (243 instead of 126), dominated by __ctype_b_loc() inlined into the same conditional as the loads it sits next to (bash O0 0xfa64d). All 10 functions that the narrowed set still de-folds for an opcode reason were read by hand and each has a STORE emitted as its own statement in the span.",
+    "exemption_self_copy": "op_is_self_copy: a CPUI_COPY back into the storage its input already occupies (what RuleIndirectCollapse leaves behind) writes the value already there. Volatile excluded. Without it gh275-spillargtrial #3 and LIBCTYPES #9 each lose a fold to an artifact. Nine unit tests in kuna_callretfold/tests.rs pin the predicate directly on hand-built IR (constant-into-global and arithmetic-into-global are barriers; glob = COPY glob is not; a copy between two globals, at a different width, or of a volatile location is; an untied temporary is not; LOAD is a barrier on the first span only).",
+    "exemption_chain": "the ops the expression travels through are exempt from the second span test: each consumes the previous one's value, so the call is evaluated before them in the folded text exactly as in the binary. With the narrowed (writes-only) set this is no longer load-bearing: dropping it changes 0 of the 23,851 functions on the sweep. Kept for the shape it is written for -- a chain op that is itself a call with an implied output, where the folded expression is that call's own argument.",
     "not_widened": "the INDIRECT test keeps the call-to-use span for the DEFAULT fold. Asking it past the use changes 31 functions across grep O0, tar O0 and ssh O2 and de-folds 27 of them, correcting none; the dominant shape is `dat_33798 = *__errno_location()` (grep O0 sub_6c53), whose binary is call/mov/mov in exactly that order. Exempting the self-copy from it as well makes kuna-elfmain's sub_1357(a1[1]) fold where it did not before -- a NEW fold, which this fix has no business adding.",
-    "phi_span_restored": "the span PAST the use is foldcallretphi's, and the first version of this PR narrowed its INDIRECT test to the landing statement alone, which WIDENED the option: with `--option foldcallretphi on` it folded two calls it used to decline (ssh O2 sub_4fd30 printed sub_3fa80 after `v5 = v2`, a copy of the escaped stack slot the binary reloads at 0x4fe98 -- GH-181's shape; tar O0 sub_67494 folded three tolower calls into a store whose base the call INDIRECTs) and recovered none. landing_span_reads_call_effect asks the question over the whole span again, landing statement included, as #654 did. It is reachable only from conflict_is_self_call_effect, so default output is unaffected."
+    "phi_left_alone": "the span past the use is also foldcallretphi's, and an earlier revision of this branch moved that option's guard into kuna_callretfold.rs and shared it, which silently RELAXED it (the implied-chain exemption and op_is_self_copy, neither of which #654 had): with `--option foldcallretphi on`, ssh O2 0xcdd0 and dpkg O2 0x2e170 each GAINED a fold origin/main declines. kuna_foldcallretphi.rs now composes its guard exactly as it shipped -- every opcode, the storage test unsoftened, no chain exemption, the INDIRECT question over the whole distance including the landing statement -- and only print_point and the raw storage test delegate to kuna_callretfold. That guard is strictly wider than the second foldcallret span, so a phi-discounted fold is decided exactly as on origin/main. See phi_arm for the per-function content comparison that replaces the set metric."
   },
   "witnesses": {
     "repro.c": "the issue verbatim; gcc -O2; binary returns 50, pre-fix C reads 91. Fixed by clause 1.",
@@ -29,29 +30,29 @@
     "libselinux.so.1 sub_16170": "real binary: strdup at 0x162d0, the two stack writes at 0x162d5/0x162dd. Pre-fix kuna emits `v23 = 1; v22 = 0x6666666; *(char **)(a0 + 0x50) = strdup(v12);`, now `v9 = strdup(v14);` first."
   },
   "corpus_sweep": {
-    "corpus": "16 binaries: decbench full_run_address_2026-09-11 O0 and O2 of coreutils fmt, grep, gzip, diffutils diff, bzip2, findutils find; plus the four in-tree ELFs tests/bug-repro/{faillog,sort,grep,libselinux.so.1}",
+    "corpus": "37 binaries: decbench full_run_address_2026-09-11 O0 and O2 of coreutils fmt and ls, grep, gzip, diffutils diff, bzip2, findutils find, tar, dash, shadow/su, e2fsprogs/e2fsck, kmod, iproute2/ip, libedit.so.0.0.70, openssh/ssh; plus libz.so.1.2.13 O0, libselinux.so.1 O2, libacl.so.1.1.2301 O2 and the four in-tree ELFs tests/bug-repro/{faillog,sort,grep,libselinux.so.1}",
+    "before": "origin/main 520443d7 (the rebase brought in #661 structdefs, default-off; the rebased build's decompile-all output is byte-identical to the pre-rebase build's on O0-grep, O2-find and libselinux, so the sweep stands)",
     "method": "kuna decompile-all before/after, split per function on the `// Function:` banner, classified by docs/features/gh657/foldclassify.py",
-    "functions": 6207,
-    "functions_changed": 57,
-    "defold": 46,
-    "defold_dedup": 7,
-    "other_same_calls": "4, read by hand: all de-folds the counter missed because the old text already bound the call to something (`v7[2] = sub_1ef10(0x40) + 0x40;` -> `v10 = sub_1ef10(0x40); ... v7[2] = v10 + 0x40;`). One of them also gains a neighbouring fold (`v26 = strlen(strcpy(...))`), a cover-dirtying cascade, not a new hazard.",
+    "functions": 23851,
+    "functions_changed": 126,
+    "defold": 88,
+    "defold_dedup": 19,
+    "other_same_calls": "19, read by hand: de-folds the counter missed because the old text already bound the call to something (`v7[2] = sub_1ef10(0x40) + 0x40;` -> `v10 = sub_1ef10(0x40); ... v7[2] = v10 + 0x40;`), plus vN renumbering. A few also gain a neighbouring fold, a cover-dirtying cascade rather than a new hazard.",
     "flag_call_gained_or_vanished": 0,
-    "call_tokens": "29228 -> 29221 (-7, exactly the seven duplicated emissions the dedup bucket removes)",
-    "emitted_lines": "187182 -> 187277 (+95)",
-    "dedup_example": "findutils find 0x1da6f: `v1 = v2[sub_33502(v2)]; v2[sub_33502(v2)] = 0;` -> one `v2 = sub_33502(v3);` and two uses -- the folded form was calling twice",
-    "clause_attribution": "a third build with clause 2 disabled changes 14 functions and costs 11 folds; clause 2 accounts for the other 43 changed functions",
-    "fold_gains": "1 distinct function gains a fold rather than losing one: grep O2 0x6a70 (it appears twice in the table because grep is both a decbench binary and an in-tree ELF). A cover-dirtying cascade -- marking one value explicit re-dirties its neighbours' covers -- not a new reorder. See disjoint_sweep.fold_gains for four more."
+    "call_tokens": "150151 -> 150130 (-21, exactly the 21 duplicated emissions the dedup bucket removes)",
+    "emitted_lines": "801176 -> 801368 (+192)",
+    "dedup_example": "findutils find 0x1da6f: `v1 = v2[sub_33502(v2)]; v2[sub_33502(v2)] = 0;` -> one `v2 = sub_33502(v3);` and two uses -- the folded form was calling twice"
   },
   "varcensus": {
     "method": "scripts.pipeline.varcensus --text on the sweep dumps",
-    "O2-coreutils-fmt": "declarations 369 -> 371 (+2), single_def_single_use 76 -> 77",
-    "O0-grep": "declarations 1626 -> 1630 (+4), single_def_single_use 299 -> 301",
-    "tree-libselinux": "declarations 1754 -> 1758 (+4), single_def_single_use 266 -> 270",
-    "note": "every gained declaration is the temp a de-folded call binds to; params, arrays and blob16 counts are unchanged everywhere"
+    "O2-coreutils-fmt": "declarations 369 -> 371 (+2)",
+    "O0-grep": "declarations 1626 -> 1627 (+1)",
+    "O2-dash": "declarations 1409 -> 1411 (+2)",
+    "tree-libselinux": "declarations 1754 -> 1758 (+4)",
+    "note": "every gained declaration is the temp a de-folded call binds to; array declarations are unchanged everywhere"
   },
   "typesweep": {
-    "method": "scripts.decbench.typesweep --baseline-only, campaign slice set (projects coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), DECBENCH_NO_CACHE=1, one run pinned to the origin/main binary and one to this branch's",
+    "method": "scripts.decbench.typesweep --baseline-only, campaign slice set (projects coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), DECBENCH_NO_CACHE=1, one run pinned to the origin/main 520443d7 binary and one to this branch's",
     "slices": 444,
     "functions_scored": 10748,
     "perfect_main": 959,
@@ -59,7 +60,7 @@
     "aggregate_main": 3037.05,
     "aggregate_fix": 3037.05,
     "control": "baseline vs published type_match 9505 agree / 1243 differ (88.44%) in BOTH arms",
-    "per_function": "0 of 10748 functions differ in type_match value and 0 in variable count; 69 functions across 41 slices differ only in vars_sig, which is the vN renumbering (names score zero)"
+    "per_function": "0 of 10748 functions differ in type_match value and 0 in decomp_vars count"
   },
   "speed": {
     "method": "interleaved A/B of `kuna decompile-all`, wall clock, min and median; the A binary is origin/main (83830e86), the B binary this branch. No option to flip, so timeit's on/off harness does not apply.",
@@ -91,81 +92,114 @@
     "make rust-test": "RUST_TEST_RC=0 -- 415 test binaries, 7106 passed / 0 failed, from the committed HEAD 367a0ba4 (log .scratch/rust-test4.log). The run before it (SHA 70e5edc0) was RED and worth recording: rewriting the foldcallret/foldcallretphi catalog rows moved tests/fixtures/phase_catalog.json, so `-p kuna-decomp --test catalog_bytecompat` failed 2 of its 5 tests while the other 414 binaries were green. Neither `kuna catalog --check` nor `counters --check` sees that fixture; only the workspace suite does."
   },
   "stage_assertions_examined": {
-    "note": "four stage assertions moved on the first version of the fix and NONE was absorbed: each pointed at a real over-decline, and the final version leaves all 1054 pre-existing assertions untouched.",
+    "note": "four stage assertions moved on the first version of the fix and NONE was absorbed: each pointed at a real over-decline, and the final version leaves all 1059 pre-existing assertions untouched (the baseline gains only the six new GH657 rows).",
     "GH275 #3": "the second atan2 de-folded because the self-copy `dat_101000 = COPY dat_101000` at the RET was counted as a write -> op_is_self_copy",
     "LIBCTYPES #9": "same shape, the self-copy sitting at the call's own address",
     "condfold-newbury #3/#4": "su_euid()/su_egid() de-folded because the widened span applied the INDIRECT test to the use op itself -> the INDIRECT test stays on the call-to-use span",
     "ELFMAIN #2": "the opposite direction: exempting the self-copy from the INDIRECT test too ADDS a fold (`sub_1357(a1[1])`), which is why that exemption is held back"
   },
   "hidden_count_sites": [
-    "kuna-base/src/xml.rs corpus file count 302 -> 303 (one new tests/stages file)",
-    "docs/baseline-stages.json re-recorded (1054 -> 1060 keys, all six new)",
-    "no option added, so no catalog/settable/tier/bytecompat/kuna-catalog.xml count moves (counters --check green)"
+    "kuna-base/src/xml.rs corpus file count 303 -> 304 after the #661 rebase (one new tests/stages file on top of structdefs')",
+    "docs/baseline-stages.json re-recorded on the rebased tree (1059 -> 1065 keys, all six new)",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json recaptured (214 settables) -- the foldcallret/foldcallretphi row text moved, which only the workspace suite's catalog_bytecompat sees",
+    "no option added, so no settable/tier/kuna-catalog.xml count moves (counters --check green)"
   ],
   "files": [
     "decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs",
+    "decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold/tests.rs",
     "decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs",
     "decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs",
     "decompiler/crates/kuna-base/src/xml.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
     "tests/stages/kuna-foldcallret-barrier.xml (new)",
     "tests/cli/foldcallret-sinks-call-past.json (new)",
     "decompiler/crates/kuna-analysis/tests/fixtures/gh657_x86_64{,.s} (new) + fixtures/README.md",
     "docs/spec/06-variables-and-merge.md",
+    "docs/options.md",
     "docs/baseline-stages.json",
-    "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s}"
+    "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s,disjoint_sweep.sh}"
   ],
   "option_off_identity": "kuna decompile-all --option foldcallret off is byte-identical between origin/main and this branch on O0 grep and libselinux.so.1: every new test is behind `Architecture::fold_call_returns`.",
   "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree; target/debug deleted afterwards. Lane SHA 367a0ba4; the commits after it touch only docs/spec/06-variables-and-merge.md and docs/features/gh657/, and the workspace suite embeds no doc but options.md, cli.md, agents.md, phases.md and modes.md. CI's own `cargo workspace suite` (full-ci label) is COMPLETED SUCCESS on the final head, alongside `parity gates`.",
   "phi_arm": {
-    "method": "phi-delta = the set of functions whose `kuna decompile-all` text differs between `--option foldcallretphi on` and `off`, per binary; compared against a build of origin/main (83830e86). .scratch/phi/phidelta.py",
+    "acceptance_metric": "per-function CONTENT equality of the `--option foldcallretphi on` dumps, main build against this branch, split on the `// Function:` banner. The round-1 metric (equality of the phi-delta SET) could not see a content change inside the delta and is retired.",
+    "main_build": "origin/main 520443d7, built fresh",
+    "result": "on every one of the five binaries, a function's ON-arm text differs from main's if and only if its DEFAULT-arm text does. No function renders differently under `--option foldcallretphi on` unless the default rendering changed too.",
     "ssh_O2": {
       "functions": 1510,
-      "origin_main": 68,
-      "narrowed_clause": 69,
-      "this_branch": 68,
-      "extra_when_narrowed": "0x4fd30"
+      "phi_delta_main": 68,
+      "phi_delta_branch": 68,
+      "sets_equal": true,
+      "on_arm_differs": 15,
+      "of_which_also_default": 15
+    },
+    "dpkg_O2": {
+      "functions": 800,
+      "phi_delta_main": 45,
+      "phi_delta_branch": 45,
+      "sets_equal": true,
+      "on_arm_differs": 6,
+      "of_which_also_default": 6
+    },
+    "bash_O2": {
+      "functions": 2538,
+      "phi_delta_main": 95,
+      "phi_delta_branch": 95,
+      "sets_equal": true,
+      "on_arm_differs": 43,
+      "of_which_also_default": 43
     },
     "tar_O0": {
       "functions": 1570,
-      "origin_main": 120,
-      "narrowed_clause": 121,
-      "this_branch": 120,
-      "extra_when_narrowed": "0x67494"
+      "phi_delta_main": 120,
+      "phi_delta_branch": 120,
+      "sets_equal": true,
+      "on_arm_differs": 3,
+      "of_which_also_default": 3
     },
-    "set_identity": "identical to origin/main's on ssh O2, tar O0, grep O0 and e2fsck O0; dash O2 gains one function downstream of the default fix (see dash_O2)",
-    "default_identity": "`kuna decompile-all` with no options is byte-identical (md5) between the narrowed and the restored build on ssh O2, tar O0, grep O0 and fmt O2, so the 16-binary sweep below is unaffected",
     "grep_O0": {
       "functions": 642,
-      "origin_main": 26,
-      "this_branch": 26,
-      "sets_equal": true
+      "phi_delta_main": 26,
+      "phi_delta_branch": 26,
+      "sets_equal": true,
+      "on_arm_differs": 1,
+      "of_which_also_default": 1
     },
-    "e2fsck_O0": {
-      "functions": 1908,
-      "origin_main": 133,
-      "this_branch": 133,
-      "sets_equal": true
-    },
-    "dash_O2": {
-      "functions": 335,
-      "origin_main": 15,
-      "this_branch": 16,
-      "extra": "0x12010",
-      "attribution": "NOT the guard: the narrowed build and the restored build render 0x12010 identically in both arms. The default GH-657 fix de-folds `sub_11e30(2)` in this function, which re-dirties neighbouring covers, so inflate_test now reaches a rejection the discount forgives and `v5 = (char *)sub_102c0(dat_21a98), *v5` prints as `*(char *)sub_102c0(dat_21a98)`. The call and the dereference are adjacent, so nothing moves."
-    }
+    "round_1_witnesses": "ssh O2 0xcdd0 and dpkg O2 0x2e170, the two functions the round-2 review found gaining a fold, are byte-identical between the two ON dumps."
   },
   "disjoint_sweep": {
-    "why": "the reviewer's WRONG-OUTPUT lens used a corpus disjoint from the 16-binary one; re-run here so the PR's own numbers cover it",
-    "corpus": "20 binaries: O0 and O2 of tar, dash, shadow/su, e2fsprogs/e2fsck, kmod, coreutils/ls, iproute2/ip, libedit.so.0.0.70, libz.so.1.2.13, openssh/ssh (.scratch/corpus/run2.sh)",
-    "functions": 17078,
-    "functions_changed": 175,
-    "defold": 148,
-    "defold_dedup": 12,
-    "other_same_calls": 15,
+    "why": "a second corpus with no overlap with the 37-binary one, matching the reviewer's own set",
+    "corpus": "bash O0, dpkg O0, gnutls/certtool O0, rsyslog/rsyslogd O2, cronie/crond O0",
+    "functions": 6610,
+    "functions_changed": 39,
+    "defold": 28,
+    "defold_dedup": 2,
+    "other_same_calls": 9,
     "flag_call_gained_or_vanished": 0,
-    "call_bindings_gained": 206,
-    "duplicated_call_texts_removed": 14,
-    "fold_gains": "1 net (O0 ip 0x9a193: `v1 = sub_9845e(3); v3 = sub_99d74(a0,v1);` -> `v3 = sub_99d74(a0,sub_9845e(3));`, and objdump has `9a1ab call 9845e / 9a1bd call 99d74` back to back, so the folded order is the binary's). Three more trade a de-fold for a neighbouring gain: O0 e2fsck 0x6b91b (ext2fs_file_get_size de-folds, its CONCAT44 argument inlines), O0 ip 0x8b389 (sub_8b331 de-folds, sub_8a7a8 folds into its argument), O2 ssh 0x20ec0 (sub_3ec10 de-folds, sub_3df50 folds into its argument). All four are the cover-dirtying cascade, not a reorder.",
-    "combined_with_16_binary_sweep": "36 binaries, 23285 functions, 232 changed: 194 defold, 19 defold-dedup, 19 other-same-calls, 0 FLAG"
+    "reviewer_witness": "bash O0 0xfa64d -- the round-2 review's pure-LOAD example, four loads and no write anywhere in the span -- is now byte-identical between main and this branch.",
+    "callee_distribution": "net new call bindings across all 42 binaries: __ctype_b_loc 53, strlen 22, es_strbufcmp 22, fclose 8, strcmp 6, ... 189 total (the review measured 181 __ctype_b_loc alone on the wider barrier set)"
+  },
+  "cause_attribution": {
+    "method": "five builds of the second span, swept over the same 37 binaries, each changed function attributed to the clause that produced it. v1 = clause 1 only; v2 = + structural conditions; v6 = v2 but an underivable print point permitted; v3 = + the storage test; branch = + the opcodes. A function can carry two causes.",
+    "i_tied_write": {
+      "functions": 54,
+      "call_to_use": 49,
+      "past_the_use": 6,
+      "both": 1,
+      "what": "a write to persistent or address-tied storage in the span -- the GH-657 class"
+    },
+    "ii_opcode_past_the_use": {
+      "functions": 10,
+      "what": "a call, CPUI_STORE or CPUI_CALLOTHER between the use and the landing statement",
+      "verified": "all ten read by hand: each has a STORE emitted as its own statement in the span, so each is a real textual reorder. In four of them that store writes memory the callee reads -- dash O0 0xab64 and 0xac29 put back the byte fnmatch is meant to see as a terminator; ssh O2 0x57170 folded close(fd) past `*a2 = -1`; tar O2 0x614a0 folded strlen(v11) past `*a6 = *a6 + 1`."
+    },
+    "iii_structural": {
+      "functions": 67,
+      "landing_statement_in_another_block": 47,
+      "print_point_not_derivable": 21,
+      "what": "the folded call would be evaluated behind a branch or after a merge (so at a different time, or not at all), or the print point cannot be derived at all (a marker, a fan-out, or a chain over eight hops) and the fold declines conservatively"
+    },
+    "total_distinct": 126
   }
 }

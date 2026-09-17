@@ -46,16 +46,29 @@ schedules the global store before the arithmetic in every C form of it.
 
 Two clauses, in `p6_variables/kuna_callretfold.rs`:
 
-1. `op_is_barrier` also stops at an op whose **output varnode is persistent or
-   address-tied** (`op_writes_tied_storage`, the helper #654 wrote for the
-   discounted fold, moved here and shared rather than duplicated). A global's
-   output is persistent; a frame slot's is tied to its stack address, and the
-   callee reaches one whenever the frame address escaped into it.
+1. `op_is_barrier` — the call-to-use span — also stops at an op whose **output
+   varnode is persistent or address-tied** (`op_writes_tied_storage`, the helper
+   #654 wrote for the discounted fold, moved here and shared rather than
+   duplicated). A global's output is persistent; a frame slot's is tied to its
+   stack address, and the callee reaches one whenever the frame address escaped
+   into it.
 2. A call output is re-examined in `check_implied_cover`, where
    `ActionMarkImplied`'s descendants-first walk has already classified the chain
    below the use, so the landing statement is derivable (`print_chain`). The
-   barrier test then runs over the whole distance the call travels
+   guard then runs over the whole distance the call travels
    (`fold_print_point_is_order_safe`).
+
+**The second span asks a narrower question than the first**
+(`op_is_write_barrier`): a call, a `CPUI_STORE`, a `CPUI_CALLOTHER`, or a write to
+persistent or address-tied storage. `CPUI_LOAD` is deliberately not in it. Up to
+the use a `LOAD` is a hazard this pass can decide — the call may `STORE` what it
+reads, and the use is where the folded text lands. Past the use, the reads left in
+the span are the ones the folded expression is printed *beside*, inside the single
+statement the whole implied chain collapses into, so de-folding over them
+repositions nothing. Counting them costs **117 further functions** on the sweep
+below, the dominant shape being `__ctype_b_loc()` inlined into the same
+conditional as the loads it now sits next to (`bash` O0 `0xfa64d`: call, then four
+loads, then the branch, all one expression either way).
 
 Two exemptions keep the guard from declining over things that are not writes or
 not reorderings:
@@ -65,13 +78,18 @@ not reorderings:
   op's output is persistent. It stores the value already there, so it is not a
   barrier (`op_is_self_copy`; a volatile location is excluded, since there the
   access itself is the effect). Without this, `gh275-spillargtrial` and
-  `kuna-libctypes` lose a fold each to an artifact.
+  `kuna-libctypes` lose a fold each to an artifact. Nine unit tests in
+  `kuna_callretfold/tests.rs` pin the predicate: a constant or an arithmetic
+  result written into a global is a barrier, `glob = COPY glob` is not, a copy
+  between two globals or at a different width or of a volatile location is, a
+  write to an untied temporary is not, and a `LOAD` is a barrier on the first span
+  only.
 * **The ops the expression travels through are exempt.** Each consumes the
   previous one's value, so the call is evaluated before them in the folded text
-  exactly as it is in the binary — a `LOAD` of the pointer a call has just
-  returned is not a load the call was moved past. Without this exemption the
-  guard declines 233 further functions over the 16-binary sweep (all consumers),
-  and `ghidra_sim_faillog_pins`' flattened-C line counts move by +4/+5.
+  exactly as it is in the binary. With the narrowed set this exemption is no
+  longer load-bearing: dropping it changes **0** of the 23,851 functions below. It
+  is kept for the case it is written for — a chain op that is itself a call with an
+  implied output, where the folded expression is that call's own argument.
 
 The INDIRECT half of the predicate is **not** widened for the default fold. It
 keeps the span it has always had, from the call to its single use, for a measured
@@ -79,42 +97,39 @@ reason: asking it past the use changes 31 functions across `grep` O0, `tar` O0
 and `ssh` O2 and de-folds 27 of them, correcting none. The shape that dominates
 is `dat_33798 = *__errno_location();` (`grep` O0 `sub_6c53`), and the binary
 there is `call 4890 / mov (%rax),%eax / mov %eax,0x33798` — one call, one load,
-one store, in exactly the order the folded text prints. Exempting the self-copy
-from it as well makes `kuna-elfmain`'s `sub_1357(a1[1])` fold where it did not
-before — a *new* fold, which a correctness fix has no business adding.
+one store, in exactly the order the folded text prints.
 
-## What this got wrong first: `foldcallretphi`
+## `foldcallretphi` is left alone
 
-That span *is* `foldcallretphi`'s, and moving #654's machinery into
-`kuna_callretfold.rs` narrowed it to the landing statement alone. That widened
-the option rather than leaving it alone: with `--option foldcallretphi on` it
-then folded two calls it used to decline and recovered none.
+`foldcallretphi` (#654, opt-in) shipped with its own span guard, wider than either
+of `foldcallret`'s: every opcode, the storage test with no self-copy exemption, no
+chain exemption, and the INDIRECT question over the whole distance including the
+landing statement. An earlier revision of this branch moved that guard into
+`kuna_callretfold.rs` and shared it, which silently relaxed it — with
+`--option foldcallretphi on`, `ssh` O2 `0xcdd0` and `dpkg` O2 `0x2e170` each
+*gained* a fold that `origin/main` declines.
 
-* `ssh` O2 `sub_4fd30` printed `sub_3fa80(v2,v3)` after `v5 = v2`, a copy of the
-  escaped stack slot at `0x8(%rsp)` whose address went to `sub_4f830`. The
-  binary is `4fe85 mov 0x8(%rsp),%rdi / 4fe93 call 3fa80 / 4fe98 mov
-  0x8(%rsp),%rdi / 4fe9f je 4fe4e`: the value reaching the taken branch is the
-  **post**-call load at `0x4fe98`, which is GH-181's shape.
-* `tar` O0 `sub_67494` folded three `tolower` calls into a store whose base is an
-  address-tied slot the call carries an INDIRECT over.
+`kuna_foldcallretphi.rs` now composes its guard exactly as it shipped; only
+`print_point` and the raw storage test delegate to `kuna_callretfold`, so the two
+options share the helpers without sharing the policy. Since that guard is strictly
+wider than the second `foldcallret` span, a phi-discounted fold is decided exactly
+as it was on `origin/main`.
 
-`landing_span_reads_call_effect` asks the question over the whole span again,
-landing statement included, as #654 did. The phi-delta set — the functions where
-`foldcallretphi on` differs from `off` — is then identical to `origin/main`'s on
-`ssh` O2 (68), `tar` O0 (120), `grep` O0 (26) and `e2fsck` O0 (133), the same
-addresses; without the clause `ssh` and `tar` read 69 and 121, the extras being
-exactly the two above. `dash` O2 goes 15 → 16, and that one is *not* the guard:
-the narrowed build and the restored build render `0x12010` identically in both
-arms. The default fix de-folds `sub_11e30(2)` there, which re-dirties the
-neighbouring covers, so `inflate_test` reaches a rejection the discount forgives
-and `v5 = (char *)sub_102c0(dat_21a98), *v5` prints as
-`*(char *)sub_102c0(dat_21a98)` — the call and its dereference are adjacent, so
-nothing moves.
+Measured per function on the `--option foldcallretphi on` dumps, main build
+(`origin/main` 520443d7) against this branch, split on the `// Function:` banner:
 
-Default output is byte-identical with the clause and without it on `ssh` O2,
-`tar` O0, `grep` O0 and `fmt` O2; the clause is reachable only from
-`conflict_is_self_call_effect`, which `check_implied_cover` calls only when the
-option is on.
+| binary | functions | phi delta (on≠off) main / branch | ON arm main≠branch | of those, also changed in the DEFAULT arm |
+|---|---|---|---|---|
+| `ssh` O2 | 1510 | 68 / 68, same set | 15 | 15 |
+| `dpkg` O2 | 800 | 45 / 45, same set | 6 | 6 |
+| `bash` O2 | 2538 | 95 / 95, same set | 43 | 43 |
+| `tar` O0 | 1570 | 120 / 120, same set | 3 | 3 |
+| `grep` O0 | 642 | 26 / 26, same set | 1 | 1 |
+
+The last column is the acceptance test, and it is content equality, not set
+equality: **no function renders differently under `--option foldcallretphi on`
+unless the default rendering changed too.** `ssh` O2 `0xcdd0` and `dpkg` O2
+`0x2e170` are byte-identical between the two ON dumps.
 
 ## Witnesses
 
@@ -124,8 +139,9 @@ option is on.
 | `int u = t * 3;` between call and write | clause 1 (gcc schedules the store first) |
 | `travel.s` (write after the use) | clause 2 |
 | `libselinux.so.1` `sub_16170` | clause 1, in a real binary |
+| `dash` O0 `0xab64` | clause 2, a `STORE` statement in a real binary |
 
-The last one, from the 16-binary sweep:
+`libselinux`:
 
 ```c
 /* before */                              /* after */
@@ -142,61 +158,77 @@ v22 = 0x6666666;                          v24 = 1;
 162ef: mov  %rax,0x50(%rbx)
 ```
 
-## Corpus sweep
-
-16 binaries (`decompile-all`, O0 and O2 of coreutils `fmt`, grep, gzip,
-diffutils `diff`, bzip2, findutils `find`, plus the four ELFs in
-`tests/bug-repro/`), classified by `foldclassify.py`:
-
-| | |
-|---|---|
-| functions | 6207 |
-| functions changed | 57 (0.92%) |
-| `defold` | 46 |
-| `defold-dedup` | 7 |
-| `OTHER-same-calls` | 4 — read by hand, all de-folds the counter missed because the old text already bound the call to something (`v7[2] = sub_1ef10(0x40) + 0x40;`) |
-| `FLAG-call-gained-or-vanished` | **0** |
-| functions that *gain* a fold | 1 (`grep` O2 `0x6a70`, counted twice because `grep` appears as both a decbench and an in-tree ELF) |
-
-A second sweep over a **disjoint** 20 binaries (O0 and O2 of `tar`, `dash`,
-`su`, `e2fsck`, `kmod`, `ls`, `ip`, `libedit`, `libz`, `ssh`; 17,078 functions)
-changes 175: 148 `defold`, 12 `defold-dedup`, 15 read by hand, **0 FLAG**. Four
-of the 15 have a neighbouring call gain a fold — `ip` O0 `0x9a193` nets one
-(`v3 = sub_99d74(a0,sub_9845e(3));`, and objdump has `9a1ab call 9845e / 9a1bd
-call 99d74` back to back, so the folded order is the binary's), and `e2fsck` O0
-`0x6b91b`, `ip` O0 `0x8b389` and `ssh` O2 `0x20ec0` trade a de-fold for a gain in
-the same expression. The two sweeps together: 36 binaries, 23,285 functions, 232
-changed, no call gained or lost.
-| call tokens | 29228 → 29221 (−7, exactly the seven duplicated emissions) |
-| emitted lines | 187182 → 187277 (+95) |
-
-Attribution, from a third build with clause 2 disabled: clause 1 alone changes
-**14** functions and costs 11 folds; clause 2 accounts for the remaining 43.
-
-The seven `defold-dedup` functions are the more interesting half. In `find` at
-`0x1da6f` the folded call was printed at *both* of its sinks:
+`dash` O0 `0xab64` — the call was printed after a store that puts back the byte
+the call is supposed to read as a terminator:
 
 ```c
 /* before */                              /* after */
-v1 = v2[sub_33502(v2)];                   v2 = sub_33502(v3);
-v2[sub_33502(v2)] = '\0';                 v1 = v3[v2];
-                                          v3[v2] = '\0';
+*v3 = v1;                                 v2 = fnmatch(a3,v5,0);
+if (!fnmatch(a3,v4,0))                    *v4 = v1;
+  return v2;                              if (!v2)
+                                            return v3;
 ```
+
+## Corpus sweep
+
+37 binaries, `decompile-all`, before = `origin/main` 520443d7, after = this
+branch: O0 and O2 of coreutils `fmt` and `ls`, `grep`, `gzip`, `diff`, `bzip2`,
+`find`, `tar`, `dash`, `su`, `e2fsck`, `kmod`, `ip`, `libedit`, `ssh`, plus `libz`
+O0, `libselinux` O2, `libacl` O2 and the four ELFs in `tests/bug-repro/`.
+Classified by `foldclassify.py`:
+
+| | |
+|---|---|
+| functions | 23,851 |
+| functions changed | 126 (0.53%) |
+| `defold` | 88 |
+| `defold-dedup` | 19 |
+| `OTHER-same-calls` | 19 — read by hand, all de-folds the counter missed because the old text already bound the call to something (`v7[2] = sub_1ef10(0x40) + 0x40;`), plus `vN` renumbering |
+| `FLAG-call-gained-or-vanished` | **0** |
+| call tokens | 150,151 → 150,130 (−21, exactly the 21 duplicated emissions) |
+| emitted lines | 801,176 → 801,368 (+192) |
+
+A second, disjoint set — O0 of `bash`, `dpkg` and `certtool`, O2 of `rsyslogd`,
+O0 of `crond` (6,610 functions, none in the table above) — changes 39: 28
+`defold`, 2 `defold-dedup`, 9 read by hand, **0 FLAG**.
+
+### Attribution by cause
+
+Five builds of the second span were swept over the same 37 binaries — structural
+conditions only, then plus the storage test, then plus the opcodes — so every
+changed function is attributed to the clause that produced it. A function can have
+two causes.
+
+| clause | functions |
+|---|---|
+| **(i)** a write to persistent or address-tied storage in the span — the GH-657 class | **54** (49 between the call and its use, 6 between the use and the landing statement, 1 both) |
+| **(ii)** a call, `STORE` or `CALLOTHER` between the use and the landing statement | **10** |
+| **(iii)** the landing statement is in another block (47) or the print point is not derivable (21) | **67** |
+
+(iii) is the largest bucket and the least ambiguous: a landing statement in
+another block means the folded call would be evaluated behind a branch or after a
+merge, so it can run at a different time or not at all. The 21 underivable ones
+are conservative declines — a marker, a fan-out, or a chain over eight hops.
+
+All ten of (ii) were read: each has a `STORE` emitted as its own statement between
+the call and the landing statement, and in four of them that store writes memory
+the callee reads (`dash` O0 `0xab64`/`0xac29` restore the byte `fnmatch` sees;
+`ssh` O2 `0x57170` folds `close(fd)` past `*a2 = -1`; `tar` O2 `0x614a0` folds
+`strlen(v11)` past `*a6 = *a6 + 1`). None is a de-fold over an op that shares the
+landing statement.
 
 ## What it costs to read
 
 A de-folded call that sat inside a condition comes back as a comma expression
 rather than a preceding statement, because the condition is where its value is
-consumed: `while (v1 = __ctype_b_loc(), ...)`. Across the two sweeps that shape
-goes from 596 occurrences to 609 (+13), and two `else if` ladders re-nest into
-`else { stmt; if ... }` (`tar` O0 `0x47e86`, `libedit` O0 `0x2c9ce`): the
-`else`-block count moves 14,607 → 14,609. That is the price of not evaluating
-the call after the write, and it is the direction the binary already takes.
+consumed: `while (v1 = __ctype_b_loc(), ...)`. Declarations rise by a handful per
+binary (`varcensus`: `fmt` O2 +2, `grep` O0 +1, `dash` O2 +2, `libselinux` +4).
+That is the price of keeping the call ahead of the write, and it is the order the
+binary already takes.
 
 ## What this does not fix
 
-A call output whose landing statement is in **another block** still folds if the
-call-to-use span is clear — the second clause declines it (`print_chain`'s block
-test), so this is covered, but only while the chain is derivable. `print_chain`
-gives up after 8 hops, on a marker, and on a fan-out; each of those declines the
-fold, which is the conservative direction.
+`print_chain` gives up after 8 hops, on a marker, and on a fan-out; each of those
+declines the fold, which is the conservative direction. A call whose landing
+statement is in another block always declines, even where the block is
+unconditional.
