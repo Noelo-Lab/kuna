@@ -1182,6 +1182,8 @@
    "method": "`kuna decompile-all` over 12 stripped binaries, this branch against a release build of the then-current origin/main (39fdc804) in its own worktree; every changed LINE classified. docs/features/libctypes/corpus-hunk-classification-stdio.txt + classify_stdio.py.",
    "binaries": 12,
    "byte_identical_binaries": 8,
+   "byte_identical_binaries_note": "fmt, ls O2, ls O0, grep, gzip, find, diff, bzip2. The four that move are the two shared objects (libselinux.so.1 68, libstdbuf.so 12 changed sides), useradd (8, the mixed image) and tar (2, one stack slot assigned the copy-relocated stdout).",
+   "reverified_on_rebase": "Re-run in full after rebasing onto origin/main fe3abc23 (structsynth #655, hideshadow #670 and signedness #656 had landed since 39fdc804), against a release build of fe3abc23 in its own worktree: IDENTICAL -- same 45 changed lines, same six buckets (30/7/5/1/1/1), the same single OTHER line in libselinux, the same four movers with the same per-binary counts, the same eight byte-identical binaries. So the classification is a property of this change, not of the base it was first measured against.",
    "changed_lines": 45,
    "classes": {
     "got-slot-named+cast-removed": 31,

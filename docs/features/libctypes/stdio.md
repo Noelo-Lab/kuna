@@ -121,7 +121,10 @@ says the same thing on this feature's fixture.
 `kuna decompile-all` over twelve stripped binaries, this branch against a
 release build of the then-current `origin/main` (`39fdc804`). Full
 classification, with the residue printed in full, in
-`corpus-hunk-classification-stdio.txt`.
+`corpus-hunk-classification-stdio.txt`. Re-run in full against a build of
+`fe3abc23` — the merge base after `structsynth`, `hideshadow` and `signedness`
+landed — and the result is identical line for line: same 45, same buckets,
+same residue, same four movers.
 
 | | lines |
 |---|---:|

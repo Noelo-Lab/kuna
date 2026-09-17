@@ -99,6 +99,33 @@ through a GOT slot that had no name at all), plus `useradd`, which is the mixed
 image, and `tar`, whose single changed line is a stack slot assigned the
 copy-relocated `stdout` and nothing else.
 
+## Re-run against the current merge base
+
+The same sweep against a release build of `fe3abc23` (the merge base after
+`structsynth`, `hideshadow` and `signedness` landed) is identical line for line:
+
+    O0_bzip2_stripped_bzip2.c                  base=  7050 branch=  7050 changed=0
+    O0_coreutils_stripped_ls.c                 base= 11853 branch= 11853 changed=0
+    O0_diffutils_stripped_diff.c               base= 13083 branch= 13083 changed=0
+    O0_findutils_stripped_find.c               base= 20812 branch= 20812 changed=0
+    O2_coreutils_stripped_fmt.c                base=  4074 branch=  4074 changed=0
+    O2_coreutils_stripped_libstdbuf.so.c       base=   194 branch=   194 changed=12
+    O2_coreutils_stripped_ls.c                 base= 13669 branch= 13669 changed=0
+    O2_grep_stripped_grep.c                    base= 18254 branch= 18254 changed=0
+    O2_gzip_stripped_gzip.c                    base=  9349 branch=  9349 changed=0
+    O2_libselinux_stripped_libselinux.so.1.c   base= 17495 branch= 17495 changed=68
+    O2_shadow_stripped_useradd.c               base= 11191 branch= 11191 changed=8
+    O2_tar_stripped_tar.c                      base= 56715 branch= 56715 changed=2
+
+        30  got-slot-named+cast-removed
+         7  got-slot-named
+         5  decl-typed-FILE
+         1  OTHER
+         1  cast-moved
+         1  proto-ret-FILE
+
+with the same single OTHER (libselinux's `__fprintf_chk` line above).
+
 ## The script
 
 `docs/features/libctypes/classify_stdio.py`, run over the two output trees.
