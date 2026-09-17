@@ -208,16 +208,16 @@
  "speed_forced_off": false,
  "speed_note": "interleaved min-of-21 whole-binary `decompile-all` on coreutils fmt -O2, re-run on the shipped round-4 build: +0.17% on the minimum (4.0755s upstream vs 4.0824s auto); the earlier pooled min-of-42 on the round-3 build was +0.21%. The MEDIAN is not usable on this box under other agents' load (-1.58% here, +4.56% then -4.85% on the round-3 pair), i.e. the noise is larger than anything this pass can cost. On the DEFAULT path the whole pass is one `SignPolicy::is_active` test per function plus one `HashMap::is_empty` in `retain_sole_named`, and `drop_cast` short-circuits, so `upstream` costs nothing measurable.",
  "count_sites": {
-  "settables": 213,
+  "settables": 214,
   "tiers": [
    68,
-   82,
+   83,
    63
   ],
-  "stage_corpus_files": 303,
+  "stage_corpus_files": 304,
   "phase_catalog_json": "recaptured",
   "catalog_exact_buckets_touched": "none (change_kind presentation-default and source_decompiler kuna are not exact-pinned buckets)",
-  "note": "re-derived on this tree after rebasing onto origin/main fc7c7a22 (foldcallretphi #654) with `python3 -m scripts.repipe.counters --rederive/--fix`; the two count-test function NAMES moved with them (settable_count_is_213, tier_counts_are_68_core_82_transform_63_analysis)."
+  "note": "re-derived on this tree after rebasing onto origin/main 83830e86 (ptrfromuse #659) with `python3 -m scripts.repipe.counters --rederive/--fix` on the freshly built tree; the count-test function NAMES moved with them (settable_count_is_214, tier_counts_are_68_core_83_transform_63_analysis, fixture_has_all_214_settables), and the comma-terminated catalog-row count went 212 -> 213. docs/baseline-stages.json was RE-RECORDED rather than hand-merged: either side of the rebase conflict dropped ptrfromuse's 11 assertions, so the new baseline is main's 1054 plus this branch's 10 = 1064, verified by set-diffing against `git show origin/main:docs/baseline-stages.json` (only-in-main: empty)."
  },
  "dwarf_accuracy": {
   "method": "238 unstripped DWARF twins (the compiled/ binaries beside the stripped images decbench scores) across coreutils, grep, gzip, diffutils, bzip2, findutils and tar at -O0 and -O2. Whole-image decompile-all once per value; every plain-integer local declaration whose name DWARF also knows INSIDE THE SAME FUNCTION, at the same width, is compared against the DWARF base type's encoding. Signedness is binary, so a declaration that differs between two values is right in exactly one of them.",
@@ -475,14 +475,14 @@
  ],
  "gates": {
   "make test": "675/675 PARITY OK",
-  "make test-stages": "1053/1053 PARITY OK",
-  "make test-cli": "178/178",
-  "make check-spec": "OK lenient + strict",
-  "kuna catalog --check": "OK (213 settables)",
+  "make test-stages": "1064/1064 PARITY OK",
+  "make test-cli": "178/178 (one run scored 177/178 under the concurrent workspace-suite lane -- the known wall_ms flake; clean on re-run)",
+  "make check-spec": "OK lenient + OK strict",
+  "kuna catalog --check": "OK (214 settables)",
   "counters --check": "no drift",
   "docs/options.md": "byte-fresh",
-  "make rust-test": "RUST_TEST_RC=0, 7110 passed / 0 failed (.scratch/rust-test-r8.log, single lane on the rebased tree)",
-  "CI": "Tests workflow green on 17d2a7ef: parity gates + cargo workspace suite (full-ci label)"
+  "make rust-test": "RUST_TEST_RC=0, 7116 passed / 0 failed (.scratch/rust-test-r12.log, single lane on the rebased tree)",
+  "CI": "Tests workflow dispatched on the rebased head; PR is MERGEABLE again after the rebase"
  },
  "care_uint_int_claim": {
   "corrected": "the demand set is a strict SUPERSET of the ops whose get_input_cast passes care_uint_int = true. The four ordered comparisons, / %, >> and the two extensions pass true; INT_SCARRY/INT_SBORROW/INT_CARRY, a same-width CPUI_CAST and INT_LEFT all fall through to the dispatch's DEFAULT arm, which passes false (decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs, get_input_cast).",
@@ -493,5 +493,6 @@
    "docs/features/signedness/proposal.md",
    "docs/features/signedness/analysis.md"
   ]
- }
+ },
+ "rebase_note": "rebased onto origin/main 83830e86. ptrfromuse (#659) is `default off`, so the default decompilation path is unchanged and every measurement in this record -- all taken with only `signedness` flipped -- still holds. Re-verified end to end on the rebased tree anyway: the stage-test repro still reproduces (`uint4 v1; ... a2 < (int4)v1` -> `int4 v1; ... a2 < v1`) and fmt -O2 sub_3060 still flips `unsigned int v1/v3` to `int` and drops the `(int)v1` cast under `auto`."
 }
