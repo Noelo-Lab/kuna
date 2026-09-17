@@ -812,7 +812,8 @@
    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
    "counters --check": "no drift: every hard-coded site agrees with the derived truth",
    "docs/options.md": "byte-fresh (`kuna catalog --markdown | diff - docs/options.md` clean)",
-   "make rust-test": "RUST_TEST_RC=0 via the lane script on the branch tip (LANE: start 2026-09-17T04:17:45Z, done rc=0 04:33:07Z): 415 `test result: ok` blocks, 0 `test result: FAILED`. The first round found the two expectations this PR moves (catalog_bytecompat's phase_catalog.json capture, ghidra_sim_faillog_pins' C-line count); both are fixed in this branch and the round-2 run is clean."
+   "make rust-test": "RUST_TEST_RC=0 via the lane script on the branch tip (LANE: start 2026-09-17T05:05:58Z, done rc=0 05:21:43Z): 415 `test result: ok` blocks, 7,098 tests ok, 0 `test result: FAILED`, options_md_matches_the_generator_byte_for_byte ok. An earlier round found the two expectations this PR moves (catalog_bytecompat's phase_catalog.json capture, ghidra_sim_faillog_pins' C-line count); both are fixed in this branch and every round since is clean.",
+   "off_arm_is_still_main": "all nine sweep binaries, this branch's rebuilt `kuna --option libctypes off` vs a release binary built from origin/main (f02365cc): byte-identical -- fmt 4069, ls 13677, grep 18257, tar 56725, find 20839, diff 13102, gzip 9358, bzip2 9769, useradd 11487 lines. Re-run after the CLI env-bridge change."
   }
  },
  "speed_flip": {
