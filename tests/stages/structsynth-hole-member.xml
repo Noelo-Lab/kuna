@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structsynth: an offset nobody dereferenced is still a declared member.
+
+    Source shape (hand-assembled, no prologue, so the parameter arrives in RDI
+    with nothing declaring its type):
+
+        void hole(void *p) {
+            char **q = *(char ***)p;              // offset 0, 8 bytes
+            long   n = *(long *)((char *)p + 24); // offset 0x18, 8 bytes
+            q[n / 8] = (char *)p + 8;             // the address of offset 8
+        }
+
+        48 8b 07        mov    rax,[rdi]
+        48 8b 57 18     mov    rdx,[rdi+0x18]
+        48 8d 4f 08     lea    rcx,[rdi+8]
+        48 89 0c 10     mov    [rax+rdx],rcx
+        c3              ret
+
+    Offsets 0 and 0x18 are the evidence; offset 8 is never dereferenced, so it
+    is not a field.  But the printer resolves an address inside a structure to
+    the field that contains it and, when no field does, invents the member name
+    `field_0x<hex>` anyway, so `p + 8` prints as `&p->field_0x8` whatever the
+    layout says.  The layout therefore has a member at every offset: the gap is
+    `uint1 field_0x8[16]`, alignment 1 at the offset it is named for, and no
+    part of the structure is left for `compose_type_body` to fill with
+    `undefined1 _pad<hex>[N]`, which the body would have named but the exported
+    header would not have declared.
+
+    Default (assert #1): the address is raw pointer arithmetic.
+
+    With `option structsynth param` (asserts 2 to 5): the parameter is retyped,
+    the body names offset 8, the layout declares a member there, and the
+    structure has no padding member at all.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488b07488b5718488d4f0848890c10c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="hole"/>
+</binaryimage>
+<script>
+  <com>lo fu hole</com>
+  <com>option structsynth off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structsynth param</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print C types</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTSYNTH-HOLE #1: default leaves the address as raw pointer arithmetic" min="1" max="1">&amp;a0\[1\]</stringmatch>
+<stringmatch name="STRUCTSYNTH-HOLE #2: the parameter is retyped to the synthesized structure" min="1" max="1">struct_0 \*a0</stringmatch>
+<stringmatch name="STRUCTSYNTH-HOLE #3: the body names the undereferenced offset" min="1" max="1">a0-&gt;field_0x8</stringmatch>
+<stringmatch name="STRUCTSYNTH-HOLE #4: and the layout declares a member there" min="1" max="1">field_0x8\[16\]</stringmatch>
+<stringmatch name="STRUCTSYNTH-HOLE #5: no part of the structure is padding the header would not name" min="0" max="0">_pad</stringmatch>
+</decompilertest>

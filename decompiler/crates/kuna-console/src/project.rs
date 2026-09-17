@@ -1636,7 +1636,9 @@ fn render_readme_inner(
         "- `{file_name}.h` — recompilation aid: the generated core-typedef prelude (the\n\
          \x20 Ghidra/kuna `undefined` family included), the user-defined type definitions\n\
          \x20 recovered during decompilation, and one prototype per decompiled function\n\
-         \x20 (token-identical to its `.c` definition line).\n"
+         \x20 (token-identical to its `.c` definition line). Compile it for the target's\n\
+         \x20 data model — the prelude names the pointer width — or a recovered aggregate\n\
+         \x20 with a pointer member lays out differently here than in the binary.\n"
     ));
     match layout {
         ReadmeLayout::Standard => out.push_str(&format!(

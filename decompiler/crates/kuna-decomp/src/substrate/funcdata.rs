@@ -356,6 +356,15 @@ pub struct Funcdata {
     /// `(comment_type, placement_address, text)`; the function address is
     /// `baseaddr`.
     pending_comments: Vec<(kuna_base::types::uint4, Address, String)>,
+    /// (kuna `structsynth`) Did the last `ActionInferTypes` pass reach the
+    /// lattice fixpoint -- i.e. run a full propagation that changed nothing?
+    ///
+    /// `ActionInferTypes::apply` returns 0 unconditionally (a type change is
+    /// deliberately not a data-flow change), so nothing in the schedule waits for
+    /// propagation to settle and an action placed after it fires on the FIRST of
+    /// up to seven passes.  A pass that wants a decided pointer picture reads
+    /// this instead.
+    kuna_infertypes_settled: bool,
     /// (kuna) Why the decompile pipeline aborted for this function, when it did.
     ///
     /// A caught per-function abort (`LOSS-131`) unwinds and discards the
@@ -509,6 +518,7 @@ impl Funcdata {
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
             pending_comments: Vec::new(),
+            kuna_infertypes_settled: false,
             kuna_pipeline_failure: None,
             kuna_rejected_flow: Vec::new(),
             kuna_wire_symbols: Vec::new(),
@@ -1769,6 +1779,15 @@ impl Funcdata {
     pub fn set_type_recovery_exceeded(&mut self) {
         self.flags |= funcdata_flags::typerecovery_exceeded;
     }
+    /// (kuna `structsynth`) Record whether the propagation pass just run left the
+    /// type lattice unchanged.
+    pub fn set_kuna_infertypes_settled(&mut self, val: bool) {
+        self.kuna_infertypes_settled = val;
+    }
+    /// (kuna `structsynth`) Has type propagation reached its fixpoint?
+    pub fn kuna_infertypes_settled(&self) -> bool {
+        self.kuna_infertypes_settled
+    }
     /// Toggle whether normalization transforms will be performed
     /// (C++ `setNormalization`).
     pub fn set_normalization(&mut self, val: bool) {
@@ -2755,6 +2774,36 @@ impl Funcdata {
             .vbank_mut()
             .get_mut(vn)
             .map(|v| v.update_type(ct))
+            .unwrap_or(false);
+        if changed {
+            if let Some(h) = high {
+                if let Some(hh) = self.high_bank_mut().get_mut(h) {
+                    hh.type_dirty();
+                }
+            }
+        }
+        changed
+    }
+
+    /// C++ `Varnode::updateType(Datatype*,bool,bool)` (`varnode.cc:485-500`) with
+    /// the `high->typeDirty()` the Varnode-local
+    /// [`Varnode::update_type_locked`](crate::varnode::Varnode::update_type_locked)
+    /// cannot reach.  Without the notification `HighVariable::update_type`
+    /// returns at its first line, so `high_get_type` -- and with it the printed
+    /// prototype and the merge tests that compare high types by `Rc` identity --
+    /// keeps reading the stale type.  Returns whether the Datatype changed.
+    pub fn vn_update_type_locked(
+        &mut self,
+        vn: VarnodeId,
+        ct: std::rc::Rc<crate::dtype::Datatype>,
+        lock: bool,
+        over: bool,
+    ) -> bool {
+        let high = self.vbank().get(vn).and_then(|v| v.get_high());
+        let changed = self
+            .vbank_mut()
+            .get_mut(vn)
+            .map(|v| v.update_type_locked(ct, lock, over))
             .unwrap_or(false);
         if changed {
             if let Some(h) = high {

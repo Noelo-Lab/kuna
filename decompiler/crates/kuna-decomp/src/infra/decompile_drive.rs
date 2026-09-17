@@ -1623,7 +1623,20 @@ pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     use crate::dtype::type_metatype::*;
     let mut out = String::new();
     out.push_str("/* kuna recompile prelude (generated): core scalar typedefs */\n");
-    out.push_str("#include <stdbool.h>\n\n");
+    out.push_str("#include <stdbool.h>\n");
+    // A recovered aggregate can hold target pointers, and a host that compiles
+    // this header for a different data model sizes them differently and moves
+    // every field after such a member -- which also moves what `p[1]` means in
+    // the body.  Name the target's width, and the flag when it is not the
+    // 64-bit host default.
+    if let Some(bytes) = arch.manage().get_default_data_space().map(|s| s.get_addr_size()) {
+        let flag = if bytes == 4 { " (`gcc -m32`)" } else { "" };
+        out.push_str(&format!(
+            "/* target pointers are {bytes} bytes: compile for that data model{flag}, or a\n   \
+             `T *` member of a different width moves every field after it */\n"
+        ));
+    }
+    out.push('\n');
 
     // Generated typedefs for the interned core types (dependent_order filtered
     // on is_core_type; sorted by name for a stable, readable block).

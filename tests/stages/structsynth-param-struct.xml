@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structsynth: synthesize a structure type from the constant-offset
+    dereferences of a pointer parameter.
+
+    Source shape (hand-assembled, no prologue, so the parameter arrives in RDI
+    with nothing declaring its type):
+
+        int two_fields(void *p) {
+            unsigned char *s = *(unsigned char **)p;   // offset 0, 8 bytes
+            int n = *(int *)((char *)p + 8);           // offset 8, 4 bytes
+            return n + *s;
+        }
+
+        48 8b 07        mov    rax,[rdi]
+        8b 4f 08        mov    ecx,[rdi+8]
+        0f b6 00        movzx  eax,byte [rax]
+        01 c8           add    eax,ecx
+        c3              ret
+
+    The dereference at offset 0 is what makes RDI a pointer to type inference;
+    `structsynth` never invents pointer-ness, so a parameter the engine still
+    believes is an integer is left alone.
+
+    Default (assert #1): the two reads are raw offset arithmetic over an
+    untyped pointee, and the reader carries the layout in their head.
+
+    With `option structsynth param` (asserts 2 to 6): once type propagation has
+    settled, the two constant offsets are completed into `struct_0` and the
+    parameter is type-locked to `struct_0 *`, so both reads render as fields and
+    the recovered layout is printable.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488b078b4f080fb60001c8c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="two_fields"/>
+</binaryimage>
+<script>
+  <com>lo fu two_fields</com>
+  <com>option structsynth off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structsynth param</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print C types</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTSYNTH #1: default leaves the offset-8 read as raw pointer arithmetic" min="1" max="1">\*\(int4 \*\)&amp;a0\[1\]</stringmatch>
+<stringmatch name="STRUCTSYNTH #2: the parameter is retyped to the synthesized structure" min="1" max="1">struct_0 \*a0</stringmatch>
+<stringmatch name="STRUCTSYNTH #3: the offset-8 read renders as a field" min="1" max="1">a0-&gt;field_0x8</stringmatch>
+<stringmatch name="STRUCTSYNTH #4: the offset-0 read renders as a field" min="1" max="1">a0-&gt;field_0x0</stringmatch>
+<stringmatch name="STRUCTSYNTH #5: offset 0 keeps the pointer type its loaded value carries" min="1" max="1">uint1 \*field_0x0;</stringmatch>
+<stringmatch name="STRUCTSYNTH #6: offset 8 is a 4-byte field, not a padded 8-byte one" min="1" max="1">int4 field_0x8;</stringmatch>
+</decompilertest>

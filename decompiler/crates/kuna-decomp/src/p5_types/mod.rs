@@ -21,3 +21,4 @@ pub mod kuna_ptrdepth;
 pub mod kuna_codescalar;
 pub mod kuna_ptrfromuse; // (kuna) type a dereferenced-only function input as a pointer
 pub mod kuna_pebnames; // (kuna) type the Windows TEB segment base so PEB/TEB field reads are named
+pub mod kuna_structsynth; // (kuna) synthesize a struct type from a pointer parameter's constant-offset dereferences

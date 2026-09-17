@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_215() {
+fn settable_count_is_216() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -154,12 +154,13 @@ fn settable_count_is_215() {
     // +1 for `libctypes` (P1 named libc/POSIX aggregate pointers in the prototype tables).
     // +1 for `foldcallretphi` (P6 call-result folding past the merge phalanx).
     // +1 for `ptrfromuse` (P5 use-derived parameter pointer).
-    assert_eq!(kuna_num_settables(), 215);
-    assert_eq!(SETTABLE_TABLE.len(), 215);
+    // +1 for `structsynth` (P5 struct synthesis over a pointer parameter).
+    assert_eq!(kuna_num_settables(), 216);
+    assert_eq!(SETTABLE_TABLE.len(), 216);
 }
 
 #[test]
-fn tier_counts_are_68_core_84_transform_63_analysis() {
+fn tier_counts_are_68_core_85_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -293,7 +294,9 @@ fn tier_counts_are_68_core_84_transform_63_analysis() {
     // pointers in the prototype tables).
     // transform 80 -> 81: +1 for `foldcallretphi` (P6 call-result folding).
     // transform 81 -> 82: +1 for `ptrfromuse` (P5 use-derived parameter pointer).
-    assert_eq!((core, transform, analysis), (68, 84, 63));
+    // transform 84 -> 85: +1 for `structsynth` (P5 struct synthesis over a
+    // pointer parameter).
+    assert_eq!((core, transform, analysis), (68, 85, 63));
 }
 
 #[test]
@@ -779,6 +782,10 @@ fn option_values_live_value_present_for_87() {
                             // the same reason `pebnames` is here. Its live value
                             // is `Architecture::ptr_from_use`.
                             | "ptrfromuse"
+                            // (kuna) `structsynth` takes a MODE (`off|param`),
+                            // for the same reason.  Its live value is
+                            // `Architecture::struct_synth`.
+                            | "structsynth"
                             | "arraycoverwidth"
                             | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like
@@ -1055,7 +1062,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 210 -> 211: +1 for `foldcallretphi`.
     // 211 -> 212: +1 for `ptrfromuse`; its P5 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
-    assert_eq!(json.matches("},\n").count(), 214);
+    // 214 -> 215: +1 for `structsynth`.
+    assert_eq!(json.matches("},\n").count(), 215);
 }
 
 #[test]

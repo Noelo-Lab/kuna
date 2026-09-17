@@ -565,6 +565,162 @@ Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
   architecture's `funcptr_align` mode bits. Inert on architectures with no
   alignment encoding (`funcptr_align == 0`).
 
+**(kuna) Struct synthesis from access offsets (`structsynth`).** A stripped
+binary keeps no record of the aggregate a pointer points at, so the lattice above
+gives a dereferenced parameter a pointee it can prove and stops there:
+`unsigned long *`, and every field read rendered as `*(unsigned int *)&a0[1]`.
+[`structsynth`](../options.md) (`off|param`, default `off`) invents the missing
+layout from the accesses themselves.
+
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
+(ActionStructSynth)` runs inside `mainloop` immediately after `ActionInferTypes`
+in the `typerecovery` group, so the pointer-arithmetic pools below rewrite the
+accesses on the same iteration. It fires **once** per function, and only once
+propagation has reached its fixpoint: `ActionInferTypes::apply` returns 0
+unconditionally — a type change is deliberately not a data-flow change — so
+nothing else in the schedule can observe that the lattice has stopped moving,
+and an action placed after it would otherwise read the first of up to seven
+passes. `run_infer_types` returning "no change" therefore records a plateau flag
+on the `Funcdata` (`funcdata.rs (kuna_infertypes_settled)`), and a function whose
+lattice never settled (the 7-pass ceiling) declines.
+
+The evidence is one read-only walk of the live `LOAD`/`STORE` ops. Each address
+operand is peeled through `COPY`, `CAST` and constant `INT_ADD`/`PTRADD`/`PTRSUB`
+to a `(base, byte offset)` pair; the access width and the loaded or stored
+value's type are recorded per offset. Phis are **not** peeled. Chasing a
+loop-carried `MULTIEQUAL` to its root reports offsets `{0, 1}` for
+`while (*p) p = &p[1]`, which would synthesize a two-field structure over a
+string, so a base that reaches a phi at all declines — an induction variable is
+an array walk, a different hypothesis.
+
+Pointer-ness is the one fact the pass never invents: the base must already carry
+`TYPE_PTR`, which is why a parameter the lattice still believes is an integer —
+`fmt`'s `get_line`, whose first parameter is the real `FILE *` — is left for a
+named-type pass. A pointee that is a *named* composite (DWARF, a parsed
+declaration, a libc shell, an earlier synthesized structure) wins outright, as
+does a type-locked base. The remaining declines are: a non-constant offset term
+(that is an array, TRex §3.3.3), the base used as an integer, fewer than two
+distinct offsets, no access at offset 0, an offset that is negative or at least
+`0x8000`, a uniform-stride run of one width (a `memset`/`memcpy` walk rather
+than a layout, Howard §4.5), and a stack- or spacebase-rooted base — the frame
+is `varmap.rs`'s to lay out and is never wrapped. The array signal does not need
+a dereference: `p + n` for a non-constant `n`, even where only a callee
+dereferences the result, is an index, which is what `ls`'s `mpsort` computes when
+it passes `&base[n]` to its recursive callee while reading `base[0]` and
+`base[1]` itself. The uniform-run rule tolerates a gap below pointer width — a
+function that writes ten of a buffer's twelve bytes is ordinary, and demanding
+exact contiguity made any such buffer a structure — but not at pointer width,
+where a record with an untouched member between two observed ones is the common
+case (`gnulib`'s `struct hash_table` is ten pointer-sized members whose readers
+touch different subsets of them). The rule takes `int fd[2]` only in its plain form; an optimized
+one that also saves and restores the pair as a single 8-byte word has mixed
+widths, and it is the layout prune below that declines it, by leaving a single
+field where two elements sat inside the wide access. A buffer whose *last*
+element is written wider than the rest escapes both rules and is the pass's known
+false-positive shape: `ls`'s `strmode` fills a `char[12]` with ten one-byte
+stores and one two-byte store, so the widths are not uniform and the wide store
+is past the narrow ones rather than over them.
+
+At a conflicting offset the **widest** access wins. A field wider than an access
+renders as a cast of the field (`(uint4)w->b`); a field narrower than an access
+loses the field name altogether (`*(uint1 **)w`).
+
+The layout is then **pruned to one a C compiler reproduces byte for byte**. The
+declaration is exported as source by `kuna decompile-project`, so it is only
+worth anything if the compiler reading it back puts `field_0xK` at offset K, and
+three shapes of access break that without changing a character of the body,
+which goes on naming its fields as though the header agreed: an access whose
+width the exported prelude cannot spell at that width (`undefined3` is a 4-byte
+`unsigned int` there, `undefined5`/`6`/`7` are 8-byte); an access at an offset
+its own alignment does not divide, which the compiler pads forward, moving every
+later field; and an access inside the bytes a wider access already claimed,
+where a second field moves every later field by its own width. Each is dropped
+to a hole. What survives is naturally aligned and 1, 2, 4 or 8 bytes wide, and
+two such ranges either nest or are disjoint, so the surviving layout cannot
+overlap at all — one sweep in offset order decides it.
+
+What survives is then made **dense**: every byte from 0 to the end of the last
+surviving field belongs to a member, a gap becoming an
+`undefined1 field_0x<hex>[N]` member of alignment 1 at the offset it is named
+for. That is not tidiness. `printc.cc:1015-1033` resolves an address inside a
+structure to the field that contains it and, when no field does, invents the
+member name `field_0x<hex>` anyway, while `compose_type_body` renders the same
+gap in the exported header as `undefined1 _pad<hex>[N]` — so a body would name a
+member the header does not declare. The gaps are reachable without a
+dereference, because address arithmetic gets there: `p + 8` handed to a callee
+prints `&p->field_0x8`. Filler is always an array, one byte included, so that an
+array-typed member is exactly the padding and never a field the pass claims.
+
+The structure's size is the end of its last surviving field rounded up to the
+width of the widest surviving field, and the bytes that rounding adds are
+covered by an `undefined1` filler member like any other gap — so a layout whose
+last field is a `uint4` at 0xc8 next to an `int8` somewhere below it is 0xd0
+bytes with `undefined1 field_0xcc[4]` on the end, not 0xcc bytes. That is what a
+C compiler does with the same members, and the body depends on it: `a0[1]` on a
+structure the decompiler sized 0xcc and the compiler sizes 0xd0 is a different
+address, which no amount of correct `offsetof` catches. The bound on the size is
+still SecondWrite §5.1's `UpdateStructure` rule — the evidence that became
+fields, not the evidence that was pruned; taking the size from the accesses
+instead let one misaligned far access declare a 64 KB type for a 16-byte object.
+There is no `variable_length` flag: that flag makes `propagate_from_pointer`
+refuse the pointee outright and gives `AddTreeState` a zero size, which
+invalidates every `TypePointerRel`. Past the end there is no member and no
+invented name: the printer spells the address as an element of the structure
+array plus a byte offset, so a pruned read at 0x10001 of a 16-byte layout
+renders as
+`*(uint4 *)((int8)&a0[0x1000].field_0x0 + 1)` — the right address, readable only
+by accident.
+A field takes the type of the value the access carried when the widths agree and
+the type's C spelling is its own width — a scalar or a pointer — and
+`undefined<N>` otherwise.
+
+Names are program-wide `struct_N`, probed with `TypeFactory::find_by_name` and
+reused whenever the layout signature — `(offset, size, metatype, pointee name)`
+per field plus the total size — matches exactly. Every mint declines on an error
+rather than propagating one: `find_add` rejects a second, different definition of
+a held name. Dedup is exact, not subsumptive, so two functions that touch
+overlapping but unequal subsets of one real structure still get two names. The
+structure is **completed before** its pointer is taken, because completing a
+structure mints a fresh `Rc` and the merge tests compare high types by pointer
+identity. The install itself is `funcdata.rs (vn_update_type_locked)`, which
+pairs `Varnode::update_type_locked` with `HighVariable::type_dirty()` — without
+the notification `high_get_type` keeps handing back the stale type, and the
+printed prototype never changes. The change is signalled by bumping the action's
+`count`, the only signal `Action::perform` reads.
+
+Because the ledger lives in the program's `TypeFactory`, `struct_N` is
+program-wide under `kuna decompile-all` and `kuna decompile-project`, which load
+once; `kuna decompile` spawns one engine per function, so there each function
+numbers from `struct_0` again.
+
+The synthesized layout is printable rather than only inferable: the P9 option
+[`structdefs`](../options.md) prints the definition of every composite a
+function's C names reach, so `--option structdefs on --option structsynth param`
+puts `struct struct_0 { ... };` — filler members and all — above the function
+whose parameter this pass retyped, and carries the same text in the per-function
+`types` array of `decompile-all --json`. Neither option is on by default, so the
+pair changes nothing unless both are asked for.
+
+**The default is `off`, and it is off on evidence.** Flipping it to `param` and
+re-running the corpora moves **no** datatest assertion (675/675) and four stage
+assertions, each of them the intended rendering — `ELFMAIN #1`/`#2`, where the
+entry's untyped argument vector becomes `struct_0 *` and `a1[1]` becomes
+`a1->field_0x8`, and `PEBNAMES-X86 #6`/`#8`, where an untyped FS-segment base
+becomes `struct_0 *` and `v4[0xc]` becomes `v4->field_0x30`, the same byte
+offset rescaled. Speed is not the reason either: whole-binary `decompile-all`
+moves between −1.05% and +1.34% over six binaries, inside the movement of an
+inert control binary on the same run. Two things keep it opt-in. On
+`decbench`'s `type_match` over 444 slices the flip is worth −1 perfect function
+(959 → 958) and −0.049% of the aggregate, because the metric compares pointee
+spellings by name and a synthesized `struct_0 *` can never intersect a
+ground-truth `WORD *`. And the type lock changes which blocks the structurer
+duplicates: over a 15-binary, 5,431-function sweep, one more function
+(`findutils` `find` O2 `sub_f620`) lands on the emitter defect where a `goto`
+survives but its target label is never written — a defect already present in
+nine functions of the same corpus with the option off. A pass that reshapes
+block duplication stays opt-in until that is fixed, and for the same reason it
+is not a member of the `aggressive` preset.
+
 Type facts are *consumed* back into the graph by the typerecovery rules: the
 `oppool2` pool (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_5.rs
 (RulePushPtr, RuleStructOffset0, RulePtrArith)`) materializes PTRADD/PTRSUB

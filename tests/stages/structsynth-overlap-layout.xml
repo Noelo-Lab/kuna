@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structsynth: an access inside a wider access's bytes is not a field.
+
+    Source shape (hand-assembled, no prologue, so the parameter arrives in RDI
+    with nothing declaring its type):
+
+        void overlap(void *p) {
+            unsigned long lo = *(unsigned long *)p;       // offset 0, 8 bytes
+            int           hi = *(int *)((char *)p + 4);   // offset 4, 4 bytes
+            *(unsigned long *)((char *)p + 8) = lo + hi;  // offset 8, 8 bytes
+        }
+
+        48 8b 07        mov    rax,[rdi]
+        48 63 4f 04     movsxd rcx,[rdi+4]
+        48 01 c8        add    rax,rcx
+        48 89 47 08     mov    [rdi+8],rax
+        c3              ret
+
+    The offset-4 read lands inside the 8 bytes the offset-0 read already claims,
+    so it is not a field.  A structure that declared one anyway,
+    `{int8 field_0x0; int4 field_0x4; int8 field_0x8;}`, is a different program
+    once a compiler reads the exported header back: `field_0x8` lands at
+    offset 16, and the body that names the fields and the header that declares
+    them no longer describe the same object.  The interior access renders as a
+    cast off the field that contains it instead.
+
+    Default (assert #1): the two 8-byte accesses are raw pointer arithmetic.
+
+    With `option structsynth param` (asserts 2 to 5): offsets 0 and 8 are the
+    layout, offset 4 is not in it, and the offset-4 read is a cast off the
+    offset-0 field.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488b0748634f044801c848894708c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="overlap"/>
+</binaryimage>
+<script>
+  <com>lo fu overlap</com>
+  <com>option structsynth off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structsynth param</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print C types</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTSYNTH-OVERLAP #1: default leaves the offset-8 store as raw pointer arithmetic" min="1" max="1">a0\[1\] = \*a0</stringmatch>
+<stringmatch name="STRUCTSYNTH-OVERLAP #2: the parameter is retyped to the synthesized structure" min="1" max="1">struct_0 \*a0</stringmatch>
+<stringmatch name="STRUCTSYNTH-OVERLAP #3: offset 0 is an 8-byte field" min="1" max="1">int8 field_0x0;</stringmatch>
+<stringmatch name="STRUCTSYNTH-OVERLAP #4: offset 8 is an 8-byte field" min="1" max="1">int8 field_0x8;</stringmatch>
+<stringmatch name="STRUCTSYNTH-OVERLAP #5: the interior read is a cast off field_0x0, not a field of its own" min="0" max="0">field_0x4</stringmatch>
+</decompilertest>
