@@ -1,0 +1,577 @@
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      v58 = a0 + (long)(int)(unsigned int)*(unsigned char *)(a0 + 0x6a8 + (long)v76) * 0x102 + 0x934c;
+      v59 = a0 + (long)(int)(unsigned int)*(unsigned char *)(a0 + 0x6a8 + (long)v76) * 0x408 + 0x9958;
++++ void
+      v57 = (long)(int)(unsigned int)*(unsigned char *)((long)a0 + (long)v76 + 0x6a8) * 0x102 + 0x934c;
+      v58 = (long)(int)(unsigned int)*(unsigned char *)((long)a0 + (long)v76 + 0x6a8) * 0x408 + 0x9958;
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-bzip2-bzip2 sub_b9c1@0xb9c1 [OTHER]
+--- off
+      sub_b31d(a0,*(char *)(v58 + (unsigned long)v54),*(unsigned int *)(v59 + (unsigned long)v54 * 4));
++++ void
+      sub_b31d(a0,*(char *)((long)a0 + (unsigned long)v54 + v57),*(unsigned int *)((long)a0 + (unsigned long)v54 * 4 + v58));
+
+=== O0-coreutils-ls sub_1b822@0x1b822 [OTHER]
+--- off
+  a0 = (*(char *)(a0 + 8)) ? a0 + 9 : 0; // branch-flip
+  v1 = sub_1b7dd(a0) == 0;
++++ void
+  v1 = (*(char *)((long)a0 + 8)) ? (long)a0 + 9 : 0; // branch-flip
+  v2 = sub_1b7dd(v1) == 0;
+
+=== O0-dash-dash sub_ec74@0xec74 [OTHER]
+--- off
+  sub_ef38(a0 != 0,a0);
++++ void
+  sub_ef38(a0 != NULL,a0);
+
+=== O0-diffutils-diff sub_1d750@0x1d750 [OTHER]
+--- off
+  a0 = (*(char *)(a0 + 8)) ? a0 + 9 : 0; // branch-flip
+  v1 = sub_1d70b(a0) == 0;
++++ void
+  v1 = (*(char *)((long)a0 + 8)) ? (long)a0 + 9 : 0; // branch-flip
+  v2 = sub_1d70b(v1) == 0;
+
+=== O0-tar-tar sub_18d26@0x18d26 [OTHER]
+--- off
+  *(bool *)&v7[10] = a1 == 0;
++++ void
+  *(bool *)&v7[10] = a1 == NULL;
+
+=== O0-tar-tar sub_6c7f5@0x6c7f5 [OTHER]
+--- off
+        return 0;
++++ void
+        return NULL;
+
+=== O0-tar-tar sub_6c7f5@0x6c7f5 [OTHER]
+--- off
+        return 0;
++++ void
+        return NULL;
+
+=== O0-tar-tar sub_6c7f5@0x6c7f5 [OTHER]
+--- off
+      return 0;
++++ void
+      return NULL;
+
+=== O0-tar-tar sub_6c7f5@0x6c7f5 [OTHER]
+--- off
+      return 0;
++++ void
+      return NULL;
+
+=== O0-tar-tar sub_6c7f5@0x6c7f5 [OTHER]
+--- off
+      return 0;
++++ void
+      return NULL;
+
+=== O0-tar-tar sub_6c7f5@0x6c7f5 [OTHER]
+--- off
+    return 0;
++++ void
+    return NULL;
+
+=== O0-tar-tar sub_6c7f5@0x6c7f5 [OTHER]
+--- off
+    return 0;
++++ void
+    return NULL;
+
+=== O0-tar-tar sub_6c7f5@0x6c7f5 [OTHER]
+--- off
+    v9 = 0;
++++ void
+    v9 = NULL;
+
+=== O0-tar-tar sub_6c7f5@0x6c7f5 [OTHER]
+--- off
+  return 0;
++++ void
+  return NULL;
+
+=== O0-tar-tar sub_7431c@0x7431c [OTHER]
+--- off
+          return 0;
++++ void
+          return NULL;
+
+=== O0-tar-tar sub_7431c@0x7431c [OTHER]
+--- off
+      return 0;
+    if (*(uint1 *)(v7 + 0x68) & 0x40) {
+      *a0 = sub_74b36(a1,v7 + 8);
++++ void
+      return NULL;
+    if (*(uint1 *)((int8)v6 + 0x68) & 0x40) {
+      *a0 = sub_74b36(a1,(int8)v6 + 8);
+
+=== O0-tar-tar sub_7431c@0x7431c [OTHER]
+--- off
+        return 0;
+      v7 = *(int8 *)(v3 * 8 + *(int8 *)(a1 + 0xb8));
++++ void
+        return NULL;
+      v6 = *(void **)(v2 * 8 + *(int8 *)((int8)a1 + 0xb8));
+
+=== O0-tar-tar sub_79532@0x79532 [OTHER]
+--- off
+  if (*(char *)(a0 + 8)) // branch-flip
+    a0 += 9;
++++ void
+  if (*(char *)((int8)a0 + 8)) // branch-flip
+    v1 = (int8)a0 + 9;
+
+=== O0-tar-tar sub_79532@0x79532 [OTHER]
+--- off
+    a0 = 0;
++++ void
+    v1 = 0;
+
+=== O0-tar-tar sub_79532@0x79532 [OTHER]
+--- off
+  v1 = sub_794ed(a0) == 0;
++++ void
+  v2 = sub_794ed(v1) == 0;
+
+=== O2-dash-dash sub_d880@0xd880 [OTHER]
+--- off
+  sub_c160(a0 != 0,a0);
++++ void
+  sub_c160(a0 != NULL,a0);
+
+=== O2-diffutils-diff sub_9e40@0x9e40 [STATEMENT]
+--- off
+  a0 += v2;
++++ void
+
+
+=== O2-diffutils-diff sub_9e40@0x9e40 [OTHER]
+--- off
+    if ((*(long *)(v1 + v2 + 0x18) == *(long *)(a0 + 0x18)) && (*(long *)(v1 + v2 + 0x10) == *(long *)(a0 + 0x10)))
++++ void
+    if ((*(long *)(v1 + v2 + 0x18) == *(long *)((long)a0 + v2 + 0x18)) && (*(long *)(v1 + v2 + 0x10) == *(long *)((long)a0 + v2 + 0x10)))
+
+=== O2-diffutils-diff sub_9e40@0x9e40 [OTHER]
+--- off
+      if ((v3 != 0x2000) || ((*(unsigned int *)(a0 + 0x28) & 0xf000) != 0x2000)) goto label_9e8a;
+      if (*(long *)(v1 + 0x38 + v2) == *(long *)(a0 + 0x38))
++++ void
+      if ((v3 != 0x2000) || ((*(unsigned int *)((long)a0 + v2 + 0x28) & 0xf000) != 0x2000)) goto label_9e8a;
+      if (*(long *)(v1 + 0x38 + v2) == *(long *)((long)a0 + v2 + 0x38))
+
+=== O2-diffutils-diff sub_9e40@0x9e40 [OTHER]
+--- off
+      if ((*(unsigned int *)(a0 + 0x28) & 0xf000) == 0x6000) {
+        if (*(long *)(v1 + 0x38 + v2) == *(long *)(a0 + 0x38))
++++ void
+      if ((*(unsigned int *)((long)a0 + v2 + 0x28) & 0xf000) == 0x6000) {
+        if (*(long *)(v1 + 0x38 + v2) == *(long *)((long)a0 + v2 + 0x38))
+
+=== O2-grep-grep sub_ac50@0xac50 [OTHER]
+--- off
+      if (*(long *)(a2 + 0x170 + (unsigned long)*a0 * 8)) break;
++++ void
+      if (*(long *)((long)a2 + (unsigned long)*a0 * 8 + 0x170)) break;
+
+=== O2-grep-grep sub_af70@0xaf70 [STATEMENT]
+--- off
+  v1 = a0 + 0x70;
+  v2 = *(unsigned char *)(a0 + 0x988);
+  v3 = *(unsigned char *)(a0 + 0x990);
+  v10 = *(long *)(a0 + 0x970) + v7;
++++ void
+  v1 = *(unsigned char *)((long)a0 + 0x988);
+  v2 = *(unsigned char *)((long)a0 + 0x990);
+  v9 = *(long *)((long)a0 + 0x970) + v6;
+
+=== O2-grep-grep sub_af70@0xaf70 [OTHER]
+--- off
+      v6 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v15 - 1)) + v15;
+      v8 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v6 + -1));
++++ void
+      v5 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v14 - 1) + 0x70) + v14;
+      v7 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v5 + -1) + 0x70);
+
+=== O2-grep-grep sub_af70@0xaf70 [OTHER]
+--- off
+      if (((!v8) || (v6 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v9 - 1)) + v9, v6 = v6 + (unsigned long)*(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v6 + -1)), v8 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v6 + -1)), v9 = (unsigned long)v8 + v6, !v8)) || (v6 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v9 - 1)) + v9, v6 = v6 + (unsigned long)*(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v6 + -1)), v8 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v6 + -1)), v9 = (unsigned long)v8 + v6, !v8)) {
++++ void
+      if (((!v7) || (v5 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v8 - 1) + 0x70) + v8, v5 = v5 + (unsigned long)*(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v5 + -1) + 0x70), v7 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v5 + -1) + 0x70), v8 = (unsigned long)v7 + v5, !v7)) || (v5 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v8 - 1) + 0x70) + v8, v5 = v5 + (unsigned long)*(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v5 + -1) + 0x70), v7 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v5 + -1) + 0x70), v8 = (unsigned long)v7 + v5, !v7)) {
+
+=== O2-grep-grep sub_af70@0xaf70 [OTHER]
+--- off
+      v6 = v9 + *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v9 - 1));
+      v9 = v6 + (unsigned long)*(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v6 + -1));
++++ void
+      v5 = v8 + *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v8 - 1) + 0x70);
+      v8 = v5 + (unsigned long)*(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v5 + -1) + 0x70);
+
+=== O2-grep-grep sub_af70@0xaf70 [OTHER]
+--- off
+    v8 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v9 - 1));
++++ void
+    v7 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v8 - 1) + 0x70);
+
+=== O2-grep-grep sub_af70@0xaf70 [OTHER]
+--- off
+  v9 = *(unsigned char *)(v1 + v15) + v9;
++++ void
+  v8 = *(unsigned char *)((long)a0 + v14 + 0x70) + v8;
+
+=== O2-grep-grep sub_144a0@0x144a0 [OTHER]
+--- off
+      if (*(unsigned char *)(*(long *)(a0 + 0x180) + v9) & *(unsigned char *)(a0 + 0x1cf + v12)) goto label_14a77;
+      if ((a2 == a1) && (v8 = *(long *)(a0 + 0x128) + v9 * 0x48, (int)(unsigned int)*(unsigned short *)(v8 + 0x22) >> 6 & (unsigned int)*(unsigned char *)(v8 + 0x20) & 7)) {
++++ void
+      if (*(unsigned char *)(*(long *)((long)a0 + 0x180) + v9) & *(unsigned char *)((long)a0 + v12 + 0x1cf)) goto label_14a77;
+      if ((a2 == a1) && (v8 = *(long *)((long)a0 + 0x128) + v9 * 0x48, (int)(unsigned int)*(unsigned short *)(v8 + 0x22) >> 6 & (unsigned int)*(unsigned char *)(v8 + 0x20) & 7)) {
+
+=== O2-tar-tar sub_3c8f0@0x3c8f0 [STATEMENT]
+--- off
+  bool v10;
++++ void
+
+
+=== O2-tar-tar sub_3c8f0@0x3c8f0 [STATEMENT]
+--- off
+
++++ void
+  bool v9;
+
+=== O2-tar-tar sub_57780@0x57780 [OTHER]
+--- off
+          return 0;
+        v6 = sub_51b20(a1,*(int8 *)(a1 + 0x48) + -1,*(unsigned int *)(a1 + 0xa0));
+        v5 = *(int8 *)(a1 + 0xb8);
+        a2 = sub_54380(a0,v2,&v8,v6);
+        *(int8 *)(v5 + v1 * 8) = a2;
++++ void
+          return NULL;
+        v6 = sub_51b20(a1,*(int8 *)((int8)a1 + 0x48) + -1,*(unsigned int *)((int8)a1 + 0xa0));
+        v5 = *(int8 *)((int8)a1 + 0xb8);
+        a2 = (void *)sub_54380(a0,v2,&v8,v6);
+        *(void **)(v5 + v1 * 8) = a2;
+
+=== O2-tar-tar sub_57780@0x57780 [OTHER]
+--- off
+    return 0;
+  v7 = sub_51d40(a1,a2 + 8,v1);
++++ void
+    return NULL;
+  v7 = sub_51d40(a1,(int8)a2 + 8,v1);
+
+=== O2-tar-tar sub_57780@0x57780 [OTHER]
+--- off
+    return 0;
+  if (!(*(uint1 *)(a2 + 0x68) & 0x40))
++++ void
+    return NULL;
+  if (!(*(uint1 *)((int8)a2 + 0x68) & 0x40))
+
+=== O2-tar-tar sub_57780@0x57780 [OTHER]
+--- off
+    return 0;
+  return *(int8 *)(*(int8 *)(a1 + 0xb8) + v1 * 8);
++++ void
+    return NULL;
+  return *(void **)(*(int8 *)((int8)a1 + 0xb8) + v1 * 8);
+

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1043,
-    1043
+    1054,
+    1054
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -924,6 +924,17 @@
     "data:paramrefdecl #3: the parameter keeps its place in the signature in both passes",
     "data:ptrdepthcap #1: option off leaves the unbounded escalation (bug reproduces: 6 four-star decls + 1 cast)",
     "data:ptrdepthcap #2: option on settles the lattice (7 in the off pass + 0 in the on pass = 7; any leak back raises the count)",
+    "data:ptrfromuse #10: and the named global it indexes survives in all three, instead of becoming a raw address",
+    "data:ptrfromuse #11: an address-like constant that names nothing is ambiguous, so that parameter is refused too in all three passes",
+    "data:ptrfromuse #1: with the option off a parameter that is only ever dereferenced is an integer -- the bug",
+    "data:ptrfromuse #2: and every field read is pointer arithmetic on that integer",
+    "data:ptrfromuse #3: with byte the same parameter is a byte pointer",
+    "data:ptrfromuse #4: and the field reads become indexing, which is what makes this body-changing",
+    "data:ptrfromuse #5: with void the parameter is a void pointer instead",
+    "data:ptrfromuse #6: and the arithmetic stays, carrying a cast",
+    "data:ptrfromuse #7: a parameter that is shifted before it is dereferenced is refused in all three passes",
+    "data:ptrfromuse #8: and a parameter that upstream already typed is untouched in all three",
+    "data:ptrfromuse #9: a parameter that subscripts a global byte table is refused in all three passes",
     "data:realtypes-pointee #1: the callback-struct parameter declares its 8-byte pointee, not void",
     "data:realtypes-pointee #2: no unknown pointee collapses to void in either pass",
     "data:realtypes-pointee #3: the 4-byte errno store keeps its access width",

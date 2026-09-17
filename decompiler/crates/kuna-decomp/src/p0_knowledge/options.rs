@@ -406,6 +406,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "voidtailreturn",
     "ptrdepthcap",
     "codescalar",
+    "ptrfromuse",
     "cortexmpriv",
     "dedupvardecls",
     "paramrefdecl",
