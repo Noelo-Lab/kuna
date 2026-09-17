@@ -182,6 +182,25 @@ in findutils `find`: the four padding bytes inside `struct tm` that a by-value
 copy of it moves. It is a hole in the published layout, and a hole is what it
 should read as.
 
+The refuters' second hazard for a sized shell — a named pointee landing on the
+first member of a larger object and respelling offsets as array indices — does
+occur, 14 times, and every one of them is an improvement: `dirent::d_name` is a
+`char[256]`, so findutils' dotfile test goes from three offset fields to the
+array it is:
+
+```
+- if ((vN->field_0x13 != '.') || ((vN->field_0x14 && (vN->field_0x14 != '.' || vN->field_0x15))))
++ if ((vN->d_name[0] != '.') || ((vN->d_name[1] && (vN->d_name[1] != '.' || vN->d_name[2]))))
+-   vN = strlen(&vN->field_0x13);
++   vN = strlen(vN->d_name);
+```
+
+Field names that actually land, across the eight binaries: `tm_*` 315,
+`d_name` 36, `d_type` 7, `pw_*` 16, `gr_*` 12, `d_ino` 3, plus the `_IO_*` and
+`st_*` families. `option`'s members (`name`, `has_arg`, `flag`, `val`) appear
+nowhere in this corpus: a `getopt_long` table is a static initializer these
+programs never read back through the pointer.
+
 Hunk classes, over the 111 functions whose text changed:
 
 | class | hunks |
@@ -308,3 +327,17 @@ arms**. Over the generated `.c` (which has never compiled, in any arm) on the
 same fixture: `off` 17 errors, `opaque` 21, `glibc` **18** — the three that
 `opaque` adds are the incomplete-type reads, and filling the layout in takes them
 back out.
+
+## Speed
+
+Interleaved `opaque`/`glibc` pairs, minimum and median of 15 each, alternating
+which arm runs first. The box was shared with another corpus sweep throughout,
+which is why the minimum is the number to read.
+
+| case | min `opaque` | min `glibc` | min Δ | median Δ |
+|---|---:|---:|---:|---:|
+| `fmt decompile-all` (152 fn) | 4070.4 ms | 4086.0 ms | +0.38% | +5.02% |
+| `ls decompile-all` (404 fn) | 13498.2 ms | 13417.1 ms | −0.60% | −0.37% |
+| `fmt functions` (load only) | 145.8 ms | 145.8 ms | −0.04% | −5.15% |
+
+Flat. The work added is nine struct completions at load, once per program.

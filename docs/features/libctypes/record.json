@@ -1046,6 +1046,47 @@
    "value": "opaque (unchanged)",
    "why": "two reasons, and the first is enough. (1) The metric is flat: 959 -> 959 perfect, +0.55 aggregate, 9 improved / 3 worse, so there is no measured case for moving the default. (2) The three worse rows are one source function -- coreutils copy_internal at -O2 -fno-inline, in cp/ginstall/mv -- where the completed layout lets a `stat *` vote reach three parameters whose ground truth is `char *`: `if (*a0 != '/')` becomes `if ((char)a0->st_dev != '/')`. A pointer to a struct outranks a pointer to char in the seed fold (SUB_PTR_STRUCT 4 < SUB_PTR 6) in BOTH arms; what the fields change is how far that vote travels. That is a small wrong answer the fieldless shell did not produce, and it is exactly the kind of judgement call the option model exists for.",
    "flip_conditions": "a later flip wants the propagation reach bounded (or the copy_internal shape understood) and a typesweep that is positive rather than flat."
+  },
+  "speed": {
+   "method": "interleaved opaque/glibc pairs (`kuna decompile-all --option libctypes opaque|glibc`), MINIMUM and median of 15 pairs each, alternating which arm runs first. The MINIMUM is the honest read: the box was shared with another agent's corpus sweep throughout.",
+   "rows": [
+    {
+     "case": "fmt decompile-all (152 fn)",
+     "min_opaque_ms": 4070.4,
+     "min_glibc_ms": 4086.0,
+     "min_delta_pct": 0.38,
+     "median_delta_pct": 5.02
+    },
+    {
+     "case": "ls decompile-all (404 fn)",
+     "min_opaque_ms": 13498.2,
+     "min_glibc_ms": 13417.1,
+     "min_delta_pct": -0.6,
+     "median_delta_pct": -0.37
+    },
+    {
+     "case": "fmt functions (load only)",
+     "min_opaque_ms": 145.8,
+     "min_glibc_ms": 145.8,
+     "min_delta_pct": -0.04,
+     "median_delta_pct": -5.15
+    }
+   ],
+   "verdict": "flat. The largest minimum delta is +0.38% and the other two are negative; the work added is nine struct completions at load, once per program."
+  },
+  "project_export": {
+   "method": "kuna decompile-project <libctypes_glibc_x86_64> -o D --option libctypes off|opaque|glibc; cc -std=c99 -fsyntax-only over the generated .h and over the generated .c",
+   "header_errors": {
+    "off": 0,
+    "opaque": 0,
+    "glibc": 0
+   },
+   "body_errors": {
+    "off": 17,
+    "opaque": 21,
+    "glibc": 18
+   },
+   "note": "`glibc` emits the real struct bodies in the .h, dependency-ordered (timespec before stat), and they parse. The three errors `opaque` adds over `off` are the incomplete-type reads, and filling the layout in takes them back out."
   }
  }
 }
