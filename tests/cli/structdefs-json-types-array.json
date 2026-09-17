@@ -25,15 +25,20 @@
       {
         "path": "functions[0].types[0].name",
         "op": "eq",
+        "value": "FILE"
+      },
+      {
+        "path": "functions[0].types[1].name",
+        "op": "eq",
         "value": "option"
       },
       {
-        "path": "functions[0].types[0].definition",
+        "path": "functions[0].types[1].definition",
         "op": "contains",
         "value": "typedef struct option option; /* opaque */"
       },
       {
-        "path": "functions[0].types[0].size",
+        "path": "functions[0].types[1].size",
         "op": "eq",
         "value": 32
       },
@@ -53,5 +58,5 @@
     "selector": "main",
     "selector_kind": "name"
   },
-  "notes": "structdefs on: main references the libc `struct option` shell, so the additive per-function `types` array carries that one definition (name, .h text, size) and the same line is printed above the body. The definition text is what scripts/decbench/structscore.py's layout parser reads, so a consumer never has to parse C out of `code`."
+  "notes": "structdefs on: main references two libc shells  -  the `struct option` it hands `getopt_long`, and the `FILE` behind the `stdin` slot its `rpl_fclose` reads (`libctypes` types that slot). The `types` array carries both in definition-before-use order with .h text and size; structscore.py parses that text, so a consumer never parses C out of `code`."
 }
