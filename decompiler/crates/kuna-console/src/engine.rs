@@ -4216,6 +4216,61 @@ fn commit_analysis_output(
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
     }
 
+    // 4b. (kuna `libctypes`) Data symbols the analysis tier types outright — the
+    //     stdio stream slots. Installed `typelock|namelock`: the name so the slot
+    //     renders `stdout` rather than `dat_c088`, the TYPE because a dynamic
+    //     relocation binding `stdout` is a declaration that the word holds a
+    //     `FILE *`, not a guess type propagation may improve on. Without the
+    //     typelock the two renderings of one global disagree inside a single
+    //     binary — a function that also calls `__overflow(FILE *, int)` infers the
+    //     stream, and one that only hands `stdout` to the image's own helper does
+    //     not.
+    //
+    //     Placed BETWEEN the string literals (arm 4) and the loader data stream
+    //     (arm 4a), so the two richer sources above still win every address they
+    //     claim, and the loader's own untyped `undefined8` naming of the same slot
+    //     is skipped by its `occupied` guard below. The stream is empty unless the
+    //     `libctypes` gate is on (`LibcTypesPass` returns before it collects).
+    for fact in &out.typed_data {
+        if std::env::var("KUNA_DBG_TYPEDDATA").is_ok() { eprintln!("TYPEDDATA {} @{:#x} {}", fact.name, fact.addr, fact.type_.get_name()); }
+        let addr = Address::new(Rc::clone(code_space), fact.addr);
+        let occupied = {
+            let arch = prog.arch();
+            match arch.symboltab.get_global_scope() {
+                Some(global) => {
+                    arch.symboltab.find_function(global, &addr).is_some()
+                        || arch
+                            .symboltab
+                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .is_some()
+                }
+                None => false,
+            }
+        };
+        if occupied {
+            continue;
+        }
+        let arch = prog.arch_mut();
+        let (scope, base) = arch.symboltab.find_create_scope_from_symbol_name(
+            &fact.name,
+            "::",
+            None,
+            num_spaces,
+        )?;
+        let (sid, _) = arch.symboltab.add_symbol_mapped(
+            scope,
+            &base,
+            Rc::clone(&fact.type_),
+            &addr,
+            &Address::new_invalid(),
+        )?;
+        arch.symboltab.set_attribute(
+            sid,
+            kuna_decomp::varnode::varnode_flags::typelock
+                | kuna_decomp::varnode::varnode_flags::namelock,
+        );
+    }
+
     // 4a. Loader data symbols: the defined `STT_OBJECT` entries of `.symtab` /
     //     `.dynsym` (`ConsoleProgram::loader_data_objects`). Installed exactly like
     //     the DWARF data globals of arm 1a — an `undefined<size>` global with

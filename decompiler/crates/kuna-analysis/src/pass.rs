@@ -177,6 +177,30 @@ pub struct LocalFact {
     pub stack_offset: i64,
 }
 
+/// (kuna `libctypes`) A data symbol whose TYPE the analysis tier knows outright:
+/// the address, the name it is installed under, and the recovered type.
+///
+/// The one producer today is
+/// [`crate::protos::kuna_libctypes::LibcTypesPass`]'s stdio-stream step. Where
+/// [`DataObjectFact`] and the loader's `.dynsym` data stream give an object a
+/// NAME and leave its type to propagation, a stream slot's type is a
+/// declaration: a `stdout` the dynamic linker fills is a `FILE *`, whatever the
+/// one function in front of the analyst happens to do with it.
+///
+/// The commit (`engine.rs::commit_analysis_output`) maps each through
+/// `add_symbol_mapped` with `typelock | namelock`, ahead of the loader data
+/// stream so the typed claim wins the address and behind the DWARF globals and
+/// the string literals so a richer source keeps it.
+#[derive(Clone, Debug)]
+pub struct TypedDataFact {
+    /// Virtual address of the object.
+    pub addr: u64,
+    /// The name the symbol is installed under.
+    pub name: String,
+    /// The recovered kuna [`Datatype`] for the object AT that address.
+    pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
+}
+
 /// A source-line annotation to attach to a decompiled instruction: at `addr`,
 /// the instruction came from source location `text` (e.g. `debug_symbol.c:122`).
 /// The commit boundary (`engine.rs::commit_analysis_output`) installs each into the
@@ -424,6 +448,9 @@ pub struct AnalysisOutput {
     /// gate is three-valued (`off|proven|inferred`), so the commit boundary picks
     /// which tiers to apply. See [`CppSigFacts`].
     pub cpp_sig: CppSigFacts,
+    /// (kuna `libctypes`) Data symbols the analysis tier types outright — the
+    /// stdio stream slots. See [`TypedDataFact`].
+    pub typed_data: Vec<TypedDataFact>,
     /// (kuna `libctypes glibc`) The published glibc x86-64 field layouts went
     /// into THIS image's named aggregates.
     ///
@@ -468,6 +495,7 @@ impl AnalysisOutput {
         };
         self.symbols.iter_mut().for_each(|s| fix(&mut s.name));
         self.data_objects.iter_mut().for_each(|d| fix(&mut d.name));
+        self.typed_data.iter_mut().for_each(|d| fix(&mut d.name));
         self.entry_names.iter_mut().for_each(|(_, n)| fix(n));
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
@@ -533,6 +561,7 @@ impl AnalysisOutput {
     pub fn merge(&mut self, other: AnalysisOutput) {
         self.symbols.extend(other.symbols);
         self.data_objects.extend(other.data_objects);
+        self.typed_data.extend(other.typed_data);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
         self.pdb_bodies.extend(other.pdb_bodies);
