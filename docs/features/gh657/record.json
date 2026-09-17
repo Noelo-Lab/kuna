@@ -88,7 +88,7 @@
     "make test-cli": "179/179 passed",
     "kuna catalog --check": "catalog OK",
     "counters --check": "no drift; docs/options.md byte-fresh",
-    "make rust-test": "RUST_TEST_RC=0 (re-run after the review, from the committed HEAD; see rust_test)"
+    "make rust-test": "re-run after the review from the committed HEAD. The first of those runs (SHA 70e5edc0) was RED: rewriting the foldcallret/foldcallretphi catalog rows moved tests/fixtures/phase_catalog.json, so -p kuna-decomp --test catalog_bytecompat failed (2 of its 5 tests); the other 414 test binaries were green. Fixture recaptured in 367a0ba4 and re-run from there -- RESULT PENDING at the time this line was written; see rust_test for the final RC."
   },
   "stage_assertions_examined": {
     "note": "four stage assertions moved on the first version of the fix and NONE was absorbed: each pointed at a real over-decline, and the final version leaves all 1054 pre-existing assertions untouched.",
@@ -115,7 +115,7 @@
     "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s}"
   ],
   "option_off_identity": "kuna decompile-all --option foldcallret off is byte-identical between origin/main and this branch on O0 grep and libselinux.so.1: every new test is behind `Architecture::fold_call_returns`.",
-  "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree; target/debug deleted afterwards",
+  "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree; target/debug deleted afterwards. Lane SHA 367a0ba4 -- the only commits after it touch docs/spec/06-variables-and-merge.md and docs/features/gh657/, and no test compiles either (the only docs the workspace suite embeds are options.md, cli.md, agents.md, phases.md and modes.md).",
   "phi_arm": {
     "method": "phi-delta = the set of functions whose `kuna decompile-all` text differs between `--option foldcallretphi on` and `off`, per binary; compared against a build of origin/main (83830e86). .scratch/phi/phidelta.py",
     "ssh_O2": {
