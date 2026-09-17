@@ -1054,7 +1054,7 @@ numbers a caller orients by are the ones `kuna functions` reports.
 `--json` emits
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
 line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
-stack_offset,size,line_numbers,addresses}]}]}` (`kuna functions --json` emits
+stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`kuna functions --json` emits
 `name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. `count` is what the
@@ -1097,6 +1097,12 @@ Per-function `code` matches `kuna decompile ... --option listing on` byte-for-by
 x86-64 (elsewhere, see the injected defaults below), `error` isolates a single failed
 function, and `variables` (params in ABI order + DWARF/stack locals) feed type-recovery
 scoring. `--no-vars` leaves `variables` empty but still emits function line mappings.
+
+`types` is the layout side of the same record: one object per composite, enum or
+typedef the function's C names, carrying its name, its definition text (the same
+line(s) the `decompile-project` header gives it) and its size. It is always
+present and is empty unless `--option structdefs on` — the array and the
+definitions that option prints above the function are one decision.
 
 The run-level verdict is aggregate, not fail-fast. If the selected set is non-empty
 and every record has `code: null`, `decompile-all` first emits the complete JSON or
