@@ -1,0 +1,65 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/gh657_x86_64",
+    "binary_sha256": "0066d6d5e2684842e45057208307f4483d9fba9b5e69039b03a6f5aa8d422ec0",
+    "binary_size": 5000,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/gh657_x86_64",
+    "selector": "target",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "target"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "v1 = helper(7);"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "not_contains",
+        "value": "helper(7) + 0x2a"
+      },
+      {
+        "path": "functions[1].name",
+        "op": "eq",
+        "value": "target2"
+      },
+      {
+        "path": "functions[1].code",
+        "op": "contains",
+        "value": "v1 = helper(7);"
+      },
+      {
+        "path": "functions[1].code",
+        "op": "not_contains",
+        "value": "helper(7) * 3"
+      }
+    ]
+  },
+  "notes": "GH-657: `foldcallret` (default-on) sank a call past a write to a global the callee reads, so the emitted C computed a different value than the binary. `helper` returns `x + k`; `target` writes `k = 42` between the call and its use, `target2` between the use and the return the folded expression would land in. Both must keep the call in a statement of its own, ahead of the write."
+}

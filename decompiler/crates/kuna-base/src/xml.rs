@@ -1870,7 +1870,9 @@ mod tests {
         // and kuna-indirectonly / inputs used only through INDIRECTs
         // and kuna-indirectonly-escape / the counterexample that keeps
         // `indirectonly` off by default
-        assert_eq!(count, 305, "corpus file count drifted");
+        // and kuna-foldcallret-barrier / a call stays ahead of a write to the
+        // global it reads (GH-657)
+        assert_eq!(count, 306, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
