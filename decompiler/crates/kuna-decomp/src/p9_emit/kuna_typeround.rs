@@ -157,8 +157,10 @@
 //! `auto` is the default.  Because it moves a declaration only on unanimous
 //! evidence, the only text it can change is that declaration and the casts the
 //! new declaration makes no-ops: 0 of 675 datatest assertions, PARITY OK on the
-//! stage corpus, and over `fmt`/`ls`/`sort`/`du` at `-O0` and `-O2` 42
-//! declaration flips and 62 cast tokens dropped with no other hunk of any kind.
+//! stage corpus, and over twelve binaries from nine projects at `-O0` and `-O2`
+//! (15,124 functions, x86-64 and ARM32) 376 declaration flips and 443 cast
+//! tokens dropped, none added, with no other hunk of any kind and no flip on a
+//! declaration narrower than `int`.
 //!
 //! [`SignPolicy::PreferSigned`] is the more faithful arm - it settles the values
 //! nothing observed decides the way C source does, and agreement with DWARF over
