@@ -62,13 +62,12 @@
 //! ```
 //!
 //! folding `helper(g)` into the last statement evaluates it *after* `k = 42` and
-//! changes what it returns.  [`op_writes_tied_storage`] is the missing
-//! barrier, and every span this module clears is tested with it — for a frame
-//! slot as well, since the callee can reach one whenever the frame address
-//! escaped into the call.  (The same hole
-//! is reachable through `foldcallret` alone, without this option, when the call
-//! takes no global operand; that is GH-657 and is fixed separately, since
-//! `foldcallret` is default-on and this option is not.)
+//! changes what it returns.  [`op_writes_tied_storage`] is the missing barrier,
+//! and every span this module clears is tested with it — for a frame slot as
+//! well, since the callee can reach one whenever the frame address escaped into
+//! the call.  (The same hole is reachable through `foldcallret` alone, without
+//! this option, when the call takes no global operand; that is GH-657, fixed
+//! separately because `foldcallret` is default-on and this option is not.)
 //!
 //! # Where the folded call is actually printed
 //!
