@@ -161,7 +161,7 @@
   "gates": {
     "make test": "PARITY OK (675/675 assertions passed)",
     "make test-stages": "PARITY OK (1059/1059 assertions passed)",
-    "make rust-test": "RUST_TEST_RC=0 -- 7113 passed / 0 failed (lane, final tree)",
+    "make rust-test": "RUST_TEST_RC=0 -- 7113 passed / 0 failed (lane 14:07:19Z -> 14:22:43Z, source-final tree)",
     "make check-spec": "OK (lenient + strict)",
     "make test-cli": "183/183 passed",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
