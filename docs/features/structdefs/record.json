@@ -121,7 +121,8 @@
   },
   "consistency": {
     "decompile_project_unchanged": "byte-identical export with the option on, serially, under --jobs 2 and under --stream (the bodies include the .h that already carries the definitions; decompile_pulled clears the flag for a want_proto batch)",
-    "renderer": "printc::render_type_definitions, the same function that builds the .h type block"
+    "renderer": "printc::render_type_definitions, the same function that builds the .h type block",
+    "line_numbers": "the preamble is emitted through the emitter before begin_function, not prepended to the finished string, so line_mappings and variables[].line_numbers count it the same way `code` does (walk_list with the option on: line_mappings[0].line_number == 13 == the `if (n) {` line)"
   },
   "gates": {},
   "files": [

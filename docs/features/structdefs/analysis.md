@@ -103,6 +103,14 @@ member needs the export's recompile prelude to compile — which is the other ha
 of why the definitions stay in the header on the surface that is meant to
 rebuild.
 
+## Line numbers stay honest
+
+The preamble goes through the emitter, before `begin_function`, rather than
+being prepended to the finished string, so every line-indexed surface counts it
+the same way the text does. With the option on, `walk_list`'s
+`line_mappings[0].line_number` is 13 and line 13 of `code` is `if (n) {` — the
+eight preamble lines shifted both together.
+
 ## Measurements
 
 **Default is byte-identical to main.** Six whole-binary `decompile-all` runs
