@@ -450,3 +450,59 @@ fn only_a_glibc_x86_64_elf_takes_the_layouts() {
         );
     }
 }
+
+/// No table carries a member glibc reserves for itself. A reserved name is only
+/// ever truthful in a whole-struct copy a reader gains nothing from, and is a
+/// confident lie about the enclosing struct's real member whenever a named
+/// pointee lands on the first member of something bigger -- so those offsets
+/// stay holes and print in the neutral offset form.
+#[test]
+fn no_layout_names_a_reserved_member() {
+    for (name, rows) in glibc::GLIBC_LAYOUTS {
+        for row in rows.iter() {
+            assert!(
+                !(row.name.starts_with("__pad")
+                    || row.name.starts_with("__glibc_reserved")
+                    || row.name.starts_with("_unused")),
+                "{name}::{} is reserved for the implementation and must stay a hole",
+                row.name
+            );
+        }
+    }
+    let types = factory();
+    let stat = named_aggregate("stat", &types, 1, Layout::Glibc).expect("mint stat");
+    assert_eq!(stat.get_size(), 144, "the holes do not shrink the aggregate");
+    for off in [0x24, 0x78, 0x80, 0x88] {
+        assert!(
+            (0..stat.num_depend()).filter_map(|i| stat.get_field(i)).all(|f| f.offset != off),
+            "stat has no member at {off:#x}"
+        );
+    }
+}
+
+/// `declared_libc_prototype` runs with no object file, so it reads the layout
+/// off the program: a held, field-filled aggregate is proof the load-time pass
+/// ran with `glibc` on an image the target gate accepted. An untouched factory,
+/// or one carrying only opaque shells, supports `Opaque` and nothing more.
+#[test]
+fn the_live_layout_is_read_off_the_program() {
+    let empty = factory();
+    assert_eq!(live_layout(&empty), Layout::Opaque, "nothing held: no evidence");
+
+    let opaque = factory();
+    named_aggregate("FILE", &opaque, 1, Layout::Opaque).expect("opaque FILE");
+    assert_eq!(live_layout(&opaque), Layout::Opaque, "a fieldless shell is not evidence");
+
+    let glibc_types = factory();
+    named_aggregate("stat", &glibc_types, 1, Layout::Glibc).expect("glibc stat");
+    assert_eq!(live_layout(&glibc_types), Layout::Glibc, "a field-filled `stat` is");
+
+    // The consequence: a name the image never imported, declared by hand, is
+    // minted at the layout the rest of the program already carries.
+    kuna_decomp::kuna_libctypes::set_libctypes_env_layout(kuna_decomp::kuna_libctypes::LibcTypesLayout::Glibc);
+    let pieces = super::super::declared_libc_prototype("fopen", &glibc_types, 1).expect("fopen");
+    let file = pieces.outtype.as_ref().and_then(|t| t.get_ptr_to()).expect("FILE *");
+    assert_eq!(file.get_name(), "FILE");
+    assert!(!file.is_incomplete(), "the declared `FILE` agrees with the program's `stat`");
+    std::env::remove_var(kuna_decomp::kuna_libctypes::LIBCTYPES_ENV);
+}

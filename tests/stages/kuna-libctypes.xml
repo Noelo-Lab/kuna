@@ -50,9 +50,16 @@
     process environment variable, and the corpus runs in one process, so a stale
     `off` would silently disable the table for every later test in the file.
 
-    Assertions span the combined output of all three passes. `FILE \*` is a
+    Assertions span the combined output of all five passes. `FILE \*` is a
     substring of `_IO_FILE \*`, so every stream assertion pins the text from the
     return type or the `(` onwards.
+
+    #6 is narrowed to the two aggregates a DWARF definition already described
+    (`st`, `f`), because pass 4 is the `opaque` arm and legitimately prints
+    `a0-&gt;field_0x8`. #15 keeps the file-wide guard #6 used to carry by pinning
+    the COUNT: the only offset-named fields anywhere in this file are the four
+    pass 4 exists to show (`field_0x8` twice, `field_0x10`, `field_0x30`), so a
+    new fallback in any pass moves it.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -132,4 +139,5 @@ c3
 <stringmatch name="LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset" min="1" max="1">&amp;a1-&gt;field_0x30</stringmatch>
 <stringmatch name="LIBCTYPES #13: glibc on, that read is the field" min="1" max="1">return a1-&gt;st_size;</stringmatch>
 <stringmatch name="LIBCTYPES #14: and the value carries the FIELD's type, so the sentinel is a signed -1" min="1" max="1">return -1;</stringmatch>
+<stringmatch name="LIBCTYPES #15: and the offset-named fields anywhere in this file are exactly the four pass 4 is there to show" min="4" max="4">field_0x</stringmatch>
 </decompilertest>

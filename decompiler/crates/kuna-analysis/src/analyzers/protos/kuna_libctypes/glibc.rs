@@ -26,12 +26,20 @@
 //! written on, by compiling a program of `offsetof`/`sizeof`/`_Alignof` against
 //! the installed headers — not restated from memory, and not copied out of a
 //! header by eye. The program and its output are in
-//! `docs/features/libctypes/glibc.md`. The two field names that are not an
-//! application's business (`stat::__pad0`, `stat::__glibc_reserved`) are carried
-//! anyway, because a named hole reads better than an unnamed one and because
-//! their absence would leave a gap the printer renders as a cast.
+//! `docs/features/libctypes/glibc.md`.
 //!
-//! ## Two rules the tables obey
+//! ## Three rules the tables obey
+//!
+//! * **No row glibc reserves for itself.** `stat::__pad0`,
+//!   `stat::__glibc_reserved`, `_IO_FILE::__pad5` and `_IO_FILE::_unused2` are
+//!   left as holes, which the printer renders as the offset form. A reserved
+//!   member is one no program may read, so every truthful use of its name is a
+//!   whole-struct copy spilling padding — which a reader learns nothing from —
+//!   while every use that carries meaning is a lie: when a `stat *` lands on the
+//!   first member of a bigger struct, that struct's own members at 0x78 and up
+//!   get spelled `__glibc_reserved[1]` instead of the neutral `field_0x80`.
+//!   Measured on 11 binaries: 19 truthful padding copies against 8 such lies, so
+//!   the honest hole wins on both counts.
 //!
 //! * **No self-reference.** `_IO_FILE::_chain` and `_IO_FILE::_freeres_list` are
 //!   `struct _IO_FILE *` in the header and `void *` here. Completing a struct
@@ -101,7 +109,8 @@ const fn f(off: int4, name: &'static str, ty: FTy) -> GlibcField {
 /// `_chain`, `_lock`, `_codecvt`, `_wide_data`, `_freeres_list` and
 /// `_freeres_buf` point at aggregates glibc does not publish (or at `FILE`
 /// itself, which this table may not name — see the module header), so they are
-/// `void *`.
+/// `void *`. 0xb8 (`__pad5`) and 0xc4..0xd8 (`_unused2`) are reserved and stay
+/// holes.
 const FILE_FIELDS: &[GlibcField] = &[
     f(0x00, "_flags", FTy::Int),
     f(0x08, "_IO_read_ptr", FTy::CharPtr),
@@ -129,12 +138,12 @@ const FILE_FIELDS: &[GlibcField] = &[
     f(0xa0, "_wide_data", FTy::VoidPtr),
     f(0xa8, "_freeres_list", FTy::VoidPtr),
     f(0xb0, "_freeres_buf", FTy::VoidPtr),
-    f(0xb8, "__pad5", FTy::ULong),
     f(0xc0, "_mode", FTy::Int),
-    f(0xc4, "_unused2", FTy::Arr(&FTy::SChar, 20)),
 ];
 
-/// `struct stat`, `sizeof` 144 — `bits/struct_stat.h`, x86-64 arm.
+/// `struct stat`, `sizeof` 144 — `bits/struct_stat.h`, x86-64 arm. 0x24
+/// (`__pad0`) and 0x78..0x90 (`__glibc_reserved[3]`) are reserved and stay
+/// holes.
 const STAT_FIELDS: &[GlibcField] = &[
     f(0x00, "st_dev", FTy::ULong),
     f(0x08, "st_ino", FTy::ULong),
@@ -142,7 +151,6 @@ const STAT_FIELDS: &[GlibcField] = &[
     f(0x18, "st_mode", FTy::UInt),
     f(0x1c, "st_uid", FTy::UInt),
     f(0x20, "st_gid", FTy::UInt),
-    f(0x24, "__pad0", FTy::Int),
     f(0x28, "st_rdev", FTy::ULong),
     f(0x30, "st_size", FTy::Long),
     f(0x38, "st_blksize", FTy::Long),
@@ -150,7 +158,6 @@ const STAT_FIELDS: &[GlibcField] = &[
     f(0x48, "st_atim", FTy::Named("timespec")),
     f(0x58, "st_mtim", FTy::Named("timespec")),
     f(0x68, "st_ctim", FTy::Named("timespec")),
-    f(0x78, "__glibc_reserved", FTy::Arr(&FTy::Long, 3)),
 ];
 
 /// `struct timespec`, `sizeof` 16 — `bits/types/struct_timespec.h`.

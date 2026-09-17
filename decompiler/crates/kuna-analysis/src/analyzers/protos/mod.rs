@@ -308,13 +308,14 @@ pub fn declared_libc_prototype(
     // holds `stat` as its own 24-byte struct, say -- degrades to the width-stable
     // one rather than withdrawing the prototype, which is what the load-time pass
     // does too (it skips the named slot and the `void *` seeding still stands).
-    // `Layout::Opaque` is not a downgrade: the load-time pass has already run on
-    // this program and interned whatever layout it decided on, and
-    // `named_aggregate` ADOPTS a name already held. This call only has to avoid
-    // minting a layout of its own on a target the pass refused one for.
+    // The layout is read off the PROGRAM rather than assumed: `named_aggregate`
+    // adopts a name already held, but only the names the image IMPORTS reached
+    // the pass, so a declared `fopen` on an image that imports `stat` and not
+    // `fopen` would mint the first `FILE` here -- see `live_layout` for the
+    // evidence that decides which layout that is.
+    let layout = kuna_libctypes::live_layout(types);
     if let Some(sig) = kuna_libctypes::declared_named_prototype(name) {
-        if let Ok(pieces) = build_pieces(name, sig, types, word_size, kuna_libctypes::Layout::Opaque)
-        {
+        if let Ok(pieces) = build_pieces(name, sig, types, word_size, layout) {
             return Some(pieces);
         }
     }
@@ -323,7 +324,7 @@ pub fn declared_libc_prototype(
         .chain(kuna_libcsigs::LIBC_EXT.iter())
         .find(|(n, _)| *n == name)
         .map(|(_, sig)| sig)?;
-    build_pieces(name, sig, types, word_size, kuna_libctypes::Layout::Opaque).ok()
+    build_pieces(name, sig, types, word_size, layout).ok()
 }
 
 /// Collect the set of FUNC symbol names present in the object — the names the
