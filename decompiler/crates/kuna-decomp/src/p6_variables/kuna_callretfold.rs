@@ -63,11 +63,12 @@
 //! side-effect-free guard, preferring false negatives (stay explicit) over
 //! reordering bugs.
 //!
-//! The opcode set is not complete, though: a write to a fixed global address is
-//! heritaged into a plain `CPUI_COPY`, so `v = f(); glob = 42; use(v)` folds and
-//! evaluates `f()` after the write to `glob` (GH-657).  `foldcallretphi` tests
-//! every span it clears with
-//! [`op_writes_global_storage`](crate::p6_variables::kuna_foldcallretphi); this
+//! The opcode set is not complete, though: heritage promotes a write to a fixed
+//! address into a plain `CPUI_COPY`, so `v = f(); glob = 42; use(v)` folds and
+//! evaluates `f()` after the write to `glob` (GH-657) — and the same goes for a
+//! frame slot whose address escaped into the call.  `foldcallretphi` tests every
+//! span it clears with
+//! [`op_writes_tied_storage`](crate::p6_variables::kuna_foldcallretphi); this
 //! predicate does not yet, because it is default-on and the fix moves default
 //! output.
 //!
@@ -233,8 +234,8 @@ pub(crate) fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId)
 /// An op whose relative order with the moved call is observable: any call, or a
 /// memory-touching op (LOAD/STORE/CALLOTHER).
 ///
-/// Opcodes only — a heritage-promoted write to a global is a `CPUI_COPY` and is
-/// not in this set (GH-657); see the module header.
+/// Opcodes only — a heritage-promoted write to a global or to an escaped frame
+/// slot is a `CPUI_COPY` and is not in this set (GH-657); see the module header.
 pub(crate) fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,

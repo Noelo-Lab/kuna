@@ -114,8 +114,8 @@ evaluation to wherever the expression is printed. Three conditions:
 ### The barrier the opcode set misses
 
 `foldcallret`'s span guard is stated in opcodes, and "writes something the callee
-can read" is not an opcode. Heritage promotes a write to a fixed global address
-into a plain `CPUI_COPY`, which the guard waves through:
+can read" is not an opcode. Heritage promotes a write to a fixed address into a
+plain `CPUI_COPY`, which the guard waves through:
 
 ```
 target: push rbx / mov ebx,ok(%rip) / mov rdi,g(%rip) / call helper
@@ -134,17 +134,28 @@ Before this guard, `--option foldcallretphi on` emitted
 while the binary — and `off`, and plain `origin/main` — compute `v1 & helper(g)`
 with the *old* `k`. Compiling both renderings gives `ok=1` against `ok=42`.
 
-`op_writes_global_storage` declines any op in the span whose output varnode is
-persistent. Built without it and otherwise identical, that binary folds again and
-the stage test's assertion #5 fails; with it, `on` is identical to `off`. Over
-the 24-binary sweep the barrier declines nothing — the shape needs a call that
-both takes a global operand (so the discount fires at all) and has a global write
-before its use — so it costs no folds.
+`op_writes_tied_storage` declines any op in the span whose output varnode is
+address-tied. Built without it and otherwise identical, that binary folds again
+and the stage test's assertion #5 fails; with it, `on` is identical to `off`.
 
-A frame slot needs no barrier of its own: for the callee to read one, its address
-has to escape into the call, and an escaped slot is written through a
-`CPUI_STORE`, which is already in the opcode set. The stage-test fixture has a
-frame store (`movb $1,(%rsp)`) in exactly that position and folds.
+A frame slot is in the barrier for the same reason, and the first version of this
+guard was wrong to leave it out on the argument that an escaped slot stays a
+`CPUI_STORE`. It does not. Given
+
+```
+target4: sub rsp,0x20 / movl $1,8(%rsp) / mov ebx,ok(%rip)
+         / lea 8(%rsp),%rdi / call helper2      (helper2 returns *p)
+         / movl $42,8(%rsp) / and eax,ebx / mov ebx,ok(%rip)
+         / lea 8(%rsp),%rdi / call helper2 / mov eax,k(%rip) / ...
+```
+
+`print raw` shows the escaped slot promoted exactly like a global —
+`0x1020:18: s0xffffffffffffffe0:4 = #0x2a:4`, a `CPUI_COPY`, with the call
+carrying its own INDIRECT over the same slot. So the barrier tests
+`is_persist() || is_addr_tied()`, and the price is a false positive: a frame slot
+the callee could not have reached also declines. (That particular listing folds
+through default-on `foldcallret` with no discount involved — `on` and `off` emit
+the same thing — so it is GH-657's family, not this option's.)
 
 The same hole is reachable through default-on `foldcallret` alone, when the call
 needs no discount at all (`v = f(7); glob = 42; use(v)`): that is GH-657, fixed

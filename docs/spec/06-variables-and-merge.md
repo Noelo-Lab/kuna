@@ -944,15 +944,16 @@ past two global reads it may itself write.
 
 That span guard also carries the barrier the opcode test misses
 (`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
-(op_writes_global_storage)`): any op between the call and the print point whose
-output varnode is persistent — a heritage-promoted write to a global, a
-`CPUI_COPY` the opcode test waves through — declines. It is checked over the
-whole distance, which contains the call-to-use span, so every fold this option
-adds is guarded against it even though `foldcallret`'s own predicate is not
-(GH-657). A frame slot needs no barrier of its own: for the callee to read one,
-its address has to escape into the call, and an escaped slot is written through a
-`CPUI_STORE`, which is already in the opcode set. The shape the guard catches,
-with `helper` returning `k`:
+(op_writes_tied_storage)`): any op between the call and the print point whose
+output varnode is address-tied declines. Heritage promotes a write to a fixed
+address into a plain `CPUI_COPY` — a global's output is persistent, a frame
+slot's is tied to its stack address — and neither is an opcode, so the
+CALL/LOAD/STORE/CALLOTHER test waves both through. The callee can read a global
+knowing nothing but its address; it can read a frame slot whenever the frame
+address escaped into it, and an escaped slot is *not* held back as a
+`CPUI_STORE`, heritage promotes it like any other. So both are barriers, at the
+cost of declining a frame slot the callee could not have reached. The shape the
+guard catches, with `helper` returning `k`:
 
 ```c
 v2 = helper(g);        /* stays spilled: the fold would evaluate helper */
@@ -960,7 +961,9 @@ k = 42;                /* after this write, and it reads k */
 ok = v1 & v2;
 ```
 
-while the same function with a frame store in place of `k = 42` folds.
+The guard runs over the whole travel distance, which contains the call-to-use
+span, so every fold this option adds is checked even though `foldcallret`'s own
+predicate is not (GH-657).
 
 It ships **off** for two reasons. Flipping the default leaves both corpora at
 PARITY OK (0 of 675 datatest assertions change) and costs nothing measurable on
