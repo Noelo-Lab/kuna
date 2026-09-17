@@ -153,5 +153,6 @@
       63
     ]
   },
-  "notes": "The roots of the type walk (prototype, every Varnode type, every mapped Symbol type) are deliberately a superset of the names the printer spells, so the preamble cannot omit a definition the body refers to; the cost is that a type carried by a Varnode that contributes no token can be defined above a function that never names it."
+  "notes": "The roots of the type walk (prototype, every Varnode type, every mapped Symbol type) are deliberately a superset of the names the printer spells, so the preamble cannot omit a definition the body refers to; the cost is that a type carried by a Varnode that contributes no token can be defined above a function that never names it.",
+  "preset_decision": "EXCLUDED_ON_PURPOSE in p0_knowledge/modes.rs: not in AGGRESSIVE_OVERRIDES. The preset is the default output under 500 KiB -- the text a caller diffs, feeds to a matcher, or reads one function of -- and a preamble in front of every function that touches a FILE * is noise there (36 of fmt's 151 functions would repeat the same `typedef struct FILE FILE;`; ls alone is 8,071 added lines). Nothing about the option is wrong output; who wants to see a layout is a reader's choice, not a size threshold's."
 }

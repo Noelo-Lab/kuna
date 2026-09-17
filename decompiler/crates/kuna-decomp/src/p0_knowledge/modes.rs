@@ -434,10 +434,21 @@ mod tests {
         /// reader cannot see, so deleting an argument as the default output under
         /// 500 KiB is the judgement the operator
         /// makes, not the preset.
+        /// `structdefs` prints the definitions of the composites a function
+        /// references above it. Nothing about it is wrong output -- the body is
+        /// byte-identical either way, and the corpus sweep in
+        /// `docs/features/structdefs/` shows 523 hunks over six binaries with zero
+        /// deleted lines. It is excluded because of what the preset IS: the default
+        /// output under 500 KiB, which is the text a caller diffs, feeds to a
+        /// matcher, or reads one function of. A preamble in front of every function
+        /// that touches a `FILE *` is noise there (36 of fmt's 151 functions repeat
+        /// the same `typedef struct FILE FILE;`), and on an unstripped binary it is
+        /// 8,071 added lines on `ls` alone. Who wants to see a layout is a reader's
+        /// choice, not a size threshold's.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "argclobber"];
+              "argclobber", "structdefs"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
