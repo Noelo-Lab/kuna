@@ -75,7 +75,7 @@ fn surface_count_is_119() {
 }
 
 #[test]
-fn settable_count_is_209() {
+fn settable_count_is_210() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -1012,7 +1012,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `tiedphitrim` (DIV-182); its P6 row sits mid-table beside
     // `paramcopyhoist`, so it increments the comma-terminated catalog-row count.
     // 202 -> 204: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    assert_eq!(json.matches("},\n").count(), 208);
+    assert_eq!(json.matches("},\n").count(), 209);
 }
 
 #[test]
