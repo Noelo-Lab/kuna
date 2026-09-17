@@ -158,7 +158,7 @@
 //! evidence, the only text it can change is that declaration and the casts the
 //! new declaration makes no-ops: 0 of 675 datatest assertions, PARITY OK on the
 //! stage corpus, and over twelve binaries from nine projects at `-O0` and `-O2`
-//! (15,124 functions, x86-64 and ARM32) 376 declaration flips and 443 cast
+//! (15,124 functions, x86-64 and ARM32) 377 declaration flips and 443 cast
 //! tokens dropped, none added, with no other hunk of any kind and no flip on a
 //! declaration narrower than `int`.
 //!

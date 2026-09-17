@@ -727,7 +727,7 @@ only text it can change is that declaration and the casts the new declaration
 makes into no-ops. That is what the evidence for the flip measures — 0 of 675
 datatest assertions, PARITY OK on the stage corpus, and over twelve binaries
 from nine projects at `-O0` and `-O2` — eight x86-64 and four 32-bit ARM
-firmware images, 15,124 functions — 376 declaration flips and 443 cast tokens
+firmware images, 15,124 functions — 377 declaration flips and 443 cast tokens
 dropped, none added, with no other hunk of any kind. `prefer-signed` is
 the more faithful arm and stays opt-in: settling the unobserved values the way C
 source does takes agreement with DWARF on 238 unstripped twins from 93.4% to

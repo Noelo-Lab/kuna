@@ -470,7 +470,7 @@
   },
   "recommendation": [
     "SHIPPED: signedness upstream|auto|prefer-signed|prefer-unsigned with `auto` as the DEFAULT (the user's go on the proposal)",
-    "auto is the default for cast removal and the end of declaration-vs-body contradictions -- 376 declaration flips and 421 cast-drop hunks over twelve binaries on two architectures, 0 hunks of any other kind -- NOT for the agreement rate, which it moves by +0.1pp on four checkable observations",
+    "auto is the default for cast removal and the end of declaration-vs-body contradictions -- 377 declaration flips and 421 cast-drop hunks over twelve binaries on two architectures, 0 hunks of any other kind -- NOT for the agreement rate, which it moves by +0.1pp on four checkable observations",
     "prefer-signed stays OPT-IN: it is the faithful arm (-O2 DWARF agreement 71.9% -> 94.8%) but moves 7,081 declarations image-wide against auto's 575, which is more than unanimity covers and more than the datatest corpus can absorb as a default",
     "prefer-unsigned is kept as prefer-signed's control and documented as not recommended (4 of its 40 judged flips right); it is also what the 16-bit stage test uses to prove the width guard declines rather than sits inert",
     "upstream restores the declaration type inference produced, byte for byte"
@@ -527,8 +527,8 @@
       "what": "whole-binary `decompile-all` default (auto) vs `--option signedness upstream`, every changed line-pair classified mechanically (docs/features/signedness/classify_hunks.py, which reads all three printer vocabularies: `unsigned int` (aggressive), `uint4` (reliable, what a binary over 500 KiB gets) and `unsigned long long` (an 8-byte local on a 32-bit target))",
       "binaries": "fmt, ls, sort, du (coreutils) + grep, gzip, tar, find (x86-64) + adc-dac-printf.elf (libopencm3), RTOSDemo.out (FreeRTOS), ch.elf (ChibiOS), cf2.elf (crazyflie) -- 32-bit ARM Cortex-M firmware; nine projects, -O0 and -O2",
       "functions": 15124,
-      "functions_changed": 310,
-      "declaration_flips": 376,
+      "functions_changed": 311,
+      "declaration_flips": 377,
       "cast_drop_hunks": 421,
       "cast_tokens_removed": 443,
       "cast_tokens_added": 0,
@@ -549,15 +549,15 @@
         "arm32": {
           "binaries": 4,
           "functions": 6448,
-          "functions_changed": 152,
-          "declaration_flips": 194,
+          "functions_changed": 153,
+          "declaration_flips": 195,
           "cast_drop_hunks": 197,
           "cast_tokens_removed": 197,
           "other_hunks": 0,
-          "note": "the 32-bit side is the more active one per function (adc-dac-printf.elf -O2 changes 18 of 171 functions where grep -O2 changes 14 of 449), and it is where the `long long` spelling appears: 29 of its 194 flips are `long long -> unsigned long long`, each paired with the `(unsigned long long)` cast the flip makes a no-op"
+          "note": "the 32-bit side is the more active one per function (adc-dac-printf.elf -O2 changes 18 of 171 functions where grep -O2 changes 14 of 449), and it is where the `long long` spelling appears: 29 of its 195 flips are `long long -> unsigned long long`, each paired with the `(unsigned long long)` cast the flip makes a no-op"
         }
       },
-      "rebase_spotcheck": "the sweep was taken on the structdefs build; after the indirectonly rebase one image was re-decompiled on the new build (libopencm3 adc-dac-printf.elf -O2) and its default-arm output is BYTE-IDENTICAL to the pre-rebase one, with the same classification (18 of 171 functions changed, 26 declaration flips, 36 cast-drop hunks, 0 other) -- indirectonly and structdefs both ship `default off`, so the default path they rebased under is the same one the sweep measured"
+      "rebase_spotcheck": "re-measured in full, not spot-checked, on the foldcallret-barrier base (origin/main 39fdc804): GH-657's fix moves the DEFAULT path, so all twelve binaries were re-decompiled in both arms (.scratch/dumps10) and re-classified. The two x86-64 tables came back identical (2,918 funcs / 34 changed / 42 flips / 53 cast-drop and 5,758 / 124 / 140 / 171), apart from one cast token on the `upstream` side; on the ARM side cf2.elf -O0 gained one changed function and one flip (34/45 -> 35/46), classified `decl-signedness` like the rest. The bucket the claim rests on, `other_hunks`, is 0 on every row before and after, and stderr is identical in all 24 pairs"
     },
     "harness_default_control": "proof that the corpora actually ran with the flip in, rather than through an Architecture that never called reset_defaults: a scratch datatest with NO `option signedness` line at all (/tmp/claude-1000/signedness-probe/probe.xml, the same 20-byte image as the stage test) asserts `int4 v1;` present and `(int4)v1` absent, and scores 2/2 through `kuna test --datatests`. The console path was checked the same way (decomp_dbg on the bare image prints `int4 v1;`), and the CLI path with `kuna decompile-all fmt --addr 0x3060` (`int v1;`, no `(int)v1`)."
   },

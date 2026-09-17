@@ -61,7 +61,7 @@ Flip directions: `unsigned int -> int` 20, `unsigned long -> long` 9,
 | find | O2 | 658 | 19 | 22 | 21 | **0** |
 | **total** | | **5,758** | **124** | **140** | **171** | **0** |
 
-Cast tokens: 15,226 → 15,042 (184 removed, **0 added**).
+Cast tokens: 15,225 → 15,041 (184 removed, **0 added**).
 Flip directions: `unsigned int -> int` 39, `uint8 -> int8` 21, `int4 -> uint4`
 19, `int8 -> uint8` 16, `int -> unsigned int` 13, `unsigned long -> long` 12,
 `uint4 -> int4` 11, `long -> unsigned long` 9. Sub-`int` flips: **0**.
@@ -77,15 +77,15 @@ the x86-64 sweeps above.
 | adc-dac-printf.elf | O0 | 181 | 14 | 22 | 33 | **0** |
 | RTOSDemo.out | O0 | 150 | 0 | 0 | 0 | **0** |
 | ch.elf | O0 | 772 | 5 | 5 | 2 | **0** |
-| cf2.elf | O0 | 2,679 | 34 | 45 | 49 | **0** |
+| cf2.elf | O0 | 2,679 | 35 | 46 | 49 | **0** |
 | adc-dac-printf.elf | O2 | 171 | 18 | 26 | 36 | **0** |
 | RTOSDemo.out | O2 | 126 | 3 | 3 | 6 | **0** |
 | ch.elf | O2 | 398 | 17 | 19 | 6 | **0** |
 | cf2.elf | O2 | 1,971 | 61 | 74 | 65 | **0** |
-| **total** | | **6,448** | **152** | **194** | **197** | **0** |
+| **total** | | **6,448** | **153** | **195** | **197** | **0** |
 
 Cast tokens: 16,910 → 16,713 (197 removed, **0 added**).
-Flip directions: `unsigned int -> int` 95, `int -> unsigned int` 70,
+Flip directions: `unsigned int -> int` 95, `int -> unsigned int` 71,
 `long long -> unsigned long long` 29. Sub-`int` flips: **0**.
 
 The 32-bit side is the *more* active one per function: `adc-dac-printf.elf` at
@@ -93,8 +93,8 @@ The 32-bit side is the *more* active one per function: `adc-dac-printf.elf` at
 
 ## All three sweeps together
 
-15,124 functions decompiled over twelve binaries and nine projects, **310** of
-them changed, **376** declaration flips, **421** cast-drop hunks, **443** cast
+15,124 functions decompiled over twelve binaries and nine projects, **311** of
+them changed, **377** declaration flips, **421** cast-drop hunks, **443** cast
 tokens removed and **0** added, and **0** hunks of any other kind — no statement
 moved, deleted, re-anchored or re-worded, and no declaration appeared or
 disappeared. Also **0** flips on a declaration narrower than `int`, which is the
@@ -108,9 +108,10 @@ Reproduce any row with the two `decompile-all` runs the classifier's header
 shows; the raw dumps this table was built from are untracked (`.scratch/dumps4`,
 `.scratch/dumps6`, `.scratch/dumps7`).
 
-The table survives a rebase without being re-run when the incoming option does
-not move the default path, and that is checked rather than assumed: on the
-libctypes-glibc base (origin/main eb87d279) one x86-64 image (`grep -O2`) and one
-ARM32 image (`libopencm3 adc-dac-printf.elf -O2`) were re-decompiled in BOTH arms
-and came out byte-identical to the dumps above, so their classification is
-unchanged by construction.
+Every row above was re-measured from scratch on the foldcallret-barrier base
+(origin/main 39fdc804), which does move the default path: all twelve binaries
+were re-decompiled in both arms into `.scratch/dumps10` and re-classified. The
+two x86-64 tables came back identical apart from one cast token on the `upstream`
+side; on the ARM side `cf2.elf -O0` gained one changed function and one flip
+(34/45 to 35/46), still classified `decl-signedness`. The bucket that carries the
+claim, `other hunks`, is **0** on every row before and after.

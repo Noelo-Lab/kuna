@@ -197,7 +197,7 @@ at **+0.21%**). What it is *not* flipped for is the agreement rate:
 removal and the end of declaration-vs-body contradictions**, which is visible in
 every changed function — over twelve binaries from nine projects at `-O0` and
 `-O2`, eight of them x86-64 and four 32-bit ARM firmware images (15,124
-functions), the flip writes 376 declaration flips and 421 cast-drop hunks,
+functions), the flip writes 377 declaration flips and 421 cast-drop hunks,
 removes 443 cast tokens, adds none, and produces **0 hunks of any other kind**.
 
 ## Witnesses (coreutils `fmt` `-O2`, CLI vocabulary)
