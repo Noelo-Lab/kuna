@@ -48,7 +48,8 @@
 use std::path::PathBuf;
 
 use kuna_console::project::{
-    build_asm, build_c, build_header, build_readme, collect_dat_addrs, decompile_targets,
+    build_asm, build_c, build_header, build_readme, collect_dat_addrs,
+    decompile_export_targets,
     BatchOutcome,
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
@@ -236,16 +237,7 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
         )?;
         (pooled.results, pooled.types)
     } else {
-        (
-            decompile_targets(
-                &mut prog,
-                targets,
-                /* no_vars= */ false,
-                /* want_proto= */ true,
-                /* want_provenance= */ false,
-            ),
-            None,
-        )
+        (decompile_export_targets(&mut prog, targets), None)
     };
     // Every artifact is address-ordered (resolve_targets only guarantees that
     // for the no-filter default; --addr/--functions arrive in user order).

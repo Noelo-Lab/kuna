@@ -1865,7 +1865,9 @@ mod tests {
         // and kuna-foldcallretphi / a call's own INDIRECT effect no longer
         // blocks folding its single-use result
         // and kuna-ptrfromuse / a dereferenced-only parameter becomes a pointer
-        assert_eq!(count, 302, "corpus file count drifted");
+        // and kuna-structdefs / the definitions of the composites a function
+        // references, printed above it
+        assert_eq!(count, 303, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

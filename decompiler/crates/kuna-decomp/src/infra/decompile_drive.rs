@@ -1716,6 +1716,58 @@ pub struct VarInfo {
     pub addresses: Vec<u64>,
 }
 
+/// A type definition surfaced for the machine-readable batch output
+/// (`kuna decompile-all --json`'s per-function `types`) — the layout side of a
+/// recovered function, so a consumer reads it without parsing C out of `code`.
+///
+/// Populated only under `option structdefs on`, whose preamble prints the same
+/// set above the function; the key is always present (`[]` when off) so a
+/// consumer can read it unconditionally.
+#[derive(Debug, Clone)]
+pub struct TypeInfo {
+    /// The type's name as the factory holds it (`_IO_FILE`, `FILE`, `struct_0`).
+    pub name: String,
+    /// The definition text: the `struct <n> { … };` body for a complete
+    /// composite, the enum block, the `typedef <base> <n>;` line, or the
+    /// `typedef struct <n> <n>; /* opaque */` forward declaration for an
+    /// incomplete one — the same line(s) the export's `.h` gives it.
+    pub definition: String,
+    /// The type's size in bytes as the factory holds it, which an incomplete
+    /// (opaque) type also has: a `libctypes` shell is created at its ABI size
+    /// and reports it (`FILE` is 216) even though no member is known, so a
+    /// consumer testing for an opaque shell reads `definition` — the
+    /// `/* opaque */` forward declaration — and never `size == 0`.
+    pub size: i64,
+}
+
+/// The composite/enum/typedef definitions `fd`'s printed C names, in
+/// definition-before-use order ([`crate::kuna_structdefs::referenced_types`]).
+///
+/// Empty unless `option structdefs on`: the JSON array and the printed preamble
+/// are one decision, so a caller never sees a layout on one surface and not the
+/// other.
+pub fn extract_type_definitions(arch: &Architecture, fd: &Funcdata) -> Vec<TypeInfo> {
+    if !arch.print().options.struct_defs() {
+        return Vec::new();
+    }
+    // (kuna outlang) The definition text is C, and the printed preamble
+    // declines for a non-C output language for that reason; the array and the
+    // preamble are one decision, so it declines here too.
+    if arch.print().out_lang() != crate::kuna_lang::OutLang::C {
+        return Vec::new();
+    }
+    let rt = crate::printc::RealTypeCtx::from_arch(arch, arch.print().out_lang());
+    let types = crate::kuna_structdefs::referenced_types(fd);
+    crate::kuna_structdefs::dedup_by_name(&types)
+        .iter()
+        .map(|ct| TypeInfo {
+            name: ct.get_name().to_string(),
+            definition: crate::kuna_structdefs::definition_text(ct, rt),
+            size: ct.get_size() as i64,
+        })
+        .collect()
+}
+
 /// One 1-based pseudocode line and its associated machine instruction addresses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineMapping {

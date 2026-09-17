@@ -1054,7 +1054,7 @@ numbers a caller orients by are the ones `kuna functions` reports.
 `--json` emits
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
 line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
-stack_offset,size,line_numbers,addresses}]}]}` (`kuna functions --json` emits
+stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`kuna functions --json` emits
 `name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. `count` is what the
@@ -1097,6 +1097,15 @@ Per-function `code` matches `kuna decompile ... --option listing on` byte-for-by
 x86-64 (elsewhere, see the injected defaults below), `error` isolates a single failed
 function, and `variables` (params in ABI order + DWARF/stack locals) feed type-recovery
 scoring. `--no-vars` leaves `variables` empty but still emits function line mappings.
+
+`types` is the layout side of the same record: one object per composite, enum or
+typedef the function's C names, carrying its name, its definition text (the same
+line(s) the `decompile-project` header gives it) and its size. It is always
+present and is empty unless `--option structdefs on` — the array and the
+definitions that option prints above the function are one decision. `size` is
+the size the type is held at, which an opaque shell has too (a `libctypes`
+`FILE` reports 216 with no member known), so "layout unknown" is read off the
+`/* opaque */` `definition`, never off `size`.
 
 The run-level verdict is aggregate, not fail-fast. If the selected set is non-empty
 and every record has `code: null`, `decompile-all` first emits the complete JSON or
@@ -2540,7 +2549,7 @@ emitted. Two runs of one command are byte-identical.
 | `parameters` | The recovered parameters in ABI order. Empty for a row with no body. |
 | `signature` | The `.h`-style prototype line, without the trailing `;`. `null` for a row with no body. |
 | `assembly` | The function's instruction listing, one `<vma>  <MNEMONIC operands>` per line — the `kuna disassemble` walk, so an undecodable byte inside the body is a `.byte 0x..` row rather than the end of the listing. Present whenever a body was attempted, including when the decompile failed: the listing is what is left to look at. |
-| `codeC` | The decompiled body, byte-identical to this function's `decompile-all --json` `code`. |
+| `codeC` | The decompiled body, byte-identical to this function's `decompile-all --json` `code` — including the `--option structdefs on` type-definition preamble, which this document has nowhere else to carry (it has no header artifact). |
 | `error` | Why this function has no `codeC`, when the decompile was attempted and failed. `null` with a `null` `codeC` means no body was attempted: a bodyless `kind`, or a `--functions`/`--addr` narrowing that did not select it. |
 | `hasIndirectCalls` | The body contains a computed call (`CALLIND`). It files no edge when its destination is computed at run time; a `call qword ptr [slot]` through a fixed slot does file one, and sets this flag too. An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
 | `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. A non-null target is also a row and a `jump` edge endpoint. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does and an AArch64 `adrp`/`ldr`/`br x16` stub does not — a Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |

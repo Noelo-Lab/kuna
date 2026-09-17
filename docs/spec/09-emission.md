@@ -15,8 +15,8 @@ is presentation: after `ActionSetCasts` the IR is only mutated by inserting
 print-support ops (CAST, `PTRSUB #0`), never by changing computation. In the
 registry (`decompiler/crates/kuna-decomp/phases.toml`) P9 carries the
 sub-decisions `cast-policy`, `naming-policy`, `literal-format`,
-`pointer-notation`, `condition-form`, `brace-form`, `warning-style`, and
-`external-refinement` — plus, via the `presentcompare` group row, the P9 half of the P3-declared `comparison-canonicalization` decision
+`pointer-notation`, `condition-form`, `brace-form`, `warning-style`,
+`type-definition-preamble`, and `external-refinement` — plus, via the `presentcompare` group row, the P9 half of the P3-declared `comparison-canonicalization` decision
 (the console/`kassert` assertion writer — an output *consumer* that writes P0
 assertions for the next run, not an algorithm of this folder). One P9-registered
 pass lives outside the folder: the (kuna, GH-558) comparison canonicalizer
@@ -1345,3 +1345,100 @@ edge addresses; a relocatable object has no comparable static base and reports
 `null` rather than its synthetic loader layout. A field that could never be
 filled is not carried: the loader retains no library-module mapping, so the
 document has no module-qualified callee rather than a key that is always `null`.
+
+## 9.8 The per-function type-definition preamble (`structdefs`)
+
+The composite definitions §9.7 renders exist only on the whole-program
+surface. A single function printed to a terminal gets none of them: a body that
+reads `f->_flags` names `FILE` in its signature and nothing says what a `FILE`
+is, so the layout the decompiler recovered — the thing the field accesses are
+printed *against* — is invisible on the surface most callers actually read.
+`option structdefs on` (P9 sub-decision `type-definition-preamble`, default off)
+prints it, above the function, the way angr prints its typedefs.
+
+**What the preamble contains** is the definable types that function's own C can
+name: composites, enums and typedefs, never core types.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_structdefs.rs
+(referenced_types)` collects the function's semantic type surface — the
+prototype's return and parameter types, every Varnode data-type, and every
+mapped Symbol type behind a HighVariable — and walks each one's dependency cone
+(`kuna_structdefs.rs (visit)`): the typedef base first, then the component
+sub-types `substrate/dtype.rs (Datatype::get_depend)` reports — a pointer's
+pointee, an array's element, a struct's fields — pushing each definable type
+after everything it depends on. The result is definition-before-use over
+exactly the referenced subset, which is the order §9.7's
+`TypeFactoryImpl::dependent_order` produces over the whole factory, computed
+here from the roots instead so a whole-binary run costs the types a function
+touches rather than the types the program interned.
+
+**Those roots are chosen to be a superset of what the printer spells.** Every
+type name in the emitted C is read off one of them — a local declaration off a
+high or its mapped symbol, the signature off the prototype, a cast off the
+Varnode type it casts to — so the preamble cannot omit a definition the body
+refers to. Collecting from the emitted token stream instead would be exact for
+names that print, and would miss the struct behind `p->field_0x8`, whose tag
+name the C never prints at all. The cost of the choice is the opposite error: a
+type carried by a Varnode that contributes no token can be defined above a
+function that never names it.
+
+**One renderer, two surfaces.** `printc.rs
+(PrintC::emit_type_definition_preamble)` hands the subset to the same
+`printc.rs (render_type_definitions)` §9.7 builds the export's `.h` type block
+with, so a preamble line and a header line for one type are the same line: the
+forward-declaration block first, then bodies, an incomplete struct printing as
+`typedef struct FILE FILE; /* opaque */`, a padding gap as `undefined1
+_pad<hexoff>[N];`. It is emitted as whole lines rather than tokens, before
+`begin_function`, because a type definition has no `PcodeOp` or `Varnode` for
+the markup back-end to bind to. A `kuna decompile-project` export therefore
+*suppresses* the preamble in its bodies
+(`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)`): those
+bodies include a header that already carries every definition, and printing them
+again above each body would redefine them. The suppression is keyed on a batch
+option that says exactly that — *this caller renders a header that defines these
+types* (`DecompileOptions::header_carries_types`, set by the export surfaces and
+by a `--jobs` worker serving one, which is the worker the export asks for the
+`.h` type block with `--jobs-types`). It is deliberately **not** keyed on
+`want_proto`: `kuna decompile-graph` asks for prototypes too, and its document
+is per-function C with no header artifact, so it keeps the preamble inside
+`codeC` exactly as `decompile-all` keeps it in `code`. The preamble is
+documentation rather than a translation unit — a `undefined1` padding member
+needs the export's recompile prelude to compile — which is the other half of why
+the definitions stay in the header on the surface that is meant to rebuild.
+
+**Two disclosed roughnesses.** A definition whose name is also a function name
+prints directly above that function's own definition: `typedef struct stat
+stat;` over `int stat(char *a0,stat *a1)` is not a translation unit a compiler
+accepts, and the export's `.h` says as much where it drops such a prototype
+(§9.7). The preamble does not apply that guard — it is documentation, and
+hiding the layout of `stat` from the one function that is about to use it costs
+more than the collision does. And the over-inclusion the Varnode-rooted walk
+buys (above) is real: a function whose only contact with `FILE` is handing
+`stdout` to a callee still gets `FILE` defined above it. On a stripped corpus,
+where a libc shell has no members and so pulls nothing else in, that is about one
+definition in seven (55 of 367 over stripped `cmp`, `od`, `find`, `tar`); on
+their unstripped twins it falls to 50 of 10,912, because a DWARF type the body
+does not name is almost always a dependency of one it does.
+
+**The preamble is C, and says so by declining.** The renderer builds the
+project export's `.h`, so its output is C whatever the active output language
+is: under `--language rust` a `struct X { … };` block carrying Rust-spelled
+field types would be neither valid Rust nor readable C. `kuna
+decompile-project` refuses a non-C output language outright for exactly that
+reason (§9.6, §9.7); the preamble takes the same decision one step smaller —
+it declines, and the body is emitted as it would have been. Teaching the
+definition renderer the language plane is that plane's work, not this option's.
+
+**The machine-readable half.** `decompile_drive.rs
+(extract_type_definitions)` reports the same set as the `types` array of a
+`kuna decompile-all --json` function record: one object per type carrying its
+name, its definition text (`kuna_structdefs.rs (definition_text)` — the body for
+a complete composite, the enum block, the typedef line, or the opaque forward
+declaration) and its size, so a consumer reads a recovered layout without
+parsing C out of `code`. The key is always present and is empty unless the
+option is on: the array and the printed preamble are one decision. The factory
+can hold two data-types under one name — a DWARF image carries both the
+forward-declared `struct _IO_FILE` and the defined one — which the rendered text
+already resolves by printing one forward declaration and one body;
+`kuna_structdefs.rs (dedup_by_name)` applies the same rule to the records, since
+two entries for `_IO_FILE` reporting size 0 and size 216 is a contradiction a
+JSON consumer has no way to resolve.

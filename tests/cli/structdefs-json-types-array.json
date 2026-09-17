@@ -1,0 +1,57 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 120,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "main",
+    "--json",
+    "--option",
+    "structdefs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].types[0].name",
+        "op": "eq",
+        "value": "option"
+      },
+      {
+        "path": "functions[0].types[0].definition",
+        "op": "contains",
+        "value": "typedef struct option option; /* opaque */"
+      },
+      {
+        "path": "functions[0].types[0].size",
+        "op": "eq",
+        "value": 32
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "typedef struct option option; /* opaque */"
+      }
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+    "binary_sha256": "2cc72cbd21561b5907af240cc9b5396f20821e7cbc5fabd2588319cf01c6d30b",
+    "binary_size": 48024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "notes": "structdefs on: main references the libc `struct option` shell, so the additive per-function `types` array carries that one definition (name, .h text, size) and the same line is printed above the body. The definition text is what scripts/decbench/structscore.py's layout parser reads, so a consumer never has to parse C out of `code`."
+}

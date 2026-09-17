@@ -111,7 +111,7 @@ use kuna_console::project::{
 // `File::architecture()` (the ARM-discovery default, decbench) plus the
 // section/segment walks the zero-discovery diagnosis reads.
 use object::{Object, ObjectSection, ObjectSegment};
-use kuna_decomp::decompile_drive::{print_c_types, LineMapping, VarInfo};
+use kuna_decomp::decompile_drive::{print_c_types, LineMapping, TypeInfo, VarInfo};
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES, RELOC_OBJECTS_ENV};
 
 use regex::Regex;
@@ -983,6 +983,12 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                 want_proto: args.jobs_proto,
                 want_provenance: args.jobs_provenance,
                 want_callee_hints: args.jobs_callees,
+                // `--jobs-types` is what a project export asks its workers for:
+                // the `.h` type block. A worker serving that surface therefore
+                // leaves the `structdefs` preamble out of the bodies, exactly as
+                // the serial export does; a `decompile-all`/`decompile-graph`
+                // worker does not set it and keeps the preamble.
+                header_carries_types: args.jobs_types,
                 single_target: false,
             };
             let mut pending = entries.into_iter();
@@ -2358,6 +2364,7 @@ fn result_json(
                 let vars = Json::Array(f.variables.iter().map(var_json).collect());
                 let line_mappings =
                     Json::Array(f.line_mappings.iter().map(line_mapping_json).collect());
+                let types = Json::Array(f.types.iter().map(type_json).collect());
                 Json::Object(vec![
                     ("name".into(), Json::Str(f.name.clone())),
                     ("address".into(), Json::Number(f.address.to_string())),
@@ -2378,6 +2385,10 @@ fn result_json(
                     ),
                     ("line_mappings".into(), line_mappings),
                     ("variables".into(), vars),
+                    // (kuna `structdefs`) The layout side: the definitions of
+                    // the composites this function's C names, as records.
+                    // Always present, `[]` unless the option is on.
+                    ("types".into(), types),
                 ])
             })
             .collect(),
@@ -2477,6 +2488,17 @@ fn object_location_json(location: Option<&ObjectLocation>) -> Json {
     }
 }
 
+/// One recovered type definition (`kuna decompile-project`'s `.h` text for that
+/// one type, plus its name and size) — the layout a consumer would otherwise
+/// have to parse back out of the C.
+fn type_json(t: &TypeInfo) -> Json {
+    Json::Object(vec![
+        ("name".into(), Json::Str(t.name.clone())),
+        ("definition".into(), Json::Str(t.definition.clone())),
+        ("size".into(), Json::Number(t.size.to_string())),
+    ])
+}
+
 /// One `VariableInfo`-shaped JSON object (the fields decbench's `type_match`
 /// consumes).
 fn var_json(v: &VarInfo) -> Json {
@@ -2541,6 +2563,11 @@ mod provenance_json_tests {
                 line_numbers: vec![3],
                 addresses: vec![0x401004],
             }],
+            types: vec![TypeInfo {
+                name: "mystruct".into(),
+                definition: "struct mystruct {\n    int a;\n};\n".into(),
+                size: 4,
+            }],
             line_mappings: vec![LineMapping {
                 line_number: 3,
                 addresses: vec![0x401004, 0x401008],
@@ -2557,6 +2584,10 @@ mod provenance_json_tests {
         assert!(rendered.contains("\"line_number\": 3"));
         assert!(rendered.contains("\"line_numbers\": [\n            3"));
         assert!(rendered.contains("\"addresses\": [\n            4198404"));
+        // (kuna `structdefs`) The layout side of the record, additive to every
+        // key above it.
+        assert!(rendered.contains("\"types\": ["));
+        assert!(rendered.contains("\"definition\": \"struct mystruct {"));
     }
 }
 

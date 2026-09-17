@@ -1,0 +1,222 @@
+# structdefs — analysis
+
+## The gap
+
+kuna recovers composite layouts and then does not show them on the surface a
+caller reads. `kuna decompile ./fmt get_prefix` prints
+
+```
+int get_prefix(_IO_FILE *f)
+{
+  ...
+  v4 = (unsigned char *)f->_IO_read_ptr;
+```
+
+and nothing in the output says what an `_IO_FILE` is. The layout the field
+accesses are printed *against* is real — it is in the type factory, and
+`kuna decompile-project` writes it into the export's `.h` — but reaching it
+means exporting a whole project folder for one function. On a stripped binary
+the same thing happens one level down: `libctypes` gives the argument the named
+opaque shell `FILE *`, which is strictly better than `long`, and the caller
+still has nothing that says `FILE` is a struct at all.
+
+angr prints the typedefs a function references above it, which is a large part
+of why its output reads struct-aware. kuna had the renderer
+(`PrintC::doc_type_definitions`, the `docTypeDefinitions` port) and only a
+whole-project caller for it.
+
+## What the option does
+
+`option structdefs on` (P9, default off) prints the definitions of the
+composite, enum and typedef types the function's own C names, above the
+function, in definition-before-use order.
+
+```
+$ kuna decompile ./fmt get_prefix --option structdefs on
+typedef struct _IO_marker _IO_marker; /* opaque */
+typedef struct _IO_FILE _IO_FILE;
+typedef struct _IO_codecvt _IO_codecvt; /* opaque */
+typedef struct _IO_wide_data _IO_wide_data; /* opaque */
+
+struct _IO_FILE {
+    int _flags;
+    undefined1 _pad4[4];
+    char *_IO_read_ptr;
+    ...
+};
+
+int get_prefix(_IO_FILE *f)
+```
+
+## The in-repo witness
+
+`dwarfstructs_x86_64` carries a self-referential `struct Node`, which is the case
+kuna's forward-declaration-first rendering exists for:
+
+```
+$ kuna decompile .../fixtures/dwarfstructs_x86_64 walk_list --option structdefs on
+typedef struct Node Node;
+
+struct Node {
+    int val;
+    undefined1 _pad4[4];
+    Node *next;
+};
+
+int walk_list(Node *n)
+```
+
+## Which types, and why those
+
+The roots are the function's semantic type surface: the prototype's return and
+parameter types, every Varnode's data-type, and every mapped Symbol type behind
+a HighVariable. From each root the walk descends through the typedef base and
+the component sub-types `Datatype::get_depend` reports (a pointer's pointee, an
+array's element, a struct's fields) and pushes each definable type in postorder.
+
+That set is a **superset** of the type names the printer can spell: a local
+declaration is read off a high or its mapped symbol, the signature off the
+prototype, a cast off the Varnode type it casts to. So the preamble cannot omit
+a definition the body refers to. Collecting from the emitted token stream
+instead would be exact for names that print, and would miss the struct behind
+`p->field_0x8`, whose tag name the C never prints at all. The cost of the
+choice is the opposite error: a type carried by a Varnode that contributes no
+token can be defined above a function that never names it.
+
+Core types are never defined (they are the language's, and the project export
+declares them once in its recompile prelude). An incomplete struct prints as its
+forward declaration alone, `typedef struct FILE FILE; /* opaque */`.
+
+## One renderer, two surfaces
+
+The text is `printc::render_type_definitions` — the same renderer that builds
+`decompile-project`'s `.h` type block — over the referenced subset, so a
+preamble line and a header line for one type are the same line. A project
+export's `.c` bodies therefore suppress the preamble: they include the header
+that already carries every definition, and printing them again above each body
+would redefine them. Measured: a `decompile-project` run with `--option
+structdefs on` is byte-identical to one without, serially, under `--jobs 2`, and
+under `--stream`.
+
+The suppression is keyed on a batch option that states that reason —
+`DecompileOptions::header_carries_types`, set by the export surfaces and by a
+`--jobs` worker serving one (the worker `--jobs-types` asks for the `.h` type
+block). The first cut keyed it on `want_proto` instead, which looked like the
+export surface and is not: `kuna decompile-graph` asks for prototypes too, and
+its document is per-function C with **no** header artifact, so the option was a
+silent no-op there — 0 of 216 minigzip functions carried a definition, exit 0,
+no diagnostic. It now carries 13, the same 13 `decompile-all` prints, which is
+also what that document's `codeC` field promises (byte-identical to
+`decompile-all --json`'s `code`).
+
+The preamble is documentation, not a translation unit — an `undefined1` padding
+member needs the export's recompile prelude to compile — which is the other half
+of why the definitions stay in the header on the surface that is meant to
+rebuild.
+
+## Two roughnesses, measured
+
+**A type name that is also a function name.** `typedef struct stat stat;`
+prints directly above `int stat(char *a0,stat *a1)`, which no compiler accepts —
+the export's `.h` knows this shape and drops the colliding *prototype* with a
+named comment. The preamble does not: it is documentation, and hiding the layout
+of `stat` from the one function about to use it costs more than the collision
+does. Four such functions over stripped `cmp`/`od`/`find`/`tar` (`stat`,
+`sigaction`).
+
+**Over-inclusion.** Roots are Varnode-level, so a type carried by a Varnode that
+contributes no token can be defined above a function that never names it — a
+function whose only contact with `FILE` is handing `stdout` to a callee. Counting
+definitions that neither the body nor another emitted definition references:
+
+| corpus | definition records | never referenced |
+|---|---|---|
+| stripped `cmp` / `od` / `find` / `tar` | 367 | 55 (15%, 1 in 6.7) |
+| their unstripped twins | 10,912 | 50 (0.5%) |
+
+The stripped rate is the visible one because a libc shell has no members and so
+pulls nothing else in; with DWARF, a type the body does not name is almost always
+a dependency of one it does. The alternative — rooting in the token stream —
+under-defines instead, missing a type the signature spells through a typedef, and
+a missing definition is the worse error for the surface this exists to serve.
+
+## Line numbers stay honest
+
+The preamble goes through the emitter, before `begin_function`, rather than
+being prepended to the finished string, so every line-indexed surface counts it
+the same way the text does. With the option on, `walk_list`'s
+`line_mappings[0].line_number` is 13 and line 13 of `code` is `if (n) {` — the
+eight preamble lines shifted both together.
+
+## The preamble is C, and declines rather than half-honouring another language
+
+`render_type_definitions` builds the project export's `.h`, so what it produces
+is C whatever `--language` is active: under `--language rust` the preamble came
+out as a C `struct Node { … };` block carrying Rust-spelled field types, which is
+neither valid Rust nor readable C. `kuna decompile-project` already refuses a
+non-C output language outright for that exact reason, so the preamble takes the
+same decision one step smaller — it declines (and so does the `types` array),
+and the Rust body is emitted unchanged. Probe:
+`tests/cli/structdefs-declines-a-rust-document.json`.
+
+## Measurements
+
+**Default is byte-identical to main.** Six whole-binary `decompile-all` runs
+(66,761 lines of C) against a main build: identical, every one.
+
+| binary | lines | vs main (default) |
+|---|---|---|
+| coreutils fmt O2 stripped | 4,070 | identical |
+| grep O2 stripped | 18,251 | identical |
+| gzip O0 stripped | 6,787 | identical |
+| bzip2 O2 stripped | 9,765 | identical |
+| coreutils ls O0 unstripped | 11,958 | identical |
+| diffutils diff O2 stripped | 15,930 | identical |
+
+**With the option on, every hunk is an insertion.** The same six binaries,
+option on vs option off, every unified-diff hunk classified
+(`classify-hunks.py`, output in `corpus-sweep-on-hunks.json`):
+
+```
+TOTAL hunks=523 added=8657 deleted=0 non_definition_added=0
+```
+
+Zero deleted lines and zero added lines that are not type-definition text: the
+option adds definitions above functions and changes nothing else. The
+distribution is the expected one — 8,071 of those 8,657 lines are on `ls`, the
+one unstripped binary in the set, where DWARF gives most functions a real
+multi-field struct; the five stripped binaries average 117 added lines each
+(one opaque `FILE`/`option` typedef per function that touches one).
+
+**The `types` array is readable by the layout instrument as it stands.**
+`scripts/decbench/structscore.py`'s `header_layouts` — unchanged — parses the
+concatenated `functions[].types[].definition` of one `decompile-all --json` run
+over `dwarfstructs_x86_64` into seven struct layouts (`Big24`, `Bits`, `Nest`,
+`Node`, `P8`, `Same`, `Same_16`; saved in `structscore-reads-types.json`), so the
+layout side no longer needs a project export to score a binary.
+
+**Metric: neutral, by construction.** decbench's `type_match` reads the
+`--json` `variables[]` array, which this option does not touch; the C text it
+does touch is read only for functions whose `variables[]` is empty. The `types`
+array is new and no metric reads it yet — it exists so
+`scripts/decbench/structscore.py`'s layout side can read a recovered layout from
+the per-function record instead of parsing the project header.
+
+**Speed.** Default off costs one bool test. The box was under three-lane load
+throughout, so the honest statistic is the interleaved minimum, not the median
+(on one run the OFF median came out *above* the ON median, 235ms vs 177ms).
+
+| measurement | off (min) | on (min) | delta |
+|---|---|---|---|
+| one function, unstripped fmt `get_prefix`, min-of-21 (loaded) | 164.00 ms | 168.03 ms | +2.45% |
+| the same, min-of-21 (loaded, again) | 164.51 ms | 163.36 ms | -0.70% |
+| whole binary, stripped fmt (151 fns), min-of-11 (quiet) | 4077.4 ms | 4080.0 ms | +0.06% |
+| the same, min-of-11 (quiet, again) | 4066.0 ms | 4071.1 ms | +0.13% |
+| the same, under three-lane load | 4269.0 ms | 4627.1 ms | +8.39% |
+
+The two quiet whole-binary runs are the trustworthy ones: +0.06% and +0.13%.
+The +6-8% the same measurement gave under load was contention, not the option —
+a per-function walk over that function's Varnodes plus a few rendered lines is
+what a tenth of a percent of a whole-binary run looks like. The single-function
+numbers disagree in sign because that process is dominated by spawn and load.
+The default path is one bool test either way.

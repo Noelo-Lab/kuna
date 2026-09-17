@@ -25,7 +25,8 @@ use std::path::Path;
 
 use kuna_base::address::Address;
 use kuna_decomp::decompile_drive::{
-    extract_variables, print_c, print_c_prototype, print_c_with_provenance, LineMapping, VarInfo,
+    extract_type_definitions, extract_variables, print_c, print_c_prototype,
+    print_c_with_provenance, LineMapping, TypeInfo, VarInfo,
 };
 use kuna_decomp::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
@@ -73,11 +74,15 @@ pub struct FuncResult {
     pub code: Option<String>,
     pub error: Option<String>,
     /// The `.h` prototype line (`<ret> <name>(<params>);`), captured only when
-    /// the caller asked for it (`decompile_targets(want_proto=true)` — the
-    /// `decompile-project` surface).  Always `None` on the `decompile-all`
-    /// path, which does not serialize prototypes.
+    /// the caller asked for it (`want_proto`): the `decompile-project` export's
+    /// header, and `decompile-graph`'s per-function row.  Always `None` on the
+    /// `decompile-all` path, which does not serialize prototypes.
     pub proto: Option<String>,
     pub variables: Vec<VarInfo>,
+    /// (kuna `structdefs`) The composite/enum/typedef definitions this
+    /// function's C names, in definition-before-use order. Empty unless the
+    /// option is on — the same decision that prints them above the body.
+    pub types: Vec<TypeInfo>,
     pub line_mappings: Vec<LineMapping>,
     /// (kuna, issue #197) Every OTHER name this entry carries — a generic
     /// `sub_<addr>` placeholder, an ELF weak/strong twin, a PE
@@ -153,6 +158,14 @@ pub struct DecompileOptions {
     pub want_provenance: bool,
     /// Collect [`FuncResult::callee_hints`] — the `--stream` scheduler's frontier.
     pub want_callee_hints: bool,
+    /// (kuna `structdefs`) This caller renders a header that already defines
+    /// every type the bodies name, so the bodies must not repeat them: the
+    /// `decompile-project` export (and the WASM form of it), whose `.h` block
+    /// comes from the same factory through the same `render_type_definitions`.
+    /// Only a surface that emits such a header sets it — a document of bare
+    /// per-function C (`decompile-all`, `decompile-graph`) has nowhere else to
+    /// carry a definition, so it keeps the preamble.
+    pub header_carries_types: bool,
     pub single_target: bool,
 }
 
@@ -160,9 +173,10 @@ pub struct DecompileOptions {
 /// program, returning one [`FuncResult`] per target (success or per-function
 /// `error` — a bad function never aborts the batch).  `want_proto`
 /// additionally captures the function's prototype line
-/// ([`print_c_prototype`]) inside the same panic guard as the C render — the
-/// `decompile-project` `.h` surface. `want_provenance` runs the markup emitter
-/// after the plain render and resolves its token references against the IR.
+/// ([`print_c_prototype`]) inside the same panic guard as the C render — for
+/// the `decompile-project` `.h` and for `decompile-graph`'s rows.
+/// `want_provenance` runs the markup emitter after the plain render and
+/// resolves its token references against the IR.
 ///
 /// The eager form of [`decompile_pulled`], with `single_target` derived from the
 /// target count.
@@ -178,11 +192,42 @@ pub fn decompile_targets(
         want_proto,
         want_provenance,
         want_callee_hints: false,
+        header_carries_types: false,
         single_target: targets.len() == 1,
     };
+    decompile_batch(prog, targets, &opts)
+}
+
+/// The project-export form of [`decompile_targets`]: prototypes for the `.h`,
+/// and no type-definition preamble in the bodies
+/// ([`DecompileOptions::header_carries_types`]) because that same `.h` defines
+/// every type they name.
+///
+/// Its own function so the decision lives with the surface that renders the
+/// header, not with a flag that happens to travel with it.
+pub fn decompile_export_targets(
+    prog: &mut ConsoleProgram,
+    targets: Vec<FunctionEntry>,
+) -> Vec<FuncResult> {
+    let opts = DecompileOptions {
+        no_vars: false,
+        want_proto: true,
+        want_provenance: false,
+        want_callee_hints: false,
+        header_carries_types: true,
+        single_target: targets.len() == 1,
+    };
+    decompile_batch(prog, targets, &opts)
+}
+
+fn decompile_batch(
+    prog: &mut ConsoleProgram,
+    targets: Vec<FunctionEntry>,
+    opts: &DecompileOptions,
+) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
     let mut pending = targets.into_iter();
-    decompile_pulled(prog, &opts, &mut || pending.next(), &mut |r| out.push(r));
+    decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| out.push(r));
     out
 }
 
@@ -216,7 +261,27 @@ pub fn decompile_pulled(
     next: &mut dyn FnMut() -> Option<FunctionEntry>,
     sink: &mut dyn FnMut(FuncResult),
 ) {
-    let DecompileOptions { no_vars, want_proto, want_provenance, single_target, .. } = *opts;
+    let DecompileOptions {
+        no_vars,
+        want_proto,
+        want_provenance,
+        header_carries_types,
+        single_target,
+        ..
+    } = *opts;
+    // (kuna `structdefs`) A project export's bodies do NOT carry the
+    // type-definition preamble: they `#include` the generated header, and
+    // `build_header` renders every one of those definitions into it from the
+    // same factory through the same `render_type_definitions`. Printing them
+    // again above each body would redefine them. Only a caller that renders
+    // such a header says so ([`DecompileOptions::header_carries_types`]);
+    // every other batch keeps the preamble, because its document has nothing
+    // else that carries a definition. Restored on the way out so one program
+    // can drive both surfaces.
+    let preamble = prog.arch().print().options.struct_defs();
+    if header_carries_types && preamble {
+        prog.arch_mut().print_mut().options.set_struct_defs(false);
+    }
     let mut hints: Option<CalleeHintContext> = None;
     while let Some(FunctionEntry {
         name,
@@ -249,6 +314,7 @@ pub fn decompile_pulled(
                 error: Some(error),
                 proto: None,
                 variables: Vec::new(),
+                types: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -278,6 +344,7 @@ pub fn decompile_pulled(
                 error: None,
                 proto: None,
                 variables: Vec::new(),
+                types: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -295,6 +362,7 @@ pub fn decompile_pulled(
                 error: Some("entry address is not mapped in this input".into()),
                 proto: None,
                 variables: Vec::new(),
+                types: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -432,6 +500,10 @@ pub fn decompile_pulled(
                     let code = untrimmed.trim_matches('\n').to_string();
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
+                    // (kuna `structdefs`) The layout side of the same function:
+                    // the definitions the preamble just printed above the body,
+                    // as records. Empty unless the option is on.
+                    let types = extract_type_definitions(prog.arch(), &fd);
                     provenance.apply_to_variables(&fd, &mut variables);
                     for variable in &mut variables {
                         for address in &mut variable.addresses {
@@ -456,10 +528,10 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, proto, line_mappings, callee_hints)
+                    (code, variables, types, proto, line_mappings, callee_hints)
                 }));
                 match rendered {
-                    Ok((code, variables, proto, line_mappings, callee_hints)) => sink(FuncResult {
+                    Ok((code, variables, types, proto, line_mappings, callee_hints)) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -468,6 +540,7 @@ pub fn decompile_pulled(
                         error: None,
                         proto,
                         variables,
+                        types,
                         line_mappings,
                         aliases,
                         object_location,
@@ -482,6 +555,7 @@ pub fn decompile_pulled(
                         error: Some("panic while rendering C / extracting variables".into()),
                         proto: None,
                         variables: Vec::new(),
+                        types: Vec::new(),
                         line_mappings: Vec::new(),
                         aliases,
                         object_location,
@@ -498,12 +572,16 @@ pub fn decompile_pulled(
                 error: Some(e.explain().to_string()),
                 proto: None,
                 variables: Vec::new(),
+                types: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
             }),
         }
+    }
+    if header_carries_types && preamble {
+        prog.arch_mut().print_mut().options.set_struct_defs(true);
     }
 }
 
