@@ -57,11 +57,11 @@ gives `B`, and only where nothing gives one does an index keep an index key
 
 The pool is then **split by evidence**, because the two halves answer different
 questions. `*(T *)(B + K)` and `B->f` commit to a field; `B[k]` and `*B` do not
-— `char *s; s[0]; s[1]` is a string walk, and 1,123 of the 1,310 candidates in
+— `char *s; s[0]; s[1]` is a string walk, and 1,123 of the 1,312 candidates in
 the recorded census have no other evidence. Each half is then measured against
 the ground truth for how many of its candidates kuna **already** types right:
 that is the match->miss channel a synthesis pass would spend, and on the
-field-committed half it is ~zero (1/80 at O0, 0/69 at O2), which is what makes
+field-committed half it is ~zero (1/82 at O0, 0/69 at O2), which is what makes
 struct synthesis a *quality* feature rather than a metric one.
 
 Usage (needs the decbench venv python)::

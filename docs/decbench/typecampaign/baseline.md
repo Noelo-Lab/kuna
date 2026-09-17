@@ -159,7 +159,11 @@ An array is scored as its element type on both sides — kuna's `char[3]` agains
 DWARF's `char[3]` is an exact match, not a pointer-vs-`char` miss — which is
 also what `type_match` does with it (`normalize_type('char[3]')` is `{'char[3]'}`,
 which no pointer form matches). Scoring the two sides by different conventions
-cost 223 points over these eight binaries, all of them on `is_c_pointer`.
+cost 333 points net over these eight binaries, 222 of them at O0. The gross
+move is larger and does not stay on one step: the old convention failed
+`is_c_pointer` on 115 more variables (575 points), and the variables that now
+survive that step give 242 of it back further down (`is_c_struct` 207,
+`c_primitive` 53, less 18 recovered at `sign_ignored_primitive`).
 
 `GT vars` is the denominator the mean is taken over: the ground-truth variables
 of every DWARF function some kuna function resolves to, which is the set the
@@ -193,12 +197,12 @@ and (2478 − 867)/413 = 3.9007:
 against 11–19% for `sign_ignored_primitive` and 4–8% for `c_primitive`. It is
 the same deficit the metric lane is chasing, and it is one-directional: of fmt's
 112 failures, 110 are kuna declining to be a pointer at all (`unsigned long` 68,
-`undefined8` 23, `long` 17) where DWARF has one — `fmt(file)` and
-`get_paragraph(f)` as `unsigned long` against `char *` and `FILE *`,
-`get_line(end_of_word)` as `undefined8` against `Word *`. So **signedness is not
-where this score is lost**: a signedness PR should expect a small `mean` move and
-no `mean 0-5` move at all, and a primitive-width PR is worth at most ~19% of the
-O0 gap.
+`undefined8` 23, `long` 17, one each of `undefined16` and `long[11]`) where
+DWARF has one — `fmt(file)` and `get_paragraph(f)` as `unsigned long` against
+`char *` and `FILE *`, `get_line(end_of_word)` as `undefined8` against
+`Word *`. So **signedness is not where this score is lost**: a signedness PR
+should expect a small `mean` move and no `mean 0-5` move at all, and a
+primitive-width PR is worth at most ~19% of the O0 gap.
 
 **At O2 the score is lost at `defined`** — 76–80% of the loss is GT variables
 kuna's JSON surface has nothing to pair with at all (968 of ls's 1,600), because
