@@ -1556,8 +1556,19 @@ moves.
   decides: a held definition of the declared width is taken whole and no
   published layout is installed over it.
 
-  Two constraints shape the tables themselves. No field is spelled as a pointer
-  to the aggregate being filled — `_IO_FILE::_chain` and `_IO_FILE::_freeres_list`
+  Three constraints shape the tables themselves. No row names a member glibc
+  reserves for itself — `stat::__pad0`, `stat::__glibc_reserved`,
+  `_IO_FILE::__pad5`, `_IO_FILE::_unused2` — so those offsets stay holes and
+  print in the neutral offset form. The width they take up is measured with
+  everything else, but a member no program may read has no truthful use that
+  carries information: every honest occurrence of such a name is a whole-struct
+  copy spilling padding, and the occurrences that carry meaning are all wrong,
+  because a named pointee landing inside a larger struct gives that struct's own
+  members the reserved names. Measured over sixteen binaries the rows fired 28
+  times — nineteen padding copies, eight mis-names of diffutils'
+  `file_data::desc` and `::name`, and one address computation the name made
+  harder to read — so the hole is the honest form in every case. No field is
+  spelled as a pointer to the aggregate being filled — `_IO_FILE::_chain` and `_IO_FILE::_freeres_list`
   are `void *` here — because completing a struct re-keys it into a new object,
   so a self-pointer taken while the shell is being filled would strand the
   program on two stream types; nothing reads `_chain`, and the alternative is a
@@ -1571,6 +1582,15 @@ moves.
   installed headers with `offsetof`/`sizeof`/`_Alignof`, not restated from
   memory; the program and its output are recorded in
   `docs/features/libctypes/glibc.md`.
+
+  A name the operator declares by hand (`--define-function 0x…=fopen`) arrives
+  long after load, with neither the option value nor the image in reach, so it
+  cannot re-run that target gate. It reads the answer off the program instead: an
+  aggregate already held under one of the nine names, carrying the member the
+  table puts at offset 0, is proof that the gate passed on this image and the
+  layouts went in, and a declared name is then minted to match. An image with no
+  such aggregate — the value off, the target refused, or none of the nine
+  imported — supports only the opaque shell, and that is what it gets.
 
   The default is `opaque`. No datatest loads a file, so the 675 assertions
   cannot see this tier either way; the stage corpus can, and
@@ -1592,9 +1612,18 @@ moves.
   is in `decompile-project`, whose exported `.c` reads fields out of a shell its
   `.h` declares incomplete (the `.h` is unaffected). `glibc` is measured the same
   way against `opaque`, and its own sweep is in `docs/features/libctypes/glibc.md`:
-  across eight whole binaries it turns 483 `field_0x<hex>` accesses into 1 (a
-  padding hole inside a copied `struct tm`), leaves the functional `PTRSUB(` form
-  absent, and moves the declaration count by 11 in 27,196.
+  across sixteen whole binaries it turns 651 `field_0x<hex>` accesses into 9,
+  leaves the functional `PTRSUB(` form absent, and moves the declaration count by
+  6 in 37,737. Two things that sweep is NOT evidence for are recorded there with
+  their counterexamples. A sized pointee makes an index respell an offset, and
+  where the named aggregate is only one member of a larger struct the respelling
+  is a confident mis-name — six of the ten indexed member accesses in the corpus,
+  e2fsprogs `init_resource_track` giving `brk_start` the name `tv_sec`. And the
+  by-value local count moves in both directions under one net figure: shadow
+  `useradd` `main` loses a recovered 144-byte `stat` stack symbol into a
+  `char[128]`, on the `variables[]` surface the type metric scores, and scores
+  identically in both arms — so a flat sweep means nothing regressed *that the
+  metric scores*, which is not the same claim.
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.

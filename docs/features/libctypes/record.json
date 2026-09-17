@@ -892,7 +892,9 @@
   "table_rules": {
    "no_self_reference": "_IO_FILE::_chain and _IO_FILE::_freeres_list are void *, not FILE *: completing a struct re-keys it into a new Rc, so a self-pointer taken while the shell is being filled would strand the program on two stream types.",
    "nesting_depth": "one level: stat holds three timespecs by value and timespec holds no aggregate, so the recursive mint terminates by construction and dependent_order's definition-before-use walk stays finite. Unit-tested.",
-   "adoption_unchanged": "a definition already held of the declared width is adopted whole; no published layout is ever installed over somebody else's."
+   "adoption_unchanged": "a definition already held of the declared width is adopted whole; no published layout is ever installed over somebody else's.",
+   "no_reserved_members": "no row names a member glibc reserves for itself (stat::__pad0, stat::__glibc_reserved, _IO_FILE::__pad5, _IO_FILE::_unused2); those offsets stay holes and print in the neutral offset form. Measured over the 16-binary corpus the rows fired 28 times and not one was worth having: 19 whole-struct copies spilling padding (v12.__glibc_reserved[0] = v13.__glibc_reserved[0] says exactly what v12._120_8_ = v13._120_8_ says), 8 LIES about diffutils file_data::desc/::name, and 1 address computation the name made worse ((long)v32.__glibc_reserved + v10*4 + -0x78 -> (long)&v32.st_dev + v10*4). Unit-tested: no_layout_names_a_reserved_member.",
+   "declared_prototype_layout": "declared_libc_prototype (--define-function 0x..=fopen) runs after load with neither the option value nor the object file in reach, so it cannot re-run target_is_glibc_x86_64 and must not guess. live_layout() reads the answer off the program: a held aggregate under one of the nine names carrying the member the table puts at offset 0 is proof the gate passed and the layouts went in. Anything else supports Opaque only. The earlier hard-coded Layout::Opaque was wrong for a name the image does not IMPORT (LibcTypesPass::run seeds from imported names only), which is exactly the case a --define-function directive creates. Unit-tested: the_live_layout_is_read_off_the_program."
   },
   "witness": {
    "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
@@ -902,42 +904,85 @@
    "value_type": "on the stage fixture, `return *(unsigned long *)&a1->field_0x30; return 0xffffffffffffffff;` becomes `return a1->st_size; return -1;` -- st_size is a signed long, so the sentinel stops printing as an unsigned bit pattern"
   },
   "corpus_sweep": {
-   "binaries": 8,
-   "functions_changed": 111,
+   "binaries": 16,
+   "functions_changed": 179,
    "ptrsub_functional_form": {
     "opaque": 0,
     "glibc": 0
    },
    "field_0x_accesses": {
-    "opaque": 483,
-    "glibc": 1
+    "opaque": 651,
+    "glibc": 9
    },
-   "field_0x_residue": "v2._36_4_ = *(unsigned int *)&a1->field_0x24 in findutils find -- the four padding bytes inside a copied struct tm, a hole in the published layout",
+   "field_0x_residue": "4 padding bytes inside a copied struct tm (findutils find), 3 address forms in e2fsck, and the 2 diffutils offsets the reserved-row rule exists to keep neutral",
    "undefined8_declarations": {
-    "opaque": 18,
-    "glibc": 2
+    "opaque": 46,
+    "glibc": 16
    },
    "declarations": {
-    "opaque": 27196,
-    "glibc": 27207
+    "opaque": 37737,
+    "glibc": 37731
    },
    "byvalue_named_aggregate_locals": {
-    "opaque": 74,
-    "glibc": 74
+    "opaque": 132,
+    "glibc": 134,
+    "is_not_an_invariant": "this is a COUNT over the 16 binaries, not a safety property. It is a net and it hides motion both ways on the exact variables[] surface decbench scores. An earlier version of this record presented '74 -> 74' over 8 binaries as a no-motion property; it never was one.",
+    "counterexample": {
+     "slice": "shadow::O2::useradd",
+     "function": "main @ 0x6480",
+     "lost": "opaque recovers a 144-byte `stat` stack symbol at -0x218 (`stat v75;`); glibc does not -- a neighbouring char[16] at -0x268 grows to char[128] and swallows it, and every access becomes a piece write (v44._16_8_ = v27 / 0x15180; stat(\"/var/log/lastlog\",(stat *)&v44[0x50]))",
+     "variables_rows": "43 in BOTH arms; the stat row is one of them under opaque and none of them under glibc (long 7 -> 4, undefined8 10 -> 15)",
+     "gained_elsewhere": "two other useradd functions (0xfde0, 0x16520) gain a by-value stat opaque did not have, which is where the net +2 comes from",
+     "metric_is_blind": "shadow::O2::useradd main scores 0.08064516129032258 with {tp:5, fp:4, fn:53, decomp_vars:43} in BOTH arms, so it is not in moved.csv. A flat sweep is evidence that nothing regressed THAT THIS METRIC SCORES -- not that nothing regressed."
+    }
    },
    "piece_reads": {
-    "opaque": 688,
-    "glibc": 494
+    "opaque": 1580,
+    "glibc": 1273
    },
    "hunk_classes": {
-    "field-name": 389,
-    "field-name-byvalue": 140,
-    "decl-type": 9,
-    "cast-or-literal": 4,
+    "field-name-or-decl-type": "the bulk; undefined8 46 -> 16 is the declaration half",
+    "cast-or-literal": "a handful (*v2 = 10 -> *v2 = '\\n', 0xffffffffffffffff -> -1)",
+    "index-respells-an-offset": 41,
     "unexplained": 0
    },
    "one_shape_that_looked_like_a_defect": "`*(unsigned int *)&v10[3] & 0xf000` -> `v10[3] & 0xf000` once the pointee goes long -> unsigned long. Pre-existing printer behaviour: on main, `uint8 *p` prints `p[3]` where `int8 *p` prints `*(uint4 *)&p[3]`.",
-   "artifact": "docs/features/libctypes/corpus-hunk-classification-glibc.txt"
+   "artifact": "docs/features/libctypes/corpus-hunk-classification-glibc.txt",
+   "binary_set": "8 chosen by the implementer (O2/coreutils/fmt, O0+O2/coreutils/ls, O0/coreutils/stat, O2/grep/grep, O0/tar/tar, O2/gzip/gzip, O0/findutils/find) + 8 chosen by an adversarial review and DISJOINT from them (O2/e2fsprogs/e2fsck, O2/coreutils/du, O0/base-passwd/update-passwd, O2/shadow/useradd, O2-noinline/coreutils/sort, O2/dpkg/dpkg-statoverride, O0/cronie/crond, O2-noinline/diffutils/diff). Both counterexamples below come from the review's half.",
+   "functions_total": 8290,
+   "named_reserved_members": {
+    "opaque": 0,
+    "glibc": 0
+   },
+   "array_index_hazard": {
+    "claim_retracted": "an earlier version of glibc.md said this hazard fires 14 times and 'every one of them is an improvement'. FALSE, and the binary that falsifies it is the one the item spec named (e2fsprogs e2fsck init_resource_track), which was not in the implementer's 8.",
+    "two_shapes": "member-then-index (p->d_name[k]) and index-then-member (p[k].member, k != 0) do not behave alike and were conflated.",
+    "member_then_index": {
+     "sites": 31,
+     "all": "dirent::d_name",
+     "verdict": "every one an improvement -- d_name IS a char[256], so findutils' dotfile test goes from three offset fields (vN->field_0x13/0x14/0x15) to vN->d_name[0..2]"
+    },
+    "index_then_member": {
+     "sites": 10,
+     "true": 4,
+     "misnamed": 6,
+     "e2fsck_init_resource_track": {
+      "addr": "0x339d0",
+      "why": "gettimeofday(a0,NULL) is the only thing in the stripped binary that says what a0 is, so a0 becomes timeval *; it is really a struct resource_track * whose first THREE members are timevals",
+      "opaque": "*(unsigned long *)&a0[3] = sbrk(0);  *(unsigned long *)&a0[3].field_0x8 = 0;  *(unsigned long *)&a0[4] = 0;",
+      "glibc": "a0[3].tv_sec = sbrk(0);  a0[3].tv_usec = 0;  a0[4].tv_sec = 0;",
+      "ground_truth": "O2/e2fsprogs/compiled/e2fsck, iscan.c:61 -- track->brk_start = sbrk(0); track->bytes_read = 0; track->bytes_written = 0; (struct resource_track { timeval time_start, user_start, system_start; void *brk_start; unsigned long long bytes_read, bytes_written; })",
+      "verdict": "5 of the 9 index sites in this one function are mis-names (brk_start/bytes_read/bytes_written spelled tv_sec/tv_usec); the other 4 (a0[1], a0[2]) really ARE timevals and are right"
+     },
+     "diffutils_diff": {
+      "addr": "0x8e70",
+      "site": "v15 = (unsigned long *)&v15[2].st_nlink;  (opaque: v16 = (char *)&v16[2].field_0x10;)",
+      "verdict": "a mis-name: pointer arithmetic to the next struct file_data { int desc; char const *name; struct stat stat; ... }, not a read of st_nlink"
+     },
+     "what_the_reserved_row_drop_fixed": "the same function's 8 `v15[-1].__glibc_reserved[1]`/`[2]` sites (really cmp.file[N].desc and ::name) are back to *(int *)&v15[-1].field_0x80 / *(char **)&v15[-1].field_0x88, which is what opaque says; the price is 4 dpkg-statoverride padding-copy lines going from v12.__pad0 / v12.__glibc_reserved[k] back to v12._36_4_ / v12._120_8_",
+     "verdict": "the hazard is INHERENT to naming a pointee from one call site, not a bug in a table: when the object is bigger than the claim, every offset past the aggregate is mis-attributed. The reserved rows made it worse and are gone; the residue (tv_sec for brk_start) is a real cost of glibc over opaque and one of the reasons opaque stays the default."
+    }
+   }
   },
   "benchmark": {
    "instrument": "scripts.decbench.typesweep (decbench main's TypeMatchMetric), DECBENCH_NO_CACHE=1, KUNA_BIN pinned to this branch's release build; base arm = the shipped default `opaque`, test arm = `--option libctypes glibc`",
@@ -1040,7 +1085,8 @@
      "test": 0.1475
     }
    ],
-   "reading": "the metric is FLAT. The surface decbench scores is variables[] -- arguments and stack symbols -- and a field NAME changes neither; what it changes is the body and the type of a loaded value, and the register locals that carry those are never exported. +0.55 aggregate over 10748 functions is noise."
+   "reading": "the metric is FLAT. The surface decbench scores is variables[] -- arguments and stack symbols -- and a field NAME changes neither; what it changes is the body and the type of a loaded value, and the register locals that carry those are never exported. +0.55 aggregate over 10748 functions is noise.",
+   "rerun_after_reserved_row_drop": "the 444-slice sweep was re-run on the build with the reserved rows dropped and the live-layout probe in: identical in every figure -- perfect 959 -> 959, aggregate 3037.05 -> 3037.60, 0 onto / 0 off perfect, 9 improved / 3 worse, and the same 12 moved rows."
   },
   "default_decision": {
    "value": "opaque (unchanged)",
