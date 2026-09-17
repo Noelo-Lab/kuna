@@ -152,7 +152,7 @@ was made dense).
   rows 215, `source_decompiler: "angr"` **36**,
   `change_kind: "structure-recovery"` **31**, `change_kind: "opt-in-tool"` 21,
   `phase_catalog.json` recaptured, `docs/options.md` regenerated,
-  `docs/baseline-stages.json` re-recorded to **1088**.
+  `docs/baseline-stages.json` re-recorded to **1094**.
 - `tests/fixtures/list_action_decompile_oracle.txt` re-recorded (two consuming
   tests: `universalaction_listing.rs` and `verify_w8x_allowlist.rs`).
 
