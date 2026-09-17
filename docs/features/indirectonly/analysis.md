@@ -246,6 +246,9 @@ Pinned:
 * `tests/stages/kuna-indirectonly.xml` — the sound direction, both arms explicit.
 * `kuna_indirectonly/tests.rs` — eight unit tests over `check_indirect_use`,
   including the direct-read counterexample that must not be marked.
+* `p0_knowledge/modes.rs` `EXCLUDED_ON_PURPOSE` — the option is deliberately out
+  of the `aggressive` preset, which `auto` picks under 500 KiB, so nothing on the
+  default path (`decompile-all`, the web front-end, the benchmark) turns it on.
 
 Closing the hole instead of shipping off would mean diverging from upstream in
 `merge_test_adjacent`, and the discriminator it would need — "does the machine
