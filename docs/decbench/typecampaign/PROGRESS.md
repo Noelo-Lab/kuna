@@ -22,12 +22,14 @@ reviewer + green gates; `[PROPOSAL]` items wait for the user; port TRex/RecStruc
 | A2 | ptrfromuse (off|byte|void, default off) | A | merged 83830e86 | — | #659 | byte: 959→964 perfect, 15 improved/0 worse; void: +100 improved/0 worse; flip withdrawn (subscript-of-global ambiguity) | — |
 | A3 | protoorder [PROPOSAL] | A | draft #669 open, review loop (stage2d wf) | /home/mahaloz/kwt/protoorder | #669 | | user go applies: flip/land after review |
 | B1 | phantom-locals root cause → argclobber | B | merged (PR #652) | — | #652 | review 3 rounds; sound 4-site rule (fmt main 3/2/1→2/2/2, phantom rdx locals gone); opt-in | — |
-| B2 | signedness [PROPOSAL] | B | **draft #656 awaiting user go/no-go** (5 review rounds) | /home/mahaloz/kwt/signedness | #656 | DWARF-agreement: upstream 93.4% (O2 71.9%) / auto 93.5% / prefer-signed 98.4% (O2 94.8%); all-signed control 92.8% (O2 59.2%) — the walk earns the slot; metric zero by construction | user decision |
-| B3 | boolbyte | B | PR #664 open; review/land re-dispatched (stage2f) | /home/mahaloz/kwt/boolbyte | #664 | census: 866 one-byte GT-_Bool vars committed to char(700)/unsigned char(166) over 444 slices | review → land |
-| B4 | foldcallretphi / hideshadow / indirectonly / charbyte / mulblob | B | #654 merged; indirectonly merged 0d79b02d (#663, default OFF: ON arm reproduces an upstream Ghidra fabricated-store defect); hideshadow #670 in review (stage2d); charbyte + mulblob running (stage2f) | /home/mahaloz/kwt/{hideshadow,charbyte,mulblob} | #654 #663 #670 | | |
-| C2 | structsynth [PROPOSAL] | C | **draft #655 awaiting user go/no-go** (4 review rounds) | /home/mahaloz/kwt/structsynth | #655 | layout precision 0.894 (704/787 fields), 14/14 exports round-trip, 292 params retyped (0 non-pointers), 1 ordinary FP (ls strmode), type_match −0.05% (4 worse: factor GMP limbs), TRex Fig.6 +109 net | user decision; next C4 ledger subsumption |
+| B2 | signedness | B | landing (stage2g wf), default auto | /home/mahaloz/kwt/signedness | #656 | 675/675 + stages PARITY under auto; 444-slice typesweep byte-identical (959→959); +0.6% speed; 12-binary sweep: 377 decl flips / 443 casts dropped / 0 other hunks | land |
+| B3 | boolbyte | B | PR #664 in review/land (stage2f) | /home/mahaloz/kwt/boolbyte | #664 | 959→987 perfect (+28), 435 improved / 0 worse | default-on evaluation in the review |
+| B4 | foldcallretphi / hideshadow / indirectonly / charbyte / mulblob | B | #654 merged; #663 merged (off); hideshadow merged ba79503e (#670); mulblob #671 in review (stage2f); charbyte later | /home/mahaloz/kwt/{mulblob,charbyte} | #654 #663 #670 #671 | | |
+| C2 | structsynth | C | merged 2272403d (#655), default OFF | — | #655 | speed +0.08% worst; accuracy −0.151% perfect on 300 slices (factor/shred GMP rows) → opt-in per the rules; precision 0.894; reviewer found a PRE-EXISTING orphan-goto invalid-C bug on main (sort O2 0x3ec0) → B6 | C4 subsumption (stage2g) |
 | B5 | GH-657 foldcallret barrier fix | B | merged 39fdc804 | — | #662 | strict fix, no option; 37-binary sweep 126 changed / 0 FLAG; typesweep unmoved | — |
 | A5 | formatstring at load time (default-on candidate, +8 perfects measured) | A | running (stage2f wf) | /home/mahaloz/kwt/formatstring | | | |
+| B6 | orphan goto (goto to a missing label = invalid C, pre-existing on main) | B | running (stage2g wf) | /home/mahaloz/kwt/gotolabel | | | strict fix |
+| C4 | structsynth layout subsumption / dedup | C | running (stage2g wf) | /home/mahaloz/kwt/structdedup | | | |
 | C3-C9 | struct lane follow-ons | C | structdefs (C5) merged 75a7f6b0 (#661) | — | #661 | | C4 subsumption / C6 all / C7 structarray after #655 lands |
 
 States: pending · running · review · gates · merged · blocked · proposal-waiting · dropped.
