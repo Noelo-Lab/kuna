@@ -255,54 +255,91 @@
    "note": "RTOSDemo __sflush_r @0x118 takes a newlib __sFILE * -- the same named-type precedence question as the nine _IO_FILE"
   },
   "retyped_params_libctypes_off": 301,
-  "io_file_class": "GONE since #658. The nine DWARF FILE * of the earlier round (rpl_fseeko in all eight binaries, fmt @0x3700) decline now: libctypes declares `int fileno(FILE *)` and propagation carries that name back into the gnulib wrapper's own parameter, which the 'a named composite pointee always wins' rule then protects. 292 on = 301 off minus exactly those nine. Witness: `kuna decompile-all fmt --addr 0x42d0 --option structsynth param` -> `unsigned long sub_42d0(FILE *a0,...)`, and `--option libctypes off` on the same command -> `struct_0 *a0`. fmt get_prefix @0x2f30 and get_line @0x3420 print `FILE *a0` too."
+  "io_file_class": "GONE since #658. The nine DWARF FILE * of the earlier round (rpl_fseeko in all eight binaries, fmt @0x3700) decline now: libctypes declares `int fileno(FILE *)` and propagation carries that name back into the gnulib wrapper's own parameter, which the 'a named composite pointee always wins' rule then protects. 292 on = 301 off minus exactly those nine. Witness: `kuna decompile-all fmt --addr 0x42d0 --option structsynth param` -> `unsigned long sub_42d0(FILE *a0,...)`, and `--option libctypes off` on the same command -> `struct_0 *a0`. fmt get_prefix @0x2f30 and get_line @0x3420 print `FILE *a0` too.",
+  "second_ordinary_false_positive": "shred O2-noinline passname @0x3290 (DWARF `char *name`): a seven-byte buffer whose `builtin_strncpy(a1,\"random\",7)` lowers to stores of 4, 2 and 1 bytes at offsets 0, 4 and 6. Mixed widths again, so the Howard array rule does not fire, and the ON arm replaces the string literal with `a1->field_0x0 = 0x646e6172; a1->field_0x4 = 0x6d6f; a1->field_0x6 = '\\0';`. Outside the census set (which is fmt/ls/sort/du), found by the 444-slice typesweep.",
+  "rebase_note": "re-run on the rebased tree: byte-identical to the previous round (292 retyped, 182 struct*, 71 other ptr, 39 no-DWARF-type, 0 non-pointer; ARM 37/29/1/3/4/0). ptrfromuse (#659) is default-off, so it does not widen the pointer precondition at the shipped defaults."
  },
  "sweep": {
-  "binaries": 11,
-  "functions": 2801,
-  "changed": 213,
-  "params_retyped": 267,
-  "control_flow_or_call_token_deltas": 1,
+  "binaries": 15,
+  "functions": 5431,
+  "changed": 455,
+  "params_retyped": 531,
   "line_buckets": {
-   "field accesses only": 144,
-   "variable renumbering only": 30,
-   "variable-count delta": 11,
-   "skeleton delta": 1,
-   "read by hand": 27,
-   "lines where the field access gained a cast": 17
+   "field accesses only": 306,
+   "variable renumbering only": 57,
+   "variable-count delta": 32,
+   "skeleton delta": 2,
+   "read by hand": 58,
+   "lines where the field access gained a cast": 36
   },
   "variable_count_delta": {
-   "+1": 9,
-   "-1": 2
+   "+1": 24,
+   "-1": 6,
+   "-2": 2
   },
   "doc": "docs/features/structsynth/sweep.md",
-  "binaries_note": "8 x86-64 ELF (2,168 functions, 175 changed, 230 params) plus chibios O2 and freertos O2 (ARM32 bare metal) and dexter O2 (PE32 DLL)",
-  "control_flow_delta_detail": "chibios O2 sub_800397c: a `for` becomes a `while` with the increment hoisted into the body and a pre-header assignment added. Read by hand against both arms: same three reads in the same order, same exit test, same increment. The eight x86-64 binaries have none, which an earlier round reported as a property of the pass; it is a property of those eight binaries.",
-  "instrument": "docs/features/structsynth/hunks.py (classification; the declaration block is the run between the opening brace and the first blank line, not a regex on line shape, which used to count assignments whose right-hand side is a bare variable) + skeleton.py (control-flow keyword and call-token sequence per function)",
-  "rebase_note": "re-run on the tree rebased onto 12c31465. libctypes default-on removed 8 functions and 8 parameters (the FILE * class) from the sweep; the 27 hand-read hunks, the 11 variable-count deltas and the single skeleton delta (chibios 0x800397c) are byte-identical lists before and after."
+  "binaries_note": "12 x86-64 ELF (fmt O0/O2, ls O2, sort O2, du O0/O2, gzip O2, bzip2 O2, grep O2, diff O2, find O2, tar O2) plus chibios O2 and freertos O2 (ARM32 bare metal) and dexter O2 (PE32 DLL). grep/diff/find/tar are the four added this round, from projects the earlier eleven did not cover; tar is the largest function count in the benchmark.",
+  "skeleton_deltas": [
+   "chibios O2 sub_800397c: a `for` becomes a `while` with the increment hoisted into the body and a pre-header assignment added. Read by hand against both arms: the same three reads in the same order, the same exit test, the same increment.",
+   "findutils find O2 sub_f620: THE BUG HUNK. One of the two `goto label_f752;` predecessors is tail-duplicated, the other `goto` survives, and no `label_f752:` is emitted -- invalid C, and the `case 0x55` arm reads as going nowhere. Pre-existing emitter defect class: 9 functions in the off arm of this corpus have the same shape, 10 in the on arm."
+  ],
+  "undefined_goto_label_census": {
+   "off": 9,
+   "on": 10,
+   "off_sites": [
+    "du O0 0x5197",
+    "bzip2 0x3df0",
+    "chibios 0x8001538",
+    "sort 0x3ec0",
+    "grep 0xeda0",
+    "gzip 0xf900",
+    "tar 0x13570",
+    "tar 0x16780",
+    "tar 0x5aa30"
+   ]
+  },
+  "instrument": "docs/features/structsynth/hunks.py (classification; the declaration block is the run between the opening brace and the first blank line, not a regex on line shape) + skeleton.py",
+  "read_by_hand_groups": {
+   "a load that was its own statement is folded into its one use": 8,
+   "splitdatatype stops splitting (four 4-byte stores become one 8-byte store)": 10,
+   "a repeated address becomes one temporary": 6,
+   "element rescale (the index is divided by the element-size ratio; same byte address)": 16,
+   "a temporary holds the sum instead of the load": 4,
+   "a pointer temporary stops doubling as an integer": 3,
+   "a cast is added or dropped": 5,
+   "a signedness spelling changes": 2,
+   "a shared temporary is dropped and its expression written twice (sort 0x7ef0, a readability cost)": 1,
+   "a memmove argument is respelled": 1,
+   "spelling the line pairing could not align (tar 0x14c50, freertos 0x18c8)": 2
+  }
  },
  "benchmark": {
-  "corpus": "decbench full_run_address_2026-09-11, O0 + O2, projects grep gzip diffutils bzip2 findutils coreutils",
-  "instrument": "scripts.decbench.typesweep --option structsynth param, DECBENCH_NO_CACHE=1",
+  "corpus": "decbench full_run_address_2026-09-11, O0 + O2 + O2-noinline, projects coreutils grep gzip diffutils bzip2 findutils tar shadow (the campaign typesweep)",
+  "instrument": "scripts.decbench.typesweep --option structsynth param, DECBENCH_NO_CACHE=1, KUNA_BIN pinned to the branch release build",
   "metric": "type_match",
-  "slices": 214,
-  "functions": 5298,
-  "control_agreement": "4990 agree / 308 differ vs the published verdict (94.19%)",
-  "perfect_off": 594,
-  "perfect_on": 593,
-  "aggregate_off": 1696.15,
-  "aggregate_on": 1695.24,
+  "slices": 444,
+  "functions": 10748,
+  "control_agreement": "9505 agree / 1243 differ vs the published verdict (88.44%); byte-identical variables in both arms 9296 functions, 0 scored differently",
+  "control_note": "the off arm's perfect count (959) reproduces the campaign's published main number exactly",
+  "perfect_off": 959,
+  "perfect_on": 958,
+  "aggregate_off": 3037.05,
+  "aggregate_on": 3035.55,
   "improved": 0,
-  "worse": 4,
+  "worse": 6,
+  "moved_onto_perfect": 0,
   "moved_off_perfect": 1,
   "worse_rows": [
    "coreutils::O0::factor powm2 1.0 -> 0.714 (moved off perfect)",
    "coreutils::O0::factor millerrabin2 0.75 -> 0.583",
    "coreutils::O2::factor powm2 0.714 -> 0.429",
-   "coreutils::O2::factor millerrabin2 0.5 -> 0.333"
+   "coreutils::O2::factor millerrabin2 0.5 -> 0.333",
+   "coreutils::O2-noinline::factor powm2 0.714 -> 0.429",
+   "coreutils::O2-noinline::factor millerrabin2 0.5 -> 0.333",
+   "coreutils::O2-noinline::shred passname 0.286 -> 0.143"
   ],
-  "why": "type_match compares pointee spellings by name, so a perfect `struct_0 *` can never intersect a ground-truth `WORD *`: this lane is worth zero there by construction. The four losses are GMP limb arrays (mp_limb_t *) read at offsets 0 and 8, which the uniform-run rule keeps as a structure because both elements are pointer-sized. Declining every {0:8, 8:8} layout would erase the loss and cost 62 of the 312 recovered parameters.",
-  "earlier_arm": "Before the uniform-run rule was extended to two sub-pointer-width offsets the same sweep was 14 functions worse (aggregate -3.42); the rule removed 10 of them at zero cost to layout-F1."
+  "why": "type_match compares pointee spellings by name, so a perfect `struct_0 *` can never intersect a ground-truth `WORD *`: this lane is worth zero there by construction. Six of the seven losses are GMP limb arrays (mp_limb_t *) read at offsets 0 and 8, which the uniform-run rule keeps as a structure because both elements are pointer-sized; declining every {0:8, 8:8} layout would erase them and cost about a fifth of the recovered parameters. The seventh, shred passname, is a DWARF `char *` seven-byte buffer whose builtin_strncpy(\"random\",7) decomposes into 4-, 2- and 1-byte stores -- mixed widths, so the array rule does not fire -- and the synthesized layout costs the recovered string literal as well.",
+  "earlier_214_slice_arm": "the O0+O2 six-project sweep gave perfect 594 -> 593 and aggregate 1696.15 -> 1695.24; the 444-slice run adds O2-noinline, tar and shadow, and the three rows above"
  },
  "interactions": {
   "ptrdepthcap": "orthogonal; the synthesized pointer is depth 1 and is type-locked, so the cap never sees it. Verified on the witness with the option both ways.",
@@ -414,22 +451,57 @@
   "mechanism": "update_input_types reads data.high_get_type(vn) into ParameterPieces; get_type_representative prefers a type-locked member unconditionally. The type_dirty() half of vn_update_type_locked is what makes high_get_type see the new type at all."
  },
  "speed": {
-  "method": "interleaved off/param, min-of-15, .scratch/speed.py; the inert control binary (grep O0, where the option cannot fire) is the noise floor",
-  "round_3_run_load_avg_20": {
-   "kuna decompile-all fmt O2 (5/151 fns change)": "-0.06% (4075.5 -> 4073.1 ms)",
-   "kuna decompile-all ls O2 (71/404 fns change)": "+1.25% (13894.1 -> 14068.1 ms)",
-   "kuna decompile-all grep O0 (inert control)": "+0.66% (6660.1 -> 6704.0 ms)",
-   "kuna decompile fmt O2 put_word @0x3000": "+2.84% (163.7 -> 168.3 ms)"
+  "method": "interleaved off/param, min-of-15, .scratch/speed6.py on the rebased build; the inert control binary (grep O0, where the option cannot fire) is the noise floor; `kuna decompile-all <binary>` with no option vs `--option structsynth param`",
+  "worst_delta_pct": 1.34,
+  "budget_pct": 5.0,
+  "within_budget": true,
+  "cases": {
+   "kuna decompile-all fmt O2": {
+    "off_ms": 4264.7,
+    "on_ms": 4251.2,
+    "delta_pct": -0.32
+   },
+   "kuna decompile-all ls O2": {
+    "off_ms": 14010.9,
+    "on_ms": 13863.9,
+    "delta_pct": -1.05
+   },
+   "kuna decompile-all sort O2": {
+    "off_ms": 14797.4,
+    "on_ms": 14778.0,
+    "delta_pct": -0.13
+   },
+   "kuna decompile-all du O2": {
+    "off_ms": 9359.4,
+    "on_ms": 9469.4,
+    "delta_pct": 1.18
+   },
+   "kuna decompile-all fmt O0": {
+    "off_ms": 1655.2,
+    "on_ms": 1677.5,
+    "delta_pct": 1.34
+   },
+   "kuna decompile-all sort O0": {
+    "off_ms": 4229.6,
+    "on_ms": 4264.0,
+    "delta_pct": 0.81
+   },
+   "kuna decompile-all grep O0 (inert control)": {
+    "off_ms": 6594.5,
+    "on_ms": 6765.9,
+    "delta_pct": 2.6
+   }
   },
-  "earlier_runs": {
+  "earlier_runs_pre_rebase": {
    "quiet": "fmt O2 +0.37%, ls O2 -0.27%, inert control -1.83%, one function +0.20%",
-   "contended": "fmt O2 +0.68%, ls O2 -1.23%, inert control +5.00%, one function -0.86%"
+   "contended": "fmt O2 +0.68%, ls O2 -1.23%, inert control +5.00%, one function -0.86%",
+   "load_20": "fmt O2 -0.06%, ls O2 +1.25%, inert control +0.66%, one function +2.84%"
   },
-  "reading": "the inert control is the floor and it moved +0.66% on this run (and +5.00% on an earlier contended one), so the whole-binary cases sit inside it. The single-function case is 163 ms, so +2.84% is 4.6 ms and is the least trustworthy row; it was +0.20% and -0.86% on the two earlier runs. The design's predicted +8% for the forced extra mainloop iteration does not survive measurement in any run."
+  "reading": "the inert control moved +2.60% on this run, and every real case sits inside it in both directions. The design's predicted +8% for the forced extra mainloop iteration does not survive measurement in any run. Speed is NOT why this ships opt-in."
  },
  "project_export": {
   "claim": "`kuna decompile-project` already renders the synthesized layouts in its header, holes included",
-  "verified": "fmt O2 with structsynth param: `struct struct_0 { unsigned char *field_0x0; unsigned int field_0x8; char field_0xc[4]; };` -- the trailing member is the C sizing rounding to the widest field, and the export spells an `undefined1` filler `char`. A layout with an interior hole: `struct struct_2 { unsigned int field_0x0; char field_0x4[4]; long *field_0x8; long field_0x10; };`. The dense layout retired `_pad`: `grep -c _pad` over every ON export is 0 (find O0, fmt O2 and the 12 others), and tests/stages/structsynth-hole-member.xml asserts min=0 max=0 for it.",
+  "verified": "re-run on the rebase (.scratch/rt6): `has no member named 'field_0x...'` is 0 in BOTH arms of all 14 exported projects (44 before the layout was made dense); `grep -c _pad` over every ON export is 0; the total gcc-error delta is +5 over 14 projects, every one of them `'NULL' undeclared` (du O0 +1, du O2 +1, sort O0 +1, chibios +2) -- no new error class. offsetcheck.py: 0 of 352 synthesized structures (2,174 members) declare a member the compiler moves, 319 compiled 64-bit and the 33 of the two ARM32 projects with -m32; without -m32 those 33 report 18 misplaced fields, which is the instrument's data model, not the layout.",
   "note": "doc_type_definitions is only called by decompile-project today; printing the referenced definitions above a single function is the separate `structdefs` change.",
   "data_model_note": "this PR also makes `decompile-project` state the target pointer width in the generated prelude (`/* target pointers are 4 bytes: compile for that data model (`gcc -m32`), ... */`) and repeats it in the README's .h bullet. structsynth is the first feature that makes an exported body's `a0[1]` depend on a synthesized sizeof, and a 64-bit host compiling a 32-bit target's header misplaces a field in 16 of chibios's 24 structures (0 of 24 with -m32)."
  },
@@ -501,5 +573,56 @@
  },
  "interactions_checked": {
   "libctypes": "merged as #651, default-on since #658, and in this branch's rebased base. fmt get_prefix @0x2f30 and get_line @0x3420 print `FILE *a0` and structsynth declines them; rpl_fseeko @0x42d0 and fmt @0x3700 likewise. The precedence is NOT inert on this corpus -- it is the whole difference between the 292-parameter census on the default and the 301-parameter census with `--option libctypes off`. The guard is also proven in the console: with `parse line struct WORDX {...}` + `map function 0x3000 putword`, structsynth param still prints w->length / w->text, not field_0x8 / field_0x0."
- }
+ },
+ "default_decision": {
+  "verdict": "default OFF (opt-in), and NOT in AGGRESSIVE_OVERRIDES",
+  "rule": "the user's four criteria, measured on the tree rebased onto 520443d7: worst whole-binary speed delta <= +5%; 444-slice pooled type_match perfect >= off - 0.1%; `make test`/`make test-stages` clean with the default temporarily flipped (0/675 datatests, or every moved stage assertion an intended field rendering fixed by re-recording stages only); no BUG hunk in the whole-corpus decompile-all sweep",
+  "speed": {
+   "criterion": "worst_delta_pct <= 5%",
+   "measured": "+1.34%",
+   "verdict": "PASS"
+  },
+  "accuracy": {
+   "criterion": "444-slice perfect >= off - 0.1% (>= 958.04)",
+   "measured": "959 -> 958 = -0.104% (aggregate 3037.05 -> 3035.55 = -0.049%)",
+   "verdict": "FAIL, by four-hundredths of a function"
+  },
+  "corpora_under_the_flip": {
+   "criterion": "0/675 datatests, stage moves intended and stages-only",
+   "measured": "make test 675/675 PARITY OK (no datatest assertion moves at all); make test-stages 1066/1070, the four moved assertions ELFMAIN #1/#2 and PEBNAMES-X86 #6/#8, each read in both arms and each the intended field rendering of a pointer input",
+   "verdict": "PASS"
+  },
+  "bug_hunk": {
+   "criterion": "no BUG hunk",
+   "measured": "findutils find O2 sub_f620: the ON arm emits `goto label_f752;` with NO `label_f752:` anywhere in the function, and the block's statements are emitted unreachable after a `return;`. The OFF arm is well formed. A whole-corpus count of the same defect over both arms of all 15 binaries is 9 (off) vs 10 (on): it is a PRE-EXISTING kuna emitter defect (du O0 0x5197, bzip2 0x3df0, chibios 0x8001538, sort 0x3ec0, grep 0xeda0, gzip 0xf900, tar 0x13570/0x16780/0x5aa30) that the type lock reaches one more time by changing which blocks the structurer duplicates",
+   "verdict": "FAIL"
+  },
+  "aggressive_overrides": "NOT a member. `auto` selects `aggressive` under 500 KiB, which is most of the benchmark, so preset membership would realize the type_match loss and the duplication reshaping on the scored path.",
+  "what_would_reopen_it": "the emitter label defect being fixed; a rule that declines a mixed-width character buffer without declining a real record that tiles its bytes the same way; subsumptive dedup"
+ },
+ "gates": {
+  "make test": "675/675 assertions passed, PARITY OK (and 675/675 PARITY OK with the default temporarily flipped to param)",
+  "make test-stages": "1070/1070 assertions passed, PARITY OK (1066/1070 with the default temporarily flipped: ELFMAIN #1/#2, PEBNAMES-X86 #6/#8)",
+  "make test-cli": "178/178 passed",
+  "make check-spec": "OK (lenient) + OK (strict)",
+  "kuna catalog --check": "OK",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "regenerated from the built binary"
+ },
+ "counters": {
+  "settables": 214,
+  "tier_tuple": [
+   68,
+   83,
+   63
+  ],
+  "corpus_files": 305,
+  "catalog_rows": 213,
+  "bucket_angr": 35,
+  "bucket_structure_recovery": 31,
+  "bucket_opt_in_tool": 21,
+  "baseline_stages": 1070,
+  "note": "re-derived with `scripts.repipe.counters --rederive` on the rebased, freshly built tree"
+ },
+ "rebase": "origin/main 520443d7 -- includes #654 foldcallretphi, #659 ptrfromuse (default off), #658 libctypes default-on, #653 the instruments, #646 the campaign ledger. list_action_decompile_oracle.txt 283 -> 284 lines with `structsynth` at 0032, immediately after `infertypes`."
 }

@@ -693,6 +693,26 @@ program-wide under `kuna decompile-all` and `kuna decompile-project`, which load
 once; `kuna decompile` spawns one engine per function, so there each function
 numbers from `struct_0` again.
 
+**The default is `off`, and it is off on evidence.** Flipping it to `param` and
+re-running the corpora moves **no** datatest assertion (675/675) and four stage
+assertions, each of them the intended rendering — `ELFMAIN #1`/`#2`, where the
+entry's untyped argument vector becomes `struct_0 *` and `a1[1]` becomes
+`a1->field_0x8`, and `PEBNAMES-X86 #6`/`#8`, where an untyped FS-segment base
+becomes `struct_0 *` and `v4[0xc]` becomes `v4->field_0x30`, the same byte
+offset rescaled. Speed is not the reason either: whole-binary `decompile-all`
+moves between −1.05% and +1.34% over six binaries, inside the movement of an
+inert control binary on the same run. Two things keep it opt-in. On
+`decbench`'s `type_match` over 444 slices the flip is worth −1 perfect function
+(959 → 958) and −0.049% of the aggregate, because the metric compares pointee
+spellings by name and a synthesized `struct_0 *` can never intersect a
+ground-truth `WORD *`. And the type lock changes which blocks the structurer
+duplicates: over a 15-binary, 5,431-function sweep, one more function
+(`findutils` `find` O2 `sub_f620`) lands on the emitter defect where a `goto`
+survives but its target label is never written — a defect already present in
+nine functions of the same corpus with the option off. A pass that reshapes
+block duplication stays opt-in until that is fixed, and for the same reason it
+is not a member of the `aggressive` preset.
+
 Type facts are *consumed* back into the graph by the typerecovery rules: the
 `oppool2` pool (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_5.rs
 (RulePushPtr, RuleStructOffset0, RulePtrArith)`) materializes PTRADD/PTRSUB

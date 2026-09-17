@@ -375,72 +375,190 @@ run needs one width and sees two, and the layout prune cannot collapse anything
 because the wide access is past the narrow ones rather than over them, so an
 11-field structure is minted over a `char[12]` buffer.
 
+The same shape is outside the census set as well. `shred` O2-noinline
+`passname` @0x3290 takes DWARF `char *name`, seven bytes written by one
+`builtin_strncpy(a1,"random",7)`; the constant sequence under it is stores of 4,
+2 and 1 bytes at offsets 0, 4 and 6, so again the widths are not uniform, and the
+synthesized layout costs the recovered string literal as well as the type
+(§6.3). Two instances of one shape — a character buffer whose writes are not all
+the same width — are what the array rule cannot see.
+
 **"One in 292" is a count, not a rate.** It counts only the shape the census can
 adjudicate: a ground truth that is not a pointer at all, or a pointer to a
 non-aggregate. A `void *` that really does point at a record is not counted
 against the pass, and neither is a layout that is wrong about a parameter DWARF
 agrees is a struct pointer — §6.1's precision is where that shows up. The
 gap-tolerant array rule closed the one class the earlier round could not see
-(any buffer with an untouched byte); `strmode`'s mixed-width tail is the class
-that remains, and closing it means declining a real `{int,int,int,int,long}`
-record that tiles its bytes the same way.
+(any buffer with an untouched byte); the mixed-width tail of `strmode` and
+`passname` is the class that remains, and closing it means declining a real
+`{int,int,int,int,long}` record that tiles its bytes the same way.
 
-### 6.3 `type_match` (bidirectional typesweep, 214 slices, 5,298 functions)
+### 6.3 `type_match` (bidirectional typesweep, 444 slices, 10,748 functions)
+
+The campaign sweep: `coreutils`, `grep`, `gzip`, `diffutils`, `bzip2`,
+`findutils`, `tar`, `shadow` at O0, O2 and O2-noinline, `DECBENCH_NO_CACHE=1`,
+`KUNA_BIN` pinned to the branch build.
 
 | | off | on |
 |---|---:|---:|
-| perfect | 594 | 593 |
-| aggregate | 1696.15 | 1695.24 |
+| perfect | 959 | 958 |
+| aggregate | 3037.05 | 3035.55 |
 
-One sweep against the pinned decbench corpus (`coreutils`, `grep`, `gzip`,
-`diffutils`, `bzip2`, `findutils`, O0 and O2, `DECBENCH_NO_CACHE=1`), re-run on
-the final build; the earlier build gave the same four rows and the same
-aggregate to the cent.
+The off arm reproduces the campaign's published `main` number (959) exactly, so
+the control holds. 0 improved, 6 worsened, 1 of them off perfect:
 
-0 improved, 4 worsened, 1 of them off perfect. All four are `powm2` and
-`millerrabin2` in coreutils `factor`, at both optimisation levels: GMP limb
-arrays (`mp_limb_t *`) read at offsets 0 and 8, which the uniform-run rule keeps
-as a structure because both elements are pointer-sized. Declining every
-`{0:8, 8:8}` layout would erase this last loss and cost a fifth of the recovered
-struct parameters, which is why the rule stops where it does.
+| slice | function | off | on |
+|---|---|---:|---:|
+| coreutils O0 factor | powm2 | 1.000 | 0.714 |
+| coreutils O0 factor | millerrabin2 | 0.750 | 0.583 |
+| coreutils O2 factor | powm2 | 0.714 | 0.429 |
+| coreutils O2 factor | millerrabin2 | 0.500 | 0.333 |
+| coreutils O2-noinline factor | powm2 | 0.714 | 0.429 |
+| coreutils O2-noinline factor | millerrabin2 | 0.500 | 0.333 |
+| coreutils O2-noinline shred | passname | 0.286 | 0.143 |
 
-The lane is therefore **slightly metric-negative** (−0.05% of the aggregate) and
-that is expected: `type_match` compares pointee spellings by name, so a perfect
-`struct_0 *` can never intersect a ground-truth `WORD *`. This is a quality
-feature measured by `structscore`, not a `type_match` mover, which is also why it
-is default-off and not in `aggressive`.
+Six of the seven are `powm2` and `millerrabin2` in coreutils `factor` at all
+three optimisation levels: GMP limb arrays (`mp_limb_t *`) read at offsets 0 and
+8, which the uniform-run rule keeps as a structure because both elements are
+pointer-sized. Declining every `{0:8, 8:8}` layout would erase them and cost a
+fifth of the recovered struct parameters, which is why the rule stops where it
+does.
+
+The seventh is new to the 444-slice run and is a different, worse shape.
+`shred`'s `passname` takes DWARF `char *name`, a seven-byte buffer the emitter
+renders as `builtin_strncpy(a1,"random",7)`. The constant sequence underneath it
+is three stores at offsets 0, 4 and 6 of widths 4, 2 and 1 — mixed widths, so
+the uniform-run rule does not fire — and the synthesized layout replaces the
+string with its bytes:
+
+```
+off  builtin_strncpy(a1,"random",7);
+on   a1->field_0x0 = 0x646e6172;
+     a1->field_0x4 = 0x6d6f;
+     a1->field_0x6 = '\0';
+```
+
+That is the same false-positive shape as `ls`'s `strmode` (§6.2) — a character
+buffer whose writes are not all one width — and here it also costs the recovered
+string literal. It is the readability case against making this a default.
+
+The lane is therefore **slightly metric-negative** (−0.049% of the aggregate,
+−0.104% of the perfect count) and that is expected: `type_match` compares
+pointee spellings by name, so a perfect `struct_0 *` can never intersect a
+ground-truth `WORD *`. This is a quality feature measured by `structscore`, not a
+`type_match` mover, which is the first half of the default-off decision (§6.6).
+
+The earlier 214-slice arm of this sweep (O0 + O2, six projects) gave perfect
+594 → 593 and aggregate 1696.15 → 1695.24; the 444-slice run adds the
+O2-noinline level, `tar` and `shadow`, and the three rows above.
 
 ### 6.4 Speed
 
-Interleaved off/param, min-of-15 (`.scratch/speed.py`). Three runs, because this
-box is shared and the load average during the last one was 20:
+Interleaved off/param, min-of-15, six whole-binary cases plus an inert control
+where the option cannot fire (`.scratch/speed6.py`, on the rebased build):
 
-| case | run 1 (quiet) | run 2 (contended) | run 3 (load 20) |
+| `kuna decompile-all` | off (ms) | param (ms) | delta |
 |---|---:|---:|---:|
-| whole binary `fmt` O2 (5/151 fire) | +0.37% | +0.68% | −0.06% |
-| whole binary `ls` O2 (71/404 fire) | −0.27% | −1.23% | +1.25% |
-| whole binary `grep` O0 (inert control, nothing fires) | −1.83% | **+5.00%** | **+0.66%** |
-| one function, `kuna decompile fmt` @0x3000 | +0.20% | −0.86% | +2.84% |
+| fmt O2 | 4264.7 | 4251.2 | −0.32% |
+| ls O2 | 14010.9 | 13863.9 | −1.05% |
+| sort O2 | 14797.4 | 14778.0 | −0.13% |
+| du O2 | 9359.4 | 9469.4 | **+1.18%** |
+| fmt O0 | 1655.2 | 1677.5 | **+1.34%** |
+| sort O0 | 4229.6 | 4264.0 | +0.81% |
+| grep O0 (inert control) | 6594.5 | 6765.9 | +2.60% |
 
-The inert control is the reading: nothing can fire there, so its movement is the
-noise floor. The whole-binary cases sit inside it in all three runs and in both
-directions. The single-function case is 163 ms, so its +2.84% is 4.6 ms and it
-is the least trustworthy row — it was +0.20% and −0.86% on the other two runs.
+**worst_delta_pct = +1.34%**, against a +5% budget. The inert control is the
+reading: nothing can fire there, so its own +2.60% is the noise floor of this
+box, and every real case sits inside it in both directions. Three earlier runs on
+the pre-rebase build agreed (`fmt` O2 +0.37% / +0.68% / −0.06%; `ls` O2 −0.27% /
+−1.23% / +1.25%; control −1.83% / +5.00% / +0.66%).
+
 The design's predicted +8% for the forced extra `mainloop` iteration does not
 survive measurement — `ActionInferTypes` is 1–4% of whole-binary time, only the
 2–18% of functions that fire pay the extra round, and the collector itself costs
-0.3 ms on `fmt` and 2.1 ms on `ls`. Default-off is a metric decision, not a speed
-one.
+0.3 ms on `fmt` and 2.1 ms on `ls`. **Speed is not why this ships opt-in.**
 
 ### 6.5 What the corpus sweep says
 
-`docs/features/structsynth/sweep.md`, 11 binaries and 2,801 functions: 213
-functions change, and **one** of them has a control-flow or call-token delta
-(`chibios` O2 `sub_800397c`, a `for` that becomes a `while` with the increment
-hoisted; read by hand, semantically identical). The eight x86-64 binaries have
-none, which is what an earlier round of this proposal reported as a property of
-the pass — it is a property of those eight binaries. Eleven functions declare
-one more or one fewer variable, and 27 are read by hand there, grouped by shape.
+`docs/features/structsynth/sweep.md`, 15 binaries and 5,431 functions: 455
+functions change, and **two** of them have a control-flow or call-token delta.
+
+The first is `chibios` O2 `sub_800397c`, a `for` that becomes a `while` with the
+increment hoisted; read by hand, semantically identical.
+
+The second is `find` O2 `sub_f620`, and it is a defect in the output. One of the
+two `goto label_f752;` predecessors is tail-duplicated, the other `goto` stays,
+and the emitter writes no `label_f752:` at all — so the C does not compile and
+the `case 0x55` arm reads as going nowhere. It is not a new defect class: the
+same shape is already on `main` in nine functions of this corpus with the option
+off (`du` O0 0x5197, `bzip2` 0x3df0, `chibios` 0x8001538, `sort` 0x3ec0, `grep`
+0xeda0, `gzip` 0xf900, `tar` 0x13570/0x16780/0x5aa30), and the whole-corpus
+count over both arms is 9 off against 10 on. The type lock changes which blocks
+the structurer duplicates, and one more function lands on the pre-existing
+emitter bug. That bug is its own fix; until it is fixed, a pass that reshapes
+block duplication cannot be a default, which is the second half of the
+default-off decision (§6.6).
+
+Thirty-two functions declare one more or one fewer variable, and 58 are read by
+hand there, grouped by shape. The four projects the earlier eleven binaries did
+not cover — `grep`, `diff`, `find`, `tar` — add no new shape to that taxonomy
+except the repeated-address-becomes-a-temporary group.
+
+### 6.6 The default decision
+
+The user's rule for this proposal was: default `param` if the worst whole-binary
+speed delta is within +5%, the pooled `type_match` perfect count over the
+444-slice campaign sweep is within 0.1% of the off arm, the datatest and stage
+corpora are clean under the flip, and no hunk in the corpus sweep is a bug.
+
+| criterion | measured | verdict |
+|---|---|---|
+| speed, worst whole-binary delta ≤ +5% | **+1.34%** (fmt O0; inert control +2.60%) | pass |
+| 444-slice pooled `type_match` perfect ≥ off − 0.1% | **959 → 958, −0.104%** | **fail** |
+| `make test` / `make test-stages` under the flip | 675/675 datatests unmoved; 4 stage assertions move, all four the intended field rendering | pass |
+| no bug hunk in the corpus sweep | `find` O2 `sub_f620` (§6.5) | **fail** |
+
+So the option ships **default off**, and stays out of `AGGRESSIVE_OVERRIDES` for
+the same reason: `auto` picks `aggressive` for anything under 500 KiB, which is
+most of the benchmark, so preset membership would realize both costs on the
+scored path.
+
+The accuracy miss is four-hundredths of a function wide and, on its own, would be
+a defensible flip — the aggregate moves −0.049%, which is the noise the rule was
+written around. The bug hunk is not narrow, and it is the one that decides it: a
+pass that changes which blocks the structurer duplicates lands one more function
+on an emitter defect that is already live on `main` in nine others. Fixing that
+defect is its own change; when it is fixed, this decision is worth re-taking with
+the same four measurements.
+
+**What the flip moves in the stage corpus.** With the default temporarily set to
+`param`, `make test` is 675/675 (no datatest assertion moves at all) and
+`make test-stages` moves exactly four, in two other options' tests. Both were
+read in both arms:
+
+* `ELFMAIN #1`/`#2` — `kuna-elfmain.xml`'s `option elfmain off` pass, where the
+  entry's argument vector has no declared type:
+
+  ```
+  off  unsigned long sub_1405(int4 a0,unsigned long *a1)
+         fprintf(stderr,"Usage: %s <binary>\n",*a1);  v1 = sub_1357(a1[1]);
+  on   unsigned long sub_1405(int4 a0,struct_0 *a1)
+         fprintf(stderr,"Usage: %s <binary>\n",a1->field_0x0);  v1 = sub_1357(a1->field_0x8);
+  ```
+
+  Same statements, same offsets. It is also a fair witness *against* the pass:
+  the real type is `char **argv`, an array, and two pointer-sized reads cannot
+  tell an array from a two-field record.
+
+* `PEBNAMES-X86 #6`/`#8` — the `option pebnames off` passes of `seh_frame32` and
+  `eh_frame32`, whose FS-segment base is an untyped register input:
+  `unsigned int *v4` becomes `struct_0 *v4`, `*v4` becomes `v4->field_0x0`, and
+  `v4[0xc]` becomes `v4->field_0x30` — the same byte offset, rescaled.
+
+Both would be closed by adding an explicit `option structsynth off` to those two
+tests' first passes and re-recording `docs/baseline-stages.json` — stages only,
+never `docs/baseline.json`. With the default staying `off` neither edit is
+needed, and neither file moves.
 
 ## 7. What a reader gets
 

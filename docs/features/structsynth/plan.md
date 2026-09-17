@@ -6,6 +6,19 @@ A new P5 action, `p5_types/kuna_structsynth.rs (ActionStructSynth)`, inserted in
 `mainloop` immediately after `ActionInferTypes` in the `typerecovery` group, behind
 `--option structsynth off|param` (default `off`).
 
+**The default is `off` on measured evidence**, not by assumption. Of the four
+criteria the user set — speed within +5%, the 444-slice `type_match` perfect
+count within 0.1% of the off arm, a clean datatest/stage corpus under the flip,
+and no bug hunk in the whole-corpus sweep — speed passes (+1.34% worst, inert
+control +2.60%) and the corpora pass (675/675 datatests unmoved; 4 stage
+assertions move and all four are the intended field rendering). Accuracy misses
+by four-hundredths of a function (959 → 958 perfect, −0.104%), and the sweep
+turns up a bug hunk: `find` O2 `sub_f620` emits `goto label_f752;` with no such
+label. The whole story is `docs/features/structsynth/analysis.md` §6.6. The
+option is likewise **not** in `AGGRESSIVE_OVERRIDES`: `auto` picks `aggressive`
+under 500 KiB, which is most of the benchmark, so preset membership would
+realize both costs on the scored path.
+
 ```
 collect   one read-only walk of the live LOAD/STORE ops
           -> per base: {offset -> widest access, its value type}
@@ -134,10 +147,12 @@ was made dense).
   widest-wins rule, the array-shape rule and its gap tolerance, constant sign
   extension, each prune clause, the dense layout, the rounded size, the saved
   `int[2]` pair, and the plateau latch.
-- Counters: +1 settable (212), tier `transform` 81, stages corpus 303,
-  `source_decompiler: "angr"` 33, `change_kind: "structure-recovery"` 31,
+- Counters, re-derived on the rebased tree (`counters --rederive`, no drift):
+  +1 settable (**214**), tier `transform` **83**, stages corpus **305**, catalog
+  rows 213, `source_decompiler: "angr"` **35**,
+  `change_kind: "structure-recovery"` **31**, `change_kind: "opt-in-tool"` 21,
   `phase_catalog.json` recaptured, `docs/options.md` regenerated,
-  `docs/baseline-stages.json` re-recorded to 1054.
+  `docs/baseline-stages.json` re-recorded to **1070**.
 - `tests/fixtures/list_action_decompile_oracle.txt` re-recorded (two consuming
   tests: `universalaction_listing.rs` and `verify_w8x_allowlist.rs`).
 
