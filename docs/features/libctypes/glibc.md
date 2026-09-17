@@ -179,8 +179,8 @@ published layout is installed over it. That is what `tests/stages/kuna-libctypes
 passes 1-3 pin, and why passes 4/5 use a fixture built without `-g`.
 
 A name the operator declares by hand (`--define-function 0x…=fopen`) arrives long
-after load, with neither the option value nor the image in reach, so it cannot
-re-run that gate and must not guess: minting a glibc layout on a musl or ARM
+after load, with the image out of reach, so it cannot re-run that gate and must
+not guess: minting a glibc layout on a musl or ARM
 image would be the false claim the gate exists to prevent. `live_layout` needs
 two facts instead, and both have to hold. The option value has to be `glibc` —
 that much is process-wide and still readable, so a run that asked for `opaque`

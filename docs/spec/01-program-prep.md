@@ -1575,8 +1575,8 @@ moves.
   split type. And nesting is one level deep: `stat` holds three `timespec`s by
   value and `timespec` holds no aggregate, which is what makes the recursive mint
   terminate by construction rather than by a depth counter, and what keeps
-  `dependent_order`'s definition-before-use walk finite. Both are unit-tested
-  properties of the tables, not conventions.
+  `dependent_order`'s definition-before-use walk finite. All three are
+  unit-tested properties of the tables, not conventions.
 
   Every offset, width and alignment in those tables was measured against the
   installed headers with `offsetof`/`sizeof`/`_Alignof`, not restated from
@@ -1584,8 +1584,8 @@ moves.
   `docs/features/libctypes/glibc.md`.
 
   A name the operator declares by hand (`--define-function 0x…=fopen`) arrives
-  long after load, with neither the option value nor the image in reach, so it
-  cannot re-run that target gate. Two facts decide it instead, and both have to
+  long after load, with the image out of reach, so it cannot re-run that target
+  gate. Two facts decide it instead, and both have to
   hold: the value the run asked for has to be `glibc`, which is process-wide and
   still readable; and the program has to carry an aggregate already held under one
   of the nine names with the member the table puts at offset 0, which is what
