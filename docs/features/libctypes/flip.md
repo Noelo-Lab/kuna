@@ -195,6 +195,23 @@ time, all `timespec`, all correct: a 16-byte `timespec` comes back in a register
 pair). By-value named **parameters** 0 → 0. `rethidden` 0 → 0. This is the case
 the sized shells exist for, and it is still clean.
 
+## Speed
+
+Interleaved `off` / default pairs, alternating which arm runs first, **minimum of
+15 pairs** (the honest read on a shared box; the medians are contention):
+
+| case | min off | min default | min Δ | median Δ |
+|---|---:|---:|---:|---:|
+| `fmt` `decompile-all` (152 fn) | 4190.0 ms | 4158.6 ms | **−0.75%** | −6.59% |
+| `ls` `decompile-all` (404 fn) | 13783.9 ms | 13957.7 ms | **+1.26%** | +0.26% |
+| `fmt` `get_prefix` (one fn) | 178.4 ms | 181.4 ms | **+1.64%** | −4.38% |
+| `fmt functions` (load only) | 171.2 ms | 171.8 ms | **+0.37%** | −0.45% |
+
+Worst +1.64% against a 5% budget. The load-only row is the table's own cost
+(~20 `get_type_struct`/`find_by_name` calls, +0.37%); the whole-binary rows carry
+the rest, which is a named 216-byte pointee participating in type propagation
+where a `void *` did not.
+
 ## `off` is still `main`
 
 `kuna decompile-all` over all eight whole binaries, this branch's build with

@@ -728,6 +728,102 @@
    "was": "sub_1249\\\\(void \\\\*param_1\\\\)",
    "now": "sub_1249\\\\(FILE \\\\*param_1\\\\)",
    "justification": "The probe proves that a name `kuna functions` reports still selects its function when --option namestyle ghidra changes how names are PRINTED; `param_1` (rather than `a0`) is what pins that the style applied, and that is untouched. The parameter of sub_1249 in decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64 is passed to fread and fclose and nothing else, so `FILE *` is the correct spelling. Same anchor, same parameter, one spelling: exactly as tight as it was."
+  },
+  "speed": {
+   "method": "interleaved off/default pairs, alternating which arm runs first; MINIMUM of 15 pairs is the honest read on a shared box. Arm A = `--option libctypes off`, arm B = no option (the new default).",
+   "rows": [
+    {
+     "case": "fmt decompile-all (152 fn)",
+     "n_pairs": 15,
+     "min_off_ms": 4190.0,
+     "min_on_ms": 4158.6,
+     "min_delta_pct": -0.75,
+     "median_off_ms": 4550.2,
+     "median_on_ms": 4250.4,
+     "median_delta_pct": -6.59
+    },
+    {
+     "case": "ls decompile-all (404 fn)",
+     "n_pairs": 15,
+     "min_off_ms": 13783.9,
+     "min_on_ms": 13957.7,
+     "min_delta_pct": 1.26,
+     "median_off_ms": 15207.8,
+     "median_on_ms": 15247.8,
+     "median_delta_pct": 0.26
+    },
+    {
+     "case": "fmt get_prefix (one fn)",
+     "n_pairs": 15,
+     "min_off_ms": 178.4,
+     "min_on_ms": 181.4,
+     "min_delta_pct": 1.64,
+     "median_off_ms": 205.8,
+     "median_on_ms": 196.8,
+     "median_delta_pct": -4.38
+    },
+    {
+     "case": "fmt functions (load only)",
+     "n_pairs": 15,
+     "min_off_ms": 171.2,
+     "min_on_ms": 171.8,
+     "min_delta_pct": 0.37,
+     "median_off_ms": 177.2,
+     "median_on_ms": 176.4,
+     "median_delta_pct": -0.45
+    }
+   ],
+   "worst_delta_pct": 1.64,
+   "budget_pct": 5.0,
+   "within_budget": true
   }
+ },
+ "speed_flip": {
+  "method": "interleaved off/default pairs, alternating which arm runs first; MINIMUM of 15 pairs is the honest read on a shared box. Arm A = `--option libctypes off`, arm B = no option (the new default).",
+  "rows": [
+   {
+    "case": "fmt decompile-all (152 fn)",
+    "n_pairs": 15,
+    "min_off_ms": 4190.0,
+    "min_on_ms": 4158.6,
+    "min_delta_pct": -0.75,
+    "median_off_ms": 4550.2,
+    "median_on_ms": 4250.4,
+    "median_delta_pct": -6.59
+   },
+   {
+    "case": "ls decompile-all (404 fn)",
+    "n_pairs": 15,
+    "min_off_ms": 13783.9,
+    "min_on_ms": 13957.7,
+    "min_delta_pct": 1.26,
+    "median_off_ms": 15207.8,
+    "median_on_ms": 15247.8,
+    "median_delta_pct": 0.26
+   },
+   {
+    "case": "fmt get_prefix (one fn)",
+    "n_pairs": 15,
+    "min_off_ms": 178.4,
+    "min_on_ms": 181.4,
+    "min_delta_pct": 1.64,
+    "median_off_ms": 205.8,
+    "median_on_ms": 196.8,
+    "median_delta_pct": -4.38
+   },
+   {
+    "case": "fmt functions (load only)",
+    "n_pairs": 15,
+    "min_off_ms": 171.2,
+    "min_on_ms": 171.8,
+    "min_delta_pct": 0.37,
+    "median_off_ms": 177.2,
+    "median_on_ms": 176.4,
+    "median_delta_pct": -0.45
+   }
+  ],
+  "worst_delta_pct": 1.64,
+  "budget_pct": 5.0,
+  "within_budget": true
  }
 }
