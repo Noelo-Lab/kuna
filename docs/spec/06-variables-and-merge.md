@@ -337,12 +337,11 @@ same storage is called redundant and silenced, the emitted C returns the call's
 result on a path where the binary returns the parameter. Naming
 (`coreaction_cleanup.rs
 (ActionNameVars)`) and casts (`ActionSetCasts`) close the phalanx but are
-policy of chapter [09](09-emission.md). Two scheduled bodies are still inert in
-the live tree — `coreaction_cleanup.rs (ActionHideShadow)` applies no change,
-and `(ActionMergeMultiEntry)` is wired to the real engine (`merge.rs
-(Merge::merge_multi_entry)`) but its multi-entry-symbol source
-(`funcdata_merge.rs (MergeContext::multi_entry_symbols)`) returns empty pending
-the symbol-scope layer.
+policy of chapter [09](09-emission.md). One scheduled body is still inert in
+the live tree: `coreaction_cleanup.rs (ActionMergeMultiEntry)` is wired to the
+real engine (`merge.rs (Merge::merge_multi_entry)`) but its multi-entry-symbol
+source (`funcdata_merge.rs (MergeContext::multi_entry_symbols)`) returns empty
+pending the symbol-scope layer.
 
 **Inputs that are only ever read indirectly** (`kuna_indirectonly.rs
 (mark_indirect_only)`, run by `coreaction_cleanup.rs (ActionMarkIndirectOnly)`
@@ -397,6 +396,35 @@ Ghidra emits the same fabricated store on the same input — so the flag ships
 Ghidra's partitioning; leaving it off restores the inert stub exactly, and
 `indirectonly` then has no writer and both readers take their more-variables
 branch.
+
+**Shadow copies** (`kuna_hideshadow.rs (hide_shadow_copies)` driving
+`merge.rs (Merge::hide_shadows)`, scheduled as `coreaction_cleanup.rs
+(ActionHideShadow)` immediately ahead of the copy marker, option
+`hideshadow`). Two Varnodes reached from one ancestor through COPYs alone
+always hold the same value. When the two copy paths are not nested the merges
+above leave them as separate assignments of that value into one variable, and
+the C repeats the assignment: a `-O0` short-circuit condition that spills a
+parameter on both ways into the body prints `(v3 = a2, v4 = a0, v4 = a0, v5 =
+a1, ...)`. The pass walks the written def-set, visits each HighVariable once
+(deduped through the bank's mark bit, cleared again on a second pass so no mark
+survives), and asks `Merge::hide_shadows` to re-point the later copy's input at
+the earlier Varnode, turning ancestor → first → second into one chain. The
+COPY's input and output are then in the same high, so the copy marker directly
+below silences it. Two conditions bound the re-point, and both are about the
+value that will be read at the re-pointed input rather than about the text:
+`funcdata.rs (Funcdata::varnode_copy_shadow)` must trace both Varnodes to one
+common ancestor through COPYs only, and the surviving Varnode's Cover must
+contain the other's definition point *strictly interior* (`cover.rs
+(Cover::contain_varnode_def)` returning 1, not a boundary hit), so the value is
+demonstrably live and unclobbered where the copy is made to read it. Two copies
+on exclusive branches fail the second test and are left alone, which is the
+common case — over 444 stripped ELFs the Cover test declines far more pairs
+than it accepts. The Cover read is preceded by a
+`MergeContext::bank_update_cover` refresh because kuna's `vn_cover_ref` is a
+plain read where the C++ `Varnode::getCover` rebuilds a dirtied cover on the
+spot, and the previous iteration's `op_set_input` is exactly what dirties it.
+Off, the action returns without walking anything, which is what the tree did
+before the body was wired.
 
 **Closing out the undefined names** (`kuna_undefname.rs
 (finish_undefined_names)`, the tail of `coreaction_cleanup.rs

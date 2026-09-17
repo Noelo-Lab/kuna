@@ -1911,6 +1911,13 @@ impl Merge {
                 if !ctx.vn_copy_shadow(vn1, vn2) {
                     continue;
                 }
+                // C++ reads `vn->getCover()`, which lazily re-runs
+                // `Varnode::updateCover` on a cover the previous iteration's
+                // `opSetInput` dirtied.  `vn_cover_ref` is a plain read, so the
+                // rebuild is driven here; every Varnode in `singlelist` is an
+                // instance of `high`, and `bank_update_cover` rebuilds each
+                // member's cover before re-deriving the high's.
+                ctx.bank_update_cover(high);
                 let vn2cover = ctx.vn_cover_ref(vn2).unwrap_or_default();
                 if single_contain_varnode_def(&vn2cover, ctx, vn1) == 1 {
                     let def1 = ctx.vn_def(vn1).unwrap();
