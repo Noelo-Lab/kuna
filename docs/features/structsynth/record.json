@@ -594,7 +594,7 @@
   },
   "corpora_under_the_flip": {
    "criterion": "0/675 datatests, stage moves intended and stages-only",
-   "measured": "make test 675/675 PARITY OK (no datatest assertion moves at all); make test-stages 1066/1070, the four moved assertions ELFMAIN #1/#2 and PEBNAMES-X86 #6/#8, each read in both arms and each the intended field rendering of a pointer input",
+   "measured": "measured on the 520443d7 base, whose stages corpus was 1070 assertions: make test 675/675 PARITY OK (no datatest assertion moves at all); make test-stages 1066/1070 -- the four moved assertions are ELFMAIN #1/#2 and PEBNAMES-X86 #6/#8, each read in both arms and each the intended field rendering of a pointer input. The four are the same four the reviewer re-derived independently by forcing the option on over the two stage files.",
    "verdict": "PASS"
   },
   "bug_hunk": {
