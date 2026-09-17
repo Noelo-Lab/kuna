@@ -98,10 +98,47 @@ would redefine them. Measured: a `decompile-project` run with `--option
 structdefs on` is byte-identical to one without, serially, under `--jobs 2`, and
 under `--stream`.
 
+The suppression is keyed on a batch option that states that reason —
+`DecompileOptions::header_carries_types`, set by the export surfaces and by a
+`--jobs` worker serving one (the worker `--jobs-types` asks for the `.h` type
+block). The first cut keyed it on `want_proto` instead, which looked like the
+export surface and is not: `kuna decompile-graph` asks for prototypes too, and
+its document is per-function C with **no** header artifact, so the option was a
+silent no-op there — 0 of 216 minigzip functions carried a definition, exit 0,
+no diagnostic. It now carries 13, the same 13 `decompile-all` prints, which is
+also what that document's `codeC` field promises (byte-identical to
+`decompile-all --json`'s `code`).
+
 The preamble is documentation, not a translation unit — an `undefined1` padding
 member needs the export's recompile prelude to compile — which is the other half
 of why the definitions stay in the header on the surface that is meant to
 rebuild.
+
+## Two roughnesses, measured
+
+**A type name that is also a function name.** `typedef struct stat stat;`
+prints directly above `int stat(char *a0,stat *a1)`, which no compiler accepts —
+the export's `.h` knows this shape and drops the colliding *prototype* with a
+named comment. The preamble does not: it is documentation, and hiding the layout
+of `stat` from the one function about to use it costs more than the collision
+does. Four such functions over stripped `cmp`/`od`/`find`/`tar` (`stat`,
+`sigaction`).
+
+**Over-inclusion.** Roots are Varnode-level, so a type carried by a Varnode that
+contributes no token can be defined above a function that never names it — a
+function whose only contact with `FILE` is handing `stdout` to a callee. Counting
+definitions that neither the body nor another emitted definition references:
+
+| corpus | definition records | never referenced |
+|---|---|---|
+| stripped `cmp` / `od` / `find` / `tar` | 367 | 55 (15%, 1 in 6.7) |
+| their unstripped twins | 10,912 | 50 (0.5%) |
+
+The stripped rate is the visible one because a libc shell has no members and so
+pulls nothing else in; with DWARF, a type the body does not name is almost always
+a dependency of one it does. The alternative — rooting in the token stream —
+under-defines instead, missing a type the signature spells through a typedef, and
+a missing definition is the worse error for the surface this exists to serve.
 
 ## Line numbers stay honest
 

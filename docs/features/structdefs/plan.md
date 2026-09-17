@@ -56,9 +56,12 @@ re-derive from.
 
 `dedup_by_name` resolves the one shape the text renderer already handles and a
 JSON consumer cannot: a DWARF image holds both the forward-declared
-`struct _IO_FILE` and the defined one, and two records for one name reporting
-size 0 and size 216 is a contradiction. The complete definition wins; an opaque
-type with no complete twin is still reported.
+`struct _IO_FILE` and the defined one, and one name carrying both a laid-out body
+and an opaque forward declaration is a contradiction. The complete definition
+wins; an opaque type with no complete twin is still reported. Completeness is the
+test, not size — an incomplete type reports the size it is held at (a `libctypes`
+`FILE` shell is 216 bytes with no member known), so `size == 0` would find
+nothing.
 
 ## 5. Tests
 
@@ -72,3 +75,9 @@ type with no complete twin is still reported.
   and change nothing else).
 - `tests/cli/structdefs-json-types-array.json` + `-key-off.json` — the `--json`
   `types` contract, on and off.
+- `tests/cli/structdefs-graph-document-carries-the-definitions.json` +
+  `-has-no-definitions-off.json` — `kuna decompile-graph`, the other C-emitting
+  surface with no header: the preamble is in `codeC` with the option on and
+  absent by default.
+- `tests/cli/structdefs-declines-a-rust-document.json` — the preamble and the
+  `types` array decline together for a non-C output language.

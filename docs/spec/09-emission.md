@@ -1412,9 +1412,12 @@ accepts, and the export's `.h` says as much where it drops such a prototype
 (§9.7). The preamble does not apply that guard — it is documentation, and
 hiding the layout of `stat` from the one function that is about to use it costs
 more than the collision does. And the over-inclusion the Varnode-rooted walk
-buys (above) is real at the top of the range: a function whose only contact with
-`FILE` is passing `stdout` to a callee gets the whole `struct _IO_FILE` body
-above it, which on an unstripped `-O2` corpus is roughly one preamble in seven.
+buys (above) is real: a function whose only contact with `FILE` is handing
+`stdout` to a callee still gets `FILE` defined above it. On a stripped corpus,
+where a libc shell has no members and so pulls nothing else in, that is about one
+definition in seven (55 of 367 over stripped `cmp`, `od`, `find`, `tar`); on
+their unstripped twins it falls to 50 of 10,912, because a DWARF type the body
+does not name is almost always a dependency of one it does.
 
 **The preamble is C, and says so by declining.** The renderer builds the
 project export's `.h`, so its output is C whatever the active output language
