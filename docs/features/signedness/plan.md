@@ -95,8 +95,8 @@ unanimity covers and more than the datatest corpus can absorb as a default.
   `-O2` against `prefer-signed`'s 98.4% / 94.8%, because it turns 379 `size_t`
   locals signed where `prefer-signed` turns 12 — done, see `analysis.md`;
 * 0/675 datatests and stages `PARITY OK` with the default flipped — done;
-* speed within +5% — done (pooled +0.20% on the minimum of 15 interleaved runs over
-  `fmt`/`ls`/`sort` `-O2`; six runs across four bases straddle zero, so read it as
+* speed within +5% — done (pooled +0.60% on the minimum of 15 interleaved runs over
+  `fmt`/`ls`/`sort` `-O2`; seven runs across five bases straddle zero, so read it as
   unmeasurable rather than as a cost — the widest single-binary reading is +1.26%).
 
 ## Interactions

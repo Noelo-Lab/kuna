@@ -199,14 +199,14 @@
     "stages": "1048/1048, PARITY OK at the time of the probe (the stages corpus has grown since: 1113 assertions on the shipped tree)",
     "note": "the probe that decided the flip was safe, run before the default was flipped: on that tree (origin/main 12c31465 + this branch, after the width-guard fix and the new 16-bit stage test) phases.toml was flipped to `auto`, both binaries rebuilt, both corpora run against the UNCHANGED baselines, and the flip then reverted. The flip has since been taken for real -- see `default_flip`, which carries the shipped result: the shipped default is `auto`."
   },
-  "speed_off_ms": 32032.1,
-  "speed_on_ms": 32096.0,
-  "speed_delta_pct": 0.2,
+  "speed_off_ms": 32039.7,
+  "speed_on_ms": 32231.3,
+  "speed_delta_pct": 0.6,
   "speed_samples": 15,
   "speed_budget_pct": 5.0,
   "speed_within_budget": true,
   "speed_forced_off": false,
-  "speed_note": "measured on the SHIPPED build after the foldcallret-barrier rebase (origin/main 39fdc804): interleaved min-of-15 whole-binary `decompile-all` on coreutils fmt, ls and sort at -O2, with the arm ORDER alternating each iteration so neither arm always runs on the warm cache (.scratch/speed-r10.sh, .scratch/speed-r10.log). Per-binary minima: ls 13.5309s -> 13.7019s (+1.26%), sort 14.4064s -> 14.2886s (-0.82%); fmt's upstream minimum in that run was contended (4.4251s, reading -7.22%), so per the repo's own rule it was re-run alone at min-of-21 (.scratch/speed-r10-fmt.log): 4.0948s -> 4.1055s = +0.26%. Pooled sum-of-minima with that corrected fmt reading 32.0321s -> 32.0960s = +0.20%. The pass walks each printed high's readers once, so it is not expected to be measurable either way -- read the sign as noise. Five runs across four bases now straddle zero (+0.21%, +0.17%, -2.94%, -1.79%, -0.56%, +0.20%) and every one is inside the +5% budget.",
+  "speed_note": "measured on the SHIPPED build on the branch's current base (origin/main ba79503e, hideshadow #670): interleaved min-of-15 whole-binary `decompile-all` on coreutils fmt, ls and sort at -O2, with the arm ORDER alternating each iteration so neither arm always runs on the warm cache (.scratch/speed-r12.sh, .scratch/speed-r12.log). Per-binary minima: fmt 4.4316s -> 4.4812s (+1.12%), ls 13.4255s -> 13.4145s (-0.08%), sort 14.1826s -> 14.3356s (+1.08%); pooled sum-of-minima 32.0397s -> 32.2313s = +0.60%, taken at a load average of ~22 with other agents on the box. No single-binary reading is outside 1.2%, so nothing needed the >5% re-run rule. The pass walks each printed high's readers once, so it is not expected to be measurable either way; seven runs across five bases straddle zero (+0.21%, +0.17%, -2.94%, -1.79%, -0.56%, +0.20%, +0.60%) and every one is inside the +5% budget.",
   "count_sites": {
     "settables": 216,
     "tiers": [
@@ -483,7 +483,7 @@
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
     "counters --check": "no drift: every hard-coded site agrees with the derived truth (218 settables, tiers 68/87/63, corpus 312 files) -- re-derived with `counters --fix` on the freshly built rebased tree, not carried over",
     "docs/options.md": "byte-fresh (regenerated; `diff` against `kuna catalog --markdown` empty, and options_md_matches_the_generator_byte_for_byte ok in the suite)",
-    "make rust-test": "RUST_TEST_RC=0, 7151 passed / 0 failed (.scratch/rust-test-r17.log, a single clean lane on the foldcallret-barrier-rebased tree; settable_count_is_216, tier_counts_are_68_core_85_transform_63_analysis, fixture_has_all_216_settables and options_md_matches_the_generator_byte_for_byte all ok, and all ten kuna_typeround unit tests ok)",
+    "make rust-test": "RUST_TEST_RC=0, 7170 passed / 0 failed (.scratch/rust-test-r19.log, a single clean lane on the hideshadow-rebased tree; settable_count_is_218, tier_counts_are_68_core_87_transform_63_analysis, fixture_has_all_218_settables, emit_catalog_json_static_form_brackets_and_commas and options_md_matches_the_generator_byte_for_byte all ok, and all ten kuna_typeround unit tests ok)",
     "CI": "re-run on the rebased head; the local gates above are the authority for the workspace suite, which CI skips on an internal PR"
   },
   "care_uint_int_claim": {
@@ -563,8 +563,9 @@
   },
   "speed_rebase_remeasure": {
     "what": "the earlier re-measures kept for the spread, since this pass's true delta is below this box's noise floor: each is an interleaved min-of-15 `decompile-all`, `--option signedness upstream` vs the default (auto)",
-    "libctypes_base_eb87d279": "fmt 4.0543s -> 4.0602s (+0.15%), ls 13.2117s -> 13.1556s (-0.42%), sort 14.1734s -> 14.0460s (-0.90%), pooled -0.56%",
-    "structdefs_base_75a7f6b0": "fmt 4.1534s -> 4.1945s (+0.99%), ls 13.4207s -> 13.0642s (-2.66%), pooled 17.5740s -> 17.2587s (-1.79%)",
+    "foldcallret_base_39fdc804": "fmt 4.0948s -> 4.1055s (+0.26%, min-of-21 re-run), ls +1.26%, sort -0.82%, pooled +0.20%",
+    "libctypes_base_eb87d279": "fmt +0.15%, ls -0.42%, sort -0.90%, pooled -0.56%",
+    "structdefs_base_75a7f6b0": "fmt +0.99%, ls -2.66%, pooled 17.5740s -> 17.2587s (-1.79%)",
     "indirectonly_base_0d79b02d": "pre-rebase r6 build, fmt/ls/sort pooled 32.9294s -> 31.9612s (-2.94%)",
     "quiet_box_single_binary": "fmt -O2 alone, min-of-42 +0.21% and min-of-21 +0.17%",
     "verdict": "every run is inside the +5% budget and they straddle zero, which is what 'unmeasurable' looks like on this box"

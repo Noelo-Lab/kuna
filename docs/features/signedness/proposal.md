@@ -189,9 +189,9 @@ table above, plus the cast hunks that stop being written.
 It clears the repo's mechanical bar — built with `auto` as the default,
 `make test` is 675/675 **PARITY OK** and stages is 1113/1113 **PARITY OK**, and
 the speed delta is inside the +5% budget (interleaved min-of-15 whole-binary
-`decompile-all` on `fmt`/`ls`/`sort` `-O2`, arm order alternating: +0.26% /
-+1.26% / −0.82%, pooled **+0.20%**, i.e. below this box's noise floor; six runs
-across four bases straddle zero the same way, the tightest of them min-of-42 on
+`decompile-all` on `fmt`/`ls`/`sort` `-O2`, arm order alternating: +1.12% /
+−0.08% / +1.08%, pooled **+0.60%**, i.e. below this box's noise floor; seven runs
+across five bases straddle zero the same way, the tightest of them min-of-42 on
 `fmt` alone at **+0.21%**). What it is *not* flipped for is the agreement rate:
 `auto` buys +0.1pp on four checkable observations. It is flipped for **cast
 removal and the end of declaration-vs-body contradictions**, which is visible in

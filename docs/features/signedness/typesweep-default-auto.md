@@ -17,10 +17,10 @@ HighVariable DECLARATION, and no declaration reaches the scored surface, so the
 identical scores below are a construction, not a coincidence.
 
 Re-run in full on every base this branch has been rebased onto since: structdefs
-(origin/main 75a7f6b0), libctypes-glibc (eb87d279), foldcallret-barrier (39fdc804)
-and structsynth (2272403d). Two of those moved the default path itself. Every
-number below reproduced exactly each time, control line included, and the last
-three reports are byte-identical to this file's body.
+(origin/main 75a7f6b0), libctypes-glibc (eb87d279), foldcallret-barrier (39fdc804),
+structsynth (2272403d) and hideshadow (ba79503e). Two of those moved the default
+path itself. Every number below reproduced exactly each time, control line
+included, and the last four reports are byte-identical to this file's body.
 -->
 
 # typesweep signedness=upstream
