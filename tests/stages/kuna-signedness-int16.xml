@@ -51,6 +51,12 @@
     Asserts 3 and 4 are the control that makes 1 and 2 mean something: the same
     arm does re-sign the 4-byte local in `g` on this same target, so the decline
     above is the width rule and not an inactive option.
+
+    Assert 1 matches the declaration by SHAPE (`int2 v<n>;`, no pointer star)
+    rather than by name: which `v<n>` the 2-byte value gets depends on how many
+    locals are declared ahead of it, which is not this test's subject.  The star
+    is what keeps that honest, because a pointer local in `f` is spelled
+    `int2 *v<n>;` and does not match.
 -->
 <bytechunk space="ram" offset="0x0">
 be00018b048b5c0283f8ff740501d88904c331c0c3
@@ -78,7 +84,7 @@ be0002668b046601c06689046689440466894408c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="signedness-int16 #1: the 2-byte local keeps its declaration under both arms, because the reader promotes it before every operator (once per pass)" min="2" max="2">^  int2 v1;$</stringmatch>
+<stringmatch name="signedness-int16 #1: the 2-byte local keeps its declaration under both arms, because the reader promotes it before every operator (once per pass)" min="2" max="2">^  int2 v[0-9]+;$</stringmatch>
 <stringmatch name="signedness-int16 #2: nothing 2 bytes wide is ever re-signed on this target, whose own int is 2 bytes" min="0" max="0">^  uint2 </stringmatch>
 <stringmatch name="signedness-int16 #3: the 4-byte control is declared signed under option signedness upstream (once)" min="1" max="1">^  int4 v1;$</stringmatch>
 <stringmatch name="signedness-int16 #4: and prefer-unsigned does re-sign it on this same target, so #1 is the width rule declining and not an inactive option (once)" min="1" max="1">^  uint4 v1;$</stringmatch>
