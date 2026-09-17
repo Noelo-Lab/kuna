@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1029,
-    1029
+    1038,
+    1038
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -382,6 +382,15 @@
     "data:KUNA-UNMAPPEDENTRY #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x <= 8 renders identically in all three passes",
     "data:KUNA-UNMAPPEDENTRY #2: the catalog documents it as a default-on P1 code/data-partition correctness fix, live-toggled back on",
     "data:KUNA-UNMAPPEDENTRY #3: the catalog row carries the correctness-fix change_kind an agent reads to judge the flip",
+    "data:LIBCTYPES #1: off, the stream parameter is an opaque void *",
+    "data:LIBCTYPES #2: on, the same parameter is a minted FILE *",
+    "data:LIBCTYPES #3: off, the fopen result is an opaque void *",
+    "data:LIBCTYPES #4: on, the fopen result is a minted FILE *",
+    "data:LIBCTYPES #5: the DWARF layout of `stat` reads the same in both passes -- the named table adopted it instead of shadowing it",
+    "data:LIBCTYPES #6: and nothing anywhere fell back to an offset-named field",
+    "data:LIBCTYPES #7: on a binary whose DWARF DOES define the stream type, that definition is what the table points at",
+    "data:LIBCTYPES #8: including the parameter the whole option exists for",
+    "data:LIBCTYPES #9: with its real field layout, not a shell",
     "data:LINUXSYSCALL #1: both int 0x80 sites render as an indirect call through swi() only in the linuxsyscall-off pass",
     "data:LINUXSYSCALL #2: with the option on, the number in EAX names the call and the ABI registers become its arguments",
     "data:LINUXSYSCALL #3: the second site resolves independently of the first (EAX reloaded between them)",

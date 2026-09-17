@@ -424,6 +424,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // 27-entry `libproto` table does not carry, ranked out of the frozen decbench C
     // corpus and reduced from the platform headers. Imported names only.
     "libcsigs",
+    // (kuna) The named libc/POSIX aggregate types: the same signatures the two
+    // tables above carry with their aggregate slots spelled `FILE *`/`stat *`/
+    // `DIR *` instead of `void *`, plus the stdio names neither carries.
+    "libctypes",
     // (kuna) The built-in Win32 API signature table: the Windows half of the `.gdt`
     // stand-in, which nothing in the tree carried. PE/COFF only, imported names only,
     // and parked by ENTRY ADDRESS because a PE import is two FunctionSymbols.

@@ -649,10 +649,102 @@ pub fn sanitize_guard(file_name: &str) -> String {
     s
 }
 
+/// (kuna) Every name the type block introduces as a TYPEDEF name.
+///
+/// C has one ordinary-identifier namespace, so a typedef and a function cannot
+/// share a spelling at file scope — and `stat`, `sigaction` and `group` are all
+/// three a POSIX struct tag AND a POSIX function. [`build_header`] uses this set
+/// to keep the exported header compilable; see there.
+///
+/// Reads the rendered block rather than the type objects because that is what
+/// this composer is handed. A typedef line is `typedef <declarator>;` possibly
+/// followed by a `/* … */` annotation, one per line
+/// (`printc::render_type_definitions`), and the declared name is pulled out of
+/// the declarator by [`declarator_name`].
+fn typedef_names(types: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line in types.lines() {
+        let Some(rest) = line.trim_start().strip_prefix("typedef ") else { continue };
+        let Some(decl) = rest.split(';').next() else { continue };
+        let name = declarator_name(decl);
+        if !name.is_empty() {
+            out.insert(name);
+        }
+    }
+    out
+}
+
+/// The identifier a C declarator declares — `X` in `struct X X`, `mystr` in
+/// `char *mystr`, but also `buf` in `char buf[8]` and `fn` in `int (*fn)(void)`,
+/// which do not END in their own name. `field_decl_text` composes all four
+/// shapes, so taking the trailing identifier alone would silently see no name in
+/// the last two.
+///
+/// Walks in from the right: an identifier there IS the name. Otherwise the
+/// trailing group is an array bound or a parameter list — drop it and keep
+/// walking — unless it is a parenthesized declarator (`(*fn)`, `(*table[4])`),
+/// recognised by the leading `*`, in which case the name is inside it. Returns
+/// "" for anything it cannot resolve, which costs only the shadowing check this
+/// feeds.
+fn declarator_name(decl: &str) -> String {
+    let mut text = decl.trim_end();
+    loop {
+        let name: String = text
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        if !name.is_empty() {
+            return name;
+        }
+        let (open, close) = match text.chars().last() {
+            Some(']') => ('[', ']'),
+            Some(')') => ('(', ')'),
+            _ => return String::new(),
+        };
+        let Some(start) = matching_open(text, open, close) else { return String::new() };
+        let inner = text[start + 1..text.len() - 1].trim();
+        text = if close == ')' && (inner.starts_with('*') || inner.starts_with('(')) {
+            inner
+        } else {
+            text[..start].trim_end()
+        };
+    }
+}
+
+/// The byte offset of the `open` matching the `close` that ends `text`, or
+/// `None` when the text is unbalanced.
+fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
+    let mut depth = 0i32;
+    for (i, c) in text.char_indices().rev() {
+        if c == close {
+            depth += 1;
+        } else if c == open {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
 /// `<name>.h`: include guard + recompile prelude + user type definitions +
 /// the prototype section (successes in address order; failures as comments).
+///
+/// A function whose name is also one of the header's typedef names has its
+/// prototype COMMENTED OUT rather than declared: `int stat(const char *, stat *)`
+/// next to `typedef struct stat stat;` is `error: 'stat' redeclared as a
+/// different kind of symbol`, and it takes the declarations after it down with
+/// it. The type is the more valuable of the two — every other signature that
+/// mentions it depends on it, while the suppressed prototype is one line, still
+/// printed verbatim in the comment.
 pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> String {
     let guard = sanitize_guard(file_name);
+    let shadowed = typedef_names(types);
     let mut out = String::new();
     out.push_str(&format!("#ifndef {guard}\n#define {guard}\n\n"));
     out.push_str(prelude);
@@ -663,6 +755,13 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
+            (Some(proto), None) if shadowed.contains(&r.name) => {
+                out.push_str(&format!(
+                    "/* `{}` is a type name above; prototype omitted: {} */\n",
+                    r.name,
+                    proto.trim().replace("/*", "/ *").replace("*/", "* /")
+                ));
+            }
             (Some(proto), None) => {
                 out.push_str(proto);
                 if !proto.ends_with('\n') {
@@ -843,6 +942,31 @@ pub fn build_asm(
 #[cfg(test)]
 mod tests {
     use super::AssemblyScratch;
+
+    /// Every typedef shape `field_decl_text` composes must yield its name, or a
+    /// function sharing that spelling is declared next to it and the header
+    /// stops compiling. Function-pointer and array typedefs do not end in their
+    /// own name.
+    #[test]
+    fn typedef_names_reads_every_declarator_shape() {
+        let block = concat!(
+            "typedef struct stat stat;\n",
+            "typedef char *mystr;\n",
+            "typedef char buf[8];\n",
+            "typedef int (*fnptr)(void);\n",
+            "typedef void (*sighandler_t)(int); /* opaque */\n",
+            "typedef int (*table[4])(char *, int);\n",
+            "typedef int plain(void);\n",
+            "struct notatypedef { int x; };\n",
+        );
+        let got = super::typedef_names(block);
+        let want: std::collections::BTreeSet<String> =
+            ["stat", "mystr", "buf", "fnptr", "sighandler_t", "table", "plain"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        assert_eq!(got, want);
+    }
 
     fn legacy_instruction_line(addr: u64, raw: &[u8], mnem: &str, body: &str) -> String {
         let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");

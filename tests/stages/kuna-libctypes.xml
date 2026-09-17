@@ -1,0 +1,99 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Named libc/POSIX aggregate types in the prototype tables (`option libctypes
+    off|opaque`).
+
+    The built-in prototype tables' type vocabulary is width-stable, so every
+    aggregate pointer in them is spelled `void *`: `fopen` returns one, `fclose`
+    takes one, `__uflow` takes one. That is honest about the width and silent
+    about the pointee, and the pointee is the one thing a declaration actually
+    knows.
+
+    The XML wrapper only supplies the harness architecture (the `option` command
+    needs one before the first `load file`). Every pass clears it and loads a
+    real ELF.
+
+    Passes 1 and 2 load `libctypes_stat_x86_64` (built from the `.c` beside it),
+    which was written to hold the two halves apart:
+
+      * it declares its stream handles `void *` itself and never names `FILE`,
+        so nothing in its DWARF defines a stream type and the named table has to
+        MINT one  -  `fclose(void *)` in pass 1, `fclose(FILE *)` in pass 2;
+      * it hands `stat` a real `struct stat *`, so its DWARF defines `struct stat`
+        with its real members. `st->st_mode` must read the same in BOTH passes
+        (#5) and no `field_0x` fallback may appear anywhere (#6).
+
+    #5 and #6 are the ones that can fail. A named shell interned BEFORE the DWARF
+    importer completes the same name is completed for everybody except the
+    pointers already built against it  -  completion re-keys the struct into a new
+    object  -  and this function degrades to
+    `*(int *)&st->field_0x18`. The pass runs after the DWARF importer and adopts
+    what is already there, which is what these two assertions pin.
+
+    Pass 3 loads the real coreutils `fmt`, whose DWARF DOES define the stream
+    type, under glibc's own `struct _IO_FILE` spelling. The named table adopts
+    that one rather than minting a second stream type beside it (#7, #8), and it
+    keeps its real field layout (#9).
+
+    The script restores the default in its last command: the gate is a process
+    environment variable, and the corpus runs in one process.
+
+    Assertions span the combined output of all three passes. `FILE \*` is a
+    substring of `_IO_FILE \*`, so every stream assertion pins the text from the
+    return type or the `(` onwards.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option libctypes off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_stat_x86_64</com>
+  <com>read symbols</com>
+  <com>load function fclose</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fopen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function mode_of</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libctypes opaque</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_stat_x86_64</com>
+  <com>read symbols</com>
+  <com>load function fclose</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function fopen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function mode_of</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64</com>
+  <com>read symbols</com>
+  <com>load function fclose</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function get_prefix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libctypes off</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LIBCTYPES #1: off, the stream parameter is an opaque void *" min="1" max="1">int4 fclose\(void \*a0\)</stringmatch>
+<stringmatch name="LIBCTYPES #2: on, the same parameter is a minted FILE *" min="1" max="1">int4 fclose\(FILE \*a0\)</stringmatch>
+<stringmatch name="LIBCTYPES #3: off, the fopen result is an opaque void *" min="1" max="1">void \* fopen\(char \*a0,char \*a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #4: on, the fopen result is a minted FILE *" min="1" max="1">FILE \* fopen\(char \*a0,char \*a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #5: the DWARF layout of `stat` reads the same in both passes -- the named table adopted it instead of shadowing it" min="2" max="2">st-&gt;st_mode</stringmatch>
+<stringmatch name="LIBCTYPES #6: and nothing anywhere fell back to an offset-named field" min="0" max="0">field_0x</stringmatch>
+<stringmatch name="LIBCTYPES #7: on a binary whose DWARF DOES define the stream type, that definition is what the table points at" min="1" max="1">int4 fclose\(_IO_FILE \*a0\)</stringmatch>
+<stringmatch name="LIBCTYPES #8: including the parameter the whole option exists for" min="1" max="1">int4 get_prefix\(_IO_FILE \*f\)</stringmatch>
+<stringmatch name="LIBCTYPES #9: with its real field layout, not a shell" min="1" max="1">f-&gt;_IO_read_end &lt;= v4</stringmatch>
+</decompilertest>

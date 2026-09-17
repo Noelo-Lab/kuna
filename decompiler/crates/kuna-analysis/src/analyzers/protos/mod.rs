@@ -39,6 +39,7 @@ use kuna_decomp::fspec::PrototypePieces;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 pub mod kuna_libcsigs;
+pub mod kuna_libctypes;
 pub mod kuna_win32sigs;
 
 /// Port of `ApplyDataArchiveAnalyzer`: seed built-in libc prototypes onto matching
@@ -75,6 +76,30 @@ enum Ty {
     WCharPtr,
     /// `void *` (also used for `FILE *`, opaque handles).
     VoidPtr,
+    /// (kuna `libctypes`) A pointer to the NAMED libc/POSIX aggregate spelled by
+    /// the payload (`FILE`, `stat`, `DIR`, ...), sized from
+    /// [`kuna_libctypes::NAMED_AGGREGATES`].
+    ///
+    /// Pointer-only: no slot these tables name is taken or returned BY VALUE,
+    /// because no libc declaration restated here does that. That is a property
+    /// of the TABLE, not a guarantee about the emitted C. Ordinary type
+    /// propagation can still carry a named type into a by-value position, and
+    /// does — on `-O2` coreutils `ls` the gnulib `gettime` wrapper renders
+    /// `timespec sub_10210(void) { timespec v1; clock_gettime(0,&v1); return
+    /// v1; }` from the `timespec *` slot alone.
+    ///
+    /// What makes that rendering right is the WIDTH, not the pointer. Both
+    /// hazards `analyzers::dwarf::kuna_dwarfstructs` documents are hazards of a
+    /// SIZELESS aggregate: a by-value parameter the ABI classifier cannot size
+    /// degrades to a raw integer, and a sizeless RETURN is classified as a
+    /// hidden-return-buffer call, which grows a phantom first parameter and
+    /// shifts every real one. Every name here carries its real ABI width, so
+    /// the classifier answers correctly — a 16-byte `timespec` really is
+    /// returned in a register pair. `rethidden` appears nowhere in the sweep
+    /// corpus, where those three `gettime` wrappers are the only by-value named
+    /// returns at all and nothing wider than a register pair reaches a return
+    /// slot.
+    NamedPtr(&'static str),
 }
 
 /// A built-in libc signature: return type, parameter types, and the first
@@ -165,6 +190,10 @@ fn build_ty(t: Ty, types: &dyn TypeFactory, word_size: uint4) -> KunaResult<Rc<D
         Ty::VoidPtr => {
             let v = types.get_type_void()?;
             types.get_type_pointer(ptr, v, word_size)
+        }
+        Ty::NamedPtr(n) => {
+            let s = kuna_libctypes::named_aggregate(n, types)?;
+            types.get_type_pointer(ptr, s, word_size)
         }
     }
 }
@@ -261,6 +290,17 @@ pub fn declared_libc_prototype(
     types: &dyn TypeFactory,
     word_size: uint4,
 ) -> Option<PrototypePieces> {
+    // (kuna `libctypes`) The named-aggregate form of the same signature when that
+    // gate is on, so a declared `fopen` agrees with what the load-time pass parks
+    // on an imported one. A named signature that cannot be built -- the image
+    // holds `stat` as its own 24-byte struct, say -- degrades to the width-stable
+    // one rather than withdrawing the prototype, which is what the load-time pass
+    // does too (it skips the named slot and the `void *` seeding still stands).
+    if let Some(sig) = kuna_libctypes::declared_named_prototype(name) {
+        if let Ok(pieces) = build_pieces(name, sig, types, word_size) {
+            return Some(pieces);
+        }
+    }
     let sig = LIBC
         .iter()
         .chain(kuna_libcsigs::LIBC_EXT.iter())

@@ -2627,6 +2627,14 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // here so it is gated by `analysis_pdb` rather than running by the fail-open
         // default.
         "pdb" => arch.analysis_pdb,
+        // (kuna) `libctypes` has NO arm on purpose and reaches this fail-open
+        // default. Its gate is the load-time `KUNA_LIBCTYPES` env bridge read
+        // inside the pass itself, because the pass interns its named type shells
+        // into the type factory as it builds the signatures, so `off` must not let
+        // it run at all — which means an arm here would be at best redundant. It
+        // would also be wrong: `clear architecture` + `load file` (what a two-pass
+        // stage test does) rebuilds the Architecture with the constructor default,
+        // so the flag would drop facts the env gate had correctly produced.
         _ => true,
     }
 }

@@ -1188,6 +1188,23 @@ A non-C identifier is rewritten by `printc.rs (sanitize_type_name)` (annotated
 `/* duplicate type name skipped */` comment instead of a redefinition — the
 first definition wins.
 
+**(kuna) A type name and a function name cannot be the same name.** C keeps
+typedefs and functions in one namespace at file scope, and POSIX supplies
+several spellings that are both: `stat`, `sigaction`, `group` are each a struct
+tag and a function. An image that carries `struct stat` in its debug info and
+calls `stat()` therefore produced a header where
+`int stat(const char *, stat *);` is `error: 'stat' redeclared as a different
+kind of symbol` — and, because the parse does not recover, every declaration
+after it fails too. `decompiler/crates/kuna-console/src/project.rs
+(build_header)` resolves the clash in favour of the type: a function whose name
+is one of the header's typedef names (`project.rs (typedef_names)`) has its
+prototype emitted as a comment carrying the full signature, instead of as a
+declaration. The type is what every other signature in the file depends on; the
+suppressed prototype is one line, and it is still printed. The rule is the
+header's alone: the body still spells a call to such a function and a cast to
+such a type with the one name they share, so the exported `.c` keeps the clash
+the header sheds.
+
 **The prototype — one token stream, two documents.** The prototype segment of
 §9.2's document walk was extracted verbatim into `printc.rs
 (PrintC::emit_prototype_declaration)` — pure code motion, byte-identical

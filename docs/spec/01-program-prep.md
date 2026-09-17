@@ -1413,6 +1413,124 @@ moves.
   address-keyed copy at each resolver address. Thus an IAT slot and veneer remain
   typed even when a same-spelled export suppresses the global key; the export
   itself remains untouched.
+- **(kuna) Named libc aggregate types** (`libctypes`, values `off|opaque`,
+  default off,
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs (LibcTypesPass)`):
+  the two tables above share one type vocabulary, and that vocabulary is
+  width-stable by construction, so every aggregate pointer in them is spelled
+  `void *`. `fopen` returns one, `fclose` takes one, `stat` fills one,
+  `getopt_long` reads one. That is honest about the width and silent about the
+  pointee — and the pointee is the one thing the table actually knows, because
+  `int fclose(FILE *)` is a declaration, not an inference. Turned to `opaque`,
+  this pass restates the same signatures with their aggregate slots named:
+  `FILE`, `DIR`, `dirent`, `stat`, `passwd`, `group`, `tm`, `option`,
+  `timespec`, `timeval`, `sigaction`, `sigset_t`, `mbstate_t`, `termios`,
+  `sockaddr`, `pthread_mutex_t`. It also carries the stdio names neither shipped
+  table has — `__uflow`, `fgetc`, `rewind`, `freopen`, `popen`, `pclose`,
+  `getdelim`, `flockfile`, `funlockfile` — for the same reason: on a `-O2`
+  coreutils reader loop the inlined `getc` refill path calls `__uflow` and
+  nothing else in the body says what the stream argument is, so that one
+  declaration is the whole evidence for the enclosing function's first parameter.
+
+  Four decisions shape the pass.
+
+  *The retarget is enumerated slot by slot, never applied in bulk.* The last
+  `void *` of `vasprintf`, `vsnprintf`, `__vasprintf_chk`, `__vfprintf_chk`,
+  `__vsnprintf_chk`, `verr` and `vwarn` is a `va_list`, not a stream; a blanket
+  `void * -> FILE *` would assert a false type at every one of those call sites,
+  which is exactly the wrongness the `libcsigs` rejection rule exists to avoid.
+  Each named table entry restates a shipped one with the same arity and the same
+  variadic slot, so no argument can shift.
+
+  *Each named type is a shell carrying its real width, never width 0.* A
+  zero-width pointee is not opaque, it is broken: the pointer-arithmetic seam has
+  no size-0 early out and `RulePtrsubUndo`'s no-field arm short-circuits when the
+  pointee size is zero, so the `PTRSUB` survives to the printer and renders in
+  FUNCTIONAL form — a literal `PTRSUB(p,0x28)` inside the C, on exactly the
+  `stdout + 0x28` and `f + 8` accesses this table exists to type. The widths are
+  the platform ABI's own (`FILE` 216, `stat` 144, `dirent` 280, `sigaction` 152,
+  `sigset_t` 128, `option` 32, `tm` 56, `passwd` 48, …, and 1 for `DIR`, whose
+  layout the platform publishes nowhere). With a real width, an in-range access
+  renders `f->field_0x8` and an out-of-range one falls back to the cast form.
+
+  The width carries a second load, and it is the one worth stating precisely.
+  Every slot these tables name is a POINTER — no libc declaration restated here
+  passes or returns an aggregate by value — but that is a property of the table,
+  not of the emitted C. Ordinary type propagation still carries a named type
+  into a by-value position, and does: `timespec sub_10210(void) { timespec v1;
+  clock_gettime(0,&v1); return v1; }` on `-O2` coreutils `ls`, from the
+  `timespec *` slot of `clock_gettime` alone. That rendering is correct — a
+  16-byte `timespec` is returned in a register pair — and it is correct because
+  the shell is SIZED. A width-0 shell in the same slot is exactly the
+  hidden-return-buffer case: an aggregate return the ABI classifier cannot size
+  grows a phantom first parameter and shifts every real one. Across the corpus
+  swept for this option, three copies of that same `gettime` wrapper are the
+  only by-value named returns at all, nothing wider than a register pair reaches
+  a return slot, and no `rethidden` appears in either arm — but the table does
+  not forbid the wider case; the width is what would answer it correctly.
+
+  *The shells stay incomplete, and the names are bare.* `type_incomplete` stays
+  set on the sized shell so the project exporter declares it
+  `typedef struct FILE FILE; /* opaque */` rather than as a struct with a width
+  and no members. The names are the bare DWARF spelling (`stat`, not
+  `struct stat`) because that is what the printer spells for a named base and
+  what that same `typedef` makes valid C. What that buys in the header it spends
+  in the body: the exported `.c` declares objects of a type its own `.h` calls
+  incomplete, so `cc -fsyntax-only` over an exported `ls.c` gains 58 errors with
+  the option on (911 to 969) — 51 of them `invalid use of incomplete typedef`,
+  `storage size … isn't known` and `return type is an incomplete type`, the rest
+  the type-name/function-name clash of §9.7 arriving in the body, which
+  `build_header`'s fix does not reach. The exported body has never compiled; the
+  header does, in both arms, and it is the header that carries the declarations
+  the rest of the export depends on.
+
+  *An image with debug info already has the real thing, and gets it.* DWARF
+  interns `stat`, `passwd`, `tm` and `option` under the identical bare spelling,
+  with their true layouts, so this table has nothing to add there and must not
+  get in the way. It runs AFTER the DWARF importer and adopts whatever
+  aggregate of the declared width is already held under the name — or under the
+  spelling the platform's own headers use for it, which for `FILE` is
+  `struct _IO_FILE`. Width and metatype are the whole test: a struct of the
+  declared width is adopted complete or not. That is what lets the importer
+  finish populating one underneath the pointers already built against it, and it
+  is what keeps the table idempotent — the second slot of a signature meets the
+  shell the first slot minted and has to take it, not decline it. A name held by
+  anything else — a different width, a non-struct, or the width-0 type a bare
+  forward declaration interns as — declines the signature: this table never
+  completes, re-keys or alters a definition it did not establish. A declined
+  name is not a withdrawn prototype; the width-stable signature stands, so the
+  arity survives even where the pointee does not.
+
+  The order is not a preference, it is the correctness condition. A pointee is
+  captured as a reference when the signature is built, and completing a struct
+  re-keys it into a NEW object (`TypeFactory::setFields` mutates in place in the
+  C++; the Rust factory clones). A shell minted first and completed by DWARF
+  afterwards is completed for everyone EXCEPT the pointers already built against
+  it, so `st->st_mode` would silently degrade to `*(int *)&st->field_0x18` on
+  exactly the `-g` binaries that have the answer. Running second closes that
+  window. For the same reason the named tables match IMPORTED names only, where
+  the shipped `LibProtoPass` also matches a name the image defines: a defined
+  `fopen` is that image's own function and its DWARF prototype outranks a table
+  entry.
+
+  *The gate is read at load time, inside the pass.* The named shells are interned
+  into the type factory while the signatures are built, which happens during
+  `load file` — upstream of every `option` command and, in `decompile-all`,
+  upstream of the runtime option pass. An architecture flag read inside the pass
+  would therefore see the constructor default whatever the operator asked for, so
+  the gate is a process environment variable that the console's `option` arm and
+  both CLI surfaces set before the load, the same bridge `dwarfstructs` and
+  `typedepth` use. With the gate off the pass returns immediately: not one shell
+  is interned and the output is the shipped tables, byte for byte. The same gate
+  answers the operator's declared-name lookup (`declaredlibcproto`), so
+  `--define-function 0x…=fopen` agrees with what the pass parks on an imported
+  `fopen`.
+
+  The default is off in the release that introduced it: the table asserts a
+  pointee where the width-stable vocabulary asserted only a width, and the
+  evidence for a default is the corpus type-recovery sweep, not the absence of a
+  datatest change — no datatest loads a file, so the 675 are structurally
+  untouched by anything in this tier.
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.

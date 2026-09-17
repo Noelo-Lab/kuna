@@ -26,6 +26,9 @@ pub mod kuna_pdatachained;
 pub mod kuna_rexthunk;
 // (kuna) DWARF aggregate-layout import option gate (load-time, env-bridged).
 pub mod kuna_dwarfstructs;
+// (kuna) Named libc/POSIX aggregate types in the prototype tables option gate
+// (load-time, env-bridged).
+pub mod kuna_libctypes;
 // (kuna) DWARF variant-part (discriminated-union) import option gate
 // (load-time, env-bridged) plus the recovered-layout side table.
 pub mod kuna_dwarfvariants;
