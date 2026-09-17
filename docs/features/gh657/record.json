@@ -88,7 +88,7 @@
     "make test-cli": "179/179 passed",
     "kuna catalog --check": "catalog OK",
     "counters --check": "no drift; docs/options.md byte-fresh",
-    "make rust-test": "re-run after the review from the committed HEAD. The first of those runs (SHA 70e5edc0) was RED: rewriting the foldcallret/foldcallretphi catalog rows moved tests/fixtures/phase_catalog.json, so -p kuna-decomp --test catalog_bytecompat failed (2 of its 5 tests); the other 414 test binaries were green. Fixture recaptured in 367a0ba4 and re-run from there -- RESULT PENDING at the time this line was written; see rust_test for the final RC."
+    "make rust-test": "RUST_TEST_RC=0 -- 415 test binaries, 7106 passed / 0 failed, from the committed HEAD 367a0ba4 (log .scratch/rust-test4.log). The run before it (SHA 70e5edc0) was RED and worth recording: rewriting the foldcallret/foldcallretphi catalog rows moved tests/fixtures/phase_catalog.json, so `-p kuna-decomp --test catalog_bytecompat` failed 2 of its 5 tests while the other 414 binaries were green. Neither `kuna catalog --check` nor `counters --check` sees that fixture; only the workspace suite does."
   },
   "stage_assertions_examined": {
     "note": "four stage assertions moved on the first version of the fix and NONE was absorbed: each pointed at a real over-decline, and the final version leaves all 1054 pre-existing assertions untouched.",
@@ -115,7 +115,7 @@
     "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s}"
   ],
   "option_off_identity": "kuna decompile-all --option foldcallret off is byte-identical between origin/main and this branch on O0 grep and libselinux.so.1: every new test is behind `Architecture::fold_call_returns`.",
-  "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree; target/debug deleted afterwards. Lane SHA 367a0ba4 -- the only commits after it touch docs/spec/06-variables-and-merge.md and docs/features/gh657/, and no test compiles either (the only docs the workspace suite embeds are options.md, cli.md, agents.md, phases.md and modes.md).",
+  "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree; target/debug deleted afterwards. Lane SHA 367a0ba4; the commits after it touch only docs/spec/06-variables-and-merge.md and docs/features/gh657/, and the workspace suite embeds no doc but options.md, cli.md, agents.md, phases.md and modes.md. CI's own `cargo workspace suite` (full-ci label) is COMPLETED SUCCESS on the final head, alongside `parity gates`.",
   "phi_arm": {
     "method": "phi-delta = the set of functions whose `kuna decompile-all` text differs between `--option foldcallretphi on` and `off`, per binary; compared against a build of origin/main (83830e86). .scratch/phi/phidelta.py",
     "ssh_O2": {
