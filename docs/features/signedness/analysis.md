@@ -131,9 +131,22 @@ Three refinements were needed on top:
   list, before any of those collapses runs; every one of them pairs candidates
   by name, so a sole-named entry can neither be suppressed by one nor absorb a
   sibling. `record_applied` already refused the *cast* drop in those cases; this
-  is the declaration half. It is nearly inert in practice (the measured cost is
-  in the table below), but it is what makes "which declarations exist is exactly
-  what `upstream` produces" a property of the code rather than an observation.
+  is the declaration half, and it is what makes "which declarations exist is
+  exactly what `upstream` produces" a property of the code rather than an
+  observation.
+
+  Measured cost over the 238-binary corpus: **8 declarations in 7 binaries**
+  under `prefer-signed` (7,089 flips → 7,081), **0** under `auto`, and 0 bytes
+  over the `fmt`/`ls`/`sort`/`du` sweep. Seven of the eight are the case the
+  guard exists for — a `VariableGroup` whose byte pieces all render one name and
+  read through one line (`cp`/`ginstall`/`mv` `overwrite_ok`'s
+  `v1._0_1_ = x->copy_as_regular, …`, `sort default_key_compare`, `find
+  apply_predicate`, `tar expcmd`), where flipping the line the pieces alias
+  through has no evidence behind it. The eighth (`shuf sparse_swap`) is a
+  conservative decline: two highs both named `v1` on the candidate list survive
+  every collapse and the printer's uniqueness pass renames one to `v1_1`, so the
+  flip would in fact have been safe. One spurious decline per 238 binaries is
+  the price of a filter that can be read off the candidate list alone.
 
 `INT_LEFT` is on the demand side, and it is the one row there that is a
 **preference rather than a soundness requirement** — the module header says so

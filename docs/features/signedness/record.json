@@ -429,7 +429,19 @@
     "flips_all_after": 7081
    },
    "cost_sweep_fmt_ls_sort_du_O0_O2": "0 bytes -- all 32 whole-binary dumps byte-identical to the pre-guard build under every value",
-   "cost_auto": 0
+   "cost_auto": 0,
+   "cases": {
+    "group_piece_alias (the case it exists for)": [
+     "cp overwrite_ok @0x67a0 v1 and make_dir_parents_private @0x4b10 v2",
+     "ginstall overwrite_ok @0x77d0 v1",
+     "mv overwrite_ok @0x64c0 v1",
+     "sort default_key_compare @0x70e0 v1",
+     "find apply_predicate @0xe7b0 v2",
+     "tar expcmd @0x38d40 v1"
+    ],
+    "group_piece_alias_shape": "a VariableGroup whose byte pieces all render ONE name and read through ONE declaration line (`v1._0_1_ = x->copy_as_regular, v1._1_1_ = ...`); flipping the line they alias through has no evidence behind it.",
+    "conservative_decline": "shuf sparse_swap @0x6e6f v1 -- two highs both named v1 on the candidate list survive every collapse and the printer's uniqueness pass renames one to v1_1, so this flip would have been safe. 1 spurious decline per 238 binaries is the price of a filter readable off the candidate list alone."
+   }
   }
  },
  "promotion_width_guard": {

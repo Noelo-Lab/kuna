@@ -118,7 +118,12 @@ Three things the rule has to survive that the first drafts did not:
   candidates by name, so a sole-named entry can neither be suppressed by one nor
   absorb a sibling. Cost over the 238-binary corpus: **8 declarations across 7
   binaries** under `prefer-signed` (7,089 → 7,081 flips), 0 under `auto`, and 0
-  bytes over the `fmt`/`ls`/`sort`/`du` sweep below.
+  bytes over the `fmt`/`ls`/`sort`/`du` sweep below. Seven of the eight are the
+  case it exists for — a `VariableGroup` whose byte pieces all render one name
+  and read through one line (`v1._0_1_ = x->copy_as_regular, …` in `cp`,
+  `ginstall`, `mv`, `sort`, `find`, `tar`). The eighth is a conservative
+  decline, where the printer's later uniqueness pass would have renamed the
+  sibling to `v1_1` anyway.
 
 Measured, not argued, over `fmt`/`ls`/`sort`/`du` at `-O0` and `-O2` (2,918
 functions):
