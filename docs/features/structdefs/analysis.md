@@ -171,12 +171,15 @@ throughout, so the honest statistic is the interleaved minimum, not the median
 
 | measurement | off (min) | on (min) | delta |
 |---|---|---|---|
-| one function, unstripped fmt `get_prefix`, min-of-21 (run 1) | 164.00 ms | 168.03 ms | +2.45% |
-| the same, min-of-21 (run 2) | 164.51 ms | 163.36 ms | -0.70% |
-| whole binary, stripped fmt (151 functions), min-of-11 | 4246.3 ms | 4517.5 ms | +6.39% |
+| one function, unstripped fmt `get_prefix`, min-of-21 (loaded) | 164.00 ms | 168.03 ms | +2.45% |
+| the same, min-of-21 (loaded, again) | 164.51 ms | 163.36 ms | -0.70% |
+| whole binary, stripped fmt (151 fns), min-of-11 (quiet) | 4077.4 ms | 4080.0 ms | +0.06% |
+| the same, min-of-11 (quiet, again) | 4066.0 ms | 4071.1 ms | +0.13% |
+| the same, under three-lane load | 4269.0 ms | 4627.1 ms | +8.39% |
 
-A single function is inside the noise (the two runs disagree in sign; the
-process is dominated by spawn and load). A whole-binary run shows a real ON-arm
-cost of roughly 6-8%: the walk runs per function over that function's Varnodes,
-and twice when the JSON surface is asked for as well. The default path is one
-bool test, which is why this ships opt-in and out of the `aggressive` preset.
+The two quiet whole-binary runs are the trustworthy ones: +0.06% and +0.13%.
+The +6-8% the same measurement gave under load was contention, not the option —
+a per-function walk over that function's Varnodes plus a few rendered lines is
+what a tenth of a percent of a whole-binary run looks like. The single-function
+numbers disagree in sign because that process is dominated by spawn and load.
+The default path is one bool test either way.

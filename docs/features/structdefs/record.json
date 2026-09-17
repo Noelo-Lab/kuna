@@ -113,16 +113,37 @@
     },
     "whole_binary": {
       "method": "interleaved off/on with the leading arm alternating per iteration, min-of-11, whole-binary `kuna decompile-all` on stripped fmt (151 functions, 36 of which name a composite)",
-      "off_min_ms": 4246.3,
-      "on_min_ms": 4517.53,
-      "delta_pct": 6.39,
-      "earlier_run": {
-        "off_min_ms": 4269.04,
-        "on_min_ms": 4627.11,
-        "delta_pct": 8.39,
-        "note": "same measurement before the alternating order, under heavier load"
-      },
-      "verdict": "a real ON-arm cost of roughly +6-8% on a whole-binary run: the walk is per function over that function's Varnodes and runs twice when the JSON surface is also asked for. The default path is untouched (one bool test), which is why this is an opt-in flag and not a preset entry."
+      "quiet_box_runs": [
+        {
+          "off_min_ms": 4077.4,
+          "on_min_ms": 4080.0,
+          "delta_pct": 0.06,
+          "off_median_ms": 4187.88,
+          "on_median_ms": 4422.25
+        },
+        {
+          "off_min_ms": 4065.99,
+          "on_min_ms": 4071.11,
+          "delta_pct": 0.13,
+          "off_median_ms": 4113.67,
+          "on_median_ms": 4112.51
+        }
+      ],
+      "loaded_box_runs": [
+        {
+          "off_min_ms": 4269.04,
+          "on_min_ms": 4627.11,
+          "delta_pct": 8.39,
+          "note": "three test lanes running"
+        },
+        {
+          "off_min_ms": 4246.3,
+          "on_min_ms": 4517.53,
+          "delta_pct": 6.39,
+          "note": "one test lane running"
+        }
+      ],
+      "verdict": "+0.06% and +0.13% on a quiet box, twice. The +6-8% the same measurement gave under three-lane load was contention, not the option: the walk is per function over that function's Varnodes and the render is a few lines, which is what ~0.1% of a whole-binary run looks like. The default path is one bool test."
     },
     "speed_budget_pct": 5.0,
     "speed_forced_off": false,
