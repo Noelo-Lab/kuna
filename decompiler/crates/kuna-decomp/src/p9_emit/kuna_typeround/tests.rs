@@ -23,7 +23,10 @@ fn option_rejects_an_unknown_value() {
 }
 
 #[test]
-fn upstream_is_the_default_and_is_inactive() {
+fn upstream_is_the_inert_arm_and_the_type_level_fallback() {
+    // The shipped default is `auto` (Architecture::reset_defaults, pinned by
+    // infra/architecture/tests.rs); the bare `Default` impl is the inert arm,
+    // so a SignPolicy that never reached reset_defaults changes nothing.
     assert_eq!(SignPolicy::default(), SignPolicy::Upstream);
     assert!(!SignPolicy::Upstream.is_active());
     assert!(SignPolicy::Auto.is_active());
