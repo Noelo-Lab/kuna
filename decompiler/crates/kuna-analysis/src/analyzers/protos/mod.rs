@@ -102,6 +102,10 @@ enum Ty {
     NamedPtr(&'static str),
 }
 
+/// Shorthand for the one layout every `void *` table can be built under: these
+/// signatures carry no [`Ty::NamedPtr`], so the value never reaches a mint.
+const L: kuna_libctypes::Layout = kuna_libctypes::Layout::Opaque;
+
 /// A built-in libc signature: return type, parameter types, and the first
 /// variadic slot (`-1` if not variadic).
 struct Sig {
@@ -158,7 +162,12 @@ const LIBC: &[(&str, Sig)] = &[
 ];
 
 /// Build the kuna [`Datatype`] for a [`Ty`] using the architecture's type factory.
-fn build_ty(t: Ty, types: &dyn TypeFactory, word_size: uint4) -> KunaResult<Rc<Datatype>> {
+fn build_ty(
+    t: Ty,
+    types: &dyn TypeFactory,
+    word_size: uint4,
+    layout: kuna_libctypes::Layout,
+) -> KunaResult<Rc<Datatype>> {
     let ptr = types.get_size_of_pointer();
     match t {
         Ty::Void => types.get_type_void(),
@@ -192,7 +201,7 @@ fn build_ty(t: Ty, types: &dyn TypeFactory, word_size: uint4) -> KunaResult<Rc<D
             types.get_type_pointer(ptr, v, word_size)
         }
         Ty::NamedPtr(n) => {
-            let s = kuna_libctypes::named_aggregate(n, types)?;
+            let s = kuna_libctypes::named_aggregate(n, types, word_size, layout)?;
             types.get_type_pointer(ptr, s, word_size)
         }
     }
@@ -204,11 +213,12 @@ fn build_pieces(
     sig: &Sig,
     types: &dyn TypeFactory,
     word_size: uint4,
+    layout: kuna_libctypes::Layout,
 ) -> KunaResult<PrototypePieces> {
-    let outtype = Some(build_ty(sig.ret, types, word_size)?);
+    let outtype = Some(build_ty(sig.ret, types, word_size, layout)?);
     let mut intypes = Vec::with_capacity(sig.params.len());
     for p in sig.params {
-        intypes.push(build_ty(*p, types, word_size)?);
+        intypes.push(build_ty(*p, types, word_size, layout)?);
     }
     let innames = vec![String::new(); intypes.len()];
     Ok(PrototypePieces {
@@ -241,12 +251,13 @@ fn seed_resolved_prototypes(
     table: &[(&str, Sig)],
     types: &dyn TypeFactory,
     word_size: uint4,
+    layout: kuna_libctypes::Layout,
 ) {
     for (name, addr) in imports {
         let Some((_, sig)) = table.iter().find(|(candidate, _)| *candidate == name) else {
             continue;
         };
-        if let Ok(pieces) = build_pieces(name, sig, types, word_size) {
+        if let Ok(pieces) = build_pieces(name, sig, types, word_size, layout) {
             out.prototypes_at.push((*addr, pieces));
         }
     }
@@ -260,12 +271,13 @@ fn seed_named_prototypes(
     table: &[(&str, Sig)],
     types: &dyn TypeFactory,
     word_size: uint4,
+    layout: kuna_libctypes::Layout,
 ) {
     for (name, sig) in table {
         if !names.contains(*name) {
             continue;
         }
-        if let Ok(pieces) = build_pieces(name, sig, types, word_size) {
+        if let Ok(pieces) = build_pieces(name, sig, types, word_size, layout) {
             out.prototypes.push(pieces);
         }
     }
@@ -296,8 +308,13 @@ pub fn declared_libc_prototype(
     // holds `stat` as its own 24-byte struct, say -- degrades to the width-stable
     // one rather than withdrawing the prototype, which is what the load-time pass
     // does too (it skips the named slot and the `void *` seeding still stands).
+    // `Layout::Opaque` is not a downgrade: the load-time pass has already run on
+    // this program and interned whatever layout it decided on, and
+    // `named_aggregate` ADOPTS a name already held. This call only has to avoid
+    // minting a layout of its own on a target the pass refused one for.
     if let Some(sig) = kuna_libctypes::declared_named_prototype(name) {
-        if let Ok(pieces) = build_pieces(name, sig, types, word_size) {
+        if let Ok(pieces) = build_pieces(name, sig, types, word_size, kuna_libctypes::Layout::Opaque)
+        {
             return Some(pieces);
         }
     }
@@ -306,7 +323,7 @@ pub fn declared_libc_prototype(
         .chain(kuna_libcsigs::LIBC_EXT.iter())
         .find(|(n, _)| *n == name)
         .map(|(_, sig)| sig)?;
-    build_pieces(name, sig, types, word_size).ok()
+    build_pieces(name, sig, types, word_size, kuna_libctypes::Layout::Opaque).ok()
 }
 
 /// Collect the set of FUNC symbol names present in the object — the names the
@@ -444,8 +461,8 @@ impl AnalysisPass for LibProtoPass {
         let imports = resolved_import_addrs(ctx.file, ctx.bytes);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
-        seed_named_prototypes(&mut out, &present, LIBC, types, word_size);
-        seed_resolved_prototypes(&mut out, &imports, LIBC, types, word_size);
+        seed_named_prototypes(&mut out, &present, LIBC, types, word_size, L);
+        seed_resolved_prototypes(&mut out, &imports, LIBC, types, word_size, L);
         out
     }
 }
@@ -612,20 +629,8 @@ mod tests {
             !imported.contains("memcmp"),
             "a same-named resolver export makes global by-name parking ambiguous"
         );
-        seed_named_prototypes(
-            &mut out,
-            &imported,
-            kuna_libcsigs::LIBC_EXT,
-            &types,
-            1,
-        );
-        seed_resolved_prototypes(
-            &mut out,
-            &imports,
-            kuna_libcsigs::LIBC_EXT,
-            &types,
-            1,
-        );
+        seed_named_prototypes(&mut out, &imported, kuna_libcsigs::LIBC_EXT, &types, 1, L);
+        seed_resolved_prototypes(&mut out, &imports, kuna_libcsigs::LIBC_EXT, &types, 1, L);
         let seeded: Vec<(u64, usize)> = out
             .prototypes_at
             .iter()
@@ -663,7 +668,7 @@ mod tests {
             .expect("install char core type");
         types.cache_core_types().expect("cache core types");
         let mut out = AnalysisOutput::default();
-        seed_named_prototypes(&mut out, &candidates, LIBC, &types, 1);
+        seed_named_prototypes(&mut out, &candidates, LIBC, &types, 1, L);
         let names: HashSet<&str> =
             out.prototypes.iter().map(|pieces| pieces.name.as_str()).collect();
 
@@ -697,7 +702,7 @@ mod tests {
             .expect("install char core type");
         types.cache_core_types().expect("cache core types");
         let mut out = AnalysisOutput::default();
-        seed_resolved_prototypes(&mut out, &imports, LIBC, &types, 1);
+        seed_resolved_prototypes(&mut out, &imports, LIBC, &types, 1, L);
         let mut seeded: Vec<u64> = out
             .prototypes_at
             .iter()

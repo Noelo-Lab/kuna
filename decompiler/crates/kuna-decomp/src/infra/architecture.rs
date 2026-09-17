@@ -1233,6 +1233,12 @@ pub struct Architecture {
     /// `load file`, upstream of every `option` command), exactly as
     /// `analysis_dwarfstructs` is for its own gate.
     pub analysis_libctypes: bool,
+    /// (kuna `libctypes glibc`) Whether the named shells additionally carry the
+    /// published glibc x86-64 FIELD layouts. Catalog-visible twin of the same
+    /// env bridge; whether the layouts are actually installed is the analysis
+    /// pass's decision, which also requires the target to be an x86-64 ELF
+    /// against glibc.
+    pub analysis_libctypes_glibc: bool,
     /// (kuna) Gate the built-in Win32 API signature table (`win32sigs`); default
     /// on.  PE/COFF only; the facts are keyed by entry address, not by name.
     pub analysis_win32sigs: bool,
@@ -2336,6 +2342,7 @@ impl Architecture {
             analysis_libproto: false,
             analysis_libcsigs: false,
             analysis_libctypes: false,
+            analysis_libctypes_glibc: false,
             analysis_win32sigs: false,
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
@@ -3259,20 +3266,27 @@ impl Architecture {
             // named aggregate shells are interned by the prototype pass at `load
             // file`, upstream of this `option`.
             "libctypes" => {
-                let val = match p1.trim().to_ascii_lowercase().as_str() {
-                    "opaque" | "on" | "1" | "true" => true,
-                    "off" | "0" | "false" => false,
+                use crate::kuna_libctypes::LibcTypesLayout;
+                let layout = match p1.trim().to_ascii_lowercase().as_str() {
+                    "opaque" | "on" | "1" | "true" => LibcTypesLayout::Opaque,
+                    "glibc" => LibcTypesLayout::Glibc,
+                    "off" | "0" | "false" => LibcTypesLayout::Off,
                     other => {
                         return Err(KunaError::lowlevel(format!(
-                            "libctypes: expected `off` or `opaque`, got `{other}`"
+                            "libctypes: expected `off`, `opaque` or `glibc`, got `{other}`"
                         )))
                     }
                 };
-                self.analysis_libctypes = val;
-                crate::kuna_libctypes::set_libctypes_env(val);
+                self.analysis_libctypes = layout != LibcTypesLayout::Off;
+                self.analysis_libctypes_glibc = layout == LibcTypesLayout::Glibc;
+                crate::kuna_libctypes::set_libctypes_env_layout(layout);
                 Ok(format!(
                     "Named libc aggregate types turned {}",
-                    if val { "on (opaque)" } else { "off" }
+                    match layout {
+                        LibcTypesLayout::Off => "off",
+                        LibcTypesLayout::Opaque => "on (opaque)",
+                        LibcTypesLayout::Glibc => "on (glibc layouts)",
+                    }
                 ))
             }
             "win32sigs" => on_off!(analysis_win32sigs, "Built-in Win32 API signature table"),

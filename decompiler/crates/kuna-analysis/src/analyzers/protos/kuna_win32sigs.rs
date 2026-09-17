@@ -231,7 +231,7 @@ impl AnalysisPass for Win32SigsPass {
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         let imports = imported_addrs_by_name(ctx.file, ctx.bytes);
-        seed_resolved_prototypes(&mut out, &imports, WIN32, types, word_size);
+        seed_resolved_prototypes(&mut out, &imports, WIN32, types, word_size, super::L);
         out
     }
 }

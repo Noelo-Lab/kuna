@@ -293,8 +293,8 @@ impl AnalysisPass for LibcSigsPass {
         let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
-        seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size);
-        seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size);
+        seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size, super::L);
         out
     }
 }

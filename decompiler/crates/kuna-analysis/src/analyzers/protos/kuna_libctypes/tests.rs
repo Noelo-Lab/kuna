@@ -21,8 +21,8 @@ fn factory() -> TypeFactoryImpl {
 #[test]
 fn a_named_aggregate_is_minted_once() {
     let types = factory();
-    let first = named_aggregate("FILE", &types).expect("mint FILE");
-    let second = named_aggregate("FILE", &types).expect("re-find FILE");
+    let first = named_aggregate("FILE", &types, 1, Layout::Opaque).expect("mint FILE");
+    let second = named_aggregate("FILE", &types, 1, Layout::Opaque).expect("re-find FILE");
     assert!(Rc::ptr_eq(&first, &second), "FILE must intern once");
     assert_eq!(first.get_size(), 216, "the glibc x86-64 width, not 0");
 }
@@ -34,7 +34,7 @@ fn a_named_aggregate_is_minted_once() {
 fn every_named_aggregate_is_sized_and_incomplete() {
     let types = factory();
     for agg in NAMED_AGGREGATES {
-        let ct = named_aggregate(agg.name, &types).expect("mint");
+        let ct = named_aggregate(agg.name, &types, 1, Layout::Opaque).expect("mint");
         assert_eq!(ct.get_size(), agg.size, "{}: width", agg.name);
         assert!(ct.get_size() > 0, "{}: a 0-width pointee keeps PTRSUB alive", agg.name);
         assert_eq!(ct.get_metatype(), type_metatype::TYPE_STRUCT, "{}", agg.name);
@@ -58,7 +58,7 @@ fn a_completed_name_is_left_alone() {
     let complete = types
         .set_fields_struct_raw(&shell, vec![field], Vec::new(), 144, 8, 0)
         .expect("complete stat");
-    let got = named_aggregate("stat", &types).expect("find the held stat");
+    let got = named_aggregate("stat", &types, 1, Layout::Opaque).expect("find the held stat");
     assert!(Rc::ptr_eq(&complete, &got), "the held definition is the answer");
     assert!(!got.is_incomplete(), "and it stays complete");
 }
@@ -75,7 +75,7 @@ fn a_different_type_under_the_same_name_declines() {
     types
         .set_fields_struct_raw(&shell, vec![field], Vec::new(), 24, 8, 0)
         .expect("a 24-byte `option` that is not the platform's");
-    assert!(named_aggregate("option", &types).is_err(), "declined, not adopted");
+    assert!(named_aggregate("option", &types, 1, Layout::Opaque).is_err(), "declined, not adopted");
 }
 
 /// glibc spells `FILE` as `struct _IO_FILE`, so that is the tag a `-g` image
@@ -90,7 +90,7 @@ fn the_platform_spelling_of_the_same_type_is_adopted() {
     let complete = types
         .set_fields_struct_raw(&shell, vec![field], Vec::new(), 216, 8, 0)
         .expect("complete _IO_FILE");
-    let got = named_aggregate("FILE", &types).expect("adopt the platform spelling");
+    let got = named_aggregate("FILE", &types, 1, Layout::Opaque).expect("adopt the platform spelling");
     assert!(Rc::ptr_eq(&complete, &got), "`FILE` resolves to the held `_IO_FILE`");
     assert_eq!(got.get_name(), "_IO_FILE");
 }
@@ -104,7 +104,7 @@ fn the_platform_spelling_of_the_same_type_is_adopted() {
 fn a_zero_width_forward_declaration_declines() {
     let types = factory();
     types.get_type_struct("stat").expect("a width-0 forward declaration");
-    assert!(named_aggregate("stat", &types).is_err(), "declined, not completed");
+    assert!(named_aggregate("stat", &types, 1, Layout::Opaque).is_err(), "declined, not completed");
 }
 
 /// The adopt test is metatype + declared width, NOT completeness: a struct of
@@ -120,7 +120,7 @@ fn an_incomplete_struct_of_the_declared_width_is_adopted() {
         .set_fields_struct_raw(&shell, Vec::new(), Vec::new(), 144, 8, flags::type_incomplete)
         .expect("a 144-byte shell somebody else is populating");
     assert!(held.is_incomplete(), "the fixture is the incomplete case");
-    let got = named_aggregate("stat", &types).expect("adopted");
+    let got = named_aggregate("stat", &types, 1, Layout::Opaque).expect("adopted");
     assert!(Rc::ptr_eq(&held, &got), "the held shell is the answer, not a second definition");
 }
 
@@ -242,7 +242,7 @@ fn the_tables_have_no_duplicate_names() {
 #[test]
 fn the_declared_lookup_follows_the_gate() {
     let types = factory();
-    kuna_decomp::kuna_libctypes::set_libctypes_env(false);
+    kuna_decomp::kuna_libctypes::set_libctypes_env_layout(kuna_decomp::kuna_libctypes::LibcTypesLayout::Off);
     let off = super::super::declared_libc_prototype("fopen", &types, 1).expect("fopen off");
     let off_base = off.outtype.as_ref().and_then(|t| t.get_ptr_to());
     assert_eq!(
@@ -250,7 +250,7 @@ fn the_declared_lookup_follows_the_gate() {
         Some(type_metatype::TYPE_VOID),
         "off: the shipped void * signature"
     );
-    kuna_decomp::kuna_libctypes::set_libctypes_env(true);
+    kuna_decomp::kuna_libctypes::set_libctypes_env_layout(kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque);
     let on = super::super::declared_libc_prototype("fopen", &types, 1).expect("fopen on");
     let on_base = on.outtype.as_ref().and_then(|t| t.get_ptr_to());
     assert_eq!(
@@ -267,14 +267,14 @@ fn the_declared_lookup_follows_the_gate() {
 #[test]
 fn a_declined_aggregate_degrades_to_the_width_stable_signature() {
     let types = factory();
-    kuna_decomp::kuna_libctypes::set_libctypes_env(true);
+    kuna_decomp::kuna_libctypes::set_libctypes_env_layout(kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque);
     let shell = types.get_type_struct("stat").expect("shell");
     let int4t = types.get_base(4, type_metatype::TYPE_INT).expect("int");
     let field = kuna_decomp::dtype::TypeField::new(0, 0, "mine", int4t);
     types
         .set_fields_struct_raw(&shell, vec![field], Vec::new(), 24, 8, 0)
         .expect("a 24-byte `stat` of the program's own");
-    assert!(named_aggregate("stat", &types).is_err(), "the fixture declines the named form");
+    assert!(named_aggregate("stat", &types, 1, Layout::Opaque).is_err(), "the fixture declines the named form");
     let pieces = super::super::declared_libc_prototype("stat", &types, 1)
         .expect("still answered, from the void * tables");
     assert_eq!(pieces.intypes.len(), 2, "the shipped arity survives");
