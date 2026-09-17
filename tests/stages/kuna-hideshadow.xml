@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue `kuna-hideshadow` (P6, sub-stage merge-aggressiveness).
+
+    Two Varnodes copied from one common ancestor always hold the same value, so
+    upstream Ghidra calls them shadows of one variable.  When the copy paths are
+    not nested the merge machinery cannot fold them into one chain, and the
+    emitted C repeats the assignment.  ActionHideShadow (coreaction.cc:4976) is
+    the upstream pass that repairs this by re-pointing the second copy at the
+    first; kuna carried it as a no-op stub although the engine half
+    (Merge::hideShadows, merge.rs) was fully ported.
+
+    Both functions are gcc -O0 x86-64, each spilling its parameters to the
+    frame.
+
+    `target` (0x1000) is the shape:
+
+      void f(char *dest, const char *dirname, const char *name)
+      { const char *p = dirname;
+        if (dirname[0] != '.' || dirname[1] != 0) { while (*p) *dest++ = *p++; }
+        while (*name) *dest++ = *name++; *dest = 0; }
+
+    The short-circuit makes gcc spill `dest` twice on the way into the body, and
+    the second spill copies the value the first one already holds.
+
+    `guard` (0x1094) is the same construct with the two copies on EXCLUSIVE
+    branches:
+
+      void g(char *dest, const char *dirname, const char *name)
+      { const char *p = dirname;
+        if (dirname[0] != '.') { dest = name; } else { p = name; dest = name; }
+        while (*p) *dest++ = *p++; *dest = 0; }
+
+    Neither copy is live at the other's definition, so upstream's Cover test
+    declines and both assignments must survive with the option ON.
+
+    Pass 1 (option hideshadow off): the repeated copy stands -> assertion #1.
+    Pass 2 (option hideshadow on): it is consolidated away -> assertion #2.
+    Pass 3 (guard, on): the non-dominating pair is untouched -> assertion #3.
+-->
+<bytechunk space="ram" offset="0x1000">
+f30f1efa554889e548897de8488975e0488955d8488b45e0488945f8488b45e00fb6003c2e752e488b45e04883c0010fb60084c07449eb1d488b55f8
+488d4201488945f8488b45e8488d480148894de80fb6128810488b45f80fb60084c075d8eb1d488b55d8488d4201488945d8488b45e8488d48014889
+4de80fb6128810488b45d80fb60084c075d8488b45e8c60000905dc3f30f1efa554889e548897de8488975e0488955d8488b45e0488945f8488b45e0
+0fb6003c2e740a488b45d8488945e8eb2f488b45d8488945f8488b45d8488945e8eb1d488b55f8488d4201488945f8488b45e8488d480148894de80f
+b6128810488b45f80fb60084c075d8488b45e8c60000905dc3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="target"/>
+<symbol space="ram" offset="0x1094" name="guard"/>
+</binaryimage>
+<script>
+  <com>option hideshadow off</com>
+  <com>lo fu target</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option hideshadow on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="hideshadow #1: the same value is copied into the variable twice (only pass 1, off)" min="1" max="1">v3 = a2, v4 = a0, v4 = a0, v5 = a1</stringmatch>
+<stringmatch name="hideshadow #2: the redundant copy is consolidated away (only pass 2, on)" min="1" max="1">v3 = a2, v4 = a0, v5 = a1</stringmatch>
+<stringmatch name="hideshadow #3: two copies on exclusive branches are left alone (pass 3, on)" min="2" max="2">v3 = a2;</stringmatch>
+</decompilertest>

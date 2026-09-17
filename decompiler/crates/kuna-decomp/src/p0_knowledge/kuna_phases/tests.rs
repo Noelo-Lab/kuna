@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_216() {
+fn settable_count_is_217() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -155,12 +155,12 @@ fn settable_count_is_216() {
     // +1 for `foldcallretphi` (P6 call-result folding past the merge phalanx).
     // +1 for `ptrfromuse` (P5 use-derived parameter pointer).
     // +1 for `structsynth` (P5 struct synthesis over a pointer parameter).
-    assert_eq!(kuna_num_settables(), 216);
-    assert_eq!(SETTABLE_TABLE.len(), 216);
+    assert_eq!(kuna_num_settables(), 217);
+    assert_eq!(SETTABLE_TABLE.len(), 217);
 }
 
 #[test]
-fn tier_counts_are_68_core_85_transform_63_analysis() {
+fn tier_counts_are_68_core_86_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -296,7 +296,7 @@ fn tier_counts_are_68_core_85_transform_63_analysis() {
     // transform 81 -> 82: +1 for `ptrfromuse` (P5 use-derived parameter pointer).
     // transform 84 -> 85: +1 for `structsynth` (P5 struct synthesis over a
     // pointer parameter).
-    assert_eq!((core, transform, analysis), (68, 85, 63));
+    assert_eq!((core, transform, analysis), (68, 86, 63));
 }
 
 #[test]
@@ -486,7 +486,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_87() {
+fn option_values_live_value_present_for_88() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -900,7 +900,8 @@ fn option_values_live_value_present_for_87() {
     // 83 -> 85: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
     // 85 -> 86: +1 for `bytehonest` (live_field = byte_honest).
     // 86 -> 87: +1 for `argclobber` (live_field = arg_clobber, opt-in).
-    assert_eq!(with_live, 87);
+    // 87 -> 88: +1 for `hideshadow` (live_field = hide_shadow, default-on).
+    assert_eq!(with_live, 88);
 }
 
 #[test]
@@ -1063,7 +1064,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 211 -> 212: +1 for `ptrfromuse`; its P5 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
     // 214 -> 215: +1 for `structsynth`.
-    assert_eq!(json.matches("},\n").count(), 215);
+    assert_eq!(json.matches("},\n").count(), 216);
 }
 
 #[test]

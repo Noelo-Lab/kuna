@@ -5565,6 +5565,31 @@ live_true = "on"
 live_false = "off"
 
 # ---------------------------------------------------------------------------
+# hideshadow: the P6 shadow-copy consolidation (upstream ActionHideShadow).
+# ---------------------------------------------------------------------------
+[[settable]]
+option = "hideshadow"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "merge-aggressiveness"
+strength = "HARD"
+rewind = "P6"
+issue = "kuna-hideshadow"
+summary = "Consolidate two copies of one value into a single chain so the repeated assignment stops printing. Two Varnodes reached from one ancestor through COPYs alone always hold the same value -- upstream Ghidra calls them shadows of one variable -- but when the two copy paths are not nested the merge passes leave them as separate assignments into one variable, and the emitted C repeats the assignment. ActionHideShadow (coreaction.cc:4976) is the upstream pass that repairs this, and Merge::hideShadows (merge.cc:1070) was ported with it, but the action body was a no-op stub, so the pass never ran. ON runs the upstream body: walk the written def-set, visit each HighVariable once (deduped through the bank mark bit, which is cleared again so no mark survives the pass), and re-point the later copy input at the earlier Varnode so ancestor -> first -> second becomes one chain; both are then instances of one HighVariable and ActionCopyMarker, scheduled directly below, marks the copy non-printing. The re-point is bounded by the two upstream tests, both about the value that will be read at the re-pointed input: Varnode::copyShadow must trace both Varnodes to one common ancestor through COPYs only, and the surviving Varnode Cover must contain the other definition point STRICTLY INTERIOR (containVarnodeDef == 1, not a boundary hit), so the value is live and unclobbered where the copy is made to read it. Two copies on exclusive branches fail the second test and are left alone, which is the common case. kuna reads the Cover through a plain accessor where the C++ getCover rebuilds a dirtied cover on the spot, so the pass refreshes the HighVariable member covers before each containment test -- the previous iteration opSetInput is what dirties them. OFF returns without walking anything, which is byte-for-byte what the tree did while the body was a stub."
+use_when = "On by default -- it is the upstream pass, which stock Ghidra runs unconditionally. The OFF symptom is the listing assigning the same value to one variable twice with nothing in between that could change it: `(v3 = a2, v4 = a0, v4 = a0, v5 = a1, ...)` in a gcc -O0 short-circuit condition, or a repeated `v14 = dat_26200;` around a conditional goto at -O2. Flip OFF to reproduce the tree before the action body was wired, or to bisect whether a missing assignment came from this pass. The flip is small and one-directional: over 444 stripped ELFs (coreutils, grep, gzip, diffutils, bzip2, findutils, tar, shadow at O0, O2 and O2-noinline) the emitted C is byte-identical on 434 and changes on 10, each losing one or two duplicated copy assignments and nothing else, and on a 40-binary instrumented run the Cover test accepted 110 HighVariables and declined 9,138. It removes a write, never a declaration, so no `vN` local is renumbered and `--assert name vN` / `--assert type vN` still address the same variables."
+example = "option hideshadow on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra ActionHideShadow (coreaction.cc:4976) and Merge::hideShadows (merge.cc:1070), the merge-phalanx pass kuna carried as an inert stub"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "the same value is assigned to one variable twice in a row with nothing in between|a comma-expression condition repeats an assignment: (v3 = a2, v4 = a0, v4 = a0, ...)|a repeated vN = dat_XXXX; around a conditional goto|kuna prints a copy assignment that stock Ghidra does not"
+live_field = "hide_shadow"
+live_true = "on"
+live_false = "off"
+
+# ---------------------------------------------------------------------------
 # paramcopyhoist: the P6 trim-COPY anchor for an unmodified incoming parameter.
 # ---------------------------------------------------------------------------
 [[settable]]

@@ -1,0 +1,11 @@
+hideshadow speed re-measure: interleaved off / on / off(control), min of 15 per arm
+command per sample: kuna decompile-all <bin> --addr <fn> --option hideshadow off|on
+
+load at start: 33.24 23.77 20.06 40/3106 63033
+coreutils ls O2 sub_7ff0 (func): off={'min': 409.0, 'median': 429.6, 'n': 15} on={'min': 415.8, 'median': 431.9, 'n': 15} off2(control)={'min': 408.2, 'median': 430.0, 'n': 15}
+coreutils ls O2 sub_7ff0 (func): MIN  ON +1.66%  CONTROL -0.20%
+coreutils ls O2 sub_7ff0 (func): MED  ON +0.54%  CONTROL +0.09%
+openssh sshd O2 sub_17630 (func): off={'min': 6592.4, 'median': 7457.5, 'n': 15} on={'min': 6633.5, 'median': 7190.4, 'n': 15} off2(control)={'min': 6495.6, 'median': 7363.1, 'n': 15}
+openssh sshd O2 sub_17630 (func): MIN  ON +0.62%  CONTROL -1.47%
+openssh sshd O2 sub_17630 (func): MED  ON -3.58%  CONTROL -1.27%
+load at end: 18.37 23.27 21.41 26/3094 75111

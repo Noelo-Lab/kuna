@@ -1,0 +1,126 @@
+### O0_coreutils_dir
+@@ -5032,7 +5032,7 @@
+   
+   v4 = a0;
+   v5 = a1;
+-  if ((*a1 != '.') || (v3 = a2, v4 = a0, v4 = a0, v5 = a1, a1[1])) {
++  if ((*a1 != '.') || (v3 = a2, v4 = a0, v5 = a1, a1[1])) {
+     while (*v5) {
+       v1 = &v5[1];
+       v2 = &v4[1];
+### O0_coreutils_ls
+@@ -5032,7 +5032,7 @@
+   
+   v4 = a0;
+   v5 = a1;
+-  if ((*a1 != '.') || (v3 = a2, v4 = a0, v4 = a0, v5 = a1, a1[1])) {
++  if ((*a1 != '.') || (v3 = a2, v4 = a0, v5 = a1, a1[1])) {
+     while (*v5) {
+       v1 = &v5[1];
+       v2 = &v4[1];
+### O0_coreutils_vdir
+@@ -5032,7 +5032,7 @@
+   
+   v4 = a0;
+   v5 = a1;
+-  if ((*a1 != '.') || (v3 = a2, v4 = a0, v4 = a0, v5 = a1, a1[1])) {
++  if ((*a1 != '.') || (v3 = a2, v4 = a0, v5 = a1, a1[1])) {
+     while (*v5) {
+       v1 = &v5[1];
+       v2 = &v4[1];
+### O2_coreutils_dir
+@@ -2715,7 +2715,6 @@
+     else {
+       v14 = dat_26200;
+       if (dat_26200 <= dat_252e0) goto label_80ec;
+-      v14 = dat_26200;
+       if (dat_26200 < dat_26200 >> 1) goto label_8035;
+     }
+     dat_26208 = (char *)sub_18650(dat_26208,dat_26200,0x18);
+@@ -3674,7 +3673,6 @@
+     if (*a0 != '/') {
+       v17 = *a3;
+       v13 = v11;
+-      v15 = dat_26311;
+       v4 = *a0;
+       if (v17) goto label_9a41;
+     }
+### O2_coreutils_ls
+@@ -2715,7 +2715,6 @@
+     else {
+       v14 = dat_26200;
+       if (dat_26200 <= dat_252e0) goto label_80ec;
+-      v14 = dat_26200;
+       if (dat_26200 < dat_26200 >> 1) goto label_8035;
+     }
+     dat_26208 = (char *)sub_18650(dat_26208,dat_26200,0x18);
+@@ -3674,7 +3673,6 @@
+     if (*a0 != '/') {
+       v17 = *a3;
+       v13 = v11;
+-      v15 = dat_26311;
+       v4 = *a0;
+       if (v17) goto label_9a41;
+     }
+### O2_coreutils_touch
+@@ -681,8 +681,6 @@
+           sub_4330(0x19120,v20,&v17);
+           dat_19130 = dat_19120;
+           dat_19138 = dat_19128;
+-          dat_19130 = dat_19120;
+-          dat_19138 = dat_19128;
+           if (((dat_19144 == 3) && (dat_19120 == v17)) && (dat_19128 == v22)) {
+             v19 = v17 ^ 1;
+             v23 = v22;
+### O2_coreutils_vdir
+@@ -2715,7 +2715,6 @@
+     else {
+       v14 = dat_26200;
+       if (dat_26200 <= dat_252e0) goto label_80ec;
+-      v14 = dat_26200;
+       if (dat_26200 < dat_26200 >> 1) goto label_8035;
+     }
+     dat_26208 = (char *)sub_18650(dat_26208,dat_26200,0x18);
+@@ -3674,7 +3673,6 @@
+     if (*a0 != '/') {
+       v17 = *a3;
+       v13 = v11;
+-      v15 = dat_26311;
+       v4 = *a0;
+       if (v17) goto label_9a41;
+     }
+### O2-noinline_diffutils_diff3
+@@ -1450,7 +1450,6 @@
+   v9[0] = 0;
+   v14 = a1;
+   v1 = a1;
+-  v1 = a1;
+   if (!a0) goto label_4fab;
+   do {
+     v6 = v1;
+@@ -1514,7 +1513,6 @@
+       *v8 = v6;
+       v8 = (long *)(v6 + 0x68);
+       v1 = v14;
+-      v1 = v14;
+       a0 = v9[5];
+       v11 = v6;
+       if (v9[5]) break;
+### O2-noinline_shadow_usermod
+@@ -1818,7 +1818,6 @@
+       if (v7 == v8) {
+         dat_23513 = '\x01';
+         dat_23568 = v12;
+-        dat_23568 = v12;
+         if (*v12 != 0x2f) {
+           __fprintf_chk(stderr,1,dcgettext(NULL,"%s: homedir must be an absolute path\n",5),v17);
+           exit(3); // no-return
+### O2_shadow_usermod
+@@ -3166,7 +3166,6 @@
+       if (v9 == v10) {
+         dat_23513 = '\x01';
+         dat_23568 = v20;
+-        dat_23568 = v20;
+         if (*v20 != 0x2f) {
+           __fprintf_chk(stderr,1,dcgettext(NULL,"%s: homedir must be an absolute path\n",5),v19);
+           exit(3); // no-return

@@ -1024,6 +1024,10 @@ pub struct Architecture {
     /// `indirectonly`, opt-in default-off: the merge it unlocks can fabricate
     /// a store into an escaped frame slot).
     pub mark_indirect_only: bool,
+    /// (kuna) Run the upstream `ActionHideShadow` body, consolidating COPY
+    /// chains that shadow one value (`hide_shadow`, option `hideshadow`,
+    /// default-on).  See [`crate::p6_variables::kuna_hideshadow`].
+    pub hide_shadow: bool,
     /// (kuna) Strip the glibc -fstack-protector canary epilogue
     /// (C++ `strip_stack_guard`).
     pub strip_stack_guard: bool,
@@ -2312,6 +2316,7 @@ impl Architecture {
             fold_call_returns: false,
             fold_call_ret_phi: false,
             mark_indirect_only: false,
+            hide_shadow: false, // (kuna) option hideshadow; reset_defaults sets the shipped default (on)
             strip_stack_guard: false,
             strip_msvc_stack_guard: false,
             strip_security_check: false,
@@ -2554,6 +2559,7 @@ impl Architecture {
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
+        self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
@@ -3202,6 +3208,11 @@ impl Architecture {
             "indirectonly" => {
                 let (val, msg) = crate::kuna_indirectonly::OptionIndirectOnly.apply(p1)?;
                 self.mark_indirect_only = val;
+                Ok(msg)
+            }
+            "hideshadow" => {
+                let (val, msg) = crate::kuna_hideshadow::OptionHideShadow.apply(p1)?;
+                self.hide_shadow = val;
                 Ok(msg)
             }
             "impliedrefs" => {
@@ -4127,6 +4138,7 @@ impl Architecture {
         ctx.fold_call_returns = self.fold_call_returns; // foldcallret
         ctx.fold_call_ret_phi = self.fold_call_ret_phi; // foldcallretphi
         ctx.mark_indirect_only = self.mark_indirect_only; // indirectonly
+        ctx.hide_shadow = self.hide_shadow; // hideshadow
         ctx.strip_stack_guard = self.strip_stack_guard; // stackguard
         ctx.strip_msvc_stack_guard = self.strip_msvc_stack_guard; // msvcstackguard
         ctx.strip_security_check = self.strip_security_check; // securitycheck
