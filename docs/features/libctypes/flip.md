@@ -208,9 +208,12 @@ comes back in a register pair.
 
 The 88 locals (83 scalars plus 5 arrays of one) are the class that actually
 moves, and they are the case the sized shells exist for: a `stat *`/`sigset_t *`/
-`tm *` argument names the on-stack object the call fills, so the byte blob and
-the scattered slots above it collapse into one declaration. The offsets have to
-land exactly, and they do — `gzip` 0xea40:
+`tm *` argument names the on-stack object the call fills, so the byte blob that
+was passed to it — and, where the optimizer had split the object up, the loose
+slots next to it — becomes one declaration. 58 of the 88 are then read back
+through `vN._off_size_`, and **not one of those reads lands past the shell's
+declared size**, which is the check that the offsets were preserved rather than
+reinterpreted. Read in full, `gzip` 0xea40:
 
 ```
 -  long v21; // stack - 0x80
@@ -238,15 +241,16 @@ timestamps onto the output — reads there. The `off` arm is the weaker renderin
 of the two: its `char v7 [72]` is *shorter* than the `struct stat` the `fstat`
 call fills, and the four longs above it are the rest of the same object.
 
-The locals carry two costs. One is the piece accessor `vN._off_size_` counted
-above (1,017 → 1,275). The other is in `decompile-project`: a by-value local of
+The locals carry two costs. One is those piece accessors, counted above
+(1,017 → 1,275). The other is in `decompile-project`: a by-value local of
 a still-incomplete shell is 5 of that export's +58 `cc` errors (`storage size of
 'vN' isn't known`). Both are what the follow-up `glibc` value — real field
 layouts instead of an opaque shell — retires.
 
 Counted by `docs/features/libctypes/byvalue.py <dir>` over the same `off`/default
 `decompile-all` dumps as the sweep above: it matches declaration lines against
-the 16 shell names and reports which of them are read through `vN._off_size_`.
+the 16 shell names and reports which of them are read through `vN._off_size_`,
+and at what offset.
 
 ## Speed
 

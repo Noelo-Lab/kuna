@@ -718,7 +718,9 @@
     },
     "locals_on_detail": "83 scalar declarations plus 5 arrays of one (`stat vN [2]`). `off` is 0 by construction: with the gate off no named shell is interned, so no name exists to appear by value. Offsets verified exact -- gzip 0xea40: `char v7 [72]` at -0xc8 plus four loose `long`s at -0x80/-0x78/-0x70/-0x68 become one `stat v7`, and the reads become v7._72_8_/._80_8_/._88_8_/._96_8_ = glibc x86-64 st_atim.tv_sec/.tv_nsec and st_mtim.tv_sec/.tv_nsec, which is what gzip copies there. The off arm's blob is SHORTER (72 bytes) than the struct stat the fstat call fills.",
     "locals_cost": "the piece accessor count above (1,017 -> 1,275) and 5 of the export's +58 cc errors (`storage size of 'vN' isn't known`); both retired by the follow-up `glibc` value.",
-    "method": "docs/features/libctypes/byvalue.py <dir> (declaration lines matching one of the 16 shell names, plus which of them are read through vN._off_size_), over the same off/default decompile-all dumps as the rest of this sweep."
+    "method": "docs/features/libctypes/byvalue.py <dir> (declaration lines matching one of the 16 shell names, plus which of them are read through vN._off_size_), over the same off/default decompile-all dumps as the rest of this sweep.",
+    "locals_read_through_a_piece_accessor": 58,
+    "locals_piece_reads_past_the_declared_size": 0
    },
    "declarations": {
     "off": 17183,
