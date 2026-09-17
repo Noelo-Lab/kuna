@@ -9,7 +9,7 @@ Kuna is written in Rust and was originally ported from [Ghidra](https://github.c
 This project is an _experiment_ to establish how far the autonomous refinement of decompilers can push research in the field.
 Learn more about this approach in this [post](https://noelo.org/blog/kuna-release/).
 
-🏆 Kuna has held the top position on [DecBench](https://decbench.com) against most modern decompilers for optimized C. Kuna is also one of the _fastest_ decompilers on the planet, decompiling a 140MB binary in under [3 minutes](https://github.com/Noelo-Lab/kuna/issues/510#issuecomment-5645307854). These wins are only possible thanks to our growing contributors and [sponsors](#acknowledgement) who keep Kuna improving. 
+🏆 Kuna has held the top position on [DecBench](https://decbench.com) against most modern decompilers for optimized C. Kuna is also one of the _fastest_ decompilers on the planet, decompiling a 19MB binary in under [3 minutes](https://github.com/Noelo-Lab/kuna/issues/510#issuecomment-5645307854). These wins are only possible thanks to our growing contributors and [sponsors](#acknowledgement) who keep Kuna improving. 
 
 **Questions? Join our Discord**:
 
