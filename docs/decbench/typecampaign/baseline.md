@@ -127,6 +127,9 @@ The **stripped** copies (what decbench scores) at -O2:
 variable here is paired to its ground truth the way `type_match` pairs it: the
 binary-wide calibration shift (8 on all eight binaries), the per-function shift
 only where that one aligns nothing, and decbench's type-preferring `claim()`.
+That is verified rather than asserted: replaying the same eight runs through
+decbench's own `_match_structured` (typesweep's verbatim recorder) pairs all
+9,593 ground-truth variables to the same kuna variable, 0 differing.
 
 **TRex Fig. 6 prioritized score** (mean per binary; `unpaired` is GT
 variables kuna's JSON surface has nothing to pair with, which is where the
