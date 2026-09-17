@@ -15,6 +15,9 @@ The line that matters is the second control: all 10,748 scored functions handed
 the metric a byte-identical `variables[]` in both arms. The option decides a
 HighVariable DECLARATION, and no declaration reaches the scored surface, so the
 identical scores below are a construction, not a coincidence.
+
+Re-run in full on the structdefs base (origin/main 75a7f6b0, .scratch/typesweep-signedness-r7):
+every number below reproduced exactly, control line included.
 -->
 
 # typesweep signedness=upstream
