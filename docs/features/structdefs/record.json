@@ -95,25 +95,34 @@
   "speed": {
     "default_cost": "one bool test (`if !self.options.struct_defs { return; }`) per function document",
     "on_arm": {
-      "method": "interleaved off/on, min-of-21, `kuna decompile-all --addr 0x2f30` on unstripped fmt (the DWARF _IO_FILE case, the largest preamble a single function gets in the corpus)",
-      "off_min_ms": 164.0,
-      "on_min_ms": 168.03,
-      "delta_pct": 2.45,
-      "caveat": "the box ran three test lanes and several sibling agents throughout; the minimum is the statistic least polluted by that (on one median-based run the OFF median came out ABOVE the ON median, 235ms vs 177ms). A first median-based timeit run on the same function reported +5.5%/+6.5% while the corpus sweep was running."
+      "method": "interleaved off/on, min-of-21, `kuna decompile-all --addr 0x2f30` on unstripped fmt (the DWARF _IO_FILE case, the largest preamble one function gets in the corpus)",
+      "runs": [
+        {
+          "off_min_ms": 164.0,
+          "on_min_ms": 168.03,
+          "delta_pct": 2.45
+        },
+        {
+          "off_min_ms": 164.51,
+          "on_min_ms": 163.36,
+          "delta_pct": -0.7
+        }
+      ],
+      "verdict": "within the noise of this box for a single function (the two runs disagree in sign); the process is dominated by spawn + load. A first median-based timeit run reported +5.5%/+6.5% while the corpus sweep was running, which is why the minimum is the statistic reported.",
+      "caveat": "three test lanes and several sibling agents ran throughout; on one run the OFF median came out ABOVE the ON median (235ms vs 177ms)."
     },
     "whole_binary": {
-      "method": "same interleaving, whole-binary decompile-all",
-      "fmt_O2_stripped": {
+      "method": "interleaved off/on with the leading arm alternating per iteration, min-of-11, whole-binary `kuna decompile-all` on stripped fmt (151 functions, 36 of which name a composite)",
+      "off_min_ms": 4246.3,
+      "on_min_ms": 4517.53,
+      "delta_pct": 6.39,
+      "earlier_run": {
         "off_min_ms": 4269.04,
         "on_min_ms": 4627.11,
-        "delta_pct": 8.39
+        "delta_pct": 8.39,
+        "note": "same measurement before the alternating order, under heavier load"
       },
-      "ls_O0_unstripped": {
-        "off_min_ms": 7886.49,
-        "on_min_ms": 7215.36,
-        "delta_pct": -8.51
-      },
-      "verdict": "noise-dominated and reported as measured: the two runs disagree in SIGN under load average 30+, so neither is evidence. The option is default-off, so the shipped path is unaffected either way."
+      "verdict": "a real ON-arm cost of roughly +6-8% on a whole-binary run: the walk is per function over that function's Varnodes and runs twice when the JSON surface is also asked for. The default path is untouched (one bool test), which is why this is an opt-in flag and not a preset entry."
     },
     "speed_budget_pct": 5.0,
     "speed_forced_off": false,
@@ -122,7 +131,8 @@
   "consistency": {
     "decompile_project_unchanged": "byte-identical export with the option on, serially, under --jobs 2 and under --stream (the bodies include the .h that already carries the definitions; decompile_pulled clears the flag for a want_proto batch)",
     "renderer": "printc::render_type_definitions, the same function that builds the .h type block",
-    "line_numbers": "the preamble is emitted through the emitter before begin_function, not prepended to the finished string, so line_mappings and variables[].line_numbers count it the same way `code` does (walk_list with the option on: line_mappings[0].line_number == 13 == the `if (n) {` line)"
+    "line_numbers": "the preamble is emitted through the emitter before begin_function, not prepended to the finished string, so line_mappings and variables[].line_numbers count it the same way `code` does (walk_list with the option on: line_mappings[0].line_number == 13 == the `if (n) {` line)",
+    "output_language": "the preamble and the JSON types array decline for a non-C output language: the renderer builds the project .h, so its output is C, and a `struct X { ... };` block in a Rust document is neither valid Rust nor readable C. decompile-project refuses a non-C language outright for the same reason. Probe: tests/cli/structdefs-declines-a-rust-document.json"
   },
   "gates": {},
   "files": [

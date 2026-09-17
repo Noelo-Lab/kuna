@@ -1746,6 +1746,12 @@ pub fn extract_type_definitions(arch: &Architecture, fd: &Funcdata) -> Vec<TypeI
     if !arch.print().options.struct_defs() {
         return Vec::new();
     }
+    // (kuna outlang) The definition text is C, and the printed preamble
+    // declines for a non-C output language for that reason; the array and the
+    // preamble are one decision, so it declines here too.
+    if arch.print().out_lang() != crate::kuna_lang::OutLang::C {
+        return Vec::new();
+    }
     let rt = crate::printc::RealTypeCtx::from_arch(arch, arch.print().out_lang());
     let types = crate::kuna_structdefs::referenced_types(fd);
     crate::kuna_structdefs::dedup_by_name(&types)

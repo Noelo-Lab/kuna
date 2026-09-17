@@ -1399,6 +1399,15 @@ translation unit — a `undefined1` padding member needs the export's recompile
 prelude to compile — which is the other half of why the definitions stay in the
 header on the surface that is meant to rebuild.
 
+**The preamble is C, and says so by declining.** The renderer builds the
+project export's `.h`, so its output is C whatever the active output language
+is: under `--language rust` a `struct X { … };` block carrying Rust-spelled
+field types would be neither valid Rust nor readable C. `kuna
+decompile-project` refuses a non-C output language outright for exactly that
+reason (§9.6, §9.7); the preamble takes the same decision one step smaller —
+it declines, and the body is emitted as it would have been. Teaching the
+definition renderer the language plane is that plane's work, not this option's.
+
 **The machine-readable half.** `decompile_drive.rs
 (extract_type_definitions)` reports the same set as the `types` array of a
 `kuna decompile-all --json` function record: one object per type carrying its

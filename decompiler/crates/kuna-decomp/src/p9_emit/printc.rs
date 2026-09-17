@@ -2456,6 +2456,16 @@ impl PrintC {
         if !self.options.struct_defs {
             return;
         }
+        // (kuna outlang) The renderer is C by contract -- it builds a `.h` --
+        // and a `struct X { … };` block in a Rust document is neither valid
+        // Rust nor readable C. `kuna decompile-project` refuses a non-C output
+        // language for the same reason rather than half-honouring it; here the
+        // preamble declines and the body is emitted as it would be anyway.
+        // Teaching the definition renderer the language plane belongs to that
+        // plane, not to this option.
+        if self.out_lang != crate::kuna_lang::OutLang::C {
+            return;
+        }
         let types = crate::kuna_structdefs::referenced_types(fd);
         if types.is_empty() {
             return;

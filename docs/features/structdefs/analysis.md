@@ -111,6 +111,17 @@ the same way the text does. With the option on, `walk_list`'s
 `line_mappings[0].line_number` is 13 and line 13 of `code` is `if (n) {` — the
 eight preamble lines shifted both together.
 
+## The preamble is C, and declines rather than half-honouring another language
+
+`render_type_definitions` builds the project export's `.h`, so what it produces
+is C whatever `--language` is active: under `--language rust` the preamble came
+out as a C `struct Node { … };` block carrying Rust-spelled field types, which is
+neither valid Rust nor readable C. `kuna decompile-project` already refuses a
+non-C output language outright for that exact reason, so the preamble takes the
+same decision one step smaller — it declines (and so does the `types` array),
+and the Rust body is emitted unchanged. Probe:
+`tests/cli/structdefs-declines-a-rust-document.json`.
+
 ## Measurements
 
 **Default is byte-identical to main.** Six whole-binary `decompile-all` runs
@@ -154,7 +165,18 @@ array is new and no metric reads it yet — it exists so
 `scripts/decbench/structscore.py`'s layout side can read a recovered layout from
 the per-function record instead of parsing the project header.
 
-**Speed.** Default off costs one bool test. The on arm is measured in
-`record.json`; the box was under three-lane load throughout, so the honest
-statistic is the interleaved minimum, not the median (on one run the OFF median
-came out *above* the ON median).
+**Speed.** Default off costs one bool test. The box was under three-lane load
+throughout, so the honest statistic is the interleaved minimum, not the median
+(on one run the OFF median came out *above* the ON median, 235ms vs 177ms).
+
+| measurement | off (min) | on (min) | delta |
+|---|---|---|---|
+| one function, unstripped fmt `get_prefix`, min-of-21 (run 1) | 164.00 ms | 168.03 ms | +2.45% |
+| the same, min-of-21 (run 2) | 164.51 ms | 163.36 ms | -0.70% |
+| whole binary, stripped fmt (151 functions), min-of-11 | 4246.3 ms | 4517.5 ms | +6.39% |
+
+A single function is inside the noise (the two runs disagree in sign; the
+process is dominated by spawn and load). A whole-binary run shows a real ON-arm
+cost of roughly 6-8%: the walk runs per function over that function's Varnodes,
+and twice when the JSON surface is asked for as well. The default path is one
+bool test, which is why this ships opt-in and out of the `aggressive` preset.
