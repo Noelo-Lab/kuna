@@ -740,10 +740,11 @@ takes no cast at all. The demand set is a **superset** of that
 default arm, which passes `care_uint_int = false`, and are demanded on anyway;
 `FLOAT_INT2FLOAT` is the converse — it passes `care_uint_int = true` whenever the
 operand's nonzero mask has its top bit set, and the pass vetoes it outright
-rather than demanding on it, which is strictly stronger. Demanding on the first
-three anyway is an over-constraint, not a gap — a carry intrinsic names its own
-signedness and a same-width cast prints a token that establishes the type — and
-only ever declines a flip that might otherwise have been made.
+rather than demanding on it, which is strictly stronger. Demanding on the carry
+intrinsics and the cast anyway is an over-constraint, not a gap — a carry
+intrinsic names its own signedness and a same-width cast prints a token that
+establishes the type — and only ever declines a flip that might otherwise have
+been made; `INT_LEFT` is the stated preference described above.
 
 "At a fixed width" is a precondition of that list, not a turn of phrase, and it
 is the third rule. C's integer promotions convert every operand narrower than
