@@ -181,12 +181,14 @@ passes 1-3 pin, and why passes 4/5 use a fixture built without `-g`.
 A name the operator declares by hand (`--define-function 0x…=fopen`) arrives long
 after load, with neither the option value nor the image in reach, so it cannot
 re-run that gate and must not guess: minting a glibc layout on a musl or ARM
-image would be the false claim the gate exists to prevent. It reads the answer
-off the program instead (`live_layout`). An aggregate already held under one of
-the nine names, carrying the member the table puts at offset 0, is proof that the
-gate passed here and the layouts went in, and the declared name is minted to
-match. An image with no such aggregate — the value off, the target refused, or
-none of the nine imported — supports only the opaque shell.
+image would be the false claim the gate exists to prevent. `live_layout` needs
+two facts instead, and both have to hold. The option value has to be `glibc` —
+that much is process-wide and still readable, so a run that asked for `opaque`
+gets `opaque`. And the program has to carry an aggregate already held under one
+of the nine names with the member the table puts at offset 0, which is what
+proves the gate passed on *this* image. Either half missing gives the opaque
+shell. The option half is the one a musl image's own DWARF `stat` — complete, and
+named exactly the same way, because the kernel ABI is shared — cannot get past.
 
 That last case is the one the earlier code got wrong: `LibcTypesPass::run` seeds
 from IMPORTED names only, so an image that imports `stat` but not `fopen` reaches

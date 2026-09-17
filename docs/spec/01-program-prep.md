@@ -1585,12 +1585,14 @@ moves.
 
   A name the operator declares by hand (`--define-function 0x…=fopen`) arrives
   long after load, with neither the option value nor the image in reach, so it
-  cannot re-run that target gate. It reads the answer off the program instead: an
-  aggregate already held under one of the nine names, carrying the member the
-  table puts at offset 0, is proof that the gate passed on this image and the
-  layouts went in, and a declared name is then minted to match. An image with no
-  such aggregate — the value off, the target refused, or none of the nine
-  imported — supports only the opaque shell, and that is what it gets.
+  cannot re-run that target gate. Two facts decide it instead, and both have to
+  hold: the value the run asked for has to be `glibc`, which is process-wide and
+  still readable; and the program has to carry an aggregate already held under one
+  of the nine names with the member the table puts at offset 0, which is what
+  proves the gate passed on this image. Either half missing gives the opaque
+  shell. The value half is the one an image's own debug info cannot get past — a
+  musl image with DWARF completes `stat` and names it exactly the same way,
+  because the kernel ABI is shared.
 
   The default is `opaque`. No datatest loads a file, so the 675 assertions
   cannot see this tier either way; the stage corpus can, and
