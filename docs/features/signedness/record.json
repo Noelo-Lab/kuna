@@ -196,7 +196,7 @@
  "default_flip_probe": {
   "built_with_default_auto": true,
   "datatests": "675/675, PARITY OK",
-  "stages": "1048/1048, PARITY OK",
+  "stages": "1048/1048, PARITY OK (before the foldcallretphi rebase; 1053 assertions now)",
   "note": "re-run on this tree (origin/main 12c31465 + this branch, after the width-guard fix and the new 16-bit stage test): phases.toml default flipped to `auto`, both binaries rebuilt, both corpora run against the UNCHANGED baselines, then the flip reverted and the tree rebuilt. The shipped default is `upstream`."
  },
  "speed_off_ms": 4045.6,
@@ -208,15 +208,16 @@
  "speed_forced_off": false,
  "speed_note": "two interleaved min-of-21 whole-binary `decompile-all` runs on coreutils fmt -O2, pooled to min-of-42: +0.21% on the minimum. The MEDIAN is not usable on this box under other agents' load -- it came out +4.56% on the first run and -4.85% on the second, i.e. the noise is larger than anything this pass can cost. The cost is the same for every active value (`plan` walks the same candidate highs; only the tie-break differs), and `upstream` returns before the walk.",
  "count_sites": {
-  "settables": 212,
+  "settables": 213,
   "tiers": [
    68,
-   81,
+   82,
    63
   ],
-  "stage_corpus_files": 302,
+  "stage_corpus_files": 303,
   "phase_catalog_json": "recaptured",
-  "catalog_exact_buckets_touched": "none (change_kind presentation-default and source_decompiler kuna are not exact-pinned buckets)"
+  "catalog_exact_buckets_touched": "none (change_kind presentation-default and source_decompiler kuna are not exact-pinned buckets)",
+  "note": "re-derived on this tree after rebasing onto origin/main fc7c7a22 (foldcallretphi #654) with `python3 -m scripts.repipe.counters --rederive/--fix`; the two count-test function NAMES moved with them (settable_count_is_213, tier_counts_are_68_core_82_transform_63_analysis)."
  },
  "dwarf_accuracy": {
   "method": "238 unstripped DWARF twins (the compiled/ binaries beside the stripped images decbench scores) across coreutils, grep, gzip, diffutils, bzip2, findutils and tar at -O0 and -O2. Whole-image decompile-all once per value; every plain-integer local declaration whose name DWARF also knows INSIDE THE SAME FUNCTION, at the same width, is compared against the DWARF base type's encoding. Signedness is binary, so a declaration that differs between two values is right in exactly one of them.",
@@ -403,12 +404,12 @@
  ],
  "gates": {
   "make test": "675/675 PARITY OK",
-  "make test-stages": "1048/1048 PARITY OK",
+  "make test-stages": "1053/1053 PARITY OK",
   "make test-cli": "178/178",
   "make check-spec": "OK lenient + strict",
-  "kuna catalog --check": "OK (212 settables)",
+  "kuna catalog --check": "OK (213 settables)",
   "counters --check": "no drift",
-  "docs/options.md": "regenerated",
-  "make rust-test": "RUST_TEST_RC=0, 7107 passed / 0 failed (.scratch/rust-test-r6.log)"
+  "docs/options.md": "byte-fresh",
+  "make rust-test": "see .scratch/rust-test-r7.log (the run on the rebased tree)"
  }
 }
