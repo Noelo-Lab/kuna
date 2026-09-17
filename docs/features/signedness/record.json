@@ -410,6 +410,7 @@
   "kuna catalog --check": "OK (213 settables)",
   "counters --check": "no drift",
   "docs/options.md": "byte-fresh",
-  "make rust-test": "see .scratch/rust-test-r7.log (the run on the rebased tree)"
+  "make rust-test": "RUST_TEST_RC=0, 7110 passed / 0 failed (.scratch/rust-test-r8.log, single lane on the rebased tree)",
+  "CI": "Tests workflow green on 17d2a7ef: parity gates + cargo workspace suite (full-ci label)"
  }
 }
