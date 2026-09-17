@@ -1,16 +1,18 @@
 # `signedness` — proposal
 
-**Status: draft, awaiting go/no-go.** A working prototype is on the branch, with
-the measurements below. Nothing here changes default output.
+**Status: answered. Shipping at default `auto`, with `prefer-signed` opt-in.**
+The measurements below are the ones the decision was taken on; the section "The
+decision" at the end records it.
 
-## What is being proposed
+## What is being shipped
 
-A value option `signedness upstream|auto|prefer-signed|prefer-unsigned` (default
-`upstream`, byte-identical to not having it) that decides a declared integer
-local's signedness at the P9 declaration seam from the operations the body
-applies to it, instead of from whichever type-inference vote happened to be most
-specific. This is TRex's *type rounding* (USENIX Security 2025, §3.3.5 / §5.1)
-reduced to the one decision kuna can make without touching its type lattice.
+A value option `signedness upstream|auto|prefer-signed|prefer-unsigned` that
+decides a declared integer local's signedness at the P9 declaration seam from
+the operations the body applies to it, instead of from whichever type-inference
+vote happened to be most specific. This is TRex's *type rounding* (USENIX
+Security 2025, §3.3.5 / §5.1) reduced to the one decision kuna can make without
+touching its type lattice. `auto` — flip only on unanimous evidence — is the
+default; `upstream` restores what type inference produced, byte for byte.
 
 ## The number the decision turns on
 
@@ -24,7 +26,7 @@ in exactly one of them.
 | value | declarations moved | agrees with DWARF | `-O0` | `-O2` | moved *and* DWARF-named | right | wrong |
 |---|---|---|---|---|---|---|---|
 | `upstream` | 0 | **93.4%** | 97.3% | 71.9% | 0 | — | — |
-| `auto` | 575 | **93.5%** | 97.3% | 72.2% | 4 | **4** | **0** |
+| `auto` *(default)* | 575 | **93.5%** | 97.3% | 72.2% | 4 | **4** | **0** |
 | `prefer-signed` | 7,081 | **98.4%** | 99.0% | 94.8% | 386 | 348 | 38 |
 | `prefer-unsigned` | 13,636 | **92.9%** | 97.1% | 69.7% | 40 | 4 | 36 |
 | *control:* all-signed, no walk | 15,136 | **92.8%** | 98.9% | **59.2%** | 790 | 376 | 414 |

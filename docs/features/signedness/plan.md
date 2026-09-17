@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| option | `signedness upstream\|auto\|prefer-signed\|prefer-unsigned`, default `upstream` |
+| option | `signedness upstream\|auto\|prefer-signed\|prefer-unsigned`, default `auto` |
 | phase / subphase | P9 / `naming-policy` (the declaration seam, next to `declhightype`) |
 | tier / change_kind | `transform` / `presentation-default` |
 | module | `decompiler/crates/kuna-decomp/src/p9_emit/kuna_typeround.rs` |
@@ -62,6 +62,22 @@ The declaration override is then recorded **only when the emitter actually wrote
 it** (a mapped-symbol, array or dedup-collapse override can still take it back),
 and only a recorded override authorizes dropping a cast.
 
+## The default
+
+`auto` ships as the default. It re-signs a declaration only on unanimous
+evidence, so the only text it can move is that declaration and the casts the new
+declaration makes into no-ops — which is what every instrument below measures,
+and why it clears the repo's default-ON bar: 0 of 675 datatest assertions, stages
+`PARITY OK` (1064/1064), speed within the +5% budget, and every hunk over eight
+whole binaries classified as a declaration flip or a dropped cast.
+
+`prefer-signed` is the arm with the better DWARF agreement (98.4% overall,
+94.8% at `-O2`, against `upstream`'s 93.4%/71.9%) and it stays **opt-in**: it
+moves 7,081 declarations image-wide against `auto`'s 575, which is more than
+unanimity covers and more than the datatest corpus can absorb as a default.
+`prefer-unsigned` stays as its control and is documented as not recommended.
+`upstream` restores the declaration type inference produced, byte for byte.
+
 ## Evidence required before this can be considered for a default flip
 
 * whole-corpus before/after over `fmt`/`ls`/`sort`/`du` at `-O0` and `-O2`, every
@@ -71,8 +87,9 @@ and only a recorded override authorizes dropping a cast.
   not error sets) and an executable round trip on the ones that link — done,
   0 ordered-comparison sign-compare deltas and 0 round-trip mismatches;
 * agreement with DWARF on unstripped twins — done, see `analysis.md`; `auto`
-  buys +0.1pp, which is the argument *against* flipping the default on accuracy
-  grounds and for flipping it on cast-removal grounds;
+  buys +0.1pp on four checkable observations, so the case for shipping it as the
+  default is cast removal and the end of declaration-vs-body contradictions, not
+  the agreement rate;
 * the control that says the walk is not decoration — "declare every eligible
   plain-integer local signed, no walk" scores 92.8% overall and **59.2%** at
   `-O2` against `prefer-signed`'s 98.4% / 94.8%, because it turns 379 `size_t`
