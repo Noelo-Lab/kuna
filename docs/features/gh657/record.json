@@ -82,13 +82,22 @@
     },
     "budget_pct": 5.0,
     "within_budget": true,
-    "note": "the new work is one walk of at most 8 implied ops per call output that already reached check_implied_cover; the two binaries disagree on sign, which is the contention floor"
+    "note": "the new work is one walk of at most 8 implied ops per call output that already reached check_implied_cover; the two binaries disagree on sign, which is the contention floor",
+    "dash_O2": {
+      "samples": 11,
+      "min_main_s": 5.469,
+      "min_fix_s": 5.611,
+      "min_delta_pct": 2.6,
+      "med_main_s": 6.172,
+      "med_fix_s": 6.244
+    },
+    "load": "load average 18-28 throughout (a rust-test lane plus sibling agents); all three deltas are inside the 5% budget and two of the three are inside the run-to-run spread"
   },
   "gates": {
     "make test": "675/675 PARITY OK (no assertion moved, no re-pin)",
     "make test-stages": "1065/1065 PARITY OK (baseline re-recorded for the six NEW assertions only; 1059 pre-existing keys untouched)",
     "make check-spec": "OK lenient + OK strict",
-    "make test-cli": "179/179 passed",
+    "make test-cli": "184/184 passed",
     "kuna catalog --check": "catalog OK",
     "counters --check": "no drift; docs/options.md byte-fresh",
     "make rust-test": "PENDING -- see rust_test",
@@ -123,7 +132,7 @@
     "docs/baseline-stages.json",
     "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s,disjoint_sweep.sh}"
   ],
-  "option_off_identity": "kuna decompile-all --option foldcallret off is byte-identical between origin/main and this branch on O0 grep and libselinux.so.1: every new test is behind `Architecture::fold_call_returns`.",
+  "option_off_identity": "`kuna decompile-all --option foldcallret off` is byte-identical (md5) between origin/main 520443d7 and this branch on grep O0, dash O2 and libselinux.so.1: every new test is behind Architecture::fold_call_returns.",
   "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree at the rebased SHA 6ed62f54; target/debug deleted afterwards. The commits after that SHA touch only docs/features/gh657/ and docs/spec/06-variables-and-merge.md, and the workspace suite embeds no doc but options.md, cli.md, agents.md, phases.md and modes.md.",
   "phi_arm": {
     "acceptance_metric": "per-function CONTENT equality of the `--option foldcallretphi on` dumps, main build against this branch, split on the `// Function:` banner. The round-1 metric (equality of the phi-delta SET) could not see a content change inside the delta and is retired.",

@@ -72,20 +72,20 @@
 //! `docs/features/gh657/`, dominated by `__ctype_b_loc()` inlined into the same
 //! conditional as the loads it now sits next to.  The same reasoning keeps the
 //! INDIRECT half of (3) on the span to the use: `dat_33798 =
-//! *__errno_location()` is one call, one load and one
-//! store in exactly that order in the binary, and asking past the use de-folds
+//! *__errno_location()` is one call, one load and one store in exactly that
+//! order in the binary, and asking past the use de-folds
 //! 27 more functions and corrects none.  `foldcallretphi` — the option that lets
 //! a fold travel past a merge conflict at all — is what otherwise holds such
 //! calls in place, so it re-asks both questions in full over the whole distance
 //! for its own folds, exactly as it shipped.
 //!
-//! Keeping `LOAD` in the forbidden set is necessary, not redundant: the call may
-//! `STORE` memory that an intervening `LOAD` reads, so sinking the call past that
-//! `LOAD` would change the value the load observes (a read-after-write hazard not
-//! covered by the `STORE`/`CALL` checks alone).  The predicate strictly *tightens*
-//! the printer's pre-existing single-use inlining with a same-block,
-//! side-effect-free guard, preferring false negatives (stay explicit) over
-//! reordering bugs.
+//! Keeping `LOAD` in (3)'s forbidden set is necessary, not redundant: the call
+//! may `STORE` memory that an intervening `LOAD` reads, so sinking the call past
+//! that `LOAD` would change the value the load observes (a read-after-write
+//! hazard not covered by the `STORE`/`CALL` checks alone).  The predicate
+//! strictly *tightens* the printer's pre-existing single-use inlining with a
+//! same-block, side-effect-free guard, preferring false negatives (stay
+//! explicit) over reordering bugs.
 //!
 //! An opcode set alone is not enough to say "nothing in between writes memory
 //! the callee reads": heritage promotes a write to a fixed address into a plain
