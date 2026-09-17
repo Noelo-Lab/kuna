@@ -16,10 +16,11 @@ the metric a byte-identical `variables[]` in both arms. The option decides a
 HighVariable DECLARATION, and no declaration reaches the scored surface, so the
 identical scores below are a construction, not a coincidence.
 
-Re-run in full on the structdefs base (origin/main 75a7f6b0), the libctypes-glibc
-base (eb87d279) and the foldcallret-barrier base (39fdc804, where the default path
-itself moved): every number below reproduced exactly all three times, control line
-included, and the last two reports are byte-identical to this file's body.
+Re-run in full on every base this branch has been rebased onto since: structdefs
+(origin/main 75a7f6b0), libctypes-glibc (eb87d279), foldcallret-barrier (39fdc804)
+and structsynth (2272403d). Two of those moved the default path itself. Every
+number below reproduced exactly each time, control line included, and the last
+three reports are byte-identical to this file's body.
 -->
 
 # typesweep signedness=upstream
