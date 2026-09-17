@@ -53,9 +53,14 @@
 //!      op (the iop encoding in input 1) is this call.  Sinking the call past
 //!      such a read (e.g. the out-parameter copy `Merge::snipReads` places right
 //!      after the call, GH-181) would hand the read the *pre*-call value;
-//!   4. the statement the folded expression is finally printed in is still
-//!      reachable under (3) — [`fold_print_point_is_order_safe`], checked once
-//!      the implied chain downstream of the use is classified.
+//!   4. no **barrier** sits between the call and the statement the folded
+//!      expression is finally printed in, which is further than the use whenever
+//!      the use op's own output is implied
+//!      ([`fold_print_point_is_order_safe`], asked once the implied chain below
+//!      the use is classified).  The ops that chain travels through are not
+//!      barriers to it: each consumes the previous one's value, so the call is
+//!      evaluated before them either way.  Only the barrier half of (3) is
+//!      re-asked there; the INDIRECT half keeps the span to the use.
 //!
 //! Keeping `LOAD` in the forbidden set is necessary, not redundant: the call may
 //! `STORE` memory that an intervening `LOAD` reads, so sinking the call past that
