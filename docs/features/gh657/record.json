@@ -63,33 +63,36 @@
     "per_function": "0 of 10748 functions differ in type_match value and 0 in decomp_vars count"
   },
   "speed": {
-    "method": "interleaved A/B of `kuna decompile-all`, wall clock, min and median; the A binary is origin/main (83830e86), the B binary this branch. No option to flip, so timeit's on/off harness does not apply.",
+    "method": "interleaved A/B of `kuna decompile-all`, wall clock, min and median; the A binary is origin/main 520443d7, the B binary this branch. No option to flip, so timeit's on/off harness does not apply. The box carried a rust-test lane throughout, so the per-sample spread is wider than the delta.",
     "fmt_O2": {
       "samples": 15,
-      "min_main_s": 4.043,
-      "min_fix_s": 4.097,
-      "min_delta_pct": 1.31,
-      "med_main_s": 4.298,
-      "med_fix_s": 4.428
+      "min_main_s": 4.089,
+      "min_fix_s": 4.156,
+      "min_delta_pct": 1.63,
+      "med_main_s": 4.258,
+      "med_fix_s": 4.45
     },
     "grep_O0": {
       "samples": 11,
-      "min_main_s": 6.54,
-      "min_fix_s": 6.538,
-      "min_delta_pct": -0.03
+      "min_main_s": 6.536,
+      "min_fix_s": 6.45,
+      "min_delta_pct": -1.32,
+      "med_main_s": 7.469,
+      "med_fix_s": 7.221
     },
     "budget_pct": 5.0,
     "within_budget": true,
-    "note": "the new work is one walk of at most 8 implied ops per call output that already reached check_implied_cover; the box is contended (three rust-test lanes), so the per-sample spread is wider than the delta"
+    "note": "the new work is one walk of at most 8 implied ops per call output that already reached check_implied_cover; the two binaries disagree on sign, which is the contention floor"
   },
   "gates": {
     "make test": "675/675 PARITY OK (no assertion moved, no re-pin)",
-    "make test-stages": "1060/1060 PARITY OK (baseline re-recorded for the six NEW assertions only)",
+    "make test-stages": "1065/1065 PARITY OK (baseline re-recorded for the six NEW assertions only; 1059 pre-existing keys untouched)",
     "make check-spec": "OK lenient + OK strict",
     "make test-cli": "179/179 passed",
     "kuna catalog --check": "catalog OK",
     "counters --check": "no drift; docs/options.md byte-fresh",
-    "make rust-test": "RUST_TEST_RC=0 -- 415 test binaries, 7106 passed / 0 failed, from the committed HEAD 367a0ba4 (log .scratch/rust-test4.log). The run before it (SHA 70e5edc0) was RED and worth recording: rewriting the foldcallret/foldcallretphi catalog rows moved tests/fixtures/phase_catalog.json, so `-p kuna-decomp --test catalog_bytecompat` failed 2 of its 5 tests while the other 414 binaries were green. Neither `kuna catalog --check` nor `counters --check` sees that fixture; only the workspace suite does."
+    "make rust-test": "PENDING -- see rust_test",
+    "stage_test_two_arm": "tests/stages/kuna-foldcallret-barrier.xml run against a build of origin/main via KUNA_DECOMP_TEST: 1/6 assertions pass (#1, #3, #4, #5, #6 fail). Against this branch: 6/6."
   },
   "stage_assertions_examined": {
     "note": "four stage assertions moved on the first version of the fix and NONE was absorbed: each pointed at a real over-decline, and the final version leaves all 1059 pre-existing assertions untouched (the baseline gains only the six new GH657 rows).",
@@ -121,7 +124,7 @@
     "docs/features/gh657/{analysis.md,plan.md,record.json,foldclassify.py,repro.c,travel.s,disjoint_sweep.sh}"
   ],
   "option_off_identity": "kuna decompile-all --option foldcallret off is byte-identical between origin/main and this branch on O0 grep and libselinux.so.1: every new test is behind `Architecture::fold_call_returns`.",
-  "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree; target/debug deleted afterwards. Lane SHA 367a0ba4; the commits after it touch only docs/spec/06-variables-and-merge.md and docs/features/gh657/, and the workspace suite embeds no doc but options.md, cli.md, agents.md, phases.md and modes.md. CI's own `cargo workspace suite` (full-ci label) is COMPLETED SUCCESS on the final head, alongside `parity gates`.",
+  "rust_test": "run through /home/mahaloz/kwt/rust-test-lane.sh on the worktree at the rebased SHA 6ed62f54; target/debug deleted afterwards. The commits after that SHA touch only docs/features/gh657/ and docs/spec/06-variables-and-merge.md, and the workspace suite embeds no doc but options.md, cli.md, agents.md, phases.md and modes.md.",
   "phi_arm": {
     "acceptance_metric": "per-function CONTENT equality of the `--option foldcallretphi on` dumps, main build against this branch, split on the `// Function:` banner. The round-1 metric (equality of the phi-delta SET) could not see a content change inside the delta and is retired.",
     "main_build": "origin/main 520443d7, built fresh",
