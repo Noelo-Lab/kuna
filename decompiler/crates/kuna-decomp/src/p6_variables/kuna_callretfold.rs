@@ -186,7 +186,7 @@ pub fn expression_contains_foldable_call(data: &Funcdata, root: VarnodeId) -> bo
 /// effect, so the call expression must not be sunk past it (GH-181).  Marker
 /// ops (a later call's own INDIRECTs chain the earlier call's versions as
 /// inputs) have no textual evaluation point and are skipped.
-fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
+pub(crate) fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,
         None => return true, // stale: be conservative
@@ -224,7 +224,7 @@ fn op_reads_indirect_output_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
 
 /// An op whose relative order with the moved call is observable: any call, or a
 /// memory-touching op (LOAD/STORE/CALLOTHER).
-fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
+pub(crate) fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     let o = match data.obank().get(op) {
         Some(o) => o,
         None => return true, // stale: be conservative
@@ -238,11 +238,11 @@ fn op_is_barrier(data: &Funcdata, op: OpId) -> bool {
     )
 }
 
-fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
+pub(crate) fn op_is_marker(data: &Funcdata, op: OpId) -> bool {
     data.obank().get(op).map(|o| o.is_marker()).unwrap_or(true)
 }
 
-fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::context::BlockId> {
+pub(crate) fn op_parent(data: &Funcdata, op: OpId) -> Option<crate::context::BlockId> {
     data.obank().get(op).and_then(|o| o.get_parent())
 }
 

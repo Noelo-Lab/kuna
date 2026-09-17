@@ -48,6 +48,18 @@
 //!   * the use op must not itself read an INDIRECT effect of the call — there
 //!     the folded text would name the operand's high both as the call's
 //!     argument (pre-call) and as an operand of the use (post-call).
+//!
+//! # Where the folded call is actually printed
+//!
+//! `call_output_foldable`'s span guard ends at the single use, which is the
+//! call's textual home only when that use op is itself a statement.  If the use
+//! op's own output is *implied*, the expression keeps travelling: it is printed
+//! wherever that implied value is finally consumed, and that can be a later
+//! block behind a branch.  The rejection this module discounts is sometimes the
+//! only thing holding such a call in place, so the discount re-derives the real
+//! print point ([`print_point`]) and re-runs the span guard over the whole
+//! distance the call would move.  A print point outside the call's own block, or
+//! one with a CALL/LOAD/STORE/CALLOTHER in between, declines.
 
 use kuna_base::error::KunaResult;
 use kuna_num::opcodes::OpCode;
@@ -81,6 +93,9 @@ pub fn conflict_is_self_call_effect(
     if op_reads_indirect_effect_of(data, use_op, call) {
         return false;
     }
+    if !print_point_is_order_safe(data, call, use_op) {
+        return false;
+    }
     let Some(high_cover) = data.high_bank().internal_cover(high).cloned() else {
         return false;
     };
@@ -109,6 +124,70 @@ pub fn conflict_is_self_call_effect(
         }
     }
     saw_conflict
+}
+
+/// Longest implied chain [`print_point`] will chase before giving up.
+const MAX_IMPLIED_CHAIN: usize = 8;
+
+/// (kuna) The op at whose statement the expression rooted at `use_op` is printed.
+///
+/// An op is its own statement when it has no output (STORE, CBRANCH, a void
+/// call, RETURN) or when its output is explicit.  Otherwise the output is
+/// implied and the expression migrates into that value's own consumer, so the
+/// walk follows the implied chain.  `None` means there is no provable single
+/// print point: a marker, a fan-out, or a value this pass has not classified yet.
+fn print_point(data: &Funcdata, use_op: OpId) -> Option<OpId> {
+    let mut op = use_op;
+    for _ in 0..MAX_IMPLIED_CHAIN {
+        if crate::kuna_callretfold::op_is_marker(data, op) {
+            return None;
+        }
+        let out = data.obank().get(op)?.get_out();
+        let Some(out) = out else {
+            return Some(op);
+        };
+        let v = data.vbank().get(out)?;
+        if v.is_explicit() {
+            return Some(op);
+        }
+        if !v.is_implied() {
+            return None;
+        }
+        op = data.lone_descend(out)?;
+    }
+    None
+}
+
+/// (kuna) Does the call survive the move all the way to its print point?
+///
+/// `call_output_foldable` has already cleared the span from the call to
+/// `use_op`; this re-runs the same guard over the span from the call to the
+/// statement the folded expression actually lands in, which is where it is
+/// evaluated at run time.
+fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
+    let Some(point) = print_point(data, use_op) else {
+        return false;
+    };
+    let Some(blk) = crate::kuna_callretfold::op_parent(data, call) else {
+        return false;
+    };
+    if crate::kuna_callretfold::op_parent(data, point) != Some(blk) {
+        return false;
+    }
+    let ops = data.bb_ops(blk);
+    let (Some(ci), Some(pi)) = (
+        ops.iter().position(|&o| o == call),
+        ops.iter().position(|&o| o == point),
+    ) else {
+        return false;
+    };
+    if pi <= ci {
+        return false;
+    }
+    !ops[ci + 1..pi].iter().any(|&mid| {
+        crate::kuna_callretfold::op_is_barrier(data, mid)
+            || crate::kuna_callretfold::op_reads_indirect_output_of(data, mid, call)
+    })
 }
 
 /// Is `vn` the output of a `CPUI_INDIRECT` whose effect op (the iop encoded in

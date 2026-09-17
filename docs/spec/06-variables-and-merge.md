@@ -919,15 +919,33 @@ discounted. Second, a use op that itself reads an INDIRECT effect of the call
 declines, since the folded text would otherwise name the operand's high both as
 the call's argument (pre-call) and as an operand of the use (post-call).
 
-It ships **off**, not for a safety reason: flipping the default leaves both
-corpora at PARITY OK (0 of 675 datatest assertions change) and costs +1.22% on
-`fmt` `decompile-all`. What holds it back is that removing a declaration
-renumbers the remaining `vN` locals, and `--assert type vN` / `--assert name vN`
-address a variable by that auto-generated name — `tests/cli` pins one such run,
-whose `type v2 char[16]` lands on a different stack slot once a `strcmp` result
-folds away. A default flip belongs in its own change, with those directives
-re-read. The effect is a call spill removed and its expression printed at the
-use:
+A third condition is the discount's own, and it is what makes the move sound
+rather than merely plausible. `foldcallret`'s predicate guards the span from the
+call to its single use, but the use is the call's textual home only when that use
+op is itself a statement — an op with no output, or one whose output is explicit.
+When the use op's own output is *implied*, the expression keeps travelling and is
+printed wherever that implied value is finally consumed, which can be a later
+block behind a branch; the `inflate_test` rejection being discounted here is
+sometimes the only thing holding the call in place. So the discount re-derives
+the real print point by following the implied chain
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
+(print_point)`) and re-runs the span guard over the whole distance the call would
+travel: a print point outside the call's own block, or one with a
+call/load/store/callother in between, declines. Without it, `betaflight`'s
+`sub_8051ac4` emits its `sub_80515b4(dat_200181a4)` *after* an
+`if (dat_200019cc & 1)` that the binary evaluates after the call — a call moved
+past two global reads it may itself write.
+
+It ships **off** for two reasons. Flipping the default leaves both corpora at
+PARITY OK (0 of 675 datatest assertions change) and costs +1.22% on `fmt`
+`decompile-all`, but removing a declaration renumbers the remaining `vN` locals,
+and `--assert type vN` / `--assert name vN` address a variable by that
+auto-generated name — `tests/cli` pins one such run, whose `type v2 char[16]`
+lands on a different stack slot once a `strcmp` result folds away. And the pass
+changes where a call is evaluated, which holds only while the guards above do;
+that is a claim a default should not inherit from this chapter but re-establish
+with its own sweep. The effect is a call spill removed and its expression printed
+at the use:
 `v12 &= sub_3700(stdin,v7);`. Because marking a value implied re-dirties its
 operands' covers, a neighbouring value occasionally fails its own implied test
 and gains a statement of its own at the position its defining op already had —
