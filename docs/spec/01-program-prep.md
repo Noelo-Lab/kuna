@@ -1659,7 +1659,17 @@ moves.
   Which slot, and what it holds, is read off the DYNAMIC RELOCATION that binds
   the stream — that relocation is also the evidence that the name is the C
   library's and not a global the program happens to spell `stdout`, so a name the
-  image defines itself is never reached. The two shapes hold different things. A
+  image defines itself is never reached: the `COPY` arm is reached only through a
+  copy relocation, which is by construction a claim about a definition in another
+  image, and the `GLOB_DAT` arm requires the symbol to be undefined. The same
+  rule reaches one step further out for the one name this pass MINTS rather than
+  reads — `stdout_ptr` is kuna's coinage, so the `GLOB_DAT` arm declines when
+  either of the image's symbol tables already spells it, and an image carrying
+  its own `stdout_ptr` global keeps the untyped `*dat_<addr>` rendering rather
+  than printing two addresses under one identifier. `.symtab` counts as much as
+  `.dynsym` there: a `static long stdout_ptr` reaches only the former, and that
+  is the table the loader's data symbols are named from. The two shapes hold
+  different things. A
   `COPY` relocation names a `.bss` word of pointer width that the run-time loader
   fills with libc's own `FILE *stdout`: the slot's type is `FILE *` and its name
   is the stream's. A `GLOB_DAT` relocation on an UNDEFINED symbol names a GOT
@@ -1684,7 +1694,12 @@ moves.
   set are byte-identical end to end, because on those the type already arrived by
   inference from a typed stdio call in the same function — the reach this step
   extends is the function that makes no such call, and the shared object, whose
-  stream never had a name at all.
+  stream never had a name at all. The cost is local merging: a slot that takes
+  `FILE *`/`FILE **` stops merging with the unrelated values a scalar local had
+  absorbed, which adds a declaration and renumbers the locals after it, so a
+  single retyped slot can account for most of a function's changed lines
+  (libedit's `rl_initialize`: one new declaration, 57 changed lines, 15 of them
+  once the numbering is normalised away).
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.

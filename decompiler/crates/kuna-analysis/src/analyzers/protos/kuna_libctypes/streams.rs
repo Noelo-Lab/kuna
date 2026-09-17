@@ -43,12 +43,20 @@
 //! about a definition in another image, and the `GLOB_DAT` arm requires the
 //! symbol to be undefined. A spelling that occurs more than once in `.dynsym` is
 //! declined outright, and so is a `COPY` slot whose declared size is not the
-//! image's pointer width. The `FILE` shell itself comes from
+//! image's pointer width.
+//!
+//! `stdout_ptr` is kuna's own coinage, so it gets the same treatment one step
+//! further out: the `GLOB_DAT` arm declines when either symbol table already
+//! spells the name it would mint. An image with its own `stdout_ptr` global
+//! would otherwise print two different addresses as one identifier. `.symtab`
+//! counts as much as `.dynsym` — a `static long stdout_ptr` reaches only the
+//! former, and the loader's data symbols are named from it. The `FILE` shell
+//! itself comes from
 //! [`super::named_aggregate`], which declines when the name is already held by
 //! something else — so an image whose own debug info defines a different `FILE`
 //! contributes no stream symbol at all rather than a contradictory one.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use kuna_base::types::uint4;
@@ -72,6 +80,32 @@ fn copy_globdat(arch: object::Architecture) -> Option<(u32, u32)> {
         object::Architecture::Arm => Some((elf::R_ARM_COPY, elf::R_ARM_GLOB_DAT)),
         _ => None,
     }
+}
+
+/// The minted `<stream>_ptr` spellings this image already answers to.
+///
+/// The `COPY` arm re-uses a name the image itself carries, but the `GLOB_DAT`
+/// arm invents one, and an invented name is only a name while nothing else
+/// holds it. Both tables are read: a `static long stdout_ptr` appears in
+/// `.symtab` alone, and that is the table the loader's data symbols are named
+/// from.
+fn minted_names_taken(file: &object::File) -> HashSet<String> {
+    let wanted: Vec<String> = STREAM_NAMES.iter().map(|n| format!("{n}_ptr")).collect();
+    let mut taken = HashSet::new();
+    let mut note = |sym: &object::Symbol| {
+        let Ok(raw) = sym.name_bytes() else { return };
+        let stripped = crate::loader::elf_plt::strip_version(raw);
+        if let Some(hit) = wanted.iter().find(|w| w.as_bytes() == stripped.as_slice()) {
+            taken.insert(hit.clone());
+        }
+    };
+    for sym in file.symbols() {
+        note(&sym);
+    }
+    for sym in file.dynamic_symbols() {
+        note(&sym);
+    }
+    taken
 }
 
 /// The stream data symbols this image carries, typed.
@@ -127,6 +161,7 @@ pub(super) fn stream_data_symbols(
     };
     let ptr_width = ptr.max(0) as u64;
 
+    let taken = minted_names_taken(file);
     let mut claimed: Vec<u64> = Vec::new();
     for (offset, reloc) in relocs {
         let RelocationFlags::Elf { r_type } = reloc.flags() else { continue };
@@ -136,11 +171,17 @@ pub(super) fn stream_data_symbols(
             // The copy destination holds what libc's own `stdout` holds.
             (name.to_string(), Rc::clone(&stream_ptr))
         } else if r_type == r_glob_dat && undefined {
-            // The GOT slot holds the ADDRESS of the stream pointer.
+            // The GOT slot holds the ADDRESS of the stream pointer. The name is
+            // minted here, so it is only usable while the image does not
+            // already answer to it.
+            let minted = format!("{name}_ptr");
+            if taken.contains(&minted) {
+                continue;
+            }
             let Ok(pp) = types.get_type_pointer(ptr, Rc::clone(&stream_ptr), word_size) else {
                 continue;
             };
-            (format!("{name}_ptr"), pp)
+            (minted, pp)
         } else {
             continue;
         };

@@ -35,13 +35,35 @@ helper and nothing else in the function says what it returns.
 
 The relocation is both the address and the evidence. It says the name belongs to
 the C library rather than to a global the program happens to spell `stdout`, so
-an image that defines its own is never reached.
+an image that defines its own is never reached: the `COPY` arm is reachable only
+through a copy relocation, which is by construction a claim about a definition in
+another image, and the `GLOB_DAT` arm requires the symbol to be undefined.
 
 | shape | slot | type | name |
 |---|---|---|---|
 | `R_*_COPY`, symbol defined, `st_size` = pointer width | the `.bss` word the run-time loader fills with libc's `FILE *stdout` | `FILE *` | `stdout` |
 | `R_*_GLOB_DAT`, symbol **undefined** | the GOT word holding `&stdout` | `FILE **` | `stdout_ptr` |
 | `R_*_GLOB_DAT`, symbol defined | the same image's own copy slot | — | declined |
+| `R_*_GLOB_DAT`, symbol undefined, but the image already spells `stdout_ptr` | the GOT word | — | declined |
+
+That last row is the one name this step MINTS rather than reads, and a minted
+name is only a name while nothing else answers to it:
+
+```
+$ cat > coll.c <<'EOF'
+#include <stdio.h>
+static long stdout_ptr = 7;
+long *keep = &stdout_ptr;
+long pending(void){ return stdout_ptr + (long)(stdout->_IO_write_ptr - stdout->_IO_write_base); }
+EOF
+$ gcc -O1 -shared -fPIC -o coll.so coll.c && kuna decompile-all ./coll.so
+  return (*(long *)(*dat_3fe0 + 0x28) - *(long *)(*dat_3fe0 + 0x20)) + stdout_ptr;
+```
+
+`.data+0x4020` already holds `stdout_ptr`, so the GOT word at `0x3fe0` keeps its
+`dat_` rendering instead of printing a second address under the same identifier.
+Both tables are read: that global is `static`, so only `.symtab` carries it — and
+`.symtab` is the table the loader's data symbols are named from.
 
 ```
 000000000000c088  R_X86_64_COPY      stdout@GLIBC_2.2.5 + 0   coreutils fmt, .bss
@@ -115,11 +137,28 @@ inlined `__overflow(stdout,c)` refill and every `*(char **)&stdout->field_0x28`
 store are byte-identical in both arms. No statement, address or control-flow edge
 moves anywhere.
 
-One shape is worth naming because it costs a declaration. On the i386
-`i386_pie_nl` fixture, `main`'s `v2 = *dat_9fd8; rpl_fclose(v2)` — where `v2` was
-a 4-byte `unsigned int` shared with other values — becomes its own
-`FILE *v3 = *stdin_ptr`. One more local, with the right type on it, and the whole
-local numbering shifts behind it.
+### The cost: local merging, and it is not one site
+
+Typing a slot `FILE *`/`FILE **` stops it merging with the unrelated values a
+scalar local had absorbed. That adds a declaration, and every local after it
+renumbers — so one retyped slot can account for most of a function's changed
+lines. Two binaries outside the twelve, measured against the same base build,
+with `v<N>` normalised away so the count is semantic hunks rather than
+renumbering:
+
+| binary / function | changed lines | with locals normalised | declarations |
+|---|---:|---:|---|
+| `O2/libedit/libedit.so.0.0.70` `rl_initialize` | 57 | 15 | 10 → 11 (`FILE **` is new) |
+| `O2/libedit/libedit.so.0.0.70` `fn_complete2` | 2 | 2 | 36 → 36 |
+| `i386_pie_nl` (6 functions) | 294 | 72 | +1 in `main`, +1 in `close_stdout` |
+
+The renumbering is the bulk of it and it is cosmetic, but it is real churn in a
+diff and the earlier single-site framing understated it. What the normalised
+count leaves is still only the three disclosed classes. `close_stdout` is the
+shape worth reading: `unsigned int v3` carried BOTH stream pointers, and typing
+them splits it into `FILE *v1` while `v1`/`v2`/`v3` shift to `v2`/`v3`/`v4` —
+one more declaration, the right type on it, 27 changed lines of which 7 survive
+normalisation.
 
 ## Type recovery
 
@@ -189,11 +228,15 @@ once `opaque` — with assertions #16-#25, plus pass 10 for the `datasyms off` i
   (#24), and whose library form only loses the cast the untyped slot needed
   (#25).
 
-Six unit tests in `protos/kuna_libctypes/tests.rs`: the two shapes' addresses,
+Seven unit tests in `protos/kuna_libctypes/tests.rs`: the two shapes' addresses,
 names and indirection depth; that neither borrows the other's naming; that the
-slots share the table's own interned `FILE`; that `glibc` reaches them; and that
-a relocatable object and a PE yield nothing.
+slots share the table's own interned `FILE`; that `glibc` reaches them; that a
+relocatable object and a PE yield nothing; and that a third build of the same
+fixture source — `-DKUNA_STREAM_NAME_COLLISION`, which adds a `static long
+stdout_ptr` — yields `stdin_ptr` alone, so the decline is per name rather than a
+bail, and a `.dynsym`-only lookup would have missed it.
 
 `tests/cli/structdefs-json-types-array.json` moved: `main` of the `i386_pie_nl`
 fixture now references two libc shells rather than one, so the per-function
-`types` array carries `FILE` ahead of `option`. The probe pins both.
+`types` array carries `FILE` ahead of `option`. Both entries are pinned by name,
+`.h` text and size.

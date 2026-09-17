@@ -28,6 +28,16 @@
         "value": "FILE"
       },
       {
+        "path": "functions[0].types[0].definition",
+        "op": "contains",
+        "value": "typedef struct FILE FILE; /* opaque */"
+      },
+      {
+        "path": "functions[0].types[0].size",
+        "op": "eq",
+        "value": 216
+      },
+      {
         "path": "functions[0].types[1].name",
         "op": "eq",
         "value": "option"
@@ -58,5 +68,5 @@
     "selector": "main",
     "selector_kind": "name"
   },
-  "notes": "structdefs on: main references two libc shells  -  the `struct option` it hands `getopt_long`, and the `FILE` behind the `stdin` slot its `rpl_fclose` reads (`libctypes` types that slot). The `types` array carries both in definition-before-use order with .h text and size; structscore.py parses that text, so a consumer never parses C out of `code`."
+  "notes": "structdefs on: main references two libc shells  -  the `struct option` it hands `getopt_long`, and the `FILE` behind the `stdin` slot its `rpl_fclose` reads (`libctypes` types that slot). The `types` array carries both in definition-before-use order, each pinned by name, .h text and size; structscore.py parses that text, so a consumer never parses C out of `code`."
 }

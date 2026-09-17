@@ -619,6 +619,35 @@ fn the_two_stream_shapes_do_not_borrow_each_others_names() {
     }
 }
 
+/// `<stream>_ptr` is a name kuna invents, so an image that already answers to it
+/// takes it: the GOT slot keeps its address-shaped rendering rather than
+/// borrowing an identifier that also names a `.data` word somewhere else. The
+/// colliding global here is `static`, so only `.symtab` carries it — a lookup
+/// that read `.dynsym` alone would miss exactly this case. `stdin` is untouched,
+/// which is the other half: the decline is per name, not a bail.
+#[test]
+fn a_minted_stream_name_the_image_already_owns_is_declined() {
+    use object::{Object, ObjectSymbol};
+    let bytes = fixture_bytes("libctypes_streams_collide_so_x86_64.so");
+    let file = object::File::parse(&bytes[..]).expect("parse the colliding .so fixture");
+    let types = factory();
+    let facts = streams::stream_data_symbols(&file, &types, 1, Layout::Opaque);
+
+    let got: Vec<(String, u64)> = facts.iter().map(|f| (f.name.clone(), f.addr)).collect();
+    assert_eq!(
+        got,
+        vec![("stdin_ptr".to_string(), 0x3fe0)],
+        "stdout's GOT slot says nothing; stdin's is unaffected"
+    );
+    assert!(
+        object::File::parse(&bytes[..])
+            .expect("parse")
+            .symbols()
+            .any(|s| s.name() == Ok("stdout_ptr")),
+        "the fixture really does own the minted spelling"
+    );
+}
+
 /// The stream slots point at the same interned `FILE` the prototype table's own
 /// `fclose(FILE *)` does. A second definition would give the binary two stream
 /// types and make the body cast between them.
