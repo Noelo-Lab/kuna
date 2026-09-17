@@ -199,14 +199,14 @@
     "stages": "1048/1048, PARITY OK (before the foldcallretphi rebase; 1053 assertions now)",
     "note": "re-run on this tree (origin/main 12c31465 + this branch, after the width-guard fix and the new 16-bit stage test): phases.toml default flipped to `auto`, both binaries rebuilt, both corpora run against the UNCHANGED baselines, then the flip reverted and the tree rebuilt. The shipped default is `upstream`."
   },
-  "speed_off_ms": 4075.5,
-  "speed_on_ms": 4082.4,
-  "speed_delta_pct": 0.17,
-  "speed_samples": 21,
+  "speed_off_ms": 32929.4,
+  "speed_on_ms": 31961.2,
+  "speed_delta_pct": -2.94,
+  "speed_samples": 15,
   "speed_budget_pct": 5.0,
   "speed_within_budget": true,
   "speed_forced_off": false,
-  "speed_note": "interleaved min-of-21 whole-binary `decompile-all` on coreutils fmt -O2, re-run on the shipped round-4 build: +0.17% on the minimum (4.0755s upstream vs 4.0824s auto); the earlier pooled min-of-42 on the round-3 build was +0.21%. The MEDIAN is not usable on this box under other agents' load (-1.58% here, +4.56% then -4.85% on the round-3 pair), i.e. the noise is larger than anything this pass can cost. On the DEFAULT path the whole pass is one `SignPolicy::is_active` test per function plus one `HashMap::is_empty` in `retain_sole_named`, and `drop_cast` short-circuits, so `upstream` costs nothing measurable.",
+  "speed_note": "the default flip re-measured on the shipped build: interleaved min-of-15 whole-binary `decompile-all` on coreutils fmt, ls and sort at -O2, each iteration running `--option signedness upstream` and then the default (auto) back to back (.scratch/speed-r6.sh, .scratch/speed-r6.log). Per-binary minima: fmt 4.1255s -> 4.1235s (-0.05%), ls 13.7452s -> 13.4545s (-2.11%), sort 15.0587s -> 14.3831s (-4.49%); summed, 32.929s -> 31.961s, -2.94%. Two of the three deltas are NEGATIVE, which a pass that only adds work cannot be: the effect is below this box's noise floor under the other agents' load, not a speedup. The medians say the same thing from the other side (fmt +5.10%, ls -0.22%, sort -1.52%) and are not usable here. The tightest measurement taken on this feature -- min-of-21 on fmt alone, at a quieter moment -- was +0.17%, which is the number to believe for the cost; either way it is inside the +5% budget. The pass is one walk over each declared integer high's readers per function, plus a HashMap lookup per cast, and `option signedness upstream` short-circuits all of it on the first `is_active` test.",
   "count_sites": {
     "settables": 214,
     "tiers": [
@@ -469,20 +469,21 @@
     "also_carries": "the walk continues through it, so `(v << 3) >> 2` is decided by the `>>`"
   },
   "recommendation": [
-    "ship at default upstream with values upstream|auto|prefer-signed",
-    "drop prefer-unsigned: its own DWARF column refutes it (4 of 41 judged flips right; -O2 71.9% -> 69.6%)",
-    "do NOT make auto the default on fidelity grounds -- +0.1pp on four observations; the honest case for a later default flip is cast removal, not accuracy"
+    "SHIPPED: signedness upstream|auto|prefer-signed|prefer-unsigned with `auto` as the DEFAULT (the user's go on the proposal)",
+    "auto is the default for cast removal and the end of declaration-vs-body contradictions -- 182 declaration flips and 224 cast-drop hunks over eight binaries, 0 hunks of any other kind -- NOT for the agreement rate, which it moves by +0.1pp on four checkable observations",
+    "prefer-signed stays OPT-IN: it is the faithful arm (-O2 DWARF agreement 71.9% -> 94.8%) but moves 7,081 declarations image-wide against auto's 575, which is more than unanimity covers and more than the datatest corpus can absorb as a default",
+    "prefer-unsigned is kept as prefer-signed's control and documented as not recommended (4 of its 40 judged flips right); it is also what the 16-bit stage test uses to prove the width guard declines rather than sits inert",
+    "upstream restores the declaration type inference produced, byte for byte"
   ],
   "gates": {
-    "make test": "675/675 PARITY OK",
-    "make test-stages": "1064/1064 PARITY OK",
-    "make test-cli": "178/178 (one run scored 177/178 under the concurrent workspace-suite lane -- the known wall_ms flake; clean on re-run)",
-    "make check-spec": "OK lenient + OK strict",
-    "kuna catalog --check": "OK (214 settables)",
-    "counters --check": "no drift",
-    "docs/options.md": "byte-fresh",
-    "make rust-test": "RUST_TEST_RC=0, 7116 passed / 0 failed (.scratch/rust-test-r12.log, single lane on the rebased tree)",
-    "CI": "Tests workflow dispatched on the rebased head; PR is MERGEABLE again after the rebase"
+    "make test": "675/675 PARITY OK (default auto)",
+    "make test-stages": "1064/1064 PARITY OK (default auto)",
+    "make test-cli": "pending",
+    "make check-spec": "check-spec OK (lenient mode) + OK (strict mode)",
+    "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+    "docs/options.md": "byte-fresh (regenerated from `kuna catalog --markdown`)",
+    "make rust-test": "pending"
   },
   "care_uint_int_claim": {
     "corrected": "the demand set is a strict SUPERSET of the ops whose get_input_cast passes care_uint_int = true. The four ordered comparisons, / %, >> and the two extensions pass true; INT_SCARRY/INT_SBORROW/INT_CARRY, a same-width CPUI_CAST and INT_LEFT all fall through to the dispatch's DEFAULT arm, which passes false (decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs, get_input_cast).",

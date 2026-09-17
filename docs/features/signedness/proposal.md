@@ -185,14 +185,19 @@ scoring step *is* signedness, is byte-identical with the option on (mean 1.7322,
 `c_primitive` 58/95 on `fmt -O2`). What it buys is the DWARF agreement in the
 table above, plus the cast hunks that stop being written.
 
-**3. Should `auto` become the default?** It clears the repo's mechanical bar —
-built with `auto` as the default, `make test` is 675/675 **PARITY OK**, stages is
-**PARITY OK**, and the speed delta is **+0.17%** on the minimum of 21 interleaved
-whole-binary `decompile-all` runs — but the fidelity
-case for it is not there: four observations. If `auto` is ever made the default,
-the argument has to be **cast removal and the end of declaration-vs-body
-contradictions**, which is visible in every changed function, not a +0.1pp
-agreement rate. This PR ships `upstream`; a flip would be its own PR.
+**3. Should `auto` become the default?** *Answered: yes, and it ships that way.*
+It clears the repo's mechanical bar — built with `auto` as the default,
+`make test` is 675/675 **PARITY OK** and stages is 1064/1064 **PARITY OK**, and
+the speed delta is inside the +5% budget (interleaved min-of-15 whole-binary
+`decompile-all` on `fmt`/`ls`/`sort` `-O2`: −0.05% / −2.11% / −4.49%, i.e. below
+this box's noise floor; the tightest measurement on a quiet box, min-of-21 on
+`fmt` alone, was **+0.17%**). What it is *not* flipped for is the agreement rate:
+`auto` buys +0.1pp on four checkable observations. It is flipped for **cast
+removal and the end of declaration-vs-body contradictions**, which is visible in
+every changed function — over eight binaries from five projects at `-O0` and
+`-O2` (8,676 functions) the flip writes 182 declaration flips and 224 cast-drop
+hunks, removes 246 cast tokens, adds none, and produces **0 hunks of any other
+kind**.
 
 ## Witnesses (coreutils `fmt` `-O2`, CLI vocabulary)
 
@@ -269,23 +274,28 @@ proposed as witnesses in the design note:
   if the width rule ever allowed it; widening a byte into a character type is a
   different decision with its own option.
 
-## The go/no-go question
+## The decision
 
-What the numbers support, stated as a recommendation so it can be rejected in one
-line:
+The user's answer, and what this PR ships:
 
-1. **Ship** `signedness` at default `upstream` with values
-   `upstream|auto|prefer-signed`.
-2. **Drop `prefer-unsigned`** — its own column refutes it.
-3. **Do not make `auto` the default on fidelity grounds.** Its measured gain is
-   +0.1pp on four observations. If it is flipped later, flip it for the casts.
+1. **Ship** `signedness` with `auto` as the **default**. It re-signs a
+   declaration only on unanimous evidence, so the only text it can move is that
+   declaration and the casts the new declaration makes into no-ops — 0 of 675
+   datatest assertions, 1064/1064 stages PARITY OK, `type_match` 959 → 959
+   perfect over 444 slices with a byte-identical `variables[]` in all 10,748
+   scored functions, and 0 non-declaration/non-cast hunks over eight binaries.
+2. **`prefer-signed` stays opt-in.** It is the arm with the fidelity (`-O2`
+   agreement 71.9% → 94.8%), and it moves 7,081 declarations image-wide against
+   `auto`'s 575 — more than unanimity covers, and more than the datatest corpus
+   can absorb as a default. Reach for it when reading `-O2` code.
+3. **`prefer-unsigned` is kept as `prefer-signed`'s control**, not recommended,
+   and its catalog row says so. It is also what the 16-bit stage test uses to
+   prove the width guard is declining rather than inert.
+4. **`upstream` restores the declaration type inference produced**, byte for
+   byte, which is what to select when diffing against upstream Ghidra or against
+   kuna before this option existed.
 
-The question for the user: is a fidelity option that scores exactly zero on
-`type_match` worth an option slot, given that the one value with a real
-measurement (`prefer-signed`, `-O2` agreement 71.9% → 94.8%, 348 right / 38 wrong
-on the flips DWARF can judge) is the one that is *not* proposed as a default?
-
-What is no longer in question is whether the rounding itself earns the slot.
+What was never in question is whether the rounding itself earns the slot.
 Dropping the walk and keeping only the tie-break scores **92.8%** overall and
 **59.2%** at `-O2` — worse than doing nothing — because it declares 379 `size_t`
 locals `int`. The walk is the part that knows not to.
