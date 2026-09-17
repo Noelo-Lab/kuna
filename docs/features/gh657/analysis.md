@@ -100,12 +100,21 @@ then folded two calls it used to decline and recovered none.
 
 `landing_span_reads_call_effect` asks the question over the whole span again,
 landing statement included, as #654 did. The phi-delta set — the functions where
-`foldcallretphi on` differs from `off` — is then identical to `origin/main`'s:
-68 on `ssh` O2 and 120 on `tar` O0, the same addresses (69 and 121 without the
-clause, the extras being exactly those two). Default output is byte-identical
-with the clause and without it on `ssh` O2, `tar` O0, `grep` O0 and `fmt` O2;
-the clause is reachable only from `conflict_is_self_call_effect`, which
-`check_implied_cover` calls only when the option is on.
+`foldcallretphi on` differs from `off` — is then identical to `origin/main`'s on
+`ssh` O2 (68), `tar` O0 (120), `grep` O0 (26) and `e2fsck` O0 (133), the same
+addresses; without the clause `ssh` and `tar` read 69 and 121, the extras being
+exactly the two above. `dash` O2 goes 15 → 16, and that one is *not* the guard:
+the narrowed build and the restored build render `0x12010` identically in both
+arms. The default fix de-folds `sub_11e30(2)` there, which re-dirties the
+neighbouring covers, so `inflate_test` reaches a rejection the discount forgives
+and `v5 = (char *)sub_102c0(dat_21a98), *v5` prints as
+`*(char *)sub_102c0(dat_21a98)` — the call and its dereference are adjacent, so
+nothing moves.
+
+Default output is byte-identical with the clause and without it on `ssh` O2,
+`tar` O0, `grep` O0 and `fmt` O2; the clause is reachable only from
+`conflict_is_self_call_effect`, which `check_implied_cover` calls only when the
+option is on.
 
 ## Witnesses
 

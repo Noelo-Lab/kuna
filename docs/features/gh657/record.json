@@ -132,8 +132,27 @@
       "this_branch": 120,
       "extra_when_narrowed": "0x67494"
     },
-    "set_identity": "the phi-delta SETS (not just the counts) are identical to origin/main's on both binaries",
-    "default_identity": "`kuna decompile-all` with no options is byte-identical (md5) between the narrowed and the restored build on ssh O2, tar O0, grep O0 and fmt O2, so the 16-binary sweep below is unaffected"
+    "set_identity": "identical to origin/main's on ssh O2, tar O0, grep O0 and e2fsck O0; dash O2 gains one function downstream of the default fix (see dash_O2)",
+    "default_identity": "`kuna decompile-all` with no options is byte-identical (md5) between the narrowed and the restored build on ssh O2, tar O0, grep O0 and fmt O2, so the 16-binary sweep below is unaffected",
+    "grep_O0": {
+      "functions": 642,
+      "origin_main": 26,
+      "this_branch": 26,
+      "sets_equal": true
+    },
+    "e2fsck_O0": {
+      "functions": 1908,
+      "origin_main": 133,
+      "this_branch": 133,
+      "sets_equal": true
+    },
+    "dash_O2": {
+      "functions": 335,
+      "origin_main": 15,
+      "this_branch": 16,
+      "extra": "0x12010",
+      "attribution": "NOT the guard: the narrowed build and the restored build render 0x12010 identically in both arms. The default GH-657 fix de-folds `sub_11e30(2)` in this function, which re-dirties neighbouring covers, so inflate_test now reaches a rejection the discount forgives and `v5 = (char *)sub_102c0(dat_21a98), *v5` prints as `*(char *)sub_102c0(dat_21a98)`. The call and the dereference are adjacent, so nothing moves."
+    }
   },
   "disjoint_sweep": {
     "why": "the reviewer's WRONG-OUTPUT lens used a corpus disjoint from the 16-binary one; re-run here so the PR's own numbers cover it",
