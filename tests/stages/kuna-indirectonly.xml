@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue `kuna-indirectonly` (P6, sub-stage merge-aggressiveness).
+
+    An ILLEGAL INPUT is an input Varnode that ActionDirectWrite never reached,
+    so nothing a formal parameter feeds can be responsible for its value: on a
+    normal frame, the leftover contents of a stack slot the function overwrites
+    before it reads.  Merge::mergeTestAdjacent refuses every speculative merge
+    involving such a variable, and HighVariable::hasName refuses to name an
+    unaffected input whose members are all of that kind.  Both refusals end
+    "unless the illegal input is only used indirectly", and that exception needs
+    the `indirectonly` Varnode flag, which nothing in kuna set:
+    Funcdata::markIndirectOnly / checkIndirectUse (funcdata_varnode.cc:801-858)
+    were unported and ActionMarkIndirectOnly was a documented no-op, so
+    isIndirectOnly() answered false everywhere.
+
+    Synthetic minimiser, the shape coreutils `date` -O0 `main` has (gcc frame,
+    the `struct timespec when` at -0xc0(%rbp) whose address escapes on the other
+    branch, filled from one call result by a divide and a remainder):
+
+      take:  push rbp / mov rbp,rsp / sub rsp,0x120
+             mov eax,[c1] / test eax,eax / je 102d
+             lea rax,[rbp-0xc0] / mov rdi,rax / mov rsi,[str] / call parse
+             jmp 106c
+      102d:  call now_ns                      ; the value, in RAX
+             mov [rbp-0xc8],rax               ; a temp
+             mov rdi,1000000000
+             mov rcx,[rbp-0xc8] / mov rax,rcx / cqo / idiv rdi
+             mov [rbp-0xc0],rax               ; when.tv_sec  = v / 1e9
+             mov rcx,[rbp-0xc8] / mov rax,rcx / cqo / idiv rdi
+             mov [rbp-0xb8],rdx               ; when.tv_nsec = v % 1e9
+      106c:  lea rax,[rbp-0xc0] / mov rdi,rax / call use / leave / ret
+
+    `lea rbp-0xc0` escapes the struct, so both of its slots are address-tied and
+    the value each holds on entry reaches nothing but the INDIRECTs of the calls
+   , indirect-only.  The COPY that writes the remainder into `when.tv_nsec`
+    wants to merge RAX's HighVariable, which also carries the call's result,
+    into that slot.
+
+    Pass 1 (option indirectonly off): the merge is refused, the call result gets
+    its own register local, and the slot is assigned across -> #1, #2.
+    Pass 2 (option indirectonly on, the default): the merge happens, the call
+    result is computed straight into `when.tv_nsec`, and the register local is
+    gone -> #3, #4, #5.
+-->
+<bytechunk space="ram" offset="0x1000">
+554889e54881ec200100008b05ef00000085c07418488d8540ffffff4889c7488b35e2000000e852000000eb3fe84f00000048898538ffffff48c7c700ca9a3b488b8d38ffffff4889c8489948f7ff48898540ffffff488b8d38ffffff4889c8489948f7ff48899548ffffff488d8540ffffff4889c7e80c000000c9c34889f0c3b805000000c3488b07c3e870fffffff4000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="take"/>
+<symbol space="ram" offset="0x107d" name="parse"/>
+<symbol space="ram" offset="0x1081" name="now_ns"/>
+<symbol space="ram" offset="0x1087" name="use"/>
+</binaryimage>
+<script>
+  <com>option indirectonly off</com>
+  <com>lo fu take</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option indirectonly on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="indirectonly #1: off spills the call result to its own register local" min="1" max="1">v1 = now_ns\(\);</stringmatch>
+<stringmatch name="indirectonly #2: off assigns the remainder across into the escaped slot" min="1" max="1">v3 = v1 % 1000000000;</stringmatch>
+<stringmatch name="indirectonly #3: on computes the call result straight into the slot" min="1" max="1">v2 = now_ns\(\);</stringmatch>
+<stringmatch name="indirectonly #4: on folds the remainder back into that same slot" min="1" max="1">v2 %= 1000000000;</stringmatch>
+<stringmatch name="indirectonly #5: the register temp is declared only in pass 1 (one local fewer on)" min="1" max="1">int8 v1; // rax</stringmatch>
+</decompilertest>

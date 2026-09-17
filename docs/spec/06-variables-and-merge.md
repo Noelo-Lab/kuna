@@ -337,13 +337,51 @@ same storage is called redundant and silenced, the emitted C returns the call's
 result on a path where the binary returns the parameter. Naming
 (`coreaction_cleanup.rs
 (ActionNameVars)`) and casts (`ActionSetCasts`) close the phalanx but are
-policy of chapter [09](09-emission.md). Three scheduled bodies are documented
-inert stubs in the live tree — `coreaction_cleanup.rs (ActionMarkIndirectOnly)`
-and `(ActionHideShadow)` apply no change, and `(ActionMergeMultiEntry)` is
-wired to the real engine (`merge.rs (Merge::merge_multi_entry)`) but its
-multi-entry-symbol source (`funcdata_merge.rs
-(MergeContext::multi_entry_symbols)`) returns empty pending the symbol-scope
-layer.
+policy of chapter [09](09-emission.md). Two scheduled bodies are still inert in
+the live tree — `coreaction_cleanup.rs (ActionHideShadow)` applies no change,
+and `(ActionMergeMultiEntry)` is wired to the real engine (`merge.rs
+(Merge::merge_multi_entry)`) but its multi-entry-symbol source
+(`funcdata_merge.rs (MergeContext::multi_entry_symbols)`) returns empty pending
+the symbol-scope layer.
+
+**Inputs that are only ever read indirectly** (`kuna_indirectonly.rs
+(mark_indirect_only)`, run by `coreaction_cleanup.rs (ActionMarkIndirectOnly)`
+one slot ahead of `ActionMergeAdjacent`, option `indirectonly`, default on).
+Two of the tests above ask whether a variable's input member is an *illegal*
+input — an input Varnode that `ActionDirectWrite` never reached, so no formal
+parameter can be responsible for its value: typically the leftover initial
+contents of a frame slot the function overwrites before it reads. `merge_test_adjacent`
+refuses every speculative merge with such a variable, to keep an uninitialized
+value from being printed as a real one, and `variable.rs
+(HighVariable::has_name)` will not name an unaffected input whose members are
+all of that kind. Both carry an exception for the case where the leftover value
+is not really read at all, and the exception needs a Varnode flag that says so.
+
+`kuna_indirectonly.rs (check_indirect_use)` decides it, as a worklist over the
+def-set. A reader that is a plain `CPUI_INDIRECT` is the accepting case and the
+walk stops there — an INDIRECT is the record that *some other op may have
+overwritten this storage*, not a use of the value. An INDIRECT caused by a STORE
+is accepted too but the walk continues through its output, because the value
+survives that store and where it ends up still matters, and a `CPUI_MULTIEQUAL`
+is transparent for the same reason. **Any other reader fails the whole test**,
+which is what keeps a slot that is genuinely read out of the flag: one
+arithmetic use, one compare, one call argument anywhere in the def-set and the
+input stays isolated. `mark_indirect_only` applies that to every illegal input
+and sets `indirectonly` on the ones that pass, and the two tests above then take
+their exception branch.
+
+The visible effect is the merge. An addr-tied frame slot whose entry value is
+only ever consumed by call INDIRECTs can now absorb the register that is copied
+into it, so the value is computed into the slot instead of into a temporary that
+is then assigned across — and the assignment, now a COPY inside one variable, is
+hidden by `mark_internal_copies`. Where the register was already carrying the
+slot's value on the way in, that removes a `vN = slot;` / `slot = vN;`
+round-trip outright. The refusal also has a wrong-output face: on coreutils `ls`
+at `-O2` the two 8-byte loads that fill a 16-byte `struct dev_ino` on the frame
+are printed into two register locals and never into the slot, and the
+`hash_delete(…, &di)` that follows reads a slot the emitted C never wrote.
+Turning the option off restores the inert stub exactly: `indirectonly` then has
+no writer and both readers take their more-variables branch.
 
 **Closing out the undefined names** (`kuna_undefname.rs
 (finish_undefined_names)`, the tail of `coreaction_cleanup.rs
