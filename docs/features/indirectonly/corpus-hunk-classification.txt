@@ -1,0 +1,236 @@
+ls-O0 sub_1dd61 REAL  decl_delta=+0
+    @@ -62,4 +62,4 @@
+               if (R[al] != '\x01') {
+    -            R[rax] = sub_1da93(S[stack-0xd8],S[stack-0xc8],X,X,S[stack-0x14c],X);
+    -            S[stack-0xa8] = R[rax] + S[stack-0xf8];
+    +            S[stack-0xa8] = sub_1da93(S[stack-0xd8],S[stack-0xc8],X,X,S[stack-0x14c],X);
+    +            S[stack-0xa8] += S[stack-0xf8];
+                 if (-0x8000000000000000 <= S[stack-0xa8]) {
+ls-O0 changed_functions=1
+tar-O0 sub_429c6 REAL  decl_delta=+0
+    @@ -88,4 +88,4 @@
+             S[stack-0x220] = &S[stack-0x220][1];
+    -        R[rax] = *a4 - (int8)S[stack-0x220];
+    -        X = sub_4077c(a0,X,S[stack-0x220],R[rax] & 0xffffffff,*(uint4 *)(a0 + 0x20) & 0x44 | 0x400700,1);
+    +        S[stack-0x208] = *a4 - (int8)S[stack-0x220];
+    +        X = sub_4077c(a0,X,S[stack-0x220],S[stack-0x208] & 0xffffffff,*(uint4 *)(a0 + 0x20) & 0x44 | 0x400700,1);
+             if (X)
+    @@ -125,4 +125,4 @@
+               S[stack-0x220] = &S[stack-0x220][1];
+    -          R[rax] = *a4 - (int8)S[stack-0x220];
+    -          X = sub_4077c(a0,X,S[stack-0x220],R[rax] & 0xffffffff,*(uint4 *)(a0 + 0x20) & 0x44 | 0x400700,1);
+    +          S[stack-0x210] = *a4 - (int8)S[stack-0x220];
+    +          X = sub_4077c(a0,X,S[stack-0x220],S[stack-0x210] & 0xffffffff,*(uint4 *)(a0 + 0x20) & 0x44 | 0x400700,1);
+               if (X)
+tar-O0 changed_functions=1
+ls-O2 main REAL  decl_delta=+0
+    @@ -682,4 +682,4 @@
+           X = dat_260f8 + -0x10;
+    -      X = *(void **)(dat_260f8 + -0x10);
+    -      X = *(unsigned long *)(dat_260f8 + -8);
+    +      S[stack-0x58] = *(void **)(dat_260f8 + -0x10);
+    +      S[stack-0x50] = *(unsigned long *)(dat_260f8 + -8);
+           dat_260f8 = X;
+ls-O2 changed_functions=1
+sort-O2 main REAL  decl_delta=+0
+    @@ -825,4 +825,4 @@
+               S[stack-0x2a4] = X & (X ^ 1);
+    -          X = (unsigned char)X[6] ^ 1;
+    -          S[stack-0x2a8] = X & X;
+    +          S[stack-0x2a8] = (unsigned char)X[6] ^ 1;
+    +          S[stack-0x2a8] = X & S[stack-0x2a8];
+               X = *(unsigned char *)((long)X + 0x31) ^ 1;
+    @@ -831,7 +831,7 @@
+               S[stack-0x2a5] = X & (*(unsigned char *)((long)X + 0x33) ^ 1);
+    -          X = *(unsigned char *)((long)X + 0x36) ^ 1;
+    -          S[stack-0x2a2] = X & X;
+    +          S[stack-0x2a2] = *(unsigned char *)((long)X + 0x36) ^ 1;
+    +          S[stack-0x2a2] = X & S[stack-0x2a2];
+               S[stack-0x2a0] = X & ((unsigned char)X[7] ^ 1);
+    -          X = *(unsigned char *)((long)X + 0x32) ^ 1;
+    -          S[stack-0x2a6] = X & X;
+    +          S[stack-0x2a6] = *(unsigned char *)((long)X + 0x32) ^ 1;
+    +          S[stack-0x2a6] = X & S[stack-0x2a6];
+               X &= *(unsigned char *)((long)X + 0x37) ^ 1;
+sort-O2 changed_functions=1
+diff-O2 sub_6e20 REAL  decl_delta=+0
+    @@ -313,7 +313,7 @@
+       S[stack-0x90] = *(unsigned long *)&a0[0x8c];
+    -  X = sub_16a40(X * 0x10);
+    +  S[stack-0x80] = sub_16a40(X * 0x10);
+       X = *(long *)&a0[0x90];
+       X = X * 8 + 8;
+    -  S[stack-0x88] = X + X;
+    -  S[stack-0x80] = X + X + X * 8;
+    +  S[stack-0x88] = S[stack-0x80] + X;
+    +  S[stack-0x80] += X + X * 8;
+       S[stack-0x78] = dat_26418;
+diff-O2 changed_functions=1
+bzip2-O2 sub_3890 REAL  decl_delta=-1
+    declarations gone: [('unsigned int', 'eax')]
+    @@ -37,3 +37,3 @@
+                     S[stack-0x140c] = S[stack-0x1424];
+    -                R[eax] = S[stack-0x1428] & 0xff;
+    +                S[stack-0x1428] &= 0xff;
+                     X = (unsigned char *)((long)&S[stack-0x1418] + 1);
+    @@ -52,3 +52,3 @@
+                     while( true ) {
+    -                  R[xmm0_qa] = (double)R[eax] * X;
+    +                  R[xmm0_qa] = (double)S[stack-0x1428] * X;
+                       X = X * dat_13b68;
+    @@ -56,3 +56,3 @@
+                       if (X == X) break;
+    -                  R[eax] = (unsigned int)*X;
+    +                  S[stack-0x1428] = (unsigned int)*X;
+                       X = &X[1];
+bzip2-O2 changed_functions=1
+tar-O2 main REAL  decl_delta=-1
+    declarations gone: [('unsigned short', '')]
+    @@ -170,3 +170,2 @@
+       X = dat_82838;
+    -  X = S[stack-0x158];
+       if ((char)S[stack-0x158]) {
+    @@ -177,3 +176,2 @@
+           X = dat_82838;
+    -      X = S[stack-0x158];
+         }
+    @@ -182,3 +180,2 @@
+         dat_82838 = X;
+    -    S[stack-0x158] = X;
+         if (S[stack-0x188][0] >= (int4)R[rax]) break;
+    @@ -187,6 +184,5 @@
+         X = dat_82838;
+    -    X = S[stack-0x158];
+       }
+       if (!dat_82ba4) {
+    -    S[stack-0x158]._1_1_ = (char)((uint2)X >> 8);
+    +    S[stack-0x158]._1_1_ = (char)((uint2)S[stack-0x158] >> 8);
+         dat_82ba4 = (S[stack-0x158]._1_1_) ? 4 : 6; // branch-flip
+tar-O2 sub_203b0 REAL  decl_delta=-2
+    declarations gone: [('uint1', '')]
+    @@ -94,7 +94,7 @@
+             if (S[stack-0xa8] == S[stack-0xa0])
+    -          X = S[stack-0x68] | 2;
+    +          S[stack-0x68] |= 2;
+             X = S[stack-0xa0] + S[stack-0x88] & ~S[stack-0x88];
+    -        X = S[stack-0x98];
+    +        S[stack-0xa8] = S[stack-0x98];
+             if (X - S[stack-0xb0] <= S[stack-0x98] - S[stack-0xb0])
+    -          X = X;
+    +          S[stack-0xa8] = X;
+             do {
+    @@ -122,7 +122,7 @@
+             if (S[stack-0xa8] == S[stack-0xa0])
+    -          X = S[stack-0x68] | 2;
+    +          S[stack-0x68] |= 2;
+             X = S[stack-0xa0] + S[stack-0x88] & ~S[stack-0x88];
+    -        X = S[stack-0x98];
+    +        S[stack-0xa0] = S[stack-0x98];
+             if (X - S[stack-0xb0] <= S[stack-0x98] - S[stack-0xb0])
+    -          X = X;
+    +          S[stack-0xa0] = X;
+             X = S[stack-0xa8];
+tar-O2 argp_parse REAL  decl_delta=-2
+    declarations gone: [('unsigned long', '')]
+    @@ -187,7 +187,2 @@
+           X = __progname;
+    -      X = S[stack-0x250]._0_16_;
+    -      X = S[stack-0x240]._0_16_;
+    -      X = S[stack-0x230]._0_16_;
+    -      X = S[stack-0x220];
+    -      X = S[stack-0x210][0];
+           X = S[stack-0x190];
+    @@ -198,7 +193,2 @@
+       X = __progname;
+    -  X = S[stack-0x250]._0_16_;
+    -  X = S[stack-0x240]._0_16_;
+    -  X = S[stack-0x230]._0_16_;
+    -  X = S[stack-0x220];
+    -  X = S[stack-0x210][0];
+       X = S[stack-0x190];
+    @@ -211,7 +201,2 @@
+       __progname = X;
+    -  S[stack-0x250]._0_16_ = X;
+    -  S[stack-0x240]._0_16_ = X;
+    -  S[stack-0x230]._0_16_ = X;
+    -  S[stack-0x220] = X;
+    -  S[stack-0x210][0] = X;
+       S[stack-0x190] = X;
+tar-O2 sub_5aa30 REAL  decl_delta=-5
+    declarations new : [('uint8 ******', 'rax')]
+    @@ -204,3 +204,3 @@
+             *(char *)&S[stack-0x148][1] = '\x01';
+    -      X = (uint8 *******)&S[stack-0x88];
+    +      S[stack-0x100] = (uint8 *******)&S[stack-0x88];
+           R[eax] = 1;
+    @@ -208,3 +208,3 @@
+           S[stack-0xe8] = NULL;
+    -      X = (uint8)S[stack-0x140] >> 0x10;
+    +      S[stack-0xe0] = (uint8)S[stack-0x140] >> 0x10;
+           X._8_8_ = 0;
+    @@ -493,5 +493,5 @@
+           R[zf] = X || X;
+    -      X = *(uint1 *)&X[0x16] >> 3 & 1;
+    +      S[stack-0x4e] = *(uint1 *)&X[0x16] >> 3 & 1;
+           S[stack-0x70] = S[stack-0x140];
+    -      X = *(uint1 *)&X[0x16] >> 2 & 1;
+    +      S[stack-0x4f] = *(uint1 *)&X[0x16] >> 2 & 1;
+           S[stack-0x78] = S[stack-0x140];
+    @@ -515,8 +515,8 @@
+             else {
+    -          X = (uint8 *******)S[stack-0x98]._0_8_;
+    +          S[stack-0xa0] = (uint8 *******)S[stack-0x98]._0_8_;
+               if (X || X) {
+                 if ((int8)S[stack-0x80] < (int8)S[stack-0x98]._0_8_)
+    -              X = S[stack-0x80];
+    -            if ((int8)X <= (int8)S[stack-0xa8]) // branch-flip
+    -              X = S[stack-0xa8];
+    +              S[stack-0xa0] = S[stack-0x80];
+    +            if ((int8)S[stack-0xa0] <= (int8)S[stack-0xa8]) // branch-flip
+    +              S[stack-0xa0] = S[stack-0xa8];
+                 else {
+    @@ -525,3 +525,3 @@
+                     S[stack-0xa8] = (uint8 *******)((int8)S[stack-0xa8] + 1);
+    -              } while (X != S[stack-0xa8]);
+    +              } while (S[stack-0xa0] != S[stack-0xa8]);
+                 }
+    @@ -878,6 +878,6 @@
+       while( true ) {
+    -    X = X;
+    -    X = (uint8 ******)X[2];
+    +    R[rax] = X;
+    +    X = (uint8 ******)R[rax][2];
+         if ((X) && (X != X)) break;
+    -    if (!(uint8 ******)*X) {
+    +    if (!(uint8 ******)*R[rax]) {
+           X = NULL;
+    @@ -886,4 +886,4 @@
+         }
+    -    X = (uint8 ******)*X;
+    -    X = X;
+    +    X = (uint8 ******)*R[rax];
+    +    X = R[rax];
+       }
+    @@ -1141,5 +1141,5 @@
+             X = 0;
+    -        X = (uint8 ******)((int8)X * 0x18);
+    -        X = *(uint8 ********)((int8)X + (int8)&X[2]);
+    -        if (0 < (int8)*(uint8 ******)((int8)X + (int8)&X[1])) {
+    +        S[stack-0x120] = (uint8 ******)((int8)X * 0x18);
+    +        X = *(uint8 ********)((int8)S[stack-0x120] + (int8)&X[2]);
+    +        if (0 < (int8)*(uint8 ******)((int8)S[stack-0x120] + (int8)&X[1])) {
+               do {
+    @@ -1359,3 +1359,3 @@
+         }
+    -    X = &X;
+    +    S[stack-0xa0] = &X;
+         S[stack-0xa8] = (uint8 *******)CONCAT44(S[stack-0xa8]._4_4_,3);
+    @@ -1437,5 +1437,5 @@
+                     X = (uint8 ******)((int8)S[stack-0xe8] * 2 + 1);
+    -                X = (uint8 *******)((int8)X * 4);
+    +                S[stack-0xd8] = (uint8 *******)((int8)X * 4);
+                     S[stack-0x150] = 0x5bf2d;
+    -                X = realloc(X[1],(uint8)X);
+    +                X = realloc(X[1],(uint8)S[stack-0xd8]);
+                     S[stack-0xf0] = X;
+tar-O2 changed_functions=4

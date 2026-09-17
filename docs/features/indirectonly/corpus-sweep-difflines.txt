@@ -1,0 +1,17 @@
+ls O0 difflines=4
+sort O0 difflines=0
+grep O0 difflines=0
+gzip O0 difflines=0
+diff O0 difflines=0
+bzip2 O0 difflines=0
+find O0 difflines=0
+tar O0 difflines=8
+ls O2 difflines=4
+sort O2 difflines=992
+grep O2 difflines=0
+gzip O2 difflines=0
+diff O2 difflines=274
+bzip2 O2 difflines=119
+find O2 difflines=0
+tar O2 difflines=4805
+SWEEP2_DONE

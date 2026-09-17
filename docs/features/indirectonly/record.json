@@ -1,0 +1,15 @@
+{
+  "option": "indirectonly",
+  "flag": "mark_indirect_only",
+  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/date",
+  "selector": "main",
+  "func_addr": "0x4402",
+  "default_on": true,
+  "speed_off_ms": 531.03,
+  "speed_on_ms": 620.05,
+  "speed_delta_pct": 16.76,
+  "speed_samples": 15,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": false,
+  "speed_forced_off": false
+}
