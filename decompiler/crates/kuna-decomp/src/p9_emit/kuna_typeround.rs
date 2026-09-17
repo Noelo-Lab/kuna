@@ -38,8 +38,10 @@
 //!
 //! Changing a declaration without changing Varnode types is only safe if no
 //! operation whose *C semantics depend on the operand's signedness* is left
-//! reading the variable through a type it disagrees with.  The signedness-sensitive
-//! C constructs are exactly:
+//! reading the variable through a type it disagrees with.  The constructs that
+//! constrain the declaration are these - the C operators whose *meaning* depends
+//! on operand signedness, plus `<<`, whose meaning does not but whose
+//! *definedness* does:
 //!
 //! | C construct | p-code | demand |
 //! |---|---|---|

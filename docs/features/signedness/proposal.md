@@ -80,11 +80,14 @@ scoring step *is* signedness, is byte-identical with the option on (mean 1.7322,
 table above, plus 53 cast hunks that stop being written.
 
 **3. Should `auto` become the default?** It already clears the repo's bar: built
-with `auto` as the default, `make test` is 675/675 **PARITY OK** and
-`make test-stages` is **PARITY OK** — zero assertions move on either corpus —
-and the speed delta is +0.13% (two interleaved min-of-15 runs pooled;
-per-run minima +4.29% and +0.13%, median +3.91%), well inside the +5% budget.
-This PR still ships `upstream`; a flip would be its own PR.
+with `auto` as the default on this tree, `make test` is 675/675 **PARITY OK**
+and `make test-stages` is 1044/1044 **PARITY OK** — zero assertions move on
+either corpus — and the speed delta is **+0.26%** on the minimum of 21
+interleaved whole-binary `decompile-all` runs on `fmt -O2` (median −2.34%), well
+inside the +5% budget. This PR still ships `upstream`; a flip would be its own
+PR. Note that `auto`'s DWARF agreement gain is +0.1pp: it is the *cast removal*
+and the removal of declaration-vs-body contradictions that a default flip would
+buy, not accuracy.
 
 ## Witnesses (coreutils `fmt` `-O2`, CLI vocabulary)
 
@@ -122,9 +125,11 @@ proposed as witnesses in the design note:
   option leaves that line alone. Narrowing a declaration is a different decision.
 * `fmt::main`'s `unsigned int v12` has no signedness-sensitive reader at all —
   only `^`, `&`, assignments and the `return` — so `auto` leaves it and
-  `prefer-signed` declares it `int` (measured:
-  `--option signedness prefer-signed` also moves `v10`, `v11`, `v9` to `long`
-  and `v3` to `int` in that function).
+  `prefer-signed` declares it `int`.
+* At `-O0`, `fmt::main`'s `unsigned long max` no longer moves either. It used to
+  be declared `long` purely by an `INT_SEXT` *definition* vote (`movslq %eax,%rdx`
+  feeding `xdectoumax`'s third argument) with no reader evidence at all, and
+  DWARF spells it `uintmax_t`. Extensions no longer vote as definitions.
 
 ## Open design points the reviewer may want to overrule
 

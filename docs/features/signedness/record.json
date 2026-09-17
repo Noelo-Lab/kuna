@@ -1,151 +1,317 @@
 {
-  "opportunity": "Datatype::type_order ranks SUB_UINT_PLAIN (16) ahead of SUB_INT_PLAIN (17), so in get_local_type's most-specific fold one uint vote outranks every int vote on a Varnode and nothing downstream re-decides. On -O2 x86-64 those uint votes are structural (INT_ZEXT from a 32-bit instruction widening into its 64-bit register; INT_AND/INT_RIGHT/INT_XOR from a strength-reduced loop), so a counter compiled from `int` is declared `unsigned int` and cast back to `int` at every comparison.",
-  "test_name": "tests/stages/kuna-signedness.xml (two-pass, 4 assertions) + 8 unit tests in p9_emit/kuna_typeround/tests.rs",
-  "binary": "decbench full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
-  "selector": "sub_3060",
-  "func_addr": "0x3060",
-  "option": "signedness",
-  "flag": "signedness",
-  "element_id": null,
-  "change_kind": "presentation-default",
-  "tier": "transform",
-  "phase": "P9",
-  "subphase": "naming-policy",
-  "source_decompiler": "kuna",
-  "inspiration": "TRex (Bosamiya, Woo, Parno; USENIX Security 2025) sections 3.3.5 and 5.1 -- type rounding decides signedness after propagation from the accumulated size-tagged operation set, with a flag preferring signed for the ambiguous case",
-  "trex_code_copied": false,
-  "trex_note": "Re-derived from the paper and from reading https://github.com/secure-foundations/trex (BSD-3). No TRex code is copied, so no NOTICE entry or per-file attribution header is added. Two classification points were taken from reading trex/src/structural.rs: `ZeroExtendTgt => None` (a zero-extension describes the source operand's type, not the widened value's) and the signed/unsigned collapse preference used by `collapse_union_of_signed_and_unsigned_ints`.",
-  "default_on": false,
-  "default_value": "upstream",
-  "values": "upstream|auto|prefer-signed|prefer-unsigned",
-  "metric": {
-    "decbench_type_match": 0,
-    "why_zero": "extract_variables (infra/decompile_drive.rs) exports FuncProto param types, ScopeLocal stack-symbol types and framelayout slots; no HighVariable declaration is consulted, and this option changes no prototype, no symbol type and no Varnode type. decbench also normalizes `unsigned` away in QUALIFIERS and collapses int4/uint4 in TYPE_MAP.",
-    "structscore_trex_fmt_O2_off": {
-      "mean_0_6": 1.7322,
-      "mean_0_5": 1.5948,
-      "c_primitive": "58/95",
-      "gt_vars": 422
-    },
-    "structscore_trex_fmt_O2_auto": {
-      "mean_0_6": 1.7322,
-      "mean_0_5": 1.5948,
-      "c_primitive": "58/95",
-      "gt_vars": 422
-    },
-    "structscore_note": "byte-identical: the TRex Fig. 6 signedness step scores the exported variables[] types, which this option does not touch."
+ "opportunity": "Datatype::type_order ranks SUB_UINT_PLAIN (16) ahead of SUB_INT_PLAIN (17), so in get_local_type's most-specific fold one uint vote outranks every int vote on a Varnode and nothing downstream re-decides. On -O2 x86-64 those uint votes are structural (INT_ZEXT from a 32-bit instruction widening into its 64-bit register; INT_AND/INT_RIGHT/INT_XOR from a strength-reduced loop), so a counter compiled from `int` is declared `unsigned int` and cast back to `int` at every comparison.",
+ "test_name": "tests/stages/kuna-signedness.xml (two functions, 6 assertions: the masked loop bound two-pass, and the sub-int width guard reduced from findutils find -O2 sub_bac0) + 9 unit tests in p9_emit/kuna_typeround/tests.rs",
+ "binary": "decbench full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+ "selector": "sub_3060",
+ "func_addr": "0x3060",
+ "option": "signedness",
+ "flag": "signedness",
+ "element_id": null,
+ "change_kind": "presentation-default",
+ "tier": "transform",
+ "phase": "P9",
+ "subphase": "naming-policy",
+ "source_decompiler": "kuna",
+ "inspiration": "TRex (Bosamiya, Woo, Parno; USENIX Security 2025) sections 3.3.5 and 5.1 -- type rounding decides signedness after propagation from the accumulated size-tagged operation set, with a flag preferring signed for the ambiguous case",
+ "trex_code_copied": false,
+ "trex_note": "Re-derived from the paper and from reading https://github.com/secure-foundations/trex (BSD-3). No TRex code is copied, so no NOTICE entry or per-file attribution header is added. Two classification points were taken from reading trex/src/structural.rs: `ZeroExtendTgt => None` (a zero-extension describes the source operand's type, not the widened value's) and the signed/unsigned collapse preference used by `collapse_union_of_signed_and_unsigned_ints`.",
+ "default_on": false,
+ "default_value": "upstream",
+ "values": "upstream|auto|prefer-signed|prefer-unsigned",
+ "metric": {
+  "decbench_type_match": 0,
+  "why_zero": "extract_variables (infra/decompile_drive.rs) exports FuncProto param types, ScopeLocal stack-symbol types and framelayout slots; no HighVariable declaration is consulted, and this option changes no prototype, no symbol type and no Varnode type. decbench also normalizes `unsigned` away in QUALIFIERS and collapses int4/uint4 in TYPE_MAP.",
+  "structscore_trex_fmt_O2_off": {
+   "mean_0_6": 1.7322,
+   "mean_0_5": 1.5948,
+   "c_primitive": "58/95",
+   "gt_vars": 422
   },
-  "corpus_sweep": {
-    "binaries": [
-      "fmt",
-      "ls",
-      "sort",
-      "du"
-    ],
-    "optimization_levels": [
-      "O0",
-      "O2"
-    ],
+  "structscore_trex_fmt_O2_auto": {
+   "mean_0_6": 1.7322,
+   "mean_0_5": 1.5948,
+   "c_primitive": "58/95",
+   "gt_vars": 422
+  },
+  "structscore_note": "byte-identical: the TRex Fig. 6 signedness step scores the exported variables[] types, which this option does not touch."
+ },
+ "corpus_sweep": {
+  "binaries": [
+   "fmt",
+   "ls",
+   "sort",
+   "du"
+  ],
+  "optimization_levels": [
+   "O0",
+   "O2"
+  ],
+  "functions_decompiled": 2918,
+  "per_value": {
+   "auto": {
     "functions_decompiled": 2918,
-    "functions_changed": 42,
-    "declaration_flips": 52,
+    "functions_changed": 34,
+    "declaration_flips": 42,
     "flip_directions": {
-      "unsigned int -> int": 23,
-      "unsigned long -> long": 15,
-      "long -> unsigned long": 8,
-      "int -> unsigned int": 4,
-      "unsigned char -> signed char": 1,
-      "short -> unsigned short": 1
+     "unsigned int -> int": 20,
+     "unsigned long -> long": 9,
+     "long -> unsigned long": 7,
+     "int -> unsigned int": 6
     },
-    "cast_tokens_removed_net": 63,
-    "cast_tokens_added": 0,
-    "hunk_classification": {
-      "decl-signedness": 52,
-      "cast-dropped": 63,
-      "other": 0
-    },
+    "cast_tokens_removed_net": 62,
     "per_binary_flips": {
-      "ls.O0": 5,
-      "sort.O0": 5,
-      "du.O0": 2,
-      "fmt.O0": 0,
-      "fmt.O2": 4,
-      "ls.O2": 12,
-      "sort.O2": 9,
-      "du.O2": 15
-    },
-    "varcensus_fmt_O2_declared_types": {
-      "unsigned int": [
-        33,
-        30
-      ],
-      "int": [
-        37,
-        40
-      ],
-      "unsigned long": [
-        109,
-        108
-      ],
-      "long": [
-        35,
-        36
-      ],
-      "note": "[upstream, auto]; every other row identical"
+     "fmt.O0": 0,
+     "ls.O0": 3,
+     "sort.O0": 4,
+     "du.O0": 2,
+     "fmt.O2": 4,
+     "ls.O2": 7,
+     "sort.O2": 9,
+     "du.O2": 13
     }
-  },
-  "correctness_evidence": {
-    "executable_round_trip": {
-      "harness": "`.scratch/roundtrip.py` -- both texts in one program (renamed apart), deterministic stubs for every callee, a shared 4 MiB arena behind every synthesized global, 2000 pseudo-random input vectors per function, comparing the return value and a hash of the arena plus the stub trace",
-      "programs_built": 15,
-      "match": 11,
-      "mismatch": 0,
-      "fully_executed": 6,
-      "fully_executed_names": [
-        "ls.O0 sub_15291",
-        "du.O0 sub_1804c",
-        "ls.O2 sub_fa20",
-        "sort.O2 sub_eb70",
-        "sort.O2 sub_11410",
-        "du.O2 sub_df90"
-      ],
-      "identically_faulting": 5,
-      "harness_crash": 4,
-      "harness_crash_note": "SIGABRT inside glibc realloc/free called with arena garbage -- a harness limitation, identical in both arms",
-      "input_vectors_per_function": 2000
+   },
+   "prefer-signed": {
+    "functions_decompiled": 2918,
+    "functions_changed": 273,
+    "declaration_flips": 353,
+    "flip_directions": {
+     "unsigned long -> long": 221,
+     "unsigned int -> int": 119,
+     "long -> unsigned long": 7,
+     "int -> unsigned int": 6
     },
-    "syntax_only": {
-      "functions_not_compilable": 27,
-      "asymmetric": 0,
-      "note": "every changed function that will not compile produces the IDENTICAL gcc error set before and after (Ghidra idioms: `v41._0_1_`, `goto` into another scope, a `dat_` global used as both scalar and pointer). The option introduces no new compile error."
+    "cast_tokens_removed_net": 62,
+    "per_binary_flips": {
+     "fmt.O0": 10,
+     "ls.O0": 46,
+     "sort.O0": 35,
+     "du.O0": 36,
+     "fmt.O2": 31,
+     "ls.O2": 70,
+     "sort.O2": 57,
+     "du.O2": 68
+    }
+   },
+   "prefer-unsigned": {
+    "functions_decompiled": 2918,
+    "functions_changed": 732,
+    "declaration_flips": 889,
+    "flip_directions": {
+     "int -> unsigned int": 548,
+     "long -> unsigned long": 312,
+     "unsigned int -> int": 20,
+     "unsigned long -> long": 9
     },
-    "declaration_vs_cast_contradiction": "none by construction: a cast is dropped only when the emitter actually wrote the rounded type as that high's declaration and the cast target is that exact type, so the surviving expression has the same C type it had."
+    "cast_tokens_removed_net": 62,
+    "per_binary_flips": {
+     "fmt.O0": 36,
+     "ls.O0": 102,
+     "sort.O0": 135,
+     "du.O0": 109,
+     "fmt.O2": 41,
+     "ls.O2": 172,
+     "sort.O2": 155,
+     "du.O2": 139
+    }
+   }
   },
-  "ablation_changed": 0,
-  "parity": "OK",
-  "default_flip_probe": {
-    "built_with_default_auto": true,
-    "datatests": "675/675, PARITY OK",
-    "stages": "1025/1025, PARITY OK",
-    "note": "the probe build was reverted; the shipped default is `upstream`. This is the 0/675 + PARITY-OK half of the default-flip evidence, recorded for the go/no-go."
+  "hunk_classification": "every hunk under every value is a declaration flip or a dropped cast; 0 hunks of any other kind (7 of the cast hunks drop more than one cast from one long line, which the 1:1 classifier reports as OTHER-1to1 and which were read by hand)",
+  "cast_tokens_removed_net": 62,
+  "cast_tokens_added": 0,
+  "note": "no sub-int flip direction appears under any value, which is the promotion width rule holding across the sweep"
+ },
+ "correctness_evidence": {
+  "executable_round_trip": {
+   "harness": "`.scratch/roundtrip.py` -- both texts in one program (renamed apart), deterministic stubs for every callee, a shared 4 MiB arena behind every synthesized global, 2000 pseudo-random input vectors per function, comparing the return value and a hash of the arena plus the stub trace",
+   "programs_built": 15,
+   "match": 11,
+   "mismatch": 0,
+   "fully_executed": 6,
+   "fully_executed_names": [
+    "ls.O0 sub_15291",
+    "du.O0 sub_1804c",
+    "ls.O2 sub_fa20",
+    "sort.O2 sub_eb70",
+    "sort.O2 sub_11410",
+    "du.O2 sub_df90"
+   ],
+   "identically_faulting": 5,
+   "harness_crash": 4,
+   "harness_crash_note": "SIGABRT inside glibc realloc/free called with arena garbage -- a harness limitation, identical in both arms",
+   "input_vectors_per_function": 2000
   },
-  "speed_off_ms": 4100.0,
-  "speed_on_ms": 4106.0,
-  "speed_delta_pct": 0.13,
-  "speed_samples": 30,
-  "speed_budget_pct": 5.0,
-  "speed_within_budget": true,
-  "speed_forced_off": false,
-  "speed_note": "two interleaved runs of min-of-15 whole-binary `decompile-all` on coreutils fmt -O2, pooled to min-of-30 per arm: +0.13% on the min, +3.91% on the median. The per-run minima are +4.29% (run 1) and +0.13% (run 2) -- the spread is the box, not the option: a `cargo test --workspace` build shared the machine throughout, and the minimum is the statistic that survives it.",
-  "count_sites": {
-    "settables": 210,
-    "tiers": [
-      67,
-      81,
-      62
-    ],
-    "stage_corpus_files": 296,
-    "phase_catalog_json": "recaptured",
-    "catalog_exact_buckets_touched": "none (change_kind presentation-default and source_decompiler kuna are not exact-pinned buckets)"
-  }
+  "syntax_only": {
+   "functions_not_compilable": 27,
+   "asymmetric": 0,
+   "note": "every changed function that will not compile produces the IDENTICAL gcc error set before and after (Ghidra idioms: `v41._0_1_`, `goto` into another scope, a `dat_` global used as both scalar and pointer). The option introduces no new compile error."
+  },
+  "declaration_vs_cast_contradiction": "none by construction: a cast is dropped only when the emitter actually wrote the rounded type as that high's declaration and the cast target is that exact type, so the surviving expression has the same C type it had."
+ },
+ "ablation_changed": 0,
+ "parity": "OK",
+ "default_flip_probe": {
+  "built_with_default_auto": true,
+  "datatests": "675/675, PARITY OK",
+  "stages": "1044/1044, PARITY OK",
+  "note": "re-run on the rebased tree (origin/main f02365cc + this branch). The probe build was reverted and the tree rebuilt; the shipped default is `upstream`."
+ },
+ "speed_off_ms": 4306.6,
+ "speed_on_ms": 4317.9,
+ "speed_delta_pct": 0.26,
+ "speed_samples": 21,
+ "speed_budget_pct": 5.0,
+ "speed_within_budget": true,
+ "speed_forced_off": false,
+ "speed_note": "interleaved min-of-21 whole-binary `decompile-all` on coreutils fmt -O2: +0.26% on the minimum, -2.34% on the median. The cost is the same for every active value (`plan` walks the same candidate highs; only the tie-break differs), and `upstream` returns before the walk.",
+ "count_sites": {
+  "settables": 212,
+  "tiers": [
+   68,
+   81,
+   63
+  ],
+  "stage_corpus_files": 301,
+  "phase_catalog_json": "recaptured",
+  "catalog_exact_buckets_touched": "none (change_kind presentation-default and source_decompiler kuna are not exact-pinned buckets)"
+ },
+ "dwarf_accuracy": {
+  "method": "238 unstripped DWARF twins (the compiled/ binaries beside the stripped images decbench scores) across coreutils, grep, gzip, diffutils, bzip2, findutils and tar at -O0 and -O2. Whole-image `decompile-all` once per value; every plain-integer local declaration whose name DWARF also knows INSIDE THE SAME FUNCTION is compared against the DWARF base type's encoding. Signedness is binary, so a declaration that differs between two values is right in exactly one of them.",
+  "harness": ".scratch/acc/dwarfsign.py (pyelftools DIE walk, follows typedef/const/volatile and DW_AT_abstract_origin) + .scratch/acc/accuracy.py",
+  "binaries": 238,
+  "plain_integer_declarations": 58653,
+  "dwarf_named": 6511,
+  "dwarf_named_same_width": 6260,
+  "declarations_moved": {
+   "upstream": 0,
+   "auto": 579,
+   "prefer-signed": 7183,
+   "prefer-unsigned": 13623
+  },
+  "overall": {
+   "upstream": {
+    "agree": 5849,
+    "of": 6260,
+    "rate_pct": 93.4,
+    "checkable_flips": 0,
+    "right": 0,
+    "wrong": 0
+   },
+   "auto": {
+    "agree": 5853,
+    "of": 6260,
+    "rate_pct": 93.5,
+    "checkable_flips": 4,
+    "right": 4,
+    "wrong": 0
+   },
+   "prefer-signed": {
+    "agree": 6159,
+    "of": 6260,
+    "rate_pct": 98.4,
+    "checkable_flips": 386,
+    "right": 348,
+    "wrong": 38
+   },
+   "prefer-unsigned": {
+    "agree": 5816,
+    "of": 6260,
+    "rate_pct": 92.9,
+    "checkable_flips": 41,
+    "right": 4,
+    "wrong": 37
+   }
+  },
+  "by_optimization": {
+   "O0": {
+    "upstream": {
+     "agree": 5164,
+     "of": 5308,
+     "rate_pct": 97.3,
+     "checkable_flips": 0,
+     "right": 0,
+     "wrong": 0
+    },
+    "auto": {
+     "agree": 5165,
+     "of": 5308,
+     "rate_pct": 97.3,
+     "checkable_flips": 1,
+     "right": 1,
+     "wrong": 0
+    },
+    "prefer-signed": {
+     "agree": 5256,
+     "of": 5308,
+     "rate_pct": 99.0,
+     "checkable_flips": 134,
+     "right": 113,
+     "wrong": 21
+    },
+    "prefer-unsigned": {
+     "agree": 5153,
+     "of": 5308,
+     "rate_pct": 97.1,
+     "checkable_flips": 13,
+     "right": 1,
+     "wrong": 12
+    }
+   },
+   "O2": {
+    "upstream": {
+     "agree": 685,
+     "of": 952,
+     "rate_pct": 72.0,
+     "checkable_flips": 0,
+     "right": 0,
+     "wrong": 0
+    },
+    "auto": {
+     "agree": 688,
+     "of": 952,
+     "rate_pct": 72.3,
+     "checkable_flips": 3,
+     "right": 3,
+     "wrong": 0
+    },
+    "prefer-signed": {
+     "agree": 903,
+     "of": 952,
+     "rate_pct": 94.9,
+     "checkable_flips": 252,
+     "right": 235,
+     "wrong": 17
+    },
+    "prefer-unsigned": {
+     "agree": 663,
+     "of": 952,
+     "rate_pct": 69.6,
+     "checkable_flips": 28,
+     "right": 3,
+     "wrong": 25
+    }
+   }
+  },
+  "prefer_signed_wrong_by_gt_spelling": {
+   "mode_t": 18,
+   "size_t": 12,
+   "gid_t": 2,
+   "unsigned int": 2,
+   "uintmax_t": 2,
+   "ino_t": 1,
+   "reg_syntax_t": 1
+  },
+  "prefer_signed_right_by_gt_spelling": {
+   "int": 342,
+   "idx_t": 5,
+   "Idx": 1
+  },
+  "auto_checkable_flips": [
+   "gzip gen_codes::len",
+   "gzip ct_init::len",
+   "ln main::link_errno",
+   "tar dump_file0::fd"
+  ],
+  "sub_int_flips": 0,
+  "caveat": "Only names DWARF knows in the same function are compared. kuna also names some register locals after the parameter of the function they feed, where the ground truth can be genuinely ambiguous (ls/du save_abbr's `abbr_size` is extend_abbrs's size_t parameter, while the value's own source identity in save_abbr is the SIGNED idx_t zone_size that C converts at the call). Those are excluded rather than scored either way."
+ }
 }
