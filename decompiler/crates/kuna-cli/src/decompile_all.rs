@@ -2557,6 +2557,11 @@ mod provenance_json_tests {
                 line_numbers: vec![3],
                 addresses: vec![0x401004],
             }],
+            types: vec![TypeInfo {
+                name: "mystruct".into(),
+                definition: "struct mystruct {\n    int a;\n};\n".into(),
+                size: 4,
+            }],
             line_mappings: vec![LineMapping {
                 line_number: 3,
                 addresses: vec![0x401004, 0x401008],
@@ -2573,6 +2578,10 @@ mod provenance_json_tests {
         assert!(rendered.contains("\"line_number\": 3"));
         assert!(rendered.contains("\"line_numbers\": [\n            3"));
         assert!(rendered.contains("\"addresses\": [\n            4198404"));
+        // (kuna `structdefs`) The layout side of the record, additive to every
+        // key above it.
+        assert!(rendered.contains("\"types\": ["));
+        assert!(rendered.contains("\"definition\": \"struct mystruct {"));
     }
 }
 

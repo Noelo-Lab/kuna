@@ -1,0 +1,52 @@
+[
+  {
+    "binary": "O0_coreutils_compiled_ls",
+    "hunks": 244,
+    "added": 8071,
+    "deleted": 0,
+    "non_definition_added": 0,
+    "samples": []
+  },
+  {
+    "binary": "O0_gzip_stripped_gzip",
+    "hunks": 57,
+    "added": 122,
+    "deleted": 0,
+    "non_definition_added": 0,
+    "samples": []
+  },
+  {
+    "binary": "O2_bzip2_stripped_bzip2",
+    "hunks": 49,
+    "added": 102,
+    "deleted": 0,
+    "non_definition_added": 0,
+    "samples": []
+  },
+  {
+    "binary": "O2_coreutils_stripped_fmt",
+    "hunks": 36,
+    "added": 73,
+    "deleted": 0,
+    "non_definition_added": 0,
+    "samples": []
+  },
+  {
+    "binary": "O2_diffutils_stripped_diff",
+    "hunks": 80,
+    "added": 169,
+    "deleted": 0,
+    "non_definition_added": 0,
+    "samples": []
+  },
+  {
+    "binary": "O2_grep_stripped_grep",
+    "hunks": 57,
+    "added": 120,
+    "deleted": 0,
+    "non_definition_added": 0,
+    "samples": []
+  }
+]
+
+TOTAL hunks=523 added=8657 deleted=0 non_definition_added=0

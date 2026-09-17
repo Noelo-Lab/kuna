@@ -2289,6 +2289,13 @@ mod tests {
                     addresses: Vec::new(),
                 },
             ],
+            // (kuna `structdefs`) One recovered type definition, so the frame
+            // codec's `types` block is exercised by the round-trip below.
+            types: vec![TypeInfo {
+                name: "mystruct".into(),
+                definition: "struct mystruct {\n    int a;\n};\n".into(),
+                size: 4,
+            }],
             line_mappings: vec![LineMapping { line_number: 3, addresses: vec![0x401004] }],
             aliases: vec!["_main".into()],
             object_location: Some(ObjectLocation {
@@ -2312,6 +2319,10 @@ mod tests {
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
             && a.line_mappings == b.line_mappings
+            && a.types.len() == b.types.len()
+            && a.types.iter().zip(&b.types).all(|(x, y)| {
+                x.name == y.name && x.definition == y.definition && x.size == y.size
+            })
             && a.variables.len() == b.variables.len()
             && a.variables.iter().zip(&b.variables).all(|(x, y)| {
                 x.name == y.name
@@ -2356,6 +2367,7 @@ mod tests {
             error: Some("budget exceeded".into()),
             proto: None,
             variables: Vec::new(),
+            types: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
@@ -2775,6 +2787,7 @@ mod tests {
             error: Some(e.to_string()),
             proto: None,
             variables: Vec::new(),
+            types: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,

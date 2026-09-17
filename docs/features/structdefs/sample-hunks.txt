@@ -1,0 +1,40 @@
+--- .scratch/ab/O2_coreutils_stripped_fmt.mine.txt	2026-09-17 11:34:11.879932910 +0000
++++ .scratch/ab/O2_coreutils_stripped_fmt.on.txt	2026-09-17 11:35:57.981161487 +0000
+@@ -19,6 +19,8 @@
+ }
+ 
+ // Function: __uflow @ 0x2370
++typedef struct FILE FILE; /* opaque */
++
+ int __uflow(FILE *a0)
+ {
+   int v1; // eax
+@@ -64,6 +66,8 @@
+ }
+ 
+ // Function: __fpending @ 0x23d0
++typedef struct FILE FILE; /* opaque */
++
+ unsigned long __fpending(FILE *a0)
+ {
+   unsigned long v1; // rax
+@@ -82,6 +86,8 @@
+ }
+ 
+ // Function: clearerr_unlocked @ 0x23f0
++typedef struct FILE FILE; /* opaque */
++
+ void clearerr_unlocked(FILE *a0)
+ {
+   (*dat_be80)(); // jump-as-call
+@@ -97,6 +103,8 @@
+ }
+ 
+ // Function: fclose @ 0x2410
++typedef struct FILE FILE; /* opaque */
++
+ int fclose(FILE *a0)
+ {
+   int v1; // eax
+@@ -148,6 +156,8 @@
+ }

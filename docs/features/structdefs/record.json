@@ -1,0 +1,149 @@
+{
+  "opportunity": "kuna recovers composite layouts and then shows them only on the whole-program surface. `kuna decompile ./fmt get_prefix` prints `int get_prefix(_IO_FILE *f)` and field accesses against a layout nothing in the output describes; reaching that layout means exporting a whole `decompile-project` folder for one function. angr prints the typedefs a function references above it, which is a large part of why its output reads struct-aware. kuna had the renderer (`PrintC::doc_type_definitions`, the `docTypeDefinitions` port) and only a whole-project caller for it.",
+  "test_name": "tests/stages/kuna-structdefs.xml (5 assertions, two `print C` passes over one decompiled function) + 7 unit tests in kuna_structdefs/tests.rs + tests/cli/structdefs-json-types-array.json and -key-off.json",
+  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/compiled/fmt",
+  "selector": "get_prefix",
+  "func_addr": "0x2f30",
+  "option": "structdefs",
+  "flag": "PrintC::options.struct_defs",
+  "element_id": 4174,
+  "change_kind": "presentation-default",
+  "tier": "transform",
+  "source_decompiler": "angr",
+  "inspiration": "angr's decompiler prints the typedefs a function references above it (analyses/decompiler/structured_codegen/c.py)",
+  "default_on": false,
+  "default_value": "off",
+  "values": "on|off",
+  "witnesses": {
+    "unstripped_fmt_get_prefix": {
+      "cmd": "kuna decompile-all <O2/coreutils/compiled/fmt> --addr 0x2f30 --option structdefs on",
+      "before": "int get_prefix(_IO_FILE *f)",
+      "after": "typedef struct _IO_marker _IO_marker; /* opaque */ | typedef struct _IO_FILE _IO_FILE; | struct _IO_FILE { int _flags; undefined1 _pad4[4]; char *_IO_read_ptr; ... }; | int get_prefix(_IO_FILE *f)",
+      "body_bytes_changed": 0
+    },
+    "stripped_fmt_libctypes": {
+      "cmd": "kuna decompile-all <O2/coreutils/stripped/fmt> --addr 0x2f30 --option structdefs on",
+      "before": "void sub_2f30(FILE *a0) // return-dupe",
+      "after": "typedef struct FILE FILE; /* opaque */ | void sub_2f30(FILE *a0) // return-dupe",
+      "body_bytes_changed": 0
+    },
+    "json_types_array": {
+      "cmd": "kuna decompile-all <O2/coreutils/compiled/fmt> --addr 0x2f30 --option structdefs on --json",
+      "types": [
+        {
+          "name": "_IO_marker",
+          "size": 0,
+          "definition": "typedef struct _IO_marker _IO_marker; /* opaque */"
+        },
+        {
+          "name": "_IO_codecvt",
+          "size": 0,
+          "definition": "typedef struct _IO_codecvt _IO_codecvt; /* opaque */"
+        },
+        {
+          "name": "_IO_wide_data",
+          "size": 0,
+          "definition": "typedef struct _IO_wide_data _IO_wide_data; /* opaque */"
+        },
+        {
+          "name": "_IO_FILE",
+          "size": 216,
+          "definition": "struct _IO_FILE { ... };"
+        }
+      ],
+      "note": "one record per name: the factory's forward-declared _IO_FILE is dropped in favour of the complete one (dedup_by_name)"
+    },
+    "structsynth_pair": "not run: #655 (structsynth) is an unmerged draft in another worktree; this option is independent of it and renders a synthesized struct_N by the same path a DWARF or libctypes type takes"
+  },
+  "sweep": {
+    "method": "whole-binary `decompile-all` over six binaries, this build vs a main build (fc7c7a22, which differs from 83830e86 only by the default-off ptrfromuse), then this build with the option on vs off, every unified-diff hunk classified by classify-hunks.py",
+    "default_vs_main": {
+      "binaries": 6,
+      "lines_of_c": 66761,
+      "identical": 6,
+      "differing": 0,
+      "detail": {
+        "coreutils/fmt O2 stripped": "identical (4070 lines)",
+        "grep O2 stripped": "identical (18251 lines)",
+        "gzip O0 stripped": "identical (6787 lines)",
+        "bzip2 O2 stripped": "identical (9765 lines)",
+        "coreutils/ls O0 unstripped": "identical (11958 lines)",
+        "diffutils/diff O2 stripped": "identical (15930 lines)"
+      }
+    },
+    "on_vs_off_hunks": {
+      "hunks": 523,
+      "added_lines": 8657,
+      "deleted_lines": 0,
+      "non_definition_added_lines": 0,
+      "classification": "every hunk is a pure insertion of type-definition text above a function; no body line moved, changed or disappeared",
+      "distribution": "8071 of 8657 added lines are on ls, the one unstripped binary (DWARF gives most functions a real multi-field struct); the five stripped binaries average 117 added lines each"
+    }
+  },
+  "benchmark": {
+    "metric": "neutral by construction",
+    "reason": "decbench type_match reads the --json variables[] array, which this option does not touch; the C text it does touch is read only for functions whose variables[] is empty. No typesweep was run: there is no channel by which a preamble above a function can move a variable's type.",
+    "new_surface": "functions[].types[] is additive and no metric reads it yet; it exists so scripts/decbench/structscore.py's layout side can read a recovered layout from the per-function record instead of parsing the project header."
+  },
+  "speed": {
+    "default_cost": "one bool test (`if !self.options.struct_defs { return; }`) per function document",
+    "on_arm": {
+      "method": "interleaved off/on, min-of-21, `kuna decompile-all --addr 0x2f30` on unstripped fmt (the DWARF _IO_FILE case, the largest preamble a single function gets in the corpus)",
+      "off_min_ms": 164.0,
+      "on_min_ms": 168.03,
+      "delta_pct": 2.45,
+      "caveat": "the box ran three test lanes and several sibling agents throughout; the minimum is the statistic least polluted by that (on one median-based run the OFF median came out ABOVE the ON median, 235ms vs 177ms). A first median-based timeit run on the same function reported +5.5%/+6.5% while the corpus sweep was running."
+    },
+    "whole_binary": {
+      "method": "same interleaving, whole-binary decompile-all",
+      "fmt_O2_stripped": {
+        "off_min_ms": 4269.04,
+        "on_min_ms": 4627.11,
+        "delta_pct": 8.39
+      },
+      "ls_O0_unstripped": {
+        "off_min_ms": 7886.49,
+        "on_min_ms": 7215.36,
+        "delta_pct": -8.51
+      },
+      "verdict": "noise-dominated and reported as measured: the two runs disagree in SIGN under load average 30+, so neither is evidence. The option is default-off, so the shipped path is unaffected either way."
+    },
+    "speed_budget_pct": 5.0,
+    "speed_forced_off": false,
+    "default_off_reason": "presentation default, not a speed hold: a preamble above every function is noise for a caller diffing bodies or feeding one function to a matcher."
+  },
+  "consistency": {
+    "decompile_project_unchanged": "byte-identical export with the option on, serially, under --jobs 2 and under --stream (the bodies include the .h that already carries the definitions; decompile_pulled clears the flag for a want_proto batch)",
+    "renderer": "printc::render_type_definitions, the same function that builds the .h type block"
+  },
+  "gates": {},
+  "files": [
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_structdefs.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_structdefs/tests.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-console/src/project.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all.rs",
+    "decompiler/crates/kuna-cli/src/jobs.rs",
+    "tests/stages/kuna-structdefs.xml",
+    "tests/cli/structdefs-json-types-array.json",
+    "tests/cli/structdefs-json-types-key-off.json",
+    "docs/spec/09-emission.md"
+  ],
+  "catalog_counts": {
+    "settables": 214,
+    "subphases": 46,
+    "surfaces": 120,
+    "stage_corpus_files": 303,
+    "angr_source_decompiler_bucket": 35,
+    "tiers": [
+      68,
+      83,
+      63
+    ]
+  },
+  "notes": "The roots of the type walk (prototype, every Varnode type, every mapped Symbol type) are deliberately a superset of the names the printer spells, so the preamble cannot omit a definition the body refers to; the cost is that a type carried by a Varnode that contributes no token can be defined above a function that never names it."
+}
