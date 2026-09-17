@@ -42,9 +42,10 @@
 //!   * the operand's high must not belong to a `VariableGroup` (the piece
 //!     intersection loop of `inflate_test` reasons about overlapping storage,
 //!     not versions, so its rejections are never discounted), and
-//!   * the use op must not itself read an INDIRECT effect of the call — there
-//!     the folded text would name the operand's high both as the call's
-//!     argument (pre-call) and as an operand of the use (post-call).
+//!   * neither the use op nor the statement the expression lands in may itself
+//!     read an INDIRECT effect of the call — there the folded text would name
+//!     the operand's high both as the call's argument (pre-call) and beside it
+//!     (post-call).
 //!
 //! # Order safety is not this option's business
 //!
@@ -92,6 +93,9 @@ pub fn conflict_is_self_call_effect(
         return false;
     }
     if op_reads_indirect_effect_of(data, use_op, call) {
+        return false;
+    }
+    if crate::kuna_callretfold::landing_reads_call_effect(data, call, use_op) {
         return false;
     }
     let Some(high_cover) = data.high_bank().internal_cover(high).cloned() else {

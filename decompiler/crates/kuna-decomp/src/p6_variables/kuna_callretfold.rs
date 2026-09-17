@@ -253,7 +253,26 @@ pub fn fold_print_point_is_order_safe(data: &Funcdata, vn: VarnodeId) -> bool {
     print_point_is_order_safe(data, def, use_op)
 }
 
-/// Longest implied chain [`print_point`] will chase before giving up.
+/// (kuna) Does the statement the folded expression lands in read a value `call`
+/// writes indirectly?
+///
+/// The landing statement is where the folded expression is substituted, so the
+/// call is evaluated as one of its operands; but naming another operand there
+/// that is the call's own INDIRECT output puts the operand's high in the text
+/// both as the call's argument (pre-call) and beside it (post-call).  Only
+/// `foldcallretphi` asks: it is the option that lets such a fold reach the
+/// printer at all, and its own sweep measured the five folds this declines.
+pub(crate) fn landing_reads_call_effect(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
+    match print_chain(data, use_op) {
+        Some(chain) => {
+            let point = *chain.last().expect("print_chain: non-empty");
+            op_reads_indirect_output_of(data, point, call)
+        }
+        None => true, // no derivable landing statement: be conservative
+    }
+}
+
+/// Longest implied chain [`print_chain`] will chase before giving up.
 const MAX_IMPLIED_CHAIN: usize = 8;
 
 /// (kuna) The ops the folded expression travels through, ending at the one whose

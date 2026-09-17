@@ -955,11 +955,16 @@ consumed. So the call output is re-examined in `ActionMarkImplied`
 (check_implied_cover)`), where the descendants-first walk has already classified
 the chain below the use and the landing statement is therefore derivable
 (`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
-(print_point)`); a landing statement in another block, or one with a barrier in
+(print_chain)`); a landing statement in another block, or one with a barrier in
 between, keeps the call spilled
 (`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
-(fold_print_point_is_order_safe)`). That second span carries the barrier test
-only. The INDIRECT test stays on the span to the use, where it has always been:
+(fold_print_point_is_order_safe)`). The ops of that chain are themselves exempt:
+each consumes the previous one's value, so the call is evaluated before them in
+the folded text exactly as it is in the binary, and a `LOAD` of the pointer a
+call has just returned is not a load the call was moved past. Without that
+exemption the same guard declines 279 further functions across the 16-binary
+sweep, all of them consumers rather than reorderings. That second span carries
+the barrier test only. The INDIRECT test stays on the span to the use, where it has always been:
 widening it would lift declines as often as it added them, because a collapsed
 INDIRECT of the call itself reads that call's effect by construction.
 Provenance: `docs/features/gh657/`.
