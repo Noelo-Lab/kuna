@@ -26,7 +26,7 @@ has had its evaluation point moved and is a bug.
     python3 foldmove.py <sweep-dir> <name>...
       # reads <sweep-dir>/<name>.off.c and <sweep-dir>/<name>.on.c
 """
-import re, sys, collections
+import re, sys, collections, difflib
 
 FUNC = re.compile(r"^// Function: (\S+) @ (\S+)$")
 VAR = re.compile(r"\bv\d+\b")
@@ -36,7 +36,28 @@ KW = {"if", "while", "for", "switch", "return", "do", "else", "sizeof", "break",
 CF = re.compile(r"^\s*(\}|\{|if\b|else\b|while\b|do\b|for\b|switch\b|case\b|"
                 r"default\b|goto\b|return\b|break\b|continue\b|\w+:\s*$)")
 DEF = re.compile(r"^\s*V = (.+);\s*$")
+CAST = re.compile(r"\(\s*[A-Za-z_][\w \*]*\*\s*\)")
 
+
+DECL = re.compile(r"^\s+[A-Za-z_][\w\s\*]*\w+\s*(\[\d*\])?\s*;\s*(//.*)?$")
+NOTDECL = re.compile(r"^\s*(return|goto|break|continue|else|do|case|default)\b")
+
+
+def body_start(lines):
+    """First body line: a function with no locals has no blank line to find."""
+    try:
+        i = lines.index("{") + 1
+    except ValueError:
+        return 0
+    while i < len(lines):
+        t = lines[i].strip()
+        if t == "":
+            return i + 1
+        if ("=" in t or "(" in t.split("//")[0] or NOTDECL.match(lines[i])
+                or not DECL.match(lines[i])):
+            return i
+        i += 1
+    return i
 
 def split_funcs(path):
     out, cur, name = {}, [], None
@@ -54,14 +75,8 @@ def split_funcs(path):
 
 
 def body(lines):
-    """Everything after the declaration block (up to its trailing blank line)."""
-    try:
-        i = lines.index("{") + 1
-    except ValueError:
-        return [l for l in lines if l.strip()]
-    while i < len(lines) and lines[i].strip() != "":
-        i += 1
-    return [VAR.sub("V", l) for l in lines[i:] if l.strip()]
+    """Everything after the declaration block, with every `vN` masked."""
+    return [VAR.sub("V", l) for l in lines[body_start(lines):] if l.strip()]
 
 
 def has_call(s):
@@ -73,6 +88,7 @@ def hazard(stmt):
     if CF.match(s):
         return "control-flow"
     s = re.sub(r'"(\\.|[^"\\])*"', '""', s)
+    s = CAST.sub("", s)          # a cast's `*` is not a dereference
     if has_call(s):
         return "call"
     if "*" in s or "[" in s or "->" in s:
@@ -83,7 +99,7 @@ def hazard(stmt):
 
 
 counts = collections.Counter()
-hazards, absent, unmatched = [], [], []
+hazards, absent, unmatched, far = [], [], [], []
 moves = collections.Counter()
 
 for b in sys.argv[2:]:
@@ -99,43 +115,70 @@ for b in sys.argv[2:]:
         counts["changed_functions"] += 1
         co, cn = collections.Counter(mo), collections.Counter(mn)
         gone = {l for l in co if co[l] > cn.get(l, 0)}   # statements the ON body lost
+        # The landing statement has itself changed, so it lies in this hunk or
+        # the next one; that bound keeps a textually identical statement much
+        # later in the function from being mistaken for it.
+        blocks = [(i1, i2) for tag, i1, i2, _, _ in
+                  difflib.SequenceMatcher(None, mo, mn, autojunk=False).get_opcodes()
+                  if tag != "equal"]
+
+        def reach(i):
+            for n, (i1, i2) in enumerate(blocks):
+                if i1 <= i < i2:
+                    return blocks[n + 1][1] if n + 1 < len(blocks) else len(mo)
+            return len(mo)
+        # Group the removed spill statements by their masked text: kuna reuses
+        # one `vN` for several calls, so the same masked line can appear more
+        # than once and only the nearest one owns a given landing statement.
+        spills = collections.defaultdict(list)
         for i, line in enumerate(mo):
             if line not in gone:
                 continue
             m = DEF.match(line)
-            if not m or not has_call(m.group(1)):
-                continue
-            expr = m.group(1)
-            hosts = [l for l in mn if expr in l]
+            if m and has_call(m.group(1)):
+                spills[line].append(i)
+        for line, idxs in spills.items():
+            expr = DEF.match(line).group(1)
+            # An unchanged copy of the spill statement elsewhere in the ON body
+            # is not a landing: it would map back onto itself.
+            hosts = [l for l in mn if expr in l and l != line]
             if not hosts:
-                counts["spill_gone_call_text_absent"] += 1
+                counts["spill_gone_call_text_absent"] += len(idxs)
                 absent.append((b, name, expr[:70]))
                 continue
-            # Map the ON host line back to the OFF statement it came from.
             cands = set()
             for h in hosts:
-                cands.add(h.replace(expr, "V", 1))
-                if "(%s)" % expr in h:
-                    cands.add(h.replace("(%s)" % expr, "V", 1))
-            landing = [u for u in range(i + 1, len(mo))
-                       if mo[u] in cands and mo[u] in gone]
-            if not landing:
-                counts["landing_unmatched"] += 1
-                unmatched.append((b, name, expr[:70]))
-                continue
-            if len(landing) > 1:
-                counts["landing_ambiguous"] += 1
-            u = landing[0]
-            counts["folds"] += 1
-            between = mo[i + 1:u]
-            moves[len(between)] += 1
-            for stmt in between:
-                k = hazard(stmt)
-                if k:
-                    counts["HAZARD_" + k] += 1
-                    hazards.append((b, name, expr[:60], k, stmt.strip()[:70]))
-                else:
-                    counts["benign_intervening"] += 1
+                for c in (h.replace(expr, "V", 1),
+                          h.replace("(%s)" % expr, "V", 1) if "(%s)" % expr in h
+                          else None):
+                    if c is not None and c != line:
+                        cands.add(c)
+            for n, i in enumerate(idxs):
+                stop = min(idxs[n + 1] if n + 1 < len(idxs) else len(mo), reach(i))
+                # Prefer a landing the ON body no longer carries verbatim; fall
+                # back to any match for a statement that also appears elsewhere.
+                landing = ([u for u in range(i + 1, stop)
+                            if mo[u] in cands and mo[u] in gone]
+                           or [u for u in range(i + 1, stop) if mo[u] in cands])
+                if not landing:
+                    counts["landing_unmatched"] += 1
+                    unmatched.append((b, name, expr[:70]))
+                    continue
+                if len(landing) > 1:
+                    counts["landing_ambiguous"] += 1
+                u = landing[0]
+                counts["folds"] += 1
+                between = mo[i + 1:u]
+                moves[len(between)] += 1
+                if len(between) > 1:
+                    far.append((b, name, i, u, expr[:70], mo[u].strip()[:70]))
+                for stmt in between:
+                    k = hazard(stmt)
+                    if k:
+                        counts["HAZARD_" + k] += 1
+                        hazards.append((b, name, expr[:60], k, stmt.strip()[:70]))
+                    else:
+                        counts["benign_intervening"] += 1
 
 print("counters:", dict(counts))
 print("statements between the deleted spill and the landing statement:",
@@ -144,6 +187,8 @@ for a in absent[:20]:
     print("CALL-TEXT-ABSENT", a)
 for x in unmatched[:20]:
     print("LANDING-UNMATCHED", x)
+for f in far:
+    print("FAR", f)
 for h in hazards[:40]:
     print("HAZARD", h)
 print("HAZARDS:", len(hazards))

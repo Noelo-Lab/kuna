@@ -1029,7 +1029,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 202 -> 204: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
     // 209 -> 210: +1 for `libctypes`; its P1 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
-    assert_eq!(json.matches("},\n").count(), 210);
+    // 210 -> 211: +1 for `foldcallretphi`.
+    assert_eq!(json.matches("},\n").count(), 211);
 }
 
 #[test]

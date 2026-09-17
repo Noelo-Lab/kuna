@@ -133,24 +133,42 @@ is a separate change with a separate risk surface.
 
 ## Corpus sweep
 
-`decompile-all` off vs on over the same six binaries, 1871 functions:
+`decompile-all` off vs on over 22 binaries -- x86-64 and ARM Cortex-M, at O0,
+O2 and O2-noinline. (The corpus's O0 and O2 betaflight images are byte-identical,
+so that pair counts twice.)
 
-| binary | functions | changed | call-spill statements | declared locals | lines |
-|---|---|---|---|---|---|
-| fmt | 151 | 2 | 84 → 80 | 369 → 367 | 4069 → 4063 |
-| ls | 404 | 4 | 308 → 294 | 1355 → 1353 | 13677 → 13661 |
-| sort | 343 | 3 | 267 → 260 | 1153 → 1152 | 11376 → 11368 |
-| du | 320 | 6 | 320 → 307 | 1038 → 1033 | 10990 → 10973 |
-| grep | 449 | 14 | 385 → 364 | 1659 → 1650 | 18257 → 18228 |
-| gzip | 204 | 7 | 195 → 184 | 864 → 860 | 9358 → 9339 |
-| **total** | **1871** | **36** | **1559 → 1489 (−70)** | **6438 → 6415 (−23)** | **−95** |
+| binary | functions | changed | declared locals | statements |
+|---|---|---|---|---|
+| O2 fmt | 151 | 2 | 369 → 367 | 2999 → 2995 |
+| O2 ls | 404 | 4 | 1355 → 1353 | 10399 → 10386 |
+| O2 sort | 343 | 3 | 1153 → 1152 | 8625 → 8620 |
+| O2 du | 320 | 6 | 1038 → 1033 | 8450 → 8439 |
+| O2 grep | 449 | 14 | 1657 → 1648 | 14503 → 14484 |
+| O2 gzip | 204 | 6 | 864 → 860 | 7528 → 7515 |
+| O2 bzip2 | 114 | 3 | 610 → 607 | 8623 → 8622 |
+| O2 diff | 398 | 13 | 1592 → 1583 | 12480 → 12464 |
+| O2 find | 658 | 31 | 2223 → 2207 | 15965 → 15941 |
+| O0 fmt | 191 | 3 | 303 → 300 | 2040 → 2036 |
+| O0 du | 441 | 13 | 992 → 980 | 6518 → 6490 |
+| O0 grep | 642 | 27 | 1648 → 1636 | 10294 → 10260 |
+| O2-noinline fmt | 201 | 3 | 329 → 327 | 2832 → 2826 |
+| O2-noinline ls | 598 | 10 | 1211 → 1206 | 9744 → 9728 |
+| O2 betaflight (ARM) | 5797 | 171 | 11085 → 10988 | 96871 → 96694 |
+| O2 cleanflight (ARM) | 2558 | 62 | 4627 → 4595 | 43197 → 43139 |
+| O2 chibios (ARM) | 398 | 0 | 748 → 748 | 6685 → 6685 |
+| O2 crazyflie (ARM) | 1971 | 54 | 6729 → 6696 | 52913 → 52858 |
+| O2 nuttx (ARM) | 792 | 14 | 2488 → 2482 | 18765 → 18755 |
+| O0 betaflight (ARM) | 5797 | 171 | 11085 → 10988 | 96871 → 96694 |
+| O0 chibios (ARM) | 772 | 4 | 686 → 683 | 6591 → 6588 |
+| O2-noinline betaflight (ARM) | 6388 | 208 | 11537 → 11410 | 97253 → 97027 |
+| **total** | **29587** | **822** | **64329 → 63849 (−480)** | **−900** |
 
 ### Hunk classification
 
-Every hunk in the 36 changed functions falls into one of three classes:
+Every hunk in the 822 changed functions falls into one of three classes:
 
 1. **The fold** — a `vN = f(...);` statement disappears and `f(...)` appears at
-   its single use. 70 sites. Example (`grep sub_7e40`):
+   its single use. 705 sites. Example (`grep sub_7e40`):
 
    ```diff
    -  unsigned long v1; // rax
@@ -161,8 +179,8 @@ Every hunk in the 36 changed functions falls into one of three classes:
    ```
 
 2. **An un-inline** — a value that used to be printed inside an expression gains
-   its own statement, at the position its defining op already occupied. 5 sites,
-   all a knock-on of `Merge::mark_implied` re-dirtying operand Covers. Example
+   its own statement, at the position its defining op already occupied, a
+   knock-on of `Merge::mark_implied` re-dirtying operand Covers. Example
    (`du main`): `v = sub_6260(dat,v[0xe],v[0xf]); if (0 < v)` becomes
    `v = v[0xf]; v = v[0xe]; if (0 < (int)sub_6260(dat,v,v))` — the two array
    loads are printed where their LOAD ops are, and the call folds into the `if`.
@@ -171,21 +189,49 @@ Every hunk in the 36 changed functions falls into one of three classes:
 
 3. **Renumbering** — `vN` indices shift when a declaration disappears.
 
-### No call crossed another call
+### What the folded calls moved past
 
-The decisive check for a pass that moves evaluation points: extract each
-function's call sequence in evaluation order (nested calls first, since C
-evaluates arguments before the call) and compare off vs on.
+A pass that moves evaluation points has to be checked against more than
+call-to-call order, because a call reordered against a memory read is invisible
+to that. Three metrics, all in this bundle, over 22 binaries -- x86-64 and ARM
+Cortex-M, at O0, O2 and O2-noinline, 29,587 functions, 822 changed:
 
-```
-functions compared=1871 call-order-changed=0
-```
+* `foldmove.py` -- for each folded call, which statements stood between the
+  deleted spill and the statement the call expression landed in. 705 folds
+  located; 696 land on the very next statement and 8 on the one after (a
+  register or constant assignment in between). One landing the text matcher
+  could not map (crazyflie `sub_8035ebc`) was read by hand: adjacent. **No fold
+  crosses a call, a memory access or a control-flow boundary.**
+* `evalorder.py` -- the whole ordered stream of calls and memory touches per
+  function. **No function gains or loses a call anywhere.** Eight functions
+  differ in memory-touch count and 36 in event order; all 44 were read, and
+  every one is an adjacent fold, a compound assignment merged into its own
+  statement, or an operand hoisted to its own statement immediately before the
+  call, which is the conservative direction.
+* `callorder.py` -- 13 functions differ, all inside those 44: the script orders
+  a multi-clause condition innermost-first and a fold re-nests it. The calls
+  keep their order in every one.
 
-Reproduce with `callorder.py`, kept in this bundle.
+### The cross-block escape this guards against
+
+The first version of the discount fired on the order-safety of the *use*, and
+that is not where the call is printed. `call_output_foldable` guards the span
+from the call to its single use; when the use op's own output is implied, the
+expression keeps travelling and lands wherever that implied value is finally
+consumed, which can be a later block behind a branch. On
+`betaflight_STM32F405.elf` `sub_8051ac4` the call `sub_80515b4(dat_200181a4)`
+came out *after* `if (dat_200019cc & 1)`, while the binary calls at `0x8051b00`
+and first reads `0x200019cc` at `0x8051b0e` -- a call moved past two global reads
+it may itself write.
+
+`print_point` follows the implied chain to the statement the expression really
+lands in, and `print_point_is_order_safe` re-runs the span guard over that whole
+distance. A build with that guard bypassed reproduces the hunk exactly; with it,
+the function is byte-identical to `--option foldcallretphi off`.
 
 ## Default
 
-Ships **off**, and the reason is worth recording because it is not safety.
+Ships **off**, for two reasons.
 
 With the default flipped on, both parity gates hold: `make test` 675/675 PARITY
 OK (0 assertions change) and `make test-stages` PARITY OK. Speed on `fmt`
@@ -202,6 +248,11 @@ separate `char v2 [8]` read buffer appears. Nothing is unsound about either
 listing, but the user's directive no longer names what they meant. That makes
 the flip a change about `--assert` ergonomics, not about this pass, so it belongs
 in its own PR with those directives re-read.
+
+The second reason is the pass itself: it changes where a call is evaluated, and
+that is sound only while the guards above hold. They have a corpus sweep behind
+them and no default-on mileage, so a flip should re-establish the claim with its
+own evidence rather than inherit it from here.
 
 The option is metric-neutral either way.
 

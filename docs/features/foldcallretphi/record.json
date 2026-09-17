@@ -67,19 +67,16 @@
     ]
   },
   "corpus_sweep": {
-    "corpus": "decbench full_run_address_2026-09-11 O2 stripped: coreutils fmt/ls/sort/du, grep, gzip",
-    "method": "kuna decompile-all off vs on, every hunk classified",
-    "functions": 1871,
-    "functions_changed": 36,
-    "call_spill_statements": "1559 -> 1489 (-70)",
-    "declared_locals": "6438 -> 6415 (-23)",
-    "emitted_lines": "-95",
-    "hunk_classes": {
-      "fold of a single-use call output into its use": 70,
-      "un-inline: a previously-implied operand gains its own statement at its defining op's position": 5,
-      "variable renumbering": "the rest"
-    },
-    "call_evaluation_order_changed": "0 of 1871 functions"
+    "corpus": "decbench full_run_address_2026-09-11, 22 binaries: x86-64 O2 (coreutils fmt/ls/sort/du, grep, gzip, bzip2, diffutils diff, findutils find), x86-64 O0 (fmt, du, grep), x86-64 O2-noinline (ls, fmt), ARM Cortex-M O2 (betaflight, cleanflight, chibios, crazyflie, nuttx), ARM O0 (betaflight, chibios), ARM O2-noinline (betaflight). The O0 and O2 betaflight images in this corpus are byte-identical, so that pair counts twice.",
+    "method": "kuna decompile-all off vs on, then three metrics in docs/features/foldcallretphi/: callorder.py (call-to-call order), evalorder.py (the whole ordered stream of calls and memory touches) and foldmove.py (for each folded call, which statements stood between the deleted spill and the statement it landed in)",
+    "functions": 29587,
+    "functions_changed": 822,
+    "declared_locals": "64329 -> 63849 (-480); 486 functions lose declarations, 17 gain",
+    "emitted_statements": "540146 -> 539246 (-900)",
+    "foldmove": "705 folds located: 696 land on the very next statement, 8 with one intervening statement (a register or constant assignment), 1 landing the text matcher could not map (crazyflie sub_8035ebc -- read by hand, the fold is adjacent). No folded call crosses a call, a memory access or a control-flow boundary.",
+    "evalorder": "0 functions gain or lose a call anywhere. 8 functions differ in memory-touch count and 36 in event order; all 44 were read by hand (diffs kept in the worktree) and every one is an adjacent fold, a compound assignment merged into its own statement, or an operand hoisted to its own statement immediately before the call -- the conservative direction.",
+    "callorder": "13 functions differ, all inside the 44 above: the script orders a multi-clause condition innermost-first, which a fold re-nests; the calls keep their order in every one.",
+    "errors": "no new error records; function counts identical off/on in all 22 binaries"
   },
   "gates": {
     "make test": "PARITY OK (675/675)",
@@ -91,12 +88,13 @@
     "make rust-test": "green (415 test binaries, 0 failures; the first run's single failure was the aggressive-preset list test, fixed by the UNEVALUATED entry)"
   },
   "catalog_counts": {
-    "settables": "209 -> 210",
-    "tiers": "core 67 / transform 80 -> 81 / analysis 62",
-    "catalog_json_rows": "208 -> 209",
+    "settables": "210 -> 211",
+    "tiers": "core 68 / transform 80 -> 81 / analysis 62",
+    "catalog_json_rows": "209 -> 210",
     "angr source_decompiler bucket": "32 -> 33",
-    "stage-corpus files": "295 -> 296",
-    "bytecompat_fixture": "recaptured with no program loaded"
+    "stage-corpus files": "299 -> 300",
+    "bytecompat_fixture": "recaptured with no program loaded",
+    "rebased_onto": "origin/main ff56f941; every count re-derived with scripts.repipe.counters on the freshly built tree"
   },
   "files": [
     "decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs (new)",
@@ -111,7 +109,8 @@
     "tests/stages/kuna-foldcallretphi.xml (new)",
     "docs/spec/06-variables-and-merge.md",
     "docs/options.md",
-    "docs/baseline-stages.json"
+    "docs/baseline-stages.json",
+    "docs/features/foldcallretphi/{callorder,evalorder,foldmove}.py (the three sweep metrics)"
   ],
   "speed": {
     "method": "interleaved off/on pairs of `kuna decompile-all` on coreutils fmt -O2 (151 functions), N=21, /usr/bin/time wall clock; min and median both reported because this box is contended",
@@ -152,5 +151,12 @@
     "tests/stages/kuna-catalog.xml #6 angr bucket 32 -> 33",
     "kuna-base/src/xml.rs corpus file count 295 -> 296",
     "p0_knowledge/modes.rs aggressive_carries_every_default_off_option: every default-off on|off option is in AGGRESSIVE_OVERRIDES or listed with a reason"
-  ]
+  ],
+  "print_point_guard": {
+    "defect": "The first version of the discount fired whenever the call's single use was order-safe, but `call_output_foldable` only guards the span up to that use. When the use op's own output is implied, the expression is printed wherever that implied value is finally consumed -- possibly a later block behind a branch -- and the inflate_test rejection the discount waives was the only thing holding the call in place.",
+    "witness": "betaflight_STM32F405.elf (O2, stripped) sub_8051ac4 @0x8051ac4: `sub_80515b4(dat_200181a4)` was emitted after `if (dat_200019cc & 1)`, while the binary calls at 0x8051b00 and first reads 0x200019cc at 0x8051b0e.",
+    "fix": "print_point() follows the implied chain from the use op to the statement the folded expression actually lands in, and print_point_is_order_safe() re-runs foldcallret's span guard (same block, strictly after, no CALL/LOAD/STORE/CALLOTHER and no read of an INDIRECT the call writes) over that whole distance.",
+    "verification": "An env-gated throwaway build (KUNA_FCRPHI_NOGUARD, reverted) reproduces the hunk exactly; with the guard the function is byte-identical to `--option foldcallretphi off`. The fmt witnesses still fold (`v11 &= sub_3700(stdin,v6);`, `if (sub_41f0(stdin))`)."
+  },
+  "related_issue": "Noelo-Lab/kuna#657 -- the pre-existing default-on foldcallret gap: a heritage-promoted global assignment is a CPUI_COPY, so op_is_barrier lets a call sink past a write to a global the callee reads. Independent of this option (same output with it on or off)."
 }

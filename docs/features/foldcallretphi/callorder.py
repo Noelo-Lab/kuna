@@ -9,7 +9,7 @@ reports every function whose sequence differs.
       kuna decompile-all <path>/$b                              > sweep/$b.off.c
       kuna decompile-all <path>/$b --option foldcallretphi on   > sweep/$b.on.c
     done
-    python3 callorder.py fmt ls sort du grep gzip
+    python3 callorder.py <sweep-dir> fmt ls sort du grep gzip
 """
 import re,sys,collections
 FUNC=re.compile(r"^// Function: (\S+) @ (\S+)$")
@@ -43,8 +43,8 @@ def calls_in_eval_order(lines):
         seq.extend(n for _,_,n in found)
     return seq
 bad=0; tot=0
-for b in sys.argv[1:]:
-    fo,fn=split_funcs(f"sweep/{b}.off.c"),split_funcs(f"sweep/{b}.on.c")
+for b in sys.argv[2:]:
+    fo,fn=split_funcs(f"{sys.argv[1]}/{b}.off.c"),split_funcs(f"{sys.argv[1]}/{b}.on.c")
     for name in fo:
         if name not in fn: continue
         tot+=1
