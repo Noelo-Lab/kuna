@@ -98,6 +98,11 @@ the write. In 10 of the 18 the slot is one the OFF arm never writes anywhere.
 
 **24 of the 27 changed functions are in that ambiguous class**, and that is the
 result: no subset of these hunks is certified safe by the emitted C alone. The
+predicate errs towards flagging — it also catches a transient the next statement
+overwrites with no call in between (`sort -O2 main`) and a slot the OFF arm
+already writes elsewhere (`fresh_slots=0` on the row) — which is the right
+direction for a safety check but means the 24 is an upper bound, not a defect
+count. The
 first round reported **0 BUG hunks** over 16 slices; that claim is withdrawn. Its
 classifier had no escape predicate at all, and `bzip2 -O2 sub_3890` — inside that
 same original 16-slice set — is confirmed wrong output.

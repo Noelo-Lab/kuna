@@ -47,6 +47,17 @@
 #                              memory at 16b7c (`add QWORD PTR [rbp-0x48],0x4`),
 #                              which is the `&S[stack-0x50][1]` hunk
 #
+#
+# ESCAPE-CANDIDATE is deliberately OVER-inclusive -- it is a safety predicate, so
+# it errs towards flagging.  Two shapes it flags that are benign on inspection:
+#   * the new write is a transient that the very next statement overwrites, with
+#     no call in between (`sort -O2 main`: `S = a ^ 1; S = X & S;` where the OFF
+#     arm used a temporary for the first half);
+#   * the slot is one the OFF arm already writes elsewhere, so the object is a
+#     real frame variable and only one more write is added (`fresh_slots=0`).
+# `fresh_slots` on each row counts the candidates whose slot the OFF arm never
+# writes at all, which is the narrower reading.
+#
 # The remaining candidates are not individually settled.
 #
 bash-O0 sub_103e7c ESCAPE-CANDIDATE decl_delta=+0 new_stmt_writes=3 fresh_slots=0
