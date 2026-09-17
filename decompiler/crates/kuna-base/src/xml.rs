@@ -1860,7 +1860,9 @@ mod tests {
         // and kuna-argclobber / kuna-argclobber-guards / kuna-argclobber-armreturn
         // / kuna-argclobber-forward / a trailing clobber argument and the three
         // clauses that keep a real one
-        assert_eq!(count, 299, "corpus file count drifted");
+        // and kuna-libctypes / named libc/POSIX aggregate pointers in the
+        // built-in prototype tables
+        assert_eq!(count, 300, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
