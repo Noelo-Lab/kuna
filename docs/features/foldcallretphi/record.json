@@ -80,12 +80,12 @@
   },
   "gates": {
     "make test": "PARITY OK (675/675)",
-    "make test-stages": "PARITY OK",
+    "make test-stages": "PARITY OK (1041/1041)",
     "make check-spec": "OK (lenient + strict)",
     "make test-cli": "178/178 passed",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
-    "make rust-test": "green (415 test binaries, 0 failures; the first run's single failure was the aggressive-preset list test, fixed by the UNEVALUATED entry)"
+    "make rust-test": "RUST_TEST_RC=0 on the rebased tree (415 test binaries, 0 failures)"
   },
   "catalog_counts": {
     "settables": "211 -> 212",
