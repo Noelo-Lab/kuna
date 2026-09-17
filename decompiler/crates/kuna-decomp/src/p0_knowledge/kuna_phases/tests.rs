@@ -1074,6 +1074,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 211 -> 212: +1 for `ptrfromuse`; its P5 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
     // 214 -> 215: +1 for `structsynth`.
+    // 215 -> 216: +1 for `signedness`; its P9 row sits mid-table, so it
+    // increments the comma-terminated catalog-row count.
     assert_eq!(json.matches("},\n").count(), 216);
 }
 

@@ -196,7 +196,7 @@
   "default_flip_probe": {
     "built_with_default_auto": true,
     "datatests": "675/675, PARITY OK",
-    "stages": "1048/1048, PARITY OK at the time of the probe (the stages corpus has grown since: 1069 assertions on the shipped tree)",
+    "stages": "1048/1048, PARITY OK at the time of the probe (the stages corpus has grown since: 1082 assertions on the shipped tree)",
     "note": "the probe that decided the flip was safe, run before the default was flipped: on that tree (origin/main 12c31465 + this branch, after the width-guard fix and the new 16-bit stage test) phases.toml was flipped to `auto`, both binaries rebuilt, both corpora run against the UNCHANGED baselines, and the flip then reverted. The flip has since been taken for real -- see `default_flip`, which carries the shipped result: the shipped default is `auto`."
   },
   "speed_off_ms": 32929.4,
@@ -208,16 +208,16 @@
   "speed_forced_off": false,
   "speed_note": "the default flip re-measured on the shipped build: interleaved min-of-15 whole-binary `decompile-all` on coreutils fmt, ls and sort at -O2, each iteration running `--option signedness upstream` and then the default (auto) back to back (.scratch/speed-r6.sh, .scratch/speed-r6.log). Per-binary minima: fmt 4.1255s -> 4.1235s (-0.05%), ls 13.7452s -> 13.4545s (-2.11%), sort 15.0587s -> 14.3831s (-4.49%); summed, 32.929s -> 31.961s, -2.94%. Two of the three deltas are NEGATIVE, which a pass that only adds work cannot be: the effect is below this box's noise floor under the other agents' load, not a speedup. The medians say the same thing from the other side (fmt +5.10%, ls -0.22%, sort -1.52%) and are not usable here. The tightest measurement taken on this feature -- min-of-21 on fmt alone, at a quieter moment -- was +0.17%, which is the number to believe for the cost; either way it is inside the +5% budget. The pass is one walk over each declared integer high's readers per function, plus a HashMap lookup per cast, and `option signedness upstream` short-circuits all of it on the first `is_active` test.",
   "count_sites": {
-    "settables": 215,
+    "settables": 216,
     "tiers": [
       68,
-      84,
+      85,
       63
     ],
-    "stage_corpus_files": 305,
+    "stage_corpus_files": 307,
     "phase_catalog_json": "recaptured",
     "catalog_exact_buckets_touched": "none (change_kind presentation-default and source_decompiler kuna are not exact-pinned buckets)",
-    "note": "re-derived on this tree after rebasing onto origin/main 75a7f6b0 (structdefs #661) with `python3 -m scripts.repipe.counters --rederive/--fix` on the freshly built tree; the count-test function NAMES moved with them (settable_count_is_215, tier_counts_are_68_core_84_transform_63_analysis, fixture_has_all_215_settables), and the comma-terminated catalog-row count went 213 -> 214. docs/baseline-stages.json was RE-RECORDED rather than hand-merged, because either side of the rebase conflict drops the other's assertions: main's 1,059 (including structdefs' five) plus this branch's ten = 1,069, set-diffed both ways to confirm nothing else moved."
+    "note": "re-derived on this tree after rebasing onto origin/main 0d79b02d (indirectonly #663) with `python3 -m scripts.repipe.counters --rederive/--fix` on the freshly built tree; the count-test function NAMES moved with them (settable_count_is_216, tier_counts_are_68_core_85_transform_63_analysis, fixture_has_all_216_settables), and the comma-terminated catalog-row count went 214 -> 215. docs/baseline-stages.json was RE-RECORDED rather than hand-merged, because either side of the rebase conflict drops the other's assertions: main's 1,072 (structdefs' five and indirectonly's thirteen included) plus this branch's ten = 1,082, set-diffed both ways to confirm nothing else moved."
   },
   "dwarf_accuracy": {
     "method": "238 unstripped DWARF twins (the compiled/ binaries beside the stripped images decbench scores) across coreutils, grep, gzip, diffutils, bzip2, findutils and tar at -O0 and -O2. Whole-image decompile-all once per value; every plain-integer local declaration whose name DWARF also knows INSIDE THE SAME FUNCTION, at the same width, is compared against the DWARF base type's encoding. Signedness is binary, so a declaration that differs between two values is right in exactly one of them.",
@@ -477,11 +477,11 @@
   ],
   "gates": {
     "make test": "datatests: 675/675 assertions passed / PARITY OK (default auto)",
-    "make test-stages": "datatests: 1069/1069 assertions passed / PARITY OK (default auto, on the structdefs base)",
+    "make test-stages": "datatests: 1082/1082 assertions passed / PARITY OK (default auto, on the indirectonly base)",
     "make test-cli": "tests/cli: 183/183 passed (178 + the five probes structdefs added)",
     "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
-    "counters --check": "no drift: every hard-coded site agrees with the derived truth (215 settables, tiers 68/84/63, corpus 305 files)",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth (216 settables, tiers 68/85/63, corpus 307 files)",
     "docs/options.md": "byte-fresh (regenerated; `diff` against `kuna catalog --markdown` empty, and options_md_matches_the_generator_byte_for_byte ok in the suite)",
     "make rust-test": "RUST_TEST_RC=0, 7123 passed / 0 failed (.scratch/rust-test-r14.log, a single clean lane on the structdefs-rebased tree; settable_count_is_215, tier_counts_are_68_core_84_transform_63_analysis, fixture_has_all_215_settables and options_md_matches_the_generator_byte_for_byte all ok). The lane started after the last code commit; everything committed later is under docs/, which no test in the suite reads",
     "CI": "re-run on the rebased head; the local gates above are the authority for the workspace suite, which CI skips on an internal PR"
@@ -496,12 +496,12 @@
       "docs/features/signedness/analysis.md"
     ]
   },
-  "rebase_note": "rebased onto origin/main 75a7f6b0 (structdefs #661), which is itself on ptrfromuse (#659) and libctypes (#658). structdefs ships `default off` and ptrfromuse ships `default off`, so the default decompilation path is unchanged and every measurement in this record -- all taken with only `signedness` flipped -- still holds. Re-verified end to end on the rebased tree anyway: the stage-test repro still reproduces (`uint4 v1; ... a2 < (int4)v1` -> `int4 v1; ... a2 < v1`) and fmt -O2 sub_3060 still flips `unsigned int v1/v3` to `int` and drops the `(int)v1` cast under `auto`. Earlier rounds of this record were written on 83830e86 and fc7c7a22.",
+  "rebase_note": "rebased onto origin/main 0d79b02d (indirectonly #663), which sits on structdefs (#661), ptrfromuse (#659) and libctypes (#658). indirectonly, structdefs and ptrfromuse all ship `default off`, so the default decompilation path is unchanged and every measurement in this record -- all taken with only `signedness` flipped -- still holds. Re-verified end to end on the rebased tree anyway: the stage-test repro still reproduces (`uint4 v1; ... a2 < (int4)v1` -> `int4 v1; ... a2 < v1`) and fmt -O2 sub_3060 still flips `unsigned int v1/v3` to `int` and drops the `(int)v1` cast under `auto`.",
   "default_flip": {
     "decided_by": "the user's go on the proposal: land at default `auto`; `prefer-signed` stays opt-in because it moves 7,081 declarations image-wide and the datatest corpus pins the upstream spellings",
     "shipped_default": "auto",
     "datatests": "675/675 PARITY OK with the default flipped -- 0 assertions moved",
-    "stages": "1069/1069 PARITY OK with the default flipped -- 0 assertions moved. The baseline is re-recorded twice over: once for three assertion NAMES that said 'the default' and now name the value they test (signedness #1, #3, signedness-int16 #3), and once on the structdefs rebase, where re-recording (rather than hand-merging) is what keeps main's five data:KUNA-STRUCTDEFS assertions. Set-diff against origin/main's baseline: 0 removed, exactly this branch's 10 added, 1,059 + 10 = 1,069",
+    "stages": "1082/1082 PARITY OK with the default flipped -- 0 assertions moved. The baseline is re-recorded for three assertion NAMES that said 'the default' and now name the value they test (signedness #1, #3, signedness-int16 #3), and again on each rebase, where re-recording (rather than hand-merging) is what keeps the incoming PRs' assertions. Set-diff against origin/main's baseline: 0 removed, exactly this branch's 10 added, 1,072 + 10 = 1,082",
     "typesweep_444_slices": {
       "what": "the campaign typesweep, default (auto) vs `--option signedness upstream`, over coreutils/grep/gzip/diffutils/bzip2/findutils/tar/shadow x O0/O2/O2-noinline",
       "slices": 444,
