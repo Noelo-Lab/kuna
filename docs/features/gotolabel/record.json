@@ -1,0 +1,88 @@
+{
+ "opportunity": "kuna emitted `goto label_X;` statements whose `label_X:` is absent from the same function -- output that does not compile (`gcc -fsyntax-only`: error: label 'label_X' used but not defined). Over 20 stripped binaries (O0/O2/O2-noinline; coreutils grep gzip bzip2 diffutils findutils tar shadow + an ARM32 betaflight image), 16,080 functions: 23 functions emitted 27 such gotos; over the 149 in-repo ELF fixtures (2,710 functions): 10 functions, 10 gotos.",
+ "test_name": "tests/cli/emitted-goto-keeps-its-label.json (in-repo fixture datasyms_faillog_x86_64 @0x2620) + 4 unit tests in substrate/block/tests.rs",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/datasyms_faillog_x86_64",
+ "selector": "0x2620",
+ "func_addr": "0x2620",
+ "option": null,
+ "flag": null,
+ "change_kind": "strict correctness fix (no option: a goto without its label is invalid C)",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "Ghidra BlockGraph::markUnstructured / BlockSwitch::markUnstructured / BlockMultiGoto::markUnstructured",
+ "default_on": true,
+ "ablation_changed": 0,
+ "parity": "OK",
+ "root_cause": "Three independent paths broke the label invariant. (1) gotoreduce/taildup/crossjumprevert each carried a private 'still referenced' census that saw only BlockGoto and BlockIf carriers, so a target a BlockSwitch case arm (or a BlockMultiGoto edge) still jumped to read as unreferenced and its label was released -- coreutils/sort O2 main, `default: goto label_661d;`. (2) mark_unstructured gated a BlockGoto's mark on goto_prints(), upstream's rule, but kuna's PrintC::emit_block_goto prints the trailing goto unconditionally (upstream's emitBlockGoto suppresses it under the same test), so a goto whose target was the next block in flow printed unlabelled -- grep O0 main. (3) the release compared the blocks carriers name while the label lives on the target's FRONT LEAF, so a surviving goto naming a BlockList and a converted one naming the BlockCopy that opens it were treated as different targets -- shadow/useradd O2 sub_16720.",
+ "corpus_scan": {
+  "method": "kuna decompile-all text, split per `// Function:` marker, a goto whose label line is absent from the same function (docs/features/gotolabel/orphan_scan.py)",
+  "stripped_binaries": {
+   "binaries": 20,
+   "functions": 16080,
+   "before_orphan_functions": 23,
+   "before_orphan_gotos": 27,
+   "after_census_fix_only": {
+    "orphan_functions": 14,
+    "orphan_gotos": 16
+   },
+   "after_plus_mark_unstructured": {
+    "orphan_functions": 1,
+    "orphan_gotos": 1
+   },
+   "after_all_three": {
+    "orphan_functions": 0,
+    "orphan_gotos": 0
+   }
+  },
+  "in_repo_fixtures": {
+   "binaries": 149,
+   "functions": 2710,
+   "before_orphan_functions": 10,
+   "after_orphan_functions": 0
+  }
+ },
+ "corpus_diff": {
+  "method": "per-function before/after text diff, every changed function classified (docs/features/gotolabel/classify_diff.py, corpus-diff.txt)",
+  "stripped_binaries": "functions=16080 changed=23 added-label-only=20 other=3 (the 3 add the same label line plus the braces the printer puts around an `if` clause that is no longer a single statement); every changed function carried an orphan goto before, and no function without one changes",
+  "in_repo_fixtures": "functions=2710 changed=10 added-label-only=10 other=0"
+ },
+ "compile_check": {
+  "method": "gcc -fsyntax-only -w on each changed function's text, before vs after, with a shared synthesized typedef prelude (docs/features/gotolabel/gcc_check.py, gcc-check.txt)",
+  "result": "changed=23, and for all 23 the ONLY diagnostic removed is `error: label 'label_X' used but not defined` (27 in total); no new diagnostic appears on any of them"
+ },
+ "speed": {
+  "method": "interleaved back-to-back pairs on one pinned CPU, median of the per-pair ratio new/old (the box carried 3 concurrent test lanes; per-pair spread is +-5%, so min-of-N alone is not readable)",
+  "bzip2 O2 decompile-all (21 pairs)": "+0.77%",
+  "gzip O2 decompile-all (15 pairs)": "-1.26%",
+  "coreutils/sort O2 main @0x3ec0 (15 pairs)": "+0.03%",
+  "worst_stable_delta_pct": 0.77,
+  "budget_pct": 5.0,
+  "within_budget": true
+ },
+ "benchmark": {
+  "typesweep": "444 slices / 10,748 functions, baseline-only with the fixed binary: type_match PERFECT 959 (main: 959), aggregate 3037.05 (mean 0.2826) -- unmoved",
+  "why_it_cannot_move": "the decbench-scored payload is `variables[]`; comparing old vs new `decompile-all --json` over sort O2, shadow/useradd O2, grep O0 and tar O2 (2,537 functions) the variables are identical field-for-field except `line_numbers`, which shift by one in the functions that gained a label line"
+ },
+ "gates": {
+  "make test": "PARITY OK (675/675 assertions passed)",
+  "make test-stages": "PARITY OK (1103/1103 assertions passed, no re-record)",
+  "make rust-test": "RUST_TEST_RC=0 (416 `test result: ok` blocks)",
+  "make check-spec": "OK (lenient + strict)",
+  "make test-cli": "185/185 passed",
+  "kuna catalog --check": "catalog OK",
+  "counters --check": "no drift"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotolabel.rs",
+  "decompiler/crates/kuna-decomp/src/p8_structure/mod.rs",
+  "decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotoreduce.rs",
+  "decompiler/crates/kuna-decomp/src/p8_structure/kuna_taildup.rs",
+  "decompiler/crates/kuna-decomp/src/p8_structure/kuna_crossjumpreverter.rs",
+  "decompiler/crates/kuna-decomp/src/substrate/block.rs",
+  "decompiler/crates/kuna-decomp/src/substrate/block/tests.rs",
+  "decompiler/crates/kuna-ghidra/tests/ghidra_sim_e2e.rs",
+  "docs/spec/08-structuring.md",
+  "tests/cli/emitted-goto-keeps-its-label.json"
+ ],
+ "notes": "The only pinned expectation that moved is ghidra_sim_faillog_pins' PIN_FAILLOG_C_LINES[0] for sub_2620 (286 -> 287): that fixture function is one of the 10 orphan carriers, and the extra line is its restored `label_2701:`. No datatest or stage assertion moved. The redundant goto in cause (2) is deliberately left printed rather than suppressed under goto_prints(): dropping a statement is a structuring decision and would change functions that have no defect."
+}
