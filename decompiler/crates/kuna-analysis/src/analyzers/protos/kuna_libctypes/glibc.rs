@@ -292,10 +292,11 @@ pub(super) fn build_fields(
 
 /// Is this image one the layouts above are TRUE of?
 ///
-/// They are glibc's x86-64 layouts and nobody else's: musl's `FILE` is 120 bytes
-/// with a different member order, and a `stat` that came off another libc shares
-/// only the names the kernel ABI fixes. Naming a field is a claim about what is
-/// at an offset, so it is made only where the claim is checkable —
+/// They are glibc's x86-64 layouts and nobody else's. Another libc's `FILE` is a
+/// different object with a different width and a different member order, and a
+/// `stat` that came off one shares with this table only the names the kernel ABI
+/// fixes. Naming a field is a claim about what is at an offset, so it is made
+/// only where the claim is checkable —
 ///
 /// * the image is an **ELF** for **x86-64**, and
 /// * its dynamic string table names glibc: the `libc.so.6` soname, or a

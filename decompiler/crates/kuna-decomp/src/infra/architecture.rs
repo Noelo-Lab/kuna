@@ -2615,6 +2615,9 @@ impl Architecture {
         // docs/features/libctypes/record.json. The pass itself reads the
         // load-time env bridge, which defaults on to match this.
         self.analysis_libctypes = true;
+        // and the layout value defaults to `opaque`: the field layouts are the
+        // `glibc` value, which is opt-in.
+        self.analysis_libctypes_glibc = false;
         // (kuna) DIV-141 built-in Win32 API signature table -- default-ON.
         self.analysis_win32sigs = true;
         // (kuna) DIV-139 declared-name libc prototype lookup -- default-ON.

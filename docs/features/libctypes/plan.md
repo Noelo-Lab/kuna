@@ -81,4 +81,5 @@ the sweep is.
 
 * `stdin`/`stdout`/`stderr` as typed `FILE *` data symbols (own sweep).
 * A `glibc` value installing the public `_IO_FILE` field names.
+  (Shipped in a follow-up; `glibc.md` is its record, sweep included.)
 * `obstack` / `regex_t` (call-site counts measured in `analysis.md`).
