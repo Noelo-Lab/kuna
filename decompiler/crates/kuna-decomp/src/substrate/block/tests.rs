@@ -11,7 +11,7 @@ use std::rc::Rc;
 use kuna_base::address::{Address, RangeList};
 use kuna_base::marshal::{Decoder, PackedDecode, PackedEncode};
 use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace};
-use kuna_base::types::int4;
+use kuna_base::types::{int4, uint4};
 
 use super::*;
 
@@ -680,4 +680,91 @@ fn flatten_ifelse_refuses_non_list_parent() {
 
     assert!(!g.kuna_flatten_ifelse(inner), "non-list parent cannot host the sibling");
     assert_eq!(g.block(inner).get_size(), 3, "unchanged");
+}
+
+// ---------------------------------------------------------------------------
+// goto labels — mark_unstructured and the carrier census the goto-reduction
+// passes clear labels against (p8_structure::kuna_gotolabel)
+// ---------------------------------------------------------------------------
+
+fn case_order(block: BlockId, gototype: uint4) -> CaseOrder {
+    CaseOrder {
+        block,
+        basicblock: None,
+        label: 0,
+        depth: 0,
+        chain: -1,
+        outindex: 0,
+        gototype,
+        isexit: false,
+        isdefault: false,
+    }
+}
+
+/// A switch arm whose edge stayed unstructured prints its own `goto`, so its
+/// target still needs a label.
+#[test]
+fn switch_case_goto_is_a_label_reference() {
+    use crate::p8_structure::kuna_gotolabel::referenced_goto_targets;
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    g.root = Some(root);
+    let target = g.new_block(root);
+    let structured = g.new_block(root);
+    let sw = g.arena.insert(FlowBlock::new_kind(BlockKind::Switch {
+        caseblocks: vec![
+            case_order(target, block_flags::f_goto_goto),
+            case_order(structured, 0),
+        ],
+        jt_index: 0,
+    }));
+    g.add_block(root, sw);
+
+    let refs = referenced_goto_targets(&g, root);
+    assert!(refs.contains(&target), "an unstructured case arm references its target");
+    assert!(!refs.contains(&structured), "a structured case arm prints its body, not a goto");
+}
+
+/// A `BlockMultiGoto`'s virtual edges are label references too.
+#[test]
+fn multigoto_edge_is_a_label_reference() {
+    use crate::p8_structure::kuna_gotolabel::referenced_goto_targets;
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    g.root = Some(root);
+    let target = g.new_block(root);
+    let mg = g.arena.insert(FlowBlock::new_kind(BlockKind::MultiGoto {
+        gotoedges: vec![target],
+        defaultswitch: false,
+    }));
+    g.add_block(root, mg);
+
+    assert!(referenced_goto_targets(&g, root).contains(&target));
+}
+
+/// `mark_unstructured` labels a `BlockGoto`'s target even when the target is the
+/// next block in flow (`goto_prints() == false`): `emit_block_goto` prints that
+/// goto all the same, and a printed goto without its label is not C.
+#[test]
+fn goto_to_the_next_block_still_gets_its_label() {
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    g.root = Some(root);
+
+    let target = g.arena.insert(FlowBlock::new_kind(BlockKind::Copy { copy: None }));
+    let gt = g.arena.insert(FlowBlock::new_kind(BlockKind::Goto {
+        gototarget: Some(target),
+        gototype: block_flags::f_goto_goto,
+    }));
+    g.add_block(root, gt);
+    let body = g.arena.insert(FlowBlock::new_kind(BlockKind::Copy { copy: None }));
+    g.add_block(gt, body);
+    g.add_block(root, target);
+
+    assert!(!g.goto_prints(gt), "the goto's target is the next block in flow");
+    g.mark_unstructured(root);
+    assert!(
+        g.block(target).is_unstructured_target(),
+        "an emitted goto's target always carries its label"
+    );
 }
