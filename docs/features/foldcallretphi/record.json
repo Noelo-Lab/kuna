@@ -88,13 +88,13 @@
     "make rust-test": "green (415 test binaries, 0 failures; the first run's single failure was the aggressive-preset list test, fixed by the UNEVALUATED entry)"
   },
   "catalog_counts": {
-    "settables": "210 -> 211",
-    "tiers": "core 68 / transform 80 -> 81 / analysis 62",
-    "catalog_json_rows": "209 -> 210",
+    "settables": "211 -> 212",
+    "tiers": "core 68 / transform 80 -> 81 / analysis 63",
+    "catalog_json_rows": "210 -> 211",
     "angr source_decompiler bucket": "32 -> 33",
-    "stage-corpus files": "299 -> 300",
+    "stage-corpus files": "300 -> 301",
     "bytecompat_fixture": "recaptured with no program loaded",
-    "rebased_onto": "origin/main ff56f941; every count re-derived with scripts.repipe.counters on the freshly built tree"
+    "rebased_onto": "origin/main f02365cc; every count re-derived with scripts.repipe.counters on the freshly built tree"
   },
   "files": [
     "decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs (new)",

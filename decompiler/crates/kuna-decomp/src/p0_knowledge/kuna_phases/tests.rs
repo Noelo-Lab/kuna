@@ -75,7 +75,7 @@ fn surface_count_is_119() {
 }
 
 #[test]
-fn settable_count_is_211() {
+fn settable_count_is_212() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
