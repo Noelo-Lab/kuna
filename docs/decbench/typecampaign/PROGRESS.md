@@ -18,10 +18,10 @@ reviewer + green gates; `[PROPOSAL]` items wait for the user; port TRex/RecStruc
 | F3 | measurement tooling | found. | review r4 → land (stage2b wf) | /home/mahaloz/kwt/typetools feat/typetools | #653 | cheap gates green; rust-test structurally untouched | re-review, land |
 | F4 | elfmain (default on) | found. | merged 37e0d31e | — | #649 | all green, review 3 rounds | — |
 | F5 | impliedrefs/termdup | found. | merged f5cea6bc | — | #648 | all green, review 1 round | — |
-| A1 | libctypes | A | running (stage2a wf) | /home/mahaloz/kwt/libctypes feat/libctypes | | | impl→review→land |
-| A2 | ptrfromuse | A | pending | | | | after A1 |
+| A1 | libctypes | A | review r4 → land (stage2c wf) | /home/mahaloz/kwt/libctypes feat/libctypes | #651 | gates green locally; typesweep tar+e2fsprogs +9 perfect / 0 worse | rebase, delta review, land; then A1-flip (default on) |
+| A2 | ptrfromuse | A | queued (stage2c wf, after A1 lands) | /home/mahaloz/kwt/ptrfromuse | | | |
 | A3 | protoorder [PROPOSAL] | A | pending | | | | after A2 |
-| B1 | phantom-locals root cause | B | running (stage2a wf) | /home/mahaloz/kwt/phantomargs feat/phantomargs | | | investigate→(PR) |
+| B1 | phantom-locals root cause → argclobber | B | merged (PR #652) | — | #652 | review 3 rounds; sound 4-site rule (fmt main 3/2/1→2/2/2, phantom rdx locals gone); opt-in | — |
 | B2 | signedness [PROPOSAL] | B | running (stage2b wf) | /home/mahaloz/kwt/signedness feat/signedness | | | draft PR → user go/no-go |
 | B3 | boolbyte | B | pending | | | | |
 | B4 | hideshadow/indirectonly/foldcallret/charbyte/mulblob | B | foldcallret running (stage2b wf) | /home/mahaloz/kwt/foldcallret feat/foldcallret | | | others after |
