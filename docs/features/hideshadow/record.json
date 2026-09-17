@@ -101,7 +101,7 @@
     "make check-spec": "OK (lenient + strict)",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
-    "make rust-test": "green (RUST_TEST_RC=0, 0 test-result FAILED lines)"
+    "make rust-test": "green (RUST_TEST_RC=0, 415 `test result: ok` lines, 0 FAILED) on the rebased tree dfaa3e55"
   },
   "catalog_counts": {
     "settables": "213 -> 214",
