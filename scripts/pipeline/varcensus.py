@@ -348,7 +348,7 @@ def selftest() -> int:
         ("4 declarations", t["declarations"] == 4),
         ("4 non-thunk declarations", t["declarations_non_thunk"] == 4),
         ("2 params on sub_1000", rows[0]["params"] == 2),
-        ("0 params on free (void*) arm", rows[1]["params"] == 1),
+        ("1 param on the thunk `free(void *a0)`", rows[1]["params"] == 1),
         ("one [16] blob", t["blob16"] == 1),
         # v1 and v2 are each written once and read once -> both foldable. v4 is
         # written twice, and v3 is only ever element-stored (a read of the base).

@@ -33,12 +33,20 @@ Which corpus is measured, in order of precedence: ``--project``/``--opt``, then
 the record's own ``benchmark.projects`` keys (so a re-measurement covers exactly
 what the last one did), then the five projects below.
 
+The cached rows carry the provenance they were measured under — the kuna binary
+by content, the decbench commit, the results tree and both arm values — and a
+cache that disagrees with the current run is dropped rather than mixed into it.
+Everything the block says about the corpus is derived from the rows it
+summarizes, so a re-report can never name a project or a binary that did not run.
+
 Nothing is written anywhere unless ``--out`` (the sweep's working directory, by
-default a cache under $HOME) or ``--write`` (the record) is given.
+default a per-option, per-corpus cache under $HOME) or ``--write`` (the record)
+is given.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -72,6 +80,54 @@ def decbench_commit() -> dict:
         except OSError:
             out[key] = None
     return out
+
+
+def binary_identity(path: str) -> dict:
+    """Which kuna produced a row, by content — a path is not an identity.
+
+    `make binaries` rewrites the same path in place, so a cache keyed on the
+    path alone republishes yesterday's rows under today's binary.
+    """
+    out = {"path": str(path), "sha256": None, "size": None}
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return out
+    out["sha256"] = hashlib.sha256(data).hexdigest()[:16]
+    out["size"] = len(data)
+    return out
+
+
+def provenance(option: str, off: str, on: str) -> dict:
+    """Everything a row's numbers depend on other than the corpus slice itself."""
+    return {
+        "kuna": binary_identity(config.kuna_bin()),
+        "decbench": decbench_commit(),
+        "results_root": str(config.results_root()),
+        "option": option, "off_value": off, "on_value": on,
+        "metric": "type_match",
+    }
+
+
+def corpus_key(projects: list[str], opts: list[str]) -> str:
+    """The corpus half of the default cache directory name.
+
+    Without it one directory holds every corpus the option was ever measured on,
+    and a narrower ``--project`` re-reports the wider run's rows.
+    """
+    seed = "|".join([str(config.results_root())] + sorted(projects) + sorted(opts))
+    return hashlib.sha1(seed.encode()).hexdigest()[:8]
+
+
+def rows_corpus(rows: dict) -> tuple[list[str], list[str]]:
+    """The projects and opt levels the ROWS cover — never the requested ones."""
+    projects, opts = set(), set()
+    for key, value in rows.items():
+        sl = value.get("slice") or {}
+        parts = key.split("::")
+        projects.add(sl.get("project") or (parts[0] if parts else "?"))
+        opts.add(sl.get("opt") or (parts[1] if len(parts) > 1 else "?"))
+    return sorted(projects), sorted(opts)
 
 
 def arm_values(record: dict, off: str | None, on: str | None) -> tuple[str, str]:
@@ -210,35 +266,89 @@ def control(rows: dict, published: dict | None = None) -> dict:
     return out
 
 
-def benchmark_block(rows: dict, option: str, off: str, on: str,
-                    projects: list[str], opts: list[str], errors: list[str],
+def benchmark_block(rows: dict, prov: dict, errors: list[str],
                     published: dict | None = None) -> dict:
-    dc = decbench_commit()
+    """The record's ``benchmark`` block, every field derived from ``rows``.
+
+    ``prov`` is the provenance the rows were MEASURED under (the stored one on a
+    ``--report-only`` re-report, the current one otherwise), and the corpus line
+    names the projects and levels the rows actually cover — not the ones this
+    invocation asked for. A block that says grep while holding bzip2's numbers
+    is a wrong-numbers channel, and this is the only thing standing in its way.
+    """
+    dc = prov.get("decbench") or {}
+    projects, opts = rows_corpus(rows)
     per_project, pooled = summarize(rows)
+    kuna = prov.get("kuna") or {}
     return {
-        "corpus": (f"decbench corpus at {config.results_root()}, optimisation levels "
-                   f"{', '.join(opts)}, projects {', '.join(projects)}, scored with "
-                   f"decbench {dc.get('branch')} @{dc.get('sha')}, DECBENCH_NO_CACHE=1"),
-        "metric": "type_match",
-        "option": f"{option} {off} (off arm) vs {option} {on} (on arm)",
-        "kuna_bin": config.kuna_bin(),
+        "corpus": (f"decbench corpus at {prov.get('results_root')}, optimisation levels "
+                   f"{', '.join(opts) or 'none'}, projects {', '.join(projects) or 'none'}, "
+                   f"{len(rows)} slices, scored with decbench {dc.get('branch')} "
+                   f"@{dc.get('sha')}, DECBENCH_NO_CACHE=1"),
+        "metric": prov.get("metric", "type_match"),
+        "option": (f"{prov.get('option')} {prov.get('off_value')} (off arm) vs "
+                   f"{prov.get('option')} {prov.get('on_value')} (on arm)"),
+        "kuna_bin": kuna.get("path"),
+        "kuna_sha256": kuna.get("sha256"),
         "projects": per_project,
         "pooled": pooled,
         "control": control(rows, published),
         "note": ("Both arms pass the option explicitly, so the numbers do not depend on "
                  "the build's default. DECBENCH_NO_CACHE=1 is set by typescore itself -- "
                  "the metric's content-addressed cache otherwise serves a stored value. "
-                 "Functions only one arm scored are excluded."
+                 "Functions only one arm scored are excluded. Every field above is "
+                 "derived from the cached rows, which carry the provenance they were "
+                 "measured under; rows from another binary, decbench or arm are dropped."
                  + (f" Slice errors: {'; '.join(errors[:5])}" if errors else "")),
     }
 
 
+def load_rows(cache: Path, want: dict, projects: list[str], opts: list[str],
+              report_only: bool) -> tuple[dict, dict | None]:
+    """Cached rows plus the provenance they were measured under.
+
+    A cache file that predates provenance, or one measured with another kuna,
+    decbench or pair of arm values, is dropped rather than mixed into this run.
+    On a ``--report-only`` re-report nothing is dropped — the rows are what there
+    is to report — but a provenance that differs from the environment is said out
+    loud, and it is the STORED one that stamps the block.
+    """
+    if not cache.exists():
+        return {}, None
+    doc = json.loads(cache.read_text())
+    stored = doc.get("provenance") if isinstance(doc, dict) else None
+    rows = doc.get("rows") if isinstance(stored, dict) else None
+    if rows is None:
+        print(f"[typescore] {cache} carries no provenance -- ignoring it and "
+              f"re-measuring", file=sys.stderr)
+        return {}, None
+    if report_only:
+        if stored != want:
+            print(f"[typescore] REPORTING STORED ROWS: they were measured with "
+                  f"{json.dumps(stored)}, not with the current "
+                  f"{json.dumps(want)}", file=sys.stderr)
+        return rows, stored
+    if stored != want:
+        print(f"[typescore] cached rows were measured with {json.dumps(stored)} -- "
+              f"dropping all {len(rows)} and re-measuring", file=sys.stderr)
+        return {}, None
+    keep = {k: v for k, v in rows.items()
+            if ((v.get("slice") or {}).get("project") or k.split("::")[0]) in projects
+            and ((v.get("slice") or {}).get("opt") or k.split("::")[1]) in opts}
+    if len(keep) != len(rows):
+        print(f"[typescore] {len(rows) - len(keep)} cached row(s) outside this run's "
+              f"corpus -- not reported", file=sys.stderr)
+    return keep, stored
+
+
 def run(option: str, off: str, on: str, projects: list[str], opts: list[str],
         out: Path, workers: int, timeout: int, limit: int,
-        report_only: bool) -> tuple[dict, list[str]]:
+        report_only: bool) -> tuple[dict, list[str], dict]:
     out.mkdir(parents=True, exist_ok=True)
     cache = out / "rows.json"
-    rows = json.loads(cache.read_text()) if cache.exists() else {}
+    want = provenance(option, off, on)
+    rows, stored = load_rows(cache, want, projects, opts, report_only)
+    prov = stored if report_only and stored else want
     errors: list[str] = []
     if not report_only:
         slices = typesweep.collect_slices(config.results_root(), set(projects), set(opts))
@@ -254,6 +364,7 @@ def run(option: str, off: str, on: str, projects: list[str], opts: list[str],
         with ProcessPoolExecutor(max_workers=workers) as ex:
             futs = {ex.submit(typesweep.score_slice, t): t for t in todo}
             for fut in as_completed(futs):
+                task = futs[fut]
                 done += 1
                 try:
                     key, value = fut.result()
@@ -261,13 +372,14 @@ def run(option: str, off: str, on: str, projects: list[str], opts: list[str],
                     errors.append(f"worker: {str(e)[:120]}")
                     print(f"[{done}/{len(todo)}] WORKER-ERR {e}", flush=True)
                     continue
+                value["slice"] = {"project": task[0], "opt": task[1], "stem": task[2]}
                 rows[key] = value
                 for arm in ("base", "test"):
                     if (value.get(arm) or {}).get("error"):
                         errors.append(f"{key}/{arm}: {value[arm]['error'][:120]}")
-                cache.write_text(json.dumps(rows))
+                cache.write_text(json.dumps({"provenance": want, "rows": rows}))
                 print(f"[{done}/{len(todo)}] {key}", flush=True)
-    return rows, errors
+    return rows, errors, prov
 
 
 def splice(record_path: Path, block: dict) -> None:
@@ -282,6 +394,46 @@ class _V:
     def __init__(self, name, type_):
         self.name, self.type = name, type_
         self.size = self.stack_offset = self.arg_index = self.kind = None
+
+
+def provenance_checks() -> list:
+    """The cache-provenance checks: the reviewer's own wrong-numbers scenario."""
+    import tempfile
+    mine = {"kuna": {"path": "/tmp/new-kuna", "sha256": "bbbb", "size": 2},
+            "decbench": {"sha": "cafe", "branch": "main"},
+            "results_root": "/results", "option": "libcsigs", "off_value": "off",
+            "on_value": "on", "metric": "type_match"}
+    theirs = {**mine, "kuna": {"path": "/tmp/old-kuna", "sha256": "aaaa", "size": 1}}
+    row = {"base": {"values": {"f": 0.0}}, "test": {"values": {"f": 1.0}},
+           "slice": {"project": "bzip2", "opt": "O0", "stem": "bzip2"}}
+    out = []
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = Path(tmp) / "rows.json"
+        cache.write_text(json.dumps({"bzip2::O0::bzip2": row}))
+        legacy, _ = load_rows(cache, mine, ["bzip2"], ["O0"], False)
+        cache.write_text(json.dumps({"provenance": theirs,
+                                     "rows": {"bzip2::O0::bzip2": row}}))
+        stale, _ = load_rows(cache, mine, ["bzip2"], ["O0"], False)
+        kept, stored = load_rows(cache, mine, ["grep"], ["O0"], True)
+        cache.write_text(json.dumps({"provenance": mine,
+                                     "rows": {"bzip2::O0::bzip2": row}}))
+        narrowed, _ = load_rows(cache, mine, ["grep"], ["O0"], False)
+        block = benchmark_block(kept, stored, [])
+        out += [
+            ("a cache with no provenance is ignored", legacy == {}),
+            ("rows measured with another kuna are dropped, not merged", stale == {}),
+            ("--report-only reports the stored rows under the STORED provenance",
+             len(kept) == 1 and stored == theirs),
+            ("rows outside the requested corpus are not reported", narrowed == {}),
+            ("the block names the corpus the ROWS cover, not the one requested",
+             "projects bzip2" in block["corpus"] and "grep" not in block["corpus"]
+             and set(block["projects"]) == {"bzip2"}),
+            ("the block names the kuna that produced the rows",
+             (block["kuna_bin"], block["kuna_sha256"]) == ("/tmp/old-kuna", "aaaa")),
+            ("the default cache key separates two corpora",
+             corpus_key(["grep"], ["O0"]) != corpus_key(["bzip2"], ["O0"])),
+        ]
+    return out
 
 
 def selftest() -> int:
@@ -334,7 +486,7 @@ def selftest() -> int:
         ("corpus falls back to the record's own projects",
          corpus({"benchmark": {"projects": {"gzip": {}}}}, [], [])
          == (["gzip"], sorted(DEFAULT_OPTS))),
-    ]
+    ] + provenance_checks()
     for name, ok in checks:
         print(f"[{'ok ' if ok else 'FAIL'}] {name}")
     bad = [n for n, ok in checks if not ok]
@@ -378,16 +530,16 @@ def main(argv=None) -> int:
     os.environ.setdefault("DECBENCH_NO_CACHE", "1")
     typesweep._imports()
 
-    out = args.out or (WORKDIR / f"{option}-{off}-{on}")
-    rows, errors = run(option, off, on, projects, opts, out, args.workers,
-                       args.timeout, args.limit, args.report_only)
+    out = args.out or (WORKDIR / f"{option}-{off}-{on}-{corpus_key(projects, opts)}")
+    rows, errors, prov = run(option, off, on, projects, opts, out, args.workers,
+                             args.timeout, args.limit, args.report_only)
     try:
         pub = typesweep.published(config.results_root())
     except Exception as e:  # noqa: BLE001
         print(f"[typescore] no published verdicts to control against ({e})",
               file=sys.stderr)
         pub = None
-    block = benchmark_block(rows, option, off, on, projects, opts, errors, pub)
+    block = benchmark_block(rows, prov, errors, pub)
     print(json.dumps(block, indent=2))
     if args.write:
         if not args.record:

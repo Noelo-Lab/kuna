@@ -98,8 +98,9 @@ both — the all-function value for the default row is 68, the non-thunk one 31)
 | default | 152 | 332 | 295 | 31 | 23 |
 | `--option foldcallret off` | 152 | 367 | 330 | 52 | 23 |
 
-JSON surface on the same run: 731 variables (298 args, 433 stack), 326 of them
-framelayout slots with no line and no address.
+JSON surface on the same run: 731 variables (298 args, 433 stack). 412 of them
+carry no line and no address at all (`json_useless_slots`); 326 of those are
+stack slots — the framelayout ones — and the other 86 are arguments.
 
 The design lane quotes 335 / 298 / 370 for the same three cells: its declaration
 rule keeps three lines this one drops. The deltas — which is what a PR argues

@@ -23,8 +23,11 @@ denominator it is 0 out of.
 -> CPrimitive?` with `f = p1*(1+p2*(1+p3*(1+p4*(1+p5*(1+p6)))))`, so an expected
 `uint64_t` scores `char*` 1, `struct{…}` 3, `double` 4, `int64_t` 5, `uint64_t`
 6. Scored over kuna's `--json variables[]` (the surface decbench scores) against
-`decbench.metrics.type_match.extract_ground_truth_types`, paired by the same
-three passes the metric uses (arg index, calibrated stack offset, name).
+`decbench.metrics.type_match.extract_ground_truth_types`, paired by
+`pair_variables` — the metric's own three passes (arg index, calibrated stack
+offset, name), its binary-wide calibration shift, and its type-preferring
+`claim()`, so a variable is scored against the ground-truth variable the metric
+would have scored it against.
 
 The last step is the only one that turns on signedness, and decbench's ground
 truth cannot answer it: `normalize_type` strips the `unsigned` qualifier, so a
@@ -44,15 +47,22 @@ exactly the blindness RecStruct §5 charges the metric with. Report them togethe
 and none can hide the others.
 
 **--census** (the opportunity ceiling). Over the same run's C text, a *base* is
-a parameter or declared local *accessed* at two or more distinct offsets or
-fields (`*(T *)(B + K)`, `B[k]`, `*B`, `B->f`) — a struct candidate. Declaration
-and prototype lines are dropped first: the `*` in `char *v1;` is not a
-dereference. A field name that encodes an offset (`field_0x28`) is keyed by that
-offset and any other field name by the name itself, so nothing depends on
-PYTHONHASHSEED. Then, using the ground truth, how many of those candidates'
-types kuna **already** gets right: that is the match->miss channel a synthesis
-pass would spend, and it is what makes struct synthesis a *quality* feature
-rather than a metric one.
+any identifier — a parameter, a declared local, or a file-scope global (`dat_*`,
+counted separately and never on the JSON surface) — *accessed* at two or more
+distinct offsets (`*(T *)(B ± K)`, `B[k]`, `*B`, `B->f`). Declaration and
+prototype lines are dropped first: the `*` in `char *v1;` is not a dereference.
+Offsets are BYTES: `B[k]` is multiplied by the element size the declaration
+gives `B`, and only where nothing gives one does an index keep an index key
+(`[3]`), a named field its name (`.next`).
+
+The pool is then **split by evidence**, because the two halves answer different
+questions. `*(T *)(B + K)` and `B->f` commit to a field; `B[k]` and `*B` do not
+— `char *s; s[0]; s[1]` is a string walk, and 1,123 of the 1,310 candidates in
+the recorded census have no other evidence. Each half is then measured against
+the ground truth for how many of its candidates kuna **already** types right:
+that is the match->miss channel a synthesis pass would spend, and on the
+field-committed half it is ~zero (1/80 at O0, 0/69 at O2), which is what makes
+struct synthesis a *quality* feature rather than a metric one.
 
 Usage (needs the decbench venv python)::
 
@@ -62,7 +72,7 @@ Usage (needs the decbench venv python)::
     ... --unstripped <twin>                             # non-decbench layout
     ... --option structsynth param                      # measure a flip
     ... --out /tmp/structscore.json                     # the only write
-    python3 -m scripts.decbench.structscore --selftest   # no decbench needed
+    python3 -m scripts.decbench.structscore --selftest   # decbench only for pairing
 
 The unstripped twin defaults to the decbench convention (``/stripped/`` ->
 ``/compiled/``). Nothing is written anywhere unless ``--out`` is given; the
@@ -572,75 +582,152 @@ def run_header(binary: Path, options, timeout: int) -> str:
 # pairing kuna's variables to the ground truth
 # --------------------------------------------------------------------------
 
-def pair_variables(variables: list[dict], gt_vars: list[dict]):
-    """GT index -> kuna variable index, by decbench's own three passes.
+class _Var:
+    """A stand-in for decbench's ``VariableInfo`` over one kuna JSON variable.
+
+    ``_effective_offset`` and ``_uncommitted_size`` read attributes, not dict
+    keys, and the fields map one-for-one onto the JSON surface the metric is
+    handed (``typesweep.build_result`` builds the same object).
+    """
+
+    def __init__(self, v: dict):
+        self.name = v.get("name") or ""
+        self.type = v.get("type") or ""
+        self.size = v.get("size")
+        self.stack_offset = v.get("stack_offset")
+        self.arg_index = v.get("arg_index")
+        self.kind = v.get("kind")
+
+
+def effective_offsets(variables: list[dict]) -> list:
+    from decbench.metrics.type_match import _effective_offset
+    return [_effective_offset(_Var(v)) for v in variables]
+
+
+def binary_calibration_shift(payload: dict, gt_by_name: dict, addr2name: dict):
+    """decbench's binary-wide stack shift (`TypeMatchMetric._calibrate_binary_shift`).
+
+    The metric calibrates ONE additive shift over every function of the binary
+    and hands that to each function; the per-function shift overrides it only
+    where the binary-wide one aligns nothing and the per-function one aligns
+    something. Pairing on the per-function shift alone is a different pairing —
+    over the census corpus it moves 453 of 9,629 ground-truth variables — so it
+    is computed once per binary here and passed to `pair_variables`.
+    """
+    from decbench.metrics.type_match import _calibrate_shift_multi
+    pairs = []
+    for fn in payload.get("functions") or []:
+        gt_vars = gt_by_name.get(addr2name.get(int(fn.get("address") or -1)) or "")
+        if not gt_vars:
+            continue
+        gt = [o for gv in gt_vars for o in (gv.get("rbp_offset") or [])]
+        dec = [o for o in effective_offsets(fn.get("variables") or []) if o is not None]
+        if gt and dec:
+            pairs.append((gt, dec))
+    return _calibrate_shift_multi(pairs)
+
+
+def pair_variables(variables: list[dict], gt_vars: list[dict], binary_shift=None):
+    """GT index -> kuna variable index, exactly as `_match_structured` pairs them.
 
     Pass 1 args by ABI position, pass 2 stack variables by calibrated offset,
-    pass 3 by exact name — `decbench.metrics.type_match._match_structured`'s
-    order, so a pairing here is the pairing the metric would have made.
+    pass 3 by exact name. Passes 2 and 3 go through decbench's `claim()`, which
+    takes the first unused candidate that TYPE-MATCHES the ground truth and only
+    then falls back to the first unused one — taking `free[0]` instead pairs a
+    different variable wherever an offset or a name carries more than one.
+
+    ``binary_shift`` is `binary_calibration_shift`'s value for the whole binary;
+    the per-function shift replaces it only under the metric's own rule (the
+    binary-wide shift aligns nothing and the per-function one aligns something).
+    Called without it, the pairing is the metric's only on binaries whose two
+    shifts agree.
     """
-    from decbench.metrics.type_match import _calibrate_shift, _effective_offset
-
-    class _V:  # _effective_offset reads attributes, not dict keys
-        def __init__(self, v):
-            self.name = v.get("name") or ""
-            self.stack_offset = v.get("stack_offset")
-            self.arg_index = v.get("arg_index")
-
-    offsets = [_effective_offset(_V(v)) for v in variables]
+    from decbench.metrics.type_match import (_SIZE_SCALARS, _calibrate_shift,
+                                             _uncommitted_size, normalize_type)
+    offsets = effective_offsets(variables)
+    decomp_offsets = [o for o in offsets if o is not None]
     gt_offsets = [o for gv in gt_vars for o in (gv.get("rbp_offset") or [])]
-    shift = _calibrate_shift(gt_offsets, [o for o in offsets if o is not None]) or 0
+    gt_off_set = set(gt_offsets)
+
+    def aligned(k) -> int:
+        if k is None or not decomp_offsets:
+            return 0
+        return len({d + k for d in decomp_offsets} & gt_off_set)
+
+    shift = binary_shift if binary_shift is not None else 0
+    func_shift = _calibrate_shift(gt_offsets, decomp_offsets)
+    if func_shift is not None and aligned(shift) == 0 and aligned(func_shift) > 0:
+        shift = func_shift
+    k = shift if shift is not None else 0
+
+    var_types = [normalize_type(v.get("type") or "") for v in variables]
+    var_unc = [_uncommitted_size(_Var(v)) for v in variables]
     by_arg, by_off, by_name = {}, {}, {}
     for i, v in enumerate(variables):
         if v.get("arg_index") is not None:
             by_arg.setdefault(v["arg_index"], i)
         if offsets[i] is not None:
-            by_off.setdefault(offsets[i] + shift, []).append(i)
+            by_off.setdefault(offsets[i] + k, []).append(i)
         if v.get("name"):
             by_name.setdefault(v["name"], []).append(i)
-    used: set[int] = set()
-    pairs: dict[int, int] = {}
+
+    def matches(gt_forms: set, i: int) -> bool:
+        if gt_forms & var_types[i]:
+            return True
+        size = var_unc[i]
+        return size is not None and bool(_SIZE_SCALARS.get(size, set()) & gt_forms)
+
+    used: set = set()
+    pairs: dict = {}
+
+    def claim(candidates: list, gt_forms: set):
+        avail = [i for i in candidates if i not in used]
+        if not avail:
+            return None
+        hit = next((i for i in avail if matches(gt_forms, i)), None)
+        i = hit if hit is not None else avail[0]
+        used.add(i)
+        return i
+
     for gi, gv in enumerate(gt_vars):
-        if gv.get("is_arg") and gv.get("arg_index") is not None:
-            i = by_arg.get(gv["arg_index"])
-            if i is not None and i not in used:
-                used.add(i)
-                pairs[gi] = i
+        if not gv.get("is_arg") or gv.get("arg_index") is None:
+            continue
+        i = by_arg.get(gv["arg_index"])
+        if i is None or i in used:
+            continue
+        used.add(i)
+        pairs[gi] = i
     for gi, gv in enumerate(gt_vars):
         if gi in pairs:
             continue
+        candidates: list = []
         for off in gv.get("rbp_offset") or []:
-            free = [i for i in by_off.get(off, []) if i not in used]
-            if free:
-                used.add(free[0])
-                pairs[gi] = free[0]
-                break
+            candidates.extend(by_off.get(off, []))
+        i = claim(candidates, set(gv.get("type") or []))
+        if i is not None:
+            pairs[gi] = i
     for gi, gv in enumerate(gt_vars):
         if gi in pairs or not gv.get("name"):
             continue
-        free = [i for i in by_name.get(gv["name"], []) if i not in used]
-        if free:
-            used.add(free[0])
-            pairs[gi] = free[0]
+        i = claim(by_name.get(gv["name"], []), set(gv.get("type") or []))
+        if i is not None:
+            pairs[gi] = i
     return pairs
 
 
 def gt_matches_kuna(pred_type: str, pred_size, gt_forms: list[str]) -> bool:
-    """decbench's own match rule, including the width-only free pass."""
+    """decbench's `_matches`, including the width-only free pass.
+
+    ``gt_forms`` are decbench's ground-truth forms, which
+    `extract_ground_truth_types` has already run through `normalize_type` — they
+    are used exactly as the metric uses them, unnormalized a second time.
+    """
     from decbench.metrics.type_match import (_SIZE_SCALARS, _uncommitted_size,
                                              normalize_type)
-
-    class _V:
-        def __init__(self, t, s):
-            self.type = t
-            self.size = s
-
-    forms: set[str] = set()
-    for form in gt_forms or []:
-        forms |= normalize_type(form)
+    forms = set(gt_forms or [])
     if normalize_type(pred_type) & forms:
         return True
-    size = _uncommitted_size(_V(pred_type, pred_size))
+    size = _uncommitted_size(_Var({"type": pred_type, "size": pred_size}))
     return size is not None and bool(_SIZE_SCALARS.get(size, set()) & forms)
 
 
@@ -649,7 +736,8 @@ def gt_matches_kuna(pred_type: str, pred_size, gt_forms: list[str]) -> bool:
 # --------------------------------------------------------------------------
 
 def measure_trex(payload: dict, gt_by_name: dict, addr2name: dict,
-                 strict_defined: bool, signs_by_name: dict | None = None) -> dict:
+                 strict_defined: bool, signs_by_name: dict | None = None,
+                 binary_shift=None) -> dict:
     """The Fig. 6 mean, plus the sign-free 0-5 mean the sign step cannot move.
 
     ``mean`` is the full 0-6 score with the ground-truth signedness read from
@@ -670,7 +758,7 @@ def measure_trex(payload: dict, gt_by_name: dict, addr2name: dict,
             continue
         signs = signs_by_name.get(name or "") or {}
         variables = fn.get("variables") or []
-        pairs = pair_variables(variables, gt_vars)
+        pairs = pair_variables(variables, gt_vars, binary_shift)
         for gi, gv in enumerate(gt_vars):
             gt = gt_parse_forms(gv.get("type") or [])
             i = pairs.get(gi)
@@ -769,11 +857,16 @@ def measure_layout(payload: dict, header: str, functions: dict) -> dict:
     }
 
 
-DEREF_PATTERNS = (
-    re.compile(r"\*\s*\(\s*[\w\s*]+\*\s*\)\s*\(\s*(?P<base>[A-Za-z_]\w*)\s*\+\s*"
-               r"(?P<off>0x[0-9a-fA-F]+|\d+)\s*\)"),
-    re.compile(r"(?P<base>[A-Za-z_]\w*)\s*\[\s*(?P<off>0x[0-9a-fA-F]+|\d+)\s*\]"),
-)
+# An access whose offset is a byte offset the code itself wrote down: a cast
+# dereference at a constant displacement, either sign. This is the evidence that
+# says "fields", because nothing about an array produces it.
+OFFSET_DEREF = re.compile(
+    r"\*\s*\(\s*[\w\s*]+\*\s*\)\s*\(\s*(?P<base>[A-Za-z_]\w*)\s*"
+    r"(?P<sign>[-+])\s*(?P<off>0x[0-9a-fA-F]+|\d+)\s*\)")
+# An access whose offset is an ELEMENT index. `B[k]` on a `char *` is what every
+# string walk looks like, so on its own it is not evidence of a struct.
+INDEX_DEREF = re.compile(
+    r"(?P<base>[A-Za-z_]\w*)\s*\[\s*(?P<off>0x[0-9a-fA-F]+|\d+)\s*\]")
 ZERO_DEREF = re.compile(r"\*\s*\(\s*[\w\s*]+\*\s*\)\s*(?P<base>[A-Za-z_]\w*)\b|"
                         r"\*(?P<base2>[A-Za-z_]\w*)\b")
 ARROW_FIELD = re.compile(r"(?P<base>[A-Za-z_]\w*)\s*->\s*(?P<field>\w+)")
@@ -782,16 +875,76 @@ ARROW_FIELD = re.compile(r"(?P<base>[A-Za-z_]\w*)\s*->\s*(?P<field>\w+)")
 OFFSET_FIELD = re.compile(r"^(?:field|_pad|off)?_?(0x[0-9a-fA-F]+|\d+)$")
 # A declaration (`char *v1;`) and a prototype (`void f(struct_0 *a0)`) both
 # carry a `*` that is not a dereference. Neither is an access, so neither may
-# create the offset-0 access that turns a one-offset base into a candidate.
+# create the offset-0 access that turns a one-offset base into a candidate --
+# but both do say what a base points AT, which is what sizes `B[k]`.
 DECL_LINE = re.compile(
     r"^\s*(?!return\b|goto\b|break\b|continue\b|else\b|do\b|case\b|default\b)"
     r"[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*\s*\**\s*"
     r"[A-Za-z_]\w*\s*(?:\[\s*\d*\s*\])?\s*;\s*$")
+DECLARATOR = re.compile(
+    r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s*(?P<stars>\**)\s*"
+    r"(?P<name>[A-Za-z_]\w*)\s*(?P<arr>\[\s*(?:\d+|0x[0-9a-fA-F]+)?\s*\])?\s*(?=[;,)])")
+# kuna spells a file-scope datum `dat_<hex>`; it is an identifier like any other
+# and is counted as a base, but it is never on the `--json` variable surface.
+GLOBAL_NAME = re.compile(r"^dat_[0-9a-fA-F]+$")
+WIDTH_SUFFIX = re.compile(r"^(?:undefined|xunknown|unknown|int|uint|float)(\d+)$")
 
 
-def _access_key(text: str) -> str:
-    """A constant offset -> ``0x10``; anything else is keyed by its own name."""
-    return f"{int(text, 0):#x}"
+def type_width(spelling: str) -> int | None:
+    """Bytes of one value of this type, or None where the table cannot say.
+
+    Covers the primitives and the width-only spellings (`undefined8`), which is
+    everything an element size can be read off; a named composite cannot be
+    sized from its name and returns None.
+    """
+    base = " ".join(QUALIFIERS.sub(" ", spelling or "").split())
+    if base in PRIMITIVES:
+        return PRIMITIVES[base][1] or None
+    m = WIDTH_SUFFIX.match(base)
+    return int(m.group(1)) // 8 if m and int(m.group(1)) >= 8 else None
+
+
+def declared_element_sizes(chunk: str) -> dict:
+    """base -> element size in bytes, from the prototype and the declarations.
+
+    `B[k]` is an index, not a byte offset, and the two only become comparable
+    through the size of what `B` points at: a pointer-to-pointer steps by a
+    pointer, a pointer (or an array) by its element type. The prototype carries
+    the parameters and the declaration lines the locals; a global has neither,
+    so it keeps its index keys.
+    """
+    lines = [l.split("//")[0] for l in chunk.split("\n")[1:]]
+    brace = next((i for i, l in enumerate(lines) if l.strip() == "{"), 0)
+    pieces = lines[:brace] + [l for l in lines[brace + 1:] if DECL_LINE.match(l)]
+    sizes: dict = {}
+    for piece in pieces:
+        for m in DECLARATOR.finditer(piece):
+            stars = m.group("stars")
+            if not stars and not m.group("arr"):
+                continue          # a scalar is not indexable
+            size = POINTER_SIZE if len(stars) > 1 else type_width(m.group("type"))
+            if size:
+                sizes.setdefault(m.group("name"), size)
+    return sizes
+
+
+def _access_key(text: str, sign: str = "+") -> str:
+    """A constant byte offset -> ``0x10`` / ``-0x10``; keys are strings."""
+    value = int(text, 0) * (-1 if sign == "-" else 1)
+    return f"-{-value:#x}" if value < 0 else f"{value:#x}"
+
+
+def _key_order(key: str) -> tuple:
+    """Byte offsets first (by value), then index keys, then field names.
+
+    Sorting the keys as plain strings put ``0x28`` before ``0x4``; the order is
+    cosmetic but it is what a reader of the JSON sees.
+    """
+    if key.startswith("["):
+        return (1, int(key[1:-1]), key)
+    if key.startswith("."):
+        return (2, 0, key)
+    return (0, int(key, 16), key)
 
 
 def census_body(chunk: str) -> str:
@@ -807,88 +960,122 @@ def census_body(chunk: str) -> str:
 
 
 def census_function(chunk: str) -> dict:
-    """Bases accessed at >= 2 distinct offsets/fields in one function.
+    """Bases accessed at >= 2 distinct offsets in one function, by evidence kind.
 
-    An access is a constant-offset dereference (``*(T *)(B + K)``, ``B[k]``,
-    ``*B``) keyed by that offset, or an arrow field (``B->f``) keyed by its
-    offset when the name encodes one (``field_0x28``) and by the field name
-    otherwise. Keys are strings so the two kinds never collide and the result
-    does not depend on PYTHONHASHSEED.
+    Every access is keyed by a BYTE offset where the function says what the base
+    points at: `*(T *)(B + K)` and `B->field_0xNN` write the offset down, and
+    `B[k]` is multiplied by the element size from `B`'s declaration (`B[3]` on a
+    `char **` is `0x18`). Where nothing says — a global, a pointer to a named
+    composite — an index access keeps an index key (``[3]``) and a named field
+    its own name (``.next``), so the two unit systems never share a key space.
+
+    ``offset_or_field`` marks the bases with at least one access that commits to
+    a field: a cast dereference at a constant displacement or an arrow. A base
+    seen only through `B[k]` and `*B` is an array walk as much as a struct, and
+    the two pools answer completely different questions — see the census section
+    of `docs/decbench/typecampaign/baseline.md`.
     """
     body = census_body(chunk)
-    offsets: dict[str, set[str]] = {}
-    for pattern in DEREF_PATTERNS:
-        for m in pattern.finditer(body):
-            offsets.setdefault(m.group("base"), set()).add(_access_key(m.group("off")))
+    sizes = declared_element_sizes(chunk)
+    keys: dict = {}
+    committed: set = set()
+    for m in OFFSET_DEREF.finditer(body):
+        base = m.group("base")
+        keys.setdefault(base, set()).add(_access_key(m.group("off"), m.group("sign")))
+        committed.add(base)
+    for m in INDEX_DEREF.finditer(body):
+        base = m.group("base")
+        size = sizes.get(base)
+        index = int(m.group("off"), 0)
+        keys.setdefault(base, set()).add(
+            _access_key(str(index * size)) if size else f"[{index}]")
     for m in ZERO_DEREF.finditer(body):
         base = m.group("base") or m.group("base2")
         if base:
-            offsets.setdefault(base, set()).add("0x0")
+            keys.setdefault(base, set()).add("0x0")
     for m in ARROW_FIELD.finditer(body):
+        base = m.group("base")
         named = OFFSET_FIELD.match(m.group("field"))
-        key = _access_key(named.group(1)) if named else f".{m.group('field')}"
-        offsets.setdefault(m.group("base"), set()).add(key)
+        keys.setdefault(base, set()).add(
+            _access_key(named.group(1)) if named else f".{m.group('field')}")
+        committed.add(base)
     addr = re.search(r"@ (0x[0-9a-fA-F]+)", chunk.split("\n")[0].strip())
     return {
         "address": int(addr.group(1), 16) if addr else None,
-        "candidates": {b: sorted(o) for b, o in offsets.items() if len(o) >= 2},
+        "candidates": {b: {"offsets": sorted(o, key=_key_order),
+                           "offset_or_field": b in committed}
+                       for b, o in keys.items() if len(o) >= 2},
     }
 
 
-def measure_census(text: str, payload: dict, gt_by_name: dict, addr2name: dict) -> dict:
+def _channel() -> dict:
+    return {"functions_with_a_candidate": 0, "candidates": 0, "candidate_is_an_arg": 0, "candidate_is_a_named_local": 0,
+            "candidate_is_a_global": 0, "candidate_not_on_the_json_surface": 0,
+            "candidates_paired_with_ground_truth": 0,
+            "candidates_kuna_already_types_correctly": 0,
+            "candidates_whose_truth_is_a_struct_pointer": 0}
+
+
+def measure_census(text: str, payload: dict, gt_by_name: dict, addr2name: dict,
+                   binary_shift=None) -> dict:
+    """The candidate pool, split by what the evidence for it was.
+
+    ``offset_or_field`` is the struct-shaped pool (at least one `*(T *)(B + K)`
+    or `B->f`); ``index_only`` is everything whose only evidence is `B[k]` / `*B`
+    — an array or string walk reads exactly the same. ``all`` is the union, and
+    the match->miss channel is only meaningful per pool.
+    """
     by_addr = {int(f.get("address") or -1): f for f in payload.get("functions") or []}
-    functions = candidate_functions = candidates = 0
-    args = stack = unmapped = 0
-    matched = already_right = gt_is_struct_ptr = 0
+    channels = {"offset_or_field": _channel(), "index_only": _channel(), "all": _channel()}
+    functions = candidate_functions = 0
     for chunk in text.split("// Function: ")[1:]:
         functions += 1
         row = census_function(chunk)
         if not row["candidates"]:
             continue
         candidate_functions += 1
-        candidates += len(row["candidates"])
+        channels["all"]["functions_with_a_candidate"] += 1
+        for kind in {"offset_or_field" if ev["offset_or_field"] else "index_only"
+                     for ev in row["candidates"].values()}:
+            channels[kind]["functions_with_a_candidate"] += 1
         fn = by_addr.get(row["address"] or -1)
-        if not fn:
-            unmapped += len(row["candidates"])
-            continue
-        variables = fn.get("variables") or []
+        variables = (fn or {}).get("variables") or []
         gt_vars = gt_by_name.get(addr2name.get(row["address"] or -1) or "") or []
-        pairs = pair_variables(variables, gt_vars) if gt_vars else {}
+        pairs = pair_variables(variables, gt_vars, binary_shift) if (fn and gt_vars) else {}
         back = {i: gi for gi, i in pairs.items()}
-        for base in row["candidates"]:
+        for base, ev in row["candidates"].items():
+            buckets = [channels["all"],
+                       channels["offset_or_field" if ev["offset_or_field"] else "index_only"]]
             index = None
-            if re.fullmatch(r"a\d+", base):
-                want = int(base[1:])
+            if GLOBAL_NAME.match(base):
+                kind = "candidate_is_a_global"
+            elif re.fullmatch(r"a\d+", base):
                 index = next((i for i, v in enumerate(variables)
-                              if v.get("arg_index") == want), None)
-                args += 1
+                              if v.get("arg_index") == int(base[1:])), None)
+                kind = "candidate_is_an_arg"
             else:
                 index = next((i for i, v in enumerate(variables)
                               if v.get("name") == base), None)
-                if index is None:
-                    unmapped += 1
-                else:
-                    stack += 1
-            if index is None or index not in back:
-                continue
-            gv = gt_vars[back[index]]
-            matched += 1
-            if gt_matches_kuna(variables[index].get("type"), variables[index].get("size"),
-                               gv.get("type") or []):
-                already_right += 1
-            gt = gt_parse_forms(gv.get("type") or [])
-            if gt["ptr"] >= 1 and gt["kind"] == "struct":
-                gt_is_struct_ptr += 1
+                kind = "candidate_is_a_named_local"
+            paired = index is not None and index in back
+            gv = gt_vars[back[index]] if paired else None
+            already = paired and gt_matches_kuna(
+                variables[index].get("type"), variables[index].get("size"),
+                gv.get("type") or [])
+            gt = gt_parse_forms(gv.get("type") or []) if paired else None
+            struct_ptr = bool(gt and gt["ptr"] >= 1 and gt["kind"] == "struct")
+            for acc in buckets:
+                acc["candidates"] += 1
+                acc[kind] += 1
+                acc["candidate_not_on_the_json_surface"] += int(index is None)
+                acc["candidates_paired_with_ground_truth"] += int(paired)
+                acc["candidates_kuna_already_types_correctly"] += int(already)
+                acc["candidates_whose_truth_is_a_struct_pointer"] += int(struct_ptr)
     return {
         "functions": functions,
         "functions_with_a_candidate": candidate_functions,
-        "candidate_bases": candidates,
-        "candidate_is_an_arg": args,
-        "candidate_is_a_named_local": stack,
-        "candidate_not_on_the_json_surface": unmapped,
-        "candidates_paired_with_ground_truth": matched,
-        "candidates_kuna_already_types_correctly": already_right,
-        "candidates_whose_truth_is_a_struct_pointer": gt_is_struct_ptr,
+        "candidate_bases": channels["all"]["candidates"],
+        "channels": channels,
     }
 
 
@@ -914,17 +1101,20 @@ def measure(binary: Path, unstripped: Path, modes: set, options, timeout: int,
     }
     payload = run_json(binary, options, timeout)
     out["kuna_functions"] = len(payload.get("functions") or [])
+    # One shift for the whole binary, as `compute_for_binary` does it.
+    shift = binary_calibration_shift(payload, gt_by_name, addr2name)
+    out["calibration_shift"] = shift
     if "trex" in modes:
         signs_by_name = {info["name"]: info.get("var_signs") or {}
                          for info in functions.values()}
         out["trex"] = measure_trex(payload, gt_by_name, addr2name, strict_defined,
-                                   signs_by_name)
+                                   signs_by_name, shift)
     if "layout" in modes:
         out["layout"] = measure_layout(payload, run_header(binary, options, timeout),
                                        functions)
     if "census" in modes:
         out["census"] = measure_census(run_text(binary, options, timeout), payload,
-                                       gt_by_name, addr2name)
+                                       gt_by_name, addr2name, shift)
     return out
 
 
@@ -959,20 +1149,28 @@ def report(rows: list[dict]) -> str:
                          f"{l['nesting']['ground_truth']} | {l['nesting']['f1']} |")
         lines.append("")
     if any("census" in r for r in rows):
-        lines += ["## struct-candidate census (>= 2 distinct offsets/fields on one base)", "",
-                  "| binary | fns | fns with a candidate | candidates | paired to GT | "
-                  "already right | GT is struct* |", "|---|---|---|---|---|---|---|"]
-        for r in rows:
-            c = r.get("census")
-            if not c:
-                continue
-            lines.append(
-                f"| {Path(r['binary']).name} | {c['functions']} | "
-                f"{c['functions_with_a_candidate']} | {c['candidate_bases']} | "
-                f"{c['candidates_paired_with_ground_truth']} | "
-                f"{c['candidates_kuna_already_types_correctly']} | "
-                f"{c['candidates_whose_truth_is_a_struct_pointer']} |")
-        lines.append("")
+        for channel, title in (
+                ("offset_or_field",
+                 "## struct-candidate census — OFFSET/FIELD evidence "
+                 "(`*(T *)(B + K)` or `B->f`)"),
+                ("index_only",
+                 "## struct-candidate census — INDEX-ONLY evidence "
+                 "(`B[k]` / `*B`; an array walk reads the same)")):
+            lines += [title, "",
+                      "| binary | fns | fns with a candidate | candidates | paired to GT | "
+                      "already right | GT is struct* |", "|---|---|---|---|---|---|---|"]
+            for r in rows:
+                c = r.get("census")
+                if not c:
+                    continue
+                ch = c["channels"][channel]
+                lines.append(
+                    f"| {Path(r['binary']).name} | {c['functions']} | "
+                    f"{ch['functions_with_a_candidate']} | {ch['candidates']} | "
+                    f"{ch['candidates_paired_with_ground_truth']} | "
+                    f"{ch['candidates_kuna_already_types_correctly']} | "
+                    f"{ch['candidates_whose_truth_is_a_struct_pointer']} |")
+            lines.append("")
     return "\n".join(lines) + "\n"
 
 
@@ -1007,6 +1205,18 @@ long sub_4000(long a0)
 }
 """
 
+SELFTEST_INDEX = """// Function: sub_4600 @ 0x4600
+int sub_4600(char *a0,unsigned int *a1,long a2)
+{
+  int v1;
+  v1 = a0[0] + a0[1];
+  v1 = v1 + a1[1] + a1[10];
+  v1 = v1 + *(int *)(a2 - 8) + *(int *)(a2 + 8);
+  v1 = v1 + dat_1000[1] + dat_1000[3];
+  return v1;
+}
+"""
+
 SELFTEST_ARROW = """// Function: sub_4300 @ 0x4300
 void sub_4300(struct_0 *a0)
 {
@@ -1020,6 +1230,40 @@ def _score(spelling: str, gt: dict, strict=False, gt_sign=None) -> int:
     return trex_score(trex_predicates(parse_type(spelling), gt, strict, gt_sign)[0])
 
 
+def pairing_checks() -> list:
+    """The pairing checks — skipped where decbench is not importable."""
+    try:
+        import decbench.metrics.type_match  # noqa: F401
+    except ImportError:
+        print("[skip] pairing checks (decbench not importable)")
+        return []
+    # Two variables share an offset and only the second one type-matches; the
+    # metric's claim() takes that one, `free[0]` would take the first.
+    tied = [{"name": "v1", "type": "int", "size": 4, "stack_offset": -0x10},
+            {"name": "v2", "type": "char *", "size": 8, "stack_offset": -0x10}]
+    tied_gt = [{"name": "s", "type": ["char *", "char*"], "rbp_offset": [-0x10],
+                "size": 8, "is_arg": False, "arg_index": None}]
+    # Per-function calibration prefers 8 (it aligns two offsets); the binary-wide
+    # 0 aligns one, which under the metric's rule is enough to keep it.
+    shifted = [{"name": "v1", "type": "int", "size": 4, "stack_offset": -0x10},
+               {"name": "v2", "type": "int", "size": 4, "stack_offset": -0x20}]
+    shifted_gt = [{"name": "at8", "type": ["int"], "rbp_offset": [-0x8], "size": 4,
+                   "is_arg": False, "arg_index": None},
+                  {"name": "at24", "type": ["int"], "rbp_offset": [-0x18], "size": 4,
+                   "is_arg": False, "arg_index": None},
+                  {"name": "at16", "type": ["int"], "rbp_offset": [-0x10], "size": 4,
+                   "is_arg": False, "arg_index": None}]
+    return [
+        ("claim() prefers the type-matching candidate over the first free one",
+         pair_variables(tied, tied_gt) == {0: 1}),
+        ("a binary-wide shift that aligns anything is kept",
+         pair_variables(shifted, shifted_gt, 0) == {2: 0}
+         and pair_variables(shifted, shifted_gt) == {2: 0}),
+        ("the per-function shift overrides a binary-wide shift that aligns nothing",
+         pair_variables(shifted, shifted_gt, 100) == {0: 0, 1: 1}),
+    ]
+
+
 def selftest() -> int:
     gt_u64 = {"ptr": 0, "base": "unsigned long", "kind": "primitive",
               "unsigned": True, "size": 8}
@@ -1031,6 +1275,7 @@ def selftest() -> int:
     gt_stripped = gt_parse_forms(["long int", "long long", "long unsigned int"])
     header = header_layouts(SELFTEST_HEADER)
     census = census_function(SELFTEST_TEXT.split("// Function: ")[1])
+    index_census = census_function(SELFTEST_INDEX.split("// Function: ")[1])["candidates"]
     checks = [
         # TRex Figure 6's own worked example: against an expected uint64_t the
         # types char*, struct{..}, double, int64_t, uint64_t score 1,3,4,5,6.
@@ -1067,15 +1312,24 @@ def selftest() -> int:
         ("a struct-pointer member records its pointee",
          header["nest_1"]["fields"][0]["pointee"] == "struct_0"),
         ("a base with 3 distinct offsets is a candidate",
-         census["candidates"].get("a0") == ["0x0", "0x8", "0xc"]),
+         census["candidates"].get("a0")
+         == {"offsets": ["0x0", "0x8", "0xc"], "offset_or_field": True}),
         ("a declaration's star is not a dereference",
          census_function(SELFTEST_DECL.split("// Function: ")[1])["candidates"] == {}),
         ("an offset-named field keeps its own offset, a plain one its name",
          census_function(SELFTEST_ARROW.split("// Function: ")[1])["candidates"]
-         == {"a0": [".next", "0x28"]}),
+         == {"a0": {"offsets": ["0x28", ".next"], "offset_or_field": True}}),
+        ("`B[k]` alone is index-only evidence, never offset/field",
+         index_census["a0"] == {"offsets": ["0x0", "0x1"], "offset_or_field": False}),
+        ("an index is scaled to a byte offset by the declared element size",
+         index_census["a1"] == {"offsets": ["0x4", "0x28"], "offset_or_field": False}),
+        ("an unsized base keeps index keys, so the two units never collide",
+         index_census["dat_1000"] == {"offsets": ["[1]", "[3]"], "offset_or_field": False}),
+        ("a negative constant displacement is an access too",
+         index_census["a2"] == {"offsets": ["-0x8", "0x8"], "offset_or_field": True}),
         ("f(p) is p1*(1+p2*(1+...))", trex_score([True] * 6) == 6
          and trex_score([True, True, False, True, True, True]) == 2),
-    ]
+    ] + pairing_checks()
     for name, ok in checks:
         print(f"[{'ok ' if ok else 'FAIL'}] {name}")
     bad = [n for n, ok in checks if not ok]

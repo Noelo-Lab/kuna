@@ -148,9 +148,12 @@ draft PR). Plus:
      `~/.virtualenvs/decbench/bin/python -m scripts.decbench.structscore <stripped>… --all`
      reports layout-F1 and nesting-F1 against the unstripped twin's DWARF (parameters
      only, RecStruct §4.1 normalization), the TRex Fig. 6 prioritized score with its
-     per-step pass rates, and the struct-candidate census — including how many
-     candidates kuna **already** types correctly, which is the match→miss channel the
-     pass would spend.
+     per-step pass rates, and the struct-candidate census. The census is split by
+     what the evidence was — a base the code reads at a written-down byte offset
+     (`*(T *)(B + K)`, `B->f`) against one seen only through `B[k]`, which an array
+     walk produces just as readily — and the match→miss channel (candidates kuna
+     **already** types correctly, and would spend) is only meaningful per pool: it is
+     ~1% on the field pool and ~15% on the index pool.
    - **A claim about variable *count* is made with `varcensus`**, not by eye:
      `python3 -m scripts.pipeline.varcensus <binary> --baseline before.json` counts
      declarations, single-def/single-read temporaries, `[N]` blobs and the declared-type
@@ -362,7 +365,10 @@ Four things to know before quoting any of them:
 * **`typescore`'s one invalidating control is `identical_variables_scored_differently`**,
   which must be 0: two arms that handed the metric byte-identical `variables[]` cannot
   legitimately score differently. `retyped_functions` next to it is the count the option
-  actually changed — the expected signal, not a warning.
+  actually changed — the expected signal, not a warning. Its cached rows carry the kuna
+  binary (by content), the decbench commit and both arm values; a cache that disagrees
+  with the run is dropped instead of re-reported, and every field of the block —
+  including which projects it covers — is derived from the rows summarized.
 * **`structscore` reports 0 layout-F1 today by construction** — kuna synthesizes no
   structs, so the number to record before any struct work is the *denominator*: how many
   pointer-to-struct parameters and GT fields exist to be recovered at all.
