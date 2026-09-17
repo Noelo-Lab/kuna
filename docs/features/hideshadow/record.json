@@ -37,7 +37,8 @@
       "O2-noinline diffutils diff3"
     ],
     "hunk_classification": {
-      "copy assignment removed and value provably identical": 18,
+      "copy assignment removed and value provably identical": 15,
+      "diff shape": "corpus-diffs.txt is 15 '-' lines and 3 '+' lines: 12 duplicate assignment statements deleted outright, 3 lines rewritten to drop a duplicated `v4 = a0,` term from inside a comma expression. Net -12 lines.",
       "variable count delta": 0,
       "anything else (BUG)": 0
     },
@@ -61,11 +62,14 @@
       "kuna decompile coreutils/ls O2 sub_7ff0 (the witness function), median of 15": "144.08 -> 140.00 ms (-2.83%)",
       "kuna decompile-all coreutils/fmt O2, min of 11 interleaved": "4548.8 -> 4579.2 ms (+0.67%)",
       "kuna decompile-all coreutils/ls O2, min of 9 interleaved": "13892 -> 13906 ms (+0.11%)",
-      "CONTROL kuna decompile-all coreutils/ls O2 off-vs-off, min of 9 interleaved": "13984 -> 13794 ms (-1.36%), i.e. the noise floor on this box is about +/-1.4%"
+      "CONTROL kuna decompile-all coreutils/ls O2 off-vs-off, min of 9 interleaved": "13984 -> 13794 ms (-1.36%), i.e. the noise floor on this box is about +/-1.4%",
+      "kuna decompile-all coreutils/ls O2 --addr 0x7ff0 (the witness function), interleaved off/on/off-control, min of 15": "409.0 -> 415.8 ms (+1.66%), control off-vs-off 408.2 ms (-0.20%); medians 429.6 -> 431.9 (+0.54%), control +0.09%",
+      "kuna decompile-all openssh sshd O2 --addr 0x17630 (a heavy function, 6.5 s), interleaved off/on/off-control, min of 15": "6592.4 -> 6633.5 ms (+0.62%), control off-vs-off 6495.6 ms (-1.47%); medians 7457.5 -> 7190.4 (-3.58%), control -1.27%"
     },
-    "worst_delta_pct": 0.67,
+    "worst_delta_pct": 1.66,
     "within_budget": true,
-    "note": "an earlier ls O2 pair measured +4.63% while the box was at load 30 with a concurrent workspace test run and a 444-slice sweep; re-measured against its own off-vs-off control it is +0.11%"
+    "note": "an earlier ls O2 pair measured +4.63% while the box was at load 30 with a concurrent workspace test run and a 444-slice sweep; re-measured against its own off-vs-off control it is +0.11%",
+    "remeasure_note": "re-measured at review time with off/on/off interleaved in one loop, min of 15 per arm, on a box at load 33 falling to 18 (docs/features/hideshadow/speed-remeasure.txt): the heavy sshd function reads +0.62% against a -1.47% off-vs-off control, i.e. inside the drift the control itself shows. Whole-binary readings on this box stay noise-dominated at this level; the option's marginal work is one cover refresh plus a walk of the written def-set, and it shows up below the noise floor on every surface measured."
   },
   "benchmark": {
     "typesweep_small": {
@@ -81,8 +85,9 @@
       "method": "kuna decompile-all --json off vs on on all 10 binaries whose C changes, comparing every function's variables[] field-by-field",
       "functions_with_any_variables_difference": "8 of 3946",
       "fields_that_differ": "line_numbers only (shifted by one, because a line was deleted)",
-      "fields_that_are_identical": "name, type, size, kind, arg_index, stack_offset, addresses -- i.e. every field type_match scores",
-      "conclusion": "structurally neutral on type_match by construction; the measured sweep agrees"
+      "fields_that_are_identical": "name, type, size, kind, arg_index, stack_offset -- i.e. every field type_match scores",
+      "conclusion": "structurally neutral on type_match by construction; the measured sweep agrees",
+      "addresses_field": "not identical in general: the hidden COPY's instruction address leaves the variable's `addresses` list. Measured on a binary outside the 10 (openssh-portable O2 sshd, 14,006 variables compared): 2 variables differ -- fn 0x17630 v30 loses 0x1a106, fn 0x46cb0 v4 loses 0x46d31 and 0x46e87. No scorer reads the field (`grep -rn addresses scripts/decbench/*.py` finds no read; scripts/pipeline/varcensus.py only tests it for non-emptiness, and no list is emptied), so type_match is unaffected."
     },
     "typesweep_changed_projects": {
       "slices": "276 (coreutils + shadow at O2 and O2-noinline -- every project whose C this option changes at those levels)",
@@ -104,12 +109,14 @@
     "make rust-test": "green (RUST_TEST_RC=0, 415 `test result: ok` lines, 0 FAILED) on the rebased tree dfaa3e55"
   },
   "catalog_counts": {
-    "settables": "213 -> 214",
-    "tiers": "core 68 / transform 82 -> 83 / analysis 63",
-    "catalog_json_rows": "212 -> 213",
-    "stage corpus files": "302 -> 303",
-    "live_value readers": "87 -> 88 (live_field = hide_shadow)",
-    "bytecompat_fixture": "recaptured from the fresh decomp_dbg build"
+    "rebase": "re-derived on main 75a7f6b0 (#661 structdefs), which had already moved the same five sites; every number below comes from `scripts.repipe.counters --rederive` on a freshly built tree, not arithmetic",
+    "settables": "214 -> 215",
+    "tiers": "core 68 / transform 83 -> 84 / analysis 63",
+    "catalog_json_rows": "213 -> 214",
+    "stage corpus files": "303 -> 304 (221 tests/stages + 83 tests/datatests)",
+    "live_value readers": "87 -> 88 (live_field = hide_shadow; structdefs has none)",
+    "bytecompat_fixture": "recaptured from the fresh decomp_dbg build",
+    "baseline-stages": "re-recorded on the rebased tree: 1059 -> 1062, the three hideshadow assertions and nothing else"
   },
   "files": [
     "decompiler/crates/kuna-decomp/src/p6_variables/kuna_hideshadow.rs (new)",
@@ -123,7 +130,8 @@
     "decompiler/crates/kuna-decomp/phases.toml",
     "tests/stages/kuna-hideshadow.xml (new)",
     "docs/spec/06-variables-and-merge.md",
-    "docs/options.md"
+    "docs/options.md",
+    "docs/features/hideshadow/ (analysis.md, plan.md, record.json, corpus-classification.md, corpus-diffs.txt, speed-remeasure.txt)"
   ],
   "notes": "The action is already in universal_sched at its upstream slot (index 0252, immediately before copymarker), so list_action_decompile_oracle.txt does not move and no oracle is re-recorded."
 }

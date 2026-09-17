@@ -1026,7 +1026,7 @@ pub struct Architecture {
     pub mark_indirect_only: bool,
     /// (kuna) Run the upstream `ActionHideShadow` body, consolidating COPY
     /// chains that shadow one value (`hide_shadow`, option `hideshadow`,
-    /// default-off).
+    /// default-on).  See [`crate::p6_variables::kuna_hideshadow`].
     pub hide_shadow: bool,
     /// (kuna) Strip the glibc -fstack-protector canary epilogue
     /// (C++ `strip_stack_guard`).
@@ -2316,7 +2316,7 @@ impl Architecture {
             fold_call_returns: false,
             fold_call_ret_phi: false,
             mark_indirect_only: false,
-            hide_shadow: false, // (kuna) option hideshadow (default-off)
+            hide_shadow: false, // (kuna) option hideshadow; reset_defaults sets the shipped default (on)
             strip_stack_guard: false,
             strip_msvc_stack_guard: false,
             strip_security_check: false,

@@ -20,7 +20,11 @@ that writes either side.
 | O2-noinline diffutils diff3 | `v1 = a1;` and `v1 = v14;` removed, each an adjacent exact duplicate | copy removed, value provably identical |
 | O2 / O2-noinline shadow usermod | `dat_23568 = v20;` (O2) / `dat_23568 = v12;` (O2-noinline) removed, adjacent exact duplicate | copy removed, value provably identical |
 
-* copy assignment removed and value provably identical: **18 lines / 10 binaries**
+* copy assignment removed and value provably identical: **15 duplicate assignments /
+  10 binaries** — `corpus-diffs.txt` is 15 `-` lines and 3 `+` lines
+  (`grep -c '^-[^-]'` = 15, `grep -c '^+[^+]'` = 3): 12 statements deleted
+  outright, and 3 lines rewritten to drop a duplicated `v4 = a0,` term from
+  inside a comma expression. Net -12 lines.
 * variable count delta: **0** (`varcensus` `declarations` and `single_def_single_use`
   identical in both arms on ls O0, ls O2, touch O2, usermod O2-noinline)
 * anything else (a BUG hunk): **0**

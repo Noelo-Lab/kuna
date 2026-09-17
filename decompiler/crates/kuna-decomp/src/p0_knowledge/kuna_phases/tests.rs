@@ -900,7 +900,7 @@ fn option_values_live_value_present_for_88() {
     // 83 -> 85: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
     // 85 -> 86: +1 for `bytehonest` (live_field = byte_honest).
     // 86 -> 87: +1 for `argclobber` (live_field = arg_clobber, opt-in).
-    // 87 -> 88: +1 for `hideshadow` (live_field = hide_shadow, opt-in).
+    // 87 -> 88: +1 for `hideshadow` (live_field = hide_shadow, default-on).
     assert_eq!(with_live, 88);
 }
 

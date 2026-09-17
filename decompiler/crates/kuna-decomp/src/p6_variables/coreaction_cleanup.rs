@@ -1795,11 +1795,13 @@ impl Action for ActionMergeType {
 }
 
 // =============================================================================
-// ActionHideShadow (coreaction.hh:1005, coreaction.cc:5085)
+// ActionHideShadow (coreaction.hh:1004, coreaction.cc:4976)
 // =============================================================================
 
-/// Locate and mark all `CONCAT` stacks that "shadow" a HighVariable (C++
-/// `ActionHideShadow`, `coreaction.cc:5085`).
+/// Hide the shadow Varnodes of a HighVariable: an internal copy of another
+/// Varnode that the compiler produced but that is not a separate variable gets
+/// its defining op repointed, so the duplicate COPY statement does not print
+/// (C++ `ActionHideShadow`, `coreaction.cc:4976`).
 pub struct ActionHideShadow {
     base: ActionBase,
 }

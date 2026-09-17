@@ -1221,7 +1221,7 @@ pub struct ArchContext {
     /// `ActionMarkIndirectOnly`.
     pub mark_indirect_only: bool,
     /// (kuna) Consolidate redundant copies of one value in the merge phalanx
-    /// (option `hideshadow`, default-off).  Read by `ActionHideShadow`.
+    /// (option `hideshadow`, default-on).  Read by `ActionHideShadow`.
     pub hide_shadow: bool,
     /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
     /// `strip_stack_guard`, opt-in default-off).  Read by
@@ -1620,7 +1620,7 @@ impl ArchContext {
             fold_call_returns: false, // foldcallret (Architecture::reset_defaults sets the shipped default: on)
             fold_call_ret_phi: false, // foldcallretphi (default-off)
             mark_indirect_only: false, // indirectonly (opt-in default-off)
-            hide_shadow: false,       // hideshadow (default-off)
+            hide_shadow: false,       // hideshadow (Architecture::reset_defaults sets the shipped default: on)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)

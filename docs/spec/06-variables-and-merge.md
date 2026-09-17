@@ -418,8 +418,8 @@ contain the other's definition point *strictly interior* (`cover.rs
 (Cover::contain_varnode_def)` returning 1, not a boundary hit), so the value is
 demonstrably live and unclobbered where the copy is made to read it. Two copies
 on exclusive branches fail the second test and are left alone, which is the
-common case — over 444 stripped ELFs the Cover test declines far more pairs
-than it accepts. The Cover read is preceded by a
+common case — over an instrumented sweep of 40 binaries the Cover test accepted
+110 candidate pairs and declined 9,138. The Cover read is preceded by a
 `MergeContext::bank_update_cover` refresh because kuna's `vn_cover_ref` is a
 plain read where the C++ `Varnode::getCover` rebuilds a dirtied cover on the
 spot, and the previous iteration's `op_set_input` is exactly what dirties it.
