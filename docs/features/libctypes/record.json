@@ -1119,7 +1119,8 @@
      "median_delta_pct": -5.15
     }
    ],
-   "verdict": "flat. The largest minimum delta is +0.38% and the other two are negative; the work added is nine struct completions at load, once per program."
+   "verdict": "flat. The largest minimum delta is +0.38% and the other two are negative; the work added is nine struct completions at load, once per program.",
+   "measured_before_the_reserved_row_drop": "yes. Dropping stat::__pad0/__glibc_reserved and FILE::__pad5/_unused2 removes four field mints per program at load and can only subtract work, so the rows above stand as an upper bound. An independent min-of-N reproduced the shape: fmt +1.17% when the measurement is load-dominated, du whole-binary -1.36% at n=11."
   },
   "project_export": {
    "method": "kuna decompile-project <libctypes_glibc_x86_64> -o D --option libctypes off|opaque|glibc; cc -std=c99 -fsyntax-only over the generated .h and over the generated .c",

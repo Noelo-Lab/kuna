@@ -546,3 +546,8 @@ which is why the minimum is the number to read.
 | `fmt functions` (load only) | 145.8 ms | 145.8 ms | −0.04% | −5.15% |
 
 Flat. The work added is nine struct completions at load, once per program.
+These numbers were taken before the reserved rows were dropped; that change
+removes four field mints per program and can only subtract work, so they stand
+as an upper bound. An independent min-of-N on a different box run reproduced
+the same shape: `fmt` +1.17% when the measurement is load-dominated, `du`
+whole-binary −1.36% at n=11.
