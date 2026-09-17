@@ -26,7 +26,8 @@ use kuna_console::engine::{
     bootstrap_from_image, ConsoleProgram, EntrySelector, FunctionEntry, ObjectLocation,
 };
 use kuna_console::project::{
-    build_asm, build_c, build_header, build_readme, collect_dat_addrs, decompile_targets,
+    build_asm, build_c, build_header, build_readme, collect_dat_addrs,
+    decompile_export_targets, decompile_targets,
     FuncResult, FAST_WHOLE_BINARY_FN_BUDGET_SECONDS,
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
@@ -202,14 +203,7 @@ fn project(binary: &str, prog: &mut ConsoleProgram, display: &str) -> Result<Str
         return Err(format!("no functions discovered in {binary}"));
     }
 
-    let mut results =
-        decompile_targets(
-            prog,
-            targets,
-            /* no_vars= */ false,
-            /* want_proto= */ true,
-            /* want_provenance= */ false,
-        );
+    let mut results = decompile_export_targets(prog, targets);
     // Every artifact is address-ordered (the CLI's convention).
     results.sort_by(|a, b| a.address.cmp(&b.address).then_with(|| a.name.cmp(&b.name)));
 

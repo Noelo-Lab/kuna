@@ -1732,7 +1732,11 @@ pub struct TypeInfo {
     /// `typedef struct <n> <n>; /* opaque */` forward declaration for an
     /// incomplete one — the same line(s) the export's `.h` gives it.
     pub definition: String,
-    /// Size in bytes (`0` for an incomplete type).
+    /// The type's size in bytes as the factory holds it, which an incomplete
+    /// (opaque) type also has: a `libctypes` shell is created at its ABI size
+    /// and reports it (`FILE` is 216) even though no member is known, so a
+    /// consumer testing for an opaque shell reads `definition` — the
+    /// `/* opaque */` forward declaration — and never `size == 0`.
     pub size: i64,
 }
 

@@ -1391,13 +1391,30 @@ _pad<hexoff>[N];`. It is emitted as whole lines rather than tokens, before
 `begin_function`, because a type definition has no `PcodeOp` or `Varnode` for
 the markup back-end to bind to. A `kuna decompile-project` export therefore
 *suppresses* the preamble in its bodies
-(`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)`, keyed on
-the same `want_proto` that asks for the `.h` prototype): those bodies include a
-header that already carries every definition, and printing them again above each
-body would redefine them. The preamble is documentation rather than a
-translation unit — a `undefined1` padding member needs the export's recompile
-prelude to compile — which is the other half of why the definitions stay in the
-header on the surface that is meant to rebuild.
+(`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)`): those
+bodies include a header that already carries every definition, and printing them
+again above each body would redefine them. The suppression is keyed on a batch
+option that says exactly that — *this caller renders a header that defines these
+types* (`DecompileOptions::header_carries_types`, set by the export surfaces and
+by a `--jobs` worker serving one, which is the worker the export asks for the
+`.h` type block with `--jobs-types`). It is deliberately **not** keyed on
+`want_proto`: `kuna decompile-graph` asks for prototypes too, and its document
+is per-function C with no header artifact, so it keeps the preamble inside
+`codeC` exactly as `decompile-all` keeps it in `code`. The preamble is
+documentation rather than a translation unit — a `undefined1` padding member
+needs the export's recompile prelude to compile — which is the other half of why
+the definitions stay in the header on the surface that is meant to rebuild.
+
+**Two disclosed roughnesses.** A definition whose name is also a function name
+prints directly above that function's own definition: `typedef struct stat
+stat;` over `int stat(char *a0,stat *a1)` is not a translation unit a compiler
+accepts, and the export's `.h` says as much where it drops such a prototype
+(§9.7). The preamble does not apply that guard — it is documentation, and
+hiding the layout of `stat` from the one function that is about to use it costs
+more than the collision does. And the over-inclusion the Varnode-rooted walk
+buys (above) is real at the top of the range: a function whose only contact with
+`FILE` is passing `stdout` to a callee gets the whole `struct _IO_FILE` body
+above it, which on an unstripped `-O2` corpus is roughly one preamble in seven.
 
 **The preamble is C, and says so by declining.** The renderer builds the
 project export's `.h`, so its output is C whatever the active output language

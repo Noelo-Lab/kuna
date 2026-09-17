@@ -166,9 +166,14 @@ fn visit(ct: &Rc<Datatype>, seen: &mut HashSet<*const Datatype>, order: &mut Vec
 /// rendered text already resolves that (`render_type_definitions` prints one
 /// forward declaration and one body, and drops the `/* opaque */` note when a
 /// complete definition exists somewhere).  A JSON consumer has no such rule to
-/// apply, and two records for `_IO_FILE` reporting size 0 and size 216 is a
-/// contradiction, so the complete definition wins and a repeat of an
-/// already-reported name is dropped.  Order is otherwise preserved.
+/// apply, and one name carrying both a laid-out body and an opaque forward
+/// declaration is a contradiction, so the complete definition wins and a repeat
+/// of an already-reported name is dropped.  Order is otherwise preserved.
+///
+/// Completeness, not size, is the test: an incomplete type still reports the
+/// size it was created at (a `libctypes` `FILE` shell is 216 bytes with no
+/// member known), so the two records would agree on `size` and disagree on
+/// everything else.
 pub fn dedup_by_name(types: &[Rc<Datatype>]) -> Vec<Rc<Datatype>> {
     let complete: HashSet<&str> = types
         .iter()

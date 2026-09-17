@@ -983,6 +983,12 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                 want_proto: args.jobs_proto,
                 want_provenance: args.jobs_provenance,
                 want_callee_hints: args.jobs_callees,
+                // `--jobs-types` is what a project export asks its workers for:
+                // the `.h` type block. A worker serving that surface therefore
+                // leaves the `structdefs` preamble out of the bodies, exactly as
+                // the serial export does; a `decompile-all`/`decompile-graph`
+                // worker does not set it and keeps the preamble.
+                header_carries_types: args.jobs_types,
                 single_target: false,
             };
             let mut pending = entries.into_iter();

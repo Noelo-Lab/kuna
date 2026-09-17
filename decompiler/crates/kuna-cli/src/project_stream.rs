@@ -849,6 +849,10 @@ fn export(
         want_proto: true,
         want_provenance: false,
         want_callee_hints: true,
+        // The export's `.h` defines every type these bodies name, so they do
+        // not carry the `structdefs` preamble — same decision as the
+        // non-streamed export, taken in the same place.
+        header_carries_types: true,
         // A streamed run is never a single-target run: `--stream` and `--assert`
         // are exclusive precisely so an unqualified directive cannot bind to
         // every function of the export.

@@ -74,9 +74,9 @@ pub struct FuncResult {
     pub code: Option<String>,
     pub error: Option<String>,
     /// The `.h` prototype line (`<ret> <name>(<params>);`), captured only when
-    /// the caller asked for it (`decompile_targets(want_proto=true)` — the
-    /// `decompile-project` surface).  Always `None` on the `decompile-all`
-    /// path, which does not serialize prototypes.
+    /// the caller asked for it (`want_proto`): the `decompile-project` export's
+    /// header, and `decompile-graph`'s per-function row.  Always `None` on the
+    /// `decompile-all` path, which does not serialize prototypes.
     pub proto: Option<String>,
     pub variables: Vec<VarInfo>,
     /// (kuna `structdefs`) The composite/enum/typedef definitions this
@@ -158,6 +158,14 @@ pub struct DecompileOptions {
     pub want_provenance: bool,
     /// Collect [`FuncResult::callee_hints`] — the `--stream` scheduler's frontier.
     pub want_callee_hints: bool,
+    /// (kuna `structdefs`) This caller renders a header that already defines
+    /// every type the bodies name, so the bodies must not repeat them: the
+    /// `decompile-project` export (and the WASM form of it), whose `.h` block
+    /// comes from the same factory through the same `render_type_definitions`.
+    /// Only a surface that emits such a header sets it — a document of bare
+    /// per-function C (`decompile-all`, `decompile-graph`) has nowhere else to
+    /// carry a definition, so it keeps the preamble.
+    pub header_carries_types: bool,
     pub single_target: bool,
 }
 
@@ -165,9 +173,10 @@ pub struct DecompileOptions {
 /// program, returning one [`FuncResult`] per target (success or per-function
 /// `error` — a bad function never aborts the batch).  `want_proto`
 /// additionally captures the function's prototype line
-/// ([`print_c_prototype`]) inside the same panic guard as the C render — the
-/// `decompile-project` `.h` surface. `want_provenance` runs the markup emitter
-/// after the plain render and resolves its token references against the IR.
+/// ([`print_c_prototype`]) inside the same panic guard as the C render — for
+/// the `decompile-project` `.h` and for `decompile-graph`'s rows.
+/// `want_provenance` runs the markup emitter after the plain render and
+/// resolves its token references against the IR.
 ///
 /// The eager form of [`decompile_pulled`], with `single_target` derived from the
 /// target count.
@@ -183,11 +192,42 @@ pub fn decompile_targets(
         want_proto,
         want_provenance,
         want_callee_hints: false,
+        header_carries_types: false,
         single_target: targets.len() == 1,
     };
+    decompile_batch(prog, targets, &opts)
+}
+
+/// The project-export form of [`decompile_targets`]: prototypes for the `.h`,
+/// and no type-definition preamble in the bodies
+/// ([`DecompileOptions::header_carries_types`]) because that same `.h` defines
+/// every type they name.
+///
+/// Its own function so the decision lives with the surface that renders the
+/// header, not with a flag that happens to travel with it.
+pub fn decompile_export_targets(
+    prog: &mut ConsoleProgram,
+    targets: Vec<FunctionEntry>,
+) -> Vec<FuncResult> {
+    let opts = DecompileOptions {
+        no_vars: false,
+        want_proto: true,
+        want_provenance: false,
+        want_callee_hints: false,
+        header_carries_types: true,
+        single_target: targets.len() == 1,
+    };
+    decompile_batch(prog, targets, &opts)
+}
+
+fn decompile_batch(
+    prog: &mut ConsoleProgram,
+    targets: Vec<FunctionEntry>,
+    opts: &DecompileOptions,
+) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
     let mut pending = targets.into_iter();
-    decompile_pulled(prog, &opts, &mut || pending.next(), &mut |r| out.push(r));
+    decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| out.push(r));
     out
 }
 
@@ -221,17 +261,25 @@ pub fn decompile_pulled(
     next: &mut dyn FnMut() -> Option<FunctionEntry>,
     sink: &mut dyn FnMut(FuncResult),
 ) {
-    let DecompileOptions { no_vars, want_proto, want_provenance, single_target, .. } = *opts;
+    let DecompileOptions {
+        no_vars,
+        want_proto,
+        want_provenance,
+        header_carries_types,
+        single_target,
+        ..
+    } = *opts;
     // (kuna `structdefs`) A project export's bodies do NOT carry the
     // type-definition preamble: they `#include` the generated header, and
     // `build_header` renders every one of those definitions into it from the
     // same factory through the same `render_type_definitions`. Printing them
-    // again above each body would redefine them. `want_proto` is exactly the
-    // `decompile-project` surface (it is what asks for the `.h` prototype), so
-    // the two surfaces stay consistent without a second flag. Restored on the
-    // way out so one program can drive both surfaces.
+    // again above each body would redefine them. Only a caller that renders
+    // such a header says so ([`DecompileOptions::header_carries_types`]);
+    // every other batch keeps the preamble, because its document has nothing
+    // else that carries a definition. Restored on the way out so one program
+    // can drive both surfaces.
     let preamble = prog.arch().print().options.struct_defs();
-    if want_proto && preamble {
+    if header_carries_types && preamble {
         prog.arch_mut().print_mut().options.set_struct_defs(false);
     }
     let mut hints: Option<CalleeHintContext> = None;
@@ -532,7 +580,7 @@ pub fn decompile_pulled(
             }),
         }
     }
-    if want_proto && preamble {
+    if header_carries_types && preamble {
         prog.arch_mut().print_mut().options.set_struct_defs(true);
     }
 }
