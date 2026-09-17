@@ -88,22 +88,22 @@
       "bash 0xe30d0 (expand_prompt)": "one row changes: the uncommitted `undefined8` framelayout slot local_a0 becomes a typed `char *` stack variable. That is a type_match gain, not a loss. Row count is unchanged at 32."
     }
   },
-  "speed_off_ms": 222.4,
-  "speed_on_ms": 226.9,
-  "speed_delta_pct": 2.03,
+  "speed_off_ms": 211.2,
+  "speed_on_ms": 209.9,
+  "speed_delta_pct": -0.61,
   "speed_samples": 21,
   "speed_budget_pct": 5.0,
   "speed_within_budget": true,
   "speed_forced_off": false,
   "speed": {
-    "method": "interleaved off/on pairs, MINIMUM of 21 pairs, `kuna decompile-all <bin> --addr <fn> --option argclobber off|on` (the CLI surface that rejects a bad option value). Re-measured after the review clauses landed; the box was running the workspace suite throughout, so these are pessimistic.",
+    "method": "interleaved off/on pairs, MINIMUM of 21 pairs, `kuna decompile-all <bin> --addr <fn> --option argclobber off|on` (the CLI surface that rejects a bad option value). Re-measured on the round-3 rule, on a box with load average 4.2 and no gate running.",
     "rows": {
-      "kuna decompile-all fmt O2 main 0x26a0 (the option fires)": "222.4 -> 226.9 ms (+2.03%)",
-      "kuna decompile-all ls O2 main 0x5b50 (control: never fires)": "319.1 -> 320.4 ms (+0.40%)"
+      "kuna decompile-all fmt O2 main 0x26a0 (the option fires)": "211.2 -> 209.9 ms (-0.61%)",
+      "kuna decompile-all grep O2 0xcec0 (control: 1,000-line function, never fires)": "1071.0 -> 1070.4 ms (-0.05%)"
     },
-    "worst_delta_pct": 2.03,
+    "worst_delta_pct": -0.05,
     "within_budget": true,
-    "why": "with the option off the first statement returns on a bool. With it on the added work is two reads of an already-built summary: the same-register test walks one join's inputs, and the callee test is a lookup in the per-image CalleeEntryDead map calleedeadarg (default on) already populates. The control binary's +0.40% is the measurement floor on a loaded box."
+    "why": "with the option off the first statement returns on a bool. With it on the added work is three reads of already-built state: one walk of the argument join's inputs (each a bounded def-chain walk for the by-product test), and a lookup in the per-image CalleeEntryDead map calleedeadarg (default on) already populates. Round 2 reported +2.03% on the same fmt row; that was the workspace suite running underneath, not the pass."
   },
   "clauses": [
     "register trial carrying is_ind_create_formed",

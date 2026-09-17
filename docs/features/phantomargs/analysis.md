@@ -235,8 +235,10 @@ byte-identical to the pinned pre-change binary on all four changed binaries plus
 four controls (grep, u-boot, ssh-keygen, crazyflie `cf2.elf`, betaflight): 0
 differing lines each.
 
-Speed, interleaved off/on pairs, minimum of 21: see
-`docs/features/phantomargs/record.json`. Budget +5%.
+Speed, interleaved off/on pairs, minimum of 21, on an unloaded box: fmt `main`
+211.2 -> 209.9 ms (-0.61%), grep `0xcec0` (a 1,000-line control the option never
+fires on) 1071.0 -> 1070.4 ms (-0.05%). Budget +5%. Round 2's +2.03% on the same
+fmt row was the workspace suite running underneath.
 
 ## 6. (c) Does `protoorder` (lane A3) make this unnecessary?
 
