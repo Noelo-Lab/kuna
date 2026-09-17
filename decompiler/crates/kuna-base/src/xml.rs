@@ -1880,7 +1880,7 @@ mod tests {
         // and kuna-signedness / an integer local declared at the signedness its
         // operations ask for, plus its int16 sibling pinning the promotion-width
         // guard on a target whose own `int` is 2 bytes
-        assert_eq!(count, 311, "corpus file count drifted");
+        assert_eq!(count, 312, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
