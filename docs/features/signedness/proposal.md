@@ -187,7 +187,7 @@ table above, plus the cast hunks that stop being written.
 
 **3. Should `auto` become the default?** *Answered: yes, and it ships that way.*
 It clears the repo's mechanical bar — built with `auto` as the default,
-`make test` is 675/675 **PARITY OK** and stages is 1110/1110 **PARITY OK**, and
+`make test` is 675/675 **PARITY OK** and stages is 1113/1113 **PARITY OK**, and
 the speed delta is inside the +5% budget (interleaved min-of-15 whole-binary
 `decompile-all` on `fmt`/`ls`/`sort` `-O2`, arm order alternating: +0.26% /
 +1.26% / −0.82%, pooled **+0.20%**, i.e. below this box's noise floor; six runs
@@ -282,7 +282,7 @@ The user's answer, and what this PR ships:
 1. **Ship** `signedness` with `auto` as the **default**. It re-signs a
    declaration only on unanimous evidence, so the only text it can move is that
    declaration and the casts the new declaration makes into no-ops — 0 of 675
-   datatest assertions, 1110/1110 stages PARITY OK, `type_match` 959 → 959
+   datatest assertions, 1113/1113 stages PARITY OK, `type_match` 959 → 959
    perfect over 444 slices with a byte-identical `variables[]` in all 10,748
    scored functions, and 0 non-declaration/non-cast hunks over twelve binaries
    on two architectures.

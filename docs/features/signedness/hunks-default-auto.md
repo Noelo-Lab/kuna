@@ -108,10 +108,12 @@ Reproduce any row with the two `decompile-all` runs the classifier's header
 shows; the raw dumps this table was built from are untracked (`.scratch/dumps4`,
 `.scratch/dumps6`, `.scratch/dumps7`).
 
-Every row above was re-measured from scratch on the foldcallret-barrier base
-(origin/main 39fdc804), which does move the default path: all twelve binaries
-were re-decompiled in both arms into `.scratch/dumps10` and re-classified. The
-two x86-64 tables came back identical apart from one cast token on the `upstream`
-side; on the ARM side `cf2.elf -O0` gained one changed function and one flip
-(34/45 to 35/46), still classified `decl-signedness`. The bucket that carries the
-claim, `other hunks`, is **0** on every row before and after.
+Every row above was re-measured from scratch on each base under this branch that
+moves the default path. On the foldcallret-barrier base (origin/main 39fdc804)
+all twelve binaries were re-decompiled in both arms and re-classified: the two
+x86-64 tables came back identical apart from one cast token on the `upstream`
+side, and on the ARM side `cf2.elf -O0` gained one changed function and one flip
+(34/45 to 35/46), still classified `decl-signedness`. The whole sweep was taken
+again on the hideshadow base (ba79503e, `.scratch/dumps12`) and every row above
+reproduces exactly, with stderr identical in all 24 pairs. The bucket that
+carries the claim, `other hunks`, is **0** on every row of every run.
