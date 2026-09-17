@@ -1414,7 +1414,7 @@ moves.
   typed even when a same-spelled export suppresses the global key; the export
   itself remains untouched.
 - **(kuna) Named libc aggregate types** (`libctypes`, values `off|opaque`,
-  default off,
+  default opaque,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs (LibcTypesPass)`):
   the two tables above share one type vocabulary, and that vocabulary is
   width-stable by construction, so every aggregate pointer in them is spelled
@@ -1526,11 +1526,20 @@ moves.
   `--define-function 0x…=fopen` agrees with what the pass parks on an imported
   `fopen`.
 
-  The default is off in the release that introduced it: the table asserts a
-  pointee where the width-stable vocabulary asserted only a width, and the
-  evidence for a default is the corpus type-recovery sweep, not the absence of a
-  datatest change — no datatest loads a file, so the 675 are structurally
-  untouched by anything in this tier.
+  *The default is `opaque`.* This tier is structurally invisible to the XML
+  corpora — no datatest loads a file, so the usual "0 of 675 assertions move" is
+  not evidence about it either way — and the evidence for the default is
+  therefore the corpus type-recovery sweep instead: over the decbench slices at
+  `-O0`, `-O2` and `-O2 -fno-inline`, naming these pointees moves functions to a
+  better type score and none to a worse one, because the table is restating a
+  declaration rather than guessing. The whole-binary `decompile-all` sweep that
+  accompanies it moves no call target, no control-flow edge and no numeric
+  literal, and the functional `PTRSUB(` form the sizing rule exists to prevent
+  stays absent in both arms. `--option libctypes off` restores the shipped
+  `void *` tables byte for byte, which is the ablation to reach for when a
+  pointee name is in question; the cost the default does carry is in
+  `decompile-project`, whose exported `.c` reads fields out of a shell its `.h`
+  declares incomplete (the `.h` is unaffected).
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.

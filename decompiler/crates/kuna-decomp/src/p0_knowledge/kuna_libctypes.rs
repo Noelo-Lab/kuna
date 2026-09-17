@@ -27,21 +27,26 @@
 //!
 //! With the gate off the pass does not run at all, so not one named shell is
 //! interned and the output is byte-identical to the `void *` tables alone.
+//!
+//! Default **opaque**: the table's own declaration is the strongest evidence
+//! about a libc pointee that exists, and `void *` discards it. The 675
+//! datatest assertions are structurally untouched (no datatest loads a file);
+//! the evidence for the default is the corpus sweep recorded in
+//! `docs/features/libctypes/record.json`. `--option libctypes off` restores the
+//! byte-identical `void *` tables.
 
 /// Environment variable that gates the named libc aggregate types (read by
-/// `kuna-analysis::analyzers::protos::kuna_libctypes`). `opaque`/`on`/`1`/`true`
-/// ⇒ enabled; absent or `off`/`0`/`false` ⇒ disabled (the `void *` tables).
+/// `kuna-analysis::analyzers::protos::kuna_libctypes`). Absent or any value
+/// other than the off-tokens ⇒ **enabled**; set to `off`/`0`/`false` ⇒ disabled
+/// (the `void *` tables).
 pub const LIBCTYPES_ENV: &str = "KUNA_LIBCTYPES";
 
 /// Whether the named libc aggregate types are enabled for this process.
-/// Default **off**: only an explicit on-token in [`LIBCTYPES_ENV`] enables it.
+/// Default **on**: only an explicit off-token in [`LIBCTYPES_ENV`] disables it.
 pub fn libctypes_enabled() -> bool {
     match std::env::var(LIBCTYPES_ENV) {
-        Ok(v) => matches!(
-            v.trim().to_ascii_lowercase().as_str(),
-            "opaque" | "on" | "1" | "true"
-        ),
-        Err(_) => false, // unset => default-off
+        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
+        Err(_) => true, // unset => default-on
     }
 }
 
@@ -57,24 +62,24 @@ pub fn set_libctypes_env(on: bool) {
 mod tests {
     use super::*;
 
-    /// The gate defaults off (unset env) and only the on-tokens enable it.
+    /// The gate defaults on (unset env) and only the off-tokens disable it.
     /// Serialized by being a single test (env is process-global).
     #[test]
     fn libctypes_env_gate() {
         std::env::remove_var(LIBCTYPES_ENV);
-        assert!(!libctypes_enabled(), "unset => default-off");
-        for on in ["opaque", "on", "1", "true", "OPAQUE", " opaque "] {
+        assert!(libctypes_enabled(), "unset => default-on");
+        for off in ["off", "0", "false", "OFF", " off "] {
+            std::env::set_var(LIBCTYPES_ENV, off);
+            assert!(!libctypes_enabled(), "`{off}` should disable");
+        }
+        for on in ["opaque", "on", "1", "true", "OPAQUE", " opaque ", ""] {
             std::env::set_var(LIBCTYPES_ENV, on);
             assert!(libctypes_enabled(), "`{on}` should enable");
         }
-        for off in ["off", "0", "false", "", "glibc"] {
-            std::env::set_var(LIBCTYPES_ENV, off);
-            assert!(!libctypes_enabled(), "`{off}` should not enable");
-        }
-        set_libctypes_env(true);
-        assert!(libctypes_enabled());
         set_libctypes_env(false);
         assert!(!libctypes_enabled());
+        set_libctypes_env(true);
+        assert!(libctypes_enabled());
         std::env::remove_var(LIBCTYPES_ENV);
     }
 }

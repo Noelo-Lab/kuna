@@ -31,12 +31,12 @@
       "eq": 0
     },
     "stdout_matches": [
-      "sub_1249\\(void \\*param_1\\)",
+      "sub_1249\\(FILE \\*param_1\\)",
       "perror\\(\"malloc failed\"\\)"
     ],
     "stderr_absent": [
       "no function"
     ]
   },
-  "notes": "Desired: a name `kuna functions` reports still selects its function when the run changes how names are PRINTED. Dataset witness: crackmes.one 6927c8d12d267f28f69b8131 (0xJam3z-Medium @0x15dc), where `sub_15dc --option namestyle ghidra` answered `no function matches` for the function the same run decompiles as `func_0x000015dc`. `param_1` pins that the style really applied."
+  "notes": "Desired: a name `kuna functions` reports still selects its function when the run changes how names are PRINTED. Dataset witness: crackmes.one 6927c8d12d267f28f69b8131 (0xJam3z-Medium @0x15dc), where `sub_15dc --option namestyle ghidra` answered `no function matches`. `param_1` pins that the style applied; the type is `FILE *` because libctypes is on by default and the body is fread/fclose on it."
 }

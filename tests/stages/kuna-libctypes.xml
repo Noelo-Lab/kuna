@@ -36,8 +36,9 @@
     that one rather than minting a second stream type beside it (#7, #8), and it
     keeps its real field layout (#9).
 
-    The script restores the default in its last command: the gate is a process
-    environment variable, and the corpus runs in one process.
+    The script restores the default (`opaque`) in its last command: the gate is a
+    process environment variable, and the corpus runs in one process, so a stale
+    `off` would silently disable the table for every later test in the file.
 
     Assertions span the combined output of all three passes. `FILE \*` is a
     substring of `_IO_FILE \*`, so every stream assertion pins the text from the
@@ -84,7 +85,7 @@ c3
   <com>load function get_prefix</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option libctypes off</com>
+  <com>option libctypes opaque</com>
   <com>quit</com>
 </script>
 <stringmatch name="LIBCTYPES #1: off, the stream parameter is an opaque void *" min="1" max="1">int4 fclose\(void \*a0\)</stringmatch>
