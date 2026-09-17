@@ -219,11 +219,13 @@ def main(argv=None) -> None:
     args = ap.parse_args(argv)
 
     kuna_bin = args.kuna_bin or config.kuna_bin()
-    case = load_case(args.case)
+    # Every field this writes is a GED field, so it reads the GED pool even
+    # where a type_match pool carries the same id.
+    case = load_case(args.case, "ged")
     results = [rescore_case(case, args.option, kuna_bin)]
     if args.siblings:
         for sib in case.get("siblings", []):
-            results.append(rescore_case(load_case(sib), args.option, kuna_bin))
+            results.append(rescore_case(load_case(sib, "ged"), args.option, kuna_bin))
 
     main_r = results[0]
     kuna_commit = subprocess.run(

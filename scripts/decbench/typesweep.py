@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import pickle
@@ -150,6 +151,19 @@ def build_result(payload: dict, addr2name: dict[int, str], unstripped: Path, bas
 
 def slice_key(project: str, opt: str, stem: str) -> str:
     return f"{project}::{opt}::{stem}"
+
+
+def variables_signature(variables) -> str:
+    """A digest of exactly the fields the metric reads, in emission order.
+
+    This is what makes the "byte-identical variables must score identically"
+    control real: if two arms hand the metric the same names, types, sizes,
+    offsets and argument positions, any score difference came from somewhere
+    other than the option.
+    """
+    payload = [[v.name, v.type, v.size, v.stack_offset, v.arg_index, v.kind]
+               for v in variables]
+    return hashlib.sha1(json.dumps(payload, default=str).encode()).hexdigest()[:16]
 
 
 def install_decision_recorder(sink: list) -> None:
@@ -298,7 +312,10 @@ def score_slice(task):
         install_decision_recorder(sink)
     out = {}
     for arm in arms:
-        opts = [] if arm == "base" else options
+        # ``arms`` is either the legacy name list (base = the build's defaults,
+        # anything else = ``options``) or a {arm: option list} map, which is how
+        # ``scripts.decbench.typescore`` asks for an explicit off/on A/B.
+        opts = arms[arm] if isinstance(arms, dict) else ([] if arm == "base" else options)
         try:
             payload = run_kuna(stripped, opts, timeout)
         except Exception as e:  # noqa: BLE001
@@ -319,6 +336,8 @@ def score_slice(task):
                                                           "decomp_vars", "matched_by")}
                      for fn, mv in mr.function_results.items()},
             "nvars": {fn: len(f.variables) for fn, f in res.functions.items()},
+            "vars_sig": {fn: variables_signature(f.variables)
+                         for fn, f in res.functions.items()},
         }
     return slice_key(project, opt, stem), out
 
@@ -430,6 +449,7 @@ def main() -> None:
 
     pub = published(root)
     agree = dis = 0
+    ident = ident_diff = 0
     b_perf = t_perf = 0
     b_sum = t_sum = 0.0
     n = 0
@@ -453,6 +473,10 @@ def main() -> None:
             tv = (t.get("values") or {}).get(fn)
             if tv is None:
                 continue
+            bsig = (b.get("vars_sig") or {}).get(fn)
+            if bsig is not None and bsig == (t.get("vars_sig") or {}).get(fn):
+                ident += 1
+                ident_diff += int(abs(tv - bv) >= 1e-9)
             t_sum += tv
             if tv == 1.0:
                 t_perf += 1
@@ -469,7 +493,11 @@ def main() -> None:
              f"slices scored: {len(rows)}", f"functions scored: {n}", "",
              "## control", "",
              f"- baseline vs published type_match: {agree} agree / {dis} differ "
-             f"({100.0*agree/max(1,agree+dis):.2f}% agreement)", ""]
+             f"({100.0*agree/max(1,agree+dis):.2f}% agreement)"]
+    if ident:
+        lines += [f"- byte-identical variables in both arms: {ident} functions, "
+                  f"{ident_diff} scored differently (must be 0)"]
+    lines += [""]
     if rows and any(v.get("test") for v in rows.values()):
         lines += ["## result", "",
                   f"- type_match PERFECT: base {b_perf} -> test {t_perf} "

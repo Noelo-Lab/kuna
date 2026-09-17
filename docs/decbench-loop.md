@@ -128,6 +128,40 @@ draft PR). Plus:
 9. **Derive every shared counter from a green build and run, never by arithmetic** — see
    *Shared counters in a busy queue* below. A rebase in this queue is not a merge problem,
    it is a measurement problem.
+10. **Every type-recovery PR records the typesweep benchmark block.** GED's
+   `rescore` block prices structure; a change to types, prototypes or variables is
+   priced on `type_match`, in the fixed shape of `docs/features/libcsigs/record.json`
+   (per project `n / perfect_off / perfect_on / mean_off / mean_on / improved / worse`,
+   plus the same seven pooled). Produce it with
+
+   ```bash
+   ~/.virtualenvs/decbench/bin/python -m scripts.decbench.typescore \
+       --record docs/features/<slug>/record.json --write
+   ```
+
+   which runs `scripts.decbench.typesweep` with the option passed **explicitly in both
+   arms** and splices the block in. `improved`/`worse` are the ship gate, not the
+   perfect count: committing a type forfeits the metric's width-only free pass, so a
+   change that flips 400 functions each way moves the scoreboard by zero.
+   - **Struct or layout work also records `structscore`** — `type_match` cannot see it
+     at all (a synthesized `struct_0 *` scores exactly what recovering nothing scores).
+     `~/.virtualenvs/decbench/bin/python -m scripts.decbench.structscore <stripped>… --all`
+     reports layout-F1 and nesting-F1 against the unstripped twin's DWARF (parameters
+     only, RecStruct §4.1 normalization), the TRex Fig. 6 prioritized score with its
+     per-step pass rates, and the struct-candidate census. The census is split by
+     what the evidence was — a base the code reads at a written-down byte offset
+     (`*(T *)(B + K)`, `B->f`) against one seen only through `B[k]`, which an array
+     walk produces just as readily — and the match→miss channel (candidates kuna
+     **already** types correctly, and would spend) is only meaningful per pool: it is
+     ~1% on the field pool and ~15% on the index pool.
+   - **A claim about variable *count* is made with `varcensus`**, not by eye:
+     `python3 -m scripts.pipeline.varcensus <binary> --baseline before.json` counts
+     declarations, single-def/single-read temporaries, `[N]` blobs and the declared-type
+     histogram. `type_match` scores the JSON `variables[]` array, so a merged-away
+     temporary is invisible to it in both directions.
+   - A PR whose metric effect is genuinely zero says so **with the measurement**
+     ("0 moved either way over N functions"), which is a result; "metric-neutral by
+     construction" without a run is not.
 
 ### A symptom is evidence; a diagnosis is a hypothesis
 
@@ -201,15 +235,20 @@ use `ghdec-<slug>.xml` for fixes with no angr analog.
 # 1. MINE — snapshot the benchmark signal into the repo
 python3 -m scripts.decbench.mine --select 30              # base angr
 python3 -m scripts.decbench.mine --base ida --select 20   # base ida (current leader)
+python3 -m scripts.decbench.mine --base ida --metric type_match --select 20  # the type pool
 python3 -m scripts.decbench.novel --select 16             # the NOVEL pool
 #   -> docs/decbench/cases[-<base>].json    the full pool, bucketed + deduped (gitignored)
 #   -> docs/decbench/cases-missing*.json    kuna-failed pool (recall workstream owns it)
 #   -> docs/decbench/backlog[-<base>].md    ranked human table (one row per group)
 #   -> docs/decbench/novel.{json,md}        kuna-is-best-and-still-bad, ranked by warts
 #   -> docs/decbench/triage-queue*.json     the stratified triage picks
+#   a non-GED pool suffixes every one of those with its metric
+#   (cases-ida-type_match.json, ...), so the GED pools are never overwritten
 
 # 2. TRIAGE — one agent per queue case; verify-first, then root-cause
 python3 -m scripts.decbench.triage --case <case-id> --also ida,ghidra
+#   a case id carries no metric, so an id in both pools resolves to the GED row
+#   unless --metric type_match asks for the other; triage says when it is in both
 #   write docs/decbench/triage/<case-id>.md (front-matter schema below)
 
 # 3. CLUSTER — group feature-candidate records by root cause
@@ -288,6 +327,60 @@ added, and how many landed inside a body". Two traps the tool prints around on e
   `AGGRESSIVE_OVERRIDES`, which for this corpus IS the shipped default path, `aifstrict`
   included. Scoring a new guard against a hand-disabled preset member books that
   member's win as the new guard's own — the exact error GH-313's issue body makes.
+
+### The type instruments — what GED's tools cannot see
+
+`optsweep` and `entrysweep` both score structure. Types have their own four, and
+standing requirement 10 says which to run when.
+
+```bash
+# the corpus A/B on type_match, both directions, the same call decbench's own scorer makes
+~/.virtualenvs/decbench/bin/python -m scripts.decbench.typesweep \
+    --option <name> <value> --opt O0 --opt O2 --project grep --out docs/features/<slug>/sweep
+#   --baseline-only measures the build; --dump-decisions gives one row per GT variable
+
+# the same run, shaped as the record's benchmark block (and spliced in with --write)
+~/.virtualenvs/decbench/bin/python -m scripts.decbench.typescore \
+    --record docs/features/<slug>/record.json
+
+# structs: layout-F1 + nesting-F1 vs DWARF, the TRex Fig. 6 score, the candidate census
+~/.virtualenvs/decbench/bin/python -m scripts.decbench.structscore <stripped>... --all
+
+# variable counts from the emitted C (the JSON surface cannot see a merged-away temp)
+python3 -m scripts.pipeline.varcensus <binary> --json --baseline before.json
+```
+
+Five things to know before quoting any of them:
+
+* **The scored surface is the JSON `variables[]` array, not the C text** — args, stack
+  symbols and `framelayout` slots. Register-resident locals are never exported, so
+  roughly half the DWARF variables in an -O2 function have nothing to pair with, and
+  `structscore --trex` prints that as its `unpaired` column rather than hiding it.
+* **Signedness and variable count are worth zero on `type_match`** (qualifiers are
+  stripped, an uncommitted same-width spelling matches any scalar). Pointers with the
+  right pointee are what moves it. A primitives/variables change is therefore priced by
+  `varcensus` and the TRex score, and says "0 either way" on `type_match` **with** the run.
+  The TRex score takes its ground-truth signedness from the twin's DWARF
+  `DW_AT_encoding`, not from decbench's form list, which has the qualifier stripped out
+  of it — quote `mean` for a signedness claim and `mean_0_5` (the same score without the
+  last step) for anything else.
+* **`typescore`'s one invalidating control is `identical_variables_scored_differently`**,
+  which must be 0: two arms that handed the metric byte-identical `variables[]` cannot
+  legitimately score differently. `retyped_functions` next to it is the count the option
+  actually changed — the expected signal, not a warning. Its cached rows carry the kuna
+  binary (by content), the decbench commit and both arm values; a cache that disagrees
+  with the run is dropped instead of re-reported, and every field of the block —
+  including which projects it covers — is derived from the rows summarized.
+* **Read the TRex score's loss table, not its pass rates.** The score stops at the
+  first failing step, so a first failure at step *i* costs `6 - i` points; a step late
+  in the order can fail twice as often as an early one and be worth a third of it.
+  `--trex` prints the decomposition (`loss` in the JSON) and it reconstructs the mean
+  exactly, so the step to work on is the one holding the points. On coreutils at O0
+  that is `is_c_pointer` (53–65% of the loss); at O2 it is `defined`, i.e. the export
+  surface, at 76–80%.
+* **`structscore` reports 0 layout-F1 today by construction** — kuna synthesizes no
+  structs, so the number to record before any struct work is the *denominator*: how many
+  pointer-to-struct parameters and GT fields exist to be recovered at all.
 
 ### Triage buckets (in `cases.json`, computed from cross-decompiler consensus)
 
