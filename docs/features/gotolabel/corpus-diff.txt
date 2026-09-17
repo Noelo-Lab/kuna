@@ -1,0 +1,16 @@
+functions=16080 changed=23 added-label-only-in-orphan-function=20 other=3
+OTHER O2_betaflight_stripped_betaflight_STM32F405.elf.c sub_8015386@0x8015386 had_orphan=True +3/-1
+   +   if (a0 == 3) {
+   + label_80153b2:
+   +   }
+   -   if (a0 == 3)
+OTHER O2_bzip2_stripped_bzip2.c sub_3df0@0x3df0 had_orphan=True +3/-1
+   +   if (ferror(a0)) {
+   + label_40a0:
+   +   }
+   -   if (ferror(a0))
+OTHER O2_tar_stripped_tar.c sub_13570@0x13570 had_orphan=True +3/-1
+   +     if (v4 != 6) {
+   + label_13e25:
+   +     }
+   -     if (v4 != 6)
