@@ -424,6 +424,19 @@ pub struct AnalysisOutput {
     /// gate is three-valued (`off|proven|inferred`), so the commit boundary picks
     /// which tiers to apply. See [`CppSigFacts`].
     pub cpp_sig: CppSigFacts,
+    /// (kuna `libctypes glibc`) The published glibc x86-64 field layouts went
+    /// into THIS image's named aggregates.
+    ///
+    /// Set by [`crate::protos::kuna_libctypes::LibcTypesPass`] when, and only
+    /// when, its own target gate (`glibc::target_is_glibc_x86_64`) accepted the
+    /// object it was handed. It is the load-time decision carried forward, for
+    /// the one consumer that runs after the object file is out of reach: a
+    /// `--define-function 0x..=fopen` directive mints the named aggregate on
+    /// demand, and whether that mint may carry field names is exactly this
+    /// question. Nothing else may answer it — an image's own DWARF is not
+    /// evidence about its libc, because `st_dev` sits at offset 0 of a MIPS32
+    /// `stat` too.
+    pub libctypes_glibc: bool,
 }
 
 impl AnalysisOutput {
@@ -543,6 +556,7 @@ impl AnalysisOutput {
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
+        self.libctypes_glibc |= other.libctypes_glibc;
     }
 }
 

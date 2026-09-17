@@ -457,6 +457,18 @@ pub struct ConsoleProgram {
     /// typelock|namelock stack symbol — the same path the console `map addr` directive
     /// uses. Real-ELF DWARF path only (empty on the XML datatest path).
     dwarf_locals: Vec<(u64, String, Rc<kuna_decomp::dtype::Datatype>, i64)>,
+    /// (kuna `libctypes glibc`) Did the load-time `libctypes` pass install the
+    /// published glibc x86-64 field layouts on THIS image?
+    ///
+    /// The pass answers that at `load file`, where it still has the object file
+    /// and can check the target (`glibc::target_is_glibc_x86_64`). A
+    /// `--define-function 0x..=fopen` directive mints the same named aggregate
+    /// much later, with the object gone, and must not re-decide: a MIPS32 or musl
+    /// image also defines a `stat` whose first member is `st_dev`, so the program
+    /// alone cannot tell whose libc it is. This carries the pass's answer across.
+    /// `false` on every path with no analysis tier (the XML datatests), which is
+    /// the opaque shell — what `--option libctypes opaque` gives.
+    libctypes_glibc: bool,
     /// (kuna) The image bytes + path stashed at load for the **deferred Listing
     /// build** (the Listing/xref PR6 build-timing fix). The Listing is gated on
     /// `--option listing on`, a flag the live CLI sets AFTER `load file` (before
@@ -2045,9 +2057,17 @@ impl ConsoleProgram {
             return;
         }
         let (_addr_size, word_size) = self.arch().data_org();
+        // The layout is the load-time pass's decision, not a fresh one: only an
+        // image whose own target gate passed may be handed the glibc field
+        // layouts (see `Self::libctypes_glibc`).
+        let layout = if self.libctypes_glibc {
+            kuna_decomp::kuna_libctypes::LibcTypesLayout::Glibc
+        } else {
+            kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque
+        };
         let pieces = {
             let types = self.arch().types();
-            kuna_analysis::protos::declared_libc_prototype(name, types, word_size)
+            kuna_analysis::protos::declared_libc_prototype(name, types, word_size, layout)
         };
         if let Some(pieces) = pieces {
             self.arch_mut().set_function_prototype_pieces_at(addr, pieces);
@@ -3171,6 +3191,7 @@ fn empty_program(
         pending_entry_thumb: None,
         analysis_code_space: None,
         dwarf_locals: Vec::new(),
+        libctypes_glibc: false,
         analysis_image: None,
         loader_data_objects: Vec::new(),
         declared_extents: BTreeMap::new(),
@@ -3856,6 +3877,12 @@ fn commit_analysis_output(
         Vec::new()
     };
     let out = out;
+
+    // 0b. (kuna `libctypes glibc`) The load-time target decision, carried to the
+    //     one consumer that runs with the object file out of reach
+    //     (`seed_declared_libc_prototype`). Set unconditionally so a second
+    //     `load file` of a foreign-arch image clears what the first established.
+    prog.libctypes_glibc = out.libctypes_glibc;
 
     // 1. Extra symbols a pass discovered. Function symbols install like the
     //    funcsym stream (idempotent); Data symbols (typed string/data objects)

@@ -301,6 +301,7 @@ pub fn declared_libc_prototype(
     name: &str,
     types: &dyn TypeFactory,
     word_size: uint4,
+    layout: kuna_decomp::kuna_libctypes::LibcTypesLayout,
 ) -> Option<PrototypePieces> {
     // (kuna `libctypes`) The named-aggregate form of the same signature when that
     // gate is on, so a declared `fopen` agrees with what the load-time pass parks
@@ -308,12 +309,13 @@ pub fn declared_libc_prototype(
     // holds `stat` as its own 24-byte struct, say -- degrades to the width-stable
     // one rather than withdrawing the prototype, which is what the load-time pass
     // does too (it skips the named slot and the `void *` seeding still stands).
-    // The layout is read off the PROGRAM rather than assumed: `named_aggregate`
-    // adopts a name already held, but only the names the image IMPORTS reached
-    // the pass, so a declared `fopen` on an image that imports `stat` and not
-    // `fopen` would mint the first `FILE` here -- see `live_layout` for the
-    // evidence that decides which layout that is.
-    let layout = kuna_libctypes::live_layout(types);
+    //
+    // `layout` is the CALLER's, and the only caller that may pass `Glibc` is the
+    // console, which passes on the load-time pass's own target decision
+    // (`AnalysisOutput::libctypes_glibc`). It cannot be re-derived here: the
+    // object file is out of reach by the time a `--define-function` directive is
+    // answered, and the program alone cannot stand in for it -- a MIPS32 image's
+    // DWARF `stat` also puts `st_dev` at offset 0.
     if let Some(sig) = kuna_libctypes::declared_named_prototype(name) {
         if let Ok(pieces) = build_pieces(name, sig, types, word_size, layout) {
             return Some(pieces);
@@ -530,13 +532,13 @@ mod tests {
         types.set_max_basetype_size(8);
         types.setup_sizes(Some(4), 4, 4);
         let _ = types.cache_core_types();
-        let base = declared_libc_prototype("ptrace", &types, 1).expect("base table name");
+        let base = declared_libc_prototype("ptrace", &types, 1, kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque).expect("base table name");
         assert_eq!(base.name, "ptrace");
         assert_eq!(base.intypes.len(), 4);
-        let ext = declared_libc_prototype("read", &types, 1).expect("extension table name");
+        let ext = declared_libc_prototype("read", &types, 1, kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque).expect("extension table name");
         assert_eq!(ext.intypes.len(), 3, "ssize_t read(int, void *, size_t)");
         assert!(
-            declared_libc_prototype("sub_8049027", &types, 1).is_none(),
+            declared_libc_prototype("sub_8049027", &types, 1, kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque).is_none(),
             "a name neither table knows is left alone"
         );
     }

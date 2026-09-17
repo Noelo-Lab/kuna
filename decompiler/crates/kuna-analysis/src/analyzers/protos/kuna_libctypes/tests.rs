@@ -249,7 +249,8 @@ fn the_declared_lookup_follows_the_gate() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let types = factory();
     kuna_decomp::kuna_libctypes::set_libctypes_env_layout(kuna_decomp::kuna_libctypes::LibcTypesLayout::Off);
-    let off = super::super::declared_libc_prototype("fopen", &types, 1).expect("fopen off");
+    let off = super::super::declared_libc_prototype("fopen", &types, 1, Layout::Opaque)
+        .expect("fopen off");
     let off_base = off.outtype.as_ref().and_then(|t| t.get_ptr_to());
     assert_eq!(
         off_base.as_ref().map(|p| p.get_metatype()),
@@ -257,7 +258,8 @@ fn the_declared_lookup_follows_the_gate() {
         "off: the shipped void * signature"
     );
     kuna_decomp::kuna_libctypes::set_libctypes_env_layout(kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque);
-    let on = super::super::declared_libc_prototype("fopen", &types, 1).expect("fopen on");
+    let on = super::super::declared_libc_prototype("fopen", &types, 1, Layout::Opaque)
+        .expect("fopen on");
     let on_base = on.outtype.as_ref().and_then(|t| t.get_ptr_to());
     assert_eq!(
         on_base.as_ref().map(|p| p.get_name().to_string()),
@@ -282,7 +284,7 @@ fn a_declined_aggregate_degrades_to_the_width_stable_signature() {
         .set_fields_struct_raw(&shell, vec![field], Vec::new(), 24, 8, 0)
         .expect("a 24-byte `stat` of the program's own");
     assert!(named_aggregate("stat", &types, 1, Layout::Opaque).is_err(), "the fixture declines the named form");
-    let pieces = super::super::declared_libc_prototype("stat", &types, 1)
+    let pieces = super::super::declared_libc_prototype("stat", &types, 1, Layout::Opaque)
         .expect("still answered, from the void * tables");
     assert_eq!(pieces.intypes.len(), 2, "the shipped arity survives");
     let p1 = pieces.intypes[1].get_ptr_to().expect("a pointer slot");
@@ -445,6 +447,9 @@ fn only_a_glibc_x86_64_elf_takes_the_layouts() {
         ("libctypes_stat_x86_64", true),
         ("armlibcmain_le32", false),
         ("win32sigs_pe_i386.exe", false),
+        // A glibc image the layouts are NOT true of: `.dynstr` names
+        // `libc.so.6` and `GLIBC_2.34`, and every pointer in it is 4 bytes.
+        ("mips_gp_le32", false),
     ] {
         let path = format!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/{}"), name);
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
@@ -487,44 +492,53 @@ fn no_layout_names_a_reserved_member() {
     }
 }
 
-/// `declared_libc_prototype` runs with no object file, so it reads the layout off
-/// the OPTION and off the program: the value has to be `glibc` and the program
-/// has to carry a field-filled aggregate, which is what proves the target gate
-/// passed here. Either half missing means `Opaque`.
+/// `declared_libc_prototype` runs with the object file out of reach, so it may
+/// NOT decide for itself whether the glibc layouts are true of this image — it
+/// is told, by the console, which passes on what the load-time pass decided
+/// (`AnalysisOutput::libctypes_glibc`).
+///
+/// The fixture here is the shape that used to defeat the old program-read
+/// heuristic and is the whole reason this is a parameter: a factory already
+/// holding a field-filled `stat` whose first member is `st_dev` at offset 0.
+/// That is what a MIPS32 or musl image's OWN debug info looks like from inside
+/// this call — `st_dev` sits at offset 0 of every one of them — and it must not
+/// buy a 216-byte x86-64 `FILE`.
 #[test]
-fn the_live_layout_is_read_off_the_program() {
+fn a_refused_target_cannot_reach_the_glibc_layouts() {
     use kuna_decomp::kuna_libctypes::{set_libctypes_env_layout, LibcTypesLayout, LIBCTYPES_ENV};
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
 
+    // The run asked for `glibc` and the program looks the part. The load-time
+    // target gate still refused, so `Opaque` is what arrives here, and `Opaque`
+    // is what is minted.
     set_libctypes_env_layout(LibcTypesLayout::Glibc);
-    let empty = factory();
-    assert_eq!(live_layout(&empty), Layout::Opaque, "nothing held: no evidence");
-
-    let opaque = factory();
-    named_aggregate("FILE", &opaque, 1, Layout::Opaque).expect("opaque FILE");
-    assert_eq!(live_layout(&opaque), Layout::Opaque, "a fieldless shell is not evidence");
-
-    let glibc_types = factory();
-    named_aggregate("stat", &glibc_types, 1, Layout::Glibc).expect("glibc stat");
-    assert_eq!(live_layout(&glibc_types), Layout::Glibc, "a field-filled `stat` is");
-
-    // The option half. A run that asked for `opaque` gets `opaque` even where the
-    // factory holds a laid-out aggregate -- which is what a musl image carrying
-    // its own DWARF `stat` looks like from here.
-    set_libctypes_env_layout(LibcTypesLayout::Opaque);
-    assert_eq!(live_layout(&glibc_types), Layout::Opaque, "the value the run asked for wins");
-    let shelled = super::super::declared_libc_prototype("fopen", &glibc_types, 1).expect("fopen");
+    let refused = factory();
+    named_aggregate("stat", &refused, 1, Layout::Glibc).expect("a laid-out `stat`");
+    let shelled = super::super::declared_libc_prototype("fopen", &refused, 1, Layout::Opaque)
+        .expect("fopen");
     let shell = shelled.outtype.as_ref().and_then(|t| t.get_ptr_to()).expect("FILE *");
-    assert!(shell.is_incomplete(), "`opaque` mints the fieldless shell");
+    assert_eq!(shell.get_name(), "FILE", "the name is still the table's");
+    assert!(
+        shell.is_incomplete(),
+        "a refused target gets the fieldless shell, whatever the program holds"
+    );
+    assert_eq!(shell.num_depend(), 0, "and no fields to read an offset under");
 
-    // The consequence of both halves holding: a name the image never imported,
-    // declared by hand, is minted at the layout the program already carries.
-    set_libctypes_env_layout(LibcTypesLayout::Glibc);
-    let types = factory();
-    named_aggregate("stat", &types, 1, Layout::Glibc).expect("glibc stat");
-    let pieces = super::super::declared_libc_prototype("fopen", &types, 1).expect("fopen");
+    // The gate passed: the same call mints the published layout.
+    let accepted = factory();
+    let pieces = super::super::declared_libc_prototype("fopen", &accepted, 1, Layout::Glibc)
+        .expect("fopen");
     let file = pieces.outtype.as_ref().and_then(|t| t.get_ptr_to()).expect("FILE *");
     assert_eq!(file.get_name(), "FILE");
-    assert!(!file.is_incomplete(), "the declared `FILE` agrees with the program's `stat`");
+    assert!(!file.is_incomplete(), "an accepted target gets the fields");
+    assert_eq!(file.get_size(), 216, "the published x86-64 width");
+
+    // The option value alone can no longer reach the layouts from here: it is
+    // necessary (the pass reads it before the target gate) and not sufficient.
+    set_libctypes_env_layout(LibcTypesLayout::Opaque);
+    let still = super::super::declared_libc_prototype("fopen", &factory(), 1, Layout::Opaque)
+        .expect("fopen");
+    let shell = still.outtype.as_ref().and_then(|t| t.get_ptr_to()).expect("FILE *");
+    assert!(shell.is_incomplete(), "`opaque` mints the fieldless shell");
     std::env::remove_var(LIBCTYPES_ENV);
 }

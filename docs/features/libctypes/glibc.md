@@ -179,21 +179,47 @@ published layout is installed over it. That is what `tests/stages/kuna-libctypes
 passes 1-3 pin, and why passes 4/5 use a fixture built without `-g`.
 
 A name the operator declares by hand (`--define-function 0x…=fopen`) arrives long
-after load, with the image out of reach, so it cannot re-run that gate and must
-not guess: minting a glibc layout on a musl or ARM
-image would be the false claim the gate exists to prevent. `live_layout` needs
-two facts instead, and both have to hold. The option value has to be `glibc` —
-that much is process-wide and still readable, so a run that asked for `opaque`
-gets `opaque`. And the program has to carry an aggregate already held under one
-of the nine names with the member the table puts at offset 0, which is what
-proves the gate passed on *this* image. Either half missing gives the opaque
-shell. The option half is the one a musl image's own DWARF `stat` — complete, and
-named exactly the same way, because the kernel ABI is shared — cannot get past.
+after load, with the image out of reach, so it cannot re-run that gate. It does
+not try. The gate's answer is carried forward as a fact about the image —
+`AnalysisOutput::libctypes_glibc`, set by `LibcTypesPass::run` at the moment it
+checks the target, kept by the console, and handed to
+`declared_libc_prototype` as its `layout` argument — and the declared path is
+told, not asked.
 
-That last case is the one the earlier code got wrong: `LibcTypesPass::run` seeds
-from IMPORTED names only, so an image that imports `stat` but not `fopen` reaches
-the declared path with no `FILE` held, and a hard-coded `Layout::Opaque` would
-have minted a fieldless 216-byte shell beside the program's field-filled `stat`.
+An earlier version of this read the layout off the PROGRAM instead: the option
+value plus one held aggregate whose offset-0 member carried the table's name.
+That was wrong, and a 32-bit MIPS glibc image is the counterexample. `st_dev` is
+at offset 0 of a MIPS32 `stat` and `tv_sec` at offset 0 of a MIPS32 `timespec`,
+so the image's own debug info satisfied the program half and the target gate was
+bypassed:
+
+```
+$ mipsel-linux-gnu-gcc -g -O1 -o mp2 mp2.c        # sz(const char *, struct stat *), myopen() @0x400810
+$ kuna decompile-project ./mp2 -o out --define-function 0x400810=fopen --option libctypes glibc
+$ sed -n '/^struct FILE {/,/^};/p' out/mp2.h
+struct FILE {
+    int _flags;
+    undefined1 _pad4[4];
+    char *_IO_read_ptr;
+    undefined1 _padc[4];
+    ...
+    int _fileno;                 /* at 0x70 */
+```
+
+On that target `sizeof(FILE)` is not 216 and no pointer in it is 8 bytes wide —
+the `_padN` filler is the emitter saying so. With the gate decision carried
+forward the same command gives `typedef struct FILE FILE; /* opaque */`. Two
+controls hold it there: a **statically linked** x86-64 glibc image (no `.dynstr`,
+so the gate refuses) also gets the shell for a declared `fopen`, although its own
+DWARF `stat` is as field-filled as it gets; and a dynamically linked x86-64
+glibc image still gets the full layout for a name it never imported.
+
+The size floor an adversarial review suggested alongside this — refuse a held
+aggregate whose width is not `NAMED_AGGREGATES[name].size` — is already the
+adoption rule in `named_aggregate` (`usable()`), and would not have been enough
+on its own: a musl x86-64 `timespec` is 16 bytes with `tv_sec` at 0, exactly like
+glibc's, because that part is the kernel ABI. Only the target gate separates
+them, so the target gate is what decides.
 
 ## Whole-corpus sweep — `opaque` vs `glibc`
 

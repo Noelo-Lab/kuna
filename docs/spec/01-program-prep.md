@@ -1585,14 +1585,16 @@ moves.
 
   A name the operator declares by hand (`--define-function 0x…=fopen`) arrives
   long after load, with the image out of reach, so it cannot re-run that target
-  gate. Two facts decide it instead, and both have to
-  hold: the value the run asked for has to be `glibc`, which is process-wide and
-  still readable; and the program has to carry an aggregate already held under one
-  of the nine names with the member the table puts at offset 0, which is what
-  proves the gate passed on this image. Either half missing gives the opaque
-  shell. The value half is the one an image's own debug info cannot get past — a
-  musl image with DWARF completes `stat` and names it exactly the same way,
-  because the kernel ABI is shared.
+  gate — and it does not re-derive one either. The gate's own answer is carried
+  forward as a fact about the image (`AnalysisOutput::libctypes_glibc`, kept by
+  the console across the load), and the declared-name path is simply told: the
+  gate accepted this target, or it did not. Nothing about the program stands in
+  for that. The member names the kernel ABI fixes are shared by every libc and
+  every architecture — `st_dev` is at offset 0 of a 32-bit MIPS `stat` and a musl
+  `stat` alike — so a program that looks glibc-shaped from the inside is not
+  evidence that its `FILE` is 216 bytes with `_fileno` at `0x70`. An image the
+  gate refused gets the opaque shell for a declared name too, whatever it holds
+  and whatever the run asked for.
 
   The default is `opaque`. No datatest loads a file, so the 675 assertions
   cannot see this tier either way; the stage corpus can, and

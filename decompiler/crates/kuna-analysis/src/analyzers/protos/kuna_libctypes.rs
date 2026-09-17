@@ -365,41 +365,6 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     ("tcsetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
 ];
 
-/// Which layout THIS program's named aggregates were actually built with.
-///
-/// [`super::declared_libc_prototype`] answers a `--define-function 0x..=fopen`
-/// directive long after the load-time pass has run, with the object file out of
-/// reach, so it cannot re-run the target gate [`glibc::target_is_glibc_x86_64`]
-/// and must not guess: minting a glibc layout on a musl or ARM image would be a
-/// false claim about what is at an offset.
-///
-/// Two facts decide it, and both have to hold. The OPTION has to be `glibc` —
-/// that much is a process-wide value this call can still read, and a run asked
-/// for `opaque` gets `opaque` whatever else is true. Then the PROGRAM has to
-/// show the layouts went in: the pass interns a `glibc` aggregate WITH its
-/// fields and an `opaque` one without, so one held, field-filled aggregate under
-/// one of the nine laid-out names — carrying at offset 0 the name the table puts
-/// there — is proof the target gate passed on this image. Anything else (the
-/// value off or `opaque`, the target refused, or an image importing none of the
-/// nine) supports only [`Layout::Opaque`].
-///
-/// The second half is what an image's own DWARF cannot fake past: on a musl
-/// image with debug info, `stat` is complete and named the same way, and the
-/// option check is the reason that does not become a glibc `FILE`.
-pub(super) fn live_layout(types: &dyn TypeFactory) -> Layout {
-    if kuna_decomp::kuna_libctypes::libctypes_layout() != Layout::Glibc {
-        return Layout::Opaque;
-    }
-    for (name, rows) in glibc::GLIBC_LAYOUTS {
-        let Ok(Some(held)) = types.find_by_name(name) else { continue };
-        let Some(first) = held.get_field(0) else { continue };
-        if first.offset == 0 && rows.first().is_some_and(|r| r.name == first.name) {
-            return Layout::Glibc;
-        }
-    }
-    Layout::Opaque
-}
-
 /// The built-in signature for a name the OPERATOR declared, in its named-type
 /// form. `None` when the gate is off or neither named table knows the name, in
 /// which case [`super::declared_libc_prototype`] answers from the `void *`
@@ -439,6 +404,10 @@ impl AnalysisPass for LibcTypesPass {
             Layout::Glibc if glibc::target_is_glibc_x86_64(ctx.file) => Layout::Glibc,
             _ => Layout::Opaque,
         };
+        // The gate decision itself is a FACT about this image, and the only
+        // consumer that cannot re-derive it is the one that runs after the object
+        // file is gone: a `--define-function 0x..=fopen` directive. Carry it.
+        out.libctypes_glibc = layout == Layout::Glibc;
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         // IMPORTED names only, for both tables — where `LibProtoPass` also matches
