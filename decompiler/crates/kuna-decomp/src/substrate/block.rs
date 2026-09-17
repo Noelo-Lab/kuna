@@ -1931,14 +1931,17 @@ impl BlockGraph {
             }
         }
         match self.arena[this_id].get_type() {
-            // BlockGoto::markUnstructured: a real goto whose target is not the
-            // natural next block in flow (gotoPrints()).
+            // BlockGoto::markUnstructured: a real goto's target.  Upstream marks
+            // only when `gotoPrints()` holds, because upstream's
+            // `PrintC::emitBlockGoto` emits the trailing goto under the same test;
+            // kuna's printer (`printc.rs (PrintC::emit_block_goto)`) emits it for
+            // every goto target, so gating the mark here left the printed
+            // `goto label_X;` with no `label_X:` whenever the target happened to be
+            // the next block in flow.  The mark is never narrower than the print.
             BlockType::Goto => {
                 if self.arena[this_id].get_goto_type() == block_flags::f_goto_goto {
                     if let Some(target) = self.arena[this_id].get_goto_target() {
-                        if self.goto_prints(this_id) {
-                            self.mark_copy_block(target, block_flags::f_unstructured_targ);
-                        }
+                        self.mark_copy_block(target, block_flags::f_unstructured_targ);
                     }
                 }
             }
