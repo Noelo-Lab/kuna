@@ -1526,7 +1526,7 @@ moves.
   `--define-function 0x…=fopen` agrees with what the pass parks on an imported
   `fopen`.
 
-  *The default is `opaque`.* No datatest loads a file, so the 675 assertions
+  The default is `opaque`. No datatest loads a file, so the 675 assertions
   cannot see this tier either way; the stage corpus can, and
   `tests/stages/kuna-libctypes.xml` pins the row in both arms. The evidence for
   the default is therefore the corpus type-recovery sweep: over the decbench
@@ -1540,12 +1540,11 @@ moves.
   absorbed into the field name it selects, so `*(long *)&a0[4]` becomes
   `a0->field_0x10`, and a thunk that inherits a typed return value grows the
   `return` it had no value to carry before. The functional `PTRSUB(` form the
-  sizing rule exists to prevent stays absent in both arms.
-  `--option libctypes off` restores the shipped
-  `void *` tables byte for byte, which is the ablation to reach for when a
-  pointee name is in question; the cost the default does carry is in
-  `decompile-project`, whose exported `.c` reads fields out of a shell its `.h`
-  declares incomplete (the `.h` is unaffected).
+  sizing rule exists to prevent stays absent in both arms. `--option libctypes
+  off` restores the shipped `void *` tables byte for byte, which is the ablation
+  to reach for when a pointee name is in question; the cost the default carries
+  is in `decompile-project`, whose exported `.c` reads fields out of a shell its
+  `.h` declares incomplete (the `.h` is unaffected).
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.
