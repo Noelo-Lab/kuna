@@ -76,15 +76,29 @@ pub(crate) fn referenced_goto_targets(graph: &BlockGraph, root: BlockId) -> std:
 /// Clear `f_unstructured_targ` on each converted goto target that no carrier in
 /// the (already mutated) structured tree still points at — the shared tail of the
 /// three goto-reduction passes.
+///
+/// The flag lives on the target's **front leaf**
+/// ([`BlockGraph::mark_copy_block`](crate::block::BlockGraph)), and two carriers
+/// can name different blocks — a `BlockList` and the `BlockCopy` it opens with —
+/// that resolve to that same leaf, so the surviving-carrier test compares front
+/// leaves.  Comparing the named blocks dropped the label of a leaf a surviving
+/// `goto` reached through its enclosing list.
 pub(crate) fn release_converted_labels(data: &mut Funcdata, converted: &[BlockId]) {
     if converted.is_empty() {
         return;
     }
     let root = data.sblocks_root();
-    let still = referenced_goto_targets(data.sblocks_ref(), root);
-    for &t in converted {
-        if !still.contains(&t) {
-            data.sblocks_mut().block_mut(t).clear_flag(block_flags::f_unstructured_targ);
-        }
+    let graph = data.sblocks_ref();
+    let still: std::collections::BTreeSet<BlockId> = referenced_goto_targets(graph, root)
+        .into_iter()
+        .filter_map(|t| graph.get_front_leaf(t))
+        .collect();
+    let clears: Vec<BlockId> = converted
+        .iter()
+        .copied()
+        .filter(|&t| graph.get_front_leaf(t).map(|l| !still.contains(&l)).unwrap_or(false))
+        .collect();
+    for t in clears {
+        data.sblocks_mut().block_mut(t).clear_flag(block_flags::f_unstructured_targ);
     }
 }
