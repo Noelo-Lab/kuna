@@ -921,13 +921,48 @@ marker ops are skipped since a later call's own INDIRECTs chain the earlier
 call's versions without any textual evaluation point). Anything else stays
 explicit: false negatives over reordering bugs.
 
-That barrier set is stated in opcodes, and opcodes are not the whole of "writes
-something the callee can read". Heritage promotes a write to a fixed global
-address into a plain `CPUI_COPY`, which no opcode test catches, so
-`v = f(); glob = 42; use(v)` folds and evaluates `f()` after the write to
-`glob` (kuna GH-657). `foldcallretphi` below tests every span it clears for that
-write as well; this predicate does not yet, because it is default-on and the fix
-moves default output.
+A barrier set stated in opcodes is not the whole of "writes something the callee
+can read". Heritage promotes a write to a fixed global address into a plain
+`CPUI_COPY`, which no opcode test catches, so `int t = f(7); k = 42;
+return t + k;` once folded to `k = 0x2a; return f(7) + 0x2a;` — the binary
+returns 50, that C reads 91 (kuna GH-657). The barrier set is therefore stated
+in storage as well as opcodes
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(op_is_barrier)`): a barrier is a call, a `CPUI_LOAD`/`CPUI_STORE`/
+`CPUI_CALLOTHER`, **or** any op whose output varnode is persistent or
+address-tied
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(op_writes_tied_storage)`). A global's output is persistent; a frame slot's is
+tied to its stack address, and the callee can reach one whenever the frame
+address escaped into it — an escaped slot is *not* held back as a `CPUI_STORE`,
+heritage promotes it like any other. The cost is declining over a frame slot the
+callee could not have reached.
+
+One op with a tied output writes nothing: a `CPUI_COPY` back into the storage
+its input already occupies
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(op_is_self_copy)`). `RuleIndirectCollapse` leaves that shape behind — `glob =
+COPY glob` — wherever a call turns out not to write a global it carried an
+INDIRECT for, and it stores the value that is already there, so it is exempt
+(a volatile location is not: there the access itself is the effect).
+
+The span the barrier test runs over is the whole distance the call travels, not
+just the span to its use. The use is the call's textual home only when that use
+op is itself a statement; when the use op's own output is *implied* the
+expression keeps travelling and is evaluated wherever that value is finally
+consumed. So the call output is re-examined in `ActionMarkImplied`
+(`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
+(check_implied_cover)`), where the descendants-first walk has already classified
+the chain below the use and the landing statement is therefore derivable
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(print_point)`); a landing statement in another block, or one with a barrier in
+between, keeps the call spilled
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(fold_print_point_is_order_safe)`). That second span carries the barrier test
+only. The INDIRECT test stays on the span to the use, where it has always been:
+widening it would lift declines as often as it added them, because a collapsed
+INDIRECT of the call itself reads that call's effect by construction.
+Provenance: `docs/features/gh657/`.
 
 The direct call output may have one descendant even though a derived value
 later fans out. For example, `u = (ushort)f()` gives the call one `SUBPIECE`
@@ -978,45 +1013,14 @@ discounted. Second, a use op that itself reads an INDIRECT effect of the call
 declines, since the folded text would otherwise name the operand's high both as
 the call's argument (pre-call) and as an operand of the use (post-call).
 
-A third condition is the discount's own, and it is what makes the move sound
-rather than merely plausible. `foldcallret`'s predicate guards the span from the
-call to its single use, but the use is the call's textual home only when that use
-op is itself a statement — an op with no output, or one whose output is explicit.
-When the use op's own output is *implied*, the expression keeps travelling and is
-printed wherever that implied value is finally consumed, which can be a later
-block behind a branch; the `inflate_test` rejection being discounted here is
-sometimes the only thing holding the call in place. So the discount re-derives
-the real print point by following the implied chain
-(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
-(print_point)`) and re-runs the span guard over the whole distance the call would
-travel: a print point outside the call's own block, or one with a
-call/load/store/callother in between, declines. Without it, `betaflight`'s
+How far the call travels is not this option's question, and it does not ask it:
+the print-point span guard above is `foldcallret`'s and runs for every folded
+call output, this option on or off. Without that guard `betaflight`'s
 `sub_8051ac4` emits its `sub_80515b4(dat_200181a4)` *after* an
 `if (dat_200019cc & 1)` that the binary evaluates after the call — a call moved
-past two global reads it may itself write.
-
-That span guard also carries the barrier the opcode test misses
-(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
-(op_writes_tied_storage)`): any op between the call and the print point whose
-output varnode is address-tied declines. Heritage promotes a write to a fixed
-address into a plain `CPUI_COPY` — a global's output is persistent, a frame
-slot's is tied to its stack address — and neither is an opcode, so the
-CALL/LOAD/STORE/CALLOTHER test waves both through. The callee can read a global
-knowing nothing but its address; it can read a frame slot whenever the frame
-address escaped into it, and an escaped slot is *not* held back as a
-`CPUI_STORE`, heritage promotes it like any other. So both are barriers, at the
-cost of declining a frame slot the callee could not have reached. The shape the
-guard catches, with `helper` returning `k`:
-
-```c
-v2 = helper(g);        /* stays spilled: the fold would evaluate helper */
-k = 42;                /* after this write, and it reads k */
-ok = v1 & v2;
-```
-
-The guard runs over the whole travel distance, which contains the call-to-use
-span, so every fold this option adds is checked even though `foldcallret`'s own
-predicate is not (GH-657).
+past two global reads it may itself write; the discount is sometimes the only
+thing that was holding such a call in place, which is why the guard has to reach
+the landing statement rather than the use.
 
 It ships **off** for two reasons. Flipping the default leaves both corpora at
 PARITY OK (0 of 675 datatest assertions change) and costs nothing measurable on

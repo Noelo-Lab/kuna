@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue GH-657 (P6, sub-stage explicit-marking).
+
+    `foldcallret` (default-on) lets an order-safe single-use call output fall
+    through ActionMarkExplicit::baseExplicit's forced-explicit call arm, which
+    moves the call's evaluation down to where the expression is printed.  The
+    order-safety predicate used to state its barrier set in opcodes - no call,
+    LOAD, STORE or CALLOTHER in between - and heritage promotes a write to a
+    fixed global address into a plain CPUI_COPY, which no opcode test catches.
+    So the call sank past the write to a global it reads, and the emitted C
+    computed a different value than the binary.
+
+    Synthetic minimiser (x86-64, gcc layout), `helper` returning `x + k`:
+
+      target:  mov edi,7 / call helper / mov [k],42 / add eax,42 / ret
+      target2: mov edi,7 / call helper / lea edx,[rax+rax*2] / mov [k],42
+               / lea eax,[rdx+42] / ret
+      helper:  mov eax,[k] / add eax,edi / ret
+
+    `target` is the issue verbatim: the write to `k` sits between the call and
+    its single use, and folding gives `return helper(7) + 0x2a` after `k = 0x2a`
+    - 91 where the binary returns 50.  `target2` puts the write *after* the use
+    instead: the use (`* 3`) is implied, so the call expression travels on to
+    the return statement and crosses the write there.  One pass, defaults only:
+    both must keep the call in a statement of its own, ahead of the write.
+-->
+<bytechunk space="ram" offset="0x1000">
+bf07000000e829000000c7052c000000
+2a00000083c02ac3bf07000000e81100
+00008d1440c705110000002a0000008d
+422ac38b050700000001f8c30f1f4000
+01000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="target"/>
+<symbol space="ram" offset="0x1018" name="target2"/>
+<symbol space="ram" offset="0x1033" name="helper"/>
+</binaryimage>
+<script>
+  <com>lo fu target</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu target2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH657 #1: both calls keep a statement of their own, ahead of the write to the global they read" min="2" max="2">v[0-9]+ = helper\(7\);</stringmatch>
+<stringmatch name="GH657 #2: the write to the global is emitted after that statement in both" min="2" max="2">dat_1040 = 0x2a;</stringmatch>
+<stringmatch name="GH657 #3: target reads the spilled result, it does not re-evaluate the call" min="1" max="1">return v[0-9]+ \+ 0x2a;</stringmatch>
+<stringmatch name="GH657 #4: target2 does the same although its use is implied and the call would travel to the return" min="1" max="1">return v[0-9]+ \* 3 \+ 0x2a;</stringmatch>
+<stringmatch name="GH657 #5: the folded form of the issue is never emitted" min="0" max="0">helper\(7\) \+ 0x2a</stringmatch>
+<stringmatch name="GH657 #6: nor the folded form of the travelling case" min="0" max="0">helper\(7\) \* 3</stringmatch>
+</decompilertest>
