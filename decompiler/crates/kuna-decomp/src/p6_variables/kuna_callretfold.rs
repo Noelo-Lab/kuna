@@ -59,8 +59,17 @@
 //!      ([`fold_print_point_is_order_safe`], asked once the implied chain below
 //!      the use is classified).  The ops that chain travels through are not
 //!      barriers to it: each consumes the previous one's value, so the call is
-//!      evaluated before them either way.  Only the barrier half of (3) is
-//!      re-asked there; the INDIRECT half keeps the span to the use.
+//!      evaluated before them either way.
+//!
+//! Only the barrier half of (3) is re-asked over that second span.  The INDIRECT
+//! half keeps the span to the use, because past the use it declines folds that
+//! are faithful: `dat_33798 = *__errno_location()` is one call, one load and one
+//! store in that order in the binary, and the call's own effect on the global is
+//! what the store performs.  Asking it there de-folds 27 functions across
+//! `grep` O0, `tar` O0 and `ssh` O2 and corrects none.  `foldcallretphi` is the
+//! option that lets a fold travel past a merge conflict at all, so it does ask
+//! the question over the whole distance, for its own folds
+//! ([`landing_span_reads_call_effect`]).
 //!
 //! Keeping `LOAD` in the forbidden set is necessary, not redundant: the call may
 //! `STORE` memory that an intervening `LOAD` reads, so sinking the call past that
@@ -258,23 +267,43 @@ pub fn fold_print_point_is_order_safe(data: &Funcdata, vn: VarnodeId) -> bool {
     print_point_is_order_safe(data, def, use_op)
 }
 
-/// (kuna) Does the statement the folded expression lands in read a value `call`
-/// writes indirectly?
+/// (kuna) Does anything the call would be moved past, up to and including the
+/// statement the folded expression lands in, read a value `call` writes
+/// indirectly?
 ///
-/// The landing statement is where the folded expression is substituted, so the
-/// call is evaluated as one of its operands; but naming another operand there
-/// that is the call's own INDIRECT output puts the operand's high in the text
-/// both as the call's argument (pre-call) and beside it (post-call).  Only
-/// `foldcallretphi` asks: it is the option that lets such a fold reach the
-/// printer at all, and its own sweep measured the five folds this declines.
-pub(crate) fn landing_reads_call_effect(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
-    match print_chain(data, use_op) {
-        Some(chain) => {
-            let point = *chain.last().expect("print_chain: non-empty");
-            op_reads_indirect_output_of(data, point, call)
-        }
-        None => true, // no derivable landing statement: be conservative
+/// [`call_output_foldable`] asks this over the span from the call to its single
+/// use.  Beyond the use the span belongs to whoever let the expression travel
+/// that far, and that is `foldcallretphi`: the merge rejection it discounts is
+/// what otherwise holds such a call in place, so it re-asks the question over
+/// the rest of the distance.  The landing statement is included — the folded
+/// expression is evaluated as one of its operands, but naming another operand
+/// there that is the call's own INDIRECT output puts that operand's high in the
+/// text both as the call's argument (pre-call) and beside it (post-call).  This
+/// is the span guard `foldcallretphi` shipped with, kept whole.
+pub(crate) fn landing_span_reads_call_effect(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
+    let Some(chain) = print_chain(data, use_op) else {
+        return true; // no derivable landing statement: be conservative
+    };
+    let point = *chain.last().expect("print_chain: non-empty");
+    let Some(blk) = op_parent(data, call) else {
+        return true;
+    };
+    if op_parent(data, point) != Some(blk) {
+        return true;
     }
+    let ops = data.bb_ops(blk);
+    let (Some(ci), Some(pi)) = (
+        ops.iter().position(|&o| o == call),
+        ops.iter().position(|&o| o == point),
+    ) else {
+        return true;
+    };
+    if pi <= ci {
+        return true;
+    }
+    ops[ci + 1..=pi]
+        .iter()
+        .any(|&mid| op_reads_indirect_output_of(data, mid, call))
 }
 
 /// Longest implied chain [`print_chain`] will chase before giving up.
@@ -318,11 +347,13 @@ fn print_chain(data: &Funcdata, use_op: OpId) -> Option<Vec<OpId>> {
 /// expression travels *through* are exempt: each consumes the previous one's
 /// value, so the call is still evaluated before them in the folded text exactly
 /// as it is in the binary — a `LOAD` of the pointer a call just returned is not a
-/// load the call was moved past.  Only the barrier test runs here: the INDIRECT
-/// question — whether a read of the call's own effect gets separated from it — is
-/// decided over the span to the use, where it always was, and widening it would
-/// *lift* declines as often as it adds them (the collapsed INDIRECT of the call
-/// itself reads that effect by construction).
+/// load the call was moved past.
+///
+/// Only the barrier test runs here.  The INDIRECT question — whether a read of
+/// the call's own effect gets separated from it — is decided over the span to
+/// the use (the module header measures what asking it here would cost);
+/// `foldcallretphi` asks it over this span for its own folds, in
+/// [`landing_span_reads_call_effect`].
 fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
     let Some(chain) = print_chain(data, use_op) else {
         return false;
@@ -357,6 +388,13 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
 /// to do so, so no callee can observe it on either side of the move; counting it
 /// as a write would decline folds over a write that is not one.  A volatile
 /// location is excluded: there the access itself is the effect.
+///
+/// The test compares storage — same space, offset and size — and not the SSA
+/// version, which is what makes "the value already there" true: heritage links a
+/// read of an address-tied location to the definition reaching that point, so
+/// input 0 of the copy *is* the current value of the output's address.  A copy
+/// that restored an older version would have to read it from somewhere else, and
+/// that read is a different address.
 fn op_is_self_copy(data: &Funcdata, op: OpId) -> bool {
     let Some(o) = data.obank().get(op) else {
         return false;

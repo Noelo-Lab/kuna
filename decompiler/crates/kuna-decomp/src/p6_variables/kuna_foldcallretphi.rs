@@ -42,26 +42,35 @@
 //!   * the operand's high must not belong to a `VariableGroup` (the piece
 //!     intersection loop of `inflate_test` reasons about overlapping storage,
 //!     not versions, so its rejections are never discounted), and
-//!   * neither the use op nor the statement the expression lands in may itself
-//!     read an INDIRECT effect of the call — there the folded text would name
-//!     the operand's high both as the call's argument (pre-call) and beside it
-//!     (post-call).
+//!   * nothing from the call up to and including the statement the expression
+//!     lands in may read an INDIRECT effect of the call — there the folded text
+//!     would name the operand's high both as the call's argument (pre-call) and
+//!     beside it (post-call).
 //!
-//! # Order safety is not this option's business
+//! # Why this option carries its own span guard
 //!
-//! How far the call travels is
-//! [`foldcallret`](crate::p6_variables::kuna_callretfold)'s guard, not this
-//! one's.  `call_output_foldable`'s span ends at the single use, which is the
-//! call's textual home only when that use op is itself a statement; when the use
-//! op's own output is implied the expression keeps travelling, and the rejection
-//! this module discounts is sometimes the only thing that was holding such a
-//! call in place.  So the span is cleared all the way to the real landing
-//! statement, and against writes to persistent or address-tied storage as well
-//! as memory opcodes, by
-//! [`fold_print_point_is_order_safe`](crate::p6_variables::kuna_callretfold)
-//! (GH-657) — one arm earlier in the same
-//! [`check_implied_cover`](crate::p6_variables::coreaction_cleanup) call, for
-//! every folded call output whether this option is on or off.
+//! `call_output_foldable`'s span ends at the single use, which is the call's
+//! textual home only when that use op is itself a statement; when the use op's
+//! own output is implied the expression keeps travelling, and the rejection this
+//! module discounts is sometimes the only thing that was holding such a call in
+//! place.  The distance it then travels is therefore this option's to clear, and
+//! it is cleared twice over:
+//!
+//!   * against barriers — a call, a memory opcode, or a write to persistent or
+//!     address-tied storage — by
+//!     [`fold_print_point_is_order_safe`](crate::p6_variables::kuna_callretfold),
+//!     one arm earlier in the same
+//!     [`check_implied_cover`](crate::p6_variables::coreaction_cleanup) call.
+//!     That arm runs for every folded call output, this option on or off; it is
+//!     where GH-657's tied-write barrier reaches the default fold.
+//!   * against reads of the call's own INDIRECT effects, by
+//!     [`landing_span_reads_call_effect`](crate::p6_variables::kuna_callretfold).
+//!     `foldcallret` asks that question only as far as the use, where asking it
+//!     further declines faithful folds; here it is asked over the whole
+//!     distance, because the folds that reach this far are exactly the ones the
+//!     merge machinery was holding.  Dropping it folds `ssh` O2 `sub_4fd30`'s
+//!     `sub_3fa80` past a copy of an escaped stack slot the call reloads —
+//!     GH-181's shape.
 //!
 use kuna_base::error::KunaResult;
 use kuna_num::opcodes::OpCode;
@@ -95,7 +104,7 @@ pub fn conflict_is_self_call_effect(
     if op_reads_indirect_effect_of(data, use_op, call) {
         return false;
     }
-    if crate::kuna_callretfold::landing_reads_call_effect(data, call, use_op) {
+    if crate::kuna_callretfold::landing_span_reads_call_effect(data, call, use_op) {
         return false;
     }
     let Some(high_cover) = data.high_bank().internal_cover(high).cloned() else {
