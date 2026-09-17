@@ -697,16 +697,17 @@ reachable from its *printed* (explicit) members and folds them into one verdict:
 `INT_SEXT`, `INT_SCARRY` and `INT_SBORROW` demand signed; `INT_LESS`,
 `INT_LESSEQUAL`, `INT_DIV`, `INT_REM`, `INT_RIGHT` (operand 0), `INT_ZEXT` and
 `INT_CARRY` demand unsigned; a `CPUI_CAST` to a plain integer of the same width
-is a demand for the type it casts to. `INT_LEFT` is deliberately *not* in that
-list: the shifted bits are the same under either declaration, so `<<` is a
-neutral operator whose printed result carries the shiftee's type, and whatever
-reads the shifted value is what decides. (An earlier revision demanded unsigned
-there on the ground that `negative << k` is undefined in C. The argument does
-not separate `<<` from `+ - *`, whose signed overflow is undefined on the same
-footing and which are neutral here, so it was dropped — kuna's C models the
-arithmetic the binary performs and is not UB-free by construction — and it cost
-fidelity, being the source of every `int` → `unsigned int` flip `auto` made
-against DWARF in the corpus sweep.) `auto` declares the value signed when every demand is signed and
+is a demand for the type it casts to. `INT_LEFT` (operand 0) also pulls unsigned,
+and it is the one entry in that list which is a stated **preference rather than a
+soundness requirement**: `a << k` shifts the same bits into the same places under
+either declaration, and `INT_LEFT` takes the *default* `getInputCast` arm
+(`care_uint_int = false`), so it is not part of what makes a flip
+meaning-preserving. The rule is kept because a value the body ORs and shifts left
+is a bit buffer, which C source spells unsigned, and because a signed `<<` is the
+one otherwise-neutral operator `-fsanitize=undefined` reports; it is not kept
+because `negative << k` is undefined, an argument that does not separate `<<`
+from `+ - *`, whose signed overflow is undefined on the same footing and which
+are neutral here. `auto` declares the value signed when every demand is signed and
 unsigned when every demand is unsigned, and leaves it alone otherwise;
 `prefer-signed` and `prefer-unsigned` additionally settle the no-demand case,
 which is TRex's observation that C programmers write `int` when the signedness
@@ -760,10 +761,11 @@ expression". First, the walk follows *implied* results: `v + 1 < 0` prints as
 one expression, so the C type of `v + 1`, and therefore whether the comparison
 is signed, follows `v`'s declaration; an operation that keeps carrying the
 operand's type extends the walk to its readers, and one whose result is a
-declared variable of its own ends it. Two of the *demanding* operations carry
-the operand's type as well — `>>` prints at the shiftee's promoted type and
-`/ %` at the usual-arithmetic-conversion type of their operands — so those
-record their demand and continue the walk, while a comparison, a
+declared variable of its own ends it. Some of the *demanding* operations carry
+the operand's type as well — `>>` and `<<` print at the shiftee's promoted type
+and `/ %` at the usual-arithmetic-conversion type of their operands — so those
+record their demand and continue the walk, which is what keeps a second operator
+further out (`(v << 3) >> 2`) from disagreeing unseen, while a comparison, a
 cast-printing extension and a carry intrinsic stop it because their printed
 result establishes a type of its own. Second, anything unclassified vetoes the
 variable outright — a `LOAD` or `STORE` address, a `PTRADD`/`PTRSUB` index
