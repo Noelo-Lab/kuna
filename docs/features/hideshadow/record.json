@@ -83,6 +83,15 @@
       "fields_that_differ": "line_numbers only (shifted by one, because a line was deleted)",
       "fields_that_are_identical": "name, type, size, kind, arg_index, stack_offset, addresses -- i.e. every field type_match scores",
       "conclusion": "structurally neutral on type_match by construction; the measured sweep agrees"
+    },
+    "typesweep_changed_projects": {
+      "slices": "276 (coreutils + shadow at O2 and O2-noinline -- every project whose C this option changes at those levels)",
+      "functions_scored": 4253,
+      "type_match_perfect": "155 -> 155 (+0)",
+      "aggregate_type_match": "701.51 -> 701.51 (+0.00)",
+      "moved_onto_perfect": 0,
+      "moved_off_perfect": 0,
+      "control_byte_identical_variables": "4253 functions, 0 scored differently"
     }
   },
   "gates": {
@@ -92,7 +101,7 @@
     "make check-spec": "OK (lenient + strict)",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
-    "make rust-test": "PENDING"
+    "make rust-test": "green (RUST_TEST_RC=0, 0 test-result FAILED lines)"
   },
   "catalog_counts": {
     "settables": "213 -> 214",
