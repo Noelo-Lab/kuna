@@ -150,11 +150,12 @@
   "gates": {
     "make_test": "datatests 675/675 PARITY OK",
     "make_test_stages": "datatests 1067/1067 PARITY OK",
-    "make_test_cli": "pending re-run",
+    "make_test_cli": "tests/cli 178/178 passed",
     "make_check_spec": "OK lenient + OK strict",
     "kuna_catalog_check": "catalog OK",
     "counters_check": "no drift (settables 214, corpus 304)",
-    "make_rust_test": "pending re-run"
+    "docs_options_md": "byte-fresh against the rebuilt catalog",
+    "make_rust_test": "RUST_TEST_RC=0, 415 `test result: ok`, 0 failures (lane run 2026-09-17T14:27:46Z..14:43:45Z on the final tree)"
   },
   "default_off_reason": "The lifted merge_test_adjacent refusal is sound only when the illegal input is the DESTINATION of the copy (the machine really does store into the frame slot). When it is the SOURCE -- the machine loads an escaped frame slot into a register and mutates the register -- the merge makes the emitted C mutate the slot, fabricating a store a later call handed the enclosing object can read. A CPUI_INDIRECT is attached only where the storage is still live in the SSA, so a slot whose last read precedes the loop carries no INDIRECT at any later call and the cover-intersection test has nothing to intersect. Stock Ghidra 12.1.2 emits the same fabricated store on the same input (docs/features/indirectonly/counterexample.md), so this is an upstream defect the port inherits faithfully rather than a porting error; kuna declines to inherit it by default.",
   "counterexample": {
