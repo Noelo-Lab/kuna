@@ -68,8 +68,8 @@ and only a recorded override authorizes dropping a cast.
 evidence, so the only text it can move is that declaration and the casts the new
 declaration makes into no-ops — which is what every instrument below measures,
 and why it clears the repo's default-ON bar: 0 of 675 datatest assertions, stages
-`PARITY OK` (1082/1082 on the indirectonly base), speed within the +5% budget, and every hunk over eight
-whole binaries classified as a declaration flip or a dropped cast.
+`PARITY OK` (1088/1088 on the libctypes-glibc base), speed within the +5% budget, and every hunk over
+twelve whole binaries classified as a declaration flip or a dropped cast.
 
 `prefer-signed` is the arm with the better DWARF agreement (98.4% overall,
 94.8% at `-O2`, against `upstream`'s 93.4%/71.9%) and it stays **opt-in**: it
@@ -95,7 +95,9 @@ unanimity covers and more than the datatest corpus can absorb as a default.
   `-O2` against `prefer-signed`'s 98.4% / 94.8%, because it turns 379 `size_t`
   locals signed where `prefer-signed` turns 12 — done, see `analysis.md`;
 * 0/675 datatests and stages `PARITY OK` with the default flipped — done;
-* speed within +5% — done (+0.17% on the minimum of 21 interleaved runs).
+* speed within +5% — done (pooled −0.56% on the minimum of 15 interleaved runs over
+  `fmt`/`ls`/`sort` `-O2`; the runs straddle zero, so read it as unmeasurable rather
+  than as a speedup — the widest single-binary reading is +0.99%).
 
 ## Interactions
 

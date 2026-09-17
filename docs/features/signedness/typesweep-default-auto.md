@@ -16,8 +16,11 @@ the metric a byte-identical `variables[]` in both arms. The option decides a
 HighVariable DECLARATION, and no declaration reaches the scored surface, so the
 identical scores below are a construction, not a coincidence.
 
-Re-run in full on the structdefs base (origin/main 75a7f6b0, .scratch/typesweep-signedness-r7):
-every number below reproduced exactly, control line included.
+Re-run in full on the structdefs base (origin/main 75a7f6b0,
+.scratch/typesweep-signedness-r7) and again on the libctypes-glibc base
+(origin/main eb87d279, .scratch/typesweep-signedness-r9): every number below
+reproduced exactly both times, control line included -- the second report is
+byte-identical to this file's body.
 -->
 
 # typesweep signedness=upstream

@@ -107,3 +107,10 @@ The stderr of each pair is identical too, so no analysis-tier decision moved.
 Reproduce any row with the two `decompile-all` runs the classifier's header
 shows; the raw dumps this table was built from are untracked (`.scratch/dumps4`,
 `.scratch/dumps6`, `.scratch/dumps7`).
+
+The table survives a rebase without being re-run when the incoming option does
+not move the default path, and that is checked rather than assumed: on the
+libctypes-glibc base (origin/main eb87d279) one x86-64 image (`grep -O2`) and one
+ARM32 image (`libopencm3 adc-dac-printf.elf -O2`) were re-decompiled in BOTH arms
+and came out byte-identical to the dumps above, so their classification is
+unchanged by construction.
