@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_218() {
+fn settable_count_is_219() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -156,12 +156,13 @@ fn settable_count_is_218() {
     // +1 for `ptrfromuse` (P5 use-derived parameter pointer).
     // +1 for `structsynth` (P5 struct synthesis over a pointer parameter).
     // +1 for `signedness` (P9 declared-signedness rounding).
-    assert_eq!(kuna_num_settables(), 218);
-    assert_eq!(SETTABLE_TABLE.len(), 218);
+    // +1 for `boolbyte` (P5 truth-valued byte typing).
+    assert_eq!(kuna_num_settables(), 219);
+    assert_eq!(SETTABLE_TABLE.len(), 219);
 }
 
 #[test]
-fn tier_counts_are_68_core_87_transform_63_analysis() {
+fn tier_counts_are_69_core_87_transform_63_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -298,7 +299,8 @@ fn tier_counts_are_68_core_87_transform_63_analysis() {
     // transform 84 -> 85: +1 for `structsynth` (P5 struct synthesis over a
     // pointer parameter).
     // transform 85 -> 86: +1 for `signedness` (P9 declared-signedness rounding).
-    assert_eq!((core, transform, analysis), (68, 87, 63));
+    // core 68 -> 69: +1 for `boolbyte` (P5 truth-valued byte typing).
+    assert_eq!((core, transform, analysis), (69, 87, 63));
 }
 
 #[test]
@@ -488,7 +490,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_88() {
+fn option_values_live_value_present_for_89() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -911,7 +913,8 @@ fn option_values_live_value_present_for_88() {
     // 85 -> 86: +1 for `bytehonest` (live_field = byte_honest).
     // 86 -> 87: +1 for `argclobber` (live_field = arg_clobber, opt-in).
     // 87 -> 88: +1 for `hideshadow` (live_field = hide_shadow, default-on).
-    assert_eq!(with_live, 88);
+    // 88 -> 89: +1 for `boolbyte` (live_field = bool_byte, opt-in).
+    assert_eq!(with_live, 89);
 }
 
 #[test]
@@ -1076,7 +1079,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 214 -> 215: +1 for `structsynth`.
     // 215 -> 216: +1 for `signedness`; its P9 row sits mid-table, so it
     // increments the comma-terminated catalog-row count.
-    assert_eq!(json.matches("},\n").count(), 217);
+    // 216 -> 217: +1 for `boolbyte`; its P5 row sits mid-table, so it
+    // increments it again.
+    assert_eq!(json.matches("},\n").count(), 218);
 }
 
 #[test]

@@ -852,6 +852,12 @@ pub struct ArchContext {
     /// dereferenced value; mirrors
     /// [`Architecture::codescalar`](crate::architecture::Architecture).
     pub codescalar: bool,
+    /// (kuna `boolbyte`) Offer `bool` as a `getLocalType` candidate for a byte
+    /// whose every read is a truth test.  Mirror of
+    /// [`Architecture::bool_byte`](crate::architecture::Architecture); the walk
+    /// lives in [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
+    pub bool_byte: bool,
+
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be a
     /// LOAD/STORE base as a pointer; mirrors
     /// [`Architecture::ptr_from_use`](crate::architecture::Architecture).  Read by
@@ -1540,6 +1546,7 @@ impl ArchContext {
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth
             codescalar: false,           // (kuna) option codescalar
+            bool_byte: false, // (kuna) option boolbyte
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch

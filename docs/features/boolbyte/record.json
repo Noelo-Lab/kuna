@@ -1,0 +1,416 @@
+{
+ "opportunity": "kuna declares a byte whose every use is a truth test `char`, because `TYPE_BOOL` is only ever an op's OUTPUT type and `TypeOpEqual::get_input_local` votes `get_base(1, TYPE_INT)` -- the ASCII `char` -- for the value being compared. Over the 444-slice decbench type sweep, 3,228 ground-truth variables are `_Bool`; 2,057 of them are matchable (argument index or calibrated stack offset) and 1,129 of those are misses, 866 because kuna committed the byte to `char` (700) or `unsigned char` (166).",
+ "test_name": "tests/stages/kuna-boolbyte.xml (10 two-pass assertions: one witness, five refusals incl. the two INDIRECT controls) + 4 unit tests on the fold order",
+ "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/basename",
+ "selector": "0x2b45",
+ "func_addr": "0x2b45",
+ "angr_version": null,
+ "option": "boolbyte",
+ "flag": "bool_byte",
+ "element_id": null,
+ "change_kind": "type-inference",
+ "tier": "core",
+ "source_decompiler": "ida",
+ "inspiration": "IDA's Hex-Rays declares a byte whose only uses are conditions as `bool`; its microcode carries a boolean operand kind for the same values. This rule reaches the same declaration through Ghidra's own lattice, by supplying the TYPE_BOOL candidate the getLocalType fold never has.",
+ "default_on": false,
+ "default_value": "off",
+ "values": "on|off",
+ "parity": "OK",
+ "witness": {
+  "function": "coreutils basename -O0 perform_basename @0x2b45 (DWARF: perform_basename(char const *, char const *, _Bool use_nuls))",
+  "before": "void sub_2b45(unsigned long a0,long a1,char a2)   /* JSON: {\"name\":\"param_3\",\"type\":\"char\",\"kind\":\"arg\",\"arg_index\":2,\"size\":1} */",
+  "after": "void sub_2b45(unsigned long a0,long a1,bool a2)   /* JSON: {\"name\":\"param_3\",\"type\":\"bool\",\"kind\":\"arg\",\"arg_index\":2,\"size\":1} */",
+  "body_change": "none -- `v1 = (a2) ? 0 : 10;` is byte-identical in both arms"
+ },
+ "census": {
+  "slices": 444,
+  "functions_scored": 10748,
+  "gt_variable_decisions": 65377,
+  "gt_bool_rows": 3228,
+  "gt_bool_matchable": 2057,
+  "gt_bool_matchable_hits": 928,
+  "matchable_committed_non_bool": 1005,
+  "matchable_committed_non_bool_one_byte": 866,
+  "by_spelling": {
+   "char": 700,
+   "unsigned char": 166,
+   "unsigned int": 89,
+   "other": 50
+  },
+  "by_storage_class": {
+   "arg": 668,
+   "stack_offset": 337
+  },
+  "by_opt": {
+   "O0": 429,
+   "O2": 247,
+   "O2-noinline": 329
+  },
+  "c_text_use_class": {
+   "A_every_use_a_truth_test": 538,
+   "B_plus_a_call_argument": 116,
+   "C_plus_a_call_result_def": 21,
+   "D_a_real_non_truth_use": 191
+  },
+  "class_A_arguments": 488,
+  "mechanism_sample": {
+   "n": 15,
+   "B_iii_no_seed": 15,
+   "B_i_nz_mask_refusal": 0,
+   "B_ii_merged_high": 0,
+   "note": "every sampled argument's byte carries local type `char`, mask 0xff, written=false -- there is no bool candidate for B-i to refuse or B-ii to demote; B-i fires 3-546 times per function on OTHER varnodes"
+  }
+ },
+ "benchmark": {
+  "metric": "decbench type_match (main), DECBENCH_NO_CACHE=1, both arms the same pinned binary",
+  "slice_set": "projects coreutils grep gzip diffutils bzip2 findutils tar shadow cronie dash kmod dpkg x O0/O2/O2-noinline (474 slices, 13276 functions) -- the 444-slice campaign set plus the four projects the bool-array defect was found in",
+  "perfect_off": 1127,
+  "perfect_on": 1155,
+  "perfect_delta": 28,
+  "aggregate_off": 3656.19,
+  "aggregate_on": 3734.82,
+  "moved_onto_perfect": 28,
+  "moved_off_perfect": 0,
+  "improved_not_perfect": 422,
+  "worsened_not_perfect": 0,
+  "harness_control_identical_variables": 12811,
+  "harness_control_scored_differently": 0,
+  "campaign_444_subset": {
+   "n": 10748,
+   "perfect_off": 959,
+   "perfect_on": 987,
+   "aggregate_off": 3037.06,
+   "aggregate_on": 3112.54,
+   "improved": 430,
+   "worse": 0
+  },
+  "added_projects_subset": {
+   "n": 2528,
+   "perfect_off": 168,
+   "perfect_on": 168,
+   "aggregate_off": 619.14,
+   "aggregate_on": 622.29,
+   "improved": 20,
+   "worse": 0
+  },
+  "per_project": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 19,
+    "perfect_on": 19,
+    "mean_off": 0.3664,
+    "mean_on": 0.3664,
+    "improved": 0,
+    "worse": 0,
+    "aggregate_off": 97.82,
+    "aggregate_on": 97.82
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 592,
+    "perfect_on": 611,
+    "mean_off": 0.2726,
+    "mean_on": 0.2816,
+    "improved": 341,
+    "worse": 0,
+    "aggregate_off": 1750.7,
+    "aggregate_on": 1808.17
+   },
+   "cronie": {
+    "n": 501,
+    "perfect_off": 39,
+    "perfect_on": 39,
+    "mean_off": 0.3446,
+    "mean_on": 0.3446,
+    "improved": 0,
+    "worse": 0,
+    "aggregate_off": 172.62,
+    "aggregate_on": 172.62
+   },
+   "dash": {
+    "n": 839,
+    "perfect_off": 72,
+    "perfect_on": 72,
+    "mean_off": 0.296,
+    "mean_on": 0.296,
+    "improved": 0,
+    "worse": 0,
+    "aggregate_off": 248.33,
+    "aggregate_on": 248.33
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 51,
+    "perfect_on": 52,
+    "mean_off": 0.3907,
+    "mean_on": 0.4004,
+    "improved": 19,
+    "worse": 0,
+    "aggregate_off": 164.1,
+    "aggregate_on": 168.16
+   },
+   "dpkg": {
+    "n": 908,
+    "perfect_off": 44,
+    "perfect_on": 44,
+    "mean_off": 0.1305,
+    "mean_on": 0.1329,
+    "improved": 15,
+    "worse": 0,
+    "aggregate_off": 118.49,
+    "aggregate_on": 120.65
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 33,
+    "perfect_on": 35,
+    "mean_off": 0.1588,
+    "mean_on": 0.1622,
+    "improved": 10,
+    "worse": 0,
+    "aggregate_off": 125.46,
+    "aggregate_on": 128.14
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 37,
+    "perfect_on": 39,
+    "mean_off": 0.3689,
+    "mean_on": 0.387,
+    "improved": 20,
+    "worse": 0,
+    "aggregate_off": 91.13,
+    "aggregate_on": 95.59
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 88,
+    "perfect_on": 88,
+    "mean_off": 0.4844,
+    "mean_on": 0.4858,
+    "improved": 2,
+    "worse": 0,
+    "aggregate_off": 178.27,
+    "aggregate_on": 178.77
+   },
+   "kmod": {
+    "n": 280,
+    "perfect_off": 13,
+    "perfect_on": 13,
+    "mean_off": 0.2846,
+    "mean_on": 0.2882,
+    "improved": 5,
+    "worse": 0,
+    "aggregate_off": 79.7,
+    "aggregate_on": 80.69
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 29,
+    "perfect_on": 29,
+    "mean_off": 0.2879,
+    "mean_on": 0.2897,
+    "improved": 12,
+    "worse": 0,
+    "aggregate_off": 197.47,
+    "aggregate_on": 198.71
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 110,
+    "perfect_on": 114,
+    "mean_off": 0.2791,
+    "mean_on": 0.2824,
+    "improved": 26,
+    "worse": 0,
+    "aggregate_off": 432.11,
+    "aggregate_on": 437.18
+   }
+  },
+  "measured_on": "re-run end to end on the final binary after the printer arm landed; totals are identical to the pre-arm run, as expected -- the arm moves C text in four functions and the metric scores the JSON variables[] surface."
+ },
+ "corpus_sweep": {
+  "binaries": [
+   "coreutils/O0/du",
+   "coreutils/O0/fmt",
+   "cronie/O0/crontab",
+   "dash/O0/dash",
+   "findutils/O0/find",
+   "kmod/O0/kmod",
+   "coreutils/O2/ls",
+   "coreutils/O2/sort",
+   "cronie/O2/crond",
+   "dash/O2/dash",
+   "dpkg/O2/dpkg-divert",
+   "grep/O2/grep",
+   "libedit/O2/libedit.so.0.0.70",
+   "shadow/O2/su",
+   "tar/O2/tar",
+   "zlib/O2/example"
+  ],
+  "functions": 7026,
+  "functions_whose_c_changed": 100,
+  "declaration_only_after_normalising_byte_type_names_casts_flag_literals_and_variable_numbers": 89,
+  "functions_whose_declaration_count_changed": 6,
+  "declarations_off": 2474,
+  "declarations_on": 2470,
+  "bool_casts_off": 114,
+  "bool_casts_on": 126,
+  "sub_intrinsics_off": 7,
+  "sub_intrinsics_on": 0,
+  "exported_bool_variables_off": 12,
+  "exported_bool_variables_on": 102,
+  "bool_typed_array_rows_on_the_scored_surface": 0,
+  "classification": [
+   "89/100 functions change only declaration spellings (`char v` -> `bool v`, `char a0` -> `bool a0`) and the rendering of the flag constants they are assigned (`v = '\\x01'` -> `v = 1`, `a1 == '\\0'` -> `a1 == 0`), which is what a bool declaration should do to a flag.",
+   "4/100 lose a raw `SUBnn` p-code intrinsic: `v24 = SUB41(v29 >> 0x1f,0);` -> `v24 = (bool)(v29 >> 0x1f);` (du -O0 0x815c, find -O0 0x347a5, libedit -O2 0x25e80, tar -O2 0x41370).  `CastStrategyC::isSubpieceCast` has no TYPE_BOOL destination in its list, so without the option's printer arm a truncation into a bool falls to the functional form and emits an undeclared identifier.  Counts of the intrinsic therefore go DOWN, never up: whole-binary, tar -O2 4 -> 1, ls -O2 1 -> 0, du -O0 1 -> 0, grep -O2 0 -> 0; and 7 -> 0 counted over the 100 functions the option changes at all.  Three of those seven are cases a comparison alone had already made `bool` without this rule, so the arm also removes them; with the option off the printer is byte-for-byte unchanged.",
+   "6/100 change their declaration COUNT: typing a byte bool can split a speculative merge, so a flag and a byte load that shared one `unsigned char` declaration become two variables.  Net -4 declarations over the sixteen binaries.  The remaining `vN` locals renumber, which is most of the raw diff volume.",
+   "1/100 (grep -O2 0x109d0) moves the same way with the declaration count unchanged: one `unsigned char` splits into a `bool` and an `unsigned char`, so the array index in `*(unsigned long *)(a1[0x31] + a0 * 8) = v11[v32];` comes to name the other half.  Splitting a merge is not a loss of information, but it moves names, which is part of why the option is a judgment call.",
+   "no statement moved, no branch changed, no call was added or removed in any of the 100.",
+   "ZERO bool-typed ARRAY rows on the scored variables[] surface across all sixteen binaries -- the class of defect that produced `bool v2 [131088]` on a cronie fgets buffer.  cronie crond -O2 and crontab -O0, where it was found, now have 0 changed functions."
+  ],
+  "measured_on": "the branch rebased onto main 2272403d, re-measured after the printer arm was added (kuna_boolbyte::truncation_prints_as_cast).  The basename -O0 0x2b45 witness still flips char -> bool and cronie crond -O2 0x7a20 still reads char v2 [131088] with the option on.",
+  "functions_whose_merge_shape_moved_without_a_declaration_count_change": 1,
+  "functions_whose_sub_intrinsic_became_a_bool_cast": 4,
+  "sub_intrinsics_off_note": "counted over the 100 functions whose C changes, not whole-binary"
+ },
+ "speed": {
+  "method": "scripts.pipeline.timeit shape: one pinned release binary, the two arms INTERLEAVED run by run, min and median of n.  Measured with two other campaign worktrees running their own suites (load average 15-30 on 80 cores), so the medians carry the machine noise and the minima are the cleaner figure; every reading over +5% on the first pass was re-run with more reps.",
+  "measurements": [
+   {
+    "label": "tar -O2 0x41370 (1200-line option parser, the function it changes most)",
+    "n": 15,
+    "off_min": 3280.8,
+    "on_min": 3281.8,
+    "delta_min_pct": 0.03,
+    "off_med": 3500.5,
+    "on_med": 3763.6,
+    "delta_med_pct": 7.52
+   },
+   {
+    "label": "grep -O2 0x109d0 (a function it changes)",
+    "n": 15,
+    "off_min": 800.0,
+    "on_min": 616.2,
+    "delta_min_pct": -22.97,
+    "off_med": 804.9,
+    "on_med": 806.0,
+    "delta_med_pct": 0.14
+   },
+   {
+    "label": "du -O0 0x815c (a function whose SUBnn becomes a cast)",
+    "n": 15,
+    "off_min": 2145.1,
+    "on_min": 2161.6,
+    "delta_min_pct": 0.77,
+    "off_med": 2676.8,
+    "on_med": 2740.2,
+    "delta_med_pct": 2.37
+   },
+   {
+    "label": "ls -O2 whole binary (404 functions)",
+    "n": 5,
+    "off_min": 13913.7,
+    "on_min": 14290.4,
+    "delta_min_pct": 2.71,
+    "off_med": 14589.4,
+    "on_med": 14759.1,
+    "delta_med_pct": 1.16
+   },
+   {
+    "label": "grep -O2 whole binary (449 functions)",
+    "n": 5,
+    "off_min": 12027.4,
+    "on_min": 12643.5,
+    "delta_min_pct": 5.12,
+    "off_med": 13702.8,
+    "on_med": 13425.9,
+    "delta_med_pct": -2.02
+   },
+   {
+    "label": "grep -O2 whole binary (449 functions) -- re-run, min-of-11",
+    "n": 11,
+    "off_min": 12022.7,
+    "on_min": 12228.6,
+    "delta_min_pct": 1.71,
+    "off_med": 13625.2,
+    "on_med": 13263.5,
+    "delta_med_pct": -2.65
+   },
+   {
+    "label": "ls -O2 whole binary (404 functions) -- re-run, min-of-11",
+    "n": 11,
+    "off_min": 13524.7,
+    "on_min": 13562.0,
+    "delta_min_pct": 0.28,
+    "off_med": 14943.8,
+    "on_med": 15131.1,
+    "delta_med_pct": 1.25
+   },
+   {
+    "label": "tar -O2 0x41370 -- re-run, min-of-21",
+    "n": 21,
+    "off_min": 3528.9,
+    "on_min": 3618.6,
+    "delta_min_pct": 2.54,
+    "off_med": 3840.1,
+    "on_med": 3806.4,
+    "delta_med_pct": -0.88
+   }
+  ],
+  "worst_min_delta_pct": 2.54,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_note": "Re-measured on the final binary, after the printer arm.  First pass put `grep` -O2 whole-binary at +5.12% on the minimum while its median said -2.02%; a min-of-11 re-run settles it at +1.71% min / -2.65% median.  `grep` -O2 0x109d0 reading -22.97% on the minimum in the same pass is the same noise from the other side (its median is +0.14%).  The worst honest minimum is tar -O2 0x41370 at +2.54% (median -0.88%).  The pre-INDIRECT-fix +10.6% on that function is gone: with INDIRECT refused and the two declines added the rule gives up earlier."
+ },
+ "gates": {
+  "make_test": "675/675 PARITY OK",
+  "make_test_stages": "1125/1125 PARITY OK (+12 boolbyte added, 0 removed, 0 moved)",
+  "make_test_cli": "184/184 passed",
+  "check_spec": "OK (lenient) + OK (strict)",
+  "kuna_catalog_check": "catalog OK",
+  "counters_check": "no drift (219 settables, tiers 69/87/63, 313 stage-corpus files)",
+  "options_md": "byte-fresh",
+  "make_rust_test": "RUST_TEST_RC=0 (416 test binaries, 0 failures)",
+  "measured_on": "the branch rebased onto main fe3abc23 (signedness #656); the witness and the tar -O2 SUBnn count (4 -> 1) re-checked on that build"
+ },
+ "soundness": {
+  "no_wider_value_inherits_bool": {
+   "method": "every exported variables[] row whose type became `bool` between the two arms, over coreutils/O2/ls, grep/O2/grep and findutils/O0/find",
+   "variables_that_became_bool": 54,
+   "by_size": {
+    "1": 54
+   },
+   "note": "no 2/4/8-byte value and no pointer acquired bool; the TYPE_BOOL propagation gate (untouched) is what stops a seeded bool from crossing into a Varnode whose mask exceeds 1"
+  },
+  "type_propagation_ceiling": {
+   "method": "throwaway instrumented build logging every `set_type_recovery_exceeded` (the 7-pass ceiling at coreaction_render.rs:2934), whole-binary decompile-all, both arms",
+   "ls_O2": {
+    "off": 6,
+    "on": 6
+   },
+   "grep_O2": {
+    "off": 10,
+    "on": 10
+   },
+   "find_O0": {
+    "off": 2,
+    "on": 2
+   },
+   "tar_O2": {
+    "off": 23,
+    "on": 23
+   },
+   "note": "identical in both arms on all four binaries -- the extra candidate does not make the lattice oscillate"
+  }
+ },
+ "default_on_evaluation": {
+  "verdict": "NOT flipped this round",
+  "datatests_with_the_default_flipped": "675/675 PARITY OK (0 assertions move)",
+  "stages_with_the_default_flipped": "1115/1115 PARITY OK; the stage test's pass 1 already carries an explicit `option boolbyte off`, so the bug arm still reproduces",
+  "speed": "worst interleaved minimum +2.54% (tar -O2 0x41370), budget +5%",
+  "typesweep": "474 slices: 28 moved onto perfect, 0 moved off, 422 improved, 0 worsened",
+  "c_text": "16 binaries / 7,026 functions: 100 change, 89 declaration-and-literal only, 4 strictly better (a raw SUBnn intrinsic becomes a cast), 7 move which variable the body names; 0 wrong-output hunks",
+  "why_not": "Every mechanical criterion passes.  What holds it back is the seven merge-shape moves: typing a byte `bool` un-merges a speculative merge, so a declaration count and the name an expression uses can change, and that is a readability judgment rather than a correctness one.  The round-2 reviewer required the default stay off this round for that reason, and the measurement above is recorded so a flip can be a one-line PR with its evidence already in hand."
+ }
+}

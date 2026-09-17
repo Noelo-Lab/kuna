@@ -408,6 +408,131 @@ change to one declaration per function; the declaration is what moves, but the
 body moves with it, because once the parameter is a byte pointer the
 pointer-arithmetic pool rewrites `*(int *)(a0 + 8)` into `*(int *)&a0[8]`.
 
+**The truth-valued byte (`boolbyte`).** `TYPE_BOOL` only ever enters the
+lattice as an op's *output*: every `booloutput` opcode's `get_output_local` is
+`get_base(size, TYPE_BOOL)`, and `CBRANCH`'s slot-1 `get_input_local` is the
+same. Nothing mints it for the value being *compared*.
+`TypeOpEqual::get_input_local` votes `get_base(1, TYPE_INT)` for that, and on a
+one-byte request that is the ASCII `char`, because `cache_core_types` prefers a
+character type over `int1` at the same (size, metatype) cell ("Char is preferred
+over other int types", transcribed from upstream). So the seed fold for a flag
+byte contains `char` and nothing else, and a value the program declared `_Bool`
+is declared `char` - on coreutils `basename` -O0, `void sub_2b45(unsigned long
+a0, long a1, char a2)` whose only use of `a2` is `v1 = (a2) ? 0 : 10`, where
+DWARF says `_Bool use_nuls`. Propagation cannot rescue it either: `BOOL_*` has
+no transfer function at all, so bool travels only by COPY/MULTIEQUAL/INDIRECT
+identity, and the gate above (a `TYPE_BOOL` refuses to land on a Varnode whose
+non-zero mask admits values above 1) stops it at the first edge into an
+unconstrained input.
+
+When `boolbyte` is `on` (shipped `off`),
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_boolbyte.rs
+(truth_value_type)` supplies the missing candidate. It applies to a one-byte
+Varnode that is not a constant, not type-locked, not covered by a type-locked
+symbol, and not in the unique space - a temporary there is an expression the
+printer renders inline, and typing it would buy nothing but the `(bool)` cast
+the cast tail then has to insert to reconcile the op's own output type. The
+evidence has a def half and a use half, and which halves apply depends on
+whether the value is written in this function.
+
+* **The use half** walks the Varnode's transitive readers with the same bounded
+  breadth-first worklist `ptrfromuse` uses - a visited set and a ten-hop cap,
+  and running out of hops refuses rather than accepting, because a use the walk
+  never reached has not agreed - crossing value-preserving identity (`COPY`,
+  `MULTIEQUAL`) and widening (`INT_ZEXT`), so a byte that is copied to a stack
+  slot and tested there is still reached. Every terminal read must be a truth test, and at
+  least one of them must be a real one: a `CBRANCH` condition, a `BOOL_NEGATE`
+  / `BOOL_AND` / `BOOL_OR` / `BOOL_XOR` operand, or an `INT_EQUAL`/`INT_NOTEQUAL`
+  against zero. Everything else refuses. The call argument is the deliberate
+  one: `putchar(c)` must not make `c` a bool because something else also tests
+  it, and a store of the value is refused for the same reason - where the byte
+  goes next is not evidence about what it is.
+* **The def half** applies to a Varnode this function writes. Its non-zero mask
+  must be at most 1, which is `ActionNonzeroMask` (§5.3) reporting "only bit 0
+  is ever set" transitively over the whole def chain, computed in the pass that
+  runs immediately before this one. The mask alone is not enough - `x & 1` has
+  mask 1 and is a parity test, not a flag - so the defs are walked too, and only
+  a literal 0 or 1, a `booloutput` result, or a copy/phi/zero-extension of those
+  counts. Once a value has passed the def half it is *proven* to be 0 or 1, and
+  the use half relaxes accordingly: `x == 1`, `x & 1` and `x ^ 1` become truth
+  tests (on a proven flag they are the identity and the negation), and a
+  `RETURN` of the value is allowed as neutral.
+* **`CPUI_INDIRECT` is not identity**, and neither half crosses it. An INDIRECT
+  output is the value *after* the op it annotates - a call whose callee may have
+  written this storage, or a store that may alias it - so a truth test on the
+  output is no evidence about the input, and a proof about the input is no
+  evidence about the output. Reading it as identity is how a byte a callee fills
+  with 200 gets declared `bool`: `unsigned char c = 0; fill(&c); return c ? 11 :
+  12;` proves `c` is 0 before the call and tests it after, and the two facts are
+  about different values. It is also how a 131 KB `fgets` line buffer whose
+  first byte is the loop's terminator test came out `bool[131088]` while it was
+  still being passed to `fgets`. So an INDIRECT def refuses, and an INDIRECT
+  read refuses.
+
+* A function **input** has no def to prove anything with, and always carries the
+  full `0xff` mask. For a parameter the use shape is therefore the whole of the
+  evidence, and the rule says so plainly: a byte the function only ever branches
+  on is what a `_Bool` parameter looks like from the inside, which is an
+  inference about the calling convention rather than a proof about the value.
+  This is why the option is a judgment call and ships off.
+
+The candidate is **folded** into `get_local_type`'s result by
+`Datatype::type_order`, not installed as a replacement seed. `SUB_BOOL` is 10,
+which beats `SUB_INT_CHAR` 19 and `SUB_UINT_PLAIN` 16, so `bool` wins against
+the `char`/`uint1` votes it exists to displace and loses to anything more
+specific - a callee's locked parameter type, a DWARF-completed enum. Nothing
+else in the lattice moves: the `TYPE_BOOL` propagation gate is left exactly as
+upstream wrote it, which is what keeps the seed from travelling along a copy
+chain into a value that can hold more than 0 or 1.
+
+What a reader sees change is usually just the declaration - `if (a2)` prints the
+same whether `a2` is a `char` or a `bool` - and over sixteen stripped binaries
+and 7,026 functions that is 91 of the 99 functions the option changes at all.
+The other eight are worth naming, because a declaration is a type and a type
+reaches the printer.
+
+* **A constant assigned into the byte re-renders.** `is_char_print` is a
+  property of the type, so `v = '\x01';` becomes `v = 1;` once `v` is a `bool`
+  (`grep` -O2 `sub_9130`, `sort` -O2 `sub_7af0`).
+* **A truncation into the byte re-renders.**
+  `CastStrategyC::is_subpiece_cast` (cast.cc:411-432) lists the destination
+  metatypes a SUBPIECE may print as a cast, and `TYPE_BOOL` is not among them,
+  because upstream never puts one there. Left alone the printer falls to the
+  functional arm and emits the raw `SUB41(x,0)` p-code intrinsic - an undeclared
+  identifier, and not compilable C, which is the class `subright` (§3.2) exists
+  to keep out of the output. The option supplies the missing arm
+  (`kuna_boolbyte.rs (truncation_prints_as_cast)`, consulted by
+  `printc.rs (subpiece_is_cast)`), so a truncation into a `bool` prints as the
+  `(bool)` cast it is. The seed that put `bool` there already required the value
+  reaching it to carry a non-zero mask of at most 1, so the cast and the low byte
+  agree. The arm belongs to the option: with `boolbyte off` the printer is
+  byte-for-byte what it was, including on the cases that need it already -
+  a comparison alone can make a destination `bool` without this rule, which it
+  does on three lines in `tar` -O2 and one each in `ls` -O2 and `du` -O0.
+  Counts of the intrinsic therefore go *down* with the option on, never up:
+  whole-binary, `tar` -O2 4 -> 1, `ls` -O2 1 -> 0, `du` -O0 1 -> 0, `grep` -O2
+  0 -> 0; over the 100 functions the option changes at all, 7 -> 0.
+* **Where a byte lands in the speculative merge moves**, because §6 merges by
+  type: a `bool` and a `char` in one storage stop being merge candidates and two
+  `bool`s start. So a function can gain or lose a declaration, and an expression
+  can come to name a different variable. `grep` -O2 `sub_109d0` splits one
+  `unsigned char` in two and the array index in
+  `*(unsigned long *)(a1[0x31] + a0 * 8) = v11[v32];` comes to name the other
+  half; `sort` -O2 `sub_ed80` goes from 33 declarations to 32 with an otherwise
+  identical body. Seven of the eight are a declaration-count move of this kind.
+  Splitting a merge is not a loss of information - the two halves were one
+  variable only because §6 guessed they could be - but it does move names, which
+  is why this is a judgment call behind an option rather than a fix.
+* **A `(bool)` cast can appear** where the cast tail has to reconcile the new
+  declaration with an op that wants an integer (two over the sixteen binaries).
+
+`tests/stages/kuna-boolbyte.xml` pins the witness, the five refusals - a byte
+that is also widened and added, a byte tested for its low bit, a byte stored
+through a pointer, a stack byte set to 0 and then filled by a callee, and a byte
+parameter copied into a slot a callee is handed the address of - and the
+truncation rendering, whose first pass is the `SUB41` the printer emits without
+the arm.
+
 **The Windows segment base (`pebnames`).** A Windows user-mode thread keeps its
 Thread Environment Block at the base of `GS` on x86-64 and of `FS` on x86, and
 x86 SLEIGH lowers a segment-prefixed operand to `GS_OFFSET + disp` /

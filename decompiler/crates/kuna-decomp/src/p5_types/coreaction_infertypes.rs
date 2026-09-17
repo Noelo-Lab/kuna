@@ -351,6 +351,7 @@ fn build_localtypes(data: &mut Funcdata) {
         } else {
             None
         };
+        let from_seed = seed.is_some();
         let (ct, needs_block) = match seed {
             // getExactPiece resolved a non-UNKNOWN piece: adopt it (no up-block;
             // the C++ seed arm leaves `needsBlock` false).
@@ -380,6 +381,21 @@ fn build_localtypes(data: &mut Funcdata) {
                     _ => ct,
                 }
             }
+        };
+        // (kuna `boolbyte`) A byte whose every read is a truth test has no `bool`
+        // candidate in the fold above: `TYPE_BOOL` is only ever an op's OUTPUT type,
+        // and `TypeOpEqual::getInputLocal` votes `getBase(1, TYPE_INT)` -- the ASCII
+        // `char` -- for the value being compared.  Add that candidate as one more
+        // vote, folded by `type_order` (`SUB_BOOL` 10 beats `SUB_INT_CHAR` 19 and
+        // `SUB_UINT_PLAIN` 16) so a locked callee parameter type still wins.  See
+        // `kuna_boolbyte`.
+        let ct = if data.get_arch().bool_byte && vn_size == 1 && !from_seed {
+            match crate::kuna_boolbyte::truth_value_type(data, vn, &ct) {
+                Some(cand) => cand,
+                None => ct,
+            }
+        } else {
+            ct
         };
         let v = data.vbank_mut().get_mut(vn).expect("build_localtypes: stale vn");
         if needs_block {

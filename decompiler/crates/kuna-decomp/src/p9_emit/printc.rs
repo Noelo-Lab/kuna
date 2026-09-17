@@ -6316,6 +6316,18 @@ impl PrintC {
         } else {
             intype
         };
+        // (kuna `boolbyte`) `isSubpieceCast` never saw a TYPE_BOOL destination
+        // upstream, so a truncation into one falls to the functional arm and
+        // prints the raw `SUB41(x,0)` intrinsic -- an undeclared identifier, the
+        // class `subright` exists to keep out of the output.
+        if crate::kuna_boolbyte::truncation_prints_as_cast(
+            arch.bool_byte,
+            &outtype,
+            &intype,
+            offset,
+        ) {
+            return true;
+        }
         strat.is_subpiece_cast(&outtype, &intype, offset)
     }
 
