@@ -100,23 +100,25 @@
     }
   },
   "gates": {
+    "tree": "rebased onto main 0d79b02d",
     "make test": "PARITY OK (675/675)",
-    "make test-stages": "PARITY OK (1057/1057)",
-    "make test-cli": "178/178 passed",
+    "make test-stages": "PARITY OK (1075/1075; the three new assertions are hideshadow's own)",
+    "make test-cli": "183/183 passed",
     "make check-spec": "OK (lenient + strict)",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
-    "make rust-test": "green (RUST_TEST_RC=0, 415 `test result: ok` lines, 0 FAILED) on the rebased tree dfaa3e55"
+    "docs/options.md": "byte-fresh (cmp against `kuna catalog --markdown`)",
+    "make rust-test": "pending on this head; see the PR comment for the lane result"
   },
   "catalog_counts": {
-    "rebase": "re-derived on main 75a7f6b0 (#661 structdefs), which had already moved the same five sites; every number below comes from `scripts.repipe.counters --rederive` on a freshly built tree, not arithmetic",
-    "settables": "214 -> 215",
-    "tiers": "core 68 / transform 83 -> 84 / analysis 63",
-    "catalog_json_rows": "213 -> 214",
-    "stage corpus files": "303 -> 304 (221 tests/stages + 83 tests/datatests)",
-    "live_value readers": "87 -> 88 (live_field = hide_shadow; structdefs has none)",
-    "bytecompat_fixture": "recaptured from the fresh decomp_dbg build",
-    "baseline-stages": "re-recorded on the rebased tree: 1059 -> 1062, the three hideshadow assertions and nothing else"
+    "rebase": "re-derived on main 0d79b02d (#661 structdefs, then #663 indirectonly), both of which had already moved the same sites; every number below comes from `scripts.repipe.counters --rederive/--fix` on a freshly built tree, not arithmetic",
+    "settables": "215 -> 216",
+    "tiers": "core 68 / transform 84 -> 85 / analysis 63",
+    "catalog_json_rows": "214 -> 215",
+    "stage corpus files": "305 -> 306 (223 tests/stages + 83 tests/datatests)",
+    "live_value readers": "87 -> 88 (live_field = hide_shadow; neither structdefs nor indirectonly has one)",
+    "bytecompat_fixture": "recaptured from the fresh decomp_dbg build (identical to the merged fixture)",
+    "baseline-stages": "re-recorded on the rebased tree: 1072 -> 1075, the three hideshadow assertions and nothing else"
   },
   "files": [
     "decompiler/crates/kuna-decomp/src/p6_variables/kuna_hideshadow.rs (new)",
@@ -133,5 +135,8 @@
     "docs/options.md",
     "docs/features/hideshadow/ (analysis.md, plan.md, record.json, corpus-classification.md, corpus-diffs.txt, speed-remeasure.txt)"
   ],
-  "notes": "The action is already in universal_sched at its upstream slot (index 0252, immediately before copymarker), so list_action_decompile_oracle.txt does not move and no oracle is re-recorded."
+  "notes": "The action is already in universal_sched at its upstream slot (index 0252, immediately before copymarker), so list_action_decompile_oracle.txt does not move and no oracle is re-recorded.",
+  "interaction": {
+    "indirectonly": "#663's P6 option is default-off; with it ON on coreutils ls O2 the hideshadow diff is the same two benign hunks (v14 = dat_26200 and v15 = dat_26311), and the stages corpus including #663's own assertions is PARITY OK with hideshadow shipped on."
+  }
 }
