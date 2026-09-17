@@ -439,6 +439,7 @@
   "what": "the default moves off -> opaque; nothing about the pass changes. `--option libctypes off` restores the shipped `void *` tables.",
   "files": [
    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_libctypes.rs (unset env => on, mirroring the dwarfstructs bridge)",
+   "decompiler/crates/kuna-cli/src/decompile.rs + decompile_all.rs (the two load-time env bridges: off-token polarity, token passed through verbatim like the symbolnamebound bridge, so a later layout value cannot read as `off`)",
    "decompiler/crates/kuna-decomp/src/infra/architecture.rs (reset_defaults_internal)",
    "decompiler/crates/kuna-decomp/phases.toml (default + use_when + example)",
    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json (byte capture recaptured)",
@@ -802,7 +803,7 @@
    "within_budget": true
   },
   "gates": {
-   "make test": "datatests: 675/675 assertions passed -- PARITY OK (and 0 of 83 datatests contain `load file`, so the corpus is structurally blind to this tier)",
+   "make test": "datatests: 675/675 assertions passed -- PARITY OK. 0 of 83 tests/datatests/*.xml contain `load file`, so the 675 cannot observe this tier and are not evidence either way; the stage corpus is where the row is pinned (16 of 217 stage fixtures load a file, one of them tests/stages/kuna-libctypes.xml).",
    "make test-stages": "datatests: 1038/1038 assertions passed -- PARITY OK; a --save-baseline re-record is byte-identical to docs/baseline-stages.json (100,769 bytes), so no assertion moved and no re-record was needed",
    "make test-cli": "tests/cli: 178/178 passed",
    "make check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
