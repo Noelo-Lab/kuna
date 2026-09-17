@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1100,
-    1100
+    1103,
+    1103
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -866,6 +866,9 @@
     "data:foldcallretphi #3: call folded into the read-modify-write (only pass 2, on)",
     "data:foldcallretphi #4: a global write between the call and its use still blocks the fold (pass 3, on)",
     "data:foldcallretphi #5: and the folded form is never emitted for it (pass 3, on)",
+    "data:hideshadow #1: the same value is copied into the variable twice (only pass 1, off)",
+    "data:hideshadow #2: the redundant copy is consolidated away (only pass 2, on)",
+    "data:hideshadow #3: two copies on exclusive branches are left alone (pass 3, on)",
     "data:ifelseflatten #1: the else-bearing 3-component BlockIf is present (off plus on = 2)",
     "data:ifelseflatten #2: the else-arm constant body survives identically (no-op, not corrupted; off plus on = 2)",
     "data:ifelseflatten #3: enabling the option is byte-identical, the loop tail is unchanged (off plus on = 2)",

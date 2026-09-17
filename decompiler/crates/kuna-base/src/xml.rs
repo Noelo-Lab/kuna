@@ -1877,7 +1877,7 @@ mod tests {
         // constant-offset dereferences of a pointer parameter, the interior
         // access that is not a field, and the hole the body names anyway
         // and kuna-hideshadow / a redundant copy of one value collapses
-        assert_eq!(count, 309, "corpus file count drifted");
+        assert_eq!(count, 310, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
