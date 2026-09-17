@@ -16,8 +16,10 @@
     read and that write together.
 
     `foldcallretphi` (default-off) discounts exactly that self-inflicted
-    collision.  foldcallret's order-safety predicate is untouched: the call
-    still may not cross a call, load, store or callother.
+    collision.  foldcallret's own order-safety predicate still applies: the
+    call may not cross a call, load, store, callother, or a write to
+    persistent or address-tied storage, all the way to the statement the
+    folded expression is printed in (GH-657).
 
     Synthetic minimiser (x86-64, gcc layout).  `target` reads the global `ok`
     (0x1058) into a register, passes the global `g` (0x1050) to `helper`, writes
