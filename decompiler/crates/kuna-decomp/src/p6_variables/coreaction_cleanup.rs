@@ -1470,12 +1470,10 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
         let n = o.num_input();
         (0..n).filter_map(|i| o.get_in(i)).collect()
     };
-    // (kuna) foldcallretphi: the arm above was written for ordinary expressions.
-    // A call output only reaches it because `foldcallret` let it through
-    // `base_explicit`, and the collision it finds is often the call's own
-    // INDIRECT effect on an operand's storage -- a conflict the fold cannot
-    // cause, since the folded call reads the operand at the point where it
-    // performs that write.  Discount exactly those.
+    // (kuna) foldcallretphi: a call output reaches the arm above only because
+    // `foldcallret` let it through `base_explicit`, and what it collides with is
+    // usually the call's own INDIRECT effect on an operand -- see
+    // `kuna_foldcallretphi` for why that collision is not a reason to refuse.
     let self_effect_ok = data.get_arch().fold_call_ret_phi
         && data.get_arch().fold_call_returns
         && data.obank().get(def).map(|o| o.is_call()).unwrap_or(false)
