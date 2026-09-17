@@ -69,7 +69,9 @@ Every changed function was then compiled twice, before and after, *separately*:
 the gcc diagnostic set is identical in both arms for **all 1,039** of them
 (34 + 273 + 732). The ones that compile clean build into a two-version program
 with stubbed callees and a shared memory arena; 2,000 pseudo-random input
-vectors per function produce **0** divergences. (Two `prefer-signed` functions
+vectors per function produce **0** divergences across 10 (`auto`, all 34), 43
+(`prefer-signed`, 161 of 273 run) and 12 (`prefer-unsigned`, an 86-function
+sample) executable programs. (Two `prefer-signed` functions
 report a mismatch and report the *same* mismatch when the upstream text is
 compared against itself — they return a real `malloc()` pointer, and the arena
 hash is identical in both arms.)

@@ -156,7 +156,15 @@
     "apparent_differ_note": "ls sub_1b525 and du sub_141a3 report DIFFER, and BOTH report the identical DIFFER when the upstream text is compared against ITSELF: the function returns a real `malloc()` pointer, so two successive calls cannot return the same address. The arena hash is identical in both arms (50e4f77d30cef1d9). Harness artifact, not a semantic difference.",
     "note": "the run was stopped after 161 of 273 functions; the syntax-pair check above covers all 273"
    },
-   "input_vectors_per_function": 2000
+   "input_vectors_per_function": 2000,
+   "prefer_unsigned": {
+    "functions_run": 86,
+    "match": 12,
+    "mismatch": 0,
+    "uncompilable": 73,
+    "harness_crash": 1,
+    "note": "a 12-per-binary-and-optimization-level sample of the 732 changed functions; the run was stopped after 86. The syntax-pair check above covers all 732."
+   }
   },
   "declaration_vs_cast_contradiction": "none by construction: a cast is dropped only when the emitter actually wrote the rounded type as that high's declaration and the cast target is that exact type, so the surviving expression has the same C type it had.",
   "ubsan": "gcc -O2 -fsanitize=undefined on the first draft's zlib sub_ce20 text reported `left shift of negative value` where a left-shifted `unsigned int` had been re-declared `int`; INT_LEFT is now an unsigned demand and that declaration no longer moves."
