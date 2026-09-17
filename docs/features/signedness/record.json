@@ -196,17 +196,17 @@
   "default_flip_probe": {
     "built_with_default_auto": true,
     "datatests": "675/675, PARITY OK",
-    "stages": "1048/1048, PARITY OK at the time of the probe (the stages corpus has grown since: 1088 assertions on the shipped tree)",
+    "stages": "1048/1048, PARITY OK at the time of the probe (the stages corpus has grown since: 1094 assertions on the shipped tree)",
     "note": "the probe that decided the flip was safe, run before the default was flipped: on that tree (origin/main 12c31465 + this branch, after the width-guard fix and the new 16-bit stage test) phases.toml was flipped to `auto`, both binaries rebuilt, both corpora run against the UNCHANGED baselines, and the flip then reverted. The flip has since been taken for real -- see `default_flip`, which carries the shipped result: the shipped default is `auto`."
   },
-  "speed_off_ms": 31439.3,
-  "speed_on_ms": 31261.8,
-  "speed_delta_pct": -0.56,
+  "speed_off_ms": 32032.1,
+  "speed_on_ms": 32096.0,
+  "speed_delta_pct": 0.2,
   "speed_samples": 15,
   "speed_budget_pct": 5.0,
   "speed_within_budget": true,
   "speed_forced_off": false,
-  "speed_note": "measured on the SHIPPED build after the libctypes-glibc rebase (origin/main eb87d279): interleaved min-of-15 whole-binary `decompile-all` on coreutils fmt, ls and sort at -O2, with the arm ORDER alternating each iteration so neither arm always runs on the warm cache (.scratch/speed-r9.sh, .scratch/speed-r9.log). Per-binary minima: fmt 4.0543s -> 4.0602s (+0.15%), ls 13.2117s -> 13.1556s (-0.42%), sort 14.1734s -> 14.0460s (-0.90%); pooled sum-of-minima 31.4393s -> 31.2618s = -0.56%. The pass walks each printed high's readers once, so it is not expected to be measurable either way -- read the sign as noise, not as a speedup. Three earlier runs bracket the same conclusion: min-of-42 on fmt alone at a quiet moment +0.21%, min-of-21 +0.17%, and the pre-rebase min-of-15 over the same three binaries -2.94%. Every one of them is inside the +5% budget.",
+  "speed_note": "measured on the SHIPPED build after the foldcallret-barrier rebase (origin/main 39fdc804): interleaved min-of-15 whole-binary `decompile-all` on coreutils fmt, ls and sort at -O2, with the arm ORDER alternating each iteration so neither arm always runs on the warm cache (.scratch/speed-r10.sh, .scratch/speed-r10.log). Per-binary minima: ls 13.5309s -> 13.7019s (+1.26%), sort 14.4064s -> 14.2886s (-0.82%); fmt's upstream minimum in that run was contended (4.4251s, reading -7.22%), so per the repo's own rule it was re-run alone at min-of-21 (.scratch/speed-r10-fmt.log): 4.0948s -> 4.1055s = +0.26%. Pooled sum-of-minima with that corrected fmt reading 32.0321s -> 32.0960s = +0.20%. The pass walks each printed high's readers once, so it is not expected to be measurable either way -- read the sign as noise. Five runs across four bases now straddle zero (+0.21%, +0.17%, -2.94%, -1.79%, -0.56%, +0.20%) and every one is inside the +5% budget.",
   "count_sites": {
     "settables": 216,
     "tiers": [
@@ -217,7 +217,7 @@
     "stage_corpus_files": 307,
     "phase_catalog_json": "recaptured",
     "catalog_exact_buckets_touched": "none (change_kind presentation-default and source_decompiler kuna are not exact-pinned buckets)",
-    "note": "re-derived with `python3 -m scripts.repipe.counters --check` on the freshly built tree after rebasing onto origin/main eb87d279 (libctypes glibc #660). #660 adds no settable and no stage file, so no hard-coded count moved this rebase -- the sites stay at 216 settables, tiers (68, 85, 63), 307 corpus files, fixture 216 and the comma-terminated catalog-row count 215 -- but they were re-derived on the rebuilt binary rather than assumed. docs/baseline-stages.json was RE-RECORDED rather than hand-merged, because either side of the rebase conflict drops the other's assertions: main's 1,078 (libctypes-glibc's seven new assertions included) plus this branch's ten = 1,088, set-diffed against `git show origin/main:docs/baseline-stages.json` to confirm 0 removed and all fifteen data:LIBCTYPES keys intact."
+    "note": "re-derived with `python3 -m scripts.repipe.counters --check` on the freshly built tree after rebasing onto origin/main 39fdc804 (GH-657 #662). #662 adds a stage file, so the corpus count is 308 (306 on main + this branch's two); it adds no settable, so 216 settables, tiers (68, 85, 63), fixture 216 and the comma-terminated catalog-row count 215 are unchanged. docs/baseline-stages.json was RE-RECORDED rather than hand-merged, because either side of the rebase conflict drops the other's assertions: main's 1,084 plus this branch's ten = 1,094, set-diffed against `git show origin/main:docs/baseline-stages.json` to confirm 0 removed and every neighbour's keys intact (15 LIBCTYPES, 13 INDIRECTONLY, 8 foldcallret, 5 STRUCTDEFS)."
   },
   "dwarf_accuracy": {
     "method": "238 unstripped DWARF twins (the compiled/ binaries beside the stripped images decbench scores) across coreutils, grep, gzip, diffutils, bzip2, findutils and tar at -O0 and -O2. Whole-image decompile-all once per value; every plain-integer local declaration whose name DWARF also knows INSIDE THE SAME FUNCTION, at the same width, is compared against the DWARF base type's encoding. Signedness is binary, so a declaration that differs between two values is right in exactly one of them.",
@@ -477,13 +477,13 @@
   ],
   "gates": {
     "make test": "datatests: 675/675 assertions passed / PARITY OK (default auto)",
-    "make test-stages": "datatests: 1088/1088 assertions passed / PARITY OK (default auto, on the libctypes-glibc base)",
-    "make test-cli": "tests/cli: 183/183 passed (178 + the five probes structdefs added)",
+    "make test-stages": "datatests: 1094/1094 assertions passed / PARITY OK (default auto, on the foldcallret-barrier base)",
+    "make test-cli": "tests/cli: 184/184 passed (183 + the probe GH-657 added)",
     "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
-    "counters --check": "no drift: every hard-coded site agrees with the derived truth (216 settables, tiers 68/85/63, corpus 307 files) -- re-derived on the freshly built rebased tree, not carried over",
+    "counters --check": "no drift: every hard-coded site agrees with the derived truth (216 settables, tiers 68/85/63, corpus 308 files) -- re-derived on the freshly built rebased tree, not carried over",
     "docs/options.md": "byte-fresh (regenerated; `diff` against `kuna catalog --markdown` empty, and options_md_matches_the_generator_byte_for_byte ok in the suite)",
-    "make rust-test": "RUST_TEST_RC=0, 7143 passed / 0 failed (.scratch/rust-test-r16.log, a single clean lane on the libctypes-glibc-rebased tree; settable_count_is_216, tier_counts_are_68_core_85_transform_63_analysis, fixture_has_all_216_settables and options_md_matches_the_generator_byte_for_byte all ok, and all ten kuna_typeround unit tests ok). The lane started after the last code commit; everything committed later is under docs/, which no test in the suite reads",
+    "make rust-test": "RUST_TEST_RC=0, 7151 passed / 0 failed (.scratch/rust-test-r17.log, a single clean lane on the foldcallret-barrier-rebased tree; settable_count_is_216, tier_counts_are_68_core_85_transform_63_analysis, fixture_has_all_216_settables and options_md_matches_the_generator_byte_for_byte all ok, and all ten kuna_typeround unit tests ok)",
     "CI": "re-run on the rebased head; the local gates above are the authority for the workspace suite, which CI skips on an internal PR"
   },
   "care_uint_int_claim": {
@@ -496,12 +496,12 @@
       "docs/features/signedness/analysis.md"
     ]
   },
-  "rebase_note": "rebased onto origin/main eb87d279 (libctypes glibc #660), which sits on indirectonly (#663), structdefs (#661), ptrfromuse (#659) and libctypes (#658). indirectonly, structdefs and ptrfromuse all ship `default off` and libctypes still defaults to `opaque` (#660 only adds the `glibc` VALUE), so the default decompilation path is unchanged and every measurement in this record -- all taken with only `signedness` flipped -- still holds. Proved rather than argued: on the rebased build the 444-slice typesweep was re-run from scratch (10,748 functions, byte-identical variables[] in all of them, type_match 959 -> 959), and one x86-64 image (grep -O2) and one ARM32 image (libopencm3 adc-dac-printf.elf -O2) were re-decompiled in BOTH arms and come out BYTE-IDENTICAL to the pre-rebase dumps the hunk classification was built from, so that classification is unchanged by construction. The stage-test repro still reproduces (`uint4 v1; ... a2 < (int4)v1` -> `int4 v1; ... a2 < v1`).",
+  "rebase_note": "rebased onto origin/main 39fdc804 (GH-657 foldcallret barrier #662), which sits on libctypes glibc (#660), indirectonly (#663), structdefs (#661), ptrfromuse (#659) and libctypes (#658). Unlike the earlier rebases this one DOES move the default path -- #662 keeps a call ahead of a write to storage the callee may read, and `foldcallret` is default-on -- so every measurement was re-taken on it rather than argued forward: the 444-slice typesweep re-run from scratch (10,748 functions, byte-identical variables[] in all of them, type_match 959 -> 959), all twelve hunk-classification binaries re-decompiled in both arms and re-classified (15,124 functions, 0 hunks of any kind other than a declaration flip or a dropped cast), and the speed block re-measured. It also moved one stage assertion, and not by a signedness flip: #662 adds a pointer local to kuna-signedness-int16.xml's `f`, renumbering the 2-byte value from v1 to v2, so assertion #1 now matches the declaration by shape (`int2 v<n>;`, no pointer star). Proved to be #662's doing by reverting only its four p6 source files and rebuilding, which restores `int2 v1;`, and the reworded assertion still scores 2/4 when MIN_PROMOTION_SIZE is lowered to 2. The PR's repro still reproduces (`uint4 v1; ... a2 < (int4)v1` -> `int4 v1; ... a2 < v1`).",
   "default_flip": {
     "decided_by": "the user's go on the proposal: land at default `auto`; `prefer-signed` stays opt-in because it moves 7,081 declarations image-wide and the datatest corpus pins the upstream spellings",
     "shipped_default": "auto",
     "datatests": "675/675 PARITY OK with the default flipped -- 0 assertions moved",
-    "stages": "1088/1088 PARITY OK with the default flipped -- 0 assertions moved. The baseline is re-recorded for three assertion NAMES that said 'the default' and now name the value they test (signedness #1, #3, signedness-int16 #3), and again on each rebase, where re-recording (rather than hand-merging) is what keeps the incoming PRs' assertions. Set-diff against origin/main's baseline: 0 removed, exactly this branch's 10 added, 1,078 + 10 = 1,088",
+    "stages": "1094/1094 PARITY OK with the default flipped. The baseline is re-recorded on each rebase, where re-recording (rather than hand-merging) is what keeps the incoming PRs' assertions; set-diff against origin/main's baseline: 0 removed, exactly this branch's 10 added, 1,084 + 10 = 1,094. Two assertion NAMES were rewritten earlier to name the value they test rather than 'the default', and one assertion PATTERN (signedness-int16 #1) was rewritten to match the declaration by shape after #662 renumbered the local it pins",
     "typesweep_444_slices": {
       "what": "the campaign typesweep, default (auto) vs `--option signedness upstream`, over coreutils/grep/gzip/diffutils/bzip2/findutils/tar/shadow x O0/O2/O2-noinline",
       "slices": 444,
@@ -563,6 +563,7 @@
   },
   "speed_rebase_remeasure": {
     "what": "the earlier re-measures kept for the spread, since this pass's true delta is below this box's noise floor: each is an interleaved min-of-15 `decompile-all`, `--option signedness upstream` vs the default (auto)",
+    "libctypes_base_eb87d279": "fmt 4.0543s -> 4.0602s (+0.15%), ls 13.2117s -> 13.1556s (-0.42%), sort 14.1734s -> 14.0460s (-0.90%), pooled -0.56%",
     "structdefs_base_75a7f6b0": "fmt 4.1534s -> 4.1945s (+0.99%), ls 13.4207s -> 13.0642s (-2.66%), pooled 17.5740s -> 17.2587s (-1.79%)",
     "indirectonly_base_0d79b02d": "pre-rebase r6 build, fmt/ls/sort pooled 32.9294s -> 31.9612s (-2.94%)",
     "quiet_box_single_binary": "fmt -O2 alone, min-of-42 +0.21% and min-of-21 +0.17%",
