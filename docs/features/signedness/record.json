@@ -483,7 +483,7 @@
     "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
     "counters --check": "no drift: every hard-coded site agrees with the derived truth (216 settables, tiers 68/85/63, corpus 307 files)",
     "docs/options.md": "byte-fresh (regenerated; `diff` against `kuna catalog --markdown` empty, and options_md_matches_the_generator_byte_for_byte ok in the suite)",
-    "make rust-test": "RUST_TEST_RC=0, 7123 passed / 0 failed (.scratch/rust-test-r14.log, a single clean lane on the structdefs-rebased tree; settable_count_is_215, tier_counts_are_68_core_84_transform_63_analysis, fixture_has_all_215_settables and options_md_matches_the_generator_byte_for_byte all ok). The lane started after the last code commit; everything committed later is under docs/, which no test in the suite reads",
+    "make rust-test": "RUST_TEST_RC=0, 7132 passed / 0 failed (.scratch/rust-test-r15.log, a single clean lane on the indirectonly-rebased tree; settable_count_is_216, tier_counts_are_68_core_85_transform_63_analysis, fixture_has_all_216_settables and options_md_matches_the_generator_byte_for_byte all ok). The lane started after the last code commit; everything committed later is under docs/, which no test in the suite reads",
     "CI": "re-run on the rebased head; the local gates above are the authority for the workspace suite, which CI skips on an internal PR"
   },
   "care_uint_int_claim": {
