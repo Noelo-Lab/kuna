@@ -451,7 +451,7 @@
   "mechanism": "update_input_types reads data.high_get_type(vn) into ParameterPieces; get_type_representative prefers a type-locked member unconditionally. The type_dirty() half of vn_update_type_locked is what makes high_get_type see the new type at all."
  },
  "speed": {
-  "method": "interleaved off/param, min-of-15, .scratch/speed6.py on the rebased build; the inert control binary (grep O0, where the option cannot fire) is the noise floor; `kuna decompile-all <binary>` with no option vs `--option structsynth param`",
+  "method": "interleaved off/param, min-of-15, docs/features/structsynth/speed.py on the rebased build; the inert control binary (grep O0, where the option cannot fire) is the noise floor; `kuna decompile-all <binary>` with no option vs `--option structsynth param`",
   "worst_delta_pct": 1.34,
   "budget_pct": 5.0,
   "within_budget": true,

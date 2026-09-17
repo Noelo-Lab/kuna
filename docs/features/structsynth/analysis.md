@@ -455,7 +455,7 @@ O2-noinline level, `tar` and `shadow`, and the three rows above.
 ### 6.4 Speed
 
 Interleaved off/param, min-of-15, six whole-binary cases plus an inert control
-where the option cannot fire (`.scratch/speed6.py`, on the rebased build):
+where the option cannot fire (`docs/features/structsynth/speed.py`, on the rebased build):
 
 | `kuna decompile-all` | off (ms) | param (ms) | delta |
 |---|---:|---:|---:|
