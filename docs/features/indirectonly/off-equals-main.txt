@@ -1,0 +1,15 @@
+#  == a fresh origin/main build
+#
+# Control for the whole-corpus A/B: the OFF arm must be the pre-port engine, not
+# just 'the other arm of the same binary'.  Built origin/main (83830e86) separately
+# and compared whole-binary 'kuna decompile-all' output.
+#
+#   main:  /home/mahaloz/kwt/_rev-lcg-main (83830e86) decompile-all <bin>
+#   off :  this branch                      decompile-all <bin> --option indirectonly off
+
+ls     O0   byte-identical (11851 lines)
+ls     O2   byte-identical (13664 lines)
+tar    O2   byte-identical (56688 lines)
+bzip2  O2   byte-identical (9765 lines)
+diff   O2   byte-identical (15930 lines)
+sort   O2   byte-identical (11367 lines)
