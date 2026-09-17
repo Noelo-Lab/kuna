@@ -50,16 +50,37 @@
     process environment variable, and the corpus runs in one process, so a stale
     `off` would silently disable the table for every later test in the file.
 
-    Assertions span the combined output of all five passes. `FILE \*` is a
+    Assertions span the combined output of all nine passes. `FILE \*` is a
     substring of `_IO_FILE \*`, so every stream assertion pins the text from the
     return type or the `(` onwards.
 
+    Passes 6-9 are the stdio STREAM slots: `libctypes_streams_x86_64` and the
+    shared object built from the same source, each once `off` and once `opaque`.
+    The two link kinds bind a stream differently and their slots hold different
+    things  -  the executable gets an `R_X86_64_COPY` relocation and a `.bss` word
+    holding libc's own `FILE *stdout`, the shared object an `R_X86_64_GLOB_DAT`
+    relocation on an UNDEFINED `stdout` and a GOT word holding its ADDRESS. So
+    the exe slot is named `stdout` and the library's `stdout_ptr`, and the
+    library's accesses carry the extra indirection the program really performs.
+    The library is loaded by address because its four functions are exported and
+    each name also resolves to a PLT stub.
+
+    `pending` is the witness: it reads two fields of the stream and calls
+    nothing, so the relocation is the only thing in the image that says what the
+    word holds (#16/#17 off, #18/#19 on). The other three are the wrong-output
+    controls. `flush_mark` stores THROUGH the stream pointer and must still store
+    to the same address (#20/#21); `hand_off` reads the stream OBJECT into one of
+    the image's own functions and must still read it whole  -  `sink(stdin)`,
+    never `sink(*stdin)` (#22/#23); `say` passes it to a libc call whose
+    prototype already named it, which must not move at all (#24), and whose
+    library form only loses the cast the untyped slot needed (#25).
+
     #6 is narrowed to the two aggregates a DWARF definition already described
     (`st`, `f`), because pass 4 is the `opaque` arm and legitimately prints
-    `a0-&gt;field_0x8`. #15 keeps the file-wide guard #6 used to carry by pinning
-    the COUNT: the only offset-named fields anywhere in this file are the four
-    pass 4 exists to show (`field_0x8` twice, `field_0x10`, `field_0x30`), so a
-    new fallback in any pass moves it.
+    `a0-&gt;field_0x8`. #15 pins the count of LINES carrying an offset-named field
+    the same way: four in pass 4 and four in the two `opaque` stream passes (one
+    `pending` line and one `flush_mark` line per link kind), so a new fallback in
+    any pass moves it.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -122,6 +143,68 @@ c3
   <com>load function size_of</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option libctypes off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_x86_64</com>
+  <com>read symbols</com>
+  <com>load function pending</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function flush_mark</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function hand_off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function say</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_so_x86_64.so</com>
+  <com>read symbols</com>
+  <com>load function 0x11b9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x11d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x11f1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x120d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libctypes opaque</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_x86_64</com>
+  <com>read symbols</com>
+  <com>load function pending</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function flush_mark</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function hand_off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function say</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_so_x86_64.so</com>
+  <com>read symbols</com>
+  <com>load function 0x11b9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x11d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x11f1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x120d</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option libctypes opaque</com>
   <com>quit</com>
 </script>
@@ -139,5 +222,15 @@ c3
 <stringmatch name="LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset" min="1" max="1">&amp;a1-&gt;field_0x30</stringmatch>
 <stringmatch name="LIBCTYPES #13: glibc on, that read is the field" min="1" max="1">return a1-&gt;st_size;</stringmatch>
 <stringmatch name="LIBCTYPES #14: and the value carries the FIELD's type, so the sentinel is a signed -1" min="1" max="1">return -1;</stringmatch>
-<stringmatch name="LIBCTYPES #15: and the offset-named fields anywhere in this file are exactly the four pass 4 is there to show" min="4" max="4">field_0x</stringmatch>
+<stringmatch name="LIBCTYPES #15: and the lines carrying an offset-named field anywhere in this file are exactly the four of pass 4 plus the four of the opaque stream passes" min="8" max="8">field_0x</stringmatch>
+<stringmatch name="LIBCTYPES #16: off, the copy-relocated stream slot is an untyped word and its fields are raw offsets" min="1" max="1">return \*\(int8 \*\)\(stdout \+ 0x28\) - \*\(int8 \*\)\(stdout \+ 0x20\);</stringmatch>
+<stringmatch name="LIBCTYPES #17: off, the GOT slot of a shared object is not even named" min="1" max="1">return \*\(int8 \*\)\(\*dat_3fd8 \+ 0x28\) - \*\(int8 \*\)\(\*dat_3fd8 \+ 0x20\);</stringmatch>
+<stringmatch name="LIBCTYPES #18: on, the copy-relocated slot is the stream itself, so the reads are fields of it" min="1" max="1">return \*\(int8 \*\)&amp;stdout-&gt;field_0x28 - \*\(int8 \*\)&amp;stdout-&gt;field_0x20;</stringmatch>
+<stringmatch name="LIBCTYPES #19: on, the GOT slot holds the stream's ADDRESS, and the name and the extra indirection both say so" min="1" max="1">return \*\(int8 \*\)&amp;\(\*stdout_ptr\)-&gt;field_0x28 - \*\(int8 \*\)&amp;\(\*stdout_ptr\)-&gt;field_0x20;</stringmatch>
+<stringmatch name="LIBCTYPES #20: a store THROUGH the stream pointer still stores to the same address" min="1" max="1">\*\(unsigned long \*\)&amp;stdout-&gt;field_0x28 = a0;</stringmatch>
+<stringmatch name="LIBCTYPES #21: and so does the GOT form" min="1" max="1">\*\(unsigned long \*\)&amp;\(\*stdout_ptr\)-&gt;field_0x28 = a0;</stringmatch>
+<stringmatch name="LIBCTYPES #22: a read of the stream OBJECT stays the object -- `sink\(stdin\)`, never `sink\(\*stdin\)`" min="2" max="2">sink\(stdin\);</stringmatch>
+<stringmatch name="LIBCTYPES #23: and in the library it is the one indirection the program performs, no more" min="1" max="1">sink\(\*stdin_ptr\);</stringmatch>
+<stringmatch name="LIBCTYPES #24: a stream handed to a libc call the table already typed does not move" min="2" max="2">fputs\(a0,stdout\);</stringmatch>
+<stringmatch name="LIBCTYPES #25: and the library's loses the cast the untyped slot needed" min="1" max="1">fputs\(a0,\*stdout_ptr\);</stringmatch>
 </decompilertest>

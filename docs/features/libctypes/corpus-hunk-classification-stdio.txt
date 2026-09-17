@@ -1,0 +1,100 @@
+# libctypes stdio streams - whole-corpus hunk classification
+
+`kuna decompile-all` over 12 stripped binaries, the branch build against
+origin/main's (39fdc804). Every changed LINE is classified; the categories are
+produced by the script reproduced at the end and the residue is printed in full.
+
+## Per binary
+
+| binary | lines off | lines on | changed lines |
+|---|---:|---:|---:|
+| O2_coreutils_stripped_fmt | 4074 | 4074 | 0 |
+| O2_coreutils_stripped_ls | 13671 | 13671 | 0 |
+| O0_coreutils_stripped_ls | 11853 | 11853 | 0 |
+| O2_grep_stripped_grep | 18254 | 18254 | 0 |
+| O2_gzip_stripped_gzip | 9349 | 9349 | 0 |
+| O2_tar_stripped_tar | 56717 | 56717 | 2 |
+| O0_findutils_stripped_find | 20812 | 20812 | 0 |
+| O0_diffutils_stripped_diff | 13083 | 13083 | 0 |
+| O2_libselinux_stripped_libselinux.so.1 | 17495 | 17495 | 68 |
+| O2_coreutils_stripped_libstdbuf.so | 194 | 194 | 12 |
+| O2_shadow_stripped_useradd | 11191 | 11191 | 8 |
+| O0_bzip2_stripped_bzip2 | 7050 | 7050 | 0 |
+
+## Categories
+
+    30  got-slot-named+cast-removed
+     7  got-slot-named
+     5  decl-typed-FILE
+     1  OTHER
+     1  cast-moved
+     1  proto-ret-FILE
+
+== OTHER in O2_libselinux_stripped_libselinux.so.1.c
+  -           __fprintf_chk((FILE *)*dat_2bf38,1,"\r%luk",dat_2ee10 >> 10);
+  +           __fprintf_chk(*stdout_ptr,1,"\r%luk",dat_2ee10 >> 10);
+
+## The residue, read
+
+The one `OTHER` is `got-slot-named+cast-removed` that the classifier's regex
+misses because the line carries a second `dat_` name that is not the slot:
+
+```
+-           __fprintf_chk((FILE *)*dat_2bf38,1,"\r%luk",dat_2ee10 >> 10);
++           __fprintf_chk(*stdout_ptr,1,"\r%luk",dat_2ee10 >> 10);
+```
+
+So the 45 changed lines are 38 slot namings (31 of which also drop a
+`(FILE *)` cast the untyped slot needed), 5 declarations that take `FILE *` or
+`FILE **`, one cast that APPEARS on a genuine `FILE *` global, and one return
+type that becomes `FILE *`. Zero lines move a statement, an address or a
+control-flow edge.
+
+## The five declarations, and the two shadow hunks
+
+tar `argp_parse` @0x3e690 -- a stack slot assigned `stdout` and nothing else:
+
+```
+-  unsigned long v70; // stack - 0x58            v70 = stdout;
++  FILE *v70;         // stack - 0x58
+```
+
+shadow `useradd` @0x18190 -- the local that carries `stdin` into `__fgets_chk`:
+
+```
+-  unsigned long v2;   v2 = *dat_21fb0;
++  FILE *v2;           v2 = *stdin_ptr;
+```
+
+`useradd` is the mixed image: `stdout` and `stderr` are copy-relocated AND have
+a GOT slot pointing at the copy (defined, so it is not a stream fact -- the
+relocation fill already renders it), while `stdin` is undefined and reaches the
+program only through its GOT.
+
+libselinux carries the other three, each `unsigned long *vN` -> `FILE **vN` on a
+local holding `stdout_ptr`/`stdin_ptr`.
+
+The two remaining hunks are shadow's `log_set_logfd`/`log_get_logfd` pair at
+0x13350/0x13380, where the global `dat_246c8` is a real `FILE *` (it is assigned
+`stderr` in the same function):
+
+```
+-    dat_246c8 = a0;              -  long sub_13380(void)
++    dat_246c8 = (FILE *)a0;      +  FILE * sub_13380(void)
+```
+
+The cast is honest: `a0` is a `long` parameter and the global is a stream.
+
+## Controls that did NOT move
+
+`fflush(stdout)`, `fputs_unlocked(s,stdout)`, `fwrite_unlocked(...,stdout)`,
+`putc_unlocked`'s inlined `__overflow(stdout,c)` refill and every
+`*(char **)&stdout->field_0x28` store are byte-identical in both arms across all
+twelve binaries -- ten of which are byte-identical end to end. The eight
+executables built without a GOT-only stream produce zero changed lines: on those
+the type already arrived by inference from a typed stdio call in the same
+function, which is exactly the reach this step extends.
+
+## The script
+
+`docs/features/libctypes/classify_stdio.py`, run over the two output trees.

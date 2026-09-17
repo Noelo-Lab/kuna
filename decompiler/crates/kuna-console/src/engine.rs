@@ -4232,7 +4232,6 @@ fn commit_analysis_output(
     //     is skipped by its `occupied` guard below. The stream is empty unless the
     //     `libctypes` gate is on (`LibcTypesPass` returns before it collects).
     for fact in &out.typed_data {
-        if std::env::var("KUNA_DBG_TYPEDDATA").is_ok() { eprintln!("TYPEDDATA {} @{:#x} {}", fact.name, fact.addr, fact.type_.get_name()); }
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         let occupied = {
             let arch = prog.arch();

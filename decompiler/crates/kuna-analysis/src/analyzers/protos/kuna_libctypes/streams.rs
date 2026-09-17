@@ -52,7 +52,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use kuna_base::types::uint4;
-use kuna_decomp::dtype::{Datatype, TypeFactory};
+use kuna_decomp::dtype::TypeFactory;
 use object::{elf, Object, ObjectSymbol, RelocationFlags, RelocationTarget};
 
 use super::Layout;
@@ -85,7 +85,6 @@ pub(super) fn stream_data_symbols(
     layout: Layout,
 ) -> Vec<TypedDataFact> {
     let mut out = Vec::new();
-    if std::env::var("KUNA_ABLATE_STREAMSYMS").is_ok() { return out; }
     if file.format() != object::BinaryFormat::Elf
         || file.kind() == object::ObjectKind::Relocatable
     {

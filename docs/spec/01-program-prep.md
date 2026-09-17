@@ -1638,6 +1638,48 @@ moves.
   claim. And a load spanning two fields is now decomposed into piece writes on a
   scalar local (`v._0_4_ = st->st_mode; v._4_4_ = st->st_uid;` for an 8-byte read
   at `stat+0x18`) — 51 sites, against 517 piece reads the value removes.
+
+  *The stream slots are typed as storage, not as a prototype slot.* Everything
+  above types a stream where a CALL says what it is, which leaves the streams
+  themselves untyped storage: `stdin`, `stdout` and `stderr` are named from the
+  symbol table (the loader data stream below) and carry an `undefined<size>`
+  word, so a function that hands `stdout` to one of the image's own helpers
+  learns nothing about it and the two renderings of one global disagree inside a
+  single binary. Under any enabled value this pass also emits a typed DATA
+  symbol for each stream slot (`AnalysisOutput::typed_data`, committed with
+  `typelock|namelock` between the string literals and the loader's own data
+  symbols, so a DWARF global or a detected literal still wins the address and the
+  loader's untyped naming of the same slot stands down).
+
+  Which slot, and what it holds, is read off the DYNAMIC RELOCATION that binds
+  the stream — that relocation is also the evidence that the name is the C
+  library's and not a global the program happens to spell `stdout`, so a name the
+  image defines itself is never reached. The two shapes hold different things. A
+  `COPY` relocation names a `.bss` word of pointer width that the run-time loader
+  fills with libc's own `FILE *stdout`: the slot's type is `FILE *` and its name
+  is the stream's. A `GLOB_DAT` relocation on an UNDEFINED symbol names a GOT
+  word holding the stream's ADDRESS: its type is `FILE **` and its name is
+  `stdout_ptr`, because the address is not the stream and calling it one would
+  make the emitted `*stdout_ptr` read as an indirection the program does not
+  perform. A `GLOB_DAT` whose symbol is DEFINED — the same image's own copy slot,
+  in a mixed executable — is not a stream fact at all; the relocation fill and
+  the RELRO constant-fold already render it. Linked ELF only, on the four
+  architectures whose relocation numbering the loader knows, and a spelling that
+  occurs more than once in `.dynsym` is declined outright.
+
+  The `FILE` the slots point at is the one `named_aggregate` hands the rest of
+  the table, so `opaque` gives `stdout->field_0x28` and `glibc`
+  `stdout->_IO_write_ptr`, and an image whose own debug info holds a different
+  `FILE` contributes no stream symbol rather than a contradictory one. What this
+  changes in emitted C is bounded and was measured: over twelve whole binaries,
+  45 lines move and every one of them is a GOT slot gaining its name (38, of
+  which 31 also drop the `(FILE *)` cast the untyped slot needed), a declaration
+  taking `FILE *`/`FILE **` (5), a cast appearing on a genuine `FILE *` global
+  (1) or a return type becoming `FILE *` (1). The eight plain executables in that
+  set are byte-identical end to end, because on those the type already arrived by
+  inference from a typed stdio call in the same function — the reach this step
+  extends is the function that makes no such call, and the shared object, whose
+  stream never had a name at all.
 - **(kuna) Win32 API signatures** (`win32sigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_win32sigs.rs (Win32SigsPass)`):
   the Windows half of the same `.gdt` stand-in, which the tree did not carry at all.
