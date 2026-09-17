@@ -42,7 +42,8 @@
       "variable count delta": 0,
       "anything else (BUG)": 0
     },
-    "detail": "docs/features/hideshadow/corpus-classification.md, raw diffs in corpus-diffs.txt"
+    "detail": "docs/features/hideshadow/corpus-classification.md, raw diffs in corpus-diffs.txt",
+    "revalidated_after_rebase": "re-run on the rebased build (main 0d79b02d): all 10 known-changed slices still change and 38 further slices drawn at random from the 444 are byte-identical off vs on, 0 errors (.scratch/spotcheck_ab.py)."
   },
   "varcensus": {
     "method": "scripts.pipeline.varcensus, off vs on, on the binaries that change",
@@ -137,6 +138,7 @@
   ],
   "notes": "The action is already in universal_sched at its upstream slot (index 0252, immediately before copymarker), so list_action_decompile_oracle.txt does not move and no oracle is re-recorded.",
   "interaction": {
-    "indirectonly": "#663's P6 option is default-off; with it ON on coreutils ls O2 the hideshadow diff is the same two benign hunks (v14 = dat_26200 and v15 = dat_26311), and the stages corpus including #663's own assertions is PARITY OK with hideshadow shipped on."
+    "indirectonly": "#663's P6 option is default-off; with it ON on coreutils ls O2 the hideshadow diff is the same two benign hunks (v14 = dat_26200 and v15 = dat_26311), and the stages corpus including #663's own assertions is PARITY OK with hideshadow shipped on.",
+    "off_arm_equals_main_after_rebase": "re-checked after the rebase: `--option hideshadow off` on the rebased build is byte-identical to a release build of main (.scratch/bin-main, 520443d7; main's default output has not moved since, as #661 and #663 both ship off) on coreutils ls O0, ls O2, touch O2, shadow usermod O2-noinline and grep O2 -- the four binaries where the pass fires plus one where it does not."
   }
 }
