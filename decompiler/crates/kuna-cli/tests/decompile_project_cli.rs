@@ -333,14 +333,17 @@ fn header_syntax_checks_with_cc() {
 ///
 /// `libctypes_stat_x86_64` imports `stat` and carries `struct stat` in its DWARF,
 /// so the clash is reachable with the named tables OFF (the DWARF import alone)
-/// and with them on (`stat *` from the prototype table as well).
+/// and with them on (`stat *` from the prototype table as well). The `glibc` arm
+/// is here because it is the one that gives a minted shell real MEMBERS, so the
+/// header stops declaring it opaque and starts printing a struct body  -  which
+/// has to parse, and has to arrive after the aggregates it holds by value.
 #[test]
 fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
     if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
         eprintln!("header_syntax_checks_when_a_type_shares_a_name_with_a_function: no `cc`");
         return;
     }
-    for arm in ["off", "opaque"] {
+    for arm in ["off", "opaque", "glibc"] {
         let bin = fixture("libctypes_stat_x86_64");
         let dir = out_dir(&format!("typefnclash_{arm}"));
         let (_stdout, stderr, ok) = run_kuna(&[

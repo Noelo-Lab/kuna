@@ -11,7 +11,7 @@
  "tier": "analysis",
  "source_decompiler": "ghidra",
  "inspiration": "Ghidra ApplyDataArchiveAnalyzer applying generic_clib_64.gdt, whose FILE */struct stat * slots carry the header's own pointee; signatures reduced from `gcc -aux-info` over the platform headers (_GNU_SOURCE + _FORTIFY_SOURCE=2); widths from sizeof/_Alignof",
- "values": "off|opaque",
+ "values": "off|opaque|glibc",
  "ablation_changed": 0,
  "parity": "OK",
  "table": {
@@ -272,7 +272,7 @@
     "concat_off": 266,
     "concat_on": 268
    },
-   "reading": "net +3 across 3,702 functions (find +2 SUB, tar -1 SUB / +2 CONCAT): the same slot read through a different decomposition, never a new one. `PTRSUB(` stays 0/0 everywhere, which is the form the sizing rule exists to prevent."
+   "reading": "net +3 across 3,702 functions (find +2 SUB, tar -1 SUB / +2 CONCAT): the same slot read through a different decomposition, never a new one. `PTRSUB(` stays 0/0 across THIS sweep (the `opaque` value's 7 binaries), which is the form the sizing rule exists to prevent. It is NOT 0/0 everywhere: the `glibc` value reaches 2 sites in O2/libselinux/libselinux.so.1 -- see glibc.corpus_sweep.ptrsub_functional_form."
   },
   "by_value_named_aggregates": {
    "what": "`Ty::NamedPtr` is pointer-only, but that is a property of the TABLE, not of the emitted C: propagation still carries a named type into a by-value position. The sized shell, not the pointer, is what keeps that out of the hidden-return-buffer classification.",
@@ -863,5 +863,308 @@
   "worst_delta_pct": 1.64,
   "budget_pct": 5.0,
   "within_budget": true
+ },
+ "glibc": {
+  "what": "the third value: the PUBLISHED glibc x86-64 field layouts of the nine aggregates whose members are part of the platform's API -- FILE, stat, timespec, timeval, tm, passwd, group, option, dirent. `opaque` gives each named aggregate a real width and no members, so a field access renders `f->field_0x8` and the loaded value keeps whatever the cast said; `glibc` installs the real members, so the same access is `f->_IO_read_ptr` and the value takes the FIELD's type.",
+  "module": "decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes/glibc.rs",
+  "provenance": "every offset/width/alignment measured on this machine with offsetof/sizeof/_Alignof against the installed headers (glibc 2.35, x86-64); the program and its output are in docs/features/libctypes/glibc.md. Nothing restated from memory.",
+  "target_gate": "installed only on an ELF for x86-64 whose .dynstr names glibc (the `libc.so.6` soname or a GLIBC_2.x symbol version). musl, another libc, another architecture and a statically linked image keep the opaque shells -- and a static image loses nothing, because these tables match IMPORTED names only.",
+  "laid_out": [
+   "FILE",
+   "stat",
+   "timespec",
+   "timeval",
+   "tm",
+   "passwd",
+   "group",
+   "option",
+   "dirent"
+  ],
+  "left_opaque": [
+   "DIR",
+   "sigaction",
+   "sigset_t",
+   "mbstate_t",
+   "termios",
+   "sockaddr",
+   "pthread_mutex_t"
+  ],
+  "table_rules": {
+   "no_self_reference": "_IO_FILE::_chain and _IO_FILE::_freeres_list are void *, not FILE *: completing a struct re-keys it into a new Rc, so a self-pointer taken while the shell is being filled would strand the program on two stream types.",
+   "nesting_depth": "one level: stat holds three timespecs by value and timespec holds no aggregate, so the recursive mint terminates by construction and dependent_order's definition-before-use walk stays finite. Unit-tested.",
+   "adoption_unchanged": "a definition already held of the declared width is adopted whole; no published layout is ever installed over somebody else's.",
+   "no_reserved_members": "no row names a member glibc reserves for itself (stat::__pad0, stat::__glibc_reserved, _IO_FILE::__pad5, _IO_FILE::_unused2); those offsets stay holes and print in the neutral offset form. Measured over the 16-binary corpus the rows fired 28 times and not one was worth having: 19 whole-struct copies spilling padding (v12.__glibc_reserved[0] = v13.__glibc_reserved[0] says exactly what v12._120_8_ = v13._120_8_ says), 8 LIES about diffutils file_data::desc/::name, and 1 address computation the name made worse ((long)v32.__glibc_reserved + v10*4 + -0x78 -> (long)&v32.st_dev + v10*4). Unit-tested: no_layout_names_a_reserved_member.",
+   "declared_prototype_layout": "declared_libc_prototype (--define-function 0x..=fopen) runs after load with the object file out of reach, so it does NOT decide whether the glibc layouts are true of this image -- it is TOLD. LibcTypesPass::run records its own target decision on AnalysisOutput::libctypes_glibc at the moment it checks the target; the console keeps it across the load and passes it in as declared_libc_prototype's `layout` argument. An earlier version read the layout off the PROGRAM (the option value plus one held aggregate whose offset-0 member carried the table's name) and was WRONG: a 32-bit MIPS glibc ELF satisfies that from its own DWARF (st_dev at offset 0 of a MIPS32 stat, tv_sec at offset 0 of a MIPS32 timespec) and minted the x86-64 216-byte FILE with _fileno at 0x70, on a target where sizeof(FILE) is not 216 and no pointer is 8 bytes wide. The size floor a review suggested alongside (refuse a held aggregate whose width is not NAMED_AGGREGATES[name].size) is already named_aggregate's adoption rule and would not have sufficed: a musl x86-64 timespec is 16 bytes with tv_sec at 0, exactly like glibc's. Unit-tested: a_refused_target_cannot_reach_the_glibc_layouts; only_a_glibc_x86_64_elf_takes_the_layouts gained a dynamically linked MIPS32 glibc fixture. End-to-end: kuna-console/tests/verify_libctypes_glibc_target.rs declares the SAME name (getgrnam, imported by neither image and the only thing that names a `group`) against two real ELFs -- the x86-64 fixture mints the published 32-byte group with gr_name at 0, and libctypes_mips32_glibc_le32 (a dynamically linked MIPS32 glibc image built -g, so its own DWARF defines stat and timespec with st_dev and tv_sec at offset 0) gets the fieldless shell. That second test FAILS against the pre-fix heuristic (verified by reinstating it: `a refused target keeps the opaque shell, whatever its own debug info says`)."
+  },
+  "witness": {
+   "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+   "func_addr": "0x2f30",
+   "opaque": "v6 = *(unsigned char **)&a0->field_0x8;  if (*(unsigned char **)&a0->field_0x10 <= v6)",
+   "glibc": "v6 = (unsigned char *)a0->_IO_read_ptr;  if (a0->_IO_read_end <= v6)",
+   "value_type": "on the stage fixture, `return *(unsigned long *)&a1->field_0x30; return 0xffffffffffffffff;` becomes `return a1->st_size; return -1;` -- st_size is a signed long, so the sentinel stops printing as an unsigned bit pattern"
+  },
+  "corpus_sweep": {
+   "binaries": 26,
+   "functions_changed": "179 of 8,290 over the classified sixteen (the other ten are counted, not classified)",
+   "ptrsub_functional_form": {
+    "opaque": 0,
+    "glibc": 2,
+    "retracted": "an earlier version of this record, of glibc.md and of the PR body said `PTRSUB(` stays 0/0 EVERYWHERE. FALSE. O2/libselinux/libselinux.so.1 goes 0 -> 2.",
+    "counterexample": "O2/libselinux/stripped/libselinux.so.1 sub_13530 @0x13530: `v50 = (int *)v14;` and `v61 = (int *)v14;` become `v50 = PTRSUB(v14,0);` / `v61 = PTRSUB(v14,0);`. v14 is a FILE *, v50/v61 are int *. opaque gives FILE no member at offset 0 so RulePtrsubUndo removes the PTRSUB; glibc puts _flags there, the PTRSUB is MATCHING, and the printer falls back to the functional form instead of &v14->_flags.",
+    "pre_existing_on_main": "the same fallback is reachable on origin/main today wherever a struct is DWARF-complete: `kuna decompile-all O2/libselinux/compiled/libselinux.so.1 | grep -c 'PTRSUB('` = 3 (PTRSUB(aeref.ae,0x30) x2 and PTRSUB(v2,0x30) = *newsid), with no libctypes value involved. The `glibc` value REACHES a pre-existing printer shape on stripped images; it does not introduce it.",
+    "scope": "2 sites in 26 binaries, all in one function of one library. Rare, but the 0/0 control claim was wrong and the honest number is 2."
+   },
+   "field_0x_accesses": {
+    "opaque": 792,
+    "glibc": 28,
+    "classified_sixteen": {
+     "opaque": 651,
+     "glibc": 9
+    }
+   },
+   "field_0x_residue": "of the 28, nine are in the classified sixteen: 4 padding bytes inside a copied struct tm (findutils find), 3 address forms in e2fsck, 2 diffutils offsets the reserved-row rule keeps neutral",
+   "undefined8_declarations": {
+    "opaque": 65,
+    "glibc": 34
+   },
+   "byvalue_named_aggregate_locals": {
+    "opaque": 132,
+    "glibc": 134,
+    "is_not_an_invariant": "this is a COUNT over the 16 binaries, not a safety property. It is a net and it hides motion both ways on the exact variables[] surface decbench scores. An earlier version of this record presented '74 -> 74' over 8 binaries as a no-motion property; it never was one.",
+    "counterexample": {
+     "slice": "shadow::O2::useradd",
+     "function": "main @ 0x6480",
+     "lost": "opaque recovers a 144-byte `stat` stack symbol at -0x218 (`stat v75;`); glibc does not -- a neighbouring char[16] at -0x268 grows to char[128] and swallows it, and every access becomes a piece write (v44._16_8_ = v27 / 0x15180; stat(\"/var/log/lastlog\",(stat *)&v44[0x50]))",
+     "variables_rows": "43 in BOTH arms; the stat row is one of them under opaque and none of them under glibc (long 7 -> 4, undefined8 10 -> 15)",
+     "gained_elsewhere": "two other useradd functions (0xfde0, 0x16520) gain a by-value stat opaque did not have, which is where the net +2 comes from",
+     "metric_is_blind": "shadow::O2::useradd main scores 0.08064516129032258 with {tp:5, fp:4, fn:53, decomp_vars:43} in BOTH arms, so it is not in moved.csv. A flat sweep is evidence that nothing regressed THAT THIS METRIC SCORES -- not that nothing regressed."
+    },
+    "scope": "the classified sixteen only (byvalue.py); 132 -> 134"
+   },
+   "piece_reads": {
+    "opaque": 2946,
+    "glibc": 2429,
+    "classified_sixteen": {
+     "opaque": 1580,
+     "glibc": 1273
+    }
+   },
+   "hunk_classes": {
+    "field-name-or-decl-type": "the bulk; undefined8 46 -> 16 is the declaration half",
+    "cast-or-literal": "a handful (*v2 = 10 -> *v2 = '\\n', 0xffffffffffffffff -> -1)",
+    "index-respells-an-offset": 41,
+    "unexplained": 0
+   },
+   "one_shape_that_looked_like_a_defect": "`*(unsigned int *)&v10[3] & 0xf000` -> `v10[3] & 0xf000` once the pointee goes long -> unsigned long. Pre-existing printer behaviour: on main, `uint8 *p` prints `p[3]` where `int8 *p` prints `*(uint4 *)&p[3]`.",
+   "artifact": "docs/features/libctypes/corpus-hunk-classification-glibc.txt",
+   "binary_set": "8 chosen by the implementer (O2/coreutils/fmt, O0+O2/coreutils/ls, O0/coreutils/stat, O2/grep/grep, O0/tar/tar, O2/gzip/gzip, O0/findutils/find) + 8 chosen by an adversarial review and DISJOINT from them (O2/e2fsprogs/e2fsck, O2/coreutils/du, O0/base-passwd/update-passwd, O2/shadow/useradd, O2-noinline/coreutils/sort, O2/dpkg/dpkg-statoverride, O0/cronie/crond, O2-noinline/diffutils/diff). Both counterexamples below come from the review's half.",
+   "functions_total": 8290,
+   "named_reserved_members": {
+    "opaque": 0,
+    "glibc": 0
+   },
+   "array_index_hazard": {
+    "claim_retracted": "an earlier version of glibc.md said this hazard fires 14 times and 'every one of them is an improvement'. FALSE, and the binary that falsifies it is the one the item spec named (e2fsprogs e2fsck init_resource_track), which was not in the implementer's 8.",
+    "two_shapes": "member-then-index (p->d_name[k]) and index-then-member (p[k].member, k != 0) do not behave alike and were conflated.",
+    "member_then_index": {
+     "sites": 31,
+     "all": "dirent::d_name",
+     "verdict": "every one an improvement -- d_name IS a char[256], so findutils' dotfile test goes from three offset fields (vN->field_0x13/0x14/0x15) to vN->d_name[0..2]"
+    },
+    "index_then_member": {
+     "sites": 10,
+     "true": 4,
+     "misnamed": 6,
+     "e2fsck_init_resource_track": {
+      "addr": "0x339d0",
+      "why": "gettimeofday(a0,NULL) is the only thing in the stripped binary that says what a0 is, so a0 becomes timeval *; it is really a struct resource_track * whose first THREE members are timevals",
+      "opaque": "*(unsigned long *)&a0[3] = sbrk(0);  *(unsigned long *)&a0[3].field_0x8 = 0;  *(unsigned long *)&a0[4] = 0;",
+      "glibc": "a0[3].tv_sec = sbrk(0);  a0[3].tv_usec = 0;  a0[4].tv_sec = 0;",
+      "ground_truth": "O2/e2fsprogs/compiled/e2fsck, iscan.c:61 -- track->brk_start = sbrk(0); track->bytes_read = 0; track->bytes_written = 0; (struct resource_track { timeval time_start, user_start, system_start; void *brk_start; unsigned long long bytes_read, bytes_written; })",
+      "verdict": "5 of the 9 index sites in this one function are mis-names (brk_start/bytes_read/bytes_written spelled tv_sec/tv_usec); the other 4 (a0[1], a0[2]) really ARE timevals and are right"
+     },
+     "diffutils_diff": {
+      "addr": "0x8e70",
+      "site": "v15 = (unsigned long *)&v15[2].st_nlink;  (opaque: v16 = (char *)&v16[2].field_0x10;)",
+      "verdict": "a mis-name: pointer arithmetic to the next struct file_data { int desc; char const *name; struct stat stat; ... }, not a read of st_nlink"
+     },
+     "what_the_reserved_row_drop_fixed": "the same function's 8 `v15[-1].__glibc_reserved[1]`/`[2]` sites (really cmp.file[N].desc and ::name) are back to *(int *)&v15[-1].field_0x80 / *(char **)&v15[-1].field_0x88, which is what opaque says; the price is 4 dpkg-statoverride padding-copy lines going from v12.__pad0 / v12.__glibc_reserved[k] back to v12._36_4_ / v12._120_8_",
+     "verdict": "the hazard is INHERENT to naming a pointee from one call site, not a bug in a table: when the object is bigger than the claim, every offset past the aggregate is mis-attributed. The reserved rows made it worse and are gone; the residue (tv_sec for brk_start) is a real cost of glibc over opaque and one of the reasons opaque stays the default.",
+     "dpkg_statoverride_is_not_a_misname": "a review counted dpkg-statoverride's 4 `v12.__pad0` / `v12.__glibc_reserved[k]` lines among the bad sites. They are not: v12 IS a genuine struct stat, filled by the fstat(v2,&v12) three lines above, and the source assigns the whole struct to a global, so the compiler copies the padding. Those four names were RIGHT, and the reserved-row rule costs them (v12.__pad0 -> v12._36_4_). The same is true of the other 15 truthful sites (coreutils stat, findutils find, tar). The trade is 19 zero-information padding names against 8 lies plus one worse address form, and it is worth taking."
+    }
+   },
+   "binary_groups": "8 implementer + 8 adversarial review 1 (classified hunk by hunk; 179 of 8,290 functions change text) + 10 adversarial review 2 (counted, not classified: cp O0, tail O2, cmp O0, kmod O2, last O2, dash O0, minigzip O2, libselinux.so.1 O2, ssh-keygen O2, ip O2)",
+   "counter": "docs/features/libctypes/census.py -- one script, one regex per metric, per-binary rows included. `python3 docs/features/libctypes/census.py <dir>..` over the A/B dumps.",
+   "stack_declarations": {
+    "opaque": 14487,
+    "glibc": 14477,
+    "moved_binaries_only": "5 of 26: shadow/useradd 158->151, openssh/ssh-keygen 1241->1239, kmod 314->312, cronie/crond 205->204, findutils/find 1032->1034. The other 21 are unchanged.",
+    "three_shapes": {
+     "real_aggregate": "kmod sub_9e20 @0x9e20: `char *v48 // stack - 0x3bb8` + `int v76 // stack - 0x3bb0` + `undefined4 v77 // stack - 0x3bac` become `timeval v47 [2]; // stack - 0x3bb8`, which is 32 bytes covering exactly those three. A recovery that costs two declarations.",
+     "plain_pointers": "openssh/ssh-keygen sub_14bc0 @0x14bc0 (do_gen_krl): `char *v26 // stack - 0x100`, `char *v27 // stack - 0x108` and `char v29 [8] // stack - 0x110` merge into one `char v26 [24]; // stack - 0x110` and every use becomes `v26._0_8_` / `._8_8_` / `._16_8_` (e.g. `v26._8_8_ = &v30[strspn(v30,\" \\t\")];`). NO aggregate is involved -- this is the shape a by-value-aggregate story does not cover, and it is a straight regression: `char *v27` said more than `v26._8_8_` does. It is also the whole of ssh-keygen's piece-read increase (33 of its 266 glibc piece reads are v26._N_N_, against 8 for the slot they replaced).",
+     "byvalue_loss": "shadow/useradd main @0x6480, the largest single move (-7) -- see byvalue_named_aggregate_locals.counterexample."
+    }
+   },
+   "cross_field_piece_write": {
+    "opaque": 0,
+    "glibc": 51,
+    "what": "an 8-byte load spanning two 4-byte fields is decomposed into pseudo-field piece WRITES on a scalar local. A shape the {field name, value type change, cast change} buckets do not name, and harder to read than the neutral cast it replaces.",
+    "repro": "unsigned long f(const char *p, struct stat *st){ if (stat(p,st)) return 0; unsigned long v; memcpy(&v,(char *)st+0x18,8); return v; }  -- opaque: `return *(unsigned long )&a1->field_0x18;`  glibc: `unsigned long v1; v1._0_4_ = a1->st_mode; v1._4_4_ = a1->st_uid; return v1;`",
+    "sites": "51 over the 26 binaries, all in the classified sixteen: tar 12, findutils find 7, coreutils ls O2 7, ls O0 6, coreutils stat 6, du 6, diffutils diff 6, e2fsck 1.",
+    "net": "piece reads still fall 2,946 -> 2,429 corpus-wide, so the class is a net win and these 51 are the part that is not. Four binaries move the other way on the piece count: ssh-keygen 253 -> 266, ls O2 146 -> 151, ls O0 26 -> 29, du 138 -> 139. ssh-keygen's increase is NOT this shape (zero cross-field writes there) -- it is the swallowed-slot shape."
+   }
+  },
+  "benchmark": {
+   "instrument": "scripts.decbench.typesweep (decbench main's TypeMatchMetric), DECBENCH_NO_CACHE=1, KUNA_BIN pinned to this branch's release build; base arm = the shipped default `opaque`, test arm = `--option libctypes glibc`",
+   "corpus": "results/full_run_address_2026-09-11, O0 + O2 + O2-noinline, 8 projects, 444 slices, 10748 scored functions",
+   "control": "baseline arm vs the tree's published type_match: 9505 agree / 1243 differ (88.44%, the tree was scored before this campaign's merges); 10590 functions hand the metric byte-identical variables[] and 0 of them score differently",
+   "pooled": {
+    "n": 10748,
+    "perfect_opaque": 959,
+    "perfect_glibc": 959,
+    "aggregate_opaque": 3037.05,
+    "aggregate_glibc": 3037.6,
+    "moved_onto_perfect": 0,
+    "moved_off_perfect": 0,
+    "improved": 9,
+    "worse": 3
+   },
+   "moved": [
+    {
+     "direction": "better",
+     "slice": "coreutils::O0::chroot",
+     "function": "main",
+     "base": 0.7308,
+     "test": 0.7692
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O0::od",
+     "function": "skip",
+     "base": 0.5,
+     "test": 0.625
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::cp",
+     "function": "copy_internal",
+     "base": 0.09,
+     "test": 0.13
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::od",
+     "function": "skip",
+     "base": 0.0,
+     "test": 0.125
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::ginstall",
+     "function": "install_file_in_file",
+     "base": 0.16,
+     "test": 0.2
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::ginstall",
+     "function": "copy_internal",
+     "base": 0.09,
+     "test": 0.13
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2::mv",
+     "function": "copy_internal",
+     "base": 0.09,
+     "test": 0.13
+    },
+    {
+     "direction": "better",
+     "slice": "coreutils::O2-noinline::od",
+     "function": "skip",
+     "base": 0.0,
+     "test": 0.125
+    },
+    {
+     "direction": "better",
+     "slice": "gzip::O0::gzip",
+     "function": "streamsavedir",
+     "base": 0.5714,
+     "test": 0.6429
+    },
+    {
+     "direction": "worse",
+     "slice": "coreutils::O2-noinline::cp",
+     "function": "copy_internal",
+     "base": 0.1803,
+     "test": 0.1475
+    },
+    {
+     "direction": "worse",
+     "slice": "coreutils::O2-noinline::ginstall",
+     "function": "copy_internal",
+     "base": 0.1803,
+     "test": 0.1475
+    },
+    {
+     "direction": "worse",
+     "slice": "coreutils::O2-noinline::mv",
+     "function": "copy_internal",
+     "base": 0.1803,
+     "test": 0.1475
+    }
+   ],
+   "reading": "the metric is FLAT. The surface decbench scores is variables[] -- arguments and stack symbols -- and a field NAME changes neither; what it changes is the body and the type of a loaded value, and the register locals that carry those are never exported. +0.55 aggregate over 10748 functions is noise.",
+   "rerun_after_reserved_row_drop": "the 444-slice sweep was re-run on the build with the reserved rows dropped and the live-layout probe in: identical in every figure -- perfect 959 -> 959, aggregate 3037.05 -> 3037.60, 0 onto / 0 off perfect, 9 improved / 3 worse, and the same 12 moved rows."
+  },
+  "default_decision": {
+   "value": "opaque (unchanged)",
+   "why": "two reasons, and the first is enough. (1) The metric is flat: 959 -> 959 perfect, +0.55 aggregate, 9 improved / 3 worse, so there is no measured case for moving the default. (2) The three worse rows are one source function -- coreutils copy_internal at -O2 -fno-inline, in cp/ginstall/mv -- where the completed layout lets a `stat *` vote reach three parameters whose ground truth is `char *`: `if (*a0 != '/')` becomes `if ((char)a0->st_dev != '/')`. A pointer to a struct outranks a pointer to char in the seed fold (SUB_PTR_STRUCT 4 < SUB_PTR 6) in BOTH arms; what the fields change is how far that vote travels. That is a small wrong answer the fieldless shell did not produce, and it is exactly the kind of judgement call the option model exists for.",
+   "flip_conditions": "a later flip wants the propagation reach bounded (or the copy_internal shape understood) and a typesweep that is positive rather than flat."
+  },
+  "speed": {
+   "method": "interleaved opaque/glibc pairs (`kuna decompile-all --option libctypes opaque|glibc`), MINIMUM and median of 15 pairs each, alternating which arm runs first. The MINIMUM is the honest read: the box was shared with another agent's corpus sweep throughout.",
+   "rows": [
+    {
+     "case": "fmt decompile-all (152 fn)",
+     "min_opaque_ms": 4070.4,
+     "min_glibc_ms": 4086.0,
+     "min_delta_pct": 0.38,
+     "median_delta_pct": 5.02
+    },
+    {
+     "case": "ls decompile-all (404 fn)",
+     "min_opaque_ms": 13498.2,
+     "min_glibc_ms": 13417.1,
+     "min_delta_pct": -0.6,
+     "median_delta_pct": -0.37
+    },
+    {
+     "case": "fmt functions (load only)",
+     "min_opaque_ms": 145.8,
+     "min_glibc_ms": 145.8,
+     "min_delta_pct": -0.04,
+     "median_delta_pct": -5.15
+    }
+   ],
+   "verdict": "flat. The largest minimum delta is +0.38% and the other two are negative; the work added is nine struct completions at load, once per program.",
+   "measured_before_the_reserved_row_drop": "yes. Dropping stat::__pad0/__glibc_reserved and FILE::__pad5/_unused2 removes four field mints per program at load and can only subtract work, so the rows above stand as an upper bound. An independent min-of-N reproduced the shape: fmt +1.17% when the measurement is load-dominated, du whole-binary -1.36% at n=11."
+  },
+  "project_export": {
+   "method": "kuna decompile-project <libctypes_glibc_x86_64> -o D --option libctypes off|opaque|glibc; cc -std=c99 -fsyntax-only over the generated .h and over the generated .c",
+   "header_errors": {
+    "off": 0,
+    "opaque": 0,
+    "glibc": 0
+   },
+   "body_errors": {
+    "off": 17,
+    "opaque": 21,
+    "glibc": 18
+   },
+   "note": "`glibc` emits the real struct bodies in the .h, dependency-ordered (timespec before stat), and they parse. The three errors `opaque` adds over `off` are the incomplete-type reads, and filling the layout in takes them back out."
+  },
+  "target_gate_controls": "MIPS32 glibc ELF with --define-function ADDR=fopen --option libctypes glibc: `typedef struct FILE FILE; /* opaque */` (before the fix: the full 216-byte x86-64 layout with undefined1 _padN filler between every 8-byte-spaced member). Statically linked x86-64 glibc image (no .dynstr, gate refuses): the shell too, although its own DWARF stat is field-filled. Dynamically linked x86-64 glibc image: the full layout even for a name it never imports."
  }
 }

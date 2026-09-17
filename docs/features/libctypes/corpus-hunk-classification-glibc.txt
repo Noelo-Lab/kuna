@@ -1,0 +1,232 @@
+# libctypes glibc -- whole-corpus `decompile-all` sweep, `opaque` vs `glibc`
+
+26 binaries, whole binary in both arms, in three disjoint groups: eight chosen by
+the implementer, eight by a first adversarial review, ten by a second.  Hunks are
+classified one by one over the first sixteen (179 of 8,290 functions change
+text); the last ten are counted, not classified, and they are where the two
+counterexamples below come from.
+
+  implementer 8          review 1 (8)                  review 2 (10)
+  O2/coreutils/fmt       O2/e2fsprogs/e2fsck           O0/coreutils/cp
+  O0/coreutils/ls        O2/coreutils/du               O2/coreutils/tail
+  O2/coreutils/ls        O0/base-passwd/update-passwd  O0/diffutils/cmp
+  O0/coreutils/stat      O2/shadow/useradd             O2/kmod/kmod
+  O2/grep/grep           O2-noinline/coreutils/sort    O2/sysvinit/last
+  O0/tar/tar             O2/dpkg/dpkg-statoverride     O0/dash/dash
+  O2/gzip/gzip           O0/cronie/crond               O2/zlib/minigzip
+  O0/findutils/find      O2-noinline/diffutils/diff    O2/libselinux/libselinux.so.1
+                                                       O2/openssh-portable/ssh-keygen
+                                                       O2/iproute2/ip
+
+Produced by .scratch/{review2/ab16.sh,rev3/ab10.sh} on the branch; the counts are
+docs/features/libctypes/census.py, which is the one definition of each metric
+(`python3 docs/features/libctypes/census.py <dir>..`, per-binary rows included).
+
+## Totals -- all 26 binaries
+
+  PTRSUB(                       opaque       0   glibc       2  <- NOT 0/0, see below
+  field_0x<hex>                 opaque     792   glibc      28
+  undefined8 declarations       opaque      65   glibc      34
+  stack declarations            opaque  14,487   glibc  14,477
+  piece reads NAME._<off>_<size>_ opaque 2,946   glibc   2,429
+  cross-field piece WRITES      opaque       0   glibc      51  <- a new shape, see below
+  named reserved members        opaque       0   glibc       0
+
+On the first sixteen alone (the classified set) the same script gives PTRSUB(
+0/0, field_0x 651 -> 9, piece reads 1,580 -> 1,273, by-value named-aggregate
+locals 132 -> 134.  Every PTRSUB( in the corpus is in the tenth group.
+
+## PTRSUB( is NOT 0 in both arms -- retraction
+
+An earlier version of this file, of glibc.md and of the PR body said `PTRSUB(`
+stays 0 in both arms everywhere.  That is false.  O2/libselinux/libselinux.so.1
+goes 0 -> 2, both in sub_13530 @0x13530, where `v14` is a `FILE *` and `v50`/`v61`
+are `int *`:
+
+  $ kuna decompile-all O2/libselinux/stripped/libselinux.so.1 --option libctypes opaque | grep -c 'PTRSUB('
+  0
+  $ kuna decompile-all O2/libselinux/stripped/libselinux.so.1 --option libctypes glibc  | grep -c 'PTRSUB('
+  2
+  -   v50 = (int *)v14;          +   v50 = PTRSUB(v14,0);
+  -   v61 = (int *)v14;          +   v61 = PTRSUB(v14,0);
+
+`opaque` gives FILE no member at offset 0, so RulePtrsubUndo removes the PTRSUB
+and the cast prints; `glibc` puts `_flags` there, the PTRSUB is MATCHING, and the
+printer falls back to the functional form instead of `&v14->_flags`.
+
+That fallback is pre-existing engine behaviour, not something this value
+introduces.  It is reachable on origin/main today wherever a struct is
+DWARF-complete -- the same library's unstripped twin, no libctypes value
+involved:
+
+  $ kuna decompile-all O2/libselinux/compiled/libselinux.so.1 | grep -c 'PTRSUB('
+  3
+      v1 = PTRSUB(aeref.ae,0x30);            (x2)
+      PTRSUB(v2,0x30) = *newsid;
+
+So what `glibc` does is reach a shape stripped images could not reach before.
+It is rare: 2 sites in 26 binaries, all in one function of one library.  The
+control claim was wrong, the mechanism is not new, and the honest number is 2.
+
+## The cross-field piece write -- a shape the three buckets do not name
+
+An 8-byte load that spans two 4-byte fields is decomposed into piece writes on a
+scalar local.  Runnable:
+
+  unsigned long f(const char *p, struct stat *st){
+      if (stat(p,st)) return 0;
+      unsigned long v; memcpy(&v,(char *)st+0x18,8); return v; }
+
+  opaque:  return *(unsigned long *)&a1->field_0x18;
+  glibc:   unsigned long v1;
+           v1._0_4_ = a1->st_mode;
+           v1._4_4_ = a1->st_uid;
+           return v1;
+
+Worse to read than the neutral cast, and it is not {field name, value type
+change, cast change}.  51 sites over the 26 binaries, all in the first sixteen
+(tar 12, findutils find 7, coreutils ls O2 7, ls O0 6, stat 6, du 6, diffutils
+diff 6, e2fsck 1).  Piece reads still fall 2,946 -> 2,429 corpus-wide, so the
+class is a net win, and these 51 are the part that is not.
+
+Four binaries move the other way on the piece count: ssh-keygen 253 -> 266,
+coreutils ls O2 146 -> 151, ls O0 26 -> 29, du 138 -> 139.  ssh-keygen's increase
+is NOT this shape (it has zero cross-field writes) -- it is the swallowed-slot
+shape below.
+
+## Hunk classes (classify16.py)
+
+  field-name        613
+  cast-or-literal    20
+  decl-type          12
+  OTHER             239   -> 137 distinct shapes, every one reviewed
+
+The 239 "OTHER" hunks are what the classifier's `DECL` regex does not match:
+declaration-list churn (a stack slot regrouped, a local retyped, a `// rax`
+comment gained or lost).  Reviewed by grouping into 137 distinct normalized
+shapes; the only non-declaration shapes are the three printer respellings
+recorded below.
+
+## The index shapes (arrayidx2.py)
+
+A sized pointee makes `p[k]` step by the aggregate's width, so an index respells
+an offset.  Two shapes, 41 sites:
+
+  member-then-index  p->d_name[k]      31 sites, all dirent::d_name, ALL BETTER
+  index-then-member  p[k].member k!=0  10 sites, 4 TRUE and 6 MIS-NAMED
+
+`p[0].member` is excluded: index 0 on a by-value array (`stat v[2]`) is an
+ordinary element and carries no claim beyond the declaration.  So is
+`p[k].field_0xNN` -- that is the neutral offset form, makes no member claim, and
+is what `opaque` prints too; it accounts for the difference between the 15 raw
+matches and the 10 counted here (5 of them are the diffutils reads the
+reserved-row rule keeps neutral).
+
+  e2fsprogs/e2fsck init_resource_track @0x339d0     9 sites, 4 true / 5 misnamed
+    a0 is `timeval *` from gettimeofday; really `struct resource_track *`
+    whose first THREE members are timevals.
+      a0[1].tv_sec/tv_usec, a0[2].tv_sec/tv_usec   TRUE (user_start, system_start)
+      a0[3].tv_sec                                 really brk_start
+      a0[3].tv_usec                                really bytes_read
+      a0[4].tv_sec                                 really bytes_written
+    Ground truth: O2/e2fsprogs/compiled/e2fsck, iscan.c:61.
+
+  diffutils/diff @0x8e70                            1 site, misnamed
+      v15 = (unsigned long *)&v15[2].st_nlink;      (opaque: &v16[2].field_0x10)
+    pointer arithmetic to the next `struct file_data`, not a read of st_nlink.
+
+## The reserved rows, and why they are gone
+
+Before the rule was added, `stat::__pad0`, `stat::__glibc_reserved`,
+`_IO_FILE::__pad5` and `_IO_FILE::_unused2` were carried and fired 28 times:
+
+  19  padding copies inside a whole-struct assignment.  Carries no information:
+      `v12.__glibc_reserved[0] = v13.__glibc_reserved[0]` says exactly what
+      `v12._120_8_ = v13._120_8_` says.
+      (coreutils/stat 7, findutils/find 4, tar/tar 4, dpkg-statoverride 4)
+   8  LIES.  diffutils/diff @0x8e70: v15 points at `file_data.stat`, so the
+      enclosing struct's own `desc` and `name` sit at -1 index plus 0x80/0x88,
+      inside __glibc_reserved:
+        -   if ((int)v15[-1].__glibc_reserved[1] != -1)     /* cmp.file[N].desc */
+        -     v9 = (char *)v15[-1].__glibc_reserved[2];     /* cmp.file[N].name */
+        +   if (*(int *)&v15[-1].field_0x80 != -1)
+        +     v9 = *(char **)&v15[-1].field_0x88;
+   1  an address computation the name made harder to read.  grep/grep:
+        -   v21 = (long)v32.__glibc_reserved + (long)v10 * 4 + -0x78;
+        +   v21 = (long)&v32.st_dev + (long)v10 * 4;
+
+## Three printer respellings, all pre-existing behaviour surfaced by a pointee
+## width or signedness change
+
+  1. `*(unsigned int *)&v10[3] & 0xf000` -> `v10[3] & 0xf000` when the pointee
+     goes `long` -> `unsigned long`.  Reproduces on main with no libctypes:
+       int f_u(unsigned long *p){ return (*(unsigned int *)&p[3] & 0xf000) == 0x4000; }
+       int f_s(long *p)         { return (*(unsigned int *)&p[3] & 0xf000) == 0x4000; }
+       int4 f_u(uint8 *p) { return (int4)((p[3] & 0xf000) == 0x4000); }
+       int4 f_s(int8 *p)  { return (int4)((*(uint4 *)&p[3] & 0xf000) == 0x4000); }
+  2. `*(char *)&vN[4]` -> `(char)vN[4]`, same class.
+  3. e2fsck @0x61c00, where a WIDER pointee makes an increment explicit:
+       -   v19 = (unsigned int *)&v18.field_0x28;   v2 = &v19[1];   *v20 = *v19;
+       +   v19 = &v18.st_rdev;    v2 = (uint8 *)((int8)v19 + 4);   *v20 = (int4)*v19;
+     (`st_rdev` is 8 bytes wide, the loop copies 4-byte elements.)  Less
+     readable, and a consequence of the slot-reuse shape below.
+
+## Two shapes the field names get wrong, beyond the index hazard
+
+  SLOT REUSE.  e2fsck `ext2fs_add_journal_inode3` @0x61c00 has both a
+  `struct stat` (for `fstat`) and a `struct ext2_inode`, and the compiler gives
+  them one stack slot.  kuna types that slot `stat` in BOTH arms -- the
+  declaration is already wrong under `opaque` -- but `opaque` reads the inode
+  half as neutral offsets and `glibc` names them:
+        -   if (v18._28_4_)          +   if (v18.st_uid)          /* i_gid */
+        -   v18._26_2_ = 1;          +   v18.st_mode._2_2_ = 1;   /* i_links_count */
+        -   v18._0_2_ = 0x8180;      +   v18.st_dev._0_2_ = 0x8180;  /* i_mode */
+        -   v18._32_4_ |= 0x80000;   +   v18.st_gid |= 0x80000;   /* i_flags */
+
+  SWALLOWED STACK SLOTS.  A frame slot grows and absorbs its neighbours, and
+  every use of the absorbed slots becomes a piece accessor on the survivor.
+  This is the one class that costs declarations, and it is NOT only a by-value
+  aggregate story -- it swallows plain pointers too.  Corpus-wide the stack
+  declaration count moves 14,487 -> 14,477; per binary, only five move at all:
+
+      shadow/useradd        158 -> 151   (-7)
+      openssh/ssh-keygen  1,241 -> 1,239 (-2)
+      kmod/kmod             314 -> 312   (-2)
+      cronie/crond          205 -> 204   (-1)
+      findutils/find      1,032 -> 1,034 (+2)
+
+  and the other 21 are unchanged.  Three shapes, in decreasing honesty:
+
+  (a) BY-VALUE AGGREGATE, kmod `sub_9e20` @0x9e20.  Three slots become one real
+      aggregate, which is what the frame holds:
+        -   char *v48; // stack - 0x3bb8   int v76; // stack - 0x3bb0
+        -   undefined4 v77; // stack - 0x3bac
+        +   timeval v47 [2]; // stack - 0x3bb8
+      A `timeval[2]` at -0x3bb8 is 32 bytes and covers exactly those three, so
+      this is a recovery, not a loss -- it just costs two declarations.
+
+  (b) PLAIN POINTERS, openssh/ssh-keygen `sub_14bc0` @0x14bc0 (do_gen_krl).
+      Three unrelated slots, two of them `char *`, merge into one byte array and
+      every use becomes a piece accessor.  No aggregate is involved:
+        -   char *v26; // stack - 0x100
+        -   char *v27; // stack - 0x108
+        -   char v29 [8]; // stack - 0x110
+        +   char v26 [24]; // stack - 0x110
+        +       v26._8_8_ = &v30[strspn(v30," \t")];
+        +       if ((!*v26._8_8_) || ((v6 = *(char *)v26._16_8_, v6 && (v6 != '-'))))
+      This is a straight regression in that function: `char *v27` said more than
+      `v26._8_8_` does.  It is also the whole of ssh-keygen's piece increase (33
+      of its 266 glibc piece reads are `v26._N_N_`, against 8 for the slot it
+      replaced).
+
+  (c) BY-VALUE LOSS, shadow/useradd `main` @0x6480 -- the largest single move
+      (-7).  It loses its recovered 144-byte `stat` stack symbol at -0x218: a
+      neighbouring char[16] at -0x268 grows to char[128] and swallows it.  43
+      `variables[]` rows in both arms; the `stat` row is one of them under
+      `opaque` and none of them under `glibc`.  Two other useradd functions
+      (0xfde0, 0x16520) gain a by-value `stat` opaque did not have, which is
+      where the net +2 in the by-value count comes from.  decbench scores this
+      function 0.08064516129032258 with {tp:5, fp:4, fn:53, decomp_vars:43} in
+      BOTH arms, so the metric cannot see it.
+
+  Shapes (b) and (c) are the reason `opaque` stays the default.

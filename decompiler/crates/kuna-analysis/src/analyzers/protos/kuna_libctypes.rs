@@ -34,6 +34,17 @@
 //! field or as a cast — the NAME, which is the whole point, is ABI-independent,
 //! and a wrong width can never make a pointer point at the wrong thing.
 //!
+//! ## `glibc` fills the shells in
+//!
+//! A sized, fieldless shell keeps the arithmetic seam honest and says nothing
+//! about what is at an offset. The `glibc` value installs the PUBLISHED x86-64
+//! members of the nine aggregates whose layout is part of the platform's API
+//! ([`glibc::GLIBC_LAYOUTS`]), so `f->field_0x8` reads `f->_IO_read_ptr` and the
+//! loaded value takes the FIELD's type. It is installed only on a target the
+//! layouts are true of — an x86-64 ELF whose `.dynstr` names glibc — and the
+//! shells stay opaque everywhere else. See [`glibc`] for the provenance and the
+//! three rules those tables obey.
+//!
 //! ## A `-g` image already has the real thing
 //!
 //! On an image that carries debug info the platform's own `struct stat` is
@@ -83,7 +94,7 @@
 use std::rc::Rc;
 
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::types::int4;
+use kuna_base::types::{int4, uint4};
 use kuna_decomp::dtype::{flags, type_metatype, Datatype, TypeFactory};
 
 use super::{
@@ -91,6 +102,12 @@ use super::{
     unambiguous_imported_function_names, Sig, Ty,
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
+
+pub(super) mod glibc;
+
+/// How much of an aggregate this table says — the `libctypes` value, as the
+/// option's own gate module spells it.
+pub(super) use kuna_decomp::kuna_libctypes::LibcTypesLayout as Layout;
 
 /// Seed the named-aggregate libc signatures. Registered after
 /// [`super::LibProtoPass`] and [`super::kuna_libcsigs::LibcSigsPass`] so its
@@ -177,7 +194,12 @@ pub(super) const NAMED_AGGREGATES: &[NamedAggregate] = &[
 /// Idempotent by construction: the second call finds the interned type by name
 /// and hands back the same `Rc`, so every `FILE *` in the table is the same
 /// pointee object.
-pub(super) fn named_aggregate(name: &str, types: &dyn TypeFactory) -> KunaResult<Rc<Datatype>> {
+pub(super) fn named_aggregate(
+    name: &str,
+    types: &dyn TypeFactory,
+    word_size: uint4,
+    layout: Layout,
+) -> KunaResult<Rc<Datatype>> {
     let Some(agg) = NAMED_AGGREGATES.iter().find(|a| a.name == name) else {
         return Err(KunaError::lowlevel(format!(
             "libctypes: no width is known for `{name}`"
@@ -205,6 +227,20 @@ pub(super) fn named_aggregate(name: &str, types: &dyn TypeFactory) -> KunaResult
             if usable(&held) {
                 return Ok(held);
             }
+        }
+    }
+    // `glibc` and a layout to install: the fields are interned FIRST, so the
+    // shell is minted only once the whole layout is known and is never handed
+    // out half-built (no field names this aggregate, which is what makes that
+    // order possible — see `glibc`'s module header). The completed struct drops
+    // `type_incomplete`: it has its members, and the `.h` emitter should print
+    // them.
+    if layout == Layout::Glibc {
+        if let Some(rows) = glibc::layout_for(name) {
+            let fields = glibc::build_fields(rows, types, word_size)?;
+            let shell = types.get_type_struct(name)?;
+            return types
+                .set_fields_struct_raw(&shell, fields, Vec::new(), agg.size, agg.align, 0);
         }
     }
     let shell = types.get_type_struct(name)?;
@@ -359,9 +395,19 @@ impl AnalysisPass for LibcTypesPass {
         // the type factory by `build_pieces` below, and with the gate off not one
         // of them may exist (an interned `stat` is exactly what the DWARF
         // importer would meet). Off is therefore the shipped tables, untouched.
-        if !enabled() {
-            return out;
-        }
+        //
+        // `glibc` asks for the published field layouts; whether they are TRUE of
+        // this image is a separate question, and the only one that can make a
+        // field name wrong. Refused => the `opaque` shells, exactly.
+        let layout = match kuna_decomp::kuna_libctypes::libctypes_layout() {
+            Layout::Off => return out,
+            Layout::Glibc if glibc::target_is_glibc_x86_64(ctx.file) => Layout::Glibc,
+            _ => Layout::Opaque,
+        };
+        // The gate decision itself is a FACT about this image, and the only
+        // consumer that cannot re-derive it is the one that runs after the object
+        // file is gone: a `--define-function 0x..=fopen` directive. Carry it.
+        out.libctypes_glibc = layout == Layout::Glibc;
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         // IMPORTED names only, for both tables — where `LibProtoPass` also matches
@@ -371,10 +417,10 @@ impl AnalysisPass for LibcTypesPass {
         // import is the whole job; the definition belongs to whoever declared it.
         let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
         let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
-        seed_named_prototypes(&mut out, &imported, LIBC_NAMED, types, word_size);
-        seed_resolved_prototypes(&mut out, &resolved, LIBC_NAMED, types, word_size);
-        seed_named_prototypes(&mut out, &imported, LIBC_EXT_NAMED, types, word_size);
-        seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT_NAMED, types, word_size);
+        seed_named_prototypes(&mut out, &imported, LIBC_NAMED, types, word_size, layout);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_NAMED, types, word_size, layout);
+        seed_named_prototypes(&mut out, &imported, LIBC_EXT_NAMED, types, word_size, layout);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT_NAMED, types, word_size, layout);
         out
     }
 }
