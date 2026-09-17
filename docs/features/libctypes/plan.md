@@ -1,5 +1,9 @@
 # `libctypes` — plan
 
+> The default moved to `opaque` after this was written; `flip.md` is the record
+> of that change and what it moves. The rest of this document describes the
+> option as it shipped.
+
 ## Goal
 
 Make a pointer to a libc/POSIX aggregate spell its name on the surface decbench

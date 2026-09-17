@@ -507,7 +507,8 @@ fn option_values_live_value_present_for_87() {
         // (kuna) The named libc/POSIX aggregate types — a load-time analysis gate
         // read through the `KUNA_LIBCTYPES` env bridge (the named shells are
         // interned while the prototype pass builds its signatures, upstream of
-        // every `option` command), so no codegen live reader. Default-off.
+        // every `option` command), so no codegen live reader. Default-ON
+        // (`opaque`).
         "libctypes",
         // (kuna) The declared-name libc prototype lookup — read console-side at
         // declaration time (`ConsoleProgram::declare_function`), so it has no

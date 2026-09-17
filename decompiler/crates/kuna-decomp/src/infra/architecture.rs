@@ -1214,7 +1214,7 @@ pub struct Architecture {
     /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
     pub analysis_libcsigs: bool,
     /// (kuna) Gate the named libc/POSIX aggregate types in the prototype tables
-    /// (`libctypes`); default off. Catalog-visible twin of the load-time
+    /// (`libctypes`); default on (`opaque`). Catalog-visible twin of the load-time
     /// [`crate::kuna_libctypes`] **env var** (the named shells are interned at
     /// `load file`, upstream of every `option` command), exactly as
     /// `analysis_dwarfstructs` is for its own gate.
@@ -2584,6 +2584,12 @@ impl Architecture {
         self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
+        // (kuna) Named libc/POSIX aggregate pointers in the prototype tables --
+        // default-ON (`opaque`). Real-ELF analysis tier only, so the XML corpora
+        // cannot observe it; the evidence is the corpus sweep in
+        // docs/features/libctypes/record.json. The pass itself reads the
+        // load-time env bridge, which defaults on to match this.
+        self.analysis_libctypes = true;
         // (kuna) DIV-141 built-in Win32 API signature table -- default-ON.
         self.analysis_win32sigs = true;
         // (kuna) DIV-139 declared-name libc prototype lookup -- default-ON.

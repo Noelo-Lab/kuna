@@ -487,7 +487,13 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // — and the uid expression `*(unsigned int *)(v7 + 0x10)` hoists into a named
 // local instead of being re-spelled twice inside the guard. Two lines, both
 // earned.
-const PIN_FAILLOG_C_LINES: [usize; 3] = [285, 39, 92];
+// sub_2620 285 -> 286 with `libctypes` on by default: one `void *v6` was doing
+// two jobs in this function -- the `getpwent()` result (read at `+0x10`) and the
+// stream `ferror`/`fflush` take -- and the named table splits it into
+// `passwd *v6` and `FILE *v13`. One extra declaration line, earned; every other
+// measurement on this fixture is unchanged, the getPcode/getMappedSymbols
+// traffic included.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [286, 39, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports

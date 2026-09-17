@@ -1,5 +1,9 @@
 # `libctypes` — named libc/POSIX aggregate pointers in the prototype tables
 
+> The default moved to `opaque` after this was written; `flip.md` is the record
+> of that change and what it moves. The rest of this document describes the
+> option as it shipped.
+
 ## The opportunity
 
 kuna's two built-in prototype tables share one type vocabulary (`Ty`,

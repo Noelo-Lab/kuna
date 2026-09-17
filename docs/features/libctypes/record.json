@@ -328,8 +328,8 @@
   "tests/stages/kuna-libctypes.xml"
  ],
  "notes": "The gate is read INSIDE the pass through the load-time env bridge, not at the commit boundary: the pass interns its named shells into the type factory while building the signatures, and a commit-boundary arch flag additionally drops facts after `clear architecture` + `load file` (measured -- it made pass 2 of the stage test render `fclose(void *)`). stdin/stdout/stderr as typed FILE * data symbols, and a `glibc` value installing the public _IO_FILE field names, are follow-ups.",
- "default_on": false,
- "default_value": "off",
+ "default_on": true,
+ "default_value": "opaque",
  "default_decision": {
   "verdict": "ship default-OFF in this PR; the flip is a separate PR (campaign Stage 3)",
   "evidence_for_on": "typesweep 214 slices / 5298 functions: +39 perfect, 0 moved off perfect, 386 improved, 0 worsened; make test 675/675 PARITY OK with the gate forced on (KUNA_LIBCTYPES=opaque); make test-stages 1022/1022 PARITY OK with the gate forced on; whole-binary sweep over 7 stripped binaries shows no wrong-output hunk and no change in the PTRSUB( count; six unstripped twins keep or gain named-field accesses; speed worst +2.01% on the minimum.",
@@ -434,5 +434,434 @@
   "field_0x_introduced": 39,
   "field_0x_introduced_on_a_base_that_had_a_named_field_off": 0,
   "reading": "named-field accesses rise or stay flat on every twin: the adopted definitions are the platform's own, so a `stat *` keeps `st_mode`. Every `field_0x` the option introduces replaces RAW POINTER ARITHMETIC in the off arm on a type DWARF never interned in that binary, never a DWARF field."
+ },
+ "default_flip": {
+  "what": "the default moves off -> opaque; nothing about the pass changes. `--option libctypes off` restores the shipped `void *` tables.",
+  "files": [
+   "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_libctypes.rs (unset env => on, mirroring the dwarfstructs bridge)",
+   "decompiler/crates/kuna-cli/src/decompile.rs + decompile_all.rs (the two load-time env bridges: off-token polarity, token passed through verbatim like the symbolnamebound bridge, so a later layout value cannot read as `off`)",
+   "decompiler/crates/kuna-decomp/src/infra/architecture.rs (reset_defaults_internal)",
+   "decompiler/crates/kuna-decomp/phases.toml (default + use_when + example)",
+   "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json (byte capture recaptured)",
+   "decompiler/crates/kuna-ghidra/tests/ghidra_sim_e2e.rs (PIN_FAILLOG_C_LINES[0] 285 -> 286)",
+   "docs/options.md, docs/spec/01-program-prep.md, docs/features/libctypes/flip.md",
+   "tests/stages/kuna-libctypes.xml (restores `opaque`, not `off`, in its last command)",
+   "tests/cli/changing-namestyle-invalidates-discovered.json (`void *param_1` -> `FILE *param_1`)",
+   "docs/features/libctypes/byvalue.py (the by-value scanner)"
+  ],
+  "moved_stage_assertions": [],
+  "moved_stage_assertions_note": "NONE. `make test-stages` is 1038/1038 PARITY OK and a --save-baseline re-record of docs/baseline-stages.json on the flipped build is byte-identical to the file in the tree (100,769 bytes each), so no re-record was needed. Checked two further ways rather than taken from the green line: (a) a throwaway fixture that loads a real ELF and asserts `int4 fclose(FILE *a0)` with NO `option` command passes on this build and fails under KUNA_LIBCTYPES=off, so the harness really sees the new default; (b) all 16 stage fixtures that `load file` were replayed through decomp_dbg in both arms with their own `option libctypes` commands removed -- 15 are byte-identical and the 16th is kuna-libctypes.xml itself (void */FILE *, plus get_prefix losing a shadow local `c` that merges into v3).",
+  "datatests_structural": "0 of 83 tests/datatests/*.xml contain `load file`, so the 675 assertions cannot observe this tier; make test is 675/675 PARITY OK and is not evidence either way.",
+  "typesweep": {
+   "instrument": "scripts.decbench.typesweep (decbench main's TypeMatchMetric), DECBENCH_NO_CACHE=1, KUNA_BIN pinned to this branch's release build, --workers 16, --dump-decisions",
+   "arms": "base = KUNA_LIBCTYPES=off (verified byte-identical to a binary built from origin/main), test = --option libctypes opaque (= the new default), so `improved` reads in the direction of the flip",
+   "corpus": "results/full_run_address_2026-09-11, projects coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline = 444 slices, 10748 scored functions",
+   "controls": {
+    "baseline_vs_published_agree": 10075,
+    "baseline_vs_published_differ": 673,
+    "agreement_pct": 93.74,
+    "byte_identical_variables_functions": 9907,
+    "byte_identical_variables_scored_differently": 0,
+    "slice_errors": 0
+   },
+   "projects": {
+    "bzip2": {
+     "n": 267,
+     "perfect_off": 15,
+     "perfect_on": 19,
+     "mean_off": 0.3454,
+     "mean_on": 0.3664,
+     "improved": 35,
+     "worse": 0
+    },
+    "coreutils": {
+     "n": 6422,
+     "perfect_off": 560,
+     "perfect_on": 592,
+     "mean_off": 0.2629,
+     "mean_on": 0.2726,
+     "improved": 410,
+     "worse": 0
+    },
+    "diffutils": {
+     "n": 420,
+     "perfect_off": 43,
+     "perfect_on": 51,
+     "mean_off": 0.3633,
+     "mean_on": 0.3907,
+     "improved": 50,
+     "worse": 0
+    },
+    "shadow": {
+     "n": 686,
+     "perfect_off": 22,
+     "perfect_on": 29,
+     "mean_off": 0.2768,
+     "mean_on": 0.2879,
+     "improved": 53,
+     "worse": 0
+    },
+    "gzip": {
+     "n": 368,
+     "perfect_off": 83,
+     "perfect_on": 88,
+     "mean_off": 0.4654,
+     "mean_on": 0.4844,
+     "improved": 30,
+     "worse": 0
+    },
+    "grep": {
+     "n": 247,
+     "perfect_off": 37,
+     "perfect_on": 37,
+     "mean_off": 0.3658,
+     "mean_on": 0.3689,
+     "improved": 7,
+     "worse": 0
+    },
+    "findutils": {
+     "n": 790,
+     "perfect_off": 31,
+     "perfect_on": 33,
+     "mean_off": 0.1465,
+     "mean_on": 0.1588,
+     "improved": 49,
+     "worse": 0
+    },
+    "tar": {
+     "n": 1548,
+     "perfect_off": 98,
+     "perfect_on": 110,
+     "mean_off": 0.267,
+     "mean_on": 0.2791,
+     "improved": 86,
+     "worse": 1
+    }
+   },
+   "opt_levels": {
+    "O2-noinline": {
+     "n": 4068,
+     "perfect_off": 203,
+     "perfect_on": 221,
+     "mean_off": 0.1872,
+     "mean_on": 0.1975,
+     "improved": 240,
+     "worse": 1
+    },
+    "O0": {
+     "n": 4286,
+     "perfect_off": 637,
+     "perfect_on": 686,
+     "mean_off": 0.4252,
+     "mean_on": 0.4395,
+     "improved": 317,
+     "worse": 0
+    },
+    "O2": {
+     "n": 2394,
+     "perfect_off": 49,
+     "perfect_on": 52,
+     "mean_off": 0.1378,
+     "mean_on": 0.1461,
+     "improved": 163,
+     "worse": 0
+    }
+   },
+   "pooled": {
+    "n": 10748,
+    "perfect_off": 889,
+    "perfect_on": 959,
+    "mean_off": 0.2711,
+    "mean_on": 0.2826,
+    "improved": 720,
+    "worse": 1,
+    "aggregate_off": 2913.85,
+    "aggregate_on": 3037.05,
+    "aggregate_delta": 123.2
+   },
+   "perfect_off": 889,
+   "perfect_on": 959,
+   "moved_onto_perfect": 70,
+   "moved_off_perfect": 0,
+   "improved_not_perfect": 650,
+   "worsened_not_perfect": 1,
+   "aggregate_type_match": {
+    "off": 2913.85,
+    "on": 3037.05,
+    "delta": 123.2
+   },
+   "worse_rows_examined": [
+    {
+     "slice": "tar::O2-noinline::tar",
+     "function": "write_directory_file_entry",
+     "base": 0.16666666666666666,
+     "test": 0.0,
+     "gt": "int write_directory_file_entry(void *entry, void *data) -- the hash_do_for_each callback signature",
+     "kuna_off": "void * (a match)",
+     "kuna_on": "FILE * (a miss)",
+     "verdict": "NOT a defect. The GT type is a POINTER, not a scalar we have started calling a pointer, so it is not the shape the sweep watches for; and kuna's answer is what the body does -- sub_1f1c0 hands that argument to fwrite_unlocked eight times. tar's own first line is `FILE *fp = data;`. The metric holds the declaration, kuna reports the use. 1 function in 10,748, not systematic."
+    }
+   ]
+  },
+  "corpus_sweep": {
+   "method": "`kuna decompile-all` off vs the new default over 9 stripped binaries (fmt/ls/grep/gzip/tar/bzip2 O2, find/diff O0, shadow useradd O2-noinline); every changed line bucketed AND every function's skeleton -- control-flow keyword sequence + call-target multiset + numeric-literal multiset, identifiers and types normalised away -- compared",
+   "functions": 4301,
+   "functions_gained_or_lost": 0,
+   "call_target_multiset_changed_in": 0,
+   "skeleton_differs": 136,
+   "skeleton_breakdown": {
+    "literals_only": 133,
+    "control_flow": 3,
+    "control_flow_detail": "all three are PLT thunks gaining a `return` because the new table entry gives them a return type: __uflow (fmt 0x2370, find 0x71d0) and fgetc (bzip2 0x23a0)",
+    "literals_detail": "every one is an offset absorbed into a field name (*(long *)&a0[4] -> a0->field_0x10) or an index respelled against a different base with the scale folded into the constant (v12[v9 * 0x26] -> (long)v12 + v9 * 0x130), same address in both"
+   },
+   "changed_lines": 6198,
+   "buckets": {
+    "var-renumber": 2817,
+    "decl-block": 703,
+    "line-removed": 491,
+    "proto-line": 472,
+    "field-form": 463,
+    "line-added": 431,
+    "OTHER": 285,
+    "pointee-named": 188,
+    "aggregate-slot": 187,
+    "decl-block-removed": 82,
+    "cast-width": 50,
+    "pointee-named-plus": 27,
+    "decl-block-added": 1,
+    "const-offset-access": 1
+   },
+   "per_binary": {
+    "bzip2_O2": {
+     "functions": 114,
+     "changed_lines": 85,
+     "skeleton_differs": 5,
+     "residual_lines": 7
+    },
+    "diff_O0": {
+     "functions": 507,
+     "changed_lines": 843,
+     "skeleton_differs": 7,
+     "residual_lines": 70
+    },
+    "find_O0": {
+     "functions": 862,
+     "changed_lines": 1377,
+     "skeleton_differs": 19,
+     "residual_lines": 27
+    },
+    "fmt_O2": {
+     "functions": 151,
+     "changed_lines": 91,
+     "skeleton_differs": 9,
+     "residual_lines": 5
+    },
+    "grep_O2": {
+     "functions": 449,
+     "changed_lines": 511,
+     "skeleton_differs": 6,
+     "residual_lines": 30
+    },
+    "gzip_O2": {
+     "functions": 204,
+     "changed_lines": 135,
+     "skeleton_differs": 8,
+     "residual_lines": 11
+    },
+    "ls_O2": {
+     "functions": 404,
+     "changed_lines": 828,
+     "skeleton_differs": 19,
+     "residual_lines": 43
+    },
+    "tar_O2": {
+     "functions": 1125,
+     "changed_lines": 2081,
+     "skeleton_differs": 45,
+     "residual_lines": 73
+    },
+    "useradd_O2ni": {
+     "functions": 485,
+     "changed_lines": 247,
+     "skeleton_differs": 18,
+     "residual_lines": 19
+    }
+   },
+   "ptrsub_functional_form": {
+    "off": 0,
+    "on": 0,
+    "note": "0 on every one of the 9 binaries in both arms -- the form the sizing rule exists to prevent"
+   },
+   "rethidden": {
+    "off": 0,
+    "on": 0
+   },
+   "by_value_named_aggregates": {
+    "returns_off": 0,
+    "returns_on": 3,
+    "returns_on_detail": "ls 0x10210, gzip 0x10bb0, tar 0x43230 -- the same gnulib gettime wrapper, all `timespec`, all correct (16 bytes in RAX:RDX)",
+    "parameters_off": 0,
+    "parameters_on": 0,
+    "locals_off": 0,
+    "locals_on": 88,
+    "locals_by_binary": {
+     "fmt": 1,
+     "ls": 6,
+     "grep": 8,
+     "gzip": 5,
+     "tar": 34,
+     "find": 13,
+     "diff": 4,
+     "useradd": 11,
+     "bzip2": 6
+    },
+    "locals_on_detail": "83 scalar declarations plus 5 arrays of one (`stat vN [2]`). `off` is 0 by construction: with the gate off no named shell is interned, so no name exists to appear by value. Offsets verified exact -- gzip 0xea40: `char v7 [72]` at -0xc8 plus four loose `long`s at -0x80/-0x78/-0x70/-0x68 become one `stat v7`, and the reads become v7._72_8_/._80_8_/._88_8_/._96_8_ = glibc x86-64 st_atim.tv_sec/.tv_nsec and st_mtim.tv_sec/.tv_nsec, which is what gzip copies there. The off arm's blob is SHORTER (72 bytes) than the struct stat the fstat call fills.",
+    "locals_cost": "the piece accessor count above (1,017 -> 1,275) and 5 of the export's +58 cc errors (`storage size of 'vN' isn't known`); both retired by the follow-up `glibc` value.",
+    "method": "docs/features/libctypes/byvalue.py <dir> (declaration lines matching one of the 16 shell names, plus which of them are read through vN._off_size_), over the same off/default decompile-all dumps as the rest of this sweep.",
+    "locals_read_through_a_piece_accessor": 58,
+    "locals_piece_reads_past_the_declared_size": 0
+   },
+   "declarations": {
+    "off": 17183,
+    "on": 17039,
+    "delta": -144,
+    "note": "down on 8 of 9 binaries: scattered stack slots collapse into the aggregate they are (ls 0x76b0: 17 `unsigned long` slots at -0xd8..-0x58 become one `void *v3 [17]` and the calls become sigaction(v6,NULL,(sigaction *)v3)). fmt is the +1: the __uflow thunk gained `int v1`."
+   },
+   "piece_accessor_form": {
+    "off": 1017,
+    "on": 1275,
+    "delta_pct": 25.37,
+    "note": "`vN._off_size_`, what an aggregate with no field at the touched offset renders as. Concentrated in tar/grep/find/diff; ls goes DOWN by one. SUB( 216->217, CONCAT( 290->292. The follow-up `glibc` value retires the stdio half."
+   }
+  },
+  "off_arm_is_main": {
+   "method": "kuna decompile-all over 9 whole binaries: this branch with KUNA_LIBCTYPES=off vs a release binary built from origin/main (f02365cc, extracted with `git archive` and built in .scratch)",
+   "result": "byte-identical on all 9",
+   "lines": {
+    "O2 coreutils fmt": 4069,
+    "O2 coreutils ls": 13677,
+    "O2 grep grep": 18257,
+    "O2 gzip gzip": 9358,
+    "O2 tar tar": 56725,
+    "O0 findutils find": 20839,
+    "O0 diffutils diff": 13102,
+    "O2-noinline shadow useradd": 11487,
+    "O2 bzip2 bzip2": 9769
+   }
+  },
+  "cli_probe": {
+   "file": "tests/cli/changing-namestyle-invalidates-discovered.json",
+   "was": "sub_1249\\\\(void \\\\*param_1\\\\)",
+   "now": "sub_1249\\\\(FILE \\\\*param_1\\\\)",
+   "justification": "The probe proves that a name `kuna functions` reports still selects its function when --option namestyle ghidra changes how names are PRINTED; `param_1` (rather than `a0`) is what pins that the style applied, and that is untouched. The parameter of sub_1249 in decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64 is passed to fread and fclose and nothing else, so `FILE *` is the correct spelling. Same anchor, same parameter, one spelling: exactly as tight as it was."
+  },
+  "speed": {
+   "method": "interleaved off/default pairs, alternating which arm runs first; MINIMUM of 15 pairs is the honest read on a shared box. Arm A = `--option libctypes off`, arm B = no option (the new default).",
+   "rows": [
+    {
+     "case": "fmt decompile-all (152 fn)",
+     "n_pairs": 15,
+     "min_off_ms": 4190.0,
+     "min_on_ms": 4158.6,
+     "min_delta_pct": -0.75,
+     "median_off_ms": 4550.2,
+     "median_on_ms": 4250.4,
+     "median_delta_pct": -6.59
+    },
+    {
+     "case": "ls decompile-all (404 fn)",
+     "n_pairs": 15,
+     "min_off_ms": 13783.9,
+     "min_on_ms": 13957.7,
+     "min_delta_pct": 1.26,
+     "median_off_ms": 15207.8,
+     "median_on_ms": 15247.8,
+     "median_delta_pct": 0.26
+    },
+    {
+     "case": "fmt get_prefix (one fn)",
+     "n_pairs": 15,
+     "min_off_ms": 178.4,
+     "min_on_ms": 181.4,
+     "min_delta_pct": 1.64,
+     "median_off_ms": 205.8,
+     "median_on_ms": 196.8,
+     "median_delta_pct": -4.38
+    },
+    {
+     "case": "fmt functions (load only)",
+     "n_pairs": 15,
+     "min_off_ms": 171.2,
+     "min_on_ms": 171.8,
+     "min_delta_pct": 0.37,
+     "median_off_ms": 177.2,
+     "median_on_ms": 176.4,
+     "median_delta_pct": -0.45
+    }
+   ],
+   "worst_delta_pct": 1.64,
+   "budget_pct": 5.0,
+   "within_budget": true
+  },
+  "gates": {
+   "make test": "datatests: 675/675 assertions passed -- PARITY OK. 0 of 83 tests/datatests/*.xml contain `load file`, so the 675 cannot observe this tier and are not evidence either way; the stage corpus is where the row is pinned (16 of 217 stage fixtures load a file, one of them tests/stages/kuna-libctypes.xml).",
+   "make test-stages": "datatests: 1038/1038 assertions passed -- PARITY OK; a --save-baseline re-record is byte-identical to docs/baseline-stages.json (100,769 bytes), so no assertion moved and no re-record was needed",
+   "make test-cli": "tests/cli: 178/178 passed",
+   "make check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
+   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+   "docs/options.md": "byte-fresh (`kuna catalog --markdown | diff - docs/options.md` clean)",
+   "make rust-test": "RUST_TEST_RC=0 via the lane script on the branch tip (LANE: start 2026-09-17T05:05:58Z, done rc=0 05:21:43Z): 415 `test result: ok` blocks, 7,098 tests ok, 0 `test result: FAILED`, options_md_matches_the_generator_byte_for_byte ok. An earlier round found the two expectations this PR moves (catalog_bytecompat's phase_catalog.json capture, ghidra_sim_faillog_pins' C-line count); both are fixed in this branch and every round since is clean.",
+   "off_arm_is_still_main": "all nine sweep binaries, this branch's rebuilt `kuna --option libctypes off` vs a release binary built from origin/main (f02365cc): byte-identical -- fmt 4069, ls 13677, grep 18257, tar 56725, find 20839, diff 13102, gzip 9358, bzip2 9769, useradd 11487 lines. Re-run after the CLI env-bridge change."
+  }
+ },
+ "speed_flip": {
+  "method": "interleaved off/default pairs, alternating which arm runs first; MINIMUM of 15 pairs is the honest read on a shared box. Arm A = `--option libctypes off`, arm B = no option (the new default).",
+  "rows": [
+   {
+    "case": "fmt decompile-all (152 fn)",
+    "n_pairs": 15,
+    "min_off_ms": 4190.0,
+    "min_on_ms": 4158.6,
+    "min_delta_pct": -0.75,
+    "median_off_ms": 4550.2,
+    "median_on_ms": 4250.4,
+    "median_delta_pct": -6.59
+   },
+   {
+    "case": "ls decompile-all (404 fn)",
+    "n_pairs": 15,
+    "min_off_ms": 13783.9,
+    "min_on_ms": 13957.7,
+    "min_delta_pct": 1.26,
+    "median_off_ms": 15207.8,
+    "median_on_ms": 15247.8,
+    "median_delta_pct": 0.26
+   },
+   {
+    "case": "fmt get_prefix (one fn)",
+    "n_pairs": 15,
+    "min_off_ms": 178.4,
+    "min_on_ms": 181.4,
+    "min_delta_pct": 1.64,
+    "median_off_ms": 205.8,
+    "median_on_ms": 196.8,
+    "median_delta_pct": -4.38
+   },
+   {
+    "case": "fmt functions (load only)",
+    "n_pairs": 15,
+    "min_off_ms": 171.2,
+    "min_on_ms": 171.8,
+    "min_delta_pct": 0.37,
+    "median_off_ms": 177.2,
+    "median_on_ms": 176.4,
+    "median_delta_pct": -0.45
+   }
+  ],
+  "worst_delta_pct": 1.64,
+  "budget_pct": 5.0,
+  "within_budget": true
  }
 }
