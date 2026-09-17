@@ -74,10 +74,10 @@ vs `on`. See `record.json` for the table and `corpus-diffs.txt` for every hunk.
 
 ## Result
 
-444 stripped ELFs: 434 byte-identical, 10 changed, 15 duplicate assignments removed
-(12 whole-line deletions + 3 lines rewritten to drop a duplicated comma-expression
-term; net -12 lines), every one
-an assignment that an identical assignment already dominates. Zero BUG hunks,
+444 stripped ELFs: 434 byte-identical, 10 changed, 15 duplicate assignments
+removed (12 whole-line deletions plus 3 lines rewritten to drop a duplicated
+comma-expression term; net -12 lines). Every one of the 15 is an assignment
+that an identical assignment already dominates. Zero BUG hunks,
 zero declarations moved, `type_match` unmoved (`record.json`). Speed within
 budget on every surface measured, against an off-vs-off control that puts this
 box's noise floor at about +/-1.4%. Shipped **default-on**: it is the upstream
