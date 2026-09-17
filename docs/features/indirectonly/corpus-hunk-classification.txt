@@ -1,3 +1,10 @@
+# SUPERSEDED by corpus-escape-classification.txt.
+#
+# This is the first round: 16 slices, and a classifier that only canonicalised
+# vN -> storage and printed the surviving hunks.  It had NO escape predicate, so
+# its "0 BUG hunks" reading was not a safety result -- `bzip2-O2 sub_3890` below
+# is confirmed wrong output.  Kept for the record; read the round-2 file instead.
+#
 ls-O0 sub_1dd61 REAL  decl_delta=+0
     @@ -62,4 +62,4 @@
                if (R[al] != '\x01') {

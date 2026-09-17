@@ -76,87 +76,114 @@ removed by that path**. The live consumer is `merge_test_adjacent`.
 
 ## 4. Whole-corpus effect
 
-`decompile-all`, 8 binaries x {O0, O2} = 16 slices, `--option indirectonly off`
-vs the default. Ten functions change; every hunk is classified in
-`corpus-hunk-classification.txt`, and `skeleton-check.txt` is the structural
-control: for each of the ten, the sequence of control keywords with their nesting
-depth and the ordered sequence of callees are **identical** between the arms, so
-no statement moved across a branch or a call.
+`decompile-all`, default (off) vs `--option indirectonly on`, **34 whole-binary
+slices**: the original ls/sort/grep/gzip/diff/bzip2/find/tar at `-O0` and `-O2`,
+plus kmod, e2fsck, dpkg, dpkg-query, dash and bash at `-O0`, `-O2` and
+`-O2-noinline`. Script `corpus-sweep.sh`, classifier `classify-escape.py`, full
+output `corpus-escape-classification.txt`.
 
-| slice | function | what changed |
-|---|---|---|
-| ls -O0 | `sub_1dd61` | call result merged into `stack-0xa8`; one copy removed |
-| tar -O0 | `sub_429c6` | RAX merged into `stack-0x208` / `stack-0x210`; two copies removed |
-| ls -O2 | `main` | **wrong output fixed** — see §5 |
-| sort -O2 | `main` | three temporaries merged into their slots |
-| diff -O2 | `sub_6e20` | malloc result merged into `stack-0x80`; one copy removed |
-| bzip2 -O2 | `sub_3890` | EAX merged into `stack-0x1428`; **-1** declaration |
-| tar -O2 | `main` | a `vN = slot;` / `slot = vN;` round-trip disappears (5 statements); **-1** declaration |
-| tar -O2 | `sub_203b0` | two slot merges; **-2** declarations |
-| tar -O2 | `argp_parse` | a 16-byte spill round-trip disappears (10 statements); **-2** declarations |
-| tar -O2 | `sub_5aa30` | six slot merges; **-5** declarations net (one new register name) |
+| | |
+|---|---|
+| slices | 34 (15 change anything) |
+| changed functions | 27 |
+| declarations | **-19** net, none gained |
+| SAFE | 14 |
+| ESCAPE-CANDIDATE | 10 |
+| ESCAPE-CANDIDATE-WEAK | 3 |
 
-grep, gzip, find at both levels and sort/bzip2/diff/grep/gzip/find at -O0 are
-byte-identical.
+An ESCAPE-CANDIDATE is a function where the ON arm assigns a frame slot the OFF
+arm never assigns, that slot sits inside an object whose address escapes, and a
+call reaches that address after the write. The first round of this A/B reported
+**0 BUG hunks**; that claim is withdrawn. It was produced by a classifier with no
+escape predicate at all, and two of the ten candidates are confirmed wrong output
+— one of them, `bzip2 -O2 sub_3890`, was inside the original eight-binary sweep
+and was classified there as a plain "merge that removes a copy".
 
-The OFF arm is not just "the other arm of the same build": it was compared
-against a separately built origin/main (83830e86) binary over six whole binaries
-and is byte-identical to it (`off-equals-main.txt`).
+## 5. The two directions, and why the text cannot tell them apart
 
-No function gains a declaration; the net is **-11** across the corpus.
+The candidates split by what the **machine** does at the merge point, and only
+the disassembly says which:
 
-## 5. The witness: coreutils `ls` -O2 `main`
-
-`ls.c` has, inside `dev_ino_pop`'s caller:
+**FIX** — the machine really does store into the slot, and the OFF arm had
+dropped the store. `ls -O2 main` is the witness. `ls.c` has
 
 ```c
 struct dev_ino di = dev_ino_pop ();
 struct dev_ino *found = hash_delete (active_dir_set, &di);
 ```
 
-`di` is a 16-byte struct on the frame at `stack-0x58` / `stack-0x50`; its address
-escapes into `hash_delete`, so both halves are address-tied and each one's entry
-value reaches nothing but the INDIRECTs of the calls around it — indirect-only.
+and the binary fills both halves before taking the address:
 
-With the flag dead, the two loads that fill it cannot be merged into the slots, so
-they are printed into register locals instead and the struct is never written:
-
-```c
-/* option indirectonly off */
-      v26 = dat_260f8 + -0x10;
-      v18 = *(void **)(dat_260f8 + -0x10);        /* dead: v18 is overwritten 2 lines down */
-      v21 = *(unsigned long *)(dat_260f8 + -8);
-      dat_260f8 = v26;
-      v18 = (void *)sub_11320(dat_263c8,&v22);    /* &v22 == &di, never assigned on this path */
+```
+591a: mov rdx,QWORD PTR [rax-0x10]
+591e: mov rax,QWORD PTR [rax-0x8]
+5922: mov QWORD PTR [rsp+0x40],rdx      <- the store
+5927: mov QWORD PTR [rsp+0x48],rax      <- the store
+592c: call 11320                        <- hash_delete(..., &di)
 ```
 
-`unsigned long v38; // stack - 0x50` — the second half of the struct — is declared
-in that arm and **never assigned and never read anywhere in the function**.
+With the flag dead, kuna prints the two loads into register locals and never into
+the slot, so `unsigned long v38; // stack - 0x50` is declared and **never assigned
+and never read anywhere in the function**, and `hash_delete` is handed memory the
+emitted C never wrote. With the flag set, both halves are filled. `tar -O0
+sub_429c6` is the same shape (`43076..43085` is the store the OFF arm loses).
 
-With the flag written, both halves are filled before the address is taken:
+**BUG** — the machine only ever *loads* the slot, and the merge fabricates a
+store. `bzip2 -O2 sub_3890` is the clearest: the block at `[rsp+0x18..0x2c]` is a
+set of out-params filled by callees through `lea`'d pointers, and every single
+access to it in the function is a `lea` or a `mov reg,[rsp+X]` — there is no store
+to any of those slots anywhere. The ON arm nevertheless emits
 
 ```c
-/* default */
-      v26 = dat_260f8 + -0x10;
-      v22 = *(void **)(dat_260f8 + -0x10);
-      v38 = *(unsigned long *)(dat_260f8 + -8);
-      dat_260f8 = v26;
-      v18 = (void *)sub_11320(dat_263c8,&v22);
+S[stack-0x1428] &= 0xff;
+...
+S[stack-0x1428] = (unsigned int)*X;
 ```
 
-The declaration count is the same; what changes is that the emitted C now writes
-the memory the machine writes.
+`kmod -O2-noinline sub_97b0` is the same: `989d: mov r14d,DWORD PTR [rsp+0x28]` is
+the only reference to that slot in the whole function and it is a load, while
+`97c9: lea r13,[rsp+0x20]` is the object handed to `9964: call e270`.
 
-## 6. Why merging into an escaped slot stays safe
+On the page the two look identical — both are "a slot the ON arm writes and the
+OFF arm does not". No local test over the emitted C separates them, which is why
+the classifier reports candidates rather than verdicts, and why the sweep cannot
+be turned into a safety proof.
 
-Two hunks (`bzip2 -O2 sub_3890`, `sort -O2 main`) write an intermediate value into
-a frame slot whose address escapes. That is safe for a reason this change does not
-touch: a call that may read or write the slot attaches a `CPUI_INDIRECT` to it,
-whose output is another Varnode at the same address and therefore a member of the
-same addr-tied HighVariable. Its cover overlaps any register live across that
-call, and `merge_test_required`'s cover-intersection test rejects the merge. The
-flag only lifts the *illegal-input* refusal, which is about the slot's **entry**
-value; the cover machinery is unchanged.
+`counterexample.md` reduces the BUG direction to a 40-line `walk.S`, compiles both
+emitted bodies against the same library and shows them disagreeing (`a_done sees
+n=3` versus `a_done sees n=-1`).
+
+## 6. Why the merge phalanx does not catch it
+
+An earlier draft of this document argued the opposite — that a call which may read
+or write the slot attaches a `CPUI_INDIRECT` whose output joins the addr-tied
+HighVariable, so its cover overlaps any register live across that call and
+`merge_test_required`'s cover-intersection test rejects the merge. **That argument
+is false.** `print raw` on `walk` shows why:
+
+```
+0x1150:12e:  s0x...ffd0:4(0x1150:12e) = s0x...ffd0:4(i) [] i0x1150:18(free)    ; INDIRECT at a_init
+0x1173:131:  s0x...ffd0:4(0x1173:131) = s0x...ffd0:4(0x1167:130) [] ...        ; INDIRECT at a_push
+0x117d:33:   R14D(0x117d:33) = s0x...ffd0:4(0x1173:131) + #0xffffffff:4        ; the load, the LAST read
+0x118e:12a:  s0x...ffc8(0x118e:12a) = s0x...ffc8(0x1183:12c) [] i0x118e:45     ; INDIRECT at sink, for -0x38 ONLY
+0x11a0:5f:   call fa_done(free)(RSP(0x113d:157))                               ; no INDIRECT at all
+```
+
+A `CPUI_INDIRECT` is attached only where the storage is still **live in the SSA**.
+`stack-0x30`'s last read is the load at `0x117d`, so heritage stops guarding it:
+no INDIRECT at `call sink`, none at `call a_done`, cover ends at `0x117d`, and the
+intersection test has nothing to intersect. The neighbouring slot at `-0x38` is
+still live — it is dereferenced inside the loop — and *does* get an INDIRECT at
+`sink`, which is exactly why only the dead-after-read half is vulnerable.
+
+There is also no p-code for a callee *reading* an escaped slot: INDIRECT models a
+possible write. The information the merge would need is not in the IR at this
+point, so no local test can recover it.
+
+This is upstream behaviour, not a porting gap. Stock **Ghidra 12.1.2** on the same
+`walk.so` emits `local_30 = local_30 + -1;` — the identical fabricated store
+(`counterexample.md` §5). kuna with the option **on** reproduces Ghidra exactly;
+kuna's shipped default declines to.
 
 ## 7. Speed and type_match
 
@@ -181,3 +208,29 @@ both arms, aggregate 3037.05 in both, 0 functions moved in either direction
 (`typesweep-report.md`). decbench scores the JSON `variables[]` surface, which
 this change does not touch -- 10739 of 10748 functions have byte-identical
 `variables` between the arms.
+
+## 8. What ships
+
+**Default off.** The port is faithful — `check_indirect_use` and
+`mark_indirect_only` match `funcdata_varnode.cc:801-858` opcode for opcode, and
+`merge_test_adjacent`'s lifted refusal matches `merge.cc:189-211` — and with
+`--option indirectonly on` kuna reproduces Ghidra's partitioning, including on the
+counterexample. But the behaviour itself is wrong on a shape that occurs in the
+corpus, and off is the arm that does not fabricate a store, so off is what ships.
+
+Turn it on to reproduce Ghidra variable partitioning exactly, or for the
+`ls -O2 main` class of fix where the OFF arm drops a store the machine makes.
+
+Pinned:
+
+* `tests/stages/kuna-indirectonly-escape.xml` — the counterexample as a
+  bytechunk. Its first pass runs the **default**, so flipping the shipped default
+  to on turns the test red.
+* `tests/stages/kuna-indirectonly.xml` — the sound direction, both arms explicit.
+* `kuna_indirectonly/tests.rs` — eight unit tests over `check_indirect_use`,
+  including the direct-read counterexample that must not be marked.
+
+Closing the hole instead of shipping off would mean diverging from upstream in
+`merge_test_adjacent`, and the discriminator it would need — "does the machine
+store to this slot here?" — is not available to a HighVariable-level test. That is
+a separate feature, not a default change.

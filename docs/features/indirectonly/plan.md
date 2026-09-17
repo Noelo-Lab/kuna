@@ -22,16 +22,27 @@ and no `list_action_decompile_oracle.txt` re-record**.
 
 ## 3. The gate
 
-`indirectonly` (`on|off`, default **on**), `Architecture::mark_indirect_only` ->
+`indirectonly` (`on|off`, default **off**), `Architecture::mark_indirect_only` ->
 `ArchContext::mark_indirect_only`, read by the action. `off` takes the `if` and
 the action is the inert stub it was before, byte-for-byte.
 
-## 4. Why default-on
+## 4. Why default-off
 
-It is the upstream body for an action kuna already schedules, and the evidence
-clears the bar: 0/675 datatest assertions change, stages PARITY OK, ten changed
-functions over the 16-slice corpus with every hunk a merge that removes a copy
-(plus one wrong-output fix), no BUG hunk, and speed flat.
+The first draft shipped it on, on the grounds that it is the upstream body for an
+action kuna already schedules. It is — but the behaviour is wrong on a shape that
+occurs in the corpus, so the default is off.
+
+The lifted `merge_test_adjacent` refusal is sound only when the illegal input is
+the copy's DESTINATION. When it is the SOURCE — the machine loads an escaped
+frame slot into a register and mutates the register — the merge makes the emitted
+C mutate the slot, so the C claims a store the machine never makes and a later
+call handed the enclosing object reads a value that never existed. `analysis.md`
+§5-§6 has the mechanism, the two hand-settled corpus instances (`bzip2 -O2
+sub_3890`, `kmod -O2-noinline sub_97b0`) and the reason no local test can separate
+the two directions. `counterexample.md` reduces it to 40 lines of assembly and
+compiles both emitted bodies to show them disagreeing; stock Ghidra 12.1.2 emits
+the same fabricated store, so this is an upstream defect the port inherits rather
+than a porting error.
 
 ## 5. Tests
 
@@ -43,8 +54,13 @@ functions over the 16-slice corpus with every hunk a merge that removes a copy
   direct-read counterexample, MULTIEQUAL transparency, the STORE-INDIRECT
   continuation, a plain INDIRECT's output *not* being followed, no-reads-at-all,
   the directwrite skip, and a MULTIEQUAL cycle terminating.
-* `docs/features/indirectonly/corpus-hunk-classification.txt` and
-  `skeleton-check.txt` — the whole-corpus A/B and its structural control.
+* `tests/stages/kuna-indirectonly-escape.xml` — the unsound direction as a
+  bytechunk. Pass 1 runs the **default** and pass 2 asks for the option, so a
+  future default flip turns the test red.
+* `docs/features/indirectonly/corpus-escape-classification.txt` — the 34-slice
+  A/B classified by the escape predicate (`classify-escape.py`).
+  `corpus-hunk-classification.txt` and `skeleton-check.txt` are the superseded
+  round-1 artifacts, kept with a header saying what they could not see.
 
 ## 6. Counters and docs
 

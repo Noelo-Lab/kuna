@@ -6,11 +6,11 @@
   "tier": "transform",
   "change_kind": "presentation-default",
   "source_decompiler": "ghidra",
-  "default_on": true,
+  "default_on": false,
   "opportunity": "varnode_flags::indirectonly has two readers in the merged tree -- HighVariable::has_name (variable.rs) and Merge::merge_test_adjacent (merge.rs) -- and NO writer: Funcdata::markIndirectOnly / checkIndirectUse (funcdata_varnode.cc:801-858) were never ported and ActionMarkIndirectOnly shipped as a documented no-op although universal_sched already scheduled it one slot ahead of ActionMergeAdjacent. So is_indirect_only() answered false everywhere and both readers took the strictly-more-conservative branch: kuna refused every speculative merge with an illegal input, including the ones upstream allows.",
   "root_cause": "Both refusals are about an ILLEGAL INPUT -- an input Varnode ActionDirectWrite never reached, i.e. the leftover entry value of a frame slot the function overwrites before it reads. Refusing the merge is the right default (an uninitialized value must not be printed as a real one); upstream's exception is that when EVERY reader in the def-set is a plain CPUI_INDIRECT the leftover value is not read at all, so there is nothing to print wrongly. That exception needed the flag nothing wrote.",
   "inspiration": "Funcdata::markIndirectOnly / Funcdata::checkIndirectUse (funcdata_varnode.cc:801-858); HighVariable::hasName (variable.cc:731-760); Merge::mergeTestAdjacent (merge.cc:185-196)",
-  "test_name": "tests/stages/kuna-indirectonly.xml (two functions x two passes: `take` changes off->on, the directly-read counterexample `keep` must not) + 8 unit tests in kuna_indirectonly/tests.rs",
+  "test_name": "tests/stages/kuna-indirectonly.xml (the sound direction: `take` changes off->on, the directly-read counterexample `keep` must not) + tests/stages/kuna-indirectonly-escape.xml (the unsound direction; its first pass runs the DEFAULT, so flipping the shipped default turns it red) + 8 unit tests in kuna_indirectonly/tests.rs",
   "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/date",
   "selector": "main",
   "func_addr": "0x4402",
@@ -18,38 +18,86 @@
   "census": {
     "method": "throwaway KUNA_IO_DEBUG instrumentation in mark_indirect_only, release build, kuna decompile-all over the decbench stripped coreutils binaries (docs/features/indirectonly/census.txt); reverted before the shipped commit",
     "columns": "marked / register / stack / also-unaffected",
-    "fmt_O0": [23, 0, 23, 0],
-    "ls_O0": [140, 0, 140, 0],
-    "sort_O0": [137, 5, 132, 0],
-    "fmt_O2": [18, 0, 18, 0],
-    "ls_O2": [109, 0, 109, 0],
-    "sort_O2": [108, 0, 108, 0],
+    "fmt_O0": [
+      23,
+      0,
+      23,
+      0
+    ],
+    "ls_O0": [
+      140,
+      0,
+      140,
+      0
+    ],
+    "sort_O0": [
+      137,
+      5,
+      132,
+      0
+    ],
+    "fmt_O2": [
+      18,
+      0,
+      18,
+      0
+    ],
+    "ls_O2": [
+      109,
+      0,
+      109,
+      0
+    ],
+    "sort_O2": [
+      108,
+      0,
+      108,
+      0
+    ],
     "finding": "no flagged input is also `unaffected`, so HighVariable::has_name's indirectonly branch never fires on x86-64 ELF and removes no declaration; the live consumer is Merge::merge_test_adjacent"
   },
   "corpus_sweep": {
-    "method": "kuna decompile-all, `--option indirectonly off` vs the default, 8 binaries x {O0,O2} = 16 slices (ls, sort, grep, gzip, diff, bzip2, find, tar)",
-    "slices": 16,
-    "changed_functions": 10,
-    "declaration_delta": -11,
-    "bug_hunks": 0,
-    "structural_control": "for all 10 changed functions the sequence of control keywords with their nesting depth and the ordered sequence of callees are identical in both arms (skeleton-check.txt), so no statement moved across a branch or a call",
-    "byte_identical_slices": ["sort-O0", "grep-O0", "gzip-O0", "diff-O0", "bzip2-O0", "find-O0", "grep-O2", "gzip-O2", "find-O2"],
-    "hunks": [
-      {"slice": "ls-O0", "function": "sub_1dd61", "class": "merge removes a copy", "decl_delta": 0},
-      {"slice": "tar-O0", "function": "sub_429c6", "class": "merge removes two copies", "decl_delta": 0},
-      {"slice": "ls-O2", "function": "main", "class": "wrong output fixed: both halves of a 16-byte struct on the frame are now written before its address is passed to hash_delete", "decl_delta": 0},
-      {"slice": "sort-O2", "function": "main", "class": "three temporaries merged into their slots", "decl_delta": 0},
-      {"slice": "diff-O2", "function": "sub_6e20", "class": "malloc result merged into stack-0x80", "decl_delta": 0},
-      {"slice": "bzip2-O2", "function": "sub_3890", "class": "EAX merged into stack-0x1428", "decl_delta": -1},
-      {"slice": "tar-O2", "function": "main", "class": "a vN = slot; / slot = vN; round-trip disappears (5 statements)", "decl_delta": -1},
-      {"slice": "tar-O2", "function": "sub_203b0", "class": "two slot merges", "decl_delta": -2},
-      {"slice": "tar-O2", "function": "argp_parse", "class": "a 16-byte spill round-trip disappears (10 statements)", "decl_delta": -2},
-      {"slice": "tar-O2", "function": "sub_5aa30", "class": "six slot merges, one new register name", "decl_delta": -5}
-    ]
+    "method": "kuna decompile-all, default (off) vs --option indirectonly on; script docs/features/indirectonly/corpus-sweep.sh, classifier classify-escape.py, full output corpus-escape-classification.txt",
+    "slices": 34,
+    "slice_set": "ls sort grep gzip diff bzip2 find tar at O0+O2; kmod e2fsck dpkg dpkg-query dash bash at O0+O2+O2-noinline",
+    "changed_slices": 15,
+    "changed_functions": 27,
+    "declaration_delta": -19,
+    "safe": 14,
+    "escape_candidates": 10,
+    "escape_candidates_weak": 3,
+    "hand_settled": [
+      {
+        "slice": "bzip2-O2",
+        "function": "sub_3890",
+        "verdict": "BUG",
+        "evidence": "every access to the [rsp+0x18..0x2c] out-param block is a lea or a load; the function contains no store to any of those slots, and the ON arm emits `S[stack-0x1428] &= 0xff;`"
+      },
+      {
+        "slice": "kmod-O2-noinline",
+        "function": "sub_97b0",
+        "verdict": "BUG",
+        "evidence": "`989d: mov r14d,DWORD PTR [rsp+0x28]` is the only reference to that slot in the whole function and it is a load; `97c9: lea r13,[rsp+0x20]` is the object handed to `9964: call e270`"
+      },
+      {
+        "slice": "ls-O2",
+        "function": "main",
+        "verdict": "FIX",
+        "evidence": "`5922: mov [rsp+0x40],rdx` / `5927: mov [rsp+0x48],rax` -- the machine fills the struct and the OFF arm drops both stores"
+      },
+      {
+        "slice": "tar-O0",
+        "function": "sub_429c6",
+        "verdict": "FIX",
+        "evidence": "`43076..43085: add [rbp-0x218],1 / sub rax,[rbp-0x218] / mov [rbp-0x200],rax` is exactly the hunk"
+      }
+    ],
+    "withdrawn_claim": "The first round reported `0 BUG hunks` over 16 slices. That claim is withdrawn: its classifier had no escape predicate, and bzip2 -O2 sub_3890 -- inside that original 16-slice set -- is confirmed wrong output.",
+    "note": "ESCAPE-CANDIDATE is not a verdict. Both directions of the merge look identical in the emitted C; only the disassembly separates a restored store from a fabricated one."
   },
   "typesweep": {
     "command": "scripts.decbench.typesweep --option indirectonly off --opt O0 --opt O2 --opt O2-noinline --project coreutils grep gzip diffutils bzip2 findutils tar shadow",
-    "note": "the option ships default-ON, so `base` is the shipped default (on) and `test` is the option turned off",
+    "note": "the option ships default-OFF, so `base` is the shipped default (off) and `test` is the option turned on; the measurement is symmetric and the arms are numerically identical",
     "slices": 444,
     "functions_scored": 10748,
     "control_agreement_pct": 88.44,
@@ -85,11 +133,26 @@
   },
   "gates": {
     "make_test": "datatests 675/675 PARITY OK",
-    "make_test_stages": "datatests 1061/1061 PARITY OK",
-    "make_test_cli": "tests/cli 178/178 passed",
+    "make_test_stages": "datatests 1067/1067 PARITY OK",
+    "make_test_cli": "pending re-run",
     "make_check_spec": "OK lenient + OK strict",
     "kuna_catalog_check": "catalog OK",
-    "counters_check": "no drift (settables 214)",
-    "make_rust_test": "RUST_TEST_RC=0"
+    "counters_check": "no drift (settables 214, corpus 304)",
+    "make_rust_test": "pending re-run"
+  },
+  "default_off_reason": "The lifted merge_test_adjacent refusal is sound only when the illegal input is the DESTINATION of the copy (the machine really does store into the frame slot). When it is the SOURCE -- the machine loads an escaped frame slot into a register and mutates the register -- the merge makes the emitted C mutate the slot, fabricating a store a later call handed the enclosing object can read. A CPUI_INDIRECT is attached only where the storage is still live in the SSA, so a slot whose last read precedes the loop carries no INDIRECT at any later call and the cover-intersection test has nothing to intersect. Stock Ghidra 12.1.2 emits the same fabricated store on the same input (docs/features/indirectonly/counterexample.md), so this is an upstream defect the port inherits faithfully rather than a porting error; kuna declines to inherit it by default.",
+  "counterexample": {
+    "doc": "docs/features/indirectonly/counterexample.md",
+    "sources": "docs/features/indirectonly/counterexample/",
+    "synthetic": "walk.S -- an object built on the frame, filled through its address by three calls, its count loaded into r14d and counted down in the register, its address then passed to a fourth call that reads the count",
+    "ground_truth": "a_done sees n=3",
+    "kuna_default_off": "int v2; // r14d ; v2 = v3 + -1  (correct)",
+    "kuna_option_on": "int v2; // stack - 0x30 ; v2 -= 1  (fabricated store)",
+    "roundtrip": "both emitted bodies compiled against the same lib.c: walk_off prints `a_done sees n=3`, walk_on prints `a_done sees n=-1`",
+    "ghidra_12_1_2": "local_30 = local_30 + -1; -- identical fabricated store (analyzeHeadless + DecompInterface)",
+    "real_corpus": [
+      "bzip2 -O2 sub_3890",
+      "kmod -O2-noinline sub_97b0"
+    ]
   }
 }
