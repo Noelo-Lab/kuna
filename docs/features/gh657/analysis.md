@@ -183,6 +183,16 @@ v2[sub_33502(v2)] = '\0';                 v1 = v3[v2];
                                           v3[v2] = '\0';
 ```
 
+## What it costs to read
+
+A de-folded call that sat inside a condition comes back as a comma expression
+rather than a preceding statement, because the condition is where its value is
+consumed: `while (v1 = __ctype_b_loc(), ...)`. Across the two sweeps that shape
+goes from 596 occurrences to 609 (+13), and two `else if` ladders re-nest into
+`else { stmt; if ... }` (`tar` O0 `0x47e86`, `libedit` O0 `0x2c9ce`): the
+`else`-block count moves 14,607 → 14,609. That is the price of not evaluating
+the call after the write, and it is the direction the binary already takes.
+
 ## What this does not fix
 
 A call output whose landing statement is in **another block** still folds if the
