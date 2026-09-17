@@ -256,26 +256,28 @@ pub fn fold_print_point_is_order_safe(data: &Funcdata, vn: VarnodeId) -> bool {
 /// Longest implied chain [`print_point`] will chase before giving up.
 const MAX_IMPLIED_CHAIN: usize = 8;
 
-/// (kuna) The op at whose statement the expression rooted at `use_op` is printed.
+/// (kuna) The ops the folded expression travels through, ending at the one whose
+/// statement it is printed in.
 ///
 /// An op is its own statement when it has no output (STORE, CBRANCH, a void
 /// call, RETURN) or when its output is explicit.  Otherwise the output is
 /// implied and the expression migrates into that value's own consumer, so the
 /// walk follows the implied chain.  `None` means there is no provable single
 /// print point: a marker, a fan-out, or a value not classified yet.
-fn print_point(data: &Funcdata, use_op: OpId) -> Option<OpId> {
+fn print_chain(data: &Funcdata, use_op: OpId) -> Option<Vec<OpId>> {
+    let mut chain = Vec::with_capacity(MAX_IMPLIED_CHAIN);
     let mut op = use_op;
     for _ in 0..MAX_IMPLIED_CHAIN {
         if op_is_marker(data, op) {
             return None;
         }
-        let out = data.obank().get(op)?.get_out();
-        let Some(out) = out else {
-            return Some(op);
+        chain.push(op);
+        let Some(out) = data.obank().get(op)?.get_out() else {
+            return Some(chain);
         };
         let v = data.vbank().get(out)?;
         if v.is_explicit() {
-            return Some(op);
+            return Some(chain);
         }
         if !v.is_implied() {
             return None;
@@ -288,17 +290,20 @@ fn print_point(data: &Funcdata, use_op: OpId) -> Option<OpId> {
 /// (kuna) Does the call survive the move all the way to its print point?
 ///
 /// Runs the barrier test over the span from the call to the statement the folded
-/// expression lands in, which is where it is evaluated at run time.  Only the
-/// barrier test: the INDIRECT question — whether a read of the call's own effect
-/// gets separated from it — is decided over the span to the use, where it always
-/// was, and widening it here would *lift* declines as often as it adds them (the
-/// collapsed INDIRECT of the call itself reads that effect by construction).  The
-/// print point is not itself in the span: the folded expression is evaluated as
-/// its operand, before it.
+/// expression lands in, which is where it is evaluated at run time.  The ops the
+/// expression travels *through* are exempt: each consumes the previous one's
+/// value, so the call is still evaluated before them in the folded text exactly
+/// as it is in the binary — a `LOAD` of the pointer a call just returned is not a
+/// load the call was moved past.  Only the barrier test runs here: the INDIRECT
+/// question — whether a read of the call's own effect gets separated from it — is
+/// decided over the span to the use, where it always was, and widening it would
+/// *lift* declines as often as it adds them (the collapsed INDIRECT of the call
+/// itself reads that effect by construction).
 fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
-    let Some(point) = print_point(data, use_op) else {
+    let Some(chain) = print_chain(data, use_op) else {
         return false;
     };
+    let point = *chain.last().expect("print_chain: non-empty");
     let Some(blk) = op_parent(data, call) else {
         return false;
     };
@@ -315,7 +320,9 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
     if pi <= ci {
         return false;
     }
-    !ops[ci + 1..pi].iter().any(|&mid| op_is_barrier(data, mid))
+    !ops[ci + 1..pi]
+        .iter()
+        .any(|&mid| !chain.contains(&mid) && op_is_barrier(data, mid))
 }
 
 /// Is `op` a `CPUI_COPY` back into the storage its input already occupies?
