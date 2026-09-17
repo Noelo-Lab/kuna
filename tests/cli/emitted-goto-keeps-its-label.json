@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-f7dbabeb8770",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x2620",
+    "--addr"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/datasyms_faillog_x86_64",
+    "binary_sha256": "d3b414256e4878f86ff281a7f315b399116c95cf930f0654aecc2125c7ff9578",
+    "binary_size": 22992,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/datasyms_faillog_x86_64",
+    "selector": "0x2620",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "goto label_2701;",
+      "^label_2701:"
+    ]
+  },
+  "notes": "An emitted goto must have its label. This function's switch default arm jumps to the no-return tail at 0x2701, and the tail-duplication pass used to release that label because its survivng-carrier census only saw BlockGoto/BlockIf carriers -- the arm printed `goto label_2701;` with no `label_2701:` anywhere in the function (gcc -fsyntax-only: error: label 'label_2701' used but not defined)."
+}
