@@ -43,7 +43,7 @@
 //! loaded value takes the FIELD's type. It is installed only on a target the
 //! layouts are true of — an x86-64 ELF whose `.dynstr` names glibc — and the
 //! shells stay opaque everywhere else. See [`glibc`] for the provenance and the
-//! two rules those tables obey.
+//! three rules those tables obey.
 //!
 //! ## A `-g` image already has the real thing
 //!
