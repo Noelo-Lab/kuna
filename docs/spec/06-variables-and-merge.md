@@ -962,11 +962,15 @@ between, keeps the call spilled
 each consumes the previous one's value, so the call is evaluated before them in
 the folded text exactly as it is in the binary, and a `LOAD` of the pointer a
 call has just returned is not a load the call was moved past. Without that
-exemption the same guard declines 279 further functions across the 16-binary
+exemption the same guard declines 233 further functions across the 16-binary
 sweep, all of them consumers rather than reorderings. That second span carries
-the barrier test only. The INDIRECT test stays on the span to the use, where it has always been:
-widening it would lift declines as often as it added them, because a collapsed
-INDIRECT of the call itself reads that call's effect by construction.
+the barrier test only. The INDIRECT test stays on the span to the use, where it
+has always been: widening it would lift declines as often as it added them,
+because a collapsed INDIRECT of the call itself reads that call's effect by
+construction. (`foldcallretphi` does ask it of the landing statement, whose own
+sweep measured five declines there:
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(landing_reads_call_effect)`.)
 Provenance: `docs/features/gh657/`.
 
 The direct call output may have one descendant even though a derived value

@@ -70,7 +70,7 @@ not reorderings:
   previous one's value, so the call is evaluated before them in the folded text
   exactly as it is in the binary — a `LOAD` of the pointer a call has just
   returned is not a load the call was moved past. Without this exemption the
-  guard declines 279 further functions over the 16-binary sweep (all consumers),
+  guard declines 233 further functions over the 16-binary sweep (all consumers),
   and `ghidra_sim_faillog_pins`' flattened-C line counts move by +4/+5.
 
 The INDIRECT half of the predicate is **not** widened. It keeps the span it has
