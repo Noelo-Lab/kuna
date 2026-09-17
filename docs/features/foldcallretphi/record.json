@@ -106,6 +106,7 @@
     "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
     "decompiler/crates/kuna-decomp/src/substrate/context.rs",
     "decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs (UNEVALUATED list entry)",
     "decompiler/crates/kuna-decomp/phases.toml",
     "tests/stages/kuna-foldcallretphi.xml (new)",
     "docs/spec/06-variables-and-merge.md",
@@ -143,5 +144,13 @@
     "du": "320 functions, 1723 variables both arms, 5 functions differ",
     "grep": "449 functions, 2524 variables both arms, 11 functions differ",
     "what_differs": "only the vN name renumbering plus line_numbers/addresses; the (type, kind, stack_offset) multiset is identical in every changed function, so type_match cannot move"
-  }
+  },
+  "hidden_count_sites": [
+    "kuna_phases/tests.rs: fn-name-settables / kuna_num_settables / SETTABLE_TABLE-len / fn-name-tiers / tier-tuple / catalog-json-records (counters --fix)",
+    "kuna_phases/tests.rs option_values_live_value_present_for_86: a bool option with no live_field must be listed beside its sibling foldcallret",
+    "tests/catalog_bytecompat.rs x4 + tests/fixtures/phase_catalog.json (recaptured with no program loaded)",
+    "tests/stages/kuna-catalog.xml #6 angr bucket 32 -> 33",
+    "kuna-base/src/xml.rs corpus file count 295 -> 296",
+    "p0_knowledge/modes.rs aggressive_carries_every_default_off_option: every default-off on|off option is in AGGRESSIVE_OVERRIDES or listed with a reason"
+  ]
 }
