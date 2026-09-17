@@ -1046,14 +1046,14 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         // (kuna) Load-time `libctypes` gate: the named aggregate shells are
         // interned by the prototype pass inside `load file`, so the choice has to
         // reach the subprocess through the env var, not the `option` line.
+        // Valued: every token but the off-tokens goes through verbatim, so a
+        // later layout value reaches the pass instead of reading as `off`.
         if let Some(value) = last_option_value(&args.options, "libctypes") {
-            let on = matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "opaque" | "on" | "1" | "true"
-            );
+            let token = value.trim().to_ascii_lowercase();
+            let on = !matches!(token.as_str(), "off" | "0" | "false");
             cmd.env(
                 kuna_decomp::kuna_libctypes::LIBCTYPES_ENV,
-                if on { "opaque" } else { "off" },
+                if on { token.as_str() } else { "off" },
             );
         }
         // (kuna) Load-time `dwarfstructs` gate: the aggregate layout is installed
