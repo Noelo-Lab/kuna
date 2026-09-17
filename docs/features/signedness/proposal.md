@@ -69,7 +69,10 @@ Every changed function was then compiled twice, before and after, *separately*:
 the gcc diagnostic set is identical in both arms for **all 1,039** of them
 (34 + 273 + 732). The ones that compile clean build into a two-version program
 with stubbed callees and a shared memory arena; 2,000 pseudo-random input
-vectors per function produce **0** divergences.
+vectors per function produce **0** divergences. (Two `prefer-signed` functions
+report a mismatch and report the *same* mismatch when the upstream text is
+compared against itself — they return a real `malloc()` pointer, and the arena
+hash is identical in both arms.)
 
 **2. Is a readability-only option worth the option budget?** It buys **zero**
 metric. `extract_variables` exports prototype parameter types, `ScopeLocal`
