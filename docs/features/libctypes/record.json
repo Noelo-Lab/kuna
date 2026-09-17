@@ -602,35 +602,41 @@
    ]
   },
   "corpus_sweep": {
-   "method": "`kuna decompile-all` off vs the new default over 8 stripped binaries (fmt/ls/grep/gzip/tar O2, find/diff O0, shadow useradd O2-noinline); every changed line bucketed AND every function's skeleton -- control-flow keyword sequence + call-target multiset + numeric-literal multiset, identifiers and types normalised away -- compared",
-   "functions": 4187,
+   "method": "`kuna decompile-all` off vs the new default over 9 stripped binaries (fmt/ls/grep/gzip/tar/bzip2 O2, find/diff O0, shadow useradd O2-noinline); every changed line bucketed AND every function's skeleton -- control-flow keyword sequence + call-target multiset + numeric-literal multiset, identifiers and types normalised away -- compared",
+   "functions": 4301,
    "functions_gained_or_lost": 0,
    "call_target_multiset_changed_in": 0,
-   "skeleton_differs": 131,
+   "skeleton_differs": 136,
    "skeleton_breakdown": {
-    "literals_only": 129,
-    "control_flow": 2,
-    "control_flow_detail": "both are the __uflow PLT thunk (fmt 0x2370, find 0x71d0) gaining a `return`: the new table entry gives __uflow a return type",
+    "literals_only": 133,
+    "control_flow": 3,
+    "control_flow_detail": "all three are PLT thunks gaining a `return` because the new table entry gives them a return type: __uflow (fmt 0x2370, find 0x71d0) and fgetc (bzip2 0x23a0)",
     "literals_detail": "every one is an offset absorbed into a field name (*(long *)&a0[4] -> a0->field_0x10) or an index respelled against a different base with the scale folded into the constant (v12[v9 * 0x26] -> (long)v12 + v9 * 0x130), same address in both"
    },
-   "changed_lines": 6113,
+   "changed_lines": 6198,
    "buckets": {
     "var-renumber": 2817,
-    "decl-block": 684,
+    "decl-block": 703,
     "line-removed": 491,
+    "proto-line": 472,
     "field-form": 463,
-    "proto-line": 453,
-    "line-added": 428,
-    "OTHER": 278,
-    "aggregate-slot": 180,
-    "pointee-named": 171,
-    "decl-block-removed": 75,
-    "cast-width": 48,
-    "pointee-named-plus": 23,
+    "line-added": 431,
+    "OTHER": 285,
+    "pointee-named": 188,
+    "aggregate-slot": 187,
+    "decl-block-removed": 82,
+    "cast-width": 50,
+    "pointee-named-plus": 27,
     "decl-block-added": 1,
     "const-offset-access": 1
    },
    "per_binary": {
+    "bzip2_O2": {
+     "functions": 114,
+     "changed_lines": 85,
+     "skeleton_differs": 5,
+     "residual_lines": 7
+    },
     "diff_O0": {
      "functions": 507,
      "changed_lines": 843,
@@ -697,21 +703,21 @@
     "parameters_on": 0
    },
    "declarations": {
-    "off": 16509,
-    "on": 16370,
-    "delta": -139,
-    "note": "down on 7 of 8 binaries: scattered stack slots collapse into the aggregate they are (ls 0x76b0: 17 `unsigned long` slots at -0xd8..-0x58 become one `void *v3 [17]` and the calls become sigaction(v6,NULL,(sigaction *)v3)). fmt is the +1: the __uflow thunk gained `int v1`."
+    "off": 17183,
+    "on": 17039,
+    "delta": -144,
+    "note": "down on 8 of 9 binaries: scattered stack slots collapse into the aggregate they are (ls 0x76b0: 17 `unsigned long` slots at -0xd8..-0x58 become one `void *v3 [17]` and the calls become sigaction(v6,NULL,(sigaction *)v3)). fmt is the +1: the __uflow thunk gained `int v1`."
    },
    "piece_accessor_form": {
-    "off": 1014,
-    "on": 1265,
-    "delta_pct": 24.75,
-    "note": "`vN._off_size_`, what an aggregate with no field at the touched offset renders as. Concentrated in tar/grep/find/diff; ls goes DOWN by one. SUB( 216->217, CONCAT( 276->278. The follow-up `glibc` value retires the stdio half."
+    "off": 1017,
+    "on": 1275,
+    "delta_pct": 25.37,
+    "note": "`vN._off_size_`, what an aggregate with no field at the touched offset renders as. Concentrated in tar/grep/find/diff; ls goes DOWN by one. SUB( 216->217, CONCAT( 290->292. The follow-up `glibc` value retires the stdio half."
    }
   },
   "off_arm_is_main": {
-   "method": "kuna decompile-all over 8 whole binaries: this branch with KUNA_LIBCTYPES=off vs a release binary built from origin/main (f02365cc, extracted with `git archive` and built in .scratch)",
-   "result": "byte-identical on all 8",
+   "method": "kuna decompile-all over 9 whole binaries: this branch with KUNA_LIBCTYPES=off vs a release binary built from origin/main (f02365cc, extracted with `git archive` and built in .scratch)",
+   "result": "byte-identical on all 9",
    "lines": {
     "O2 coreutils fmt": 4069,
     "O2 coreutils ls": 13677,
@@ -720,7 +726,8 @@
     "O2 tar tar": 56725,
     "O0 findutils find": 20839,
     "O0 diffutils diff": 13102,
-    "O2-noinline shadow useradd": 11487
+    "O2-noinline shadow useradd": 11487,
+    "O2 bzip2 bzip2": 9769
    }
   },
   "cli_probe": {

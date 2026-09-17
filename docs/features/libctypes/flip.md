@@ -120,24 +120,24 @@ unsigned long sub_1f1c0(int8 a0,FILE *a1)
 real function. The declaration is what the metric holds; the stream is what the
 code has. One function in 10,748.
 
-## Whole-binary output — 8 binaries, 4,187 functions
+## Whole-binary output — 9 binaries, 4,301 functions
 
-`kuna decompile-all` off vs default over `fmt`/`ls`/`grep`/`gzip`/`tar` `-O2`,
-`find`/`diff` `-O0` and shadow `useradd` `-O2 -fno-inline`. Every changed line is
+`kuna decompile-all` off vs default over `fmt`/`ls`/`grep`/`gzip`/`tar`/`bzip2`
+`-O2`, `find`/`diff` `-O0` and shadow `useradd` `-O2 -fno-inline`. Every changed line is
 bucketed and, independently, every function's **skeleton** — its control-flow
 keyword sequence, its call-target multiset and its numeric-literal multiset,
 identifiers and types normalised away — is compared.
 
 * **0 functions lost, 0 gained.**
-* **The call-target multiset is identical in all 4,187 functions.** Nothing calls
+* **The call-target multiset is identical in all 4,301 functions.** Nothing calls
   anything different.
-* **131 functions differ in the skeleton at all.** 129 of them differ *only* in
+* **136 functions differ in the skeleton at all.** 133 of them differ *only* in
   literals, and in every case the literals are offsets absorbed into a field name
   (`*(long *)&a0[4]` → `a0->field_0x10`) or an index respelled against a
   different base (`v12[v9 * 0x26]` → `(long)v12 + v9 * 0x130`, same address,
-  scale folded into the constant). The other 2 are the `__uflow` PLT thunk in
-  `fmt` and `find`, which gains a `return` because the new table entry gives it a
-  return type:
+  scale folded into the constant). The other 3 are PLT thunks — `__uflow` in
+  `fmt` and `find`, `fgetc` in `bzip2` — which gain a `return` because the new
+  table entries give them a return type:
 
 ```
 -void __uflow(void)                    +int __uflow(FILE *a0)
@@ -154,17 +154,18 @@ identifiers and types normalised away — is compared.
 | O0 findutils find | 862 | 1377 | 19 | 27 |
 | O0 diffutils diff | 507 | 843 | 7 | 70 |
 | O2-noinline shadow useradd | 485 | 247 | 18 | 19 |
+| O2 bzip2 bzip2 | 114 | 85 | 5 | 7 |
 
-6,113 changed lines, of which 5,835 land in a named bucket: `var-renumber` 2,817,
-`decl-block` 684, removed/added lines 919, `field-form` 463, `proto-line` 453,
-`aggregate-slot` 180, `pointee-named` 194, `cast-width` 48, `const-offset-access`
-1. The 278 residual lines are dominated by the line-pairing of a function whose
+6,198 changed lines, of which 5,913 land in a named bucket: `var-renumber` 2,817,
+`decl-block` 703, removed/added lines 1,005, `field-form` 463, `proto-line` 472,
+`aggregate-slot` 187, `pointee-named` 215, `cast-width` 50, `const-offset-access`
+1. The 285 residual lines are dominated by the line-pairing of a function whose
 locals renumbered wholesale; the skeleton comparison above, not the bucket count,
 is what carries the "nothing does anything different" claim.
 
 ### What the flip buys and what it costs, in the body
 
-Declarations go **down** on 7 of the 8 binaries — 16,509 → 16,370 net — because
+Declarations go **down** on 8 of the 9 binaries — 17,183 → 17,039 net — because
 scattered stack slots collapse into the aggregate they really are:
 
 ```
@@ -178,10 +179,10 @@ scattered stack slots collapse into the aggregate they really are:
 ```
 
 The cost is the piece accessor `vN._off_size_`, which is what an aggregate with
-no field at the touched offset renders as: **1,014 → 1,265** over the eight
-binaries (+24.7%), concentrated in `tar`/`grep`/`find`/`diff`; `ls` goes down by
+no field at the touched offset renders as: **1,017 → 1,275** over the nine
+binaries (+25.4%), concentrated in `tar`/`grep`/`find`/`diff`; `ls` goes down by
 one. The neighbouring functional forms barely move (`SUB` 216 → 217, `CONCAT`
-276 → 278), and `PTRSUB(` — the form the sizing rule exists to prevent — is
+290 → 292), and `PTRSUB(` — the form the sizing rule exists to prevent — is
 **0 in both arms on every binary**. The follow-up `glibc` value, which installs
 the public `_IO_FILE`/`stat` field names, retires the stdio half of the piece
 accessors.
@@ -189,7 +190,7 @@ accessors.
 ### The by-value question, re-checked on the flipped default
 
 `Ty::NamedPtr` is pointer-only, but propagation still reaches by-value positions.
-Over the same 8 binaries: named aggregates returned **by value** 0 → 3 (`ls`
+Over the same 9 binaries: named aggregates returned **by value** 0 → 3 (`ls`
 0x10210, `gzip` 0x10bb0, `tar` 0x43230 — the same gnulib `gettime` wrapper each
 time, all `timespec`, all correct: a 16-byte `timespec` comes back in a register
 pair). By-value named **parameters** 0 → 0. `rethidden` 0 → 0. This is the case
@@ -214,10 +215,11 @@ where a `void *` did not.
 
 ## `off` is still `main`
 
-`kuna decompile-all` over all eight whole binaries, this branch's build with
+`kuna decompile-all` over all nine whole binaries, this branch's build with
 `KUNA_LIBCTYPES=off` against a release binary built from `origin/main`
 (f02365cc): **byte-identical on every one** — fmt 4,069 lines, ls 13,677, grep
-18,257, gzip 9,358, tar 56,725, find 20,839, diff 13,102, useradd 11,487.
+18,257, gzip 9,358, tar 56,725, find 20,839, diff 13,102, useradd 11,487,
+bzip2 9,769.
 
 So every "off" column above is `main`'s own output, not a second implementation
 of it, and `--option libctypes off` is a real ablation of the flip.
