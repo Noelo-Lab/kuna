@@ -1191,6 +1191,16 @@ impl Merge {
             }
             let bcover = ctx.vn_cover_ref(b).unwrap_or_default();
             if 2 == bcover.intersect(&high_cover) {
+                if std::env::var("KUNA_DBG_FCR").is_ok() {
+                    let bdef = ctx.vn_def(b);
+                    eprintln!(
+                        "    INFLATE-HIT inst[{}] b_def={:?} b_defcode={:?} b_defaddr={:x}",
+                        i,
+                        bdef,
+                        bdef.map(|d| ctx.op_code(d)),
+                        bdef.map(|d| ctx.op_addr(d).get_offset()).unwrap_or(0)
+                    );
+                }
                 return true;
             }
         }

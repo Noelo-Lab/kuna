@@ -713,6 +713,10 @@ impl Action for ActionMergeRequired {
 /// the printer reads only the explicit bit, so this never produces *less*
 /// inlining than the oracle for the addrtied case.  The PTRSUB-spacebase
 /// maxref-lift is ported faithfully.
+fn dbg_fcr() -> bool {
+    std::env::var("KUNA_DBG_FCR").is_ok()
+}
+
 fn base_explicit(data: &Funcdata, vn: crate::context::VarnodeId, mut maxref: int4) -> int4 {
     let v = data.vbank().get(vn).expect("baseExplicit: stale vn");
     let def = match v.get_def() {
@@ -732,6 +736,44 @@ fn base_explicit(data: &Funcdata, vn: crate::context::VarnodeId, mut maxref: int
             // output fall through to the implied path so the printer inlines the
             // call expression at its use (angr "call return variable folding").
             // Option off => byte-identical upstream (always explicit).
+            if dbg_fcr() {
+                let reason = crate::kuna_callretfold::fold_reason(data, vn);
+                let ni = v
+                    .get_high()
+                    .and_then(|h| data.high_bank().get(h))
+                    .map(|h| h.num_instances())
+                    .unwrap_or(-1);
+                eprintln!(
+                    "FCR call-out vn=off{:x}sz{} def@{:x} reason={} ninst={} tied={} mapped={} protopart={} nodesc={}",
+                    v.get_addr().get_offset(),
+                    v.get_size(),
+                    dop.get_addr().get_offset(),
+                    reason,
+                    ni,
+                    v.is_addr_tied(),
+                    v.is_mapped(),
+                    v.is_proto_partial(),
+                    v.has_no_descend(),
+                );
+                if reason == "OK" && ni > 1 {
+                    if let Some(h) = v.get_high().and_then(|h| data.high_bank().get(h)) {
+                        for i in 0..h.num_instances() {
+                            let iv = h.get_instance(i);
+                            let d = data.vbank().get(iv).and_then(|x| x.get_def());
+                            let dc = d
+                                .and_then(|dd| data.obank().get(dd))
+                                .map(|o| format!("{:?}@{:x}", o.code(), o.get_addr().get_offset()));
+                            eprintln!(
+                                "    inst[{}] vn=off{:x} sz{} def={:?}",
+                                i,
+                                data.vbank().get(iv).map(|x| x.get_addr().get_offset()).unwrap_or(0),
+                                data.vbank().get(iv).map(|x| x.get_size()).unwrap_or(0),
+                                dc
+                            );
+                        }
+                    }
+                }
+            }
             if !(data.get_arch().fold_call_returns
                 && crate::kuna_callretfold::call_output_foldable(data, vn))
             {
@@ -1136,7 +1178,25 @@ impl Action for ActionMarkImplied {
                 if idx == descs.len() {
                     // All descendants traced -> classify vncur.
                     count += 1; // will be marked explicit or implied
+                    let dbg_call = dbg_fcr()
+                        && data
+                            .vbank()
+                            .get(vncur)
+                            .and_then(|v| v.get_def())
+                            .and_then(|d| data.obank().get(d))
+                            .map(|o| o.is_call())
+                            .unwrap_or(false);
+                    let dbg_addr = data
+                        .vbank()
+                        .get(vncur)
+                        .and_then(|v| v.get_def())
+                        .and_then(|d| data.obank().get(d))
+                        .map(|o| o.get_addr().get_offset())
+                        .unwrap_or(0);
                     if check_implied_cover(&mut *data, vncur) {
+                        if dbg_call {
+                            eprintln!("MI call-out def@{dbg_addr:x} -> IMPLIED");
+                        }
                         // Merge::markImplied — the input cover-dirtying is
                         // load-bearing: Cover::rebuild walks forward through
                         // implied consumers, so an operand's Cover only grows to
@@ -1148,6 +1208,9 @@ impl Action for ActionMarkImplied {
                             crate::merge::Merge::mark_implied(data, vncur)
                         });
                     } else {
+                        if dbg_call {
+                            eprintln!("MI call-out def@{dbg_addr:x} -> EXPLICIT(cic)");
+                        }
                         data.vbank_mut().get_mut(vncur).expect("markimplied").set_explicit();
                     }
                     varstack.pop();
@@ -1442,6 +1505,22 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
                 .map(|c| c.contain(blk, point, 2))
                 .unwrap_or(false);
             if crosses {
+                if dbg_fcr() {
+                    let defaddr = data
+                        .obank()
+                        .get(def)
+                        .map(|o| o.get_addr().get_offset())
+                        .unwrap_or(0);
+                    let calladdr = data
+                        .obank()
+                        .get(callop)
+                        .map(|o| o.get_addr().get_offset())
+                        .unwrap_or(0);
+                    eprintln!(
+                        "CIC reject def@{defaddr:x} crossed-call@{calladdr:x} blk={blk} pt={point:?} cover={:?}",
+                        data.vbank().get(vn).and_then(|v| v.cover()).map(|c| format!("{c:?}"))
+                    );
+                }
                 return false;
             }
         }
@@ -1476,6 +1555,30 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
         }
         let intersects = data.with_covermerge(|merge, data| merge.inflate_test(data, defvn, high));
         if intersects {
+            if dbg_fcr() {
+                let defaddr = data
+                    .obank()
+                    .get(def)
+                    .map(|o| o.get_addr().get_offset())
+                    .unwrap_or(0);
+                let iv = data.vbank().get(defvn);
+                let ivdef = iv
+                    .and_then(|x| x.get_def())
+                    .and_then(|d| data.obank().get(d))
+                    .map(|o| format!("{:?}@{:x}", o.code(), o.get_addr().get_offset()));
+                let ivhigh = iv
+                    .and_then(|x| x.get_high())
+                    .and_then(|h| data.high_bank().get(h))
+                    .map(|h| h.num_instances())
+                    .unwrap_or(-1);
+                eprintln!(
+                    "CIC inflate-reject def@{defaddr:x} input off{:x} sz{} idef={:?} ininst={}",
+                    iv.map(|x| x.get_addr().get_offset()).unwrap_or(0),
+                    iv.map(|x| x.get_size()).unwrap_or(0),
+                    ivdef,
+                    ivhigh
+                );
+            }
             return false;
         }
     }
