@@ -118,7 +118,10 @@ The **stripped** copies (what decbench scores) at -O2:
 
 ### 4. `structscore` — structs, the TRex score and the candidate census
 
-`structscore <stripped>... --all`, coreutils fmt/ls/sort/du, O0 and O2.
+`structscore <stripped>... --all`, coreutils fmt/ls/sort/du, O0 and O2. Every
+variable here is paired to its ground truth the way `type_match` pairs it: the
+binary-wide calibration shift (8 on all eight binaries), the per-function shift
+only where that one aligns nothing, and decbench's type-preferring `claim()`.
 
 **TRex Fig. 6 prioritized score** (mean per binary; `unpaired` is GT
 variables kuna's JSON surface has nothing to pair with, which is where the
@@ -131,20 +134,20 @@ they score 5, so `mean` is a lower bound by at most that many sixths:
 
 | opt | binary | GT vars | unpaired | mean 0-6 | mean 0-5 | sign? | defined | is_c_pointer | pointer_level | is_c_struct | sign_ignored | c_primitive |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| O0 | fmt | 413 | 5 | **3.860** | 3.521 | 7 | 408/413 | 292/408 | 288/292 | 259/288 | 207/259 | 140/207 |
-| O0 | ls | 1,859 | 44 | **3.486** | 3.216 | 12 | 1815/1859 | 1220/1815 | 1208/1220 | 1064/1208 | 671/1064 | 503/671 |
-| O0 | sort | 1,510 | 28 | **3.476** | 3.218 | 14 | 1482/1510 | 995/1482 | 980/995 | 849/980 | 553/849 | 390/553 |
-| O0 | du | 1,434 | 42 | **3.603** | 3.339 | 12 | 1392/1434 | 1010/1392 | 997/1010 | 855/997 | 534/855 | 378/534 |
-| O2 | fmt | 422 | 234 | **1.706** | 1.569 | 8 | 188/422 | 136/188 | 133/136 | 112/133 | 93/112 | 58/93 |
-| O2 | ls | 1,600 | 976 | **1.419** | 1.325 | 25 | 624/1600 | 452/624 | 436/452 | 374/436 | 234/374 | 151/234 |
-| O2 | sort | 1,214 | 678 | **1.577** | 1.461 | 17 | 536/1214 | 375/536 | 359/375 | 286/359 | 217/286 | 141/217 |
-| O2 | du | 1,177 | 679 | **1.579** | 1.464 | 16 | 498/1177 | 371/498 | 357/371 | 281/357 | 216/281 | 136/216 |
+| O0 | fmt | 413 | 4 | **3.884** | 3.540 | 7 | 409/413 | 294/409 | 290/294 | 260/290 | 209/260 | 142/209 |
+| O0 | ls | 1,859 | 39 | **3.541** | 3.260 | 14 | 1820/1859 | 1241/1820 | 1229/1241 | 1075/1229 | 696/1075 | 522/696 |
+| O0 | sort | 1,510 | 25 | **3.549** | 3.280 | 14 | 1485/1510 | 1023/1485 | 1007/1023 | 861/1007 | 577/861 | 406/577 |
+| O0 | du | 1,434 | 42 | **3.631** | 3.363 | 12 | 1392/1434 | 1022/1392 | 1009/1022 | 858/1009 | 542/858 | 384/542 |
+| O2 | fmt | 422 | 231 | **1.716** | 1.578 | 8 | 191/422 | 135/191 | 132/135 | 114/132 | 94/114 | 58/94 |
+| O2 | ls | 1,600 | 968 | **1.437** | 1.343 | 28 | 632/1600 | 457/632 | 441/457 | 379/441 | 239/379 | 151/239 |
+| O2 | sort | 1,214 | 672 | **1.605** | 1.485 | 18 | 542/1214 | 381/542 | 364/381 | 292/364 | 224/292 | 146/224 |
+| O2 | du | 1,177 | 673 | **1.601** | 1.486 | 19 | 504/1177 | 377/504 | 363/377 | 285/363 | 220/285 | 136/220 |
 
 Read the steps, not only the mean. At O0 nearly every GT variable is paired and
 the loss is concentrated in one step: `is_c_struct` → `sign_ignored_primitive`
-drops 259→207 on fmt and 1064→671 on ls, which is the pointer/struct gap the
+drops 260→209 on fmt and 1075→696 on ls, which is the pointer/struct gap the
 metric lane is already chasing. The last step is comparatively cheap once its
-ground truth is right — 140 of 207 on fmt, 68% — so **signedness is not where
+ground truth is right — 142 of 209 on fmt, 68% — so **signedness is not where
 this score is lost**, and a signedness PR should expect a small `mean` move and
 no `mean 0-5` move at all. At O2 55–61% of GT variables have nothing to pair
 with and the mean collapses; the O0→O2 drop is the same shape TRex reports for
@@ -172,38 +175,64 @@ record is the denominator:
 Over both levels that is **835 pointer-to-struct parameters, 9,443 GT fields and
 1,660 GT nestings** (O0 alone: 538 / 6,022 / 1,010).
 
-**Struct-candidate census** (a base accessed at ≥2 distinct offsets or fields;
-declaration and prototype lines are excluded, so the `*` in `char *v1;` and in
-`void f(struct_0 *a0)` is not counted as a dereference):
+**Struct-candidate census** — a base accessed at ≥2 distinct byte offsets, split
+by what the evidence was. Declaration and prototype lines are excluded (the `*`
+in `char *v1;` is not a dereference), an index is scaled to a byte offset by the
+declared element size, and a `dat_*` global counts as a base like any other.
+
+*Field-committed candidates* — at least one `*(T *)(B ± K)` or `B->f`, which
+nothing but a field access produces:
 
 | opt | binary | functions | with a candidate | candidates | paired to GT | already right | GT is `struct *` |
 |---|---|---|---|---|---|---|---|
-| O0 | fmt | 191 | 24 | 30 | 22 | 8 | 11 |
-| O0 | ls | 589 | 120 | 190 | 143 | 35 | 96 |
-| O0 | sort | 479 | 109 | 181 | 132 | 26 | 94 |
-| O0 | du | 441 | 111 | 171 | 118 | 13 | 99 |
-| **O0 total** | | **1,700** | **364 (21.4%)** | **572** | **415** | **82 (19.8%)** | **300 (72.3%)** |
-| O2 | fmt | 151 | 29 | 48 | 12 | 1 | 10 |
-| O2 | ls | 404 | 161 | 319 | 159 | 14 | 42 |
-| O2 | sort | 343 | 88 | 184 | 64 | 12 | 47 |
-| O2 | du | 320 | 99 | 187 | 69 | 8 | 56 |
-| **O2 total** | | **1,218** | **377 (31.0%)** | **738** | **304** | **35 (11.5%)** | **155 (51.0%)** |
+| O0 | fmt | 191 | 3 | 5 | 3 | 0 | 3 |
+| O0 | ls | 589 | 19 | 21 | 21 | 0 | 21 |
+| O0 | sort | 479 | 22 | 25 | 25 | 1 | 21 |
+| O0 | du | 441 | 32 | 40 | 33 | 0 | 33 |
+| **O0 total** | | **1,700** | **76 (4.5%)** | **91** | **82** | **1 (1.2%)** | **78 (95.1%)** |
+| O2 | fmt | 151 | 5 | 7 | 4 | 0 | 4 |
+| O2 | ls | 404 | 28 | 45 | 41 | 0 | 9 |
+| O2 | sort | 343 | 14 | 16 | 10 | 0 | 10 |
+| O2 | du | 320 | 22 | 30 | 14 | 0 | 14 |
+| **O2 total** | | **1,218** | **69 (5.7%)** | **98** | **69** | **0 (0.0%)** | **37 (53.6%)** |
 
-Two things this settles before any struct work starts:
+*Index-only candidates* — everything whose only evidence is `B[k]` or `*B`.
+`char *s; s[0]; s[1]` is in here, and so is every other string or array walk:
 
-* **The O0 pool really is smaller** — 21.4% of functions carry a candidate at O0
-  against 31.0% at O2, and 0.34 candidates per function against 0.61. That was the
-  design lane's guess and it holds. What flips the other way is how much of the
-  pool is *judgeable*: 415 of 572 O0 candidates (72.6%) pair with a ground-truth
-  variable against 304 of 738 (41.2%) at O2, because at O2 the base is often a
-  register kuna never exports.
-* **The match→miss channel is small but real**: 82 of 415 paired candidates at O0
-  (19.8%) and 35 of 304 at O2 (11.5%) are variables kuna *already* types to
-  DWARF's satisfaction, so a synthesis pass that fires on them spends a match. On
-  the other side, 72.3% (O0) and 51.0% (O2) of paired candidates really are
-  pointer-to-struct in the source. The design lane's 637 candidates / 332 of 1,218
-  O2 functions is the same measurement with a narrower pattern set; this one also
-  counts `B->field` and a bare `*B`, hence 738 / 377.
+| opt | binary | functions | with a candidate | candidates | paired to GT | already right | GT is `struct *` |
+|---|---|---|---|---|---|---|---|
+| O0 | fmt | 191 | 21 | 26 | 19 | 8 | 9 |
+| O0 | ls | 589 | 105 | 169 | 132 | 36 | 85 |
+| O0 | sort | 479 | 94 | 156 | 119 | 29 | 81 |
+| O0 | du | 441 | 89 | 131 | 93 | 13 | 75 |
+| **O0 total** | | **1,700** | **309 (18.2%)** | **482** | **363** | **86 (23.7%)** | **250 (68.9%)** |
+| O2 | fmt | 151 | 28 | 42 | 11 | 1 | 6 |
+| O2 | ls | 404 | 143 | 274 | 122 | 14 | 34 |
+| O2 | sort | 343 | 84 | 168 | 58 | 12 | 38 |
+| O2 | du | 320 | 90 | 157 | 59 | 8 | 43 |
+| **O2 total** | | **1,218** | **345 (28.3%)** | **641** | **250** | **35 (14.0%)** | **121 (48.4%)** |
+
+Three things this settles before any struct work starts:
+
+* **The pool a synthesis pass can act on is small and it is the top table.** 91
+  field-committed candidates at O0 and 98 at O2 — 5% of functions, against the
+  1,123 index-only bases that are 86% of everything the census picks up. Any
+  claim sized off the combined 573 / 739 is sized off array walks.
+* **The match→miss channel is ~zero where it matters.** Exactly 1 of 82 paired
+  field-committed candidates at O0 and 0 of 69 at O2 are variables kuna already
+  types to DWARF's satisfaction, so a pass that fires on this pool spends almost
+  no matches. The 23.7% / 14.0% in the second table is real but it is the price
+  of retyping a `char *` that is only ever indexed — which is exactly what a
+  synthesis pass must not do.
+* **Field-committed candidates really are structs**: 78 of 82 paired (95.1%) at
+  O0 have a pointer-to-struct ground truth, against 250 of 363 (68.9%) index-only.
+  At O2 both halves fall (53.6% / 48.4%) and most of the pool stops being
+  judgeable at all — 316 of 641 index-only candidates are bases kuna never puts
+  on the JSON surface, because at O2 the base is usually a register.
+
+The design lane's 637 candidates over 332 of the 1,218 O2 functions is the
+combined pool with a narrower pattern set; this census also counts `B->field`, a
+bare `*B` and a negative displacement, hence 739 over 377 — and then splits it.
 
 Reproduce (about 4 minutes for all eight binaries):
 
