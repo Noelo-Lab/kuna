@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1084,
-    1084
+    1100,
+    1100
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
