@@ -3,6 +3,11 @@
 use super::*;
 use kuna_decomp::dtype::TypeFactoryImpl;
 
+/// The `libctypes` gate is a process environment variable and these tests run as
+/// threads of one process, so the three that write it have to take turns. Without
+/// this, `the_declared_lookup_follows_the_gate` reads a value another test set.
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// A type factory shaped like the x86-64 one the passes run against.
 fn factory() -> TypeFactoryImpl {
     let types = TypeFactoryImpl::new();
@@ -241,6 +246,7 @@ fn the_tables_have_no_duplicate_names() {
 /// it off `declared_libc_prototype` falls through to the `void *` tables.
 #[test]
 fn the_declared_lookup_follows_the_gate() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let types = factory();
     kuna_decomp::kuna_libctypes::set_libctypes_env_layout(kuna_decomp::kuna_libctypes::LibcTypesLayout::Off);
     let off = super::super::declared_libc_prototype("fopen", &types, 1).expect("fopen off");
@@ -266,6 +272,7 @@ fn the_declared_lookup_follows_the_gate() {
 /// the arity too, which is the part `--define-function 0x…=stat` is asked for.
 #[test]
 fn a_declined_aggregate_degrades_to_the_width_stable_signature() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let types = factory();
     kuna_decomp::kuna_libctypes::set_libctypes_env_layout(kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque);
     let shell = types.get_type_struct("stat").expect("shell");
@@ -480,12 +487,16 @@ fn no_layout_names_a_reserved_member() {
     }
 }
 
-/// `declared_libc_prototype` runs with no object file, so it reads the layout
-/// off the program: a held, field-filled aggregate is proof the load-time pass
-/// ran with `glibc` on an image the target gate accepted. An untouched factory,
-/// or one carrying only opaque shells, supports `Opaque` and nothing more.
+/// `declared_libc_prototype` runs with no object file, so it reads the layout off
+/// the OPTION and off the program: the value has to be `glibc` and the program
+/// has to carry a field-filled aggregate, which is what proves the target gate
+/// passed here. Either half missing means `Opaque`.
 #[test]
 fn the_live_layout_is_read_off_the_program() {
+    use kuna_decomp::kuna_libctypes::{set_libctypes_env_layout, LibcTypesLayout, LIBCTYPES_ENV};
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+
+    set_libctypes_env_layout(LibcTypesLayout::Glibc);
     let empty = factory();
     assert_eq!(live_layout(&empty), Layout::Opaque, "nothing held: no evidence");
 
@@ -497,12 +508,23 @@ fn the_live_layout_is_read_off_the_program() {
     named_aggregate("stat", &glibc_types, 1, Layout::Glibc).expect("glibc stat");
     assert_eq!(live_layout(&glibc_types), Layout::Glibc, "a field-filled `stat` is");
 
-    // The consequence: a name the image never imported, declared by hand, is
-    // minted at the layout the rest of the program already carries.
-    kuna_decomp::kuna_libctypes::set_libctypes_env_layout(kuna_decomp::kuna_libctypes::LibcTypesLayout::Glibc);
-    let pieces = super::super::declared_libc_prototype("fopen", &glibc_types, 1).expect("fopen");
+    // The option half. A run that asked for `opaque` gets `opaque` even where the
+    // factory holds a laid-out aggregate -- which is what a musl image carrying
+    // its own DWARF `stat` looks like from here.
+    set_libctypes_env_layout(LibcTypesLayout::Opaque);
+    assert_eq!(live_layout(&glibc_types), Layout::Opaque, "the value the run asked for wins");
+    let shelled = super::super::declared_libc_prototype("fopen", &glibc_types, 1).expect("fopen");
+    let shell = shelled.outtype.as_ref().and_then(|t| t.get_ptr_to()).expect("FILE *");
+    assert!(shell.is_incomplete(), "`opaque` mints the fieldless shell");
+
+    // The consequence of both halves holding: a name the image never imported,
+    // declared by hand, is minted at the layout the program already carries.
+    set_libctypes_env_layout(LibcTypesLayout::Glibc);
+    let types = factory();
+    named_aggregate("stat", &types, 1, Layout::Glibc).expect("glibc stat");
+    let pieces = super::super::declared_libc_prototype("fopen", &types, 1).expect("fopen");
     let file = pieces.outtype.as_ref().and_then(|t| t.get_ptr_to()).expect("FILE *");
     assert_eq!(file.get_name(), "FILE");
     assert!(!file.is_incomplete(), "the declared `FILE` agrees with the program's `stat`");
-    std::env::remove_var(kuna_decomp::kuna_libctypes::LIBCTYPES_ENV);
+    std::env::remove_var(LIBCTYPES_ENV);
 }

@@ -368,18 +368,28 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
 /// Which layout THIS program's named aggregates were actually built with.
 ///
 /// [`super::declared_libc_prototype`] answers a `--define-function 0x..=fopen`
-/// directive long after the load-time pass has run, with neither the option
-/// value nor the object file in reach, so it cannot re-run the target gate
-/// [`glibc::target_is_glibc_x86_64`] and must not guess: minting a glibc layout
-/// on a musl or ARM image would be a false claim about what is at an offset.
+/// directive long after the load-time pass has run, with the object file out of
+/// reach, so it cannot re-run the target gate [`glibc::target_is_glibc_x86_64`]
+/// and must not guess: minting a glibc layout on a musl or ARM image would be a
+/// false claim about what is at an offset.
 ///
-/// The program answers instead. The pass interns a `glibc` aggregate WITH its
+/// Two facts decide it, and both have to hold. The OPTION has to be `glibc` —
+/// that much is a process-wide value this call can still read, and a run asked
+/// for `opaque` gets `opaque` whatever else is true. Then the PROGRAM has to
+/// show the layouts went in: the pass interns a `glibc` aggregate WITH its
 /// fields and an `opaque` one without, so one held, field-filled aggregate under
-/// one of the nine laid-out names — with the name at offset 0 that the table
-/// says belongs there — is proof that the gate passed on this image and the
-/// tables went in. Anything else, the option off, the target refused, or an
-/// image that imports none of the nine, supports only [`Layout::Opaque`].
+/// one of the nine laid-out names — carrying at offset 0 the name the table puts
+/// there — is proof the target gate passed on this image. Anything else (the
+/// value off or `opaque`, the target refused, or an image importing none of the
+/// nine) supports only [`Layout::Opaque`].
+///
+/// The second half is what an image's own DWARF cannot fake past: on a musl
+/// image with debug info, `stat` is complete and named the same way, and the
+/// option check is the reason that does not become a glibc `FILE`.
 pub(super) fn live_layout(types: &dyn TypeFactory) -> Layout {
+    if kuna_decomp::kuna_libctypes::libctypes_layout() != Layout::Glibc {
+        return Layout::Opaque;
+    }
     for (name, rows) in glibc::GLIBC_LAYOUTS {
         let Ok(Some(held)) = types.find_by_name(name) else { continue };
         let Some(first) = held.get_field(0) else { continue };

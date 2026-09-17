@@ -38,8 +38,11 @@
 //!   while every use that carries meaning is a lie: when a `stat *` lands on the
 //!   first member of a bigger struct, that struct's own members at 0x78 and up
 //!   get spelled `__glibc_reserved[1]` instead of the neutral `field_0x80`.
-//!   Measured on 11 binaries: 19 truthful padding copies against 8 such lies, so
-//!   the honest hole wins on both counts.
+//!   Measured over 16 binaries, the rows fired 28 times: 19 padding copies a
+//!   reader gains nothing from, 8 lies about diffutils' `file_data::desc` and
+//!   `::name`, and one address computation the name made worse
+//!   (`(long)v32.__glibc_reserved + v10 * 4 - 0x78`, now `(long)&v32.st_dev +
+//!   v10 * 4`). The hole wins on every count that carries information.
 //!
 //! * **No self-reference.** `_IO_FILE::_chain` and `_IO_FILE::_freeres_list` are
 //!   `struct _IO_FILE *` in the header and `void *` here. Completing a struct
