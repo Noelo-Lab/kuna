@@ -129,10 +129,10 @@
   },
   "default_on_ablation": {
     "method": "flip Architecture::reset_defaults_internal to fold_call_ret_phi = true, rebuild, run every gate",
-    "datatests": "675/675 assertions passed, PARITY OK (0 assertions change)",
-    "stages": "1024/1024 assertions passed, PARITY OK",
+    "datatests": "675/675 assertions passed, PARITY OK (0 assertions change) -- re-run with the global-write barrier in",
+    "stages": "1043/1043 assertions passed, PARITY OK -- re-run with the global-write barrier in",
     "check-spec": "OK (lenient + strict)",
-    "speed": "+1.22% min-of-21 on fmt decompile-all, inside the +5% budget",
+    "speed": "no measurable cost on fmt decompile-all (min of 21 interleaved pairs: 4.200 s both arms; median +1.26%), inside the +5% budget",
     "test-cli": "177/178 -- no-cli-rename-or-prototype-override fails",
     "why_held_off": "`--assert type vN` / `--assert name vN` address a variable by its auto-generated name. Folding `v1 = strcmp(pass,sneaky)` into its `if` removes a declaration and renumbers the rest, so the probe's `type v2 char[16]` retypes a different stack slot (credbuf lands at -0x10 instead of -0x18 and a separate `char v2 [8]` appears). Neither listing is unsound; the directive simply no longer names what the user meant. The flip is therefore a change about --assert ergonomics rather than about this pass, and belongs in its own PR with those directives re-read.",
     "verdict": "shipped default-off with the flip evidence recorded"

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1041,
-    1041
+    1043,
+    1043
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -831,6 +831,8 @@
     "data:foldcallretphi #1: call result spilled to its own statement (only pass 1, off)",
     "data:foldcallretphi #2: the spill is read back by the read-modify-write (only pass 1, off)",
     "data:foldcallretphi #3: call folded into the read-modify-write (only pass 2, on)",
+    "data:foldcallretphi #4: a global write between the call and its use still blocks the fold (pass 3, on)",
+    "data:foldcallretphi #5: and the folded form is never emitted for it (pass 3, on)",
     "data:ifelseflatten #1: the else-bearing 3-component BlockIf is present (off plus on = 2)",
     "data:ifelseflatten #2: the else-arm constant body survives identically (no-op, not corrupted; off plus on = 2)",
     "data:ifelseflatten #3: enabling the option is byte-identical, the loop tail is unchanged (off plus on = 2)",
