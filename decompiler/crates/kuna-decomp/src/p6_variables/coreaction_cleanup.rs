@@ -1446,6 +1446,18 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
             }
         }
     }
+    // (kuna GH-657) foldcallret: `base_explicit` cleared the span from the call
+    // to its single use, but the folded expression is evaluated wherever that
+    // use's own value is finally printed, which can be several statements later.
+    // The descendants-first walk of `ActionMarkImplied` has classified that
+    // chain by now, so the real landing statement is derivable: re-run the span
+    // guard over the whole distance the call would move.
+    if data.get_arch().fold_call_returns
+        && data.obank().get(def).map(|o| o.is_call()).unwrap_or(false)
+        && !crate::kuna_callretfold::fold_print_point_is_order_safe(data, vn)
+    {
+        return false;
+    }
     // The `Merge::inflateTest` input-intersection arm (coreaction.cc:3509-3514).
     // A non-constant defining input whose HighVariable would intersect `vn`'s
     // internalCover after inflation forces `vn` EXPLICIT — this is what GAINS

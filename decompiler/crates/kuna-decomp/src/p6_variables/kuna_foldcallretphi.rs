@@ -37,50 +37,31 @@
 //! The discount is about *versions*, not order: the collision it forgives is
 //! one the call itself creates, and in the folded rendering the operand read and
 //! that write still happen at the same point — inside the call expression —
-//! exactly as they do in the spilled form.  Three further conditions bound it:
+//! exactly as they do in the spilled form.  Two further conditions bound it:
 //!
 //!   * the operand's high must not belong to a `VariableGroup` (the piece
 //!     intersection loop of `inflate_test` reasons about overlapping storage,
-//!     not versions, so its rejections are never discounted),
+//!     not versions, so its rejections are never discounted), and
 //!   * the use op must not itself read an INDIRECT effect of the call — there
 //!     the folded text would name the operand's high both as the call's
-//!     argument (pre-call) and as an operand of the use (post-call), and
-//!   * the whole distance the call moves has to be order-safe
-//!     ([`print_point_is_order_safe`]).
+//!     argument (pre-call) and as an operand of the use (post-call).
 //!
-//! # What order-safe means here, and why it is not `foldcallret`'s span
+//! # Order safety is not this option's business
 //!
-//! `foldcallret`'s guard tests *opcodes*: no CALL, LOAD, STORE or CALLOTHER
-//! between the call and its use.  That set is not the whole of "writes something
-//! the callee can see".  A write to a fixed global address is heritaged into a
-//! plain `CPUI_COPY`, which the opcode test waves through, so on
+//! How far the call travels is
+//! [`foldcallret`](crate::p6_variables::kuna_callretfold)'s guard, not this
+//! one's.  `call_output_foldable`'s span ends at the single use, which is the
+//! call's textual home only when that use op is itself a statement; when the use
+//! op's own output is implied the expression keeps travelling, and the rejection
+//! this module discounts is sometimes the only thing that was holding such a
+//! call in place.  So the span is cleared all the way to the real landing
+//! statement, and against writes to persistent or address-tied storage as well
+//! as memory opcodes, by
+//! [`fold_print_point_is_order_safe`](crate::p6_variables::kuna_callretfold)
+//! (GH-657) — one arm earlier in the same
+//! [`check_implied_cover`](crate::p6_variables::coreaction_cleanup) call, for
+//! every folded call output whether this option is on or off.
 //!
-//! ```text
-//! v2 = helper(g);   // helper returns k
-//! k = 42;           // a CPUI_COPY: no STORE, no LOAD, no call
-//! ok = v1 & v2;
-//! ```
-//!
-//! folding `helper(g)` into the last statement evaluates it *after* `k = 42` and
-//! changes what it returns.  [`op_writes_tied_storage`] is the missing barrier,
-//! and every span this module clears is tested with it — for a frame slot as
-//! well, since the callee can reach one whenever the frame address escaped into
-//! the call.  (The same hole is reachable through `foldcallret` alone, without
-//! this option, when the call takes no global operand; that is GH-657, fixed
-//! separately because `foldcallret` is default-on and this option is not.)
-//!
-//! # Where the folded call is actually printed
-//!
-//! `call_output_foldable`'s span guard ends at the single use, which is the
-//! call's textual home only when that use op is itself a statement.  If the use
-//! op's own output is *implied*, the expression keeps travelling: it is printed
-//! wherever that implied value is finally consumed, and that can be a later
-//! block behind a branch.  The rejection this module discounts is sometimes the
-//! only thing holding such a call in place, so the discount re-derives the real
-//! print point ([`print_point`]) and re-runs the span guard over the whole
-//! distance the call would move.  A print point outside the call's own block, or
-//! one with a barrier or a global write in between, declines.
-
 use kuna_base::error::KunaResult;
 use kuna_num::opcodes::OpCode;
 
@@ -113,9 +94,6 @@ pub fn conflict_is_self_call_effect(
     if op_reads_indirect_effect_of(data, use_op, call) {
         return false;
     }
-    if !print_point_is_order_safe(data, call, use_op) {
-        return false;
-    }
     let Some(high_cover) = data.high_bank().internal_cover(high).cloned() else {
         return false;
     };
@@ -144,110 +122,6 @@ pub fn conflict_is_self_call_effect(
         }
     }
     saw_conflict
-}
-
-/// Longest implied chain [`print_point`] will chase before giving up.
-const MAX_IMPLIED_CHAIN: usize = 8;
-
-/// (kuna) The op at whose statement the expression rooted at `use_op` is printed.
-///
-/// An op is its own statement when it has no output (STORE, CBRANCH, a void
-/// call, RETURN) or when its output is explicit.  Otherwise the output is
-/// implied and the expression migrates into that value's own consumer, so the
-/// walk follows the implied chain.  `None` means there is no provable single
-/// print point: a marker, a fan-out, or a value this pass has not classified yet.
-fn print_point(data: &Funcdata, use_op: OpId) -> Option<OpId> {
-    let mut op = use_op;
-    for _ in 0..MAX_IMPLIED_CHAIN {
-        if crate::kuna_callretfold::op_is_marker(data, op) {
-            return None;
-        }
-        let out = data.obank().get(op)?.get_out();
-        let Some(out) = out else {
-            return Some(op);
-        };
-        let v = data.vbank().get(out)?;
-        if v.is_explicit() {
-            return Some(op);
-        }
-        if !v.is_implied() {
-            return None;
-        }
-        op = data.lone_descend(out)?;
-    }
-    None
-}
-
-/// (kuna) Does the call survive the move all the way to its print point?
-///
-/// `call_output_foldable` has already cleared the span from the call to
-/// `use_op`; this re-runs the same guard over the span from the call to the
-/// statement the folded expression actually lands in, which is where it is
-/// evaluated at run time, and adds the memory-write barrier
-/// [`op_writes_tied_storage`] that the opcode test misses.  The print point
-/// itself is not a barrier — the folded expression is evaluated as its operand,
-/// before it — but its *other* operands must not read an effect of the call,
-/// so the INDIRECT test covers it too.
-fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
-    let Some(point) = print_point(data, use_op) else {
-        return false;
-    };
-    let Some(blk) = crate::kuna_callretfold::op_parent(data, call) else {
-        return false;
-    };
-    if crate::kuna_callretfold::op_parent(data, point) != Some(blk) {
-        return false;
-    }
-    let ops = data.bb_ops(blk);
-    let (Some(ci), Some(pi)) = (
-        ops.iter().position(|&o| o == call),
-        ops.iter().position(|&o| o == point),
-    ) else {
-        return false;
-    };
-    if pi <= ci {
-        return false;
-    }
-    let span_clear = !ops[ci + 1..pi].iter().any(|&mid| {
-        crate::kuna_callretfold::op_is_barrier(data, mid)
-            || op_writes_tied_storage(data, mid)
-            || crate::kuna_callretfold::op_reads_indirect_output_of(data, mid, call)
-    });
-    span_clear && !crate::kuna_callretfold::op_reads_indirect_output_of(data, point, call)
-}
-
-/// (kuna) Does `op` write storage the callee could read — memory, not a register?
-///
-/// Heritage promotes a write to a fixed address into a plain `CPUI_COPY` (or any
-/// arithmetic op) whose output varnode is address-tied: a global is persistent,
-/// a frame slot is tied to its stack address.  Neither is an opcode, so
-/// [`op_is_barrier`](crate::p6_variables::kuna_callretfold) — which tests for
-/// CALL/LOAD/STORE/CALLOTHER — waves both through, and folding the call past one
-/// hands the callee the new value.  For a global the callee needs nothing but
-/// the address (the shape in the module header); for a frame slot it needs a
-/// pointer into the frame, which it has whenever the frame address escaped, and
-/// an escaped slot is *not* kept as a `CPUI_STORE` — heritage promotes it like
-/// any other.  So both are barriers here.  The cost is the false positives: a
-/// frame slot the callee cannot reach also declines.
-///
-/// Marker ops are skipped: an INDIRECT/MULTIEQUAL performs no write of its own,
-/// it records one its effect op performs, and that op is either the call being
-/// folded (its own INDIRECTs are what this module exists to discount) or a
-/// barrier in its own right.
-fn op_writes_tied_storage(data: &Funcdata, op: OpId) -> bool {
-    let Some(o) = data.obank().get(op) else {
-        return true; // stale: be conservative
-    };
-    if o.is_marker() {
-        return false;
-    }
-    let Some(out) = o.get_out() else {
-        return false;
-    };
-    data.vbank()
-        .get(out)
-        .map(|v| v.is_persist() || v.is_addr_tied())
-        .unwrap_or(true)
 }
 
 /// Is `vn` the output of a `CPUI_INDIRECT` whose effect op (the iop encoded in
