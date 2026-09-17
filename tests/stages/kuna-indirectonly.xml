@@ -44,11 +44,16 @@
     read fails checkIndirectUse for the whole def-set and the flag must NOT be
     set: an uninitialized value must not be merged into a real variable.
 
-    Pass 1 (option indirectonly off): the merge is refused in both functions,
-    the call result gets its own register local and the slot is assigned across.
-    Pass 2 (option indirectonly on, the default): `take` merges: the call
-    result is computed straight into `when.tv_nsec` and the register local is
-    gone, and `keep` is byte-identical to pass 1.
+    Pass 1 (option indirectonly off, which is also the shipped default): the
+    merge is refused in both functions, the call result gets its own register
+    local and the slot is assigned across.  Pass 2 (option indirectonly on):
+    `take` merges: the call result is computed straight into `when.tv_nsec` and
+    the register local is gone, and `keep` is byte-identical to pass 1.
+
+    This is the direction of the merge that is SOUND - the machine really does
+    store the computed value into the slot, so the merge only moves where it is
+    computed.  `kuna-indirectonly-escape.xml` is the other direction, and the
+    reason the option ships off.
 -->
 <bytechunk space="ram" offset="0x1024">
 554889e54881ec200100008b051001000085c07418488d8540ffffff4889c7488b350b010000e8dd000000eb3fe8da00000048898538ffffff48c7c700ca9a3b488b8d38ffffff4889c8489948f7ff48898540ffffff488b8d38ffffff4889c8489948f7ff48899548ffffff488d8540ffffff4889c7e897000000c9c3554889e54881ec20010000488bb548ffffff488935930000008b058500000085c07418488d8540ffffff4889c7488b3580000000e852000000eb3fe84f00000048898538ffffff48c7c707ca9a3b488b8d38ffffff4889c8489948f7ff48898540ffffff488b8d38ffffff4889c8489948f7ff48899548ffffff488d8540ffffff4889c7e80c000000c9c34889f0c3b805000000c3488b07c3e8e5feffffe85dfffffff4000000000000000000000000000000000000000000000000

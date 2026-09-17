@@ -1679,9 +1679,9 @@ impl Action for ActionMarkIndirectOnly {
         // C++ coreaction.hh:358 — ActionMarkIndirectOnly::apply
         //   data.markIndirectOnly(); return 0;
         //
-        // (kuna, option `indirectonly`, default-on) off restores the inert stub
-        // this action shipped as before the port: `indirectonly` then has no
-        // writer and both of its readers — `HighVariable::has_name` and
+        // (kuna, option `indirectonly`, opt-in default-off) off is the inert
+        // stub this action shipped as before the port: `indirectonly` then has
+        // no writer and both of its readers — `HighVariable::has_name` and
         // `Merge::merge_test_adjacent` — take the more-variables branch.
         if data.get_arch().mark_indirect_only {
             crate::kuna_indirectonly::mark_indirect_only(data);

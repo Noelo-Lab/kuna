@@ -1213,7 +1213,8 @@ pub struct ArchContext {
     /// default-off).  Read by `check_implied_cover`.
     pub fold_call_ret_phi: bool,
     /// (kuna) Run `Funcdata::markIndirectOnly` instead of the inert stub
-    /// (option `indirectonly`, default-on).  Read by `ActionMarkIndirectOnly`.
+    /// (option `indirectonly`, opt-in default-off).  Read by
+    /// `ActionMarkIndirectOnly`.
     pub mark_indirect_only: bool,
     /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
     /// `strip_stack_guard`, opt-in default-off).  Read by
@@ -1610,7 +1611,7 @@ impl ArchContext {
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (Architecture::reset_defaults sets the shipped default: on)
             fold_call_ret_phi: false, // foldcallretphi (default-off)
-            mark_indirect_only: false, // indirectonly (Architecture::reset_defaults sets the shipped default: on)
+            mark_indirect_only: false, // indirectonly (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)

@@ -1868,7 +1868,9 @@ mod tests {
         // and kuna-structdefs / the definitions of the composites a function
         // references, printed above it
         // and kuna-indirectonly / inputs used only through INDIRECTs
-        assert_eq!(count, 304, "corpus file count drifted");
+        // and kuna-indirectonly-escape / the counterexample that keeps
+        // `indirectonly` off by default
+        assert_eq!(count, 305, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

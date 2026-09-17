@@ -346,7 +346,7 @@ the symbol-scope layer.
 
 **Inputs that are only ever read indirectly** (`kuna_indirectonly.rs
 (mark_indirect_only)`, run by `coreaction_cleanup.rs (ActionMarkIndirectOnly)`
-one slot ahead of `ActionMergeAdjacent`, option `indirectonly`, default on).
+one slot ahead of `ActionMergeAdjacent`, option `indirectonly`, default off).
 Two of the tests above ask whether a variable's input member is an *illegal*
 input — an input Varnode that `ActionDirectWrite` never reached, so no formal
 parameter can be responsible for its value: typically the leftover initial
@@ -370,18 +370,33 @@ input stays isolated. `mark_indirect_only` applies that to every illegal input
 and sets `indirectonly` on the ones that pass, and the two tests above then take
 their exception branch.
 
-The visible effect is the merge. An addr-tied frame slot whose entry value is
-only ever consumed by call INDIRECTs can now absorb the register that is copied
-into it, so the value is computed into the slot instead of into a temporary that
-is then assigned across — and the assignment, now a COPY inside one variable, is
-hidden by `mark_internal_copies`. Where the register was already carrying the
-slot's value on the way in, that removes a `vN = slot;` / `slot = vN;`
-round-trip outright. The refusal also has a wrong-output face: on coreutils `ls`
-at `-O2` the two 8-byte loads that fill a 16-byte `struct dev_ino` on the frame
-are printed into two register locals and never into the slot, and the
-`hash_delete(…, &di)` that follows reads a slot the emitted C never wrote.
-Turning the option off restores the inert stub exactly: `indirectonly` then has
-no writer and both readers take their more-variables branch.
+The visible effect is the merge, and its soundness depends on which side of the
+copy the illegal input is. When the slot is the copy's **destination** the
+machine really does store into it, and the merge only moves where the value is
+computed: into the slot instead of into a temporary that is then assigned across
+— and the assignment, now a COPY inside one variable, is hidden by
+`mark_internal_copies`. That direction also has a wrong-output face on the
+refusing side: on coreutils `ls` at `-O2` the two 8-byte loads that fill a
+16-byte `struct dev_ino` on the frame are printed into two register locals and
+never into the slot, and the `hash_delete(…, &di)` that follows reads a slot the
+emitted C never wrote.
+
+When the slot is the copy's **source** the direction reverses and the merge is
+unsound. The machine loads the slot into a register once and mutates the
+register; after the merge the emitted C mutates the slot, so it claims a store
+the machine never performs, and if the slot's address escaped earlier — the
+usual case, since an escaped object is why the slot's entry value was
+INDIRECT-only in the first place — a later call handed that object reads a value
+that never existed. Nothing in the merge phalanx catches this. A CPUI_INDIRECT
+is attached only where the storage is still live in the SSA, so a slot whose
+last read happens before the loop carries no INDIRECT at any call after it, its
+cover ends at that read, and `merge_test_required`'s cover intersection has
+nothing to intersect. This is upstream behaviour, not a porting gap — stock
+Ghidra emits the same fabricated store on the same input — so the flag ships
+**off** and kuna's default keeps the register local. Turning it on reproduces
+Ghidra's partitioning; leaving it off restores the inert stub exactly, and
+`indirectonly` then has no writer and both readers take their more-variables
+branch.
 
 **Closing out the undefined names** (`kuna_undefname.rs
 (finish_undefined_names)`, the tail of `coreaction_cleanup.rs

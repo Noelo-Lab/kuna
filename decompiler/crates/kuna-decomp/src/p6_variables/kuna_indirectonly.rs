@@ -42,11 +42,31 @@
 //! stale marks behind for a later pass.  The traversal order and the accepted
 //! opcode set are unchanged.
 //!
-//! # Why it is an option
+//! # Why it is an option, and why it is off
 //!
 //! Both consumers change what is printed — a declaration disappears, and a
 //! speculative merge that was refused can now happen — so the change ships
-//! behind `indirectonly` (`off` restores the inert stub byte-for-byte).
+//! behind `indirectonly`, and `off` (the default) restores the inert stub
+//! byte-for-byte.
+//!
+//! It defaults to *off* although the body is upstream verbatim.  The merge the
+//! flag unlocks is sound in one direction and not in the other:
+//!
+//!   * The illegal input is the copy's **destination** — the machine really
+//!     does store into the frame slot — and the merge only moves where the
+//!     value is computed.  Safe, and the reason to turn the option on.
+//!   * The illegal input is the copy's **source** — the machine loads the slot
+//!     into a register and mutates the register — and the merge makes the
+//!     emitted C mutate the slot.  If the slot's address escaped, a later call
+//!     reads a value the machine never wrote there.
+//!
+//! The cover machinery cannot separate the two: a CPUI_INDIRECT is only
+//! attached where the storage is still live in the SSA, so a slot whose last
+//! read is before the loop carries no INDIRECT at any call after it and there
+//! is nothing for the cover-intersection test to intersect.  Stock Ghidra
+//! 12.1.2 emits the same fabricated store on the same input, so this is an
+//! upstream defect the port inherits faithfully rather than a porting error —
+//! see `docs/features/indirectonly/counterexample.md`.
 
 use std::collections::HashSet;
 
