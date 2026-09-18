@@ -1,0 +1,22 @@
+196 scored variables leave a struct_N *
+    48  gt void*                -> long *             
+    44  gt hash_entry*          -> unsigned long *    
+    18  gt __uintmax_t*         -> unsigned long *    MATCH
+    15  gt stat*                -> long *             
+    12  gt timespec*            -> unsigned long *    
+     9  gt void*                -> uint8 *            
+     8  gt stat*                -> int8 *             
+     8  gt xheader*             -> int8 *             
+     6  gt void*                -> unsigned long *    
+     3  gt BLOCK*               -> long *             
+     3  gt char**               -> unsigned long *    
+     3  gt predlist*            -> long *             
+     3  gt sharefile_handle     -> unsigned long *    
+     3  gt sgrp*                -> unsigned long *    
+     3  gt sp_array*            -> unsigned long *    
+     2  gt layout*              -> long *             
+     2  gt E_string*            -> long *             
+     2  gt Spec_list*           -> long *             
+     2  gt predlist*            -> unsigned long *    
+     1  gt factors*             -> unsigned long *    
+     1  gt line*                -> unsigned long *    

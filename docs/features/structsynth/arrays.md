@@ -140,3 +140,35 @@ default is still `off`.
 * Speed: FLIP_PLACEHOLDER
 * Layout: the flip is worth +684 correctly placed fields (0 -> 0.1340 F1) on
   the eight layout binaries. `type_match` cannot see them.
+
+## 5. If `type_match` credited `struct_N *`
+
+`structsynth` is headed for default-on on the premise that decbench will
+credit any `struct_N *` against a DWARF pointer to a structure, while a
+primitive pointer still has to match exactly. This rule is scored differently
+under that premise, so here it is under both.
+
+`arrays_credit.py` over the two 444-slice runs (`arrays_credit.txt`): 196
+scored variables change from a `struct_N *` to a primitive pointer. 18 of them
+are the `__uintmax_t *` rows, which match today and would still match. 109 have a
+DWARF structure pointer as ground truth: `hash_entry` 44, `stat` 23, `timespec`
+12, `xheader` 8, `predlist` 5, and `BLOCK`, `sgrp`, `sp_array`, `layout`,
+`E_string`, `Spec_list`, `factors` and `line` with 1 to 3 each (classified by
+hand from the DWARF names). Those 109 score nothing today and would all be
+credited matches if the rule were absent. The other 69 are `void *` (63),
+`sharefile_handle` (a `void *` typedef, 3) and `char **` (3), and score nothing
+either way.
+
+| scored variables | today's `type_match` | with `struct_N *` credited |
+|---|---:|---:|
+| gained by the rule | +18 | +18 |
+| lost by the rule | 0 | -109 |
+| net | +18 | -91 |
+
+TRex's struct step already credits a structure against a structure, and it
+points the same way: -12 points net (section 3). The local evidence cannot
+separate `factor`'s limbs from `stat`'s `st_dev`/`st_ino` or `hash_entry`'s two
+words. Every one of those is two same-typed eight-byte integers read through
+an integer pointer, and by base rate a structure pointer is the likelier
+ground truth (46 against 12 in the census). Under the crediting premise the
+rule is the wrong default. It is right only where the metric compares names.

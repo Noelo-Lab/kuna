@@ -859,6 +859,31 @@
     ]
    },
    "reading": "factor gains the is_c_struct step on uintmax_t *; ls/sort/du/find lose it on stat */timespec */hash_entry * now read as an integer pointer; net -12 points over 17105 variables"
+  },
+  "struct_crediting": {
+   "instrument": "docs/features/structsynth/arrays_credit.py on the two 444-slice typesweep --dump-decisions runs (main, branch), output arrays_credit.txt",
+   "variables_leaving_struct_n": 196,
+   "gained_today": 18,
+   "gt_struct_pointer": 109,
+   "gt_void_or_other": 69,
+   "gt_struct_pointer_breakdown": {
+    "hash_entry": 44,
+    "stat": 23,
+    "timespec": 12,
+    "xheader": 8,
+    "predlist": 5,
+    "BLOCK": 3,
+    "sgrp": 3,
+    "sp_array": 3,
+    "layout": 2,
+    "E_string": 2,
+    "Spec_list": 2,
+    "factors": 1,
+    "line": 1
+   },
+   "net_today": 18,
+   "net_if_struct_n_credited": -91,
+   "reading": "under the user-decided premise that decbench credits any struct_N * against a GT pointer-to-struct, the rule trades 109 credited variables for 18; TRex (struct-aware) agrees in sign (-12 points). The rule is net positive only under today's name-comparing type_match."
   }
  }
 }
