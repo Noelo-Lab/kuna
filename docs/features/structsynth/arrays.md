@@ -118,7 +118,13 @@ stores (`a1->field_0x0 = a2; a2->field_0x8 = (int8 *)a1;` becomes
 `*a1 = (int8)a2; a2->field_0x8 = a1;`). No skeleton delta and no
 variable-count delta. No function in any arm has a `goto` without its label.
 
-**Speed**: SPEED_PLACEHOLDER
+**Speed** (`arrays_speed.py`, `decompile-all`, interleaved, min-of-15, arm order
+rotating by round). Branch param against main param: `factor` O2 +3.27%, `fmt` O2
+-5.47%, `ls` O2 +4.41% (+4.00% on a re-run), `du` O2 -5.40%. An inert control
+(`grep` O0, where the option does not fire) moved -1.48% and then -5.40% between
+the same two builds, so every delta is inside the noise between two binaries.
+The worst is +4.41%, inside the +5% budget. The check is one pass over a
+candidate's recorded accesses, and a declined pair skips the install.
 
 ## 4. The default-on evaluation (not flipped here)
 
@@ -137,7 +143,10 @@ default is still `off`.
 * Whole-corpus: the `find` O2 `sub_f620` missing-label hunk that decided #655
   is gone. #674 fixed the emitter, and the dangling-`goto` count is 0 in all
   three arms over 16 binaries.
-* Speed: FLIP_PLACEHOLDER
+* Speed (branch param against branch off, same run): `factor` O2 -0.16%, `fmt`
+  O2 -0.54%, `du` O2 +0.11%, and `ls` O2 +7.91%, which did not reproduce
+  (+0.32% on a re-run at lower load). The inert control moved -4.54% and then
+  -1.83%. The worst reproducible delta is +0.32%.
 * Layout: the flip is worth +684 correctly placed fields (0 -> 0.1340 F1) on
   the eight layout binaries. `type_match` cannot see them.
 

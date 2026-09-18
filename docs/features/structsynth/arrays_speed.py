@@ -9,6 +9,7 @@ option). `after` vs `before` is the cost of the rule itself; `after` vs `off`
 is what flipping the default would cost. Every round runs every arm of every
 binary, the arm order rotating by round so no arm always runs first; the
 reported number is each arm's MIN, with the median printed for scale.
+`SPEED_CASES=ls O2,du O2` re-runs a subset.
 """
 import json
 import os
@@ -28,6 +29,8 @@ CASES = [
     ("du O2", f"{R}/O2/coreutils/stripped/du"),
     ("grep O0 (inert control)", f"{R}/O0/grep/stripped/grep"),
 ]
+if os.environ.get("SPEED_CASES"):
+    CASES = [c for c in CASES if c[0] in os.environ["SPEED_CASES"].split(",")]
 ARMS = {
     "off": (AFTER, []),
     "before": (BEFORE, ["--option", "structsynth", "param"]),

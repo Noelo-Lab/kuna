@@ -779,10 +779,12 @@ same-typed integer pairs the pass minted over 16 x86-64 binaries (coreutils
 rule declines 92, and DWARF calls 12 of those integer pointers, 29 `void *`,
 5 untyped and 46 structure pointers. For those 46, mostly `stat`'s leading
 `st_dev`/`st_ino`, `timespec` and `hash_entry`, the declined layout had the right
-offsets and sizes, and 20 correctly placed fields leave the layout-F1 instrument.
-They score the same on `type_match` either way, since a synthesized name never
-matches a DWARF name, while the 12 integer pointers are exactly the rows the
-option used to lose there.
+offsets and sizes; on the eight binaries the layout-F1 instrument covers, 20
+correctly placed fields leave it. They score the same on today's `type_match`
+either way, since a synthesized name never matches a DWARF name, while the 12
+integer pointers are exactly the rows the option used to lose there. A metric
+that credited any synthesized structure against a DWARF structure pointer would
+reverse that verdict (`docs/features/structsynth/arrays.md` section 5).
 
 At a conflicting offset the **widest** access wins. A field wider than an access
 renders as a cast of the field (`(uint4)w->b`); a field narrower than an access

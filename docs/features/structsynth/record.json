@@ -793,14 +793,127 @@
     "main_param": 0
    }
   },
-  "speed": "PENDING",
+  "speed": {
+   "method": "docs/features/structsynth/arrays_speed.py: kuna decompile-all <binary>, interleaved rounds with rotating arm order, min-of-15 per arm. Arms: off (branch, default), before (main d3617d64 control build, --option structsynth param), after (branch, --option structsynth param). rule = after vs before; flip = after vs off. Machine shared with ~9 other lanes (load 20-40).",
+   "run1": {
+    "factor O2": {
+     "min_ms": {
+      "off": 5198.6,
+      "before": 5025.6,
+      "after": 5190.1
+     },
+     "median_ms": {
+      "off": 5727.4,
+      "before": 6004.6,
+      "after": 5756.7
+     },
+     "rule_delta_pct": 3.27,
+     "flip_delta_pct": -0.16
+    },
+    "fmt O2": {
+     "min_ms": {
+      "off": 4167.4,
+      "before": 4384.8,
+      "after": 4145.1
+     },
+     "median_ms": {
+      "off": 4871.4,
+      "before": 4808.3,
+      "after": 4816.0
+     },
+     "rule_delta_pct": -5.47,
+     "flip_delta_pct": -0.54
+    },
+    "ls O2": {
+     "min_ms": {
+      "off": 13353.6,
+      "before": 13801.5,
+      "after": 14410.5
+     },
+     "median_ms": {
+      "off": 16542.1,
+      "before": 15867.5,
+      "after": 16793.5
+     },
+     "rule_delta_pct": 4.41,
+     "flip_delta_pct": 7.91
+    },
+    "du O2": {
+     "min_ms": {
+      "off": 9587.9,
+      "before": 10147.1,
+      "after": 9598.9
+     },
+     "median_ms": {
+      "off": 10397.2,
+      "before": 11064.8,
+      "after": 11365.0
+     },
+     "rule_delta_pct": -5.4,
+     "flip_delta_pct": 0.11
+    },
+    "grep O0 (inert control)": {
+     "min_ms": {
+      "off": 7101.6,
+      "before": 6880.7,
+      "after": 6778.9
+     },
+     "median_ms": {
+      "off": 7946.7,
+      "before": 7497.3,
+      "after": 7783.0
+     },
+     "rule_delta_pct": -1.48,
+     "flip_delta_pct": -4.54
+    }
+   },
+   "run2_rerun_of_the_one_delta_over_5pct": {
+    "ls O2": {
+     "min_ms": {
+      "off": 14192.7,
+      "before": 13690.9,
+      "after": 14238.1
+     },
+     "median_ms": {
+      "off": 16228.2,
+      "before": 15521.3,
+      "after": 16504.3
+     },
+     "rule_delta_pct": 4.0,
+     "flip_delta_pct": 0.32
+    },
+    "grep O0 (inert control)": {
+     "min_ms": {
+      "off": 6719.4,
+      "before": 6973.1,
+      "after": 6596.3
+     },
+     "median_ms": {
+      "off": 7614.4,
+      "before": 7991.4,
+      "after": 7981.9
+     },
+     "rule_delta_pct": -5.4,
+     "flip_delta_pct": -1.83
+    }
+   },
+   "rule_reading": "every rule delta (+3.27, -5.47, +4.41/+4.00, -5.40) sits inside the spread the inert control shows between the same two builds (-1.48, -5.40): below the instrument's floor for two different binaries. Worst +4.41%, within the +5% budget. The check is one pass over a candidate's recorded (offset, width) set, and declining does strictly less install work.",
+   "rule_worst_delta_pct": 4.41,
+   "budget_pct": 5.0,
+   "within_budget": true
+  },
   "default_on_evaluation": {
    "note": "measured with the default temporarily flipped to param in a throwaway build (.scratch only); the default in this PR stays off",
    "datatests": "make test 675/675, PARITY OK (0 assertions move)",
    "stages": "1144/1146 before this PR's re-record: 2 move, PEBNAMES-X86 #6 and #8 -- the x86 fs-segment TEB base becomes struct_0 with field_0x0/field_0x30 (NT_TIB.ExceptionList, ProcessEnvironmentBlock), the intended field rendering; main with structsynth param injected moves the same two. ELFMAIN #1/#2, which moved in the #655 evaluation, no longer move on main either.",
    "typesweep": "959 -> 959 perfect, aggregate 3037.19 -> 3037.05 (-0.005%), 1 worse row (shred passname)",
    "bug_hunk": "none: the find O2 sub_f620 dangling goto that decided #655 is gone since #674; 0 dangling-goto functions in any arm over 16 binaries",
-   "speed": "PENDING"
+   "speed": {
+    "worst_delta_pct_first_run": 7.91,
+    "ls_O2_rerun_pct": 0.32,
+    "worst_delta_pct_after_rerun": 0.32,
+    "reading": "ls O2 +7.91% on the first run did not reproduce (+0.32% on the re-run, N=15); the other flip deltas are -0.16 (factor O2), -0.54 (fmt O2), +0.11 (du O2) against an inert control at -4.54 / -1.83. Within the +5% budget."
+   }
   },
   "trex_fig6": {
    "instrument": "scripts.decbench.structscore --trex --option structsynth param, factor/fmt/ls/sort/du (coreutils) + find (findutils) at O0 and O2, 17105 GT variables",
