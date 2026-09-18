@@ -1,0 +1,453 @@
+# truncarg whole-corpus decompile-all diff (main d3617d64 vs fix/truncarg), kuna decompile-all <bin> --json
+# produced by classify_diff.py + breakdown.py; every changed line listed below as: binary function | before => after
+
+O0_coreutils_stripped_sort                    fns=  479 changed=   1 cast_sites=   1
+O0_gzip_stripped_gzip                         fns=  248 changed=   1 cast_sites=   1
+O2-noinline_coreutils_stripped_cat            fns=  192 changed=   1 cast_sites=   3
+O2_betaflight_stripped_betaflight_STM32F405-elf fns= 5797 changed= 206 cast_sites= 344
+O2_bzip2_stripped_bzip2                       fns=  114 changed=   0 cast_sites=   0
+O2_coreutils_stripped_fmt                     fns=  151 changed=   0 cast_sites=   0
+O2_crazyflie_stripped_cf2-elf                 fns= 1971 changed=  41 cast_sites=  64
+O2_dash_stripped_dash                         fns=  335 changed=   1 cast_sites=   2
+O2_diffutils_stripped_diff                    fns=  398 changed=   3 cast_sites=   5
+O2_findutils_stripped_find                    fns=  658 changed=   4 cast_sites=   7
+O2_grep_stripped_grep                         fns=  449 changed=   4 cast_sites=   5
+O2_kmod_stripped_kmod                         fns=  394 changed=   0 cast_sites=   0
+O2_openssh-portable_stripped_sftp-server      fns=  464 changed=   4 cast_sites=   5
+O2_tar_stripped_tar                           fns= 1125 changed=   5 cast_sites=  10
+TOTAL fns=12775 changed_fns=271 cast_sites=447 retyped_existing_casts=38 other=0
+
+## each new cast, by the callee's own printed parameter at that position
+arm32   argument beyond the callee definition's parameters   81
+arm32   callee declares the narrow parameter (redundant)     55
+arm32   callee reads a wider parameter (value fixed)         266
+arm32   indirect call                                        6
+x86-64  argument beyond the callee definition's parameters   2
+x86-64  callee declares the narrow parameter (redundant)     25
+x86-64  callee reads a wider parameter (value fixed)         12
+total 447 {"argument beyond the callee definition's parameters": 83, 'callee declares the narrow parameter (redundant)': 80, 'callee reads a wider parameter (value fixed)': 278, 'indirect call': 6}
+
+## every changed line
+O0_coreutils_stripped_sort sub_b536 | sub_b536(a0 + v4 * -0x20,a1 - v4,v5 + a2,a3); => sub_b536(a0 + v4 * -0x20,a1 - v4,v5 + a2,(unsigned char)a3);
+O0_gzip_stripped_gzip sub_b76a | *(unsigned short *)(a0 + (long)v6 * 4) = sub_3bed(v1,v2); => *(unsigned short *)(a0 + (long)v6 * 4) = sub_3bed((unsigned short)v1,v2);
+O2-noinline_coreutils_stripped_cat main | v21 &= sub_3130(v14,v13,v15,v20,v3,v1,v24,v25,v23,v22); => v21 &= sub_3130(v14,v13,v15,v20,v3,v1,(unsigned char)v24,v25,(unsigned char)v23,(unsigned char)v22);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800c158 | v1 = sub_802257c(v6,a1[2]); => v1 = sub_802257c(v6,(uint1)a1[2]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800c158 | v2 = sub_8022fb0(a1[3]); => v2 = sub_8022fb0((uint1)a1[3]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800c158 | sub_8022f20(v2,0x22,*a1 + '\x01'); => sub_8022f20(v2,0x22,(uint1)(*a1 + '\x01'));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800c158 | sub_8022b8c(a1[3]); => sub_8022b8c((uint1)a1[3]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800c1ec | v1 = sub_8022fb0(*(char *)(a0 + 0x121)); => v1 = sub_8022fb0((uint1)*(char *)(a0 + 0x121));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cec4 | else if (!sub_8022e58(v20,3,a2 + '\x01')) => else if (!sub_8022e58(v20,3,(uint1)(a2 + '\x01')))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cec4 | v8 = sub_8022fb0((char)a0[1]); => v8 = sub_8022fb0((uint1)a0[1]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800d3f8 | if ((dat_200181ff) && (v1 = sub_80657e0(0x40012000,4,a2,dat_200181ff,a3), v1)) => if ((dat_200181ff) && (v1 = sub_80657e0(0x40012000,4,a2,(uint1)dat_200181ff,a3), v1))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800d468 | sub_8065664(v4,*(char *)(v9 + 0x200088d9),v6,*(char *)(v9 + 0x200088dc)); => sub_8065664(v4,*(char *)(v9 + 0x200088d9),(uint1)v6,*(char *)(v9 + 0x200088dc));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800d468 | sub_806571c(v4,1,v6); => sub_806571c(v4,1,(uint1)v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800d468 | v8 = sub_800e4ac(2,v3,(int4)a0[v8 + 0x10]); => v8 = sub_800e4ac(2,(uint1)v3,(int4)a0[v8 + 0x10]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800d468 | if (!sub_8022e58(v5,6,v1)) => if (!sub_8022e58(v5,6,(uint1)v1))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800d694 | sub_8065df0(v4,0,a0 * 5,dat_20018201,a3); => sub_8065df0(v4,0,a0 * 5,(uint1)dat_20018201,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800d694 | sub_8065df0(v4,0,a0 * 5,dat_20018201,a3); => sub_8065df0(v4,0,a0 * 5,(uint1)dat_20018201,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800e30e | sub_8065fba(v10,1,(char)v9,v4,a3); => sub_8065fba(v10,1,(uint1)(char)v9,(uint1)v4,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800f488 | v1 = sub_8022fb0(*(char *)&v2[1]); => v1 = sub_8022fb0((uint1)*(char *)&v2[1]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801014c | v3 = sub_8022fb0(v2); => v3 = sub_8022fb0((uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801014c | v4 = sub_8024138(v2,4,v6); => v4 = sub_8024138((uint1)v2,4,v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8010670 | sub_80101d8(*(char *)(v5 + 0x20),1); => sub_80101d8((uint1)*(char *)(v5 + 0x20),1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80118a0 | dat_20003f10 = sub_8022fb0(*a0); => dat_20003f10 = sub_8022fb0((uint1)*a0);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80118a0 | if ((sub_8022f54(v1)) && (v2 = sub_802257c(dat_20003f04,a0[1]), v3 = 0, v2)) { => if ((sub_8022f54(v1)) && (v2 = sub_802257c(dat_20003f04,(uint1)a0[1]), v3 = 0, v2)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80118a0 | sub_8022b8c(*a0); => sub_8022b8c((uint1)*a0);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8011b78 | sub_8011b3c(2,0,v1 + -1); => sub_8011b3c(2,0,(uint2)(v1 + -1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8012678 | sub_80125dc(*(unsigned int *)(a0 + 0x24),v3,0x34,v1,a3); => sub_80125dc(*(unsigned int *)(a0 + 0x24),v3,0x34,(uint1)v1,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8012ed0 | dat_200040e8 = sub_8022fb0(dat_200083dd); => dat_200040e8 = sub_8022fb0((uint1)dat_200083dd);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8013d18 | dat_20006544 = sub_8022fb0(*(char *)(a0 + 1)); => dat_20006544 = sub_8022fb0((uint1)*(char *)(a0 + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80158b2 | v1 = sub_80155c8(a0,0,a2,*a0,a3); => v1 = sub_80155c8(a0,0,a2,(uint1)*a0,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8015e18 | *a1 = sub_8017b9a(v1); => *a1 = sub_8017b9a((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8015e18 | *a1 = sub_8017b9a(v1); => *a1 = sub_8017b9a((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8018910 | if ((v3) && ((!*(char *)(v5 * 6 + 0x2000ec3c) || (sub_80328f0(v3))))) => if ((v3) && ((!*(char *)(v5 * 6 + 0x2000ec3c) || (sub_80328f0((uint1)v3)))))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8018910 | if (((*(char *)(v6 + 0x200080c4)) && (v5 = sub_802406c(*(char *)(v6 + 0x200080c4)), v5)) && (*(uint1 *)(v5 + 6) & 2)) { => if (((*(char *)(v6 + 0x200080c4)) && (v5 = sub_802406c((uint1)*(char *)(v6 + 0x200080c4)), v5)) && (*(uint1 *)(v5 + 6) & 2)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8018bc6 | if ((v1) && ((!*(char *)(v5 * 6 + 0x2000ec3c) || (sub_80328f0(v1))))) => if ((v1) && ((!*(char *)(v5 * 6 + 0x2000ec3c) || (sub_80328f0((uint1)v1)))))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8018bc6 | if (((*(char *)(v6 + 0x200080c4)) && (v5 = sub_802406c(*(char *)(v6 + 0x200080c4)), v5)) && (*(uint1 *)(v5 + 6) & 2)) { => if (((*(char *)(v6 + 0x200080c4)) && (v5 = sub_802406c((uint1)*(char *)(v6 + 0x200080c4)), v5)) && (*(uint1 *)(v5 + 6) & 2)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80193bc | if (!sub_801611c(v5,&v3[3],(uint4)v1 - 6,(char)v2)) => if (!sub_801611c(v5,&v3[3],(uint4)v1 - 6,(uint1)v2))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8019f40 | (*v2)(a3,0,"# pin %c%02d: TIM%d CH%d%s (AF%d)",v6,a0 & 0xf,v4,(*(uint1 *)((int4)v3 + 5) >> 2) + 1,v5,*(char *)((int4)v3 + 7)); => (*v2)(a3,0,"# pin %c%02d: TIM%d CH%d%s (AF%d)",v6,a0 & 0xf,v4,(uint1)((*(uint1 *)((int4)v3 + 5) >> 2) + 1),v5,*(char *)((int4)v3 + 7));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801a430 | (*a5)(v2,0,"# pin %c%02d: DMA%d Stream %d Channel %d",v5,a0 & 0xf,v1 >> 0xc,(v1 & 0xfff) >> 8,(char)v1); => (*a5)(v2,0,"# pin %c%02d: DMA%d Stream %d Channel %d",v5,a0 & 0xf,v1 >> 0xc,(v1 & 0xfff) >> 8,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801b104 | sub_8019f40(v1,v7,v9,a0,0x801a531); => sub_8019f40((uint1)v1,(uint1)v7,v9,a0,0x801a531);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801b104 | sub_8019f40(v1,v2,v9,a0,0x801a567); => sub_8019f40((uint1)v1,(uint1)v2,v9,a0,0x801a567);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801b988 | sub_801a566(a0,v10,"resource %s %d %c%02d",v3,v6 + 1,(v1 >> 4) + 0x40,v4 & 0xf); => sub_801a566(a0,v10,"resource %s %d %c%02d",v3,v6 + 1,(uint1)((v1 >> 4) + 0x40),v4 & 0xf);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bab4 | sub_801a530(a0,v5,"mode_color %u %u %u",v4,v3,v2); => sub_801a530(a0,v5,"mode_color %u %u %u",v4,v3,(uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bab4 | sub_801a566(a0,v5,"mode_color %u %u %u",v4,v3,v1); => sub_801a566(a0,v5,"mode_color %u %u %u",v4,v3,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bab4 | sub_801a530(a0,v5,"mode_color %u %u %u",6,v4,v2); => sub_801a530(a0,v5,"mode_color %u %u %u",6,v4,(uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bab4 | sub_801a566(a0,v5,"mode_color %u %u %u",6,v4,v1); => sub_801a566(a0,v5,"mode_color %u %u %u",6,v4,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bab4 | sub_801a530(a0,v5,"mode_color %u %u %u",7,0,v2); => sub_801a530(a0,v5,"mode_color %u %u %u",7,0,(uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bab4 | sub_801a566(a0,v5,"mode_color %u %u %u",7,0,v1); => sub_801a566(a0,v5,"mode_color %u %u %u",7,0,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bed4 | v2 = sub_802401c(v1,*(char *)(v6 + 1)); => v2 = sub_802401c((uint1)v1,*(char *)(v6 + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bed4 | sub_801a430(v1,v2,v5,v8,a3,0x801a531); => sub_801a430((uint1)v1,v2,v5,v8,a3,0x801a531);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bed4 | sub_801a430(v1,v2,v7,v8,a3,0x801a567); => sub_801a430((uint1)v1,v2,v7,v8,a3,0x801a567);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801bfa8 | v5 = sub_802401c(v1,v6[1]); => v5 = sub_802401c((uint1)v1,v6[1]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801ce58 | sub_801cc38("Manufacturer 0x%x, %ukB, %02d/%04d, v%d.%d, \'",*(char *)((int4)v1 + 6),*v1 >> 1,(char)v1[5],*(unsigned short *)((int4)v1 + 0x12),(char)v1[4],*(cha => sub_801cc38("Manufacturer 0x%x, %ukB, %02d/%04d, v%d.%d, \'",*(char *)((int4)v1 + 6),*v1 >> 1,(uint1)v1[5],*(unsigned short *)((int4)v1 + 0x12),(uint1)v1[4],*(char *)((int4)v1 + 0x
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801d290 | while (v3 = sub_8010b98(v7), v3) { => while (v3 = sub_8010b98((uint1)v7), v3) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801d370 | sub_801d178("# AF%d: TIM%d CH%d%s",v1,v7,(*(uint1 *)((int4)v6 + 5) >> 2) + 1,v10); => sub_801d178("# AF%d: TIM%d CH%d%s",v1,v7,(uint1)((*(uint1 *)((int4)v6 + 5) >> 2) + 1),v10);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801d370 | sub_8019cb0(a0,"INVALID TIMER OPTION FOR %c%02d: \'%s\'",(v14 >> 4) + 0x40,v14 & 0xf,v4); => sub_8019cb0(a0,"INVALID TIMER OPTION FOR %c%02d: \'%s\'",(uint1)((v14 >> 4) + 0x40),v14 & 0xf,v4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801d370 | sub_8019cb0(a0,"INVALID ALTERNATE FUNCTION FOR %c%02d: \'%s\'",(v14 >> 4) + 0x40,v14 & 0xf,v4); => sub_8019cb0(a0,"INVALID ALTERNATE FUNCTION FOR %c%02d: \'%s\'",(uint1)((v14 >> 4) + 0x40),v14 & 0xf,v4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801d370 | sub_801d178("# timer %c%02d: changed from %s to %s",(v14 >> 4) + 0x40,v14 & 0xf,v16,v15); => sub_801d178("# timer %c%02d: changed from %s to %s",(uint1)((v14 >> 4) + 0x40),v14 & 0xf,v16,v15);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801d370 | sub_801d178("# timer %c%02d: no change: %s",(v14 >> 4) + 0x40,v14 & 0xf,v16); => sub_801d178("# timer %c%02d: no change: %s",(uint1)((v14 >> 4) + 0x40),v14 & 0xf,v16);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | if ((v1) && (v4 = sub_802406c(v1), v4)) { => if ((v1) && (v4 = sub_802406c((uint1)v1), v4)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | v7 = sub_8022fb0(v1); => v7 = sub_8022fb0((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | sub_802378c(v11[v5 * 4 + 3],(char)v11[v5 * 4 + 2]); => sub_802378c(v11[v5 * 4 + 3],(uint1)v11[v5 * 4 + 2]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | v8 = sub_80254cc((int4)(char)v11[v5 * 4],0,0,0,v11[v5 * 4 + 1],(char)v11[v5 * 4 + 2],0); => v8 = sub_80254cc((int4)(char)v11[v5 * 4],0,0,0,v11[v5 * 4 + 1],(uint1)v11[v5 * 4 + 2],0);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e2a0 | if ((v2) && (v5 = sub_802406c(v2), v5)) { => if ((v2) && (v5 = sub_802406c((uint1)v2), v5)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e2a0 | v6 = sub_8022fb0(v2); => v6 = sub_8022fb0((uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e2e6 | if ((v2) && (v3 = sub_802406c(v2), v3)) { => if ((v2) && (v3 = sub_802406c((uint1)v2), v3)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e2e6 | v6 = sub_8022fb0(v2); => v6 = sub_8022fb0((uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801ef5c | if (!sub_800a3ec("AERT12345678abcdefgh",v2)) { => if (!sub_800a3ec("AERT12345678abcdefgh",(uint1)v2)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801ef5c | if (sub_800a3ec(&v6[v4 + 1],v2)) { => if (sub_800a3ec(&v6[v4 + 1],(uint1)v2)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801fb34 | sub_801d178("%d",v1); => sub_801d178("%d",(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801fb34 | sub_801d178("LED %d: %s",v6,v3,v1); => sub_801d178("LED %d: %s",v6,v3,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801fbe2 | sub_801d178("%d",v1); => sub_801d178("%d",(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801fbe2 | sub_801d178("LED %d: %s",v3,v2,v1); => sub_801d178("LED %d: %s",v3,v2,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801fed8 | sub_801d178(" %6d %3d.%02d %6d %6d %6d %6d %6d",*(unsigned short *)(v7 + 0x10000b24),*(uint2 *)(v7 + 0x10000b26) >> 2,(*(uint2 *)(v7 + 0x10000b26) & 3) * 0x19,* => sub_801d178(" %6d %3d.%02d %6d %6d %6d %6d %6d",*(unsigned short *)(v7 + 0x10000b24),*(uint2 *)(v7 + 0x10000b26) >> 2,(uint2)((*(uint2 *)(v7 + 0x10000b26) & 3) * 0x19),*(unsigned s
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8020164 | sub_801d178("# %d: DMA%d Stream %d Channel %d",v3,v2 >> 0xc,(v2 & 0xfff) >> 8,(char)v2); => sub_801d178("# %d: DMA%d Stream %d Channel %d",v3,v2 >> 0xc,(v2 & 0xfff) >> 8,(uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8020164 | sub_801d178("# %d: DMA%d Stream %d Channel %d",v3,v2 >> 0xc,(v2 & 0xfff) >> 8,(char)v2); => sub_801d178("# %d: DMA%d Stream %d Channel %d",v3,v2 >> 0xc,(v2 & 0xfff) >> 8,(uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8020164 | sub_8019cb0(a0,"INVALID DMA OPTION FOR PIN %c%02d: \'%s\'",(v14 >> 4) + 0x40,v14 & 0xf,v9); => sub_8019cb0(a0,"INVALID DMA OPTION FOR PIN %c%02d: \'%s\'",(uint1)((v14 >> 4) + 0x40),v14 & 0xf,v9);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8020164 | sub_801d178("# dma pin %c%02d: changed from %s to %s",(v14 >> 4) + 0x40,v14 & 0xf,v16,v15); => sub_801d178("# dma pin %c%02d: changed from %s to %s",(uint1)((v14 >> 4) + 0x40),v14 & 0xf,v16,v15);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8020164 | sub_801d178("# dma %c%02d: no change: %s",(v14 >> 4) + 0x40,v14 & 0xf,v16); => sub_801d178("# dma %c%02d: no change: %s",(uint1)((v14 >> 4) + 0x40),v14 & 0xf,v16);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8020490 | sub_8022fb0(*v5); => sub_8022fb0((uint1)*v5);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8020490 | sub_801cf78(v9 & 0xff,v4 & 0xff,*v5); => sub_801cf78(v9 & 0xff,v4 & 0xff,(uint1)*v5);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8020a24 | sub_801d178("\r\n# resetting group %d to defaults",v3); => sub_801d178("\r\n# resetting group %d to defaults",(uint2)v3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8020a24 | sub_801a0f0(v3); => sub_801a0f0((uint2)v3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8021630 | sub_80210c4(v3,v6); => sub_80210c4(v3,(uint1)v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8021642 | sub_80210c4(v3,v6); => sub_80210c4(v3,(uint1)v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022120 | *(unsigned int *)(v4 * 0x28 + 0x20002648) = sub_8022fb0(v1); => *(unsigned int *)(v4 * 0x28 + 0x20002648) = sub_8022fb0((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022120 | *(unsigned int *)(v4 * 0x28 + 0x2000264c) = sub_8022fb0(v1); => *(unsigned int *)(v4 * 0x28 + 0x2000264c) = sub_8022fb0((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802222c | sub_800de44((int4)*(char *)(*a0 + 4),(char)a0[1],a1,a2); => sub_800de44((int4)*(char *)(*a0 + 4),(uint1)a0[1],a1,a2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022240 | v2 = sub_800dd20((int4)*(char *)(*a0 + 4),(char)a0[1],a1,1,0x2001821a); => v2 = sub_800dd20((int4)*(char *)(*a0 + 4),(uint1)a0[1],a1,1,0x2001821a);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802227c | sub_800df44((int4)*(char *)(*a0 + 4),(char)a0[1],a1); => sub_800df44((int4)*(char *)(*a0 + 4),(uint1)a0[1],a1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802229a | sub_800de74((int4)*(char *)(*a0 + 4),(char)a0[1],a1); => sub_800de74((int4)*(char *)(*a0 + 4),(uint1)a0[1],a1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022a98 | sub_8022f20(v1,0x41,a1 + '\x01'); => sub_8022f20(v1,0x41,(uint1)(a1 + '\x01'));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802306c | v1 = sub_8022fb0(*(char *)(a0 + v2)); => v1 = sub_8022fb0((uint1)*(char *)(a0 + v2));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802369c | sub_8022f20(v1,a1,a2 + '\x01'); => sub_8022f20(v1,a1,(uint1)(a2 + '\x01'));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8023a24 | if (sub_8022e58(v2,0xb,v1 + 1)) { => if (sub_8022e58(v2,0xb,(uint1)(v1 + 1))) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8023a24 | if (!sub_8022e58(v2,0xc,v1 + 1)) => if (!sub_8022e58(v2,0xc,(uint1)(v1 + 1)))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8023c7c | sub_8023bdc(a0,a0,a2,dat_200180c8,a3); => sub_8023bdc(a0,a0,a2,(uint2)dat_200180c8,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8023f88 | sub_8023f30(a0 + '\x01',0xfa); => sub_8023f30((uint1)(a0 + '\x01'),0xfa);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8025190 | sub_8023668(v2,sub_802ae70(v1)); => sub_8023668(v2,sub_802ae70((uint1)v1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80251b8 | if ((*(char *)(v1 + 0x2000c784) != '\xff') && (a1 = sub_80328a4(*(char *)(v1 + 0x2000c784),a1), a1)) { => if ((*(char *)(v1 + 0x2000c784) != '\xff') && (a1 = sub_80328a4((uint1)*(char *)(v1 + 0x2000c784),a1), a1)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8025cc4 | sub_802d414(v1,v11); => sub_802d414((uint1)v1,v11);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8025cc4 | sub_80179e4(a1,v1); => sub_80179e4(a1,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8025cc4 | sub_802d0d0(v1,v11); => sub_802d0d0((uint1)v1,v11);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8025cc4 | sub_80179e4(a1,v1); => sub_80179e4(a1,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80260ac | sub_802d414("\n2<=>?@ABCDEFG"[v2]); => sub_802d414((uint1)"\n2<=>?@ABCDEFG"[v2]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8026148 | sub_802d0d0("\nP2<=>?@ABCDEFG"[v2]); => sub_802d0d0((uint1)"\nP2<=>?@ABCDEFG"[v2]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80265f8 | sub_80179e4(a2,dat_2001051b); => sub_80179e4(a2,(uint1)dat_2001051b);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8027fa0 | sub_80179ee(a0,v8[0] + 2); => sub_80179ee(a0,(uint2)(v8[0] + 2));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802abac | if ((*(char *)(v5 + 0x20008124) != '\xff') && (v2 = sub_802aab0(*(char *)(v5 + 0x20008124)), v2)) { => if ((*(char *)(v5 + 0x20008124) != '\xff') && (v2 = sub_802aab0((uint1)*(char *)(v5 + 0x20008124)), v2)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802d4d4 | sub_8038250(dat_2000f02c); => sub_8038250((uint1)dat_2000f02c);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802d4d4 | sub_8053ae0(v8,v5); => sub_8053ae0(v8,(uint1)v5);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802d7a2 | sub_8053ae0(a5,v8); => sub_8053ae0(a5,(uint1)v8);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802e390 | v5 = sub_8024138(v2,0x58,v9); => v5 = sub_8024138((uint1)v2,0x58,v9);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802e390 | v11 = (v1 != v2) ? sub_8024138(v1,0x59,v9) : v5; // branch-flip => v11 = (v1 != v2) ? sub_8024138((uint1)v1,0x59,v9) : v5; // branch-flip
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802e390 | v6 = sub_8022fb0(v1); => v6 = sub_8022fb0((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802e390 | v7 = sub_8022fb0(v2); => v7 = sub_8022fb0((uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802e78a | (*v2)((char)(v1 >> 1),*(unsigned int *)(a0 + 0x30),v2,(v1 & 0x1ff) >> 1,a3); => (*v2)((uint1)(v1 >> 1),*(unsigned int *)(a0 + 0x30),v2,(v1 & 0x1ff) >> 1,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802f274 | if (((!sub_801960c(0x8000000)) && (dat_10000c58)) && (sub_80215f8(dat_10000c58), dat_200080c3)) => if (((!sub_801960c(0x8000000)) && (dat_10000c58)) && (sub_80215f8((uint1)dat_10000c58), dat_200080c3))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8030b18 | sub_801697e(v1 + 0x2000e664,a0 + 1,v1 + 0x2000e674,v1,a3); => sub_801697e(v1 + 0x2000e664,(uint2)(a0 + 1),v1 + 0x2000e674,v1,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80319ec | v4 = sub_80316b4(a0,v1,v7); => v4 = sub_80316b4(a0,(uint1)v1,v7);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80319ec | sub_803162c(v4,v1); => sub_803162c(v4,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8031f38 | v4 = sub_8031b40(a0,v2,(int4)((float4)(int8)v5 + ((float4)(int8)(int4)(uint4)*(uint2 *)(v9 * 10 + 0x2000e9c4) * (v11 - 1500.0)) / 500.0)); => v4 = sub_8031b40(a0,(uint1)v2,(int4)((float4)(int8)v5 + ((float4)(int8)(int4)(uint4)*(uint2 *)(v9 * 10 + 0x2000e9c4) * (v11 - 1500.0)) / 500.0));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8031f38 | v4 = sub_8031e90(v2,(v6 + -900) / (int4)(0x4b0 / v9) & 0xff); => v4 = sub_8031e90((uint1)v2,(v6 + -900) / (int4)(0x4b0 / v9) & 0xff);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8031f38 | sub_803162c(v4,v2); => sub_803162c(v4,(uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803b1d8 | if ((v1) && (!sub_8032628(v1 + '\x0f'))) => if ((v1) && (!sub_8032628((uint1)(v1 + '\x0f'))))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803b6a8 | sub_803ae74(v2,v1 & 0xff); => sub_803ae74((uint1)v2,v1 & 0xff);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803b6a8 | sub_803ae74(v2,v1 & 0xff); => sub_803ae74((uint1)v2,v1 & 0xff);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803b6a8 | sub_803aea0(v2); => sub_803aea0((uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803b6a8 | sub_8010120((float4)(int8)(int4)*(int2 *)(v1 * 2 + 0x2000f78c),v2); => sub_8010120((float4)(int8)(int4)*(int2 *)(v1 * 2 + 0x2000f78c),(uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803b6a8 | sub_803aeb8(v2); => sub_803aeb8((uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803b6c0 | sub_8010120((float4)(int8)(int4)*(int2 *)(v3 * 2 + 0x2000f78c),v4); => sub_8010120((float4)(int8)(int4)*(int2 *)(v3 * 2 + 0x2000f78c),(uint1)v4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803b6c0 | sub_803aeb8(v4); => sub_803aeb8((uint1)v4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bb64 | sub_803bb48(v9); => sub_803bb48((uint1)v9);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bb64 | sub_803bb48(v2); => sub_803bb48((uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bb64 | sub_803bb48(*v7); => sub_803bb48((uint1)*v7);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bb64 | sub_803bb48(v4); => sub_803bb48((uint1)v4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc02 | sub_803bb48(v12); => sub_803bb48((uint1)v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc02 | sub_803bb48(v1); => sub_803bb48((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc02 | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc82 | sub_803bb48(a5._1_1_); => sub_803bb48((uint1)a5._1_1_);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc82 | sub_803bb48(v1); => sub_803bb48((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc82 | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc90 | sub_803bb48(v13); => sub_803bb48((uint1)v13);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc90 | sub_803bb48(v14); => sub_803bb48((uint1)v14);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc90 | sub_803bb48(v1); => sub_803bb48((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bc90 | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bd1a | sub_803bb48(v12); => sub_803bb48((uint1)v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bd1a | sub_803bb48(v1); => sub_803bb48((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bd1a | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bd58 | sub_803bb48(v12); => sub_803bb48((uint1)v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bd58 | sub_803bb48(v1); => sub_803bb48((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bd58 | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bd78 | sub_803bb48(v12); => sub_803bb48((uint1)v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bd78 | sub_803bb48(v1); => sub_803bb48((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bd78 | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bdc6 | sub_803bb48(v12); => sub_803bb48((uint1)v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bdc6 | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803be32 | sub_803bb48(v12); => sub_803bb48((uint1)v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803be32 | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803be74 | sub_803bb48(v12); => sub_803bb48((uint1)v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803be74 | sub_803bb48(v1); => sub_803bb48((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803be74 | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bebe | sub_803bb48(v12); => sub_803bb48((uint1)v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bebe | sub_803bb48(v1); => sub_803bb48((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803bebe | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803befe | sub_803bb48(v12); => sub_803bb48((uint1)v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803befe | sub_803bb48(v1); => sub_803bb48((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803befe | sub_803bb48(*v6); => sub_803bb48((uint1)*v6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803c380 | sub_803c17c(*(unsigned int *)&a0[4],*a0); => sub_803c17c(*(unsigned int *)&a0[4],(uint1)*a0);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803c5f8 | sub_803c580(dat_2001826b); => sub_803c580((uint1)dat_2001826b);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803c9d0 | sub_803c580(*a0); => sub_803c580((uint1)*a0);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803e6a0 | dat_2000fd60 = sub_8022fb0(*(char *)(a0 + 0xc)); => dat_2000fd60 = sub_8022fb0((uint1)*(char *)(a0 + 0xc));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803e6a0 | dat_2000fd5c = sub_8022fb0(*(char *)(a0 + 0xb)); => dat_2000fd5c = sub_8022fb0((uint1)*(char *)(a0 + 0xb));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803eef8 | sub_80237c6(dat_2000fdac,0x2000fd68,dat_2001828f,0x2000fdac,a3); => sub_80237c6(dat_2000fdac,0x2000fd68,(uint1)dat_2001828f,0x2000fdac,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803f248 | sub_80237c6(dat_2000fe88,0x2000fe70,dat_20018293,0x2000fe88,a3); => sub_80237c6(dat_2000fe88,0x2000fe70,(uint1)dat_20018293,0x2000fe88,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803f270 | if (sub_805ce3c(v5,v1 + '\xfe',0)) { => if (sub_805ce3c(v5,(uint1)(v1 + '\xfe'),0)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803f990 | sub_80237c6(dat_2000ff64,0x2000ff4c,dat_20018299,0x2000ff64,a3); => sub_80237c6(dat_2000ff64,0x2000ff4c,(uint1)dat_20018299,0x2000ff64,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803fb1c | v4 = sub_8057c70(v4,dat_2000fbd1); => v4 = sub_8057c70(v4,(uint1)dat_2000fbd1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_803fb1c | v5 = sub_8022fb0(v3); => v5 = sub_8022fb0((uint1)v3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80439c4 | sub_80436bc(0,dat_2001052b,v1,dat_10002db4); => sub_80436bc(0,dat_2001052b,(uint2)v1,dat_10002db4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8046562 | sub_8046edc("H Product:Blackbox flight data recorder by Nicholas Sherlock\nH Data version:2\n"[dat_200107c8]); => sub_8046edc((uint1)"H Product:Blackbox flight data recorder by Nicholas Sherlock\nH Data version:2\n"[dat_200107c8]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80469f8 | sub_8046edc((char)a0[1]); => sub_8046edc((uint1)a0[1]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80469f8 | sub_8046edc((char)a0[2]); => sub_8046edc((uint1)a0[2]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8046fcc | sub_8046edc(*v1); => sub_8046edc((uint1)*v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804770c | v1 = sub_8017b9a(v1); => v1 = sub_8017b9a((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8047cde | sub_8022d2a(a0,dat_200182d3 - 1,v17 + ((int4)(int2)(uint2)dat_200182d0 * (int4)v5 & 0xffU) & 0xff,0,0x53); => sub_8022d2a(a0,(uint1)(dat_200182d3 - 1),v17 + ((int4)(int2)(uint2)dat_200182d0 * (int4)v5 & 0xffU) & 0xff,0,0x53);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8047cde | sub_8022d2a(a0,dat_200182d3 - 1,v17,0,v12); => sub_8022d2a(a0,(uint1)(dat_200182d3 - 1),v17,0,v12);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8047cde | sub_8022d2a(a0,dat_200182d3 - 1,v17 + dat_200182ca & 0xff,0,0x76); => sub_8022d2a(a0,(uint1)(dat_200182d3 - 1),v17 + dat_200182ca & 0xff,0,0x76);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8048104 | sub_8022dce(v3,dat_20013492); => sub_8022dce(v3,(uint1)dat_20013492);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8048958 | v1 = sub_8048258(dat_200108fc,dat_200182cf,a2,0x200108fc,a3); => v1 = sub_8048258(dat_200108fc,(uint1)dat_200182cf,a2,0x200108fc,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8048958 | v1 = sub_8048938(dat_200108fc,v2,dat_20000cdc); => v1 = sub_8048938(dat_200108fc,(uint1)v2,dat_20000cdc);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8048c48 | sub_80173f8(0x20010918,"---",a2,dat_200107e9); => sub_80173f8(0x20010918,"---",a2,(uint1)dat_200107e9);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8049670 | sub_802da34(v1 + '\xff',sub_80186e8()); => sub_802da34((uint1)(v1 + '\xff'),sub_80186e8());
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8049690 | sub_803aa38(v1 + '\xff',sub_80186dc()); => sub_803aa38((uint1)(v1 + '\xff'),sub_80186dc());
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804aa64 | sub_804cac0(sub_804c87c(),dat_2001833f,dat_2001833e); => sub_804cac0(sub_804c87c(),dat_2001833f,(uint1)dat_2001833e);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804aa64 | dat_20018186 = sub_804ca74(sub_804c87c(),dat_2001833f,dat_2001833e,0x2001833f,a3); => dat_20018186 = sub_804ca74(sub_804c87c(),dat_2001833f,(uint1)dat_2001833e,0x2001833f,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804aad8 | sub_804cac0(sub_804c87c(),dat_2001833f,dat_2001833e); => sub_804cac0(sub_804c87c(),(uint1)dat_2001833f,dat_2001833e);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804aad8 | dat_20018186 = sub_804ca74(sub_804c87c(),dat_2001833f,dat_2001833e,0x2001833f,a3); => dat_20018186 = sub_804ca74(sub_804c87c(),(uint1)dat_2001833f,dat_2001833e,0x2001833f,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804ab58 | sub_80173f8((char *)0x20001841,"%4d",dat_20001a8a); => sub_80173f8((char *)0x20001841,"%4d",(uint2)dat_20001a8a);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804adf4 | dat_20018188 = sub_804ca74(sub_804c87c(),dat_20001899,dat_20001898,0x20001899,a3); => dat_20018188 = sub_804ca74(sub_804c87c(),(uint1)dat_20001899,(uint1)dat_20001898,0x20001899,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804afd4 | s_200018a8[3] = *(char *)sub_804c98c(v1,v4); => s_200018a8[3] = *(char *)sub_804c98c(v1,(uint1)v4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b2b0 | sub_800de44((int4)*(char *)(*a0 + 4),(char)a0[1],0x80,a1); => sub_800de44((int4)*(char *)(*a0 + 4),(uint1)a0[1],0x80,a1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b2ec | sub_800de44((int4)*(char *)(*a0 + 4),(char)a0[1],0x40,a1); => sub_800de44((int4)*(char *)(*a0 + 4),(uint1)a0[1],0x40,a1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804bb1e | (*v2)((char)(v1 >> 1),*(unsigned int *)(a0 + 0x30),v2,(v1 & 0x1ff) >> 1,a3); => (*v2)((uint1)(v1 >> 1),*(unsigned int *)(a0 + 0x30),v2,(v1 & 0x1ff) >> 1,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804bd64 | sub_8022f20(sub_8022fb0(v1),3,0); => sub_8022f20(sub_8022fb0((uint1)v1),3,0);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804bd64 | sub_800f938(sub_8022fb0(v1),a1); => sub_800f938(sub_8022fb0((uint1)v1),a1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804c238 | v4 = sub_8024138(dat_20011dc8,3,0); => v4 = sub_8024138((uint1)dat_20011dc8,3,0);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804c3b4 | if ((v1) && (v4 = sub_8024138(v1,3,0), v4)) { => if ((v1) && (v4 = sub_8024138((uint1)v1,3,0), v4)) {
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804d5b0 | sub_804b384(dat_20012894,v5); => sub_804b384(dat_20012894,(uint1)v5);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804d884 | sub_804d6f8("AERT12345678abcdefgh"[a0]); => sub_804d6f8((uint1)"AERT12345678abcdefgh"[a0]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804d884 | sub_804d70c(a1 + '\xff',v1 & 0xff,(int4)((uint8)((int8)(v2 + -1000) * 0x66666667) >> 0x20),v1,a3); => sub_804d70c((uint1)(a1 + '\xff'),v1 & 0xff,(int4)((uint8)((int8)(v2 + -1000) * 0x66666667) >> 0x20),v1,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804dff8 | sub_804dfe8(a0,a1,a2,a3,*v1); => sub_804dfe8(a0,a1,a2,a3,(uint1)*v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804e3a6 | sub_804e394(a0,a1,a2,0,*v1); => sub_804e394(a0,a1,a2,0,(uint1)*v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804ed90 | sub_804eabc(a0,a1 + '\x01'); => sub_804eabc(a0,(uint1)(a1 + '\x01'));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804f2e4 | sub_804f2bc(&a0[2],a1 + '\xfe',v2,&v1); => sub_804f2bc(&a0[2],(uint1)(a1 + '\xfe'),v2,&v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804f354 | sub_804f2e4(a0,(char)a2 + '\x06',a3,a3,a3); => sub_804f2e4(a0,(uint1)((char)a2 + '\x06'),a3,a3,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804f808 | sub_804f2e4(&v1,(char)a2 + '\x06',0); => sub_804f2e4(&v1,(uint1)((char)a2 + '\x06'),0);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804fb00 | sub_804f378(0x20910016,a0,a0,dat_20012dc0,a3); => sub_804f378(0x20910016,a0,a0,(uint1)dat_20012dc0,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8050660 | sub_805047c(0x20012b94,0x20012bb8,dat_20018360,dat_20018363); => sub_805047c(0x20012b94,0x20012bb8,dat_20018360,(uint1)dat_20018363);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80506a6 | sub_805047c(0x20012b94,0x20012bb8,dat_20018360,dat_20018363); => sub_805047c(0x20012b94,0x20012bb8,dat_20018360,(uint1)dat_20018363);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8051670 | sub_804b4f0(dat_200130bc); => sub_804b4f0((uint1)dat_200130bc);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8051ecc | v4 = sub_8051e98(0x200019c8,v2); => v4 = sub_8051e98(0x200019c8,(uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8052868 | sub_802bc84((*(uint2 *)((uint4)dat_200019d1 * 2 + 0x20012ea4) >> 7) + 1); => sub_802bc84((uint2)((*(uint2 *)((uint4)dat_200019d1 * 2 + 0x20012ea4) >> 7) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8052ac4 | sub_8022cf2(dat_200134a4,a0 + '\xf3',a1,0,a2); => sub_8022cf2(dat_200134a4,(uint1)(a0 + '\xf3'),a1,0,a2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8052ac4 | sub_8022cf2(dat_200134a4,a0 + '\x05',a1,0,":"); => sub_8022cf2(dat_200134a4,(uint1)(a0 + '\x05'),a1,0,":");
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8052ac4 | sub_8022cf2(dat_200134a4,a0 + '\a',a1,0,a3); => sub_8022cf2(dat_200134a4,(uint1)(a0 + '\a'),a1,0,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8052b5c | sub_8022cf2(v2,v4 - ((uint4)sub_800a600("> CRASH FLIP <") >> 1) & 0xff,v1 + 1,0,"> CRASH FLIP <"); => sub_8022cf2(v2,v4 - ((uint4)sub_800a600("> CRASH FLIP <") >> 1) & 0xff,(uint1)(v1 + 1),0,"> CRASH FLIP <");
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8053f30 | sub_802bc84((*(uint2 *)(v4 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v4 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8053f6e | sub_802bc84((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8053fa6 | sub_802bc84((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8053fb8 | sub_802bc84((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8053fd0 | sub_802bc84((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8053fe6 | sub_802bc84((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8053ff6 | sub_802bc84((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805402c | sub_802bc84((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805404a | sub_802bc84((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054068 | sub_802bc84((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80540c8 | sub_802bc84((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054124 | sub_802bc84((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805413a | sub_802bc84((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v2 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054158 | sub_802bc84((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1); => sub_802bc84((uint2)((*(uint2 *)(v3 * 2 + 0x20013104) >> 8) + 1));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054944 | sub_8054838(a0,*(char *)(a0 + 1) + '\xfa',*(char *)(a0 + 2),0,3); => sub_8054838(a0,(uint1)(*(char *)(a0 + 1) + '\xfa'),*(char *)(a0 + 2),0,3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054944 | sub_8054838(a0,*(char *)(a0 + 1) + '\x06',*(char *)(a0 + 2),0,2); => sub_8054838(a0,(uint1)(*(char *)(a0 + 1) + '\x06'),*(char *)(a0 + 2),0,2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054944 | sub_8054838(a0,*(char *)(a0 + 1) + '\xf9',*(char *)(a0 + 2) + dat_200019d4,0,0x13); => sub_8054838(a0,(uint1)(*(char *)(a0 + 1) + '\xf9'),(uint1)(*(char *)(a0 + 2) + dat_200019d4),0,0x13);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054944 | sub_8054838(a0,*(char *)(a0 + 1) + '\a',*(char *)(a0 + 2) + dat_200019d4,0,0x13); => sub_8054838(a0,(uint1)(*(char *)(a0 + 1) + '\a'),(uint1)(*(char *)(a0 + 2) + dat_200019d4),0,0x13);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80549e0 | sub_80546f4(a0,v5,v1 + v4 + '\xff',0,*(unsigned int *)(a0 + 4)); => sub_80546f4(a0,v5,(uint1)(v1 + v4 + '\xff'),0,*(unsigned int *)(a0 + 4));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80549e0 | sub_80546f4(a0,v5,v1,0,*(unsigned int *)(a0 + 4)); => sub_80546f4(a0,v5,(uint1)v1,0,*(unsigned int *)(a0 + 4));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80549e0 | sub_8054838(a0,v5,dat_200019d5 + v1,0,0x16); => sub_8054838(a0,v5,(uint1)(dat_200019d5 + v1),0,0x16);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80549e0 | sub_8054838(a0,(v5 + v2 & 0xff) - 1 & 0xff,dat_200019d5 + v1,0,0x16); => sub_8054838(a0,(v5 + v2 & 0xff) - 1 & 0xff,(uint1)(dat_200019d5 + v1),0,0x16);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054b04 | sub_80546f4(a0,v1,v2 + '\x02',0,*(unsigned int *)(a0 + 4)); => sub_80546f4(a0,(uint1)v1,(uint1)(v2 + '\x02'),0,*(unsigned int *)(a0 + 4));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054b04 | sub_8054838(a0,v1 + '\x03',v2 + dat_20018396,0,0x16); => sub_8054838(a0,(uint1)(v1 + '\x03'),(uint1)(v2 + dat_20018396),0,0x16);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054c6c | sub_80546f4(a0,v1,v2 + dat_2001839b,0,v3); => sub_80546f4(a0,v1,(uint1)(v2 + dat_2001839b),0,v3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054d00 | sub_8054838(a0,v1 + v5,(uint4)v2 + v6 / 3 & 0xff,0,(v6 - (((uint4)((uint8)v6 * 0xaaaaaaab >> 0x20) & 0xfe) + v6 / 3) & 0xff) + 8 & 0xff); => sub_8054838(a0,(uint1)(v1 + v5),(uint4)v2 + v6 / 3 & 0xff,0,(v6 - (((uint4)((uint8)v6 * 0xaaaaaaab >> 0x20) & 0xfe) + v6 / 3) & 0xff) + 8 & 0xff);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8054e5c | *(char *)(a0 + v2) = sub_8017b9a(v1); => *(char *)(a0 + v2) = sub_8017b9a((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8055008 | sub_80546f4(a1,v2,v1 + dat_20018399,0,v5); => sub_80546f4(a1,v2,(uint1)(v1 + dat_20018399),0,v5);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80559f0 | v2 = sub_804c964(v1,v7[0]); => v2 = sub_804c964(v1,(uint1)v7[0]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80567f4 | sub_8022d96(a0,1,a2,dat_2001839d,a3); => sub_8022d96(a0,1,a2,(uint1)dat_2001839d,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8058214 | sub_8017a2e(a0,dat_20012e7c * 10); => sub_8017a2e(a0,(uint2)(dat_20012e7c * 10));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805866c | sub_80585e8(v2,v1); => sub_80585e8(v2,(uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805888c | sub_804e25c(a0[1],a0[2],a2,3,a3); => sub_804e25c((uint1)a0[1],(uint1)a0[2],a2,3,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80588d4 | sub_8057fbe(v5,dat_20013718,dat_200183a5,dat_200183a4); => sub_8057fbe(v5,dat_20013718,dat_200183a5,(uint1)dat_200183a4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80590ac | sub_80179e4(a0,v1 | 0x38U | v12 | v13 | v14); => sub_80179e4(a0,(uint1)(v1 | 0x38U | v12 | v13 | v14));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8059344 | sub_80179ee(v3,v2); => sub_80179ee(v3,(uint2)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8059404 | sub_80179e4(a0,0xc,v2,*(char *)(v2 + 0x2001380c),a3); => sub_80179e4(a0,0xc,v2,(uint1)*(char *)(v2 + 0x2001380c),a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8059660 | sub_8040470(a0,dat_200183b7); => sub_8040470(a0,(uint1)dat_200183b7);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8059bb4 | sub_80598f4(0x39,(int4)(int2)v2,v4,dat_200136fb,a3); => sub_80598f4(0x39,(int4)(int2)v2,v4,(uint1)dat_200136fb,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8059e28 | sub_80598f4(0x17,(int2)(v3 % 0x3c << 8),v1,v3 * -0x77777777,a3); => sub_80598f4(0x17,(uint2)(v3 % 0x3c << 8),v1,v3 * -0x77777777,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805a588 | sub_805a574(v1,v3); => sub_805a574((uint1)v1,v3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805a588 | sub_805a574(v1,0x200183c1); => sub_805a574((uint1)v1,0x200183c1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805ab50 | sub_800a964(v1 + 9 + a0,a2[1],v2); => sub_800a964(v1 + 9 + a0,a2[1],(uint1)v2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805ae40 | v1 = sub_803cf58(a0,v2 + 8); => v1 = sub_803cf58(a0,(uint1)(v2 + 8));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805bf54 | sub_805be54(v3 | dat_20012e7e << 2); => sub_805be54((uint1)(v3 | dat_20012e7e << 2));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805bfc8 | sub_805be54(v2 | v3 << 2); => sub_805be54((uint1)(v2 | v3 << 2));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805c9c8 | sub_805c44a(0,200,0x20013b98,dat_20012e58,v2,0,v5,dat_20012e58,dat_20012e5c,dat_20012e60 * 10,0xffff,0xffff,dat_20012e7a,dat_20012e7c * 10,dat_20012e7e); => sub_805c44a(0,200,0x20013b98,dat_20012e58,v2,0,v5,dat_20012e58,dat_20012e5c,dat_20012e60 * 10,0xffff,0xffff,dat_20012e7a,(uint2)(dat_20012e7c * 10),dat_20012e7e);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805cfb0 | sub_80179e4(v2,v6 | dat_200183da << 5); => sub_80179e4(v2,(uint1)(v6 | dat_200183da << 5));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805cfb0 | sub_80179e4(v2,(char)dat_20013cc4); => sub_80179e4(v2,(uint1)dat_20013cc4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805cfb0 | sub_80179e4(v2,(char)dat_20013cc4); => sub_80179e4(v2,(uint1)dat_20013cc4);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805dea0 | sub_804cac0(a0,v4,v5); => sub_804cac0(a0,(uint1)v4,(uint1)v5);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805e01c | v2 = sub_804ca74(v1,dat_20013fd4,dat_20013fd5); => v2 = sub_804ca74(v1,(uint1)dat_20013fd4,dat_20013fd5);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805fa34 | dat_200181d4 = sub_804ca74(sub_804c87c(),dat_20001ad9,dat_20001ad8,0x20001ad9,a3); => dat_200181d4 = sub_804ca74(sub_804c87c(),(uint1)dat_20001ad9,(uint1)dat_20001ad8,0x20001ad9,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805fbf8 | s_20001adc[3] = *(char *)sub_804c98c(v1,v3); => s_20001adc[3] = *(char *)sub_804c98c(v1,(uint1)v3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_805fdd4 | sub_8021fe4(v2,0x6b,0x80,v1,a3); => sub_8021fe4(v2,0x6b,0x80,(uint1)v1,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8060028 | v1 = sub_8022fb0(*(char *)(a0 + 0x121)); => v1 = sub_8022fb0((uint1)*(char *)(a0 + 0x121));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80606dc | v1 = sub_8022fb0(*(char *)(a0 + 0x121)); => v1 = sub_8022fb0((uint1)*(char *)(a0 + 0x121));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80609b8 | sub_8022914(v4,0xd,(char)(v7 >> 0x10)); => sub_8022914(v4,0xd,(uint1)(v7 >> 0x10));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80609b8 | sub_8022914(v4,4,(char)(v7 >> 0x10)); => sub_8022914(v4,4,(uint1)(v7 >> 0x10));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8060d48 | v1 = sub_8022fb0(*(char *)(a0 + 0x121)); => v1 = sub_8022fb0((uint1)*(char *)(a0 + 0x121));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8063a90 | sub_8063a80(v1,0x25,(char)a0[1]); => sub_8063a80(v1,0x25,(uint1)a0[1]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8064124 | v1 = sub_8022fb0(*(char *)(a0 + 0xf4)); => v1 = sub_8022fb0((uint1)*(char *)(a0 + 0xf4));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80647e0 | sub_8022acc(*(char *)(a0 + 1),v1,1,*(char *)(a0 + 3),a3); => sub_8022acc(*(char *)(a0 + 1),v1,1,(uint1)*(char *)(a0 + 3),a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8064dec | if ((!a0[1]) || (v2 = sub_802257c(dat_20001b44,a0[2]), v4 = dat_20001b44, !v2)) => if ((!a0[1]) || (v2 = sub_802257c(dat_20001b44,(uint1)a0[2]), v4 = dat_20001b44, !v2))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8064dec | *(unsigned int *)(v4 + 8) = sub_8022fb0(v1); => *(unsigned int *)(v4 + 8) = sub_8022fb0((uint1)v1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8066720 | sub_8066040(a0,a1[1],a1[2],a1[4],a3); => sub_8066040(a0,(uint2)a1[1],(uint2)a1[2],(uint2)a1[4],a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8066720 | sub_80666c0(a0,a1[3]); => sub_80666c0(a0,(uint2)a1[3]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8066720 | sub_8066132(a0,a1[1],a1[2],a1[4]); => sub_8066132(a0,(uint2)a1[1],(uint2)a1[2],(uint2)a1[4]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8066720 | sub_8066706(a0,a1[3]); => sub_8066706(a0,(uint2)a1[3]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8066720 | sub_80660e2(a0,a1[1],a1[2],a1[4]); => sub_80660e2(a0,(uint2)a1[1],(uint2)a1[2],(uint2)a1[4]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8066720 | sub_80666f0(a0,a1[3]); => sub_80666f0(a0,(uint2)a1[3]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8066720 | sub_806608c(a0,a1[1],a1[2],a1[4]); => sub_806608c(a0,(uint2)a1[1],(uint2)a1[2],(uint2)a1[4]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8066720 | sub_80666d6(a0,a1[3]); => sub_80666d6(a0,(uint2)a1[3]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80680a4 | sub_8067490(a0,v2,a2,*(char *)(a0 + 0x112),a3); => sub_8067490(a0,v2,a2,(uint1)*(char *)(a0 + 0x112),a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806829c | sub_8067f8c(a0,a1,v2,v3,a3); => sub_8067f8c(a0,a1,v2,(uint1)v3,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806829c | sub_8067f8c(a0,a1,v2,v3,a3); => sub_8067f8c(a0,a1,v2,(uint1)v3,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806829c | sub_8067f8c(a0,a1,v2,v3,a3); => sub_8067f8c(a0,a1,v2,(uint1)v3,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8068b60 | sub_80672a0(a0,(char)*(unsigned short *)&a1[4],0x40,2); => sub_80672a0(a0,(uint1)(char)*(unsigned short *)&a1[4],0x40,2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8068b60 | sub_80672a0(a0,(char)*(unsigned short *)&a1[4],0x40,2); => sub_80672a0(a0,(uint1)(char)*(unsigned short *)&a1[4],0x40,2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8069404 | sub_803dd90(dat_200181e2 << 3,3,a2,0x200181e2,a3); => sub_803dd90((uint2)(dat_200181e2 << 3),3,a2,0x200181e2,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8069490 | dat_20016518 = sub_8022fb0(dat_200082a7); => dat_20016518 = sub_8022fb0((uint1)dat_200082a7);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8069490 | dat_2001651c = sub_8022fb0(dat_200082a6); => dat_2001651c = sub_8022fb0((uint1)dat_200082a6);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8069490 | dat_20016514 = sub_8022fb0(dat_200082a8); => dat_20016514 = sub_8022fb0((uint1)dat_200082a8);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8069fe4 | sub_8069404(v2[0x12]); => sub_8069404((uint1)v2[0x12]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806a0f2 | sub_806ec26(0x20016884,dat_20016884 + '\x01'); => sub_806ec26(0x20016884,(uint1)(dat_20016884 + '\x01'));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806a840 | sub_806ec26(0x200168ec,dat_200168ec + '\x01'); => sub_806ec26(0x200168ec,(uint1)(dat_200168ec + '\x01'));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806abd4 | sub_8069404(a0[0xd]); => sub_8069404((uint1)a0[0xd]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806ac40 | sub_806ec44(0xc,dat_20018435,v2,(int4)dat_20018435,a3); => sub_806ec44(0xc,(uint1)dat_20018435,v2,(int4)dat_20018435,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806ad1c | sub_806ec44(0xc,dat_20018436); => sub_806ec44(0xc,(uint1)dat_20018436);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806adb8 | sub_806ec44(0xc,dat_20018435); => sub_806ec44(0xc,(uint1)dat_20018435);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806ae3c | sub_806ec44(10,dat_20018439 * '\x06' + '\x10'); => sub_806ec44(10,(uint1)(dat_20018439 * '\x06' + '\x10'));
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806b5d8 | sub_806ec44(0xc,dat_2001843b); => sub_806ec44(0xc,(uint1)dat_2001843b);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806b688 | sub_806ec44(0xc,dat_2001843c); => sub_806ec44(0xc,(uint1)dat_2001843c);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806b714 | sub_806ec44(0xc,dat_2001843b); => sub_806ec44(0xc,(uint1)dat_2001843b);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806d774 | sub_806ea88(v1,(uint4)dat_20001d4b,dat_20001d48,0x20001d48,a3); => sub_806ea88(v1,(uint4)dat_20001d4b,(uint1)dat_20001d48,0x20001d48,a3);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806df4c | dat_20016e44 = sub_8022fb0(dat_200082bc); => dat_20016e44 = sub_8022fb0((uint1)dat_200082bc);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806df4c | dat_20016e48 = sub_8022fb0(dat_200082bd); => dat_20016e48 = sub_8022fb0((uint1)dat_200082bd);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806e174 | sub_803e750(dat_20018443); => sub_803e750((uint1)dat_20018443);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806ea48 | if (!sub_8058148(a0 + 5,8,a2,v1,a3)) => if (!sub_8058148(a0 + 5,8,a2,(uint1)v1,a3))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_806eb38 | *a0 = sub_8058a68(0x200171f0,0x29,a2,dat_2001844b,a3); => *a0 = sub_8058a68(0x200171f0,0x29,a2,(uint1)dat_2001844b,a3);
+O2_crazyflie_stripped_cf2-elf sub_8008c0c | v11 = sub_80089d8(*(char *)(v6 + -5),*(char *)(v6 + -4)); => v11 = sub_80089d8((unsigned char)*(char *)(v6 + -5),*(char *)(v6 + -4));
+O2_crazyflie_stripped_cf2-elf sub_800c938 | sub_8039ecc(v16,v9,*(short *)&v15[(v8 + 0x14) * 2],0); => sub_8039ecc(v16,v9,(unsigned short)*(short *)&v15[(v8 + 0x14) * 2],0);
+O2_crazyflie_stripped_cf2-elf sub_800cbe4 | sub_8039e00(v14,v1,*(int *)&v8[2],0,v7 & 0x7f); => sub_8039e00(v14,(unsigned char)v1,*(int *)&v8[2],0,v7 & 0x7f);
+O2_crazyflie_stripped_cf2-elf sub_800cbe4 | sub_8039ecc(v14,v1,v2,0); => sub_8039ecc(v14,(unsigned char)v1,(unsigned short)v2,0);
+O2_crazyflie_stripped_cf2-elf sub_800dee8 | sub_800de8c(v11,v13); => sub_800de8c(v11,(unsigned short)v13);
+O2_crazyflie_stripped_cf2-elf sub_8010838 | sub_801ce60(v4,(char)v3); => sub_801ce60(v4,(unsigned char)v3);
+O2_crazyflie_stripped_cf2-elf sub_8010c70 | sub_8010c04(v7 & 0xff,v6,v2,0,a3); => sub_8010c04(v7 & 0xff,(unsigned char)v6,v2,0,a3);
+O2_crazyflie_stripped_cf2-elf sub_8011060 | sub_80103ac(0x200006b8,dat_200034c2,(short)a1 + 9,0x200034e0); // tail-call => sub_80103ac(0x200006b8,dat_200034c2,(unsigned short)((short)a1 + 9),0x200034e0); // tail-call
+O2_crazyflie_stripped_cf2-elf sub_8011674 | sub_80367a0("id < NBR_OF_MOTORS","../src/drivers/src/motors.c",0x1ec,dat_20001ed0,a3); => sub_80367a0("id < NBR_OF_MOTORS","../src/drivers/src/motors.c",0x1ec,(unsigned char)dat_20001ed0,a3);
+O2_crazyflie_stripped_cf2-elf sub_8012366 | sub_80102a0(dat_2000346c,dat_200034c5,a0 * '\x03' + '\'',7,a1); => sub_80102a0(dat_2000346c,dat_200034c5,(unsigned char)(a0 * '\x03' + '\''),7,a1);
+O2_crazyflie_stripped_cf2-elf sub_801239a | sub_801031c(dat_2000346c,dat_200034c5,a0 * '\x03' + '\'',3,4,a1); => sub_801031c(dat_2000346c,dat_200034c5,(unsigned char)(a0 * '\x03' + '\''),3,4,a1);
+O2_crazyflie_stripped_cf2-elf sub_80168dc | sub_8010ec4((char)v2[3],*(char *)(v5 + v3 * 8)); => sub_8010ec4((unsigned char)(char)v2[3],*(char *)(v5 + v3 * 8));
+O2_crazyflie_stripped_cf2-elf sub_80168dc | sub_80168a4((char)v2[3]); => sub_80168a4((unsigned char)(char)v2[3]);
+O2_crazyflie_stripped_cf2-elf sub_8017020 | v2 = sub_8016dc4(0x23,(char)dat_20003bdb + '\x05'); => v2 = sub_8016dc4(0x23,(unsigned char)((char)dat_20003bdb + '\x05'));
+O2_crazyflie_stripped_cf2-elf sub_8017020 | if (!sub_8016dc4(0x23,v1 + '\x05')) { => if (!sub_8016dc4(0x23,(unsigned char)(v1 + '\x05'))) {
+O2_crazyflie_stripped_cf2-elf sub_80177ec | sub_80072ac(&Stack00000004,v2 + 4,v4); => sub_80072ac(&Stack00000004,v2 + 4,(unsigned char)v4);
+O2_crazyflie_stripped_cf2-elf sub_801a288 | sub_801dc08(a0,0x200062b4,*(short *)&a1[6],(unsigned int)v1 << 0x18,a3); => sub_801dc08(a0,0x200062b4,(unsigned short)*(short *)&a1[6],(unsigned int)v1 << 0x18,a3);
+O2_crazyflie_stripped_cf2-elf sub_801aa2c | if (!(sub_800e67c(v1) & 1)) { => if (!(sub_800e67c((unsigned char)v1) & 1)) {
+O2_crazyflie_stripped_cf2-elf sub_801ac5c | v2 = sub_800e698(a0[1],&a0[0x38],*(unsigned int *)&a0[0x34],1,a3); => v2 = sub_800e698((unsigned char)a0[1],&a0[0x38],*(unsigned int *)&a0[0x34],1,a3);
+O2_crazyflie_stripped_cf2-elf sub_801ac5c | sub_800e698(a0[1],&a0[0x38],*(unsigned int *)&a0[0x20] + *(int *)&a0[0x34],1); => sub_800e698((unsigned char)a0[1],&a0[0x38],*(unsigned int *)&a0[0x20] + *(int *)&a0[0x34],1);
+O2_crazyflie_stripped_cf2-elf sub_801ac5c | sub_800e698(a0[1],&a0[0x38],*(int *)&a0[0x24] + 1,1,a3); => sub_800e698((unsigned char)a0[1],&a0[0x38],*(int *)&a0[0x24] + 1,1,a3);
+O2_crazyflie_stripped_cf2-elf sub_801ac5c | return sub_800e6a8(v1,0) != 0; => return sub_800e6a8((unsigned char)v1,0) != 0;
+O2_crazyflie_stripped_cf2-elf sub_801b274 | v8 = sub_801c620(v4); => v8 = sub_801c620((unsigned short)v4);
+O2_crazyflie_stripped_cf2-elf sub_801bb4c | if ((*v9) && (v4 = sub_800e67c(v9[1]), 0 <= v4 << 0x1f)) { => if ((*v9) && (v4 = sub_800e67c((unsigned char)v9[1]), 0 <= v4 << 0x1f)) {
+O2_crazyflie_stripped_cf2-elf sub_801bdd0 | if (!sub_800e688(v1,&a0[10],v2,1)) => if (!sub_800e688((unsigned char)v1,&a0[10],v2,1))
+O2_crazyflie_stripped_cf2-elf sub_801c34c | if ((((!v7) || (!*v7)) || ((short)a0[1] != *(short *)&v7[6])) || (v1 = v7[1], (int)(sub_800e67c(v1) << 0x1f) <= -1)) => if ((((!v7) || (!*v7)) || ((short)a0[1] != *(short *)&v7[6])) || (v1 = v7[1], (int)(sub_800e67c((unsigned char)v1) << 0x1f) <= -1))
+O2_crazyflie_stripped_cf2-elf sub_801f298 | v1 = sub_8020ab4(a1,a2,a3,*(short *)(a0 + 0x15e),a0 + 0x184,a0 + 0x19c); => v1 = sub_8020ab4(a1,a2,a3,(unsigned short)*(short *)(a0 + 0x15e),a0 + 0x184,a0 + 0x19c);
+O2_crazyflie_stripped_cf2-elf sub_801f2d0 | v3 = sub_80209f8(*(short *)(a0 + 0x15e),*(char *)(a0 + 0x1a2)); => v3 = sub_80209f8((unsigned short)*(short *)(a0 + 0x15e),*(char *)(a0 + 0x1a2));
+O2_crazyflie_stripped_cf2-elf sub_801f2d0 | *a2 = sub_8020a98(v2 << 8 | v2 >> 8,v3); => *a2 = sub_8020a98((unsigned short)(v2 << 8 | v2 >> 8),v3);
+O2_crazyflie_stripped_cf2-elf sub_801f2d0 | *a3 = sub_8020a98(v2 << 8 | v2 >> 8,v3); => *a3 = sub_8020a98((unsigned short)(v2 << 8 | v2 >> 8),v3);
+O2_crazyflie_stripped_cf2-elf sub_801f438 | v1 = sub_8020ab4(a3,a4,a5,*(short *)(a0 + 0x15e),v4,v5); => v1 = sub_8020ab4(a3,a4,a5,(unsigned short)*(short *)(a0 + 0x15e),v4,v5);
+O2_crazyflie_stripped_cf2-elf sub_80249d8 | sub_8011674(0,v5); => sub_8011674(0,(unsigned short)v5);
+O2_crazyflie_stripped_cf2-elf sub_80249d8 | sub_8011674(1,v5); => sub_8011674(1,(unsigned short)v5);
+O2_crazyflie_stripped_cf2-elf sub_80249d8 | sub_8011674(2,v5); => sub_8011674(2,(unsigned short)v5);
+O2_crazyflie_stripped_cf2-elf sub_80249d8 | sub_8011674(3,v5); => sub_8011674(3,(unsigned short)v5);
+O2_crazyflie_stripped_cf2-elf sub_8024c98 | sub_8011674(0,v3); => sub_8011674(0,(unsigned short)v3);
+O2_crazyflie_stripped_cf2-elf sub_8024c98 | sub_8011674(1,v3); => sub_8011674(1,(unsigned short)v3);
+O2_crazyflie_stripped_cf2-elf sub_8024c98 | sub_8011674(2,v3); => sub_8011674(2,(unsigned short)v3);
+O2_crazyflie_stripped_cf2-elf sub_8024c98 | sub_8011674(3,v3); => sub_8011674(3,(unsigned short)v3);
+O2_crazyflie_stripped_cf2-elf sub_802656c | if (sub_80264d8(v2 - v3,v10)) { => if (sub_80264d8((unsigned char)(v2 - v3),v10)) {
+O2_crazyflie_stripped_cf2-elf sub_802656c | v7 = sub_8026514(v9 - (v6 & 0xff) & 0xff,v10[0],dat_20008848 + '\xfb',0x2000884f); => v7 = sub_8026514(v9 - (v6 & 0xff) & 0xff,v10[0],(unsigned char)(dat_20008848 + '\xfb'),0x2000884f);
+O2_crazyflie_stripped_cf2-elf sub_802656c | v7 = sub_8026440(v9,v10[0],dat_20008848 + '\xfb',0x2000884f); => v7 = sub_8026440(v9,v10[0],(unsigned char)(dat_20008848 + '\xfb'),0x2000884f);
+O2_crazyflie_stripped_cf2-elf sub_802656c | v7 = sub_8026498(v9 - (v6 & 0xff) & 0xff,v10[0],dat_2000884f,0x20008850); => v7 = sub_8026498(v9 - (v6 & 0xff) & 0xff,v10[0],(unsigned char)dat_2000884f,0x20008850);
+O2_crazyflie_stripped_cf2-elf sub_802656c | v7 = sub_80263e8(v9,v10[0],dat_2000884f,0x20008850); => v7 = sub_80263e8(v9,v10[0],(unsigned char)dat_2000884f,0x20008850);
+O2_crazyflie_stripped_cf2-elf sub_80267e4 | sub_8037494(0x8022621,"MSP Request has invalid preamble %d %d\n",(char)*a0,*(char *)((int)a0 + 1)); => sub_8037494(0x8022621,"MSP Request has invalid preamble %d %d\n",(unsigned char)*a0,*(char *)((int)a0 + 1));
+O2_crazyflie_stripped_cf2-elf sub_80267e4 | (**(void **)&a0[0x8e])(&a0[0xc],a0[0x8c]); => (**(void **)&a0[0x8e])(&a0[0xc],(unsigned short)a0[0x8c]);
+O2_crazyflie_stripped_cf2-elf sub_8029f88 | sub_8029ef8(*(unsigned int *)&a0[4],*a0); => sub_8029ef8(*(unsigned int *)&a0[4],(unsigned char)*a0);
+O2_crazyflie_stripped_cf2-elf sub_802a0d8 | return sub_8029de0(v3,(char)v2); // tail-call => return sub_8029de0(v3,(unsigned char)v2); // tail-call
+O2_crazyflie_stripped_cf2-elf sub_802a198 | return sub_8029de0(v2,(char)v1); // tail-call => return sub_8029de0(v2,(unsigned char)v1); // tail-call
+O2_crazyflie_stripped_cf2-elf sub_802a854 | sub_802c408((char)*v11); => sub_802c408((unsigned char)*v11);
+O2_crazyflie_stripped_cf2-elf sub_802a8a8 | sub_802c408((char)*v11); => sub_802c408((unsigned char)*v11);
+O2_crazyflie_stripped_cf2-elf sub_802aa60 | sub_802c408((char)*v11); => sub_802c408((unsigned char)*v11);
+O2_crazyflie_stripped_cf2-elf sub_802aafc | sub_802c408((char)*v16); => sub_802c408((unsigned char)*v16);
+O2_crazyflie_stripped_cf2-elf sub_802f5d0 | sub_80308b8(dat_20001199); // tail-call => sub_80308b8((unsigned char)dat_20001199); // tail-call
+O2_crazyflie_stripped_cf2-elf sub_80360e4 | sub_80072ac(&a0[8],0x2000c8e8,(unsigned short)dat_2000c8e5 - 2,a3); // tail-call => sub_80072ac(&a0[8],0x2000c8e8,(unsigned short)((unsigned short)dat_2000c8e5 - 2),a3); // tail-call
+O2_crazyflie_stripped_cf2-elf sub_803625c | sub_80072ac(&a0[2],0x2000ca9d,(unsigned int)dat_2000ca9a - 1,dat_2000ca9c,a3); => sub_80072ac(&a0[2],0x2000ca9d,(unsigned int)dat_2000ca9a - 1,(unsigned char)dat_2000ca9c,a3);
+O2_crazyflie_stripped_cf2-elf sub_8036300 | sub_8037494(0x8022621,v1,0x2000cb08,dat_2000cb01); => sub_8037494(0x8022621,v1,0x2000cb08,(unsigned char)dat_2000cb01);
+O2_crazyflie_stripped_cf2-elf sub_8036300 | sub_8037494(0x8022621,"CPX: Not handling function [0x%02X] from [0x%02X]\n",dat_2000cb03,dat_2000cb01); => sub_8037494(0x8022621,"CPX: Not handling function [0x%02X] from [0x%02X]\n",dat_2000cb03,(unsigned char)dat_2000cb01);
+O2_crazyflie_stripped_cf2-elf sub_8036300 | sub_8037494(0x8022621,"CPX: WiFi connected to ip: %u.%u.%u.%u\n",dat_2000cb09,dat_2000cb0a,dat_2000cb0b,dat_2000cb0c); => sub_8037494(0x8022621,"CPX: WiFi connected to ip: %u.%u.%u.%u\n",(unsigned char)dat_2000cb09,dat_2000cb0a,dat_2000cb0b,dat_2000cb0c);
+O2_crazyflie_stripped_cf2-elf sub_803666c | sub_80072ac(a1,&a0[2],v2 + -2,v1,a3); => sub_80072ac(a1,&a0[2],v2 + -2,(unsigned char)v1,a3);
+O2_crazyflie_stripped_cf2-elf sub_8036900 | sub_8037494(0x8022621,"SYS: The system resumed after a failed assert [WARNING]\n",0x2000cbe8,dat_20014740,a3); => sub_8037494(0x8022621,"SYS: The system resumed after a failed assert [WARNING]\n",0x2000cbe8,(unsigned char)dat_20014740,a3);
+O2_crazyflie_stripped_cf2-elf sub_8037cf4 | (*(void *)a0[1])(a1 + 3,0x2000cd44,v1); => (*(void *)a0[1])(a1 + 3,0x2000cd44,(unsigned char)v1);
+O2_crazyflie_stripped_cf2-elf sub_8037cf4 | if (!sub_80070e4(a2,0x2000cd44,v1)) => if (!sub_80070e4(a2,0x2000cd44,(unsigned char)v1))
+O2_dash_stripped_dash sub_d3e0 | sub_d370(dat_1f0d0,v4); => sub_d370(dat_1f0d0,(unsigned char)v4);
+O2_dash_stripped_dash sub_d3e0 | sub_c6d0(v1,sub_bb50(v5,0),v4); => sub_c6d0(v1,sub_bb50(v5,0),(unsigned char)v4);
+O2_diffutils_stripped_diff main | sub_8f60(v24); => sub_8f60((unsigned char)v24);
+O2_diffutils_stripped_diff sub_6e20 | sub_6360(0,*(unsigned long *)&a0[0x44],0,v12,dat_26408,&v30); => sub_6360(0,*(unsigned long *)&a0[0x44],0,v12,(unsigned char)dat_26408,&v30);
+O2_diffutils_stripped_diff sub_12690 | v25 = sub_12690(0,0xffffffffffffffff,"%Y-%m-%d",a3,v4,0x2b,4,v3,a8); => v25 = sub_12690(0,0xffffffffffffffff,"%Y-%m-%d",a3,(unsigned char)v4,0x2b,4,v3,a8);
+O2_diffutils_stripped_diff sub_12690 | v25 = sub_12690(0,0xffffffffffffffff,v35,a3,v4,v33,v31,v3,a8); => v25 = sub_12690(0,0xffffffffffffffff,v35,a3,(unsigned char)v4,v33,v31,v3,a8);
+O2_diffutils_stripped_diff sub_12690 | sub_12690(v28,a1 - v34,v35,a3,v4,v33,v31,v3,a8); => sub_12690(v28,a1 - v34,v35,a3,(unsigned char)v4,v33,v31,v3,a8);
+O2_findutils_stripped_find sub_7670 | v9 = sub_7510((short)a1[0xd]); => v9 = sub_7510((unsigned short)a1[0xd]);
+O2_findutils_stripped_find sub_7670 | v8 = sub_7510(v5); => v8 = sub_7510((unsigned short)v5);
+O2_findutils_stripped_find sub_a040 | sub_14fb0(v1,v2,a0,strlen(a0) + 1,v14,v12,0); => sub_14fb0(v1,v2,a0,strlen(a0) + 1,v14,(unsigned char)v12,0);
+O2_findutils_stripped_find sub_a040 | sub_15270(v1,v2,v9,strlen(v9),v14,v12,a0,v4,0); => sub_15270(v1,v2,v9,strlen(v9),v14,(unsigned char)v12,a0,v4,0);
+O2_findutils_stripped_find sub_10870 | dat_38e40 = sub_1e550(a0); => dat_38e40 = sub_1e550((unsigned char)a0);
+O2_findutils_stripped_find sub_1f590 | if (!sub_1f4d0(a0,(char)v2,v1,v37,v17)) => if (!sub_1f4d0(a0,(unsigned char)v2,v1,v37,v17))
+O2_findutils_stripped_find sub_1f590 | if (!sub_1f4d0(a0,(char)v2,v1,v37,v17)) => if (!sub_1f4d0(a0,(unsigned char)v2,v1,v37,v17))
+O2_grep_stripped_grep sub_82a0 | v3 = sub_8050(v1,v8,a1,(-(dat_2b802 == 0) & 0xdU) + 0x2d); => v3 = sub_8050(v1,v8,a1,(unsigned char)((-(dat_2b802 == 0) & 0xdU) + 0x2d));
+O2_grep_stripped_grep sub_a0f0 | v2 = sub_9130(v1,a3); // tail-call => v2 = sub_9130(v1,(unsigned char)a3); // tail-call
+O2_grep_stripped_grep sub_ab10 | sub_ab10(*a0,a1,a2,a3); => sub_ab10(*a0,a1,a2,(unsigned char)a3);
+O2_grep_stripped_grep sub_ab10 | sub_ab10(a0[1],a1,a2,a3); => sub_ab10(a0[1],a1,a2,(unsigned char)a3);
+O2_grep_stripped_grep sub_fc00 | sub_f9c0(a0,*v1,(v2 + -1 == v4) * '\x02'); => sub_f9c0(a0,*v1,(unsigned char)((v2 + -1 == v4) * '\x02'));
+O2_openssh-portable_stripped_sftp-server sub_16ab0 | v5 = sub_12000(v6,v4); => v5 = sub_12000(v6,(unsigned char)v4);
+O2_openssh-portable_stripped_sftp-server sub_20ec0 | v3 = sub_12000(a1,v2); => v3 = sub_12000(a1,(unsigned char)v2);
+O2_openssh-portable_stripped_sftp-server sub_22af0 | return sub_27ed0(v1,v2); => return sub_27ed0((unsigned char)v1,(unsigned char)v2);
+O2_openssh-portable_stripped_sftp-server sub_23850 | if ((v1 == *a1) && (sub_223d0(v1,a2,v2) != -1)) { => if ((v1 == *a1) && (sub_223d0((unsigned short)v1,a2,v2) != -1)) {
+O2_tar_stripped_tar sub_ec80 | if (!sub_dd80(v16 * '\x02')) goto label_f288; => if (!sub_dd80((uint1)(v16 * '\x02'))) goto label_f288;
+O2_tar_stripped_tar sub_101a0 | a1 += (int8)(int4)sub_101a0(a0,a1,"%{%Y-%m-%d %H:%M:%S}t: %ds, %{read,wrote}T%*\r",a3,a4); => a1 += (int8)(int4)sub_101a0(a0,a1,"%{%Y-%m-%d %H:%M:%S}t: %ds, %{read,wrote}T%*\r",(uint1)a3,a4);
+O2_tar_stripped_tar sub_41370 | v39 = sub_41370(0,"%Y-%m-%d",a2,v9,0x2b,4,v8,v36); => v39 = sub_41370(0,"%Y-%m-%d",a2,(uint1)v9,0x2b,4,v8,v36);
+O2_tar_stripped_tar sub_41370 | v39 = sub_41370(0,v32,a2,v9,v37,v20,v8,v36); => v39 = sub_41370(0,v32,a2,(uint1)v9,v37,v20,v8,v36);
+O2_tar_stripped_tar sub_41370 | sub_41370(a0,v32,a2,v9,v37,v20,v8,a7); => sub_41370(a0,v32,a2,(uint1)v9,v37,v20,v8,a7);
+O2_tar_stripped_tar sub_46d70 | if (!sub_46a40(a0,(char)v3,v2,v16,v17)) => if (!sub_46a40(a0,(uint1)v3,v2,v16,v17))
+O2_tar_stripped_tar sub_46d70 | if (!sub_46a40(a0,(char)v3,v2,v16,v17)) => if (!sub_46a40(a0,(uint1)v3,v2,v16,v17))
+O2_tar_stripped_tar sub_5f210 | v25 = sub_5f210(0,0xffffffffffffffff,"%Y-%m-%d",a3,v4,0x2b,4,v3,a8); => v25 = sub_5f210(0,0xffffffffffffffff,"%Y-%m-%d",a3,(uint1)v4,0x2b,4,v3,a8);
+O2_tar_stripped_tar sub_5f210 | v25 = sub_5f210(0,0xffffffffffffffff,v35,a3,v4,v33,v31,v3,a8); => v25 = sub_5f210(0,0xffffffffffffffff,v35,a3,(uint1)v4,v33,v31,v3,a8);
+O2_tar_stripped_tar sub_5f210 | sub_5f210(v28,a1 - v34,v35,a3,v4,v33,v31,v3,a8); => sub_5f210(v28,a1 - v34,v35,a3,(uint1)v4,v33,v31,v3,a8);
