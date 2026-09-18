@@ -3370,6 +3370,42 @@ candidate cannot split them. ARM instead reuses the existing Thumb-pointer
 oracle: an aligned odd code pointer is accepted only at an undefined
 frame-establishing prologue that passes the same valid-subroutine probe.
 
+**Headerless-image function discovery** (`rawdiscover`, default-on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_rawdiscover.rs`) is the raw
+analog of that walk. A `--raw-image` load has no `object::File`, so the whole
+tier above declines: the consumer entry point opens by parsing the object, and
+every §1.5 oracle under it reads a symbol table, an exception table or a section
+list. The inventory is then exactly the `--entry` addresses the caller named,
+which on a firmware image is one function spanning the file.
+
+Neither of the two things that actually find functions needs that metadata, so
+both run over the raw loader's synthetic `CODE` section instead. A **linear
+call-target sweep** decodes each executable range end to end and collects the
+statically derivable target of every direct call, dropping targets outside the
+executable ranges; on a failed or zero-length decode it advances by the code
+space's addressable unit rather than stopping, so a run of data costs
+resynchronization instead of the rest of the range. Those targets join the
+caller's seeds as roots of the ordinary recursive descent, which decodes each
+for real and promotes the direct-call closure. Seeds are never dropped, so the
+inventory can only grow.
+
+The three walk inputs that come from the object file take the values a
+headerless image honestly records: the executable universe is the raw loader's
+single `CODE` section, the decode-mode painter is empty (there are no ARM `$t`
+markers or Cortex-M vector table to read, and `--isa arm|thumb` has already
+painted any whole-image mode claim), and the PPC64 local-entry fold is empty.
+The gap-filling AIF walk is not run: it needs at least 20 already-discovered
+functions to build its prologue fingerprint histogram, which is a corpus a raw
+image does not have until this pass has already produced one.
+
+Because a seed no longer bounds the run, `--entry` seeds a raw load without
+*selecting*: with a discovered inventory beyond it, an entry that also filtered
+would hide everything found from it. `--addr` continues to do both. What this
+cannot recover is what the input does not record: a function no direct call
+reaches and no seed names stays undiscovered, and `--define-function` remains
+the way to assert it. Raw-container only, so every object-format result is
+byte-identical; `--option rawdiscover off` restores the seeds-only inventory.
+
 Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and
 high-confidence callback/vtable roots while avoiding the full prologue scan,

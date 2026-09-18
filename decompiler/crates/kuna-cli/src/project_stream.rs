@@ -998,8 +998,9 @@ fn seed_indices(prog: &ConsoleProgram, args: &Args, scheduler: &Scheduler) -> Ve
     let mut addrs: Vec<u64> = match entry {
         Some(vma) => vec![vma],
         None => args
-            .addrs
+            .entry_seeds
             .iter()
+            .chain(args.addrs.iter())
             .filter_map(|selector| match selector {
                 EntrySelector::Numeric(vma) if args.raw_image => prog.input_code_offset(*vma).ok(),
                 EntrySelector::Numeric(vma) => Some(*vma),

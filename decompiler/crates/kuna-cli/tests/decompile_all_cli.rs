@@ -1631,6 +1631,88 @@ fn raw_image_supported_surfaces_share_seed_and_base_semantics() {
     std::fs::remove_file(path).unwrap();
 }
 
+/// (kuna `rawdiscover`) A headerless image's inventory is its seeds plus what
+/// the executable bytes call, not just what the caller typed.
+///
+/// The fixture is 36 bytes of Cortus APS3 laid out so the two discovery halves
+/// are distinguishable. `0x80000010` is reached by a direct call from the entry,
+/// so the recursive descent alone would find it; `0x80000020` is called only
+/// from `0x80000018`, which sits past the entry function's `ret` with nothing
+/// branching to it, so only the linear call-target sweep reaches it. An
+/// unfiltered `decompile-all` must then emit all three bodies, because on a raw
+/// image `--entry` seeds the load without selecting.
+#[test]
+fn raw_image_discovers_called_functions_beyond_its_seeds() {
+    let path = common::scratch_file("raw-aps3-calls", "bin");
+    #[rustfmt::skip]
+    let image: [u8; 36] = [
+        0x04, 0x21,                          // 0x00 mov r2,1
+        0x8b, 0x00, 0x00, 0x00,              // 0x02 call 0x80000010
+        0xe1, 0xf0,                          // 0x06 ret
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x26, 0x22,                          // 0x10 add r2,r2
+        0xe1, 0xf0,                          // 0x12 ret
+        0x00, 0x00, 0x00, 0x00,
+        0x0b, 0x01, 0x00, 0x00,              // 0x18 call 0x80000020 (no flow reaches here)
+        0xe1, 0xf0,                          // 0x1c ret
+        0x00, 0x00,
+        0x04, 0x27,                          // 0x20 mov r2,7
+        0xe1, 0xf0,                          // 0x22 ret
+    ];
+    std::fs::write(&path, image).unwrap();
+    let binary = path.to_string_lossy().into_owned();
+    let sp = specs();
+    let target = "Cortus:LE:32:APS3:default";
+    let spec = PathBuf::from(&sp).join("Ghidra/Processors/Cortus/data/languages/aps3.sla");
+    if !spec.exists() {
+        eprintln!("raw_image CLI: skipping (no Cortus APS3 `.sla`)");
+        let _ = std::fs::remove_file(path);
+        return;
+    }
+
+    // Off: the inventory is exactly the seed, as it was before the option.
+    let (stdout, stderr, ok) = run_kuna(&[
+        "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
+        "0x80000000", "--entry", "0x80000000", "--option", "rawdiscover", "off",
+        "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw functions with rawdiscover off failed: {stderr}");
+    assert!(stdout.contains("\"count\": 1"), "{stdout}");
+
+    // On (the default): the seed, its direct callee, and the sweep-only callee.
+    let (stdout, stderr, ok) = run_kuna(&[
+        "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
+        "0x80000000", "--entry", "0x80000000", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw functions failed: {stderr}");
+    assert!(stdout.contains("\"count\": 3"), "{stdout}");
+    assert!(stdout.contains("\"address_hex\": \"0x80000010\""), "{stdout}");
+    assert!(
+        stdout.contains("\"address_hex\": \"0x80000020\""),
+        "the sweep-only callee must be discovered:\n{stdout}"
+    );
+
+    // `--entry` seeds without selecting, so the whole inventory is decompiled.
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all", &binary, "--json", "--raw-image", "--target", target,
+        "--base", "0x80000000", "--entry", "0x80000000", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw decompile-all failed: {stderr}");
+    assert!(stdout.contains("\"count\": 3"), "{stdout}");
+    assert!(stdout.contains("return 7;"), "the sweep-only body must decompile:\n{stdout}");
+
+    // `--addr` still narrows a raw run to the addresses named.
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all", &binary, "--json", "--raw-image", "--target", target,
+        "--base", "0x80000000", "--addr", "0x80000020", "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw decompile-all --addr failed: {stderr}");
+    assert!(stdout.contains("\"count\": 1"), "{stdout}");
+    assert!(stdout.contains("return 7;"), "{stdout}");
+
+    std::fs::remove_file(path).unwrap();
+}
+
 #[test]
 fn raw_image_decompile_scales_word_addressed_selector() {
     let path = common::scratch_file("raw-avr-return", "bin");
@@ -3079,8 +3161,9 @@ fn a_refused_lane_spawn_falls_back_to_the_serial_walk() {
 
 /// `--raw-image` and `--assert` are worker-POOL policy: `kuna functions` never
 /// spawns one, so `--jobs` there is only the decode lanes and neither
-/// combination may be refused. A raw image has no whole-binary discovery walk at
-/// all -- its entry seeds are the load -- so `--jobs` is simply inert.
+/// combination may be refused. A raw image's discovery (`rawdiscover`) is a
+/// serial sweep and descent with no lanes to hand work to, so `--jobs` is
+/// simply inert.
 #[test]
 fn functions_takes_jobs_with_a_raw_image() {
     let bin = fauxware();
@@ -3113,9 +3196,9 @@ fn functions_takes_jobs_with_a_raw_image() {
         "the pool's raw-image refusal must not fire on a surface with no pool:\n{stderr}"
     );
     assert!(
-        stderr.contains("[kuna --jobs] decode: serial (raw image runs no discovery walk)"),
-        "a raw image runs no discovery walk, and must say so rather than accept the flag \
-         and do nothing:\n{stderr}"
+        stderr.contains("[kuna --jobs] decode: serial (a raw image's discovery walk has no lanes)"),
+        "a raw image's discovery walk takes no decode lanes, and must say so rather than \
+         accept the flag and do nothing:\n{stderr}"
     );
 
     // The pool surface keeps the refusal: there a raw image really is a policy

@@ -130,6 +130,12 @@ pub(crate) struct Args {
     /// `--addr 0xVMA|.section+0xOFFSET|SECTION_INDEX:0xOFFSET` (repeatable).
     /// Combined with `--functions` if both are given.
     pub(crate) addrs: Vec<EntrySelector>,
+    /// `--entry 0xVMA` (repeatable, `--raw-image` only): where the image's code
+    /// starts. Both forms seed a raw load, but only `--addr` *selects*. With
+    /// `rawdiscover` on there is a discovered inventory beyond the seeds, and a
+    /// seed that also filtered would hide all of it. Empty on every
+    /// object-format input, where `--entry` is refused outright.
+    pub(crate) entry_seeds: Vec<EntrySelector>,
     /// `--no-vars`: skip the per-function variable extraction (faster; drops the
     /// `variables` array used by decbench's `type_match`).
     pub(crate) no_vars: bool,
@@ -207,6 +213,7 @@ impl Args {
             json: false,
             names: None,
             addrs: Vec::new(),
+            entry_seeds: Vec::new(),
             no_vars: false,
             max_fn_seconds: 0,
             options: Vec::new(),
@@ -1599,16 +1606,21 @@ pub(crate) fn load_program(
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
     let mut prog = if args.raw_image {
-        // (kuna `--jobs`) A raw image has no whole-binary discovery walk for the
-        // decode lanes to run: its entry seeds ARE the load. Say so, rather than
-        // accept the flag and do nothing with it -- every other surface prints
-        // one line saying which walk it took.
+        // (kuna `--jobs`) A raw image's discovery (`rawdiscover`) is a serial
+        // sweep and descent, not the lane-parallel object walk, so the decode
+        // lanes have nothing to run. Say so, rather than accept the flag and do
+        // nothing with it -- every other surface prints one line saying which
+        // walk it took.
         if jobs::decode_lanes(args) > 1 {
-            eprintln!("[kuna --jobs] decode: serial (raw image runs no discovery walk)");
+            eprintln!("[kuna --jobs] decode: serial (a raw image's discovery walk has no lanes)");
         }
+        // Both forms seed the load: `--entry` says where the image starts and
+        // `--addr` names a function to decompile, and a raw image must be able
+        // to decode from either.
         let entries: Vec<u64> = args
-            .addrs
+            .entry_seeds
             .iter()
+            .chain(args.addrs.iter())
             .filter_map(|selector| match selector {
                 EntrySelector::Numeric(entry) => Some(*entry),
                 _ => None,
@@ -1718,6 +1730,9 @@ fn resolve_targets_with_policy(
     let mut targets: Vec<FunctionEntry> = Vec::new();
 
     // Resolve every address form through the program's shared selector model.
+    // `args.entry_seeds` is deliberately not here: a raw image's `--entry`
+    // loaded the image, and selecting on it would hide everything discovery
+    // found from it.
     for selector in &args.addrs {
         let selector = match (args.raw_image, selector) {
             (true, EntrySelector::Numeric(entry)) => EntrySelector::Numeric(
@@ -2691,6 +2706,7 @@ pub(crate) fn parse_args_with_filters(
     let mut json = false;
     let mut names: Option<Vec<String>> = None;
     let mut addrs: Vec<EntrySelector> = Vec::new();
+    let mut entry_seeds: Vec<EntrySelector> = Vec::new();
     let mut no_vars = false;
     let mut max_fn_seconds: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
@@ -2736,9 +2752,14 @@ pub(crate) fn parse_args_with_filters(
             }
             "--addr" | "--entry" => {
                 let flag = a;
-                saw_entry |= flag == "--entry";
                 let v = take(argv, &mut i, flag)?;
-                addrs.push(parse_entry_selector(&v)?);
+                let selector = parse_entry_selector(&v)?;
+                if flag == "--entry" {
+                    saw_entry = true;
+                    entry_seeds.push(selector);
+                } else {
+                    addrs.push(selector);
+                }
             }
             "--define-function" => {
                 let v = take(argv, &mut i, "--define-function")?;
@@ -2871,10 +2892,14 @@ pub(crate) fn parse_args_with_filters(
         if names.is_some() {
             return Err("--raw-image uses explicit --entry/--addr seeds, not --functions".into());
         }
-        if addrs.is_empty() {
+        if addrs.is_empty() && entry_seeds.is_empty() {
             return Err("--raw-image requires at least one --entry or --addr".into());
         }
-        if addrs.iter().any(|selector| !matches!(selector, EntrySelector::Numeric(_))) {
+        if addrs
+            .iter()
+            .chain(entry_seeds.iter())
+            .any(|selector| !matches!(selector, EntrySelector::Numeric(_)))
+        {
             return Err("raw image entries must be numeric addresses".into());
         }
         if slice.is_some() {
@@ -2961,6 +2986,7 @@ pub(crate) fn parse_args_with_filters(
             json,
             names,
             addrs,
+            entry_seeds,
             no_vars,
             max_fn_seconds,
             options,

@@ -128,9 +128,14 @@ kuna decompile-all ./challenge.com --raw-image \
   --target 'x86:LE:16:Real Mode' --base 0x100 --entry 0x100 --jobs 1
 ```
 
-Adjust target/base/entry to the image. Raw-image decompilation requires explicit entries
-and serial execution; `--summary`, `--reachable-from`, `strings`, `xrefs`, `disassemble`,
-and `read` require object metadata.
+Adjust target/base/entry to the image; a bare-metal firmware image usually keeps its
+entry in its first word, so `entry = *(uint32_t *)&file[0]` and the base is that value
+rounded down to the region start. `--entry` only seeds the load: discovery sweeps the
+executable bytes for call targets from there, so an unfiltered `decompile-all` emits
+what the image calls, not just the seed (`--option rawdiscover off` to disable, `--addr`
+to narrow). Raw-image decompilation requires explicit entries and serial execution;
+`--summary`, `--reachable-from`, `strings`, `xrefs`, `disassemble`, and `read` require
+object metadata.
 
 If corrections fail, record the command and error, then use another decompiler or
 dynamic analysis when available. Suggest an issue report after the original task;

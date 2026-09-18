@@ -98,6 +98,15 @@ impl ContextPainter {
         ContextPainter { paints }
     }
 
+    /// A painter with nothing to paint, for a caller that has no `object::File`
+    /// to read markers from (the raw-image walk). Distinct from
+    /// [`ContextPainter::new`] only in that it cannot be wrong: a raw image
+    /// carries no `$t` markers and no vector table, and `--isa arm|thumb` has
+    /// already painted whatever whole-image mode the caller asserted.
+    pub(super) fn empty() -> Self {
+        ContextPainter { paints: Vec::new() }
+    }
+
     /// `true` iff there is nothing to paint (x86-64 / any language with no
     /// decode-mode context) — the walk needs no context step at all.
     pub(super) fn is_empty(&self) -> bool {

@@ -306,6 +306,7 @@ before 2026-09-16, and `docs/divergences.md` before 2026-07-28).
 | DIV-182 | `tiedphitrim` | trim a loop head's direct read of an aliased location out of `Merge::mergeOp`'s forced merge |
 | DIV-183 | `loweredswitchexact` | a re-rolled lowered switch labels every case value, is installed only when it routes every value and keeps every value its compare blocks compute, and prints labels… |
 | DIV-184 | `loweredswitchheads` | lowered-switch detection tries every head on the switch variable, not only the first in block order |
+| DIV-185 | `rawdiscover` | a headerless `--raw-image` gets a function inventory: sweep the executable bytes for direct call targets and hand them, with the `--entry` seeds, to the recursive descent |
 
 ### Convergences (upstream behavior restored)
 
