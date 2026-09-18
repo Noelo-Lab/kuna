@@ -552,9 +552,10 @@ ablation to reach for when a `bool` declaration is in question.
 `tests/stages/kuna-boolbyte.xml` pins the witness, the five refusals - a byte
 that is also widened and added, a byte tested for its low bit, a byte stored
 through a pointer, a stack byte set to 0 and then filled by a callee, and a byte
-parameter copied into a slot a callee is handed the address of - and the
-truncation rendering, whose first pass is the `SUB41` the printer emits without
-the arm.
+parameter copied into a slot a callee is handed the address of - and both
+truncation renderings: the one whose first pass is the `SUB41` the printer emits
+without the arm, and `truncflag`, whose second pass must print
+`(bool)(uint1)(a0 & 0x201)` and never the bare `(bool)(a0 & 0x201)`.
 
 **The Windows segment base (`pebnames`).** A Windows user-mode thread keeps its
 Thread Environment Block at the base of `GS` on x86-64 and of `FS` on x86, and

@@ -414,9 +414,9 @@
   "why_not": "Every mechanical criterion passes.  What holds it back is the seven merge-shape moves: typing a byte `bool` un-merges a speculative merge, so a declaration count and the name an expression uses can change, and that is a readability judgment rather than a correctness one.  The round-2 reviewer required the default stay off this round for that reason, and the measurement above is recorded so a flip can be a one-line PR with its evidence already in hand."
  },
  "default_on_flip": {
-  "base": "origin/main d3617d64; both arms are the same release build (new default vs `--option boolbyte off`); the off arm is byte-identical to a binary built from main on grep -O2 and du -O0 whole-binary decompile-all",
+  "base": "origin/main e1139df9 plus this branch, including the truncation fix; both arms are the same release build (new default vs `--option boolbyte off`). The fix is inert with the option off (truncation_form returns before asking for the operand mask), and the review build of the previous head found the off arm byte-identical to main e1139df9 on 12/12 disjoint binaries",
   "datatests": "675/675 PARITY OK with the default flipped, 0 assertions moved, no per-test opt-out needed",
-  "stages": "1141/1141 PARITY OK, 0 moved; tests/stages/kuna-boolbyte.xml pass 1 already carries an explicit `option boolbyte off`, so the bug arm still reproduces; docs/baseline-stages.json not re-recorded",
+  "stages": "1144/1144 PARITY OK. docs/baseline-stages.json re-recorded only to add the three new truncflag assertions (#13-#15 in tests/stages/kuna-boolbyte.xml); no existing assertion moved. Pass 1 of the stage test sets `option boolbyte off` explicitly, so the bug arm still reproduces; #14 and #15 fail on a build without the fix",
   "test_cli": "185/185 passed; no probe pins a moved vN name",
   "typesweep": {
    "metric": "decbench type_match (main), DECBENCH_NO_CACHE=1, both arms the same pinned binary",
@@ -510,7 +510,8 @@
      "improved": 26,
      "worse": 0
     }
-   }
+   },
+   "remeasured_on": "origin/main e1139df9 + this branch with the truncation fix: identical to the d3617d64 measurement (the fix changes printing only, and the metric scores variables[])"
   },
   "arity_phantom": {
    "method": "per scored function, the exported variables[] of both arms: argument count (kind=arg or arg_index set), variable count, and kuna variables the metric matched to no ground-truth variable",
@@ -543,16 +544,22 @@
    ],
    "functions": 4332,
    "changed": 105,
-   "type_spelling_only": 95,
-   "subnn_intrinsic_to_bool_cast": 6,
-   "merge_shape_moves": 10,
-   "merge_shape_detail": "8 functions lose one declaration (a byte local joins a bool of the same storage; 1621 -> 1613 declarations) and renumber the remaining vN; grep -O2 sub_109d0 splits one unsigned char into a bool flag and a load that now names the other byte variable; tar -O2 sub_41370 renumbers with the declaration count unchanged",
-   "signatures": "78 parameters char -> bool, 1 return type char -> bool (tar transform_name_fp, `bool` in source), 0 arity changes",
+   "method": "strict: casts are compared verbatim, never folded; (char)/(bool)/(unsigned char) and SUBnn(x,0) differences are CAST lines, each listed with the range of its input",
+   "decl_or_literal_only": 93,
+   "with_cast_lines": 7,
+   "merge_shape_without_cast_lines": 5,
+   "merge_shape_functions": 10,
+   "cast_lines": 13,
+   "cast_lines_detail": "13 cast-changing lines in 7 functions: 7 replace a raw SUBnn(x,0) intrinsic, 4 turn (char)x into (bool)x, 2 wrap an x & 1 in (bool). Every input is provably 0 or 1, so each (bool) cast equals the low byte the machine keeps. No line prints (bool)(unsigned char)x in this corpus: the truncation fix does not fire here, it fires on the constructed m32/truncflag case (tests/stages/kuna-boolbyte.xml #13-#15)",
+   "signatures": {
+    "functions_whose_signature_line_changed": 78,
+    "parameter_char_to_bool": 78,
+    "return_type_changed": 1
+   },
    "calls_changed": 0,
-   "control_flow_changed": 0,
-   "bool_pointer_or_array_added": 0,
-   "wrong_output_hunks": 0,
-   "classes_note": "type_spelling_only (95) and merge_shape_moves (10) partition the 105; subnn_intrinsic_to_bool_cast (6) overlaps them (2 spelling-only, 4 merge moves)"
+   "control_flow_keyword_counts_changed": 0,
+   "wrong_output_lines": 0,
+   "previous_classifier": "the round-1 classifier folded bool/char into one spelling, dropped byte casts and rewrote SUBnn(x,0) to (x), so it could not have seen a (bool) cast that tests bits the truncation discards; its \"type_spelling_only 95\" is replaced by the strict classes above"
   },
   "speed": {
    "method": "one release binary, `kuna decompile-all <bin>` (default mode) vs the same with `--option boolbyte off`, the two arms interleaved run by run (order alternating), min and median of 15 after one warm-up; measured while other campaign lanes and this branch's own rust-test were running",
@@ -614,6 +621,15 @@
    "note": "the first fmt pass ran under the rust-test lane's load; its quiet re-run reads -5.26% min / +4.18% median, so the fmt figure is noise either way. bash -O2 (1.3 MB, the >= 500 KiB case) is -3.23% min / -7.05% median"
   },
   "modes": "boolbyte removed from EXCLUDED_ON_PURPOSE in p0_knowledge/modes.rs: a default-on option is inherited by every preset, so aggressive needs no entry",
-  "renumbering": "downstream `--assert type vN` / `--assert name vN` consumers addressing one of the merge-shape functions by an auto-generated name from an older run can address a different variable; `--option boolbyte off` restores the old numbering"
+  "renumbering": "downstream `--assert type vN` / `--assert name vN` consumers addressing one of the merge-shape functions by an auto-generated name from an older run can address a different variable; `--option boolbyte off` restores the old numbering",
+  "truncation_fix": {
+   "found_by": "review of the flip: a constructed gcc -O0 case, not the corpus",
+   "repro": "int m32(unsigned x){unsigned v=x&0x201; unsigned char c=v, d=c; printf(\"%u\\n\",v); while(d){puts(\"z\");d=0;} if(c)puts(\"q\"); return c?1:2;}",
+   "before": "bool v1; ... v1 = (bool)(a0 & 0x201);  -- returns 1 and prints z, q for x = 0x200, where the source returns 2 and prints nothing",
+   "after": "v1 = (bool)(unsigned char)(a0 & 0x201);  -- round-trips through gcc against the source for x in {0,1,0x200,0x201,0x100000000,0x100000001,~0}, and the 64-bit twin (x & 0x100000001) likewise",
+   "mechanism": "the literal 0 seeds d bool, propagation carries bool back through the copy to c (whose mask is 1), and the printer arm printed the truncation as (bool)x. It now prints (bool)x only when the operand mask, re-derived at print time by kuna_boolbyte::value_mask, has no bit above the byte, and (bool)(unsigned char)x otherwise",
+   "corpus_effect": "none: no line in the 8-binary corpus prints (bool)(unsigned char), because all 13 cast lines have 0/1 inputs",
+   "stage_assertions": "tests/stages/kuna-boolbyte.xml #13-#15 (function truncflag)"
+  }
  }
 }
