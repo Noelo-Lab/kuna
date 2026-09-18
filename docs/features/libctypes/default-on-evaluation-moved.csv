@@ -1,0 +1,13 @@
+direction,slice,function,base,test
+better,coreutils::O0::chroot,main,0.7307692307692307,0.7692307692307693
+better,coreutils::O0::od,skip,0.5,0.625
+better,coreutils::O2::cp,copy_internal,0.09,0.13
+better,coreutils::O2::od,skip,0.0,0.125
+better,coreutils::O2::mv,copy_internal,0.09,0.13
+better,coreutils::O2::ginstall,install_file_in_file,0.16,0.2
+better,coreutils::O2::ginstall,copy_internal,0.09,0.13
+better,coreutils::O2-noinline::od,skip,0.0,0.125
+better,gzip::O0::gzip,streamsavedir,0.5714285714285714,0.6428571428571429
+worse,coreutils::O2-noinline::cp,copy_internal,0.18032786885245902,0.14754098360655737
+worse,coreutils::O2-noinline::mv,copy_internal,0.18032786885245902,0.14754098360655737
+worse,coreutils::O2-noinline::ginstall,copy_internal,0.18032786885245902,0.14754098360655737

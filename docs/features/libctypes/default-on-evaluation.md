@@ -101,7 +101,48 @@ Each of #660's named counterexamples reproduces with the same text:
 
 ## 3. The typesweep
 
-TYPESWEEP_PLACEHOLDER
+`scripts.decbench.typesweep`, decbench main's `TypeMatchMetric`,
+`DECBENCH_NO_CACHE=1`, `KUNA_BIN` pinned to this build; base arm the default
+(`opaque`), test arm `--option libctypes glibc`; 8 projects (coreutils grep gzip
+diffutils bzip2 findutils tar shadow) x `O0`/`O2`/`O2-noinline` = **444 slices,
+10,748 scored functions**.
+
+| | base (`opaque`) | test (`glibc`) |
+|---|---:|---:|
+| `type_match` PERFECT | 959 | 959 (+0) |
+| aggregate `type_match` | 3037.19 | 3037.74 (+0.55) |
+| moved onto / off perfect | | 0 / 0 |
+| improved / worsened | | 9 / 3 |
+
+| group | n | mean base -> test | improved | worse |
+|---|---:|---|---:|---:|
+| coreutils | 6,422 | .2726 -> .2727 | 8 | 3 |
+| gzip | 368 | .4844 -> .4846 | 1 | 0 |
+| bzip2, diffutils, findutils, grep, shadow, tar | 3,958 | unchanged | 0 | 0 |
+| `O0` / `O2` / `O2-noinline` | 4,286 / 2,394 / 4,068 | | 3 / 5 / 1 | 0 / 0 / 3 |
+
+Controls: the base arm agrees with the tree's published `type_match` on 9,504 of
+10,748 (88.43%); 10,590 functions hand the metric byte-identical `variables[]`
+in both arms and 0 of them score differently.
+
+The twelve moved rows are the same twelve #660 reported, with the same scores:
+
+| direction | slice | function | base -> test |
+|---|---|---|---|
+| better | coreutils::O0::chroot | main | .731 -> .769 |
+| better | coreutils::O0::od | skip | .500 -> .625 |
+| better | coreutils::O2::od / O2-noinline::od | skip | .000 -> .125 |
+| better | coreutils::O2::cp / mv / ginstall | copy_internal | .090 -> .130 |
+| better | coreutils::O2::ginstall | install_file_in_file | .160 -> .200 |
+| better | gzip::O0::gzip | streamsavedir | .571 -> .643 |
+| **worse** | coreutils::O2-noinline::cp / mv / ginstall | copy_internal | .180 -> .148 |
+
+The rule's letter (improved >= worse) is met, 9 to 3. It is not the question:
+the three worse rows are the section-1 wrong answer, the sweep is as flat as it
+was (+0.55 over 10,748 functions, 0 perfect moved), and the regressions in
+section 2 are on surfaces this metric does not score (`useradd` `main` scores
+the same `tp`/`fp`/`fn` in both arms). A flip would rest on nothing the sweep
+can see.
 
 ## What was not run, and why
 
@@ -116,7 +157,7 @@ has to find were already named. #660's own speed pairs (`fmt`/`ls`
 ## What would unblock a flip
 
 1. Stop the over-merged register variable in `copy_internal` from voting a
-   `stat *` onto the name parameters (section 1). That removes the three
+   `stat *` onto the name parameters (section 1). Those are the three
    worsened typesweep rows.
 2. Print a matching zero-offset PTRSUB as `&p->_flags` (or undo it as `opaque`
    does) so `PTRSUB(` stays 0 on `libselinux.so.1`.
