@@ -501,11 +501,22 @@ reaches the printer.
   functional arm and emits the raw `SUB41(x,0)` p-code intrinsic - an undeclared
   identifier, and not compilable C, which is the class `subright` (§3.2) exists
   to keep out of the output. The option supplies the missing arm
-  (`kuna_boolbyte.rs (truncation_prints_as_cast)`, consulted by
-  `printc.rs (subpiece_is_cast)`), so a truncation into a `bool` prints as the
-  `(bool)` cast it is. The seed that put `bool` there already required the value
-  reaching it to carry a non-zero mask of at most 1, so the cast and the low byte
-  agree. The arm belongs to the option: with `boolbyte off` the printer is
+  (`kuna_boolbyte.rs (truncation_form)`, consulted by
+  `printc.rs (subpiece_cast_form)`), so a truncation into a `bool` prints as a
+  cast. Which cast depends on the operand, not the destination. A C conversion
+  to `bool` tests every bit of its operand while the truncation keeps only the
+  low byte, and a `bool` can reach a truncated byte whose source has other bits
+  set: in `unsigned char c = x & 0x201, d = c; while (d) d = 0;` the literal
+  `0` makes `d` a `bool` and propagation carries it back through the copy to
+  `c`, whose own mask is 1 even though `x & 0x201` is not. So the arm prints
+  `(bool)x` only when every bit of `x` above the destination is proven zero, and
+  `(bool)(unsigned char)x` otherwise - `(bool)(x & 0x201)` would be 1 for
+  `x = 0x200`, where the byte is 0. The proof is the operand's non-zero mask,
+  re-derived at print time (`kuna_boolbyte.rs (value_mask)`) over copies,
+  casts, extensions, masks, constant shifts and phis, because the stored mask is
+  refreshed only inside the main loop and a Varnode created later - a cast, a
+  block the return duplication cloned - still carries the all-ones default. The
+  arm belongs to the option: with `boolbyte off` the printer is
   byte-for-byte what it was, including on the cases that need it already -
   a comparison alone can make a destination `bool` without this rule, which it
   does on three lines in `tar` -O2 and one each in `ls` -O2 and `du` -O0.
