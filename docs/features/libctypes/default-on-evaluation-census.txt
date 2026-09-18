@@ -1,0 +1,37 @@
+O0-base-passwd-update-passwd   PTRSUB( 0->0  field_0x 1->0  piece 6->0  undefined8 0->0  stack decls 50->50  cross-field piece write 0->0
+O0-coreutils-cp                PTRSUB( 0->0  field_0x 58->4  piece 126->14  undefined8 2->0  stack decls 682->682  cross-field piece write 0->0
+O0-coreutils-ls                PTRSUB( 0->0  field_0x 56->0  piece 18->21  undefined8 0->0  stack decls 579->579  cross-field piece write 0->6
+O0-coreutils-stat              PTRSUB( 0->0  field_0x 51->0  piece 77->33  undefined8 0->0  stack decls 334->334  cross-field piece write 0->6
+O0-cronie-crond                PTRSUB( 0->0  field_0x 21->0  piece 39->8  undefined8 1->0  stack decls 205->204  cross-field piece write 0->0
+O0-dash-dash                   PTRSUB( 0->0  field_0x 1->0  piece 0->0  undefined8 0->0  stack decls 750->750  cross-field piece write 0->0
+O0-diffutils-cmp               PTRSUB( 0->0  field_0x 0->0  piece 20->10  undefined8 0->0  stack decls 256->256  cross-field piece write 0->0
+O0-findutils-find              PTRSUB( 0->0  field_0x 95->1  piece 61->25  undefined8 16->5  stack decls 1032->1034  cross-field piece write 0->7
+O0-tar-tar                     PTRSUB( 0->0  field_0x 102->0  piece 93->41  undefined8 0->0  stack decls 2524->2524  cross-field piece write 0->12
+O2-coreutils-du                PTRSUB( 0->0  field_0x 51->0  piece 55->56  undefined8 0->0  stack decls 240->240  cross-field piece write 0->6
+O2-coreutils-fmt               PTRSUB( 0->0  field_0x 47->0  piece 9->9  undefined8 0->0  stack decls 99->99  cross-field piece write 0->0
+O2-coreutils-ls                PTRSUB( 0->0  field_0x 104->0  piece 52->57  undefined8 0->0  stack decls 265->265  cross-field piece write 0->7
+O2-coreutils-tail              PTRSUB( 0->0  field_0x 9->0  piece 68->19  undefined8 0->0  stack decls 145->145  cross-field piece write 0->0
+O2-dpkg-dpkg-statoverride      PTRSUB( 0->0  field_0x 3->0  piece 25->5  undefined8 0->0  stack decls 281->281  cross-field piece write 0->0
+O2-e2fsprogs-e2fsck            PTRSUB( 0->0  field_0x 23->3  piece 452->404  undefined8 7->7  stack decls 1481->1481  cross-field piece write 0->1
+O2-grep-grep                   PTRSUB( 0->0  field_0x 14->0  piece 97->60  undefined8 0->0  stack decls 322->322  cross-field piece write 0->0
+O2-gzip-gzip                   PTRSUB( 0->0  field_0x 14->0  piece 38->24  undefined8 2->0  stack decls 147->147  cross-field piece write 0->0
+O2-iproute2-ip                 PTRSUB( 0->0  field_0x 2->0  piece 637->634  undefined8 12->12  stack decls 2214->2214  cross-field piece write 0->0
+O2-kmod-kmod                   PTRSUB( 0->0  field_0x 44->1  piece 70->45  undefined8 1->1  stack decls 314->312  cross-field piece write 0->0
+O2-libselinux-libselinux.so.1  PTRSUB( 0->2  field_0x 14->12  piece 52->29  undefined8 1->1  stack decls 415->415  cross-field piece write 0->0
+O2-noinline-coreutils-cp       PTRSUB( 0->0  field_0x 73->8  piece 203->75  undefined8 1->0  stack decls 326->326  cross-field piece write 0->0
+O2-noinline-coreutils-ginstall PTRSUB( 0->0  field_0x 75->8  piece 189->68  undefined8 1->0  stack decls 321->321  cross-field piece write 0->0
+O2-noinline-coreutils-mv       PTRSUB( 0->0  field_0x 79->8  piece 172->68  undefined8 1->0  stack decls 292->292  cross-field piece write 0->0
+O2-noinline-coreutils-sort     PTRSUB( 0->0  field_0x 6->0  piece 44->39  undefined8 0->0  stack decls 259->259  cross-field piece write 0->0
+O2-noinline-diffutils-diff     PTRSUB( 0->0  field_0x 51->5  piece 62->67  undefined8 9->3  stack decls 406->406  cross-field piece write 0->6
+O2-openssh-portable-ssh-keygen PTRSUB( 0->0  field_0x 13->2  piece 233->246  undefined8 1->2  stack decls 1241->1239  cross-field piece write 0->0
+O2-shadow-useradd              PTRSUB( 0->0  field_0x 12->0  piece 67->39  undefined8 13->3  stack decls 158->151  cross-field piece write 0->0
+O2-sysvinit-last               PTRSUB( 0->0  field_0x 0->0  piece 11->10  undefined8 0->0  stack decls 47->47  cross-field piece write 0->0
+O2-zlib-minigzip               PTRSUB( 0->0  field_0x 0->0  piece 8->8  undefined8 0->0  stack decls 41->41  cross-field piece write 0->0
+
+PTRSUB(                         0 ->      2
+field_0x                     1019 ->     52
+piece                        2984 ->   2114
+undefined8                     68 ->     34
+stack decls                 15426 ->  15416
+cross-field piece write         0 ->     51
+binaries: 29
