@@ -826,7 +826,10 @@ invented name: the printer spells the address as an element of the structure
 array plus a byte offset, so a pruned read at 0x10001 of a 16-byte layout
 renders as
 `*(uint4 *)((int8)&a0[0x1000].field_0x0 + 1)` — the right address, readable only
-by accident.
+by accident. An unaligned read that straddles the end can come out worse: the
+crazyflie `cf2` O2 reads at `0x8022c48` and `0x8022d08` are split into four byte
+reads of `a0[1]` and printed in piece syntax (`v3._0_1_ = a0[1].field_0x0`), which
+is the right value but not C.
 A field takes the type of the value the access carried when the widths agree and
 the type's C spelling is its own width — a scalar or a pointer — and
 `undefined<N>` otherwise. It commits to a signedness only when every access of
@@ -839,6 +842,19 @@ sign-extend what the binary zero-extends, the value `RuleExpandLoad` keeps the
 unsigned spelling to preserve (chapter 03). An unsigned field is safe in both
 directions, since a sign-dependent operation is its own p-code op and prints its
 own cast.
+A float beside anything else is a different disagreement: the bytes are a union
+member read two ways, and C has no scalar that reads them as both. Typed `long`
+(or `undefined8`), a field read by a `movsd` prints `(double)a0->field_0x8`, a
+value conversion of bits the binary reinterprets; typed `double`, the same field
+read by `cvtsi2sdq` prints `(double)(long)a0->field_0x8`, the conversion the other
+way. So a field whose accesses of its width carry a float and a non-float is raw
+bytes, `undefined1 field_0x<hex>[N]` like the filler of a gap, and every read of
+it casts the address: `*(double *)a0->field_0x8`, `(double)*(long *)a0->field_0x8`.
+The value classes of every access of the field's width are accumulated rather
+than compared pair by pair, so a sign contest that already cleared the type cannot
+hide a later float (`Slot::reinterpreted`). A narrower access is not the field's
+evidence and needs no rule: it already prints through an address cast
+(`*(float *)&a0->field_0x8`).
 
 Names are program-wide `struct_N`, probed with `TypeFactory::find_by_name` and
 reused whenever the layout signature — `(offset, size, metatype, pointee name)`

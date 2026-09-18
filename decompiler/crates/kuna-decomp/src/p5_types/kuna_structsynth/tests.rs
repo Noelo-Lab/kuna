@@ -344,6 +344,16 @@ fn accesses_that_disagree_on_sign_leave_the_field_undefined() {
     pointers.record(0, 8, Some(Rc::clone(&void_ptr)));
     assert!(pointers.slots[&0].committed().is_some(), "pointer spellings are not sign evidence");
 
+    // `find`'s `sub_f620`: a pointer field also read as `long` and `unsigned long`
+    // has no sign to get wrong, so it stays a pointer.
+    let long = f.get_base(8, type_metatype::TYPE_INT).unwrap();
+    let ulong = f.get_base(8, type_metatype::TYPE_UINT).unwrap();
+    let mut ptr_first = Evidence::default();
+    for t in [&ptr, &long, &ulong] {
+        ptr_first.record(8, 8, Some(Rc::clone(t)));
+    }
+    assert!(ptr_first.slots[&8].committed().is_some_and(|t| t.get_metatype() == type_metatype::TYPE_PTR));
+
     let mut widened = Evidence::default();
     widened.record(0x68, 2, Some(Rc::clone(&short)));
     widened.record(0x68, 2, Some(Rc::clone(&undef2)));

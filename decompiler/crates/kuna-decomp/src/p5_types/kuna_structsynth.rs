@@ -234,12 +234,18 @@ impl Slot {
         self.seen.float && (self.seen.signed || self.seen.unsigned || self.seen.other)
     }
 
-    /// The type the field commits to, or `None` when the accesses disagree.
+    /// The type the field commits to, or `None` when the accesses disagree. Sign
+    /// is contested only for an integer field: a pointer has no sign to get wrong.
     fn committed(&self) -> Option<&Rc<Datatype>> {
-        if self.reinterpreted() || (self.seen.signed && self.seen.unsigned) {
+        let ct = self.ctype.as_ref()?;
+        let integer = matches!(
+            ct.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+        );
+        if self.reinterpreted() || (integer && self.seen.signed && self.seen.unsigned) {
             return None;
         }
-        self.ctype.as_ref()
+        Some(ct)
     }
 }
 
