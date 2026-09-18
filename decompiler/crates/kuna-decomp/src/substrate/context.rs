@@ -861,6 +861,10 @@ pub struct ArchContext {
     /// (`realtypes` on, C output), so its promotion sign-extends.  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
     pub unknown_byte_is_char: bool,
+    /// (kuna) The output language promotes a sub-`int` argument to `int`
+    /// (`LangCaps::integer_promotion`).  Read by
+    /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
+    pub int_promotion: bool,
 
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be a
     /// LOAD/STORE base as a pointer; mirrors
@@ -1556,6 +1560,7 @@ impl ArchContext {
             codescalar: false,           // (kuna) option codescalar
             bool_byte: true, // (kuna) option boolbyte (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output
+            int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch

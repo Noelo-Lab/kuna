@@ -26,6 +26,7 @@ fn rust_caps_forbid_the_c_only_constructs() {
     assert!(!c.ternary, "Rust has no ?: -- if/else is an expression instead");
     assert!(!c.comma_expression, "no Rust form for condfold's comma operand");
     assert!(!c.arrow_member, "Rust raw pointers need an explicit deref");
+    assert!(!c.integer_promotion, "Rust arithmetic keeps the operand width");
     assert!(!c.switch_falls_through, "match arms do not fall through");
     assert!(!c.switch_default_optional, "match on an integer must be exhaustive");
     assert!(c.labeled_loop_break && c.labeled_block_break);

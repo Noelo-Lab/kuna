@@ -4102,6 +4102,7 @@ impl Architecture {
         ctx.bool_byte = self.bool_byte; // (kuna) boolbyte
         ctx.unknown_byte_is_char =
             self.realtypes && self.print.out_lang() == crate::kuna_lang::OutLang::C;
+        ctx.int_promotion = self.print.out_lang().profile().caps.integer_promotion;
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch

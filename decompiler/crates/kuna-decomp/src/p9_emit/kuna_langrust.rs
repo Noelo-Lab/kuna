@@ -293,6 +293,7 @@ pub static LANG_RUST: LangProfile = LangProfile {
         arrow_member: false,
         paren_conditions: false,
         integer_suffixes: false,
+        integer_promotion: false,
     },
     forms: LangForms {
         proto: ProtoForm::RustFnArrow,

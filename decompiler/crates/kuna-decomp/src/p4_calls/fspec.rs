@@ -6565,6 +6565,10 @@ pub struct FuncCallSpecs {
     /// to ask what its sibling recovered.  See
     /// [`crate::p4_calls::kuna_calleearity`].
     final_input_storage: Vec<(Address, int4)>,
+    /// (kuna) `truncarg`: inputs a subvariable-flow trim narrowed by dropping
+    /// only known-zero bits, as `(slot, size, number of inputs)` at the trim.
+    /// See [`crate::p9_emit::kuna_truncarg`].
+    zext_trimmed: Vec<(int4, int4, int4)>,
 }
 
 impl FuncCallSpecs {
@@ -6597,6 +6601,7 @@ impl FuncCallSpecs {
             isbadjumptable: false,
             isstackoutputlock: false,
             final_input_storage: Vec::new(), // (kuna) calleearity
+            zext_trimmed: Vec::new(),        // (kuna) truncarg
         }
     }
 
@@ -6950,6 +6955,21 @@ impl FuncCallSpecs {
             return true;
         }
         false
+    }
+
+    /// (kuna `truncarg`) Record that input `slot` was just trimmed to `size`
+    /// bytes, and whether every bit the trim dropped was known zero.
+    pub fn note_trimmed_input(&mut self, slot: int4, size: int4, ninputs: int4, zext: bool) {
+        self.zext_trimmed.retain(|e| e.0 != slot);
+        if zext {
+            self.zext_trimmed.push((slot, size, ninputs));
+        }
+    }
+
+    /// (kuna `truncarg`) Is input `slot`, still `size` bytes wide in a call with
+    /// `ninputs` inputs, the narrow value of a zero-extension the binary passed?
+    pub fn is_zext_trimmed_input(&self, slot: int4, size: int4, ninputs: int4) -> bool {
+        self.zext_trimmed.contains(&(slot, size, ninputs))
     }
 
     // -- input join (fspec.cc:5354-5400) ------------------------------------

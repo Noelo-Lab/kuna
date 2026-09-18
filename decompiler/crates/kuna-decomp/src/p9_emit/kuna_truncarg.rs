@@ -11,17 +11,22 @@
 //! so nothing in the printed program truncates the value again.  Upstream Ghidra
 //! prints the same promoted form.
 //!
-//! A trimmed argument therefore gets an explicit cast to the unsigned integer of
-//! its own size whenever its C value after promotion is not already that
-//! zero-extension: an arithmetic expression promotion can widen, or a signed
-//! variable promotion sign-extends.  A one-byte value of unknown type counts as
-//! signed when the printer spells it `char` (`realtypes`, C output), which is how
-//! a trimmed byte load (`movzbl`) reads.  Zero-extension is the right conversion
-//! for every trimmed input, because the bits the trim dropped were either known
-//! zero or never read by the callee.  A slot whose parameter type a declared
-//! prototype locks is left alone: C already converts the argument to that narrow
-//! type.  So is an expression whose C value provably lies in the unsigned range
-//! of its size (`(a != 2) + 6`), where promotion cannot change it.
+//! The trim records, on the call's [`FuncCallSpecs`](crate::fspec::FuncCallSpecs),
+//! each slot whose dropped bits were known zero ([`drops_only_zero_bits`]).  Only
+//! such a slot gets a cast, to the unsigned integer of its own size, and only when
+//! its C value after promotion is not already that zero-extension: an arithmetic
+//! expression promotion can widen, or a signed variable promotion sign-extends.  A
+//! narrow input with no such record keeps its promoted form, since nothing says
+//! the binary zero-extended it: a narrow parameter forwarded untouched (clang
+//! relies on the caller's extension), a sign-extension trimmed because the callee
+//! reads only the low bytes, or an input that was narrow from the start.  A
+//! one-byte value of unknown type counts as signed when the printer spells it
+//! `char` (`realtypes`, C output), which is how a trimmed byte load (`movzbl`)
+//! reads.  A slot whose parameter type a declared prototype locks is left alone:
+//! C already converts the argument to that narrow type.  So is an expression whose
+//! C value provably lies in the unsigned range of its size (`(a != 2) + 6`), where
+//! promotion cannot change it.  Output languages without integer promotion (Rust)
+//! get nothing.
 
 use std::rc::Rc;
 
@@ -45,14 +50,22 @@ pub(crate) fn narrowed_arg_cast(
     if slot < 1 {
         return None;
     }
+    if !data.get_arch().int_promotion {
+        return None;
+    }
     let o = data.obank().get(op)?;
     if !matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
         return None;
     }
+    let ninputs = o.num_input();
     let invn = o.get_in(slot)?;
     let vn = data.vbank().get(invn)?;
     let size = vn.get_size();
     if size >= strat.promote_size() || vn.is_annotation() {
+        return None;
+    }
+    let fc = data.get_call_specs(data.get_call_specs_index(op)?);
+    if !fc.is_zext_trimmed_input(slot, size, ninputs) {
         return None;
     }
     let is_const = vn.is_constant();
@@ -88,6 +101,31 @@ pub(crate) fn narrowed_arg_cast(
         return None;
     }
     Some(ct)
+}
+
+/// Did narrowing the call input `vn` to the logical value under `mask` drop only
+/// bits known to be zero?  Then the binary passed that value zero-extended.
+pub(crate) fn drops_only_zero_bits(data: &Funcdata, vn: VarnodeId, mask: u64) -> bool {
+    mask & 1 != 0 && data.vbank().get(vn).is_some_and(|v| v.get_nz_mask() & !mask == 0)
+}
+
+/// Record on the call's spec that input `slot` of `op` was just trimmed, and
+/// whether the trim dropped only known-zero bits.
+pub(crate) fn note_trimmed_arg(data: &mut Funcdata, op: OpId, slot: int4, zext: bool) {
+    let Some(o) = data.obank().get(op) else {
+        return;
+    };
+    if !matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+        return;
+    }
+    let ninputs = o.num_input();
+    let Some(size) = o.get_in(slot).and_then(|v| data.vbank().get(v)).map(|v| v.get_size()) else {
+        return;
+    };
+    let Some(i) = data.get_call_specs_index(op) else {
+        return;
+    };
+    data.get_call_specs_mut(i).note_trimmed_input(slot, size, ninputs, zext);
 }
 
 /// Retype an argument that already prints as a truncating cast (`(char)v2`) to
