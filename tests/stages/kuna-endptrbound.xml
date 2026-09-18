@@ -148,7 +148,7 @@
 <stringmatch name="ENDPTRBOUND #2: off, the walking pointer is typed after that neighbour" min="2" max="2">^  unsigned long long \*v3;$</stringmatch>
 <stringmatch name="ENDPTRBOUND #3: on, the walked bytes are one 8-byte buffer" min="2" max="2">^  char v1 \[8\]; // stack - 0x58$</stringmatch>
 <stringmatch name="ENDPTRBOUND #4: on, the bound is one past that buffer" min="2" max="2">^  \} while \(v3 != &amp;v1\[8\]\);$</stringmatch>
-<stringmatch name="ENDPTRBOUND #5: on, the call argument that means the neighbour still names it" min="2" max="2">^    push_back\(v2,\*v3\);$</stringmatch>
+<stringmatch name="ENDPTRBOUND #5: on, the call argument that means the neighbour still names it" min="2" max="2">^    push_back\(v2,\(uint1\)\*v3\);$</stringmatch>
 <stringmatch name="ENDPTRBOUND #6: both passes, a store straddling the walk's end vetoes the buffer" min="2" max="2">^  unsigned long long v3; // stack - 0x54$</stringmatch>
 <stringmatch name="ENDPTRBOUND #7: both passes, a comparison that controls no loop exit keeps naming the neighbour" min="2" max="2">^    if \(v4 != v3\)$</stringmatch>
 <stringmatch name="ENDPTRBOUND #8: both passes, that comparison invents no buffer" min="2" max="2">^  unsigned int v2; // stack - 0x60$</stringmatch>
