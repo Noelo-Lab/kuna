@@ -5,7 +5,8 @@ evidence the flip was measured against. It was measured on `d3617d64` (which
 carries #674, the fix for a `goto` whose label was never emitted), then again
 after rebasing onto `e1139df9` (#677, which keeps a zero-extended narrow load
 unsigned); the second pass found one defect the flip would have reintroduced,
-fixed here (*A field's signedness*). The earlier opt-in evaluation is
+fixed here (*A field's signedness*), and review found two more, also fixed here
+(*Review: sharded runs and union members*). The earlier opt-in evaluation is
 `default_decision` in `record.json`; everything here supersedes it.
 
 ## Corpora
@@ -14,7 +15,7 @@ fixed here (*A field's signedness*). The earlier opt-in evaluation is
 |---|---|
 | `make test` with the flip | 675/675, PARITY OK — no datatest assertion moves |
 | `make test-stages` with the flip, before touching a test | 1137/1141: `ELFMAIN #1/#2`, `PEBNAMES-X86 #6/#8` |
-| `make test-cli` | 185/185 before the new probe, 186/186 after |
+| `make test-cli` | 185/185 before the new probes, 189/189 after (four new) |
 
 The four stage assertions are exactly the ones the opt-in evaluation predicted,
 and each was read in both arms:
@@ -176,8 +177,66 @@ have put it on the default path. A sharded export now runs its workers with
 `.c`, `.h`, `.asm` and `README.md` are byte-identical to a serial
 `--option structsynth off` export (the `jobs_project_runs_workers_with_structsynth_off`
 integration test on `i386_pie_nl`, and `tests/cli/sharded-project-export-structsynth-off.json`).
-Sharded `decompile-all`/`decompile-graph` still synthesize; there each worker's
-`struct_N` is local to the functions it decompiled, which `docs/cli.md` now says.
+Review found the same numbering reaching `decompile-all` and `decompile-graph`;
+every sharded run now gets the same treatment (next section).
+
+## Review: sharded runs and union members
+
+**Sharded `decompile-all` and `decompile-graph`.** Each worker process numbered
+its own `struct_N`, so `--jobs N` did not match `--jobs 1`, which the help text
+promised: `fmt` O2 at `--jobs 4` renamed three prototypes (`sub_3000`
+`struct_0 *` → `struct_1 *`, `sub_5960` `struct_1 *` → `struct_0 *`, `sub_6be0`
+`struct_2 *` → `struct_0 *`), and `ls` O2 at `--jobs 4 --option structdefs on`
+defined 18 names twice with different layouts. Every sharded run now passes its
+workers `--option structsynth off` and prints the note on stderr, whatever the
+surface; the help text of all three commands, `docs/cli.md` and both spec
+chapters say the output equals `--jobs 1 --option structsynth off`. `fmt` O2 at
+`--jobs 4` is byte-identical to that; `jobs_run_workers_with_structsynth_off`
+(`itaniumrtti_x86_64.so`, five `struct_N` serially, 18 lines moved at `--jobs 2`
+before the fix) and `tests/cli/sharded-decompile-all-structsynth-off.json` pin
+it. Worker-independent names would keep the structures under a pool, but they
+need a renumbering pass over the merged results, which is the `structdedup`
+lane's ground.
+
+**A union member read as a float and as an integer.** gcc -O2 `vread`
+(`struct V { int tag; union { int i; float f; double d; long l; } u; }`) reads
+the member at 8 with `movsd` (case 2) and `cvtsi2sdq` (case 3). The field took
+the `long` read's type, and the `movsd` printed `(double)a0->field_0x8`, a value
+conversion; `undefined8` prints the same cast, and a `double` field turns the
+`cvtsi2sdq` into `(double)(long)a0->field_0x8`, so no scalar type is right. The
+pass now accumulates the value classes of every access of the field's width
+(`Slot::reinterpreted`): a float beside anything else makes the field raw bytes,
+`char field_0x8[8]`, and every read casts the address (`*(double *)a0->field_0x8`,
+`(double)*(long *)a0->field_0x8`). The sign contest keeps its old meaning: it
+applies only when the field's type is an integer, so a pointer field also read
+as `long` and `unsigned long` (`find` O2 `sub_f620`) stays a pointer.
+
+- Round trip, the reviewer's 37 functions compiled from the printed C with
+  `structdefs on` against the original: the on arm now fails only `sg2` (O2) and
+  `sg2`, `c9` (O0), a subset of the off arm's failures (which add `vread1` and
+  `vmix`); `vread` and `vmix` now pass in the on arm. Six union shapes: `vread`
+  passes at O0 and O2; `bread` (declined, both arms), and `cread`/`dread` at O2,
+  where one register holds the member and is used as bits (`movq %rax,%xmm0`) and
+  as a value (`cvtsi2sd %rax`), are wrong in both arms — the printer's same-size
+  int/float cast, not this pass.
+- `unionfield_fp_x86_64` (new fixture), `a_float_and_integer_union_field_round_trips_through_the_printed_c`
+  and `tests/cli/structsynth-union-fp-field-raw-bytes.json` pin `vread`.
+- Whole-corpus check, the 14 binaries above plus the reviewer's disjoint 10
+  (`dash` O2, `libz` and `cp`/`pr` O2-noinline, `tail` O0, `kmod` O2, crazyflie
+  `cf2` O2, `crond` O0, `mirai` O2, cleanflight O2; 12,544 functions): the off arm
+  is byte-identical to the pre-review off arm on all 24, and the on arm moves 5
+  functions, all in `cf2` (Cortex-M4F). Three were wrong before and are fixed: a
+  float field copied through an integer register into an `unsigned int` global
+  or array (`0x8023398`, `0x803228c`, `0x802dbf4`: `a1[4] = v3` with `float v3`
+  and `unsigned int *a1`) is now copied as bits, the spelling the off arm
+  already had (`*(unsigned int *)&a0[4]`). Two are spelling only (`0x8028640`,
+  `0x80286c0`): a float field zero-initialized with an integer `str` is raw
+  bytes, so its zero stores print `*(unsigned int *)a4->field_0x8 = 0`, which is
+  correct and noisier.
+- Known limit, recorded in `docs/spec/05-types.md`: an unaligned 4-byte read
+  that straddles the structure's end (`cf2` O2 `0x8022c48`, `0x8022d08`) is
+  split into four byte reads and printed in piece syntax; the value is right,
+  the syntax is not C.
 
 ## decbench `type_match` (444 slices, 10,748 functions)
 
