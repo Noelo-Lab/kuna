@@ -223,13 +223,22 @@ on :  v41 = SUB41(v15,0);      # before the arm
 on :  v41 = (bool)v15;         # after it
 ```
 
-`kuna_boolbyte::truncation_prints_as_cast`, consulted from
-`printc::subpiece_is_cast`, supplies the missing arm for a low-piece truncation
-into a `bool`. The rewrite is safe for the same reason the declaration is: the
-seed that put `bool` on the destination already required the value reaching it
-to carry a non-zero mask of at most 1, so `(bool)x` and the low byte of `x`
-agree. It is also strictly a rewrite — the truncation is still printed, just as
-the cast it is, which is what the option-off arm prints too (`(char)v15`).
+`kuna_boolbyte::truncation_form`, consulted from
+`printc::subpiece_cast_form`, supplies the missing arm for a low-piece
+truncation into a `bool`. The destination's mask is not enough to make `(bool)x`
+safe. A C conversion to `bool` tests every bit of `x`, and the truncation keeps
+only the low byte, so the two agree only when `x` has no bits above the byte. A
+`bool` can reach a truncated byte whose source does have them: gcc -O0 of
+`unsigned v = x & 0x201; unsigned char c = v, d = c; while (d) d = 0;` makes
+`d` a `bool` through the literal `0`, propagation carries it back through the
+copy to `c` (whose own mask is 1), and a bare `(bool)(x & 0x201)` is 1 for
+`x = 0x200` where the byte is 0. So the arm prints `(bool)x` only when the
+operand's non-zero mask proves every bit above the destination zero, and
+`(bool)(unsigned char)x` otherwise. The mask is re-derived at print time
+(`kuna_boolbyte::value_mask`) because the stored one is refreshed only inside
+the main loop: a Varnode created later, such as a cast or a block the return
+duplication cloned, still carries the all-ones default. The truncation is
+always printed; only its spelling changes (`(char)v15` with the option off).
 
 The arm is gated on the option, so with `boolbyte off` the printer is
 byte-for-byte what it was. That matters because the class is **pre-existing**: a
