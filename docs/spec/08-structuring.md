@@ -420,6 +420,22 @@ loop-head label is hoisted above the loop rather than into its condition).
 `blockaction.rs (ActionNormalizeBranches)` is transcribed control-flow with
 its mutating half still stubbed (recorded in the retired losses ledger, see `docs/history.md`).
 
+**The label invariant.** An emitted `goto label_X;` without a `label_X:` in
+the same function is not C, so the set of blocks
+`decompiler/crates/kuna-decomp/src/substrate/block.rs
+(BlockGraph::mark_unstructured)` labels must cover every goto the printer
+emits. It marks the front leaf of a `BlockGoto`'s target, a `BlockIf`'s goto
+target, and each `BlockSwitch` case arm whose edge stayed unstructured.
+Upstream marks a `BlockGoto`'s target only when `gotoPrints()` holds — the
+target is not the block flow reaches next — because upstream's
+`PrintC::emitBlockGoto` suppresses the goto under the same test. kuna's
+printer (`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+(PrintC::emit_block_goto)`) emits the trailing goto for every target it has,
+so the mark here is deliberately wider than upstream's: gating it left the
+printed `goto label_X;` unlabelled whenever its target happened to be the
+next block in flow. The redundant goto itself is kept rather than suppressed,
+because dropping a statement is a structuring decision, not a label fix.
+
 **Final component ordering.** Structuring does not always end with a single
 top-level component: an irreducible knot, a multi-entry loop, or a switch whose
 arms could not be folded leaves the root `sblocks` graph holding several
@@ -660,6 +676,25 @@ structured path — no convergence proof is needed. *Bounds/failure:* ≤ 3
 blocks, ≤ 12 printed ops, at most `kuna_taildup.rs (MAX_TAIL_CALLS)` = 2
 calls (angr `ReturnDuplicatorBase.max_calls_in_regions = 2` — the budget
 that defines this pass), `STORE` always declines. Flipped on by DIV-14.
+
+### Releasing a label the duplication passes converted away
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotolabel.rs`. The three
+passes that turn a `goto` into a duplicated tail (`gotoreduce`, `taildup`,
+`crossjumprevert`) each end by clearing `f_unstructured_targ` on the target
+they converted, so a label whose last goto is gone does not linger. That is a
+*release*, and it is only correct when no other carrier still jumps there, so
+the surviving-carrier census is shared and covers all four carriers a goto can
+ride: a `BlockGoto`, a `BlockIf` goto, a `BlockSwitch` case arm whose edge
+stayed unstructured, and a `BlockMultiGoto`'s virtual edges. A census that saw
+only the first two released the label of a block a switch arm still jumped to,
+and the arm printed `goto label_X;` into a function with no `label_X:`
+(`coreutils/sort` O2 `main`: `default: goto label_661d;`). The comparison is
+on **front leaves**, not on the blocks the carriers name, because the label
+lives on the target's front leaf and two carriers can reach one leaf through
+different enclosing nodes — a `BlockList` and the `BlockCopy` it opens with.
+The census is only ever read to *decline* a release, so it can keep a label
+the printer would otherwise drop but can never remove one.
 
 ### retsplitglobal — a bound on cloning a global-writing epilogue
 

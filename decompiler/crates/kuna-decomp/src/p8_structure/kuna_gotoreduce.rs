@@ -139,13 +139,10 @@ impl Action for ActionGotoReduce {
             count += 1;
         }
 
-        // Drop the label on any target no longer reached by an unstructured edge.
-        let still: std::collections::BTreeSet<BlockId> = referenced_goto_targets(data);
-        for t in converted_targets {
-            if !still.contains(&t) {
-                data.sblocks_mut().block_mut(t).clear_flag(block_flags::f_unstructured_targ);
-            }
-        }
+        // Drop the label on any target no longer reached by an unstructured edge --
+        // counting switch-case and multigoto carriers, not just BlockGoto/BlockIf
+        // (`kuna_gotolabel`), so a target a switch arm still jumps to keeps its label.
+        crate::p8_structure::kuna_gotolabel::release_converted_labels(data, &converted_targets);
 
         self.base_mut().count += count;
         0
@@ -166,23 +163,6 @@ fn collect_nodes(data: &Funcdata, root: BlockId) -> Vec<BlockId> {
         }
     }
     out
-}
-
-/// The set of sblocks still targeted by an unstructured `if`-goto or `goto`
-/// (after the conversions have mutated the tree).
-fn referenced_goto_targets(data: &Funcdata) -> std::collections::BTreeSet<BlockId> {
-    let mut set = std::collections::BTreeSet::new();
-    let root = data.sblocks_root();
-    for n in collect_nodes(data, root) {
-        let blk = data.sblocks_ref().block(n);
-        if let Some(t) = blk.get_if_goto_target() {
-            set.insert(t);
-        }
-        if let Some(t) = blk.get_goto_target() {
-            set.insert(t);
-        }
-    }
-    set
 }
 
 /// Walk the *bblocks* single-successor run starting at `bb0`; return the chain

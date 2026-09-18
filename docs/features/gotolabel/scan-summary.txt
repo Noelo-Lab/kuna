@@ -1,0 +1,31 @@
+# Orphan-goto census (a `goto X;` whose `X:` is absent from the same function)
+# Produced by orphan_scan.py over `kuna decompile-all` text.
+
+## 20 stripped binaries (O0/O2/O2-noinline; coreutils grep gzip bzip2 diffutils
+## findutils tar shadow + ARM32 betaflight), 16,080 functions
+
+before (main @ ba79503e)                         orphan_functions=23  orphan_gotos=27
+after  kuna_gotolabel census only                orphan_functions=14  orphan_gotos=16
+after  + mark_unstructured (goto_prints gate)    orphan_functions=1   orphan_gotos=1
+after  + front-leaf release comparison           orphan_functions=0   orphan_gotos=0
+
+## 149 in-repo ELF fixtures (kuna-analysis/tests/fixtures), 2,710 functions
+
+before  orphan_functions=10  orphan_gotos=10
+after   orphan_functions=0   orphan_gotos=0
+
+## Classified whole-corpus diff (classify_diff.py, corpus-diff.txt)
+
+20 binaries: functions=16080 changed=23 added-label-only-in-orphan-function=20 other=3
+  the 3 "other" rows each add the same label line plus the braces the printer puts
+  around an `if` clause that is no longer a single statement; all 3 carried an orphan
+  goto before. 0 functions without an orphan goto change.
+149 fixtures: functions=2710 changed=10 added-label-only-in-orphan-function=10 other=0
+
+## gcc -fsyntax-only on every changed function (gcc_check.py, gcc-check.txt)
+
+changed=23 only-undefined-label-error-removed=23
+  i.e. for all 23, the ONLY diagnostic that disappears is
+  `error: label 'label_X' used but not defined` (27 of them in total), and no new
+  diagnostic appears. The remaining errors are the undeclared globals/callees that
+  standalone decompiled text always has, identical on both sides.

@@ -1,0 +1,18 @@
+# scripts.decbench.typesweep --baseline-only, 444 slices, KUNA_BIN = the fixed build
+# (per-slice progress lines trimmed; this is the tail of .scratch/typesweep.log)
+[444/444] tar::O2::tar
+# typesweep base
+
+slices scored: 444
+functions scored: 10748
+
+## control
+
+- baseline vs published type_match: 9505 agree / 1243 differ (88.44% agreement)
+
+## baseline
+
+- type_match PERFECT: 959 / 10748
+- aggregate type_match: 3037.05 (mean 0.2826)
+
+TYPESWEEP_RC=0

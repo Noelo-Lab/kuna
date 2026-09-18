@@ -493,7 +493,11 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // `passwd *v6` and `FILE *v13`. One extra declaration line, earned; every other
 // measurement on this fixture is unchanged, the getPcode/getMappedSymbols
 // traffic included.
-const PIN_FAILLOG_C_LINES: [usize; 3] = [286, 39, 92];
+// sub_2620 286 -> 287: the function's switch default arm jumps to the no-return
+// tail at 0x2701, whose `label_2701:` was released by the tail-duplication pass
+// and never printed -- `goto label_2701;` into a function with no such label.
+// The line is the restored label.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [287, 39, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports
