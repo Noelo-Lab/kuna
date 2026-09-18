@@ -73,7 +73,7 @@
 //! # Why a homogeneous pair of words declines too
 //!
 //! The uniform-run rule keeps a pair of pointer-sized fields, and for a pair of
-//! *pointers* that is right: every such layout in the census is a record. A
+//! *pointers* that is right: every one DWARF can type (30 of 35) is a record. A
 //! pair of same-typed *integers* is different in kind, because the structure
 //! then says nothing the base's own pointer does not. `unsigned long *a0` read
 //! at `a0[0]` and `a0[1]` and `struct_0 *a0` with two `unsigned long` fields at
@@ -87,6 +87,13 @@
 //! lattice gave is kept. Any heterogeneous evidence -- a field of another
 //! metatype, an access of another width even where the layout prune later
 //! drops it, a base whose pointee is not the element -- keeps the structure.
+//!
+//! The price is measured, not assumed: of the 92 pairs this declines over 16
+//! x86-64 binaries, DWARF calls 12 integer pointers and 46 structure pointers
+//! whose two fields were placed right (`stat`'s `st_dev`/`st_ino`,
+//! `timespec`). Those 46 score the same on `type_match` either way, since a
+//! synthesized name never matches a DWARF one; they are what the layout
+//! instrument gives up.
 //!
 //! # Why the widest access wins an offset
 //!
@@ -547,7 +554,7 @@ fn is_integer(mt: type_metatype) -> bool {
 /// bytes as `pointee[i]` under a record name the evidence cannot justify: a
 /// homogeneous run is the array hypothesis, and a record needs heterogeneous
 /// evidence (TRex §3.3.3, Howard §4.5). Pointer-typed runs are not covered --
-/// the census finds them to be records.
+/// the census finds the ones DWARF can type to be records.
 fn is_element_run(ev: &Evidence, pointee: &Datatype) -> bool {
     let Some(&(_, width)) = ev.accesses.first() else { return false };
     if ev.accesses.len() < 2 || pointee.get_size() != width || !is_integer(pointee.get_metatype()) {

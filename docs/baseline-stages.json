@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1141,
-    1141
+    1146,
+    1146
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -678,6 +678,11 @@
     "data:STRUCTSYNTH #4: the offset-0 read renders as a field",
     "data:STRUCTSYNTH #5: offset 0 keeps the pointer type its loaded value carries",
     "data:STRUCTSYNTH #6: offset 8 is a 4-byte field, not a padded 8-byte one",
+    "data:STRUCTSYNTH-ELEMENT-PAIR #1: the integer pair keeps its element pointer with the option off and on",
+    "data:STRUCTSYNTH-ELEMENT-PAIR #2: both reads stay element reads",
+    "data:STRUCTSYNTH-ELEMENT-PAIR #3: the pointer-plus-integer pair is still a record, and the first one minted",
+    "data:STRUCTSYNTH-ELEMENT-PAIR #4: no structure of two integers is declared",
+    "data:STRUCTSYNTH-ELEMENT-PAIR #5: the record's offset 0 is the pointer it dereferences",
     "data:STRUCTSYNTH-HOLE #1: default leaves the address as raw pointer arithmetic",
     "data:STRUCTSYNTH-HOLE #2: the parameter is retyped to the synthesized structure",
     "data:STRUCTSYNTH-HOLE #3: the body names the undereferenced offset",

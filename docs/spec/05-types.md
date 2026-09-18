@@ -754,6 +754,36 @@ false-positive shape: `ls`'s `strmode` fills a `char[12]` with ten one-byte
 stores and one two-byte store, so the widths are not uniform and the wide store
 is past the narrow ones rather than over them.
 
+A pair of pointer-sized members is the one run the width rule cannot settle, so
+the pass looks at what the pair holds. A pair of pointers is kept: every one
+DWARF can type in the census (30 of 35) is a record, `hash_table`'s `bucket`
+and `bucket_limit` among them. A pair of **same-typed integers** is declined when it says nothing
+the base's own pointer does not. `unsigned long *a0` read at `a0[0]` and `a0[1]`
+and `struct_0 *a0` over `{ unsigned long field_0x0; unsigned long field_0x8; }`
+are the same bytes, and only the second asserts a record, which two equal-width
+reads cannot tell from an array. `factor`'s double-limb arithmetic is that shape
+(`powm2` and `millerrabin2`, DWARF `uintmax_t *`), and there the structure
+replaced a correct element pointer with a name nothing matches. The test
+(`is_element_run`) needs all three of: every *raw* access is one width `w` at
+exactly `0, w, 2w, ...`, judged before the widest-wins merge and the prune, so
+an access the prune drops still counts as heterogeneous evidence (the four-byte
+read inside a word in `structsynth-overlap-layout.xml` keeps its structure);
+every field the pass would declare has the same integer metatype (`int`, `uint`
+or unknown, so a pair that differs in signedness is kept); and the base already
+points at an integer or `undefined` of width `w`. The last clause keeps a
+`char *` read as two words, where the structure is what says "8 bytes". Since
+runs of three or more already decline on width, in practice this rule decides
+`{0:8, 8:8}` pairs. It is a trade, and the census states it: of the 93
+same-typed integer pairs the pass minted over 16 x86-64 binaries (coreutils
+`fmt`/`ls`/`sort`/`du`/`factor`/`shred`, `tar`, `find`, at `-O0` and `-O2`), the
+rule declines 92, and DWARF calls 12 of those integer pointers, 29 `void *`,
+5 untyped and 46 structure pointers. For those 46, mostly `stat`'s leading
+`st_dev`/`st_ino`, `timespec` and `hash_entry`, the declined layout had the right
+offsets and sizes, and 20 correctly placed fields leave the layout-F1 instrument.
+They score the same on `type_match` either way, since a synthesized name never
+matches a DWARF name, while the 12 integer pointers are exactly the rows the
+option used to lose there.
+
 At a conflicting offset the **widest** access wins. A field wider than an access
 renders as a cast of the field (`(uint4)w->b`); a field narrower than an access
 loses the field name altogether (`*(uint1 **)w`).
