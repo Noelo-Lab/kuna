@@ -1,0 +1,27 @@
+diff --git a/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs b/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
+index 3214160e..e36102d4 100644
+--- a/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
++++ b/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
+@@ -731,6 +731,22 @@ fn synthesize(data: &mut Funcdata) -> bool {
+         }
+         let Some((fields, size)) = fields_for(types.as_ref(), e) else { continue };
+         let Some(st) = ledger_type(types.as_ref(), fields, size) else { continue };
++        if std::env::var_os("KUNA_STRUCTSYNTH_CENSUS").is_some() {
++            let reg = data.vbank().get(*base).map(|v| v.get_offset()).unwrap_or(0);
++            let spec: Vec<String> = (0..st.num_depend())
++                .filter_map(|i| st.get_field(i))
++                .filter(|f| f.field_type.get_metatype() != type_metatype::TYPE_ARRAY)
++                .map(|f| {
++                    let pointee = f.field_type.get_ptr_to().map(|p| {
++                        format!("{}/{}/{}", p.get_metatype() as u8, p.get_size(), p.get_name())
++                    });
++                    format!("{}:{}:{}:{}", f.offset, f.field_type.get_size(),
++                        f.field_type.get_metatype() as u8, pointee.unwrap_or_default())
++                })
++                .collect();
++            eprintln!("STRUCTSYNTH_CENSUS\t{:#x}\t{}\t{}\t{}\t{}",
++                data.get_address().get_offset(), st.get_name(), st.get_size(), reg, spec.join(";"));
++        }
+         // The pointer is taken only once the structure is COMPLETE: completing a
+         // structure mints a fresh `Rc`, and merge compares high types by `Rc`
+         // identity, so a pointer to the incomplete shell would never match.

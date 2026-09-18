@@ -1,0 +1,28 @@
+du.O0            441 functions    26 changed  element pointer restored=3, ledger renumbering only=23
+du.O2            320 functions    26 changed  element pointer restored=2, ledger renumbering only=24
+factor.O0        269 functions    12 changed  element pointer restored=4, ledger renumbering only=8
+factor.O2        226 functions    11 changed  element pointer restored=5, ledger renumbering only=6
+find.O0          862 functions    63 changed  element pointer restored=11, ledger renumbering only=52
+find.O2          658 functions    56 changed  element pointer restored=9, ledger renumbering only=47
+fmt.O0           191 functions     0 changed  
+fmt.O2           151 functions     0 changed  
+ls.O0            589 functions    32 changed  element pointer restored=4, ledger renumbering only=28
+ls.O2            404 functions    70 changed  element pointer restored=3, ledger renumbering only=67
+shred.O0         265 functions     0 changed  
+shred.O2         204 functions     0 changed  
+sort.O0          479 functions    10 changed  element pointer restored=2, ledger renumbering only=8
+sort.O2          343 functions     0 changed  
+tar.O0          1570 functions   145 changed  element pointer restored=17, ledger renumbering only=127, other=1
+tar.O2          1125 functions   105 changed  element pointer restored=11, ledger renumbering only=94
+
+changed functions by class:
+    484  ledger renumbering only
+     71  element pointer restored
+      1  other
+
+other (1):
+   tar.O0 0x41265
+       - a1->field_0x0 = a2;
+       + *a1 = (int8)a2;
+       - a2->field_0x8 = (int8 *)a1;
+       + a2->field_0x8 = a1;
