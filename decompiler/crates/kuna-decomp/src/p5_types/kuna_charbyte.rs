@@ -393,10 +393,26 @@ pub fn same_but_char(up: &Datatype, now: &Datatype) -> bool {
     }
 }
 
+/// Is `vn` loaded through a pointer that does not point to `char`?  Such a
+/// byte prints as a cast of its own load (`(char)v2[1]`,
+/// `*(char *)((long)v2 + 1)`), which is what the rule exists to remove.
+fn loaded_through_other(data: &Funcdata, vn: VarnodeId) -> bool {
+    let def = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d));
+    match def {
+        Some(o) if o.code() == OpCode::CPUI_LOAD => !o
+            .get_in(1)
+            .and_then(|p| data.vbank().get(p))
+            .and_then(|p| p.get_temp_type())
+            .map(|t| points_to(t, is_char))
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
 /// Keep the second propagation only if every Varnode ends where the first
 /// left it or at the same type with `uint1` read as `char`, and no byte that
-/// moved is read without a cast or is a counter; otherwise put the first
-/// propagation's types back.  A re-seed can tip an unrelated contest -- a
+/// moved is read without a cast, is a counter or is loaded through a pointer
+/// that is not `char *`; otherwise put the first propagation's types back.  A re-seed can tip an unrelated contest -- a
 /// `char *` that loses to an `int *` at a join where `unsigned char *` had
 /// won -- and it retypes every byte read through the pointer, recorded or not.
 pub fn keep_or_restore(data: &mut Funcdata, upstream: Snapshot) -> bool {
@@ -408,7 +424,9 @@ pub fn keep_or_restore(data: &mut Funcdata, upstream: Snapshot) -> bool {
         if !same_but_char(up, now) {
             return true;
         }
-        is_uint1(up) && is_char(now) && (read_without_cast(data, *vn) || is_counter(data, *vn))
+        is_uint1(up)
+            && is_char(now)
+            && (read_without_cast(data, *vn) || is_counter(data, *vn) || loaded_through_other(data, *vn))
     });
     if strays {
         for (vn, up) in upstream {
