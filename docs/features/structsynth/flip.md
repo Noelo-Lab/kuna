@@ -190,7 +190,21 @@ the 19 primitive-pointer losses stay losses.
 
 ## Speed
 
-SPEEDBLOCK
+Interleaved `off`/`param` pairs, min of 15, whole-binary `decompile-all`
+(`speed.py`, `SPEED_SET=flip`; both arms name the value, one pinned release
+build). The box was shared with other lanes and a workspace test run, which
+the interleaving spreads over both arms.
+
+| case | off ms | on ms | delta | median off → on |
+|---|---:|---:|---:|---|
+| fmt O2 | 4,494 | 4,340 | -3.42% | 4,955 → 4,777 |
+| ls O2 | 14,022 | 14,432 | +2.92% | 16,611 → 16,504 |
+| sort O2 | 14,790 | 15,145 | +2.40% | 17,646 → 18,059 |
+| bash O2 (1.3 MB, auto = reliable) | 86,931 | 86,420 | -0.59% | 103,104 → 100,156 |
+| grep O0 (inert control) | 6,868 | 6,917 | +0.72% | 8,114 → 8,065 |
+
+**Worst delta +2.92% (`ls` O2), inside the +5% budget.** `bash` O2 is 1.3 MB,
+so `auto` runs it under `reliable`, which carries the default.
 
 ## Interactions
 

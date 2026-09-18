@@ -724,7 +724,54 @@
   },
   "false_positive_census": "unchanged: fmt/ls/sort/du x O0/O2 292 retyped = 182 struct* / 71 other ptr (70 void*, 1 char*: ls strmode) / 39 no DWARF type / 0 non-pointer; ARM32 37 = 29 / 1 / 3 / 4 not in DWARF / 0",
   "layout_precision": "unchanged: fields-only 704/787 = 0.8945, filler-counted 798/1021 = 0.7816",
-  "speed": "SPEED_PENDING",
+  "speed": {
+   "method": "interleaved off/param, min-of-15, whole-binary decompile-all, docs/features/structsynth/speed.py SPEED_SET=flip, both arms explicit, one pinned release build (KUNA_BIN); contended box",
+   "cases": {
+    "fmt O2": {
+     "off_ms": 4493.5,
+     "on_ms": 4339.9,
+     "delta_pct": -3.42,
+     "off_median": 4955.1,
+     "on_median": 4777.2,
+     "pairs": 15
+    },
+    "ls O2": {
+     "off_ms": 14022.0,
+     "on_ms": 14432.1,
+     "delta_pct": 2.92,
+     "off_median": 16610.7,
+     "on_median": 16504.3,
+     "pairs": 15
+    },
+    "sort O2": {
+     "off_ms": 14790.0,
+     "on_ms": 15145.0,
+     "delta_pct": 2.4,
+     "off_median": 17646.2,
+     "on_median": 18058.6,
+     "pairs": 15
+    },
+    "bash O2 (1.3 MB, auto = reliable)": {
+     "off_ms": 86930.6,
+     "on_ms": 86419.6,
+     "delta_pct": -0.59,
+     "off_median": 103104.0,
+     "on_median": 100156.5,
+     "pairs": 15
+    },
+    "grep O0 (inert control)": {
+     "off_ms": 6868.0,
+     "on_ms": 6917.4,
+     "delta_pct": 0.72,
+     "off_median": 8114.0,
+     "on_median": 8065.2,
+     "pairs": 15
+    }
+   },
+   "worst_delta_pct": 2.92,
+   "budget_pct": 5.0,
+   "within_budget": true
+  },
   "modes": {
    "reliable": "empty = the shipped defaults, so it synthesizes; pinning off would make auto's 500 KiB-2 MiB band disagree with the default on no evidence of wrong output",
    "aggressive": "not named: inherits the default; the option is multi-valued and pinning param would hold the preset below a future `all`",
@@ -735,6 +782,17 @@
    "structdedup #675 / structarrays": "open; rebase onto this, and their changes become default-output changes",
    "protoorder #669 (types mode)": "open; once it lands a callee's struct_N parameter propagates into its callers' argument types",
    "ghidra front-end": "applies the defaults, so kuna-as-Ghidra's-core prints struct_N too; stock Ghidra decodes a decompiler-invented struct as an undefined of its size (PcodeDataTypeManager.decodeDataType), so nothing breaks, but Ghidra's own data-type model does not learn the layout"
-  }
+  },
+  "gates": {
+   "make test": "datatests: 675/675 assertions passed; PARITY OK",
+   "make test-stages": "datatests: 1141/1141 assertions passed; PARITY OK",
+   "make test-cli": "tests/cli: 186/186 passed",
+   "make check-spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+   "docs/options.md": "regenerated from the built binary; byte-identical to the checked-in file",
+   "make rust-test": "RUST_TEST_RC=0 via /home/mahaloz/kwt/rust-test-lane.sh on da16c6ce (416 `test result: ok`, 0 FAILED), including kuna-cli jobs_project_runs_workers_with_structsynth_off and jobs::tests::structsynth_shard_note_only_for_a_project_that_would_synthesize"
+  },
+  "counters": "the flip adds no option, so no count moves; `counters --rederive` agrees with every site; baseline_stages 1141"
  }
 }

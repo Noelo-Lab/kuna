@@ -887,7 +887,9 @@ return block the structurer now duplicates (`findutils` `find` O2 `sub_f620`, wh
 remaining `goto label_f752` keeps its label). No function in either arm has a
 `goto` whose label is missing, and the 311 structures of eight serial project
 exports compile with every `offsetof(struct_N, field_0xK)` equal to K.
-Whole-binary speed is inside the movement of an inert control.
+Whole-binary `decompile-all` time moves between −3.4% and +2.9% (interleaved
+min-of-15 over `fmt`, `ls` and `sort` at O2 and the 1.3 MB `bash` O2), against a
++5% budget.
 
 The cost is on decbench's `type_match`, and it is accepted: the metric compares
 pointee spellings by name, so a synthesized `struct_0 *` can never intersect a
