@@ -516,19 +516,6 @@ mod tests {
             // flip is its own change with its own evidence rather than a line
             // added here.
             "foldcallretphi",
-            // `boolbyte` declares a truth-valued byte `bool`. Its corpus
-            // evidence is one-directional -- over a 474-slice decbench type
-            // sweep, 28 functions move ONTO a perfect `type_match`, 422 improve
-            // and NONE regress -- and `tests/stages` is PARITY OK with the
-            // default flipped. What holds it out of the preset is the
-            // declaration surface, not the metric: typing a byte `bool` can
-            // split a speculative merge, so seven of the 100 functions it
-            // touches across sixteen binaries change which variable the body
-            // names (six of them the declaration COUNT) and renumber the
-            // remaining `vN` locals, which is the surface `--assert type vN`
-            // addresses. A default flip is its own change with its own
-            // evidence, not a line added here.
-            "boolbyte",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

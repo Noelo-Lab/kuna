@@ -425,7 +425,7 @@ identity, and the gate above (a `TYPE_BOOL` refuses to land on a Varnode whose
 non-zero mask admits values above 1) stops it at the first edge into an
 unconstrained input.
 
-When `boolbyte` is `on` (shipped `off`),
+When `boolbyte` is `on` (the default),
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_boolbyte.rs
 (truth_value_type)` supplies the missing candidate. It applies to a one-byte
 Varnode that is not a constant, not type-locked, not covered by a type-locked
@@ -474,7 +474,7 @@ whether the value is written in this function.
   evidence, and the rule says so plainly: a byte the function only ever branches
   on is what a `_Bool` parameter looks like from the inside, which is an
   inference about the calling convention rather than a proof about the value.
-  This is why the option is a judgment call and ships off.
+  This is why the rule sits behind an option that can be turned off.
 
 The candidate is **folded** into `get_local_type`'s result by
 `Datatype::type_order`, not installed as a replacement seed. `SUB_BOOL` is 10,
@@ -525,6 +525,18 @@ reaches the printer.
   is why this is a judgment call behind an option rather than a fix.
 * **A `(bool)` cast can appear** where the cast tail has to reconcile the new
   declaration with an op that wants an integer (two over the sixteen binaries).
+
+The option is on by default. With the default flipped none of the 675 datatest
+assertions moves and the stage corpus is PARITY OK; over the decbench type
+sweep the flip moves functions onto a perfect `type_match` and none off it,
+with no function scored worse (the measurement is in
+`docs/features/boolbyte/record.json`, `default_on`). What the default costs is
+the name surface described in the last bullets but one: the functions whose
+merge moves renumber their remaining `vN` locals, so a `--assert type vN` or
+`--assert name vN` written against an older run can address a different
+variable. `--option boolbyte off` restores the upstream fold exactly - the
+candidate is never offered and the printer arm is not consulted - which is the
+ablation to reach for when a `bool` declaration is in question.
 
 `tests/stages/kuna-boolbyte.xml` pins the witness, the five refusals - a byte
 that is also widened and added, a byte tested for its low bit, a byte stored

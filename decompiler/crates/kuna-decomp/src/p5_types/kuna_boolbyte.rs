@@ -48,7 +48,7 @@
 //! seed cannot leak along a copy chain into a value that can hold more than 0/1.
 //!
 //! Gated by [`Architecture::bool_byte`](crate::architecture::Architecture) (option
-//! `boolbyte on|off`, default off); with the option off nothing in this module is
+//! `boolbyte on|off`, default on); with the option off nothing in this module is
 //! reachable.
 
 use std::collections::{HashSet, VecDeque};
