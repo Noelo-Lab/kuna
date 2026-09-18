@@ -391,7 +391,19 @@ fn covered_by_larger_symbol(data: &Funcdata, vn: VarnodeId) -> bool {
         .unwrap_or(false)
 }
 
-/// Does a truncation into this rule's `bool` print as a `(bool)` cast?
+/// How a truncation into this rule's `bool` prints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TruncationForm {
+    /// Not this rule's case: `CastStrategyC::is_subpiece_cast` decides.
+    Upstream,
+    /// `(bool)x`: every bit of `x` above the destination is proven zero.
+    Cast,
+    /// `(bool)(unsigned char)x`: `x` may carry bits above the destination, which
+    /// `(bool)x` would test and the machine throws away.
+    CastThroughByte,
+}
+
+/// The form a low-piece SUBPIECE into this rule's `bool` prints in.
 ///
 /// `CastStrategyC::isSubpieceCast` (cast.cc:411-432) lists the destination
 /// metatypes a SUBPIECE may print as a cast, and `TYPE_BOOL` is not one of them
@@ -403,30 +415,40 @@ fn covered_by_larger_symbol(data: &Funcdata, vn: VarnodeId) -> bool {
 /// keep out of the emitted C.  tar -O2 `sub_41370` is the measured case
 /// (`v = (char)v15;` -> `v = SUB41(v15,0);`).
 ///
-/// The truncation is only rewritten, never removed: the cast is the same
-/// narrowing `(char)` printed there with the option off, and the seed that put
-/// `bool` on the destination already required the value reaching it to carry a
-/// non-zero mask of at most 1, so `(bool)x` and the low byte of `x` agree.
-/// Inert with the option off.
-pub fn truncation_prints_as_cast(
+/// A C conversion to `bool` tests every bit of its operand, and a truncation
+/// keeps only the low `out_size` bytes, so `(bool)x` is the truncation only when
+/// `in_nz_mask` proves every bit above the destination zero.  Otherwise the
+/// truncation is printed explicitly first: `x & 0x201` truncated into a byte is
+/// 0 for `x = 0x200`, and `(bool)(x & 0x201)` is 1.  A `bool` reaches such a
+/// destination by propagation from a sibling copy -- `d = c; ... d = 0;` makes
+/// `d` and then `c` a `bool` -- not from the seed, whose def half refuses a
+/// SUBPIECE.  Inert with the option off.
+pub fn truncation_form(
     enabled: bool,
     outtype: &Rc<Datatype>,
     intype: &Rc<Datatype>,
     offset: u32,
-) -> bool {
-    if !enabled || offset != 0 {
-        return false;
+    out_size: i32,
+    in_nz_mask: u64,
+) -> TruncationForm {
+    if !enabled || offset != 0 || outtype.get_metatype() != type_metatype::TYPE_BOOL {
+        return TruncationForm::Upstream;
     }
-    if outtype.get_metatype() != type_metatype::TYPE_BOOL {
-        return false;
-    }
-    matches!(
+    if !matches!(
         intype.get_metatype(),
         type_metatype::TYPE_INT
             | type_metatype::TYPE_UINT
             | type_metatype::TYPE_UNKNOWN
             | type_metatype::TYPE_BOOL
-    )
+    ) {
+        return TruncationForm::Upstream;
+    }
+    let bits = 8 * out_size.max(0) as u32;
+    if bits >= 64 || in_nz_mask >> bits == 0 {
+        TruncationForm::Cast
+    } else {
+        TruncationForm::CastThroughByte
+    }
 }
 
 /// Is this Varnode's value *proven* to be 0 or 1 (rather than merely used as
