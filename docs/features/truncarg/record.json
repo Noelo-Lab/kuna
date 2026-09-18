@@ -1,0 +1,121 @@
+{
+ "opportunity": "A call argument narrower than int that the caller zero-extends (movzx edi,di) is trimmed to its narrow value, and C's integer promotion then widens the printed argument expression again: `sink(a0 * 3)` passes the untruncated product where the binary passes zext16(a0 * 3) to a callee that reads the whole register. Upstream Ghidra 12.1 prints the same `sink(param_1 * 3)`.",
+ "test_name": "tests/stages/kuna-truncarg.xml (7 assertions; #1-#4 fail on main) + docs/features/truncarg/roundtrip/roundtrip.sh (compile-and-run)",
+ "binary": "tests/stages/kuna-truncarg.xml bytechunk (x86-64, hand-assembled)",
+ "selector": "f",
+ "func_addr": "0x1000",
+ "option": null,
+ "flag": null,
+ "change_kind": "strict correctness fix (no option: it only adds the conversion the binary performs)",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "Ghidra CastStrategyC::intPromotionType / localExtensionType (cast.cc), SubvariableFlow::tryCallPull (subflow.cc)",
+ "default_on": true,
+ "ablation_changed": 0,
+ "parity": "OK",
+ "root_cause": "ActionDeadCode counts only minimalmask(nzmask) of an unlocked call input as consumed, so RDI = ZEXT(x & 0xffff) consumes 0xffff; RuleSubvarAnd's SubvariableFlow then trims the call input to the 2-byte value through tryCallPull (nothing outside the mask is consumed). ActionSetCasts' default getInputCast compares the unlocked parameter's local type (undefined2) with the argument and asks for no cast, so a sub-int arithmetic argument prints bare and C promotes it. Found with an instrumented throwaway build printing the p-code after every changing rule/action (subvar_and is the step that replaces CALL sink,RDI:8 with CALL sink,DI:2).",
+ "fix": "p9_emit/kuna_truncarg.rs (narrowed_arg_cast), consulted by the default getInputCast arm when cast_standard asks for nothing: a CALL/CALLIND input narrower than sizeof(int), integer/unknown-typed and not an enum, whose slot no declared prototype type-locks, gets a cast to the unsigned integer of its width unless its promoted C value is already the zero-extension (int_promotion_type for an expression; the declared type's natural extension for a variable, load or cast; a ZEXT always). An argument already printed as a truncating SUBPIECE cast is retyped instead of double-cast (retype_truncation).",
+ "roundtrip": {
+  "method": "docs/features/truncarg/roundtrip/roundtrip.sh: gcc -O2 rt.c (six narrowed-argument callers), kuna decompile each, compile the C against a driver defining the callees as rt.c does, compare what the callees receive over 23 inputs spanning 0x7f..0x10000..0xffffffff",
+  "main": "MISMATCH on 43 of 138 values",
+  "fix": "MATCH (138 values)"
+ },
+ "corpus_diff": {
+  "method": "kuna decompile-all --json, main vs fix, per-function code diff; every changed line must be an added unsigned narrow cast at a call argument (optionally replacing a signed narrow cast); any other text change or any non-code JSON field change is OTHER (classify_diff.py, breakdown.py, corpus-diff.txt)",
+  "binaries": [
+   "O2/coreutils/fmt",
+   "O2/grep",
+   "O0/gzip",
+   "O2/diffutils/diff",
+   "O2/bzip2",
+   "O2/findutils/find",
+   "O2/tar",
+   "O2-noinline/coreutils/cat",
+   "O0/coreutils/sort",
+   "O2/dash",
+   "O2/betaflight_STM32F405.elf (arm32)",
+   "O2/crazyflie cf2.elf (arm32)",
+   "O2/kmod",
+   "O2/openssh-portable/sftp-server"
+  ],
+  "functions": 12775,
+  "changed_functions": 271,
+  "new_casts": 447,
+  "existing_signed_truncation_retyped": 38,
+  "other": 0,
+  "by_callee_own_parameter": {
+   "wider_than_argument_value_fixed": {
+    "x86-64": 12,
+    "arm32": 266
+   },
+   "same_narrow_width_redundant": {
+    "x86-64": 25,
+    "arm32": 55
+   },
+   "beyond_callee_parameter_list": {
+    "x86-64": 2,
+    "arm32": 81
+   },
+   "indirect_call": {
+    "x86-64": 0,
+    "arm32": 6
+   }
+  }
+ },
+ "speed": {
+  "method": "kuna decompile-all <bin> --json, main vs fix binaries, 15 interleaved pairs (order alternating), min and median wall ms; box carried other lanes",
+  "results": {
+   "O2/coreutils/stripped/fmt": {
+    "n": 15,
+    "base_min_ms": 4220.6,
+    "fix_min_ms": 4151.0,
+    "delta_min_pct": -1.65,
+    "base_median_ms": 4522.9,
+    "fix_median_ms": 4336.2
+   },
+   "O2/grep/stripped/grep": {
+    "n": 15,
+    "base_min_ms": 12631.7,
+    "fix_min_ms": 13029.1,
+    "delta_min_pct": 3.15,
+    "base_median_ms": 14235.8,
+    "fix_median_ms": 14296.7
+   },
+   "O2/diffutils/stripped/diff": {
+    "n": 15,
+    "base_min_ms": 14936.4,
+    "fix_min_ms": 14938.1,
+    "delta_min_pct": 0.01,
+    "base_median_ms": 17245.7,
+    "fix_median_ms": 17013.9
+   }
+  },
+  "worst_min_delta_pct": 3.15,
+  "budget_pct": 5.0,
+  "within_budget": true
+ },
+ "benchmark": {
+  "typesweep": "444 slices / 10,748 functions, --baseline-only with each binary: type_match PERFECT 959 -> 959, aggregate 3037.19 -> 3037.19; per-slice rows (decisions + scores) identical in 444/444 slices (typesweep.txt)",
+  "why_it_cannot_move": "the change inserts CAST ops at ActionSetCasts, after every type and variable decision; over the 12,775-function corpus diff no JSON field other than `code` changed, so variables[] (what type_match and the arity/phantom counters read) is identical"
+ },
+ "gates": {
+  "make test": "PARITY OK (675/675 assertions passed)",
+  "make test-stages": "PARITY OK (1148/1148 assertions passed; +7 new kuna-truncarg keys, no existing key moved)",
+  "make rust-test": "RUST_TEST_RC=0 (416 `test result: ok` blocks)",
+  "make check-spec": "OK (lenient + strict)",
+  "make test-cli": "185/185 passed",
+  "kuna catalog --check": "catalog OK",
+  "counters --check": "no drift",
+  "docs/options.md": "byte-fresh (no option added)"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p9_emit/kuna_truncarg.rs",
+  "decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs",
+  "decompiler/crates/kuna-decomp/src/p9_emit/mod.rs",
+  "decompiler/crates/kuna-base/src/xml.rs",
+  "docs/spec/09-emission.md",
+  "docs/baseline-stages.json",
+  "tests/stages/kuna-truncarg.xml"
+ ],
+ "notes": "Zero-extension is the right conversion for every narrowed input: the trim fires only when the dropped bits are known zero (non-aggressive tryCallPull consume test) or unread by the callee (RulePiecePathology), and the one sign-extension trim path (RuleSubvarSext aggressive_ext_trim) is off. The redundant casts are the price of deciding at the call site without the callee's prototype; a locked prototype suppresses the cast (stage assertion #7), so locking call-site prototypes from the callees' recovered ones removes them. Out of scope, recorded as a follow-up: the same trim at the promotion width (`sink64(a0 * 3)` with int a0, trimmed from RDI = ZEXT(EDI)) is converted by C with sign extension against an 8-byte callee; casting there would touch nearly every int argument on x86-64."
+}
