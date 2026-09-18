@@ -80,7 +80,7 @@ pub(crate) fn narrowed_arg_cast(
     if promotes_as_zext(data, strat, op, invn, meta, char_ty) {
         return None;
     }
-    if fits_unsigned(data, invn, size, 0) {
+    if fits_unsigned(data, invn, size) {
         return None;
     }
     let ct = tlst.get_base(size, type_metatype::TYPE_UINT).ok()?;
@@ -192,9 +192,9 @@ fn promotes_as_zext(
 
 /// Does the printed expression `vn` provably evaluate, in C, to a value in
 /// `[0, 2^(8*size))`?  Then it already equals the zero-extension of the p-code.
-fn fits_unsigned(data: &Funcdata, vn: VarnodeId, size: int4, depth: u32) -> bool {
+fn fits_unsigned(data: &Funcdata, vn: VarnodeId, size: int4) -> bool {
     let limit = 1i128 << (8 * size);
-    c_range(data, vn, depth).is_some_and(|(lo, hi)| lo >= 0 && hi < limit)
+    c_range(data, vn, 0).is_some_and(|(lo, hi)| lo >= 0 && hi < limit)
 }
 
 /// A bound on the C value of the expression rooted at `vn`, over constants with a
@@ -224,11 +224,14 @@ fn c_range(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(i128, i128)> {
     match d.code() {
         OpCode::CPUI_INT_ADD => {
             let ((l0, h0), (l1, h1)) = (range(a)?, range(b)?);
-            Some((l0 + l1, h0 + h1))
+            Some((l0.checked_add(l1)?, h0.checked_add(h1)?))
         }
         OpCode::CPUI_INT_MULT => {
             let ((l0, h0), (l1, h1)) = (range(a)?, range(b)?);
-            (l0 >= 0 && l1 >= 0).then(|| (l0 * l1, h0 * h1))
+            if l0 < 0 || l1 < 0 {
+                return None;
+            }
+            Some((l0.checked_mul(l1)?, h0.checked_mul(h1)?))
         }
         OpCode::CPUI_INT_AND => {
             let hi = [range(a), range(b)]
@@ -242,7 +245,7 @@ fn c_range(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(i128, i128)> {
         OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => {
             let ((l0, h0), (l1, h1)) = (range(a)?, range(b)?);
             let bits = 128 - (h0.max(h1) as u128).leading_zeros();
-            (l0 >= 0 && l1 >= 0).then(|| (0, (1i128 << bits) - 1))
+            (l0 >= 0 && l1 >= 0 && bits < 64).then(|| (0, (1i128 << bits) - 1))
         }
         _ => None,
     }
