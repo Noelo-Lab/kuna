@@ -308,3 +308,104 @@ fn the_size_is_rounded_up_to_the_widest_field() {
     assert_eq!(size, 0x18);
     assert_eq!(plan.last(), Some(&(0x15, 3, true)), "the tail is filler too: {plan:?}");
 }
+
+fn scalar(size: int4, mt: type_metatype) -> Option<Rc<Datatype>> {
+    Some(Rc::new(Datatype::new(size, mt)))
+}
+
+fn run(accesses: &[(intb, int4, Option<Rc<Datatype>>)]) -> Evidence {
+    let mut e = Evidence::default();
+    for (off, width, ct) in accesses {
+        e.record(*off, *width, ct.clone());
+    }
+    e.prune();
+    e
+}
+
+/// `factor`'s `powm2`: two limbs of a `uintmax_t *` read at 0 and 8 over a base
+/// the lattice already typed `unsigned long *`. The structure would be the same
+/// bytes under a record name, so the element pointer is kept.
+#[test]
+fn a_same_typed_integer_pair_over_its_element_pointer_is_an_element_run() {
+    use type_metatype::*;
+    let uint8 = Datatype::new(8, TYPE_UINT);
+    let pair = run(&[(0, 8, scalar(8, TYPE_UINT)), (8, 8, scalar(8, TYPE_UINT))]);
+    assert!(is_element_run(&pair, &uint8));
+
+    // A value whose type was never decided is `undefined8` on both sides, and a
+    // signed pointee spells the same element.
+    let unknown = run(&[(0, 8, None), (8, 8, None)]);
+    assert!(is_element_run(&unknown, &uint8));
+    assert!(is_element_run(&unknown, &Datatype::new(8, TYPE_INT)));
+    assert!(is_element_run(&unknown, &Datatype::new(8, TYPE_UNKNOWN)));
+
+    // The uniform-run rule already takes three or more; this one agrees.
+    let three = run(&[(0, 8, None), (8, 8, None), (0x10, 8, None)]);
+    assert!(is_element_run(&three, &uint8));
+}
+
+/// Any heterogeneous evidence keeps the structure.
+#[test]
+fn heterogeneous_evidence_is_not_an_element_run() {
+    use type_metatype::*;
+    let uint8 = Datatype::new(8, TYPE_UINT);
+
+    // A pair of pointers: every such layout in the census is a record
+    // (`hash_table`'s `bucket`/`bucket_limit`).
+    let pointers = run(&[(0, 8, scalar(8, TYPE_PTR)), (8, 8, scalar(8, TYPE_PTR))]);
+    assert!(!is_element_run(&pointers, &uint8));
+
+    // One field an integer, the other a pointer.
+    let mixed = run(&[(0, 8, scalar(8, TYPE_UINT)), (8, 8, scalar(8, TYPE_PTR))]);
+    assert!(!is_element_run(&mixed, &uint8));
+
+    // Fields that disagree in signedness: `timespec`, `stat`'s leading pair.
+    let signs = run(&[(0, 8, scalar(8, TYPE_INT)), (8, 8, scalar(8, TYPE_UINT))]);
+    assert!(!is_element_run(&signs, &uint8));
+
+    // A float pair is left to the other rules.
+    let floats = run(&[(0, 8, scalar(8, TYPE_FLOAT)), (8, 8, scalar(8, TYPE_FLOAT))]);
+    assert!(!is_element_run(&floats, &Datatype::new(8, TYPE_FLOAT)));
+}
+
+/// The element pointer is kept only where the lattice already gave one.
+#[test]
+fn a_base_that_does_not_point_at_the_element_keeps_the_structure() {
+    use type_metatype::*;
+    let pair = run(&[(0, 8, None), (8, 8, None)]);
+    // `char *` read as two words: the structure is what says "8 bytes".
+    assert!(!is_element_run(&pair, &Datatype::new(1, TYPE_INT)));
+    assert!(!is_element_run(&pair, &Datatype::new(8, TYPE_PTR)));
+    assert!(!is_element_run(&pair, &Datatype::new(8, TYPE_FLOAT)));
+}
+
+/// The run is judged on the raw accesses, not the pruned layout: an access the
+/// prune drops is still evidence that the object is not one element wide.
+#[test]
+fn a_pruned_or_off_grid_access_breaks_the_run() {
+    use type_metatype::*;
+    let uint8 = Datatype::new(8, TYPE_UINT);
+
+    // `structsynth-overlap-layout.xml`: a 4-byte read inside the offset-0 word.
+    let overlap = run(&[(0, 8, None), (4, 4, None), (8, 8, None)]);
+    assert_eq!(overlap.slots.keys().copied().collect::<Vec<_>>(), vec![0, 8]);
+    assert!(!is_element_run(&overlap, &uint8));
+
+    // A narrower read at an element's own offset.
+    let narrow = run(&[(0, 8, None), (0, 4, None), (8, 8, None)]);
+    assert!(!is_element_run(&narrow, &uint8));
+
+    // A misaligned word the prune drops.
+    let misaligned = run(&[(0, 8, None), (8, 8, None), (0xc, 8, None)]);
+    assert!(!is_element_run(&misaligned, &uint8));
+
+    // A hole, and a run that does not start at 0.
+    let hole = run(&[(0, 8, None), (0x10, 8, None)]);
+    assert!(!is_element_run(&hole, &uint8));
+    let late = run(&[(8, 8, None), (0x10, 8, None)]);
+    assert!(!is_element_run(&late, &uint8));
+
+    // One access is not a run.
+    let one = run(&[(0, 8, None)]);
+    assert!(!is_element_run(&one, &uint8));
+}

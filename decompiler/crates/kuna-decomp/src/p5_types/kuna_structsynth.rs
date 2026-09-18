@@ -55,7 +55,8 @@
 //! Three or more equal-width offsets on that grid is the evidence outright; two
 //! counts only for an element narrower than a pointer, so `int pipefds[2]` and
 //! `arg[0]`/`arg[1]` over a `char *` decline while a pair of pointer-sized
-//! fields -- far more often a record than a `long[2]` -- does not.
+//! fields -- far more often a record than a `long[2]` -- does not, on width
+//! alone (the next rule looks at what the pair holds).
 //!
 //! A gap does not break the run below pointer width: a function that writes ten
 //! of a buffer's twelve bytes is ordinary, and demanding exact contiguity made
@@ -68,6 +69,24 @@
 //! The widths differ, so the uniform-run test says nothing -- the layout rule
 //! below is what declines it, because both elements sit inside the byte range
 //! the wide access already claimed and nothing is left but a single field.
+//!
+//! # Why a homogeneous pair of words declines too
+//!
+//! The uniform-run rule keeps a pair of pointer-sized fields, and for a pair of
+//! *pointers* that is right: every such layout in the census is a record. A
+//! pair of same-typed *integers* is different in kind, because the structure
+//! then says nothing the base's own pointer does not. `unsigned long *a0` read
+//! at `a0[0]` and `a0[1]` and `struct_0 *a0` with two `unsigned long` fields at
+//! 0 and 8 are the same bytes spelled two ways, and only the second one asserts
+//! a record -- which the evidence cannot tell from an array. `factor`'s
+//! double-limb arithmetic (`powm2`, `millerrabin2`, DWARF `uintmax_t *`) is
+//! exactly that shape, and there the structure turns the correct element
+//! pointer into a name nothing can match. So when every access is one width on
+//! the grid `0, w, 2w, ...`, every field has the same integer metatype, and the
+//! base already points at an integer of that width, the element pointer the
+//! lattice gave is kept. Any heterogeneous evidence -- a field of another
+//! metatype, an access of another width even where the layout prune later
+//! drops it, a base whose pointee is not the element -- keeps the structure.
 //!
 //! # Why the widest access wins an offset
 //!
@@ -131,7 +150,7 @@
 //! * A field whose value is itself a synthesis base is not nested in this
 //!   version; it keeps the scalar type the accesses agree on.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use kuna_base::types::{int4, intb, uintb};
@@ -204,11 +223,28 @@ struct Slot {
     ctype: Option<Rc<Datatype>>,
 }
 
+impl Slot {
+    /// The type this offset's field is declared with: the access's own type
+    /// when it is exactly the access width and spells that width in C, and
+    /// `undefined<N>` of the access width (`None` here) otherwise.
+    fn field_type(&self) -> Option<&Rc<Datatype>> {
+        self.ctype.as_ref().filter(|t| t.get_size() == self.width && spells_its_own_width(t))
+    }
+
+    /// The metatype of the field this slot becomes.
+    fn field_metatype(&self) -> type_metatype {
+        self.field_type().map(|t| t.get_metatype()).unwrap_or(type_metatype::TYPE_UNKNOWN)
+    }
+}
+
 /// Everything one candidate base accumulated.
 #[derive(Default)]
 struct Evidence {
     /// Observed offset -> widest access.
     slots: BTreeMap<intb, Slot>,
+    /// Every `(offset, width)` observed, before the widest-wins merge and the
+    /// layout prune threw any of it away.
+    accesses: BTreeSet<(intb, int4)>,
     /// A dereference whose offset was not a constant (the array signal).
     dynamic_offset: bool,
     /// The base reached an operation that treats it as an integer.
@@ -220,6 +256,7 @@ struct Evidence {
 impl Evidence {
     /// Record one access.
     fn record(&mut self, off: intb, width: int4, ctype: Option<Rc<Datatype>>) {
+        self.accesses.insert((off, width));
         let slot = self.slots.entry(off).or_default();
         if width > slot.width {
             slot.width = width;
@@ -458,7 +495,8 @@ fn points_at_named_composite(ct: &Datatype) -> bool {
 /// that evidence outright. Two is weak either way, so it counts only for an
 /// element narrower than a pointer -- `int pipefds[2]` and `arg[0]`/`arg[1]`
 /// over a `char *` are arrays, while a pair of pointer-sized fields is far more
-/// often a record than a `long[2]` parameter.
+/// often a record than a `long[2]` parameter -- on width alone; `is_element_run`
+/// is what looks at the metatypes.
 ///
 /// A run need not be contiguous. One element the function never touches is
 /// ordinary -- `strmode` writes ten of its twelve bytes -- and demanding exact
@@ -494,6 +532,35 @@ fn is_array_shaped(slots: &BTreeMap<intb, Slot>, ptr_size: int4) -> bool {
         // A gap weakens the evidence, so only the outright tier counts.
         slots.len() >= 3 && width < ptr_size
     }
+}
+
+/// A metatype whose field prints as the element of an integer pointer.
+fn is_integer(mt: type_metatype) -> bool {
+    matches!(mt, type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)
+}
+
+/// Does this layout say nothing the base's element pointer does not already say?
+///
+/// True when every access is one width `w` on the grid `0, w, 2w, ...` with no
+/// hole, every field it would mint has the same integer metatype, and the base
+/// already points at an integer of width `w`. Such a structure is the same
+/// bytes as `pointee[i]` under a record name the evidence cannot justify: a
+/// homogeneous run is the array hypothesis, and a record needs heterogeneous
+/// evidence (TRex §3.3.3, Howard §4.5). Pointer-typed runs are not covered --
+/// the census finds them to be records.
+fn is_element_run(ev: &Evidence, pointee: &Datatype) -> bool {
+    let Some(&(_, width)) = ev.accesses.first() else { return false };
+    if ev.accesses.len() < 2 || pointee.get_size() != width || !is_integer(pointee.get_metatype()) {
+        return false;
+    }
+    let on_grid = ev
+        .accesses
+        .iter()
+        .enumerate()
+        .all(|(i, (off, w))| *w == width && *off == i as intb * width as intb);
+    let mut metatypes = ev.slots.values().map(Slot::field_metatype);
+    let Some(first) = metatypes.next() else { return false };
+    on_grid && is_integer(first) && metatypes.all(|mt| mt == first)
 }
 
 /// The exact-layout signature of a completed structure: `(size, [(offset, field
@@ -608,12 +675,9 @@ fn fields_for(
             // the instruments tell filler from a field the pass actually claims.
             types.get_type_array(*width, Rc::clone(&byte)).ok()?
         } else {
-            match ev.slots.get(&(*off as intb)).and_then(|s| s.ctype.as_ref()) {
-                // A value type wider or narrower than the access is not this
-                // offset's field; fall back to the honest unknown of the access
-                // width, which prints `undefined<N>`.
-                Some(t) if t.get_size() == *width && spells_its_own_width(t) => Rc::clone(t),
-                _ => types.get_base(*width, type_metatype::TYPE_UNKNOWN).ok()?,
+            match ev.slots.get(&(*off as intb)).and_then(Slot::field_type) {
+                Some(t) => Rc::clone(t),
+                None => types.get_base(*width, type_metatype::TYPE_UNKNOWN).ok()?,
             }
         };
         fields.push(TypeField::new(i as int4, *off, format!("field_0x{off:x}"), ct));
@@ -726,6 +790,9 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     }
     let ptr_size = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
     if is_array_shaped(&e.slots, ptr_size) {
+        return false;
+    }
+    if ct.get_ptr_to().is_some_and(|pt| is_element_run(e, &pt)) {
         return false;
     }
     true
