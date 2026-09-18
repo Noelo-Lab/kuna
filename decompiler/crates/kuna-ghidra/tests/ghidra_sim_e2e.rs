@@ -579,6 +579,8 @@ const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
 // symbol ranges negative/positive-cache the rest).
 const PIN_FAILLOG_GETMAPPED_TOTAL: u64 = 1448;
 
+/// The CLI arm of the differential runs `formatstring off`, like for like with
+/// the wire session (see `PIN_FAILLOG_DIFF_FLOOR`).
 #[test]
 fn ghidra_sim_faillog_pins() {
     let binary = repo_root().join("tests/bug-repro/faillog");
@@ -611,10 +613,6 @@ fn ghidra_sim_faillog_pins() {
 
     // The differential-C gap vs the in-process CLI path.
     let SessionRun { mut oracle, docs, addrs, .. } = run;
-    // Like for like: the wire session has no kuna-side load, so the GUI path has
-    // no load-time format-string facts.  Take them off the CLI arm too, so this
-    // differential measures markup fidelity and not that one known gap (see the
-    // band comment above and docs/ghidra-integration.md).
     oracle
         .prog
         .arch_mut()

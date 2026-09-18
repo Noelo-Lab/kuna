@@ -302,7 +302,11 @@ fn resolve_at(
     if chain.is_empty() {
         return None;
     }
-    fold(ctx, listing, &chain, store, gettext, lifts)
+    let value = fold(ctx, listing, &chain, store, gettext, lifts)?;
+    if lift(ctx, call_site, lifts).is_none_or(|l| !l.ok || writes_before_transfer(&l.ops, store)) {
+        return None;
+    }
+    Some(value)
 }
 
 /// The instructions of `call_site`'s basic block that precede it, oldest first.
@@ -400,21 +404,9 @@ fn fold(
     gettext: &HashMap<u64, (Key, Key)>,
     lifts: &mut LiftCache,
 ) -> Option<u64> {
-    let translate = ctx.arch.translate();
-    let space = Rc::clone(ctx.arch.manage().get_default_code_space()?);
     let mut known: HashMap<Key, u64> = HashMap::new();
     for &vma in chain {
-        // Neighbouring call sites share most of their window, so one lift per
-        // address per binary rather than one per (site, address).
-        let lifted = match lifts.entry(vma) {
-            std::collections::hash_map::Entry::Occupied(e) => Rc::clone(e.get()),
-            std::collections::hash_map::Entry::Vacant(e) => {
-                let mut l = Lifted { ops: Vec::new(), ok: true };
-                let at = Address::new(Rc::clone(&space), vma);
-                l.ok = translate.one_instruction(&mut l, &at).is_ok();
-                Rc::clone(e.insert(Rc::new(l)))
-            }
-        };
+        let lifted = lift(ctx, vma, lifts)?;
         if !lifted.ok {
             known.clear();
             continue;
@@ -424,6 +416,7 @@ fn fold(
         if let Some(target) = call_target(listing, vma) {
             let hop = gettext
                 .get(&target)
+                .filter(|(_, msgid)| !writes_before_transfer(&lifted.ops, msgid))
                 .and_then(|(ret, msgid)| known.get(msgid).map(|value| (*ret, *value)));
             known.clear();
             if let Some((ret, value)) = hop {
@@ -434,6 +427,39 @@ fn fold(
         apply_ops(&lifted.ops, &mut known, &|at, size| read_const(ctx, at, size));
     }
     known.get(store).copied()
+}
+
+/// The p-code of the instruction at `vma`, lifted once per binary: neighbouring
+/// call sites share most of their window.
+fn lift(ctx: &AnalysisCtx, vma: u64, lifts: &mut LiftCache) -> Option<Rc<Lifted>> {
+    if let Some(l) = lifts.get(&vma) {
+        return Some(Rc::clone(l));
+    }
+    let space = Rc::clone(ctx.arch.manage().get_default_code_space()?);
+    let mut l = Lifted { ops: Vec::new(), ok: true };
+    l.ok = ctx.arch.translate().one_instruction(&mut l, &Address::new(space, vma)).is_ok();
+    Some(Rc::clone(lifts.entry(vma).or_insert(Rc::new(l))))
+}
+
+/// Does a call instruction write `k` before it transfers? A MIPS or SPARC call
+/// runs its delay slot first, so `jal printf` with `addiu a0,a0,%lo(fmt)` in the
+/// slot passes a value the window before the call never sees.
+fn writes_before_transfer(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], k: &Key) -> bool {
+    let (space, off, size) = *k;
+    let hi = off.wrapping_add(u64::from(size));
+    ops.iter()
+        .take_while(|(opc, _, _)| {
+            !matches!(
+                opc,
+                OpCode::CPUI_CALL
+                    | OpCode::CPUI_CALLIND
+                    | OpCode::CPUI_BRANCH
+                    | OpCode::CPUI_BRANCHIND
+                    | OpCode::CPUI_CBRANCH
+            )
+        })
+        .filter_map(|(_, out, _)| out.as_ref().and_then(key_of))
+        .any(|(s, o, sz)| s == space && o < hi && off < o.wrapping_add(u64::from(sz)))
 }
 
 /// The fold key for one assigned parameter/return slot: its storage address plus
@@ -746,6 +772,30 @@ mod tests {
         // An exactly-abutting write does not.
         kill_overlapping(&mut known, &(1, 0x38, 8));
         assert_eq!(known.get(&(1, 0x30, 8)), Some(&0x11));
+    }
+
+    #[test]
+    fn a_delay_slot_write_to_the_format_register_is_seen() {
+        let (k, r) = spaces();
+        let (a0, ra) = (vn(&r, 0x10, 4), vn(&r, 0x7c, 4));
+        let a0_key = key_of(&a0).unwrap();
+        // jal printf / addiu a0,a0,0x1234: ra = next; a0 = a0 + 0x1234; call printf
+        let jal_with_slot = [
+            (OpCode::CPUI_COPY, Some(ra.clone()), vec![vn(&k, 0x400108, 4)]),
+            (OpCode::CPUI_INT_ADD, Some(a0.clone()), vec![a0.clone(), vn(&k, 0x1234, 4)]),
+            (OpCode::CPUI_CALL, None, vec![vn(&r, 0x400200, 4)]),
+        ];
+        assert!(writes_before_transfer(&jal_with_slot, &a0_key));
+        // x86 `call`: the return address goes on the stack, the argument register is untouched.
+        let call = [
+            (OpCode::CPUI_COPY, Some(ra.clone()), vec![vn(&k, 0x400108, 4)]),
+            (OpCode::CPUI_CALL, None, vec![vn(&r, 0x400200, 4)]),
+            (OpCode::CPUI_COPY, Some(a0.clone()), vec![vn(&k, 0, 4)]),
+        ];
+        assert!(!writes_before_transfer(&call, &a0_key));
+        // A write to a sub-register overlaps.
+        let sub = [(OpCode::CPUI_COPY, Some(vn(&r, 0x12, 1)), vec![vn(&k, 0, 1)])];
+        assert!(writes_before_transfer(&sub, &a0_key));
     }
 
     #[test]
