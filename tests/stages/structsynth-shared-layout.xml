@@ -1,0 +1,158 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structsynth: two functions that read overlapping subsets of one record get
+    ONE synthesized structure, not one each.
+
+    Source shape (hand-assembled, no prologue, so each parameter arrives in RDI
+    with nothing declaring its type):
+
+        int three_fields(void *p) {              // @0x100000
+            unsigned char *s = *(unsigned char **)p;   // offset 0,  8 bytes
+            int n = *(int *)((char *)p + 8);           // offset 8,  4 bytes
+            n += *(int *)((char *)p + 0xc);            // offset 0xc, 4 bytes
+            return n + *s;
+        }
+        int two_fields(void *p) {                // @0x100010
+            unsigned char *s = *(unsigned char **)p;   // offset 0, 8 bytes
+            int n = *(int *)((char *)p + 8);           // offset 8, 4 bytes
+            return n + *s;
+        }
+
+        three_fields                    two_fields
+        48 8b 07  mov rax,[rdi]         48 8b 07  mov rax,[rdi]
+        8b 4f 08  mov ecx,[rdi+8]       8b 4f 08  mov ecx,[rdi+8]
+        03 4f 0c  add ecx,[rdi+0xc]     0f b6 00  movzx eax,byte [rax]
+        0f b6 00  movzx eax,byte [rax]  01 c8     add eax,ecx
+        01 c8     add eax,ecx           c3        ret
+        c3        ret
+
+    `two_fields` claims offsets {0, 8}; `three_fields` claims {0, 8, 0xc} of the
+    same record. Comparing layouts for equality gives them different names.
+
+    Default (assert #1): both bodies are raw offset arithmetic over an untyped
+    pointee.
+
+    With `option structsynth param` (asserts 2 to 5): `three_fields` mints the
+    layout, and `two_fields`, whose claims it contains at the same offsets with
+    the same widths and types, is answered with the SAME `struct_0` rather than
+    a name of its own.
+
+    The second pair is the shape that must NOT merge: two integer words are how
+    distinct records begin (`struct stat` and gnulib's `cycle_check_state` both
+    start `{dev, ino}`), so a reader that measured only those is answered by
+    its own shape, never by a larger record that happens to begin the same way.
+
+        long four_words(void *p) {       // @0x100020: {0,8,0x10: 8 bytes; 0x18: 4}
+            return *(long *)p + *(long *)((char *)p + 8)
+                 + *(long *)((char *)p + 0x10) + *(unsigned *)((char *)p + 0x18);
+        }
+        long two_words(void *p) {        // @0x100040: {0, 8}
+            return *(long *)p + *(long *)((char *)p + 8);
+        }
+
+        48 8b 07     mov rax,[rdi]          48 8b 07     mov rax,[rdi]
+        48 03 47 08  add rax,[rdi+8]        48 03 47 08  add rax,[rdi+8]
+        48 03 47 10  add rax,[rdi+0x10]     c3           ret
+        8b 57 18     mov edx,[rdi+0x18]
+        48 01 d0     add rax,rdx
+        c3           ret
+
+    Asserts 6 and 7: `four_words` mints `struct_1`, and `two_words` mints
+    `struct_2` instead of being answered with it.
+
+    The third pair is an interface table, the shape of rsyslogd's
+    `*QueryInterface` functions: a version word at offset 0 and then nothing but
+    function pointers. A `code *` names no record, so distinct tables differ
+    only in how many slots they have, and a table is answered only by its own
+    shape. Without that rule rsyslogd's seven interface records (80 to 136
+    bytes) all took the 144-byte layout of the largest.
+
+        int big_if(struct if5 *p) {      // @0x100060: {0: 4 bytes; 8..0x28: code *}
+            p->ver = 0xd; p->f[0..4] = fn_0 .. fn_4; return 0;
+        }
+        int small_if(struct if3 *p) {    // @0x1000a0: {0: 4 bytes; 8..0x18: code *}
+            p->ver = 1; p->f[0..2] = fn_5 .. fn_7; return 0;
+        }
+
+        c7 07 0d 00 00 00           mov dword [rdi], 0xd
+        48 c7 47 08 00 01 10 00     mov qword [rdi+8], fn_0 (0x100100)
+        ... one store per slot, fn_N at 0x100100 + 4*N ...
+        31 c0                       xor eax, eax
+        c3                          ret
+
+    Asserts 8 and 9: `big_if`, decompiled first, mints `struct_3`, and
+    `small_if`, whose claims it contains, still mints `struct_4`, so two
+    definitions declare slot 0x18.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488b078b4f08034f0c0fb60001c8c39090909090488b078b4f080fb60001c8c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100020" readonly="true">
+488b0748034708480347108b57184801d0c39090909090909090909090909090
+488b0748034708c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100060" readonly="true">
+c7070d00000048c747080001100048c747100401100048c747180801100048c7
+47200c01100048c747281001100031c0c3909090909090909090909090909090
+c7070100000048c747081401100048c747101801100048c747181c01100031c0
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+c3909090c3909090c3909090c3909090c3909090c3909090c3909090c3909090
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="three_fields"/>
+<symbol space="ram" offset="0x100010" name="two_fields"/>
+<symbol space="ram" offset="0x100020" name="four_words"/>
+<symbol space="ram" offset="0x100040" name="two_words"/>
+<symbol space="ram" offset="0x100060" name="big_if"/>
+<symbol space="ram" offset="0x1000a0" name="small_if"/>
+<symbol space="ram" offset="0x100100" name="fn_0"/>
+<symbol space="ram" offset="0x100104" name="fn_1"/>
+<symbol space="ram" offset="0x100108" name="fn_2"/>
+<symbol space="ram" offset="0x10010c" name="fn_3"/>
+<symbol space="ram" offset="0x100110" name="fn_4"/>
+<symbol space="ram" offset="0x100114" name="fn_5"/>
+<symbol space="ram" offset="0x100118" name="fn_6"/>
+<symbol space="ram" offset="0x10011c" name="fn_7"/>
+</binaryimage>
+<script>
+  <com>option structsynth off</com>
+  <com>lo fu three_fields</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_fields</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structsynth param</com>
+  <com>lo fu three_fields</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_fields</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu four_words</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_words</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu big_if</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu small_if</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print C types</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTSYNTH-SHARED #1: option off leaves the offset-8 read raw in BOTH functions" min="2" max="2">\*\(int4 \*\)&amp;a0\[1\]</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #2: both readers name the same synthesized structure" min="2" max="2">struct_0 \*a0</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #3: six readers, five records" min="0" max="0">struct_5</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #4: only the reader that claims offset 0xc renders it" min="1" max="1">a0-&gt;field_0xc</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #5: one definition serves both readers" min="1" max="1">int4 field_0xc;</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #6: the four-claim reader mints its own record" min="1" max="1">struct_1 \*a0</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #7: two integer words are not answered by a record that begins with them" min="1" max="1">struct_2 \*a0</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #8: each interface table keeps its own definition" min="2" max="2">code \*field_0x18;</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #9: the smaller table is not answered by the larger one" min="1" max="1">small_if\(struct_4 \*a0\)</stringmatch>
+</decompilertest>

@@ -1,0 +1,82 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structsynth: a reader whose own layout leaves some accessed bytes unclaimed
+    is not answered by a structure that puts a member boundary inside them.
+
+    Source shape (gcc -O2, endbr64 dropped):
+
+        struct T { int i0; char c4, c5, c6, c7, c8, c9, c10, c11;
+                   long pad; long l10; char *s; long l20; };
+        void full(struct T *p, unsigned v, char *s) {          // @0x100000
+            p->i0 = 5; p->c7 = v; p->c8 = v >> 3; p->c9 = v >> 5;
+            p->c10 = v >> 7; p->l10 = 0; p->s = s; p->l20 = v;
+        }
+        unsigned long rd_c8(struct T *p, char *s, unsigned w) { // @0x100040
+            unsigned v; memcpy(&v, &p->c7, 4);   // 4-byte load at 7
+            p->c8 = w >> 3;                      // byte store at 8
+            p->i0 = 5; p->l10 = 0; p->s = s; p->l20 = v;
+            return v * 3u;
+        }
+        rd_c9 @0x100080 and rd_c10 @0x1000c0 store at 9 and 10 instead.
+
+        full                                  rd_c8
+        89 f0              mov eax,esi         8b 4f 07     mov ecx,[rdi+7]
+        c7 07 05 00 00 00  mov [rdi],5         c1 ea 03     shr edx,3
+        c1 e8 03           shr eax,3           48 89 77 20  mov [rdi+0x20],rsi
+        40 88 77 07        mov [rdi+7],sil     88 57 08     mov [rdi+8],dl
+        88 47 08           mov [rdi+8],al      c7 07 05 .. mov [rdi],5
+        ...                                    8d 04 49     lea eax,[rcx+rcx*2]
+        88 47 09 / 88 47 0a  bytes at 9, 10    48 c7 47 18  mov [rdi+0x18],0
+        48 89 47 28        mov [rdi+0x28],rax  48 89 4f 28  mov [rdi+0x28],rcx
+        c3                 ret                 c3           ret
+
+    The load at 7 is unaligned, so no reader claims a field for it and its
+    own layout spells it through filler, as *(uint4 *)&a0->field_0x4[3]. The
+    engine decides whether a load may print after a store by comparing their
+    addresses, and it takes one base plus two different constants to be two
+    different objects whatever the access widths. The filler spelling is not
+    one base plus a constant, so the load keeps its own statement ahead of the
+    store. full's structure, which contains every field each reader claims,
+    has a char at 7: answered with it, the load is spelled through
+    a0->field_0x7, is judged distinct from a0->field_0x8, and prints after the
+    store that overwrites its second byte.
+
+    All asserts run with option structsynth param, the setting this rule is
+    part of. full mints struct_0 and each reader keeps its own shape.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+89f0c70705000000c1e8034088770788470889f0c1e80548c747180000000088
+470989f0c1e8074889572088470a89f048894728c39090909090909090909090
+8b4f07c1ea0348897720885708c707050000008d044948c74718000000004889
+4f28c39090909090909090909090909090909090909090909090909090909090
+8b4f07c1ea0348897720885709c707050000008d044948c74718000000004889
+4f28c39090909090909090909090909090909090909090909090909090909090
+8b4f07c1ea034889772088570ac707050000008d044948c74718000000004889
+4f28c39090909090909090909090909090909090909090909090909090909090
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="full"/>
+<symbol space="ram" offset="0x100040" name="rd_c8"/>
+<symbol space="ram" offset="0x100080" name="rd_c9"/>
+<symbol space="ram" offset="0x1000c0" name="rd_c10"/>
+</binaryimage>
+<script>
+  <com>option structsynth param</com>
+  <com>lo fu full</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rd_c8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rd_c9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rd_c10</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTSYNTH-UNCLAIMED #1: each reader loads the word into a local ahead of its store" min="3" max="3">v1 = \*\(uint4 \*\)&amp;a0-&gt;field_0x4\[3\];</stringmatch>
+<stringmatch name="STRUCTSYNTH-UNCLAIMED #2: no reader spells the load through the writer's byte member" min="0" max="0">\(uint4 \*\)&amp;a0-&gt;field_0x7</stringmatch>
+<stringmatch name="STRUCTSYNTH-UNCLAIMED #3: only the writer names the writer's structure" min="1" max="1">struct_0 \*a0</stringmatch>
+</decompilertest>

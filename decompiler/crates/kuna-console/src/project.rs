@@ -226,9 +226,98 @@ fn decompile_batch(
     opts: &DecompileOptions,
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
+    // Only the surface that can supersede a name pays for the replay list.
+    let replay =
+        if prog.arch().struct_synth.fires() { targets.clone() } else { Vec::new() };
     let mut pending = targets.into_iter();
     decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| out.push(r));
+    converge_synthesized_structs(prog, opts, &replay, &mut out);
     out
+}
+
+/// (kuna `structsynth`) Decide again the functions that named a synthesized
+/// structure a later, larger one has taken over.
+///
+/// `structsynth` mints a `struct_N` from one function's evidence, and a function
+/// decompiled later can measure MORE of the same record. The earlier name cannot
+/// be widened -- the type factory refuses a second definition of a held name --
+/// so the larger layout is minted beside it and the earlier one is superseded.
+/// A whole-program batch would then print two names for one record, the smaller
+/// one only because it was decided first.
+///
+/// This runs once, after the batch, over exactly the results that name a
+/// superseded structure, and the ledger lookup now answers each with the
+/// survivor where the survivor is in its reach. It is one sweep, not a fixed
+/// point. The growth bounds are not transitive, so a survivor can be out of
+/// reach, and that function keeps the superseded structure it was given, which
+/// still answers for it: its record ends with two names. The sweep mints no new
+/// name as long as a function measures the same layout as it did the first
+/// time, because the structure it was given first still answers for it.
+///
+/// A redo that fails where the first pass succeeded -- a watchdog budget spent
+/// the second time round -- keeps the first body.
+///
+/// A batch that synthesized nothing pays one ledger probe for the whole run.
+fn converge_synthesized_structs(
+    prog: &mut ConsoleProgram,
+    opts: &DecompileOptions,
+    targets: &[FunctionEntry],
+    out: &mut [FuncResult],
+) {
+    if !prog.arch().struct_synth.fires() {
+        return;
+    }
+    let stale = kuna_decomp::kuna_structsynth::ledger::superseded_names(prog.arch().types());
+    if stale.is_empty() {
+        return;
+    }
+    let redo: Vec<usize> = out
+        .iter()
+        .enumerate()
+        .filter(|(i, r)| *i < targets.len() && names_any_type(r, &stale))
+        .map(|(i, _)| i)
+        .collect();
+    for i in redo {
+        let again = decompile_entry(prog, targets[i].clone(), opts);
+        if redo_replaces(&out[i], &again) {
+            out[i] = again;
+        }
+    }
+}
+
+/// Does the sweep's second decompile replace the first one?
+fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
+    again.error.is_none() || first.error.is_some()
+}
+
+/// Does this result spell any of `names` as a type name?
+///
+/// The C text, the `.h` prototype line and the exported variable rows are every
+/// surface a type name reaches. The match is on whole identifiers, so `struct_1`
+/// does not answer for `struct_10`.
+fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
+    let mut hit = |hay: &str| names.iter().any(|n| contains_identifier(hay, n));
+    r.code.as_deref().is_some_and(&mut hit)
+        || r.proto.as_deref().is_some_and(&mut hit)
+        || r.variables.iter().any(|v| hit(&v.type_name))
+        || r.types.iter().any(|t| hit(&t.name))
+}
+
+/// Is `needle` in `hay` as a whole C identifier?
+fn contains_identifier(hay: &str, needle: &str) -> bool {
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut from = 0;
+    while let Some(rel) = hay[from..].find(needle) {
+        let at = from + rel;
+        let end = at + needle.len();
+        let before_ok = hay[..at].chars().next_back().is_none_or(|c| !word(c));
+        let after_ok = hay[end..].chars().next().is_none_or(|c| !word(c));
+        if before_ok && after_ok {
+            return true;
+        }
+        from = at + 1;
+    }
+    false
 }
 
 /// One target's decompile, for a caller holding a single [`FunctionEntry`].
@@ -820,8 +909,12 @@ fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
 /// it. The type is the more valuable of the two — every other signature that
 /// mentions it depends on it, while the suppressed prototype is one line, still
 /// printed verbatim in the comment.
+///
+/// The type block is filtered by [`prune_unreferenced_synth_types`] first, so a
+/// synthesized structure the document no longer names is not declared.
 pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> String {
     let guard = sanitize_guard(file_name);
+    let types = &prune_unreferenced_synth_types(types, results);
     let shadowed = typedef_names(types);
     let mut out = String::new();
     out.push_str(&format!("#ifndef {guard}\n#define {guard}\n\n"));
@@ -856,6 +949,109 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     }
     out.push_str(&format!("\n#endif /* {guard} */\n"));
     out
+}
+
+/// (kuna `structsynth`) Drop the `struct_N` definitions this export does not use.
+///
+/// The type block is the whole factory in dependency order, and the factory
+/// keeps every structure `structsynth` ever minted -- including the ones a later,
+/// larger layout superseded, which the ledger never hands out again and the
+/// convergence sweep has already moved every reader off. Left in, they are a
+/// header that declares more records than the program has: `ls` O2 has 25
+/// records and its factory holds 35 definitions.
+///
+/// The rule is syntactic and therefore safe on a surface where the sweep did not
+/// run (the streaming export, which has written a body before a name can be
+/// superseded): only `struct_<digits>` is eligible, and one is dropped only when
+/// nothing left in the document names it -- no prototype, no body, no exported
+/// variable row, and no field of a definition that is itself kept.
+fn prune_unreferenced_synth_types(types: &str, results: &[FuncResult]) -> String {
+    let minted: Vec<String> = synth_type_names(types);
+    if minted.is_empty() {
+        return types.to_string();
+    }
+    let mut keep: Vec<String> = minted
+        .iter()
+        .filter(|n| names_any_type_in(results, std::slice::from_ref(*n)))
+        .cloned()
+        .collect();
+    // A kept definition's own fields can name another one.
+    loop {
+        let grown: Vec<String> = minted
+            .iter()
+            .filter(|n| !keep.contains(n))
+            .filter(|n| keep.iter().any(|k| body_of(types, k).is_some_and(|b| contains_identifier(b, n))))
+            .cloned()
+            .collect();
+        if grown.is_empty() {
+            break;
+        }
+        keep.extend(grown);
+    }
+    if keep.len() == minted.len() {
+        return types.to_string();
+    }
+    let dropped: Vec<&String> = minted.iter().filter(|n| !keep.contains(n)).collect();
+    let mut out = String::with_capacity(types.len());
+    let mut skipping = false;
+    let mut just_dropped = false;
+    for line in types.lines() {
+        if skipping {
+            skipping = line.trim() != "};";
+            just_dropped = !skipping;
+            continue;
+        }
+        // The blank line that separated the dropped body from the next one.
+        if std::mem::take(&mut just_dropped) && line.trim().is_empty() {
+            continue;
+        }
+        let head = line
+            .strip_prefix("struct ")
+            .and_then(|r| r.strip_suffix(" {"))
+            .filter(|n| dropped.iter().any(|d| d.as_str() == *n));
+        if head.is_some() {
+            skipping = true;
+            continue;
+        }
+        let fwd = line
+            .strip_prefix("typedef struct ")
+            .and_then(|r| r.split_whitespace().next())
+            .filter(|n| dropped.iter().any(|d| d.as_str() == *n));
+        if fwd.is_some() {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+/// Every `struct_<digits>` the rendered type block defines a body for.
+fn synth_type_names(types: &str) -> Vec<String> {
+    types
+        .lines()
+        .filter_map(|l| l.strip_prefix("struct ").and_then(|r| r.strip_suffix(" {")))
+        .filter(|n| is_synth_name(n))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Is this the `struct_<digits>` spelling `structsynth` mints?
+fn is_synth_name(n: &str) -> bool {
+    n.strip_prefix("struct_").is_some_and(|d| !d.is_empty() && d.bytes().all(|c| c.is_ascii_digit()))
+}
+
+/// The member lines of one rendered definition, excluding its own header line.
+fn body_of<'a>(types: &'a str, name: &str) -> Option<&'a str> {
+    let head = format!("struct {name} {{\n");
+    let at = types.find(&head)? + head.len();
+    let end = types[at..].find("\n};")?;
+    Some(&types[at..at + end])
+}
+
+/// Does any result name one of `names`?
+fn names_any_type_in(results: &[FuncResult], names: &[String]) -> bool {
+    results.iter().any(|r| names_any_type(r, names))
 }
 
 // --- .c ------------------------------------------------------------------
@@ -1019,7 +1215,94 @@ pub fn build_asm(
 
 #[cfg(test)]
 mod tests {
-    use super::AssemblyScratch;
+    use super::{
+        contains_identifier, prune_unreferenced_synth_types, redo_replaces, AssemblyScratch,
+        FuncResult,
+    };
+
+    /// A result carrying only what the streaming export keeps.
+    fn streamed(proto: &str, param_type: &str) -> FuncResult {
+        FuncResult {
+            name: "sub_1000".into(),
+            address: 0x1000,
+            byte_address: 0x1000,
+            size: 0x20,
+            // `StreamWriter::record` nulls the body once it is appended to the
+            // `.c`, long before the header is built from these records.
+            code: None,
+            error: None,
+            proto: Some(proto.into()),
+            variables: vec![super::VarInfo {
+                name: "a0".into(),
+                type_name: param_type.into(),
+                stack_offset: None,
+                size: 8,
+                is_param: true,
+                arg_index: Some(0),
+                line_numbers: vec![],
+                addresses: vec![],
+            }],
+            types: vec![],
+            line_mappings: vec![],
+            aliases: vec![],
+            object_location: None,
+            callee_hints: vec![],
+        }
+    }
+
+    /// (kuna `structsynth`) The header prune must decide "referenced" without a
+    /// body: the streaming writer sets `code = None` on every record before the
+    /// set reaches `build_header`, so a definition the export still names has to
+    /// survive on the prototype and the variable rows alone.
+    #[test]
+    fn a_streamed_record_keeps_the_definition_its_prototype_names() {
+        let types = concat!(
+            "struct struct_0 {\n    unsigned char *field_0x0;\n    int field_0x8;\n};\n",
+            "\n",
+            "struct struct_1 {\n    unsigned long field_0x0;\n};\n",
+        );
+        let kept = prune_unreferenced_synth_types(
+            types,
+            &[streamed("void sub_1000(struct_0 *a0);", "struct_0 *")],
+        );
+        assert!(kept.contains("struct struct_0 {"), "{kept}");
+        assert!(!kept.contains("struct struct_1 {"), "{kept}");
+        // Nothing names either one: both go.
+        let none = prune_unreferenced_synth_types(
+            types,
+            &[streamed("void sub_1000(long a0);", "long")],
+        );
+        assert!(!none.contains("struct struct_0 {"), "{none}");
+    }
+
+    /// (kuna `structsynth`) Under `--mode fast` the sweep's redo can run out of
+    /// the watchdog budget the first pass fit in; the body that succeeded stays.
+    #[test]
+    fn a_failed_redo_never_replaces_a_body_that_succeeded() {
+        let good = streamed("void sub_1000(struct_0 *a0);", "struct_0 *");
+        let mut failed = streamed("void sub_1000(struct_1 *a0);", "struct_1 *");
+        failed.error = Some("timed out".into());
+        assert!(!redo_replaces(&good, &failed));
+        assert!(redo_replaces(&good, &good));
+        assert!(redo_replaces(&failed, &good));
+        assert!(redo_replaces(&failed, &failed));
+    }
+
+    /// (kuna `structsynth`) The convergence sweep decides which results to
+    /// decompile again by looking for a superseded type name in their text, so
+    /// `struct_1` must not answer for `struct_10` or for `my_struct_1`.
+    #[test]
+    fn a_type_name_is_matched_as_a_whole_identifier() {
+        assert!(contains_identifier("void f(struct_1 *a0)", "struct_1"));
+        assert!(contains_identifier("  struct_1 field;", "struct_1"));
+        assert!(!contains_identifier("void f(struct_10 *a0)", "struct_1"));
+        assert!(!contains_identifier("void f(my_struct_1 *a0)", "struct_1"));
+        assert!(!contains_identifier("void f(struct_1x *a0)", "struct_1"));
+        assert!(contains_identifier("struct_1", "struct_1"));
+        assert!(!contains_identifier("nothing here", "struct_1"));
+        // The first hit is not the only one considered.
+        assert!(contains_identifier("struct_10 a; struct_1 b;", "struct_1"));
+    }
 
     /// Every typedef shape `field_decl_text` composes must yield its name, or a
     /// function sharing that spelling is declared next to it and the header
