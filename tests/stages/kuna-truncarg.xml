@@ -1,0 +1,74 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna strict fix (P9, sub-stage cast insertion; no option).
+
+    A caller that zero-extends a sub-int value into the argument register
+    (movzx edi,di) has its call input trimmed to the narrow value, because the
+    register's high bits are known zero.  C promotes a sub-int expression to
+    int before it becomes an argument, so the printed call `sink(a0 * 3)`
+    passes the untruncated product while the binary passes zext16(a0 * 3), and
+    sink reads the whole register.  The argument now carries an explicit cast
+    to the unsigned type of its width whenever promotion could set its high
+    bits.
+
+      f:     lea edi,[rdi+rdi*2] / movzx edi,di  / jmp sink   (product)
+      k:     add edi,1           / movzx edi,dil / jmp sink   (byte sum)
+      neg_:  neg edi             / movzx edi,di  / jmp sink   (negation)
+      h:     movzx edi,di        / jmp sink                   (plain input)
+      g:     movsx edi,di        / jmp sink                   (sign-extended)
+      d:     lea edi,[rdi+rdi*2] / movzx edi,di  / jmp sinkd  (declared uint2)
+      sink:  mov [acc],edi / ret
+      sinkd: mov [acc],di / ret
+
+    One pass, defaults only.  f, k and neg_ get the cast.  h passes an input
+    whose promotion already zero-extends, g passes a sign extension, and d
+    calls a prototype that declares the narrow parameter, so C converts the
+    argument itself; none of the three changes.
+-->
+<bytechunk space="ram" offset="0x1000">
+8d3c7f0fb7ffeb2283c701400fb6ffeb
+19f7df0fb7ffeb120fb7ffeb0d0fbfff
+eb088d3c7f0fb7ffeb07893d10000000
+c366893d08000000c30f1f8000000000
+0000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="f"/>
+<symbol space="ram" offset="0x1008" name="k"/>
+<symbol space="ram" offset="0x1011" name="neg_"/>
+<symbol space="ram" offset="0x1018" name="h"/>
+<symbol space="ram" offset="0x101d" name="g"/>
+<symbol space="ram" offset="0x1022" name="d"/>
+<symbol space="ram" offset="0x102a" name="sink"/>
+<symbol space="ram" offset="0x1031" name="sinkd"/>
+</binaryimage>
+<script>
+  <com>parse line extern void sinkd(uint2 x);</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu neg_</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="truncarg #1: a narrowed product keeps its 16-bit truncation" min="1" max="1">sink\(\(uint2\)\(a0 \* 3\)\);</stringmatch>
+<stringmatch name="truncarg #2: a narrowed byte sum keeps its 8-bit truncation" min="1" max="1">sink\(\(uint1\)\(a0 \+ '\\x01'\)\);</stringmatch>
+<stringmatch name="truncarg #3: a narrowed negation keeps its 16-bit truncation" min="1" max="1">sink\(\(uint2\)-a0\);</stringmatch>
+<stringmatch name="truncarg #4: the promoted forms are never printed" min="0" max="0">sink\((a0 \* 3|-a0|a0 \+ )</stringmatch>
+<stringmatch name="truncarg #5: an input whose promotion zero-extends gets no cast" min="1" max="1">sink\(a0\);</stringmatch>
+<stringmatch name="truncarg #6: a sign extension is untouched" min="1" max="1">sink\(\(int4\)a0\);</stringmatch>
+<stringmatch name="truncarg #7: a declared narrow parameter converts the argument itself" min="1" max="1">sinkd\(a0 \* 3\);</stringmatch>
+</decompilertest>
