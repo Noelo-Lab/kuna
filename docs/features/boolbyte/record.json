@@ -551,7 +551,8 @@
    "calls_changed": 0,
    "control_flow_changed": 0,
    "bool_pointer_or_array_added": 0,
-   "wrong_output_hunks": 0
+   "wrong_output_hunks": 0,
+   "classes_note": "type_spelling_only (95) and merge_shape_moves (10) partition the 105; subnn_intrinsic_to_bool_cast (6) overlaps them (2 spelling-only, 4 merge moves)"
   },
   "speed": {
    "method": "one release binary, `kuna decompile-all <bin>` (default mode) vs the same with `--option boolbyte off`, the two arms interleaved run by run (order alternating), min and median of 15 after one warm-up; measured while other campaign lanes and this branch's own rust-test were running",
