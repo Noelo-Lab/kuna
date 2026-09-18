@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--functions",
+    "vread",
+    "--option",
+    "structdefs",
+    "on"
+  ],
+  "cwd": "{{TMP}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/unionfield_fp_x86_64",
+    "binary_sha256": "6e47fe5afbaee90b87d05741a70629ba9db61d93c8a242cb39e5248bf4a33d32",
+    "binary_size": 16040,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/unionfield_fp_x86_64",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "char field_0x8\\[8\\];",
+      "return \\*\\(double \\*\\)a0->field_0x8;"
+    ],
+    "stdout_absent": [
+      "\\(double\\)a0->field_0x8"
+    ]
+  },
+  "notes": "vread reads one 8-byte union member as a double (movsd) and as a long converted to double (cvtsi2sdq). A long field_0x8 made the double read print the value conversion (double)a0->field_0x8; a field read both as a float and as a non-float is now raw bytes, and the double read casts the address."
+}

@@ -857,12 +857,13 @@ printed prototype never changes. The change is signalled by bumping the action's
 Because the ledger lives in the program's `TypeFactory`, `struct_N` is
 program-wide under `kuna decompile-all` and `kuna decompile-project`, which load
 once; `kuna decompile` spawns one engine per function, so there each function
-numbers from `struct_0` again, and so does each worker process of a `--jobs N`
-run. A sharded `decompile-project` cannot live with that: its `.h` declares every
-type once, and two workers can each mint a different `struct_0`, so its workers
-run with `structsynth off` and the run says so on stderr
-(`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`); a serial
-export synthesizes.
+numbers from `struct_0` again, and so would each worker process of a `--jobs N`
+run. A sharded run cannot live with that: two workers could each mint a different
+`struct_0`, so one `decompile-all` document would use the name for two layouts and
+a `decompile-project` `.h`, which declares every type once, could not declare both.
+Every sharded run's workers therefore run with `structsynth off` and the run says
+so on stderr (`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`);
+`--jobs 1` synthesizes.
 
 The synthesized layout is printable rather than only inferable: the P9 option
 [`structdefs`](../options.md) prints the definition of every composite a

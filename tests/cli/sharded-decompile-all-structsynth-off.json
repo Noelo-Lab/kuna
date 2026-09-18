@@ -1,0 +1,46 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--max-fn-seconds",
+    "0",
+    "--jobs",
+    "2",
+    "--jobs-chunk",
+    "1"
+  ],
+  "cwd": "{{TMP}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so",
+    "binary_sha256": "0b9737aee1bcf9bfa8be5b3b86f0e18da2248101be26ea79f50e0d8e34655839",
+    "binary_size": 14608,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "// Function: "
+    ],
+    "stdout_absent": [
+      "struct_\\d+"
+    ],
+    "stderr_matches": [
+      "\\[kuna --jobs\\] note: structsynth is off in the worker processes: each process would number its own struct_N, so one name could stand for two layouts\\. Re-run with --jobs 1 for synthesized structures\\."
+    ]
+  },
+  "notes": "A serial decompile-all of this fixture synthesizes five struct_N. Each worker process would number its own, so at --jobs 2 the same name stood for different layouts in functions two workers decompiled. Every sharded run now gives its workers structsynth off, stderr says so, and no struct_N reaches the document."
+}

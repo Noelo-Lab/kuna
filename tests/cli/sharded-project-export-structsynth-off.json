@@ -38,7 +38,7 @@
       "wrote .*proj: i386_pie_nl\\.c \\(\\d+ bytes\\), i386_pie_nl\\.h"
     ],
     "stderr_matches": [
-      "\\[kuna --jobs\\] note: structsynth is off in the worker processes: each process numbers its own struct_N, so a sharded \\.h cannot declare them consistently\\. Re-run with --jobs 1 for synthesized structures\\."
+      "\\[kuna --jobs\\] note: structsynth is off in the worker processes: each process would number its own struct_N, so one name could stand for two layouts\\. Re-run with --jobs 1 for synthesized structures\\."
     ],
     "stderr_absent": [
       "worker shards recovered different user-defined types"

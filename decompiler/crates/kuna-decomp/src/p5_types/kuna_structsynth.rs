@@ -202,9 +202,45 @@ struct Slot {
     width: int4,
     /// The type the widest access carried, when one was readable.
     ctype: Option<Rc<Datatype>>,
-    /// Two accesses of that width disagree on whether the value is signed, so
-    /// the field commits to neither.
-    contested: bool,
+    /// What every access of that width said the bytes are.
+    seen: Kinds,
+}
+
+/// The value classes the accesses of one slot carried.
+#[derive(Default, Clone, Copy)]
+struct Kinds {
+    signed: bool,
+    /// Unsigned or undefined.
+    unsigned: bool,
+    float: bool,
+    /// A readable type that is none of the above (a pointer, a bool).
+    other: bool,
+}
+
+impl Kinds {
+    fn note(&mut self, t: &Datatype) {
+        match t.get_metatype() {
+            type_metatype::TYPE_INT => self.signed = true,
+            type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN => self.unsigned = true,
+            type_metatype::TYPE_FLOAT => self.float = true,
+            _ => self.other = true,
+        }
+    }
+}
+
+impl Slot {
+    /// The bytes are read both as a float and as something else: a union member.
+    fn reinterpreted(&self) -> bool {
+        self.seen.float && (self.seen.signed || self.seen.unsigned || self.seen.other)
+    }
+
+    /// The type the field commits to, or `None` when the accesses disagree.
+    fn committed(&self) -> Option<&Rc<Datatype>> {
+        if self.reinterpreted() || (self.seen.signed && self.seen.unsigned) {
+            return None;
+        }
+        self.ctype.as_ref()
+    }
 }
 
 /// Everything one candidate base accumulated.
@@ -223,23 +259,27 @@ struct Evidence {
 impl Evidence {
     /// Record one access.
     ///
-    /// A field's type is the one every access of its width agrees on. When one
-    /// access carries a signed integer and another an unsigned or undefined one,
-    /// the field falls back to `undefined<N>`: a signed field would make the C
-    /// sign-extend a read the binary zero-extends (`movzwl` into a call argument
-    /// whose extension the call absorbed), which is the value the unsigned access
-    /// was printed to keep.
+    /// A field's type is the one every access of its width agrees on. A signed
+    /// access beside an unsigned or undefined one leaves the field `undefined<N>`:
+    /// a signed field would make the C sign-extend a read the binary zero-extends
+    /// (`movzwl` into a call argument whose extension the call absorbed). A float
+    /// beside anything else makes the field raw bytes, `undefined1[N]`: C has no
+    /// scalar that reads the same bits as both, and a `long` or `undefined8`
+    /// field read as `double` prints `(double)p->field_0x8`, a value conversion of
+    /// bits the binary reinterprets (`movsd 0x8(%rdi)`), where a byte array makes
+    /// every access cast the address instead.
     fn record(&mut self, off: intb, width: int4, ctype: Option<Rc<Datatype>>) {
         let slot = self.slots.entry(off).or_default();
+        if width < slot.width {
+            return;
+        }
         if width > slot.width {
             slot.width = width;
-            slot.ctype = ctype;
-            slot.contested = false;
-        } else if width == slot.width && disagree_on_sign(slot.ctype.as_deref(), ctype.as_deref()) {
-            slot.contested = true;
+            slot.seen = Kinds::default();
+            slot.ctype = ctype.clone();
         }
-        if slot.contested {
-            slot.ctype = None;
+        if let Some(t) = ctype.as_deref() {
+            slot.seen.note(t);
         }
     }
 
@@ -577,18 +617,6 @@ fn ledger_type(
     None
 }
 
-/// Do two scalar integer types of one width disagree on signedness?  Only a
-/// signed integer against an unsigned or undefined one counts; pointers, floats
-/// and an unreadable type are not evidence either way.
-fn disagree_on_sign(a: Option<&Datatype>, b: Option<&Datatype>) -> bool {
-    let (Some(a), Some(b)) = (a, b) else { return false };
-    let unsigned_scalar = |t: &Datatype| {
-        matches!(t.get_metatype(), type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)
-    };
-    let signed = |t: &Datatype| t.get_metatype() == type_metatype::TYPE_INT;
-    (signed(a) && unsigned_scalar(b)) || (unsigned_scalar(a) && signed(b))
-}
-
 /// Does this type's C spelling occupy exactly the bytes the decompiler thinks it
 /// does?  A scalar or a pointer does.  An aggregate carries its own padding and
 /// alignment into the exported header, so an aggregate-typed value degrades to
@@ -636,7 +664,7 @@ fn fields_for(
             // the instruments tell filler from a field the pass actually claims.
             types.get_type_array(*width, Rc::clone(&byte)).ok()?
         } else {
-            match ev.slots.get(&(*off as intb)).and_then(|s| s.ctype.as_ref()) {
+            match ev.slots.get(&(*off as intb)).and_then(Slot::committed) {
                 // A value type wider or narrower than the access is not this
                 // offset's field; fall back to the honest unknown of the access
                 // width, which prints `undefined<N>`.
@@ -671,7 +699,7 @@ fn layout_plan(slots: &BTreeMap<intb, Slot>) -> Option<(Vec<(int4, int4, bool)>,
         if off > next {
             plan.push((next, off - next, true));
         }
-        plan.push((off, slot.width, false));
+        plan.push((off, slot.width, slot.reinterpreted()));
         align = align.max(slot.width);
         next = off.checked_add(slot.width)?;
     }

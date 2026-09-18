@@ -1256,8 +1256,8 @@ Behaviors specific to `decompile-all`:
   - **The output of a non-stream run does not depend on how the pool scheduled
     it.** Work is handed out in a longest-first order that is deliberately not
     output order, but every target owns a slot and results are merged
-    positionally, so the document is identical to `--jobs 1` whatever order the
-    workers finish in. The concrete `--mode`, every resolved `--option` and the
+    positionally, so the document is identical to `--jobs 1` (with `structsynth
+    off`, below) whatever order the workers finish in. The concrete `--mode`, every resolved `--option` and the
     watchdog budget are settled once by the parent and passed to every worker.
     `decompile-project --stream` is the one surface where the schedule *is*
     observable, and only in the order of the `.c`: a streamed export writes each
@@ -1273,15 +1273,15 @@ Behaviors specific to `decompile-all`:
     rendering as `"BM"` where the serial run printed the UTF-16 `"䵂"`. The pool
     does not cause it: a serial `--filter '^sub_18073e690$'` over the same load
     prints `"BM"` too, and adding the function that reaches that address first
-    turns it back into `"䵂"`. `--jobs 1` is the definition of the answer. The
-    same holds for the synthesized structures of `structsynth`: each process
-    numbers its own `struct_N`, so under `decompile-all`/`decompile-graph
-    --jobs N` one name can mean two layouts in functions two workers decompiled.
-  - **`decompile-project` workers run with `structsynth off`.** Its `.h` declares
-    every type once for the whole program, and per-process `struct_N` numbering
-    cannot give it one layout per name, so a sharded export's type block is the
-    one `structsynth off` produces and the run says so on stderr. `--jobs 1`
-    (serial, or `--stream` without workers) synthesizes.
+    turns it back into `"䵂"`. `--jobs 1` is the definition of the answer.
+  - **Workers run with `structsynth off`.** A synthesized `struct_N` is named by
+    the process that minted it, so two workers could each mint a different
+    `struct_0`: a `decompile-all` or `decompile-graph` document would use one name
+    for two layouts, and a `decompile-project` `.h`, which declares every type
+    once, could not declare both. Every sharded run therefore passes its workers
+    `--option structsynth off` and says so on stderr, and its output is the one
+    `--jobs 1 --option structsynth off` produces. `--jobs 1` (serial, or
+    `--stream` without workers) synthesizes.
   - **Memory, not cores, is the limit.** Every worker loads the binary itself, so
     peak memory is roughly `N ×` one worker's resident size, on top of the
     parent's. On an 18 MB PE with 33,214 functions that is 469 MB per worker

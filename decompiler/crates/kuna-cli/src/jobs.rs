@@ -25,7 +25,9 @@
 //! function cannot idle the pool) and deliberately NOT in output order, but it
 //! is merged back **positionally**: every target owns a slot index and its
 //! result is written to that slot, so the emitted document is byte-identical to
-//! `--jobs 1` regardless of completion order.  The parent resolves the
+//! a `--jobs 1 --option structsynth off` run regardless of completion order.
+//! Workers run with `structsynth off` because each process would number its own
+//! `struct_N` ([`structsynth_shard_note`]).  The parent resolves the
 //! per-function watchdog budget, the concrete `--mode` and every `--option` ONCE
 //! and passes them explicitly, so a worker cannot resolve a different policy
 //! just because the run was sharded.  The one thing that can still differ is the
@@ -1342,9 +1344,7 @@ impl Worker {
             cmd.arg("--option").arg("fast_funcdisc").arg("off");
         }
         // See [`structsynth_shard_note`].
-        if cfg.want_types {
-            cmd.arg("--option").arg("structsynth").arg("off");
-        }
+        cmd.arg("--option").arg("structsynth").arg("off");
         // Same reasoning one flag further in: the parent's own load ran the
         // discovery walk on N decode lanes and is handing the inventory over, so
         // a worker must not run N more of them. Forced rather than merely left
@@ -1562,21 +1562,21 @@ pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
     out
 }
 
-/// Why a sharded `decompile-project` runs its workers with `structsynth off`,
-/// or `None` when the run had turned it off anyway.
+/// Why a sharded run gives its workers `structsynth off`, or `None` when the run
+/// had turned it off anyway.
 ///
 /// A synthesized `struct_N` is named by the process that minted it, so two
-/// workers can each define a different `struct_0`, and one `.h` cannot give that
-/// name one layout. The type block of a sharded export is therefore the pre-
-/// `structsynth` one; `--jobs 1` synthesizes.
+/// workers can each define a different `struct_0`: one document would use a name
+/// for two layouts, and one `.h` cannot declare both. A sharded run is therefore
+/// the `structsynth off` one; `--jobs 1` synthesizes.
 fn structsynth_shard_note(cfg: &PoolConfig, tag: &str) -> Option<String> {
     let explicit = cfg.options.iter().rev().find(|(name, _)| name == "structsynth");
-    if !cfg.want_types || explicit.is_some_and(|(_, value)| value == "off") {
+    if explicit.is_some_and(|(_, value)| value == "off") {
         return None;
     }
     Some(format!(
-        "[kuna {tag}] note: structsynth is off in the worker processes: each process numbers \
-         its own struct_N, so a sharded .h cannot declare them consistently. Re-run with \
+        "[kuna {tag}] note: structsynth is off in the worker processes: each process would \
+         number its own struct_N, so one name could stand for two layouts. Re-run with \
          --jobs 1 for synthesized structures."
     ))
 }
@@ -2857,20 +2857,20 @@ mod tests {
         }
     }
 
-    /// A sharded project export says why its type block has no `struct_N`, and
-    /// stays quiet where there was nothing to lose.
+    /// Every sharded run says why it has no `struct_N`, a project export or not,
+    /// and stays quiet where the run had turned synthesis off itself.
     #[test]
-    fn structsynth_shard_note_only_for_a_project_that_would_synthesize() {
-        let project = PoolConfig { want_types: true, ..cfg(0, 0.0) };
-        let note = structsynth_shard_note(&project, JOBS_TAG).expect("default param");
+    fn structsynth_shard_note_for_every_run_that_would_synthesize() {
+        let note = structsynth_shard_note(&cfg(0, 0.0), JOBS_TAG).expect("default param");
         assert!(note.starts_with("[kuna --jobs] note: structsynth is off"), "{note}");
-        assert!(structsynth_shard_note(&cfg(0, 0.0), JOBS_TAG).is_none());
+        let project = PoolConfig { want_types: true, ..cfg(0, 0.0) };
+        assert!(structsynth_shard_note(&project, STREAM_TAG).is_some());
         let off = [("structsynth".to_string(), "off".to_string())];
-        let turned_off = PoolConfig { want_types: true, options: &off, ..cfg(0, 0.0) };
-        assert!(structsynth_shard_note(&turned_off, STREAM_TAG).is_none());
+        let turned_off = PoolConfig { options: &off, ..cfg(0, 0.0) };
+        assert!(structsynth_shard_note(&turned_off, JOBS_TAG).is_none());
         let param = [("structsynth".to_string(), "param".to_string())];
-        let asked = PoolConfig { want_types: true, options: &param, ..cfg(0, 0.0) };
-        assert!(structsynth_shard_note(&asked, STREAM_TAG).is_some());
+        let asked = PoolConfig { options: &param, ..cfg(0, 0.0) };
+        assert!(structsynth_shard_note(&asked, JOBS_TAG).is_some());
     }
 
     /// The pool is the only thing that can enforce the per-function budget on a
