@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1144,
-    1144
+    1156,
+    1156
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -1125,6 +1125,18 @@
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
     "data:tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)",
+    "data:truncarg #10: a sum that provably fits its byte gets no cast",
+    "data:truncarg #11: a narrow parameter forwarded untouched keeps its promoted form",
+    "data:truncarg #12: a byte nothing zero-extended gets no unsigned cast",
+    "data:truncarg #1: a narrowed product keeps its 16-bit truncation",
+    "data:truncarg #2: a narrowed byte sum keeps its 8-bit truncation",
+    "data:truncarg #3: a narrowed negation keeps its 16-bit truncation",
+    "data:truncarg #4: the promoted forms are never printed",
+    "data:truncarg #5: an input whose promotion zero-extends gets no cast",
+    "data:truncarg #6: a sign extension is untouched",
+    "data:truncarg #7: a declared narrow parameter converts the argument itself",
+    "data:truncarg #8: a trimmed byte load printed as char keeps its zero-extension",
+    "data:truncarg #9: an AND of unsigned byte loads gets no cast",
     "data:undefname #1: no buildUndefinedName placeholder survives the naming pass, in either pass",
     "data:undefname #2: the va_arg slot is declared once per pass, at the width the body uses",
     "data:undefname #3: the va_arg guard reads the name the loop actually writes",
