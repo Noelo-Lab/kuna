@@ -1,4 +1,4 @@
-# typesweep, --baseline-only, main d3617d64 vs fix/truncarg, 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x; O0 O2 O2-noinline)
+# typesweep, --baseline-only, main e1139df9 (this branch with the narrowed-argument hook disabled) vs fix/truncarg, 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x; O0 O2 O2-noinline)
 ## main
 # typesweep base
 
@@ -13,8 +13,6 @@ functions scored: 10748
 
 - type_match PERFECT: 959 / 10748
 - aggregate type_match: 3037.19 (mean 0.2826)
-
-TYPESWEEP_RC=0
 
 ## fix/truncarg
 # typesweep base
@@ -31,6 +29,4 @@ functions scored: 10748
 - type_match PERFECT: 959 / 10748
 - aggregate type_match: 3037.19 (mean 0.2826)
 
-TYPESWEEP_RC=0
-
-rows.json (per-slice decisions + scores) of the two arms: 444/444 slices identical
+## per-slice rows (decisions + scores): identical in 444/444 slices

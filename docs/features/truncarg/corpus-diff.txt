@@ -1,5 +1,6 @@
-# truncarg whole-corpus decompile-all diff, kuna decompile-all <bin> --json: main d3617d64 vs fix/truncarg built on d3617d64
-# produced by classify_diff.py + breakdown.py over two disjoint 14-binary corpora (A: the implementer's, B: the reviewer's);
+# truncarg whole-corpus decompile-all diff, kuna decompile-all <bin> --json: main e1139df9 (this branch built with the
+# narrowed-argument hook disabled, byte-identical output to main on the stage and battery checks) vs fix/truncarg on e1139df9;
+# produced by classify_diff.py + breakdown.py over two disjoint 14-binary corpora (A and B);
 # every changed line listed below as: binary function | before => after (lines cut at 240 characters)
 
 ## corpus A
@@ -12,12 +13,12 @@ O2_coreutils_stripped_fmt                     fns=  151 changed=   0 cast_sites=
 O2_crazyflie_stripped_cf2-elf                 fns= 1971 changed= 184 cast_sites= 534
 O2_dash_stripped_dash                         fns=  335 changed=   1 cast_sites=   2
 O2_diffutils_stripped_diff                    fns=  398 changed=   5 cast_sites=   8
-O2_findutils_stripped_find                    fns=  658 changed=  11 cast_sites=  18
+O2_findutils_stripped_find                    fns=  658 changed=  11 cast_sites=  17
 O2_grep_stripped_grep                         fns=  449 changed=   6 cast_sites=  10
 O2_kmod_stripped_kmod                         fns=  394 changed=   2 cast_sites=   2
 O2_openssh-portable_stripped_sftp-server      fns=  464 changed=   4 cast_sites=   5
 O2_tar_stripped_tar                           fns= 1125 changed=  17 cast_sites=  29
-TOTAL fns=12775 changed_fns=902 cast_sites=2209 retyped_existing_casts=42 other=0
+TOTAL fns=12775 changed_fns=902 cast_sites=2208 retyped_existing_casts=13 other=0
 
 ## corpus A: each new cast, by the callee's own printed parameter at that position
 O0_coreutils_stripped_sort                    callee declares the narrow parameter (redundant)     2
@@ -40,7 +41,7 @@ O2_diffutils_stripped_diff                    callee declares the narrow paramet
 O2_diffutils_stripped_diff                    callee reads a wider parameter (value fixed)         2
 O2_findutils_stripped_find                    argument beyond the callee definition's parameters   1
 O2_findutils_stripped_find                    callee declares the narrow parameter (redundant)     11
-O2_findutils_stripped_find                    callee reads a wider parameter (value fixed)         6
+O2_findutils_stripped_find                    callee reads a wider parameter (value fixed)         5
 O2_grep_stripped_grep                         callee declares the narrow parameter (redundant)     7
 O2_grep_stripped_grep                         callee reads a wider parameter (value fixed)         3
 O2_kmod_stripped_kmod                         callee declares the narrow parameter (redundant)     2
@@ -49,14 +50,14 @@ O2_openssh-portable_stripped_sftp-server      callee reads a wider parameter (va
 O2_tar_stripped_tar                           argument beyond the callee definition's parameters   1
 O2_tar_stripped_tar                           callee declares the narrow parameter (redundant)     25
 O2_tar_stripped_tar                           callee reads a wider parameter (value fixed)         3
-total 2209 {'callee declares the narrow parameter (redundant)': 389, 'callee reads a wider parameter (value fixed)': 1264, "argument beyond the callee definition's parameters": 245, 'callee without a body in the corpus': 248, 'indirect call': 63}
+total 2208 {'callee declares the narrow parameter (redundant)': 389, 'callee reads a wider parameter (value fixed)': 1263, "argument beyond the callee definition's parameters": 245, 'callee without a body in the corpus': 248, 'indirect call': 63}
 
 ## corpus B
 O0_zlib_minigzip                              fns=  185 changed=   1 cast_sites=   1
 O2-noinline_coreutils_ls                      fns=  598 changed=  14 cast_sites=  26
 O2_chibios_ch.elf                             fns=  398 changed=  13 cast_sites=  19
 O2_cleanflight_cleanflight_DALRCF405.elf      fns= 2558 changed= 276 cast_sites= 774
-O2_iproute2_ip                                fns= 1008 changed= 101 cast_sites= 340
+O2_iproute2_ip                                fns= 1008 changed= 101 cast_sites= 337
 O2_libexpat_xmlwf                             fns=  126 changed=   0 cast_sites=   0
 O2_libopencm3_usart-stdio.elf                 fns=  151 changed=   0 cast_sites=   0
 O2_minipig_minipig.exe                        fns=   63 changed=   0 cast_sites=   0
@@ -66,7 +67,7 @@ O2_nuttx_nuttx                                fns=  792 changed=  35 cast_sites=
 O2_shadow_passwd                              fns=  228 changed=   2 cast_sites=   3
 O2_x0r-usb_x0r-usb.exe                        fns=   11 changed=   0 cast_sites=   0
 O2_zlib_libz.so.1.2.13                        fns=  184 changed=   0 cast_sites=   0
-TOTAL fns=6540 changed_fns=456 cast_sites=1331 retyped_existing_casts=74 other=0
+TOTAL fns=6540 changed_fns=456 cast_sites=1328 retyped_existing_casts=6 other=0
 
 ## corpus B: each new cast, by the callee's own printed parameter at that position
 O0_zlib_minigzip                              callee reads a wider parameter (value fixed)         1
@@ -79,7 +80,7 @@ O2_cleanflight_cleanflight_DALRCF405.elf      callee declares the narrow paramet
 O2_cleanflight_cleanflight_DALRCF405.elf      callee reads a wider parameter (value fixed)         413
 O2_cleanflight_cleanflight_DALRCF405.elf      callee without a body in the corpus                  80
 O2_cleanflight_cleanflight_DALRCF405.elf      indirect call                                        17
-O2_iproute2_ip                                argument beyond the callee definition's parameters   118
+O2_iproute2_ip                                argument beyond the callee definition's parameters   115
 O2_iproute2_ip                                callee declares the narrow parameter (redundant)     81
 O2_iproute2_ip                                callee reads a wider parameter (value fixed)         141
 O2_mirai_mirai                                callee declares the narrow parameter (redundant)     102
@@ -92,7 +93,7 @@ O2_nuttx_nuttx                                callee reads a wider parameter (va
 O2_nuttx_nuttx                                indirect call                                        10
 O2_shadow_passwd                              callee declares the narrow parameter (redundant)     2
 O2_shadow_passwd                              callee reads a wider parameter (value fixed)         1
-total 1331 {'callee reads a wider parameter (value fixed)': 602, 'callee declares the narrow parameter (redundant)': 381, "argument beyond the callee definition's parameters": 237, 'callee without a body in the corpus': 82, 'indirect call': 29}
+total 1328 {'callee reads a wider parameter (value fixed)': 602, 'callee declares the narrow parameter (redundant)': 381, "argument beyond the callee definition's parameters": 234, 'callee without a body in the corpus': 82, 'indirect call': 29}
 
 ## corpus A: every changed line
 O0_coreutils_stripped_sort sub_5372 | v6 = sub_4c3d(&v4,a1); => v6 = sub_4c3d(&v4,(unsigned char)a1);
@@ -128,7 +129,7 @@ O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cdb0 | sub_8010fc8(v3,*(c
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_800ce18 | if ((!sub_8021ba4()) && (v4 = sub_8021e5c(dat_10000c50), !v4)) => if ((!sub_8021ba4()) && (v4 = sub_8021e5c((uint1)dat_10000c50), !v4))
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cec4 | if (!sub_8022e58(v20,0x39,v3)) => if (!sub_8022e58(v20,0x39,(uint1)v3))
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cec4 | else if (!sub_8022e58(v20,3,a2 + '\x01')) => else if (!sub_8022e58(v20,3,(uint1)(a2 + '\x01')))
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cec4 | v8 = sub_8022fb0((char)a0[1]); => v8 = sub_8022fb0((uint1)a0[1]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cec4 | v8 = sub_8022fb0(*(char *)&a0[1]); => v8 = sub_8022fb0((uint1)*(char *)&a0[1]);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cec4 | sub_800f990(v8,v13,*(char *)((int4)a0 + 7)); => sub_800f990(v8,v13,(uint1)*(char *)((int4)a0 + 7));
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cec4 | v4 = sub_8011006(*(char *)((int4)a0 + 5)); => v4 = sub_8011006((uint1)*(char *)((int4)a0 + 5));
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_800cec4 | sub_800e8ec(v20,0x800cc71,0x90,*(char *)(a1 * 0x8c + 0x20002131)); => sub_800e8ec(v20,0x800cc71,0x90,(uint1)*(char *)(a1 * 0x8c + 0x20002131));
@@ -267,7 +268,7 @@ O2_betaflight_stripped_betaflight_STM32F405-elf sub_8018bc6 | if ((v1) && ((!*(c
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8018bc6 | sub_8032924(*(char *)(v5 * 6 + 0x2000ec3c)); => sub_8032924((uint1)*(char *)(v5 * 6 + 0x2000ec3c));
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8018bc6 | if ((dat_20007e08) && (v5 = sub_802406c(dat_20007e04), !v5)) => if ((dat_20007e08) && (v5 = sub_802406c((uint1)dat_20007e04), !v5))
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8018bc6 | if (((*(char *)(v6 + 0x200080c4)) && (v5 = sub_802406c(*(char *)(v6 + 0x200080c4)), v5)) && (*(uint1 *)(v5 + 6) & 2)) { => if (((*(char *)(v6 + 0x200080c4)) && (v5 = sub_802406c(
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_80193bc | if (!sub_801611c(v5,&v3[3],(uint4)v1 - 6,(char)v2)) => if (!sub_801611c(v5,&v3[3],(uint4)v1 - 6,(uint1)v2))
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80193bc | if (!sub_801611c(v5,&v3[3],(uint4)v2 - 6,v1)) => if (!sub_801611c(v5,&v3[3],(uint4)v2 - 6,(uint1)v1))
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8019568 | v3 = sub_80194f8(a0,a0 + 8,v1,v4,a3); => v3 = sub_80194f8(a0,a0 + 8,(uint1)v1,v4,a3);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8019bd8 | sub_8019bc4(*a0); => sub_8019bc4((uint1)*a0);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8019e4c | sub_80173f8(a0 + v1 * 2,0x8072780,*(char *)(a1 + v1)); => sub_80173f8(a0 + v1 * 2,0x8072780,(uint1)*(char *)(a1 + v1));
@@ -330,7 +331,7 @@ O2_betaflight_stripped_betaflight_STM32F405-elf sub_801c824 | sub_801a566(a0,v5,
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801c824 | sub_801a530(a0,v5,"rxfail %u %c %d",v2,*(char *)(*(uint1 *)(a2 + v2 * 2) + 0x807d0e4),(uint4)*(uint1 *)(v4 + 1) * 0x19 + 0x2ee); => sub_801a530(a0,v5,"rxfail %u %c %d",v2,(uint1)
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801c824 | sub_801a566(a0,v5,"rxfail %u %c %d",v2,*(char *)(*(uint1 *)(a1 + v2 * 2) + 0x807d0e4),(uint4)*(uint1 *)(v3 + 1) * 0x19 + 0x2ee); => sub_801a566(a0,v5,"rxfail %u %c %d",v2,(uint1)
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801c9c8 | sub_8019bc4(*(char *)(v5 + 0x20008764)); => sub_8019bc4((uint1)*(char *)(v5 + 0x20008764));
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_801ce58 | sub_801cc38("Manufacturer 0x%x, %ukB, %02d/%04d, v%d.%d, \'",*(char *)((int4)v1 + 6),*v1 >> 1,(char)v1[5],*(unsigned short *)((int4)v1 + 0x12),(char)v1[4],*(char *)((int4)v1 + 0x
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801ce58 | sub_801cc38("Manufacturer 0x%x, %ukB, %02d/%04d, v%d.%d, \'",*(char *)((int4)v1 + 6),*v1 >> 1,*(char *)&v1[5],*(unsigned short *)((int4)v1 + 0x12),*(char *)&v1[4],*(char *)((int4
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801d290 | while (v3 = sub_8010b98(v7), v3) { => while (v3 = sub_8010b98((uint1)v7), v3) {
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801d370 | sub_8019f40(v14,*(char *)(v11 * 3 + 0x20008395),0,1,0x801a567); => sub_8019f40(v14,(uint1)*(char *)(v11 * 3 + 0x20008395),0,1,0x801a567);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801d370 | sub_801d178("# AF%d: TIM%d CH%d%s",v1,v7,(*(uint1 *)((int4)v6 + 5) >> 2) + 1,v10); => sub_801d178("# AF%d: TIM%d CH%d%s",(uint1)v1,v7,(uint1)((*(uint1 *)((int4)v6 + 5) >> 2) + 1)
@@ -345,8 +346,8 @@ O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e0e4 | sub_801d178("Array
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e0e4 | sub_801d178("String length: %d - %d",*(char *)(a0 + 5),*(char *)(a0 + 6),0x80,a3); => sub_801d178("String length: %d - %d",(uint1)*(char *)(a0 + 5),(uint1)*(char *)(a0 + 6),0x80,
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | if ((v1) && (v4 = sub_802406c(v1), v4)) { => if ((v1) && (v4 = sub_802406c((uint1)v1), v4)) {
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | v7 = sub_8022fb0(v1); => v7 = sub_8022fb0((uint1)v1);
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | sub_802378c(v11[v5 * 4 + 3],(char)v11[v5 * 4 + 2]); => sub_802378c(v11[v5 * 4 + 3],(uint1)v11[v5 * 4 + 2]);
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | v8 = sub_80254cc((int4)(char)v11[v5 * 4],0,0,0,v11[v5 * 4 + 1],(char)v11[v5 * 4 + 2],0); => v8 = sub_80254cc((int4)(char)v11[v5 * 4],0,0,0,v11[v5 * 4 + 1],(uint1)v11[v5 * 4 + 2],
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | sub_802378c(v11[v5 * 4 + 3],*(char *)&v11[v5 * 4 + 2]); => sub_802378c(v11[v5 * 4 + 3],(uint1)*(char *)&v11[v5 * 4 + 2]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e1d8 | v8 = sub_80254cc((int4)(char)v11[v5 * 4],0,0,0,v11[v5 * 4 + 1],*(char *)&v11[v5 * 4 + 2],0); => v8 = sub_80254cc((int4)(char)v11[v5 * 4],0,0,0,v11[v5 * 4 + 1],(uint1)*(char *)&v1
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e2a0 | if ((v2) && (v5 = sub_802406c(v2), v5)) { => if ((v2) && (v5 = sub_802406c((uint1)v2), v5)) {
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e2a0 | v6 = sub_8022fb0(v2); => v6 = sub_8022fb0((uint1)v2);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_801e2a0 | sub_802378c(*(unsigned int *)&(&Stack0000002c)[v11 * 0x10],(&Stack00000028)[v11 * 0x10]); => sub_802378c(*(unsigned int *)&(&Stack0000002c)[v11 * 0x10],(uint1)(&Stack00000028)[v1
@@ -400,10 +401,10 @@ O2_betaflight_stripped_betaflight_STM32F405-elf sub_802199c | v3 = sub_8022fb0(v
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_802199c | if (!sub_800cec4(v2,v5 & 0xff,v7,v1,v4)) break; => if (!sub_800cec4(v2,v5 & 0xff,v7,(uint1)v1,v4)) break;
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022120 | *(unsigned int *)(v4 * 0x28 + 0x20002648) = sub_8022fb0(v1); => *(unsigned int *)(v4 * 0x28 + 0x20002648) = sub_8022fb0((uint1)v1);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022120 | *(unsigned int *)(v4 * 0x28 + 0x2000264c) = sub_8022fb0(v1); => *(unsigned int *)(v4 * 0x28 + 0x2000264c) = sub_8022fb0((uint1)v1);
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_802222c | sub_800de44((int4)*(char *)(*a0 + 4),(char)a0[1],a1,a2); => sub_800de44((int4)*(char *)(*a0 + 4),(uint1)a0[1],a1,a2);
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022240 | v2 = sub_800dd20((int4)*(char *)(*a0 + 4),(char)a0[1],a1,1,0x2001821a); => v2 = sub_800dd20((int4)*(char *)(*a0 + 4),(uint1)a0[1],a1,1,0x2001821a);
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_802227c | sub_800df44((int4)*(char *)(*a0 + 4),(char)a0[1],a1); => sub_800df44((int4)*(char *)(*a0 + 4),(uint1)a0[1],a1);
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_802229a | sub_800de74((int4)*(char *)(*a0 + 4),(char)a0[1],a1); => sub_800de74((int4)*(char *)(*a0 + 4),(uint1)a0[1],a1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802222c | sub_800de44((int4)*(char *)(*a0 + 4),*(char *)&a0[1],a1,a2); => sub_800de44((int4)*(char *)(*a0 + 4),(uint1)*(char *)&a0[1],a1,a2);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022240 | v2 = sub_800dd20((int4)*(char *)(*a0 + 4),*(char *)&a0[1],a1,1,0x2001821a); => v2 = sub_800dd20((int4)*(char *)(*a0 + 4),(uint1)*(char *)&a0[1],a1,1,0x2001821a);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802227c | sub_800df44((int4)*(char *)(*a0 + 4),*(char *)&a0[1],a1); => sub_800df44((int4)*(char *)(*a0 + 4),(uint1)*(char *)&a0[1],a1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_802229a | sub_800de74((int4)*(char *)(*a0 + 4),*(char *)&a0[1],a1); => sub_800de74((int4)*(char *)(*a0 + 4),(uint1)*(char *)&a0[1],a1);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022a98 | v1 = sub_8022fb0(*a0); => v1 = sub_8022fb0((uint1)*a0);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022a98 | sub_8022f20(v1,0x41,a1 + '\x01'); => sub_8022f20(v1,0x41,(uint1)(a1 + '\x01'));
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8022a98 | sub_800f938(v1,a0[1]); => sub_800f938(v1,(uint1)a0[1]);
@@ -1125,8 +1126,8 @@ O2_betaflight_stripped_betaflight_STM32F405-elf sub_80464ec | v1 = sub_8047120(d
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8046562 | sub_8046edc("H Product:Blackbox flight data recorder by Nicholas Sherlock\nH Data version:2\n"[dat_200107c8]); => sub_8046edc((uint1)"H Product:Blackbox flight data recorder by N
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_80466a8 | sub_804401c(dat_200182c1); => sub_804401c((uint1)dat_200182c1);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8046726 | v1 = sub_8047120(dat_200182c4); => v1 = sub_8047120((uint1)dat_200182c4);
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_80469f8 | sub_8046edc((char)a0[1]); => sub_8046edc((uint1)a0[1]);
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_80469f8 | sub_8046edc((char)a0[2]); => sub_8046edc((uint1)a0[2]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80469f8 | sub_8046edc(*(char *)&a0[1]); => sub_8046edc((uint1)*(char *)&a0[1]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_80469f8 | sub_8046edc(*(char *)&a0[2]); => sub_8046edc((uint1)*(char *)&a0[2]);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8046ab2 | sub_8046edc(*(char *)(v2 + v1 * 4)); => sub_8046edc((uint1)*(char *)(v2 + v1 * 4));
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8046ab2 | sub_8046edc(*(char *)(v2 + v1 * 4)); => sub_8046edc((uint1)*(char *)(v2 + v1 * 4));
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8046ab2 | sub_8046edc(*(char *)(v2 + v1 * 4)); => sub_8046edc((uint1)*(char *)(v2 + v1 * 4));
@@ -1171,9 +1172,9 @@ O2_betaflight_stripped_betaflight_STM32F405-elf sub_804ae60 | sub_804c8bc(v1,dat
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_804ae60 | dat_20013fd8 = sub_804ca74(sub_804c87c(),dat_20001899,dat_20001898); => dat_20013fd8 = sub_804ca74(sub_804c87c(),(uint1)dat_20001899,(uint1)dat_20001898);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_804afd4 | s_200018a8[3] = *(char *)sub_804c98c(v1,v4); => s_200018a8[3] = *(char *)sub_804c98c(v1,(uint1)v4);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_804afd4 | if (((v2) && (sub_804c8fc(v1,&v7))) && (sub_804cb34(v1,v7,&v3))) { => if (((v2) && (sub_804c8fc(v1,&v7))) && (sub_804cb34(v1,(uint1)v7,&v3))) {
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b2b0 | sub_800de44((int4)*(char *)(*a0 + 4),(char)a0[1],0x80,a1); => sub_800de44((int4)*(char *)(*a0 + 4),(uint1)a0[1],0x80,a1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b2b0 | sub_800de44((int4)*(char *)(*a0 + 4),*(char *)&a0[1],0x80,a1); => sub_800de44((int4)*(char *)(*a0 + 4),(uint1)*(char *)&a0[1],0x80,a1);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b2c4 | if (!sub_804b2b0(a0,v1)) break; => if (!sub_804b2b0(a0,(uint1)v1)) break;
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b2ec | sub_800de44((int4)*(char *)(*a0 + 4),(char)a0[1],0x40,a1); => sub_800de44((int4)*(char *)(*a0 + 4),(uint1)a0[1],0x40,a1);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b2ec | sub_800de44((int4)*(char *)(*a0 + 4),*(char *)&a0[1],0x40,a1); => sub_800de44((int4)*(char *)(*a0 + 4),(uint1)*(char *)&a0[1],0x40,a1);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b628 | v1 = sub_800fa68(dat_2001834c); => v1 = sub_800fa68((uint1)dat_2001834c);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b630 | v1 = sub_800fa68(dat_2001834c); => v1 = sub_800fa68((uint1)dat_2001834c);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_804b764 | dat_20011d84 = sub_8022fb0(*a1); => dat_20011d84 = sub_8022fb0((uint1)*a1);
@@ -1406,7 +1407,7 @@ O2_betaflight_stripped_betaflight_STM32F405-elf sub_8061110 | sub_8022914(v1,0x1
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8061b04 | dat_200141c8 = sub_8022fb0(*a0); => dat_200141c8 = sub_8022fb0((uint1)*a0);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8061b68 | dat_200141f8 = sub_8022fb0(*(char *)(a0 + 1)); => dat_200141f8 = sub_8022fb0((uint1)*(char *)(a0 + 1));
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8062568 | v2 = sub_8022fb0(*a0); => v2 = sub_8022fb0((uint1)*a0);
-O2_betaflight_stripped_betaflight_STM32F405-elf sub_8063a90 | sub_8063a80(v1,0x25,(char)a0[1]); => sub_8063a80(v1,0x25,(uint1)a0[1]);
+O2_betaflight_stripped_betaflight_STM32F405-elf sub_8063a90 | sub_8063a80(v1,0x25,*(char *)&a0[1]); => sub_8063a80(v1,0x25,(uint1)*(char *)&a0[1]);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8063b3c | sub_80229ec(v2,0x49,a1,dat_200142f9,a3); => sub_80229ec(v2,0x49,a1,(uint1)dat_200142f9,a3);
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8064124 | v1 = sub_8022fb0(*(char *)(a0 + 0xf4)); => v1 = sub_8022fb0((uint1)*(char *)(a0 + 0xf4));
 O2_betaflight_stripped_betaflight_STM32F405-elf sub_8064740 | sub_8064730(dat_20018412); => sub_8064730((uint1)dat_20018412);
@@ -1902,8 +1903,8 @@ O2_crazyflie_stripped_cf2-elf sub_8015c1a | if ((*v6)(v1,0x19,v8,1)) => if ((*v6
 O2_crazyflie_stripped_cf2-elf sub_8015c1a | if ((*v6)(v1,0x1a,v8,1)) => if ((*v6)((unsigned char)v1,0x1a,v8,1))
 O2_crazyflie_stripped_cf2-elf sub_8015f1c | if ((*v4)(v1,0x7e,v7,1)) => if ((*v4)((unsigned char)v1,0x7e,v7,1))
 O2_crazyflie_stripped_cf2-elf sub_80161c4 | if ((*v5)(v1,0x1b,&v8,1)) { => if ((*v5)((unsigned char)v1,0x1b,&v8,1)) {
-O2_crazyflie_stripped_cf2-elf sub_80168dc | sub_8010ec4((char)v2[3],*(char *)(v5 + v3 * 8)); => sub_8010ec4((unsigned char)v2[3],(unsigned char)*(char *)(v5 + v3 * 8));
-O2_crazyflie_stripped_cf2-elf sub_80168dc | sub_80168a4((char)v2[3]); => sub_80168a4((unsigned char)v2[3]);
+O2_crazyflie_stripped_cf2-elf sub_80168dc | sub_8010ec4(*(char *)&v2[3],*(char *)(v5 + v3 * 8)); => sub_8010ec4((unsigned char)*(char *)&v2[3],(unsigned char)*(char *)(v5 + v3 * 8));
+O2_crazyflie_stripped_cf2-elf sub_80168dc | sub_80168a4(*(char *)&v2[3]); => sub_80168a4((unsigned char)*(char *)&v2[3]);
 O2_crazyflie_stripped_cf2-elf sub_8016dc4 | sub_8037494(0x8022621,"OW: Cmd 0x%X timeout.\n",v4); => sub_8037494(0x8022621,"OW: Cmd 0x%X timeout.\n",(unsigned char)v4);
 O2_crazyflie_stripped_cf2-elf sub_8017020 | v2 = sub_8016dc4(0x23,(char)dat_20003bdb + '\x05'); => v2 = sub_8016dc4(0x23,(unsigned char)((char)dat_20003bdb + '\x05'));
 O2_crazyflie_stripped_cf2-elf sub_8017020 | if (!sub_8016dc4(0x23,v1 + '\x05')) { => if (!sub_8016dc4(0x23,(unsigned char)(v1 + '\x05'))) {
@@ -1994,7 +1995,7 @@ O2_crazyflie_stripped_cf2-elf sub_802656c | v7 = sub_8026514(v9 - (v6 & 0xff) & 
 O2_crazyflie_stripped_cf2-elf sub_802656c | v7 = sub_8026440(v9,v10[0],dat_20008848 + '\xfb',0x2000884f); => v7 = sub_8026440(v9,v10[0],(unsigned char)(dat_20008848 + '\xfb'),0x2000884f);
 O2_crazyflie_stripped_cf2-elf sub_802656c | v7 = sub_8026498(v9 - (v6 & 0xff) & 0xff,v10[0],dat_2000884f,0x20008850); => v7 = sub_8026498(v9 - (v6 & 0xff) & 0xff,v10[0],(unsigned char)dat_2000884f,0x20008850);
 O2_crazyflie_stripped_cf2-elf sub_802656c | v7 = sub_80263e8(v9,v10[0],dat_2000884f,0x20008850); => v7 = sub_80263e8(v9,v10[0],(unsigned char)dat_2000884f,0x20008850);
-O2_crazyflie_stripped_cf2-elf sub_80267e4 | sub_8037494(0x8022621,"MSP Request has invalid preamble %d %d\n",(char)*a0,*(char *)((int)a0 + 1)); => sub_8037494(0x8022621,"MSP Request has invalid preamble %d %d\n",(unsigned char)*a0,(unsigned
+O2_crazyflie_stripped_cf2-elf sub_80267e4 | sub_8037494(0x8022621,"MSP Request has invalid preamble %d %d\n",*(char *)a0,*(char *)((int)a0 + 1)); => sub_8037494(0x8022621,"MSP Request has invalid preamble %d %d\n",(unsigned char)*(char *)a0
 O2_crazyflie_stripped_cf2-elf sub_80267e4 | (**(void **)&a0[0x8e])(&a0[0xc],a0[0x8c]); => (**(void **)&a0[0x8e])(&a0[0xc],(unsigned short)a0[0x8c]);
 O2_crazyflie_stripped_cf2-elf sub_8027cb8 | sub_80270b0(0x20005ee8,dat_20005eea); => sub_80270b0(0x20005ee8,(unsigned char)dat_20005eea);
 O2_crazyflie_stripped_cf2-elf sub_8029d4c | while (v2 = sub_802a474(dat_20008f28), v2) { => while (v2 = sub_802a474((unsigned char)dat_20008f28), v2) {
@@ -2007,14 +2008,14 @@ O2_crazyflie_stripped_cf2-elf sub_8029ef8 | sub_8029ea4(dat_20008f18); => sub_80
 O2_crazyflie_stripped_cf2-elf sub_8029ef8 | sub_8029ea4(dat_20008f19); => sub_8029ea4((unsigned char)dat_20008f19);
 O2_crazyflie_stripped_cf2-elf sub_8029ef8 | sub_802a48c(dat_20008f28); // tail-call => sub_802a48c((unsigned char)dat_20008f28); // tail-call
 O2_crazyflie_stripped_cf2-elf sub_8029f88 | sub_8029ef8(*(unsigned int *)&a0[4],*a0); => sub_8029ef8(*(unsigned int *)&a0[4],(unsigned char)*a0);
-O2_crazyflie_stripped_cf2-elf sub_802a0d8 | return sub_8029de0(v3,(char)v2); // tail-call => return sub_8029de0(v3,(unsigned char)v2); // tail-call
-O2_crazyflie_stripped_cf2-elf sub_802a198 | return sub_8029de0(v2,(char)v1); // tail-call => return sub_8029de0(v2,(unsigned char)v1); // tail-call
+O2_crazyflie_stripped_cf2-elf sub_802a0d8 | return sub_8029de0(v2,v1); // tail-call => return sub_8029de0(v2,(unsigned char)v1); // tail-call
+O2_crazyflie_stripped_cf2-elf sub_802a198 | return sub_8029de0(v2,v1); // tail-call => return sub_8029de0(v2,(unsigned char)v1); // tail-call
 O2_crazyflie_stripped_cf2-elf sub_802a4fc | sub_802c408(dat_20008f1c); => sub_802c408((unsigned char)dat_20008f1c);
 O2_crazyflie_stripped_cf2-elf sub_802a502 | sub_802c408(dat_20008f1c); => sub_802c408((unsigned char)dat_20008f1c);
-O2_crazyflie_stripped_cf2-elf sub_802a854 | sub_802c408((char)*v11); => sub_802c408((unsigned char)*v11);
-O2_crazyflie_stripped_cf2-elf sub_802a8a8 | sub_802c408((char)*v11); => sub_802c408((unsigned char)*v11);
-O2_crazyflie_stripped_cf2-elf sub_802aa60 | sub_802c408((char)*v11); => sub_802c408((unsigned char)*v11);
-O2_crazyflie_stripped_cf2-elf sub_802aafc | sub_802c408((char)*v16); => sub_802c408((unsigned char)*v16);
+O2_crazyflie_stripped_cf2-elf sub_802a854 | sub_802c408(*(char *)v11); => sub_802c408((unsigned char)*(char *)v11);
+O2_crazyflie_stripped_cf2-elf sub_802a8a8 | sub_802c408(*(char *)v11); => sub_802c408((unsigned char)*(char *)v11);
+O2_crazyflie_stripped_cf2-elf sub_802aa60 | sub_802c408(*(char *)v11); => sub_802c408((unsigned char)*(char *)v11);
+O2_crazyflie_stripped_cf2-elf sub_802aafc | sub_802c408(*(char *)v16); => sub_802c408((unsigned char)*(char *)v16);
 O2_crazyflie_stripped_cf2-elf sub_802b574 | sub_8037494(0x8022621,"SUP: State: %s\n",sub_802bb00(v1)); => sub_8037494(0x8022621,"SUP: State: %s\n",sub_802bb00((unsigned char)v1));
 O2_crazyflie_stripped_cf2-elf sub_802f5d0 | sub_80308b8(dat_20001199); // tail-call => sub_80308b8((unsigned char)dat_20001199); // tail-call
 O2_crazyflie_stripped_cf2-elf sub_802fcf4 | sub_8037494(0x8022621,"LHFL: Lighthouse bootloader version: %d\n",v5); => sub_8037494(0x8022621,"LHFL: Lighthouse bootloader version: %d\n",(unsigned char)v5);
@@ -2058,7 +2059,6 @@ O2_diffutils_stripped_diff sub_11bc0 | v4 = sub_11170(*(unsigned int *)(a0[5] + 
 O2_diffutils_stripped_diff sub_12690 | v25 = sub_12690(0,0xffffffffffffffff,"%Y-%m-%d",a3,v4,0x2b,4,v3,a8); => v25 = sub_12690(0,0xffffffffffffffff,"%Y-%m-%d",a3,(unsigned char)v4,0x2b,4,v3,a8);
 O2_diffutils_stripped_diff sub_12690 | v25 = sub_12690(0,0xffffffffffffffff,v35,a3,v4,v33,v31,v3,a8); => v25 = sub_12690(0,0xffffffffffffffff,v35,a3,(unsigned char)v4,v33,v31,v3,a8);
 O2_diffutils_stripped_diff sub_12690 | sub_12690(v28,a1 - v34,v35,a3,v4,v33,v31,v3,a8); => sub_12690(v28,a1 - v34,v35,a3,(unsigned char)v4,v33,v31,v3,a8);
-O2_findutils_stripped_find sub_7670 | v9 = sub_7510((short)a1[0xd]); => v9 = sub_7510((unsigned short)a1[0xd]);
 O2_findutils_stripped_find sub_7670 | v8 = sub_7510(v5); => v8 = sub_7510((unsigned short)v5);
 O2_findutils_stripped_find sub_8fe0 | sub_165e0(a0,dat_385f8,dat_385f0,a1,dat_38638,dat_3865c,*(char *)(a2 + 0x28),*(unsigned long *)(a2 + 0x40)); => sub_165e0(a0,dat_385f8,dat_385f0,a1,dat_38638,dat_3865c,(unsigned char)*(char *)(a2 + 0x28
 O2_findutils_stripped_find sub_9020 | sub_16e80(*(unsigned long *)(a2 + 0x40),*(unsigned long *)(a2 + 0x58),*(char *)(a2 + 0x50),"%s\n",a0); => sub_16e80(*(unsigned long *)(a2 + 0x40),*(unsigned long *)(a2 + 0x58),(unsigned char)*(char *)(a
@@ -2074,8 +2074,8 @@ O2_findutils_stripped_find sub_f620 | v4 = sub_16e80(*(unsigned long *)(a0 + 8),
 O2_findutils_stripped_find sub_10870 | dat_38e40 = sub_1e550(a0); => dat_38e40 = sub_1e550((unsigned char)a0);
 O2_findutils_stripped_find sub_1b2f0 | v2 = sub_1ab50(*(unsigned int *)(a1 + 8),a0,*(char *)(a1 + 0x10)); => v2 = sub_1ab50(*(unsigned int *)(a1 + 8),a0,(unsigned char)*(char *)(a1 + 0x10));
 O2_findutils_stripped_find sub_1b5a0 | v4 = sub_1ab50(*(unsigned int *)(a0[5] + 8),a1,*(char *)(a0[5] + 0x10)); => v4 = sub_1ab50(*(unsigned int *)(a0[5] + 8),a1,(unsigned char)*(char *)(a0[5] + 0x10));
-O2_findutils_stripped_find sub_1f590 | if (!sub_1f4d0(a0,(char)v2,v1,v37,v17)) => if (!sub_1f4d0(a0,(unsigned char)v2,v1,v37,v17))
-O2_findutils_stripped_find sub_1f590 | if (!sub_1f4d0(a0,(char)v2,v1,v37,v17)) => if (!sub_1f4d0(a0,(unsigned char)v2,v1,v37,v17))
+O2_findutils_stripped_find sub_1f590 | if (!sub_1f4d0(a0,v1,v3,v38,v18)) => if (!sub_1f4d0(a0,(unsigned char)v1,v3,v38,v18))
+O2_findutils_stripped_find sub_1f590 | if (!sub_1f4d0(a0,v1,v3,v38,v18)) => if (!sub_1f4d0(a0,(unsigned char)v1,v3,v38,v18))
 O2_grep_stripped_grep sub_a0f0 | v2 = sub_9130(v1,a3); // tail-call => v2 = sub_9130(v1,(unsigned char)a3); // tail-call
 O2_grep_stripped_grep sub_ab10 | sub_ab10(*a0,a1,a2,a3); => sub_ab10(*a0,a1,a2,(unsigned char)a3);
 O2_grep_stripped_grep sub_ab10 | sub_ab10(a0[1],a1,a2,a3); => sub_ab10(a0[1],a1,a2,(unsigned char)a3);
@@ -2116,15 +2116,15 @@ O2_tar_stripped_tar sub_233e0 | v19 = (char *)sub_23240(a0[0x1f],a0[0x20],dat_82
 O2_tar_stripped_tar sub_41370 | v39 = sub_41370(0,"%Y-%m-%d",a2,v9,0x2b,4,v8,v36); => v39 = sub_41370(0,"%Y-%m-%d",a2,(uint1)v9,0x2b,4,v8,v36);
 O2_tar_stripped_tar sub_41370 | v39 = sub_41370(0,v32,a2,v9,v37,v20,v8,v36); => v39 = sub_41370(0,v32,a2,(uint1)v9,v37,v20,v8,v36);
 O2_tar_stripped_tar sub_41370 | sub_41370(a0,v32,a2,v9,v37,v20,v8,a7); => sub_41370(a0,v32,a2,(uint1)v9,v37,v20,v8,a7);
-O2_tar_stripped_tar sub_46d70 | if (!sub_46a40(a0,(char)v3,v2,v16,v17)) => if (!sub_46a40(a0,(uint1)v3,v2,v16,v17))
-O2_tar_stripped_tar sub_46d70 | if (!sub_46a40(a0,(char)v3,v2,v16,v17)) => if (!sub_46a40(a0,(uint1)v3,v2,v16,v17))
+O2_tar_stripped_tar sub_46d70 | if (!sub_46a40(a0,v2,v4,v17,v18)) => if (!sub_46a40(a0,(uint1)v2,v4,v17,v18))
+O2_tar_stripped_tar sub_46d70 | if (!sub_46a40(a0,v2,v4,v17,v18)) => if (!sub_46a40(a0,(uint1)v2,v4,v17,v18))
 O2_tar_stripped_tar sub_5f210 | v25 = sub_5f210(0,0xffffffffffffffff,"%Y-%m-%d",a3,v4,0x2b,4,v3,a8); => v25 = sub_5f210(0,0xffffffffffffffff,"%Y-%m-%d",a3,(uint1)v4,0x2b,4,v3,a8);
 O2_tar_stripped_tar sub_5f210 | v25 = sub_5f210(0,0xffffffffffffffff,v35,a3,v4,v33,v31,v3,a8); => v25 = sub_5f210(0,0xffffffffffffffff,v35,a3,(uint1)v4,v33,v31,v3,a8);
 O2_tar_stripped_tar sub_5f210 | sub_5f210(v28,a1 - v34,v35,a3,v4,v33,v31,v3,a8); => sub_5f210(v28,a1 - v34,v35,a3,(uint1)v4,v33,v31,v3,a8);
 
 ## corpus B: every changed line
 O0_zlib_minigzip sub_f4f0 | *(unsigned short *)(a0 + (long)v5 * 4) = sub_1268a(v1,v2); => *(unsigned short *)(a0 + (long)v5 * 4) = sub_1268a((unsigned short)v1,v2);
-O2-noinline_coreutils_ls main | sub_b180(*v9,v9[1],(char)v9[2]); => sub_b180(*v9,v9[1],(unsigned char)v9[2]);
+O2-noinline_coreutils_ls main | sub_b180(*v9,v9[1],*(char *)&v9[2]); => sub_b180(*v9,v9[1],(unsigned char)*(char *)&v9[2]);
 O2-noinline_coreutils_ls sub_6f50 | sub_59b0(a0); // tail-call => sub_59b0((unsigned char)a0); // tail-call
 O2-noinline_coreutils_ls sub_70b0 | sub_6f50(a2,dcgettext(NULL,"cannot read symbolic link %s",5),a0); // tail-call => sub_6f50((unsigned char)a2,dcgettext(NULL,"cannot read symbolic link %s",5),a0); // tail-call
 O2-noinline_coreutils_ls sub_8af0 | v6 = (v6 + 1) - (unsigned long)(sub_6040(v1,v3,v2) == '\0'); => v6 = (v6 + 1) - (unsigned long)(sub_6040((unsigned char)v1,v3,v2) == '\0');
@@ -2216,17 +2216,17 @@ O2_cleanflight_cleanflight_DALRCF405.elf sub_800af4c | v8 = sub_8010d04(dat_2000
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800af4c | sub_8039162(v3,sub_8010d0a(v1),1); => sub_8039162(v3,sub_8010d0a((unsigned char)v1),1);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800b144 | sub_80383f4(dat_2000267c,0x32a,a2,dat_20008ad6,a3); => sub_80383f4(dat_2000267c,0x32a,a2,(unsigned char)dat_20008ad6,a3);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800b28c | v4 = (*v2)(v4 + (sub_80108f4(v1) + 2) * 4 + 4,4,v3); => v4 = (*v2)(v4 + (sub_80108f4((unsigned char)v1) + 2) * 4 + 4,4,v3);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | v2 = sub_800ffa0((char)a0[1]); => v2 = sub_800ffa0((unsigned char)a0[1]);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800feec(v2,0x2a,(char)a0[2]); => sub_800feec(v2,0x2a,(unsigned char)a0[2]);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_8010c94(v6,*(char *)((int)a0 + 5),&v9); => sub_8010c94(v6,(unsigned char)*(char *)((int)a0 + 5),&v9);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_8010ccc(v6,*(char *)((int)a0 + 5),8); => sub_8010ccc(v6,(unsigned char)*(char *)((int)a0 + 5),8);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_8039022(v6,*(char *)((int)a0 + 5),4); => sub_8039022(v6,(unsigned char)*(char *)((int)a0 + 5),4);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_8039000(v6,*(char *)((int)a0 + 5),1); => sub_8039000(v6,(unsigned char)*(char *)((int)a0 + 5),1);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | v1 = sub_8010d0a(*(char *)((int)a0 + 5)); => v1 = sub_8010d0a((unsigned char)*(char *)((int)a0 + 5));
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800ad10((char)v3,0x31,sub_80108dc(v6)); => sub_800ad10((unsigned char)v3,0x31,(unsigned char)sub_80108dc(v6));
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800ae30((char)a0[8],0x800b185,0x60,a1); => sub_800ae30((unsigned char)a0[8],0x800b185,0x60,a1);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800ad10((char)a0[5],3,a1 + 1U & 0xff); => sub_800ad10((unsigned char)a0[5],3,a1 + 1U & 0xff);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800ae30((char)a0[5],0x800b185,0x60,a1); => sub_800ae30((unsigned char)a0[5],0x800b185,0x60,a1);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | v3 = sub_800ffa0(*(char *)&a0[1]); => v3 = sub_800ffa0((unsigned char)*(char *)&a0[1]);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800feec(v3,0x2a,*(char *)&a0[2]); => sub_800feec(v3,0x2a,(unsigned char)*(char *)&a0[2]);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_8010c94(v7,*(char *)((int)a0 + 5),&v10); => sub_8010c94(v7,(unsigned char)*(char *)((int)a0 + 5),&v10);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_8010ccc(v7,*(char *)((int)a0 + 5),8); => sub_8010ccc(v7,(unsigned char)*(char *)((int)a0 + 5),8);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_8039022(v7,*(char *)((int)a0 + 5),4); => sub_8039022(v7,(unsigned char)*(char *)((int)a0 + 5),4);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_8039000(v7,*(char *)((int)a0 + 5),1); => sub_8039000(v7,(unsigned char)*(char *)((int)a0 + 5),1);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | v2 = sub_8010d0a(*(char *)((int)a0 + 5)); => v2 = sub_8010d0a((unsigned char)*(char *)((int)a0 + 5));
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800ad10(v1,0x31,sub_80108dc(v4)); => sub_800ad10((unsigned char)v1,0x31,(unsigned char)sub_80108dc(v4));
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800ae30(*(char *)&a0[8],0x800b185,0x60,a1); => sub_800ae30((unsigned char)*(char *)&a0[8],0x800b185,0x60,a1);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800ad10(*(char *)&a0[5],3,a1 + 1U & 0xff); => sub_800ad10((unsigned char)*(char *)&a0[5],3,a1 + 1U & 0xff);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800b3c4 | sub_800ae30(*(char *)&a0[5],0x800b185,0x60,a1); => sub_800ae30((unsigned char)*(char *)&a0[5],0x800b185,0x60,a1);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800b76a | v3 = sub_800ba0c(a0,a3,a4,a5); => v3 = sub_800ba0c(a0,a3,a4,(unsigned char)a5);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800ba0c | sub_800ae30(v2,0x800b8c9,*(char *)(v5 + 0x1f),v4); => sub_800ae30(v2,0x800b8c9,(unsigned char)*(char *)(v5 + 0x1f),v4);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800ba0c | v1 = sub_800ffa0(*(char *)((int)v4 + 0x65)); => v1 = sub_800ffa0((unsigned char)*(char *)((int)v4 + 0x65));
@@ -2256,7 +2256,7 @@ O2_cleanflight_cleanflight_DALRCF405.elf sub_800ea2c | v1 = sub_800ea0c(*a0); =>
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800ea2c | v2 = sub_800ea0c(*a1); => v2 = sub_800ea0c((unsigned char)*a1);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800ecbc | sub_800e810(a0,"%04u-%02u-%02u %02u:%02u:%02u",*a1,*(char *)&a1[1],*(char *)((int)a1 + 3),*(char *)&a1[2],*(char *)((int)a1 + 5),*(char *)&a1[3]); => sub_800e810(a0,"%04u-%02u-%02u %02u
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800ecbc | sub_800e810(a0,"%04u-%02u-%02uT%02u:%02u:%02u.%03u%c%02d:%02d",*a1,*(char *)&a1[1],*(char *)((int)a1 + 3),*(char *)&a1[2],*(char *)((int)a1 + 5),*(char *)&a1[3],a1[4],v4,(v3 ^ v3 >> 0x1
-O2_cleanflight_cleanflight_DALRCF405.elf sub_800f404 | sub_80152d6(v2,&v1[3],(unsigned int)*v1 - 6,(char)v1[2]); => sub_80152d6(v2,&v1[3],(unsigned int)*v1 - 6,(unsigned char)v1[2]);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_800f404 | sub_80152d6(v2,&v1[3],(unsigned int)*v1 - 6,*(char *)&v1[2]); => sub_80152d6(v2,&v1[3],(unsigned int)*v1 - 6,(unsigned char)*(char *)&v1[2]);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800f614 | v3 = sub_800f5a4(a0,*(unsigned int *)(a0 + 8),v1,v4,a3); => v3 = sub_800f5a4(a0,*(unsigned int *)(a0 + 8),(unsigned char)v1,v4,a3);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800f7a8 | *(unsigned int *)(v4 * 0x24 + 0x20008c00) = sub_800ffa0(v1); => *(unsigned int *)(v4 * 0x24 + 0x20008c00) = sub_800ffa0((unsigned char)v1);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_800f7a8 | *(unsigned int *)(v4 * 0x24 + 0x20008c04) = sub_800ffa0(v1); => *(unsigned int *)(v4 * 0x24 + 0x20008c04) = sub_800ffa0((unsigned char)v1);
@@ -2399,16 +2399,16 @@ O2_cleanflight_cleanflight_DALRCF405.elf sub_80168c0 | sub_800feec(dat_20004e78,
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016ca6 | sub_8016bb8(*a1,*(char *)((int)a1 + 5),a4,v3); => sub_8016bb8(*a1,(unsigned char)*(char *)((int)a1 + 5),a4,v3);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016d78 | v2 = (unsigned int *)sub_8010c4c(v1,0); => v2 = (unsigned int *)sub_8010c4c((unsigned char)v1,0);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016d78 | v3 = sub_800ffa0(v1); => v3 = sub_800ffa0((unsigned char)v1);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_8016d78 | sub_800b3c4(v2,v6 & 0xff,(char)a0[1],v7); => sub_800b3c4(v2,v6 & 0xff,(unsigned char)a0[1],v7);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_8016d78 | sub_800b3c4(v2,v6 & 0xff,*(char *)&a0[1],v7); => sub_800b3c4(v2,v6 & 0xff,(unsigned char)*(char *)&a0[1],v7);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016d78 | sub_800feec(*(unsigned int *)(v6 * 0x18 + 0x20004f78),2,*(char *)&v2[2]); => sub_800feec(*(unsigned int *)(v6 * 0x18 + 0x20004f78),2,(unsigned char)*(char *)&v2[2]);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016d78 | sub_8016ca6(v5 + 0x20004f64,v2,v4,v9 & 0xffff,a1,*(char *)((int)a0 + 3)); => sub_8016ca6(v5 + 0x20004f64,v2,v4,v9 & 0xffff,a1,(unsigned char)*(char *)((int)a0 + 3));
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e08 | v2 = (unsigned int *)sub_8010c4c(v1,0); => v2 = (unsigned int *)sub_8010c4c((unsigned char)v1,0);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e08 | v3 = sub_800ffa0(v1); => v3 = sub_800ffa0((unsigned char)v1);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e08 | sub_800b3c4(v2,v6 & 0xff,(char)v7[1],v8); => sub_800b3c4(v2,v6 & 0xff,(unsigned char)v7[1],v8);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e08 | sub_800b3c4(v2,v6 & 0xff,*(char *)&v7[1],v8); => sub_800b3c4(v2,v6 & 0xff,(unsigned char)*(char *)&v7[1],v8);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e08 | sub_800feec(*(unsigned int *)(v6 * 0x18 + 0x20004f78),2,*(char *)&v2[2]); => sub_800feec(*(unsigned int *)(v6 * 0x18 + 0x20004f78),2,(unsigned char)*(char *)&v2[2]);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e28 | v2 = (unsigned int *)sub_8010c4c(v1,0); => v2 = (unsigned int *)sub_8010c4c((unsigned char)v1,0);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e28 | v3 = sub_800ffa0(v1); => v3 = sub_800ffa0((unsigned char)v1);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e28 | sub_800b3c4(v2,v6 & 0xff,(char)v7[1],v8); => sub_800b3c4(v2,v6 & 0xff,(unsigned char)v7[1],v8);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e28 | sub_800b3c4(v2,v6 & 0xff,*(char *)&v7[1],v8); => sub_800b3c4(v2,v6 & 0xff,(unsigned char)*(char *)&v7[1],v8);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8016e28 | sub_800feec(*(unsigned int *)(v6 * 0x18 + 0x20004f78),2,*(char *)&v2[2]); => sub_800feec(*(unsigned int *)(v6 * 0x18 + 0x20004f78),2,(unsigned char)*(char *)&v2[2]);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8017180 | v2 = sub_800ffa0(v1); => v2 = sub_800ffa0((unsigned char)v1);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8017180 | v3 = sub_8010c4c(v1,0); => v3 = sub_8010c4c((unsigned char)v1,0);
@@ -2679,8 +2679,8 @@ O2_cleanflight_cleanflight_DALRCF405.elf sub_80285e8 | sub_8028ae4("rc_interpola
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8028624 | sub_8028ae4("use_unsynced_pwm","%d",dat_2000ac20); => sub_8028ae4("use_unsynced_pwm","%d",(unsigned char)dat_2000ac20);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_802865c | sub_8028ae4("debug_mode","%d",dat_2000a696); => sub_8028ae4("debug_mode","%d",(unsigned char)dat_2000a696);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8028714 | v1 = sub_8028fc0(dat_20008b51); => v1 = sub_8028fc0((unsigned char)dat_20008b51);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_8028b94 | sub_8028eb0((char)a0[1]); => sub_8028eb0((unsigned char)a0[1]);
-O2_cleanflight_cleanflight_DALRCF405.elf sub_8028b94 | sub_8028eb0((char)a0[2]); => sub_8028eb0((unsigned char)a0[2]);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_8028b94 | sub_8028eb0(*(char *)&a0[1]); => sub_8028eb0((unsigned char)*(char *)&a0[1]);
+O2_cleanflight_cleanflight_DALRCF405.elf sub_8028b94 | sub_8028eb0(*(char *)&a0[2]); => sub_8028eb0((unsigned char)*(char *)&a0[2]);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8028c88 | sub_8028eb0(*(char *)(v1 + v3 * 4)); => sub_8028eb0((unsigned char)*(char *)(v1 + v3 * 4));
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8028c88 | sub_8028eb0(*(char *)(v1 + v3 * 4)); => sub_8028eb0((unsigned char)*(char *)(v1 + v3 * 4));
 O2_cleanflight_cleanflight_DALRCF405.elf sub_8028c88 | sub_8028eb0(*(char *)(v1 + v3 * 4)); => sub_8028eb0((unsigned char)*(char *)(v1 + v3 * 4));
@@ -2847,17 +2847,17 @@ O2_cleanflight_cleanflight_DALRCF405.elf sub_803ac00 | sub_803a8f0(a0,a1,v2,v3,a
 O2_cleanflight_cleanflight_DALRCF405.elf sub_803ac00 | sub_803a8f0(a0,a1,v2,v3,a3); => sub_803a8f0(a0,a1,v2,(unsigned char)v3,a3);
 O2_cleanflight_cleanflight_DALRCF405.elf sub_803d51c | (*(void *)software_udf(0xfc,0x803d554))(*(char *)(v1 + -0x101),a1,*(char *)(v2 + 0x3df1553e),a3 + -0x28,a2); // jump-as-call => (*(void *)software_udf(0xfc,0x803d554))((unsigned char)*(
 O2_cleanflight_cleanflight_DALRCF405.elf sub_80521bc | (*v4)(v3,v6,v7,(int)*(short *)((int)v4 * 2 + dat_a0)); // jump-as-call => (*v4)((unsigned char)v3,v6,v7,(int)*(short *)((int)v4 * 2 + dat_a0)); // jump-as-call
-O2_iproute2_ip print_addrinfo | v12 = (char *)family_name((char)a0[4]); => v12 = (char *)family_name((uint1)a0[4]);
-O2_iproute2_ip print_addrinfo | print_color_int(4,6,"family_index","    family %d ",(char)a0[4]); => print_color_int(4,6,"family_index","    family %d ",(uint1)a0[4]);
-O2_iproute2_ip print_addrinfo | v6 = format_host((char)a0[4],(uint4)*v18 - 4,&v18[2]); => v6 = format_host((uint1)a0[4],(uint4)*v18 - 4,&v18[2]);
-O2_iproute2_ip print_addrinfo | print_color_string(4,ifa_family_color((char)v11),"local",0x82ef8,v6); => print_color_string(4,ifa_family_color((uint1)v11),"local",0x82ef8,v6);
-O2_iproute2_ip print_addrinfo | v6 = format_host((char)a0[4],(uint4)*v17 - 4,&v17[2]); => v6 = format_host((uint1)a0[4],(uint4)*v17 - 4,&v17[2]);
-O2_iproute2_ip print_addrinfo | print_color_string(4,ifa_family_color((char)v11),"address",0x82ef8,v6); => print_color_string(4,ifa_family_color((uint1)v11),"address",0x82ef8,v6);
+O2_iproute2_ip print_addrinfo | v12 = (char *)family_name(*(char *)&a0[4]); => v12 = (char *)family_name((uint1)*(char *)&a0[4]);
+O2_iproute2_ip print_addrinfo | print_color_int(4,6,"family_index","    family %d ",*(char *)&a0[4]); => print_color_int(4,6,"family_index","    family %d ",(uint1)*(char *)&a0[4]);
+O2_iproute2_ip print_addrinfo | v6 = format_host(*(char *)&a0[4],(uint4)*v18 - 4,&v18[2]); => v6 = format_host((uint1)*(char *)&a0[4],(uint4)*v18 - 4,&v18[2]);
+O2_iproute2_ip print_addrinfo | print_color_string(4,ifa_family_color(v2),"local",0x82ef8,v6); => print_color_string(4,ifa_family_color((uint1)v2),"local",0x82ef8,v6);
+O2_iproute2_ip print_addrinfo | v6 = format_host(*(char *)&a0[4],(uint4)*v17 - 4,&v17[2]); => v6 = format_host((uint1)*(char *)&a0[4],(uint4)*v17 - 4,&v17[2]);
+O2_iproute2_ip print_addrinfo | print_color_string(4,ifa_family_color(v2),"address",0x82ef8,v6); => print_color_string(4,ifa_family_color((uint1)v2),"address",0x82ef8,v6);
 O2_iproute2_ip print_addrinfo | print_color_int(4,6,"prefixlen","/%d ",*(char *)((int8)a0 + 0x11)); => print_color_int(4,6,"prefixlen","/%d ",(uint1)*(char *)((int8)a0 + 0x11));
-O2_iproute2_ip print_addrinfo | v6 = format_host((char)a0[4],(uint4)*v20 - 4,&v20[2]); => v6 = format_host((uint1)a0[4],(uint4)*v20 - 4,&v20[2]);
-O2_iproute2_ip print_addrinfo | print_color_string(4,ifa_family_color((char)v11),"broadcast",0x8d2ae,v6); => print_color_string(4,ifa_family_color((uint1)v11),"broadcast",0x8d2ae,v6);
-O2_iproute2_ip print_addrinfo | v6 = format_host((char)a0[4],(uint4)*v21 - 4,&v21[2]); => v6 = format_host((uint1)a0[4],(uint4)*v21 - 4,&v21[2]);
-O2_iproute2_ip print_addrinfo | print_color_string(4,ifa_family_color((char)v11),"anycast",0x8d2ae,v6); => print_color_string(4,ifa_family_color((uint1)v11),"anycast",0x8d2ae,v6);
+O2_iproute2_ip print_addrinfo | v6 = format_host(*(char *)&a0[4],(uint4)*v20 - 4,&v20[2]); => v6 = format_host((uint1)*(char *)&a0[4],(uint4)*v20 - 4,&v20[2]);
+O2_iproute2_ip print_addrinfo | print_color_string(4,ifa_family_color(v2),"broadcast",0x8d2ae,v6); => print_color_string(4,ifa_family_color((uint1)v2),"broadcast",0x8d2ae,v6);
+O2_iproute2_ip print_addrinfo | v6 = format_host(*(char *)&a0[4],(uint4)*v21 - 4,&v21[2]); => v6 = format_host((uint1)*(char *)&a0[4],(uint4)*v21 - 4,&v21[2]);
+O2_iproute2_ip print_addrinfo | print_color_string(4,ifa_family_color(v2),"anycast",0x8d2ae,v6); => print_color_string(4,ifa_family_color((uint1)v2),"anycast",0x8d2ae,v6);
 O2_iproute2_ip print_addrinfo | print_color_string(4,6,"scope","scope %s ",rtnl_rtscope_n2a(v2,v9,0x40)); => print_color_string(4,6,"scope","scope %s ",rtnl_rtscope_n2a((uint1)v2,v9,0x40));
 O2_iproute2_ip sub_11480 | get_prefix(&v18,a3[1],v41); => get_prefix(&v18,a3[1],(uint1)v41);
 O2_iproute2_ip sub_11480 | addattr_l(&v16,0x118,1,v19,v18._2_2_); => addattr_l(&v16,0x118,1,v19,(uint2)v18._2_2_);
@@ -2868,31 +2868,31 @@ O2_iproute2_ip print_linkinfo | sub_10dd0(a1,*(char *)(v72 + 4)); => sub_10dd0(a
 O2_iproute2_ip print_linkinfo | sub_10dd0(a1,*(char *)(v72 + 4)); => sub_10dd0(a1,(uint1)*(char *)(v72 + 4));
 O2_iproute2_ip print_linkinfo | print_color_string(4,1,"address",v46,ll_addr_n2a(v17 + 8,v38,v5,v28,0x40)); => print_color_string(4,1,"address",v46,ll_addr_n2a(v17 + 8,v38,(uint2)v5,v28,0x40));
 O2_iproute2_ip print_linkinfo | print_color_string(4,1,"broadcast",v46,ll_addr_n2a(v15 + 4,v17,v5,v28,0x40)); => print_color_string(4,1,"broadcast",v46,ll_addr_n2a(v15 + 4,v17,(uint2)v5,v28,0x40));
-O2_iproute2_ip print_addrlabel | v2 = format_host((char)a0[4],(uint4)*v4 - 4,&v4[2]); => v2 = format_host((uint1)a0[4],(uint4)*v4 - 4,&v4[2]);
-O2_iproute2_ip print_addrlabel | print_color_string(4,ifa_family_color((char)v1),"address",0x82ef8,v2); => print_color_string(4,ifa_family_color((uint1)v1),"address",0x82ef8,v2);
+O2_iproute2_ip print_addrlabel | v3 = format_host(*(char *)&a0[4],(uint4)*v5 - 4,&v5[2]); => v3 = format_host((uint1)*(char *)&a0[4],(uint4)*v5 - 4,&v5[2]);
+O2_iproute2_ip print_addrlabel | print_color_string(4,ifa_family_color(v1),"address",0x82ef8,v3); => print_color_string(4,ifa_family_color((uint1)v1),"address",0x82ef8,v3);
 O2_iproute2_ip print_addrlabel | print_color_uint(4,6,"prefixlen","/%u ",*(char *)((int8)a0 + 0x12)); => print_color_uint(4,6,"prefixlen","/%u ",(uint1)*(char *)((int8)a0 + 0x12));
 O2_iproute2_ip sub_16ab0 | v2 = format_host(*a1,(uint4)*a2 - 4,&a2[2]); => v2 = format_host((uint1)*a1,(uint4)*a2 - 4,&a2[2]);
 O2_iproute2_ip sub_16ab0 | print_color_string(1,ifa_family_color(v1),0,0x8d2ae,v2); // tail-call => print_color_string(1,ifa_family_color((uint1)v1),0,0x8d2ae,v2); // tail-call
 O2_iproute2_ip sub_16b40 | if (((((!(dat_aa780 & 1) && !v23) || (v3 = *(char *)(a0 + 0x11), !inet_addr_match(&v13,0xaa780,v3))) && ((!(dat_aa888 & 1) && !dat_aa88e || (v12 = (int4)dat_aa88c, !inet_addr_match(&v14,0xaa888,v12))))) && ((((!(d
-O2_iproute2_ip sub_17650 | v1 = af_bit_len((char)a0[4]); => v1 = af_bit_len((uint1)a0[4]);
+O2_iproute2_ip sub_17650 | v1 = af_bit_len(*(char *)&a0[4]); => v1 = af_bit_len((uint1)*(char *)&a0[4]);
 O2_iproute2_ip sub_17730 | addattr8(&v21,0x101c,0x1a,v9); => addattr8(&v21,0x101c,0x1a,(uint1)v9);
-O2_iproute2_ip sub_19780 | print_color_string(1,ifa_family_color((char)v1),0,0x8d2ae,v3); // tail-call => print_color_string(1,ifa_family_color((uint1)v1),0,0x8d2ae,v3); // tail-call
+O2_iproute2_ip sub_19780 | print_color_string(1,ifa_family_color(v1),0,0x8d2ae,v4); // tail-call => print_color_string(1,ifa_family_color((uint1)v1),0,0x8d2ae,v4); // tail-call
 O2_iproute2_ip __print_rta_gateway | print_color_string(1,ifa_family_color(a1),0,0x8d2ae,a2); // tail-call => print_color_string(1,ifa_family_color((uint1)a1),0,0x8d2ae,a2); // tail-call
-O2_iproute2_ip print_route | v6 = af_bit_len((char)a0[4]); => v6 = af_bit_len((uint1)a0[4]);
-O2_iproute2_ip print_route | v9 = get_real_family(*(char *)((int8)a0 + 0x17),(char)a0[4]); => v9 = get_real_family((uint1)*(char *)((int8)a0 + 0x17),(uint1)a0[4]);
-O2_iproute2_ip print_route | v10 = ifa_family_color((char)v9); => v10 = ifa_family_color((uint1)v9);
-O2_iproute2_ip print_route | v10 = get_real_family(*(char *)((int8)a0 + 0x17),(char)a0[4]); => v10 = get_real_family((uint1)*(char *)((int8)a0 + 0x17),(uint1)a0[4]);
-O2_iproute2_ip print_route | v9 = ifa_family_color((char)v10); => v9 = ifa_family_color((uint1)v10);
-O2_iproute2_ip print_route | print_color_string(4,6,"tos","tos %s ",rtnl_dsfield_n2a(v20,&v17,0x40)); => print_color_string(4,6,"tos","tos %s ",rtnl_dsfield_n2a((uint1)v20,&v17,0x40));
-O2_iproute2_ip print_route | __print_rta_gateway(a1,(char)v4,format_host((char)v4,(uint4)v3 - 4,&v30[2])); => __print_rta_gateway(a1,(uint1)v4,format_host((uint1)v4,(uint4)v3 - 4,&v30[2]));
-O2_iproute2_ip print_route | print_color_string(4,6,"protocol","proto %s ",rtnl_rtprot_n2a(v20,&v17,0x40)); => print_color_string(4,6,"protocol","proto %s ",rtnl_rtprot_n2a((uint1)v20,&v17,0x40));
-O2_iproute2_ip print_route | print_color_string(4,6,"scope","scope %s ",rtnl_rtscope_n2a(v20,&v17,0x40)); => print_color_string(4,6,"scope","scope %s ",rtnl_rtscope_n2a((uint1)v20,&v17,0x40));
-O2_iproute2_ip print_route | v12 = rt_addr_n2a((char)a0[4],(uint4)*v32 - 4,&v32[2]); => v12 = rt_addr_n2a((uint1)a0[4],(uint4)*v32 - 4,&v32[2]);
-O2_iproute2_ip print_route | print_color_string(1,ifa_family_color((char)v22),0,0x8d2ae,v12); => print_color_string(1,ifa_family_color((uint1)v22),0,0x8d2ae,v12);
-O2_iproute2_ip print_route | print_color_uint(4,6,0x7e08a,"%u",v20); => print_color_uint(4,6,0x7e08a,"%u",(uint1)v20);
-O2_iproute2_ip print_route | __print_rta_gateway(a1,(char)v6,format_host((char)v6,(uint4)v3 - 4,v1)); => __print_rta_gateway(a1,(uint1)v6,format_host((uint1)v6,(uint4)v3 - 4,v1));
-O2_iproute2_ip print_route | print_color_int(4,6,0x7e3fd,"(ttl>%d)",*(char *)((int8)v15 + 3)); => print_color_int(4,6,0x7e3fd,"(ttl>%d)",(uint1)*(char *)((int8)v15 + 3));
-O2_iproute2_ip print_route | print_rt_flags(a1,(char)v15[1]); => print_rt_flags(a1,(uint1)v15[1]);
+O2_iproute2_ip print_route | v7 = af_bit_len(*(char *)&a0[4]); => v7 = af_bit_len((uint1)*(char *)&a0[4]);
+O2_iproute2_ip print_route | v10 = get_real_family(*(char *)((int8)a0 + 0x17),*(char *)&a0[4]); => v10 = get_real_family((uint1)*(char *)((int8)a0 + 0x17),(uint1)*(char *)&a0[4]);
+O2_iproute2_ip print_route | v11 = ifa_family_color((char)v10); => v11 = ifa_family_color((uint1)v10);
+O2_iproute2_ip print_route | v11 = get_real_family(*(char *)((int8)a0 + 0x17),*(char *)&a0[4]); => v11 = get_real_family((uint1)*(char *)((int8)a0 + 0x17),(uint1)*(char *)&a0[4]);
+O2_iproute2_ip print_route | v10 = ifa_family_color((char)v11); => v10 = ifa_family_color((uint1)v11);
+O2_iproute2_ip print_route | print_color_string(4,6,"tos","tos %s ",rtnl_dsfield_n2a(v21,&v18,0x40)); => print_color_string(4,6,"tos","tos %s ",rtnl_dsfield_n2a((uint1)v21,&v18,0x40));
+O2_iproute2_ip print_route | __print_rta_gateway(a1,v3,format_host(v3,(uint4)v4 - 4,&v31[2])); => __print_rta_gateway(a1,(uint1)v3,format_host((uint1)v3,(uint4)v4 - 4,&v31[2]));
+O2_iproute2_ip print_route | print_color_string(4,6,"protocol","proto %s ",rtnl_rtprot_n2a(v21,&v18,0x40)); => print_color_string(4,6,"protocol","proto %s ",rtnl_rtprot_n2a((uint1)v21,&v18,0x40));
+O2_iproute2_ip print_route | print_color_string(4,6,"scope","scope %s ",rtnl_rtscope_n2a(v21,&v18,0x40)); => print_color_string(4,6,"scope","scope %s ",rtnl_rtscope_n2a((uint1)v21,&v18,0x40));
+O2_iproute2_ip print_route | v13 = rt_addr_n2a(*(char *)&a0[4],(uint4)*v33 - 4,&v33[2]); => v13 = rt_addr_n2a((uint1)*(char *)&a0[4],(uint4)*v33 - 4,&v33[2]);
+O2_iproute2_ip print_route | print_color_string(1,ifa_family_color(v3),0,0x8d2ae,v13); => print_color_string(1,ifa_family_color((uint1)v3),0,0x8d2ae,v13);
+O2_iproute2_ip print_route | print_color_uint(4,6,0x7e08a,"%u",v21); => print_color_uint(4,6,0x7e08a,"%u",(uint1)v21);
+O2_iproute2_ip print_route | __print_rta_gateway(a1,v3,format_host(v3,(uint4)v4 - 4,v1)); => __print_rta_gateway(a1,(uint1)v3,format_host((uint1)v3,(uint4)v4 - 4,v1));
+O2_iproute2_ip print_route | print_color_int(4,6,0x7e3fd,"(ttl>%d)",*(char *)((int8)v16 + 3)); => print_color_int(4,6,0x7e3fd,"(ttl>%d)",(uint1)*(char *)((int8)v16 + 3));
+O2_iproute2_ip print_route | print_rt_flags(a1,*(char *)&v16[1]); => print_rt_flags(a1,(uint1)*(char *)&v16[1]);
 O2_iproute2_ip sub_1ca00 | get_prefix(v14,*a1,v34); => get_prefix(v14,*a1,(uint1)v34);
 O2_iproute2_ip sub_1ca00 | addattr_l(&v12,0x41c,1,v15,v25); => addattr_l(&v12,0x41c,1,v15,(uint2)v25);
 O2_iproute2_ip sub_1ca00 | get_addr(v14,*v17,v34); => get_addr(v14,*v17,(uint1)v34);
@@ -2903,20 +2903,20 @@ O2_iproute2_ip print_rta_gateway | __print_rta_gateway(a0,a1,format_host(a1,(uin
 O2_iproute2_ip sub_1da40 | addattr8(&v11,0x41c,0x15,v14); => addattr8(&v11,0x41c,0x15,(uint1)v14);
 O2_iproute2_ip sub_1da40 | get_prefix(v12,a2[1],v25); => get_prefix(v12,a2[1],(uint1)v25);
 O2_iproute2_ip sub_1da40 | get_prefix(v12,*v19,v25); => get_prefix(v12,*v19,(uint1)v25);
-O2_iproute2_ip print_rule | v6 = af_bit_len((char)a0[4]); => v6 = af_bit_len((uint1)a0[4]);
-O2_iproute2_ip print_rule | v8 = rt_addr_n2a((char)a0[4],(uint4)*v15 - 4,&v15[2]); => v8 = rt_addr_n2a((uint1)a0[4],(uint4)*v15 - 4,&v15[2]);
-O2_iproute2_ip print_rule | print_color_string(4,ifa_family_color((char)v7),"src",0x82ef8,v8); => print_color_string(4,ifa_family_color((uint1)v7),"src",0x82ef8,v8);
-O2_iproute2_ip print_rule | v8 = rt_addr_n2a((char)a0[4],(uint4)*v14 - 4,&v14[2]); => v8 = rt_addr_n2a((uint1)a0[4],(uint4)*v14 - 4,&v14[2]);
-O2_iproute2_ip print_rule | print_color_string(4,ifa_family_color((char)v7),"dst",0x82ef8,v8); => print_color_string(4,ifa_family_color((uint1)v7),"dst",0x82ef8,v8);
-O2_iproute2_ip print_rule | print_color_string(4,6,"tos"," tos %s",rtnl_dsfield_n2a(v2,v11,0x40)); => print_color_string(4,6,"tos"," tos %s",rtnl_dsfield_n2a((uint1)v2,v11,0x40));
-O2_iproute2_ip print_rule | print_color_string(4,6,"ipproto"," ipproto %s",inet_proto_n2a(v3,v10,0x40)); => print_color_string(4,6,"ipproto"," ipproto %s",inet_proto_n2a((uint1)v3,v10,0x40));
+O2_iproute2_ip print_rule | v6 = af_bit_len(*(char *)&a0[4]); => v6 = af_bit_len((uint1)*(char *)&a0[4]);
+O2_iproute2_ip print_rule | v8 = rt_addr_n2a(*(char *)&a0[4],(uint4)*v15 - 4,&v15[2]); => v8 = rt_addr_n2a((uint1)*(char *)&a0[4],(uint4)*v15 - 4,&v15[2]);
+O2_iproute2_ip print_rule | print_color_string(4,ifa_family_color(v1),"src",0x82ef8,v8); => print_color_string(4,ifa_family_color((uint1)v1),"src",0x82ef8,v8);
+O2_iproute2_ip print_rule | v8 = rt_addr_n2a(*(char *)&a0[4],(uint4)*v14 - 4,&v14[2]); => v8 = rt_addr_n2a((uint1)*(char *)&a0[4],(uint4)*v14 - 4,&v14[2]);
+O2_iproute2_ip print_rule | print_color_string(4,ifa_family_color(v1),"dst",0x82ef8,v8); => print_color_string(4,ifa_family_color((uint1)v1),"dst",0x82ef8,v8);
+O2_iproute2_ip print_rule | print_color_string(4,6,"tos"," tos %s",rtnl_dsfield_n2a(v3,v11,0x40)); => print_color_string(4,6,"tos"," tos %s",rtnl_dsfield_n2a((uint1)v3,v11,0x40));
+O2_iproute2_ip print_rule | print_color_string(4,6,"ipproto"," ipproto %s",inet_proto_n2a(v1,v10,0x40)); => print_color_string(4,6,"ipproto"," ipproto %s",inet_proto_n2a((uint1)v1,v10,0x40));
 O2_iproute2_ip print_rule | print_color_uint(4,6,"sport_start"," sport %u",v4); => print_color_uint(4,6,"sport_start"," sport %u",(uint2)v4);
 O2_iproute2_ip print_rule | print_color_uint(4,6,"sport"," sport %u",v4); => print_color_uint(4,6,"sport"," sport %u",(uint2)v4);
 O2_iproute2_ip print_rule | print_color_uint(4,6,"dport_start"," dport %u",v4); => print_color_uint(4,6,"dport_start"," dport %u",(uint2)v4);
 O2_iproute2_ip print_rule | print_color_uint(4,6,"dport"," dport %u",v4); => print_color_uint(4,6,"dport"," dport %u",(uint2)v4);
-O2_iproute2_ip print_rule | print_color_string(4,6,"action"," %s",rtnl_rtntype_n2a(v2,v11,0x40)); => print_color_string(4,6,"action"," %s",rtnl_rtntype_n2a((uint1)v2,v11,0x40));
-O2_iproute2_ip print_rule | print_color_string(4,6,"nat_gateway"," map-to %s",format_host((char)v7,(uint4)v5 - 4,&v18[2])); => print_color_string(4,6,"nat_gateway"," map-to %s",format_host((uint1)v7,(uint4)v5 - 4,&v18[2]));
-O2_iproute2_ip sub_1fe10 | af_bit_len((char)a0[4]); => af_bit_len((uint1)a0[4]);
+O2_iproute2_ip print_rule | print_color_string(4,6,"action"," %s",rtnl_rtntype_n2a(v3,v11,0x40)); => print_color_string(4,6,"action"," %s",rtnl_rtntype_n2a((uint1)v3,v11,0x40));
+O2_iproute2_ip print_rule | print_color_string(4,6,"nat_gateway"," map-to %s",format_host(v1,(uint4)v5 - 4,&v18[2])); => print_color_string(4,6,"nat_gateway"," map-to %s",format_host((uint1)v1,(uint4)v5 - 4,&v18[2]));
+O2_iproute2_ip sub_1fe10 | af_bit_len(*(char *)&a0[4]); => af_bit_len((uint1)*(char *)&a0[4]);
 O2_iproute2_ip sub_22ee0 | __snprintf_chk((char *)v9,0x40,1,0x40,"%s/ip",tnl_strproto(v2)); => __snprintf_chk((char *)v9,0x40,1,0x40,"%s/ip",tnl_strproto((uint1)v2));
 O2_iproute2_ip sub_22ee0 | print_color_uint(4,6,0x7e3fd," ttl %u",*(char *)(a0 + 0x28)); => print_color_uint(4,6,0x7e3fd," ttl %u",(uint1)*(char *)(a0 + 0x28));
 O2_iproute2_ip sub_22ee0 | print_color_uint(4,6,"6rd-prefixlen",0x7e2cd,v13._4_2_); => print_color_uint(4,6,"6rd-prefixlen",0x7e2cd,(uint2)v13._4_2_);
@@ -2931,16 +2931,16 @@ O2_iproute2_ip print_neigh | print_color_string(4,ifa_family_color(v14),"dst",0x
 O2_iproute2_ip print_neigh | v7 = format_host(v14,(uint4)*v15 - 4,&v15[2]); => v7 = format_host((uint1)v14,(uint4)*v15 - 4,&v15[2]);
 O2_iproute2_ip print_neigh | print_color_string(4,ifa_family_color(v14),"dst","%-39s ",v7); => print_color_string(4,ifa_family_color((uint1)v14),"dst","%-39s ",v7);
 O2_iproute2_ip sub_276d0 | v6 = addattr8(&v8,0x11c,0xc,(char)v9); => v6 = addattr8(&v8,0x11c,0xc,(uint1)(char)v9);
-O2_iproute2_ip sub_28bc0 | print_color_string(4,6,"family",0x8d2ae,family_name((char)v3)); => print_color_string(4,6,"family",0x8d2ae,family_name((uint1)v3));
+O2_iproute2_ip sub_28bc0 | print_color_string(4,6,"family",0x8d2ae,family_name(v1)); => print_color_string(4,6,"family",0x8d2ae,family_name((uint1)v1));
 O2_iproute2_ip sub_2cde0 | if (!matches(v6,"help",v10)) => if (!matches(v6,"help",(uint1)v10))
 O2_iproute2_ip do_iplink | v4 = sub_2a4b0(v24,v27._4_2_,v27[7],v23,v12); => v4 = sub_2a4b0(v24,v27._4_2_,(uint1)v27[7],v23,v12);
 O2_iproute2_ip do_iplink | if (0 <= (int4)sub_2a4b0(v24,v2,v3,v25,&v11)) goto label_2dbcc; => if (0 <= (int4)sub_2a4b0(v24,v2,(uint1)v3,v25,&v11)) goto label_2dbcc;
 O2_iproute2_ip sub_2f040 | print_color_string(4,6,"family","%-5s ",family_name(v2)); => print_color_string(4,6,"family","%-5s ",family_name((uint2)v2));
 O2_iproute2_ip sub_2f040 | print_color_string(4,ifa_family_color(v1),"address",0x82ef8,v7); => print_color_string(4,ifa_family_color((uint1)v1),"address",0x82ef8,v7);
-O2_iproute2_ip print_mroute | v3 = get_real_family(*(char *)((int8)a0 + 0x17),(char)a0[4]); => v3 = get_real_family((uint1)*(char *)((int8)a0 + 0x17),(uint1)a0[4]);
+O2_iproute2_ip print_mroute | v3 = get_real_family(*(char *)((int8)a0 + 0x17),*(char *)&a0[4]); => v3 = get_real_family((uint1)*(char *)((int8)a0 + 0x17),(uint1)*(char *)&a0[4]);
 O2_iproute2_ip sub_32110 | get_prefix(&v9,v4,v13); => get_prefix(&v9,v4,(uint1)v13);
-O2_iproute2_ip sub_32480 | v3 = format_host((char)a0[4],(uint4)*v6 - 4,&v6[2]); => v3 = format_host((uint1)a0[4],(uint4)*v6 - 4,&v6[2]);
-O2_iproute2_ip sub_32480 | print_color_string(4,ifa_family_color((char)v2),"token",0x82ef8,v3); => print_color_string(4,ifa_family_color((uint1)v2),"token",0x82ef8,v3);
+O2_iproute2_ip sub_32480 | v4 = format_host(*(char *)&a0[4],(uint4)*v7 - 4,&v7[2]); => v4 = format_host((uint1)*(char *)&a0[4],(uint4)*v7 - 4,&v7[2]);
+O2_iproute2_ip sub_32480 | print_color_string(4,ifa_family_color(v1),"token",0x82ef8,v4); => print_color_string(4,ifa_family_color((uint1)v1),"token",0x82ef8,v4);
 O2_iproute2_ip xfrm_selector_print | __fprintf_chk(a2,1,"src %s/%u ",rt_addr_n2a(v5,0x10,a0 + 0x10),(uint8)v1); => __fprintf_chk(a2,1,"src %s/%u ",rt_addr_n2a((uint2)v5,0x10,a0 + 0x10),(uint8)v1);
 O2_iproute2_ip xfrm_selector_print | __fprintf_chk(a2,1,"dst %s/%u ",rt_addr_n2a(v5,0x10,a0),(uint8)v1); => __fprintf_chk(a2,1,"dst %s/%u ",rt_addr_n2a((uint2)v5,0x10,a0),(uint8)v1);
 O2_iproute2_ip xfrm_xfrma_print | sub_33050(&v6[2],1,(uint4)*v6 - 4,a2,a3,1,a4); => sub_33050(&v6[2],1,(uint4)*v6 - 4,a2,a3,1,(uint1)a4);
@@ -2948,13 +2948,13 @@ O2_iproute2_ip xfrm_xfrma_print | sub_33220(&v13[2],(uint4)*v13 - 4,a2,a3,a4); =
 O2_iproute2_ip xfrm_xfrma_print | sub_33370(&v6[2],(uint4)*v6 - 4,a2,a3,a4); => sub_33370(&v6[2],(uint4)*v6 - 4,a2,a3,(uint1)a4);
 O2_iproute2_ip xfrm_xfrma_print | sub_33050(&v6[2],2,(uint4)*v6 - 4,a2,a3,1,a4); => sub_33050(&v6[2],2,(uint4)*v6 - 4,a2,a3,1,(uint1)a4);
 O2_iproute2_ip xfrm_xfrma_print | sub_33050(&v6[2],3,(uint4)*v6 - 4,a2,a3,1,a4); => sub_33050(&v6[2],3,(uint4)*v6 - 4,a2,a3,1,(uint1)a4);
-O2_iproute2_ip xfrm_xfrma_print | sub_32d00(v13,&v13[-0xe],(char)v13[10],*(unsigned int *)&v13[8],v13[-2],0,a2,a3,"tmpl "); => sub_32d00(v13,&v13[-0xe],(uint1)v13[10],*(unsigned int *)&v13[8],v13[-2],0,a2,a3,"tmpl ");
+O2_iproute2_ip xfrm_xfrma_print | sub_32d00(v13,&v13[-0xe],*(char *)&v13[10],*(unsigned int *)&v13[8],v13[-2],0,a2,a3,"tmpl "); => sub_32d00(v13,&v13[-0xe],(uint1)*(char *)&v13[10],*(unsigned int *)&v13[8],v13[-2],0,a2,a3,"tmpl ");
 O2_iproute2_ip xfrm_xfrma_print | __fprintf_chk(a2,1,"share %s ",sub_32850(v2)); => __fprintf_chk(a2,1,"share %s ",sub_32850((uint1)v2));
-O2_iproute2_ip xfrm_xfrma_print | sub_32d00(v13,&v13[-0xe],(char)v13[10],*(unsigned int *)&v13[8],v13[-2],0,a2,0,"tmpl "); => sub_32d00(v13,&v13[-0xe],(uint1)v13[10],*(unsigned int *)&v13[8],v13[-2],0,a2,0,"tmpl ");
+O2_iproute2_ip xfrm_xfrma_print | sub_32d00(v13,&v13[-0xe],*(char *)&v13[10],*(unsigned int *)&v13[8],v13[-2],0,a2,0,"tmpl "); => sub_32d00(v13,&v13[-0xe],(uint1)*(char *)&v13[10],*(unsigned int *)&v13[8],v13[-2],0,a2,0,"tmpl ");
 O2_iproute2_ip xfrm_state_info_print | sub_32d00((int8)a0 + 0x50,(int8)a0 + 0x38,*(char *)((int8)a0 + 0xd6),*(unsigned int *)((int8)a0 + 0xd0),*(unsigned short *)((int8)a0 + 0xd4),(uint1)(*(char *)((int8)a0 + 0x4c) - 0x32U) < 2 || *(char *)
 O2_iproute2_ip xfrm_state_info_print | xfrm_xfrma_print(a1,*(unsigned short *)((int8)a0 + 0xd4),a2,v9,a5); => xfrm_xfrma_print(a1,*(unsigned short *)((int8)a0 + 0xd4),a2,v9,(uint1)a5);
-O2_iproute2_ip xfrm_policy_info_print | __fprintf_chk(a2,1,"%s ",strxf_ptype((char)v5)); => __fprintf_chk(a2,1,"%s ",strxf_ptype((uint1)v5));
-O2_iproute2_ip xfrm_policy_info_print | __fprintf_chk(a2,1,"share %s ",sub_32850(v2)); => __fprintf_chk(a2,1,"share %s ",sub_32850((uint1)v2));
+O2_iproute2_ip xfrm_policy_info_print | __fprintf_chk(a2,1,"%s ",strxf_ptype(v1)); => __fprintf_chk(a2,1,"%s ",strxf_ptype((uint1)v1));
+O2_iproute2_ip xfrm_policy_info_print | __fprintf_chk(a2,1,"share %s ",sub_32850(v1)); => __fprintf_chk(a2,1,"share %s ",sub_32850((uint1)v1));
 O2_iproute2_ip xfrm_id_parse | v6 = strxf_xfrmproto(v1); => v6 = strxf_xfrmproto((uint1)v1);
 O2_iproute2_ip sub_368b0 | xfrm_state_info_print(v9,v8,a1,0,0,a2); => xfrm_state_info_print(v9,v8,a1,0,0,(uint1)a2);
 O2_iproute2_ip sub_372d0 | addattr8(&v14,0x1010,0x19,filter[0x54]); => addattr8(&v14,0x1010,0x19,(uint1)filter[0x54]);
@@ -2967,20 +2967,17 @@ O2_iproute2_ip sub_37820 | v11 = strxf_xfrmproto(v84); => v11 = strxf_xfrmproto(
 O2_iproute2_ip sub_37820 | v11 = strxf_xfrmproto(v84); => v11 = strxf_xfrmproto((uint1)v84);
 O2_iproute2_ip do_xfrm_state | v4 = strxf_xfrmproto((char)v16); => v4 = strxf_xfrmproto((uint1)(char)v16);
 O2_iproute2_ip xfrm_policy_print | if (!sub_3a3e0(v8,v7)) => if (!sub_3a3e0(v8,(uint1)v7))
-O2_iproute2_ip sub_3b320 | if (((!filter._0_4_) || (((!filter._296_2_ || (filter._296_2_ == (int2)a0[0xe])) && (sub_3a3e0(&a0[4],v6))))) && (((uint1)a0[0x2c] <= 2 && ((int8)*(int4 *)((int8)a1 + 0xc) + 0x50U <= (uint8)(int8)(int4)a1[1])))) {
+O2_iproute2_ip sub_3b320 | if (((!filter._0_4_) || (((!filter._296_2_ || (filter._296_2_ == (int2)a0[0xe])) && (sub_3a3e0(&a0[4],v7))))) && (((uint1)a0[0x2c] <= 2 && ((int8)*(int4 *)((int8)a1 + 0xc) + 0x50U <= (uint8)(int8)(int4)a1[1])))) {
 O2_iproute2_ip sub_3b580 | addattr_l(&v11,0x850,8,v12,v12[0]); => addattr_l(&v11,0x850,8,v12,(uint2)v12[0]);
 O2_iproute2_ip sub_3bb80 | addattr_l(&v10,0x8b8,8,v12,v12[0]); => addattr_l(&v10,0x8b8,8,v12,(uint2)v12[0]);
 O2_iproute2_ip sub_3d1f0 | __fprintf_chk(a2,1," protocol %s ",strxf_proto(v1)); => __fprintf_chk(a2,1," protocol %s ",strxf_proto((uint1)v1));
-O2_iproute2_ip sub_3d290 | __fprintf_chk(a1,1,"proto %s ",strxf_xfrmproto((char)v1)); => __fprintf_chk(a1,1,"proto %s ",strxf_xfrmproto((uint1)v1));
+O2_iproute2_ip sub_3d290 | __fprintf_chk(a1,1,"proto %s ",strxf_xfrmproto(v1)); => __fprintf_chk(a1,1,"proto %s ",strxf_xfrmproto((uint1)v1));
 O2_iproute2_ip sub_3d290 | xfrm_selector_print(&a0[5],v2,a1,"  sel "); => xfrm_selector_print(&a0[5],(uint2)v2,a1,"  sel ");
 O2_iproute2_ip sub_3d290 | xfrm_xfrma_print(v3,v2,a1,"  ",dat_abdd0); => xfrm_xfrma_print(v3,(uint2)v2,a1,"  ",(uint1)dat_abdd0);
-O2_iproute2_ip sub_3d410 | __fprintf_chk(a1,1,"%s ",strxf_ptype((char)v1)); => __fprintf_chk(a1,1,"%s ",strxf_ptype((uint1)v1));
-O2_iproute2_ip sub_3d5b0 | __fprintf_chk(a1,1,"proto %s ",strxf_xfrmproto((char)v1)); => __fprintf_chk(a1,1,"proto %s ",strxf_xfrmproto((uint1)v1));
+O2_iproute2_ip sub_3d410 | __fprintf_chk(a1,1,"%s ",strxf_ptype(v1)); => __fprintf_chk(a1,1,"%s ",strxf_ptype((uint1)v1));
+O2_iproute2_ip sub_3d5b0 | __fprintf_chk(a1,1,"proto %s ",strxf_xfrmproto(v1)); => __fprintf_chk(a1,1,"proto %s ",strxf_xfrmproto((uint1)v1));
 O2_iproute2_ip sub_3d5b0 | xfrm_selector_print(&a0[0xe],v5,a1,"  sel "); => xfrm_selector_print(&a0[0xe],(uint2)v5,a1,"  sel ");
-O2_iproute2_ip sub_3d8c0 | v4 = strxf_xfrmproto((char)a1[4]); => v4 = strxf_xfrmproto((uint1)a1[4]);
-O2_iproute2_ip sub_3d8c0 | __fprintf_chk(a2,1,"src %s ",rt_addr_n2a((int2)v2,0x10,&a1[10])); => __fprintf_chk(a2,1,"src %s ",rt_addr_n2a((uint2)v2,0x10,&a1[10]));
-O2_iproute2_ip sub_3d8c0 | __fprintf_chk(a2,1,"%s",rt_addr_n2a((int2)v2,0x10,&a1[0xb])); => __fprintf_chk(a2,1,"%s",rt_addr_n2a((uint2)v2,0x10,&a1[0xb]));
-O2_iproute2_ip sub_3d8c0 | __fprintf_chk(a2,1,"%s",rt_addr_n2a((int2)v2,0x10,&a1[0xf])); => __fprintf_chk(a2,1,"%s",rt_addr_n2a((uint2)v2,0x10,&a1[0xf]));
+O2_iproute2_ip sub_3d8c0 | v5 = strxf_xfrmproto(*(char *)&a1[4]); => v5 = strxf_xfrmproto((uint1)*(char *)&a1[4]);
 O2_iproute2_ip sub_3f0a0 | print_color_uint(4,6,0x7e3fd,"ttl %u ",v8); => print_color_uint(4,6,0x7e3fd,"ttl %u ",(uint1)v8);
 O2_iproute2_ip sub_3f0a0 | print_color_0xhex(4,6,"tos","tos %#llx ",v8); => print_color_0xhex(4,6,"tos","tos %#llx ",(uint1)v8);
 O2_iproute2_ip sub_3f0a0 | print_color_uint(4,6,"erspan_ver","erspan_ver %u ",*(char *)(*(int8 *)(a2 + 0xb0) + 4)); => print_color_uint(4,6,"erspan_ver","erspan_ver %u ",(uint1)*(char *)(*(int8 *)(a2 + 0xb0) + 4));
@@ -3012,7 +3009,7 @@ O2_iproute2_ip sub_47370 | addattr8(a3,0x400,7,v20); => addattr8(a3,0x400,7,(uin
 O2_iproute2_ip sub_47370 | addattr16(a3,0x400,0xf,v16 << 8 | v16 >> 8); => addattr16(a3,0x400,0xf,(uint2)(v16 << 8 | v16 >> 8));
 O2_iproute2_ip sub_48780 | v5 = ifa_family_color((char)v42); => v5 = ifa_family_color((uint1)(char)v42);
 O2_iproute2_ip sub_48780 | v11 = format_host(v44,v43,v20); => v11 = format_host((uint2)v44,v43,v20);
-O2_iproute2_ip print_netconf | print_color_string(4,6,"family",0x8d2ae,family_name((char)v2)); => print_color_string(4,6,"family",0x8d2ae,family_name((uint1)v2));
+O2_iproute2_ip print_netconf | print_color_string(4,6,"family",0x8d2ae,family_name(v1)); => print_color_string(4,6,"family",0x8d2ae,family_name((uint1)v1));
 O2_iproute2_ip sub_4a6a0 | print_color_uint(4,6,0x7e3fd,"hoplimit %u ",v5); => print_color_uint(4,6,0x7e3fd,"hoplimit %u ",(uint1)v5);
 O2_iproute2_ip sub_4a6a0 | print_color_uint(4,6,"encap_limit","encaplimit %u ",*(char *)(*(int8 *)(a2 + 0x30) + 4)); => print_color_uint(4,6,"encap_limit","encaplimit %u ",(uint1)*(char *)(*(int8 *)(a2 + 0x30) + 4));
 O2_iproute2_ip sub_4abf0 | addattr8(a3,0x400,9,v18); => addattr8(a3,0x400,9,(uint1)v18);
@@ -3130,11 +3127,11 @@ O2_iproute2_ip sub_57d10 | rta_addattr8(a2,v5,1,(char)v4); => rta_addattr8(a2,v5
 O2_iproute2_ip sub_57d10 | rta_addattr8(a2,v5,3,(char)v4); => rta_addattr8(a2,v5,3,(uint1)(char)v4);
 O2_iproute2_ip sub_57d10 | rta_addattr8(a2,v5,4,(char)v4); => rta_addattr8(a2,v5,4,(uint1)(char)v4);
 O2_iproute2_ip sub_58ea0 | if (((((!v5) && (v5 = rta_addattr32(a0,a1,5,v15), !v5)) && (!rta_addattr8(a0,a1,1))) && ((v20 == '\x01' || (!rta_addattr_l(a0,a1,2,v13,v21))))) && (!rta_addattr_l(a0,a1,3,v7,8))) { => if (((((!v5) && (v5 = rta_add
-O2_iproute2_ip lwt_print_encap | print_color_uint(4,6,0x7e3fd,"ttl %u ",(char)v19[2]); => print_color_uint(4,6,0x7e3fd,"ttl %u ",(uint1)v19[2]);
-O2_iproute2_ip lwt_print_encap | print_color_uint(4,6,0x7e3fd,"ttl %u ",(char)v21[2]); => print_color_uint(4,6,0x7e3fd,"ttl %u ",(uint1)v21[2]);
-O2_iproute2_ip lwt_print_encap | print_color_uint(4,6,"tos","tos %d ",(char)v22[2]); => print_color_uint(4,6,"tos","tos %d ",(uint1)v22[2]);
-O2_iproute2_ip lwt_print_encap | print_color_u64(4,6,"hoplimit","hoplimit %u ",(char)v21[2]); => print_color_u64(4,6,"hoplimit","hoplimit %u ",(uint1)v21[2]);
-O2_iproute2_ip lwt_print_encap | print_color_uint(4,6,0x80b1a,"tc %u ",(char)v22[2]); => print_color_uint(4,6,0x80b1a,"tc %u ",(uint1)v22[2]);
+O2_iproute2_ip lwt_print_encap | print_color_uint(4,6,0x7e3fd,"ttl %u ",*(char *)&v19[2]); => print_color_uint(4,6,0x7e3fd,"ttl %u ",(uint1)*(char *)&v19[2]);
+O2_iproute2_ip lwt_print_encap | print_color_uint(4,6,0x7e3fd,"ttl %u ",*(char *)&v21[2]); => print_color_uint(4,6,0x7e3fd,"ttl %u ",(uint1)*(char *)&v21[2]);
+O2_iproute2_ip lwt_print_encap | print_color_uint(4,6,"tos","tos %d ",*(char *)&v22[2]); => print_color_uint(4,6,"tos","tos %d ",(uint1)*(char *)&v22[2]);
+O2_iproute2_ip lwt_print_encap | print_color_u64(4,6,"hoplimit","hoplimit %u ",*(char *)&v21[2]); => print_color_u64(4,6,"hoplimit","hoplimit %u ",(uint1)*(char *)&v21[2]);
+O2_iproute2_ip lwt_print_encap | print_color_uint(4,6,0x80b1a,"tc %u ",*(char *)&v22[2]); => print_color_uint(4,6,0x80b1a,"tc %u ",(uint1)*(char *)&v22[2]);
 O2_iproute2_ip lwt_print_encap | print_color_uint(4,6,"ns","ns %u ",v20[2] << 8 | v20[2] >> 8); => print_color_uint(4,6,"ns","ns %u ",(uint2)(v20[2] << 8 | v20[2] >> 8));
 O2_iproute2_ip sub_5bf30 | addattr8(&v4,0x400,2,*(char *)(a3 + 0x10)); => addattr8(&v4,0x400,2,(uint1)*(char *)(a3 + 0x10));
 O2_iproute2_ip sub_5bf30 | addattr8(&v4,0x400,1,*a4); => addattr8(&v4,0x400,1,(uint1)*a4);
@@ -3222,7 +3219,7 @@ O2_mirai_mirai sub_44a0 | v18 = sub_5940(a2,a3,0,0x300); => v18 = sub_5940((unsi
 O2_mirai_mirai sub_44a0 | v10 = sub_5940(a2,a3,1,1); => v10 = sub_5940((unsigned char)a2,a3,1,1);
 O2_mirai_mirai sub_44a0 | *(unsigned short *)(v25 + 0x24) = sub_c570(v25,v25 + 0x14,v12 * 0x100 | v12 >> 8,v18 + 0x14); => *(unsigned short *)(v25 + 0x24) = sub_c570(v25,v25 + 0x14,(unsigned short)(v12 * 0x100 | v12 >> 8),v18 + 0x14);
 O2_mirai_mirai sub_54d0 | (*(void *)**(unsigned long **)(dat_16080 + v2))(a2,a3,a4,a5); => (*(void *)**(unsigned long **)(dat_16080 + v2))((unsigned char)a2,a3,(unsigned char)a4,a5);
-O2_mirai_mirai sub_55b0 | sub_54d0(v3 >> 0x18 | (v3 & 0xff0000) >> 8 | (v3 & 0xff00) << 8 | v3 << 0x18,(char)v6,v1,v8,v2,v9); => sub_54d0(v3 >> 0x18 | (v3 & 0xff0000) >> 8 | (v3 & 0xff00) << 8 | v3 << 0x18,(unsigned char)v6,v1,v8,v2,v9);
+O2_mirai_mirai sub_55b0 | sub_54d0(v4 >> 0x18 | (v4 & 0xff0000) >> 8 | (v4 & 0xff00) << 8 | v4 << 0x18,v1,v2,v8,v3,v9); => sub_54d0(v4 >> 0x18 | (v4 & 0xff0000) >> 8 | (v4 & 0xff00) << 8 | v4 << 0x18,(unsigned char)v1,v2,v8,v3,v9);
 O2_mirai_mirai sub_9850 | v16 = sub_5900(a2,a3,0x15,0); => v16 = sub_5900((unsigned char)a2,a3,0x15,0);
 O2_mirai_mirai sub_9850 | v17 = sub_5900(a2,a3,0x14,"GET"); => v17 = sub_5900((unsigned char)a2,a3,0x14,"GET");
 O2_mirai_mirai sub_9850 | v18 = sub_5900(a2,a3,8,0); => v18 = sub_5900((unsigned char)a2,a3,8,0);
@@ -3325,9 +3322,9 @@ O2_nuttx_nuttx sub_800f65c | sub_800f614(a2,"  %-10s %8lu%c %8lu%c  %8lu%c %s\n"
 O2_nuttx_nuttx sub_8010960 | v1 = sub_8003798(dat_200005a8,*(char *)(dat_200005a8 + 0x34),a2,0x200005a8,a3); => v1 = sub_8003798(dat_200005a8,(unsigned char)*(char *)(dat_200005a8 + 0x34),a2,0x200005a8,a3);
 O2_nuttx_nuttx sub_80109d4 | v1 = sub_8003a60(a0[2],*(char *)&v12[2],v7,v3); => v1 = sub_8003a60(a0[2],(unsigned char)*(char *)&v12[2],v7,v3);
 O2_nuttx_nuttx sub_80109d4 | (**(void **)(v1 + 4))(*(char *)&v12[2],&v12[2],0); => (**(void **)(v1 + 4))((unsigned char)*(char *)&v12[2],&v12[2],0);
-O2_nuttx_nuttx sub_8010ef4 | sub_801170c(&v11,(char)v8[4]); => sub_801170c(&v11,(unsigned char)v8[4]);
-O2_nuttx_nuttx sub_8010ef4 | (*(void *)v8[1])((char)v8[4],&v8[4],0); => (*(void *)v8[1])((unsigned char)v8[4],&v8[4],0);
-O2_nuttx_nuttx sub_8011088 | sub_801170c(&v4,(char)v2[2]); => sub_801170c(&v4,(unsigned char)v2[2]);
+O2_nuttx_nuttx sub_8010ef4 | sub_801170c(&v11,*(char *)&v8[4]); => sub_801170c(&v11,(unsigned char)*(char *)&v8[4]);
+O2_nuttx_nuttx sub_8010ef4 | (*(void *)v8[1])(*(char *)&v8[4],&v8[4],0); => (*(void *)v8[1])((unsigned char)*(char *)&v8[4],&v8[4],0);
+O2_nuttx_nuttx sub_8011088 | sub_801170c(&v4,*(char *)&v2[2]); => sub_801170c(&v4,(unsigned char)*(char *)&v2[2]);
 O2_nuttx_nuttx sub_801116c | if (sub_8011810(v2 + 0x90,v1) != 1) // branch-flip => if (sub_8011810(v2 + 0x90,(unsigned char)v1) != 1) // branch-flip
 O2_nuttx_nuttx sub_801116c | if (((sub_8011810(v2 + 0x88,v5) != 1) && (!a1[4])) && (a1[3] != v2)) { => if (((sub_8011810(v2 + 0x88,(unsigned char)v5) != 1) && (!a1[4])) && (a1[3] != v2)) {
 O2_nuttx_nuttx sub_801116c | if (sub_8003a60(v3,v1)) { => if (sub_8003a60(v3,(unsigned char)v1)) {
