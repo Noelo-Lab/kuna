@@ -642,31 +642,31 @@
  },
  "default_on_evidence": {
   "decision": "user, 2026-09-18: default `param`. The type_match cost of an anonymous struct_N * against a program-defined GT name is accepted (Noelo-Lab/decbench#93 asks the metric to credit any structure pointer against a GT pointer-to-structure); primitive pointers must still match exactly, so a struct_N that replaces a correct primitive pointer is reported as a false positive.",
-  "base": "d3617d64 (origin/main, includes #674 and #671/#672/#664)",
+  "base": "measured on d3617d64, then on e1139df9 (origin/main with #677) after rebasing; the figures below are the final tree unless marked",
   "doc": "docs/features/structsynth/flip.md",
   "corpora": {
    "make test": "675/675 PARITY OK with the flip; 0 datatest assertions move",
    "make test-stages": "1137/1141 before touching a test: ELFMAIN #1/#2 (elfmain-off pass: argv read at [0]/[1] becomes struct_0 *; the pass now pins upstream with `option structsynth off`) and PEBNAMES-X86 #6/#8 (the SEH function's FS base becomes a two-member struct_0 *; regexes follow, #8 renamed). After: 1141/1141; the re-recorded baseline differs only by four renamed keys (PEBNAMES-X86 #8 and the three structsynth #1 'off leaves' names).",
-   "make test-cli": "185/185 on the flip; 186/186 with tests/cli/sharded-project-export-structsynth-off.json"
+   "make test-cli": "tests/cli: 187/187 passed (two new probes: sharded-project-export-structsynth-off, structsynth-sign-contested-field-unsigned)"
   },
   "sweep": {
    "binaries": "coreutils fmt O2, ls O2, sort O0/O2, du O0/O2; findutils find O2; grep O2; gzip O2; bzip2 O2; diffutils diff O2; tar O2 (reliable); chibios O2 + freertos O2 (ARM32)",
    "functions": 5610,
    "changed": 483,
-   "off_arm_identity": "branch with --option structsynth off byte-identical to a d3617d64 release build on all 14",
+   "off_arm_identity": "on d3617d64: branch with --option structsynth off byte-identical to a d3617d64 release build on all 14; on e1139df9 the off arm is unmoved by the sign rule (it lives in the pass)",
    "goto_without_label": {
     "off": 0,
     "on": 0,
     "instrument": "docs/features/structsynth/gotolabel.py"
    },
    "find_O2_sub_f620": "label_f752: emitted in both arms; the on arm duplicates the case 0x75 return block and the remaining goto keeps its label",
-   "verified_mechanically": 345,
-   "read_by_hand": 138,
+   "verified_mechanically": 350,
+   "read_by_hand": 133,
    "read_by_hand_classes": {
-    "load folded into its use / temporary holds a sum or comparison": 50,
+    "load folded into its use / temporary holds a sum or comparison": 49,
     "index rescaled to the structure size or spelled past its end": 41,
     "undefined1 filler array decays to its address": 40,
-    "literal respelled for the field type": 29,
+    "literal respelled for the field type": 25,
     "constant byte stores merged into one field store": 10,
     "byte-mask test respelled on the wider field": 8,
     "a local takes the structure type or the field's pointer type": 11,
@@ -682,7 +682,7 @@
    "instruments": "canon.py (offset-canonical equality), hunks.py, skeleton.py, gotolabel.py; per-function list in flip-hunks.txt"
   },
   "project_export": {
-   "serial_offsetcheck": "8 exports (7 x86-64 + chibios -m32): 311 synthesized structs, 0 with a misplaced field",
+   "serial_offsetcheck": "8 exports on the final build (7 x86-64 + chibios -m32): 311 synthesized structs, 0 with a misplaced field",
    "serial_gcc_syntax": "no new error kind; struct-related errors equal in both arms; 'NULL' undeclared +1/+7/+1/+2 (du/tar/sort O0/chibios, prelude gap), one sort O0 void-call error respelled, one more find sub_ece0 arity error from the duplicated block",
    "jobs_defect": "decompile-project --jobs N merged per-worker struct_N definitions line by line: ls O2 --jobs 4 wrote 23 struct openings and one `};`. Fixed: sharded project workers run with structsynth off (jobs.rs structsynth_shard_note) and stderr says so; every artifact byte-identical to a serial structsynth-off export (kuna-cli jobs_project_runs_workers_with_structsynth_off; tests/cli/sharded-project-export-structsynth-off.json)"
   },
@@ -770,7 +770,8 @@
    },
    "worst_delta_pct": 2.92,
    "budget_pct": 5.0,
-   "within_budget": true
+   "within_budget": true,
+   "note": "measured on the d3617d64 build; the sign rule adds one type comparison per recorded access"
   },
   "modes": {
    "reliable": "empty = the shipped defaults, so it synthesizes; pinning off would make auto's 500 KiB-2 MiB band disagree with the default on no evidence of wrong output",
@@ -793,6 +794,12 @@
    "docs/options.md": "regenerated from the built binary; byte-identical to the checked-in file",
    "make rust-test": "RUST_TEST_RC=0 via /home/mahaloz/kwt/rust-test-lane.sh on da16c6ce (416 `test result: ok`, 0 FAILED), including kuna-cli jobs_project_runs_workers_with_structsynth_off and jobs::tests::structsynth_shard_note_only_for_a_project_that_would_synthesize"
   },
-  "counters": "the flip adds no option, so no count moves; `counters --rederive` agrees with every site; baseline_stages 1141"
+  "counters": "the flip adds no option, so no count moves; `counters --rederive` agrees with every site; baseline_stages 1141",
+  "sign_rule": {
+   "found": "after the rebase onto #677: findutils find O2 sub_7670 printed `sub_7510(a1->field_0x68)` over a synthesized `short field_0x68` (taken from a read that feeds signed comparisons) where the binary zero-extends (`movzwl 0x68(%rbp),%edi`) into sub_7510's 32-bit argument; C sign-extends, the value #677 fixed in the off arm (`sub_7510(*(unsigned short *)&a1[0xd])`). The only such call in the sweep: the other 88 places where off spells an unsigned narrow read and on a field are unsigned fields or sign-blind uses.",
+   "fix": "Evidence::record: a field commits to a signedness only when every access of its width agrees; a signed read against an unsigned or undefined one leaves the field undefined<N> (prints unsigned). find's field_0x68 is now `unsigned short`, as DWARF's `unsigned short fts_info`.",
+   "effect": "35 on-arm functions over the 14 binaries respelled (casts where an unsigned field meets a signed compare, literal spellings, locals' sign/numbering); 5 of them become mechanically verified; off arm unchanged",
+   "tests": "unit accesses_that_disagree_on_sign_leave_the_field_undefined; fixture signfield_zext_x86_64 + kuna-cli a_sign_contested_synthesized_field_round_trips_through_the_printed_c (printed f hands sink 0x9abc; before the rule 4294941372); tests/cli/structsynth-sign-contested-field-unsigned.json; #677's round trip runs with structsynth off and at the default"
+  }
  }
 }
