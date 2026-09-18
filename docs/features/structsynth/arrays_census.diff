@@ -1,8 +1,6 @@
-diff --git a/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs b/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
-index 3214160e..e36102d4 100644
 --- a/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
 +++ b/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
-@@ -731,6 +731,22 @@ fn synthesize(data: &mut Funcdata) -> bool {
+@@ -738,6 +738,22 @@
          }
          let Some((fields, size)) = fields_for(types.as_ref(), e) else { continue };
          let Some(st) = ledger_type(types.as_ref(), fields, size) else { continue };
