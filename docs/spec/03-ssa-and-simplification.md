@@ -601,6 +601,23 @@ that quotient. `RuleDivOpt` substitutes `(x / 3) * 2` only when the same
 and `RuleModOpt` rules can then recover `x % 3`. Other masks, reciprocals, widths, wide divisions, and
 multiply-without-a-matching-quotient forms are declined.
 
+The cleanup pool's `RuleExpandLoad` widens a LOAD to the whole element its
+pointer is typed to and takes the loaded bytes back out, either as the
+least-significant truncation or through an AND-and-compare. The truncation form
+needs the loaded value's signedness, because the SUBPIECE it leaves prints as a
+cast to the value's own type. kuna declines it for a value whose type is still
+undefined, where upstream accepts one: `TypeOpSubpiece::getOutputToken` treats
+an undefined output as `int` of its width, which invents a sign. The case that
+shows it is a zero-extended argument: `movzwl 0x68(%rdi),%edi` before a call
+whose parameter is 32 bits wide, read through a pointer the function's other
+uses type `unsigned int *`. Widened, it printed `sink((short)a0[0x1a])`, which C
+sign-extends, so 0x9abc reached `sink` as 4294941372. Declined, the load keeps
+its own width and kuna's unsigned spelling of an undefined value:
+`sink(*(unsigned short *)&a0[0x1a])`. A value whose type is known signed or
+unsigned still takes the truncation form. That form is value-correct but reads
+the whole element, and narrowing it too would move pinned output
+(`kuna-tiedphitrim.xml` #13/#14).
+
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
 `COPY`'s input instead. When the reader is an ordinary op that is pure gain: the

@@ -1,0 +1,82 @@
+# expandload: decompile-all --json, main (d3617d64) vs this branch, every changed function classified
+# python3 classify.py <dir>   (<dir>/<n>.off.json = main, <n>.on.json = fix)
+
+## 12 binaries
+O0-bzip2-bzip2                                {'fns': 154, 'changed': 3, 'L1-respell': 2, 'L3-casts': 1}
+O0-coreutils-sort                             {'fns': 479, 'changed': 2, 'L1-respell': 2}
+O2-cleanflight-cleanflight_DALRCF405-elf      {'fns': 2558, 'changed': 7, 'L4-temps': 1, 'L1-respell': 6}
+O2-coreutils-fmt                              {'fns': 151}
+O2-coreutils-ls                               {'fns': 404, 'changed': 1, 'L1-respell': 1}
+O2-diffutils-diff                             {'fns': 398, 'changed': 1, 'L1-respell': 1}
+O2-gnutls-gnutls-cli                          {'fns': 388}
+O2-grep-grep                                  {'fns': 449, 'changed': 1, 'L4-temps': 1}
+O2-gzip-gzip                                  {'fns': 204}
+O2-noinline-findutils-find                    {'fns': 874, 'changed': 7, 'L1-respell': 4, 'L3-casts': 1, 'L4-temps': 2}
+O2-noinline-tar-tar                           {'fns': 1585, 'changed': 15, 'L1-respell': 9, 'L3-casts': 2, 'L4-temps': 4}
+O2-riot-os-hello-world-elf                    {'fns': 129}
+TOTAL {'fns': 7773, 'missing': 0, 'changed': 37, 'L1-respell': 25, 'L3-casts': 4, 'L4-temps': 8}
+
+## 46 binaries
+O0-coreutils-csplit                           {'fns': 235, 'changed': 1, 'L1-respell': 1}
+O0-coreutils-expr                             {'fns': 213, 'changed': 1, 'L1-respell': 1}
+O0-coreutils-sort                             {'fns': 479, 'changed': 2, 'L1-respell': 2}
+O0-coreutils-tail                             {'fns': 316}
+O0-cronie-crond                               {'fns': 198}
+O0-dpkg-dpkg-divert                           {'fns': 657, 'changed': 4, 'L1-respell': 1, 'L3-casts': 3}
+O0-grep-grep                                  {'fns': 642, 'changed': 3, 'L1-respell': 3}
+O0-gzip-gzip                                  {'fns': 248}
+O0-libexpat-xmlwf                             {'fns': 134}
+O0-shadow-chage                               {'fns': 237, 'changed': 1, 'L1-respell': 1}
+O0-shadow-useradd                             {'fns': 483, 'changed': 1, 'L1-respell': 1}
+O2-base-passwd-update-passwd                  {'fns': 92}
+O2-betaflight-betaflight_STM32F405-elf        {'fns': 5797, 'changed': 20, 'L1-respell': 18, 'other': 1, 'L3-casts': 1}
+O2-bzip2-bzip2                                {'fns': 114}
+O2-chibios-ch-elf                             {'fns': 398, 'changed': 1, 'L1-respell': 1}
+O2-coreutils-fmt                              {'fns': 151}
+O2-coreutils-ginstall                         {'fns': 446, 'changed': 1, 'L1-respell': 1}
+O2-coreutils-ls                               {'fns': 404, 'changed': 1, 'L1-respell': 1}
+O2-crazyflie-cf2-elf                          {'fns': 1971, 'changed': 10, 'L1-respell': 8, 'L4-temps': 1, 'L3-casts': 1}
+O2-cronie-crontab                             {'fns': 151}
+O2-dash-dash                                  {'fns': 335, 'changed': 2, 'L3-casts': 2}
+O2-diffutils-diff                             {'fns': 398, 'changed': 1, 'L1-respell': 1}
+O2-diffutils-diff3                            {'fns': 212}
+O2-dpkg-dpkg-query                            {'fns': 585, 'changed': 3, 'L1-respell': 1, 'L3-casts': 1, 'L4-temps': 1}
+O2-e2fsprogs-e2fsck                           {'fns': 1421, 'changed': 45, 'other': 5, 'L4-temps': 9, 'L1-respell': 27, 'L3-casts': 4}
+O2-findutils-find                             {'fns': 658, 'changed': 6, 'L1-respell': 4, 'L4-temps': 2}
+O2-freertos-RTOSDemo-out                      {'fns': 126}
+O2-grep-grep                                  {'fns': 449, 'changed': 1, 'L4-temps': 1}
+O2-iproute2-ip                                {'fns': 1008, 'changed': 27, 'L4-temps': 10, 'L1-respell': 12, 'L3-casts': 5}
+O2-kmod-kmod                                  {'fns': 394}
+O2-libacl-getfacl                             {'fns': 77}
+O2-libacl-setfacl                             {'fns': 112}
+O2-libbsd-libbsd-so-0-11-7                    {'fns': 282}
+O2-libedit-libedit-so-0-0-70                  {'fns': 664, 'changed': 3, 'L1-respell': 1, 'L4-temps': 2}
+O2-libopencm3-cdcacm-elf                      {'fns': 61}
+O2-libselinux-libselinux-so-1                 {'fns': 621, 'changed': 1, 'L1-respell': 1}
+O2-mirai-mirai                                {'fns': 123, 'changed': 1, 'L3-casts': 1}
+O2-noinline-coreutils-cat                     {'fns': 192}
+O2-noinline-grep-grep                         {'fns': 634, 'changed': 3, 'L4-temps': 1, 'L1-respell': 2}
+O2-noinline-sysvinit-killall5                 {'fns': 87}
+O2-nuttx-nuttx                                {'fns': 792, 'changed': 3, 'L1-respell': 3}
+O2-openssh-portable-scp                       {'fns': 524}
+O2-openssh-portable-sftp-server               {'fns': 464}
+O2-sysvinit-init                              {'fns': 144}
+O2-tar-tar                                    {'fns': 1125, 'changed': 13, 'L1-respell': 10, 'L3-casts': 1, 'L4-temps': 2}
+O2-zlib-libz-so-1-2-13                        {'fns': 184, 'changed': 8, 'other': 2, 'L1-respell': 4, 'L3-casts': 1, 'L4-temps': 1}
+TOTAL {'fns': 25038, 'missing': 0, 'changed': 163, 'L1-respell': 105, 'L3-casts': 20, 'other': 8, 'L4-temps': 30}
+
+## hand labels for the 8 `other` rows (46 binaries); none is another class
+O2-betaflight 0x800e30e sub_800e30e                L3, spelled across dialects: *(int2 *)(v+8) = (int2)a0[1] -> *(unsigned short *)(v+8) = *(unsigned short *)&a0[1]
+O2-e2fsck 0x165b0 main                             L3, same: *(int4 *)(...) = (int4)v8[0xf] -> *(unsigned int *)(...) = *(unsigned int *)&v8[0xf]
+O2-e2fsck 0x55d50 ext2fs_extent_get_info           L3+L4: v2 = a0[0x15]; *(int4 *)a1[1] = (int4)v2 -> v4 = *(unsigned int *)&a0[0x15]; *(unsigned int *)a1[1] = v4
+O2-e2fsck 0x59610 ext2fs_find_first_zero_generic_bmap  the narrow load is read at each use instead of through a temp; no store between the reads
+O2-e2fsck 0x597f0 ext2fs_find_first_set_generic_bmap   same
+O2-e2fsck 0x66090 sub_66090                        same (both reads inside one expression)
+O2-zlib 0x4650 sub_4650                            the load of a0[0x12] (+0x90) prints before the store to a0[0x10] (+0x80); objdump: 47ba load 0x90, 47d5 store 0x80
+O2-zlib 0x4fc0 sub_4fc0                            the load of a0[0x12] (+0x90) prints before the store to +0xb4; objdump: 511a load 0x90, 5120 store 0xb4
+
+## invariants (46 binaries, off = main, on = fix)
+variables[] rows identical beyond v-numbering and line maps: 25,038 / 25,038 functions
+call arguments 209,487 -> 209,487; arg rows 44,995 -> 44,995; never-assigned-local arguments 944 -> 944
+string-literal arguments 26,626 -> 26,626; calls lost 0; goto delta 0; return delta 0
+declarations +11 in 27 functions (split register temps); body statements -3 (the 3 read-at-each-use functions)
