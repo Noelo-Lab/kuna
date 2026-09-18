@@ -341,6 +341,16 @@ impl Evidence {
         }
         self.unclaimed = dropped;
     }
+
+    /// Every byte range this function dereferenced without a typed field of its
+    /// own: the accesses the prune dropped and the fields read as raw bytes. The
+    /// ledger never answers with a structure that lays other members over them.
+    /// Offsets beyond `int4` are clamped; they lie past every member either way.
+    fn unclaimed_ranges(&self) -> Vec<(int4, int4)> {
+        let clamp = |v: intb| v.clamp(int4::MIN as intb, int4::MAX as intb) as int4;
+        let raw = self.slots.iter().filter(|(_, s)| s.reinterpreted()).map(|(o, s)| (*o, s.width));
+        self.unclaimed.iter().copied().chain(raw).map(|(o, w)| (clamp(o), w)).collect()
+    }
 }
 
 /// The `(base, offset)` an address varnode peels to, or `None` when the peel hit
@@ -665,13 +675,6 @@ fn layout_plan(slots: &BTreeMap<intb, Slot>) -> Option<(Vec<(int4, int4, bool)>,
     Some((plan, size))
 }
 
-/// The unclaimed accesses as ledger byte ranges. Offsets beyond `int4` are
-/// clamped: they lie past every member of every candidate either way.
-fn unclaimed_ranges(dropped: &[(intb, int4)]) -> Vec<(int4, int4)> {
-    let clamp = |v: intb| v.clamp(int4::MIN as intb, int4::MAX as intb) as int4;
-    dropped.iter().map(|&(off, width)| (clamp(off), width)).collect()
-}
-
 /// The one pass: decide every candidate base and install the accepted ones.
 /// Returns whether anything was installed.
 fn synthesize(data: &mut Funcdata) -> bool {
@@ -684,7 +687,7 @@ fn synthesize(data: &mut Funcdata) -> bool {
             continue;
         }
         let Some((fields, size)) = fields_for(types.as_ref(), e) else { continue };
-        let unclaimed = unclaimed_ranges(&e.unclaimed);
+        let unclaimed = e.unclaimed_ranges();
         let Some(st) = ledger::lookup_or_mint(types.as_ref(), fields, size, &unclaimed) else {
             continue;
         };
