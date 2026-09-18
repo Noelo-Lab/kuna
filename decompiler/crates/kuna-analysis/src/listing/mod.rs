@@ -34,6 +34,7 @@ pub mod decode;
 pub mod kuna_callbackentry;
 pub mod kuna_entrythumbflow;
 pub mod kuna_pdecode;
+pub mod kuna_rawdiscover;
 pub mod kuna_tailcallentry;
 mod kuna_picbase;
 mod kuna_picpool;
@@ -53,6 +54,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound;
 use std::rc::Rc;
 
+use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::Translate;
 use object::Object;
@@ -328,6 +330,73 @@ impl Listing {
                 .into_iter()
                 .map(|(target, source)| (source, target))
                 .collect(),
+        }
+    }
+
+    /// (kuna `rawdiscover`) Build a Listing for a **headerless** image, from
+    /// explicit executable ranges and seeds rather than from an `object::File`.
+    ///
+    /// The three inputs [`Listing::build_with_meta_planned`] reads off the object
+    /// file have honest inert values here: the executable universe is the raw
+    /// loader's synthetic `CODE` section, the decode-mode painter is empty (a raw
+    /// image carries no ARM `$t` markers or Cortex-M vector table, and
+    /// `--isa arm|thumb` has already painted any whole-image claim), and the
+    /// PPC64 local-entry fold is empty. The walk itself is the same one.
+    ///
+    /// Returns an empty Listing when the architecture publishes no default code
+    /// space, matching the object-backed constructor.
+    pub fn build_raw(
+        arch: &Architecture,
+        translate: &dyn Translate,
+        code_space: &Rc<AddrSpace>,
+        exec_ranges: &[(u64, u64)],
+        seeds: &[u64],
+        detail: ListingDetail,
+    ) -> Listing {
+        let mut exec_ranges: Vec<(u64, u64)> = exec_ranges.to_vec();
+        exec_ranges.sort_unstable();
+        let seed_funcs: BTreeMap<u64, DiscoveredFunction> = seeds
+            .iter()
+            .map(|&entry| {
+                (
+                    entry,
+                    DiscoveredFunction {
+                        entry,
+                        name: None,
+                        // A raw image has no symbol table, so no seed came from one.
+                        from_symbol: false,
+                        has_no_return: false,
+                        call_fixup: None,
+                    },
+                )
+            })
+            .collect();
+        let st = walk::walk(
+            translate,
+            arch,
+            code_space,
+            &exec_ranges,
+            seeds,
+            &seed_funcs,
+            &context::ContextPainter::empty(),
+            &BTreeMap::new(),
+            detail,
+            /* want_stack_callbacks = */ false,
+            &WalkPlan::serial(),
+        );
+        let mut refs_to = st.refs_to;
+        let mut refs_from = st.refs_from;
+        finalize_refs(&mut refs_to, /* by_source = */ true);
+        finalize_refs(&mut refs_from, /* by_source = */ false);
+        Listing {
+            insns: st.insns,
+            refs_to,
+            refs_from,
+            funcs: st.funcs,
+            exec_ranges,
+            has_assembly: detail.assembly,
+            has_refs: detail.refs,
+            stack_callback_refs: Vec::new(),
         }
     }
 

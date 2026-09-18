@@ -1686,6 +1686,13 @@ pub struct Architecture {
     /// from metadata-backed roots and admits pointer-table targets only after
     /// fingerprint and valid-subroutine checks. The `fast` mode enables it.
     pub analysis_fast_funcdisc: bool,
+    /// (kuna) Gate recursive-descent function discovery on a headerless
+    /// `--raw-image` load (`rawdiscover`); default **on**. A raw image has no
+    /// `object::File`, so the whole object-backed discovery tier declines and the
+    /// inventory is exactly the `--entry` seeds; this follows direct calls from
+    /// those seeds instead. Raw-container only, so every object-format parity
+    /// gate is byte-identical.
+    pub analysis_rawdiscover: bool,
     /// (kuna) Gate the discovered-no-return consumer (`noreturn_disc`), the first
     /// Listing/xref consumer; default **off**. It is a flow heuristic (a callee is
     /// no-return if ≥3 of its call sites show no valid fall-through, iterated to a
@@ -2418,6 +2425,7 @@ impl Architecture {
             analysis_formatstring: false,
             analysis_listing: false,
             analysis_fast_funcdisc: false,
+            analysis_rawdiscover: false,
             analysis_noreturn_disc: false,
             analysis_noreturn_discstrict: false,
             analysis_noreturn_propagate: false,
@@ -2720,6 +2728,7 @@ impl Architecture {
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
+        self.analysis_rawdiscover = true; // (kuna) default-on: a raw image's only discovery. ADDS FUNCTIONS (direct-call targets reached from the --entry seeds). Raw-container only, so every parity gate is byte-identical; restore the seeds-only inventory with `option rawdiscover off`
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
         self.analysis_noreturn_discstrict = true; // (kuna, GH-312) DIV-92 default-on: drop noreturn_disc's decode-failure evidence arm, keeping the terminal arm + the two positive arms. RESTORES CODE (a forged no-return verdict no longer deletes the caller's tail). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore the legacy three-arm tally with `option noreturn_discstrict off`
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
@@ -3574,6 +3583,9 @@ impl Architecture {
             "listing" => on_off!(analysis_listing, "Listing/xref disassembly tier"),
             "fast_funcdisc" => {
                 on_off!(analysis_fast_funcdisc, "Fast whole-project function discovery")
+            }
+            "rawdiscover" => {
+                on_off!(analysis_rawdiscover, "Raw-image recursive function discovery")
             }
             "noreturn_disc" => {
                 on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")

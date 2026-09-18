@@ -518,6 +518,9 @@ Three tiers:
 | fast decompile-project emits only import veneers and the binary entry | [`fast_funcdisc`](#fast_funcdisc) |
 | internal direct callees have no project bodies | [`fast_funcdisc`](#fast_funcdisc) |
 | function reachable through a callback or vtable pointer is absent while explicit --addr decompiles it | [`fast_funcdisc`](#fast_funcdisc) |
+| kuna functions on a --raw-image reports one function whose size is the whole file | [`rawdiscover`](#rawdiscover) |
+| decompile-all on a raw image emits a single enormous body | [`rawdiscover`](#rawdiscover) |
+| a firmware image decompiles only at addresses passed by hand | [`rawdiscover`](#rawdiscover) |
 | stripped static-linked library function stays sub_<addr> although its fingerprint is known | [`fid`](#fid) |
 | no .fid database renames applied in a stripped binary | [`fid`](#fid) |
 | msvc c++ class names missing and vftables left as unnamed data | [`rtti`](#rtti) |
@@ -1942,6 +1945,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Enabled by fast mode for unfiltered or name-selected decompile-all/decompile-project/functions so a stripped binary does not collapse to imports plus its entry point. Flip off to restore the old metadata-only fast inventory, or when even the rooted whole-image recursive decode is too costly. Explicit --addr selections skip the preset's discovery work unless this option is explicitly turned on.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-fast-function-discovery
 - **Example:** `--mode fast --option fast_funcdisc on`
+
+### `rawdiscover` -- on | off, default `on`
+
+- **Symptoms:** kuna functions on a --raw-image reports one function whose size is the whole file; decompile-all on a raw image emits a single enormous body; a firmware image decompiles only at addresses passed by hand.
+- **What it does:** Recover a function inventory for a headerless --raw-image load by recursive descent from its --entry seeds. The object-backed discovery tier opens by parsing an object::File and every seed oracle under it reads a symbol table, an exception table or a section list, so a raw image declines the whole tier and its inventory is exactly the entry addresses the caller typed: one function spanning the file. The recursive-descent walk needs none of that metadata, so it is run directly over the raw loader's synthetic CODE section with those seeds as roots, promoting every direct call target to a function entry. The decode-mode painter and the PPC64 local-entry fold are empty, which is what a headerless image honestly records; --isa arm|thumb has already painted any whole-image mode claim. Seeds are never dropped, so the inventory can only grow.
+- **When to flip:** On by default for --raw-image. Flip off to restore the seeds-only inventory when the walk follows a decoded call into data and mints entries that are not functions, which a bytes-are-code image with no section table can do. A function no direct call reaches and no --entry names is still undiscovered either way; assert it with --define-function.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-raw-image-function-discovery
+- **Example:** `kuna functions fw.bin --raw-image --target Cortus:LE:32:APS3:default --base 0x80000000 --entry 0x8000010c --option rawdiscover off`
 
 ### `fid` -- on | off, default `off`
 

@@ -2143,6 +2143,46 @@ impl ConsoleProgram {
         }
     }
 
+    /// (kuna `rawdiscover`) Extend [`Self::pending_synthetic_entries`] with every
+    /// function the headerless-image discovery finds: the targets of every direct
+    /// call in the executable bytes, plus the direct-call closure of those and
+    /// the seeds.
+    ///
+    /// Seeds and executable bounds both come from the raw loader: the caller's
+    /// `--entry` addresses, and the synthetic `CODE` section it publishes for
+    /// the whole file. A seed is never dropped, so the inventory can only grow;
+    /// an image whose bytes hold no direct call returns unchanged.
+    fn discover_raw_entries(&mut self) {
+        let Some(code_space) = self.analysis_code_space.clone() else {
+            return;
+        };
+        let exec: Vec<(u64, u64)> = self
+            .sections()
+            .into_iter()
+            .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
+            .map(|(addr, size, _)| (addr, addr.saturating_add(size)))
+            .collect();
+        let seeds: Vec<u64> =
+            self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
+        let known: BTreeSet<u64> = seeds.iter().copied().collect();
+        let found = {
+            let arch = self.arch();
+            kuna_analysis::listing::kuna_rawdiscover::discover(
+                arch,
+                arch.translate(),
+                &code_space,
+                &exec,
+                &seeds,
+            )
+        };
+        for vma in found {
+            if known.contains(&vma) {
+                continue;
+            }
+            self.pending_synthetic_entries.push(Address::new(Rc::clone(&code_space), vma));
+        }
+    }
+
     /// (kuna) Commit the stashed per-pass analysis facts, gated by the per-pass
     /// `--option <id> on|off` enable flags — the deferred half of the analysis
     /// boundary (conflict #4). Called from `IfcReadSymbols` (`read symbols`), which
@@ -2168,6 +2208,14 @@ impl ConsoleProgram {
     /// below. With Listing off, this whole block is skipped.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
         if !self.pending_synthetic_entries.is_empty() {
+            // (kuna `rawdiscover`) A headerless image reaches this point holding
+            // only the `--entry` addresses the caller typed, because the
+            // object-file discovery tier below declines without an
+            // `object::File`. Discover the rest first, so the entries it finds
+            // are named and installed by the same loop.
+            if self.container == ProgramContainer::Raw && self.arch().analysis_rawdiscover {
+                self.discover_raw_entries();
+            }
             let entries = std::mem::take(&mut self.pending_synthetic_entries);
             let symbols = entries
                 .into_iter()

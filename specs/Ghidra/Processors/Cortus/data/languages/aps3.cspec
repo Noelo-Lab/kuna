@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Cortus APS3 compiler spec.
+
+     Register roles, all measured over the 555 discovered functions of a 147 KiB
+     ATWINC1500 image:
+
+       r0   reads as constant zero
+       r1   stack pointer (`sub r1,#N` opens the frame in 306 of 555 entries)
+       r15  link register: `call` writes it, and `ret` is `jmp [r15]`
+       r2   first argument and the return value; r2..r7 are the argument
+            registers (r2 84.9% of call sites, r3 62.1%, r4 43.0%, then a cliff)
+       r8..r14  callee-saved.  Saved-in-prologue rate falls monotonically from
+            r14 (61.3%) through r13 (47.0%), r12 (46.8%), r11 (24.7%), r10
+            (17.1%) to r9/r8 (11.9%) - the "spill from the top down" signature.
+            r2..r7 are saved in at most 1.3% of prologues, so the split is at r8.
+-->
+<compiler_spec>
+  <global><range space="ram"/></global>
+  <stackpointer register="r1" space="ram"/>
+  <funcptr align="2"/>
+  <returnaddress>
+    <register name="r15"/>
+  </returnaddress>
+  <default_proto>
+    <prototype name="__asmA" extrapop="0" stackshift="0">
+      <input>
+        <pentry minsize="1" maxsize="4"><register name="r2"/></pentry>
+        <pentry minsize="1" maxsize="4"><register name="r3"/></pentry>
+        <pentry minsize="1" maxsize="4"><register name="r4"/></pentry>
+        <pentry minsize="1" maxsize="4"><register name="r5"/></pentry>
+        <pentry minsize="1" maxsize="4"><register name="r6"/></pentry>
+        <pentry minsize="1" maxsize="4"><register name="r7"/></pentry>
+        <pentry minsize="1" maxsize="4" align="4"><addr offset="0" space="stack"/></pentry>
+      </input>
+      <output><pentry minsize="1" maxsize="4"><register name="r2"/></pentry></output>
+      <unaffected>
+        <register name="r0"/><register name="r1"/>
+        <register name="r8"/><register name="r9"/><register name="r10"/>
+        <register name="r11"/><register name="r12"/><register name="r13"/>
+        <register name="r14"/>
+      </unaffected>
+      <killedbycall>
+        <register name="r2"/><register name="r3"/><register name="r4"/>
+        <register name="r5"/><register name="r6"/><register name="r7"/>
+        <register name="r15"/>
+      </killedbycall>
+    </prototype>
+  </default_proto>
+</compiler_spec>

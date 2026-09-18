@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language_definitions>
+  <language processor="Cortus" endian="little" size="32" variant="APS3" version="1.0"
+            slafile="aps3.sla" processorspec="aps3.pspec" id="Cortus:LE:32:APS3">
+    <description>Cortus APS3 32-bit RISC (opcode map recovered empirically; see README.md)</description>
+    <compiler name="default" spec="aps3.cspec" id="default"/>
+  </language>
+</language_definitions>

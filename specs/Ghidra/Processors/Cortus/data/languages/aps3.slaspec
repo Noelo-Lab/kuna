@@ -1,0 +1,299 @@
+# Cortus APS3 (aps3) SLEIGH -- complete 256-opcode map. Generated; see README.md.
+define endian=little;
+define alignment=2;
+define space ram      type=ram_space      size=4 default;
+define space register type=register_space size=4;
+define register offset=0x00 size=4 [ r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 ];
+define register offset=0x40 size=4 [ rtt psr pc ];
+define register offset=0x60 size=1 [ ZF NF CF VF ];
+define token instr(16) op8=(0,7) op7=(0,6) sh5=(7,11) oplo=(0,3) tlo=(4,7) sd=(14,15) sb=(12,13) soff=(8,11) rd=(12,15) rdA=(12,15) rdB=(12,15) rdC=(12,15) rdD=(12,15) rs=(8,11) tmid=(8,11) thi=(12,15) imm4=(8,11) simm8=(8,15) signed disp8u=(8,15);
+define token immtok(16) imm16=(0,15) simm16=(0,15) signed imm5=(0,4) rs2=(0,3);
+attach variables [ rd rs rs2 ] [ r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 ];
+attach variables [ rdA ] [ r0 r0 r2 r2 r4 r4 r6 r6 r8 r8 r10 r10 r12 r12 r14 r14 ];
+attach variables [ rdB ] [ r1 r1 r3 r3 r5 r5 r7 r7 r9 r9 r11 r11 r13 r13 r15 r15 ];
+attach variables [ rdC ] [ r2 r2 r2 r2 r6 r6 r6 r6 r10 r10 r10 r10 r14 r14 r14 r14 ];
+attach variables [ rdD ] [ r3 r3 r3 r3 r7 r7 r7 r7 r11 r11 r11 r11 r15 r15 r15 r15 ];
+# r0 reads as constant zero; RSRC exports that so [r0+off] folds to an absolute address
+RSRC: rs is rs        { export rs; }
+RSRC: "r0" is rs=0 { export 0:4; }
+RDSRC: rd is rd     { export rd; }
+RDSRC: "r0" is rd=0 { export 0:4; }
+attach variables [ sd ] [ r4 r5 r6 r7 ];
+attach variables [ sb ] [ r4 r1 r2 r3 ];
+so2: v is soff [ v = soff*2; ] { export *[const]:4 v; }
+so4: v is soff [ v = soff*4; ] { export *[const]:4 v; }
+relS: reloc is simm8 [ reloc = inst_start + 2*simm8; ] { export *:4 reloc; }
+
+
+# Opcodes whose *length and operand format* are established but whose operation is
+# not.  They are emitted as explicit unknown-value p-code rather than `unimpl`:
+# `unimpl` aborts the enclosing basic block, which costs the whole function, while
+# an opaque value keeps control flow and lets every other statement decompile.
+define pcodeop aps3_unknown_op;
+define pcodeop aps3_unknown_op_imm;
+
+:nop            is op8=0x00 & rd & rs { }                                      # PROVEN pad
+:movhi rd,imm16 is op8=0x08 & rd ; imm16 { rd = imm16 << 16; }                 # PROVEN
+:ret            is op8=0xE1 & rd=15 & rs=0 { return [r15]; }                   # PROVEN
+:jmp [rd]       is op8=0xE1 & rd { goto [rd]; }                                # PROVEN
+:call [rd]      is op8=0xF1 & rd { r15 = inst_next; call [rd]; }              # PROVEN indirect call (257 sites; ret is jmp [r15], so without this there is no return edge)
+:ble relS is op8=0x02 & relS { if ((ZF!=0)||(NF!=VF)) goto relS; }   # PROVEN short branch (disp8)
+lb0a: reloc is op8=0x0a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:ble lb0a is lb0a { if ((ZF!=0)||(NF!=VF)) goto lb0a; }   # PROVEN long branch (disp24)
+:bgt relS is op8=0x12 & relS { if ((ZF==0)&&(NF==VF)) goto relS; }   # PROVEN short branch (disp8)
+lb1a: reloc is op8=0x1a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bgt lb1a is lb1a { if ((ZF==0)&&(NF==VF)) goto lb1a; }   # PROVEN long branch (disp24)
+:blt relS is op8=0x22 & relS { if (NF!=VF) goto relS; }   # PROVEN short branch (disp8)
+lb2a: reloc is op8=0x2a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:blt lb2a is lb2a { if (NF!=VF) goto lb2a; }   # PROVEN long branch (disp24)
+:bge relS is op8=0x32 & relS { if (NF==VF) goto relS; }   # PROVEN short branch (disp8)
+lb3a: reloc is op8=0x3a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bge lb3a is lb3a { if (NF==VF) goto lb3a; }   # PROVEN long branch (disp24)
+:bmi relS is op8=0x42 & relS { if (NF!=0) goto relS; }   # PROVEN short branch (disp8)
+lb4a: reloc is op8=0x4a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bmi lb4a is lb4a { if (NF!=0) goto lb4a; }   # PROVEN long branch (disp24)
+:bpl relS is op8=0x52 & relS { if (NF==0) goto relS; }   # PROVEN short branch (disp8)
+lb5a: reloc is op8=0x5a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bpl lb5a is lb5a { if (NF==0) goto lb5a; }   # PROVEN long branch (disp24)
+:bvs relS is op8=0x62 & relS { if (VF!=0) goto relS; }   # PROVEN short branch (disp8)
+lb6a: reloc is op8=0x6a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bvs lb6a is lb6a { if (VF!=0) goto lb6a; }   # PROVEN long branch (disp24)
+:bvc relS is op8=0x72 & relS { if (VF==0) goto relS; }   # PROVEN short branch (disp8)
+lb7a: reloc is op8=0x7a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bvc lb7a is lb7a { if (VF==0) goto lb7a; }   # PROVEN long branch (disp24)
+:beq relS is op8=0x82 & relS { if (ZF!=0) goto relS; }   # PROVEN short branch (disp8)
+lb8a: reloc is op8=0x8a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:beq lb8a is lb8a { if (ZF!=0) goto lb8a; }   # PROVEN long branch (disp24)
+:bne relS is op8=0x92 & relS { if (ZF==0) goto relS; }   # PROVEN short branch (disp8)
+lb9a: reloc is op8=0x9a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bne lb9a is lb9a { if (ZF==0) goto lb9a; }   # PROVEN long branch (disp24)
+:blo relS is op8=0xa2 & relS { if (CF!=0) goto relS; }   # PROVEN short branch (disp8)
+lbaa: reloc is op8=0xaa & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:blo lbaa is lbaa { if (CF!=0) goto lbaa; }   # PROVEN long branch (disp24)
+:bhs relS is op8=0xb2 & relS { if (CF==0) goto relS; }   # PROVEN short branch (disp8)
+lbba: reloc is op8=0xba & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bhs lbba is lbba { if (CF==0) goto lbba; }   # PROVEN long branch (disp24)
+:bls relS is op8=0xc2 & relS { if ((CF!=0)||(ZF!=0)) goto relS; }   # PROVEN short branch (disp8)
+lbca: reloc is op8=0xca & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bls lbca is lbca { if ((CF!=0)||(ZF!=0)) goto lbca; }   # PROVEN long branch (disp24)
+:bhi relS is op8=0xd2 & relS { if ((CF==0)&&(ZF==0)) goto relS; }   # PROVEN short branch (disp8)
+lbda: reloc is op8=0xda & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bhi lbda is lbda { if ((CF==0)&&(ZF==0)) goto lbda; }   # PROVEN long branch (disp24)
+:brn relS is op8=0xe2 & relS {  }   # PROVEN short branch (disp8)
+lbea: reloc is op8=0xea & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:brn lbea is lbea {  }   # PROVEN long branch (disp24)
+:bra relS is op8=0xf2 & relS { goto relS; }   # PROVEN short branch (disp8)
+lbfa: reloc is op8=0xfa & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
+:bra lbfa is lbfa { goto lbfa; }   # PROVEN long branch (disp24)
+:ldub rd, [RSRC] is op8=0x10 & rd & RSRC { rd = zext(*:1 RSRC); }   # PROVEN load
+:stb RDSRC, [RSRC] is op8=0x91 & RDSRC & RSRC { *:1 RSRC = RDSRC:1; }   # PROVEN store
+:ldub rd, [RSRC, imm16] is op8=0x18 & rd & RSRC ; imm16 { rd = zext(*:1 (RSRC + imm16)); }   # PROVEN load
+:stb RDSRC, [RSRC, imm16] is op8=0x99 & RDSRC & RSRC ; imm16 { *:1 (RSRC + imm16) = RDSRC:1; }   # PROVEN store
+:lduh rd, [RSRC] is op8=0x20 & rd & RSRC { rd = zext(*:2 RSRC); }   # PROVEN load
+:sth RDSRC, [RSRC] is op8=0xa1 & RDSRC & RSRC { *:2 RSRC = RDSRC:2; }   # PROVEN store
+:lduh rd, [RSRC, imm16] is op8=0x28 & rd & RSRC ; imm16 { rd = zext(*:2 (RSRC + imm16)); }   # PROVEN load
+:sth RDSRC, [RSRC, imm16] is op8=0xa9 & RDSRC & RSRC ; imm16 { *:2 (RSRC + imm16) = RDSRC:2; }   # PROVEN store
+:ld rd, [RSRC] is op8=0x30 & rd & RSRC { rd = *:4 RSRC; }   # PROVEN load
+:st RDSRC, [RSRC] is op8=0xb1 & RDSRC & RSRC { *:4 RSRC = RDSRC; }   # PROVEN store
+:ld rd, [RSRC, imm16] is op8=0x38 & rd & RSRC ; imm16 { rd = *:4 (RSRC + imm16); }   # PROVEN load
+:st RDSRC, [RSRC, imm16] is op8=0xb9 & RDSRC & RSRC ; imm16 { *:4 (RSRC + imm16) = RDSRC; }   # PROVEN store
+:ldd rdA, [RSRC] is op8=0x40 & rdA & rdB & rdC & rdD & RSRC { rdA = *:4 RSRC; rdB = *:4 (RSRC + 4); }   # STRONG load
+:std rdA, [RSRC] is op8=0xc1 & rdA & rdB & rdC & rdD & RSRC { *:4 RSRC = rdA; *:4 (RSRC + 4) = rdB; }   # STRONG multi-reg store
+:ldd rdA, [RSRC, imm16] is op8=0x48 & rdA & rdB & rdC & rdD & RSRC ; imm16 { rdA = *:4 (RSRC + imm16); rdB = *:4 ((RSRC + imm16) + 4); }   # STRONG load
+:std rdA, [RSRC, imm16] is op8=0xc9 & rdA & rdB & rdC & rdD & RSRC ; imm16 { *:4 (RSRC + imm16) = rdA; *:4 ((RSRC + imm16) + 4) = rdB; }   # STRONG multi-reg store
+:ldq rdA, [RSRC] is op8=0x50 & rdA & rdB & rdC & rdD & RSRC { rdA = *:4 RSRC; rdB = *:4 (RSRC + 4); rdC = *:4 (RSRC + 8); rdD = *:4 (RSRC + 12); }   # STRONG load
+:stq rdA, [RSRC] is op8=0xd1 & rdA & rdB & rdC & rdD & RSRC { *:4 RSRC = rdA; *:4 (RSRC + 4) = rdB; *:4 (RSRC + 8) = rdC; *:4 (RSRC + 12) = rdD; }   # STRONG multi-reg store
+:ldq rdA, [RSRC, imm16] is op8=0x58 & rdA & rdB & rdC & rdD & RSRC ; imm16 { rdA = *:4 (RSRC + imm16); rdB = *:4 ((RSRC + imm16) + 4); rdC = *:4 ((RSRC + imm16) + 8); rdD = *:4 ((RSRC + imm16) + 12); }   # STRONG load
+:stq rdA, [RSRC, imm16] is op8=0xd9 & rdA & rdB & rdC & rdD & RSRC ; imm16 { *:4 (RSRC + imm16) = rdA; *:4 ((RSRC + imm16) + 4) = rdB; *:4 ((RSRC + imm16) + 8) = rdC; *:4 ((RSRC + imm16) + 12) = rdD; }   # STRONG multi-reg store
+:ldsb rd, [RSRC] is op8=0x60 & rd & RSRC { rd = sext(*:1 RSRC); }   # INFERRED load
+:ldsb rd, [RSRC, imm16] is op8=0x68 & rd & RSRC ; imm16 { rd = sext(*:1 (RSRC + imm16)); }   # INFERRED load
+:ldsh rd, [RSRC] is op8=0x70 & rd & RSRC { rd = sext(*:2 RSRC); }   # INFERRED load
+:ldsh rd, [RSRC, imm16] is op8=0x78 & rd & RSRC ; imm16 { rd = sext(*:2 (RSRC + imm16)); }   # INFERRED load
+:ldub.cc rd, [RSRC] is op8=0x90 & rd & RSRC { rd = zext(*:1 RSRC); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN load
+:ldub.cc rd, [RSRC, imm16] is op8=0x98 & rd & RSRC ; imm16 { rd = zext(*:1 (RSRC + imm16)); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN load
+:lduh.cc rd, [RSRC] is op8=0xa0 & rd & RSRC { rd = zext(*:2 RSRC); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN load
+:lduh.cc rd, [RSRC, imm16] is op8=0xa8 & rd & RSRC ; imm16 { rd = zext(*:2 (RSRC + imm16)); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN load
+:ld.cc rd, [RSRC] is op8=0xb0 & rd & RSRC { rd = *:4 RSRC; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN load
+:ld.cc rd, [RSRC, imm16] is op8=0xb8 & rd & RSRC ; imm16 { rd = *:4 (RSRC + imm16); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN load
+:ldd.cc rdA, [RSRC] is op8=0xc0 & rdA & rdB & rdC & rdD & RSRC { rdA = *:4 RSRC; rdB = *:4 (RSRC + 4); }   # STRONG load
+:ldd.cc rdA, [RSRC, imm16] is op8=0xc8 & rdA & rdB & rdC & rdD & RSRC ; imm16 { rdA = *:4 (RSRC + imm16); rdB = *:4 ((RSRC + imm16) + 4); }   # STRONG load
+:ldq.cc rdA, [RSRC] is op8=0xd0 & rdA & rdB & rdC & rdD & RSRC { rdA = *:4 RSRC; rdB = *:4 (RSRC + 4); rdC = *:4 (RSRC + 8); rdD = *:4 (RSRC + 12); }   # STRONG load
+:ldq.cc rdA, [RSRC, imm16] is op8=0xd8 & rdA & rdB & rdC & rdD & RSRC ; imm16 { rdA = *:4 (RSRC + imm16); rdB = *:4 ((RSRC + imm16) + 4); rdC = *:4 ((RSRC + imm16) + 8); rdD = *:4 ((RSRC + imm16) + 12); }   # STRONG load
+:ldsb.cc rd, [RSRC] is op8=0xe0 & rd & RSRC { rd = sext(*:1 RSRC); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED load
+:ldsb.cc rd, [RSRC, imm16] is op8=0xe8 & rd & RSRC ; imm16 { rd = sext(*:1 (RSRC + imm16)); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED load
+:ldsh.cc rd, [RSRC] is op8=0xf0 & rd & RSRC { rd = sext(*:2 RSRC); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED load
+:ldsh.cc rd, [RSRC, imm16] is op8=0xf8 & rd & RSRC ; imm16 { rd = sext(*:2 (RSRC + imm16)); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED load
+:mov rd, imm4 is op8=0x04 & rd & imm4 { rd = imm4; }   # PROVEN
+:mov rd, imm16 is op8=0x0c & rd ; imm16 { rd = imm16; }   # PROVEN
+:mov rd, rs is op8=0x06 & rd & rs { rd = rs; }   # PROVEN
+:inv rd, imm4 is op8=0x14 & rd & imm4 { rd = ~imm4; }   # PROVEN
+:inv rd, imm16 is op8=0x1c & rd ; imm16 { rd = ~imm16; }   # PROVEN
+:inv rd, rs is op8=0x16 & rd & rs { rd = ~rs; }   # PROVEN
+:add rd, imm4 is op8=0x24 & rd & imm4 { rd = rd + imm4; }   # PROVEN
+:add rd, imm16 is op8=0x2c & rd ; imm16 { rd = rd + imm16; }   # PROVEN
+:add rd, rs is op8=0x26 & rd & rs { rd = rd + rs; }   # PROVEN
+:sub rd, imm4 is op8=0x34 & rd & imm4 { rd = rd - imm4; }   # PROVEN
+:sub rd, imm16 is op8=0x3c & rd ; imm16 { rd = rd - imm16; }   # PROVEN
+:sub rd, rs is op8=0x36 & rd & rs { rd = rd - rs; }   # PROVEN
+:un_cmpx rd, imm4 is op8=0x44 & rd & imm4 { local a4:4 = imm4; rd = aps3_unknown_op(rd, a4); }   # GUESS (unused non-cc compare)
+:un_cmpx rd, imm16 is op8=0x4c & rd ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, a16); }   # GUESS (unused non-cc compare)
+:un_cmpx rd, rs is op8=0x46 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS (unused non-cc compare)
+:and rd, imm4 is op8=0x54 & rd & imm4 { rd = rd & imm4; }   # STRONG
+:and rd, imm16 is op8=0x5c & rd ; imm16 { rd = rd & imm16; }   # STRONG
+:and rd, rs is op8=0x56 & rd & rs { rd = rd & rs; }   # STRONG
+:or rd, imm4 is op8=0x64 & rd & imm4 { rd = rd | imm4; }   # INFERRED
+:or rd, imm16 is op8=0x6c & rd ; imm16 { rd = rd | imm16; }   # INFERRED
+:or rd, rs is op8=0x66 & rd & rs { rd = rd | rs; }   # INFERRED
+:xor rd, imm4 is op8=0x74 & rd & imm4 { rd = rd ^ imm4; }   # PROVEN
+:xor rd, imm16 is op8=0x7c & rd ; imm16 { rd = rd ^ imm16; }   # PROVEN
+:xor rd, rs is op8=0x76 & rd & rs { rd = rd ^ rs; }   # PROVEN
+:mov.cc rd, imm4 is op8=0x84 & rd & imm4 { rd = imm4; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:mov.cc rd, imm16 is op8=0x8c & rd ; imm16 { rd = imm16; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:mov.cc rd, rs is op8=0x86 & rd & rs { rd = rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:inv.cc rd, imm4 is op8=0x94 & rd & imm4 { rd = ~imm4; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:inv.cc rd, imm16 is op8=0x9c & rd ; imm16 { rd = ~imm16; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:inv.cc rd, rs is op8=0x96 & rd & rs { rd = ~rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:add.cc rd, imm4 is op8=0xa4 & rd & imm4 { CF = carry(rd, imm4); VF = scarry(rd, imm4); rd = rd + imm4; ZF=(rd==0); NF=(rd s< 0); }   # PROVEN
+:add.cc rd, imm16 is op8=0xac & rd ; imm16 { CF = carry(rd, imm16); VF = scarry(rd, imm16); rd = rd + imm16; ZF=(rd==0); NF=(rd s< 0); }   # PROVEN
+:add.cc rd, rs is op8=0xa6 & rd & rs { CF = carry(rd, rs); VF = scarry(rd, rs); rd = rd + rs; ZF=(rd==0); NF=(rd s< 0); }   # PROVEN
+:sub.cc rd, imm4 is op8=0xb4 & rd & imm4 { CF = (rd < imm4); VF = sborrow(rd, imm4); rd = rd - imm4; ZF=(rd==0); NF=(rd s< 0); }   # PROVEN
+:sub.cc rd, imm16 is op8=0xbc & rd ; imm16 { CF = (rd < imm16); VF = sborrow(rd, imm16); rd = rd - imm16; ZF=(rd==0); NF=(rd s< 0); }   # PROVEN
+:sub.cc rd, rs is op8=0xb6 & rd & rs { CF = (rd < rs); VF = sborrow(rd, rs); rd = rd - rs; ZF=(rd==0); NF=(rd s< 0); }   # PROVEN
+:cmp rd, imm4 is op8=0xc4 & rd & imm4 { local d = rd - imm4; ZF=(d==0); NF=(d s< 0); CF=(rd < imm4); VF = sborrow(rd, imm4); }   # PROVEN
+:cmp rd, imm16 is op8=0xcc & rd ; imm16 { local d = rd - imm16; ZF=(d==0); NF=(d s< 0); CF=(rd < imm16); VF = sborrow(rd, imm16); }   # PROVEN
+:cmp rd, rs is op8=0xc6 & rd & rs { local d = rd - rs; ZF=(d==0); NF=(d s< 0); CF=(rd < rs); VF = sborrow(rd, rs); }   # PROVEN
+:and.cc rd, imm4 is op8=0xd4 & rd & imm4 { rd = rd & imm4; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG
+:and.cc rd, imm16 is op8=0xdc & rd ; imm16 { rd = rd & imm16; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG
+:and.cc rd, rs is op8=0xd6 & rd & rs { rd = rd & rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG
+:or.cc rd, imm4 is op8=0xe4 & rd & imm4 { rd = rd | imm4; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED
+:or.cc rd, imm16 is op8=0xec & rd ; imm16 { rd = rd | imm16; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED
+:or.cc rd, rs is op8=0xe6 & rd & rs { rd = rd | rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED
+:xor.cc rd, imm4 is op8=0xf4 & rd & imm4 { rd = rd ^ imm4; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:xor.cc rd, imm16 is op8=0xfc & rd ; imm16 { rd = rd ^ imm16; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:xor.cc rd, rs is op8=0xf6 & rd & rs { rd = rd ^ rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:un_x03 rd, rs is op8=0x03 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS unary - 3 sites in 5 images, all rd==rs==r0 (dead)
+:sextb rd, rs is op8=0x13 & rd & rs { rd = sext(rs:1); }   # STRONG sign-extend (width+signedness measured)
+:sexth rd, rs is op8=0x23 & rd & rs { rd = sext(rs:2); }   # STRONG sign-extend (width+signedness measured)
+:extb rd, rs is op8=0x33 & rd & rs { rd = zext(rs:1); }   # STRONG zero-extend byte (measured)
+:exth rd, rs is op8=0x43 & rd & rs { rd = zext(rs:2); }   # STRONG zero-extend halfword - completes the extend column (0x13 sextb / 0x23 sexth / 0x33 extb / 0x43 exth)
+:shl rd, rs is op8=0x53 & rd & rs { rd = rd << rs; }   # STRONG register shift (measured)
+:lshr rd, rs is op8=0x63 & rd & rs { rd = rd >> rs; }   # STRONG register shift (measured)
+:ashr rd, rs is op8=0x73 & rd & rs { rd = rd s>> rs; }   # INFERRED register shift - lshr/ashr assignment NOT settled
+:un_x03.cc rd, rs is op8=0x83 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS .cc form of 0x03 - zero sites in any image
+:sextb.cc rd, rs is op8=0x93 & rd & rs { rd = sext(rs:1); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x13; rd=r0 in 75/128 sites makes it a byte test
+:sexth.cc rd, rs is op8=0xa3 & rd & rs { rd = sext(rs:2); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x23; rd=r0 in 33/48 sites makes it a halfword test
+:extb.cc rd, rs is op8=0xb3 & rd & rs { rd = zext(rs:1); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x33; rd is never r0 in 30 sites, so it is a value, not a test
+:exth.cc rd, rs is op8=0xc3 & rd & rs { rd = zext(rs:2); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x43; rd=r0 in 5/15 sites makes it a halfword test
+:shl.cc rd, rs is op8=0xd3 & rd & rs { rd = rd << rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG register shift (measured)
+:lshr.cc rd, rs is op8=0xe3 & rd & rs { rd = rd >> rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG register shift (measured)
+:ashr.cc rd, rs is op8=0xf3 & rd & rs { rd = rd s>> rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED register shift - lshr/ashr assignment NOT settled
+:shl rd, sh5  is op7=0x57 & rd & sh5 { rd = rd << sh5; }    # PROVEN shift, 5-bit count in insn[11:7]
+:lshr rd, sh5 is op7=0x77 & rd & sh5 { rd = rd >> sh5; }    # PROVEN shift, 5-bit count in insn[11:7]
+# The direct call names a halfword index inside the PC's own 256 KiB window: 17 bits
+# cannot carry a 32-bit address, and the three images that load outside 0x80000000
+# (a 0x60000000 boot stage and its second stage) resolve every one of their call
+# targets inside their own extent under this rule and none under a fixed base.
+calltgt: reloc is oplo=0xB & tlo & tmid & thi ; imm5 [ reloc = (inst_start $and 0xFFFC0000) + 2*(tlo + (tmid << 4) + (thi << 8) + (imm5 << 12)); ] { export *:4 reloc; }
+:call calltgt is calltgt { r15 = inst_next; call calltgt; }   # PROVEN direct call - absolute, halfword-scaled, 17-bit target
+:ldub.s sd, [sb, soff] is op8=0x17 & sd & sb & soff { sd = zext(*:1 (sb + soff)); }   # STRONG short load (packed 3-operand form)
+:lduh.s sd, [sb, so2] is op8=0x27 & sd & sb & so2 { sd = zext(*:2 (sb + so2)); }   # STRONG short load (packed 3-operand form)
+:ld.s sd, [sb, so4] is op8=0x37 & sd & sb & so4 { sd = *:4 (sb + so4); }   # STRONG short load (packed 3-operand form)
+:stb.s sd, [sb, soff] is op8=0x97 & sd & sb & soff { *:1 (sb + soff) = sd:1; }   # STRONG short store (packed 3-operand form)
+:sth.s sd, [sb, so2] is op8=0xa7 & sd & sb & so2 { *:2 (sb + so2) = sd:2; }   # STRONG short store (packed 3-operand form)
+:st.s sd, [sb, so4] is op8=0xb7 & sd & sb & so4 { *:4 (sb + so4) = sd; }   # STRONG short store (packed 3-operand form)
+:mov rd, rs2, rs is op8=0x0f & rd & rs ; rs2 { rd = rs2; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:inv rd, rs2, rs is op8=0x1f & rd & rs ; rs2 { rd = ~rs2; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:add rd, rs2, rs is op8=0x2f & rd & rs ; rs2 { rd = rs2 + rs; }   # STRONG 3-register ALU (measured; operand order corrected with 0x3F)
+:sub rd, rs2, rs is op8=0x3f & rd & rs ; rs2 { rd = rs2 - rs; }   # PROVEN 3-register ALU, operand order rs2-then-rs (strlen + both memcpy guards)
+:and rd, rs2, rs is op8=0x5f & rd & rs ; rs2 { rd = rs2 & rs; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:or rd, rs2, rs is op8=0x6f & rd & rs ; rs2 { rd = rs2 | rs; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:xor rd, rs2, rs is op8=0x7f & rd & rs ; rs2 { rd = rs2 ^ rs; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:mov.cc rd, rs2, rs is op8=0x8f & rd & rs ; rs2 { rd = rs2; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:inv.cc rd, rs2, rs is op8=0x9f & rd & rs ; rs2 { rd = ~rs2; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:add.cc rd, rs2, rs is op8=0xaf & rd & rs ; rs2 { CF = carry(rs2, rs); VF = scarry(rs2, rs); rd = rs2 + rs; ZF=(rd==0); NF=(rd s< 0); }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:sub.cc rd, rs2, rs is op8=0xbf & rd & rs ; rs2 { CF = (rs2 < rs); VF = sborrow(rs2, rs); rd = rs2 - rs; ZF=(rd==0); NF=(rd s< 0); }   # PROVEN 3-register ALU, operand order rs2-then-rs (strlen + both memcpy guards)
+:and.cc rd, rs2, rs is op8=0xdf & rd & rs ; rs2 { rd = rs2 & rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:or.cc rd, rs2, rs is op8=0xef & rd & rs ; rs2 { rd = rs2 | rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:xor.cc rd, rs2, rs is op8=0xff & rd & rs ; rs2 { rd = rs2 ^ rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED 3-register ALU (by high nibble; operand order corrected with 0x3F)
+:un_cpr0 rd, rs is op8=0x07 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS coproc reg op
+:un_cpr4 rd, rs is op8=0x47 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS coproc reg op
+:un_cpr4 rd, rs, imm16 is op8=0x4f & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS coproc reg op (wide)
+:ashr rd, sh5 is op7=0x67 & rd & sh5 { rd = rd s>> sh5; }   # STRONG shift, 5-bit count in insn[11:7] - covers bytes 0x67 (even count) and 0xe7 (odd)
+:un_cpr8 rd, rs is op8=0x87 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS coproc reg op
+:un_cpr12 rd, rs is op8=0xc7 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS coproc reg op
+:un_cpr12 rd, rs, imm16 is op8=0xcf & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS coproc reg op (wide)
+:inv rd, rs is op8=0x15 & rd & rs { rd = ~rs; }   # STRONG bitwise NOT (bit-clear idiom, 20.5% vs 0.2% control)
+:addc rd, rs is op8=0x25 & rd & rs { local c:4 = zext(CF); rd = rd + rs + c; }   # PROVEN add-with-carry (40/40 sites follow a .cc add/sub)
+:subc rd, rs is op8=0x35 & rd & rs { local c:4 = zext(CF); rd = rd - rs - c; }   # INFERRED subtract-with-borrow - zero sites in this image, symmetry with 0x25 only
+:mul rd, rs2, rs is op8=0x0d & rd & rs ; rs2 { rd = rs2 * rs; }   # STRONG 3-register multiply (2 sites, both atoi)
+:mov rd,"rtt" is op8=0x01 & rd & rs=0 { rd = rtt; }   # STRONG read special reg 0 = rtt (interrupt return addr); 51 sites, IRQ prologue
+:mov rd,"psr" is op8=0x01 & rd & rs=1 { rd = psr; }   # STRONG read special reg 1 = psr (status word); 52 sites, IRQ prologue
+:mov rd, rs is op8=0x01 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS special-reg index >=2 - never occurs in this image
+:mov "rtt",rs is op8=0x11 & rd=0 & rs { rtt = rs; }   # STRONG write special reg 0 = rtt; 3 sites, all restores in irq_demux
+:mov "psr",rs is op8=0x11 & rd=1 & rs { psr = rs; }   # STRONG write special reg 1 = psr; 7 sites - 5 bare-movhi boot configs, 2 restores
+:mov rd, rs is op8=0x11 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS special-reg index >=2 - never occurs in this image
+:rti is op8=0x61 & rd=0 & rs=0 { return [rtt]; }   # STRONG return-from-interrupt; exactly 1 site (0x80005524), the shared ISR exit
+:rti_x rd, rs is op8=0x61 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS non-zero operand form of 0x61 - never occurs in this image
+:un_misc_05 rd, rs is op8=0x05 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_1d rd, rs, imm16 is op8=0x1d & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_2d rd, rs, imm16 is op8=0x2d & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_3d rd, rs, imm16 is op8=0x3d & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_45 rd, rs is op8=0x45 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_4d rd, rs, imm16 is op8=0x4d & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_55 rd, rs is op8=0x55 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_5d rd, rs, imm16 is op8=0x5d & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_65 rd, rs is op8=0x65 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_6d rd, rs, imm16 is op8=0x6d & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_75 rd, rs is op8=0x75 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_7d rd, rs, imm16 is op8=0x7d & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_85 rd, rs is op8=0x85 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_8d rd, rs, imm16 is op8=0x8d & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_95 rd, rs is op8=0x95 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_9d rd, rs, imm16 is op8=0x9d & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_a5 rd, rs is op8=0xa5 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_ad rd, rs, imm16 is op8=0xad & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_b5 rd, rs is op8=0xb5 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_bd rd, rs, imm16 is op8=0xbd & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_c5 rd, rs is op8=0xc5 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_cd rd, rs, imm16 is op8=0xcd & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_d5 rd, rs is op8=0xd5 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_dd rd, rs, imm16 is op8=0xdd & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_e5 rd, rs is op8=0xe5 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_ed rd, rs, imm16 is op8=0xed & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_misc_f5 rd, rs is op8=0xf5 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS reserved
+:un_misc_fd rd, rs, imm16 is op8=0xfd & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS reserved
+:un_und_09 rd, rs, imm16 is op8=0x09 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_0e rd, rs, imm16 is op8=0x0e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_19 rd, rs, imm16 is op8=0x19 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_1e rd, rs, imm16 is op8=0x1e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_21 rd, rs is op8=0x21 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS unassigned
+:un_und_29 rd, rs, imm16 is op8=0x29 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_2e rd, rs, imm16 is op8=0x2e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_31 rd, rs is op8=0x31 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS unassigned
+:un_und_39 rd, rs, imm16 is op8=0x39 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_3e rd, rs, imm16 is op8=0x3e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_41 rd, rs is op8=0x41 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS unassigned
+:un_und_49 rd, rs, imm16 is op8=0x49 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_4e rd, rs, imm16 is op8=0x4e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_51 rd, rs is op8=0x51 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS unassigned
+:un_und_59 rd, rs, imm16 is op8=0x59 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_5e rd, rs, imm16 is op8=0x5e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_69 rd, rs, imm16 is op8=0x69 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_6e rd, rs, imm16 is op8=0x6e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_71 rd, rs is op8=0x71 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS unassigned
+:un_und_79 rd, rs, imm16 is op8=0x79 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_7e rd, rs, imm16 is op8=0x7e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_80 rd, rs is op8=0x80 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS unassigned
+:un_und_81 rd, rs is op8=0x81 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS unassigned
+:un_und_88 rd, rs, imm16 is op8=0x88 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_89 rd, rs, imm16 is op8=0x89 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_8e rd, rs, imm16 is op8=0x8e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_9e rd, rs, imm16 is op8=0x9e & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_ae rd, rs, imm16 is op8=0xae & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_be rd, rs, imm16 is op8=0xbe & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_ce rd, rs, imm16 is op8=0xce & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_de rd, rs, imm16 is op8=0xde & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_e9 rd, rs, imm16 is op8=0xe9 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_ee rd, rs, imm16 is op8=0xee & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_f9 rd, rs, imm16 is op8=0xf9 & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned
+:un_und_fe rd, rs, imm16 is op8=0xfe & rd & rs ; imm16 { local a16:4 = imm16; rd = aps3_unknown_op_imm(rd, rs, a16); }   # GUESS unassigned

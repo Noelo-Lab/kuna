@@ -7,7 +7,7 @@
 //! each way, and the agreement of the whole corpus with a `globalset` count over
 //! each language's own source closure (`.slaspec` plus every `.sinc` it
 //! `@include`s, transitively). Zero occurrences must mean `false`, and any
-//! occurrence must mean `true`, for all 148 vendored languages.
+//! occurrence must mean `true`, for all 149 vendored languages.
 //!
 //! ## `.sla` precondition
 //!
@@ -138,7 +138,7 @@ fn context_commits_agree_with_the_globalset_sources() {
         );
         return;
     }
-    assert_eq!(corpus.len(), 148, "the vendored language corpus changed");
+    assert_eq!(corpus.len(), 149, "the vendored language corpus changed");
 
     let mut answers: Vec<(String, String, bool, usize)> = Vec::new();
     for (processor, name, path) in &corpus {

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Cortus APS3 processor spec.
+
+     The volatile ranges are the two peripheral windows the ATWINC1500 firmware
+     actually touches: 0x4000_0000 (interrupt controller at +0x000, timer at
+     +0x2000) and the 0x3000_0000 chip-register window, which carries 302 of the
+     image's 1045 `movhi` immediates.  Marking them volatile stops repeated
+     register reads from folding into one.
+-->
+<processor_spec>
+  <programcounter register="pc"/>
+  <volatile outputop="write_volatile" inputop="read_volatile">
+    <range space="ram" first="0x30000000" last="0x301fffff"/>
+    <range space="ram" first="0x40000000" last="0x40002fff"/>
+  </volatile>
+</processor_spec>

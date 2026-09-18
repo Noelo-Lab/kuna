@@ -873,8 +873,23 @@ half-open range is rejected. Duplicate entries collapse. ARM32 raw input require
 even byte address before validation. Other addresses retain every input bit, so
 an odd ARM data or property address still selects the odd byte.
 
-Raw images carry no symbols or trustworthy boundary metadata, so `functions`
-reports the explicit seeds. Named `--functions`, section-relative selectors,
+Raw images carry no symbols, so there is no object-backed discovery tier to
+run; `--option rawdiscover off` leaves the inventory at the explicit seeds.
+On (the default) `rawdiscover` sweeps the executable bytes for direct call
+targets and hands them, with the seeds, to the ordinary recursive descent, so
+`functions` reports what the image calls rather than only what you typed:
+
+```bash
+$ kuna functions fw.bin --json --raw-image \
+    --target Cortus:LE:32:APS3:default --base 0x80000000 --entry 0x8000010c
+#   "count": 556          # 1 with --option rawdiscover off
+```
+
+`--entry` therefore seeds the load without *selecting*: an unfiltered
+`decompile-all` decompiles the discovered inventory, not just the seed. `--addr`
+still does both, so it remains the way to narrow a raw run to named addresses.
+A function no direct call reaches and no seed names is still undiscovered;
+`--define-function` asserts it. Named `--functions`, section-relative selectors,
 `--slice`, `--summary`, and `--reachable-from` are rejected. Support is limited
 to `decompile` (text and JSON), `decompile-all`, `functions`, and
 `decompile-project`; `decompile-graph`, `disassemble`/`read`, `xrefs`, and
@@ -1387,8 +1402,8 @@ apply to `kuna functions` — which never spawns a pool — exactly as they do t
   discards nothing. After the lanes start, `lane fault`, `unmapped fetch`,
   `merge collision`, `round limit` and `context moved` each discard the parallel
   result and re-walk serially. `kuna functions --raw-image` reports
-  `raw image runs no discovery walk`: there is no whole-binary walk on that
-  surface, so the flag has nothing to size. Nothing is printed when `--jobs` is
+  `a raw image's discovery walk has no lanes`: `rawdiscover` is a serial sweep
+  and descent, so the flag has nothing to size. Nothing is printed when `--jobs` is
   absent and `KUNA_DECODE_JOBS` is unset.
 - **The two caps are different numbers.** `--jobs auto` gives the pool this
   machine's parallelism capped at 16 (a worker pays a whole program load) and
