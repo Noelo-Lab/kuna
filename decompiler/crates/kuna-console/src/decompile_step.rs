@@ -38,6 +38,7 @@ use kuna_decomp::database::DynamicSymbolSpec;
 use kuna_decomp::dtype::Datatype;
 use kuna_decomp::fspec::{ParameterPieces, PrototypePieces};
 use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::kuna_formatstring::ParkedFormatSite;
 
 /// Every console-only fact a decompile may be seeded with, plus the two facts
 /// both surfaces carry (`mapped_symbols`, `flow_overrides`).
@@ -139,11 +140,42 @@ pub fn decompile_one_prefollowed(
     proto_overrides: &[(Address, PrototypePieces)],
     prefollowed: Option<Funcdata>,
 ) -> DecompileStep {
-    let formatstring_enabled = arch.analysis_formatstring;
+    let formatstring_mode = arch.analysis_formatstring;
     let saved_readonlypropagate = arch.readonlypropagate;
-    if formatstring_enabled {
+    // Only the LOOP needs the drive to fold the format constant out of read-only
+    // memory; the static resolver read it out of the image at load.
+    if formatstring_mode.loop_pass() {
         arch.readonlypropagate = true;
     }
+    // (kuna `formatstring static`) The per-call-site overrides the load-time
+    // resolver parked for THIS function. A caller-supplied override at the same
+    // callpoint wins, exactly as a hand-typed `override prototype` outranks a
+    // discovered one below.
+    let parked: Vec<ParkedFormatSite> = if formatstring_mode.statik() {
+        match arch.format_call_overrides.get(&entry.get_offset()) {
+            Some(sites) if entry.get_space().is_some() => sites
+                .iter()
+                .filter(|s| !proto_overrides.iter().any(|(a, _)| a.get_offset() == s.callpoint))
+                .cloned()
+                .collect(),
+            _ => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+    let first_overrides: Vec<(Address, PrototypePieces)> = if parked.is_empty() {
+        proto_overrides.to_vec()
+    } else {
+        let space = entry.get_space().expect("checked above");
+        let mut merged = proto_overrides.to_vec();
+        merged.extend(
+            parked
+                .iter()
+                .map(|s| (Address::new(Rc::clone(space), s.callpoint), s.pieces.clone())),
+        );
+        merged
+    };
+    let proto_overrides: &[(Address, PrototypePieces)] = &first_overrides;
     // A RET-call chain beginning at the function entry is safe to recognize
     // without an assertion: every link stored its own fall-through before the
     // RETURN, which distinguishes it from the incoming return address and from
@@ -198,8 +230,10 @@ pub fn decompile_one_prefollowed(
     }));
     // `load function` followed the entry before automatic recognition ran.
     // Rebuild only this uncommon shape; every ordinary function still adopts
-    // the already-followed IR.
-    let prefollowed = if has_derived_flow { None } else { prefollowed };
+    // the already-followed IR. A parked format-string override is the same
+    // shape: prototype overrides are consumed AT FLOW TIME, so IR followed
+    // without them does not carry the typing.
+    let prefollowed = if has_derived_flow || !parked.is_empty() { None } else { prefollowed };
     let mut result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn_prefollowed(
         arch,
         name,
@@ -217,37 +251,177 @@ pub fn decompile_one_prefollowed(
         seed.mapped_params,
         prefollowed,
     );
+    // A parked override the drive contradicts is withdrawn, and the function is
+    // driven again without it. See [`audit_parked_format_sites`].
+    let dropped: Vec<u64> = match &result {
+        Ok(fd) if !parked.is_empty() => audit_parked_format_sites(arch, fd, &parked),
+        _ => Vec::new(),
+    };
     let mut discovered: Vec<(Address, PrototypePieces)> = Vec::new();
-    if formatstring_enabled {
+    if formatstring_mode.loop_pass() {
         if let Ok(fd) = &result {
-            let mut merged = proto_overrides.to_vec();
             for (callpoint, pieces) in extract_format_string_overrides(arch, fd) {
                 // Only the call-site overrides not already installed (a
                 // hand-typed `override prototype` at the same callpoint wins).
-                if !merged.iter().any(|(a, _)| a == &callpoint) {
-                    merged.push((callpoint.clone(), pieces.clone()));
+                if !proto_overrides.iter().any(|(a, _)| a == &callpoint)
+                    && !discovered.iter().any(|(a, _)| a == &callpoint)
+                {
                     discovered.push((callpoint, pieces));
                 }
             }
-            if !discovered.is_empty() {
-                result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
-                    arch,
-                    name,
-                    entry,
-                    size,
-                    seed.mapped_symbols,
-                    seed.usepoint_symbols,
-                    seed.dynamic_symbols,
-                    seed.pending_proto,
-                    &flow_overrides,
-                    &merged,
-                    seed.mapped_params,
-                );
+            if std::env::var_os("KUNA_FMTSTATIC_DEBUG").is_some() {
+                for (at, _) in &discovered {
+                    eprintln!("fmtloop: site only the loop found {:#x}", at.get_offset());
+                }
             }
         }
     }
+    if !dropped.is_empty() || !discovered.is_empty() {
+        let mut merged: Vec<(Address, PrototypePieces)> = proto_overrides
+            .iter()
+            .filter(|(a, _)| !dropped.contains(&a.get_offset()))
+            .cloned()
+            .collect();
+        merged.extend(discovered.iter().cloned());
+        result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+            arch,
+            name,
+            entry,
+            size,
+            seed.mapped_symbols,
+            seed.usepoint_symbols,
+            seed.dynamic_symbols,
+            seed.pending_proto,
+            &flow_overrides,
+            &merged,
+            seed.mapped_params,
+        );
+    }
     arch.readonlypropagate = saved_readonlypropagate;
     DecompileStep { result, discovered }
+}
+
+/// (kuna `formatstring static`) The parked call sites whose override the drive
+/// contradicts, by callpoint.
+///
+/// The load-time resolver reads the format out of a window of the call's own
+/// block, and the Listing it walks back through does not know every edge into
+/// that block: a join reached only from the case bodies of a jump table looks
+/// like straight-line code there. The drive does know them, so a site is kept
+/// only while the drive agrees on two things:
+///
+/// - the format argument is the resolved constant — every value that can reach
+///   it is that string, directly, through a read-only load, or as the msgid of a
+///   `gettext`-family call; and
+/// - the call passes exactly the arguments the override declares. In a function
+///   whose stack pointer the drive cannot track (an `alloca` frame) a closed
+///   prototype picks up the slot the call pushes its return address into as one
+///   more argument; the open varargs prototype does not.
+///
+/// A site whose call is not in the drive at all is kept: the override has
+/// nothing to act on.
+fn audit_parked_format_sites(
+    arch: &Architecture,
+    fd: &Funcdata,
+    parked: &[ParkedFormatSite],
+) -> Vec<u64> {
+    use kuna_num::opcodes::OpCode;
+    let mut dropped: Vec<u64> = Vec::new();
+    for i in 0..fd.num_calls() {
+        let Some(op) = fd.obank().get(fd.get_call_specs(i).get_op()) else { continue };
+        if op.code() != OpCode::CPUI_CALL {
+            continue;
+        }
+        let at = op.get_addr().get_offset();
+        let Some(site) = parked.iter().find(|s| s.callpoint == at) else { continue };
+        if dropped.contains(&at) {
+            continue;
+        }
+        let declared = site.pieces.intypes.len() as int4;
+        let arity = op.num_input() - 1 == declared;
+        let format = op.get_in(site.format_slot as int4 + 1).is_some_and(|vn| {
+            let mut seen = Vec::new();
+            format_is(arch, fd, vn, site.format_vma, &mut seen)
+        });
+        if !(arity && format) {
+            if std::env::var_os("KUNA_FMTSTATIC_DEBUG").is_some() {
+                eprintln!(
+                    "fmtaudit: withdrew {at:#x} (args {} vs declared {declared}, format {})",
+                    op.num_input() - 1,
+                    if format { "agrees" } else { "differs" }
+                );
+            }
+            dropped.push(at);
+        }
+    }
+    dropped
+}
+
+/// Is every value that can reach `vn_id` the string at `vma`?
+fn format_is(
+    arch: &Architecture,
+    fd: &Funcdata,
+    vn_id: kuna_decomp::context::VarnodeId,
+    vma: uintb,
+    seen: &mut Vec<kuna_decomp::context::VarnodeId>,
+) -> bool {
+    use kuna_num::opcodes::OpCode;
+    if seen.contains(&vn_id) {
+        return true;
+    }
+    if seen.len() >= 64 {
+        return false;
+    }
+    seen.push(vn_id);
+    if let Some(v) = const_value(fd, vn_id, 0) {
+        return v == vma;
+    }
+    let Some(def) = fd.vbank().get(vn_id).and_then(|vn| vn.get_def()) else { return false };
+    let Some(op) = fd.obank().get(def) else { return false };
+    let input = |slot: int4| op.get_in(slot);
+    match op.code() {
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input())
+            .all(|i| input(i).is_some_and(|v| format_is(arch, fd, v, vma, seen))),
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
+            input(0).is_some_and(|v| format_is(arch, fd, v, vma, seen))
+        }
+        OpCode::CPUI_LOAD => {
+            let size = fd.vbank().get(vn_id).map_or(0, |vn| vn.get_size());
+            input(1).and_then(|a| const_value(fd, a, 0)).is_some_and(|at| {
+                let Some(space) = arch.manage().get_default_code_space() else { return false };
+                arch.read_loadimage_value(&Address::new(Rc::clone(space), at), size)
+                    .is_ok_and(|v| v == vma)
+            })
+        }
+        OpCode::CPUI_CALL => {
+            let Some(spec) = fd.get_call_specs_index(def) else { return false };
+            let name = fd.get_call_specs(spec).get_name();
+            kuna_analysis::formatstring::kuna_fmtstatic::gettext_msgid_slot(name).is_some_and(
+                |slot| input(slot as int4 + 1).is_some_and(|v| format_is(arch, fd, v, vma, seen)),
+            )
+        }
+        _ => false,
+    }
+}
+
+/// The value of `vn_id` when it is a constant or an address arithmetic of
+/// constants (the `->(#0x0,#0xVMA)` shape a global's address takes).
+fn const_value(fd: &Funcdata, vn_id: kuna_decomp::context::VarnodeId, depth: u32) -> Option<uintb> {
+    use kuna_num::opcodes::OpCode;
+    let vn = fd.vbank().get(vn_id)?;
+    if vn.is_constant() {
+        return Some(vn.get_offset());
+    }
+    if depth >= 4 {
+        return None;
+    }
+    let op = fd.obank().get(vn.get_def()?)?;
+    let arg = |slot: int4| op.get_in(slot).and_then(|v| const_value(fd, v, depth + 1));
+    match op.code() {
+        OpCode::CPUI_PTRSUB | OpCode::CPUI_INT_ADD => Some(arg(0)?.wrapping_add(arg(1)?)),
+        OpCode::CPUI_PTRADD => Some(arg(0)?.wrapping_add(arg(1)?.wrapping_mul(arg(2)?))),
+        _ => None,
+    }
 }
 
 /// Resolve a `CALL` argument varnode to the constant pointer it carries, if any
@@ -326,6 +500,16 @@ pub(crate) fn read_cstring(arch: &Architecture, vma: uintb) -> Option<String> {
     None
 }
 
+/// Is every byte of `[vma, vma + len)` painted read-only (the loader's
+/// read-only sections, or an XML `readonly` bytechunk)?
+fn is_readonly_span(arch: &Architecture, vma: uintb, len: u64) -> bool {
+    let Some(space) = arch.manage().get_default_code_space() else { return false };
+    (0..len).all(|i| {
+        let addr = Address::new(Rc::clone(space), vma.wrapping_add(i));
+        arch.symboltab.get_property(&addr) & kuna_decomp::varnode::varnode_flags::readonly != 0
+    })
+}
+
 /// Walk the decompiled `fd`'s `CALL` ops and produce per-call-site prototype
 /// overrides for printf/scanf-family variadic calls whose format string is a
 /// readable constant (the kuna analog of `FormatStringAnalyzer.decompile` +
@@ -402,6 +586,9 @@ pub(crate) fn extract_format_string_overrides(
         if !fmt.contains('%') {
             continue;
         }
+        if !is_readonly_span(arch, vma, fmt.len() as u64 + 1) {
+            continue;
+        }
         // (5) Parse + build the override pieces.
         let specs = if is_output {
             formatstring::parse_output_types(&fmt)
@@ -438,6 +625,7 @@ pub(crate) fn extract_format_string_overrides(
             &specs,
             types,
             word_size,
+            kuna_decomp::kuna_formatstring::target_vararg_abi(arch),
         ) {
             Ok(Some(pieces)) => overrides.push((callpoint, pieces)),
             Ok(None) => {}

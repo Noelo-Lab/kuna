@@ -574,6 +574,14 @@ fn listing_consumer_passes(arch: &Architecture) -> Vec<(bool, Box<dyn AnalysisPa
             Box::new(crate::noreturn_propagate::NoReturnPropagatePass),
         ),
         (arch.analysis_fid, Box::new(crate::fid::FidPass)),
+        // (kuna `formatstring static`) The load-time format-string resolver: a
+        // Listing consumer like the rest, because the call edges are what it
+        // walks. `full` runs it too — the decompile-time loop then covers only
+        // the sites it declined.
+        (
+            arch.analysis_formatstring.statik(),
+            Box::new(crate::formatstring::kuna_fmtstatic::FormatStringStaticPass),
+        ),
     ]
 }
 
@@ -1303,6 +1311,7 @@ mod tests {
         arch.analysis_noreturn_disc = false;
         arch.analysis_noreturn_propagate = true;
         arch.analysis_fid = false;
+        arch.analysis_formatstring = kuna_decomp::kuna_formatstring::FormatStringMode::Off;
 
         let schedule: Vec<(&str, bool)> = listing_consumer_passes(&arch)
             .into_iter()
@@ -1314,9 +1323,24 @@ mod tests {
             vec![
                 ("noreturn_disc", false),
                 ("noreturn_propagate", true),
-                ("fid", false)
+                ("fid", false),
+                ("formatstring", false)
             ]
         );
+
+        // `static` and `full` both ask for the load-time resolver; only `off`
+        // leaves it out.
+        for mode in [
+            kuna_decomp::kuna_formatstring::FormatStringMode::Static,
+            kuna_decomp::kuna_formatstring::FormatStringMode::Full,
+        ] {
+            arch.analysis_formatstring = mode;
+            let enabled = listing_consumer_passes(&arch)
+                .into_iter()
+                .find(|(_, pass)| pass.id() == "formatstring")
+                .map(|(enabled, _)| enabled);
+            assert_eq!(enabled, Some(true), "{}", mode.as_str());
+        }
     }
 
     /// `passes_for(Unknown, non-PE)` MUST be exactly today's `default_passes()`

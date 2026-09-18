@@ -1,0 +1,232 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The LOAD-TIME format-string resolver (`option formatstring off|static|full`,
+    default `static`).
+
+    The XML wrapper only provides the harness architecture. Every pass clears it
+    and loads the same in-tree ELF fixture through the CLI's own loader; it is
+    `int main(int argc, char **argv) { printf("%d %s\n", argc, argv[0]); }`
+    built for x86-64, so `main` reaches `printf@plt` with the format pointer in
+    RDI as a `lea rax,[rip+0xea8]` / `mov rdi,rax` pair.
+
+    Pass 1 (`formatstring off`) reproduces the defect: nothing says what the
+    variadic arguments are, so the `%d` argument is widened to the register's
+    full width and the `%s` argument keeps the element type of the pointer it
+    was loaded through.
+
+    Pass 2 (the shipped default) is the load-time resolver. The Listing supplies
+    the call edge, the compiler spec supplies RDI as the format parameter's
+    storage, and a constant-fold over the call's own basic block supplies
+    0x402004 - so `"%d %s\n"` is read out of the image and the per-call-site
+    override is parked BEFORE `main` is decompiled. The arguments render `int`
+    and `char *`, at one decompile.
+
+    Pass 3 is `full`, which is the ported Ghidra `FormatStringAnalyzer` loop:
+    decompile, read the constant off the lifted CALL, install the override,
+    decompile again. It reaches the same answer WITHOUT the Listing, which is
+    what the extra decompile buys and why the value is kept.
+
+    Passes 4 to 6 (off, the default, full) load fmtjoin_x86_64 (source beside
+    it, gcc -O2) and pin two call sites whose load-time answer the drive has to
+    overrule. All three passes must render the same calls.
+
+    report: the format printf receives is picked on a jump table. The case
+    bodies are reached only through the table and jump back to the join that
+    the default path falls into, so the window before the call sees only the
+    default path's "default %ld\n". Taking that answer closes the call to one
+    vararg, and the %s argument and the parameter it came from disappear. The
+    drive sees the join, the format there is not the resolved constant, and the
+    parked override is withdrawn.
+
+    show: an alloca frame. The drive cannot track the stack pointer, so a
+    closed prototype picks up the slot the call pushes its return address into
+    as one more argument. The call then passes more arguments than the override
+    declares, and the parked override is withdrawn.
+
+    The override closes the prototype, so the compiler spec places each
+    conversion where it would place a NAMED argument. Passes 7 to 14 pin the
+    targets and strings where that is not where the call put it; on each the
+    default must render what off renders.
+
+    Passes 7 to 9 (off, the default, full) load macho_imports_arm64, an Apple
+    arm64 image. Apple passes every vararg on the stack, so a closed prototype
+    reads the %d from w1: _main grew a phantom parameter and printed it instead
+    of a0 * 3 + 7. No Apple AArch64 site is typed.
+
+    Passes 10 to 12 (off, the default, full) load fmtabi_armhf (gcc -O2 -marm,
+    hard-float). A %f vararg travels in r2:r3 and a named double in d0, so a
+    closed prototype read d0 and d1: f_conv lost its int parameter and printed
+    an uninitialized register, f_sum printed (a, b) instead of (a + b, a). ARM
+    declines a floating conversion, and still types the integer site f_is.
+
+    Passes 13 and 14 (off, the default) load fmtedge_x86_64. show passes a
+    format that lives in writable .data and is rewritten to "v=%s" before the
+    call, so the image's "v=%d" typed the pointer argument int. A string
+    outside a read-only section is not read. wide prints %lc, a wint_t: it is
+    typed as an int-sized unsigned value, not a char, so no truncating cast
+    appears.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option listing on</com>
+  <com>option formatstring off</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64</com>
+  <com>option formatstring full</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtjoin_x86_64</com>
+  <com>option listing on</com>
+  <com>option formatstring off</com>
+  <com>read symbols</com>
+  <com>load function report</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function show</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtjoin_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function report</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function show</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtjoin_x86_64</com>
+  <com>option listing on</com>
+  <com>option formatstring full</com>
+  <com>read symbols</com>
+  <com>load function report</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function show</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_imports_arm64</com>
+  <com>option listing on</com>
+  <com>option formatstring off</com>
+  <com>read symbols</com>
+  <com>load function _main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_imports_arm64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function _main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_imports_arm64</com>
+  <com>option listing on</com>
+  <com>option formatstring full</com>
+  <com>read symbols</com>
+  <com>load function _main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtabi_armhf</com>
+  <com>option listing on</com>
+  <com>option formatstring off</com>
+  <com>read symbols</com>
+  <com>load function f_conv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_is</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtabi_armhf</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function f_conv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_is</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtabi_armhf</com>
+  <com>option listing on</com>
+  <com>option formatstring full</com>
+  <com>read symbols</com>
+  <com>load function f_conv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function f_is</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtedge_x86_64</com>
+  <com>option listing on</com>
+  <com>option formatstring off</com>
+  <com>read symbols</com>
+  <com>load function show</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtedge_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function show</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FMTSTATIC #1: off, the %d argument is widened to the register width" min="1" max="1">,\(uint8\)a0,\*a1\);</stringmatch>
+<stringmatch name="FMTSTATIC #2: off, the parameter it came from is unsigned" min="1" max="1">unsigned long main\(uint4 a0,unsigned long \*a1\)</stringmatch>
+<stringmatch name="FMTSTATIC #3: static and full both type the varargs per the specifiers" min="2" max="2">,a0,\(char \*\)\*a1\);</stringmatch>
+<stringmatch name="FMTSTATIC #4: static and full both recover the %d parameter as int" min="2" max="2">unsigned long main\(int4 a0,unsigned long \*a1\)</stringmatch>
+<stringmatch name="FMTSTATIC #5: a jump-table join keeps the parameter the %s argument came from" min="3" max="3">void report\(unsigned int a0,unsigned long a1,unsigned long a2\)</stringmatch>
+<stringmatch name="FMTSTATIC #6: a jump-table join keeps both varargs" min="3" max="3">__printf_chk\(1,v1,a1,a2\);</stringmatch>
+<stringmatch name="FMTSTATIC #7: an alloca frame gains no argument past the format's one" min="3" max="3">__printf_chk\(1,"got %s\\n",v3\);</stringmatch>
+<stringmatch name="FMTSTATIC #8: Apple arm64 prints the computed value" min="3" max="3">printf\("%d\\n",\(uint8\)\(a0 \* 3 \+ 7\)\);</stringmatch>
+<stringmatch name="FMTSTATIC #9: Apple arm64 gains no phantom parameter" min="3" max="3">unsigned long _main\(int4 a0\)</stringmatch>
+<stringmatch name="FMTSTATIC #10: ARM hard-float keeps the int parameter a %f prints" min="3" max="3">void f_conv\(int4 a0\)</stringmatch>
+<stringmatch name="FMTSTATIC #11: ARM hard-float prints the converted value" min="3" max="3">__printf_chk\(2,"x=%f\\n",SUB84\(\(float8\)\(int8\)a0,0\)</stringmatch>
+<stringmatch name="FMTSTATIC #12: ARM hard-float prints a + b, not d0" min="3" max="3">__printf_chk\(2,"sum=%f a=%f\\n",SUB84\(v2 \+ v3,0\)</stringmatch>
+<stringmatch name="FMTSTATIC #13: ARM still types an integer-only site" min="2" max="2">void f_is\(int4 a0,char \*a1\)</stringmatch>
+<stringmatch name="FMTSTATIC #14: a format in writable data is not read" min="2" max="2">void show\(unsigned long a0\)</stringmatch>
+<stringmatch name="FMTSTATIC #15: a %lc argument is not narrowed to char" min="1" max="1">__printf_chk\(1,"&lt;%lc&gt;\\n",a0\);</stringmatch>
+</decompilertest>

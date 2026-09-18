@@ -23,8 +23,9 @@
 //! - length modifiers `h`/`hh`/`l`/`ll`/`q`/`j`/`z`/`t`/`L` (short/char/long/
 //!   long-long/intmax/size_t/ptrdiff_t/long-double widths);
 //! - floats `f`/`F`/`e`/`E`/`g`/`G`/`a`/`A` → `double` (`L` → `long double`);
-//! - `c` → `unsigned char` (`lc` → wide-char pointer); `s` → `char *`
-//!   (`ls` → wide-char pointer); `C`/`S` → wide-char pointer;
+//! - `c` → `char`; `s` → `char *`; `lc`/`C` → a `wint_t`-sized unsigned
+//!   value and `ls`/`S` → wide-char pointer (where Ghidra keeps `char`/`char *`
+//!   for `lc`/`ls` and a pointer for `C`, see [`Spec::WideCharValue`]);
 //! - `p` → `void *`; `n` → `int *` (with the length-modifier-widened pointee);
 //! - `%%` → literal, consumes no argument (`emitPercent`);
 //! - field-width / precision `*` → consumes an `int` argument;
@@ -84,6 +85,11 @@
 /// decompile→override→re-decompile loop live in the `kuna-console` driver.
 pub mod apply;
 
+/// (kuna `formatstring static`) The LOAD-TIME resolver: read the format constant
+/// out of the image at each call site and park the per-call-site override before
+/// anything is decompiled, so the typing costs no second decompile.
+pub mod kuna_fmtstatic;
+
 use std::rc::Rc;
 
 use kuna_base::error::KunaResult;
@@ -129,8 +135,19 @@ pub enum Spec {
     UShort,
     /// `char` — `hhd`/`hhi`.
     Char,
-    /// `unsigned char` — `c`, and `hho`/`hhu`/`hhx`/`hhX`.
+    /// `unsigned char` — `hho`/`hhu`/`hhx`/`hhX`.
     UChar,
+    /// `char` — the `c` conversion's argument.
+    ///
+    /// Ghidra's `conversionSpecifierToDataType` answers `getUnsignedCharDataType`
+    /// here, and in Ghidra's type system that is a CHARACTER type. kuna's port
+    /// lowered it to a plain one-byte unsigned integer, which is a different
+    /// thing: a `%c` argument stopped printing as a character literal, so
+    /// findutils' `-size` suffix switch rendered `if (v6 != 0x62)` where the
+    /// character it compares is `'b'`. This variant keeps Ghidra's meaning by
+    /// mapping to the char family; [`Spec::UChar`] stays the integer it is for
+    /// `%hhu` and friends.
+    CharValue,
     /// `long` — `ld`/`li`.
     Long,
     /// `unsigned long` — `lo`/`lu`/`lx`/`lX`.
@@ -153,8 +170,15 @@ pub enum Spec {
     PtrDiffT,
     /// `char *` — `s`.
     CharPtr,
-    /// `wchar_t *` — `C`/`S`, `lc`/`ls`.
+    /// `wchar_t *` — `S`/`ls`.
     WideCharPtr,
+    /// `wint_t` — `C`/`lc`: one wide character, passed promoted to an
+    /// `int`-sized unsigned value. Ghidra's parser returns before the length
+    /// modifier for `c`/`s`, so it types `%lc` as a `char` and `%ls` as a
+    /// `char *`, and it types `%C` as a pointer. The first puts a truncating
+    /// `(char)` cast on a wide character, which is wrong once the typing is on
+    /// by default.
+    WideCharValue,
     /// `void *` — `p`.
     VoidPtr,
     /// `int *` — `n` (the length modifier widens the pointee, but the pointer
@@ -840,6 +864,9 @@ pub fn convert_to_format_argument_list(fmt: &str, is_output_type: bool) -> Optio
 /// the default (unhandled) branches.
 fn convert_pair_to_spec(length_modifier: Option<&str>, conversion_specifier: &str) -> Option<Spec> {
     let cs = conversion_specifier;
+    if length_modifier == Some("l") && (cs == "c" || cs == "s") {
+        return Some(if cs == "c" { Spec::WideCharValue } else { Spec::WideCharPtr });
+    }
     if length_modifier.is_none() || cs == "c" || cs == "s" || cs == "C" || cs == "S" {
         return conversion_specifier_to_spec(cs);
     }
@@ -864,9 +891,10 @@ fn conversion_specifier_to_spec(conversion_specifier: &str) -> Option<Spec> {
         'p' => Some(Spec::VoidPtr),
         's' => Some(Spec::CharPtr),
         'n' => Some(Spec::IntPtr),
-        'c' => Some(Spec::UChar),
+        'c' => Some(Spec::CharValue),
         'a' | 'A' | 'g' | 'G' | 'e' | 'E' | 'f' | 'F' => Some(Spec::Double),
-        'S' | 'C' => Some(Spec::WideCharPtr),
+        'S' => Some(Spec::WideCharPtr),
+        'C' => Some(Spec::WideCharValue),
         _ => None,
     }
 }
@@ -1061,7 +1089,8 @@ fn pointer_to(spec: Spec) -> Spec {
     match spec {
         Spec::Int => Spec::IntPtr,
         Spec::Short => Spec::ShortPtr,
-        Spec::Char | Spec::UChar => Spec::CharSignedPtr,
+        Spec::Char | Spec::UChar | Spec::CharValue => Spec::CharSignedPtr,
+        Spec::WideCharValue => Spec::WideCharPtr,
         Spec::Long => Spec::LongPtr,
         Spec::LongLong => Spec::LongLongPtr,
         Spec::IntMaxT | Spec::UIntMaxT => Spec::IntMaxTPtr,
@@ -1139,6 +1168,7 @@ pub fn spec_to_datatype(
         Spec::UShort => base(2, type_metatype::TYPE_UINT),
         Spec::Char => base(char_sz, type_metatype::TYPE_INT),
         Spec::UChar => base(char_sz, type_metatype::TYPE_UINT),
+        Spec::CharValue => types.get_type_char(char_sz),
         Spec::Long => base(long_sz, type_metatype::TYPE_INT),
         Spec::ULong => base(long_sz, type_metatype::TYPE_UINT),
         Spec::LongLong => base(8, type_metatype::TYPE_INT),
@@ -1164,6 +1194,7 @@ pub fn spec_to_datatype(
             let wc = types.get_type_char(wchar_sz)?;
             types.get_type_pointer(ptr, wc, word_size)
         }
+        Spec::WideCharValue => base(int_sz, type_metatype::TYPE_UINT),
         Spec::VoidPtr => {
             let v = types.get_type_void()?;
             types.get_type_pointer(ptr, v, word_size)
@@ -1228,7 +1259,7 @@ mod tests {
         assert_eq!(parse_output_types("%x"), vec![Spec::UInt]);
         assert_eq!(parse_output_types("%X"), vec![Spec::UInt]);
         assert_eq!(parse_output_types("%o"), vec![Spec::UInt]);
-        assert_eq!(parse_output_types("%c"), vec![Spec::UChar]);
+        assert_eq!(parse_output_types("%c"), vec![Spec::CharValue]);
         assert_eq!(parse_output_types("%n"), vec![Spec::IntPtr]);
     }
 
@@ -1253,16 +1284,20 @@ mod tests {
 
     #[test]
     fn wide_string_and_char() {
-        // Faithful to Ghidra: convertPairToDataType's guard (`:622`) returns
-        // *before* the length-modifier switch when the spec is s/c/S/C, so the
-        // length modifier is ignored for these. `%ls`/`%lc` therefore map via
-        // conversionSpecifierToDataType (char* / unsigned char) — the wide-char
-        // branch in longLengthModification is unreachable for the printf path.
-        assert_eq!(parse_output_types("%ls"), vec![Spec::CharPtr]);
-        assert_eq!(parse_output_types("%lc"), vec![Spec::UChar]);
-        // Capital C/S ARE wide (conversionSpecifierToDataType, `:677`).
+        // Ghidra's convertPairToDataType guard (`:622`) returns before the
+        // length-modifier switch for s/c/S/C, so it types `%lc` as `char` and
+        // `%ls` as `char *`. A wide character is an int-sized `wint_t` and a
+        // wide string a `wchar_t *`, and `%C`/`%S` are their spellings.
+        assert_eq!(parse_output_types("%ls"), vec![Spec::WideCharPtr]);
+        assert_eq!(parse_output_types("%lc"), vec![Spec::WideCharValue]);
         assert_eq!(parse_output_types("%S"), vec![Spec::WideCharPtr]);
-        assert_eq!(parse_output_types("%C"), vec![Spec::WideCharPtr]);
+        assert_eq!(parse_output_types("%C"), vec![Spec::WideCharValue]);
+        // scanf stores through a pointer either way.
+        assert_eq!(parse_input_types("%lc"), vec![Spec::WideCharPtr]);
+        assert_eq!(parse_input_types("%C"), vec![Spec::WideCharPtr]);
+        assert_eq!(parse_input_types("%ls"), vec![Spec::WideCharPtr]);
+        // The plain conversions are unchanged.
+        assert_eq!(parse_output_types("%c %s"), vec![Spec::CharValue, Spec::CharPtr]);
     }
 
     #[test]
@@ -1405,6 +1440,73 @@ mod tests {
     }
 
     // --- FmtArg-level intermediate, faithful to FormatArgument. ---
+
+    #[test]
+    fn every_c99_conversion_maps_to_one_argument() {
+        // The full C99 conversion set, each with the type `printf` implies.
+        for (conv, want) in [
+            ('d', Spec::Int),
+            ('i', Spec::Int),
+            ('o', Spec::UInt),
+            ('u', Spec::UInt),
+            ('x', Spec::UInt),
+            ('X', Spec::UInt),
+            ('f', Spec::Double),
+            ('F', Spec::Double),
+            ('e', Spec::Double),
+            ('E', Spec::Double),
+            ('g', Spec::Double),
+            ('G', Spec::Double),
+            ('a', Spec::Double),
+            ('A', Spec::Double),
+            ('c', Spec::CharValue),
+            ('s', Spec::CharPtr),
+            ('p', Spec::VoidPtr),
+            ('n', Spec::IntPtr),
+            ('C', Spec::WideCharValue),
+            ('S', Spec::WideCharPtr),
+        ] {
+            let got = parse_output_types(&format!("%{conv}"));
+            assert_eq!(got, vec![want], "%{conv}");
+        }
+        // `%%` is the one conversion that consumes nothing.
+        assert!(parse_output_types("%%").is_empty());
+    }
+
+    #[test]
+    fn every_length_modifier_widens_d_and_u() {
+        for (modifier, signed, unsigned) in [
+            ("hh", Spec::Char, Spec::UChar),
+            ("h", Spec::Short, Spec::UShort),
+            ("l", Spec::Long, Spec::ULong),
+            ("ll", Spec::LongLong, Spec::ULongLong),
+            ("q", Spec::LongLong, Spec::ULongLong),
+            ("j", Spec::IntMaxT, Spec::UIntMaxT),
+            ("z", Spec::SizeT, Spec::SizeT),
+            ("t", Spec::PtrDiffT, Spec::SizeT),
+        ] {
+            assert_eq!(parse_output_types(&format!("%{modifier}d")), vec![signed], "%{modifier}d");
+            assert_eq!(
+                parse_output_types(&format!("%{modifier}u")),
+                vec![unsigned],
+                "%{modifier}u"
+            );
+        }
+        // `L` is the float-only modifier.
+        assert_eq!(parse_output_types("%Lf"), vec![Spec::LongDouble]);
+    }
+
+    #[test]
+    fn star_width_and_precision_each_consume_an_int() {
+        assert_eq!(parse_output_types("%*d"), vec![Spec::Int, Spec::Int]);
+        assert_eq!(parse_output_types("%.*s"), vec![Spec::Int, Spec::CharPtr]);
+        assert_eq!(
+            parse_output_types("%*.*f"),
+            vec![Spec::Int, Spec::Int, Spec::Double]
+        );
+        // In `scanf` a `*` is the ASSIGNMENT-SUPPRESSION flag, not an argument.
+        assert!(parse_input_types("%*d").is_empty());
+    }
 
     #[test]
     fn fmtarg_intermediate_pairs() {

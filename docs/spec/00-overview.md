@@ -894,14 +894,22 @@ into a `Funcdata` through the same driver-tier step
 wraps the engine drive
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
 (decompile_func_full_with_override_dyn)`) in the parts of the per-function
-contract that are policy rather than pipeline. Today that is the format-string
-varargs-typing loop: when the run enables `formatstring`, the step decompiles
-once, reads the constant format strings at the printf/scanf-family call sites it
-finds, installs the derived per-call-site prototype overrides, and decompiles a
-second time so the variadic arguments render typed (chapter
-[01](01-program-prep.md) §1.4); reading those constants also needs read-only
-propagation, so the step enables it for the duration and restores the prior
-value. The caller supplies only the facts it has — the console its `map addr` /
+contract that are policy rather than pipeline. Today that is format-string
+varargs typing (chapter [01](01-program-prep.md) §1.4), in two parts. The
+shipped default (`formatstring static`) is a park-and-consume: the step hands
+the FIRST drive the per-call-site prototype overrides the load-time resolver
+already parked for this function on the architecture, which costs nothing beyond
+installing them — but it means a function that has one may not adopt IR followed
+before the park, because a prototype override is consumed at flow time. The
+step then checks each parked override against that first drive, and withdraws
+any the drive contradicts: a call that passes a different number of arguments
+than the override declares, or a format argument that is not the resolved
+string. The function is then driven once more without those overrides. Under
+`formatstring full` the step also runs the loop the option began as: decompile
+once, read the constant format strings off the lifted printf/scanf-family
+`CALL`s, install the derived overrides and decompile a second time. Reading a
+constant that way needs read-only propagation, so the step enables it for the
+duration of the loop and restores the prior value. The caller supplies only the facts it has — the console its `map addr` /
 `parse line` / `override` state, the whole-binary loop the function's DWARF
 locals and the no-return flow prunes — through one seed struct, and both the
 console `decompile` command
@@ -914,11 +922,10 @@ command, `--option formatstring on` was a **silent no-op** on every whole-binary
 surface even though `--mode aggressive` — and therefore `auto` under 500 KiB —
 named it, so every benchmark number was measured on the weaker of the two. Making
 both surfaces honour it then exposed what it costs: a caller whose call sites
-yield an override is decompiled **twice**, which is +43% to +75% on a
-printf-heavy whole binary. `formatstring` is therefore no longer in the
-`aggressive` preset — it is a per-run opt-in on every surface, the speed gate's
-prescribed outcome — so the shipped default runs no second decompile and both
-surfaces deliver the same C when the option is given (DIV-66).
+yield an override is decompiled **twice**, which is +43% to +77% on a
+printf-heavy whole binary (DIV-66). That cost is the reason the typing now
+happens at load instead, and the reason `full` — the loop — remains a per-run
+opt-in rather than the default.
 
 (kuna) **Surface defaults.** The drivers inject their defaults before the option
 pass, from one shared table
@@ -1966,9 +1973,7 @@ and an agent writes:
   **`aggressive`** (every off-by-default recovery/analysis pass on, except
   `v850indirectbranch`, which would mis-decode register-indirect calls off-V850,
   `dwarf_lines`, which annotates rather than recovers and would bury a `-g`
-  binary's body in `/* src.c:NNN */` comments, and `formatstring`, whose
-  re-decompile loop misses the speed budget by an order of magnitude on a whole
-  binary — DIV-66; the exclusion list is enforced by an invariant test in
+  binary's body in `/* src.c:NNN */` comments; the exclusion list is enforced by an invariant test in
   `decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs`, so a default-off
   option is either in the preset or listed there with its reason),
   and **`fast`** (`listing`, `funcstart_patterns`, and `aif` off to avoid
@@ -2287,12 +2292,14 @@ both hold:
 - **The architecture is configured as it was at the load.** A `Funcdata`
   snapshots the per-function flags into its ArchSeam handle when it is *built*
   (§0.5), so a flag flipped afterwards is invisible to it. Three things move
-  between the load and the drive and therefore refuse adoption: `formatstring`,
-  which turns read-only propagation on around the drive so the printf format
-  constant can be read (adopting there leaves `printf((char *)(dat_… + …), …)`,
-  the format string unresolved); the watchdog's per-function budget, armed inside
-  the drive; and ghidra mode's staged name/dynamic/prototype-model
-  recommendations.
+  between the load and the drive and therefore refuse adoption: `formatstring
+  full`, which turns read-only propagation on around the drive so the printf
+  format constant can be read (adopting there leaves `printf((char *)(dat_… + …),
+  …)`, the format string unresolved); the watchdog's per-function budget, armed
+  inside the drive; and ghidra mode's staged name/dynamic/prototype-model
+  recommendations. A parked `formatstring static` override refuses adoption for
+  its own function only, in the step itself: the override is consumed at flow
+  time, so IR followed before the park does not carry the typing.
 - **The `decompile` is the immediately next command.** `load function` records the
   console's command counter
   (`decompiler/crates/kuna-console/src/interface.rs (IfaceStatus::command_seq)`)

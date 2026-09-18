@@ -2335,34 +2335,189 @@ every other binary's pass list is byte-identical to before the pass existed):
   name renames (never guess on a tie), and only through the placeholder label
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
-- **Format strings** (`formatstring`, default-off, matching upstream's default;
-  `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): the one
-  analyzer that is decompiler-*dependent* — the format constant only exists in the
-  lifted caller — so it splits into the pure spec-parser (the `FormatStringParser`
-  state machine: length modifiers, conversion specs, `%%`, `*` widths, positional
-  args; malformed input parses to nothing) plus the call-site classification and
-  override construction
-  (`decompiler/crates/kuna-analysis/src/analyzers/formatstring/apply.rs
-  (classify_variadic_call)`: name contains `printf`/`scanf`, scanf-family takes
-  input types). The **driver** orchestrates the decompile → read constant →
-  install per-call-site prototype override → re-decompile loop; the pipeline itself
-  never calls back into the tier. That loop is the shared per-function decompile
-  step (`decompiler/crates/kuna-console/src/decompile_step.rs (decompile_one)`,
+- **Format strings** (`formatstring off|static|full`, default `static`;
+  `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
+  `printf`/`scanf`-family call does with its variadic arguments is stated by its
+  format string, so reading that string types them. The pure spec-parser is the
+  `FormatStringParser` state machine (length modifiers, conversion specs, `%%`,
+  `*` widths, positional args; malformed input parses to nothing). It departs
+  from Ghidra's parser in one place: a wide character (`%lc`, `%C`) is typed as
+  an `int`-sized unsigned value, the promoted `wint_t` it is passed as, and a
+  wide string (`%ls`, `%S`) as a `wchar_t *`. Ghidra's parser returns before the
+  length modifier for `c` and `s`, so it types `%lc` as a `char`, which puts a
+  truncating `(char)` cast on the argument, and it types `%C` as a pointer. The
+  override construction is
+  `decompiler/crates/kuna-analysis/src/analyzers/formatstring/apply.rs
+  (build_override_pieces)` — the callee's fixed parameters followed by the
+  format-derived argument types, with the varargs closed. The override's own
+  parameters are left anonymous: a call-site override's parameter names reach the
+  CALLER's locals, and a positional `param3` is the same name at every site, so
+  two different values in neighbouring branches were rendered under one name with
+  only one of them declared.
+
+  The two values differ in **where the format constant is read**, which is the
+  whole cost question.
+
+  `full` is Ghidra's `FormatStringAnalyzer`, which is `DecompilerDependent`: the
+  format pointer is an input varnode of a lifted `CALL`, so the caller must be
+  decompiled, inspected, given the override, and decompiled again. The
+  classification there is the name test
+  (`apply.rs (classify_variadic_call)`: the name contains `printf` or `scanf`;
+  the `scanf` family takes input types, i.e. each value type wrapped in a
+  pointer). The loop lives in the shared per-function decompile step
+  (`decompiler/crates/kuna-console/src/decompile_step.rs (decompile_one)`,
   chapter [00](00-overview.md) §0.2), so it applies identically to the console
   `decompile` command and to every whole-binary surface; when it ran only in the
-  console command the option was inert on `decompile-all` (DIV-66) — and once both
-  surfaces honoured it, the second decompile's cost (+43% to +75% on a
-  printf-heavy whole binary, all of it the re-decompile rather than the read-only
-  propagation) took the option out of the `aggressive` preset, so it is a per-run
-  opt-in everywhere. Reading a
-  format constant needs read-only propagation — on ARM the format address is
-  loaded PC-relatively from a literal pool, so the format-arg varnode is a memory
-  LOAD that only constant-folds through `Funcdata::fillin_read_only` — so the step
-  enables it for the duration of the decompile and restores the prior value.
-  That side effect is much broader than the varargs typing itself: with it on,
-  every literal-pool pointer in an ARM function resolves, which is why enabling
-  `formatstring` rewrites most of a Cortex-M firmware function's body and not
-  just its `printf` call sites.
+  console command the option was inert on `decompile-all` (DIV-66). The second
+  decompile is expensive — +43% to +77% on a printf-heavy whole binary, because
+  the callers that re-decompile are the large ones — which is why this half is
+  not the default. It also needs read-only propagation, since on ARM the format
+  address is a PC-relative literal-pool load that only constant-folds through
+  `Funcdata::fillin_read_only`; the step enables it for the duration of the
+  decompile and restores the prior value. That side effect is much broader than
+  the varargs typing itself: with it on, every literal-pool pointer in an ARM
+  function resolves, which is why `formatstring full` rewrites most of a Cortex-M
+  firmware function's body and not just its `printf` call sites.
+
+  `static` (`analyzers/formatstring/kuna_fmtstatic.rs
+  (FormatStringStaticPass)`) reads the same constant out of the **image**, at
+  load, and parks the override in `Architecture::format_call_overrides` keyed by
+  the containing function — so the first decompile already has it and there is no
+  second one. Four facts the program-prep tier already holds are enough:
+
+  1. **Which callees take a format**, and in which slot. Not a name list: a
+     built-in signature qualifies when it declares a first-variadic slot and the
+     fixed parameter immediately before it is a `char *`
+     (`analyzers/protos/mod.rs (variadic_format_prototype)`) — Ghidra's
+     `usesVariadicFormatString` read off the declaration instead of off a
+     recovered prototype. That admits the `err`/`errx`/`warn`/`warnx`/`error`/
+     `syslog` families, which the `printf`/`scanf` substring test never matched,
+     and excludes `open`/`fcntl`/`ioctl` structurally (their last fixed slot is
+     not a `char *`). `execlp`, whose trailing `char *` is `argv[0]`, is named
+     as the one exception. The fixed parameter types come from the same table
+     under the same `libctypes` layout the callee's own parked prototype uses, so
+     an `fprintf` override carries the same `FILE *`.
+  2. **Where it is called**: the Listing's edges into the callee
+     (`Listing::refs_to`), with `function_containing` naming the caller. Two edge
+     kinds count. A `Call` edge is the ordinary call site. A `Code` edge that is
+     not a fall-through is a **tail jump** — `jmp printf@plt`, which gcc emits at
+     `-O2` for a function whose last act is the format call — and it is a format
+     call site too: the jump hands the callee the caller's own argument
+     registers, and the lifter turns it into a `CALL` at the jump's own address,
+     so the override keys exactly as it does for a real call. An indirect call
+     through a function pointer produces no edge at all and is therefore
+     invisible to this pass. All of this ties `static` to the Listing
+     (`listing`). The decompiling CLI surfaces (`decompile`, `decompile-all`,
+     `decompile-project`) build it under `--mode auto`, `aggressive` and
+     `reliable`, whatever the binary's size; only `--mode fast` turns it off. The
+     console and the XML datatest paths build it only when asked. Without a
+     Listing the pass contributes nothing.
+  3. **Which register holds it**: `ProtoModel::assign_parameter_storage` over the
+     callee's signature, so the answer comes from the compiler spec rather than
+     from a per-architecture table.
+  4. **What it points at**: a bounded backward walk of the call site's own basic
+     block (48 instructions, stopping at any address the Listing knows something
+     branches to),
+     re-lifted to p-code and constant-folded forward. The fold models
+     `COPY`/`INT_*`/`SUBPIECE`/`PIECE`/extensions plus a `LOAD` from a section the
+     image initializes and does not write, which is how an ARM literal pool
+     resolves; a partial write invalidates the whole register, a write that
+     follows a branch inside the same instruction is killed rather than set (x86
+     `cmovcc` lifts to `if (!cc) goto inst_next; dst = src;`, so its destination
+     is either value), and an intervening call clears everything. Whatever is not constant there is simply not
+     resolved.
+
+  The one call that does not clear everything is the `gettext` hop. GNU programs
+  pass `_(...)`, i.e. `dcgettext(NULL, "…%s…", 5)`, not the literal — so a format
+  argument produced by a `gettext`/`dgettext`/`dcgettext` call is resolved through
+  that call's msgid parameter. The translation shares the msgid's conversions
+  (that is what `xgettext`'s `c-format` check enforces), and without the hop the
+  pass finds almost nothing in coreutils, grep, tar or findutils.
+
+  A parked override is consumed at flow time, so a function that has one never
+  adopts IR that was followed before the park.
+
+  Two more conditions decide whether the answer may be used at all, and both
+  apply to `full` as well, since the two values build the override the same way.
+
+  **The string must be one the program cannot rewrite.** The resolved address
+  is read only when the whole string, NUL included, lies in a section the image
+  initializes and does not write (the predicate the fold's `LOAD` uses; the
+  `full` loop checks the loader's read-only ranges). A format kept in `.data`
+  is whatever the program last stored there: one rewritten from `"v=%d"` to
+  `"v=%s"` before the call typed the caller's `char *` parameter as an `int`.
+
+  **The closed prototype must describe the same call.** The override hands
+  each conversion to the compiler spec as a named argument, so it is sound only
+  where the target passes a variadic argument exactly where it passes a named
+  argument of the same type. That is a property of the ABI, recorded per target
+  by `decompiler/crates/kuna-decomp/src/p1_partition/kuna_formatstring.rs
+  (vararg_abi)` and checked for every conversion by `build_override_pieces`:
+
+  - x86 (32- and 64-bit, SysV and Win64) and AArch64 under the standard AAPCS64
+    pass every vararg as a named argument, so every conversion is typed. (Win64
+    also copies a floating vararg into the integer register; the `XMM` copy the
+    override reads holds the same value.)
+  - ARM32, RISC-V, MIPS, PowerPC, and AArch64 in a PE image, pass an integer or
+    pointer vararg no wider than a pointer as a named one, and a floating vararg
+    differently: ARM hard-float passes it in `r2:r3` and a named `double` in
+    `d0`, RISC-V passes it in integer registers, Windows on AArch64 in `x`
+    registers, and RISC-V also aligns a double-width vararg to an even register
+    pair. A site with a floating or wider-than-pointer conversion is declined
+    there. Assigned to `d0`, the `%f` of `printf("x=%f\n", (double)x)` dropped
+    the caller's `int` parameter and printed an uninitialized register.
+  - Apple AArch64 passes every vararg on the stack, so no site is typed there.
+    On the in-tree `macho_imports_arm64`, a closed `printf("%d\n", ...)` read
+    `w1`, invented a second parameter and printed it in place of `a0 * 3 + 7`.
+    Every other processor is declined until it has been checked.
+
+  Whether an AArch64 target is Apple's, Windows' or the standard one is a
+  property of the container, not of the language id, so the console records it
+  at `load file` (`Architecture::format_vararg_abi`, from the object-file kind)
+  beside the other one-bit image facts. An Apple SLEIGH variant or a `windows`
+  compiler spec settles it from the id alone. The XML path, which has no
+  container, declines every AArch64 site.
+
+  **The drive has the last word.** The window is only as sound as the Listing's
+  edges, and the Listing does not have all of them. Its walk does not read jump
+  tables, so the case bodies of a `switch` are decoded by nobody, and a join
+  they jump back to looks like straight-line code: when the default path falls
+  into that join after loading its own format, the window reads the default
+  path's string, and the closed prototype drops the arguments the other formats
+  consume, together with the caller's parameter they came from. The
+  prototype itself can also be wrong for the drive. In a function whose stack
+  pointer the drive cannot track (an `alloca` frame), a closed prototype picks
+  up the slot the call pushes its return address into as one more argument,
+  where the open varargs prototype does not. So after the first drive the
+  decompile step checks every parked site against the IR
+  (`decompiler/crates/kuna-console/src/decompile_step.rs
+  (audit_parked_format_sites)`) and keeps an override only when the call passes
+  exactly the arguments it declares and every value that can reach the format
+  argument, through copies and phi-nodes, is the resolved string, whether
+  directly, as a load from read-only memory, or as the msgid of a
+  `gettext`-family call. A contradicted override is withdrawn and the function
+  is driven once more without it, so that call renders exactly as it does under
+  `off`. The check is cheap and the re-drive is rare: over every coreutils
+  binary at `O0`, `O2` and `O2-noinline` and 31 others, 130 of the 11,743 sites
+  resolved at load were withdrawn, all of them for the argument count, in the
+  `alloca` frames of `cp`, `mv`, `ginstall`, `df`, `stat`, `ls` and `ip`. The jump-table join occurs in `tar`, where
+  a case body jumps into the window before an `__fprintf_chk` with a msgid of
+  its own.
+
+  What `static` declines, in full: no Listing; no edge into the callee — an
+  indirect call through a function pointer, or a site inside a function the
+  Listing's walk never decoded (on x86-64 the walk is not seeded with the
+  committed entry inventory, a ceiling shared by every Listing consumer); a format argument written outside
+  the call's own basic block, or not constant there, or clobbered by an
+  intervening call; an address with no readable NUL-terminated string behind it;
+  a string outside a read-only section; a conversion the target does not pass
+  as a named argument (above); a format with no conversions; a site the first
+  drive contradicts (above); and a format carrying `%Lf`, whose x86-64
+  argument class the override pieces cannot spell (declining the whole site is
+  what keeps a `long double` from being mis-parked as an eightbyte and inventing
+  parameters). `full` still catches, with its second decompile, a site declined
+  for want of a Listing edge or of a constant in the window; the read-only, ABI
+  and `%Lf` rules bind it too.
 
 ## 1.5 Entry discovery
 

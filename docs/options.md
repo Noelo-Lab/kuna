@@ -517,6 +517,7 @@ Three tiers:
 | string argument of a no-prototype call not typed as char[N] | [`operand_refs`](#operand_refs) |
 | printf/scanf variadic arguments render untyped at the call site | [`formatstring`](#formatstring) |
 | %d and %s arguments carry generic types instead of int/char * | [`formatstring`](#formatstring) |
+| error/warn/syslog format arguments carry generic types | [`formatstring`](#formatstring) |
 | noreturn discovery inert on a stripped binary | [`listing`](#listing) |
 | analysis passes that need whole-image xrefs do nothing | [`listing`](#listing) |
 | no program-wide instruction/xref/function model for consumer passes | [`listing`](#listing) |
@@ -1932,13 +1933,13 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-operand-refs
 - **Example:** `option operand_refs on`
 
-### `formatstring` -- on | off, default `off`
+### `formatstring` -- off | static | full | on, default `static`
 
-- **Symptoms:** printf/scanf variadic arguments render untyped at the call site; %d and %s arguments carry generic types instead of int/char *.
-- **What it does:** Type printf/scanf-family variadic arguments per call site (FormatStringAnalyzer half B, DecompilerDependent): after the first decompile, read the format-string constant at each printf/scanf call, parse its specifiers, and install a per-call-site prototype override (fixed types = format-derived, varargs closed), then re-decompile so the variadic args render typed. DISABLED by default (matches Ghidra FormatStringAnalyzer.setDefaultEnablement(false)).
-- **When to flip:** Off (default; the decompile→override→re-decompile loop is inert and every parity gate is byte-identical). Flip on to recover typed printf/scanf varargs (e.g. %d→int, %s→char*) in a real-ELF target.
+- **Symptoms:** printf/scanf variadic arguments render untyped at the call site; %d and %s arguments carry generic types instead of int/char *; error/warn/syslog format arguments carry generic types.
+- **What it does:** Type printf/scanf-family variadic arguments per call site. `static` (default) resolves each call site's format constant AT LOAD — the Listing supplies the call edges, the cspec supplies the format parameter's register, and a bounded constant-fold over the call's own basic block supplies the value — then parks a per-call-site prototype override (fixed types ++ format-derived varargs, varargs closed) the first decompile consumes, so the typing costs nothing per function. `full` adds Ghidra's FormatStringAnalyzer half-B loop on top for the sites the static resolver declined: decompile, read the constant off the lifted CALL, install the override, decompile again. `off` types nothing.
+- **When to flip:** Static (default; the load-time resolver runs wherever the Listing is built, which is every decompiling CLI surface under `--mode auto`, `aggressive` or `reliable`; only `--mode fast` turns it off). Both `static` and `full` type a site only where the target passes a vararg as a named argument: every conversion on x86 and standard AArch64, integer and pointer conversions no wider than a pointer on ARM32, RISC-V, MIPS, PowerPC and Windows AArch64, nothing on Apple AArch64 or an unchecked processor; and only from a format string in a read-only section. Use `full` when a site the static resolver declined matters (a statically linked image, a format computed at run time) and the second decompile of every changed caller is affordable; use `off` to restore untyped varargs. `on` is accepted as an alias of `full`, the spelling this option had while it was a toggle.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-formatstring
-- **Example:** `option formatstring on`
+- **Example:** `option formatstring full`
 
 ### `listing` -- on | off, default `off`
 

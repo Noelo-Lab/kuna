@@ -318,7 +318,7 @@ pub(super) fn build_fields(
 /// only, so a static image gets no named aggregate to lay out in the first
 /// place. Everything refused here keeps the sized opaque shells, which is the
 /// `opaque` value's behaviour exactly.
-pub(super) fn target_is_glibc_x86_64(file: &object::File) -> bool {
+pub(crate) fn target_is_glibc_x86_64(file: &object::File) -> bool {
     use object::{Object, ObjectSection};
     if file.format() != object::BinaryFormat::Elf
         || file.architecture() != object::Architecture::X86_64

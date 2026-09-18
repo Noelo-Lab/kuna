@@ -2263,7 +2263,7 @@ decomp_command!(
             // `docs/spec/00-overview.md` §0.5) -- a flag flipped afterwards is
             // invisible to it.  Three things move between the load and the drive:
             //
-            //  * `formatstring` turns read-only propagation on around the drive so
+            //  * `formatstring full` turns read-only propagation on around the drive so
             //    the printf format constant can be READ (on ARM it is a PC-relative
             //    literal-pool load that only folds with `fillin_read_only`).  The
             //    loaded IR snapshotted the flag OFF, so adopting it renders
@@ -2274,7 +2274,7 @@ decomp_command!(
             //  * ghidra mode stages name/dynamic/prototype-model recommendations that
             //    the drive takes; a follow that ran while they were still parked is
             //    not the same follow.
-            let same_config = !prog.arch().analysis_formatstring
+            let same_config = !prog.arch().analysis_formatstring.loop_pass()
                 && prog.arch().kuna_fn_budget.is_none()
                 && prog.arch().kuna_pending_name_recs.is_empty()
                 && prog.arch().kuna_pending_dyn_recs.is_empty()

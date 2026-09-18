@@ -1,0 +1,329 @@
+BIN O0_coreutils_stripped_[ {"changed": 4}
+BIN O0_coreutils_stripped_basename {"changed": 4}
+BIN O0_coreutils_stripped_cat {"changed": 7}
+BIN O0_coreutils_stripped_chcon {"changed": 8, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_chgrp {"changed": 7, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_chmod {"changed": 6}
+BIN O0_coreutils_stripped_chown {"changed": 7, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_chroot {"changed": 5}
+BIN O0_coreutils_stripped_cksum {"changed": 11}
+BIN O0_coreutils_stripped_comm {"changed": 6}
+BIN O0_coreutils_stripped_cp {"changed": 15, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_csplit {"changed": 14}
+BIN O0_coreutils_stripped_cut {"changed": 4}
+BIN O0_coreutils_stripped_date {"changed": 14}
+BIN O0_coreutils_stripped_dd {"changed": 7}
+BIN O0_coreutils_stripped_df {"changed": 12, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_dir {"changed": 16, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_dircolors {"changed": 6}
+BIN O0_coreutils_stripped_dirname {"changed": 3}
+BIN O0_coreutils_stripped_du {"changed": 11, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_echo {"changed": 3}
+BIN O0_coreutils_stripped_env {"changed": 12}
+BIN O0_coreutils_stripped_expand {"changed": 5}
+BIN O0_coreutils_stripped_expr {"changed": 9}
+BIN O0_coreutils_stripped_factor {"changed": 5}
+BIN O0_coreutils_stripped_false {"changed": 3}
+BIN O0_coreutils_stripped_fmt {"changed": 5}
+BIN O0_coreutils_stripped_fold {"changed": 5}
+BIN O0_coreutils_stripped_getlimits {"changed": 4}
+BIN O0_coreutils_stripped_ginstall {"changed": 18, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_groups {"changed": 4}
+BIN O0_coreutils_stripped_head {"changed": 6}
+BIN O0_coreutils_stripped_hostid {"changed": 3}
+BIN O0_coreutils_stripped_id {"changed": 3}
+BIN O0_coreutils_stripped_join {"changed": 8}
+BIN O0_coreutils_stripped_kill {"changed": 8}
+BIN O0_coreutils_stripped_libstdbuf.so {"changed": 1}
+BIN O0_coreutils_stripped_link {"changed": 3}
+BIN O0_coreutils_stripped_ln {"changed": 7, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_logname {"changed": 4}
+BIN O0_coreutils_stripped_ls {"changed": 16, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_make-prime-list {"changed": 2}
+BIN O0_coreutils_stripped_mkdir {"changed": 5, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_mkfifo {"changed": 4, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_mknod {"changed": 5, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_mktemp {"changed": 4}
+BIN O0_coreutils_stripped_mv {"changed": 16, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_nice {"changed": 4}
+BIN O0_coreutils_stripped_nl {"changed": 6}
+BIN O0_coreutils_stripped_nohup {"changed": 4}
+BIN O0_coreutils_stripped_nproc {"changed": 5}
+BIN O0_coreutils_stripped_numfmt {"changed": 10}
+BIN O0_coreutils_stripped_od {"changed": 8}
+BIN O0_coreutils_stripped_paste {"changed": 5}
+BIN O0_coreutils_stripped_pathchk {"changed": 6}
+BIN O0_coreutils_stripped_pinky {"changed": 8}
+BIN O0_coreutils_stripped_pr {"changed": 9}
+BIN O0_coreutils_stripped_printenv {"changed": 4}
+BIN O0_coreutils_stripped_printf {"changed": 11}
+BIN O0_coreutils_stripped_ptx {"changed": 9}
+BIN O0_coreutils_stripped_pwd {"changed": 4}
+BIN O0_coreutils_stripped_readlink {"changed": 5, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_realpath {"changed": 6, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_rm {"changed": 9, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_rmdir {"changed": 4}
+BIN O0_coreutils_stripped_runcon {"changed": 3}
+BIN O0_coreutils_stripped_seq {"changed": 7}
+BIN O0_coreutils_stripped_shred {"changed": 10}
+BIN O0_coreutils_stripped_shuf {"changed": 8, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_sleep {"changed": 4}
+BIN O0_coreutils_stripped_sort {"changed": 15, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_split {"changed": 16}
+BIN O0_coreutils_stripped_stat {"changed": 12}
+BIN O0_coreutils_stripped_stdbuf {"changed": 5}
+BIN O0_coreutils_stripped_stty {"changed": 8}
+BIN O0_coreutils_stripped_sync {"changed": 4}
+BIN O0_coreutils_stripped_tac {"changed": 4}
+BIN O0_coreutils_stripped_tail {"changed": 13, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_tee {"changed": 5}
+BIN O0_coreutils_stripped_test {"changed": 3}
+BIN O0_coreutils_stripped_timeout {"changed": 8}
+BIN O0_coreutils_stripped_touch {"changed": 12}
+BIN O0_coreutils_stripped_tr {"changed": 8}
+BIN O0_coreutils_stripped_true {"changed": 3}
+BIN O0_coreutils_stripped_truncate {"changed": 6}
+BIN O0_coreutils_stripped_tsort {"changed": 6}
+BIN O0_coreutils_stripped_tty {"changed": 4}
+BIN O0_coreutils_stripped_uname {"changed": 4}
+BIN O0_coreutils_stripped_unexpand {"changed": 5}
+BIN O0_coreutils_stripped_uniq {"changed": 7}
+BIN O0_coreutils_stripped_unlink {"changed": 3}
+BIN O0_coreutils_stripped_uptime {"changed": 6, "fixed_mismatch": 2}
+BIN O0_coreutils_stripped_users {"changed": 5}
+BIN O0_coreutils_stripped_vdir {"changed": 16, "fixed_mismatch": 1}
+BIN O0_coreutils_stripped_wc {"changed": 8}
+BIN O0_coreutils_stripped_who {"changed": 11}
+BIN O0_coreutils_stripped_whoami {"changed": 4}
+BIN O0_coreutils_stripped_yes {"changed": 4}
+BIN O0_cronie_stripped_crontab {"changed": 21}
+BIN O2-noinline_coreutils_stripped_[ {"changed": 4}
+BIN O2-noinline_coreutils_stripped_basename {"changed": 4}
+BIN O2-noinline_coreutils_stripped_cat {"changed": 7}
+BIN O2-noinline_coreutils_stripped_chcon {"changed": 8, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_chgrp {"changed": 8, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_chmod {"changed": 7, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_chown {"changed": 7, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_chroot {"changed": 5}
+BIN O2-noinline_coreutils_stripped_cksum {"changed": 12, "fixed_mismatch": 2}
+BIN O2-noinline_coreutils_stripped_comm {"changed": 6}
+BIN O2-noinline_coreutils_stripped_cp {"changed": 18, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_csplit {"changed": 16, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_cut {"changed": 4}
+BIN O2-noinline_coreutils_stripped_date {"changed": 14, "fixed_mismatch": 4}
+BIN O2-noinline_coreutils_stripped_dd {"changed": 8, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_df {"changed": 9, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_dir {"changed": 15, "fixed_mismatch": 3}
+BIN O2-noinline_coreutils_stripped_dircolors {"changed": 6}
+BIN O2-noinline_coreutils_stripped_dirname {"changed": 3}
+BIN O2-noinline_coreutils_stripped_du {"changed": 10, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_echo {"changed": 3}
+BIN O2-noinline_coreutils_stripped_env {"changed": 13}
+BIN O2-noinline_coreutils_stripped_expand {"changed": 5}
+BIN O2-noinline_coreutils_stripped_expr {"changed": 8}
+BIN O2-noinline_coreutils_stripped_factor {"changed": 5}
+BIN O2-noinline_coreutils_stripped_false {"changed": 3}
+BIN O2-noinline_coreutils_stripped_fmt {"changed": 6, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_fold {"changed": 5, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_getlimits {"changed": 4}
+BIN O2-noinline_coreutils_stripped_ginstall {"changed": 24, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_groups {"changed": 5}
+BIN O2-noinline_coreutils_stripped_head {"changed": 7, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_hostid {"changed": 4}
+BIN O2-noinline_coreutils_stripped_id {"changed": 6}
+BIN O2-noinline_coreutils_stripped_join {"changed": 9, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_kill {"changed": 8}
+BIN O2-noinline_coreutils_stripped_link {"changed": 3}
+BIN O2-noinline_coreutils_stripped_ln {"changed": 8, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_logname {"changed": 4}
+BIN O2-noinline_coreutils_stripped_ls {"changed": 15, "fixed_mismatch": 3}
+BIN O2-noinline_coreutils_stripped_make-prime-list {"changed": 2}
+BIN O2-noinline_coreutils_stripped_mkdir {"changed": 8, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_mkfifo {"changed": 4, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_mknod {"changed": 5, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_mktemp {"changed": 4}
+BIN O2-noinline_coreutils_stripped_mv {"changed": 21, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_nice {"changed": 4}
+BIN O2-noinline_coreutils_stripped_nl {"changed": 6, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_nohup {"changed": 4}
+BIN O2-noinline_coreutils_stripped_nproc {"changed": 5, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_numfmt {"changed": 12, "fixed_mismatch": 3}
+BIN O2-noinline_coreutils_stripped_od {"changed": 9}
+BIN O2-noinline_coreutils_stripped_paste {"changed": 6}
+BIN O2-noinline_coreutils_stripped_pathchk {"changed": 6}
+BIN O2-noinline_coreutils_stripped_pinky {"changed": 8}
+BIN O2-noinline_coreutils_stripped_pr {"changed": 10, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_printenv {"changed": 4}
+BIN O2-noinline_coreutils_stripped_printf {"changed": 9, "fixed_mismatch": 2}
+BIN O2-noinline_coreutils_stripped_ptx {"changed": 8}
+BIN O2-noinline_coreutils_stripped_pwd {"changed": 4}
+BIN O2-noinline_coreutils_stripped_readlink {"changed": 5, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_realpath {"changed": 6, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_rm {"changed": 11, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_rmdir {"changed": 4}
+BIN O2-noinline_coreutils_stripped_runcon {"changed": 4}
+BIN O2-noinline_coreutils_stripped_seq {"changed": 6, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_shred {"changed": 13, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_shuf {"changed": 6, "fixed_mismatch": 2}
+BIN O2-noinline_coreutils_stripped_sleep {"changed": 3}
+BIN O2-noinline_coreutils_stripped_sort {"changed": 20, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_split {"changed": 16, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_stat {"changed": 12}
+BIN O2-noinline_coreutils_stripped_stdbuf {"changed": 5}
+BIN O2-noinline_coreutils_stripped_stty {"changed": 8, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_sync {"changed": 4}
+BIN O2-noinline_coreutils_stripped_tac {"changed": 4}
+BIN O2-noinline_coreutils_stripped_tail {"changed": 17, "fixed_mismatch": 2}
+BIN O2-noinline_coreutils_stripped_tee {"changed": 5}
+BIN O2-noinline_coreutils_stripped_test {"changed": 3}
+BIN O2-noinline_coreutils_stripped_timeout {"changed": 8}
+BIN O2-noinline_coreutils_stripped_touch {"changed": 13, "fixed_mismatch": 4}
+BIN O2-noinline_coreutils_stripped_tr {"changed": 8}
+BIN O2-noinline_coreutils_stripped_true {"changed": 3}
+BIN O2-noinline_coreutils_stripped_truncate {"changed": 6, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_tsort {"changed": 5}
+BIN O2-noinline_coreutils_stripped_tty {"changed": 4}
+BIN O2-noinline_coreutils_stripped_uname {"changed": 4}
+BIN O2-noinline_coreutils_stripped_unexpand {"changed": 5}
+BIN O2-noinline_coreutils_stripped_uniq {"changed": 7}
+BIN O2-noinline_coreutils_stripped_unlink {"changed": 4}
+BIN O2-noinline_coreutils_stripped_uptime {"changed": 6}
+BIN O2-noinline_coreutils_stripped_users {"changed": 5}
+BIN O2-noinline_coreutils_stripped_vdir {"changed": 15, "fixed_mismatch": 3}
+BIN O2-noinline_coreutils_stripped_wc {"changed": 7}
+BIN O2-noinline_coreutils_stripped_who {"changed": 11, "fixed_mismatch": 1}
+BIN O2-noinline_coreutils_stripped_whoami {"changed": 4}
+BIN O2-noinline_coreutils_stripped_yes {"changed": 3}
+BIN O2_base-passwd_stripped_update-passwd {"changed": 11, "fixed_mismatch": 7}
+BIN O2_bzip2_stripped_bzip2recover {"changed": 3, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_[ {"changed": 5}
+BIN O2_coreutils_stripped_basename {"changed": 4}
+BIN O2_coreutils_stripped_cat {"changed": 4}
+BIN O2_coreutils_stripped_chcon {"changed": 6, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_chgrp {"changed": 6, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_chmod {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_chown {"changed": 6, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_chroot {"changed": 5}
+BIN O2_coreutils_stripped_cksum {"changed": 12, "fixed_mismatch": 2}
+BIN O2_coreutils_stripped_comm {"changed": 6}
+BIN O2_coreutils_stripped_cp {"changed": 19, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_csplit {"changed": 10, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_cut {"changed": 4}
+BIN O2_coreutils_stripped_date {"changed": 11, "fixed_mismatch": 2}
+BIN O2_coreutils_stripped_dd {"changed": 8, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_df {"changed": 7, "fixed_mismatch": 1}
+ARITY O2_coreutils_stripped_dir 0xc590 3->2
+BIN O2_coreutils_stripped_dir {"changed": 13, "fixed_mismatch": 3, "arity_down": 1}
+BIN O2_coreutils_stripped_dircolors {"changed": 5}
+BIN O2_coreutils_stripped_dirname {"changed": 3}
+BIN O2_coreutils_stripped_du {"changed": 7, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_echo {"changed": 3}
+BIN O2_coreutils_stripped_env {"changed": 9, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_expand {"changed": 6}
+BIN O2_coreutils_stripped_expr {"changed": 7}
+BIN O2_coreutils_stripped_factor {"changed": 5}
+BIN O2_coreutils_stripped_false {"changed": 3}
+BIN O2_coreutils_stripped_fmt {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_fold {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_getlimits {"changed": 4}
+BIN O2_coreutils_stripped_ginstall {"changed": 24, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_groups {"changed": 5}
+BIN O2_coreutils_stripped_head {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_hostid {"changed": 4}
+BIN O2_coreutils_stripped_id {"changed": 5}
+BIN O2_coreutils_stripped_join {"changed": 9}
+BIN O2_coreutils_stripped_kill {"changed": 6}
+BIN O2_coreutils_stripped_link {"changed": 3}
+BIN O2_coreutils_stripped_ln {"changed": 8, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_logname {"changed": 4}
+ARITY O2_coreutils_stripped_ls 0xc590 3->2
+BIN O2_coreutils_stripped_ls {"changed": 13, "fixed_mismatch": 3, "arity_down": 1}
+BIN O2_coreutils_stripped_make-prime-list {"changed": 2}
+BIN O2_coreutils_stripped_mkdir {"changed": 8, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_mkfifo {"changed": 4, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_mknod {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_mktemp {"changed": 4}
+BIN O2_coreutils_stripped_mv {"changed": 22, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_nice {"changed": 4}
+BIN O2_coreutils_stripped_nl {"changed": 6, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_nohup {"changed": 4}
+BIN O2_coreutils_stripped_nproc {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_numfmt {"changed": 7, "fixed_mismatch": 3}
+BIN O2_coreutils_stripped_od {"changed": 8}
+BIN O2_coreutils_stripped_paste {"changed": 6}
+BIN O2_coreutils_stripped_pathchk {"changed": 4}
+BIN O2_coreutils_stripped_pinky {"changed": 6}
+BIN O2_coreutils_stripped_pr {"changed": 10, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_printenv {"changed": 4}
+BIN O2_coreutils_stripped_printf {"changed": 8, "fixed_mismatch": 2}
+BIN O2_coreutils_stripped_ptx {"changed": 7}
+BIN O2_coreutils_stripped_pwd {"changed": 4}
+BIN O2_coreutils_stripped_readlink {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_realpath {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_rm {"changed": 10, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_rmdir {"changed": 4}
+BIN O2_coreutils_stripped_runcon {"changed": 4}
+BIN O2_coreutils_stripped_seq {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_shred {"changed": 9, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_shuf {"changed": 6, "fixed_mismatch": 2}
+BIN O2_coreutils_stripped_sleep {"changed": 3}
+BIN O2_coreutils_stripped_sort {"changed": 17, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_split {"changed": 11, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_stat {"changed": 9}
+BIN O2_coreutils_stripped_stdbuf {"changed": 4}
+BIN O2_coreutils_stripped_stty {"changed": 8, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_sync {"changed": 4}
+BIN O2_coreutils_stripped_tac {"changed": 4}
+BIN O2_coreutils_stripped_tail {"changed": 11, "fixed_mismatch": 2}
+BIN O2_coreutils_stripped_tee {"changed": 5}
+BIN O2_coreutils_stripped_test {"changed": 4}
+BIN O2_coreutils_stripped_timeout {"changed": 8}
+BIN O2_coreutils_stripped_touch {"changed": 11, "fixed_mismatch": 2}
+BIN O2_coreutils_stripped_tr {"changed": 7}
+BIN O2_coreutils_stripped_true {"changed": 3}
+BIN O2_coreutils_stripped_truncate {"changed": 5, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_tsort {"changed": 5}
+BIN O2_coreutils_stripped_tty {"changed": 4}
+BIN O2_coreutils_stripped_uname {"changed": 4}
+BIN O2_coreutils_stripped_unexpand {"changed": 5}
+BIN O2_coreutils_stripped_uniq {"changed": 6}
+BIN O2_coreutils_stripped_unlink {"changed": 4}
+BIN O2_coreutils_stripped_uptime {"changed": 6}
+BIN O2_coreutils_stripped_users {"changed": 5}
+ARITY O2_coreutils_stripped_vdir 0xc590 3->2
+BIN O2_coreutils_stripped_vdir {"changed": 13, "fixed_mismatch": 3, "arity_down": 1}
+BIN O2_coreutils_stripped_wc {"changed": 7, "fixed_mismatch": 3}
+BIN O2_coreutils_stripped_who {"changed": 7, "fixed_mismatch": 1}
+BIN O2_coreutils_stripped_whoami {"changed": 4}
+BIN O2_coreutils_stripped_yes {"changed": 3}
+BIN O2_cronie_stripped_crond {"changed": 11, "fixed_mismatch": 1}
+BIN O2_cronie_stripped_crontab {"changed": 17, "fixed_mismatch": 4}
+BIN O2_diffutils_stripped_cmp {"changed": 3}
+BIN O2_diffutils_stripped_diff3 {"changed": 5}
+BIN O2_diffutils_stripped_sdiff {"changed": 4}
+BIN O2_dpkg_stripped_dpkg-divert {"changed": 26}
+BIN O2_dpkg_stripped_dpkg-query {"changed": 24}
+BIN O2_dpkg_stripped_dpkg-statoverride {"changed": 13}
+BIN O2_dpkg_stripped_dpkg {"changed": 38}
+BIN O2_e2fsprogs_stripped_e2fsck {"changed": 70, "fixed_mismatch": 23}
+BIN O2_gnutls_stripped_certtool {"changed": 93, "fixed_mismatch": 12}
+BIN O2_gnutls_stripped_ocsptool {"changed": 45, "fixed_mismatch": 6}
+BIN O2_gnutls_stripped_psktool {"changed": 3, "fixed_mismatch": 5}
+BIN O2_gnutls_stripped_srptool {"changed": 6, "fixed_mismatch": 2}
+ARITY O2_iproute2_stripped_ip 0x6d6a0 5->3
+ARITY O2_iproute2_stripped_ip 0x6d8a0 5->3
+BIN O2_iproute2_stripped_ip {"changed": 277, "fixed_mismatch": 91, "arity_down": 2}
+ARITY O2_iproute2_stripped_rtmon 0xb320 5->3
+ARITY O2_iproute2_stripped_rtmon 0xb520 5->3
+BIN O2_iproute2_stripped_rtmon {"changed": 50, "fixed_mismatch": 6, "arity_down": 2}
+ARITY O2_kmod_stripped_kmod 0xd650 5->6
+BIN O2_kmod_stripped_kmod {"changed": 30, "fixed_mismatch": 6, "arity_up": 1}
+BIN O2_libacl_stripped_chacl {"changed": 3, "fixed_mismatch": 1}
+BIN O2_libacl_stripped_getfacl {"changed": 4, "fixed_mismatch": 1}
+BIN O2_libacl_stripped_setfacl {"changed": 6}
+BIN O2_libexpat_stripped_xmlwf {"changed": 13, "fixed_mismatch": 2}
+BIN O2_sysvinit_stripped_bootlogd {"changed": 3, "fixed_mismatch": 1}
+BIN O2_sysvinit_stripped_init {"changed": 6}
+BIN O2_sysvinit_stripped_last {"changed": 6, "fixed_mismatch": 2}
+BIN O2_zlib_stripped_minigzip {"changed": 2}
+TOTAL {"binaries": 325, "functions": 74707, "changed": 2849, "fixed_mismatch": 313, "arity_down": 7, "arity_up": 1}

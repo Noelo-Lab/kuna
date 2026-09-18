@@ -1893,6 +1893,8 @@ mod tests {
         // and structsynth-unclaimed-bytes / a shared layout keeps a load ahead
         // of the store that overwrites it
         // and kuna-aliasoverlap / a load stays ahead of a store into its bytes
+        // and kuna-formatstring-static / printf/scanf varargs typed from the
+        // format constant the LOAD-TIME resolver read out of the image
         assert_eq!(count, 321, "corpus file count drifted");
     }
 

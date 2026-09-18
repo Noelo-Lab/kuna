@@ -232,10 +232,83 @@ fn build_pieces(
     })
 }
 
+/// (kuna) The named-aggregate layout this image's built-in prototypes are built
+/// under: the `libctypes` gate, narrowed by whether the published glibc layouts
+/// are true of THIS object.
+///
+/// The decision `LibcTypesPass` makes, factored out so a second consumer
+/// (`formatstring static`, which must spell `fprintf`'s `FILE *` exactly as the
+/// callee's own parked prototype does) cannot drift from it.
+pub(crate) fn effective_libctypes_layout(
+    file: &object::File,
+) -> kuna_decomp::kuna_libctypes::LibcTypesLayout {
+    use kuna_decomp::kuna_libctypes::LibcTypesLayout as L;
+    match kuna_decomp::kuna_libctypes::libctypes_layout() {
+        L::Off => L::Off,
+        L::Glibc if kuna_libctypes::glibc::target_is_glibc_x86_64(file) => L::Glibc,
+        _ => L::Opaque,
+    }
+}
+
+/// (kuna `formatstring static`) The table names whose last fixed parameter is a
+/// `char *` and whose varargs are nevertheless NOT governed by it. `execlp`'s is
+/// `argv[0]`, not a format — every other variadic in the tables is excluded
+/// structurally (its last fixed slot is an `int` or a `size_t`).
+const NOT_FORMAT_VARIADICS: &[&str] = &["execl", "execle", "execlp"];
+
+/// (kuna `formatstring static`) The built-in prototype for a VARIADIC
+/// format-taking libc function, plus the parameter index its format string
+/// occupies — or `None` when neither table knows the name, or knows it as
+/// something else.
+///
+/// The predicate is the tables' own data, not a name list: a signature qualifies
+/// when it declares a first-variadic slot (`vararg >= 1`) and the fixed parameter
+/// immediately before it is a `char *`. That is Ghidra's
+/// `usesVariadicFormatString` read off the declaration instead of off a recovered
+/// prototype, and it is what keeps `execlp`/`fcntl`/`ioctl`/`open` — variadic, but
+/// not format-taking — out while admitting the `err`/`warn`/`error`/`syslog`
+/// families the `printf`/`scanf` substring test never matched.
+///
+/// `layout` selects the same named-aggregate spelling the load-time prototype
+/// passes install, so a `fprintf` override carries the very `FILE *` the callee's
+/// own parked prototype does.
+pub(crate) fn variadic_format_prototype(
+    name: &str,
+    types: &dyn TypeFactory,
+    word_size: uint4,
+    layout: kuna_decomp::kuna_libctypes::LibcTypesLayout,
+) -> Option<(PrototypePieces, usize)> {
+    if NOT_FORMAT_VARIADICS.contains(&name) {
+        return None;
+    }
+    let named = if layout == kuna_libctypes::Layout::Off {
+        None
+    } else {
+        kuna_libctypes::declared_named_prototype(name)
+    };
+    let sig = match named {
+        Some(sig) => sig,
+        None => LIBC
+            .iter()
+            .chain(kuna_libcsigs::LIBC_EXT.iter())
+            .find(|(n, _)| *n == name)
+            .map(|(_, sig)| sig)?,
+    };
+    if sig.vararg < 1 || (sig.vararg as usize) != sig.params.len() {
+        return None;
+    }
+    let slot = sig.params.len() - 1;
+    if !matches!(sig.params[slot], Ty::CharPtr) {
+        return None;
+    }
+    let pieces = build_pieces(name, sig, types, word_size, layout).ok()?;
+    Some((pieces, slot))
+}
+
 /// Imported function names paired with every concrete address the format
 /// resolver associates with them. A PE import normally contributes both its IAT
 /// slot and its `FF 25` veneer.
-fn resolved_import_addrs(file: &object::File, bytes: &[u8]) -> Vec<(String, u64)> {
+pub(crate) fn resolved_import_addrs(file: &object::File, bytes: &[u8]) -> Vec<(String, u64)> {
     crate::loader::format::resolve_imports(file, bytes)
         .into_iter()
         .filter(|sym| sym.kind == crate::loader::format::ImportSymKind::Import)
@@ -473,6 +546,77 @@ impl AnalysisPass for LibProtoPass {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A type factory shaped like the x86-64 one the passes run against.
+    fn fmt_factory() -> kuna_decomp::dtype::TypeFactoryImpl {
+        let types = kuna_decomp::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.setup_sizes(Some(8), 8, 4);
+        types
+            .set_core_type("char", 1, kuna_decomp::dtype::type_metatype::TYPE_INT, true)
+            .expect("char core type");
+        types.cache_core_types().expect("cache core types");
+        types
+    }
+
+    #[test]
+    fn variadic_format_prototype_admits_the_format_families() {
+        use kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque;
+        let types = fmt_factory();
+        // The format slot is the LAST fixed parameter of each declaration.
+        for (name, slot) in [
+            ("printf", 0usize),
+            ("scanf", 0),
+            ("fprintf", 1),
+            ("sprintf", 1),
+            ("snprintf", 2),
+            ("sscanf", 1),
+            ("fscanf", 1),
+            ("__isoc99_scanf", 0),
+            ("__isoc99_sscanf", 1),
+            ("__printf_chk", 1),
+            ("__fprintf_chk", 2),
+            ("__sprintf_chk", 3),
+            ("__snprintf_chk", 4),
+            ("__syslog_chk", 2),
+            ("asprintf", 1),
+            // The families the printf/scanf substring test never named.
+            ("err", 1),
+            ("errx", 1),
+            ("warn", 0),
+            ("warnx", 0),
+            ("error", 2),
+            ("syslog", 1),
+        ] {
+            let (pieces, got) = variadic_format_prototype(name, &types, 8, Opaque)
+                .unwrap_or_else(|| panic!("{name} is a format function"));
+            assert_eq!(got, slot, "{name} format slot");
+            assert_eq!(pieces.intypes.len(), slot + 1, "{name} fixed parameter count");
+            assert_eq!(pieces.first_var_arg_slot as usize, slot + 1, "{name} vararg slot");
+        }
+    }
+
+    #[test]
+    fn variadic_format_prototype_refuses_everything_else() {
+        use kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque;
+        let types = fmt_factory();
+        for name in [
+            // Variadic, but the varargs are not governed by the trailing char *.
+            "execlp",
+            // Variadic with a non-pointer last fixed parameter.
+            "open", "openat", "fcntl", "ioctl",
+            // The `v*` forms take a va_list, not varargs.
+            "vsnprintf", "vasprintf", "__vfprintf_chk",
+            // Not variadic at all, and not in the tables at all.
+            "puts", "memcpy", "sub_401136", "",
+        ] {
+            assert!(
+                variadic_format_prototype(name, &types, 8, Opaque).is_none(),
+                "{name} must not be treated as a format function"
+            );
+        }
+    }
 
     #[test]
     fn table_entries_are_well_formed() {

@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "main"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64",
+    "binary_sha256": "d88f6faf73f3f1a3de00adc1ed42b378d11a4b12044515d557ca6a2002c21e7d",
+    "binary_size": 15888,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "printf\\(\"%d %s\\\\n\",a0,\\(char \\*\\)\\*a1\\);",
+      "main\\(int a0,unsigned long \\*a1\\)"
+    ],
+    "stdout_absent": [
+      "\\(unsigned long\\)a0"
+    ]
+  },
+  "notes": "Desired: a printf/scanf call's variadic arguments carry the types its format string states. The default rendering used to be `printf(\"%d %s\\n\",(unsigned long)a0,*a1)` - the `%d` argument widened to the register and the `%s` argument left as the pointer's element type - because typing them cost a second decompile of every caller. The load-time resolver reads the constant out of the image instead."
+}

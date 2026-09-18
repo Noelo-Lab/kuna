@@ -110,7 +110,7 @@ use super::{
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
-pub(super) mod glibc;
+pub(crate) mod glibc;
 mod streams;
 
 /// How much of an aggregate this table says — the `libctypes` value, as the
