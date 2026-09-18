@@ -52,7 +52,8 @@
 //! through the address it was loaded from (`*p = c + 1`): the `char *` it
 //! meets can be nothing but that sum's default signed vote.  Either one in the
 //! second propagation -- a sibling `a0[1]` read through the retyped pointer
-//! included -- restores the first.
+//! included -- restores the first, and so does a byte that took `char` while
+//! the pointer it is loaded through did not ([`loaded_through_other`]).
 //!
 //! Gated by [`Architecture::char_byte`](crate::architecture::Architecture)
 //! (option `charbyte on|off`); with the option off nothing is recorded and the
@@ -396,7 +397,7 @@ pub fn same_but_char(up: &Datatype, now: &Datatype) -> bool {
 /// Is `vn` loaded through a pointer that does not point to `char`?  Such a
 /// byte prints as a cast of its own load (`(char)v2[1]`,
 /// `*(char *)((long)v2 + 1)`), which is what the rule exists to remove.
-fn loaded_through_other(data: &Funcdata, vn: VarnodeId) -> bool {
+pub fn loaded_through_other(data: &Funcdata, vn: VarnodeId) -> bool {
     let def = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d));
     match def {
         Some(o) if o.code() == OpCode::CPUI_LOAD => !o

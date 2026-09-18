@@ -623,7 +623,14 @@ taking it would turn a genuine `unsigned char *` into `char *` with `c + '\x01'`
 A digit stored into a different buffer (`*buf = d + '0'`) is character
 arithmetic and is not a counter. Neither kind is recorded, and one found in the
 second propagation - a sibling `a0[1]` read through the retyped pointer, a copy
-or a join of a recorded byte - puts the first propagation's types back.
+or a join of a recorded byte - puts the first propagation's types back. So does
+a byte that took `char` while the pointer it is loaded through did not end at
+`char *`: such a byte prints as a cast of its own load (ssh -O2 printed
+`(uint4)(uint1)(char)v2[1]`), which is the opposite of what the rule is for.
+With `structsynth` on, a synthesized struct whose pointer field moves from
+`unsigned char *` to `char *` can become identical to a struct already
+synthesized and take its name; the `struct_N` numbers of every function
+decompiled after it then shift by one, a renaming with no other effect.
 
 The widened value is never claimed: the `INT_ZEXT` output keeps its own type,
 and the cast tail prints the zero-extension of a `char` as the `(unsigned
