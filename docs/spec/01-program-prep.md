@@ -2341,12 +2341,20 @@ every other binary's pass list is byte-identical to before the pass existed):
   format string, so reading that string types them. The pure spec-parser is the
   `FormatStringParser` state machine (length modifiers, conversion specs, `%%`,
   `*` widths, positional args; malformed input parses to nothing). It departs
-  from Ghidra's parser in one place: a wide character (`%lc`, `%C`) is typed as
+  from Ghidra's parser in two places. A wide character (`%lc`, `%C`) is typed as
   an `int`-sized unsigned value, the promoted `wint_t` it is passed as, and a
   wide string (`%ls`, `%S`) as a `wchar_t *`. Ghidra's parser returns before the
   length modifier for `c` and `s`, so it types `%lc` as a `char`, which puts a
-  truncating `(char)` cast on the argument, and it types `%C` as a pointer. The
-  override construction is
+  truncating `(char)` cast on the argument, and it types `%C` as a pointer. And
+  `l` on a floating conversion (`%lf`, `%le`, `%lg`, `%la`) is a `double`: C11
+  7.21.6.1p7 gives it no effect in `printf`, and in `scanf` it selects a
+  `double` destination over a `float` one, so the input type is a `double *`.
+  Ghidra's `longLengthModification` falls through to `unsigned long` for every
+  conversion it does not list. With the typing on by default that does not
+  mistype one argument, it moves it: the `double` leaves `xmm0` for an integer
+  register, the arguments after it shift, and the caller grows phantom
+  parameters (e2fsck's `%16.4lf` memory ratio printed its bit counter). `%lp`
+  is typed as `%p`. The override construction is
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/apply.rs
   (build_override_pieces)` — the callee's fixed parameters followed by the
   format-derived argument types, with the varargs closed. The override's own
@@ -2425,7 +2433,12 @@ every other binary's pass list is byte-identical to before the pass existed):
      follows a branch inside the same instruction is killed rather than set (x86
      `cmovcc` lifts to `if (!cc) goto inst_next; dst = src;`, so its destination
      is either value), and an intervening call clears everything. Whatever is not constant there is simply not
-     resolved.
+     resolved. The call instruction is lifted too, because a MIPS or SPARC call
+     runs its delay slot before it transfers: a site, or a `gettext` hop, whose
+     call instruction writes the format register is declined, since the window
+     before it never sees that write. MIPS is inert today in any case: a
+     non-PIC `jal printf@plt` stub is not resolved to an import name, and PIC
+     code calls through `$t9`, which leaves no Listing edge.
 
   The one call that does not clear everything is the `gettext` hop. GNU programs
   pass `_(...)`, i.e. `dcgettext(NULL, "…%s…", 5)`, not the literal — so a format
@@ -2509,7 +2522,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   Listing's walk never decoded (on x86-64 the walk is not seeded with the
   committed entry inventory, a ceiling shared by every Listing consumer); a format argument written outside
   the call's own basic block, or not constant there, or clobbered by an
-  intervening call; an address with no readable NUL-terminated string behind it;
+  intervening call, or written by the call instruction itself (a delay slot); an
+  address with no readable NUL-terminated string behind it;
   a string outside a read-only section; a conversion the target does not pass
   as a named argument (above); a format with no conversions; a site the first
   drive contradicts (above); and a format carrying `%Lf`, whose x86-64
