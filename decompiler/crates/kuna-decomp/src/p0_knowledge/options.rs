@@ -415,6 +415,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "ptrdepthcap",
     "codescalar",
     "boolbyte",
+    "charbyte",
     "ptrfromuse",
     "cortexmpriv",
     "dedupvardecls",

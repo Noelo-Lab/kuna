@@ -1,0 +1,266 @@
+{
+ "opportunity": "kuna declares a byte read through a `char *` as `unsigned char`, and pushes `unsigned char *` back over the pointer, because x86 loads every byte with movzx and TypeOpIntZext::getInputLocal's uint1 vote outranks char (SUB_UINT_PLAIN 16 < SUB_INT_CHAR 19). Over fmt/ls/sort/grep -O0/-O2: 40 LOAD sites where a char * meets a uint1 byte, 65 where the byte pushes unsigned char * over char *; 39 declarations and 15 signature lines move when fixed. Readability item: type_match strips `unsigned`, so its metric effect is zero by construction.",
+ "test_name": "tests/stages/kuna-charbyte.xml (13 two-pass assertions: witness, unsigned char * control, unsigned-compare control, the 0xe9 constant, a pointer that is char * only through strlen) + 4 unit tests",
+ "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+ "selector": "0x79b0",
+ "func_addr": "0x79b0",
+ "angr_version": null,
+ "option": "charbyte",
+ "flag": "char_byte",
+ "element_id": null,
+ "change_kind": "type-inference",
+ "tier": "core",
+ "source_decompiler": "ida",
+ "inspiration": "Hex-Rays declares a byte read through a char * as char and prints the movzx that widens it as (unsigned __int8)c.",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "parity": "OK",
+ "witness": {
+  "function": "coreutils fmt -O2 rpl_mbrtowc @0x79b0 (gnulib; also fmt -O0 0x82c0, ls 0x150be/0x12780, sort 0x19dd4/0x13c20, grep 0x21b80/0x1acc0)",
+  "before": "unsigned long sub_79b0(unsigned int *a0,unsigned char *a1,unsigned long a2,mbstate_t *a3) ... v1 = mbrtowc(a0,(char *)a1,a2,a3); ... *a0 = (unsigned int)*a1;",
+  "after": "unsigned long sub_79b0(unsigned int *a0,char *a1,unsigned long a2,mbstate_t *a3) ... v1 = mbrtowc(a0,a1,a2,a3); ... *a0 = (unsigned int)(unsigned char)*a1;",
+  "second": "fmt -O2 get_line @0x3420: `v1 = (unsigned char *)*dat_c100; strchr(\"([\\'`\\\"\",(int)(char)*v1)` -> `v2 = (char *)*dat_c100; strchr(\"([\\'`\\\"\",(int)*v2)`"
+ },
+ "census": {
+  "binaries": "coreutils fmt/ls/sort + grep, -O0 and -O2 (3,248 functions)",
+  "load_sites_char_ptr_meets_uint1_byte": 40,
+  "load_sites_uint1_byte_pushes_over_char_ptr": 65,
+  "functions_changed": 21,
+  "declarations_unsigned_char_to_char": 39,
+  "signature_lines_changed": 15,
+  "witness_class": 54,
+  "gate": ">= 30",
+  "off_arm_unsigned_char_spellings": {
+   "decl_scalar": 197,
+   "decl_ptr": 162,
+   "param_scalar": 73,
+   "param_ptr": 60
+  },
+  "bash_O2": {
+   "functions": 2538,
+   "functions_changed": 12,
+   "declarations": "227 -> 224 (three unsigned char bytes join an existing char variable of the same storage)",
+   "params": "38 -> 38",
+   "json_variables": "216 -> 216",
+   "guard_restored": "0x757a0 param_expand (a string pointer would have come out int4 * at a join with the int * parameter)",
+   "char_literal_arithmetic_lines_added": 6,
+   "char_literal_arithmetic_lines_already_in_off_arm": 14
+  }
+ },
+ "corpus_sweep": {
+  "method": "kuna decompile-all --json both arms, one build, fmt/ls/sort/grep -O0/-O2; every changed line classified (analysis.md section 4)",
+  "functions_changed": 21,
+  "hunk_classes": [
+   "unsigned char -> char type spelling (decls, params, returns)",
+   "cast back to char dropped",
+   "zero-extension of a char printed as (unsigned char)",
+   "character constants as literals",
+   "U suffix on byte arithmetic constants",
+   "merge/renumbering in 3 functions"
+  ],
+  "params": "65 -> 65",
+  "json_variables": "286 -> 286",
+  "c_declarations": "152 -> 153 (fmt -O2 0x3420 +1 and ls -O2 0x7920 +1: a char value split from an unrelated unsigned char value it had shared a declaration with; ls -O2 0x6d40 -1: two char * locals join)",
+  "hunks_outside_documented_effect": 0,
+  "guard": "keep_or_restore never fires on the 8 binaries (their output is byte-identical with and without it); it restores bash -O2 0x757a0",
+  "rebased_on_e1139df9": "8-binary on/off hunks byte-identical to the pre-rebase build"
+ },
+ "soundness": {
+  "oracle": "docs/features/charbyte/oracle.c: every distinct value-bearing hunk form (all 33 changed comparison lines of the 8 binaries, every changed widening/narrowing/store, and the bash -O2 arithmetic and comparison forms) evaluated with the off-arm types and the on-arm types for all 256 byte values (256x256 for the byte-vs-global compare), x86-64 gcc, signed plain char",
+  "checks": 78848,
+  "differ": 0,
+  "control": "a char compared with 0xe9 (what the rejected edge-override design printed) is caught",
+  "rejected_design": "overriding the LOAD edge left a compared constant uint1: `char v1; ... v1 == 0xe9` (never true in C); re-seeding + re-propagating prints `v1 == '\\xe9'`"
+ },
+ "benchmark": {
+  "metric": "decbench type_match (main), DECBENCH_NO_CACHE=1, both arms the same pinned binary",
+  "slice_set": "projects coreutils grep gzip diffutils bzip2 findutils tar shadow x, O0/O2/O2-noinline (444 slices, 10,748 functions)",
+  "runs": [
+   {
+    "build": "pre-guard, default off, --option charbyte on vs baseline",
+    "improved": 0,
+    "worse": 0,
+    "perfect": "959 -> 959",
+    "variables_changed": 24,
+    "note": "all 24 are unsigned char * -> char * where GT is char *"
+   },
+   {
+    "build": "guarded, default on, --option charbyte off vs baseline (on)",
+    "improved": 0,
+    "worse": 0,
+    "perfect": "959 -> 959",
+    "variables_changed": 24
+   },
+   {
+    "build": "guarded, default on, rebased on e1139df9, --option charbyte off vs baseline (on)",
+    "improved": 0,
+    "worse": 0,
+    "perfect": "959 -> 959",
+    "variables_changed": 24,
+    "note": "per_project below is this run"
+   }
+  ],
+  "control_identical_variables_scored_differently": 0,
+  "metric_note": "type_match strips `unsigned`, so this signedness change is worth zero by construction; the sweep shows nothing else moved",
+  "per_project": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 19,
+    "perfect_on": 19,
+    "mean_off": 0.3664,
+    "mean_on": 0.3664,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 592,
+    "perfect_on": 592,
+    "mean_off": 0.2726,
+    "mean_on": 0.2726,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 51,
+    "perfect_on": 51,
+    "mean_off": 0.3907,
+    "mean_on": 0.3907,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 33,
+    "perfect_on": 33,
+    "mean_off": 0.1588,
+    "mean_on": 0.1588,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 37,
+    "perfect_on": 37,
+    "mean_off": 0.3689,
+    "mean_on": 0.3689,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 88,
+    "perfect_on": 88,
+    "mean_off": 0.4844,
+    "mean_on": 0.4844,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 29,
+    "perfect_on": 29,
+    "mean_off": 0.2879,
+    "mean_on": 0.2879,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 110,
+    "perfect_on": 110,
+    "mean_off": 0.2791,
+    "mean_on": 0.2791,
+    "improved": 0,
+    "worse": 0
+   },
+   "pooled": {
+    "n": 10748,
+    "perfect_off": 959,
+    "perfect_on": 959,
+    "mean_off": 0.2826,
+    "mean_on": 0.2826,
+    "improved": 0,
+    "worse": 0
+   }
+  }
+ },
+ "speed": {
+  "method": "one pinned release binary, `kuna decompile-all --json --option charbyte off|on`, arms interleaved and order-alternated run by run, one warm-up discarded; min and median of 15, and an order-alternated min-of-31 re-run for any reading over +5%. Measured with other campaign lanes on the box (load average 20-40 on 80 cores), so the minima are the figure; the KUNA_ACTION_PROF exclusive-time table gives the deterministic cost of the pass itself.",
+  "measurements": [
+   {
+    "label": "fmt -O2 whole binary (151 functions)",
+    "n": 15,
+    "delta_min_pct": 0.11,
+    "delta_med_pct": 1.37,
+    "off_min": 4269.4,
+    "on_min": 4273.9
+   },
+   {
+    "label": "ls -O2 whole binary (404 functions)",
+    "n": 15,
+    "delta_min_pct": -3.11,
+    "delta_med_pct": 4.34,
+    "off_min": 14766.3,
+    "on_min": 14307.0
+   },
+   {
+    "label": "sort -O2 whole binary (343 functions)",
+    "n": 15,
+    "delta_min_pct": 9.54,
+    "delta_med_pct": 0.32,
+    "off_min": 14901.5,
+    "on_min": 16323.5,
+    "note": "one outlying fast off-arm run; re-run below"
+   },
+   {
+    "label": "sort -O2 whole binary, order-alternated re-run",
+    "n": 31,
+    "delta_min_pct": 3.28,
+    "delta_med_pct": -2.45,
+    "off_min": 14382.6,
+    "on_min": 14853.8
+   },
+   {
+    "label": "bash -O2 whole binary (2,538 functions, 1.3 MB, the >=500 KiB target)",
+    "n": 15,
+    "delta_min_pct": -1.87,
+    "delta_med_pct": 8.64,
+    "off_min": 91928.6,
+    "on_min": 90208.1
+   }
+  ],
+  "action_profile_infertypes_ms": {
+   "fmt": "33.2 -> 39.5 of 4.1 s",
+   "ls": "824.5 -> 850.6 of 18.2 s",
+   "sort": "629.0 -> 574.7 (noise) of 15.4 s",
+   "bash": "3216.3 -> 3614.2 of 77.5 s (+0.51% of the total)"
+  },
+  "worst_stable_delta_min_pct": 3.28,
+  "budget_pct": 5.0,
+  "within_budget": true
+ },
+ "gates": {
+  "measured_on": "feat/charbyte rebased onto origin/main e1139df9",
+  "make_test": "datatests: 675/675 assertions passed, PARITY OK",
+  "make_test_stages": "datatests: 1154/1154 assertions passed, PARITY OK (+13 charbyte, 0 moved)",
+  "make_test_cli": "tests/cli: 185/185 passed",
+  "check_spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
+  "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
+  "counters_check": "no drift: every hard-coded site agrees with the derived truth",
+  "options_md": "byte-fresh",
+  "make_rust_test": "RUST_TEST_RC=0 (7194 passed, 0 failed, 417 test binaries)"
+ },
+ "default_on_evaluation": {
+  "verdict": "flipped: charbyte ships on",
+  "a_datatests": "675/675 PARITY OK with the default on; no assertion moved",
+  "b_stages": "1154/1154 PARITY OK; the only new keys are the 13 charbyte assertions, whose pass 1 sets `option charbyte off`; no existing assertion moved",
+  "c_test_cli": "185/185 with the default on; no probe moved",
+  "d_typesweep": "444 slices: 0 improved, 0 worse, perfect 959 -> 959 (metric-neutral by construction)",
+  "e_speed": "worst stable interleaved minimum +3.28% (sort -O2, min-of-31); budget +5%",
+  "f_hunks": "8 binaries: 21 functions, every hunk in the documented classes, 0 outside; comparison oracle 0/78,848 differ",
+  "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope"
+ }
+}

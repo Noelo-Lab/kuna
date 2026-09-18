@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_221() {
+fn settable_count_is_222() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -158,12 +158,12 @@ fn settable_count_is_221() {
     // +1 for `signedness` (P9 declared-signedness rounding).
     // +1 for `boolbyte` (P5 truth-valued byte typing).
     // +1 for `mulblob` (P3 wide-multiply operand structuring decline).
-    assert_eq!(kuna_num_settables(), 221);
-    assert_eq!(SETTABLE_TABLE.len(), 221);
+    assert_eq!(kuna_num_settables(), 222);
+    assert_eq!(SETTABLE_TABLE.len(), 222);
 }
 
 #[test]
-fn tier_counts_are_69_core_88_transform_64_analysis() {
+fn tier_counts_are_70_core_88_transform_64_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -303,7 +303,7 @@ fn tier_counts_are_69_core_88_transform_64_analysis() {
     // core 68 -> 69: +1 for `boolbyte` (P5 truth-valued byte typing).
     // transform 87 -> 88: +1 for `mulblob` (P3 wide-multiply operand
     // structuring decline).
-    assert_eq!((core, transform, analysis), (69, 88, 64));
+    assert_eq!((core, transform, analysis), (70, 88, 64));
 }
 
 #[test]
@@ -493,7 +493,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_90() {
+fn option_values_live_value_present_for_91() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -922,7 +922,8 @@ fn option_values_live_value_present_for_90() {
     // 87 -> 88: +1 for `hideshadow` (live_field = hide_shadow, default-on).
     // 88 -> 89: +1 for `boolbyte` (live_field = bool_byte, opt-in).
     // 89 -> 90: +1 for `mulblob` (live_field = mul_blob, default-on).
-    assert_eq!(with_live, 90);
+    // 90 -> 91: +1 for `charbyte` (live_field = char_byte, default-on).
+    assert_eq!(with_live, 91);
 }
 
 #[test]
@@ -1091,7 +1092,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // increments it again.
     // 217 -> 218: +1 for `mulblob`; its P3 row sits mid-table, so it
     // increments it again.
-    assert_eq!(json.matches("},\n").count(), 220);
+    assert_eq!(json.matches("},\n").count(), 221);
 }
 
 #[test]

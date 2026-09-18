@@ -365,6 +365,10 @@ pub struct Architecture {
     /// whose every read is a truth test.  Implementation:
     /// [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
     pub bool_byte: bool,
+    /// (kuna `charbyte`) Keep `char` for a byte loaded through a `char *` when
+    /// the only unsigned vote on it is a zero-extension.  Implementation:
+    /// [`kuna_charbyte`](crate::p5_types::kuna_charbyte).
+    pub char_byte: bool,
 
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be
     /// a LOAD/STORE base as a pointer, and what that pointer points at.  See
@@ -2221,6 +2225,7 @@ impl Architecture {
             rodata_string: false, // (kuna) option rodatastring; reset_defaults sets the shipped default
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
+            char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
@@ -2624,6 +2629,7 @@ impl Architecture {
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
+        self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off; // (kuna) option ptrfromuse: default OFF -- it commits a parameter to a pointer, which forfeits the width-only free pass an 8-byte scalar gets, so it ships opt-in
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
@@ -3294,6 +3300,7 @@ impl Architecture {
             "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
             "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
             "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
+            "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
             "ptrfromuse" => {
                 let (val, msg) =
                     crate::p5_types::kuna_ptrfromuse::OptionPtrFromUse.apply(p1)?;
@@ -4103,6 +4110,7 @@ impl Architecture {
         ctx.unknown_byte_is_char =
             self.realtypes && self.print.out_lang() == crate::kuna_lang::OutLang::C;
         ctx.int_promotion = self.print.out_lang().profile().caps.integer_promotion;
+        ctx.char_byte = self.char_byte; // (kuna) charbyte
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
