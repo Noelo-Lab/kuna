@@ -361,8 +361,8 @@
   "A buffer whose LAST element is written wider than the rest escapes both the uniform-run rule (the widths differ) and the prune (the wide access is past the narrow ones, not over them): ls's strmode fills a char[12] with ten 1-byte stores and one 2-byte store.",
   "A field whose value is itself a synthesis base is not nested in this version.",
   "struct_N names are program-wide only where one process decompiles the whole program (decompile-all, a serial decompile-project); `kuna decompile` spawns one decomp_dbg per function, and a sharded `--jobs N` run turns structsynth off in its workers, so neither has anything for the convergence sweep to do.",
-  "The layout ledger shares one record across functions by containment, so an absorbed parameter is declared with the container's whole field list -- fields its own evidence never saw. Against DWARF the shipped rule is ahead of per-function naming on the tuning set (0.8980 vs 0.8945), on 22 fresh builds (0.9087 vs 0.9054), on 28 reviewer-picked builds (0.8407 vs 0.8395) and on 26 builds chosen after the rules were fixed (0.8780 vs 0.8776), and 0.05 points behind on 17 independently picked builds (0.9347 vs 0.9352); pooled over the four held-out sets 0.8747 vs 0.8735, with recall higher on all five. Per binary it moves both ways: 25 builds gain, 5 lose (du O2 0.9316 -> 0.9200, kmod O2 0.8507 -> 0.8417). See dedup.layout_precision.",
-  "One measured false unification remains: du O2 add_exclude's struct exclude *, which measured {0: long *, 8: long}, is answered with an mbchar layout that begins the same way. A pointer claim is strong evidence, not proof.",
+  "The layout ledger shares one record across functions by containment, so an absorbed parameter is declared with the container's whole field list -- fields its own evidence never saw. Against DWARF (main 6e4f6fa5) the shipped rule is ahead of per-function naming on the tuning set (0.9001 vs 0.8945), on 22 fresh builds (0.9087 vs 0.9054), on 28 reviewer-picked builds (0.8413 vs 0.8395) and on 26 builds chosen after the rules were fixed (0.8780 vs 0.8776), and 0.02 points behind on 17 independently picked builds (0.9350 vs 0.9352); pooled over the four held-out sets 0.8750 vs 0.8735, with recall higher on all five. Per binary it moves both ways: 30 builds gain, 4 lose (kmod O0 0.9246 -> 0.9163, kmod O2 0.8507 -> 0.8417). See dedup.layout_precision.",
+  "One measured false unification remains: e2fsck O0 ea_refcount_intr_next's struct ea_refcount *, which measured three uint64 words, is filled in with a same-size layout another record measured. Integer words are weak evidence, and a same-size container is all the integer rule asks for.",
   "Readers of different records that measured exactly the same shape share one name, as they already did on main: cp O2's struct_1 {long; long;} serves both the struct stat readers and src_to_dest_compare's Src_to_dest.",
   "The growth bounds are not transitive, so a record can end with two names: fb claims four fields, fa two of them, fc eight including fb's four; fc is out of fa's reach and fa keeps the superseded structure it was first given (tests/cli/structsynth-sweep-mints-no-third-name.json). Which of the two fa gets depends on address order.",
   "decompile-project --stream and the default (eager) export of the same binary report DIFFERENT numbers of records: cp O2 with `--option structsynth param` gives 31 definitions streamed against 30 eagerly (main before the ledger: 33 and 33). The convergence sweep is a property of the eager batch -- the streaming writer has already appended a body by the time a name it spells can be superseded. Each surface is self-consistent (every struct_N a body names is defined in its header). A sharded `--jobs N` run turns structsynth off in its workers, so it neither mints nor converges. The stream property the prune depends on is pinned by prune_unreferenced_synth_types over records whose `code` is None.",
@@ -835,8 +835,8 @@
   },
   "census": {
    "method": "kuna decompile-all <bin> --option structsynth param --option structdefs on --json; distinct synthesized names the run emits, and the (function, structure) pairs behind them",
-   "names_before": 514,
-   "names_after": 467,
+   "names_before": 516,
+   "names_after": 472,
    "pairs_before": 637,
    "pairs_after": 637,
    "lost_pairs": "none. The previous round lost du O0 sub_17854 and find O0 sub_33f9b and called them benign 'layouts unified with each other'; that was wrong: sub_17854 is gnulib cycle_check(struct cycle_check_state *, const struct stat *) and its struct stat * was declared as the state record, a false unification the pointer rule now refuses",
@@ -850,8 +850,8 @@
      3
     ],
     "ls O0": [
-     26,
-     23
+     27,
+     24
     ],
     "ls O2": [
      35,
@@ -871,10 +871,10 @@
     ],
     "du O2": [
      32,
-     28
+     29
     ],
     "find O0": [
-     56,
+     55,
      50
     ],
     "find O2": [
@@ -882,47 +882,46 @@
      50
     ],
     "tar O0": [
-     124,
-     119
+     126,
+     121
     ],
     "tar O2": [
      93,
-     85
+     86
     ]
    },
-   "main": "e1139df9",
-   "note_unclaimed_rule": "re-measured with the unclaimed-bytes rule against main f1ec42a7: 514 -> 467, per binary identical to the table above"
+   "main": "6e4f6fa5",
+   "note_unclaimed_rule": "on f1ec42a7 the same census was 514 -> 467, with and without the unclaimed-bytes rule"
   },
   "sweep": {
-   "method": "kuna decompile-all on 9 binaries (fmt ls sort du find tar grep diff rsyslogd, O2), main build f1ec42a7 vs branch build, both arms; every changed line classified by docs/features/structsynth/dedup_hunks.py",
-   "option_off_identical": "9/9 byte-identical",
+   "method": "kuna decompile-all on 9 binaries (fmt ls sort du find tar grep diff rsyslogd, O2), main build 6e4f6fa5 vs branch build: default (structsynth param), explicit `--option structsynth param`, and `--option structsynth off`; every changed line classified by docs/features/structsynth/dedup_hunks.py",
    "option_on": {
-    "rename": 258,
-    "other": 0
+    "rename": 236,
+    "other": 0,
+    "per_binary": "ls 55, sort 16, du 19, find 22, tar 61, grep 42, diff 19, rsyslogd 2, fmt identical; the default run classifies the same"
    },
-   "previous_revision": "one store split in rsyslogd O2 (timeConvertToUTC's 4-byte store at 7 written as four byte-field stores of the same bytes); the unclaimed-bytes rule gives that parameter main's layout and body back"
+   "previous_revision": "one store split in rsyslogd O2 (timeConvertToUTC's 4-byte store at 7 written as four byte-field stores of the same bytes); the unclaimed-bytes rule gives that parameter main's layout and body back",
+   "structsynth_off_identical": "9/9 byte-identical"
   },
   "project_export": {
-   "method": "kuna decompile-project --option structsynth param on the same 9 projects, main vs branch, then gcc -fsyntax-only and docs/features/structsynth/offsetcheck.py",
-   "definitions_in_header_before": 403,
-   "definitions_in_header_after": 366,
+   "method": "kuna decompile-project --option structsynth param on the same 9 projects, main 6e4f6fa5 vs branch, then gcc -fsyntax-only and docs/features/structsynth/offsetcheck.py",
+   "definitions_in_header_before": 406,
+   "definitions_in_header_after": 373,
    "has_no_member_named": 0,
-   "offsetcheck_misplaced": "0/366 (main 0/403)",
+   "offsetcheck_misplaced": "0/373",
    "gcc_error_totals_unchanged": "324/892/718/558/1375/4121/1019/1038/6483, identical to main (the export's pre-existing prelude errors)"
   },
   "typesweep": {
-   "method": "scripts.decbench.typesweep --option structsynth param, 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x x O0/O2/O2-noinline), DECBENCH_NO_CACHE=1, KUNA_BIN pinned per arm, main e1139df9",
-   "perfect_main": 958,
-   "perfect_branch": 958,
-   "aggregate_main": 3035.69,
-   "aggregate_branch": 3035.69,
-   "option_off_arm_both": "959 / 3037.19",
-   "moved_onto_off_vs_off_arm": "0 / 1 on both builds",
-   "improved_worse_vs_off_arm": "0 / 6 on both builds",
+   "method": "scripts.decbench.typesweep --option structsynth param, 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x x O0/O2/O2-noinline), DECBENCH_NO_CACHE=1, KUNA_BIN pinned per build, main 6e4f6fa5 (structsynth default on, so both of the sweep's arms are the default output)",
+   "perfect_main": 986,
+   "perfect_branch": 986,
+   "aggregate_main": 3111.18,
+   "aggregate_branch": 3111.18,
+   "rows": "per-function scores (`values`) and variable counts (`nvars`) identical in all 444 slices; 76 slices differ only in the `vars_sig` hash, which covers struct_N names",
    "moved_csv_identical": true,
    "note": "identical BY CONSTRUCTION, not as evidence either way: the metric compares pointee spellings by name and cannot read struct_N. layout_precision and record_identity are the arms that can."
   },
-  "default_decision": "No new settable. The behaviour lives entirely inside `structsynth param`. This PR does not change the option's default; the user decided on 2026-09-18 that structsynth goes default `param` in a separate PR, so everything here is measured as the default output it will become. With the option off the change is one boolean test per batch and the output is byte-identical to main (9/9 binaries).",
+  "default_decision": "No new settable. The behaviour lives entirely inside `structsynth param`, which is the default since 6e4f6fa5 (#682), so every change here is default output and is measured as such against main 6e4f6fa5. With `--option structsynth off` the change is one boolean test per batch and the output is byte-identical to main (9/9 binaries).",
   "speed": {
    "method": "interleaved main (e1139df9) / branch, min-of-15, `kuna decompile-all <binary>` wall clock, both binaries frozen; shared machine. The first run started every round with main and put every case above +3% under load, including the option-off control; every case was re-run with the order alternating per round",
    "budget_pct": 5.0,
@@ -977,11 +976,11 @@
      0
     ],
     "du O2": [
-     28,
+     29,
      0
     ],
     "tar O2": [
-     85,
+     86,
      0
     ],
     "cp O2": [
@@ -993,7 +992,7 @@
      0
     ],
     "rsyslogd O2": [
-     87,
+     90,
      1
     ]
    },
@@ -1021,7 +1020,7 @@
    "why_integer_rule": "records that begin alike part ways after the last field a reader touched: ip's netlink readers measure the same nlmsghdr words ahead of different payloads (13 absorptions on heldout3/4 added 34 fields, 0 real); dpkg pkg_queue (24 B) was answered with a 40-byte command layout (0/3 real). Cost: openssh sshbuf readers measuring 64 of 72 bytes keep their own name"
   },
   "layout_precision": {
-   "method": "docs/features/structsynth/dedup_heldout.py score (layoutscore.py's fields-only measure: a claimed field is true when the real record has a field at that offset with that size), `--option structsynth param` on every arm, KUNA_BIN pinned per arm, main = e1139df9, over five sets: TUNING fmt/ls/sort/du x O0/O2 (growth bounds chosen here); HELDOUT 17 picked independently (two-integer-word shape found here); HELDOUT2 22 measured after the pointer rule was fixed; HELDOUT3 28 a reviewer picked, mostly outside coreutils (the table and integer rules were drawn from it); HELDOUT4 26 chosen before any result under those two rules was seen (bash O2 writes no header on either build, scores 0/0)",
+   "method": "docs/features/structsynth/dedup_heldout.py score (layoutscore.py's fields-only measure: a claimed field is true when the real record has a field at that offset with that size), `--option structsynth param` on every arm, KUNA_BIN pinned per arm, main = 6e4f6fa5 for the shipped arm (e1139df9, f1ec42a7 and 6e4f6fa5 score the same on main), over five sets: TUNING fmt/ls/sort/du x O0/O2 (growth bounds chosen here); HELDOUT 17 picked independently (two-integer-word shape found here); HELDOUT2 22 measured after the pointer rule was fixed; HELDOUT3 28 a reviewer picked, mostly outside coreutils (the table and integer rules were drawn from it); HELDOUT4 26 chosen before any result under those two rules was seen (bash O2 writes no header on either build, scores 0/0)",
    "note": "sharing one layout across functions re-attributes the container's whole field list to every parameter it absorbs, so this is the instrument the dedup rule has to be chosen on; the census, the hunk classes, fprate.py and typesweep are all blind to it",
    "arms": {
     "main (exact signature)": {
@@ -1035,19 +1034,26 @@
      "heldout3": "2818/3368 = 0.8367 R 0.0315",
      "heldout4": "3592/4123 = 0.8712 R 0.0243"
     },
-    "+ integer rule (previous revision)": {
+    "+ integer rule (on f1ec42a7)": {
      "tuning": "748/833 = 0.8980 R 0.0792",
      "heldout": "1060/1134 = 0.9347 R 0.0691",
      "heldout2": "836/920 = 0.9087 R 0.0501",
      "heldout3": "2795/3324 = 0.8409 R 0.0313",
      "heldout4": "3555/4049 = 0.8780 R 0.0240"
     },
-    "SHIPPED: + unclaimed-bytes rule (main f1ec42a7)": {
+    "+ unclaimed-bytes rule (on f1ec42a7)": {
      "tuning": "748/833 = 0.8980 R 0.0792",
      "heldout": "1060/1134 = 0.9347 R 0.0691",
      "heldout2": "836/920 = 0.9087 R 0.0501",
      "heldout3": "2791/3320 = 0.8407 R 0.0312",
      "heldout4": "3555/4049 = 0.8780 R 0.0240"
+    },
+    "SHIPPED (on 6e4f6fa5, structsynth default on)": {
+     "tuning": "748/831 = 0.9001 R 0.0792",
+     "heldout": "1064/1138 = 0.9350 R 0.0694",
+     "heldout2": "836/920 = 0.9087 R 0.0501",
+     "heldout3": "2794/3321 = 0.8413 R 0.0313",
+     "heldout4": "3549/4042 = 0.8780 R 0.0240"
     },
     "previous revision (reviewer, heldout3, main d3617d64)": {
      "main": "2746/3271 = 0.8395",
@@ -1058,17 +1064,54 @@
      "size <= 2x only": "734/845 = 0.8686"
     }
    },
-   "tradeoff_stated": "a small gain, not flat everywhere: ahead of main on tuning (+0.35pt), heldout2 (+0.33pt), heldout3 (+0.12pt) and heldout4 (+0.04pt), 0.05pt behind on heldout; recall higher on all five. Pooled over the four held-out sets 8242/9423 = 0.8747 vs main 8016/9177 = 0.8735 (226 more true fields). 25 of 101 builds gain precision, 5 lose it: du O2 0.9316->0.9200, kmod O2 0.8507->0.8417, kmod O0 0.9246->0.9163, rsyslogd O0 0.9159->0.9087, ip O2 0.5451->0.5409.",
+   "tradeoff_stated": "a small gain, not flat everywhere: ahead of main on tuning (+0.56pt), heldout2 (+0.33pt), heldout3 (+0.18pt) and heldout4 (+0.04pt), 0.02pt behind on heldout; recall higher on all five. Pooled over the four held-out sets 8243/9421 = 0.8750 vs main 8016/9177 = 0.8735 (227 more true fields). 30 of 101 builds gain precision, 4 lose it: kmod O0 0.9246->0.9163, kmod O2 0.8507->0.8417, ip O0 0.6699->0.6675, e2fsck O0 0.8931->0.8922. The shipped arm differs from the f1ec42a7 arm because #682 changed field types (sign-contested integers undefined<N>, float-and-integer fields raw bytes) and agreement on a shared field is exact.",
    "fprate_py": "blind by construction: the ledger never changes which parameters are retyped or what DWARF says they are, only which record a retyped parameter is given",
    "pooled_heldout": {
     "main": "8016/9177 = 0.8735",
-    "shipped": "8242/9423 = 0.8747",
+    "shipped": "8243/9421 = 0.8750",
     "sets": "heldout + heldout2 + heldout3 + heldout4 (93 builds)",
-    "previous_revision": "8246/9427 = 0.8747"
+    "on f1ec42a7": "8242/9423 = 0.8747"
    },
    "record_identity": {
     "method": "dedup_heldout.py absorb: a parameter the branch answers with a strictly larger structure than main gave it is an absorption; it is on the SAME record when some parameter of the same DWARF record measured exactly that structure on main. Field precision cannot see a wrong record whose fields line up (stat and cycle_check_state agree at {0,8,0x10,0x18}); this can.",
     "shipped (tuning/heldout/heldout2/heldout3/heldout4)": {
+     "absorbed": [
+      28,
+      35,
+      20,
+      29,
+      66
+     ],
+     "same": [
+      28,
+      35,
+      20,
+      27,
+      64
+     ],
+     "different": [
+      0,
+      0,
+      0,
+      0,
+      1
+     ],
+     "uncheckable": [
+      0,
+      0,
+      0,
+      2,
+      1
+     ],
+     "added_fields_true": [
+      "44/44",
+      "53/57",
+      "32/32",
+      "48/50",
+      "94/105"
+     ]
+    },
+    "on f1ec42a7 (tuning/heldout/heldout2/heldout3/heldout4)": {
      "absorbed": [
       29,
       33,
@@ -1171,10 +1214,9 @@
      "uncheckable": 18
     },
     "remaining_different": [
-     "du O2 add_exclude: struct exclude * measured {0: long *, 8: long} and is answered with an mbchar layout that begins the same way",
-     "rsyslogd O0 hashtable_remove / hashtable_search / hashtable_iterator_search: {0: uint, 8: long, 0x28: code *} in 48 bytes, filled in with the same-size layout of a lookup_s table",
-     "e2fsck O0 ea_refcount_intr_next: three uint64 words of a 32-byte ea_refcount, filled in with a dentry_info_args layout"
-    ]
+     "e2fsck O0 ea_refcount_intr_next: three uint64 words of a 32-byte ea_refcount, filled in with a same-size layout another record measured"
+    ],
+    "different_on_f1ec42a7_only": "du O2 add_exclude (answered with an mbchar layout) and rsyslogd O0 hashtable_remove / hashtable_search / hashtable_iterator_search (a lookup_s table); under #682's field types those containers no longer contain them"
    },
    "named_witnesses": {
     "cp O2 cycle_check sub_17670": {
@@ -1193,15 +1235,15 @@
      "shipped": "struct_6 *a1"
     }
    },
-   "rechecked_on": "the integer-rule arm was measured on e1139df9 and again on f1ec42a7 (identical); the shipped arm is measured against f1ec42a7"
+   "rechecked_on": "main 6e4f6fa5 for the shipped arm; the earlier arms keep the main they were measured on"
   },
   "variable_rows": {
-   "method": "the --json of all 101 builds in dedup_heldout.py's five sets, main f1ec42a7 vs branch, per function: variable count, argument count, and every row with struct_N names normalized",
+   "method": "the --json of all 101 builds in dedup_heldout.py's five sets, main 6e4f6fa5 vs branch, per function: variable count, argument count, and every row with struct_N names normalized",
    "functions": 40056,
    "variables": 260970,
    "count_or_arity_changed": 0,
    "rows_changed_beyond_struct_name": 0,
-   "functions_with_a_struct_rename": 1108,
+   "functions_with_a_struct_rename": 1101,
    "code_beyond_struct_name": "1 function: ip O0 ll_remember_index passes &a0->field_0x6[10] to a callee as &a0->field_0x8[8] (and &a0[1].field_0x6[2] as a0[1].field_0x8), the same addresses spelled through a same-size container's filler; a call argument, not a dereference"
   },
   "unclaimed_bytes": {

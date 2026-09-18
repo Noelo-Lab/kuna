@@ -976,8 +976,8 @@ matches by **subsumption**: a measured layout `L` is answered with a minted
 structure `S` when `S` is at least as large and every field `L` claims exists in
 `S` at the same offset, at the same width and with the same type. Filler is not
 a claim and never takes part. Over `fmt`, `ls`, `sort`, `du`, `find` and `tar` at
-O0 and O2 the same twelve binaries then name 467 records where equality named
-514, and no function loses a structure it named before. Agreement on a shared field is
+O0 and O2 the same twelve binaries then name 472 records where equality named
+516, and no function loses a structure it named before. Agreement on a shared field is
 **exact**, `undefined<N>` included: two different types at one offset — a
 `char *` against a `uint4` — are the obvious conflict, and a field one reader
 could not type is its own answer rather than a wildcard the other may fill in.
@@ -1061,19 +1061,18 @@ and lists all five sets). The growth bounds come from `fmt`, `ls`, `sort` and
 `du`. The pointer rule comes from 17 independently picked builds and was checked
 on 22 more. The table and integer rules come from 28 builds a reviewer picked,
 mostly outside coreutils. The fifth set is 26 builds chosen before any result
-under the last two rules was seen. Against main's equality dedup, claimed-field
-precision goes from 0.8945 to 0.8980, 0.9352 to 0.9347, 0.9054 to 0.9087, 0.8395
-to 0.8407 and 0.8776 to 0.8780 on the five sets, and recall rises on all five.
-Pooled over the four held-out sets it is 0.8735 on main and 0.8747 here. The
-rule is a trade, not a free win. An absorbed parameter is declared with the
-container's whole field list, and 25 builds gain precision while 5 lose it
-(`du` O2 and `kmod` O2 lose the most, about a point each). The record can also be
-wrong. Of the 178 parameters answered by a strictly larger structure across the
-five sets, 5 are given a structure measured from a different DWARF record and 3
-cannot be checked. Three of those five are `rsyslogd` O0 `hashtable` readers
-that are filled in with the same-size layout of a `lookup_s` table. Before the
-table and integer rules, a reviewer measured 7 wrong records out of 46 checkable
-on the 28-build set alone.
+under the last two rules was seen. Against equality dedup, claimed-field
+precision goes from 0.8945 to 0.9001, 0.9352 to 0.9350, 0.9054 to 0.9087, 0.8395
+to 0.8413 and 0.8776 to 0.8780 on the five sets, and recall rises on all five.
+Pooled over the four held-out sets it is 0.8735 with equality and 0.8750 with
+subsumption. The rule is a trade, not a free win. An absorbed parameter is
+declared with the container's whole field list, and 30 builds gain precision
+while 4 lose it (`kmod` O0 and O2 lose the most, about a point each). The record
+can also be wrong. Of the 178 parameters answered by a strictly larger structure
+across the five sets, 1 is given a structure measured from a different DWARF
+record (`e2fsck` O0's `ea_refcount`, three integer words filled in by a same-size
+layout) and 3 cannot be checked. Before the table and integer rules, a reviewer
+measured 7 wrong records out of 46 checkable on the 28-build set alone.
 
 When the containment runs the other way — the new layout strictly contains one
 already minted — the minted one cannot be widened. `find_add` refuses to redefine

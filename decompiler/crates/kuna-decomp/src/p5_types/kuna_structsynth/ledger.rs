@@ -9,7 +9,7 @@
 //! `{0xa8: int, 0xac: uint}`. Comparing layouts for equality -- which is all the
 //! first version of the pass did -- gives them a name each, and the reader has
 //! two names for one type. With the rule below, `fmt`/`ls`/`sort`/`du`/`find`/`tar`
-//! at O0 and O2 name 467 records where equality named 514.
+//! at O0 and O2 name 472 records where equality named 516.
 //!
 //! # The rule
 //!

@@ -3,12 +3,12 @@
 The second half of `structsynth`. The first version compared minted layouts for
 *equality*, so two functions that read overlapping but unequal subsets of one
 record got a name each. This is how the ledger decides instead, and what the
-decision measures. The measurements were first taken against main at `e1139df9`.
-The five-set precision and record tables were measured again after rebasing onto
-`f1ec42a7` and did not change. The last rule,
-[bytes a reader touched without claiming them](#bytes-a-reader-touched-without-claiming-them),
-was added after that and measured against `f1ec42a7`, and every table below
-includes it.
+decision measures. `structsynth` is on by default since `6e4f6fa5` (#682), so
+everything here is default output. Unless a section says otherwise, the tables
+compare this branch with main at `6e4f6fa5`, both with the option at its
+default. The rules were developed against earlier mains (`e1139df9`,
+`f1ec42a7`); the arms that only exist for a rule that was later changed keep the
+main they were measured on, and say so.
 
 ## The rule
 
@@ -119,13 +119,19 @@ option off, on raw offsets (`*(uint4 *)((int8)a0 + 7)` after
 `*(char *)&a0[2] = ...`), so that is an engine defect in its own right and is
 not addressed here.
 
-Measured over all 101 builds of the five sets below, the rule changes exactly one
-parameter: `rsyslogd` O2 `timeConvertToUTC`'s `struct syslogTime *`, a 4-byte
+Measured over all 101 builds of the five sets below, on `f1ec42a7` with and
+without the rule, it changes exactly one parameter: `rsyslogd` O2 `timeConvertToUTC`'s `struct syslogTime *`, a 4-byte
 store at 7 that was answered with the same-size layout declaring byte fields at
 7..10. It returns to its own 10-claim shape, losing 4 fields that were real
-(held-out 3 precision 0.8409 → 0.8407). Its body is main's again. The previous
-revision split that store into four byte stores, which wrote the same bytes but
-was the one non-rename hunk in the whole-corpus sweep.
+(held-out 3 precision 0.8409 → 0.8407 on that main). Its body is main's again.
+The previous revision split that store into four byte stores, which wrote the
+same bytes but was the one non-rename hunk in the whole-corpus sweep.
+
+Since #682 a field read both as a float and as an integer is raw bytes
+(`undefined1 field_0x<hex>[N]`) in the reader's own layout, which is filler to
+the ledger. A container with a typed field there would print the float read as a
+value conversion again, the defect #682 fixed, so those bytes count as unclaimed
+too (`Evidence::unclaimed_ranges`).
 
 ## Why agreement on a shared field is exact
 
@@ -193,18 +199,25 @@ Claimed-field precision (filler excluded), with recall in parentheses:
 
 | dedup rule | tuning | held-out 1 | held-out 2 | held-out 3 | held-out 4 |
 |---|---:|---:|---:|---:|---:|
-| exact signature (main) | 704/787 = 0.8945 (0.0746) | 1011/1081 = 0.9352 (0.0659) | 804/888 = 0.9054 (0.0482) | 2746/3271 = 0.8395 (0.0307) | 3455/3937 = 0.8776 (0.0233) |
-| bounds + pointer rule + table rule | | | | 2818/3368 = 0.8367 (0.0315) | 3592/4123 = 0.8712 (0.0243) |
-| + integer rule (previous revision) | 748/833 = 0.8980 (0.0792) | 1060/1134 = 0.9347 (0.0691) | 836/920 = 0.9087 (0.0501) | 2795/3324 = 0.8409 (0.0313) | 3555/4049 = 0.8780 (0.0240) |
-| **+ unclaimed-bytes rule (shipped)** | **748/833 = 0.8980 (0.0792)** | **1060/1134 = 0.9347 (0.0691)** | **836/920 = 0.9087 (0.0501)** | **2791/3320 = 0.8407 (0.0312)** | **3555/4049 = 0.8780 (0.0240)** |
+| dedup rule | tuning | held-out 1 | held-out 2 | held-out 3 | held-out 4 |
+|---|---:|---:|---:|---:|---:|
+| exact signature (main `6e4f6fa5`; `e1139df9` and `f1ec42a7` score the same) | 704/787 = 0.8945 (0.0746) | 1011/1081 = 0.9352 (0.0659) | 804/888 = 0.9054 (0.0482) | 2746/3271 = 0.8395 (0.0307) | 3455/3937 = 0.8776 (0.0233) |
+| bounds + pointer rule + table rule (on `e1139df9`) | | | | 2818/3368 = 0.8367 (0.0315) | 3592/4123 = 0.8712 (0.0243) |
+| + integer rule (on `f1ec42a7`) | 748/833 = 0.8980 (0.0792) | 1060/1134 = 0.9347 (0.0691) | 836/920 = 0.9087 (0.0501) | 2795/3324 = 0.8409 (0.0313) | 3555/4049 = 0.8780 (0.0240) |
+| + unclaimed-bytes rule (on `f1ec42a7`) | 748/833 = 0.8980 (0.0792) | 1060/1134 = 0.9347 (0.0691) | 836/920 = 0.9087 (0.0501) | 2791/3320 = 0.8407 (0.0312) | 3555/4049 = 0.8780 (0.0240) |
+| **shipped, on `6e4f6fa5`** | **748/831 = 0.9001 (0.0792)** | **1064/1138 = 0.9350 (0.0694)** | **836/920 = 0.9087 (0.0501)** | **2794/3321 = 0.8413 (0.0313)** | **3549/4042 = 0.8780 (0.0240)** |
+
+The last two rows differ because #682 changed the types the pass gives some
+fields (a sign-contested integer is `undefined<N>`, a float read as an integer is
+raw bytes), and agreement on a shared field is exact.
 
 Pooled over the four held-out sets, precision is 8016/9177 = 0.8735 on main and
-8242/9423 = 0.8747 shipped, with 226 more true fields. Recall is higher on every
-set. The gain is small, and it is not uniform. Of the 101 builds, 25 gain
-precision and 5 lose it. The losses are `du` O2 (0.9316 → 0.9200), `kmod` O2
-(0.8507 → 0.8417), `kmod` O0 (0.9246 → 0.9163), `rsyslogd` O0 (0.9159 →
-0.9087) and `ip` O2 (0.5451 → 0.5409). The largest gains are `sort` O0 (0.8571 →
-0.8636), `diff` O0 (0.8563 → 0.8629) and `ls` O2 (0.8770 → 0.8828).
+8243/9421 = 0.8750 shipped, with 227 more true fields. Recall is higher on every
+set. The gain is small, and it is not uniform. Of the 101 builds, 30 gain
+precision and 4 lose it. The losses are `kmod` O2 (0.8507 → 0.8417), `kmod` O0
+(0.9246 → 0.9163), `ip` O0 (0.6699 → 0.6675) and `e2fsck` O0 (0.8931 → 0.8922).
+The largest gains are `diff` O0 (0.8563 → 0.8629), `sort` O0 (0.8571 → 0.8636),
+`sort` O2 (0.8750 → 0.8814) and `du` O0 (0.9206 → 0.9265).
 
 The previous revision had neither the table rule nor the integer rule. A reviewer
 measured it on held-out 3 against a `d3617d64` main: 0.8395 → 0.8294, with 7 of
@@ -219,24 +232,22 @@ correct. `dedup_heldout.py absorb` checks the record instead. For each
 parameter answered by a strictly larger structure, it asks whether that
 structure is one some parameter of the *same* DWARF record measured on main.
 
-| shipped rule | absorbed | same record | different record | uncheckable | added fields true |
+| shipped rule, on `6e4f6fa5` | absorbed | same record | different record | uncheckable | added fields true |
 |---|---:|---:|---:|---:|---:|
-| tuning | 29 | 28 | 1 | 0 | 44/46 |
-| held-out 1 | 33 | 33 | 0 | 0 | 49/53 |
+| tuning | 28 | 28 | 0 | 0 | 44/44 |
+| held-out 1 | 35 | 35 | 0 | 0 | 53/57 |
 | held-out 2 | 20 | 20 | 0 | 0 | 32/32 |
-| held-out 3 | 30 | 28 | 0 | 2 | 45/49 |
-| held-out 4 | 66 | 61 | 4 | 1 | 100/112 |
-| without the integer rule, held-out 3 / 4 | 57 / 108 | 39 / 80 | 0 / 8 | 18 / 20 | 72/97, 137/186 |
+| held-out 3 | 29 | 27 | 0 | 2 | 48/50 |
+| held-out 4 | 66 | 64 | 1 | 1 | 94/105 |
+| same rule on `f1ec42a7` | 178 | 170 | 5 | 3 | |
+| without the integer rule, held-out 3 / 4 (on `e1139df9`) | 57 / 108 | 39 / 80 | 0 / 8 | 18 / 20 | 72/97, 137/186 |
 
-The five wrong records that remain:
-
-- `du` O2 `add_exclude`: `struct exclude *` measured `{0: long *, 8: long}` and
-  is answered with an `mbchar` layout that begins the same way.
-- `rsyslogd` O0 `hashtable_remove`, `hashtable_search` and
-  `hashtable_iterator_search`: `{0: uint, 8: long, 0x28: code *}` inside
-  48 bytes, filled in with the same-size layout of a `lookup_s` table.
-- `e2fsck` O0 `ea_refcount_intr_next`: three `uint64` words of a 32-byte
-  `ea_refcount`, filled in with a `dentry_info_args` layout.
+One wrong record remains: `e2fsck` O0 `ea_refcount_intr_next`, three `uint64`
+words of a 32-byte `ea_refcount`, filled in with a same-size layout another
+record measured. On `f1ec42a7` there were four more: `du` O2 `add_exclude`
+(`struct exclude *` answered with an `mbchar` layout) and three `rsyslogd` O0
+`hashtable` readers (answered with a `lookup_s` table). Under #682's field types
+those containers no longer contain them.
 
 Each rule answers one shape:
 
@@ -268,20 +279,20 @@ counting the distinct synthesized names the run emits and the
 |---|---:|---:|---:|
 | fmt O0 | 4 | 4 | 4 → 4 |
 | fmt O2 | 3 | 3 | 3 → 3 |
-| ls O0 | 26 | 23 | 33 → 33 |
+| ls O0 | 27 | 24 | 33 → 33 |
 | ls O2 | 35 | 27 | 71 → 71 |
 | sort O0 | 31 | 28 | 34 → 34 |
 | sort O2 | 26 | 23 | 28 → 28 |
 | du O0 | 31 | 27 | 34 → 34 |
-| du O2 | 32 | 28 | 35 → 35 |
-| find O0 | 56 | 50 | 68 → 68 |
+| du O2 | 32 | 29 | 35 → 35 |
+| find O0 | 55 | 50 | 68 → 68 |
 | find O2 | 53 | 50 | 62 → 62 |
-| tar O0 | 124 | 119 | 155 → 155 |
-| tar O2 | 93 | 85 | 110 → 110 |
-| **total** | **514** | **467** | **637 → 637** |
+| tar O0 | 126 | 121 | 155 → 155 |
+| tar O2 | 93 | 86 | 110 → 110 |
+| **total** | **516** | **472** | **637 → 637** |
 
-The same functions are retyped, and they name 9.1% fewer records. No pair is
-lost.
+The same functions are retyped, and they name 8.5% fewer records. No pair is
+lost. (On `f1ec42a7` the same count was 514 → 467.)
 
 ## `fprate.py`, the type metric and the variable rows are blind to all of this
 
@@ -291,42 +302,48 @@ given. The same holds for decbench's `type_match`, which compares pointee
 spellings by name, so `struct_0 *` and `struct_1 *` score alike.
 
 `scripts.decbench.typesweep --option structsynth param`, 444 slices
-(coreutils grep gzip diffutils bzip2 findutils tar shadow x × O0/O2/O2-noinline):
+(coreutils grep gzip diffutils bzip2 findutils tar shadow x × O0/O2/O2-noinline),
+`KUNA_BIN` pinned per build. With the option on by default both of the sweep's
+arms are the default output, so the comparison is between the two builds:
 
-| | main + `structsynth param` | branch + `structsynth param` |
+| | main `6e4f6fa5` | branch |
 |---|---:|---:|
-| `type_match` PERFECT | 958 | 958 |
-| aggregate `type_match` | 3035.69 | 3035.69 |
-| moved ONTO / OFF perfect (vs option off) | 0 / 1 | 0 / 1 |
-| improved / worsened (vs option off) | 0 / 6 | 0 / 6 |
+| `type_match` PERFECT | 986 | 986 |
+| aggregate `type_match` | 3111.18 | 3111.18 |
 
-`moved.csv` is byte-identical between the two builds. That is expected by
-construction and is not evidence either way.
+Every slice's per-function scores and variable counts (`values`, `nvars` in
+`rows.json`) are identical between the builds. The only difference is the
+`vars_sig` hash of 76 slices, which covers the `struct_N` names. That is
+expected by construction and is not evidence either way.
 
 No variable or argument appears or disappears. Over the 101 builds above
 (40,056 functions, 260,970 exported variable rows), no function's variable count
 or argument count changes, and no row changes in anything but the `struct_N` it
-names (1,108 functions have such a rename, against `f1ec42a7`).
+names (1,101 functions have such a rename). One function's C changes beyond a
+name: `ip` O0 `ll_remember_index` passes `&a0->field_0x6[10]` to a callee as
+`&a0->field_0x8[8]`, the same address spelled through a same-size container's
+filler. It is a call argument, not a dereference.
 
 ## Whole-corpus `decompile-all` before/after
 
 Nine binaries, main build vs branch build, both arms, every changed line
 classified (`docs/features/structsynth/dedup_hunks.py`).
 
-| binary | `--option structsynth param` | default (option off) |
+| binary | default (`structsynth param`) | `--option structsynth off` |
 |---|---|---|
 | fmt O2 | identical | identical |
 | ls O2 | 55 rename | identical |
 | sort O2 | 16 rename | identical |
-| du O2 | 20 rename | identical |
+| du O2 | 19 rename | identical |
 | find O2 | 22 rename | identical |
-| tar O2 | 81 rename | identical |
+| tar O2 | 61 rename | identical |
 | grep O2 | 42 rename | identical |
-| diff O2 | 20 rename | identical |
+| diff O2 | 19 rename | identical |
 | rsyslogd O2 | 2 rename | identical |
 
-Main is `f1ec42a7`. `rename` is a line whose only change is which `struct_N` it
-names; there is no other kind of hunk. No statement moved, and no declaration
+Main is `6e4f6fa5`. The default run and an explicit `--option structsynth param`
+give the same classification. `rename` is a line whose only change is which
+`struct_N` it names; there is no other kind of hunk. No statement moved, and no declaration
 appeared or vanished. The previous revision had one more hunk, in `rsyslogd` O2,
 where `timeConvertToUTC`'s `syslogTime` parameter was answered with a same-size
 layout that declares byte fields at 7..10, and the 4-byte store
@@ -345,15 +362,15 @@ build and the branch build.
 | fmt O2 | 3 → 3 | 0 |
 | ls O2 | 35 → 27 | 0 |
 | sort O2 | 26 → 23 | 0 |
-| du O2 | 32 → 28 | 0 |
+| du O2 | 32 → 29 | 0 |
 | find O2 | 53 → 50 | 0 |
-| tar O2 | 93 → 85 | 0 |
-| grep O2 | 40 → 34 | 0 |
-| diff O2 | 33 → 29 | 0 |
-| rsyslogd O2 | 88 → 87 | 0 |
+| tar O2 | 93 → 86 | 0 |
+| grep O2 | 40 → 35 | 0 |
+| diff O2 | 33 → 30 | 0 |
+| rsyslogd O2 | 91 → 90 | 0 |
 
-`offsetcheck.py`: **0 of 366** synthesized structures have a field the C compiler
-moves (main: 0 of 403). Each export's total `gcc` error count is the same as
+`offsetcheck.py`: **0 of 373** synthesized structures have a field the C compiler
+moves (main exports 406). Each export's total `gcc` error count is the same as
 main's (324 / 892 / 718 / 558 / 1375 / 4121 / 1019 / 1038 / 6483). These are the
 export's existing prelude errors, not new ones. The header declares one
 definition per name still in use: `build_header` drops a `struct_<digits>`
@@ -379,11 +396,11 @@ name is the decision, not a residue.
 |---|---:|---:|
 | fmt O0 | 4 | 0 |
 | ls O2 | 27 | 0 |
-| du O2 | 28 | 0 |
-| tar O2 | 85 | 0 |
+| du O2 | 29 | 0 |
+| tar O2 | 86 | 0 |
 | cp O2 | 30 | 0 |
 | kmod O0 | 51 | 0 |
-| rsyslogd O2 | 87 | 1 |
+| rsyslogd O2 | 90 | 1 |
 
 A non-transitive chain like the `fb`/`fa`/`fc` fixture above would show up here
 as a superseded structure that is still emitted. None of these binaries has one.
