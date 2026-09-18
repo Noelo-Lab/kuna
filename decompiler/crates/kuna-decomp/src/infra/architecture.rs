@@ -690,6 +690,10 @@ pub struct Architecture {
     /// (kuna) A stack pointer walk's one-past-the-end bound renders on the walked
     /// buffer, recovered as one array (option `endptrbound`).
     pub end_ptr_bound: bool,
+    /// (kuna) A widened multiply operand stays a value instead of being
+    /// structured into a 16-byte aggregate (option `mulblob`).  See
+    /// [`crate::p3_dataflow::kuna_mulblob`].
+    pub mul_blob: bool,
     /// (kuna) Read the caller's own stack discipline for the argument bytes a
     /// callee pops, instead of guessing that it pops none (option
     /// `calleepop`).  See [`crate::p6_variables::kuna_calleepop`].
@@ -2277,6 +2281,7 @@ impl Architecture {
             cookie_scramble: true,
             nul_terminator: false,
             end_ptr_bound: true,
+            mul_blob: true,
             callee_pop: true,
             callee_proto_stack: true,
             arg_clobber: false, // (kuna) argclobber: opt-in
@@ -2547,6 +2552,7 @@ impl Architecture {
         self.lowered_switch_every_head = true; // (kuna) DIV-184 default-on: a compare on the switch variable in front of an inlined switch no longer hides the cascade behind it; a cascade behind a later head must match its compare tree exactly
         self.lowered_switch_exact = true; // (kuna) DIV-183 default-on correctness fix: a re-rolled lowered switch labels every case value and is kept only when it routes every value and keeps every statement as its compare tree does
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.mul_blob = true; // (kuna) mulblob default-on: an unsigned wide-multiply operand prints as the value it is, matching the signed form kuna already renders
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
@@ -2942,6 +2948,11 @@ impl Architecture {
                 let (val, msg) =
                     crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
                 self.callsite_stack_args = val;
+                Ok(msg)
+            }
+            "mulblob" => {
+                let (val, msg) = crate::p3_dataflow::kuna_mulblob::OptionMulBlob.apply(p1)?;
+                self.mul_blob = val;
                 Ok(msg)
             }
             "endptrbound" => {
@@ -4088,6 +4099,7 @@ impl Architecture {
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
         ctx.nul_terminator = self.nul_terminator; // nulterminator
         ctx.end_ptr_bound = self.end_ptr_bound; // endptrbound
+        ctx.mul_blob = self.mul_blob; // (kuna) mulblob
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.arg_clobber = self.arg_clobber; // argclobber

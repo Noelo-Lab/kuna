@@ -25,6 +25,15 @@ fn shared_div3_reciprocal_recovers_the_modulo() {
     let code = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "decompile failed: {stderr}");
-    assert!(code.contains("v4 = a0 % 3;"), "modulo was not recovered:\n{code}");
+    // The modulo must land in a local; that local's NUMBER is not part of the
+    // contract -- it shifts whenever a declaration ahead of it is added or
+    // removed (`mulblob`, for one).
+    let modulo_to_local = code.lines().any(|l| {
+        let l = l.trim();
+        l.ends_with(" = a0 % 3;")
+            && l.strip_suffix(" = a0 % 3;")
+                .is_some_and(|lhs| lhs.starts_with('v') && lhs[1..].chars().all(|c| c.is_ascii_digit()))
+    });
+    assert!(modulo_to_local, "modulo was not recovered:\n{code}");
     assert!(!code.contains("0xfffffffffffffffe"), "raw reciprocal term survived:\n{code}");
 }

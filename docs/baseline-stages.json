@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1136,
-    1136
+    1141,
+    1141
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -529,6 +529,11 @@
     "data:MSVCSTRAPPEND #7: the register-count append keeps its grow call in both passes, the literal one only off",
     "data:MSVCSTRAPPEND #8: the 16-byte threshold diamond survives both passes",
     "data:MSVCSTRAPPEND #9: the mismatched-char diamond survives both passes",
+    "data:MULBLOB #1: mulblob off declares a 16-byte local per operand (the bug)",
+    "data:MULBLOB #2: mulblob off fills each blob in halves before the product is read",
+    "data:MULBLOB #3: mulblob off reads the high half out of the blob product",
+    "data:MULBLOB #4: default prints the high half over the operands themselves",
+    "data:MULBLOB #5: default prints the low half the same way, with no blob left",
     "data:NULTERMINATOR #10: no array grows over the padding or the locals after its terminator",
     "data:NULTERMINATOR #11: gap_zero off declares [20]",
     "data:NULTERMINATOR #12: gap_zero on declares [21]",

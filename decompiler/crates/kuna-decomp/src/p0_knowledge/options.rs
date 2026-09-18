@@ -256,6 +256,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "ovlesssimplify",
     "booleanmask",
     "cancelbytearithmetic",
+    "mulblob",
     "simdlane",
     "constspaceload",
     "declhightype",

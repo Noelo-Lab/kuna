@@ -1099,6 +1099,60 @@ by `INT_MULT(cnt, STRIDE)`, re-exposing `cnt` as the array index so the
 pointer rules and the emitter can render `arr[i]` instead of
 `iVar += 0x414`. Settable `arraystride`, shipped default **on** (DIV-3).
 
+**mulblob** (kuna) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_mulblob.rs
+(declines_zext)`, consulted by `RulePieceStructure` rather than registered as a
+rule of its own. It answers one question: whether a widened operand of a wide
+multiply is a *value* or an *aggregate*.
+
+x86-64 `MUL r64` lowers to `tmp:16 = zext(RAX) * zext(rm64)` with `RDX` and
+`RAX` read back out by SUBPIECE. A 16-byte Varnode has no primitive data-type,
+so the type factory hands it the width fallback `undefined1[16]` — an array,
+which `Datatype::is_piece_structured` accepts along with every struct. That is
+enough for `RulePieceStructure` to treat the extension as the root of a
+concatenation tree building a structured value: it rewrites the `INT_ZEXT` into
+a `PIECE` of a zero constant and the operand, marks the output a partial root,
+and §6 then gives that root a declaration of its own. Every unsigned wide
+multiply therefore costs two extra locals whose entire content is the operand
+(`v8._8_8_ = 0; v8._0_8_ = v29;`) before a single `SUB168` reads the product
+back. The signed sibling never had this: `IMUL` lowers through `sext`, and
+`INT_SEXT` is not in `RulePieceStructure`'s op list, so kuna has always printed
+`SUB168(SEXT816(x) * SEXT816(y),8)` for it.
+
+With the gate on, `declines_zext` makes the unsigned form behave like the
+signed one: `RulePieceStructure` leaves the extension alone at all three of its
+conversion sites (the direct `INT_ZEXT` entry, the extension found above a
+CONCAT root, and each `INT_ZEXT` leaf inside a gathered tree), the operand stays
+an implied varnode, and the multiply prints over the operands themselves. The
+IR is otherwise untouched — no op is added, moved or deleted — so both halves of
+the product are the same SUBPIECEs of the same product they were before.
+
+The decline is narrow, because the same rewrite is load-bearing wherever a
+concatenation really does build a structure. It requires all of: the extension's
+output is in the unique space, and is not addr-tied, mapped, persistent or
+already a proto-partial; it is wider than 8 bytes and no wider than 16; its
+data-type is exactly the width fallback (an array of that many one-byte
+`undefined` elements, not a recovered array); no local Symbol covers its
+address; and every reader is a same-width integer arithmetic op whose own
+result is read only through SUBPIECE. A Varnode backed by real storage, or one
+whose array type came from type recovery, keeps upstream's structuring in
+either arm.
+
+One naming consequence is worth stating, because it is the only place the
+decline is visible outside the multiply itself. With the blob gone, an operand
+that is read by the multiply *and* by something else has two readers of its own,
+and §6's `ActionMarkExplicit` gives a value with a second reader through an
+extension its own name. A reciprocal division whose dividend is also returned
+therefore reads `v1 = x; ... = v1 / N;` rather than repeating `x` on both sides
+— which is exactly how the signed sibling, whose operands were never
+structured, has always rendered the same code. With the blob present the copy
+into it supplied that second name, so the repetition survived.
+
+Settable `mulblob on|off`, shipped default **on**. Flipping it off restores
+upstream Ghidra's rendering, which prints the same `undefined1 auVarN [16]`
+blobs — this is a deliberate readability divergence, not a fidelity fix, and it
+is inert on every function with no wide multiply.
+
 ## 3.6 Early passes
 
 `decompiler/crates/kuna-decomp/src/p3_dataflow/coreaction_early.rs` holds the

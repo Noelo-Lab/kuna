@@ -1663,6 +1663,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "mulblob"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "wide-multiply-operand-blobs"
+summary = "Print a widened 64x64->128 multiply operand as the value it is (`SUB168(ZEXT816(x) * ZEXT816(y),8)`) instead of materialising a 16-byte local per operand and filling it in halves."
+use_when = "On by default. x86-64 `MUL r64` lowers (SLEIGH `ia.sinc:4128`) to `tmp:16 = zext(RAX) * zext(rm64)`, and a 16-byte varnode has no primitive data-type, so the type factory hands it the width fallback `undefined1[16]` - an array, which `Datatype::isPieceStructured` accepts. `RulePieceStructure` (ruleaction.cc:7488) therefore rewrites each zero-extension into a `PIECE` rooted at a partial-root Varnode, and P6 gives that root a declaration of its own: every unsigned wide multiply costs two `char vN [16]` locals whose entire content is the operand (`v8._8_8_ = 0; v8._0_8_ = v29;`) before a single `SUB168` reads the product back out. The signed sibling never had this: `IMUL` lowers through `sext`, `INT_SEXT` is not in `RulePieceStructure`'s op list, and kuna already prints `SUB168(SEXT816(x) * SEXT816(y),8)`. On, the unsigned form prints the same way. The decline is narrow: the extension's output must be an anonymous unique, not addr-tied, not mapped, not covered by a Symbol, 9..16 bytes wide, typed with the width fallback (an array of exactly that many one-byte `undefined` elements) and read only by same-width integer arithmetic whose own result is read only through `SUBPIECE`. A Varnode backed by real storage or a recovered array keeps upstream's structuring in either arm. Flip off to restore the upstream `undefined1 auVarN [16]` rendering - Ghidra prints those blobs too, so this is a deliberate divergence, not a fidelity fix."
+example = "option mulblob off"
+source_decompiler = "kuna"
+inspiration = "coreutils fmt -O2 xstrtoumax (10 `MUL RCX` sites): 20 of the function's 28 declarations were the operand blobs, 23 of the binary's 298 non-thunk declarations (7.7%); IDA prints the same expression as one `__int128` multiply"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "a 16-byte local (`char vN [16]` / `undefined1 auVarN [16]`) is declared for every operand of an unsigned multiply|`vN._8_8_ = 0; vN._0_8_ = x;` pairs appear in front of a `SUB168(... * ...,0)`|a function with several `mul` instructions declares twice as many locals as it has values|the high half of a 64x64 product is read out of a blob instead of off the multiply"
+live_field = "mul_blob"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "cancelbytearithmetic"
 values = "on|off"
 default = "on"
