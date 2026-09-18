@@ -418,7 +418,8 @@ pub enum TruncationForm {
 ///
 /// A C conversion to `bool` tests every bit of its operand, and a truncation
 /// keeps only the low `out_size` bytes, so `(bool)x` is the truncation only when
-/// `in_nz_mask` proves every bit above the destination zero.  Otherwise the
+/// `in_nz_mask` (asked only once the destination is known to be this rule's
+/// `bool`) proves every bit above the destination zero.  Otherwise the
 /// truncation is printed explicitly first: `x & 0x201` truncated into a byte is
 /// 0 for `x = 0x200`, and `(bool)(x & 0x201)` is 1.  A `bool` reaches such a
 /// destination by propagation from a sibling copy -- `d = c; ... d = 0;` makes
@@ -430,7 +431,7 @@ pub fn truncation_form(
     intype: &Rc<Datatype>,
     offset: u32,
     out_size: i32,
-    in_nz_mask: u64,
+    in_nz_mask: impl FnOnce() -> u64,
 ) -> TruncationForm {
     if !enabled || offset != 0 || outtype.get_metatype() != type_metatype::TYPE_BOOL {
         return TruncationForm::Upstream;
@@ -445,7 +446,7 @@ pub fn truncation_form(
         return TruncationForm::Upstream;
     }
     let bits = 8 * out_size.max(0) as u32;
-    if bits >= 64 || in_nz_mask >> bits == 0 {
+    if bits >= 64 || in_nz_mask() >> bits == 0 {
         TruncationForm::Cast
     } else {
         TruncationForm::CastThroughByte
