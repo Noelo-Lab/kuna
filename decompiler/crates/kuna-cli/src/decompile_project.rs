@@ -160,8 +160,10 @@ fn usage() {
          default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
-         serial). The artifacts are identical to a --jobs 1 run without --stream;\n\
-         progress goes to stderr, and peak memory is roughly N times one worker's RSS.\n\
+         serial). The artifacts are identical to a --jobs 1 run without --stream,\n\
+         except that workers run with structsynth off (each process would number\n\
+         its own struct_N); progress goes to stderr, and peak memory is roughly N\n\
+         times one worker's RSS.\n\
          --stream writes the folder as the run goes instead of at the end: the entry\n\
          point and what it calls are written first, index.jsonl announces each\n\
          finished function and .streaming reports progress until the export\n\

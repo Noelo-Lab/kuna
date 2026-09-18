@@ -871,6 +871,9 @@ fn run_pool_with(
             .map_err(|e| format!("cannot write the worker inventory {}: {e}", path.display()))?;
     }
     eprintln!("{}", report.banner);
+    if let Some(note) = structsynth_shard_note(cfg, report.tag) {
+        eprintln!("{note}");
+    }
 
     let pool = Pool {
         cfg,
@@ -1338,6 +1341,10 @@ impl Worker {
         if !cfg.full_load {
             cmd.arg("--option").arg("fast_funcdisc").arg("off");
         }
+        // See [`structsynth_shard_note`].
+        if cfg.want_types {
+            cmd.arg("--option").arg("structsynth").arg("off");
+        }
         // Same reasoning one flag further in: the parent's own load ran the
         // discovery walk on N decode lanes and is handing the inventory over, so
         // a worker must not run N more of them. Forced rather than merely left
@@ -1553,6 +1560,25 @@ pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
         }
     }
     out
+}
+
+/// Why a sharded `decompile-project` runs its workers with `structsynth off`,
+/// or `None` when the run had turned it off anyway.
+///
+/// A synthesized `struct_N` is named by the process that minted it, so two
+/// workers can each define a different `struct_0`, and one `.h` cannot give that
+/// name one layout. The type block of a sharded export is therefore the pre-
+/// `structsynth` one; `--jobs 1` synthesizes.
+fn structsynth_shard_note(cfg: &PoolConfig, tag: &str) -> Option<String> {
+    let explicit = cfg.options.iter().rev().find(|(name, _)| name == "structsynth");
+    if !cfg.want_types || explicit.is_some_and(|(_, value)| value == "off") {
+        return None;
+    }
+    Some(format!(
+        "[kuna {tag}] note: structsynth is off in the worker processes: each process numbers \
+         its own struct_N, so a sharded .h cannot declare them consistently. Re-run with \
+         --jobs 1 for synthesized structures."
+    ))
 }
 
 /// Every `error` record the POOL itself produced, as opposed to one the engine
@@ -2829,6 +2855,22 @@ mod tests {
             target: None,
             sleighpath: None,
         }
+    }
+
+    /// A sharded project export says why its type block has no `struct_N`, and
+    /// stays quiet where there was nothing to lose.
+    #[test]
+    fn structsynth_shard_note_only_for_a_project_that_would_synthesize() {
+        let project = PoolConfig { want_types: true, ..cfg(0, 0.0) };
+        let note = structsynth_shard_note(&project, JOBS_TAG).expect("default param");
+        assert!(note.starts_with("[kuna --jobs] note: structsynth is off"), "{note}");
+        assert!(structsynth_shard_note(&cfg(0, 0.0), JOBS_TAG).is_none());
+        let off = [("structsynth".to_string(), "off".to_string())];
+        let turned_off = PoolConfig { want_types: true, options: &off, ..cfg(0, 0.0) };
+        assert!(structsynth_shard_note(&turned_off, STREAM_TAG).is_none());
+        let param = [("structsynth".to_string(), "param".to_string())];
+        let asked = PoolConfig { want_types: true, options: &param, ..cfg(0, 0.0) };
+        assert!(structsynth_shard_note(&asked, STREAM_TAG).is_some());
     }
 
     /// The pool is the only thing that can enforce the per-function budget on a

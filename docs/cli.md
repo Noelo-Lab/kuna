@@ -1273,7 +1273,15 @@ Behaviors specific to `decompile-all`:
     rendering as `"BM"` where the serial run printed the UTF-16 `"䵂"`. The pool
     does not cause it: a serial `--filter '^sub_18073e690$'` over the same load
     prints `"BM"` too, and adding the function that reaches that address first
-    turns it back into `"䵂"`. `--jobs 1` is the definition of the answer.
+    turns it back into `"䵂"`. `--jobs 1` is the definition of the answer. The
+    same holds for the synthesized structures of `structsynth`: each process
+    numbers its own `struct_N`, so under `decompile-all`/`decompile-graph
+    --jobs N` one name can mean two layouts in functions two workers decompiled.
+  - **`decompile-project` workers run with `structsynth off`.** Its `.h` declares
+    every type once for the whole program, and per-process `struct_N` numbering
+    cannot give it one layout per name, so a sharded export's type block is the
+    one `structsynth off` produces and the run says so on stderr. `--jobs 1`
+    (serial, or `--stream` without workers) synthesizes.
   - **Memory, not cores, is the limit.** Every worker loads the binary itself, so
     peak memory is roughly `N ×` one worker's resident size, on top of the
     parent's. On an 18 MB PE with 33,214 functions that is 469 MB per worker
