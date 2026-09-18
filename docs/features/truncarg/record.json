@@ -117,45 +117,45 @@
   "evidence_gate_effect": "on the gcc/MSVC corpora the evidence gate removes nothing (every cast there sits on a trimmed zero-extension); the explicit-variable fit rule removes 3 redundant casts (v24 = (x == 0x55) + 2 in diff, v2 & 0x3f + 8 in betaflight and cleanflight); on the clang corpus it removes one fitting cast in nginx. The clang forwarders and libedit's sub_b980((char)a0) keep main's output."
  },
  "speed": {
-  "method": "kuna decompile-all <bin> --json, main e1139df9 (hook disabled) vs fix binaries, 15 interleaved pairs (order alternating), min and median wall ms; box carried a typesweep and a rust-test lane",
+  "method": "kuna decompile-all <bin> --json, main e1139df9 (hook disabled) vs fix (fe42cf29), 15 interleaved pairs (order alternating), min and median wall ms; box carried other campaign lanes",
   "results": {
    "O2/coreutils/stripped/fmt": {
     "n": 15,
-    "base_min_ms": 4712.9,
-    "fix_min_ms": 4851.3,
-    "delta_min_pct": 2.94,
-    "base_median_ms": 5414.0,
-    "fix_median_ms": 5249.2
+    "base_min_ms": 4249.3,
+    "fix_min_ms": 4250.1,
+    "delta_min_pct": 0.02,
+    "base_median_ms": 5052.3,
+    "fix_median_ms": 4765.2
    },
    "O2/grep/stripped/grep": {
     "n": 15,
-    "base_min_ms": 14519.6,
-    "fix_min_ms": 13712.4,
-    "delta_min_pct": -5.56,
-    "base_median_ms": 17362.8,
-    "fix_median_ms": 16822.7
+    "base_min_ms": 12266.9,
+    "fix_min_ms": 12385.3,
+    "delta_min_pct": 0.97,
+    "base_median_ms": 12920.8,
+    "fix_median_ms": 13198.0
    },
    "O2/diffutils/stripped/diff": {
     "n": 15,
-    "base_min_ms": 16743.2,
-    "fix_min_ms": 16178.3,
-    "delta_min_pct": -3.37,
-    "base_median_ms": 17855.0,
-    "fix_median_ms": 17575.2
+    "base_min_ms": 14247.8,
+    "fix_min_ms": 14391.8,
+    "delta_min_pct": 1.01,
+    "base_median_ms": 16102.4,
+    "fix_median_ms": 15476.6
    }
   },
-  "worst_min_delta_pct": 2.94,
+  "worst_min_delta_pct": 1.01,
   "budget_pct": 5.0,
   "within_budget": true
  },
  "benchmark": {
-  "typesweep": "444 slices / 10,748 functions, --baseline-only with each binary: type_match PERFECT 959 -> 959, aggregate 3037.19 -> 3037.19; per-slice rows (decisions + scores) identical in 444/444 slices (typesweep.txt)",
-  "why_it_cannot_move": "the change inserts CAST ops (or retypes an implied SUBPIECE output) at ActionSetCasts, after every type and variable decision; over the 19,315-function corpus diff no JSON field other than `code` changed, so variables[] (what type_match and the arity/phantom counters read) is identical"
+  "typesweep": "444 slices / 10,748 functions, --baseline-only with each binary (main e1139df9 hook-disabled vs fix fe42cf29): type_match PERFECT 959 -> 959, aggregate 3037.19 -> 3037.19; per-slice rows (decisions + scores) identical in 444/444 slices (typesweep.txt)",
+  "why_it_cannot_move": "the change inserts CAST ops (or retypes an implied SUBPIECE output) at ActionSetCasts, after every type and variable decision, and records trim evidence on FuncCallSpecs without touching the p-code; over the 20,732-function corpus diff no JSON field other than `code` changed, so variables[] (what type_match and the arity/phantom counters read) is identical"
  },
  "gates": {
   "make test": "PARITY OK (675/675 assertions passed)",
-  "make test-stages": "PARITY OK (1151/1151; +10 kuna-truncarg keys over main, kuna-endptrbound #5 regex updated to push_back(v2,(uint1)*v3), no key removed)",
-  "make rust-test": "RUST_TEST_RC=0 (416 `test result: ok` blocks) on ebc810d2",
+  "make test-stages": "PARITY OK (1153/1153; +12 kuna-truncarg keys over main, kuna-endptrbound #5 regex updated to push_back(v2,(uint1)*v3), no key removed)",
+  "make rust-test": "RUST_TEST_RC=0 (416 `test result: ok` blocks) on fe42cf29, lane started 21:06:20Z after the last .rs commit",
   "make check-spec": "OK (lenient + strict)",
   "make test-cli": "185/185 passed",
   "kuna catalog --check": "catalog OK",
