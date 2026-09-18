@@ -1,0 +1,1123 @@
+{
+ "what": "whole-binary `kuna decompile-all <bin>` (default mode) with the new default vs `--option boolbyte off`, same build, per-function text diff; every changed function classified",
+ "binaries": [
+  "O0_du",
+  "O0_find",
+  "O0_fmt",
+  "O2-noinline_diff",
+  "O2_grep",
+  "O2_ls",
+  "O2_sort",
+  "O2_tar"
+ ],
+ "off_arm_identity_control": "`--option boolbyte off` output is byte-identical to a binary built from main d3617d64 on grep -O2 and du -O0",
+ "classes": {
+  "TYPE_SPELLING_ONLY": "body identical after normalising byte type names (char/unsigned char/uint1 -> bool), the flag literals assigned to them ('\\x01' -> 1, '\\0' -> 0) and (bool) casts",
+  "SUBNN_TO_CAST": "a raw SUBnn(x,0) p-code intrinsic into a bool destination prints as the (bool)(x) cast (the option's printer arm)",
+  "TYPE_SPELLING_PLUS_RENUMBER": "as TYPE_SPELLING_ONLY, plus vN locals renumbered",
+  "DECLCOUNT": "a byte local joins a bool of the same storage in the speculative merge: one declaration fewer, remaining vN renumber",
+  "BODY_OTHER": "body identical after normalising byte type names, flag literals, (bool) casts, SUBnn and vN numbering (8/9); grep -O2 sub_109d0 differs only by the parentheses of a new (bool) cast and by which of two byte variables a load names (an unsigned char split from a bool flag)"
+ },
+ "per_binary": {
+  "O0_du": {
+   "functions": 441,
+   "fn_set_equal": 1,
+   "changed": 8,
+   "decls_on": 146,
+   "decls_off": 146,
+   "sub_on": 0,
+   "sub_off": 1,
+   "boolcast_on": 4,
+   "boolcast_off": 3,
+   "cls_TYPE_SPELLING_ONLY": 8,
+   "cls_SUBNN_TO_CAST": 1
+  },
+  "O0_find": {
+   "functions": 862,
+   "fn_set_equal": 1,
+   "changed": 24,
+   "decls_on": 209,
+   "decls_off": 209,
+   "sub_on": 0,
+   "sub_off": 1,
+   "boolcast_on": 4,
+   "boolcast_off": 3,
+   "cls_TYPE_SPELLING_ONLY": 24,
+   "cls_SUBNN_TO_CAST": 1
+  },
+  "O0_fmt": {
+   "functions": 191,
+   "fn_set_equal": 1,
+   "changed": 1,
+   "decls_on": 0,
+   "decls_off": 0,
+   "sub_on": 0,
+   "sub_off": 0,
+   "boolcast_on": 0,
+   "boolcast_off": 0,
+   "cls_TYPE_SPELLING_ONLY": 1
+  },
+  "O2-noinline_diff": {
+   "functions": 517,
+   "fn_set_equal": 1,
+   "changed": 12,
+   "decls_on": 152,
+   "decls_off": 154,
+   "sub_on": 0,
+   "sub_off": 1,
+   "boolcast_on": 31,
+   "boolcast_off": 29,
+   "cls_TYPE_SPELLING_ONLY": 10,
+   "declcount_changed": 2,
+   "cls_DECLCOUNT": 2,
+   "cls_SUBNN_TO_CAST": 1,
+   "cls_BODY_OTHER": 2
+  },
+  "O2_grep": {
+   "functions": 449,
+   "fn_set_equal": 1,
+   "changed": 18,
+   "decls_on": 346,
+   "decls_off": 347,
+   "sub_on": 0,
+   "sub_off": 0,
+   "boolcast_on": 23,
+   "boolcast_off": 21,
+   "cls_TYPE_SPELLING_ONLY": 16,
+   "cls_BODY_OTHER": 2,
+   "declcount_changed": 1,
+   "cls_DECLCOUNT": 1
+  },
+  "O2_ls": {
+   "functions": 404,
+   "fn_set_equal": 1,
+   "changed": 11,
+   "decls_on": 163,
+   "decls_off": 165,
+   "sub_on": 0,
+   "sub_off": 1,
+   "boolcast_on": 31,
+   "boolcast_off": 29,
+   "cls_TYPE_SPELLING_ONLY": 9,
+   "declcount_changed": 2,
+   "cls_DECLCOUNT": 2,
+   "cls_SUBNN_TO_CAST": 1,
+   "cls_BODY_OTHER": 2
+  },
+  "O2_sort": {
+   "functions": 343,
+   "fn_set_equal": 1,
+   "changed": 8,
+   "decls_on": 263,
+   "decls_off": 264,
+   "sub_on": 0,
+   "sub_off": 0,
+   "boolcast_on": 21,
+   "boolcast_off": 21,
+   "cls_TYPE_SPELLING_ONLY": 7,
+   "declcount_changed": 1,
+   "cls_DECLCOUNT": 1,
+   "cls_BODY_OTHER": 1
+  },
+  "O2_tar": {
+   "functions": 1125,
+   "fn_set_equal": 1,
+   "changed": 23,
+   "decls_on": 334,
+   "decls_off": 336,
+   "sub_on": 0,
+   "sub_off": 3,
+   "boolcast_on": 42,
+   "boolcast_off": 37,
+   "cls_TYPE_SPELLING_ONLY": 20,
+   "cls_SUBNN_TO_CAST": 2,
+   "cls_TYPE_SPELLING_PLUS_RENUMBER": 1,
+   "declcount_changed": 2,
+   "cls_DECLCOUNT": 2,
+   "cls_BODY_OTHER": 2
+  }
+ },
+ "rows": [
+  {
+   "bin": "O0_du",
+   "fn": "sub_4831",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 23,
+   "decls_on": 23
+  },
+  {
+   "bin": "O0_du",
+   "fn": "sub_815c",
+   "cls": [
+    "SUBNN_TO_CAST",
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 74,
+   "decls_on": 74
+  },
+  {
+   "bin": "O0_du",
+   "fn": "sub_b213",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 1,
+   "decls_on": 1
+  },
+  {
+   "bin": "O0_du",
+   "fn": "sub_b25b",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 1,
+   "decls_on": 1
+  },
+  {
+   "bin": "O0_du",
+   "fn": "sub_c6a5",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 29,
+   "decls_on": 29
+  },
+  {
+   "bin": "O0_du",
+   "fn": "sub_d069",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 5,
+   "decls_on": 5
+  },
+  {
+   "bin": "O0_du",
+   "fn": "sub_e799",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 8,
+   "decls_on": 8
+  },
+  {
+   "bin": "O0_du",
+   "fn": "sub_e932",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 5,
+   "decls_on": 5
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_82e7",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 28,
+   "decls_on": 28
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_9975",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 5,
+   "decls_on": 5
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_b615",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 7,
+   "decls_on": 7
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_bb9d",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 4,
+   "decls_on": 4
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_c3e1",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 0,
+   "decls_on": 0
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_dc43",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 0,
+   "decls_on": 0
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_fe38",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 0,
+   "decls_on": 0
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_ff96",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 0,
+   "decls_on": 0
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_19cee",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 2,
+   "decls_on": 2
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_1c643",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 5,
+   "decls_on": 5
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_1cf56",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 1,
+   "decls_on": 1
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_1d5ba",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 2,
+   "decls_on": 2
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_1ea57",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 1,
+   "decls_on": 1
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_1ea9f",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 1,
+   "decls_on": 1
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_1fee9",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 29,
+   "decls_on": 29
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_208ad",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 4,
+   "decls_on": 4
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_21fe9",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 8,
+   "decls_on": 8
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_22182",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 5,
+   "decls_on": 5
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_25f2e",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 11,
+   "decls_on": 11
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_27c77",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 7,
+   "decls_on": 7
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_2a972",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 6,
+   "decls_on": 6
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_2ac65",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 9,
+   "decls_on": 9
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_2b92e",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 20,
+   "decls_on": 20
+  },
+  {
+   "bin": "O0_find",
+   "fn": "sub_347a5",
+   "cls": [
+    "SUBNN_TO_CAST",
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 54,
+   "decls_on": 54
+  },
+  {
+   "bin": "O0_fmt",
+   "fn": "sub_32fb",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 0,
+   "decls_on": 0
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_6130",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 27,
+   "decls_on": 27
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_87e0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 0,
+   "decls_on": 0
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_8870",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 3,
+   "decls_on": 3
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_bfd0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 4,
+   "decls_on": 4
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_d970",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 13,
+   "decls_on": 13
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_de60",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 2,
+   "decls_on": 2
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_ef20",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 7,
+   "decls_on": 7
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_10d00",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 9,
+   "decls_on": 9
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_10e30",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 6,
+   "decls_on": 6
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_10f60",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 2,
+   "decls_on": 2
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_12210",
+   "cls": [
+    "DECLCOUNT",
+    "SUBNN_TO_CAST",
+    "BODY_OTHER"
+   ],
+   "decls_off": 44,
+   "decls_on": 43
+  },
+  {
+   "bin": "O2-noinline_diff",
+   "fn": "sub_18650",
+   "cls": [
+    "DECLCOUNT",
+    "BODY_OTHER"
+   ],
+   "decls_off": 37,
+   "decls_on": 36
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_6a70",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 27,
+   "decls_on": 27
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_9130",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 34,
+   "decls_on": 34
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_a0f0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 5,
+   "decls_on": 5
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_ace0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 15,
+   "decls_on": 15
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_e420",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 9,
+   "decls_on": 9
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_e5c0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 3,
+   "decls_on": 3
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_109d0",
+   "cls": [
+    "BODY_OTHER"
+   ],
+   "decls_off": 40,
+   "decls_on": 40
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_12650",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 28,
+   "decls_on": 28
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_144a0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 18,
+   "decls_on": 18
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_15020",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 37,
+   "decls_on": 37
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_15aa0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 21,
+   "decls_on": 21
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_17400",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 9,
+   "decls_on": 9
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_17890",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 1,
+   "decls_on": 1
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_17ed0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 33,
+   "decls_on": 33
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_19a20",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 11,
+   "decls_on": 11
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_19b30",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 10,
+   "decls_on": 10
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_19c70",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 8,
+   "decls_on": 8
+  },
+  {
+   "bin": "O2_grep",
+   "fn": "sub_1b790",
+   "cls": [
+    "DECLCOUNT",
+    "BODY_OTHER"
+   ],
+   "decls_off": 38,
+   "decls_on": 37
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_72a0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 5,
+   "decls_on": 5
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_7540",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 1,
+   "decls_on": 1
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_75b0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 2,
+   "decls_on": 2
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_76b0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 7,
+   "decls_on": 7
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_7ff0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 17,
+   "decls_on": 17
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_bcf0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 17,
+   "decls_on": 17
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_103b0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 11,
+   "decls_on": 11
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_104c0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 10,
+   "decls_on": 10
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_10600",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 8,
+   "decls_on": 8
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_13210",
+   "cls": [
+    "DECLCOUNT",
+    "SUBNN_TO_CAST",
+    "BODY_OTHER"
+   ],
+   "decls_off": 49,
+   "decls_on": 48
+  },
+  {
+   "bin": "O2_ls",
+   "fn": "sub_15270",
+   "cls": [
+    "DECLCOUNT",
+    "BODY_OTHER"
+   ],
+   "decls_off": 38,
+   "decls_on": 37
+  },
+  {
+   "bin": "O2_sort",
+   "fn": "main",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 137,
+   "decls_on": 137
+  },
+  {
+   "bin": "O2_sort",
+   "fn": "sub_7af0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 8,
+   "decls_on": 8
+  },
+  {
+   "bin": "O2_sort",
+   "fn": "sub_a180",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 17,
+   "decls_on": 17
+  },
+  {
+   "bin": "O2_sort",
+   "fn": "sub_b220",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 35,
+   "decls_on": 35
+  },
+  {
+   "bin": "O2_sort",
+   "fn": "sub_cd90",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 11,
+   "decls_on": 11
+  },
+  {
+   "bin": "O2_sort",
+   "fn": "sub_cea0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 10,
+   "decls_on": 10
+  },
+  {
+   "bin": "O2_sort",
+   "fn": "sub_cfe0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 8,
+   "decls_on": 8
+  },
+  {
+   "bin": "O2_sort",
+   "fn": "sub_ed80",
+   "cls": [
+    "DECLCOUNT",
+    "BODY_OTHER"
+   ],
+   "decls_off": 38,
+   "decls_on": 37
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_12c70",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 11,
+   "decls_on": 11
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_18980",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 3,
+   "decls_on": 3
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_1e440",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 5,
+   "decls_on": 5
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_23240",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 7,
+   "decls_on": 7
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_25930",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 13,
+   "decls_on": 13
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_25c10",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 6,
+   "decls_on": 6
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_26490",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 1,
+   "decls_on": 1
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_2bee0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 4,
+   "decls_on": 4
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_308a0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 19,
+   "decls_on": 19
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_30e90",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 8,
+   "decls_on": 8
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_31e00",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 2,
+   "decls_on": 2
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_31fd0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 4,
+   "decls_on": 4
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_33640",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 12,
+   "decls_on": 12
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_3f9b0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 30,
+   "decls_on": 30
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_41370",
+   "cls": [
+    "SUBNN_TO_CAST",
+    "TYPE_SPELLING_PLUS_RENUMBER"
+   ],
+   "decls_off": 54,
+   "decls_on": 54
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_43480",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 11,
+   "decls_on": 11
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_43590",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 8,
+   "decls_on": 8
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_45ce0",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 7,
+   "decls_on": 7
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_46a40",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 2,
+   "decls_on": 2
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_4b0c0",
+   "cls": [
+    "DECLCOUNT",
+    "BODY_OTHER"
+   ],
+   "decls_off": 38,
+   "decls_on": 37
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_53b50",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 9,
+   "decls_on": 9
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_58960",
+   "cls": [
+    "TYPE_SPELLING_ONLY"
+   ],
+   "decls_off": 36,
+   "decls_on": 36
+  },
+  {
+   "bin": "O2_tar",
+   "fn": "sub_5f210",
+   "cls": [
+    "DECLCOUNT",
+    "SUBNN_TO_CAST",
+    "BODY_OTHER"
+   ],
+   "decls_off": 46,
+   "decls_on": 45
+  }
+ ],
+ "signatures": {
+  "functions_whose_signature_line_changed": 78,
+  "parameter_char_to_bool": 78,
+  "return_type_char_to_bool": 1,
+  "return_type_note": "tar -O2 sub_308a0 is transform_name_fp, declared `bool` in tar's source; its returned r12b flag is assigned only 0 and 1",
+  "arity_changed": 0,
+  "parameter_type_changes_other_than_char_to_bool": 0
+ },
+ "totals": {
+  "functions": 4332,
+  "changed": 105,
+  "declarations_off": 1621,
+  "declarations_on": 1613,
+  "subnn_intrinsics_in_changed_off": 7,
+  "subnn_intrinsics_in_changed_on": 0,
+  "bool_casts_in_changed_off": 143,
+  "bool_casts_in_changed_on": 156,
+  "bool_pointer_or_array_declarations_added": 0,
+  "calls_changed": 0,
+  "control_flow_keyword_counts_changed": 0,
+  "wrong_output_hunks": 0
+ }
+}

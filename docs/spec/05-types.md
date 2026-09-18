@@ -530,7 +530,7 @@ The option is on by default. With the default flipped none of the 675 datatest
 assertions moves and the stage corpus is PARITY OK; over the decbench type
 sweep the flip moves functions onto a perfect `type_match` and none off it,
 with no function scored worse (the measurement is in
-`docs/features/boolbyte/record.json`, `default_on`). What the default costs is
+`docs/features/boolbyte/record.json`, `default_on_flip`). What the default costs is
 the name surface described in the last bullets but one: the functions whose
 merge moves renumber their remaining `vN` locals, so a `--assert type vN` or
 `--assert name vN` written against an older run can address a different

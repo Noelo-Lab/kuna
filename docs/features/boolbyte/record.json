@@ -12,8 +12,8 @@
  "tier": "core",
  "source_decompiler": "ida",
  "inspiration": "IDA's Hex-Rays declares a byte whose only uses are conditions as `bool`; its microcode carries a boolean operand kind for the same values. This rule reaches the same declaration through Ghidra's own lattice, by supplying the TYPE_BOOL candidate the getLocalType fold never has.",
- "default_on": false,
- "default_value": "off",
+ "default_on": true,
+ "default_value": "on",
  "values": "on|off",
  "parity": "OK",
  "witness": {
@@ -405,12 +405,156 @@
   }
  },
  "default_on_evaluation": {
-  "verdict": "NOT flipped this round",
+  "verdict": "NOT flipped in #664; superseded by default_on_flip (re-measured on main d3617d64 and flipped)",
   "datatests_with_the_default_flipped": "675/675 PARITY OK (0 assertions move)",
   "stages_with_the_default_flipped": "1115/1115 PARITY OK; the stage test's pass 1 already carries an explicit `option boolbyte off`, so the bug arm still reproduces",
   "speed": "worst interleaved minimum +2.54% (tar -O2 0x41370), budget +5%",
   "typesweep": "474 slices: 28 moved onto perfect, 0 moved off, 422 improved, 0 worsened",
   "c_text": "16 binaries / 7,026 functions: 100 change, 89 declaration-and-literal only, 4 strictly better (a raw SUBnn intrinsic becomes a cast), 7 move which variable the body names; 0 wrong-output hunks",
   "why_not": "Every mechanical criterion passes.  What holds it back is the seven merge-shape moves: typing a byte `bool` un-merges a speculative merge, so a declaration count and the name an expression uses can change, and that is a readability judgment rather than a correctness one.  The round-2 reviewer required the default stay off this round for that reason, and the measurement above is recorded so a flip can be a one-line PR with its evidence already in hand."
+ },
+ "default_on_flip": {
+  "base": "origin/main d3617d64; both arms are the same release build (new default vs `--option boolbyte off`); the off arm is byte-identical to a binary built from main on grep -O2 and du -O0 whole-binary decompile-all",
+  "datatests": "675/675 PARITY OK with the default flipped, 0 assertions moved, no per-test opt-out needed",
+  "stages": "1141/1141 PARITY OK, 0 moved; tests/stages/kuna-boolbyte.xml pass 1 already carries an explicit `option boolbyte off`, so the bug arm still reproduces; docs/baseline-stages.json not re-recorded",
+  "test_cli": "185/185 passed; no probe pins a moved vN name",
+  "typesweep": {
+   "metric": "decbench type_match (main), DECBENCH_NO_CACHE=1, both arms the same pinned binary",
+   "slice_set": "projects coreutils grep gzip diffutils bzip2 findutils tar shadow x, O0/O2/O2-noinline: 444 slices, 10,748 functions",
+   "harness_control": "10,303 functions with byte-identical variables in both arms, 0 scored differently",
+   "pooled": {
+    "n": 10748,
+    "perfect_off": 959,
+    "perfect_on": 987,
+    "aggregate_off": 3037.19,
+    "aggregate_on": 3112.68,
+    "mean_off": 0.2826,
+    "mean_on": 0.2896,
+    "improved": 430,
+    "worse": 0
+   },
+   "moved_onto_perfect": 28,
+   "moved_off_perfect": 0,
+   "improved_not_perfect": 402,
+   "worsened": 0,
+   "per_project": {
+    "bzip2": {
+     "n": 267,
+     "perfect_off": 19,
+     "perfect_on": 19,
+     "mean_off": 0.3664,
+     "mean_on": 0.3664,
+     "improved": 0,
+     "worse": 0
+    },
+    "coreutils": {
+     "n": 6422,
+     "perfect_off": 592,
+     "perfect_on": 611,
+     "mean_off": 0.2726,
+     "mean_on": 0.2816,
+     "improved": 341,
+     "worse": 0
+    },
+    "diffutils": {
+     "n": 420,
+     "perfect_off": 51,
+     "perfect_on": 52,
+     "mean_off": 0.3907,
+     "mean_on": 0.4004,
+     "improved": 19,
+     "worse": 0
+    },
+    "findutils": {
+     "n": 790,
+     "perfect_off": 33,
+     "perfect_on": 35,
+     "mean_off": 0.1588,
+     "mean_on": 0.1622,
+     "improved": 10,
+     "worse": 0
+    },
+    "grep": {
+     "n": 247,
+     "perfect_off": 37,
+     "perfect_on": 39,
+     "mean_off": 0.3689,
+     "mean_on": 0.387,
+     "improved": 20,
+     "worse": 0
+    },
+    "gzip": {
+     "n": 368,
+     "perfect_off": 88,
+     "perfect_on": 88,
+     "mean_off": 0.4844,
+     "mean_on": 0.4858,
+     "improved": 2,
+     "worse": 0
+    },
+    "shadow": {
+     "n": 686,
+     "perfect_off": 29,
+     "perfect_on": 29,
+     "mean_off": 0.2879,
+     "mean_on": 0.2897,
+     "improved": 12,
+     "worse": 0
+    },
+    "tar": {
+     "n": 1548,
+     "perfect_off": 110,
+     "perfect_on": 114,
+     "mean_off": 0.2791,
+     "mean_on": 0.2824,
+     "improved": 26,
+     "worse": 0
+    }
+   }
+  },
+  "arity_phantom": {
+   "method": "per scored function, the exported variables[] of both arms: argument count (kind=arg or arg_index set), variable count, and kuna variables the metric matched to no ground-truth variable",
+   "functions": 10748,
+   "arity_changed": 0,
+   "arguments_off": 21815,
+   "arguments_on": 21815,
+   "variables_off": 96666,
+   "variables_on": 96666,
+   "variable_count_changed": 0,
+   "unmatched_kuna_variables_off": 58515,
+   "unmatched_kuna_variables_on": 58513,
+   "ground_truth_missed_off": 27533,
+   "ground_truth_missed_on": 27531,
+   "true_positives_off": 17965,
+   "true_positives_on": 18415,
+   "note": "the scored surface carries arguments and stack symbols only, so the merge-shape moves below (register locals) are invisible here; the corpus diff counts them"
+  },
+  "corpus_diff": {
+   "file": "docs/features/boolbyte/flip-corpus.json",
+   "binaries": [
+    "O0 du",
+    "O0 fmt",
+    "O0 find",
+    "O2 ls",
+    "O2 sort",
+    "O2 grep",
+    "O2 tar",
+    "O2-noinline diff"
+   ],
+   "functions": 4332,
+   "changed": 105,
+   "type_spelling_only": 95,
+   "subnn_intrinsic_to_bool_cast": 6,
+   "merge_shape_moves": 10,
+   "merge_shape_detail": "8 functions lose one declaration (a byte local joins a bool of the same storage; 1621 -> 1613 declarations) and renumber the remaining vN; grep -O2 sub_109d0 splits one unsigned char into a bool flag and a load that now names the other byte variable; tar -O2 sub_41370 renumbers with the declaration count unchanged",
+   "signatures": "78 parameters char -> bool, 1 return type char -> bool (tar transform_name_fp, `bool` in source), 0 arity changes",
+   "calls_changed": 0,
+   "control_flow_changed": 0,
+   "bool_pointer_or_array_added": 0,
+   "wrong_output_hunks": 0
+  },
+  "speed": null,
+  "modes": "boolbyte removed from EXCLUDED_ON_PURPOSE in p0_knowledge/modes.rs: a default-on option is inherited by every preset, so aggressive needs no entry",
+  "renumbering": "downstream `--assert type vN` / `--assert name vN` consumers addressing one of the merge-shape functions by an auto-generated name from an older run can address a different variable; `--option boolbyte off` restores the old numbering"
  }
 }
