@@ -180,39 +180,67 @@ excluded mirai's printf copies, whose `*buf = d + '0'` is character arithmetic;
 the rule now requires the store to go back through the load's own address
 (same Varnode up to COPYs, or the same op over the same inputs).
 
+**A byte whose pointer did not follow, and a split pointer web.** The review
+measured `(uint4)(uint1)(char)v2[1]` on ssh -O2 0x52dd0: the byte took `char`
+but the pointer it is loaded through stayed another type, so the printer cast
+the load itself. It also measured a string walker (gcc -O2 `loop2`) whose
+entry pointer took `char *` while the loop pointer stayed `unsigned char *`,
+printed as a second variable and a cast (`v5 = (unsigned char *)&a0[1]`).
+`keep_or_restore` now also restores the first propagation when a byte that
+moved to `char` is loaded through a pointer that does not end at `char *`
+(`loaded_through_other`), and when a pointer that moved to `char *` copies
+into or out of one that stayed `unsigned char *` through a `COPY`,
+`MULTIEQUAL`, `INDIRECT`, `PTRADD`, `PTRSUB` or pointer arithmetic
+(`splits_pointer`). The second guard restores four corpus functions: bash -O2
+0x79210 (eleven `(uint1 *)` casts on pointer copies), dash -O2 0x8070
+(`v1 = (unsigned char *)&v6[1]`), tar -O2 0x41370 (`v33 = (uint1 *)&v25[1]`),
+and dash -O2 0x16310, where the cast was not printed but the walker's byte
+stayed `unsigned char` behind a `char *`.
+
 **Census after the fix** (`kuna decompile-all --json`, both arms of one build
-on f1ec42a7 + this branch, 34 binaries, 13,747 functions: the 8 above, the
+on 6e4f6fa5 + this branch, 34 binaries, 13,747 functions: the 8 above, the
 reviewer's 26 - bash/tar/ssh/libedit/dash/diff/cut/tr/expr/od/xmlwf/gzip/
 bzip2/mirai at -O2 and the coreutils/cronie/dash/diff/gzip/xmlwf/bzip2/mirai
 set at -O0 - and the libopencm3 ARM image):
 
-| | before the fix | after |
+| | reviewer's run (e1139df9) | after (6e4f6fa5) |
 |---|---|---|
-| functions changed, 8 binaries | 21 | 21 (byte-identical output) |
-| functions changed, 34 binaries | 67 | 66 |
+| functions changed, 8 binaries | 21 | 21 (same hunks) |
+| functions changed, 34 binaries | 67 | 61, plus 26 renumbered only (below) |
 | mirai -O2 0xce90 (counter + call argument) | changed | unchanged |
 | mirai -O2 printf copies (10) | changed | changed (same hunks) |
-| tar -O2 0x41370 (a retyped byte reaches the switch) | changed | changed, the switch byte stays `uint1` |
-| parameters / JSON `variables[]` | 246 / 1,210 both arms | 246 / 1,210 both arms |
+| ssh -O2 0x52dd0 (byte whose pointer did not follow) | changed | unchanged |
+| tar -O2 0x41370 (a retyped byte reaches the switch; split pointer web) | changed | unchanged |
+| bash -O2 0x79210, dash -O2 0x8070 / 0x16310 (split pointer web) | changed | unchanged |
+| parameters / JSON `variables[]` | equal in both arms | 291 / 1,406, equal in both arms |
 
 Every type that moves in `variables[]` moves only from `unsigned char` to
-`char` (scalars, pointers, `[24]` and `[125]` arrays); no size moves and no
-variable or argument is added or removed.
+`char` (scalars, pointers, `[24]` and `[125]` arrays) or is a `struct_N`
+renumbering; no size moves and no variable or argument is added or removed.
+
+**Struct renumbering (new with `structsynth` on by default).** In sort -O0
+0x8002 the parameter's synthesized struct has a pointer field that moves from
+`unsigned char *` to `char *`; with it the struct is identical to one already
+synthesized (`struct_2`) and takes that name instead of a new one, so every
+function decompiled afterwards names its structs one number lower. 26 sort
+-O0 functions differ only in `struct_N` numbers; with the numbers normalized
+their output is identical in both arms. The other changed functions carry
+the same off-to-on hunks as on the pre-rebase base, except where the base
+itself changed (a `struct_N` field access in sort -O0 0x8002 and sort -O2
+0x7dd0 / 0x82d0).
 
 **Unchanged-line audit.** `audit.py` (kept with the census, not in the tree)
 lists, for every changed function, every line - changed or not - that
 mentions an identifier whose declared type moved from `unsigned char` to
-`char`, and classifies each occurrence by context. Over the 66 functions:
+`char`, and classifies each occurrence by context. Over the 87 functions:
 no retyped scalar is a direct call argument, returned value or switch
-variable (the three `CALLARG` hits are tar's `char v8`, which is `char` in
-both arms and passes the `char a3` parameter to the recursive call); the
+variable; the
 unchanged reads are byte copies and stores (`v = *p`, `*p = v`, `a0[1] = v`),
 truth tests (`if (!v)`, `while (*p)`), pointer copies, comparisons and
 arithmetic, and a retyped pointer passed as a pointer. Every unchanged
 comparison either compares two retyped bytes with each other or a byte with a
 character literal. Each value-bearing form is in `oracle.c`.
 
-**Readability cost the review measured.** ssh -O2 0x52dd0 prints
-`(uint4)(uint1)(char)v2[1]` and a walker in gcc -O2 splits one declaration
-into `unsigned char *v5; v5 = (unsigned char *)&a0[1];`. Both are the cast
-tail printing a zero-extension of a `char`; neither changes a value.
+**Readability cost the review measured.** Both are gone: ssh -O2 0x52dd0's
+`(uint4)(uint1)(char)v2[1]` and the gcc -O2 `loop2` declaration split now
+print as with the option off (above).

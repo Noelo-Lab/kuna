@@ -627,6 +627,11 @@ or a join of a recorded byte - puts the first propagation's types back. So does
 a byte that took `char` while the pointer it is loaded through did not end at
 `char *`: such a byte prints as a cast of its own load (ssh -O2 printed
 `(uint4)(uint1)(char)v2[1]`), which is the opposite of what the rule is for.
+For the same reason the first propagation is kept when a pointer that took
+`char *` copies into or out of one that stayed `unsigned char *` (through a
+`COPY`, `MULTIEQUAL`, `INDIRECT`, `PTRADD`, `PTRSUB` or pointer arithmetic):
+the two would print as separate variables joined by a cast, as a string
+walker's loop pointer did (`v5 = (unsigned char *)&a0[1]`).
 With `structsynth` on, a synthesized struct whose pointer field moves from
 `unsigned char *` to `char *` can become identical to a struct already
 synthesized and take its name; the `struct_N` numbers of every function

@@ -27,10 +27,12 @@
    from a different seed.
 4. `keep_or_restore` compares the second propagation with a snapshot of the
    first and keeps it only if every Varnode's type is unchanged or the same
-   type with `uint1` read as `char` (through pointers and arrays), and no byte
-   that moved to `char` is read without a cast or is a counter (this catches a
-   sibling byte read through the retyped pointer); otherwise the snapshot is
-   restored (analysis.md §3b, §5).
+   type with `uint1` read as `char` (through pointers and arrays), no byte
+   that moved to `char` is read without a cast, is a counter or is loaded
+   through a pointer that did not become `char *` (this catches a sibling byte
+   read through the retyped pointer), and no pointer that moved copies into or
+   out of one that did not; otherwise the snapshot is restored (analysis.md
+   §3b, §5).
 
 Rejected: overriding the edge (install `char` against `type_order`, refuse the
 `uint1 *` push). It leaves Varnodes the byte already typed `uint1` behind, which
