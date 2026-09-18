@@ -1563,6 +1563,12 @@ impl Rule for RuleOrCompare {
 
 /// \brief Convert LOAD size to match pointer data-type (C++ `RuleExpandLoad`,
 /// name `"expandload"`).
+///
+/// (kuna) The truncation form declines a loaded value whose type is still
+/// undefined, where upstream accepts it.  The SUBPIECE it leaves prints as a cast
+/// to `int` of the loaded width (`TypeOpSubpiece::getOutputToken`), inventing a
+/// signedness the value never had; a zero-extended call argument then reads back
+/// sign-extended (`(short)p[0x1a]` for `movzwl 0x68(%rdi)`).
 pub struct RuleExpandLoad;
 
 impl RuleExpandLoad {
@@ -1739,7 +1745,6 @@ impl Rule for RuleExpandLoad {
                 .get_metatype();
             if out_meta != type_metatype::TYPE_INT
                 && out_meta != type_metatype::TYPE_UINT
-                && out_meta != type_metatype::TYPE_UNKNOWN
                 && out_meta != type_metatype::TYPE_BOOL
             {
                 // C++ `return false;` (treated as no-op).
