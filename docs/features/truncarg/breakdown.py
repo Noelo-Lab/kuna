@@ -33,7 +33,6 @@ for name, fn, o, n in d['examples']:
         f = json.load(open('%s/corpus/%s.fix.json' % (O, name)))
         cache[name] = {x['name']: x for x in f['functions']}
     m = cache[name]
-    arch = 'arm32' if ('betaflight' in name or 'crazyflie' in name) else 'x86-64'
     newc = len(CASTRE.findall(n)) - len(CASTRE.findall(o))
     seen = 0
     for cm in CASTRE.finditer(n):
@@ -54,10 +53,10 @@ for name, fn, o, n in d['examples']:
                 ptype = params[argi].rsplit(' ', 1)[0].replace('*', '').strip()
                 k = 'callee declares the narrow parameter (redundant)' if ptype in NARROW else \
                     'callee reads a wider parameter (value fixed)'
-        stats[(arch, k)] += 1
+        stats[(name, k)] += 1
         seen += 1
 tot = collections.Counter()
 for (a, k), v in sorted(stats.items()):
-    print('%-7s %-52s %d' % (a, k, v))
+    print('%-45s %-52s %d' % (a, k, v))
     tot[k] += v
 print('total', sum(tot.values()), dict(tot))

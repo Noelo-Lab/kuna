@@ -208,19 +208,44 @@ consults `decompiler/crates/kuna-decomp/src/p9_emit/kuna_truncarg.rs
 CALL/CALLIND input narrower than `sizeof(int)`, integer- or unknown-typed and
 not an enum, whose slot no declared prototype type-locks, it asks whether the
 argument's promoted C value is already the zero-extension of the p-code value:
-`int_promotion_type` answers for an expression, the declared type's natural
-extension for a variable, a load or a cast, and a ZEXT always is. When it is
-not, the argument is cast to the unsigned integer of its own width,
-`sink((uint2)(a0 * 3))`. Zero-extension is the right conversion for every
-trimmed input, since the bits the trim dropped were either known zero or never
-read by the callee. An argument that already prints as a truncating cast (a
-single-use SUBPIECE rendered `(char)v2`) is retyped to the unsigned type rather
-than given a second cast (`kuna_truncarg.rs (retype_truncation)`). A slot whose
-parameter type a declared prototype locks is left alone, because C converts the
-argument to that narrow type itself. Upstream Ghidra prints the promoted form.
-Where the callee's own definition also declares the narrow parameter the cast
-is redundant, though never wrong; the rule has no option because it only adds
-a conversion the binary performs. Pinned by `tests/stages/kuna-truncarg.xml`.
+`int_promotion_type` answers for an expression, the natural extension of the
+type the value prints as for a variable, a load or a cast, and a ZEXT always
+is. The type it prints as is not always the one the cast strategy sees. A
+one-byte value no pass ever typed is TYPE_UNKNOWN, which upstream's promotion
+tables treat as unsigned, but `realtypes` spells it `char` in C output, and C
+sign-extends a `char` wherever it is signed. A trimmed byte load (`movzbl`)
+reads exactly that way, `sink(*(char *)(a0 + 3))`. The check therefore runs
+through a view of the cast context (`coreaction_casts.rs
+(FuncdataCastContext::with_unknown_byte_as)`) that reports a non-constant
+one-byte TYPE_UNKNOWN as the signed `int1`, for the argument and for the
+operands its promotion looks at. The view is on only when the per-function
+`ArchContext::unknown_byte_is_char` says the printer spells such a byte
+`char` (`realtypes` on, C output). With `realtypes` off the byte prints as
+`xunknown1`, and in Rust output as `u8`, and both keep the unsigned reading.
+When the promoted value is not the zero-extension, the argument is cast to the
+unsigned integer of its own width, as in `sink((uint2)(a0 * 3))` and
+`sink((uint1)*(char *)(a0 + 3))`. Zero-extension is the right conversion for
+every trimmed input, since the bits the trim dropped were either known zero or
+never read by the callee. Two cases get no cast. The first is an expression
+whose C value provably lies in `[0, 2^(8*size))`, such as `(a0 != 2) + 6`,
+where promotion cannot change the value (`kuna_truncarg.rs (c_range)`). The
+bound is taken over constants with a clear sign bit, truth values, and
+`+ * & | ^` of those. The second is a slot whose parameter type a declared
+prototype locks, because C converts the argument to that narrow type itself.
+An argument that already prints as a truncating cast (a SUBPIECE rendered
+`(char)v2`, every read of which is a call argument) is retyped to the unsigned
+type rather than given a second cast (`kuna_truncarg.rs (retype_truncation)`).
+Upstream Ghidra prints the promoted form. Where the callee's own definition
+also declares the narrow parameter the cast is redundant, though never wrong.
+The rule has no option because it only adds a conversion the binary performs.
+Pinned by `tests/stages/kuna-truncarg.xml`.
+
+One value-changing case is still open. A 32-bit argument trimmed out of a
+64-bit register keeps its `int` type, so `sink64(a0 * 3)` with `int a0`
+reaches a callee defined as `void sink64(unsigned long a0)` sign-extended,
+where the binary's 32-bit write zero-extended it. It is left alone because
+nearly every `int` argument on x86-64 is such a trim, and the cast would land
+on all of them to fix the few whose callee reads the full register.
 
 **Casting an output.** `coreaction_casts.rs (Funcdata::cast_output)` compares
 the *token* type the operator naturally produces — `coreaction_casts.rs
@@ -252,9 +277,10 @@ becomes COPY or INT_ADD) rather than print a field access into the wrong type.
 The upstream LOAD/STORE pointer diagnostics (`checkPointerIssues`) are
 warnings-only in C++, and in kuna the hook `coreaction_casts.rs
 (Funcdata::cast_check_pointer_issues)` is a faithful no-op — a missing
-diagnostic comment, never a changed expression. Apart from the promotion case
-the narrowed-argument rule above closes, when the cast strategy loses the
-failure is cosmetic: a spurious `(int4)` token or a missing one —
+diagnostic comment, never a changed expression. Apart from the narrowed
+call arguments above, including the open 32-to-64-bit case, when the cast
+strategy loses the failure is cosmetic: a spurious `(int4)` token or a missing
+one —
 the computation is unchanged, and the upstream console knob
 `option nocastprinting` suppresses every cast token at print time without
 touching the inserted ops.
