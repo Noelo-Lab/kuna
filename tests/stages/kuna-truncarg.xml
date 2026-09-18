@@ -23,6 +23,9 @@
       bl:    movzx edi,byte [rdi+3] / jmp sink            (byte load)
       band:  movzx eax,byte [rdi+1] / and al,[rdi+2] / movzx edi,al / jmp sink
       bfit:  xor eax,eax / cmp edi,2 / setne al / add eax,6 / movzx edi,al / jmp sink
+      sinkf: mov esi,edi / lea rdi,[fmt] / xor eax,eax / jmp prf   (printf)
+      fwd1:  mov [acc],dil / jmp sinkf                    (clang forward)
+      fwd7:  xor eax,eax / cmp dil,0xb / setge al / mov [acc],eax / jmp sinkf
 
     One pass, defaults only.  f, k and neg_ get the cast.  So does bl: its
     byte has no committed type and prints as char, which C sign-extends.  h
@@ -30,6 +33,13 @@
     extension, d calls a prototype that declares the narrow parameter, so C
     converts the argument itself, band ANDs two bytes typed unsigned, and
     bfit's sum is 6 or 7 whatever the input; none of those five changes.
+
+    fwd1 and fwd7 are clang -O2's code for `void r1(signed char c) { acc8 = c;
+    sinki(c); }` and `r7(signed char c) { accs = c > 10; sinki(c); }`: clang
+    relies on the caller having extended the narrow parameter and passes EDI on
+    untouched (`unsigned char c` compiles to the same bytes as r1).  Nothing
+    zero-extended the byte, so the call keeps its promoted form even though
+    fwd7's compare types the byte signed.
 -->
 <bytechunk space="ram" offset="0x1000">
 8d3c7f0fb7ffeb2283c701400fb6ffeb
@@ -39,6 +49,11 @@ c366893d08000000c30f1f8000000000
 00000000000000000fb67f03ebdc0fb6
 47012247020fb6f8ebd031c083ff020f
 95c083c0060fb6f8ebc0000000000000
+89fe488d3d3700000031c0eb2b0f1f00
+40883db9ffffffebe70f1f8000000000
+31c04080ff0b0f9dc08905a1ffffffeb
+cf0f1f8000000000c300000000000000
+25640000000000000000000000000000
 </bytechunk>
 <symbol space="ram" offset="0x1000" name="f"/>
 <symbol space="ram" offset="0x1008" name="k"/>
@@ -51,9 +66,14 @@ c366893d08000000c30f1f8000000000
 <symbol space="ram" offset="0x1048" name="bl"/>
 <symbol space="ram" offset="0x104e" name="band"/>
 <symbol space="ram" offset="0x105a" name="bfit"/>
+<symbol space="ram" offset="0x1070" name="sinkf"/>
+<symbol space="ram" offset="0x1080" name="fwd1"/>
+<symbol space="ram" offset="0x1090" name="fwd7"/>
+<symbol space="ram" offset="0x10a8" name="prf"/>
 </binaryimage>
 <script>
   <com>parse line extern void sinkd(uint2 x);</com>
+  <com>parse line extern int4 prf(char *fmt, ...);</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
@@ -81,6 +101,12 @@ c366893d08000000c30f1f8000000000
   <com>lo fu bfit</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu fwd1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fwd7</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="truncarg #1: a narrowed product keeps its 16-bit truncation" min="1" max="1">sink\(\(uint2\)\(a0 \* 3\)\);</stringmatch>
@@ -93,4 +119,6 @@ c366893d08000000c30f1f8000000000
 <stringmatch name="truncarg #8: a trimmed byte load printed as char keeps its zero-extension" min="1" max="1">sink\(\(uint1\)\*\(char \*\)\(a0 \+ 3\)\);</stringmatch>
 <stringmatch name="truncarg #9: an AND of unsigned byte loads gets no cast" min="1" max="1">sink\(\*\(uint1 \*\)\(a0 \+ 1\) &amp; \*\(uint1 \*\)\(a0 \+ 2\)\);</stringmatch>
 <stringmatch name="truncarg #10: a sum that provably fits its byte gets no cast" min="1" max="1">sink\(\(a0 != 2\) \+ '\\x06'\);</stringmatch>
+<stringmatch name="truncarg #11: a narrow parameter forwarded untouched keeps its promoted form" min="2" max="2">sinkf\(a0\);</stringmatch>
+<stringmatch name="truncarg #12: a byte nothing zero-extended gets no unsigned cast" min="0" max="0">sinkf\(\(uint1\)</stringmatch>
 </decompilertest>
