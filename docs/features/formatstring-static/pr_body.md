@@ -35,28 +35,31 @@ With this change the default prints `main(int a0,unsigned long *a1)` and
   pointer conversions on ARM32, RISC-V, MIPS, PowerPC and Windows AArch64,
   nothing on Apple AArch64 (which puts every vararg on the stack) or an
   unchecked processor. This binds `full` too.
-- The format string must sit in a read-only section.
+- The format string must sit in a read-only section, and a site whose call
+  instruction writes the format register itself (a delay slot) is declined.
 - Fixes in the existing typing: override parameter names no longer leak into
-  the caller, `%c` is a char, `%lc` is a `wint_t` rather than a `char`, `%Lf`
-  declines the site.
+  the caller, `%c` is a char, `%lc` is a `wint_t` rather than a `char`, `%lf`
+  is a `double` (and `double *` for scanf) rather than an `unsigned long`,
+  `%Lf` declines the site.
 
 ## The tests
 
-`tests/stages/kuna-formatstring-static.xml` has 14 passes: off, default and
-`full` on `fmt_x86_64`, then the same three on the new `fmtjoin_x86_64`
-fixture (the jump-table and `alloca` sites). Passes 7-14 require default ==
-off on the Apple arm64 `macho_imports_arm64`, on a new ARM hard-float
-`fmtabi_armhf` (`printf("x=%f\n",(double)x)`), and on a new `fmtedge_x86_64`
-(a format in `.data`, a `%lc`). The previous build fails 7 of those 8. Also a CLI probe and
-unit tests (including a `cmov` the fold must not resolve). Over 325 binaries
-(every coreutils build plus 31 others), off vs static: no format call gains or
-loses a vararg against its conversions (313 are fixed), and 8 functions change
-arity, all to what their callers pass.
-decbench `type_match` over 444 slices: 959 → 997 perfect, 176 better, 2 worse.
-Speed, `decompile-all` interleaved min-of-15 against `off`: `fmt` +1.2%, `ls` +0.7%, `sort` 0.0%.
+`tests/stages/kuna-formatstring-static.xml` has 20 passes: off, default and
+`full` on `fmt_x86_64` and on the new `fmtjoin_x86_64` (the jump-table and
+`alloca` sites). Passes 7-14 require default == off on the Apple arm64
+`macho_imports_arm64`, on a new ARM hard-float `fmtabi_armhf` and on a new
+`fmtedge_x86_64` (a format in `.data`, a `%lc`). Passes 15-20 pin `%lf` as a
+`double` on new `fmtlf_x86_64`/`fmtlf_armhf` fixtures. The previous build fails
+8 of those 9. Also a CLI probe and unit tests. Over 325 binaries (every
+coreutils build plus 31 others), off vs static: no format call gains or loses a
+vararg, or passes one in the wrong class (float vs integer), against its
+conversions (313 counts and 4 classes are fixed), and 8 functions change arity,
+all to what their callers pass. With `formatstring off` the output is
+byte-identical to main on 13 other binaries.
+decbench `type_match` over 444 slices: 987 → 1025 perfect, 176 better, 2 worse.
+Speed, `decompile-all` interleaved min-of-15 against `off`: SPEEDLINE.
 Evidence: `docs/features/formatstring-static/`.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 https://claude.ai/code/session_01YFCA715QE6ZBSnTn7bwabG
-

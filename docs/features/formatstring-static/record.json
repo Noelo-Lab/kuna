@@ -1,6 +1,6 @@
 {
   "opportunity": "A printf/scanf call states the types of its variadic arguments in its format string, but reading it cost a second decompile of every caller: Ghidra's FormatStringAnalyzer is DecompilerDependent, so the format pointer is only visible as an input varnode of a lifted CALL. decompile-all measured +77.5% (cronie crontab), +55.1% (gnutls psktool), +43.7% (gzip), which held the option to a per-run opt-in and out of the aggressive preset, even though the recovery was real (decbench C type_match perfects 80 -> 88 of 1,133). The constant is in the image, and so is the call site.",
-  "test_name": "tests/stages/kuna-formatstring-static.xml (15 assertions, 14 passes; passes 7-14 require default == off on macho_imports_arm64, fmtabi_armhf and fmtedge_x86_64; the first six: over fmt_x86_64 off = the bug, default = the fix, full = the same answer with no Listing; over fmtjoin_x86_64 off/default/full must agree on a format chosen on a jump table and on a call in an alloca frame, the two shapes the post-drive audit withdraws) + tests/cli/printf-varargs-render-untyped.json + 10 unit tests (C99 conversion matrix, length-modifier matrix, `*` widths, the long-double decline, the format-function predicate over 21 accepted / 12 refused names, the fold's arithmetic incl. PIECE at the low input's width and shifts of 64 or more, and a cmov destination the fold must not know)",
+  "test_name": "tests/stages/kuna-formatstring-static.xml (24 assertions, 20 passes; passes 7-14 require default == off on macho_imports_arm64, fmtabi_armhf and fmtedge_x86_64; passes 15-20 pin %lf as a double on fmtlf_x86_64 and default == off on fmtlf_armhf's printf sites; the first six: over fmt_x86_64 off = the bug, default = the fix, full = the same answer with no Listing; over fmtjoin_x86_64 off/default/full must agree on a format chosen on a jump table and on a call in an alloca frame, the two shapes the post-drive audit withdraws) + tests/cli/printf-varargs-render-untyped.json + 12 unit tests (%l on a floating conversion is a double, a delay-slot write to the format register, C99 conversion matrix, length-modifier matrix, `*` widths, the long-double decline, the format-function predicate over 21 accepted / 12 refused names, the fold's arithmetic incl. PIECE at the low input's width and shifts of 64 or more, and a cmov destination the fold must not know)",
   "binary": "decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64",
   "selector": "main",
   "func_addr": "0x401136",
@@ -256,37 +256,37 @@
       },
       "coreutils": {
         "n": 6422,
-        "perfect_off": 592,
-        "perfect_static": 600,
-        "mean_off": 0.2726,
-        "mean_static": 0.2742,
+        "perfect_off": 611,
+        "perfect_static": 619,
+        "mean_off": 0.2816,
+        "mean_static": 0.2832,
         "improved": 43,
         "worse": 2
       },
       "diffutils": {
         "n": 420,
-        "perfect_off": 51,
-        "perfect_static": 57,
-        "mean_off": 0.3907,
-        "mean_static": 0.4133,
+        "perfect_off": 52,
+        "perfect_static": 58,
+        "mean_off": 0.4004,
+        "mean_static": 0.423,
         "improved": 21,
         "worse": 0
       },
       "findutils": {
         "n": 790,
-        "perfect_off": 33,
-        "perfect_static": 34,
-        "mean_off": 0.1588,
-        "mean_static": 0.1657,
+        "perfect_off": 35,
+        "perfect_static": 36,
+        "mean_off": 0.1622,
+        "mean_static": 0.1691,
         "improved": 20,
         "worse": 0
       },
       "grep": {
         "n": 247,
-        "perfect_off": 37,
-        "perfect_static": 45,
-        "mean_off": 0.3689,
-        "mean_static": 0.3973,
+        "perfect_off": 39,
+        "perfect_static": 47,
+        "mean_off": 0.387,
+        "mean_static": 0.4153,
         "improved": 8,
         "worse": 0
       },
@@ -294,8 +294,8 @@
         "n": 368,
         "perfect_off": 88,
         "perfect_static": 90,
-        "mean_off": 0.4844,
-        "mean_static": 0.4899,
+        "mean_off": 0.4858,
+        "mean_static": 0.4912,
         "improved": 2,
         "worse": 0
       },
@@ -303,27 +303,27 @@
         "n": 686,
         "perfect_off": 29,
         "perfect_static": 30,
-        "mean_off": 0.2879,
-        "mean_static": 0.2934,
+        "mean_off": 0.2897,
+        "mean_static": 0.2952,
         "improved": 29,
         "worse": 0
       },
       "tar": {
         "n": 1548,
-        "perfect_off": 110,
-        "perfect_static": 119,
-        "mean_off": 0.2791,
-        "mean_static": 0.2878,
+        "perfect_off": 114,
+        "perfect_static": 123,
+        "mean_off": 0.2824,
+        "mean_static": 0.2911,
         "improved": 43,
         "worse": 0
       }
     },
     "pooled": {
       "n": 10748,
-      "perfect_off": 959,
-      "perfect_static": 997,
-      "aggregate_off": 3037.19,
-      "aggregate_static": 3094.46,
+      "perfect_off": 987,
+      "perfect_static": 1025,
+      "aggregate_off": 3112.68,
+      "aggregate_static": 3169.95,
       "moved_onto_perfect_by_off": 0,
       "moved_off_perfect_by_off": 38,
       "improved": 176,
@@ -345,20 +345,21 @@
         "static": 96674
       },
       "fp": {
-        "off": 20217,
-        "static": 20004
+        "off": 19769,
+        "static": 19556
       },
       "tp": {
-        "off": 17965,
-        "static": 18178
+        "off": 18415,
+        "static": 18628
       },
       "fn": {
-        "off": 27533,
-        "static": 27533
+        "off": 27531,
+        "static": 27531
       },
-      "reading": "static exports 23 fewer variables and none is lost (fn unchanged); 213 move from fp to tp"
+      "reading": "static exports 23 fewer variables and none is lost (fn unchanged); 213 move from fp to tp (round 4, d03560b2)"
     },
-    "round2_note": "re-measured on the round-2 build (audit + cmov fix): identical to the round-1 numbers, 997 vs 959 perfect and 3094.46 vs 3037.19 aggregate; the audit build before the cmov fix measured the same"
+    "round2_note": "re-measured on the round-2 build (audit + cmov fix): identical to the round-1 numbers, 997 vs 959 perfect and 3094.46 vs 3037.19 aggregate; the audit build before the cmov fix measured the same",
+    "round4_note": "re-measured on the round-4 build rebased onto d03560b2 (main gained boolbyte-on and truncarg, which lift both arms): static vs off +38 perfect, 176 better, 2 worse -- the same deltas and the same two tr make_printable_str rows as rounds 1-3"
   },
   "speed": {
     "method": "interleaved `kuna decompile-all` wall time (off / static / full in one round) on the round-2 build, box shared with other lanes' workspace suites; min-of-N plus the paired median of per-round deltas",
@@ -399,14 +400,14 @@
     "within_budget": true
   },
   "gates": {
-    "make test": "PARITY OK (675/675)",
-    "make test-stages": "PARITY OK (1148/1148; baseline re-recorded for this test's 7 assertions)",
-    "make test-cli": "186/186",
-    "make check-spec": "OK (lenient and --strict)",
-    "kuna catalog --check": "OK",
+    "make test": "675/675 assertions passed / PARITY OK",
+    "make test-stages": "1180/1180 assertions passed / PARITY OK (baseline re-recorded on d03560b2: +24, only this test's; none removed)",
+    "make test-cli": "186/186 passed",
+    "make check-spec": "OK (lenient) + OK (strict)",
+    "kuna catalog --check": "catalog OK",
     "counters --check": "no drift",
-    "docs/options.md": "byte-fresh",
-    "make rust-test": "RUST_TEST_RC=0 via the lane script (2026-09-18 19:07-19:25Z, after the last .rs change), ghidra_sim_faillog_pins ok. The round-1 fixes stand: the listing-consumer schedule test and the phase_catalog.json fixture were updated for the new values; the ghidra_sim faillog differential's CLI arm runs `formatstring off` (like-for-like with a host-driven session, which has no kuna-side load) and its diff ceiling is unchanged at 0.09"
+    "docs/options.md": "byte-fresh (cmp rc=0); phase_catalog.json recapture byte-identical",
+    "make rust-test": "RUST_TEST_RC=0 via the lane script, 2026-09-18 23:00:15-23:18:35Z, after the last .rs/fixture commit c9cde6dc (22:58:39Z); later commits are docs only. ghidra_sim_faillog_pins, l_on_a_floating_conversion_is_still_a_double and a_delay_slot_write_to_the_format_register_is_seen ok"
   },
   "files": [
     "decompiler/crates/kuna-analysis/src/analyzers/formatstring/kuna_fmtstatic.rs",
@@ -434,7 +435,7 @@
   "preset_decision": "`formatstring` leaves the AGGRESSIVE_OVERRIDES exclusion list. It was excluded for the second decompile's cost; `static` does not pay it, and it needs the Listing, which the preset supplies.",
   "notes": "Three defects were found and fixed while measuring, all of them pre-existing in the loop and all of them newly visible because the feature became the default: the override's positional parameter names leaked into the CALLER's locals (coreutils fmt rendered two different values as `error(0,*v2,\"%s: %s\",param3,param3)` with one of them undeclared); `%c` lowered to a plain byte rather than the char family, so a %c argument stopped printing as a character literal; and a `long double` conversion lowered to an 8-byte float, which is the wrong x86-64 SysV argument CLASS and grew two phantom parameters on coreutils numfmt simple_strtod_human. Review round 2 found two shapes where the load-time answer is wrong for the drive -- a jump-table join the Listing cannot see, and an alloca frame whose pushed return-address slot a closed prototype takes as one more argument -- and the fix is a post-drive audit (decompile_step.rs audit_parked_format_sites) that withdraws a contradicted override and drives once more. Running it over 129 binaries exposed a third, in the fold: a cmovcc destination was set unconditionally. The fold's PIECE is now concatenated at the low input's width, and shifts of 64 or more fold to zero.",
   "argcount": {
-    "what": "off vs static over decompile-all --json: every format call whose format the rendered C names, vararg count vs the format's conversion count; and every function's arity (docs/features/formatstring-static/argcount.py, output argcount.txt)",
+    "what": "off vs static over decompile-all --json: every format call whose format the rendered C names, vararg count vs the format's conversion count AND each vararg's class (floating or not) vs its conversion's; every %l-float site listed with its argument's class; every function's arity (docs/features/formatstring-static/argcount.py, output argcount.txt). Round 4: re-run on the tree rebased onto d03560b2, both arms from one build",
     "binaries": "every decbench coreutils binary at O0, O2 and O2-noinline (3 x 98) + dpkg dpkg-divert dpkg-statoverride dpkg-query kmod certtool ocsptool srptool psktool crond crontab(O2,O0) ip rtmon e2fsck diff3 sdiff cmp init bootlogd last setfacl chacl getfacl minigzip bzip2recover xmlwf update-passwd dash(O0) mirai adc-dac-printf.elf(ARM) = 325",
     "functions": 74707,
     "changed": 2849,
@@ -461,9 +462,24 @@
         "dir": 2,
         "vdir": 2
       },
-      "first_run": "before the cmov fix the O2 part of the sweep also withdrew 6 on the format (nohup, od, mkdir, ginstall, last x2), all x86 cmovcc windows the fold resolved to one of two strings; the fold now kills a write that follows a branch inside its instruction, and the rerun withdrew none on the format"
+      "first_run": "before the cmov fix the O2 part of the sweep also withdrew 6 on the format (nohup, od, mkdir, ginstall, last x2), all x86 cmovcc windows the fold resolved to one of two strings; the fold now kills a write that follows a branch inside its instruction, and the rerun withdrew none on the format",
+      "round4": "withdrew 130, all on the argument count (69+46+12+3 by arity), none on the format -- identical to round 2"
     },
-    "reviewer_sites": "the 51 phantom varargs round 2 reported (cp 15, mv 13, ginstall 13, ip 6, df 2, stat 2) are all withdrawn and render as under off"
+    "reviewer_sites": "the 51 phantom varargs round 2 reported (cp 15, mv 13, ginstall 13, ip 6, df 2, stat 2) are all withdrawn and render as under off",
+    "vararg_class_newly_wrong": 0,
+    "vararg_class_fixed": 4,
+    "vararg_class_mismatches": {
+      "off": 6,
+      "static": 2,
+      "reading": "the 4 fixed are uptime O2/O2-noinline %.2f load averages (unsigned long locals -> double); the 2 left are in both arms: uptime third %.2f keeps its format in callee-saved rbp across the previous call, which the fold conservatively clears, so that site is declined"
+    },
+    "class_coverage": "18,057 varargs checked under static, 90.5% with a known class (81 floating conversions)",
+    "lfloat_sites": {
+      "count": 1,
+      "sites": {
+        "O2 e2fsck 0x736b0 %16.4lf": "off: the call passes no argument; static: v9 / (float8)(uint8)(v2 - v1), the source eff = (double)((count * sizeof(struct bmap_rb_extent)) << 3) / (real_end - start)"
+      }
+    }
   },
   "round3": {
     "review": "CHANGES: the closed override moved varargs on targets that do not pass them like named arguments (Apple arm64, ARM32 hard-float, RISC-V); a format in writable memory was trusted; %lc narrowed to char; docs overstated aggressive-only.",
@@ -528,6 +544,36 @@
         "paired_median_static_vs_off_pct": -2.61,
         "static_vs_round2_pct": 2.1
       }
+    }
+  },
+  "round4": {
+    "review": "CHANGES (blocker): %lf/%le/%lg/%la typed unsigned long (printf) / long * (scanf) -- Ghidra longLengthModification falls through; on by default the double left xmm0, arguments shifted, phantom parameters appeared (x86-64, AArch64, ARM32); e2fsck O2 0x736b0 printed its bit counter. Minor: MIPS delay slots; stale record gates line; chfn byte split; inline comment in ghidra_sim_e2e.rs.",
+    "fix": {
+      "parser": "mod.rs long_length_modification: l + [aAeEfFgG] -> Spec::Double (C11 7.21.6.1p7), l + p -> VoidPtr; parse_input_types: l + floating -> new Spec::DoublePtr (double *); plain scanf %f stays void * as before",
+      "delay_slot": "kuna_fmtstatic.rs writes_before_transfer: the call instruction is lifted; a site (or gettext hop) whose call instruction writes the format storage before its CALL/BRANCH is declined (MIPS/SPARC delay slot). MIPS is inert today (non-PIC plt stubs not import-named; PIC calls through $t9)",
+      "comment": "ghidra_sim_e2e.rs inline block moved to the test function header"
+    },
+    "unit_tests": [
+      "l_on_a_floating_conversion_is_still_a_double (printf %lf %lF %le %lE %lg %lG %la %lA %10lf %16.4lf == [Double]; scanf == [DoublePtr]; %lp -> VoidPtr; scanf %f stays VoidPtr)",
+      "a_delay_slot_write_to_the_format_register_is_seen"
+    ],
+    "witnesses": {
+      "lf_O2 x86-64 (review ce/lf.c)": "default: show(double a0,int a1) / __printf_chk(1,\"value=%lf n=%d\\n\",a0,a1); show2(double a0,char *a1) / (a1,a0); rd returns double with double v1 -- was sub_11f0(unsigned long a0,unsigned long a1,unsigned long a2,int a3) / a0 & 0xffffffff",
+      "armlf O0/O2 hard-float": "printf %lf sites == off (declined by the ARM rule); sscanf %lf: O2 double v1 and no phantom trailing argument (off has &v1,0), O0 (double *)&v1",
+      "e2fsck O2 0x736b0": "%16.4lf gets v9 / (float8)(uint8)(v2 - v1) (the source eff); off passes nothing",
+      "chfn O2-noinline 0x8e70": "40 a0[0x40N] = 0 byte stores under static, 0 under off: the documented struct-first-field class (value unchanged), added to analysis.md"
+    },
+    "stage_test": "passes 15-20 load new fixtures fmtlf_x86_64 / fmtlf_armhf (one source): 24/24 on this build; the round-3 binary passes 16/24 and fails 8 of the 9 new assertions (#23 is off-only)",
+    "off_equals_main": "decompile-all --option formatstring off (this build) vs main d03560b2 default, byte-identical on 13/13: dash, scp, gpasswd, gnutls-cli-debug, mydoom.exe (PE32), example64, rsyslogd (1.6 MB C, reliable), mirai, ssh-add O0, chfn O2-ni, libedit.so, x0r-usb.exe, dumpcfg O2-ni",
+    "gates": {
+      "make test": "675/675 assertions passed / PARITY OK",
+      "make test-stages": "1180/1180 assertions passed / PARITY OK (baseline re-recorded on d03560b2: +24, only this test's; none removed)",
+      "make test-cli": "186/186 passed",
+      "make check-spec": "OK (lenient) + OK (strict)",
+      "kuna catalog --check": "catalog OK",
+      "counters --check": "no drift",
+      "docs/options.md": "byte-fresh (cmp rc=0); phase_catalog.json recapture byte-identical",
+      "make rust-test": "RUST_TEST_RC=0 via the lane script, 2026-09-18 23:00:15-23:18:35Z, after the last .rs/fixture commit c9cde6dc (22:58:39Z); later commits are docs only. ghidra_sim_faillog_pins, l_on_a_floating_conversion_is_still_a_double and a_delay_slot_write_to_the_format_register_is_seen ok"
     }
   }
 }
