@@ -1883,7 +1883,9 @@ mod tests {
         // and kuna-boolbyte / a byte whose every read is a truth test is a bool
         // and mulblob-wide-multiply-operands / a widened multiply operand is a
         // value, not a 16-byte aggregate
-        assert_eq!(count, 314, "corpus file count drifted");
+        // and kuna-structsynth-element-pair / a same-typed integer pair read
+        // through its element pointer is not a record
+        assert_eq!(count, 315, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

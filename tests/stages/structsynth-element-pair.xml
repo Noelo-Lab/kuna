@@ -1,0 +1,74 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structsynth: a pair of same-typed integers read through an integer
+    pointer is two elements, not a record.
+
+    Source shapes (hand-assembled, no prologue, so each parameter arrives in
+    RDI with nothing declaring its type):
+
+        void limbs(unsigned long *p) {       // coreutils factor's powm2 shape:
+            p[0] = p[0] + p[1];              // a double-limb uintmax_t *
+        }
+
+        48 8b 07        mov    rax,[rdi]
+        48 03 47 08     add    rax,[rdi+8]
+        48 89 07        mov    [rdi],rax
+        c3              ret
+
+        struct rec { long *next; long n; };
+        void record(struct rec *r) {         // offset 0 is a pointer: a record
+            r->n = *r->next + r->n;
+        }
+
+        48 8b 07        mov    rax,[rdi]
+        48 8b 00        mov    rax,[rax]
+        48 03 47 08     add    rax,[rdi+8]
+        48 89 47 08     mov    [rdi+8],rax
+        c3              ret
+
+    Type inference already gives `limbs` an `int8 *` parameter.  A structure
+    of two `int8` fields at 0 and 8 is the same bytes under a record name the
+    evidence cannot tell from an array, and on a stripped binary it turns the
+    correct element pointer into a name nothing can match.  Every access is
+    one width on the grid 0, 8, every field would be the same integer type,
+    and the parameter already points at an integer of that width, so the pass
+    keeps the element pointer.  `record` reads a pointer at offset 0, which is
+    heterogeneous evidence, and is still synthesized.
+
+    Pass 1 (`option structsynth off`) and pass 2 (`option structsynth param`)
+    both print `limbs` over its element pointer (asserts 1 and 2).  Pass 3
+    (`param`) synthesizes `record`, the only structure minted, so it is
+    `struct_0` (asserts 3 to 5).  Before the element-pair rule, pass 2 printed
+    `void limbs(struct_0 *a0)` over `struct struct_0 { int8 field_0x0; int8
+    field_0x8; }` and `record` became `struct_1`: asserts 1 to 4 fail there.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488b0748034708488907c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100010" readonly="true">
+488b07488b004803470848894708c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="limbs"/>
+<symbol space="ram" offset="0x100010" name="record"/>
+</binaryimage>
+<script>
+  <com>lo fu limbs</com>
+  <com>option structsynth off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structsynth param</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu record</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print C types</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTSYNTH-ELEMENT-PAIR #1: the integer pair keeps its element pointer with the option off and on" min="2" max="2">void limbs\(int8 \*a0\)</stringmatch>
+<stringmatch name="STRUCTSYNTH-ELEMENT-PAIR #2: both reads stay element reads" min="2" max="2">\*a0 = \*a0 \+ a0\[1\];</stringmatch>
+<stringmatch name="STRUCTSYNTH-ELEMENT-PAIR #3: the pointer-plus-integer pair is still a record, and the first one minted" min="1" max="1">void record\(struct_0 \*a0\)</stringmatch>
+<stringmatch name="STRUCTSYNTH-ELEMENT-PAIR #4: no structure of two integers is declared" min="0" max="0">int8 field_0x0;</stringmatch>
+<stringmatch name="STRUCTSYNTH-ELEMENT-PAIR #5: the record's offset 0 is the pointer it dereferences" min="1" max="1">int8 \*field_0x0;</stringmatch>
+</decompilertest>
