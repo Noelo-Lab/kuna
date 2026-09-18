@@ -101,7 +101,7 @@ impl<'a> FuncdataCastContext<'a> {
 
     /// Intern a `VarnodeId`, returning its opaque handle (stable for the life of
     /// this context).
-    fn vn_ref(&self, vn: VarnodeId) -> VnRef {
+    pub(crate) fn vn_ref(&self, vn: VarnodeId) -> VnRef {
         let mut tab = self.vn_intern.borrow_mut();
         // Linear scan: the per-op cast decision touches a handful of varnodes, so
         // the table stays tiny; this keeps the handle stable without a HashMap
@@ -114,7 +114,7 @@ impl<'a> FuncdataCastContext<'a> {
     }
 
     /// Intern an `OpId`, returning its opaque handle.
-    fn op_ref(&self, op: OpId) -> OpRef {
+    pub(crate) fn op_ref(&self, op: OpId) -> OpRef {
         let mut tab = self.op_intern.borrow_mut();
         if let Some(i) = tab.iter().position(|&k| k == op) {
             return OpRef(i);
@@ -348,7 +348,9 @@ pub(crate) fn get_input_cast(
             }
             let reqtype = input_type_local(data, op, slot);
             let curtype = data.vn_high_type_read_facing(invn, op);
-            strat.cast_standard(&reqtype, &curtype, false, true)
+            strat
+                .cast_standard(&reqtype, &curtype, false, true)
+                .or_else(|| crate::kuna_truncarg::narrowed_arg_cast(data, strat, op, slot))
         }
     }
 }
