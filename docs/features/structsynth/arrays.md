@@ -95,6 +95,14 @@ all 20 were on a real structure at the right offset and size (`stat`'s
 Counting parameters, the rule gives up 46 DWARF structure pointers to restore
 12 integer pointers, and the 12 are the only ones `type_match` can score.
 
+**TRex Fig. 6 prioritized score** (`scripts.decbench.structscore --trex`,
+factor/fmt/ls/sort/du/find at O0 and O2, 17,105 DWARF variables): pooled mean
+2.6604 -> 2.6597 (points lost 57,124 -> 57,136). `factor` goes up (O0 4.1726 ->
+4.1861, O2 1.7190 -> 1.7330) because a `uintmax_t *` now passes the struct
+step, and `ls`/`sort`/`du`/`find` go down by the same kind of step in the other
+direction (`stat *` read as `long *` fails it). `fmt` does not move. The
+two effects net out to -12 points over 17,105 variables.
+
 **False-positive census** (`fprate.py census`, fmt/ls/sort/du O0+O2): 292
 retyped parameters -> 274. Structure pointers 182 -> 172, `void *`/other
 pointer 71 -> 63, no DWARF type 39 -> 39, non-pointer 0 -> 0.

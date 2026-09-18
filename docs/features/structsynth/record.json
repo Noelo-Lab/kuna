@@ -801,6 +801,64 @@
    "typesweep": "959 -> 959 perfect, aggregate 3037.19 -> 3037.05 (-0.005%), 1 worse row (shred passname)",
    "bug_hunk": "none: the find O2 sub_f620 dangling goto that decided #655 is gone since #674; 0 dangling-goto functions in any arm over 16 binaries",
    "speed": "PENDING"
+  },
+  "trex_fig6": {
+   "instrument": "scripts.decbench.structscore --trex --option structsynth param, factor/fmt/ls/sort/du (coreutils) + find (findutils) at O0 and O2, 17105 GT variables",
+   "pooled_mean_main": 2.6604,
+   "pooled_mean_branch": 2.6597,
+   "points_lost_main": 57124,
+   "points_lost_branch": 57136,
+   "per_binary_mean_0_6": {
+    "factor O0": [
+     4.1726,
+     4.1861
+    ],
+    "fmt O0": [
+     4.0242,
+     4.0242
+    ],
+    "ls O0": [
+     3.6692,
+     3.6654
+    ],
+    "sort O0": [
+     3.704,
+     3.7
+    ],
+    "du O0": [
+     3.7782,
+     3.7755
+    ],
+    "find O0": [
+     3.2953,
+     3.2917
+    ],
+    "factor O2": [
+     1.719,
+     1.733
+    ],
+    "fmt O2": [
+     1.846,
+     1.846
+    ],
+    "ls O2": [
+     1.4956,
+     1.4931
+    ],
+    "sort O2": [
+     1.7092,
+     1.7092
+    ],
+    "du O2": [
+     1.7366,
+     1.7358
+    ],
+    "find O2": [
+     1.3279,
+     1.3268
+    ]
+   },
+   "reading": "factor gains the is_c_struct step on uintmax_t *; ls/sort/du/find lose it on stat */timespec */hash_entry * now read as an integer pointer; net -12 points over 17105 variables"
   }
  }
 }
