@@ -191,7 +191,10 @@ findutils, tar and shadow:
 | aggregate | 3037.19 | 3035.69 (−0.049%) |
 
 0 improved, 6 worse, 1 moved off perfect; controls clean (9,296 functions with
-byte-identical variables in both arms, 0 scored differently).
+byte-identical variables in both arms, 0 scored differently). Re-measured on the
+final tree (`e1139df9` + this branch, sign rule included) as `--option structsynth
+off` against the default: the same 958 / 959, 3035.69 / 3037.19 and the same
+seven rows.
 
 `typeclasses.py` over the `--dump-decisions` rows classes all 1,641 decisions the
 flip changes (1,449 functions):
