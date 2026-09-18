@@ -1,0 +1,84 @@
+{
+ "opportunity": "A narrow LOAD read through a pointer typed to a wider element printed as a cast of the wider element, `(short)a0[0x1a]` for `movzwl 0x68(%rdi),%edi`, which C sign-extends: compiled, the printed f hands sink 4294941372 where the binary hands it 39612.",
+ "test_name": "kuna-cli/tests/decompile_all_cli.rs a_zero_extended_narrow_load_round_trips_through_the_printed_c (fixture expandload_zext_x86_64, gcc -O2)",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/expandload_zext_x86_64",
+ "selector": "f",
+ "option": null,
+ "flag": null,
+ "change_kind": "strict correctness fix (no option: the old output computes a different value)",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "Ghidra RuleExpandLoad (ruleaction.cc); upstream accepts a TYPE_UNKNOWN output in the truncation form",
+ "default_on": true,
+ "root_cause": "RuleExpandLoad's truncation form accepted an output whose type was still undefined; the SUBPIECE it leaves prints as a cast to int of the loaded width (TypeOpSubpiece::getOutputToken), inventing a sign. Only TYPE_UNKNOWN is declined: declining every truncation moves kuna-tiedphitrim #13/#14 (stages 1139/1141).",
+ "round_trip": {
+  "main": "sink((short)a0[0x1a]); -> sink receives 4294941372; the test FAILS",
+  "branch": "sink(*(unsigned short *)&a0[0x1a]); -> 39612; the test passes"
+ },
+ "corpus_diff": {
+  "method": "decompile-all --json, main build vs branch, every changed function classified (docs/features/expandload/classify.py, corpus-diff.txt)",
+  "12_binaries": "functions=7773 changed=37 L1-respell=25 L3-casts=4 L4-temps=8 other=0",
+  "46_binaries": "functions=25038 changed=163 L1-respell=105 L3-casts=20 L4-temps=30 hand=8 (3 L3 across spellings, 3 load read at each use with no store between, 2 load printed in machine order before a store to a non-overlapping field); no other class",
+  "invariants_46": "variables[] identical beyond v-numbering/line maps 25038/25038; call args 209487==209487; arg rows 44995==44995; phantom 944==944; strings 26626==26626; calls lost 0; goto 0; return 0; decls +11 in 27 fns; body statements -3"
+ },
+ "typesweep": {
+  "slices": 444,
+  "functions": 10748,
+  "perfect_off": 959,
+  "perfect_on": 959,
+  "agg_off": 3037.19,
+  "agg_on": 3037.19,
+  "onto": 0,
+  "off": 0,
+  "improved": 0,
+  "worse": 0,
+  "control_identical_variables": 10748
+ },
+ "speed": {
+  "method": "interleaved main/branch pairs, whole-binary `decompile-all --json`, min-of-15 (main = this branch with the one ruleaction_8.rs line reverted); box shared with other lanes (load 11-40)",
+  "fmt -O2": {
+   "main_min_ms": 4469,
+   "pr_min_ms": 4580,
+   "main_median_ms": 4923,
+   "pr_median_ms": 5006,
+   "delta_min_pct": 2.5,
+   "delta_median_pct": 1.7
+  },
+  "ls -O2": {
+   "main_min_ms": 14462,
+   "pr_min_ms": 14527,
+   "main_median_ms": 17757,
+   "pr_median_ms": 16994,
+   "delta_min_pct": 0.4,
+   "delta_median_pct": -4.3
+  },
+  "kmod -O2": {
+   "main_min_ms": 7321,
+   "pr_min_ms": 7329,
+   "main_median_ms": 8288,
+   "pr_median_ms": 7846,
+   "delta_min_pct": 0.1,
+   "delta_median_pct": -5.3
+  },
+  "bzip2 -O0": {
+   "main_min_ms": 9923,
+   "pr_min_ms": 10068,
+   "main_median_ms": 10962,
+   "pr_median_ms": 10982,
+   "delta_min_pct": 1.5,
+   "delta_median_pct": 0.2
+  },
+  "find -O2-noinline": {
+   "main_min_ms": 12835,
+   "pr_min_ms": 12941,
+   "main_median_ms": 14545,
+   "pr_median_ms": 14649,
+   "delta_min_pct": 0.8,
+   "delta_median_pct": 0.7
+  },
+  "worst_delta_min_pct": 2.5,
+  "budget_pct": 5.0,
+  "within_budget": true
+ },
+ "parity": "OK"
+}
