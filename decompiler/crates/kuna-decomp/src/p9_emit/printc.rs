@@ -6327,7 +6327,7 @@ impl PrintC {
         // the `(int4)` cast.  Apply the same immutable cache consult the high
         // accessor would: see [`Funcdata::find_resolve_facing`].
         let inv = fd.vbank().get(invn)?;
-        let in_nz_mask = inv.get_nz_mask();
+        let in_nz_mask = crate::kuna_boolbyte::value_mask(fd, invn);
         let intype = inv.get_type_read_facing(op).clone();
         let intype = if intype.needs_resolution() {
             let slot = fd.obank().get(op).map(|o| o.get_slot(invn)).unwrap_or(-1);

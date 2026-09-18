@@ -58,6 +58,7 @@ use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
+use kuna_base::address::calc_mask;
 use kuna_base::space::spacetype;
 
 /// How many def-use hops the walk follows before giving up.  The same bound
@@ -449,6 +450,75 @@ pub fn truncation_form(
     } else {
         TruncationForm::CastThroughByte
     }
+}
+
+/// A sound non-zero mask for `vn` when the printer reads it.
+///
+/// `ActionNonzeroMask` refreshes the stored mask inside the main loop only, so a
+/// Varnode a later pass creates -- a CAST output, a block the return duplication
+/// cloned -- still carries the all-ones default at print time.  The def is
+/// re-derived over the few ops a truncated operand is built from, within a small
+/// node budget, and intersected with the stored mask, which stays sound for the
+/// same SSA value.
+pub fn value_mask(data: &Funcdata, vn: VarnodeId) -> u64 {
+    let mut budget = MASK_BUDGET;
+    value_mask_at(data, vn, &mut budget)
+}
+
+/// How many Varnodes [`value_mask`] visits before it settles for stored masks.
+const MASK_BUDGET: usize = 32;
+
+fn value_mask_at(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> u64 {
+    let v = match data.vbank().get(vn) {
+        Some(v) => v,
+        None => return u64::MAX,
+    };
+    let full = calc_mask(v.get_size());
+    if v.is_constant() {
+        return v.get_offset() & full;
+    }
+    let stored = v.get_nz_mask() & full;
+    if *budget == 0 {
+        return stored;
+    }
+    *budget -= 1;
+    let o = match v.get_def().and_then(|d| data.obank().get(d)) {
+        Some(o) => o,
+        None => return stored,
+    };
+    if o.is_bool_output() {
+        return stored & 1;
+    }
+    let mut input = |i: i32| match o.get_in(i) {
+        Some(x) => value_mask_at(data, x, budget),
+        None => full,
+    };
+    let shift = |i: i32| {
+        o.get_in(i)
+            .and_then(|x| data.vbank().get(x))
+            .filter(|x| x.is_constant() && x.get_offset() < 64)
+            .map(|x| x.get_offset() as u32)
+    };
+    let derived = match o.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ZEXT => input(0),
+        OpCode::CPUI_INT_AND => input(0) & input(1),
+        OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => input(0) | input(1),
+        OpCode::CPUI_INT_RIGHT => match shift(1) {
+            Some(sa) => input(0) >> sa,
+            None => full,
+        },
+        OpCode::CPUI_INT_LEFT => match shift(1) {
+            Some(sa) => input(0) << sa,
+            None => full,
+        },
+        OpCode::CPUI_SUBPIECE => match shift(1) {
+            Some(b) if b < 8 => input(0) >> (8 * b),
+            _ => full,
+        },
+        OpCode::CPUI_MULTIEQUAL => (0..o.num_input()).fold(0, |m, i| m | input(i)),
+        _ => full,
+    };
+    stored & derived
 }
 
 /// Is this Varnode's value *proven* to be 0 or 1 (rather than merely used as
