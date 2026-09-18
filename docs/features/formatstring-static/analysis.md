@@ -136,13 +136,22 @@ driven once more without it, which renders that call exactly as `off` does. The
 parked site carries the format's slot and address for this.
 
 Measured `off` against `static` over every coreutils binary at `O0`, `O2` and
-`O2-noinline` and 31 others (325 binaries, 74,707 functions), checking every
-format call whose format the rendered C names for its vararg count against the
-format's conversion count, and every function's arity (`argcount.py`, output in
+`O2-noinline` and 31 others (325 binaries, 74,707 functions; re-run on the tree
+rebased onto `d03560b2`, both arms from one build), checking every format call
+whose format the rendered C names for its vararg count against the format's
+conversion count and each vararg's class (floating or not) against its
+conversion's, and every function's arity (`argcount.py`, output in
 `argcount.txt`):
 
 - **0** calls newly render a different number of varargs than their format
   consumes; **313** that did under `off` now agree.
+- **0** varargs newly render in the wrong class; **4** that did under `off` now
+  agree (`uptime` `O2`/`O2-noinline`, `%.2f` load averages that were
+  `unsigned long` locals and are now `double`). Of the 18,057 varargs checked
+  under `static`, 90.5% have a known class (81 floating conversions). The 2 class mismatches left
+  under `static` are also under `off`: `uptime`'s third `%.2f` keeps its format
+  in callee-saved `rbp` across the previous call, which the fold conservatively
+  clears, so the site is declined.
 - **8** functions change arity, all toward what their callers pass: `ls`/`dir`/
   `vdir` `0xc590` 3 → 2 and `ip`/`rtmon` `rtnl_rtscope_n2a` and `rtnl_rtrealm_n2a`
   5 → 3 lose a phantom parameter, and `kmod` `0xd650` 5 → 6 gains the one its
@@ -235,6 +244,51 @@ argument. `%lc`/`%C` are now an `int`-sized unsigned value (what a `wint_t` is
 passed as), and `%ls`/`%S` a `wchar_t *`; `scanf` wraps both in a pointer as
 before.
 
+## `l` on a floating conversion
+
+Ghidra's `longLengthModification` answers `unsigned long` for every conversion
+it does not list, so `%lf`, `%le`, `%lg` and `%la` became integers, and the
+`scanf` forms `long *`. C11 7.21.6.1p7 says `l` has no effect on a floating
+`printf` conversion; in `scanf` it selects a `double` destination over a
+`float` one. On by default the old answer was not a mistyped argument but a
+moved one. `printf("value=%lf n=%d\n", d, n)` at x86-64 `-O2` rendered
+`show(unsigned long a0,unsigned long a1,unsigned long a2,int a3)` and printed
+`a0 & 0xffffffff`: the `double` in `xmm0` was replaced by an integer register
+read and the int shifted two slots, adding two phantom parameters. On ARM
+hard-float `unsigned long` fits in a pointer, so the ABI rule did not catch
+it either, and a `sscanf("%lf", &d)` local became `int v1[3]`. In the corpus,
+e2fsck `O2` `0x736b0` printed `%16.4lf` with the bit counter; it now prints
+`v9 / (float8)(uint8)(v2 - v1)`, which is the source's
+`eff = (double)((count * sizeof(struct bmap_rb_extent)) << 3) / (real_end - start)`
+(`40 << 3 == 0x140`).
+
+`%l` plus a floating conversion is now `double` for `printf` and a new
+`double *` for `scanf` (a plain `%f` there stays `void *`, as before). `%lp` is
+`%p`. The ARM rule then declines the `printf` sites, which render as under
+`off`, and still types the `scanf` pointer: the local is a `float8`, and off's
+phantom trailing argument goes. Passes 15-20 of the stage test pin both targets
+(`fmtlf_x86_64`, `fmtlf_armhf`); the round-3 build fails 8 of the 9 new
+assertions.
+
+`argcount.py` compared only counts, which is why its 325-binary check could not
+see this. It now also classes each vararg (floating or not, from the declared
+type, a cast, a literal, or an arithmetic expression whose known operands
+agree; an unknown class never counts) against its conversion, and lists every
+`%l`-float site with the class its argument received. Over the 325 binaries
+there is one such site, e2fsck `0x736b0` above: under `off` its call passes no
+argument at all, and under `static` it passes a floating one.
+
+## Delay slots
+
+The window walks backward from the call and never lifted the call instruction
+itself. A MIPS or SPARC call runs its delay slot before it transfers, so a
+format register set there (`jal printf` with `addiu a0,a0,%lo(fmt)` in the
+slot) would fold to the `%hi` half alone. The call instruction is now lifted
+too, and a site (or a `gettext` hop) whose call instruction writes the format
+register before it transfers is declined. MIPS is inert today regardless: a
+non-PIC `jal printf@plt` stub is not resolved to an import name, and PIC code
+calls through `$t9`, which leaves no Listing edge.
+
 ## A `%s` of a struct's first field
 
 A `%s` whose argument is the address of a structure's leading `char[]` field is
@@ -242,7 +296,9 @@ the structure's own address, so the `char *` the conversion asserts reaches the
 caller's structure pointer. Wider stores through that pointer then render as runs
 of byte stores: `ssh-keygen` O2 `0x52d30` renders `*(unsigned int *)(a1 + 0xd8)
 = 1;` as four byte stores, and `useradd` O0 `0x1ca0d` splits an 8-byte store
-into eight (+32 lines in that binary). The value stored is the same on a
+into eight (+32 lines in that binary), and `chfn` O2-noinline `0x8e70` zeroes
+a field with 40 `a0[0x40N] = '\0'` stores where `off` has none (`gpasswd` and
+`rsyslogd` are unchanged by it). The value stored is the same on a
 little-endian target, so this is a readability cost, not wrong output. It is the
 same thing any `char *` libc prototype does to a structure pointer passed as its
 first field (`strlen(&s->name)`), which makes it a type-propagation question

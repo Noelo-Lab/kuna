@@ -279,6 +279,9 @@ def main(d, a, b):
             for s in (sites(ca) if ca is not None else []):
                 for cls in s[5]:
                     per[f'lfloat_{a}_{cls}'] += 1
+            for arm, code in ((a, ca), (b, cb)):
+                if code is not None:
+                    per[f'class_mismatch_{arm}'] += len(class_mismatches(code))
             if ca is None or ca == cb:
                 continue
             per['changed'] += 1
