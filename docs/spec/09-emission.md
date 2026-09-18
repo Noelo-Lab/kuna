@@ -195,6 +195,33 @@ cast (`coreaction_casts.rs (test_struct_offset0)`). Only when all of that
 fails is a real `CPUI_CAST` op inserted before the reader, with an implied
 unique output carrying the required type.
 
+**Narrowed call arguments (kuna).** Dead-code analysis counts only the
+possibly-nonzero bits of a call input as consumed, so when a caller
+zero-extends a sub-`int` value into its argument register the subvariable-flow
+rules (chapter [03](03-ssa-and-simplification.md)) trim the input to the narrow
+value: `RDI = ZEXT(x:2)` becomes the 2-byte `x`. The p-code is right, but C
+promotes a sub-`int` argument expression to `int` before the call, so the
+default arm alone printed `sink(a0 * 3)` for a callee that reads the whole
+register, passing a value the binary never passed. The default arm therefore
+consults `decompiler/crates/kuna-decomp/src/p9_emit/kuna_truncarg.rs
+(narrowed_arg_cast)` whenever `cast_standard` asks for nothing. For a
+CALL/CALLIND input narrower than `sizeof(int)`, integer- or unknown-typed and
+not an enum, whose slot no declared prototype type-locks, it asks whether the
+argument's promoted C value is already the zero-extension of the p-code value:
+`int_promotion_type` answers for an expression, the declared type's natural
+extension for a variable, a load or a cast, and a ZEXT always is. When it is
+not, the argument is cast to the unsigned integer of its own width,
+`sink((uint2)(a0 * 3))`. Zero-extension is the right conversion for every
+trimmed input, since the bits the trim dropped were either known zero or never
+read by the callee. An argument that already prints as a truncating cast (a
+single-use SUBPIECE rendered `(char)v2`) is retyped to the unsigned type rather
+than given a second cast (`kuna_truncarg.rs (retype_truncation)`). A slot whose
+parameter type a declared prototype locks is left alone, because C converts the
+argument to that narrow type itself. Upstream Ghidra prints the promoted form.
+Where the callee's own definition also declares the narrow parameter the cast
+is redundant, though never wrong; the rule has no option because it only adds
+a conversion the binary performs. Pinned by `tests/stages/kuna-truncarg.xml`.
+
 **Casting an output.** `coreaction_casts.rs (Funcdata::cast_output)` compares
 the *token* type the operator naturally produces — `coreaction_casts.rs
 (get_output_token)`: COPY/PTRADD echo the input, arithmetic takes the
@@ -225,8 +252,9 @@ becomes COPY or INT_ADD) rather than print a field access into the wrong type.
 The upstream LOAD/STORE pointer diagnostics (`checkPointerIssues`) are
 warnings-only in C++, and in kuna the hook `coreaction_casts.rs
 (Funcdata::cast_check_pointer_issues)` is a faithful no-op — a missing
-diagnostic comment, never a changed expression. When the cast strategy loses,
-the failure is always cosmetic: a spurious `(int4)` token or a missing one —
+diagnostic comment, never a changed expression. Apart from the promotion case
+the narrowed-argument rule above closes, when the cast strategy loses the
+failure is cosmetic: a spurious `(int4)` token or a missing one —
 the computation is unchanged, and the upstream console knob
 `option nocastprinting` suppresses every cast token at print time without
 touching the inserted ops.
