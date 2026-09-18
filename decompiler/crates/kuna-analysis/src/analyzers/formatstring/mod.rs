@@ -22,7 +22,9 @@
 //! - integer specs `d`/`i` (signed int), `u`/`o`/`x`/`X` (unsigned int);
 //! - length modifiers `h`/`hh`/`l`/`ll`/`q`/`j`/`z`/`t`/`L` (short/char/long/
 //!   long-long/intmax/size_t/ptrdiff_t/long-double widths);
-//! - floats `f`/`F`/`e`/`E`/`g`/`G`/`a`/`A` → `double` (`L` → `long double`);
+//! - floats `f`/`F`/`e`/`E`/`g`/`G`/`a`/`A` → `double` (`L` → `long double`;
+//!   `l` changes nothing for printf and selects a `double *` for scanf, where
+//!   Ghidra falls through to `unsigned long`);
 //! - `c` → `char`; `s` → `char *`; `lc`/`C` → a `wint_t`-sized unsigned
 //!   value and `ls`/`S` → wide-char pointer (where Ghidra keeps `char`/`char *`
 //!   for `lc`/`ls` and a pointer for `C`, see [`Spec::WideCharValue`]);
@@ -160,6 +162,9 @@ pub enum Spec {
     Double,
     /// `long double` — `Lf`/`Le`/…
     LongDouble,
+    /// `double *` — scanf `lf`/`le`/`lg`/`la`, where the `l` selects a `double`
+    /// destination over a `float` one.
+    DoublePtr,
     /// `intmax_t` — `jd`/`ji` (typedef-backed; long long fallback).
     IntMaxT,
     /// `uintmax_t` — `jo`/`ju`/`jx`/`jX` (typedef-backed; unsigned long long fallback).
@@ -899,13 +904,22 @@ fn conversion_specifier_to_spec(conversion_specifier: &str) -> Option<Spec> {
     }
 }
 
-/// `longLengthModification` — `FormatStringParser.java:685`.
+/// `longLengthModification` — `FormatStringParser.java:685`. Ghidra falls
+/// through to `unsigned long` for every conversion it does not list, so `%lf`
+/// became an integer argument; C11 7.21.6.1p7 says `l` has no effect on a
+/// floating conversion, and glibc prints `%lp` as `%p`.
 fn long_length_modification(cs: &str) -> Spec {
     if is_integer_pointer(cs) {
         return Spec::LongPtr;
     }
     if cs == "s" || cs == "c" {
         return Spec::WideCharPtr;
+    }
+    if is_double(cs) {
+        return Spec::Double;
+    }
+    if is_void_pointer(cs) {
+        return Spec::VoidPtr;
     }
     if is_signed_integer(cs) {
         Spec::Long
@@ -1009,6 +1023,7 @@ fn spec_is_pointer(spec: Spec) -> bool {
             | Spec::IntMaxTPtr
             | Spec::SizeTPtr
             | Spec::PtrDiffTPtr
+            | Spec::DoublePtr
     )
 }
 
@@ -1045,8 +1060,9 @@ pub fn parse_output_types(fmt: &str) -> Vec<Spec> {
 /// Port of `convertToFormatArgumentList(fmt, false)` → `convertToInputDataTypes`
 /// (`FormatStringParser.java:576`): a `*` spec skips the *following* argument
 /// (assignment-suppression), and every non-pointer value type is wrapped in an
-/// extra pointer (scanf takes addresses). Returns an empty list on any
-/// undefined-behavior branch.
+/// extra pointer (scanf takes addresses). `%lf` and its siblings store a
+/// `double`, so they are [`Spec::DoublePtr`] rather than the wrapped value.
+/// Returns an empty list on any undefined-behavior branch.
 pub fn parse_input_types(fmt: &str) -> Vec<Spec> {
     let Some(args) = convert_to_format_argument_list(fmt, false) else {
         return Vec::new();
@@ -1061,6 +1077,11 @@ pub fn parse_input_types(fmt: &str) -> Vec<Spec> {
                 return Vec::new();
             }
             i += 2; // skip the suppressed argument
+            continue;
+        }
+        if arg.length_modifier.as_deref() == Some("l") && is_double(&arg.conversion_specifier) {
+            specs.push(Spec::DoublePtr);
+            i += 1;
             continue;
         }
         match convert_pair_to_spec(arg.length_modifier.as_deref(), &arg.conversion_specifier) {
@@ -1216,6 +1237,7 @@ pub fn spec_to_datatype(
             let (s, m) = integral_pointer(true);
             ptr_to_base(s, m)
         }
+        Spec::DoublePtr => ptr_to_base(8, type_metatype::TYPE_FLOAT),
     }
 }
 
@@ -1305,6 +1327,26 @@ mod tests {
         for spec in ["%f", "%F", "%e", "%E", "%g", "%G", "%a", "%A"] {
             assert_eq!(parse_output_types(spec), vec![Spec::Double], "spec {spec}");
         }
+    }
+
+    #[test]
+    fn l_on_a_floating_conversion_is_still_a_double() {
+        for spec in ["%lf", "%lF", "%le", "%lE", "%lg", "%lG", "%la", "%lA", "%10lf"] {
+            assert_eq!(parse_output_types(spec), vec![Spec::Double], "spec {spec}");
+            assert_eq!(parse_input_types(spec), vec![Spec::DoublePtr], "spec {spec}");
+        }
+        assert_eq!(parse_output_types("%16.4lf"), vec![Spec::Double]);
+        assert_eq!(
+            parse_output_types("value=%lf n=%d\n"),
+            vec![Spec::Double, Spec::Int]
+        );
+        assert_eq!(
+            parse_input_types("%d %ld %lf %7s"),
+            vec![Spec::IntPtr, Spec::LongPtr, Spec::DoublePtr, Spec::CharPtr]
+        );
+        assert_eq!(parse_input_types("%f"), vec![Spec::VoidPtr]);
+        assert_eq!(parse_output_types("%lp"), vec![Spec::VoidPtr]);
+        assert_eq!(parse_input_types("%lp"), vec![Spec::VoidPtr]);
     }
 
     #[test]
