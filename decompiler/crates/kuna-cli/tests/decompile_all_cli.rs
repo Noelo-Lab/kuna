@@ -3261,40 +3261,46 @@ fn functions_takes_jobs_with_an_assert_overlay() {
     assert_ne!(got, plain, "the `{overlay}` overlay changed nothing, so it pins nothing");
 }
 
-/// A zero-extended 16-bit field read through a pointer typed `unsigned int *`
-/// keeps its width and its zero extension.  `RuleExpandLoad` used to print it as
-/// `(short)a0[0x1a]`; compiled, that hands `sink` 4294941372 where the binary
-/// hands it 0x9abc.  The round trip compiles `f` exactly as printed.
+/// A synthesized field commits to a signedness only when every read of its width
+/// does.  `f` reads its 16-bit field into a signed comparison and, after a call,
+/// zero-extends it into `sink`'s 32-bit argument; a `short field_0xc` would make
+/// the printed call sign-extend, handing `sink` 4294941372 where the binary hands
+/// it 0x9abc.  The round trip compiles `f` with the definition `structdefs`
+/// prints above it.
 #[test]
-fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
+fn a_sign_contested_synthesized_field_round_trips_through_the_printed_c() {
     let bin = repo_root()
-        .join("decompiler/crates/kuna-analysis/tests/fixtures/expandload_zext_x86_64")
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/signfield_zext_x86_64")
         .to_str()
         .unwrap()
         .to_string();
     let sp = specs();
-    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--functions", "f", "--sleighpath", &sp]);
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all", &bin, "--functions", "f", "--option", "structdefs", "on", "--sleighpath", &sp,
+    ]);
     if !ok && is_specs_skip(&stderr) {
-        eprintln!("expandload round trip: skipping (no `.sla`; run `make specs`)");
+        eprintln!("signfield round trip: skipping (no `.sla`; run `make specs`)");
         return;
     }
     assert!(ok, "kuna decompile-all failed: {stderr}");
-    assert!(stdout.contains("sink(*(unsigned short *)&a0[0x1a]);"), "{stdout}");
+    assert!(stdout.contains("unsigned short field_0xc;"), "{stdout}");
+    assert!(stdout.contains("sink(a0->field_0xc);"), "{stdout}");
 
     if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
-        eprintln!("expandload round trip: no `cc`, spelling checked only");
+        eprintln!("signfield round trip: no `cc`, spelling checked only");
         return;
     }
-    let dir = std::env::temp_dir().join(format!("kuna-expandload-rt-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kuna-signfield-rt-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let src = dir.join("rt.c");
     let exe = dir.join("rt");
     std::fs::write(
         &src,
         format!(
-            "#include <stdio.h>\nstatic unsigned int got;\nvoid sink(unsigned int x) {{ got = x; }}\n{stdout}\n\
-             int main(void) {{\n  static unsigned int s[27];\n  s[0] = 1; s[1] = 2;\n  \
-             ((unsigned short *)s)[0x34] = 0x9abc;\n  void (*fp)() = (void (*)())f;\n  fp((void *)s);\n  \
+            "#include <stdio.h>\nstatic unsigned int got;\nvoid touch(void *s) {{ (void)s; }}\n\
+             void sink(unsigned int x) {{ got = x; }}\n{stdout}\n\
+             int main(void) {{\n  static unsigned long s[2];\n  s[0] = 1;\n  \
+             ((unsigned short *)s)[6] = 0x9abc;\n  int (*fp)() = (int (*)())f;\n  fp((void *)s);\n  \
              printf(\"%u\\n\", got);\n  return 0;\n}}\n"
         ),
     )
@@ -3308,4 +3314,65 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
     let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got, (0x9abcu32).to_string(), "the printed f hands sink a different value:\n{stdout}");
+}
+
+/// A zero-extended 16-bit field read through a pointer typed `unsigned int *`
+/// keeps its width and its zero extension.  `RuleExpandLoad` used to print it as
+/// `(short)a0[0x1a]`; compiled, that hands `sink` 4294941372 where the binary
+/// hands it 0x9abc.  The round trip compiles `f` exactly as printed, both with
+/// `structsynth off` (the raw pointer) and at the default, where the read goes
+/// through a synthesized `unsigned short field_0x68` whose definition
+/// `structdefs` prints above `f`.
+#[test]
+fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/expandload_zext_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let arms: [(&[&str], &str); 2] = [
+        (&["--option", "structsynth", "off"], "sink(*(unsigned short *)&a0[0x1a]);"),
+        (&["--option", "structdefs", "on"], "sink(a0->field_0x68);"),
+    ];
+    for (extra, call) in arms {
+        let mut args = vec!["decompile-all", bin.as_str(), "--functions", "f", "--sleighpath", sp.as_str()];
+        args.extend_from_slice(extra);
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("expandload round trip: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        assert!(stdout.contains(call), "{stdout}");
+
+        if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+            eprintln!("expandload round trip: no `cc`, spelling checked only");
+            continue;
+        }
+        let dir = std::env::temp_dir()
+            .join(format!("kuna-expandload-rt-{}-{}", std::process::id(), extra[1]));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("rt.c");
+        let exe = dir.join("rt");
+        std::fs::write(
+            &src,
+            format!(
+                "#include <stdio.h>\nstatic unsigned int got;\nvoid sink(unsigned int x) {{ got = x; }}\n{stdout}\n\
+                 int main(void) {{\n  static unsigned int s[27];\n  s[0] = 1; s[1] = 2;\n  \
+                 ((unsigned short *)s)[0x34] = 0x9abc;\n  void (*fp)() = (void (*)())f;\n  fp((void *)s);\n  \
+                 printf(\"%u\\n\", got);\n  return 0;\n}}\n"
+            ),
+        )
+        .unwrap();
+        let cc = Command::new("cc")
+            .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+            .output()
+            .expect("spawn cc");
+        assert!(cc.status.success(), "the printed f did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
+        let run = Command::new(&exe).output().expect("run the round trip");
+        let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(got, (0x9abcu32).to_string(), "the printed f hands sink a different value:\n{stdout}");
+    }
 }

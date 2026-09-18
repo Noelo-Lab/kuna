@@ -202,6 +202,9 @@ struct Slot {
     width: int4,
     /// The type the widest access carried, when one was readable.
     ctype: Option<Rc<Datatype>>,
+    /// Two accesses of that width disagree on whether the value is signed, so
+    /// the field commits to neither.
+    contested: bool,
 }
 
 /// Everything one candidate base accumulated.
@@ -219,11 +222,24 @@ struct Evidence {
 
 impl Evidence {
     /// Record one access.
+    ///
+    /// A field's type is the one every access of its width agrees on. When one
+    /// access carries a signed integer and another an unsigned or undefined one,
+    /// the field falls back to `undefined<N>`: a signed field would make the C
+    /// sign-extend a read the binary zero-extends (`movzwl` into a call argument
+    /// whose extension the call absorbed), which is the value the unsigned access
+    /// was printed to keep.
     fn record(&mut self, off: intb, width: int4, ctype: Option<Rc<Datatype>>) {
         let slot = self.slots.entry(off).or_default();
         if width > slot.width {
             slot.width = width;
             slot.ctype = ctype;
+            slot.contested = false;
+        } else if width == slot.width && disagree_on_sign(slot.ctype.as_deref(), ctype.as_deref()) {
+            slot.contested = true;
+        }
+        if slot.contested {
+            slot.ctype = None;
         }
     }
 
@@ -559,6 +575,18 @@ fn ledger_type(
         }
     }
     None
+}
+
+/// Do two scalar integer types of one width disagree on signedness?  Only a
+/// signed integer against an unsigned or undefined one counts; pointers, floats
+/// and an unreadable type are not evidence either way.
+fn disagree_on_sign(a: Option<&Datatype>, b: Option<&Datatype>) -> bool {
+    let (Some(a), Some(b)) = (a, b) else { return false };
+    let unsigned_scalar = |t: &Datatype| {
+        matches!(t.get_metatype(), type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)
+    };
+    let signed = |t: &Datatype| t.get_metatype() == type_metatype::TYPE_INT;
+    (signed(a) && unsigned_scalar(b)) || (unsigned_scalar(a) && signed(b))
 }
 
 /// Does this type's C spelling occupy exactly the bytes the decompiler thinks it

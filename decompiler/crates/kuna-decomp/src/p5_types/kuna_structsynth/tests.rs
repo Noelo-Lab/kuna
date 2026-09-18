@@ -308,3 +308,45 @@ fn the_size_is_rounded_up_to_the_widest_field() {
     assert_eq!(size, 0x18);
     assert_eq!(plan.last(), Some(&(0x15, 3, true)), "the tail is filler too: {plan:?}");
 }
+
+/// A field commits to a signedness only when every access of its width does.
+/// `find`'s `consider_visiting` reads `fts_info` (offset 0x68) into signed
+/// comparisons and, with `movzwl`, into a call whose extension the call
+/// absorbed; a `short` field would make that argument sign-extend.
+#[test]
+fn accesses_that_disagree_on_sign_leave_the_field_undefined() {
+    use crate::dtype::TypeFactoryImpl;
+    let f = TypeFactoryImpl::new();
+    f.set_default_alignment_map();
+    f.set_max_basetype_size(8);
+    let short = f.get_base(2, type_metatype::TYPE_INT).unwrap();
+    let ushort = f.get_base(2, type_metatype::TYPE_UINT).unwrap();
+    let undef2 = f.get_base(2, type_metatype::TYPE_UNKNOWN).unwrap();
+    let int4 = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+    let ptr = f.get_type_pointer(8, f.get_base(1, type_metatype::TYPE_INT).unwrap(), 1).unwrap();
+    let void_ptr = f.get_type_pointer(8, f.get_base(1, type_metatype::TYPE_UNKNOWN).unwrap(), 1).unwrap();
+
+    for (first, second) in [(&short, &undef2), (&undef2, &short), (&short, &ushort)] {
+        let mut e = Evidence::default();
+        e.record(0x68, 2, Some(Rc::clone(first)));
+        e.record(0x68, 2, Some(Rc::clone(second)));
+        e.record(0x68, 2, Some(Rc::clone(&short)));
+        assert!(e.slots[&0x68].ctype.is_none(), "a contested sign stays contested");
+    }
+
+    let mut agree = Evidence::default();
+    agree.record(8, 4, Some(Rc::clone(&int4)));
+    agree.record(8, 4, Some(Rc::clone(&int4)));
+    assert!(agree.slots[&8].ctype.is_some(), "agreeing accesses keep their type");
+
+    let mut pointers = Evidence::default();
+    pointers.record(0, 8, Some(Rc::clone(&ptr)));
+    pointers.record(0, 8, Some(Rc::clone(&void_ptr)));
+    assert!(pointers.slots[&0].ctype.is_some(), "pointer spellings are not sign evidence");
+
+    let mut widened = Evidence::default();
+    widened.record(0x68, 2, Some(Rc::clone(&short)));
+    widened.record(0x68, 2, Some(Rc::clone(&undef2)));
+    widened.record(0x68, 4, Some(Rc::clone(&int4)));
+    assert!(widened.slots[&0x68].ctype.is_some(), "a wider access starts a new contest");
+}

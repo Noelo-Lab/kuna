@@ -829,7 +829,16 @@ renders as
 by accident.
 A field takes the type of the value the access carried when the widths agree and
 the type's C spelling is its own width — a scalar or a pointer — and
-`undefined<N>` otherwise.
+`undefined<N>` otherwise. It commits to a signedness only when every access of
+its width does: one read carrying a signed integer and another an unsigned or
+undefined one leave the field `undefined<N>` (`Evidence::record`). The reason is
+an extension the text cannot show. `find`'s `consider_visiting` reads `fts_info`
+into signed comparisons and, with `movzwl`, into a call argument whose extension
+the call absorbed; typed `short`, the field made `sub_7510(a1->field_0x68)`
+sign-extend what the binary zero-extends, the value `RuleExpandLoad` keeps the
+unsigned spelling to preserve (chapter 03). An unsigned field is safe in both
+directions, since a sign-dependent operation is its own p-code op and prints its
+own cast.
 
 Names are program-wide `struct_N`, probed with `TypeFactory::find_by_name` and
 reused whenever the layout signature — `(offset, size, metatype, pointee name)`
@@ -875,8 +884,8 @@ and the pass would read `argv[0]`/`argv[1]` as a two-field structure; that pass
 pins the upstream form with `option structsynth off`, since an array of `char *`
 is not a record. Over a 14-binary, 5,610-function `decompile-all` sweep (x86-64
 coreutils, findutils, grep, gzip, bzip2, diffutils and tar at O0 and O2, and two
-ARM32 firmwares) 483 functions change. 345 of them are the same statements with
-each parameter access rewritten from its byte offset to a field; the other 138
+ARM32 firmwares) 483 functions change. 350 of them are the same statements with
+each parameter access rewritten from its byte offset to a field; the other 133
 were read by hand, and every one is a consequence of the pointee type rather than
 a change of meaning: an index rescaled to the structure's size or spelled past its
 end (`&a0[1].field_0x8`), an `undefined1` filler array decaying to its address,

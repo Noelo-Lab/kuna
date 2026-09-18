@@ -1,10 +1,12 @@
 # structsynth — the default flip (`off` → `param`)
 
 The user decided on 2026-09-18 that `structsynth` ships on. This file is the
-evidence the flip was measured against, on the tree rebased onto `d3617d64`
-(which carries #674, the fix for a `goto` whose label was never emitted). The
-earlier opt-in evaluation is `default_decision` in `record.json`; everything here
-supersedes it.
+evidence the flip was measured against. It was measured on `d3617d64` (which
+carries #674, the fix for a `goto` whose label was never emitted), then again
+after rebasing onto `e1139df9` (#677, which keeps a zero-extended narrow load
+unsigned); the second pass found one defect the flip would have reintroduced,
+fixed here (*A field's signedness*). The earlier opt-in evaluation is
+`default_decision` in `record.json`; everything here supersedes it.
 
 ## Corpora
 
@@ -41,10 +43,11 @@ are those four renames.
 14 stripped binaries, 5,610 functions: coreutils `fmt`/`ls`/`sort`/`du` (O2, plus
 `sort` and `du` at O0), findutils `find`, grep, gzip, bzip2, diffutils `diff`,
 tar (530 KiB, so `auto` runs it under `reliable`) at O2, and the ARM32
-firmwares `chibios` and `freertos` at O2. The off arm is a release build of
-`d3617d64`; the on arm is this branch at its defaults. As a control, this branch
-with `--option structsynth off` is byte-identical to the `d3617d64` build on all
-14.
+firmwares `chibios` and `freertos` at O2. The figures below are the final tree
+(`e1139df9` + this branch): the off arm is `--option structsynth off`, the on arm
+the default. On `d3617d64` the off arm of this branch was byte-identical to a
+release build of `d3617d64` on all 14, and after the rebase the off arm is again
+unmoved by the sign rule (it lives in the pass).
 
 | binary | functions | changed |
 |---|---:|---:|
@@ -69,22 +72,22 @@ with `--option structsynth off` is byte-identical to the `d3617d64` build on all
 `label_f752:` in both arms: the on arm still duplicates the `case 0x75` return
 block, and the one `goto label_f752;` left has its label.
 
-**345 of the 483 are verified mechanically** (`canon.py`): every access through
+**350 of the 483 are verified mechanically** (`canon.py`): every access through
 the retyped parameter is rewritten to its byte offset in both arms (`a0[k]`,
 `*a0`, `*(T *)&a0[k]`, `*((long)a0 + K)` against `a0->field_0xK`), casts are
 dropped and variable numbering collapsed, and the two function bodies are then
 equal line for line.
 
-**The other 138 were read by hand**, all of them; `flip-hunks.txt` tags each one.
+**The other 133 were read by hand**, all of them; `flip-hunks.txt` tags each one.
 Every one reads and writes the same bytes as the off arm. The classes, with a
 function counted once per class it shows:
 
 | class | functions | example |
 |---|---:|---|
-| a load folded into its use, or a temporary holding a sum or a comparison | 50 | tar `0x35aa0`: `v1 += a0->field_0x0; if (v1 + a1 <= ...)` for `if (v1 + *a0 + a1 <= ...)` |
+| a load folded into its use, or a temporary holding a sum or a comparison | 49 | tar `0x35aa0`: `v1 += a0->field_0x0; if (v1 + a1 <= ...)` for `if (v1 + *a0 + a1 <= ...)` |
 | an index rescaled to the structure's size, or spelled past its end | 41 | ls `0x175c0`: `&a0[2]` (8-byte elements) is `&a0[1]` (a 16-byte `struct_33`); chibios `&a0[8]` is `&a0[1].field_0x8` |
 | an `undefined1` filler array decaying to its address | 40 | du `0x5e80`: `getdelim(..., &a0[3], ...)` is `getdelim(..., a0->field_0x18, ...)`, `field_0x18` being `char[16]` |
-| a literal respelled for the field's type | 29 | `= 0` / `= NULL`, `0xfffffffa` / `-6`, `0x400000U` / `0x400000` |
+| a literal respelled for the field's type | 25 | `= 0` / `= NULL`, `0xfffffffa` / `-6`, `0x400000U` / `0x400000` |
 | constant byte stores merged into one store of the field | 10 | mbuiter: eight `a0[0x18..0x1f]` byte stores are `a0->field_0x18 = 1` |
 | a byte-mask test respelled on the wider field | 8 | fts: `*(uchar *)((long)a0 + 0x49) & 0x20` is `a0->field_0x48 & 0x2000` |
 | a local takes the structure type or the field's pointer type | 11 | sort O0 `0x8002`: a copy of the parameter reads `v->field_0x36` |
@@ -107,6 +110,43 @@ Two functions move a control-flow token (`skeleton.py`), both read in full:
   needs.
 
 No hunk falls outside these classes, so the sweep holds no BUG hunk.
+
+## A field's signedness (found after the rebase onto #677)
+
+#677 made `RuleExpandLoad` keep a zero-extended narrow load unsigned:
+`find` O2 `sub_7670` (`consider_visiting`), whose `movzwl 0x68(%rbp),%edi`
+feeds `sub_7510`'s 32-bit argument, now prints
+`sub_7510(*(unsigned short *)&a1[0xd])` where it used to print the sign-extending
+`(short)a1[0xd]`. With the flip, the same read went through the synthesized
+field, and the field had taken its type from another read at 0x68 — one the
+lattice types `short` because it feeds signed comparisons — so the call printed
+`sub_7510(a1->field_0x68)` over a `short field_0x68`. Against
+`char *sub_7510(unsigned int)` C sign-extends that, which is the value #677
+exists to stop printing: an `fts_info` of 0x9abc would arrive as 4294941372.
+It is the only such call in the sweep; the other 88 places where the off arm
+spells an unsigned narrow read and the on arm a field were read, and every
+field there is unsigned or the use is sign-blind (a mask, a store, a truth
+test).
+
+The pass now gives a field a signedness only when every access of its width
+agrees (`Evidence::record`); a signed read against an unsigned or undefined one
+leaves the field `undefined<N>`, which prints unsigned. The call is unchanged
+text and now correct C: `unsigned short field_0x68`, as the DWARF says
+(`unsigned short fts_info`). An unsigned field cannot make the opposite mistake,
+because a sign-dependent operation is its own p-code op and prints its own cast.
+Over the 14 binaries the rule respells 35 on-arm functions and nothing else: a
+cast appears where an unsigned field meets a signed compare
+(`(int8)a0->field_0x40 < a0->field_0x58`), literals follow the field
+(`'\x01'` → `1`, `-6` → `0xfffffffa`), a few locals change sign or number, and
+5 functions become mechanically verified.
+
+`tests/cli/structsynth-sign-contested-field-unsigned.json` and
+`a_sign_contested_synthesized_field_round_trips_through_the_printed_c` (on the
+new fixture `signfield_zext_x86_64`, a 16-bit field read into a signed compare
+and, after a call, zero-extended into `sink`) pin it: compiled with its
+`structdefs` definition, the printed `f` hands `sink` 0x9abc; before the rule it
+handed it 4294941372. #677's own round trip now runs both with `structsynth off`
+(the raw pointer) and at the default, through `unsigned short field_0x68`.
 
 ## Project export: offsets and compilation
 
