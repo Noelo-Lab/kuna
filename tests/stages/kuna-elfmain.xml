@@ -14,7 +14,10 @@
     Pass 1 (`elfmain off`) reproduces the defect: the program's own starting
     point is one more `sub_<addr>` in the inventory, declared with whatever
     reading its body alone produces - a guessed return width and one anonymous
-    slot, because this `main` reads `argc` but never `argv`.
+    slot, because this `main` reads `argc` but never `argv`. That pass also
+    turns `structsynth` off, so it keeps the upstream form it pins: with it on,
+    the untyped argument vector, read at [0] and [1], becomes a two-field
+    `struct_0 *` instead of an array of pointers.
 
     Pass 2 (the shipped default) applies the two things the C runtime's
     contract states about that address: the name `main`, and the declaration
@@ -43,6 +46,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/stripped_dynamic_x86_64</com>
   <com>option elfmain off</com>
+  <com>option structsynth off</com>
   <com>read symbols</com>
   <com>load function sub_1405</com>
   <com>decompile</com>

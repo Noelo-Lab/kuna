@@ -27,8 +27,11 @@
       0x401062  8b 4d f4 / 64 89 0d 00 00 00 00       mov ecx,[ebp-0xc] ; mov fs:[0],ecx
       0x40106c  89 ec / 5d / c3                       mov esp,ebp ; pop ebp ; ret
     Passes 3 and 4 decompile it off and on, and the two renders must agree: the
-    12-byte record stays one object and the PEB read stays an array element of
-    the base. Passes 5 and 6 do the same for MSVC's C++ EH prologue, whose
+    12-byte record stays one object and the PEB read goes through the base
+    without a TEB name. The base this pass leaves alone is not left raw by the
+    default `structsynth param`, which reads offsets 0 and 0x30 off it and
+    declares it a two-member `struct_0 *`, so the link is `v->field_0x0 = ...`
+    and the PEB read is `v->field_0x30` in both passes. Passes 5 and 6 do the same for MSVC's C++ EH prologue, whose
     record {Next, handler, state} is linked through a pointer taken after the
     /GS cookie push; typing the base there split the record into three unrelated
     scalars:
@@ -105,9 +108,9 @@
 <stringmatch name="PEBNAMES-X86 #3: FS:[0x18] is TEB.Self and chains on to the ProcessHeap (on pass only)" min="1" max="1">teb-&gt;Self-&gt;ProcessEnvironmentBlock-&gt;ProcessHeap \+ 0x40</stringmatch>
 <stringmatch name="PEBNAMES-X86 #4: the magic-offset read of BeingDebugged (off pass only)" min="1" max="1">!\*\(char \*\)\(\*\(int4 \*\)\(v[0-9]+ \+ 0x30\) \+ 2\)</stringmatch>
 <stringmatch name="PEBNAMES-X86 #5: the TEB pointer is declared for the reader and every near miss, never for the function that writes the base" min="5" max="5">TEB \*teb; // fs_offset</stringmatch>
-<stringmatch name="PEBNAMES-X86 #6: the function that links an SEH record keeps its PEB read untyped under on" min="2" max="2">\*\(char \*\)\(v[0-9]+\[0xc\] \+ 2\)</stringmatch>
+<stringmatch name="PEBNAMES-X86 #6: the function that links an SEH record keeps its PEB read untyped under on" min="2" max="2">\*\(char \*\)\(v[0-9]+-&gt;field_0x30 \+ 2\)</stringmatch>
 <stringmatch name="PEBNAMES-X86 #7: the SEH registration record stays one 12-byte object under on" min="2" max="2">char v[0-9]+ \[12\];</stringmatch>
-<stringmatch name="PEBNAMES-X86 #8: the record is linked and unlinked through the untyped base in both passes" min="4" max="4">\*v[0-9]+ = v[0-9]+;</stringmatch>
+<stringmatch name="PEBNAMES-X86 #8: the record is linked and unlinked through the base's first member, not a TEB name, in both passes" min="4" max="4">v[0-9]+-&gt;field_0x0 = v[0-9]+;</stringmatch>
 <stringmatch name="PEBNAMES-X86 #9: the register storage comment survives in every pass" min="10" max="10">; // fs_offset</stringmatch>
 <stringmatch name="PEBNAMES-X86 #10: fs:[0x1010] lies inside the Windows 11 WOW64 TEB32 and is offset-named, not a field of a phantom neighbour" min="1" max="1">\*\(unsigned int \*\)&amp;teb-&gt;field_0x1010;</stringmatch>
 <stringmatch name="PEBNAMES-X86 #11: a read past the largest TEB32 stays an integer addition" min="1" max="1">\*\(unsigned int \*\)\(\(int4\)teb \+ 0x1040\);</stringmatch>
