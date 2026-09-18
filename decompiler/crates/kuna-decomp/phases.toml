@@ -4216,7 +4216,7 @@ symptoms = "a local commented // gs_offset or // fs_offset is read through const
 [[settable]]
 option = "structsynth"
 values = "off|param"
-default = "off"
+default = "param"
 destructive = false
 phase = "P5"
 subphase = "aggregate-union"
