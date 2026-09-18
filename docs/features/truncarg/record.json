@@ -1,25 +1,37 @@
 {
  "opportunity": "A call argument narrower than int that the caller zero-extends (movzx edi,di; movzbl) is trimmed to its narrow value, and C's integer promotion then widens the printed argument again: `sink(a0 * 3)` passes the untruncated product where the binary passes zext16(a0 * 3), and `sink(*(char *)(a0 + 3))` sign-extends a byte the binary zero-extends. Upstream Ghidra 12.1 prints the same `sink(param_1 * 3)`.",
- "test_name": "tests/stages/kuna-truncarg.xml (10 assertions; #1-#4 and #8 fail on main, #10 fails with c_range disabled) + tests/stages/kuna-endptrbound.xml #5 (legitimate change) + docs/features/truncarg/roundtrip/roundtrip.sh (compile-and-run)",
+ "test_name": "tests/stages/kuna-truncarg.xml (12 assertions; #1-#4 and #8 fail on main, #10 fails with c_range disabled, #11/#12 (clang forwarders) fail when the cast ignores the trim evidence) + tests/stages/kuna-endptrbound.xml #5 (legitimate change) + docs/features/truncarg/roundtrip/roundtrip.sh (compile-and-run, gcc and clang, NEW_WRONG against a base kuna)",
  "binary": "tests/stages/kuna-truncarg.xml bytechunk (x86-64, hand-assembled)",
  "selector": "f",
  "func_addr": "0x1000",
  "option": null,
  "flag": null,
- "change_kind": "strict correctness fix (no option: it only adds the conversion the binary performs)",
+ "change_kind": "strict correctness fix (no option: it only restores the zero-extension the trim proved the binary performed)",
  "tier": "transform",
  "source_decompiler": "kuna",
  "inspiration": "Ghidra CastStrategyC::intPromotionType / localExtensionType (cast.cc), SubvariableFlow::tryCallPull (subflow.cc)",
  "default_on": true,
  "ablation_changed": 0,
  "parity": "OK",
- "root_cause": "ActionDeadCode counts only minimalmask(nzmask) of an unlocked call input as consumed, so RDI = ZEXT(x & 0xffff) consumes 0xffff; RuleSubvarAnd's SubvariableFlow then trims the call input to the 2-byte value through tryCallPull (nothing outside the mask is consumed). ActionSetCasts' default getInputCast compares the unlocked parameter's local type (undefined2) with the argument and asks for no cast, so a sub-int arithmetic argument prints bare and C promotes it. Found with an instrumented throwaway build printing the p-code after every changing rule/action (subvar_and is the step that replaces CALL sink,RDI:8 with CALL sink,DI:2). For a byte the trim leaves TYPE_UNKNOWN, a second cause: upstream's localExtensionType treats TYPE_UNKNOWN as zero-extending, but realtypes prints a one-byte unknown as `char`, which C sign-extends, so the promotion check and the printed C disagreed.",
- "fix": "p9_emit/kuna_truncarg.rs (narrowed_arg_cast), consulted by the default getInputCast arm when cast_standard asks for nothing: a CALL/CALLIND input narrower than sizeof(int), integer/unknown-typed and not an enum, whose slot no declared prototype type-locks, gets a cast to the unsigned integer of its width unless its promoted C value is already the zero-extension (int_promotion_type for an expression; the natural extension of the printed type for a variable, load or cast; a ZEXT always) or the expression's C value provably lies in [0, 2^(8*size)) (c_range over sign-clear constants, truth values and + * & | ^). The promotion check runs through FuncdataCastContext::with_unknown_byte_as, which reports a non-constant one-byte TYPE_UNKNOWN as int1 when ArchContext::unknown_byte_is_char (realtypes on, C output). An argument already printed as a truncating SUBPIECE cast, every read of which is a call argument, is retyped instead of double-cast (retype_truncation).",
+ "root_cause": "ActionDeadCode counts only minimalmask(nzmask) of an unlocked call input as consumed, so RDI = ZEXT(x & 0xffff) consumes 0xffff; RuleSubvarAnd's SubvariableFlow then trims the call input to the 2-byte value through tryCallPull (nothing outside the mask is consumed). ActionSetCasts' default getInputCast compares the unlocked parameter's local type (undefined2) with the argument and asks for no cast, so a sub-int arithmetic argument prints bare and C promotes it. Found with an instrumented throwaway build printing the p-code after every changing rule/action (subvar_and is the step that replaces CALL sink,RDI:8 with CALL sink,DI:2). For a byte the trim leaves TYPE_UNKNOWN, a second cause: upstream's localExtensionType treats TYPE_UNKNOWN as zero-extending, but realtypes prints a one-byte unknown as `char`, which C sign-extends, so the promotion check and the printed C disagreed. A narrow call input is not always such a trim: clang forwards a narrow parameter as the register it received (`mov %dil,acc8; jmp sinki`), where heritage gives the call a DIL:1 input from the start and no trim runs; nothing there says which extension the binary used.",
+ "fix": "Evidence (P3): SubvariableFlow::try_call_pull notes a call slot whose trim drops only known-zero bits (kuna_truncarg::drops_only_zero_bits: the wide input's nzmask lies inside the logical mask anchored at bit 0); when the rewrite commits, do_replacement records (slot, new size, input count) on the call's FuncCallSpecs (note_trimmed_arg), and a trim without that proof clears the slot. Cast (P9): p9_emit/kuna_truncarg.rs (narrowed_arg_cast), consulted by the default getInputCast arm when cast_standard asks for nothing and only when the output language promotes (LangCaps::integer_promotion: C yes, Rust no): a recorded CALL/CALLIND input still at the recorded size and input count, narrower than sizeof(int), integer/unknown-typed and not an enum, whose slot no declared prototype type-locks, gets a cast to the unsigned integer of its width unless its promoted C value is already the zero-extension (int_promotion_type for an expression; the natural extension of the printed type for a variable, load or cast; a ZEXT always) or its C value provably lies in [0, 2^(8*size)) (c_range over sign-clear constants, truth values, + * & | ^, and variables whose def keeps the sign bit clear). The promotion check runs through FuncdataCastContext::with_unknown_byte_as, which reports a non-constant one-byte TYPE_UNKNOWN as int1 when ArchContext::unknown_byte_is_char (realtypes on, C output). An argument already printed as a truncating SUBPIECE cast, every read of which is a call argument, is retyped instead of double-cast (retype_truncation).",
  "roundtrip": {
-  "method": "docs/features/truncarg/roundtrip/roundtrip.sh <kuna>: gcc -O2 rt.c (eight narrowed-argument callers, two of them byte loads), kuna decompile each, compile the C against a driver defining the callees as rt.c does, compare what the callees receive (23 word inputs spanning 0x7f..0x10000..0xffffffff, 256 byte values)",
-  "main": "MISMATCH on 299 of 650 values",
-  "fix": "MATCH (650 values)",
-  "battery": "25-caller x86-64 compile-and-run battery (sign extension, masks, bool, typed loads, varargs, constants, byte loads, indirect call): main 601 wrong values over 14 callers, fix 0"
+  "method": "docs/features/truncarg/roundtrip/roundtrip.sh <kuna> <base-kuna> with CC=gcc and CC=clang: $CC -O2 rt.c (eleven callers: eight narrowed-argument callers, two of them byte loads, and the clang forwarders r1/r6/r7), kuna decompile each, compile the C against a driver defining the callees as rt.c does, compare what the callees receive with the binary value by value (719 values), and against the base kuna (NEW_WRONG = fix wrong where base right)",
+  "gcc": {
+   "main_wrong": 309,
+   "fix_wrong": 0,
+   "new_wrong": 0,
+   "fixed": 309
+  },
+  "clang": {
+   "main_wrong": 309,
+   "fix_wrong": 10,
+   "new_wrong": 0,
+   "fixed": 299,
+   "note": "the 10 are r6 (unsigned char forwarded untouched; same bytes as r1), wrong on main too through its char parameter type"
+  },
+  "previous_version_clang_new_wrong": 20,
+  "battery": "24-caller x86-64 compile-and-run battery (.scratch ce.c: sign extension, masks, bool, typed loads, varargs, constants, byte loads, indirect call): gcc build main 601 wrong values, fix 0; clang build main 555, fix 0"
  },
  "corpus_diff": {
   "method": "kuna decompile-all --json, main e1139df9 (this branch with the hook disabled) vs fix, per-function code diff; every changed line must be an added unsigned narrow cast at a call argument (optionally replacing a signed narrow cast); any other text change or any non-code JSON field change is OTHER (classify_diff.py, breakdown.py, corpus-diff.txt)",
@@ -41,8 +53,8 @@
     "O2/openssh-portable/sftp-server"
    ],
    "functions": 12775,
-   "changed_functions": 902,
-   "new_casts": 2208,
+   "changed_functions": 900,
+   "new_casts": 2206,
    "existing_signed_truncation_retyped": 13,
    "other": 0
   },
@@ -64,19 +76,45 @@
     "O2/libopencm3 usart-stdio.elf (arm32)"
    ],
    "functions": 6540,
-   "changed_functions": 456,
-   "new_casts": 1328,
+   "changed_functions": 455,
+   "new_casts": 1327,
    "existing_signed_truncation_retyped": 6,
    "other": 0
   },
   "by_callee_own_parameter": {
-   "wider_than_argument_value_fixed": 1865,
-   "same_narrow_width_redundant": 770,
-   "beyond_callee_parameter_list": 479,
-   "callee_without_body": 330,
-   "indirect_call": 92
+   "A": {
+    "wider_than_argument_value_fixed": 1261,
+    "same_narrow_width_redundant": 389,
+    "beyond_callee_parameter_list": 245,
+    "callee_without_body": 248,
+    "indirect_call": 63
+   },
+   "B": {
+    "wider_than_argument_value_fixed": 601,
+    "same_narrow_width_redundant": 381,
+    "beyond_callee_parameter_list": 234,
+    "callee_without_body": 82,
+    "indirect_call": 29
+   },
+   "C": {
+    "wider_than_argument_value_fixed": 23,
+    "callee_without_body": 5
+   }
   },
-  "unknown_byte_share": "the unknown-byte view adds 878 of corpus B's casts (cleanflight 566, ip 146, mirai 103, nuttx 24, ls 22, chibios 15, mydoom 2); the fit rule removes 5 (ip)"
+  "unknown_byte_share": "the unknown-byte view adds 878 of corpus B's casts (cleanflight 566, ip 146, mirai 103, nuttx 24, ls 22, chibios 15, mydoom 2); the fit rule removes 5 (ip)",
+  "corpus_C_clang": {
+   "binaries": [
+    "nginx (clang -O2, stripped)",
+    "21 x86-64 objects from decbench bzip2/zlib/gzip/libedit/shadow sources (clang -O2 -c)"
+   ],
+   "functions": 1417,
+   "changed_functions": 14,
+   "new_casts": 28,
+   "existing_signed_truncation_retyped": 3,
+   "other": 0,
+   "spot_check": "each nginx cast checked against the disassembly has a movzbl/movzwl at the argument (ngx_inet_ntop's four octets, ngx_memn2cmp's lengths)"
+  },
+  "evidence_gate_effect": "on the gcc/MSVC corpora the evidence gate removes nothing (every cast there sits on a trimmed zero-extension); the explicit-variable fit rule removes 3 redundant casts (v24 = (x == 0x55) + 2 in diff, v2 & 0x3f + 8 in betaflight and cleanflight); on the clang corpus it removes one fitting cast in nginx. The clang forwarders and libedit's sub_b980((char)a0) keep main's output."
  },
  "speed": {
   "method": "kuna decompile-all <bin> --json, main e1139df9 (hook disabled) vs fix binaries, 15 interleaved pairs (order alternating), min and median wall ms; box carried a typesweep and a rust-test lane",
@@ -136,7 +174,16 @@
   "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
   "tests/stages/kuna-endptrbound.xml",
   "docs/features/truncarg/analysis.md",
-  "docs/features/truncarg/plan.md"
+  "docs/features/truncarg/plan.md",
+  "decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs",
+  "decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs",
+  "decompiler/crates/kuna-decomp/src/p9_emit/kuna_lang.rs",
+  "decompiler/crates/kuna-decomp/src/p9_emit/kuna_langrust.rs",
+  "decompiler/crates/kuna-decomp/src/p9_emit/kuna_lang/tests.rs",
+  "decompiler/crates/kuna-decomp/src/p9_emit/kuna_langrust/tests.rs",
+  "docs/spec/03-ssa-and-simplification.md",
+  "docs/features/truncarg/roundtrip/roundtrip.sh",
+  "docs/features/truncarg/roundtrip/rt.c"
  ],
- "notes": "Zero-extension is the right conversion for every narrowed input: the trim fires only when the dropped bits are known zero (non-aggressive tryCallPull consume test) or unread by the callee (RulePiecePathology), and the one sign-extension trim path (RuleSubvarSext aggressive_ext_trim) is off. A `char` is cast even on targets whose char is unsigned (arm32): C leaves char's signedness to the implementation, and the cast is right under either. The redundant casts are the price of deciding at the call site without the callee's prototype; a locked prototype suppresses the cast (stage assertion #7). Still open, named in 09-emission.md: the same trim at the promotion width (`sink64(a0 * 3)` with int a0, trimmed from RDI = ZEXT(EDI)) is converted by C with sign extension against an 8-byte callee; casting there would touch nearly every int argument on x86-64."
+ "notes": "The cast restores the zero-extension the trim removed: it fires only on a slot whose trim dropped known-zero bits. Inputs narrow for any other reason (a parameter clang forwards untouched, a sign-extension trimmed because the callee reads only the low bytes, a parameter recovered narrow) keep main's promoted form, which leaves clang's unsigned-char forwarder (r6) wrong exactly as on main: its bytes equal the signed one's. A `char` is cast even on targets whose char is unsigned (arm32): C leaves char's signedness to the implementation, and the cast is right under either. The redundant casts are the price of deciding at the call site without the callee's prototype; a locked prototype suppresses the cast (stage assertion #7). Still open, named in 09-emission.md: the same trim at the promotion width (`sink64(a0 * 3)` with int a0, trimmed from RDI = ZEXT(EDI)) is converted by C with sign extension against an 8-byte callee; casting there would touch nearly every int argument on x86-64."
 }
