@@ -1,0 +1,162 @@
+# structsynth default flip -- every changed function of the 14-binary decompile-all sweep
+#
+# 483 changed of 5,610. VERIFIED (345): canon.py rewrites every access through the retyped
+# parameter to its byte offset in both arms, drops casts and collapses v/a numbering, and the
+# bodies are then equal. READ (138): the residue, read by hand in both arms; the tags name what
+# the text difference is. Every READ function accesses the same bytes as the off arm.
+
+## VERIFIED (345)
+bzip2O2: 0x8700
+chibiosO2: 0x8000c38 0x8001538 0x80015a8 0x8002610 0x8002b9a
+diffO2: 0x6360 0x8b80 0x8d60 0x8ea0 0x9f90 0xb8a0 0xd0d0 0xd500 0xe180 0xf330 0x10320 0x11060 0x112b0 0x11450 0x114b0 0x11680 0x116f0 0x11740 0x117d0 0x11820 0x118e0 0x11a20 0x11ad0 0x11bc0 0x15500 0x15520 0x167a0
+duO0: 0x66b5 0x66f3 0x728a 0x7523 0xae02 0xaf35 0xc426 0xd9ea 0xda6c 0xdc51 0xdd43 0xde41 0xdee1 0xe08d 0xe4d6 0xe75f 0xe932 0xeb06 0x105e6 0x11d9d 0x15074 0x17854
+duO2: 0x5f20 0x5f40 0x6810 0x9170 0x97d0 0xb810 0xba60 0xbc00 0xbc60 0xbe30 0xbea0 0xbef0 0xbf80 0xbfd0 0xc090 0xc1d0 0xc280 0xc370 0xd850 0xe9f0 0x11a10 0x136b0
+findO2: 0x9890 0xa040 0xa3a0 0xae30 0xb590 0xbef0 0xc690 0xd0f0 0xea00 0xea30 0xeb20 0xeb40 0x11c90 0x14fb0 0x15430 0x156e0 0x15940 0x15e60 0x17780 0x177a0 0x18110 0x183c0 0x18870 0x1aa40 0x1ac90 0x1ae30 0x1ae90 0x1b060 0x1b0d0 0x1b120 0x1b1b0 0x1b200 0x1b2c0 0x1b400 0x1b4b0 0x1b5a0 0x1efb0 0x210e0 0x24290 0x242c0 0x257e0 0x27400
+fmtO2: 0x3000 0x6be0
+freertosO2: 0x170c 0x1724 0x1ac4 0x2038
+grepO2: 0xa710 0xabd0 0xba10 0xf890 0xfec0 0x10010 0x10800 0x14e90 0x169e0 0x17370 0x179d0 0x19a20 0x19c70 0x19e10 0x19e70 0x1a040 0x1a0b0 0x1a100 0x1a190 0x1a1e0 0x1a2a0 0x1a3e0 0x1a490 0x1a580 0x1b3b0 0x1df70 0x1df90 0x1eca0 0x1fbf0
+gzipO2: 0xa090 0x10c20
+lsO2: 0x6920 0x7880 0x7e10 0x82b0 0x8370 0x83d0 0x8430 0x8490 0x8880 0x88c0 0x8920 0x8980 0x8a00 0x8a70 0x8ae0 0x8bf0 0x8c60 0x8cd0 0x8d40 0x8dc0 0x9050 0x90a0 0x90f0 0x9150 0x91a0 0x9230 0x9490 0xa660 0xa710 0xa7f0 0xa8c0 0xa960 0xaa20 0xaaf0 0xabc0 0xae30 0xaf00 0xb220 0xb2d0 0xb550 0xb5f0 0xb6c0 0xb8c0 0xb990 0xbc10 0xc0e0 0xf930 0xf9c0 0xfa20 0x103b0 0x10600 0x107a0 0x10800 0x109d0 0x10a40 0x10a90 0x10b20 0x10b70 0x10c30 0x10d70 0x10e20 0x10f10 0x114c0 0x14ed0 0x18320
+sortO0: 0x6618 0x66d0 0x66f4 0x6898 0x9e2a 0x9f73 0xbde5 0xc4e8 0xfc0d 0x10896 0x10918 0x10afd 0x10bef 0x10ced 0x10d8d 0x10f39 0x11382 0x1160b 0x117de 0x119b2 0x12474 0x17d3e 0x1a0a0 0x1a24f 0x1a443
+sortO2: 0x7790 0x7dd0 0xa0b0 0xb1a0 0xb220 0xcd90 0xcfe0 0xd180 0xd1e0 0xd3b0 0xd420 0xd470 0xd500 0xd550 0xd610 0xd750 0xd800 0xd8f0 0xe010 0x12840 0x13e80 0x14080
+tarO2: 0xc670 0x12380 0x123a0 0x12b40 0x14450 0x1a9b0 0x1aca0 0x1bb40 0x1bf50 0x1dcd0 0x1de80 0x1e120 0x1ebb0 0x1f780 0x233e0 0x28840 0x29560 0x2a5b0 0x2a650 0x2a7c0 0x2a9d0 0x2ab20 0x2c0f0 0x2d480 0x2dca0 0x2e120 0x2e340 0x3a820 0x3a920 0x3ac00 0x3b0c0 0x3c620 0x3de60 0x3e230 0x3e2d0 0x3e5f0 0x40930 0x43480 0x43590 0x43730 0x43790 0x43960 0x439d0 0x43a20 0x43ab0 0x43b00 0x43bc0 0x43cf0 0x43da0 0x43e90 0x48e10 0x4d6b0 0x4d6e0 0x4e930 0x4fe80 0x50150 0x50640 0x50720 0x50950 0x51720 0x51970 0x51c00 0x539d0 0x53b50 0x53fc0 0x54290 0x54380 0x546c0 0x54990 0x54cc0 0x54db0 0x54f10 0x56230 0x56410 0x5d820 0x5ed60 0x5eda0
+
+## READ (138)
+fmtO2 0x5960: filler array decays to its address; load folded / temporary holds the expression
+lsO2 0x14df0: load folded / temporary holds the expression
+lsO2 0x16700: filler array decays to its address; load folded / temporary holds the expression
+lsO2 0x17540: filler array decays to its address; index rescaled / spelled past the end
+lsO2 0x175c0: filler array decays to its address; index rescaled / spelled past the end
+lsO2 0x7050: filler array decays to its address
+sortO0 0x1148d: index rescaled / spelled past the end; load folded / temporary holds the expression
+sortO0 0x14c28: filler array decays to its address; load folded / temporary holds the expression
+sortO0 0x16967: filler array decays to its address; index rescaled / spelled past the end
+sortO0 0x6a5e: literal respelled for the field type
+sortO0 0x8002: a local takes the structure type; load folded / temporary holds the expression
+sortO0 0xb911: filler array decays to its address; index rescaled / spelled past the end; literal respelled for the field type
+sortO0 0xc28e: load folded / temporary holds the expression
+sortO2 0x10210: filler array decays to its address; load folded / temporary holds the expression
+sortO2 0x11900: pointer field indexed; filler array decays to its address
+sortO2 0x13fa0: load folded / temporary holds the expression
+sortO2 0x7ef0: literal respelled for the field type; pointer field indexed
+sortO2 0x82d0: load folded / temporary holds the expression
+duO2 0x10130: filler array decays to its address; load folded / temporary holds the expression
+duO2 0x5e80: filler array decays to its address
+duO2 0x6080: literal respelled for the field type
+duO2 0x6b70: a local takes the field's pointer type (a narrow load respelled as a truncating cast)
+duO2 0xabe0: index rescaled / spelled past the end
+duO2 0xadd0: index rescaled / spelled past the end; literal respelled for the field type; load folded / temporary holds the expression; sub-field mask respelled on the wider field
+duO2 0xb550: literal respelled for the field type; sub-field mask respelled on the wider field
+duO2 0xd710: filler array decays to its address
+duO2 0xd9f0: filler array decays to its address; index rescaled / spelled past the end
+duO2 0xdb00: byte stores merged into one field store
+duO0 0x10c3a: byte stores merged into one field store
+duO0 0x10e7b: index rescaled / spelled past the end
+duO0 0x137a3: filler array decays to its address; load folded / temporary holds the expression
+duO0 0x18087: filler array decays to its address; index rescaled / spelled past the end
+duO0 0x65ca: filler array decays to its address
+duO0 0x6a45: literal respelled for the field type
+duO0 0xb89b: index rescaled / spelled past the end
+duO0 0xbd55: index rescaled / spelled past the end; load folded / temporary holds the expression
+duO0 0xc6a5: index rescaled / spelled past the end; load folded / temporary holds the expression
+duO0 0xe5e1: index rescaled / spelled past the end; load folded / temporary holds the expression
+findO2 0x15de0: filler array decays to its address; index rescaled / spelled past the end; load folded / temporary holds the expression
+findO2 0x176e0: filler array decays to its address
+findO2 0x19e00: index rescaled / spelled past the end
+findO2 0x19ff0: index rescaled / spelled past the end; literal respelled for the field type; load folded / temporary holds the expression; sub-field mask respelled on the wider field
+findO2 0x1a780: literal respelled for the field type; sub-field mask respelled on the wider field
+findO2 0x1c940: filler array decays to its address
+findO2 0x1cf60: byte stores merged into one field store
+findO2 0x1f590: literal respelled for the field type
+findO2 0x23450: filler array decays to its address; load folded / temporary holds the expression
+findO2 0x24230: load folded / temporary holds the expression
+findO2 0x27670: filler array decays to its address; index rescaled / spelled past the end
+findO2 0x7670: index rescaled / spelled past the end
+findO2 0xe630: literal respelled for the field type; pointer field indexed
+findO2 0xe7b0: load folded / temporary holds the expression; sub-field address spelled off the field
+findO2 0xf620: SKELETON: the structurer duplicates one more return block (case 0x75 inlines label_f752's two statements; the other goto keeps its label); load folded / temporary holds the expression
+grepO2 0x10290: pointer field indexed
+grepO2 0x15020: literal respelled for the field type; load folded / temporary holds the expression
+grepO2 0x16d40: a local takes the field's pointer type (a narrow load respelled as a truncating cast)
+grepO2 0x18de0: index rescaled / spelled past the end
+grepO2 0x18fd0: index rescaled / spelled past the end; literal respelled for the field type; load folded / temporary holds the expression; sub-field mask respelled on the wider field
+grepO2 0x19750: literal respelled for the field type; sub-field mask respelled on the wider field
+grepO2 0x1ab30: filler array decays to its address
+grepO2 0x1ac10: filler array decays to its address; index rescaled / spelled past the end
+grepO2 0x1ad50: byte stores merged into one field store
+grepO2 0x1b2d0: load folded / temporary holds the expression
+grepO2 0x1cc20: filler array decays to its address; load folded / temporary holds the expression
+grepO2 0x7110: filler array decays to its address; load folded / temporary holds the expression
+grepO2 0xab10: pointer field indexed
+grepO2 0xc100: load folded / temporary holds the expression
+gzipO2 0x10e50: a local takes the structure type; filler array decays to its address; index rescaled / spelled past the end
+tarO2 0x14c50: variables renumbered and merged around the field accesses
+tarO2 0x1c880: literal respelled for the field type
+tarO2 0x1c920: literal respelled for the field type
+tarO2 0x2e4c0: load folded / temporary holds the expression
+tarO2 0x2fb80: literal respelled for the field type
+tarO2 0x35440: literal respelled for the field type
+tarO2 0x35890: literal respelled for the field type
+tarO2 0x35aa0: load folded / temporary holds the expression
+tarO2 0x36e70: index rescaled / spelled past the end; load folded / temporary holds the expression; sub-field mask respelled on the wider field
+tarO2 0x3be20: pointer field indexed
+tarO2 0x40c90: a local takes the field's pointer type (a narrow load respelled as a truncating cast)
+tarO2 0x45440: filler array decays to its address; index rescaled / spelled past the end
+tarO2 0x454c0: byte stores merged into one field store
+tarO2 0x46d70: literal respelled for the field type
+tarO2 0x4c550: filler array decays to its address; load folded / temporary holds the expression
+tarO2 0x4d650: load folded / temporary holds the expression
+tarO2 0x4fda0: load folded / temporary holds the expression
+tarO2 0x510c0: literal respelled for the field type
+tarO2 0x517a0: literal respelled for the field type
+tarO2 0x51e60: load folded / temporary holds the expression
+tarO2 0x52670: literal respelled for the field type; load folded / temporary holds the expression
+tarO2 0x52de0: sub-field mask respelled on the wider field
+tarO2 0x532e0: byte stores merged into one field store; load folded / temporary holds the expression; sub-field address spelled off the field
+tarO2 0x551a0: load folded / temporary holds the expression
+tarO2 0x55740: filler array decays to its address; load folded / temporary holds the expression
+tarO2 0x56dd0: filler array decays to its address; index rescaled / spelled past the end
+tarO2 0x59300: load folded / temporary holds the expression
+tarO2 0x5dc90: literal respelled for the field type
+tarO2 0x5de40: literal respelled for the field type
+bzip2O2 0x62f0: filler array decays to its address
+bzip2O2 0x7810: filler array decays to its address; load folded / temporary holds the expression
+bzip2O2 0x7ff0: filler array decays to its address
+diffO2 0x10680: a local takes the field's pointer type (a narrow load respelled as a truncating cast)
+diffO2 0x12220: filler array decays to its address; index rescaled / spelled past the end
+diffO2 0x122a0: byte stores merged into one field store
+diffO2 0x14520: byte stores merged into one field store
+diffO2 0x17c90: byte stores merged into one field store
+diffO2 0x19ee0: filler array decays to its address; load folded / temporary holds the expression
+diffO2 0xb920: byte stores merged into one field store
+diffO2 0xb9e0: literal respelled for the field type
+diffO2 0xbbc0: index rescaled / spelled past the end
+chibiosO2 0x80009a8: index rescaled / spelled past the end
+chibiosO2 0x8001d88: load folded / temporary holds the expression
+chibiosO2 0x8001dbc: load folded / temporary holds the expression
+chibiosO2 0x8001ddc: load folded / temporary holds the expression
+chibiosO2 0x8001e0c: load folded / temporary holds the expression
+chibiosO2 0x8001f84: a local takes the structure type; literal respelled for the field type
+chibiosO2 0x8001fe8: a local takes the structure type; literal respelled for the field type
+chibiosO2 0x8002638: index rescaled / spelled past the end
+chibiosO2 0x8002670: index rescaled / spelled past the end
+chibiosO2 0x800269c: index rescaled / spelled past the end
+chibiosO2 0x8002718: index rescaled / spelled past the end
+chibiosO2 0x8002754: index rescaled / spelled past the end
+chibiosO2 0x80027cc: index rescaled / spelled past the end
+chibiosO2 0x800280c: index rescaled / spelled past the end
+chibiosO2 0x800287c: index rescaled / spelled past the end
+chibiosO2 0x8002cb0: index rescaled / spelled past the end
+chibiosO2 0x8002ce4: index rescaled / spelled past the end
+chibiosO2 0x8002d30: index rescaled / spelled past the end
+chibiosO2 0x8002e20: index rescaled / spelled past the end
+chibiosO2 0x8002f0c: filler array decays to its address
+chibiosO2 0x8002f80: filler array decays to its address
+chibiosO2 0x8003074: filler array decays to its address
+chibiosO2 0x800397c: SKELETON: a for becomes a while with the same init, test and step; a local takes the structure type; load folded / temporary holds the expression
+chibiosO2 0x8007ed8: a local takes the structure type; load folded / temporary holds the expression
+chibiosO2 0x80081d8: a local takes the structure type; load folded / temporary holds the expression
+freertosO2 0x118: filler array decays to its address
+freertosO2 0x18c8: sub-field address spelled off the field
+freertosO2 0x191c: load folded / temporary holds the expression
+freertosO2 0x1ed8: literal respelled for the field type
