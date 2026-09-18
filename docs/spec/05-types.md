@@ -726,7 +726,7 @@ Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
 binary keeps no record of the aggregate a pointer points at, so the lattice above
 gives a dereferenced parameter a pointee it can prove and stops there:
 `unsigned long *`, and every field read rendered as `*(unsigned int *)&a0[1]`.
-[`structsynth`](../options.md) (`off|param`, default `off`) invents the missing
+[`structsynth`](../options.md) (`off|param`, default `param`) invents the missing
 layout from the accesses themselves.
 
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
@@ -826,10 +826,35 @@ invented name: the printer spells the address as an element of the structure
 array plus a byte offset, so a pruned read at 0x10001 of a 16-byte layout
 renders as
 `*(uint4 *)((int8)&a0[0x1000].field_0x0 + 1)` — the right address, readable only
-by accident.
+by accident. An unaligned read that straddles the end can come out worse: the
+crazyflie `cf2` O2 reads at `0x8022c48` and `0x8022d08` are split into four byte
+reads of `a0[1]` and printed in piece syntax (`v3._0_1_ = a0[1].field_0x0`), which
+is the right value but not C.
 A field takes the type of the value the access carried when the widths agree and
 the type's C spelling is its own width — a scalar or a pointer — and
-`undefined<N>` otherwise.
+`undefined<N>` otherwise. It commits to a signedness only when every access of
+its width does: one read carrying a signed integer and another an unsigned or
+undefined one leave the field `undefined<N>` (`Evidence::record`). The reason is
+an extension the text cannot show. `find`'s `consider_visiting` reads `fts_info`
+into signed comparisons and, with `movzwl`, into a call argument whose extension
+the call absorbed; typed `short`, the field made `sub_7510(a1->field_0x68)`
+sign-extend what the binary zero-extends, the value `RuleExpandLoad` keeps the
+unsigned spelling to preserve (chapter 03). An unsigned field is safe in both
+directions, since a sign-dependent operation is its own p-code op and prints its
+own cast.
+A float beside anything else is a different disagreement: the bytes are a union
+member read two ways, and C has no scalar that reads them as both. Typed `long`
+(or `undefined8`), a field read by a `movsd` prints `(double)a0->field_0x8`, a
+value conversion of bits the binary reinterprets; typed `double`, the same field
+read by `cvtsi2sdq` prints `(double)(long)a0->field_0x8`, the conversion the other
+way. So a field whose accesses of its width carry a float and a non-float is raw
+bytes, `undefined1 field_0x<hex>[N]` like the filler of a gap, and every read of
+it casts the address: `*(double *)a0->field_0x8`, `(double)*(long *)a0->field_0x8`.
+The value classes of every access of the field's width are accumulated rather
+than compared pair by pair, so a sign contest that already cleared the type cannot
+hide a later float (`Slot::reinterpreted`). A narrower access is not the field's
+evidence and needs no rule: it already prints through an address cast
+(`*(float *)&a0->field_0x8`).
 
 Names are program-wide `struct_N`, probed with `TypeFactory::find_by_name` and
 reused whenever the layout signature — `(offset, size, metatype, pointee name)`
@@ -848,35 +873,65 @@ printed prototype never changes. The change is signalled by bumping the action's
 Because the ledger lives in the program's `TypeFactory`, `struct_N` is
 program-wide under `kuna decompile-all` and `kuna decompile-project`, which load
 once; `kuna decompile` spawns one engine per function, so there each function
-numbers from `struct_0` again.
+numbers from `struct_0` again, and so would each worker process of a `--jobs N`
+run. A sharded run cannot live with that: two workers could each mint a different
+`struct_0`, so one `decompile-all` document would use the name for two layouts and
+a `decompile-project` `.h`, which declares every type once, could not declare both.
+Every sharded run's workers therefore run with `structsynth off` and the run says
+so on stderr (`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`);
+`--jobs 1` synthesizes.
 
 The synthesized layout is printable rather than only inferable: the P9 option
 [`structdefs`](../options.md) prints the definition of every composite a
 function's C names reach, so `--option structdefs on --option structsynth param`
 puts `struct struct_0 { ... };` — filler members and all — above the function
 whose parameter this pass retyped, and carries the same text in the per-function
-`types` array of `decompile-all --json`. Neither option is on by default, so the
-pair changes nothing unless both are asked for.
+`types` array of `decompile-all --json`. `structdefs` is off by default, so the
+layouts of a default run live in the `decompile-project` header and nowhere in a
+function's own text.
 
-**The default is `off`, and it is off on evidence.** Flipping it to `param` and
-re-running the corpora moves **no** datatest assertion (675/675) and four stage
-assertions, each of them the intended rendering — `ELFMAIN #1`/`#2`, where the
-entry's untyped argument vector becomes `struct_0 *` and `a1[1]` becomes
-`a1->field_0x8`, and `PEBNAMES-X86 #6`/`#8`, where an untyped FS-segment base
-becomes `struct_0 *` and `v4[0xc]` becomes `v4->field_0x30`, the same byte
-offset rescaled. Speed is not the reason either: whole-binary `decompile-all`
-moves between −1.05% and +1.34% over six binaries, inside the movement of an
-inert control binary on the same run. Two things keep it opt-in. On
-`decbench`'s `type_match` over 444 slices the flip is worth −1 perfect function
-(959 → 958) and −0.049% of the aggregate, because the metric compares pointee
-spellings by name and a synthesized `struct_0 *` can never intersect a
-ground-truth `WORD *`. And the type lock changes which blocks the structurer
-duplicates: over a 15-binary, 5,431-function sweep, one more function
-(`findutils` `find` O2 `sub_f620`) lands on the emitter defect where a `goto`
-survives but its target label is never written — a defect already present in
-nine functions of the same corpus with the option off. A pass that reshapes
-block duplication stays opt-in until that is fixed, and for the same reason it
-is not a member of the `aggressive` preset.
+**The default is `param`.** Flipping it on moves **no** datatest assertion
+(675/675). In `tests/stages` it reaches four assertions of other features, each
+the intended rendering of a pointer input: `PEBNAMES-X86 #6`/`#8`, where the
+FS-segment base of an SEH-linking function that `pebnames` leaves untyped becomes
+a two-member `struct_0 *` (`v->field_0x0` for the registration link, `v->field_0x30`
+for the PEB pointer, the same byte offsets `v[0xc]` spelled before), and
+`ELFMAIN #1`/`#2`, where `elfmain off` leaves the entry's argument vector untyped
+and the pass would read `argv[0]`/`argv[1]` as a two-field structure; that pass
+pins the upstream form with `option structsynth off`, since an array of `char *`
+is not a record. Over a 14-binary, 5,610-function `decompile-all` sweep (x86-64
+coreutils, findutils, grep, gzip, bzip2, diffutils and tar at O0 and O2, and two
+ARM32 firmwares) 483 functions change. 350 of them are the same statements with
+each parameter access rewritten from its byte offset to a field; the other 133
+were read by hand, and every one is a consequence of the pointee type rather than
+a change of meaning: an index rescaled to the structure's size or spelled past its
+end (`&a0[1].field_0x8`), an `undefined1` filler array decaying to its address,
+constant byte stores merged into one store of the field's width, a load folded
+into its use or a sum held in a temporary, a local taking the pointer type of the
+field it was loaded from, a literal respelled for the field's signedness, and one
+return block the structurer now duplicates (`findutils` `find` O2 `sub_f620`, whose
+remaining `goto label_f752` keeps its label). No function in either arm has a
+`goto` whose label is missing, and the 311 structures of eight serial project
+exports compile with every `offsetof(struct_N, field_0xK)` equal to K.
+Whole-binary `decompile-all` time moves between −3.4% and +2.9% (interleaved
+min-of-15 over `fmt`, `ls` and `sort` at O2 and the 1.3 MB `bash` O2), against a
++5% budget.
+
+The cost is on decbench's `type_match`, and it is accepted: the metric compares
+pointee spellings by name, so a synthesized `struct_0 *` can never intersect a
+ground-truth `WORD *`, and over 444 slices the flip is worth −1 perfect function
+(959 → 958) and −0.05% of the aggregate. Every decision it moves off a match is
+a real false positive of one shape — a buffer of primitive elements the array
+rule does not recognise: `factor`'s GMP limb arrays (`__uintmax_t *`, read at
+offsets 0 and 8, two pointer-sized elements the uniform-run rule keeps as a
+record) and `shred`'s seven-byte `char *` name buffer (stores of 4, 2 and 1
+bytes). The other 1,295 decisions it touches were already misses: a
+`struct_N *` where the ground truth names the aggregate (`Hash_table *`,
+`stat *`, `fileinfo *`, …), which a metric that credits an anonymous structure
+against a named one would count. The pass is not a member of any `--mode` preset
+list: `reliable` is the shipped defaults, so it synthesizes; `aggressive` inherits
+the default rather than pinning `param` below a future `all`; `fast` changes
+discovery only.
 
 Type facts are *consumed* back into the graph by the typerecovery rules: the
 `oppool2` pool (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_5.rs

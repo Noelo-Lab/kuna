@@ -202,6 +202,51 @@ struct Slot {
     width: int4,
     /// The type the widest access carried, when one was readable.
     ctype: Option<Rc<Datatype>>,
+    /// What every access of that width said the bytes are.
+    seen: Kinds,
+}
+
+/// The value classes the accesses of one slot carried.
+#[derive(Default, Clone, Copy)]
+struct Kinds {
+    signed: bool,
+    /// Unsigned or undefined.
+    unsigned: bool,
+    float: bool,
+    /// A readable type that is none of the above (a pointer, a bool).
+    other: bool,
+}
+
+impl Kinds {
+    fn note(&mut self, t: &Datatype) {
+        match t.get_metatype() {
+            type_metatype::TYPE_INT => self.signed = true,
+            type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN => self.unsigned = true,
+            type_metatype::TYPE_FLOAT => self.float = true,
+            _ => self.other = true,
+        }
+    }
+}
+
+impl Slot {
+    /// The bytes are read both as a float and as something else: a union member.
+    fn reinterpreted(&self) -> bool {
+        self.seen.float && (self.seen.signed || self.seen.unsigned || self.seen.other)
+    }
+
+    /// The type the field commits to, or `None` when the accesses disagree. Sign
+    /// is contested only for an integer field: a pointer has no sign to get wrong.
+    fn committed(&self) -> Option<&Rc<Datatype>> {
+        let ct = self.ctype.as_ref()?;
+        let integer = matches!(
+            ct.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+        );
+        if self.reinterpreted() || (integer && self.seen.signed && self.seen.unsigned) {
+            return None;
+        }
+        Some(ct)
+    }
 }
 
 /// Everything one candidate base accumulated.
@@ -219,11 +264,28 @@ struct Evidence {
 
 impl Evidence {
     /// Record one access.
+    ///
+    /// A field's type is the one every access of its width agrees on. A signed
+    /// access beside an unsigned or undefined one leaves the field `undefined<N>`:
+    /// a signed field would make the C sign-extend a read the binary zero-extends
+    /// (`movzwl` into a call argument whose extension the call absorbed). A float
+    /// beside anything else makes the field raw bytes, `undefined1[N]`: C has no
+    /// scalar that reads the same bits as both, and a `long` or `undefined8`
+    /// field read as `double` prints `(double)p->field_0x8`, a value conversion of
+    /// bits the binary reinterprets (`movsd 0x8(%rdi)`), where a byte array makes
+    /// every access cast the address instead.
     fn record(&mut self, off: intb, width: int4, ctype: Option<Rc<Datatype>>) {
         let slot = self.slots.entry(off).or_default();
+        if width < slot.width {
+            return;
+        }
         if width > slot.width {
             slot.width = width;
-            slot.ctype = ctype;
+            slot.seen = Kinds::default();
+            slot.ctype = ctype.clone();
+        }
+        if let Some(t) = ctype.as_deref() {
+            slot.seen.note(t);
         }
     }
 
@@ -608,7 +670,7 @@ fn fields_for(
             // the instruments tell filler from a field the pass actually claims.
             types.get_type_array(*width, Rc::clone(&byte)).ok()?
         } else {
-            match ev.slots.get(&(*off as intb)).and_then(|s| s.ctype.as_ref()) {
+            match ev.slots.get(&(*off as intb)).and_then(Slot::committed) {
                 // A value type wider or narrower than the access is not this
                 // offset's field; fall back to the honest unknown of the access
                 // width, which prints `undefined<N>`.
@@ -643,7 +705,7 @@ fn layout_plan(slots: &BTreeMap<intb, Slot>) -> Option<(Vec<(int4, int4, bool)>,
         if off > next {
             plan.push((next, off - next, true));
         }
-        plan.push((off, slot.width, false));
+        plan.push((off, slot.width, slot.reinterpreted()));
         align = align.max(slot.width);
         next = off.checked_add(slot.width)?;
     }

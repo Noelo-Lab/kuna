@@ -1020,7 +1020,15 @@ process's database, so they follow the SET of functions that process decompiled,
 and sharding changes that set. Measured at 2 records in 32,777 on an 18 MB PE,
 both a two-byte string constant rendering as `"BM"` rather than the UTF-16
 `"䵂"`; narrowing a serial run to one of those functions flips it the same way,
-so the dependence is the engine's and not the pool's. The parent resolves the concrete
+so the dependence is the engine's and not the pool's. The synthesized structures
+of `structsynth` are the same kind of state at a larger scale: each process would
+number its own `struct_N`, so under a pool one name could mean two layouts in
+functions two workers decompiled, in one `decompile-all` document or in the one
+`.h` a `decompile-project` declares every type in. So every sharded run passes its
+workers `--option structsynth off` and says so on stderr
+(`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`); its output is
+then the one a serial `structsynth off` run renders, and `--jobs 1` is how to get
+the structures. The parent resolves the concrete
 `--mode`, every `--option` and the watchdog budget once and passes them to every
 worker, so a shard cannot resolve a different policy just because the run was
 sharded. `--assert` and `--raw-image` are refused with a pool: assertion outcomes

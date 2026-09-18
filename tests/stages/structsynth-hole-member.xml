@@ -28,7 +28,7 @@
     `undefined1 _pad<hex>[N]`, which the body would have named but the exported
     header would not have declared.
 
-    Default (assert #1): the address is raw pointer arithmetic.
+    With `option structsynth off` (assert #1): the address is raw pointer arithmetic.
 
     With `option structsynth param` (asserts 2 to 5): the parameter is retyped,
     the body names offset 8, the layout declares a member there, and the
@@ -50,7 +50,7 @@
   <com>print C types</com>
   <com>quit</com>
 </script>
-<stringmatch name="STRUCTSYNTH-HOLE #1: default leaves the address as raw pointer arithmetic" min="1" max="1">&amp;a0\[1\]</stringmatch>
+<stringmatch name="STRUCTSYNTH-HOLE #1: off leaves the address as raw pointer arithmetic" min="1" max="1">&amp;a0\[1\]</stringmatch>
 <stringmatch name="STRUCTSYNTH-HOLE #2: the parameter is retyped to the synthesized structure" min="1" max="1">struct_0 \*a0</stringmatch>
 <stringmatch name="STRUCTSYNTH-HOLE #3: the body names the undereferenced offset" min="1" max="1">a0-&gt;field_0x8</stringmatch>
 <stringmatch name="STRUCTSYNTH-HOLE #4: and the layout declares a member there" min="1" max="1">field_0x8\[16\]</stringmatch>

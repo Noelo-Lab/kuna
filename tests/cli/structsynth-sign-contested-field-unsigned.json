@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--functions",
+    "f",
+    "--option",
+    "structdefs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/signfield_zext_x86_64",
+    "binary_sha256": "ef09d82bc6923b77b0606de0229bab665d971b9eec5ffff6af386aa7a80c442a",
+    "binary_size": 16128,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/signfield_zext_x86_64",
+    "selector": "f",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned short field_0xc;",
+      "sink\\(a0->field_0xc\\);"
+    ],
+    "stdout_absent": [
+      "\\n\\s+short field_0xc;"
+    ]
+  },
+  "notes": "f reads one 16-bit field into a signed comparison and, after a call, zero-extends it into sink's 32-bit argument. A synthesized field takes a signedness only when every read of its width agrees, so it is unsigned short and the call zero-extends as the binary does; a short field made it hand sink 4294941372."
+}

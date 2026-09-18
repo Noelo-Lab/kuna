@@ -25,7 +25,9 @@
 //! function cannot idle the pool) and deliberately NOT in output order, but it
 //! is merged back **positionally**: every target owns a slot index and its
 //! result is written to that slot, so the emitted document is byte-identical to
-//! `--jobs 1` regardless of completion order.  The parent resolves the
+//! a `--jobs 1 --option structsynth off` run regardless of completion order.
+//! Workers run with `structsynth off` because each process would number its own
+//! `struct_N` ([`structsynth_shard_note`]).  The parent resolves the
 //! per-function watchdog budget, the concrete `--mode` and every `--option` ONCE
 //! and passes them explicitly, so a worker cannot resolve a different policy
 //! just because the run was sharded.  The one thing that can still differ is the
@@ -871,6 +873,9 @@ fn run_pool_with(
             .map_err(|e| format!("cannot write the worker inventory {}: {e}", path.display()))?;
     }
     eprintln!("{}", report.banner);
+    if let Some(note) = structsynth_shard_note(cfg, report.tag) {
+        eprintln!("{note}");
+    }
 
     let pool = Pool {
         cfg,
@@ -1338,6 +1343,8 @@ impl Worker {
         if !cfg.full_load {
             cmd.arg("--option").arg("fast_funcdisc").arg("off");
         }
+        // See [`structsynth_shard_note`].
+        cmd.arg("--option").arg("structsynth").arg("off");
         // Same reasoning one flag further in: the parent's own load ran the
         // discovery walk on N decode lanes and is handing the inventory over, so
         // a worker must not run N more of them. Forced rather than merely left
@@ -1553,6 +1560,25 @@ pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
         }
     }
     out
+}
+
+/// Why a sharded run gives its workers `structsynth off`, or `None` when the run
+/// had turned it off anyway.
+///
+/// A synthesized `struct_N` is named by the process that minted it, so two
+/// workers can each define a different `struct_0`: one document would use a name
+/// for two layouts, and one `.h` cannot declare both. A sharded run is therefore
+/// the `structsynth off` one; `--jobs 1` synthesizes.
+fn structsynth_shard_note(cfg: &PoolConfig, tag: &str) -> Option<String> {
+    let explicit = cfg.options.iter().rev().find(|(name, _)| name == "structsynth");
+    if explicit.is_some_and(|(_, value)| value == "off") {
+        return None;
+    }
+    Some(format!(
+        "[kuna {tag}] note: structsynth is off in the worker processes: each process would \
+         number its own struct_N, so one name could stand for two layouts. Re-run with \
+         --jobs 1 for synthesized structures."
+    ))
 }
 
 /// Every `error` record the POOL itself produced, as opposed to one the engine
@@ -2829,6 +2855,22 @@ mod tests {
             target: None,
             sleighpath: None,
         }
+    }
+
+    /// Every sharded run says why it has no `struct_N`, a project export or not,
+    /// and stays quiet where the run had turned synthesis off itself.
+    #[test]
+    fn structsynth_shard_note_for_every_run_that_would_synthesize() {
+        let note = structsynth_shard_note(&cfg(0, 0.0), JOBS_TAG).expect("default param");
+        assert!(note.starts_with("[kuna --jobs] note: structsynth is off"), "{note}");
+        let project = PoolConfig { want_types: true, ..cfg(0, 0.0) };
+        assert!(structsynth_shard_note(&project, STREAM_TAG).is_some());
+        let off = [("structsynth".to_string(), "off".to_string())];
+        let turned_off = PoolConfig { options: &off, ..cfg(0, 0.0) };
+        assert!(structsynth_shard_note(&turned_off, JOBS_TAG).is_none());
+        let param = [("structsynth".to_string(), "param".to_string())];
+        let asked = PoolConfig { options: &param, ..cfg(0, 0.0) };
+        assert!(structsynth_shard_note(&asked, JOBS_TAG).is_some());
     }
 
     /// The pool is the only thing that can enforce the per-function budget on a

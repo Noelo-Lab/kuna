@@ -3064,9 +3064,11 @@ fn usage_decompile_all() {
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
          in-process path). Output is merged in target order, so it is identical to\n\
-         --jobs 1; progress goes to stderr. Every worker loads the binary itself,\n\
-         so peak memory is roughly N times one worker's RSS. --jobs-chunk N sets\n\
-         the functions per worker invocation (bigger = less load overhead, more\n\
+         --jobs 1 with --option structsynth off: workers run with structsynth off,\n\
+         because each process would number its own struct_N. Progress goes to\n\
+         stderr. Every worker loads the binary itself, so peak memory is roughly\n\
+         N times one worker's RSS. --jobs-chunk N sets the functions per worker\n\
+         invocation (bigger = less load overhead, more\n\
          peak RSS); --jobs-full-load makes each worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\

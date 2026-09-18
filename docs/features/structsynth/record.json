@@ -12,7 +12,7 @@
  "tier": "transform",
  "source_decompiler": "angr",
  "inspiration": "angr simple_solver.py _determine's struct branch + map_offsets_to_bases; TRex USENIX Sec 2025 3.3.3 (a dynamic offset is the array signal); SecondWrite PLDI 2013 5.1 (UpdateStructure running-max size); Howard NDSS 2011 4.5 (the memset/array defense)",
- "default_on": false,
+ "default_on": true,
  "ablation_changed": 0,
  "parity": "OK",
  "proposal": true,
@@ -603,7 +603,8 @@
    "verdict": "FAIL"
   },
   "aggressive_overrides": "NOT a member. `auto` selects `aggressive` under 500 KiB, which is most of the benchmark, so preset membership would realize the type_match loss and the duplication reshaping on the scored path.",
-  "what_would_reopen_it": "the emitter label defect being fixed; a rule that declines a mixed-width character buffer without declining a real record that tiles its bytes the same way; subsumptive dedup"
+  "what_would_reopen_it": "the emitter label defect being fixed; a rule that declines a mixed-width character buffer without declining a real record that tiles its bytes the same way; subsumptive dedup",
+  "superseded": "2026-09-18: the user decided the default is `param`; the evidence the flip was measured against is `default_on_evidence` and docs/features/structsynth/flip.md. The bug-hunk criterion that failed here no longer fails (#674 emits the label; 0 dangling gotos in both arms of a 14-binary sweep), and the type_match cost is accepted."
  },
  "gates": {
   "make test": "675/675 assertions passed, PARITY OK (and 675/675 PARITY OK with the default temporarily flipped to param)",
@@ -638,5 +639,175 @@
   "json": "`decompile-all --json` on fmt O2 is byte-identical too (594801 bytes), so the per-function `types` array #661 added is unmoved at the default",
   "on_arm_recheck": "the ON arm is unmoved by the merged work too, re-measured on the eb87d279 build: the false-positive census (fprate.py census, 8 binaries) is byte-identical to the pre-rebase round (182 struct* / 71 other ptr / 39 no-DWARF-type / 0 non-pointer, sum 292), so #660's real glibc layouts take no parameter this pass was taking; the libctypes precedence witness still reads `unsigned long sub_42d0(FILE *a0,...)` under `--option structsynth param` and only becomes `struct_0 *a0` with `--option libctypes off`; `--mode aggressive` alone still leaves `long *a0` on the PR-body repro, so the option is out of AGGRESSIVE_OVERRIDES; and the decisive bug hunk reproduces unchanged -- findutils find O2 sub_f620 emits `goto label_f752;` at line 96 with no `label_f752:` anywhere, and the whole-binary dangling-goto scan over grep/diff/find/ls O2 is OFF 1/0/0/0 vs ON 1/0/1/0, a delta of exactly +1 over a defect already live at the default. The default decision is therefore unchanged by the rebase: the criterion that decides it fails identically.",
   "measurements_transfer": "why the campaign numbers were not re-measured after the two rebases: on the eight binaries of the identity control BOTH arms are byte-identical across the bases. The OFF-arm text of the branch build on 0d79b02d equals the OFF-arm text of the branch build on eb87d279 for all eight, and the ON-arm dump of the decisive case (findutils find O2 sub_f620 under `--option structsynth param`) is byte-identical across the same two builds. The merged work therefore moves neither arm here, so the speed block (measured on the 520443d7 build) and the 444-slice typesweep stand as measured; the two things a new base could have moved -- the census and the bug hunk -- were re-run on eb87d279 and are unchanged."
+ },
+ "default_on_evidence": {
+  "decision": "user, 2026-09-18: default `param`. The type_match cost of an anonymous struct_N * against a program-defined GT name is accepted (Noelo-Lab/decbench#93 asks the metric to credit any structure pointer against a GT pointer-to-structure); primitive pointers must still match exactly, so a struct_N that replaces a correct primitive pointer is reported as a false positive.",
+  "base": "measured on d3617d64, then on e1139df9 (origin/main with #677) after rebasing; the figures below are the final tree unless marked",
+  "doc": "docs/features/structsynth/flip.md",
+  "corpora": {
+   "make test": "675/675 PARITY OK with the flip; 0 datatest assertions move",
+   "make test-stages": "1137/1141 before touching a test: ELFMAIN #1/#2 (elfmain-off pass: argv read at [0]/[1] becomes struct_0 *; the pass now pins upstream with `option structsynth off`) and PEBNAMES-X86 #6/#8 (the SEH function's FS base becomes a two-member struct_0 *; regexes follow, #8 renamed). After: 1141/1141; the re-recorded baseline differs only by four renamed keys (PEBNAMES-X86 #8 and the three structsynth #1 'off leaves' names).",
+   "make test-cli": "tests/cli: 189/189 passed (four new probes: sharded-project-export-structsynth-off, structsynth-sign-contested-field-unsigned, sharded-decompile-all-structsynth-off, structsynth-union-fp-field-raw-bytes)"
+  },
+  "sweep": {
+   "binaries": "coreutils fmt O2, ls O2, sort O0/O2, du O0/O2; findutils find O2; grep O2; gzip O2; bzip2 O2; diffutils diff O2; tar O2 (reliable); chibios O2 + freertos O2 (ARM32)",
+   "functions": 5610,
+   "changed": 483,
+   "off_arm_identity": "on d3617d64: branch with --option structsynth off byte-identical to a d3617d64 release build on all 14; on e1139df9 the off arm is unmoved by the sign rule (it lives in the pass)",
+   "goto_without_label": {
+    "off": 0,
+    "on": 0,
+    "instrument": "docs/features/structsynth/gotolabel.py"
+   },
+   "find_O2_sub_f620": "label_f752: emitted in both arms; the on arm duplicates the case 0x75 return block and the remaining goto keeps its label",
+   "verified_mechanically": 350,
+   "read_by_hand": 133,
+   "read_by_hand_classes": {
+    "load folded into its use / temporary holds a sum or comparison": 49,
+    "index rescaled to the structure size or spelled past its end": 41,
+    "undefined1 filler array decays to its address": 40,
+    "literal respelled for the field type": 25,
+    "constant byte stores merged into one field store": 10,
+    "byte-mask test respelled on the wider field": 8,
+    "a local takes the structure type or the field's pointer type": 11,
+    "pointer field indexed": 6,
+    "sub-field address spelled off a field": 3,
+    "variables renumbered and merged": 1
+   },
+   "skeleton_deltas": [
+    "find O2 sub_f620: one more duplicated return block, label kept",
+    "chibios O2 sub_800397c: for -> while, same init/test/step"
+   ],
+   "bug_hunks": 0,
+   "instruments": "canon.py (offset-canonical equality), hunks.py, skeleton.py, gotolabel.py; per-function list in flip-hunks.txt"
+  },
+  "project_export": {
+   "serial_offsetcheck": "8 exports on the final build (7 x86-64 + chibios -m32): 311 synthesized structs, 0 with a misplaced field",
+   "serial_gcc_syntax": "no new error kind; struct-related errors equal in both arms; 'NULL' undeclared +1/+7/+1/+2 (du/tar/sort O0/chibios, prelude gap), one sort O0 void-call error respelled, one more find sub_ece0 arity error from the duplicated block",
+   "jobs_defect": "decompile-project --jobs N merged per-worker struct_N definitions line by line: ls O2 --jobs 4 wrote 23 struct openings and one `};`. Fixed: sharded project workers run with structsynth off (jobs.rs structsynth_shard_note) and stderr says so; every artifact byte-identical to a serial structsynth-off export (kuna-cli jobs_project_runs_workers_with_structsynth_off; tests/cli/sharded-project-export-structsynth-off.json)"
+  },
+  "typesweep": {
+   "instrument": "scripts.decbench.typesweep --option structsynth param --dump-decisions, KUNA_BIN = d3617d64 release build, DECBENCH_NO_CACHE=1",
+   "slices": 444,
+   "functions": 10748,
+   "perfect_off": 959,
+   "perfect_on": 958,
+   "aggregate_off": 3037.19,
+   "aggregate_on": 3035.69,
+   "aggregate_delta_pct": -0.049,
+   "improved": 0,
+   "worse": 6,
+   "moved_off_perfect": 1,
+   "moved_onto_perfect": 0,
+   "controls": "9504/10748 agree with the published verdict (88.43%); 9296 functions with byte-identical variables, 0 scored differently",
+   "worse_rows": [
+    "coreutils::O0::factor powm2 1.0 -> 0.714 (off perfect)",
+    "coreutils::O0::factor millerrabin2 0.75 -> 0.583",
+    "coreutils::O2::factor powm2 0.714 -> 0.429",
+    "coreutils::O2::factor millerrabin2 0.5 -> 0.333",
+    "coreutils::O2-noinline::factor powm2 0.714 -> 0.429",
+    "coreutils::O2-noinline::factor millerrabin2 0.5 -> 0.333",
+    "coreutils::O2-noinline::shred passname 0.286 -> 0.143"
+   ],
+   "decision_classes": {
+    "instrument": "docs/features/structsynth/typeclasses.py",
+    "changed_decisions": 1641,
+    "functions": 1449,
+    "struct_N vs GT pointer to a named aggregate, miss->miss": 1295,
+    "struct_N vs GT primitive pointer, miss->miss": 310,
+    "struct_N vs GT pointer to a primitive pointer, miss->miss": 12,
+    "struct_N vs GT primitive pointer, match->miss (genuine false positives)": 19,
+    "other, miss->miss": 5
+   },
+   "genuine_false_positives": "19 decisions in the 7 worse rows: factor powm2 bp/ep/np/one and millerrabin2 np/one at O0/O2/O2-noinline (DWARF __uintmax_t *, GMP limb arrays read at 0 and 8) and shred O2-noinline passname name (char *, stores of 4/2/1 bytes). Array recognition is the structarrays lane's; not changed here.",
+   "named_aggregate_pointees": "Hash_table 704, Hash_tuning 66, hash_entry 44, stat 33, fileinfo 33, tar_stat_info 28, passwd 23, predicate 20, ...",
+   "final_tree_remeasure": "e1139df9 + this branch (sign rule included), `--option structsynth off` against the default over the same 444 slices: default 958 perfect / 3035.69 aggregate, off 959 / 3037.19, the same 7 rows in reverse (factor powm2/millerrabin2 x3, shred passname); controls: 9296 byte-identical functions, 0 scored differently"
+  },
+  "false_positive_census": "unchanged: fmt/ls/sort/du x O0/O2 292 retyped = 182 struct* / 71 other ptr (70 void*, 1 char*: ls strmode) / 39 no DWARF type / 0 non-pointer; ARM32 37 = 29 / 1 / 3 / 4 not in DWARF / 0",
+  "layout_precision": "unchanged: fields-only 704/787 = 0.8945, filler-counted 798/1021 = 0.7816",
+  "speed": {
+   "method": "interleaved off/param, min-of-15, whole-binary decompile-all, docs/features/structsynth/speed.py SPEED_SET=flip, both arms explicit, one pinned release build (KUNA_BIN); contended box",
+   "cases": {
+    "fmt O2": {
+     "off_ms": 4493.5,
+     "on_ms": 4339.9,
+     "delta_pct": -3.42,
+     "off_median": 4955.1,
+     "on_median": 4777.2,
+     "pairs": 15
+    },
+    "ls O2": {
+     "off_ms": 14022.0,
+     "on_ms": 14432.1,
+     "delta_pct": 2.92,
+     "off_median": 16610.7,
+     "on_median": 16504.3,
+     "pairs": 15
+    },
+    "sort O2": {
+     "off_ms": 14790.0,
+     "on_ms": 15145.0,
+     "delta_pct": 2.4,
+     "off_median": 17646.2,
+     "on_median": 18058.6,
+     "pairs": 15
+    },
+    "bash O2 (1.3 MB, auto = reliable)": {
+     "off_ms": 86930.6,
+     "on_ms": 86419.6,
+     "delta_pct": -0.59,
+     "off_median": 103104.0,
+     "on_median": 100156.5,
+     "pairs": 15
+    },
+    "grep O0 (inert control)": {
+     "off_ms": 6868.0,
+     "on_ms": 6917.4,
+     "delta_pct": 0.72,
+     "off_median": 8114.0,
+     "on_median": 8065.2,
+     "pairs": 15
+    }
+   },
+   "worst_delta_pct": 2.92,
+   "budget_pct": 5.0,
+   "within_budget": true,
+   "note": "measured on the d3617d64 build; the sign rule adds one type comparison per recorded access"
+  },
+  "modes": {
+   "reliable": "empty = the shipped defaults, so it synthesizes; pinning off would make auto's 500 KiB-2 MiB band disagree with the default on no evidence of wrong output",
+   "aggressive": "not named: inherits the default; the option is multi-valued and pinning param would hold the preset below a future `all`",
+   "fast": "not named: reshapes discovery only"
+  },
+  "interactions": {
+   "structdefs": "stays off (#661), and not recommended as a default: with structsynth on, `decompile-all` of ls O2 under `structdefs on` is 872 lines longer (13,610 -> 14,482, +6.4%), printing a struct_N definition above 70 of 404 functions, while the same layouts are declared once in the decompile-project header",
+   "structdedup #675 / structarrays": "open; rebase onto this, and their changes become default-output changes",
+   "protoorder #669 (types mode)": "open; once it lands a callee's struct_N parameter propagates into its callers' argument types",
+   "ghidra front-end": "applies the defaults, so kuna-as-Ghidra's-core prints struct_N too; stock Ghidra decodes a decompiler-invented struct as an undefined of its size (PcodeDataTypeManager.decodeDataType), so nothing breaks, but Ghidra's own data-type model does not learn the layout"
+  },
+  "gates": {
+   "make test": "datatests: 675/675 assertions passed; PARITY OK",
+   "make test-stages": "datatests: 1141/1141 assertions passed; PARITY OK",
+   "make test-cli": "tests/cli: 187/187 passed",
+   "make check-spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+   "docs/options.md": "regenerated from the built binary; byte-identical to the checked-in file",
+   "make rust-test": "RUST_TEST_RC=0 via /home/mahaloz/kwt/rust-test-lane.sh on b634f017 (the last code commit; later commits are docs/features prose), LANE 2026-09-18T20:07:22Z..20:25:49Z, 416 `test result: ok`, 0 FAILED, including accesses_that_disagree_on_sign_leave_the_field_undefined, a_sign_contested_synthesized_field_round_trips_through_the_printed_c, a_zero_extended_narrow_load_round_trips_through_the_printed_c, jobs_project_runs_workers_with_structsynth_off and structsynth_shard_note_only_for_a_project_that_would_synthesize"
+  },
+  "counters": "the flip adds no option, so no count moves; `counters --rederive` agrees with every site; baseline_stages 1141",
+  "sign_rule": {
+   "found": "after the rebase onto #677: findutils find O2 sub_7670 printed `sub_7510(a1->field_0x68)` over a synthesized `short field_0x68` (taken from a read that feeds signed comparisons) where the binary zero-extends (`movzwl 0x68(%rbp),%edi`) into sub_7510's 32-bit argument; C sign-extends, the value #677 fixed in the off arm (`sub_7510(*(unsigned short *)&a1[0xd])`). The only such call in the sweep: the other 88 places where off spells an unsigned narrow read and on a field are unsigned fields or sign-blind uses.",
+   "fix": "Evidence::record: a field commits to a signedness only when every access of its width agrees; a signed read against an unsigned or undefined one leaves the field undefined<N> (prints unsigned). find's field_0x68 is now `unsigned short`, as DWARF's `unsigned short fts_info`.",
+   "effect": "35 on-arm functions over the 14 binaries respelled (casts where an unsigned field meets a signed compare, literal spellings, locals' sign/numbering); 5 of them become mechanically verified; off arm unchanged",
+   "tests": "unit accesses_that_disagree_on_sign_leave_the_field_undefined; fixture signfield_zext_x86_64 + kuna-cli a_sign_contested_synthesized_field_round_trips_through_the_printed_c (printed f hands sink 0x9abc; before the rule 4294941372); tests/cli/structsynth-sign-contested-field-unsigned.json; #677's round trip runs with structsynth off and at the default"
+  },
+  "review_fixes": {
+   "sharded_runs": "decompile-all/decompile-graph --jobs N numbered struct_N per worker (fmt O2 --jobs 4: sub_3000/sub_5960/sub_6be0 renamed; ls O2 --jobs 4 --option structdefs on: 18 names with two layouts). Every sharded run now passes its workers structsynth off and prints the stderr note (jobs.rs structsynth_shard_note); help text of decompile-all/-graph/-project, docs/cli.md and spec 00/05 say the output equals --jobs 1 --option structsynth off. fmt O2 --jobs 4 byte-identical to that. Pinned by kuna-cli jobs_run_workers_with_structsynth_off (itaniumrtti_x86_64.so; 18 lines moved at --jobs 2 before) and tests/cli/sharded-decompile-all-structsynth-off.json.",
+   "union_float_integer": "A field read at one width both as a float and as a non-float (gcc -O2 vread: movsd and cvtsi2sdq of one union member) took the long read's type and printed (double)a0->field_0x8, a value conversion. Evidence now accumulates value classes per width (Slot::reinterpreted); a float beside anything else makes the field raw bytes (char field_0x8[8]) and every read casts the address. The sign contest applies only to an integer field, as before (find O2 sub_f620 field_0x8 stays void *). Pinned by fixture unionfield_fp_x86_64, a_float_and_integer_union_field_round_trips_through_the_printed_c, tests/cli/structsynth-union-fp-field-raw-bytes.json and the unit test a_float_and_an_integer_of_one_width_make_the_field_raw_bytes.",
+   "round_trip": "reviewer's 37-function cex, printed C with structdefs on vs original: on arm fails sg2 (O2) and sg2, c9 (O0), a subset of the off arm's failures (plus vread1, vmix); six union shapes: vread passes at O0/O2; bread (declined), cread/dread at O2 (one register used as bits and as a value) wrong in both arms, the printer's same-size int/float cast",
+   "sweep": "24 binaries, 12,544 functions (the 14 of the flip sweep + dash O2, libz/cp/pr O2-noinline, tail O0, kmod O2, cf2 O2, crond O0, mirai O2, cleanflight O2): off arm byte-identical to the pre-review off arm on 24/24; on arm vs pre-review on arm moves 5 functions, all crazyflie cf2 O2: 3 fixes (0x8023398, 0x803228c, 0x802dbf4: a float field copied through an integer register into an unsigned int global/array printed as a float-to-integer value conversion; now copied as bits, the off arm's spelling) and 2 spelling-only (0x8028640, 0x80286c0: integer zero stores to a float field print *(unsigned int *)a4->field_0x8 = 0)",
+   "known_limits_added": "a float field zero-initialized with an integer store is raw bytes (noisier zero stores); an unaligned 4-byte read straddling the structure end (cf2 O2 0x8022c48, 0x8022d08) prints in piece syntax (value right, not C)"
+  }
  }
 }

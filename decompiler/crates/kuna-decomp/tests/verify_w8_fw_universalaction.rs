@@ -209,7 +209,7 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // lock: the Symbol it maps must exist before heritage creates the input); and
     // `msvcstrappend`, option-gated default-off, directly after that (S2 inlined
     // MSVC std::string append collapse: proved over the RAW p-code, and its call
-    // spec is input-locked); and `structsynth`, option-gated default-off,
+    // spec is input-locked); and `structsynth`, option-gated default `param`,
     // directly after `infertypes` inside mainloop (P5 structure synthesis from
     // constant-offset dereferences: it needs the settled lattice infertypes
     // leaves and the pointer-arithmetic pools below it to render the fields).)
