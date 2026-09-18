@@ -574,6 +574,34 @@
       "counters --check": "no drift",
       "docs/options.md": "byte-fresh (cmp rc=0); phase_catalog.json recapture byte-identical",
       "make rust-test": "RUST_TEST_RC=0 via the lane script, 2026-09-18 23:00:15-23:18:35Z, after the last .rs/fixture commit c9cde6dc (22:58:39Z); later commits are docs only. ghidra_sim_faillog_pins, l_on_a_floating_conversion_is_still_a_double and a_delay_slot_write_to_the_format_register_is_seen ok"
-    }
+    },
+    "speed": {
+      "method": "interleaved kuna decompile-all, off / default (round 4) / default (round-3 binary, built on d3617d64) per round, min-of-15, box shared with other lanes (load 17-61)",
+      "fmt O2": {
+        "off_ms": 5028,
+        "static_ms": 5076,
+        "static_r3_ms": 5077,
+        "static_vs_off_pct": 0.96,
+        "paired_median_static_vs_off_pct": 0.97,
+        "static_vs_round3_pct": -0.0
+      },
+      "ls O2": {
+        "off_ms": 14207,
+        "static_ms": 14054,
+        "static_r3_ms": 13892,
+        "static_vs_off_pct": -1.08,
+        "paired_median_static_vs_off_pct": -1.33,
+        "static_vs_round3_pct": 1.17
+      },
+      "sort O2": {
+        "off_ms": 14756,
+        "static_ms": 14758,
+        "static_r3_ms": 14657,
+        "static_vs_off_pct": 0.01,
+        "paired_median_static_vs_off_pct": 0.0,
+        "static_vs_round3_pct": 0.68
+      }
+    },
+    "typesweep": "444 slices / 10,748 functions, off vs default on d03560b2: perfect 987 -> 1025 (+38), aggregate 3112.68 -> 3169.95, 176 better / 2 worse (tr make_printable_str, as before); decomp_vars 96,697 -> 96,674, fp 19,769 -> 19,556, fn 27,531 unchanged"
   }
 }

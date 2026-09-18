@@ -57,7 +57,7 @@ conversions (313 counts and 4 classes are fixed), and 8 functions change arity,
 all to what their callers pass. With `formatstring off` the output is
 byte-identical to main on 13 other binaries.
 decbench `type_match` over 444 slices: 987 → 1025 perfect, 176 better, 2 worse.
-Speed, `decompile-all` interleaved min-of-15 against `off`: SPEEDLINE.
+Speed, `decompile-all` interleaved min-of-15 against `off`: `fmt` +1.0%, `ls` -1.1%, `sort` 0.0%.
 Evidence: `docs/features/formatstring-static/`.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
