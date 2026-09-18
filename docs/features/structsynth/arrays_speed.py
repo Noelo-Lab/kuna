@@ -26,8 +26,6 @@ CASES = [
     ("fmt O2", f"{R}/O2/coreutils/stripped/fmt"),
     ("ls O2", f"{R}/O2/coreutils/stripped/ls"),
     ("du O2", f"{R}/O2/coreutils/stripped/du"),
-    ("find O2", f"{R}/O2/findutils/stripped/find"),
-    ("factor O0", f"{R}/O0/coreutils/stripped/factor"),
     ("grep O0 (inert control)", f"{R}/O0/grep/stripped/grep"),
 ]
 ARMS = {

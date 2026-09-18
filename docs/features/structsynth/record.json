@@ -638,5 +638,169 @@
   "json": "`decompile-all --json` on fmt O2 is byte-identical too (594801 bytes), so the per-function `types` array #661 added is unmoved at the default",
   "on_arm_recheck": "the ON arm is unmoved by the merged work too, re-measured on the eb87d279 build: the false-positive census (fprate.py census, 8 binaries) is byte-identical to the pre-rebase round (182 struct* / 71 other ptr / 39 no-DWARF-type / 0 non-pointer, sum 292), so #660's real glibc layouts take no parameter this pass was taking; the libctypes precedence witness still reads `unsigned long sub_42d0(FILE *a0,...)` under `--option structsynth param` and only becomes `struct_0 *a0` with `--option libctypes off`; `--mode aggressive` alone still leaves `long *a0` on the PR-body repro, so the option is out of AGGRESSIVE_OVERRIDES; and the decisive bug hunk reproduces unchanged -- findutils find O2 sub_f620 emits `goto label_f752;` at line 96 with no `label_f752:` anywhere, and the whole-binary dangling-goto scan over grep/diff/find/ls O2 is OFF 1/0/0/0 vs ON 1/0/1/0, a delta of exactly +1 over a defect already live at the default. The default decision is therefore unchanged by the rebase: the criterion that decides it fails identically.",
   "measurements_transfer": "why the campaign numbers were not re-measured after the two rebases: on the eight binaries of the identity control BOTH arms are byte-identical across the bases. The OFF-arm text of the branch build on 0d79b02d equals the OFF-arm text of the branch build on eb87d279 for all eight, and the ON-arm dump of the decisive case (findutils find O2 sub_f620 under `--option structsynth param`) is byte-identical across the same two builds. The merged work therefore moves neither arm here, so the speed block (measured on the 520443d7 build) and the 444-slice typesweep stand as measured; the two things a new base could have moved -- the census and the bug hunk -- were re-run on eb87d279 and are unchanged."
+ },
+ "element_pair": {
+  "change": "structsynth param declines a same-typed integer pair read through its element pointer (p5_types/kuna_structsynth.rs is_element_run, called from accepts): every raw access one width w at exactly 0, w, 2w, ... before the widest-wins merge and the prune; every field the same integer metatype (int, uint or unknown); the base already a pointer to an integer or undefined of width w. Pointer pairs, signedness-mixed pairs, pairs with any pruned or off-grid access, and pairs over a pointer to another element are still synthesized. No new option: the rule acts only under structsynth param.",
+  "witness": {
+   "command": "kuna decompile-all O2/coreutils/stripped/factor --addr 0x3190 --option structsynth param",
+   "before": "unsigned long sub_3190(unsigned long *a0,struct_0 *a1,struct_1 *a2,struct_0 *a3,unsigned long a4,struct_0 *a5)",
+   "after": "unsigned long sub_3190(unsigned long *a0,unsigned long *a1,unsigned long *a2,unsigned long *a3,unsigned long a4,unsigned long *a5)",
+   "dwarf": "powm2(uintmax_t *r1m, const uintmax_t *bp, const uintmax_t *ep, const uintmax_t *np, uintmax_t ni, const uintmax_t *one)"
+  },
+  "test_name": "tests/stages/structsynth-element-pair.xml (two-pass, 5 assertions; on origin/main d3617d64 asserts 1-4 fail) + 4 unit tests in p5_types/kuna_structsynth/tests.rs",
+  "control_build": "origin/main d3617d64, built in the same tree with kuna_structsynth.rs swapped to main's version (the only non-test source difference)",
+  "off_arm_identity": "decompile-all text and --json at the default, branch vs main, over coreutils fmt/ls/sort/du/factor/shred + tar + find at O0 and O2: 32/32 files byte-identical",
+  "census": {
+   "instrument": "docs/features/structsynth/arrays_census.py on a build with arrays_census.diff applied (KUNA_STRUCTSYNTH_CENSUS=1)",
+   "before_base_70511284": {
+    "bases": 746,
+    "homog_int": {
+     "total": 93,
+     "struct_ptr": 47,
+     "void_ptr": 29,
+     "scalar_ptr": 12,
+     "no_dwarf_type": 5,
+     "scalar_ptr_note": "all coreutils factor uintmax_t (powm2, millerrabin2)"
+    },
+    "homog_ptr": {
+     "total": 35,
+     "struct_ptr": 30,
+     "no_dwarf_type": 5
+    },
+    "loose_int": 13,
+    "other": 605,
+    "every_homogeneous_accepted_layout": "a {0:8, 8:8} pair; n>=3 was already declined by is_array_shaped"
+   },
+   "after_branch": {
+    "bases": 654,
+    "homog_int": 1,
+    "homog_ptr": 35,
+    "loose_int": 13,
+    "other": 605,
+    "kept_homog_int": "tar O0 0x6c7f5 arg 3: the base is char *, not an 8-byte element, so clause 3 keeps it; DWARF says struct (anon, 16 bytes)"
+   }
+  },
+  "declined_set": {
+   "method": "decompile-all --json --option structsynth param, main vs branch, 16 binaries, joined to the census by (binary, address, argument)",
+   "struct_n_args_before": 743,
+   "struct_n_args_after": 651,
+   "declined": 92,
+   "declined_by_dwarf": {
+    "struct_ptr": 46,
+    "void_ptr": 29,
+    "scalar_ptr": 12,
+    "no_dwarf_type": 5
+   },
+   "declined_shapes": "all 92 same-typed integer pairs; no argument gained a structure; pointer pairs, loose pairs and other layouts unmoved (census 35/13/605 both sides)",
+   "kuna_type_after": {
+    "unsigned long *": 44,
+    "long *": 30,
+    "int8 *": 12,
+    "uint8 *": 6
+   }
+  },
+  "typesweep": {
+   "instrument": "scripts.decbench.typesweep --option structsynth param, 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0 O2 O2-noinline), 10748 functions, DECBENCH_NO_CACHE=1, KUNA_BIN pinned per arm, --workers 12",
+   "main": {
+    "perfect_off": 959,
+    "perfect_on": 958,
+    "aggregate_off": 3037.19,
+    "aggregate_on": 3035.69,
+    "moved_onto_perfect": 0,
+    "moved_off_perfect": 1,
+    "improved": 0,
+    "worse": 6,
+    "rows": [
+     "coreutils::O0::factor powm2 1.0 -> 0.714 (off perfect)",
+     "coreutils::O0::factor millerrabin2 0.75 -> 0.583",
+     "coreutils::O2::factor powm2 0.714 -> 0.429",
+     "coreutils::O2::factor millerrabin2 0.5 -> 0.333",
+     "coreutils::O2-noinline::factor powm2 0.714 -> 0.429",
+     "coreutils::O2-noinline::factor millerrabin2 0.5 -> 0.333",
+     "coreutils::O2-noinline::shred passname 0.286 -> 0.143"
+    ]
+   },
+   "branch": {
+    "perfect_off": 959,
+    "perfect_on": 959,
+    "aggregate_off": 3037.19,
+    "aggregate_on": 3037.05,
+    "moved_onto_perfect": 0,
+    "moved_off_perfect": 0,
+    "improved": 0,
+    "worse": 1,
+    "rows": [
+     "coreutils::O2-noinline::shred passname 0.286 -> 0.143"
+    ]
+   },
+   "remaining_row": "shred passname: param_2 char * -> struct_0 * over {unsigned int field_0x0; unsigned short field_0x4; char field_0x6; char field_0x7[1];}, the builtin_strncpy(name, \"random\", 7) of a char name[7] split into 4-, 2- and 1-byte stores: the documented mixed-width character-buffer false positive, not a pair",
+   "controls": "baseline vs published verdict 9504 agree / 1244 differ (88.43%) in both runs; byte-identical variables in both arms 9450 (branch) / 9296 (main) functions, 0 scored differently"
+  },
+  "layoutscore": {
+   "instrument": "docs/features/structsynth/layoutscore.py, fields only (filler excluded), fmt/ls/sort/du O0+O2, 9443 DWARF fields",
+   "main": {
+    "tp": 704,
+    "predicted": 787,
+    "precision": 0.8945,
+    "recall": 0.0746,
+    "f1": 0.1376
+   },
+   "branch": {
+    "tp": 684,
+    "predicted": 767,
+    "precision": 0.8918,
+    "recall": 0.0724,
+    "f1": 0.134
+   },
+   "filler_counted": {
+    "main": "798/1021 P 0.7816 F1 0.1525",
+    "branch": "778/1001 P 0.7772 F1 0.1490"
+   },
+   "trade": "the rule removes 20 claimed fields on these eight binaries and all 20 were true positives (stat's st_dev/st_ino, timespec, hash_entry). Over the 16-binary census it gives up 46 DWARF structure pointers to restore 12 integer pointers; the 46 score the same on type_match either way (a synthesized name never matches a DWARF name), the 12 are the factor rows type_match lost."
+  },
+  "false_positive_census": {
+   "instrument": "docs/features/structsynth/fprate.py census (fmt/ls/sort/du O0+O2)",
+   "main": {
+    "retyped": 292,
+    "struct_ptr": 182,
+    "void_or_other_ptr": 71,
+    "no_dwarf_type": 39,
+    "non_pointer": 0
+   },
+   "branch": {
+    "retyped": 274,
+    "struct_ptr": 172,
+    "void_or_other_ptr": 63,
+    "no_dwarf_type": 39,
+    "non_pointer": 0
+   }
+  },
+  "hunks": {
+   "instrument": "docs/features/structsynth/arrays_hunks.py (whole function incl. signature), output docs/features/structsynth/arrays_hunks.txt",
+   "binaries": 16,
+   "functions_changed": 556,
+   "ledger_renumbering_only": 484,
+   "element_pointer_restored": 71,
+   "read_by_hand": 1,
+   "skeleton_delta": 0,
+   "variable_count_delta": 0,
+   "read_by_hand_rows": [
+    "tar O0 0x41265 (wsnode_insert): a cast moves between two stores, `a1->field_0x0 = a2; a2->field_0x8 = (int8 *)a1;` -> `*a1 = (int8)a2; a2->field_0x8 = a1;` -- same stores, not a bug"
+   ],
+   "dangling_goto_functions": {
+    "branch_off": 0,
+    "branch_param": 0,
+    "main_param": 0
+   }
+  },
+  "speed": "PENDING",
+  "default_on_evaluation": {
+   "note": "measured with the default temporarily flipped to param in a throwaway build (.scratch only); the default in this PR stays off",
+   "datatests": "make test 675/675, PARITY OK (0 assertions move)",
+   "stages": "1144/1146 before this PR's re-record: 2 move, PEBNAMES-X86 #6 and #8 -- the x86 fs-segment TEB base becomes struct_0 with field_0x0/field_0x30 (NT_TIB.ExceptionList, ProcessEnvironmentBlock), the intended field rendering; main with structsynth param injected moves the same two. ELFMAIN #1/#2, which moved in the #655 evaluation, no longer move on main either.",
+   "typesweep": "959 -> 959 perfect, aggregate 3037.19 -> 3037.05 (-0.005%), 1 worse row (shred passname)",
+   "bug_hunk": "none: the find O2 sub_f620 dangling goto that decided #655 is gone since #674; 0 dangling-goto functions in any arm over 16 binaries",
+   "speed": "PENDING"
+  }
  }
 }
