@@ -48,7 +48,7 @@
 //! seed cannot leak along a copy chain into a value that can hold more than 0/1.
 //!
 //! Gated by [`Architecture::bool_byte`](crate::architecture::Architecture) (option
-//! `boolbyte on|off`, default off); with the option off nothing in this module is
+//! `boolbyte on|off`, default on); with the option off nothing in this module is
 //! reachable.
 
 use std::collections::{HashSet, VecDeque};
@@ -58,6 +58,7 @@ use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
+use kuna_base::address::calc_mask;
 use kuna_base::space::spacetype;
 
 /// How many def-use hops the walk follows before giving up.  The same bound
@@ -391,7 +392,19 @@ fn covered_by_larger_symbol(data: &Funcdata, vn: VarnodeId) -> bool {
         .unwrap_or(false)
 }
 
-/// Does a truncation into this rule's `bool` print as a `(bool)` cast?
+/// How a truncation into this rule's `bool` prints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TruncationForm {
+    /// Not this rule's case: `CastStrategyC::is_subpiece_cast` decides.
+    Upstream,
+    /// `(bool)x`: every bit of `x` above the destination is proven zero.
+    Cast,
+    /// `(bool)(unsigned char)x`: `x` may carry bits above the destination, which
+    /// `(bool)x` would test and the machine throws away.
+    CastThroughByte,
+}
+
+/// The form a low-piece SUBPIECE into this rule's `bool` prints in.
 ///
 /// `CastStrategyC::isSubpieceCast` (cast.cc:411-432) lists the destination
 /// metatypes a SUBPIECE may print as a cast, and `TYPE_BOOL` is not one of them
@@ -403,30 +416,110 @@ fn covered_by_larger_symbol(data: &Funcdata, vn: VarnodeId) -> bool {
 /// keep out of the emitted C.  tar -O2 `sub_41370` is the measured case
 /// (`v = (char)v15;` -> `v = SUB41(v15,0);`).
 ///
-/// The truncation is only rewritten, never removed: the cast is the same
-/// narrowing `(char)` printed there with the option off, and the seed that put
-/// `bool` on the destination already required the value reaching it to carry a
-/// non-zero mask of at most 1, so `(bool)x` and the low byte of `x` agree.
-/// Inert with the option off.
-pub fn truncation_prints_as_cast(
+/// A C conversion to `bool` tests every bit of its operand, and a truncation
+/// keeps only the low `out_size` bytes, so `(bool)x` is the truncation only when
+/// `in_nz_mask` (asked only once the destination is known to be this rule's
+/// `bool`) proves every bit above the destination zero.  Otherwise the
+/// truncation is printed explicitly first: `x & 0x201` truncated into a byte is
+/// 0 for `x = 0x200`, and `(bool)(x & 0x201)` is 1.  A `bool` reaches such a
+/// destination by propagation from a sibling copy -- `d = c; ... d = 0;` makes
+/// `d` and then `c` a `bool` -- not from the seed, whose def half refuses a
+/// SUBPIECE.  Inert with the option off.
+pub fn truncation_form(
     enabled: bool,
     outtype: &Rc<Datatype>,
     intype: &Rc<Datatype>,
     offset: u32,
-) -> bool {
-    if !enabled || offset != 0 {
-        return false;
+    out_size: i32,
+    in_nz_mask: impl FnOnce() -> u64,
+) -> TruncationForm {
+    if !enabled || offset != 0 || outtype.get_metatype() != type_metatype::TYPE_BOOL {
+        return TruncationForm::Upstream;
     }
-    if outtype.get_metatype() != type_metatype::TYPE_BOOL {
-        return false;
-    }
-    matches!(
+    if !matches!(
         intype.get_metatype(),
         type_metatype::TYPE_INT
             | type_metatype::TYPE_UINT
             | type_metatype::TYPE_UNKNOWN
             | type_metatype::TYPE_BOOL
-    )
+    ) {
+        return TruncationForm::Upstream;
+    }
+    let bits = 8 * out_size.max(0) as u32;
+    if bits >= 64 || in_nz_mask() >> bits == 0 {
+        TruncationForm::Cast
+    } else {
+        TruncationForm::CastThroughByte
+    }
+}
+
+/// A sound non-zero mask for `vn` when the printer reads it.
+///
+/// `ActionNonzeroMask` refreshes the stored mask inside the main loop only, so a
+/// Varnode a later pass creates -- a CAST output, a block the return duplication
+/// cloned -- still carries the all-ones default at print time.  The def is
+/// re-derived over the few ops a truncated operand is built from, within a small
+/// node budget, and intersected with the stored mask, which stays sound for the
+/// same SSA value.
+pub fn value_mask(data: &Funcdata, vn: VarnodeId) -> u64 {
+    let mut budget = MASK_BUDGET;
+    value_mask_at(data, vn, &mut budget)
+}
+
+/// How many Varnodes [`value_mask`] visits before it settles for stored masks.
+const MASK_BUDGET: usize = 32;
+
+fn value_mask_at(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> u64 {
+    let v = match data.vbank().get(vn) {
+        Some(v) => v,
+        None => return u64::MAX,
+    };
+    let full = calc_mask(v.get_size());
+    if v.is_constant() {
+        return v.get_offset() & full;
+    }
+    let stored = v.get_nz_mask() & full;
+    if *budget == 0 {
+        return stored;
+    }
+    *budget -= 1;
+    let o = match v.get_def().and_then(|d| data.obank().get(d)) {
+        Some(o) => o,
+        None => return stored,
+    };
+    if o.is_bool_output() {
+        return stored & 1;
+    }
+    let mut input = |i: i32| match o.get_in(i) {
+        Some(x) => value_mask_at(data, x, budget),
+        None => full,
+    };
+    let shift = |i: i32| {
+        o.get_in(i)
+            .and_then(|x| data.vbank().get(x))
+            .filter(|x| x.is_constant() && x.get_offset() < 64)
+            .map(|x| x.get_offset() as u32)
+    };
+    let derived = match o.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ZEXT => input(0),
+        OpCode::CPUI_INT_AND => input(0) & input(1),
+        OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => input(0) | input(1),
+        OpCode::CPUI_INT_RIGHT => match shift(1) {
+            Some(sa) => input(0) >> sa,
+            None => full,
+        },
+        OpCode::CPUI_INT_LEFT => match shift(1) {
+            Some(sa) => input(0) << sa,
+            None => full,
+        },
+        OpCode::CPUI_SUBPIECE => match shift(1) {
+            Some(b) if b < 8 => input(0) >> (8 * b),
+            _ => full,
+        },
+        OpCode::CPUI_MULTIEQUAL => (0..o.num_input()).fold(0, |m, i| m | input(i)),
+        _ => full,
+    };
+    stored & derived
 }
 
 /// Is this Varnode's value *proven* to be 0 or 1 (rather than merely used as

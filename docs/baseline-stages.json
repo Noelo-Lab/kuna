@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1141,
-    1141
+    1144,
+    1144
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -803,6 +803,9 @@
     "data:boolbyte #10: the slot both controls hand to the callee stays a character in both passes -- the INDIRECT a call leaves on it is not identity, and one byte of a bigger object is not a declaration of its own",
     "data:boolbyte #11: with the option off a truncation whose destination a comparison already made bool prints as the raw SUB41 intrinsic -- an undeclared identifier",
     "data:boolbyte #12: with the option on the same truncation prints as the cast it is",
+    "data:boolbyte #13: with the option off a byte truncated from a value with bits above it is a character",
+    "data:boolbyte #14: with the option on the truncation is kept explicit inside the bool cast",
+    "data:boolbyte #15: and never prints as a bare bool cast, which would test bit 9 as well",
     "data:boolbyte #1: with the option off a byte that is only ever branched on is a character -- the bug",
     "data:boolbyte #2: with the option on the same parameter is a bool",
     "data:boolbyte #3: the witness function's body is the same in both passes -- here only the declaration moves",

@@ -6264,28 +6264,49 @@ impl PrintC {
         // + ActionDeindirect wave landed: condconstsub's `process` returns the
         // recovered call output, no spurious SUBPIECE), so the faithful dispatch
         // is restored.
-        if self.subpiece_is_cast(fd, arch, op) {
-            self.op_type_cast_ir(fd, arch, op);
-        } else {
-            self.op_func_ir(fd, arch, op);
+        use crate::kuna_boolbyte::TruncationForm;
+        match self.subpiece_cast_form(fd, arch, op) {
+            Some(TruncationForm::CastThroughByte) => self.op_bool_truncation_ir(fd, arch, op),
+            Some(_) => self.op_type_cast_ir(fd, arch, op),
+            None => self.op_func_ir(fd, arch, op),
         }
     }
 
+    /// (kuna `boolbyte`) `(bool)(unsigned char)x`: a truncation into a `bool`
+    /// whose operand may carry bits above the destination, which a bare
+    /// `(bool)x` would test.
+    fn op_bool_truncation_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let out = fd.obank().get(op).and_then(|o| o.get_out()).and_then(|v| fd.vbank().get(v));
+        let out_ty = out.map(|v| v.get_type_def_facing().clone());
+        let byte_ty = out.and_then(|v| {
+            arch.types().get_base(v.get_size(), crate::dtype::type_metatype::TYPE_UINT).ok()
+        });
+        let (out_ty, byte_ty) = match (out_ty, byte_ty) {
+            (Some(o), Some(b)) if !self.options.nocasts => (o, b),
+            _ => return self.op_type_cast_ir(fd, arch, op),
+        };
+        self.push_cast_open(&out_ty, op);
+        self.push_cast_open(&byte_ty, op);
+        if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+            self.push_vn_ir(fd, arch, vn, op);
+        }
+        self.push_cast_close(&byte_ty);
+        self.push_cast_close(&out_ty);
+    }
+
     /// C++ `castStrategy->isSubpieceCast(out->getHighTypeDefFacing(),
-    /// in0->getHighTypeReadFacing(op), (uint4)in1->getOffset())` (printc.cc:892).
-    fn subpiece_is_cast(&self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
-        let strat = match cast_strategy_for(arch) {
-            Some(s) => s,
-            None => return false,
-        };
-        let outvn = match fd.obank().get(op).and_then(|o| o.get_out()) {
-            Some(v) => v,
-            None => return false,
-        };
-        let invn = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
-            Some(v) => v,
-            None => return false,
-        };
+    /// in0->getHighTypeReadFacing(op), (uint4)in1->getOffset())` (printc.cc:892):
+    /// `None` prints the functional form, `Some` a cast.
+    fn subpiece_cast_form(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+    ) -> Option<crate::kuna_boolbyte::TruncationForm> {
+        use crate::kuna_boolbyte::TruncationForm;
+        let strat = cast_strategy_for(arch)?;
+        let outvn = fd.obank().get(op).and_then(|o| o.get_out())?;
+        let invn = fd.obank().get(op).and_then(|o| o.get_in(0))?;
         let offset = fd
             .obank()
             .get(op)
@@ -6293,10 +6314,9 @@ impl PrintC {
             .and_then(|v| fd.vbank().get(v))
             .map(|v| v.get_offset())
             .unwrap_or(0) as uint4;
-        let outtype = match fd.vbank().get(outvn) {
-            Some(v) => v.get_type_def_facing().clone(),
-            None => return false,
-        };
+        let outv = fd.vbank().get(outvn)?;
+        let outtype = outv.get_type_def_facing().clone();
+        let out_size = outv.get_size();
         // intype = in0->getHighTypeReadFacing(op)  (printc.cc:892).  For a union
         // (or other needs-resolution composite) the C++ high read-facing accessor
         // resolves the field for this read edge through the per-function union
@@ -6306,10 +6326,8 @@ impl PrintC {
         // → int4) would mis-dispatch to the functional `SUB84(...)` arm instead of
         // the `(int4)` cast.  Apply the same immutable cache consult the high
         // accessor would: see [`Funcdata::find_resolve_facing`].
-        let intype = match fd.vbank().get(invn) {
-            Some(v) => v.get_type_read_facing(op).clone(),
-            None => return false,
-        };
+        let inv = fd.vbank().get(invn)?;
+        let intype = inv.get_type_read_facing(op).clone();
         let intype = if intype.needs_resolution() {
             let slot = fd.obank().get(op).map(|o| o.get_slot(invn)).unwrap_or(-1);
             fd.find_resolve_facing(&intype, op, slot)
@@ -6320,15 +6338,18 @@ impl PrintC {
         // upstream, so a truncation into one falls to the functional arm and
         // prints the raw `SUB41(x,0)` intrinsic -- an undeclared identifier, the
         // class `subright` exists to keep out of the output.
-        if crate::kuna_boolbyte::truncation_prints_as_cast(
+        match crate::kuna_boolbyte::truncation_form(
             arch.bool_byte,
             &outtype,
             &intype,
             offset,
+            out_size,
+            || crate::kuna_boolbyte::value_mask(fd, invn),
         ) {
-            return true;
+            TruncationForm::Upstream => {}
+            form => return Some(form),
         }
-        strat.is_subpiece_cast(&outtype, &intype, offset)
+        strat.is_subpiece_cast(&outtype, &intype, offset).then_some(TruncationForm::Cast)
     }
 
     /// The `(out->getHighTypeDefFacing(), in0->getHighTypeReadFacing(op))` type

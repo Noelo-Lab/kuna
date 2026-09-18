@@ -62,6 +62,15 @@
                     emits the raw `SUB41(x,0)` p-code intrinsic - an undeclared
                     identifier, not compilable C.  The option supplies the missing
                     arm and the truncation prints as the `(bool)` cast it is
+        truncflag:  gcc -O0 of `unsigned v = x & 0x201; *out = v;
+                    unsigned char c = v, d = c; while (d) d = 0;
+                    return c ? 1 : 2;`
+                    the WRONG-OUTPUT case of that arm - `d = 0` makes `d`, and
+                    through the copy `c`, a `bool`, so the truncation of
+                    `x & 0x201` lands in a bool.  `(bool)(x & 0x201)` tests bit 9
+                    too, and is 1 for x = 0x200 where the byte is 0, so the arm
+                    prints `(bool)(uint1)x` whenever `x` may carry bits above the
+                    byte
 
     Pass 1 (`option boolbyte off`) reproduces the bug; pass 2 (`on`) is the fix.
     All five controls are identical in both passes.
@@ -73,6 +82,8 @@
 4883c418c30f1f004883ec1840887c240f488d7c240fe81d0000000fb644240f84c07407b80b0000
 00eb05b80c0000004883c418c30f1f00c607c8c366662e0f1f84000000000090
 4883ec18897c240885f6740a83ff050f9f442407eb0b8b442408c1e81f88442407807c240700740ab80b0000004883c418c3b80c0000004883c418c3
+90909090
+554889e5897dec488975e08b45ec25010200008945fc8b45fc8845fb0fb645fb8845fa488b45e08b55fc8910eb04c645fa00807dfa0075f6807dfb007407b801000000eb05b8020000005dc3
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="flagparam"/>
 <symbol space="ram" offset="0x100010" name="bytearith"/>
@@ -82,6 +93,7 @@
 <symbol space="ram" offset="0x100080" name="callslot"/>
 <symbol space="ram" offset="0x1000b0" name="touch"/>
 <symbol space="ram" offset="0x1000c0" name="truncjoin"/>
+<symbol space="ram" offset="0x100100" name="truncflag"/>
 </binaryimage>
 <script>
   <com>option boolbyte off</com>
@@ -106,6 +118,9 @@
   <com>lo fu truncjoin</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu truncflag</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option boolbyte on</com>
   <com>lo fu flagparam</com>
   <com>decompile</com>
@@ -128,6 +143,9 @@
   <com>lo fu truncjoin</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu truncflag</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="boolbyte #1: with the option off a byte that is only ever branched on is a character -- the bug" min="1" max="1">unsigned long flagparam\(char a0\)</stringmatch>
@@ -142,4 +160,7 @@
 <stringmatch name="boolbyte #10: the slot both controls hand to the callee stays a character in both passes -- the INDIRECT a call leaves on it is not identity, and one byte of a bigger object is not a declaration of its own" min="4" max="4">  char v1 \[9\];</stringmatch>
 <stringmatch name="boolbyte #11: with the option off a truncation whose destination a comparison already made bool prints as the raw SUB41 intrinsic -- an undeclared identifier" min="1" max="1">v1 = SUB41\(\(uint4\)a0 &gt;&gt; 0x1f,0\);</stringmatch>
 <stringmatch name="boolbyte #12: with the option on the same truncation prints as the cast it is" min="1" max="1">v1 = \(bool\)\(\(uint4\)a0 &gt;&gt; 0x1f\);</stringmatch>
+<stringmatch name="boolbyte #13: with the option off a byte truncated from a value with bits above it is a character" min="1" max="1">v1 = \(char\)\(a0 &amp; 0x201\);</stringmatch>
+<stringmatch name="boolbyte #14: with the option on the truncation is kept explicit inside the bool cast" min="1" max="1">v1 = \(bool\)\(uint1\)\(a0 &amp; 0x201\);</stringmatch>
+<stringmatch name="boolbyte #15: and never prints as a bare bool cast, which would test bit 9 as well" min="0" max="0">\(bool\)\(a0 &amp; 0x201\)</stringmatch>
 </decompilertest>

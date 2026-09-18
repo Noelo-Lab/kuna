@@ -1550,7 +1550,7 @@ impl ArchContext {
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth
             codescalar: false,           // (kuna) option codescalar
-            bool_byte: false, // (kuna) option boolbyte
+            bool_byte: true, // (kuna) option boolbyte (default on)
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch

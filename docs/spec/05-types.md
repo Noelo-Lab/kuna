@@ -425,7 +425,7 @@ identity, and the gate above (a `TYPE_BOOL` refuses to land on a Varnode whose
 non-zero mask admits values above 1) stops it at the first edge into an
 unconstrained input.
 
-When `boolbyte` is `on` (shipped `off`),
+When `boolbyte` is `on` (the default),
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_boolbyte.rs
 (truth_value_type)` supplies the missing candidate. It applies to a one-byte
 Varnode that is not a constant, not type-locked, not covered by a type-locked
@@ -474,7 +474,7 @@ whether the value is written in this function.
   evidence, and the rule says so plainly: a byte the function only ever branches
   on is what a `_Bool` parameter looks like from the inside, which is an
   inference about the calling convention rather than a proof about the value.
-  This is why the option is a judgment call and ships off.
+  This is why the rule sits behind an option that can be turned off.
 
 The candidate is **folded** into `get_local_type`'s result by
 `Datatype::type_order`, not installed as a replacement seed. `SUB_BOOL` is 10,
@@ -501,11 +501,22 @@ reaches the printer.
   functional arm and emits the raw `SUB41(x,0)` p-code intrinsic - an undeclared
   identifier, and not compilable C, which is the class `subright` (§3.2) exists
   to keep out of the output. The option supplies the missing arm
-  (`kuna_boolbyte.rs (truncation_prints_as_cast)`, consulted by
-  `printc.rs (subpiece_is_cast)`), so a truncation into a `bool` prints as the
-  `(bool)` cast it is. The seed that put `bool` there already required the value
-  reaching it to carry a non-zero mask of at most 1, so the cast and the low byte
-  agree. The arm belongs to the option: with `boolbyte off` the printer is
+  (`kuna_boolbyte.rs (truncation_form)`, consulted by
+  `printc.rs (subpiece_cast_form)`), so a truncation into a `bool` prints as a
+  cast. Which cast depends on the operand, not the destination. A C conversion
+  to `bool` tests every bit of its operand while the truncation keeps only the
+  low byte, and a `bool` can reach a truncated byte whose source has other bits
+  set: in `unsigned char c = x & 0x201, d = c; while (d) d = 0;` the literal
+  `0` makes `d` a `bool` and propagation carries it back through the copy to
+  `c`, whose own mask is 1 even though `x & 0x201` is not. So the arm prints
+  `(bool)x` only when every bit of `x` above the destination is proven zero, and
+  `(bool)(unsigned char)x` otherwise - `(bool)(x & 0x201)` would be 1 for
+  `x = 0x200`, where the byte is 0. The proof is the operand's non-zero mask,
+  re-derived at print time (`kuna_boolbyte.rs (value_mask)`) over copies,
+  casts, extensions, masks, constant shifts and phis, because the stored mask is
+  refreshed only inside the main loop and a Varnode created later - a cast, a
+  block the return duplication cloned - still carries the all-ones default. The
+  arm belongs to the option: with `boolbyte off` the printer is
   byte-for-byte what it was, including on the cases that need it already -
   a comparison alone can make a destination `bool` without this rule, which it
   does on three lines in `tar` -O2 and one each in `ls` -O2 and `du` -O0.
@@ -526,12 +537,25 @@ reaches the printer.
 * **A `(bool)` cast can appear** where the cast tail has to reconcile the new
   declaration with an op that wants an integer (two over the sixteen binaries).
 
+The option is on by default. With the default flipped none of the 675 datatest
+assertions moves and the stage corpus is PARITY OK; over the decbench type
+sweep the flip moves functions onto a perfect `type_match` and none off it,
+with no function scored worse (the measurement is in
+`docs/features/boolbyte/record.json`, `default_on_flip`). What the default costs is
+the name surface described in the last bullets but one: the functions whose
+merge moves renumber their remaining `vN` locals, so a `--assert type vN` or
+`--assert name vN` written against an older run can address a different
+variable. `--option boolbyte off` restores the upstream fold exactly - the
+candidate is never offered and the printer arm is not consulted - which is the
+ablation to reach for when a `bool` declaration is in question.
+
 `tests/stages/kuna-boolbyte.xml` pins the witness, the five refusals - a byte
 that is also widened and added, a byte tested for its low bit, a byte stored
 through a pointer, a stack byte set to 0 and then filled by a callee, and a byte
-parameter copied into a slot a callee is handed the address of - and the
-truncation rendering, whose first pass is the `SUB41` the printer emits without
-the arm.
+parameter copied into a slot a callee is handed the address of - and both
+truncation renderings: the one whose first pass is the `SUB41` the printer emits
+without the arm, and `truncflag`, whose second pass must print
+`(bool)(uint1)(a0 & 0x201)` and never the bare `(bool)(a0 & 0x201)`.
 
 **The Windows segment base (`pebnames`).** A Windows user-mode thread keeps its
 Thread Environment Block at the base of `GS` on x86-64 and of `FS` on x86, and

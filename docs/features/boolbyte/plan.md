@@ -1,6 +1,7 @@
 # boolbyte — plan
 
-**Option.** `boolbyte on|off`, default `off`. P5, subphase `type-propagation`,
+**Option.** `boolbyte on|off`, default `on` (shipped `off` in #664; flipped on
+the measurement in `record.json` `default_on_flip`). P5, subphase `type-propagation`,
 tier `core`, `change_kind = type-inference`, `live_field = bool_byte`.
 Module `decompiler/crates/kuna-decomp/src/p5_types/kuna_boolbyte.rs`, consulted
 from `build_localtypes` in `coreaction_infertypes.rs` exactly where
@@ -32,7 +33,7 @@ and loses to anything more specific.
   admitted too.
 * A function input has no def, so for a parameter the use shape is the whole of
   the evidence. That is an inference about the calling convention, not a proof
-  about the value, which is why the option ships off.
+  about the value, which is why it sits behind an option that can be turned off.
 
 **What it deliberately does not do.**
 
