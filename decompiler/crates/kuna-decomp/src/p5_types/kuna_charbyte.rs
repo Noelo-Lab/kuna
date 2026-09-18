@@ -53,7 +53,10 @@
 //! meets can be nothing but that sum's default signed vote.  Either one in the
 //! second propagation -- a sibling `a0[1]` read through the retyped pointer
 //! included -- restores the first, and so does a byte that took `char` while
-//! the pointer it is loaded through did not ([`loaded_through_other`]).
+//! the pointer it is loaded through did not ([`loaded_through_other`]), or a
+//! pointer that took `char *` while one it copies into or out of stayed
+//! `unsigned char *` ([`splits_pointer`]): both print as a cast the rule was
+//! meant to remove.
 //!
 //! Gated by [`Architecture::char_byte`](crate::architecture::Architecture)
 //! (option `charbyte on|off`); with the option off nothing is recorded and the
@@ -410,10 +413,46 @@ pub fn loaded_through_other(data: &Funcdata, vn: VarnodeId) -> bool {
     }
 }
 
+/// Does the pointer `vn`, retyped to `char *`, copy into or out of a pointer
+/// that stayed `unsigned char *`?  The two would print as separate variables
+/// joined by a cast (`v5 = (unsigned char *)&a0[1]`).
+pub fn splits_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
+    let stayed = |w: Option<VarnodeId>| {
+        w.and_then(|w| data.vbank().get(w))
+            .and_then(|x| x.get_temp_type())
+            .map(|t| points_to(t, is_uint1))
+            .unwrap_or(false)
+    };
+    let web = |o: &crate::op::PcodeOp, slot: int4| match o.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => true,
+        OpCode::CPUI_INDIRECT | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB => slot == 0,
+        _ => false,
+    };
+    let v = match data.vbank().get(vn) {
+        Some(v) => v,
+        None => return false,
+    };
+    for r in v.descend_iter() {
+        if let Some(o) = data.obank().get(r) {
+            if web(o, o.get_slot(vn)) && stayed(o.get_out()) {
+                return true;
+            }
+        }
+    }
+    if let Some(o) = v.get_def().and_then(|d| data.obank().get(d)) {
+        let n = if matches!(o.code(), OpCode::CPUI_MULTIEQUAL) { o.num_input() } else { 1 };
+        if (0..n).any(|i| web(o, i) && stayed(o.get_in(i))) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Keep the second propagation only if every Varnode ends where the first
-/// left it or at the same type with `uint1` read as `char`, and no byte that
-/// moved is read without a cast, is a counter or is loaded through a pointer
-/// that is not `char *`; otherwise put the first propagation's types back.  A re-seed can tip an unrelated contest -- a
+/// left it or at the same type with `uint1` read as `char`, no byte that moved
+/// is read without a cast, is a counter or is loaded through a pointer that is
+/// not `char *`, and no pointer that moved copies into or out of one that did
+/// not; otherwise put the first propagation's types back.  A re-seed can tip an unrelated contest -- a
 /// `char *` that loses to an `int *` at a join where `unsigned char *` had
 /// won -- and it retypes every byte read through the pointer, recorded or not.
 pub fn keep_or_restore(data: &mut Funcdata, upstream: Snapshot) -> bool {
@@ -425,9 +464,10 @@ pub fn keep_or_restore(data: &mut Funcdata, upstream: Snapshot) -> bool {
         if !same_but_char(up, now) {
             return true;
         }
-        is_uint1(up)
-            && is_char(now)
-            && (read_without_cast(data, *vn) || is_counter(data, *vn) || loaded_through_other(data, *vn))
+        if is_uint1(up) && is_char(now) {
+            return read_without_cast(data, *vn) || is_counter(data, *vn) || loaded_through_other(data, *vn);
+        }
+        points_to(up, is_uint1) && points_to(now, is_char) && splits_pointer(data, *vn)
     });
     if strays {
         for (vn, up) in upstream {
