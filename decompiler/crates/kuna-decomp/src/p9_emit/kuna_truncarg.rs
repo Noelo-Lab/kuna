@@ -236,21 +236,33 @@ fn fits_unsigned(data: &Funcdata, vn: VarnodeId, size: int4) -> bool {
 }
 
 /// A bound on the C value of the expression rooted at `vn`, over constants with a
-/// clear sign bit, truth values and `+ * & | ^` of those.
+/// clear sign bit, truth values and `+ * & | ^` of those.  A variable counts when
+/// the bound on its defining expression keeps its sign bit clear, so neither its
+/// width nor its signedness changes the value.
 fn c_range(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(i128, i128)> {
     if depth > 6 {
         return None;
     }
     let v = data.vbank().get(vn)?;
     let size = v.get_size();
-    if v.is_constant() {
-        let c = v.get_offset() as i128;
-        return (size <= 8 && c < (1i128 << (8 * size - 1))).then_some((c, c));
-    }
-    if !v.is_implied() {
+    if size > 8 {
         return None;
     }
-    let d = data.obank().get(v.get_def()?)?;
+    let signbit = 1i128 << (8 * size - 1);
+    if v.is_constant() {
+        let c = v.get_offset() as i128;
+        return (c < signbit).then_some((c, c));
+    }
+    let r = def_range(data, v.get_def()?, depth)?;
+    if v.is_implied() {
+        return Some(r);
+    }
+    (r.0 >= 0 && r.1 < signbit).then_some(r)
+}
+
+/// [`c_range`] of the expression the op `def` computes.
+fn def_range(data: &Funcdata, def: OpId, depth: u32) -> Option<(i128, i128)> {
+    let d = data.obank().get(def)?;
     if d.is_bool_output() {
         return Some((0, 1));
     }
