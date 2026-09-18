@@ -717,6 +717,52 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
     let _ = std::fs::remove_dir_all(&serial);
 }
 
+/// A worker process numbers its own `struct_N`, so a sharded export runs its
+/// workers with `structsynth off`: every artifact equals the serial
+/// `structsynth off` export, where the serial default synthesizes, and stderr
+/// says why.
+#[test]
+fn jobs_project_runs_workers_with_structsynth_off() {
+    let bin = fixture("i386_pie_nl");
+    let export = |tag: &str, extra: &[&str]| -> (PathBuf, String, bool) {
+        let dir = out_dir(tag);
+        let mut args = vec!["decompile-project", bin.as_str(), "-o", dir.to_str().unwrap()];
+        args.extend_from_slice(&["--max-fn-seconds", "0"]);
+        args.extend_from_slice(extra);
+        let sp = specs();
+        args.extend_from_slice(&["--sleighpath", sp.as_str()]);
+        let (_, stderr, ok) = run_kuna(&args);
+        (dir, stderr, ok)
+    };
+    let (serial, stderr, ok) = export("structsynth_serial", &[]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("structsynth jobs: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("serial project export failed: {stderr}");
+    }
+    let header = std::fs::read_to_string(serial.join("i386_pie_nl.h")).unwrap();
+    assert!(header.contains("struct struct_0 {"), "the fixture stopped synthesizing:\n{header}");
+
+    let (off, stderr, ok) = export("structsynth_off", &["--option", "structsynth", "off"]);
+    assert!(ok, "structsynth-off project export failed: {stderr}");
+    let (sharded, stderr, ok) = export("structsynth_j2", &["--jobs", "2", "--jobs-chunk", "1"]);
+    assert!(ok, "--jobs 2 project export failed: {stderr}");
+    assert!(
+        stderr.contains("note: structsynth is off in the worker processes"),
+        "no note on stderr: {stderr}"
+    );
+    for name in ["i386_pie_nl.c", "i386_pie_nl.h", "i386_pie_nl.asm", "README.md"] {
+        let got = std::fs::read(sharded.join(name)).expect(name);
+        let want = std::fs::read(off.join(name)).expect(name);
+        assert!(got == want, "--jobs 2 differs from the structsynth-off export in {name}");
+    }
+    for dir in [serial, off, sharded] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
 /// Both project writers finish every artifact before reporting that no selected
 /// function produced a body. A mixed project remains a successful export.
 #[test]

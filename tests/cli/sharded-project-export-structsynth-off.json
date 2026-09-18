@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-project",
+    "{{BIN}}",
+    "-o",
+    "{{TMP}}/proj",
+    "--max-fn-seconds",
+    "0",
+    "--jobs",
+    "2",
+    "--jobs-chunk",
+    "1"
+  ],
+  "cwd": "{{TMP}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 180,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+    "binary_sha256": "2cc72cbd21561b5907af240cc9b5396f20821e7cbc5fabd2588319cf01c6d30b",
+    "binary_size": 48024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "wrote .*proj: i386_pie_nl\\.c \\(\\d+ bytes\\), i386_pie_nl\\.h"
+    ],
+    "stderr_matches": [
+      "\\[kuna --jobs\\] note: structsynth is off in the worker processes: each process numbers its own struct_N, so a sharded \\.h cannot declare them consistently\\. Re-run with --jobs 1 for synthesized structures\\."
+    ],
+    "stderr_absent": [
+      "worker shards recovered different user-defined types"
+    ]
+  },
+  "notes": "A serial export of this fixture declares `struct struct_0 {`. Each worker numbers its own struct_N, so a sharded export used to merge conflicting definitions into a torn .h. Workers now run with structsynth off, stderr says so, and the worker type blocks agree, so the merge warning never fires."
+}
