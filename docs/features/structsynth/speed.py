@@ -1,6 +1,10 @@
 """Interleaved min-of-N speed A/B for `--option structsynth param` vs off.
 
     SPEED_N=15 SPEED_OUT=speed.json python3 docs/features/structsynth/speed.py
+    SPEED_SET=flip ...   # the default-flip set: fmt/ls/sort O2, bash O2, the inert control
+
+Both arms name the value explicitly, so the measurement does not depend on which
+value is the shipped default.
 
 Run from the worktree root with the release `kuna` built and the pinned decbench
 results tree in place.
@@ -12,10 +16,18 @@ least-contended sample); the median is printed too, for scale.
 import json, os, subprocess, sys, time
 
 R = "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11"
-K = os.path.abspath("decompiler/target/release/kuna")
+K = os.environ.get("KUNA_BIN") or os.path.abspath("decompiler/target/release/kuna")
 N = int(os.environ.get("SPEED_N", "15"))
 env = dict(os.environ, SLEIGHHOME=os.path.abspath("specs"),
            KUNA_SPECS=os.path.abspath("specs"))
+
+FLIP_CASES = [
+    ("fmt O2",  f"{R}/O2/coreutils/stripped/fmt"),
+    ("ls O2",   f"{R}/O2/coreutils/stripped/ls"),
+    ("sort O2", f"{R}/O2/coreutils/stripped/sort"),
+    ("bash O2 (1.3 MB, auto = reliable)", f"{R}/O2/bash/stripped/bash"),
+    ("grep O0 (inert control)", f"{R}/O0/grep/stripped/grep"),
+]
 
 CASES = [
     ("fmt O2",  f"{R}/O2/coreutils/stripped/fmt"),
@@ -28,10 +40,12 @@ CASES = [
 ]
 
 
+if os.environ.get("SPEED_SET") == "flip":
+    CASES = FLIP_CASES
+
+
 def run(binary, on):
-    cmd = [K, "decompile-all", binary]
-    if on:
-        cmd += ["--option", "structsynth", "param"]
+    cmd = [K, "decompile-all", binary, "--option", "structsynth", "param" if on else "off"]
     t = time.perf_counter()
     p = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
     dt = (time.perf_counter() - t) * 1000.0

@@ -726,7 +726,7 @@ Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
 binary keeps no record of the aggregate a pointer points at, so the lattice above
 gives a dereferenced parameter a pointee it can prove and stops there:
 `unsigned long *`, and every field read rendered as `*(unsigned int *)&a0[1]`.
-[`structsynth`](../options.md) (`off|param`, default `off`) invents the missing
+[`structsynth`](../options.md) (`off|param`, default `param`) invents the missing
 layout from the accesses themselves.
 
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
@@ -848,35 +848,62 @@ printed prototype never changes. The change is signalled by bumping the action's
 Because the ledger lives in the program's `TypeFactory`, `struct_N` is
 program-wide under `kuna decompile-all` and `kuna decompile-project`, which load
 once; `kuna decompile` spawns one engine per function, so there each function
-numbers from `struct_0` again.
+numbers from `struct_0` again, and so does each worker process of a `--jobs N`
+run. A sharded `decompile-project` cannot live with that: its `.h` declares every
+type once, and two workers can each mint a different `struct_0`, so its workers
+run with `structsynth off` and the run says so on stderr
+(`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`); a serial
+export synthesizes.
 
 The synthesized layout is printable rather than only inferable: the P9 option
 [`structdefs`](../options.md) prints the definition of every composite a
 function's C names reach, so `--option structdefs on --option structsynth param`
 puts `struct struct_0 { ... };` — filler members and all — above the function
 whose parameter this pass retyped, and carries the same text in the per-function
-`types` array of `decompile-all --json`. Neither option is on by default, so the
-pair changes nothing unless both are asked for.
+`types` array of `decompile-all --json`. `structdefs` is off by default, so the
+layouts of a default run live in the `decompile-project` header and nowhere in a
+function's own text.
 
-**The default is `off`, and it is off on evidence.** Flipping it to `param` and
-re-running the corpora moves **no** datatest assertion (675/675) and four stage
-assertions, each of them the intended rendering — `ELFMAIN #1`/`#2`, where the
-entry's untyped argument vector becomes `struct_0 *` and `a1[1]` becomes
-`a1->field_0x8`, and `PEBNAMES-X86 #6`/`#8`, where an untyped FS-segment base
-becomes `struct_0 *` and `v4[0xc]` becomes `v4->field_0x30`, the same byte
-offset rescaled. Speed is not the reason either: whole-binary `decompile-all`
-moves between −1.05% and +1.34% over six binaries, inside the movement of an
-inert control binary on the same run. Two things keep it opt-in. On
-`decbench`'s `type_match` over 444 slices the flip is worth −1 perfect function
-(959 → 958) and −0.049% of the aggregate, because the metric compares pointee
-spellings by name and a synthesized `struct_0 *` can never intersect a
-ground-truth `WORD *`. And the type lock changes which blocks the structurer
-duplicates: over a 15-binary, 5,431-function sweep, one more function
-(`findutils` `find` O2 `sub_f620`) lands on the emitter defect where a `goto`
-survives but its target label is never written — a defect already present in
-nine functions of the same corpus with the option off. A pass that reshapes
-block duplication stays opt-in until that is fixed, and for the same reason it
-is not a member of the `aggressive` preset.
+**The default is `param`.** Flipping it on moves **no** datatest assertion
+(675/675). In `tests/stages` it reaches four assertions of other features, each
+the intended rendering of a pointer input: `PEBNAMES-X86 #6`/`#8`, where the
+FS-segment base of an SEH-linking function that `pebnames` leaves untyped becomes
+a two-member `struct_0 *` (`v->field_0x0` for the registration link, `v->field_0x30`
+for the PEB pointer, the same byte offsets `v[0xc]` spelled before), and
+`ELFMAIN #1`/`#2`, where `elfmain off` leaves the entry's argument vector untyped
+and the pass would read `argv[0]`/`argv[1]` as a two-field structure; that pass
+pins the upstream form with `option structsynth off`, since an array of `char *`
+is not a record. Over a 14-binary, 5,610-function `decompile-all` sweep (x86-64
+coreutils, findutils, grep, gzip, bzip2, diffutils and tar at O0 and O2, and two
+ARM32 firmwares) 483 functions change. 345 of them are the same statements with
+each parameter access rewritten from its byte offset to a field; the other 138
+were read by hand, and every one is a consequence of the pointee type rather than
+a change of meaning: an index rescaled to the structure's size or spelled past its
+end (`&a0[1].field_0x8`), an `undefined1` filler array decaying to its address,
+constant byte stores merged into one store of the field's width, a load folded
+into its use or a sum held in a temporary, a local taking the pointer type of the
+field it was loaded from, a literal respelled for the field's signedness, and one
+return block the structurer now duplicates (`findutils` `find` O2 `sub_f620`, whose
+remaining `goto label_f752` keeps its label). No function in either arm has a
+`goto` whose label is missing, and the 311 structures of eight serial project
+exports compile with every `offsetof(struct_N, field_0xK)` equal to K.
+Whole-binary speed is inside the movement of an inert control.
+
+The cost is on decbench's `type_match`, and it is accepted: the metric compares
+pointee spellings by name, so a synthesized `struct_0 *` can never intersect a
+ground-truth `WORD *`, and over 444 slices the flip is worth −1 perfect function
+(959 → 958) and −0.05% of the aggregate. Every decision it moves off a match is
+a real false positive of one shape — a buffer of primitive elements the array
+rule does not recognise: `factor`'s GMP limb arrays (`__uintmax_t *`, read at
+offsets 0 and 8, two pointer-sized elements the uniform-run rule keeps as a
+record) and `shred`'s seven-byte `char *` name buffer (stores of 4, 2 and 1
+bytes). The other 1,295 decisions it touches were already misses: a
+`struct_N *` where the ground truth names the aggregate (`Hash_table *`,
+`stat *`, `fileinfo *`, …), which a metric that credits an anonymous structure
+against a named one would count. The pass is not a member of any `--mode` preset
+list: `reliable` is the shipped defaults, so it synthesizes; `aggressive` inherits
+the default rather than pinning `param` below a future `all`; `fast` changes
+discovery only.
 
 Type facts are *consumed* back into the graph by the typerecovery rules: the
 `oppool2` pool (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_5.rs
