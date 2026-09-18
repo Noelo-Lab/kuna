@@ -21,7 +21,7 @@
 
 use std::rc::Rc;
 
-use kuna_base::types::int4;
+use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 
 use crate::cast::{CastStrategy, CastStrategyC, IntPromotionCode};
@@ -67,7 +67,48 @@ pub(crate) fn narrowed_arg_cast(
         return None;
     }
     let tlst = data.get_arch().types_rc()?;
-    tlst.get_base(size, type_metatype::TYPE_UINT).ok()
+    let ct = tlst.get_base(size, type_metatype::TYPE_UINT).ok()?;
+    if retype_truncation(data, strat, op, invn, &ct) {
+        return None;
+    }
+    Some(ct)
+}
+
+/// Retype an argument that already prints as a truncating cast (`(char)v2`) to
+/// `ct`, so it reads `(unsigned char)v2` rather than stacking a second cast.
+fn retype_truncation(
+    data: &mut Funcdata,
+    strat: &CastStrategyC,
+    op: OpId,
+    invn: VarnodeId,
+    ct: &Rc<Datatype>,
+) -> bool {
+    let Some(vn) = data.vbank().get(invn) else {
+        return false;
+    };
+    if !vn.is_implied() || data.lone_descend(invn) != Some(op) {
+        return false;
+    }
+    let Some(def) = vn.get_def() else {
+        return false;
+    };
+    let Some(d) = data.obank().get(def) else {
+        return false;
+    };
+    if d.code() != OpCode::CPUI_SUBPIECE || d.does_special_printing() {
+        return false;
+    }
+    let (Some(in0), Some(in1)) = (d.get_in(0), d.get_in(1)) else {
+        return false;
+    };
+    let off = data.vbank().get(in1).map(|v| v.get_offset()).unwrap_or(0) as uint4;
+    let intype = data.vn_high_type_read_facing(in0, def);
+    let outtype = data.vn_high_type_def_facing(invn);
+    if !strat.is_subpiece_cast(&outtype, &intype, off) || !strat.is_subpiece_cast(ct, &intype, off) {
+        return false;
+    }
+    data.vn_update_type(invn, Rc::clone(ct));
+    data.vbank().get(invn).is_some_and(|v| Rc::ptr_eq(v.get_type(), ct))
 }
 
 /// Is parameter `slot` of the call fixed by a declared prototype?
