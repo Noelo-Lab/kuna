@@ -20,18 +20,25 @@
       d:     lea edi,[rdi+rdi*2] / movzx edi,di  / jmp sinkd  (declared uint2)
       sink:  mov [acc],edi / ret
       sinkd: mov [acc],di / ret
+      bl:    movzx edi,byte [rdi+3] / jmp sink            (byte load)
+      band:  movzx eax,byte [rdi+1] / and al,[rdi+2] / movzx edi,al / jmp sink
+      bfit:  xor eax,eax / cmp edi,2 / setne al / add eax,6 / movzx edi,al / jmp sink
 
-    One pass, defaults only.  f, k and neg_ get the cast.  h passes an input
-    whose promotion already zero-extends, g passes a sign extension, and d
-    calls a prototype that declares the narrow parameter, so C converts the
-    argument itself; none of the three changes.
+    One pass, defaults only.  f, k and neg_ get the cast.  So does bl: its
+    byte has no committed type and prints as char, which C sign-extends.  h
+    passes an input whose promotion already zero-extends, g passes a sign
+    extension, d calls a prototype that declares the narrow parameter, so C
+    converts the argument itself, band ANDs two bytes typed unsigned, and
+    bfit's sum is 6 or 7 whatever the input; none of those five changes.
 -->
 <bytechunk space="ram" offset="0x1000">
 8d3c7f0fb7ffeb2283c701400fb6ffeb
 19f7df0fb7ffeb120fb7ffeb0d0fbfff
 eb088d3c7f0fb7ffeb07893d10000000
 c366893d08000000c30f1f8000000000
-0000000000000000
+00000000000000000fb67f03ebdc0fb6
+47012247020fb6f8ebd031c083ff020f
+95c083c0060fb6f8ebc0000000000000
 </bytechunk>
 <symbol space="ram" offset="0x1000" name="f"/>
 <symbol space="ram" offset="0x1008" name="k"/>
@@ -41,6 +48,9 @@ c366893d08000000c30f1f8000000000
 <symbol space="ram" offset="0x1022" name="d"/>
 <symbol space="ram" offset="0x102a" name="sink"/>
 <symbol space="ram" offset="0x1031" name="sinkd"/>
+<symbol space="ram" offset="0x1048" name="bl"/>
+<symbol space="ram" offset="0x104e" name="band"/>
+<symbol space="ram" offset="0x105a" name="bfit"/>
 </binaryimage>
 <script>
   <com>parse line extern void sinkd(uint2 x);</com>
@@ -62,6 +72,15 @@ c366893d08000000c30f1f8000000000
   <com>lo fu d</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu bl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu band</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bfit</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="truncarg #1: a narrowed product keeps its 16-bit truncation" min="1" max="1">sink\(\(uint2\)\(a0 \* 3\)\);</stringmatch>
@@ -71,4 +90,7 @@ c366893d08000000c30f1f8000000000
 <stringmatch name="truncarg #5: an input whose promotion zero-extends gets no cast" min="1" max="1">sink\(a0\);</stringmatch>
 <stringmatch name="truncarg #6: a sign extension is untouched" min="1" max="1">sink\(\(int4\)a0\);</stringmatch>
 <stringmatch name="truncarg #7: a declared narrow parameter converts the argument itself" min="1" max="1">sinkd\(a0 \* 3\);</stringmatch>
+<stringmatch name="truncarg #8: a trimmed byte load printed as char keeps its zero-extension" min="1" max="1">sink\(\(uint1\)\*\(char \*\)\(a0 \+ 3\)\);</stringmatch>
+<stringmatch name="truncarg #9: an AND of unsigned byte loads gets no cast" min="1" max="1">sink\(\*\(uint1 \*\)\(a0 \+ 1\) &amp; \*\(uint1 \*\)\(a0 \+ 2\)\);</stringmatch>
+<stringmatch name="truncarg #10: a sum that provably fits its byte gets no cast" min="1" max="1">sink\(\(a0 != 2\) \+ '\\x06'\);</stringmatch>
 </decompilertest>

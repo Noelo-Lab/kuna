@@ -857,6 +857,10 @@ pub struct ArchContext {
     /// [`Architecture::bool_byte`](crate::architecture::Architecture); the walk
     /// lives in [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
     pub bool_byte: bool,
+    /// (kuna) The printer spells a residual one-byte TYPE_UNKNOWN as C `char`
+    /// (`realtypes` on, C output), so its promotion sign-extends.  Read by
+    /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
+    pub unknown_byte_is_char: bool,
 
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be a
     /// LOAD/STORE base as a pointer; mirrors
@@ -1551,6 +1555,7 @@ impl ArchContext {
             struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth
             codescalar: false,           // (kuna) option codescalar
             bool_byte: true, // (kuna) option boolbyte (default on)
+            unknown_byte_is_char: false, // (kuna) realtypes + C output
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
