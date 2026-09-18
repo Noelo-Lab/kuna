@@ -87,6 +87,7 @@ pub struct FuncdataCastContext<'a> {
     fd: RefCell<&'a mut Funcdata>,
     vn_intern: RefCell<Vec<VarnodeId>>,
     op_intern: RefCell<Vec<OpId>>,
+    byte_as: Option<Rc<Datatype>>,
 }
 
 impl<'a> FuncdataCastContext<'a> {
@@ -96,12 +97,33 @@ impl<'a> FuncdataCastContext<'a> {
             fd: RefCell::new(fd),
             vn_intern: RefCell::new(Vec::new()),
             op_intern: RefCell::new(Vec::new()),
+            byte_as: None,
+        }
+    }
+
+    /// (kuna) Report a non-constant one-byte TYPE_UNKNOWN as `ty` instead, so the
+    /// promotion queries see the type the printer spells it as.
+    pub(crate) fn with_unknown_byte_as(mut self, ty: Rc<Datatype>) -> Self {
+        self.byte_as = Some(ty);
+        self
+    }
+
+    fn view(&self, vn: VarnodeId, ty: Rc<Datatype>) -> Rc<Datatype> {
+        match &self.byte_as {
+            Some(b)
+                if ty.get_size() == 1
+                    && ty.get_metatype() == type_metatype::TYPE_UNKNOWN
+                    && !self.fd.borrow().vbank().get(vn).is_some_and(|v| v.is_constant()) =>
+            {
+                Rc::clone(b)
+            }
+            _ => ty,
         }
     }
 
     /// Intern a `VarnodeId`, returning its opaque handle (stable for the life of
     /// this context).
-    fn vn_ref(&self, vn: VarnodeId) -> VnRef {
+    pub(crate) fn vn_ref(&self, vn: VarnodeId) -> VnRef {
         let mut tab = self.vn_intern.borrow_mut();
         // Linear scan: the per-op cast decision touches a handful of varnodes, so
         // the table stays tiny; this keeps the handle stable without a HashMap
@@ -114,7 +136,7 @@ impl<'a> FuncdataCastContext<'a> {
     }
 
     /// Intern an `OpId`, returning its opaque handle.
-    fn op_ref(&self, op: OpId) -> OpRef {
+    pub(crate) fn op_ref(&self, op: OpId) -> OpRef {
         let mut tab = self.op_intern.borrow_mut();
         if let Some(i) = tab.iter().position(|&k| k == op) {
             return OpRef(i);
@@ -211,15 +233,19 @@ impl CastContext for FuncdataCastContext<'_> {
         let vnk = self.vn_key(vn);
         // high->getType(): the merged HighVariable's data-type (lazy recompute ->
         // &mut), else the bare Varnode type when no HighVariable exists.
-        let mut fd = self.fd.borrow_mut();
-        fd.high_get_type(vnk)
-            .unwrap_or_else(|| Rc::clone(fd.vbank().get(vnk).expect("cast ctx: stale vn").get_type()))
+        let ty = {
+            let mut fd = self.fd.borrow_mut();
+            fd.high_get_type(vnk)
+                .unwrap_or_else(|| Rc::clone(fd.vbank().get(vnk).expect("cast ctx: stale vn").get_type()))
+        };
+        self.view(vnk, ty)
     }
 
     fn vn_high_type_read_facing(&self, vn: VnRef, op: OpRef) -> Rc<Datatype> {
         let vnk = self.vn_key(vn);
         let opk = self.op_key(op);
-        self.fd.borrow_mut().vn_high_type_read_facing(vnk, opk)
+        let ty = self.fd.borrow_mut().vn_high_type_read_facing(vnk, opk);
+        self.view(vnk, ty)
     }
 
     fn op_inherits_sign(&self, op: OpRef) -> bool {
@@ -348,7 +374,9 @@ pub(crate) fn get_input_cast(
             }
             let reqtype = input_type_local(data, op, slot);
             let curtype = data.vn_high_type_read_facing(invn, op);
-            strat.cast_standard(&reqtype, &curtype, false, true)
+            strat
+                .cast_standard(&reqtype, &curtype, false, true)
+                .or_else(|| crate::kuna_truncarg::narrowed_arg_cast(data, strat, op, slot))
         }
     }
 }

@@ -830,7 +830,12 @@ not refuse but *patch*: the trace records a pull/push patch at the boundary
 (`try_call_pull`/`try_return_pull`/`try_switch_pull`/`try_call_return_push`),
 and `do_trace` additionally refuses to commit when **zero pull points** were
 found — a rewrite whose small value never actually escapes the shadow graph
-would churn the IR for no output gain.
+would churn the IR for no output gain. (kuna) A call pull whose dropped bits
+are known zero, because the wide input's non-zero mask lies inside the logical
+mask, is recorded on the call's spec when the rewrite commits
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_truncarg.rs (note_trimmed_arg)`),
+so emission can print the zero-extension C's promotion would otherwise lose
+(chapter [09](09-emission.md)).
 
 Three sibling engines share the file. `subflow.rs (SplitFlow)` (trigger
 `RuleSplitFlow`, oppool1) splits a double-sized value into hi/lo lanes through

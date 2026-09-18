@@ -427,6 +427,9 @@ pub struct LangCaps {
     pub paren_conditions: bool,
     /// Integer literals carry `U`/`L`/`LL` type suffixes.
     pub integer_suffixes: bool,
+    /// A sub-`int` integer operand is promoted to `int` before arithmetic and
+    /// when passed as an argument.
+    pub integer_promotion: bool,
 }
 
 /// The per-language surface vocabulary.
@@ -551,6 +554,7 @@ pub static LANG_C: LangProfile = LangProfile {
         arrow_member: true,
         paren_conditions: true,
         integer_suffixes: true,
+        integer_promotion: true,
     },
     forms: LangForms {
         proto: ProtoForm::CPrefixReturn,

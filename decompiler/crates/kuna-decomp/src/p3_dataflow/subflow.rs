@@ -233,6 +233,9 @@ pub struct SubvariableFlow {
     worklist: Vec<RvId>,
     /// Number of instructions pulling out the logical value (C++ `pullcount`).
     pullcount: int4,
+    /// (kuna `truncarg`) Call slots `try_call_pull` trims whose dropped bits are
+    /// known zero.
+    zext_pulls: Vec<(OpId, int4)>,
 }
 
 impl SubvariableFlow {
@@ -519,6 +522,10 @@ impl SubvariableFlow {
         // Don't trim a non-varargs locked prototype.
         if fc.is_input_locked() && !fc.is_dotdotdot() {
             return Ok(false);
+        }
+        let r = self.rv(rvn);
+        if r.vn.is_some_and(|vn| crate::kuna_truncarg::drops_only_zero_bits(data, vn, r.mask)) {
+            self.zext_pulls.push((op, slot));
         }
         self.patchlist.push(PatchRecord {
             typ: PatchType::ParameterPatch,
@@ -2072,6 +2079,7 @@ impl SubvariableFlow {
             patchlist: Vec::new(),
             worklist: Vec::new(),
             pullcount: 0,
+            zext_pulls: Vec::new(),
         };
         if mask == 0u64 {
             // fd = 0; return;  -- invalid engine
@@ -2256,6 +2264,8 @@ impl SubvariableFlow {
                     let slot = self.patchlist[piter].slot;
                     let v = self.get_replace_varnode(data, in1)?;
                     data.op_set_input(pullop, v, slot)?;
+                    let zext = self.zext_pulls.contains(&(pullop, slot));
+                    crate::kuna_truncarg::note_trimmed_arg(data, pullop, slot, zext);
                 }
                 PatchType::ExtensionPatch => {
                     // operations that flow the small variable into a bigger variable
