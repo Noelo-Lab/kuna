@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_222() {
+fn settable_count_is_223() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -161,8 +161,8 @@ fn settable_count_is_222() {
     // +1 for `rawdiscover` (P1 raw-image function inventory).
     // +1 for `protoorder` (P4 callee-first recovered parameter types).
     // +1 for `charbyte` (P5 char-pointer byte typing).
-    assert_eq!(kuna_num_settables(), 222);
-    assert_eq!(SETTABLE_TABLE.len(), 222);
+    assert_eq!(kuna_num_settables(), 223);
+    assert_eq!(SETTABLE_TABLE.len(), 223);
 }
 
 #[test]
@@ -1104,7 +1104,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // increments it again.
     // 217 -> 218: +1 for `mulblob`; its P3 row sits mid-table, so it
     // increments it again.
-    assert_eq!(json.matches("},\n").count(), 221);
+    assert_eq!(json.matches("},\n").count(), 222);
 }
 
 #[test]
