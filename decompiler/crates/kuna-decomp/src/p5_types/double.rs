@@ -5006,7 +5006,7 @@ impl RuleDoubleLoad {
     ///
     /// `spc` is the address-space index referred to by the LOAD/STOREs.
     /// `indirects`, if `Some`, collects INDIRECTs caused by STOREs.
-    fn no_write_conflict(
+    pub(crate) fn no_write_conflict(
         data: &Funcdata,
         mut op1: OpId,
         mut op2: OpId,

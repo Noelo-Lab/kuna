@@ -4028,6 +4028,11 @@ impl SplitDatatype {
     }
 
     /// Split a LOAD operation (C++ `SplitDatatype::splitLoad`, subflow.cc:2770).
+    ///
+    /// (kuna) The split LOADs land at the LOAD's lone COPY only when no write to
+    /// the loaded space or call lies between the two; otherwise they stay at
+    /// the LOAD and the COPY is kept. Upstream always moves them to the COPY,
+    /// which can print the read after a store into its bytes or a call.
     pub fn split_load(
         &mut self,
         data: &mut Funcdata,
@@ -4049,6 +4054,15 @@ impl SplitDatatype {
                 return Ok(false);
             }
             if opc != OpCode::CPUI_COPY {
+                copy_op = None;
+            }
+        }
+        if let Some(cop) = copy_op {
+            let load_in0 = data.obank().get(load_op).expect("stale load").get_in(0).expect("load in0");
+            let spc = data.vbank().get(load_in0).expect("stale space").get_offset() as int4;
+            if crate::p5_types::double::RuleDoubleLoad::no_write_conflict(data, load_op, cop, spc, None)
+                .is_none()
+            {
                 copy_op = None;
             }
         }
