@@ -176,6 +176,7 @@ pub fn decompile_one_prefollowed(
         merged
     };
     let proto_overrides: &[(Address, PrototypePieces)] = &first_overrides;
+    arch.format_override_callpoints = parked.iter().map(|s| s.callpoint).collect();
     // A RET-call chain beginning at the function entry is safe to recognize
     // without an assertion: every link stored its own fall-through before the
     // RETURN, which distinguishes it from the incoming return address and from
@@ -283,6 +284,8 @@ pub fn decompile_one_prefollowed(
             .cloned()
             .collect();
         merged.extend(discovered.iter().cloned());
+        arch.format_override_callpoints.retain(|at| !dropped.contains(at));
+        arch.format_override_callpoints.extend(discovered.iter().map(|(a, _)| a.get_offset()));
         result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
             arch,
             name,
@@ -297,6 +300,7 @@ pub fn decompile_one_prefollowed(
             seed.mapped_params,
         );
     }
+    arch.format_override_callpoints.clear();
     arch.readonlypropagate = saved_readonlypropagate;
     DecompileStep { result, discovered }
 }

@@ -1276,6 +1276,9 @@ impl Action for ActionActiveParam {
                 self.base.count += 1;
             }
         }
+        // (kuna `formatstring`) Once no call has trials left, a resolved format
+        // call sheds the tail it was scored with.
+        self.base.count += crate::p4_calls::kuna_formattail::shed_format_tails(data);
         // (kuna) `calleearityfwd`: every spec in this pass is final now, so the
         // sites that recovered nothing get their one retry.
         crate::p4_calls::kuna_calleearityfwd::rescue_pending(data, &pending_rescue);

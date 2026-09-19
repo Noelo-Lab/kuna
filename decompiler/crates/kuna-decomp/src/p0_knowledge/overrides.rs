@@ -223,6 +223,9 @@ pub struct Override {
     flowoverride: BTreeMap<Address, uint4>,
     /// `/GS` checker call sites recognized after SSA and replayed on restart.
     msvc_cookie_calls: BTreeSet<Address>,
+    /// (kuna `formatstring`) Call points whose prototype override is a resolved
+    /// format string, installed with an open tail it sheds after P4.
+    format_calls: BTreeSet<Address>,
 }
 
 impl Override {
@@ -242,6 +245,7 @@ impl Override {
         self.multistagejump.clear();
         self.flowoverride.clear();
         self.msvc_cookie_calls.clear();
+        self.format_calls.clear();
     }
 
     /// Generate the \e warning message related to a dead-code delay
@@ -329,6 +333,18 @@ impl Override {
     /// Record an exact `/GS` checker call site for the restart re-flow.
     pub fn insert_msvc_cookie_call(&mut self, addr: Address) {
         self.msvc_cookie_calls.insert(addr);
+    }
+
+    /// (kuna `formatstring`) Mark the prototype override at `addr` as one a
+    /// resolved format string produced.
+    pub fn insert_format_call(&mut self, addr: Address) {
+        self.format_calls.insert(addr);
+    }
+
+    /// (kuna `formatstring`) Is the prototype override at `addr` a resolved
+    /// format string's?
+    pub fn is_format_call(&self, addr: &Address) -> bool {
+        self.format_calls.contains(addr)
     }
 
     /// Has the late `/GS` recognizer seeded this exact call site?

@@ -737,8 +737,13 @@ pub fn build_and_follow_flow_with_override_and_protos(
         fd.get_override_mut().insert_flow_override(addr.clone(), *ty);
     }
     for (callpoint, pieces) in proto_overrides {
+        let mut pieces = pieces.clone();
+        if arch.format_override_callpoints.contains(&callpoint.get_offset()) {
+            pieces.first_var_arg_slot = pieces.intypes.len() as int4;
+            fd.get_override_mut().insert_format_call(callpoint.clone());
+        }
         let ov: Box<dyn crate::overrides::FuncProtoOverride> =
-            Box::new(crate::overrides::PiecesProtoOverride { pieces: pieces.clone() });
+            Box::new(crate::overrides::PiecesProtoOverride { pieces });
         fd.get_override_mut().insert_proto_override(callpoint.clone(), ov);
     }
     follow_flow_on_fd(arch, fd)

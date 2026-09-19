@@ -2711,6 +2711,9 @@ truncating the fall-through here"
             if let Some(pieces) = pieces {
                 if let Some(proto) = self.env.build_override_proto(&pieces)? {
                     fc.proto_mut().copy(&proto);
+                    if self.data.get_override().is_format_call(&op_addr) {
+                        fc.set_format_arity(Some(pieces.intypes.len() as int4));
+                    }
                 }
             }
         }

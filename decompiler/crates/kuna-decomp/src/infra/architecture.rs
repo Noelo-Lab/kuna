@@ -1696,6 +1696,12 @@ pub struct Architecture {
     /// overrides.  Empty unless the Listing and `formatstring` are both on.
     pub format_call_overrides:
         std::collections::BTreeMap<u64, Vec<crate::kuna_formatstring::ParkedFormatSite>>,
+    /// (kuna `formatstring`) The call points, among the prototype overrides of
+    /// the drive in progress, whose override a resolved format string produced.
+    /// Set by the console's decompile step around each drive; the flow build
+    /// installs those overrides with an open tail
+    /// ([`crate::p4_calls::kuna_formattail`]).
+    pub format_override_callpoints: std::collections::BTreeSet<u64>,
     /// (kuna `formatstring`) Which variadic arguments the target passes exactly
     /// as named ones, which bounds what a closed printf/scanf override may
     /// declare. A FACT, written once at `load file` from the image's container;
@@ -2452,6 +2458,7 @@ impl Architecture {
             analysis_operand_refs: false,
             analysis_formatstring: crate::kuna_formatstring::FormatStringMode::Off,
             format_call_overrides: std::collections::BTreeMap::new(),
+            format_override_callpoints: std::collections::BTreeSet::new(),
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,

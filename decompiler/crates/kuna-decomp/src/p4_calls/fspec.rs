@@ -6573,6 +6573,10 @@ pub struct FuncCallSpecs {
     /// only known-zero bits, as `(slot, size, number of inputs)` at the trim.
     /// See [`crate::p9_emit::kuna_truncarg`].
     zext_trimmed: Vec<(int4, int4, int4)>,
+    /// (kuna `formatstring`) The argument count a resolved format string
+    /// declares, while this call still carries the open tail it sheds after
+    /// trial scoring. See [`crate::p4_calls::kuna_formattail`].
+    format_arity: Option<int4>,
 }
 
 impl FuncCallSpecs {
@@ -6606,6 +6610,7 @@ impl FuncCallSpecs {
             isstackoutputlock: false,
             final_input_storage: Vec::new(), // (kuna) calleearity
             zext_trimmed: Vec::new(),        // (kuna) truncarg
+            format_arity: None,              // (kuna) formatstring
         }
     }
 
@@ -6635,6 +6640,7 @@ impl FuncCallSpecs {
         // We are skipping activeinput, activeoutput (per C++).
         res.isbadjumptable = self.isbadjumptable;
         res.proto.copy(&self.proto); // Copy the FuncProto portion
+        res.format_arity = self.format_arity;
         res
     }
 
@@ -6968,6 +6974,17 @@ impl FuncCallSpecs {
         if zext {
             self.zext_trimmed.push((slot, size, ninputs));
         }
+    }
+
+    /// (kuna `formatstring`) The declared argument count of a resolved format
+    /// call whose open tail has not been shed yet.
+    pub fn format_arity(&self) -> Option<int4> {
+        self.format_arity
+    }
+
+    /// (kuna `formatstring`) Set or clear [`Self::format_arity`].
+    pub fn set_format_arity(&mut self, arity: Option<int4>) {
+        self.format_arity = arity;
     }
 
     /// (kuna `truncarg`) Is input `slot`, still `size` bytes wide in a call with
