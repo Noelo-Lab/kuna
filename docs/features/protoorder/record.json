@@ -235,76 +235,102 @@
   "note_improved": "projects.*.improved counts rows that reach perfect too (957 = 119 onto perfect + 838 improved)"
  },
  "speed": {
-  "method": "main (a d96e3408 build) vs this branch's final engine rebased onto it, whole-binary `kuna decompile-all --json`, main and branch alternating inside each iteration (order swapped every iteration), min and median of 15, three slice groups side by side on a shared 80-core box (load 2-9)",
+  "method": "round 12: main (a d96e3408 build; 75f832e3 differs only in docs) vs this branch's round-12 engine vs the round-11 engine, whole-binary `kuna decompile-all --json`, three arms rotated and reversed inside each iteration, min and median of 15, three slice groups side by side (box load 9-41)",
   "budget_pct": 5,
   "slices": {
    "fmt -O2": {
-    "main_min_ms": 4111,
-    "pr_min_ms": 4177,
-    "main_median_ms": 4152,
-    "pr_median_ms": 4210,
-    "delta_min": "+1.6%",
-    "delta_median": "+1.4%"
+    "main_min_ms": 4451,
+    "pr_min_ms": 4221,
+    "round11_min_ms": 4258,
+    "main_median_ms": 4649,
+    "pr_median_ms": 4529,
+    "delta_min_pct": -5.2,
+    "delta_median_pct": -2.6,
+    "vs_round11_min_pct": -0.9
    },
    "kmod -O2": {
-    "main_min_ms": 7130,
-    "pr_min_ms": 7280,
-    "main_median_ms": 7182,
-    "pr_median_ms": 7331,
-    "delta_min": "+2.1%",
-    "delta_median": "+2.1%"
+    "main_min_ms": 7316,
+    "pr_min_ms": 7495,
+    "round11_min_ms": 7619,
+    "main_median_ms": 8247,
+    "pr_median_ms": 8320,
+    "delta_min_pct": 2.4,
+    "delta_median_pct": 0.9,
+    "vs_round11_min_pct": -1.6
    },
    "ls -O2": {
-    "main_min_ms": 13481,
-    "pr_min_ms": 13735,
-    "main_median_ms": 13877,
-    "pr_median_ms": 14047,
-    "delta_min": "+1.9%",
-    "delta_median": "+1.2%"
+    "main_min_ms": 14126,
+    "pr_min_ms": 14218,
+    "round11_min_ms": 14338,
+    "main_median_ms": 15553,
+    "pr_median_ms": 15662,
+    "delta_min_pct": 0.7,
+    "delta_median_pct": 0.7,
+    "vs_round11_min_pct": -0.8
    },
    "libselinux -O2": {
-    "main_min_ms": 6460,
-    "pr_min_ms": 6604,
-    "main_median_ms": 6521,
-    "pr_median_ms": 6674,
-    "delta_min": "+2.2%",
-    "delta_median": "+2.3%"
+    "main_min_ms": 6808,
+    "pr_min_ms": 6807,
+    "round11_min_ms": 6930,
+    "main_median_ms": 7482,
+    "pr_median_ms": 7633,
+    "delta_min_pct": -0.0,
+    "delta_median_pct": 2.0,
+    "vs_round11_min_pct": -1.8
    },
    "ip -O2": {
-    "main_min_ms": 27054,
-    "pr_min_ms": 26811,
-    "main_median_ms": 27548,
-    "pr_median_ms": 27422,
-    "delta_min": "-0.9%",
-    "delta_median": "-0.5%"
+    "main_min_ms": 29609,
+    "pr_min_ms": 29498,
+    "round11_min_ms": 27667,
+    "main_median_ms": 32098,
+    "pr_median_ms": 31253,
+    "delta_min_pct": -0.4,
+    "delta_median_pct": -2.6,
+    "vs_round11_min_pct": 6.6,
+    "rerun": {
+     "main_min_ms": 31228,
+     "pr_min_ms": 30906,
+     "round11_min_ms": 30938,
+     "main_median_ms": 34533,
+     "pr_median_ms": 34034,
+     "delta_min_pct": -1.0,
+     "delta_median_pct": -1.4,
+     "vs_round11_min_pct": -0.1
+    }
    },
    "e2fsck -O2": {
-    "main_min_ms": 26237,
-    "pr_min_ms": 26902,
-    "main_median_ms": 26631,
-    "pr_median_ms": 27132,
-    "delta_min": "+2.5%",
-    "delta_median": "+1.9%"
+    "main_min_ms": 26856,
+    "pr_min_ms": 27233,
+    "round11_min_ms": 27355,
+    "main_median_ms": 27957,
+    "pr_median_ms": 28623,
+    "delta_min_pct": 1.4,
+    "delta_median_pct": 2.4,
+    "vs_round11_min_pct": -0.4
    },
    "tar -O2": {
-    "main_min_ms": 44189,
-    "pr_min_ms": 45693,
-    "main_median_ms": 44556,
-    "pr_median_ms": 46051,
-    "delta_min": "+3.4%",
-    "delta_median": "+3.4%"
+    "main_min_ms": 44911,
+    "pr_min_ms": 45645,
+    "round11_min_ms": 47896,
+    "main_median_ms": 49683,
+    "pr_median_ms": 51681,
+    "delta_min_pct": 1.6,
+    "delta_median_pct": 4.0,
+    "vs_round11_min_pct": -4.7
    },
    "betaflight -O2": {
-    "main_min_ms": 54296,
-    "pr_min_ms": 55062,
-    "main_median_ms": 54667,
-    "pr_median_ms": 55619,
-    "delta_min": "+1.4%",
-    "delta_median": "+1.7%"
+    "main_min_ms": 55045,
+    "pr_min_ms": 55802,
+    "round11_min_ms": 57592,
+    "main_median_ms": 57491,
+    "pr_median_ms": 59080,
+    "delta_min_pct": 1.4,
+    "delta_median_pct": 2.8,
+    "vs_round11_min_pct": -3.1
    }
   },
-  "verdict": "every slice inside +5% on the minimum: fmt +1.6%, kmod +2.1%, ls +1.9%, libselinux +2.2%, ip -0.9%, e2fsck +2.5%, tar +3.4%, betaflight +1.4%",
-  "note": "rounds 8-10 measured against e1139df9 and are kept under round8/round9/round10",
+  "verdict": "every slice inside +5% on the minimum vs main: fmt -5.2%, kmod +2.4%, ls +0.7%, libselinux -0.0%, ip -0.4% (re-run -1.0%), e2fsck +1.4%, tar +1.6%, betaflight +1.4%; vs the round-11 engine every slice is within noise (ip's +6.6% in the first run was two outlying round-11 samples; the re-run gives -0.1%)",
+  "note": "rounds 8-10 measured against e1139df9 and are kept under round8/round9/round10; round 11 on d96e3408 under round11_on_d96e3408",
   "round9": {
    "method": "main (origin/main e1139df9 build) vs this branch after the round-9 float refusal, whole-binary `kuna decompile-all --json`, interleaved (order swapped every iteration), min and median of 15, two groups side by side on the shared 80-core box (load 13-28); .scratch/r9/speed.py",
    "slices": {
@@ -637,6 +663,76 @@
      "pr_min_ms": 55697
     }
    }
+  },
+  "round11_on_d96e3408": {
+   "method": "main (a d96e3408 build) vs this branch's final engine rebased onto it, whole-binary `kuna decompile-all --json`, main and branch alternating inside each iteration (order swapped every iteration), min and median of 15, three slice groups side by side on a shared 80-core box (load 2-9)",
+   "slices": {
+    "fmt -O2": {
+     "main_min_ms": 4111,
+     "pr_min_ms": 4177,
+     "main_median_ms": 4152,
+     "pr_median_ms": 4210,
+     "delta_min": "+1.6%",
+     "delta_median": "+1.4%"
+    },
+    "kmod -O2": {
+     "main_min_ms": 7130,
+     "pr_min_ms": 7280,
+     "main_median_ms": 7182,
+     "pr_median_ms": 7331,
+     "delta_min": "+2.1%",
+     "delta_median": "+2.1%"
+    },
+    "ls -O2": {
+     "main_min_ms": 13481,
+     "pr_min_ms": 13735,
+     "main_median_ms": 13877,
+     "pr_median_ms": 14047,
+     "delta_min": "+1.9%",
+     "delta_median": "+1.2%"
+    },
+    "libselinux -O2": {
+     "main_min_ms": 6460,
+     "pr_min_ms": 6604,
+     "main_median_ms": 6521,
+     "pr_median_ms": 6674,
+     "delta_min": "+2.2%",
+     "delta_median": "+2.3%"
+    },
+    "ip -O2": {
+     "main_min_ms": 27054,
+     "pr_min_ms": 26811,
+     "main_median_ms": 27548,
+     "pr_median_ms": 27422,
+     "delta_min": "-0.9%",
+     "delta_median": "-0.5%"
+    },
+    "e2fsck -O2": {
+     "main_min_ms": 26237,
+     "pr_min_ms": 26902,
+     "main_median_ms": 26631,
+     "pr_median_ms": 27132,
+     "delta_min": "+2.5%",
+     "delta_median": "+1.9%"
+    },
+    "tar -O2": {
+     "main_min_ms": 44189,
+     "pr_min_ms": 45693,
+     "main_median_ms": 44556,
+     "pr_median_ms": 46051,
+     "delta_min": "+3.4%",
+     "delta_median": "+3.4%"
+    },
+    "betaflight -O2": {
+     "main_min_ms": 54296,
+     "pr_min_ms": 55062,
+     "main_median_ms": 54667,
+     "pr_median_ms": 55619,
+     "delta_min": "+1.4%",
+     "delta_median": "+1.7%"
+    }
+   },
+   "verdict": "every slice inside +5% on the minimum: fmt +1.6%, kmod +2.1%, ls +1.9%, libselinux +2.2%, ip -0.9%, e2fsck +2.5%, tar +3.4%, betaflight +1.4%"
   }
  },
  "invariants_checked": {
