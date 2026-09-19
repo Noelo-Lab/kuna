@@ -2657,6 +2657,37 @@ fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
     }
 }
 
+/// `fill` stores the eight bytes of `"ustar  "` through the buffer it hands
+/// `peek`, whose recovered parameter is `unsigned char *`. Taken as a vote, that
+/// type made `fill`'s parameter a byte pointer and `SplitDatatype` printed the
+/// store as eight byte stores; the vote is refused because the caller writes
+/// wider than the pointee. Checked at the default and with `--option ptrfromuse
+/// void`, which also types `fill`'s parameter from its own dereferences.
+#[test]
+fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_narrowvote_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for void in [false, true] {
+        let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", &sp];
+        if void {
+            args.extend_from_slice(&["--option", "ptrfromuse", "void"]);
+        }
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("protoorder byte pointee: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let fill = stdout.split("// Function: ").find(|c| c.starts_with("fill ")).expect("fill is printed");
+        assert!(fill.contains("= 0x2020726174737575;"), "the eight-byte store was split (void={void}):\n{fill}");
+        assert!(!fill.contains("unsigned char *a0"), "the byte-pointer vote was taken (void={void}):\n{fill}");
+    }
+}
+
 /// `--jobs-full-load` gives every worker the parent's own load instead of the
 /// inventory hand-off.  It exists as the paranoid option, so it has to agree with
 /// the hand-off, not merely with itself.
