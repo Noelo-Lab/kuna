@@ -2348,7 +2348,8 @@ impl PrintC {
     /// definitions); the per-type body renderers are pure functions
     /// ([`compose_type_body`] etc.) for unit-testability.
     pub fn doc_type_definitions(&mut self, arch: &Architecture) -> String {
-        let deporder = arch.types_impl().dependent_order();
+        let deporder =
+            crate::kuna_structsynth::ledger::in_name_order(arch.types_impl().dependent_order());
         render_type_definitions(&deporder, RealTypeCtx::from_arch(arch, self.out_lang))
     }
 

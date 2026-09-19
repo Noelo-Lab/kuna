@@ -528,6 +528,36 @@ pub(super) fn lookup_or_mint(
     types.set_fields_struct_raw(&shell, fields, Vec::new(), size, 1, 0).ok()
 }
 
+/// The number `N` of a structure this pass minted, or `None` for any other type.
+fn minted_number(ct: &Datatype) -> Option<u32> {
+    let n = ct.get_name().strip_prefix("struct_")?;
+    if n.is_empty() || !n.bytes().all(|c| c.is_ascii_digit()) || layout_of(ct).is_none() {
+        return None;
+    }
+    n.parse().ok()
+}
+
+/// `order` with the synthesized structures it holds moved to its end, in
+/// ascending `N`.
+///
+/// The factory keeps its types in a tree ordered by size and then field by
+/// field, and two structures that agree that far are ordered by the ADDRESS of
+/// a field's type; a pointer is ordered by the address of what it points at.
+/// Minted structures agree that far all the time -- every one starts with
+/// `field_0x0` -- so a header rendered in tree order lists them in an order that
+/// changes from one run of the same export to the next. A minted structure
+/// holds nothing by value but scalars and byte arrays, and nothing holds one by
+/// value, so it may be defined anywhere after the forward declarations; after
+/// everything else, in ascending `N`, is the same place every run and in every
+/// process.
+pub fn in_name_order(order: Vec<Rc<Datatype>>) -> Vec<Rc<Datatype>> {
+    let (mut minted, mut rest): (Vec<Rc<Datatype>>, Vec<Rc<Datatype>>) =
+        order.into_iter().partition(|ct| minted_number(ct).is_some());
+    minted.sort_by_key(|ct| minted_number(ct));
+    rest.append(&mut minted);
+    rest
+}
+
 /// The synthesized structures a later, larger layout has taken over.
 ///
 /// A whole-program driver reads this after its batch: a function that named one
