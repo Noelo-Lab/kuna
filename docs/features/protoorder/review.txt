@@ -82,8 +82,8 @@
 
 ### O0_grep_stripped_grep sub_14de8 0x14de8 class=REVIEW layout=None 
 @@ -1 +1 @@
--void sub_14de8(long a0,long a1,struct_5 *a2)
-+void sub_14de8(long a0,long a1,struct_27 *a2)
+-void sub_14de8(long a0,long a1,struct_4 *a2)
++void sub_14de8(long a0,long a1,struct_26 *a2)
 @@ -4,8 +4,9 @@
 -  unsigned long v2;
 -  long v3;
@@ -151,8 +151,8 @@
 
 ### O0_grep_stripped_grep sub_15528 0x15528 class=REVIEW layout=None 
 @@ -1 +1 @@
--long sub_15528(long a0,struct_5 *a1,unsigned int a2)
-+long sub_15528(long a0,struct_28 *a1,unsigned int a2)
+-long sub_15528(long a0,struct_4 *a1,unsigned int a2)
++long sub_15528(long a0,struct_27 *a1,unsigned int a2)
 @@ -4,2 +4,2 @@
 -  unsigned long v2;
 -  unsigned long v3;
@@ -333,8 +333,8 @@
 
 ### O2-noinline_grep_stripped_grep sub_f9a0 0xf9a0 class=REVIEW layout=None 
 @@ -1 +1 @@
--long sub_f9a0(long a0,struct_10 *a1,unsigned int a2)
-+long sub_f9a0(long a0,struct_13 *a1,unsigned int a2)
+-long sub_f9a0(long a0,struct_39 *a1,unsigned int a2)
++long sub_f9a0(long a0,struct_12 *a1,unsigned int a2)
 @@ -4,10 +4,10 @@
 -  unsigned long v10; // rbx
 -  unsigned long v11; // rsi
@@ -871,8 +871,8 @@
 
 ### O2_betaflight_stripped_betaflight_STM32F405-elf sub_805c3a0 0x805c3a0 class=REVIEW layout=None 
 @@ -1 +1 @@
--int4 sub_805c3a0(int4 a0,struct_111 *a1,unsigned int a2,unsigned int a3)
-+int4 sub_805c3a0(unsigned int *a0,struct_106 *a1,unsigned int a2,unsigned int a3)
+-int4 sub_805c3a0(int4 a0,struct_108 *a1,unsigned int a2,unsigned int a3)
++int4 sub_805c3a0(unsigned int *a0,struct_104 *a1,unsigned int a2,unsigned int a3)
 @@ -3 +3 @@
 -  int4 v1; // r3
 +  uint1 v1;
@@ -1470,7 +1470,7 @@
 ### O2_crazyflie_stripped_cf2-elf sub_8010838 0x8010838 class=REVIEW layout=None 
 @@ -1 +1 @@
 -void sub_8010838(struct_11 *a0) // return-dupe x5
-+void sub_8010838(struct_83 *a0) // return-dupe x5
++void sub_8010838(struct_82 *a0) // return-dupe x5
 @@ -4,3 +4 @@
 -  unsigned int v10;
 -  int v11; // r7
@@ -1750,7 +1750,7 @@
 ### O2_crazyflie_stripped_cf2-elf sub_8028640 0x8028640 class=REVIEW layout=None 
 @@ -1 +1 @@
 -unsigned int sub_8028640(float a0,float a1,float a2,struct_102 *a3,struct_101 *a4,int a5,int a6)
-+unsigned int sub_8028640(float a0,float a1,float a2,struct_121 *a3,struct_117 *a4,int a5,int a6)
++unsigned int sub_8028640(float a0,float a1,float a2,struct_120 *a3,struct_116 *a4,int a5,int a6)
 @@ -8 +8 @@
 -  a3->field_0x4 = &a4->field_0x0;
 +  a3->field_0x4 = a4;
@@ -1779,7 +1779,7 @@
 ### O2_crazyflie_stripped_cf2-elf sub_80286c0 0x80286c0 class=REVIEW layout=None 
 @@ -1 +1 @@
 -unsigned int sub_80286c0(float a0,float a1,float a2,struct_102 *a3,struct_103 *a4,int a5)
-+unsigned int sub_80286c0(float a0,float a1,float a2,struct_122 *a3,struct_123 *a4,int a5)
++unsigned int sub_80286c0(float a0,float a1,float a2,struct_121 *a3,struct_122 *a4,int a5)
 @@ -11,3 +11,3 @@
 -    *(unsigned int *)a4->field_0xc = 0;
 -    *(unsigned int *)a4->field_0x10 = 0;
@@ -1805,7 +1805,7 @@
 ### O2_crazyflie_stripped_cf2-elf sub_8031268 0x8031268 class=REVIEW layout=None 
 @@ -1 +1 @@
 -void sub_8031268(struct_117 *a0,int a1,int a2,int a3,unsigned int a4)
-+void sub_8031268(struct_146 *a0,int a1,float *a2,int a3,unsigned int a4)
++void sub_8031268(struct_145 *a0,int a1,float *a2,int a3,unsigned int a4)
 @@ -32 +32 @@
 -      sub_80340bc(0x2000c4ac,0x2000c4d4,a1,a3,a3);
 +      sub_80340bc((float *)0x2000c4ac,0x2000c4d4,a1,a3,a3);
@@ -1837,7 +1837,7 @@
 ### O2_crazyflie_stripped_cf2-elf sub_803cc84 0x803cc84 class=REVIEW layout=None 
 @@ -1 +1 @@
 -int sub_803cc84(int a0,int a1,unsigned int a2)
-+int sub_803cc84(struct_135 *a0,int a1,int a2)
++int sub_803cc84(struct_134 *a0,int a1,int a2)
 @@ -25 +25 @@
 -    a0 += 0x24;
 +    a0 = &a0[1];
@@ -1845,7 +1845,7 @@
 ### O2_crazyflie_stripped_firmware-elf sub_8010838 0x8010838 class=REVIEW layout=None 
 @@ -1 +1 @@
 -void sub_8010838(struct_11 *a0) // return-dupe x5
-+void sub_8010838(struct_83 *a0) // return-dupe x5
++void sub_8010838(struct_82 *a0) // return-dupe x5
 @@ -4,3 +4 @@
 -  unsigned int v10;
 -  int v11; // r7
@@ -2125,7 +2125,7 @@
 ### O2_crazyflie_stripped_firmware-elf sub_8028640 0x8028640 class=REVIEW layout=None 
 @@ -1 +1 @@
 -unsigned int sub_8028640(float a0,float a1,float a2,struct_102 *a3,struct_101 *a4,int a5,int a6)
-+unsigned int sub_8028640(float a0,float a1,float a2,struct_121 *a3,struct_117 *a4,int a5,int a6)
++unsigned int sub_8028640(float a0,float a1,float a2,struct_120 *a3,struct_116 *a4,int a5,int a6)
 @@ -8 +8 @@
 -  a3->field_0x4 = &a4->field_0x0;
 +  a3->field_0x4 = a4;
@@ -2154,7 +2154,7 @@
 ### O2_crazyflie_stripped_firmware-elf sub_80286c0 0x80286c0 class=REVIEW layout=None 
 @@ -1 +1 @@
 -unsigned int sub_80286c0(float a0,float a1,float a2,struct_102 *a3,struct_103 *a4,int a5)
-+unsigned int sub_80286c0(float a0,float a1,float a2,struct_122 *a3,struct_123 *a4,int a5)
++unsigned int sub_80286c0(float a0,float a1,float a2,struct_121 *a3,struct_122 *a4,int a5)
 @@ -11,3 +11,3 @@
 -    *(unsigned int *)a4->field_0xc = 0;
 -    *(unsigned int *)a4->field_0x10 = 0;
@@ -2180,7 +2180,7 @@
 ### O2_crazyflie_stripped_firmware-elf sub_8031268 0x8031268 class=REVIEW layout=None 
 @@ -1 +1 @@
 -void sub_8031268(struct_117 *a0,int a1,int a2,int a3,unsigned int a4)
-+void sub_8031268(struct_146 *a0,int a1,float *a2,int a3,unsigned int a4)
++void sub_8031268(struct_145 *a0,int a1,float *a2,int a3,unsigned int a4)
 @@ -32 +32 @@
 -      sub_80340bc(0x2000c4ac,0x2000c4d4,a1,a3,a3);
 +      sub_80340bc((float *)0x2000c4ac,0x2000c4d4,a1,a3,a3);
@@ -2212,7 +2212,7 @@
 ### O2_crazyflie_stripped_firmware-elf sub_803cc84 0x803cc84 class=REVIEW layout=None 
 @@ -1 +1 @@
 -int sub_803cc84(int a0,int a1,unsigned int a2)
-+int sub_803cc84(struct_135 *a0,int a1,int a2)
++int sub_803cc84(struct_134 *a0,int a1,int a2)
 @@ -25 +25 @@
 -    a0 += 0x24;
 +    a0 = &a0[1];
@@ -2496,7 +2496,7 @@
 ### O2_dpkg_stripped_dpkg-query sub_5460 0x5460 class=REVIEW layout=None 
 @@ -1 +1 @@
 -int sub_5460(struct_1 *a0,unsigned long a1,unsigned long a2,long *a3)
-+int sub_5460(struct_28 *a0,void *a1,unsigned long a2,long *a3)
++int sub_5460(struct_27 *a0,void *a1,unsigned long a2,long *a3)
 @@ -4,13 +4,16 @@
 -  int *v10;
 -  long v11; // stack - 0x80
@@ -2511,14 +2511,14 @@
 -  long v7; // rax
 -  unsigned int v8;
 -  void *v9;
-+  struct_31 *v10; // r12
++  struct_30 *v10; // r12
 +  long v11; // r12
 +  unsigned int v12;
 +  int *v13;
 +  long v14; // stack - 0x80
 +  int v15; // stack - 0x6c
 +  int *v16; // stack - 0x60
-+  struct_31 *v17; // stack - 0x58
++  struct_30 *v17; // stack - 0x58
 +  unsigned long v2;
 +  unsigned int v3; // eax
 +  unsigned long v4; // rax
@@ -2526,7 +2526,7 @@
 +  long *v6;
 +  long *v7; // rbx
 +  long v8; // rbx
-+  struct_31 *v9;
++  struct_30 *v9;
 @@ -19 +22 @@
 -    v5 = 1;
 +    v2 = 1;
@@ -2544,7 +2544,7 @@
 +    } while (a3[v4]);
 +    v15 = (int)v4;
 +    v16 = (int *)sub_dc50(v4,4);
-+    v17 = (struct_31 *)sub_dc30(v4 * 0x28);
++    v17 = (struct_30 *)sub_dc30(v4 * 0x28);
 +    v6 = a3;
 +    v9 = v17;
 @@ -30 +33 @@
@@ -2566,7 +2566,7 @@
 -    v14 = (void *)sub_dc30(0);
 -    v12 = 0;
 +    v16 = (int *)sub_dc50(0,4);
-+    v17 = (struct_31 *)sub_dc30(0);
++    v17 = (struct_30 *)sub_dc30(0);
 +    v15 = 0;
 @@ -46,3 +49,3 @@
 -      free(v14); // return-dupe
@@ -2668,7 +2668,7 @@
 ### O2_e2fsprogs_stripped_e2fsck sub_202f0 0x202f0 class=REVIEW layout=None 
 @@ -1 +1 @@
 -unsigned long sub_202f0(int8 a0,uint8 *a1,int8 a2,int8 a3,unsigned long a4,struct_13 *a5)
-+unsigned long sub_202f0(int8 a0,uint8 *a1,uint8 a2,int8 a3,unsigned long a4,struct_104 *a5)
++unsigned long sub_202f0(int8 a0,uint8 *a1,uint8 a2,int8 a3,unsigned long a4,struct_103 *a5)
 @@ -4,3 +4,3 @@
 -  int8 v10 [10]; // stack - 0xa8
 -  int4 v11;
@@ -2708,7 +2708,7 @@
 +  v9 = a5->field_0x4;
 +  v10 = v9 & 1;
 +  if ((v9 & 1) && (!v14 && !a2)) {
-+    v7 = ext2fs_add_dir_block2(*(struct_101 **)(a0 + 0x90),a5->field_0x0,0,0);
++    v7 = ext2fs_add_dir_block2(*(struct_100 **)(a0 + 0x90),a5->field_0x0,0,0);
 +    *v2 = v7;
 +    if (!v7) {
 @@ -35 +36 @@
@@ -2749,8 +2749,8 @@
 
 ### O2_e2fsprogs_stripped_e2fsck e2fsck_add_dir_info 0x34e00 class=REVIEW layout=None 
 @@ -1 +1 @@
--void e2fsck_add_dir_info(struct_51 *a0,uint4 a1,uint4 a2) // return-dupe
-+void e2fsck_add_dir_info(struct_137 *a0,uint4 a1,uint4 a2) // return-dupe
+-void e2fsck_add_dir_info(struct_50 *a0,uint4 a1,uint4 a2) // return-dupe
++void e2fsck_add_dir_info(struct_136 *a0,uint4 a1,uint4 a2) // return-dupe
 @@ -3 +3 @@
 -  int8 v1;
 +  struct_30 *v1;
@@ -2769,7 +2769,7 @@
 -  void *v5; // rax
 -  int8 v6;
 -  unsigned int *v7;
-+  struct_157 *v5; // rax
++  struct_156 *v5; // rax
 +  int8 *v6;
 +  int4 *v7;
 @@ -21 +21 @@
@@ -2782,7 +2782,7 @@
 +            v2 = v6[5];
 @@ -30 +30 @@
 -              *(void **)(v2 + 0x10) = v5;
-+              *(struct_157 **)(v2 + 0x10) = v5;
++              *(struct_156 **)(v2 + 0x10) = v5;
 @@ -32 +32 @@
 -              (**(code **)(*(int8 *)((int8)v5 + 0x38) + 0x30))(v2);
 +              (**(code **)&v5->field_0x38[0x30])(v2);
@@ -2812,7 +2812,7 @@
 ### O2_e2fsprogs_stripped_e2fsck sub_46460 0x46460 class=REVIEW layout=None 
 @@ -1 +1 @@
 -void sub_46460(int8 a0,unsigned long a1)
-+void sub_46460(struct_209 *a0,unsigned long a1)
++void sub_46460(struct_207 *a0,unsigned long a1)
 @@ -5 +5 @@
 -  v1 = *(FILE **)(*(int8 *)(a0 + 0xa8) + 0x18);
 +  v1 = *(FILE **)&a0->field_0xa8[6];
@@ -2971,8 +2971,8 @@
 
 ### O2_e2fsprogs_stripped_e2fsck ext2fs_get_next_inode_full 0x5e460 class=REVIEW layout=None 
 @@ -1 +1 @@
--int8 ext2fs_get_next_inode_full(struct_205 *a0,int4 *a1,void *a2,int4 a3) // return-dupe
-+int8 ext2fs_get_next_inode_full(struct_135 *a0,int4 *a1,void *a2,int4 a3) // return-dupe
+-int8 ext2fs_get_next_inode_full(struct_201 *a0,int4 *a1,void *a2,int4 a3) // return-dupe
++int8 ext2fs_get_next_inode_full(struct_134 *a0,int4 *a1,void *a2,int4 a3) // return-dupe
 @@ -10 +10 @@
 -  void *v16;
 +  char *v16;
@@ -3004,7 +3004,7 @@
 ### O2_e2fsprogs_stripped_e2fsck sub_74410 0x74410 class=REVIEW layout=None 
 @@ -1 +1 @@
 -int8 sub_74410(int8 a0,uint4 a1,unsigned int a2,int8 a3,unsigned long a4,int8 *a5,int8 *a6,uint8 a7,uint8 a8,uint8 a9)
-+int8 sub_74410(int8 a0,uint4 a1,unsigned int a2,int8 a3,struct_23 *a4,uint8 *a5,uint8 *a6,uint8 a7,uint8 a8,uint8 a9)
++int8 sub_74410(int8 a0,uint4 a1,unsigned int a2,int8 a3,struct_39 *a4,uint8 *a5,uint8 *a6,uint8 a7,uint8 a8,uint8 a9)
 @@ -3 +3 @@
 -  unsigned long v1;
 +  int8 v1;
@@ -3202,8 +3202,8 @@
 
 ### O2_grep_stripped_grep sub_10290 0x10290 class=REVIEW layout=None 
 @@ -1 +1 @@
--long sub_10290(long a0,struct_8 *a1,unsigned int a2)
-+long sub_10290(long a0,struct_24 *a1,unsigned int a2)
+-long sub_10290(long a0,struct_6 *a1,unsigned int a2)
++long sub_10290(long a0,struct_22 *a1,unsigned int a2)
 @@ -18 +18 @@
 -  long v9; // rdx
 +  long v9;
@@ -4172,8 +4172,8 @@
 
 ### O2_tar_stripped_tar sub_40c90 0x40c90 class=REVIEW layout=None 
 @@ -1 +1 @@
--void sub_40c90(struct_39 *a0,char *a1,uint4 a2) // return-dupe x2
-+void sub_40c90(struct_69 *a0,char *a1,uint4 a2) // return-dupe x2
+-void sub_40c90(struct_37 *a0,char *a1,uint4 a2) // return-dupe x2
++void sub_40c90(struct_60 *a0,char *a1,uint4 a2) // return-dupe x2
 @@ -4 +4 @@
 -  void *v10; // rax
 +  char *v10; // rax
@@ -4254,8 +4254,8 @@
 
 ### O2_tar_stripped_tar sub_54f10 0x54f10 class=REVIEW layout=None 
 @@ -1 +1 @@
--unsigned long sub_54f10(struct_82 *a0,int8 a1,int8 a2,int8 a3,uint4 a4) // early-return x3
-+unsigned long sub_54f10(struct_63 *a0,int8 a1,int8 a2,int8 a3,uint4 a4) // early-return x3
+-unsigned long sub_54f10(struct_78 *a0,int8 a1,int8 a2,int8 a3,uint4 a4) // early-return x3
++unsigned long sub_54f10(struct_62 *a0,int8 a1,int8 a2,int8 a3,uint4 a4) // early-return x3
 @@ -3 +3,2 @@
 -  int8 v1;
 +  void *v1;

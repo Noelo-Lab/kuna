@@ -122,7 +122,7 @@ the one main prints for the same value through a narrow load
 
 | Finding | Change | Evidence |
 |---|---|---|
-| #675 decompiles once more, after an address-order batch, the functions that name a structure a later, larger one superseded (`converge_synthesized_structs`). The callee-first path decompiles each target on its own and never reached that sweep, so under the default a function kept the superseded name: `tests/cli/structsynth-sweep-mints-no-third-name` failed on the rebased branch (`long fb(struct_0 *a0)` where main prints `struct_1`, `fc`'s) | The callee-first loop ends with the same sweep, in plan order, each function stating its recovered types again where the plan let it; not under `lock` (§9) | CLI test `callee_first_runs_the_structsynth_convergence_sweep` (the three readers make no direct calls, so the default document must equal the `protoorder off` one) fails on the rebased engine without the sweep and passes with it; the probe passes. REBASE_EVIDENCE |
+| #675 decompiles once more, after an address-order batch, the functions that name a structure a later, larger one superseded (`converge_synthesized_structs`). The callee-first path decompiles each target on its own and never reached that sweep, so under the default a function kept the superseded name: `tests/cli/structsynth-sweep-mints-no-third-name` failed on the rebased branch (`long fb(struct_0 *a0)` where main prints `struct_1`, `fc`'s) | The callee-first loop ends with the same sweep, in plan order, each function stating its recovered types again where the plan let it; not under `lock` (§9) | CLI test `callee_first_runs_the_structsynth_convergence_sweep` (the three readers make no direct calls, so the default document must equal the `protoorder off` one) fails on the rebased engine without the sweep and passes with it; the probe passes. Re-measured on a fresh 3831d703 build: `--option protoorder off` byte-identical to main on 60 of 60 binaries, 9,654 functions change (9,652 on a3bf6a15) with the same 100 REVIEW functions under the same labels and the same arity counts (§5); `type_match` identical in both arms and on firmware (§6) |
 
 ## 4. What the vote may not do
 
@@ -172,7 +172,9 @@ these and kept in `git log`. Round 12 re-ran the default arm on the same 60
 binaries with §3f's refusal: 26 functions differ from the round-11 engine.
 Round 13 re-ran all 60 in seven arms against a fresh build of main a3bf6a15 (the
 round-12 engine, this branch at the default, off and with `ptrfromuse void`, and
-main with and without it): §3g changes 4 functions against the round-12 engine
+main with and without it), and the tables below were measured once more after
+the rebase onto 3831d703 (#675, #686) with §3h's sweep, against a fresh 3831d703
+build: §3g changes 4 functions against the round-12 engine
 in either arm (crond `sub_6b7b`, the walk-limit case, whose two argument casts
 go back to main's spelling; betaflight `sub_801379c`, its sector fill whole again
 and the function identical to main, and the two callers its vote had typed,
@@ -180,7 +182,7 @@ and the function identical to main, and the two callers its vote had typed,
 votes). Every table below is the round-13 tree's.
 
 **Off arm vs main:** `--option protoorder off` is byte-identical to a fresh
-a3bf6a15 build on **60 of 60** binaries (and was to d96e3408 in round 11), and the round-12 engine's off arm on
+3831d703 build on **60 of 60** binaries (and to a3bf6a15 before that rebase, d96e3408 in round 11), and the round-12 engine's off arm on
 the 10 of them re-run (fmt, ls, kmod, libselinux, betaflight, nuttx, dash, grep
 -O0, zlib, crazyflie), and again on those 10 after the rebase onto d6c5862f,
 where their call arguments (67,928), argument rows (18,930) and never-assigned
@@ -218,16 +220,16 @@ whose first use is a read **0**. The two merges are nuttx `sub_8007bd0` (-O2
 and -O2-noinline), two adjacent `char`s becoming the `char tmp[]` the code fills
 and prints with `%s`.
 
-**Every changed function classified** (9,652 of 32,406), by the first normalizer
+**Every changed function classified** (9,654 of 32,406), by the first normalizer
 under which the two bodies agree:
 
 | class | functions | what differs |
 |---|---|---|
 | casts | 4,439 | C casts, NULL/0, char/negative/hex spellings, `x += y` as `x = x + y` |
-| declarations | 2,748 | local numbering, declaration types, which locals share a name |
-| struct-number | 1,424 | only the `struct_N` numbers: a callee-first run mints the synthesized structures in another order |
+| declarations | 2,746 | local numbering, declaration types, which locals share a name |
+| struct-number | 1,425 | only the `struct_N` numbers: a callee-first run mints the synthesized structures in another order |
 | member-reach | 435 | the same bytes through a retyped pointer or a struct member (`*(int *)(a0 + 0x28)` ↔ `a0[10]` ↔ `a0->field_0x28`) |
-| literal | 369 | a number became a string or float literal |
+| literal | 372 | a number became a string or float literal |
 | pointer-arith | 120 | `&p[k]` ↔ `p + k`, `p[k]` ↔ `*(p + k)` |
 | merge | 17 | a parameter and a local trade which one holds a value |
 | REVIEW | 100 | none of the above -- labelled below |
@@ -269,7 +271,11 @@ firmware 208 → 217. Round 13 re-scored everything on a3bf6a15 (#687 moves two
 of main's rows onto perfect), with the round-12 engine in the same sweep: §3g
 moves none of the 10,748 rows in either arm, and one firmware row back to main's
 score (§3g). The numbers below are that sweep's: a fresh a3bf6a15 build against
-this branch.
+this branch. After the rebase onto 3831d703 (#675, structsynth sharing one layout
+across functions, and #686) and §3h's sweep, a fresh 3831d703 build and this
+branch score exactly the same rows in both `ptrfromuse` arms and on firmware:
+#675 and #686 move no row on main, the rebase none on this branch, and §3h's
+sweep none (it rewrites the variables of 144 functions, all scored the same).
 
 - PERFECT **988 → 1,107 (+119)**; aggregate 3,099.48 → 3,352.26 (+252.77)
 - moved ONTO perfect **119**, moved OFF perfect **0**

@@ -156,8 +156,8 @@
   "class:REVIEW": 2,
   "class:casts": 181,
   "class:declarations": 136,
-  "class:literal": 28,
-  "class:member-reach": 19,
+  "class:literal": 29,
+  "class:member-reach": 18,
   "class:merge": 2,
   "class:pointer-arith": 12,
   "class:struct-number": 55,
@@ -336,36 +336,36 @@
   "functions": 212
  },
  "O2_dpkg_stripped_dpkg-query": {
-  "changed": 202,
+  "changed": 201,
   "class:REVIEW": 3,
   "class:casts": 75,
   "class:declarations": 72,
   "class:literal": 6,
   "class:member-reach": 8,
   "class:merge": 2,
-  "class:struct-number": 36,
+  "class:struct-number": 35,
   "functions": 585
  },
  "O2_e2fsprogs_stripped_e2fsck": {
-  "changed": 600,
+  "changed": 603,
   "class:REVIEW": 8,
   "class:casts": 236,
   "class:declarations": 117,
   "class:literal": 10,
   "class:member-reach": 34,
   "class:pointer-arith": 6,
-  "class:struct-number": 189,
+  "class:struct-number": 192,
   "functions": 1421
  },
  "O2_findutils_stripped_find": {
-  "changed": 213,
+  "changed": 212,
   "class:REVIEW": 1,
   "class:casts": 77,
   "class:declarations": 84,
   "class:literal": 3,
   "class:member-reach": 5,
   "class:pointer-arith": 2,
-  "class:struct-number": 41,
+  "class:struct-number": 40,
   "functions": 658
  },
  "O2_freertos_stripped_RTOSDemo-out": {
@@ -403,11 +403,11 @@
   "functions": 1008
  },
  "O2_kmod_stripped_kmod": {
-  "changed": 123,
+  "changed": 124,
   "class:REVIEW": 1,
   "class:casts": 62,
   "class:declarations": 34,
-  "class:member-reach": 5,
+  "class:member-reach": 6,
   "class:pointer-arith": 5,
   "class:struct-number": 16,
   "functions": 394
@@ -481,19 +481,21 @@
   "layout:merge": 1
  },
  "O2_openssh-portable_stripped_scp": {
-  "changed": 197,
+  "changed": 194,
   "class:casts": 77,
-  "class:declarations": 90,
+  "class:declarations": 89,
+  "class:literal": 1,
   "class:member-reach": 4,
-  "class:struct-number": 26,
+  "class:struct-number": 23,
   "functions": 524
  },
  "O2_openssh-portable_stripped_sftp-server": {
-  "changed": 162,
+  "changed": 165,
   "class:casts": 69,
-  "class:declarations": 72,
+  "class:declarations": 71,
+  "class:literal": 1,
   "class:member-reach": 1,
-  "class:struct-number": 20,
+  "class:struct-number": 23,
   "functions": 464
  },
  "O2_riot-os_stripped_hello-world-elf": {
@@ -535,15 +537,15 @@
   "functions": 184
  },
  "TOTAL": {
-  "changed": 9652,
+  "changed": 9654,
   "class:REVIEW": 100,
   "class:casts": 4439,
-  "class:declarations": 2748,
-  "class:literal": 369,
+  "class:declarations": 2746,
+  "class:literal": 372,
   "class:member-reach": 435,
   "class:merge": 17,
   "class:pointer-arith": 120,
-  "class:struct-number": 1424,
+  "class:struct-number": 1425,
   "functions": 32406,
   "layout:merge": 2
  }
