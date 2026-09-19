@@ -189,6 +189,7 @@
 use std::io::{BufRead, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -274,8 +275,10 @@ const RUN_RERUN_FAILURES: usize = 16;
 /// Test-only fault injection, comma-separated: `panic:<addr>` panics a worker
 /// as it starts the target at `<addr>`, `panic-once:<addr>` only the first time
 /// in a run, `stall:<addr>` wedges it there until the stall watchdog kills it,
-/// and `spawn:<n>` refuses every worker spawn after the first `n`.  `<addr>` is
-/// a byte address (`0x` hex or decimal), or `*` for every target.
+/// `spawn:<n>` refuses every worker spawn after the first `n`, `synth:serial`
+/// names synthesized structures by the one-worker serial path and
+/// `synth:force` renames no function.  `<addr>` is a byte address (`0x` hex or
+/// decimal), or `*` for every target.
 pub(crate) const JOBS_FAULT_ENV: &str = "KUNA_JOBS_FAULT";
 
 /// One decompile target, flattened out of a [`kuna_console::engine::FunctionEntry`]
@@ -909,11 +912,9 @@ pub(crate) fn run_pool(
     let mut run = run_planned(cfg, &session, jobs, targets, plan, &first, &banner)?;
     let named = match &cfg.synth_base {
         Some(base) => name_structs_serially(cfg, &session, jobs, targets, base.clone(), &mut run)?,
-        None => first.synth,
+        None => Named { kind: first.synth, table: None },
     };
-    // Only the workers that ended in the run's last kind rendered the type
-    // block the document's names belong to.
-    let blocks = session.close(cfg, named);
+    let blocks = session.close(cfg, &named);
     let PlannedRun { results, retries } = run;
     warn_about_anomalies(&results, cfg.max_fn_seconds, retries);
     // After the anomaly warnings, which report the run itself: the type-shard
@@ -976,6 +977,14 @@ struct Phase<'t> {
     table: Option<&'t [u8]>,
 }
 
+/// How a sharded run's synthesized structures were named: the kind of worker
+/// whose type blocks speak for the document, and the replayed table when the
+/// names are the replay's.
+struct Named {
+    kind: SynthWorker,
+    table: Option<Vec<u8>>,
+}
+
 /// (kuna `structsynth`) Give every synthesized structure of a sharded run the
 /// name, the layout and the reuse `--jobs 1` gives it.
 ///
@@ -987,29 +996,29 @@ struct Phase<'t> {
 /// not depend on the answers it got before, as a rule, so the first pool's
 /// workers record every lookup, and this replays them in target order through
 /// the ledger's own decision ([`Replay`]): every answer, every mint, the
-/// superseded set and the answers the convergence sweep will get. Only the
-/// functions that asked are decompiled again, with each lookup answered by its
-/// replayed name; the ones the sweep will redo with a different answer go out
-/// in the same pool.
+/// superseded set and the answers the convergence sweep will get.
 ///
-/// The second pool reuses the first one's workers: each forgets the structures
-/// it minted itself, installs the replayed ones and answers from then on
-/// (`synth` on its assignment pipe), so the price of the second decompile is
-/// the decompile and not another program load.
+/// A function whose own worker answered every lookup with a structure that has
+/// exactly the members of the serial answer's -- which a function that mints
+/// what it measured usually did -- keeps its first decompile with the numbers
+/// renamed ([`shard::renaming`]). Only the others are decompiled again, by the
+/// first pool's workers: each forgets the structures it minted itself,
+/// installs the replayed ones and answers every lookup with its replayed name
+/// (`synth` on its assignment pipe); the ones the sweep will redo with a
+/// different answer go out in the same pool.
 ///
 /// The second decompile records its lookups too, and the exception to the rule
 /// shows up there: a function whose first answers change what it does next --
 /// a restart, a second drive -- asks something else once it is answered as the
 /// serial run answers it. Its questions up to the first difference were answered
 /// right, so the replay takes the new record and runs again, and only the
-/// functions whose answers moved are decompiled once more. When that does not
-/// settle within [`SYNTH_ROUNDS`], when the sweep would ask something new, or
-/// when a structure cannot be rebuilt in another process, the functions that
-/// asked are decompiled again in target order by ONE worker running the ledger
-/// and the sweep itself: the serial computation, over the only functions that
-/// take part in it.
-///
-/// Returns the kind of worker whose type blocks speak for the run.
+/// functions whose answers moved are renamed or decompiled once more. When that
+/// does not settle within [`SYNTH_ROUNDS`], when the sweep would ask something
+/// new, when a structure cannot be rebuilt in another process, or when a
+/// second decompile fails where the first did not (a worker that died, a
+/// table it could not install), the functions that asked are decompiled again
+/// in target order by ONE worker running the ledger and the sweep itself: the
+/// serial computation, over the only functions that take part in it.
 fn name_structs_serially(
     cfg: &PoolConfig,
     session: &Session,
@@ -1017,39 +1026,56 @@ fn name_structs_serially(
     targets: &[TargetSpec],
     base: Replay,
     run: &mut PlannedRun,
-) -> Result<SynthWorker, String> {
-    let mut asked: Vec<Vec<SynthRequest>> = run
-        .results
-        .iter_mut()
-        .map(|r| r.synth.take().map(|record| record.requests).unwrap_or_default())
-        .collect();
+) -> Result<Named, String> {
+    let records: Vec<Option<FunctionRecord>> = run.results.iter_mut().map(|r| r.synth.take()).collect();
+    let mut asked: Vec<Vec<SynthRequest>> =
+        records.iter().map(|r| r.as_ref().map(|r| r.requests.clone()).unwrap_or_default()).collect();
     let askers: Vec<usize> = (0..asked.len()).filter(|&i| !asked[i].is_empty()).collect();
     if askers.is_empty() {
-        return Ok(SynthWorker::Record);
+        return Ok(Named { kind: SynthWorker::Record, table: None });
     }
     let fallback = |run: &mut PlannedRun, why: &str| serial_fallback(cfg, session, targets, &askers, run, why);
-    if Faults::from_env().synth_serial {
+    let faults = Faults::from_env();
+    if faults.synth_serial {
         return fallback(run, &format!("{JOBS_FAULT_ENV} asked for the serial path"));
     }
     // A function the watchdog or a dead worker cut short asks a different
     // number of questions each time it runs; its record is taken as it comes.
-    let cut_short: Vec<bool> = run
-        .results
+    let cut_short: Vec<bool> = run.results.iter().map(|r| r.error.is_some()).collect();
+    // What each function's own worker answered, while its record stands.
+    let mut own: Vec<Option<Vec<shard::Answer>>> = records
         .iter()
-        .map(|r| r.error.as_deref().is_some_and(|e| e != kuna_console::project::SYNTH_DEFERRED))
+        .zip(&cut_short)
+        .map(|(r, &cut)| if cut || faults.synth_force { None } else { r.as_ref()?.own_answers() })
         .collect();
+    let held = base.held();
 
-    // Every kept second decompile, with the answers it was given.
-    let mut firsts: std::collections::HashMap<usize, (AnswerKey, FuncResult)> =
-        std::collections::HashMap::new();
-    let mut sweeps: std::collections::HashMap<usize, (AnswerKey, FuncResult)> =
-        std::collections::HashMap::new();
+    // Every kept first and sweep decompile, with the answers it was given.
+    let mut firsts: HashMap<usize, (AnswerKey, FuncResult)> = HashMap::new();
+    let mut sweeps: HashMap<usize, (AnswerKey, FuncResult)> = HashMap::new();
+    let mut renamed: HashSet<usize> = HashSet::new();
+    let mut forced = 0usize;
     let mut round = 0;
     let plan = loop {
         let plan = match SynthPlan::replay(&mut base.clone(), &asked) {
             Ok(plan) => plan,
             Err(why) => return fallback(run, &why),
         };
+        for &i in &askers {
+            let first = plan.first_key(i);
+            if firsts.get(&i).is_none_or(|(key, _)| *key != first) {
+                if let Some(r) = rename_result(&run.results[i], own[i].as_deref(), &first, &held) {
+                    firsts.insert(i, (first, r));
+                    renamed.insert(i);
+                }
+            }
+            let Some(key) = plan.sweep_key(i).filter(|_| plan.redo_predicted(i)) else { continue };
+            if sweeps.get(&i).is_none_or(|(kept, _)| *kept != key) {
+                if let Some(r) = rename_result(&run.results[i], own[i].as_deref(), &key, &held) {
+                    sweeps.insert(i, (key, r));
+                }
+            }
+        }
         let stale_first = |i: usize| firsts.get(&i).is_none_or(|(key, _)| *key != plan.first_key(i));
         let stale_sweep = |i: usize| {
             plan.redo_predicted(i) && sweeps.get(&i).is_none_or(|(key, _)| Some(key) != plan.sweep_key(i).as_ref())
@@ -1067,25 +1093,33 @@ fn name_structs_serially(
             return fallback(run, "the replayed questions did not settle");
         }
         round += 1;
+        forced += list.len();
         for (i, sweep, r, record) in run_forced(cfg, session, jobs, targets, &plan, &list)? {
+            if r.error.is_some() && !cut_short[i] {
+                return fallback(run, "a function failed when decompiled again with the serial names");
+            }
             let agrees = record.as_ref().is_some_and(|rec| asks_the_same(rec, &asked[i]));
-            if agrees || cut_short[i] || r.error.is_some() {
+            if agrees || cut_short[i] {
                 if sweep {
                     sweeps.insert(i, (plan.sweep_key(i).unwrap_or_default(), r));
                 } else {
                     firsts.insert(i, (plan.first_key(i), r));
+                    renamed.remove(&i);
                 }
                 continue;
             }
             match record {
                 Some(rec) if !sweep => {
                     asked[i] = rec.requests;
+                    own[i] = None;
                     firsts.remove(&i);
+                    renamed.remove(&i);
                 }
                 _ => return fallback(run, "a function asked the ledger something new in the sweep"),
             }
         }
     };
+    let renamed = renamed.len();
     for (i, (_, r)) in firsts.drain() {
         run.results[i] = r;
     }
@@ -1110,12 +1144,23 @@ fn name_structs_serially(
         }
     }
     if !leftover.is_empty() {
+        forced += leftover.len();
         for (i, _, r, record) in run_forced(cfg, session, jobs, targets, &plan, &leftover)? {
+            if r.error.is_some() && !cut_short[i] {
+                return fallback(run, "a function failed when decompiled again with the serial names");
+            }
             let agrees = record.as_ref().is_some_and(|rec| asks_the_same(rec, &asked[i]));
-            if !(agrees || cut_short[i] || r.error.is_some()) {
+            if !(agrees || cut_short[i]) {
                 return fallback(run, "a function asked the ledger something new in the sweep");
             }
             again.push((i, r));
+        }
+    }
+    // The `.h` renders the structures from the workers that hold them, each
+    // with the other types its own functions interned.
+    if cfg.want_types && !plan.table.is_empty() {
+        if let Err(why) = install_on_idle_workers(cfg, session, &plan.table) {
+            return fallback(run, &why);
         }
     }
     again.sort_by_key(|(i, _)| *i);
@@ -1124,7 +1169,42 @@ fn name_structs_serially(
             run.results[i] = r;
         }
     }
-    Ok(SynthWorker::Force)
+    eprintln!(
+        "[kuna --jobs] structsynth: {} function(s) with synthesized structures named as --jobs 1 \
+         names them: {renamed} renamed, {forced} decompile(s) again",
+        askers.len()
+    );
+    Ok(Named { kind: SynthWorker::Force, table: Some(plan.table) })
+}
+
+/// `r` with its structures renamed from `own` to `serial`, or `None` when the
+/// two answer lists do not name structures with the same members, or the
+/// function's text names one the renaming does not cover.
+fn rename_result(
+    r: &FuncResult,
+    own: Option<&[shard::Answer]>,
+    serial: &[shard::Answer],
+    held: &[String],
+) -> Option<FuncResult> {
+    let map = shard::renaming(own?, serial)?;
+    let text = |s: &str| shard::rename_identifiers(s, &map, held);
+    let mut out = r.clone();
+    out.code = match r.code.as_deref() {
+        Some(code) => Some(text(code)?),
+        None => None,
+    };
+    out.proto = match r.proto.as_deref() {
+        Some(proto) => Some(text(proto)?),
+        None => None,
+    };
+    for v in &mut out.variables {
+        v.type_name = text(&v.type_name)?;
+    }
+    for t in &mut out.types {
+        t.name = text(&t.name)?;
+        t.definition = text(&t.definition)?;
+    }
+    Some(out)
 }
 
 /// Did a forced decompile ask what the replay was told it asks, repeats aside,
@@ -1140,7 +1220,7 @@ const SYNTH_ROUNDS: usize = 4;
 /// What a function's lookups were answered with, each name paired with the
 /// definition the replay minted under it (a name held before the run stands for
 /// itself), so a kept decompile is reused only when both still hold.
-type AnswerKey = Vec<Option<(String, Option<SynthRequest>)>>;
+type AnswerKey = Vec<shard::Answer>;
 
 /// The replayed ledger of one run: the answers each function's first decompile
 /// gets, the answers its redo would get, the superseded names, and the table
@@ -1152,7 +1232,7 @@ struct SynthPlan {
     sweep: Vec<Option<Vec<Option<String>>>>,
     stale: Vec<String>,
     table: Vec<u8>,
-    minted: std::collections::HashMap<String, SynthRequest>,
+    minted: HashMap<String, SynthRequest>,
 }
 
 impl SynthPlan {
@@ -1178,6 +1258,14 @@ impl SynthPlan {
                     Some(_) => {}
                     None => answers.push((q, answer)),
                 }
+            }
+            // Whether the function repeats a question can depend on what its
+            // process decompiled before, so every question must get the same
+            // answer at the end of the function as when it was first asked.
+            if answers.iter().any(|(q, a)| replay.lookup(q) != Ok(a.clone())) {
+                return Err("a function's own structures would answer its earlier question \
+                            differently"
+                    .into());
             }
             first.push(answers.into_iter().map(|(_, a)| a).collect());
         }
@@ -1270,6 +1358,50 @@ fn run_forced(
         .collect())
 }
 
+/// Make every idle worker hold `table` -- a new one, when no worker is left
+/// that could -- and wait until each says it installed it: the `.h` renders
+/// the replayed structures from the workers that hold them, and a worker whose
+/// every function kept its first decompile never took the table.
+fn install_on_idle_workers(cfg: &PoolConfig, session: &Session, table: &[u8]) -> Result<(), String> {
+    let id = session.write_table(table)?;
+    let idle = std::mem::take(&mut *session.idle.lock().unwrap_or_else(|e| e.into_inner()));
+    let (ready, mut stale): (Vec<Worker>, Vec<Worker>) =
+        idle.into_iter().partition(|w| w.synth == SynthWorker::Force && w.table == id);
+    if ready.is_empty() && stale.is_empty() && !session.holds_table(table) {
+        let exe = std::env::current_exe().map_err(|e| format!("cannot locate the kuna binary: {e}"))?;
+        let mut w = Worker::spawn(cfg, SynthWorker::Force, &exe, session.path())
+            .map_err(|e| format!("{SPAWN_FAILED}: {e}"))?;
+        w.table = id;
+        stale.push(w);
+    }
+    session.idle.lock().unwrap_or_else(|e| e.into_inner()).extend(ready);
+    let failed = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        for mut w in stale {
+            let failed = &failed;
+            scope.spawn(move || {
+                let idx = session.chunk_ids.fetch_add(1, Ordering::SeqCst);
+                if std::fs::write(session.path().join(spec_name(idx)), encode_spec(&[])).is_err() {
+                    session.retire(cfg, w);
+                    failed.store(true, Ordering::SeqCst);
+                    return;
+                }
+                // An empty chunk acknowledged after the `synth` line is the
+                // table installed; a worker that died instead is gone.
+                if (w.stale_for(id) && !w.force(id)) || w.run_chunk(cfg, session.path(), idx, 0).2 != Ending::Finished {
+                    failed.store(true, Ordering::SeqCst);
+                    return;
+                }
+                session.idle.lock().unwrap_or_else(|e| e.into_inner()).push(w);
+            });
+        }
+    });
+    if failed.load(Ordering::SeqCst) {
+        return Err("a worker could not install the synthesized structures".into());
+    }
+    Ok(())
+}
+
 /// The functions that asked the ledger, decompiled again in target order by one
 /// worker running the ledger and the convergence sweep itself.
 fn serial_fallback(
@@ -1279,7 +1411,7 @@ fn serial_fallback(
     askers: &[usize],
     run: &mut PlannedRun,
     why: &str,
-) -> Result<SynthWorker, String> {
+) -> Result<Named, String> {
     eprintln!(
         "[kuna --jobs] note: {why}, so the {} function(s) with synthesized structures are \
          decompiled again in order by one worker process, as --jobs 1 would.",
@@ -1297,7 +1429,7 @@ fn serial_fallback(
     }
     run.retries.recovered += serial.retries.recovered;
     run.retries.failed_alone += serial.retries.failed_alone;
-    Ok(SynthWorker::Serial)
+    Ok(Named { kind: SynthWorker::Serial, table: None })
 }
 
 /// The `--stream` pool: the same workers over a caller-supplied dynamic
@@ -1340,23 +1472,33 @@ pub(crate) fn run_pool_streaming(
         &PoolReport { tag: STREAM_TAG, banner, workers, finish_delivered: true },
         sink,
     )?;
-    let blocks = session.close(cfg, SynthWorker::Off);
+    let blocks = session.close(cfg, &Named { kind: SynthWorker::Off, table: None });
     Ok((blocks, retries))
 }
 
 /// What the pools of one run share: the scratch directory every worker was
 /// started on, the chunk and retirement counters, the live workers one pool
-/// hands to the next, and every retired worker's type block with the kind of
-/// worker it was when it rendered it.
+/// hands to the next, and every retired worker's type blocks with the kind of
+/// worker it was when it rendered them.
 struct Session {
     scratch: ScratchDir,
     chunk_ids: AtomicUsize,
     retired: AtomicUsize,
     idle: Mutex<Vec<Worker>>,
-    blocks: Mutex<Vec<((SynthWorker, usize), String)>>,
-    /// Which replayed table sits in the scratch directory: 0 for none, then one
-    /// more each time a pool writes one.
-    table: AtomicUsize,
+    blocks: Mutex<Vec<RetiredBlocks>>,
+    /// Which replayed table sits in the scratch directory, 0 for none and one
+    /// more each time a different one is written, and its bytes.
+    table: Mutex<(usize, Vec<u8>)>,
+}
+
+/// One retired worker's type blocks: rendered with everything its factory
+/// held, and (a worker that took part in naming structures) once more
+/// without the structures it minted or installed.
+struct RetiredBlocks {
+    kind: SynthWorker,
+    table: usize,
+    full: String,
+    rest: Option<String>,
 }
 
 impl Session {
@@ -1373,7 +1515,7 @@ impl Session {
             retired: AtomicUsize::new(0),
             idle: Mutex::new(Vec::new()),
             blocks: Mutex::new(Vec::new()),
-            table: AtomicUsize::new(0),
+            table: Mutex::new((0, Vec::new())),
         })
     }
 
@@ -1381,41 +1523,67 @@ impl Session {
         self.scratch.path()
     }
 
-    /// Retiring a worker is where its type block comes from.
+    /// Put `table` where a forcing worker reads it, unless it is there
+    /// already, and return its number.
+    fn write_table(&self, table: &[u8]) -> Result<usize, String> {
+        let mut held = self.table.lock().unwrap_or_else(|e| e.into_inner());
+        if held.0 > 0 && held.1 == table {
+            return Ok(held.0);
+        }
+        let path = self.path().join(SYNTH_TABLE_FILE);
+        std::fs::write(&path, table)
+            .map_err(|e| format!("cannot write the synthesized structures {}: {e}", path.display()))?;
+        *held = (held.0 + 1, table.to_vec());
+        Ok(held.0)
+    }
+
+    /// The number of the table in the scratch directory, when it is `table`.
+    fn table_id(&self, table: &[u8]) -> Option<usize> {
+        let held = self.table.lock().unwrap_or_else(|e| e.into_inner());
+        (held.0 > 0 && held.1 == table).then_some(held.0)
+    }
+
+    /// The number of the latest table.
+    fn latest_table(&self) -> usize {
+        self.table.lock().unwrap_or_else(|e| e.into_inner()).0
+    }
+
+    /// Does a live or retired worker hold `table`?
+    fn holds_table(&self, table: &[u8]) -> bool {
+        let Some(id) = self.table_id(table) else { return false };
+        let holds = |kind: SynthWorker, t: usize| kind == SynthWorker::Force && t == id;
+        self.idle.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|w| holds(w.synth, w.table))
+            || self.blocks.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|b| holds(b.kind, b.table))
+    }
+
+    /// Retiring a worker is where its type blocks come from.
     fn retire(&self, cfg: &PoolConfig, w: Worker) {
         let token = self.retired.fetch_add(1, Ordering::SeqCst);
-        let kind = (w.synth, w.table);
-        if let Some(block) = w.quit(cfg, self.path(), token) {
-            self.blocks.lock().unwrap_or_else(|e| e.into_inner()).push((kind, block));
+        let (kind, table) = (w.synth, w.table);
+        if let Some((full, rest)) = w.quit(cfg, self.path(), token) {
+            self.blocks.lock().unwrap_or_else(|e| e.into_inner()).push(RetiredBlocks { kind, table, full, rest });
         }
     }
 
-    /// Retire every worker still alive, in parallel, and return the type blocks
-    /// of the workers that ended as `kind` -- holding the latest table, when
-    /// that kind forces. A worker that would not is first told to take the
-    /// latest table, when there is one, so its block renders the structures the
-    /// document names.
-    fn close(self, cfg: &PoolConfig, kind: SynthWorker) -> Vec<String> {
+    /// Retire every worker still alive, in parallel, and return the type
+    /// blocks that speak for the document: in full from each worker that
+    /// ended as `named.kind` (holding `named.table`, when there is one), first;
+    /// then every other worker's without the structures it minted, for the
+    /// types its functions interned.
+    fn close(&self, cfg: &PoolConfig, named: &Named) -> Vec<String> {
         let idle = std::mem::take(&mut *self.idle.lock().unwrap_or_else(|e| e.into_inner()));
-        let table = self.table.load(Ordering::SeqCst);
         std::thread::scope(|scope| {
-            for mut w in idle {
-                let session = &self;
-                scope.spawn(move || {
-                    if kind == SynthWorker::Force && w.stale_for(table) {
-                        w.force(table);
-                    }
-                    session.retire(cfg, w);
-                });
+            for w in idle {
+                scope.spawn(move || self.retire(cfg, w));
             }
         });
-        self.blocks
-            .into_inner()
-            .unwrap_or_else(|e| e.into_inner())
-            .into_iter()
-            .filter(|((k, t), _)| *k == kind && (kind != SynthWorker::Force || *t == table))
-            .map(|(_, block)| block)
-            .collect()
+        let table = named.table.as_deref().and_then(|t| self.table_id(t));
+        let speaks = |b: &RetiredBlocks| {
+            b.kind == named.kind && (named.kind != SynthWorker::Force || Some(b.table) == table)
+        };
+        let blocks = std::mem::take(&mut *self.blocks.lock().unwrap_or_else(|e| e.into_inner()));
+        let (full, other): (Vec<RetiredBlocks>, Vec<RetiredBlocks>) = blocks.into_iter().partition(|b| speaks(b));
+        full.into_iter().map(|b| b.full).chain(other.into_iter().map(|b| b.rest.unwrap_or(b.full))).collect()
     }
 }
 
@@ -1450,10 +1618,7 @@ fn run_pool_with(
     let total = targets.len();
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate the kuna binary: {e}"))?;
     if let Some(table) = phase.table {
-        let path = session.path().join(SYNTH_TABLE_FILE);
-        std::fs::write(&path, table)
-            .map_err(|e| format!("cannot write the synthesized structures {}: {e}", path.display()))?;
-        session.table.fetch_add(1, Ordering::SeqCst);
+        session.write_table(table)?;
     }
     eprintln!("{}", report.banner);
     if phase.synth == SynthWorker::Off {
@@ -1629,7 +1794,7 @@ impl Pool<'_> {
         // latest table on the spot; any other worker of the wrong kind is
         // retired and replaced.
         if let Some(w) = worker.as_mut() {
-            let table = self.session.table.load(Ordering::SeqCst);
+            let table = self.session.latest_table();
             let usable = if self.synth == SynthWorker::Force {
                 !w.stale_for(table) || w.force(table)
             } else {
@@ -1670,7 +1835,7 @@ impl Pool<'_> {
         }
         let mut w = Worker::spawn(self.cfg, self.synth, self.exe, self.scratch)?;
         if self.synth == SynthWorker::Force {
-            w.table = self.session.table.load(Ordering::SeqCst);
+            w.table = self.session.latest_table();
         }
         Ok(w)
     }
@@ -2106,7 +2271,7 @@ impl Worker {
     /// the token names the file it leaves it in.  Per WORKER, not per chunk: a
     /// worker's type factory accumulates over every chunk it served, so its final
     /// rendering is the only one that speaks for all of them.
-    fn quit(self, cfg: &PoolConfig, scratch: &Path, token: usize) -> Option<String> {
+    fn quit(self, cfg: &PoolConfig, scratch: &Path, token: usize) -> Option<(String, Option<String>)> {
         let Self { mut child, mut stdin, .. } = self;
         let _ = writeln!(stdin, "{QUIT_PREFIX}{token}");
         let _ = stdin.flush();
@@ -2126,10 +2291,14 @@ impl Worker {
         if !cfg.want_types {
             return None;
         }
-        let path = scratch.join(types_name(token));
-        let block = std::fs::read_to_string(&path).ok();
-        let _ = std::fs::remove_file(&path);
-        block
+        let read = |rest: bool| {
+            let path = scratch.join(types_name(token, rest));
+            let block = std::fs::read_to_string(&path).ok();
+            let _ = std::fs::remove_file(&path);
+            block
+        };
+        let rest = read(true);
+        Some((read(false)?, rest))
     }
 }
 
@@ -2165,54 +2334,71 @@ fn stall_deadline(cfg: &PoolConfig, warm: bool) -> Option<Duration> {
 /// decompiled.  A serial run has one factory; a sharded one has one per worker,
 /// each rendered when that worker retires, after every chunk it served.
 ///
-/// The merge only claims what it can prove.  When every worker rendered the same
-/// block, no shard interned a renderable type over its whole life — which means
-/// the serial run would not have either, and that identical block IS the serial
-/// answer.  The synthesized structures are no exception: every worker that
-/// renders them installed the same replayed set before its first function
-/// ([`name_structs_serially`]).  When the blocks differ the parent says so and
-/// emits the ordered union, deduplicated by whole definition, so the `.h` still
-/// declares everything the `.c` uses; the exact serial ordering is what
-/// `--jobs 1` is for.
+/// The merge only claims what it can prove.  When one block holds every
+/// definition any block holds, no shard interned a renderable type that
+/// worker's did not, which means the serial run's factory held what that
+/// worker's did, and its block IS the serial answer.  The blocks that speak for
+/// the synthesized structures come first ([`Session::close`]); every other
+/// worker's comes without the structures it minted or installed, so a worker
+/// that numbered its own `struct_N` still adds the other types its functions
+/// interned.  When no block holds them all the parent says so and emits the
+/// ordered union, deduplicated by whole definition, so the `.h` still declares
+/// everything the `.c` uses; the exact serial ordering is what `--jobs 1` is
+/// for.
 pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
     let Some(first) = blocks.first() else { return String::new() };
-    if blocks.iter().all(|b| b == first) {
-        return first.clone();
+    let items: Vec<HashSet<String>> =
+        blocks.iter().map(|b| type_items(b).into_iter().map(|(_, item)| item).collect()).collect();
+    if let Some(k) = (0..blocks.len()).find(|&k| items.iter().all(|other| other.is_subset(&items[k]))) {
+        return blocks[k].clone();
     }
+    let known = items.into_iter().next().unwrap_or_default();
     eprintln!(
         "[kuna {tag}] warning: worker shards recovered different user-defined types, so the .h \
          type block is their union rather than the exact --jobs 1 rendering. Re-run with \
          --jobs 1 if the ordering matters."
     );
-    let mut seen = std::collections::HashSet::new();
-    let mut out = String::new();
-    for block in blocks {
-        let mut lines = block.lines();
-        while let Some(line) = lines.next() {
-            if line.trim().is_empty() {
-                out.push_str(line);
-                out.push('\n');
-                continue;
-            }
-            // A definition is one item from its `{` line to its closing `}`
-            // line: its member lines are not items of their own, or two
-            // structures that share a member would lose it from the second.
-            let mut item = format!("{line}\n");
-            if line.ends_with('{') {
-                for member in lines.by_ref() {
-                    item.push_str(member);
-                    item.push('\n');
-                    if member.starts_with('}') {
-                        break;
-                    }
-                }
-            }
+    let mut seen = known;
+    let mut out = first.clone();
+    for block in &blocks[1..] {
+        for (spaced, item) in type_items(block) {
             if seen.insert(item.clone()) {
+                if spaced && !out.is_empty() && !out.ends_with("\n\n") {
+                    out.push('\n');
+                }
                 out.push_str(&item);
             }
         }
     }
     out
+}
+
+/// A type block's items, each with whether a blank line came before it. A
+/// definition is one item from its `{` line to its closing `}` line: its member
+/// lines are not items of their own, or two structures that share a member
+/// would lose it from the second.
+fn type_items(block: &str) -> Vec<(bool, String)> {
+    let mut items = Vec::new();
+    let mut spaced = false;
+    let mut lines = block.lines();
+    while let Some(line) = lines.next() {
+        if line.trim().is_empty() {
+            spaced = true;
+            continue;
+        }
+        let mut item = format!("{line}\n");
+        if line.ends_with('{') {
+            for member in lines.by_ref() {
+                item.push_str(member);
+                item.push('\n');
+                if member.starts_with('}') {
+                    break;
+                }
+            }
+        }
+        items.push((std::mem::take(&mut spaced), item));
+    }
+    items
 }
 
 /// Why a pool gives its workers `structsynth off`, or `None` when the run had
@@ -2696,14 +2882,15 @@ pub(crate) fn result_name(idx: usize) -> String {
     format!("chunk{idx}.res")
 }
 
-fn types_name(token: usize) -> String {
-    format!("types{token}.blk")
+fn types_name(token: usize, rest: bool) -> String {
+    format!("types{token}{}.blk", if rest { ".rest" } else { "" })
 }
 
 /// Leave this worker's rendered user-defined type definitions where the parent's
-/// `quit` said to (see [`merge_type_definitions`]).
-pub(crate) fn write_type_block(scratch: &str, token: usize, text: &str) -> Result<(), String> {
-    let path = Path::new(scratch).join(types_name(token));
+/// `quit` said to (see [`merge_type_definitions`]); `rest` is the rendering
+/// without the synthesized structures ([`Session::close`]).
+pub(crate) fn write_type_block(scratch: &str, token: usize, rest: bool, text: &str) -> Result<(), String> {
+    let path = Path::new(scratch).join(types_name(token, rest));
     std::fs::write(&path, text)
         .map_err(|e| format!("cannot write the worker type block {}: {e}", path.display()))
 }
@@ -2743,6 +2930,9 @@ pub(crate) struct Faults {
     /// `synth:serial`: name the synthesized structures by the one-worker serial
     /// path even when the replay holds, so a test can reach it.
     synth_serial: bool,
+    /// `synth:force`: rename no function, so every one that asked the ledger
+    /// is decompiled again with the replayed names.
+    synth_force: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2783,6 +2973,10 @@ impl Faults {
                     }
                     "synth" if arg == "serial" => {
                         faults.synth_serial = true;
+                        return Some(());
+                    }
+                    "synth" if arg == "force" => {
+                        faults.synth_force = true;
                         return Some(());
                     }
                     "panic" => Fault::Panic,

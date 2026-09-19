@@ -964,14 +964,20 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
-    // (kuna `structsynth`) A recording worker reports every ledger lookup; a
-    // forcing one first mints the parent's replayed structures, in the serial
-    // run's order, and then answers each lookup with the name the chunk spec
-    // gives it. A serial one keeps its own ledger and converges each chunk.
-    let held_at_start = shard::held_names(prog.arch().types());
+    // (kuna `structsynth`) A recording worker reports every ledger lookup and
+    // its own answer; a forcing one first mints the parent's replayed
+    // structures, in the serial run's order, and then answers each lookup with
+    // the name the chunk spec gives it. A serial one keeps its own ledger and
+    // converges each chunk.
+    let at_load = std::rc::Rc::new(match args.jobs_synth {
+        Some(jobs::SynthWorker::Record | jobs::SynthWorker::Force) => {
+            shard::AtLoad::of(prog.arch().types_impl())
+        }
+        _ => shard::AtLoad::default(),
+    });
     let mut synth_hook = match args.jobs_synth {
-        Some(jobs::SynthWorker::Record) => Some(ShardHook::recording()),
-        Some(jobs::SynthWorker::Force) => Some(take_synth_table(&mut prog, scratch, &held_at_start)?),
+        Some(jobs::SynthWorker::Record) => Some(ShardHook::recording(at_load.clone())),
+        Some(jobs::SynthWorker::Force) => Some(take_synth_table(&mut prog, scratch, &at_load)?),
         _ => None,
     };
     prog.arch_mut().struct_synth_shard = synth_hook.clone();
@@ -986,12 +992,18 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         let idx = match assignment {
             jobs::Assignment::Chunk(idx) => idx,
             jobs::Assignment::Force => {
-                synth_hook = Some(take_synth_table(&mut prog, scratch, &held_at_start)?);
+                synth_hook = Some(take_synth_table(&mut prog, scratch, &at_load)?);
                 continue;
             }
             jobs::Assignment::Quit(token) => {
                 if args.jobs_types {
-                    jobs::write_type_block(scratch, token, &print_c_types(prog.arch_mut()))?;
+                    jobs::write_type_block(scratch, token, false, &print_c_types(prog.arch_mut()))?;
+                    // Whether this worker's structures are the document's is the
+                    // parent's to know, so it also gets the block without them.
+                    if synth_hook.is_some() {
+                        shard::forget_minted(prog.arch().types_impl(), at_load.held())?;
+                        jobs::write_type_block(scratch, token, true, &print_c_types(prog.arch_mut()))?;
+                    }
                 }
                 break;
             }
@@ -1022,10 +1034,6 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                 header_carries_types: args.jobs_types,
                 park_recovered_proto: false,
                 single_target: false,
-                // A recording worker's function that asked the ledger is
-                // decompiled again with the serial names; its rendering here
-                // would be thrown away.
-                defer_synthesized: synth_hook.as_ref().is_some_and(|h| h.borrow().lets_ledger_answer()),
             };
             let mut pending = entries.into_iter();
             let mut pulled = 0usize;
@@ -1087,13 +1095,13 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
 fn take_synth_table(
     prog: &mut ConsoleProgram,
     scratch: &str,
-    held_at_start: &[String],
+    at_load: &std::rc::Rc<shard::AtLoad>,
 ) -> Result<shard::ShardHandle, String> {
     let table = jobs::read_synth_table(scratch)?;
-    shard::forget_minted(prog.arch().types_impl(), held_at_start)
+    shard::forget_minted(prog.arch().types_impl(), at_load.held())
         .and_then(|()| shard::install_table(prog.arch().types(), &table))
         .map_err(|e| format!("cannot install the synthesized structures: {e}"))?;
-    let hook = ShardHook::forcing();
+    let hook = ShardHook::forcing(at_load.clone());
     prog.arch_mut().struct_synth_shard = Some(hook.clone());
     Ok(hook)
 }

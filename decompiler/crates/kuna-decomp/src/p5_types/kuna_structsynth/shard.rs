@@ -9,14 +9,18 @@
 //!
 //! * a worker RECORDS every ledger lookup a function makes ([`SynthRequest`]):
 //!   the measured layout, its members, the bytes it accessed without claiming
-//!   them, and a recipe for each field type;
+//!   them, and a recipe for each field type -- and what its own ledger answered
+//!   ([`Answer`]);
 //! * the parent REPLAYS the lookups in target order through the ledger's own
 //!   decision ([`Replay`]), which yields every answer, every minted name and
 //!   the superseded set;
-//! * a fresh worker INSTALLS the replayed structures ([`install_table`]) and
-//!   decompiles each function again with its lookups FORCED to the replayed
-//!   answers, recording what it asked so the parent can check that the replay
-//!   was told the truth.
+//! * a function whose own answers named structures with exactly the members of
+//!   the serial ones is RENAMED ([`renaming`], [`rename_identifiers`]): its
+//!   text is the serial text with other numbers;
+//! * any other function is decompiled again by a worker that INSTALLS the
+//!   replayed structures ([`install_table`]) and answers each lookup with its
+//!   replayed name, recording what it asked so the parent can check that the
+//!   replay was told the truth.
 //!
 //! What a lookup asks does not depend on what the ledger holds: `synthesize`
 //! collects its evidence before it installs anything, and a field takes the
@@ -24,10 +28,13 @@
 //! later request is a restarted decompile, whose parameter can keep the type
 //! the first attempt locked; that is why the forced run's requests are compared
 //! with the recorded ones, and why a field typed by a synthesized structure is
-//! never given a recipe.
+//! never given a recipe. Nor is a field typed by a named type the worker's load
+//! did not create ([`AtLoad`]): a pass that interns a type the first time a
+//! function needs it (`pebnames`' `PEB` and `TEB`) leaves it in some workers and
+//! not in others, so no other process is sure to rebuild it.
 
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
 use kuna_base::types::int4;
@@ -100,6 +107,15 @@ impl TypeRecipe {
         }
     }
 
+    /// Does every named type the recipe reaches belong to `at_load`?
+    fn held_at_load(&self, at_load: &AtLoad) -> bool {
+        match self {
+            TypeRecipe::Named { id, .. } => at_load.ids.contains(id),
+            TypeRecipe::Pointer { to, .. } => to.held_at_load(at_load),
+            TypeRecipe::Array { elem, .. } => elem.held_at_load(at_load),
+        }
+    }
+
     /// Rebuild the type in `types`, or `None` when the factory does not hold
     /// exactly what the recipe names.
     pub fn build(&self, types: &dyn TypeFactory) -> Option<Rc<Datatype>> {
@@ -111,6 +127,32 @@ impl TypeRecipe {
             TypeRecipe::Array { count, elem } => types.get_type_array(*count, elem.build(types)?).ok()?,
         };
         (TypeRecipe::of(&ct).as_ref() == Some(self)).then_some(ct)
+    }
+}
+
+/// What a worker's program held when its load finished, which every worker of a
+/// run holds alike: the named types, and the `struct_N` names.
+#[derive(Clone, Debug, Default)]
+pub struct AtLoad {
+    ids: HashSet<u64>,
+    held: Vec<String>,
+}
+
+impl AtLoad {
+    /// Take the snapshot, before any decompile.
+    pub fn of(types: &TypeFactoryImpl) -> AtLoad {
+        let ids = types
+            .dependent_order()
+            .iter()
+            .filter(|t| !t.get_name().is_empty() && t.get_id() != 0)
+            .map(|t| t.get_id())
+            .collect();
+        AtLoad { ids, held: held_names(types) }
+    }
+
+    /// The `struct_N` names held at load, which [`forget_minted`] keeps.
+    pub fn held(&self) -> &[String] {
+        &self.held
     }
 }
 
@@ -135,8 +177,9 @@ pub struct SynthRequest {
 }
 
 impl SynthRequest {
-    /// Record the arguments of one `lookup_or_mint` call.
-    fn of(fields: &[TypeField], size: int4, unclaimed: &[(int4, int4)]) -> SynthRequest {
+    /// Record the arguments of one `lookup_or_mint` call. A field type gets a
+    /// recipe only when every named type it reaches was held at load.
+    fn of(fields: &[TypeField], size: int4, unclaimed: &[(int4, int4)], at_load: &AtLoad) -> SynthRequest {
         SynthRequest {
             size,
             want: ledger::layout_of_fields(fields, size),
@@ -148,7 +191,7 @@ impl SynthRequest {
                     ident: f.ident,
                     offset: f.offset,
                     name: f.name.clone(),
-                    ty: TypeRecipe::of(&f.field_type),
+                    ty: TypeRecipe::of(&f.field_type).filter(|r| r.held_at_load(at_load)),
                 })
                 .collect(),
         }
@@ -158,7 +201,20 @@ impl SynthRequest {
     pub fn portable(&self) -> bool {
         self.fields.iter().all(|f| f.ty.is_some())
     }
+
+    /// Does a structure minted for `self` have exactly the members of one
+    /// minted for `other`? Only a portable request can tell: a field without a
+    /// recipe could be any type.
+    pub fn defines_same(&self, other: &SynthRequest) -> bool {
+        self.portable() && self.size == other.size && self.fields == other.fields
+    }
 }
+
+/// What one ledger lookup was answered with: the structure's name and the
+/// lookup that minted it (`None` for a name held before the run), or `None`
+/// for no answer. A recording worker reports its own ledger's; the parent
+/// derives the serial run's from the replay.
+pub type Answer = Option<(String, Option<SynthRequest>)>;
 
 /// `requests` without the repeats: each distinct lookup once, where a function
 /// first made it.
@@ -178,16 +234,40 @@ pub fn distinct(requests: &[SynthRequest]) -> Vec<SynthRequest> {
 pub struct FunctionRecord {
     /// Every lookup, in the order the function made them.
     pub requests: Vec<SynthRequest>,
+    /// A recording worker's own answer to each of `requests`; empty from a
+    /// forced run.
+    pub answers: Vec<Answer>,
     /// A forced run asked more lookups than it had answers, fewer, or was
     /// answered with a name its factory does not hold.
     pub off_script: bool,
 }
 
+impl FunctionRecord {
+    /// The worker's own answer to each distinct lookup ([`distinct`]), or
+    /// `None` when there is no answer for every lookup or a repeated lookup
+    /// was answered differently.
+    pub fn own_answers(&self) -> Option<Vec<Answer>> {
+        if self.answers.len() != self.requests.len() {
+            return None;
+        }
+        let mut out: Vec<(&SynthRequest, &Answer)> = Vec::new();
+        for (q, a) in self.requests.iter().zip(&self.answers) {
+            match out.iter().find(|(seen, _)| *seen == q) {
+                Some((_, first)) if first.as_ref().map(|x| &x.0) != a.as_ref().map(|x| &x.0) => return None,
+                Some(_) => {}
+                None => out.push((q, a)),
+            }
+        }
+        Some(out.into_iter().map(|(_, a)| a.clone()).collect())
+    }
+}
+
 /// What a worker's ledger does with a lookup.
 #[derive(Debug)]
 enum Mode {
-    /// Record it and answer as the ledger would.
-    Record,
+    /// Record it and answer as the ledger would, remembering the lookup that
+    /// minted each structure this process holds.
+    Record(HashMap<String, SynthRequest>),
     /// Record it and answer with the next name in the queue, or with the name
     /// an identical earlier lookup of the same function got.
     Force(VecDeque<Option<String>>),
@@ -199,6 +279,7 @@ enum Mode {
 #[derive(Debug)]
 pub struct ShardHook {
     mode: Mode,
+    at_load: Rc<AtLoad>,
     record: FunctionRecord,
     /// A forced function's distinct lookups so far, with their answers.
     answered: Vec<(SynthRequest, Option<String>)>,
@@ -208,22 +289,18 @@ pub struct ShardHook {
 pub type ShardHandle = Rc<RefCell<ShardHook>>;
 
 impl ShardHook {
+    fn with(mode: Mode, at_load: Rc<AtLoad>) -> ShardHandle {
+        Rc::new(RefCell::new(ShardHook { mode, at_load, record: FunctionRecord::default(), answered: Vec::new() }))
+    }
+
     /// A hook that records every lookup and lets the ledger answer.
-    pub fn recording() -> ShardHandle {
-        Rc::new(RefCell::new(ShardHook {
-            mode: Mode::Record,
-            record: FunctionRecord::default(),
-            answered: Vec::new(),
-        }))
+    pub fn recording(at_load: Rc<AtLoad>) -> ShardHandle {
+        Self::with(Mode::Record(HashMap::new()), at_load)
     }
 
     /// A hook that records every lookup and answers from [`ShardHook::begin`].
-    pub fn forcing() -> ShardHandle {
-        Rc::new(RefCell::new(ShardHook {
-            mode: Mode::Force(VecDeque::new()),
-            record: FunctionRecord::default(),
-            answered: Vec::new(),
-        }))
+    pub fn forcing(at_load: Rc<AtLoad>) -> ShardHandle {
+        Self::with(Mode::Force(VecDeque::new()), at_load)
     }
 
     /// Start a function: forget the last record and, when forcing, queue the
@@ -237,14 +314,22 @@ impl ShardHook {
         }
     }
 
-    /// Does this hook let the ledger answer?
-    pub fn lets_ledger_answer(&self) -> bool {
-        matches!(self.mode, Mode::Record)
-    }
-
     /// Has the function under way asked anything yet?
     pub fn asked(&self) -> bool {
         !self.record.requests.is_empty()
+    }
+
+    /// Remember what a recording worker's own ledger answered `request` with,
+    /// and, the first time a name comes back, that `request` minted it.
+    fn own_answer(&mut self, answer: Option<&Datatype>, request: SynthRequest) {
+        let Mode::Record(minted) = &mut self.mode else { return };
+        let held = &self.at_load.held;
+        let answer = answer.map(|ct| {
+            let name = ct.get_name().to_string();
+            let def = (!held.contains(&name)).then(|| minted.entry(name.clone()).or_insert(request).clone());
+            (name, def)
+        });
+        self.record.answers.push(answer);
     }
 
     /// End a function: what it asked.
@@ -260,42 +345,44 @@ impl ShardHook {
 
 /// `lookup_or_mint`, through the hook.
 pub(super) fn lookup(
-    hook: &ShardHandle,
+    handle: &ShardHandle,
     types: &dyn TypeFactory,
     fields: Vec<TypeField>,
     size: int4,
     unclaimed: &[(int4, int4)],
 ) -> Option<Rc<Datatype>> {
-    let mut hook = hook.borrow_mut();
-    let request = SynthRequest::of(&fields, size, unclaimed);
+    let mut hook = handle.borrow_mut();
+    let request = SynthRequest::of(&fields, size, unclaimed, &hook.at_load);
     hook.record.requests.push(request.clone());
+    if matches!(hook.mode, Mode::Record(_)) {
+        drop(hook);
+        let answer = ledger::lookup_or_mint(types, fields, size, unclaimed);
+        handle.borrow_mut().own_answer(answer.as_deref(), request);
+        return answer;
+    }
     // A decompile can ask the same thing twice -- a restarted pass measures the
     // same layout again -- and whether it does depends on what the process
     // decompiled before, so a repeat is answered as the first asking was and
     // does not take a queued answer.
     let repeat = hook.answered.iter().find(|(q, _)| *q == request).map(|(_, a)| a.clone());
-    let forced = match (&mut hook.mode, repeat) {
-        (Mode::Record, _) => None,
-        (Mode::Force(_), Some(answer)) => Some(Some(answer)),
+    let answer = match (&mut hook.mode, repeat) {
+        (Mode::Force(_), Some(answer)) => Some(answer),
         (Mode::Force(queue), None) => {
             let next = queue.pop_front();
             if let Some(answer) = &next {
                 hook.answered.push((request, answer.clone()));
             }
-            Some(next)
+            next
         }
+        (Mode::Record(_), _) => unreachable!("answered by the ledger above"),
     };
-    match forced {
+    match answer {
         None => {
-            drop(hook);
-            ledger::lookup_or_mint(types, fields, size, unclaimed)
-        }
-        Some(None) => {
             hook.record.off_script = true;
             None
         }
-        Some(Some(None)) => None,
-        Some(Some(Some(name))) => {
+        Some(None) => None,
+        Some(Some(name)) => {
             let held =
                 types.find_by_name(&name).ok().flatten().filter(|t| ledger::minted_number(t).is_some());
             if held.is_none() {
@@ -439,6 +526,132 @@ impl Replay {
     pub fn table(&self) -> &[(String, SynthRequest)] {
         &self.minted
     }
+
+    /// The `struct_<n>` names held by something the run did not mint.
+    pub fn held(&self) -> Vec<String> {
+        let minted: HashSet<&str> = self.minted.iter().map(|(n, _)| n.as_str()).collect();
+        (0..self.slots.len())
+            .filter(|&n| matches!(self.slots[n], Slot::Foreign | Slot::Synth { .. }))
+            .map(slot_name)
+            .filter(|name| !minted.contains(name.as_str()))
+            .collect()
+    }
+}
+
+// --- renaming -----------------------------------------------------------------
+
+/// The renaming that turns a function's own answers into the serial ones, as
+/// `(own name, serial name)` pairs, or `None` when an answer names a structure
+/// whose members differ from the serial answer's, or two answers would share a
+/// name on one side only: then the function's text is not the serial text with
+/// other numbers.
+pub fn renaming(own: &[Answer], serial: &[Answer]) -> Option<Vec<(String, String)>> {
+    if own.len() != serial.len() {
+        return None;
+    }
+    let mut map: Vec<(String, String)> = Vec::new();
+    for (o, s) in own.iter().zip(serial) {
+        match (o, s) {
+            (None, None) => {}
+            (Some((on, od)), Some((sn, sd))) => {
+                let same = match (od, sd) {
+                    (None, None) => on == sn,
+                    (Some(od), Some(sd)) => od.defines_same(sd),
+                    _ => false,
+                };
+                if !same {
+                    return None;
+                }
+                match map.iter().find(|(a, b)| a == on || b == sn) {
+                    Some((a, b)) if a == on && b == sn => {}
+                    Some(_) => return None,
+                    None => map.push((on.clone(), sn.clone())),
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(map)
+}
+
+/// `text` with every `struct_<N>` identifier renamed by `map`, leaving the
+/// names in `keep`. `None` when the text names one neither covers, or spells
+/// one inside a string or character literal, whose bytes a rename must not
+/// touch and whose meaning it cannot know.
+pub fn rename_identifiers(text: &str, map: &[(String, String)], keep: &[String]) -> Option<String> {
+    const PREFIX: &[u8] = b"struct_";
+    let bytes = text.as_bytes();
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut out = String::with_capacity(text.len());
+    let (mut last, mut i) = (0, 0);
+    let mut quote: Option<u8> = None;
+    // Inside a comment a quote opens nothing: `// can't` is prose.
+    let mut comment: Option<&[u8]> = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = quote {
+            if b == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b == q {
+                quote = None;
+            } else if bytes[i..].starts_with(PREFIX) {
+                return None;
+            }
+            i += 1;
+            continue;
+        }
+        match comment {
+            Some(close) if bytes[i..].starts_with(close) => {
+                comment = None;
+                i += close.len();
+                continue;
+            }
+            Some(_) => {}
+            None if bytes[i..].starts_with(b"//") => {
+                comment = Some(b"\n");
+                i += 2;
+                continue;
+            }
+            None if bytes[i..].starts_with(b"/*") => {
+                comment = Some(b"*/");
+                i += 2;
+                continue;
+            }
+            None if b == b'"' || b == b'\'' => {
+                quote = Some(b);
+                i += 1;
+                continue;
+            }
+            None => {}
+        }
+        if !bytes[i..].starts_with(PREFIX) || (i > 0 && ident(bytes[i - 1])) {
+            i += 1;
+            continue;
+        }
+        let mut end = i + PREFIX.len();
+        while end < bytes.len() && bytes[end].is_ascii_digit() {
+            end += 1;
+        }
+        if end == i + PREFIX.len() || (end < bytes.len() && ident(bytes[end])) {
+            i = end;
+            continue;
+        }
+        let name = &text[i..end];
+        match map.iter().find(|(from, _)| from == name) {
+            Some((_, to)) => {
+                out.push_str(&text[last..i]);
+                out.push_str(to);
+                last = end;
+            }
+            None if keep.iter().any(|k| k == name) => {}
+            None => return None,
+        }
+        i = end;
+    }
+    out.push_str(&text[last..]);
+    Some(out)
 }
 
 /// The `struct_<n>` names `types` holds now.
@@ -721,6 +934,32 @@ fn read_request(r: &mut Reader) -> Option<SynthRequest> {
     Some(SynthRequest { size, want: Layout { size: want_size, fields: keys }, own, unclaimed, fields })
 }
 
+fn put_answer(out: &mut Vec<u8>, a: &Answer) {
+    match a {
+        None => out.push(0),
+        Some((name, def)) => {
+            out.push(1);
+            put_str(out, name);
+            match def {
+                Some(q) => {
+                    out.push(1);
+                    put_request(out, q);
+                }
+                None => out.push(0),
+            }
+        }
+    }
+}
+
+fn read_answer(r: &mut Reader) -> Option<Answer> {
+    if !r.bool()? {
+        return Some(None);
+    }
+    let name = r.string()?;
+    let def = if r.bool()? { Some(read_request(r)?) } else { None };
+    Some(Some((name, def)))
+}
+
 impl FunctionRecord {
     /// Append the record's wire form.
     pub fn encode(&self, out: &mut Vec<u8>) {
@@ -728,6 +967,10 @@ impl FunctionRecord {
         put_u32(out, self.requests.len() as u32);
         for q in &self.requests {
             put_request(out, q);
+        }
+        put_u32(out, self.answers.len() as u32);
+        for a in &self.answers {
+            put_answer(out, a);
         }
     }
 
@@ -741,7 +984,12 @@ impl FunctionRecord {
         for _ in 0..n {
             requests.push(read_request(&mut r)?);
         }
-        Some((FunctionRecord { requests, off_script }, r.pos))
+        let n = r.count()?;
+        let mut answers = Vec::with_capacity(n);
+        for _ in 0..n {
+            answers.push(read_answer(&mut r)?);
+        }
+        Some((FunctionRecord { requests, answers, off_script }, r.pos))
     }
 }
 
