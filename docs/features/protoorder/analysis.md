@@ -366,6 +366,13 @@ Round 13 (§3g) against a fresh a3bf6a15 build, interleaved min-of-15: fmt
 beside a second main arm: +2.9% against main, with main against itself at
 +2.2%. §3g only refuses earlier; it adds no walk.
 
+After the rebase onto 3831d703 and §3h's sweep, against a fresh 3831d703 build:
+fmt +1.9%, kmod +1.5%, ls +1.9%, libselinux -0.1%, tar +3.8%. tar re-run
+beside a second main arm: +3.6% against main and +4.0% against the second arm,
+main against itself -0.4%. The sweep re-decompiles the functions that name a
+superseded structure, as main's address-order run does; a vote that spreads a
+structure pointer to a caller gives it more such functions to redo.
+
 Rounds 8-10 measured the branch against e1139df9 (all within +5% on the
 minimum after re-runs); their tables are in `record.json` under `speed.round8`,
 `round9` and `round10`, and round 6 measured off against on inside one build

@@ -783,6 +783,15 @@
    "libselinux -O2": "+4.1% (median +2.9%); 3-arm re-run +2.9% vs main, main vs itself +2.2%, +0.7% vs the second main arm",
    "tar -O2": "+2.8% (median +2.6%)",
    "verdict": "within +5% on every binary"
+  },
+  "rebased_3831d703_round13": {
+   "arms": "main 3831d703 (fresh build) vs the final engine (with the callee-first convergence sweep), whole-binary decompile-all --json, interleaved min-of-15",
+   "fmt -O2": "+1.9% (median +1.8%)",
+   "kmod -O2": "+1.5% (median +2.6%)",
+   "ls -O2": "+1.9% (median +0.8%)",
+   "libselinux -O2": "-0.1% (median +2.4%)",
+   "tar -O2": "+3.8% (median +5.1%); 3-arm re-run +3.6% vs main, +4.0% vs a second main arm, main vs itself -0.4%",
+   "verdict": "within +5% on the minimum on every binary; tar is the closest"
   }
  },
  "invariants_checked": {
