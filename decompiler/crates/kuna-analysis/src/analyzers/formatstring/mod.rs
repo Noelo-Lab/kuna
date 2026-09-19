@@ -1160,14 +1160,17 @@ pub fn spec_to_datatype(
     let char_sz = types.get_size_of_char();
     let wchar_sz = types.get_size_of_wchar();
 
-    // getIntegralPointerType(signed): pointer-width int if int<=ptr<long, else long.
+    // size_t / ptrdiff_t: the int, long or long long as wide as a pointer. On
+    // LLP64 (Win64) that is the 8-byte long long, not the 4-byte long.
     let integral_pointer = |signed: bool| -> (int4, type_metatype) {
         let m = if signed {
             type_metatype::TYPE_INT
         } else {
             type_metatype::TYPE_UINT
         };
-        if ptr < long_sz && ptr >= int_sz {
+        if ptr == int_sz || ptr == long_sz || ptr == 8 {
+            (ptr, m)
+        } else if ptr < long_sz && ptr >= int_sz {
             (int_sz, m)
         } else {
             (long_sz, m)
@@ -1347,6 +1350,48 @@ mod tests {
         assert_eq!(parse_input_types("%f"), vec![Spec::VoidPtr]);
         assert_eq!(parse_output_types("%lp"), vec![Spec::VoidPtr]);
         assert_eq!(parse_input_types("%lp"), vec![Spec::VoidPtr]);
+    }
+
+    /// A factory with the given `long` and pointer widths (int is 4 bytes).
+    fn sized_factory(long_sz: int4, ptr_sz: int4) -> kuna_decomp::dtype::TypeFactoryImpl {
+        let types = kuna_decomp::dtype::TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.set_size_of_long(long_sz);
+        types.setup_sizes(Some(ptr_sz), ptr_sz, 4);
+        types
+            .set_core_type("char", 1, type_metatype::TYPE_INT, true)
+            .expect("char core type");
+        types.cache_core_types().expect("cache core types");
+        types
+    }
+
+    #[test]
+    fn size_t_and_ptrdiff_t_are_pointer_width_on_llp64() {
+        let width = |types: &kuna_decomp::dtype::TypeFactoryImpl, fmt: &str| {
+            let spec = parse_output_types(fmt)[0];
+            spec_to_datatype(spec, types, 1).unwrap().get_size()
+        };
+        let pointee = |types: &kuna_decomp::dtype::TypeFactoryImpl, fmt: &str| {
+            let spec = parse_input_types(fmt)[0];
+            let ty = spec_to_datatype(spec, types, 1).unwrap();
+            ty.get_ptr_to().expect("a scanf conversion is a pointer").get_size()
+        };
+        let llp64 = sized_factory(4, 8);
+        for fmt in ["%zu", "%zd", "%zx", "%td", "%tu"] {
+            assert_eq!(width(&llp64, fmt), 8, "LLP64 {fmt}");
+            assert_eq!(pointee(&llp64, fmt), 8, "LLP64 scanf {fmt}");
+        }
+        assert_eq!(width(&llp64, "%ld"), 4, "LLP64 long");
+        assert_eq!(width(&llp64, "%lu"), 4, "LLP64 unsigned long");
+        assert_eq!(pointee(&llp64, "%ld"), 4, "LLP64 scanf long");
+        let lp64 = sized_factory(8, 8);
+        assert_eq!(width(&lp64, "%zu"), 8);
+        assert_eq!(width(&lp64, "%ld"), 8);
+        let ilp32 = sized_factory(4, 4);
+        assert_eq!(width(&ilp32, "%zu"), 4);
+        assert_eq!(width(&ilp32, "%td"), 4);
+        assert_eq!(width(&ilp32, "%lld"), 8);
     }
 
     #[test]
