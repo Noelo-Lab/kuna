@@ -1887,7 +1887,9 @@ mod tests {
         // and kuna-charbyte / a byte read through a char pointer stays char
         // and kuna-foldcallretphi-join / an i386 eax output that may be the low
         // half of edx:eax keeps its spill
-        assert_eq!(count, 317, "corpus file count drifted");
+        // and kuna-foldcallret-shortcircuit / a call never folds into the
+        // right-hand operand of && or || (GH-684)
+        assert_eq!(count, 318, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
