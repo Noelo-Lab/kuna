@@ -90,7 +90,7 @@ impl TypeRecipe {
             | DatatypeKind::Spacebase { .. } => None,
             _ if ct.get_name().is_empty() => None,
             // A synthesized structure is named by the process that minted it.
-            _ if ledger::layout_of(ct).is_some() => None,
+            _ if ledger::minted_number(ct).is_some() => None,
             _ => Some(TypeRecipe::Named {
                 name: ct.get_name().to_string(),
                 id: ct.get_id(),
@@ -251,7 +251,8 @@ pub(super) fn lookup(
         }
         Some(Some(None)) => None,
         Some(Some(Some(name))) => {
-            let held = types.find_by_name(&name).ok().flatten().filter(|t| ledger::layout_of(t).is_some());
+            let held =
+                types.find_by_name(&name).ok().flatten().filter(|t| ledger::minted_number(t).is_some());
             if held.is_none() {
                 hook.record.off_script = true;
             }
@@ -654,3 +655,6 @@ pub fn decode_table(bytes: &[u8]) -> Option<Vec<(String, SynthRequest)>> {
     }
     (r.pos == bytes.len()).then_some(out)
 }
+
+#[cfg(test)]
+mod tests;
