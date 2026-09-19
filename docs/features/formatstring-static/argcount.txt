@@ -1,339 +1,460 @@
-BIN O0_coreutils_stripped_[ {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_basename {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_cat {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O0_coreutils_stripped_chcon {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_chgrp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_chmod {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O0_coreutils_stripped_chown {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_chroot {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_cksum {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11}
-BIN O0_coreutils_stripped_comm {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O0_coreutils_stripped_cp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 15, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_csplit {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 14}
-BIN O0_coreutils_stripped_cut {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_date {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 14}
-BIN O0_coreutils_stripped_dd {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O0_coreutils_stripped_df {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 12, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_dir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 16, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_dircolors {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O0_coreutils_stripped_dirname {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_du {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_echo {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_env {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 12}
-BIN O0_coreutils_stripped_expand {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_expr {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9}
-BIN O0_coreutils_stripped_factor {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_false {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_fmt {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_fold {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_getlimits {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_ginstall {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 18, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_groups {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_head {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O0_coreutils_stripped_hostid {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_id {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_join {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O0_coreutils_stripped_kill {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O0_coreutils_stripped_libstdbuf.so {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 1}
-BIN O0_coreutils_stripped_link {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_ln {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_logname {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_ls {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 16, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_make-prime-list {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 2}
-BIN O0_coreutils_stripped_mkdir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_mkfifo {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_mknod {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_mktemp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_mv {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 16, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_nice {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_nl {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O0_coreutils_stripped_nohup {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_nproc {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_numfmt {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 10}
-BIN O0_coreutils_stripped_od {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O0_coreutils_stripped_paste {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_pathchk {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O0_coreutils_stripped_pinky {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O0_coreutils_stripped_pr {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9}
-BIN O0_coreutils_stripped_printenv {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_printf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11}
-BIN O0_coreutils_stripped_ptx {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9}
-BIN O0_coreutils_stripped_pwd {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_readlink {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_realpath {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_rm {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_rmdir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_runcon {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_seq {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O0_coreutils_stripped_shred {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 10}
-BIN O0_coreutils_stripped_shuf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_sleep {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_sort {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 15, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_split {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 16}
-BIN O0_coreutils_stripped_stat {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 12}
-BIN O0_coreutils_stripped_stdbuf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_stty {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O0_coreutils_stripped_sync {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_tac {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_tail {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 13, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_tee {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_test {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_timeout {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O0_coreutils_stripped_touch {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 12}
-BIN O0_coreutils_stripped_tr {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O0_coreutils_stripped_true {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_truncate {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O0_coreutils_stripped_tsort {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O0_coreutils_stripped_tty {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_uname {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_unexpand {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_uniq {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O0_coreutils_stripped_unlink {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O0_coreutils_stripped_uptime {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 2}
-BIN O0_coreutils_stripped_users {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O0_coreutils_stripped_vdir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 16, "fixed_mismatch": 1}
-BIN O0_coreutils_stripped_wc {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O0_coreutils_stripped_who {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11}
-BIN O0_coreutils_stripped_whoami {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_coreutils_stripped_yes {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O0_cronie_stripped_crontab {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 21}
-BIN O0_dash_stripped_dash {"class_mismatch_off": 0, "class_mismatch_static": 0}
-BIN O2-noinline_coreutils_stripped_[ {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_basename {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_cat {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O2-noinline_coreutils_stripped_chcon {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_chgrp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_chmod {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_chown {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_chroot {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2-noinline_coreutils_stripped_cksum {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 12, "fixed_mismatch": 2}
-BIN O2-noinline_coreutils_stripped_comm {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2-noinline_coreutils_stripped_cp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 18, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_csplit {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 16, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_cut {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_date {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 14, "fixed_mismatch": 4}
-BIN O2-noinline_coreutils_stripped_dd {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_df {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_dir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 15, "fixed_mismatch": 3}
-BIN O2-noinline_coreutils_stripped_dircolors {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2-noinline_coreutils_stripped_dirname {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2-noinline_coreutils_stripped_du {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 10, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_echo {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2-noinline_coreutils_stripped_env {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 13}
-BIN O2-noinline_coreutils_stripped_expand {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2-noinline_coreutils_stripped_expr {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O2-noinline_coreutils_stripped_factor {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2-noinline_coreutils_stripped_false {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2-noinline_coreutils_stripped_fmt {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_fold {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_getlimits {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_ginstall {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 24, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_groups {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2-noinline_coreutils_stripped_head {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_hostid {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_id {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2-noinline_coreutils_stripped_join {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_kill {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O2-noinline_coreutils_stripped_libstdbuf.so {"class_mismatch_off": 0, "class_mismatch_static": 0}
-BIN O2-noinline_coreutils_stripped_link {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2-noinline_coreutils_stripped_ln {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_logname {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_ls {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 15, "fixed_mismatch": 3}
-BIN O2-noinline_coreutils_stripped_make-prime-list {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 2}
-BIN O2-noinline_coreutils_stripped_mkdir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_mkfifo {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_mknod {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_mktemp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_mv {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 21, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_nice {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_nl {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_nohup {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_nproc {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_numfmt {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 12, "fixed_mismatch": 3}
-BIN O2-noinline_coreutils_stripped_od {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9}
-BIN O2-noinline_coreutils_stripped_paste {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2-noinline_coreutils_stripped_pathchk {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2-noinline_coreutils_stripped_pinky {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O2-noinline_coreutils_stripped_pr {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 10, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_printenv {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_printf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9, "fixed_mismatch": 2}
-BIN O2-noinline_coreutils_stripped_ptx {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O2-noinline_coreutils_stripped_pwd {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_readlink {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_realpath {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_rm {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_rmdir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_runcon {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_seq {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_shred {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 13, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_shuf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 2}
-BIN O2-noinline_coreutils_stripped_sleep {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2-noinline_coreutils_stripped_sort {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 20, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_split {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 16, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_stat {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 12}
-BIN O2-noinline_coreutils_stripped_stdbuf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2-noinline_coreutils_stripped_stty {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_sync {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_tac {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_tail {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 17, "fixed_mismatch": 2}
-BIN O2-noinline_coreutils_stripped_tee {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2-noinline_coreutils_stripped_test {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2-noinline_coreutils_stripped_timeout {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O2-noinline_coreutils_stripped_touch {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 13, "fixed_mismatch": 4}
-BIN O2-noinline_coreutils_stripped_tr {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O2-noinline_coreutils_stripped_true {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2-noinline_coreutils_stripped_truncate {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_tsort {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2-noinline_coreutils_stripped_tty {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_uname {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_unexpand {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2-noinline_coreutils_stripped_uniq {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O2-noinline_coreutils_stripped_unlink {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-FIXEDCLASS O2-noinline_coreutils_stripped_uptime 0x2ad0 ('__printf_chk', ',  load average: %.2f', 0, 'F', 'I', 'v15')
-FIXEDCLASS O2-noinline_coreutils_stripped_uptime 0x2ad0 ('__printf_chk', ', %.2f', 0, 'F', 'I', 'v21')
-BIN O2-noinline_coreutils_stripped_uptime {"class_mismatch_off": 3, "class_mismatch_static": 1, "changed": 6, "fixed_class_mismatch": 2}
-BIN O2-noinline_coreutils_stripped_users {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2-noinline_coreutils_stripped_vdir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 15, "fixed_mismatch": 3}
-BIN O2-noinline_coreutils_stripped_wc {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O2-noinline_coreutils_stripped_who {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11, "fixed_mismatch": 1}
-BIN O2-noinline_coreutils_stripped_whoami {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2-noinline_coreutils_stripped_yes {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2_base-passwd_stripped_update-passwd {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11, "fixed_mismatch": 7}
-BIN O2_bzip2_stripped_bzip2recover {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_[ {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_coreutils_stripped_basename {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_cat {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_chcon {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_chgrp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_chmod {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_chown {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_chroot {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_coreutils_stripped_cksum {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 12, "fixed_mismatch": 2}
-BIN O2_coreutils_stripped_comm {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2_coreutils_stripped_cp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 19, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_csplit {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 10, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_cut {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_date {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11, "fixed_mismatch": 2}
-BIN O2_coreutils_stripped_dd {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_df {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 1}
-ARITY O2_coreutils_stripped_dir 0xc590 3->2
-BIN O2_coreutils_stripped_dir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 13, "fixed_mismatch": 3, "arity_down": 1}
-BIN O2_coreutils_stripped_dircolors {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_coreutils_stripped_dirname {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2_coreutils_stripped_du {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_echo {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2_coreutils_stripped_env {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_expand {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2_coreutils_stripped_expr {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O2_coreutils_stripped_factor {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_coreutils_stripped_false {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2_coreutils_stripped_fmt {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_fold {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_getlimits {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_ginstall {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 24, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_groups {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_coreutils_stripped_head {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_hostid {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_id {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_coreutils_stripped_join {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9}
-BIN O2_coreutils_stripped_kill {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2_coreutils_stripped_libstdbuf.so {"class_mismatch_off": 0, "class_mismatch_static": 0}
-BIN O2_coreutils_stripped_link {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2_coreutils_stripped_ln {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_logname {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-ARITY O2_coreutils_stripped_ls 0xc590 3->2
-BIN O2_coreutils_stripped_ls {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 13, "fixed_mismatch": 3, "arity_down": 1}
-BIN O2_coreutils_stripped_make-prime-list {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 2}
-BIN O2_coreutils_stripped_mkdir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_mkfifo {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_mknod {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_mktemp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_mv {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 22, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_nice {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_nl {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_nohup {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_nproc {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_numfmt {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 3}
-BIN O2_coreutils_stripped_od {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O2_coreutils_stripped_paste {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2_coreutils_stripped_pathchk {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_pinky {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2_coreutils_stripped_pr {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 10, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_printenv {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_printf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 2}
-BIN O2_coreutils_stripped_ptx {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O2_coreutils_stripped_pwd {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_readlink {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_realpath {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_rm {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 10, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_rmdir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_runcon {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_seq {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_shred {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_shuf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 2}
-BIN O2_coreutils_stripped_sleep {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2_coreutils_stripped_sort {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 17, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_split {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_stat {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 9}
-BIN O2_coreutils_stripped_stdbuf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_stty {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_sync {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_tac {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_tail {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11, "fixed_mismatch": 2}
-BIN O2_coreutils_stripped_tee {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_coreutils_stripped_test {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_timeout {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 8}
-BIN O2_coreutils_stripped_touch {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11, "fixed_mismatch": 2}
-BIN O2_coreutils_stripped_tr {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7}
-BIN O2_coreutils_stripped_true {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2_coreutils_stripped_truncate {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_tsort {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_coreutils_stripped_tty {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_uname {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_unexpand {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_coreutils_stripped_uniq {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2_coreutils_stripped_unlink {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-FIXEDCLASS O2_coreutils_stripped_uptime 0x2a80 ('__printf_chk', ',  load average: %.2f', 0, 'F', 'I', 'v11')
-FIXEDCLASS O2_coreutils_stripped_uptime 0x2a80 ('__printf_chk', ', %.2f', 0, 'F', 'I', 'v17')
-BIN O2_coreutils_stripped_uptime {"class_mismatch_off": 3, "class_mismatch_static": 1, "changed": 6, "fixed_class_mismatch": 2}
-BIN O2_coreutils_stripped_users {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-ARITY O2_coreutils_stripped_vdir 0xc590 3->2
-BIN O2_coreutils_stripped_vdir {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 13, "fixed_mismatch": 3, "arity_down": 1}
-BIN O2_coreutils_stripped_wc {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 3}
-BIN O2_coreutils_stripped_who {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 7, "fixed_mismatch": 1}
-BIN O2_coreutils_stripped_whoami {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_coreutils_stripped_yes {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2_cronie_stripped_crond {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 11, "fixed_mismatch": 1}
-BIN O2_cronie_stripped_crontab {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 17, "fixed_mismatch": 4}
-BIN O2_diffutils_stripped_cmp {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3}
-BIN O2_diffutils_stripped_diff3 {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 5}
-BIN O2_diffutils_stripped_sdiff {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4}
-BIN O2_dpkg_stripped_dpkg-divert {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 26}
-BIN O2_dpkg_stripped_dpkg-query {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 24}
-BIN O2_dpkg_stripped_dpkg-statoverride {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 13}
-BIN O2_dpkg_stripped_dpkg {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 38}
-LFLOAT O2_e2fsprogs_stripped_e2fsck 0x736b0 __fprintf_chk '%16.4lf memory / bitmap bit memory ratio (bitarr' arg=F
-BIN O2_e2fsprogs_stripped_e2fsck {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 70, "fixed_mismatch": 23, "lfloat_F": 1, "lfloat_off_count": 1}
-BIN O2_gnutls_stripped_certtool {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 93, "fixed_mismatch": 12}
-BIN O2_gnutls_stripped_ocsptool {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 45, "fixed_mismatch": 6}
-BIN O2_gnutls_stripped_psktool {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3, "fixed_mismatch": 5}
-BIN O2_gnutls_stripped_srptool {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 2}
-ARITY O2_iproute2_stripped_ip 0x6d6a0 5->3
-ARITY O2_iproute2_stripped_ip 0x6d8a0 5->3
-BIN O2_iproute2_stripped_ip {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 277, "fixed_mismatch": 91, "arity_down": 2}
-ARITY O2_iproute2_stripped_rtmon 0xb320 5->3
-ARITY O2_iproute2_stripped_rtmon 0xb520 5->3
-BIN O2_iproute2_stripped_rtmon {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 50, "fixed_mismatch": 6, "arity_down": 2}
-ARITY O2_kmod_stripped_kmod 0xd650 5->6
-BIN O2_kmod_stripped_kmod {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 30, "fixed_mismatch": 6, "arity_up": 1}
-BIN O2_libacl_stripped_chacl {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3, "fixed_mismatch": 1}
-BIN O2_libacl_stripped_getfacl {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 4, "fixed_mismatch": 1}
-BIN O2_libacl_stripped_setfacl {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2_libexpat_stripped_xmlwf {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 13, "fixed_mismatch": 2}
-BIN O2_libopencm3_stripped_adc-dac-printf.elf {"class_mismatch_off": 0, "class_mismatch_static": 0}
-BIN O2_mirai_stripped_mirai {"class_mismatch_off": 0, "class_mismatch_static": 0}
-BIN O2_sysvinit_stripped_bootlogd {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 3, "fixed_mismatch": 1}
-BIN O2_sysvinit_stripped_init {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6}
-BIN O2_sysvinit_stripped_last {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 6, "fixed_mismatch": 2}
-BIN O2_zlib_stripped_minigzip {"class_mismatch_off": 0, "class_mismatch_static": 0, "changed": 2}
-TOTAL {"arity_down": 7, "arity_up": 1, "binaries": 325, "changed": 2849, "class_mismatch_off": 6, "class_mismatch_static": 2, "fixed_class_mismatch": 4, "fixed_mismatch": 313, "functions": 74707, "lfloat_F": 1, "lfloat_off_count": 1}
+# argcount.py over the round-6 sweep: off vs static (the build BEFORE the default was
+# restricted to x86), 325 decbench x86-64 + 40 i386 + 148 AArch64 + 58 ARM32 binaries.
+# CALLARITY rows carry a hand verdict (FIX = phantom removed / real argument recovered,
+# WRONG = phantom added / real argument dropped). With the x86-only default every
+# non-x86 row below is gone: the default renders those targets as off.
+CORPUS aarch64 firmware: {"binaries": 148, "changed": 4481, "fixed_mismatch": 552, "new_mismatch": 0, "fixed_class_mismatch": 302, "new_class_mismatch": 0, "class_mismatch_off": 317, "class_mismatch_static": 14, "arity_up": 10, "arity_down": 0, "callarity_toward": 3, "callarity_away": 8, "callarity_unknown": 6, "callshape": 55}
+CORPUS arm32 firmware: {"binaries": 58, "changed": 480, "fixed_mismatch": 193, "new_mismatch": 0, "fixed_class_mismatch": 0, "new_class_mismatch": 0, "class_mismatch_off": 3, "class_mismatch_static": 3, "arity_up": 0, "arity_down": 10, "callarity_toward": 0, "callarity_away": 0, "callarity_unknown": 7, "callshape": 1}
+CORPUS i386 libs: {"binaries": 40, "changed": 0, "fixed_mismatch": 0, "new_mismatch": 0, "fixed_class_mismatch": 0, "new_class_mismatch": 0, "class_mismatch_off": 0, "class_mismatch_static": 0, "arity_up": 0, "arity_down": 0, "callarity_toward": 0, "callarity_away": 0, "callarity_unknown": 0, "callshape": 0}
+CORPUS x86-64 decbench: {"binaries": 325, "changed": 2846, "fixed_mismatch": 313, "new_mismatch": 0, "fixed_class_mismatch": 4, "new_class_mismatch": 0, "class_mismatch_off": 6, "class_mismatch_static": 2, "arity_up": 1, "arity_down": 7, "callarity_toward": 7, "callarity_away": 0, "callarity_unknown": 1, "callshape": 2}
+ARITY fw_ax21-rootfs_sbin_devmem 0x2cd0c 4->3
+ARITY fw_ax21-rootfs_usr_sbin_cnss_diag 0xce34 4->3
+CALLARITY fw_ax21-rootfs_usr_sbin_iwconfig 0x4568 sub_4568 -> __aeabi_dmul#1 5->6 callee=0/0 ?  WRONG
+LFLOAT fw_ax21-rootfs_usr_sbin_tcq 0x10bf0 fprintf 'probability %lg ' arg=count
+LFLOAT fw_ax21-rootfs_usr_sbin_tcq 0x1d580 fprintf 'probability %lg ' arg=count
+ARITY fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_dhd 0x15a48 18->3
+ARITY fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_google_client 0x1aac8 3->1
+ARITY fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_google_client 0x1b2b4 3->0
+CALLARITY fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_google_client 0x1be64 sub_1be64 -> s_browse_to_tree#0 4->5 callee=0/0 ?  WRONG
+CALLARITY fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_google_client 0x1be64 sub_1be64 -> write_log#1 4->7 callee=0/0 ?  WRONG
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x12354 fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x12354 fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x12354 fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x12354 fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x12354 fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x12354 fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x12354 fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x12354 fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13070 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13070 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13070 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13070 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13070 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13070 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13070 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13070 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13b7c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x13e68 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x144b0 fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=count
+LFLOAT fw_ax82u-25098-root__RT-AX82U_3.0.0.4_388_25098-g6766b10_puresqubi.w.extracted_squashfs-root_usr_sbin_sysstate 0x14888 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=count
+LFLOAT fw_be17000-rootfs_sbin_traffic_meter 0x12da0 snprintf '%.2lf' arg=count
+ARITY fw_be17000-rootfs_sbin_traffic_meter 0x14f38 3->2
+CALLARITY fw_be17000-rootfs_usr_bin_csh 0x177e8 csh_cb_on_change -> d2_subscribe#0 3->6 callee=0/0 ?  WRONG
+LFLOAT fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 printf 'Average Wait in High Priority Q in milliseconds:' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 printf 'Average Wait in Med Priority Q in milliseconds: ' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 printf 'Averate Wait in Low Priority Q in milliseconds: ' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 printf 'Total Time spent Working in seconds: %lf\n' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 printf 'Total Time spent Idle in seconds : %lf\n' arg=F
+FIXEDCLASS fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 ('printf', 'Average Wait in High Priority Q in milliseconds:', 0, 'F', 'I', '*(unsigned long *)(a0 + 0x10)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 ('printf', 'Average Wait in Med Priority Q in milliseconds: ', 0, 'F', 'I', '*(unsigned long *)(a0 + 0x28)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 ('printf', 'Averate Wait in Low Priority Q in milliseconds: ', 0, 'F', 'I', '*(unsigned long *)(a0 + 0x40)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 ('printf', 'Total Time spent Working in seconds: %lf\n', 0, 'F', 'I', '*(unsigned long *)(a0 + 0x48)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_bin_wscd 0x4204d4 ('printf', 'Total Time spent Idle in seconds : %lf\n', 0, 'F', 'I', 'v1')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_bin_iperf3 0x416ec8 ('sprintf', '%1.15g', 0, 'F', 'I', 'v5')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_bin_iperf3 0x416ec8 ('sprintf', '%1.17g', 0, 'F', 'I', 'v5')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.3f mA\n', 0, 'I', 'F', '(float8)*(uint2 *)(a0 + 0x20) / 500.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.3f mA\n', 1, 'F', 'I', '"Laser bias current high alarm threshold')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.3f mA\n', 0, 'I', 'F', '(float8)*(uint2 *)(a0 + 0x1e) / 500.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.3f mA\n', 1, 'F', 'I', '"Laser bias current low alarm threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.3f mA\n', 0, 'I', 'F', '(float8)*(uint2 *)(a0 + 0x1c) / 500.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.3f mA\n', 1, 'F', 'I', '"Laser bias current high warning thresho')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.3f mA\n', 0, 'I', 'F', '(float8)*(uint2 *)(a0 + 0x1a) / 500.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.3f mA\n', 1, 'F', 'I', '"Laser bias current low warning threshol')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', '"Laser output power high alarm threshold')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', '"Laser output power low alarm threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', '"Laser output power high warning thresho')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', '"Laser output power low warning threshol')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 0, 'I', 'F', '(float8)(int4)*(int2 *)(a0 + 0x16) / 256')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 2, 'F', 'I', '"Module temperature high alarm threshold')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 0, 'I', 'F', '(float8)(int4)*(int2 *)(a0 + 0x14) / 256')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 2, 'F', 'I', '"Module temperature low alarm threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 0, 'I', 'F', '(float8)(int4)*(int2 *)(a0 + 0x12) / 256')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 2, 'F', 'I', '"Module temperature high warning thresho')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 0, 'I', 'F', '(float8)(int4)*(int2 *)(a0 + 0x10) / 256')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 2, 'F', 'I', '"Module temperature low warning threshol')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f V\n', 0, 'I', 'F', '(float8)*(uint2 *)(a0 + 0xc) / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f V\n', 1, 'F', 'I', '"Module voltage high alarm threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f V\n', 0, 'I', 'F', '(float8)*(uint2 *)(a0 + 10) / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f V\n', 1, 'F', 'I', '"Module voltage low alarm threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f V\n', 0, 'I', 'F', '(float8)*(uint2 *)(a0 + 8) / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f V\n', 1, 'F', 'I', '"Module voltage high warning threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f V\n', 0, 'I', 'F', '(float8)*(uint2 *)(a0 + 6) / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f V\n', 1, 'F', 'I', '"Module voltage low warning threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', '"Laser rx power high alarm threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', '"Laser rx power low alarm threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', '"Laser rx power high warning threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 1, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4346cc ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', '"Laser rx power low warning threshold"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.3f mA\n', 0, 'I', 'F', '(float8)v10 / 500.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.3f mA\n', 1, 'F', 'I', '"Laser bias current"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v11 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', '"Laser output power"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v12 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', 'v14')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 0, 'I', 'F', '(float8)(int4)v9 / 256.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 2, 'F', 'I', '"Module temperature"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.4f V\n', 0, 'I', 'F', '(float8)v8 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x4379f4 ('printf', '\t%-41s : %.4f V\n', 1, 'F', 'I', '"Module voltage"')
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43b538 printf '\t%-41s : %.3lfnm\n' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43b538 printf '\t%-41s : %.3lfnm\n' arg=F
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43b538 ('printf', '\t%-41s : %.3lfnm\n', 0, 'I', 'F', '(float8)CONCAT11(*(char *)(*(int8 *)(a0 ')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43b538 ('printf', '\t%-41s : %.3lfnm\n', 1, 'F', 'I', '"Laser wavelength"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43b538 ('printf', '\t%-41s : %.3lfnm\n', 0, 'I', 'F', '(float8)CONCAT11(*(char *)(*(int8 *)(a0 ')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43b538 ('printf', '\t%-41s : %.3lfnm\n', 1, 'F', 'I', '"Laser wavelength tolerance"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 0, 'I', 'F', '(float8)(int4)v13 / 256.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 2, 'F', 'I', '"Module temperature"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.4f V\n', 0, 'I', 'F', '(float8)v12 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.4f V\n', 1, 'F', 'I', '"Module voltage"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.3f mA\n', 0, 'I', 'F', '(float8)v5[(int8)v14 * 3] / 500.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.3f mA\n', 1, 'F', 'I', 'v4')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', 'v4')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43c02c ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', 'v4')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e17c ('printf', '\t%-41s : %.02fW\n', 0, 'I', 'F', '(float8)((float4)v1 * 0.25)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e17c ('printf', '\t%-41s : %.02fW\n', 1, 'F', 'I', '"Max power"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e214 ('printf', '\t%-41s : %0.2fm\n', 0, 'I', 'F', '(float8)((float4)(*(uint1 *)(*(int8 *)(a')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e334 ('printf', '\t%-41s : %0.2fkm\n', 0, 'I', 'F', '(float8)((float4)(*(uint1 *)(*(int8 *)(a')
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e54c printf '\t%-41s : %.3lfnm\n' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e54c printf '\t%-41s : %.3lfnm\n' arg=F
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e54c ('printf', '\t%-41s : %.3lfnm\n', 0, 'I', 'F', '(float8)CONCAT11(*(char *)(a0 + 0x8a),*(')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e54c ('printf', '\t%-41s : %.3lfnm\n', 1, 'F', 'I', '"Laser wavelength"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e54c ('printf', '\t%-41s : %.3lfnm\n', 0, 'I', 'F', '(float8)CONCAT11(*(char *)(a0 + 0x8c),*(')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43e54c ('printf', '\t%-41s : %.3lfnm\n', 1, 'F', 'I', '"Laser wavelength tolerance"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43f788 ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 0, 'I', 'F', '(float8)(int4)*(int2 *)(a0 + 0x18) / 256')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43f788 ('printf', '\t%-41s : %.2f degrees C / %.2f degrees F\n', 2, 'F', 'I', '"Module temperature"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43f788 ('printf', '\t%-41s : %.4f V\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43f788 ('printf', '\t%-41s : %.4f V\n', 1, 'F', 'I', '"Module voltage"')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43f834 ('printf', '\t%-41s : %.3f mA\n', 0, 'I', 'F', '(float8)*(uint2 *)(a1 + (int8)v2 * 6 + 0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43f834 ('printf', '\t%-41s : %.3f mA\n', 1, 'F', 'I', 'v1')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43f99c ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43f99c ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43fb40 ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 0, 'I', 'F', '(float8)v1 / 10000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ethtool 0x43fb40 ('printf', '\t%-41s : %.4f mW / %.2f dBm\n', 2, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_gupnp 0x40c7c0 ('fprintf', 'Average Wait in High Priority Q in milliseconds:', 0, 'F', 'I', '*(unsigned long *)(a0 + 0x10)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_gupnp 0x40c7c0 ('fprintf', 'Average Wait in Med Priority Q in milliseconds: ', 0, 'F', 'I', '*(unsigned long *)(a0 + 0x28)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_gupnp 0x40c7c0 ('fprintf', 'Averate Wait in Low Priority Q in milliseconds: ', 0, 'F', 'I', '*(unsigned long *)(a0 + 0x40)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_gupnp 0x40c7c0 ('fprintf', 'Total Time spent Working in seconds: %f\n', 0, 'F', 'I', '*(unsigned long *)(a0 + 0x48)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_gupnp 0x40c7c0 ('fprintf', 'Total Time spent Idle in seconds : %f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_mtdinfo 0x40446c ('printf', '%s%.1f GiB', 0, 'I', 'F', '(double)bytes / 1073741824.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_mtdinfo 0x40446c ('printf', '%s%.1f MiB', 0, 'I', 'F', '(double)bytes / 1048576.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_mtdinfo 0x40446c ('printf', '%s%.1f KiB', 0, 'I', 'F', '(double)bytes / 1024.0')
+CALLARITY fw_friday-gs7-air-full-system-root_usr_sbin_networkmap 0x4146f8 sub_4146f8 -> f_exists#0 6->1 callee=0/0 ?  FIX
+CALLARITY fw_friday-gs7-air-full-system-root_usr_sbin_networkmap 0x414f58 sub_414f58 -> f_exists#1 6->1 callee=0/0 ?  FIX
+ARITY fw_friday-gs7-air-full-system-root_usr_sbin_phddns 0x4024b0 0->2
+ARITY fw_friday-gs7-air-full-system-root_usr_sbin_phddns 0x4024bc 0->2
+ARITY fw_friday-gs7-air-full-system-root_usr_sbin_phddns 0x4024c8 0->2
+ARITY fw_friday-gs7-air-full-system-root_usr_sbin_phddns 0x4033bc 0->2
+ARITY fw_friday-gs7-air-full-system-root_usr_sbin_phddns 0x4033c8 0->2
+ARITY fw_friday-gs7-air-full-system-root_usr_sbin_phddns 0x4033d4 0->2
+CALLARITY fw_friday-gs7-air-full-system-root_usr_sbin_pppoe-relay 0x403558 sub_403558 -> sub_402c98#0 4->3 callee=3/3 toward  FIX
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_qrencode 0x4024c0 ('fprintf', '\t\t\t<rect x="%d" y="%d" width="%d" height="1" fil', 0, 'I', 'F', '(double)a0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_qrencode 0x4024c0 ('fprintf', '\t\t\t<rect x="%d" y="%d" width="%d" height="1" fil', 4, 'F', 'I', 'a5')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_qrencode 0x4027a4 ('fprintf', '\t\t<rect x="0" y="0" width="%d" height="%d" fill=', 0, 'I', 'F', '(double)((float)v12 / v4)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_qrencode 0x4027a4 ('fprintf', '\t\t<rect x="0" y="0" width="%d" height="%d" fill=', 3, 'F', 'I', 'v8')
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40262c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402b90 ('fprintf', '[%s]%4s %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f %7.2', 0, 'I', 'F', '(double)NEON_ucvtf(*(unsigned long *)v5)')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402b90 ('fprintf', '[%s]%4s %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f %7.2', 1, 'I', 'F', 'v9 * v16')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402b90 ('fprintf', '[%s]%4s %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f %7.2', 8, 'F', 'I', '&v3')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402b90 ('fprintf', '[%s]%4s %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f %7.2', 9, 'F', 'I', '0x405f60')
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=I
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=I
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=I
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=I
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=I
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=I
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x402e00 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40346c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40346c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x40346c fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x403674 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x403674 fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x403bcc fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x403bcc fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x403bcc fprintf '{"mean":"%.3lf","var":"%.3lf","sigma":"%.3lf"}' arg=?
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x403e8c fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=F
+LFLOAT fw_friday-gs7-air-full-system-root_usr_sbin_sysstate 0x403e8c fprintf '{"mu":"%.3lf","va":"%.3lf"}' arg=F
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ubinfo 0x406bdc ('printf', '%s%.1f GiB', 0, 'I', 'F', '(double)bytes / 1073741824.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ubinfo 0x406bdc ('printf', '%s%.1f MiB', 0, 'I', 'F', '(double)bytes / 1048576.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_ubinfo 0x406bdc ('printf', '%s%.1f KiB', 0, 'I', 'F', '(double)bytes / 1024.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_wg 0x402970 ('fprintf', "%s: `%s'. Trying again in %.2f seconds...\n", 0, 'I', 'F', '(double)v15 / 1000000.0')
+FIXEDCLASS fw_friday-gs7-air-full-system-root_usr_sbin_wg 0x402970 ('fprintf', "%s: `%s'. Trying again in %.2f seconds...\n", 2, 'F', 'I', 'a1')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevice_id 0x40c500 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevice_id 0x411e94 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevice_id 0x411e94 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevice_id 0x41200c ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevice_id 0x41200c ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevice_id 0x41200c ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevice_id 0x41200c ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup 0x4089a8 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup 0x419698 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup 0x419698 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup 0x419810 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup 0x419810 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup 0x419810 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup 0x419810 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup2 0x4074f8 ('printf', 'Negotiated Protocol Version %.1f\n', 0, 'F', 'I', 'v19')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup2 0x40bed0 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup2 0x4206e8 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup2 0x4206e8 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup2 0x420860 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup2 0x420860 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup2 0x420860 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicebackup2 0x420860 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicecrashreport 0x4064e4 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicecrashreport 0x415260 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicecrashreport 0x415260 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicecrashreport 0x4153d8 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicecrashreport 0x4153d8 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicecrashreport 0x4153d8 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicecrashreport 0x4153d8 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedate 0x40c7fc ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedate 0x412190 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedate 0x412190 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedate 0x412308 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedate 0x412308 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedate 0x412308 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedate 0x412308 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebug 0x40e688 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebug 0x416c38 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebug 0x416c38 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebug 0x416db0 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebug 0x416db0 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebug 0x416db0 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebug 0x416db0 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebugserverproxy 0x40ba30 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebugserverproxy 0x413fe0 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebugserverproxy 0x413fe0 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebugserverproxy 0x414158 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebugserverproxy 0x414158 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebugserverproxy 0x414158 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicedebugserverproxy 0x414158 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicediagnostics 0x40da98 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicediagnostics 0x41342c ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicediagnostics 0x41342c ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicediagnostics 0x4135a4 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicediagnostics 0x4135a4 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicediagnostics 0x4135a4 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicediagnostics 0x4135a4 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceenterrecovery 0x40c280 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceenterrecovery 0x411c14 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceenterrecovery 0x411c14 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceenterrecovery 0x411d8c ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceenterrecovery 0x411d8c ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceenterrecovery 0x411d8c ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceenterrecovery 0x411d8c ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceimagemounter 0x4060d8 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceimagemounter 0x41576c ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceimagemounter 0x41576c ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceimagemounter 0x4158e4 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceimagemounter 0x4158e4 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceimagemounter 0x4158e4 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceimagemounter 0x4158e4 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceinfo 0x40561c ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceinfo 0x4120f8 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceinfo 0x4120f8 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceinfo 0x412270 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceinfo 0x412270 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceinfo 0x412270 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceinfo 0x412270 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicename 0x40c440 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicename 0x411dd4 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicename 0x411dd4 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicename 0x411f4c ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicename 0x411f4c ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicename 0x411f4c ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicename 0x411f4c ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicenotificationproxy 0x40d280 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicenotificationproxy 0x412c14 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicenotificationproxy 0x412c14 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicenotificationproxy 0x412d8c ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicenotificationproxy 0x412d8c ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicenotificationproxy 0x412d8c ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicenotificationproxy 0x412d8c ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicepair 0x4067dc ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicepair 0x412270 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicepair 0x412270 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicepair 0x4123e8 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicepair 0x4123e8 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicepair 0x4123e8 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicepair 0x4123e8 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceprovision 0x406b18 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceprovision 0x413e7c ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceprovision 0x413e7c ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceprovision 0x413ff4 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceprovision 0x413ff4 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceprovision 0x413ff4 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_ideviceprovision 0x413ff4 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicescreenshot 0x40caa0 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicescreenshot 0x412e44 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicescreenshot 0x412e44 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicescreenshot 0x412fbc ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicescreenshot 0x412fbc ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicescreenshot 0x412fbc ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicescreenshot 0x412fbc ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesetlocation 0x40cb60 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesetlocation 0x411fa8 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesetlocation 0x411fa8 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesetlocation 0x412120 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesetlocation 0x412120 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesetlocation 0x412120 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesetlocation 0x412120 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesyslog 0x40eb08 ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesyslog 0x41449c ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesyslog 0x41449c ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesyslog 0x414614 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesyslog 0x414614 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesyslog 0x414614 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_idevicesyslog 0x414614 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_inetcat 0x408f88 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_inetcat 0x408f88 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_inetcat 0x409100 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_inetcat 0x409100 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_inetcat 0x409100 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_inetcat 0x409100 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_iproxy 0x409e48 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_iproxy 0x409e48 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_iproxy 0x409fc0 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_iproxy 0x409fc0 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_iproxy 0x409fc0 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_iproxy 0x409fc0 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_plistutil 0x401d90 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_plistutil 0x401d90 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_plistutil 0x401f08 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_plistutil 0x401f08 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_plistutil 0x401f08 ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_plistutil 0x401f08 ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_usbmuxd 0x41a41c ('fprintf', '%f\n', 0, 'F', 'I', 'v3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_usbmuxd 0x41fa44 ('snprintf', '%.*g', 0, 'I', 'F', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_usbmuxd 0x41fa44 ('snprintf', '%.*g', 1, 'F', 'I', '0x11')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_usbmuxd 0x41fbbc ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_usbmuxd 0x41fbbc ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_usbmuxd 0x41fbbc ('snprintf', '%li', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_bin_usbmuxd 0x41fbbc ('snprintf', '%lu', 0, 'I', 'F', 'v9')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_asuswebstorage 0x406710 ('printf', '%s %10.0f / %10.0f (%g %%)\n', 0, 'I', 'F', 'a1')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_asuswebstorage 0x406710 ('printf', '%s %10.0f / %10.0f (%g %%)\n', 3, 'F', 'I', 'a4')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_asuswebstorage 0x406710 ('printf', '%s %10.0f / %10.0f (%g %%)\n', 0, 'I', 'F', 'a3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_asuswebstorage 0x406710 ('printf', '%s %10.0f / %10.0f (%g %%)\n', 3, 'F', 'I', 'a4')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_dropbox_client 0x406958 ('printf', '@%s %g / %g (%g %%)\n', 0, 'I', 'F', 'a3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_dropbox_client 0x406958 ('printf', '@%s %g / %g (%g %%)\n', 3, 'F', 'I', 'a4')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_dropbox_client 0x406958 ('printf', '@@%s %10.0f / %10.0f (%g %%)\n', 0, 'I', 'F', 'a1')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_dropbox_client 0x406958 ('printf', '@@%s %10.0f / %10.0f (%g %%)\n', 3, 'F', 'I', 'a4')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_dropbox_client 0x406958 ('printf', '@@@%s %10.0f / %10.0f (%g %%)\n', 0, 'I', 'F', 'a3')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_dropbox_client 0x406958 ('printf', '@@@%s %10.0f / %10.0f (%g %%)\n', 3, 'F', 'I', 'a4')
+ARITY fw_friday-gs7-full-system-root_usr_sbin_e2fsck 0x41a24c 0->2
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_ftpclient 0x406d68 ('printf', '\r%s %10.0f / %10.0f (%g %%)', 0, 'I', 'F', 'a1')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_ftpclient 0x406d68 ('printf', '\r%s %10.0f / %10.0f (%g %%)', 3, 'F', 'I', 'a4')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_ftpclient 0x406d68 ('printf', '\r%s %10.0f', 1, 'F', 'I', 'a4')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_mke2fs 0x404820 ('printf', '%llu blocks (%2.2f%%) reserved for the super use', 0, 'I', 'F', '((double)v33 * 100.0) / (double)(unsigne')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_mke2fs 0x404820 ('printf', '%llu blocks (%2.2f%%) reserved for the super use', 1, 'F', 'I', 'v22')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_mke2fs 0x409504 ('printf', 'This filesystem will be automatically checked ev', 0, 'I', 'F', '(double)a1 / 86400.0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_mke2fs 0x409504 ('printf', 'This filesystem will be automatically checked ev', 1, 'F', 'I', '(unsigned long)a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_sambaclient 0x40fa4c ('printf', '\rDownload [%s] percent - %f ', 0, 'I', 'F', '(double)((float)v10 / (float)v5)')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_sambaclient 0x40fa4c ('printf', '\rDownload [%s] percent - %f ', 1, 'F', 'I', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_sambaclient 0x40fd04 ('printf', '\rUpload [%s] percent - %f ', 0, 'I', 'F', '(double)((float)v10 / (float)v6)')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_sambaclient 0x40fd04 ('printf', '\rUpload [%s] percent - %f ', 1, 'F', 'I', 'a0')
+CALLARITY fw_friday-gs7-full-system-root_usr_sbin_shn_ctrl 0x41f4 sub_41f4 -> pthread_self#0 1->0 callee=0/0 toward  FIX
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_usbclient 0x413a44 ('printf', '\rDownload [%s] percent - %f ', 0, 'I', 'F', '(double)((float)v9 / (float)v4)')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_usbclient 0x413a44 ('printf', '\rDownload [%s] percent - %f ', 1, 'F', 'I', 'a0')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_usbclient 0x413cd8 ('printf', '\rUpload [%s] percent - %f ', 0, 'I', 'F', '(double)((float)v10 / (float)v6)')
+FIXEDCLASS fw_friday-gs7-full-system-root_usr_sbin_usbclient 0x413cd8 ('printf', '\rUpload [%s] percent - %f ', 1, 'F', 'I', 'a0')
+ARITY fw_friday-gs7-full-system-root_usr_sbin_vsftpd 0x414718 0->1
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_fatfsck 0x239b0 sub_239b0 -> sub_1f0a0#0 5->7 callee=3/3 ?  WRONG
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_fatfsck 0x289e0 sub_289e0 -> sub_40c50#0 4->5 callee=4/4 away  WRONG
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_fatfsck 0x2c480 sub_2c480 -> sub_26620#0 4->5 callee=4/4 away  WRONG
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_fatfsck 0x36da0 sub_36da0 -> sub_15e60#0 1->2 callee=1/1 away  WRONG
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_fatfsck 0x3ba20 sub_3ba20 -> sub_3a930#0 7->8 callee=7/7 away  WRONG
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_mkfatfs 0xdd30 sub_dd30 -> sub_28330#0 1->2 callee=1/1 away  WRONG
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_mkfatfs 0x129b0 sub_129b0 -> sub_118c0#0 7->8 callee=7/7 away  WRONG
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_mkfatfs 0x1f140 sub_1f140 -> sub_1a830#0 5->7 callee=3/3 ?  WRONG
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_mkfatfs 0x2a300 sub_2a300 -> sub_248f0#0 4->5 callee=4/4 away  WRONG
+CALLARITY fw_friday-gtbe98e20-root_usr_sbin_mkfatfs 0x2dda0 sub_2dda0 -> sub_268f0#0 4->5 callee=4/4 away  WRONG
+ARITY fw_friday-mr90-10246-wan-http-root_usr_bin_circlev2_shares_usr_lib_libnet.so.1.7.0 0xbe28 2->1
+CALLARITY fw_friday-mr90-10246-wan-http-root_usr_sbin_airiq_app 0x14ea8 sub_14ea8 -> wl_iovar_getint#0 3->7 callee=0/0 ?  WRONG
+CALLARITY fw_friday-mr90-10246-wan-http-root_usr_sbin_airiq_app 0x14ea8 sub_14ea8 -> wl_iovar_getint#1 3->7 callee=0/0 ?  WRONG
+ARITY fw_friday-mr90-10246-wan-http-root_usr_sbin_airiq_service 0x139fc 3->2
+ARITY fw_friday-rax36s-104-root_usr_sbin_net-cgi 0x5ec44 12->2
+ARITY fw_friday-rax41v2-http-root_sbin_wdhcp6c 0x16964 3->1
+CALLARITY fw_friday-rax41v2-http-root_usr_bin_bst_daemon 0x12610 bst_cb_on_change -> d2_subscribe#0 3->6 callee=0/0 ?  WRONG
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_ip 0x40ba90 ('snprintf', '%.*f%c%s', 0, 'I', 'F', '(float8)a2 / (float8)v7')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_ip 0x40ba90 ('snprintf', '%.*f%c%s', 1, 'F', 'I', 'v3')
+CALLARITY fw_raxe500-upnp-rootfs_bin_ip 0x42fcc0 xfrm_policy_print -> parse_rtattr#0 4->3 callee=0/0 ?  WRONG
+CALLARITY fw_raxe500-upnp-rootfs_bin_ip 0x42fcc0 xfrm_policy_print -> parse_rtattr#1 4->3 callee=0/0 ?  WRONG
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_ip 0x434860 ('fprintf', '\n\t  bitrate %d sample-point %.3f ', 0, 'I', 'F', '(float8)(float4)NEON_ucvtf(*(unsigned in')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_ip 0x434860 ('fprintf', '\n\t  bitrate %d sample-point %.3f ', 1, 'F', 'I', '(uint8)*(uint4 *)(v10 + 4)')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_ip 0x434860 ('fprintf', '\n\t  dbitrate %d dsample-point %.3f ', 0, 'I', 'F', '(float8)(float4)NEON_ucvtf(*(unsigned in')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_ip 0x434860 ('fprintf', '\n\t  dbitrate %d dsample-point %.3f ', 1, 'F', 'I', '(uint8)*(uint4 *)(v10 + 4)')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_ip 0x453220 ('snprintf', '%uus', 0, 'I', 'F', 'v1')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_ip 0x453480 ('snprintf', '%lldns', 0, 'I', 'F', 'v1')
+ARITY fw_raxe500-upnp-rootfs_bin_ip 0x4569d0 1->2
+LFLOAT fw_raxe500-upnp-rootfs_bin_tc 0x40eaa0 snprintf '%lf' arg=F
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_tc 0x418b00 ('fprintf', '  borrowed %u overactions %u avgidle %g undertim', 0, 'I', 'F', '(double)*(int *)&a2[6]')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_tc 0x418b00 ('fprintf', '  borrowed %u overactions %u avgidle %g undertim', 1, 'I', 'F', '(double)*(int *)&a2[8]')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_tc 0x418b00 ('fprintf', '  borrowed %u overactions %u avgidle %g undertim', 2, 'F', 'I', '(unsigned long)*(unsigned int *)&a2[2]')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_tc 0x418b00 ('fprintf', '  borrowed %u overactions %u avgidle %g undertim', 3, 'F', 'I', '(unsigned long)*(unsigned int *)&a2[4]')
+CALLARITY fw_raxe500-upnp-rootfs_bin_tc 0x42da60 sub_42da60 -> print_color_string#0 6->5 callee=5/5 toward  FIX
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_tc 0x444fc0 ('snprintf', '%uus', 0, 'I', 'F', 'v1')
+FIXEDCLASS fw_raxe500-upnp-rootfs_bin_tc 0x445220 ('snprintf', '%lldns', 0, 'I', 'F', 'v1')
+ARITY fw_raxe500-upnp-rootfs_bin_tc 0x447d00 1->2
+FIXEDCLASS x86_O2-noinline_coreutils_stripped_uptime 0x2ad0 ('__printf_chk', ',  load average: %.2f', 0, 'F', 'I', 'v15')
+FIXEDCLASS x86_O2-noinline_coreutils_stripped_uptime 0x2ad0 ('__printf_chk', ', %.2f', 0, 'F', 'I', 'v21')
+CALLARITY x86_O2_base-passwd_stripped_update-passwd 0x4290 sub_4290 -> sub_2be0#6 4->3 callee=14/14 ?  FIX
+CALLARITY x86_O2_coreutils_stripped_dir 0xc590 sub_c590 -> sub_12720#0 4->2 callee=2/2 toward  FIX
+ARITY x86_O2_coreutils_stripped_dir 0xc590 3->2
+CALLARITY x86_O2_coreutils_stripped_ls 0xc590 sub_c590 -> sub_12720#0 4->2 callee=2/2 toward  FIX
+ARITY x86_O2_coreutils_stripped_ls 0xc590 3->2
+FIXEDCLASS x86_O2_coreutils_stripped_uptime 0x2a80 ('__printf_chk', ',  load average: %.2f', 0, 'F', 'I', 'v11')
+FIXEDCLASS x86_O2_coreutils_stripped_uptime 0x2a80 ('__printf_chk', ', %.2f', 0, 'F', 'I', 'v17')
+CALLARITY x86_O2_coreutils_stripped_vdir 0xc590 sub_c590 -> sub_12720#0 4->2 callee=2/2 toward  FIX
+ARITY x86_O2_coreutils_stripped_vdir 0xc590 3->2
+LFLOAT x86_O2_e2fsprogs_stripped_e2fsck 0x736b0 __fprintf_chk '%16.4lf memory / bitmap bit memory ratio (bitarr' arg=F
+CALLARITY x86_O2_iproute2_stripped_ip 0x6d6a0 rtnl_rtscope_n2a -> sub_6cee0#0 6->3 callee=3/3 toward  FIX
+ARITY x86_O2_iproute2_stripped_ip 0x6d6a0 5->3
+CALLARITY x86_O2_iproute2_stripped_ip 0x6d8a0 rtnl_rtrealm_n2a -> sub_6cee0#0 6->3 callee=3/3 toward  FIX
+ARITY x86_O2_iproute2_stripped_ip 0x6d8a0 5->3
+CALLARITY x86_O2_iproute2_stripped_rtmon 0xb320 rtnl_rtscope_n2a -> sub_ab60#0 6->3 callee=3/3 toward  FIX
+ARITY x86_O2_iproute2_stripped_rtmon 0xb320 5->3
+CALLARITY x86_O2_iproute2_stripped_rtmon 0xb520 rtnl_rtrealm_n2a -> sub_ab60#0 6->3 callee=3/3 toward  FIX
+ARITY x86_O2_iproute2_stripped_rtmon 0xb520 5->3
+ARITY x86_O2_kmod_stripped_kmod 0xd650 5->6
+TOTAL {"arity_down": 17, "arity_up": 11, "binaries": 571, "callarity_away": 8, "callarity_toward": 10, "callarity_unknown": 14, "callshape": 58, "changed": 7807, "class_mismatch_off": 326, "class_mismatch_static": 19, "fixed_class_mismatch": 306, "fixed_mismatch": 1058, "functions": 180134, "lfloat_?": 35, "lfloat_F": 20, "lfloat_I": 6, "lfloat_count": 23, "lfloat_off_?": 35, "lfloat_off_F": 9, "lfloat_off_I": 16, "lfloat_off_count": 24}

@@ -215,8 +215,76 @@ container, so the console records it at `load file` beside the other one-bit
 image facts; the XML path has no container and types no AArch64 site.
 
 `fmtabi_armhf` (the stage test's passes 10 to 12) pins ARM: `f_conv` and
-`f_sum` render as under `off`, and the integer site `f_is(int, char *)` is still
-typed. Passes 7 to 9 pin `macho_imports_arm64`.
+`f_sum` render as under `off`, and under `full` the integer site
+`f_is(int, char *)` is still typed. Passes 7 to 9 pin `macho_imports_arm64`.
+This table is what `full` applies. The default applies only its x86 part, for
+the reason in the next section.
+
+## Neighbouring calls, and why the default stops at x86
+
+Review found a non-format call that lost an argument on AArch64. In iproute2
+`ip` (`/tmp/raxe500-upnp-rootfs/bin/ip`, stripped aarch64) `xfrm_policy_print`
+renders `parse_rtattr(v3,0x1f,v7,v8)` under `off` and `parse_rtattr(v3,0x1f,v7)`
+under `static`, at both call sites (`0x42fd3c`, `0x42fdfc`). The source computes
+`len` with `subs w3,w2,#192`, so the value is born in `w3`, where
+`parse_rtattr` takes it; the error path prints it with
+`fprintf(stderr, "BUG: wrong nlmsg len %d\n", len)` through `mov w2,w3`.
+
+P4 keeps an unknown callee's register argument only when the value in that
+register is used by nothing but the call (`Funcdata::only_op_use`, upstream
+`onlyOpUse`). A use by another call is excused only while that call's own
+arguments are still being recovered (`check_call_double_use`): an open
+`fprintf` is excused as long as its trial for the register is unscored, a
+closed one never is. A trace of the veto (a temporary `eprintln!` in
+`only_op_use`) shows it plainly: under `off` the `fprintf` at `0x42ff7c` was
+still unscored when `parse_rtattr`'s trials were, so it did not count; closed
+by the format, it vetoes `x3` at both sites. `main` already drops the same
+argument at 13 of the binary's 60 `parse_rtattr` calls, and at the 9 traced the
+veto is the same `mov w2,w3; bl fprintf` of the same message; in those
+functions the `fprintf`'s trial happened to be scored first. `static` makes it
+15 of 60.
+
+The mechanism runs both ways, and it is not specific to `x3`. A register the
+closed call no longer takes stops vetoing a neighbour's trial, so a phantom the
+open call used to suppress comes back. To count every such change,
+`argcount.py` now pairs the argument count of every non-format call in a changed
+function (per callee, in order) and reports it with the callee's own decompiled
+arity. Over the r6 sweep (`off` against `static`, before this restriction):
+
+| corpus | binaries | calls moved | phantom removed / real argument recovered | wrong |
+|---|---|---|---|---|
+| decbench x86-64 (O0, O2, O2-noinline) | 325 | 8 | 8 | 0 |
+| i386 Linux shared libraries | 40 | 0 | 0 | 0 |
+| AArch64 firmware | 148 | 17 | 5 | 12 |
+| ARM32 firmware | 58 | 7 | 0 | 7 |
+
+The x86 eight are `ls`/`dir`/`vdir` `0xc590` (`4->2`), `ip`/`rtmon`
+`rtnl_rtscope_n2a`/`rtnl_rtrealm_n2a` (`6->3` each; a map-file helper that
+takes three), and `update-passwd` `0x4290`, whose debconf wrapper
+`sub_2be0("base-passwd/%s/user/%s/gecos", ...)` loses the argument its format
+has no conversion for. The wrong ones on firmware are eight calls in
+`fatfsck`/`mkfatfs` (aarch64) that gain an `x8` of `0`, the indirect-result
+register, ahead of their real arguments (`sub_40c50(0,*(a0+0xd8),a3,a1,&v4)`);
+two tail calls there that grow from 5 to 7 arguments against a callee of 3;
+the two `parse_rtattr` sites; and ARM calls that pick up leftover registers:
+`__aeabi_dmul` with six, `d2_subscribe(d2h,tbl,1)` with three more (twice),
+`wl_iovar_getint` with seven (twice), `write_log` with seven where it takes
+four, and `s_browse_to_tree` with five. The right ones there are
+`f_exists("/tmp/NMP_DEBUG")` losing the five arguments of the `sscanf` after it
+(twice), `pthread_self()` losing one, and two helper calls losing a phantom
+trailing argument.
+
+So `static` resolves at load on x86 only
+(`FormatStringMode::resolves_at_load`), and on every other target the default
+renders what `off` renders; `full` keeps the whole table above, so the typing is
+one option away where it is wanted. Stage passes 24 to 26 pin `fmt_aarch64`
+(the default equals `off`, `full` types it) and assertion 28 pins ARM's `f_is`.
+On the 206 firmware binaries the default is now byte-identical to `off`.
+
+What would lift the restriction is making the closed prototype invisible to
+the neighbours' scoring: leave the format call open through P4's trial scoring,
+as `off` does, and substitute the format-derived arguments when its own trials
+are resolved. That is an engine change of its own and is not in this PR.
 
 ## A format the program can rewrite
 

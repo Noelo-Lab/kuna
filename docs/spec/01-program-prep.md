@@ -2500,6 +2500,24 @@ every other binary's pass list is byte-identical to before the pass existed):
   compiler spec settles it from the id alone. The XML path, which has no
   container, declines every AArch64 site.
 
+  **`static` resolves at load on x86 only**
+  (`kuna_formatstring.rs (reached_by_default)`); `full` resolves on every target
+  the rule above admits. A closed prototype changes more than the format call.
+  P4 keeps an unknown callee's register argument only when the value in that
+  register is used by nothing but the call (`Funcdata::only_op_use`, upstream
+  `onlyOpUse`), and a use by another call counts against it unless that call's
+  own arguments are still being recovered (`check_call_double_use`). An open
+  `printf` is such a call, so the registers it might take compete with a
+  neighbour's trials only as far as its own trials have been scored. Once its
+  prototype is closed, a register it takes competes for good and one it does not
+  take stops competing, and the neighbour's argument list moves. Over 325 x86-64
+  binaries all 8 neighbouring calls this moved lost a phantom argument. Over 206
+  AArch64 and ARM32 firmware binaries 19 of 24 went wrong: eight calls gained an
+  `x8` of `0` (the indirect-result register) ahead of their real arguments,
+  `ip`'s `parse_rtattr` lost the `len` its error path also prints (`subs w3`
+  feeds `parse_rtattr` in `w3` and `fprintf` through `mov w2,w3`), and ARM calls
+  picked up leftover registers. Those targets keep the typing behind `full`.
+
   **The drive has the last word.** The window is only as sound as the Listing's
   edges, and the Listing does not have all of them. Its walk does not read jump
   tables, so the case bodies of a `switch` are decoded by nobody, and a join

@@ -29,10 +29,15 @@ With this change the default prints `main(int a0,unsigned long *a1)` and
   function decompiled once more, when the call passes a different number of
   arguments than it declares (an `alloca` frame) or its format is not the
   resolved string (a join reached from a jump table).
+- The default types x86 only. A closed format prototype also changes which
+  registers count as arguments of the calls around it; on x86 that only ever
+  removed phantoms, but on AArch64 and ARM32 it gave calls an `x8` of `0` or
+  leftover registers, and cost iproute2 `ip`'s `parse_rtattr` its `len`. `full`
+  still types those targets.
 - An override is built only where the target passes a vararg exactly like a
   named argument: every conversion on x86 and standard AArch64, integer and
   pointer conversions on ARM32, RISC-V, MIPS, PowerPC and Windows AArch64,
-  nothing on Apple AArch64 or an unchecked processor. This binds `full` too.
+  nothing on Apple AArch64 or an unchecked processor.
 - The format must sit in a read-only section, and a site whose call
   instruction writes the format register itself (a delay slot) is declined.
 - Fixes in the existing typing: override parameter names no longer leak into
@@ -42,17 +47,17 @@ With this change the default prints `main(int a0,unsigned long *a1)` and
 
 ## The tests
 
-- `tests/stages/kuna-formatstring-static.xml`, 23 passes: off, default and
+- `tests/stages/kuna-formatstring-static.xml`, 26 passes: off, default and
   `full` on `fmt_x86_64`, the jump-table/`alloca` sites, `%lf` on x86-64 and
-  ARM hard-float, a Win64 PE with `%zu`/`%td`, and default == off on Apple
-  arm64, ARM hard-float `%f` and a format in `.data`. Without the `%zu` fix
-  the 3 Win64 assertions fail; without the `%lf` fix 8 more do.
-- decbench `type_match` over 444 slices: 986 → 1024 perfect, 176 functions
-  better, 2 worse.
-- Over 325 binaries, off vs static, no format call gains or loses a vararg or
-  gets one of the wrong class. With `formatstring off` the output is
-  byte-identical to main. `decompile-all` min-of-15 against main: `fmt`
-  +1.2%, `ls` +0.7%, `sort` +1.1%.
+  ARM hard-float, a Win64 PE with `%zu`/`%td`, `fmt_aarch64`, and default ==
+  off on Apple arm64, AArch64, ARM and a format in `.data`. The build before
+  the x86-only default fails 8 of the 28 assertions.
+- decbench `type_match` over 444 slices: TYPESWEEP_LINE
+- Every call in every function the default changes, off vs static, over 325
+  x86-64 and 40 i386 binaries: no format call newly disagrees with its format
+  (313 stop disagreeing), and the 8 other calls whose argument count moved all
+  lost a phantom. With `formatstring off`, and on every non-x86 target by
+  default, the output is byte-identical to main. SPEED_LINE
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
