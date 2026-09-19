@@ -736,7 +736,7 @@
   }
  },
  "invariants_checked": {
-  "off_is_origin_main": "round 11: `--option protoorder off --json` is byte-identical to a fresh origin/main d96e3408 build on all 60 corpus binaries (and to 6e4f6fa5 on all 60 before the charbyte rebase)",
+  "off_is_origin_main": "round 11: `--option protoorder off --json` is byte-identical to a fresh origin/main d96e3408 build on all 60 corpus binaries (and to 6e4f6fa5 on all 60 before the charbyte rebase); round 12: the final engine's `--option protoorder off --json` is byte-identical to main on 10 of 10 re-run binaries (fmt, ls, kmod, libselinux, betaflight, nuttx, dash, grep -O0, zlib, crazyflie cf2)",
   "determinism": "two default runs of fmt -O2 --json are byte-identical",
   "jobs": "an explicit `--option protoorder` with --jobs N exits 2; under the default a --jobs run states nothing and prints a note on stderr; with --option protoorder off it is byte-identical to the serial run (kuna-cli tests)",
   "assert": "`--assert prototype` declares the entry, so the recovered statement declines and the declared branch of getInputLocal answers first",
