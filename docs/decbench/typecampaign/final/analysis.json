@@ -1,0 +1,2436 @@
+{
+ "control_rerun_vs_0916": {
+  "rerun_functions": 10748,
+  "0916_functions": 10748,
+  "common": 10748,
+  "only_rerun": 0,
+  "only_0916": 0,
+  "value_differs_on_common": 0,
+  "0916": [
+   10748,
+   848,
+   2843.2793672959274
+  ],
+  "rerun": [
+   10748,
+   848,
+   2843.2793672959274
+  ]
+ },
+ "moves": {
+  "functions_both": 10748,
+  "improved_any": 1449,
+  "worse_any": 8,
+  "onto_perfect": 139,
+  "off_perfect": 1,
+  "only_base": 0,
+  "only_final": 0
+ },
+ "slices": {
+  "ALL": {
+   "n": 10748,
+   "perfect_base": 848,
+   "mean_base": 0.2645,
+   "perfect_final": 986,
+   "mean_final": 0.2895
+  },
+  "opt:O0": {
+   "n": 4286,
+   "perfect_base": 612,
+   "mean_base": 0.4167,
+   "perfect_final": 704,
+   "mean_final": 0.4467
+  },
+  "opt:O2": {
+   "n": 2394,
+   "perfect_base": 42,
+   "mean_base": 0.133,
+   "perfect_final": 53,
+   "mean_final": 0.1514
+  },
+  "opt:O2-noinline": {
+   "n": 4068,
+   "perfect_base": 194,
+   "mean_base": 0.1817,
+   "perfect_final": 229,
+   "mean_final": 0.205
+  },
+  "proj:bzip2": {
+   "n": 267,
+   "perfect_base": 15,
+   "mean_base": 0.3441,
+   "perfect_final": 19,
+   "mean_final": 0.3664
+  },
+  "proj:bzip2@O0": {
+   "n": 108,
+   "perfect_base": 14,
+   "mean_base": 0.5661,
+   "perfect_final": 18,
+   "mean_final": 0.6026
+  },
+  "proj:bzip2@O2": {
+   "n": 56,
+   "perfect_base": 0,
+   "mean_base": 0.1847,
+   "perfect_final": 0,
+   "mean_final": 0.1959
+  },
+  "proj:bzip2@O2-noinline": {
+   "n": 103,
+   "perfect_base": 1,
+   "mean_base": 0.1979,
+   "perfect_final": 1,
+   "mean_final": 0.2114
+  },
+  "proj:coreutils": {
+   "n": 6422,
+   "perfect_base": 525,
+   "mean_base": 0.256,
+   "perfect_final": 610,
+   "mean_final": 0.2813
+  },
+  "proj:coreutils@O0": {
+   "n": 2585,
+   "perfect_base": 400,
+   "mean_base": 0.4067,
+   "perfect_final": 456,
+   "mean_final": 0.4363
+  },
+  "proj:coreutils@O2": {
+   "n": 1401,
+   "perfect_base": 12,
+   "mean_base": 0.1156,
+   "perfect_final": 20,
+   "mean_final": 0.1352
+  },
+  "proj:coreutils@O2-noinline": {
+   "n": 2436,
+   "perfect_base": 113,
+   "mean_base": 0.1768,
+   "perfect_final": 134,
+   "mean_final": 0.2009
+  },
+  "proj:diffutils": {
+   "n": 420,
+   "perfect_base": 43,
+   "mean_base": 0.3592,
+   "perfect_final": 52,
+   "mean_final": 0.4004
+  },
+  "proj:diffutils@O0": {
+   "n": 165,
+   "perfect_base": 25,
+   "mean_base": 0.5209,
+   "perfect_final": 30,
+   "mean_final": 0.5649
+  },
+  "proj:diffutils@O2": {
+   "n": 97,
+   "perfect_base": 6,
+   "mean_base": 0.2377,
+   "perfect_final": 7,
+   "mean_final": 0.2709
+  },
+  "proj:diffutils@O2-noinline": {
+   "n": 158,
+   "perfect_base": 12,
+   "mean_base": 0.2651,
+   "perfect_final": 15,
+   "mean_final": 0.308
+  },
+  "proj:findutils": {
+   "n": 790,
+   "perfect_base": 31,
+   "mean_base": 0.1444,
+   "perfect_final": 35,
+   "mean_final": 0.1622
+  },
+  "proj:findutils@O0": {
+   "n": 306,
+   "perfect_base": 19,
+   "mean_base": 0.2164,
+   "perfect_final": 23,
+   "mean_final": 0.2433
+  },
+  "proj:findutils@O2": {
+   "n": 194,
+   "perfect_base": 1,
+   "mean_base": 0.0654,
+   "perfect_final": 1,
+   "mean_final": 0.0734
+  },
+  "proj:findutils@O2-noinline": {
+   "n": 290,
+   "perfect_base": 11,
+   "mean_base": 0.1212,
+   "perfect_final": 11,
+   "mean_final": 0.136
+  },
+  "proj:grep": {
+   "n": 247,
+   "perfect_base": 37,
+   "mean_base": 0.3614,
+   "perfect_final": 39,
+   "mean_final": 0.387
+  },
+  "proj:grep@O0": {
+   "n": 101,
+   "perfect_base": 22,
+   "mean_base": 0.5141,
+   "perfect_final": 23,
+   "mean_final": 0.5439
+  },
+  "proj:grep@O2": {
+   "n": 52,
+   "perfect_base": 1,
+   "mean_base": 0.1881,
+   "perfect_final": 1,
+   "mean_final": 0.2012
+  },
+  "proj:grep@O2-noinline": {
+   "n": 94,
+   "perfect_base": 14,
+   "mean_base": 0.2932,
+   "perfect_final": 15,
+   "mean_final": 0.3213
+  },
+  "proj:gzip": {
+   "n": 368,
+   "perfect_base": 83,
+   "mean_base": 0.4654,
+   "perfect_final": 88,
+   "mean_final": 0.4858
+  },
+  "proj:gzip@O0": {
+   "n": 134,
+   "perfect_base": 56,
+   "mean_base": 0.7179,
+   "perfect_final": 60,
+   "mean_final": 0.7405
+  },
+  "proj:gzip@O2": {
+   "n": 99,
+   "perfect_base": 10,
+   "mean_base": 0.3167,
+   "perfect_final": 10,
+   "mean_final": 0.3356
+  },
+  "proj:gzip@O2-noinline": {
+   "n": 135,
+   "perfect_base": 17,
+   "mean_base": 0.3236,
+   "perfect_final": 18,
+   "mean_final": 0.3431
+  },
+  "proj:shadow": {
+   "n": 686,
+   "perfect_base": 20,
+   "mean_base": 0.2619,
+   "perfect_final": 29,
+   "mean_final": 0.2897
+  },
+  "proj:shadow@O0": {
+   "n": 270,
+   "perfect_base": 15,
+   "mean_base": 0.4837,
+   "perfect_final": 22,
+   "mean_final": 0.5275
+  },
+  "proj:shadow@O2": {
+   "n": 131,
+   "perfect_base": 2,
+   "mean_base": 0.1186,
+   "perfect_final": 3,
+   "mean_final": 0.1338
+  },
+  "proj:shadow@O2-noinline": {
+   "n": 285,
+   "perfect_base": 3,
+   "mean_base": 0.1177,
+   "perfect_final": 4,
+   "mean_final": 0.136
+  },
+  "proj:tar": {
+   "n": 1548,
+   "perfect_base": 94,
+   "mean_base": 0.26,
+   "perfect_final": 114,
+   "mean_final": 0.2824
+  },
+  "proj:tar@O0": {
+   "n": 617,
+   "perfect_base": 61,
+   "mean_base": 0.393,
+   "perfect_final": 72,
+   "mean_final": 0.417
+  },
+  "proj:tar@O2": {
+   "n": 364,
+   "perfect_base": 10,
+   "mean_base": 0.1473,
+   "perfect_final": 11,
+   "mean_final": 0.166
+  },
+  "proj:tar@O2-noinline": {
+   "n": 567,
+   "perfect_base": 23,
+   "mean_base": 0.1876,
+   "perfect_final": 31,
+   "mean_final": 0.2107
+  }
+ },
+ "per_project_moves": {
+  "bzip2": {
+   "improved": 38,
+   "worse": 0
+  },
+  "coreutils": {
+   "improved": 932,
+   "worse": 7
+  },
+  "diffutils": {
+   "improved": 68,
+   "worse": 0
+  },
+  "findutils": {
+   "improved": 63,
+   "worse": 0
+  },
+  "grep": {
+   "improved": 31,
+   "worse": 0
+  },
+  "gzip": {
+   "improved": 30,
+   "worse": 0
+  },
+  "shadow": {
+   "improved": 139,
+   "worse": 0
+  },
+  "tar": {
+   "improved": 148,
+   "worse": 1
+  }
+ },
+ "worst": [
+  [
+   -0.2857,
+   "coreutils::O2-noinline::factor",
+   "powm2",
+   0.7142857142857143,
+   0.42857142857142855
+  ],
+  [
+   -0.2857,
+   "coreutils::O2::factor",
+   "powm2",
+   0.7142857142857143,
+   0.42857142857142855
+  ],
+  [
+   -0.2857,
+   "coreutils::O0::factor",
+   "powm2",
+   1.0,
+   0.7142857142857143
+  ],
+  [
+   -0.1667,
+   "coreutils::O2-noinline::factor",
+   "millerrabin2",
+   0.5,
+   0.3333333333333333
+  ],
+  [
+   -0.1667,
+   "coreutils::O2::factor",
+   "millerrabin2",
+   0.5,
+   0.3333333333333333
+  ],
+  [
+   -0.1667,
+   "tar::O2-noinline::tar",
+   "write_directory_file_entry",
+   0.16666666666666666,
+   0.0
+  ],
+  [
+   -0.1667,
+   "coreutils::O0::factor",
+   "millerrabin2",
+   0.75,
+   0.5833333333333334
+  ],
+  [
+   -0.1429,
+   "coreutils::O2-noinline::shred",
+   "passname",
+   0.2857142857142857,
+   0.14285714285714285
+  ]
+ ],
+ "classes": {
+  "kuna_base": {
+   "n_total": 65715,
+   "tp_total": 16676,
+   "per_class": {
+    "int_s4": {
+     "n": 8788,
+     "tp": 4690,
+     "fp": 317,
+     "rate": 53.4
+    },
+    "ptr_ptr": {
+     "n": 1834,
+     "tp": 335,
+     "fp": 1131,
+     "rate": 18.3
+    },
+    "ptr_struct": {
+     "n": 14252,
+     "tp": 0,
+     "fp": 7882,
+     "rate": 0.0
+    },
+    "int_u8": {
+     "n": 7657,
+     "tp": 3885,
+     "fp": 163,
+     "rate": 50.7
+    },
+    "int_u4": {
+     "n": 1596,
+     "tp": 869,
+     "fp": 81,
+     "rate": 54.4
+    },
+    "ptr_char": {
+     "n": 14645,
+     "tp": 3015,
+     "fp": 4183,
+     "rate": 20.6
+    },
+    "char": {
+     "n": 846,
+     "tp": 454,
+     "fp": 27,
+     "rate": 53.7
+    },
+    "array": {
+     "n": 750,
+     "tp": 142,
+     "fp": 408,
+     "rate": 18.9
+    },
+    "array_char": {
+     "n": 1448,
+     "tp": 190,
+     "fp": 629,
+     "rate": 13.1
+    },
+    "ptr_prim": {
+     "n": 1242,
+     "tp": 506,
+     "fp": 446,
+     "rate": 40.7
+    },
+    "bool": {
+     "n": 3222,
+     "tp": 696,
+     "fp": 1358,
+     "rate": 21.6
+    },
+    "int_s8": {
+     "n": 2478,
+     "tp": 1450,
+     "fp": 79,
+     "rate": 58.5
+    },
+    "funcptr": {
+     "n": 525,
+     "tp": 0,
+     "fp": 397,
+     "rate": 0.0
+    },
+    "ptr_void": {
+     "n": 3481,
+     "tp": 52,
+     "fp": 2566,
+     "rate": 1.5
+    },
+    "struct_val": {
+     "n": 1769,
+     "tp": 0,
+     "fp": 1534,
+     "rate": 0.0
+    },
+    "enum": {
+     "n": 518,
+     "tp": 299,
+     "fp": 16,
+     "rate": 57.7
+    },
+    "float": {
+     "n": 358,
+     "tp": 47,
+     "fp": 150,
+     "rate": 13.1
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 12,
+     "fp": 2,
+     "rate": 66.7
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 0,
+     "fp": 10,
+     "rate": 0.0
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 19,
+     "fp": 0,
+     "rate": 35.8
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 15,
+     "fp": 1,
+     "rate": 65.2
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 31,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 143,
+     "tp": 0,
+     "fp": 80,
+     "rate": 0.0
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 21577,
+     "tp": 7786,
+     "rate": 36.1
+    },
+    "stack": {
+     "n": 18317,
+     "tp": 8890,
+     "rate": 48.5
+    },
+    "reg": {
+     "n": 25821,
+     "tp": 0,
+     "rate": 0.0
+    }
+   }
+  },
+  "kuna_final": {
+   "n_total": 65715,
+   "tp_total": 18396,
+   "per_class": {
+    "int_s4": {
+     "n": 8788,
+     "tp": 4690,
+     "fp": 317,
+     "rate": 53.4
+    },
+    "ptr_struct": {
+     "n": 14252,
+     "tp": 355,
+     "fp": 7527,
+     "rate": 2.5
+    },
+    "char": {
+     "n": 846,
+     "tp": 454,
+     "fp": 27,
+     "rate": 53.7
+    },
+    "int_u4": {
+     "n": 1596,
+     "tp": 871,
+     "fp": 79,
+     "rate": 54.6
+    },
+    "ptr_char": {
+     "n": 14645,
+     "tp": 3028,
+     "fp": 4170,
+     "rate": 20.7
+    },
+    "ptr_ptr": {
+     "n": 1834,
+     "tp": 523,
+     "fp": 948,
+     "rate": 28.5
+    },
+    "int_u8": {
+     "n": 7657,
+     "tp": 3888,
+     "fp": 161,
+     "rate": 50.8
+    },
+    "ptr_prim": {
+     "n": 1242,
+     "tp": 488,
+     "fp": 464,
+     "rate": 39.3
+    },
+    "bool": {
+     "n": 3222,
+     "tp": 1378,
+     "fp": 678,
+     "rate": 42.8
+    },
+    "int_s8": {
+     "n": 2478,
+     "tp": 1450,
+     "fp": 79,
+     "rate": 58.5
+    },
+    "array_char": {
+     "n": 1448,
+     "tp": 190,
+     "fp": 629,
+     "rate": 13.1
+    },
+    "funcptr": {
+     "n": 525,
+     "tp": 0,
+     "fp": 397,
+     "rate": 0.0
+    },
+    "ptr_void": {
+     "n": 3481,
+     "tp": 50,
+     "fp": 2568,
+     "rate": 1.4
+    },
+    "array": {
+     "n": 750,
+     "tp": 142,
+     "fp": 408,
+     "rate": 18.9
+    },
+    "struct_val": {
+     "n": 1769,
+     "tp": 497,
+     "fp": 1037,
+     "rate": 28.1
+    },
+    "enum": {
+     "n": 518,
+     "tp": 299,
+     "fp": 16,
+     "rate": 57.7
+    },
+    "float": {
+     "n": 358,
+     "tp": 47,
+     "fp": 150,
+     "rate": 13.1
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 12,
+     "fp": 2,
+     "rate": 66.7
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 0,
+     "fp": 10,
+     "rate": 0.0
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 19,
+     "fp": 0,
+     "rate": 35.8
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 15,
+     "fp": 1,
+     "rate": 65.2
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 31,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 143,
+     "tp": 0,
+     "fp": 80,
+     "rate": 0.0
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 21577,
+     "tp": 8723,
+     "rate": 40.4
+    },
+    "stack": {
+     "n": 18317,
+     "tp": 9669,
+     "rate": 52.8
+    },
+    "reg": {
+     "n": 25821,
+     "tp": 4,
+     "rate": 0.0
+    }
+   }
+  },
+  "ida_tree_own": {
+   "n_total": 64241,
+   "tp_total": 15469,
+   "per_class": {
+    "int_s4": {
+     "n": 8753,
+     "tp": 4199,
+     "fp": 361,
+     "rate": 48.0
+    },
+    "ptr_struct": {
+     "n": 13644,
+     "tp": 328,
+     "fp": 6521,
+     "rate": 2.4
+    },
+    "char": {
+     "n": 803,
+     "tp": 351,
+     "fp": 28,
+     "rate": 43.7
+    },
+    "int_u4": {
+     "n": 1591,
+     "tp": 749,
+     "fp": 113,
+     "rate": 47.1
+    },
+    "ptr_char": {
+     "n": 14525,
+     "tp": 3543,
+     "fp": 2978,
+     "rate": 24.4
+    },
+    "ptr_ptr": {
+     "n": 1748,
+     "tp": 670,
+     "fp": 686,
+     "rate": 38.3
+    },
+    "int_u8": {
+     "n": 7381,
+     "tp": 3101,
+     "fp": 287,
+     "rate": 42.0
+    },
+    "array": {
+     "n": 750,
+     "tp": 62,
+     "fp": 357,
+     "rate": 8.3
+    },
+    "bool": {
+     "n": 3219,
+     "tp": 292,
+     "fp": 1517,
+     "rate": 9.1
+    },
+    "struct_val": {
+     "n": 1769,
+     "tp": 42,
+     "fp": 1169,
+     "rate": 2.4
+    },
+    "array_char": {
+     "n": 1448,
+     "tp": 113,
+     "fp": 535,
+     "rate": 7.8
+    },
+    "int_s8": {
+     "n": 2473,
+     "tp": 1201,
+     "fp": 94,
+     "rate": 48.6
+    },
+    "float": {
+     "n": 358,
+     "tp": 113,
+     "fp": 32,
+     "rate": 31.6
+    },
+    "ptr_void": {
+     "n": 3242,
+     "tp": 53,
+     "fp": 2259,
+     "rate": 1.6
+    },
+    "ptr_prim": {
+     "n": 1194,
+     "tp": 366,
+     "fp": 500,
+     "rate": 30.7
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 9,
+     "fp": 0,
+     "rate": 17.0
+    },
+    "funcptr": {
+     "n": 519,
+     "tp": 0,
+     "fp": 391,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "enum": {
+     "n": 518,
+     "tp": 257,
+     "fp": 14,
+     "rate": 49.6
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 6,
+     "fp": 8,
+     "rate": 33.3
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 6,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 143,
+     "tp": 0,
+     "fp": 75,
+     "rate": 0.0
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 22,
+     "rate": 0.0
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 14,
+     "fp": 1,
+     "rate": 60.9
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 20637,
+     "tp": 8376,
+     "rate": 40.6
+    },
+    "stack": {
+     "n": 18317,
+     "tp": 7002,
+     "rate": 38.2
+    },
+    "reg": {
+     "n": 25287,
+     "tp": 91,
+     "rate": 0.4
+    }
+   }
+  },
+  "ida_tree_common": {
+   "n_total": 64241,
+   "tp_total": 15469,
+   "per_class": {
+    "int_s4": {
+     "n": 8753,
+     "tp": 4199,
+     "fp": 361,
+     "rate": 48.0
+    },
+    "ptr_struct": {
+     "n": 13644,
+     "tp": 328,
+     "fp": 6521,
+     "rate": 2.4
+    },
+    "char": {
+     "n": 803,
+     "tp": 351,
+     "fp": 28,
+     "rate": 43.7
+    },
+    "int_u4": {
+     "n": 1591,
+     "tp": 749,
+     "fp": 113,
+     "rate": 47.1
+    },
+    "ptr_char": {
+     "n": 14525,
+     "tp": 3543,
+     "fp": 2978,
+     "rate": 24.4
+    },
+    "ptr_ptr": {
+     "n": 1748,
+     "tp": 670,
+     "fp": 686,
+     "rate": 38.3
+    },
+    "int_u8": {
+     "n": 7381,
+     "tp": 3101,
+     "fp": 287,
+     "rate": 42.0
+    },
+    "array": {
+     "n": 750,
+     "tp": 62,
+     "fp": 357,
+     "rate": 8.3
+    },
+    "bool": {
+     "n": 3219,
+     "tp": 292,
+     "fp": 1517,
+     "rate": 9.1
+    },
+    "struct_val": {
+     "n": 1769,
+     "tp": 42,
+     "fp": 1169,
+     "rate": 2.4
+    },
+    "array_char": {
+     "n": 1448,
+     "tp": 113,
+     "fp": 535,
+     "rate": 7.8
+    },
+    "int_s8": {
+     "n": 2473,
+     "tp": 1201,
+     "fp": 94,
+     "rate": 48.6
+    },
+    "float": {
+     "n": 358,
+     "tp": 113,
+     "fp": 32,
+     "rate": 31.6
+    },
+    "ptr_void": {
+     "n": 3242,
+     "tp": 53,
+     "fp": 2259,
+     "rate": 1.6
+    },
+    "ptr_prim": {
+     "n": 1194,
+     "tp": 366,
+     "fp": 500,
+     "rate": 30.7
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 9,
+     "fp": 0,
+     "rate": 17.0
+    },
+    "funcptr": {
+     "n": 519,
+     "tp": 0,
+     "fp": 391,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "enum": {
+     "n": 518,
+     "tp": 257,
+     "fp": 14,
+     "rate": 49.6
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 6,
+     "fp": 8,
+     "rate": 33.3
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 6,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 143,
+     "tp": 0,
+     "fp": 75,
+     "rate": 0.0
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 22,
+     "rate": 0.0
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 14,
+     "fp": 1,
+     "rate": 60.9
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 20637,
+     "tp": 8376,
+     "rate": 40.6
+    },
+    "stack": {
+     "n": 18317,
+     "tp": 7002,
+     "rate": 38.2
+    },
+    "reg": {
+     "n": 25287,
+     "tp": 91,
+     "rate": 0.4
+    }
+   }
+  },
+  "binja_tree_own": {
+   "n_total": 64526,
+   "tp_total": 19801,
+   "per_class": {
+    "int_s4": {
+     "n": 8718,
+     "tp": 5012,
+     "fp": 308,
+     "rate": 57.5
+    },
+    "ptr_struct": {
+     "n": 13973,
+     "tp": 389,
+     "fp": 7454,
+     "rate": 2.8
+    },
+    "char": {
+     "n": 832,
+     "tp": 441,
+     "fp": 54,
+     "rate": 53.0
+    },
+    "int_u4": {
+     "n": 1545,
+     "tp": 902,
+     "fp": 42,
+     "rate": 58.4
+    },
+    "ptr_char": {
+     "n": 14469,
+     "tp": 5323,
+     "fp": 1946,
+     "rate": 36.8
+    },
+    "ptr_ptr": {
+     "n": 1758,
+     "tp": 542,
+     "fp": 892,
+     "rate": 30.8
+    },
+    "int_u8": {
+     "n": 7594,
+     "tp": 3887,
+     "fp": 292,
+     "rate": 51.2
+    },
+    "array": {
+     "n": 747,
+     "tp": 140,
+     "fp": 401,
+     "rate": 18.7
+    },
+    "bool": {
+     "n": 3203,
+     "tp": 83,
+     "fp": 1992,
+     "rate": 2.6
+    },
+    "struct_val": {
+     "n": 1761,
+     "tp": 90,
+     "fp": 1429,
+     "rate": 5.1
+    },
+    "array_char": {
+     "n": 1443,
+     "tp": 103,
+     "fp": 716,
+     "rate": 7.1
+    },
+    "int_s8": {
+     "n": 2461,
+     "tp": 1431,
+     "fp": 160,
+     "rate": 58.1
+    },
+    "float": {
+     "n": 358,
+     "tp": 88,
+     "fp": 129,
+     "rate": 24.6
+    },
+    "ptr_void": {
+     "n": 3147,
+     "tp": 402,
+     "fp": 1926,
+     "rate": 12.8
+    },
+    "ptr_prim": {
+     "n": 1173,
+     "tp": 607,
+     "fp": 317,
+     "rate": 51.7
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 19,
+     "fp": 0,
+     "rate": 35.8
+    },
+    "funcptr": {
+     "n": 522,
+     "tp": 0,
+     "fp": 395,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 3,
+     "fp": 7,
+     "rate": 20.0
+    },
+    "enum": {
+     "n": 516,
+     "tp": 310,
+     "fp": 6,
+     "rate": 60.1
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 14,
+     "fp": 0,
+     "rate": 77.8
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 143,
+     "tp": 0,
+     "fp": 81,
+     "rate": 0.0
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 31,
+     "rate": 0.0
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 15,
+     "fp": 1,
+     "rate": 65.2
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 20720,
+     "tp": 10033,
+     "rate": 48.4
+    },
+    "stack": {
+     "n": 18190,
+     "tp": 9416,
+     "rate": 51.8
+    },
+    "reg": {
+     "n": 25616,
+     "tp": 352,
+     "rate": 1.4
+    }
+   }
+  },
+  "binja_tree_common": {
+   "n_total": 64526,
+   "tp_total": 19801,
+   "per_class": {
+    "int_s4": {
+     "n": 8718,
+     "tp": 5012,
+     "fp": 308,
+     "rate": 57.5
+    },
+    "ptr_struct": {
+     "n": 13973,
+     "tp": 389,
+     "fp": 7454,
+     "rate": 2.8
+    },
+    "char": {
+     "n": 832,
+     "tp": 441,
+     "fp": 54,
+     "rate": 53.0
+    },
+    "int_u4": {
+     "n": 1545,
+     "tp": 902,
+     "fp": 42,
+     "rate": 58.4
+    },
+    "ptr_char": {
+     "n": 14469,
+     "tp": 5323,
+     "fp": 1946,
+     "rate": 36.8
+    },
+    "ptr_ptr": {
+     "n": 1758,
+     "tp": 542,
+     "fp": 892,
+     "rate": 30.8
+    },
+    "int_u8": {
+     "n": 7594,
+     "tp": 3887,
+     "fp": 292,
+     "rate": 51.2
+    },
+    "array": {
+     "n": 747,
+     "tp": 140,
+     "fp": 401,
+     "rate": 18.7
+    },
+    "bool": {
+     "n": 3203,
+     "tp": 83,
+     "fp": 1992,
+     "rate": 2.6
+    },
+    "struct_val": {
+     "n": 1761,
+     "tp": 90,
+     "fp": 1429,
+     "rate": 5.1
+    },
+    "array_char": {
+     "n": 1443,
+     "tp": 103,
+     "fp": 716,
+     "rate": 7.1
+    },
+    "int_s8": {
+     "n": 2461,
+     "tp": 1431,
+     "fp": 160,
+     "rate": 58.1
+    },
+    "float": {
+     "n": 358,
+     "tp": 88,
+     "fp": 129,
+     "rate": 24.6
+    },
+    "ptr_void": {
+     "n": 3147,
+     "tp": 402,
+     "fp": 1926,
+     "rate": 12.8
+    },
+    "ptr_prim": {
+     "n": 1173,
+     "tp": 607,
+     "fp": 317,
+     "rate": 51.7
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 19,
+     "fp": 0,
+     "rate": 35.8
+    },
+    "funcptr": {
+     "n": 522,
+     "tp": 0,
+     "fp": 395,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 3,
+     "fp": 7,
+     "rate": 20.0
+    },
+    "enum": {
+     "n": 516,
+     "tp": 310,
+     "fp": 6,
+     "rate": 60.1
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 14,
+     "fp": 0,
+     "rate": 77.8
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 143,
+     "tp": 0,
+     "fp": 81,
+     "rate": 0.0
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 31,
+     "rate": 0.0
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 15,
+     "fp": 1,
+     "rate": 65.2
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 20720,
+     "tp": 10033,
+     "rate": 48.4
+    },
+    "stack": {
+     "n": 18190,
+     "tp": 9416,
+     "rate": 51.8
+    },
+    "reg": {
+     "n": 25616,
+     "tp": 352,
+     "rate": 1.4
+    }
+   }
+  },
+  "ghidra_tree_own": {
+   "n_total": 65562,
+   "tp_total": 14106,
+   "per_class": {
+    "int_s4": {
+     "n": 8775,
+     "tp": 3781,
+     "fp": 176,
+     "rate": 43.1
+    },
+    "ptr_struct": {
+     "n": 14189,
+     "tp": 325,
+     "fp": 6413,
+     "rate": 2.3
+    },
+    "char": {
+     "n": 846,
+     "tp": 295,
+     "fp": 15,
+     "rate": 34.9
+    },
+    "int_u4": {
+     "n": 1596,
+     "tp": 667,
+     "fp": 46,
+     "rate": 41.8
+    },
+    "ptr_char": {
+     "n": 14627,
+     "tp": 2675,
+     "fp": 3441,
+     "rate": 18.3
+    },
+    "ptr_ptr": {
+     "n": 1831,
+     "tp": 27,
+     "fp": 1359,
+     "rate": 1.5
+    },
+    "int_u8": {
+     "n": 7655,
+     "tp": 3131,
+     "fp": 91,
+     "rate": 40.9
+    },
+    "array": {
+     "n": 749,
+     "tp": 143,
+     "fp": 363,
+     "rate": 19.1
+    },
+    "bool": {
+     "n": 3222,
+     "tp": 495,
+     "fp": 879,
+     "rate": 15.4
+    },
+    "struct_val": {
+     "n": 1769,
+     "tp": 541,
+     "fp": 956,
+     "rate": 30.6
+    },
+    "array_char": {
+     "n": 1448,
+     "tp": 137,
+     "fp": 662,
+     "rate": 9.5
+    },
+    "int_s8": {
+     "n": 2478,
+     "tp": 1149,
+     "fp": 69,
+     "rate": 46.4
+    },
+    "float": {
+     "n": 358,
+     "tp": 36,
+     "fp": 76,
+     "rate": 10.1
+    },
+    "ptr_void": {
+     "n": 3429,
+     "tp": 46,
+     "fp": 2457,
+     "rate": 1.3
+    },
+    "ptr_prim": {
+     "n": 1241,
+     "tp": 397,
+     "fp": 482,
+     "rate": 32.0
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 7,
+     "fp": 0,
+     "rate": 13.2
+    },
+    "funcptr": {
+     "n": 525,
+     "tp": 0,
+     "fp": 386,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "enum": {
+     "n": 518,
+     "tp": 234,
+     "fp": 13,
+     "rate": 45.2
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 4,
+     "fp": 10,
+     "rate": 22.2
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 7,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 143,
+     "tp": 0,
+     "fp": 51,
+     "rate": 0.0
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 31,
+     "rate": 0.0
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 16,
+     "fp": 0,
+     "rate": 69.6
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 21429,
+     "tp": 7576,
+     "rate": 35.4
+    },
+    "stack": {
+     "n": 18316,
+     "tp": 6513,
+     "rate": 35.6
+    },
+    "reg": {
+     "n": 25817,
+     "tp": 17,
+     "rate": 0.1
+    }
+   }
+  },
+  "ghidra_tree_common": {
+   "n_total": 65562,
+   "tp_total": 14106,
+   "per_class": {
+    "int_s4": {
+     "n": 8775,
+     "tp": 3781,
+     "fp": 176,
+     "rate": 43.1
+    },
+    "ptr_struct": {
+     "n": 14189,
+     "tp": 325,
+     "fp": 6413,
+     "rate": 2.3
+    },
+    "char": {
+     "n": 846,
+     "tp": 295,
+     "fp": 15,
+     "rate": 34.9
+    },
+    "int_u4": {
+     "n": 1596,
+     "tp": 667,
+     "fp": 46,
+     "rate": 41.8
+    },
+    "ptr_char": {
+     "n": 14627,
+     "tp": 2675,
+     "fp": 3441,
+     "rate": 18.3
+    },
+    "ptr_ptr": {
+     "n": 1831,
+     "tp": 27,
+     "fp": 1359,
+     "rate": 1.5
+    },
+    "int_u8": {
+     "n": 7655,
+     "tp": 3131,
+     "fp": 91,
+     "rate": 40.9
+    },
+    "array": {
+     "n": 749,
+     "tp": 143,
+     "fp": 363,
+     "rate": 19.1
+    },
+    "bool": {
+     "n": 3222,
+     "tp": 495,
+     "fp": 879,
+     "rate": 15.4
+    },
+    "struct_val": {
+     "n": 1769,
+     "tp": 541,
+     "fp": 956,
+     "rate": 30.6
+    },
+    "array_char": {
+     "n": 1448,
+     "tp": 137,
+     "fp": 662,
+     "rate": 9.5
+    },
+    "int_s8": {
+     "n": 2478,
+     "tp": 1149,
+     "fp": 69,
+     "rate": 46.4
+    },
+    "float": {
+     "n": 358,
+     "tp": 36,
+     "fp": 76,
+     "rate": 10.1
+    },
+    "ptr_void": {
+     "n": 3429,
+     "tp": 46,
+     "fp": 2457,
+     "rate": 1.3
+    },
+    "ptr_prim": {
+     "n": 1241,
+     "tp": 397,
+     "fp": 482,
+     "rate": 32.0
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 7,
+     "fp": 0,
+     "rate": 13.2
+    },
+    "funcptr": {
+     "n": 525,
+     "tp": 0,
+     "fp": 386,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "enum": {
+     "n": 518,
+     "tp": 234,
+     "fp": 13,
+     "rate": 45.2
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 4,
+     "fp": 10,
+     "rate": 22.2
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 7,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 143,
+     "tp": 0,
+     "fp": 51,
+     "rate": 0.0
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 31,
+     "rate": 0.0
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 16,
+     "fp": 0,
+     "rate": 69.6
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 21429,
+     "tp": 7576,
+     "rate": 35.4
+    },
+    "stack": {
+     "n": 18316,
+     "tp": 6513,
+     "rate": 35.6
+    },
+    "reg": {
+     "n": 25817,
+     "tp": 17,
+     "rate": 0.1
+    }
+   }
+  },
+  "angr_tree_own": {
+   "n_total": 64273,
+   "tp_total": 15730,
+   "per_class": {
+    "int_s4": {
+     "n": 8603,
+     "tp": 4598,
+     "fp": 456,
+     "rate": 53.4
+    },
+    "ptr_struct": {
+     "n": 13893,
+     "tp": 315,
+     "fp": 7309,
+     "rate": 2.3
+    },
+    "char": {
+     "n": 824,
+     "tp": 431,
+     "fp": 28,
+     "rate": 52.3
+    },
+    "int_u4": {
+     "n": 1569,
+     "tp": 840,
+     "fp": 57,
+     "rate": 53.5
+    },
+    "ptr_char": {
+     "n": 14388,
+     "tp": 2361,
+     "fp": 4676,
+     "rate": 16.4
+    },
+    "ptr_ptr": {
+     "n": 1806,
+     "tp": 101,
+     "fp": 1335,
+     "rate": 5.6
+    },
+    "int_u8": {
+     "n": 7480,
+     "tp": 3791,
+     "fp": 320,
+     "rate": 50.7
+    },
+    "array": {
+     "n": 737,
+     "tp": 88,
+     "fp": 425,
+     "rate": 11.9
+    },
+    "bool": {
+     "n": 3157,
+     "tp": 0,
+     "fp": 2011,
+     "rate": 0.0
+    },
+    "struct_val": {
+     "n": 1733,
+     "tp": 353,
+     "fp": 1128,
+     "rate": 20.4
+    },
+    "array_char": {
+     "n": 1415,
+     "tp": 605,
+     "fp": 164,
+     "rate": 42.8
+    },
+    "int_s8": {
+     "n": 2458,
+     "tp": 1381,
+     "fp": 142,
+     "rate": 56.2
+    },
+    "float": {
+     "n": 354,
+     "tp": 1,
+     "fp": 175,
+     "rate": 0.3
+    },
+    "ptr_void": {
+     "n": 3329,
+     "tp": 80,
+     "fp": 2331,
+     "rate": 2.4
+    },
+    "ptr_prim": {
+     "n": 1217,
+     "tp": 452,
+     "fp": 453,
+     "rate": 37.1
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 19,
+     "fp": 0,
+     "rate": 35.8
+    },
+    "funcptr": {
+     "n": 497,
+     "tp": 0,
+     "fp": 366,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 0,
+     "fp": 10,
+     "rate": 0.0
+    },
+    "enum": {
+     "n": 512,
+     "tp": 286,
+     "fp": 25,
+     "rate": 55.9
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 14,
+     "fp": 0,
+     "rate": 77.8
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 138,
+     "tp": 0,
+     "fp": 77,
+     "rate": 0.0
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 31,
+     "rate": 0.0
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 14,
+     "fp": 2,
+     "rate": 60.9
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 21083,
+     "tp": 7026,
+     "rate": 33.3
+    },
+    "stack": {
+     "n": 18143,
+     "tp": 8484,
+     "rate": 46.8
+    },
+    "reg": {
+     "n": 25047,
+     "tp": 220,
+     "rate": 0.9
+    }
+   }
+  },
+  "angr_tree_common": {
+   "n_total": 64273,
+   "tp_total": 15730,
+   "per_class": {
+    "int_s4": {
+     "n": 8603,
+     "tp": 4598,
+     "fp": 456,
+     "rate": 53.4
+    },
+    "ptr_struct": {
+     "n": 13893,
+     "tp": 315,
+     "fp": 7309,
+     "rate": 2.3
+    },
+    "char": {
+     "n": 824,
+     "tp": 431,
+     "fp": 28,
+     "rate": 52.3
+    },
+    "int_u4": {
+     "n": 1569,
+     "tp": 840,
+     "fp": 57,
+     "rate": 53.5
+    },
+    "ptr_char": {
+     "n": 14388,
+     "tp": 2361,
+     "fp": 4676,
+     "rate": 16.4
+    },
+    "ptr_ptr": {
+     "n": 1806,
+     "tp": 101,
+     "fp": 1335,
+     "rate": 5.6
+    },
+    "int_u8": {
+     "n": 7480,
+     "tp": 3791,
+     "fp": 320,
+     "rate": 50.7
+    },
+    "array": {
+     "n": 737,
+     "tp": 88,
+     "fp": 425,
+     "rate": 11.9
+    },
+    "bool": {
+     "n": 3157,
+     "tp": 0,
+     "fp": 2011,
+     "rate": 0.0
+    },
+    "struct_val": {
+     "n": 1733,
+     "tp": 353,
+     "fp": 1128,
+     "rate": 20.4
+    },
+    "array_char": {
+     "n": 1415,
+     "tp": 605,
+     "fp": 164,
+     "rate": 42.8
+    },
+    "int_s8": {
+     "n": 2458,
+     "tp": 1381,
+     "fp": 142,
+     "rate": 56.2
+    },
+    "float": {
+     "n": 354,
+     "tp": 1,
+     "fp": 175,
+     "rate": 0.3
+    },
+    "ptr_void": {
+     "n": 3329,
+     "tp": 80,
+     "fp": 2331,
+     "rate": 2.4
+    },
+    "ptr_prim": {
+     "n": 1217,
+     "tp": 452,
+     "fp": 453,
+     "rate": 37.1
+    },
+    "int_u2": {
+     "n": 53,
+     "tp": 19,
+     "fp": 0,
+     "rate": 35.8
+    },
+    "funcptr": {
+     "n": 497,
+     "tp": 0,
+     "fp": 366,
+     "rate": 0.0
+    },
+    "ptr_other": {
+     "n": 15,
+     "tp": 0,
+     "fp": 10,
+     "rate": 0.0
+    },
+    "enum": {
+     "n": 512,
+     "tp": 286,
+     "fp": 25,
+     "rate": 55.9
+    },
+    "ptr_enum": {
+     "n": 18,
+     "tp": 14,
+     "fp": 0,
+     "rate": 77.8
+    },
+    "int_other": {
+     "n": 12,
+     "tp": 0,
+     "fp": 9,
+     "rate": 0.0
+    },
+    "ptr_union": {
+     "n": 138,
+     "tp": 0,
+     "fp": 77,
+     "rate": 0.0
+    },
+    "union_val": {
+     "n": 42,
+     "tp": 0,
+     "fp": 31,
+     "rate": 0.0
+    },
+    "int_s2": {
+     "n": 23,
+     "tp": 14,
+     "fp": 2,
+     "rate": 60.9
+    }
+   },
+   "storage": {
+    "arg": {
+     "n": 21083,
+     "tp": 7026,
+     "rate": 33.3
+    },
+    "stack": {
+     "n": 18143,
+     "tp": 8484,
+     "rate": 46.8
+    },
+    "reg": {
+     "n": 25047,
+     "tp": 220,
+     "rate": 0.9
+    }
+   }
+  },
+  "kuna_tree_own": {
+   "n_total": 0,
+   "tp_total": 0,
+   "per_class": {},
+   "storage": {}
+  },
+  "kuna_tree_common": {
+   "n_total": 0,
+   "tp_total": 0,
+   "per_class": {},
+   "storage": {}
+  }
+ },
+ "rivals": {
+  "ida": {
+   "own": [
+    10273,
+    856,
+    2755.09175323045
+   ],
+   "common": [
+    10273,
+    856,
+    2755.09175323045
+   ],
+   "kuna_final_on_common": [
+    10273,
+    969,
+    3059.260191931886
+   ],
+   "kuna_base_on_common": [
+    10273,
+    834,
+    2792.173598065158
+   ],
+   "by_opt_own": {
+    "O0": {
+     "own": [
+      4286,
+      587,
+      1643.708539001473
+     ],
+     "common": [
+      4286,
+      587,
+      1643.708539001473
+     ],
+     "kuna_final_common": [
+      4286,
+      704,
+      1914.568203683545
+     ]
+    },
+    "O2": {
+     "own": [
+      2198,
+      50,
+      326.36375135623274
+     ],
+     "common": [
+      2198,
+      50,
+      326.36375135623274
+     ],
+     "kuna_final_common": [
+      2198,
+      50,
+      342.4832862307339
+     ]
+    },
+    "O2-noinline": {
+     "own": [
+      3789,
+      219,
+      785.0194628727446
+     ],
+     "common": [
+      3789,
+      219,
+      785.0194628727446
+     ],
+     "kuna_final_common": [
+      3789,
+      215,
+      802.208702017607
+     ]
+    }
+   }
+  },
+  "binja": {
+   "own": [
+    10366,
+    1273,
+    3547.546680260594
+   ],
+   "common": [
+    10366,
+    1273,
+    3547.546680260594
+   ],
+   "kuna_final_on_common": [
+    10366,
+    969,
+    3077.869796668235
+   ],
+   "kuna_base_on_common": [
+    10366,
+    831,
+    2810.3310202618245
+   ],
+   "by_opt_own": {
+    "O0": {
+     "own": [
+      4282,
+      872,
+      2122.3584785624103
+     ],
+     "common": [
+      4282,
+      872,
+      2122.3584785624103
+     ],
+     "kuna_final_common": [
+      4282,
+      703,
+      1912.1263432184287
+     ]
+    },
+    "O2": {
+     "own": [
+      2304,
+      79,
+      430.44781542721813
+     ],
+     "common": [
+      2304,
+      79,
+      430.44781542721813
+     ],
+     "kuna_final_common": [
+      2304,
+      49,
+      355.3067752417229
+     ]
+    },
+    "O2-noinline": {
+     "own": [
+      3780,
+      322,
+      994.7403862709658
+     ],
+     "common": [
+      3780,
+      322,
+      994.7403862709658
+     ],
+     "kuna_final_common": [
+      3780,
+      217,
+      810.4366782080832
+     ]
+    }
+   }
+  },
+  "ghidra": {
+   "own": [
+    10673,
+    730,
+    2525.9947960710224
+   ],
+   "common": [
+    10673,
+    730,
+    2525.9947960710224
+   ],
+   "kuna_final_on_common": [
+    10673,
+    976,
+    3099.445127829322
+   ],
+   "kuna_base_on_common": [
+    10673,
+    841,
+    2832.296033962594
+   ],
+   "by_opt_own": {
+    "O0": {
+     "own": [
+      4286,
+      484,
+      1454.849752736578
+     ],
+     "common": [
+      4286,
+      484,
+      1454.849752736578
+     ],
+     "kuna_final_common": [
+      4286,
+      704,
+      1914.568203683545
+     ]
+    },
+    "O2": {
+     "own": [
+      2362,
+      35,
+      311.84730739859634
+     ],
+     "common": [
+      2362,
+      35,
+      311.84730739859634
+     ],
+     "kuna_final_common": [
+      2362,
+      51,
+      359.33488879483644
+     ]
+    },
+    "O2-noinline": {
+     "own": [
+      4025,
+      211,
+      759.297735935848
+     ],
+     "common": [
+      4025,
+      211,
+      759.297735935848
+     ],
+     "kuna_final_common": [
+      4025,
+      221,
+      825.5420353509403
+     ]
+    }
+   }
+  },
+  "angr": {
+   "own": [
+    10502,
+    869,
+    2785.1689393934535
+   ],
+   "common": [
+    10502,
+    869,
+    2785.1689393934535
+   ],
+   "kuna_final_on_common": [
+    10502,
+    978,
+    3073.1218118848606
+   ],
+   "kuna_base_on_common": [
+    10502,
+    843,
+    2812.3459646244673
+   ],
+   "by_opt_own": {
+    "O0": {
+     "own": [
+      4286,
+      638,
+      1761.1686846369118
+     ],
+     "common": [
+      4286,
+      638,
+      1761.1686846369118
+     ],
+     "kuna_final_common": [
+      4286,
+      704,
+      1914.568203683545
+     ]
+    },
+    "O2": {
+     "own": [
+      2319,
+      38,
+      312.1995660495365
+     ],
+     "common": [
+      2319,
+      38,
+      312.1995660495365
+     ],
+     "kuna_final_common": [
+      2319,
+      52,
+      356.903524325972
+     ]
+    },
+    "O2-noinline": {
+     "own": [
+      3897,
+      193,
+      711.8006887070053
+     ],
+     "common": [
+      3897,
+      193,
+      711.8006887070053
+     ],
+     "kuna_final_common": [
+      3897,
+      222,
+      801.6500838753433
+     ]
+    }
+   }
+  },
+  "kuna": {
+   "own": [
+    0,
+    0,
+    0
+   ],
+   "common": [
+    0,
+    0,
+    0
+   ],
+   "kuna_final_on_common": [
+    0,
+    0,
+    0
+   ],
+   "kuna_base_on_common": [
+    0,
+    0,
+    0
+   ],
+   "by_opt_own": {
+    "O0": {
+     "own": [
+      0,
+      0,
+      0
+     ],
+     "common": [
+      0,
+      0,
+      0
+     ],
+     "kuna_final_common": [
+      0,
+      0,
+      0
+     ]
+    },
+    "O2": {
+     "own": [
+      0,
+      0,
+      0
+     ],
+     "common": [
+      0,
+      0,
+      0
+     ],
+     "kuna_final_common": [
+      0,
+      0,
+      0
+     ]
+    },
+    "O2-noinline": {
+     "own": [
+      0,
+      0,
+      0
+     ],
+     "common": [
+      0,
+      0,
+      0
+     ],
+     "kuna_final_common": [
+      0,
+      0,
+      0
+     ]
+    }
+   }
+  }
+ }
+}

@@ -13,3 +13,14 @@
 6. Goal 2 = correctness (phantom args via protoorder) + readability measured by varcensus; kuna is already leanest.
 7. `kuna decompile` and `decompile-all` may disagree on a callee's types once protoorder parks recovered protos.
 8. Never write into /home/mahaloz/github/decbench/results (a dewolf run is live); baselines are kuna-side.
+9. 2026-09-17 user decision: GO on all open proposal PRs under the normal rules — no large speed hit (+5% budget)
+   and accuracy relatively the same or better (444-slice typesweep). Applied as: signedness lands with default
+   `auto` (the measured same-or-better arm that keeps 675/675; prefer-signed stays opt-in because it moves datatest
+   assertions); structsynth's default is decided by a proper interleaved speed measurement + the full typesweep
+   (≤ +5% and ≥ off − 0.1% → default `param`, else opt-in); protoorder gets the same treatment when its draft opens.
+10. 2026-09-18 user decision (supersedes 4): structsynth goes default `param`. The `type_match` cost of anonymous
+   `struct_N *` names is accepted; decbench is asked to credit any struct pointer against a pointer-to-struct GT
+   (Noelo-Lab/decbench#93). A `struct_N *` on a primitive pointer (`char *`, `unsigned long *`) is still a real
+   false positive — the 7 structsynth rows among the final re-measure's 8 worse functions are that class.
+11. 2026-09-19 Stage-3 re-measure (`results.md`) against decbench `main` @ 625e892, the checkout the baseline was
+   taken with, so the before/after pair shares one metric; newer decbench commits are not mixed in.
