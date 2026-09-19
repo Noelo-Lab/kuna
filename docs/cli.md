@@ -1045,15 +1045,17 @@ protoorder off` renders. A stated type is one more vote about the value passed,
 not a declaration the argument is converted to: where the caller's own evidence
 wins, the argument renders exactly as it does with the option off. Where the vote
 wins, the spelling can change beyond the type: a constant it makes a pointer
-prints with a cast (`caller((unsigned char *)0x402000,3)`), a pointee it guesses
-can split a wide store into narrower stores of the same bytes, and an unsigned
-vote can make a parameter unsigned. The vote is refused outright where the caller
+prints with a cast (`caller((unsigned char *)0x402000,3)`), a character pointee
+it guesses can split a wide constant store into character stores of the same
+bytes (any other pointee narrower than a constant the caller stores through the
+pointer refuses the vote), and an unsigned vote can make a parameter unsigned. The vote is refused outright where the caller
 knows better: the argument is the address of a stack object (a pointer vote
 there would re-lay the frame), the value comes from a declared parameter or a
 global, another call reads the same value as a different kind of thing (pointer,
 integer, float), the value or its register disagrees with the vote about being
-a float, or a pointer vote lands on a constant inside a function's code (a Thumb
-function address would print as `&sub_8130[1]`). `--option protoorder lock` also states the callee's recovered ARITY,
+a float, a pointer vote lands on a constant inside a function's code (a Thumb
+function address would print as `&sub_8130[1]`), or what the caller loads and
+stores through a pointer disagrees with the pointee the vote would give it. `--option protoorder lock` also states the callee's recovered ARITY,
 which collapses a caller that over-recovered but fabricates parameters where the
 callee's own recovery over-counted; it is opt-in for that reason.
 `KUNA_PROTOORDER_TRACE=1` prints what each function stated, or why it declined.
