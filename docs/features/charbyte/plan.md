@@ -58,14 +58,18 @@ prints `char v1; ... v1 == 0xe9` - wrong C (analysis.md §3).
   compile-and-run oracle over all 256 byte values for every value-bearing form
   (analysis.md §4-5, `oracle.c`).
 
-## Default flip (the campaign's procedure, measured on d3617d64 + this branch)
+## Default flip (the campaign's procedure, re-measured on 6e4f6fa5 + this branch)
 
 (a) `make test` with the default on: 675/675, PARITY OK, no assertion moved.
-(b) `make test-stages`: 1154/1154, PARITY OK; the only new keys are the 13
+(b) `make test-stages`: 1177/1177, PARITY OK; the only new keys are the 21
     charbyte assertions (pass 1 of the stage test says `option charbyte off`).
-(c) `make test-cli`: 185/185.
-(d) 444-slice typesweep, on vs off: 0 improved, 0 worse, perfect 959 -> 959 (record.json `benchmark`; 24 variables move from `unsigned char *` to `char *`, all with GT `char *`).
-(e) interleaved timing, min-of-15 (min-of-31 re-run over +5%): worst stable minimum +3.28% (sort -O2); record.json `speed`.
-(f) 8-binary hunk classification: analysis.md §4.
+(c) `make test-cli`: 189/189.
+(d) 444-slice typesweep, on vs off: 0 improved, 0 worse, perfect 986 -> 986
+    (record.json `benchmark`; 19 variables move from `unsigned char *` to
+    `char *`, all with GT `char *`, and 21 sort -O0 `struct_N` names renumber).
+(e) interleaved timing, min-of-15: worst minimum +1.17% (bash -O2; fmt +0.23%,
+    ls -0.71%, sort -0.41%); record.json `speed`.
+(f) 34-binary hunk classification with the unchanged-line audit: analysis.md
+    §4-5.
 (g) `modes.rs`: nothing to do; a default-on option is outside the aggressive
     preset's default-off scope.

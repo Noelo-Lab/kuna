@@ -214,57 +214,43 @@
   }
  },
  "speed": {
-  "method": "one pinned release binary, `kuna decompile-all --json --option charbyte off|on`, arms interleaved and order-alternated run by run, one warm-up discarded; min and median of 15, and an order-alternated min-of-31 re-run for any reading over +5%. Measured with other campaign lanes on the box (load average 20-40 on 80 cores), so the minima are the figure; the KUNA_ACTION_PROF exclusive-time table gives the deterministic cost of the pass itself.",
+  "method": "one pinned release binary (6e4f6fa5 + this branch), `kuna decompile-all --json --option charbyte off|on`, arms interleaved and order-alternated run by run, one warm-up discarded; min and median of 15. Other campaign lanes were running on the box (load average 5-15 on 80 cores), so the minima are the figure.",
   "measurements": [
    {
     "label": "fmt -O2 whole binary (151 functions)",
     "n": 15,
-    "delta_min_pct": 0.11,
-    "delta_med_pct": 1.37,
-    "off_min": 4269.4,
-    "on_min": 4273.9
+    "delta_min_pct": 0.23,
+    "delta_med_pct": -3.12,
+    "off_min": 4319.8,
+    "on_min": 4329.9
    },
    {
     "label": "ls -O2 whole binary (404 functions)",
     "n": 15,
-    "delta_min_pct": -3.11,
-    "delta_med_pct": 4.34,
-    "off_min": 14766.3,
-    "on_min": 14307.0
+    "delta_min_pct": -0.71,
+    "delta_med_pct": 0.57,
+    "off_min": 13435.0,
+    "on_min": 13339.9
    },
    {
     "label": "sort -O2 whole binary (343 functions)",
     "n": 15,
-    "delta_min_pct": 9.54,
-    "delta_med_pct": 0.32,
-    "off_min": 14901.5,
-    "on_min": 16323.5,
-    "note": "one outlying fast off-arm run; re-run below"
-   },
-   {
-    "label": "sort -O2 whole binary, order-alternated re-run",
-    "n": 31,
-    "delta_min_pct": 3.28,
-    "delta_med_pct": -2.45,
-    "off_min": 14382.6,
-    "on_min": 14853.8
+    "delta_min_pct": -0.41,
+    "delta_med_pct": -0.27,
+    "off_min": 14551.2,
+    "on_min": 14491.4
    },
    {
     "label": "bash -O2 whole binary (2,538 functions, 1.3 MB, the >=500 KiB target)",
     "n": 15,
-    "delta_min_pct": -1.87,
-    "delta_med_pct": 8.64,
-    "off_min": 91928.6,
-    "on_min": 90208.1
+    "delta_min_pct": 1.17,
+    "delta_med_pct": -0.72,
+    "off_min": 85942.4,
+    "on_min": 86946.5
    }
   ],
-  "action_profile_infertypes_ms": {
-   "fmt": "33.2 -> 39.5 of 4.1 s",
-   "ls": "824.5 -> 850.6 of 18.2 s",
-   "sort": "629.0 -> 574.7 (noise) of 15.4 s",
-   "bash": "3216.3 -> 3614.2 of 77.5 s (+0.51% of the total)"
-  },
-  "worst_stable_delta_min_pct": 3.28,
+  "earlier_rounds": "before review round 2 (e1139df9 base): worst stable minimum +3.28% (sort -O2, min-of-31); the round-2 guards run only in functions where a byte was recorded",
+  "worst_stable_delta_min_pct": 1.17,
   "budget_pct": 5.0,
   "within_budget": true
  },
@@ -285,7 +271,7 @@
   "b_stages": "1177/1177 PARITY OK; the only new keys are the 21 charbyte assertions, whose pass 1 sets `option charbyte off`; no existing assertion moved",
   "c_test_cli": "189/189 with the default on; no probe moved",
   "d_typesweep": "444 slices: 0 improved, 0 worse, perfect 986 -> 986 (metric-neutral by construction)",
-  "e_speed": "worst stable interleaved minimum +3.28% (sort -O2, min-of-31); budget +5%",
+  "e_speed": "worst interleaved minimum +1.17% (bash -O2, min-of-15; fmt +0.23%, ls -0.71%, sort -0.41%); budget +5%",
   "f_hunks": "34 binaries: 61 functions + 26 struct renumberings, every hunk in the documented classes; unchanged lines audited; oracle 0/149,248 differ",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope",
   "measured_on": "6e4f6fa5 + this branch"
