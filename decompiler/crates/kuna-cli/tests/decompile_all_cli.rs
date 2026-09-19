@@ -2924,6 +2924,40 @@ fn jobs_names_synthesized_structs_as_the_serial_run_does() {
     }
 }
 
+/// A worker that cannot install the replayed structures takes its chunk down
+/// with it. The functions it was given are the record pool's, not lost work:
+/// the run decompiles them again by the one-worker serial path instead of
+/// keeping the dead worker's `error` records.
+#[test]
+fn jobs_falls_back_when_a_worker_cannot_install_the_replayed_structures() {
+    let sp = specs();
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let base = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let (want, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs structsynth install: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    assert!(want.contains("struct_4 *"), "the fixture stopped synthesizing");
+    let (got, stderr, ok) = run_kuna_env(
+        &[&base[..], &["--jobs", "2", "--jobs-chunk", "1"]].concat(),
+        &[("KUNA_JOBS_FAULT", "synth:force,synth:noinstall")],
+    );
+    assert!(ok, "the run failed: {stderr}");
+    assert!(
+        stderr.contains("a function failed when decompiled again with the serial names"),
+        "no fallback: {stderr}"
+    );
+    assert_eq!(got, want, "a worker that could not install the structures moved the document");
+}
+
 /// `pebnames` creates the `PEB` type the first time a function reads the PEB,
 /// so only the worker that decompiled one holds it, and a synthesized
 /// structure with a `PEB *` field cannot be installed in another. The run

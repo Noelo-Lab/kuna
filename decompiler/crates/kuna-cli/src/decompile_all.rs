@@ -1097,6 +1097,9 @@ fn take_synth_table(
     scratch: &str,
     at_load: &std::rc::Rc<shard::AtLoad>,
 ) -> Result<shard::ShardHandle, String> {
+    if jobs::Faults::from_env().refuses_synth_install() {
+        return Err(format!("cannot install the synthesized structures: {} refused", jobs::JOBS_FAULT_ENV));
+    }
     let table = jobs::read_synth_table(scratch)?;
     shard::forget_minted(prog.arch().types_impl(), at_load.held())
         .and_then(|()| shard::install_table(prog.arch().types(), &table))

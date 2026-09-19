@@ -282,8 +282,9 @@ const RUN_RERUN_FAILURES: usize = 16;
 /// as it starts the target at `<addr>`, `panic-once:<addr>` only the first time
 /// in a run, `stall:<addr>` wedges it there until the stall watchdog kills it,
 /// `spawn:<n>` refuses every worker spawn after the first `n`, `synth:serial`
-/// names synthesized structures by the one-worker serial path and
-/// `synth:force` renames no function.  `<addr>` is a byte address (`0x` hex or
+/// names synthesized structures by the one-worker serial path, `synth:force`
+/// renames no function and `synth:noinstall` makes a worker refuse the
+/// replayed structures.  `<addr>` is a byte address (`0x` hex or
 /// decimal), or `*` for every target.
 pub(crate) const JOBS_FAULT_ENV: &str = "KUNA_JOBS_FAULT";
 
@@ -2945,6 +2946,9 @@ pub(crate) struct Faults {
     /// `synth:force`: rename no function, so every one that asked the ledger
     /// is decompiled again with the replayed names.
     synth_force: bool,
+    /// `synth:noinstall`: a worker refuses the replayed structures, which is
+    /// what a field type it cannot rebuild would do to it.
+    synth_noinstall: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2989,6 +2993,10 @@ impl Faults {
                     }
                     "synth" if arg == "force" => {
                         faults.synth_force = true;
+                        return Some(());
+                    }
+                    "synth" if arg == "noinstall" => {
+                        faults.synth_noinstall = true;
                         return Some(());
                     }
                     "panic" => Fault::Panic,
@@ -3036,6 +3044,11 @@ impl Faults {
                 }
             }
         }
+    }
+
+    /// Worker side: does this worker refuse the replayed structures?
+    pub(crate) fn refuses_synth_install(&self) -> bool {
+        self.synth_noinstall
     }
 
     /// Parent side: does spawn number `n` (from 0) fail?
@@ -3580,8 +3593,8 @@ mod tests {
         );
         assert!(!f.refuses_spawn(1) && f.refuses_spawn(2) && f.refuses_spawn(9));
         assert!(!Faults::default().refuses_spawn(0));
-        let (f, rejected) = Faults::parse("synth:serial,synth:force,synth:other");
-        assert!(f.synth_serial && f.synth_force);
+        let (f, rejected) = Faults::parse("synth:serial,synth:force,synth:noinstall,synth:other");
+        assert!(f.synth_serial && f.synth_force && f.refuses_synth_install());
         assert_eq!(rejected, vec!["synth:other"]);
 
         let dir = ScratchDir::create().unwrap();
