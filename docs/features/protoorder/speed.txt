@@ -66,3 +66,12 @@ whole-binary decompile-all --json, interleaved min-of-15 (.scratch/r13/speed.py,
   libselinux -O2  min main  6663 pr  6934 ms  +4.1%  (median +2.9%)
     re-run, 3 arms: main 6552, main again 6695 (+2.2%), pr 6740 ms: +2.9% vs main, +0.7% vs the second main arm
   tar -O2         min main 46032 pr 47307 ms  +2.8%  (median +2.6%)
+
+Round 13 after the rebase onto 3831d703 (#675, #686) with the callee-first convergence sweep,
+main 3831d703 vs this branch, interleaved min-of-15 (.scratch/r13/speedS.py, speed3S.py):
+  fmt -O2         min main  4141 pr  4220 ms  +1.9%  (median +1.8%)
+  kmod -O2        min main  7286 pr  7397 ms  +1.5%  (median +2.6%)
+  ls -O2          min main 13488 pr 13744 ms  +1.9%  (median +0.8%)
+  libselinux -O2  min main  6608 pr  6599 ms  -0.1%  (median +2.4%)
+  tar -O2         min main 47045 pr 48818 ms  +3.8%  (median +5.1%)
+    re-run, 3 arms: main 45572, main again 45391 (-0.4%), pr 47216 ms: +3.6% vs main, +4.0% vs the second main arm
