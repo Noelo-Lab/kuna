@@ -1,7 +1,7 @@
 {
   "arm": "on",
   "totals": {
-    "changed": 9652,
+    "changed": 9654,
     "goto_delta": 0,
     "return_delta": 0,
     "stmt_delta": 98,
@@ -237,19 +237,19 @@
       "stmt_delta": 0
     },
     "O2_dpkg_stripped_dpkg-query": {
-      "changed": 202,
+      "changed": 201,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 12
     },
     "O2_e2fsprogs_stripped_e2fsck": {
-      "changed": 600,
+      "changed": 603,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 3
     },
     "O2_findutils_stripped_find": {
-      "changed": 213,
+      "changed": 212,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 12
@@ -274,7 +274,7 @@
       "stmt_delta": -19
     },
     "O2_kmod_stripped_kmod": {
-      "changed": 123,
+      "changed": 124,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 0
@@ -328,13 +328,13 @@
       "stmt_delta": 20
     },
     "O2_openssh-portable_stripped_scp": {
-      "changed": 197,
+      "changed": 194,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": -1
     },
     "O2_openssh-portable_stripped_sftp-server": {
-      "changed": 162,
+      "changed": 165,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 0
