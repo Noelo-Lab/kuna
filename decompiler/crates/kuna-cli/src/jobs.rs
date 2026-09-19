@@ -977,9 +977,16 @@ fn name_structs_serially(
         return Ok(None);
     }
     let plan = match SynthPlan::replay(&mut replay, &asked) {
+        Ok(_) if Faults::from_env().synth_serial => {
+            let why = format!("{JOBS_FAULT_ENV} asked for the serial path");
+            return serial_fallback(cfg, targets, inventory, &askers, run, &why).map(Some);
+        }
         Ok(plan) => plan,
         Err(why) => return serial_fallback(cfg, targets, inventory, &askers, run, &why).map(Some),
     };
+    // A function the watchdog or a dead worker cut short asks a different
+    // number of questions each time it runs; its record is taken as it comes.
+    let cut_short: Vec<bool> = run.results.iter().map(|r| r.error.is_some()).collect();
 
     // The sweep's redo gets different answers only where a superseded name is
     // among the first ones; the text decides below whether the sweep runs.
@@ -994,7 +1001,7 @@ fn name_structs_serially(
     let jobs_list: Vec<(usize, bool)> =
         askers.iter().map(|&i| (i, false)).chain(redo.iter().map(|&i| (i, true))).collect();
     let Some((mut firsts, mut sweeps, mut blocks)) =
-        run_forced(cfg, jobs, targets, inventory, &plan, &asked, &jobs_list)?
+        run_forced(cfg, jobs, targets, inventory, &plan, &asked, &cut_short, &jobs_list)?
     else {
         return serial_fallback(
             cfg,
@@ -1042,7 +1049,7 @@ fn name_structs_serially(
     }
     if !leftover.is_empty() {
         let late: Vec<(usize, bool)> = leftover.iter().map(|&i| (i, true)).collect();
-        match run_forced(cfg, jobs, targets, inventory, &plan, &asked, &late)? {
+        match run_forced(cfg, jobs, targets, inventory, &plan, &asked, &cut_short, &late)? {
             Some((_, mut more, more_blocks)) => {
                 blocks.extend(more_blocks);
                 again.extend(leftover.iter().filter_map(|&i| Some((i, more.remove(&i)?))));
@@ -1121,7 +1128,10 @@ type Forced = (
 /// Decompile each `(slot, sweep)` of `list` again in fresh workers that install
 /// the replayed table and answer from `plan`. `None` when any of them asked the
 /// ledger something other than what the first pool recorded, or went off the
-/// answers it was given.
+/// answers it was given, unless the watchdog or a worker failure cut either run
+/// of it short (`cut_short`, or an `error` now), which is timing and not the
+/// ledger.
+#[allow(clippy::too_many_arguments)]
 fn run_forced(
     cfg: &PoolConfig,
     jobs: usize,
@@ -1129,6 +1139,7 @@ fn run_forced(
     inventory: &[TargetSpec],
     plan: &SynthPlan,
     asked: &[Vec<SynthRequest>],
+    cut_short: &[bool],
     list: &[(usize, bool)],
 ) -> Result<Option<Forced>, String> {
     let specs: Vec<TargetSpec> = list
@@ -1162,6 +1173,7 @@ fn run_forced(
     for (mut r, &(i, sweep)) in run.results.into_iter().zip(list) {
         match r.synth.take() {
             Some(record) if !record.off_script && record.requests == asked[i] => {}
+            _ if cut_short[i] || r.error.is_some() => {}
             _ => return Ok(None),
         }
         if sweep {
@@ -1965,9 +1977,12 @@ fn stall_deadline(cfg: &PoolConfig, warm: bool) -> Option<Duration> {
 /// The merge only claims what it can prove.  When every worker rendered the same
 /// block, no shard interned a renderable type over its whole life — which means
 /// the serial run would not have either, and that identical block IS the serial
-/// answer.  When they differ the parent says so and emits the ordered union,
-/// deduplicated by definition line, so the `.h` still declares everything the
-/// `.c` uses; the exact serial ordering is what `--jobs 1` is for.
+/// answer.  The synthesized structures are no exception: every worker that
+/// renders them installed the same replayed set before its first function
+/// ([`name_structs_serially`]).  When the blocks differ the parent says so and
+/// emits the ordered union, deduplicated by whole definition, so the `.h` still
+/// declares everything the `.c` uses; the exact serial ordering is what
+/// `--jobs 1` is for.
 pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
     let Some(first) = blocks.first() else { return String::new() };
     if blocks.iter().all(|b| b == first) {
@@ -1981,10 +1996,28 @@ pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
     let mut seen = std::collections::HashSet::new();
     let mut out = String::new();
     for block in blocks {
-        for line in block.lines() {
-            if line.trim().is_empty() || seen.insert(line.to_string()) {
+        let mut lines = block.lines();
+        while let Some(line) = lines.next() {
+            if line.trim().is_empty() {
                 out.push_str(line);
                 out.push('\n');
+                continue;
+            }
+            // A definition is one item from its `{` line to its closing `}`
+            // line: its member lines are not items of their own, or two
+            // structures that share a member would lose it from the second.
+            let mut item = format!("{line}\n");
+            if line.ends_with('{') {
+                for member in lines.by_ref() {
+                    item.push_str(member);
+                    item.push('\n');
+                    if member.starts_with('}') {
+                        break;
+                    }
+                }
+            }
+            if seen.insert(item.clone()) {
+                out.push_str(&item);
             }
         }
     }
@@ -2506,6 +2539,9 @@ pub(crate) fn ack_chunk(idx: usize) {
 pub(crate) struct Faults {
     at: Vec<(Fault, Option<u64>)>,
     spawn_after: Option<usize>,
+    /// `synth:serial`: name the synthesized structures by the one-worker serial
+    /// path even when the replay holds, so a test can reach it.
+    synth_serial: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2542,6 +2578,10 @@ impl Faults {
                 let fault = match kind.trim() {
                     "spawn" => {
                         faults.spawn_after = Some(arg.parse().ok()?);
+                        return Some(());
+                    }
+                    "synth" if arg == "serial" => {
+                        faults.synth_serial = true;
                         return Some(());
                     }
                     "panic" => Fault::Panic,
