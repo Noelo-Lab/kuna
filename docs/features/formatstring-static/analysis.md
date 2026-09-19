@@ -287,10 +287,100 @@ x86-64 binaries it renders exactly what `static` rendered before the change.
 `off` is byte-identical to main `d6c5862f` on six x86-64 and four AArch64/ARM32
 binaries, and on those four the default is too.
 
-What would lift the restriction is making the closed prototype invisible to
-the neighbours' scoring: leave the format call open through P4's trial scoring,
-as `off` does, and substitute the format-derived arguments when its own trials
-are resolved. That is an engine change of its own and is not in this PR.
+The next section changes how the override is installed, and with it the x86
+half of this story. The firmware rows above were measured with the prototype
+closed from the start and were not re-measured.
+
+## The open tail: the calls around a resolved call keep what `off` gives them
+
+Review found the other direction on x86-64, on a corpus outside decbench.
+Ubuntu 22.04's `/usr/bin/m4` (1.4.18, SHA-256 `bef5254af5957f1c...`) prints
+its version with gnulib `version_etc` (`0x16bc0`), which keeps the authors'
+`va_list` in the lowest three outgoing stack slots when it prints
+`"%s (%s) %s\n"`. Under `off` that call is open and claims the three slots as
+phantom arguments, and `only_op_use` then refuses them to the
+`"Written by ..."` calls further down, which push their own arguments below
+the `va_list` and whose formats are picked in jump-table case bodies, so they
+stay open. With the resolved call closed from the start nothing claimed the
+slots, and three of those calls grew from 9 to 12 arguments
+(`__fprintf_chk(a8,1,v16,v15[0],...,v6,v17,v18,v14)`; the machine code
+passes 9). The temporary `eprintln!` in `only_op_use` from the previous
+section shows it: under `off` every such trial is vetoed by the version calls
+at `0x16cfd` and `0x16f2b`, and closed, none is.
+
+The closed prototype also hid a wrong-output case that no gcc corpus has.
+clang keeps a small local in the slot its `push rax` makes, which at a call is
+the first outgoing stack argument slot. `int a = 5; sscanf(s, "%d", &a);
+return a + 1;` rendered `return 6;` with the prototype closed (clang `-O1` and
+up), and a `"%c %c"` pair `return 0;`.
+
+So the override is no longer installed closed
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_formattail.rs`, spec
+chapter 04). The call gets its declared arguments followed by `...`
+(`first_var_arg_slot` = the declared count), is offered and scores the trials
+past them exactly as under `off`, and sheds whatever it took there, and the
+`...`, once no live call in the function has trials left. A phantom it takes
+still vetoes the same value at a neighbour and then leaves the call. On m4 the
+default now renders both version lines with their three strings and every
+other call exactly as `off` does.
+
+Two follow-ons, both found on the way:
+
+- **Declared arguments are kept.** `fillinMap`'s chain rule ends an argument
+  list at a run of unused registers, and a ninth `double` goes on the stack
+  behind the four integer registers a `"%f ... %d"` call leaves unused. With
+  the open tail that dropped the declared stack `double`, the audit then
+  withdrew the site, and the call rendered as `off` (`printf(fmt, a0 &
+  0xffffffff)`). `keep_declared_trials` re-marks every declared
+  (fixed-position) trial active when the call finalizes.
+- **The `alloca` withdrawals are gone.** With `...` the call's stack is
+  handled as the open call's is, so the slot the call pushes its return
+  address into is no longer an argument and the audit's count check no longer
+  fires there. Over the 325-binary decbench sweep the audit withdrew 130 sites
+  before and none now; the `tar` `O2` jump-table join is still withdrawn
+  (format differs). Those calls are typed now, for example `watch`'s
+  `"Every %.1fs: "` gains the `double` it was missing and `make`'s
+  `"Stem too long: '%s%.*s'"` gets `(char *)v24,v13` with `v13 = (int)v75`.
+
+Fixtures: `fmtvalist_x86_64` (gcc `-O2 -flto`, the `version_etc` shape;
+stage passes 27 to 29) and `fmtslots_x86_64` (clang `-O2`: the two `sscanf`
+functions and `show9`; passes 30 to 32). The round-6 binary fails 6 of their
+10 assertions.
+
+Measured with `argcount.py`, `off` against the default, both from the final
+build:
+
+| corpus | binaries | functions | changed | format calls fixed | newly wrong | other calls moved |
+|---|---|---|---|---|---|---|
+| decbench x86-64 (O0, O2, O2-noinline) | 325 | 74,707 | 2,860 | 313 | 0 | 8, all phantoms removed |
+| Ubuntu 22.04 `/usr/bin` x86-64 (gcc) | 25 | 7,248 | 419 | 115 | 0 | 0 |
+
+The Ubuntu binaries are `xxd bc file tree lsof ed m4 patch cpio less make jq
+whiptail free watch sed diff3 cmp bison gzip tar grep flex gawk rsync`, the
+review's set. `argcount.py` prints one row for them, `gawk` `0x24160`, whose
+`'\"'` character literal it misreads as a string; both arms pass
+`"%c\n%c"` its two arguments. One function changes arity, `make`
+`sub_20180` 3 to 1, and its body reads only `rdi`. With the prototype closed
+from the start the same Ubuntu sweep gave 116 fixed and 3 newly wrong (the m4
+calls above), and decbench had no instance of the shape.
+
+Against the round-6 binary (closed from the start) the default differs in 16
+Ubuntu functions and 77 decbench functions. Ubuntu: `m4` `0x16bc0` (the fix
+above); 9 with a formerly withdrawn `alloca` site now typed (`make` `main`,
+`ar_scan`, `sub_17e20`, `new_job`, `patch` `sub_f880`, `watch` `main`,
+`cpio` and `tar` `argp_parse`, `tar` `sub_23940`); 6 equivalent (`diff3`
+`main` and `lsof` twice: a `goto` folded into the condition; `gawk`
+`sub_85f70`, `rsync` `sub_2de80` and `xxd` `main`: which of two copies
+carries a name). decbench: 3 functions now render exactly as `off`
+(`who` twice, `init`); the rest are the `alloca` sites now typed (`cp`, `mv`,
+`ginstall`, `df`, `stat`, `ls`/`dir`/`vdir`, `ip`, and the functions sharing
+their callees) or the same kind of equivalent rewrite; `argcount.py` counts are
+identical to round 6 on every column.
+
+The default still types x86 only. The open tail removes the direction in
+which a resolved call stops claiming a value; the other direction, a declared
+argument that is now certain vetoing the same value at a neighbour, remains,
+and it is the one that cost `ip`'s `parse_rtattr` its `len` on AArch64.
 
 ## A format the program can rewrite
 

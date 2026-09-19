@@ -158,13 +158,14 @@ pub fn vararg_abi(archid: &str, family: Option<ImageFamily>) -> VarargAbi {
 
 /// Does `static`, the default, type the target `archid` names? x86 only.
 ///
-/// A closed format prototype also changes how P4 scores the argument trials of
-/// the calls around it: a register the format call no longer takes stops vetoing
-/// a neighbour's trial, and one it now takes for certain starts to. On x86 every
-/// such change measured was a phantom argument removed. On AArch64 and ARM32,
-/// where the argument registers double as the scratch registers, most added a
-/// phantom (an `x8` of `0` ahead of the real arguments) or dropped a real one,
-/// so those targets are typed only when `full` is asked for.
+/// A resolved format call also changes how P4 scores the argument trials of the
+/// calls around it: an argument it declares is taken for certain, so it vetoes
+/// the same value at a neighbour. (The phantoms it would claim without the
+/// override still do; see [`crate::p4_calls::kuna_formattail`].) Over the x86
+/// corpora measured every such change removed a phantom argument. On AArch64
+/// and ARM32, measured with the prototype closed from the start, most changes
+/// added a phantom (an `x8` of `0` ahead of the real arguments) or dropped a
+/// real argument, so those targets are typed only when `full` is asked for.
 pub fn reached_by_default(archid: &str) -> bool {
     archid.split(':').next() == Some("x86")
 }

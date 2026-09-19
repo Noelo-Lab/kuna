@@ -2500,23 +2500,38 @@ every other binary's pass list is byte-identical to before the pass existed):
   compiler spec settles it from the id alone. The XML path, which has no
   container, declines every AArch64 site.
 
-  **`static` resolves at load on x86 only**
-  (`kuna_formatstring.rs (reached_by_default)`); `full` resolves on every target
-  the rule above admits. A closed prototype changes more than the format call.
-  P4 keeps an unknown callee's register argument only when the value in that
-  register is used by nothing but the call (`Funcdata::only_op_use`, upstream
-  `onlyOpUse`), and a use by another call counts against it unless that call's
-  own arguments are still being recovered (`check_call_double_use`). An open
-  `printf` is such a call, so the registers it might take compete with a
-  neighbour's trials only as far as its own trials have been scored. Once its
-  prototype is closed, a register it takes competes for good and one it does not
-  take stops competing, and the neighbour's argument list moves. Over 324 x86-64
-  binaries all 8 neighbouring calls this moved lost a phantom argument. Over 206
-  AArch64 and ARM32 firmware binaries 19 of 24 went wrong: eight calls gained an
-  `x8` of `0` (the indirect-result register) ahead of their real arguments,
-  `ip`'s `parse_rtattr` lost the `len` its error path also prints (`subs w3`
-  feeds `parse_rtattr` in `w3` and `fprintf` through `mov w2,w3`), and ARM calls
-  picked up leftover registers. Those targets keep the typing behind `full`.
+  **How the override is installed, and why `static` resolves at load on x86
+  only** (`kuna_formatstring.rs (reached_by_default)`); `full` resolves on every
+  target the rule above admits. A resolved call's prototype changes more than
+  that call. P4 keeps an unknown callee's argument only when the value is used
+  by nothing but the call (`Funcdata::only_op_use`, upstream `onlyOpUse`), and a
+  use by another call counts against it unless that call is still recovering
+  its own arguments and has not taken the value (`check_call_double_use`). So
+  the override is not installed closed: the call gets its declared arguments
+  followed by `...`, is offered and scores the same trials past them that it
+  gets under `off`, and sheds whatever it took there once every call in the
+  function has its arguments (chapter [04](04-calls-and-prototypes.md),
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_formattail.rs`). A phantom
+  it would claim under `off` therefore still keeps that value from the calls
+  around it. Installed closed from the start it did not, and x86-64 showed
+  both ways that goes wrong: gnulib's `version_etc` keeps its `va_list` in the
+  lowest outgoing stack slots, so in Ubuntu's `/usr/bin/m4` three
+  `__fprintf_chk` calls whose formats are not resolved grew from 9 to 12
+  arguments; and clang keeps a small local in the slot its `push rax` makes,
+  the call's first outgoing argument slot, so a `sscanf("%d", &a)` destination
+  was folded to the value stored before the call.
+
+  What the open tail leaves is the other direction: a declared argument is
+  taken for certain, so it vetoes the same value at a neighbour where an open
+  call's unscored trial would not have. Over 324 x86-64 decbench binaries and
+  25 Ubuntu `/usr/bin` binaries every neighbouring call this moved lost a
+  phantom argument (8 calls, all in decbench). Over 206 AArch64 and ARM32
+  firmware binaries, measured with the prototype closed from the start, 19 of
+  24 went wrong, and one of them is this direction: `ip`'s `parse_rtattr` lost
+  the `len` its error path also prints (`subs w3` feeds `parse_rtattr` in `w3`
+  and `fprintf` through `mov w2,w3`). The others gained an `x8` of `0` (the
+  indirect-result register) ahead of their real arguments or picked up
+  leftover registers. Those targets keep the typing behind `full`.
 
   **The drive has the last word.** The window is only as sound as the Listing's
   edges, and the Listing does not have all of them. Its walk does not read jump
@@ -2525,10 +2540,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   into that join after loading its own format, the window reads the default
   path's string, and the closed prototype drops the arguments the other formats
   consume, together with the caller's parameter they came from. The
-  prototype itself can also be wrong for the drive. In a function whose stack
-  pointer the drive cannot track (an `alloca` frame), a closed prototype picks
-  up the slot the call pushes its return address into as one more argument,
-  where the open varargs prototype does not. So after the first drive the
+  prototype itself can also be wrong for the drive: in a function whose stack
+  pointer the drive cannot track (an `alloca` frame), a closed prototype picked
+  up the slot the call pushes its return address into as one more argument.
+  The open tail treats that slot as the open call does, so the count now
+  agrees there, but the check stays. So after the first drive the
   decompile step checks every parked site against the IR
   (`decompiler/crates/kuna-console/src/decompile_step.rs
   (audit_parked_format_sites)`) and keeps an override only when the call passes
@@ -2538,11 +2554,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   `gettext`-family call. A contradicted override is withdrawn and the function
   is driven once more without it, so that call renders exactly as it does under
   `off`. The check is cheap and the re-drive is rare: over every coreutils
-  binary at `O0`, `O2` and `O2-noinline` and 31 others, 130 of the 11,743 sites
-  resolved at load were withdrawn, all of them for the argument count, in the
-  `alloca` frames of `cp`, `mv`, `ginstall`, `df`, `stat`, `ls` and `ip`. The jump-table join occurs in `tar`, where
-  a case body jumps into the window before an `__fprintf_chk` with a msgid of
-  its own.
+  binary at `O0`, `O2` and `O2-noinline` and 31 others, no site resolved at
+  load is withdrawn. With the prototype closed from the start, 130 were, all
+  for the argument count, in the `alloca` frames of `cp`, `mv`, `ginstall`,
+  `df`, `stat`, `ls` and `ip`; those calls are typed now. The jump-table join
+  occurs in `tar`, where a case body jumps into the window before an
+  `__fprintf_chk` with a msgid of its own, and that site is still withdrawn.
 
   What `static` declines, in full: no Listing; no edge into the callee — an
   indirect call through a function pointer, or a site inside a function the
