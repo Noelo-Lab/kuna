@@ -1497,13 +1497,46 @@ fn decompile_entries_callee_first(
         single_target: targets.len() == 1,
     };
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
-    for (index, park) in plan {
+    for &(index, park) in &plan {
         let opts =
             kuna_console::project::DecompileOptions { park_recovered_proto: park, ..base };
         slots[index] =
             Some(kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts));
     }
+    converge_callee_first(prog, &targets, &plan, &base, &mut slots);
     slots.into_iter().flatten().collect()
+}
+
+/// (kuna `protoorder` + `structsynth`) The batch's convergence sweep
+/// (`converge_synthesized_structs`) for the callee-first order: decompile once
+/// more, in plan order and with each target's own park decision, exactly the
+/// results that name a superseded structure. A redone callee states its survivor
+/// type again before its redone callers read it. Not under `lock`, where a
+/// parked prototype is declared and a second decompile would read its own.
+fn converge_callee_first(
+    prog: &mut ConsoleProgram,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut [Option<FuncResult>],
+) {
+    if prog.arch().protoorder == kuna_decomp::kuna_protoorder::ProtoOrderMode::Lock {
+        return;
+    }
+    let stale = kuna_console::project::superseded_struct_names(prog);
+    if stale.is_empty() {
+        return;
+    }
+    for &(index, park) in plan {
+        if !slots[index].as_ref().is_some_and(|r| kuna_console::project::names_any_type(r, &stale)) {
+            continue;
+        }
+        let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
+        let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
+        if slots[index].as_ref().is_none_or(|first| kuna_console::project::redo_replaces(first, &again)) {
+            slots[index] = Some(again);
+        }
+    }
 }
 
 /// The decompile order and the park decision for each target: `(index into

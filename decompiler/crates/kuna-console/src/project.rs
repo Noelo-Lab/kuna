@@ -270,10 +270,7 @@ fn converge_synthesized_structs(
     targets: &[FunctionEntry],
     out: &mut [FuncResult],
 ) {
-    if !prog.arch().struct_synth.fires() {
-        return;
-    }
-    let stale = kuna_decomp::kuna_structsynth::ledger::superseded_names(prog.arch().types());
+    let stale = superseded_struct_names(prog);
     if stale.is_empty() {
         return;
     }
@@ -291,8 +288,18 @@ fn converge_synthesized_structs(
     }
 }
 
+/// (kuna `structsynth`) The synthesized structures a later, larger one has
+/// superseded so far in this run: what the convergence sweep looks for. Empty
+/// when `structsynth` is off.
+pub fn superseded_struct_names(prog: &ConsoleProgram) -> Vec<String> {
+    if !prog.arch().struct_synth.fires() {
+        return Vec::new();
+    }
+    kuna_decomp::kuna_structsynth::ledger::superseded_names(prog.arch().types())
+}
+
 /// Does the sweep's second decompile replace the first one?
-fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
+pub fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
     again.error.is_none() || first.error.is_some()
 }
 
@@ -301,7 +308,7 @@ fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
 /// The C text, the `.h` prototype line and the exported variable rows are every
 /// surface a type name reaches. The match is on whole identifiers, so `struct_1`
 /// does not answer for `struct_10`.
-fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
+pub fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
     let mut hit = |hay: &str| names.iter().any(|n| contains_identifier(hay, n));
     r.code.as_deref().is_some_and(&mut hit)
         || r.proto.as_deref().is_some_and(&mut hit)
