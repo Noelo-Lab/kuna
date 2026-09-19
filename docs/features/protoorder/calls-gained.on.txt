@@ -1,0 +1,1 @@
+{"binary": "O2_freertos_stripped_RTOSDemo-out", "function": "sub_341e@0x341e", "gained": {"prvGetRegistersFromStack": 1}}

@@ -1,0 +1,4363 @@
+### O0_coreutils_stripped_sort sub_b536 0xb536 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_b536(long a0,unsigned long a1,long a2,char a3) // return-dupe x2
++void sub_b536(unsigned long *a0,unsigned long a1,unsigned long *a2,char a3) // return-dupe x2
+@@ -8,2 +8,2 @@
+-  long v6; // stack - 0x38
+-  long v7; // stack - 0x30
++  unsigned long *v6; // stack - 0x38
++  unsigned long *v7; // stack - 0x30
+@@ -18 +18 @@
+-    sub_b536(a0 + v4 * -0x20,a1 - v4,v5 + a2,(unsigned char)a3);
++    sub_b536(&a0[v4 * -4],a1 - v4,v5 + (long)a2,(unsigned char)a3);
+@@ -22,6 +22,6 @@
+-      v2 = *(unsigned long *)(a0 + -0x18);
+-      *(unsigned long *)(a2 + -0x20) = *(unsigned long *)(a0 + -0x20);
+-      *(unsigned long *)(a2 + -0x18) = v2;
+-      v2 = *(unsigned long *)(a0 + -8);
+-      *(unsigned long *)(a2 + -0x10) = *(unsigned long *)(a0 + -0x10);
+-      *(unsigned long *)(a2 + -8) = v2;
++      v2 = a0[-3];
++      a2[-4] = a0[-4];
++      a2[-3] = v2;
++      v2 = a0[-1];
++      a2[-2] = a0[-2];
++      a2[-1] = v2;
+@@ -40 +40 @@
+-  v3 = (unsigned int)(0 < (int)sub_9e2a(a0 + -0x20,a0 + -0x40));
++  v3 = (unsigned int)(0 < (int)sub_9e2a((struct_6 *)&a0[-4],(struct_6 *)&a0[-8]));
+@@ -42 +42 @@
+-    v1 = (unsigned long *)((long)(int)~v3 * 0x20 + a0);
++    v1 = &a0[(long)(int)~v3 * 4];
+@@ -44,2 +44,2 @@
+-    *(unsigned long *)(a2 + -0x20) = *v1;
+-    *(unsigned long *)(a2 + -0x18) = v2;
++    a2[-4] = *v1;
++    a2[-3] = v2;
+@@ -47,9 +47,9 @@
+-    *(unsigned long *)(a2 + -0x10) = v1[2];
+-    *(unsigned long *)(a2 + -8) = v2;
+-    v1 = (unsigned long *)((long)(int)(v3 - 2) * 0x20 + a0);
+-    v2 = v1[1];
+-    *(unsigned long *)(a2 + -0x40) = *v1;
+-    *(unsigned long *)(a2 + -0x38) = v2;
+-    v2 = v1[3];
+-    *(unsigned long *)(a2 + -0x30) = v1[2];
+-    *(unsigned long *)(a2 + -0x28) = v2;
++    a2[-2] = v1[2];
++    a2[-1] = v2;
++    a0 = &a0[(long)(int)(v3 - 2) * 4];
++    v2 = a0[1];
++    a2[-8] = *a0;
++    a2[-7] = v2;
++    v2 = a0[3];
++    a2[-6] = a0[2];
++    a2[-5] = v2;
+@@ -59,16 +59,16 @@
+-    v2 = *(unsigned long *)(a0 + -0x18);
+-    *(unsigned long *)(a2 + -0x20) = *(unsigned long *)(a0 + -0x20);
+-    *(unsigned long *)(a2 + -0x18) = v2;
+-    v2 = *(unsigned long *)(a0 + -8);
+-    *(unsigned long *)(a2 + -0x10) = *(unsigned long *)(a0 + -0x10);
+-    *(unsigned long *)(a2 + -8) = v2;
+-    *(unsigned long *)(a0 + -0x20) = *(unsigned long *)(a0 + -0x40);
+-    *(unsigned long *)(a0 + -0x18) = *(unsigned long *)(a0 + -0x38);
+-    *(unsigned long *)(a0 + -0x10) = *(unsigned long *)(a0 + -0x30);
+-    *(unsigned long *)(a0 + -8) = *(unsigned long *)(a0 + -0x28);
+-    v2 = *(unsigned long *)(a2 + -0x18);
+-    *(unsigned long *)(a0 + -0x40) = *(unsigned long *)(a2 + -0x20);
+-    *(unsigned long *)(a0 + -0x38) = v2;
+-    v2 = *(unsigned long *)(a2 + -8);
+-    *(unsigned long *)(a0 + -0x30) = *(unsigned long *)(a2 + -0x10);
+-    *(unsigned long *)(a0 + -0x28) = v2;
++    v2 = a0[-3];
++    a2[-4] = a0[-4];
++    a2[-3] = v2;
++    v2 = a0[-1];
++    a2[-2] = a0[-2];
++    a2[-1] = v2;
++    a0[-4] = a0[-8];
++    a0[-3] = a0[-7];
++    a0[-2] = a0[-6];
+
+### O0_grep_stripped_grep sub_14de8 0x14de8 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_14de8(long a0,long a1,struct_5 *a2)
++void sub_14de8(long a0,long a1,struct_27 *a2)
+@@ -4,8 +4,9 @@
+-  unsigned long v2;
+-  long v3;
+-  unsigned long *v4; // rcx
+-  unsigned long *v5; // rdx
+-  unsigned int v6; // stack - 0x50
+-  long v7; // stack - 0x40
+-  long v8; // stack - 0x38
+-  long v9; // stack - 0x30
++  long v10; // stack - 0x30
++  void *v2;
++  unsigned long v3;
++  long v4; // rax
++  unsigned long *v5; // rcx
++  unsigned long *v6; // rdx
++  unsigned int v7; // stack - 0x50
++  long v8; // stack - 0x40
++  long v9; // stack - 0x38
+@@ -13,3 +14,3 @@
+-  v9 = a2->field_0x8;
+-  v7 = 0;
+-  v8 = v9;
++  v10 = a2->field_0x8;
++  v8 = 0;
++  v9 = v10;
+@@ -18,9 +19,9 @@
+-      if (v8 <= v7) {
+-        v3 = a2->field_0x0;
+-        a2->field_0x0 = sub_11a1e(v3,v9,&a2[1],0xffffffffffffffff,0x10);
+-        for (; v7 < v9; v9 = v9 + -1) {
+-          v5 = (unsigned long *)(a2->field_0x0 + v9 * 0x10 + -0x10);
+-          v4 = (unsigned long *)(a2->field_0x0 + v9 * 0x10);
+-          v2 = v5[1];
+-          *v4 = *v5;
+-          v4[1] = v2;
++      if (v9 <= v8) {
++        v2 = a2->field_0x0;
++        a2->field_0x0 = (void *)sub_11a1e(v2,v10,&a2[1],-1,0x10);
++        for (; v8 < v10; v10 = v10 + -1) {
++          v6 = (unsigned long *)((long)a2->field_0x0 + v10 * 0x10 + -0x10);
++          v5 = (unsigned long *)((long)a2->field_0x0 + v10 * 0x10);
++          v3 = v6[1];
++          *v5 = *v6;
++          v5[1] = v3;
+@@ -28 +29 @@
+-        v1 = (long *)(a2->field_0x0 + v7 * 0x10);
++        v1 = (long *)((long)a2->field_0x0 + v8 * 0x10);
+@@ -34,3 +35,3 @@
+-      v3 = v8 + v7 >> 1;
+-      if (a0 <= *(long *)(v3 * 0x10 + a2->field_0x0)) break;
+-      v7 = v3 + 1;
++      v4 = v9 + v8 >> 1;
++      if (a0 <= *(long *)(v4 * 0x10 + (long)a2->field_0x0)) break;
++      v8 = v4 + 1;
+@@ -38,2 +39,2 @@
+-    if (*(long *)(v3 * 0x10 + a2->field_0x0) == a0) break;
+-    v8 = v3;
++    if (*(long *)(v4 * 0x10 + (long)a2->field_0x0) == a0) break;
++    v9 = v4;
+@@ -41,2 +42,2 @@
+-  v6 = (unsigned int)a1;
+-  *(unsigned int *)(v3 * 0x10 + a2->field_0x0 + 8) = v6 | *(unsigned int *)(v3 * 0x10 + a2->field_0x0 + 8);
++  v7 = (unsigned int)a1;
++  *(unsigned int *)((long)a2->field_0x0 + v4 * 0x10 + 8) = v7 | *(unsigned int *)((long)a2->field_0x0 + v4 * 0x10 + 8);
+
+### O0_grep_stripped_grep sub_15528 0x15528 class=REVIEW layout=None 
+@@ -1 +1 @@
+-long sub_15528(long a0,struct_5 *a1,unsigned int a2)
++long sub_15528(long a0,struct_28 *a1,unsigned int a2)
+@@ -4,2 +4,2 @@
+-  unsigned long v2;
+-  unsigned long v3;
++  long v2;
++  void *v3;
+@@ -14,2 +14,2 @@
+-  for (v6 = 0; v6 < a1->field_0x8; v6 = v6 + 1) {
+-    v5 ^= *(long *)(v6 * 0x10 + a1->field_0x0) + (unsigned long)*(unsigned int *)(v6 * 0x10 + a1->field_0x0 + 8);
++  for (v6 = 0; v6 < (long)a1->field_0x8; v6 = v6 + 1) {
++    v5 ^= *(long *)(v6 * 0x10 + (long)a1->field_0x0) + (unsigned long)*(unsigned int *)((long)a1->field_0x0 + v6 * 0x10 + 8);
+@@ -20,2 +20,2 @@
+-      for (v8 = 0; v8 < a1->field_0x8; v8 = v8 + 1) {
+-        v1 = *(unsigned int *)(*(long *)(v8 * 0x10 + a1->field_0x0) * 4 + *(long *)(a0 + 0x150));
++      for (v8 = 0; v8 < (long)a1->field_0x8; v8 = v8 + 1) {
++        v1 = *(unsigned int *)(*(long *)(v8 * 0x10 + (long)a1->field_0x0) * 4 + *(long *)(a0 + 0x150));
+@@ -26 +26 @@
+-        else if (*(long *)(*(long *)(v8 * 0x10 + a1->field_0x0) * 8 + *(long *)(a0 + 0x90)) == 0x112)
++        else if (*(long *)(*(long *)(v8 * 0x10 + (long)a1->field_0x0) * 8 + *(long *)(a0 + 0x90)) == 0x112)
+@@ -29,3 +29,3 @@
+-      v2 = *(unsigned long *)(a0 + 0x130);
+-      v3 = *(unsigned long *)(a0 + 0x128);
+-      *(unsigned long *)(a0 + 0x128) = sub_11a1e(v3,v2,a0 + 0x138,0xffffffffffffffff,0x48);
++      v2 = *(long *)(a0 + 0x130);
++      v3 = *(void **)(a0 + 0x128);
++      *(unsigned long *)(a0 + 0x128) = sub_11a1e(v3,v2,(long *)(a0 + 0x138),-1,0x48);
+@@ -33,2 +33,2 @@
+-      sub_14d9e(v6 * 0x48 + *(long *)(a0 + 0x128) + 8,a1->field_0x8);
+-      sub_14ce2(a1,v6 * 0x48 + *(long *)(a0 + 0x128) + 8);
++      sub_14d9e((unsigned long *)(v6 * 0x48 + *(long *)(a0 + 0x128) + 8),a1->field_0x8);
++      sub_14ce2(a1,(unsigned long *)(v6 * 0x48 + *(long *)(a0 + 0x128) + 8));
+@@ -44 +44 @@
+-      for (v7 = 0; ((v7 < a1->field_0x8 && (*(int *)(v7 * 0x10 + a1->field_0x0 + 8) == *(int *)(v7 * 0x10 + *(long *)(v6 * 0x48 + *(long *)(a0 + 0x128) + 8) + 8))) && (*(long *)(v7 * 0x10 + a1->field_0x0) == *(long *)(v7 * 0x10 + *(long *)(v6 * 0x48 + *(long *)(a0 + 0x128) + 8)))); v7 = v7 + 1) {
++      for (v7 = 0; ((v7 < (long)a1->field_0x8 && (*(int *)((long)a1->field_0x0 + v7 * 0x10 + 8) == *(int *)(v7 * 0x10 + *(long *)(v6 * 0x48 + *(long *)(a0 + 0x128) + 8) + 8))) && (*(long *)(v7 * 0x10 + (long)a1->field_0x0) == *(long *)(v7 * 0x10 + *(long *)(v6 * 0x48 + *(long *)(a0 + 0x128) + 8)))); v7 = v7 + 1) {
+
+### O0_gzip_stripped_gzip sub_4677 0x4677 class=REVIEW layout=None 
+@@ -6 +6 @@
+-  long v4; // rax
++  char *v4; // rax
+@@ -62 +62 @@
+-      v4 = (0 <= (long)dat_1a068) ? (dat_1a068 & 0xffffffff) + 0xad000 : 0; // branch-flip
++      v4 = (0 <= (long)dat_1a068) ? (char *)((dat_1a068 & 0xffffffff) + 0xad000) : NULL; // branch-flip
+@@ -70 +70 @@
+-  v4 = (0 <= (long)dat_1a068) ? (dat_1a068 & 0xffffffff) + 0xad000 : 0; // branch-flip
++  v4 = (0 <= (long)dat_1a068) ? (char *)((dat_1a068 & 0xffffffff) + 0xad000) : NULL; // branch-flip
+
+### O0_gzip_stripped_gzip sub_4a9e 0x4a9e class=REVIEW layout=None 
+@@ -9 +9 @@
+-  long v7; // rax
++  char *v7; // rax
+@@ -66 +66 @@
+-        v7 = (0 <= (long)dat_1a068) ? (dat_1a068 & 0xffffffff) + 0xad000 : 0; // branch-flip
++        v7 = (0 <= (long)dat_1a068) ? (char *)((dat_1a068 & 0xffffffff) + 0xad000) : NULL; // branch-flip
+@@ -78 +78 @@
+-        v7 = (0 <= (long)dat_1a068) ? (dat_1a068 & 0xffffffff) + 0xad000 : 0; // branch-flip
++        v7 = (0 <= (long)dat_1a068) ? (char *)((dat_1a068 & 0xffffffff) + 0xad000) : NULL; // branch-flip
+@@ -91 +91 @@
+-        v7 = (0 <= (long)dat_1a068) ? (dat_1a068 & 0xffffffff) + 0xad000 : 0; // branch-flip
++        v7 = (0 <= (long)dat_1a068) ? (char *)((dat_1a068 & 0xffffffff) + 0xad000) : NULL; // branch-flip
+@@ -107 +107 @@
+-  v7 = (0 <= (long)dat_1a068) ? (dat_1a068 & 0xffffffff) + 0xad000 : 0; // branch-flip
++  v7 = (0 <= (long)dat_1a068) ? (char *)((dat_1a068 & 0xffffffff) + 0xad000) : NULL; // branch-flip
+
+### O0_mirai_stripped_mirai sub_f813 0xf813 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned char * sub_f813(unsigned long a0) // early-return, ternary
++unsigned char * sub_f813(char *a0) // early-return, ternary
+@@ -15 +15 @@
+-  long v20;
++  unsigned char v20 [4];
+@@ -26 +26 @@
+-  short *v30; // stack - 0x1110
++  unsigned char *v30; // stack - 0x1110
+@@ -31,2 +31,2 @@
+-  short *v35; // stack - 0x10e8
+-  unsigned int *v36; // stack - 0x10e0
++  unsigned char *v35; // stack - 0x10e8
++  unsigned char *v36; // stack - 0x10e0
+@@ -132 +132 @@
+-    v30 = &v33[2];
++    v30 = (unsigned char *)&v33[2];
+@@ -139,3 +139,3 @@
+-    v35 = (short *)((long)v30 + (long)v19);
+-    v30 = &v35[5];
+-    v5 = *v35;
++    v35 = &v30[v19];
++    v30 = &v35[10];
++    v5 = *(short *)v35;
+@@ -143 +143 @@
+-    if ((v5 != htons(1)) || (v3 = v35[1], v3 != htons(1))) {
++    if ((v5 != htons(1)) || (v3 = *(short *)&v35[2], v3 != htons(1))) {
+@@ -145 +145 @@
+-      v30 = (unsigned short *)((long)v30 + (long)v19);
++      v30 = &v30[v19];
+@@ -148 +148 @@
+-      v3 = v35[4];
++      v3 = *(short *)&v35[8];
+@@ -151 +151 @@
+-          *(char *)((long)v12 + (long)v24 + -4) = *(char *)((long)v30 + (long)v24);
++          v20[v24] = v30[v24];
+@@ -153 +153 @@
+-        v36 = &v20;
++        v36 = v20;
+@@ -158,2 +158,2 @@
+-        *(unsigned int *)(*(long *)&v31[8] + (unsigned long)v1 * 4) = *v36;
+-        sub_f5e4("[resolv] Found IP address: %08x\n",*v36);
++        *(unsigned int *)(*(long *)&v31[8] + (unsigned long)v1 * 4) = *(unsigned int *)v36;
++        sub_f5e4("[resolv] Found IP address: %08x\n",*(unsigned int *)v36);
+@@ -161,2 +161,2 @@
+-      v3 = v35[4];
+-      v30 = (unsigned short *)((long)v30 + (unsigned long)(unsigned short)ntohs((unsigned short)v3));
++      v3 = *(short *)&v35[8];
++      v30 = &v30[(unsigned short)ntohs((unsigned short)v3)];
+
+### O0_shadow_stripped_chage sub_75b0 0x75b0 class=REVIEW layout=None 
+@@ -7,2 +7,2 @@
+-  long v5; // stack - 0x38
+-  long v6; // stack - 0x30
++  char *v5; // stack - 0x38
++  char *v6; // stack - 0x30
+@@ -10 +10 @@
+-  v5 = 0;
++  v5 = NULL;
+@@ -19 +19 @@
+-    v6 = 0;
++    v6 = NULL;
+@@ -21 +21 @@
+-    if ((!strcmp(v2,"--root")) || (((v2 = *(char **)(a2 + (long)v4 * 8), !strncmp(v2,"--root=",7) && (v6 = *(long *)(a2 + (long)v4 * 8) + 7, v6)) || (v2 = *(char **)(a2 + (long)v4 * 8), !strcmp(v2,a0))))) {
++    if ((!strcmp(v2,"--root")) || (((v2 = *(char **)(a2 + (long)v4 * 8), !strncmp(v2,"--root=",7) && (v6 = (char *)(*(long *)(a2 + (long)v4 * 8) + 7), v6)) || (v2 = *(char **)(a2 + (long)v4 * 8), !strcmp(v2,a0))))) {
+@@ -39 +39 @@
+-        v5 = *(long *)(a2 + (long)v4 * 8);
++        v5 = *(char **)(a2 + (long)v4 * 8);
+
+### O0_shadow_stripped_useradd sub_11de5 0x11de5 class=REVIEW layout=None 
+@@ -7,2 +7,2 @@
+-  long v5; // stack - 0x38
+-  long v6; // stack - 0x30
++  char *v5; // stack - 0x38
++  char *v6; // stack - 0x30
+@@ -10 +10 @@
+-  v5 = 0;
++  v5 = NULL;
+@@ -19 +19 @@
+-    v6 = 0;
++    v6 = NULL;
+@@ -21 +21 @@
+-    if ((!strcmp(v2,"--root")) || (((v2 = *(char **)(a2 + (long)v4 * 8), !strncmp(v2,"--root=",7) && (v6 = *(long *)(a2 + (long)v4 * 8) + 7, v6)) || (v2 = *(char **)(a2 + (long)v4 * 8), !strcmp(v2,a0))))) {
++    if ((!strcmp(v2,"--root")) || (((v2 = *(char **)(a2 + (long)v4 * 8), !strncmp(v2,"--root=",7) && (v6 = (char *)(*(long *)(a2 + (long)v4 * 8) + 7), v6)) || (v2 = *(char **)(a2 + (long)v4 * 8), !strcmp(v2,a0))))) {
+@@ -39 +39 @@
+-        v5 = *(long *)(a2 + (long)v4 * 8);
++        v5 = *(char **)(a2 + (long)v4 * 8);
+
+### O2-noinline_coreutils_stripped_cat sub_6b30 0x6b30 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_6b30(long a0,long *a1,long a2,long a3,long a4)
++void sub_6b30(void *a0,long *a1,long a2,long a3,long a4)
+@@ -5,0 +6 @@
++  long v4;
+@@ -11 +12 @@
+-  v3 = a3;
++  v4 = a3;
+@@ -13 +14 @@
+-    v3 = v2;
++    v4 = v2;
+@@ -15 +16 @@
+-    v2 = v3;
++    v2 = v4;
+@@ -18 +19 @@
+-    v3 = 0x7fffffffffffffff;
++    v4 = 0x7fffffffffffffff;
+@@ -21 +22 @@
+-    v3 = 0x80;
++    v4 = 0x80;
+@@ -23,2 +24,2 @@
+-  v2 = v3 / a4;
+-  v3 -= v3 % a4;
++  v2 = v4 / a4;
++  v3 = v4 - v4 % a4;
+
+### O2-noinline_grep_stripped_grep sub_f9a0 0xf9a0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-long sub_f9a0(long a0,struct_10 *a1,unsigned int a2)
++long sub_f9a0(long a0,struct_13 *a1,unsigned int a2)
+@@ -4,10 +4,10 @@
+-  unsigned long v10; // rbx
+-  unsigned long v11; // rsi
+-  unsigned int v12;
+-  long v13;
+-  long v14; // r9
+-  unsigned int v15;
+-  long *v16;
+-  long v17; // r12
+-  char v18; // sil
+-  unsigned short v19;
++  unsigned long v10; // rsi
++  unsigned int v11;
++  long v12;
++  long v13; // r9
++  unsigned int v14;
++  long *v15;
++  long v16; // r12
++  char v17; // sil
++  unsigned short v18;
++  long v19; // stack - 0x40
+@@ -15,8 +15,7 @@
+-  long v20; // stack - 0x40
+-  unsigned long v3;
+-  char v4; // al
+-  long *v5;
+-  long *v6; // rax
+-  long v7;
+-  unsigned long v8; // rcx
+-  unsigned long *v9;
++  char v3; // al
++  long *v4;
++  long *v5; // rax
++  long v6;
++  unsigned long v7; // rcx
++  unsigned long *v8;
++  unsigned long v9; // rbx
+@@ -24,2 +23,2 @@
+-  v11 = (unsigned long)a2;
+-  v18 = (char)a2;
++  v10 = (unsigned long)a2;
++  v17 = (char)a2;
+@@ -28 +27 @@
+-  v7 = *(long *)(a0 + 0x130);
++  v6 = *(long *)(a0 + 0x130);
+@@ -30,3 +29,3 @@
+-    v16 = a1->field_0x0;
+-    v10 = 0;
+-    v5 = v16;
++    v15 = a1->field_0x0;
++    v9 = 0;
++    v4 = v15;
+@@ -34,7 +33,7 @@
+-      v6 = &v5[2];
+-      v10 ^= (unsigned long)*(unsigned int *)&v5[1] + *v5;
+-      v5 = v6;
+-    } while (&v16[v2 * 2] != v6);
+-    if (1 <= v7) goto label_fa0c;
+-    v20 = 0;
+-    v17 = 0;
++      v5 = &v4[2];
++      v9 ^= (unsigned long)*(unsigned int *)&v4[1] + *v4;
++      v4 = v5;
++    } while (&v15[v2 * 2] != v5);
++    if (1 <= v6) goto label_fa0c;
++    v19 = 0;
++    v16 = 0;
+@@ -43,3 +42,2 @@
+-    v10 = 0;
+-    if (v7 <= 0) {
+-      v20 = 0;
++    v9 = 0;
++    if (v6 <= 0) {
+@@ -47 +45,2 @@
+-      v17 = 0;
++      v18 = 0;
++      v16 = 0;
+
+### O2-noinline_grep_stripped_grep sub_1d2b0 0x1d2b0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_1d2b0(long a0,long *a1,long a2,long a3,long a4)
++void sub_1d2b0(void *a0,long *a1,long a2,long a3,long a4)
+@@ -5,0 +6 @@
++  long v4;
+@@ -11 +12 @@
+-  v3 = a3;
++  v4 = a3;
+@@ -13 +14 @@
+-    v3 = v2;
++    v4 = v2;
+@@ -15 +16 @@
+-    v2 = v3;
++    v2 = v4;
+@@ -18 +19 @@
+-    v3 = 0x7fffffffffffffff;
++    v4 = 0x7fffffffffffffff;
+@@ -21 +22 @@
+-    v3 = 0x80;
++    v4 = 0x80;
+@@ -23,2 +24,2 @@
+-  v2 = v3 / a4;
+-  v3 -= v3 % a4;
++  v2 = v4 / a4;
++  v3 = v4 - v4 % a4;
+
+### O2-noinline_gzip_stripped_gzip sub_f3f0 0xf3f0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_f3f0(long a0,long *a1,long a2,long a3,long a4)
++void sub_f3f0(void *a0,long *a1,long a2,long a3,long a4)
+@@ -5,0 +6 @@
++  long v4;
+@@ -11 +12 @@
+-  v3 = a3;
++  v4 = a3;
+@@ -13 +14 @@
+-    v3 = v2;
++    v4 = v2;
+@@ -15 +16 @@
+-    v2 = v3;
++    v2 = v4;
+@@ -18 +19 @@
+-    v3 = 0x7fffffffffffffff;
++    v4 = 0x7fffffffffffffff;
+@@ -21 +22 @@
+-    v3 = 0x80;
++    v4 = 0x80;
+@@ -23,2 +24,2 @@
+-  v2 = v3 / a4;
+-  v3 -= v3 % a4;
++  v2 = v4 / a4;
++  v3 = v4 - v4 % a4;
+
+### O2-noinline_nuttx_stripped_nuttx sub_8007bc4 0x8007bc4 class=REVIEW layout=merge 
+@@ -8,2 +8 @@
+-  char v6; // stack - 0x24
+-  char v7; // stack - 0x23
++  char v6 [8]; // stack - 0x24
+@@ -23,3 +22,3 @@
+-        v6 = *v5;
+-        v7 = 0;
+-        (**(void **)(a0 + 0x18))(a0,"nsh: %s: no matching %s\n",&v6);
++        v6[0] = *v5;
++        v6[1] = 0;
++        (**(void **)(a0 + 0x18))(a0,"nsh: %s: no matching %s\n",v6);
+@@ -32 +31 @@
+-      *v5 = 0;
++      *v5 = '\0';
+
+### O2-noinline_nuttx_stripped_nuttx sub_800c9bc 0x800c9bc class=REVIEW layout=None 
+@@ -1 +1 @@
+-int sub_800c9bc(struct_11 *a0,int a1,int a2,unsigned int a3,unsigned int *a4) // return-dupe
++int sub_800c9bc(struct_11 *a0,int a1,unsigned int a2,unsigned int a3,unsigned int *a4) // return-dupe
+@@ -3 +3 @@
+-  int v1;
++  unsigned int v1;
+@@ -12 +12 @@
+-  int v7; // stack - 0x38
++  unsigned int v7; // stack - 0x38
+@@ -18 +18 @@
+-  v6 = a2 << 0x1d < 0;
++  v6 = (int)(a2 << 0x1d) < 0;
+@@ -28 +28 @@
+-  v12 = (unsigned char)((unsigned int)(a2 << 0x13) >> 0x1f);
++  v12 = (unsigned char)((a2 << 0x13) >> 0x1f);
+@@ -39 +39 @@
+-    if (0 <= a2 << 0x14) { // branch-flip
++    if (0 <= (int)(a2 << 0x14)) { // branch-flip
+@@ -58 +58 @@
+-      if (a2 << 0x1e < 0) goto label_800ca36;
++      if ((int)(a2 << 0x1e) < 0) goto label_800ca36;
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_80131e0 0x80131e0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int4 sub_80131e0(int4 *a0,int4 a1,int4 a2)
++int4 sub_80131e0(int4 *a0,int4 a1,int4 *a2)
+@@ -7,4 +7,2 @@
+-  uint4 v5; // r2
+-  int4 v6; // r3
+-  int4 v7; // r4
+-  int4 v8; // r12
++  int4 v5; // r4
++  int4 v6; // r12
+@@ -17,10 +15,9 @@
+-          v8 = 0;
+-          v7 = 2;
+-          for (v2 = 0; v6 = a2 + v2 * 0x4c, *(int4 *)(a2 + v2 * 0x4c); v2 = v2 + 1) {
+-            if (*(char *)(v6 + 4)) { // branch-flip
+-              *(unsigned int *)(v6 + 0x10) = 0;
+-              *(unsigned int *)(v6 + 0x14) = 0;
+-              *(int4 *)(v6 + 0x30) = v7;
+-              v3 = *(int4 *)(v6 + 0x3c) * 0x20;
+-              if (v3) // branch-flip
+-                v4 = v3 + 0xfffU >> 0xc;
++          v6 = 0;
++          v5 = 2;
++          for (v2 = 0; a2[v2 * 0x13]; v2 = v2 + 1) {
++            if ((char)a2[v2 * 0x13 + 1]) { // branch-flip
++              a2[v2 * 0x13 + 4] = 0;
++              a2[v2 * 0x13 + 5] = 0;
++              a2[v2 * 0x13 + 0xc] = v5;
++              if (a2[v2 * 0x13 + 0xf] * 0x20) // branch-flip
++                v3 = a2[v2 * 0x13 + 0xf] * 0x20 + 0xfffU >> 0xc;
+@@ -28 +25 @@
+-                v4 = 1;
++                v3 = 1;
+@@ -30,3 +27,3 @@
+-              v7 = v7 + v4 + -1;
+-              *(int4 *)(v6 + 0x34) = v7;
+-              *(int4 *)(v6 + 0x38) = v7;
++              v5 = v5 + v3 + -1;
++              a2[v2 * 0x13 + 0xd] = v5;
++              a2[v2 * 0x13 + 0xe] = v5;
+@@ -35,3 +32,3 @@
+-              *(int4 *)(v6 + 0x30) = v7;
+-              if (*(int4 *)(v6 + 0x10)) // branch-flip
+-                v4 = *(int4 *)(v6 + 0x10) + 0xfffU >> 0xc;
++              a2[v2 * 0x13 + 0xc] = v5;
++              if (a2[v2 * 0x13 + 4]) // branch-flip
++                v3 = a2[v2 * 0x13 + 4] + 0xfffU >> 0xc;
+@@ -39 +36 @@
+-                v4 = 1;
++                v3 = 1;
+@@ -41,3 +38,3 @@
+-              *(uint4 *)(v6 + 0x34) = v4 + v7 + -1;
+-              if (*(int4 *)(v6 + 0x14)) // branch-flip
+-                v4 = *(int4 *)(v6 + 0x14) + 0xfffU >> 0xc;
++              a2[v2 * 0x13 + 0xd] = v3 + v5 + -1;
++              if (a2[v2 * 0x13 + 5]) // branch-flip
++                v3 = a2[v2 * 0x13 + 5] + 0xfffU >> 0xc;
+@@ -45 +42 @@
+-                v4 = 1;
++                v3 = 1;
+@@ -47 +44 @@
+-              *(uint4 *)(v6 + 0x38) = v4 + v7 + -1;
++              a2[v2 * 0x13 + 0xe] = v3 + v5 + -1;
+@@ -49,2 +46,2 @@
+-            v8 += *(int4 *)(v6 + 0x38) - *(int4 *)(v6 + 0x34);
+-            v7 = *(int4 *)(v6 + 0x38) + 1;
++            v6 += a2[v2 * 0x13 + 0xe] - a2[v2 * 0x13 + 0xd];
++            v5 = a2[v2 * 0x13 + 0xe] + 1;
+@@ -52 +49 @@
+-          v4 = v7 - 2;
++          v3 = v5 - 2;
+@@ -58,4 +55,4 @@
+-          a0[9] = v4;
+-          a0[10] = v8;
+-          if (v4) // branch-flip
+-            v5 = v4 * 4 + 0x1ff >> 9 | ((v4 >> 0x1e) + (uint4)(0xfffffe01 <= v4 * 4)) * 0x800000;
++          a0[9] = v3;
++          a0[10] = v6;
++          if (v3) // branch-flip
++            v4 = v3 * 4 + 0x1ff >> 9 | ((v3 >> 0x1e) + (uint4)(0xfffffe01 <= v3 * 4)) * 0x800000;
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_8013580 0x8013580 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8013580(int4 a0,int4 a1,uint1 a2,unsigned int a3,unsigned int *a4,unsigned int a5)
++void sub_8013580(uint1 *a0,int4 a1,uint1 a2,unsigned int a3,unsigned int *a4,unsigned int a5)
+@@ -3,4 +3,4 @@
+-  char v1;
+-  unsigned int *v2;
+-  int4 v3; // r0
+-  int4 v4;
++  unsigned int *v1;
++  int4 v2; // r0
++  int4 v3; // r1
++  uint4 v4;
+@@ -8 +8 @@
+-  int4 v6;
++  uint4 v6;
+@@ -10 +10 @@
+-  v2 = a4;
++  v1 = a4;
+@@ -12,6 +12,6 @@
+-  if (v2) {
+-    *(unsigned short *)(a0 + 0x10) = *(unsigned short *)((int4)v2 + 2);
+-    *(int2 *)(a0 + 0xe) = (int2)*v2;
+-    *(unsigned short *)(a0 + 0x18) = *(unsigned short *)((int4)v2 + 6);
+-    *(int2 *)(a0 + 0x16) = (int2)v2[1];
+-    *(unsigned short *)(a0 + 0x12) = *(unsigned short *)((int4)v2 + 10);
++  if (v1) {
++    *(unsigned short *)&a0[0x10] = *(unsigned short *)((int4)v1 + 2);
++    *(int2 *)&a0[0xe] = (int2)*v1;
++    *(unsigned short *)&a0[0x18] = *(unsigned short *)((int4)v1 + 6);
++    *(int2 *)&a0[0x16] = (int2)v1[1];
++    *(unsigned short *)&a0[0x12] = *(unsigned short *)((int4)v1 + 10);
+@@ -19,2 +19,2 @@
+-  v3 = sub_800a600(a1);
+-  v4 = v3;
++  v2 = sub_800a600(a1);
++  v4 = v2;
+@@ -22 +22 @@
+-    v4 = -1;
++    v4 = 0xffffffff;
+@@ -26,2 +26,2 @@
+-      if (v4 <= -1) {
+-        v4 = -1;
++      if ((int4)v4 <= -1) {
++        v4 = 0xffffffff;
+@@ -31 +31 @@
+-    if (v4 != -1) {
++    if (v4 != 0xffffffff) {
+@@ -33 +33 @@
+-      if (8 <= v4)
++      if (8 <= (int4)v4)
+@@ -35 +35 @@
+-      v5 = (v3 - v4) + -1;
++      v5 = (v2 - v4) - 1;
+@@ -41,2 +41,2 @@
+-  if (8 <= v3)
+-    v3 = 8;
++  if (8 <= v2)
++    v2 = 8;
+@@ -44 +44 @@
+-  v6 = v3;
++  v6 = v2;
+@@ -48,5 +48,5 @@
+-  sub_800a6d8(a0 + 8,0x20,3);
+-  sub_800a964(a0 + 8,a1 + v4 + 1,v5);
+-  for (v4 = 0; v4 <= 7; v4 = v4 + 1) {
+-    if ((uint1)(*(char *)(a0 + v4) + 0x9fU) <= 0x19)
+-      *(char *)(a0 + v4) = *(char *)(a0 + v4) + '\xe0';
++  sub_800a6d8(&a0[8],0x20,3);
++  sub_800a964(&a0[8],(unsigned int *)(a1 + v4 + 1),v5);
++  for (v3 = 0; v3 <= 7; v3 = v3 + 1) {
++    if ((uint1)(a0[v3] + 0x9f) <= 0x19)
++      a0[v3] = a0[v3] - 0x20;
+@@ -54,4 +54,3 @@
+-  for (v4 = 0; v4 <= 2; v4 = v4 + 1) {
+-    v1 = *(char *)(a0 + v4 + 8);
+-    if ((uint1)(v1 + 0x9fU) <= 0x19)
+-      *(char *)(a0 + v4 + 8) = v1 + '\xe0';
++  for (v3 = 0; v3 <= 2; v3 = v3 + 1) {
++    if ((uint1)(a0[v3 + 8] + 0x9f) <= 0x19)
++      a0[v3 + 8] = a0[v3 + 8] - 0x20;
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_8015f10 0x8015f10 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8015f10(int4 a0)
++void sub_8015f10(uint1 *a0)
+@@ -6 +5,0 @@
+-  int4 v4; // r12
+@@ -12,5 +11,4 @@
+-    v4 = a0 + v3 * 6;
+-    *(char *)(a0 + v3 * 6) = *(char *)(v1 + 0x807c651);
+-    *(char *)(v4 + 1) = *(char *)(v1 + 0x807c652);
+-    *(char *)(v4 + 2) = *(char *)(v1 + 0x807c653);
+-    *(unsigned short *)(v4 + 4) = *(unsigned short *)(v1 + 0x807c654);
++    a0[v3 * 6] = *(uint1 *)(v1 + 0x807c651);
++    a0[v3 * 6 + 1] = *(uint1 *)(v1 + 0x807c652);
++    a0[v3 * 6 + 2] = *(uint1 *)(v1 + 0x807c653);
++    *(unsigned short *)&a0[v3 * 6 + 4] = *(unsigned short *)(v1 + 0x807c654);
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_801a358 0x801a358 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int sub_801a358(int4 a0,unsigned int a1) // return-dupe
++unsigned int sub_801a358(char *a0,unsigned int a1) // return-dupe
+@@ -4,2 +4 @@
+-  unsigned int v2; // r0
+-  int4 v3; // r0
++  int4 v2; // r0
+@@ -10,2 +9,2 @@
+-  v1 = *(char *)(a0 + sub_800a600(a1));
+-  if ((!sub_8017b60((uint1)v1)) && (*(char *)(a0 + sub_800a600(a1))))
++  v1 = a0[sub_800a600(a1)];
++  if ((!sub_8017b60((uint1)v1)) && (a0[sub_800a600(a1)]))
+@@ -13,2 +12,2 @@
+-  v3 = sub_800a600(a1);
+-  return sub_8019b6e(v3 + 1 + a0);
++  v2 = sub_800a600(a1);
++  return sub_8019b6e(&a0[v2 + 1]);
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_801ae68 0x801ae68 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_801ae68(unsigned int a0,int4 a1,int4 a2,unsigned int a3)
++void sub_801ae68(uint4 a0,int4 a1,int4 a2,char *a3)
+@@ -3,4 +3,5 @@
+-  unsigned int v1; // r0
+-  uint4 v2; // r4
+-  int4 v3; // r2
+-  bool v4; // r9
++  char *v1; // r0
++  int4 v2; // r2
++  uint4 v3; // r4
++  int4 *v4; // r10
++  bool v5; // r9
+@@ -8,3 +9,3 @@
+-  v1 = sub_801a6e4(a0,0,a3);
+-  v4 = 0;
+-  for (v2 = 0; v2 <= 9; v2 = v2 + 1) {
++  v1 = (char *)sub_801a6e4(a0,0,a3);
++  v5 = 0;
++  for (v3 = 0; v3 <= 9; v3 = v3 + 1) {
+@@ -12,4 +13,4 @@
+-      v3 = a2 + v2 * 6;
+-      v4 = sub_800ae80(a1 + v2 * 6,v3,6) == 0;
+-      v1 = sub_801a6e4(a0,!v4,v1);
+-      sub_801a530(a0,v4,"vtx %u %u %u %u %u %u %u",v2,(uint1)*(char *)(a2 + v2 * 6),(uint1)*(char *)(v3 + 1),(uint1)*(char *)(v3 + 2),(uint1)*(char *)(v3 + 3),(uint4)*(uint1 *)(v3 + 4) * 0x19 + 900,(uint4)*(uint1 *)(v3 + 5) * 0x19 + 900);
++      v4 = (int4 *)(a2 + v3 * 6);
++      v5 = sub_800ae80((int4 *)(a1 + v3 * 6),v4,6) == 0;
++      v1 = (char *)sub_801a6e4(a0,!v5,v1);
++      sub_801a530(a0,v5,"vtx %u %u %u %u %u %u %u",v3,(uint1)*(char *)(a2 + v3 * 6),(uint1)*(char *)((int4)v4 + 1),(uint1)*(char *)((int4)v4 + 2),(uint1)*(char *)((int4)v4 + 3),(uint4)*(uint1 *)&v4[1] * 0x19 + 900,(uint4)*(uint1 *)((int4)v4 + 5) * 0x19 + 900);
+@@ -17,2 +18,2 @@
+-    v3 = a1 + v2 * 6;
+-    sub_801a566(a0,v4,"vtx %u %u %u %u %u %u %u",v2,(uint1)*(char *)(a1 + v2 * 6),(uint1)*(char *)(v3 + 1),(uint1)*(char *)(v3 + 2),(uint1)*(char *)(v3 + 3),(uint4)*(uint1 *)(v3 + 4) * 0x19 + 900,(uint4)*(uint1 *)(v3 + 5) * 0x19 + 900);
++    v2 = a1 + v3 * 6;
++    sub_801a566(a0,v5,"vtx %u %u %u %u %u %u %u",v3,(uint1)*(char *)(a1 + v3 * 6),(uint1)*(char *)(v2 + 1),(uint1)*(char *)(v2 + 2),(uint1)*(char *)(v2 + 3),(uint4)*(uint1 *)(v2 + 4) * 0x19 + 900,(uint4)*(uint1 *)(v2 + 5) * 0x19 + 900);
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_801b5bc 0x801b5bc class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_801b5bc(unsigned int a0,int4 a1,int4 a2,unsigned int a3)
++void sub_801b5bc(uint4 a0,int4 a1,int4 a2,char *a3)
+@@ -4 +4 @@
+-  unsigned int v2; // r0
++  char *v2; // r0
+@@ -6,2 +6,3 @@
+-  int4 v4; // r9
+-  bool v5; // r10
++  int4 *v4; // r9
++  int4 v5; // r12
++  bool v6; // r10
+@@ -9 +10 @@
+-  v2 = sub_801a6e4(a0,0,a3);
++  v2 = (char *)sub_801a6e4(a0,0,a3);
+@@ -14,4 +15,4 @@
+-        v4 = a2 + v3 * 0xc;
+-        v5 = sub_800ae80(a1 + v3 * 0xc,v4,0xc) == 0;
+-        v2 = sub_801a6e4(a0,!v5,v2);
+-        sub_801a530(a0,v5,"serial %d %d %ld %ld %ld %ld",(int4)*(char *)(v4 + 4),*(unsigned int *)(a2 + v3 * 0xc),*(unsigned int *)((uint4)*(uint1 *)(v4 + 5) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)(v4 + 6) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)(v4 + 8) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)(v4 + 7) * 4 + 0x807fde4));
++        v4 = (int4 *)(a2 + v3 * 0xc);
++        v6 = sub_800ae80((int4 *)(a1 + v3 * 0xc),v4,0xc) == 0;
++        v2 = (char *)sub_801a6e4(a0,!v6,v2);
++        sub_801a530(a0,v6,"serial %d %d %ld %ld %ld %ld",(int4)(char)v4[1],*(unsigned int *)(a2 + v3 * 0xc),*(unsigned int *)((uint4)*(uint1 *)((int4)v4 + 5) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)((int4)v4 + 6) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)&v4[2] * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)((int4)v4 + 7) * 4 + 0x807fde4));
+@@ -20 +21 @@
+-        v5 = 0;
++        v6 = 0;
+@@ -22,2 +23,2 @@
+-      v4 = a1 + v3 * 0xc;
+-      sub_801a566(a0,v5,"serial %d %d %ld %ld %ld %ld",(int4)*(char *)(v4 + 4),*(unsigned int *)(a1 + v3 * 0xc),*(unsigned int *)((uint4)*(uint1 *)(v4 + 5) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)(v4 + 6) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)(v4 + 8) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)(v4 + 7) * 4 + 0x807fde4));
++      v5 = a1 + v3 * 0xc;
++      sub_801a566(a0,v6,"serial %d %d %ld %ld %ld %ld",(int4)*(char *)(v5 + 4),*(unsigned int *)(a1 + v3 * 0xc),*(unsigned int *)((uint4)*(uint1 *)(v5 + 5) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)(v5 + 6) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)(v5 + 8) * 4 + 0x807fde4),*(unsigned int *)((uint4)*(uint1 *)(v5 + 7) * 4 + 0x807fde4));
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_802b2cc 0x802b2cc class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int sub_802b2cc(unsigned int a0,int4 a1,int4 a2) // ternary
++unsigned int sub_802b2cc(unsigned int *a0,unsigned int *a1,int4 a2) // ternary
+@@ -3,10 +3,11 @@
+-  uint1 v1;
+-  unsigned int v10; // stack - 0x28
+-  uint4 v11; // stack - 0x24
+-  char v12; // stack - 0x2b
+-  int4 v13; // stack - 0x20
+-  unsigned int v14; // stack - 0x1c
+-  unsigned short v2;
+-  int4 v3; // r0
+-  unsigned int v4;
+-  unsigned int v5; // r0
++  unsigned short v1;
++  char v10; // stack - 0x2c
++  unsigned int v11; // stack - 0x28
++  uint4 v12; // stack - 0x24
++  char v13; // stack - 0x2b
++  int4 v14; // stack - 0x20
++  unsigned int v15; // stack - 0x1c
++  int4 v2; // r0
++  uint4 v3;
++  uint1 *v4; // r0
++  char *v5; // r0
+@@ -15,2 +16,2 @@
+-  int4 v8;
+-  char v9; // stack - 0x2c
++  uint4 v8; // r0
++  int4 v9;
+@@ -18,2 +19 @@
+-  v3 = sub_8017b20(a1);
+-  v13 = 0;
++  v2 = sub_8017b20(a1);
+@@ -21,4 +21,5 @@
+-  v10 = CONCAT11("MMX"[a2],0x24);
+-  v6 = (*(int2 *)(a1 + 10) != -1) ? 0x3e : 0x21; // branch-flip
+-  v10 = CONCAT12(v6,v10);
+-  v2 = (unsigned short)v3; // branch-flip
++  v15 = 0;
++  v11 = CONCAT11("MMX"[a2],0x24);
++  v6 = (*(int2 *)((int4)a1 + 10) != -1) ? 0x3e : 0x21; // branch-flip
++  v11 = CONCAT12(v6,v11);
++  v1 = (unsigned short)v2; // branch-flip
+@@ -29,7 +30,7 @@
+-      v10 = CONCAT13(*(char *)(a1 + 0xc),v10);
+-      v11 = CONCAT22(v2,*(unsigned short *)(a1 + 8));
+-      v4 = sub_801656e(0,&v8,5,0xd5);
+-      v5 = sub_8017b28(a1);
+-      v9 = sub_801656e(v4,v5,v3,0xd5);
+-      v4 = 1;
+-      v7 = 8;
++      v11 = CONCAT13(*(char *)&a1[3],v11);
++      v12 = CONCAT22(v1,*(unsigned short *)&a1[2]);
++      v8 = sub_801656e(0,&v9,5,0xd5);
++      v5 = (char *)sub_8017b28(a1);
++      v10 = sub_801656e(v8,v5,v2,0xd5);
++      v3 = 1;
++      v8 = 8;
+@@ -38 +39 @@
+-      v7 = v3 + 6;
++      v7 = v2 + 6;
+@@ -40,3 +41,3 @@
+-        v10 = CONCAT13(0xff,v10);
+-        v13 = v7 * 0x10000;
+-        v7 = 0xc;
++        v11 = CONCAT13(0xff,v11);
++        v14 = v7 * 0x10000;
++        v8 = 0xc;
+@@ -45,2 +46,2 @@
+-        v10 = CONCAT13((char)v7,v10);
+-        v7 = 10;
++        v11 = CONCAT13((char)v7,v11);
++        v8 = 10;
+@@ -48,10 +49,10 @@
+-      v11._0_2_ = CONCAT11(*(char *)(a1 + 0xc),0xff);
+-      v11 = CONCAT22(*(unsigned short *)(a1 + 8),(unsigned short)v11);
+-      v13 = CONCAT22(v13._2_2_,v2);
+-      v4 = sub_801656e(0,(int4)&v11 + 1,5,0xd5);
+-      v5 = sub_8017b28(a1);
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_8058148 0x8058148 class=REVIEW layout=None 
+@@ -1 +1 @@
+-bool sub_8058148(unsigned int a0,int4 a1,unsigned int a2,unsigned int a3)
++bool sub_8058148(unsigned int *a0,uint4 a1,unsigned int a2,unsigned int a3)
+@@ -5 +5 @@
+-  v1 = dat_200137a0 + 1 + a1 <= 0x60;
++  v1 = (int4)(dat_200137a0 + 1 + a1) <= 0x60;
+@@ -8 +8 @@
+-    sub_800a964(dat_200137a0 + 0x20013741,a0,a1,dat_200137a0 + 0x20013740,a3);
++    sub_800a964((unsigned int *)(dat_200137a0 + 0x20013741),a0,a1,dat_200137a0 + 0x20013740,a3);
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_805c3a0 0x805c3a0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int4 sub_805c3a0(int4 a0,struct_111 *a1,unsigned int a2,unsigned int a3)
++int4 sub_805c3a0(unsigned int *a0,struct_106 *a1,unsigned int a2,unsigned int a3)
+@@ -3 +3 @@
+-  int4 v1; // r3
++  uint1 v1;
+@@ -6,3 +6,3 @@
+-  v1 = a1->field_0x3 + 6;
+-  *(char *)(a0 + v1) = (char)a1->field_0x0;
+-  *(char *)(a0 + v1 + 1) = (char)((uint2)a1->field_0x0 >> 8);
++  v1 = a1->field_0x3;
++  *(char *)((int4)a0 + v1 + 6) = (char)a1->field_0x0;
++  *(char *)((int4)a0 + v1 + 7) = (char)((uint2)a1->field_0x0 >> 8);
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_8064586 0x8064586 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int4 sub_8064586(int4 a0)
++int4 sub_8064586(struct_49 *a0)
+@@ -3 +3 @@
+-  unsigned int v1; // r0
++  int4 *v1; // r0
+@@ -5 +5 @@
+-  int4 v3; // r5
++  char **v3; // r5
+@@ -7 +7 @@
+-  v3 = a0 + 0xc;
++  v3 = &a0->field_0xc;
+@@ -9 +9 @@
+-  v1 = *(unsigned int *)(*(int4 *)(a0 + 0xc) + 4);
++  v1 = *(int4 **)&a0->field_0xc[4];
+@@ -12 +12 @@
+-    sub_8021fe4(*(unsigned int *)(*(int4 *)(a0 + 0xc) + 4),0x37,2);
++    sub_8021fe4(*(int4 **)&a0->field_0xc[4],0x37,2);
+@@ -14 +14 @@
+-    *(char *)(a0 + 0x10) = 0xc;
++    a0->field_0x10 = 0xc;
+@@ -18 +18 @@
+-      *(char *)(a0 + 0x10) = 0x68;
++      a0->field_0x10 = 0x68;
+
+### O2_betaflight_stripped_betaflight_STM32F405-elf sub_80698e8 0x80698e8 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int4 sub_80698e8(int4 a0)
++int4 sub_80698e8(uint1 *a0)
+@@ -3,4 +3,3 @@
+-  char v1;
+-  uint4 v2; // r2
+-  uint4 v3; // r3
+-  int4 v4;
++  uint1 v1;
++  uint4 v2; // r3
++  int4 v3;
+@@ -8 +7 @@
+-  v4 = 0;
++  v3 = 0;
+@@ -12,2 +11,2 @@
+-      v4 = sub_806956c(a0);
+-      if (v4) {
++      v3 = sub_806956c(a0);
++      if (v3) {
+@@ -15,3 +14,3 @@
+-          if (!*(char *)(a0 + 5)) {
+-            dat_2000826d = *(char *)(a0 + 3);
+-            dat_2000826e = *(char *)(a0 + 4);
++          if (!a0[5]) {
++            dat_2000826d = a0[3];
++            dat_2000826e = a0[4];
+@@ -19,2 +18,2 @@
+-              dat_2000826f = *(char *)(a0 + 0xb);
+-              dat_200082a3 = *(char *)(a0 + 0xc);
++              dat_2000826f = a0[0xb];
++              dat_200082a3 = a0[0xc];
+@@ -23 +22 @@
+-              dat_2000826f = *(char *)(a0 + 0x11);
++              dat_2000826f = a0[0x11];
+@@ -27,3 +26,2 @@
+-          for (v3 = 0; v3 <= 4; v3 = v3 + 1 & 0xff) {
+-            v2 = *(uint1 *)(a0 + 5) + v3;
+-            if (0x2f <= v2) // branch-flip
++          for (v2 = 0; v2 <= 4; v2 = v2 + 1 & 0xff) {
++            if (0x2f <= a0[5] + v2) // branch-flip
+@@ -32 +30 @@
+-              v1 = *(char *)(a0 + v3 + 6);
++              v1 = a0[v2 + 6];
+@@ -34 +32 @@
+-            *(char *)(v2 + 0x20008271) = v1;
++            *(uint1 *)(a0[5] + v2 + 0x20008271) = v1;
+@@ -36,4 +34,4 @@
+-          v3 = 1 << *(uint1 *)(a0 + 5) / 5 | (uint4)dat_200181e4;
+-          dat_200181e4 = (uint2)v3;
+-          if ((v3 & 0xffff) != 0x3ff) // branch-flip
+-            v4 = 0;
++          v2 = 1 << a0[5] / 5 | (uint4)dat_200181e4;
++          dat_200181e4 = (uint2)v2;
++          if ((v2 & 0xffff) != 0x3ff) // branch-flip
++            v3 = 0;
+@@ -45,2 +43,2 @@
+-          for (v3 = 3; (int4)v3 < (int4)((uint4)dat_20018421 - 4); v3 = v3 + 1 & 0xff) {
+-            *(uint1 *)(a0 + v3) = *(uint1 *)(a0 + v3) ^ 0xa7;
++          for (v2 = 3; (int4)v2 < (int4)((uint4)dat_20018421 - 4); v2 = v2 + 1 & 0xff) {
++            a0[v2] = a0[v2] ^ 0xa7;
+@@ -48,5 +46,5 @@
+-          dat_2000826d = *(char *)(a0 + 3);
+-          dat_2000826e = *(char *)(a0 + 4);
+-          dat_2000826f = *(char *)(a0 + 5);
+-          dat_200082a3 = *(char *)(a0 + 6);
+-          sub_80695c0((uint4)*(uint1 *)(a0 + 3) + (uint4)*(uint1 *)(a0 + 4) * 0x100);
++          dat_2000826d = a0[3];
++          dat_2000826e = a0[4];
++          dat_2000826f = a0[5];
++          dat_200082a3 = a0[6];
++          sub_80695c0((uint4)a0[3] + (uint4)a0[4] * 0x100);
+@@ -58 +56 @@
+-      v4 = 0;
++      v3 = 0;
+@@ -61 +59 @@
+-  return v4;
++  return v3;
+
+### O2_bzip2_stripped_bzip2 sub_110c0 0x110c0 class=REVIEW layout=None 
+@@ -24 +24 @@
+-    sub_10110(v3,*(long *)(a0 + 0x40),(long)(int)((v1 & 1) + 0x22 + v1) + *(long *)(a0 + 0x40),v4,v1,v2,&v7);
++    sub_10110(v3,*(unsigned char **)(a0 + 0x40),&(*(unsigned char **)(a0 + 0x40))[(int)((v1 & 1) + 0x22 + v1)],v4,v1,v2,&v7);
+@@ -37 +37 @@
+-  sub_f510(*(unsigned long *)(a0 + 0x18),*(unsigned long *)(a0 + 0x20),v4,v1,v2);
++  sub_f510(*(long *)(a0 + 0x18),*(unsigned char **)(a0 + 0x20),v4,v1,v2);
+
+### O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8014e1a 0x8014e1a class=REVIEW layout=None 
+@@ -1 +1 @@
+-int sub_8014e1a(unsigned int *a0,int a1) // ternary
++int sub_8014e1a(unsigned int *a0,unsigned int *a1) // ternary
+@@ -3,2 +3,2 @@
+-  unsigned char v1;
+-  int v2; // r0
++  int v1; // r0
++  unsigned char *v2; // r0
+@@ -7 +7 @@
+-  unsigned int v5; // r0
++  int *v5; // r7
+@@ -13,4 +13,4 @@
+-  sub_8010248(*a0);
+-  v2 = sub_800e9a2(a1);
+-  v3 = v2;
+-  if (0xff <= v2)
++  sub_8010248((int *)*a0);
++  v1 = sub_800e9a2(a1);
++  v3 = v1;
++  if (0xff <= v1)
+@@ -18,2 +18,2 @@
+-  if (*(short *)(a1 + 10) != -1) { // branch-flip
+-    v4 = (*(char *)(a1 + 0xc)) ? 0x3c : 0x3e; // branch-flip
++  if (*(short *)((int)a1 + 10) != -1) { // branch-flip
++    v4 = (*(char *)&a1[3]) ? 0x3c : 0x3e; // branch-flip
+@@ -26,5 +26,4 @@
+-  v1 = (unsigned char)*(unsigned short *)(a1 + 8);
+-  v9 = (unsigned int)v1;
+-  if (0xff <= v2) { // branch-flip
+-    v9._0_2_ = CONCAT11((char)v2,v1);
+-    v9._0_3_ = CONCAT12((char)((unsigned int)v2 >> 8),(unsigned short)v9);
++  v9 = (unsigned int)(unsigned char)*(unsigned short *)&a1[2];
++  if (0xff <= v1) { // branch-flip
++    v9._0_2_ = CONCAT11((char)v1,(unsigned char)*(unsigned short *)&a1[2]);
++    v9._0_3_ = CONCAT12((char)((unsigned int)v1 >> 8),(unsigned short)v9);
+@@ -37 +36 @@
+-  sub_80101ea(*a0,&v6,v3);
++  sub_80101ea((int *)*a0,&v6,v3);
+@@ -39,3 +38,3 @@
+-  if (0 < v2) {
+-    v5 = *a0;
+-    sub_80101ea(v5,sub_800e9aa(a1),v2);
++  if (0 < v1) {
++    v5 = (int *)*a0;
++    sub_80101ea(v5,(char *)sub_800e9aa(a1),v1);
+@@ -43,2 +42,2 @@
+-    v5 = sub_800e9aa(a1);
+-    v8 = sub_8014da8((unsigned char)v4,v5,v2);
++    v2 = (unsigned char *)sub_800e9aa(a1);
++    v8 = sub_8014da8((unsigned char)v4,v2,v1);
+@@ -46,3 +45,3 @@
+-  sub_80101ea(*a0,&v8,1);
+-  sub_8010254(*a0);
+-  return v2 + 9;
++  sub_80101ea((int *)*a0,&v8,1);
++  sub_8010254((int *)*a0);
++  return v1 + 9;
+
+### O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8020b08 0x8020b08 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int sub_8020b08(int a0,unsigned int a1) // return-dupe
++char * sub_8020b08(char *a0,unsigned int a1) // return-dupe
+@@ -4 +4 @@
+-  unsigned int v2; // r0
++  int v2; // r0
+@@ -8,5 +8,5 @@
+-    return 0;
+-  v1 = *(char *)(a0 + sub_8008a00(a1));
+-  if ((!sub_800e9e2((unsigned char)v1)) && (*(char *)(a0 + sub_8008a00(a1))))
+-    return 0;
+-  return sub_8008a00(a1) + 1 + a0;
++    return NULL;
++  v1 = a0[sub_8008a00(a1)];
++  if ((!sub_800e9e2((unsigned char)v1)) && (a0[sub_8008a00(a1)]))
++    return NULL;
++  return &a0[sub_8008a00(a1) + 1];
+
+### O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_80275ec 0x80275ec class=REVIEW layout=None 
+@@ -6,0 +7 @@
++  float v5; // s15
+@@ -21 +22 @@
+-    sub_8028b34(dat_20008a72 - *(short *)&v1[0x19] & 0x3fff);
++    sub_8028b34(dat_20008a72 - (short)v1[0x19] & 0x3fff);
+@@ -31 +32,2 @@
+-  sub_8028b34((unsigned int)(0.0 < (float)(long long)(int)*(short *)&v1[0x11] - dat_2000ab94) * (int)((float)(long long)(int)*(short *)&v1[0x11] - dat_2000ab94));
++  v5 = (float)(long long)(int)(short)v1[0x11] - dat_2000ab94;
++  sub_8028b34((unsigned int)(0.0 < v5) * (int)v5);
+@@ -34 +36 @@
+-    sub_8028b52((int)*(short *)((int)v1 + (v4 + 0x20) * 2 + 4) - (int)*(short *)&v1[0x11]);
++    sub_8028b52((int)*(short *)((int)v1 + (v4 + 0x20) * 2 + 4) - (int)(short)v1[0x11]);
+
+### O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8029742 0x8029742 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8029742(int a0,unsigned int a1)
++void sub_8029742(int *a0,unsigned int a1) // ternary
+@@ -3,10 +3,9 @@
+-  unsigned char v1;
+-  bool v10; // tmpcy
+-  unsigned short v2;
+-  unsigned int v3; // r0
+-  char v4;
+-  unsigned int *v5;
+-  unsigned int v6; // r3
+-  int v7; // r0
+-  unsigned int v8; // r7
+-  unsigned short v9; // r8
++  unsigned short v1;
++  unsigned int v2; // r0
++  char v3;
++  unsigned int *v4;
++  int v5; // r0
++  unsigned int v6;
++  unsigned int v7; // r7
++  unsigned short v8; // r8
++  bool v9; // tmpcy
+@@ -14,5 +13,12 @@
+-  if (dat_20008b5d) // branch-flip
+-    v8 = 1;
+-  else {
+-    v7 = (unsigned int)*(unsigned char *)(a0 + 8) - (unsigned int)dat_20008b55;
+-    v8 = (v7 - (v7 >> 0x1f) & 0x1ffU) >> 1;
++  v7 = (dat_20008b5d) ? 1 : (((unsigned int)*(unsigned char *)&a0[2] - (unsigned int)dat_20008b55) - ((int)((unsigned int)*(unsigned char *)&a0[2] - (unsigned int)dat_20008b55) >> 0x1f) & 0x1ff) >> 1; // branch-flip
++  v9 = a1 <= dat_2000745c + 100000;
++  if (!v9)
++    dat_2000745c = a1;
++  v2 = sub_800fbdc(a0);
++  if ((char)a0[3]) { // branch-flip
++    for (v4 = dat_20007474; (char)v4[1] != '\x0e'; v4 = &v4[5]) {
++      v6 = v4[4];
++      *(unsigned char *)&v4[4] = (unsigned char)v6 | 2;
++      *(unsigned char *)&v4[4] = (unsigned char)v6 | 3;
++    }
++    *(char *)&a0[3] = 0;
+@@ -20,16 +26,4 @@
+-  v10 = a1 <= dat_2000745c + 100000;
+-  if (!v10)
+-    dat_2000745c = a1;
+-  v3 = sub_800fbdc(a0);
+-  if (*(char *)(a0 + 0xc)) { // branch-flip
+-    for (v5 = dat_20007474; *(char *)&v5[1] != '\x0e'; v5 = &v5[5]) {
+-      v1 = *(unsigned char *)&v5[4];
+-      *(unsigned char *)&v5[4] = v1 | 2;
+-      *(unsigned char *)&v5[4] = v1 | 3;
+-    }
+-    *(char *)(a0 + 0xc) = 0;
+-  }
+-  else if (!v10) {
+-    for (v5 = dat_20007474; v5 <= &dat_20007474[(unsigned int)dat_20008b55 * 5]; v5 = &v5[5]) {
+-      if (*(unsigned char *)&v5[4] & 4)
+-        *(unsigned char *)&v5[4] = *(unsigned char *)&v5[4] | 1;
++  else if (!v9) {
++    for (v4 = dat_20007474; v4 <= &dat_20007474[(unsigned int)dat_20008b55 * 5]; v4 = &v4[5]) {
++      if ((unsigned char)v4[4] & 4)
++        *(unsigned char *)&v4[4] = (unsigned char)v4[4] | 1;
+@@ -38 +32 @@
+-  while (!*(char *)&dat_20007474[dat_20007471 * 5 + 1]) {
++  while (!(char)dat_20007474[dat_20007471 * 5 + 1]) {
+@@ -41,4 +35,4 @@
+-  v7 = (int)*(char *)(a0 + 0xd);
+-  if ((0 <= v7) && (dat_20007471 != v7)) {
+-    v7 = sub_800fb88(a0,(unsigned char)dat_20008b5c,(unsigned int)dat_20008b59 * v7 + v8 & 0xff," ");
+-    v3 -= v7;
++  v5 = (int)*(char *)((int)a0 + 0xd);
++  if ((0 <= v5) && (dat_20007471 != v5)) {
++    v5 = sub_800fb88(a0,(unsigned char)dat_20008b5c,(unsigned int)dat_20008b59 * v5 + v7 & 0xff," ");
++    v2 -= v5;
+@@ -46,5 +40,5 @@
+-  if (0x1e <= v3) {
+-    if ((int)*(char *)(a0 + 0xd) != (int)dat_20007471) {
+-      v7 = sub_800fb88(a0,(unsigned char)dat_20008b5c,(unsigned int)dat_20008b59 * (int)dat_20007471 + v8 & 0xff,">");
+-      v3 -= v7;
+-      *(char *)(a0 + 0xd) = dat_20007471;
+
+### O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_803002c 0x803002c class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_803002c(int a0,int *a1)
++void sub_803002c(int a0,int *a1) // ternary x2
+@@ -3 +3 @@
+-  unsigned int v1; // r0
++  unsigned int *v1; // r0
+@@ -20,5 +20 @@
+-      if (dat_20008b9b) // branch-flip
+-        v1 = sub_802f854(3);
+-      else {
+-        v1 = sub_802f854(7);
+-      }
++      v1 = (dat_20008b9b) ? (unsigned int *)sub_802f854(3) : (unsigned int *)sub_802f854(7); // branch-flip
+@@ -26,2 +21,0 @@
+-    else if (dat_20008b9b) // branch-flip
+-      v1 = sub_802f854(5);
+@@ -29 +23 @@
+-      v1 = sub_802f854(6);
++      v1 = (dat_20008b9b) ? (unsigned int *)sub_802f854(5) : (unsigned int *)sub_802f854(6); // branch-flip
+@@ -33 +27 @@
+-    v1 = sub_802f854(5);
++    v1 = (unsigned int *)sub_802f854(5);
+
+### O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8032554 0x8032554 class=REVIEW layout=None 
+@@ -1 +1 @@
+-bool sub_8032554(unsigned int a0,int a1,unsigned int a2,unsigned int a3)
++bool sub_8032554(unsigned int *a0,unsigned int a1,unsigned int a2,unsigned int a3)
+@@ -5 +5 @@
+-  v1 = dat_20007a60 + 1 + a1 <= 0x60;
++  v1 = (int)(dat_20007a60 + 1 + a1) <= 0x60;
+@@ -8 +8 @@
+-    sub_8008ee0(dat_20007a60 + 0x20007a01,a0,a1,dat_20007a60 + 0x20007a00,a3);
++    sub_8008ee0((unsigned int *)(dat_20007a60 + 0x20007a01),a0,a1,dat_20007a60 + 0x20007a00,a3);
+
+### O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8034f74 0x8034f74 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int sub_8034f74(int a0,struct_54 *a1,unsigned int a2,unsigned int a3)
++int sub_8034f74(unsigned int *a0,struct_53 *a1,unsigned int a2,unsigned int a3)
+@@ -3 +3 @@
+-  int v1; // r3
++  unsigned char v1;
+@@ -6,3 +6,3 @@
+-  v1 = a1->field_0x3 + 6;
+-  *(char *)(a0 + v1) = (char)a1->field_0x0;
+-  *(char *)(a0 + v1 + 1) = (char)((unsigned short)a1->field_0x0 >> 8);
++  v1 = a1->field_0x3;
++  *(char *)((int)a0 + v1 + 6) = (char)a1->field_0x0;
++  *(char *)((int)a0 + v1 + 7) = (char)((unsigned short)a1->field_0x0 >> 8);
+
+### O2_coreutils_stripped_ginstall sub_dd10 0xdd10 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void * sub_dd10(int a0,void *a1,int a2,bool a3) // return-dupe
++char * sub_dd10(int a0,void *a1,int a2,bool a3) // return-dupe
+@@ -4,6 +4,6 @@
+-  unsigned long v10;
+-  void *v11;
+-  dirent *v12; // rax
+-  unsigned short *v13;
+-  void *v14;
+-  int *v15; // rax
++  char *v10;
++  dirent *v11; // rax
++  char *v12;
++  void *v13;
++  int *v14; // rax
++  unsigned short *v15; // rax
+@@ -12,23 +12,21 @@
+-  char *v18;
+-  char v19;
+-  unsigned int *v2;
+-  int v20; // stack - 0x44
+-  void *v21;
+-  char *v22;
+-  long v23; // r14
+-  unsigned long v24; // rcx
+-  long v25;
+-  unsigned char v26;
+-  long v27; // stack - 0xc0
+-  int v28; // stack - 0xa4
+-  unsigned long v29; // stack - 0xa0
+-  long v3;
+-  unsigned long v30; // stack - 0x98
+-  long v31; // stack - 0x70
+-  void *v32; // stack - 0x60
+-  unsigned short v4;
+-  bool v5;
+-  unsigned char v6;
+-  int v7;
+-  unsigned long v8; // rax
+-  long v9; // rax
++  char v18;
++  int v19; // stack - 0x44
++  long v2;
++  char *v20;
++  long v21; // r14
++  unsigned long v22; // rcx
++  long v23;
++  unsigned char v24;
++  long v25; // stack - 0xc0
++  int v26; // stack - 0xa4
++  unsigned long v27; // stack - 0xa0
++  unsigned long v28; // stack - 0x98
++  long v29; // stack - 0x70
++  unsigned short v3;
++  void *v30; // stack - 0x60
++  bool v4;
++  unsigned char v5;
++  int v6;
++  unsigned long v7; // rax
++  long v8; // rax
++  unsigned long v9;
+@@ -36,5 +34,5 @@
+-  v32 = (void *)sub_e530(a1);
+-  v27 = sub_e590(v32);
+-  v23 = (long)v32 - (long)a1;
+-  v8 = v27 + v23;
+-  v22 = dat_285a0;
++  v30 = (void *)sub_e530(a1);
++  v25 = sub_e590(v30);
++  v21 = (long)v30 - (long)a1;
++  v7 = v25 + v21;
++  v10 = dat_285a0;
+@@ -42,5 +40,5 @@
+-    v18 = getenv("SIMPLE_BACKUP_SUFFIX");
+-    v22 = "~";
+-    if (((v18) && (*v18)) && (v22 = (char *)sub_e530(v18), v18 != v22))
+-      v22 = "~";
+-    dat_285a0 = v22;
++    v12 = getenv("SIMPLE_BACKUP_SUFFIX");
++    v10 = "~";
+
+### O2_coreutils_stripped_sort sub_a430 0xa430 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_a430(long a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,void *a5)
++void sub_a430(long a0,unsigned long a1,unsigned long a2,FILE *a3,char *a4,void *a5)
+@@ -4 +4 @@
+-  unsigned long v10;
++  long v10;
+@@ -9,16 +9,16 @@
+-  long v15;
+-  int v16; // eax
+-  void *v17; // rax
+-  unsigned long *v18; // rax
+-  void *v19;
+-  long *v2;
+-  unsigned long *v20;
+-  long v21;
+-  unsigned long *v22;
+-  unsigned long *v23; // rdx
+-  unsigned long *v24;
+-  void *v25; // stack - 0x68
+-  unsigned long v26;
+-  unsigned long v27; // r14
+-  unsigned long v28;
+-  unsigned long v29;
++  unsigned long v15;
++  unsigned long v16;
++  unsigned long v17;
++  unsigned long v18;
++  unsigned long v19;
++  struct_7 *v2;
++  long v20;
++  int v21; // eax
++  void *v22; // rax
++  unsigned long *v23; // rax
++  unsigned char *v24;
++  unsigned long *v25;
++  void *v26;
++  long v27;
++  unsigned long *v28;
++  unsigned long *v29; // rdx
+@@ -26,17 +26,23 @@
+-  bool v30; // zf
+-  void *v31; // stack - 0xd0
+-  unsigned long v32; // stack - 0xc8
+-  void *v33; // stack - 0xc0
+-  void *v34; // stack - 0xb8
+-  void **v35; // stack - 0xb0
+-  unsigned long v36; // stack - 0x88
+-  unsigned long v37; // stack - 0x80
+-  unsigned long v38; // stack - 0x60
+-  long v39; // stack - 0x58
+-  unsigned long v4;
+-  long v40; // stack - 0x50
+-  unsigned long v5;
+-  long v6;
+-  long v7;
+-  unsigned long v8;
+-  unsigned long v9;
++  unsigned long *v30;
++  void *v31; // stack - 0x68
++  unsigned long v32;
++  unsigned long v33; // r14
++  unsigned long v34;
++  unsigned long v35;
++  bool v36; // zf
++  void *v37; // stack - 0xd0
++  unsigned long v38; // stack - 0xc8
++  void *v39; // stack - 0xc0
++  unsigned int *v4;
++  void *v40; // stack - 0xb8
++  void **v41; // stack - 0xb0
++  unsigned long v42; // stack - 0x88
++  unsigned long v43; // stack - 0x80
++  unsigned long v44; // stack - 0x60
++  long v45; // stack - 0x58
++  long v46; // stack - 0x50
++  char *v5;
++  struct_10 *v6;
++  struct_10 *v7;
++  long *v8;
++  long v9;
+
+### O2_coreutils_stripped_sort sub_b220 0xb220 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_b220(long a0,unsigned long a1,unsigned long a2,struct_6 *a3,unsigned long *a4,unsigned long a5,unsigned long a6)
++void sub_b220(long a0,unsigned long a1,unsigned long a2,struct_13 *a3,unsigned long *a4,FILE *a5,char *a6)
+@@ -15,4 +15,4 @@
+-  long v20;
+-  unsigned long *v21;
+-  char v22;
+-  long v23;
++  struct_11 *v20;
++  long v21;
++  unsigned long *v22;
++  char v23;
+@@ -20,2 +20,2 @@
+-  unsigned long *v25;
+-  unsigned long v26;
++  long v25;
++  unsigned long *v26;
+@@ -23,2 +23,2 @@
+-  unsigned long v28; // r15
+-  long v29;
++  unsigned long v28;
++  unsigned long v29; // r15
+@@ -26,6 +26,7 @@
+-  unsigned long v30; // stack - 0x70
+-  unsigned long v31; // stack - 0x68
+-  long v32; // stack - 0x60
+-  unsigned long *v33; // stack - 0x58
+-  unsigned long v34; // stack - 0x50
+-  unsigned long v35; // stack - 0x48
++  long v30;
++  unsigned long v31; // stack - 0x70
++  unsigned long v32; // stack - 0x68
++  long v33; // stack - 0x60
++  unsigned long *v34; // stack - 0x58
++  FILE *v35; // stack - 0x50
++  char *v36; // stack - 0x48
+@@ -37 +38 @@
+-  unsigned long v9;
++  char *v9;
+@@ -40,5 +41,5 @@
+-  v28 = a1 >> 1;
+-  v27 = a3->field_0x28;
+-  v26 = a3->field_0x30;
+-  v32 = a3->field_0x40;
+-  v35 = a6;
++  v29 = a1 >> 1;
++  v28 = a3->field_0x28;
++  v27 = a3->field_0x30;
++  v33 = a3->field_0x40;
++  v36 = a6;
+@@ -46,5 +47,5 @@
+-  v30 = v28;
+-  v31 = a2;
+-  v33 = a4;
+-  v34 = a5;
+-  if ((0x20000 <= v27 + v26) && (2 <= a1)) {
++  v31 = v29;
++  v32 = a2;
++  v34 = a4;
++  v35 = a5;
++  if ((0x20000 <= v28 + v27) && (2 <= a1)) {
+@@ -52 +53 @@
+-      sub_b220(a0 + a3->field_0x28 * -0x20,a1 - v28,a2,a3->field_0x48,a4,a5,v9);
++      sub_b220(a0 + a3->field_0x28 * -0x20,a1 - v29,a2,a3->field_0x48,a4,a5,v9);
+@@ -56,2 +57,2 @@
+-    v27 = a3->field_0x28;
+-    v26 = a3->field_0x30;
++    v28 = a3->field_0x28;
++    v27 = a3->field_0x30;
+@@ -59,4 +60,2 @@
+-  v23 = a0 + a2 * -0x20;
+-  v29 = a0 + v27 * -0x20;
+-  if (2 <= v26)
+-    sub_a180(v29,v26,v23 + (v27 >> 1) * -0x20,0);
++  v24 = a0 + a2 * -0x20;
++  v30 = a0 + v28 * -0x20;
+@@ -64 +63,3 @@
+-    sub_a180(a0,v27,v23,0);
++    sub_a180(v30,v27,v24 + (v28 >> 1) * -0x20,0);
++  if (2 <= v28)
+
+### O2_crazyflie_stripped_cf2-elf sub_8010838 0x8010838 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8010838(struct_11 *a0) // return-dupe x5
++void sub_8010838(struct_83 *a0) // return-dupe x5
+@@ -4,3 +4 @@
+-  unsigned int v10;
+-  int v11; // r7
+-  unsigned int v12 [2]; // stack - 0x1c
++  unsigned int v10 [2]; // stack - 0x1c
+@@ -10,3 +8,3 @@
+-  unsigned int v5; // r0
+-  unsigned int *v6; // r2
+-  unsigned int v7; // r2
++  int v5; // r0
++  int *v6; // r2
++  int v7; // r2
+@@ -14 +12 @@
+-  int v9; // r3
++  unsigned int v9;
+@@ -23 +21 @@
+-      sub_801ce44(*v6,1);
++      sub_801ce44((unsigned short *)*v6,1);
+@@ -36 +34 @@
+-  v12[0] = v8 & 2;
++  v10[0] = v8 & 2;
+@@ -38 +36 @@
+-    v10 = v8 & 4;
++    v9 = v8 & 4;
+@@ -46 +44 @@
+-        sub_803b530(a0->field_0x20,v12);
++        sub_803b530(a0->field_0x20,v10);
+@@ -49,4 +47,4 @@
+-        v9 = a0->field_0x18;
+-        v11 = a0->field_0x14;
+-        a0->field_0x18 = v9 + 1;
+-        *(char *)(v11 + v9) = sub_801ce64(v4);
++        v5 = a0->field_0x18;
++        v7 = a0->field_0x14;
++        a0->field_0x18 = v5 + 1;
++        *(char *)(v7 + v5) = sub_801ce64(v4);
+@@ -54,2 +52,2 @@
+-        v12[0] = v2 & 4;
+-        sub_803b530(a0->field_0x20,v12);
++        v10[0] = v2 & 4;
++        sub_803b530(a0->field_0x20,v10);
+@@ -57 +55 @@
+-      if (v12[0]) {
++      if (v10[0]) {
+@@ -70,4 +68,4 @@
+-      v9 = a0->field_0x18;
+-      v11 = a0->field_0x14;
+-      a0->field_0x18 = v9 + 1;
+-      *(char *)(v11 + v9) = sub_801ce64(v4);
++      v5 = a0->field_0x18;
++      v7 = a0->field_0x14;
++      a0->field_0x18 = v5 + 1;
++      *(char *)(v7 + v5) = sub_801ce64(v4);
+@@ -82,3 +80,3 @@
+-        v9 = a0->field_0x18;
+-        a0->field_0x18 = v9 + 1;
+-        sub_801ce60(v4,(unsigned char)*(char *)(a0->field_0x14 + v9));
++        v5 = a0->field_0x18;
++        a0->field_0x18 = v5 + 1;
++        sub_801ce60(v4,(unsigned char)*(char *)(a0->field_0x14 + v5));
+@@ -92 +90 @@
+-      v10 = v8 & 0x40;
++      v9 = v8 & 0x40;
+@@ -94 +92 @@
+-    sub_801cea4(v4,0x400,v10); // return-dupe, tail-call
++    sub_801cea4(v4,0x400,v9); // return-dupe, tail-call
+@@ -106 +104 @@
+-      sub_801ca80(*(unsigned int *)((int)a0->field_0x0 + 0x40),0x14,1);
++      sub_801ca80((struct_6 *)a0->field_0x0[0x10],0x14,1);
+@@ -108 +106 @@
+-      sub_801c9f0(*(unsigned int *)((int)a0->field_0x0 + 0x40),1);
++      sub_801c9f0((unsigned int *)a0->field_0x0[0x10],1);
+@@ -124,2 +122,2 @@
+-  v10 = 1;
+-  sub_801cea4(v4,0x400,v10);
++  v9 = 1;
++  sub_801cea4(v4,0x400,v9);
+
+### O2_crazyflie_stripped_cf2-elf sub_8010af8 0x8010af8 class=REVIEW layout=None 
+@@ -1 +1 @@
+-bool sub_8010af8(struct_13 *a0,unsigned int a1,unsigned int a2,unsigned int a3)
++bool sub_8010af8(struct_30 *a0,unsigned int *a1,unsigned int a2,unsigned int a3)
+@@ -4 +4 @@
+-  int v2; // r0
++  struct_12 *v2; // r0
+@@ -7 +7 @@
+-  sub_803b778(a0->field_0x74,0xffffffff,a2,a3,a3);
++  sub_803b778(a0->field_0x74,-1,a2,a3,a3);
+@@ -18,2 +18,2 @@
+-    sub_801c998(*(unsigned int *)((int)a0->field_0x0 + 0x40),&a0->field_0x78[0x50]);
+-    sub_801c9f0(*(unsigned int *)((int)a0->field_0x0 + 0x40),1);
++    sub_801c998((struct_5 *)a0->field_0x0[0x10],&a0->field_0x78[0x50]);
++    sub_801c9f0((unsigned int *)a0->field_0x0[0x10],1);
+@@ -33 +33 @@
+-  sub_803b1cc(a0->field_0x74,0,0);
++  sub_803b1cc(a0->field_0x74,NULL,0);
+
+### O2_crazyflie_stripped_cf2-elf sub_8012664 0x8012664 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8012664(void)
++void sub_8012664(void) // ternary
+@@ -3 +3 @@
+-  unsigned int v1; // r0
++  unsigned int *v1; // r0
+@@ -6,5 +6 @@
+-  if (v2 & 4) // branch-flip
+-    v1 = getProcessStackPointer();
+-  else {
+-    v1 = getMainStackPointer();
+-  }
++  v1 = (v2 & 4) ? (unsigned int *)getProcessStackPointer() : (unsigned int *)getMainStackPointer(); // branch-flip
+
+### O2_crazyflie_stripped_cf2-elf sub_801c15c 0x801c15c class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int sub_801c15c(int a0,char *a1,unsigned int a2,int *a3)
++unsigned int sub_801c15c(unsigned int *a0,char *a1,unsigned int a2,int *a3)
+@@ -4,6 +4,4 @@
+-  char *v10;
+-  unsigned int v11; // r2
+-  unsigned int v12; // r3
+-  unsigned int v13;
+-  char *v14;
+-  int v15 [2]; // stack - 0x2c
++  int v10;
++  unsigned int v11;
++  char *v12;
++  int v13 [2]; // stack - 0x2c
+@@ -11,7 +9,7 @@
+-  int v3;
+-  unsigned int v4; // r0
+-  int v5;
+-  unsigned int v6; // r1
+-  char *v7; // r1
+-  unsigned char v8;
+-  unsigned int v9;
++  unsigned int v3; // r0
++  int v4;
++  char *v5; // r1
++  unsigned char v6;
++  unsigned int v7;
++  char *v8;
++  unsigned int v9; // r1
+@@ -20,5 +18,5 @@
+-  v4 = sub_801aa2c(a0,v15);
+-  if ((!v4) && (v4 = (unsigned int)*(unsigned char *)(a0 + 0x11), !v4)) {
+-    v8 = *(unsigned char *)(a0 + 0x10);
+-    if (0 <= (int)((unsigned int)v8 << 0x1e)) // branch-flip
+-      v4 = 7;
++  v3 = sub_801aa2c(a0,v13);
++  if ((!v3) && (v3 = (unsigned int)*(unsigned char *)((int)a0 + 0x11), !v3)) {
++    v6 = *(unsigned char *)&a0[4];
++    if (0 <= (int)((unsigned int)v6 << 0x1e)) // branch-flip
++      v3 = 7;
+@@ -26,3 +24,3 @@
+-      v12 = *(unsigned int *)(a0 + 0x14);
+-      if (CARRY4(v12,a2))
+-        a2 = ~v12;
++      v9 = a0[5];
++      if (CARRY4(v9,a2))
++        a2 = ~v9;
+@@ -31,3 +29,3 @@
+-          v3 = v15[0];
+-          v9 = v12 & 0x1ff;
+-          if (v9) { // branch-flip
++          v10 = v13[0];
++          v7 = v9 & 0x1ff;
++          if (v7) { // branch-flip
+@@ -35,5 +33,5 @@
+-            v13 = 0x200 - v9;
+-            if (a2 <= 0x200 - v9)
+-              v13 = a2;
+-            v14 = (char *)(a0 + v9 + 0x27);
+-            v10 = &a1[v13];
++            v11 = 0x200 - v7;
++            if (a2 <= 0x200 - v7)
++              v11 = a2;
++            v12 = (char *)((int)a0 + v7 + 0x27);
++            v8 = &a1[v11];
+@@ -41,6 +39,6 @@
+-              v7 = &a1[1];
+-              v14 = &v14[1];
+-              *v14 = *a1;
+-              a1 = v7;
+-            } while (v7 != v10);
+-            *(unsigned char *)(a0 + 0x10) = *(unsigned char *)(a0 + 0x10) | 0x80;
++              v5 = &a1[1];
++              v12 = &v12[1];
++              *v12 = *a1;
++              a1 = v5;
++            } while (v5 != v8);
++            *(unsigned char *)&a0[4] = *(unsigned char *)&a0[4] | 0x80;
+@@ -49,2 +47,2 @@
+-            v9 = (unsigned int)*(unsigned short *)(v15[0] + 10) - 1 & v12 >> 9;
+
+### O2_crazyflie_stripped_cf2-elf sub_80267e4 0x80267e4 class=REVIEW layout=None 
+@@ -14 +14 @@
+-  char *v7; // r5
++  unsigned int *v7; // r5
+@@ -93 +93 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -105 +105 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -113 +113 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -123 +123 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -137,2 +137,2 @@
+-      v14 = sub_8007a70((int)v14,(int)((unsigned long long)v14 >> 0x20),0,0x408f4000);
+-      v13 = (float)sub_8007d90((int)v14,(int)((unsigned long long)v14 >> 0x20)) * 65535.0;
++      v14 = sub_8007a70((int)v14,(unsigned int)((unsigned long long)v14 >> 0x20),0,0x408f4000);
++      v13 = (float)sub_8007d90((unsigned int)v14,(unsigned int)((unsigned long long)v14 >> 0x20)) * 65535.0;
+@@ -146 +146 @@
+-    sub_80072ac((char *)((int)a0 + 0x1d),0,0);
++    sub_80072ac((unsigned int *)((int)a0 + 0x1d),NULL,0);
+@@ -154 +154 @@
+-      } while (v6 != &((char *)((int)a0 + 0x1d))[(unsigned int)v2 - 1 & 0xffff]);
++      } while (v6 != (unsigned char *)((int)a0 + 0x1d + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -170 +170 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -183 +183 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -187,2 +187,2 @@
+-        v7 = (char *)((int)a0 + 0x1d);
+-        sub_80072ac(v7,0x8044310,4);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
++        sub_80072ac(v7,(unsigned int *)0x8044310,4);
+@@ -200 +200 @@
+-          } while (&v7[(unsigned int)v2 - 1 & 0xffff] != v6);
++          } while ((unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)) != v6);
+@@ -206 +206 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -217 +217 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -221,2 +221,2 @@
+-        v7 = (char *)((int)a0 + 0x1d);
+-        sub_80072ac(v7,sub_8036708(),4);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
++        sub_80072ac(v7,(unsigned int *)sub_8036708(),4);
+@@ -235 +235 @@
+-          } while (&v7[(unsigned int)v2 - 1 & 0xffff] != v6);
++          } while ((unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)) != v6);
+@@ -239 +239 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -253 +253 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -263 +263 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -277 +277 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -298 +298 @@
+-      v7 = (char *)((int)a0 + 0x1d);
++      v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -313 +313 @@
+-        } while (&v7[(unsigned int)v2 - 1 & 0xffff] != v6);
++        } while ((unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)) != v6);
+@@ -321 +321 @@
+-      v7 = (char *)((int)a0 + 0x1d);
++      v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -333 +333 @@
+-        } while (&v7[(unsigned int)v2 - 1 & 0xffff] != v6);
++        } while ((unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)) != v6);
+@@ -339 +339 @@
+-      v7 = (char *)((int)a0 + 0x1d);
+
+### O2_crazyflie_stripped_cf2-elf sub_8028640 0x8028640 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int sub_8028640(float a0,float a1,float a2,struct_102 *a3,struct_101 *a4,int a5,int a6)
++unsigned int sub_8028640(float a0,float a1,float a2,struct_121 *a3,struct_117 *a4,int a5,int a6)
+@@ -8 +8 @@
+-  a3->field_0x4 = &a4->field_0x0;
++  a3->field_0x4 = a4;
+@@ -11,3 +11,3 @@
+-    *(unsigned int *)a4->field_0x8 = 0;
+-    *(unsigned int *)a4->field_0xc = 0;
+-    *(unsigned int *)a4->field_0x10 = 0;
++    a4->field_0x8 = 0.0;
++    a4->field_0xc = 0.0;
++    a4->field_0x10 = 0.0;
+@@ -19,3 +19,3 @@
+-    *(float *)a4->field_0xc = a1 - v2;
+-    *(float *)a4->field_0x8 = a0 - v1;
+-    *(float *)a4->field_0x10 = a2 - v3;
++    a4->field_0xc = a1 - v2;
++    a4->field_0x8 = a0 - v1;
++    a4->field_0x10 = a2 - v3;
+@@ -24,3 +24,3 @@
+-  *(unsigned int *)a4->field_0x8 = 0;
+-  *(unsigned int *)a4->field_0xc = 0;
+-  *(unsigned int *)a4->field_0x10 = 0;
++  a4->field_0x8 = 0.0;
++  a4->field_0xc = 0.0;
++  a4->field_0x10 = 0.0;
+
+### O2_crazyflie_stripped_cf2-elf sub_80286c0 0x80286c0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int sub_80286c0(float a0,float a1,float a2,struct_102 *a3,struct_103 *a4,int a5)
++unsigned int sub_80286c0(float a0,float a1,float a2,struct_122 *a3,struct_123 *a4,int a5)
+@@ -11,3 +11,3 @@
+-    *(unsigned int *)a4->field_0xc = 0;
+-    *(unsigned int *)a4->field_0x10 = 0;
+-    *(unsigned int *)a4->field_0x14 = 0;
++    a4->field_0xc = 0.0;
++    a4->field_0x10 = 0.0;
++    a4->field_0x14 = 0.0;
+@@ -16,3 +16,3 @@
+-  *(unsigned int *)a4->field_0xc = 0;
+-  *(unsigned int *)a4->field_0x10 = 0;
+-  *(unsigned int *)a4->field_0x14 = 0;
++  a4->field_0xc = 0.0;
++  a4->field_0x10 = 0.0;
++  a4->field_0x14 = 0.0;
+@@ -20,3 +20,3 @@
+-  *(float *)a4->field_0x10 = a1 - v2;
+-  *(float *)a4->field_0xc = a0 - v1;
+-  *(float *)a4->field_0x14 = a2 - v3;
++  a4->field_0x10 = a1 - v2;
++  a4->field_0xc = a0 - v1;
++  a4->field_0x14 = a2 - v3;
+
+### O2_crazyflie_stripped_cf2-elf sub_8031268 0x8031268 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8031268(struct_117 *a0,int a1,int a2,int a3,unsigned int a4)
++void sub_8031268(struct_146 *a0,int a1,float *a2,int a3,unsigned int a4)
+@@ -32 +32 @@
+-      sub_80340bc(0x2000c4ac,0x2000c4d4,a1,a3,a3);
++      sub_80340bc((float *)0x2000c4ac,0x2000c4d4,a1,a3,a3);
+@@ -50 +50 @@
+-      sub_80340bc(0x2000c4ac,0x2000c4d4,a1,a3,a3);
++      sub_80340bc((float *)0x2000c4ac,0x2000c4d4,a1,a3,a3);
+@@ -124,0 +125 @@
++  v20 = a2[4];
+@@ -128,2 +129,2 @@
+-  v20 = *(float *)(a2 + 0x10) * 0.017453292;
+-  dat_2000c4a0 = *(float *)(a2 + 0xc) * 0.017453292;
++  v19 = a2[5];
++  dat_2000c4a0 = a2[3] * 0.017453292;
+@@ -131 +132 @@
+-  dat_20001590 = -v20;
++  dat_20001590 = -(v20 * 0.017453292);
+@@ -135 +135,0 @@
+-  v19 = *(float *)(a2 + 0x14) * 0.017453292;
+@@ -137 +137 @@
+-  dat_2000c4a8 = -v19;
++  dat_2000c4a8 = -(v19 * 0.017453292);
+@@ -161 +161 @@
+-  dat_200014cc = (v19 + dat_2000c4c0) * dat_200015e4;
++  dat_200014cc = (v19 * 0.017453292 + dat_2000c4c0) * dat_200015e4;
+@@ -165 +165 @@
+-  dat_200014c8 = (v20 + dat_2000c4bc) * dat_200015e0;
++  dat_200014c8 = (v20 * 0.017453292 + dat_2000c4bc) * dat_200015e0;
+
+### O2_crazyflie_stripped_cf2-elf sub_803cc84 0x803cc84 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int sub_803cc84(int a0,int a1,unsigned int a2)
++int sub_803cc84(struct_135 *a0,int a1,int a2)
+@@ -25 +25 @@
+-    a0 += 0x24;
++    a0 = &a0[1];
+
+### O2_crazyflie_stripped_firmware-elf sub_8010838 0x8010838 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8010838(struct_11 *a0) // return-dupe x5
++void sub_8010838(struct_83 *a0) // return-dupe x5
+@@ -4,3 +4 @@
+-  unsigned int v10;
+-  int v11; // r7
+-  unsigned int v12 [2]; // stack - 0x1c
++  unsigned int v10 [2]; // stack - 0x1c
+@@ -10,3 +8,3 @@
+-  unsigned int v5; // r0
+-  unsigned int *v6; // r2
+-  unsigned int v7; // r2
++  int v5; // r0
++  int *v6; // r2
++  int v7; // r2
+@@ -14 +12 @@
+-  int v9; // r3
++  unsigned int v9;
+@@ -23 +21 @@
+-      sub_801ce44(*v6,1);
++      sub_801ce44((unsigned short *)*v6,1);
+@@ -36 +34 @@
+-  v12[0] = v8 & 2;
++  v10[0] = v8 & 2;
+@@ -38 +36 @@
+-    v10 = v8 & 4;
++    v9 = v8 & 4;
+@@ -46 +44 @@
+-        sub_803b530(a0->field_0x20,v12);
++        sub_803b530(a0->field_0x20,v10);
+@@ -49,4 +47,4 @@
+-        v9 = a0->field_0x18;
+-        v11 = a0->field_0x14;
+-        a0->field_0x18 = v9 + 1;
+-        *(char *)(v11 + v9) = sub_801ce64(v4);
++        v5 = a0->field_0x18;
++        v7 = a0->field_0x14;
++        a0->field_0x18 = v5 + 1;
++        *(char *)(v7 + v5) = sub_801ce64(v4);
+@@ -54,2 +52,2 @@
+-        v12[0] = v2 & 4;
+-        sub_803b530(a0->field_0x20,v12);
++        v10[0] = v2 & 4;
++        sub_803b530(a0->field_0x20,v10);
+@@ -57 +55 @@
+-      if (v12[0]) {
++      if (v10[0]) {
+@@ -70,4 +68,4 @@
+-      v9 = a0->field_0x18;
+-      v11 = a0->field_0x14;
+-      a0->field_0x18 = v9 + 1;
+-      *(char *)(v11 + v9) = sub_801ce64(v4);
++      v5 = a0->field_0x18;
++      v7 = a0->field_0x14;
++      a0->field_0x18 = v5 + 1;
++      *(char *)(v7 + v5) = sub_801ce64(v4);
+@@ -82,3 +80,3 @@
+-        v9 = a0->field_0x18;
+-        a0->field_0x18 = v9 + 1;
+-        sub_801ce60(v4,(unsigned char)*(char *)(a0->field_0x14 + v9));
++        v5 = a0->field_0x18;
++        a0->field_0x18 = v5 + 1;
++        sub_801ce60(v4,(unsigned char)*(char *)(a0->field_0x14 + v5));
+@@ -92 +90 @@
+-      v10 = v8 & 0x40;
++      v9 = v8 & 0x40;
+@@ -94 +92 @@
+-    sub_801cea4(v4,0x400,v10); // return-dupe, tail-call
++    sub_801cea4(v4,0x400,v9); // return-dupe, tail-call
+@@ -106 +104 @@
+-      sub_801ca80(*(unsigned int *)((int)a0->field_0x0 + 0x40),0x14,1);
++      sub_801ca80((struct_6 *)a0->field_0x0[0x10],0x14,1);
+@@ -108 +106 @@
+-      sub_801c9f0(*(unsigned int *)((int)a0->field_0x0 + 0x40),1);
++      sub_801c9f0((unsigned int *)a0->field_0x0[0x10],1);
+@@ -124,2 +122,2 @@
+-  v10 = 1;
+-  sub_801cea4(v4,0x400,v10);
++  v9 = 1;
++  sub_801cea4(v4,0x400,v9);
+
+### O2_crazyflie_stripped_firmware-elf sub_8010af8 0x8010af8 class=REVIEW layout=None 
+@@ -1 +1 @@
+-bool sub_8010af8(struct_13 *a0,unsigned int a1,unsigned int a2,unsigned int a3)
++bool sub_8010af8(struct_30 *a0,unsigned int *a1,unsigned int a2,unsigned int a3)
+@@ -4 +4 @@
+-  int v2; // r0
++  struct_12 *v2; // r0
+@@ -7 +7 @@
+-  sub_803b778(a0->field_0x74,0xffffffff,a2,a3,a3);
++  sub_803b778(a0->field_0x74,-1,a2,a3,a3);
+@@ -18,2 +18,2 @@
+-    sub_801c998(*(unsigned int *)((int)a0->field_0x0 + 0x40),&a0->field_0x78[0x50]);
+-    sub_801c9f0(*(unsigned int *)((int)a0->field_0x0 + 0x40),1);
++    sub_801c998((struct_5 *)a0->field_0x0[0x10],&a0->field_0x78[0x50]);
++    sub_801c9f0((unsigned int *)a0->field_0x0[0x10],1);
+@@ -33 +33 @@
+-  sub_803b1cc(a0->field_0x74,0,0);
++  sub_803b1cc(a0->field_0x74,NULL,0);
+
+### O2_crazyflie_stripped_firmware-elf sub_8012664 0x8012664 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8012664(void)
++void sub_8012664(void) // ternary
+@@ -3 +3 @@
+-  unsigned int v1; // r0
++  unsigned int *v1; // r0
+@@ -6,5 +6 @@
+-  if (v2 & 4) // branch-flip
+-    v1 = getProcessStackPointer();
+-  else {
+-    v1 = getMainStackPointer();
+-  }
++  v1 = (v2 & 4) ? (unsigned int *)getProcessStackPointer() : (unsigned int *)getMainStackPointer(); // branch-flip
+
+### O2_crazyflie_stripped_firmware-elf sub_801c15c 0x801c15c class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int sub_801c15c(int a0,char *a1,unsigned int a2,int *a3)
++unsigned int sub_801c15c(unsigned int *a0,char *a1,unsigned int a2,int *a3)
+@@ -4,6 +4,4 @@
+-  char *v10;
+-  unsigned int v11; // r2
+-  unsigned int v12; // r3
+-  unsigned int v13;
+-  char *v14;
+-  int v15 [2]; // stack - 0x2c
++  int v10;
++  unsigned int v11;
++  char *v12;
++  int v13 [2]; // stack - 0x2c
+@@ -11,7 +9,7 @@
+-  int v3;
+-  unsigned int v4; // r0
+-  int v5;
+-  unsigned int v6; // r1
+-  char *v7; // r1
+-  unsigned char v8;
+-  unsigned int v9;
++  unsigned int v3; // r0
++  int v4;
++  char *v5; // r1
++  unsigned char v6;
++  unsigned int v7;
++  char *v8;
++  unsigned int v9; // r1
+@@ -20,5 +18,5 @@
+-  v4 = sub_801aa2c(a0,v15);
+-  if ((!v4) && (v4 = (unsigned int)*(unsigned char *)(a0 + 0x11), !v4)) {
+-    v8 = *(unsigned char *)(a0 + 0x10);
+-    if (0 <= (int)((unsigned int)v8 << 0x1e)) // branch-flip
+-      v4 = 7;
++  v3 = sub_801aa2c(a0,v13);
++  if ((!v3) && (v3 = (unsigned int)*(unsigned char *)((int)a0 + 0x11), !v3)) {
++    v6 = *(unsigned char *)&a0[4];
++    if (0 <= (int)((unsigned int)v6 << 0x1e)) // branch-flip
++      v3 = 7;
+@@ -26,3 +24,3 @@
+-      v12 = *(unsigned int *)(a0 + 0x14);
+-      if (CARRY4(v12,a2))
+-        a2 = ~v12;
++      v9 = a0[5];
++      if (CARRY4(v9,a2))
++        a2 = ~v9;
+@@ -31,3 +29,3 @@
+-          v3 = v15[0];
+-          v9 = v12 & 0x1ff;
+-          if (v9) { // branch-flip
++          v10 = v13[0];
++          v7 = v9 & 0x1ff;
++          if (v7) { // branch-flip
+@@ -35,5 +33,5 @@
+-            v13 = 0x200 - v9;
+-            if (a2 <= 0x200 - v9)
+-              v13 = a2;
+-            v14 = (char *)(a0 + v9 + 0x27);
+-            v10 = &a1[v13];
++            v11 = 0x200 - v7;
++            if (a2 <= 0x200 - v7)
++              v11 = a2;
++            v12 = (char *)((int)a0 + v7 + 0x27);
++            v8 = &a1[v11];
+@@ -41,6 +39,6 @@
+-              v7 = &a1[1];
+-              v14 = &v14[1];
+-              *v14 = *a1;
+-              a1 = v7;
+-            } while (v7 != v10);
+-            *(unsigned char *)(a0 + 0x10) = *(unsigned char *)(a0 + 0x10) | 0x80;
++              v5 = &a1[1];
++              v12 = &v12[1];
++              *v12 = *a1;
++              a1 = v5;
++            } while (v5 != v8);
++            *(unsigned char *)&a0[4] = *(unsigned char *)&a0[4] | 0x80;
+@@ -49,2 +47,2 @@
+-            v9 = (unsigned int)*(unsigned short *)(v15[0] + 10) - 1 & v12 >> 9;
+
+### O2_crazyflie_stripped_firmware-elf sub_80267e4 0x80267e4 class=REVIEW layout=None 
+@@ -14 +14 @@
+-  char *v7; // r5
++  unsigned int *v7; // r5
+@@ -93 +93 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -105 +105 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -113 +113 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -123 +123 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -137,2 +137,2 @@
+-      v14 = sub_8007a70((int)v14,(int)((unsigned long long)v14 >> 0x20),0,0x408f4000);
+-      v13 = (float)sub_8007d90((int)v14,(int)((unsigned long long)v14 >> 0x20)) * 65535.0;
++      v14 = sub_8007a70((int)v14,(unsigned int)((unsigned long long)v14 >> 0x20),0,0x408f4000);
++      v13 = (float)sub_8007d90((unsigned int)v14,(unsigned int)((unsigned long long)v14 >> 0x20)) * 65535.0;
+@@ -146 +146 @@
+-    sub_80072ac((char *)((int)a0 + 0x1d),0,0);
++    sub_80072ac((unsigned int *)((int)a0 + 0x1d),NULL,0);
+@@ -154 +154 @@
+-      } while (v6 != &((char *)((int)a0 + 0x1d))[(unsigned int)v2 - 1 & 0xffff]);
++      } while (v6 != (unsigned char *)((int)a0 + 0x1d + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -170 +170 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -183 +183 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -187,2 +187,2 @@
+-        v7 = (char *)((int)a0 + 0x1d);
+-        sub_80072ac(v7,0x8044310,4);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
++        sub_80072ac(v7,(unsigned int *)0x8044310,4);
+@@ -200 +200 @@
+-          } while (&v7[(unsigned int)v2 - 1 & 0xffff] != v6);
++          } while ((unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)) != v6);
+@@ -206 +206 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -217 +217 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -221,2 +221,2 @@
+-        v7 = (char *)((int)a0 + 0x1d);
+-        sub_80072ac(v7,sub_8036708(),4);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
++        sub_80072ac(v7,(unsigned int *)sub_8036708(),4);
+@@ -235 +235 @@
+-          } while (&v7[(unsigned int)v2 - 1 & 0xffff] != v6);
++          } while ((unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)) != v6);
+@@ -239 +239 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -253 +253 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -263 +263 @@
+-        v7 = (char *)((int)a0 + 0x1d);
++        v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -277 +277 @@
+-          } while (v6 != &v7[(unsigned int)v2 - 1 & 0xffff]);
++          } while (v6 != (unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)));
+@@ -298 +298 @@
+-      v7 = (char *)((int)a0 + 0x1d);
++      v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -313 +313 @@
+-        } while (&v7[(unsigned int)v2 - 1 & 0xffff] != v6);
++        } while ((unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)) != v6);
+@@ -321 +321 @@
+-      v7 = (char *)((int)a0 + 0x1d);
++      v7 = (unsigned int *)((int)a0 + 0x1d);
+@@ -333 +333 @@
+-        } while (&v7[(unsigned int)v2 - 1 & 0xffff] != v6);
++        } while ((unsigned char *)((int)v7 + ((unsigned int)v2 - 1 & 0xffff)) != v6);
+@@ -339 +339 @@
+-      v7 = (char *)((int)a0 + 0x1d);
+
+### O2_crazyflie_stripped_firmware-elf sub_8028640 0x8028640 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int sub_8028640(float a0,float a1,float a2,struct_102 *a3,struct_101 *a4,int a5,int a6)
++unsigned int sub_8028640(float a0,float a1,float a2,struct_121 *a3,struct_117 *a4,int a5,int a6)
+@@ -8 +8 @@
+-  a3->field_0x4 = &a4->field_0x0;
++  a3->field_0x4 = a4;
+@@ -11,3 +11,3 @@
+-    *(unsigned int *)a4->field_0x8 = 0;
+-    *(unsigned int *)a4->field_0xc = 0;
+-    *(unsigned int *)a4->field_0x10 = 0;
++    a4->field_0x8 = 0.0;
++    a4->field_0xc = 0.0;
++    a4->field_0x10 = 0.0;
+@@ -19,3 +19,3 @@
+-    *(float *)a4->field_0xc = a1 - v2;
+-    *(float *)a4->field_0x8 = a0 - v1;
+-    *(float *)a4->field_0x10 = a2 - v3;
++    a4->field_0xc = a1 - v2;
++    a4->field_0x8 = a0 - v1;
++    a4->field_0x10 = a2 - v3;
+@@ -24,3 +24,3 @@
+-  *(unsigned int *)a4->field_0x8 = 0;
+-  *(unsigned int *)a4->field_0xc = 0;
+-  *(unsigned int *)a4->field_0x10 = 0;
++  a4->field_0x8 = 0.0;
++  a4->field_0xc = 0.0;
++  a4->field_0x10 = 0.0;
+
+### O2_crazyflie_stripped_firmware-elf sub_80286c0 0x80286c0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int sub_80286c0(float a0,float a1,float a2,struct_102 *a3,struct_103 *a4,int a5)
++unsigned int sub_80286c0(float a0,float a1,float a2,struct_122 *a3,struct_123 *a4,int a5)
+@@ -11,3 +11,3 @@
+-    *(unsigned int *)a4->field_0xc = 0;
+-    *(unsigned int *)a4->field_0x10 = 0;
+-    *(unsigned int *)a4->field_0x14 = 0;
++    a4->field_0xc = 0.0;
++    a4->field_0x10 = 0.0;
++    a4->field_0x14 = 0.0;
+@@ -16,3 +16,3 @@
+-  *(unsigned int *)a4->field_0xc = 0;
+-  *(unsigned int *)a4->field_0x10 = 0;
+-  *(unsigned int *)a4->field_0x14 = 0;
++  a4->field_0xc = 0.0;
++  a4->field_0x10 = 0.0;
++  a4->field_0x14 = 0.0;
+@@ -20,3 +20,3 @@
+-  *(float *)a4->field_0x10 = a1 - v2;
+-  *(float *)a4->field_0xc = a0 - v1;
+-  *(float *)a4->field_0x14 = a2 - v3;
++  a4->field_0x10 = a1 - v2;
++  a4->field_0xc = a0 - v1;
++  a4->field_0x14 = a2 - v3;
+
+### O2_crazyflie_stripped_firmware-elf sub_8031268 0x8031268 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8031268(struct_117 *a0,int a1,int a2,int a3,unsigned int a4)
++void sub_8031268(struct_146 *a0,int a1,float *a2,int a3,unsigned int a4)
+@@ -32 +32 @@
+-      sub_80340bc(0x2000c4ac,0x2000c4d4,a1,a3,a3);
++      sub_80340bc((float *)0x2000c4ac,0x2000c4d4,a1,a3,a3);
+@@ -50 +50 @@
+-      sub_80340bc(0x2000c4ac,0x2000c4d4,a1,a3,a3);
++      sub_80340bc((float *)0x2000c4ac,0x2000c4d4,a1,a3,a3);
+@@ -124,0 +125 @@
++  v20 = a2[4];
+@@ -128,2 +129,2 @@
+-  v20 = *(float *)(a2 + 0x10) * 0.017453292;
+-  dat_2000c4a0 = *(float *)(a2 + 0xc) * 0.017453292;
++  v19 = a2[5];
++  dat_2000c4a0 = a2[3] * 0.017453292;
+@@ -131 +132 @@
+-  dat_20001590 = -v20;
++  dat_20001590 = -(v20 * 0.017453292);
+@@ -135 +135,0 @@
+-  v19 = *(float *)(a2 + 0x14) * 0.017453292;
+@@ -137 +137 @@
+-  dat_2000c4a8 = -v19;
++  dat_2000c4a8 = -(v19 * 0.017453292);
+@@ -161 +161 @@
+-  dat_200014cc = (v19 + dat_2000c4c0) * dat_200015e4;
++  dat_200014cc = (v19 * 0.017453292 + dat_2000c4c0) * dat_200015e4;
+@@ -165 +165 @@
+-  dat_200014c8 = (v20 + dat_2000c4bc) * dat_200015e0;
++  dat_200014c8 = (v20 * 0.017453292 + dat_2000c4bc) * dat_200015e0;
+
+### O2_crazyflie_stripped_firmware-elf sub_803cc84 0x803cc84 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int sub_803cc84(int a0,int a1,unsigned int a2)
++int sub_803cc84(struct_135 *a0,int a1,int a2)
+@@ -25 +25 @@
+-    a0 += 0x24;
++    a0 = &a0[1];
+
+### O2_dexter_stripped_dexter-dll DownloadFile 0x69942570 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int DownloadFile(unsigned int a0)
++unsigned int DownloadFile(char *a0)
+@@ -3,13 +3,13 @@
+-  unsigned int v1; // eax
+-  int v10; // ebp
+-  unsigned int *v11; // esi
+-  unsigned int v12;
+-  int v13;
+-  int v2; // eax
+-  unsigned int v3; // eax
+-  int v4;
+-  char v5 [251];
+-  char v6 [63];
+-  char v7 [548];
+-  int v8 [8]; // stack - 0x390
+-  unsigned int v9; // eax
++  char *v1;
++  int v10 [8]; // stack - 0x390
++  unsigned int v11; // eax
++  int *v12; // esi
++  unsigned int v13;
++  unsigned int v2; // eax
++  int v3; // eax
++  char *v4; // eax
++  int v5;
++  int v6;
++  char v7 [251];
++  char v8 [63];
++  char v9 [548];
+@@ -17,15 +17,15 @@
+-  v12 = a0;
+-  v8[2] = 0;
+-  v8[1] = 0x84200000;
+-  v8[0] = 0;
+-  v13 = dat_6994c720;
+-  v1 = InternetOpenUrlA(dat_6994c720,a0,0);
+-  _memset(&v4,0,0x40);
+-  CopyTill(v5,v12,0x3f);
+-  v2 = GetCookie(v5,&v4);
+-  v8[3] = 0;
+-  if (v2) {
+-    v2 = lstrlenA(s_69948058);
+-    if (v6[v2] == '(') {
+-      CopyTill(v7,&v6[v2 + 1],0x29);
+-      v9 = _atoi(v7);
++  v1 = a0;
++  v10[2] = 0;
++  v10[1] = 0x84200000;
++  v10[0] = 0;
++  v5 = dat_6994c720;
++  v2 = InternetOpenUrlA(dat_6994c720,a0,0);
++  _memset(&v6,0,0x40);
++  CopyTill(v7,v1,0x3f);
++  v3 = GetCookie(v7,&v6);
++  v10[3] = 0;
++  if (v3) {
++    v3 = lstrlenA(s_69948058);
++    if (v8[v3] == '(') {
++      CopyTill(v9,&v8[v3 + 1],0x29);
++      v11 = _atoi(v9);
+@@ -33,6 +33,6 @@
+-    v12 = v9;
+-    v2 = HeapAlloc(dat_6994c948,0,v9);
+-    v10 = 0;
+-    VirtualAlloc(0,v9,0x3000,4);
+-    v8[0] = 0;
+-    _memset(v7,0,0x200);
++    v13 = v11;
++    v4 = (char *)HeapAlloc(dat_6994c948,0,v11);
++    v3 = 0;
++    VirtualAlloc(0,v11,0x3000,4);
++    v10[0] = 0;
++    _memset(v9,0,0x200);
+@@ -40,6 +40,6 @@
+-      if ((!InternetReadFile(v1,v7,0x200,v8)) || (!v13)) break;
+-      _memcpy(v2,v7,v13);
+-      v2 += v8[0];
+-      v10 += v8[0];
+-      v8[0] = 0;
+
+### O2_dexter_stripped_dexter-dll copySectionToProcess 0x699431a0 class=REVIEW layout=None 
+@@ -8,4 +8,4 @@
+-  int *v2;
+-  unsigned int v3;
+-  unsigned int v4;
+-  int v5; // eax
++  unsigned int v2;
++  int v3;
++  int v4;
++  char *v5; // eax
+@@ -15 +15 @@
+-  int v9;
++  int v9; // ebp
+@@ -17 +17 @@
+-  v6 = a1;
++  v3 = a1;
+@@ -19,5 +19,5 @@
+-  v3 = *(unsigned int *)(v9 + 0x50);
+-  v5 = IsBadReadPtr(a1,v3);
+-  if ((!v5) && (VirtualAllocEx(v8,0,v3,0x3000,0x40))) {
+-    v5 = HeapAlloc(dat_6994c948,8,v3);
+-    _memcpy(v5,v6,v3);
++  v6 = *(int *)(v9 + 0x50);
++  v4 = IsBadReadPtr(a1,v6);
++  if ((!v4) && (VirtualAllocEx(v8,0,v6,0x3000,0x40))) {
++    v5 = (char *)HeapAlloc(dat_6994c948,8,v6);
++    _memcpy(v5,v3,v6);
+@@ -26,5 +26,5 @@
+-        v7 = (int *)(v5 + *(int *)(v9 + 0xa0));
+-        v9 = *v7;
+-        while (v9) {
+-          while ((v4 = v7[1], v4 <= 7 || (v11 = v4 - 8 >> 1, !v11))) {
+-            v7 = (int *)((int)v7 + v4);
++        v7 = (int *)&v5[*(int *)(v9 + 0xa0)];
++        v4 = *v7;
++        while (v4) {
++          while ((v2 = v7[1], v2 <= 7 || (v11 = v2 - 8 >> 1, !v11))) {
++            v7 = (int *)((int)v7 + v2);
+@@ -36,4 +36,2 @@
+-            if (*v12) {
+-              v2 = (int *)(v5 + (*v12 & 0xfff) + *v7);
+-              *v2 = *v2 + (v13 - v6);
+-            }
++            if (*v12)
++              *(int *)&v5[(*v12 & 0xfff) + *v7] = *(int *)&v5[(*v12 & 0xfff) + *v7] + (v13 - v3);
+@@ -43 +41 @@
+-          v9 = *v7;
++          v4 = *v7;
+@@ -46 +44 @@
+-        v6 = WriteProcessMemory(v10,v13,v5,v3,0);
++        v6 = WriteProcessMemory(v10,v13,v5,v6,0);
+
+### O2_diffutils_stripped_diff sub_8590 0x8590 class=REVIEW layout=None 
+@@ -4,6 +4,7 @@
+-  long v10; // stack - 0x48
+-  unsigned long *v11;
+-  int v12; // esi
+-  long v13;
+-  FILE *v14;
+-  long v15; // stack - 0x78
++  long v10; // stack - 0x60
++  long v11; // stack - 0x48
++  struct_5 *v12;
++  int v13; // esi
++  long v14;
++  FILE *v15;
++  long v16; // stack - 0x78
+@@ -13 +14 @@
+-  long v5;
++  char *v5; // rax
+@@ -15,3 +16,3 @@
+-  long v7; // stack - 0x50
+-  long v8; // stack - 0x58
+-  long v9; // stack - 0x60
++  long v7;
++  long v8; // stack - 0x50
++  long v9; // stack - 0x58
+@@ -19 +20 @@
+-  if (!sub_f670(a0,&v9,&v8,&v7,&v10))
++  if (!sub_f670(a0,&v10,&v9,&v8,&v11))
+@@ -21,10 +22,10 @@
+-  v9 -= dat_26570;
+-  v5 = -dat_26288;
+-  if (v9 < v5)
+-    v9 = v5;
+-  v7 -= dat_26570;
+-  if (v7 < v5)
+-    v7 = v5;
+-  v5 = dat_26570 + v8;
+-  v3 = v8 < dat_26270 - dat_26570;
+-  v8 = dat_26270 + -1;
++  v10 -= dat_26570;
++  v6 = -dat_26288;
++  if (v10 < v6)
++    v10 = v6;
++  v8 -= dat_26570;
++  if (v8 < v6)
++    v8 = v6;
++  v6 = dat_26570 + v9;
++  v3 = v9 < dat_26270 - dat_26570;
++  v9 = dat_26270 + -1;
+@@ -32,4 +33,4 @@
+-    v8 = v5;
+-  v5 = dat_26570 + v10;
+-  v3 = v10 < dat_263a0 - dat_26570;
+-  v10 = dat_263a0 + -1;
++    v9 = v6;
++  v6 = dat_26570 + v11;
++  v3 = v11 < dat_263a0 - dat_26570;
++  v11 = dat_263a0 + -1;
+@@ -37 +38 @@
+-    v10 = v5;
++    v11 = v6;
+@@ -39 +40 @@
+-    v5 = sub_7e50(dat_26258);
++    v5 = (char *)sub_7e50(dat_26258);
+@@ -41 +42 @@
+-    v14 = dat_26188;
++    v15 = dat_26188;
+@@ -43,5 +44,5 @@
+-    fputs_unlocked("@@ -",v14);
+-    sub_84f0(0x261a0,v9,v8);
+-    fputs_unlocked(" +",v14);
+-    sub_84f0(0x262d0,v7,v10);
+-    fputs_unlocked(" @@",v14);
++    fputs_unlocked("@@ -",v15);
++    sub_84f0(0x261a0,v10,v9);
++    fputs_unlocked(" +",v15);
++    sub_84f0(0x262d0,v8,v11);
++    fputs_unlocked(" @@",v15);
+@@ -50 +51 @@
+-      sub_7f00(v14,v5);
++      sub_7f00(v15,v5);
+
+### O2_diffutils_stripped_diff sub_d500 0xd500 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_d500(long a0,char a1,struct_10 *a2)
++void sub_d500(struct_5 *a0,char a1,struct_5 *a2)
+@@ -10 +10 @@
+-  long v7;
++  unsigned long v7;
+@@ -32 +32 @@
+-    if ((*(char *)(a2->field_0x8 + -1) == '\n') != v9) {
++    if ((a2->field_0x8[-1] == 10) != v9) {
+@@ -43 +43 @@
+-      v9 = *(char *)(*(long *)(a0 + 8) + -1) == '\n';
++      v9 = a0->field_0x8[-1] == 10;
+@@ -60 +60 @@
+-  if ((a2) && (v9 = (bool)(v9 | *(char *)(a2->field_0x8 + -1) == '\n'), *a2->field_0x0 != '\n'))
++  if ((a2) && (v9 = (bool)(v9 | a2->field_0x8[-1] == 10), *a2->field_0x0 != 10))
+
+### O2_diffutils_stripped_diff sub_f330 0xf330 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_f330(char *a0,struct_10 *a1,bool a2)
++void sub_f330(char *a0,struct_5 *a1,bool a2)
+@@ -4,2 +4,2 @@
+-  char *v2;
+-  long v3;
++  unsigned char *v2;
++  unsigned char *v3;
+@@ -22 +22 @@
+-      if ((dat_26491) && (*v2 == '\n')) {
++      if ((dat_26491) && (*v2 == 10)) {
+@@ -29 +29 @@
+-      sub_f0e0(v2,v3 - (unsigned long)(*(char *)(v3 + -1) == '\n'),v7,a0);
++      sub_f0e0(v2,&v3[-(unsigned long)(v3[-1] == 10)],v7,a0);
+@@ -40 +40 @@
+-    sub_f0e0(v2,v3 - (unsigned long)(*(char *)(v3 + -1) == '\n'),0,0);
++    sub_f0e0(v2,&v3[-(unsigned long)(v3[-1] == 10)],NULL,0);
+@@ -42 +42 @@
+-    sub_f0e0(v2,v3,0,0);
++    sub_f0e0(v2,v3,NULL,0);
+@@ -44 +44 @@
+-  if (*(char *)(v3 + -1) == '\n')
++  if (v3[-1] == 10)
+@@ -47,3 +47,3 @@
+-    sub_e180(0x26020);
+-    sub_e180(0x26050);
+-    sub_e180(0x26030);
++    sub_e180((struct_3 *)0x26020);
++    sub_e180((struct_3 *)0x26050);
++    sub_e180((struct_3 *)0x26030);
+
+### O2_diffutils_stripped_diff sub_14de0 0x14de0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-long sub_14de0(long a0,char *a1)
++char * sub_14de0(char *a0,char *a1)
+@@ -7 +7 @@
+-    dat_36868 = sub_1a0d0(0);
++    dat_36868 = sub_1a0d0(NULL);
+@@ -12 +12 @@
+-  return sub_1a1f0(a0,0xffffffffffffffff,a1,v2,v1) + a0;
++  return &a0[sub_1a1f0(a0,0xffffffffffffffff,a1,v2,v1)];
+
+### O2_dpkg_stripped_dpkg-query sub_5460 0x5460 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int sub_5460(struct_1 *a0,unsigned long a1,unsigned long a2,long *a3)
++int sub_5460(struct_28 *a0,void *a1,unsigned long a2,long *a3)
+@@ -4,13 +4,16 @@
+-  int *v10;
+-  long v11; // stack - 0x80
+-  int v12; // stack - 0x6c
+-  int *v13; // stack - 0x60
+-  void *v14; // stack - 0x58
+-  unsigned int v2; // eax
+-  long *v3;
+-  long *v4; // rbx
+-  long v5;
+-  void *v6; // r12
+-  long v7; // rax
+-  unsigned int v8;
+-  void *v9;
++  struct_31 *v10; // r12
++  long v11; // r12
++  unsigned int v12;
++  int *v13;
++  long v14; // stack - 0x80
++  int v15; // stack - 0x6c
++  int *v16; // stack - 0x60
++  struct_31 *v17; // stack - 0x58
++  unsigned long v2;
++  unsigned int v3; // eax
++  unsigned long v4; // rax
++  unsigned long *v5; // rax
++  long *v6;
++  long *v7; // rbx
++  long v8; // rbx
++  struct_31 *v9;
+@@ -19 +22 @@
+-    v5 = 1;
++    v2 = 1;
+@@ -21,8 +24,8 @@
+-      v7 = v5;
+-      v5 = v7 + 1;
+-    } while (a3[v7]);
+-    v12 = (int)v7;
+-    v13 = (int *)sub_dc50(v7,4);
+-    v14 = (void *)sub_dc30(v7 * 0x28);
+-    v3 = a3;
+-    v9 = v14;
++      v4 = v2;
++      v2 = v4 + 1;
++    } while (a3[v4]);
++    v15 = (int)v4;
++    v16 = (int *)sub_dc50(v4,4);
++    v17 = (struct_31 *)sub_dc30(v4 * 0x28);
++    v6 = a3;
++    v9 = v17;
+@@ -30 +33 @@
+-      v4 = &v3[1];
++      v7 = &v6[1];
+@@ -32,5 +35,5 @@
+-      v6 = (void *)((long)v9 + 0x28);
+-      sub_13a60(v9,*v3);
+-      v3 = v4;
+-      v9 = v6;
+-    } while (v6 != (void *)(v7 * 0x28 + (long)v14));
++      v10 = &v9[1];
++      sub_13a60(v9,(char *)*v6);
++      v6 = v7;
++      v9 = v10;
++    } while (v10 != &v17[v4]);
+@@ -41,3 +44,3 @@
+-    v13 = (int *)sub_dc50(0,4);
+-    v14 = (void *)sub_dc30(0);
+-    v12 = 0;
++    v16 = (int *)sub_dc50(0,4);
++    v17 = (struct_31 *)sub_dc30(0);
++    v15 = 0;
+@@ -46,3 +49,3 @@
+-      free(v14); // return-dupe
+-      free(v13);
+-      return v12;
++      free(v17); // return-dupe
++      free(v16);
+
+### O2_dpkg_stripped_dpkg-query sub_af80 0xaf80 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_af80(unsigned long a0,long a1,long a2,unsigned long a3) // return-dupe
++void sub_af80(struct_2 *a0,long a1,long a2,unsigned long a3) // return-dupe
+@@ -25 +25 @@
+-    sub_13130(a0,*(long *)(v2 + 8),*(long *)(v2 + 8) + 0x48,1);
++    sub_13130(a0,*(long **)(v2 + 8),&(*(long **)(v2 + 8))[9],1);
+
+### O2_dpkg_stripped_dpkg-query sub_183f0 0x183f0 class=REVIEW layout=None 
+@@ -3 +3 @@
+-  long v1;
++  int v1;
+@@ -5,4 +5,4 @@
+-  int v2;
+-  unsigned int v3;
+-  long *v4;
+-  long v5;
++  unsigned int v2;
++  long *v3;
++  long v4;
++  void *v5;
+@@ -10,2 +10,2 @@
+-  long v7;
+-  unsigned int v8; // ebx
++  unsigned int v7; // ebx
++  int v8;
+@@ -14,2 +14,2 @@
+-  v2 = *(int *)(a0 + 0x14);
+-  v7 = *a1;
++  v1 = *(int *)(a0 + 0x14);
++  v6 = *a1;
+@@ -17,4 +17,4 @@
+-  v6 = *(long *)(a0 + 0x18);
+-  if (v7) { // branch-flip
+-    v9 = 0;
+-    v4 = a1;
++  v5 = *(void **)(a0 + 0x18);
++  if (v6) { // branch-flip
++    v8 = 0;
++    v3 = a1;
+@@ -22,6 +22,7 @@
+-      v8 = v9;
+-      v4 = &v4[1];
+-      v9 = v8 + 1;
+-    } while (*v4);
+-    if (v2 - v10 < (int)(v8 + 2)) {
+-      v10 = (v8 + 2 + v2) * 2;
++      v7 = v8;
++      v3 = &v3[1];
++      v8 = v7 + 1;
++    } while (*v3);
++    v9 = v10;
++    if (v1 - v10 < (int)(v7 + 2)) {
++      v10 = (v7 + 2 + v1) * 2;
+@@ -29,4 +30,4 @@
+-      v6 = sub_dc70(v6,(long)v10 * 8);
+-      v10 = *(int *)(a0 + 0x10);
+-      v7 = *a1;
+-      *(long *)(a0 + 0x18) = v6;
++      v5 = (void *)sub_dc70(v5,(long)v10 * 8);
++      v9 = *(int *)(a0 + 0x10);
++      v6 = *a1;
++      *(void **)(a0 + 0x18) = v5;
+@@ -34,2 +35 @@
+-    v1 = v6 + (long)v10 * 8;
+-    v5 = 0;
++    v4 = 0;
+@@ -37,4 +37,4 @@
+-      *(long *)(v1 + v5 * 8) = v7;
+-      v5 += 1;
+-      if (v9 <= (int)v5) break;
+-      v7 = a1[v5];
++      *(long *)((long)v5 + v4 * 8 + (long)v9 * 8) = v6;
++      v4 += 1;
++      if (v8 <= (int)v4) break;
++      v6 = a1[v4];
+@@ -42,7 +42,7 @@
+-    v3 = 0;
+-    if (1 <= v9)
+-      v3 = v8;
+-    v10 = v10 + 1 + v3;
+-    v5 = (unsigned long)v8 << 3;
+-    if (v9 <= 0)
+-      v5 = 0;
++    v2 = 0;
++    if (1 <= v8)
++      v2 = v7;
++    v10 = v9 + 1 + v2;
++    v4 = (unsigned long)v7 << 3;
+
+### O2_e2fsprogs_stripped_e2fsck sub_202f0 0x202f0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned long sub_202f0(int8 a0,uint8 *a1,int8 a2,int8 a3,unsigned long a4,struct_13 *a5)
++unsigned long sub_202f0(int8 a0,uint8 *a1,uint8 a2,int8 a3,unsigned long a4,struct_104 *a5)
+@@ -4,3 +4,3 @@
+-  int8 v10 [10]; // stack - 0xa8
+-  int4 v11;
+-  uint8 v12;
++  uint1 v10; // dl
++  int8 v11 [10]; // stack - 0xa8
++  int4 v12;
+@@ -8,2 +8,3 @@
+-  unsigned long v14;
+-  unsigned long v15; // stack - 0x58
++  uint8 v14;
++  unsigned long v15; // r13
++  unsigned long v16; // stack - 0x58
+@@ -12,6 +13,6 @@
+-  int4 v4;
+-  uint4 v5; // eax
+-  int8 v6;
+-  char *v7; // rax
+-  uint1 v8;
+-  uint1 v9; // dl
++  uint8 v4;
++  int4 v5;
++  uint4 v6; // eax
++  int8 v7;
++  char *v8; // rax
++  uint1 v9;
+@@ -19 +20 @@
+-  v13 = *a1;
++  v14 = *a1;
+@@ -22,6 +23,6 @@
+-  v8 = a5->field_0x4;
+-  v9 = v8 & 1;
+-  if ((v8 & 1) && (!v13 && !a2)) {
+-    v6 = ext2fs_add_dir_block2(*(unsigned long *)(a0 + 0x90),a5->field_0x0,0,0);
+-    *v2 = v6;
+-    if (!v6) {
++  v9 = a5->field_0x4;
++  v10 = v9 & 1;
++  if ((v9 & 1) && (!v14 && !a2)) {
++    v7 = ext2fs_add_dir_block2(*(struct_101 **)(a0 + 0x90),a5->field_0x0,0,0);
++    *v2 = v7;
++    if (!v7) {
+@@ -35 +36 @@
+-  if (!v13)
++  if (!v14)
+@@ -37 +38 @@
+-  if (((a5->field_0x38) && (a5->field_0x0 != 7)) && (v12 = a5->field_0x38 + 1, v12 != v13)) {
++  if (((a5->field_0x38) && (a5->field_0x0 != 7)) && (v13 = a5->field_0x38 + 1, v13 != v14)) {
+@@ -39,3 +40,3 @@
+-      v5 = 100;
+-      if (!v9)
+-        v5 = (-(uint4)((v8 & 2) == 0) & 0xffffffd9) + 0x66;
++      v6 = 100;
++      if (!v10)
++        v6 = (-(uint4)((v9 & 2) == 0) & 0xffffffd9) + 0x66;
+@@ -43,12 +44,12 @@
+-      __printf_chk(1,dcgettext(NULL,"%6lu(%c): expecting %6lu got phys %6lu (blkcnt %lld)\n",5),(uint8)v1,(uint8)v5,v12,v13);
+-    }
+-    v8 = a5->field_0x4 | 0x10;
+-    a5->field_0x4 = v8;
+-    v9 = v8 & 1;
+-  }
+-  v6 = *(int8 *)(a0 + 0x20);
+-  if (v9) { // branch-flip
+-    if (*(uint4 *)(v6 + 0x60) & 0x4000) // branch-flip
+-      v11 = 0;
+-    else {
+-      v11 = 0;
++      __printf_chk(1,dcgettext(NULL,"%6lu(%c): expecting %6lu got phys %6lu (blkcnt %lld)\n",5),(uint8)v1,(uint8)v6,v13,v14);
++    }
++    v9 = a5->field_0x4 | 0x10;
++    a5->field_0x4 = v9;
++    v10 = v9 & 1;
++  }
++  v7 = *(int8 *)(a0 + 0x20);
++  if (v10) { // branch-flip
++    if (*(uint4 *)(v7 + 0x60) & 0x4000) // branch-flip
+
+### O2_e2fsprogs_stripped_e2fsck e2fsck_add_dir_info 0x34e00 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void e2fsck_add_dir_info(struct_51 *a0,uint4 a1,uint4 a2) // return-dupe
++void e2fsck_add_dir_info(struct_137 *a0,uint4 a1,uint4 a2) // return-dupe
+@@ -3 +3 @@
+-  int8 v1;
++  struct_30 *v1;
+@@ -44 +44 @@
+-    profile_get_string(a0->field_0x360,"scratch_files","directory",0,0,&v14);
++    profile_get_string(a0->field_0x360,"scratch_files","directory",0,NULL,&v14);
+@@ -52 +52 @@
+-        uuid_unparse(*(int8 *)(a0->field_0x0 + 0x20) + 0x68,v18);
++        uuid_unparse(&a0->field_0x0->field_0x20[0x1a],v18);
+
+### O2_e2fsprogs_stripped_e2fsck quota_write_inode 0x3f150 class=REVIEW layout=None 
+@@ -3 +3 @@
+-  int8 v1;
++  int8 *v1;
+@@ -7,3 +7,3 @@
+-  void *v5; // rax
+-  int8 v6;
+-  unsigned int *v7;
++  struct_157 *v5; // rax
++  int8 *v6;
++  int4 *v7;
+@@ -21 +21 @@
+-        if ((a1 & 1 << ((uint1)v8 & 0x1f)) && (v1 = a0[v8 + 1], v1)) {
++        if ((a1 & 1 << ((uint1)v8 & 0x1f)) && (v1 = (int8 *)a0[v8 + 1], v1)) {
+@@ -27,2 +27,2 @@
+-          for (v6 = dict_first(v1); v6; v6 = dict_next(v1,v6)) {
+-            v2 = *(int8 *)(v6 + 0x28);
++          for (v6 = (int8 *)dict_first(v1); v6; v6 = (int8 *)dict_next(v1,v6)) {
++            v2 = v6[5];
+@@ -30 +30 @@
+-              *(void **)(v2 + 0x10) = v5;
++              *(struct_157 **)(v2 + 0x10) = v5;
+@@ -32 +32 @@
+-              (**(code **)(*(int8 *)((int8)v5 + 0x38) + 0x30))(v2);
++              (**(code **)&v5->field_0x38[0x30])(v2);
+@@ -37,3 +37,3 @@
+-            if (*(int8 *)((int8)v5 + 0x20))
+-              ext2fs_file_close(*(int8 *)((int8)v5 + 0x20));
+-            quota_inode_truncate(v4,*(unsigned int *)((int8)v5 + 0x18));
++            if ((struct_53 *)v5->field_0x20)
++              ext2fs_file_close((struct_53 *)v5->field_0x20);
++            quota_inode_truncate(v4,v5->field_0x18);
+@@ -43 +43 @@
+-          v1 = *(int8 *)(v4 + 0x20);
++          v2 = *(int8 *)(v4 + 0x20);
+@@ -45 +45 @@
+-            v7 = (unsigned int *)(v1 + 0x26c);
++            v7 = (int4 *)(v2 + 0x26c);
+@@ -52 +52 @@
+-              v7 = (unsigned int *)(v1 + 0x240);
++              v7 = (int4 *)(v2 + 0x240);
+@@ -56 +56 @@
+-            v7 = (unsigned int *)(v1 + 0x244);
++            v7 = (int4 *)(v2 + 0x244);
+@@ -58 +58 @@
+-          *v7 = *(unsigned int *)((int8)v5 + 0x18);
++          *v7 = v5->field_0x18;
+
+### O2_e2fsprogs_stripped_e2fsck sub_46460 0x46460 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_46460(int8 a0,unsigned long a1)
++void sub_46460(struct_209 *a0,unsigned long a1)
+@@ -5 +5 @@
+-  v1 = *(FILE **)(*(int8 *)(a0 + 0xa8) + 0x18);
++  v1 = *(FILE **)&a0->field_0xa8[6];
+
+### O2_e2fsprogs_stripped_e2fsck ext2fs_convert_subcluster_bitmap 0x599d0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int8 ext2fs_convert_subcluster_bitmap(int8 a0,int8 *a1)
++int8 ext2fs_convert_subcluster_bitmap(int8 *a0,int8 *a1)
+@@ -3,5 +3,3 @@
+-  int4 v1;
+-  int8 v10; // stack - 0x50
+-  uint8 v11; // stack - 0x48
+-  uint8 v12;
+-  int8 v2;
++  int8 v1;
++  uint8 v10;
++  unsigned long v2;
+@@ -9,2 +7,2 @@
+-  unsigned long v4;
+-  int8 v5;
++  int8 v4;
++  int8 v5; // rax
+@@ -12,3 +10,3 @@
+-  int8 v7; // rax
+-  uint1 v8; // cl
+-  uint8 v9;
++  uint8 v7;
++  int8 v8; // stack - 0x50
++  uint8 v9; // stack - 0x48
+@@ -16,11 +14,11 @@
+-  v6 = 0;
+-  v2 = *a1;
+-  v1 = *(int4 *)(a0 + 0xc0);
+-  if ((v1 != ext2fs_get_bitmap_granularity(v2)) && (v6 = ext2fs_allocate_block_bitmap(a0,"converted cluster bitmap",&v10), v5 = v10, !v6)) {
+-    v3 = *(unsigned long *)(v2 + 0x28);
+-    v9 = *(uint8 *)(v2 + 0x30);
+-    v12 = *(uint8 *)(v2 + 0x20);
+-    *(uint8 *)(v2 + 0x28) = v9;
+-    v4 = *(unsigned long *)(v10 + 0x28);
+-    *(unsigned long *)(v10 + 0x28) = *(unsigned long *)(v10 + 0x30);
+-    if (v12 < v9) {
++  v5 = 0;
++  v1 = *a1;
++  v4 = a0[0x18];
++  if (((int4)v4 != ext2fs_get_bitmap_granularity(v1)) && (v5 = ext2fs_allocate_block_bitmap(a0,"converted cluster bitmap",&v8), v4 = v8, !v5)) {
++    v2 = *(unsigned long *)(v1 + 0x28);
++    v7 = *(uint8 *)(v1 + 0x30);
++    v10 = *(uint8 *)(v1 + 0x20);
++    *(uint8 *)(v1 + 0x28) = v7;
++    v3 = *(unsigned long *)(v8 + 0x28);
++    *(unsigned long *)(v8 + 0x28) = *(unsigned long *)(v8 + 0x30);
++    if (v10 < v7) {
+@@ -28,8 +26,7 @@
+-        v7 = ext2fs_find_first_set_generic_bmap(v2,v12,v9,&v11);
+-        v12 = v11;
+-        if (v7) break;
+-        ext2fs_mark_generic_bmap(v10,v11);
+-        v9 = *(uint8 *)(v2 + 0x30);
+-        v8 = (uint1)*(unsigned int *)(a0 + 0xc0);
+-        v12 = (v12 >> (v8 & 0x3f)) + 1 << (v8 & 0x3f);
+-      } while (v12 < v9);
++        v6 = ext2fs_find_first_set_generic_bmap(v1,v10,v7,&v9);
++        v10 = v9;
++        if (v6) break;
++        ext2fs_mark_generic_bmap(v8,v9);
++        v7 = *(uint8 *)(v1 + 0x30);
++        v10 = (v10 >> ((uint1)*(unsigned int *)&a0[0x18] & 0x3f)) + 1 << ((uint1)*(unsigned int *)&a0[0x18] & 0x3f);
++      } while (v10 < v7);
+@@ -37,4 +34,4 @@
+-    *(unsigned long *)(v2 + 0x28) = v3;
+-    *(unsigned long *)(v5 + 0x28) = v4;
+-    ext2fs_free_block_bitmap(v2);
+-    *a1 = v5;
++    *(unsigned long *)(v1 + 0x28) = v2;
++    *(unsigned long *)(v4 + 0x28) = v3;
++    ext2fs_free_block_bitmap(v1);
++    *a1 = v4;
+@@ -42 +39 @@
+-  return v6;
++  return v5;
+
+### O2_e2fsprogs_stripped_e2fsck ext2fs_create_icount_tdb 0x5acf0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int8 ext2fs_create_icount_tdb(int8 a0,char *a1,unsigned int a2,int8 *a3)
++int8 ext2fs_create_icount_tdb(struct_34 *a0,char *a1,unsigned int a2,int8 *a3)
+@@ -5,6 +5,7 @@
+-  uint4 v3;
+-  int4 v4; // eax
+-  int8 v5;
+-  char *v6; // rax
+-  int8 v7; // stack - 0x70
+-  char v8 [40];
++  unsigned int *v3;
++  uint4 v4;
++  int4 v5; // eax
++  int8 v6; // rax
++  char *v7; // rax
++  int8 v8; // stack - 0x70
++  char v9 [40];
+@@ -12,19 +13,19 @@
+-  v5 = sub_5abd0(a0,a2,&v7);
+-  if (!v5) {
+-    v6 = malloc(strlen(a1) + 0x40);
+-    if (v6) { // branch-flip
+-      v5 = *(int8 *)(a0 + 0x20);
+-      v3 = *(uint4 *)(v5 + 0x68);
+-      __sprintf_chk(v8,1,0x28,"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",(uint8)(v3 >> 0x18 | (v3 & 0xff0000) >> 8 | (v3 & 0xff00) << 8 | v3 << 0x18),(uint8)(uint2)(*(uint2 *)(v5 + 0x6c) << 8 | *(uint2 *)(v5 + 0x6c) >> 8),(uint8)(uint2)(*(uint2 *)(v5 + 0x6e) << 8 | *(uint2 *)(v5 + 0x6e) >> 8),(uint8)(uint1)*(uint2 *)(v5 + 0x70),(uint8)(*(uint2 *)(v5 + 0x70) >> 8),(uint8)*(uint1 *)(v5 + 0x72),(uint8)*(uint1 *)(v5 + 0x73),(uint8)*(uint1 *)(v5 + 0x74),(uint8)*(uint1 *)(v5 + 0x75),(uint8)*(uint1 *)(v5 + 0x76),(uint8)*(uint1 *)(v5 + 0x77));
+-      __sprintf_chk(v6,1,0xffffffffffffffff,"%s/%s-icount-XXXXXX",a1,v8);
+-      v3 = umask(0x3f);
+-      v4 = mkstemp(v6);
+-      if (0 <= v4) { // branch-flip
+-        *(char **)(v7 + 0x38) = v6;
+-        umask(v3);
+-        v1 = **(int4 **)(a0 + 0x20);
+-        v2 = (*(int4 **)(a0 + 0x20))[4];
+-        *(unsigned long *)(v7 + 0x40) = ext2fs_tdb_open(v6,v1 - v2,0x44,0x242,0x180);
+-        close(v4);
+-        if (*(int8 *)(v7 + 0x40)) {
+-          *a3 = v7;
++  v6 = sub_5abd0(a0,a2,&v8);
++  if (!v6) {
++    v7 = malloc(strlen(a1) + 0x40);
++    if (v7) { // branch-flip
++      v3 = a0->field_0x20;
++      v4 = v3[0x1a];
++      __sprintf_chk(v9,1,0x28,"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",(uint8)(v4 >> 0x18 | (v4 & 0xff0000) >> 8 | (v4 & 0xff00) << 8 | v4 << 0x18),(uint8)(uint2)(*(uint2 *)&v3[0x1b] << 8 | *(uint2 *)&v3[0x1b] >> 8),(uint8)(uint2)(*(uint2 *)((int8)v3 + 0x6e) << 8 | *(uint2 *)((int8)v3 + 0x6e) >> 8),(uint8)(uint1)*(uint2 *)&v3[0x1c],(uint8)(*(uint2 *)&v3[0x1c] >> 8),(uint8)*(uint1 *)((int8)v3 + 0x72),(uint8)*(uint1 *)((int8)v3 + 0x73),(uint8)*(uint1 *)&v3[0x1d],(uint8)*(uint1 *)((int8)v3 + 0x75),(uint8)*(uint1 *)((int8)v3 + 0x76),(uint8)*(uint1 *)((int8)v3 + 0x77));
++      __sprintf_chk(v7,1,0xffffffffffffffff,"%s/%s-icount-XXXXXX",a1,v9);
++      v4 = umask(0x3f);
++      v5 = mkstemp(v7);
++      if (0 <= v5) { // branch-flip
++        *(char **)(v8 + 0x38) = v7;
++        umask(v4);
++        v1 = *a0->field_0x20;
++        v2 = a0->field_0x20[4];
++        *(unsigned long *)(v8 + 0x40) = ext2fs_tdb_open(v7,v1 - v2,0x44,0x242,0x180);
++        close(v5);
++        if (*(int8 *)(v8 + 0x40)) {
++          *a3 = v8;
+@@ -33 +34 @@
+-        v5 = (int8)*__errno_location();
++        v6 = (int8)*__errno_location();
+@@ -36,2 +37,2 @@
+-        v5 = (int8)*__errno_location();
+-        free(v6);
++        v6 = (int8)*__errno_location();
++        free(v7);
+@@ -41 +42 @@
+-      v5 = 0x7f2bb746;
++      v6 = 0x7f2bb746;
+@@ -43 +44 @@
+-    ext2fs_free_icount(v7);
++    ext2fs_free_icount(v8);
+@@ -45 +46 @@
+-  return v5;
++  return v6;
+
+### O2_e2fsprogs_stripped_e2fsck ext2fs_get_next_inode_full 0x5e460 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int8 ext2fs_get_next_inode_full(struct_205 *a0,int4 *a1,void *a2,int4 a3) // return-dupe
++int8 ext2fs_get_next_inode_full(struct_135 *a0,int4 *a1,void *a2,int4 a3) // return-dupe
+@@ -10 +10 @@
+-  void *v16;
++  char *v16;
+@@ -26 +26 @@
+-  unsigned long v5;
++  struct_0 *v5;
+@@ -168 +168 @@
+-    v5 = *(unsigned long *)(v8 + 8);
++    v5 = *(struct_0 **)(v8 + 8);
+@@ -271 +271 @@
+-  a0->field_0x48 = (void *)a0->field_0x38;
++  a0->field_0x48 = (char *)a0->field_0x38;
+@@ -294 +294 @@
+-    a0->field_0x48 = (void *)((int8)a0->field_0x48 + (int8)v28);
++    a0->field_0x48 = &a0->field_0x48[v28];
+@@ -297 +297 @@
+-      v16 = (void *)a0->field_0x58;
++      v16 = (char *)a0->field_0x58;
+@@ -303 +303 @@
+-      v16 = (void *)a0->field_0x58;
++      v16 = (char *)a0->field_0x58;
+@@ -307 +307 @@
+-      v16 = (void *)a0->field_0x58;
++      v16 = (char *)a0->field_0x58;
+@@ -335 +335 @@
+-    a0->field_0x48 = (void *)((int8)a0->field_0x48 + (int8)a0->field_0x40);
++    a0->field_0x48 = &a0->field_0x48[a0->field_0x40];
+
+### O2_e2fsprogs_stripped_e2fsck sub_74410 0x74410 class=REVIEW layout=None 
+@@ -1 +1 @@
+-int8 sub_74410(int8 a0,uint4 a1,unsigned int a2,int8 a3,unsigned long a4,int8 *a5,int8 *a6,uint8 a7,uint8 a8,uint8 a9)
++int8 sub_74410(int8 a0,uint4 a1,unsigned int a2,int8 a3,struct_23 *a4,uint8 *a5,uint8 *a6,uint8 a7,uint8 a8,uint8 a9)
+@@ -3 +3 @@
+-  unsigned long v1;
++  int8 v1;
+@@ -5 +5 @@
+-  int8 *v11;
++  uint8 *v11;
+@@ -10 +10 @@
+-  int8 v16;
++  int8 v16; // rax
+@@ -58 +58 @@
+-    v20 = *(uint4 *)&a5[2];
++    v20 = (uint4)a5[2];
+@@ -69,2 +69,2 @@
+-      v14 = a5[1];
+-      if ((((!v34) && (v27 = v14 + -1 + (uint8)v20, v27 <= v32)) && (v32 <= v35 + v27)) && (v35 = (int8)v32 - v27, !v35)) goto label_747e0;
++      v27 = a5[1];
++      if ((((!v34) && (v15 = (v27 - 1) + (uint8)v20, v15 <= v32)) && (v32 <= v35 + v15)) && (v35 = (int8)v32 - v15, !v35)) goto label_747e0;
+@@ -73 +73 @@
+-      if (!ext2fs_extent_goto(a4,v14)) {
++      if (!ext2fs_extent_goto(a4,v27)) {
+@@ -88 +88 @@
+-          v14 = ext2fs_zero_blocks2(a0,((uint8)*(uint4 *)&a5[2] + *a5) - v35,v35 & 0xffffffff,0,0);
++          v14 = ext2fs_zero_blocks2(a0,((uint8)(uint4)a5[2] + *a5) - v35,v35 & 0xffffffff,NULL,NULL);
+@@ -107 +107 @@
+-        v20 = *(uint4 *)&a5[2];
++        v20 = (uint4)a5[2];
+@@ -109 +109 @@
+-        v27 = *(uint4 *)&v11[2] + v15 + a8;
++        v27 = (uint4)v11[2] + v15 + a8;
+@@ -112 +112 @@
+-          v14 = a5[1];
++          v15 = a5[1];
+@@ -116,4 +116,3 @@
+-          if (!ext2fs_extent_goto(a4,v14)) {
+-            v14 = *v11;
+-            v25 = *(uint4 *)&a5[2];
+-            v16 = *a5;
++          if (!ext2fs_extent_goto(a4,v15)) {
++            v15 = *v11;
++            v28 = (uint8)(uint4)a5[2] + *a5;
+@@ -121 +120 @@
+-            if ((!ext2fs_new_range(a0,3,(uint8)v25 + v16,(v14 + 1) - ((uint8)v25 + v16),0,&v21,&v22)) && (v21 + CONCAT44(v36,v22) == *v11)) {
++            if ((!ext2fs_new_range(a0,3,v28,(v15 + 1) - v28,NULL,&v21,&v22)) && (v21 + CONCAT44(v36,v22) == *v11)) {
+@@ -147 +146 @@
+-              v14 = a5[1];
++              v26 = a5[1];
+@@ -149 +148 @@
+-              v11[1] = v14;
++              v11[1] = v26;
+@@ -156 +155 @@
+-              return ext2fs_zero_blocks2(a0,a7,v26,0,0);
++              return ext2fs_zero_blocks2(a0,a7,v26,NULL,NULL);
+@@ -171 +170 @@
+-          v27 = (uint8)*(uint4 *)&a5[2] + (uint8)*(uint4 *)&v11[2] + a8;
++          v27 = (uint8)(uint4)a5[2] + (uint8)(uint4)v11[2] + a8;
+@@ -181 +180 @@
+-        v15 = (uint8)*(uint4 *)&a5[2];
++        v15 = (uint8)(uint4)a5[2];
+@@ -202 +201 @@
+-            v15 = (uint8)*(uint4 *)&a5[2];
++            v15 = (uint8)(uint4)a5[2];
+@@ -206 +205 @@
+-          v14 = *a5;
++          v28 = *a5;
+@@ -210 +209 @@
+-          if (!ext2fs_new_range(a0,3,v15 + v14,v27,0,v32)) {
++          if (!ext2fs_new_range(a0,3,v15 + v28,v27,NULL,v32)) {
+@@ -234 +233 @@
+-              v14 = ext2fs_zero_blocks2(a0,v21,v22,0,0);
++              v14 = ext2fs_zero_blocks2(a0,v21,v22,NULL,NULL);
+@@ -280 +279 @@
+-              v14 = ext2fs_zero_blocks2(a0,*v11,v35 & 0xffffffff,0,0);
++              v14 = ext2fs_zero_blocks2(a0,*v11,v35 & 0xffffffff,NULL,NULL);
+@@ -294 +293 @@
+-      v20 = *(uint4 *)&a5[2];
++      v20 = (uint4)a5[2];
+@@ -331 +330 @@
+
+### O2_findutils_stripped_find sub_f620 0xf620 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_f620(long a0,struct_13 *a1,void *a2,struct_14 *a3) // return-dupe
++void sub_f620(long a0,struct_29 *a1,char *a2,struct_30 *a3) // return-dupe
+@@ -4,6 +4,7 @@
+-  unsigned long v10; // stack - 0x360
+-  stat v11; // stack - 0x358
+-  void *v12;
+-  unsigned long v13; // r8
+-  unsigned long v14;
+-  char v15; // stack - 0x2be
++  char v10 [10];
++  unsigned long v11; // stack - 0x360
++  stat v12; // stack - 0x358
++  void *v13;
++  unsigned long v14; // r8
++  unsigned long v15;
++  char v16; // stack - 0x2be
+@@ -15,3 +16,3 @@
+-  unsigned long v7;
+-  char *v8;
+-  char v9 [10];
++  unsigned long v7; // rax
++  unsigned long v8; // rcx
++  char *v9;
+@@ -23,2 +24,2 @@
+-    v12 = a1->field_0x8;
+-    if (fwrite(v12,1,(long)v3,v1) < (unsigned long)(long)v3) {
++    v13 = a1->field_0x8;
++    if (fwrite(v13,1,(long)v3,v1) < (unsigned long)(long)v3) {
+@@ -26 +27 @@
+-      sub_e970(*v4,*(unsigned long *)(a0 + 0x10));
++      sub_e970(*v4,*(char **)(a0 + 0x10));
+@@ -28,2 +29,2 @@
+-    v7 = *(unsigned long *)(a0 + 8);
+-    if (!sub_180c0(v7))
++    v1 = *(FILE **)(a0 + 8);
++    if (!sub_180c0(v1))
+@@ -32 +33 @@
+-    sub_e970(*v4,*(unsigned long *)(a0 + 0x10)); // tail-call
++    sub_e970(*v4,*(char **)(a0 + 0x10)); // tail-call
+@@ -41,2 +42,2 @@
+-    v12 = a1->field_0x8;
+-    if ((unsigned long)(long)v3 <= fwrite(v12,1,(long)v3,v1))
++    v13 = a1->field_0x8;
++    if ((unsigned long)(long)v3 <= fwrite(v13,1,(long)v3,v1))
+@@ -45 +46 @@
+-    sub_e970(*v4,*(unsigned long *)(a0 + 0x10));
++    sub_e970(*v4,*(char **)(a0 + 0x10));
+@@ -57,3 +58,3 @@
+-      v14 = a3->field_0x0;
+-      v13 = 1;
+-      v7 = 1;
++      v15 = a3->field_0x0;
++      v14 = 1;
++      v8 = 1;
+@@ -62 +63 @@
+-      v8 = (char *)sub_108e0(a3,a2);
++      v9 = (char *)sub_108e0(a3,a2);
+@@ -67,6 +68,6 @@
+-      v8 = (char *)sub_25a50((long)(dat_385fc + 1));
+-      v14 = (unsigned long)dat_385fc;
+-      memcpy(v8,a2,v14);
+-      v8[v14] = '\0';
+-      sub_ece0(a0,a1->field_0x8,v8);
+-      free(v8); // return-dupe, tail-call
++      v9 = (char *)sub_25a50((long)(dat_385fc + 1));
++      v15 = (unsigned long)dat_385fc;
++      memcpy(v9,a2,v15);
++      v9[v15] = '\0';
++      sub_ece0(a0,a1->field_0x8,v9);
++      free(v9); // return-dupe, tail-call
+@@ -75,3 +76,3 @@
+-      sub_18290(a3,v9);
+-      v15 = 0;
+-      sub_ece0(a0,a1->field_0x8,v9);
++      sub_18290(a3,v10);
++      v16 = 0;
++      sub_ece0(a0,a1->field_0x8,v10);
+@@ -80 +81 @@
+-      v8 = "";
+
+### O2_freertos_stripped_RTOSDemo-out sub_3130 0x3130 class=REVIEW layout=None 
+@@ -3 +3 @@
+-  sub_3888(0xaa4);
++  sub_3888("\r\n\r\nMalloc failed\r\n");
+
+### O2_freertos_stripped_RTOSDemo-out sub_3150 0x3150 class=REVIEW layout=None 
+@@ -3 +3 @@
+-  sub_3888(0xab8);
++  sub_3888("\r\n\r\nStack overflow in %s\r\n");
+
+### O2_freertos_stripped_RTOSDemo-out sub_3174 0x3174 class=REVIEW layout=None 
+@@ -3 +3 @@
+-  sub_3888(0xad4,a1,a0);
++  sub_3888("ASSERT! Line %d, file %s\r\n",a1,a0);
+
+### O2_freertos_stripped_RTOSDemo-out sub_3228 0x3228 class=REVIEW layout=None 
+@@ -3 +3 @@
+-  unsigned int v1; // r0
++  char *v1; // r0
+@@ -7,2 +7,2 @@
+-    while (sub_1ed8(dat_2000fb70,&v2,0xffffffff), v2 == 100) {
+-      sub_3888(0xaf0);
++    while (sub_1ed8(dat_2000fb70,&v2,-1), v2 == 100) {
++      sub_3888("Message received from task\r\n");
+@@ -10 +10 @@
+-    v1 = (v2 != 200) ? 0xb38 : 0xb10; // branch-flip
++    v1 = (v2 != 200) ? "Unexpected message\r\n" : "Message received from software timer\r\n"; // branch-flip
+
+### O2_freertos_stripped_RTOSDemo-out sub_341e 0x341e class=REVIEW layout=None 
+@@ -11,2 +11,2 @@
+-  sub_3888(0xb60);
+-  sub_264(*(unsigned int *)(dat_20000000 + 8));
++  sub_3888("Calling prvGetRegistersFromStack() from fault handler");
++  sub_264(*(int *)(dat_20000000 + 8));
+
+### O2_grep_stripped_grep sub_10290 0x10290 class=REVIEW layout=None 
+@@ -1 +1 @@
+-long sub_10290(long a0,struct_8 *a1,unsigned int a2)
++long sub_10290(long a0,struct_24 *a1,unsigned int a2)
+@@ -18 +18 @@
+-  long v9; // rdx
++  long v9;
+@@ -51 +51 @@
+-          while (((int)a1->field_0x0[v7 * 2 + 1] == *(int *)(v8[1] + 8 + v7 * 0x10) && (a1->field_0x0[v7 * 2] == *(long *)(v8[1] + v7 * 0x10)))) {
++          while ((v9 = v7 * 0x10, *(int *)((long)a1->field_0x0 + v9 + 8) == *(int *)(v8[1] + 8 + v9) && (*(long *)((long)a1->field_0x0 + v9) == *(long *)(v8[1] + v9)))) {
+@@ -93 +93 @@
+-    v6 = (unsigned long *)sub_1f1f0(v6,a0 + 0x138,1,0xffffffffffffffff,0x48);
++    v6 = (unsigned long *)sub_1f1f0(v6,(long *)(a0 + 0x138),1,-1,0x48);
+@@ -104 +104 @@
+-  sub_10010(a1,v2 + v16 + 8);
++  sub_10010(a1,(unsigned long *)(v2 + v16 + 8));
+
+### O2_grep_stripped_grep sub_12df0 0x12df0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-long sub_12df0(long a0) // early-return
++long sub_12df0(unsigned long *a0) // early-return
+@@ -18,2 +18,2 @@
+-  unsigned long v7; // rax
+-  unsigned long *v8;
++  unsigned long *v7;
++  long v8; // rax
+@@ -25,3 +25,3 @@
+-  v6 = *(long *)(a0 + 0x28);
+-  if (!v6) {
+-    *(unsigned long *)(a0 + 0x30) = 0xffffffffffffffff;
++  v10 = a0[5];
++  if (!v10) {
++    a0[6] = 0xffffffffffffffff;
+@@ -30,2 +30,2 @@
+-  v15 = *(unsigned char **)(a0 + 0x20);
+-  v3 = *(int *)(a0 + 0x51c + (unsigned long)*v15 * 4);
++  v15 = (unsigned char *)a0[4];
++  v3 = *(int *)((long)a0 + (unsigned long)*v15 * 4 + 0x51c);
+@@ -34 +34 @@
+-    *(int *)(a0 + 0x48) = v3;
++    *(int *)&a0[9] = v3;
+@@ -37,5 +37,5 @@
+-    v7 = sub_1acc0(&v13,v15,v6,a0 + 0x110);
+-    if (0xfffffffffffffffd <= (unsigned long)(v7 - 1U)) {
+-      *(unsigned long *)(a0 + 0x110) = 0;
+-      v15 = *(unsigned char **)(a0 + 0x20);
+-      v6 = *(long *)(a0 + 0x28);
++    v6 = sub_1acc0(&v13,v15,v10,(mbstate_t *)&a0[0x22]);
++    if (0xfffffffffffffffd <= (unsigned long)(v6 - 1U)) {
++      a0[0x22] = 0;
++      v15 = (unsigned char *)a0[4];
++      v10 = a0[5];
+@@ -44,4 +44,4 @@
+-    v6 = *(long *)(a0 + 0x28);
+-    v15 = *(unsigned char **)(a0 + 0x20);
+-    *(unsigned int *)(a0 + 0x48) = v13;
+-    v3 = (int)v7;
++    v10 = a0[5];
++    v15 = (unsigned char *)a0[4];
++    *(unsigned int *)&a0[9] = v13;
++    v3 = (int)v6;
+@@ -50,2 +50,2 @@
+-      *(unsigned char **)(a0 + 0x20) = &v15[v3];
+-      *(long *)(a0 + 0x28) = v6 - v3;
++      a0[4] = &v15[v3];
++      a0[5] = v10 - (long)v3;
+@@ -58,3 +58,3 @@
+-  v6 -= 1;
+-  *(unsigned char **)(a0 + 0x20) = v11;
+-  *(long *)(a0 + 0x28) = v6;
++  v6 = v10 - 1;
++  a0[4] = v11;
++  a0[5] = v6;
+@@ -63 +63 @@
+-      if (!(*(unsigned char *)(a0 + 0x1c1) & 8)) {
++      if (!(*(unsigned char *)((long)a0 + 0x1c1) & 8)) {
+@@ -78 +78 @@
+-        v10 = *(unsigned long *)(a0 + 0x1c0);
++        v10 = a0[0x38];
+@@ -87,3 +87,3 @@
+-      if (!(*(unsigned char *)(a0 + 0x1c2) & 8)) {
+-label_12ec3:
+-        *(unsigned long *)(a0 + 0x30) = 0x10d;
++      if (!(*(unsigned char *)((long)a0 + 0x1c2) & 8)) {
++label_12ec3:
++        a0[6] = 0x10d;
+@@ -96,4 +96,4 @@
+-      if ((((unsigned char)(*(unsigned long *)(a0 + 0x1c0) >> 0xd) ^ 1) & 1) == v16) {
+-        *(long *)(a0 + 0x38) = *(long *)(a0 + 0x38) + 1;
+-        *(char *)(a0 + 0x78) = 1;
+-        *(unsigned long *)(a0 + 0x30) = 0x107;
++      if ((((unsigned char)((unsigned long)a0[0x38] >> 0xd) ^ 1) & 1) == v16) {
++        a0[7] = a0[7] + 1;
++        *(char *)&a0[0xf] = 1;
++        a0[6] = 0x107;
+@@ -104,4 +104,4 @@
+-      if (((((unsigned char)(*(unsigned long *)(a0 + 0x1c0) >> 0xd) ^ 1) & 1) == v16) && ((*(long *)(a0 + 0x38) || (!(*(unsigned long *)(a0 + 0x1c0) & 0x20000))))) {
+-        *(char *)(a0 + 0x78) = 0;
+
+### O2_iproute2_stripped_ip sub_1ca00 0x1ca00 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned long sub_1ca00(int4 a0,int8 *a1)
++unsigned long sub_1ca00(int4 a0,unsigned long *a1)
+@@ -4 +4 @@
+-  int8 v10;
++  int8 v10; // rcx
+@@ -11,25 +11,24 @@
+-  int8 *v17;
+-  unsigned long *v18;
+-  int8 v19; // stack - 0x5a8
+-  int4 *v2;
+-  int8 v20; // stack - 0x5a0
+-  bool v21; // stack - 0x595
+-  int4 v22; // stack - 0x58c
+-  unsigned short v23; // stack - 0x57e
+-  unsigned int v24; // stack - 0x57c
+-  int2 v25; // stack - 0x576
+-  int2 v26; // stack - 0x574
+-  unsigned short v27; // stack - 0x572
+-  int8 v28; // stack - 0x568
+-  int8 v29; // stack - 0x560
+-  bool v3;
+-  int8 v30; // stack - 0x558
+-  int8 v31; // stack - 0x550
+-  unsigned short *v32; // stack - 0x540
+-  int8 v33; // stack - 0x4e8
+-  char v34; // stack - 0x458
+-  char v35; // stack - 0x457
+-  char v36; // stack - 0x456
+-  char v37; // stack - 0x455
+-  uint4 v38; // stack - 0x450
+-  uint1 v4;
++  unsigned long *v17;
++  char *v18; // stack - 0x5a8
++  char *v19; // stack - 0x5a0
++  unsigned long v2;
++  bool v20; // stack - 0x595
++  int4 v21; // stack - 0x58c
++  unsigned short v22; // stack - 0x57e
++  unsigned int v23; // stack - 0x57c
++  int2 v24; // stack - 0x576
++  int2 v25; // stack - 0x574
++  unsigned short v26; // stack - 0x572
++  int8 v27; // stack - 0x568
++  int8 v28; // stack - 0x560
++  int8 v29; // stack - 0x558
++  struct_21 *v3;
++  int8 v30; // stack - 0x550
++  unsigned short *v31; // stack - 0x540
++  int8 v32; // stack - 0x4e8
++  char v33; // stack - 0x458
++  char v34; // stack - 0x457
++  char v35; // stack - 0x456
++  char v36; // stack - 0x455
++  uint4 v37; // stack - 0x450
++  bool v4;
+@@ -37,2 +36,2 @@
+-  int2 v6;
+-  int4 v7;
++  uint1 v6;
++  int2 v7;
+@@ -40 +39 @@
+-  int4 v9; // eax
++  int4 v9;
+@@ -44 +43 @@
+-  v18 = &v12;
++  v17 = &v12;
+@@ -46,2 +45,2 @@
+-    v1 = &v18[1];
+-    *v18 = 0;
++    v1 = &v17[1];
++    *v17 = 0;
+@@ -49 +48 @@
+-    v18 = v1;
++    v17 = v1;
+@@ -52 +51 @@
+-  *(unsigned int *)v18 = 0;
++  *(unsigned int *)v17 = 0;
+@@ -54 +53 @@
+-  v18 = (unsigned long *)0xaa400;
+
+### O2_iproute2_stripped_ip do_ipnh 0x63bf0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void do_ipnh(int4 a0,struct_9 *a1)
++void do_ipnh(int4 a0,struct_25 *a1)
+@@ -3,4 +3,4 @@
+-  char *v1;
+-  char v2; // al
+-  unsigned long v3;
+-  unsigned long *v4;
++  char v1; // al
++  char *v2;
++  unsigned long v3; // rdx
++  char **v4;
+@@ -20,12 +20,12 @@
+-  v3 = a1->field_0x0;
+-  if (matches(v3,0x7d15c)) { // branch-flip
+-    v3 = a1->field_0x0;
+-    if (matches(v3,"replace")) {
+-      v3 = a1->field_0x0;
+-      if (matches(v3,"delete")) {
+-        v3 = a1->field_0x0;
+-        if (((matches(v3,"list")) && (v3 = a1->field_0x0, matches(v3,0x7d16c))) && (v3 = a1->field_0x0, matches(v3,0x7d171))) {
+-          v3 = a1->field_0x0;
+-          if (matches(v3,"get")) { // branch-flip
+-            v3 = a1->field_0x0;
+-            if (!matches(v3,"flush")) {
++  v2 = a1->field_0x0;
++  if (matches(v2,"add")) { // branch-flip
++    v2 = a1->field_0x0;
++    if (matches(v2,"replace")) {
++      v2 = a1->field_0x0;
++      if (matches(v2,"delete")) {
++        v2 = a1->field_0x0;
++        if (((matches(v2,"list")) && (v2 = a1->field_0x0, matches(v2,"show"))) && (v2 = a1->field_0x0, matches(v2,"lst"))) {
++          v2 = a1->field_0x0;
++          if (matches(v2,"get")) { // branch-flip
++            v2 = a1->field_0x0;
++            if (!matches(v2,"flush")) {
+@@ -38,2 +38,2 @@
+-            v3 = a1->field_0x0;
+-            if (!matches(v3,"bucket")) {
++            v2 = a1->field_0x0;
++            if (!matches(v2,"bucket")) {
+@@ -41,8 +41,8 @@
+-                v3 = a1->field_0x8;
+-                if (((matches(v3,"list")) && (v3 = a1->field_0x8, matches(v3,0x7d16c))) && (v2 = matches(a1->field_0x8,0x7d171), v2)) {
+-                  v3 = a1->field_0x8;
+-                  if (matches(v3,"get")) { // branch-flip
+-                    v3 = a1->field_0x8;
+-                    if (matches(v3,"help")) {
+-                      v3 = a1->field_0x8;
+-                      __fprintf_chk(stderr,1,"Command \"%s\" is unknown, try \"ip nexthop help\".\n",v3); // return-dupe
++                v2 = a1->field_0x8;
++                if (((matches(v2,"list")) && (v2 = a1->field_0x8, matches(v2,"show"))) && (v1 = matches(a1->field_0x8,"lst"), v1)) {
++                  v2 = a1->field_0x8;
++                  if (matches(v2,"get")) { // branch-flip
++                    v2 = a1->field_0x8;
++                    if (matches(v2,"help")) {
++                      v2 = a1->field_0x8;
++                      __fprintf_chk(stderr,1,"Command \"%s\" is unknown, try \"ip nexthop help\".\n",v2); // return-dupe
+@@ -58,3 +58,3 @@
+-                      v1 = (char *)v4[-1];
+-                      if (strcmp(v1,"id")) { // branch-flip
+-                        if (strcmp(v1,"index")) {
++                      v2 = ((struct_25 *)&v4[-1])->field_0x0;
++                      if (strcmp(v2,"id")) { // branch-flip
++                        if (strcmp(v2,"index")) {
+@@ -66,2 +66,2 @@
+-                        v3 = *v4;
+-                        if (get_u16(&v6,v3,0))
++                        v2 = *v4;
++                        if (get_u16(&v6,v2,0))
+@@ -69 +69 @@
+-                        v9 = v2;
++                        v9 = v1;
+@@ -74,3 +74,3 @@
+-                        v3 = *v4;
+-                        if (get_unsigned(&v5,v3,0))
+-                          invarg("invalid id value",v3); // return-dupe, no-return
++                        v2 = *v4;
++                        if (get_unsigned(&v5,v2,0))
+
+### O2_kmod_stripped_kmod sub_6660 0x6660 class=REVIEW layout=None 
+@@ -7 +7 @@
+-  void *v13;
++  long *v13; // rax
+@@ -9,4 +9,4 @@
+-  void *v15; // rax
+-  void *v16;
+-  unsigned long v17; // rax
+-  long v18;
++  void *v15;
++  unsigned long v16; // rax
++  long v17;
++  char *v18;
+@@ -15,10 +15,10 @@
+-  char *v20;
+-  long v21; // rax
+-  char **v22;
+-  unsigned long v23; // stack - 0x11e8
+-  char *v24; // stack - 0x11e0
+-  char v25 [4104];
+-  char *v26 [3]; // stack - 0x11d8
+-  char v27 [270];
+-  char *v28;
+-  long v29;
++  long v20; // rax
++  char **v21;
++  unsigned long v22; // stack - 0x11e8
++  char *v23; // stack - 0x11e0
++  char v24 [4104];
++  char *v25 [3]; // stack - 0x11d8
++  char v26 [270];
++  char *v27;
++  long v28;
++  int v29;
+@@ -26,10 +26,10 @@
+-  int v30;
+-  char **v31;
+-  unsigned long v32; // r14
+-  void *v33; // stack - 0x1228
+-  char *v34; // stack - 0x1220
+-  char *v35; // stack - 0x1210
+-  unsigned int v36; // stack - 0x11f4
+-  void *v37; // stack - 0x11c0
+-  char *v38; // stack - 0x11b8
+-  void *v39; // stack - 0x11b0
++  char **v30;
++  unsigned long v31; // r14
++  long *v32; // stack - 0x1228
++  char *v33; // stack - 0x1220
++  char *v34; // stack - 0x1210
++  unsigned int v35; // stack - 0x11f4
++  void *v36; // stack - 0x11c0
++  char *v37; // stack - 0x11b8
++  void *v38; // stack - 0x11b0
++  char *v39; // stack - 0x11a8
+@@ -37,6 +37,5 @@
+-  char *v40; // stack - 0x11a8
+-  void *v41; // stack - 0x11a0
+-  char *v42; // stack - 0x1198
+-  void *v43; // stack - 0x1190
+-  char *v44; // stack - 0x1188
+-  void *v45; // stack - 0x1180
++  void *v40; // stack - 0x11a0
++  char *v41; // stack - 0x1198
++  void *v42; // stack - 0x1190
++  char *v43; // stack - 0x1188
++  void *v44; // stack - 0x1180
+@@ -53,2 +52,2 @@
+-      v18 = 0;
+-      v20 = v8;
++      v17 = 0;
++      v19 = v8;
+@@ -56,3 +55,3 @@
+-        v20 = &v20[1];
+-        v18 += (unsigned long)(v4 == ' ');
+-        v4 = *v20;
++        v19 = &v19[1];
++        v17 += (unsigned long)(v4 == ' ');
++        v4 = *v19;
+@@ -60 +59 @@
+-      v21 = (long)v20 - (long)v8;
+
+### O2_libedit_stripped_libedit-so-0-0-70 el_get 0xe4d0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned int el_get(long a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5)
++unsigned int el_get(long a0,unsigned long a1,unsigned long *a2,unsigned long a3,unsigned long a4,unsigned long a5)
+@@ -6 +6 @@
+-  unsigned long v12; // stack - 0x80
++  unsigned long *v12; // stack - 0x80
+@@ -32 +32 @@
+-        v6 = sub_12a70(a0,v4,0,a1 & 0xffffffff);
++        v6 = sub_12a70(a0,v4,NULL,a1 & 0xffffffff);
+@@ -65 +65 @@
+-        v16._0_4_ = (unsigned int)a2;
++        v16._0_4_ = SUB84(a2,0);
+
+### O2_libedit_stripped_libedit-so-0-0-70 sub_113e0 0x113e0 class=REVIEW layout=None 
+@@ -4 +4 @@
+-  char v10 [4096];
++  long *v10;
+@@ -6,4 +6,6 @@
+-  char v12 [1032];
+-  long v13;
+-  int v14; // r11d
+-  bool v15; // r15b
++  char v12 [4096];
++  char v13 [1032];
++  long v14;
++  unsigned int *v15;
++  int v16; // r11d
++  bool v17; // r15b
+@@ -11,7 +13,7 @@
+-  unsigned char *v3;
+-  unsigned long *v4;
+-  unsigned long v5; // rdx
+-  int v6; // eax
+-  long v7;
+-  unsigned long v8; // rbx
+-  long *v9;
++  unsigned int *v3;
++  char *v4; // rax
++  unsigned long *v5;
++  unsigned long v6; // rdx
++  int v7; // eax
++  long v8; // rax
++  unsigned long v9; // rbx
+@@ -21,2 +23,2 @@
+-  v3 = (unsigned char *)a2[1];
+-  v13 = *(long *)(a0 + 0x3f8);
++  v3 = (unsigned int *)a2[1];
++  v14 = *(long *)(a0 + 0x3f8);
+@@ -24 +26 @@
+-    v7 = 1;
++    v8 = 1;
+@@ -26,2 +28,2 @@
+-    v15 = 0;
+-    v14 = 0;
++    v17 = 0;
++    v16 = 0;
+@@ -29,2 +31,2 @@
+-      if (*(int *)v3 != 0x2d) {
+-        v6 = (int)v7 + 1;
++      if (*v3 != 0x2d) {
++        v7 = (int)v8 + 1;
+@@ -32 +34 @@
+-          if (v15) {
++          if (v17) {
+@@ -36,3 +38,3 @@
+-          v9 = &a2[v6];
+-          v7 = *v9;
+-          if (!v7) {
++          v10 = &a2[v7];
++          v15 = (unsigned int *)*v10;
++          if (!v15) {
+@@ -44 +46 @@
+-          v3 = (unsigned char *)sub_12770(v11,v3);
++          v3 = (unsigned int *)sub_12770(v12,v3);
+@@ -49,2 +51,2 @@
+-          if (v15) {
+-            if (*(int *)&v3[4]) {
++          if (v17) {
++            if (v3[1]) {
+@@ -54 +56,2 @@
+-            if (*(char *)((unsigned long)*v3 + v13) == '\x19') {
++            v4 = (char *)((unsigned long)(unsigned char)*v3 + v14);
++            if (*v4 == '\x19') {
+@@ -58 +61 @@
+-            *(char *)((unsigned long)*v3 + v13) = '\x1c';
++            *v4 = '\x1c';
+@@ -61,4 +64,4 @@
+-          v9 = &a2[v6];
+-          v7 = *v9;
+-          if (!v7) {
+-            if ((*(int *)v3) && (*(int *)&v3[4])) {
++          v10 = &a2[v7];
++          v15 = (unsigned int *)*v10;
++          if (!v15) {
+
+### O2_libedit_stripped_libedit-so-0-0-70 sub_1ab60 0x1ab60 class=REVIEW layout=None 
+@@ -5 +5 @@
+-  if ((unsigned long)(*(long *)(a0 + 0x60) - 4U) <= *(unsigned long *)(a0 + 0x58))
++  if (&(*(unsigned int **)(a0 + 0x60))[-1] <= *(unsigned int **)(a0 + 0x58))
+@@ -7 +7 @@
+-  v1 = sub_ad50(a0,*(unsigned long *)(a0 + 0x58),*(long *)(a0 + 0x60),*(unsigned int *)(a0 + 0x78),sub_ac40);
++  v1 = sub_ad50(a0,*(unsigned int **)(a0 + 0x58),*(unsigned int **)(a0 + 0x60),*(unsigned int *)(a0 + 0x78),sub_ac40);
+
+### O2_libedit_stripped_libedit-so-0-0-70 sub_1abd0 0x1abd0 class=REVIEW layout=None 
+@@ -5 +5 @@
+-  if ((unsigned long)(*(long *)(a0 + 0x60) - 4U) <= *(unsigned long *)(a0 + 0x58))
++  if (&(*(unsigned int **)(a0 + 0x60))[-1] <= *(unsigned int **)(a0 + 0x58))
+@@ -7 +7 @@
+-  v1 = sub_ad50(a0,*(unsigned long *)(a0 + 0x58),*(long *)(a0 + 0x60),*(unsigned int *)(a0 + 0x78),sub_ac00);
++  v1 = sub_ad50(a0,*(unsigned int **)(a0 + 0x58),*(unsigned int **)(a0 + 0x60),*(unsigned int *)(a0 + 0x78),sub_ac00);
+
+### O2_libedit_stripped_libedit-so-0-0-70 history_w 0x1d5b0 class=REVIEW layout=None 
+@@ -9 +9 @@
+-  char *v15;
++  long v15;
+@@ -11,3 +11,3 @@
+-  int v17; // eax
+-  int v18;
+-  long v19;
++  FILE *v17;
++  int v18; // eax
++  int v19;
+@@ -15 +15 @@
+-  FILE *v20; // rax
++  FILE *v20;
+@@ -33,2 +33,2 @@
+-  char *v37; // stack - 0x50
+-  char *v38; // stack - 0x48
++  FILE *v37; // stack - 0x50
++  FILE *v38; // stack - 0x48
+@@ -37,2 +37,2 @@
+-  unsigned long v5;
+-  long v6;
++  long v5;
++  unsigned long v6;
+@@ -43,8 +43,8 @@
+-  v15 = v38;
+-  v11 = a13;
+-  v10 = a12;
+-  v9 = a11;
+-  v8 = a10;
+-  v7 = a9;
+-  v6 = a8;
+-  v19 = a7;
++  v20 = v38;
++  v12 = a13;
++  v11 = a12;
++  v10 = a11;
++  v9 = a10;
++  v8 = a9;
++  v7 = a8;
++  v5 = a7;
+@@ -64,2 +64,2 @@
+-  v18 = (unsigned int)v37;
+-  v16 = v37;
++  v19 = (unsigned int)v37;
++  v17 = v37;
+@@ -73,2 +73,2 @@
+-          sub_1d3a0(*a0,v31);
+-        a0[6] = v6;
++          sub_1d3a0((void *)*a0,v31);
++        a0[6] = v7;
+@@ -79,6 +79,6 @@
+-        a0[5] = v19;
+-        a0[7] = v7;
+-        a0[9] = v8;
+-        a0[10] = v9;
+-        a0[0xb] = v10;
+-        a0[8] = v11;
++        a0[5] = v5;
++        a0[7] = v8;
++        a0[9] = v9;
++        a0[10] = v10;
++        a0[0xb] = v11;
++        a0[8] = v12;
+@@ -125,3 +125,3 @@
+-        v18 = *(unsigned int *)(*a0 + 0x34);
+-        *a1 = v18;
+-        if (-1 > v18) {
++        v19 = *(unsigned int *)(*a0 + 0x34);
++        *a1 = v19;
++        if (-1 > v19) {
+@@ -155 +155 @@
+-      a2 = (*(void *)a0[0xb])(*a0,a1,v16);
++      a2 = (*(void *)a0[0xb])(*a0,a1,v17);
+@@ -158 +158 @@
+-      a2 = (*(void *)a0[10])(*a0,a1,v16);
++      a2 = (*(void *)a0[10])(*a0,a1,v17);
+@@ -170 +170 @@
+-        return (*v27)(v32,a1,v16);
++        return (*v27)(v32,a1,v17);
+@@ -180,7 +180,7 @@
+
+### O2_libedit_stripped_libedit-so-0-0-70 history 0x1ed60 class=REVIEW layout=None 
+@@ -9,5 +9,5 @@
+-  int v15; // eax
+-  int v16;
+-  char *v17;
+-  long v18;
+-  FILE *v19; // rax
++  long v15;
++  FILE *v16;
++  int v17; // eax
++  int v18;
++  FILE *v19;
+@@ -31,2 +31,2 @@
+-  char *v35; // stack - 0x50
+-  char *v36; // stack - 0x48
++  FILE *v35; // stack - 0x50
++  FILE *v36; // stack - 0x48
+@@ -41,8 +41,8 @@
+-  v30 = v36;
+-  v12 = a13;
+-  v11 = a12;
+-  v10 = a11;
+-  v9 = a10;
+-  v8 = a9;
+-  v7 = a8;
+-  v18 = a7;
++  v19 = v36;
++  v13 = a13;
++  v12 = a12;
++  v11 = a11;
++  v10 = a10;
++  v9 = a9;
++  v8 = a8;
++  v7 = a7;
+@@ -62,2 +62,2 @@
+-  v16 = (unsigned int)v35;
+-  v17 = v35;
++  v18 = (unsigned int)v35;
++  v16 = v35;
+@@ -71,2 +71,2 @@
+-          sub_1eb50(*a0,v29);
+-        a0[6] = v7;
++          sub_1eb50((void *)*a0,v29);
++        a0[6] = v8;
+@@ -77,6 +77,6 @@
+-        a0[5] = v18;
+-        a0[7] = v8;
+-        a0[9] = v9;
+-        a0[10] = v10;
+-        a0[0xb] = v11;
+-        a0[8] = v12;
++        a0[5] = v7;
++        a0[7] = v9;
++        a0[9] = v10;
++        a0[10] = v11;
++        a0[0xb] = v12;
++        a0[8] = v13;
+@@ -123,3 +123,3 @@
+-        v16 = *(unsigned int *)(*a0 + 0x34);
+-        *a1 = v16;
+-        if (-1 > v16) {
++        v18 = *(unsigned int *)(*a0 + 0x34);
++        *a1 = v18;
++        if (-1 > v18) {
+@@ -153 +153 @@
+-      a2 = (*(void *)a0[0xb])(*a0,a1,v17);
++      a2 = (*(void *)a0[0xb])(*a0,a1,v16);
+@@ -156 +156 @@
+-      a2 = (*(void *)a0[10])(*a0,a1,v17);
++      a2 = (*(void *)a0[10])(*a0,a1,v16);
+@@ -168 +168 @@
+-        return (*v25)(v5,a1,v17);
++        return (*v25)(v5,a1,v16);
+@@ -178,3 +178,3 @@
+-      v21 = strlen(v17);
+-      v15 = (*(void *)a0[6])(*a0,a1);
+-      while (v15 != -1) {
++      v21 = strlen((char *)v16);
++      v17 = (*(void *)a0[6])(*a0,a1);
++      while (v17 != -1) {
+@@ -182,3 +182,3 @@
+
+### O2_libselinux_stripped_libselinux-so-1 sub_1d4c0 0x1d4c0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned long sub_1d4c0(long a0) // return-dupe
++unsigned long sub_1d4c0(char *a0) // return-dupe
+@@ -19,4 +19,4 @@
+-  v1 = *(unsigned long *)(a0 + 0x98);
+-  if (*(char *)(a0 + 0x92))
+-    pthread_mutex_lock((pthread_mutex_t *)(a0 + 0xd0));
+-  v4 = *(long *)(a0 + 0xa0);
++  v1 = *(unsigned long *)&a0[0x98];
++  if (a0[0x92])
++    pthread_mutex_lock((pthread_mutex_t *)&a0[0xd0]);
++  v4 = *(long *)&a0[0xa0];
+@@ -24 +24,8 @@
+-  *(unsigned long *)(a0 + 0xa0) = 0;
++  a0[0xa0] = '\0';
++  a0[0xa1] = '\0';
++  a0[0xa2] = '\0';
++  a0[0xa3] = '\0';
++  a0[0xa4] = '\0';
++  a0[0xa5] = '\0';
++  a0[0xa6] = '\0';
++  a0[0xa7] = '\0';
+@@ -27 +34 @@
+-  if ((*(char *)(a0 + 8)) && (**(long **)(v4 + 0x68) != *(long *)(a0 + 0x10))) {
++  if ((a0[8]) && (**(long **)(v4 + 0x68) != *(long *)&a0[0x10])) {
+@@ -37 +44 @@
+-        if (*(long *)(a0 + 0x18) == 0x62656572) {
++        if (*(long *)&a0[0x18] == 0x62656572) {
+@@ -49,2 +56,2 @@
+-        if (*(char *)(a0 + 0x91)) {
+-          v3 = *(int *)(a0 + 0xbc);
++        if (a0[0x91]) {
++          v3 = *(int *)&a0[0xbc];
+@@ -58 +65 @@
+-            if (!*(char *)(a0 + 0x90)) {
++            if (!a0[0x90]) {
+@@ -84,4 +91,4 @@
+-                  if (!*(int *)(a0 + 0xbc)) {
+-                    if (!*(long *)(a0 + 0xb0)) {
+-                      *(unsigned long **)(a0 + 0xb0) = v5;
+-                      *(unsigned long **)(a0 + 0xa8) = v5;
++                  if (!*(int *)&a0[0xbc]) {
++                    if (!*(long *)&a0[0xb0]) {
++                      *(unsigned long **)&a0[0xb0] = v5;
++                      *(unsigned long **)&a0[0xa8] = v5;
+@@ -91,2 +98,2 @@
+-                    *(unsigned long **)(*(long *)(a0 + 0xb0) + 0x20) = v5;
+-                    *(unsigned long **)(a0 + 0xb0) = v5;
++                    *(unsigned long **)(*(long *)&a0[0xb0] + 0x20) = v5;
++                    *(unsigned long **)&a0[0xb0] = v5;
+@@ -115,2 +122,2 @@
+-        if (*(char *)(a0 + 0x92))
+-          pthread_mutex_unlock((pthread_mutex_t *)(a0 + 0xd0));
++        if (a0[0x92])
++          pthread_mutex_unlock((pthread_mutex_t *)&a0[0xd0]);
+@@ -118 +125 @@
+-        if ((*(char *)(a0 + 0x92)) && (pthread_mutex_lock((pthread_mutex_t *)(a0 + 0xd0)), *(char *)(a0 + 0xb8))) goto label_1d59a;
++        if ((a0[0x92]) && (pthread_mutex_lock((pthread_mutex_t *)&a0[0xd0]), a0[0xb8])) goto label_1d59a;
+@@ -125,3 +132,3 @@
+-        if (*(char *)(a0 + 9)) {
+-          *(int *)(a0 + 0xbc) = v3;
+-          *(char *)(a0 + 0xb8) = 1;
++        if (a0[9]) {
++          *(int *)&a0[0xbc] = v3;
++          a0[0xb8] = '\x01';
+@@ -132,2 +139,2 @@
+-        if (*(char *)(a0 + 0xf)) // branch-flip
+-          *(long *)(a0 + 0xc0) = *(long *)(a0 + 0xc0) + 1;
++        if (a0[0xf]) // branch-flip
++          *(long *)&a0[0xc0] = *(long *)&a0[0xc0] + 1;
+@@ -135 +142 @@
+-          *(int *)(a0 + 0xbc) = v3;
++          *(int *)&a0[0xbc] = v3;
+@@ -146,2 +153,5 @@
+-        *(unsigned int *)(a0 + 0xbc) = 0xffffffff;
+-        *(char *)(a0 + 0xb8) = 1;
++        a0[0xbc] = '\xff';
++        a0[0xbd] = '\xff';
++        a0[0xbe] = '\xff';
++        a0[0xbf] = '\xff';
+
+### O2_libselinux_stripped_libselinux-so-1 sub_22240 0x22240 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_22240(long a0,long a1)
++void sub_22240(unsigned int *a0,long a1)
+@@ -10 +10 @@
+-    v4[v2] = (char)(*(unsigned int *)(a0 + 0x14 + (unsigned long)((unsigned int)v2 <= 3) * 4) >> (signed char)((~(unsigned int)v2 & 3) << 3));
++    v4[v2] = (char)(a0[(unsigned long)((unsigned int)v2 <= 3) + 5] >> (signed char)((~(unsigned int)v2 & 3) << 3));
+@@ -13,2 +13,2 @@
+-  sub_220c0(a0,0x250f5,1);
+-  v1 = *(unsigned int *)(a0 + 0x14);
++  sub_220c0(a0,(unsigned long *)0x250f5,1);
++  v1 = a0[5];
+@@ -16,2 +16,2 @@
+-    sub_220c0(a0,0x250f7,1);
+-    v1 = *(unsigned int *)(a0 + 0x14);
++    sub_220c0(a0,(unsigned long *)0x250f7,1);
++    v1 = a0[5];
+@@ -22 +22 @@
+-    *(char *)(a1 + v3) = (char)(*(unsigned int *)(a0 + (v3 >> 2 & 0x3fffffff) * 4) >> (signed char)((~(unsigned int)v3 & 3) << 3));
++    *(char *)(a1 + v3) = (char)(a0[v3 >> 2 & 0x3fffffff] >> (signed char)((~(unsigned int)v3 & 3) << 3));
+
+### O2_mirai_stripped_mirai sub_ce90 0xce90 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned char * sub_ce90(unsigned long a0)
++unsigned char * sub_ce90(char *a0)
+@@ -3 +3 @@
+-  short *v1;
++  unsigned char *v1;
+@@ -19,2 +19,2 @@
+-  char v24 [2039];
+-  char *v25;
++  unsigned char v24 [2039];
++  unsigned char *v25;
+@@ -102,3 +102,3 @@
+-        v1 = (short *)&v25[v23];
+-        if ((*v1 != 0x100) || (v1[1] != 0x100)) {
+-          sub_c620(&v1[5],v21,&v23);
++        v1 = &v25[v23];
++        if ((*(short *)v1 != 0x100) || (*(short *)&v1[2] != 0x100)) {
++          sub_c620(&v1[10],v21,&v23);
+@@ -108 +108 @@
+-          v14 = v1[4];
++          v14 = *(unsigned short *)&v1[8];
+@@ -117 +117 @@
+-            v14 = v1[4];
++            v14 = *(unsigned short *)&v1[8];
+@@ -121 +121 @@
+-        v25 = (char *)((long)&v1[5] + v27);
++        v25 = &(&v1[10])[v27];
+
+### O2_nuttx_stripped_nuttx sub_8007bd0 0x8007bd0 class=REVIEW layout=merge 
+@@ -8,2 +8 @@
+-  char v6; // stack - 0x24
+-  char v7; // stack - 0x23
++  char v6 [8]; // stack - 0x24
+@@ -23,3 +22,3 @@
+-        v6 = *v5;
+-        v7 = 0;
+-        (**(void **)(a0 + 0x18))(a0,"nsh: %s: no matching %s\n",&v6);
++        v6[0] = *v5;
++        v6[1] = 0;
++        (**(void **)(a0 + 0x18))(a0,"nsh: %s: no matching %s\n",v6);
+@@ -32 +31 @@
+-      *v5 = 0;
++      *v5 = '\0';
+
+### O2_riot-os_stripped_hello-world-elf sub_8000748 0x8000748 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_8000748(void)
++void sub_8000748(void) // ternary
+@@ -3 +3 @@
+-  unsigned int v1; // r0
++  unsigned int *v1; // r0
+@@ -6 +6 @@
+-  unsigned int v2; // r1
++  int v2; // r1
+@@ -22,5 +22 @@
+-  if (v11 & 4) // branch-flip
+-    v1 = getProcessStackPointer();
+-  else {
+-    v1 = getMainStackPointer();
+-  }
++  v1 = (v11 & 4) ? (unsigned int *)getProcessStackPointer() : (unsigned int *)getMainStackPointer(); // branch-flip
+
+### O2_tar_stripped_tar sub_1d5d0 0x1d5d0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_1d5d0(int8 a0,char *a1,unsigned long a2,unsigned long a3)
++void sub_1d5d0(int8 a0,char *a1,void *a2,int8 a3)
+@@ -4 +4 @@
+-  unsigned long *v2; // rax
++  char *v2; // rax
+@@ -7,6 +7,4 @@
+-  v2 = (unsigned long *)sub_4ecc0(v1 + 1 + strlen("SCHILY.xattr."));
+-  *v2 = 0x782e594c49484353;
+-  *(unsigned int *)&v2[1] = 0x72747461;
+-  *(char *)((int8)v2 + 0xc) = 0x2e;
+-  strcpy((char *)((int8)v2 + 0xd),a1);
+-  sub_1aa20(a0 + 0x160,a0 + 0x158,v2,a2,a3);
++  v2 = (char *)sub_4ecc0(v1 + 1 + strlen("SCHILY.xattr."));
++  builtin_strncpy(v2,"SCHILY.xattr.",0xd);
++  strcpy(&v2[0xd],a1);
++  sub_1aa20((int8 *)(a0 + 0x160),(int8 *)(a0 + 0x158),v2,a2,a3);
+
+### O2_tar_stripped_tar sub_3c8f0 0x3c8f0 class=REVIEW layout=None 
+@@ -9,2 +9,2 @@
+-  int8 *v15;
+-  int8 **v16;
++  int8 **v15;
++  int8 *v16;
+@@ -12,2 +12,2 @@
+-  int8 *v18;
+-  int8 **v19;
++  int8 **v18;
++  int8 *v19;
+@@ -15,10 +15,10 @@
+-  int8 *v20;
+-  uint1 v21;
+-  int4 v22; // eax
+-  int4 v23;
+-  uint8 v24; // rax
+-  int8 *v25;
+-  uint8 v26;
+-  char *v27;
+-  unsigned long v28;
+-  uint1 *v29;
++  uint1 v20;
++  int4 v21; // eax
++  int4 v22;
++  uint8 v23; // rax
++  int8 *v24;
++  uint8 v25;
++  char *v26;
++  unsigned long v27;
++  uint1 *v28;
++  int8 *v29;
+@@ -26,3 +26,3 @@
+-  int8 *v30;
+-  int8 v31;
+-  int8 **v32;
++  unsigned long *v30;
++  int8 **v31;
++  int8 v32;
+@@ -30,2 +30,2 @@
+-  uint4 v34;
+-  int8 *v35;
++  int8 *v34;
++  uint4 v35;
+@@ -83 +83 @@
+-    v29 = (uint1 *)getenv("ARGP_HELP_FMT");
++    v28 = (uint1 *)getenv("ARGP_HELP_FMT");
+@@ -89,4 +89,4 @@
+-    if (v29) {
+-      v63 = (int8 **)CONCAT71(v63._1_7_,*v29);
+-      if (*v29) {
+-        v30 = __ctype_b_loc();
++    if (v28) {
++      v63 = (int8 **)CONCAT71(v63._1_7_,*v28);
++      if (*v28) {
++        v29 = __ctype_b_loc();
+@@ -97,2 +97,2 @@
+-          v48 = *v30;
+-          v50 = v29;
++          v48 = *v29;
++          v50 = v28;
+@@ -112 +112 @@
+-          v29 = v50;
++          v28 = v50;
+@@ -114,2 +114,2 @@
+-            v24 = 0;
+-            v21 = v3;
++            v23 = 0;
++            v20 = v3;
+@@ -120,4 +120,4 @@
+-                v21 = v29[1];
+-                v29 = &v29[1];
+-                v4 = *(uint2 *)(v48 + (uint8)v21 * 2);
+-              } while (v21 == 0x2d || v21 == 0x5f);
++                v20 = v28[1];
++                v28 = &v28[1];
++                v4 = *(uint2 *)(v48 + (uint8)v20 * 2);
++              } while (v20 == 0x2d || v20 == 0x5f);
+@@ -125 +125 @@
+-            v24 = (int8)v29 - (int8)v50;
++            v23 = (int8)v28 - (int8)v50;
+
+### O2_tar_stripped_tar sub_3f9b0 0x3f9b0 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void * sub_3f9b0(unsigned int a0,void *a1,int4 a2,bool a3) // return-dupe
++char * sub_3f9b0(unsigned int a0,void *a1,int4 a2,bool a3) // return-dupe
+@@ -4,3 +4,3 @@
+-  dirent *v10; // rax
+-  unsigned short *v11;
+-  int4 *v12; // rax
++  char *v10;
++  int4 *v11; // rax
++  unsigned short *v12; // rax
+@@ -10,14 +10,12 @@
+-  char *v16;
+-  void *v17;
+-  int4 v18;
+-  char *v19;
+-  unsigned int *v2;
+-  int4 v20; // stack - 0x44
+-  uint8 v21;
+-  int8 v22; // r15
+-  uint1 v23;
+-  int8 v24; // stack - 0xa8
+-  int4 v25; // stack - 0x9c
+-  uint8 v26; // stack - 0x88
+-  uint8 v27; // stack - 0x80
+-  uint8 v28; // stack - 0x70
++  int4 v16;
++  int4 v17; // stack - 0x44
++  char *v18;
++  uint8 v19;
++  char *v2;
++  int8 v20; // r15
++  uint1 v21;
++  int8 v22; // stack - 0xa8
++  int4 v23; // stack - 0x9c
++  uint8 v24; // stack - 0x88
++  uint8 v25; // stack - 0x80
++  uint8 v26; // stack - 0x70
+@@ -30 +28 @@
+-  void *v9;
++  dirent *v9; // rax
+@@ -33,2 +31,2 @@
+-  v22 = (int8)v6 - (int8)a1;
+-  v7 = strlen(v6) + v22;
++  v20 = (int8)v6 - (int8)a1;
++  v7 = strlen(v6) + v20;
+@@ -37 +35 @@
+-    v16 = getenv("SIMPLE_BACKUP_SUFFIX");
++    v10 = getenv("SIMPLE_BACKUP_SUFFIX");
+@@ -39 +37 @@
+-    if (((v16) && (*v16)) && (v6 = (char *)sub_400d0(v16), v16 != v6))
++    if (((v10) && (*v10)) && (v6 = (char *)sub_400d0(v10), v10 != v6))
+@@ -48,2 +46,2 @@
+-  v9 = malloc(v8);
+-  if (!v9)
++  v6 = malloc(v8);
++  if (!v6)
+@@ -51 +49 @@
+-  v20 = -1;
++  v17 = -1;
+@@ -53,2 +51,2 @@
+-  v28 = 0;
+-  v25 = a2;
++  v26 = 0;
++  v23 = a2;
+@@ -56,4 +54,4 @@
+-    memcpy(v9,a1,v7 + 1U);
+-    if (v25 != 1) { // branch-flip
+-      v11 = (unsigned short *)((int8)v9 + v22);
+-      v24 = sub_40130(v11);
++    memcpy(v6,a1,v7 + 1U);
++    if (v23 != 1) { // branch-flip
++      v10 = &v6[v20];
++      v22 = sub_40130(v10);
+@@ -63,2 +61,2 @@
+-        v26 = 1;
+-        v27 = v8;
++        v24 = 1;
++        v25 = v8;
+@@ -67,5 +65,5 @@
+-        v23 = v5;
+
+### O2_tar_stripped_tar sub_40c90 0x40c90 class=REVIEW layout=None 
+@@ -1 +1 @@
+-void sub_40c90(struct_39 *a0,char *a1,uint4 a2) // return-dupe x2
++void sub_40c90(struct_69 *a0,char *a1,uint4 a2) // return-dupe x2
+@@ -4 +4 @@
+-  void *v10; // rax
++  char *v10; // rax
+@@ -10,3 +10,2 @@
+-  unsigned int *v16; // rbx
+-  uint4 v17; // r12d
+-  uint8 v18;
++  uint4 v16; // r12d
++  uint8 v17;
+@@ -15,5 +14,5 @@
+-  char *v4;
+-  int4 v5; // eax
+-  int8 *v6;
+-  char *v7; // rax
+-  int8 v8;
++  int8 v4;
++  char *v5;
++  int4 v6; // eax
++  int8 *v7;
++  void *v8;
+@@ -22 +21 @@
+-  v6 = a0->field_0x0;
++  v7 = a0->field_0x0;
+@@ -24,2 +23,2 @@
+-    if (((!v6) || ((int4)v6[1])) || ((*(uint4 *)((int8)v6 + 0xc) ^ a2) & 0x60000018)) {
+-      v6 = (int8 *)sub_4ed80(0x28);
++    if (((!v7) || ((int4)v7[1])) || ((*(uint4 *)((int8)v7 + 0xc) ^ a2) & 0x60000018)) {
++      v7 = (int8 *)sub_4ed80(0x28);
+@@ -28,2 +27,2 @@
+-      *(unsigned int *)&v6[1] = 0;
+-      *(uint4 *)((int8)v6 + 0xc) = a2;
++      *(unsigned int *)&v7[1] = 0;
++      *(uint4 *)((int8)v7 + 0xc) = a2;
+@@ -34 +33 @@
+-      v6[2] = sub_43bf0(0,0,v15,v11,sub_40410);
++      v7[2] = sub_43bf0(0,0,v15,v11,sub_40410);
+@@ -36,2 +35,2 @@
+-      a0->field_0x0 = v6;
+-      *v6 = (int8)v3;
++      a0->field_0x0 = v7;
++      *v7 = (int8)v3;
+@@ -39 +38 @@
+-    v7 = (char *)sub_4ee30(a1);
++    v10 = (char *)sub_4ee30(a1);
+@@ -42,2 +41,2 @@
+-      v8 = v6[2];
+-      if (v7 == (char *)sub_44240(v8,v7))
++      v4 = v7[2];
++      if (v10 == (char *)sub_44240(v4,v10))
+@@ -45 +44 @@
+-      free(v7); // tail-call
++      free(v10); // tail-call
+@@ -48,2 +47,2 @@
+-    v9 = v7;
+-    v12 = v7;
++    v9 = v10;
++    v12 = v10;
+@@ -52 +51 @@
+-      v4 = v9;
++      v5 = v9;
+@@ -54 +53 @@
+-        v9 = &v4[1];
++        v9 = &v5[1];
+@@ -56 +55 @@
+-        *v4 = v14;
++        *v5 = v14;
+@@ -59 +58 @@
+-        v4 = v9;
++        v5 = v9;
+@@ -67 +66 @@
+-      v9 = &v4[1];
++      v9 = &v5[1];
+@@ -69 +68 @@
+-      *v4 = v14;
++      *v5 = v14;
+@@ -72,4 +71,4 @@
+-  if ((!v6) || (((int4)v6[1] != 1 || ((*(uint4 *)((int8)v6 + 0xc) ^ a2) & 0x20000000)))) {
+
+### O2_tar_stripped_tar sub_54f10 0x54f10 class=REVIEW layout=None 
+@@ -1 +1 @@
+-unsigned long sub_54f10(struct_82 *a0,int8 a1,int8 a2,int8 a3,uint4 a4) // early-return x3
++unsigned long sub_54f10(struct_63 *a0,int8 a1,int8 a2,int8 a3,uint4 a4) // early-return x3
+@@ -3 +3,2 @@
+-  int8 v1;
++  void *v1;
++  int8 v10; // stack - 0x48
+@@ -6,3 +7,3 @@
+-  unsigned long v4; // rax
+-  int8 v5; // rbx
+-  int8 v6;
++  int8 v4;
++  unsigned long v5; // rax
++  int8 v6; // rbx
+@@ -10 +11,2 @@
+-  int8 v8; // stack - 0x48
++  int8 *v8; // rbx
++  int8 v9; // r15
+@@ -14,8 +16,8 @@
+-    v6 = a0->field_0x0;
+-    v7 = a0->field_0x28;
+-    v2 = a1 * 0x10 + v6;
+-    if (*(char *)(v2 + 8) != '\x04') { // branch-flip
+-      v1 = v7 + a1 * 0x18;
+-      v3 = *(int8 *)(v1 + 8);
+-      if (!v3) {
+-        *(unsigned long *)(a0->field_0x18 + a2 * 8) = *(unsigned long *)(a0->field_0x18 + a1 * 8);
++    v7 = a0->field_0x0;
++    v1 = a0->field_0x28;
++    v3 = a1 * 0x10 + v7;
++    if (*(char *)(v3 + 8) != '\x04') { // branch-flip
++      v9 = a1 * 0x18;
++      v4 = *(int8 *)((int8)v1 + v9 + 8);
++      if (!v4) {
++        *(unsigned long *)((int8)a0->field_0x18 + a2 * 8) = *(unsigned long *)((int8)a0->field_0x18 + a1 * 8);
+@@ -24,5 +26,5 @@
+-      v5 = a2 * 0x18;
+-      v7 += v5;
+-      v1 = **(int8 **)(v1 + 0x10);
+-      *(unsigned long *)(v7 + 8) = 0;
+-      if (v3 == 1) {
++      v6 = a2 * 0x18;
++      v8 = (int8 *)((int8)v1 + v6);
++      v2 = **(int8 **)((int8)v1 + v9 + 0x10);
++      v8[1] = 0;
++      if (v4 == 1) {
+@@ -30 +32 @@
+-          if (!sub_54b90(v7,v1))
++          if (!sub_54b90(v8,v2))
+@@ -34,2 +36,2 @@
+-        a4 |= *(uint4 *)(v2 + 8) >> 8 & 0x3ff;
+-        a2 = sub_51970(a0,v1,a4);
++        a4 |= *(uint4 *)(v3 + 8) >> 8 & 0x3ff;
++        a2 = sub_51970(a0,v2,a4);
+@@ -38,2 +40,2 @@
+-        v6 = a0->field_0x28;
+-        if (!sub_54b90(v5 + v6,a2))
++        v1 = a0->field_0x28;
++        if (!sub_54b90((int8 *)(v6 + (int8)v1),a2))
+@@ -41 +43 @@
+-        a1 = v1;
++        a1 = v2;
+@@ -44,4 +46,4 @@
+-      v2 = a0->field_0x10 + -1;
+-      v3 = v2 * 0x10 + v6;
+-      if ((*(uint1 *)(v3 + 10) & 4) && (1 <= v2)) {
+-        v6 -= v3;
++      v3 = a0->field_0x10 + -1;
++      v4 = v3 * 0x10 + v7;
++      if ((*(uint1 *)(v4 + 10) & 4) && (1 <= v3)) {
++        v7 -= v4;
+@@ -49,2 +51,2 @@
+-          if ((*(int8 *)(a0->field_0x20 + v2 * 8) == v1) && (a4 == (*(uint4 *)(v3 + 8) >> 8 & 0x3ff))) {
+-            if (!sub_54b90(v7,v2))
++          if ((*(int8 *)((int8)a0->field_0x20 + v3 * 8) == v2) && (a4 == (*(uint4 *)(v4 + 8) >> 8 & 0x3ff))) {
++            if (!sub_54b90(v8,v3))
+@@ -54,3 +56,3 @@
+-          v3 += v6 + -0x20 + a0->field_0x10 * 0x10;
+-          v2 -= 1;
+-        } while ((*(uint1 *)(v3 + 10) & 4) && (1 <= v2));
+
+### O2_zlib_stripped_libz-so-1-2-13 sub_4650 0x4650 class=REVIEW layout=None 
+@@ -17 +17 @@
+-  long v6;
++  struct_0 *v6;
+@@ -41 +41 @@
+-      v12 = *(int *)(v6 + 8);
++      v12 = v6->field_0x8;
+@@ -45 +45 @@
+-      v12 = *(int *)(v6 + 8);
++      v12 = v6->field_0x8;
+@@ -48 +48 @@
+-    v18 = sub_45c0(v6,(unsigned long)(unsigned int)a0->field_0xac + (unsigned long)(unsigned int)a0->field_0xb4 + (long)a0->field_0x60,v18);
++    v18 = sub_45c0(v6,(void *)((unsigned long)(unsigned int)a0->field_0xac + (unsigned long)(unsigned int)a0->field_0xb4 + (long)a0->field_0x60),v18);
+@@ -71 +71 @@
+-    if ((0x105 < v8) || (!*(int *)(a0->field_0x0 + 8))) break;
++    if ((0x105 < v8) || (!a0->field_0x0->field_0x8)) break;
+
+### O2_zlib_stripped_libz-so-1-2-13 inflate 0x9a60 class=REVIEW layout=None 
+@@ -203 +203 @@
+-              if (sub_c140(0,v6 + 0x98,0x13,v6 + 0x90,v6 + 0x78,v6 + 0x318)) { // branch-flip
++              if (sub_c140(0,(unsigned short *)(v6 + 0x98),0x13,(long *)(v6 + 0x90),(unsigned int *)(v6 + 0x78),v6 + 0x318)) { // branch-flip
+@@ -346 +346 @@
+-                  if (sub_c140(1,v6 + 0x98,v8,v6 + 0x90,v6 + 0x78)) { // branch-flip
++                  if (sub_c140(1,(unsigned short *)(v6 + 0x98),v8,(long *)(v6 + 0x90),(unsigned int *)(v6 + 0x78))) { // branch-flip
+@@ -355 +355 @@
+-                    if (!sub_c140(2,v6 + 0x98 + (unsigned long)v35 * 2,v5,v6 + 0x90,v6 + 0x7c,v6 + 0x318)) {
++                    if (!sub_c140(2,&((unsigned short *)(v6 + 0x98))[v35],v5,(long *)(v6 + 0x90),(unsigned int *)(v6 + 0x7c),v6 + 0x318)) {

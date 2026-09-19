@@ -3921,6 +3921,10 @@ impl ProtoModel {
     pub fn input(&self) -> &ParamListStandard {
         self.input.as_ref().expect("ProtoModel::input: not built")
     }
+    /// (kuna) The input resource model, or `None` before `build_param_list`.
+    pub fn input_opt(&self) -> Option<&ParamListStandard> {
+        self.input.as_ref()
+    }
     /// Borrow the output resource model (panics if not yet built — C++ would
     /// dereference a null `output`).
     pub fn output(&self) -> &ParamListStandard {

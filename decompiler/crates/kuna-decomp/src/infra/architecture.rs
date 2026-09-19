@@ -374,6 +374,9 @@ pub struct Architecture {
     /// a LOAD/STORE base as a pointer, and what that pointer points at.  See
     /// [`kuna_ptrfromuse`](crate::p5_types::kuna_ptrfromuse).
     pub ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode,
+    /// (kuna `protoorder`) Callee-first whole-binary order and what it states
+    /// (`types` or `lock`); read by the `kuna-cli` driver.
+    pub protoorder: crate::kuna_protoorder::ProtoOrderMode,
     /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
     /// dereferenced value.
     ///
@@ -1208,6 +1211,13 @@ pub struct Architecture {
     pub kuna_callee_dead_cache: std::collections::HashMap<
         (int4, uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
+    >,
+    /// (kuna `protoorder types`) The recovered parameter types each callee stated
+    /// for the callers decompiled after it, keyed by `(space index, entry
+    /// offset)`.  Copied per function by `seed_protoorder_types`.
+    pub kuna_protoorder_types: std::collections::HashMap<
+        (int4, uintb),
+        std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
     /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
     /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
@@ -2227,6 +2237,7 @@ impl Architecture {
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
+            protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
             v850_indirect_branch: false,
@@ -2368,6 +2379,7 @@ impl Architecture {
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
+            kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive
@@ -2632,6 +2644,7 @@ impl Architecture {
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off; // (kuna) option ptrfromuse: default OFF -- it commits a parameter to a pointer, which forfeits the width-only free pass an 8-byte scalar gets, so it ships opt-in
+        self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Types; // (kuna) option protoorder default `types`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, so the call renders with exactly the arguments it renders with off; `lock` also states the arity and stays opt-in
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
@@ -3302,6 +3315,11 @@ impl Architecture {
             "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
             "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
             "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
+            "protoorder" => {
+                let (mode, msg) = crate::kuna_protoorder::OptionProtoOrder.apply(p1)?;
+                self.protoorder = mode;
+                Ok(msg)
+            }
             "ptrfromuse" => {
                 let (val, msg) =
                     crate::p5_types::kuna_ptrfromuse::OptionPtrFromUse.apply(p1)?;

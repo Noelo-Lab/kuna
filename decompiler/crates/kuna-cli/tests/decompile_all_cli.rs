@@ -1700,6 +1700,17 @@ fn raw_image_discovers_called_functions_beyond_its_seeds() {
     assert!(ok, "raw decompile-all failed: {stderr}");
     assert!(stdout.contains("\"count\": 3"), "{stdout}");
     assert!(stdout.contains("return 7;"), "the sweep-only body must decompile:\n{stdout}");
+    // A raw image has no call graph, so the default `protoorder` stays out of the
+    // way silently; naming the option is what makes it say it had nothing to order.
+    assert!(!stderr.contains("protoorder"), "the default spoke on a raw image:\n{stderr}");
+    let (named, stderr, ok) = run_kuna(&[
+        "decompile-all", &binary, "--json", "--raw-image", "--target", target,
+        "--base", "0x80000000", "--entry", "0x80000000", "--option", "protoorder", "types",
+        "--sleighpath", &sp,
+    ]);
+    assert!(ok, "raw decompile-all --option protoorder types failed: {stderr}");
+    assert!(stderr.contains("--option protoorder: no call graph"), "{stderr}");
+    assert_eq!(named, stdout, "naming protoorder moved a raw image's output");
 
     // `--addr` still narrows a raw run to the addresses named.
     let (stdout, stderr, ok) = run_kuna(&[
@@ -2280,17 +2291,74 @@ fn fast_discovery_finds_the_pointer_only_target() {
 
 // --- `--jobs N`: the worker pool ---------------------------------------------
 
+fn protoorder_fixture() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
 /// The pool's whole contract: the document must not depend on how many processes
 /// produced it, or on how the work was cut up between them.  Every job count and
 /// chunk size here has to agree with the serial run byte for byte — dispatch
 /// order is longest-first, which is deliberately not output order, so a
 /// positional merge is the only thing that can make this hold.
+///
+/// Both runs pass `--option protoorder off`: the serial default decompiles
+/// callees first and a worker cannot see another worker's callees
+/// ([`jobs_notes_that_the_default_callee_first_order_is_serial_only`]).  The
+/// protoorder fixture is one where the default does move the output, so the
+/// pin is not vacuous.
 #[test]
 fn jobs_output_is_byte_identical_to_serial() {
-    let bin = fauxware();
     let sp = specs();
-    let (want, stderr, ok) =
-        run_kuna(&["decompile-all", &bin, "--json", "--max-fn-seconds", "0", "--sleighpath", &sp]);
+    for bin in [fauxware(), protoorder_fixture()] {
+        let base = ["decompile-all", &bin, "--json", "--max-fn-seconds", "0", "--sleighpath", &sp,
+            "--option", "protoorder", "off"];
+        let (want, stderr, ok) = run_kuna(&base);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("jobs: skipping (no `.sla`; run `make specs`): {stderr}");
+                return;
+            }
+            panic!("kuna decompile-all failed: {stderr}");
+        }
+        assert!(want.contains("\"code\""), "the serial run decompiled nothing:\n{want}");
+
+        for (jobs, chunk) in [("2", None), ("3", Some("1")), ("4", Some("7")), ("8", Some("1000"))] {
+            let mut args = base.to_vec();
+            args.extend_from_slice(&["--jobs", jobs]);
+            if let Some(chunk) = chunk {
+                args.extend_from_slice(&["--jobs-chunk", chunk]);
+            }
+            let (got, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all --jobs {jobs} failed: {stderr}");
+            assert_eq!(got, want, "--jobs {jobs} (chunk {chunk:?}) moved the document of {bin}");
+            // A run that can take an hour has to say where it is, and it has to say
+            // it on stderr — stdout is the document, byte-compared just above.
+            assert!(
+                stderr.contains("[kuna --jobs]") && stderr.contains("worker process(es)"),
+                "--jobs {jobs} reported no plan on stderr:\n{stderr}"
+            );
+            assert!(
+                stderr.contains("[kuna --jobs] done:"),
+                "--jobs {jobs} never reported completion:\n{stderr}"
+            );
+            assert!(!stderr.contains("callee-first"), "protoorder off still noted:\n{stderr}");
+        }
+    }
+}
+
+/// With the default `protoorder types`, a serial run types `caller`'s argument
+/// from `callee`'s own recovery and a pool run cannot: the pool says so on
+/// stderr instead of silently producing a different document.
+#[test]
+fn jobs_notes_that_the_default_callee_first_order_is_serial_only() {
+    let bin = protoorder_fixture();
+    let sp = specs();
+    let base = ["decompile-all", &bin, "--max-fn-seconds", "0", "--sleighpath", &sp];
+    let (serial, stderr, ok) = run_kuna(&base);
     if !ok {
         if is_specs_skip(&stderr) {
             eprintln!("jobs: skipping (no `.sla`; run `make specs`): {stderr}");
@@ -2298,36 +2366,390 @@ fn jobs_output_is_byte_identical_to_serial() {
         }
         panic!("kuna decompile-all failed: {stderr}");
     }
-    assert!(want.contains("\"name\": \"main\""), "the serial run decompiled nothing:\n{want}");
+    assert!(!stderr.contains("callee-first"), "a serial run printed the pool note:\n{stderr}");
+    assert!(serial.contains("caller(unsigned char *a0,int a1)"), "{serial}");
+    let mut pooled = base.to_vec();
+    pooled.extend_from_slice(&["--jobs", "2"]);
+    let (got, stderr, ok) = run_kuna(&pooled);
+    assert!(ok, "kuna decompile-all --jobs 2 failed: {stderr}");
+    assert!(
+        stderr.contains("--jobs decompiles without the callee-first order"),
+        "the pool did not say its output can differ:\n{stderr}"
+    );
+    assert!(got.contains("caller(unsigned long a0,int a1)"), "{got}");
+}
 
-    for (jobs, chunk) in [("2", None), ("3", Some("1")), ("4", Some("7")), ("8", Some("1000"))] {
-        let mut args = vec![
-            "decompile-all",
-            &bin,
-            "--json",
-            "--max-fn-seconds",
-            "0",
-            "--sleighpath",
-            &sp,
-            "--jobs",
-            jobs,
-        ];
-        if let Some(chunk) = chunk {
-            args.extend_from_slice(&["--jobs-chunk", chunk]);
+/// A narrowed run skips the callee-first order (and its call-graph build) by
+/// default, silently; naming the option orders the selection and says that a
+/// callee outside it states nothing.
+#[test]
+fn a_narrowed_run_orders_callees_first_only_when_asked() {
+    let bin = protoorder_fixture();
+    let sp = specs();
+    let base = ["decompile-all", &bin, "--functions", "caller,callee", "--sleighpath", &sp];
+    let (plain, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("protoorder: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
         }
-        let (got, stderr, ok) = run_kuna(&args);
-        assert!(ok, "kuna decompile-all --jobs {jobs} failed: {stderr}");
-        assert_eq!(got, want, "--jobs {jobs} (chunk {chunk:?}) moved the document");
-        // A run that can take an hour has to say where it is, and it has to say
-        // it on stderr — stdout is the document, byte-compared just above.
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    assert!(!stderr.contains("protoorder"), "a default narrowed run printed a note:\n{stderr}");
+    assert!(plain.contains("caller(unsigned long a0,int a1)"), "{plain}");
+    let mut asked = base.to_vec();
+    asked.extend_from_slice(&["--option", "protoorder", "types"]);
+    let (got, stderr, ok) = run_kuna(&asked);
+    assert!(ok, "{stderr}");
+    assert!(stderr.contains("note: --option protoorder: 2 of this binary's entries selected"), "{stderr}");
+    assert!(got.contains("caller(unsigned char *a0,int a1)"), "{got}");
+}
+
+/// The functions of a `decompile-all` document whose headers start with one of
+/// `names`, each `struct_N` typedef and definition that `structdefs` printed
+/// above them kept once and hoisted, so the set compiles as one file.
+fn printed_functions(stdout: &str, names: &[&str]) -> String {
+    let mut defs: Vec<String> = Vec::new();
+    let mut bodies = String::new();
+    for chunk in stdout.split("// Function: ").filter(|c| names.iter().any(|n| c.starts_with(n))) {
+        let mut lines = chunk.lines();
+        bodies.push_str("// ");
+        while let Some(line) = lines.next() {
+            if line.starts_with("typedef struct struct_") {
+                let def = format!("{line}\n");
+                if !defs.contains(&def) {
+                    defs.insert(0, def);
+                }
+            } else if line.starts_with("struct struct_") && line.ends_with('{') {
+                let mut def = format!("{line}\n");
+                for l in lines.by_ref() {
+                    def.push_str(l);
+                    def.push('\n');
+                    if l == "};" {
+                        break;
+                    }
+                }
+                if !defs.contains(&def) {
+                    defs.push(def);
+                }
+            } else {
+                bodies.push_str(line);
+                bodies.push('\n');
+            }
+        }
+        bodies.push('\n');
+    }
+    format!("{}{bodies}", defs.concat())
+}
+
+/// On MIPS o32 `h(int, float)` takes its float in a general register, and each
+/// `g*` hands it a word's bits while also adding, comparing, truncating or
+/// storing that word as an integer.  A float vote there printed `(int)v1 + 3`,
+/// `(short)((unsigned int)v1 >> 0x10)` and `a2[1] = (int)v1` -- value conversions
+/// where the machine moves bits -- so it is refused.  The round trip compiles the
+/// seven printed callers (`-no-pie`, so the array's address fits the `int`
+/// parameter) against a bit-preserving `h` and compares them with the source.
+#[test]
+fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatgpr_mipsel")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) =
+        run_kuna(&["decompile-all", &bin, "--option", "structdefs", "on", "--sleighpath", &sp]);
+    if !ok && is_specs_skip(&stderr) {
+        eprintln!("protoorder float-in-GPR: skipping (no `.sla`; run `make specs`)");
+        return;
+    }
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in [
+        "return (int)(float)h(a0,v1) + v1 + 3;",
+        "(unsigned int)(v1 < 0x3fc00000)",
+        "if (v1 == 0x3fc00001)",
+        "(unsigned int)(0x3fc00000 < v1)",
+        "*a2 = (short)((unsigned int)v1 >> 0x10);",
+        "a2[1] = (char)((unsigned int)v1 >> 0x10);",
+    ] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    assert!(
+        stdout.contains("a2[1] = v1;") || stdout.contains("a2->field_0x4 = v1;"),
+        "missing the bitwise store of v1:\n{stdout}"
+    );
+    for bad in ["float v1;", "1.5000001"] {
+        assert!(!stdout.contains(bad), "`{bad}` printed:\n{stdout}");
+    }
+    let converts_v1 = |cast: &str, shift_ok: bool| {
+        stdout.match_indices(cast).any(|(i, m)| {
+            let rest = &stdout[i + m.len()..];
+            !rest.starts_with(|c: char| c.is_ascii_digit()) && !(shift_ok && rest.starts_with(" >>"))
+        })
+    };
+    assert!(!converts_v1("(int)v1", false), "`(int)v1` printed:\n{stdout}");
+    assert!(!converts_v1("(unsigned int)v1", true), "`(unsigned int)v1` printed:\n{stdout}");
+
+    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        eprintln!("protoorder float-in-GPR round trip: no `cc`, spelling checked only");
+        return;
+    }
+    let printed = printed_functions(&stdout, &["g3 ", "g5 ", "g6 ", "g9 ", "g20 ", "g22 ", "g24 "]);
+    let dir = std::env::temp_dir().join(format!("kuna-protoorder-floatgpr-rt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("rt.c");
+    let exe = dir.join("rt");
+    std::fs::write(
+        &src,
+        format!(
+            "#include <stdio.h>\n#include <string.h>\n\
+             static float hs(int k, float x) {{ return x * 2.5f + (float)k; }}\n\
+             static float h(int k, int bits) {{ float x; memcpy(&x, &bits, 4); return hs(k, x); }}\n\
+             {printed}\n\
+             static float fb(int b) {{ float f; memcpy(&f, &b, 4); return f; }}\n\
+             static int s3(int k, int *p) {{ int b = p[3]; return (int)hs(k, fb(b)) + b + 3; }}\n\
+             static int s5(int k, int *p) {{ int b = p[3]; return (int)hs(k, fb(b)) + (b < 0x3fc00000); }}\n\
+             static int s6(int k, int *p) {{ int b = p[3]; return (int)hs(k, fb(b)) + (b == 0x3fc00001) * 100; }}\n\
+             static unsigned s9(int k, unsigned *p) {{ unsigned b = p[3]; \
+             return (unsigned)hs(k, fb((int)b)) + (b > 0x3fc00000u); }}\n\
+             static int s20(int k, int *p, unsigned short *q) {{ int b = p[3]; int r = (int)hs(k, fb(b)); \
+             *q = (short)(b >> 16); return r; }}\n\
+             static int s22(int k, int *p, char *q) {{ int b = p[3]; int r = (int)hs(k, fb(b)); \
+             q[0] = (char)(b >> 8); q[1] = (char)(b >> 16); return r; }}\n\
+             static unsigned s24(int k, int *p, int *q) {{ int b = p[3]; float r = hs(k, fb(b)); \
+             q[1] = b; q[0] = (int)r; return 0; }}\n\
+             static int arr[4] = {{1, 2, 3, 0x3fc00001}};\n\
+             static int bits[4] = {{1, 2, 3, 0x3fc01234}};\n\
+             static void run(int use_printed) {{\n  \
+             int a = (int)(long)arr, b = (int)(long)bits;\n  \
+             unsigned short s = 0; char c[2] = {{0, 0}}; int q[2] = {{0, 0}}; int r20, r22, r24;\n  \
+             if (use_printed) {{\n    \
+             printf(\"%d %d %d %u \", g3(7, a), g5(7, a), g6(7, a), (unsigned)g9(7, a));\n    \
+             r20 = g20(7, b, &s); r22 = g22(7, b, c); r24 = (int)g24(7, b, q);\n  \
+             }} else {{\n    \
+             printf(\"%d %d %d %u \", s3(7, arr), s5(7, arr), s6(7, arr), s9(7, (unsigned *)arr));\n    \
+             r20 = s20(7, bits, &s); r22 = s22(7, bits, c); r24 = (int)s24(7, bits, q);\n  \
+             }}\n  \
+             printf(\"%d %04x %d %02x %02x %d %d %x\\n\", r20, s, r22, (unsigned char)c[0], (unsigned char)c[1], \
+             r24, q[0], q[1]);\n\
+             }}\n\
+             int main(void) {{\n  run(1);\n  run(0);\n  return 0;\n}}\n"
+        ),
+    )
+    .unwrap();
+    let cc = Command::new("cc")
+        .args(["-std=gnu11", "-w", "-fno-pie", "-no-pie", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .output()
+        .expect("spawn cc");
+    assert!(cc.status.success(), "the printed callers did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
+    let run = Command::new(&exe).output().expect("run the round trip");
+    let got = String::from_utf8_lossy(&run.stdout).to_string();
+    let _ = std::fs::remove_dir_all(&dir);
+    let lines: Vec<&str> = got.lines().collect();
+    assert_eq!(lines.len(), 2, "{got}");
+    assert_eq!(lines[0], lines[1], "the printed callers compute different values:\n{printed}");
+}
+
+/// `dsum`, `norm` and `use` read their argument as `double *`, `struct P *` and
+/// `struct M *`, and each caller writes that memory with integer bits first. A
+/// pointer vote from the callee printed those stores as value conversions
+/// (`a0->field_0x0 = (double)(a1 + 1)`, `a0->field_0x4 = (float)v2`), the payload
+/// NaN as `NAN`, and `s3`'s integer-register parameters as `double`. Both passes,
+/// the default and `--option protoorder off`, compile the six printed callers
+/// against recording callees and must leave the same bytes as the source.
+#[test]
+fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatpointee_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    for off in [false, true] {
+        let mut args = vec!["decompile-all", bin.as_str(), "--option", "structdefs", "on", "--sleighpath", &sp];
+        if off {
+            args.extend_from_slice(&["--option", "protoorder", "off"]);
+        }
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("protoorder float pointee: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let names = ["u1 ", "u2 ", "s3 ", "cp1 ", "cp3 ", "cp5 "];
+        let chunks: Vec<&str> =
+            stdout.split("// Function: ").filter(|c| names.iter().any(|n| c.starts_with(n))).collect();
+        assert_eq!(chunks.len(), names.len(), "{stdout}");
+        for bad in ["= (double)(", "= (float)", "NAN", "double a1", "double a2"] {
+            assert!(!chunks.iter().any(|c| c.contains(bad)), "`{bad}` printed (off={off}):\n{stdout}");
+        }
+        if !have_cc {
+            eprintln!("protoorder float pointee round trip: no `cc`, spelling checked only");
+            continue;
+        }
+        let printed = printed_functions(&stdout, &names);
+        let dir = std::env::temp_dir().join(format!("kuna-protoorder-pointee-rt-{}-{off}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("rt.c");
+        let exe = dir.join("rt");
+        std::fs::write(
+            &src,
+            format!(
+                "#include <stdio.h>\n#include <string.h>\n#include <math.h>\n\
+                 static unsigned char seen[32];\n\
+                 double dsum(void *p) {{ memcpy(seen, p, 32); return 0; }}\n\
+                 double norm(void *p) {{ memcpy(seen, p, 16); return 0; }}\n\
+                 double use(void *p) {{ memcpy(seen, p, 16); return 0; }}\n\
+                 {printed}\n\
+                 union U {{ long l[4]; double d[4]; }};\n\
+                 struct P {{ double x, y; }};\n\
+                 struct M {{ int i; float f; double d; }};\n\
+                 static void s_u1(union U *u, long v) {{ u->l[0] = v + 1; u->l[1] = v >> 1; dsum(u->d); }}\n\
+                 static void s_u2(union U *u) {{ long t = u->l[2]; u->l[0] = t * 3; \
+                 u->l[1] = 0x7ff0000000000001L; dsum(u->d); }}\n\
+                 static void s_s3(struct P *d, long a, long b) {{ memcpy(&d->x, &a, 8); memcpy(&d->y, &b, 8); \
+                 norm(d); }}\n\
+                 static void s_cp1(struct M *d, const struct M *s) {{ *d = *s; use(d); }}\n\
+                 static void s_cp3(struct M *d, long a, long b) {{ memcpy(d, &a, 8); memcpy(&d->d, &b, 8); \
+                 use(d); }}\n\
+                 static void s_cp5(struct M *d, unsigned v) {{ unsigned w = v * 2 + 1; memcpy(&d->f, &w, 4); \
+                 d->i = v; d->d = 0; use(d); }}\n\
+                 static void show(const char *tag, long *b) {{\n  printf(\"%s\", tag);\n  \
+                 for (int i = 0; i < 4; i++) printf(\" %016lx\", b[i]);\n  \
+                 for (int i = 0; i < 32; i++) printf(\"%02x\", seen[i]);\n  printf(\"\\n\");\n  \
+                 memset(seen, 0, 32);\n}}\n\
+                 static void run(int p) {{\n  \
+                 long b[4], s[4] = {{0x40000000L << 32 | 1, 0x4008000000000000L, 0, 0}};\n  \
+                 memcpy(b, (long[4]){{1, 2, 3, 4}}, 32);\n  \
+                 if (p) ((void (*)(void *, long))u1)(b, 7); else s_u1((void *)b, 7);\n  show(\"u1\", b);\n  \
+                 memcpy(b, (long[4]){{1, 2, 3, 4}}, 32);\n  \
+                 if (p) ((void (*)(void *))u2)(b); else s_u2((void *)b);\n  show(\"u2\", b);\n  \
+                 memset(b, 0, 32);\n  \
+                 if (p) ((void (*)(void *, long, long))s3)(b, 0x4008000000000001L, 0x4010000000000000L);\n  \
+                 else s_s3((void *)b, 0x4008000000000001L, 0x4010000000000000L);\n  show(\"s3\", b);\n  \
+                 memset(b, 0, 32);\n  \
+                 if (p) ((void (*)(void *, void *))cp1)(b, s); else s_cp1((void *)b, (void *)s);\n  \
+                 show(\"cp1\", b);\n  memset(b, 0, 32);\n  \
+                 if (p) ((void (*)(void *, long, long))cp3)(b, 0x4000000000000001L, 0x3ff0000000000000L);\n  \
+                 else s_cp3((void *)b, 0x4000000000000001L, 0x3ff0000000000000L);\n  show(\"cp3\", b);\n  \
+                 memset(b, 0, 32);\n  \
+                 if (p) ((void (*)(void *, unsigned))cp5)(b, 0x1fc00007u); else s_cp5((void *)b, 0x1fc00007u);\n  \
+                 show(\"cp5\", b);\n}}\n\
+                 int main(void) {{\n  run(1);\n  printf(\"--\\n\");\n  run(0);\n  return 0;\n}}\n"
+            ),
+        )
+        .unwrap();
+        let cc = Command::new("cc")
+            .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+            .output()
+            .expect("spawn cc");
         assert!(
-            stderr.contains("[kuna --jobs]") && stderr.contains("worker process(es)"),
-            "--jobs {jobs} reported no plan on stderr:\n{stderr}"
+            cc.status.success(),
+            "the printed callers did not compile (off={off}):\n{}\n{printed}",
+            String::from_utf8_lossy(&cc.stderr)
         );
-        assert!(
-            stderr.contains("[kuna --jobs] done:"),
-            "--jobs {jobs} never reported completion:\n{stderr}"
-        );
+        let run = Command::new(&exe).output().expect("run the round trip");
+        let got = String::from_utf8_lossy(&run.stdout).to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        let (printed_run, source_run) = got.split_once("--\n").expect("both runs printed");
+        assert_eq!(printed_run, source_run, "the printed callers store different bytes (off={off}):\n{printed}");
+    }
+}
+
+/// `fill` stores the eight bytes of `"ustar  "` through the buffer it hands
+/// `peek`, whose recovered parameter is `unsigned char *`. Taken as a vote, that
+/// type made `fill`'s parameter a byte pointer and `SplitDatatype` printed the
+/// store as eight byte stores; the vote is refused because the caller writes
+/// wider than the pointee. Checked at the default and with `--option ptrfromuse
+/// void`, which also types `fill`'s parameter from its own dereferences.
+#[test]
+fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_narrowvote_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for void in [false, true] {
+        let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", &sp];
+        if void {
+            args.extend_from_slice(&["--option", "ptrfromuse", "void"]);
+        }
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("protoorder byte pointee: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let fill = stdout.split("// Function: ").find(|c| c.starts_with("fill ")).expect("fill is printed");
+        assert!(fill.contains("= 0x2020726174737575;"), "the eight-byte store was split (void={void}):\n{fill}");
+        assert!(!fill.contains("unsigned char *a0"), "the byte-pointer vote was taken (void={void}):\n{fill}");
+    }
+}
+
+/// The callee-first order runs the batch's `structsynth` convergence sweep too:
+/// `fc` supersedes the structure `fb` minted, and `fb` is decompiled again onto
+/// `fc`'s. The three readers make no direct calls, so the callee-first order is
+/// the address order and the whole document equals the `protoorder off` one.
+#[test]
+fn callee_first_runs_the_structsynth_convergence_sweep() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/structsynthchain_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let base = ["decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "structsynth", "param"];
+    let (default, stderr, ok) = run_kuna(&base);
+    if !ok && is_specs_skip(&stderr) {
+        eprintln!("protoorder structsynth sweep: skipping (no `.sla`; run `make specs`)");
+        return;
+    }
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let mut off_args = base.to_vec();
+    off_args.extend_from_slice(&["--option", "protoorder", "off"]);
+    let (off, stderr, ok) = run_kuna(&off_args);
+    assert!(ok, "kuna decompile-all --option protoorder off failed: {stderr}");
+    let proto = |name: &str| {
+        default.lines().find(|l| l.starts_with(&format!("long {name}("))).map(str::to_string).unwrap_or_default()
+    };
+    assert_eq!(proto("fb").replace("fb", "f"), proto("fc").replace("fc", "f"), "fb was not moved onto fc's structure:\n{default}");
+    assert_eq!(default, off, "the callee-first run differs from the address-order run");
+}
+
+/// `fill_words` stores an eight-byte constant at each word of the buffer it hands
+/// the byte-reading `peek`, and `fill_many` stores 520 of them at fixed places,
+/// more addresses than the vote's access walk follows. Taken as a vote, `peek`'s
+/// `unsigned char *` printed every one of those stores as eight byte stores; both
+/// votes are refused, at the default and with `--option ptrfromuse void`.
+#[test]
+fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_widefill_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for void in [false, true] {
+        let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", &sp];
+        if void {
+            args.extend_from_slice(&["--option", "ptrfromuse", "void"]);
+        }
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("protoorder word fills: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for (name, store) in [("fill_words", "= 0x102030405060708;"), ("fill_many", "= 0x2020726174737575;")] {
+            let body = stdout
+                .split("// Function: ")
+                .find(|c| c.starts_with(&format!("{name} ")))
+                .unwrap_or_else(|| panic!("{name} is printed"));
+            assert!(body.contains(store), "{name}'s eight-byte store was split (void={void}):\n{body}");
+            assert!(!body.contains("unsigned char *a0"), "{name} took the byte-pointer vote (void={void}):\n{body}");
+        }
     }
 }
 
@@ -2437,6 +2859,8 @@ fn jobs_auto_and_the_plain_c_surface_match_serial() {
 /// layouts. Every sharded run gives its workers `structsynth off`: the document
 /// equals the serial `structsynth off` one where the serial default
 /// synthesizes, and stderr says why unless the run turned synthesis off itself.
+/// The serial side also runs `protoorder off`, the callee-first order a pool
+/// never takes.
 #[test]
 fn jobs_run_workers_with_structsynth_off() {
     let bin = repo_root()
@@ -2458,7 +2882,7 @@ fn jobs_run_workers_with_structsynth_off() {
     assert!(serial.contains("struct_1 *"), "the fixture stopped synthesizing two structures");
 
     let off = [&base[..], &["--option", "structsynth", "off"]].concat();
-    let (want, stderr, ok) = run_kuna(&off);
+    let (want, stderr, ok) = run_kuna(&[&off[..], &["--option", "protoorder", "off"]].concat());
     assert!(ok, "structsynth-off decompile-all failed: {stderr}");
     let pool = ["--jobs", "2", "--jobs-chunk", "1"];
 

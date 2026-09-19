@@ -166,6 +166,10 @@ pub struct DecompileOptions {
     /// per-function C (`decompile-all`, `decompile-graph`) has nowhere else to
     /// carry a definition, so it keeps the preamble.
     pub header_carries_types: bool,
+    /// (kuna `protoorder`) State this target's recovered prototype for the
+    /// callers decompiled after it; the driver clears it inside a call-graph
+    /// cycle.
+    pub park_recovered_proto: bool,
     pub single_target: bool,
 }
 
@@ -193,6 +197,7 @@ pub fn decompile_targets(
         want_provenance,
         want_callee_hints: false,
         header_carries_types: false,
+        park_recovered_proto: false,
         single_target: targets.len() == 1,
     };
     decompile_batch(prog, targets, &opts)
@@ -215,6 +220,7 @@ pub fn decompile_export_targets(
         want_provenance: false,
         want_callee_hints: false,
         header_carries_types: true,
+        park_recovered_proto: false,
         single_target: targets.len() == 1,
     };
     decompile_batch(prog, targets, &opts)
@@ -264,10 +270,7 @@ fn converge_synthesized_structs(
     targets: &[FunctionEntry],
     out: &mut [FuncResult],
 ) {
-    if !prog.arch().struct_synth.fires() {
-        return;
-    }
-    let stale = kuna_decomp::kuna_structsynth::ledger::superseded_names(prog.arch().types());
+    let stale = superseded_struct_names(prog);
     if stale.is_empty() {
         return;
     }
@@ -285,8 +288,18 @@ fn converge_synthesized_structs(
     }
 }
 
+/// (kuna `structsynth`) The synthesized structures a later, larger one has
+/// superseded so far in this run: what the convergence sweep looks for. Empty
+/// when `structsynth` is off.
+pub fn superseded_struct_names(prog: &ConsoleProgram) -> Vec<String> {
+    if !prog.arch().struct_synth.fires() {
+        return Vec::new();
+    }
+    kuna_decomp::kuna_structsynth::ledger::superseded_names(prog.arch().types())
+}
+
 /// Does the sweep's second decompile replace the first one?
-fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
+pub fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
     again.error.is_none() || first.error.is_some()
 }
 
@@ -295,7 +308,7 @@ fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
 /// The C text, the `.h` prototype line and the exported variable rows are every
 /// surface a type name reaches. The match is on whole identifiers, so `struct_1`
 /// does not answer for `struct_10`.
-fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
+pub fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
     let mut hit = |hay: &str| names.iter().any(|n| contains_identifier(hay, n));
     r.code.as_deref().is_some_and(&mut hit)
         || r.proto.as_deref().is_some_and(&mut hit)
@@ -504,6 +517,9 @@ pub fn decompile_pulled(
         // field is empty for a run that passed no directive, which is what makes
         // the plane free (`crate::assertions`).
         let seed = crate::assertions::function_seed(prog, &name, &entry, single_target);
+        // (kuna `protoorder`) `entry` is consumed by the symbol-scoped second
+        // decompile below; the park needs the address afterwards.
+        let park_entry = entry.clone();
         // (kuna `--assert`) A caller-stated `flow` reclassification is appended
         // AFTER the derived no-return prunes, so it wins the map insert at an
         // address both name (`Override::insertFlowOverride` is a map store):
@@ -577,6 +593,30 @@ pub fn decompile_pulled(
                 // would otherwise abort the WHOLE binary and discard every function
                 // already decompiled. Containing it here honors the per-function
                 // isolation contract (one bad function → one `error` record).
+                // (kuna `protoorder`) State what this function's recovery found for its callers.
+                if opts.park_recovered_proto {
+                    let mode = prog.arch().protoorder;
+                    let outcome = kuna_decomp::kuna_protoorder::park_recovered(
+                        prog.arch_mut(),
+                        &park_entry,
+                        &name,
+                        fd.get_func_proto(),
+                        mode,
+                    );
+                    if protoorder_trace() {
+                        match &outcome {
+                            Ok(r) => eprintln!(
+                                "[protoorder] state {name} @0x{byte_address:x} params={} trimmed={}",
+                                r.pieces.intypes.len(),
+                                r.trimmed
+                            ),
+                            Err(reason) => eprintln!(
+                                "[protoorder] decline {name} @0x{byte_address:x} {}",
+                                reason.as_str()
+                            ),
+                        }
+                    }
+                }
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
@@ -672,6 +712,15 @@ pub fn decompile_pulled(
     if header_carries_types && preamble {
         prog.arch_mut().print_mut().options.set_struct_defs(true);
     }
+}
+
+/// (kuna `protoorder`) Is the park/decline trace on (`KUNA_PROTOORDER_TRACE=1`)?
+///
+/// A run's accept/decline tally is the evidence an operator (or a sweep) needs
+/// to judge what the option actually stated about a binary, and it is not worth
+/// a JSON field on every function that does not use it.
+fn protoorder_trace() -> bool {
+    std::env::var("KUNA_PROTOORDER_TRACE").is_ok_and(|v| v != "0" && !v.is_empty())
 }
 
 /// The per-batch facts [`FuncResult::callee_hints`] is filtered against: which

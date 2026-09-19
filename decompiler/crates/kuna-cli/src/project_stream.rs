@@ -853,6 +853,7 @@ fn export(
         // not carry the `structdefs` preamble — same decision as the
         // non-streamed export, taken in the same place.
         header_carries_types: true,
+        park_recovered_proto: false,
         // A streamed run is never a single-target run: `--stream` and `--assert`
         // are exclusive precisely so an unqualified directive cannot bind to
         // every function of the export.

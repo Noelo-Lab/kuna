@@ -1,0 +1,550 @@
+{
+ "O0_bzip2_stripped_bzip2": {
+  "changed": 16,
+  "class:casts": 8,
+  "class:declarations": 6,
+  "class:literal": 1,
+  "class:pointer-arith": 1,
+  "functions": 154
+ },
+ "O0_coreutils_stripped_csplit": {
+  "changed": 38,
+  "class:casts": 14,
+  "class:declarations": 17,
+  "class:literal": 3,
+  "class:member-reach": 3,
+  "class:struct-number": 1,
+  "functions": 235
+ },
+ "O0_coreutils_stripped_expr": {
+  "changed": 48,
+  "class:casts": 19,
+  "class:declarations": 17,
+  "class:literal": 3,
+  "class:member-reach": 4,
+  "class:struct-number": 5,
+  "functions": 213
+ },
+ "O0_coreutils_stripped_sort": {
+  "changed": 110,
+  "class:REVIEW": 1,
+  "class:casts": 41,
+  "class:declarations": 35,
+  "class:literal": 4,
+  "class:member-reach": 5,
+  "class:pointer-arith": 1,
+  "class:struct-number": 23,
+  "functions": 479
+ },
+ "O0_coreutils_stripped_tail": {
+  "changed": 61,
+  "class:casts": 18,
+  "class:declarations": 21,
+  "class:member-reach": 4,
+  "class:pointer-arith": 1,
+  "class:struct-number": 17,
+  "functions": 316
+ },
+ "O0_cronie_stripped_crond": {
+  "changed": 29,
+  "class:casts": 14,
+  "class:declarations": 9,
+  "class:member-reach": 1,
+  "class:struct-number": 5,
+  "functions": 198
+ },
+ "O0_dpkg_stripped_dpkg-divert": {
+  "changed": 235,
+  "class:casts": 88,
+  "class:declarations": 84,
+  "class:literal": 3,
+  "class:member-reach": 17,
+  "class:pointer-arith": 1,
+  "class:struct-number": 42,
+  "functions": 657
+ },
+ "O0_grep_stripped_grep": {
+  "changed": 178,
+  "class:REVIEW": 2,
+  "class:casts": 81,
+  "class:declarations": 53,
+  "class:literal": 1,
+  "class:member-reach": 9,
+  "class:pointer-arith": 2,
+  "class:struct-number": 30,
+  "functions": 642
+ },
+ "O0_gzip_stripped_gzip": {
+  "changed": 38,
+  "class:REVIEW": 2,
+  "class:casts": 25,
+  "class:declarations": 9,
+  "class:literal": 1,
+  "class:pointer-arith": 1,
+  "functions": 248
+ },
+ "O0_libexpat_stripped_xmlwf": {
+  "changed": 12,
+  "class:casts": 7,
+  "class:declarations": 5,
+  "functions": 134
+ },
+ "O0_mirai_stripped_mirai": {
+  "changed": 40,
+  "class:REVIEW": 1,
+  "class:casts": 14,
+  "class:declarations": 17,
+  "class:member-reach": 4,
+  "class:pointer-arith": 4,
+  "functions": 174
+ },
+ "O0_shadow_stripped_chage": {
+  "changed": 38,
+  "class:REVIEW": 1,
+  "class:casts": 17,
+  "class:declarations": 17,
+  "class:pointer-arith": 1,
+  "class:struct-number": 2,
+  "functions": 237
+ },
+ "O0_shadow_stripped_useradd": {
+  "changed": 97,
+  "class:REVIEW": 1,
+  "class:casts": 34,
+  "class:declarations": 49,
+  "class:member-reach": 2,
+  "class:pointer-arith": 1,
+  "class:struct-number": 10,
+  "functions": 483
+ },
+ "O2-noinline_coreutils_stripped_cat": {
+  "changed": 39,
+  "class:REVIEW": 1,
+  "class:casts": 14,
+  "class:declarations": 24,
+  "functions": 192
+ },
+ "O2-noinline_grep_stripped_grep": {
+  "changed": 167,
+  "class:REVIEW": 2,
+  "class:casts": 71,
+  "class:declarations": 54,
+  "class:literal": 1,
+  "class:member-reach": 5,
+  "class:merge": 2,
+  "class:struct-number": 32,
+  "functions": 634
+ },
+ "O2-noinline_gzip_stripped_gzip": {
+  "changed": 46,
+  "class:REVIEW": 1,
+  "class:casts": 30,
+  "class:declarations": 9,
+  "class:literal": 2,
+  "class:pointer-arith": 1,
+  "class:struct-number": 3,
+  "functions": 262
+ },
+ "O2-noinline_libexpat_stripped_xmlwf": {
+  "changed": 11,
+  "class:casts": 6,
+  "class:declarations": 5,
+  "functions": 134
+ },
+ "O2-noinline_nuttx_stripped_nuttx": {
+  "changed": 435,
+  "class:REVIEW": 2,
+  "class:casts": 181,
+  "class:declarations": 136,
+  "class:literal": 28,
+  "class:member-reach": 19,
+  "class:merge": 2,
+  "class:pointer-arith": 12,
+  "class:struct-number": 55,
+  "functions": 954,
+  "layout:merge": 1
+ },
+ "O2-noinline_sysvinit_stripped_killall5": {
+  "changed": 7,
+  "class:casts": 6,
+  "class:declarations": 1,
+  "functions": 87
+ },
+ "O2_base-passwd_stripped_update-passwd": {
+  "changed": 6,
+  "class:casts": 6,
+  "functions": 92
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf": {
+  "changed": 1621,
+  "class:REVIEW": 11,
+  "class:casts": 779,
+  "class:declarations": 514,
+  "class:literal": 55,
+  "class:member-reach": 60,
+  "class:merge": 5,
+  "class:pointer-arith": 22,
+  "class:struct-number": 175,
+  "functions": 5797
+ },
+ "O2_bzip2_stripped_bzip2": {
+  "changed": 14,
+  "class:REVIEW": 1,
+  "class:casts": 6,
+  "class:declarations": 2,
+  "class:literal": 1,
+  "class:member-reach": 2,
+  "class:struct-number": 2,
+  "functions": 114
+ },
+ "O2_chibios_stripped_ch-elf": {
+  "changed": 172,
+  "class:casts": 107,
+  "class:declarations": 18,
+  "class:literal": 4,
+  "class:member-reach": 25,
+  "class:struct-number": 18,
+  "functions": 398
+ },
+ "O2_cleanflight_stripped_cleanflight_DALRCF405-elf": {
+  "changed": 734,
+  "class:REVIEW": 7,
+  "class:casts": 343,
+  "class:declarations": 229,
+  "class:literal": 15,
+  "class:member-reach": 34,
+  "class:merge": 2,
+  "class:pointer-arith": 13,
+  "class:struct-number": 91,
+  "functions": 2558
+ },
+ "O2_coreutils_stripped_dd": {
+  "changed": 44,
+  "class:casts": 16,
+  "class:declarations": 25,
+  "class:pointer-arith": 1,
+  "class:struct-number": 2,
+  "functions": 214
+ },
+ "O2_coreutils_stripped_fmt": {
+  "changed": 29,
+  "class:casts": 12,
+  "class:declarations": 17,
+  "functions": 151
+ },
+ "O2_coreutils_stripped_ginstall": {
+  "changed": 116,
+  "class:REVIEW": 1,
+  "class:casts": 36,
+  "class:declarations": 47,
+  "class:literal": 1,
+  "class:member-reach": 2,
+  "class:pointer-arith": 1,
+  "class:struct-number": 28,
+  "functions": 446
+ },
+ "O2_coreutils_stripped_ls": {
+  "changed": 131,
+  "class:casts": 28,
+  "class:declarations": 30,
+  "class:literal": 3,
+  "class:member-reach": 7,
+  "class:struct-number": 63,
+  "functions": 404
+ },
+ "O2_coreutils_stripped_numfmt": {
+  "changed": 35,
+  "class:casts": 16,
+  "class:declarations": 18,
+  "class:struct-number": 1,
+  "functions": 163
+ },
+ "O2_coreutils_stripped_od": {
+  "changed": 42,
+  "class:casts": 15,
+  "class:declarations": 25,
+  "class:struct-number": 2,
+  "functions": 192
+ },
+ "O2_coreutils_stripped_sort": {
+  "changed": 86,
+  "class:REVIEW": 2,
+  "class:casts": 33,
+  "class:declarations": 32,
+  "class:pointer-arith": 1,
+  "class:struct-number": 18,
+  "functions": 343
+ },
+ "O2_crazyflie_stripped_cf2-elf": {
+  "changed": 746,
+  "class:REVIEW": 9,
+  "class:casts": 418,
+  "class:declarations": 111,
+  "class:literal": 44,
+  "class:member-reach": 40,
+  "class:pointer-arith": 10,
+  "class:struct-number": 114,
+  "functions": 1971
+ },
+ "O2_crazyflie_stripped_firmware-elf": {
+  "changed": 746,
+  "class:REVIEW": 9,
+  "class:casts": 418,
+  "class:declarations": 111,
+  "class:literal": 44,
+  "class:member-reach": 40,
+  "class:pointer-arith": 10,
+  "class:struct-number": 114,
+  "functions": 1971
+ },
+ "O2_cronie_stripped_crontab": {
+  "changed": 18,
+  "class:casts": 16,
+  "class:declarations": 2,
+  "functions": 151
+ },
+ "O2_dash_stripped_dash": {
+  "changed": 89,
+  "class:casts": 62,
+  "class:declarations": 14,
+  "class:member-reach": 3,
+  "class:pointer-arith": 1,
+  "class:struct-number": 9,
+  "functions": 335
+ },
+ "O2_dexter_stripped_dexter-dll": {
+  "changed": 14,
+  "class:REVIEW": 2,
+  "class:casts": 9,
+  "class:declarations": 3,
+  "functions": 109
+ },
+ "O2_diffutils_stripped_diff": {
+  "changed": 113,
+  "class:REVIEW": 4,
+  "class:casts": 45,
+  "class:declarations": 37,
+  "class:member-reach": 2,
+  "class:struct-number": 25,
+  "functions": 398
+ },
+ "O2_diffutils_stripped_diff3": {
+  "changed": 37,
+  "class:casts": 14,
+  "class:declarations": 18,
+  "class:struct-number": 5,
+  "functions": 212
+ },
+ "O2_dpkg_stripped_dpkg-query": {
+  "changed": 202,
+  "class:REVIEW": 3,
+  "class:casts": 75,
+  "class:declarations": 72,
+  "class:literal": 6,
+  "class:member-reach": 8,
+  "class:merge": 2,
+  "class:struct-number": 36,
+  "functions": 585
+ },
+ "O2_e2fsprogs_stripped_e2fsck": {
+  "changed": 600,
+  "class:REVIEW": 8,
+  "class:casts": 236,
+  "class:declarations": 117,
+  "class:literal": 10,
+  "class:member-reach": 34,
+  "class:pointer-arith": 6,
+  "class:struct-number": 189,
+  "functions": 1421
+ },
+ "O2_findutils_stripped_find": {
+  "changed": 213,
+  "class:REVIEW": 1,
+  "class:casts": 77,
+  "class:declarations": 84,
+  "class:literal": 3,
+  "class:member-reach": 5,
+  "class:pointer-arith": 2,
+  "class:struct-number": 41,
+  "functions": 658
+ },
+ "O2_freertos_stripped_RTOSDemo-out": {
+  "changed": 38,
+  "class:REVIEW": 5,
+  "class:casts": 15,
+  "class:declarations": 9,
+  "class:literal": 1,
+  "class:member-reach": 3,
+  "class:pointer-arith": 1,
+  "class:struct-number": 4,
+  "functions": 126
+ },
+ "O2_grep_stripped_grep": {
+  "changed": 119,
+  "class:REVIEW": 2,
+  "class:casts": 51,
+  "class:declarations": 28,
+  "class:literal": 2,
+  "class:member-reach": 6,
+  "class:pointer-arith": 2,
+  "class:struct-number": 28,
+  "functions": 449
+ },
+ "O2_iproute2_stripped_ip": {
+  "changed": 414,
+  "class:REVIEW": 2,
+  "class:casts": 195,
+  "class:declarations": 83,
+  "class:literal": 72,
+  "class:member-reach": 24,
+  "class:merge": 2,
+  "class:pointer-arith": 1,
+  "class:struct-number": 35,
+  "functions": 1008
+ },
+ "O2_kmod_stripped_kmod": {
+  "changed": 123,
+  "class:REVIEW": 1,
+  "class:casts": 62,
+  "class:declarations": 34,
+  "class:member-reach": 5,
+  "class:pointer-arith": 5,
+  "class:struct-number": 16,
+  "functions": 394
+ },
+ "O2_libacl_stripped_getfacl": {
+  "changed": 5,
+  "class:casts": 4,
+  "class:literal": 1,
+  "functions": 77
+ },
+ "O2_libacl_stripped_setfacl": {
+  "changed": 12,
+  "class:casts": 5,
+  "class:declarations": 2,
+  "class:literal": 1,
+  "class:struct-number": 4,
+  "functions": 112
+ },
+ "O2_libbsd_stripped_libbsd-so-0-11-7": {
+  "changed": 18,
+  "class:casts": 14,
+  "class:declarations": 3,
+  "class:member-reach": 1,
+  "functions": 282
+ },
+ "O2_libedit_stripped_libedit-so-0-0-70": {
+  "changed": 68,
+  "class:REVIEW": 6,
+  "class:casts": 43,
+  "class:declarations": 12,
+  "class:member-reach": 1,
+  "class:struct-number": 6,
+  "functions": 664
+ },
+ "O2_libopencm3_stripped_cdcacm-elf": {
+  "changed": 11,
+  "class:casts": 3,
+  "class:declarations": 5,
+  "class:member-reach": 3,
+  "functions": 61
+ },
+ "O2_libselinux_stripped_libselinux-so-1": {
+  "changed": 79,
+  "class:REVIEW": 2,
+  "class:casts": 32,
+  "class:declarations": 29,
+  "class:member-reach": 3,
+  "class:struct-number": 13,
+  "functions": 621
+ },
+ "O2_mirai_stripped_mirai": {
+  "changed": 18,
+  "class:REVIEW": 1,
+  "class:casts": 12,
+  "class:declarations": 1,
+  "class:member-reach": 2,
+  "class:pointer-arith": 2,
+  "functions": 123
+ },
+ "O2_nuttx_stripped_nuttx": {
+  "changed": 402,
+  "class:REVIEW": 1,
+  "class:casts": 179,
+  "class:declarations": 106,
+  "class:literal": 32,
+  "class:member-reach": 29,
+  "class:merge": 2,
+  "class:pointer-arith": 10,
+  "class:struct-number": 43,
+  "functions": 792,
+  "layout:merge": 1
+ },
+ "O2_openssh-portable_stripped_scp": {
+  "changed": 197,
+  "class:casts": 77,
+  "class:declarations": 90,
+  "class:member-reach": 4,
+  "class:struct-number": 26,
+  "functions": 524
+ },
+ "O2_openssh-portable_stripped_sftp-server": {
+  "changed": 162,
+  "class:casts": 69,
+  "class:declarations": 72,
+  "class:member-reach": 1,
+  "class:struct-number": 20,
+  "functions": 464
+ },
+ "O2_riot-os_stripped_hello-world-elf": {
+  "changed": 32,
+  "class:REVIEW": 1,
+  "class:casts": 10,
+  "class:declarations": 13,
+  "class:literal": 2,
+  "class:member-reach": 1,
+  "class:struct-number": 5,
+  "functions": 129
+ },
+ "O2_sysvinit_stripped_init": {
+  "changed": 5,
+  "class:casts": 4,
+  "class:member-reach": 1,
+  "functions": 144
+ },
+ "O2_tar_stripped_tar": {
+  "changed": 475,
+  "class:REVIEW": 5,
+  "class:casts": 202,
+  "class:declarations": 157,
+  "class:literal": 25,
+  "class:member-reach": 16,
+  "class:pointer-arith": 6,
+  "class:struct-number": 64,
+  "functions": 1125
+ },
+ "O2_x0r-usb_stripped_x0r-usb-exe": {
+  "functions": 11
+ },
+ "O2_zlib_stripped_libz-so-1-2-13": {
+  "changed": 21,
+  "class:REVIEW": 2,
+  "class:casts": 7,
+  "class:declarations": 10,
+  "class:struct-number": 2,
+  "functions": 184
+ },
+ "TOTAL": {
+  "changed": 9652,
+  "class:REVIEW": 100,
+  "class:casts": 4439,
+  "class:declarations": 2748,
+  "class:literal": 369,
+  "class:member-reach": 435,
+  "class:merge": 17,
+  "class:pointer-arith": 120,
+  "class:struct-number": 1424,
+  "functions": 32406,
+  "layout:merge": 2
+ }
+}
