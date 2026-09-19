@@ -50,14 +50,18 @@ With this change the default prints `main(int a0,unsigned long *a1)` and
 - `tests/stages/kuna-formatstring-static.xml`, 26 passes: off, default and
   `full` on `fmt_x86_64`, the jump-table/`alloca` sites, `%lf` on x86-64 and
   ARM hard-float, a Win64 PE with `%zu`/`%td`, `fmt_aarch64`, and default ==
-  off on Apple arm64, AArch64, ARM and a format in `.data`. The build before
-  the x86-only default fails 8 of the 28 assertions.
-- decbench `type_match` over 444 slices: TYPESWEEP_LINE
+  off on Apple arm64, AArch64, ARM and a format in `.data`. Without the
+  x86-only default 8 of the 28 assertions fail; without the `%zu` fix the 3
+  Win64 ones do, and without the `%lf` fix 8 more.
+- decbench `type_match` over 444 slices (x86-64): 986 → 1024 perfect, 176
+  functions better, 2 worse.
 - Every call in every function the default changes, off vs static, over 324
   x86-64 and 40 i386 binaries: no format call newly disagrees with its format
   (313 stop disagreeing), and the 8 other calls whose argument count moved all
   lost a phantom. With `formatstring off`, and on every non-x86 target by
-  default, the output is byte-identical to main. SPEED_LINE
+  default, the output is byte-identical to main. `decompile-all` min-of-15
+  against main: `fmt` -5.5%, `ls` -0.4%, `sort` +1.7% (against `off`: -1.1%,
+  -1.1%, +1.0%).
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 

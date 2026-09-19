@@ -1,6 +1,6 @@
 {
   "opportunity": "A printf/scanf call states the types of its variadic arguments in its format string, but reading it cost a second decompile of every caller: Ghidra's FormatStringAnalyzer is DecompilerDependent, so the format pointer is only visible as an input varnode of a lifted CALL. decompile-all measured +77.5% (cronie crontab), +55.1% (gnutls psktool), +43.7% (gzip), which held the option to a per-run opt-in and out of the aggressive preset, even though the recovery was real (decbench C type_match perfects 80 -> 88 of 1,133). The constant is in the image, and so is the call site.",
-  "test_name": "tests/stages/kuna-formatstring-static.xml (27 assertions, 23 passes; passes 7-14 require default == off on macho_imports_arm64, fmtabi_armhf and fmtedge_x86_64; passes 15-20 pin %lf as a double on fmtlf_x86_64 and default == off on fmtlf_armhf's printf sites; passes 21-23 pin %zu/%td as 8 bytes on the Win64 PE32+ fmtzu_pe_x86_64; the first six: over fmt_x86_64 off = the bug, default = the fix, full = the same answer with no Listing; over fmtjoin_x86_64 off/default/full must agree on a format chosen on a jump table and on a call in an alloca frame, the two shapes the post-drive audit withdraws) + tests/cli/printf-varargs-render-untyped.json + 12 unit tests (%l on a floating conversion is a double, a delay-slot write to the format register, C99 conversion matrix, length-modifier matrix, `*` widths, the long-double decline, the format-function predicate over 21 accepted / 12 refused names, the fold's arithmetic incl. PIECE at the low input's width and shifts of 64 or more, and a cmov destination the fold must not know)",
+  "test_name": "tests/stages/kuna-formatstring-static.xml (28 assertions, 26 passes; passes 7-14 require default == off on macho_imports_arm64, fmtabi_armhf and fmtedge_x86_64; passes 15-20 pin %lf as a double on fmtlf_x86_64 and default == off on fmtlf_armhf's printf sites; passes 21-23 pin %zu/%td as 8 bytes on the Win64 PE32+ fmtzu_pe_x86_64; passes 24-26 pin fmt_aarch64 default == off and full typed (the default types x86 only); the first six: over fmt_x86_64 off = the bug, default = the fix, full = the same answer with no Listing; over fmtjoin_x86_64 off/default/full must agree on a format chosen on a jump table and on a call in an alloca frame, the two shapes the post-drive audit withdraws) + tests/cli/printf-varargs-render-untyped.json + 12 unit tests (%l on a floating conversion is a double, a delay-slot write to the format register, C99 conversion matrix, length-modifier matrix, `*` widths, the long-double decline, the format-function predicate over 21 accepted / 12 refused names, the fold's arithmetic incl. PIECE at the low input's width and shifts of 64 or more, and a cmov destination the fold must not know)",
   "binary": "decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64",
   "selector": "main",
   "func_addr": "0x401136",
@@ -13,7 +13,7 @@
   "source_decompiler": "kuna",
   "inspiration": "Ghidra FormatStringAnalyzer (Variadic Function Signature Override, default-off); angr _get_format_string_arg_types / _apply_format_string_type_constraints (engine_ail.py: the literal is read from the loader, not from the decompiled body)",
   "default_on": true,
-  "default_value": "static",
+  "default_value": "static (x86 only; full types AArch64/ARM32/RISC-V/MIPS/PowerPC per the vararg rule)",
   "values": "off|static|full|on",
   "on_alias": "`on` is accepted as a spelling of `full` (what it meant while the option was on|off)",
   "ablation_changed": 0,
@@ -402,13 +402,13 @@
   },
   "gates": {
     "make test": "675/675 assertions passed / PARITY OK",
-    "make test-stages": "1204/1204 assertions passed / PARITY OK (baseline re-recorded on 75f832e3: +27, only this test's; none removed)",
+    "make test-stages": "1209/1209 assertions passed / PARITY OK (baseline re-recorded on d6c5862f: +28, only this test's; none removed)",
     "make test-cli": "190/190 passed",
     "make check-spec": "OK (lenient) + OK (strict)",
     "kuna catalog --check": "catalog OK",
     "counters --check": "no drift",
     "docs/options.md": "byte-fresh (cmp rc=0)",
-    "make rust-test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 11:41:15-11:56:38Z, after the last .rs/fixture commit 85538147 (11:40:46Z); later commits are docs/baseline only. size_t_and_ptrdiff_t_are_pointer_width_on_llp64 and l_on_a_floating_conversion_is_still_a_double ok"
+    "make rust-test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 13:35:13-13:52:25Z, after the last .rs commit 621b3ae6 (13:35:00Z); later commits are docs only. static_reaches_x86_and_full_every_target and listing_consumer_schedule_pairs_each_pass_with_its_option ok. (Also RUST_TEST_RC=0 13:15:23-13:31:14Z on the rebased tree before the change.)"
   },
   "files": [
     "decompiler/crates/kuna-analysis/src/analyzers/formatstring/kuna_fmtstatic.rs",
@@ -616,5 +616,61 @@
     "rust_test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 11:41:15-11:56:38Z, after the last .rs/fixture commit 85538147 (11:40:46Z); later commits are docs/baseline only. size_t_and_ptrdiff_t_are_pointer_width_on_llp64 and l_on_a_floating_conversion_is_still_a_double ok",
     "typesweep": "75f832e3 base, 444 slices / 10,748 functions, DECBENCH_NO_CACHE=1, pinned .scratch/r5/bin/kuna: off 986 -> static 1024 perfect, aggregate 3111.18 -> 3168.45, 176 better / 2 worse (tr make_printable_str O2 and O2-noinline, the same metric artifact as rounds 1-4). decomp_vars 96697 -> 96674, fn 27531 both, fp 19788 -> 19575, tp 18396 -> 18609. off 986 equals main's campaign number (986)",
     "speed": "interleaved decompile-all min-of-15 (off / static on this build / main 75f832e3 default): static vs main fmt O2 +1.19%, ls O2 +0.72%, sort O2 +1.09%; static vs off +1.19%, -5.46% (off arm drew a slow minimum), -0.35%; paired medians static vs off +4.28%, -1.00%, -0.97% (box load 12-22)"
+  },
+  "round6": {
+    "review": "CHANGES (major): on AArch64 the default dropped a real argument from a non-format call -- iproute2 ip xfrm_policy_print, parse_rtattr(v3,0x1f,v7,v8) -> parse_rtattr(v3,0x1f,v7) at 0x42fd3c/0x42fdfc; argcount.py never counted arguments on non-format calls. Minor: Thumb sites never resolve; %s of a struct's leading char[] types the struct pointer char *; PR body sentence 'no format call gains or loses a vararg' false (313 do). Rebase onto d6c5862f needed.",
+    "root_cause": "Not a formatstring bug but its interaction with P4 trial scoring (upstream onlyOpUse/checkCallDoubleUse): x3 = len (subs w3,w2,#192) also reaches the error-path fprintf through mov w2,w3. An OPEN fprintf excuses the use while its own trial is unscored; a CLOSED one never does, so x3 is vetoed at both parse_rtattr sites. Trace (temporary eprintln in only_op_use): under off the fprintf at 0x42ff7c was still unscored; main already drops parse_rtattr's len at 13/60 ip sites, and at the 9 traced the veto is the same mov w2,w3; bl fprintf 'BUG: wrong nlmsg len'. static: 15/60. The mechanism runs both ways: a register the closed call no longer takes stops vetoing a neighbour's phantom.",
+    "measurement": "argcount.py now pairs the argument count of every non-format call in every changed function (per callee, in order; string literals and reordered bodies skipped) against the callee's own decompiled arity. Sweep off vs static (pre-restriction build) over 325 decbench (324 x86-64 + 1 ARM Cortex-M, unchanged) + 40 i386 libs + 148 AArch64 + 58 ARM32 firmware binaries: x86-64 8 calls moved, 8 fixes (ls/dir/vdir 0xc590 4->2, ip/rtmon n2a helpers 6->3 x4, update-passwd sub_2be0 4->3); i386 0; AArch64 17 moved, 5 fixes / 12 wrong (8 x8=0 hidden-return phantoms in fatfsck/mkfatfs, 2 tail calls 5->7, 2 parse_rtattr drops); ARM32 7 moved, 7 wrong (__aeabi_dmul, write_log, s_browse_to_tree, d2_subscribe x2, wl_iovar_getint x2). Format calls: x86-64 313 counts fixed / 0 new; AArch64 552 / 0; ARM32 193 / 0. Verdicts in argcount.txt.",
+    "fix": "FormatStringMode::resolves_at_load(archid): static resolves at load on x86 only (reached_by_default); full on every target VarargAbi admits. Gates: passes.rs listing consumer + engine.rs analysis_pass_enabled. Unit test static_reaches_x86_and_full_every_target; passes.rs schedule test covers x86/AArch64 x static/full/off.",
+    "stage_test": "passes 24-26 (off/default/full) on in-tree fmt_aarch64: default == off, full types printf(\"%d %s\\n\",a0,(char *)*a1); #28 f_is renders as off by default on ARM; #1-4/#13/#19/#23 recounted. New build 28/28; the pre-change build fails 8 (#1-4, 13, 19, 23, 28). baseline-stages 1209 = main 1181 + 28 FMTSTATIC keys, 0 removed.",
+    "verification": "post-change default vs pre-change sweep: 198/198 firmware binaries static had changed render byte-identically to off (sqlite3 0x494de8 hit the 120 s budget under load, re-checked alone: identical); 12/12 x86-64 binaries render exactly the pre-change static. off == main d6c5862f byte-identical on grep O0/O2, find O2-noinline, tar O2, gpasswd O2, gzip O2, ip, tc (aarch64), fatfsck (aarch64), bst_daemon (ARM32); default == main on the last four.",
+    "thumb": "documented (spec + analysis Known limits): a Thumb site's window does not fold (the resolver's lift does not see the Listing's Thumb mode), so Thumb code renders as off; no code change.",
+    "struct_percent_s": "already documented (analysis 'A %s of a struct's first field'); no change.",
+    "rebase": "onto origin/main d6c5862f (#681 foldcallretphi on); xml.rs corpus count 318 (main 317 + 1)",
+    "typesweep": "444 slices / 10,748 functions on d6c5862f: off 986 -> static 1024 perfect, aggregate 3111.18 -> 3168.45, 176 better / 2 worse (tr make_printable_str x2, the known stack-spill artifact); control 0 scored differently among byte-identical functions",
+    "speed": {
+      "fmt O2": {
+        "min_ms": {
+          "off": 4325.132626108825,
+          "static": 4277.1737379953265,
+          "main": 4527.756550349295
+        },
+        "static_vs_off_pct": -1.1088420231091427,
+        "static_vs_main_pct": -5.534370268530391,
+        "paired_median_static_vs_off_pct": -0.9730143972622596,
+        "n": 15
+      },
+      "ls O2": {
+        "min_ms": {
+          "off": 13851.944729685783,
+          "static": 13704.943218268454,
+          "main": 13755.08133508265
+        },
+        "static_vs_off_pct": -1.0612337421639704,
+        "static_vs_main_pct": -0.364506145712986,
+        "paired_median_static_vs_off_pct": 1.0579742775047631,
+        "n": 15
+      },
+      "sort O2": {
+        "min_ms": {
+          "off": 15007.621615193784,
+          "static": 15160.516356118023,
+          "main": 14908.712820149958
+        },
+        "static_vs_off_pct": 1.0187806225701201,
+        "static_vs_main_pct": 1.688968987501984,
+        "paired_median_static_vs_off_pct": -0.6175123536506937,
+        "n": 15
+      },
+      "ip aarch64": {
+        "min_ms": {
+          "default": 20524.57062806934,
+          "main": 20427.968974225223
+        },
+        "default_vs_main_pct": 0.4728891744744877,
+        "n": 11
+      }
+    },
+    "rust_test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 13:35:13-13:52:25Z, after the last .rs commit 621b3ae6 (13:35:00Z); later commits are docs only. static_reaches_x86_and_full_every_target and listing_consumer_schedule_pairs_each_pass_with_its_option ok. (Also RUST_TEST_RC=0 13:15:23-13:31:14Z on the rebased tree before the change.)"
   }
 }
