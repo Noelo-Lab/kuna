@@ -1164,7 +1164,7 @@ fn name_structs_serially(
     }
     // The `.h` renders the structures from the workers that hold them, each
     // with the other types its own functions interned.
-    if cfg.want_types && !plan.table.is_empty() {
+    if cfg.want_types && !plan.minted.is_empty() {
         if let Err(why) = install_on_idle_workers(cfg, session, &plan.table) {
             return fallback(run, &why);
         }
@@ -1589,7 +1589,13 @@ impl Session {
         };
         let blocks = std::mem::take(&mut *self.blocks.lock().unwrap_or_else(|e| e.into_inner()));
         let (full, other): (Vec<RetiredBlocks>, Vec<RetiredBlocks>) = blocks.into_iter().partition(|b| speaks(b));
-        full.into_iter().map(|b| b.full).chain(other.into_iter().map(|b| b.rest.unwrap_or(b.full))).collect()
+        // A worker that numbered structures of its own and could not say what
+        // it held without them says nothing.
+        let rest = other.into_iter().filter_map(|b| match b.kind {
+            SynthWorker::Record | SynthWorker::Force => b.rest,
+            SynthWorker::Off | SynthWorker::Serial => Some(b.full),
+        });
+        full.into_iter().map(|b| b.full).chain(rest).collect()
     }
 }
 
