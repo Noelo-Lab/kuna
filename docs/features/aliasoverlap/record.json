@@ -33,7 +33,8 @@
   "changed_functions": {
    "O2/bash/bash sub_e2c10": "IN CLASS: an 8-byte IR load at +0x18 folded past a 4-byte store at +0x1c (its high half) is now `v4 = dat_143518[3];` ahead of the store; main's re-read only matched because it is truncated to the untouched low half"
   },
-  "out_of_class": 0
+  "out_of_class": 0,
+  "rebased": "re-run on d6c5862f (bin-base2 vs bin-fix2): 52 binaries, 29,212 functions, the same single sub_e2c10 hunk byte for byte"
  },
  "speed": {
   "method": "kuna decompile-all <stripped bin> --json, main 75f832e3 vs fix, 15 interleaved pairs (order alternating), min and median wall ms; the box carried other campaign lanes",
@@ -75,17 +76,20 @@
     "delta_median_pct": -2.14
    }
   },
-  "verdict": "within the +5% budget on every case (min deltas -0.68/+2.51/+2.38/+0.43%, medians all negative); the predicate runs only for a LOAD whose cover crosses a STORE and adds a few integer operations per call"
+  "verdict": "within the +5% budget on every case (min deltas -0.68/+2.51/+2.38/+0.43%, medians all negative); the predicate runs only for a LOAD whose cover crosses a STORE and adds a few integer operations per call",
+  "base": "measured against main 75f832e3 before the rebase; the rebase changed no line of this diff's code"
  },
  "benchmark": {
   "typesweep": "444 slices / 10,748 functions, --baseline-only --dump-decisions with each binary (main 75f832e3 vs fix): type_match PERFECT 986 -> 986, aggregate 3111.18 -> 3111.18; per-slice rows (decisions + scores) identical in 444/444 slices (typesweep.txt)",
   "arity_phantom": "65,377 scored variable rows (20,574 arguments) identical on both arms: no variable or argument added or removed",
-  "why_it_cannot_move": "the change only turns an implied LOAD explicit (a register temporary printed as its own statement); variables[] exports arguments and stack/frame symbols, not register locals"
+  "why_it_cannot_move": "the change only turns an implied LOAD explicit (a register temporary printed as its own statement); variables[] exports arguments and stack/frame symbols, not register locals",
+  "rebased": "re-run on d6c5862f: 986 -> 986, 3111.18 -> 3111.18, rows identical 444/444"
  },
  "gates": {
+  "base": "rebased onto main d6c5862f (#681); code head 908b7dfe",
   "make test": "PARITY OK (675/675 assertions passed); no datatest assertion moved",
-  "make test-stages": "PARITY OK (1181/1181; +4 kuna-aliasoverlap keys over main's 1177, none removed)",
-  "make rust-test": "RUST_TEST_RC=0 (416 `test result: ok`, 0 FAILED) via rust-test-lane.sh on 6cf92875 (11:29:36Z-11:45:59Z); later commits touch docs/features/aliasoverlap only",
+  "make test-stages": "PARITY OK (1185/1185; +4 kuna-aliasoverlap keys over main's 1181, none removed)",
+  "make rust-test": "RUST_TEST_RC=0 (416 `test result: ok`, 0 FAILED) via rust-test-lane.sh on 908b7dfe (12:48:59Z-13:04:46Z); also RC=0/416 on the pre-rebase head",
   "make check-spec": "check-spec OK (lenient mode); check_spec.py --strict: check-spec OK (strict mode)",
   "make test-cli": "tests/cli: 189/189 passed",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",

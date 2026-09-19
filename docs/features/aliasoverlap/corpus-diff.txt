@@ -1,4 +1,4 @@
-# aliasoverlap corpus diff: kuna decompile-all <stripped bin> (default mode), main 75f832e3 vs fix/aliasoverlap, per-function C text compared
+# aliasoverlap corpus diff: kuna decompile-all <stripped bin> (default mode), main 75f832e3 vs fix/aliasoverlap, per-function C text compared; re-run after rebasing onto d6c5862f (#681): same totals, the same single hunk byte for byte
 # binaries: decbench full_run_address_2026-09-11 {O0,O2,O2-noinline}/<project>/stripped/<bin>; all runs rc=0; 0 functions present on one side only
 
 O0-coreutils-ls: 589 fns, 0 changed, 0 only-one-side
