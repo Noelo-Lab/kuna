@@ -50,8 +50,8 @@ unchanged on master at f9e13846, 2026-06-16); its constant arm even carries
   every STORE as a barrier, with no offset reasoning.
 - No other pass decides that a LOAD may print past a STORE. CSE
   (`cse_find_in_block`) and `RuleMultiCollapse` use `functional_equality`,
-  which equates two LOADs only when they come from the same instruction
-  address, so no store can sit between them.
+  which equates two LOADs only when they come from the same machine
+  instruction.
 
 ## 4. What the fix must keep
 
@@ -62,3 +62,14 @@ between two indices counts elements, so it must be scaled by the element size
 before it is compared with byte widths: unscaled, `a[i]` against `a[i + 1]`
 (4-byte elements, 4-byte accesses) would read as distance 1 < 4 and turn every
 such load explicit.
+
+## 5. The fix only ever adds explicit loads
+
+In every case where main's predicate answers "may alias", the new one does
+too: two equal constants overlap; a constant step or two distinct constants
+off one base used to be "different" outright and now are "different" only if
+the ranges are disjoint; wherever main recursed, the new code recurses with
+the same operands (or answers "may alias" outright for the commuted `PTRADD`
+matches). So a load main printed as its own statement still is, and every
+output change is a load that was folded past a store now printed as a local
+ahead of it.
