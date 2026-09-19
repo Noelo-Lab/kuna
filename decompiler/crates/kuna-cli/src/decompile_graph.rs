@@ -491,8 +491,7 @@ fn usage() {
          `error` record and the run still exits 0.\n\
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
-         serial). The document is identical to --jobs 1 with --option structsynth\n\
-         off (workers run with structsynth off, because each process would number\n\
-         its own struct_N), and peak memory is roughly N times one worker's RSS."
+         serial). The document is identical to --jobs 1, synthesized struct_N\n\
+         names included, and peak memory is roughly N times one worker's RSS."
     );
 }

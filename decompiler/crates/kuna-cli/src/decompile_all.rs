@@ -3372,14 +3372,15 @@ fn usage_decompile_all() {
          budget becomes its own `error` record and the batch continues.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
-         in-process path). Output is merged in target order; progress goes to\n\
-         stderr. Workers run with structsynth off, because each process would\n\
-         number its own struct_N, and a worker cannot see another worker's\n\
-         callees, so the pool does not type call arguments callee-first: it\n\
-         matches --jobs 1 only with --option structsynth off and --option\n\
-         protoorder off on both. Every worker loads the binary itself, so peak\n\
-         memory is roughly N times one worker's RSS. --jobs-chunk N sets the\n\
-         functions per worker invocation (bigger = less load overhead, more\n\
+         in-process path). Output is merged in target order and is identical to\n\
+         --jobs 1, synthesized struct_N names included: the functions that\n\
+         synthesize a structure are decompiled a second time with the names the\n\
+         serial run gives them. A worker cannot see another worker's callees, so\n\
+         the pool does not type call arguments callee-first: on this surface it\n\
+         matches --jobs 1 with --option protoorder off on both. Progress goes to\n\
+         stderr. Every worker loads the binary itself, so peak memory is roughly\n\
+         N times one worker's RSS. --jobs-chunk N sets the functions per worker\n\
+         invocation (bigger = less load overhead, more\n\
          peak RSS); --jobs-full-load makes each worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
