@@ -2936,7 +2936,10 @@ fn jobs_falls_back_when_a_worker_cannot_install_the_replayed_structures() {
         .to_str()
         .unwrap()
         .to_string();
-    let base = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    // The serial side runs `--option protoorder off`: the callee-first order is
+    // the serial run a pool cannot take, here as everywhere else.
+    let base = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str(),
+        "--option", "protoorder", "off"];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
         if is_specs_skip(&stderr) {
@@ -2971,7 +2974,8 @@ fn jobs_falls_back_when_a_structure_holds_a_type_other_workers_lack() {
         .to_str()
         .unwrap()
         .to_string();
-    let base = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
+    let base = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str(),
+        "--option", "protoorder", "off"];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
         if is_specs_skip(&stderr) {
