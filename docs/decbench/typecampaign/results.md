@@ -23,7 +23,7 @@ decbench `main` @ `625e892` (the checkout the baseline was taken with), results 
 | goal 1: primitives | per-GT-class match rate | bool 21.6%, char 53.7%, int 50–59% | **bool 42.8%**, char 53.7%, int unchanged | bool doubled (1st of five by 27 points); int/char were already 1st and cannot move on this metric |
 | goal 2: variables | varcensus, fmt/ls/sort/du O0+O2 | 7,085 non-thunk declarations, 151 `[16]` blobs | 6,945 (−2.0%), **66** blobs (−56%) | fewer, cleaner declarations; the fmt::main phantom arguments are fixed only with `argclobber on` (opt-in) |
 | goal 3: structs | structscore layout-F1 (835 GT struct-pointer params) | 0.0 (kuna synthesized no structs) | **0.138** (P 0.8945, R 0.0746); 182 params typed as a struct | first nonzero struct recovery; TRex Fig. 6 mean up on all 8 binaries |
-| speed | whole-binary `decompile-all`, min-of-11 interleaved | — | SPEED_HEADLINE | SPEED_READING |
+| speed | whole-binary `decompile-all`, min-of-11 interleaved | — | fmt +0.6%, ls +1.0%, sort +1.3%, bash +2.5% | the whole campaign's default-on work costs at most 2.5%, inside the +5% budget |
 
 ## 1. type_match — the 444-slice typesweep
 
@@ -80,9 +80,10 @@ the rival's functions.
 | kuna final, same functions | 9.14% / .2904 | 16.43% / .4467 | 2.16% / .1521 | 5.49% / .2051 |
 
 kuna went from **4th of five** on perfect% (behind binja, IDA and angr, each on its own functions) to **2nd**
-(behind binja), and stayed 2nd on mean with the gap to binja cut from .071 to .045. The campaign opened on "kuna is last-of-four at O2":
-on this slice set it now ties IDA's O2 perfect rate, leads it on O2 mean (.1558 vs .1485), and is within 0.11
-points of it on O2-noinline perfect while leading on mean. binja's lead is `ptr_char` and `ptr_void` (below).
+(behind binja), and stayed 2nd on mean with the gap to binja cut from .071 to .045. The campaign opened on
+"kuna is last-of-four at O2": on this slice set it now ties IDA's O2 perfect rate, leads it on O2 mean (.1558
+vs .1485), and is within 0.11 points of it on O2-noinline perfect while leading on mean. binja's lead is
+`ptr_char` and `ptr_void` (below).
 
 ## 2. Per ground-truth class
 
@@ -171,9 +172,13 @@ that no statement assigns, the shape of a phantom register argument; counted by 
 | **total** | | **7,085 → 6,945 (−2.0%)** | 969 → 974 | **151 → 66 (−56%)** | 261 → 252 | 58 → 56 |
 
 85 of the 140 fewer declarations are mulblob's (#671, the 128-bit multiply operand blobs); the rest are spread
-across the type PRs and were not attributed one by one. kuna was already the leanest declarer of the four (3.33 declarations per function against IDA's 4.07
-before the campaign), and `type_match` gives a missing or an extra variable exactly zero, so none of this moves
-§1.
+across the type PRs and were not attributed one by one. kuna was already the leanest declarer of the four
+(3.33 declarations per function against IDA's 4.07 before the campaign), and `type_match` gives a missing or an
+extra variable exactly zero, so none of this moves §1.
+
+The phantom-`rdx` shape specifically — a never-written local declared `// rdx` — is **11 → 11** (all O2: fmt 2,
+ls 2, du 7). Nothing on by default targets it; with `--option argclobber on` it is 9 (fmt's two are gone, the
+ls and du ones are not the clobbered-argument shape).
 
 **`fmt::main`, the named bad case** (O2, `0x26a0`; full texts in `final/fmt-main-{base,final,final-argclobber}.c`):
 
@@ -199,7 +204,7 @@ deliberately changes no call arity, so it would not fix this either.
 `scripts.decbench.structscore --all` on fmt/ls/sort/du, O0 and O2, each binary run with the baseline and with
 the final kuna (the final one has structsynth `param` on by default, #655 → #682):
 
-| opt | binary | TRex mean 0-6 | mean 0-5 | `is_c_struct` passed | `c_primitive` passed | params typed as a struct / GT struct params | layout F1 |
+| opt | binary | TRex mean 0-6 | mean 0-5 | `is_c_struct` passed | `c_primitive` passed | params typed as a struct / GT struct params | layout F1 (filler counted) |
 |---|---|---|---|---|---|---|---|
 | O0 | fmt | 3.901 → **4.032** | 3.557 → 3.642 | 260/293 → 277/293 | 142/210 → 161/228 | 0 → 4 / 34 | 0 → 0.052 |
 | O0 | ls | 3.593 → **3.684** | 3.312 → 3.369 | 1092/1259 → 1139/1260 | 522/715 → 586/773 | 0 → 32 / 168 | 0 → 0.130 |
@@ -223,7 +228,21 @@ every `struct_N *` as a miss, because no synthesized name can equal a program-de
 
 ## 6. Speed
 
-SPEED_SECTION
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation) on the O2 stripped binaries,
+baseline and final binaries interleaved with the order alternating each round, 11 rounds, on a quiet box (load
+average about 2 on 80 cores). Driver: `final/speed.py`; raw samples: `final/speed.json`.
+
+| binary | functions | baseline min | final min | Δ min | Δ median |
+|---|---:|---:|---:|---:|---:|
+| coreutils fmt | 151 | 4,043.5 ms | 4,067.4 ms | +0.59% | +0.53% |
+| coreutils ls | 404 | 13,038.6 ms | 13,170.7 ms | +1.01% | +1.08% |
+| coreutils sort | 343 | 13,781.6 ms | 13,959.6 ms | +1.29% | −0.23% |
+| bash | 2,538 | 83,056.9 ms | 85,117.5 ms | **+2.48%** | +2.61% |
+
+Every campaign item carried its own speed block; this is their sum on whole binaries. bash is 1.3 MB, so
+`--mode auto` resolves to `reliable` there (500 KiB – 2 MiB) rather than `aggressive` — it measures the other
+preset. Min and median
+agree on everything but sort, where both sit within 1.3% of zero.
 
 ## 7. Every campaign PR and what it measured
 
