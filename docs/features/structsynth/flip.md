@@ -200,7 +200,7 @@ lane's ground.
 
 *Later:* sharded runs keep the structures with their serial names again; the
 tests and probes named above were replaced along with the limit
-(`docs/features/jobsstructs/`).
+(the `jobs_names_synthesized_structs_as_the_serial_run_does` integration test and the `tests/cli/sharded-*-keeps-serial-*` probes).
 
 **A union member read as a float and as an integer.** gcc -O2 `vread`
 (`struct V { int tag; union { int i; float f; double d; long l; } u; }`) reads
