@@ -124,7 +124,9 @@ one-conversion `"cannot change to directory %s"`, and `cp`, `mv`, `ginstall`,
 `stat` and `ip` did the same at 51 sites. The same frame already costs every
 closed-prototype call in those functions a phantom (`free(v6,v16[v2 + -8])` is
 rendered with `formatstring off` too); the override only made the format calls
-closed.
+closed. (That was with the prototype closed from the start. Installed with the
+open tail described below, the call treats that slot as the untyped call does,
+the count agrees, and the audit keeps these sites.)
 
 **The audit.** After the first drive, `decompile_step.rs
 (audit_parked_format_sites)` looks at each parked site's `CALL` and keeps the
@@ -156,8 +158,8 @@ conversion's, and every function's arity (`argcount.py`, output in
   `vdir` `0xc590` 3 → 2 and `ip`/`rtmon` `rtnl_rtscope_n2a` and `rtnl_rtrealm_n2a`
   5 → 3 lose a phantom parameter, and `kmod` `0xd650` 5 → 6 gains the one its
   `"%c! /dev/%s 0600 - - - %u:%u\n"` call reads.
-- The audit withdrew **130** of the 11,743 sites resolved at load, all on the
-  argument count, in `alloca` frames: `cp` 41, `ginstall` 34, `mv` 34, `ip` 7,
+- The audit withdrew **130** of the 11,743 sites resolved at load (none with
+  the open tail, below), all on the argument count, in `alloca` frames: `cp` 41, `ginstall` 34, `mv` 34, `ip` 7,
   `df` 4, `stat` 4, and one each in `ls`/`dir`/`vdir` at `O0` and `O2-noinline`.
   Those calls now render exactly as under `off`.
 

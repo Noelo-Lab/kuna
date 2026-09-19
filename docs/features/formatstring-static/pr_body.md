@@ -25,15 +25,22 @@ With this change the default prints `main(int a0,unsigned long *a1)` and
 - A callee takes a format when its built-in signature has a `char *` just
   before the `...`, so `err`/`warn`/`error`/`syslog` count too. A format that
   comes out of `dcgettext` is read through its msgid.
+- The resolved prototype is installed with an open tail: the call is scored
+  exactly like the untyped call and drops what it took past its declared
+  arguments only once every call in the function has its arguments, so the
+  calls around it keep what `off` gives them. Installed closed, it freed the
+  stack slots it used to claim, and calls whose format is not resolved took
+  them (three `__fprintf_chk` calls in Ubuntu m4's `version_etc` went from 9
+  to 12 arguments); it also let a clang `sscanf("%d", &a)` destination in the
+  first outgoing stack slot fold to the value stored before the call.
 - The first decompile has the last word. An override is dropped, and the
-  function decompiled once more, when the call passes a different number of
-  arguments than it declares (an `alloca` frame) or its format is not the
-  resolved string (a join reached from a jump table).
-- The default types x86 only. A closed format prototype also changes which
-  registers count as arguments of the calls around it; on x86 that only ever
-  removed phantoms, but on AArch64 and ARM32 it gave calls an `x8` of `0` or
-  leftover registers, and cost iproute2 `ip`'s `parse_rtattr` its `len`. `full`
-  still types those targets.
+  function decompiled once more, when the call's format is not the resolved
+  string (a join reached from a jump table) or its argument count disagrees.
+- The default types x86 only. A declared argument, now certain, can veto the
+  same value at a neighbouring call. On x86-64 the 8 calls this moved all lost
+  a phantom; on AArch64 and ARM32 firmware (measured with the prototype
+  closed) it gave calls an `x8` of `0` or leftover registers and cost iproute2
+  `ip`'s `parse_rtattr` its `len`. `full` still types those targets.
 - An override is built only where the target passes a vararg exactly like a
   named argument: every conversion on x86 and standard AArch64, integer and
   pointer conversions on ARM32, RISC-V, MIPS, PowerPC and Windows AArch64,
@@ -47,21 +54,23 @@ With this change the default prints `main(int a0,unsigned long *a1)` and
 
 ## The tests
 
-- `tests/stages/kuna-formatstring-static.xml`, 26 passes: off, default and
-  `full` on `fmt_x86_64`, the jump-table/`alloca` sites, `%lf` on x86-64 and
-  ARM hard-float, a Win64 PE with `%zu`/`%td`, `fmt_aarch64`, and default ==
-  off on Apple arm64, AArch64, ARM and a format in `.data`. Without the
-  x86-only default 8 of the 28 assertions fail; without the `%zu` fix the 3
-  Win64 ones do, and without the `%lf` fix 8 more.
-- decbench `type_match` over 444 slices (x86-64): 986 → 1024 perfect, 176
-  functions better, 2 worse.
-- Every call in every function the default changes, off vs static, over 324
-  x86-64 and 40 i386 binaries: no format call newly disagrees with its format
-  (313 stop disagreeing), and the 8 other calls whose argument count moved all
-  lost a phantom. With `formatstring off`, and on every non-x86 target by
-  default, the output is byte-identical to main. `decompile-all` min-of-15
-  against main: `fmt` -5.5%, `ls` -0.4%, `sort` +1.7% (against `off`: -1.1%,
-  -1.1%, +1.0%).
+- `tests/stages/kuna-formatstring-static.xml`, 32 passes and 38 assertions:
+  off, default and `full` on `fmt_x86_64`, the jump-table/`alloca` sites, `%lf`
+  on x86-64 and ARM hard-float, a Win64 PE with `%zu`/`%td`, `fmt_aarch64`,
+  gnulib's `version_etc` shape, clang `sscanf` destinations in the first
+  outgoing stack slot and a ninth `double` on the stack, and default == off on
+  Apple arm64, AArch64, ARM and a format in `.data`. A build that installs the
+  prototype closed fails 6 of the last 10.
+- decbench `type_match` over 444 slices (x86-64): 988 → 1026 perfect, 176
+  functions better, none worse.
+- Every call in every function the default changes, off vs default, over 325
+  decbench and 25 Ubuntu `/usr/bin` x86-64 binaries (81,955 functions): no
+  format call newly disagrees with its format (428 stop disagreeing), no call
+  whose format is not resolved gains an argument, and the 8 other calls whose
+  argument count moved all lost a phantom. With `formatstring off`, and on
+  every non-x86 target by default, the output is byte-identical to main.
+  `decompile-all` min-of-15 against main: `fmt` -4.6%, `ls` +0.8%, `sort`
+  -0.4%, `m4` +0.7% (against `off`: +1.2%, +1.2%, -0.7%, +1.1%).
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 

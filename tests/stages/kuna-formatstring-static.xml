@@ -40,9 +40,10 @@
     parked override is withdrawn.
 
     show: an alloca frame. The drive cannot track the stack pointer, so a
-    closed prototype picks up the slot the call pushes its return address into
-    as one more argument. The call then passes more arguments than the override
-    declares, and the parked override is withdrawn.
+    prototype closed from the start picked up the slot the call pushes its
+    return address into as one more argument, and the audit withdrew the
+    override. Installed with an open tail (passes 27 to 29), the call treats
+    that slot as the untyped call does and keeps the format's one argument.
 
     The override closes the prototype, so the compiler spec places each
     conversion where it would place a NAMED argument. Passes 7 to 14 pin the

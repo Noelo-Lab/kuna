@@ -1649,10 +1649,9 @@ the slot away from the calls after it. Closed from the start, the resolved call
 claims nothing past its declared arguments, and the slot goes to whichever open
 call is scored next: in gnulib's `version_etc` the `va_list` in the lowest
 outgoing stack slots became three extra arguments of each `"Written by ..."`
-call whose format is not resolved. A closed call also left a local that clang
-keeps in its `push rax` slot, the first outgoing argument slot, unread at the
-call, so a `sscanf("%d", &a)` destination was folded to the value stored before
-the call.
+call whose format is not resolved. With the call closed, a local that clang
+keeps in its `push rax` slot, the first outgoing argument slot, was also folded
+across a `sscanf("%d", &a)` to the value stored before the call.
 
 So the override is installed as its declared arguments followed by `...`
 (`first_var_arg_slot` is the declared count; the flow build marks the call point

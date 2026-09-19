@@ -1,0 +1,41 @@
+# argcount.py off vs default (round 7, open-tail build 64e37365) over 25 Ubuntu 22.04 /usr/bin x86-64 binaries
+# (xxd bc file tree lsof ed m4 patch cpio less make jq whiptail free watch sed diff3 cmp bison gzip tar grep flex gawk rsync)
+# NEWMISMATCH gawk 0x24160: argcount misreads the '\"' character literal; both arms pass "%c\n%c" two arguments.
+BIN bc {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 7, "callshape": 0}
+BIN bison {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 3, "callshape": 0}
+BIN cmp {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 3, "callshape": 0, "fixed_mismatch": 1}
+BIN cpio {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 27, "callshape": 0, "fixed_mismatch": 1}
+BIN diff3 {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 5, "fixed_mismatch": 3, "callshape": 0}
+BIN ed {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 5, "callshape": 0}
+BIN file {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 2, "callshape": 0}
+BIN flex {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 23, "callshape": 0, "fixed_mismatch": 4}
+BIN free {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 2, "callshape": 0}
+FIXEDCLASS gawk 0x10020 ('__fprintf_chk', '<%.*g>', 1, 'F', 'I', '0xffffffff')
+FIXEDCLASS gawk 0x10020 ('__fprintf_chk', ':%.*g', 1, 'F', 'I', '0xffffffff')
+NEWMISMATCH gawk 0x24160 ('__fprintf_chk', '%c\n%c', 2, 1)
+BIN gawk {"class_mismatch_off": 2, "class_mismatch_new": 0, "changed": 49, "callshape": 0, "fixed_class_mismatch": 2, "new_mismatch": 1, "fixed_mismatch": 18}
+BIN grep {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 9, "callshape": 0, "fixed_mismatch": 3}
+BIN gzip {"class_mismatch_off": 0, "class_mismatch_new": 0}
+BIN jq {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 2, "callshape": 0}
+BIN less {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 12, "callshape": 0, "fixed_mismatch": 4}
+BIN lsof {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 54, "fixed_mismatch": 18, "callshape": 0}
+BIN m4 {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 8, "fixed_mismatch": 3, "callshape": 0}
+ARITY make 0x20180 3->1
+BIN make {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 34, "callshape": 0, "fixed_mismatch": 8, "arity_down": 1}
+BIN patch {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 17, "callshape": 0, "fixed_mismatch": 6}
+BIN rsync {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 35, "callshape": 0, "fixed_mismatch": 25}
+BIN sed {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 8, "callshape": 0, "fixed_mismatch": 2}
+BIN tar {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 77, "callshape": 0, "fixed_mismatch": 7}
+BIN tree {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 28, "callshape": 0, "fixed_mismatch": 6}
+BIN watch {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 4, "fixed_mismatch": 6, "callshape": 0}
+BIN whiptail {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 2, "callshape": 0}
+BIN xxd {"class_mismatch_off": 0, "class_mismatch_new": 0, "changed": 3, "callshape": 0}
+TOTAL {"arity_down": 1, "binaries": 25, "callshape": 0, "changed": 419, "class_mismatch_new": 0, "class_mismatch_off": 2, "fixed_class_mismatch": 2, "fixed_mismatch": 115, "functions": 7248, "new_mismatch": 1}
+
+# the same sweep, off vs the build that installs the prototype closed (round 6):
+NEWMISMATCH gawk 0x24160 ('__fprintf_chk', '%c\n%c', 2, 1)
+NEWMISMATCH m4 0x16bc0 ('__fprintf_chk', 'Written by %s, %s, %s,\n%s, %s, %s, %s,\nand %s.\n', 8, 12)
+NEWMISMATCH m4 0x16bc0 ('__fprintf_chk', 'Written by %s, %s, %s,\n%s, %s, %s, %s,\n%s, and %', 9, 12)
+NEWMISMATCH m4 0x16bc0 ('__fprintf_chk', 'Written by %s, %s, %s,\n%s, %s, %s, %s,\n%s, %s, a', 9, 12)
+ARITY make 0x20180 3->1
+TOTAL {"arity_down": 1, "binaries": 25, "callshape": 0, "changed": 414, "class_mismatch_off": 2, "class_mismatch_old": 0, "fixed_class_mismatch": 2, "fixed_mismatch": 116, "functions": 7248, "new_mismatch": 4}

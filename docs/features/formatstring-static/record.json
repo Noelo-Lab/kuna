@@ -1,6 +1,6 @@
 {
   "opportunity": "A printf/scanf call states the types of its variadic arguments in its format string, but reading it cost a second decompile of every caller: Ghidra's FormatStringAnalyzer is DecompilerDependent, so the format pointer is only visible as an input varnode of a lifted CALL. decompile-all measured +77.5% (cronie crontab), +55.1% (gnutls psktool), +43.7% (gzip), which held the option to a per-run opt-in and out of the aggressive preset, even though the recovery was real (decbench C type_match perfects 80 -> 88 of 1,133). The constant is in the image, and so is the call site.",
-  "test_name": "tests/stages/kuna-formatstring-static.xml (28 assertions, 26 passes; passes 7-14 require default == off on macho_imports_arm64, fmtabi_armhf and fmtedge_x86_64; passes 15-20 pin %lf as a double on fmtlf_x86_64 and default == off on fmtlf_armhf's printf sites; passes 21-23 pin %zu/%td as 8 bytes on the Win64 PE32+ fmtzu_pe_x86_64; passes 24-26 pin fmt_aarch64 default == off and full typed (the default types x86 only); the first six: over fmt_x86_64 off = the bug, default = the fix, full = the same answer with no Listing; over fmtjoin_x86_64 off/default/full must agree on a format chosen on a jump table and on a call in an alloca frame, the two shapes the post-drive audit withdraws) + tests/cli/printf-varargs-render-untyped.json + 12 unit tests (%l on a floating conversion is a double, a delay-slot write to the format register, C99 conversion matrix, length-modifier matrix, `*` widths, the long-double decline, the format-function predicate over 21 accepted / 12 refused names, the fold's arithmetic incl. PIECE at the low input's width and shifts of 64 or more, and a cmov destination the fold must not know)",
+  "test_name": "tests/stages/kuna-formatstring-static.xml (38 assertions, 32 passes; passes 7-14 require default == off on macho_imports_arm64, fmtabi_armhf and fmtedge_x86_64; passes 15-20 pin %lf as a double on fmtlf_x86_64 and default == off on fmtlf_armhf's printf sites; passes 21-23 pin %zu/%td as 8 bytes on the Win64 PE32+ fmtzu_pe_x86_64; passes 24-26 pin fmt_aarch64 default == off and full typed (the default types x86 only); passes 27-29 pin gnulib version_etc (fmtvalist_x86_64): the switch calls keep what off gives them; passes 30-32 pin clang sscanf destinations in the first outgoing stack slot and a ninth stack double (fmtslots_x86_64); the first six: over fmt_x86_64 off = the bug, default = the fix, full = the same answer with no Listing; over fmtjoin_x86_64 off/default/full must agree on a format chosen on a jump table and on a call in an alloca frame, the two shapes the post-drive audit withdraws) + tests/cli/printf-varargs-render-untyped.json + 12 unit tests (%l on a floating conversion is a double, a delay-slot write to the format register, C99 conversion matrix, length-modifier matrix, `*` widths, the long-double decline, the format-function predicate over 21 accepted / 12 refused names, the fold's arithmetic incl. PIECE at the low input's width and shifts of 64 or more, and a cmov destination the fold must not know)",
   "binary": "decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64",
   "selector": "main",
   "func_addr": "0x401136",
@@ -249,26 +249,26 @@
         "n": 267,
         "perfect_off": 19,
         "perfect_static": 22,
-        "mean_off": 0.3664,
-        "mean_static": 0.3877,
+        "mean_off": 0.3644,
+        "mean_static": 0.3857,
         "improved": 10,
         "worse": 0
       },
       "coreutils": {
         "n": 6422,
-        "perfect_off": 610,
-        "perfect_static": 618,
-        "mean_off": 0.2813,
-        "mean_static": 0.283,
+        "perfect_off": 612,
+        "perfect_static": 620,
+        "mean_off": 0.2803,
+        "mean_static": 0.2819,
         "improved": 43,
-        "worse": 2
+        "worse": 0
       },
       "diffutils": {
         "n": 420,
         "perfect_off": 52,
         "perfect_static": 58,
-        "mean_off": 0.4004,
-        "mean_static": 0.423,
+        "mean_off": 0.3966,
+        "mean_static": 0.4192,
         "improved": 21,
         "worse": 0
       },
@@ -276,8 +276,8 @@
         "n": 790,
         "perfect_off": 35,
         "perfect_static": 36,
-        "mean_off": 0.1622,
-        "mean_static": 0.1691,
+        "mean_off": 0.1621,
+        "mean_static": 0.169,
         "improved": 20,
         "worse": 0
       },
@@ -285,8 +285,8 @@
         "n": 247,
         "perfect_off": 39,
         "perfect_static": 47,
-        "mean_off": 0.387,
-        "mean_static": 0.4153,
+        "mean_off": 0.3848,
+        "mean_static": 0.4131,
         "improved": 8,
         "worse": 0
       },
@@ -294,8 +294,8 @@
         "n": 368,
         "perfect_off": 88,
         "perfect_static": 90,
-        "mean_off": 0.4858,
-        "mean_static": 0.4912,
+        "mean_off": 0.4863,
+        "mean_static": 0.4917,
         "improved": 2,
         "worse": 0
       },
@@ -303,8 +303,8 @@
         "n": 686,
         "perfect_off": 29,
         "perfect_static": 30,
-        "mean_off": 0.2897,
-        "mean_static": 0.2952,
+        "mean_off": 0.2884,
+        "mean_static": 0.294,
         "improved": 29,
         "worse": 0
       },
@@ -312,22 +312,20 @@
         "n": 1548,
         "perfect_off": 114,
         "perfect_static": 123,
-        "mean_off": 0.2824,
-        "mean_static": 0.2911,
+        "mean_off": 0.2816,
+        "mean_static": 0.2902,
         "improved": 43,
         "worse": 0
       }
     },
     "pooled": {
       "n": 10748,
-      "perfect_off": 986,
-      "perfect_static": 1024,
-      "aggregate_off": 3111.18,
-      "aggregate_static": 3168.45,
-      "moved_onto_perfect_by_off": 0,
-      "moved_off_perfect_by_off": 38,
+      "perfect_off": 988,
+      "perfect_static": 1026,
       "improved": 176,
-      "worse": 2
+      "worse": 0,
+      "aggregate_off": 3099.48,
+      "aggregate_static": 3157.0
     },
     "worse_rows_read": "coreutils::O2::tr and coreutils::O2-noinline::tr, make_printable_str (0.5 -> 0.375) -- the same two rows as the previous measurement, unchanged. The only C change in that function is `(unsigned long)v1` -> `(unsigned int)v1` on a %03o argument, which is correct; the score moves because the value that was spilled to stack -0x58 is now a register-only variable, and decbench scores variables[] (args + stack symbols), which never carries a register local. The emitted C is equal or better.",
     "full_vs_static": {
@@ -360,7 +358,8 @@
     },
     "round2_note": "re-measured on the round-2 build (audit + cmov fix): identical to the round-1 numbers, 997 vs 959 perfect and 3094.46 vs 3037.19 aggregate; the audit build before the cmov fix measured the same",
     "round4_note": "re-measured on the round-4 build rebased onto d03560b2 (main gained boolbyte-on and truncarg, which lift both arms): static vs off +38 perfect, 176 better, 2 worse -- the same deltas and the same two tr make_printable_str rows as rounds 1-3",
-    "round5_note": "re-measured on the round-5 build rebased onto 75f832e3 (main gained structsynth-on and charbyte): static vs off +38 perfect, 176 better, 2 worse -- the same deltas and the same two tr rows; the LLP64 fix cannot move an ELF (it differs from the old rule only when the pointer is 8 bytes and long is narrower)"
+    "round5_note": "re-measured on the round-5 build rebased onto 75f832e3 (main gained structsynth-on and charbyte): static vs off +38 perfect, 176 better, 2 worse -- the same deltas and the same two tr rows; the LLP64 fix cannot move an ELF (it differs from the old rule only when the pointer is 8 bytes and long is narrower)",
+    "note": "round 7 re-measure on the open-tail build (decbench scorer as of 2026-09-19 14:36)"
   },
   "speed": {
     "method": "interleaved `kuna decompile-all` wall time (off / static / full in one round) on the round-2 build, box shared with other lanes' workspace suites; min-of-N plus the paired median of per-round deltas",
@@ -402,13 +401,13 @@
   },
   "gates": {
     "make test": "675/675 assertions passed / PARITY OK",
-    "make test-stages": "1209/1209 assertions passed / PARITY OK (baseline re-recorded on d6c5862f: +28, only this test's; none removed)",
+    "make test-stages": "1219/1219 assertions passed / PARITY OK (baseline re-recorded on d6c5862f: 1219 = main 1181 + 38 FMTSTATIC keys; none removed)",
     "make test-cli": "190/190 passed",
     "make check-spec": "OK (lenient) + OK (strict)",
     "kuna catalog --check": "catalog OK",
     "counters --check": "no drift",
     "docs/options.md": "byte-fresh (cmp rc=0)",
-    "make rust-test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 13:35:13-13:52:25Z, after the last .rs commit 621b3ae6 (13:35:00Z); later commits are docs only. static_reaches_x86_and_full_every_target and listing_consumer_schedule_pairs_each_pass_with_its_option ok. (Also RUST_TEST_RC=0 13:15:23-13:31:14Z on the rebased tree before the change.)"
+    "make rust-test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 16:04:47-16:20:23Z, started after the last .rs/.toml commit 173efc85 (16:04:33Z); later commits are docs and a stage-file comment. (An earlier lane on 64e37365 was stopped to take the phases.toml text; no failure before it was stopped.)"
   },
   "files": [
     "decompiler/crates/kuna-analysis/src/analyzers/formatstring/kuna_fmtstatic.rs",
@@ -430,7 +429,16 @@
     "tests/cli/printf-varargs-render-untyped.json",
     "docs/baseline-stages.json",
     "docs/ghidra-integration.md",
-    "decompiler/crates/kuna-ghidra/tests/ghidra_sim_e2e.rs"
+    "decompiler/crates/kuna-ghidra/tests/ghidra_sim_e2e.rs",
+    "decompiler/crates/kuna-decomp/src/p4_calls/kuna_formattail.rs",
+    "decompiler/crates/kuna-decomp/src/p4_calls/coreaction_protos.rs",
+    "decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs",
+    "decompiler/crates/kuna-decomp/src/p2_lift/flow.rs",
+    "decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/fmtvalist_x86_64.c",
+    "decompiler/crates/kuna-analysis/tests/fixtures/fmtslots_x86_64.c",
+    "docs/spec/04-calls-and-prototypes.md"
   ],
   "catalog_counts": "no new settable (a value change on an existing row): counters --check reports no drift. The manual sites that moved: tests/fixtures/phase_catalog.json (recaptured), decompiler/crates/kuna-base/src/xml.rs corpus count 315 (main's 314 + this PR's one stage file; round 2 extended that file rather than adding one), and docs/baseline-stages.json (re-recorded: 1148 = main's 1141 + this test's 7 assertions).",
   "preset_decision": "`formatstring` leaves the AGGRESSIVE_OVERRIDES exclusion list. It was excluded for the second decompile's cost; `static` does not pay it, and it needs the Listing, which the preset supplies.",
@@ -672,5 +680,67 @@
       }
     },
     "rust_test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 13:35:13-13:52:25Z, after the last .rs commit 621b3ae6 (13:35:00Z); later commits are docs only. static_reaches_x86_and_full_every_target and listing_consumer_schedule_pairs_each_pass_with_its_option ok. (Also RUST_TEST_RC=0 13:15:23-13:31:14Z on the rebased tree before the change.)"
+  },
+  "round7": {
+    "review": "CHANGES (major): x86-64 wrong output by default -- calls whose format is not resolved pick up phantom stack arguments. /usr/bin/m4 (Ubuntu 1.4.18, sha256 bef5254af5957f1c) 0x16bc0 gnulib version_etc: three __fprintf_chk calls 9 -> 12 varargs by default, 9 under off. PR body/spec/reached_by_default claim 'on x86 that only ever removed phantoms' false. Add a corpus beyond decbench (reviewer: 25 Ubuntu /usr/bin binaries, 116 fixed / 3 new).",
+    "root_cause": "Trace (KUNA_TRIAL_TRACE build, temporary eprintln in only_op_use): under off the open version calls 0x16cfd/0x16f2b claim the va_list's three outgoing stack slots (callee-relative 0x8/0x10/0x18) as phantoms, so check_call_double_use vetoes the same values at the switch calls (their slots 0x38..0x48, below six pushes). Closed from the start, the version call has no input there, nothing vetoes, and the case-8/9/others calls take them.",
+    "fix": "p4_calls/kuna_formattail.rs: the override is installed as the declared arguments + ... (first_var_arg_slot = declared count; decompile_step sets Architecture::format_override_callpoints, the flow build marks Override::insert_format_call, build_call_specs sets FuncCallSpecs::format_arity). The call scores the trials past its declared arguments exactly as under off; keep_declared_trials re-marks declared (fixed-position) trials active at finalization (fillinMap's chain rule dropped a ninth double on the stack behind rcx..r9 unused); shed_format_tails removes inputs past the declared count and the ... once no live call is input-active (end of ActionActiveParam, before the calleearity retries).",
+    "also_fixed": "clang -O1+ keeps a local in the push-rax slot (the first outgoing stack-arg slot): closed from the start, sscanf(\"%d\",&a); return a+1 rendered 'return 6;' and a %c pair 'return 0;' (a latent wrong output of the earlier closed install, not on main). The open tail renders them as off. And the audit's alloca arity withdrawals (130 on decbench) no longer fire: those sites are typed; tar O2 0x23875 jump-table join still withdrawn (format differs).",
+    "stage_test": "passes 27-29 fmtvalist_x86_64 (gcc -O2 -flto, version_etc shape: #29 off keeps the version line's phantoms, #30 default/full print it with 3 strings, #31 switch calls keep off's arguments, #32 no switch call takes the va_list's slots); passes 30-32 fmtslots_x86_64 (clang -O2: #33-#36 sscanf destinations read back / typed / no 'return 6;', #37-#38 show9 keeps its ninth stack double). New 38/38; the round-6 binary 32/38 (fails #31-#36). baseline-stages 1219 = main 1181 + 38 FMTSTATIC keys, 0 removed.",
+    "measurement": {
+      "decbench_x86_64": "325 binaries / 74,707 functions, off vs default: 2,860 changed; argcount 313 format calls fixed / 0 new; class 4 fixed / 0 new; 8 non-format calls moved, all phantoms removed (ls/dir/vdir 0xc590 4->2, ip/rtmon n2a 6->3 x4, update-passwd sub_2be0 4->3); arity 7 down / 1 up (kmod 0xd650 reads r9). Identical to round 6 on every argcount column.",
+      "ubuntu_usr_bin": "25 Ubuntu 22.04 x86-64 gcc binaries (xxd bc file tree lsof ed m4 patch cpio less make jq whiptail free watch sed diff3 cmp bison gzip tar grep flex gawk rsync), 7,248 functions: 419 changed; 115 format calls fixed / 0 new (argcount prints gawk 0x24160 whose '\\\"' literal it misreads; both arms pass 2 args to \"%c\\n%c\"); 0 non-format calls moved; arity make sub_20180 3->1 (body reads only rdi). The closed build: 116 fixed / 3 new (m4).",
+      "vs_round6_binary": "Ubuntu 16 functions differ: m4 0x16bc0 (fix: both version lines lose their phantoms, every other call == off), 9 with a formerly withdrawn alloca site now typed (make main/ar_scan/sub_17e20/new_job, patch sub_f880, watch main gains the %.1f double, cpio and tar argp_parse, tar sub_23940), 6 equivalent (diff3, lsof x2: goto folded into the condition; gawk, rsync, xxd: which copy carries a name). decbench 77: 3 now == off (who x2, init), the rest alloca sites typed or equivalent rewrites; argcount identical.",
+      "audit": "withdrawals on the 325-binary decbench sweep: 130 (all arity, alloca) -> 0; tar O2 0x23875 (jump-table join, format differs) still withdrawn.",
+      "battery": "reviewer's conv.c/conv2.c + buf.c + many2.c at gcc/clang O0/O1/O2/Os, FORTIFY 0/2 (34 binaries): new vs round-6 differs only in clang t_scanchar/t_scan2/t_scan3 (round-6 wrong, new == off + typing); t_many (9 doubles) typed after keep_declared_trials."
+    },
+    "typesweep": "444 slices / 10,748 functions (decbench scorer updated 2026-09-19 14:36, so the control moved; within-run comparison): off 988 -> default 1026 perfect, aggregate 3099.48 -> 3157.00, 176 better / 0 worse (round 6: 2 worse, tr make_printable_str x2, gone); decomp_vars 96,697 -> 96,671, fp 19,356 -> 19,141, fn 28,270 -> 28,270.",
+    "speed": {
+      "fmt O2": {
+        "min_ms": {
+          "off": 4125.145657919347,
+          "static": 4175.70776771754,
+          "main": 4376.942729577422
+        },
+        "static_vs_off_pct": 1.225704835443208,
+        "static_vs_main_pct": -4.59761468890205,
+        "paired_median_static_vs_off_pct": -0.013448382869862423,
+        "n": 15
+      },
+      "ls O2": {
+        "min_ms": {
+          "off": 13398.726779967546,
+          "static": 13552.82682273537,
+          "main": 13451.613447628915
+        },
+        "static_vs_off_pct": 1.150109598459892,
+        "static_vs_main_pct": 0.752425539884173,
+        "paired_median_static_vs_off_pct": 0.004285486680344865,
+        "n": 15
+      },
+      "sort O2": {
+        "min_ms": {
+          "off": 14154.558937996626,
+          "static": 14053.76396048814,
+          "main": 14105.009040795267
+        },
+        "static_vs_off_pct": -0.7121025667420153,
+        "static_vs_main_pct": -0.3633112191485469,
+        "paired_median_static_vs_off_pct": 1.059244927639387,
+        "n": 15
+      },
+      "m4 ubuntu": {
+        "min_ms": {
+          "off": 13749.854158610106,
+          "static": 13903.969537466764,
+          "main": 13801.383252255619
+        },
+        "static_vs_off_pct": 1.1208510074279767,
+        "static_vs_main_pct": 0.7433043727293043,
+        "paired_median_static_vs_off_pct": -2.081043934906852,
+        "n": 15
+      }
+    },
+    "rust_test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 16:04:47-16:20:23Z, started after the last .rs/.toml commit 173efc85 (16:04:33Z); later commits are docs and a stage-file comment. (An earlier lane on 64e37365 was stopped to take the phases.toml text; no failure before it was stopped.)"
   }
 }
