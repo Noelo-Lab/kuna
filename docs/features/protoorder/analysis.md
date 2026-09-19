@@ -172,9 +172,10 @@ these and kept in `git log`. Round 12 re-ran the default arm on the same 60
 binaries with §3f's refusal: 26 functions differ from the round-11 engine.
 Round 13 re-ran all 60 in seven arms against a fresh build of main a3bf6a15 (the
 round-12 engine, this branch at the default, off and with `ptrfromuse void`, and
-main with and without it), and the tables below were measured once more after
-the rebase onto 3831d703 (#675, #686) with §3h's sweep, against a fresh 3831d703
-build: §3g changes 4 functions against the round-12 engine
+main with and without it), and measured again after the rebase onto 3831d703
+(#675, #686) with §3h's sweep. The tables below are the last measurement, after
+the rebase onto e76fd044 (#673, formatstring on by default), against a fresh
+e76fd044 build: §3g changes 4 functions against the round-12 engine
 in either arm (crond `sub_6b7b`, the walk-limit case, whose two argument casts
 go back to main's spelling; betaflight `sub_801379c`, its sector fill whole again
 and the function identical to main, and the two callers its vote had typed,
@@ -182,7 +183,7 @@ and the function identical to main, and the two callers its vote had typed,
 votes). Every table below is the round-13 tree's.
 
 **Off arm vs main:** `--option protoorder off` is byte-identical to a fresh
-3831d703 build on **60 of 60** binaries (and to a3bf6a15 before that rebase, d96e3408 in round 11), and the round-12 engine's off arm on
+e76fd044 build on **60 of 60** binaries (and to 3831d703 and a3bf6a15 before those rebases, d96e3408 in round 11), and the round-12 engine's off arm on
 the 10 of them re-run (fmt, ls, kmod, libselinux, betaflight, nuttx, dash, grep
 -O0, zlib, crazyflie), and again on those 10 after the rebase onto d6c5862f,
 where their call arguments (67,928), argument rows (18,930) and never-assigned
@@ -192,8 +193,8 @@ measurement.)
 
 **The reviewer's classes** (every function, both arms): `aN[k].field_` /
 `vN[k].field_` array subscripts of a structure 152 on main, 152 here; `._i_j_`
-piece assignments 4,004 and 4,004; `NAN` 55 and 55; `= (double)(` 13 and 13.
-`= (float)` goes 1,305 → 1,344 (1,312 → 1,351 on d96e3408): per function, 199 appear and 159 disappear on
+piece assignments 4,048 and 4,048; `NAN` 55 and 55; `= (double)(` 14 and 14.
+`= (float)` goes 1,306 → 1,345 (1,312 → 1,351 on d96e3408): per function, 199 appear and 159 disappear on
 hard-float call results read from `s0` (`v3 = (float)sub_800dd06(...)`, a callee
 that returns `float`, the cast moving with a temporary), one is main's own
 int-to-float conversion moved into a temporary (cleanflight `sub_80275ec`), and
@@ -203,14 +204,16 @@ rules: an access outside the object or across members, a step of other than one
 element (grep `sub_14e90`, sort `sub_a180`), a pointer member's own pointee, and
 the sibling loads of the field a vote's value came from (e2fsck `getblk`).
 
-**Arity** (`callsite-metrics.py`): **258,249** call arguments in both arms, 0
-added, 0 deleted; **57,938** `variables[]` argument rows in both arms (no
-function gains a parameter); arguments that are a never-assigned local 1,179 in
-both arms; call sites with fewer arguments than the callee's declaration 13,853
-in both arms (`underarity.py`); string-literal arguments 30,519 → 31,018.
+**Arity** (`callsite-metrics.py`): **258,449** call arguments in both arms, 0
+added, 0 deleted; **57,931** `variables[]` argument rows in both arms (no
+function gains a parameter); arguments that are a never-assigned local 1,186 in
+both arms; call sites with fewer arguments than the callee's declaration 13,695
+in both arms (`underarity.py`); string-literal arguments 30,532 → 31,063. (#673's
+format-string arity moved main's own counts from 258,249 / 57,938 / 1,179 /
+13,853; both arms moved together.)
 
 **Invariants** (`invariants.py`): 0 calls lost; `goto` delta 0; `return` delta
-0; `;` delta +98 (+127 before §3f undid the byte stores). The one "gained call" is a string literal the default arm
+0; `;` delta +30 (+98 on 3831d703, +127 before §3f undid the byte stores). The one "gained call" is a string literal the default arm
 recovers, `"Calling prvGetRegistersFromStack() from fault handler"`, which the
 call regex reads as a call.
 
@@ -220,17 +223,17 @@ whose first use is a read **0**. The two merges are nuttx `sub_8007bd0` (-O2
 and -O2-noinline), two adjacent `char`s becoming the `char tmp[]` the code fills
 and prints with `%s`.
 
-**Every changed function classified** (9,654 of 32,406), by the first normalizer
+**Every changed function classified** (9,670 of 32,406), by the first normalizer
 under which the two bodies agree:
 
 | class | functions | what differs |
 |---|---|---|
-| casts | 4,439 | C casts, NULL/0, char/negative/hex spellings, `x += y` as `x = x + y` |
-| declarations | 2,746 | local numbering, declaration types, which locals share a name |
-| struct-number | 1,425 | only the `struct_N` numbers: a callee-first run mints the synthesized structures in another order |
+| casts | 4,441 | C casts, NULL/0, char/negative/hex spellings, `x += y` as `x = x + y` |
+| declarations | 2,734 | local numbering, declaration types, which locals share a name |
+| struct-number | 1,426 | only the `struct_N` numbers: a callee-first run mints the synthesized structures in another order |
 | member-reach | 435 | the same bytes through a retyped pointer or a struct member (`*(int *)(a0 + 0x28)` ↔ `a0[10]` ↔ `a0->field_0x28`) |
-| literal | 372 | a number became a string or float literal |
-| pointer-arith | 120 | `&p[k]` ↔ `p + k`, `p[k]` ↔ `*(p + k)` |
+| literal | 398 | a number became a string or float literal |
+| pointer-arith | 119 | `&p[k]` ↔ `p + k`, `p[k]` ↔ `*(p + k)` |
 | merge | 17 | a parameter and a local trade which one holds a value |
 | REVIEW | 100 | none of the above -- labelled below |
 
@@ -242,10 +245,10 @@ and `return`s in both arms:
 | label | functions | what |
 |---|---|---|
 | spelling | 45 | the same addresses spelled for a retyped pointer (byte offsets as element indices, `p + k` ↔ `&p[k]`, casts, 0 ↔ NULL) |
-| member-reach | 13 | the same bytes through a struct member or a pointer member the vote typed |
+| member-reach | 14 | the same bytes through a struct member or a pointer member the vote typed |
 | regroup | 12 | a temporary inlined, extracted or re-used for the same value |
 | store-width | 1 | libselinux `sub_1d4c0`: a constant stored through a `char *` as `'\0'` stores, the same bytes at a narrower access, the character-pointee shape §3f allows (§9); betaflight's word fill, the other one before §3g, is identical to main now |
-| literal | 10 | a small address printed as its string, or a constant at another width |
+| literal | 9 | a small address printed as its string, or a constant at another width |
 | ternary | 5 | an if/else assignment printed as `?:`, or back |
 | builtin-string | 4 | constant stores ↔ `builtin_strncpy` or `char` stores: two strings gained; a 2-byte constant printed as two `char` stores in ginstall `sub_dd10` and tar `sub_3f9b0` (a `char *` vote, §9) |
 | float-literal | 4 | a float member's bits printed as the exact literal (`0` → `0.0`, `0xbf800000` → `-1.0`) |
@@ -276,13 +279,17 @@ across functions, and #686) and §3h's sweep, a fresh 3831d703 build and this
 branch score exactly the same rows in both `ptrfromuse` arms and on firmware:
 #675 and #686 move no row on main, the rebase none on this branch, and §3h's
 sweep none (it rewrites the variables of 144 functions, all scored the same).
+After the rebase onto e76fd044 (#673, formatstring on by default, which moves
+38 of main's rows onto perfect), the numbers below are that base's: a fresh
+e76fd044 build against this branch.
 
-- PERFECT **988 → 1,107 (+119)**; aggregate 3,099.48 → 3,352.26 (+252.77)
-- moved ONTO perfect **119**, moved OFF perfect **0**
-- improved (not perfect) **838**, worsened **3**
-- control: 6,842 functions with byte-identical `variables` score identically
-- with `--option ptrfromuse void` in both arms: 988 → 1,311, none off perfect,
-  838 improved, 18 worse. Twelve of those are the ls, dir and vdir
+- PERFECT **1,026 → 1,147 (+121)**; aggregate 3,157.00 → 3,413.35 (+256.35)
+  (on a3bf6a15 and 3831d703: 988 → 1,107, 838 improved, 3 worse)
+- moved ONTO perfect **121**, moved OFF perfect **0**
+- improved (not perfect) **827**, worsened **2**
+- control: 6,837 functions with byte-identical `variables` score identically
+- with `--option ptrfromuse void` in both arms: 1,026 → 1,351, none off perfect,
+  827 improved, 17 worse (988 → 1,311 and 18 on the earlier bases). Twelve of those are the ls, dir and vdir
   `*_df_extension` comparators, which main scores 0 at the default and a third
   with `ptrfromuse void` (`void *`), and this branch 0 in both: the vote gives
   them their callee `sub_71f0`'s own `undefined8 *` (§10); none scores worse than
@@ -292,18 +299,19 @@ sweep none (it rewrites the variables of 144 functions, all scored the same).
 
 | project | n | perfect off → on | mean off → on | improved | worse |
 |---|---|---|---|---|---|
-| bzip2 | 267 | 19 → 28 | 0.3644 → 0.3864 | 14 | 0 |
-| coreutils | 6,422 | 612 → 665 | 0.2803 → 0.2961 | 428 | 2 |
-| diffutils | 420 | 52 → 52 | 0.3966 → 0.4058 | 19 | 0 |
-| findutils | 790 | 35 → 40 | 0.1621 → 0.2120 | 149 | 0 |
-| grep | 247 | 39 → 44 | 0.3848 → 0.4065 | 17 | 1 |
-| gzip | 368 | 88 → 100 | 0.4863 → 0.5148 | 26 | 0 |
-| shadow | 686 | 29 → 30 | 0.2884 → 0.2949 | 19 | 0 |
-| tar | 1,548 | 114 → 148 | 0.2816 → 0.3344 | 285 | 0 |
+| bzip2 | 267 | 22 → 31 | 0.3857 → 0.4077 | 14 | 0 |
+| coreutils | 6,422 | 620 → 675 | 0.2819 → 0.2978 | 429 | 1 |
+| diffutils | 420 | 58 → 58 | 0.4192 → 0.4287 | 19 | 0 |
+| findutils | 790 | 36 → 41 | 0.1690 → 0.2199 | 153 | 0 |
+| grep | 247 | 47 → 51 | 0.4131 → 0.4328 | 16 | 1 |
+| gzip | 368 | 90 → 102 | 0.4917 → 0.5202 | 26 | 0 |
+| shadow | 686 | 30 → 31 | 0.2940 → 0.2988 | 11 | 0 |
+| tar | 1,548 | 123 → 158 | 0.2902 → 0.3457 | 280 | 0 |
 
 Firmware corpus (nuttx, mirai, betaflight, freertos at -O2): PERFECT 207 →
 216, aggregate 506.08 → 538.88 (+32.81), moved off perfect 0, improved
-111, worsened 4 (the same four as round 12, read below).
+111, worsened 4 (the same four as round 12, read below), on e76fd044 as on
+a3bf6a15 and 3831d703.
 
 A type the vote is right about can still score nothing: a `struct_N *` never
 equals a program-defined ground-truth name, and the campaign's decision to
@@ -319,7 +327,7 @@ and accounts for four of the eight worsened rows at that point, the
 
 | slice | function | off → on | why |
 |---|---|---|---|
-| coreutils O0 tail | `file_lines` | `long end_pos` → `void *` | callee over-typed: `dump_remainder` reads BUFSIZ 0x2000 as the address `_DT_INIT` and recovers its count as `void *` |
+| coreutils O0 tail | `file_lines` | `long end_pos` → `void *` | callee over-typed: `dump_remainder` reads BUFSIZ 0x2000 as the address `_DT_INIT` and recovers its count as `void *`; on e76fd044 this branch scores it as main does (0.636), so it is no longer a worse row |
 | coreutils O0 tail | `tail_forever` | a `long` local → `void *` | the same callee |
 | grep O2-noinline | `buf_has_encoding_errors` | `char *` → `unsigned long *` | callee over-typed: a word-at-a-time scan reads the buffer 8 bytes at a time |
 | freertos O2 | `vQueueWaitForMessageRestricted` | `TickType_t` → `int *` | callee over-typed |

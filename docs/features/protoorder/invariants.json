@@ -1,10 +1,10 @@
 {
   "arm": "on",
   "totals": {
-    "changed": 9654,
+    "changed": 9670,
     "goto_delta": 0,
     "return_delta": 0,
-    "stmt_delta": 98,
+    "stmt_delta": 30,
     "calls_gained": 1
   },
   "per_binary": {
@@ -18,13 +18,13 @@
       "changed": 38,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 3
+      "stmt_delta": 0
     },
     "O0_coreutils_stripped_expr": {
       "changed": 48,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 4
+      "stmt_delta": 2
     },
     "O0_coreutils_stripped_sort": {
       "changed": 110,
@@ -33,16 +33,16 @@
       "stmt_delta": 3
     },
     "O0_coreutils_stripped_tail": {
-      "changed": 61,
+      "changed": 62,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 2
     },
     "O0_cronie_stripped_crond": {
-      "changed": 29,
+      "changed": 30,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 0
+      "stmt_delta": -1
     },
     "O0_dpkg_stripped_dpkg-divert": {
       "changed": 235,
@@ -75,22 +75,22 @@
       "stmt_delta": 0
     },
     "O0_shadow_stripped_chage": {
-      "changed": 38,
+      "changed": 41,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 3
+      "stmt_delta": -9
     },
     "O0_shadow_stripped_useradd": {
-      "changed": 97,
+      "changed": 103,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 4
+      "stmt_delta": -8
     },
     "O2-noinline_coreutils_stripped_cat": {
       "changed": 39,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 2
+      "stmt_delta": 1
     },
     "O2-noinline_grep_stripped_grep": {
       "changed": 167,
@@ -168,7 +168,7 @@
       "changed": 116,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -1
+      "stmt_delta": -4
     },
     "O2_coreutils_stripped_ls": {
       "changed": 131,
@@ -192,7 +192,7 @@
       "changed": 86,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 10
+      "stmt_delta": 11
     },
     "O2_crazyflie_stripped_cf2-elf": {
       "changed": 746,
@@ -237,22 +237,22 @@
       "stmt_delta": 0
     },
     "O2_dpkg_stripped_dpkg-query": {
-      "changed": 201,
+      "changed": 202,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 12
+      "stmt_delta": 10
     },
     "O2_e2fsprogs_stripped_e2fsck": {
-      "changed": 603,
+      "changed": 607,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 3
+      "stmt_delta": 1
     },
     "O2_findutils_stripped_find": {
       "changed": 212,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 12
+      "stmt_delta": 8
     },
     "O2_freertos_stripped_RTOSDemo-out": {
       "changed": 38,
@@ -268,13 +268,13 @@
       "stmt_delta": 13
     },
     "O2_iproute2_stripped_ip": {
-      "changed": 414,
+      "changed": 412,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -19
+      "stmt_delta": -46
     },
     "O2_kmod_stripped_kmod": {
-      "changed": 124,
+      "changed": 128,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 0
@@ -328,13 +328,13 @@
       "stmt_delta": 20
     },
     "O2_openssh-portable_stripped_scp": {
-      "changed": 194,
+      "changed": 193,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": -1
     },
     "O2_openssh-portable_stripped_sftp-server": {
-      "changed": 165,
+      "changed": 164,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 0

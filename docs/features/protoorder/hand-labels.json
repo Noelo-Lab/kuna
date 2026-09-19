@@ -298,5 +298,9 @@
  "O2_zlib_stripped_libz-so-1-2-13 sub_4650": {
   "class": "member-reach",
   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_iproute2_stripped_ip sub_1ca00": {
+  "class": "member-reach",
+  "why": "print_route's struct_21 * vote on the reply buffer (struct_21 is 0x1c bytes: &v3[1] is main's &v2[7] through an int4 *, v3->field_0x12 is the one-byte store at +0x12, and + '\\xe0' is - 0x20 mod 256); v8 = v9 - 0x1c is main's inline v7 + -0x1c, the same signed int4 compare; since #673 main prints the matches() strings too, so the literal residue that labelled it before is gone"
  }
 }

@@ -19,10 +19,10 @@
  "O0_coreutils_stripped_expr": {
   "changed": 48,
   "class:casts": 19,
-  "class:declarations": 17,
+  "class:declarations": 16,
   "class:literal": 3,
   "class:member-reach": 4,
-  "class:struct-number": 5,
+  "class:struct-number": 6,
   "functions": 213
  },
  "O0_coreutils_stripped_sort": {
@@ -37,18 +37,18 @@
   "functions": 479
  },
  "O0_coreutils_stripped_tail": {
-  "changed": 61,
-  "class:casts": 18,
-  "class:declarations": 21,
+  "changed": 62,
+  "class:casts": 19,
+  "class:declarations": 22,
   "class:member-reach": 4,
   "class:pointer-arith": 1,
-  "class:struct-number": 17,
+  "class:struct-number": 16,
   "functions": 316
  },
  "O0_cronie_stripped_crond": {
-  "changed": 29,
+  "changed": 30,
   "class:casts": 14,
-  "class:declarations": 9,
+  "class:declarations": 10,
   "class:member-reach": 1,
   "class:struct-number": 5,
   "functions": 198
@@ -56,11 +56,11 @@
  "O0_dpkg_stripped_dpkg-divert": {
   "changed": 235,
   "class:casts": 88,
-  "class:declarations": 84,
+  "class:declarations": 83,
   "class:literal": 3,
   "class:member-reach": 17,
   "class:pointer-arith": 1,
-  "class:struct-number": 42,
+  "class:struct-number": 43,
   "functions": 657
  },
  "O0_grep_stripped_grep": {
@@ -85,8 +85,8 @@
  },
  "O0_libexpat_stripped_xmlwf": {
   "changed": 12,
-  "class:casts": 7,
-  "class:declarations": 5,
+  "class:casts": 6,
+  "class:declarations": 6,
   "functions": 134
  },
  "O0_mirai_stripped_mirai": {
@@ -99,19 +99,19 @@
   "functions": 174
  },
  "O0_shadow_stripped_chage": {
-  "changed": 38,
+  "changed": 41,
   "class:REVIEW": 1,
-  "class:casts": 17,
-  "class:declarations": 17,
+  "class:casts": 18,
+  "class:declarations": 19,
   "class:pointer-arith": 1,
   "class:struct-number": 2,
   "functions": 237
  },
  "O0_shadow_stripped_useradd": {
-  "changed": 97,
+  "changed": 103,
   "class:REVIEW": 1,
   "class:casts": 34,
-  "class:declarations": 49,
+  "class:declarations": 55,
   "class:member-reach": 2,
   "class:pointer-arith": 1,
   "class:struct-number": 10,
@@ -147,8 +147,8 @@
  },
  "O2-noinline_libexpat_stripped_xmlwf": {
   "changed": 11,
-  "class:casts": 6,
-  "class:declarations": 5,
+  "class:casts": 5,
+  "class:declarations": 6,
   "functions": 134
  },
  "O2-noinline_nuttx_stripped_nuttx": {
@@ -336,9 +336,9 @@
   "functions": 212
  },
  "O2_dpkg_stripped_dpkg-query": {
-  "changed": 201,
+  "changed": 202,
   "class:REVIEW": 3,
-  "class:casts": 75,
+  "class:casts": 76,
   "class:declarations": 72,
   "class:literal": 6,
   "class:member-reach": 8,
@@ -347,14 +347,14 @@
   "functions": 585
  },
  "O2_e2fsprogs_stripped_e2fsck": {
-  "changed": 603,
+  "changed": 607,
   "class:REVIEW": 8,
-  "class:casts": 236,
-  "class:declarations": 117,
-  "class:literal": 10,
+  "class:casts": 242,
+  "class:declarations": 116,
+  "class:literal": 11,
   "class:member-reach": 34,
   "class:pointer-arith": 6,
-  "class:struct-number": 192,
+  "class:struct-number": 190,
   "functions": 1421
  },
  "O2_findutils_stripped_find": {
@@ -391,11 +391,11 @@
   "functions": 449
  },
  "O2_iproute2_stripped_ip": {
-  "changed": 414,
+  "changed": 412,
   "class:REVIEW": 2,
-  "class:casts": 195,
-  "class:declarations": 83,
-  "class:literal": 72,
+  "class:casts": 189,
+  "class:declarations": 75,
+  "class:literal": 84,
   "class:member-reach": 24,
   "class:merge": 2,
   "class:pointer-arith": 1,
@@ -403,13 +403,13 @@
   "functions": 1008
  },
  "O2_kmod_stripped_kmod": {
-  "changed": 124,
+  "changed": 128,
   "class:REVIEW": 1,
-  "class:casts": 62,
+  "class:casts": 63,
   "class:declarations": 34,
   "class:member-reach": 6,
   "class:pointer-arith": 5,
-  "class:struct-number": 16,
+  "class:struct-number": 19,
   "functions": 394
  },
  "O2_libacl_stripped_getfacl": {
@@ -481,18 +481,18 @@
   "layout:merge": 1
  },
  "O2_openssh-portable_stripped_scp": {
-  "changed": 194,
-  "class:casts": 77,
-  "class:declarations": 89,
+  "changed": 193,
+  "class:casts": 78,
+  "class:declarations": 87,
   "class:literal": 1,
   "class:member-reach": 4,
   "class:struct-number": 23,
   "functions": 524
  },
  "O2_openssh-portable_stripped_sftp-server": {
-  "changed": 165,
-  "class:casts": 69,
-  "class:declarations": 71,
+  "changed": 164,
+  "class:casts": 70,
+  "class:declarations": 69,
   "class:literal": 1,
   "class:member-reach": 1,
   "class:struct-number": 23,
@@ -517,12 +517,12 @@
  "O2_tar_stripped_tar": {
   "changed": 475,
   "class:REVIEW": 5,
-  "class:casts": 202,
-  "class:declarations": 157,
-  "class:literal": 25,
+  "class:casts": 200,
+  "class:declarations": 148,
+  "class:literal": 38,
   "class:member-reach": 16,
-  "class:pointer-arith": 6,
-  "class:struct-number": 64,
+  "class:pointer-arith": 5,
+  "class:struct-number": 63,
   "functions": 1125
  },
  "O2_x0r-usb_stripped_x0r-usb-exe": {
@@ -537,15 +537,15 @@
   "functions": 184
  },
  "TOTAL": {
-  "changed": 9654,
+  "changed": 9670,
   "class:REVIEW": 100,
-  "class:casts": 4439,
-  "class:declarations": 2746,
-  "class:literal": 372,
+  "class:casts": 4441,
+  "class:declarations": 2734,
+  "class:literal": 398,
   "class:member-reach": 435,
   "class:merge": 17,
-  "class:pointer-arith": 120,
-  "class:struct-number": 1425,
+  "class:pointer-arith": 119,
+  "class:struct-number": 1426,
   "functions": 32406,
   "layout:merge": 2
  }

@@ -993,7 +993,7 @@
 @@ -24 +24 @@
 -    sub_10110(v3,*(long *)(a0 + 0x40),(long)(int)((v1 & 1) + 0x22 + v1) + *(long *)(a0 + 0x40),v4,v1,v2,&v7);
 +    sub_10110(v3,*(unsigned char **)(a0 + 0x40),&(*(unsigned char **)(a0 + 0x40))[(int)((v1 & 1) + 0x22 + v1)],v4,v1,v2,&v7);
-@@ -37 +37 @@
+@@ -38 +38 @@
 -  sub_f510(*(unsigned long *)(a0 + 0x18),*(unsigned long *)(a0 + 0x20),v4,v1,v2);
 +  sub_f510(*(long *)(a0 + 0x18),*(unsigned char **)(a0 + 0x20),v4,v1,v2);
 
@@ -2682,18 +2682,20 @@
 +  uint8 v14;
 +  unsigned long v15; // r13
 +  unsigned long v16; // stack - 0x58
-@@ -12,6 +13,6 @@
--  int4 v4;
--  uint4 v5; // eax
--  int8 v6;
--  char *v7; // rax
+@@ -11,7 +12,7 @@
+-  int4 v3;
+-  uint4 v4;
+-  int8 v5;
+-  char *v6; // rax
+-  char v7; // cl
 -  uint1 v8;
 -  uint1 v9; // dl
-+  uint8 v4;
-+  int4 v5;
-+  uint4 v6; // eax
-+  int8 v7;
-+  char *v8; // rax
++  uint8 v3;
++  int4 v4;
++  uint4 v5;
++  int8 v6;
++  char *v7; // rax
++  char v8; // cl
 +  uint1 v9;
 @@ -19 +20 @@
 -  v13 = *a1;
@@ -2702,50 +2704,48 @@
 -  v8 = a5->field_0x4;
 -  v9 = v8 & 1;
 -  if ((v8 & 1) && (!v13 && !a2)) {
--    v6 = ext2fs_add_dir_block2(*(unsigned long *)(a0 + 0x90),a5->field_0x0,0,0);
--    *v2 = v6;
--    if (!v6) {
+-    v5 = ext2fs_add_dir_block2(*(unsigned long *)(a0 + 0x90),a5->field_0x0,0,0);
+-    *v1 = v5;
+-    if (!v5) {
 +  v9 = a5->field_0x4;
 +  v10 = v9 & 1;
 +  if ((v9 & 1) && (!v14 && !a2)) {
-+    v7 = ext2fs_add_dir_block2(*(struct_100 **)(a0 + 0x90),a5->field_0x0,0,0);
-+    *v2 = v7;
-+    if (!v7) {
++    v6 = ext2fs_add_dir_block2(*(struct_100 **)(a0 + 0x90),a5->field_0x0,0,0);
++    *v1 = v6;
++    if (!v6) {
 @@ -35 +36 @@
 -  if (!v13)
 +  if (!v14)
 @@ -37 +38 @@
 -  if (((a5->field_0x38) && (a5->field_0x0 != 7)) && (v12 = a5->field_0x38 + 1, v12 != v13)) {
 +  if (((a5->field_0x38) && (a5->field_0x0 != 7)) && (v13 = a5->field_0x38 + 1, v13 != v14)) {
-@@ -39,3 +40,3 @@
--      v5 = 100;
+@@ -39,16 +40,16 @@
+-      v7 = 'd';
 -      if (!v9)
--        v5 = (-(uint4)((v8 & 2) == 0) & 0xffffffd9) + 0x66;
-+      v6 = 100;
-+      if (!v10)
-+        v6 = (-(uint4)((v9 & 2) == 0) & 0xffffffd9) + 0x66;
-@@ -43,12 +44,12 @@
--      __printf_chk(1,dcgettext(NULL,"%6lu(%c): expecting %6lu got phys %6lu (blkcnt %lld)\n",5),(uint8)v1,(uint8)v5,v12,v13);
+-        v7 = (-((v8 & 2) == 0) & 0xd9U) + 0x66;
+-      v4 = *(uint4 *)&v1[1];
+-      __printf_chk(1,dcgettext(NULL,"%6lu(%c): expecting %6lu got phys %6lu (blkcnt %lld)\n",5),(uint8)v4,v7,v12,v13,a2);
 -    }
 -    v8 = a5->field_0x4 | 0x10;
 -    a5->field_0x4 = v8;
 -    v9 = v8 & 1;
 -  }
--  v6 = *(int8 *)(a0 + 0x20);
+-  v5 = *(int8 *)(a0 + 0x20);
 -  if (v9) { // branch-flip
--    if (*(uint4 *)(v6 + 0x60) & 0x4000) // branch-flip
+-    if (*(uint4 *)(v5 + 0x60) & 0x4000) // branch-flip
 -      v11 = 0;
 -    else {
 -      v11 = 0;
-+      __printf_chk(1,dcgettext(NULL,"%6lu(%c): expecting %6lu got phys %6lu (blkcnt %lld)\n",5),(uint8)v1,(uint8)v6,v13,v14);
++      v8 = 'd';
++      if (!v10)
++        v8 = (-((v9 & 2) == 0) & 0xd9U) + 0x66;
++      v5 = *(uint4 *)&v1[1];
++      __printf_chk(1,dcgettext(NULL,"%6lu(%c): expecting %6lu got phys %6lu (blkcnt %lld)\n",5),(uint8)v5,v8,v13,v14,a2);
 +    }
 +    v9 = a5->field_0x4 | 0x10;
 +    a5->field_0x4 = v9;
 +    v10 = v9 & 1;
 +  }
-+  v7 = *(int8 *)(a0 + 0x20);
-+  if (v10) { // branch-flip
-+    if (*(uint4 *)(v7 + 0x60) & 0x4000) // branch-flip
 
 ### O2_e2fsprogs_stripped_e2fsck e2fsck_add_dir_info 0x34e00 class=REVIEW layout=None 
 @@ -1 +1 @@
@@ -2760,6 +2760,9 @@
 @@ -52 +52 @@
 -        uuid_unparse(*(int8 *)(a0->field_0x0 + 0x20) + 0x68,v18);
 +        uuid_unparse(&a0->field_0x0->field_0x20[0x1a],v18);
+@@ -84 +84 @@
+-      fatal_error(a0,0); // no-return
++      fatal_error(a0,NULL); // no-return
 
 ### O2_e2fsprogs_stripped_e2fsck quota_write_inode 0x3f150 class=REVIEW layout=None 
 @@ -3 +3 @@
@@ -2811,8 +2814,8 @@
 
 ### O2_e2fsprogs_stripped_e2fsck sub_46460 0x46460 class=REVIEW layout=None 
 @@ -1 +1 @@
--void sub_46460(int8 a0,unsigned long a1)
-+void sub_46460(struct_207 *a0,unsigned long a1)
+-void sub_46460(int8 a0,uint8 a1)
++void sub_46460(struct_207 *a0,uint8 a1)
 @@ -5 +5 @@
 -  v1 = *(FILE **)(*(int8 *)(a0 + 0xa8) + 0x18);
 +  v1 = *(FILE **)&a0->field_0xa8[6];
@@ -2919,7 +2922,7 @@
 -    if (v6) { // branch-flip
 -      v5 = *(int8 *)(a0 + 0x20);
 -      v3 = *(uint4 *)(v5 + 0x68);
--      __sprintf_chk(v8,1,0x28,"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",(uint8)(v3 >> 0x18 | (v3 & 0xff0000) >> 8 | (v3 & 0xff00) << 8 | v3 << 0x18),(uint8)(uint2)(*(uint2 *)(v5 + 0x6c) << 8 | *(uint2 *)(v5 + 0x6c) >> 8),(uint8)(uint2)(*(uint2 *)(v5 + 0x6e) << 8 | *(uint2 *)(v5 + 0x6e) >> 8),(uint8)(uint1)*(uint2 *)(v5 + 0x70),(uint8)(*(uint2 *)(v5 + 0x70) >> 8),(uint8)*(uint1 *)(v5 + 0x72),(uint8)*(uint1 *)(v5 + 0x73),(uint8)*(uint1 *)(v5 + 0x74),(uint8)*(uint1 *)(v5 + 0x75),(uint8)*(uint1 *)(v5 + 0x76),(uint8)*(uint1 *)(v5 + 0x77));
+-      __sprintf_chk(v8,1,0x28,"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",v3 >> 0x18 | (v3 & 0xff0000) >> 8 | (v3 & 0xff00) << 8 | v3 << 0x18,(uint4)(uint2)(*(uint2 *)(v5 + 0x6c) << 8 | *(uint2 *)(v5 + 0x6c) >> 8),(uint4)(uint2)(*(uint2 *)(v5 + 0x6e) << 8 | *(uint2 *)(v5 + 0x6e) >> 8),(uint4)(uint1)*(uint2 *)(v5 + 0x70),(uint4)(*(uint2 *)(v5 + 0x70) >> 8),(uint4)*(uint1 *)(v5 + 0x72),(uint4)*(uint1 *)(v5 + 0x73),(uint4)*(uint1 *)(v5 + 0x74),(uint4)*(uint1 *)(v5 + 0x75),(uint4)*(uint1 *)(v5 + 0x76),(uint4)*(uint1 *)(v5 + 0x77));
 -      __sprintf_chk(v6,1,0xffffffffffffffff,"%s/%s-icount-XXXXXX",a1,v8);
 -      v3 = umask(0x3f);
 -      v4 = mkstemp(v6);
@@ -2938,7 +2941,7 @@
 +    if (v7) { // branch-flip
 +      v3 = a0->field_0x20;
 +      v4 = v3[0x1a];
-+      __sprintf_chk(v9,1,0x28,"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",(uint8)(v4 >> 0x18 | (v4 & 0xff0000) >> 8 | (v4 & 0xff00) << 8 | v4 << 0x18),(uint8)(uint2)(*(uint2 *)&v3[0x1b] << 8 | *(uint2 *)&v3[0x1b] >> 8),(uint8)(uint2)(*(uint2 *)((int8)v3 + 0x6e) << 8 | *(uint2 *)((int8)v3 + 0x6e) >> 8),(uint8)(uint1)*(uint2 *)&v3[0x1c],(uint8)(*(uint2 *)&v3[0x1c] >> 8),(uint8)*(uint1 *)((int8)v3 + 0x72),(uint8)*(uint1 *)((int8)v3 + 0x73),(uint8)*(uint1 *)&v3[0x1d],(uint8)*(uint1 *)((int8)v3 + 0x75),(uint8)*(uint1 *)((int8)v3 + 0x76),(uint8)*(uint1 *)((int8)v3 + 0x77));
++      __sprintf_chk(v9,1,0x28,"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",v4 >> 0x18 | (v4 & 0xff0000) >> 8 | (v4 & 0xff00) << 8 | v4 << 0x18,(uint4)(uint2)(*(uint2 *)&v3[0x1b] << 8 | *(uint2 *)&v3[0x1b] >> 8),(uint4)(uint2)(*(uint2 *)((int8)v3 + 0x6e) << 8 | *(uint2 *)((int8)v3 + 0x6e) >> 8),(uint4)(uint1)*(uint2 *)&v3[0x1c],(uint4)(*(uint2 *)&v3[0x1c] >> 8),(uint4)*(uint1 *)((int8)v3 + 0x72),(uint4)*(uint1 *)((int8)v3 + 0x73),(uint4)*(uint1 *)&v3[0x1d],(uint4)*(uint1 *)((int8)v3 + 0x75),(uint4)*(uint1 *)((int8)v3 + 0x76),(uint4)*(uint1 *)((int8)v3 + 0x77));
 +      __sprintf_chk(v7,1,0xffffffffffffffff,"%s/%s-icount-XXXXXX",a1,v9);
 +      v4 = umask(0x3f);
 +      v5 = mkstemp(v7);
@@ -3383,15 +3386,11 @@
 
 ### O2_iproute2_stripped_ip do_ipnh 0x63bf0 class=REVIEW layout=None 
 @@ -1 +1 @@
--void do_ipnh(int4 a0,struct_9 *a1)
-+void do_ipnh(int4 a0,struct_25 *a1)
-@@ -3,4 +3,4 @@
--  char *v1;
--  char v2; // al
+-void do_ipnh(int4 a0,struct_23 *a1)
++void do_ipnh(int4 a0,struct_24 *a1)
+@@ -5,2 +5,2 @@
 -  unsigned long v3;
 -  unsigned long *v4;
-+  char v1; // al
-+  char *v2;
 +  unsigned long v3; // rdx
 +  char **v4;
 @@ -20,12 +20,12 @@
@@ -3424,15 +3423,14 @@
 -            if (!matches(v3,"bucket")) {
 +            v2 = a1->field_0x0;
 +            if (!matches(v2,"bucket")) {
-@@ -41,8 +41,8 @@
+@@ -41,7 +41,7 @@
 -                v3 = a1->field_0x8;
--                if (((matches(v3,"list")) && (v3 = a1->field_0x8, matches(v3,0x7d16c))) && (v2 = matches(a1->field_0x8,0x7d171), v2)) {
+-                if (((matches(v3,"list")) && (v3 = a1->field_0x8, matches(v3,0x7d16c))) && (v1 = matches(a1->field_0x8,0x7d171), v1)) {
 -                  v3 = a1->field_0x8;
 -                  if (matches(v3,"get")) { // branch-flip
 -                    v3 = a1->field_0x8;
 -                    if (matches(v3,"help")) {
--                      v3 = a1->field_0x8;
--                      __fprintf_chk(stderr,1,"Command \"%s\" is unknown, try \"ip nexthop help\".\n",v3); // return-dupe
+-                      v2 = (char *)a1->field_0x8;
 +                v2 = a1->field_0x8;
 +                if (((matches(v2,"list")) && (v2 = a1->field_0x8, matches(v2,"show"))) && (v1 = matches(a1->field_0x8,"lst"), v1)) {
 +                  v2 = a1->field_0x8;
@@ -3440,28 +3438,33 @@
 +                    v2 = a1->field_0x8;
 +                    if (matches(v2,"help")) {
 +                      v2 = a1->field_0x8;
-+                      __fprintf_chk(stderr,1,"Command \"%s\" is unknown, try \"ip nexthop help\".\n",v2); // return-dupe
-@@ -58,3 +58,3 @@
--                      v1 = (char *)v4[-1];
--                      if (strcmp(v1,"id")) { // branch-flip
--                        if (strcmp(v1,"index")) {
-+                      v2 = ((struct_25 *)&v4[-1])->field_0x0;
-+                      if (strcmp(v2,"id")) { // branch-flip
-+                        if (strcmp(v2,"index")) {
+@@ -58 +58 @@
+-                      v2 = (char *)v4[-1];
++                      v2 = ((struct_24 *)&v4[-1])->field_0x0;
 @@ -66,2 +66,2 @@
 -                        v3 = *v4;
 -                        if (get_u16(&v6,v3,0))
 +                        v2 = *v4;
 +                        if (get_u16(&v6,v2,0))
-@@ -69 +69 @@
--                        v9 = v2;
-+                        v9 = v1;
 @@ -74,3 +74,3 @@
 -                        v3 = *v4;
 -                        if (get_unsigned(&v5,v3,0))
 -                          invarg("invalid id value",v3); // return-dupe, no-return
 +                        v2 = *v4;
 +                        if (get_unsigned(&v5,v2,0))
++                          invarg("invalid id value",v2); // return-dupe, no-return
+@@ -99,3 +99,3 @@
+-            v3 = a1->field_0x0;
+-            if (matches(v3,"help")) {
+-              v2 = (char *)a1->field_0x0;
++            v2 = a1->field_0x0;
++            if (matches(v2,"help")) {
++              v2 = a1->field_0x0;
+@@ -111 +111 @@
+-                v2 = (char *)*v4;
++                v2 = *v4;
+@@ -118,3 +118,3 @@
+-                v3 = v4[1];
 
 ### O2_kmod_stripped_kmod sub_6660 0x6660 class=REVIEW layout=None 
 @@ -7 +7 @@
@@ -3582,7 +3585,7 @@
 -  long v7;
 -  unsigned long v8; // rbx
 -  long *v9;
-+  unsigned int *v3;
++  wchar_t *v3;
 +  char *v4; // rax
 +  unsigned long *v5;
 +  unsigned long v6; // rdx
@@ -3592,7 +3595,7 @@
 @@ -21,2 +23,2 @@
 -  v3 = (unsigned char *)a2[1];
 -  v13 = *(long *)(a0 + 0x3f8);
-+  v3 = (unsigned int *)a2[1];
++  v3 = (wchar_t *)a2[1];
 +  v14 = *(long *)(a0 + 0x3f8);
 @@ -24 +26 @@
 -    v7 = 1;
@@ -3605,7 +3608,7 @@
 @@ -29,2 +31,2 @@
 -      if (*(int *)v3 != 0x2d) {
 -        v6 = (int)v7 + 1;
-+      if (*v3 != 0x2d) {
++      if (*v3 != L'-') {
 +        v7 = (int)v8 + 1;
 @@ -32 +34 @@
 -          if (v15) {
@@ -3619,7 +3622,7 @@
 +          if (!v15) {
 @@ -44 +46 @@
 -          v3 = (unsigned char *)sub_12770(v11,v3);
-+          v3 = (unsigned int *)sub_12770(v12,v3);
++          v3 = (wchar_t *)sub_12770(v12,v3);
 @@ -49,2 +51,2 @@
 -          if (v15) {
 -            if (*(int *)&v3[4]) {

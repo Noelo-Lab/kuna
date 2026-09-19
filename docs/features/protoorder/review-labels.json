@@ -2,8 +2,8 @@
  "tally": {
   "builtin-string": 4,
   "float-literal": 4,
-  "literal": 10,
-  "member-reach": 13,
+  "literal": 9,
+  "member-reach": 14,
   "regroup": 12,
   "spelling": 45,
   "stack-merge": 2,
@@ -1154,13 +1154,20 @@
   },
   {
    "function": "O2_iproute2_stripped_ip sub_1ca00",
-   "class": "literal",
-   "why": "",
+   "class": "member-reach",
+   "why": "print_route's struct_21 * vote on the reply buffer (struct_21 is 0x1c bytes: &v3[1] is main's &v2[7] through an int4 *, v3->field_0x12 is the one-byte store at +0x12, and + '\\xe0' is - 0x20 mod 256); v8 = v9 - 0x1c is main's inline v7 + -0x1c, the same signed int4 compare; since #673 main prints the matches() strings too, so the literal residue that labelled it before is gone",
    "off": [
-    "parse_rtattr(V,30,V+28);"
+    "if(V+18446744073709551588<0){",
+    "__fprintf_chk(stderr,1,K,V+18446744073709551588);",
+    "parse_rtattr(V,30,V+28);",
+    "*(V+18)=*(V*8)+224;"
    ],
    "on": [
-    "parse_rtattr(V,30,V+1);"
+    "V=V+18446744073709551588;",
+    "if(V<0){",
+    "__fprintf_chk(stderr,1,K,V);",
+    "parse_rtattr(V,30,V+1);",
+    "*(V+18)=*(V*8)18446744073709551584;"
    ]
   },
   {
@@ -1207,13 +1214,23 @@
    "class": "regroup",
    "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
    "off": [
+    "if(*V!=45){",
+    "if(*(V+4)){",
     "if(*(*V+V)==25){",
-    "*(*V+V)=28;"
+    "*(*V+V)=28;",
+    "if((*V)&&(*(V+4))){",
+    "if(*(V+4)){",
+    "switch(*(V+4)){"
    ],
    "on": [
+    "if(*V!=L45){",
+    "if(*(V+1)){",
     "V=*V+V;",
     "if(*V==25){",
-    "*V=28;"
+    "*V=28;",
+    "if((*V)&&(*(V+1))){",
+    "if(*(V+1)){",
+    "switch(*(V+1)){"
    ]
   },
   {
