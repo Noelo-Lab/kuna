@@ -1060,43 +1060,73 @@ name a structure a later, larger one superseded. A worker left to itself would
 number its own structures. What a function ASKS the ledger, though, does not
 depend on what it is answered: the evidence is collected before anything is
 installed, and a field takes the type an access carried. So the first pool's
-workers record every lookup
+workers record every lookup and what their own ledger answered
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (SynthRequest)`), and the parent, which decompiles nothing, replays the lookups
 in target order through the ledger's own decision
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (Replay)`). The replay yields every answer, every mint, the superseded set and
-the answers the convergence sweep's lookups will get. A recording worker skips
-the rendering of a function that asked, whose C would be thrown away. The
-functions that asked are then decompiled a second time by the same workers, each
-of which first destroys the structures it minted itself, and every type built on
+the answers the convergence sweep's lookups will get.
+
+Most functions need nothing more. A function whose own worker answered each
+lookup with a structure that has exactly the members of the serial answer's --
+it minted what it measured, and so did the serial run under another number --
+printed the serial text with other numbers, so the parent renames the
+identifiers in its C, prototype, variable types and type definitions
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(renaming)`). The renaming is refused when an answer's members differ, when two
+names would become one, or when the text spells a structure name the renaming
+does not cover or spells one inside a string or character literal
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(rename_identifiers)`). On `tar` O2, 100 of the 106 functions that synthesize
+are renamed. The rest are decompiled a second time by the same workers, each of
+which first destroys the structures it minted itself, and every type built on
 one (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (forget_minted)`), mints the replayed structures in the serial order
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (install_table)`) and answers each lookup with its replayed name; a function the
-sweep will decide differently goes out twice in that pool, and the parent applies
-the sweep on the first-pass text exactly as the serial batch does
-(`decompiler/crates/kuna-cli/src/jobs.rs (name_structs_serially)`). The second
+sweep will decide differently is renamed onto its sweep answers or goes out
+twice in that pool, and the parent applies the sweep on the first-pass text
+exactly as the serial batch does (`decompiler/crates/kuna-cli/src/jobs.rs (name_structs_serially)`). The second
 decompile records its lookups as well, and they have to be the first ones,
 repeats aside. A decompile can ask one question twice (a restarted pass measures
 the same layout again), whether it does follows the process's history, and a
 forced worker answers a repeat as it answered the first asking
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
-(distinct)`). A function whose first answers do change what it asks next is the
-real exception: its questions up to the first difference were answered as the
-serial run answers them, so the parent takes the corrected record, replays again
-and decompiles only the functions whose answers moved. If that does not settle
-in four rounds, or a field whose type another process cannot rebuild would have
-to travel, the functions that asked are decompiled again in target order by one
-worker that runs the ledger and the sweep itself, which is the serial computation
-restricted to the only functions that take part in it, and stderr says so. Only
-a function the watchdog or a worker failure cut short is exempt from the check,
-since it asks a different number of questions on every run. Across sixteen x86-64, i386-PE and
-ARM binaries at `--jobs 2` and `--jobs 4`, `decompile-all` (text and `--json`),
-`decompile-graph` and every `decompile-project` artifact are byte-identical to
-`--jobs 1`, and none needed the one-worker path. `decompile-project --stream`
-writes each body as it lands and runs no sweep, so its workers still run with
-`structsynth off` and say so
+(distinct)`), so the replay also requires every question to get the same answer
+at the end of its function as when it was first asked. A function whose first
+answers do change what it asks next is the real exception: its questions up to
+the first difference were answered as the serial run answers them, so the parent
+takes the corrected record, replays again and renames or decompiles only the
+functions whose answers moved.
+
+A structure can travel only if another process can rebuild every field type,
+and a named type counts only if the worker's load created it
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(AtLoad)`): `pebnames` creates `PEB` and `TEB` the first time a function reads
+them, so one worker holds them and another does not. When such a field would
+have to travel, when the questions do not settle in four rounds, when a repeated
+question could be answered differently, or when a second decompile fails where
+the first did not (a dead worker, a table it could not install), the functions
+that asked are decompiled again in target order by one worker that runs the
+ledger and the sweep itself, which is the serial computation restricted to the
+only functions that take part in it, and stderr says so. Only a function the
+watchdog or a worker failure cut short in the first pool is exempt from the
+checks, since it asks a different number of questions on every run.
+
+A `decompile-project` header is rendered by the workers
+(`decompiler/crates/kuna-cli/src/jobs.rs (merge_type_definitions)`). The workers that hold the replayed structures
+render their block in full; when no function was decompiled again, every idle
+worker installs them before it retires
+(`decompiler/crates/kuna-cli/src/jobs.rs (install_on_idle_workers)`). Every
+other worker, including every worker the one-worker path did not use, renders
+its block without the structures it minted or installed, so the types its own
+functions interned (a `TEB` read by a function that synthesizes nothing) still
+reach the header. A block that holds every definition any block holds is the
+serial answer and is emitted as is; otherwise the parent warns and emits the
+union. Across SWEEP_PLACEHOLDER `decompile-project --stream` writes each body
+as it lands and runs no sweep, so its workers still run with `structsynth off`
+and say so
 (`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`). The parent resolves the concrete
 `--mode`, every `--option` and the watchdog budget once and passes them to every
 worker, so a shard cannot resolve a different policy just because the run was

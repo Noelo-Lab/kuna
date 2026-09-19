@@ -40,11 +40,11 @@
       "struct_2"
     ],
     "stderr_matches": [
-      "\\[kuna --jobs\\] structsynth: 4 decompile\\(s\\) of the functions with synthesized structures again"
+      "\\[kuna --jobs\\] structsynth: 3 function\\(s\\) with synthesized structures named as --jobs 1 names them: \\d+ renamed, \\d+ decompile\\(s\\) again"
     ],
     "stderr_absent": [
       "\\[kuna --jobs\\] note:"
     ]
   },
-  "notes": "The convergence sweep under --jobs 4. fb claims four fields of one record, fa two of them, fc eight including fb's four. Serially the sweep moves fb onto fc's structure and fa keeps struct_0. The pool replays the ledger: fa, fb and fc are decompiled again with their first-pass names, and fb once more with its sweep answer, so the document names match --jobs 1 (4 second decompiles)."
+  "notes": "The convergence sweep under --jobs 4. fb claims four fields of one record, fa two of them, fc eight including fb's four. Serially the sweep moves fb onto fc's structure and fa keeps struct_0. The pool replays the ledger for fa, fb and fc; each keeps its first decompile renamed when its own structures match the serial ones and is decompiled again with the serial names otherwise, and fb is decided again by the sweep, so the document names match --jobs 1."
 }

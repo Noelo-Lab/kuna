@@ -38,7 +38,7 @@
       "wrote .*proj: i386_pie_nl\\.c \\(\\d+ bytes\\), i386_pie_nl\\.h"
     ],
     "stderr_matches": [
-      "\\[kuna --jobs\\] structsynth: \\d+ decompile\\(s\\) of the functions with synthesized structures again"
+      "\\[kuna --jobs\\] structsynth: \\d+ function\\(s\\) with synthesized structures named as --jobs 1 names them: \\d+ renamed, \\d+ decompile\\(s\\) again"
     ],
     "stderr_absent": [
       "worker shards recovered different user-defined types",
@@ -46,5 +46,5 @@
       "\\[kuna --jobs\\] note:"
     ]
   },
-  "notes": "A serial export of this fixture declares `struct struct_0 {`. Each worker used to number its own struct_N and the merged .h tore definitions apart; then workers ran with structsynth off. Now the functions that synthesize are decompiled again with the serial names by workers that all mint the same replayed structures first, so their .h type blocks agree and the merge warning never fires."
+  "notes": "A serial export of this fixture declares `struct struct_0 {`. Each worker used to number its own struct_N and the merged .h tore definitions apart; then workers ran with structsynth off. Now every function that synthesizes gets the serial names (renamed, or decompiled again), the workers that render the .h all install the same replayed structures first, and every other worker contributes its block without its own structures, so the blocks agree and the merge warning never fires."
 }

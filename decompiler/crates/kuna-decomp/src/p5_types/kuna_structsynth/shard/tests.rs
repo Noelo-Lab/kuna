@@ -350,8 +350,8 @@ fn a_type_interned_after_the_load_does_not_travel() {
     let peb = f.set_fields_struct_raw(&peb, named, Vec::new(), 8, 1, 0).unwrap();
     let peb_ptr = f.get_type_pointer(8, peb, 1).unwrap();
     let fs = vec![
-        TypeField::new(0, 0, "field_0x0".into(), ty(&f, Ty::Uint)),
-        TypeField::new(1, 8, "field_0x8".into(), peb_ptr),
+        TypeField::new(0, 0, "field_0x0", ty(&f, Ty::Uint)),
+        TypeField::new(1, 8, "field_0x8", peb_ptr),
     ];
     assert!(!SynthRequest::of(&fs, 16, &[], &loaded).portable());
     assert!(SynthRequest::of(&fs, 16, &[], &AtLoad::of(&f)).portable());
@@ -363,12 +363,10 @@ fn a_type_interned_after_the_load_does_not_travel() {
 #[test]
 fn a_recording_hook_reports_its_own_answers() {
     let f = factory();
-    let foreign = f.get_type_struct("struct_0").unwrap();
-    let named = vec![TypeField::new(0, 0, "flags", ty(&f, Ty::Long))];
-    f.set_fields_struct_raw(&foreign, named, Vec::new(), 8, 1, 0).unwrap();
+    let flags = fields(&f, &[(0, Ty::Long)]);
+    ledger::lookup_or_mint(&f, flags.clone(), 8, &[]).unwrap();
     let hook = ShardHook::recording(Rc::new(AtLoad::of(&f)));
     let pair = fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]);
-    let flags = fields(&f, &[(0, Ty::Long)]);
     let minting = req(&pair, 16, &[]);
 
     hook.borrow_mut().begin(&[]);
@@ -385,11 +383,8 @@ fn a_recording_hook_reports_its_own_answers() {
     lookup(&hook, &f, pair, 16, &[(0x10, 8)]);
     lookup(&hook, &f, flags, 8, &[]).unwrap();
     let second = hook.borrow_mut().take();
+    assert_eq!(second.answers[0], own);
     assert_eq!(second.answers[1], Some(("struct_0".to_string(), None)));
-    if let Some((name, Some(def))) = &second.answers[0] {
-        assert_eq!(name, "struct_1");
-        assert_eq!(def, &minting);
-    }
 
     // A repeat answered differently leaves nothing to rename by.
     let mut split = first.clone();

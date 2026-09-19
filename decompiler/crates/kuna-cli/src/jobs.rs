@@ -43,20 +43,20 @@
 //! name a structure a later, larger one superseded are decompiled once more.  A
 //! worker sees only its own functions, so the names it mints are its own.  What
 //! a function ASKS the ledger does not depend on the answers, though, so the
-//! first pool's workers record every lookup (`--jobs-synth record`), and the
-//! parent replays them in target order through the ledger's own decision
-//! (`kuna_structsynth::shard::Replay`).  That gives every answer, every mint,
-//! the superseded set and what the sweep's lookups will answer.  A recording
-//! worker does not render a function that asked, since its C would be thrown
-//! away.  The functions that asked -- a tenth to a fifth of a coreutils binary --
-//! are then decompiled again by the same workers, each of which first forgets
-//! the structures it minted itself, mints the replayed ones in the serial order
-//! and from then on answers each lookup with its replayed name (`synth` on the
-//! assignment pipe, or `--jobs-synth force` for a worker started that late); a
-//! function the sweep redoes with different answers goes out twice in that
-//! pool, and the parent applies the sweep exactly as
-//! `converge_synthesized_structs` does.  Every such worker renders the same type
-//! block, because every one holds the same replayed structures.
+//! first pool's workers record every lookup and their own answer
+//! (`--jobs-synth record`), and the parent replays the lookups in target order
+//! through the ledger's own decision (`kuna_structsynth::shard::Replay`).  That
+//! gives every answer, every mint, the superseded set and what the sweep's
+//! lookups will answer.  A function whose own answers name structures with the
+//! members of the serial ones keeps its first decompile with the numbers
+//! renamed (`kuna_structsynth::shard::renaming`) -- on `tar` O2, 100 of 106.
+//! The others are decompiled again by the same workers, each of which first
+//! forgets the structures it minted itself, mints the replayed ones in the
+//! serial order and from then on answers each lookup with its replayed name
+//! (`synth` on the assignment pipe, or `--jobs-synth force` for a worker
+//! started that late); a function the sweep redoes with different answers is
+//! renamed onto them or goes out twice in that pool, and the parent applies the
+//! sweep exactly as `converge_synthesized_structs` does.
 //!
 //! The second decompile records its lookups too, and they must be the first
 //! ones, repeats aside: a decompile can ask the same thing twice (a restarted
@@ -64,14 +64,20 @@
 //! process decompiled before, and a repeat is answered as the first asking was.
 //! A function whose first answers change what it asks next is the one real
 //! exception; its record is corrected from the second decompile and the replay
-//! runs again, re-decompiling only what moved.  When that does not settle, or a
-//! structure's field type cannot be rebuilt in another process, the functions
-//! that asked are decompiled again in target order by ONE worker running the
-//! ledger and the sweep itself (`--jobs-synth serial`), which is the serial
+//! runs again, renaming or re-decompiling only what moved.  When that does not
+//! settle, when a structure's field type is one another worker may not hold, or
+//! when a second decompile fails where the first did not, the functions that
+//! asked are decompiled again in target order by ONE worker running the ledger
+//! and the sweep itself (`--jobs-synth serial`), which is the serial
 //! computation over the only functions that take part in it, and stderr says
 //! so.  A function the watchdog or a dead worker cut short asks a different
 //! number of questions on each run, so its record is taken as it comes -- the
 //! same wall-clock caveat as the watchdog itself.  [`name_structs_serially`].
+//!
+//! A project's `.h` comes from the workers' type blocks: in full from the
+//! workers holding the replayed structures, and from every other worker
+//! without the structures it numbered itself ([`Session::close`],
+//! [`merge_type_definitions`]).
 //!
 //! `--stream` has no sweep to reproduce and writes each body as it lands, so its
 //! workers still run with `structsynth off` ([`structsynth_shard_note`]).
@@ -3568,6 +3574,9 @@ mod tests {
         );
         assert!(!f.refuses_spawn(1) && f.refuses_spawn(2) && f.refuses_spawn(9));
         assert!(!Faults::default().refuses_spawn(0));
+        let (f, rejected) = Faults::parse("synth:serial,synth:force,synth:other");
+        assert!(f.synth_serial && f.synth_force);
+        assert_eq!(rejected, vec!["synth:other"]);
 
         let dir = ScratchDir::create().unwrap();
         Faults::default().before_target(dir.path(), 0x1000);
@@ -3885,19 +3894,34 @@ mod tests {
         assert!(whales.contains(&fixed[0][0]));
     }
 
-    /// The `.h` merge only claims identity when the shards agree; when they do
-    /// not it still declares everything, and says so.
+    /// The `.h` merge only claims identity when one shard holds every
+    /// definition; when none does it still declares everything once, and says
+    /// so.
     #[test]
-    fn the_type_block_is_the_shards_agreement_or_their_union() {
-        let a = "typedef struct s s;\nstruct s { int x; };\n".to_string();
+    fn the_type_block_is_the_shard_that_holds_them_all_or_their_union() {
+        let a = "typedef struct s s;\n\nstruct s {\n    int x;\n};\n".to_string();
         assert_eq!(merge_type_definitions(&[a.clone(), a.clone()], JOBS_TAG), a);
         assert_eq!(merge_type_definitions(&[], JOBS_TAG), "");
         assert_eq!(merge_type_definitions(std::slice::from_ref(&a), JOBS_TAG), a);
 
-        let b = "typedef struct s s;\nstruct s { int x; };\ntypedef struct t t;\n".to_string();
-        let merged = merge_type_definitions(&[a, b], JOBS_TAG);
-        for line in ["typedef struct s s;", "struct s { int x; };", "typedef struct t t;"] {
-            assert_eq!(merged.matches(line).count(), 1, "{line} must appear exactly once");
+        // A worker's block without its structures holds nothing the full one
+        // lacks, wherever it comes.
+        let full = "typedef struct s s;\ntypedef struct struct_0 struct_0;\n\nstruct s {\n    int x;\n};\n\n\
+                    struct struct_0 {\n    int x;\n};\n"
+            .to_string();
+        assert_eq!(merge_type_definitions(&[a.clone(), full.clone()], JOBS_TAG), full);
+        assert_eq!(merge_type_definitions(&[full.clone(), a.clone(), String::new()], JOBS_TAG), full);
+
+        // Two blocks that each hold a type the other does not.
+        let t = "typedef struct t t;\n\nstruct t {\n    int x;\n};\n".to_string();
+        let merged = merge_type_definitions(&[full.clone(), t], JOBS_TAG);
+        assert_eq!(
+            merged,
+            format!("{full}typedef struct t t;\n\nstruct t {{\n    int x;\n}};\n"),
+            "one blank line before a spaced definition, none repeated"
+        );
+        for item in ["struct s {\n    int x;\n};", "struct t {\n    int x;\n};", "struct struct_0 {\n    int x;\n};"] {
+            assert_eq!(merged.matches(item).count(), 1, "{item} must appear exactly once");
         }
     }
 

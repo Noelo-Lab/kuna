@@ -718,28 +718,37 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
 }
 
 /// A sharded export names every synthesized structure as the serial export
-/// does, so every artifact is byte-identical, the `.h` included: its worker
-/// type blocks agree because each worker installed the same replayed set, and
-/// the minted structures are declared in name order, which also makes two
-/// serial exports agree with each other. `structsynthchain_x86_64` takes the
-/// convergence sweep, `itaniumrtti_x86_64.so` mints five structures, and
-/// `i386_pie_nl` is 32-bit.
+/// does, so every artifact is byte-identical, the `.h` included: the workers
+/// that render the structures all hold the same replayed set, every other
+/// worker's block adds the types its own functions interned, and the minted
+/// structures are declared in name order, which also makes two serial exports
+/// agree with each other. `structsynthchain_x86_64` takes the convergence
+/// sweep, `itaniumrtti_x86_64.so` mints five structures, `i386_pie_nl` is
+/// 32-bit, and in `structsynth_teb_pe_x86_64.exe` the `TEB` type comes from a
+/// function that synthesizes nothing. `synth:force` decompiles every function
+/// that asked again rather than renaming it.
 #[test]
 fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
-    for fixture_name in ["structsynthchain_x86_64", "itaniumrtti_x86_64.so", "i386_pie_nl"] {
+    for fixture_name in
+        ["structsynthchain_x86_64", "itaniumrtti_x86_64.so", "i386_pie_nl", "structsynth_teb_pe_x86_64.exe"]
+    {
         let bin = fixture(fixture_name);
         let stem = std::path::Path::new(fixture_name).file_name().unwrap().to_str().unwrap();
-        let export = |tag: &str, extra: &[&str]| -> (PathBuf, String, bool) {
+        let export = |tag: &str, extra: &[&str], env: &[(&str, &str)]| -> (PathBuf, String, bool) {
             let dir = out_dir(&format!("structsynth_{stem}_{tag}"));
             let mut args = vec!["decompile-project", bin.as_str(), "-o", dir.to_str().unwrap()];
             args.extend_from_slice(&["--max-fn-seconds", "0"]);
             args.extend_from_slice(extra);
             let sp = specs();
             args.extend_from_slice(&["--sleighpath", sp.as_str()]);
-            let (_, stderr, ok) = run_kuna(&args);
-            (dir, stderr, ok)
+            let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .args(&args)
+                .envs(env.iter().copied())
+                .output()
+                .expect("failed to spawn the kuna binary");
+            (dir, String::from_utf8_lossy(&out.stderr).into_owned(), out.status.success())
         };
-        let (serial, stderr, ok) = export("serial", &[]);
+        let (serial, stderr, ok) = export("serial", &[], &[]);
         if !ok {
             if is_specs_skip(&stderr) {
                 eprintln!("structsynth jobs: skipping (no `.sla`; run `make specs`): {stderr}");
@@ -755,12 +764,13 @@ fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
         let header = std::fs::read_to_string(serial.join(&names[1])).unwrap();
         assert!(header.contains("struct struct_0 {"), "{stem} stopped synthesizing:\n{header}");
         let mut dirs = vec![serial.clone()];
-        for (tag, extra) in [
-            ("again", &[][..]),
-            ("j2", &["--jobs", "2", "--jobs-chunk", "1"][..]),
-            ("j4", &["--jobs", "4"][..]),
+        for (tag, extra, env) in [
+            ("again", &[][..], &[][..]),
+            ("j2", &["--jobs", "2", "--jobs-chunk", "1"][..], &[][..]),
+            ("j4", &["--jobs", "4"][..], &[][..]),
+            ("force", &["--jobs", "3", "--jobs-chunk", "1"][..], &[("KUNA_JOBS_FAULT", "synth:force")][..]),
         ] {
-            let (dir, stderr, ok) = export(tag, extra);
+            let (dir, stderr, ok) = export(tag, extra, env);
             assert!(ok, "{stem} {tag} project export failed: {stderr}");
             assert!(!stderr.contains("warning"), "{stem} {tag}: {stderr}");
             for name in &names {
@@ -773,6 +783,51 @@ fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
         for dir in dirs {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+}
+
+/// The one-worker serial path decompiles only the functions that synthesize a
+/// structure, so the types a function that synthesizes nothing interned live
+/// in another worker. The `.h` still declares them (as the union of the
+/// shards' blocks, and says so), and the `.c` is the serial one.
+#[test]
+fn jobs_project_serial_path_keeps_the_types_of_the_other_functions() {
+    let bin = fixture("structsynth_teb_pe_x86_64.exe");
+    let sp = specs();
+    let export = |tag: &str, extra: &[&str], env: &[(&str, &str)]| -> (PathBuf, String, bool) {
+        let dir = out_dir(&format!("structsynth_teb_{tag}"));
+        let mut args = vec!["decompile-project", bin.as_str(), "-o", dir.to_str().unwrap()];
+        args.extend_from_slice(&["--max-fn-seconds", "0", "--sleighpath", sp.as_str()]);
+        args.extend_from_slice(extra);
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(&args)
+            .envs(env.iter().copied())
+            .output()
+            .expect("failed to spawn the kuna binary");
+        (dir, String::from_utf8_lossy(&out.stderr).into_owned(), out.status.success())
+    };
+    let (serial, stderr, ok) = export("serial", &[], &[]);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("structsynth teb: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("serial project export failed: {stderr}");
+    }
+    let (sharded, stderr, ok) =
+        export("fallback", &["--jobs", "4", "--jobs-chunk", "1"], &[("KUNA_JOBS_FAULT", "synth:serial")]);
+    assert!(ok, "sharded export failed: {stderr}");
+    assert!(stderr.contains("decompiled again in order by one worker process"), "{stderr}");
+    let c = "structsynth_teb_pe_x86_64.exe.c";
+    assert_eq!(std::fs::read(sharded.join(c)).unwrap(), std::fs::read(serial.join(c)).unwrap());
+    let body = std::fs::read_to_string(serial.join(c)).unwrap();
+    assert!(body.contains("TEB *teb;"), "the fixture stopped reading the TEB:\n{body}");
+    let header = std::fs::read_to_string(sharded.join("structsynth_teb_pe_x86_64.exe.h")).unwrap();
+    for wanted in ["struct TEB {", "struct PEB {", "struct struct_0 {", "struct struct_4 {"] {
+        assert_eq!(header.matches(wanted).count(), 1, "{wanted:?} in:\n{header}");
+    }
+    for dir in [serial, sharded] {
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
 

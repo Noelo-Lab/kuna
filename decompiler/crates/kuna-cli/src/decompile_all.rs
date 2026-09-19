@@ -3402,11 +3402,13 @@ fn usage_decompile_all() {
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
          in-process path). Output is merged in target order and is identical to\n\
-         --jobs 1, synthesized struct_N names included: the functions that\n\
-         synthesize a structure are decompiled a second time with the names the\n\
-         serial run gives them. A worker cannot see another worker's callees, so\n\
-         the pool does not type call arguments callee-first: on this surface it\n\
-         matches --jobs 1 with --option protoorder off on both. Progress goes to\n\
+         --jobs 1, synthesized struct_N names included: a function that\n\
+         synthesized a structure keeps its text with the serial numbers when its\n\
+         structures have the serial ones' members, and is decompiled a second\n\
+         time with the serial names otherwise. A worker cannot see another\n\
+         worker's callees, so the pool does not type call arguments\n\
+         callee-first: on this surface it matches --jobs 1 with --option\n\
+         protoorder off on both. Progress goes to\n\
          stderr. Every worker loads the binary itself, so peak memory is roughly\n\
          N times one worker's RSS. --jobs-chunk N sets the functions per worker\n\
          invocation (bigger = less load overhead, more\n\

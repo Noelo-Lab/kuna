@@ -1163,18 +1163,30 @@ can take it without a factory: it scans the `struct_<n>` slots as the ledger
 does, skipping a name another type holds, calls the same `best_of` and
 `keeps_unclaimed`, and mints at the first free slot. A `--jobs` worker records
 each lookup a function makes, with a recipe for every field type (a named type
-by name and id, a pointer or byte array around its rebuilt element), the parent
-replays the records in target order, and the workers, having destroyed the
-structures they minted themselves and every type built on one, install the
-replayed structures in mint order
+by name and id, a pointer or byte array around its rebuilt element), and the
+answer its own ledger gave, with the lookup that minted that structure in the
+worker. The parent replays the records in target order. A structure is its
+members, so when a function's own answers and the serial ones name structures
+built from the same members, lookup for lookup and one name for one name
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
-(install_table)`) and decompiles the functions that asked with each lookup
-answered by its replayed name. The parent also answers the sweep: a structure
-still answers every layout it answered once, so the sweep's lookups never mint,
-and the ones whose answer changes are decompiled in the same pool. The
-synthesized structures of a sharded run are therefore the eager batch's, name
-for name; chapter [00](00-overview.md) has the pool's side, including the checks
-that send a run back to one ordered worker.
+(renaming)`), the function's text is the serial text with other numbers and
+is renamed. A structure minted from its own function's lookup is the common
+case: the serial run minted the same members under another number. Every other
+function is decompiled again by a worker that has destroyed the structures it
+minted itself and every type built on one, installed the replayed structures in
+mint order
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(install_table)`) and answers each lookup with its replayed name. A named field
+type gets a recipe only if the worker's load created it
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs (AtLoad)`): a pass
+that interns a type the first time a function needs it, as `pebnames` does
+`PEB` and `TEB`, leaves it in some workers and not in others, so a structure
+with such a field is named by one ordered worker instead. The parent also
+answers the sweep: a structure still answers every layout it answered once, so
+the sweep's lookups never mint, and the ones whose answer changes are renamed
+or decompiled in the same pool. The synthesized structures of a sharded run are
+therefore the eager batch's, name for name; chapter [00](00-overview.md) has the
+pool's side, including the checks that send a run back to one ordered worker.
 
 The `.h` of a project export lists the minted structures after every other
 type, in ascending `N`

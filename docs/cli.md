@@ -1339,26 +1339,30 @@ Behaviors specific to `decompile-all`:
   - **Synthesized structures keep their serial names.** `structsynth` names a
     `struct_N` in decompile order, each function reading what the ones before it
     minted, so a worker left to itself would number its own. Instead the workers
-    record every question a function asks the structure ledger, the parent
-    replays those questions in target order and gets the answers the serial run
-    gets, and the functions that synthesized anything (a tenth to a fifth of a
-    coreutils binary) are decompiled a second time, by the same workers, with
-    those answers. The run says so on stderr:
+    record every question a function asks the structure ledger and what their
+    own ledger answered, and the parent replays the questions in target order to
+    get the answers the serial run gets. A function whose own structures have
+    exactly the members of the serial ones keeps its text with the numbers
+    renamed; the others are decompiled a second time, by the same workers, with
+    the serial answers. The run says so on stderr:
 
     ```text
-    [kuna --jobs] structsynth: 92 decompile(s) of the functions with synthesized structures again, with the serial names, 46 chunk(s), 4 worker process(es)
+    [kuna --jobs] structsynth: 106 function(s) with synthesized structures named as --jobs 1 names them: 100 renamed, 10 decompile(s) again
     ```
 
     The second decompile's questions are checked against the first (a question
     asked twice counts once). A function whose answers change what it asks next
-    has its questions corrected and the replay runs again, which decompiles only
-    what moved; if that does not settle, or a structure has a field type another
-    process cannot rebuild, the functions with structures are decompiled once
-    more in order by a single worker, and a `note:` line says why. The `.h` of a `decompile-project` declares the minted
-    structures after every other type, by number, which is also what makes two
-    serial exports of one binary agree. `decompile-project --stream` still runs
-    its workers with `structsynth off` and says so, since a streamed export writes
-    each body before a later structure could supersede its names.
+    has its questions corrected and the replay runs again, which renames or
+    decompiles only what moved. The functions with structures are decompiled
+    once more in order by a single worker, with a `note:` line saying why, when
+    that does not settle, when a structure has a field type another worker may
+    not hold (`PEB`/`TEB`, which `pebnames` creates only in a worker that reads
+    them), or when a second decompile fails where the first did not. The `.h` of
+    a `decompile-project` declares the minted structures after every other
+    type, by number, which is also what makes two serial exports of one binary
+    agree. `decompile-project --stream` still runs its workers with
+    `structsynth off` and says so, since a streamed export writes each body
+    before a later structure could supersede its names.
   - **Memory, not cores, is the limit.** Every worker loads the binary itself, so
     peak memory is roughly `N ×` one worker's resident size, on top of the
     parent's. On an 18 MB PE with 33,214 functions that is 469 MB per worker
@@ -2338,10 +2342,13 @@ recovered. Each worker therefore renders its own block and sends it back: when
 they agree — which is what a shard that interned nothing renderable looks like,
 and what every fixture measured here does — that block is the serial answer and is
 emitted as is. The synthesized structures come back the same way: every worker
-that decompiles with the serial names first forgets its own and mints all of the
-replayed ones, in the serial order. When the blocks disagree the parent says so on stderr and emits their
-union, one whole definition at a time, so the `.h` still declares everything the
-`.c` uses.
+that renders them first forgets its own and mints all of the replayed ones, in
+the serial order, and every other worker also sends its block without the
+structures it numbered itself, so the types its own functions interned still
+reach the header. When one block holds every definition the others hold, that
+block is emitted as is; otherwise the parent says so on stderr and emits the
+union, one whole definition at a time, so the `.h` still declares everything
+the `.c` uses.
 
 ### `--stream` — the folder is readable while it fills
 
