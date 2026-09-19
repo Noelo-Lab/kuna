@@ -50,26 +50,26 @@
   "instrument": "docs/features/protoorder/corpus-diff.py (every changed function classified by the first normalizer under which the two bodies agree; frame layout from variables[]; use-before-def from the code) + label-review.py/hand-labels.json for the residue + invariants.py; round 11 adds the struct-number class (struct_N renumbered by order of appearance) and member-reach through ->field_0xN / ->field_0xN[k]",
   "binaries": 60,
   "functions_total": 32406,
-  "functions_changed": 9664,
+  "functions_changed": 9660,
   "classes": {
-   "REVIEW": 114,
+   "REVIEW": 103,
    "casts": 4438,
    "declarations": 2753,
    "literal": 369,
-   "member-reach": 432,
+   "member-reach": 435,
    "merge": 17,
    "pointer-arith": 120,
-   "struct-number": 1421
+   "struct-number": 1425
   },
   "residue_labels": {
-   "builtin-string": 5,
+   "builtin-string": 4,
    "float-literal": 4,
    "literal": 11,
    "member-reach": 13,
    "regroup": 12,
    "spelling": 45,
    "stack-merge": 2,
-   "store-width": 12,
+   "store-width": 2,
    "ternary": 6,
    "wide-read": 4
   },
@@ -105,13 +105,13 @@
    "to_float_note": "per function 199 appear and 159 disappear on hard-float call results read from s0 (a callee returning float), 1 is main's own conversion moved into a temporary, 2 of main's go away"
   },
   "invariants": {
-   "functions_changed": 9664,
+   "functions_changed": 9660,
    "calls_lost": 0,
    "calls_gained": 1,
    "calls_gained_note": "a string literal the default arm recovers, \"Calling prvGetRegistersFromStack() from fault handler\", read as a call by the regex",
    "goto_delta": 0,
    "return_delta": 0,
-   "stmt_delta": 127
+   "stmt_delta": 92
   },
   "files": [
    "corpus-report.json",
@@ -122,7 +122,7 @@
    "callsite.json",
    "calls-gained.on.txt"
   ],
-  "measured_on": "round 11: main d96e3408 (= the off arm on 60/60) vs the rebased final engine (the same code measured on 6e4f6fa5 first: identical class counts, arity and typesweep rows)"
+  "measured_on": "round 12: main d96e3408 (= the off arm on 60/60; 75f832e3 differs from it only in docs) vs the round-12 engine (round 11 plus the narrow-pointee refusal); every count above is the round-12 tree's. Round 11's engine differed on 26 functions (analysis.md section 3f)"
  },
  "benchmark": {
   "corpus": "frozen decbench corpus (results/full_run_address_2026-09-11), 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow; O0 O2 O2-noinline; the campaign's x project has no slice), DECBENCH_NO_CACHE=1, scripts.decbench.typesweep --baseline-only on a main d96e3408 build and on this branch, merged",
@@ -214,7 +214,7 @@
   "aggregate_on": 3363.95,
   "moved_onto_perfect": 119,
   "moved_off_perfect": 0,
-  "control": "6,838 functions with byte-identical variables score identically in both arms",
+  "control": "6,839 functions with byte-identical variables score identically in both arms",
   "firmware": {
    "slices": "nuttx mirai betaflight freertos at O2",
    "perfect_off": 208,
@@ -662,5 +662,17 @@
   "docs/options.md": "byte-fresh against the final build",
   "make rust-test": "RUST_TEST_RC=0 (7,234 passed / 0 failed; lane 2026-09-19T05:02:01Z -> 05:16:46Z on d10962dc, rebased onto d96e3408); on the 6e4f6fa5 base the same engine: 7,230 / 0"
  },
- "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main d96e3408 (structsynth, boolbyte and charbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh d96e3408 build; the same engine measured on 6e4f6fa5 first gave the same typesweep rows and class counts; rounds 6-10 were against d3617d64/e1139df9 and are superseded"
+ "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main d96e3408 (structsynth, boolbyte and charbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh d96e3408 build; the same engine measured on 6e4f6fa5 first gave the same typesweep rows and class counts; rounds 6-10 were against d3617d64/e1139df9 and are superseded",
+ "round12_narrow_pointee": {
+  "finding": "found by the ptrfromuse default evaluation (branch feat/ptrfromuse-on): a vote whose pointee is a non-character integer narrower than a constant the caller stores through the pointer split the store, one store per element (SplitDatatype). Default: gzip sub_6e90 '.tar' as five byte stores, betaflight sub_8041e24 1.0f as four, e2fsck sub_3a380 an 8-byte zero as two 4-byte stores; --option ptrfromuse void: bzip2 sub_5a10/sub_60e0 *(unsigned long *)(a0 + 0x5c) = 0x100 as eight byte stores, tar sub_133d0 'ustar  ' as eight",
+  "change": "pointee_refuses: a non-character integer, bool or pointer pointee refuses a constant stored wider than itself at a fixed place or a record stride; a stride of the store's own width, a computed value and a character pointee are allowed",
+  "fixture": "protoorder_narrowvote_x86_64 (sha256 6c0b1c906cfb2c96e5210178c98ed6d41aaccd6359657d7e5ef61cdfe7e8c0ed)",
+  "witness_before": "int fill(unsigned char *a0,int a1) ... a0[0x10] = 0x75; a0[0x11] = 0x75; ... a0[0x17] = 0x20; (default and ptrfromuse void)",
+  "witness_after": "int fill(long a0,int a1) ... *(unsigned long *)(a0 + 0x10) = 0x2020726174737575; (default; ptrfromuse void: void *a0 and ((long)a0 + 0x10)); identical to main",
+  "tests": "kuna-cli a_byte_pointee_vote_keeps_the_callers_wide_stores (default + ptrfromuse void), probe tests/cli/protoorder-types-keeps-a-wide-store-whole.json; both fail on the pre-fix engine",
+  "typesweep": "0 of 10,748 rows move at the default (1,105 = 1,105) and 0 with --option ptrfromuse void (1,309 = 1,309); firmware 0 of 3,451 in both arms",
+  "corpus_default": "60 binaries: 26 of 32,406 functions change vs the round-11 engine: 11 store splits undone, 9 caller argument casts follow, 6 refused votes give back main's type; arity 258,249 = 258,249, argument rows 57,938 = 57,938, never-assigned arguments 1,179 = 1,179",
+  "corpus_ptrfromuse_void": "13 binaries: 14 of 10,549 functions change: 9 store splits undone, 5 caller casts",
+  "residual": "two store-width rows remain by design: a char * vote (libselinux sub_1d4c0, eight '\\0' stores) and a word-at-a-time fill of a byte buffer (betaflight sub_801379c)"
+ }
 }
