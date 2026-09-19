@@ -1164,8 +1164,9 @@ does, skipping a name another type holds, calls the same `best_of` and
 `keeps_unclaimed`, and mints at the first free slot. A `--jobs` worker records
 each lookup a function makes, with a recipe for every field type (a named type
 by name and id, a pointer or byte array around its rebuilt element), the parent
-replays the records in target order, and a second pool of workers installs the
-minted structures in mint order
+replays the records in target order, and the workers, having destroyed the
+structures they minted themselves and every type built on one, install the
+replayed structures in mint order
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (install_table)`) and decompiles the functions that asked with each lookup
 answered by its replayed name. The parent also answers the sweep: a structure
