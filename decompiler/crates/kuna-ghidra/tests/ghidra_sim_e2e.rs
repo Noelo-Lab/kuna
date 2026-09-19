@@ -497,7 +497,14 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // tail at 0x2701, whose `label_2701:` was released by the tail-duplication pass
 // and never printed -- `goto label_2701;` into a function with no such label.
 // The line is the restored label.
-const PIN_FAILLOG_C_LINES: [usize; 3] = [287, 39, 92];
+// sub_2620 287 -> 286 with `foldcallretphi` on by default: `fstat(fileno(dat_6298),..)`
+// and `!fclose(dat_6298)` fold into their use, one spill line going with them.
+// sub_3320 39 -> 37 in the same change: `fread(..,dat_6298)` and
+// `fwrite(..,dat_6298)` fold into their tests, and one declaration goes. The
+// `sub_3de0`/`sub_31a0`/`sub_3900` and `fseeko` results stay spilled: their
+// outputs are an unlocked `eax` read out of `rax`, which the fold leaves alone.
+// The CLI path loses the same 1 and 2 lines.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [286, 37, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports

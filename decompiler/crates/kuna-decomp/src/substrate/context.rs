@@ -1236,7 +1236,7 @@ pub struct ArchContext {
     pub fold_call_returns: bool,
     /// (kuna) Discount a foldable call's own INDIRECT effect in
     /// `check_implied_cover`'s inflate arm (option `foldcallretphi`,
-    /// default-off).  Read by `check_implied_cover`.
+    /// default-on).  Read by `check_implied_cover`.
     pub fold_call_ret_phi: bool,
     /// (kuna) Run `Funcdata::markIndirectOnly` instead of the inert stub
     /// (option `indirectonly`, opt-in default-off).  Read by
@@ -1647,7 +1647,7 @@ impl ArchContext {
             switch_return: false, // switchreturn (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (Architecture::reset_defaults sets the shipped default: on)
-            fold_call_ret_phi: false, // foldcallretphi (default-off)
+            fold_call_ret_phi: false, // foldcallretphi (Architecture::reset_defaults sets the shipped default: on)
             mark_indirect_only: false, // indirectonly (opt-in default-off)
             hide_shadow: false,       // hideshadow (Architecture::reset_defaults sets the shipped default: on)
             strip_stack_guard: false,    // stackguard (opt-in default-off)

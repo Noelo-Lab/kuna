@@ -92,6 +92,17 @@ fn caller_parameter_typed_from_the_callee_it_is_passed_to() {
     );
 }
 
+/// The declaration of the local assigned `open(...)`'s result, found by what it
+/// holds rather than by its `vN` number, which moves whenever an earlier local
+/// is folded away.
+fn fd_declaration(code: &str) -> Option<&str> {
+    let name = code
+        .lines()
+        .find_map(|l| l.trim().split_once(" = open(").map(|(lhs, _)| lhs.trim()))?;
+    let suffix = format!(" {name};");
+    code.lines().map(str::trim).find(|l| l.split("//").next().unwrap().trim_end().ends_with(&suffix))
+}
+
 /// The same call's RETURN type travels too: `open` yields an `int` file
 /// descriptor, so the local holding it stops being an `unsigned int` of unknown
 /// provenance.
@@ -99,13 +110,13 @@ fn caller_parameter_typed_from_the_callee_it_is_passed_to() {
 fn callee_return_type_reaches_the_local_that_holds_it() {
     let Some(off) = decompile("authenticate", "off") else { return };
     assert!(
-        off.contains("unsigned int v4;"),
+        fd_declaration(&off).is_some_and(|d| d.starts_with("unsigned int ")),
         "gate off leaves the fd an unsigned int, got:\n{off}"
     );
 
     let on = decompile("authenticate", "on").expect("second pass bootstraps");
     assert!(
-        on.contains("int4 v4;"),
+        fd_declaration(&on).is_some_and(|d| d.starts_with("int4 ")),
         "the default must carry `open`'s int return onto the fd, got:\n{on}"
     );
 }

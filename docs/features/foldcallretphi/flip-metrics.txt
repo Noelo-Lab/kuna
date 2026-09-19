@@ -1,0 +1,94 @@
+# The 48-binary sweep, --option foldcallretphi off vs the default (width, joined-return and short-circuit guards in), one build.
+# names: O0-cp O0-diff O0-du O0-fmt O0-gzip O0-head O0-ls O0-sort O0-stat O0-useradd O2-bzip2 O2-cf2.elf O2-chage O2-ch.elf O2-cmp O2-crond O2-crontab O2-csplit O2-dash O2-diff O2-dpkg-statoverride O2-du O2-expr O2-find O2-fmt O2-grep O2-gzip O2-init O2-kmod O2-ls O2-minigzip O2-mirai O2-noinline-od O2-noinline-pr O2-noinline-ptx O2-noinline-shutdown O2-ocsptool O2-psktool O2-rtmon O2-RTOSDemo.out O2-scp O2-sftp O2-sort O2-ssh-add O2-ssh-keyscan O2-tail O2-tar O2-xmlwf 
+
+# evalorder.py
+event order differs (read by hand) O0-ls sub_c308@0xc308
+   at 2 off: ['M', 'M', 'C:sub_1b9a5', 'M', 'C:sub_c25f', 'C:sub_15784'] on: ['M', 'M', 'M', 'C:sub_1b9a5', 'C:sub_c25f', 'C:sub_15784']
+EVENT SET CHANGED O2-cf2.elf sub_80340bc@0x80340bc
+   only off: {'M': 2}  only on: {}
+event order differs (read by hand) O2-crontab sub_4b40@0x4b40
+   at 5 off: ['M', 'C:__printf_chk', 'C:fflush', 'C:fgets', 'M', 'C:exit', 'M'] on: ['M', 'C:__printf_chk', 'C:fflush', 'M', 'C:fgets', 'C:exit', 'M']
+event order differs (read by hand) O2-csplit sub_39e0@0x39e0
+   at 8 off: ['M', 'M', 'M', 'C:strlen', 'M', 'C:__sprintf_chk', 'M'] on: ['M', 'M', 'M', 'M', 'C:strlen', 'C:__sprintf_chk', 'M']
+event order differs (read by hand) O2-dash sub_5940@0x5940
+   at 46 off: ['C:sub_e1c0', 'M', 'M', 'C:mempcpy', 'M', 'M', 'M'] on: ['C:sub_e1c0', 'M', 'M', 'M', 'C:mempcpy', 'M', 'M']
+EVENT SET CHANGED O2-find sub_f400@0xf400
+   only off: {}  only on: {'M': 2}
+EVENT SET CHANGED O2-ocsptool sub_8c70@0x8c70
+   only off: {'M': 1}  only on: {}
+event order differs (read by hand) O2-ssh-add sub_a6b0@0xa6b0
+   at 25 off: ['C:sub_11ab0', 'C:strcspn', 'M', 'C:strspn', 'M', 'M', 'M'] on: ['C:sub_11ab0', 'C:strcspn', 'M', 'M', 'C:strspn', 'M', 'M']
+event order differs (read by hand) O2-ssh-add sub_217a0@0x217a0
+   at 13 off: ['C:strncmp', 'C:strcmp', 'C:sub_172b0', 'C:strcspn', 'M', 'M', 'C:strdup'] on: ['C:strncmp', 'C:strcmp', 'C:sub_172b0', 'M', 'C:strcspn', 'M', 'C:strdup']
+event order differs (read by hand) O2-ssh-add sub_25c40@0x25c40
+   at 3 off: ['M', 'M', 'C:__getdelim', 'C:strcspn', 'M', 'C:free', 'C:sub_11ab0'] on: ['M', 'M', 'C:__getdelim', 'M', 'C:strcspn', 'C:free', 'C:sub_11ab0']
+event order differs (read by hand) O2-ssh-keyscan sub_25a00@0x25a00
+   at 3 off: ['M', 'M', 'C:__getdelim', 'C:strcspn', 'M', 'C:free', 'C:sub_14390'] on: ['M', 'M', 'C:__getdelim', 'M', 'C:strcspn', 'C:free', 'C:sub_14390']
+event order differs (read by hand) O2-ssh-keyscan sub_49f70@0x49f70
+   at 39 off: ['C:sub_28380', 'C:strerror', 'C:sub_28380', 'M', 'C:sub_2b580', 'C:sub_32350', 'C:__errno_location'] on: ['C:sub_28380', 'C:strerror', 'C:sub_28380', 'C:sub_2b580', 'M', 'C:sub_32350', 'C:__errno_location']
+event order differs (read by hand) O2-tar sub_14c50@0x14c50
+   at 6 off: ['C:sub_2df50', 'C:sub_25120', 'M', 'C:sub_33640', 'M', 'C:sub_25120', 'M'] on: ['C:sub_2df50', 'C:sub_25120', 'M', 'M', 'C:sub_33640', 'C:sub_25120', 'M']
+event order differs (read by hand) O2-tar sub_185e0@0x185e0
+   at 10 off: ['M', 'M', 'M', 'C:fstatat', 'M', 'M', 'M'] on: ['M', 'M', 'M', 'M', 'M', 'C:fstatat', 'M']
+event order differs (read by hand) O2-tar sub_18fd0@0x18fd0
+   at 34 off: ['M', 'C:strcmp', 'M', 'C:fstatat', 'M', 'C:fstatat', 'M'] on: ['M', 'C:strcmp', 'M', 'M', 'C:fstatat', 'C:fstatat', 'M']
+functions compared=18196 changed=300 event-set-changed=3 event-order-differs=12
+
+# foldmove.py
+counters: {'functions': 18196, 'changed_functions': 300, 'located': 477, 'landing_ambiguous': 154, 'call_text_absent': 60, 'classified': 253, 'landing_unmatched': 10, 'benign_intervening': 4}
+statements between the deleted spill and the landing statement: {0: 249, 1: 4}
+CALL-TEXT-ABSENT ('O0-cp', 'sub_4b50@0x4b50', 'stat(V,&V,V[V + -8])')
+CALL-TEXT-ABSENT ('O0-cp', 'sub_4b50@0x4b50', 'fstatat(V,V,&V,0x100,V[V + -8])')
+CALL-TEXT-ABSENT ('O0-diff', 'sub_7206@0x7206', 'sub_1d2a2(8,sub_1d2a2(V,V,0x7ffffffffffffffe),V)')
+CALL-TEXT-ABSENT ('O0-diff', 'sub_7206@0x7206', 'sub_1c991(*(unsigned long *)&a0[(long)V * 0x4c + 0x28],V)')
+CALL-TEXT-ABSENT ('O0-diff', 'main@0x8f2f', '(char *)sub_1c945(V * 7 + 0x61)')
+CALL-TEXT-ABSENT ('O0-diff', 'sub_1e8c1@0x1e8c1', 'memcmp(V,V,V,V[-8])')
+CALL-TEXT-ABSENT ('O0-diff', 'sub_1f057@0x1f057', '!((V != V) || (V = memcmp(V,V,V), V))')
+CALL-TEXT-ABSENT ('O0-ls', 'sub_70af@0x70af', 'sub_1cd03(optarg,0,0,0x7fffffffffffffff,0x1f27b,gettext("invalid tab s')
+CALL-TEXT-ABSENT ('O0-ls', 'sub_c6c8@0xc6c8', 'sub_c25f(V,0x3e9,(unsigned char)V,V,dat_2b438,V & 0xffffffff)')
+CALL-TEXT-ABSENT ('O0-stat', 'sub_809b@0x809b', 'memcpy((void *)((unsigned long)((long)V + V + 0xf) & 0xfffffffffffffff')
+CALL-TEXT-ABSENT ('O0-stat', 'sub_809b@0x809b', 'chdir(V,*(char *)((long)V + V + -8))')
+CALL-TEXT-ABSENT ('O0-useradd', 'sub_c1ae@0xc1ae', 'access(V,0,*(char *)((long)V + V + -8))')
+CALL-TEXT-ABSENT ('O0-useradd', 'sub_c6e2@0xc6e2', 'fchown(V,dat_2b5b8,V,V[V + -8])')
+CALL-TEXT-ABSENT ('O0-useradd', 'sub_c6e2@0xc6e2', 'fchmod(V,V,V[V + -8])')
+CALL-TEXT-ABSENT ('O0-useradd', 'sub_19900@0x19900', 'realloc(dat_2bb28,(long)dat_2bb20 * 8)')
+CALL-TEXT-ABSENT ('O2-cmp', 'sub_8a80@0x8a80', 'sub_70e0(V,V,V,&V)')
+CALL-TEXT-ABSENT ('O2-dash', 'sub_5430@0x5430', 'sub_5240(V + -0xb,V,V)')
+CALL-TEXT-ABSENT ('O2-dash', 'sub_9f60@0x9f60', 'read(V[0],V,0x80,*(char *)((long)V + -8))')
+CALL-TEXT-ABSENT ('O2-dash', 'sub_aa60@0xaa60', 'strtol(V,NULL,10,V[-8])')
+CALL-TEXT-ABSENT ('O2-dash', 'sub_b2d0@0xb2d0', 'fnmatch(V,a1,0)')
+LANDING-UNMATCHED ('O0-cp', 'sub_ff09@0xff09', 'strlen(dat_275e8)')
+LANDING-UNMATCHED ('O2-dash', 'sub_5940@0x5940', 'mempcpy(dat_1f3b8,V,(long)V - (long)V)')
+LANDING-UNMATCHED ('O2-noinline-pr', 'sub_3f10@0x3f10', 'sub_80c0(0,0xffffffffffffffff,dat_15170,V,dat_15168,V & 0xffffffff)')
+LANDING-UNMATCHED ('O2-scp', 'sub_2afe0@0x2afe0', 'strlen(V)')
+LANDING-UNMATCHED ('O2-sftp', 'sub_2b720@0x2b720', 'strlen(V)')
+LANDING-UNMATCHED ('O2-ssh-add', 'sub_ab70@0xab70', 'dup2(V,0)')
+LANDING-UNMATCHED ('O2-ssh-add', 'sub_43e80@0x43e80', 'strlen(V)')
+LANDING-UNMATCHED ('O2-ssh-keyscan', 'sub_b530@0xb530', 'dup2(V,0)')
+LANDING-UNMATCHED ('O2-tar', 'sub_198d0@0x198d0', 'fstatat(dat_7f234,a0,&V,0x100)')
+LANDING-UNMATCHED ('O2-tar', 'sub_2df50@0x2df50', '__getdelim(&V,&V,10,dat_82bb0)')
+LANDING-AMBIGUOUS ('O0-cp', 'sub_4b50@0x4b50', 'fstatat(V,V,&V,0,V[V + -8])', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-cp', 'sub_4b50@0x4b50', 'fstatat(V,V,&V,0,V[V + -8])', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-cp', 'sub_11312@0x11312', 'sub_11f2c(stdin)', 1, 2, [1, 12])
+LANDING-AMBIGUOUS ('O0-diff', 'sub_a3ae@0xa3ae', 'ferror_unlocked(stdout)', 1, 2, [1, 4])
+LANDING-AMBIGUOUS ('O0-diff', 'sub_11e1b@0x11e1b', 'ferror_unlocked(dat_2d5c0)', 1, 2, [1, 4])
+LANDING-AMBIGUOUS ('O0-diff', 'sub_1694e@0x1694e', 'towlower(V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-diff', 'sub_1694e@0x1694e', 'memcmp(V,V,V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-diff', 'sub_1f057@0x1f057', '((V != V) || (V = memcmp(V,V,V), V))', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-du', 'main@0x5197', 'strcmp(V,"-")', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-du', 'sub_10853@0x10853', 'towlower(V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-du', 'sub_10853@0x10853', 'memcmp(V,V,V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-du', 'sub_11107@0x11107', 'sub_110ce(V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-du', 'sub_16cf3@0x16cf3', 'sub_16a9e(a1,V,&V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-du', 'sub_16cf3@0x16cf3', 'sub_16a9e(a1,V,&V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-gzip', 'sub_5f11@0x5f11', 'close(dat_dd860)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-ls', 'sub_9a40@0x9a40', 'strlen(V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-ls', 'sub_1dd61@0x1dd61', 'sub_1db0c(a1,V,&V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-ls', 'sub_1dd61@0x1dd61', 'sub_1db0c(a1,V,&V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-stat', 'sub_9806@0x9806', 'sub_97cd(V)', 'call text is not unique')
+LANDING-AMBIGUOUS ('O0-stat', 'sub_11118@0x11118', 'sub_10ec3(a1,V,&V)', 'call text is not unique')
+LOCATED: 477 = classified 253 + call_text_absent 60 + landing_unmatched 10 + landing_ambiguous 154  (unclassified 47.0%)
+HAZARDS: 0
+
+# callorder.py
+functions compared=18196 call-order-changed=0

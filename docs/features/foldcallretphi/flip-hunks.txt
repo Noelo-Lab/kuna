@@ -1,0 +1,305 @@
+# hunkclass.py over the 48-binary sweep (--option foldcallretphi off vs the default, width, joined-return and short-circuit guards in);
+# 8: fmt/ls/sort/du O0+O2; 12: grep gzip diff find bzip2 dash scp ssh-add (O2), gzip cp (O0), od (O2-noinline), ch.elf;
+# 12: tail kmod crond chage init dpkg-statoverride mirai RTOSDemo.out sftp ocsptool (O2), diff (O0), pr (O2-noinline);
+# 16: csplit expr cmp crontab xmlwf minigzip ssh-keyscan psktool tar rtmon cf2.elf (O2), head useradd stat (O0), shutdown ptx (O2-noinline)
+O0-cp    sub_4b50@0x4b50          decl-only decl-only decl-only fold fold fold fold
+O0-cp    sub_5522@0x5522          fold-in-condition
+O0-cp    main@0x6276              fold fold
+O0-cp    sub_7533@0x7533          decl-only fold
+O0-cp    sub_aa08@0xaa08          decl-only fold
+O0-cp    sub_ff09@0xff09          fold
+O0-cp    sub_10726@0x10726        decl-only decl-only fold-in-condition+operand-hoist
+O0-cp    sub_11312@0x11312        decl-only fold
+O0-cp    sub_120e0@0x120e0        decl-only fold
+O0-cp    sub_12cea@0x12cea        decl-only fold
+O0-cp    sub_17254@0x17254        decl-only decl-only decl-only fold-in-condition+operand-hoist fold
+O0-cp    sub_19651@0x19651        decl-only decl-only decl-only fold
+O0-diff  sub_7206@0x7206          decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold fold
+O0-diff  sub_7d13@0x7d13          decl-only fold-in-condition
+O0-diff  main@0x8f2f              fold-in-condition fold-in-condition fold
+O0-diff  sub_a3ae@0xa3ae          fold fold
+O0-diff  sub_a746@0xa746          fold-in-condition+operand-hoist fold-in-condition fold-in-condition fold-in-condition fold
+O0-diff  sub_11b50@0x11b50        fold fold
+O0-diff  sub_11e1b@0x11e1b        decl-only fold fold fold
+O0-diff  sub_1694e@0x1694e        decl-only decl-only decl-only decl-only decl-only fold fold fold
+O0-diff  sub_1bc48@0x1bc48        decl-only decl-only decl-only fold-in-condition fold-in-condition
+O0-diff  sub_1e8c1@0x1e8c1        decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold
+O0-diff  sub_1f057@0x1f057        decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold-in-condition fold-in-condition
+O0-diff  sub_1fb19@0x1fb19        decl-only decl-only decl-only fold-in-condition+operand-hoist fold
+O0-du    main@0x5197              decl-only decl-only decl-only decl-only fold fold-in-condition fold-in-condition fold fold fold-in-condition other
+O0-du    sub_ae89@0xae89          decl-only fold
+O0-du    sub_ba93@0xba93          decl-only fold
+O0-du    sub_1054d@0x1054d        decl-only fold
+O0-du    sub_10853@0x10853        decl-only decl-only decl-only decl-only decl-only fold fold fold
+O0-du    sub_11107@0x11107        fold-in-condition fold fold
+O0-du    sub_12419@0x12419        decl-only decl-only decl-only fold-in-condition+operand-hoist fold
+O0-du    sub_16cf3@0x16cf3        fold fold fold
+O0-fmt   sub_4dce@0x4dce          decl-only decl-only decl-only fold-in-condition+operand-hoist fold
+O0-gzip  sub_5f11@0x5f11          fold other
+O0-gzip  sub_6a54@0x6a54          decl-only decl-only decl-only decl-only fold-in-condition+operand-hoist
+O0-gzip  sub_6d5a@0x6d5a          fold fold
+O0-gzip  sub_870d@0x870d          fold
+O0-gzip  sub_10c61@0x10c61        decl-only decl-only decl-only fold
+O0-head  sub_2db6@0x2db6          decl-only fold
+O0-head  sub_5760@0x5760          decl-only decl-only decl-only fold-in-condition+operand-hoist fold
+O0-ls    main@0x6882              fold-in-condition fold
+O0-ls    sub_70af@0x70af          fold fold fold fold fold fold fold fold fold
+O0-ls    sub_9a40@0x9a40          decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold
+O0-ls    sub_c308@0xc308          decl-only fold
+O0-ls    sub_c6c8@0xc6c8          fold-in-condition fold
+O0-ls    sub_1056e@0x1056e        decl-only decl-only fold-in-condition+operand-hoist
+O0-ls    sub_192c8@0x192c8        decl-only decl-only decl-only fold-in-condition+operand-hoist fold
+O0-ls    sub_1ce96@0x1ce96        decl-only fold
+O0-ls    sub_1dd61@0x1dd61        fold fold fold
+O0-sort  sub_4a08@0x4a08          decl-only fold
+O0-sort  sub_5372@0x5372          decl-only fold
+O0-sort  main@0xda8d              fold-in-condition fold fold-in-condition fold-in-condition
+O0-sort  sub_1389e@0x1389e        decl-only decl-only decl-only fold-in-condition+operand-hoist fold
+O0-stat  sub_546d@0x546d          decl-only fold
+O0-stat  sub_5d98@0x5d98          decl-only fold
+O0-stat  main@0x7c77              decl-only decl-only decl-only fold
+O0-stat  sub_809b@0x809b          decl-only decl-only decl-only decl-only fold fold fold (split) fold (split)
+O0-stat  sub_9806@0x9806          fold-in-condition fold fold
+O0-stat  sub_d348@0xd348          decl-only decl-only decl-only fold-in-condition+operand-hoist fold
+O0-stat  sub_11118@0x11118        fold fold fold
+O0-useradd sub_6c38@0x6c38          fold fold
+O0-useradd sub_7424@0x7424          fold fold
+O0-useradd sub_896b@0x896b          decl-only fold
+O0-useradd sub_8af2@0x8af2          decl-only decl-only decl-only fold fold
+O0-useradd sub_919b@0x919b          fold-in-condition fold fold fold fold fold-in-condition
+O0-useradd sub_bc20@0xbc20          decl-only fold
+O0-useradd sub_be4e@0xbe4e          decl-only fold-in-condition
+O0-useradd sub_c1ae@0xc1ae          decl-only decl-only fold fold fold fold
+O0-useradd sub_c6e2@0xc6e2          decl-only decl-only decl-only decl-only fold fold fold fold
+O0-useradd main@0xcad6              decl-only decl-only decl-only fold
+O0-useradd sub_e3d7@0xe3d7          decl-only fold fold
+O0-useradd sub_ef43@0xef43          fold fold fold fold
+O0-useradd sub_fbdb@0xfbdb          fold fold fold fold
+O0-useradd sub_17a35@0x17a35        fold
+O0-useradd sub_19900@0x19900        fold
+O0-useradd fgetsgent@0x1dec6        fold
+O0-useradd sub_1e47e@0x1e47e        decl-only decl-only decl-only decl-only fold fold
+O2-bzip2 main@0x2500              decl-only decl-only decl-only fold
+O2-bzip2 sub_3890@0x3890          decl-only decl-only decl-only decl-only decl-only fold-in-condition
+O2-bzip2 sub_4400@0x4400          decl-only decl-only decl-only fold-in-condition
+O2-cf2.elf sub_80340bc@0x80340bc    other
+O2-chage sub_9d70@0x9d70          fold
+O2-cmp   main@0x2900              fold-in-condition fold
+O2-cmp   sub_3c90@0x3c90          decl-only fold
+O2-cmp   sub_56d0@0x56d0          decl-only decl-only decl-only fold fold fold-in-condition fold
+O2-cmp   sub_7a80@0x7a80          decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold fold-in-condition
+O2-cmp   sub_8a80@0x8a80          decl-only decl-only decl-only fold
+O2-crontab main@0x3bc0              decl-only fold
+O2-crontab sub_4b40@0x4b40          decl-only fold
+O2-crontab sub_5790@0x5790          fold fold fold
+O2-csplit sub_39e0@0x39e0          decl-only fold fold
+O2-dash  sub_5430@0x5430          decl-only fold
+O2-dash  sub_5940@0x5940          decl-only decl-only fold
+O2-dash  sub_9f60@0x9f60          fold
+O2-dash  sub_aa60@0xaa60          decl-only decl-only decl-only decl-only decl-only decl-only fold fold
+O2-dash  sub_b2d0@0xb2d0          decl-only fold
+O2-dash  sub_cde0@0xcde0          decl-only fold
+O2-dash  sub_105e0@0x105e0        decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold
+O2-dash  sub_141b0@0x141b0        fold
+O2-diff  main@0x4f20              fold fold-in-condition
+O2-diff  sub_7cf0@0x7cf0          decl-only fold-in-condition
+O2-diff  sub_9df0@0x9df0          decl-only fold
+O2-diff  sub_e830@0xe830          decl-only decl-only fold fold
+O2-diff  sub_ead0@0xead0          decl-only fold
+O2-diff  sub_ff60@0xff60          decl-only decl-only decl-only fold
+O2-diff  sub_12410@0x12410        decl-only decl-only decl-only decl-only fold
+O2-diff  sub_15d60@0x15d60        decl-only decl-only decl-only fold fold fold-in-condition fold
+O2-diff  sub_182a0@0x182a0        decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold fold-in-condition
+O2-diff  sub_1b790@0x1b790        decl-only decl-only decl-only fold
+O2-dpkg-statoverride sub_4b40@0x4b40          decl-only fold
+O2-du    main@0x3c50              fold fold fold-in-condition
+O2-du    sub_53d0@0x53d0          decl-only fold
+O2-du    sub_6450@0x6450          decl-only decl-only decl-only fold
+O2-du    sub_dc70@0xdc70          decl-only decl-only decl-only decl-only fold
+O2-du    sub_df90@0xdf90          decl-only decl-only decl-only decl-only decl-only fold
+O2-expr  sub_34a0@0x34a0          decl-only decl-only fold-in-condition
+O2-expr  sub_4f20@0x4f20          decl-only decl-only decl-only fold
+O2-expr  sub_51d0@0x51d0          decl-only decl-only decl-only fold
+O2-find  sub_8070@0x8070          fold
+O2-find  sub_8550@0x8550          decl-only fold
+O2-find  sub_8d00@0x8d00          decl-only decl-only fold fold fold-in-condition
+O2-find  sub_9c00@0x9c00          decl-only fold
+O2-find  sub_d820@0xd820          fold
+O2-find  sub_dab0@0xdab0          decl-only fold
+O2-find  sub_e8c0@0xe8c0          decl-only fold
+O2-find  sub_e920@0xe920          decl-only fold
+O2-find  sub_e970@0xe970          fold
+O2-find  sub_e9b0@0xe9b0          decl-only fold
+O2-find  sub_f400@0xf400          decl-only decl-only other fold
+O2-find  sub_f620@0xf620          fold
+O2-find  sub_165e0@0x165e0        fold
+O2-find  sub_1d5d0@0x1d5d0        decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold fold-in-condition
+O2-find  sub_1e550@0x1e550        decl-only decl-only decl-only decl-only decl-only fold
+O2-find  sub_210e0@0x210e0        fold-in-condition
+O2-find  sub_276f0@0x276f0        decl-only decl-only decl-only fold
+O2-grep  main@0x4ff0              fold fold fold fold
+O2-grep  sub_7b80@0x7b80          decl-only decl-only decl-only fold
+O2-grep  sub_7e40@0x7e40          fold
+O2-grep  sub_7e70@0x7e70          decl-only fold
+O2-grep  sub_7fa0@0x7fa0          decl-only fold
+O2-grep  sub_82a0@0x82a0          decl-only decl-only fold-in-condition
+O2-grep  sub_8710@0x8710          decl-only fold
+O2-grep  sub_8790@0x8790          decl-only decl-only fold
+O2-grep  sub_9130@0x9130          decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold fold-in-condition fold-in-condition fold-in-condition
+O2-grep  sub_16620@0x16620        decl-only decl-only decl-only fold
+O2-grep  sub_1aec0@0x1aec0        decl-only decl-only decl-only decl-only fold
+O2-gzip  sub_6e90@0x6e90          fold (split) fold (split) fold fold fold fold-in-condition
+O2-gzip  sub_f6b0@0xf6b0          decl-only decl-only decl-only decl-only decl-only fold
+O2-gzip  sub_10a00@0x10a00        decl-only fold
+O2-init  sub_51b0@0x51b0          decl-only decl-only decl-only decl-only fold fold
+O2-init  sub_59f0@0x59f0          fold
+O2-init  sub_7e50@0x7e50          fold
+O2-kmod  main@0x3ce0              decl-only decl-only fold
+O2-kmod  sub_4ca0@0x4ca0          fold fold fold
+O2-kmod  sub_5860@0x5860          decl-only fold
+O2-kmod  sub_fd90@0xfd90          decl-only decl-only fold
+O2-kmod  sub_15390@0x15390        decl-only decl-only decl-only fold (split) fold (split)
+O2-kmod  sub_15c60@0x15c60        decl-only decl-only fold
+O2-ls    main@0x4d10              decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold fold fold fold fold fold fold fold fold fold-in-condition fold-in-condition fold
+O2-ls    sub_c980@0xc980          fold fold
+O2-minigzip main@0x2400              decl-only decl-only decl-only fold fold fold
+O2-mirai sub_7cd0@0x7cd0          decl-only decl-only decl-only decl-only fold
+O2-noinline-od main@0x2840              fold
+O2-noinline-od sub_4f00@0x4f00          decl-only fold fold fold
+O2-noinline-od sub_9970@0x9970          decl-only fold
+O2-noinline-od sub_a110@0xa110          decl-only fold
+O2-noinline-pr sub_3f10@0x3f10          decl-only decl-only decl-only decl-only decl-only fold fold
+O2-noinline-ptx main@0x2a20              fold fold
+O2-noinline-ptx sub_9550@0x9550          decl-only decl-only decl-only fold-in-condition fold fold-in-condition fold
+O2-noinline-ptx sub_b4a0@0xb4a0          decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold fold-in-condition
+O2-noinline-shutdown main@0x2a40              fold (split) fold (split) fold-in-condition
+O2-ocsptool sub_8c70@0x8c70          decl-only decl-only decl-only decl-only other
+O2-ocsptool sub_a950@0xa950          decl-only fold
+O2-ocsptool sub_c5c0@0xc5c0          fold fold fold fold
+O2-ocsptool sub_111b0@0x111b0        decl-only decl-only decl-only decl-only decl-only fold-in-condition
+O2-ocsptool sub_12470@0x12470        fold-in-condition
+O2-psktool sub_27d0@0x27d0          decl-only decl-only decl-only decl-only decl-only fold
+O2-psktool sub_2e50@0x2e50          fold-in-condition
+O2-scp   main@0x5150              fold
+O2-scp   sub_6f60@0x6f60          decl-only fold fold-in-condition
+O2-scp   sub_7bd0@0x7bd0          fold
+O2-scp   sub_8520@0x8520          decl-only decl-only fold fold fold-in-condition+operand-hoist fold
+O2-scp   sub_aac0@0xaac0          fold
+O2-scp   sub_d440@0xd440          decl-only decl-only fold
+O2-scp   sub_f640@0xf640          fold-in-condition fold-in-condition fold fold-in-condition fold-in-condition fold-in-condition fold fold fold fold-in-condition
+O2-scp   sub_13130@0x13130        decl-only decl-only fold
+O2-scp   sub_14180@0x14180        decl-only decl-only fold
+O2-scp   sub_14d70@0x14d70        decl-only decl-only decl-only decl-only fold fold
+O2-scp   sub_24360@0x24360        decl-only decl-only decl-only decl-only decl-only fold
+O2-scp   sub_245e0@0x245e0        decl-only decl-only decl-only decl-only decl-only fold
+O2-scp   sub_2afe0@0x2afe0        fold
+O2-scp   sub_2b890@0x2b890        decl-only fold
+O2-scp   sub_2ef70@0x2ef70        fold
+O2-sftp  main@0x5250              decl-only decl-only decl-only fold-in-condition fold
+O2-sftp  sub_6840@0x6840          decl-only fold-in-condition
+O2-sftp  sub_71f0@0x71f0          decl-only decl-only decl-only decl-only decl-only fold
+O2-sftp  sub_7670@0x7670          fold
+O2-sftp  sub_a860@0xa860          fold fold
+O2-sftp  sub_db80@0xdb80          decl-only decl-only fold
+O2-sftp  sub_fd80@0xfd80          fold-in-condition fold-in-condition fold fold-in-condition fold-in-condition fold-in-condition fold fold fold fold-in-condition
+O2-sftp  sub_13870@0x13870        decl-only decl-only fold
+O2-sftp  sub_148c0@0x148c0        decl-only decl-only fold
+O2-sftp  sub_154b0@0x154b0        decl-only decl-only decl-only decl-only fold fold
+O2-sftp  sub_24aa0@0x24aa0        decl-only decl-only decl-only decl-only decl-only fold
+O2-sftp  sub_24d20@0x24d20        decl-only decl-only decl-only decl-only decl-only fold
+O2-sftp  sub_2b720@0x2b720        fold
+O2-sftp  sub_2bfd0@0x2bfd0        decl-only fold
+O2-sftp  sub_2f6c0@0x2f6c0        fold
+O2-sort  main@0x3ec0              fold-in-condition fold fold-in-condition fold (split) fold (split)
+O2-ssh-add main@0x81a0              decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold
+O2-ssh-add sub_9cb0@0x9cb0          decl-only fold (split) fold (split) fold (split) fold (split)
+O2-ssh-add sub_a6b0@0xa6b0          decl-only decl-only decl-only fold-in-condition fold
+O2-ssh-add sub_ab70@0xab70          fold
+O2-ssh-add sub_154d0@0x154d0        fold-in-condition
+O2-ssh-add sub_19e70@0x19e70        fold fold fold
+O2-ssh-add sub_1fba0@0x1fba0        decl-only decl-only fold fold-in-condition
+O2-ssh-add sub_217a0@0x217a0        decl-only decl-only decl-only decl-only fold fold
+O2-ssh-add sub_25c40@0x25c40        decl-only decl-only fold
+O2-ssh-add sub_26880@0x26880        fold fold fold
+O2-ssh-add sub_29680@0x29680        fold
+O2-ssh-add sub_2ea60@0x2ea60        decl-only decl-only decl-only decl-only decl-only fold
+O2-ssh-add sub_2ece0@0x2ece0        decl-only decl-only decl-only decl-only decl-only fold
+O2-ssh-add sub_35920@0x35920        decl-only decl-only decl-only fold fold
+O2-ssh-add sub_36050@0x36050        decl-only decl-only fold
+O2-ssh-add sub_36410@0x36410        fold fold
+O2-ssh-add sub_384a0@0x384a0        decl-only fold fold
+O2-ssh-add sub_39130@0x39130        decl-only decl-only decl-only fold
+O2-ssh-add sub_43e80@0x43e80        fold
+O2-ssh-add sub_44730@0x44730        decl-only fold
+O2-ssh-add sub_49300@0x49300        fold
+O2-ssh-keyscan main@0x9440              fold
+O2-ssh-keyscan sub_b530@0xb530          fold
+O2-ssh-keyscan sub_17db0@0x17db0        fold-in-condition
+O2-ssh-keyscan sub_1c750@0x1c750        fold fold fold
+O2-ssh-keyscan sub_25a00@0x25a00        decl-only decl-only decl-only fold
+O2-ssh-keyscan sub_26640@0x26640        fold fold fold
+O2-ssh-keyscan sub_299e0@0x299e0        fold
+O2-ssh-keyscan sub_36710@0x36710        decl-only decl-only decl-only decl-only decl-only fold
+O2-ssh-keyscan sub_36990@0x36990        decl-only decl-only decl-only decl-only decl-only fold
+O2-ssh-keyscan sub_3d5d0@0x3d5d0        decl-only decl-only decl-only fold fold
+O2-ssh-keyscan sub_3dd00@0x3dd00        decl-only decl-only fold
+O2-ssh-keyscan sub_3e0c0@0x3e0c0        fold fold
+O2-ssh-keyscan sub_40150@0x40150        decl-only fold fold
+O2-ssh-keyscan sub_44780@0x44780        decl-only decl-only decl-only fold
+O2-ssh-keyscan sub_47a70@0x47a70        decl-only decl-only decl-only fold fold fold
+O2-ssh-keyscan sub_49f70@0x49f70        fold
+O2-ssh-keyscan sub_4f550@0x4f550        fold fold
+O2-ssh-keyscan sub_56650@0x56650        uninline/reshape other
+O2-ssh-keyscan sub_5a4e0@0x5a4e0        fold
+O2-tail  main@0x2960              fold fold fold fold-in-condition fold fold
+O2-tail  sub_5c60@0x5c60          decl-only fold
+O2-tail  sub_6430@0x6430          decl-only decl-only fold
+O2-tar   main@0xa9f0              decl-only decl-only decl-only decl-only decl-only fold fold fold-in-condition
+O2-tar   sub_c100@0xc100          decl-only fold
+O2-tar   sub_c350@0xc350          decl-only fold-in-condition
+O2-tar   sub_cdf0@0xcdf0          decl-only fold
+O2-tar   sub_d000@0xd000          decl-only fold fold
+O2-tar   sub_f4b0@0xf4b0          fold
+O2-tar   sub_11250@0x11250        decl-only fold
+O2-tar   sub_11340@0x11340        decl-only fold-in-condition
+O2-tar   sub_11680@0x11680        fold
+O2-tar   sub_12b40@0x12b40        decl-only decl-only uninline/reshape fold fold
+O2-tar   sub_13570@0x13570        decl-only decl-only decl-only fold fold
+O2-tar   sub_14c50@0x14c50        decl-only decl-only decl-only decl-only fold fold fold fold
+O2-tar   sub_17850@0x17850        decl-only fold
+O2-tar   sub_17b80@0x17b80        decl-only decl-only fold
+O2-tar   sub_185e0@0x185e0        fold fold
+O2-tar   sub_18d00@0x18d00        decl-only decl-only fold
+O2-tar   sub_18fd0@0x18fd0        fold-in-condition fold
+O2-tar   sub_198d0@0x198d0        decl-only decl-only decl-only decl-only fold fold fold
+O2-tar   sub_19da0@0x19da0        decl-only decl-only decl-only decl-only decl-only decl-only fold
+O2-tar   sub_1d220@0x1d220        fold
+O2-tar   sub_1e240@0x1e240        decl-only decl-only fold
+O2-tar   sub_1e440@0x1e440        decl-only decl-only fold
+O2-tar   sub_1e820@0x1e820        fold
+O2-tar   sub_1ebb0@0x1ebb0        decl-only fold
+O2-tar   sub_1f810@0x1f810        fold
+O2-tar   sub_203b0@0x203b0        fold fold fold fold
+O2-tar   sub_25ba0@0x25ba0        decl-only fold
+O2-tar   sub_25c10@0x25c10        fold
+O2-tar   sub_26a40@0x26a40        fold
+O2-tar   sub_27eb0@0x27eb0        decl-only fold
+O2-tar   sub_27f40@0x27f40        decl-only fold
+O2-tar   sub_27fd0@0x27fd0        fold
+O2-tar   sub_28080@0x28080        fold
+O2-tar   sub_2a1e0@0x2a1e0        decl-only decl-only decl-only fold
+O2-tar   sub_2cfc0@0x2cfc0        decl-only decl-only decl-only fold
+O2-tar   sub_2d260@0x2d260        decl-only fold
+O2-tar   sub_2df50@0x2df50        decl-only fold
+O2-tar   sub_2e3b0@0x2e3b0        decl-only fold
+O2-tar   sub_30e90@0x30e90        decl-only decl-only fold fold fold
+O2-tar   sub_335f0@0x335f0        fold-in-condition
+O2-tar   sub_38d40@0x38d40        decl-only decl-only decl-only fold
+O2-tar   sub_40560@0x40560        decl-only decl-only decl-only fold
+O2-tar   sub_45630@0x45630        decl-only decl-only decl-only decl-only fold
+O2-tar   sub_54990@0x54990        decl-only decl-only decl-only fold
+O2-tar   sub_55450@0x55450        decl-only decl-only decl-only fold
+O2-tar   sub_58960@0x58960        fold
+O2-tar   sub_59300@0x59300        decl-only decl-only decl-only decl-only decl-only decl-only decl-only fold fold-in-condition
+O2-tar   sub_5aa30@0x5aa30        fold
+TOTALS {'changed_fn': 300, 'decl-only': 562, 'fold': 411, 'fold-in-condition': 80, 'fold-in-condition+operand-hoist': 13, 'other': 6, 'fold (split)': 14, 'uninline/reshape': 2}

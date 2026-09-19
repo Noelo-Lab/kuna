@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    kuna issue `kuna-foldcallretphi-join` (P6, sub-stage explicit-marking).
+
+    `foldcallretphi` (default-on) lets a call's single-use output fold past the
+    merge conflict its own INDIRECT on a global argument creates, but only
+    when the output carries the callee's whole return value.  On i386 a
+    `long long` comes back in edx:eax, so an unlocked `eax` output may be the
+    low half of a wider return, and the spill's 32-bit declaration is then the
+    only place the narrowing is written down.  Folding drops it.
+
+    Synthetic minimiser (i386, gcc), from
+      long long big(void *f) { return f ? 0xffffffffLL : 1; }
+      int t(void) { int r = (int)big(g); if (r == -1) return 1; return 7; }
+
+      target: sub esp,0x18 / push dword [g] / call big / mov edx,1
+              / cmp eax,-1 / mov eax,7 / cmove eax,edx / add esp,0x1c / ret
+      big:    mov ecx,[esp+4] / mov eax,0xffffffff / xor edx,edx
+              / test ecx,ecx / je +1 / ret / mov eax,1 / xor edx,edx / ret
+      g (0x1050) = 1
+
+    kuna prints `big` as `unsigned long long big(int4)`, so the folded
+    `if (big(dat_1050) != -1) return 7;` reads as 0xffffffff != -1 and returns
+    7, where the binary compares eax alone and returns 1.
+
+    Pass 1 (the default, no option command; `big` undeclared): the output is
+    the low half of the edx:eax pair a `long long` would use, so the spill
+    stays -> #1, and the folded form is absent -> #2.
+    Pass 2 (the default, `big` declared `int4`): the output is locked at 32
+    bits and the call folds into the comparison -> #2.
+    Pass 3 (option foldcallretphi off, `big` declared): the spill -> #1.
+-->
+<bytechunk space="ram" offset="0x1000">
+83ec18ff3550100000e822000000ba0100000083f8ffb8070000000f44c283c41cc390909090909090909090909090908b4c2404b8ffffffff31d285c97401c3b80100000031d2c3909090909090909001000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="target"/>
+<symbol space="ram" offset="0x1030" name="big"/>
+</binaryimage>
+<script>
+  <com>lo fu target</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int4 big(int4 a);</com>
+  <com>lo fu target</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option foldcallretphi off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="foldcallretphi-join #1: an undeclared call's eax output keeps its spill (pass 1 default, pass 3 off)" min="2" max="2">v1 = big\(dat_1050\);</stringmatch>
+<stringmatch name="foldcallretphi-join #2: the call folds into the comparison only once big is declared int4 (pass 2, default)" min="1" max="1">if \(big\(dat_1050\) != -1\)</stringmatch>
+</decompilertest>

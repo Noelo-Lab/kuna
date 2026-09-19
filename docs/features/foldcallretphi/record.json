@@ -1,6 +1,6 @@
 {
   "opportunity": "foldcallret proves a single-use call output order-safe to fold, but ActionMarkImplied re-tests it in check_implied_cover, whose Merge::inflate_test arm forces it explicit when an operand has another live SSA version of the same HighVariable over the call output's cover. Upstream never reaches that arm with a call output, and the version it collides with is the CPUI_INDIRECT the call itself attaches to a global it reads as an argument, so passing stdin/stdout/errno to a call is enough to block the fold.",
-  "test_name": "tests/stages/kuna-foldcallretphi.xml (pass 1 off = the spill, pass 2 on = the fold, pass 3 on = a global write in the span keeps the spill) + 3 option-parse unit tests + the architecture default assertion",
+  "test_name": "tests/stages/kuna-foldcallretphi.xml (default passes first, no option command: helper undeclared = the spill kept by the width guard; helper declared int4 = the fold; target2 = a global write in the span keeps the spill; target3 = gcc -O2 setcc/and for (r == 0) && (a > 5), the call's value the right operand of BOOL_AND = the spill kept; then option foldcallretphi off = the spills) + tests/stages/kuna-foldcallretphi-join.xml (i386 edx:eax: undeclared big keeps the spill, declared int4 folds, off keeps it) + 3 option-parse unit tests + the architecture default assertion",
   "binary": "synthetic bytechunk (x86:LE:64:default:gcc) in the stage test",
   "selector": "target",
   "func_addr": "0x1000",
@@ -11,7 +11,7 @@
   "tier": "transform",
   "source_decompiler": "angr",
   "inspiration": "angr call-return variable folding (the fold angr performs unconditionally where kuna's second gate declines); foldcallret",
-  "default_on": false,
+  "default_on": true,
   "root_cause": "check_implied_cover's inflate_test arm was written for ordinary expressions and only sees call outputs because of kuna's foldcallret escape. The collision it reports is produced by the call being folded: a call may write any global, so it carries a CPUI_INDIRECT over every global it touches, and that INDIRECT's output is another instance of the argument's own HighVariable, live from the call onwards.",
   "hypothesis_refuted": "The E2 report's ceiling hypothesis (ActionMergeRequired runs before ActionMarkExplicit, so a force-merged call output fails num_instances()>1) is not what blocks the named witnesses: every one of them reports ninst=1 at base_explicit. num_instances()>1 does veto 141 other call outputs across the six sweep binaries, but those highs have 2-22 members from speculative datatype merges, not the single trim COPY a relaxation would need, so that ceiling is documented and left standing.",
   "census": {
@@ -135,7 +135,7 @@
     "speed": "no measurable cost on fmt decompile-all (min of 21 interleaved pairs: 4.200 s both arms; median +1.26%), inside the +5% budget",
     "test-cli": "177/178 -- no-cli-rename-or-prototype-override fails",
     "why_held_off": "`--assert type vN` / `--assert name vN` address a variable by its auto-generated name. Folding `v1 = strcmp(pass,sneaky)` into its `if` removes a declaration and renumbers the rest, so the probe's `type v2 char[16]` retypes a different stack slot (credbuf lands at -0x10 instead of -0x18 and a separate `char v2 [8]` appears). Neither listing is unsound; the directive simply no longer names what the user meant. The flip is therefore a change about --assert ergonomics rather than about this pass, and belongs in its own PR with those directives re-read.",
-    "verdict": "shipped default-off with the flip evidence recorded"
+    "verdict": "shipped default-off with the flip evidence recorded; superseded by default_on_flip"
   },
   "metric_neutrality": {
     "method": "kuna decompile-all --json off vs on; decbench scores variables[] (args + stack symbols + framelayout slots), never register locals",
@@ -166,5 +166,481 @@
     "verification": "built without the barrier and otherwise identical: the counterexample folds again and stage assertion #5 fails; with it, on == off == origin/main. Re-swept over the 24 binaries with the full barrier: all three metrics report identical numbers (1270 located, 718 mapped, 0 hazards, 9 event-set + 40 event-order diffs), so it costs no folds, and five binaries change in one shape each -- a local assignment that had moved across a strlen call goes back to its off-arm position (du, diff x2, find, grep, tar). A write to a local is not an event for either metric, so those six reorders were in no hazard count; the barrier removes them structurally.",
     "print_point_indirect_test": "op_reads_indirect_output_of is now applied to the statement the expression lands in as well as to the single use op -- with an implied chain longer than one hop those are different ops. It declines 5 folds on the sweep (O0/O2 grep main, O0 grep sub_828e, cleanflight sub_8017f4c, crazyflie sub_8009c74), each one a landing statement that reads a global or a frame slot the call carries an INDIRECT over.",
     "sibling": "Noelo-Lab/kuna#657 -- the same hole through default-on foldcallret alone, fixed separately because it moves default output."
+  },
+  "default_on_flip": {
+    "base": "measured on origin/main e1139df9, then rebased onto f1ec42a7 (boolbyte default-on) and onto 6e4f6fa5 (structsynth default-on), re-measured each time (gates, 32-binary sweep, typesweep, speed); one build per base, new default vs --option foldcallretphi off; off byte-identical to main-build dumps on 24 of the 32 sweep binaries at e1139df9 (48/48 files); review round 3 added the joined-return and short-circuit guards and every measurement was re-run on that build (6e4f6fa5), the sweep widened to 48 binaries",
+    "datatests": "675/675 PARITY OK, 0 assertions move, no per-test opt-out",
+    "stages": "PARITY OK on every base (1141/1141 e1139df9, 1144/1144 f1ec42a7, 1156/1156 6e4f6fa5); tests/stages/kuna-foldcallretphi.xml gains the undeclared-helper pass (spill kept) and `parse line extern int4 helper(int8 a);` (folded); its 5 assertion names re-recorded in docs/baseline-stages.json, no other row moves; round 3: 1160/1160 PARITY OK. kuna-foldcallretphi.xml runs its default passes first with no option command (pins the shipped default) and gains target3 (gcc -O2 setcc/and for (r == 0) && (a > 5): spill kept, #6/#7); new kuna-foldcallretphi-join.xml (i386 edx:eax: undeclared big keeps the spill, declared int4 folds); 5 names re-recorded + 4 new rows, no other row moves; the 4 new assertions fail on the pre-guard build",
+    "test_cli": "tests/cli/no-cli-rename-or-prototype-override re-pointed v2 -> v1 (the read buffer renumbers once the strcmp spill folds) plus a read(\\w+,credbuf,8) clause; derived id a-a58fc408288b -> a-76f56989c6d3; 185/185 (e1139df9, f1ec42a7), 189/189 (6e4f6fa5); 189/189 with both round-3 guards",
+    "rust_test_pins_moved": {
+      "kuna-console/tests/verify_assertplane.rs": "6 cases target authenticate's register local int v1 (the strcmp spill); fixture loads with foldcallretphi off",
+      "kuna-console/tests/verify_libcsigs.rs callee_return_type_reaches_the_local_that_holds_it": "fd local found by its = open( assignment instead of the v4 number",
+      "kuna-ghidra/tests/ghidra_sim_e2e.rs ghidra_sim_faillog_pins": "PIN_FAILLOG_C_LINES [287,39,92] -> [286,37,92]: fstat(fileno(..)) and !fclose(dat_6298) fold in sub_2620, fread/fwrite in sub_3320; sub_3de0/sub_31a0/sub_3900/fseeko keep their spills under the width guard; CLI loses the same 1 and 2 lines"
+    },
+    "typesweep": {
+      "method": "scripts.decbench.typesweep --option foldcallretphi off with the flipped build (base arm = new default, test arm = off; columns written from the default's side), --opt O0 O2 O2-noinline, projects coreutils grep gzip diffutils bzip2 findutils tar shadow x (x: no slices), DECBENCH_NO_CACHE=1, --workers 12",
+      "per_project": {
+        "bzip2": {
+          "slices": 6,
+          "n": 267,
+          "perfect_off": 19,
+          "perfect_on": 19,
+          "mean_off": 0.3664,
+          "mean_on": 0.3664,
+          "improved": 0,
+          "worse": 0
+        },
+        "coreutils": {
+          "slices": 294,
+          "n": 6422,
+          "perfect_off": 610,
+          "perfect_on": 610,
+          "mean_off": 0.2813,
+          "mean_on": 0.2813,
+          "improved": 0,
+          "worse": 0
+        },
+        "diffutils": {
+          "slices": 12,
+          "n": 420,
+          "perfect_off": 52,
+          "perfect_on": 52,
+          "mean_off": 0.4004,
+          "mean_on": 0.4004,
+          "improved": 0,
+          "worse": 0
+        },
+        "findutils": {
+          "slices": 3,
+          "n": 790,
+          "perfect_off": 35,
+          "perfect_on": 35,
+          "mean_off": 0.1622,
+          "mean_on": 0.1622,
+          "improved": 0,
+          "worse": 0
+        },
+        "grep": {
+          "slices": 3,
+          "n": 247,
+          "perfect_off": 39,
+          "perfect_on": 39,
+          "mean_off": 0.387,
+          "mean_on": 0.387,
+          "improved": 0,
+          "worse": 0
+        },
+        "gzip": {
+          "slices": 3,
+          "n": 368,
+          "perfect_off": 88,
+          "perfect_on": 88,
+          "mean_off": 0.4858,
+          "mean_on": 0.4858,
+          "improved": 0,
+          "worse": 0
+        },
+        "shadow": {
+          "slices": 120,
+          "n": 686,
+          "perfect_off": 29,
+          "perfect_on": 29,
+          "mean_off": 0.2897,
+          "mean_on": 0.2897,
+          "improved": 0,
+          "worse": 0
+        },
+        "tar": {
+          "slices": 3,
+          "n": 1548,
+          "perfect_off": 114,
+          "perfect_on": 114,
+          "mean_off": 0.2824,
+          "mean_on": 0.2824,
+          "improved": 0,
+          "worse": 0
+        }
+      },
+      "pooled": {
+        "slices": 444,
+        "n": 10748,
+        "perfect_off": 986,
+        "perfect_on": 986,
+        "mean_off": 0.2895,
+        "mean_on": 0.2895,
+        "improved": 0,
+        "worse": 0
+      },
+      "moved_onto_perfect": 0,
+      "moved_off_perfect": 0,
+      "aggregate_type_match": "6e4f6fa5 3111.18, f1ec42a7 3112.68, e1139df9 3037.19 (both arms equal on each base)",
+      "controls": "10525 functions byte-identical variables in both arms, 0 scored differently; the other 223 differ only in vN names / line spans and score identically (first version: 10298 / 450)",
+      "arity_phantom_counters": "decomp_vars / tp / fp / fn / gt_vars equal in both arms on every base: 6e4f6fa5 96697/18396/19788/27531/65715, f1ec42a7 96697/18415/19769/27531/65715, e1139df9 96697/17965/20217/27533/65715; per-function variable count identical in all 10748 functions (97376 each arm)",
+      "base": "6e4f6fa5 (final rebase)",
+      "at_e1139df9_pooled": {
+        "slices": 444,
+        "n": 10748,
+        "perfect_off": 959,
+        "perfect_on": 959,
+        "mean_off": 0.2826,
+        "mean_on": 0.2826,
+        "improved": 0,
+        "worse": 0
+      },
+      "at_f1ec42a7_pooled": {
+        "slices": 444,
+        "n": 10748,
+        "perfect_off": 987,
+        "perfect_on": 987,
+        "mean_off": 0.2896,
+        "mean_on": 0.2896,
+        "improved": 0,
+        "worse": 0
+      },
+      "round3": "re-run on the final build: 986 -> 986 perfect, aggregate 3111.18 both arms, 0 onto/off/improved/worse, 10525 byte-identical variables functions, counters 96697/18396/19788/27531/65715 in both arms, decomp_vars equal in all 10748 functions"
+    },
+    "speed": {
+      "method": "interleaved --option foldcallretphi off / default pairs of kuna decompile-all, alternating which arm runs first, min of 15, same build; wall and child CPU (user+sys) both recorded; final tree with the width, joined-return and short-circuit guards",
+      "cases": [
+        {
+          "case": "fmt O2 decompile-all (during a concurrent rust-test run)",
+          "min_off_ms": 4093.6,
+          "min_on_ms": 4206.7,
+          "min_delta_pct": 2.76,
+          "med_off_ms": 4861.2,
+          "med_on_ms": 4779.5,
+          "med_delta_pct": -1.68,
+          "n": 15,
+          "cpu_min_delta_pct": 2.76
+        },
+        {
+          "case": "ls O2 decompile-all",
+          "min_off_ms": 13355.0,
+          "min_on_ms": 13266.6,
+          "min_delta_pct": -0.66,
+          "med_off_ms": 13929.0,
+          "med_on_ms": 13933.0,
+          "med_delta_pct": 0.03,
+          "n": 15,
+          "cpu_min_delta_pct": -0.66
+        },
+        {
+          "case": "sort O2 decompile-all",
+          "min_off_ms": 13725.4,
+          "min_on_ms": 13647.4,
+          "min_delta_pct": -0.57,
+          "med_off_ms": 14478.3,
+          "med_on_ms": 14417.8,
+          "med_delta_pct": -0.42,
+          "n": 15,
+          "cpu_min_delta_pct": -0.57
+        },
+        {
+          "case": "bash O2 decompile-all",
+          "min_off_ms": 77299.4,
+          "min_on_ms": 77238.5,
+          "min_delta_pct": -0.08,
+          "med_off_ms": 79853.6,
+          "med_on_ms": 79615.6,
+          "med_delta_pct": -0.3,
+          "n": 15,
+          "cpu_min_delta_pct": -0.08
+        },
+        {
+          "case": "fmt O2 decompile-all (re-run on a quieter box)",
+          "min_off_ms": 4026.3,
+          "min_on_ms": 4034.7,
+          "min_delta_pct": 0.21,
+          "med_off_ms": 4055.4,
+          "med_on_ms": 4060.9,
+          "med_delta_pct": 0.14,
+          "n": 15,
+          "cpu_min_delta_pct": 0.21
+        }
+      ],
+      "worst_min_delta_pct": 2.76,
+      "base": "6e4f6fa5, final build (review round 3)",
+      "at_6e4f6fa5_round2": {
+        "cases": [
+          {
+            "case": "fmt O2 decompile-all",
+            "min_off_ms": 4120.9,
+            "min_on_ms": 4130.9,
+            "min_delta_pct": 0.24,
+            "med_off_ms": 4179.4,
+            "med_on_ms": 4227.6,
+            "med_delta_pct": 1.15,
+            "n": 15,
+            "cpu_min_delta_pct": 0.25
+          },
+          {
+            "case": "ls O2 decompile-all",
+            "min_off_ms": 13299.8,
+            "min_on_ms": 13342.2,
+            "min_delta_pct": 0.32,
+            "med_off_ms": 13746.6,
+            "med_on_ms": 13515.7,
+            "med_delta_pct": -1.68,
+            "n": 15,
+            "cpu_min_delta_pct": 0.32
+          },
+          {
+            "case": "sort O2 decompile-all",
+            "min_off_ms": 13981.2,
+            "min_on_ms": 14091.4,
+            "min_delta_pct": 0.79,
+            "med_off_ms": 15069.1,
+            "med_on_ms": 14905.4,
+            "med_delta_pct": -1.09,
+            "n": 15,
+            "cpu_min_delta_pct": 0.79
+          },
+          {
+            "case": "bash O2 decompile-all",
+            "min_off_ms": 76624.4,
+            "min_on_ms": 77298.8,
+            "min_delta_pct": 0.88,
+            "med_off_ms": 80202.7,
+            "med_on_ms": 80049.7,
+            "med_delta_pct": -0.19,
+            "n": 15,
+            "cpu_min_delta_pct": 0.88
+          }
+        ],
+        "worst_min_delta_pct": 0.88,
+        "base": "6e4f6fa5 (final rebase)"
+      },
+      "at_e1139df9": {
+        "method": "interleaved --option foldcallretphi off / default pairs of kuna decompile-all, alternating which arm runs first, min of 15, same build; wall and child CPU (user+sys) both recorded; final tree with the width guard",
+        "cases": [
+          {
+            "case": "fmt O2 decompile-all",
+            "min_off_ms": 4345.5,
+            "min_on_ms": 4420.5,
+            "min_delta_pct": 1.73,
+            "med_off_ms": 4791.0,
+            "med_on_ms": 4791.2,
+            "med_delta_pct": 0.0,
+            "n": 15,
+            "cpu_min_delta_pct": 1.73
+          },
+          {
+            "case": "ls O2 decompile-all",
+            "min_off_ms": 14637.4,
+            "min_on_ms": 14097.0,
+            "min_delta_pct": -3.69,
+            "med_off_ms": 16157.3,
+            "med_on_ms": 16024.9,
+            "med_delta_pct": -0.82,
+            "n": 15,
+            "cpu_min_delta_pct": -3.7
+          },
+          {
+            "case": "sort O2 decompile-all",
+            "min_off_ms": 14840.6,
+            "min_on_ms": 14837.5,
+            "min_delta_pct": -0.02,
+            "med_off_ms": 15534.2,
+            "med_on_ms": 15955.1,
+            "med_delta_pct": 2.71,
+            "n": 15,
+            "cpu_min_delta_pct": -0.03
+          },
+          {
+            "case": "bash O2 decompile-all",
+            "min_off_ms": 82358.6,
+            "min_on_ms": 81413.9,
+            "min_delta_pct": -1.15,
+            "med_off_ms": 87167.0,
+            "med_on_ms": 88413.7,
+            "med_delta_pct": 1.43,
+            "n": 15,
+            "cpu_min_delta_pct": -1.14
+          }
+        ],
+        "worst_min_delta_pct": 1.73
+      },
+      "at_f1ec42a7": {
+        "cases": [
+          {
+            "case": "fmt O2 decompile-all",
+            "min_off_ms": 4090.7,
+            "min_on_ms": 4098.2,
+            "min_delta_pct": 0.18,
+            "med_off_ms": 4416.1,
+            "med_on_ms": 4467.4,
+            "med_delta_pct": 1.16,
+            "n": 15,
+            "cpu_min_delta_pct": 0.19
+          },
+          {
+            "case": "ls O2 decompile-all",
+            "min_off_ms": 13185.3,
+            "min_on_ms": 13220.2,
+            "min_delta_pct": 0.26,
+            "med_off_ms": 16018.6,
+            "med_on_ms": 15660.6,
+            "med_delta_pct": -2.23,
+            "n": 15,
+            "cpu_min_delta_pct": 0.26
+          },
+          {
+            "case": "sort O2 decompile-all",
+            "min_off_ms": 15397.4,
+            "min_on_ms": 16326.8,
+            "min_delta_pct": 6.04,
+            "med_off_ms": 18246.1,
+            "med_on_ms": 17863.6,
+            "med_delta_pct": -2.1,
+            "n": 15,
+            "cpu_min_delta_pct": 6.04
+          },
+          {
+            "case": "bash O2 decompile-all",
+            "min_off_ms": 81304.2,
+            "min_on_ms": 84694.7,
+            "min_delta_pct": 4.17,
+            "med_off_ms": 100744.2,
+            "med_on_ms": 99313.2,
+            "med_delta_pct": -1.42,
+            "n": 15,
+            "cpu_min_delta_pct": 4.17
+          },
+          {
+            "case": "sort O2 decompile-all (re-run: first min +6.04% under load)",
+            "min_off_ms": 15061.0,
+            "min_on_ms": 14666.6,
+            "min_delta_pct": -2.62,
+            "med_off_ms": 16574.7,
+            "med_on_ms": 16395.9,
+            "med_delta_pct": -1.08,
+            "n": 15,
+            "cpu_min_delta_pct": -2.62
+          }
+        ],
+        "base": "f1ec42a7",
+        "worst_min_delta_pct_after_reruns": 4.17
+      }
+    },
+    "corpus_sweep": {
+      "binaries": "32 stripped: coreutils fmt ls sort du O0+O2; O2 grep gzip diff find bzip2 dash scp ssh-add, O0 gzip cp, O2-noinline od, ARM ch.elf; O2 tail kmod crond chage init dpkg-statoverride mirai sftp ocsptool, ARM RTOSDemo.out, O0 diff, O2-noinline pr. 11279 functions; identical function sets and error records",
+      "functions_changed": {
+        "core8": [
+          30,
+          2918
+        ],
+        "next12": [
+          109,
+          4983
+        ],
+        "last12": [
+          49,
+          3378
+        ],
+        "before_width_guard": [
+          55,
+          174,
+          73
+        ]
+      },
+      "hunk_classes": "hunkclass.py (vN-normalized): fold 251, fold-in-condition 60, fold-in-condition+operand-hoist 11, fold split 10, declaration 375, other 4 read by hand (a fold inside ||, two in-place folds in one condition, two load hoists at their defining op); no function changes its if/else/while/for/switch/goto/return/? counts; flip-hunks.txt",
+      "evalorder": "2 event-set changes = the two load hoists; 5 order differences, all adjacent folds (V[strcspn(..)] = 0, *(char *)mempcpy(..) = 0, && chains) read by hand",
+      "foldmove": "281 located, 161 mapped: 159 next statement, 2 after one register assignment (gzip O2 sub_6e90 v11 = 0x180a0, kmod O2 sub_15390 v1 = 0); 0 hazards",
+      "callorder": "0 functions change call-to-call order",
+      "crossings": "every removed spill with unique text: besides the two above, only v31 &= 0xffffffff (sort O2 main, register) and v17 = 0xa04c/0xa0d3 (ssh-add O2 sub_9cb0, phantom return-address slot, no &v17)",
+      "variables": "variables[] multiset of (kind,type,size,stack_offset,arg_index) identical in all 11279 functions; 0 arity changes",
+      "metrics_file": "flip-metrics.txt",
+      "round3": {
+        "binaries": "the 32 above plus 16 a reviewer added: O2 csplit expr cmp crontab xmlwf minigzip ssh-keyscan psktool tar rtmon, ARM cf2.elf; O0 head useradd stat; O2-noinline shutdown ptx. 48 binaries, 18196 functions",
+        "off_is_main": "off arm byte-identical to the round-2 off dumps (64 files) and to the reviewer's origin/main dumps of the 16 (32 files), text and --json",
+        "vs_round2_default": "53 functions change, every one now printed exactly as off prints it, all ARM (cf2.elf 52, RTOSDemo.out 1): the joined-return guard. No x86-64 function changes.",
+        "functions_changed": {
+          "first32": [
+            187,
+            11279
+          ],
+          "reviewer16": [
+            113,
+            6917
+          ],
+          "total": [
+            300,
+            18196
+          ]
+        },
+        "hunk_classes": "fold 411, fold-in-condition 80, fold-in-condition+operand-hoist 13, fold split 14, declaration 562, load hoist 2, other 6 read by hand (flip-hunks.txt)",
+        "evalorder": "3 event-set changes (two load hoists, cf2 sub_80340bc two global stores -> one); 12 order differences, all adjacent folds or a call in the leftmost operand of an &&/|| chain",
+        "foldmove": "477 located, 253 mapped: 249 next statement, 4 after one assignment to a local; 0 hazards",
+        "callorder": "0 functions change call-to-call order",
+        "short_circuit_scan": "reviewer's scanner (call spill whose read sits right of &&/||/?) finds 0 in the default; cx3/cx7 test programs (7 binaries, gcc -O0..-Os): calls right of &&/|| 16 -> 0, 19 left-operand folds unchanged",
+        "join_scan": "reviewer's join scanner (8-byte callee, 1-4 byte spill folded) finds 0",
+        "narrowcount": "lost 0; uncast f(..) == -1 on an 8-byte callee 84 off -> 87 default (the 3 extra: du O0 getline(..) != -1 and two declared libc calls in the reviewer's 16, all long spills)",
+        "variables": "variables[] multiset identical in all 18196 functions; 0 variable-count or arity changes; no other field besides code/line_mappings differs",
+        "metrics_file": "flip-metrics.txt"
+      }
+    },
+    "compile_and_run": "foldrun.c, gcc -O0 and -O2: FOLDRUN OK 63/63 (35/35 before round 3). Round 3 adds G (cx7 z1 -O2: ferror folded into the left operand of ||, agrees; cx7 z3 -O2: the default keeps the fflush spill feeding the right operand of &&, agrees), control G' (the pre-guard fold 5 < a0 && !fflush(stdout): agrees for a0 > 5, must and does differ for a0 <= 5, no fflush in the trace), H (i386 join: default keeps v1 = big(g); v1 != -1) and control H' (pre-guard big(g) != -1 against an unsigned long long callee returning 0xffffffff: ret 7 vs 1). foldrun.c, gcc -O0 and -O2: FOLDRUN OK 35/35. Folded sites A sort O2 main strcmp past v31 &= .., C/D faillog main fclose in && / fstat(fileno(..)), E du O0 sub_11107 getline != -1 agree against logging stubs that write the globals the sites read; B sort O2 main / F pr O2-noinline main keep the spill in the default and agree; controls: the pre-guard fold sub_c5b0(stdin) == -1 / sub_60c0(stdin) == -1 with a callee returning 0xffffffff, and a fold past k = 42, each mismatch as required",
+    "modes": "removed from modes.rs UNEVALUATED; not in AGGRESSIVE_OVERRIDES; no mode overrides it",
+    "decision": "flipped: on every base, and again with the round-3 guards, 0/675 datatest assertions, stages PARITY OK, type_match neutral (0 improved / 0 worse, counters identical), speed within +5% (worst +2.76% on the final build), every hunk a fold / hoist / declaration, 0 narrowings of an integer up to long long dropped, no call folded into the right operand of &&/||",
+    "width_guard": {
+      "what": "conflict_is_self_call_effect declines unless the call's output carries the callee's whole return value: a locked output, or an unlocked one as wide as the prototype model's return entry holding it (call_output_is_full_width; ProtoModel::output_entries). An unlocked eax read out of rax keeps its spill.",
+      "why": "sort O2 main: int v15 = sub_c5b0(stdin); v15 == -1 folded to sub_c5b0(stdin) == -1, and kuna prints sub_c5b0 (rpl_fclose, binary mov $0xffffffff,%eax) as unsigned long ... return 0xffffffff; -- the compare is never true. Before the guard: 9 such new always-false -1 checks over 32 binaries, ~44/45 narrowing drops per sweep set.",
+      "after": "narrowcount.py over 32 binaries: lost 0; uncast f(..) == -1 on an 8-byte callee 45 off -> 46 default, the one extra being du O0 sub_11107 getline(..) != -1 whose spill was long (correct)",
+      "remaining_cost": "same-width signedness of an unlocked full-width output; over 32 binaries no folded undeclared call feeds a relational compare, shift or division (all 32 relational uses are declared libc calls or print a cast)",
+      "joined_pairs": {
+        "what": "call_output_is_full_width also asks the model where it would return an int of each power-of-two size above the output's, up to long long (wider_int_return_contains, via ParamListStandard::assign_map on ProtoModel::output_list), and declines when that storage contains the output: i386 edx:eax (a join entry for 5..8 bytes the entry filter skipped) and ARM r0:r1 (a model rule, not an entry). Pairs wider than long long (rdx:rax, x0:x1) are not asked about.",
+        "why": "gcc -m32 -O2: int r = (int)big(g); if (r == -1) return 1; return 7; with big returning 0xffffffffLL printed as unsigned long long folded to if (big(g) != -1) return 7;, returning 7 where the binary returns 1",
+        "effect": "x86-64 unchanged (an 8-byte rax has no wider size to ask; narrower outputs were already declined); on 32-bit targets only declared callees fold: 53 ARM functions go back to the off text"
+      }
+    },
+    "varcensus_goal2": {
+      "binaries": "fmt ls sort du, O0+O2",
+      "base": "6e4f6fa5",
+      "declarations": [
+        7464,
+        7450
+      ],
+      "single_def_single_use": [
+        1491,
+        1484
+      ],
+      "at_f1ec42a7": {
+        "declarations": [
+          7460,
+          7446
+        ],
+        "single_def_single_use": [
+          1493,
+          1486
+        ]
+      },
+      "at_e1139df9": {
+        "declarations": [
+          7466,
+          7452
+        ],
+        "single_def_single_use": [
+          1493,
+          1486
+        ]
+      },
+      "first_version_without_width_guard": {
+        "declarations": [
+          7466,
+          7427
+        ],
+        "single_def_single_use": [
+          1493,
+          1474
+        ]
+      }
+    },
+    "rust_test": "round 3 (final tree, lane 01:39:31-01:54:57 after the last commit): RUST_TEST_RC=0, 416 binaries, 7200 passed, 0 failed, 38 ignored; earlier: make rust-test via the lane script RUST_TEST_RC=0 on every base (6e4f6fa5: 416 binaries, 7200 passed, 0 failed, 38 ignored); kuna-ghidra release --include-ignored green",
+    "short_circuit_guard": {
+      "what": "print_point_is_order_safe declines when the call's value reaches a BOOL_AND or BOOL_OR as its right-hand operand anywhere along the print chain (chain_reaches_short_circuit_rhs); the left-hand operand is always evaluated and the printer emits input 0 on the left",
+      "why": "gcc -O2: int r = fflush(stdout); gflag = (r == 0) && (a > 5); is one block (call; test; sete; cmp; setg; and), so the span guard passed it and the default printed gflag = 5 < a0 && !fflush(stdout), skipping a call the binary always makes",
+      "effect": "0 changes over the 48-binary sweep (no such fold existed there); cx3/cx7 right-operand calls 16 -> 0",
+      "foldcallret": "foldcallret alone has the same hole for calls without a global operand (if (a0 <= 5 || getpid())); fixing it changes today's default, tracked as GH-684"
+    }
   }
 }
