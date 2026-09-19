@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1177,
-    1177
+    1181,
+    1181
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -913,11 +913,15 @@
     "data:finalorder #6: the entry falls through into the loop head label",
     "data:foldcallret #1: spilled call return (only pass 1, off)",
     "data:foldcallret #2: call folded into condition (only pass 2, on)",
-    "data:foldcallretphi #1: call result spilled to its own statement (only pass 1, off)",
-    "data:foldcallretphi #2: the spill is read back by the read-modify-write (only pass 1, off)",
-    "data:foldcallretphi #3: call folded into the read-modify-write (only pass 2, on)",
-    "data:foldcallretphi #4: a global write between the call and its use still blocks the fold (pass 3, on)",
-    "data:foldcallretphi #5: and the folded form is never emitted for it (pass 3, on)",
+    "data:foldcallretphi #1: call result spilled to its own statement (pass 1 default with a narrowed output, and pass 5 off)",
+    "data:foldcallretphi #2: the spill is read back by the read-modify-write (passes 1 and 5)",
+    "data:foldcallretphi #3: call folded into the read-modify-write (only pass 2, the default, helper declared int4)",
+    "data:foldcallretphi #4: a global write between the call and its use still blocks the fold (pass 3, default)",
+    "data:foldcallretphi #5: and the folded form is never emitted for it (pass 3, default)",
+    "data:foldcallretphi #6: a call feeding a short-circuit operator keeps its spill (pass 4 default, pass 6 off)",
+    "data:foldcallretphi #7: the call is never printed inside the and-and (pass 4, default)",
+    "data:foldcallretphi-join #1: an undeclared call's eax output keeps its spill (pass 1 default, pass 3 off)",
+    "data:foldcallretphi-join #2: the call folds into the comparison only once big is declared int4 (pass 2, default)",
     "data:hideshadow #1: the same value is copied into the variable twice (only pass 1, off)",
     "data:hideshadow #2: the redundant copy is consolidated away (only pass 2, on)",
     "data:hideshadow #3: two copies on exclusive branches are left alone (pass 3, on)",

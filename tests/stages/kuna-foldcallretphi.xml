@@ -15,7 +15,7 @@
     a call is enough to block the fold, even though the fold moves the operand
     read and that write together.
 
-    `foldcallretphi` (default-off) discounts exactly that self-inflicted
+    `foldcallretphi` (default-on) discounts exactly that self-inflicted
     collision.  foldcallret's own order-safety predicate still applies: no
     call, load, store or callother between the call and its single use, and
     no write to persistent or address-tied storage anywhere from the call to
@@ -40,35 +40,81 @@
     plain foldcallret fold the call with no option at all, which is what pins
     the global operand as the blocker.
 
-    Pass 1 (option foldcallretphi off, the default): the call result spills to
-    its own statement -> assertions #1 and #2.
-    Pass 2 (option foldcallretphi on): the call is folded into the
-    read-modify-write and the spill is gone -> assertion #3.
+    The discount also needs the call's output to carry the callee's whole
+    return value.  With no prototype for `helper`, its output is only the `eax`
+    that `and ebx,eax` reads, while `helper` writes all of `rax`; the spill's
+    32-bit declaration is then the only thing that narrows it, and a fold
+    would drop that (an `unsigned long f()` returning 0xffffffff, folded into
+    `f() == -1`, never compares equal).  Declaring `int4 helper(int8)` locks
+    the output at 32 bits and the fold goes ahead.  The i386 `edx:eax` form of
+    the same narrowing is kuna-foldcallretphi-join.xml.
+
+    `target3` is gcc -O2's code for
+      int r = fflush(stdout); gflag = (r == 0) && (a > 5);
+    with `helper` for fflush, `g3` (0x1150) for stdout and `gflag` at 0x1158:
+
+      target3: push rbx / mov ebx,edi / mov rdi,[g3] / call helper
+               / test eax,eax / sete dl / xor eax,eax / cmp ebx,5 / pop rbx
+               / setg al / and eax,edx / mov [gflag],eax / ret
+
+    The call, both setcc and the and are one block, the and is a BOOL_AND,
+    which C prints as `&&`, and the call's result reaches it as the right-hand
+    operand.  Folding the call there gives `gflag = 5 < a0 && !helper(g3)`,
+    which skips the call whenever a0 <= 5; the binary always makes it.  So
+    the call keeps its spill.  (A result that reaches the left-hand operand is
+    always evaluated and still folds.)
+
+    Pass 1 (the default, no option command; `helper` undeclared): the output
+    is narrower than the return register, so the spill stays -> #1, #2.
+    Pass 2 (the default, `helper` declared `int4`): the call is folded into the
+    read-modify-write and the spill is gone -> #3.
+    Pass 3 (`target2`, the default): a global write between the call and its
+    use still blocks the fold -> #4, #5.
+    Pass 4 (`target3`, the default): the short-circuit keeps the spill -> #6, #7.
+    Pass 5 (option foldcallretphi off, the opt-out): the call result spills to
+    its own statement -> #1, #2.
+    Pass 6 (`target3`, off): the spill -> #6.
 -->
 <bytechunk space="ram" offset="0x1000">
 534883ec108b1d4d000000488b3d3e000000e828000000c604240121c3891d350000000fb6042488052f000000488b3d1c000000e80c0000004883c4105bc3b805000000c331c0c3909090909090909000000000000000000000000000000000538b1d39000000488b3d2a000000e8ccffffffc705130000002a00000021c3891d1b0000005bc300000000000000000001000000000000000700000000000000ff000000
+</bytechunk>
+<bytechunk space="ram" offset="0x1100">
+5389fb488b3d46000000e830ffffff85c00f94c231c083fb055b0f9fc021d0890533000000c3909090909090909090909090909090909090909090909090909090909090909090909090909090909090010000000000000000000000
 </bytechunk>
 <symbol space="ram" offset="0x1000" name="target"/>
 <symbol space="ram" offset="0x103f" name="helper"/>
 <symbol space="ram" offset="0x1045" name="sink"/>
 <symbol space="ram" offset="0x1060" name="target2"/>
+<symbol space="ram" offset="0x1100" name="target3"/>
 </binaryimage>
 <script>
-  <com>option foldcallretphi off</com>
   <com>lo fu target</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option foldcallretphi on</com>
+  <com>parse line extern int4 helper(int8 a);</com>
+  <com>lo fu target</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu target2</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu target3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option foldcallretphi off</com>
+  <com>lo fu target</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu target3</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="foldcallretphi #1: call result spilled to its own statement (only pass 1, off)" min="1" max="1">dat_1058 = helper\(dat_1050\);</stringmatch>
-<stringmatch name="foldcallretphi #2: the spill is read back by the read-modify-write (only pass 1, off)" min="1" max="1">dat_1058 = v1 &amp; dat_1058;</stringmatch>
-<stringmatch name="foldcallretphi #3: call folded into the read-modify-write (only pass 2, on)" min="1" max="1">dat_1058 = v1 &amp; helper\(dat_1050\);</stringmatch>
-<stringmatch name="foldcallretphi #4: a global write between the call and its use still blocks the fold (pass 3, on)" min="1" max="1">helper\(dat_1098\);</stringmatch>
-<stringmatch name="foldcallretphi #5: and the folded form is never emitted for it (pass 3, on)" min="0" max="0">&amp; helper\(dat_1098\)</stringmatch>
+<stringmatch name="foldcallretphi #1: call result spilled to its own statement (pass 1 default with a narrowed output, and pass 5 off)" min="2" max="2">dat_1058 = helper\(dat_1050\);</stringmatch>
+<stringmatch name="foldcallretphi #2: the spill is read back by the read-modify-write (passes 1 and 5)" min="2" max="2">dat_1058 = v1 &amp; dat_1058;</stringmatch>
+<stringmatch name="foldcallretphi #3: call folded into the read-modify-write (only pass 2, the default, helper declared int4)" min="1" max="1">dat_1058 = v1 &amp; helper\(dat_1050\);</stringmatch>
+<stringmatch name="foldcallretphi #4: a global write between the call and its use still blocks the fold (pass 3, default)" min="1" max="1">helper\(dat_1098\);</stringmatch>
+<stringmatch name="foldcallretphi #5: and the folded form is never emitted for it (pass 3, default)" min="0" max="0">&amp; helper\(dat_1098\)</stringmatch>
+<stringmatch name="foldcallretphi #6: a call feeding a short-circuit operator keeps its spill (pass 4 default, pass 6 off)" min="2" max="2">v1 = helper\(dat_1150\);</stringmatch>
+<stringmatch name="foldcallretphi #7: the call is never printed inside the and-and (pass 4, default)" min="0" max="0">&amp;&amp;[^;]*helper\(dat_1150\)</stringmatch>
 </decompilertest>

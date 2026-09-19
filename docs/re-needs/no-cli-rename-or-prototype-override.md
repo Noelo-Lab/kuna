@@ -4,7 +4,7 @@ title: an agent cannot rename or retype anything, or force a prototype
 track: tooling
 status: closed
 severity: major
-acceptance_id: a-a58fc408288b
+acceptance_id: a-76f56989c6d3
 hypothesis_status: overturned
 credibility: 1.0
 instances: 1
@@ -37,7 +37,7 @@ run reports each one's fate as machine-readable JSON. FAILS at e3db5512: every
 ```json
 {
   "schema": "re-probe/1",
-  "probe_id": "a-a58fc408288b",
+  "probe_id": "a-76f56989c6d3",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -48,9 +48,9 @@ run reports each one's fate as machine-readable JSON. FAILS at e3db5512: every
     "--assert",
     "prototype authenticate int4 authenticate(char *user,char *pass)",
     "--assert",
-    "type v2 char[16]",
+    "type v1 char[16]",
     "--assert",
-    "name v2 credbuf"
+    "name v1 credbuf"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -108,6 +108,11 @@ run reports each one's fate as machine-readable JSON. FAILS at e3db5512: every
         "path": "functions[0].code",
         "op": "not_contains",
         "value": "char v2 [8]"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "read\\(\\w+,credbuf,8\\)"
       }
     ]
   },
@@ -178,3 +183,4 @@ ADVISORY. The cheap half is exposure, not implementation: most of these commands
   shows the expensive half was not "the stubs" but a shipped command that aborted the process
   -- p4_calls/fspec.rs grows an `outtype.is_none()` guard for the output-only pieces `map
   return` parks, with a regression test, in the same PR.
+- foldcallretphi default flip (PR #681): acceptance re-pointed `v2` -> `v1` and `acceptance_id` re-derived a-a58fc408288b -> a-76f56989c6d3, matching the promoted `tests/cli/no-cli-rename-or-prototype-override.json`. With the flip, the `strcmp` result in `authenticate` folds into its test (`if (!strcmp(a1,sneaky))`), so its spill local is gone and the locals renumber: the 8-byte `read` buffer the probe names is now `v1`, and `v2` is now the one-byte local at `stack - 0x10`. The old probe retyped and renamed that local instead, so it still reported `applied` but left `char v2 [8]` in the C. The capability is unchanged; the probe only names a variable by its printed name. Added a `read\(\w+,credbuf,8\)` clause so the probe checks it renamed the buffer that `read` fills, not merely some local. Measured with `verify --acceptance-suite --need no-cli-rename-or-prototype-override` on the branch build: PASS.

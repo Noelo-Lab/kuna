@@ -502,20 +502,6 @@ mod tests {
             // but preset membership is a DIV-recorded default change and the
             // measurement that would justify it needs a `/GS` corpus first.
             "msvcstackguard",
-            // `foldcallretphi` is measured (`docs/features/foldcallretphi/`):
-            // 0/675 datatest assertions and `tests/stages` PARITY OK with the
-            // default flipped, +1.22% on `fmt` `decompile-all`, and a sweep
-            // across x86-64 and ARM at O0/O2/O2-noinline in which no folded
-            // call moves past a call, a memory access or a branch. Two things
-            // hold it out of the preset. Folding removes a declaration and
-            // renumbers the remaining `vN` locals, and `--assert type vN` /
-            // `--assert name vN` address a variable by that auto-generated
-            // name, so making it the default output under 500 KiB re-points one
-            // such directive in `tests/cli`. And the option moves where a call
-            // is evaluated, which is sound only while its guards hold, so the
-            // flip is its own change with its own evidence rather than a line
-            // added here.
-            "foldcallretphi",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

@@ -3926,6 +3926,10 @@ impl ProtoModel {
     pub fn output(&self) -> &ParamListStandard {
         self.output.as_ref().expect("ProtoModel::output: not built")
     }
+    /// (kuna) The output resource model, or `None` when it is not built.
+    pub fn output_list(&self) -> Option<&ParamListStandard> {
+        self.output.as_ref()
+    }
     /// Borrow the merged-model state, if this is a merged model.
     pub fn merged(&self) -> Option<&ProtoModelMerged> {
         self.merged.as_ref()

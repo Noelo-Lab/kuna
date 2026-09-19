@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-a58fc408288b",
+  "probe_id": "a-76f56989c6d3",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -11,9 +11,9 @@
     "--assert",
     "prototype authenticate int4 authenticate(char *user,char *pass)",
     "--assert",
-    "type v2 char[16]",
+    "type v1 char[16]",
     "--assert",
-    "name v2 credbuf"
+    "name v1 credbuf"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -71,6 +71,11 @@
         "path": "functions[0].code",
         "op": "not_contains",
         "value": "char v2 [8]"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "read\\(\\w+,credbuf,8\\)"
       }
     ]
   },

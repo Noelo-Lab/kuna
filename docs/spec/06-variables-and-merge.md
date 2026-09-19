@@ -1032,7 +1032,7 @@ Provenance: `docs/features/call-return-variable-folding-dcde82/record.json`
 (ablation: 5 upstream assertions change; measured speed delta −3.2%).
 
 **(angr) `option foldcallretphi` — folding past the merge phalanx**
-(default **off**). `foldcallret` relaxes only the first of two gates. A call
+(default **on**). `foldcallret` relaxes only the first of two gates. A call
 output it lets through is re-examined by `ActionMarkImplied` in
 `coreaction_cleanup.rs (check_implied_cover)`, whose third arm
 (`merge.rs (Merge::inflate_test)`) forces a value explicit when one of its
@@ -1053,12 +1053,35 @@ ignored only when at least one instance of the operand's high collides and
 *every* colliding instance is the output of an INDIRECT whose effect op is this
 call. The collision is about versions, not order: the folded text performs the
 operand read and the call's own write at one point, exactly as the spilled form
-does. Two conditions bound the discount itself. First, a high that belongs to
+does. Three conditions bound the discount itself. First, a high that belongs to
 a `VariableGroup` declines: `inflate_test`'s second loop reasons about
 overlapping storage rather than versions, and its rejections are never
 discounted. Second, a use op that itself reads an INDIRECT effect of the call
 declines, since the folded text would otherwise name the operand's high both as
-the call's argument (pre-call) and as an operand of the use (post-call).
+the call's argument (pre-call) and as an operand of the use (post-call). Third,
+the call's output has to carry everything the callee returns
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
+(call_output_is_full_width)`). A locked output is the callee's declared type and
+qualifies. An unlocked one qualifies only when no wider return storage contains
+it. An unlocked `eax` read out of `rax` does not qualify: the callee may write
+all of `rax`, and its own decompilation prints that width (`sort` O2's
+`sub_c5b0` is `unsigned long` and ends in `return 0xffffffff;`), so the spilled
+local's `int` declaration is the only place the narrowing is written down.
+Folding it away turns `v15 = sub_c5b0(stdin), v15 == -1` into
+`sub_c5b0(stdin) == -1`, which against that prototype is never true. The
+return registers are one place to look, and the model's answer for a wider
+integer is the other: the discount asks where the model would return an `int`
+of each power-of-two size above the output's, up to `long long`, and declines
+when that storage contains the output. That catches the joined pairs the register entries
+do not show: `edx:eax` on i386, which `x86gcc.cspec` declares as a join entry
+for 5 to 8 bytes, and `r0:r1` on ARM, which is a model rule and not an entry at
+all. On i386, `if (v1 != -1)` after `v1 = big(g)` against a `big` kuna prints as
+`unsigned long long` and that returns `0xffffffff` in `eax` and 0 in `edx` would
+otherwise fold into `big(g) != -1`, which returns the other branch. So on a
+32-bit target an undeclared callee's output never folds under this option.
+Pairs wider than `long long` (`rdx:rax`, `x0:x1`) are not asked about. They
+carry `__int128` or a two-word struct, and counting them would mark every
+64-bit output narrowed.
 
 How far the call travels is the rest of this option's question, and it is asked
 here rather than borrowed from `foldcallret`
@@ -1067,7 +1090,22 @@ here rather than borrowed from `foldcallret`
 may be a barrier — any opcode in `foldcallret`'s first set, or any op writing
 persistent or address-tied storage, the self-copy exemption not applied — and
 nothing up to and including that statement may read a value the call writes
-indirectly. Without it `betaflight`'s `sub_8051ac4` emits its
+indirectly. Nor may the call's value reach a `BOOL_AND` or `BOOL_OR` as its
+right-hand operand anywhere along the chain the expression travels through
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
+(chain_reaches_short_circuit_rhs)`). Both ops evaluate both operands, and every
+op of the chain can sit in the call's own block, but C prints them as `&&` and
+`||`, which skip the right-hand operand when the left one decides. gcc -O2
+compiles `r = fflush(stdout); gflag = (r == 0) && (a > 5);` to one block
+(`call fflush; test eax,eax; sete dl; cmp ebx,5; setg al; and eax,edx`), and
+folding the call prints `gflag = 5 < a0 && !fflush(stdout)`: the binary always
+calls `fflush`, the C only when `a0 > 5`. The left-hand operand is always
+evaluated, and the printer emits input 0 on the left, so a call that reaches
+input 0 (`(ferror(stdin) || 5 < a0)`) still folds. A structured `if (a && b)` built from two blocks is
+not affected: there the call sits in the second block and the binary skips it
+too. `foldcallret`'s own folds can land in such an operand as well; that is
+tracked separately (GH-684) and not changed by this option. Without the
+barrier half `betaflight`'s `sub_8051ac4` emits its
 `sub_80515b4(dat_200181a4)` *after* an `if (dat_200019cc & 1)` that the binary
 evaluates after the call — a call moved past two global reads it may itself
 write; the discount is sometimes the only thing that was holding such a call in
@@ -1075,8 +1113,7 @@ place, which is why the guard has to reach the landing statement rather than the
 use. Narrowing the INDIRECT half to the landing statement alone lets `ssh` O2
 `sub_4fd30` print `sub_3fa80(v2,v3)` after `v5 = v2`, a copy of an escaped stack
 slot the binary reloads at `0x4fe98` — GH-181's shape — and adds one such fold on
-`ssh` O2 and one on `tar` O0 to the 68 and 120 functions this option otherwise
-changes there.
+`ssh` O2 and one on `tar` O0.
 
 This guard is deliberately wider than the two `foldcallret` runs, and stays as it
 shipped: the folds it releases are ones the merge machinery was holding, so what
@@ -1085,21 +1122,40 @@ it was before GH-657. The only thing the option inherits from that fix is what
 the fix changes in the default rendering — measured per function on `ssh` O2,
 `dpkg` O2, `bash` O2, `tar` O0 and `grep` O0 in `docs/features/gh657/`.
 
-It ships **off** for two reasons. Flipping the default leaves both corpora at
-PARITY OK (0 of 675 datatest assertions change) and costs nothing measurable on
-`fmt` `decompile-all` (min of 21 interleaved pairs: 4.200 s both arms), but removing a declaration renumbers the remaining `vN` locals,
-and `--assert type vN` / `--assert name vN` address a variable by that
-auto-generated name — `tests/cli` pins one such run, whose `type v2 char[16]`
-lands on a different stack slot once a `strcmp` result folds away. And the pass
-changes where a call is evaluated, which holds only while the guards above do;
-that is a claim a default should not inherit from this chapter but re-establish
-with its own sweep. The effect is a call spill removed and its expression printed
-at the use:
-`v12 &= sub_3700(stdin,v7);`. Because marking a value implied re-dirties its
-operands' covers, a neighbouring value occasionally fails its own implied test
-and gains a statement of its own at the position its defining op already had —
-the conservative direction, and the reason the declaration count falls by less
-than the number of folds. Provenance and the corpus sweep:
+It is on by default. The effect is a call spill removed and its expression
+printed at the use: `v31 &= 0xffffffff; if (strcmp(v98,optarg))` in `sort` O2
+`main`. Because marking a value
+implied re-dirties its operands' covers, a neighbouring value occasionally fails
+its own implied test and gains a statement of its own at the position its
+defining op already had (the loads `find` O2 `sub_f400` passes to
+`__snprintf_chk` become statements just ahead of it) — the conservative direction, and the reason the declaration count falls
+by less than the number of folds. What the default buys and costs was measured
+on the flip itself. Over `fmt`, `ls`, `sort` and `du` at O0 and O2 (2,918
+functions) 30 functions change and the emitted C declares 14 fewer locals and 7
+fewer single-def/single-use temporaries. Over those and 24 more stripped binaries
+(11,279 functions) the `--json` `variables[]` surface decbench scores keeps the
+same (kind, type, stack offset, size, argument index) multiset in every function,
+with only `vN` names and line spans moving; every declaration this removes is a
+register local, which `variables[]` never carried. Each hunk is a fold, one of
+those operand hoists, a renumbering, or the declaration that went with them. A
+folded call is never moved past a call, a load, a store through a pointer, a
+global write or a branch, and never into an operand of `&&` or `||`. The most it crosses is an assignment to a local whose
+address is never taken: a register (`v31 &= 0xffffffff`, `v1 = 0`), or a stack
+slot nothing can reach, such as the phantom return-address slot `ssh-add` O2
+`sub_9cb0` writes (`v17 = 0xa04c`).
+
+Two costs remain. The first is positional: removing a declaration renumbers the
+remaining `vN` locals, and `--assert type vN` / `--assert name vN` address a
+variable by that auto-generated name, so a directive written against the pre-flip
+output can name a different variable. The second is signedness at equal width:
+the width condition keeps every narrowing of an integer up to `long long`, but a full-width unlocked output is
+still typed by this function's own reads, so a callee printed `unsigned long`
+whose caller spilled its result into a `long` loses that conversion when folded.
+It only matters under a relational comparison, a shift or a division, and over
+the 32 binaries no folded call of an undeclared callee feeds one; every such use
+is a declared library call or already prints a cast (`(long)lseek(..) < 0`).
+`--option foldcallretphi off` restores the spilled form byte-for-byte.
+Provenance and the corpus sweep:
 `docs/features/foldcallretphi/`.
 
 **(kuna, Ghidra issue GH-8500) `option stackalias`** (default **off**,
