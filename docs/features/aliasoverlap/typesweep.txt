@@ -28,3 +28,5 @@ functions scored: 10748
 ## per-slice rows (decisions + scores): identical in 444/444 slices (65377 scored variable rows, 20574 of them arguments, on both arms)
 
 ## re-run after rebasing onto d6c5862f (#681), .scratch/bin-base2 vs .scratch/bin-fix2: type_match PERFECT 986 -> 986, aggregate 3111.18 -> 3111.18, per-slice rows identical in 444/444 slices
+
+## re-run after rebasing onto bcfe6289 (#687 foldcallret short-circuit, #675 structdedup), main bcfe6289 vs the rebased fix: type_match PERFECT 986 -> 986, aggregate 3111.18 -> 3111.18, improved 0, worse 0, per-slice rows identical in 444/444 slices (decbench pinned at 625e892, the version the runs above used; decbench f54badb renamed `_effective_offset`, which the typesweep instrument imports)
