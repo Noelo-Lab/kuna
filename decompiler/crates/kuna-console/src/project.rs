@@ -107,6 +107,11 @@ pub struct FuncResult {
     /// every error record, and on every run that did not ask for it
     /// ([`DecompileOptions::want_callee_hints`]).
     pub callee_hints: Vec<u64>,
+    /// (kuna `structsynth`) What this decompile asked the synthesized-structure
+    /// ledger, recorded only by a `--jobs` worker whose architecture carries the
+    /// shard hook, so the parent can name every `struct_N` as the serial run
+    /// does. `None` everywhere else.
+    pub synth: Option<kuna_decomp::kuna_structsynth::shard::FunctionRecord>,
 }
 
 /// The run-level verdict of a non-empty decompile batch.
@@ -264,7 +269,7 @@ fn decompile_batch(
 /// the second time round -- keeps the first body.
 ///
 /// A batch that synthesized nothing pays one ledger probe for the whole run.
-fn converge_synthesized_structs(
+pub fn converge_synthesized_structs(
     prog: &mut ConsoleProgram,
     opts: &DecompileOptions,
     targets: &[FunctionEntry],
@@ -421,6 +426,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             });
             continue;
         }
@@ -451,6 +457,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             });
             continue;
         }
@@ -469,6 +476,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             });
             continue;
         }
@@ -674,6 +682,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints,
+                        synth: None,
                     }),
                     Err(_) => sink(FuncResult {
                         name,
@@ -689,6 +698,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints: Vec::new(),
+                        synth: None,
                     }),
                 }
             }
@@ -706,6 +716,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             }),
         }
     }
@@ -1296,6 +1307,7 @@ mod tests {
             aliases: vec![],
             object_location: None,
             callee_hints: vec![],
+            synth: None,
         }
     }
 

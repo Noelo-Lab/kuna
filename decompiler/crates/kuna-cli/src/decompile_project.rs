@@ -55,7 +55,8 @@ use kuna_console::project::{
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
 use crate::decompile_all::{
-    decompile_targets_pooled, load_program, parse_args, resolve_targets, Args, DriverDefaults,
+    decompile_targets_pooled, load_program, parse_args, resolve_targets, synth_base, Args,
+    DriverDefaults,
 };
 
 /// `kuna decompile-project` entry point.
@@ -237,6 +238,7 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
             /* want_provenance= */ false,
             /* want_types= */ true,
             load_seconds,
+            synth_base(&prog),
         )?;
         (pooled.results, pooled.types)
     } else {

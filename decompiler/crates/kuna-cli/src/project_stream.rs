@@ -1254,6 +1254,7 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: hints,
+            synth: None,
         }
     }
 
