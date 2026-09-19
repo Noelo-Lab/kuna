@@ -37,12 +37,12 @@
       "struct_4 \\*"
     ],
     "stderr_matches": [
-      "\\[kuna --jobs\\] structsynth: \\d+ function\\(s\\) with synthesized structures named as --jobs 1 names them: \\d+ renamed, \\d+ decompile\\(s\\) again"
+      "\\[kuna --jobs\\] structsynth: \\d+ function\\(s\\) with synthesized structures named as --jobs 1 --option protoorder off names them: \\d+ renamed, \\d+ decompile\\(s\\) again"
     ],
     "stderr_absent": [
       "structsynth is off",
       "\\[kuna --jobs\\] note:"
     ]
   },
-  "notes": "A serial decompile-all of this fixture synthesizes five struct_N. The workers record every ledger lookup and their own answer, the parent replays the lookups in target order, and each function that synthesized keeps its first decompile renamed or is decompiled again with the serial names, so all five reach the document under the --jobs 1 names."
+  "notes": "A serial decompile-all of this fixture synthesizes five struct_N. Workers record every ledger lookup and their own answer, the parent replays the lookups in target order, and each function that synthesized is renamed or decompiled again with the serial names. The pool cannot take the callee-first order, so the line names the serial run it replays."
 }

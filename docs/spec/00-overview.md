@@ -1043,7 +1043,12 @@ The pool is driver policy, and its contract is that it cannot be observed in the
 output. Work is planned longest-first into equal-work chunks and handed out
 dynamically, which is deliberately not output order; every target owns a slot
 index and results are filed positionally, so the merged document is identical to
-`--jobs 1` whatever order the workers finish in. What the pool cannot make
+`--jobs 1` whatever order the workers finish in. On `decompile-all` that is
+`--jobs 1 --option protoorder off`: the serial default decompiles callees first
+(chapter [04](04-calls-and-prototypes.md)) and a worker cannot see another
+worker's callees, so a pool never takes that order and says so on stderr before
+it starts. `decompile-project` and `decompile-graph` do not take it serially
+either, so there the serial run is the plain one. What the pool cannot make
 identical is the emission the engine already makes depend on decompile history:
 a handful of type and symbol decisions are first-toucher-wins inside one
 process's database, so they follow the SET of functions that process decompiled,

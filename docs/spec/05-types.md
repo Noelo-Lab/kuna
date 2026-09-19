@@ -1185,7 +1185,10 @@ with such a field is named by one ordered worker instead. The parent also
 answers the sweep: a structure still answers every layout it answered once, so
 the sweep's lookups never mint, and the ones whose answer changes are renamed
 or decompiled in the same pool. The synthesized structures of a sharded run are
-therefore the eager batch's, name for name; chapter [00](00-overview.md) has the
+therefore the eager batch's, name for name -- the batch a pool can run, which on
+`decompile-all` means `--option protoorder off`, since the callee-first order
+(chapter [04](04-calls-and-prototypes.md)) decides what a function measures and
+no worker can see another worker's callees. Chapter [00](00-overview.md) has the
 pool's side, including the checks that send a run back to one ordered worker.
 
 The `.h` of a project export lists the minted structures after every other

@@ -382,6 +382,12 @@ pub(crate) struct PoolConfig<'a> {
     /// run synthesizes structures: the state a [`run_pool`] replays the
     /// workers' lookups from.  `None` runs every worker with `structsynth off`.
     pub(crate) synth_base: Option<Replay>,
+    /// (kuna `protoorder`) The serial run this pool replays would have
+    /// decompiled callees first, an order no pool takes: the structures a
+    /// function mints there are the ones its callees' recovered prototypes lead
+    /// it to, so the serial run the replayed names belong to is
+    /// `--jobs 1 --option protoorder off` and the report says so.
+    pub(crate) serial_callee_first: bool,
 }
 
 /// How many decode lanes `--jobs` asks the discovery walk for.
@@ -1177,9 +1183,10 @@ fn name_structs_serially(
         }
     }
     eprintln!(
-        "[kuna --jobs] structsynth: {} function(s) with synthesized structures named as --jobs 1 \
-         names them: {renamed} renamed, {forced} decompile(s) again",
-        askers.len()
+        "[kuna --jobs] structsynth: {} function(s) with synthesized structures named as {} names \
+         them: {renamed} renamed, {forced} decompile(s) again",
+        askers.len(),
+        serial_run(cfg)
     );
     Ok(Named { kind: SynthWorker::Force, table: Some(plan.table) })
 }
@@ -1409,6 +1416,20 @@ fn install_on_idle_workers(cfg: &PoolConfig, session: &Session, table: &[u8]) ->
     Ok(())
 }
 
+/// The serial run a sharded one is replaying, spelled as a command line.
+///
+/// (kuna `protoorder`) On `decompile-all` the serial default decompiles callees
+/// first, which decides what a function mints as much as the ledger does; a pool
+/// cannot take that order ([`crate::decompile_all`] says so on its own line), so
+/// the run whose names these are is the one with the order turned off.
+fn serial_run(cfg: &PoolConfig) -> &'static str {
+    if cfg.serial_callee_first {
+        "--jobs 1 --option protoorder off"
+    } else {
+        "--jobs 1"
+    }
+}
+
 /// The functions that asked the ledger, decompiled again in target order by one
 /// worker running the ledger and the convergence sweep itself.
 fn serial_fallback(
@@ -1421,8 +1442,9 @@ fn serial_fallback(
 ) -> Result<Named, String> {
     eprintln!(
         "[kuna --jobs] note: {why}, so the {} function(s) with synthesized structures are \
-         decompiled again in order by one worker process, as --jobs 1 would.",
-        askers.len()
+         decompiled again in order by one worker process, as {} would.",
+        askers.len(),
+        serial_run(cfg)
     );
     let specs: Vec<TargetSpec> = askers.iter().map(|&i| targets[i].clone()).collect();
     let n = specs.len();
@@ -3766,6 +3788,7 @@ mod tests {
             target: None,
             sleighpath: None,
             synth_base: None,
+            serial_callee_first: false,
         }
     }
 
@@ -3784,6 +3807,16 @@ mod tests {
         let param = [("structsynth".to_string(), "param".to_string())];
         let asked = PoolConfig { options: &param, ..cfg(0, 0.0) };
         assert!(structsynth_shard_note(&asked, JOBS_TAG).is_some());
+    }
+
+    /// (kuna `protoorder`) The names a pool replays are a serial run's, and on
+    /// `decompile-all` that run is the one without the callee-first order: the
+    /// report has to name it, not `--jobs 1`.
+    #[test]
+    fn the_report_names_the_serial_run_it_can_actually_replay() {
+        assert_eq!(serial_run(&cfg(0, 0.0)), "--jobs 1");
+        let callee_first = PoolConfig { serial_callee_first: true, ..cfg(0, 0.0) };
+        assert_eq!(serial_run(&callee_first), "--jobs 1 --option protoorder off");
     }
 
     /// The pool is the only thing that can enforce the per-function budget on a

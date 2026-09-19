@@ -179,6 +179,10 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
             /* want_types= */ false,
             load_seconds,
             synth_base(&prog),
+            // (kuna `protoorder`) This surface never takes the callee-first
+            // order, serially either (`warn_protoorder_inert`), so the serial
+            // run these names come from is the plain one.
+            /* serial_callee_first= */ false,
         )?
         .results
     } else {
