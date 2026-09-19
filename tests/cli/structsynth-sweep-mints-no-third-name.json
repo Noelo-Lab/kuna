@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "structsynth",
+    "param"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/structsynthchain_x86_64",
+    "binary_sha256": "6dd4ba2be931f9ee31ba0d636613aad25cf7e40646c2e2df0ade0dbb740501c7",
+    "binary_size": 15792,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/structsynthchain_x86_64",
+    "selector": "fa",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "(?s)^long fb\\(struct_(\\d+) \\*a0\\).*^long fc\\(struct_\\1 \\*a0\\)",
+      "^long fa\\(struct_0 \\*a0\\)"
+    ],
+    "stdout_absent": [
+      "struct_2"
+    ]
+  },
+  "notes": "structsynth's convergence sweep under decompile-all. fb claims four fields of one record, fa two of them, fc eight including fb's four. The sweep moves fb onto fc's structure; fc is past the growth bound for fa, so fa keeps the superseded structure it was first given (struct_0) instead of minting a name that structure would supersede at birth. Fixture source structsynthchain_x86_64.c."
+}

@@ -158,9 +158,11 @@ was made dense).
 
 ## 7. What this PR deliberately does not do
 
-Nesting (a field that is itself a synthesis base), recursion, subsumptive dedup,
-locals and globals (`structsynth all`) and arrays (`structarray`) are each their
-own change. Printing the recovered definitions above the function is already its
+Nesting (a field that is itself a synthesis base), recursion, locals and globals
+(`structsynth all`) and arrays (`structarray`) are each their own change.
+Subsumptive dedup -- one name for a record two functions read different subsets
+of -- is the follow-up, measured in
+[`dedup.md`](dedup.md). Printing the recovered definitions above the function is already its
 own option, `structdefs`, and the two compose: `--option structdefs on --option
 structsynth param` prints `struct struct_0 { ... };` above the function whose
 parameter this pass retyped.

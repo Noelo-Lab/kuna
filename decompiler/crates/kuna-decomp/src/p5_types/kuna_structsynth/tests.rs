@@ -406,3 +406,29 @@ fn a_float_and_an_integer_of_one_width_make_the_field_raw_bytes() {
     assert!(!floats.slots[&8].reinterpreted(), "a narrower access is not this field's evidence");
     assert!(floats.slots[&8].committed().is_some(), "agreeing float accesses keep their type");
 }
+
+/// Bytes a function dereferenced without a typed field of its own are what the
+/// ledger keeps a container's members off: the accesses the prune dropped (an
+/// unaligned word) and a field read as raw bytes (a union member read as a
+/// `double` and as a `long`, which a container's `long` field would print as a
+/// value conversion).
+#[test]
+fn unclaimed_ranges_cover_pruned_accesses_and_raw_byte_fields() {
+    use crate::dtype::TypeFactoryImpl;
+    let f = TypeFactoryImpl::new();
+    f.set_default_alignment_map();
+    f.set_max_basetype_size(8);
+    let double = f.get_base(8, type_metatype::TYPE_FLOAT).unwrap();
+    let long = f.get_base(8, type_metatype::TYPE_INT).unwrap();
+    let uint = f.get_base(4, type_metatype::TYPE_UINT).unwrap();
+    let mut e = Evidence::default();
+    e.record(0, 4, Some(Rc::clone(&uint)));
+    e.record(7, 4, Some(Rc::clone(&uint)));
+    e.record(0x10, 8, Some(Rc::clone(&double)));
+    e.record(0x10, 8, Some(Rc::clone(&long)));
+    e.record(0x18, 8, Some(Rc::clone(&long)));
+    e.prune();
+    let mut got = e.unclaimed_ranges();
+    got.sort();
+    assert_eq!(got, vec![(7, 4), (0x10, 8)]);
+}

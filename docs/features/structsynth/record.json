@@ -359,8 +359,17 @@
   "The structure is exactly as wide as its surviving fields rounded up to their own alignment. Past that end the printer spells the address as an element of the structure array plus a byte offset: a pruned read at 0x10001 of a 16-byte layout renders as `*(unsigned int *)((long)&a0[0x1000].field_0x0 + 1)`, which compiles and computes the right address but is readable only by accident.",
   "Offsets nobody dereferenced, and the offsets the layout prune dropped, are undefined1 filler: named and declared at their own offset, but carrying no type.",
   "A buffer whose LAST element is written wider than the rest escapes both the uniform-run rule (the widths differ) and the prune (the wide access is past the narrow ones, not over them): ls's strmode fills a char[12] with ten 1-byte stores and one 2-byte store.",
-  "struct_N names are program-wide only where one process decompiles the whole program (decompile-all, decompile-project); `kuna decompile` spawns one decomp_dbg per function.",
-  "A field whose value is itself a synthesis base is not nested in this version."
+  "A field whose value is itself a synthesis base is not nested in this version.",
+  "struct_N names are program-wide only where one process decompiles the whole program (decompile-all, a serial decompile-project); `kuna decompile` spawns one decomp_dbg per function, and a sharded `--jobs N` run turns structsynth off in its workers, so neither has anything for the convergence sweep to do.",
+  "The layout ledger shares one record across functions by containment, so an absorbed parameter is declared with the container's whole field list -- fields its own evidence never saw. Against DWARF (main 75f832e3) pooled claimed-field precision over 169 held-out builds is 0.8908 vs 0.8902 for per-function naming, and on the second reviewer's 42 builds 0.9104 vs 0.9098, with recall higher on all eight sets; but on the 34 builds chosen last (before any result under the padding rule) it is 0.8852 vs 0.8855, and 0.9350 vs 0.9352 on 17 independently picked builds. Per binary it moves both ways: 53 of 177 builds gain, 6 lose (kmod O0/O2/O2-noinline and grep O2 under a point each, ip O0, e2fsck O0). See dedup.layout_precision.",
+  "Four measured false unifications remain out of 258 absorptions over 177 builds, all e2fsck readers with no typed pointer filled in between their own fields by a same-size layout: O0 ea_refcount_intr_next (ea_refcount answered with a dentry_info_args layout), O2-noinline ext2fs_new_dir_block (struct_ext2_filsys answered with a utf8cursor layout), and O2-noinline handle_htree / ext2fs_is_fast_symlink (ext2_inode answered with ext2_inode_large, the same record for its first 128 bytes, both added fields real). Integer words are weak evidence, and a same-size container filling holes between them is all the integer rule asks for.",
+  "Readers of different records that measured exactly the same shape share one name, as they already did on main: cp O2's struct_1 {long; long;} serves both the struct stat readers and src_to_dest_compare's Src_to_dest.",
+  "The growth bounds are not transitive, so a record can end with two names: fb claims four fields, fa two of them, fc eight including fb's four; fc is out of fa's reach and fa keeps the superseded structure it was first given (tests/cli/structsynth-sweep-mints-no-third-name.json). Which of the two fa gets depends on address order.",
+  "decompile-project --stream and the default (eager) export of the same binary report DIFFERENT numbers of records: cp O2 with `--option structsynth param` gives 31 definitions streamed against 30 eagerly (main before the ledger: 33 and 33). The convergence sweep is a property of the eager batch -- the streaming writer has already appended a body by the time a name it spells can be superseded. Each surface is self-consistent (every struct_N a body names is defined in its header). A sharded `--jobs N` run turns structsynth off in its workers, so it neither mints nor converges. The stream property the prune depends on is pinned by prune_unreferenced_synth_types over records whose `code` is None.",
+  "Speed at ledger scale: a synthetic 112 KB binary whose 1000 functions each read a different layout decompiles +12.08% against main 75f832e3 (structsynth default on; +43% before the lookup was narrowed). Real binaries measured tar O0 -0.99%, ls O2 +0.90%, rsyslogd O2 +1.02%, and ls O2 with structsynth off -0.40% (interleaved min-of-15). The residue is one scan of the held names per lookup plus the convergence sweep.",
+  "The unclaimed-bytes veto guards this pass's spelling, not the engine's ordering test: ActionMarkImplied's isPossibleAlias takes one base plus two different constants to be two objects whatever the access widths, so a load can still print after an overlapping store where the addresses are spelled that way without structsynth (raw offsets with the option off: rd_c8's `*(uint4 *)((int8)a0 + 7)` prints after `*(char *)&a0[2] = ...`). A reader the veto turns away mints its own shape beside a live container, so the record keeps two names (rsyslogd O2 syslogTime).",
+  "Records that agree on every word one of their readers measured and differ only in that reader's alignment padding keep separate names because of the padding rule: bash O0 execute_if_command/copy_if_command (if_com) vs for_com/select_com (int line at 4), the six it_init_* ITEMLIST readers vs case_com, dpkg O2-noinline pkg_queue_init (pkg_queue) vs pkg_spec (flag bytes in pkg_queue's tail padding); before the rule a reviewer measured 10 of 28 absorptions on 18 builds given a different record this way (tests/stages/structsynth-shared-layout.xml #10-#12). The cost is the reverse case: 19 absorptions onto the same record that a reader measured with a hole where its record has a member (6 of them on the first five sets: 4 into interior padding, e.g. e2fsck O2 e2fsck_get_lost_and_found, and 2 into an untyped reader's tail) now keep their own name.",
+  "A container larger than the reader's own object re-spells address arithmetic past the reader's measured end through the container's members, changing its type but not its value: cx2 (gcc -O2) rsmall returns `struct Small *p + 1`; with a larger struct Big written elsewhere the branch prints `unsigned int * sub_12b0(struct_0 *a0)` with `v1 = &a0->field_0x10;` where main prints `struct_0 * sub_12b0(struct_0 *a0)` with `v1 = &a0[1];`, and a call argument `&a0[1]` becomes `&a0->field_0x10`. The ledger sees a reader's dereferences, not the arithmetic on its base. No function in the 177 measured builds changes this way."
  ],
  "pass_counts": {
   "instrument": "KUNA_ACTION_PROF over a whole-binary decompile-all, off vs param; call counts are deterministic and load-independent",
@@ -809,5 +818,608 @@
    "sweep": "24 binaries, 12,544 functions (the 14 of the flip sweep + dash O2, libz/cp/pr O2-noinline, tail O0, kmod O2, cf2 O2, crond O0, mirai O2, cleanflight O2): off arm byte-identical to the pre-review off arm on 24/24; on arm vs pre-review on arm moves 5 functions, all crazyflie cf2 O2: 3 fixes (0x8023398, 0x803228c, 0x802dbf4: a float field copied through an integer register into an unsigned int global/array printed as a float-to-integer value conversion; now copied as bits, the off arm's spelling) and 2 spelling-only (0x8028640, 0x80286c0: integer zero stores to a float field print *(unsigned int *)a4->field_0x8 = 0)",
    "known_limits_added": "a float field zero-initialized with an integer store is raw bytes (noisier zero stores); an unaligned 4-byte read straddling the structure end (cf2 O2 0x8022c48, 0x8022d08) prints in piece syntax (value right, not C)"
   }
+ },
+ "dedup": {
+  "what": "The layout ledger's second half: a measured layout is answered with an already-minted struct_N that CONTAINS it (same offset, same width, same type for every field it claims, and at least as large), instead of only with one whose layout it equals. Containment alone is not enough. A container that says strictly more must also claim at most twice as many fields and be at most four times the size, the reader must claim two fields of which one is a typed pointer, or three without one, no container member may sit in the alignment padding the reader's claims leave between two of them, and a reader with no typed pointer is answered only by a same-size structure that claims nothing past its last field: otherwise a two-word `hash_entry` reader is answered with a 200-byte `stat`, and a `struct stat *` that measured {dev, ino} is answered with the `cycle_check_state` that begins the same way, bash's `if_com` (padding at 4) is answered with `for_com` (`int line` at 4), and dpkg's `pkg_queue` with `pkg_spec` (flag bytes in `pkg_queue`'s tail padding). The other direction supersedes: a completed structure can never be widened, so the larger layout mints and the smaller is handed out again only to a layout no live structure answers for. Supersession is derived from the minted set on every lookup, for the entries that answer, not stored. And whatever the bounds say, a structure answers for a reader only if it lays exactly the reader's own members (offsets, widths, types, filler) over every byte range the reader read or wrote without claiming a field: the engine's load/store ordering test (isPossibleAlias) compares addresses without their widths, so a container that started a member inside such an access printed a 4-byte load at 7 after the byte store at 8 that overwrites it.",
+  "module": "decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs",
+  "convergence": "kuna-console/src/project.rs (converge_synthesized_structs): decompile-all runs in address order, so the smaller layout mints first; after the eager batch the driver decompiles again exactly the results that spell a superseded name as a whole identifier, and each moves to the survivor where the survivor is in its reach. One sweep, not a fixpoint, and not always one name per record: the growth bounds are not transitive (fb claims four fields, fa two of them, fc eight including fb's four; fc is out of fa's reach, so fa keeps the superseded structure it was first given). The lookup never mints a name an existing structure answers for, so the sweep mints nothing as long as a re-decided function measures what it measured the first time; the previous round minted a born-superseded third name there (tests/cli/structsynth-sweep-mints-no-third-name.json fails on it). Not reached by the streaming project export (a body is already written), by `--jobs N` (one factory per worker) or by `kuna decompile` (one engine per function).",
+  "header": "kuna-console/src/project.rs (prune_unreferenced_synth_types): build_header drops a struct_<digits> definition when nothing left in the document names it, so the exported .h declares one definition per surviving record.",
+  "new_option": false,
+  "counters_moved": false,
+  "test_name": "tests/stages/structsynth-shared-layout.xml (two-pass, 12 assertions: main fails #2, #3 and #9-#12 (it names every reader separately); #6/#7 failed on the rule without the pointer test; #8/#9, an interface-table pair, fail without the table rule; #10/#11/#12, the if_com/for_com, ITEMLIST/case_com and pkg_queue/pkg_spec shapes, fail on the previous revision (9/12) and pass here) + tests/cli/structsynth-sweep-mints-no-third-name.json over decompiler/crates/kuna-analysis/tests/fixtures/structsynthchain_x86_64(.c) (fails on main) + tests/stages/structsynth-unclaimed-bytes.xml (3 assertions, 0/3 without the unclaimed-bytes rule, 3/3 here and on main) + 18 ledger unit tests + project::tests::{a_type_name_is_matched_as_a_whole_identifier, a_streamed_record_keeps_the_definition_its_prototype_names, a_failed_redo_never_replaces_a_body_that_succeeded}",
+  "rejected_variant": {
+   "rule": "let undefined<N> be a wildcard any N-byte type may refine (the 'more informative type wins' reading)",
+   "why_rejected": "it unifies records that only share a shape: du O2 sub_c090 writes two double bit patterns and a zero byte at {0, 8, 0x10} and was answered with an unrelated record whose offset 0 is a pointer, printing a0->field_0x0 = (void *)0x3f80000000000000",
+   "names_over_the_census": 356,
+   "typesweep_aggregate": 3034.13,
+   "typesweep_worsened": 10,
+   "non_rename_hunks": 23
+  },
+  "census": {
+   "method": "kuna decompile-all <bin> --option structsynth param --option structdefs on --json; distinct synthesized names the run emits, and the (function, structure) pairs behind them",
+   "names_before": 515,
+   "names_after": 471,
+   "pairs_before": 637,
+   "pairs_after": 637,
+   "lost_pairs": "none. The previous round lost du O0 sub_17854 and find O0 sub_33f9b and called them benign 'layouts unified with each other'; that was wrong: sub_17854 is gnulib cycle_check(struct cycle_check_state *, const struct stat *) and its struct stat * was declared as the state record, a false unification the pointer rule now refuses",
+   "per_binary": {
+    "fmt O0": [
+     4,
+     4
+    ],
+    "fmt O2": [
+     3,
+     3
+    ],
+    "ls O0": [
+     27,
+     24
+    ],
+    "ls O2": [
+     35,
+     27
+    ],
+    "sort O0": [
+     30,
+     27
+    ],
+    "sort O2": [
+     26,
+     23
+    ],
+    "du O0": [
+     31,
+     27
+    ],
+    "du O2": [
+     32,
+     29
+    ],
+    "find O0": [
+     55,
+     50
+    ],
+    "find O2": [
+     53,
+     50
+    ],
+    "tar O0": [
+     126,
+     121
+    ],
+    "tar O2": [
+     93,
+     86
+    ]
+   },
+   "main": "75f832e3",
+   "note_unclaimed_rule": "on 6e4f6fa5 the same census was 516 -> 472, and on f1ec42a7 514 -> 467"
+  },
+  "sweep": {
+   "method": "kuna decompile-all on 9 binaries (fmt ls sort du find tar grep diff rsyslogd, O2), main build 75f832e3 vs branch build: default (structsynth param), explicit `--option structsynth param`, and `--option structsynth off`; every changed line classified by docs/features/structsynth/dedup_hunks.py",
+   "option_on": {
+    "rename": 236,
+    "other": 0,
+    "per_binary": "ls 55, sort 16, du 19, find 22, tar 61, grep 42, diff 19, rsyslogd 2, fmt identical; the default run classifies the same"
+   },
+   "previous_revision": "one store split in rsyslogd O2 (timeConvertToUTC's 4-byte store at 7 written as four byte-field stores of the same bytes); the unclaimed-bytes rule gives that parameter main's layout and body back",
+   "structsynth_off_identical": "9/9 byte-identical"
+  },
+  "project_export": {
+   "method": "kuna decompile-project --option structsynth param on the same 9 projects, main 75f832e3 vs branch, then gcc -fsyntax-only and docs/features/structsynth/offsetcheck.py",
+   "definitions_in_header_before": 406,
+   "definitions_in_header_after": 373,
+   "has_no_member_named": 0,
+   "offsetcheck_misplaced": "0/373",
+   "gcc_error_totals_unchanged": "324/892/718/558/1375/4121/1019/1038/6483, identical to main (the export's pre-existing prelude errors)"
+  },
+  "typesweep": {
+   "method": "scripts.decbench.typesweep --option structsynth param, 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x x O0/O2/O2-noinline), DECBENCH_NO_CACHE=1, KUNA_BIN pinned per build, main 75f832e3 (structsynth default on, so both of the sweep's arms are the default output)",
+   "perfect_main": 986,
+   "perfect_branch": 986,
+   "aggregate_main": 3111.18,
+   "aggregate_branch": 3111.18,
+   "rows": "per-function scores (`values`), match details (`meta`) and variable counts (`nvars`) identical in all 444 slices; 74 slices differ only in the `vars_sig` hash, which covers struct_N names",
+   "moved_csv_identical": true,
+   "note": "identical BY CONSTRUCTION, not as evidence either way: the metric compares pointee spellings by name and cannot read struct_N. layout_precision and record_identity are the arms that can."
+  },
+  "default_decision": "No new settable. The behaviour lives entirely inside `structsynth param`, which is the default since 6e4f6fa5 (#682), so every change here is default output and is measured as such against main 75f832e3. With `--option structsynth off` the change is one boolean test per batch and the output is byte-identical to main (9/9 binaries).",
+  "speed": {
+   "method": "interleaved main (75f832e3, structsynth default on) / branch, min-of-15, order alternating per round, `kuna decompile-all <binary>` wall clock, both binaries frozen; shared machine (load average about 30 on 80 cores)",
+   "budget_pct": 5.0,
+   "cases": {
+    "tar O0 default (structsynth param)": {
+     "base_s": 19.935,
+     "new_s": 19.738,
+     "delta_pct": -0.99
+    },
+    "ls O2 default (structsynth param)": {
+     "base_s": 13.398,
+     "new_s": 13.519,
+     "delta_pct": 0.9
+    },
+    "rsyslogd O2 default (structsynth param)": {
+     "base_s": 26.055,
+     "new_s": 26.321,
+     "delta_pct": 1.02
+    },
+    "ls O2 structsynth off": {
+     "base_s": 13.051,
+     "new_s": 12.999,
+     "delta_pct": -0.4
+    },
+    "synth 1000 layouts default": {
+     "base_s": 2.325,
+     "new_s": 2.606,
+     "delta_pct": 12.08
+    }
+   },
+   "within_budget": "real binaries: tar O0 default (structsynth param) -0.99%, ls O2 default (structsynth param) +0.90%, rsyslogd O2 default (structsynth param) +1.02%, ls O2 structsynth off -0.40%; synthetic 1000-layout binary +12.08%",
+   "previous_revision_on_6e4f6fa5": {
+    "cases": {
+     "tar O0 default (structsynth param)": {
+      "base_s": 19.158,
+      "new_s": 18.671,
+      "delta_pct": -2.54
+     },
+     "ls O2 default (structsynth param)": {
+      "base_s": 13.383,
+      "new_s": 13.447,
+      "delta_pct": 0.48
+     },
+     "rsyslogd O2 default (structsynth param)": {
+      "base_s": 25.509,
+      "new_s": 24.709,
+      "delta_pct": -3.14
+     },
+     "ls O2 structsynth off": {
+      "base_s": 12.984,
+      "new_s": 12.926,
+      "delta_pct": -0.44
+     },
+     "synth 1000 layouts default": {
+      "base_s": 2.349,
+      "new_s": 2.641,
+      "delta_pct": 12.44
+     }
+    },
+    "within_budget": "real binaries: tar O0 default (structsynth param) -2.54%, ls O2 default (structsynth param) +0.48%, rsyslogd O2 default (structsynth param) -3.14%, ls O2 structsynth off -0.44%; synthetic 1000-layout binary +12.44%"
+   },
+   "previous_revision_on_e1139df9": {
+    "method": "interleaved main (e1139df9) / branch, min-of-15, `kuna decompile-all <binary>` wall clock, both binaries frozen; shared machine. The first run started every round with main and put every case above +3% under load, including the option-off control; every case was re-run with the order alternating per round",
+    "budget_pct": 5.0,
+    "cases": {
+     "tar O0 --option structsynth param": {
+      "base_s": 19.503,
+      "new_s": 19.684,
+      "delta_pct": 0.93,
+      "first_run_fixed_order_pct": 5.16
+     },
+     "ls O2 --option structsynth param": {
+      "base_s": 13.826,
+      "new_s": 13.75,
+      "delta_pct": -0.55,
+      "first_run_fixed_order_pct": 3.81
+     },
+     "rsyslogd O2 --option structsynth param": {
+      "base_s": 25.322,
+      "new_s": 25.466,
+      "delta_pct": 0.57,
+      "first_run_fixed_order_pct": 4.7
+     },
+     "ls O2 default (option off)": {
+      "base_s": 13.298,
+      "new_s": 13.484,
+      "delta_pct": 1.39,
+      "first_run_fixed_order_pct": 3.29
+     },
+     "synthetic 1000 distinct layouts --option structsynth param": {
+      "base_s": 2.357,
+      "new_s": 2.632,
+      "delta_pct": 11.65,
+      "previous_revisions_pct": [
+       43,
+       15.92,
+       12.81
+      ]
+     }
+    },
+    "within_budget": "real binaries yes (+0.93% / -0.55% / +0.57%; option off +1.39%, one boolean test per batch and byte-identical output); the 1000-layout synthetic no (+11.65%)",
+    "at_scale": "the synthetic is ~8x the densest real ledger measured (tar O0 124 names on main). Supersession is derived only for the entries that answer a lookup, and a lookup reads only layouts whose size lies in [size, 16*size] (lookup_window). What remains is one name scan per lookup plus the convergence sweep's re-decompiles."
+   }
+  },
+  "residual": {
+   "method": "docs/features/structsynth/dedup_residual.py with the shipped rule (bounds, typed-pointer rule, table rule, integer same-size-and-no-tail rule, padding rule): an emitted layout the ledger's own rule would still have merged",
+   "per_binary": {
+    "fmt O0": [
+     4,
+     0
+    ],
+    "ls O2": [
+     27,
+     0
+    ],
+    "du O2": [
+     29,
+     0
+    ],
+    "tar O2": [
+     86,
+     0
+    ],
+    "cp O2": [
+     30,
+     0
+    ],
+    "kmod O0": [
+     51,
+     0
+    ],
+    "rsyslogd O2": [
+     90,
+     0
+    ]
+   },
+   "note": "0 everywhere. The previous revision's script counted one layout in rsyslogd O2 (timeConvertToUTC's own, turned away by the unclaimed-bytes rule, which the script cannot see); that container also has members in the reader's padding, which the script now checks. The emitted definitions are the same 90"
+  },
+  "gates": {
+   "tree": "f4b2e528, rebased onto main d6c5862f (#681 foldcallretphi on); measurements are against 75f832e3, and a default/off decompile-all spot check against d6c5862f (ls O2, tar O2, rsyslogd O2, grep O2, bash O0) is rename-only by default and byte-identical with structsynth off, as on 75f832e3",
+   "make_test": "PARITY OK, 675/675",
+   "make_test_stages": "PARITY OK, 1196/1196 (re-recorded on d6c5862f: +15 structsynth keys over main's 1181, none removed)",
+   "make_test_cli": "190/190",
+   "make_rust_test": "RUST_TEST_RC=0 via the lane script, 416 `test result: ok`, 0 FAILED, 2026-09-19T14:28:31Z-14:44:07Z, on f4b2e528 (after the rebase; no later code change)",
+   "make_check_spec": "OK lenient + strict",
+   "catalog_check": "OK",
+   "counters_check": "no drift",
+   "options_md": "fresh (regenerated; phase_catalog.json recaptured)"
+  },
+  "bounds": {
+   "rule": "a container saying strictly more than the reader measured must claim <= 2x its claimed fields (MAX_CLAIM_GROWTH) and be <= 4x its size (MAX_SIZE_GROWTH); the reader must claim >= 2 fields of which one is a typed pointer (MIN_SHARED_CLAIMS) or >= 3 without one (MIN_UNTYPED_CLAIMS); a pointer to code, void or an undefined type is not typed; a reader whose every claim past offset 0 is such a pointer is a table and answered only by its own shape; a reader with no typed pointer is answered only by a structure of its own size that claims nothing past the reader's last field; no container answers with a member inside the alignment padding the reader's claims leave between two of them (from the end of a claim to the next claim or the next multiple of that claim's width, whichever is first); two layouts of exactly the same shape always share a name",
+   "why_claim_bound": "ls O0 sub_afe2 measured two fields of an 80-byte layout and unbounded containment answered it with a sixteen-field structure only 1.5x the size",
+   "why_size_bound": "ls O0 sub_12d8d takes a `struct hash_entry *` (two words) and unbounded containment declared it a 200-byte struct_5, the layout of the `struct stat *` two other functions pass; that container claims exactly 2x the fields",
+   "why_4x_not_2x": "ls O2's two fileinfo comparators are one record measured at 80 and at 176 bytes; a 2x size bound refuses the witness and scores worse on the tuning set (0.8686 for size-only 2x)",
+   "why_pointer_rule": "two integer words are how distinct records begin (stat {dev, ino}, cycle_check_state, Src_to_dest {ino, dev}, list nodes, timespec, hash entries) and pass both growth bounds (2 claims vs 4, 16 bytes vs 32). Over the three sets under the previous rule: two integer claims 17 same record / 44 different / 5 uncheckable; two claims with a pointer 45 / 1 / 0; three or more claims 50 / 0 / 1. The reviewer's alternative (>= 3 claims always) also refuses the ls fileinfo witness, {0: char *, 0x48: long}.",
+   "superseded_fallback": "the bounds cost containment its transitivity, so when nothing live answers, the smallest superseded entry that answers is handed out rather than minting a name that entry would supersede at birth; an exact-shape entry is always the smallest answer",
+   "unit_tests": "a_container_that_dwarfs_the_measurement_does_not_answer_for_it, two_integer_words_are_answered_only_by_their_own_shape, a_table_of_code_pointers_is_answered_only_by_its_own_shape, integer_claims_are_never_answered_by_a_larger_structure, a_superseded_container_answers_when_nothing_live_reaches_this_layout, the_size_window_never_changes_the_answer, a_member_in_the_readers_alignment_padding_is_a_different_record",
+   "why_table_rule": "rsyslogd O2's seven *_if_s interface records (80-136 B) are a version word then code * slots; `code *` names no record, so with the pointer rule alone all seven took statsobj_if_s's 144-byte layout and 1 of the 31 added fields was real (strgenQueryInterface 0x414e0 / statsobjQueryInterface 0x551d0)",
+   "why_integer_rule": "records that begin alike part ways after the last field a reader touched: ip's netlink readers measure the same nlmsghdr words ahead of different payloads (13 absorptions on heldout3/4 added 34 fields, 0 real); dpkg pkg_queue (24 B) was answered with a 40-byte command layout (0/3 real). Cost: openssh sshbuf readers measuring 64 of 72 bytes keep their own name",
+   "why_padding_rule": "records part ways in their first words as well as after their last: a reviewer's 18 builds (bash O0, dpkg O2-noinline, ...) gave 10 of 28 absorptions a different record, all a same-size container with a member where the reader has padding: bash O0 execute_if_command/copy_if_command (if_com {0: uint, 8, 0x10, 0x18}) and copy_while_command answered with for_com (int line at 4); six it_init_* ITEMLIST readers ({0: uint, 0x10: long *}) answered with case_com; dpkg O2-noinline pkg_queue_init (pkg_queue, 24 B) answered with pkg_spec (flag bytes at 0x14/0x15, pkg_queue's tail padding). With the rule: 0 of 13 on those builds, and over all 177 builds it removes 30 of the previous revision's absorptions (11 different record, 19 same record) and adds none. A hole wider than its padding may still be filled, and a typed reader may still take tail members (fmt put_word {0: char *, 8: int} of WORD, whose int space is at 0xc)"
+  },
+  "layout_precision": {
+   "method": "docs/features/structsynth/dedup_heldout.py score (layoutscore.py's fields-only measure: a claimed field is true when the real record has a field at that offset with that size), `--option structsynth param` on every arm, KUNA_BIN pinned per arm, main = 75f832e3 for the shipped arm (e1139df9, f1ec42a7, 6e4f6fa5 and 75f832e3 score the same on main), over eight sets: TUNING fmt/ls/sort/du x O0/O2 (growth bounds chosen here); HELDOUT 17 picked independently (two-integer-word shape found here); HELDOUT2 22 measured after the pointer rule was fixed; HELDOUT3 28 a reviewer picked, mostly outside coreutils (the table and integer rules were drawn from it); HELDOUT4 26 chosen before any result under those two rules was seen (bash O2 writes no header on either build, scores 0/0); REV1 24 and REV2 18 builds a second reviewer picked outside every earlier set (the padding rule was drawn from REV2); FRESH6 34 chosen at 2026-09-19T11:56Z before any result under the padding rule was seen (bash O2-noinline's decompile-project panics in kuna-sleigh kuna_sharedbytes.rs on main and branch, so it scores 0/0)",
+   "note": "sharing one layout across functions re-attributes the container's whole field list to every parameter it absorbs, so this is the instrument the dedup rule has to be chosen on; the census, the hunk classes, fprate.py and typesweep are all blind to it",
+   "arms": {
+    "main (exact signature)": {
+     "tuning": "704/787 = 0.8945 R 0.0746",
+     "heldout": "1011/1081 = 0.9352 R 0.0659",
+     "heldout2": "804/888 = 0.9054 R 0.0482",
+     "heldout3": "2746/3271 = 0.8395 R 0.0307",
+     "heldout4": "3455/3937 = 0.8776 R 0.0233",
+     "rev1": "3933/4292 = 0.9164 R 0.0298",
+     "rev2": "4091/4527 = 0.9037 R 0.0355",
+     "fresh6": "4000/4517 = 0.8855 R 0.0284"
+    },
+    "bounds + pointer rule + table rule": {
+     "heldout3": "2818/3368 = 0.8367 R 0.0315",
+     "heldout4": "3592/4123 = 0.8712 R 0.0243"
+    },
+    "+ integer rule (on f1ec42a7)": {
+     "tuning": "748/833 = 0.8980 R 0.0792",
+     "heldout": "1060/1134 = 0.9347 R 0.0691",
+     "heldout2": "836/920 = 0.9087 R 0.0501",
+     "heldout3": "2795/3324 = 0.8409 R 0.0313",
+     "heldout4": "3555/4049 = 0.8780 R 0.0240"
+    },
+    "+ unclaimed-bytes rule (on f1ec42a7)": {
+     "tuning": "748/833 = 0.8980 R 0.0792",
+     "heldout": "1060/1134 = 0.9347 R 0.0691",
+     "heldout2": "836/920 = 0.9087 R 0.0501",
+     "heldout3": "2791/3320 = 0.8407 R 0.0312",
+     "heldout4": "3555/4049 = 0.8780 R 0.0240"
+    },
+    "previous revision (reviewer, heldout3, main d3617d64)": {
+     "main": "2746/3271 = 0.8395",
+     "previous": "2819/3399 = 0.8294"
+    },
+    "tuning only, earlier arms": {
+     "containment unbounded": "772/925 = 0.8346",
+     "size <= 2x only": "734/845 = 0.8686"
+    },
+    "previous revision (no padding rule), on 6e4f6fa5 / 75f832e3": {
+     "tuning": "748/831 = 0.9001 R 0.0792",
+     "heldout": "1064/1138 = 0.9350 R 0.0694",
+     "heldout2": "836/920 = 0.9087 R 0.0501",
+     "heldout3": "2794/3321 = 0.8413 R 0.0313",
+     "heldout4": "3549/4042 = 0.8780 R 0.0240",
+     "rev1": "3965/4324 = 0.9170 R 0.0300",
+     "rev2": "4129/4576 = 0.9023 R 0.0358",
+     "fresh6": "4094/4626 = 0.8850 R 0.0291"
+    },
+    "SHIPPED (+ padding rule, on 75f832e3, structsynth default on)": {
+     "tuning": "748/831 = 0.9001 R 0.0792",
+     "heldout": "1064/1138 = 0.9350 R 0.0694",
+     "heldout2": "836/920 = 0.9087 R 0.0501",
+     "heldout3": "2786/3312 = 0.8412 R 0.0312",
+     "heldout4": "3545/4037 = 0.8781 R 0.0239",
+     "rev1": "3960/4319 = 0.9169 R 0.0300",
+     "rev2": "4115/4551 = 0.9042 R 0.0357",
+     "fresh6": "4081/4610 = 0.8852 R 0.0290"
+    }
+   },
+   "tradeoff_stated": "a small gain, not flat everywhere: ahead of main on tuning, heldout2, heldout3, heldout4, rev1 and rev2, behind on heldout (0.9350 vs 0.9352) and on fresh6 (0.8852 vs 0.8855: 81 more true fields, 93 more claimed; e2fsck O2-noinline alone adds 50 true of 58); recall higher on all eight. Pooled over the seven held-out sets (169 builds) 20387/22887 = 0.8908 vs main 20040/22513 = 0.8902 (347 more true fields); over the second reviewer's 42 builds 8075/8870 = 0.9104 vs 8024/8819 = 0.9098 (previous revision 8094/8900 = 0.9094). 53 of 177 builds gain precision, 6 lose it: kmod O2 0.8507->0.8417, kmod O2-noinline 0.8876->0.8791, grep O2 0.9212->0.9128, kmod O0 0.9246->0.9163, ip O0 0.6699->0.6675, e2fsck O0 0.8931->0.8926.",
+   "fprate_py": "blind by construction: the ledger never changes which parameters are retyped or what DWARF says they are, only which record a retyped parameter is given",
+   "pooled_heldout": {
+    "main": "20040/22513 = 0.8902",
+    "shipped": "20387/22887 = 0.8908",
+    "sets": "heldout + heldout2 + heldout3 + heldout4 + rev1 + rev2 + fresh6 (169 builds)",
+    "first four held-out sets only (93 builds)": "main 8016/9177 = 0.8735, shipped 8231/9407 = 0.8750",
+    "on 6e4f6fa5, previous revision, first four": "8243/9421 = 0.8750",
+    "on f1ec42a7": "8242/9423 = 0.8747"
+   },
+   "record_identity": {
+    "method": "dedup_heldout.py absorb: a parameter the branch answers with a strictly larger structure than main gave it is an absorption; it is on the SAME record when some parameter of the same DWARF record measured exactly that structure on main. Field precision cannot see a wrong record whose fields line up (stat and cycle_check_state agree at {0,8,0x10,0x18}); this can.",
+    "shipped on 75f832e3 (tuning/heldout/heldout2/heldout3/heldout4/rev1/rev2/fresh6)": {
+     "absorbed": [
+      28,
+      35,
+      20,
+      27,
+      62,
+      11,
+      13,
+      62
+     ],
+     "same": [
+      28,
+      35,
+      20,
+      25,
+      60,
+      11,
+      13,
+      57
+     ],
+     "different": [
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      3
+     ],
+     "uncheckable": [
+      0,
+      0,
+      0,
+      2,
+      1,
+      0,
+      0,
+      2
+     ],
+     "added_fields_true": [
+      "44/44",
+      "53/57",
+      "32/32",
+      "40/41",
+      "90/100",
+      "27/27",
+      "24/24",
+      "81/93"
+     ],
+     "total": "258 absorbed, 249 same, 4 different, 5 uncheckable, 391/418 added fields true"
+    },
+    "previous revision on 75f832e3 (rev1/rev2/fresh6)": {
+     "absorbed": [
+      15,
+      28,
+      67
+     ],
+     "same": [
+      15,
+      18,
+      61
+     ],
+     "different": [
+      0,
+      10,
+      4
+     ],
+     "uncheckable": [
+      0,
+      0,
+      2
+     ],
+     "added_fields_true": [
+      "32/32",
+      "38/49",
+      "94/109"
+     ]
+    },
+    "on f1ec42a7 (tuning/heldout/heldout2/heldout3/heldout4)": {
+     "absorbed": [
+      29,
+      33,
+      20,
+      30,
+      66
+     ],
+     "same": [
+      28,
+      33,
+      20,
+      28,
+      61
+     ],
+     "different": [
+      1,
+      0,
+      0,
+      0,
+      4
+     ],
+     "uncheckable": [
+      0,
+      0,
+      0,
+      2,
+      1
+     ],
+     "added_fields_true": [
+      "44/46",
+      "49/53",
+      "32/32",
+      "45/49",
+      "100/112"
+     ]
+    },
+    "previous revision, integer rule (tuning/heldout/heldout2/heldout3/heldout4)": {
+     "absorbed": [
+      29,
+      33,
+      20,
+      31,
+      66
+     ],
+     "same": [
+      28,
+      33,
+      20,
+      28,
+      61
+     ],
+     "different": [
+      1,
+      0,
+      0,
+      0,
+      4
+     ],
+     "uncheckable": [
+      0,
+      0,
+      0,
+      3,
+      1
+     ],
+     "added_fields_true": [
+      "44/46",
+      "49/53",
+      "32/32",
+      "49/53",
+      "100/112"
+     ]
+    },
+    "without the integer rule (heldout3/heldout4)": {
+     "absorbed": [
+      57,
+      108
+     ],
+     "same": [
+      39,
+      80
+     ],
+     "different": [
+      0,
+      8
+     ],
+     "uncheckable": [
+      18,
+      20
+     ],
+     "added_fields_true": [
+      "72/97",
+      "137/186"
+     ]
+    },
+    "previous revision (reviewer, heldout3)": {
+     "absorbed": 64,
+     "same": 39,
+     "different": 7,
+     "uncheckable": 18
+    },
+    "remaining_different": [
+     "e2fsck O0 ea_refcount_intr_next: three uint64 words of a 32-byte ea_refcount, filled in between its fields with a same-size layout a dentry_info_args reader measured",
+     "e2fsck O2-noinline handle_htree and ext2fs_is_fast_symlink: {0: ushort, 4: uint, 0x6c: uint} of an ext2_inode, filled in with the layout an ext2_inode_large reader measured (the same record for its first 128 bytes; both added fields real)",
+     "e2fsck O2-noinline ext2fs_new_dir_block: {0, 0x20, 0x28} of a struct_ext2_filsys, filled in with a utf8cursor layout (2 of 3 added fields real)"
+    ],
+    "different_on_f1ec42a7_only": "du O2 add_exclude (answered with an mbchar layout) and rsyslogd O0 hashtable_remove / hashtable_search / hashtable_iterator_search (a lookup_s table); under #682's field types those containers no longer contain them",
+    "previous revision on 6e4f6fa5 (tuning/heldout/heldout2/heldout3/heldout4)": {
+     "absorbed": [
+      28,
+      35,
+      20,
+      29,
+      66
+     ],
+     "same": [
+      28,
+      35,
+      20,
+      27,
+      64
+     ],
+     "different": [
+      0,
+      0,
+      0,
+      0,
+      1
+     ],
+     "uncheckable": [
+      0,
+      0,
+      0,
+      2,
+      1
+     ],
+     "added_fields_true": [
+      "44/44",
+      "53/57",
+      "32/32",
+      "48/50",
+      "94/105"
+     ]
+    },
+    "removed_by_padding_rule": "30 absorptions over the 177 builds, none added: 11 different record (bash O0 if_com x2, while_com, six ITEMLIST it_init_*; dpkg O2-noinline pkg_queue; useradd O0 new_grent) and 19 same record (6 on the first five sets: 4 interior padding, 2 untyped tail)",
+    "rechecked_on": "main 75f832e3 for the shipped arm; the earlier arms keep the main they were measured on"
+   },
+   "named_witnesses": {
+    "cp O2 cycle_check sub_17670": {
+     "main": "(struct_29 *, struct_1 *)",
+     "previous": "(struct_26 *, struct_26 *)",
+     "shipped": "(struct_26 *, struct_1 *)"
+    },
+    "cp O2 src_to_dest_compare sub_bc20": {
+     "main": "(struct_1 *, struct_1 *)",
+     "previous": "(struct_26 *, struct_26 *)",
+     "shipped": "(struct_1 *, struct_1 *)"
+    },
+    "dash O2 find_command sub_8440": {
+     "main": "struct_6 *a1",
+     "previous": "struct_2 *a1",
+     "shipped": "struct_6 *a1"
+    }
+   }
+  },
+  "variable_rows": {
+   "method": "the --json of all 177 builds in the eight sets, main 75f832e3 vs branch, per function: variable count, argument count, and every row with struct_N names normalized",
+   "functions": 92680,
+   "variables": 623992,
+   "count_or_arity_changed": 0,
+   "rows_changed_beyond_struct_name": 0,
+   "functions_with_a_struct_rename": 2119,
+   "code_beyond_struct_name": "1 function: ip O0 ll_remember_index passes &a0->field_0x6[10] to a callee as &a0->field_0x8[8] (and &a0[1].field_0x6[2] as a0[1].field_0x8), the same addresses spelled through a same-size container's filler; a call argument, not a dereference"
+  },
+  "unclaimed_bytes": {
+   "rule": "ledger.rs keeps_unclaimed: for every (offset, width) the prune dropped from the reader's evidence, the candidate structure's members overlapping those bytes must equal the reader's own members there (offset, size, claimed field key or filler); checked only for candidates that already answer by containment and the bounds, and only when the reader has an unclaimed access",
+   "why": "ActionMarkImplied::checkImpliedCover lets a LOAD cross a STORE unless isPossibleAlias says the addresses may alias, and isPossibleAlias answers 'no' for one base plus two different constants whatever the access widths. The reader's own layout spells an unclaimed access through filler (&a0->field_0x4[3]), which the test cannot separate from a field, so it stays explicit; a container member starting inside the access made it a direct field address (&a0->field_0x7) and the load printed after an overlapping byte store.",
+   "counterexample": "gcc -O2 stripped: full(p,v,s) writes c7..c10, i0, l10, s, l20; rd_c8(p,s,w) { memcpy(&v,&p->c7,4); p->c8=w>>3; ... return v*3u; }. Previous revision: rd_c8 answered with full's struct, `return *(uint4 *)&a0->field_0x7 * 3` after `a0->field_0x8 = ...`; the printed body returned 0xd5c06096 where the original returns 0xd5c0ab96 (stores at 9 and 10 the same; a store at 7 is safe). Shipped: each reader keeps its own shape and `v1 = *(uint4 *)&a0->field_0x4[3];` stays first, as on main.",
+   "measured": "all 101 builds of the five sets, main f1ec42a7 vs this revision vs the previous one: exactly one parameter changes, rsyslogd O2 timeConvertToUTC's struct syslogTime * (a 4-byte store at 7 answered with a same-size layout declaring bytes 7..10); it returns to its own 10-claim shape and main's body, losing 4 true fields (heldout3 0.8409 -> 0.8407; pooled held-out stays 0.8747). The whole-corpus sweep's one non-rename hunk (that store split into four byte stores) is gone.",
+   "engine_defect_not_fixed_here": "isPossibleAlias ignores access widths on raw offsets too: with structsynth off, rd_c8 prints `*(uint4 *)((int8)a0 + 7)` after `*(char *)&a0[2] = (char)(a2 >> 3)`. That is a separate strict engine fix."
+  },
+  "container_larger_than_reader": "a container larger than the reader's own object re-spells address arithmetic past the reader's measured end through the container's members: reviewer cx2 (gcc -O2) rsmall(struct Small {char *; long;} *p) returns p + 1, and with struct Big {char *; long; int; int; long;} written elsewhere the branch prints `unsigned int * sub_12b0(struct_0 *a0)` ... `v1 = &a0->field_0x10;` where main prints `struct_0 * sub_12b0(struct_0 *a0)` ... `v1 = &a0[1];` (rsmall_arg's call argument `&a0[1]` likewise becomes `&a0->field_0x10`). Same address and value, different type. The ledger sees a reader's dereferences, not the arithmetic on its base. No function in the 177 builds changes this way (the one non-rename code change is ip O0 ll_remember_index)"
  }
 }

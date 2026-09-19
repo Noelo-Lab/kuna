@@ -145,6 +145,11 @@ use crate::context::VarnodeId;
 use crate::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
 use crate::funcdata::Funcdata;
 
+/// (kuna `structsynth`) The program-wide layout ledger: which minted `struct_N`
+/// a freshly measured layout is, and which ones a later layout took over.
+pub mod ledger;
+
+
 /// The largest constant offset that is still believed to be a field.
 const MAX_FIELD_OFFSET: intb = 0x8000;
 
@@ -260,6 +265,9 @@ struct Evidence {
     integer_use: bool,
     /// The base flows into a phi, so some dereference of it is loop-carried.
     phi_reached: bool,
+    /// `(offset, width)` of every access the prune dropped: bytes this
+    /// function touched without claiming a field for them.
+    unclaimed: Vec<(intb, int4)>,
 }
 
 impl Evidence {
@@ -312,20 +320,36 @@ impl Evidence {
     /// ranges either nest or are disjoint, so the surviving layout cannot
     /// overlap at all: one sweep in offset order decides it.
     fn prune(&mut self) {
-        self.slots
-            .retain(|off, s| FIELD_WIDTHS.contains(&s.width) && off.rem_euclid(s.width as intb) == 0);
-        let mut interior: Vec<intb> = Vec::new();
+        let mut dropped: Vec<(intb, int4)> = Vec::new();
+        self.slots.retain(|off, s| {
+            let keep = FIELD_WIDTHS.contains(&s.width) && off.rem_euclid(s.width as intb) == 0;
+            if !keep {
+                dropped.push((*off, s.width));
+            }
+            keep
+        });
         let mut end: intb = intb::MIN;
         for (off, s) in self.slots.iter() {
             if *off < end {
-                interior.push(*off);
+                dropped.push((*off, s.width));
             } else {
                 end = *off + s.width as intb;
             }
         }
-        for off in interior {
-            self.slots.remove(&off);
+        for (off, _) in dropped.iter() {
+            self.slots.remove(off);
         }
+        self.unclaimed = dropped;
+    }
+
+    /// Every byte range this function dereferenced without a typed field of its
+    /// own: the accesses the prune dropped and the fields read as raw bytes. The
+    /// ledger never answers with a structure that lays other members over them.
+    /// Offsets beyond `int4` are clamped; they lie past every member either way.
+    fn unclaimed_ranges(&self) -> Vec<(int4, int4)> {
+        let clamp = |v: intb| v.clamp(int4::MIN as intb, int4::MAX as intb) as int4;
+        let raw = self.slots.iter().filter(|(_, s)| s.reinterpreted()).map(|(o, s)| (*o, s.width));
+        self.unclaimed.iter().copied().chain(raw).map(|(o, w)| (clamp(o), w)).collect()
     }
 }
 
@@ -558,71 +582,6 @@ fn is_array_shaped(slots: &BTreeMap<intb, Slot>, ptr_size: int4) -> bool {
     }
 }
 
-/// The exact-layout signature of a completed structure: `(size, [(offset, field
-/// size, metatype, pointee name)])`.
-fn signature_of(ct: &Datatype) -> Option<Vec<(int4, int4, u8, String)>> {
-    if ct.get_metatype() != type_metatype::TYPE_STRUCT {
-        return None;
-    }
-    let mut out = Vec::new();
-    for i in 0..ct.num_depend() {
-        let f = ct.get_field(i)?;
-        let pointee = f
-            .field_type
-            .get_ptr_to()
-            .map(|p| p.get_name().to_string())
-            .unwrap_or_default();
-        out.push((f.offset, f.field_type.get_size(), f.field_type.get_metatype() as u8, pointee));
-    }
-    Some(out)
-}
-
-/// The same signature for a layout that has not been built yet.
-fn signature_of_fields(fields: &[TypeField]) -> Vec<(int4, int4, u8, String)> {
-    fields
-        .iter()
-        .map(|f| {
-            let pointee = f
-                .field_type
-                .get_ptr_to()
-                .map(|p| p.get_name().to_string())
-                .unwrap_or_default();
-            (f.offset, f.field_type.get_size(), f.field_type.get_metatype() as u8, pointee)
-        })
-        .collect()
-}
-
-/// Find or mint the program-wide `struct_N` for this layout.
-///
-/// `find_add` rejects a second, different definition of a held name with a hard
-/// `Err`, so every probe declines rather than propagating: a name already taken
-/// by a different layout simply moves the search to `N+1`.
-fn ledger_type(
-    types: &dyn TypeFactory,
-    fields: Vec<TypeField>,
-    size: int4,
-) -> Option<Rc<Datatype>> {
-    let want = signature_of_fields(&fields);
-    for n in 0..1024u32 {
-        let name = format!("struct_{n}");
-        match types.find_by_name(&name) {
-            Ok(None) => {
-                let shell = types.get_type_struct(&name).ok()?;
-                return types
-                    .set_fields_struct_raw(&shell, fields, Vec::new(), size, 1, 0)
-                    .ok();
-            }
-            Ok(Some(t)) => {
-                if t.get_size() == size && signature_of(&t).as_ref() == Some(&want) {
-                    return Some(t);
-                }
-            }
-            Err(_) => return None,
-        }
-    }
-    None
-}
-
 /// Does this type's C spelling occupy exactly the bytes the decompiler thinks it
 /// does?  A scalar or a pointer does.  An aggregate carries its own padding and
 /// alignment into the exported header, so an aggregate-typed value degrades to
@@ -728,7 +687,10 @@ fn synthesize(data: &mut Funcdata) -> bool {
             continue;
         }
         let Some((fields, size)) = fields_for(types.as_ref(), e) else { continue };
-        let Some(st) = ledger_type(types.as_ref(), fields, size) else { continue };
+        let unclaimed = e.unclaimed_ranges();
+        let Some(st) = ledger::lookup_or_mint(types.as_ref(), fields, size, &unclaimed) else {
+            continue;
+        };
         // The pointer is taken only once the structure is COMPLETE: completing a
         // structure mints a fresh `Rc`, and merge compares high types by `Rc`
         // identity, so a pointer to the incomplete shell would never match.

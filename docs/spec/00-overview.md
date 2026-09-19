@@ -1000,6 +1000,26 @@ console/parity paths never set one. It is not a hard wall around discovery,
 unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
 construction, total project time, or memory.
 
+(kuna) **Synthesized structures across a batch.** With `structsynth` on, a
+function decompiled later can measure more of a record that an earlier one has
+already named. The layout ledger then mints the larger layout beside the older
+one instead of widening it (chapter [05](05-types.md) §5.2, struct synthesis).
+After an eager batch (`decompile_targets` behind `decompile-all`,
+`decompile_export_targets` behind a non-stream `decompile-project`),
+`decompiler/crates/kuna-console/src/project.rs (converge_synthesized_structs)`
+asks the ledger which names have been superseded and decompiles again, once,
+exactly the results that spell one. If a redo fails where the first pass
+succeeded, for example because it ran past a watchdog budget that the first pass
+fit in, the first body is kept. That body still names a structure that is
+defined. The streamed export has already written its bodies before any name can
+be superseded, so it runs no sweep. On both paths the header declares only what
+the document names. `build_header` passes the type block through
+`prune_unreferenced_synth_types`, which keeps a synthesized `struct_<digits>`
+definition only when a prototype, a body, an exported variable row or a field of
+another kept definition names it. The test reads names and never needs a body,
+so it also holds for streamed records, whose `code` is already `None` by the
+time the header is built.
+
 (kuna) **The worker pool.** The per-function loop is ~96% of a whole-binary run's
 wall clock, and the engine is structurally single-threaded: a `Funcdata` holds
 `Rc<ArchContext>` and the flow environment a raw `*const Architecture`, so nothing

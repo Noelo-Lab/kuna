@@ -1889,7 +1889,10 @@ mod tests {
         // half of edx:eax keeps its spill
         // and kuna-foldcallret-shortcircuit / a call never folds into the
         // right-hand operand of && or || (GH-684)
-        assert_eq!(count, 318, "corpus file count drifted");
+        // and structsynth-shared-layout / two readers of one record share a name
+        // and structsynth-unclaimed-bytes / a shared layout keeps a load ahead
+        // of the store that overwrites it
+        assert_eq!(count, 320, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -957,13 +957,193 @@ hide a later float (`Slot::reinterpreted`). A narrower access is not the field's
 evidence and needs no rule: it already prints through an address cast
 (`*(float *)&a0->field_0x8`).
 
-Names are program-wide `struct_N`, probed with `TypeFactory::find_by_name` and
-reused whenever the layout signature — `(offset, size, metatype, pointee name)`
-per field plus the total size — matches exactly. Every mint declines on an error
-rather than propagating one: `find_add` rejects a second, different definition of
-a held name. Dedup is exact, not subsumptive, so two functions that touch
-overlapping but unequal subsets of one real structure still get two names. The
-structure is **completed before** its pointer is taken, because completing a
+Names are program-wide `struct_N`, minted and handed out by the **layout
+ledger** (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs`),
+which is the set of `struct_N` the program's `TypeFactory` already holds: the
+ledger probes `find_by_name` from `struct_0` up to the first free name, reads
+each one's layout back, and declines any whose members are not all named
+`field_0x<hex>` — that name is held by a type from somewhere else (DWARF, a
+parsed header) and is never handed out as the answer to an access pattern.
+Every mint declines on an error rather than propagating one: `find_add` rejects
+a second, different definition of a held name.
+
+Two functions rarely read all of one record. `ls`'s two `fileinfo`
+comparators (`rev_strcmp_size` and `rev_strcmp_df_size`) are one record read
+twice: the first claims `{0: char *, 0x48: long}` and the second those two plus
+`{0xa8: int, 0xac: unsigned int}`. Comparing layouts for *equality*, which is
+all the first version did, gives the one record two names. The ledger therefore
+matches by **subsumption**: a measured layout `L` is answered with a minted
+structure `S` when `S` is at least as large and every field `L` claims exists in
+`S` at the same offset, at the same width and with the same type. Filler is not
+a claim and never takes part. Over `fmt`, `ls`, `sort`, `du`, `find` and `tar` at
+O0 and O2 the same twelve binaries then name 471 records where equality named
+515, and no function loses a structure it named before. Agreement on a shared field is
+**exact**, `undefined<N>` included: two different types at one offset — a
+`char *` against a `uint4` — are the obvious conflict, and a field one reader
+could not type is its own answer rather than a wildcard the other may fill in.
+Letting `undefined8` be absorbed by anything eight bytes wide was measured and
+rejected, because it unifies records that merely share a shape: `du` O2's
+`sub_c090` writes two double bit patterns and a zero byte at `{0, 8, 0x10}`,
+which a wildcard rule reports as contained by an unrelated record whose offset 0
+is a pointer, and the body then prints
+`field_0x0 = (void *)0x3f80000000000000`. Among the structures that do contain
+`L`, the **smallest** is the one reused, since every extra field a reused
+structure carries is a claim this function's evidence does not support.
+
+Containment alone is not the whole rule, because it stops being evidence in two
+ways. The container can dwarf the measurement: a reader that measured the two
+words of `ls`'s `hash_entry` is contained by the 200-byte layout of its `stat`
+and would be declared to hold 174 bytes of members nothing read. And the
+measurement can be too generic to name a record. Two integer words are how
+distinct records begin: `struct stat` starts `{dev, ino}`, and so do gnulib's
+`cycle_check_state` and `cp`'s `Src_to_dest`, while a list node, a `timespec`
+and a hash entry are two integer words to a stripped reader as well. Unguarded,
+`cycle_check(struct cycle_check_state *, const struct stat *)` came out with
+both parameters declared as the state record. A structure that says *strictly
+more* than `L` measured therefore answers only when it claims at most **twice**
+as many fields as `L` and is at most **four times** its size, and when `L`
+claims at least two fields of which one is a typed pointer, or at least three
+without one. A typed pointer claim is stronger evidence because its pointee is
+part of the field's identity, and it is what keeps the two `fileinfo`
+comparators, 80 bytes measured against 176, on one name. A pointer whose pointee
+says nothing (`code *`, `void *`, `undefinedN *`) is not a typed pointer. A
+layout whose every claim past offset 0 is such a pointer is a table of slots,
+such as an interface, an ops vector or a vtable, and it is answered only by a
+structure of exactly its own shape. Distinct tables differ only in how many
+slots they have. In `rsyslogd` O2, seven `*_if_s` interface records of 80 to 136
+bytes are each a version word followed by function pointers. Without the table
+rule they all took the 144-byte layout of `statsobj_if_s`, and of the 31 fields
+that added, one was real. A layout with no typed pointer is answered only by a
+structure of its own size that claims nothing past the reader's last field. Such
+a structure may fill in the holes between the fields the reader measured, but
+not the bytes after them, because records that begin alike part ways exactly
+there. Every netlink reader in `ip` measures the same `nlmsghdr` words ahead of
+a payload of its own. dpkg's 24-byte `pkg_queue` begins the way a 40-byte
+command record does, and it ends in the tail padding where the 24-byte
+`pkg_spec` keeps two flag bytes. Last, no structure answers with a member inside
+the alignment padding the reader's claims leave between two of them (from the
+end of one claim up to the next claim or the next multiple of that claim's
+width, whichever comes first). Records also part ways in their first words.
+Every `bash` command record begins with an `int flags`; `if_com` then has a
+pointer at 8, while `for_com`, `select_com` and `case_com` put an `int line` at
+4, in exactly the bytes `if_com` pads. Without this rule `execute_if_command`'s
+`IF_COM *` took `for_com`'s layout, and six `it_init_*` readers of `ITEMLIST`,
+which measure `{0: int, 0x10: pointer}`, took `case_com`'s. A hole wider than
+its padding is still room for a member the reader skipped, and a reader with a
+typed pointer may still be given members in its tail padding: `fmt`'s
+`put_word` measures `{0: char *, 8: int}` of a `WORD` whose `int space` sits
+at 0xc.
+
+Each bound catches a shape the others miss. Bounding the size alone still answers `ls` O0 `sub_afe2`'s two fields with a
+sixteen-field structure at 1.5× the size. A 2× size bound refuses the
+`fileinfo` pair. The two-integer-word shape passes both growth bounds (2 claims
+against 4, 16 bytes against 32). Two layouts of exactly the same shape always
+share a name whatever the bounds say.
+
+Containment is also checked against the bytes a reader touched without claiming
+them. The prune drops an unaligned word, a 16-byte copy or a width the header
+cannot spell, and such an access prints through whatever member holds its first
+byte. The engine decides whether a load may be printed after a store by
+comparing the two addresses (`ActionMarkImplied`'s `isPossibleAlias`), and it
+treats one base plus two different constants as two different objects without
+asking how wide either access is. That test is only as safe as the spelling it
+is given. Take a reader that loads four bytes at offset 7 and then stores one
+byte at 8, beside a writer that stores a `char` at each of 7 through 10. The
+reader's own layout spells the load `*(uint4 *)&a0->field_0x4[3]`, which the test
+cannot tell apart from `a0->field_0x8`, so the load keeps its own statement ahead
+of the store. Answered with the writer's structure, the same load becomes
+`*(uint4 *)&a0->field_0x7`, is judged distinct from the store, and prints after
+the byte it reads has been overwritten. A structure therefore answers for a
+reader only if it lays exactly the reader's own members (offsets, widths, types
+and filler) over every byte range the reader accessed without claiming
+(`ledger.rs (keeps_unclaimed)`), so each such access is spelled as it is under
+the reader's own layout. The reader it turns away mints its own shape even
+though a live structure contains it, so that name is superseded from the start,
+and the convergence sweep below decides the reader again to the same answer.
+`tests/stages/structsynth-unclaimed-bytes.xml` pins the shape. Over the 101
+builds of the first five sets measured below, the veto changes one parameter: `rsyslogd` O2
+`timeConvertToUTC`'s `struct syslogTime *`, whose 4-byte store at offset 7 a
+same-size layout with bytes at 7 to 10 answered, keeps its own shape and loses 4
+true fields. The address test
+itself is unchanged, and with the option off it misorders the same reader on raw
+offsets: `*(uint4 *)((int8)a0 + 7)` also prints after `*(char *)&a0[2] = ...`.
+
+The rules were drawn from builds scored against DWARF
+(`docs/features/structsynth/dedup_heldout.py`, which scores claimed fields with
+the measure of `layoutscore.py` and lists every set). The growth bounds come from
+`fmt`, `ls`, `sort` and `du`. The pointer rule comes from 17 independently picked
+builds and was checked on 22 more. The table and integer rules come from 28
+builds a reviewer picked, mostly outside coreutils, and were checked on 26 chosen
+before any result under them was seen. The padding rule comes from 42 builds a
+second reviewer picked (with it, `bash` O0's command records and dpkg's
+`pkg_queue` keep their own names) and was checked on 34 more chosen before any
+result under it was seen. Against equality dedup on main `75f832e3`,
+claimed-field precision pooled over the 169 held-out builds is 0.8908 against
+0.8902, with 347 more true fields, and recall rises on every set. The rule is a
+trade, not a free win. An absorbed parameter is declared with the container's
+whole field list: 53 builds gain precision and 6 lose it (`kmod` at O0, O2 and
+O2-noinline and `grep` O2 lose the most, under a point each), and on the last 34
+builds precision is 0.8852 against 0.8855. The record can also be wrong. Of the
+258 parameters answered by a strictly larger structure across all 177 builds, 4
+are given a structure measured from a different DWARF record and 5 cannot be
+checked. All four are `e2fsck` readers with no typed pointer filled in between
+their own fields by a same-size layout, and two of them take `ext2_inode_large`
+for an `ext2_inode`, which is the same record for its first 128 bytes. Without
+the padding rule the same builds give 11 more (10 of 28 absorptions on the
+second reviewer's 18 builds).
+
+When the containment runs the other way — the new layout strictly contains one
+already minted — the minted one cannot be widened. `find_add` refuses to redefine
+a held name, and a completed structure is already shared by every function that
+took a pointer to it, so altering it in place would retype functions that never
+measured the extra fields. The larger layout is minted under a fresh name and the
+smaller one is **superseded**: still defined, and handed out again only to a
+layout that no live structure answers for. Supersession is not recorded
+anywhere. It is a property of the minted set — `S` is superseded exactly when
+some other minted structure strictly subsumes it — so it is read from the
+factory on each lookup, for the entries that answer, and cannot drift out of
+step with the types that are actually defined. A lookup reads the layout of
+only those held structures whose size lets them answer, or supersede an answer:
+from the measured layout's own size up to sixteen times it. It reads
+supersession only for the structures that answer.
+
+That leaves an ordering artifact, because `decompile-all` decompiles in address
+order: `rev_strcmp_size` at the lower address mints the smaller layout,
+`rev_strcmp_df_size` supersedes it, and the first function's own text still
+names the superseded structure it was given before the larger one existed. So a
+whole-program batch closes the gap itself.
+`kuna-console/src/project.rs (converge_synthesized_structs)` runs once after the
+batch, asks the ledger which structures were superseded
+(`ledger::superseded_names`), and decompiles again exactly the results whose C,
+prototype line, exported variable rows or `types` array spell one of those names
+as a whole identifier. The lookup now answers each with the survivor where the
+survivor is in reach.
+
+It is one sweep, not a fixpoint, and it does not always leave one name per
+record, because the growth bounds are not transitive. Take `fb` claiming four
+fields, `fa` two of them and `fc` eight that include `fb`'s four, in that address
+order. `fb` mints, `fa` reuses it (four claims against two), and `fc` supersedes
+it (eight against four). Decided again, `fb` moves to `fc`'s structure, but eight
+claims are out of `fa`'s reach, so the lookup answers `fa` with the superseded
+structure it was given the first time, the smallest one that still answers for
+it. The record ends with two names. Apart from the unclaimed-bytes veto above,
+the lookup never mints a name that an existing structure answers for: that name
+would be superseded the moment it existed. So a mint only happens when nothing
+held answers, and the sweep mints nothing as long as each function it decides
+again measures the same layout it measured the first time. The fixture
+`decompiler/crates/kuna-analysis/tests/fixtures/structsynthchain_x86_64.c` and
+the CLI probe `tests/cli/structsynth-sweep-mints-no-third-name.json` pin this
+shape. A batch that synthesized nothing pays one ledger probe for the whole run.
+
+The convergence is a property of the eager batch (`decompile_targets`,
+`decompile_export_targets`). The streaming project export has already written a
+body by the time its name could be superseded, so it reports MORE records than
+the eager export of the same program: `cp` O2 exports 31 definitions under
+`--stream` against 30 eagerly (main: 33 and 33). Each is self-consistent, since
+the header prune keeps every definition the document still names. A sharded
+`--jobs N` run does not synthesize at all (below).
+
+The structure is **completed before** its pointer is taken, because completing a
 structure mints a fresh `Rc` and the merge tests compare high types by pointer
 identity. The install itself is `funcdata.rs (vn_update_type_locked)`, which
 pairs `Varnode::update_type_locked` with `HighVariable::type_dirty()` — without
@@ -980,7 +1160,8 @@ run. A sharded run cannot live with that: two workers could each mint a differen
 a `decompile-project` `.h`, which declares every type once, could not declare both.
 Every sharded run's workers therefore run with `structsynth off` and the run says
 so on stderr (`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`);
-`--jobs 1` synthesizes.
+`--jobs 1` synthesizes. Neither
+kind of run has anything for the convergence sweep to do.
 
 The synthesized layout is printable rather than only inferable: the P9 option
 [`structdefs`](../options.md) prints the definition of every composite a
