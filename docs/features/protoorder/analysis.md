@@ -159,7 +159,9 @@ every table below is the round-12 tree's.
 **Off arm vs main:** `--option protoorder off` is byte-identical to a fresh
 d96e3408 build on **60 of 60** binaries, and the round-12 engine's off arm on
 the 10 of them re-run (fmt, ls, kmod, libselinux, betaflight, nuttx, dash, grep
--O0, zlib, crazyflie). (The same held against 6e4f6fa5 before
+-O0, zlib, crazyflie), and again on those 10 after the rebase onto d6c5862f,
+where their call arguments (67,928), argument rows (18,930) and never-assigned
+arguments (468) are also the same in both arms. (The same held against 6e4f6fa5 before
 the charbyte rebase, and every number below is within a few functions of that
 measurement.)
 
@@ -237,7 +239,10 @@ refinements) scored the same 10,748 rows identically, so the pointee refusals
 cost no row. Round 12's refusal (§3f) moves none either, measured both at the
 default and with `--option ptrfromuse void` (1,309 perfect with and without it;
 the firmware rows too, 217 and 217), against the pre-§3f engine in the same
-sweep.
+sweep. After the rebase onto d6c5862f (`foldcallretphi` on by default), main
+and this branch score exactly as above: main 986 perfect (0 rows move from
+d96e3408), this branch 1,105 at the default and 1,309 with `ptrfromuse void`,
+firmware 208 → 217.
 
 - PERFECT **986 → 1,105 (+119)**; aggregate 3,111.18 → 3,363.95 (+252.77)
 - moved ONTO perfect **119**, moved OFF perfect **0**
