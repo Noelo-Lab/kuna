@@ -33,16 +33,17 @@
     so the 4-byte read at s+7 spans four char fields and is split into one
     read per field (SplitDatatype::splitLoad).  The split reads used to be
     re-created at the read's lone COPY into the return register, after
-    whatever lay in between (upstream subflow.cc does the same):
+    whatever lay in between (upstream subflow.cc does the same).  A read whose
+    COPY lies past a store or a call is now left whole:
 
       splitstore: mov eax,[rdi+7]  / mov [rdi+9],sil         byte into the read
       splitother: mov eax,[rdi+7]  / mov [rsi+9],dl          store through t
       splitcall:  mov r12d,[rdi+7] / call sink / mov eax,r12d
       splitplain: mov eax,[rdi+7]  / ret                     nothing in between
 
-    #5, #6 and #7: the four field reads print ahead of the store or the call
-    (before the fix all three printed them after it).  #8: with nothing in
-    between, splitplain still splits at the COPY, as before.
+    #5, #6 and #7: the read prints whole, ahead of the store or the call
+    (before the fix all three printed four field reads after it).  #8: with
+    nothing in between, splitplain still splits at the COPY, as before.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 8b470740887708c390909090909090908b4707897705c3909090909090909090
@@ -109,11 +110,11 @@
 <stringmatch name="ALIASOVERLAP #2: the 8-byte indexed read is a local ahead of the element store" min="1" max="1">v1 = \*\(unsigned long \*\)\(a0 \+ a1 \* 4\);</stringmatch>
 <stringmatch name="ALIASOVERLAP #3: only the adjacent-byte stores keep the read folded" min="2" max="2">return \*\(unsigned int \*\)\(a0 \+ 7\);</stringmatch>
 <stringmatch name="ALIASOVERLAP #4: the adjacent-element store keeps the read folded" min="1" max="1">return \*\(unsigned int \*\)\(a0 \+ a1 \* 4\);</stringmatch>
-<stringmatch name="ALIASOVERLAP #5: splitstore reads the four fields before the byte store into them" min="1" max="1">v1\._3_1_ = s-&gt;c10;
+<stringmatch name="ALIASOVERLAP #5: splitstore reads s+7 whole before the byte store into it" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
 s-&gt;c9 = \(char\)w;</stringmatch>
-<stringmatch name="ALIASOVERLAP #6: splitother reads the four fields before the store through t" min="1" max="1">v1\._3_1_ = s-&gt;c10;
+<stringmatch name="ALIASOVERLAP #6: splitother reads s+7 whole before the store through t" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
 t-&gt;c9 = \(char\)w;</stringmatch>
-<stringmatch name="ALIASOVERLAP #7: splitcall reads the four fields before the call" min="1" max="1">v1\._3_1_ = s-&gt;c10;
+<stringmatch name="ALIASOVERLAP #7: splitcall reads s+7 whole before the call" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
 sink\(s\);</stringmatch>
 <stringmatch name="ALIASOVERLAP #8: with nothing in between, splitplain still splits into the return register" min="1" max="1">uint4 splitplain\(S \*s\)
 \{

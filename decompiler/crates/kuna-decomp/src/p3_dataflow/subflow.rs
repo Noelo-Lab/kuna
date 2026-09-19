@@ -4029,10 +4029,9 @@ impl SplitDatatype {
 
     /// Split a LOAD operation (C++ `SplitDatatype::splitLoad`, subflow.cc:2770).
     ///
-    /// (kuna) The split LOADs land at the LOAD's lone COPY only when no write to
-    /// the loaded space or call lies between the two; otherwise they stay at
-    /// the LOAD and the COPY is kept. Upstream always moves them to the COPY,
-    /// which can print the read after a store into its bytes or a call.
+    /// (kuna) A LOAD whose lone COPY lies past a STORE or a call is not split:
+    /// upstream builds the split LOADs at the COPY, which prints the read after
+    /// a store into its bytes or a call.
     pub fn split_load(
         &mut self,
         data: &mut Funcdata,
@@ -4058,12 +4057,8 @@ impl SplitDatatype {
             }
         }
         if let Some(cop) = copy_op {
-            let load_in0 = data.obank().get(load_op).expect("stale load").get_in(0).expect("load in0");
-            let spc = data.vbank().get(load_in0).expect("stale space").get_offset() as int4;
-            if crate::p5_types::double::RuleDoubleLoad::no_write_conflict(data, load_op, cop, spc, None)
-                .is_none()
-            {
-                copy_op = None;
+            if Self::store_or_call_between(data, load_op, cop) {
+                return Ok(false);
             }
         }
         if let Some(cop) = copy_op {
@@ -4108,6 +4103,27 @@ impl SplitDatatype {
         data.op_destroy(load_op);
         root.free_pointer_chain(data);
         Ok(true)
+    }
+
+    /// (kuna) Does a STORE or a call lie between `load_op` and the later
+    /// `copy_op`, or do they sit in different blocks?
+    fn store_or_call_between(data: &Funcdata, load_op: OpId, copy_op: OpId) -> bool {
+        let parent = data.obank().get(load_op).expect("stale load").get_parent();
+        if parent.is_none() || parent != data.obank().get(copy_op).expect("stale copy").get_parent() {
+            return true;
+        }
+        let mut cur = data.obank().get(load_op).expect("stale load").basic_neighbours().1;
+        while let Some(op) = cur {
+            if op == copy_op {
+                return false;
+            }
+            let o = data.obank().get(op).expect("stale op");
+            if o.code() == OpCode::CPUI_STORE || o.is_call() {
+                return true;
+            }
+            cur = o.basic_neighbours().1;
+        }
+        true
     }
 
     /// Split a STORE operation (C++ `SplitDatatype::splitStore`, subflow.cc:2823).
