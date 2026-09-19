@@ -46,5 +46,5 @@
       "\\[kuna --jobs\\] note:"
     ]
   },
-  "notes": "A serial export of this fixture declares `struct struct_0 {`. Each worker used to number its own struct_N and the merged .h tore definitions apart; then workers ran with structsynth off. Now every function that synthesizes gets the serial names (renamed, or decompiled again), the workers that render the .h all install the same replayed structures first, and every other worker contributes its block without its own structures, so the blocks agree and the merge warning never fires."
+  "notes": "A serial export of this fixture declares `struct struct_0 {`. Workers used to number their own struct_N and the merged .h tore definitions apart; then they ran with structsynth off. Now every function that synthesizes gets the serial names, and the workers that render the .h hold the same replayed structures, so the merge warning never fires."
 }

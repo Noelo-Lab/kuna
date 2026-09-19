@@ -46,5 +46,5 @@
       "\\[kuna --jobs\\] note:"
     ]
   },
-  "notes": "The convergence sweep under --jobs 4. fb claims four fields of one record, fa two of them, fc eight including fb's four. Serially the sweep moves fb onto fc's structure and fa keeps struct_0. The pool replays the ledger for fa, fb and fc; each keeps its first decompile renamed when its own structures match the serial ones and is decompiled again with the serial names otherwise, and fb is decided again by the sweep, so the document names match --jobs 1."
+  "notes": "The convergence sweep under --jobs 4. fb claims four fields of one record, fa two of them, fc eight including fb's four. Serially the sweep moves fb onto fc's structure and fa keeps struct_0. The pool replays the ledger for fa, fb and fc, renaming or decompiling each again, and fb is decided again by the sweep."
 }

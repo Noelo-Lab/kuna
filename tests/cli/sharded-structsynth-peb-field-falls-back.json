@@ -47,5 +47,5 @@
       "have no result because their worker process failed"
     ]
   },
-  "notes": "pebnames creates the PEB type the first time a function reads gs:[0x60], so under --jobs only the worker that decompiled store_a holds it, and store_a's structure has a PEB * field. The parent sees the field type has no load-time recipe and names the structures by the one-worker serial path; no worker tries to install a table it cannot build, and every function keeps its body (the kuna-cli integration test compares the document with --jobs 1)."
+  "notes": "pebnames creates the PEB type the first time a function reads gs:[0x60], so only the worker that decompiled store_a holds it, and store_a's structure has a PEB * field. The parent sees a field type with no load-time recipe and names the structures by the one-worker serial path instead of losing the functions to a worker that cannot install them."
 }

@@ -44,5 +44,5 @@
       "\\[kuna --jobs\\] note:"
     ]
   },
-  "notes": "A serial decompile-all of this fixture synthesizes five struct_N. The workers record every structure-ledger lookup and their own answers, the parent replays the lookups in target order, and each function that synthesized anything either keeps its first decompile with the numbers renamed (its own structures have the serial ones' members) or is decompiled again with the serial names, so all five reach the document under the names --jobs 1 gives them (the kuna-cli integration test compares the documents byte for byte)."
+  "notes": "A serial decompile-all of this fixture synthesizes five struct_N. The workers record every ledger lookup and their own answer, the parent replays the lookups in target order, and each function that synthesized keeps its first decompile renamed or is decompiled again with the serial names, so all five reach the document under the --jobs 1 names."
 }
