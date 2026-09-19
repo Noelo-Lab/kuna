@@ -54,47 +54,89 @@
   }
  },
  "speed": {
-  "method": "kuna decompile-all <stripped bin> --json, main 75f832e3 vs fix, 15 interleaved pairs (order alternating), min and median wall ms; the box carried other campaign lanes",
+  "method": "kuna decompile-all <stripped bin> --json, main d6c5862f vs fix a45e0e4d (both changes), 15 interleaved pairs (order alternating), min and median wall ms; the box carried other campaign lanes",
   "results": {
    "O2/coreutils/fmt": {
     "n": 15,
-    "base_min_ms": 4164.5,
-    "fix_min_ms": 4136.2,
-    "delta_min_pct": -0.68,
-    "base_median_ms": 4420.5,
-    "fix_median_ms": 4202.7,
-    "delta_median_pct": -4.93
+    "base_min_ms": 4188.6,
+    "fix_min_ms": 4176.0,
+    "delta_min_pct": -0.3,
+    "base_median_ms": 4657.1,
+    "fix_median_ms": 4652.5,
+    "delta_median_pct": -0.1
    },
    "O2/coreutils/ls": {
     "n": 15,
-    "base_min_ms": 14097.0,
-    "fix_min_ms": 14450.9,
-    "delta_min_pct": 2.51,
-    "base_median_ms": 16098.0,
-    "fix_median_ms": 15026.2,
-    "delta_median_pct": -6.66
+    "base_min_ms": 13646.6,
+    "fix_min_ms": 13944.1,
+    "delta_min_pct": 2.18,
+    "base_median_ms": 14217.6,
+    "fix_median_ms": 14784.8,
+    "delta_median_pct": 3.99
    },
    "O2/coreutils/sort": {
     "n": 15,
-    "base_min_ms": 14750.5,
-    "fix_min_ms": 15101.2,
-    "delta_min_pct": 2.38,
-    "base_median_ms": 16418.7,
-    "fix_median_ms": 16148.9,
-    "delta_median_pct": -1.64
+    "base_min_ms": 14974.8,
+    "fix_min_ms": 14614.4,
+    "delta_min_pct": -2.41,
+    "base_median_ms": 17017.7,
+    "fix_median_ms": 17516.0,
+    "delta_median_pct": 2.93
    },
    "O2/bash/bash": {
     "n": 15,
-    "base_min_ms": 83954.7,
-    "fix_min_ms": 84311.8,
-    "delta_min_pct": 0.43,
-    "base_median_ms": 92954.2,
-    "fix_median_ms": 90969.6,
-    "delta_median_pct": -2.14
+    "base_min_ms": 88124.8,
+    "fix_min_ms": 86460.9,
+    "delta_min_pct": -1.89,
+    "base_median_ms": 95176.5,
+    "fix_median_ms": 95355.0,
+    "delta_median_pct": 0.19
    }
   },
-  "verdict": "within the +5% budget on every case (min deltas -0.68/+2.51/+2.38/+0.43%, medians all negative); the predicate runs only for a LOAD whose cover crosses a STORE and adds a few integer operations per call",
-  "base": "measured against main 75f832e3 before the rebase; the rebase changed no line of this diff's code"
+  "verdict": "within the +5% budget on every case: min deltas fmt -0.30%, ls +2.18%, sort -2.41%, bash -1.89%. The alias predicate runs only for a LOAD whose cover crosses a STORE; the split-load check walks the ops between a LOAD and its COPY only when a split is about to happen",
+  "base": "main d6c5862f",
+  "previous": {
+   "base": "main 75f832e3 vs the is_possible_alias change alone",
+   "results": {
+    "O2/coreutils/fmt": {
+     "n": 15,
+     "base_min_ms": 4164.5,
+     "fix_min_ms": 4136.2,
+     "delta_min_pct": -0.68,
+     "base_median_ms": 4420.5,
+     "fix_median_ms": 4202.7,
+     "delta_median_pct": -4.93
+    },
+    "O2/coreutils/ls": {
+     "n": 15,
+     "base_min_ms": 14097.0,
+     "fix_min_ms": 14450.9,
+     "delta_min_pct": 2.51,
+     "base_median_ms": 16098.0,
+     "fix_median_ms": 15026.2,
+     "delta_median_pct": -6.66
+    },
+    "O2/coreutils/sort": {
+     "n": 15,
+     "base_min_ms": 14750.5,
+     "fix_min_ms": 15101.2,
+     "delta_min_pct": 2.38,
+     "base_median_ms": 16418.7,
+     "fix_median_ms": 16148.9,
+     "delta_median_pct": -1.64
+    },
+    "O2/bash/bash": {
+     "n": 15,
+     "base_min_ms": 83954.7,
+     "fix_min_ms": 84311.8,
+     "delta_min_pct": 0.43,
+     "base_median_ms": 92954.2,
+     "fix_median_ms": 90969.6,
+     "delta_median_pct": -2.14
+    }
+   },
+   "verdict": "within the +5% budget on every case (min deltas -0.68/+2.51/+2.38/+0.43%, medians all negative); the predicate runs only for a LOAD whose cover crosses a STORE and adds a few integer operations per call"
+  }
  },
  "benchmark": {
   "typesweep": "444 slices / 10,748 functions, --baseline-only --dump-decisions with each binary (main 75f832e3 vs fix): type_match PERFECT 986 -> 986, aggregate 3111.18 -> 3111.18; per-slice rows (decisions + scores) identical in 444/444 slices (typesweep.txt)",
