@@ -366,7 +366,7 @@
   "Readers of different records that measured exactly the same shape share one name, as they already did on main: cp O2's struct_1 {long; long;} serves both the struct stat readers and src_to_dest_compare's Src_to_dest.",
   "The growth bounds are not transitive, so a record can end with two names: fb claims four fields, fa two of them, fc eight including fb's four; fc is out of fa's reach and fa keeps the superseded structure it was first given (tests/cli/structsynth-sweep-mints-no-third-name.json). Which of the two fa gets depends on address order.",
   "decompile-project --stream and the default (eager) export of the same binary report DIFFERENT numbers of records: cp O2 with `--option structsynth param` gives 31 definitions streamed against 30 eagerly (main before the ledger: 33 and 33). The convergence sweep is a property of the eager batch -- the streaming writer has already appended a body by the time a name it spells can be superseded. Each surface is self-consistent (every struct_N a body names is defined in its header). A sharded `--jobs N` run turns structsynth off in its workers, so it neither mints nor converges. The stream property the prune depends on is pinned by prune_unreferenced_synth_types over records whose `code` is None.",
-  "SPEED_LIMIT_PLACEHOLDER",
+  "Speed at ledger scale: a synthetic 112 KB binary whose 1000 functions each read a different layout decompiles +12.44% against main 6e4f6fa5 (structsynth default on; +43% before the lookup was narrowed). Real binaries measured tar O0 -2.54%, ls O2 +0.48%, rsyslogd O2 -3.14%, and ls O2 with structsynth off -0.44% (interleaved min-of-15). The residue is one scan of the held names per lookup plus the convergence sweep.",
   "The unclaimed-bytes veto guards this pass's spelling, not the engine's ordering test: ActionMarkImplied's isPossibleAlias takes one base plus two different constants to be two objects whatever the access widths, so a load can still print after an overlapping store where the addresses are spelled that way without structsynth (raw offsets with the option off: rd_c8's `*(uint4 *)((int8)a0 + 7)` prints after `*(char *)&a0[2] = ...`). A reader the veto turns away mints its own shape beside a live container, so the record keeps two names (rsyslogd O2 syslogTime)."
  ],
  "pass_counts": {
@@ -923,46 +923,78 @@
   },
   "default_decision": "No new settable. The behaviour lives entirely inside `structsynth param`, which is the default since 6e4f6fa5 (#682), so every change here is default output and is measured as such against main 6e4f6fa5. With `--option structsynth off` the change is one boolean test per batch and the output is byte-identical to main (9/9 binaries).",
   "speed": {
-   "method": "interleaved main (e1139df9) / branch, min-of-15, `kuna decompile-all <binary>` wall clock, both binaries frozen; shared machine. The first run started every round with main and put every case above +3% under load, including the option-off control; every case was re-run with the order alternating per round",
+   "method": "interleaved main (6e4f6fa5, structsynth default on) / branch, min-of-15, order alternating per round, `kuna decompile-all <binary>` wall clock, both binaries frozen; shared machine",
    "budget_pct": 5.0,
    "cases": {
-    "tar O0 --option structsynth param": {
-     "base_s": 19.503,
-     "new_s": 19.684,
-     "delta_pct": 0.93,
-     "first_run_fixed_order_pct": 5.16
+    "tar O0 default (structsynth param)": {
+     "base_s": 19.158,
+     "new_s": 18.671,
+     "delta_pct": -2.54
     },
-    "ls O2 --option structsynth param": {
-     "base_s": 13.826,
-     "new_s": 13.75,
-     "delta_pct": -0.55,
-     "first_run_fixed_order_pct": 3.81
+    "ls O2 default (structsynth param)": {
+     "base_s": 13.383,
+     "new_s": 13.447,
+     "delta_pct": 0.48
     },
-    "rsyslogd O2 --option structsynth param": {
-     "base_s": 25.322,
-     "new_s": 25.466,
-     "delta_pct": 0.57,
-     "first_run_fixed_order_pct": 4.7
+    "rsyslogd O2 default (structsynth param)": {
+     "base_s": 25.509,
+     "new_s": 24.709,
+     "delta_pct": -3.14
     },
-    "ls O2 default (option off)": {
-     "base_s": 13.298,
-     "new_s": 13.484,
-     "delta_pct": 1.39,
-     "first_run_fixed_order_pct": 3.29
+    "ls O2 structsynth off": {
+     "base_s": 12.984,
+     "new_s": 12.926,
+     "delta_pct": -0.44
     },
-    "synthetic 1000 distinct layouts --option structsynth param": {
-     "base_s": 2.357,
-     "new_s": 2.632,
-     "delta_pct": 11.65,
-     "previous_revisions_pct": [
-      43,
-      15.92,
-      12.81
-     ]
+    "synth 1000 layouts default": {
+     "base_s": 2.349,
+     "new_s": 2.641,
+     "delta_pct": 12.44
     }
    },
-   "within_budget": "real binaries yes (+0.93% / -0.55% / +0.57%; option off +1.39%, one boolean test per batch and byte-identical output); the 1000-layout synthetic no (+11.65%)",
-   "at_scale": "the synthetic is ~8x the densest real ledger measured (tar O0 124 names on main). Supersession is derived only for the entries that answer a lookup, and a lookup reads only layouts whose size lies in [size, 16*size] (lookup_window). What remains is one name scan per lookup plus the convergence sweep's re-decompiles."
+   "within_budget": "real binaries: tar O0 default (structsynth param) -2.54%, ls O2 default (structsynth param) +0.48%, rsyslogd O2 default (structsynth param) -3.14%, ls O2 structsynth off -0.44%; synthetic 1000-layout binary +12.44%",
+   "previous_revision_on_e1139df9": {
+    "method": "interleaved main (e1139df9) / branch, min-of-15, `kuna decompile-all <binary>` wall clock, both binaries frozen; shared machine. The first run started every round with main and put every case above +3% under load, including the option-off control; every case was re-run with the order alternating per round",
+    "budget_pct": 5.0,
+    "cases": {
+     "tar O0 --option structsynth param": {
+      "base_s": 19.503,
+      "new_s": 19.684,
+      "delta_pct": 0.93,
+      "first_run_fixed_order_pct": 5.16
+     },
+     "ls O2 --option structsynth param": {
+      "base_s": 13.826,
+      "new_s": 13.75,
+      "delta_pct": -0.55,
+      "first_run_fixed_order_pct": 3.81
+     },
+     "rsyslogd O2 --option structsynth param": {
+      "base_s": 25.322,
+      "new_s": 25.466,
+      "delta_pct": 0.57,
+      "first_run_fixed_order_pct": 4.7
+     },
+     "ls O2 default (option off)": {
+      "base_s": 13.298,
+      "new_s": 13.484,
+      "delta_pct": 1.39,
+      "first_run_fixed_order_pct": 3.29
+     },
+     "synthetic 1000 distinct layouts --option structsynth param": {
+      "base_s": 2.357,
+      "new_s": 2.632,
+      "delta_pct": 11.65,
+      "previous_revisions_pct": [
+       43,
+       15.92,
+       12.81
+      ]
+     }
+    },
+    "within_budget": "real binaries yes (+0.93% / -0.55% / +0.57%; option off +1.39%, one boolean test per batch and byte-identical output); the 1000-layout synthetic no (+11.65%)",
+    "at_scale": "the synthetic is ~8x the densest real ledger measured (tar O0 124 names on main). Supersession is derived only for the entries that answer a lookup, and a lookup reads only layouts whose size lies in [size, 16*size] (lookup_window). What remains is one name scan per lookup plus the convergence sweep's re-decompiles."
+   }
   },
   "residual": {
    "method": "docs/features/structsynth/dedup_residual.py with the shipped rule (bounds, typed-pointer rule, table rule, integer same-size rule): an emitted layout the ledger's own rule would still have merged",

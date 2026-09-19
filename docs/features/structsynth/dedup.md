@@ -444,19 +444,17 @@ definition named by their prototype survives.
 ## Speed
 
 Interleaved main/branch, min-of-15, `kuna decompile-all` wall clock, with both
-binaries frozen for the run. The machine was shared with other jobs. The first
-run always started each round with main, and under heavy load it put every case
-above +3%, including the option-off control, whose only difference is one
-boolean test per batch. Every case was run again with the order alternating
-from round to round:
+binaries frozen and the order alternating from round to round. Main is
+`6e4f6fa5`, where `structsynth` is on by default. The machine was shared with
+other jobs.
 
-| case | main | branch | delta | first run (fixed order) |
-|---|---:|---:|---:|---:|
-| `tar` O0 `--option structsynth param` (densest real ledger, 124 → 119 names) | 19.503 s | 19.684 s | +0.93% | +5.16% |
-| `ls` O2 `--option structsynth param` | 13.826 s | 13.750 s | −0.55% | +3.81% |
-| `rsyslogd` O2 `--option structsynth param` | 25.322 s | 25.466 s | +0.57% | +4.70% |
-| `ls` O2 default (option off) | 13.298 s | 13.484 s | +1.39% | +3.29% |
-| synthetic, 1000 distinct layouts, `--option structsynth param` | | | | +11.65% (2.357 s → 2.632 s) |
+| case | main | branch | delta |
+|---|---:|---:|---:|
+| `tar` O0, default (densest real ledger, 126 → 121 names) | 19.158 s | 18.671 s | −2.54% |
+| `ls` O2, default | 13.383 s | 13.447 s | +0.48% |
+| `rsyslogd` O2, default | 25.509 s | 24.709 s | −3.14% |
+| `ls` O2, `--option structsynth off` | 12.984 s | 12.926 s | −0.44% |
+| synthetic, 1000 distinct layouts, default | 2.349 s | 2.641 s | +12.44% |
 
 Real binaries are inside the +5% budget. The synthetic binary is not. It is a
 112 KB program whose 1000 functions each read a different random layout, about
@@ -465,3 +463,6 @@ was limited to the structures that answer a lookup and a lookup was limited to
 the sizes that can answer (from the measured size up to 16× it); neither changes
 any output. What is left is one scan of the held names per lookup, plus the
 convergence sweep re-deciding the functions that named a superseded structure.
+The unclaimed-bytes check runs only for a candidate that already answers and a
+reader that has an unclaimed access, and the previous revision measured +11.65%
+on the same binary against `e1139df9`.
