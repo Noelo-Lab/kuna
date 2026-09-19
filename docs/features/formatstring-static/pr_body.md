@@ -53,7 +53,7 @@ With this change the default prints `main(int a0,unsigned long *a1)` and
   off on Apple arm64, AArch64, ARM and a format in `.data`. The build before
   the x86-only default fails 8 of the 28 assertions.
 - decbench `type_match` over 444 slices: TYPESWEEP_LINE
-- Every call in every function the default changes, off vs static, over 325
+- Every call in every function the default changes, off vs static, over 324
   x86-64 and 40 i386 binaries: no format call newly disagrees with its format
   (313 stop disagreeing), and the 8 other calls whose argument count moved all
   lost a phantom. With `formatstring off`, and on every non-x86 target by

@@ -253,7 +253,8 @@ arity. Over the r6 sweep (`off` against `static`, before this restriction):
 
 | corpus | binaries | calls moved | phantom removed / real argument recovered | wrong |
 |---|---|---|---|---|
-| decbench x86-64 (O0, O2, O2-noinline) | 325 | 8 | 8 | 0 |
+| decbench x86-64 (O0, O2, O2-noinline) | 324 | 8 | 8 | 0 |
+| decbench ARM Cortex-M (`adc-dac-printf.elf`, no imports) | 1 | 0 | 0 | 0 |
 | i386 Linux shared libraries | 40 | 0 | 0 | 0 |
 | AArch64 firmware | 148 | 17 | 5 | 12 |
 | ARM32 firmware | 58 | 7 | 0 | 7 |
@@ -279,7 +280,12 @@ So `static` resolves at load on x86 only
 renders what `off` renders; `full` keeps the whole table above, so the typing is
 one option away where it is wanted. Stage passes 24 to 26 pin `fmt_aarch64`
 (the default equals `off`, `full` types it) and assertion 28 pins ARM's `f_is`.
-On the 206 firmware binaries the default is now byte-identical to `off`.
+On the 198 firmware binaries where `static` had changed anything, the default
+now renders every function byte-identically to `off` (one 4,500-line `sqlite3`
+function hit the 120 s budget under load and was re-checked alone), and on 12
+x86-64 binaries it renders exactly what `static` rendered before the change.
+`off` is byte-identical to main `d6c5862f` on six x86-64 and four AArch64/ARM32
+binaries, and on those four the default is too.
 
 What would lift the restriction is making the closed prototype invisible to
 the neighbours' scoring: leave the format call open through P4's trial scoring,

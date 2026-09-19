@@ -2510,7 +2510,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   `printf` is such a call, so the registers it might take compete with a
   neighbour's trials only as far as its own trials have been scored. Once its
   prototype is closed, a register it takes competes for good and one it does not
-  take stops competing, and the neighbour's argument list moves. Over 325 x86-64
+  take stops competing, and the neighbour's argument list moves. Over 324 x86-64
   binaries all 8 neighbouring calls this moved lost a phantom argument. Over 206
   AArch64 and ARM32 firmware binaries 19 of 24 went wrong: eight calls gained an
   `x8` of `0` (the indirect-result register) ahead of their real arguments,
