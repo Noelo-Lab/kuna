@@ -654,13 +654,13 @@
  "gates": {
   "base": "origin/main d96e3408 (charbyte); 223 settables after the rebase (tiers core 70 / transform 89 / analysis 64)",
   "make test": "datatests: 675/675 assertions passed / PARITY OK",
-  "make test-stages": "datatests: 1156/1156 assertions passed / PARITY OK (a scratch --save-baseline re-record is byte-identical to docs/baseline-stages.json)",
-  "make test-cli": "tests/cli: 202/202 passed",
+  "make test-stages": "datatests: 1177/1177 assertions passed / PARITY OK (on d96e3408, which adds the charbyte stage test)",
+  "make test-cli": "tests/cli: 202/202 passed (a first run under the rust-test lane's load timed out the known-flaky disassembling-40-instructions-takes wall_ms probe, 201/202; re-run quiet: 202/202)",
   "check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
-  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth (223 settables after the rebase)",
   "docs/options.md": "byte-fresh against the final build",
-  "make rust-test": "RUST_TEST_RC=0 (7,230 passed / 0 failed; lane 2026-09-19T03:35:25Z -> 03:50:06Z on 6f937812, the final engine af624192 plus the use_when text)"
+  "make rust-test": "RUST_TEST_RC=0 (7,234 passed / 0 failed; lane 2026-09-19T05:02:01Z -> 05:16:46Z on d10962dc, rebased onto d96e3408); on the 6e4f6fa5 base the same engine: 7,230 / 0"
  },
  "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main d96e3408 (structsynth, boolbyte and charbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh d96e3408 build; the same engine measured on 6e4f6fa5 first gave the same typesweep rows and class counts; rounds 6-10 were against d3617d64/e1139df9 and are superseded"
 }
