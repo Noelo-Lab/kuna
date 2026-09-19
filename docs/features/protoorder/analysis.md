@@ -96,7 +96,7 @@ the one main prints for the same value through a narrow load
 |---|---|---|
 | (blocker) A pointer vote whose POINTEE is float-class was never checked, so integer bits the caller stores or copies through the pointer printed as value conversions: `*a0 = (double)(a1 + 1)` for `u->l[0] = v + 1` through a union a callee sums as doubles, `(double)((long)a0[2] * 3)`, `a0[1] = NAN` for the bits 0x7ff0000000000001. After the rebase onto structsynth-on main, a plain `*dst = *src` of `struct {int i; float f; double d;}` printed `a0->field_0x4 = (float)v2` (f=2 became 1.07e9 compiled back) | `pointee_refuses`: every load and store the caller makes through the value's family is walked (constant offsets, index strides, loop steps, copies). An access landing on a float element or member holds the value stored or loaded there to the float-vote rule one level down: refused if an integer op computes with it, if it is a NaN constant, a caller parameter in a register no float arrives in, handed on outside a float register, or (stored) loaded through another pointer that nothing reads as a float. A float vote on a NaN constant is refused too (every NaN prints `NAN`) | fixture `protoorder_floatpointee_x86_64` (a3's union callers and a6's struct copies in one binary); `a_float_pointee_keeps_the_callers_integer_stores_round_trip` compiles the six printed callers, default and `protoorder off`, and compares the bytes they store with the source: all six differ on the pre-fix engine, none now; probe `protoorder-types-keeps-a-float-pointee-bitwise` fails on the pre-fix engine and passes on main and here |
 | (major) The float pointee reached the caller's own integer-register parameters: `s3(struct P *dst, long a, long b)` printed `double a1, double a2` in `rsi`/`rdx` | A float type never lands on a caller parameter in a register the convention would not give a float at that position. The model is asked (a float after an integer goes to `xmm0` on SysV, to `a1` on MIPS o32), not a register table, so MIPS o32's float-in-`a1` keeps its vote | the same fixture (`s3`, `cp3` keep `unsigned long a1, a2`); the MIPS o32 round trip still passes |
-| (major) Evidence was against e1139df9; with structsynth on, a callee's partial `struct_N` reached callers as a new class: 374 `aN[k].field_`/`._i_j_` occurrences in 50 functions (`*(int **)&a0[0x33].field_0x4`, a 4-byte load printed as four byte pieces) | Rebased onto 6e4f6fa5. A composite pointee (struct, array, union) refuses an access or a derived address outside it, and an access that is not exactly one member (across two members, or part of one). A hole inside a structure is allowed: it prints as a cast offset, as main does | reviewer's 14 binaries (7,368 functions): `aN[k].field_` 21 main / 21 here, `._i_j_` 419 / 419 (0 new); `--option protoorder off` byte-identical to main on 14 of 14; nuttx `sub_80059e8` is now identical to main, `sub_8002294` keeps `*(unsigned int *)(a4 + 0xc)`. Re-measured corpus, typesweep and speed are §5-§7 |
+| (major) Evidence was against e1139df9; with structsynth on, a callee's partial `struct_N` reached callers as a new class: 374 `aN[k].field_`/`._i_j_` occurrences in 50 functions (`*(int **)&a0[0x33].field_0x4`, a 4-byte load printed as four byte pieces) | Rebased onto 6e4f6fa5, then onto d96e3408 (charbyte). A composite pointee (struct, array, union) refuses an access or a derived address outside it, and an access that is not exactly one member (across two members, or part of one). A hole inside a structure is allowed: it prints as a cast offset, as main does | reviewer's 14 binaries (7,368 functions): `aN[k].field_` 21 main / 21 here, `._i_j_` 419 / 419 (0 new); `--option protoorder off` byte-identical to main on 14 of 14; nuttx `sub_80059e8` is now identical to main, `sub_8002294` keeps `*(unsigned int *)(a4 + 0xc)`. Re-measured corpus, typesweep and speed are §5-§7 |
 | (minor) gzip `sub_69d0`: `builtin_strncpy(v1,".tar",5)` became five byte stores | Not changed: the vote types `v1` `unsigned char *` (its callee's parameter), and the string-store idiom only recognises `char`; the bytes are the same. Recorded in §9 | -- |
 | (minor) The four rows the typesweep scores worse | Read (§6); three userland rows remain, the fourth is gone. Each is a callee's own over-typing the call site cannot contradict | `typesweep-moved.csv` |
 | (nit) PR body over a screen, numbers stale | Rewritten to one screen with the numbers of this tree | -- |
@@ -133,8 +133,8 @@ Each refusal, with the witness that motivated it (`call_argument_vote`):
 
 ## 5. The corpus
 
-Round 11 re-measures everything on the tree that lands: main 6e4f6fa5
-(structsynth and boolbyte on by default) against this branch, `decompile-all
+Round 11 re-measures everything on the tree that lands: main d96e3408
+(structsynth, boolbyte and charbyte on by default) against this branch, `decompile-all
 --json`. The corpus is the 46 binaries of earlier rounds plus the reviewer's 14
 (cleanflight, crazyflie `firmware.elf`, riot-os, nuttx -O2-noinline; numfmt, od,
 sort, dd; gzip and xmlwf -O2-noinline; mirai and bzip2 -O0; x0r-usb.exe,
@@ -144,7 +144,9 @@ measured the same things against e1139df9; their numbers are superseded by
 these and kept in `git log`.
 
 **Off arm vs main:** `--option protoorder off` is byte-identical to a fresh
-6e4f6fa5 build on **60 of 60** binaries.
+d96e3408 build on **60 of 60** binaries. (The same held against 6e4f6fa5 before
+the charbyte rebase, and every number below is within a few functions of that
+measurement.)
 
 **The reviewer's classes** (every function, both arms): `aN[k].field_` /
 `vN[k].field_` array subscripts of a structure 152 on main, 152 here; `._i_j_`
@@ -163,10 +165,10 @@ the sibling loads of the field a vote's value came from (e2fsck `getblk`).
 added, 0 deleted; **57,938** `variables[]` argument rows in both arms (no
 function gains a parameter); arguments that are a never-assigned local 1,179 in
 both arms; call sites with fewer arguments than the callee's declaration 13,853
-in both arms (`underarity.py`); string-literal arguments 30,518 → 31,001.
+in both arms (`underarity.py`); string-literal arguments 30,518 → 31,017.
 
 **Invariants** (`invariants.py`): 0 calls lost; `goto` delta 0; `return` delta
-0; `;` delta +129. The one "gained call" is a string literal the default arm
+0; `;` delta +127. The one "gained call" is a string literal the default arm
 recovers, `"Calling prvGetRegistersFromStack() from fault handler"`, which the
 call regex reads as a call.
 
@@ -176,17 +178,17 @@ whose first use is a read **0**. The two merges are nuttx `sub_8007bd0` (-O2
 and -O2-noinline), two adjacent `char`s becoming the `char tmp[]` the code fills
 and prints with `%s`.
 
-**Every changed function classified** (9,669 of 32,406), by the first normalizer
+**Every changed function classified** (9,664 of 32,406), by the first normalizer
 under which the two bodies agree:
 
 | class | functions | what differs |
 |---|---|---|
-| casts | 4,450 | C casts, NULL/0, char/negative/hex spellings, `x += y` as `x = x + y` |
-| declarations | 2,754 | local numbering, declaration types, which locals share a name |
-| struct-number | 1,420 | only the `struct_N` numbers: a callee-first run mints the synthesized structures in another order |
+| casts | 4,438 | C casts, NULL/0, char/negative/hex spellings, `x += y` as `x = x + y` |
+| declarations | 2,753 | local numbering, declaration types, which locals share a name |
+| struct-number | 1,421 | only the `struct_N` numbers: a callee-first run mints the synthesized structures in another order |
 | member-reach | 432 | the same bytes through a retyped pointer or a struct member (`*(int *)(a0 + 0x28)` ↔ `a0[10]` ↔ `a0->field_0x28`) |
-| literal | 360 | a number became a string or float literal |
-| pointer-arith | 122 | `&p[k]` ↔ `p + k`, `p[k]` ↔ `*(p + k)` |
+| literal | 369 | a number became a string or float literal |
+| pointer-arith | 120 | `&p[k]` ↔ `p + k`, `p[k]` ↔ `*(p + k)` |
 | merge | 17 | a parameter and a local trade which one holds a value |
 | REVIEW | 114 | none of the above -- labelled below |
 
@@ -213,7 +215,7 @@ and `return`s in both arms:
 Campaign corpus, 444 slices / 10,748 functions (coreutils, grep, gzip,
 diffutils, bzip2, findutils, tar, shadow at -O0/-O2/-O2-noinline; the
 campaign's `x` project has no slice here), `DECBENCH_NO_CACHE=1`. A fresh
-6e4f6fa5 build and this branch's final build are each scored with `typesweep
+d96e3408 build and this branch's final build are each scored with `typesweep
 --baseline-only` and merged into one report (`typesweep-report.md`,
 `typesweep-moved.csv`). Every intermediate round-11 engine (§3e's four pointee
 refinements) scored the same 10,748 rows identically, so the pointee refusals
@@ -222,7 +224,7 @@ cost no row.
 - PERFECT **986 → 1,105 (+119)**; aggregate 3,111.18 → 3,363.95 (+252.77)
 - moved ONTO perfect **119**, moved OFF perfect **0**
 - improved (not perfect) **838**, worsened **3**
-- control: 6,822 functions with byte-identical `variables` score identically
+- control: 6,838 functions with byte-identical `variables` score identically
 
 `improved` below counts the rows that reach perfect too.
 
