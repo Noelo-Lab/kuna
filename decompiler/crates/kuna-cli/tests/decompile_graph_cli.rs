@@ -205,6 +205,22 @@ fn two_runs_produce_the_same_bytes() {
     assert_eq!(first, second, "two runs disagreed");
 }
 
+/// A sharded graph names every synthesized structure as the serial one does:
+/// `fb`, decided again by the convergence sweep, and `fc` share a structure
+/// that `fa` cannot reach.
+#[test]
+fn a_sharded_graph_keeps_the_serial_structure_names() {
+    let bin = fixture("structsynthchain_x86_64");
+    let Some(serial) = graph(&[&bin, "--max-fn-seconds", "0"]) else { return };
+    assert!(serial.contains("struct_1 *"), "the fixture stopped synthesizing:\n{serial}");
+    for pool in [&["--jobs", "2", "--jobs-chunk", "1"][..], &["--jobs", "4"][..]] {
+        let args = [&[bin.as_str(), "--max-fn-seconds", "0"][..], pool].concat();
+        let Some((sharded, stderr)) = run(&args) else { return };
+        assert!(stderr.contains("[kuna --jobs] structsynth: "), "{pool:?}:\n{stderr}");
+        assert_eq!(sharded, serial, "{pool:?} moved the document");
+    }
+}
+
 /// The address-taken edge. `_start` never calls `main`; it loads its address and
 /// hands it to `__libc_start_main`, which is the shape of every glibc program.
 /// Dropping that reference leaves the one function an analyst opens the document

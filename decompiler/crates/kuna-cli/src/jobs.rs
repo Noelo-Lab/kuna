@@ -3342,6 +3342,7 @@ mod tests {
             slice: None,
             target: None,
             sleighpath: None,
+            synth_base: None,
         }
     }
 
