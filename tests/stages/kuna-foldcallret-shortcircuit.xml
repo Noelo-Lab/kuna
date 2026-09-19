@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue GH-684 (P6, sub-stage explicit-marking).
+
+    `foldcallret` (default-on) folds an order-safe single-use call output into
+    the statement that consumes it.  P-code's BOOL_AND/BOOL_OR evaluate both
+    operands, but the printer emits them as C's `&&`/`||`, which skip the
+    right-hand operand whenever the left-hand one decides.  A call folded into
+    that operand stops being made on those paths, although the binary always
+    makes it.  The fold now declines when the call's value reaches input 1 of
+    a BOOL_AND/BOOL_OR anywhere on the chain it travels to its print point.
+    Input 0 is printed on the left and always evaluated, so it still folds.
+    Correctness fix, no option.
+
+    The three fixtures are built from foldcallret_sc_x86_64.c (beside them):
+
+      int r = tick(a); if ((r == 0) & (a > 5)) puts("A");   (w1f)
+      int r = tick(a); gflag = (r == 0) & (a > 5);            (w4f)
+
+    gcc -O0 puts the call's value on the right of both operators; clang -O2
+    does so for w4f; clang -O0 puts it on the left of both.  The XML wrapper
+    only supplies the harness architecture; every pass loads a real ELF.
+
+    Pass 1 (gcc -O0): both calls keep a statement of their own -> #1, #2, #3.
+    Pass 2 (clang -O0): the call on the left still folds -> #4, #5.
+    Pass 3 (clang -O2): w4f keeps its statement too -> #1, #6.
+    #7 and #8: the folded right-hand forms of the issue are never emitted.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/foldcallret_sc_gcc_O0_x86_64</com>
+  <com>read symbols</com>
+  <com>load function w1f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w4f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/foldcallret_sc_clang_O0_x86_64</com>
+  <com>read symbols</com>
+  <com>load function w1f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w4f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/foldcallret_sc_clang_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>load function w4f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH684 #1: the call keeps its own statement (gcc -O0 w1f and w4f, clang -O2 w4f)" min="3" max="3">v1 = tick\(a0\);</stringmatch>
+<stringmatch name="GH684 #2: gcc -O0 w1f reads the spill on the right of the or-or" min="1" max="1">if \(a0 &lt;= 5 \|\| v1\)</stringmatch>
+<stringmatch name="GH684 #3: gcc -O0 w4f reads the spill on the right of the and-and" min="1" max="1">gflag = \(uint4\)\(5 &lt; a0 &amp;&amp; !v1\);</stringmatch>
+<stringmatch name="GH684 #4: clang -O0 w1f still folds the call on the left of the or-or" min="1" max="1">if \(tick\(a0\) \|\| a0 &lt;= 5\)</stringmatch>
+<stringmatch name="GH684 #5: clang -O0 w4f still folds the call on the left of the and-and" min="1" max="1">gflag = \(uint4\)\(!tick\(a0\) &amp;&amp; 5 &lt; a0\);</stringmatch>
+<stringmatch name="GH684 #6: clang -O2 w4f reads the spill on the right of the and-and" min="1" max="1">gflag = \(uint4\)\(6 &lt;= a0 &amp;&amp; !v1\);</stringmatch>
+<stringmatch name="GH684 #7: the call is never printed on the right of an or-or" min="0" max="0">\|\| !?tick\(</stringmatch>
+<stringmatch name="GH684 #8: the call is never printed on the right of an and-and" min="0" max="0">&amp;&amp; !?tick\(</stringmatch>
+</decompilertest>

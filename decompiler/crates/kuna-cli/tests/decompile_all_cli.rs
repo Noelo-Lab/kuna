@@ -3482,3 +3482,79 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
         assert_eq!(got, (0x9abcu32).to_string(), "the printed f hands sink a different value:\n{stdout}");
     }
 }
+
+/// A call whose result meets a comparison through a non-short-circuit `&` is
+/// always made by the binary.  `foldcallret` used to fold it into the right-hand
+/// operand of the `&&`/`||` the printer emits, `if (a0 <= 5 || tick(a0))`, so
+/// the printed C skipped it whenever the left-hand side decided (GH-684).  The
+/// round trip compiles `w1f` and `w4f` as printed and counts the calls: each
+/// fixture prints `2 0` (`calls`, `gflag`) for an argument of 1.  clang -O0 puts
+/// the call on the left, where it is always evaluated and still folds.
+#[test]
+fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
+    let sp = specs();
+    let fixtures: [(&str, &[&str], &[&str]); 3] = [
+        (
+            "foldcallret_sc_gcc_O0_x86_64",
+            &["v1 = tick(a0);", "if (a0 <= 5 || v1)", "gflag = (unsigned int)(5 < a0 && !v1);"],
+            &["|| tick(", "&& !tick("],
+        ),
+        (
+            "foldcallret_sc_clang_O0_x86_64",
+            &["if (tick(a0) || a0 <= 5)", "gflag = (unsigned int)(!tick(a0) && 5 < a0);"],
+            &[],
+        ),
+        (
+            "foldcallret_sc_clang_O2_x86_64",
+            &["v1 = tick(a0);", "gflag = (unsigned int)(6 <= a0 && !v1);"],
+            &["&& !tick("],
+        ),
+    ];
+    for (name, want, never) in fixtures {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(name)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let (stdout, stderr, ok) =
+            run_kuna(&["decompile-all", bin.as_str(), "--functions", "w1f,w4f", "--sleighpath", sp.as_str()]);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("foldcallret short-circuit round trip: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
+        for w in want {
+            assert!(stdout.contains(w), "{name}: missing `{w}`:\n{stdout}");
+        }
+        for n in never {
+            assert!(!stdout.contains(n), "{name}: the call was folded into a right-hand operand (`{n}`):\n{stdout}");
+        }
+
+        if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+            eprintln!("foldcallret short-circuit round trip: no `cc`, spelling checked only");
+            continue;
+        }
+        let dir = std::env::temp_dir().join(format!("kuna-foldcallret-sc-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("rt.c");
+        let exe = dir.join("rt");
+        std::fs::write(
+            &src,
+            format!(
+                "#include <stdio.h>\nint calls;\nint gflag;\nint tick(int x) {{ calls++; return x - 3; }}\n{stdout}\n\
+                 int main(void) {{\n  w1f(1);\n  w4f(1);\n  printf(\"%d %d\\n\", calls, gflag);\n  return 0;\n}}\n"
+            ),
+        )
+        .unwrap();
+        let cc = Command::new("cc")
+            .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+            .output()
+            .expect("spawn cc");
+        assert!(cc.status.success(), "{name}: the printed C did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
+        let run = Command::new(&exe).output().expect("run the round trip");
+        let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(got, "2 0", "{name}: the printed C makes a different number of calls than the binary:\n{stdout}");
+    }
+}

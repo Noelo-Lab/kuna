@@ -213,3 +213,86 @@ mod storage {
         assert!(op_is_write_barrier(&fd, store));
     }
 }
+
+//===========================================================================
+// The short-circuit operand (GH-684)
+//===========================================================================
+
+mod shortcircuit {
+    use std::rc::Rc;
+
+    use kuna_base::address::Address;
+    use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace};
+    use kuna_num::opcodes::OpCode;
+
+    use crate::context::{ArchContext, OpId, VarnodeId};
+    use crate::funcdata::Funcdata;
+
+    use super::super::chain_reaches_short_circuit_rhs;
+
+    fn build_fd() -> Funcdata {
+        let mut m = AddrSpaceManager::new();
+        m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        m.insert_space(Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            2,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        )))
+        .unwrap();
+        let glb = Rc::new(ArchContext::new(m));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        Funcdata::new("f", "f", glb, Address::new(ram, 0x1000), 0x1000_0000, 0x40).unwrap()
+    }
+
+    fn op(fd: &mut Funcdata, opc: OpCode, ins: &[VarnodeId], out_size: i32) -> (OpId, VarnodeId) {
+        let pc = Address::new(Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap()), 0x1100);
+        let o = fd.new_op(ins.len() as i32, pc);
+        fd.op_set_opcode_code(o, opc);
+        for (slot, vn) in ins.iter().enumerate() {
+            fd.op_set_input(o, *vn, slot as i32).unwrap();
+        }
+        let out = fd.new_unique_out(out_size, o).unwrap();
+        (o, out)
+    }
+
+    /// `r = tick(); t = (r == 0); c = other && t` (or `||`): the call reaches
+    /// input 1 through the comparison, which C skips when `other` decides.
+    #[test]
+    fn a_call_reaching_input_1_declines_and_input_0_does_not() {
+        for bool_op in [OpCode::CPUI_BOOL_AND, OpCode::CPUI_BOOL_OR] {
+            for rhs in [true, false] {
+                let mut fd = build_fd();
+                let target = fd.new_constant(8, 0x2000);
+                let (call, r) = op(&mut fd, OpCode::CPUI_CALL, &[target], 4);
+                let zero = fd.new_constant(4, 0);
+                let (eq, t) = op(&mut fd, OpCode::CPUI_INT_EQUAL, &[r, zero], 1);
+                let other = fd.new_constant(1, 1);
+                let ins = if rhs { [other, t] } else { [t, other] };
+                let (bop, _) = op(&mut fd, bool_op, &ins, 1);
+                assert_eq!(chain_reaches_short_circuit_rhs(&fd, call, &[eq, bop]), rhs, "{bool_op:?} rhs={rhs}");
+            }
+        }
+    }
+
+    /// The left-hand operand of an `&&` that is itself the right-hand operand of
+    /// an `||` is still skipped when the `||`'s left side decides.
+    #[test]
+    fn a_left_operand_nested_on_the_right_declines() {
+        let mut fd = build_fd();
+        let target = fd.new_constant(8, 0x2000);
+        let (call, r) = op(&mut fd, OpCode::CPUI_CALL, &[target], 1);
+        let a = fd.new_constant(1, 1);
+        let (and, t) = op(&mut fd, OpCode::CPUI_BOOL_AND, &[r, a], 1);
+        let b = fd.new_constant(1, 0);
+        let (or, _) = op(&mut fd, OpCode::CPUI_BOOL_OR, &[b, t], 1);
+        assert!(!chain_reaches_short_circuit_rhs(&fd, call, &[and]));
+        assert!(chain_reaches_short_circuit_rhs(&fd, call, &[and, or]));
+    }
+}

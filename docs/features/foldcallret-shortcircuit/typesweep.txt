@@ -1,0 +1,24 @@
+# typesweep --baseline-only, main d6c5862f1 vs fix/foldcallret-shortcircuit, 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x; O0 O2 O2-noinline), DECBENCH_NO_CACHE=1
+# python3 tscompare.py <main-out> <fix-out>
+bzip2      n=267 perfect 19->19 mean 0.3664->0.3664 improved=0 worse=0
+coreutils  n=6422 perfect 610->610 mean 0.2813->0.2813 improved=0 worse=0
+diffutils  n=420 perfect 52->52 mean 0.4004->0.4004 improved=0 worse=0
+findutils  n=790 perfect 35->35 mean 0.1622->0.1622 improved=0 worse=0
+grep       n=247 perfect 39->39 mean 0.3870->0.3870 improved=0 worse=0
+gzip       n=368 perfect 88->88 mean 0.4858->0.4858 improved=0 worse=0
+shadow     n=686 perfect 29->29 mean 0.2897->0.2897 improved=0 worse=0
+tar        n=1548 perfect 114->114 mean 0.2824->0.2824 improved=0 worse=0
+POOLED slices=444 n=10748 missing=0 perfect 986->986 agg 3111.18->3111.18 improved=0 worse=0 tp 18396->18396 fp 19788->19788 fn 27531->27531 nvars 96666->96666
+
+## main
+slices scored: 444
+functions scored: 10748
+- baseline vs published type_match: 9123 agree / 1625 differ (84.88% agreement)
+- type_match PERFECT: 986 / 10748
+- aggregate type_match: 3111.18 (mean 0.2895)
+## fix
+slices scored: 444
+functions scored: 10748
+- baseline vs published type_match: 9123 agree / 1625 differ (84.88% agreement)
+- type_match PERFECT: 986 / 10748
+- aggregate type_match: 3111.18 (mean 0.2895)

@@ -1011,6 +1011,27 @@ questions in full over the whole distance, for its own folds, because those are
 the ones it released; the `foldcallretphi` entry below has that half. Provenance:
 `docs/features/gh657/`.
 
+The same chain also decides whether the folded call is evaluated at all
+(kuna GH-684). P-code's `BOOL_AND` and `BOOL_OR` evaluate both operands, and
+every op of the chain can sit in the call's own block, but the printer emits
+them as C's `&&` and `||`, which skip the right-hand operand whenever the
+left-hand one decides. So a fold whose value reaches input 1 of a `BOOL_AND` or
+`BOOL_OR` anywhere along the chain keeps the call in its own statement
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(chain_reaches_short_circuit_rhs)`). gcc -O0 compiles `int r = tick(a); if ((r
+== 0) & (a > 5)) puts("A");` to one block (`call tick; cmpl $0,-4(%rbp); sete
+%dl; cmpl $5,-0x14(%rbp); setg %al; and %edx,%eax`), and the fold used to print
+`if (a0 <= 5 || tick(a0)) return;`: the binary always calls `tick`, that C
+only when `a0 > 5`. It now prints `v1 = tick(a0); if (a0 <= 5 || v1)`. Input 0
+is printed on the left and is always evaluated, so clang -O0's `(tick(a0) ||
+a0 <= 5)` still folds. The other places the printer evaluates an expression
+conditionally are structural and never on this chain: the second block of an
+`if (a && b)` built from two blocks, and the arms of an `iteregion` `?:`, are
+blocks of their own, which the binary also runs only conditionally, and a fold
+never leaves the call's block. Flipping a condition later
+(`opFlipInPlaceExecute`) swaps `BOOL_AND` and `BOOL_OR` without swapping their
+operands, so the side the call was checked on is the side it is printed on.
+
 The direct call output may have one descendant even though a derived value
 later fans out. For example, `u = (ushort)f()` gives the call one `SUBPIECE`
 descendant, while `u` can feed a loop comparison and a post-loop store. If the
@@ -1092,8 +1113,9 @@ persistent or address-tied storage, the self-copy exemption not applied — and
 nothing up to and including that statement may read a value the call writes
 indirectly. Nor may the call's value reach a `BOOL_AND` or `BOOL_OR` as its
 right-hand operand anywhere along the chain the expression travels through
-(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs
-(chain_reaches_short_circuit_rhs)`). Both ops evaluate both operands, and every
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs
+(chain_reaches_short_circuit_rhs)`, the rule `foldcallret` asks of its own
+folds). Both ops evaluate both operands, and every
 op of the chain can sit in the call's own block, but C prints them as `&&` and
 `||`, which skip the right-hand operand when the left one decides. gcc -O2
 compiles `r = fflush(stdout); gflag = (r == 0) && (a > 5);` to one block
@@ -1103,8 +1125,8 @@ calls `fflush`, the C only when `a0 > 5`. The left-hand operand is always
 evaluated, and the printer emits input 0 on the left, so a call that reaches
 input 0 (`(ferror(stdin) || 5 < a0)`) still folds. A structured `if (a && b)` built from two blocks is
 not affected: there the call sits in the second block and the binary skips it
-too. `foldcallret`'s own folds can land in such an operand as well; that is
-tracked separately (GH-684) and not changed by this option. Without the
+too. `foldcallret` declines the same folds of its own before this option is
+consulted, so the two never disagree on an operand. Without the
 barrier half `betaflight`'s `sub_8051ac4` emits its
 `sub_80515b4(dat_200181a4)` *after* an `if (dat_200019cc & 1)` that the binary
 evaluates after the call — a call moved past two global reads it may itself

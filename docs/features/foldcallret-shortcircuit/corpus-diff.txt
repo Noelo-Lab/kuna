@@ -1,0 +1,140 @@
+# foldcallret-shortcircuit (GH-684): decompile-all --json, main (d6c5862f1) vs this branch, every changed function classified
+# python3 classify.py <dir> unfold-rhs unfold-rhs+operand unfold-lhs other   (<dir>/<n>.off.json = main, <n>.on.json = fix)
+# 34 stripped binaries (decbench full_run_address_2026-09-11), default options; hunks below have v-numbers renamed by first use
+
+O0-bzip2       {'fns': 154}
+O0-dash        {'fns': 442}
+O0-diff        {'fns': 507}
+O0-e2fsck      {'fns': 1908}
+O0-find        {'fns': 862}
+O0-fmt         {'fns': 191}
+O0-grep        {'fns': 642}
+O0-gzip        {'fns': 248}
+O0-ip          {'fns': 1874}
+O0-kmod        {'fns': 548}
+O0-ls          {'fns': 589}
+O0-sort        {'fns': 479}
+O0-ssh         {'fns': 1850}
+O0-su          {'fns': 155}
+O0-tar         {'fns': 1570}
+O2-bash        {'fns': 2538, 'changed': 3, 'unfold-rhs+operand': 1, 'calls': 3, 'unfold-rhs': 2}
+O2-bzip2       {'fns': 114}
+O2-dash        {'fns': 335}
+O2-diff        {'fns': 398}
+O2-e2fsck      {'fns': 1421, 'changed': 1, 'unfold-rhs+operand': 1, 'calls': 1}
+O2-find        {'fns': 658, 'changed': 1, 'unfold-rhs': 1, 'calls': 1}
+O2-fmt         {'fns': 151}
+O2-grep        {'fns': 449}
+O2-gzip        {'fns': 204}
+O2-ip          {'fns': 1008}
+O2-kmod        {'fns': 394, 'changed': 1, 'unfold-rhs': 1, 'calls': 1}
+O2-libacl      {'fns': 129}
+O2-libselinux  {'fns': 621}
+O2-ls          {'fns': 404}
+O2-sort        {'fns': 343}
+O2-ssh         {'fns': 1510, 'changed': 1, 'unfold-rhs': 1, 'calls': 1}
+O2-su          {'fns': 150}
+O2-tar         {'fns': 1125}
+O2ni-tar       {'fns': 1585, 'changed': 1, 'unfold-rhs': 1, 'calls': 2}
+TOTAL {'fns': 25556, 'missing': 0, 'changed': 8, 'unfold-rhs+operand': 2, 'calls': 9, 'unfold-rhs': 6}
+
+### O2-bash 0x4f0c0 sub_4f0c0 [unfold-rhs+operand]
+    -    V2 = *(unsigned long *)&a0[4];
+    -    stdin_redir = (uint4)(a2 != 0xffffffff || stdin_redirects(V2));
+    +    V3 = stdin_redirects(*(unsigned long *)&a0[4]);
+    +    stdin_redir = (uint4)(a2 != 0xffffffff || V3);
+
+### O2-bash 0x887f0 sub_887f0 [unfold-rhs]
+    -      V0 = (uint4)(V0 || sub_887f0());
+    +      V2 = sub_887f0();
+    +      V0 = (uint4)(V0 || V2);
+
+### O2-bash 0xc4460 sub_c4460 [unfold-rhs]
+    -                            V15 = (uint4)(V6 == 0x5f || iswctype(V6,V27));
+    +                            V16 = iswctype(V6,V27);
+    +                            V15 = (uint4)(V6 == 0x5f || V16);
+
+### O2-e2fsck 0x28e90 sub_28e90 [unfold-rhs+operand]
+    -  V4 = V0[0x6e];
+    -  if (V4)
+    -    V42 = V8 != -1 && ext2fs_u32_list_test(V4,V1);
+    +  if (V0[0x6e]) {
+    +    V9 = ext2fs_u32_list_test(V0[0x6e],V1);
+    +    V42 = V8 != -1 && V9;
+    +  }
+
+### O2-find 0x1e550 sub_1e550 [unfold-rhs]
+    -      if (((((strcmp(V9,"autofs")) && (strcmp(V9,"proc"))) && (strcmp(V9,"subfs"))) && (((strcmp(V9,"debugfs") && (strcmp(V9,"devpts"))) && ((strcmp(V9,"fusectl") && ((strcmp(V9,"fuse.portal") && (strcmp(V9,"mqueue"))))))))) && ((strcmp(V9,"rpc_pipefs") && ((((strcmp(V9,"sysfs") && (strcmp(V9,"devfs"))) && (strcmp(V9,"kernfs"))) && (strcmp(V9,"ignore")))))))
+    -        V14 = !V18 && !strcmp(V9,"none");
+    +      if (((((strcmp(V9,"autofs")) && (strcmp(V9,"proc"))) && (strcmp(V9,"subfs"))) && (((strcmp(V9,"debugfs") && (strcmp(V9,"devpts"))) && ((strcmp(V9,"fusectl") && ((strcmp(V9,"fuse.portal") && (strcmp(V9,"mqueue"))))))))) && ((strcmp(V9,"rpc_pipefs") && ((((strcmp(V9,"sysfs") && (strcmp(V9,"devfs"))) && (strcmp(V9,"kernfs"))) && (strcmp(V9,"ignore"))))))) {
+    +        V16 = strcmp(V9,"none");
+    +        V14 = !V18 && !V16;
+    +      }
+
+### O2-kmod 0x110a0 sub_110a0 [unfold-rhs]
+    -                        if (V21 && 0 <= (int)sub_e8f0(V20)) {
+    +                        V15 = sub_e8f0(V20);
+    +                        if (V21 && 0 <= V15) {
+
+### O2-ssh 0x86960 sub_86960 [unfold-rhs]
+    +                      V19 = sub_b4d80(V15 + (int8)V17,V13,V12);
+    -                      if (V6 || sub_b4d80(V15 + (int8)V17,V13,V12))
+    +                      if (V6 || V19)
+
+### O2ni-tar 0x55a80 sub_55a80 [unfold-rhs]
+    -      V6 = (uint4)(V3 == 0x5f || iswalnum(V3));
+    +      V6 = iswalnum(V3);
+    +      V7 = (uint4)(V3 == 0x5f || V6);
+    -      *(uint1 *)((int8)&a0->field_0x8 + 2) = (uint1)(V6 << 6) | *(uint1 *)((int8)&a0->field_0x8 + 2) & 0xbf;
+    +      *(uint1 *)((int8)&a0->field_0x8 + 2) = (uint1)(V7 << 6) | *(uint1 *)((int8)&a0->field_0x8 + 2) & 0xbf;
+    -          V7 = 2;
+    +          V8 = 2;
+    -          V7 = 2;
+    +          V8 = 2;
+    -          V7 = 2;
+    +          V8 = 2;
+    -          V7 = 2;
+    +          V8 = 2;
+    -          V7 = 2;
+    +          V8 = 2;
+    -          V7 = 2;
+    +          V8 = 2;
+    -    V6 = (uint4)(V3 == 0x5f || iswalnum(V3));
+    +    V6 = iswalnum(V3);
+    +    V7 = (uint4)(V3 == 0x5f || V6);
+    -      V6 = *(uint2 *)(*(int8 *)__ctype_b_loc() + ((uint8)V5 & 0xff) * 2) >> 3 & 1 | (uint4)((char)V5 == '_');
+    +      V7 = *(uint2 *)(*(int8 *)__ctype_b_loc() + ((uint8)V5 & 0xff) * 2) >> 3 & 1 | (uint4)((char)V5 == '_');
+    -    V6 = *(uint2 *)(*(int8 *)__ctype_b_loc() + (uint8)V1 * 2) >> 3 & 1 | (uint4)(V1 == 0x5f);
+    -  }
+    -  *(uint1 *)((int8)&a0->field_0x8 + 2) = (uint1)(V6 << 6) | *(uint1 *)((int8)&a0->field_0x8 + 2) & 0xbf;
+    +    V7 = *(uint2 *)(*(int8 *)__ctype_b_loc() + (uint8)V1 * 2) >> 3 & 1 | (uint4)(V1 == 0x5f);
+    +  }
+    +  *(uint1 *)((int8)&a0->field_0x8 + 2) = (uint1)(V7 << 6) | *(uint1 *)((int8)&a0->field_0x8 + 2) & 0xbf;
+    -        V7 = 1;
+    +        V8 = 1;
+    -        return V7;
+    +        return V8;
+    -        V7 = 1;
+    +        V8 = 1;
+    -        return V7;
+    +        return V8;
+    -          sub_55a80(V8,a1,a2);
+    +          sub_55a80(V9,a1,a2);
+    -          if (2 <= (uint1)(V9 - 9U))
+    +          if (2 <= (uint1)(V10 - 9U))
+    -        V7 = 1;
+    +        V8 = 1;
+    -        return V7;
+    +        return V8;
+    -        V7 = 1;
+    +        V8 = 1;
+    -        return V7;
+    +        return V8;
+    -        V7 = 1;
+    +        V8 = 1;
+    -        return V7;
+    +        return V8;
+    -        V7 = 1;
+    +        V8 = 1;
+    -        return V7;
+    +        return V8;

@@ -176,7 +176,8 @@ pub fn conflict_is_self_call_effect(
 /// folded expression is evaluated as its operand, before it — but its *other*
 /// operands must not read an effect of the call, so the INDIRECT test covers it
 /// too.  A chain into the right-hand operand of a short-circuit operator
-/// declines: see [`chain_reaches_short_circuit_rhs`].
+/// declines: see
+/// [`chain_reaches_short_circuit_rhs`](crate::p6_variables::kuna_callretfold::chain_reaches_short_circuit_rhs).
 ///
 /// This is wider than either span `foldcallret` clears — every opcode, the
 /// storage test with no self-copy exemption, no exemption for the ops the
@@ -187,7 +188,7 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
     let Some(chain) = crate::kuna_callretfold::print_chain(data, use_op) else {
         return false;
     };
-    if chain_reaches_short_circuit_rhs(data, call, &chain) {
+    if crate::kuna_callretfold::chain_reaches_short_circuit_rhs(data, call, &chain) {
         return false;
     }
     let point = *chain.last().expect("print_chain: non-empty");
@@ -213,34 +214,6 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
             || crate::kuna_callretfold::op_reads_indirect_output_of(data, mid, call)
     });
     span_clear && !crate::kuna_callretfold::op_reads_indirect_output_of(data, point, call)
-}
-
-/// (kuna) Does the folded call's value reach the right-hand operand of an `&&`
-/// or `||` on its way to the print point?
-///
-/// P-code's `BOOL_AND`/`BOOL_OR` evaluate both operands, and C's `&&`/`||` skip
-/// the right-hand one when the left one decides.  A call folded there could
-/// stop being made, so it keeps its own statement.  The left-hand operand is
-/// always evaluated, and the printer emits input 0 on the left.
-fn chain_reaches_short_circuit_rhs(data: &Funcdata, call: OpId, chain: &[OpId]) -> bool {
-    let Some(mut val) = data.obank().get(call).and_then(|o| o.get_out()) else {
-        return true;
-    };
-    for &op in chain {
-        let Some(o) = data.obank().get(op) else {
-            return true;
-        };
-        if matches!(o.code(), OpCode::CPUI_BOOL_AND | OpCode::CPUI_BOOL_OR)
-            && (1..o.num_input()).any(|slot| o.get_in(slot) == Some(val))
-        {
-            return true;
-        }
-        match o.get_out() {
-            Some(out) => val = out,
-            None => break,
-        }
-    }
-    false
 }
 
 /// (kuna) Does `call`'s output carry the whole value its callee returns?

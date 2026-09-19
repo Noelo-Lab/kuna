@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1181,
-    1181
+    1189,
+    1189
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -251,6 +251,14 @@
     "data:GH657 #4: target2 does the same although its use is implied and the call would travel to the return",
     "data:GH657 #5: the folded form of the issue is never emitted",
     "data:GH657 #6: nor the folded form of the travelling case",
+    "data:GH684 #1: the call keeps its own statement (gcc -O0 w1f and w4f, clang -O2 w4f)",
+    "data:GH684 #2: gcc -O0 w1f reads the spill on the right of the or-or",
+    "data:GH684 #3: gcc -O0 w4f reads the spill on the right of the and-and",
+    "data:GH684 #4: clang -O0 w1f still folds the call on the left of the or-or",
+    "data:GH684 #5: clang -O0 w4f still folds the call on the left of the and-and",
+    "data:GH684 #6: clang -O2 w4f reads the spill on the right of the and-and",
+    "data:GH684 #7: the call is never printed on the right of an or-or",
+    "data:GH684 #8: the call is never printed on the right of an and-and",
     "data:GH6882 #1: post-call unimp renders as a computed call (bug reproduced)",
     "data:GH6882 #2: sparcstructret on recovers the function tail (the real return expression)",
     "data:GH6904 #1: r3/ptr compared as a plain 32-bit pointer (no widening)",
