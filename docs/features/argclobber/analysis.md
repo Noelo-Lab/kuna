@@ -1,0 +1,103 @@
+# `argclobber` — the callee's recovered prototype as the admitting evidence
+
+## The symptom, still
+
+coreutils `fmt` -O2 (stripped, decbench `full_run_address_2026-09-11`) calls one
+static function three times from `main` and kuna renders three different arities,
+the longest of which reads a local nothing assigns:
+
+```
+$ kuna decompile-all O2/coreutils/stripped/fmt --option argclobber off
+  unsigned long v9;  // rdx        <- never assigned
+  unsigned long v11; // rdx        <- never assigned
+      v12 &= sub_3700(v6);
+    v3 = sub_3700(stdin,v7);
+  v12 = sub_3700(stdin,"-",v10);
+unsigned long sub_3700(FILE *a0,char *a1)
+```
+
+The callee's own recovered prototype takes **two** parameters, and DWARF on the
+unstripped twin says `fmt(FILE *f, char const *name)`. The third argument is
+`rdx`, which at that call is a join of a previous call's clobber and a dead
+`idiv` remainder. Nothing on the caller's side put a value there for this call.
+
+## Why the shipped rule could not be a default
+
+`argclobber` shipped off. Its eight clauses admit a drop when the caller's side
+shows a clobber and nothing else, and the only clause that could speak for the
+callee was a **bounded walk of the callee's entry**: decline if that walk sees
+the register read before it is written.
+
+That walk can only ever *see*, and the evaluation on `feat/argclobber-on`
+(`default-on-evaluation.md`, kept here with its four programs) found four
+ordinary ways for a real read to be invisible to it:
+
+| program | how the read hides | callee's recovered prototype |
+|---|---|---|
+| `ce-remainder-or-pair.c` | read only past a jump table | 3 parameters |
+| `ce-probe-budget.c` | read in the first instruction, but the body is over the walk's 192-instruction budget | 3 parameters |
+| `ce-probe-budget.s` | same shape, hand written | 3 parameters |
+| `ce-import.c` | the callee is a PLT import | no body |
+
+In each, `argclobber on` deleted an argument the callee reads, and with it the
+expression that computed it — including the second half of a 16-byte `rax:rdx`
+struct return. Every gate stayed green, because no corpus the gates run contains
+the shape.
+
+The evaluation also measured the opposite rule (drop only on *positive* proof
+that the register is dead through the callee) and it declined three of the four
+drops the option shipped as correct. The one signal that separates the two sets
+is the one the rule never read: **the callee's own recovered prototype**. All
+four shipped drops land on a callee kuna itself recovers with two parameters;
+every counterexample callee recovers three, or has no body.
+
+## What changed
+
+Reading that prototype needs callees decompiled before their callers, which is
+`protoorder`'s machinery (#669, merged). `protoorder types` parks each callee's
+recovered parameter list — storage and type — as it decompiles the call graph
+callee-first, and the caller reads it back through
+`Funcdata::kuna_protoorder_types`.
+
+The callee clause is now:
+
+* the callee's recovered prototype must **exist** for this entry, and
+* none of its parameters may overlap the argument's register bytes.
+
+Requiring it to exist is most of the clause's strength, because `protoorder`
+refuses to park one in exactly the cases where a callee's parameter list is not
+knowable: a recursive component (`Decline::Scc`), a variadic callee, an import
+with no recovered body, a callee that recovered no parameters, and a callee whose
+prototype is already *declared* (which input-locks the call spec, declined at the
+rule's first line). A callee that was never decompiled first states nothing, so
+the rule is inert on a single-function `kuna decompile`, a narrowed
+`decompile-all`, a `--jobs N` run, and under `--option protoorder off`.
+
+The bounded entry walk stays, as a **veto only**: it can refuse a drop the
+prototype admitted, never admit one. It is what still answers for a callee kuna
+never recovered as variadic (u-boot's `printf`, 1,924 sites, its `va_list`
+prologue spilling `r1`–`r3`). It is also now seeded only when something is
+parked, so the option costs nothing on a surface where it cannot fire.
+
+## What it still cannot know
+
+The evidence is a recovery, not a fact: a callee whose own parameter list kuna
+under-recovers states a prototype that admits the drop. That is the residual
+hole, and it is the hole every callee-derived statement has. What the clause
+removes is the class a bounded body walk cannot see at all — the four programs
+above.
+
+One effect belongs in the option's own description rather than in a footnote:
+dropping the argument also **narrows the preceding call's return value** where
+that call was the register's only writer. `bash`'s `expand_prompt` renders
+`v = xmalloc(n); a = SUB168(v,8);` off and `v = (char *)xmalloc(n);` on. That is
+right for `xmalloc`, and it is the same mechanism that would delete a real struct
+half at an under-recovered callee.
+
+## Why `destructive = true` even as a default
+
+`kuna_phases.rs` defines `destructive` as "not safe as a global default". What
+this option drops is an *argument*: a wrong drop is a deleted expression, which
+is the kind of wrong output a reader cannot see. Seven other options ship
+`destructive = true` with a non-`off` default for the same reason — the field
+records the failure mode, not the shipped value.
