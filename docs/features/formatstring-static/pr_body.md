@@ -28,37 +28,31 @@ With this change the default prints `main(int a0,unsigned long *a1)` and
 - The first decompile has the last word. An override is dropped, and the
   function decompiled once more, when the call passes a different number of
   arguments than it declares (an `alloca` frame) or its format is not the
-  resolved string (a join reached from a jump table). That happens at 130 of
-  11,743 sites in 325 binaries.
+  resolved string (a join reached from a jump table).
 - An override is built only where the target passes a vararg exactly like a
   named argument: every conversion on x86 and standard AArch64, integer and
   pointer conversions on ARM32, RISC-V, MIPS, PowerPC and Windows AArch64,
-  nothing on Apple AArch64 (which puts every vararg on the stack) or an
-  unchecked processor. This binds `full` too.
-- The format string must sit in a read-only section, and a site whose call
+  nothing on Apple AArch64 or an unchecked processor. This binds `full` too.
+- The format must sit in a read-only section, and a site whose call
   instruction writes the format register itself (a delay slot) is declined.
 - Fixes in the existing typing: override parameter names no longer leak into
-  the caller, `%c` is a char, `%lc` is a `wint_t` rather than a `char`, `%lf`
-  is a `double` (and `double *` for scanf) rather than an `unsigned long`,
-  `%Lf` declines the site.
+  the caller; `%c` is a char and `%lc` a `wint_t`; `%lf` is a `double` (a
+  `double *` for scanf); `%zu`/`%td` are pointer-width, so 8 bytes on Win64
+  where `long` is 4; `%Lf` declines the site.
 
 ## The tests
 
-`tests/stages/kuna-formatstring-static.xml` has 20 passes: off, default and
-`full` on `fmt_x86_64` and on the new `fmtjoin_x86_64` (the jump-table and
-`alloca` sites). Passes 7-14 require default == off on the Apple arm64
-`macho_imports_arm64`, on a new ARM hard-float `fmtabi_armhf` and on a new
-`fmtedge_x86_64` (a format in `.data`, a `%lc`). Passes 15-20 pin `%lf` as a
-`double` on new `fmtlf_x86_64`/`fmtlf_armhf` fixtures. The previous build fails
-8 of those 9. Also a CLI probe and unit tests. Over 325 binaries (every
-coreutils build plus 31 others), off vs static: no format call gains or loses a
-vararg, or passes one in the wrong class (float vs integer), against its
-conversions (313 counts and 4 classes are fixed), and 8 functions change arity,
-all to what their callers pass. With `formatstring off` the output is
-byte-identical to main on 13 other binaries.
-decbench `type_match` over 444 slices: 987 → 1025 perfect, 176 better, 2 worse.
-Speed, `decompile-all` interleaved min-of-15 against `off`: `fmt` +1.0%, `ls` -1.1%, `sort` 0.0%.
-Evidence: `docs/features/formatstring-static/`.
+- `tests/stages/kuna-formatstring-static.xml`, 23 passes: off, default and
+  `full` on `fmt_x86_64`, the jump-table/`alloca` sites, `%lf` on x86-64 and
+  ARM hard-float, a Win64 PE with `%zu`/`%td`, and default == off on Apple
+  arm64, ARM hard-float `%f` and a format in `.data`. Without the `%zu` fix
+  the 3 Win64 assertions fail; without the `%lf` fix 8 more do.
+- decbench `type_match` over 444 slices: 986 → 1024 perfect, 176 functions
+  better, 2 worse.
+- Over 325 binaries, off vs static, no format call gains or loses a vararg or
+  gets one of the wrong class. With `formatstring off` the output is
+  byte-identical to main. `decompile-all` min-of-15 against main: `fmt`
+  +1.2%, `ls` +0.7%, `sort` +1.1%.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 

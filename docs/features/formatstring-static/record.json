@@ -1,6 +1,6 @@
 {
   "opportunity": "A printf/scanf call states the types of its variadic arguments in its format string, but reading it cost a second decompile of every caller: Ghidra's FormatStringAnalyzer is DecompilerDependent, so the format pointer is only visible as an input varnode of a lifted CALL. decompile-all measured +77.5% (cronie crontab), +55.1% (gnutls psktool), +43.7% (gzip), which held the option to a per-run opt-in and out of the aggressive preset, even though the recovery was real (decbench C type_match perfects 80 -> 88 of 1,133). The constant is in the image, and so is the call site.",
-  "test_name": "tests/stages/kuna-formatstring-static.xml (24 assertions, 20 passes; passes 7-14 require default == off on macho_imports_arm64, fmtabi_armhf and fmtedge_x86_64; passes 15-20 pin %lf as a double on fmtlf_x86_64 and default == off on fmtlf_armhf's printf sites; the first six: over fmt_x86_64 off = the bug, default = the fix, full = the same answer with no Listing; over fmtjoin_x86_64 off/default/full must agree on a format chosen on a jump table and on a call in an alloca frame, the two shapes the post-drive audit withdraws) + tests/cli/printf-varargs-render-untyped.json + 12 unit tests (%l on a floating conversion is a double, a delay-slot write to the format register, C99 conversion matrix, length-modifier matrix, `*` widths, the long-double decline, the format-function predicate over 21 accepted / 12 refused names, the fold's arithmetic incl. PIECE at the low input's width and shifts of 64 or more, and a cmov destination the fold must not know)",
+  "test_name": "tests/stages/kuna-formatstring-static.xml (27 assertions, 23 passes; passes 7-14 require default == off on macho_imports_arm64, fmtabi_armhf and fmtedge_x86_64; passes 15-20 pin %lf as a double on fmtlf_x86_64 and default == off on fmtlf_armhf's printf sites; passes 21-23 pin %zu/%td as 8 bytes on the Win64 PE32+ fmtzu_pe_x86_64; the first six: over fmt_x86_64 off = the bug, default = the fix, full = the same answer with no Listing; over fmtjoin_x86_64 off/default/full must agree on a format chosen on a jump table and on a call in an alloca frame, the two shapes the post-drive audit withdraws) + tests/cli/printf-varargs-render-untyped.json + 12 unit tests (%l on a floating conversion is a double, a delay-slot write to the format register, C99 conversion matrix, length-modifier matrix, `*` widths, the long-double decline, the format-function predicate over 21 accepted / 12 refused names, the fold's arithmetic incl. PIECE at the low input's width and shifts of 64 or more, and a cmov destination the fold must not know)",
   "binary": "decompiler/crates/kuna-analysis/tests/fixtures/fmt_x86_64",
   "selector": "main",
   "func_addr": "0x401136",
@@ -256,10 +256,10 @@
       },
       "coreutils": {
         "n": 6422,
-        "perfect_off": 611,
-        "perfect_static": 619,
-        "mean_off": 0.2816,
-        "mean_static": 0.2832,
+        "perfect_off": 610,
+        "perfect_static": 618,
+        "mean_off": 0.2813,
+        "mean_static": 0.283,
         "improved": 43,
         "worse": 2
       },
@@ -320,10 +320,10 @@
     },
     "pooled": {
       "n": 10748,
-      "perfect_off": 987,
-      "perfect_static": 1025,
-      "aggregate_off": 3112.68,
-      "aggregate_static": 3169.95,
+      "perfect_off": 986,
+      "perfect_static": 1024,
+      "aggregate_off": 3111.18,
+      "aggregate_static": 3168.45,
       "moved_onto_perfect_by_off": 0,
       "moved_off_perfect_by_off": 38,
       "improved": 176,
@@ -345,21 +345,22 @@
         "static": 96674
       },
       "fp": {
-        "off": 19769,
-        "static": 19556
+        "off": 19788,
+        "static": 19575
       },
       "tp": {
-        "off": 18415,
-        "static": 18628
+        "off": 18396,
+        "static": 18609
       },
       "fn": {
         "off": 27531,
         "static": 27531
       },
-      "reading": "static exports 23 fewer variables and none is lost (fn unchanged); 213 move from fp to tp (round 4, d03560b2)"
+      "reading": "static exports 23 fewer variables and none is lost (fn unchanged); 213 move from fp to tp (round 5, 75f832e3)"
     },
     "round2_note": "re-measured on the round-2 build (audit + cmov fix): identical to the round-1 numbers, 997 vs 959 perfect and 3094.46 vs 3037.19 aggregate; the audit build before the cmov fix measured the same",
-    "round4_note": "re-measured on the round-4 build rebased onto d03560b2 (main gained boolbyte-on and truncarg, which lift both arms): static vs off +38 perfect, 176 better, 2 worse -- the same deltas and the same two tr make_printable_str rows as rounds 1-3"
+    "round4_note": "re-measured on the round-4 build rebased onto d03560b2 (main gained boolbyte-on and truncarg, which lift both arms): static vs off +38 perfect, 176 better, 2 worse -- the same deltas and the same two tr make_printable_str rows as rounds 1-3",
+    "round5_note": "re-measured on the round-5 build rebased onto 75f832e3 (main gained structsynth-on and charbyte): static vs off +38 perfect, 176 better, 2 worse -- the same deltas and the same two tr rows; the LLP64 fix cannot move an ELF (it differs from the old rule only when the pointer is 8 bytes and long is narrower)"
   },
   "speed": {
     "method": "interleaved `kuna decompile-all` wall time (off / static / full in one round) on the round-2 build, box shared with other lanes' workspace suites; min-of-N plus the paired median of per-round deltas",
@@ -401,13 +402,13 @@
   },
   "gates": {
     "make test": "675/675 assertions passed / PARITY OK",
-    "make test-stages": "1180/1180 assertions passed / PARITY OK (baseline re-recorded on d03560b2: +24, only this test's; none removed)",
-    "make test-cli": "186/186 passed",
+    "make test-stages": "1204/1204 assertions passed / PARITY OK (baseline re-recorded on 75f832e3: +27, only this test's; none removed)",
+    "make test-cli": "190/190 passed",
     "make check-spec": "OK (lenient) + OK (strict)",
     "kuna catalog --check": "catalog OK",
     "counters --check": "no drift",
-    "docs/options.md": "byte-fresh (cmp rc=0); phase_catalog.json recapture byte-identical",
-    "make rust-test": "RUST_TEST_RC=0 via the lane script, 2026-09-18 23:00:15-23:18:35Z, after the last .rs/fixture commit c9cde6dc (22:58:39Z); later commits are docs only. ghidra_sim_faillog_pins, l_on_a_floating_conversion_is_still_a_double and a_delay_slot_write_to_the_format_register_is_seen ok"
+    "docs/options.md": "byte-fresh (cmp rc=0)",
+    "make rust-test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 11:41:15-11:56:38Z, after the last .rs/fixture commit 85538147 (11:40:46Z); later commits are docs/baseline only. size_t_and_ptrdiff_t_are_pointer_width_on_llp64 and l_on_a_floating_conversion_is_still_a_double ok"
   },
   "files": [
     "decompiler/crates/kuna-analysis/src/analyzers/formatstring/kuna_fmtstatic.rs",
@@ -603,5 +604,17 @@
       }
     },
     "typesweep": "444 slices / 10,748 functions, off vs default on d03560b2: perfect 987 -> 1025 (+38), aggregate 3112.68 -> 3169.95, 176 better / 2 worse (tr make_printable_str, as before); decomp_vars 96,697 -> 96,674, fp 19,769 -> 19,556, fn 27,531 unchanged"
+  },
+  "round5": {
+    "review": "CHANGES (major): on LLP64 (Win64 PE, Windows AArch64) %z*/%t* were typed 4 bytes -- spec_to_datatype's integral_pointer took long unless ptr<long; a synthesized PE32+ printf(\"%zu\\n\",(n<<32)|5) rendered printf(\"%zu\\n\",5) and lost its parameter (pre-existing under formatstring on). Minor: excess varargs dropped (C ignores them), %ls literal rendered (wchar_t *)\"h\" (string tier, pre-existing), PR body tests paragraph too long.",
+    "fix": "mod.rs spec_to_datatype integral_pointer: size_t/ptrdiff_t (and their scanf pointers) are the int, long or long long whose width equals the pointer's; the old int-if-int<=ptr<long-else-long rule is kept only when no such integer exists. Differs from the old rule only when ptr=8 and long<8 (LLP64): LP64 and ILP32 (and every 16-bit or data-org-less cspec) answer as before.",
+    "unit_test": "size_t_and_ptrdiff_t_are_pointer_width_on_llp64: LLP64 factory (long 4, ptr 8) %zu %zd %zx %td %tu = 8 bytes, scanf pointees 8; %ld %lu = 4; LP64 %zu/%ld 8; ILP32 %zu/%td 4, %lld 8",
+    "stage_test": "passes 21-23 (off/default/full) load new fixture fmtzu_pe_x86_64.exe (generator fmtzu_pe_x86_64.py; exports show_zu/show_td printing (n << 32) | 5 via msvcrt printf): asserts #25-27, all three passes print a0 << 0x20 | 5 with an int8 parameter. This build 27/27; round-4 build fails exactly #25-27; round-3 build fails 11 (#16-22, #24, #25-27)",
+    "rebase": "onto origin/main 75f832e3 (structsynth on #682, charbyte #683); xml.rs corpus count 317 (main 316 + this PR's one stage file); baseline-stages re-recorded 1204 = main 1177 + 27 FMTSTATIC keys, 0 removed",
+    "off_equals_main": "decompile-all --option formatstring off (this build) vs main 75f832e3 default: byte-identical 9/9 at --jobs 4 (grep O0, grep O2, find O2-noinline, tar O2, gpasswd O2, gzip O2, mydoom.exe PE32, fmtzu_pe_x86_64.exe, demangler_gnu_v2_41.exe PE32+ MinGW) and 2/2 at --jobs 1 with structsynth active (gpasswd, gzip)",
+    "pe32plus_sweep": "8 real PE32+ binaries (lzfse.exe, demangler_gnu_v2_41.exe, setuptools cli-64.exe, PUSHAN if_test/loop_test/process_terminator/smt_no_solve/tool_urlglob _gt.exe), 2,265 functions: static vs off changes 0 functions. Their %zu sites go through stripped wrappers or curl_msnprintf, not a printf-family import, so none is typed.",
+    "rust_test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 11:41:15-11:56:38Z, after the last .rs/fixture commit 85538147 (11:40:46Z); later commits are docs/baseline only. size_t_and_ptrdiff_t_are_pointer_width_on_llp64 and l_on_a_floating_conversion_is_still_a_double ok",
+    "typesweep": "75f832e3 base, 444 slices / 10,748 functions, DECBENCH_NO_CACHE=1, pinned .scratch/r5/bin/kuna: off 986 -> static 1024 perfect, aggregate 3111.18 -> 3168.45, 176 better / 2 worse (tr make_printable_str O2 and O2-noinline, the same metric artifact as rounds 1-4). decomp_vars 96697 -> 96674, fn 27531 both, fp 19788 -> 19575, tp 18396 -> 18609. off 986 equals main's campaign number (986)",
+    "speed": "interleaved decompile-all min-of-15 (off / static on this build / main 75f832e3 default): static vs main fmt O2 +1.19%, ls O2 +0.72%, sort O2 +1.09%; static vs off +1.19%, -5.46% (off arm drew a slow minimum), -0.35%; paired medians static vs off +4.28%, -1.00%, -0.97% (box load 12-22)"
   }
 }
