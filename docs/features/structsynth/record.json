@@ -366,7 +366,7 @@
   "Readers of different records that measured exactly the same shape share one name, as they already did on main: cp O2's struct_1 {long; long;} serves both the struct stat readers and src_to_dest_compare's Src_to_dest.",
   "The growth bounds are not transitive, so a record can end with two names: fb claims four fields, fa two of them, fc eight including fb's four; fc is out of fa's reach and fa keeps the superseded structure it was first given (tests/cli/structsynth-sweep-mints-no-third-name.json). Which of the two fa gets depends on address order.",
   "decompile-project --stream and the default (eager) export of the same binary report DIFFERENT numbers of records: cp O2 with `--option structsynth param` gives 31 definitions streamed against 30 eagerly (main before the ledger: 33 and 33). The convergence sweep is a property of the eager batch -- the streaming writer has already appended a body by the time a name it spells can be superseded. Each surface is self-consistent (every struct_N a body names is defined in its header). A sharded `--jobs N` run turns structsynth off in its workers, so it neither mints nor converges. The stream property the prune depends on is pinned by prune_unreferenced_synth_types over records whose `code` is None.",
-  "Speed at ledger scale: a synthetic 112 KB binary whose 1000 functions each read a different layout decompiles +12.44% against main 6e4f6fa5 (structsynth default on; +43% before the lookup was narrowed). Real binaries measured tar O0 -2.54%, ls O2 +0.48%, rsyslogd O2 -3.14%, and ls O2 with structsynth off -0.44% (interleaved min-of-15). The residue is one scan of the held names per lookup plus the convergence sweep.",
+  "Speed at ledger scale: a synthetic 112 KB binary whose 1000 functions each read a different layout decompiles +12.08% against main 75f832e3 (structsynth default on; +43% before the lookup was narrowed). Real binaries measured tar O0 -0.99%, ls O2 +0.90%, rsyslogd O2 +1.02%, and ls O2 with structsynth off -0.40% (interleaved min-of-15). The residue is one scan of the held names per lookup plus the convergence sweep.",
   "The unclaimed-bytes veto guards this pass's spelling, not the engine's ordering test: ActionMarkImplied's isPossibleAlias takes one base plus two different constants to be two objects whatever the access widths, so a load can still print after an overlapping store where the addresses are spelled that way without structsynth (raw offsets with the option off: rd_c8's `*(uint4 *)((int8)a0 + 7)` prints after `*(char *)&a0[2] = ...`). A reader the veto turns away mints its own shape beside a live container, so the record keeps two names (rsyslogd O2 syslogTime).",
   "Records that agree on every word one of their readers measured and differ only in that reader's alignment padding keep separate names because of the padding rule: bash O0 execute_if_command/copy_if_command (if_com) vs for_com/select_com (int line at 4), the six it_init_* ITEMLIST readers vs case_com, dpkg O2-noinline pkg_queue_init (pkg_queue) vs pkg_spec (flag bytes in pkg_queue's tail padding); before the rule a reviewer measured 10 of 28 absorptions on 18 builds given a different record this way (tests/stages/structsynth-shared-layout.xml #10-#12). The cost is the reverse case: 19 absorptions onto the same record that a reader measured with a hole where its record has a member (6 of them on the first five sets: 4 into interior padding, e.g. e2fsck O2 e2fsck_get_lost_and_found, and 2 into an untyped reader's tail) now keep their own name.",
   "A container larger than the reader's own object re-spells address arithmetic past the reader's measured end through the container's members, changing its type but not its value: cx2 (gcc -O2) rsmall returns `struct Small *p + 1`; with a larger struct Big written elsewhere the branch prints `unsigned int * sub_12b0(struct_0 *a0)` with `v1 = &a0->field_0x10;` where main prints `struct_0 * sub_12b0(struct_0 *a0)` with `v1 = &a0[1];`, and a call argument `&a0[1]` becomes `&a0->field_0x10`. The ledger sees a reader's dereferences, not the arithmetic on its base. No function in the 177 measured builds changes this way."
@@ -925,36 +925,66 @@
   },
   "default_decision": "No new settable. The behaviour lives entirely inside `structsynth param`, which is the default since 6e4f6fa5 (#682), so every change here is default output and is measured as such against main 75f832e3. With `--option structsynth off` the change is one boolean test per batch and the output is byte-identical to main (9/9 binaries).",
   "speed": {
-   "method": "interleaved main (6e4f6fa5, structsynth default on) / branch, min-of-15, order alternating per round, `kuna decompile-all <binary>` wall clock, both binaries frozen; shared machine",
+   "method": "interleaved main (75f832e3, structsynth default on) / branch, min-of-15, order alternating per round, `kuna decompile-all <binary>` wall clock, both binaries frozen; shared machine (load average about 30 on 80 cores)",
    "budget_pct": 5.0,
    "cases": {
     "tar O0 default (structsynth param)": {
-     "base_s": 19.158,
-     "new_s": 18.671,
-     "delta_pct": -2.54
+     "base_s": 19.935,
+     "new_s": 19.738,
+     "delta_pct": -0.99
     },
     "ls O2 default (structsynth param)": {
-     "base_s": 13.383,
-     "new_s": 13.447,
-     "delta_pct": 0.48
+     "base_s": 13.398,
+     "new_s": 13.519,
+     "delta_pct": 0.9
     },
     "rsyslogd O2 default (structsynth param)": {
-     "base_s": 25.509,
-     "new_s": 24.709,
-     "delta_pct": -3.14
+     "base_s": 26.055,
+     "new_s": 26.321,
+     "delta_pct": 1.02
     },
     "ls O2 structsynth off": {
-     "base_s": 12.984,
-     "new_s": 12.926,
-     "delta_pct": -0.44
+     "base_s": 13.051,
+     "new_s": 12.999,
+     "delta_pct": -0.4
     },
     "synth 1000 layouts default": {
-     "base_s": 2.349,
-     "new_s": 2.641,
-     "delta_pct": 12.44
+     "base_s": 2.325,
+     "new_s": 2.606,
+     "delta_pct": 12.08
     }
    },
-   "within_budget": "real binaries: tar O0 default (structsynth param) -2.54%, ls O2 default (structsynth param) +0.48%, rsyslogd O2 default (structsynth param) -3.14%, ls O2 structsynth off -0.44%; synthetic 1000-layout binary +12.44%",
+   "within_budget": "real binaries: tar O0 default (structsynth param) -0.99%, ls O2 default (structsynth param) +0.90%, rsyslogd O2 default (structsynth param) +1.02%, ls O2 structsynth off -0.40%; synthetic 1000-layout binary +12.08%",
+   "previous_revision_on_6e4f6fa5": {
+    "cases": {
+     "tar O0 default (structsynth param)": {
+      "base_s": 19.158,
+      "new_s": 18.671,
+      "delta_pct": -2.54
+     },
+     "ls O2 default (structsynth param)": {
+      "base_s": 13.383,
+      "new_s": 13.447,
+      "delta_pct": 0.48
+     },
+     "rsyslogd O2 default (structsynth param)": {
+      "base_s": 25.509,
+      "new_s": 24.709,
+      "delta_pct": -3.14
+     },
+     "ls O2 structsynth off": {
+      "base_s": 12.984,
+      "new_s": 12.926,
+      "delta_pct": -0.44
+     },
+     "synth 1000 layouts default": {
+      "base_s": 2.349,
+      "new_s": 2.641,
+      "delta_pct": 12.44
+     }
+    },
+    "within_budget": "real binaries: tar O0 default (structsynth param) -2.54%, ls O2 default (structsynth param) +0.48%, rsyslogd O2 default (structsynth param) -3.14%, ls O2 structsynth off -0.44%; synthetic 1000-layout binary +12.44%"
+   },
    "previous_revision_on_e1139df9": {
     "method": "interleaved main (e1139df9) / branch, min-of-15, `kuna decompile-all <binary>` wall clock, both binaries frozen; shared machine. The first run started every round with main and put every case above +3% under load, including the option-off control; every case was re-run with the order alternating per round",
     "budget_pct": 5.0,
@@ -1033,11 +1063,11 @@
    "note": "0 everywhere. The previous revision's script counted one layout in rsyslogd O2 (timeConvertToUTC's own, turned away by the unclaimed-bytes rule, which the script cannot see); that container also has members in the reader's padding, which the script now checks. The emitted definitions are the same 90"
   },
   "gates": {
-   "tree": "ca689797, rebased onto main 6e4f6fa5 (structsynth default on)",
+   "tree": "22095d29, rebased onto main 75f832e3 (the later commits touch only record.json and dedup.md)",
    "make_test": "PARITY OK, 675/675",
-   "make_test_stages": "PARITY OK, 1168/1168 (re-recorded on 6e4f6fa5: +12 structsynth keys over main's 1156, none removed)",
+   "make_test_stages": "PARITY OK, 1192/1192 (re-recorded on 75f832e3: +15 structsynth keys over main's 1177, none removed)",
    "make_test_cli": "190/190",
-   "make_rust_test": "RUST_TEST_RC=0 via the lane script, 416 `test result: ok`, 0 FAILED, 2026-09-19T00:23:46Z-00:38:40Z, after the last code and catalog change",
+   "make_rust_test": "RUST_TEST_RC=0 via the lane script, 416 `test result: ok`, 0 FAILED, 2026-09-19T13:52:26Z-14:08:20Z, after the last code, toml and fixture commit (887d3664, 13:49:36Z)",
    "make_check_spec": "OK lenient + strict",
    "catalog_check": "OK",
    "counters_check": "no drift",

@@ -560,16 +560,16 @@ definition named by their prototype survives.
 
 Interleaved main/branch, min-of-15, `kuna decompile-all` wall clock, with both
 binaries frozen and the order alternating from round to round. Main is
-`6e4f6fa5`, where `structsynth` is on by default. The machine was shared with
+`75f832e3`, where `structsynth` is on by default. The machine was shared with
 other jobs.
 
 | case | main | branch | delta |
 |---|---:|---:|---:|
-| `tar` O0, default (densest real ledger, 126 → 121 names) | 19.158 s | 18.671 s | −2.54% |
-| `ls` O2, default | 13.383 s | 13.447 s | +0.48% |
-| `rsyslogd` O2, default | 25.509 s | 24.709 s | −3.14% |
-| `ls` O2, `--option structsynth off` | 12.984 s | 12.926 s | −0.44% |
-| synthetic, 1000 distinct layouts, default | 2.349 s | 2.641 s | +12.44% |
+| `tar` O0, default (densest real ledger, 126 → 121 names) | 19.935 s | 19.738 s | −0.99% |
+| `ls` O2, default | 13.398 s | 13.519 s | +0.90% |
+| `rsyslogd` O2, default | 26.055 s | 26.321 s | +1.02% |
+| `ls` O2, `--option structsynth off` | 13.051 s | 12.999 s | −0.40% |
+| synthetic, 1000 distinct layouts, default | 2.325 s | 2.606 s | +12.08% |
 
 Real binaries are inside the +5% budget. The synthetic binary is not. It is a
 112 KB program whose 1000 functions each read a different random layout, about
@@ -578,6 +578,6 @@ was limited to the structures that answer a lookup and a lookup was limited to
 the sizes that can answer (from the measured size up to 16× it); neither changes
 any output. What is left is one scan of the held names per lookup, plus the
 convergence sweep re-deciding the functions that named a superseded structure.
-The unclaimed-bytes check runs only for a candidate that already answers and a
-reader that has an unclaimed access, and the previous revision measured +11.65%
-on the same binary against `e1139df9`.
+The unclaimed-bytes and padding checks run only for a candidate that already
+answers by containment. Earlier revisions measured +11.65% (against `e1139df9`)
+and +12.44% (against `6e4f6fa5`) on the same binary.
