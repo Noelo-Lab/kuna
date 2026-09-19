@@ -315,8 +315,9 @@ largest (protoorder, ptrfromuse void) were measured stacked: **1,309 perfect** o
 * **Program-defined struct names: 10,559 of 14,252 `ptr_struct` GT variables (16.1% of all GT).** `hash_entry`,
   `Hash_table`, `fileinfo`, `predicate`, `tar_stat_info`, … — a stripped binary does not carry these names and no
   decompiler recovers them: every one of kuna's 355 `ptr_struct` TPs is a libc name, and so is every rival's
-  (IDA 328: `FILE` 315, `DIR` 11, `__sigset_t` 2). The
-  remaining 2,472 libc-named ones are the reachable pool. structsynth recovers the *shape*, which `type_match`
+  (IDA 328: `FILE` 315, `DIR` 11, `__sigset_t` 2). Of the rest, 2,472 carry a libc/POSIX name (by a hand list:
+  `FILE`, `stat`, `passwd`, `obstack`, …) and are the reachable pool, and 1,221 are the restrict artifact below.
+  structsynth recovers the *shape*, which `type_match`
   cannot credit: replaying the final rows under the crediting rule proposed in Noelo-Lab/decbench#93 (any struct
   pointer matches a pointer-to-struct GT) would add **1,287 TP and 173 functions onto perfect** (986 → ~1,159).
 * **Restrict-qualified pointers are unmatchable: 4,412 GT variables (6.7%).** decbench's `_parse_type_die` has no
