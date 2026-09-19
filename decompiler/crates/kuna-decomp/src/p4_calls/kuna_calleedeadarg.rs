@@ -589,8 +589,12 @@ pub fn seed_callee_entry_dead(
     data: &mut Funcdata,
 ) {
     let body_arity = arch.callee_arity && arch.callee_arity_body;
+    // `argclobber` reads this probe only as a veto on a drop its recovered-
+    // prototype clause already admitted, so with nothing parked it can never
+    // consult it and the decode is pure cost.
+    let clobber_veto = arch.arg_clobber && !arch.kuna_protoorder_types.is_empty();
     if !arch.callee_dead_arg
-        && !arch.arg_clobber
+        && !clobber_veto
         && !(arch.callee_arity && arch.callee_arity_live)
         && !body_arity
     {

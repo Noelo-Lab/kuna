@@ -567,7 +567,7 @@ only (the remainder-formed and indirect-creation-formed rejection in
 `fillin_map_standard_out`, below): the input list has no such test, so the
 evidence that disqualifies a return value is ignored for an argument.
 
-(kuna) `argclobber` (default **off**,
+(kuna) `argclobber` (default **on**,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_argclobber.rs`) applies that
 same sentence to the input list, bounded by eight clauses.
 
@@ -612,14 +612,34 @@ parameter, and `void caller(long,unsigned long)` renders as `void caller(long)` 
 a deletion that reaches the JSON `variables[]` surface as a missing `kind: arg`
 row, not just the C text.
 
-The **callee's own body** must not read those register bytes before writing them.
-That is the `proves_input` half of the per-image entry-liveness summary
-`calleedeadarg` (below) already builds, and it settles the case the caller's side
-cannot: bytes the callee reads at entry are a parameter however the value got
-into the register. It is also what answers for a callee kuna never recovered as
-variadic — u-boot's `printf` is called from 1,924 sites, and its prologue
-spilling `r1`–`r3` into the `va_list` save area speaks for all of them at once,
-which no per-function sibling scan can.
+The **callee's own recovered prototype** must exist and must have no parameter
+overlapping those register bytes. This is the clause the rule rests on, and the
+reason it can be a default. Nothing on the caller's side can say whether the
+callee wanted the register; the parameter list kuna gets from decompiling that
+function can, and `protoorder` (above) parks exactly that list for every callee
+it decompiles before the caller.
+
+Requiring the prototype to **exist** carries most of the clause's weight, because
+`protoorder` refuses to state one wherever a callee's parameter list is not
+knowable: a callee inside a recursive component, a variadic one, one with no
+recovered body such as a PLT import, one that recovered no parameters at all, and
+one whose prototype is already *declared* — that last case input-locks the call
+spec, which this rule declines at its first line. "Nothing parked" and "cannot
+tell" are therefore the same answer and both decline, which also makes the rule
+inert wherever no callee was decompiled first: a single-function `kuna decompile`
+(it forks one process per function), a `decompile-all` narrowed by `--addr` or
+`--functions`, a `--jobs N` run, and `--option protoorder off`.
+
+The **callee's own body** is still read, as a veto only: a bounded entry walk
+that positively sees those register bytes read before they are written declines
+the drop too. That is the `proves_input` half of the per-image entry-liveness
+summary `calleedeadarg` (below) already builds, and it settles a parameter the
+callee's own recovery missed — bytes the callee reads at entry are a parameter
+however the value got into the register. It is also what answers for a callee
+kuna never recovered as variadic — u-boot's `printf` is called from 1,924 sites,
+and its prologue spilling `r1`–`r3` into the `va_list` save area speaks for all
+of them at once, which no per-function sibling scan can. The walk can refuse a
+drop; it can never admit one.
 
 The trial must be **trailing**, so the list keeps its positional shape and no
 other argument moves. At least one argument must remain, since an empty list is
@@ -632,12 +652,21 @@ sibling rule promoted outranks the clobber evidence here. The drop is
 `mark_no_use`, which every deferred member of the family reads as
 definitely-not-used, so none of them puts the argument back.
 
-What no clause can see is a callee that really returns a 16-byte value in
-`rax:rdx` and forwards the high half as the next call's trailing argument: it
-writes nothing into `rdx` itself, so it keeps the phantom's shape on every count,
-and only the callee probe can decline it — and only where the probe covers that
-callee's entry. That, and the fact that a wrong drop is a *deleted* expression
-rather than a visibly odd one, is why it is opt-in.
+Dropping the argument also **narrows the preceding call's return value** wherever
+that call was the register's only writer. `bash`'s `expand_prompt` renders
+`v = xmalloc(n); a = SUB168(v,8);` with the option off and
+`v = (char *)xmalloc(n);` with it on, because the `rdx` half has lost its only
+reader. That is right for `xmalloc`, and it is the same mechanism that would
+delete a real struct half at a callee whose own prototype is under-recovered.
+
+What no clause can see is that the evidence is a *recovery*. A callee whose own
+parameter list kuna under-recovers states a prototype that admits the drop, and
+the argument goes. What the prototype clause does remove is the class a bounded
+body walk cannot see at all: a read past a jump table, a read beyond the walk's
+instruction budget, a read inside an import, and a callee that really returns a
+16-byte value in `rax:rdx` and forwards the high half as the next call's trailing
+argument. Each of those is a callee whose *recovered prototype* carries the
+parameter, so each is declined.
 
 Together the clauses are narrow: over 46 stripped decbench binaries and 41,258
 functions the rule fires on four functions, and all four are one shape — a call
