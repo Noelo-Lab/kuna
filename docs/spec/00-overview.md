@@ -1133,11 +1133,14 @@ union. Across thirty-two binaries (seventeen projects at O0, O2 and
 O2-noinline, stripped and with DWARF, an ARM firmware ELF and two PEs) at
 `--jobs 2` and `--jobs 4`, `decompile-all` (text and `--json`),
 `decompile-graph` and every `decompile-project` artifact are byte-identical to
-`--jobs 1`, with 788 of the 852 functions that synthesize renamed at `--jobs 4`
-and none sent to the one-worker path. The one header that differs is one whose
-serial rendering is not stable either: `dash` with DWARF places one debug-info
-structure in one of two spots from one serial run to the next, since the type
-tree orders it by an address. `decompile-project --stream` writes each body as
+the serial run, with 788 of the 852 functions that synthesize renamed at
+`--jobs 4`, 93 decompiled again and none sent to the one-worker path; a third
+pass that forces every one of them to decompile again lands on the same
+documents. (On `decompile-all` the serial side of that comparison is
+`--option protoorder off`, above.) What a pool cannot repair is a header type
+it never touches: `dash` with DWARF still places one debug-info structure in
+one of two spots from one serial run to the next, since the type tree orders it
+by an address. `decompile-project --stream` writes each body as
 it lands and runs no sweep, so its workers still run with `structsynth off` and
 say so
 (`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`). The parent resolves the concrete
