@@ -2925,7 +2925,7 @@
 ### O2_dpkg_stripped_dpkg-query sub_5460 0x5460 class=REVIEW layout=None 
 @@ -1 +1 @@
 -int sub_5460(struct_1 *a0,unsigned long a1,unsigned long a2,long *a3)
-+int sub_5460(struct_29 *a0,void *a1,unsigned long a2,long *a3)
++int sub_5460(struct_28 *a0,void *a1,unsigned long a2,long *a3)
 @@ -4,13 +4,16 @@
 -  int *v10;
 -  long v11; // stack - 0x80
@@ -2940,14 +2940,14 @@
 -  long v7; // rax
 -  unsigned int v8;
 -  void *v9;
-+  struct_32 *v10; // r12
++  struct_31 *v10; // r12
 +  long v11; // r12
 +  unsigned int v12;
 +  int *v13;
 +  long v14; // stack - 0x80
 +  int v15; // stack - 0x6c
 +  int *v16; // stack - 0x60
-+  struct_32 *v17; // stack - 0x58
++  struct_31 *v17; // stack - 0x58
 +  unsigned long v2;
 +  unsigned int v3; // eax
 +  unsigned long v4; // rax
@@ -2955,7 +2955,7 @@
 +  long *v6;
 +  long *v7; // rbx
 +  long v8; // rbx
-+  struct_32 *v9;
++  struct_31 *v9;
 @@ -19 +22 @@
 -    v5 = 1;
 +    v2 = 1;
@@ -2973,7 +2973,7 @@
 +    } while (a3[v4]);
 +    v15 = (int)v4;
 +    v16 = (int *)sub_dc50(v4,4);
-+    v17 = (struct_32 *)sub_dc30(v4 * 0x28);
++    v17 = (struct_31 *)sub_dc30(v4 * 0x28);
 +    v6 = a3;
 +    v9 = v17;
 @@ -30 +33 @@
@@ -2995,7 +2995,7 @@
 -    v14 = (void *)sub_dc30(0);
 -    v12 = 0;
 +    v16 = (int *)sub_dc50(0,4);
-+    v17 = (struct_32 *)sub_dc30(0);
++    v17 = (struct_31 *)sub_dc30(0);
 +    v15 = 0;
 @@ -46,3 +49,3 @@
 -      free(v14); // return-dupe
