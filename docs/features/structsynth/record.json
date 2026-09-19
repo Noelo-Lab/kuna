@@ -1063,11 +1063,11 @@
    "note": "0 everywhere. The previous revision's script counted one layout in rsyslogd O2 (timeConvertToUTC's own, turned away by the unclaimed-bytes rule, which the script cannot see); that container also has members in the reader's padding, which the script now checks. The emitted definitions are the same 90"
   },
   "gates": {
-   "tree": "22095d29, rebased onto main 75f832e3 (the later commits touch only record.json and dedup.md)",
+   "tree": "f4b2e528, rebased onto main d6c5862f (#681 foldcallretphi on); measurements are against 75f832e3, and a default/off decompile-all spot check against d6c5862f (ls O2, tar O2, rsyslogd O2, grep O2, bash O0) is rename-only by default and byte-identical with structsynth off, as on 75f832e3",
    "make_test": "PARITY OK, 675/675",
    "make_test_stages": "PARITY OK, 1196/1196 (re-recorded on d6c5862f: +15 structsynth keys over main's 1181, none removed)",
    "make_test_cli": "190/190",
-   "make_rust_test": "RUST_TEST_RC=0 via the lane script, 416 `test result: ok`, 0 FAILED, 2026-09-19T13:52:26Z-14:08:20Z, after the last code, toml and fixture commit (887d3664, 13:49:36Z)",
+   "make_rust_test": "RUST_TEST_RC=0 via the lane script, 416 `test result: ok`, 0 FAILED, 2026-09-19T14:28:31Z-14:44:07Z, on f4b2e528 (after the rebase; no later code change)",
    "make_check_spec": "OK lenient + strict",
    "catalog_check": "OK",
    "counters_check": "no drift",
