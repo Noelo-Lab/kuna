@@ -86,14 +86,26 @@
     function lost its parameter. All three passes print the whole expression.
 
     Passes 24 to 26 (off, the default, full) load fmt_aarch64, pass 1's main
-    built for AArch64 Linux. The default types x86 only. A closed format
-    prototype also changes how the argument trials of the calls around it are
-    scored: a register the format call no longer takes stops vetoing a
-    neighbour's phantom, and one it now takes for certain vetoes a real
-    argument. On x86 every such change measured removed a phantom; on AArch64
-    and ARM32 firmware most added one (an x8 of 0 ahead of the real
-    arguments) or dropped a real one (iproute2 ip's parse_rtattr len). So the
-    default renders AArch64 as off does, and full types it.
+    built for AArch64 Linux. The default types x86 only. A resolved format
+    call also changes how the argument trials of the calls around it are
+    scored: an argument it now takes for certain vetoes the same value at a
+    neighbour. On AArch64 and ARM32 firmware, measured with the prototype
+    closed from the start, most such changes added a phantom (an x8 of 0 ahead
+    of the real arguments) or dropped a real argument (iproute2 ip's
+    parse_rtattr len). So the default renders AArch64 as off does, and full
+    types it.
+
+    Passes 27 to 29 (off, the default, full) load fmtvalist_x86_64 (source
+    beside it, gcc -O2 -flto), gnulib's version_etc shape. Its va_list sits in
+    the lowest outgoing stack slots when the "%s (%s) %s\n" line is printed.
+    Open, that call claims the three slots as arguments, and the fprintf calls
+    in the switch, which push their own arguments below them, are refused
+    them; their formats are picked in case bodies reached only through a jump
+    table, so they are not resolved. Closed from the start, the resolved call
+    left the slots to them, and three calls grew three phantom arguments each.
+    The resolved call is now scored with an open tail that it sheds once every
+    call's arguments are final, so it loses its phantoms and the switch calls
+    render as off renders them.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -377,6 +389,29 @@ c3
   <com>load function main</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtvalist_x86_64</com>
+  <com>option listing on</com>
+  <com>option formatstring off</com>
+  <com>read symbols</com>
+  <com>load function credits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtvalist_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function credits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtvalist_x86_64</com>
+  <com>option listing on</com>
+  <com>option formatstring full</com>
+  <com>read symbols</com>
+  <com>load function credits</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="FMTSTATIC #1: off, and the default on AArch64, widen the %d argument to the register width" min="3" max="3">,\(uint8\)a0,\*a1\);</stringmatch>
@@ -407,4 +442,8 @@ c3
 <stringmatch name="FMTSTATIC #26: Win64 %td prints the whole ptrdiff_t, not its low half" min="3" max="3">printf\("%td\\n",a0 &lt;&lt; 0x20 \| 5\);</stringmatch>
 <stringmatch name="FMTSTATIC #27: Win64 %zu and %td keep the 8-byte parameter" min="6" max="6">void show_(zu|td)\(int8 a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #28: the default types no ARM site, so f_is renders as off" min="2" max="2">void f_is\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="FMTSTATIC #29: off leaves the version line's three phantom arguments" min="2" max="2">__fprintf_chk\(a8,1,"%s \(%s\) %s\\n",0x2011,"Demo Pkg",0x2004,0x20,v13,v14\);</stringmatch>
+<stringmatch name="FMTSTATIC #30: the default and full print the version line with its three strings" min="4" max="4">__fprintf_chk\(a8,1,"%s \(%s\) %s\\n","demo","Demo Pkg","1.0"\);</stringmatch>
+<stringmatch name="FMTSTATIC #31: the switch calls keep the arguments off gives them" min="9" max="9">,(v18|v10\[7\]),v2\);</stringmatch>
+<stringmatch name="FMTSTATIC #32: no switch call takes the va_list's slots" min="0" max="0">,v2,0x20,</stringmatch>
 </decompilertest>
