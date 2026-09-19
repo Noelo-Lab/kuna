@@ -14,7 +14,9 @@ moved between bases, the others are given beside it.
 A third review found two more ways a fold could change what the C does, both
 reproduced as a compile-and-run mismatch, and both now decline (see *The width
 guard* and *The short-circuit guard*). Every measurement below was run again on
-that build.
+that build, on `6e4f6fa5`, and once more after rebasing onto `d96e3408`
+(`charbyte` default-on): the gates, the 48-binary sweep (identical hunk list and
+metrics), the typesweep and the speed pairs.
 
 `--option foldcallretphi off` is `main`: over 24 of the 32 sweep binaries below,
 text and `--json`, the `off` dumps are byte-identical to dumps two reviews made
@@ -153,7 +155,7 @@ today's default output, so it is GH-684 and not part of this change.
 | gate | result |
 |---|---|
 | `make test` | 675/675, PARITY OK — 0 assertions move |
-| `make test-stages` | 1160/1160 on `6e4f6fa5` with both new guards (1156 before them, 1141 on `e1139df9`), PARITY OK. The option's stage test now runs its default passes first with no option command, so the corpus pins the shipped default: the undeclared-`helper` pass (spill kept), the declared one (folded), `target2` (global write blocks), and `target3`, gcc -O2's setcc/and shape for `(r == 0) && (a > 5)` (spill kept); then `option foldcallretphi off`. `kuna-foldcallretphi-join.xml` is new: i386 `edx:eax`, spill kept for undeclared `big`, fold once it is declared `int4`. Its five old assertion names are re-recorded and four new rows added in `docs/baseline-stages.json`; no other row moves. The four new assertions fail on the build before the guards |
+| `make test-stages` | 1181/1181 on `d96e3408`, 1160/1160 on `6e4f6fa5` with both new guards (1156 before them, 1141 on `e1139df9`), PARITY OK. The option's stage test now runs its default passes first with no option command, so the corpus pins the shipped default: the undeclared-`helper` pass (spill kept), the declared one (folded), `target2` (global write blocks), and `target3`, gcc -O2's setcc/and shape for `(r == 0) && (a > 5)` (spill kept); then `option foldcallretphi off`. `kuna-foldcallretphi-join.xml` is new: i386 `edx:eax`, spill kept for undeclared `big`, fold once it is declared `int4`. Its five old assertion names are re-recorded and four new rows added in `docs/baseline-stages.json`; no other row moves. The four new assertions fail on the build before the guards |
 | `make test-cli` | 189/189 on `6e4f6fa5` with both new guards (185 on `e1139df9`); one probe re-pointed, see below |
 
 `tests/cli/no-cli-rename-or-prototype-override` runs
@@ -226,6 +228,7 @@ That table is `6e4f6fa5`. On every base the run is neutral in both directions:
 | `f1ec42a7` (`boolbyte` on) | 987 -> 987 | 3112.68 | 0 | 0 |
 | `6e4f6fa5` (`structsynth` on) | 986 -> 986 | 3111.18 | 0 | 0 |
 | `6e4f6fa5`, both new guards in | 986 -> 986 | 3111.18 | 0 | 0 |
+| `d96e3408` (`charbyte` on), both new guards in | 986 -> 986 | 3111.18 | 0 | 0 |
 
 Controls (every base): 10,525 functions carry byte-identical `variables[]` in
 both arms and all score identically; the other 223 differ only in `vN` names and
@@ -252,7 +255,16 @@ tracks it within 0.02% (`decompile-all` is one thread). The box was shared with
 the other campaign lanes, so medians carry contention; every delta over 5% was
 re-run.
 
-With all three guards (the final build):
+With all three guards, rebased onto `d96e3408` (the final build):
+
+| case | min off | min default | min delta | median delta | CPU min delta |
+|---|---:|---:|---:|---:|---:|
+| `fmt` O2 (151 fn) | 4070.6 ms | 4086.9 ms | **+0.40%** | +7.80% | +0.40% |
+| `ls` O2 (404 fn) | 13045.8 ms | 13181.9 ms | **+1.04%** | -0.38% | +1.04% |
+| `sort` O2 (343 fn) | 13763.2 ms | 13744.2 ms | **-0.14%** | -0.34% | -0.14% |
+| `bash` O2 (1.3 MB, `reliable` mode) | 77558.2 ms | 77231.7 ms | **-0.42%** | -0.81% | -0.42% |
+
+Worst minimum +1.04%. The same guards on `6e4f6fa5`:
 
 | case | min off | min default | min delta | median delta | CPU min delta |
 |---|---:|---:|---:|---:|---:|
@@ -297,6 +309,9 @@ dumps the reviewer made from a `main` build of the sixteen (32 of 32 files).
 sixteen's 6,917. Against the round-2 build the only difference is 53 functions
 that are now printed exactly as `off` prints them, all on ARM (52 in `cf2.elf`,
 1 in `RTOSDemo.out`): the joined-return guard. No x86-64 function changes.
+Rebased onto `d96e3408`, `charbyte` changes the text of 30 of the 48 binaries
+in both arms, and the per-function hunk list, `narrowcount.py`, the three order
+metrics and the `variables[]` comparison come out identical.
 
 `hunkclass.py` (per-function list in `flip-hunks.txt`) compares each function
 with every `vN` renamed to `V`, so a pure renumbering is not a hunk, and
@@ -445,7 +460,8 @@ and read once):
 | **total** | **7466 -> 7452 (-14)** | **1493 -> 1486 (-7)** |
 
 That table is `e1139df9`. On `f1ec42a7` the totals are 7460 -> 7446 and
-1493 -> 1486, and on `6e4f6fa5` 7464 -> 7450 and 1491 -> 1484: the same -14
+1493 -> 1486, on `6e4f6fa5` 7464 -> 7450 and 1491 -> 1484 (with and without
+the round-3 guards), and on `d96e3408` 7466 -> 7452 and 1491 -> 1484: the same -14
 and -7 on every base, from starting points the two default flips had already
 moved. The hunk list, `narrowcount.py`, the three order metrics and the
 `variables[]` comparison are identical on both rebased sweeps.
@@ -474,7 +490,7 @@ runs its default passes with no option command, gains the short-circuit pass,
 and gets an i386 sibling for the joined pair); the typesweep is neutral in both
 directions (0 improved, 0 worse, the same perfect count in both arms, every
 arity and phantom counter identical); the worst min-of-15 speed delta is
-+2.76% on the final build (`fmt` O2 under load; +0.21% re-run); every hunk over the 48 binaries is a fold, the
++1.04% on the final build (`ls` O2; on `6e4f6fa5` +2.76%, `fmt` under load, +0.21% re-run); every hunk over the 48 binaries is a fold, the
 knock-on operand hoist, a renumbering or a declaration. No folded call crosses a
 call, a load, a store through a pointer, a global write or a branch, and none
 lands in the right-hand operand of `&&` or `||`. The most a fold moves past is
