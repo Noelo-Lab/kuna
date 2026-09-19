@@ -1188,10 +1188,10 @@ fn op_cover_pair(
     (blk, data.op_cover_point_pub(op))
 }
 
-/// Two accesses a pointer's width apart, `w1` bytes at `vn1` and `w2` bytes at
-/// `vn2`, and the pointers' byte scale: `scale` bytes per unit of the values
-/// being compared (1 for a pointer, the element size for a `PTRADD` index,
-/// negated under a negation).
+/// The two accesses `is_possible_alias` compares: `w1` bytes at `vn1`, `w2`
+/// bytes at `vn2`, and `scale`, the bytes per unit of difference between the
+/// values being compared (1 for pointers, the element size under a `PTRADD`
+/// index, negated under a negation).
 #[derive(Clone, Copy)]
 struct AliasSpan {
     w1: i128,
@@ -1428,13 +1428,8 @@ fn is_possible_alias(
 ///  * any non-constant defining input whose HighVariable would intersect `vn`'s
 ///    after inflation (`Merge::inflateTest`).
 ///
-/// The `inflateTest` arm reads the HighVariable extended-cover/intersection
-/// graph; that bridge is not yet surfaced here, so it takes the C++-default
-/// "no intersection" branch (allow implied).  Omitting it only ever yields
-/// *more* inlining than the oracle, never less — and it is the documented next
-/// layer.  The LOAD/CALL-crossing arm IS ported faithfully (it is what the
-/// array datatests need and is self-contained on the Cover the merge pass
-/// already builds).
+/// The crossing arm compares byte ranges (`is_possible_alias`); the
+/// `inflateTest` arm asks the merge pass (`Merge::inflate_test`).
 fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bool {
     let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
         Some(d) => d,
