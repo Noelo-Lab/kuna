@@ -1133,6 +1133,10 @@ impl ParamTrial {
     pub fn set_fixed_position(&mut self, pos: int4) {
         self.fixed_position = pos;
     }
+    /// The declared-parameter index of a locked varargs prefix trial, or -1.
+    pub fn get_fixed_position(&self) -> int4 {
+        self.fixed_position
+    }
     /// Reset the memory range of this trial (C++ `setAddress`).
     pub fn set_address(&mut self, ad: Address, sz: int4) {
         self.addr = ad;

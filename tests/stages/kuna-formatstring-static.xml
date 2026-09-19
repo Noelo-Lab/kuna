@@ -106,6 +106,17 @@
     The resolved call is now scored with an open tail that it sheds once every
     call's arguments are final, so it loses its phantoms and the switch calls
     render as off renders them.
+
+    Passes 30 to 32 (off, the default, full) load fmtslots_x86_64 (source
+    beside it, clang -O2). clang keeps a scanf destination in the slot its
+    push rax makes, which at the call is the first outgoing stack argument
+    slot. Closed from the start, the prototype let the value stored there
+    before the call reach the return, so read_int returned 6 and read_chars
+    returned 0. Scored with the open tail, the slot is what off makes of it,
+    and both return what was read. show9 prints nine doubles and an int: the
+    ninth double goes on the stack behind the four integer registers the call
+    leaves unused, which the positional rules take for the end of the list,
+    so the declared arguments are kept whatever those rules say.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -412,6 +423,47 @@ c3
   <com>load function credits</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtslots_x86_64</com>
+  <com>option listing on</com>
+  <com>option formatstring off</com>
+  <com>read symbols</com>
+  <com>load function show9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_chars</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtslots_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function show9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_chars</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtslots_x86_64</com>
+  <com>option listing on</com>
+  <com>option formatstring full</com>
+  <com>read symbols</com>
+  <com>load function show9</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function read_chars</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="FMTSTATIC #1: off, and the default on AArch64, widen the %d argument to the register width" min="3" max="3">,\(uint8\)a0,\*a1\);</stringmatch>
@@ -446,4 +498,10 @@ c3
 <stringmatch name="FMTSTATIC #30: the default and full print the version line with its three strings" min="4" max="4">__fprintf_chk\(a8,1,"%s \(%s\) %s\\n","demo","Demo Pkg","1.0"\);</stringmatch>
 <stringmatch name="FMTSTATIC #31: the switch calls keep the arguments off gives them" min="9" max="9">,(v18|v10\[7\]),v2\);</stringmatch>
 <stringmatch name="FMTSTATIC #32: no switch call takes the va_list's slots" min="0" max="0">,v2,0x20,</stringmatch>
+<stringmatch name="FMTSTATIC #33: a scanf destination in the outgoing argument slot is read back after the call" min="3" max="3">return v1 \+ 1;</stringmatch>
+<stringmatch name="FMTSTATIC #34: both %c destinations are read back after the call" min="3" max="3">return \(int4\)v2\._6_1_ \+ v2\._7_1_ \* 3;</stringmatch>
+<stringmatch name="FMTSTATIC #35: the default and full type the %c destinations char *" min="2" max="2">__isoc99_sscanf\(a0,"%c %c",\(char \*\)\(\(int8\)&amp;v2 \+ 7\),\(char \*\)\(\(int8\)&amp;v2 \+ 6\)\);</stringmatch>
+<stringmatch name="FMTSTATIC #36: read_int does not return the 5 it stored before the call, plus one" min="0" max="0">return 6;</stringmatch>
+<stringmatch name="FMTSTATIC #37: the default and full keep show9's ninth double, passed on the stack" min="2" max="2">printf\("%f %f %f %f %f %f %f %f %f %d\\n",a0,a1,a2,a3,a4,a5,a6,a7,v1,a8\);</stringmatch>
+<stringmatch name="FMTSTATIC #38: the default and full give show9 its doubles and int" min="2" max="2">void show9\(float8 a0,float8 a1,float8 a2,float8 a3,float8 a4,float8 a5,float8 a6,float8 a7,int4 a8\)</stringmatch>
 </decompilertest>

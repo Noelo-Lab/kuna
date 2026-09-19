@@ -27,7 +27,26 @@
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
+use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
+
+/// Keep every declared argument of a resolved format call. `fillinMap`'s
+/// positional rules end an argument list at a run of unused registers, and a
+/// ninth `double` goes on the stack after the four integer registers a
+/// `"%f ... %d"` call leaves unused, so the locked stack trial would otherwise
+/// be dropped.
+pub fn keep_declared_trials(fc: &mut FuncCallSpecs) {
+    let Some(arity) = fc.format_arity() else { return };
+    let active = fc.get_active_input();
+    for i in 0..active.get_num_trials() {
+        let trial = active.get_trial_mut(i);
+        let pos = trial.get_fixed_position();
+        if (0..arity).contains(&pos) && !trial.is_definitely_not_used() {
+            trial.mark_active();
+            trial.mark_used();
+        }
+    }
+}
 
 /// Shed the open tail of every resolved format call once every live call's
 /// argument list is final. Returns how many calls changed.

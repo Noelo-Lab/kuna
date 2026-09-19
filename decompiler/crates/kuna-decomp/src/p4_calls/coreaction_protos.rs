@@ -1261,6 +1261,10 @@ impl Action for ActionActiveParam {
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);
+                // (kuna `formatstring`) A resolved format call's declared
+                // arguments are arguments whatever the positional rules made
+                // of the gap in front of them.
+                crate::p4_calls::kuna_formattail::keep_declared_trials(&mut fc);
                 let fixup = build_input_from_trials(&mut fc, data);
                 if let Some(p) = fixup.rescue {
                     pending_rescue.push(p);
