@@ -110,6 +110,7 @@ pub fn run(argv: &[String]) -> i32 {
         );
         return 2;
     }
+    crate::decompile_all::warn_protoorder_inert(&args.options, "decompile-project");
     let run = if stream {
         crate::project_stream::run(&args, output.as_deref())
     } else {

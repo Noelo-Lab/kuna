@@ -1,0 +1,3449 @@
+{
+ "note": "every call site rendering FEWER arguments with the option on, from the 22-binary corpus; the detail list is capped at 200 rows by callsite-metrics.py",
+ "rows": [
+  {
+   "kind": "deleted",
+   "binary": "O2-noinline_coreutils_stripped_cat",
+   "caller": "sub_5f20@0x5f20",
+   "callee": "sub_5b10",
+   "off": [
+    "&v1",
+    "(int)a2",
+    "1",
+    "a3",
+    "a0",
+    "a1"
+   ],
+   "on": [
+    "(long)&v1",
+    "a2",
+    "1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2-noinline_coreutils_stripped_cat",
+   "caller": "sub_6b30@0x6b30",
+   "callee": "sub_6d30",
+   "off": [
+    "a0",
+    "v3"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8008190@0x8008190",
+   "callee": "sub_8008e4c",
+   "off": [
+    "a0",
+    "a1"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800c490@0x800c490",
+   "callee": "sub_8022acc",
+   "off": [
+    "*(char *)(a0 + 3)",
+    "0x20",
+    "1",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint4)*(uint1 *)(a0 + 3)",
+    "0x20",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800ca1c@0x800ca1c",
+   "callee": "sub_8021484",
+   "off": [
+    "a0 * 0x8c + 0x20002120"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800cc18@0x800cc18",
+   "callee": "sub_80663ba",
+   "off": [
+    "v5",
+    "1",
+    "v2",
+    "v4",
+    "a3"
+   ],
+   "on": [
+    "v1",
+    "1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800cc70@0x800cc70",
+   "callee": "sub_80667d2",
+   "off": [
+    "**(unsigned int **)(v1 + 0x20002128)",
+    "0x100",
+    "0",
+    "*(unsigned int **)(v1 + 0x20002128)",
+    "a3"
+   ],
+   "on": [
+    "**(int4 **)(v1 + 0x20002128)",
+    "0x100",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800cc70@0x800cc70",
+   "callee": "sub_80667d2",
+   "off": [
+    "**(unsigned int **)(v2 + 0x20002128)",
+    "*(unsigned short *)(v2 + 0x2000212c)",
+    "0",
+    "*(unsigned int **)(v2 + 0x20002128)",
+    "a3"
+   ],
+   "on": [
+    "**(int4 **)(v2 + 0x20002128)",
+    "*(uint2 *)(v2 + 0x2000212c)",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800cd64@0x800cd64",
+   "callee": "sub_806666c",
+   "off": [
+    "*v1",
+    "*(char *)((int4)v1 + 5)",
+    "1",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "*v1",
+    "(uint4)*(uint1 *)((int4)v1 + 5)",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800ce18@0x800ce18",
+   "callee": "sub_80663ba",
+   "off": [
+    "*(unsigned int *)(v5 + 0x20002580)",
+    "1",
+    "(uint4)v2",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "*(uint2 **)(v3 + 0x20002580)",
+    "1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800d374@0x800d374",
+   "callee": "sub_8065732",
+   "off": [
+    "0x40012000",
+    "0x11",
+    "1",
+    "7",
+    "a3"
+   ],
+   "on": [
+    "0x40012000",
+    "0x11",
+    "1",
+    "7"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800d3f8@0x800d3f8",
+   "callee": "sub_80657e0",
+   "off": [
+    "0x40012000",
+    "4",
+    "a2",
+    "dat_200181ff",
+    "a3"
+   ],
+   "on": [
+    "(uint4 *)0x40012000",
+    "4",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800d448@0x800d448",
+   "callee": "sub_80657c6",
+   "off": [
+    "0x40012000",
+    "0x14",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40012000",
+    "0x14",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800d458@0x800d458",
+   "callee": "sub_80657c6",
+   "off": [
+    "0x40012000",
+    "0x18",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40012000",
+    "0x18",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800d694@0x800d694",
+   "callee": "sub_8065df0",
+   "off": [
+    "v4",
+    "1",
+    "a0 * 5",
+    "v2 & 0xf7ff",
+    "a3"
+   ],
+   "on": [
+    "v3",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800d694@0x800d694",
+   "callee": "sub_8065df0",
+   "off": [
+    "v4",
+    "0",
+    "a0 * 5",
+    "dat_20018201",
+    "a3"
+   ],
+   "on": [
+    "v3",
+    "0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800d694@0x800d694",
+   "callee": "sub_8065df0",
+   "off": [
+    "v4",
+    "0",
+    "a0 * 5",
+    "dat_20018201",
+    "a3"
+   ],
+   "on": [
+    "v3",
+    "0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800d694@0x800d694",
+   "callee": "sub_8065df0",
+   "off": [
+    "v4",
+    "0",
+    "a0 * 5",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "v3",
+    "0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800dd20@0x800dd20",
+   "callee": "sub_8065da8",
+   "off": [
+    "v4",
+    "1",
+    "v3",
+    "*v4",
+    "v1"
+   ],
+   "on": [
+    "v4",
+    "1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800de74@0x800de74",
+   "callee": "sub_8065da8",
+   "off": [
+    "v4",
+    "1",
+    "v3",
+    "*v4",
+    "v1"
+   ],
+   "on": [
+    "v4",
+    "1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800e2c4@0x800e2c4",
+   "callee": "sub_8065fe0",
+   "off": [
+    "v3",
+    "3",
+    "0",
+    "v2",
+    "a3"
+   ],
+   "on": [
+    "v3",
+    "3",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800e30e@0x800e30e",
+   "callee": "sub_8065fba",
+   "off": [
+    "v10",
+    "0",
+    "a2",
+    "1",
+    "a3"
+   ],
+   "on": [
+    "v9",
+    "0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800e30e@0x800e30e",
+   "callee": "sub_8065fba",
+   "off": [
+    "v10",
+    "1",
+    "(char)v9",
+    "v4",
+    "a3"
+   ],
+   "on": [
+    "v9",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800e7d4@0x800e7d4",
+   "callee": "sub_8065410",
+   "off": [
+    "v1",
+    "1",
+    "v2",
+    "0x40026000",
+    "a3"
+   ],
+   "on": [
+    "v1",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800ed28@0x800ed28",
+   "callee": "sub_8021484",
+   "off": [
+    "v1 + 0x1000005c"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800ed34@0x800ed34",
+   "callee": "sub_8021484",
+   "off": [
+    "v1 + 0x1000005c"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800edc2@0x800edc2",
+   "callee": "sub_8023ef8",
+   "off": [
+    "a0"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800effc@0x800effc",
+   "callee": "sub_800e8ec",
+   "off": [
+    "v2",
+    "0x800eb3d",
+    "0x90",
+    "a0",
+    "a3"
+   ],
+   "on": [
+    "v2",
+    "0x800eb3d",
+    "0x90",
+    "a0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800f046@0x800f046",
+   "callee": "sub_8022ec2",
+   "off": [
+    "a0"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800f646@0x800f646",
+   "callee": "sub_80659f0",
+   "off": [
+    "*(unsigned int *)(a0 + 0x10)",
+    "0x10",
+    "1",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "*(uint4 **)(a0 + 0x10)",
+    "0x10",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800f6b8@0x800f6b8",
+   "callee": "sub_8065480",
+   "off": [
+    "0x4000",
+    "1",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x4000",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800f908@0x800f908",
+   "callee": "sub_8022ec2",
+   "off": [
+    "a0"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800f908@0x800f908",
+   "callee": "sub_8022ec2",
+   "off": [
+    "a0"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800f908@0x800f908",
+   "callee": "sub_8022ec2",
+   "off": [
+    "a0"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800f938@0x800f938",
+   "callee": "sub_8022ec2",
+   "off": [
+    "a0"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800f990@0x800f990",
+   "callee": "sub_8022ec2",
+   "off": [
+    "a0"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800f990@0x800f990",
+   "callee": "sub_8022ec2",
+   "off": [
+    "a0"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800fc94@0x800fc94",
+   "callee": "sub_80659dc",
+   "off": [
+    "dat_20002e94",
+    "0x42a",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(int4)dat_20002e94",
+    "0x42a",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_800fcd8@0x800fcd8",
+   "callee": "sub_8065464",
+   "off": [
+    "0x10000000",
+    "1",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x10000000",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801040c@0x801040c",
+   "callee": "sub_80659e6",
+   "off": [
+    "*(unsigned int *)(a0 + 0x40)",
+    "*(int4 *)(a0 + 0x18) + v2",
+    "0",
+    "v2",
+    "a3"
+   ],
+   "on": [
+    "*(int4 *)(a0 + 0x40)",
+    "*(int4 *)(a0 + 0x18) + *(int4 *)(a0 + 0x28)",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80108fc@0x80108fc",
+   "callee": "sub_8065410",
+   "off": [
+    "0x670000",
+    "1",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x670000",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801094c@0x801094c",
+   "callee": "sub_8065578",
+   "off": [
+    "0x20000000",
+    "0",
+    "dat_40023874",
+    "0x2000be50",
+    "a3"
+   ],
+   "on": [
+    "0x20000000",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010cbc@0x8010cbc",
+   "callee": "sub_80667a6",
+   "off": [
+    "v4",
+    "2 << v3 & 0xffff",
+    "0",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "v4",
+    "(uint2)(2 << v3)",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010cbc@0x8010cbc",
+   "callee": "sub_80667a6",
+   "off": [
+    "*a0",
+    "2 << v3 & 0xffff",
+    "1",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "*a0",
+    "(uint2)(2 << (uint4)(*(uint1 *)((int4)a0 + 5) >> 2))",
+    "1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010d34@0x8010d34",
+   "callee": "sub_8010a8c",
+   "off": [
+    "v1 * 0x2c + 0x20002fbc",
+    "a0",
+    "0x20002fbc",
+    "0x2c",
+    "a3"
+   ],
+   "on": [
+    "v1 * 0x2c + 0x20002fbc",
+    "a0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010d5c@0x8010d5c",
+   "callee": "sub_80667a6",
+   "off": [
+    "*a0",
+    "v1 & 0xffff",
+    "a1",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "*a0",
+    "(uint2)(2 << (*(uint1 *)((int4)a0 + 5) >> 2))",
+    "a1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010d78@0x8010d78",
+   "callee": "sub_80667c2",
+   "off": [
+    "*a0",
+    "2 << v1 & 0xffff",
+    "a2",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "*a0",
+    "(uint2)(2 << (uint4)(*(uint1 *)((int4)a0 + 5) >> 2))",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010ddc@0x8010ddc",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40010000",
+    "0x20002fbc",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40010000",
+    "0x20002fbc",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010e14@0x8010e14",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40000000",
+    "0x20002fe8",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40000000",
+    "0x20002fe8",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010e28@0x8010e28",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40000400",
+    "0x20003014",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40000400",
+    "0x20003014",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010e3c@0x8010e3c",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40000800",
+    "0x20003040",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40000800",
+    "0x20003040",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010e50@0x8010e50",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40000c00",
+    "0x2000306c",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40000c00",
+    "0x2000306c",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010e64@0x8010e64",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40010400",
+    "0x200030f0",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40010400",
+    "0x200030f0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010e9c@0x8010e9c",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40014000",
+    "0x2000311c",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40014000",
+    "0x2000311c",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010eb0@0x8010eb0",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40014800",
+    "0x20003174",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40014800",
+    "0x20003174",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010ec4@0x8010ec4",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40001800",
+    "0x200031a0",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40001800",
+    "0x200031a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010ed8@0x8010ed8",
+   "callee": "sub_8010aec",
+   "off": [
+    "0x40002000",
+    "0x200031f8",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x40002000",
+    "0x200031f8",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8010f4c@0x8010f4c",
+   "callee": "sub_80663d6",
+   "off": [
+    "a0",
+    "1",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8011378@0x8011378",
+   "callee": "sub_80659dc",
+   "off": [
+    "dat_20003d80",
+    "*(unsigned short *)(a0 + 0x10)",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(int4)dat_20003d80",
+    "(uint4)*(uint2 *)(a0 + 0x10)",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801146c@0x801146c",
+   "callee": "sub_8011424",
+   "off": [
+    "dat_1ffff7e8 + dat_1ffff7ec",
+    "0x20000436",
+    "8",
+    "dat_1ffff7ec",
+    "a3"
+   ],
+   "on": [
+    "dat_1ffff7e8 + dat_1ffff7ec",
+    "0x20000436",
+    "8",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80116d8@0x80116d8",
+   "callee": "sub_800a964",
+   "off": [
+    "0x20000000",
+    "0x8000000",
+    "0x188",
+    "0x40023800",
+    "a3"
+   ],
+   "on": [
+    "(unsigned int *)0x20000000",
+    "(unsigned int *)0x8000000",
+    "0x188",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8011744@0x8011744",
+   "callee": "sub_8011568",
+   "off": [
+    "0x10000",
+    "0x20000",
+    "5000",
+    "v2",
+    "a3"
+   ],
+   "on": [
+    "0x10000",
+    "0x20000",
+    "5000",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8011744@0x8011744",
+   "callee": "sub_8011568",
+   "off": [
+    "1",
+    "2",
+    "5000",
+    "v2",
+    "a3"
+   ],
+   "on": [
+    "1",
+    "2",
+    "5000",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80119b8@0x80119b8",
+   "callee": "sub_8022acc",
+   "off": [
+    "*a0",
+    "0x20",
+    "1",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint4)*a0",
+    "0x20",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8012228@0x8012228",
+   "callee": "sub_80120fa",
+   "off": [
+    "v1",
+    "0xff",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "v1",
+    "0xff",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8012540@0x8012540",
+   "callee": "sub_8011b3c",
+   "off": [
+    "3",
+    "0x3eb",
+    "0x3ff",
+    "0x8000000",
+    "a3"
+   ],
+   "on": [
+    "3",
+    "0x3eb",
+    "0x3ff",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8012678@0x8012678",
+   "callee": "sub_80125dc",
+   "off": [
+    "*(unsigned int *)(a0 + 0x24)",
+    "v3",
+    "0x34",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "*(int4 **)(a0 + 0x24)",
+    "v2",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80126c8@0x80126c8",
+   "callee": "sub_80125dc",
+   "off": [
+    "*(unsigned int *)(a0 + 0x24)",
+    "v2",
+    "a2",
+    "dat_20003fd4",
+    "a3"
+   ],
+   "on": [
+    "*(int4 **)(a0 + 0x24)",
+    "v1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8012738@0x8012738",
+   "callee": "sub_80125dc",
+   "off": [
+    "*(unsigned int *)(a0 + 0x24)",
+    "v2",
+    "a2",
+    "dat_20003fd4",
+    "a3"
+   ],
+   "on": [
+    "*(int4 **)(a0 + 0x24)",
+    "v1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80127e4@0x80127e4",
+   "callee": "sub_80125dc",
+   "off": [
+    "*(unsigned int *)(a0 + 0x24)",
+    "v2",
+    "v1",
+    "dat_20003fd0",
+    "v7"
+   ],
+   "on": [
+    "*(int4 **)(a0 + 0x24)",
+    "v1",
+    "v6"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8012850@0x8012850",
+   "callee": "sub_80125dc",
+   "off": [
+    "a0[9]",
+    "v5",
+    "v3",
+    "dat_20003fd4",
+    "a3"
+   ],
+   "on": [
+    "(int4 *)a0[9]",
+    "v2",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8012850@0x8012850",
+   "callee": "sub_80125dc",
+   "off": [
+    "a0[9]",
+    "v5",
+    "v3",
+    "dat_20003fd4",
+    "a3"
+   ],
+   "on": [
+    "(int4 *)a0[9]",
+    "v2",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8012b98@0x8012b98",
+   "callee": "sub_8011aa0",
+   "off": [
+    "v2 << 0xb",
+    "0x20004040",
+    "0x10",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "v3 << 0xb",
+    "0x20004040",
+    "0x10",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8012ed0@0x8012ed0",
+   "callee": "sub_8022f20",
+   "off": [
+    "dat_200040e8",
+    "0x3d",
+    "0",
+    "0x200040e8",
+    "a3"
+   ],
+   "on": [
+    "dat_200040e8",
+    "0x3d",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80132ca@0x80132ca",
+   "callee": "sub_800a6d8",
+   "off": [
+    "a1",
+    "0",
+    "0x200",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "0",
+    "0x200",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801347c@0x801347c",
+   "callee": "sub_800a6d8",
+   "off": [
+    "&a1[4]",
+    "0",
+    "0x1e0",
+    "0xffffffff",
+    "a3"
+   ],
+   "on": [
+    "&a1[4]",
+    "0",
+    "0x1e0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80134ec@0x80134ec",
+   "callee": "sub_8013438",
+   "off": [
+    "a0",
+    "v4",
+    "v1",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "v2",
+    "v1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801379c@0x801379c",
+   "callee": "sub_8013438",
+   "off": [
+    "a0",
+    "v3",
+    "v1",
+    "v2",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "v4",
+    "v2",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8013978@0x8013978",
+   "callee": "sub_8012d2c",
+   "off": [
+    "a2",
+    "a0",
+    "a1",
+    "a2",
+    "a3"
+   ],
+   "on": [
+    "a2",
+    "a0",
+    "a1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8013990@0x8013990",
+   "callee": "sub_800a964",
+   "off": [
+    "a0",
+    "*(int4 *)(a3 + 0x18) + v1",
+    "a1",
+    "*(int4 *)(a3 + 0x18)",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(unsigned int *)(*(int4 *)(a3 + 0x18) + v1)",
+    "a1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80144c8@0x80144c8",
+   "callee": "sub_8013dc4",
+   "off": [
+    "v2",
+    "sub_8013ec0(a0)",
+    "0x8013fe1",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "v2",
+    "sub_8013ec0(a0,a3)",
+    "0x8013fe1",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80147c8@0x80147c8",
+   "callee": "sub_8014750",
+   "off": [
+    "a0",
+    "1",
+    "a2",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8014f60@0x8014f60",
+   "callee": "sub_8014e4c",
+   "off": [
+    "1",
+    "a0 + 0x30",
+    "dat_20007d84 + 2",
+    "0x2000754c",
+    "a3"
+   ],
+   "on": [
+    "1",
+    "(uint4 *)&a0[0x30]",
+    "dat_20007d84 + 2"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80155c8@0x80155c8",
+   "callee": "sub_8015488",
+   "off": [
+    "a0",
+    "0",
+    "0",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "0",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801592e@0x801592e",
+   "callee": "sub_8014d20",
+   "off": [
+    "a0",
+    "0",
+    "a2",
+    "(uint4)(uint1)a0[0x28] - 1",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80159e4@0x80159e4",
+   "callee": "sub_8015488",
+   "off": [
+    "0x20007d34",
+    "0",
+    "0",
+    "0x2000754c",
+    "a3"
+   ],
+   "on": [
+    "(char *)0x20007d34",
+    "0",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801697e@0x801697e",
+   "callee": "sub_800a6d8",
+   "off": [
+    "a2",
+    "0",
+    "a1 << 2",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "a2",
+    "0",
+    "a1 << 2",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8017448@0x8017448",
+   "callee": "sub_80173e4",
+   "off": [
+    "0",
+    "0x801742d",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0",
+    "0x801742d",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8017990@0x8017990",
+   "callee": "sub_800a6d8",
+   "off": [
+    "a0",
+    "0",
+    "6",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "0",
+    "6",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80179ee@0x80179ee",
+   "callee": "sub_80179e4",
+   "off": [
+    "a0",
+    "a1 & 0xff",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(char)a1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8017a04@0x8017a04",
+   "callee": "sub_80179e4",
+   "off": [
+    "a0",
+    "a1 & 0xff",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(char)a1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8017a2e@0x8017a2e",
+   "callee": "sub_80179e4",
+   "off": [
+    "a0",
+    "a1 >> 8",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(char)((uint4)a1 >> 8)",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8017a44@0x8017a44",
+   "callee": "sub_80179e4",
+   "off": [
+    "a0",
+    "a1 >> 0x18",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(char)((uint4)a1 >> 0x18)",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8017b12@0x8017b12",
+   "callee": "sub_800a964",
+   "off": [
+    "a1",
+    "*a0",
+    "a2",
+    "a1",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "(unsigned int *)*a0",
+    "a2",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8018088@0x8018088",
+   "callee": "sub_8017fa4",
+   "off": [
+    "a0",
+    "a1",
+    "v1",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "a1",
+    "v1",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80180c4@0x80180c4",
+   "callee": "sub_8017f66",
+   "off": [
+    "a1",
+    "a0",
+    "(int4)dat_20008654",
+    "a1",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "a0",
+    "(int4)dat_20008654",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8018eae@0x8018eae",
+   "callee": "sub_80185d0",
+   "off": [
+    "1",
+    "a1 + 0xc4"
+   ],
+   "on": [
+    "1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801953a@0x801953a",
+   "callee": "sub_800a6d8",
+   "off": [
+    "a0",
+    "0",
+    "0x18",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "0",
+    "0x18",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8019568@0x8019568",
+   "callee": "sub_80194f8",
+   "off": [
+    "a0",
+    "a0 + 8",
+    "v1",
+    "v4",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "&a0[2]",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80195a2@0x80195a2",
+   "callee": "sub_800a6d8",
+   "off": [
+    "v1 + a0 + 8",
+    "0",
+    "4 - v1",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)(v1 + (int4)&a0[2])",
+    "0",
+    "4 - v1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801966c@0x801966c",
+   "callee": "sub_80195e4",
+   "off": [
+    "a0",
+    "0x200086d8",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(uint4 *)0x200086d8",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801967c@0x801967c",
+   "callee": "sub_80195ec",
+   "off": [
+    "a0",
+    "0x200086d8",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(uint4 *)0x200086d8",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8019c4c@0x8019c4c",
+   "callee": "sub_8019bfc",
+   "off": [
+    "dat_200088a4",
+    "\"###ERROR IN \"",
+    "a2",
+    "0x200088a4",
+    "a3"
+   ],
+   "on": [
+    "dat_200088a4",
+    "\"###ERROR IN \"",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8019ec4@0x8019ec4",
+   "callee": "sub_800a3ec",
+   "off": [
+    "a0",
+    "0x20",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "0x20",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801a094@0x801a094",
+   "callee": "sub_800a964",
+   "off": [
+    "*(unsigned int *)(a0 + 0xc)",
+    "*(unsigned int *)(a0 + 8)",
+    "*(unsigned short *)(a0 + 4)",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "*(unsigned int **)(a0 + 0xc)",
+    "*(unsigned int **)(a0 + 8)",
+    "(uint4)*(uint2 *)(a0 + 4)",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801a0d4@0x801a0d4",
+   "callee": "sub_800a964",
+   "off": [
+    "*(unsigned int *)&a0[4]",
+    "*(unsigned int *)&a0[6]",
+    "a0[2]",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "*(unsigned int **)&a0[4]",
+    "*(unsigned int **)&a0[6]",
+    "(uint4)a0[2]",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801a124@0x801a124",
+   "callee": "sub_800a964",
+   "off": [
+    "a1",
+    "0x8072100",
+    "5",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "(unsigned int *)0x8072100",
+    "5",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801a2ec@0x801a2ec",
+   "callee": "sub_8017be4",
+   "off": [
+    "a0",
+    "\"rx\"",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(uint4)0x80783a8",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801a4bc@0x801a4bc",
+   "callee": "sub_8019bfc",
+   "off": [
+    "dat_200088a8",
+    "a0",
+    "a2",
+    "0x200088a8",
+    "a3"
+   ],
+   "on": [
+    "dat_200088a8",
+    "a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801a594@0x801a594",
+   "callee": "sub_801a566",
+   "off": [
+    "a0",
+    "v1",
+    "\"\\r\\n# name: %s\"",
+    "a1",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "v1",
+    "\"\\r\\n# name: %s\"",
+    "a1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801cf7c@0x801cf7c",
+   "callee": "sub_8019fdc",
+   "off": [
+    "*v3",
+    "*(unsigned int *)(v6 * 8 + 0x807cea4)",
+    "v4",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "*(uint4 *)(v5 * 8 + 0x807cea0)",
+    "*(uint4 *)(v5 * 8 + 0x807cea4)",
+    "v3",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801d034@0x801d034",
+   "callee": "sub_8017be4",
+   "off": [
+    "*(unsigned int *)(v4 * 0x10 + 0x807caf0)",
+    "a1",
+    "0x807caf0",
+    "v4 * 0x10",
+    "a3"
+   ],
+   "on": [
+    "v3",
+    "(uint4)a1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801d0cc@0x801d0cc",
+   "callee": "sub_801cc54",
+   "off": [
+    "a0",
+    "a1",
+    "*(int4 *)(v1 + 8) + v2",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "a1",
+    "*(int4 *)&v1[4] + v2",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801e8cc@0x801e8cc",
+   "callee": "sub_8017be4",
+   "off": [
+    "v5",
+    "a1",
+    "0x807d1d4",
+    "v3 * 0xd",
+    "a3"
+   ],
+   "on": [
+    "v5",
+    "a1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801ed34@0x801ed34",
+   "callee": "sub_801bbf8",
+   "off": [
+    "1",
+    "0x2000ef98",
+    "0",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "1",
+    "0x2000ef98",
+    "0"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801ee94@0x801ee94",
+   "callee": "sub_801d178",
+   "off": [
+    "\"Mixer: %s\"",
+    "*(unsigned int *)(((uint4)dat_2000f02c - 1) * 4 + 0x807d164)",
+    "0x807d164",
+    "(uint4)dat_2000f02c - 1",
+    "a3"
+   ],
+   "on": [
+    "\"Mixer: %s\"",
+    "*(unsigned int *)(((uint4)dat_2000f02c - 1) * 4 + 0x807d164)"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801f2b0@0x801f2b0",
+   "callee": "sub_8017baa",
+   "off": [
+    "a1",
+    "0x80730c4",
+    "v2",
+    "0x200086d8",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "0x80730c4",
+    "v2"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_801f2b0@0x801f2b0",
+   "callee": "sub_8017baa",
+   "off": [
+    "a1",
+    "v3",
+    "v2",
+    "0x807d0e8",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "v5",
+    "v2"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80215f8@0x80215f8",
+   "callee": "sub_800a6d8",
+   "off": [
+    "0x10000b14",
+    "0",
+    "0x108",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)0x10000b14",
+    "0",
+    "0x108",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802193c@0x802193c",
+   "callee": "sub_800f990",
+   "off": [
+    "v2",
+    "*(char *)(v1 + 0x14)",
+    "*(char *)(*(int4 *)(v1 + 8) + 7)",
+    "*(int4 *)(v1 + 8)",
+    "a3"
+   ],
+   "on": [
+    "v2",
+    "(uint4)*(uint1 *)(v1 + 0x14)",
+    "(uint4)*(uint1 *)(*(int4 *)(v1 + 8) + 7)"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8021fe4@0x8021fe4",
+   "callee": "sub_8022962",
+   "off": [
+    "a0",
+    "a1 & 0x7f",
+    "a2",
+    "2",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(uint1)a1 & 0x7f",
+    "(char)a2"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802201c@0x802201c",
+   "callee": "sub_8022962",
+   "off": [
+    "a0",
+    "a1 & 0x7f",
+    "a2",
+    "2",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(uint1)a1 & 0x7f",
+    "a2"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80229c8@0x80229c8",
+   "callee": "sub_8022982",
+   "off": [
+    "a0",
+    "a1",
+    "a2",
+    "a3",
+    "v2"
+   ],
+   "on": [
+    "a0",
+    "a1",
+    "a2",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8022a8c@0x8022a8c",
+   "callee": "sub_8022a3e",
+   "off": [
+    "a0",
+    "a1 | 0x80",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "a1 | 0x80",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802327c@0x802327c",
+   "callee": "sub_8023258",
+   "off": [
+    "a0",
+    "0x2001821e",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(char *)0x2001821e",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80234c8@0x80234c8",
+   "callee": "sub_800a6d8",
+   "off": [
+    "0x100005c0",
+    "0",
+    "0xc0",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)0x100005c0",
+    "0",
+    "0xc0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80234c8@0x80234c8",
+   "callee": "sub_800a6d8",
+   "off": [
+    "0x20009978",
+    "0",
+    "0x34",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)0x20009978",
+    "0",
+    "0x34",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80238ce@0x80238ce",
+   "callee": "sub_8066910",
+   "off": [
+    "*(unsigned int *)(a0 + 0x60)",
+    "0x727",
+    "1",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "*(int4 *)(a0 + 0x60)",
+    "0x727",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80238f0@0x80238f0",
+   "callee": "sub_8066910",
+   "off": [
+    "*(unsigned int *)(a0 + 0x60)",
+    "0x727",
+    "1",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "*(int4 *)(a0 + 0x60)",
+    "0x727",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8023930@0x8023930",
+   "callee": "sub_800a964",
+   "off": [
+    "*(int4 *)(a0 + 0x18) + v1",
+    "a1",
+    "v3",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "(unsigned int *)(*(int4 *)(a0 + 0x18) + *(int4 *)(a0 + 0x24))",
+    "a1",
+    "v2",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8023c7c@0x8023c7c",
+   "callee": "sub_8023bdc",
+   "off": [
+    "a0",
+    "a0",
+    "a2",
+    "dat_200180c8",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8023fc8@0x8023fc8",
+   "callee": "sub_800a964",
+   "off": [
+    "0x10000000",
+    "0x8086aee",
+    "4",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(unsigned int *)0x10000000",
+    "(unsigned int *)0x8086aee",
+    "4",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802406c@0x802406c",
+   "callee": "sub_802401c",
+   "off": [
+    "a0",
+    "v2",
+    "a2",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "v1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802406c@0x802406c",
+   "callee": "sub_802401c",
+   "off": [
+    "a0",
+    "v2",
+    "a2",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "v1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802409c@0x802409c",
+   "callee": "sub_802401c",
+   "off": [
+    "*(char *)(v1 + 0x20008394)",
+    "*(char *)(v1 + 0x20008395)",
+    "0x20008394",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "(uint4)*(uint1 *)(v3 * 3 + 0x20008394)",
+    "(uint4)*(uint1 *)(v3 * 3 + 0x20008395)"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80240f8@0x80240f8",
+   "callee": "sub_802401c",
+   "off": [
+    "*(char *)(v1 + 0x20008394)",
+    "*(char *)(v1 + 0x20008395)",
+    "0x20008394",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "(uint4)*(uint1 *)(v2 * 3 + 0x20008394)",
+    "(uint4)*(uint1 *)(v2 * 3 + 0x20008395)"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8024138@0x8024138",
+   "callee": "sub_802401c",
+   "off": [
+    "a0",
+    "*(char *)(v1 + 0x20008395)",
+    "v1",
+    "v1 + 0x20008394",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "(uint4)*(uint1 *)(v2 * 3 + 0x20008395)",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8024204@0x8024204",
+   "callee": "sub_800a6d8",
+   "off": [
+    "&a0[0x14]",
+    "0",
+    "0x9b0",
+    "0xa39e",
+    "a3"
+   ],
+   "on": [
+    "&a0[0x14]",
+    "0",
+    "0x9b0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80242cc@0x80242cc",
+   "callee": "sub_800a6d8",
+   "off": [
+    "&a0[0x14]",
+    "0",
+    "0xb40",
+    "0x707ce",
+    "a3"
+   ],
+   "on": [
+    "&a0[0x14]",
+    "0",
+    "0xb40",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80242fc@0x80242fc",
+   "callee": "sub_800a6d8",
+   "off": [
+    "a0 + 0x14",
+    "0",
+    "800",
+    "38000",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)(a0 + 0x14)",
+    "0",
+    "800",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80244c8@0x80244c8",
+   "callee": "sub_800aa98",
+   "off": [
+    "0x20007e6c",
+    "0x2000bec8",
+    "5",
+    "0x20018222",
+    "a3"
+   ],
+   "on": [
+    "(uint4 *)0x20007e6c",
+    "(uint4 *)0x2000bec8",
+    "5",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8024518@0x8024518",
+   "callee": "sub_800a964",
+   "off": [
+    "0x2000be90",
+    "a0",
+    "0x20",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "(unsigned int *)0x2000be90",
+    "a0",
+    "0x20",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802453c@0x802453c",
+   "callee": "sub_800a964",
+   "off": [
+    "0x20007e4c",
+    "0x2000be90",
+    "0x20",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "(unsigned int *)0x20007e4c",
+    "(unsigned int *)0x2000be90",
+    "0x20",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80245e4@0x80245e4",
+   "callee": "sub_802303c",
+   "off": [
+    "0",
+    "1",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8024720@0x8024720",
+   "callee": "sub_802b634",
+   "off": [
+    "dat_20018227 & 1",
+    "0x802a2b5",
+    "0x802aa49",
+    "0x20018227",
+    "a3"
+   ],
+   "on": [
+    "dat_20018227 & 1",
+    "0x802a2b5",
+    "0x802aa49"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80251b8@0x80251b8",
+   "callee": "sub_80328a4",
+   "off": [
+    "*(char *)(v1 + 0x2000c784)",
+    "a1"
+   ],
+   "on": [
+    "(uint4)*(uint1 *)(v2 + 0x2000c784)"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80253c4@0x80253c4",
+   "callee": "sub_8057c70",
+   "off": [
+    "v2",
+    "dat_200081ac",
+    "v6",
+    "0x200081a4",
+    "a3"
+   ],
+   "on": [
+    "v2",
+    "(uint4)dat_200081ac",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80255a4@0x80255a4",
+   "callee": "sub_800a6d8",
+   "off": [
+    "0x2000c870",
+    "0",
+    "0x6c",
+    "0x2001822b",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)0x2000c870",
+    "0",
+    "0x6c",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80257dc@0x80257dc",
+   "callee": "sub_802303c",
+   "off": [
+    "0",
+    "1",
+    "a2",
+    "1",
+    "a3"
+   ],
+   "on": [
+    "0",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80258e8@0x80258e8",
+   "callee": "sub_80112f0",
+   "off": [
+    "dat_2000c903",
+    "dat_2000c8f8",
+    "a2",
+    "0x2000c8f8",
+    "a3"
+   ],
+   "on": [
+    "(uint4)dat_2000c903",
+    "(uint4)dat_2000c8f8",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8025b6c@0x8025b6c",
+   "callee": "sub_80179e4",
+   "off": [
+    "a1",
+    "*(char *)(a0 + v3 + 0x66)",
+    "v1",
+    "a0 + v3",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "*(char *)(a0 + v2 + 0x66)"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8025bb2@0x8025bb2",
+   "callee": "sub_80179e4",
+   "off": [
+    "a1",
+    "*(char *)(a0 + 0x86)",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "*(char *)(a0 + 0x86)",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8025c24@0x8025c24",
+   "callee": "sub_80179e4",
+   "off": [
+    "a1",
+    "*(char *)(a0 + 0x8e)",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "*(char *)(a0 + 0x8e)",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8025c76@0x8025c76",
+   "callee": "sub_80179e4",
+   "off": [
+    "a1",
+    "*(char *)(a0 + 0x21)",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "*(char *)(a0 + 0x21)",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8028164@0x8028164",
+   "callee": "sub_8017b20",
+   "off": [
+    "a2",
+    "v6"
+   ],
+   "on": [
+    "a2"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802977a@0x802977a",
+   "callee": "sub_8017b20",
+   "off": [
+    "v5",
+    "v1"
+   ],
+   "on": [
+    "v3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8029aea@0x8029aea",
+   "callee": "sub_8017ad0",
+   "off": [
+    "0x92",
+    "v2"
+   ],
+   "on": [
+    "0x92"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802aa78@0x802aa78",
+   "callee": "sub_801632c",
+   "off": [
+    "0x2000c90c",
+    "a0",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x2000c90c",
+    "a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802aa80@0x802aa80",
+   "callee": "sub_801632c",
+   "off": [
+    "0x2000c90c",
+    "a0",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x2000c90c",
+    "a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802ab60@0x802ab60",
+   "callee": "sub_80179e4",
+   "off": [
+    "a0",
+    "*(char *)(a1 + 5)",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "*(char *)(a1 + 5)",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802afac@0x802afac",
+   "callee": "sub_801654e",
+   "off": [
+    "v1",
+    "a1",
+    "0xd5",
+    "v4",
+    "a3"
+   ],
+   "on": [
+    "(uint4)v1",
+    "a1",
+    "0xd5",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802afac@0x802afac",
+   "callee": "sub_801654e",
+   "off": [
+    "v1",
+    "a1",
+    "0xd5",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "(uint4)v2",
+    "a1",
+    "0xd5",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802afac@0x802afac",
+   "callee": "sub_801654e",
+   "off": [
+    "v1",
+    "a1",
+    "0xd5",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "(uint4)v1",
+    "a1",
+    "0xd5",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802afac@0x802afac",
+   "callee": "sub_801654e",
+   "off": [
+    "v1",
+    "a1",
+    "0xd5",
+    "v3",
+    "a3"
+   ],
+   "on": [
+    "(uint4)v2",
+    "a1",
+    "0xd5",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802b748@0x802b748",
+   "callee": "sub_800a6d8",
+   "off": [
+    "0x2000d924",
+    "0",
+    "0x2a0",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)0x2000d924",
+    "0",
+    "0x2a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802b814@0x802b814",
+   "callee": "sub_800a6d8",
+   "off": [
+    "0x10000f80",
+    "0",
+    "0x88",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)0x10000f80",
+    "0",
+    "0x88",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802b860@0x802b860",
+   "callee": "sub_800a850",
+   "off": [
+    "(v5 + 1) * 4 + 0x10000f80",
+    "v5 * 4 + 0x10000f80",
+    "(v1 - v5) * 4",
+    "v4",
+    "a3"
+   ],
+   "on": [
+    "(unsigned int *)((v4 + 1) * 4 + 0x10000f80)",
+    "(unsigned int *)(v4 * 4 + 0x10000f80)",
+    "(v1 - v4) * 4"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802b8c8@0x802b8c8",
+   "callee": "sub_800a850",
+   "off": [
+    "v1 * 4 + 0x10000f80",
+    "(v1 + 1) * 4 + 0x10000f80",
+    "(dat_1000100c - v1) * 4",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "(unsigned int *)(v1 * 4 + 0x10000f80)",
+    "(unsigned int *)((v1 + 1) * 4 + 0x10000f80)",
+    "(dat_1000100c - v1) * 4",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802bdc0@0x802bdc0",
+   "callee": "sub_8023ec0",
+   "off": [
+    "dat_2000dc0c",
+    "dat_200020dc"
+   ],
+   "on": [
+    "dat_2000dc0c"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802c0ea@0x802c0ea",
+   "callee": "sub_8023ec0",
+   "off": [
+    "dat_2000dc0c",
+    "dat_200020dc"
+   ],
+   "on": [
+    "dat_2000dc0c"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802c104@0x802c104",
+   "callee": "sub_8023ec0",
+   "off": [
+    "dat_2000dc0c",
+    "dat_200020dc"
+   ],
+   "on": [
+    "dat_2000dc0c"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802c356@0x802c356",
+   "callee": "sub_8023ea4",
+   "off": [
+    "v6"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802c542@0x802c542",
+   "callee": "sub_8023e4c",
+   "off": [
+    "v2"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802ced4@0x802ced4",
+   "callee": "sub_800a6d8",
+   "off": [
+    "0x2000dcf4",
+    "0",
+    "0x10",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)0x2000dcf4",
+    "0",
+    "0x10",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802cf9c@0x802cf9c",
+   "callee": "sub_800a6d8",
+   "off": [
+    "0x2000dce8",
+    "0",
+    "0xc",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint1 *)0x2000dce8",
+    "0",
+    "0xc",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802d020@0x802d020",
+   "callee": "sub_8023ef8",
+   "off": [
+    "v2 * -0x33333333"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802da34@0x802da34",
+   "callee": "sub_800a964",
+   "off": [
+    "a0 * 0x1e + 0x2000ddd0",
+    "a1 * 0x1e + 0x2000ddd0",
+    "0x1e",
+    "0x2000ddd0",
+    "a3"
+   ],
+   "on": [
+    "(unsigned int *)(a0 * 0x1e + 0x2000ddd0)",
+    "(unsigned int *)(a1 * 0x1e + 0x2000ddd0)",
+    "0x1e",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802da42@0x802da42",
+   "callee": "sub_800a964",
+   "off": [
+    "a0 * 0x1e + 0x2000ddd0",
+    "a1 * 0x1e + 0x2000ddd0",
+    "0x1e",
+    "0x2000ddd0",
+    "a3"
+   ],
+   "on": [
+    "(unsigned int *)(a0 * 0x1e + 0x2000ddd0)",
+    "(unsigned int *)(a1 * 0x1e + 0x2000ddd0)",
+    "0x1e",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802db14@0x802db14",
+   "callee": "sub_8022acc",
+   "off": [
+    "*(char *)(a0 + 9)",
+    "0x20",
+    "1",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(uint4)*(uint1 *)(a0 + 9)",
+    "0x20",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802dbc8@0x802dbc8",
+   "callee": "sub_80227dc",
+   "off": [
+    "0x2000de58",
+    "a0",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x2000de58",
+    "a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802dbd8@0x802dbd8",
+   "callee": "sub_80228da",
+   "off": [
+    "0x2000de58",
+    "a0",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(int4 *)0x2000de58",
+    "a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802dbe8@0x802dbe8",
+   "callee": "sub_8022914",
+   "off": [
+    "0x2000de58",
+    "a0",
+    "a1",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(int4 *)0x2000de58",
+    "a0",
+    "a1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802dc10@0x802dc10",
+   "callee": "sub_8022a3e",
+   "off": [
+    "0x2000de58",
+    "a0",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "(int4 *)0x2000de58",
+    "a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802dfa8@0x802dfa8",
+   "callee": "sub_802df5c",
+   "off": [
+    "*v1",
+    "*(char *)((int4)v1 + 5)",
+    "2",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "*v1",
+    "(uint2)*(uint1 *)((int4)v1 + 5)",
+    "2",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802dfa8@0x802dfa8",
+   "callee": "sub_802df5c",
+   "off": [
+    "*v1",
+    "*(char *)((int4)v1 + 5)",
+    "0",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "*v1",
+    "(uint2)*(uint1 *)((int4)v1 + 5)",
+    "0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802e2b2@0x802e2b2",
+   "callee": "sub_800f938",
+   "off": [
+    "*(unsigned int *)(a0 + 0x40)",
+    "1",
+    "a2",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "*(int4 *)(a0 + 0x40)",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802e2ce@0x802e2ce",
+   "callee": "sub_800f938",
+   "off": [
+    "*(unsigned int *)(a0 + 0x40)",
+    "0",
+    "a2",
+    "0",
+    "a3"
+   ],
+   "on": [
+    "*(int4 *)(a0 + 0x40)",
+    "0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802e30c@0x802e30c",
+   "callee": "sub_806666c",
+   "off": [
+    "*v1",
+    "*(char *)((int4)v1 + 5)",
+    "1",
+    "v1",
+    "a3"
+   ],
+   "on": [
+    "**(int4 **)(a0 + 0x44)",
+    "(uint4)*(uint1 *)((int4)*(int4 **)(a0 + 0x44) + 5)",
+    "1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802ec9c@0x802ec9c",
+   "callee": "sub_802303c",
+   "off": [
+    "0",
+    "1",
+    "a2",
+    "dat_20018227",
+    "a3"
+   ],
+   "on": [
+    "0",
+    "1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802f5b4@0x802f5b4",
+   "callee": "sub_8032628",
+   "off": [
+    "4",
+    "v2"
+   ],
+   "on": [
+    "4"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_802fb3e@0x802fb3e",
+   "callee": "sub_8032628",
+   "off": [
+    "4",
+    "v3"
+   ],
+   "on": [
+    "4"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80320e0@0x80320e0",
+   "callee": "sub_80319ec",
+   "off": [
+    "a0",
+    "v1",
+    "v3",
+    "v5",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "v1"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8032214@0x8032214",
+   "callee": "sub_805f44e",
+   "off": [
+    "0xad"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8032628@0x8032628",
+   "callee": "sub_801632c",
+   "off": [
+    "0x2000ecec",
+    "a0",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "0x2000ecec",
+    "a0",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_80326bc@0x80326bc",
+   "callee": "sub_801632c",
+   "off": [
+    "a1",
+    "v1",
+    "a2",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a1",
+    "(uint4)v1",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8032710@0x8032710",
+   "callee": "sub_80326bc",
+   "off": [
+    "a0",
+    "a1",
+    "a2",
+    "v2",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "a1",
+    "a2",
+    "v2"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8032990@0x8032990",
+   "callee": "sub_800ae80",
+   "off": [
+    "a0",
+    "a1",
+    "6",
+    "a3",
+    "a3"
+   ],
+   "on": [
+    "a0",
+    "a1",
+    "6",
+    "a3"
+   ]
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8033232@0x8033232",
+   "callee": "sub_8023ef8",
+   "off": [
+    "v1"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8033232@0x8033232",
+   "callee": "sub_8023ef8",
+   "off": [
+    "v1"
+   ],
+   "on": []
+  },
+  {
+   "kind": "deleted",
+   "binary": "O2_betaflight_stripped_betaflight_STM32F405-elf",
+   "caller": "sub_8033232@0x8033232",
+   "callee": "sub_8023ef8",
+   "off": [
+    "v1"
+   ],
+   "on": []
+  }
+ ]
+}

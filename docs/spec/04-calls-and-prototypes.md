@@ -1723,3 +1723,410 @@ representation), and would add a preferred prototype model consulted where
 that P4 action reads carries only `defaultfp`/`evalfp_current` and no named-model
 registry, so a `preferred_model` hook today would be plumbing in service of a
 function that returns `None` for both languages kuna emits.
+
+### (kuna) `protoorder` — callee-first prototypes
+
+Every prototype a caller can read about its callee is a **declared** one.
+`TypeOpCall::getInputLocal`
+(`decompiler/crates/kuna-decomp/src/p5_types/coreaction_infertypes.rs`) already
+types a call argument from the callee's parameter, and `ActionDefaultParams`
+already gives a call site its callee's whole signature — but both read the
+`PrototypePieces` parked on the callee's `FunctionSymbol`, and the writers of
+that slot are all statements of fact from outside the decompile: a libc table
+entry, a DWARF or demangled signature, a console `parse line extern`, a CLI
+`--assert prototype`. What a *recovery* found about a function has never been
+written anywhere a caller reads, so an internal callee tells its callers nothing
+and each caller types the call from its own local evidence alone. That is the
+shape of `fmt -O2`: the callee at `0x3700` renders
+`unsigned long sub_3700(FILE *a0, unsigned long a1)` where the ground truth is
+`int fmt (FILE *fp, char const *file)`, and the `char *` its own callees already
+proved never arrives.
+
+The option closes that gap without adding a pass. `kuna decompile-all` already
+loads and analyzes once and then loops over the entries; with the option on it
+orders that loop by the program's call graph — the `kuna_analysis::listing::xrefs`
+edges `kuna xrefs` answers with, not a second graph — so each callee is
+decompiled before its callers, and after each function completes what its own
+recovery found is recorded for the callers still ahead of it
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs`). Results are
+buffered and emitted in address order, so the ORDER of the run changes and the
+order of the output does not.
+
+Ordering is Tarjan's strongly-connected components over the direct-call edges,
+whose output order is already reverse-topological. A component with more than one
+member — and a function that calls itself — is recursion, where "callees first"
+has no meaning: those functions decompile with nothing stated.
+
+The option has two live values, because there are two different things a
+recovered prototype can be asked to say and only one of them is safe to say by
+default.
+
+#### `types` (the default) — the callee's parameter types, never its arity
+
+A recovered prototype is not a fact about the program; it is a summary of what
+one decompile managed to recover, and recovery is wrong in both directions. It
+under-counts on a variadic and on any function that forwards its arguments
+without naming them; it over-counts wherever an argument register an earlier call
+left live looked like a parameter. The types it recovered are a judgement about
+values the program really passes. The COUNT it recovered is a claim about the
+program's shape, and stating a wrong one rewrites what the emitted C says the
+machine code does.
+
+So the default value states only the parameter types. Nothing is written to the
+symbol table: the recovered parameter types and the storage they were recovered
+in go into `Architecture::kuna_protoorder_types`, keyed by the callee's entry.
+The type-inference seam that reads them cannot reach the `Architecture`
+(`Funcdata::get_arch` is the per-function `ArchHandle`), so they are copied onto
+each caller's `Funcdata` once after its flow build — the bridge `calleedeadarg`
+and `rustabi` already take for their own callee-body probes, at the same two
+points in `decompile_drive.rs`.
+
+At the call site, argument `i` takes the callee's recovered type for parameter
+`i` when the two recoveries agree about **where that argument lives**. The
+caller's side of that agreement is `FuncCallSpecs::final_input_storage`, which
+`build_input_from_trials` records as it writes the argument list — the storage
+each recovered argument was passed in, in argument order, kept because the
+written inputs hold values and not locations. Position and storage must both
+agree: position alone would re-bind every later type whenever the two recoveries
+disagree about how many arguments there are, and storage alone would let a
+register the convention reuses carry a type across a slot boundary.
+
+What arrives is a **vote** about the value, not a declaration the value must be
+converted to. `Varnode::getLocalType` folds it against every other reader of the
+Varnode by `Datatype::type_order`, type propagation afterwards replaces it with
+any strictly more specific type the value carries, and a declared (type-locked)
+parameter answers before it is asked. Casts are measured against the declared
+answer only (`declared_input_type_local`): the vote is never the type a call
+argument is *required* to have, so where it loses, the argument renders exactly
+as it does with the option off — `sub_16da9(stderr)`, not
+`sub_16da9((long)stderr)` — and where it wins, the value already carries it.
+Winning still changes spellings, so a changed function has to be read rather
+than assumed cosmetic: a constant the vote types a pointer prints with its cast
+(`caller((unsigned char *)0x402000,3)`); a pointee guessed for a pointer can
+split one wide store through it into narrower stores of the same bytes
+(`*(unsigned long *)(a0 + 0xe8) = 0` becomes `a0[0x3a] = 0; a0[0x3b] = 0;` —
+the same memory contents at a different access width, which matters on
+memory-mapped I/O); the same guess can widen a narrow load into a read of the
+wider element and a truncation (`*(short *)(a0 + 0xc)` becomes `(short)a0[3]`,
+`*(char *)&v4[2]` becomes `(char)v4[2]`) — the same value, read at a different
+width, again a difference on memory-mapped I/O; and an unsigned vote can make a caller's parameter
+unsigned, with casts keeping its signed uses correct (`(int)a0 >> 2`).
+"More specific" is the lattice's order, not a judgement of quality: a pointer
+outranks an integer whatever the integer's source, so the fold alone would let a
+recovered pointer overwrite an integer the caller had right. That is why a vote
+is refused outright wherever the caller holds evidence the fold cannot weigh
+(`kuna_protoorder::call_argument_vote`):
+
+- **The argument is the address of a frame object**, a value computed from the
+  stack pointer. `gatherOpen` turns a pointer's pointee at a frame address into
+  a range hint, so a vote there re-lays the frame instead of typing a value: a
+  `char buf[256]` whose elements are handed to `int *` and `short *` callees
+  rendered as `char [20]` plus `unsigned int [61]` while the loop still wrote all
+  256 bytes into the first.
+- **The value is frame memory or declared.** The value is taken as its family:
+  every varnode joined to the argument by COPY, CAST, MULTIEQUAL or INDIRECT in
+  either direction — the edges type propagation crosses, and at -O0 the stack
+  slot's phi-nodes that one parameter is reloaded through for every call. The
+  vote is refused when a member is type-locked (a declared parameter) or global
+  (`is_persist`); is itself a frame address (a phi that also carries `&buf`,
+  through which the vote would reach the frame after all: dash's `int pip[2]`
+  turned into a `long` read as `(int)v15`); is loaded from or stored to memory
+  through a frame address; starts at a frame address the function takes; lies
+  inside a stack struct or array the frame already holds; or lies in an indexed
+  frame region: at or above a frame address the function indexes with a
+  non-constant, below the next frame address it takes. That region is the open
+  range `gatherOpen` builds an array from, and one typed element inside it cuts
+  the array short: firmware's `char *argv[13]` split into a scalar, an
+  `int [10]` indexed with `v4 - 1`, and a tail local nothing writes.
+- **The value is loaded through itself** — `p = *p`, `p = p->next` — which is
+  `T == ptr(T)`, the equation `ptrdepthcap` exists for: no finite type satisfies
+  it, and a pointer vote seeds it, so every inference pass adds a level (tar's
+  regex routines rendered `uint8 *******a0`). A vote deeper than the inferred
+  cap `kuna_ptrdepth::MAX_INFERRED_PTR_DEPTH` is refused for the same reason.
+- **A pointer vote lands on a constant inside a function's code.** A Thumb
+  function address handed over as data — `target|1` — resolves, through the
+  same global container lookup `ActionConstantPtr` uses, to the function's own
+  symbol and prints as `&sub_8130[1]`: a subscript of a function, which is not
+  C. The literal stays a number.
+- **Another call reads or writes the same value as a different kind of thing**
+  — pointer, integer or float — through a declared parameter, a declared return,
+  or another callee's stated parameter. This is coreutils `tail_bytes`:
+  `dump_remainder` recovers its byte count as `void *` (it is compared with the
+  constant 0x2000, which is also the address `_DT_INIT`), `lseek` declares the
+  same value `off_t`, and the pointer, had it won, would have reached
+  `end_pos = stats.st_size`, split `struct stat` in two, and left the output
+  reading an `st_blksize` local nothing writes.
+- **Float-ness disagrees**: the family is produced or read by a float op and the
+  vote is not a float; a pointer vote on a value the caller multiplies, divides,
+  shifts, masks or reads as a float; or an integer or pointer vote in a
+  float-class argument register. `fabsf` recovered as `unsigned int` (it masks
+  the sign bit) would otherwise print `(unsigned int)v7` on a float — a value
+  conversion spelling a bit reinterpretation.
+- **A float vote meets anything but a float or a copy of the bits.** Every other
+  reader and writer of the family has to be a float op or pass the bits through
+  untouched — a copy, a phi, a load. The vote is refused when any integer op
+  computes with the family, including the ones a pointer vote ignores (addition,
+  subtraction, the comparisons, the carry and borrow tests, zero or sign
+  extension, truncation or byte extraction, concatenation), because a pointer is
+  added to, compared and truncated but a float is not. It is also refused when
+  the family is stored, or — outside a register the calling convention assigns
+  to floats — returned by a function whose result is not declared a float,
+  passed to another call that states no class for it, or produced by a call
+  whose result is not declared. Each hands the value to a type decided
+  elsewhere, and the printer bridges a float to an integer there with a value
+  conversion; a float register is itself the float declaration, so `s0` on
+  hard-float ARM or `xmm0` on x86-64 keeps the vote (the fixture
+  `protoorder_floatreg_armhf.o` prints `1000.0`, not its bits `0x447a0000`).
+  The case is an ABI that
+  passes a float in a general register (MIPS
+  o32, ARM soft-float, RISC-V ilp32): the caller hands a word's bits to a
+  `float` parameter and also adds, compares, truncates or stores the same word as
+  an integer, and the float vote printed `(int)v1 + 3`, `v1 == 1.5000001`,
+  `(short)((unsigned int)v1 >> 0x10)` and `a2[1] = (int)v1` — value conversions
+  where the machine works on bits, which compute different numbers (the fixture
+  `protoorder_floatgpr_mipsel`). The store is not particular to those ABIs: on
+  x86-64 a float loaded, passed in `xmm0` and stored beside an int in a struct
+  kuna types as `int *` printed `v1[1] = (int)v3` (the fixture
+  `protoorder_floatstore_x86_64`). Two more sources refuse a float vote: a
+  constant whose bits are a NaN, because every NaN prints as `NAN` whatever its
+  payload, and a parameter of the caller's own in a register the convention
+  would not give a float at that position. The model answers that question
+  rather than a register table: a float after an integer goes to `xmm0` on SysV,
+  so `rsi` never holds one, while MIPS o32 passes it in `a1`.
+- **What the caller does through a pointer disagrees with the pointee.** A
+  pointer vote whose pointee is a float, a structure, an array or a union is
+  checked against every load and store the caller makes through the value's
+  family, following constant offsets, indexing (the stride of a multiply, a
+  shift or a `PTRADD`), a pointer stepped around a loop and copies. An access
+  outside a composite pointee refuses the vote, and so does an address the
+  caller derives outside it: a callee's `struct_N` is only the part of the
+  object that callee touched, and a caller that reads offset 0x19c of it printed
+  `*(int **)&a0[0x33].field_0x4`, the array subscript of a structure that is not
+  an array. So does a pointer the caller steps or indexes by other than exactly
+  one element: grep's loop over 0x48-byte records printed `a0 = (unsigned long
+  *)&a0[4].field_0x8` for a callee's 16-byte view, and sort's 32-byte records
+  printed `v18[-2].field_0x8`. An index into an array member inside the
+  structure is refused the same way, which costs a vote and prints what main
+  prints. A pointer member the caller loads or stores through the pointee is
+  checked against the caller's uses of it in turn, two levels deep. When the
+  value itself was loaded from memory, every other load of the same field (the
+  same base, offset and width) is checked with it: the vote types the field it
+  was loaded from, and the field types those loads, so e2fsck's `getblk` printed
+  `*(int8 *)&v2[4].field_0x4c[0x1c]` for a `v2 = a0->field_0x0` the call never
+  saw. An access that is not exactly one member, whether it spans two
+  members or part of one, refuses it: a 4-byte load over four byte members
+  printed as four piece assignments (`v6._0_1_ = a4[1].field_0x0; ...`), and an
+  8-byte struct copy over an `int` and a `float` was split into two 4-byte
+  stores. An access landing on a float element or member is then held to the
+  float-vote rule one level down: the value stored there, or the value loaded
+  from there, is refused if any integer op computes with it, if it is a NaN
+  constant or a caller parameter in a register no float arrives in, if it is
+  handed on outside a float register, or, for a stored value, if it was loaded
+  through another pointer and nothing reads it as a float. Without that, integer
+  bits moved into memory a callee reads as floats printed as value conversions:
+  `*a0 = (double)(a1 + 1)` for `u->l[0] = v + 1` through a union a callee sums
+  as doubles, `a0[1] = NAN` for a signalling NaN's bits, `a0->field_0x4 =
+  (float)v2` for a plain `*dst = *src`, and `double` parameters in `rsi` and
+  `rdx` for a `memcpy` from two `long`s (the fixture
+  `protoorder_floatpointee_x86_64`, whose six callers are compiled from the
+  printed C and compared with the source). A pointee that is an integer, a
+  character or a pointer is not checked: an access of another width through it
+  prints a cast, not a conversion.
+
+The callee's recovered RETURN type is not stated. It has no competing evidence at
+the caller — the call's result is a new value — so a wrong one spreads through
+every comparison it meets into the caller's own parameters: expr's `mbslen`
+recovered as `char *` turned both `size_t` parameters of its caller into
+`char *` and printed `&v3[1 - (long)a1]`. Over the 444-slice campaign corpus it
+was worth one perfect function and accounted for four of the eight that scored
+worse, `grep`'s `memchr_kwset` family among them.
+
+No call spec is input-locked, so `ActionFuncLink` runs the caller's own argument
+recovery at every call exactly as it does with the option off, and nothing about
+the call's shape can move. That is checkable rather than merely arguable, and it
+is checked: over 46 stripped binaries (25,038 functions, x86-64 userland
+at -O0, -O2 and -O2-noinline plus ARM Cortex-M firmware) the two arms render
+**the same 209,487 call arguments**, no function gains or loses a
+`variables[]` argument row, no call is made or lost, and no `goto` or `return`
+moves (`docs/features/protoorder/callsite.json`, `invariants.json`). Every
+changed function is classified by `corpus-diff.py`, which also checks the frame
+of every one of them for a split or merged stack object and for a stack local the
+output reads without writing (`corpus-report.json`, `analysis.md`).
+
+It is also why this value is cheap. Parking a prototype bumps
+`Database::kuna_generation`, which drops the memoized
+`build_callee_proto_pieces` snapshot that every later function rebuilds; this
+table is the module's own and the symbol table does not move.
+
+What the vote can still get wrong is a type the callee's own recovery got wrong,
+where nothing at the call site contradicts it. Over the 444-slice campaign corpus
+that costs three functions a lower score against 851 that gain, and
+none that leave a perfect score against 115 that reach one.
+
+#### `lock` — the arity claim, opt-in
+
+The other value parks the recovered prototype in the symbol table, where
+`ActionDefaultParams` reads a declared one from. That does decide the call's
+arity, which is the point where a caller over-recovered — `ext2fs_mmp_start`
+renders three arguments and takes one — and a defect where the callee
+under-recovered. It gains 818 call arguments at 418 sites over the x86-64 half of
+the corpus above and loses 28 at 21. It also FABRICATES parameters: 155 of 7,553
+x86-64 functions and 630 of 6,589 ARM Cortex-M ones gain an argument row nothing
+sets, which `type_match` cannot see at all, because a decompiled variable with no
+ground-truth counterpart is never a false positive. It is therefore never the
+default; the rest of this section is what makes it safe enough to offer at all.
+
+The under-count is the dangerous direction, and it is dangerous because of what a
+lock does. `ActionFuncLink::func_link_input` turns on a call site's own argument
+recovery only when the call spec is *not* input-locked; a locked spec is answered
+entirely from the parked list. So a callee parked with a list shorter than the
+arguments its callers really pass does not merely fail to describe them — it
+**deletes** them from the emitted call. Measured over twelve stripped binaries, a
+closed parked list deleted 639 arguments at 216 call sites.
+
+The shape of the park is what answers it: **the parked list is a floor, not a
+ceiling.** The pieces name the first slot past the recovered parameters as the
+start of a variable tail (`PrototypePieces::first_var_arg_slot`), which is the
+one shape `func_link_input` treats as locked *and* input-active (`if !inputlocked
+|| varargs`). The recovered types bind the slots that were recovered and the
+caller's own recovery still runs for everything past them, so no call is
+truncated to the parked list any more; over the same twelve binaries that class
+goes from 639 arguments at 216 sites to zero.
+
+It does not follow that an argument can no longer be lost. A parked prototype
+still changes the caller's own dataflow, because every parameter it states is a
+register the call site now reads: state a parameter the callee does not have and
+the caller materialises a live-in that is nothing, which competes with the
+caller's ordinary argument recovery — at a *different* call, earlier in the same
+body, to a callee that has no prototype of its own. That is the residual: 28
+arguments at 21 sites over twenty x86-64 userland binaries, each enumerated in
+`docs/features/protoorder/deleted-arguments.json`. The open tail has a second
+cost besides: a list with a variable tail makes the call spec variadic, and
+`FuncProto::characterize_as_input_param` sends a variadic spec straight to the
+model, so every argument register the convention has becomes a candidate at that
+site again and a caller holding a live value in one of them renders it as an
+argument the machine code never passes. How much that costs is a property of the
+convention — AAPCS has four argument registers and firmware keeps all four busy,
+which is why the ARM column is five times the x86-64 one.
+
+The over-count is answered with evidence rather than with shape, because there is
+no shape that expresses "this parameter may not exist". Both rules read the
+callee's own machine code, through the entry-liveness walk `calleedeadarg`
+already takes (`probe_callee_entry_dead`), which answers one question per
+register range one-sidedly: does every path from the entry write these bytes
+before reading them, or does some path read them first?
+
+- A **trailing** parameter is stated only when the body reads the register it
+  would arrive in, for a value that can reach something (the register-zeroing
+  idiom `xor esi,esi` is a read in the p-code and not a use). The burden of
+  proof is on the tail, not on the trim: a parameter the body neither reads nor
+  writes is only *possible*, and `save_cwd` in `findutils/find -O2` — one
+  parameter in the DWARF — is recovered with three exactly that way, because a
+  nested call reads an `rdx` the body never writes. Under-stating a tail is the
+  cheap direction and only because the parked list is a floor: the caller still
+  passes what it passes, so the cost is a type on that slot, where an
+  over-stated tail fabricates an argument and disturbs the caller's other
+  calls. A stack parameter is dropped for the same reason — the entry walk
+  cannot speak about it at all. Only the tail is trimmed: removing an interior
+  parameter would leave a hole the convention re-packs, silently re-binding
+  every later type.
+- A callee that provably **reads** the register its next argument would arrive
+  in — the storage the model assigns to one more parameter than were recovered —
+  has under-recovered, and is declined outright. This is the rule that catches
+  what the variadic test cannot: `FuncProto::is_dotdotdot` is only ever set from
+  a *declared* signature, and a declared entry never reaches the policy at all
+  (the declared check fires one branch earlier), so on a stripped image it can
+  never fire. A SysV register-save prologue reads every argument register there
+  is, and that read is visible in the body whether or not anything declared the
+  function variadic.
+
+Everything the walk cannot see — an incomplete walk, a register space it cannot
+name, a body that is one endless loop — answers `false` to both, so both rules
+decline to act rather than guess.
+
+One case the walk cannot see at all is the one where it matters most. Asking
+whether the callee reads its *next* argument register presumes there is a next
+register to ask about. A recovered list that fills the convention's argument
+registers — six on SysV, four on AAPCS, eight on AArch64 — has its next slot on
+the stack, at an offset the entry walk never speaks about, so the question comes
+back `false` for a variadic exactly as it does for a real six-argument function.
+That is not evidence; it is the absence of a witness, and the population sitting
+on that boundary is not neutral: a variadic that calls `va_start` spills the
+argument registers past its named ones into the register save area, so every one
+of them is read before it is written and recovery reports exactly as many
+parameters as the convention has registers. So **a recovered list that ends on
+the convention's last argument register is declined**, asked of the model (the
+last parameter must be in a register and the next slot must not be) so that a
+convention passing everything on the stack never trips it. The cost is the
+genuine six-argument SysV function and the genuine four-argument AAPCS one,
+which keep the option's off behaviour at their call sites.
+
+None of these four rules applies under `types`, where a stated list cannot
+fabricate an argument at all: a short list states fewer types, and a long one
+states types for slots the caller does not have, which match no argument.
+
+Closing the tail where the entry walk decoded the callee's whole body — every
+path ending at a `RETURN`, so "no other argument register is read" is a
+statement about the body rather than about its first few instructions — was
+measured and rejected: over twenty-two binaries it left the fabricated-parameter
+counters unmoved (785 functions gaining `variables[]` argument rows either way)
+and deleted nineteen more arguments. The callees that fabricate are the ones
+that call something, which is exactly where that walk stops.
+
+#### What both values decline
+
+Both values decline when
+
+- the function's decompile errored, or left no parameter store;
+- it says nothing: no parameters and a `void` return;
+- model selection did not settle on a known model;
+- a parameter is a hidden return pointer, an indirect-storage parameter or a
+  `this` pointer, or carries no type or no real storage;
+- the function is in a call-graph cycle of more than one member;
+- a prototype is already **declared** for that entry. A `--assert prototype`, a
+  libc/`libctypes` signature, a DWARF (`cppproto`) or demangled (`cppsig`) one
+  are all stated facts that outrank anything recovery found — and under `types`
+  a type-locked parameter answers before the recovered vote in any case.
+
+`lock` declines one thing more: **recovered parameters that are not where the
+convention would put those types**. A parked prototype is re-bound from the model
+(`set_pieces` → `update_all_types` → `assign_parameter_storage`), so a prototype
+the model would re-bind cannot be parked faithfully at all. This catches the
+variadic whose register-save prologue also spilled the XMM registers: recovery
+reports fourteen parameters, the model would put the last eight on the stack, and
+the mismatch declines it. `types` does not need the rule, because it round-trips
+nothing through the model: it matches the recovered storage against the caller's
+own recovered storage directly.
+
+`types` states no return type at all. Under `lock`, a recovered **void return**
+is never stated: `set_pieces` output-locks whatever the pieces name and
+`call_output_type_local` then removes the call's result at every site, so a
+caller reading the return register would lose the definition and go on reading a
+value nothing writes. A recovered non-void return is parked, where it can only
+type a result the caller already has.
+
+Under `lock`, parameter names are carried as recovered (`a0`, `a1` on a stripped
+image), which is what the callee's own decompile chose; on a `-g` binary that is
+the DWARF name, and a caller's local can take it. `types` carries no names.
+
+Two consequences are worth stating plainly. What is stated is a **caller-side
+fact only**: the locked-input branch of `ActionPrototypeTypes` is stubbed, and
+the callee has already been decompiled when its types are recorded, so nothing
+re-reads it about itself. And `kuna decompile` — which forks one `decomp_dbg` per
+function — cannot see what another function's decompile stated, so the two
+surfaces may disagree about a call's argument types; the whole-binary surface is
+the one that has the callee. `decompile-project` and `decompile-graph` have their
+own schedules and are not callee-first either; both warn on stderr when the
+option is asked for explicitly, rather than producing identical output silently.
+
+A run that selects part of the program — `--functions`, `--addr`, a triage
+filter — or a single function decompiles in address order and builds no call
+graph, since the callees it would order are mostly not in it; naming the option
+explicitly orders the selection anyway and says on stderr that a callee outside
+it states nothing. An explicit `--option protoorder` is refused alongside
+`--jobs N`, exactly like `--assert`: each worker process loads the binary into
+its own `Architecture`, so a statement could not cross a chunk boundary and the
+output would depend on how the chunks fell. A `--jobs` run under the default is
+not refused; it states nothing and says so on stderr, since its call-argument
+types can then differ from the serial run's, and `--option protoorder off` on
+both makes them byte-identical.

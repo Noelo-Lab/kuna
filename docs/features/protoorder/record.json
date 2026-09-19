@@ -1,0 +1,614 @@
+{
+ "opportunity": "A callee's recovered prototype never reaches its callers. ActionDefaultParams reads a call's callee signature from the PrototypePieces parked on the callee's FunctionSymbol, and every writer of that slot is a DECLARED fact (a libc/libctypes table entry, DWARF, a demangled name, `parse line extern`, `--assert prototype`). Nothing parks what recovery found, so each caller types a call from its own local evidence: coreutils fmt -O2 renders the same two-parameter callee with one, two and three arguments inside main, and the FILE * the caller holds stops at the call.",
+ "status": "Implemented. `protoorder off|types|lock`, DEFAULT `types`. `types` states the callee's recovered PARAMETER types as a vote at matching call arguments; the vote never sets a cast's required type and is refused wherever the caller holds contrary evidence (frame objects and frame memory, declared or global values, a different-class reader or writer, float disagreement, a float or composite pointee the caller's own loads and stores contradict, a value loaded through itself, a type deeper than the inferred pointer cap). The result vote is not stated. `lock` keeps the round-4 arity claim, opt-in.",
+ "test_name": "26 hermetic unit tests in p4_calls/kuna_protoorder/tests.rs (member lookup and strides among them); thirteen tests/cli probes over eight in-repo fixtures (protoorder_x86_64: off / default / arity pin / lock register-save decline; protoorder_stackarray_x86_64 and protoorder_stackstruct_x86_64, gcc -O0, a frame object that must stay whole; protoorder_codeptr_thumb_le32, a Thumb function address that must not print as &sub_8130[1]; protoorder_floatgpr_mipsel, MIPS o32, a float passed in a general register whose word the caller also uses as an integer; protoorder_floatstore_x86_64, a float stored beside an int; protoorder_floatreg_armhf.o, ARM hard-float values in s0 that keep the vote; protoorder_floatpointee_x86_64, gcc -O2, a union and struct copies written with integer bits through a pointer a callee reads as double *, struct P * and struct M *); kuna-cli tests jobs_output_is_byte_identical_to_serial, jobs_notes_that_the_default_callee_first_order_is_serial_only, jobs_run_workers_with_structsynth_off (serial reference with protoorder off), a_narrowed_run_orders_callees_first_only_when_asked, raw_image_discovers_called_functions_beyond_its_seeds, a_float_in_a_general_register_keeps_its_integer_uses_round_trip (seven MIPS callers compiled against a bit-preserving h), a_float_pointee_keeps_the_callers_integer_stores_round_trip (six x86-64 callers compiled from the default and the protoorder-off output and compared byte for byte with the source; all six differ on the pre-fix engine)",
+ "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
+ "selector": "0x3700",
+ "func_addr": "0x3700",
+ "option": "protoorder",
+ "values": "off|types|lock",
+ "default_value": "types",
+ "default_on": true,
+ "change_kind": "analysis-enablement",
+ "tier": "transform",
+ "phase": "P4",
+ "subphase": "prototype-source",
+ "source_decompiler": "angr",
+ "inspiration": "angr's Clinic propagates a recovered SimTypeFunction back onto the callee's Function.prototype, so later callers read it; Ghidra's decompiler-parameter-ID analyzer commits recovered prototypes to the program database before the callers are decompiled.",
+ "witness": {
+  "command": "kuna decompile-all .../O2/coreutils/stripped/fmt --option protoorder off|types",
+  "ground_truth": "int fmt (FILE *fp, char const *file)",
+  "off": "unsigned long sub_3700(FILE *a0,unsigned long a1)",
+  "types": "unsigned long sub_3700(FILE *a0,char *a1)",
+  "note": "the second parameter is the one the callee's own callees already proved is a string; with the option off nothing carries that across the call. Every call site renders the SAME arguments in both arms -- `sub_3700(v6)`, `sub_3700(stdin,v7)`, `sub_3700(stdin,\"-\",v10)` -- because `types` never moves an arity. The trailing fabricated argument at the third site is `argclobber`'s job, and the two compose: `--option argclobber on` alone gives 2/2/2 with `unsigned long a1`, and both on give 2/2/2 with `char *a1`.",
+  "fixture": {
+   "caller_off": "unsigned long caller(unsigned long a0,int a1)   /   caller(0x402000,3);",
+   "caller_types": "unsigned long caller(unsigned char *a0,int a1)   /   caller((unsigned char *)0x402000,3);",
+   "arity_pins": "thunk(a0,1,2,3,4) (one recovered parameter, five passed), sink(a0,a1) + overrec(v1), and vfmt((unsigned char *)0x402004) (six recovered parameters, one argument) all render identically in the off and types arms",
+   "lock_contrast": "under `lock`, overrec's OWN signature becomes `void overrec(long *a0,unsigned long a1,long a2)` -- two parameters nothing sets -- and vfmt is declined outright by the register-file rule, so its one call site loses the pointer type `types` gives it"
+  }
+ },
+ "arity": {
+  "instrument": "docs/features/protoorder/callsite-metrics.py over `decompile-all --json` in both arms (off = main 6e4f6fa5 byte for byte, vs the default), 60 stripped binaries, 32,406 functions",
+  "call_arguments_off": 258249,
+  "call_arguments_on": 258249,
+  "arguments_added": 0,
+  "arguments_deleted": 0,
+  "call_sites_whose_count_changed": 0,
+  "variables_arg_rows_off": 57938,
+  "variables_arg_rows_on": 57938,
+  "functions_gaining_arg_rows": 0,
+  "never_assigned_arguments_off": 1179,
+  "never_assigned_arguments_on": 1179,
+  "string_literal_arguments_off": 30518,
+  "string_literal_arguments_on": 31001,
+  "under_arity_sites_off": 13853,
+  "under_arity_sites_on": 13853,
+  "file": "docs/features/protoorder/callsite.json"
+ },
+ "corpus_diff": {
+  "instrument": "docs/features/protoorder/corpus-diff.py (every changed function classified by the first normalizer under which the two bodies agree; frame layout from variables[]; use-before-def from the code) + label-review.py/hand-labels.json for the residue + invariants.py; round 11 adds the struct-number class (struct_N renumbered by order of appearance) and member-reach through ->field_0xN / ->field_0xN[k]",
+  "binaries": 60,
+  "functions_total": 32406,
+  "functions_changed": 9669,
+  "classes": {
+   "REVIEW": 114,
+   "casts": 4450,
+   "declarations": 2754,
+   "literal": 360,
+   "member-reach": 432,
+   "merge": 17,
+   "pointer-arith": 122,
+   "struct-number": 1420
+  },
+  "residue_labels": {
+   "builtin-string": 5,
+   "float-literal": 4,
+   "literal": 11,
+   "member-reach": 13,
+   "regroup": 12,
+   "spelling": 45,
+   "stack-merge": 2,
+   "store-width": 12,
+   "ternary": 6,
+   "wide-read": 4
+  },
+  "frame": {
+   "stack_objects_split": 0,
+   "stack_objects_merged": 2,
+   "merge_note": "nuttx sub_8007bd0 (-O2 and -O2-noinline): two adjacent chars become the char tmp[] the code prints with %s -- an improvement",
+   "locals_read_never_written": 0,
+   "locals_first_used_as_read": 0
+  },
+  "reviewer_classes": {
+   "instrument": "regex counts over every function's code, main vs the default",
+   "array_subscript_of_a_struct": [
+    152,
+    152
+   ],
+   "piece_assignments": [
+    4004,
+    4004
+   ],
+   "NAN": [
+    55,
+    55
+   ],
+   "to_double": [
+    13,
+    13
+   ],
+   "to_float": [
+    1312,
+    1351
+   ],
+   "to_float_note": "per function 199 appear and 159 disappear on hard-float call results read from s0 (a callee returning float), 1 is main's own conversion moved into a temporary, 2 of main's go away"
+  },
+  "invariants": {
+   "functions_changed": 9669,
+   "calls_lost": 0,
+   "calls_gained": 1,
+   "calls_gained_note": "a string literal the default arm recovers, \"Calling prvGetRegistersFromStack() from fault handler\", read as a call by the regex",
+   "goto_delta": 0,
+   "return_delta": 0,
+   "stmt_delta": 129
+  },
+  "files": [
+   "corpus-report.json",
+   "review.txt",
+   "review-labels.json",
+   "hand-labels.json",
+   "invariants.json",
+   "callsite.json",
+   "calls-gained.on.txt"
+  ],
+  "measured_on": "round 11: main 6e4f6fa5 (= the off arm on 60/60) vs the final engine (af624192 code; the final build is byte-identical on 10 re-checked binaries)"
+ },
+ "benchmark": {
+  "corpus": "frozen decbench corpus (results/full_run_address_2026-09-11), 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow; O0 O2 O2-noinline; the campaign's x project has no slice), DECBENCH_NO_CACHE=1, scripts.decbench.typesweep --baseline-only on a main 6e4f6fa5 build and on this branch, merged",
+  "metric": "type_match",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 19,
+    "perfect_on": 28,
+    "mean_off": 0.3664,
+    "mean_on": 0.3884,
+    "improved": 14,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 610,
+    "perfect_on": 663,
+    "mean_off": 0.2813,
+    "mean_on": 0.2972,
+    "improved": 428,
+    "worse": 2
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 52,
+    "perfect_on": 52,
+    "mean_off": 0.4004,
+    "mean_on": 0.4096,
+    "improved": 19,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 35,
+    "perfect_on": 40,
+    "mean_off": 0.1622,
+    "mean_on": 0.2121,
+    "improved": 149,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 39,
+    "perfect_on": 44,
+    "mean_off": 0.387,
+    "mean_on": 0.4087,
+    "improved": 17,
+    "worse": 1
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 88,
+    "perfect_on": 100,
+    "mean_off": 0.4858,
+    "mean_on": 0.5142,
+    "improved": 26,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 29,
+    "perfect_on": 30,
+    "mean_off": 0.2897,
+    "mean_on": 0.2962,
+    "improved": 19,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 114,
+    "perfect_on": 148,
+    "mean_off": 0.2824,
+    "mean_on": 0.3353,
+    "improved": 285,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 986,
+   "perfect_on": 1105,
+   "mean_off": 0.2895,
+   "mean_on": 0.313,
+   "improved": 957,
+   "worse": 3
+  },
+  "aggregate_off": 3111.18,
+  "aggregate_on": 3363.95,
+  "moved_onto_perfect": 119,
+  "moved_off_perfect": 0,
+  "control": "6,822 functions with byte-identical variables score identically in both arms",
+  "firmware": {
+   "slices": "nuttx mirai betaflight freertos at O2",
+   "perfect_off": 208,
+   "perfect_on": 217,
+   "aggregate_off": 506.93,
+   "aggregate_on": 539.88,
+   "moved_off_perfect": 0,
+   "improved_not_perfect": 112,
+   "worse": 4
+  },
+  "ablations": {
+   "build": "an earlier round-6 build (before the frame-memory refusals), all three arms against the same off base",
+   "all_votes_incl_result": "perfect 1,075, 8 worse (memchr_kwset family, csplit process_line_count among them)",
+   "parameter_votes_only": "perfect 1,074, 4 worse -- shipped: the result vote is dropped",
+   "without_void_pointer_votes": "perfect 1,064 -- void * votes kept"
+  },
+  "worse_rows": "all 7 read, docs/features/protoorder/analysis.md section 6: 5 callee over-typed, 1 ground-truth integer the program uses as a pointer (nxsig_timeout), 1 parameter-order artefact (rpmFilterApply)",
+  "note_improved": "projects.*.improved counts rows that reach perfect too (957 = 119 onto perfect + 838 improved)"
+ },
+ "speed": {
+  "method": "main (a 6e4f6fa5 build) vs this branch's final engine, whole-binary `kuna decompile-all --json`, main and branch alternating inside each iteration (order swapped every iteration), min and median of 15, three slice groups side by side on a shared 80-core box (load 3-14)",
+  "budget_pct": 5,
+  "slices": {
+   "fmt -O2": {
+    "main_min_ms": 4134,
+    "pr_min_ms": 4158,
+    "main_median_ms": 4177,
+    "pr_median_ms": 4203,
+    "delta_min": "+0.6%",
+    "delta_median": "+0.6%"
+   },
+   "kmod -O2": {
+    "main_min_ms": 7167,
+    "pr_min_ms": 7321,
+    "main_median_ms": 7367,
+    "pr_median_ms": 7438,
+    "delta_min": "+2.1%",
+    "delta_median": "+1.0%"
+   },
+   "ls -O2": {
+    "main_min_ms": 13669,
+    "pr_min_ms": 14048,
+    "main_median_ms": 15076,
+    "pr_median_ms": 15617,
+    "delta_min": "+2.8%",
+    "delta_median": "+3.6%"
+   },
+   "libselinux -O2": {
+    "main_min_ms": 6499,
+    "pr_min_ms": 6680,
+    "main_median_ms": 6634,
+    "pr_median_ms": 6784,
+    "delta_min": "+2.8%",
+    "delta_median": "+2.3%"
+   },
+   "ip -O2": {
+    "main_min_ms": 27375,
+    "pr_min_ms": 27967,
+    "main_median_ms": 29249,
+    "pr_median_ms": 28836,
+    "delta_min": "+2.2%",
+    "delta_median": "-1.4%"
+   },
+   "e2fsck -O2": {
+    "main_min_ms": 26724,
+    "pr_min_ms": 27248,
+    "main_median_ms": 27313,
+    "pr_median_ms": 27878,
+    "delta_min": "+2.0%",
+    "delta_median": "+2.1%"
+   },
+   "tar -O2": {
+    "main_min_ms": 45384,
+    "pr_min_ms": 45838,
+    "main_median_ms": 47024,
+    "pr_median_ms": 47939,
+    "delta_min": "+1.0%",
+    "delta_median": "+1.9%"
+   },
+   "betaflight -O2": {
+    "main_min_ms": 54652,
+    "pr_min_ms": 55697,
+    "main_median_ms": 55689,
+    "pr_median_ms": 56625,
+    "delta_min": "+1.9%",
+    "delta_median": "+1.7%"
+   }
+  },
+  "verdict": "every slice inside +5% on the minimum: fmt +0.6%, kmod +2.1%, ls +2.8%, libselinux +2.8%, and over 500 KiB ip +2.2%, e2fsck +2.0%, tar +1.0%, betaflight +1.9%",
+  "note": "rounds 8-10 measured against e1139df9 and are kept under round8/round9/round10",
+  "round9": {
+   "method": "main (origin/main e1139df9 build) vs this branch after the round-9 float refusal, whole-binary `kuna decompile-all --json`, interleaved (order swapped every iteration), min and median of 15, two groups side by side on the shared 80-core box (load 13-28); .scratch/r9/speed.py",
+   "slices": {
+    "fmt -O2": {
+     "main_min_ms": 4374,
+     "pr_min_ms": 4307,
+     "main_median_ms": 5038,
+     "pr_median_ms": 4866,
+     "delta_min": "-1.5%",
+     "delta_median": "-3.4%"
+    },
+    "kmod -O2": {
+     "main_min_ms": 7412,
+     "pr_min_ms": 7623,
+     "main_median_ms": 8148,
+     "pr_median_ms": 8240,
+     "delta_min": "+2.8%",
+     "delta_median": "+1.1%"
+    },
+    "ls -O2": {
+     "main_min_ms": 13933,
+     "pr_min_ms": 14099,
+     "main_median_ms": 16152,
+     "pr_median_ms": 16275,
+     "delta_min": "+1.2%",
+     "delta_median": "+0.8%"
+    },
+    "libselinux -O2": {
+     "main_min_ms": 6869,
+     "pr_min_ms": 6921,
+     "main_median_ms": 7528,
+     "pr_median_ms": 7656,
+     "delta_min": "+0.8%",
+     "delta_median": "+1.7%"
+    },
+    "ip -O2": {
+     "main_min_ms": 27907,
+     "pr_min_ms": 28349,
+     "main_median_ms": 33433,
+     "pr_median_ms": 34235,
+     "delta_min": "+1.6%",
+     "delta_median": "+2.4%"
+    }
+   }
+  },
+  "round10": {
+   "method": "main (origin/main e1139df9 build) vs this branch at engine 2761aca9, whole-binary `kuna decompile-all --json`, interleaved (order swapped every iteration), min and median of 15, three groups side by side (load 30-45 falling to 6); libselinux re-run twice as main / round 9 / round 10 in one rotation; tar re-run at load 5-12; .scratch/r10/speed.py and speed3arm.py",
+   "slices": {
+    "fmt -O2": {
+     "main_min_ms": 5053,
+     "pr_min_ms": 5083,
+     "main_median_ms": 5273,
+     "pr_median_ms": 5236,
+     "delta_min": "+0.6%",
+     "delta_median": "-0.7%"
+    },
+    "kmod -O2": {
+     "main_min_ms": 7410,
+     "pr_min_ms": 7562,
+     "main_median_ms": 8248,
+     "pr_median_ms": 8068,
+     "delta_min": "+2.0%",
+     "delta_median": "-2.2%"
+    },
+    "ls -O2": {
+     "main_min_ms": 14089,
+     "pr_min_ms": 14430,
+     "main_median_ms": 16471,
+     "pr_median_ms": 15670,
+     "delta_min": "+2.4%",
+     "delta_median": "-4.9%"
+    },
+    "libselinux -O2": {
+     "main_min_ms": 7435,
+     "pr_min_ms": 7810,
+     "main_median_ms": 8785,
+     "pr_median_ms": 8811,
+     "delta_min": "+5.0%",
+     "delta_median": "+0.3%"
+    },
+    "ip -O2": {
+     "main_min_ms": 29173,
+     "pr_min_ms": 29523,
+     "main_median_ms": 37893,
+     "pr_median_ms": 37080,
+     "delta_min": "+1.2%",
+     "delta_median": "-2.1%"
+    },
+    "e2fsck -O2": {
+     "main_min_ms": 27330,
+     "pr_min_ms": 28035,
+     "main_median_ms": 30782,
+     "pr_median_ms": 32143,
+     "delta_min": "+2.6%",
+     "delta_median": "+4.4%"
+    },
+    "tar -O2": {
+     "main_min_ms": 48421,
+     "pr_min_ms": 48481,
+     "main_median_ms": 55828,
+     "pr_median_ms": 62215,
+     "delta_min": "+0.1%",
+     "delta_median": "+11.4%"
+    },
+    "betaflight -O2": {
+     "main_min_ms": 56860,
+     "pr_min_ms": 57313,
+     "main_median_ms": 59381,
+     "pr_median_ms": 61477,
+     "delta_min": "+0.8%",
+     "delta_median": "+3.5%"
+    }
+   },
+   "rerun": {
+    "libselinux -O2 (1)": {
+     "main": {
+      "min_ms": 7075,
+      "median_ms": 7492
+     },
+     "r9": {
+      "min_ms": 7308,
+      "median_ms": 7804
+     },
+     "r10": {
+      "min_ms": 7381,
+      "median_ms": 7697
+     },
+     "r10_vs_main_min": "+4.3%",
+     "r10_vs_r9_min": "+1.0%"
+    },
+    "libselinux -O2 (2)": {
+     "main": {
+      "min_ms": 6532,
+      "median_ms": 7332
+     },
+     "r9": {
+      "min_ms": 6738,
+      "median_ms": 7181
+     },
+     "r10": {
+      "min_ms": 6595,
+      "median_ms": 7285
+     },
+     "r10_vs_main_min": "+1.0%",
+     "r10_vs_r9_min": "-2.1%"
+    },
+    "tar -O2": {
+     "main_min_ms": 45965,
+     "pr_min_ms": 47118,
+     "main_median_ms": 46722,
+     "pr_median_ms": 48293,
+     "delta_min": "+2.5%",
+     "delta_median": "+3.4%"
+    }
+   },
+   "verdict": "every slice within +5% on the minimum; round 10 vs round 9 on libselinux in one rotation: +1.0% and -2.1%"
+  },
+  "round8": {
+   "method": "main (origin/main e1139df9 build) vs this branch (default types), whole-binary `kuna decompile-all --json`, main and branch alternating inside each iteration (order swapped every iteration), min and median of 15, three slice groups run side by side on a shared 80-core box (load 20-51 during the run); .scratch/r8/speed.py in the implementing worktree",
+   "slices": {
+    "fmt -O2": {
+     "main_min_ms": 4406,
+     "pr_min_ms": 4266,
+     "main_median_ms": 4742,
+     "pr_median_ms": 4636,
+     "delta_min": "-3.2%",
+     "delta_median": "-2.2%"
+    },
+    "ls -O2": {
+     "main_min_ms": 14450,
+     "pr_min_ms": 15547,
+     "main_median_ms": 19962,
+     "pr_median_ms": 21004,
+     "delta_min": "+7.6%",
+     "delta_median": "+5.2%"
+    },
+    "kmod -O2": {
+     "main_min_ms": 8678,
+     "pr_min_ms": 8643,
+     "main_median_ms": 9402,
+     "pr_median_ms": 9386,
+     "delta_min": "-0.4%",
+     "delta_median": "-0.2%"
+    },
+    "libselinux -O2": {
+     "main_min_ms": 7192,
+     "pr_min_ms": 7071,
+     "main_median_ms": 8655,
+     "pr_median_ms": 8901,
+     "delta_min": "-1.7%",
+     "delta_median": "+2.9%"
+    },
+    "ip -O2": {
+     "main_min_ms": 30371,
+     "pr_min_ms": 30227,
+     "main_median_ms": 34719,
+     "pr_median_ms": 35907,
+     "delta_min": "-0.5%",
+     "delta_median": "+3.4%"
+    },
+    "tar -O2": {
+     "main_min_ms": 52904,
+     "pr_min_ms": 52923,
+     "main_median_ms": 59274,
+     "pr_median_ms": 61161,
+     "delta_min": "+0.0%",
+     "delta_median": "+3.2%"
+    },
+    "e2fsck -O2": {
+     "main_min_ms": 34871,
+     "pr_min_ms": 33875,
+     "main_median_ms": 39469,
+     "pr_median_ms": 37223,
+     "delta_min": "-2.9%",
+     "delta_median": "-5.7%"
+    },
+    "betaflight -O2": {
+     "main_min_ms": 62100,
+     "pr_min_ms": 64718,
+     "main_median_ms": 78034,
+     "pr_median_ms": 78412,
+     "delta_min": "+4.2%",
+     "delta_median": "+0.5%"
+    },
+    "ip -O2 --addr 0x2d730": {
+     "main_min_ms": 1358,
+     "pr_min_ms": 1441,
+     "main_median_ms": 1786,
+     "pr_median_ms": 1955,
+     "delta_min": "+6.1%",
+     "delta_median": "+9.5%"
+    }
+   },
+   "rerun": {
+    "why": "run 1 had ls +7.6% and the narrowed ip +6.1% on the minimum at load 45-51 (the samples spread 14-25 s for ls); both re-run with two groups side by side at load 13-31, with kmod as a control and betaflight (the slowest delta under budget) alone, recording child CPU time (ru_utime+ru_stime) beside wall time. The process is single-threaded and CPU-bound, so CPU time tracks wall time to within 0.1%.",
+    "slices": {
+     "ls -O2": {
+      "main_min_ms": 14304,
+      "pr_min_ms": 14063,
+      "main_median_ms": 15633,
+      "pr_median_ms": 15690,
+      "delta_min": "-1.7%",
+      "delta_median": "+0.4%",
+      "cpu_delta_min": "-1.7%",
+      "cpu_delta_median": "+0.4%"
+     },
+     "ip -O2 --addr 0x2d730": {
+      "main_min_ms": 1192,
+      "pr_min_ms": 1155,
+      "main_median_ms": 1556,
+      "pr_median_ms": 1326,
+      "delta_min": "-3.2%",
+      "delta_median": "-14.8%",
+      "cpu_delta_min": "-3.2%",
+      "cpu_delta_median": "-14.8%"
+     },
+     "kmod -O2": {
+      "main_min_ms": 7485,
+      "pr_min_ms": 7489,
+      "main_median_ms": 8152,
+      "pr_median_ms": 8532,
+      "delta_min": "+0.1%",
+      "delta_median": "+4.7%",
+      "cpu_delta_min": "+0.0%",
+      "cpu_delta_median": "+4.7%"
+     },
+     "betaflight -O2": {
+      "main_min_ms": 59914,
+      "pr_min_ms": 61838,
+      "main_median_ms": 67503,
+      "pr_median_ms": 67973,
+      "delta_min": "+3.2%",
+      "delta_median": "+0.7%",
+      "cpu_delta_min": "+3.2%",
+      "cpu_delta_median": "+0.7%"
+     }
+    }
+   },
+   "verdict": "every slice within +5% on the minimum; the worst is betaflight, +4.2% and +3.2% on the minimum in two runs, +0.5% and +0.7% on the median",
+   "note": "scripts.pipeline.timeit times `kuna decompile`, where the option is inert; the narrowed ip run shows the call-graph skip (no fixed cost). ip, tar and e2fsck are the >=500 KiB binaries the round-1 review asked for; libselinux is the shared object it named."
+  }
+ },
+ "invariants_checked": {
+  "off_is_origin_main": "round 11: `--option protoorder off --json` is byte-identical to a fresh origin/main 6e4f6fa5 build on all 60 corpus binaries; the final build (after the use_when text) is byte-identical to the measured engine and off==main on fmt, ls, kmod, libselinux, betaflight, nuttx, dash, grep -O0, zlib, crazyflie cf2 (10/10)",
+  "determinism": "two default runs of fmt -O2 --json are byte-identical",
+  "jobs": "an explicit `--option protoorder` with --jobs N exits 2; under the default a --jobs run states nothing and prints a note on stderr; with --option protoorder off it is byte-identical to the serial run (kuna-cli tests)",
+  "assert": "`--assert prototype` declares the entry, so the recovered statement declines and the declared branch of getInputLocal answers first",
+  "bad_value": "`--option protoorder bogus` exits 1 naming off|types|lock",
+  "inert_surfaces": "decompile-project and decompile-graph warn on stderr when the option is asked for explicitly",
+  "argclobber": "off/argclobber=2/2/2 with `unsigned long a1`; types/argclobber=2/2/2 with `char *a1` (re-checked on the final build)",
+  "narrowed": "a --functions/--addr/filter-narrowed or single-target run builds no call graph and prints nothing unless the option is named",
+  "ce7_out_of_scope": "main defect found here, handed to the truncarg lane: `sink((unsigned short)(v*3u))` (gcc -O2: lea; movzwl %di,%edi; jmp sink) prints `void f(short a0) { sink(a0 * 3); }` on main, off and the default arm alike -- the 16-bit truncation is lost and the parameter sign-extended; analysis.md section 10",
+  "float_votes": "a float vote needs every other reader and writer of the value to be a float op, a copy of the bits (COPY/CAST/MULTIEQUAL/INDIRECT/LOAD), a float-class register of the calling convention, or a declared float: integer ops incl. SUBPIECE/PIECE, a STORE, and a RETURN/other call/call result outside a float register refuse it. Self-review sets over x86-64, MIPS o32, ARM softfp/soft/hard-float: the default differs from main only in int parameters from h(int k, ...) and bit-exact float literals"
+ },
+ "gates": {
+  "base": "origin/main 6e4f6fa5; no option added in round 11 (222 settables; tiers core 69 / transform 89 / analysis 64)",
+  "make test": "datatests: 675/675 assertions passed / PARITY OK",
+  "make test-stages": "datatests: 1156/1156 assertions passed / PARITY OK (a scratch --save-baseline re-record is byte-identical to docs/baseline-stages.json)",
+  "make test-cli": "tests/cli: 202/202 passed",
+  "check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh against the final build",
+  "make rust-test": "RUST_TEST_RC=0 (7,230 passed / 0 failed; lane 2026-09-19T03:35:25Z -> 03:50:06Z on 6f937812, the final engine af624192 plus the use_when text)"
+ },
+ "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main 6e4f6fa5 (structsynth and boolbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh 6e4f6fa5 build; rounds 6-10 were against d3617d64/e1139df9 and are superseded"
+}

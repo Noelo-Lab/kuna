@@ -36,3 +36,4 @@ pub mod kuna_stackarggap; // (kuna) an unwritten argument register ends a call s
 pub mod kuna_rustabi; // (kuna) the rustc two-register return: keep the pair, connect it at the call
 pub mod kuna_langabi; // (kuna) the ABI seam: per-language `extern` rendering
 pub mod kuna_formattail; // (kuna) a resolved format call keeps an open tail through trial scoring
+pub mod kuna_protoorder; // (kuna) a callee's recovered prototype, parked for the callers decompiled after it

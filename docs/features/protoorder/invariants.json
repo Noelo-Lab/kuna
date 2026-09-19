@@ -1,0 +1,368 @@
+{
+  "arm": "on",
+  "totals": {
+    "changed": 9669,
+    "goto_delta": 0,
+    "return_delta": 0,
+    "stmt_delta": 129,
+    "calls_gained": 1
+  },
+  "per_binary": {
+    "O0_bzip2_stripped_bzip2": {
+      "changed": 16,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -2
+    },
+    "O0_coreutils_stripped_csplit": {
+      "changed": 38,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 3
+    },
+    "O0_coreutils_stripped_expr": {
+      "changed": 48,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 5
+    },
+    "O0_coreutils_stripped_sort": {
+      "changed": 111,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 3
+    },
+    "O0_coreutils_stripped_tail": {
+      "changed": 61,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 2
+    },
+    "O0_cronie_stripped_crond": {
+      "changed": 29,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O0_dpkg_stripped_dpkg-divert": {
+      "changed": 235,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 6
+    },
+    "O0_grep_stripped_grep": {
+      "changed": 179,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 5
+    },
+    "O0_gzip_stripped_gzip": {
+      "changed": 38,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 1
+    },
+    "O0_libexpat_stripped_xmlwf": {
+      "changed": 12,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -1
+    },
+    "O0_mirai_stripped_mirai": {
+      "changed": 40,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O0_shadow_stripped_chage": {
+      "changed": 38,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 3
+    },
+    "O0_shadow_stripped_useradd": {
+      "changed": 97,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 3
+    },
+    "O2-noinline_coreutils_stripped_cat": {
+      "changed": 39,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 2
+    },
+    "O2-noinline_grep_stripped_grep": {
+      "changed": 166,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 8
+    },
+    "O2-noinline_gzip_stripped_gzip": {
+      "changed": 46,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 5
+    },
+    "O2-noinline_libexpat_stripped_xmlwf": {
+      "changed": 11,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2-noinline_nuttx_stripped_nuttx": {
+      "changed": 435,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 21
+    },
+    "O2-noinline_sysvinit_stripped_killall5": {
+      "changed": 7,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -1
+    },
+    "O2_base-passwd_stripped_update-passwd": {
+      "changed": 6,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 2
+    },
+    "O2_betaflight_stripped_betaflight_STM32F405-elf": {
+      "changed": 1624,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 2
+    },
+    "O2_bzip2_stripped_bzip2": {
+      "changed": 14,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -1
+    },
+    "O2_chibios_stripped_ch-elf": {
+      "changed": 172,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 5
+    },
+    "O2_cleanflight_stripped_cleanflight_DALRCF405-elf": {
+      "changed": 735,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 5
+    },
+    "O2_coreutils_stripped_dd": {
+      "changed": 44,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_coreutils_stripped_fmt": {
+      "changed": 29,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_coreutils_stripped_ginstall": {
+      "changed": 116,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -1
+    },
+    "O2_coreutils_stripped_ls": {
+      "changed": 133,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_coreutils_stripped_numfmt": {
+      "changed": 35,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_coreutils_stripped_od": {
+      "changed": 42,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_coreutils_stripped_sort": {
+      "changed": 87,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 10
+    },
+    "O2_crazyflie_stripped_cf2-elf": {
+      "changed": 747,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -2
+    },
+    "O2_crazyflie_stripped_firmware-elf": {
+      "changed": 747,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -2
+    },
+    "O2_cronie_stripped_crontab": {
+      "changed": 18,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 1
+    },
+    "O2_dash_stripped_dash": {
+      "changed": 89,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 3
+    },
+    "O2_dexter_stripped_dexter-dll": {
+      "changed": 14,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_diffutils_stripped_diff": {
+      "changed": 115,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -2
+    },
+    "O2_diffutils_stripped_diff3": {
+      "changed": 38,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -2
+    },
+    "O2_dpkg_stripped_dpkg-query": {
+      "changed": 203,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 13
+    },
+    "O2_e2fsprogs_stripped_e2fsck": {
+      "changed": 600,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 1
+    },
+    "O2_findutils_stripped_find": {
+      "changed": 215,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 11
+    },
+    "O2_freertos_stripped_RTOSDemo-out": {
+      "changed": 38,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 2,
+      "calls_gained": 1
+    },
+    "O2_grep_stripped_grep": {
+      "changed": 119,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 12
+    },
+    "O2_iproute2_stripped_ip": {
+      "changed": 414,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -19
+    },
+    "O2_kmod_stripped_kmod": {
+      "changed": 123,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_libacl_stripped_getfacl": {
+      "changed": 5,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 2
+    },
+    "O2_libacl_stripped_setfacl": {
+      "changed": 12,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 1
+    },
+    "O2_libbsd_stripped_libbsd-so-0-11-7": {
+      "changed": 18,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -2
+    },
+    "O2_libedit_stripped_libedit-so-0-0-70": {
+      "changed": 68,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 3
+    },
+    "O2_libopencm3_stripped_cdcacm-elf": {
+      "changed": 11,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_libselinux_stripped_libselinux-so-1": {
+      "changed": 79,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 8
+    },
+    "O2_mirai_stripped_mirai": {
+      "changed": 18,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -4
+    },
+    "O2_nuttx_stripped_nuttx": {
+      "changed": 402,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 20
+    },
+    "O2_openssh-portable_stripped_scp": {
+      "changed": 197,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": -1
+    },
+    "O2_openssh-portable_stripped_sftp-server": {
+      "changed": 162,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_riot-os_stripped_hello-world-elf": {
+      "changed": 32,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 1
+    },
+    "O2_sysvinit_stripped_init": {
+      "changed": 5,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_tar_stripped_tar": {
+      "changed": 476,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    },
+    "O2_x0r-usb_stripped_x0r-usb-exe": {},
+    "O2_zlib_stripped_libz-so-1-2-13": {
+      "changed": 21,
+      "goto_delta": 0,
+      "return_delta": 0,
+      "stmt_delta": 0
+    }
+  }
+}
