@@ -717,49 +717,62 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
     let _ = std::fs::remove_dir_all(&serial);
 }
 
-/// A worker process numbers its own `struct_N`, so a sharded export runs its
-/// workers with `structsynth off`: every artifact equals the serial
-/// `structsynth off` export, where the serial default synthesizes, and stderr
-/// says why.
+/// A sharded export names every synthesized structure as the serial export
+/// does, so every artifact is byte-identical, the `.h` included: its worker
+/// type blocks agree because each worker installed the same replayed set, and
+/// the minted structures are declared in name order, which also makes two
+/// serial exports agree with each other. `structsynthchain_x86_64` takes the
+/// convergence sweep, `itaniumrtti_x86_64.so` mints five structures, and
+/// `i386_pie_nl` is 32-bit.
 #[test]
-fn jobs_project_runs_workers_with_structsynth_off() {
-    let bin = fixture("i386_pie_nl");
-    let export = |tag: &str, extra: &[&str]| -> (PathBuf, String, bool) {
-        let dir = out_dir(tag);
-        let mut args = vec!["decompile-project", bin.as_str(), "-o", dir.to_str().unwrap()];
-        args.extend_from_slice(&["--max-fn-seconds", "0"]);
-        args.extend_from_slice(extra);
-        let sp = specs();
-        args.extend_from_slice(&["--sleighpath", sp.as_str()]);
-        let (_, stderr, ok) = run_kuna(&args);
-        (dir, stderr, ok)
-    };
-    let (serial, stderr, ok) = export("structsynth_serial", &[]);
-    if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("structsynth jobs: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
+fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
+    for fixture_name in ["structsynthchain_x86_64", "itaniumrtti_x86_64.so", "i386_pie_nl"] {
+        let bin = fixture(fixture_name);
+        let stem = std::path::Path::new(fixture_name).file_name().unwrap().to_str().unwrap();
+        let export = |tag: &str, extra: &[&str]| -> (PathBuf, String, bool) {
+            let dir = out_dir(&format!("structsynth_{stem}_{tag}"));
+            let mut args = vec!["decompile-project", bin.as_str(), "-o", dir.to_str().unwrap()];
+            args.extend_from_slice(&["--max-fn-seconds", "0"]);
+            args.extend_from_slice(extra);
+            let sp = specs();
+            args.extend_from_slice(&["--sleighpath", sp.as_str()]);
+            let (_, stderr, ok) = run_kuna(&args);
+            (dir, stderr, ok)
+        };
+        let (serial, stderr, ok) = export("serial", &[]);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("structsynth jobs: skipping (no `.sla`; run `make specs`): {stderr}");
+                return;
+            }
+            panic!("serial project export failed: {stderr}");
         }
-        panic!("serial project export failed: {stderr}");
-    }
-    let header = std::fs::read_to_string(serial.join("i386_pie_nl.h")).unwrap();
-    assert!(header.contains("struct struct_0 {"), "the fixture stopped synthesizing:\n{header}");
-
-    let (off, stderr, ok) = export("structsynth_off", &["--option", "structsynth", "off"]);
-    assert!(ok, "structsynth-off project export failed: {stderr}");
-    let (sharded, stderr, ok) = export("structsynth_j2", &["--jobs", "2", "--jobs-chunk", "1"]);
-    assert!(ok, "--jobs 2 project export failed: {stderr}");
-    assert!(
-        stderr.contains("note: structsynth is off in the worker processes"),
-        "no note on stderr: {stderr}"
-    );
-    for name in ["i386_pie_nl.c", "i386_pie_nl.h", "i386_pie_nl.asm", "README.md"] {
-        let got = std::fs::read(sharded.join(name)).expect(name);
-        let want = std::fs::read(off.join(name)).expect(name);
-        assert!(got == want, "--jobs 2 differs from the structsynth-off export in {name}");
-    }
-    for dir in [serial, off, sharded] {
-        let _ = std::fs::remove_dir_all(dir);
+        let names: Vec<String> = ["c", "h", "asm"]
+            .iter()
+            .map(|ext| format!("{stem}.{ext}"))
+            .chain(std::iter::once("README.md".to_string()))
+            .collect();
+        let header = std::fs::read_to_string(serial.join(&names[1])).unwrap();
+        assert!(header.contains("struct struct_0 {"), "{stem} stopped synthesizing:\n{header}");
+        let mut dirs = vec![serial.clone()];
+        for (tag, extra) in [
+            ("again", &[][..]),
+            ("j2", &["--jobs", "2", "--jobs-chunk", "1"][..]),
+            ("j4", &["--jobs", "4"][..]),
+        ] {
+            let (dir, stderr, ok) = export(tag, extra);
+            assert!(ok, "{stem} {tag} project export failed: {stderr}");
+            assert!(!stderr.contains("warning"), "{stem} {tag}: {stderr}");
+            for name in &names {
+                let got = std::fs::read(dir.join(name)).expect(name);
+                let want = std::fs::read(serial.join(name)).expect(name);
+                assert!(got == want, "{stem} {tag} differs from the serial export in {name}");
+            }
+            dirs.push(dir);
+        }
+        for dir in dirs {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 }
 

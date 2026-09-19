@@ -2432,47 +2432,95 @@ fn jobs_auto_and_the_plain_c_surface_match_serial() {
     }
 }
 
-/// A worker process would number its own `struct_N`, so two workers could each
-/// mint a different `struct_0` and one document would use the name for two
-/// layouts. Every sharded run gives its workers `structsynth off`: the document
-/// equals the serial `structsynth off` one where the serial default
-/// synthesizes, and stderr says why unless the run turned synthesis off itself.
+/// A sharded run names every synthesized structure as the serial run does, on
+/// both surfaces and at every job count. `structsynthchain_x86_64` takes the
+/// convergence sweep (`fb` is decided again onto `fc`'s structure while `fa`
+/// keeps the superseded one), `itaniumrtti_x86_64.so` mints five structures,
+/// and the i386 PE is a second architecture and loader. The one-worker serial
+/// path the parent falls back to must land on the same document.
 #[test]
-fn jobs_run_workers_with_structsynth_off() {
+fn jobs_names_synthesized_structs_as_the_serial_run_does() {
+    let sp = specs();
+    for (fixture, pinned) in [
+        ("structsynthchain_x86_64", "long fb(struct_1 *a0)"),
+        ("itaniumrtti_x86_64.so", "struct_4 *"),
+        ("explicit_branch_assertion_pe_i386.exe", "struct_0 *"),
+    ] {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        for json in [false, true] {
+            let mut base =
+                vec!["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", &sp];
+            if json {
+                base.push("--json");
+            }
+            let (want, stderr, ok) = run_kuna(&base);
+            if !ok {
+                if is_specs_skip(&stderr) {
+                    eprintln!("jobs structsynth: skipping (no `.sla`; run `make specs`): {stderr}");
+                    return;
+                }
+                panic!("kuna decompile-all {fixture} failed: {stderr}");
+            }
+            assert!(want.contains(pinned), "{fixture} stopped synthesizing {pinned:?}");
+            for pool in [&["--jobs", "2", "--jobs-chunk", "1"][..], &["--jobs", "4"][..]] {
+                let (got, stderr, ok) = run_kuna(&[&base[..], pool].concat());
+                assert!(ok, "{fixture} {pool:?} failed: {stderr}");
+                assert!(
+                    stderr.contains("[kuna --jobs] structsynth: "),
+                    "{fixture} {pool:?} never decompiled with the serial names:\n{stderr}"
+                );
+                assert!(!stderr.contains("[kuna --jobs] note:"), "{fixture} {pool:?} fell back:\n{stderr}");
+                assert_eq!(got, want, "{fixture} {pool:?} (json {json}) moved the document");
+            }
+            let (got, stderr, ok) = run_kuna_env(
+                &[&base[..], &["--jobs", "3"]].concat(),
+                &[("KUNA_JOBS_FAULT", "synth:serial")],
+            );
+            assert!(ok, "{fixture} serial path failed: {stderr}");
+            assert!(stderr.contains("decompiled again in order by one worker process"), "{stderr}");
+            assert_eq!(got, want, "{fixture} the one-worker serial path moved the document");
+        }
+    }
+}
+
+/// `--option structsynth off` still reaches every worker, and a run that asked
+/// for it hears nothing about structures.
+#[test]
+fn jobs_structsynth_off_is_the_serial_structsynth_off_document() {
     let bin = repo_root()
         .join("decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so")
         .to_str()
         .unwrap()
         .to_string();
     let sp = specs();
-    let base =
-        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
-    let (serial, stderr, ok) = run_kuna(&base);
+    let off = [
+        "decompile-all",
+        bin.as_str(),
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        sp.as_str(),
+        "--option",
+        "structsynth",
+        "off",
+    ];
+    let (want, stderr, ok) = run_kuna(&off);
     if !ok {
         if is_specs_skip(&stderr) {
-            eprintln!("jobs structsynth: skipping (no `.sla`; run `make specs`): {stderr}");
+            eprintln!("jobs structsynth off: skipping (no `.sla`; run `make specs`): {stderr}");
             return;
         }
         panic!("kuna decompile-all failed: {stderr}");
     }
-    assert!(serial.contains("struct_1 *"), "the fixture stopped synthesizing two structures");
-
-    let off = [&base[..], &["--option", "structsynth", "off"]].concat();
-    let (want, stderr, ok) = run_kuna(&off);
-    assert!(ok, "structsynth-off decompile-all failed: {stderr}");
-    let pool = ["--jobs", "2", "--jobs-chunk", "1"];
-
-    let (got, stderr, ok) = run_kuna(&[&base[..], &pool].concat());
-    assert!(ok, "--jobs 2 decompile-all failed: {stderr}");
-    assert!(
-        stderr.contains("note: structsynth is off in the worker processes"),
-        "no note on stderr: {stderr}"
-    );
-    assert_eq!(got, want, "--jobs 2 differs from the serial structsynth-off document");
-
-    let (got, stderr, ok) = run_kuna(&[&off[..], &pool].concat());
+    assert!(!want.contains("struct_0"), "structsynth off still synthesized");
+    let (got, stderr, ok) = run_kuna(&[&off[..], &["--jobs", "2", "--jobs-chunk", "1"]].concat());
     assert!(ok, "--jobs 2 structsynth-off decompile-all failed: {stderr}");
-    assert!(!stderr.contains("note: structsynth"), "a note for a run that asked for off: {stderr}");
+    assert!(!stderr.contains("structsynth"), "a structure line for a run that asked for off: {stderr}");
     assert_eq!(got, want, "--jobs 2 --option structsynth off moved the document");
 }
 
