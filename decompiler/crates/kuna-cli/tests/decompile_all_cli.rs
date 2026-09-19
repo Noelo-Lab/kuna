@@ -3656,3 +3656,103 @@ int main(void) {
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got.lines().last(), Some("0"), "the printed functions read different bytes:\n{got}\n{stdout}");
 }
+
+/// A typed read that spans several fields is not split at a COPY that lies past
+/// a store or a call.  `SplitDatatype::split_load` built the per-field reads at
+/// the read's lone COPY into the return register, so `intospan` printed
+/// `s->c9 = (char)w;` and then read `s->c7`..`s->c10`, returning the new byte;
+/// `otherptr` (called with `t == s`) and `acrosscall` (whose `sink` bumps
+/// `s->c8`) did the same.  `plain`, with nothing between the read and its COPY,
+/// still splits.  The round trip rewrites the printed partial writes
+/// (`v1._0_1_ = ...`) as byte stores, compiles the four functions and checks
+/// each against its source.
+#[test]
+fn a_split_load_is_not_moved_past_a_store_or_a_call() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/splitload_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        bin.as_str(),
+        "--functions",
+        "intospan,otherptr,acrosscall,plain",
+        "--sleighpath",
+        sp.as_str(),
+    ]);
+    if !ok && is_specs_skip(&stderr) {
+        eprintln!("splitload round trip: skipping (no `.sla`; run `make specs`)");
+        return;
+    }
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let body = |name: &str| -> String {
+        let at = stdout.find(&format!("// Function: {name} @")).unwrap_or_else(|| panic!("no {name}:\n{stdout}"));
+        let rest = &stdout[at + 1..];
+        rest[..rest.find("// Function:").unwrap_or(rest.len())].to_string()
+    };
+    let read = "v1 = *(unsigned int *)&s->c7;";
+    for (name, after) in [("intospan", "s->c9 = (char)w;"), ("otherptr", "t->c9 = (char)w;"), ("acrosscall", "sink(s);")] {
+        let b = body(name);
+        let (i, j) = (b.find(read), b.find(after));
+        assert!(i.is_some() && j.is_some() && i < j, "{name}: `{read}` must print before `{after}`:\n{b}");
+    }
+    assert!(body("plain").contains("v1._0_1_ = s->c7;"), "plain no longer splits:\n{}", body("plain"));
+
+    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        eprintln!("splitload round trip: no `cc`, order checked only");
+        return;
+    }
+    let partial = regex::Regex::new(r"(\w+)\._(\d+)_(\d+)_ = ").unwrap();
+    let printed = partial.replace_all(&stdout, |c: &regex::Captures| {
+        let ty = match &c[3] {
+            "1" => "unsigned char",
+            "2" => "unsigned short",
+            "4" => "unsigned int",
+            _ => "unsigned long",
+        };
+        format!("*({ty} *)((char *)&{} + {}) = ", &c[1], &c[2])
+    });
+    let dir = std::env::temp_dir().join(format!("kuna-splitload-rt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("rt.c");
+    let exe = dir.join("rt");
+    let harness = r#"#include <stdio.h>
+#include <string.h>
+typedef struct S { int i0; char c4, c5, c6, c7, c8, c9, c10, c11; } S;
+void sink(S *s) { s->c8 = (char)(s->c8 + 0x11); }
+@PRINTED@
+static unsigned ref_intospan(S *s, int w) { unsigned v; memcpy(&v, &s->c7, 4); s->c9 = w; return v; }
+static unsigned ref_otherptr(S *s, S *t, int w) { unsigned v; memcpy(&v, &s->c7, 4); t->c9 = w; return v; }
+static unsigned ref_acrosscall(S *s) { unsigned v; memcpy(&v, &s->c7, 4); sink(s); return v; }
+static unsigned ref_plain(S *s) { unsigned v; memcpy(&v, &s->c7, 4); return v; }
+static void fill(S *p, S *q) {
+  for (int i = 0; i < (int)sizeof(S); i++) ((unsigned char *)p)[i] = ((unsigned char *)q)[i] = (unsigned char)(i * 37 + 0x81);
+}
+int main(void) {
+  int bad = 0;
+  S a, r;
+  unsigned got, want;
+#define CHECK(name, call, ref) \
+  fill(&a, &r); got = call; want = ref; \
+  if (got != want || memcmp(&a, &r, sizeof a)) { printf(name " %08x != %08x\n", got, want); bad++; }
+  CHECK("intospan", intospan(&a, 0x5a), ref_intospan(&r, 0x5a))
+  CHECK("otherptr", otherptr(&a, &a, 0x5a), ref_otherptr(&r, &r, 0x5a))
+  CHECK("acrosscall", acrosscall(&a), ref_acrosscall(&r))
+  CHECK("plain", plain(&a), ref_plain(&r))
+  printf("%d\n", bad);
+  return 0;
+}
+"#;
+    std::fs::write(&src, harness.replace("@PRINTED@", &printed)).unwrap();
+    let cc = Command::new("cc")
+        .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .output()
+        .expect("spawn cc");
+    assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
+    let run = Command::new(&exe).output().expect("run the round trip");
+    let got = String::from_utf8_lossy(&run.stdout).to_string();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(got.lines().last(), Some("0"), "the printed functions read different bytes:\n{got}\n{printed}");
+}
