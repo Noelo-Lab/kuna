@@ -1,0 +1,306 @@
+{
+ "O0_coreutils_stripped_sort sub_b536": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O0_grep_stripped_grep sub_14de8": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O0_grep_stripped_grep sub_15528": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O0_mirai_stripped_mirai sub_f813": {
+  "class": "spelling",
+  "why": "a `char *` vote: short pointers re-expressed as byte pointers with casts (`&v[5]` of a short <-> `&v[10]` of a byte); the same addresses"
+ },
+ "O2-noinline_grep_stripped_grep sub_f9a0": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2-noinline_gzip_stripped_gzip sub_69d0": {
+  "class": "builtin-string",
+  "why": "LOSS: `builtin_strncpy(v1,\".tar\",5)` prints as five byte stores; the vote types v1 `unsigned char *` and the idiom recognises only `char`; the same bytes (\u00a79)"
+ },
+ "O2-noinline_nuttx_stripped_nuttx sub_8007bc4": {
+  "class": "stack-merge",
+  "why": "two adjacent chars become the `char tmp[]` the code fills and prints with %s (an improvement)"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_80131e0": {
+  "class": "wide-read",
+  "why": "a2 typed `int4 *`: records indexed as `a2[v*0x13 + k]`; a byte test prints as `(char)a2[..]`, the low byte of the same word"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8013580": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL; -1 printed 0xffffffff for a now-unsigned local"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_801379c": {
+  "class": "store-width",
+  "why": "a constant stored through a `uint1 *` / `unsigned char *` vote as byte stores: the same bytes, a narrower access (\u00a79)"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8015f10": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_801ae68": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_801b5bc": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_802b2cc": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL, inside the CONCAT operands main already prints"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8041e24": {
+  "class": "store-width",
+  "why": "a constant stored through a `uint1 *` / `unsigned char *` vote as byte stores: the same bytes, a narrower access (\u00a79)"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_805c3a0": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8064586": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_betaflight_stripped_betaflight_STM32F405-elf sub_80698e8": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_bzip2_stripped_bzip2 sub_110c0": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8014e1a": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8020b08": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_80275ec": {
+  "class": "wide-read",
+  "why": "`(short)v1[k]` for a 16-bit load through the `unsigned int *` v1: the same value, a wider read (\u00a73b)"
+ },
+ "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8034f74": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2_coreutils_stripped_ginstall sub_dd10": {
+  "class": "builtin-string",
+  "why": "a `char *` vote: the 2-byte constant 0x7e2e and the byte 0x30 print as the char stores '.' '~' '0'; byte arithmetic as `&p[k]`"
+ },
+ "O2_coreutils_stripped_sort sub_a430": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_crazyflie_stripped_cf2-elf sub_8010838": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_crazyflie_stripped_cf2-elf sub_8010af8": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_crazyflie_stripped_cf2-elf sub_801c15c": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_crazyflie_stripped_cf2-elf sub_80267e4": {
+  "class": "spelling",
+  "why": "v7 typed `unsigned int *`: byte arithmetic through `(unsigned char *)` casts, `(int)` <-> `(unsigned int)` on call arguments; the same addresses"
+ },
+ "O2_crazyflie_stripped_cf2-elf sub_8028640": {
+  "class": "float-literal",
+  "why": "a float member or parameter now prints its bit pattern as the exact float literal (`0` -> `0.0`, `0xbf800000` -> `-1.0`); the same bits"
+ },
+ "O2_crazyflie_stripped_cf2-elf sub_80286c0": {
+  "class": "float-literal",
+  "why": "a float member or parameter now prints its bit pattern as the exact float literal (`0` -> `0.0`, `0xbf800000` -> `-1.0`); the same bits"
+ },
+ "O2_crazyflie_stripped_cf2-elf sub_8031268": {
+  "class": "regroup",
+  "why": "a2 typed `float *`: the `* 0.017453292` moves from the load's temporary into each use; the same float operations"
+ },
+ "O2_crazyflie_stripped_firmware-elf sub_8010838": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_crazyflie_stripped_firmware-elf sub_8010af8": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_crazyflie_stripped_firmware-elf sub_801c15c": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_crazyflie_stripped_firmware-elf sub_80267e4": {
+  "class": "spelling",
+  "why": "v7 typed `unsigned int *`: byte arithmetic through `(unsigned char *)` casts, `(int)` <-> `(unsigned int)` on call arguments; the same addresses"
+ },
+ "O2_crazyflie_stripped_firmware-elf sub_8028640": {
+  "class": "float-literal",
+  "why": "a float member or parameter now prints its bit pattern as the exact float literal (`0` -> `0.0`, `0xbf800000` -> `-1.0`); the same bits"
+ },
+ "O2_crazyflie_stripped_firmware-elf sub_80286c0": {
+  "class": "float-literal",
+  "why": "a float member or parameter now prints its bit pattern as the exact float literal (`0` -> `0.0`, `0xbf800000` -> `-1.0`); the same bits"
+ },
+ "O2_crazyflie_stripped_firmware-elf sub_8031268": {
+  "class": "regroup",
+  "why": "a2 typed `float *`: the `* 0.017453292` moves from the load's temporary into each use; the same float operations"
+ },
+ "O2_dexter_stripped_dexter-dll copySectionToProcess": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2_diffutils_stripped_diff sub_14de0": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_diffutils_stripped_diff sub_8590": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`); '\\n' printed as 10"
+ },
+ "O2_diffutils_stripped_diff sub_d500": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`); '\\n' printed as 10"
+ },
+ "O2_diffutils_stripped_diff sub_f330": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL; '\\n' printed as 10"
+ },
+ "O2_dpkg_stripped_dpkg-query sub_183f0": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2_dpkg_stripped_dpkg-query sub_5460": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_dpkg_stripped_dpkg-query sub_af80": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_e2fsprogs_stripped_e2fsck e2fsck_add_dir_info": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_e2fsprogs_stripped_e2fsck ext2fs_convert_subcluster_bitmap": {
+  "class": "wide-read",
+  "why": "`*(int4 *)(a0 + 0xc0)` <-> `(int4)a0[0x18]`, the truncated 8-byte element (\u00a73b), and a temporary inlined"
+ },
+ "O2_e2fsprogs_stripped_e2fsck ext2fs_create_icount_tdb": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_e2fsprogs_stripped_e2fsck ext2fs_get_next_inode_full": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_e2fsprogs_stripped_e2fsck quota_write_inode": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_e2fsprogs_stripped_e2fsck sub_46460": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_e2fsprogs_stripped_e2fsck sub_74410": {
+  "class": "wide-read",
+  "why": "a5 typed `uint8 *`: `*(uint4 *)&a5[2]` <-> `(uint4)a5[2]` (the low half of the same element) and a temporary regrouped"
+ },
+ "O2_findutils_stripped_find sub_f620": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_grep_stripped_grep sub_10290": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2_grep_stripped_grep sub_12df0": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_iproute2_stripped_ip do_ipnh": {
+  "class": "literal",
+  "why": "string constants print as their strings (\"add\", \"show\", \"lst\") where main printed the addresses"
+ },
+ "O2_kmod_stripped_kmod sub_6660": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL; the `* 8` moves into realloc's argument; char literals"
+ },
+ "O2_libedit_stripped_libedit-so-0-0-70 el_get": {
+  "class": "spelling",
+  "why": "a2 typed `unsigned long *`: `(unsigned int)a2` <-> `SUB84(a2,0)` in a piece assignment main already prints; the same low word"
+ },
+ "O2_libedit_stripped_libedit-so-0-0-70 history": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_libedit_stripped_libedit-so-0-0-70 history_w": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_libedit_stripped_libedit-so-0-0-70 sub_113e0": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2_libedit_stripped_libedit-so-0-0-70 sub_1ab60": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_libedit_stripped_libedit-so-0-0-70 sub_1abd0": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_libselinux_stripped_libselinux-so-1 sub_22240": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_mirai_stripped_mirai sub_ce90": {
+  "class": "spelling",
+  "why": "a `char *` vote: short pointers re-expressed as byte pointers with casts; the same addresses"
+ },
+ "O2_nuttx_stripped_nuttx sub_8007bd0": {
+  "class": "stack-merge",
+  "why": "two adjacent chars become the `char tmp[]` the code fills and prints with %s (an improvement)"
+ },
+ "O2_tar_stripped_tar sub_1d5d0": {
+  "class": "builtin-string",
+  "why": "GAIN: three constant stores print as `builtin_strncpy(v2,\"SCHILY.xattr.\",0xd)`"
+ },
+ "O2_tar_stripped_tar sub_3c8f0": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL; a code constant 0x6aa88 prints as \"help\""
+ },
+ "O2_tar_stripped_tar sub_3f9b0": {
+  "class": "builtin-string",
+  "why": "a `char *` vote: the 2-byte constant 0x7e2e and the byte 0x30 print as the char stores '.' '~' '0'; byte arithmetic as `&p[k]`"
+ },
+ "O2_tar_stripped_tar sub_40c90": {
+  "class": "builtin-string",
+  "why": "GAIN: constant stores print as `builtin_strncpy(&v[n],\"(/.*)?\",7)`"
+ },
+ "O2_tar_stripped_tar sub_54f10": {
+  "class": "regroup",
+  "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same"
+ },
+ "O2_zlib_stripped_libz-so-1-2-13 inflate": {
+  "class": "spelling",
+  "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL"
+ },
+ "O2_zlib_stripped_libz-so-1-2-13 sub_4650": {
+  "class": "member-reach",
+  "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)"
+ },
+ "O2_iproute2_stripped_ip sub_1ca00": {
+  "class": "member-reach",
+  "why": "print_route's struct_21 * vote on the reply buffer (struct_21 is 0x1c bytes: &v3[1] is main's &v2[7] through an int4 *, v3->field_0x12 is the one-byte store at +0x12, and + '\\xe0' is - 0x20 mod 256); v8 = v9 - 0x1c is main's inline v7 + -0x1c, the same signed int4 compare; since #673 main prints the matches() strings too, so the literal residue that labelled it before is gone"
+ }
+}

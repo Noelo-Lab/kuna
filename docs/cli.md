@@ -951,7 +951,7 @@ kuna functions ./a.out --json                          # full callable-symbol in
 kuna functions ./a.out --sort size --limit 10          # the ten biggest functions
 kuna functions ./big.bin --json --jobs 16              # the same answer, 16 decode lanes
 kuna decompile-all ./a.out --reachable-from main --json    # only what main touches
-kuna decompile-all ./a.out --json --jobs 12            # the same answer, 12 processes
+kuna decompile-all ./a.out --json --jobs 12            # 12 processes (see the --jobs contract)
 kuna decompile-all ./a.out --functions main,parse --json
 kuna decompile-all ./a.out --json                      # every CODE-backed function
 ```
@@ -1023,6 +1023,59 @@ references the challenge prompt (found with `kuna xrefs --to` on the string) cut
 the run from 1,036 decompiled functions to 307 — **5,943,701 bytes / 11.5 s down
 to 876,577 bytes / 2.5 s**, with the answer still inside it. Adding `--min-size
 256 --sort size --limit 10` brings it to 115,667 bytes / 1.8 s.
+
+### `--option protoorder` — decompile callees first (on by default)
+
+`decompile-all` used to decompile in address order, so each function was typed
+from its own evidence and what one function recovered about its parameters never
+reached the calls to it. It now orders the run by the call graph — callees before
+callers, cycles broken by address — and each callee states the types its own
+recovery found for the callers still ahead of it, so a call's arguments carry the
+types the callee actually has. The output is still emitted in address order; only
+the decompile order changes.
+
+```bash
+kuna decompile-all ./fmt | grep sub_3700          # unsigned long sub_3700(FILE *a0,char *a1)
+kuna decompile-all ./fmt --option protoorder off  # unsigned long sub_3700(FILE *a0,unsigned long a1)
+```
+
+The default value is `types`, which states ONLY types: nothing is locked and no
+call gains or loses an argument, so the shape of every call is what `--option
+protoorder off` renders. A stated type is one more vote about the value passed,
+not a declaration the argument is converted to: where the caller's own evidence
+wins, the argument renders exactly as it does with the option off. Where the vote
+wins, the spelling can change beyond the type: a constant it makes a pointer
+prints with a cast (`caller((unsigned char *)0x402000,3)`), a character pointee
+it guesses can split a wide constant store into character stores of the same
+bytes (any other pointee narrower than a constant the caller stores through the
+pointer refuses the vote), and an unsigned vote can make a parameter unsigned. The vote is refused outright where the caller
+knows better: the argument is the address of a stack object (a pointer vote
+there would re-lay the frame), the value comes from a declared parameter or a
+global, another call reads the same value as a different kind of thing (pointer,
+integer, float), the value or its register disagrees with the vote about being
+a float, a pointer vote lands on a constant inside a function's code (a Thumb
+function address would print as `&sub_8130[1]`), or what the caller loads and
+stores through a pointer disagrees with the pointee the vote would give it. `--option protoorder lock` also states the callee's recovered ARITY,
+which collapses a caller that over-recovered but fabricates parameters where the
+callee's own recovery over-counted; it is opt-in for that reason.
+`KUNA_PROTOORDER_TRACE=1` prints what each function stated, or why it declined.
+
+It is a whole-binary surface only: `kuna decompile` forks one `decomp_dbg` per
+function and cannot see what another function's decompile stated, so the two
+surfaces may disagree about a call's argument types. A run narrowed by
+`--functions`, `--addr` or a triage filter, one that selects a single function,
+or a `--raw-image` run (which has no call graph), decompiles in address order and
+builds no call graph, unless the option is given by name; then it orders the selection and says on stderr that a callee
+outside it states nothing. An explicit `--option protoorder` is refused alongside
+`--jobs N` (a statement is per-load state that does not cross a worker process);
+a `--jobs` run that does not ask for it states nothing and says so on stderr, so
+its output can differ from the serial run's (see the `--jobs` contract below).
+
+`decompile-all` is the only surface that acts on it. `decompile-project` (with or
+without `--stream`) has its own schedule and its own header, and
+`decompile-graph` decompiles one function per row, so both produce the option-off
+output; both say so on stderr when it is asked for explicitly, rather than
+accepting it silently.
 
 ### `kuna functions --summary` — orientation in one call
 
@@ -1256,8 +1309,9 @@ Behaviors specific to `decompile-all`:
   - **The output of a non-stream run does not depend on how the pool scheduled
     it.** Work is handed out in a longest-first order that is deliberately not
     output order, but every target owns a slot and results are merged
-    positionally, so the document is identical to `--jobs 1` (with `structsynth
-    off`, below) whatever order the workers finish in. The concrete `--mode`, every resolved `--option` and the
+    positionally, so the document is the same whatever order the workers finish
+    in. It is the `--jobs 1` document only with `--option structsynth off` and
+    `--option protoorder off` on both runs (the next bullets). The concrete `--mode`, every resolved `--option` and the
     watchdog budget are settled once by the parent and passed to every worker.
     `decompile-project --stream` is the one surface where the schedule *is*
     observable, and only in the order of the `.c`: a streamed export writes each
@@ -1265,6 +1319,12 @@ Behaviors specific to `decompile-all`:
     completion order and is not reproducible run to run. The set of functions,
     the prototypes and the disassembly are what the same selection produces
     serially; `index.jsonl` indexes the order the run happened to take.
+  - **It is the serial answer with `--option protoorder off`.** A serial
+    `decompile-all` decompiles callees first by default and types call arguments
+    from what each callee recovered; a pool worker cannot see another worker's
+    callees, so the pool does not. Under `--jobs N` with the default, the parent
+    prints a note and call-argument types can differ from the serial run; add
+    `--option protoorder off` to both to compare them byte for byte.
   - **It can depend on how the work was divided, wherever the engine's own output
     already does.** A few emission decisions are first-toucher-wins in the
     per-process type and symbol database, so they are a function of which *other*

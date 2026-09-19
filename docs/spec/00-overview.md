@@ -1015,7 +1015,10 @@ After an eager batch (`decompile_targets` behind `decompile-all`,
 `decompile_export_targets` behind a non-stream `decompile-project`),
 `decompiler/crates/kuna-console/src/project.rs (converge_synthesized_structs)`
 asks the ledger which names have been superseded and decompiles again, once,
-exactly the results that spell one. If a redo fails where the first pass
+exactly the results that spell one. `decompile-all`'s default callee-first order
+(`protoorder`, chapter [04](04-calls-and-prototypes.md)) runs the same sweep at
+its end, in its own plan order
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (converge_callee_first)`). If a redo fails where the first pass
 succeeded, for example because it ran past a watchdog budget that the first pass
 fit in, the first body is kept. That body still names a structure that is
 defined. The streamed export has already written its bodies before any name can

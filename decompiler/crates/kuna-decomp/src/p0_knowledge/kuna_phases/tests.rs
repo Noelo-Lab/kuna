@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_222() {
+fn settable_count_is_223() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -158,12 +158,15 @@ fn settable_count_is_222() {
     // +1 for `signedness` (P9 declared-signedness rounding).
     // +1 for `boolbyte` (P5 truth-valued byte typing).
     // +1 for `mulblob` (P3 wide-multiply operand structuring decline).
-    assert_eq!(kuna_num_settables(), 222);
-    assert_eq!(SETTABLE_TABLE.len(), 222);
+    // +1 for `rawdiscover` (P1 raw-image function inventory).
+    // +1 for `protoorder` (P4 callee-first recovered parameter types).
+    // +1 for `charbyte` (P5 char-pointer byte typing).
+    assert_eq!(kuna_num_settables(), 223);
+    assert_eq!(SETTABLE_TABLE.len(), 223);
 }
 
 #[test]
-fn tier_counts_are_70_core_88_transform_64_analysis() {
+fn tier_counts_are_70_core_89_transform_64_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -303,7 +306,11 @@ fn tier_counts_are_70_core_88_transform_64_analysis() {
     // core 68 -> 69: +1 for `boolbyte` (P5 truth-valued byte typing).
     // transform 87 -> 88: +1 for `mulblob` (P3 wide-multiply operand
     // structuring decline).
-    assert_eq!((core, transform, analysis), (70, 88, 64));
+    // analysis 63 -> 64: +1 for `rawdiscover` (P1 raw-image function inventory).
+    // transform 88 -> 89: +1 for `protoorder` (P4 callee-first recovered
+    // parameter types).
+    // core 69 -> 70: +1 for `charbyte` (P5 char-pointer byte typing).
+    assert_eq!((core, transform, analysis), (70, 89, 64));
 }
 
 #[test]
@@ -797,6 +804,11 @@ fn option_values_live_value_present_for_91() {
                             // for the same reason.  Its live value is
                             // `Architecture::struct_synth`.
                             | "structsynth"
+                            // (kuna) `protoorder` takes a MODE
+                            // (`off|types|lock`) over an enum field, for the
+                            // same reason.  Its live value is
+                            // `Architecture::protoorder`.
+                            | "protoorder"
                             | "arraycoverwidth"
                             | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like
@@ -1092,7 +1104,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // increments it again.
     // 217 -> 218: +1 for `mulblob`; its P3 row sits mid-table, so it
     // increments it again.
-    assert_eq!(json.matches("},\n").count(), 221);
+    assert_eq!(json.matches("},\n").count(), 222);
 }
 
 #[test]

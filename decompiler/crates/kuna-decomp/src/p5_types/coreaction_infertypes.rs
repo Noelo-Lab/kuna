@@ -102,6 +102,18 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
 }
 
 pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Datatype> {
+    input_type_local_with(data, op, slot, true)
+}
+
+/// [`input_type_local`] without the (kuna `protoorder`) recovered-callee vote: the
+/// type a call argument is REQUIRED to have, which is what a cast is measured
+/// against.  A recovered type is a vote about the value, not a declaration the
+/// value must be converted to, so it never emits a cast.
+pub(crate) fn declared_input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Datatype> {
+    input_type_local_with(data, op, slot, false)
+}
+
+fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool) -> Rc<Datatype> {
     let arch = Rc::clone(data.get_arch());
     let o = data.obank().get(op).expect("input_type_local: stale op");
     let opcode = o.code();
@@ -117,7 +129,7 @@ pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Data
     // parameter type.  This is what flows a typed call argument (e.g. a `mystruct *`)
     // back onto the argument Varnode so the stack-frame member access is recovered.
     if (opcode == OpCode::CPUI_CALL || opcode == OpCode::CPUI_CALLIND) && slot > 0 {
-        if let Some(ct) = call_input_type_local(data, op, slot, opcode) {
+        if let Some(ct) = call_input_type_local(data, op, slot, opcode, recovered) {
             return ct;
         }
     }
@@ -170,13 +182,16 @@ pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Data
 /// The callee-parameter arm of `TypeOpCall::getInputLocal` / `TypeOpCallind::getInputLocal`
 /// (typeop.cc:689-721 / 763-810): resolve the `FuncCallSpecs` for the CALL op and,
 /// if parameter `slot-1` is type-locked (or a known `this` pointer to a struct),
-/// return that parameter's data-type when it fits the argument Varnode.  `None`
-/// falls back to the generic `getInputLocal`.
+/// return that parameter's data-type when it fits the argument Varnode.  Otherwise,
+/// when `recovered`, the (kuna `protoorder`) vote of a callee decompiled earlier in
+/// the run ([`crate::kuna_protoorder::call_argument_vote`]).  `None` falls back to
+/// the generic `getInputLocal`.
 fn call_input_type_local(
     data: &Funcdata,
     op: OpId,
     slot: int4,
     opcode: OpCode,
+    recovered: bool,
 ) -> Option<Rc<Datatype>> {
     // C++: vn = op->getIn(0); for a CALL the prototype lives only when in(0) is an
     // fspec reference (CALLIND always consults the recovered spec).
@@ -205,28 +220,34 @@ fn call_input_type_local(
     let fc = fc?;
     // param = fc->getParam(slot - 1)
     let proto = fc.proto();
-    let param = proto.get_param(slot - 1)?;
     let arg_size =
         data.obank().get(op).and_then(|o| o.get_in(slot)).and_then(|v| data.vbank().get(v)).map(|v| v.get_size())?;
-    if param.is_type_locked() {
-        let ct = param.get_type()?;
-        // (ct->metatype != VOID) && (ct->size <= op->getIn(slot)->size)
-        if ct.get_metatype() != type_metatype::TYPE_VOID && ct.get_size() <= arg_size {
-            return Some(Rc::clone(ct));
-        }
-    } else if param.is_this_pointer() {
-        // Known "this" pointer is effectively typelocked: a struct pointer flows.
-        let ct = param.get_type()?;
-        if ct.get_metatype() == type_metatype::TYPE_PTR
-            && ct
-                .get_ptr_to()
-                .map(|p| p.get_metatype() == type_metatype::TYPE_STRUCT)
-                .unwrap_or(false)
-        {
-            return Some(Rc::clone(ct));
+    if let Some(param) = proto.get_param(slot - 1) {
+        if param.is_type_locked() {
+            let ct = param.get_type()?;
+            // (ct->metatype != VOID) && (ct->size <= op->getIn(slot)->size)
+            if ct.get_metatype() != type_metatype::TYPE_VOID && ct.get_size() <= arg_size {
+                return Some(Rc::clone(ct));
+            }
+            return None;
+        } else if param.is_this_pointer() {
+            // Known "this" pointer is effectively typelocked: a struct pointer flows.
+            let ct = param.get_type()?;
+            if ct.get_metatype() == type_metatype::TYPE_PTR
+                && ct
+                    .get_ptr_to()
+                    .map(|p| p.get_metatype() == type_metatype::TYPE_STRUCT)
+                    .unwrap_or(false)
+            {
+                return Some(Rc::clone(ct));
+            }
+            return None;
         }
     }
-    None
+    if !recovered || proto.is_input_locked() {
+        return None;
+    }
+    crate::kuna_protoorder::call_argument_vote(data, op, fc, slot, arg_size)
 }
 
 /// The locked-output arm of `TypeOpCall::getOutputLocal` (typeop.cc:722-738) /

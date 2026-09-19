@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-e475e354c99c",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_widefill_x86_64",
+    "binary_sha256": "ca48818092626783e00d2f69b91c88ed4d6833ddd2ba0398ad9df7faf955ef90",
+    "binary_size": 24304,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_widefill_x86_64",
+    "selector": "fill_words",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int fill_words\\(unsigned long \\*a0,int a1\\)",
+      "\\*v\\d+ = 0x102030405060708;"
+    ],
+    "stdout_absent": [
+      "int fill_words\\(unsigned char \\*a0",
+      "v\\d+\\[0\\] = 8;",
+      "int fill_many\\(unsigned char \\*a0",
+      "a0\\[0x10\\] = 0x75;"
+    ]
+  },
+  "notes": "DEFAULT on x86-64: peek's parameter is unsigned char *. fill_words stores an 8-byte constant at each word of the buffer it hands peek; fill_many stores 520 at fixed places, more addresses than the vote's walk follows. Taking peek's type as a vote printed each 8-byte store as eight byte stores. Both votes are refused: fill_words keeps unsigned long * and one store per word."
+}

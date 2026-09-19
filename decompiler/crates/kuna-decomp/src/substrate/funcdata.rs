@@ -414,6 +414,13 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
     >,
+    /// (kuna `protoorder types`) The recovered parameter types of each callee this
+    /// function calls, copied off the `Architecture` after the flow build (the
+    /// type-inference seam cannot reach it), keyed by `(space index, entry offset)`.
+    kuna_protoorder_types: std::collections::HashMap<
+        (int4, kuna_base::types::uintb),
+        std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
+    >,
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
@@ -525,6 +532,7 @@ impl Funcdata {
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
             kuna_callee_entry_dead: std::collections::HashMap::new(),
+            kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
         })
     }
@@ -721,6 +729,31 @@ impl Funcdata {
     ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
         let sp = entry.get_space()?;
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `protoorder types`) Record the types a callee's own recovery stated
+    /// for the function entered at `entry`.
+    pub fn kuna_set_protoorder_types(
+        &mut self,
+        entry: &Address,
+        stated: std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
+    ) {
+        if let Some(sp) = entry.get_space() {
+            self.kuna_protoorder_types.insert((sp.get_index(), entry.get_offset()), stated);
+        }
+    }
+
+    /// (kuna `protoorder types`) The types a callee's own recovery stated for
+    /// the function entered at `entry`, if any were stated.
+    pub fn kuna_protoorder_types(
+        &self,
+        entry: &Address,
+    ) -> Option<&crate::kuna_protoorder::RecoveredTypes> {
+        if self.kuna_protoorder_types.is_empty() {
+            return None;
+        }
+        let sp = entry.get_space()?;
+        self.kuna_protoorder_types.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
     }
 
     /// (kuna `retpushedhalf`) The flow build's record of registers this function

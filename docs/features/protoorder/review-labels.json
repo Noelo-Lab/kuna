@@ -1,0 +1,1452 @@
+{
+ "tally": {
+  "builtin-string": 4,
+  "float-literal": 4,
+  "literal": 9,
+  "member-reach": 14,
+  "regroup": 12,
+  "spelling": 45,
+  "stack-merge": 2,
+  "store-width": 1,
+  "ternary": 5,
+  "wide-read": 4
+ },
+ "functions": [
+  {
+   "function": "O0_coreutils_stripped_sort sub_b536",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "V=~V*32+V;"
+   ],
+   "on": [
+    "V=V+(~V*4)*8;"
+   ]
+  },
+  {
+   "function": "O0_grep_stripped_grep sub_14de8",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "*(V*16+*V+8)=V|*(V*16+*V+8);"
+   ],
+   "on": [
+    "*(*V+V*16+8)=V|*(*V+V*16+8);"
+   ]
+  },
+  {
+   "function": "O0_grep_stripped_grep sub_15528",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "V=V^(*(V*16+*V)+*(V*16+*V+8));",
+    "for(V=0;((V<*(V+8)&&(*(V*16+*V+8)==*(V*16+*(V*72+*(V+296)+8)+8)))&&(*(V*16+*V)==*(V*16+*(V*72+*(V+296)+8))));V=V+1){"
+   ],
+   "on": [
+    "V=V^(*(V*16+*V)+*(*V+V*16+8));",
+    "for(V=0;((V<*(V+8)&&(*(*V+V*16+8)==*(V*16+*(V*72+*(V+296)+8)+8)))&&(*(V*16+*V)==*(V*16+*(V*72+*(V+296)+8))));V=V+1){"
+   ]
+  },
+  {
+   "function": "O0_gzip_stripped_gzip sub_4677",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=(0<=K)?(K&18446744073709551615)+K:0;",
+    "V=(0<=K)?(K&18446744073709551615)+K:0;"
+   ],
+   "on": [
+    "V=(0<=K)?((K&18446744073709551615)+K):0;",
+    "V=(0<=K)?((K&18446744073709551615)+K):0;"
+   ]
+  },
+  {
+   "function": "O0_gzip_stripped_gzip sub_4a9e",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=(0<=K)?(K&18446744073709551615)+K:0;",
+    "V=(0<=K)?(K&18446744073709551615)+K:0;",
+    "V=(0<=K)?(K&18446744073709551615)+K:0;",
+    "V=(0<=K)?(K&18446744073709551615)+K:0;"
+   ],
+   "on": [
+    "V=(0<=K)?((K&18446744073709551615)+K):0;",
+    "V=(0<=K)?((K&18446744073709551615)+K):0;",
+    "V=(0<=K)?((K&18446744073709551615)+K):0;",
+    "V=(0<=K)?((K&18446744073709551615)+K):0;"
+   ]
+  },
+  {
+   "function": "O0_mirai_stripped_mirai sub_f813",
+   "class": "spelling",
+   "why": "a `char *` vote: short pointers re-expressed as byte pointers with casts (`&v[5]` of a short <-> `&v[10]` of a byte); the same addresses",
+   "off": [
+    "*(V*2+18446744073709551612)=*(V*2);",
+    "V=&V;",
+    "V=V+ntohs(V);"
+   ],
+   "on": [
+    "*(V+V)=*(V*2);",
+    "V=V;",
+    "V=V+(ntohs(V))*1;"
+   ]
+  },
+  {
+   "function": "O0_shadow_stripped_chage sub_75b0",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "if((!strcmp(V,K))||((V=*(V+V*8),!strncmp(V,K,7)&&(V=*(V+V*8)+7,V))||(V=*(V+V*8),!strcmp(V,V)))){"
+   ],
+   "on": [
+    "if((!strcmp(V,K))||((V=*(V+V*8),!strncmp(V,K,7)&&(V=(*(V+V*8)+7),V))||(V=*(V+V*8),!strcmp(V,V)))){"
+   ]
+  },
+  {
+   "function": "O0_shadow_stripped_useradd sub_11de5",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "if((!strcmp(V,K))||((V=*(V+V*8),!strncmp(V,K,7)&&(V=*(V+V*8)+7,V))||(V=*(V+V*8),!strcmp(V,V)))){"
+   ],
+   "on": [
+    "if((!strcmp(V,K))||((V=*(V+V*8),!strncmp(V,K,7)&&(V=(*(V+V*8)+7),V))||(V=*(V+V*8),!strcmp(V,V)))){"
+   ]
+  },
+  {
+   "function": "O2-noinline_coreutils_stripped_cat sub_6b30",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=V-(V%V);"
+   ],
+   "on": [
+    "V=V-V%V;"
+   ]
+  },
+  {
+   "function": "O2-noinline_grep_stripped_grep sub_f9a0",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "while(*(V+V*2+1)==*(*(V+8)+V*16+8)&&(*(V+V*2)==*(*(V+8)+V*16))){"
+   ],
+   "on": [
+    "while(V=V*16,*(*V+V+8)==*(*(V+8)+V+8)&&(*(*V+V)==*(*(V+8)+V))){"
+   ]
+  },
+  {
+   "function": "O2-noinline_grep_stripped_grep sub_1d2b0",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=V-(V%V);"
+   ],
+   "on": [
+    "V=V-V%V;"
+   ]
+  },
+  {
+   "function": "O2-noinline_gzip_stripped_gzip sub_f3f0",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=V-(V%V);"
+   ],
+   "on": [
+    "V=V-V%V;"
+   ]
+  },
+  {
+   "function": "O2-noinline_nuttx_stripped_nuttx sub_8007bc4",
+   "class": "stack-merge",
+   "why": "two adjacent chars become the `char tmp[]` the code fills and prints with %s (an improvement)",
+   "off": [
+    "V=*V;",
+    "V=0;",
+    "(**(V+24))(V,K,&V);"
+   ],
+   "on": [
+    "*(V+0)=*V;",
+    "*(V+1)=0;",
+    "(**(V+24))(V,K,V);"
+   ]
+  },
+  {
+   "function": "O2-noinline_nuttx_stripped_nuttx sub_800c9bc",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=V<<29<0;"
+   ],
+   "on": [
+    "V=(V<<29)<0;"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_80131e0",
+   "class": "wide-read",
+   "why": "a2 typed `int4 *`: records indexed as `a2[v*0x13 + k]`; a byte test prints as `(char)a2[..]`, the low byte of the same word",
+   "off": [
+    "for(V=0;V=V+V*76,*(V+V*76);V=V+1){",
+    "if(*(V+4)){",
+    "*(V+16)=0;",
+    "*(V+20)=0;",
+    "*(V+48)=V;",
+    "V=*(V*32+1920);",
+    "ifV",
+    "V=V+4095>>12;"
+   ],
+   "on": [
+    "for(V=0;*(V+V*76);V=V+1){",
+    "if(*(V+V*76+4)){",
+    "*(V+V*76+16)=0;",
+    "*(V+V*76+20)=0;",
+    "*(V+V*76+48)=V;",
+    "if(*(V*32+V*2432+1920))",
+    "V=*(V*32+V*2432+1920)+4095>>12;",
+    "*(V+V*76+52)=V;"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8013580",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL; -1 printed 0xffffffff for a now-unsigned local",
+   "off": [
+    "*(V+V)=*(V+V)+224;",
+    "V=*(V+V+8);",
+    "if(V+159<=25)",
+    "*(V+V+8)=V+224;"
+   ],
+   "on": [
+    "*(V+V)=*(V+V)18446744073709551584;",
+    "if(*(V+V+8)+159<=25)",
+    "*(V+V+8)=*(V+V+8)18446744073709551584;"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8015f10",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "V=V+V*6;",
+    "*(V+1)=*(V+K);",
+    "*(V+2)=*(V+K);",
+    "*(V+4)=*(V+K);"
+   ],
+   "on": [
+    "*(V+V*6+1)=*(V+K);",
+    "*(V+V*6+2)=*(V+K);",
+    "*(V+V*6+4)=*(V+K);"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_801a358",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=*(V+K(V));",
+    "if((!K(V))&&(*(V+K(V))))"
+   ],
+   "on": [
+    "V=*(V+(K(V))*1);",
+    "if((!K(V))&&(*(V+(K(V))*1)))"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_801ae68",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "K(V,V,K,V,*(V+V*6),*(V+1),*(V+2),*(V+3),*(V*25+100)+900,*(V*25+125)+900);"
+   ],
+   "on": [
+    "K(V,V,K,V,*(V+V*6),*(V+1),*(V+2),*(V+3),*(V*25+1*4*25)+900,*(V*25+125)+900);"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_801b5bc",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "K(V,V,K,*(V+4),*(V+V*12),*(*(V*4+20)+K),*(*(V*4+24)+K),*(*(V*4+32)+K),*(*(V*4+28)+K));"
+   ],
+   "on": [
+    "K(V,V,K,*(V+4),*(V+V*12),*(*(V*4+20)+K),*(*(V*4+24)+K),*(*(V*4+2*4*4)+K),*(*(V*4+28)+K));"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_802b2cc",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL, inside the CONCAT operands main already prints",
+   "off": [
+    "V=V;",
+    "V._0_3_=CONCAT21(V,V);"
+   ],
+   "on": [
+    "V._0_3_=CONCAT21(V,*(V+8));"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8058148",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=K+V+1<=96;"
+   ],
+   "on": [
+    "V=(K+V+1)<=96;"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_805c3a0",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "V=*(V+3)+6;",
+    "*(V+V)=*V;",
+    "*(V+V+1)=*V>>8;"
+   ],
+   "on": [
+    "V=*(V+3);",
+    "*(V+V+6)=*V;",
+    "*(V+V+7)=*V>>8;"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8064586",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "V=*(*(V+12)+4);",
+    "K(*(*(V+12)+4),55,2);"
+   ],
+   "on": [
+    "V=*(V+16);",
+    "K(*(V+16),55,2);"
+   ]
+  },
+  {
+   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_80698e8",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "V=*(V+5)+V;",
+    "if(47<=V)",
+    "*(V+K)=V;",
+    "K(*(V+3)+*(V*256+1024));"
+   ],
+   "on": [
+    "if(47<=*(V+5)+V)",
+    "*(*(V+5)+V+K)=V;",
+    "K(*(V+3)+*(V*256+4*1*256));"
+   ]
+  },
+  {
+   "function": "O2_bzip2_stripped_bzip2 sub_110c0",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "K(V,*(V+64),((V&1)+V+34)+*(V+64),V,V,V,&V);"
+   ],
+   "on": [
+    "K(V,*(V+64),&(*(V+64))[((V&1)+V+34)],V,V,V,&V);"
+   ]
+  },
+  {
+   "function": "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8014e1a",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "V=V;",
+    "V._0_2_=CONCAT11(V,V);"
+   ],
+   "on": [
+    "V._0_2_=CONCAT11(V,*(V+8));"
+   ]
+  },
+  {
+   "function": "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8020b08",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "V=*(V+K(V));",
+    "if((!K(V))&&(*(V+K(V))))",
+    "returnsub_8008a00(V)+V+1;"
+   ],
+   "on": [
+    "V=*(V+(K(V))*1);",
+    "if((!K(V))&&(*(V+(K(V))*1)))",
+    "return(V+(K(V)+1)*1);"
+   ]
+  },
+  {
+   "function": "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_80275ec",
+   "class": "wide-read",
+   "why": "`(short)v1[k]` for a 16-bit load through the `unsigned int *` v1: the same value, a wider read (\u00a73b)",
+   "off": [
+    "K((0<*(V+68)-K)*(*(V+68)-K));"
+   ],
+   "on": [
+    "V=*(V+68)-K;",
+    "K((0<V)*V);"
+   ]
+  },
+  {
+   "function": "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8029742",
+   "class": "ternary",
+   "why": "",
+   "off": [
+    "ifdat_20008b5d",
+    "V=1;",
+    "else{",
+    "V=*(V+8)-K;",
+    "V=(V-(V>>31)&511)>>1;",
+    "}",
+    "while(!**(K+K*5+1)){"
+   ],
+   "on": [
+    "V=K?1:((*(V+8)-K)-((*(V+8)-K)>>31)&511)>>1;",
+    "while(!*(K+K*5+1)){"
+   ]
+  },
+  {
+   "function": "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_803002c",
+   "class": "ternary",
+   "why": "",
+   "off": [
+    "ifdat_20008b9b",
+    "V=K(3);",
+    "V=K(7);",
+    "}",
+    "}",
+    "elseifdat_20008b9b",
+    "V=K(5);",
+    "else{"
+   ],
+   "on": [
+    "V=K?K(3):K(7);",
+    "}",
+    "V=K?K(5):K(6);"
+   ]
+  },
+  {
+   "function": "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8032554",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=K+V+1<=96;"
+   ],
+   "on": [
+    "V=(K+V+1)<=96;"
+   ]
+  },
+  {
+   "function": "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_8034f74",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "V=*(V+3)+6;",
+    "*(V+V)=*V;",
+    "*(V+V+1)=*V>>8;"
+   ],
+   "on": [
+    "V=*(V+3);",
+    "*(V+V+6)=*V;",
+    "*(V+V+7)=*V>>8;"
+   ]
+  },
+  {
+   "function": "O2_coreutils_stripped_ginstall sub_dd10",
+   "class": "builtin-string",
+   "why": "a `char *` vote: the 2-byte constant 0x7e2e and the byte 0x30 print as the char stores '.' '~' '0'; byte arithmetic as `&p[k]`",
+   "off": [
+    "*V=K;",
+    "V=V*2;",
+    "*V=K;",
+    "*(V+4)=0;",
+    "*V=K;",
+    "*(V+4)=0;"
+   ],
+   "on": [
+    "*V=46;",
+    "*(V+1)=126;",
+    "*(V+1)=0;",
+    "builtin_strncpy(V*3,K,5);",
+    "builtin_strncpy(V*3,K,5);"
+   ]
+  },
+  {
+   "function": "O2_coreutils_stripped_sort sub_a430",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "*(V*9)=V*2+*(V*18446744073709551584+2*8*18446744073709551584);"
+   ],
+   "on": [
+    "*(V*9)=V+(*(V*18446744073709551584+18446744073709551104)+V)*1;"
+   ]
+  },
+  {
+   "function": "O2_coreutils_stripped_sort sub_b220",
+   "class": "literal",
+   "why": "",
+   "off": [
+    "pthread_mutex_unlock(V+88);"
+   ],
+   "on": [
+    "pthread_mutex_unlock(V+1);"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_cf2-elf sub_8010838",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "K(*(*V+64),20,1);",
+    "K(*(*V+64),1);"
+   ],
+   "on": [
+    "K(*(V+16),20,1);",
+    "K(*(V+16),1);"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_cf2-elf sub_8010af8",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "K(*(*V+64),V+200);",
+    "K(*(*V+64),1);"
+   ],
+   "on": [
+    "K(*(V+16),V+200);",
+    "K(*(V+16),1);"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_cf2-elf sub_8012664",
+   "class": "ternary",
+   "why": "",
+   "off": [
+    "if(V&4)",
+    "V=getProcessStackPointer(0);",
+    "else{",
+    "V=getMainStackPointer(0);",
+    "}"
+   ],
+   "on": [
+    "V=(V&4)?getProcessStackPointer(0):getMainStackPointer(0);"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_cf2-elf sub_801c15c",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "V=*(V+24)18446744073709551614;",
+    "if(*(V+28)18446744073709551614<=V){",
+    "V=V*V+*(V+48);",
+    "V=*(V+28)-V;",
+    "if(V<V){",
+    "V=V+V*512;",
+    "}while(V!=&(V+V*512)[512]);"
+   ],
+   "on": [
+    "if(*(V+28)18446744073709551614<=*(V+24)18446744073709551614){",
+    "V=V*(*(V+24)18446744073709551614)+*(V+48);",
+    "V=*(V+28);",
+    "if(0<V){",
+    "V=V;",
+    "}while(V!=V+512);"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_cf2-elf sub_80267e4",
+   "class": "spelling",
+   "why": "v7 typed `unsigned int *`: byte arithmetic through `(unsigned char *)` casts, `(int)` <-> `(unsigned int)` on call arguments; the same addresses",
+   "off": [
+    "}while(V!=(V+(V-1&K)*1));",
+    "}while(V!=(V+(V-1&K)*1));",
+    "}while(V!=&(V+29)[V-1&K]);",
+    "}while(V!=(V+(V-1&K)*1));",
+    "}while((V+(V-1&K)*1)!=V);",
+    "}while(V!=(V+(V-1&K)*1));",
+    "}while((V+(V-1&K)*1)!=V);",
+    "}while(V!=(V+(V-1&K)*1));"
+   ],
+   "on": [
+    "}while(V!=(V+(V-1&K)));",
+    "}while(V!=(V+(V-1&K)));",
+    "}while(V!=(V+29+(V-1&K)));",
+    "}while(V!=(V+(V-1&K)));",
+    "}while((V+(V-1&K))!=V);",
+    "}while(V!=(V+(V-1&K)));",
+    "}while((V+(V-1&K))!=V);",
+    "}while(V!=(V+(V-1&K)));"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_cf2-elf sub_8028640",
+   "class": "float-literal",
+   "why": "a float member or parameter now prints its bit pattern as the exact float literal (`0` -> `0.0`, `0xbf800000` -> `-1.0`); the same bits",
+   "off": [
+    "**(V+8)=0;",
+    "**(V+12)=0;",
+    "**(V+16)=0;",
+    "**(V+12)=V+V*18446744073709551615;",
+    "**(V+8)=V+V*18446744073709551615;",
+    "**(V+16)=V+V*18446744073709551615;",
+    "**(V+8)=0;",
+    "**(V+12)=0;"
+   ],
+   "on": [
+    "*(V+8)=0;",
+    "*(V+12)=0;",
+    "*(V+16)=0;",
+    "*(V+12)=V+V*18446744073709551615;",
+    "*(V+8)=V+V*18446744073709551615;",
+    "*(V+16)=V+V*18446744073709551615;",
+    "*(V+8)=0;",
+    "*(V+12)=0;"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_cf2-elf sub_80286c0",
+   "class": "float-literal",
+   "why": "a float member or parameter now prints its bit pattern as the exact float literal (`0` -> `0.0`, `0xbf800000` -> `-1.0`); the same bits",
+   "off": [
+    "**(V+12)=0;",
+    "**(V+16)=0;",
+    "**(V+20)=0;",
+    "**(V+12)=0;",
+    "**(V+16)=0;",
+    "**(V+20)=0;",
+    "**(V+16)=V+V*18446744073709551615;",
+    "**(V+12)=V+V*18446744073709551615;"
+   ],
+   "on": [
+    "*(V+12)=0;",
+    "*(V+16)=0;",
+    "*(V+20)=0;",
+    "*(V+12)=0;",
+    "*(V+16)=0;",
+    "*(V+20)=0;",
+    "*(V+16)=V+V*18446744073709551615;",
+    "*(V+12)=V+V*18446744073709551615;"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_cf2-elf sub_8031268",
+   "class": "regroup",
+   "why": "a2 typed `float *`: the `* 0.017453292` moves from the load's temporary into each use; the same float operations",
+   "off": [
+    "V=*K;",
+    "K=*K;",
+    "K=-V;",
+    "V=*K;",
+    "K=-V;",
+    "K=(V+K)*K;",
+    "K=(V+K)*K;"
+   ],
+   "on": [
+    "V=*(V+16);",
+    "V=*(V+20);",
+    "K=*(V*0+3*4*0).017453292;",
+    "K=-(V*K);",
+    "K=-(V*K);",
+    "K=(V*K+K)*K;",
+    "K=(V*K+K)*K;"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_cf2-elf sub_803cc84",
+   "class": "literal",
+   "why": "",
+   "off": [
+    "V=V+36;"
+   ],
+   "on": [
+    "V=V+1;"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_firmware-elf sub_8010838",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "K(*(*V+64),20,1);",
+    "K(*(*V+64),1);"
+   ],
+   "on": [
+    "K(*(V+16),20,1);",
+    "K(*(V+16),1);"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_firmware-elf sub_8010af8",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "K(*(*V+64),V+200);",
+    "K(*(*V+64),1);"
+   ],
+   "on": [
+    "K(*(V+16),V+200);",
+    "K(*(V+16),1);"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_firmware-elf sub_8012664",
+   "class": "ternary",
+   "why": "",
+   "off": [
+    "if(V&4)",
+    "V=getProcessStackPointer(0);",
+    "else{",
+    "V=getMainStackPointer(0);",
+    "}"
+   ],
+   "on": [
+    "V=(V&4)?getProcessStackPointer(0):getMainStackPointer(0);"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_firmware-elf sub_801c15c",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "V=*(V+24)18446744073709551614;",
+    "if(*(V+28)18446744073709551614<=V){",
+    "V=V*V+*(V+48);",
+    "V=*(V+28)-V;",
+    "if(V<V){",
+    "V=V+V*512;",
+    "}while(V!=&(V+V*512)[512]);"
+   ],
+   "on": [
+    "if(*(V+28)18446744073709551614<=*(V+24)18446744073709551614){",
+    "V=V*(*(V+24)18446744073709551614)+*(V+48);",
+    "V=*(V+28);",
+    "if(0<V){",
+    "V=V;",
+    "}while(V!=V+512);"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_firmware-elf sub_80267e4",
+   "class": "spelling",
+   "why": "v7 typed `unsigned int *`: byte arithmetic through `(unsigned char *)` casts, `(int)` <-> `(unsigned int)` on call arguments; the same addresses",
+   "off": [
+    "}while(V!=(V+(V-1&K)*1));",
+    "}while(V!=(V+(V-1&K)*1));",
+    "}while(V!=&(V+29)[V-1&K]);",
+    "}while(V!=(V+(V-1&K)*1));",
+    "}while((V+(V-1&K)*1)!=V);",
+    "}while(V!=(V+(V-1&K)*1));",
+    "}while((V+(V-1&K)*1)!=V);",
+    "}while(V!=(V+(V-1&K)*1));"
+   ],
+   "on": [
+    "}while(V!=(V+(V-1&K)));",
+    "}while(V!=(V+(V-1&K)));",
+    "}while(V!=(V+29+(V-1&K)));",
+    "}while(V!=(V+(V-1&K)));",
+    "}while((V+(V-1&K))!=V);",
+    "}while(V!=(V+(V-1&K)));",
+    "}while((V+(V-1&K))!=V);",
+    "}while(V!=(V+(V-1&K)));"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_firmware-elf sub_8028640",
+   "class": "float-literal",
+   "why": "a float member or parameter now prints its bit pattern as the exact float literal (`0` -> `0.0`, `0xbf800000` -> `-1.0`); the same bits",
+   "off": [
+    "**(V+8)=0;",
+    "**(V+12)=0;",
+    "**(V+16)=0;",
+    "**(V+12)=V+V*18446744073709551615;",
+    "**(V+8)=V+V*18446744073709551615;",
+    "**(V+16)=V+V*18446744073709551615;",
+    "**(V+8)=0;",
+    "**(V+12)=0;"
+   ],
+   "on": [
+    "*(V+8)=0;",
+    "*(V+12)=0;",
+    "*(V+16)=0;",
+    "*(V+12)=V+V*18446744073709551615;",
+    "*(V+8)=V+V*18446744073709551615;",
+    "*(V+16)=V+V*18446744073709551615;",
+    "*(V+8)=0;",
+    "*(V+12)=0;"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_firmware-elf sub_80286c0",
+   "class": "float-literal",
+   "why": "a float member or parameter now prints its bit pattern as the exact float literal (`0` -> `0.0`, `0xbf800000` -> `-1.0`); the same bits",
+   "off": [
+    "**(V+12)=0;",
+    "**(V+16)=0;",
+    "**(V+20)=0;",
+    "**(V+12)=0;",
+    "**(V+16)=0;",
+    "**(V+20)=0;",
+    "**(V+16)=V+V*18446744073709551615;",
+    "**(V+12)=V+V*18446744073709551615;"
+   ],
+   "on": [
+    "*(V+12)=0;",
+    "*(V+16)=0;",
+    "*(V+20)=0;",
+    "*(V+12)=0;",
+    "*(V+16)=0;",
+    "*(V+20)=0;",
+    "*(V+16)=V+V*18446744073709551615;",
+    "*(V+12)=V+V*18446744073709551615;"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_firmware-elf sub_8031268",
+   "class": "regroup",
+   "why": "a2 typed `float *`: the `* 0.017453292` moves from the load's temporary into each use; the same float operations",
+   "off": [
+    "V=*K;",
+    "K=*K;",
+    "K=-V;",
+    "V=*K;",
+    "K=-V;",
+    "K=(V+K)*K;",
+    "K=(V+K)*K;"
+   ],
+   "on": [
+    "V=*(V+16);",
+    "V=*(V+20);",
+    "K=*(V*0+3*4*0).017453292;",
+    "K=-(V*K);",
+    "K=-(V*K);",
+    "K=(V*K+K)*K;",
+    "K=(V*K+K)*K;"
+   ]
+  },
+  {
+   "function": "O2_crazyflie_stripped_firmware-elf sub_803cc84",
+   "class": "literal",
+   "why": "",
+   "off": [
+    "V=V+36;"
+   ],
+   "on": [
+    "V=V+1;"
+   ]
+  },
+  {
+   "function": "O2_dexter_stripped_dexter-dll DownloadFile",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "V=V+(*(V+0));"
+   ],
+   "on": [
+    "V=V+*(V+0);"
+   ]
+  },
+  {
+   "function": "O2_dexter_stripped_dexter-dll copySectionToProcess",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "V=V+*(V+160);",
+    "if(*V){",
+    "V=V+(*V&4095)+*V;",
+    "*V=*V+0;",
+    "}"
+   ],
+   "on": [
+    "V=V+(*(V+160))*1;",
+    "if(*V)",
+    "*(V+((*V&4095)+*V)*1)=*(V+((*V&4095)+*V)*1)+0;"
+   ]
+  },
+  {
+   "function": "O2_diffutils_stripped_diff sub_8590",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`); '\\n' printed as 10",
+   "off": [
+    "if(*(*(V+8)18446744073709551615)==10)break;",
+    "if(*(*(V+8)18446744073709551615)==10)break;"
+   ],
+   "on": [
+    "if(*(V+7)==10)break;",
+    "if(*(V+7)==10)break;"
+   ]
+  },
+  {
+   "function": "O2_diffutils_stripped_diff sub_d500",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`); '\\n' printed as 10",
+   "off": [
+    "if(*(*(V+8)18446744073709551615)==10!=V){",
+    "V=*(*(V+8)18446744073709551615)==10;",
+    "if(V&&(V=(V|*(*(V+8)18446744073709551615)==10),**V!=10))"
+   ],
+   "on": [
+    "if(*(V+7)==10!=V){",
+    "V=*(V+7)==10;",
+    "if(V&&(V=(V|*(V+7)==10),**V!=10))"
+   ]
+  },
+  {
+   "function": "O2_diffutils_stripped_diff sub_f330",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL; '\\n' printed as 10",
+   "off": [
+    "K(V,V-(*(V+18446744073709551615)==10),V,V);",
+    "K(V,V-(*(V+18446744073709551615)==10),0,0);"
+   ],
+   "on": [
+    "K(V,V+(-(*(V+18446744073709551615)==10))*1,V,V);",
+    "K(V,V+(-(*(V+18446744073709551615)==10))*1,0,0);"
+   ]
+  },
+  {
+   "function": "O2_diffutils_stripped_diff sub_14de0",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "returnsub_1a1f0(V,18446744073709551615,V,V,V)+V;"
+   ],
+   "on": [
+    "return(V+(K(V,18446744073709551615,V,V,V))*1);"
+   ]
+  },
+  {
+   "function": "O2_dpkg_stripped_dpkg-query sub_5460",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "V=V+40;",
+    "}while(V!=V*41);",
+    "V=V+40;",
+    "V=V+40;"
+   ],
+   "on": [
+    "V=V+1;",
+    "}while(V!=V+V);",
+    "V=V+1;",
+    "V=V+1;"
+   ]
+  },
+  {
+   "function": "O2_dpkg_stripped_dpkg-query sub_af80",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "K(V,*(V+8),*(V+8)+72,1);"
+   ],
+   "on": [
+    "K(V,*(V+8),&(*(V+8))[9],1);"
+   ]
+  },
+  {
+   "function": "O2_dpkg_stripped_dpkg-query sub_183f0",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "V=V*9;",
+    "*(V*9)=V;",
+    "*(V*2)=V;"
+   ],
+   "on": [
+    "V=V;",
+    "*(V*17)=V;",
+    "*(V*10)=V;"
+   ]
+  },
+  {
+   "function": "O2_e2fsprogs_stripped_e2fsck sub_202f0",
+   "class": "spelling",
+   "why": "",
+   "off": [
+    "if(1<<(21-*(V+24)&31)<V)"
+   ],
+   "on": [
+    "if((1<<(21-*(V+24)&31))<V)"
+   ]
+  },
+  {
+   "function": "O2_e2fsprogs_stripped_e2fsck e2fsck_add_dir_info",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "uuid_unparse(*(*V+32)+104,V);"
+   ],
+   "on": [
+    "uuid_unparse(*(V+0)->*(field_0x20+26),V);"
+   ]
+  },
+  {
+   "function": "O2_e2fsprogs_stripped_e2fsck quota_write_inode",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "(**(*(V+56)+48))(V);"
+   ],
+   "on": [
+    "(**(V+104))(V);"
+   ]
+  },
+  {
+   "function": "O2_e2fsprogs_stripped_e2fsck sub_46460",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "V=*(*(V+168)+24);"
+   ],
+   "on": [
+    "V=*(V+174);"
+   ]
+  },
+  {
+   "function": "O2_e2fsprogs_stripped_e2fsck ext2fs_convert_subcluster_bitmap",
+   "class": "wide-read",
+   "why": "`*(int4 *)(a0 + 0xc0)` <-> `(int4)a0[0x18]`, the truncated 8-byte element (\u00a73b), and a temporary inlined",
+   "off": [
+    "V=*(V+192);",
+    "V=(V>>(V&63))+1<<(V&63);"
+   ],
+   "on": [
+    "V=(V>>(*(V+192)&63))+1<<(*(V+192)&63);"
+   ]
+  },
+  {
+   "function": "O2_e2fsprogs_stripped_e2fsck ext2fs_create_icount_tdb",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "V=(*(V+32))[4];"
+   ],
+   "on": [
+    "V=*(V+36);"
+   ]
+  },
+  {
+   "function": "O2_e2fsprogs_stripped_e2fsck ext2fs_get_next_inode_full",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "*(V+72)=*(V+72)+V;",
+    "*(V+72)=*(V+72)+*(V+64);"
+   ],
+   "on": [
+    "*(V+72)=V+V+72;",
+    "*(V+72)=V+72+(*(V+64));"
+   ]
+  },
+  {
+   "function": "O2_e2fsprogs_stripped_e2fsck sub_74410",
+   "class": "wide-read",
+   "why": "a5 typed `uint8 *`: `*(uint4 *)&a5[2]` <-> `(uint4)a5[2]` (the low half of the same element) and a temporary regrouped",
+   "off": [
+    "V=*(V+16);",
+    "V=*V;",
+    "if((!ext2fs_new_range(V,3,V*2,V+1-(V*2),0,&V,&V))&&(V+CONCAT44(V,V)==*V)){"
+   ],
+   "on": [
+    "V=*(V+16)+*V;",
+    "if((!ext2fs_new_range(V,3,V,1,0,&V,&V))&&(V+CONCAT44(V,V)==*V)){"
+   ]
+  },
+  {
+   "function": "O2_findutils_stripped_find sub_f620",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "V=&(K+V)[*(K+V)==47];"
+   ],
+   "on": [
+    "V=&(V+K*1)[*(V+K*1)==47];"
+   ]
+  },
+  {
+   "function": "O2_freertos_stripped_RTOSDemo-out sub_3130",
+   "class": "literal",
+   "why": "",
+   "off": [
+    "K(2724);"
+   ],
+   "on": [
+    "K(K);"
+   ]
+  },
+  {
+   "function": "O2_freertos_stripped_RTOSDemo-out sub_3150",
+   "class": "literal",
+   "why": "",
+   "off": [
+    "K(2744);"
+   ],
+   "on": [
+    "K(K);"
+   ]
+  },
+  {
+   "function": "O2_freertos_stripped_RTOSDemo-out sub_3174",
+   "class": "literal",
+   "why": "",
+   "off": [
+    "K(2772,V,V);"
+   ],
+   "on": [
+    "K(K,V,V);"
+   ]
+  },
+  {
+   "function": "O2_freertos_stripped_RTOSDemo-out sub_3228",
+   "class": "literal",
+   "why": "",
+   "off": [
+    "K(2800);",
+    "V=(V!=200)?2872:2832;"
+   ],
+   "on": [
+    "K(K);",
+    "V=(V!=200)?K:K;"
+   ]
+  },
+  {
+   "function": "O2_freertos_stripped_RTOSDemo-out sub_341e",
+   "class": "literal",
+   "why": "",
+   "off": [
+    "K(2912);"
+   ],
+   "on": [
+    "K(K);"
+   ]
+  },
+  {
+   "function": "O2_grep_stripped_grep sub_10290",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "while(*(V+V*2+1)==*(*(V+8)+V*16+8)&&(*(V+V*2)==*(*(V+8)+V*16))){"
+   ],
+   "on": [
+    "while(V=V*16,*(*V+V+8)==*(*(V+8)+V+8)&&(*(*V+V)==*(*(V+8)+V))){"
+   ]
+  },
+  {
+   "function": "O2_grep_stripped_grep sub_12df0",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "V=*(V+1308+*(V*4));",
+    "if((0<=*(V+64))&&(V=V+*(V*10+640),K<=V))"
+   ],
+   "on": [
+    "V=*(V+*(V*4)+1308);",
+    "if((0<=*(V+64))&&(V=V+*(V*10+8*8*10),K<=V))"
+   ]
+  },
+  {
+   "function": "O2_iproute2_stripped_ip sub_1ca00",
+   "class": "member-reach",
+   "why": "print_route's struct_21 * vote on the reply buffer (struct_21 is 0x1c bytes: &v3[1] is main's &v2[7] through an int4 *, v3->field_0x12 is the one-byte store at +0x12, and + '\\xe0' is - 0x20 mod 256); v8 = v9 - 0x1c is main's inline v7 + -0x1c, the same signed int4 compare; since #673 main prints the matches() strings too, so the literal residue that labelled it before is gone",
+   "off": [
+    "if(V+18446744073709551588<0){",
+    "__fprintf_chk(stderr,1,K,V+18446744073709551588);",
+    "parse_rtattr(V,30,V+28);",
+    "*(V+18)=*(V*8)+224;"
+   ],
+   "on": [
+    "V=V+18446744073709551588;",
+    "if(V<0){",
+    "__fprintf_chk(stderr,1,K,V);",
+    "parse_rtattr(V,30,V+1);",
+    "*(V+18)=*(V*8)18446744073709551584;"
+   ]
+  },
+  {
+   "function": "O2_iproute2_stripped_ip do_ipnh",
+   "class": "literal",
+   "why": "string constants print as their strings (\"add\", \"show\", \"lst\") where main printed the addresses",
+   "off": [
+    "V=*(V+18446744073709551608);"
+   ],
+   "on": [
+    "V=V+18446744073709551608>field_0x0;"
+   ]
+  },
+  {
+   "function": "O2_kmod_stripped_kmod sub_6660",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL; the `* 8` moves into realloc's argument; char literals",
+   "off": [
+    "V=V*8+16;",
+    "V=realloc(V,V);",
+    "*(V*2+18446744073709551608)=0;",
+    "*(V*2+18446744073709551600)=optarg;"
+   ],
+   "on": [
+    "V=V+2;",
+    "V=realloc(V,V*8);",
+    "*(V*9+18446744073709551608)=0;",
+    "*(V*9+18446744073709551600)=optarg;"
+   ]
+  },
+  {
+   "function": "O2_libedit_stripped_libedit-so-0-0-70 el_get",
+   "class": "spelling",
+   "why": "a2 typed `unsigned long *`: `(unsigned int)a2` <-> `SUB84(a2,0)` in a piece assignment main already prints; the same low word",
+   "off": [
+    "V._0_4_=V;"
+   ],
+   "on": [
+    "V._0_4_=SUB84(V,0);"
+   ]
+  },
+  {
+   "function": "O2_libedit_stripped_libedit-so-0-0-70 sub_113e0",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "if(*V!=45){",
+    "if(*(V+4)){",
+    "if(*(*V+V)==25){",
+    "*(*V+V)=28;",
+    "if((*V)&&(*(V+4))){",
+    "if(*(V+4)){",
+    "switch(*(V+4)){"
+   ],
+   "on": [
+    "if(*V!=L45){",
+    "if(*(V+1)){",
+    "V=*V+V;",
+    "if(*V==25){",
+    "*V=28;",
+    "if((*V)&&(*(V+1))){",
+    "if(*(V+1)){",
+    "switch(*(V+1)){"
+   ]
+  },
+  {
+   "function": "O2_libedit_stripped_libedit-so-0-0-70 sub_1ab60",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "if(*(V+96)18446744073709551612<=*(V+88))"
+   ],
+   "on": [
+    "if(&(*(V+96))[18446744073709551615]<=*(V+88))"
+   ]
+  },
+  {
+   "function": "O2_libedit_stripped_libedit-so-0-0-70 sub_1abd0",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "if(*(V+96)18446744073709551612<=*(V+88))"
+   ],
+   "on": [
+    "if(&(*(V+96))[18446744073709551615]<=*(V+88))"
+   ]
+  },
+  {
+   "function": "O2_libedit_stripped_libedit-so-0-0-70 history_w",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [],
+   "on": [
+    "V=*(V+20);",
+    "*(V+4)=V;"
+   ]
+  },
+  {
+   "function": "O2_libedit_stripped_libedit-so-0-0-70 history",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [],
+   "on": [
+    "V=*(V+20);",
+    "*(V+4)=V;"
+   ]
+  },
+  {
+   "function": "O2_libselinux_stripped_libselinux-so-1 sub_1d4c0",
+   "class": "store-width",
+   "why": "",
+   "off": [
+    "*(V+188)=18446744073709551615;"
+   ],
+   "on": [
+    "*(V+161)=0;",
+    "*(V+162)=0;",
+    "*(V+163)=0;",
+    "*(V+164)=0;",
+    "*(V+165)=0;",
+    "*(V+166)=0;",
+    "*(V+167)=0;",
+    "*(V+188)=255;"
+   ]
+  },
+  {
+   "function": "O2_libselinux_stripped_libselinux-so-1 sub_22240",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "*(V+V)=*(V+20+(V<=3)*4)>>((~V&3)<<3);"
+   ],
+   "on": [
+    "*(V+V)=*(V+((V<=3)+5)*4)>>((~V&3)<<3);"
+   ]
+  },
+  {
+   "function": "O2_mirai_stripped_mirai sub_ce90",
+   "class": "spelling",
+   "why": "a `char *` vote: short pointers re-expressed as byte pointers with casts; the same addresses",
+   "off": [
+    "V=V*2+10;"
+   ],
+   "on": [
+    "V=&(V+10)[V];"
+   ]
+  },
+  {
+   "function": "O2_nuttx_stripped_nuttx sub_8007bd0",
+   "class": "stack-merge",
+   "why": "two adjacent chars become the `char tmp[]` the code fills and prints with %s (an improvement)",
+   "off": [
+    "V=*V;",
+    "V=0;",
+    "(**(V+24))(V,K,&V);"
+   ],
+   "on": [
+    "*(V+0)=*V;",
+    "*(V+1)=0;",
+    "(**(V+24))(V,K,V);"
+   ]
+  },
+  {
+   "function": "O2_riot-os_stripped_hello-world-elf sub_8000748",
+   "class": "ternary",
+   "why": "",
+   "off": [
+    "if(V&4)",
+    "V=getProcessStackPointer(0);",
+    "else{",
+    "V=getMainStackPointer(0);",
+    "}"
+   ],
+   "on": [
+    "V=(V&4)?getProcessStackPointer(0):getMainStackPointer(0);"
+   ]
+  },
+  {
+   "function": "O2_tar_stripped_tar sub_1d5d0",
+   "class": "builtin-string",
+   "why": "GAIN: three constant stores print as `builtin_strncpy(v2,\"SCHILY.xattr.\",0xd)`",
+   "off": [
+    "*V=8659957317661901651;",
+    "*(V+8)=K;",
+    "*(V+12)=46;"
+   ],
+   "on": [
+    "builtin_strncpy(V,K,13);"
+   ]
+  },
+  {
+   "function": "O2_tar_stripped_tar sub_3c8f0",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL; a code constant 0x6aa88 prints as \"help\"",
+   "off": [
+    "V=*(V+1);",
+    "if(*(V+1)){",
+    "if(V&&(*(V+1))){"
+   ],
+   "on": [
+    "V=**(V+1);",
+    "if(**(V+1)){",
+    "if(V&&(**(V+1))){"
+   ]
+  },
+  {
+   "function": "O2_tar_stripped_tar sub_3f9b0",
+   "class": "builtin-string",
+   "why": "a `char *` vote: the 2-byte constant 0x7e2e and the byte 0x30 print as the char stores '.' '~' '0'; byte arithmetic as `&p[k]`",
+   "off": [
+    "*V=K;",
+    "V=V*2;",
+    "*V=K;",
+    "*(V+4)=0;",
+    "*V=K;",
+    "*(V+4)=0;"
+   ],
+   "on": [
+    "*V=46;",
+    "*(V+1)=126;",
+    "*(V+1)=0;",
+    "builtin_strncpy(V*3,K,5);",
+    "builtin_strncpy(V*3,K,5);"
+   ]
+  },
+  {
+   "function": "O2_tar_stripped_tar sub_40c90",
+   "class": "builtin-string",
+   "why": "GAIN: constant stores print as `builtin_strncpy(&v[n],\"(/.*)?\",7)`",
+   "off": [
+    "V=V*2;",
+    "*V=K;",
+    "*(V+4)=K;",
+    "*(V+6)=0;"
+   ],
+   "on": [
+    "builtin_strncpy(V*2,K,7);"
+   ]
+  },
+  {
+   "function": "O2_tar_stripped_tar sub_54f10",
+   "class": "regroup",
+   "why": "a temporary inlined, extracted or re-used for the same value because a retyped value merges differently; every load, store and call is the same",
+   "off": [
+    "V=V*24+V;",
+    "V=*(V+8);",
+    "V=**(V+16);",
+    "V=*(*(*(V+40)+V*24+16)+8);",
+    "V=V+(*(V+40));"
+   ],
+   "on": [
+    "V=V*24;",
+    "V=*(V*2+8);",
+    "V=**(V*2+16);",
+    "V=*(*(*(V+40)+V+16)+8);",
+    "V=V+*(V+40);"
+   ]
+  },
+  {
+   "function": "O2_zlib_stripped_libz-so-1-2-13 sub_4650",
+   "class": "member-reach",
+   "why": "the same bytes reached through a struct member or a pointer member the vote typed (`*(T *)(p + 0x40)` <-> `p->field_0x0[0x10]`)",
+   "off": [
+    "if((261<V)||(!*(*V+8)))break;"
+   ],
+   "on": [
+    "if((261<V)||(!*(V+0)->field_0x8))break;"
+   ]
+  },
+  {
+   "function": "O2_zlib_stripped_libz-so-1-2-13 inflate",
+   "class": "spelling",
+   "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL",
+   "off": [
+    "if(!K(2,V*3+152,V,V+144,V+124,V+792)){"
+   ],
+   "on": [
+    "if(!K(2,&(V+152)[V],V,V+144,V+124,V+792)){"
+   ]
+  }
+ ]
+}

@@ -996,6 +996,7 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                 // the serial export does; a `decompile-all`/`decompile-graph`
                 // worker does not set it and keeps the preamble.
                 header_carries_types: args.jobs_types,
+                park_recovered_proto: false,
                 single_target: false,
             };
             let mut pending = entries.into_iter();
@@ -1359,11 +1360,25 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     } else {
         targets
     };
+    // (kuna `protoorder`) A narrowed run, or a raw image (which has no call graph),
+    // skips the callee-first order unless the option is named.
+    let explicit = args.options.iter().any(|(name, _)| name == "protoorder");
+    let whole = targets.len() == discovered && args.addrs.is_empty() && args.names.is_none();
+    let callee_first = prog.arch().protoorder.is_on()
+        && targets.len() > 1
+        && (explicit || (whole && !args.raw_image));
     // `--jobs N`: hand the targets to the worker pool and release the parent's
     // program (2.0 GB on an 18 MB PE) before the workers start — nothing below
     // needs it on this surface, and it is the parent's RSS that decides how many
     // workers the machine can hold.
     if args.jobs > 1 {
+        if callee_first {
+            eprintln!(
+                "note: --jobs decompiles without the callee-first order (option protoorder, on by \
+                 default), so call-argument types can differ from a serial run; add --option \
+                 protoorder off to make the two byte-identical"
+            );
+        }
         let inventory = prog.function_entries_canonical();
         let assertions = prog.assertion_outcomes();
         drop(prog);
@@ -1378,7 +1393,18 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         )?;
         return Ok(AllRun { funcs: pooled.results, discovered, assertions });
     }
-    let funcs = decompile_entries(&mut prog, args, targets);
+    if explicit && prog.arch().protoorder.is_on() && !whole {
+        eprintln!(
+            "note: --option protoorder: {} of this binary's entries selected; a callee \
+             outside the selection is not decompiled, so it states nothing",
+            targets.len()
+        );
+    }
+    let funcs = if callee_first {
+        decompile_entries_callee_first(&mut prog, args, targets, explicit)
+    } else {
+        decompile_entries(&mut prog, args, targets)
+    };
     Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes() })
 }
 
@@ -1408,6 +1434,215 @@ pub(crate) fn decompile_entries(
         /* want_proto= */ false,
         /* want_provenance= */ args.json,
     )
+}
+
+/// (kuna `protoorder`) Say so on a surface the option does not reach.
+///
+/// The callee-first order and the park live in `decompile-all`'s own loop.
+/// `decompile-project` has its own schedule and its own header, and
+/// `decompile-graph` decompiles one function per row, so neither parks
+/// anything: with `protoorder on` they produce exactly the output they produce
+/// with it off. That is a legitimate choice, but it must not be a silent one --
+/// an option accepted with `rc=0` and no effect reads as "it did not help".
+pub fn warn_protoorder_inert(options: &[(String, String)], surface: &str) {
+    if options.iter().any(|(name, value)| name == "protoorder" && value != "off") {
+        eprintln!(
+            "warning: --option protoorder has no effect on `kuna {surface}`: the callee-first \
+             order is a `decompile-all` surface (see docs/cli.md)"
+        );
+    }
+}
+
+/// (kuna `protoorder`) The callee-first form of [`decompile_entries`]: decompile
+/// each target only after the targets it calls, parking each function's
+/// recovered prototype so the callers still ahead of it read it back through
+/// `ActionDefaultParams`.
+///
+/// Only the ORDER changes.  Results are buffered and returned in the caller's
+/// own target order, so `--json` and the concatenated C surface stay
+/// byte-order-stable and decbench's function set is untouched.
+///
+/// The ordering is the program's call graph as [`CallGraph`] reads it — the
+/// same `kuna_analysis::listing::xrefs` edges `kuna xrefs` and
+/// `--reachable-from` answer with.  An image whose call graph cannot be built
+/// (a raw image has none) decompiles in the caller's order with nothing parked,
+/// which is exactly the option-off behaviour; it says so only when the option
+/// was named (`explicit`).
+fn decompile_entries_callee_first(
+    prog: &mut ConsoleProgram,
+    args: &Args,
+    targets: Vec<FunctionEntry>,
+    explicit: bool,
+) -> Vec<FuncResult> {
+    if args.max_fn_seconds > 0 {
+        prog.arch_mut().kuna_fn_budget =
+            Some(std::time::Duration::from_secs(args.max_fn_seconds));
+    }
+    let plan = match CallGraph::build(prog, &args.binary, args.slice_pref()) {
+        Ok(graph) => callee_first_plan(&graph, &targets),
+        Err(e) => {
+            if explicit {
+                eprintln!("warning: --option protoorder: no call graph for {}: {e}", args.binary);
+            }
+            (0..targets.len()).map(|i| (i, false)).collect()
+        }
+    };
+    let base = kuna_console::project::DecompileOptions {
+        no_vars: args.no_vars,
+        want_proto: false,
+        want_provenance: args.json,
+        want_callee_hints: false,
+        header_carries_types: false,
+        park_recovered_proto: false,
+        single_target: targets.len() == 1,
+    };
+    let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
+    for &(index, park) in &plan {
+        let opts =
+            kuna_console::project::DecompileOptions { park_recovered_proto: park, ..base };
+        slots[index] =
+            Some(kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts));
+    }
+    converge_callee_first(prog, &targets, &plan, &base, &mut slots);
+    slots.into_iter().flatten().collect()
+}
+
+/// (kuna `protoorder` + `structsynth`) The batch's convergence sweep
+/// (`converge_synthesized_structs`) for the callee-first order: decompile once
+/// more, in plan order and with each target's own park decision, exactly the
+/// results that name a superseded structure. A redone callee states its survivor
+/// type again before its redone callers read it. Not under `lock`, where a
+/// parked prototype is declared and a second decompile would read its own.
+fn converge_callee_first(
+    prog: &mut ConsoleProgram,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut [Option<FuncResult>],
+) {
+    if prog.arch().protoorder == kuna_decomp::kuna_protoorder::ProtoOrderMode::Lock {
+        return;
+    }
+    let stale = kuna_console::project::superseded_struct_names(prog);
+    if stale.is_empty() {
+        return;
+    }
+    for &(index, park) in plan {
+        if !slots[index].as_ref().is_some_and(|r| kuna_console::project::names_any_type(r, &stale)) {
+            continue;
+        }
+        let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
+        let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
+        if slots[index].as_ref().is_none_or(|first| kuna_console::project::redo_replaces(first, &again)) {
+            slots[index] = Some(again);
+        }
+    }
+}
+
+/// The decompile order and the park decision for each target: `(index into
+/// targets, may park)`.
+///
+/// Tarjan's strongly-connected components over the direct-call edges, whose
+/// output order is already reverse-topological — a component is emitted only
+/// once everything it calls has been.  Roots and neighbours are walked in
+/// ascending address order and the members of one component are emitted in
+/// ascending address order, so the plan is a function of the program alone.
+///
+/// A component with more than one member, and a function that calls itself, are
+/// recursion: "callees first" has no meaning inside a cycle, so every member
+/// decompiles with nothing parked (`Decline::Scc`).
+fn callee_first_plan(graph: &CallGraph, targets: &[FunctionEntry]) -> Vec<(usize, bool)> {
+    let mut index_of: BTreeMap<u64, usize> = BTreeMap::new();
+    for (i, t) in targets.iter().enumerate() {
+        index_of.entry(t.addr.get_offset()).or_insert(i);
+    }
+    // Callees first: an edge u -> v means "u calls v", and Tarjan pops v's
+    // component before u's.
+    let mut edges: Vec<Vec<usize>> = vec![Vec::new(); targets.len()];
+    let mut self_recursive: Vec<bool> = vec![false; targets.len()];
+    for (i, t) in targets.iter().enumerate() {
+        let mut out: Vec<usize> = Vec::new();
+        for (callee, _kind) in graph.callees_of(t.addr.get_offset()) {
+            let Some(&j) = index_of.get(&callee) else { continue };
+            if j == i {
+                self_recursive[i] = true;
+                continue;
+            }
+            out.push(j);
+        }
+        out.sort_unstable();
+        out.dedup();
+        edges[i] = out;
+    }
+    let (order, component_size) = tarjan_scc(&edges);
+    order
+        .into_iter()
+        .map(|i| (i, component_size[i] == 1 && !self_recursive[i]))
+        .collect()
+}
+
+/// Tarjan's SCC over `edges`, iteratively (a 100k-function binary would
+/// overflow the stack recursing).  Returns the emission order — every component
+/// after the components it points at — and each node's component size.
+fn tarjan_scc(edges: &[Vec<usize>]) -> (Vec<usize>, Vec<usize>) {
+    let n = edges.len();
+    const UNVISITED: usize = usize::MAX;
+    let mut index = vec![UNVISITED; n];
+    let mut low = vec![0usize; n];
+    let mut on_stack = vec![false; n];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut next_index = 0usize;
+    let mut order: Vec<usize> = Vec::with_capacity(n);
+    let mut component_size = vec![1usize; n];
+    for root in 0..n {
+        if index[root] != UNVISITED {
+            continue;
+        }
+        // (node, next edge to walk)
+        let mut work: Vec<(usize, usize)> = vec![(root, 0)];
+        index[root] = next_index;
+        low[root] = next_index;
+        next_index += 1;
+        stack.push(root);
+        on_stack[root] = true;
+        while let Some(&mut (v, ref mut edge)) = work.last_mut() {
+            if *edge < edges[v].len() {
+                let w = edges[v][*edge];
+                *edge += 1;
+                if index[w] == UNVISITED {
+                    index[w] = next_index;
+                    low[w] = next_index;
+                    next_index += 1;
+                    stack.push(w);
+                    on_stack[w] = true;
+                    work.push((w, 0));
+                } else if on_stack[w] {
+                    low[v] = low[v].min(index[w]);
+                }
+                continue;
+            }
+            work.pop();
+            if low[v] == index[v] {
+                let mut members: Vec<usize> = Vec::new();
+                while let Some(w) = stack.pop() {
+                    on_stack[w] = false;
+                    members.push(w);
+                    if w == v {
+                        break;
+                    }
+                }
+                members.sort_unstable();
+                for &w in &members {
+                    component_size[w] = members.len();
+                }
+                order.extend(members);
+            }
+            if let Some(&mut (parent, _)) = work.last_mut() {
+                low[parent] = low[parent].min(low[v]);
+            }
+        }
+    }
+    (order, component_size)
 }
 
 /// Enumerate the program's full callable-symbol inventory, one
@@ -2972,6 +3207,19 @@ pub(crate) fn parse_args_with_filters(
                     .into(),
             );
         }
+        // (kuna `protoorder`) A statement does not cross a worker process.
+        if options
+            .iter()
+            .any(|(name, value)| name == "protoorder" && value != "off")
+        {
+            return Err(
+                "--option protoorder and --jobs are exclusive: what a callee states about its \
+                 own types is per-load state that does not cross a worker process. Re-run with \
+                 --jobs 1 (a run that does not ask for the option is not refused: it simply \
+                 states nothing)."
+                    .into(),
+            );
+        }
     }
 
     if let (Some(min), Some(max)) = (filters.min_size, filters.max_size) {
@@ -3063,12 +3311,14 @@ fn usage_decompile_all() {
          budget becomes its own `error` record and the batch continues.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
-         in-process path). Output is merged in target order, so it is identical to\n\
-         --jobs 1 with --option structsynth off: workers run with structsynth off,\n\
-         because each process would number its own struct_N. Progress goes to\n\
-         stderr. Every worker loads the binary itself, so peak memory is roughly\n\
-         N times one worker's RSS. --jobs-chunk N sets the functions per worker\n\
-         invocation (bigger = less load overhead, more\n\
+         in-process path). Output is merged in target order; progress goes to\n\
+         stderr. Workers run with structsynth off, because each process would\n\
+         number its own struct_N, and a worker cannot see another worker's\n\
+         callees, so the pool does not type call arguments callee-first: it\n\
+         matches --jobs 1 only with --option structsynth off and --option\n\
+         protoorder off on both. Every worker loads the binary itself, so peak\n\
+         memory is roughly N times one worker's RSS. --jobs-chunk N sets the\n\
+         functions per worker invocation (bigger = less load overhead, more\n\
          peak RSS); --jobs-full-load makes each worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\

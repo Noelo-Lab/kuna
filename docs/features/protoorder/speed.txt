@@ -1,0 +1,87 @@
+# protoorder -- speed, round 12 (main d96e3408 vs this branch vs round 11)
+
+Main (a fresh d96e3408 build; 75f832e3 differs only in docs) against this
+branch's round-12 engine, and the round-11 engine (before §3f) as a third arm,
+whole-binary `decompile-all --json`, the three rotating inside each iteration
+(order rotated and reversed every iteration), min and median of 15, three slice
+groups side by side (box load 9-41, other lanes running). `scripts.pipeline.timeit`
+cannot measure this option: it times `kuna decompile`, where the option is inert.
+
+| slice | main min / median | this branch min / median | delta min / median | vs round 11, delta min |
+|---|---|---|---|---|
+| fmt -O2 (46 KiB) | 4,451 / 4,649 ms | 4,221 / 4,529 ms | -5.2% / -2.6% | -0.9% |
+| kmod -O2 (158 KiB) | 7,316 / 8,247 ms | 7,495 / 8,320 ms | +2.4% / +0.9% | -1.6% |
+| ls -O2 (146 KiB) | 14,126 / 15,553 ms | 14,218 / 15,662 ms | +0.7% / +0.7% | -0.8% |
+| libselinux -O2 (176 KiB) | 6,808 / 7,482 ms | 6,807 / 7,633 ms | -0.0% / +2.0% | -1.8% |
+| ip -O2 (678 KiB) | 31,228 / 34,533 ms | 30,906 / 34,034 ms | -1.0% / -1.4% | -0.1% |
+| e2fsck -O2 (706 KiB) | 26,856 / 27,957 ms | 27,233 / 28,623 ms | +1.4% / +2.4% | -0.4% |
+| tar -O2 (517 KiB) | 44,911 / 49,683 ms | 45,645 / 51,681 ms | +1.6% / +4.0% | -4.7% |
+| betaflight -O2 (520 KiB, ARM) | 55,045 / 57,491 ms | 55,802 / 59,080 ms | +1.4% / +2.8% | -3.1% |
+
+Every slice is inside the +5% budget on the minimum; the worst is kmod at +2.4%.
+ip is a re-run (load 9 at its start, 41 at its end): the first run gave -0.4% against main
+and +6.6% against the round-11 arm, whose two fastest samples were 2 s under
+any other sample of that run; the re-run gives -0.1% against it. §3f adds a walk
+of the loads and stores through a pointer vote's value for a non-character
+primitive pointee, as §3e does for a float or composite one; the walk stops at
+512 steps. Round 11's table (the same comparison without §3f, load 2-9) is in
+`record.json` under `speed.round11_on_d96e3408`.
+
+# protoorder -- speed, round 11 (main d96e3408 vs this branch)
+
+Main (a fresh `origin/main` d96e3408 build: structsynth, boolbyte and charbyte
+on) against this branch's final engine rebased onto it, whole-binary
+`decompile-all --json`, the two alternating inside each iteration (order swapped
+every iteration), min and median of 15, three slice groups side by side (box
+load 2-9). `scripts.pipeline.timeit` cannot measure this option: it times `kuna
+decompile`, where the option is inert. The last column is the same engine
+measured against 6e4f6fa5 before the charbyte rebase (load 3-14).
+
+| slice | main min / median | this branch min / median | delta min / median | on 6e4f6fa5, delta min |
+|---|---|---|---|---|
+| fmt -O2 (46 KiB) | 4,111 / 4,152 ms | 4,177 / 4,210 ms | +1.6% / +1.4% | +0.6% |
+| kmod -O2 (158 KiB) | 7,130 / 7,182 ms | 7,280 / 7,331 ms | +2.1% / +2.1% | +2.1% |
+| ls -O2 (146 KiB) | 13,481 / 13,877 ms | 13,735 / 14,047 ms | +1.9% / +1.2% | +2.8% |
+| libselinux -O2 (176 KiB) | 6,460 / 6,521 ms | 6,604 / 6,674 ms | +2.2% / +2.3% | +2.8% |
+| ip -O2 (678 KiB) | 27,054 / 27,548 ms | 26,811 / 27,422 ms | -0.9% / -0.5% | +2.2% |
+| e2fsck -O2 (706 KiB) | 26,237 / 26,631 ms | 26,902 / 27,132 ms | +2.5% / +1.9% | +2.0% |
+| tar -O2 (517 KiB) | 44,189 / 44,556 ms | 45,693 / 46,051 ms | +3.4% / +3.4% | +1.0% |
+| betaflight -O2 (520 KiB, ARM) | 54,296 / 54,667 ms | 55,062 / 55,619 ms | +1.4% / +1.7% | +1.9% |
+
+Every slice is inside the +5% budget on the minimum, in both measurements; the
+worst here is tar at +3.4%. ip, e2fsck, tar and betaflight are
+the binaries over 500 KiB. The pointee check walks the loads and stores through
+a pointer vote's value only for a float or composite pointee, and stops at 512
+steps.
+
+Rounds 8-10 measured the branch against e1139df9 (all within +5% on the
+minimum after re-runs); their tables are in `record.json` under `speed.round8`,
+`round9` and `round10`.
+
+Round 13 (pointee_refuses: refuse on walk give-up, no stride exemption), main a3bf6a15 vs this branch,
+whole-binary decompile-all --json, interleaved min-of-15 (.scratch/r13/speed.py, speed3.py):
+  fmt -O2         min main  4065 pr  4105 ms  +1.0%  (median -1.6%)
+  kmod -O2        min main  6948 pr  7097 ms  +2.2%  (median +5.4%)
+  ls -O2          min main 13520 pr 13559 ms  +0.3%  (median -0.0%)
+  libselinux -O2  min main  6663 pr  6934 ms  +4.1%  (median +2.9%)
+    re-run, 3 arms: main 6552, main again 6695 (+2.2%), pr 6740 ms: +2.9% vs main, +0.7% vs the second main arm
+  tar -O2         min main 46032 pr 47307 ms  +2.8%  (median +2.6%)
+
+Round 13 after the rebase onto 3831d703 (#675, #686) with the callee-first convergence sweep,
+main 3831d703 vs this branch, interleaved min-of-15 (.scratch/r13/speedS.py, speed3S.py):
+  fmt -O2         min main  4141 pr  4220 ms  +1.9%  (median +1.8%)
+  kmod -O2        min main  7286 pr  7397 ms  +1.5%  (median +2.6%)
+  ls -O2          min main 13488 pr 13744 ms  +1.9%  (median +0.8%)
+  libselinux -O2  min main  6608 pr  6599 ms  -0.1%  (median +2.4%)
+  tar -O2         min main 47045 pr 48818 ms  +3.8%  (median +5.1%)
+    re-run, 3 arms: main 45572, main again 45391 (-0.4%), pr 47216 ms: +3.6% vs main, +4.0% vs the second main arm
+
+Round 13 on the base that lands, e76fd044 (#673 formatstring on), main vs this branch,
+interleaved min-of-15 (.scratch/r13/speedT.py, speed3T.py):
+  fmt -O2         min main  4171 pr  4138 ms  -0.8%  (median -1.0%)
+  kmod -O2        min main  7354 pr  7623 ms  +3.7%  (median +2.6%)
+    re-run, 3 arms: main 7462, main again 7484 (+0.3%), pr 7632 ms: +2.3% vs main, +2.0% vs the second main arm
+  ls -O2          min main 13493 pr 13529 ms  +0.3%  (median +0.9%)
+  libselinux -O2  min main  6505 pr  6775 ms  +4.1%  (median +4.0%)
+    re-run, 3 arms: main 6731, main again 6669 (-0.9%), pr 6916 ms: +2.7% vs main, +3.7% vs the second main arm
+  tar -O2         min main 47848 pr 48540 ms  +1.4%  (median -0.2%)

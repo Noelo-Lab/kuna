@@ -459,10 +459,15 @@ mod tests {
         /// live in the SSA, so a slot that is dead after its last read carries no
         /// guard at any later call -- so fabricating a store as the default output
         /// under 500 KiB is the operator's judgement, not the preset's.
+        ///
+        /// `protoorder` is a whole-binary RUN ORDER, not a pass, and its own
+        /// default (`types`) already turns it on where it means anything: a
+        /// serial `kuna decompile-all`. The other surfaces cannot act on it, so
+        /// preset membership would change nothing.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "argclobber", "structdefs", "indirectonly"];
+              "argclobber", "structdefs", "indirectonly", "protoorder"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

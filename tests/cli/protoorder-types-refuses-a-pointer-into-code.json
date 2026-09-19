@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-7ec6dd18469e",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--isa",
+    "thumb"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_codeptr_thumb_le32",
+    "binary_sha256": "7a954a37054992e877ff9dcdf45926319fea3b1bfcc4e5c612aa76f2a2514fab",
+    "binary_size": 448,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_codeptr_thumb_le32",
+    "selector": "sub_8110",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int sub_8120\\((unsigned char|struct_\\d+) \\*a0\\)",
+      "sub_8120\\(0x8131\\);"
+    ],
+    "stdout_absent": [
+      "&sub_8130\\[1\\]"
+    ]
+  },
+  "notes": "The DEFAULT (`protoorder types`) on a Thumb image: `sub_8120` recovers a byte-pointer parameter and `sub_8110` passes it `0x8131`, the Thumb address of `sub_8130`. A pointer vote on that constant renders it `&sub_8130[1]`, a subscript of a function, which is not C; the vote is refused on a constant inside a function's code, so the literal stays a number."
+}
