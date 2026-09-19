@@ -3558,3 +3558,101 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
         assert_eq!(got, "2 0", "{name}: the printed C makes a different number of calls than the binary:\n{stdout}");
     }
 }
+
+/// A load whose bytes a later store overwrites keeps its own statement ahead of
+/// the store.  Whether a load may print after a store was decided by comparing
+/// the two pointers alone, and one base plus two different constants counted as
+/// two objects whatever the access widths: `inside` (a 4-byte read at `p+7`, a
+/// byte store at `p+8`) printed `*(char *)(a0 + 8) = a1; return *(unsigned int
+/// *)(a0 + 7);`, which returns the new byte.  `below` stores below the read,
+/// `indexed` one element into an 8-byte read; `after`, `before` and `next` store
+/// next to the read bytes, not into them, and keep the read folded.  The round
+/// trip compiles the six printed functions and checks each against its source.
+#[test]
+fn a_load_is_not_printed_after_a_store_into_its_bytes() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/aliasoverlap_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&[
+        "decompile-all",
+        bin.as_str(),
+        "--functions",
+        "inside,below,after,before,indexed,next",
+        "--sleighpath",
+        sp.as_str(),
+    ]);
+    if !ok && is_specs_skip(&stderr) {
+        eprintln!("aliasoverlap round trip: skipping (no `.sla`; run `make specs`)");
+        return;
+    }
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let body = |name: &str| -> String {
+        let at = stdout.find(&format!("// Function: {name} @")).unwrap_or_else(|| panic!("no {name}:\n{stdout}"));
+        let rest = &stdout[at + 1..];
+        rest[..rest.find("// Function:").unwrap_or(rest.len())].to_string()
+    };
+    let ordered = [
+        ("inside", "*(unsigned int *)(a0 + 7);", "*(char *)(a0 + 8) = "),
+        ("below", "*(unsigned int *)(a0 + 7);", "*(unsigned int *)(a0 + 5) = "),
+        ("indexed", "*(unsigned long *)(a0 + a1 * 4);", "*(unsigned int *)(a0 + 4 + a1 * 4) = "),
+        ("after", "*(char *)(a0 + 0xb) = ", "return *(unsigned int *)(a0 + 7);"),
+        ("before", "*(char *)(a0 + 6) = ", "return *(unsigned int *)(a0 + 7);"),
+        ("next", "*(unsigned int *)(a0 + 4 + a1 * 4) = ", "return *(unsigned int *)(a0 + a1 * 4);"),
+    ];
+    for (name, first, second) in ordered {
+        let b = body(name);
+        let (i, j) = (b.find(first), b.find(second));
+        assert!(i.is_some() && j.is_some() && i < j, "{name}: `{first}` must print before `{second}`:\n{b}");
+    }
+
+    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        eprintln!("aliasoverlap round trip: no `cc`, order checked only");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna-aliasoverlap-rt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("rt.c");
+    let exe = dir.join("rt");
+    let harness = r#"#include <stdio.h>
+#include <string.h>
+@PRINTED@
+static unsigned ref_inside(unsigned char *p, unsigned w) { unsigned v; memcpy(&v, p + 7, 4); p[8] = w; return v; }
+static unsigned ref_below(unsigned char *p, unsigned w) { unsigned v; memcpy(&v, p + 7, 4); memcpy(p + 5, &w, 4); return v; }
+static unsigned ref_after(unsigned char *p, unsigned w) { unsigned v; memcpy(&v, p + 7, 4); p[11] = w; return v; }
+static unsigned ref_before(unsigned char *p, unsigned w) { unsigned v; memcpy(&v, p + 7, 4); p[6] = w; return v; }
+static unsigned long ref_indexed(unsigned *a, long i, unsigned w) { unsigned long v; memcpy(&v, a + i, 8); a[i + 1] = w; return v; }
+static unsigned ref_next(unsigned *a, long i, unsigned w) { unsigned v = a[i]; a[i + 1] = w; return v; }
+static void fill(void *p, void *q, int n) {
+  for (int i = 0; i < n; i++) ((unsigned char *)p)[i] = ((unsigned char *)q)[i] = (unsigned char)(i * 37 + 0x81);
+}
+int main(void) {
+  int bad = 0;
+  unsigned char b[32], r[32];
+#define CHECK(T, f, ...) \
+  fill(b, r, 32); \
+  { T got = ((T (*)())f)((void *)b, __VA_ARGS__), want = ref_##f((void *)r, __VA_ARGS__); \
+    if (got != want || memcmp(b, r, 32)) { printf(#f " %lx != %lx\n", (unsigned long)got, (unsigned long)want); bad++; } }
+  CHECK(unsigned, inside, 0x5au)
+  CHECK(unsigned, below, 0x5au)
+  CHECK(unsigned, after, 0x5au)
+  CHECK(unsigned, before, 0x5au)
+  CHECK(unsigned long, indexed, 2L, 0x5au)
+  CHECK(unsigned, next, 4L, 0x5au)
+  printf("%d\n", bad);
+  return 0;
+}
+"#;
+    std::fs::write(&src, harness.replace("@PRINTED@", &stdout)).unwrap();
+    let cc = Command::new("cc")
+        .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+        .output()
+        .expect("spawn cc");
+    assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
+    let run = Command::new(&exe).output().expect("run the round trip");
+    let got = String::from_utf8_lossy(&run.stdout).to_string();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(got.lines().last(), Some("0"), "the printed functions read different bytes:\n{got}\n{stdout}");
+}
