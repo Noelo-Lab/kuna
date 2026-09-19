@@ -215,21 +215,6 @@
 -  v7 = (0 <= (long)dat_1a068) ? (dat_1a068 & 0xffffffff) + 0xad000 : 0; // branch-flip
 +  v7 = (0 <= (long)dat_1a068) ? (char *)((dat_1a068 & 0xffffffff) + 0xad000) : NULL; // branch-flip
 
-### O0_libexpat_stripped_xmlwf main 0x4a58 class=REVIEW layout=None 
-@@ -1 +1 @@
--int main(int argc,char **argv,char **envp)
-+int main(int argc,char **argv,char **envp) // ternary
-@@ -23 +23 @@
--  long v28; // stack - 0x58
-+  unsigned long *v28; // stack - 0x58
-@@ -192,5 +192 @@
--  if (v1)
--    v28 = XML_ParserCreateNS(v23,1);
--  else {
--    v28 = XML_ParserCreate(v23);
--  }
-+  v28 = (v1) ? (unsigned long *)XML_ParserCreateNS(v23,1) : (unsigned long *)XML_ParserCreate(v23);
-
 ### O0_mirai_stripped_mirai sub_f813 0xf813 class=REVIEW layout=None 
 @@ -1 +1 @@
 -unsigned char * sub_f813(unsigned long a0) // early-return, ternary
@@ -684,61 +669,6 @@
 +  for (v3 = 0; v3 <= 2; v3 = v3 + 1) {
 +    if ((uint1)(a0[v3 + 8] + 0x9f) <= 0x19)
 +      a0[v3 + 8] = a0[v3 + 8] - 0x20;
-
-### O2_betaflight_stripped_betaflight_STM32F405-elf sub_801379c 0x801379c class=REVIEW layout=None 
-@@ -1 +1 @@
--void sub_801379c(int4 a0,int4 a1,uint4 a2,unsigned int a3) // return-dupe x3
-+void sub_801379c(int4 a0,uint1 *a1,uint4 a2,unsigned int a3) // return-dupe x3
-@@ -3,3 +3,4 @@
--  int4 v1; // r0
--  uint4 v2; // r3
--  uint4 v3; // r6
-+  uint1 *v1;
-+  int4 v2; // r0
-+  uint4 v3; // r3
-+  uint4 v4; // r6
-@@ -7,8 +8,12 @@
--  v3 = (a2 >> 3) + 2;
--  v1 = *(int4 *)(a0 + 0x30);
--  v2 = *(uint4 *)(v1 + 0x30);
--  if ((v3 < v2) || (v2 = *(uint4 *)(v1 + 0x38), v2 < v3)) {
--    v1 = sub_8013438(a0,v3,v1,v2,a3);
--    if (!v1) {
--      for (v1 = 0; v1 <= 0x7f; v1 = v1 + 1) {
--        *(unsigned int *)(a1 + v1 * 4) = 0xefbeadde;
-+  v4 = (a2 >> 3) + 2;
-+  v2 = *(int4 *)(a0 + 0x30);
-+  v3 = *(uint4 *)(v2 + 0x30);
-+  if ((v4 < v3) || (v3 = *(uint4 *)(v2 + 0x38), v3 < v4)) {
-+    v2 = sub_8013438(a0,v4,v2,v3,a3);
-+    if (!v2) {
-+      for (v2 = 0; v2 <= 0x7f; v2 = v2 + 1) {
-+        v1 = &a1[v2 * 4];
-+        v1[0] = 0xde;
-+        v1[1] = 0xad;
-+        v1[2] = 0xbe;
-+        v1[3] = 0xef;
-@@ -18 +23 @@
--    *(int4 *)(a0 + 0x30) = v1;
-+    *(int4 *)(a0 + 0x30) = v2;
-@@ -20,3 +25,3 @@
--  if (!*(char *)(v1 + 4)) {
--    if (*(code **)(v1 + 0x28)) {
--      (**(code **)(v1 + 0x28))(a1,0x200,*(int4 *)(v1 + 0xc) + ((a2 & 7) + (v3 - *(int4 *)(v1 + 0x30)) * 8) * 0x200,v1);
-+  if (!*(char *)(v2 + 4)) {
-+    if (*(code **)(v2 + 0x28)) {
-+      (**(code **)(v2 + 0x28))(a1,0x200,*(int4 *)(v2 + 0xc) + ((a2 & 7) + (v4 - *(int4 *)(v2 + 0x30)) * 8) * 0x200,v2);
-@@ -28 +33 @@
--  sub_8013688(a0,a1,v1,a2 & 7);
-+  sub_8013688(a0,a1,v2,a2 & 7);
-
-### O2_betaflight_stripped_betaflight_STM32F405-elf sub_8013818 0x8013818 class=REVIEW layout=None 
-@@ -1 +1 @@
--void sub_8013818(int4 a0,int4 a1,uint4 a2,int4 a3)
-+void sub_8013818(int4 a0,struct_73 *a1,uint4 a2,int4 a3)
-@@ -33 +33 @@
--    a1 += 0x200;
-+    a1 = &a1[1];
 
 ### O2_betaflight_stripped_betaflight_STM32F405-elf sub_8015f10 0x8015f10 class=REVIEW layout=None 
 @@ -1 +1 @@

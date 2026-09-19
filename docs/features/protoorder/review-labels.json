@@ -2,13 +2,13 @@
  "tally": {
   "builtin-string": 4,
   "float-literal": 4,
-  "literal": 11,
+  "literal": 10,
   "member-reach": 13,
   "regroup": 12,
   "spelling": 45,
   "stack-merge": 2,
-  "store-width": 2,
-  "ternary": 6,
+  "store-width": 1,
+  "ternary": 5,
   "wide-read": 4
  },
  "functions": [
@@ -75,21 +75,6 @@
     "V=(0<=K)?((K&18446744073709551615)+K):0;",
     "V=(0<=K)?((K&18446744073709551615)+K):0;",
     "V=(0<=K)?((K&18446744073709551615)+K):0;"
-   ]
-  },
-  {
-   "function": "O0_libexpat_stripped_xmlwf main",
-   "class": "ternary",
-   "why": "",
-   "off": [
-    "ifV",
-    "V=XML_ParserCreateNS(V,1);",
-    "else{",
-    "V=XML_ParserCreate(V);",
-    "}"
-   ],
-   "on": [
-    "V=V?XML_ParserCreateNS(V,1):XML_ParserCreate(V);"
    ]
   },
   {
@@ -238,32 +223,6 @@
     "*(V+V)=*(V+V)18446744073709551584;",
     "if(*(V+V+8)+159<=25)",
     "*(V+V+8)=*(V+V+8)18446744073709551584;"
-   ]
-  },
-  {
-   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_801379c",
-   "class": "store-width",
-   "why": "a constant stored through a `uint1 *` / `unsigned char *` vote as byte stores: the same bytes, a narrower access (\u00a79)",
-   "off": [
-    "*(V+V*4)=K;"
-   ],
-   "on": [
-    "V=V+V*4;",
-    "*V=222;",
-    "*(V+1)=173;",
-    "*(V+2)=190;",
-    "*(V+3)=239;"
-   ]
-  },
-  {
-   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8013818",
-   "class": "literal",
-   "why": "",
-   "off": [
-    "V=V+512;"
-   ],
-   "on": [
-    "V=V+1;"
    ]
   },
   {

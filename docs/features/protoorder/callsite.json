@@ -4,15 +4,15 @@
   "argrows_on": 57938,
   "functions": 32406,
   "allargs_off": 258249,
-  "allstring_off": 30518,
+  "allstring_off": 30519,
   "allphantom_off": 1179,
   "allargs_on": 258249,
-  "allstring_on": 31017,
+  "allstring_on": 31018,
   "allphantom_on": 1179,
-  "string_off": 6458,
-  "string_on": 6957,
-  "phantom_off": 162,
-  "phantom_on": 162
+  "string_off": 6436,
+  "string_on": 6935,
+  "phantom_off": 160,
+  "phantom_on": 160
  },
  "per_binary": {
   "O0_bzip2_stripped_bzip2": {
@@ -177,8 +177,8 @@
    "allstring_off": 829,
    "allargs_on": 4127,
    "allstring_on": 829,
-   "string_off": 4,
-   "string_on": 4
+   "string_off": 20,
+   "string_on": 20
   },
   "O2-noinline_coreutils_stripped_cat": {
    "argrows_off": 364,
@@ -261,9 +261,9 @@
    "argrows_on": 135,
    "functions": 92,
    "allargs_off": 707,
-   "allstring_off": 128,
+   "allstring_off": 129,
    "allargs_on": 707,
-   "allstring_on": 128,
+   "allstring_on": 129,
    "string_off": 6,
    "string_on": 6
   },
@@ -277,8 +277,8 @@
    "allargs_on": 28182,
    "allphantom_on": 333,
    "allstring_on": 1746,
-   "phantom_off": 22,
-   "phantom_on": 22,
+   "phantom_off": 20,
+   "phantom_on": 20,
    "string_off": 299,
    "string_on": 329
   },
@@ -328,10 +328,10 @@
    "argrows_on": 454,
    "functions": 214,
    "allargs_off": 1928,
-   "allstring_off": 230,
+   "allstring_off": 231,
    "allphantom_off": 10,
    "allargs_on": 1928,
-   "allstring_on": 230,
+   "allstring_on": 231,
    "allphantom_on": 10,
    "string_off": 2,
    "string_on": 2
@@ -363,10 +363,10 @@
    "argrows_on": 798,
    "functions": 404,
    "allargs_off": 2766,
-   "allstring_off": 310,
+   "allstring_off": 309,
    "allphantom_off": 8,
    "allargs_on": 2766,
-   "allstring_on": 314,
+   "allstring_on": 313,
    "allphantom_on": 8,
    "string_off": 12,
    "string_on": 16,
@@ -378,11 +378,11 @@
    "argrows_on": 346,
    "functions": 163,
    "allargs_off": 1618,
-   "allstring_off": 241,
+   "allstring_off": 242,
    "allargs_on": 1618,
-   "allstring_on": 241,
-   "string_off": 19,
-   "string_on": 19
+   "allstring_on": 242,
+   "string_off": 21,
+   "string_on": 21
   },
   "O2_coreutils_stripped_od": {
    "argrows_off": 467,
@@ -515,9 +515,9 @@
    "allargs_on": 5108,
    "allstring_on": 1205,
    "allphantom_on": 13,
-   "string_off": 76,
+   "string_off": 74,
    "phantom_off": 5,
-   "string_on": 101,
+   "string_on": 99,
    "phantom_on": 5
   },
   "O2_e2fsprogs_stripped_e2fsck": {
@@ -530,8 +530,8 @@
    "allargs_on": 17087,
    "allstring_on": 1263,
    "allphantom_on": 26,
-   "string_off": 357,
-   "string_on": 363,
+   "string_off": 364,
+   "string_on": 370,
    "phantom_off": 2,
    "phantom_on": 2
   },
@@ -582,8 +582,8 @@
    "allargs_on": 30345,
    "allstring_on": 6642,
    "allphantom_on": 123,
-   "string_off": 2658,
-   "string_on": 2860,
+   "string_off": 2643,
+   "string_on": 2845,
    "phantom_off": 34,
    "phantom_on": 34
   },
@@ -612,8 +612,8 @@
    "allargs_on": 362,
    "allstring_on": 44,
    "allphantom_on": 1,
-   "string_off": 14,
-   "string_on": 14
+   "string_off": 6,
+   "string_on": 6
   },
   "O2_libacl_stripped_setfacl": {
    "argrows_off": 146,
@@ -666,10 +666,10 @@
    "argrows_on": 795,
    "functions": 621,
    "allargs_off": 4001,
-   "allstring_off": 347,
+   "allstring_off": 346,
    "allphantom_off": 1,
    "allargs_on": 4001,
-   "allstring_on": 347,
+   "allstring_on": 346,
    "allphantom_on": 1,
    "string_off": 17,
    "string_on": 17
@@ -729,8 +729,8 @@
    "allargs_on": 5597,
    "allstring_on": 1009,
    "allphantom_on": 24,
-   "string_off": 191,
-   "string_on": 191,
+   "string_off": 169,
+   "string_on": 169,
    "phantom_off": 2,
    "phantom_on": 2
   },

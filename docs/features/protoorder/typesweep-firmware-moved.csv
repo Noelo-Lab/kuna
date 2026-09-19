@@ -9,7 +9,7 @@ onto,betaflight::O2::betaflight_STM32F405,cliBeeper,0.0,1.0
 onto,betaflight::O2::betaflight_STM32F405,cliBeacon,0.0,1.0
 onto,betaflight::O2::betaflight_STM32F405,BL_SendBuf,0.5,1.0
 better,freertos::O2::RTOSDemo,printf,0.0,0.5
-better,mirai::O2::mirai,resolv_lookup,0.1111111111111111,0.14814814814814814
+better,mirai::O2::mirai,resolv_lookup,0.07407407407407407,0.1111111111111111
 better,nuttx::O2::nuttx,devzero_read,0.16666666666666666,0.3333333333333333
 better,nuttx::O2::nuttx,proc_findnode,0.0,0.3333333333333333
 better,nuttx::O2::nuttx,mount_sprintf,0.0,0.2
@@ -18,7 +18,6 @@ better,nuttx::O2::nuttx,builtin_loadbinary,0.1111111111111111,0.2222222222222222
 better,nuttx::O2::nuttx,getopt_common,0.2,0.3
 better,betaflight::O2::betaflight_STM32F405,read_mbr_sector,0.0,0.3333333333333333
 better,betaflight::O2::betaflight_STM32F405,fill_dir_sector,0.14285714285714285,0.2857142857142857
-better,betaflight::O2::betaflight_STM32F405,read_data_sector,0.14285714285714285,0.2857142857142857
 better,betaflight::O2::betaflight_STM32F405,pgResetInstance,0.0,0.25
 better,betaflight::O2::betaflight_STM32F405,cliPrintErrorVa,0.0,0.3333333333333333
 better,betaflight::O2::betaflight_STM32F405,cliPrintErrorLinef,0.0,0.3333333333333333

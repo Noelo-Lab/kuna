@@ -1,10 +1,10 @@
 {
   "arm": "on",
   "totals": {
-    "changed": 9660,
+    "changed": 9652,
     "goto_delta": 0,
     "return_delta": 0,
-    "stmt_delta": 92,
+    "stmt_delta": 98,
     "calls_gained": 1
   },
   "per_binary": {
@@ -48,13 +48,13 @@
       "changed": 235,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 6
+      "stmt_delta": 5
     },
     "O0_grep_stripped_grep": {
       "changed": 178,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 4
+      "stmt_delta": 5
     },
     "O0_gzip_stripped_gzip": {
       "changed": 38,
@@ -66,7 +66,7 @@
       "changed": 12,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -1
+      "stmt_delta": 0
     },
     "O0_mirai_stripped_mirai": {
       "changed": 40,
@@ -84,7 +84,7 @@
       "changed": 97,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 3
+      "stmt_delta": 4
     },
     "O2-noinline_coreutils_stripped_cat": {
       "changed": 39,
@@ -129,10 +129,10 @@
       "stmt_delta": 2
     },
     "O2_betaflight_stripped_betaflight_STM32F405-elf": {
-      "changed": 1623,
+      "changed": 1621,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -7
+      "stmt_delta": -9
     },
     "O2_bzip2_stripped_bzip2": {
       "changed": 14,
@@ -180,7 +180,7 @@
       "changed": 35,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 0
+      "stmt_delta": 1
     },
     "O2_coreutils_stripped_od": {
       "changed": 42,
@@ -225,34 +225,34 @@
       "stmt_delta": 0
     },
     "O2_diffutils_stripped_diff": {
-      "changed": 115,
+      "changed": 113,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -1
+      "stmt_delta": 1
     },
     "O2_diffutils_stripped_diff3": {
-      "changed": 38,
+      "changed": 37,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -1
+      "stmt_delta": 0
     },
     "O2_dpkg_stripped_dpkg-query": {
       "changed": 202,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 13
+      "stmt_delta": 12
     },
     "O2_e2fsprogs_stripped_e2fsck": {
       "changed": 600,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 1
+      "stmt_delta": 3
     },
     "O2_findutils_stripped_find": {
-      "changed": 214,
+      "changed": 213,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 11
+      "stmt_delta": 12
     },
     "O2_freertos_stripped_RTOSDemo-out": {
       "changed": 38,
@@ -262,10 +262,10 @@
       "calls_gained": 1
     },
     "O2_grep_stripped_grep": {
-      "changed": 120,
+      "changed": 119,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 12
+      "stmt_delta": 13
     },
     "O2_iproute2_stripped_ip": {
       "changed": 414,
@@ -283,7 +283,7 @@
       "changed": 5,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 2
+      "stmt_delta": 1
     },
     "O2_libacl_stripped_setfacl": {
       "changed": 12,
@@ -352,7 +352,7 @@
       "stmt_delta": 0
     },
     "O2_tar_stripped_tar": {
-      "changed": 476,
+      "changed": 475,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 0
