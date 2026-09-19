@@ -57,3 +57,12 @@ steps.
 Rounds 8-10 measured the branch against e1139df9 (all within +5% on the
 minimum after re-runs); their tables are in `record.json` under `speed.round8`,
 `round9` and `round10`.
+
+Round 13 (pointee_refuses: refuse on walk give-up, no stride exemption), main a3bf6a15 vs this branch,
+whole-binary decompile-all --json, interleaved min-of-15 (.scratch/r13/speed.py, speed3.py):
+  fmt -O2         min main  4065 pr  4105 ms  +1.0%  (median -1.6%)
+  kmod -O2        min main  6948 pr  7097 ms  +2.2%  (median +5.4%)
+  ls -O2          min main 13520 pr 13559 ms  +0.3%  (median -0.0%)
+  libselinux -O2  min main  6663 pr  6934 ms  +4.1%  (median +2.9%)
+    re-run, 3 arms: main 6552, main again 6695 (+2.2%), pr 6740 ms: +2.9% vs main, +0.7% vs the second main arm
+  tar -O2         min main 46032 pr 47307 ms  +2.8%  (median +2.6%)

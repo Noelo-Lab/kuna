@@ -349,6 +349,11 @@ d6c5862f build, with a second main arm as the noise floor: kmod +1.1%,
 libselinux +2.7% and fmt +3.9% on the minimum (main against itself: -2.9%,
 +3.0%, -0.1%); fmt re-run three times, +0.4%, -0.1% and -0.4%.
 
+Round 13 (§3g) against a fresh a3bf6a15 build, interleaved min-of-15: fmt
++1.0%, kmod +2.2%, ls +0.3%, libselinux +4.1%, tar +2.8%. libselinux re-run
+beside a second main arm: +2.9% against main, with main against itself at
++2.2%. §3g only refuses earlier; it adds no walk.
+
 Rounds 8-10 measured the branch against e1139df9 (all within +5% on the
 minimum after re-runs); their tables are in `record.json` under `speed.round8`,
 `round9` and `round10`, and round 6 measured off against on inside one build
