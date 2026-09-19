@@ -107,6 +107,11 @@ pub struct FuncResult {
     /// every error record, and on every run that did not ask for it
     /// ([`DecompileOptions::want_callee_hints`]).
     pub callee_hints: Vec<u64>,
+    /// (kuna `structsynth`) What this decompile asked the synthesized-structure
+    /// ledger, recorded only by a `--jobs` worker whose architecture carries the
+    /// shard hook, so the parent can name every `struct_N` as the serial run
+    /// does. `None` everywhere else.
+    pub synth: Option<kuna_decomp::kuna_structsynth::shard::FunctionRecord>,
 }
 
 /// The run-level verdict of a non-empty decompile batch.
@@ -258,7 +263,7 @@ fn decompile_batch(
 /// the second time round -- keeps the first body.
 ///
 /// A batch that synthesized nothing pays one ledger probe for the whole run.
-fn converge_synthesized_structs(
+pub fn converge_synthesized_structs(
     prog: &mut ConsoleProgram,
     opts: &DecompileOptions,
     targets: &[FunctionEntry],
@@ -286,7 +291,7 @@ fn converge_synthesized_structs(
 }
 
 /// Does the sweep's second decompile replace the first one?
-fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
+pub fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
     again.error.is_none() || first.error.is_some()
 }
 
@@ -295,7 +300,7 @@ fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
 /// The C text, the `.h` prototype line and the exported variable rows are every
 /// surface a type name reaches. The match is on whole identifiers, so `struct_1`
 /// does not answer for `struct_10`.
-fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
+pub fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
     let mut hit = |hay: &str| names.iter().any(|n| contains_identifier(hay, n));
     r.code.as_deref().is_some_and(&mut hit)
         || r.proto.as_deref().is_some_and(&mut hit)
@@ -408,6 +413,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             });
             continue;
         }
@@ -438,6 +444,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             });
             continue;
         }
@@ -456,6 +463,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             });
             continue;
         }
@@ -634,6 +642,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints,
+                        synth: None,
                     }),
                     Err(_) => sink(FuncResult {
                         name,
@@ -649,6 +658,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints: Vec::new(),
+                        synth: None,
                     }),
                 }
             }
@@ -666,6 +676,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             }),
         }
     }
@@ -1247,6 +1258,7 @@ mod tests {
             aliases: vec![],
             object_location: None,
             callee_hints: vec![],
+            synth: None,
         }
     }
 

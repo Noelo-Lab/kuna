@@ -38,8 +38,8 @@ use kuna_console::project::{decompile_targets, FuncResult};
 use object::{Object, ObjectSegment};
 
 use crate::decompile_all::{
-    decompile_targets_pooled, load_program, parse_args, resolve_targets_allow_bodyless, Args,
-    CallGraph, DriverDefaults,
+    decompile_targets_pooled, load_program, parse_args, resolve_targets_allow_bodyless,
+    synth_base, Args, CallGraph, DriverDefaults,
 };
 use crate::jsonfmt::{dumps_indent2, Json};
 
@@ -177,6 +177,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
             /* want_provenance= */ false,
             /* want_types= */ false,
             load_seconds,
+            synth_base(&prog),
         )?
         .results
     } else {
