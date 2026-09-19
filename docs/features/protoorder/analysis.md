@@ -317,6 +317,11 @@ primitive pointee, as §3e does for a float or composite one; the walk stops at
 512 steps. Round 11's table (the same comparison without §3f, load 2-9) is in
 `record.json` under `speed.round11_on_d96e3408`.
 
+After the rebase onto d6c5862f (`foldcallretphi` on), a spot check against a
+d6c5862f build, with a second main arm as the noise floor: kmod +1.1%,
+libselinux +2.7% and fmt +3.9% on the minimum (main against itself: -2.9%,
++3.0%, -0.1%); fmt re-run three times, +0.4%, -0.1% and -0.4%.
+
 Rounds 8-10 measured the branch against e1139df9 (all within +5% on the
 minimum after re-runs); their tables are in `record.json` under `speed.round8`,
 `round9` and `round10`, and round 6 measured off against on inside one build
