@@ -24,6 +24,12 @@ a load past a store that overwrites some of its bytes.
   `a0 == b1` / `a1 == b0` matches are only taken for byte-scaled adds, where
   they mean the same distance.
 
+## 1b. The split-load path (`p3_dataflow/subflow.rs`)
+
+- `SplitDatatype::split_load` keeps the split at the LOAD, and the COPY in
+  place, unless `RuleDoubleLoad::no_write_conflict` (`p5_types/double.rs`, now
+  `pub(crate)`) clears the ops between the LOAD and its lone COPY.
+
 ## 2. Tests
 
 - `kuna-cli/tests/decompile_all_cli.rs`
@@ -32,7 +38,12 @@ a load past a store that overwrites some of its bytes.
   statement order in six functions and compiles the printed C against the
   source. Main: 3 of 6 functions return a different value; fix: 0.
 - `tests/stages/kuna-aliasoverlap.xml`: the same six functions as a bytechunk,
-  four assertions; main fails #1-#3.
+  plus four functions over a typed `S *` for the split-load path (a byte store
+  into the read, a store through a second pointer, a call, and a control with
+  nothing between the read and its COPY); eight assertions, main fails #1-#3
+  and #5-#7. The split-load shapes print `v1._0_1_ = ...` partial writes, which
+  do not compile, so they are pinned by statement order rather than a round
+  trip.
 
 ## 3. Measurement
 

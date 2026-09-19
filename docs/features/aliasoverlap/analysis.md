@@ -48,10 +48,17 @@ unchanged on master at f9e13846, 2026-06-16); its constant arm even carries
 - The load/call-crosses-call arm of `check_implied_cover` is unconditional.
 - `foldcallret`/`foldcallretphi` (`kuna_callretfold.rs op_is_barrier`) treat
   every STORE as a barrier, with no offset reasoning.
-- No other pass decides that a LOAD may print past a STORE. CSE
-  (`cse_find_in_block`) and `RuleMultiCollapse` use `functional_equality`,
+- `SplitDatatype::split_load` (`p3_dataflow/subflow.rs`) does move a LOAD past
+  a STORE or a call; section 6 covers it, and this PR fixes it too.
+- CSE (`cse_find_in_block`) and `RuleMultiCollapse` use `functional_equality`,
   which equates two LOADs only when they come from the same machine
   instruction.
+- `RuleDoubleLoad`, which merges two LOADs into one at the later of the two,
+  already refuses when anything between them may write the loaded space
+  (`no_write_conflict`). The bitfield rewrites (`p5_types/bitfield/`) re-create
+  a LOAD next to the original (pull) or re-read the container for their own
+  read-modify-write (insert), and `op_stack_load` adds a stack read at its use.
+  None of them moves an existing read across a store.
 
 ## 4. What the fix must keep
 
@@ -73,3 +80,34 @@ the same operands (or answers "may alias" outright for the commuted `PTRADD`
 matches). So a load main printed as its own statement still is, and every
 output change is a load that was folded past a store now printed as a local
 ahead of it.
+
+## 6. The second path: `SplitDatatype::split_load`
+
+When a LOAD's type says it spans several fields (a DWARF `struct S *`, or a
+`struct_N *` from `structsynth`), `RuleSplitLoad` splits it into one LOAD per
+field. If the loaded value's only use is a COPY, the split LOADs were built at
+the COPY and wrote straight into the COPY's output, which can sit after a
+STORE or a call. Upstream Ghidra does the same (subflow.cc
+`insertPoint = (copyOp == 0) ? loadOp : copyOp`). With
+`struct S { int i0; char c4, ..., c11; }`, gcc -O2 -g:
+
+    unsigned d1(struct S *s, int w) { unsigned v; memcpy(&v, &s->c7, 4); s->c9 = w; return v; }
+
+is `mov 0x7(%rdi),%eax; mov %sil,0x9(%rdi); ret`, and main printed
+
+    s->c9 = (char)w;
+    v1._0_1_ = s->c7;
+    ...
+    v1._2_1_ = s->c9;
+
+The same happened with a call between the load and the COPY (`mov
+0x7(%rdi),%r12d; call sink; mov %r12d,%eax` printed `sink(s)` first) and with a
+store through a second pointer. clang -O2 -g is the same. This path does not go
+through `is_possible_alias`, so the first half of the fix did not reach it.
+
+The split now moves to the COPY only when `RuleDoubleLoad::no_write_conflict`
+finds the two in one block with no STORE into the loaded space, no write to a
+Varnode in it and no call between them. Otherwise the split stays at the LOAD
+and the COPY is kept. The piece LOADs are not simply hoisted, because they write
+pieces of the COPY's output register, which a call in between clobbers. When
+nothing lies between the two the output is unchanged (the `splitplain` control).

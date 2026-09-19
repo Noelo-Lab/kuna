@@ -318,7 +318,9 @@ values alone, so one base plus two different constants counted as two objects
 whatever the widths: a byte store at `p+8` let a 4-byte load at `p+7` print
 after it, reading the new byte. kuna corrects that without an option; a store
 on an adjacent byte or element still lets the load fold past it
-(`tests/stages/kuna-aliasoverlap.xml`).
+(`tests/stages/kuna-aliasoverlap.xml`). The other place a read used to move past
+a store is the per-field split of a typed LOAD, guarded in chapter
+[03](03-ssa-and-simplification.md) (§3.3).
 
 Each accepted marking goes through `merge.rs (Merge::mark_implied)`, which sets
 the flag *and* dirties the Cover of every operand of the defining op. That
