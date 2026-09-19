@@ -1762,11 +1762,13 @@ as it does with the option off — `sub_16da9(stderr)`, not
 `sub_16da9((long)stderr)` — and where it wins, the value already carries it.
 Winning still changes spellings, so a changed function has to be read rather
 than assumed cosmetic: a constant the vote types a pointer prints with its cast
-(`caller((unsigned char *)0x402000,3)`); a pointee guessed for a pointer can
-split one wide store through it into narrower stores of the same bytes
-(`*(unsigned long *)(a0 + 0xe8) = 0` becomes `a0[0x3a] = 0; a0[0x3b] = 0;` —
-the same memory contents at a different access width, which matters on
-memory-mapped I/O); the same guess can widen a narrow load into a read of the
+(`caller((unsigned char *)0x402000,3)`); a character pointee guessed for a
+pointer can split one wide constant store through it into character stores of
+the same bytes — the same memory contents at a different access width, which
+matters on memory-mapped I/O, and printed as `builtin_strncpy` where the bytes
+are text (a pointee of any other primitive type narrower than a constant
+stored through it at a fixed place is refused, below); a pointee guessed for a
+pointer can widen a narrow load into a read of the
 wider element and a truncation (`*(short *)(a0 + 0xc)` becomes `(short)a0[3]`,
 `*(char *)&v4[2]` becomes `(char)v4[2]`) — the same value, read at a different
 width, again a difference on memory-mapped I/O; and an unsigned vote can make a caller's parameter
@@ -1889,9 +1891,21 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   (float)v2` for a plain `*dst = *src`, and `double` parameters in `rsi` and
   `rdx` for a `memcpy` from two `long`s (the fixture
   `protoorder_floatpointee_x86_64`, whose six callers are compiled from the
-  printed C and compared with the source). A pointee that is an integer, a
-  character or a pointer is not checked: an access of another width through it
-  prints a cast, not a conversion.
+  printed C and compared with the source). A pointee that is a non-character
+  integer, a `bool` or a pointer refuses a constant the caller stores through
+  the family wider than itself, at a fixed place or at a record stride:
+  `SplitDatatype` reads such a pointer as an array of its pointee and splits a
+  constant store into one store per element, so a callee's `unsigned char *`
+  printed gzip's `".tar"` suffix as five byte stores, betaflight's `1.0f` in a
+  0x14-byte record as four and, with `ptrfromuse` on, bzip2's field write
+  `*(unsigned long *)(a0 + 0x5c) = 0x100` as eight (the fixture
+  `protoorder_narrowvote_x86_64` stores `"ustar  "` the same way). A
+  constant stored at a stride of its own width is a buffer filled a word at a
+  time, which a byte pointee does describe (betaflight's `read_data_sector`
+  fills its `uint8_t *` sector with `0xdeadbeef`), and is allowed; any other
+  access of another width prints a cast, not a conversion, and is not checked.
+  Neither is a character pointee: the byte stores it produces are what the
+  string-copy idiom prints as `builtin_strncpy`.
 
 The callee's recovered RETURN type is not stated. It has no competing evidence at
 the caller — the call's result is a new value — so a wrong one spreads through
