@@ -253,19 +253,30 @@ fn a_forced_hook_answers_in_order_and_notices_a_changed_script() {
     let minted = ledger::lookup_or_mint(&f, first.clone(), 16, &[]).unwrap();
     let hook = ShardHook::forcing();
 
+    let second = fields(&f, &[(0, Ty::Long), (8, Ty::Long), (0x10, Ty::Long)]);
     hook.borrow_mut().begin(&[Some(minted.get_name().to_string()), None]);
     let a = lookup(&hook, &f, first.clone(), 16, &[]);
     assert!(a.is_some_and(|t| Rc::ptr_eq(&t, &minted)));
-    assert!(lookup(&hook, &f, first.clone(), 16, &[]).is_none());
+    assert!(lookup(&hook, &f, second, 24, &[]).is_none());
     let record = hook.borrow_mut().take();
     assert_eq!(record.requests.len(), 2);
     assert!(!record.off_script);
+
+    // A repeated lookup is answered as the first one was and takes no answer.
+    hook.borrow_mut().begin(&[Some(minted.get_name().to_string())]);
+    assert!(lookup(&hook, &f, first.clone(), 16, &[]).is_some());
+    assert!(lookup(&hook, &f, first.clone(), 16, &[]).is_some_and(|t| Rc::ptr_eq(&t, &minted)));
+    let record = hook.borrow_mut().take();
+    assert!(!record.off_script);
+    assert_eq!(record.requests.len(), 2);
+    assert_eq!(distinct(&record.requests).len(), 1);
 
     // One answer too few, one too many, and a name nobody minted.
     hook.borrow_mut().begin(&[]);
     assert!(lookup(&hook, &f, first.clone(), 16, &[]).is_none());
     assert!(hook.borrow_mut().take().off_script);
     hook.borrow_mut().begin(&[None, None]);
+    lookup(&hook, &f, first.clone(), 16, &[]);
     lookup(&hook, &f, first.clone(), 16, &[]);
     assert!(hook.borrow_mut().take().off_script);
     hook.borrow_mut().begin(&[Some("struct_9".into())]);

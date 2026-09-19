@@ -160,6 +160,18 @@ impl SynthRequest {
     }
 }
 
+/// `requests` without the repeats: each distinct lookup once, where a function
+/// first made it.
+pub fn distinct(requests: &[SynthRequest]) -> Vec<SynthRequest> {
+    let mut out: Vec<SynthRequest> = Vec::with_capacity(requests.len());
+    for q in requests {
+        if !out.contains(q) {
+            out.push(q.clone());
+        }
+    }
+    out
+}
+
 /// What one decompile asked the ledger, and whether a forced run went off the
 /// script it was given.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -176,7 +188,8 @@ pub struct FunctionRecord {
 enum Mode {
     /// Record it and answer as the ledger would.
     Record,
-    /// Record it and answer with the next name in the queue.
+    /// Record it and answer with the next name in the queue, or with the name
+    /// an identical earlier lookup of the same function got.
     Force(VecDeque<Option<String>>),
 }
 
@@ -187,6 +200,8 @@ enum Mode {
 pub struct ShardHook {
     mode: Mode,
     record: FunctionRecord,
+    /// A forced function's distinct lookups so far, with their answers.
+    answered: Vec<(SynthRequest, Option<String>)>,
 }
 
 /// The shared handle an architecture carries.
@@ -195,7 +210,11 @@ pub type ShardHandle = Rc<RefCell<ShardHook>>;
 impl ShardHook {
     /// A hook that records every lookup and lets the ledger answer.
     pub fn recording() -> ShardHandle {
-        Rc::new(RefCell::new(ShardHook { mode: Mode::Record, record: FunctionRecord::default() }))
+        Rc::new(RefCell::new(ShardHook {
+            mode: Mode::Record,
+            record: FunctionRecord::default(),
+            answered: Vec::new(),
+        }))
     }
 
     /// A hook that records every lookup and answers from [`ShardHook::begin`].
@@ -203,13 +222,16 @@ impl ShardHook {
         Rc::new(RefCell::new(ShardHook {
             mode: Mode::Force(VecDeque::new()),
             record: FunctionRecord::default(),
+            answered: Vec::new(),
         }))
     }
 
     /// Start a function: forget the last record and, when forcing, queue the
-    /// answers this function's lookups get, in order.
+    /// answers this function's distinct lookups get, in the order it first
+    /// makes them ([`distinct`]).
     pub fn begin(&mut self, answers: &[Option<String>]) {
         self.record = FunctionRecord::default();
+        self.answered.clear();
         if let Mode::Force(queue) = &mut self.mode {
             *queue = answers.iter().cloned().collect();
         }
@@ -245,10 +267,23 @@ pub(super) fn lookup(
     unclaimed: &[(int4, int4)],
 ) -> Option<Rc<Datatype>> {
     let mut hook = hook.borrow_mut();
-    hook.record.requests.push(SynthRequest::of(&fields, size, unclaimed));
-    let forced = match &mut hook.mode {
-        Mode::Record => None,
-        Mode::Force(queue) => Some(queue.pop_front()),
+    let request = SynthRequest::of(&fields, size, unclaimed);
+    hook.record.requests.push(request.clone());
+    // A decompile can ask the same thing twice -- a restarted pass measures the
+    // same layout again -- and whether it does depends on what the process
+    // decompiled before, so a repeat is answered as the first asking was and
+    // does not take a queued answer.
+    let repeat = hook.answered.iter().find(|(q, _)| *q == request).map(|(_, a)| a.clone());
+    let forced = match (&mut hook.mode, repeat) {
+        (Mode::Record, _) => None,
+        (Mode::Force(_), Some(answer)) => Some(Some(answer)),
+        (Mode::Force(queue), None) => {
+            let next = queue.pop_front();
+            if let Some(answer) = &next {
+                hook.answered.push((request, answer.clone()));
+            }
+            Some(next)
+        }
     };
     match forced {
         None => {

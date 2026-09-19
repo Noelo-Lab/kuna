@@ -1287,10 +1287,12 @@ Behaviors specific to `decompile-all`:
     [kuna --jobs] structsynth: 92 decompile(s) of the functions with synthesized structures again, with the serial names, 46 chunk(s), 4 worker process(es)
     ```
 
-    The second decompile's questions are checked against the first. If one
-    differs, or a structure has a field type another process cannot rebuild,
-    those functions are decompiled once more in order by a single worker, and a
-    `note:` line says why. The `.h` of a `decompile-project` declares the minted
+    The second decompile's questions are checked against the first (a question
+    asked twice counts once). A function whose answers change what it asks next
+    has its questions corrected and the replay runs again, which decompiles only
+    what moved; if that does not settle, or a structure has a field type another
+    process cannot rebuild, the functions with structures are decompiled once
+    more in order by a single worker, and a `note:` line says why. The `.h` of a `decompile-project` declares the minted
     structures after every other type, by number, which is also what makes two
     serial exports of one binary agree. `decompile-project --stream` still runs
     its workers with `structsynth off` and says so, since a streamed export writes
