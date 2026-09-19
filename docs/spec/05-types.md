@@ -976,8 +976,8 @@ matches by **subsumption**: a measured layout `L` is answered with a minted
 structure `S` when `S` is at least as large and every field `L` claims exists in
 `S` at the same offset, at the same width and with the same type. Filler is not
 a claim and never takes part. Over `fmt`, `ls`, `sort`, `du`, `find` and `tar` at
-O0 and O2 the same twelve binaries then name 472 records where equality named
-516, and no function loses a structure it named before. Agreement on a shared field is
+O0 and O2 the same twelve binaries then name 471 records where equality named
+515, and no function loses a structure it named before. Agreement on a shared field is
 **exact**, `undefined<N>` included: two different types at one offset — a
 `char *` against a `uint4` — are the obvious conflict, and a field one reader
 could not type is its own answer rather than a wildcard the other may fill in.
@@ -1013,12 +1013,26 @@ structure of exactly its own shape. Distinct tables differ only in how many
 slots they have. In `rsyslogd` O2, seven `*_if_s` interface records of 80 to 136
 bytes are each a version word followed by function pointers. Without the table
 rule they all took the 144-byte layout of `statsobj_if_s`, and of the 31 fields
-that added, one was real. Last, a layout with no typed pointer is answered only by
-a structure of its own size. Such a structure may fill in the holes of what the
-reader measured, but it may not extend past the reader's last field, because
-records that begin alike part ways exactly there. Every netlink reader in `ip`
-measures the same `nlmsghdr` words ahead of a payload of its own, and dpkg's
-24-byte `pkg_queue` begins the way a 40-byte command record does.
+that added, one was real. A layout with no typed pointer is answered only by a
+structure of its own size that claims nothing past the reader's last field. Such
+a structure may fill in the holes between the fields the reader measured, but
+not the bytes after them, because records that begin alike part ways exactly
+there. Every netlink reader in `ip` measures the same `nlmsghdr` words ahead of
+a payload of its own. dpkg's 24-byte `pkg_queue` begins the way a 40-byte
+command record does, and it ends in the tail padding where the 24-byte
+`pkg_spec` keeps two flag bytes. Last, no structure answers with a member inside
+the alignment padding the reader's claims leave between two of them (from the
+end of one claim up to the next claim or the next multiple of that claim's
+width, whichever comes first). Records also part ways in their first words.
+Every `bash` command record begins with an `int flags`; `if_com` then has a
+pointer at 8, while `for_com`, `select_com` and `case_com` put an `int line` at
+4, in exactly the bytes `if_com` pads. Without this rule `execute_if_command`'s
+`IF_COM *` took `for_com`'s layout, and six `it_init_*` readers of `ITEMLIST`,
+which measure `{0: int, 0x10: pointer}`, took `case_com`'s. A hole wider than
+its padding is still room for a member the reader skipped, and a reader with a
+typed pointer may still be given members in its tail padding: `fmt`'s
+`put_word` measures `{0: char *, 8: int}` of a `WORD` whose `int space` sits
+at 0xc.
 
 Each bound catches a shape the others miss. Bounding the size alone still answers `ls` O0 `sub_afe2`'s two fields with a
 sixteen-field structure at 1.5× the size. A 2× size bound refuses the
@@ -1047,32 +1061,36 @@ the reader's own layout. The reader it turns away mints its own shape even
 though a live structure contains it, so that name is superseded from the start,
 and the convergence sweep below decides the reader again to the same answer.
 `tests/stages/structsynth-unclaimed-bytes.xml` pins the shape. Over the 101
-builds measured below, the veto changes one parameter: `rsyslogd` O2
+builds of the first five sets measured below, the veto changes one parameter: `rsyslogd` O2
 `timeConvertToUTC`'s `struct syslogTime *`, whose 4-byte store at offset 7 a
 same-size layout with bytes at 7 to 10 answered, keeps its own shape and loses 4
 true fields. The address test
 itself is unchanged, and with the option off it misorders the same reader on raw
 offsets: `*(uint4 *)((int8)a0 + 7)` also prints after `*(char *)&a0[2] = ...`.
 
-The rules were drawn from four sets of builds and then checked on a fifth that
-played no part in choosing them (`docs/features/structsynth/dedup_heldout.py`,
-which scores claimed fields against DWARF with the measure of `layoutscore.py`
-and lists all five sets). The growth bounds come from `fmt`, `ls`, `sort` and
-`du`. The pointer rule comes from 17 independently picked builds and was checked
-on 22 more. The table and integer rules come from 28 builds a reviewer picked,
-mostly outside coreutils. The fifth set is 26 builds chosen before any result
-under the last two rules was seen. Against equality dedup, claimed-field
-precision goes from 0.8945 to 0.9001, 0.9352 to 0.9350, 0.9054 to 0.9087, 0.8395
-to 0.8413 and 0.8776 to 0.8780 on the five sets, and recall rises on all five.
-Pooled over the four held-out sets it is 0.8735 with equality and 0.8750 with
-subsumption. The rule is a trade, not a free win. An absorbed parameter is
-declared with the container's whole field list, and 30 builds gain precision
-while 4 lose it (`kmod` O0 and O2 lose the most, about a point each). The record
-can also be wrong. Of the 178 parameters answered by a strictly larger structure
-across the five sets, 1 is given a structure measured from a different DWARF
-record (`e2fsck` O0's `ea_refcount`, three integer words filled in by a same-size
-layout) and 3 cannot be checked. Before the table and integer rules, a reviewer
-measured 7 wrong records out of 46 checkable on the 28-build set alone.
+The rules were drawn from builds scored against DWARF
+(`docs/features/structsynth/dedup_heldout.py`, which scores claimed fields with
+the measure of `layoutscore.py` and lists every set). The growth bounds come from
+`fmt`, `ls`, `sort` and `du`. The pointer rule comes from 17 independently picked
+builds and was checked on 22 more. The table and integer rules come from 28
+builds a reviewer picked, mostly outside coreutils, and were checked on 26 chosen
+before any result under them was seen. The padding rule comes from 42 builds a
+second reviewer picked (with it, `bash` O0's command records and dpkg's
+`pkg_queue` keep their own names) and was checked on 34 more chosen before any
+result under it was seen. Against equality dedup on main `75f832e3`,
+claimed-field precision pooled over the 169 held-out builds is 0.8908 against
+0.8902, with 347 more true fields, and recall rises on every set. The rule is a
+trade, not a free win. An absorbed parameter is declared with the container's
+whole field list: 53 builds gain precision and 6 lose it (`kmod` at O0, O2 and
+O2-noinline and `grep` O2 lose the most, under a point each), and on the last 34
+builds precision is 0.8852 against 0.8855. The record can also be wrong. Of the
+258 parameters answered by a strictly larger structure across all 177 builds, 4
+are given a structure measured from a different DWARF record and 5 cannot be
+checked. All four are `e2fsck` readers with no typed pointer filled in between
+their own fields by a same-size layout, and two of them take `ext2_inode_large`
+for an `ext2_inode`, which is the same record for its first 128 bytes. Without
+the padding rule the same builds give 11 more (10 of 28 absorptions on the
+second reviewer's 18 builds).
 
 When the containment runs the other way — the new layout strictly contains one
 already minted — the minted one cannot be widened. `find_add` refuses to redefine

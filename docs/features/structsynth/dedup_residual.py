@@ -20,9 +20,11 @@ def claimed(defn):
 # layout claiming at least MIN_CLAIMS fields of which one is a typed pointer, or at
 # least MIN_UNTYPED_CLAIMS without one. A pointer to code, `void` or an undefined
 # type is not typed; a layout whose every claim past offset 0 is such a pointer
-# is a table and answered only by its own shape; a layout with no typed pointer
-# is answered only by a structure of its own size. A contained layout outside
-# those rules keeps its own name by design, so it is not a convergence residual.
+# is a table and answered only by its own shape; no structure answers with a
+# member inside the alignment padding a layout leaves between two of its claims;
+# a layout with no typed pointer is answered only by a structure of its own size
+# that claims nothing past its last field. A contained layout outside those rules
+# keeps its own name by design, so it is not a convergence residual.
 CLAIM_GROWTH = 2
 SIZE_GROWTH = 4
 MIN_CLAIMS = 2
@@ -34,6 +36,32 @@ def opaque(t):
     return '*' in t and bool(OPAQUE.match(t.replace('*', '').strip()))
 
 
+WIDTH = {'char': 1, 'bool': 1, 'uchar': 1, 'short': 2, 'ushort': 2, 'int': 4, 'uint': 4,
+         'float': 4, 'long': 8, 'ulong': 8, 'double': 8}
+
+
+def width(t):
+    """Bytes a member of this x86-64 type spelling occupies."""
+    if '*' in t:
+        return 8
+    words = t.replace('unsigned', '').replace('signed', '').split()
+    last = words[-1] if words else 'int'
+    m = re.match(r'^(?:u?int|undefined)(\d+)$', last)
+    return int(m.group(1)) if m else WIDTH.get(last, 1)
+
+
+def padding(claims):
+    """The `[lo, hi)` alignment padding a layout leaves between two claims."""
+    ws = sorted((o, width(t)) for o, t in claims)
+    out = []
+    for (o1, w1), (o2, w2) in zip(ws, ws[1:]):
+        lo, a = o1 + w1, (w2 if w2 in (1, 2, 4, 8) else 1)
+        hi = min(o2, (lo + a - 1) // a * a)
+        if lo < hi:
+            out.append((lo, hi))
+    return out
+
+
 def answers_for(big, small):
     """Would the ledger have handed `big` out to a reader who measured `small`?"""
     (bsize, bclaims), (ssize, sclaims) = big, small
@@ -41,12 +69,16 @@ def answers_for(big, small):
         return False
     if bsize == ssize and len(bclaims) == len(sclaims):
         return False                      # the same shape: one name already
+    over = lambda lo, hi: any(o < hi and o + width(t) > lo for o, t in bclaims)
+    if any(over(lo, hi) for lo, hi in padding(sclaims)):
+        return False
     typed = any('*' in t and not opaque(t) for _, t in sclaims)
     slots = [t for o, t in sclaims if o != 0]
     table = bool(slots) and all(opaque(t) for t in slots)
+    end = max((o + width(t) for o, t in sclaims), default=0)
     evidence = (not table
                 and (len(sclaims) >= MIN_UNTYPED_CLAIMS or (len(sclaims) >= MIN_CLAIMS and typed))
-                and (typed or bsize == ssize))
+                and (typed or (bsize == ssize and not over(end, bsize))))
     return (evidence and bsize <= ssize * SIZE_GROWTH
             and len(bclaims) <= len(sclaims) * CLAIM_GROWTH)
 

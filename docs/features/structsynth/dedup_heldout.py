@@ -7,11 +7,13 @@
     ~/.virtualenvs/decbench/bin/python $D score branch               # fields-only P/R/F1
     ~/.virtualenvs/decbench/bin/python $D absorb main branch         # record identity
 
-`score` is `layoutscore.py`'s fields-only measure over five sets: the eight
+`score` is `layoutscore.py`'s fields-only measure over eight sets: the eight
 builds the growth bounds were tuned on, 17 a reviewer picked, 22 measured only
 after the pointer rule was fixed, 28 a second reviewer picked outside coreutils
-(the table and integer rules were drawn from these), and 26 chosen before any
-result under those two rules was seen.  `absorb` compares two builds parameter by
+(the table and integer rules were drawn from these), 26 chosen before any
+result under those two rules was seen, 24 and 18 a third reviewer picked outside
+all of those (the padding rule was drawn from the 18), and 34 chosen before any
+result under the padding rule was seen.  `absorb` compares two builds parameter by
 parameter: a parameter the branch answers with a strictly larger structure than
 main gave it is an absorption, and it is on the SAME record when some parameter
 of the same DWARF record measured exactly that structure on main.  Field
@@ -56,8 +58,38 @@ HELDOUT4 = [tuple(x.split()) for x in (
     "iproute2 ip O0|rsyslog rsyslogd O0|e2fsprogs e2fsck O0|coreutils touch O2|coreutils expr O2|"
     "coreutils seq O2"
 ).split("|")]
+REVIEW1 = [tuple(x.split()) for x in (
+    "openssh-portable sshd O2|openssh-portable ssh-keygen O2|gnutls gnutls-serv O2|"
+    "libselinux libselinux.so.1 O2|libbsd libbsd.so.0.11.7 O2|libedit libedit.so.0.0.70 O2|"
+    "zlib libz.so.1.2.13 O2|cronie crontab O2|libacl libacl.so.1.1.2301 O2|"
+    "libselinux libselinux.so.1 O0|libedit libedit.so.0.0.70 O0|openssh-portable sftp-server O0|"
+    "openssh-portable sftp-server O2|zlib libz.so.1.2.13 O0|libedit libedit.so.0.0.70 O2-noinline|"
+    "openssh-portable ssh-keygen O2-noinline|gnutls srptool O2|openssh-portable ssh-keygen O0|"
+    "openssh-portable sshd O0|openssh-portable ssh O2|gnutls gnutls-cli-debug O2|"
+    "openssh-portable ssh-pkcs11-helper O2|libacl chacl O2|sysvinit utmpdump O2"
+).split("|")]
+REVIEW2 = [tuple(x.split()) for x in (
+    "bash bash O0|openssh-portable ssh O0|openssh-portable sftp O0|openssh-portable scp O0|"
+    "openssh-portable ssh-agent O0|gnutls certtool O0|gnutls gnutls-cli O0|dpkg dpkg O0|"
+    "dpkg dpkg-query O0|sysvinit init O0|libbsd libbsd.so.0.11.7 O0|"
+    "libselinux libselinux.so.1 O2-noinline|openssh-portable ssh O2-noinline|"
+    "openssh-portable sshd O2-noinline|libexpat xmlwf O2-noinline|cronie crond O2-noinline|"
+    "dpkg dpkg O2-noinline|iproute2 ip O2-noinline"
+).split("|")]
+FRESH6 = [tuple(x.split()) for x in (
+    "bash bash O2-noinline|bash man2html O0|bash mkbuiltins O2|dpkg dpkg-divert O0|"
+    "dpkg dpkg-query O2-noinline|dpkg dpkg-trigger O0|dpkg dpkg-statoverride O0|"
+    "rsyslog rsyslogd O2-noinline|e2fsprogs e2fsck O2-noinline|kmod kmod O2-noinline|"
+    "dash dash O2-noinline|openssh-portable ssh-keysign O2|openssh-portable ssh-add O0|"
+    "openssh-portable sftp O2-noinline|gnutls gnutls-serv O0|gnutls ocsptool O0|iproute2 rtmon O0|"
+    "grep grep O2|gzip gzip O0|diffutils diff O2|diffutils diff3 O0|zlib minigzip O0|"
+    "libacl setfacl O0|sysvinit shutdown O0|sysvinit killall5 O0|cronie crontab O2-noinline|"
+    "libbsd libbsd.so.0.11.7 O2-noinline|bzip2 bzip2 O0|coreutils ginstall O2|coreutils stty O0|"
+    "coreutils cksum O2-noinline|shadow useradd O0|shadow usermod O2-noinline|shadow newusers O2"
+).split("|")]
 SETS = (("TUNING", TUNING), ("HELDOUT", HELDOUT), ("HELDOUT2", HELDOUT2),
-        ("HELDOUT3", HELDOUT3), ("HELDOUT4", HELDOUT4))
+        ("HELDOUT3", HELDOUT3), ("HELDOUT4", HELDOUT4), ("REVIEW1", REVIEW1),
+        ("REVIEW2", REVIEW2), ("FRESH6", FRESH6))
 CACHE = Path(os.environ.get("DEDUP_CACHE", "/tmp/structdedup-heldout"))
 OPTS = ["--option", "structsynth", "param"]
 ENV = dict(os.environ, KUNA_SPECS=os.environ.get("KUNA_SPECS", str(WT / "specs")),

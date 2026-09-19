@@ -5,10 +5,10 @@ The second half of `structsynth`. The first version compared minted layouts for
 record got a name each. This is how the ledger decides instead, and what the
 decision measures. `structsynth` is on by default since `6e4f6fa5` (#682), so
 everything here is default output. Unless a section says otherwise, the tables
-compare this branch with main at `6e4f6fa5`, both with the option at its
+compare this branch with main at `75f832e3`, both with the option at its
 default. The rules were developed against earlier mains (`e1139df9`,
-`f1ec42a7`); the arms that only exist for a rule that was later changed keep the
-main they were measured on, and say so.
+`f1ec42a7`, `6e4f6fa5`); the arms that only exist for a rule that was later
+changed keep the main they were measured on, and say so.
 
 ## The rule
 
@@ -26,8 +26,12 @@ that contain `L`, the smallest is reused.
   `long *`, `struct_N *`. `code *`, `void *` and `undefinedN *` are not.
 - `L` is not a **table**: a layout whose every claim past offset 0 is a pointer
   without a pointee is answered only by its own shape.
-- If `L` has no typed pointer, `S` is **the same size** as `L`. It can fill in
-  the holes of what `L` measured, but it cannot extend it.
+- If `L` has no typed pointer, `S` is **the same size** as `L` and claims
+  nothing past `L`'s last field. It can fill in the holes between the fields `L`
+  measured, but not the bytes after them.
+- `S` claims nothing inside the **alignment padding** `L`'s claims leave between
+  two of them: from the end of one claim up to the next claim or the next
+  multiple of that claim's width, whichever comes first.
 
 And whatever `S` says, it answers only if it lays **exactly `L`'s own members**
 (offsets, widths, types and filler) over every byte range `L` read or wrote
@@ -133,6 +137,99 @@ the ledger. A container with a typed field there would print the float read as a
 value conversion again, the defect #682 fixed, so those bytes count as unclaimed
 too (`Evidence::unclaimed_ranges`).
 
+## Records that differ only in a reader's padding
+
+A reviewer measured the previous revision on 42 builds outside every earlier set
+and found 10 of 43 absorptions given a different record. All ten were a
+same-size container with a member where the reader's own layout has padding:
+
+- `bash` O0 `execute_if_command` and `copy_if_command` (`if_com`:
+  `{int flags; COMMAND *test, *true_case, *false_case}`) measure
+  `{0: uint, 8, 0x10, 0x18}` and were answered with `for_com`'s layout, which
+  has `int line` at 4. `copy_while_command` (`while_com`) the same.
+- Six `it_init_*` readers of `ITEMLIST` measure `{0: uint, 0x10: long *}` and
+  were answered with `case_com`'s `{0: uint, 4: uint, 8, 0x10: long *}`.
+- dpkg O2-noinline `pkg_queue_init` (`pkg_queue`, 24 bytes, `{0, 8, 0x10: uint}`)
+  was answered with `pkg_spec`'s layout, which has two flag bytes at 0x14 and
+  0x15, in `pkg_queue`'s tail padding.
+
+Records part ways in their first words as much as after their last one: every
+`bash` command record begins with `int flags`, and whether offset 4 is `int line`
+or padding is exactly what tells `if_com` from `for_com`. So a container may not
+claim bytes the reader's claims leave as alignment padding, and a reader with no
+typed pointer may not be given anything past its last field. A hole wider than
+its padding is still room for a member the reader skipped (`{0: uint, 0x10: ptr}`
+may still take a word at 8), and a typed reader may still be given members in its
+tail padding: `fmt`'s `put_word` measures `{0: char *, 8: int}` of a `WORD` whose
+`int space` sits at 0xc. `tests/stages/structsynth-shared-layout.xml` asserts
+10 to 12 pin the three shapes (all three fail on the previous revision).
+
+On the reviewer's builds and on 34 more chosen before any result under this rule
+was seen, main (`75f832e3`) → previous revision → this revision:
+
+| | main | previous revision | shipped |
+|---|---:|---:|---:|
+| reviewer, 24 builds: precision | 3933/4292 = 0.9164 | 3965/4324 = 0.9170 | 3960/4319 = 0.9169 |
+| reviewer, 24 builds: absorbed / different record | | 15 / 0 | 11 / 0 |
+| reviewer, 18 builds incl. `bash` O0, dpkg O2-noinline: precision | 4091/4527 = 0.9037 | 4129/4576 = 0.9023 | 4115/4551 = 0.9042 |
+| reviewer, 18 builds: absorbed / different record | | 28 / 10 | 13 / 0 |
+| fresh, 34 builds: precision | 4000/4517 = 0.8855 | 4094/4626 = 0.8850 | 4081/4610 = 0.8852 |
+| fresh, 34 builds: absorbed / different record | | 67 / 4 | 62 / 3 |
+
+The fresh set is `bash` O2-noinline, `man2html` O0, `mkbuiltins` O2,
+`dpkg-divert` O0, `dpkg-query` O2-noinline, `dpkg-trigger` O0,
+`dpkg-statoverride` O0, `rsyslogd` O2-noinline, `e2fsck` O2-noinline, `kmod`
+O2-noinline, `dash` O2-noinline, `ssh-keysign` O2, `ssh-add` O0, `sftp`
+O2-noinline, `gnutls-serv` O0, `ocsptool` O0, `rtmon` O0, `grep` O2, `gzip` O0,
+`diff` O2, `diff3` O0, zlib `minigzip` O0, `setfacl` O0, `shutdown` O0,
+`killall5` O0, `crontab` O2-noinline, `libbsd` O2-noinline, `bzip2` O0,
+`ginstall` O2, `stty` O0, `cksum` O2-noinline, `useradd` O0, `usermod`
+O2-noinline and `newusers` O2. The rule removed one of its four wrong records
+(`useradd` O0 `new_grent`, a `group` reader whose padding at 0x14 a larger record
+fills). The three left are all `e2fsck` O2-noinline and are untyped readers
+filled in *between* their fields, which the padding rule does not reach:
+`handle_htree` and `ext2fs_is_fast_symlink` measure `{0: ushort, 4: uint,
+0x6c: uint}` of an `ext2_inode` and take the layout an `ext2_inode_large` reader
+measured, which is the same record for its first 128 bytes, so the two added
+fields are real; `ext2fs_new_dir_block` measures `{0, 0x20, 0x28}` of a
+`struct_ext2_filsys` and takes a `utf8cursor` layout, 2 of 3 added fields real.
+On the fresh set the rule is 0.0003 behind main (81 more true fields, 93 more
+claimed); `e2fsck` O2-noinline alone adds 50 true fields of 58.
+
+`bash` O2-noinline scores nothing on either build: its `decompile-project`
+export panics in `kuna-sleigh` (`kuna_sharedbytes.rs`) on main as well, so
+there is no header to read.
+
+## Address arithmetic past a reader's end
+
+A container larger than the reader's own object also changes how the reader's
+addresses past its measured end are spelled. A reviewer built the case, gcc -O2,
+stripped:
+
+```c
+struct Small { char *name; long len; };
+struct Big { char *name; long len; int a; int pad; long c; };
+long wbig(struct Big *p, long v);   /* writes name, len, a, c */
+struct Small *rsmall(struct Small *p) { long l = p->len; if (*p->name) l += 2; p->len = l; return p + 1; }
+```
+
+`rsmall` measures `{0: char *, 8: long}`, 16 bytes, and `wbig`'s 32-byte layout
+contains it. `p + 1` is 16 bytes on, which in the container is its `int` at
+0x10:
+
+```
+main:    struct_0 * sub_12b0(struct_0 *a0)     ...  v1 = &a0[1];
+branch:  unsigned int * sub_12b0(struct_0 *a0) ...  v1 = &a0->field_0x10;
+```
+
+The address and the value are the same; the return type is now a pointer to the
+container's field instead of to the record. A call argument is re-spelled the
+same way (`rsmall_arg`'s `&a0[1]` becomes `&a0->field_0x10`). This is inherent
+to answering a reader with a larger record: the ledger sees the fields a reader
+dereferences, not the arithmetic it does on its base. No function in the 177
+builds changes this way (the only non-rename change is `ip` O0
+`ll_remember_index`, below).
+
 ## Why agreement on a shared field is exact
 
 The obvious relaxation is to let `undefined<N>` be a wildcard any `N`-byte type
@@ -199,23 +296,25 @@ Claimed-field precision (filler excluded), with recall in parentheses:
 
 | dedup rule | tuning | held-out 1 | held-out 2 | held-out 3 | held-out 4 |
 |---|---:|---:|---:|---:|---:|
-| dedup rule | tuning | held-out 1 | held-out 2 | held-out 3 | held-out 4 |
-|---|---:|---:|---:|---:|---:|
-| exact signature (main `6e4f6fa5`; `e1139df9` and `f1ec42a7` score the same) | 704/787 = 0.8945 (0.0746) | 1011/1081 = 0.9352 (0.0659) | 804/888 = 0.9054 (0.0482) | 2746/3271 = 0.8395 (0.0307) | 3455/3937 = 0.8776 (0.0233) |
+| exact signature (main `75f832e3`; `e1139df9`, `f1ec42a7` and `6e4f6fa5` score the same) | 704/787 = 0.8945 (0.0746) | 1011/1081 = 0.9352 (0.0659) | 804/888 = 0.9054 (0.0482) | 2746/3271 = 0.8395 (0.0307) | 3455/3937 = 0.8776 (0.0233) |
 | bounds + pointer rule + table rule (on `e1139df9`) | | | | 2818/3368 = 0.8367 (0.0315) | 3592/4123 = 0.8712 (0.0243) |
 | + integer rule (on `f1ec42a7`) | 748/833 = 0.8980 (0.0792) | 1060/1134 = 0.9347 (0.0691) | 836/920 = 0.9087 (0.0501) | 2795/3324 = 0.8409 (0.0313) | 3555/4049 = 0.8780 (0.0240) |
 | + unclaimed-bytes rule (on `f1ec42a7`) | 748/833 = 0.8980 (0.0792) | 1060/1134 = 0.9347 (0.0691) | 836/920 = 0.9087 (0.0501) | 2791/3320 = 0.8407 (0.0312) | 3555/4049 = 0.8780 (0.0240) |
-| **shipped, on `6e4f6fa5`** | **748/831 = 0.9001 (0.0792)** | **1064/1138 = 0.9350 (0.0694)** | **836/920 = 0.9087 (0.0501)** | **2794/3321 = 0.8413 (0.0313)** | **3549/4042 = 0.8780 (0.0240)** |
+| previous revision, on `6e4f6fa5` | 748/831 = 0.9001 (0.0792) | 1064/1138 = 0.9350 (0.0694) | 836/920 = 0.9087 (0.0501) | 2794/3321 = 0.8413 (0.0313) | 3549/4042 = 0.8780 (0.0240) |
+| **+ padding rule (shipped), on `75f832e3`** | **748/831 = 0.9001 (0.0792)** | **1064/1138 = 0.9350 (0.0694)** | **836/920 = 0.9087 (0.0501)** | **2786/3312 = 0.8412 (0.0312)** | **3545/4037 = 0.8781 (0.0239)** |
 
-The last two rows differ because #682 changed the types the pass gives some
-fields (a sign-contested integer is `undefined<N>`, a float read as an integer is
-raw bytes), and agreement on a shared field is exact.
+The unclaimed-bytes row and the previous revision differ because #682 changed
+the types the pass gives some fields (a sign-contested integer is
+`undefined<N>`, a float read as an integer is raw bytes), and agreement on a
+shared field is exact.
 
-Pooled over the four held-out sets, precision is 8016/9177 = 0.8735 on main and
-8243/9421 = 0.8750 shipped, with 227 more true fields. Recall is higher on every
-set. The gain is small, and it is not uniform. Of the 101 builds, 30 gain
-precision and 4 lose it. The losses are `kmod` O2 (0.8507 → 0.8417), `kmod` O0
-(0.9246 → 0.9163), `ip` O0 (0.6699 → 0.6675) and `e2fsck` O0 (0.8931 → 0.8922).
+Pooled over the seven held-out sets (these four, the reviewer's 24 and 18
+builds and the fresh 34 above; 169 builds), precision is 20040/22513 = 0.8902 on
+main and 20387/22887 = 0.8908 shipped, with 347 more true fields. Recall is
+higher on every set. The gain is small, and it is not uniform. Of the 177 builds,
+53 gain precision and 6 lose it. The losses are `kmod` O2 (0.8507 → 0.8417),
+`kmod` O2-noinline (0.8876 → 0.8791), `kmod` O0 (0.9246 → 0.9163), `grep` O2
+(0.9212 → 0.9128), `ip` O0 (0.6699 → 0.6675) and `e2fsck` O0 (0.8931 → 0.8926).
 The largest gains are `diff` O0 (0.8563 → 0.8629), `sort` O0 (0.8571 → 0.8636),
 `sort` O2 (0.8750 → 0.8814) and `du` O0 (0.9206 → 0.9265).
 
@@ -232,22 +331,30 @@ correct. `dedup_heldout.py absorb` checks the record instead. For each
 parameter answered by a strictly larger structure, it asks whether that
 structure is one some parameter of the *same* DWARF record measured on main.
 
-| shipped rule, on `6e4f6fa5` | absorbed | same record | different record | uncheckable | added fields true |
+| shipped rule, on `75f832e3` | absorbed | same record | different record | uncheckable | added fields true |
 |---|---:|---:|---:|---:|---:|
 | tuning | 28 | 28 | 0 | 0 | 44/44 |
 | held-out 1 | 35 | 35 | 0 | 0 | 53/57 |
 | held-out 2 | 20 | 20 | 0 | 0 | 32/32 |
-| held-out 3 | 29 | 27 | 0 | 2 | 48/50 |
-| held-out 4 | 66 | 64 | 1 | 1 | 94/105 |
-| same rule on `f1ec42a7` | 178 | 170 | 5 | 3 | |
+| held-out 3 | 27 | 25 | 0 | 2 | 40/41 |
+| held-out 4 | 62 | 60 | 1 | 1 | 90/100 |
+| reviewer, 24 builds | 11 | 11 | 0 | 0 | 27/27 |
+| reviewer, 18 builds | 13 | 13 | 0 | 0 | 24/24 |
+| fresh, 34 builds | 62 | 57 | 3 | 2 | 81/93 |
+| **all 177 builds** | **258** | **249** | **4** | **5** | **391/418** |
+| previous revision (no padding rule) on the first five, `6e4f6fa5` | 178 | 174 | 1 | 3 | |
+| previous revision on the last three, `75f832e3` | 110 | 94 | 14 | 2 | |
 | without the integer rule, held-out 3 / 4 (on `e1139df9`) | 57 / 108 | 39 / 80 | 0 / 8 | 18 / 20 | 72/97, 137/186 |
 
-One wrong record remains: `e2fsck` O0 `ea_refcount_intr_next`, three `uint64`
-words of a 32-byte `ea_refcount`, filled in with a same-size layout another
-record measured. On `f1ec42a7` there were four more: `du` O2 `add_exclude`
-(`struct exclude *` answered with an `mbchar` layout) and three `rsyslogd` O0
-`hashtable` readers (answered with a `lookup_s` table). Under #682's field types
-those containers no longer contain them.
+Four wrong records remain, all `e2fsck`, all untyped readers filled in between
+their own fields by a same-size layout: O0 `ea_refcount_intr_next` (three
+`uint64` words of a 32-byte `ea_refcount`, answered with a `dentry_info_args`
+layout) and the three O2-noinline readers above. Two of those (`ext2_inode`
+answered with `ext2_inode_large`) are one record's common initial sequence, and
+their added fields are real. On `f1ec42a7` there were four more: `du` O2
+`add_exclude` (`struct exclude *` answered with an `mbchar` layout) and three
+`rsyslogd` O0 `hashtable` readers (answered with a `lookup_s` table). Under
+#682's field types those containers no longer contain them.
 
 Each rule answers one shape:
 
@@ -268,6 +375,12 @@ Each rule answers one shape:
   answered with a 40-byte command layout, 0 of 3 added fields real. The rule
   costs some right answers too: openssh's `sshbuf` readers measure 64 of its
   72 bytes and now keep their own name.
+- **Nothing in the reader's padding.** See [above](#records-that-differ-only-in-a-readers-padding).
+  Over all eight sets it removes 30 of the previous revision's absorptions and
+  adds none: 11 were a different record and 19 the same one. On the first five
+  sets it removes only same-record absorptions (6: 4 into interior padding, 2
+  into an untyped reader's tail), which is why held-out 3 and 4 barely move
+  (0.8413 → 0.8412 and 0.8780 → 0.8781).
 
 ## Distinct `struct_N` names per binary
 
@@ -281,7 +394,7 @@ counting the distinct synthesized names the run emits and the
 | fmt O2 | 3 | 3 | 3 → 3 |
 | ls O0 | 27 | 24 | 33 → 33 |
 | ls O2 | 35 | 27 | 71 → 71 |
-| sort O0 | 31 | 28 | 34 → 34 |
+| sort O0 | 30 | 27 | 34 → 34 |
 | sort O2 | 26 | 23 | 28 → 28 |
 | du O0 | 31 | 27 | 34 → 34 |
 | du O2 | 32 | 29 | 35 → 35 |
@@ -289,10 +402,10 @@ counting the distinct synthesized names the run emits and the
 | find O2 | 53 | 50 | 62 → 62 |
 | tar O0 | 126 | 121 | 155 → 155 |
 | tar O2 | 93 | 86 | 110 → 110 |
-| **total** | **516** | **472** | **637 → 637** |
+| **total** | **515** | **471** | **637 → 637** |
 
 The same functions are retyped, and they name 8.5% fewer records. No pair is
-lost. (On `f1ec42a7` the same count was 514 → 467.)
+lost. (On `6e4f6fa5` the same count was 516 → 472, and on `f1ec42a7` 514 → 467.)
 
 ## `fprate.py`, the type metric and the variable rows are blind to all of this
 
@@ -306,20 +419,20 @@ spellings by name, so `struct_0 *` and `struct_1 *` score alike.
 `KUNA_BIN` pinned per build. With the option on by default both of the sweep's
 arms are the default output, so the comparison is between the two builds:
 
-| | main `6e4f6fa5` | branch |
+| | main `75f832e3` | branch |
 |---|---:|---:|
 | `type_match` PERFECT | 986 | 986 |
 | aggregate `type_match` | 3111.18 | 3111.18 |
 
-Every slice's per-function scores and variable counts (`values`, `nvars` in
-`rows.json`) are identical between the builds. The only difference is the
-`vars_sig` hash of 76 slices, which covers the `struct_N` names. That is
-expected by construction and is not evidence either way.
+Every slice's per-function scores, match details and variable counts (`values`,
+`meta`, `nvars` in `rows.json`) are identical between the builds. The only
+difference is the `vars_sig` hash of 74 slices, which covers the `struct_N`
+names. That is expected by construction and is not evidence either way.
 
-No variable or argument appears or disappears. Over the 101 builds above
-(40,056 functions, 260,970 exported variable rows), no function's variable count
+No variable or argument appears or disappears. Over all 177 builds above
+(92,680 functions, 623,992 exported variable rows), no function's variable count
 or argument count changes, and no row changes in anything but the `struct_N` it
-names (1,101 functions have such a rename). One function's C changes beyond a
+names (2,119 functions have such a rename). One function's C changes beyond a
 name: `ip` O0 `ll_remember_index` passes `&a0->field_0x6[10]` to a callee as
 `&a0->field_0x8[8]`, the same address spelled through a same-size container's
 filler. It is a call argument, not a dereference.
@@ -341,7 +454,7 @@ classified (`docs/features/structsynth/dedup_hunks.py`).
 | diff O2 | 19 rename | identical |
 | rsyslogd O2 | 2 rename | identical |
 
-Main is `6e4f6fa5`. The default run and an explicit `--option structsynth param`
+Main is `75f832e3`. The default run and an explicit `--option structsynth param`
 give the same classification. `rename` is a line whose only change is which
 `struct_N` it names; there is no other kind of hunk. No statement moved, and no declaration
 appeared or vanished. The previous revision had one more hunk, in `rsyslogd` O2,
@@ -400,13 +513,15 @@ name is the decision, not a residue.
 | tar O2 | 86 | 0 |
 | cp O2 | 30 | 0 |
 | kmod O0 | 51 | 0 |
-| rsyslogd O2 | 90 | 1 |
+| rsyslogd O2 | 90 | 0 |
 
 A non-transitive chain like the `fb`/`fa`/`fc` fixture above would show up here
 as a superseded structure that is still emitted. None of these binaries has one.
-The one layout left in `rsyslogd` O2 is `timeConvertToUTC`'s: the
-unclaimed-bytes rule turns its container away, which the script cannot see
-because the unclaimed store is not in the header.
+The previous revision's script counted one layout in `rsyslogd` O2,
+`timeConvertToUTC`'s, whose container the unclaimed-bytes rule turns away (the
+script cannot see the unclaimed store, which is not in the header). The same
+container also has members in that reader's padding, which the script now
+checks, so it is no longer counted; the emitted definitions are the same 90.
 
 ## The streaming export does not converge
 
