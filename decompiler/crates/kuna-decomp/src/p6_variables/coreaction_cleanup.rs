@@ -1188,14 +1188,61 @@ fn op_cover_pair(
     (blk, data.op_cover_point_pub(op))
 }
 
-/// Return false only if one Varnode is obtained by adding a non-zero thing to
-/// the other (C++ `ActionMarkImplied::isPossibleAliasStep`, coreaction.cc:3382).
+/// The two accesses `is_possible_alias` compares: `w1` bytes at `vn1`, `w2`
+/// bytes at `vn2`, and `scale`, the bytes per unit of difference between the
+/// values being compared (1 for pointers, the element size under a `PTRADD`
+/// index, negated under a negation).
+#[derive(Clone, Copy)]
+struct AliasSpan {
+    w1: i128,
+    w2: i128,
+    scale: i128,
+}
+
+impl AliasSpan {
+    /// Do the accesses share a byte when `vn2` lies `d` units past `vn1`?
+    fn overlaps_at(self, d: i128) -> bool {
+        let b = d.saturating_mul(self.scale);
+        b < self.w1 && b > -self.w2
+    }
+
+    /// Do they share a byte when the pointers differ by at least `dist` units
+    /// in an unknown direction?
+    fn may_overlap_within(self, dist: i128) -> bool {
+        dist.saturating_mul(self.scale.abs()) < self.w1.max(self.w2)
+    }
+
+    fn swapped(self) -> AliasSpan {
+        AliasSpan { w1: self.w2, w2: self.w1, scale: self.scale }
+    }
+
+    fn scaled(self, mult: i128) -> AliasSpan {
+        AliasSpan { scale: self.scale.saturating_mul(mult), ..self }
+    }
+}
+
+/// `val` read as a signed `size`-byte quantity.
+fn signed_at_size(val: i128, size: int4) -> i128 {
+    let bits = (size.clamp(1, 8) as u32) * 8;
+    let m = (val as u128) & (u128::MAX >> (128 - bits));
+    if m >> (bits - 1) & 1 == 1 {
+        m as i128 - (1i128 << bits)
+    } else {
+        m as i128
+    }
+}
+
+/// When one Varnode is the other plus (or xor) a constant, whether the two
+/// accesses can share a byte; `None` when neither is (C++
+/// `ActionMarkImplied::isPossibleAliasStep`, coreaction.cc:3382, which takes
+/// any constant step to mean "different object" whatever the access widths).
 /// Order of the Varnodes is not important.
 fn is_possible_alias_step(
     data: &Funcdata,
     vn1: crate::context::VarnodeId,
     vn2: crate::context::VarnodeId,
-) -> bool {
+    span: AliasSpan,
+) -> Option<bool> {
     let var = [vn1, vn2];
     for i in 0..2 {
         let vncur = var[i];
@@ -1219,22 +1266,37 @@ fn is_possible_alias_step(
         if dop.get_in(0) != Some(var[1 - i]) {
             continue;
         }
-        if let Some(in1) = dop.get_in(1) {
-            if data.vbank().get(in1).map(|x| x.is_constant()).unwrap_or(false) {
-                return false;
-            }
+        let c = match dop.get_in(1).and_then(|x| data.vbank().get(x)) {
+            Some(c) if c.is_constant() => c,
+            _ => continue,
+        };
+        let span = if i == 0 { span.swapped() } else { span };
+        if opc == OpCode::CPUI_INT_XOR {
+            let x = c.get_offset();
+            let dist = if x == 0 { 0 } else { 1i128 << x.trailing_zeros() };
+            return Some(span.may_overlap_within(dist));
         }
+        let mult = if opc == OpCode::CPUI_PTRADD {
+            dop.get_in(2).and_then(|x| data.vbank().get(x)).map(|x| x.get_offset() as i64).unwrap_or(1)
+        } else {
+            1
+        };
+        let size = v.get_size();
+        let d = signed_at_size(signed_at_size(c.get_offset() as i128, size) * mult as i128, size);
+        return Some(span.overlaps_at(d));
     }
-    true
+    None
 }
 
-/// Return false \b only if we can guarantee two Varnodes have different values
-/// (C++ `ActionMarkImplied::isPossibleAlias`, coreaction.cc:3406).  `depth`
+/// Return false \b only if the `span.w1` bytes at `vn1` and the `span.w2` bytes
+/// at `vn2` cannot share a byte (C++ `ActionMarkImplied::isPossibleAlias`,
+/// coreaction.cc:3406, which compares the pointer values alone).  `depth`
 /// bounds the recursion.
 fn is_possible_alias(
     data: &Funcdata,
     vn1: crate::context::VarnodeId,
     vn2: crate::context::VarnodeId,
+    span: AliasSpan,
     depth: int4,
 ) -> bool {
     if vn1 == vn2 {
@@ -1244,13 +1306,14 @@ fn is_possible_alias(
     let v2 = data.vbank().get(vn2).expect("isPossibleAlias: stale vn2");
     if !v1.is_written() || !v2.is_written() {
         if v1.is_constant() && v2.is_constant() {
-            return v1.get_offset() == v2.get_offset();
+            let d = v2.get_offset() as i128 - v1.get_offset() as i128;
+            return span.overlaps_at(signed_at_size(d, v1.get_size()));
         }
-        return is_possible_alias_step(data, vn1, vn2);
+        return is_possible_alias_step(data, vn1, vn2, span).unwrap_or(true);
     }
 
-    if !is_possible_alias_step(data, vn1, vn2) {
-        return false;
+    if let Some(res) = is_possible_alias_step(data, vn1, vn2, span) {
+        return res;
     }
     let op1 = v1.get_def().expect("isPossibleAlias: vn1 no def");
     let op2 = v2.get_def().expect("isPossibleAlias: vn2 no def");
@@ -1291,13 +1354,16 @@ fn is_possible_alias(
         crate::expression::functional_equality(a, b, data.vbank(), data.obank())
     };
     match opc1 {
-        OpCode::CPUI_COPY
-        | OpCode::CPUI_INT_ZEXT
-        | OpCode::CPUI_INT_SEXT
-        | OpCode::CPUI_INT_2COMP
-        | OpCode::CPUI_INT_NEGATE => {
-            is_possible_alias(data, dop1.get_in(0).unwrap(), dop2.get_in(0).unwrap(), depth)
+        OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => {
+            is_possible_alias(data, dop1.get_in(0).unwrap(), dop2.get_in(0).unwrap(), span, depth)
         }
+        OpCode::CPUI_INT_2COMP | OpCode::CPUI_INT_NEGATE => is_possible_alias(
+            data,
+            dop1.get_in(0).unwrap(),
+            dop2.get_in(0).unwrap(),
+            span.scaled(-1),
+            depth,
+        ),
         OpCode::CPUI_INT_ADD => {
             let cvn1 = dop1.get_in(1).unwrap();
             let cvn2 = dop2.get_in(1).unwrap();
@@ -1306,15 +1372,18 @@ fn is_possible_alias(
             if cv1.is_constant() && cv2.is_constant() {
                 let val1 = (mult1 as i128) * (cv1.get_offset() as i128);
                 let val2 = (mult2 as i128) * (cv2.get_offset() as i128);
-                if val1 == val2 {
+                let d = signed_at_size(val2 - val1, v1.get_size());
+                if d == 0 {
                     return is_possible_alias(
                         data,
                         dop1.get_in(0).unwrap(),
                         dop2.get_in(0).unwrap(),
+                        span,
                         depth,
                     );
                 }
-                return !fe(dop1.get_in(0).unwrap(), dop2.get_in(0).unwrap());
+                return !fe(dop1.get_in(0).unwrap(), dop2.get_in(0).unwrap())
+                    || span.overlaps_at(d);
             }
             if mult1 != mult2 {
                 return true;
@@ -1324,16 +1393,19 @@ fn is_possible_alias(
             let b0 = dop2.get_in(0).unwrap();
             let b1 = dop2.get_in(1).unwrap();
             if fe(a0, b0) {
-                return is_possible_alias(data, a1, b1, depth);
+                return is_possible_alias(data, a1, b1, span.scaled(mult1 as i128), depth);
             }
             if fe(a1, b1) {
-                return is_possible_alias(data, a0, b0, depth);
+                return is_possible_alias(data, a0, b0, span, depth);
+            }
+            if mult1 != 1 {
+                return true;
             }
             if fe(a0, b1) {
-                return is_possible_alias(data, a1, b0, depth);
+                return is_possible_alias(data, a1, b0, span, depth);
             }
             if fe(a1, b0) {
-                return is_possible_alias(data, a0, b1, depth);
+                return is_possible_alias(data, a0, b1, span, depth);
             }
             true
         }
@@ -1356,13 +1428,8 @@ fn is_possible_alias(
 ///  * any non-constant defining input whose HighVariable would intersect `vn`'s
 ///    after inflation (`Merge::inflateTest`).
 ///
-/// The `inflateTest` arm reads the HighVariable extended-cover/intersection
-/// graph; that bridge is not yet surfaced here, so it takes the C++-default
-/// "no intersection" branch (allow implied).  Omitting it only ever yields
-/// *more* inlining than the oracle, never less — and it is the documented next
-/// layer.  The LOAD/CALL-crossing arm IS ported faithfully (it is what the
-/// array datatests need and is self-contained on the Cover the merge pass
-/// already builds).
+/// The crossing arm compares byte ranges (`is_possible_alias`); the
+/// `inflateTest` arm asks the merge pass (`Merge::inflate_test`).
 fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bool {
     let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
         Some(d) => d,
@@ -1389,6 +1456,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
             .map(|s| s.get_offset())
             .unwrap_or(0);
         let load_ptr = data.obank().get(def).and_then(|o| o.get_in(1));
+        let load_size = data.vbank().get(vn).map(|v| v.get_size()).unwrap_or(1);
         let store_ops: Vec<crate::context::OpId> =
             data.obank().iter_code(OpCode::CPUI_STORE).collect();
         for storeop in store_ops {
@@ -1418,8 +1486,20 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
                     .unwrap_or(0);
                 if store_space_off == load_space_off {
                     let store_ptr = data.obank().get(storeop).and_then(|o| o.get_in(1));
+                    let store_size = data
+                        .obank()
+                        .get(storeop)
+                        .and_then(|o| o.get_in(2))
+                        .and_then(|v| data.vbank().get(v))
+                        .map(|v| v.get_size())
+                        .unwrap_or(1);
+                    let span = AliasSpan {
+                        w1: store_size.max(1) as i128,
+                        w2: load_size.max(1) as i128,
+                        scale: 1,
+                    };
                     if let (Some(sp), Some(lp)) = (store_ptr, load_ptr) {
-                        if is_possible_alias(data, sp, lp, 2) {
+                        if is_possible_alias(data, sp, lp, span, 2) {
                             return false;
                         }
                     }

@@ -1,0 +1,122 @@
+# aliasoverlap corpus diff: kuna decompile-all <stripped bin> (default mode), main 75f832e3 vs fix/aliasoverlap, per-function C text compared; re-run after rebasing onto d6c5862f (#681): same totals, the same single hunk byte for byte
+# binaries: decbench full_run_address_2026-09-11 {O0,O2,O2-noinline}/<project>/stripped/<bin>; all runs rc=0; 0 functions present on one side only
+
+O0-coreutils-ls: 589 fns, 0 changed, 0 only-one-side
+O0-grep-grep: 642 fns, 0 changed, 0 only-one-side
+O0-gzip-gzip: 248 fns, 0 changed, 0 only-one-side
+O0-openssh-portable-ssh: 1850 fns, 0 changed, 0 only-one-side
+O0-tar-tar: 1570 fns, 0 changed, 0 only-one-side
+O0-zlib-libz.so.1.2.13: 205 fns, 0 changed, 0 only-one-side
+O2-bash-bash: 2538 fns, 1 changed, 0 only-one-side
+O2-bzip2-bzip2: 114 fns, 0 changed, 0 only-one-side
+O2-coreutils-cp: 409 fns, 0 changed, 0 only-one-side
+O2-coreutils-dd: 214 fns, 0 changed, 0 only-one-side
+O2-coreutils-factor: 226 fns, 0 changed, 0 only-one-side
+O2-coreutils-fmt: 151 fns, 0 changed, 0 only-one-side
+O2-coreutils-ls: 404 fns, 0 changed, 0 only-one-side
+O2-coreutils-numfmt: 163 fns, 0 changed, 0 only-one-side
+O2-coreutils-od: 192 fns, 0 changed, 0 only-one-side
+O2-coreutils-pr: 210 fns, 0 changed, 0 only-one-side
+O2-coreutils-ptx: 204 fns, 0 changed, 0 only-one-side
+O2-coreutils-sort: 343 fns, 0 changed, 0 only-one-side
+O2-coreutils-stat: 238 fns, 0 changed, 0 only-one-side
+O2-coreutils-tail: 225 fns, 0 changed, 0 only-one-side
+O2-coreutils-tr: 155 fns, 0 changed, 0 only-one-side
+O2-cronie-crond: 180 fns, 0 changed, 0 only-one-side
+O2-dash-dash: 335 fns, 0 changed, 0 only-one-side
+O2-diffutils-diff: 398 fns, 0 changed, 0 only-one-side
+O2-dpkg-dpkg: 800 fns, 0 changed, 0 only-one-side
+O2-e2fsprogs-e2fsck: 1421 fns, 0 changed, 0 only-one-side
+O2-findutils-find: 658 fns, 0 changed, 0 only-one-side
+O2-gnutls-certtool: 675 fns, 0 changed, 0 only-one-side
+O2-gnutls-gnutls-cli: 388 fns, 0 changed, 0 only-one-side
+O2-grep-grep: 449 fns, 0 changed, 0 only-one-side
+O2-gzip-gzip: 204 fns, 0 changed, 0 only-one-side
+O2-iproute2-ip: 1008 fns, 0 changed, 0 only-one-side
+O2-kmod-kmod: 394 fns, 0 changed, 0 only-one-side
+O2-libacl-libacl.so.1.1.2301: 129 fns, 0 changed, 0 only-one-side
+O2-libbsd-libbsd.so.0.11.7: 282 fns, 0 changed, 0 only-one-side
+O2-libedit-libedit.so.0.0.70: 664 fns, 0 changed, 0 only-one-side
+O2-libexpat-xmlwf: 126 fns, 0 changed, 0 only-one-side
+O2-libselinux-libselinux.so.1: 621 fns, 0 changed, 0 only-one-side
+O2-mirai-mirai: 123 fns, 0 changed, 0 only-one-side
+O2-mydoom-mydoom.exe: 115 fns, 0 changed, 0 only-one-side
+O2-noinline-coreutils-sort: 490 fns, 0 changed, 0 only-one-side
+O2-noinline-diffutils-diff: 517 fns, 0 changed, 0 only-one-side
+O2-openssh-portable-sftp: 533 fns, 0 changed, 0 only-one-side
+O2-openssh-portable-ssh: 1510 fns, 0 changed, 0 only-one-side
+O2-openssh-portable-ssh-keygen: 1042 fns, 0 changed, 0 only-one-side
+O2-openssh-portable-sshd: 1680 fns, 0 changed, 0 only-one-side
+O2-rsyslog-rsyslogd: 1535 fns, 0 changed, 0 only-one-side
+O2-shadow-useradd: 427 fns, 0 changed, 0 only-one-side
+O2-sysvinit-init: 144 fns, 0 changed, 0 only-one-side
+O2-tar-tar: 1125 fns, 0 changed, 0 only-one-side
+O2-zlib-libz.so.1.2.13: 184 fns, 0 changed, 0 only-one-side
+O2-zlib-minigzip: 165 fns, 0 changed, 0 only-one-side
+
+TOTAL 29212 fns 1 changed
+
+## every changed function, classified
+
+### O2/bash/bash sub_e2c10 (IN CLASS: a load folded past a store into its bytes is now a local ahead of the store)
+
+binary: e2c81 movslq 0x18(%rbx),%rdi / e2c85 mov %edi,0x1c(%rbx) / e2c88 shl $0x2,%rdi / call xmalloc
+The IR's read is an 8-byte LOAD at +0x18 (main already prints it as (int4)dat_143518[3]); the 4-byte store at +0x1c
+overwrites its high half. main re-read it after the store; the value only matched because that second read is
+truncated to the untouched low half. The fix reads once, ahead of the store, as the binary does.
+
+===== O2-bash-bash // Function: sub_e2c10 @ 0xe2c10
+--- 
++++ 
+@@ -19,6 +19,7 @@
+     v1 = dat_143518;
+     *(unsigned long *)(v4 + 0x20) = v3;
+-    *(int4 *)((int8)dat_143518 + 0x1c) = (int4)dat_143518[3];
+-    v4 = xmalloc((int8)(int4)dat_143518[3] << 2);
++    v4 = dat_143518[3];
++    *(int4 *)((int8)dat_143518 + 0x1c) = (int4)v4;
++    v4 = xmalloc((int8)(int4)v4 << 2);
+     v2 = dat_143518;
+     v1[4] = v4;
+
+# DWARF footprint (the split-load path needs a typed struct pointer): kuna decompile-all <unstripped DWARF bin> (default mode), main d6c5862f vs fix a45e0e4d
+# binaries: decbench full_run_address_2026-09-11 {O0,O2,O2-noinline}/<project>/compiled/<bin>; all runs rc=0
+
+O0-bash-bash: 3107 fns, 0 changed, 0 only-one-side
+O0-coreutils-ls: 590 fns, 0 changed, 0 only-one-side
+O0-coreutils-sort: 480 fns, 0 changed, 0 only-one-side
+O0-grep-grep: 643 fns, 0 changed, 0 only-one-side
+O0-gzip-gzip: 249 fns, 0 changed, 0 only-one-side
+O0-tar-tar: 1568 fns, 0 changed, 0 only-one-side
+O2-bash-bash: 2540 fns, 1 changed, 0 only-one-side
+O2-bzip2-bzip2: 115 fns, 0 changed, 0 only-one-side
+O2-coreutils-cp: 410 fns, 0 changed, 0 only-one-side
+O2-coreutils-dd: 215 fns, 0 changed, 0 only-one-side
+O2-coreutils-fmt: 152 fns, 0 changed, 0 only-one-side
+O2-coreutils-ls: 405 fns, 0 changed, 0 only-one-side
+O2-coreutils-numfmt: 164 fns, 0 changed, 0 only-one-side
+O2-coreutils-od: 193 fns, 0 changed, 0 only-one-side
+O2-coreutils-pr: 211 fns, 0 changed, 0 only-one-side
+O2-coreutils-ptx: 205 fns, 0 changed, 0 only-one-side
+O2-coreutils-sort: 344 fns, 0 changed, 0 only-one-side
+O2-coreutils-stat: 239 fns, 0 changed, 0 only-one-side
+O2-coreutils-tr: 156 fns, 0 changed, 0 only-one-side
+O2-diffutils-diff: 399 fns, 0 changed, 0 only-one-side
+O2-e2fsprogs-e2fsck: 1425 fns, 0 changed, 0 only-one-side
+O2-findutils-find: 658 fns, 0 changed, 0 only-one-side
+O2-gnutls-certtool: 675 fns, 0 changed, 0 only-one-side
+O2-grep-grep: 450 fns, 0 changed, 0 only-one-side
+O2-gzip-gzip: 205 fns, 0 changed, 0 only-one-side
+O2-libexpat-xmlwf: 127 fns, 0 changed, 0 only-one-side
+O2-noinline-coreutils-sort: 491 fns, 0 changed, 0 only-one-side
+O2-noinline-diffutils-diff: 518 fns, 0 changed, 0 only-one-side
+O2-openssh-portable-sftp: 534 fns, 0 changed, 0 only-one-side
+O2-shadow-useradd: 428 fns, 0 changed, 0 only-one-side
+O2-tar-tar: 1127 fns, 0 changed, 0 only-one-side
+TOTAL 31 bins 19023 fns 1 changed 0 only-one-side
+
+# changed: O2/bash/bash init_line_structures @ 0xe2c10 is the DWARF twin of the stripped sub_e2c10 hunk above (IN CLASS, same is_possible_alias change).
+# the split-load change alone (previous head cc9aeb0a vs a45e0e4d): 0 changed of 10,970 functions in the first 20 DWARF binaries (the other 11 are unchanged from main altogether) and 0 of 29,212 stripped functions.
+# stripped re-run on a45e0e4d: 52 binaries, 29,212 functions, the same single sub_e2c10 hunk.
+# rejected first attempt (split at the LOAD and keep the COPY): changed tar O0 validate_uparams, where each read's COPY writes the global uparams at the return; four of the five stores into uparams stopped printing. Replaced by declining the split.
+# re-run after rebasing onto bcfe6289 (#687, #675): stripped O2 fmt/ls/sort/bash (3,436 functions) change only sub_e2c10, byte for byte the hunk above; DWARF O2 bash and O0 tar (4,108 functions) change only init_line_structures, byte for byte the a45e0e4d output. bash read_token.part.0 sits at the 10 s per-function budget on both builds (interleaved min 10.62 s main, 10.64 s fix, same output) and timed out once under load on the fix run.

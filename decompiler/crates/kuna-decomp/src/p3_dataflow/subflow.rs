@@ -4028,6 +4028,10 @@ impl SplitDatatype {
     }
 
     /// Split a LOAD operation (C++ `SplitDatatype::splitLoad`, subflow.cc:2770).
+    ///
+    /// (kuna) A LOAD whose lone COPY lies past a STORE or a call is not split:
+    /// upstream builds the split LOADs at the COPY, which prints the read after
+    /// a store into its bytes or a call.
     pub fn split_load(
         &mut self,
         data: &mut Funcdata,
@@ -4050,6 +4054,11 @@ impl SplitDatatype {
             }
             if opc != OpCode::CPUI_COPY {
                 copy_op = None;
+            }
+        }
+        if let Some(cop) = copy_op {
+            if Self::store_or_call_between(data, load_op, cop) {
+                return Ok(false);
             }
         }
         if let Some(cop) = copy_op {
@@ -4094,6 +4103,27 @@ impl SplitDatatype {
         data.op_destroy(load_op);
         root.free_pointer_chain(data);
         Ok(true)
+    }
+
+    /// (kuna) Does a STORE or a call lie between `load_op` and the later
+    /// `copy_op`, or do they sit in different blocks?
+    fn store_or_call_between(data: &Funcdata, load_op: OpId, copy_op: OpId) -> bool {
+        let parent = data.obank().get(load_op).expect("stale load").get_parent();
+        if parent.is_none() || parent != data.obank().get(copy_op).expect("stale copy").get_parent() {
+            return true;
+        }
+        let mut cur = data.obank().get(load_op).expect("stale load").basic_neighbours().1;
+        while let Some(op) = cur {
+            if op == copy_op {
+                return false;
+            }
+            let o = data.obank().get(op).expect("stale op");
+            if o.code() == OpCode::CPUI_STORE || o.is_call() {
+                return true;
+            }
+            cur = o.basic_neighbours().1;
+        }
+        true
     }
 
     /// Split a STORE operation (C++ `SplitDatatype::splitStore`, subflow.cc:2823).

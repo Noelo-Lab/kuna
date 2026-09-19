@@ -873,6 +873,22 @@ same invariant is what `substrate/funcdata_varnode.rs (Funcdata::fillin_read_onl
 warns about (`Read-only address (ram,X) is written`) when `readonlypropagate` is
 on; declining the split does not depend on that option.
 
+**Which LOADs the split declines** (`subflow.rs (SplitDatatype::split_load)`).
+When a loaded value's only use is a COPY, upstream builds the per-field LOADs at
+the COPY and writes the fields straight into the COPY's output. The COPY can sit
+after a STORE or a call, though. A 4-byte read at `s+7` that spans four `char`
+fields, then a byte store to `s->c9`, then the COPY into the return register
+printed the four field reads after the store, so the function returned the new
+byte. kuna declines the split when a STORE or a call lies between the LOAD and
+its COPY, or when the two sit in different blocks
+(`subflow.rs (SplitDatatype::store_or_call_between)`). The LOAD then stays whole
+and prints as its own statement ahead of the store (`v1 = *(uint4 *)&s->c7;`).
+Splitting at the LOAD and keeping the COPY is not the answer: when the COPY writes
+a global at the function's return, the pieces land in a temporary and the COPY
+into the global stops printing, which drops the global's store. With nothing between the
+two, the split still happens at the COPY, as upstream does. This is a strict fix
+with no option (`tests/stages/kuna-aliasoverlap.xml` #5 to #8).
+
 ## 3.4 Conditional execution
 
 `decompiler/crates/kuna-decomp/src/p3_dataflow/condexe.rs

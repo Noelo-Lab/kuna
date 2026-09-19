@@ -1,0 +1,122 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna strict fix (P6, ActionMarkImplied load-crosses-store test; no option).
+
+    A load that reads bytes a later store overwrites must keep its own
+    statement ahead of the store.  Whether a load may print after a store is
+    decided by comparing the two pointers, and one base plus two different
+    constants used to count as two objects whatever the access widths (upstream
+    Ghidra's isPossibleAlias has the same hole).  So `inside` printed
+
+        *(char *)(a0 + 8) = a1;
+        return *(unsigned int *)(a0 + 7);
+
+    which returns the new byte.  The test now asks whether the byte ranges
+    [o1,o1+w1) and [o2,o2+w2) intersect.
+
+    Source (gcc -O2 and clang -O2 emit the same pairs; endbr64 dropped):
+
+      inside:  mov eax,[rdi+7]      / mov [rdi+8],sil        byte into the read
+      below:   mov eax,[rdi+7]      / mov [rdi+5],esi        4 bytes below it
+      indexed: mov rax,[rdi+rsi*4]  / mov [rdi+rsi*4+4],edx  element into an 8-byte read
+      after:   mov eax,[rdi+7]      / mov [rdi+0xb],sil      adjacent byte after
+      before:  mov eax,[rdi+7]      / mov [rdi+6],sil        adjacent byte before
+      next:    mov eax,[rdi+rsi*4]  / mov [rdi+rsi*4+4],edx  adjacent element
+
+    One pass, defaults only.  #1 and #2: inside, below and indexed read into a
+    local ahead of the store (before the fix all three printed the read after
+    it, and #1, #2 and #3 fail).  #3 and #4: after, before and next touch no
+    read byte and keep the read folded into the return, as before.
+
+    The split* functions take a typed struct pointer (as a DWARF build does),
+    so the 4-byte read at s+7 spans four char fields and is split into one
+    read per field (SplitDatatype::splitLoad).  The split reads used to be
+    re-created at the read's lone COPY into the return register, after
+    whatever lay in between (upstream subflow.cc does the same).  A read whose
+    COPY lies past a store or a call is now left whole:
+
+      splitstore: mov eax,[rdi+7]  / mov [rdi+9],sil         byte into the read
+      splitother: mov eax,[rdi+7]  / mov [rsi+9],dl          store through t
+      splitcall:  mov r12d,[rdi+7] / call sink / mov eax,r12d
+      splitplain: mov eax,[rdi+7]  / ret                     nothing in between
+
+    #5, #6 and #7: the read prints whole, ahead of the store or the call
+    (before the fix all three printed four field reads after it).  #8: with
+    nothing in between, splitplain still splits at the COPY, as before.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+8b470740887708c390909090909090908b4707897705c3909090909090909090
+488b04b78954b704c3909090909090908b47074088770bc39090909090909090
+8b470740887706c390909090909090908b04b78954b704c39090909090909090
+</bytechunk>
+<bytechunk space="ram" offset="0x100060" readonly="true">
+8b470740887709c390909090909090908b4707885609c3909090909090909090
+4154448b6707e8250000004489e0415cc3909090909090909090909090909090
+8b4707c3909090909090909090909090c3909090909090909090909090909090
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="inside"/>
+<symbol space="ram" offset="0x100010" name="below"/>
+<symbol space="ram" offset="0x100020" name="indexed"/>
+<symbol space="ram" offset="0x100030" name="after"/>
+<symbol space="ram" offset="0x100040" name="before"/>
+<symbol space="ram" offset="0x100050" name="next"/>
+<symbol space="ram" offset="0x100060" name="splitstore"/>
+<symbol space="ram" offset="0x100070" name="splitother"/>
+<symbol space="ram" offset="0x100080" name="splitcall"/>
+<symbol space="ram" offset="0x1000a0" name="splitplain"/>
+<symbol space="ram" offset="0x1000b0" name="sink"/>
+</binaryimage>
+<script>
+  <com>lo fu inside</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu below</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu indexed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu before</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu next</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line struct S { int4 i0; char c4; char c5; char c6; char c7; char c8; char c9; char c10; char c11; };</com>
+  <com>parse line extern uint4 splitstore(S *s, int4 w);</com>
+  <com>parse line extern uint4 splitother(S *s, S *t, int4 w);</com>
+  <com>parse line extern void sink(S *s);</com>
+  <com>parse line extern uint4 splitcall(S *s);</com>
+  <com>parse line extern uint4 splitplain(S *s);</com>
+  <com>lo fu splitstore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu splitother</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu splitcall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu splitplain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it" min="2" max="2">v1 = \*\(unsigned int \*\)\(a0 \+ 7\);</stringmatch>
+<stringmatch name="ALIASOVERLAP #2: the 8-byte indexed read is a local ahead of the element store" min="1" max="1">v1 = \*\(unsigned long \*\)\(a0 \+ a1 \* 4\);</stringmatch>
+<stringmatch name="ALIASOVERLAP #3: only the adjacent-byte stores keep the read folded" min="2" max="2">return \*\(unsigned int \*\)\(a0 \+ 7\);</stringmatch>
+<stringmatch name="ALIASOVERLAP #4: the adjacent-element store keeps the read folded" min="1" max="1">return \*\(unsigned int \*\)\(a0 \+ a1 \* 4\);</stringmatch>
+<stringmatch name="ALIASOVERLAP #5: splitstore reads s+7 whole before the byte store into it" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
+s-&gt;c9 = \(char\)w;</stringmatch>
+<stringmatch name="ALIASOVERLAP #6: splitother reads s+7 whole before the store through t" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
+t-&gt;c9 = \(char\)w;</stringmatch>
+<stringmatch name="ALIASOVERLAP #7: splitcall reads s+7 whole before the call" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
+sink\(s\);</stringmatch>
+<stringmatch name="ALIASOVERLAP #8: with nothing in between, splitplain still splits into the return register" min="1" max="1">uint4 splitplain\(S \*s\)
+\{
+uint4 v1; // eax</stringmatch>
+</decompilertest>

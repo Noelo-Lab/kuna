@@ -297,14 +297,30 @@ to bound how many printed statements a condition block may carry, so
 remaining Varnode's expression tree depth-first and marks it implied unless
 inlining would be *semantically* unsafe
 (`coreaction_cleanup.rs (check_implied_cover)`): a LOAD whose cover crosses a
-STORE into the same space with a possibly-aliasing pointer
-(`coreaction_cleanup.rs (is_possible_alias)`, recursion depth 2 — proves
-difference only through matching op shapes with distinct constant offsets), a
+STORE into the same space that may touch the loaded bytes
+(`coreaction_cleanup.rs (is_possible_alias)`, recursion depth 2), a
 LOAD or call output whose cover crosses any call, or a defining input whose
 high would collide after inflating its cover to the candidate's
 (`merge.rs (Merge::inflate_test)`, copy shadows again forgiven). The failure
 mode of a wrong "implied" is a value printed at a program point where it no
 longer holds — which is why every unsafe case resolves to explicit.
+
+The alias test compares the two accesses, not only the two pointers. It proves
+a STORE harmless only when both pointers derive from one base through matching
+op shapes (a constant step, or the same op on each side down to a common
+operand) and the constant distance that leaves between them keeps the store's
+bytes, as wide as its value, clear of the load's, as wide as its output. A
+distance found between two `PTRADD` indices is scaled by the element size
+before it meets the widths, a negation reverses its direction, and a pointer
+XORed with a constant is taken to be at least the constant's lowest set bit
+away in either direction. Upstream `isPossibleAlias` compares the pointer
+values alone, so one base plus two different constants counted as two objects
+whatever the widths: a byte store at `p+8` let a 4-byte load at `p+7` print
+after it, reading the new byte. kuna corrects that without an option; a store
+on an adjacent byte or element still lets the load fold past it
+(`tests/stages/kuna-aliasoverlap.xml`). The other place a read used to move past
+a store is the per-field split of a typed LOAD, guarded in chapter
+[03](03-ssa-and-simplification.md) (§3.3).
 
 Each accepted marking goes through `merge.rs (Merge::mark_implied)`, which sets
 the flag *and* dirties the Cover of every operand of the defining op. That

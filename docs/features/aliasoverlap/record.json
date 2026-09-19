@@ -1,0 +1,176 @@
+{
+ "opportunity": "A load that reads bytes a later store overwrites could print after that store: one base plus two different constant offsets counted as two objects whatever the access widths, so `mov eax,[rdi+7]; mov [rdi+8],sil` printed `*(char *)(a0 + 8) = a1; return *(unsigned int *)(a0 + 7);`, which returns the new byte. A typed read split into per-field reads (SplitDatatype::split_load) was built at its lone COPY, after any store or call in between, so on a DWARF build `mov eax,[rdi+7]; mov [rdi+9],sil` printed `s->c9 = (char)w;` before the field reads",
+ "test_name": "tests/stages/kuna-aliasoverlap.xml (8 assertions; #1-#3 and #5-#7 fail on main) + kuna-cli/tests/decompile_all_cli.rs a_load_is_not_printed_after_a_store_into_its_bytes (round trip of six printed functions; main 3/6 wrong, fix 0/6) + a_split_load_is_not_moved_past_a_store_or_a_call (DWARF round trip of four printed functions; main 3/4 wrong, fix 0/4)",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/aliasoverlap_x86_64 (gcc -O2 from aliasoverlap_x86_64.c; clang -O2 emits the same instruction pairs); decompiler/crates/kuna-analysis/tests/fixtures/splitload_x86_64 (gcc -O2 -g from splitload_x86_64.c)",
+ "selector": "inside",
+ "func_addr": "0x1240",
+ "option": null,
+ "flag": null,
+ "change_kind": "strict correctness fix (no option: it only stops a load from printing after a store that overwrites some of its bytes)",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "Ghidra ActionMarkImplied::isPossibleAlias / isPossibleAliasStep (coreaction.cc); upstream master f9e13846 has the same hole and a FIXME on its constant arm; Ghidra SplitDatatype::splitLoad (subflow.cc, insertPoint = copyOp when the LOAD's lone use is a COPY)",
+ "default_on": true,
+ "ablation_changed": 0,
+ "parity": "OK",
+ "root_cause": "ActionMarkImplied::checkImpliedCover forces a LOAD explicit when its cover crosses a STORE whose pointer isPossibleAlias says may equal the load's. isPossibleAlias compares pointer VALUES only: a pointer plus any constant (isPossibleAliasStep), one base plus two different constants (INT_ADD arm: !functionalEquality(bases)), and two different constant addresses all answer 'different', whatever the access widths, so a 4-byte load at base+7 was judged independent of a 1-byte store at base+8. Separately, SplitDatatype::splitLoad re-creates the per-field LOADs at the LOAD's lone COPY whatever lies between the two, so a STORE into the read bytes or a call between them ended up before the reads.",
+ "fix": "p6_variables/coreaction_cleanup.rs: check_implied_cover passes the store's value size and the load's output size (AliasSpan {w1, w2, scale}); a constant step, two distinct constants off functionally equal bases, or two constant addresses answer 'different' only when [o1,o1+w1) and [o2,o2+w2) are disjoint (distance taken signed at the pointer size). A distance between two PTRADD indices is scaled by the element size; a negation reverses it; an XOR by a constant is at least its lowest set bit away in either direction. Commuted matches are only taken for byte-scaled adds. The predicate answers 'may alias' everywhere main's did, so the fix can only turn implied loads explicit. p3_dataflow/subflow.rs: split_load declines the split when store_or_call_between finds a STORE or a call between the LOAD and its lone COPY, or the two in different blocks; the read then prints whole ahead of the store or call. Splitting at the LOAD and keeping the COPY was tried first and rejected: on tar O0 validate_uparams (DWARF) the COPYs write the global uparams at the return, and four of five stores stopped printing.",
+ "roundtrip": {
+  "method": "kuna-cli/tests/decompile_all_cli.rs a_load_is_not_printed_after_a_store_into_its_bytes: decompile-all the fixture (six functions), check statement order, compile the printed C with cc -std=gnu11 against a driver holding the source functions, call each on a filled buffer, compare return value and buffer",
+  "main": "3 of 6 wrong: inside f3ce5a84 != f3cea984, below f3ce0000 != f3cea984, indexed 5a18f3cea9 != ac87623d18f3cea9",
+  "fix": "0 of 6 wrong",
+  "clang": "clang -O2 emits the same six instruction pairs (no endbr64); kuna's output is identical for both builds, before and after",
+  "dwarf": "gcc -O2 -g build: main prints `p[8] = (char)w; return *(unsigned int *)&p[7];` and `a[i + 1] = w; return *(unsigned long *)&a[i];`; fix keeps each read in a local ahead of the store; after/before/next unchanged",
+  "structdedup_cx6": "cx6 rd_c8/rd_c9/rd_c10 (gcc -O2, --option structsynth off) round trip: main 3/3 wrong (rd_c8 4201fc33 != 42016633), fix 0/3",
+  "dwarf_splitload": {
+   "method": "kuna-cli/tests/decompile_all_cli.rs a_split_load_is_not_moved_past_a_store_or_a_call: decompile-all splitload_x86_64 (gcc -O2 -g) intospan/otherptr/acrosscall/plain, rewrite printed partial writes (v1._N_1_ = x) as byte stores so main's output compiles, compile against a driver holding the source functions (otherptr called with t == s; sink bumps s->c8), compare return value and struct bytes",
+   "main": "3 of 4 wrong: intospan f35aa984 != f3cea984, otherptr f35aa984 != f3cea984, acrosscall f3ceba84 != f3cea984; plain right",
+   "fix": "0 of 4 wrong; plain still splits (v1._0_1_ = s->c7;)",
+   "clang": "clang -O2 -g emits the same instruction pairs; the .o reproducer prints the same before and after for gcc and clang"
+  }
+ },
+ "corpus_diff": {
+  "method": "kuna decompile-all <bin> (default mode), main d6c5862f vs fix a45e0e4d, per-function C text; every changed function classified (docs/features/aliasoverlap/corpus-diff.txt)",
+  "binaries": 52,
+  "functions": 29212,
+  "changed": 1,
+  "only_one_side": 0,
+  "nonzero_rc": 0,
+  "changed_functions": {
+   "O2/bash/bash sub_e2c10": "IN CLASS: an 8-byte IR load at +0x18 folded past a 4-byte store at +0x1c (its high half) is now `v4 = dat_143518[3];` ahead of the store; main's re-read only matched because it is truncated to the untouched low half"
+  },
+  "out_of_class": 0,
+  "rebased": "stripped set re-run on a45e0e4d: 52 binaries, 29,212 functions, the same single sub_e2c10 hunk byte for byte",
+  "dwarf": {
+   "binaries": 31,
+   "functions": 19023,
+   "changed": 1,
+   "nonzero_rc": 0,
+   "changed_functions": {
+    "O2/bash/bash init_line_structures @ 0xe2c10": "IN CLASS: the DWARF twin of the stripped sub_e2c10 hunk (is_possible_alias)"
+   },
+   "split_load_alone": "0 changed: cc9aeb0a vs a45e0e4d over the first 20 DWARF binaries (10,970 functions) and all 52 stripped binaries; the other 11 DWARF binaries are unchanged from main altogether",
+   "rejected_attempt": "split at the LOAD and keep the COPY: changed tar O0 validate_uparams, dropping four of five stores into the global uparams"
+  }
+ },
+ "speed": {
+  "method": "kuna decompile-all <stripped bin> --json, main d6c5862f vs fix a45e0e4d (both changes), 15 interleaved pairs (order alternating), min and median wall ms; the box carried other campaign lanes",
+  "results": {
+   "O2/coreutils/fmt": {
+    "n": 15,
+    "base_min_ms": 4188.6,
+    "fix_min_ms": 4176.0,
+    "delta_min_pct": -0.3,
+    "base_median_ms": 4657.1,
+    "fix_median_ms": 4652.5,
+    "delta_median_pct": -0.1
+   },
+   "O2/coreutils/ls": {
+    "n": 15,
+    "base_min_ms": 13646.6,
+    "fix_min_ms": 13944.1,
+    "delta_min_pct": 2.18,
+    "base_median_ms": 14217.6,
+    "fix_median_ms": 14784.8,
+    "delta_median_pct": 3.99
+   },
+   "O2/coreutils/sort": {
+    "n": 15,
+    "base_min_ms": 14974.8,
+    "fix_min_ms": 14614.4,
+    "delta_min_pct": -2.41,
+    "base_median_ms": 17017.7,
+    "fix_median_ms": 17516.0,
+    "delta_median_pct": 2.93
+   },
+   "O2/bash/bash": {
+    "n": 15,
+    "base_min_ms": 88124.8,
+    "fix_min_ms": 86460.9,
+    "delta_min_pct": -1.89,
+    "base_median_ms": 95176.5,
+    "fix_median_ms": 95355.0,
+    "delta_median_pct": 0.19
+   }
+  },
+  "verdict": "within the +5% budget on every case: min deltas fmt -0.30%, ls +2.18%, sort -2.41%, bash -1.89%. The alias predicate runs only for a LOAD whose cover crosses a STORE; the split-load check walks the ops between a LOAD and its COPY only when a split is about to happen",
+  "base": "main d6c5862f",
+  "previous": {
+   "base": "main 75f832e3 vs the is_possible_alias change alone",
+   "results": {
+    "O2/coreutils/fmt": {
+     "n": 15,
+     "base_min_ms": 4164.5,
+     "fix_min_ms": 4136.2,
+     "delta_min_pct": -0.68,
+     "base_median_ms": 4420.5,
+     "fix_median_ms": 4202.7,
+     "delta_median_pct": -4.93
+    },
+    "O2/coreutils/ls": {
+     "n": 15,
+     "base_min_ms": 14097.0,
+     "fix_min_ms": 14450.9,
+     "delta_min_pct": 2.51,
+     "base_median_ms": 16098.0,
+     "fix_median_ms": 15026.2,
+     "delta_median_pct": -6.66
+    },
+    "O2/coreutils/sort": {
+     "n": 15,
+     "base_min_ms": 14750.5,
+     "fix_min_ms": 15101.2,
+     "delta_min_pct": 2.38,
+     "base_median_ms": 16418.7,
+     "fix_median_ms": 16148.9,
+     "delta_median_pct": -1.64
+    },
+    "O2/bash/bash": {
+     "n": 15,
+     "base_min_ms": 83954.7,
+     "fix_min_ms": 84311.8,
+     "delta_min_pct": 0.43,
+     "base_median_ms": 92954.2,
+     "fix_median_ms": 90969.6,
+     "delta_median_pct": -2.14
+    }
+   },
+   "verdict": "within the +5% budget on every case (min deltas -0.68/+2.51/+2.38/+0.43%, medians all negative); the predicate runs only for a LOAD whose cover crosses a STORE and adds a few integer operations per call"
+  }
+ },
+ "benchmark": {
+  "typesweep": "444 slices / 10,748 functions, --baseline-only --dump-decisions with each binary (main 75f832e3 vs fix): type_match PERFECT 986 -> 986, aggregate 3111.18 -> 3111.18; per-slice rows (decisions + scores) identical in 444/444 slices (typesweep.txt)",
+  "arity_phantom": "65,377 scored variable rows (20,574 arguments) identical on both arms: no variable or argument added or removed",
+  "why_it_cannot_move": "the change only turns an implied LOAD explicit (a register temporary printed as its own statement); variables[] exports arguments and stack/frame symbols, not register locals",
+  "rebased": "re-run on d6c5862f: 986 -> 986, 3111.18 -> 3111.18, rows identical 444/444",
+  "final_head": "re-run on a45e0e4d (split-load fix included): 986 -> 986, 3111.18 -> 3111.18, rows (decisions + scores, incl. every argument and variable row) identical to main in 444/444 slices"
+ },
+ "gates": {
+  "base": "main d6c5862f; code head a45e0e4d",
+  "make test": "PARITY OK (675/675 assertions passed); no datatest assertion moved",
+  "make test-stages": "PARITY OK (1189/1189; +8 kuna-aliasoverlap keys over main's 1181, none removed)",
+  "make rust-test": "RUST_TEST_RC=0 (416 `test result: ok`, 0 FAILED) via rust-test-lane.sh on a45e0e4d (13:44:14Z-13:59:44Z, after the last .rs change at 13:42:19Z); includes a_load_is_not_printed_after_a_store_into_its_bytes and a_split_load_is_not_moved_past_a_store_or_a_call",
+  "make check-spec": "check-spec OK (lenient mode); check_spec.py --strict: check-spec OK (strict mode)",
+  "make test-cli": "tests/cli: 189/189 passed",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh (no option added)"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs",
+  "decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs",
+  "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs",
+  "decompiler/crates/kuna-analysis/tests/fixtures/aliasoverlap_x86_64",
+  "decompiler/crates/kuna-analysis/tests/fixtures/aliasoverlap_x86_64.c",
+  "decompiler/crates/kuna-analysis/tests/fixtures/splitload_x86_64",
+  "decompiler/crates/kuna-analysis/tests/fixtures/splitload_x86_64.c",
+  "decompiler/crates/kuna-analysis/tests/fixtures/README.md",
+  "decompiler/crates/kuna-base/src/xml.rs",
+  "tests/stages/kuna-aliasoverlap.xml",
+  "docs/baseline-stages.json",
+  "docs/spec/03-ssa-and-simplification.md",
+  "docs/spec/06-variables-and-merge.md",
+  "docs/features/aliasoverlap/"
+ ],
+ "notes": "Upstream Ghidra master (f9e13846) has the same predicate and a FIXME on its constant arm. Only caller: check_implied_cover's load-crosses-store loop; siblings checked (analysis.md section 3); SplitDatatype::split_load was the one that also moves a read past a store or a call, fixed here (analysis.md section 6). Word-addressed spaces compare address-unit distances against byte widths, which can only over-report aliasing."
+}
