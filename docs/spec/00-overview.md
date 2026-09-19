@@ -1077,14 +1077,21 @@ one (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 sweep will decide differently goes out twice in that pool, and the parent applies
 the sweep on the first-pass text exactly as the serial batch does
 (`decompiler/crates/kuna-cli/src/jobs.rs (name_structs_serially)`). The second
-decompile records its lookups as well, and they have to be the first ones. A
-restarted decompile can carry its first attempt's structure into its second, and
-a field whose type another process cannot rebuild cannot travel; either way the
-functions that asked are decompiled again in target order by one worker that runs
-the ledger and the sweep itself, which is the serial computation restricted to the
-only functions that take part in it, and stderr says so. Only a function the
-watchdog or a worker failure cut short is exempt from the check, since it asks a
-different number of questions on every run. Across sixteen x86-64, i386-PE and
+decompile records its lookups as well, and they have to be the first ones,
+repeats aside. A decompile can ask one question twice (a restarted pass measures
+the same layout again), whether it does follows the process's history, and a
+forced worker answers a repeat as it answered the first asking
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(distinct)`). A function whose first answers do change what it asks next is the
+real exception: its questions up to the first difference were answered as the
+serial run answers them, so the parent takes the corrected record, replays again
+and decompiles only the functions whose answers moved. If that does not settle
+in four rounds, or a field whose type another process cannot rebuild would have
+to travel, the functions that asked are decompiled again in target order by one
+worker that runs the ledger and the sweep itself, which is the serial computation
+restricted to the only functions that take part in it, and stderr says so. Only
+a function the watchdog or a worker failure cut short is exempt from the check,
+since it asks a different number of questions on every run. Across sixteen x86-64, i386-PE and
 ARM binaries at `--jobs 2` and `--jobs 4`, `decompile-all` (text and `--json`),
 `decompile-graph` and every `decompile-project` artifact are byte-identical to
 `--jobs 1`, and none needed the one-worker path. `decompile-project --stream`
