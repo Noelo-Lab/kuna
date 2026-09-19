@@ -381,6 +381,11 @@ main against itself -0.4%. The sweep re-decompiles the functions that name a
 superseded structure, as main's address-order run does; a vote that spreads a
 structure pointer to a caller gives it more such functions to redo.
 
+And on the base that lands, e76fd044, against a fresh build of it: fmt -0.8%,
+kmod +3.7%, ls +0.3%, libselinux +4.1%, tar +1.4%. kmod and libselinux re-run
+beside a second main arm: +2.3% and +2.7% against main, +2.0% and +3.7% against
+that second arm, main against itself +0.3% and -0.9%.
+
 Rounds 8-10 measured the branch against e1139df9 (all within +5% on the
 minimum after re-runs); their tables are in `record.json` under `speed.round8`,
 `round9` and `round10`, and round 6 measured off against on inside one build

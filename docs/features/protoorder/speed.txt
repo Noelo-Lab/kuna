@@ -75,3 +75,13 @@ main 3831d703 vs this branch, interleaved min-of-15 (.scratch/r13/speedS.py, spe
   libselinux -O2  min main  6608 pr  6599 ms  -0.1%  (median +2.4%)
   tar -O2         min main 47045 pr 48818 ms  +3.8%  (median +5.1%)
     re-run, 3 arms: main 45572, main again 45391 (-0.4%), pr 47216 ms: +3.6% vs main, +4.0% vs the second main arm
+
+Round 13 on the base that lands, e76fd044 (#673 formatstring on), main vs this branch,
+interleaved min-of-15 (.scratch/r13/speedT.py, speed3T.py):
+  fmt -O2         min main  4171 pr  4138 ms  -0.8%  (median -1.0%)
+  kmod -O2        min main  7354 pr  7623 ms  +3.7%  (median +2.6%)
+    re-run, 3 arms: main 7462, main again 7484 (+0.3%), pr 7632 ms: +2.3% vs main, +2.0% vs the second main arm
+  ls -O2          min main 13493 pr 13529 ms  +0.3%  (median +0.9%)
+  libselinux -O2  min main  6505 pr  6775 ms  +4.1%  (median +4.0%)
+    re-run, 3 arms: main 6731, main again 6669 (-0.9%), pr 6916 ms: +2.7% vs main, +3.7% vs the second main arm
+  tar -O2         min main 47848 pr 48540 ms  +1.4%  (median -0.2%)
