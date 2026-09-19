@@ -106,8 +106,17 @@ the one main prints for the same value through a narrow load
 
 | Finding | Change | Evidence |
 |---|---|---|
-| A pointer vote whose pointee is a non-character integer narrower than a constant the caller stores through the pointer split the store into one store per element, because `SplitDatatype` reads the pointer as an array of its pointee. At the default: gzip `sub_6e90`'s `".tar"` as five byte stores, betaflight `sub_8041e24`'s `1.0f` as four, e2fsck `sub_3a380`'s 8-byte zero as two 4-byte stores. With `--option ptrfromuse void` (the `ptrfromuse` branch evaluating that value as a default found it): bzip2 `sub_5a10` printed `*(unsigned long *)((long)a0 + 0x5c) = 0x100` as eight byte stores (`a0[0x5c] = 0; a0[0x5d] = 1; ...`), and the same in bzip2 `sub_60e0` and tar `sub_133d0`, because with `ptrfromuse` on a callee's `long` parameter becomes a pointer, the two votes agree in class, and the more specific `unsigned char *` wins. Ten of the twelve `store-width` rows round 11 listed as a residual in §5 were this, and gzip `sub_69d0`'s lost `builtin_strncpy` too | `pointee_refuses`: a vote whose pointee is a non-character integer, `bool` or pointer is refused when the caller stores a constant wider than the pointee through the pointer at a fixed place or at a record stride. A constant stored at a stride of its own width (a buffer filled a word at a time) is allowed, as are a computed value stored wider (it prints as a cast) and a character pointee (its byte stores are what the string-copy idiom prints as `builtin_strncpy`). Taken from the `ptrfromuse` branch's commit without that branch's default flip | fixture `protoorder_narrowvote_x86_64` (`fill` stores `"ustar  "` through the buffer it hands a byte-reading `peek`): the pre-fix engine prints `int fill(unsigned char *a0,int a1)` and eight byte stores at the default and with `ptrfromuse void`, the fixed one `*(unsigned long *)(a0 + 0x10) = 0x2020726174737575;` in both, as main does. CLI test `a_byte_pointee_vote_keeps_the_callers_wide_stores` (both arms) and probe `protoorder-types-keeps-a-wide-store-whole` fail on the pre-fix engine. bzip2 `sub_5a10` and `sub_60e0` under `ptrfromuse void` are now identical to main; tar `sub_133d0` and gzip `sub_6e90` differ from main only in the casts a winning vote adds |
+| A pointer vote whose pointee is a non-character integer narrower than a constant the caller stores through the pointer split the store into one store per element, because `SplitDatatype` reads the pointer as an array of its pointee. At the default: gzip `sub_6e90`'s `".tar"` as five byte stores, betaflight `sub_8041e24`'s `1.0f` as four, e2fsck `sub_3a380`'s 8-byte zero as two 4-byte stores. With `--option ptrfromuse void` (the `ptrfromuse` branch evaluating that value as a default found it): bzip2 `sub_5a10` printed `*(unsigned long *)((long)a0 + 0x5c) = 0x100` as eight byte stores (`a0[0x5c] = 0; a0[0x5d] = 1; ...`), and the same in bzip2 `sub_60e0` and tar `sub_133d0`, because with `ptrfromuse` on a callee's `long` parameter becomes a pointer, the two votes agree in class, and the more specific `unsigned char *` wins. Ten of the twelve `store-width` rows round 11 listed as a residual in §5 were this, and gzip `sub_69d0`'s lost `builtin_strncpy` too | `pointee_refuses`: a vote whose pointee is a non-character integer, `bool` or pointer is refused when the caller stores a constant wider than the pointee through the pointer at a fixed place or at a record stride. A constant stored at a stride of its own width (a buffer filled a word at a time) was allowed (round 13 dropped that, §3g), as are a computed value stored wider (it prints as a cast) and a character pointee (its byte stores are what the string-copy idiom prints as `builtin_strncpy`). Taken from the `ptrfromuse` branch's commit without that branch's default flip | fixture `protoorder_narrowvote_x86_64` (`fill` stores `"ustar  "` through the buffer it hands a byte-reading `peek`): the pre-fix engine prints `int fill(unsigned char *a0,int a1)` and eight byte stores at the default and with `ptrfromuse void`, the fixed one `*(unsigned long *)(a0 + 0x10) = 0x2020726174737575;` in both, as main does. CLI test `a_byte_pointee_vote_keeps_the_callers_wide_stores` (both arms) and probe `protoorder-types-keeps-a-wide-store-whole` fail on the pre-fix engine. bzip2 `sub_5a10` and `sub_60e0` under `ptrfromuse void` are now identical to main; tar `sub_133d0` and gzip `sub_6e90` differ from main only in the casts a winning vote adds |
 | What the refusal changes | Nothing else: 0 of 10,748 `type_match` rows move, in either `ptrfromuse` arm, and 0 of 3,451 firmware rows | 60 binaries at the default: 26 of 32,406 functions change against the pre-fix engine -- 11 splits undone, 9 callers whose argument cast follows the callee's new parameter type, and 6 where a refused vote gives back main's own type (crazyflie `sub_801ffc8` `char`, ip `sub_3e220`/`sub_3eee0` `int *` and their two callers' locals). `ptrfromuse void` over 13 binaries: 14 change, 9 splits undone and 5 caller casts. Call arguments, argument rows and never-assigned arguments unchanged (§5) |
+
+## 3g. Round 13: two ways past the narrow-pointee refusal
+
+| Finding | Change | Evidence |
+|---|---|---|
+| §3f allowed a constant stored at a stride of its own width, as a buffer filled a word at a time, and that printed the same per-element split: a loop storing an eight-byte constant per word printed eight byte stores per iteration under `unsigned char *a0` where main prints `unsigned long *a0` and `*v2 = 0x102030405060708;`, and betaflight `sub_801379c`'s sector fill `*(unsigned int *)(a1 + v1 * 4) = 0xefbeadde` printed as four byte stores per word | The exemption is gone: a non-character integer, `bool` or pointer pointee refuses any constant the caller stores through the pointer wider than itself | fixture `protoorder_widefill_x86_64` `fill_words`: the round-12 engine prints the split at the default and with `ptrfromuse void`; the fixed one prints main's function byte for byte in both. betaflight `sub_801379c`: FW_SUB_801379C |
+| The narrow primitive rule read "the walk gave up" (more than 511 steps over the caller's derived addresses) as "no wide store", so a caller with that many addresses took the vote unchecked: 520 eight-byte constants stored through the buffer a byte-reading callee gets printed as 4,160 byte stores under `unsigned char *a0` | That rule refuses when the walk gives up, as the float and composite rules already did | fixture `fill_many`: the round-12 engine prints the split in both arms; the fixed one prints main's function byte for byte. CLI test `a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole` (both functions, both arms) and probe `protoorder-types-keeps-a-word-fill-whole` fail on the round-12 engine |
+| What the two changes do elsewhere | Nothing else | CORPUS_R13 |
+| Not changed: a vote with a wider pointee over the caller's own byte reads (stat O2 `sub_df20`'s `char *a0` becomes `int *a0`, printed `v1 = (char)*a0;`) | Kept | The wide-read class of §9: the same value on a little-endian target, read at a different width. It is the same class main prints for any typed pointer, and no store is split by it |
 
 ## 4. What the vote may not do
 
@@ -138,9 +147,10 @@ Each refusal, with the witness that motivated it (`call_argument_vote`):
   `*(int **)&a0[0x33].field_0x4`), an access across or inside members (four byte
   pieces for one word), or integer bits moved through a float member (the union
   and struct-copy callers of `protoorder_floatpointee_x86_64`, §3e). For a
-  non-character integer, `bool` or pointer pointee: a constant the caller stores
-  wider than it at a fixed place or a record stride (`protoorder_narrowvote_x86_64`,
-  §3f).
+  non-character integer, `bool` or pointer pointee: any constant the caller stores
+  wider than it (`protoorder_narrowvote_x86_64`, §3f; `protoorder_widefill_x86_64`,
+  §3g). Every pointee rule refuses when the walk over the caller's addresses
+  gives up (§3g).
 
 ## 5. The corpus
 
@@ -352,26 +362,30 @@ recovery over-counted; `type_match` cannot see a fabricated parameter at all.
   states nothing and says so.
 - A winning vote changes spellings, not only declarations: casts at the typed
   argument, a signed use cast back after an unsigned vote (`(int)a0 >> 2`), and,
-  in the two shapes §3f allows, a byte pointee splitting one wide constant store
-  through it into byte stores of the same bytes: a `char *` vote (libselinux
+  in the one shape §3f allows, a character pointee splitting one wide constant
+  store through it into character stores of the same bytes: libselinux
   `sub_1d4c0` prints `*(unsigned long *)(a0 + 0xa0) = 0` as eight `'\0'` stores
-  on a structure the callee reads bytes of; ginstall and tar print a 2-byte
-  constant as two `char`s) and a buffer filled a word at a time (betaflight
-  `sub_801379c` fills a 512-byte sector with the bytes `de ad be ef`, printed as
-  four byte stores per word through its `uint1 *` parameter). Memory ends up the same; the access
-  width does not, which matters on memory-mapped I/O. Any other non-character
-  primitive pointee narrower than a constant stored through it is refused (§3f),
-  and a structure or float pointee never splits a store: an access across its
-  members refuses the vote (§3e). A pointer typed by a vote also lets `RuleExpandLoad` print a
-  known-typed narrow load as the truncated element (`(short)v1[0x11]`): the same
-  value, a wider read, as main prints for any typed pointer (§3b).
+  on a structure the callee reads bytes of, and ginstall and tar print a 2-byte
+  constant as two `char`s. Memory ends up the same; the access width does not,
+  which matters on memory-mapped I/O. Any other non-character primitive pointee
+  narrower than a constant stored through it is refused (§3f, §3g), a buffer
+  filled a word at a time included, and a structure or float pointee never
+  splits a store: an access across its members refuses the vote (§3e).
+- A pointer typed by a vote also lets `RuleExpandLoad` print a known-typed
+  narrow load as the truncated element: `(short)v1[0x11]`, and stat O2
+  `sub_df20`, whose `char *a0` takes an `int *` passed up from `sub_e1d0`
+  through `sub_dfe0`, prints its format-string reads as `v1 = (char)*a0;`. The
+  same value on a little-endian target, read at a different width, as main
+  prints for any typed pointer (§3b); no store is split by it.
 - A vote of the same class can still override the caller's own evidence: an
   unsigned vote makes a parameter the caller shifts and divides as signed
   `unsigned int`, with `(int)a0` casts keeping those uses correct. The refusals
   are by class (pointer, integer, float), not by the finer type, except where the
   finer type would split a store (§3f): gzip's `unsigned char *` beside
   `strcmp`'s declared `char *` no longer turns its `builtin_strncpy(v,".tar",5)`
-  into five byte stores.
+  into five byte stores. A same-width vote can still lose a character spelling:
+  pr O0 `sub_2d9c`'s `char *` becomes `unsigned char *`, and `*v3 == ':'`
+  prints as `*v3 == 0x3a`.
 - A float vote is refused on any value the function also stores, even where
   the store lands in float memory (`*a2 = v1` through what becomes a `float *`):
   the vote cannot see which type the store's pointer will settle on, and an

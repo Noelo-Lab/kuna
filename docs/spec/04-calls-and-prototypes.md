@@ -1892,20 +1892,24 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   `rdx` for a `memcpy` from two `long`s (the fixture
   `protoorder_floatpointee_x86_64`, whose six callers are compiled from the
   printed C and compared with the source). A pointee that is a non-character
-  integer, a `bool` or a pointer refuses a constant the caller stores through
-  the family wider than itself, at a fixed place or at a record stride:
-  `SplitDatatype` reads such a pointer as an array of its pointee and splits a
-  constant store into one store per element, so a callee's `unsigned char *`
-  printed gzip's `".tar"` suffix as five byte stores, betaflight's `1.0f` in a
-  0x14-byte record as four and, with `ptrfromuse` on, bzip2's field write
-  `*(unsigned long *)(a0 + 0x5c) = 0x100` as eight (the fixture
-  `protoorder_narrowvote_x86_64` stores `"ustar  "` the same way). A
-  constant stored at a stride of its own width is a buffer filled a word at a
-  time, which a byte pointee does describe (betaflight's `read_data_sector`
-  fills its `uint8_t *` sector with `0xdeadbeef`), and is allowed; any other
-  access of another width prints a cast, not a conversion, and is not checked.
-  Neither is a character pointee: the byte stores it produces are what the
-  string-copy idiom prints as `builtin_strncpy`.
+  integer, a `bool` or a pointer refuses any constant the caller stores through
+  the family wider than itself, wherever it lands: `SplitDatatype` reads such a
+  pointer as an array of its pointee and splits a constant store into one store
+  per element, so a callee's `unsigned char *` printed gzip's `".tar"` suffix as
+  five byte stores, betaflight's `1.0f` in a 0x14-byte record as four and, with
+  `ptrfromuse` on, bzip2's field write `*(unsigned long *)(a0 + 0x5c) = 0x100`
+  as eight (the fixture `protoorder_narrowvote_x86_64` stores `"ustar  "` the
+  same way). A buffer filled a word at a time is no exception: betaflight's
+  sector fill `*(unsigned int *)(a1 + v1 * 4) = 0xefbeadde` printed as four byte
+  stores per word, and a loop storing an eight-byte constant per word as eight
+  (`fill_words` in `protoorder_widefill_x86_64`). A store of a computed value
+  of another width prints a cast, not a conversion, and is not checked. Neither
+  is a character pointee: the byte stores it produces are what the string-copy
+  idiom prints as `builtin_strncpy`. The walk over the addresses derived from
+  the family gives up after 511 steps, and every pointee check refuses the vote
+  when it does, rather than taking one it could not check: `fill_many` in
+  the same fixture stores 520 eight-byte constants, and a vote let through
+  there printed 4,160 byte stores.
 
 The callee's recovered RETURN type is not stated. It has no competing evidence at
 the caller — the call's result is a new value — so a wrong one spreads through
