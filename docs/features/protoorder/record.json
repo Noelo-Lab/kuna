@@ -798,15 +798,15 @@
   "float_votes": "a float vote needs every other reader and writer of the value to be a float op, a copy of the bits (COPY/CAST/MULTIEQUAL/INDIRECT/LOAD), a float-class register of the calling convention, or a declared float: integer ops incl. SUBPIECE/PIECE, a STORE, and a RETURN/other call/call result outside a float register refuse it. Self-review sets over x86-64, MIPS o32, ARM softfp/soft/hard-float: the default differs from main only in int parameters from h(int k, ...) and bit-exact float literals"
  },
  "gates": {
-  "base": "origin/main a3bf6a15 (#687 foldcallret short-circuit fix); 223 settables (tiers core 70 / transform 89 / analysis 64)",
+  "base": "origin/main 3831d703 (#675 structsynth shared layouts, #686 alias overlap); 223 settables (tiers core 70 / transform 89 / analysis 64)",
   "make test": "datatests: 675/675 assertions passed / PARITY OK",
-  "make test-stages": "datatests: 1189/1189 assertions passed / PARITY OK (a3bf6a15 adds the foldcallret-shortcircuit stage assertions); a re-record of docs/baseline-stages.json is byte-identical to the committed one",
-  "make test-cli": "tests/cli: 204/204 passed (adds protoorder-types-keeps-a-word-fill-whole)",
+  "make test-stages": "datatests: 1212/1212 assertions passed / PARITY OK; a re-record of docs/baseline-stages.json is byte-identical to the committed one",
+  "make test-cli": "tests/cli: 205/205 passed (protoorder-types-keeps-a-word-fill-whole, and #675's structsynth-sweep-mints-no-third-name, which failed on the rebased branch before §3h)",
   "check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth (223 settables)",
   "docs/options.md": "byte-fresh against the final build (OPTIONS_FRESH); phase_catalog.json recaptured for the reworded protoorder row",
-  "make rust-test": "RUST_TEST_RC=0 (7,239 passed / 0 failed; lane 2026-09-19T16:18:19Z -> 16:34:50Z on 7b237787, the last .rs/.toml/fixture change; later commits are docs only); a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole ok"
+  "make rust-test": "RUST_TEST_RC=0 (7,264 passed / 0 failed; lane 2026-09-19T18:31:18Z -> 18:47:17Z on 9e5e0940, the last code change; later commits are docs only). A lane at 17:53Z under heavy load had one failure, jobs_a_stalled_worker_loses_only_the_function_that_stalled (_init past a 1 s per-function budget in the debug build, the --jobs path); it passed in the quiet re-run, in the 17:29Z lane and in release"
  },
  "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main d96e3408 (structsynth, boolbyte and charbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh d96e3408 build; the same engine measured on 6e4f6fa5 first gave the same typesweep rows and class counts; rounds 6-10 were against d3617d64/e1139df9 and are superseded; round 12 measured on 75f832e3 (docs-only over d96e3408) and re-checked after the rebase onto d6c5862f (foldcallretphi on): typesweep, off == main (10 binaries), arity on those 10, gates and rust-test; round 13 re-measured everything on a3bf6a15 (#687 over d6c5862f): the 60-binary corpus in seven arms (round-12 engine, this branch default/off/ptrfromuse void, main with and without ptrfromuse void), typesweep (444 slices + firmware, both ptrfromuse arms, main/round-12/round-13 engines in one sweep), arity, gates, rust-test and a speed spot check; then rebased onto 3831d703 (#675 structdedup, #686): corpus (60 binaries: default, off, ptrfromuse void; main with and without), typesweep (both arms + firmware), gates and rust-test re-run on the final engine",
  "round12_narrow_pointee": {
