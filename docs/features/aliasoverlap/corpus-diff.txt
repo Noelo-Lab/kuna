@@ -78,3 +78,44 @@ truncated to the untouched low half. The fix reads once, ahead of the store, as 
 +    v4 = xmalloc((int8)(int4)v4 << 2);
      v2 = dat_143518;
      v1[4] = v4;
+
+# DWARF footprint (the split-load path needs a typed struct pointer): kuna decompile-all <unstripped DWARF bin> (default mode), main d6c5862f vs fix a45e0e4d
+# binaries: decbench full_run_address_2026-09-11 {O0,O2,O2-noinline}/<project>/compiled/<bin>; all runs rc=0
+
+O0-bash-bash: 3107 fns, 0 changed, 0 only-one-side
+O0-coreutils-ls: 590 fns, 0 changed, 0 only-one-side
+O0-coreutils-sort: 480 fns, 0 changed, 0 only-one-side
+O0-grep-grep: 643 fns, 0 changed, 0 only-one-side
+O0-gzip-gzip: 249 fns, 0 changed, 0 only-one-side
+O0-tar-tar: 1568 fns, 0 changed, 0 only-one-side
+O2-bash-bash: 2540 fns, 1 changed, 0 only-one-side
+O2-bzip2-bzip2: 115 fns, 0 changed, 0 only-one-side
+O2-coreutils-cp: 410 fns, 0 changed, 0 only-one-side
+O2-coreutils-dd: 215 fns, 0 changed, 0 only-one-side
+O2-coreutils-fmt: 152 fns, 0 changed, 0 only-one-side
+O2-coreutils-ls: 405 fns, 0 changed, 0 only-one-side
+O2-coreutils-numfmt: 164 fns, 0 changed, 0 only-one-side
+O2-coreutils-od: 193 fns, 0 changed, 0 only-one-side
+O2-coreutils-pr: 211 fns, 0 changed, 0 only-one-side
+O2-coreutils-ptx: 205 fns, 0 changed, 0 only-one-side
+O2-coreutils-sort: 344 fns, 0 changed, 0 only-one-side
+O2-coreutils-stat: 239 fns, 0 changed, 0 only-one-side
+O2-coreutils-tr: 156 fns, 0 changed, 0 only-one-side
+O2-diffutils-diff: 399 fns, 0 changed, 0 only-one-side
+O2-e2fsprogs-e2fsck: 1425 fns, 0 changed, 0 only-one-side
+O2-findutils-find: 658 fns, 0 changed, 0 only-one-side
+O2-gnutls-certtool: 675 fns, 0 changed, 0 only-one-side
+O2-grep-grep: 450 fns, 0 changed, 0 only-one-side
+O2-gzip-gzip: 205 fns, 0 changed, 0 only-one-side
+O2-libexpat-xmlwf: 127 fns, 0 changed, 0 only-one-side
+O2-noinline-coreutils-sort: 491 fns, 0 changed, 0 only-one-side
+O2-noinline-diffutils-diff: 518 fns, 0 changed, 0 only-one-side
+O2-openssh-portable-sftp: 534 fns, 0 changed, 0 only-one-side
+O2-shadow-useradd: 428 fns, 0 changed, 0 only-one-side
+O2-tar-tar: 1127 fns, 0 changed, 0 only-one-side
+TOTAL 31 bins 19023 fns 1 changed 0 only-one-side
+
+# changed: O2/bash/bash init_line_structures @ 0xe2c10 is the DWARF twin of the stripped sub_e2c10 hunk above (IN CLASS, same is_possible_alias change).
+# the split-load change alone (previous head cc9aeb0a vs a45e0e4d): 0 changed of 10,970 functions in the first 20 DWARF binaries (the other 11 are unchanged from main altogether) and 0 of 29,212 stripped functions.
+# stripped re-run on a45e0e4d: 52 binaries, 29,212 functions, the same single sub_e2c10 hunk.
+# rejected first attempt (split at the LOAD and keep the COPY): changed tar O0 validate_uparams, where each read's COPY writes the global uparams at the return; four of the five stores into uparams stopped printing. Replaced by declining the split.

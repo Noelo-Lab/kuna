@@ -83,9 +83,9 @@ ahead of it.
 
 ## 6. The second path: `SplitDatatype::split_load`
 
-When a LOAD's type says it spans several fields (a DWARF `struct S *`, or a
-`struct_N *` from `structsynth`), `RuleSplitLoad` splits it into one LOAD per
-field. If the loaded value's only use is a COPY, the split LOADs were built at
+When a LOAD's type says it spans several fields (in practice a DWARF-typed
+struct pointer; no function in the 52 stripped footprint binaries changed),
+`RuleSplitLoad` splits it into one LOAD per field. If the loaded value's only use is a COPY, the split LOADs were built at
 the COPY and wrote straight into the COPY's output, which can sit after a
 STORE or a call. Upstream Ghidra does the same (subflow.cc
 `insertPoint = (copyOp == 0) ? loadOp : copyOp`). With
@@ -105,9 +105,17 @@ The same happened with a call between the load and the COPY (`mov
 store through a second pointer. clang -O2 -g is the same. This path does not go
 through `is_possible_alias`, so the first half of the fix did not reach it.
 
-The split now moves to the COPY only when `RuleDoubleLoad::no_write_conflict`
-finds the two in one block with no STORE into the loaded space, no write to a
-Varnode in it and no call between them. Otherwise the split stays at the LOAD
-and the COPY is kept. The piece LOADs are not simply hoisted, because they write
-pieces of the COPY's output register, which a call in between clobbers. When
-nothing lies between the two the output is unchanged (the `splitplain` control).
+The fix declines the split when a STORE or a call lies between the LOAD and
+its COPY, or the two sit in different blocks. The read then prints whole, as
+its own statement ahead of the store or call: `v1 = *(unsigned int *)&s->c7;`.
+When nothing lies between the two the output is unchanged (the `plain` and
+`splitplain` controls).
+
+The first attempt split at the LOAD and kept the COPY, as the review suggested.
+The DWARF footprint showed why that is wrong: on tar O0 `validate_uparams`
+(`uparams = *upptr;`) each 8-byte read's COPY writes the global `uparams`
+at the return, and the write of `uparams+0x20` lies between. Split at the
+LOAD, the pieces went to a temporary and the COPY into `uparams` stopped
+printing, so four of the five stores vanished from the output. Declining the
+split keeps main's output there, since a write to a global Varnode is neither a
+STORE nor a call.

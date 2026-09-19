@@ -26,9 +26,10 @@ a load past a store that overwrites some of its bytes.
 
 ## 1b. The split-load path (`p3_dataflow/subflow.rs`)
 
-- `SplitDatatype::split_load` keeps the split at the LOAD, and the COPY in
-  place, unless `RuleDoubleLoad::no_write_conflict` (`p5_types/double.rs`, now
-  `pub(crate)`) clears the ops between the LOAD and its lone COPY.
+- `SplitDatatype::split_load` returns without splitting when
+  `store_or_call_between` finds a STORE or a call between the LOAD and its lone
+  COPY, or the two in different blocks. The read then prints whole ahead of the
+  store or call.
 
 ## 2. Tests
 
@@ -41,9 +42,12 @@ a load past a store that overwrites some of its bytes.
   plus four functions over a typed `S *` for the split-load path (a byte store
   into the read, a store through a second pointer, a call, and a control with
   nothing between the read and its COPY); eight assertions, main fails #1-#3
-  and #5-#7. The split-load shapes print `v1._0_1_ = ...` partial writes, which
-  do not compile, so they are pinned by statement order rather than a round
-  trip.
+  and #5-#7.
+- `decompile_all_cli.rs` `a_split_load_is_not_moved_past_a_store_or_a_call`:
+  fixture `splitload_x86_64` (gcc -O2 -g, DWARF), the same four shapes. It
+  rewrites the printed partial writes (`v1._0_1_ = ...`) as byte stores so main's
+  output compiles too, then checks each function against its source. Main: 3 of
+  4 return a different value; fix: 0.
 
 ## 3. Measurement
 
