@@ -29,7 +29,7 @@
   }
  },
  "arity": {
-  "instrument": "docs/features/protoorder/callsite-metrics.py over `decompile-all --json` in both arms (off = main 6e4f6fa5 byte for byte, vs the default), 60 stripped binaries, 32,406 functions",
+  "instrument": "docs/features/protoorder/callsite-metrics.py over `decompile-all --json` in both arms (off = main d96e3408 byte for byte, vs the default), 60 stripped binaries, 32,406 functions",
   "call_arguments_off": 258249,
   "call_arguments_on": 258249,
   "arguments_added": 0,
@@ -41,7 +41,7 @@
   "never_assigned_arguments_off": 1179,
   "never_assigned_arguments_on": 1179,
   "string_literal_arguments_off": 30518,
-  "string_literal_arguments_on": 31001,
+  "string_literal_arguments_on": 31017,
   "under_arity_sites_off": 13853,
   "under_arity_sites_on": 13853,
   "file": "docs/features/protoorder/callsite.json"
@@ -50,16 +50,16 @@
   "instrument": "docs/features/protoorder/corpus-diff.py (every changed function classified by the first normalizer under which the two bodies agree; frame layout from variables[]; use-before-def from the code) + label-review.py/hand-labels.json for the residue + invariants.py; round 11 adds the struct-number class (struct_N renumbered by order of appearance) and member-reach through ->field_0xN / ->field_0xN[k]",
   "binaries": 60,
   "functions_total": 32406,
-  "functions_changed": 9669,
+  "functions_changed": 9664,
   "classes": {
    "REVIEW": 114,
-   "casts": 4450,
-   "declarations": 2754,
-   "literal": 360,
+   "casts": 4438,
+   "declarations": 2753,
+   "literal": 369,
    "member-reach": 432,
    "merge": 17,
-   "pointer-arith": 122,
-   "struct-number": 1420
+   "pointer-arith": 120,
+   "struct-number": 1421
   },
   "residue_labels": {
    "builtin-string": 5,
@@ -105,13 +105,13 @@
    "to_float_note": "per function 199 appear and 159 disappear on hard-float call results read from s0 (a callee returning float), 1 is main's own conversion moved into a temporary, 2 of main's go away"
   },
   "invariants": {
-   "functions_changed": 9669,
+   "functions_changed": 9664,
    "calls_lost": 0,
    "calls_gained": 1,
    "calls_gained_note": "a string literal the default arm recovers, \"Calling prvGetRegistersFromStack() from fault handler\", read as a call by the regex",
    "goto_delta": 0,
    "return_delta": 0,
-   "stmt_delta": 129
+   "stmt_delta": 127
   },
   "files": [
    "corpus-report.json",
@@ -122,10 +122,10 @@
    "callsite.json",
    "calls-gained.on.txt"
   ],
-  "measured_on": "round 11: main 6e4f6fa5 (= the off arm on 60/60) vs the final engine (af624192 code; the final build is byte-identical on 10 re-checked binaries)"
+  "measured_on": "round 11: main d96e3408 (= the off arm on 60/60) vs the rebased final engine (the same code measured on 6e4f6fa5 first: identical class counts, arity and typesweep rows)"
  },
  "benchmark": {
-  "corpus": "frozen decbench corpus (results/full_run_address_2026-09-11), 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow; O0 O2 O2-noinline; the campaign's x project has no slice), DECBENCH_NO_CACHE=1, scripts.decbench.typesweep --baseline-only on a main 6e4f6fa5 build and on this branch, merged",
+  "corpus": "frozen decbench corpus (results/full_run_address_2026-09-11), 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow; O0 O2 O2-noinline; the campaign's x project has no slice), DECBENCH_NO_CACHE=1, scripts.decbench.typesweep --baseline-only on a main d96e3408 build and on this branch, merged",
   "metric": "type_match",
   "projects": {
    "bzip2": {
@@ -214,7 +214,7 @@
   "aggregate_on": 3363.95,
   "moved_onto_perfect": 119,
   "moved_off_perfect": 0,
-  "control": "6,822 functions with byte-identical variables score identically in both arms",
+  "control": "6,838 functions with byte-identical variables score identically in both arms",
   "firmware": {
    "slices": "nuttx mirai betaflight freertos at O2",
    "perfect_off": 208,
@@ -588,7 +588,7 @@
   }
  },
  "invariants_checked": {
-  "off_is_origin_main": "round 11: `--option protoorder off --json` is byte-identical to a fresh origin/main 6e4f6fa5 build on all 60 corpus binaries; the final build (after the use_when text) is byte-identical to the measured engine and off==main on fmt, ls, kmod, libselinux, betaflight, nuttx, dash, grep -O0, zlib, crazyflie cf2 (10/10)",
+  "off_is_origin_main": "round 11: `--option protoorder off --json` is byte-identical to a fresh origin/main d96e3408 build on all 60 corpus binaries (and to 6e4f6fa5 on all 60 before the charbyte rebase)",
   "determinism": "two default runs of fmt -O2 --json are byte-identical",
   "jobs": "an explicit `--option protoorder` with --jobs N exits 2; under the default a --jobs run states nothing and prints a note on stderr; with --option protoorder off it is byte-identical to the serial run (kuna-cli tests)",
   "assert": "`--assert prototype` declares the entry, so the recovered statement declines and the declared branch of getInputLocal answers first",
@@ -600,7 +600,7 @@
   "float_votes": "a float vote needs every other reader and writer of the value to be a float op, a copy of the bits (COPY/CAST/MULTIEQUAL/INDIRECT/LOAD), a float-class register of the calling convention, or a declared float: integer ops incl. SUBPIECE/PIECE, a STORE, and a RETURN/other call/call result outside a float register refuse it. Self-review sets over x86-64, MIPS o32, ARM softfp/soft/hard-float: the default differs from main only in int parameters from h(int k, ...) and bit-exact float literals"
  },
  "gates": {
-  "base": "origin/main 6e4f6fa5; no option added in round 11 (222 settables; tiers core 69 / transform 89 / analysis 64)",
+  "base": "origin/main d96e3408 (charbyte); 223 settables after the rebase (tiers core 70 / transform 89 / analysis 64)",
   "make test": "datatests: 675/675 assertions passed / PARITY OK",
   "make test-stages": "datatests: 1156/1156 assertions passed / PARITY OK (a scratch --save-baseline re-record is byte-identical to docs/baseline-stages.json)",
   "make test-cli": "tests/cli: 202/202 passed",
@@ -610,5 +610,5 @@
   "docs/options.md": "byte-fresh against the final build",
   "make rust-test": "RUST_TEST_RC=0 (7,230 passed / 0 failed; lane 2026-09-19T03:35:25Z -> 03:50:06Z on 6f937812, the final engine af624192 plus the use_when text)"
  },
- "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main 6e4f6fa5 (structsynth and boolbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh 6e4f6fa5 build; rounds 6-10 were against d3617d64/e1139df9 and are superseded"
+ "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main d96e3408 (structsynth, boolbyte and charbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh d96e3408 build; the same engine measured on 6e4f6fa5 first gave the same typesweep rows and class counts; rounds 6-10 were against d3617d64/e1139df9 and are superseded"
 }

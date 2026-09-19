@@ -7,10 +7,10 @@
   "allstring_off": 30518,
   "allphantom_off": 1179,
   "allargs_on": 258249,
-  "allstring_on": 31001,
+  "allstring_on": 31017,
   "allphantom_on": 1179,
-  "string_off": 6468,
-  "string_on": 6951,
+  "string_off": 6460,
+  "string_on": 6959,
   "phantom_off": 162,
   "phantom_on": 162
  },
@@ -120,10 +120,10 @@
    "allstring_off": 272,
    "allphantom_off": 9,
    "allargs_on": 3558,
-   "allstring_on": 272,
+   "allstring_on": 273,
    "allphantom_on": 9,
-   "string_off": 3,
-   "string_on": 3
+   "string_on": 4,
+   "string_off": 3
   },
   "O0_gzip_stripped_gzip": {
    "argrows_off": 339,
@@ -199,10 +199,10 @@
    "allstring_off": 263,
    "allphantom_off": 9,
    "allargs_on": 3705,
-   "allstring_on": 263,
+   "allstring_on": 264,
    "allphantom_on": 9,
    "string_off": 5,
-   "string_on": 5
+   "string_on": 6
   },
   "O2-noinline_gzip_stripped_gzip": {
    "argrows_off": 383,
@@ -368,8 +368,8 @@
    "allargs_on": 2766,
    "allstring_on": 314,
    "allphantom_on": 8,
-   "string_off": 20,
-   "string_on": 24,
+   "string_off": 12,
+   "string_on": 16,
    "phantom_off": 1,
    "phantom_on": 1
   },
@@ -567,10 +567,10 @@
    "allstring_off": 278,
    "allphantom_off": 8,
    "allargs_on": 3681,
-   "allstring_on": 278,
+   "allstring_on": 279,
    "allphantom_on": 8,
    "string_off": 16,
-   "string_on": 16
+   "string_on": 17
   },
   "O2_iproute2_stripped_ip": {
    "argrows_off": 2195,
@@ -697,10 +697,10 @@
    "allstring_off": 293,
    "allphantom_off": 35,
    "allargs_on": 4963,
-   "allstring_on": 364,
+   "allstring_on": 377,
    "allphantom_on": 35,
    "string_off": 138,
-   "string_on": 209,
+   "string_on": 222,
    "phantom_off": 4,
    "phantom_on": 4
   },

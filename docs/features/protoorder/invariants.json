@@ -1,10 +1,10 @@
 {
   "arm": "on",
   "totals": {
-    "changed": 9669,
+    "changed": 9664,
     "goto_delta": 0,
     "return_delta": 0,
-    "stmt_delta": 129,
+    "stmt_delta": 127,
     "calls_gained": 1
   },
   "per_binary": {
@@ -24,10 +24,10 @@
       "changed": 48,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 5
+      "stmt_delta": 4
     },
     "O0_coreutils_stripped_sort": {
-      "changed": 111,
+      "changed": 110,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 3
@@ -51,10 +51,10 @@
       "stmt_delta": 6
     },
     "O0_grep_stripped_grep": {
-      "changed": 179,
+      "changed": 178,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 5
+      "stmt_delta": 4
     },
     "O0_gzip_stripped_gzip": {
       "changed": 38,
@@ -93,10 +93,10 @@
       "stmt_delta": 2
     },
     "O2-noinline_grep_stripped_grep": {
-      "changed": 166,
+      "changed": 167,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 8
+      "stmt_delta": 7
     },
     "O2-noinline_gzip_stripped_gzip": {
       "changed": 46,
@@ -171,10 +171,10 @@
       "stmt_delta": -1
     },
     "O2_coreutils_stripped_ls": {
-      "changed": 133,
+      "changed": 131,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 0
+      "stmt_delta": -1
     },
     "O2_coreutils_stripped_numfmt": {
       "changed": 35,
@@ -189,7 +189,7 @@
       "stmt_delta": 0
     },
     "O2_coreutils_stripped_sort": {
-      "changed": 87,
+      "changed": 86,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 10
@@ -228,16 +228,16 @@
       "changed": 115,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -2
+      "stmt_delta": -1
     },
     "O2_diffutils_stripped_diff3": {
       "changed": 38,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -2
+      "stmt_delta": -1
     },
     "O2_dpkg_stripped_dpkg-query": {
-      "changed": 203,
+      "changed": 202,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 13
@@ -249,7 +249,7 @@
       "stmt_delta": 1
     },
     "O2_findutils_stripped_find": {
-      "changed": 215,
+      "changed": 214,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 11
@@ -262,7 +262,7 @@
       "calls_gained": 1
     },
     "O2_grep_stripped_grep": {
-      "changed": 119,
+      "changed": 120,
       "goto_delta": 0,
       "return_delta": 0,
       "stmt_delta": 12
