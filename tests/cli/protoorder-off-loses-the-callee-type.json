@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-3db667201086",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "protoorder",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64",
+    "binary_sha256": "69e7f12f215e9ba62ef5412171670b0cebcdc7b9c3d7d13d43021fb9e9aac2a9",
+    "binary_size": 9288,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64",
+    "selector": "caller",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int callee\\(unsigned char \\*a0,int a1\\)",
+      "unsigned long caller\\(unsigned long a0,int a1\\)",
+      "caller\\(0x402000,3\\);",
+      "vfmt\\(0x402004\\);",
+      "thunk\\(a0,1,2,3,4\\);"
+    ]
+  },
+  "notes": "OFF: `callee` recovers `(unsigned char *, int)`, but nothing carries that to `caller`, whose own parameter stays `unsigned long a0` and whose caller passes a bare `0x402000`. `vfmt` and `thunk` are pinned here so the ON arm can be compared argument for argument."
+}

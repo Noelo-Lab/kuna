@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-983b3eb73cd3",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatreg_armhf.o",
+    "binary_sha256": "d84637875ec61071ff4bb168b16fea1585eb26769a925afdc33bde628795777a",
+    "binary_size": 1260,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatreg_armhf.o",
+    "selector": "pick",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "h1\\(1500\\.0\\)",
+      "1000\\.0"
+    ],
+    "stdout_absent": [
+      "0x447a0000",
+      "0x44bb8000"
+    ]
+  },
+  "notes": "DEFAULT on ARM hard-float: pick puts 1500.0, 1000.0 or gf's result in s0 and passes it to h1(float). A float vote on a value another call produces is refused only outside a float-class register; s0 is one, so the vote stands and the constants print as floats, not as their bits (0x447a0000)."
+}

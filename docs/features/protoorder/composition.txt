@@ -1,0 +1,58 @@
+# protoorder -- composition and exclusivity, round 5 (types default)
+
+## argclobber (coreutils fmt -O2, the three sub_3700 sites in main)
+ground truth: int fmt (FILE *fp, char const *file)
+
+$ kuna decompile-all fmt --option protoorder off
+          v12 &= sub_3700(v6);
+        v3 = sub_3700(stdin,v7);
+    v12 = sub_3700(stdin,"-",v10);
+unsigned long sub_3700(FILE *a0,unsigned long a1) // return-dupe
+
+$ kuna decompile-all fmt --option protoorder off --option argclobber on
+          v9 &= sub_3700(v6,v7);
+        v3 = sub_3700(stdin,v7);
+    v9 = sub_3700(stdin,"-");
+unsigned long sub_3700(FILE *a0,unsigned long a1) // return-dupe
+
+$ kuna decompile-all fmt --option protoorder types
+          v12 &= sub_3700(v6);
+        v3 = sub_3700(stdin,v7);
+    v12 = sub_3700(stdin,"-",v10);
+unsigned long sub_3700(FILE *a0,char *a1) // return-dupe
+
+$ kuna decompile-all fmt --option protoorder types --option argclobber on
+          v9 &= sub_3700(v6,v7);
+        v3 = sub_3700(stdin,v7);
+    v9 = sub_3700(stdin,"-");
+unsigned long sub_3700(FILE *a0,char *a1) // return-dupe
+
+$ kuna decompile-all fmt --option protoorder lock
+          v11 &= (unsigned int)sub_3700(v5,v7);
+        v6 = sub_3700(stdin,v7);
+    v6 = sub_3700(stdin,"-",v9);
+unsigned long sub_3700(FILE *a0,unsigned long a1) // return-dupe
+
+$ kuna decompile-all fmt --option protoorder lock --option argclobber on
+          v11 &= (unsigned int)sub_3700(v5,v7);
+        v6 = sub_3700(stdin,v7);
+    v6 = sub_3700(stdin,"-",v9);
+unsigned long sub_3700(FILE *a0,unsigned long a1) // return-dupe
+
+## exclusivity / precedence
+$ kuna decompile-all fmt --jobs 4 --option protoorder types   -> rc=2
+error: --option protoorder and --jobs are exclusive: a parked callee prototype is per-load state that does not cross a worker process. Re-run with --jobs 1.
+$ kuna decompile-all fmt --jobs 4 --json                      (the DEFAULT is not refused)
+rc=0
+$ kuna decompile-all fmt --option protoorder bogus            -> rc=1
+error: option protoorder: Unknown protoorder value: bogus (expected off|types|lock)
+$ kuna decompile-project fmt -o DIR --option protoorder types
+warning: --option protoorder has no effect on `kuna decompile-project`: the callee-first park is a `decompile-all` surface (see docs/cli.md)
+
+$ kuna decompile-all fmt --assert 'prototype sub_3700 int sub_3700(char *, char *)'   (a DECLARED prototype outranks recovery)
+          v9 &= sub_3700((char *)v6,v7);
+        v3 = sub_3700((char *)stdin,v7);
+    v9 = sub_3700((char *)stdin,"-");
+
+## determinism: two default runs of fmt -O2 --json
+byte-identical
