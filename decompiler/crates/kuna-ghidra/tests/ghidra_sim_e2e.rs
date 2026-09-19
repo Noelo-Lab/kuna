@@ -473,6 +473,18 @@ const PIN_FAILLOG_RESOLVABLE: [usize; 3] = [0, 0, 0];
 // residue is per-function analysis skew — the ghidra path decompiles one
 // function against wire-fed facts while the CLI path runs after whole-binary
 // analysis commits (jumptable label choices, readonly-driven const folds).
+//
+// `formatstring static` is a fact the host-driven path cannot have: the CLI path
+// types a printf/scanf call's variadic arguments from the format constant the
+// LOAD-TIME resolver read out of the image, and a wire session has no kuna-side
+// load to read it in (the program database is Ghidra's, and so is its own
+// FormatStringAnalyzer).  That is a real GUI-path gap — recorded in
+// docs/ghidra-integration.md — but it is not a markup defect, and letting it
+// into this band would blind the band to the markup regressions it exists to
+// catch (on this image's `main`, which makes eight such calls, it alone is
+// worth 0.415 of ratio, mostly declaration renumbering).  So the CLI arm below
+// runs with `formatstring off`: both arms are then compared without format
+// facts, like for like, and the band keeps its measured width.
 const PIN_FAILLOG_DIFF_FLOOR: [f64; 3] = [0.02, 0.04, 0.06];
 const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // Normalized non-empty line count of the flattened markup C, per target: the
@@ -567,6 +579,8 @@ const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
 // symbol ranges negative/positive-cache the rest).
 const PIN_FAILLOG_GETMAPPED_TOTAL: u64 = 1448;
 
+/// The CLI arm of the differential runs `formatstring off`, like for like with
+/// the wire session (see `PIN_FAILLOG_DIFF_FLOOR`).
 #[test]
 fn ghidra_sim_faillog_pins() {
     let binary = repo_root().join("tests/bug-repro/faillog");
@@ -599,6 +613,11 @@ fn ghidra_sim_faillog_pins() {
 
     // The differential-C gap vs the in-process CLI path.
     let SessionRun { mut oracle, docs, addrs, .. } = run;
+    oracle
+        .prog
+        .arch_mut()
+        .set_kuna_option("formatstring", "off")
+        .unwrap_or_else(|e| panic!("formatstring off: {}", e.explain()));
     let mut ratios = Vec::new();
     for (i, parsed) in docs.iter().enumerate() {
         let cli_c = decompile_cli(&mut oracle.prog, &parsed.name.clone(), &addrs[i]);

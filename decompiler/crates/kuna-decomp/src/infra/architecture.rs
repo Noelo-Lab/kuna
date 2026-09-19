@@ -1669,16 +1669,45 @@ pub struct Architecture {
     /// scalar immediate that points into allocated read-only data. Real-ELF path
     /// only ⇒ the XML datatest oracle is structurally untouched.
     pub analysis_operand_refs: bool,
-    /// (kuna) Gate the format-string varargs-typing behavior (`formatstring`,
-    /// `FormatStringAnalyzer` half B); default **off** (matches Ghidra
-    /// `FormatStringAnalyzer.setDefaultEnablement(false)`).  Unlike the other
-    /// `analysis_*` flags this does NOT gate a load-time `AnalysisOutput` pass:
-    /// `FormatStringAnalyzer` is `DecompilerDependent`, so the console's
-    /// `IfcDecompile` reads this flag *after* the first decompile to decide
-    /// whether to run the per-call-site printf/scanf varargs override loop and
-    /// re-decompile.  Default-off ⇒ the loop is inert and every parity gate is
-    /// byte-identical.
-    pub analysis_formatstring: bool,
+    /// (kuna) Gate the format-string varargs-typing behavior (`formatstring`);
+    /// default **static** (the load-time resolver alone).
+    ///
+    /// `static` runs [`crate::kuna_formatstring::FormatStringMode::statik`]'s
+    /// load-time pass: the format constant is read out of the image at each
+    /// printf/scanf-family call site and the per-call-site prototype override is
+    /// parked in [`Self::format_call_overrides`] before the caller is ever
+    /// decompiled, so the typing costs one decompile.  `full` adds Ghidra's
+    /// `FormatStringAnalyzer` half-B loop — the console's decompile step reads
+    /// the flag *after* the first decompile and re-decompiles the caller with the
+    /// overrides the lifted `CALL` ops yield — which is the expensive half.
+    ///
+    /// The static resolver needs the Listing (`listing`), which the XML datatest
+    /// and console parity paths never build, so every parity gate is
+    /// byte-identical on the shipped default.
+    pub analysis_formatstring: crate::kuna_formatstring::FormatStringMode,
+    /// (kuna `formatstring static`) Per-call-site prototype overrides the
+    /// LOAD-TIME format-string resolver recovered, keyed by the CONTAINING
+    /// function's entry VMA and then by the call-site VMA.
+    ///
+    /// The `error_noreturn_callsites` precedent: a fact the Listing tier derived
+    /// once, parked on the architecture, and consumed per function at decompile
+    /// time — here by `decompile_step::decompile_one`, which hands the entries of
+    /// the function it is about to decompile to the FIRST drive as prototype
+    /// overrides.  Empty unless the Listing and `formatstring` are both on.
+    pub format_call_overrides:
+        std::collections::BTreeMap<u64, Vec<crate::kuna_formatstring::ParkedFormatSite>>,
+    /// (kuna `formatstring`) The call points, among the prototype overrides of
+    /// the drive in progress, whose override a resolved format string produced.
+    /// Set by the console's decompile step around each drive; the flow build
+    /// installs those overrides with an open tail
+    /// ([`crate::p4_calls::kuna_formattail`]).
+    pub format_override_callpoints: std::collections::BTreeSet<u64>,
+    /// (kuna `formatstring`) Which variadic arguments the target passes exactly
+    /// as named ones, which bounds what a closed printf/scanf override may
+    /// declare. A FACT, written once at `load file` from the image's container;
+    /// `None` (the XML `<binaryimage>` bootstrap) falls back to the language id.
+    /// See [`crate::kuna_formatstring::target_vararg_abi`].
+    pub format_vararg_abi: Option<crate::kuna_formatstring::VarargAbi>,
     /// (kuna) Gate the Listing/xref disassembly tier (`listing`); default
     /// **off**. When on (real-ELF path only), a program-wide recursive-descent
     /// disassembly Listing/xref model is built once at load and shared read-only
@@ -2427,7 +2456,10 @@ impl Architecture {
             analysis_callfixup: false,
             analysis_addrtable: false,
             analysis_operand_refs: false,
-            analysis_formatstring: false,
+            analysis_formatstring: crate::kuna_formatstring::FormatStringMode::Off,
+            format_call_overrides: std::collections::BTreeMap::new(),
+            format_override_callpoints: std::collections::BTreeSet::new(),
+            format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
             analysis_rawdiscover: false,
@@ -2732,7 +2764,7 @@ impl Architecture {
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
-        self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
+        self.analysis_formatstring = crate::kuna_formatstring::FormatStringMode::Static; // (kuna) DIV: the LOAD-TIME format-string resolver default-ON. Ghidra's own FormatStringAnalyzer is default-off because it costs a second decompile; the static resolver reads the constant out of the image instead, so it costs nothing per function. `full` restores the second-decompile loop. Gated on the Listing (default-off), so every parity gate is byte-identical
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
         self.analysis_rawdiscover = true; // (kuna) default-on: a raw image's only discovery. ADDS FUNCTIONS (direct-call targets reached from the --entry seeds). Raw-container only, so every parity gate is byte-identical; restore the seeds-only inventory with `option rawdiscover off`
@@ -3586,7 +3618,9 @@ impl Architecture {
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
             "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),
             "formatstring" => {
-                on_off!(analysis_formatstring, "Format-string varargs-typing pass")
+                let (mode, msg) = crate::kuna_formatstring::parse_formatstring_mode(p1)?;
+                self.analysis_formatstring = mode;
+                Ok(msg)
             }
             "listing" => on_off!(analysis_listing, "Listing/xref disassembly tier"),
             "fast_funcdisc" => {

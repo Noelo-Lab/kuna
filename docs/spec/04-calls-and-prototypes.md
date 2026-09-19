@@ -1635,6 +1635,46 @@ standing for "the callee wrote something here" — with two `SUBPIECE`s of a val
 the CALL now produces, so no statement is removed that was not a read of an
 undefined local, and no call can lose an argument. Set it off to restore the stub.
 
+### (kuna) A resolved format call's open tail (`formatstring`)
+
+**(kuna)** When the format string of a printf/scanf-family call is resolved
+(chapter [01](01-program-prep.md), `formatstring`), the call gets a prototype
+override with exactly the arguments the format consumes. How that override is
+installed matters to every other call in the function, because of the veto in
+`ActionActiveParam` above: a trial is kept only while its value is used by
+nothing but its call, and a use by another call counts against it unless that
+call is still recovering its own arguments and has not taken the value. An
+open printf that claims a leftover stack slot as a phantom therefore also keeps
+the slot away from the calls after it. Closed from the start, the resolved call
+claims nothing past its declared arguments, and the slot goes to whichever open
+call is scored next: in gnulib's `version_etc` the `va_list` in the lowest
+outgoing stack slots became three extra arguments of each `"Written by ..."`
+call whose format is not resolved. With the call closed, a local that clang
+keeps in its `push rax` slot, the first outgoing argument slot, was also folded
+across a `sscanf("%d", &a)` to the value stored before the call.
+
+So the override is installed as its declared arguments followed by `...`
+(`first_var_arg_slot` is the declared count; the flow build marks the call point
+in the `Override` store and the call spec records the count). The call is then
+offered the same trials past its declared arguments that it is offered without
+the override, they are scored the same way, and the calls around it see the same
+competition. Two steps in
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_formattail.rs` finish the
+call. When it finalizes, `keep_declared_trials` marks every declared
+(fixed-position) trial active and used, because `fillinMap`'s positional rules
+can end a list at a gap the ABI makes on purpose: a ninth `double` goes on the
+stack behind the four integer registers a `"%f ... %d"` call leaves unused, and
+the chain rule reads that run as the end of the arguments. Then, once no live
+call in the function has trials left, `shed_format_tails` removes every input
+past the declared ones and clears the `...`. It runs at the end of the
+`ActionActiveParam` pass that finalizes the last call, before the
+`calleearity` retries, so those see the declared list. The call spec's
+recorded storage is truncated to match.
+
+The effect is that a resolved format call changes its own arguments and types,
+and a neighbour only where a declared argument, now certain, vetoes the same
+value at that neighbour. Calls without a resolved format never take this path.
+
 ### The ABI seam (`kuna_langabi.rs`)
 
 **(kuna, output languages)** How a recovered calling convention *appears* is a

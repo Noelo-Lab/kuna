@@ -451,6 +451,15 @@ pub struct AnalysisOutput {
     /// (kuna `libctypes`) Data symbols the analysis tier types outright — the
     /// stdio stream slots. See [`TypedDataFact`].
     pub typed_data: Vec<TypedDataFact>,
+    /// (kuna `formatstring static`) Per-call-site prototype overrides the
+    /// LOAD-TIME format-string resolver recovered — a printf/scanf-family call
+    /// whose format constant the image itself answers for. Committed onto
+    /// `Architecture::format_call_overrides`, which the per-function decompile
+    /// step reads before the FIRST drive, so the varargs are typed without the
+    /// second decompile Ghidra's `FormatStringAnalyzer` needs. Produced only by
+    /// [`crate::formatstring::kuna_fmtstatic::FormatStringStaticPass`], which
+    /// requires the Listing; empty otherwise. See [`FormatSiteFact`].
+    pub format_sites: Vec<FormatSiteFact>,
     /// (kuna `libctypes glibc`) The published glibc x86-64 field layouts went
     /// into THIS image's named aggregates.
     ///
@@ -506,6 +515,7 @@ impl AnalysisOutput {
         self.cpp_dwarf.prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.proven.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.inferred.iter_mut().for_each(|(_, p)| fix_proto(p));
+        self.format_sites.iter_mut().for_each(|f| fix_proto(&mut f.pieces));
     }
 }
 
@@ -585,8 +595,30 @@ impl AnalysisOutput {
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
+        self.format_sites.extend(other.format_sites);
         self.libctypes_glibc |= other.libctypes_glibc;
     }
+}
+
+/// (kuna `formatstring static`) One printf/scanf-family call site whose format
+/// string the load-time resolver read out of the image.
+///
+/// `pieces` is the same per-call-site override the decompile-time loop builds —
+/// the callee's fixed parameters followed by the format-derived argument types,
+/// with the varargs closed — so the decompiler side does not know which half
+/// produced it.
+#[derive(Clone, Debug)]
+pub struct FormatSiteFact {
+    /// Entry VMA of the function CONTAINING the call site (the park key).
+    pub func: u64,
+    /// VMA of the call instruction the override applies at.
+    pub callpoint: u64,
+    /// The per-call-site prototype override.
+    pub pieces: kuna_decomp::fspec::PrototypePieces,
+    /// Which parameter of `pieces` is the format.
+    pub format_slot: usize,
+    /// The format string's VMA (for a `gettext` hop, the msgid's).
+    pub format_vma: u64,
 }
 
 /// Read-only inputs an analysis sees: the parsed object, the loaded image

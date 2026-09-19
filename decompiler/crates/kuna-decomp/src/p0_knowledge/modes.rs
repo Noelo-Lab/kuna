@@ -113,19 +113,20 @@ const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 ///     on any binary built with `-g` it buries the code under interleaved
 ///     `/* src.c:NNN */` lines (`auto` picks `aggressive` under 500 KiB, which
 ///     made that the *default* rendering for small debug binaries).
-///   - `formatstring` costs a **second full decompile** of any caller whose
-///     printf/scanf call sites yield a varargs override, and those are the
-///     expensive functions, so on a whole binary it is far over the 5% speed
-///     budget: `decompile-all` measured +77.5% (cronie `crontab`), +55.1%
-///     (gnutls `psktool`), +43.7% (`gzip`). Only ~5-15% of functions re-decompile;
-///     they simply carry most of the time. Held to a per-run opt-in by standing
-///     requirement 4 (DIV-66) -- the recovery it buys is real (decbench C
-///     `type_match` perfects 80 -> 88 of 1,133) and `--option formatstring on`
-///     still gets it, on every surface.
 ///
-/// All three stay manual per-run opt-ins (`--option v850indirectbranch on`,
-/// `--option dwarf_lines on`, `--option formatstring on`) even under
-/// `--mode aggressive`.
+/// Both stay manual per-run opt-ins (`--option v850indirectbranch on`,
+/// `--option dwarf_lines on`) even under `--mode aggressive`.
+///
+/// `formatstring` used to be a third exclusion, for cost: its
+/// decompile->override->re-decompile loop paid a **second full decompile** of
+/// every caller whose printf/scanf call sites yielded an override, and those are
+/// the expensive functions -- `decompile-all` measured +77.5% (cronie
+/// `crontab`), +55.1% (gnutls `psktool`), +43.7% (`gzip`) -- while the recovery
+/// it bought was real (decbench C `type_match` perfects 80 -> 88 of 1,133). The
+/// loop is now the option's `full` value; its `static` default reads the same
+/// format constants out of the IMAGE at load, so the typing arrives before the
+/// first decompile and there is no second one. `static` needs the Listing, which
+/// this preset supplies, so the preset is where it delivers.
 const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // transform-tier default-off recovery/structuring passes.
     ("switchmodbound", "on"),
@@ -459,7 +460,7 @@ mod tests {
         /// guard at any later call -- so fabricating a store as the default output
         /// under 500 KiB is the operator's judgement, not the preset's.
         const EXCLUDED_ON_PURPOSE: &[&str] =
-            &["v850indirectbranch", "dwarf_lines", "formatstring", "ifuncfpret",
+            &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "argclobber", "structdefs", "indirectonly"];
 

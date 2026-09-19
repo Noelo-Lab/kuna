@@ -2565,6 +2565,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // facts are computed at LOAD and COMMITTED only when this gate is on, so
         // `off` renders exactly what the base table alone renders.
         "libcsigs" => arch.analysis_libcsigs,
+        // (kuna) The LOAD-TIME format-string resolver — a Listing consumer whose
+        // per-call-site overrides are computed at the deferred commit point and
+        // applied only when the gate asks for the static half (`static` on x86,
+        // `full` everywhere).
+        "formatstring" => arch.analysis_formatstring.resolves_at_load(&arch.archid),
         // (kuna) The built-in Win32 API signatures — the Windows half of the
         // `.gdt` stand-in, seeded onto IMPORTED API names only and keyed by entry
         // address. Facts computed at LOAD, COMMITTED only when this gate is on, so
@@ -3817,6 +3822,14 @@ pub fn bootstrap_from_object_with_isa(
     // auto` acts only when it is.
     sleigh.base_mut().unwrap().image_windows_user =
         kuna_analysis::loader::format::pe::is_windows_user_mode_image(&bytes);
+    // (kuna `formatstring`) And one more: does this target pass a variadic
+    // argument the way it passes a named one? On AArch64 that is the container's
+    // answer (Apple puts every vararg on the stack), which only the image knows.
+    let vararg_abi = kuna_decomp::kuna_formatstring::vararg_abi(
+        &sleigh.base().unwrap().archid,
+        Some(kuna_analysis::formatstring::kuna_fmtstatic::image_family(&bytes)),
+    );
+    sleigh.base_mut().unwrap().format_vararg_abi = Some(vararg_abi);
 
     // Hand the loader to the engine (the C++ `loader` back-pointer the decode
     // reads on load_fill).
@@ -4148,6 +4161,34 @@ fn commit_analysis_output(
         sites.sort_unstable();
         sites.dedup();
         prog.arch_mut().error_noreturn_callsites = sites;
+    }
+
+    // 3a''. (kuna `formatstring static`) Park the per-call-site printf/scanf
+    //       prototype overrides the load-time resolver recovered, keyed by the
+    //       CONTAINING function so the decompile step can hand exactly this
+    //       function's sites to the FIRST drive. Empty unless the Listing and
+    //       `formatstring` are both on, so the datatest/console parity paths
+    //       (which never build a Listing) are unaffected.
+    if !out.format_sites.is_empty() {
+        let mut parked: std::collections::BTreeMap<
+            u64,
+            Vec<kuna_decomp::kuna_formatstring::ParkedFormatSite>,
+        > = std::collections::BTreeMap::new();
+        for site in &out.format_sites {
+            parked.entry(site.func).or_default().push(
+                kuna_decomp::kuna_formatstring::ParkedFormatSite {
+                    callpoint: site.callpoint,
+                    pieces: site.pieces.clone(),
+                    format_slot: site.format_slot,
+                    format_vma: site.format_vma,
+                },
+            );
+        }
+        for sites in parked.values_mut() {
+            sites.sort_by_key(|s| s.callpoint);
+            sites.dedup_by_key(|s| s.callpoint);
+        }
+        prog.arch_mut().format_call_overrides = parked;
     }
 
     // 3b. FID re-identification (the kuna analog of Ghidra's FID identification

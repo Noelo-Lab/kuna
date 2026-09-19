@@ -412,6 +412,17 @@ What breaks when a partial core omits pieces — all failure modes are clean:
 | `<parammeasures>` | param-ID / convention analyzers get nothing | those analyzers no-op |
 | `<jumptablelist>` | switch analyzer finds no tables | unrecovered switches in the listing |
 
+**Load-time analysis facts are the other half of this.** A wire session never loads
+the image on kuna's side — the program database is Ghidra's — so every kuna analysis
+pass that reads the file itself contributes nothing to the GUI path. The largest one
+today is `formatstring static`, the load-time printf/scanf format resolver: through
+the CLI a `printf("%s %d", …)` call has its variadic arguments typed from the format
+constant read out of `.rodata`, and through the wire it does not. Ghidra ships its own
+`FormatStringAnalyzer` for this, so the fact is available on the host side; carrying it
+across the wire (or having kuna open the file alongside the session) is future work.
+The ghidra-sim differential in §11 therefore runs its CLI arm with `formatstring off`,
+so the pinned line-diff band measures markup fidelity rather than this known gap.
+
 ## 11. Testing strategy
 
 - **In-crate mock-Java e2e (Phase 1, shipped).** A `MockJava` test double owns the

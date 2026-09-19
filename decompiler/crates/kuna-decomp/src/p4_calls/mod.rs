@@ -35,3 +35,4 @@ pub mod kuna_inputparamgap; // (kuna) an unused-argument-register run must not v
 pub mod kuna_stackarggap; // (kuna) an unwritten argument register ends a call site's argument list
 pub mod kuna_rustabi; // (kuna) the rustc two-register return: keep the pair, connect it at the call
 pub mod kuna_langabi; // (kuna) the ABI seam: per-language `extern` rendering
+pub mod kuna_formattail; // (kuna) a resolved format call keeps an open tail through trial scoring
