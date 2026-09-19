@@ -84,10 +84,9 @@ ahead of it.
 ## 6. The second path: `SplitDatatype::split_load`
 
 When a LOAD's type says it spans several fields (in practice a DWARF-typed
-struct pointer; no function in the 52 stripped footprint binaries changed),
-`RuleSplitLoad` splits it into one LOAD per field. If the loaded value's only use is a COPY, the split LOADs were built at
-the COPY and wrote straight into the COPY's output, which can sit after a
-STORE or a call. Upstream Ghidra does the same (subflow.cc
+struct pointer), `RuleSplitLoad` splits it into one LOAD per field. If the
+loaded value's only use is a COPY, the split LOADs were built at the COPY and
+wrote straight into the COPY's output, which can sit after a STORE or a call. Upstream Ghidra does the same (subflow.cc
 `insertPoint = (copyOp == 0) ? loadOp : copyOp`). With
 `struct S { int i0; char c4, ..., c11; }`, gcc -O2 -g:
 
@@ -109,9 +108,10 @@ The fix declines the split when a STORE or a call lies between the LOAD and
 its COPY, or the two sit in different blocks. The read then prints whole, as
 its own statement ahead of the store or call: `v1 = *(unsigned int *)&s->c7;`.
 When nothing lies between the two the output is unchanged (the `plain` and
-`splitplain` controls).
+`splitplain` controls). The shape is rare: the change alters no function in the
+52 stripped and 31 DWARF footprint binaries.
 
-The first attempt split at the LOAD and kept the COPY, as the review suggested.
+The first attempt split at the LOAD and kept the COPY.
 The DWARF footprint showed why that is wrong: on tar O0 `validate_uparams`
 (`uparams = *upptr;`) each 8-byte read's COPY writes the global `uparams`
 at the return, and the write of `uparams+0x20` lies between. Split at the
