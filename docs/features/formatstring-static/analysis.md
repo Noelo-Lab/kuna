@@ -278,6 +278,38 @@ agree; an unknown class never counts) against its conversion, and lists every
 there is one such site, e2fsck `0x736b0` above: under `off` its call passes no
 argument at all, and under `static` it passes a floating one.
 
+## `size_t` on LLP64
+
+`%z` and `%t` were sized by Ghidra's `getIntegralPointerType`, which takes
+`long` unless a pointer is narrower than one. Win64 (and Windows AArch64, which
+the `Integer` vararg rule admits) is LLP64: `long` is 4 bytes and `size_t` is 8.
+A 4-byte `%zu` keeps only the low half of the argument, so
+`printf("%zu\n", (n << 32) | 5)` rendered `printf("%zu\n",5)` and the function
+lost its parameter; a plain `%zu` gave `unsigned int a0`. `formatstring on` had
+the same answer on main, and the default made it the shipped output. The sweep
+had no PE x64 in it, which is why it did not show.
+
+`size_t` and `ptrdiff_t` (and their `scanf` pointers) are now the `int`, `long`
+or `long long` whose width is the pointer's; LP64 and ILP32 answer as before.
+Passes 21-23 of the stage test load `fmtzu_pe_x86_64`, a generated PE32+ whose
+`show_zu`/`show_td` print `(n << 32) | 5`: off, the default and full all print
+the whole expression with an `int8` parameter, and the round-3 build fails the
+3 new assertions. A unit test pins `%zu`/`%zd`/`%zx`/`%td`/`%tu` at 8 bytes and
+`%ld` at 4 under an LLP64 factory.
+
+## Known limits kept
+
+- A call that passes more arguments than its format reads is closed at the
+  format's count, so the extra argument stops being a use:
+  `f(int a, int b) { printf("%d\n", a, b); }` renders `f(int a0)`. C evaluates
+  and ignores excess arguments (7.21.6.1p2), so it is the same program. A call
+  that passes too few gets the parameters `printf` will read, which is the
+  undefined behavior the source has.
+- `printf("%ls\n", L"hello wide")` renders `(wchar_t *)"h"` (off: `"h"`). The
+  argument's type is right; the literal is rendered from the string markup,
+  which reads `h\0\0\0e...` as a one-character narrow string. That is the
+  string tier's, not this option's.
+
 ## Delay slots
 
 The window walks backward from the call and never lifted the call instruction

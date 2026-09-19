@@ -2354,7 +2354,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   mistype one argument, it moves it: the `double` leaves `xmm0` for an integer
   register, the arguments after it shift, and the caller grows phantom
   parameters (e2fsck's `%16.4lf` memory ratio printed its bit counter). `%lp`
-  is typed as `%p`. The override construction is
+  is typed as `%p`. `%z` and `%t` (`size_t`, `ptrdiff_t`) are the `int`, `long`
+  or `long long` as wide as a pointer. Ghidra takes `long` unless a pointer is
+  narrower than one, which on an LLP64 target (Win64, Windows AArch64) is 4
+  bytes for an 8-byte argument: the call keeps only the low half, so
+  `printf("%zu\n", (n << 32) | 5)` printed `5` and the function lost `n`. The
+  override construction is
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/apply.rs
   (build_override_pieces)` — the callee's fixed parameters followed by the
   format-derived argument types, with the varargs closed. The override's own
