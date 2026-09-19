@@ -434,3 +434,19 @@ a0,int a1)`, `xmm0` before `edi`), and its callers print one argument,
 uninitialized local (`protoorder_floatstore_x86_64`'s `fill`, where main, the
 off arm and the default all print it). The round-10 fixture was chosen so its
 probe does not depend on that spelling.
+
+A follow-up measured here and left for its own PR: refusing a vote whose
+non-character primitive pointee (undefined types included) is wider than an
+access the caller makes through the pointer. It is the wide-read class of §9:
+stat O2 `sub_df20` keeps main's `char *a0` instead of printing
+`v1 = (char)*a0;` through an `int *`, and under `--option ptrfromuse void` the
+twelve ls, dir and vdir `*_df_extension` comparators keep `void *` instead of the
+`undefined8 *` their callee `sub_71f0` recovers (main prints `void *` there, and
+they are twelve of the eighteen rows that score worse against main in that arm).
+Against this branch, over the 444 slices: 3 rows improve at the default (+0.57),
+18 with `ptrfromuse void` (+4.72), none gets worse and no perfect row moves; the
+3,451 firmware rows do not move. It is not taken here because it also changes
+209 functions over 33 of the 60 corpus binaries (68 of them back to main's
+text, the rest a refused vote among others kept, mostly firmware register
+accesses no longer spelled through an element type), and each of those needs
+reading before it ships.
