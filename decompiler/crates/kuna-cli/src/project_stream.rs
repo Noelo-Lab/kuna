@@ -857,6 +857,7 @@ fn export(
         // are exclusive precisely so an unqualified directive cannot bind to
         // every function of the export.
         single_target: false,
+        defer_synthesized: false,
     };
 
     let (mut writer, (mut type_blocks, retries)) = std::thread::scope(
@@ -1235,6 +1236,7 @@ mod tests {
             object_location: None,
             provenance: EntryProvenance::Mapped,
             binding: None,
+            synth: None,
         }
     }
 
@@ -1253,6 +1255,7 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: hints,
+            synth: None,
         }
     }
 

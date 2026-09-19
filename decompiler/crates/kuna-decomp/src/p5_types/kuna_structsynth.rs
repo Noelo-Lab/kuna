@@ -149,6 +149,10 @@ use crate::funcdata::Funcdata;
 /// a freshly measured layout is, and which ones a later layout took over.
 pub mod ledger;
 
+/// (kuna `structsynth`) The ledger as data, for a whole-program run split across
+/// worker processes: record, replay, install, force.
+pub mod shard;
+
 
 /// The largest constant offset that is still believed to be a field.
 const MAX_FIELD_OFFSET: intb = 0x8000;
@@ -688,7 +692,11 @@ fn synthesize(data: &mut Funcdata) -> bool {
         }
         let Some((fields, size)) = fields_for(types.as_ref(), e) else { continue };
         let unclaimed = e.unclaimed_ranges();
-        let Some(st) = ledger::lookup_or_mint(types.as_ref(), fields, size, &unclaimed) else {
+        let answer = match &data.get_arch().struct_synth_shard {
+            Some(hook) => shard::lookup(hook, types.as_ref(), fields, size, &unclaimed),
+            None => ledger::lookup_or_mint(types.as_ref(), fields, size, &unclaimed),
+        };
+        let Some(st) = answer else {
             continue;
         };
         // The pointer is taken only once the structure is COMPLETE: completing a

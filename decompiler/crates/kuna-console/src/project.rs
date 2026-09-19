@@ -107,6 +107,11 @@ pub struct FuncResult {
     /// every error record, and on every run that did not ask for it
     /// ([`DecompileOptions::want_callee_hints`]).
     pub callee_hints: Vec<u64>,
+    /// (kuna `structsynth`) What this decompile asked the synthesized-structure
+    /// ledger, recorded only by a `--jobs` worker whose architecture carries the
+    /// shard hook, so the parent can name every `struct_N` as the serial run
+    /// does. `None` everywhere else.
+    pub synth: Option<kuna_decomp::kuna_structsynth::shard::FunctionRecord>,
 }
 
 /// The run-level verdict of a non-empty decompile batch.
@@ -167,7 +172,17 @@ pub struct DecompileOptions {
     /// carry a definition, so it keeps the preamble.
     pub header_carries_types: bool,
     pub single_target: bool,
+    /// (kuna `structsynth`) Skip rendering a function that asked the
+    /// synthesized-structure ledger anything, and leave a
+    /// [`SYNTH_DEFERRED`] record instead: a `--jobs` recording worker's
+    /// parent decompiles every such function again with the serial names, so
+    /// its first rendering would be thrown away.
+    pub defer_synthesized: bool,
 }
+
+/// The `error` of a record [`DecompileOptions::defer_synthesized`] left in
+/// place of a rendering. Never reaches a document: the pool replaces it.
+pub const SYNTH_DEFERRED: &str = "rendered after the synthesized structures are named";
 
 /// Decompile each `(name, entry)` target in turn against the already-loaded
 /// program, returning one [`FuncResult`] per target (success or per-function
@@ -194,6 +209,7 @@ pub fn decompile_targets(
         want_callee_hints: false,
         header_carries_types: false,
         single_target: targets.len() == 1,
+        defer_synthesized: false,
     };
     decompile_batch(prog, targets, &opts)
 }
@@ -216,6 +232,7 @@ pub fn decompile_export_targets(
         want_callee_hints: false,
         header_carries_types: true,
         single_target: targets.len() == 1,
+        defer_synthesized: false,
     };
     decompile_batch(prog, targets, &opts)
 }
@@ -258,7 +275,7 @@ fn decompile_batch(
 /// the second time round -- keeps the first body.
 ///
 /// A batch that synthesized nothing pays one ledger probe for the whole run.
-fn converge_synthesized_structs(
+pub fn converge_synthesized_structs(
     prog: &mut ConsoleProgram,
     opts: &DecompileOptions,
     targets: &[FunctionEntry],
@@ -286,7 +303,7 @@ fn converge_synthesized_structs(
 }
 
 /// Does the sweep's second decompile replace the first one?
-fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
+pub fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
     again.error.is_none() || first.error.is_some()
 }
 
@@ -295,7 +312,7 @@ fn redo_replaces(first: &FuncResult, again: &FuncResult) -> bool {
 /// The C text, the `.h` prototype line and the exported variable rows are every
 /// surface a type name reaches. The match is on whole identifiers, so `struct_1`
 /// does not answer for `struct_10`.
-fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
+pub fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
     let mut hit = |hay: &str| names.iter().any(|n| contains_identifier(hay, n));
     r.code.as_deref().is_some_and(&mut hit)
         || r.proto.as_deref().is_some_and(&mut hit)
@@ -408,6 +425,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             });
             continue;
         }
@@ -438,6 +456,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             });
             continue;
         }
@@ -456,6 +475,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             });
             continue;
         }
@@ -571,6 +591,27 @@ pub fn decompile_pulled(
                     single_target,
                     &fd,
                 );
+                if opts.defer_synthesized
+                    && prog.arch().struct_synth_shard.as_ref().is_some_and(|h| h.borrow().asked())
+                {
+                    sink(FuncResult {
+                        name,
+                        address,
+                        byte_address,
+                        size: size as i64,
+                        code: None,
+                        error: Some(SYNTH_DEFERRED.into()),
+                        proto: None,
+                        variables: Vec::new(),
+                        types: Vec::new(),
+                        line_mappings: Vec::new(),
+                        aliases,
+                        object_location,
+                        callee_hints: Vec::new(),
+                        synth: None,
+                    });
+                    continue;
+                }
                 // Render + extract under `catch_unwind`: the decompile drive only
                 // guards the pipeline (decompile_drive.rs), so a fail-fast invariant
                 // in the printer / type declarator on an exotic recovered function
@@ -634,6 +675,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints,
+                        synth: None,
                     }),
                     Err(_) => sink(FuncResult {
                         name,
@@ -649,6 +691,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints: Vec::new(),
+                        synth: None,
                     }),
                 }
             }
@@ -666,6 +709,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                synth: None,
             }),
         }
     }
@@ -1247,6 +1291,7 @@ mod tests {
             aliases: vec![],
             object_location: None,
             callee_hints: vec![],
+            synth: None,
         }
     }
 

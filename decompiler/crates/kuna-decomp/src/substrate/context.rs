@@ -1151,6 +1151,9 @@ pub struct ArchContext {
     /// [`ActionStructSynth`](crate::p5_types::kuna_structsynth::ActionStructSynth)
     /// synthesize a structure from constant-offset dereferences?
     pub struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode,
+    /// (kuna `structsynth`) The engine Architecture's `--jobs` worker ledger hook,
+    /// shared: `None` outside a worker.
+    pub struct_synth_shard: Option<crate::p5_types::kuna_structsynth::shard::ShardHandle>,
     /// (kuna) `option switchselector`: refuse a recovered lowered-switch record
     /// whose synthesized BRANCHIND would not get the switch value as its
     /// selector.  Read by
@@ -1561,6 +1564,7 @@ impl ArchContext {
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
             struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Param, // (kuna) option structsynth, default `param`; the real value is copied from the engine Architecture in `build_arch_handle`
+            struct_synth_shard: None,
             codescalar: false,           // (kuna) option codescalar
             bool_byte: true, // (kuna) option boolbyte (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output

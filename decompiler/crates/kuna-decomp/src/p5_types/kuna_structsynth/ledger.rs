@@ -118,7 +118,7 @@ use kuna_base::types::int4;
 use crate::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
 
 /// The highest `struct_N` the ledger will probe.
-const MAX_LEDGER_SLOTS: u32 = 1024;
+pub(super) const MAX_LEDGER_SLOTS: u32 = 1024;
 
 /// How far a pointer chain is followed when a field type is spelled.
 const MAX_POINTEE_DEPTH: u32 = 3;
@@ -223,7 +223,7 @@ fn type_key(ct: &Datatype) -> String {
 
 /// A synthesized structure reduced to what the dedup decision needs: its size
 /// and its claimed fields, in offset order.
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub(super) struct Layout {
     /// The structure's size in bytes, holes and tail rounding included.
     pub size: int4,
@@ -383,13 +383,13 @@ pub(super) struct Member {
 }
 
 impl Member {
-    fn of(f: &TypeField) -> Member {
+    pub(super) fn of(f: &TypeField) -> Member {
         Member { offset: f.offset, size: f.field_type.get_size(), claim: key_of(f) }
     }
 }
 
 /// Every member of a completed structure, filler included.
-fn members_of(ct: &Datatype) -> Vec<Member> {
+pub(super) fn members_of(ct: &Datatype) -> Vec<Member> {
     (0..ct.num_depend()).filter_map(|i| ct.get_field(i)).map(Member::of).collect()
 }
 
@@ -452,7 +452,7 @@ fn entries(
 }
 
 /// Does some other entry say strictly more than entry `i`?
-fn is_superseded(layouts: &[&Layout], i: usize) -> bool {
+pub(super) fn is_superseded(layouts: &[&Layout], i: usize) -> bool {
     layouts.iter().enumerate().any(|(j, l)| j != i && l.strictly_subsumes(layouts[i]))
 }
 
@@ -470,7 +470,11 @@ fn is_superseded(layouts: &[&Layout], i: usize) -> bool {
 /// would give a name that entry supersedes the moment it exists. A new name is
 /// therefore minted only when nothing held answers at all. `fits` is the
 /// per-reader veto of [`keeps_unclaimed`].
-fn best_of(layouts: &[&Layout], want: &Layout, fits: impl Fn(usize) -> bool) -> Option<usize> {
+pub(super) fn best_of(
+    layouts: &[&Layout],
+    want: &Layout,
+    fits: impl Fn(usize) -> bool,
+) -> Option<usize> {
     let mut answering: Vec<usize> =
         (0..layouts.len()).filter(|&i| layouts[i].answers_for(want) && fits(i)).collect();
     answering.sort_by_key(|&i| (layouts[i].fields.len(), layouts[i].size));
@@ -487,7 +491,7 @@ fn best_of(layouts: &[&Layout], want: &Layout, fits: impl Fn(usize) -> bool) -> 
 /// times it, and an entry that supersedes one of those is at most
 /// [`MAX_SIZE_GROWTH`] times larger again. Nothing outside the window can change
 /// the answer.
-fn lookup_window(size: int4) -> std::ops::RangeInclusive<i64> {
+pub(super) fn lookup_window(size: int4) -> std::ops::RangeInclusive<i64> {
     let lo = i64::from(size);
     let growth = MAX_SIZE_GROWTH as i64;
     lo..=lo.saturating_mul(growth).saturating_mul(growth)
@@ -522,6 +526,36 @@ pub(super) fn lookup_or_mint(
     let name = free?;
     let shell = types.get_type_struct(&name).ok()?;
     types.set_fields_struct_raw(&shell, fields, Vec::new(), size, 1, 0).ok()
+}
+
+/// The number `N` of a structure this pass minted, or `None` for any other type.
+pub(super) fn minted_number(ct: &Datatype) -> Option<u32> {
+    let n = ct.get_name().strip_prefix("struct_")?;
+    if n.is_empty() || !n.bytes().all(|c| c.is_ascii_digit()) || layout_of(ct).is_none() {
+        return None;
+    }
+    n.parse().ok()
+}
+
+/// `order` with the synthesized structures it holds moved to its end, in
+/// ascending `N`.
+///
+/// The factory keeps its types in a tree ordered by size and then field by
+/// field, and two structures that agree that far are ordered by the ADDRESS of
+/// a field's type; a pointer is ordered by the address of what it points at.
+/// Minted structures agree that far all the time -- every one starts with
+/// `field_0x0` -- so a header rendered in tree order lists them in an order that
+/// changes from one run of the same export to the next. A minted structure
+/// holds nothing by value but scalars and byte arrays, and nothing holds one by
+/// value, so it may be defined anywhere after the forward declarations; after
+/// everything else, in ascending `N`, is the same place every run and in every
+/// process.
+pub fn in_name_order(order: Vec<Rc<Datatype>>) -> Vec<Rc<Datatype>> {
+    let (mut minted, mut rest): (Vec<Rc<Datatype>>, Vec<Rc<Datatype>>) =
+        order.into_iter().partition(|ct| minted_number(ct).is_some());
+    minted.sort_by_key(|ct| minted_number(ct));
+    rest.append(&mut minted);
+    rest
 }
 
 /// The synthesized structures a later, larger layout has taken over.

@@ -105,13 +105,14 @@ use kuna_console::engine::{
 // The decompile loop + result shape live in the shared decompile-project core
 // (`kuna_console::project` — also reused by the `kuna_wasm` front-end).
 use kuna_console::project::{
-    decompile_pulled, decompile_targets, default_fn_budget_seconds, render_c, BatchOutcome,
-    DecompileOptions, FuncResult,
+    converge_synthesized_structs, decompile_pulled, decompile_targets, default_fn_budget_seconds,
+    render_c, BatchOutcome, DecompileOptions, FuncResult,
 };
 // `File::architecture()` (the ARM-discovery default, decbench) plus the
 // section/segment walks the zero-discovery diagnosis reads.
 use object::{Object, ObjectSection, ObjectSegment};
 use kuna_decomp::decompile_drive::{print_c_types, LineMapping, TypeInfo, VarInfo};
+use kuna_decomp::kuna_structsynth::shard::{self, ShardHook};
 use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES, RELOC_OBJECTS_ENV};
 
 use regex::Regex;
@@ -199,6 +200,9 @@ pub(crate) struct Args {
     /// Report each function's callee hints — the `--stream` scheduler's
     /// frontier, asked for by `--jobs-callees`.
     pub(crate) jobs_callees: bool,
+    /// Internal: what this worker does with the synthesized-structure ledger
+    /// (`--jobs-synth record|force|serial`, see [`jobs::SynthWorker`]).
+    pub(crate) jobs_synth: Option<jobs::SynthWorker>,
 }
 
 impl Args {
@@ -236,6 +240,7 @@ impl Args {
             jobs_provenance: false,
             jobs_types: false,
             jobs_callees: false,
+            jobs_synth: None,
         }
     }
 
@@ -959,6 +964,18 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
+    // (kuna `structsynth`) A recording worker reports every ledger lookup; a
+    // forcing one first mints the parent's replayed structures, in the serial
+    // run's order, and then answers each lookup with the name the chunk spec
+    // gives it. A serial one keeps its own ledger and converges each chunk.
+    let held_at_start = shard::held_names(prog.arch().types());
+    let mut synth_hook = match args.jobs_synth {
+        Some(jobs::SynthWorker::Record) => Some(ShardHook::recording()),
+        Some(jobs::SynthWorker::Force) => Some(take_synth_table(&mut prog, scratch, &held_at_start)?),
+        _ => None,
+    };
+    prog.arch_mut().struct_synth_shard = synth_hook.clone();
+    let converge = args.jobs_synth == Some(jobs::SynthWorker::Serial);
 
     let dir = std::path::Path::new(scratch);
     let faults = jobs::Faults::from_env();
@@ -968,6 +985,10 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         // state speaks for all of them.
         let idx = match assignment {
             jobs::Assignment::Chunk(idx) => idx,
+            jobs::Assignment::Force => {
+                synth_hook = Some(take_synth_table(&mut prog, scratch, &held_at_start)?);
+                continue;
+            }
             jobs::Assignment::Quit(token) => {
                 if args.jobs_types {
                     jobs::write_type_block(scratch, token, &print_c_types(prog.arch_mut()))?;
@@ -976,7 +997,10 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
             }
         };
         let targets = jobs::read_spec(&dir.join(jobs::spec_name(idx)).to_string_lossy())?;
+        let answers: Vec<Vec<Option<String>>> =
+            targets.iter().map(|t| t.synth.clone().unwrap_or_default()).collect();
         let entries = rehydrate_entries(&prog, targets)?;
+        let replay = if converge { entries.clone() } else { Vec::new() };
         {
             let mut out =
                 jobs::ResultWriter::create(&dir.join(jobs::result_name(idx)).to_string_lossy())?;
@@ -997,8 +1021,15 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                 // worker does not set it and keeps the preamble.
                 header_carries_types: args.jobs_types,
                 single_target: false,
+                // A recording worker's function that asked the ledger is
+                // decompiled again with the serial names; its rendering here
+                // would be thrown away.
+                defer_synthesized: synth_hook.as_ref().is_some_and(|h| h.borrow().lets_ledger_answer()),
             };
             let mut pending = entries.into_iter();
+            let mut pulled = 0usize;
+            // The serial worker holds its chunk back until the sweep has run.
+            let mut held: Vec<FuncResult> = Vec::new();
             // A result file this worker cannot write is the whole chunk lost, so
             // the pull stops at the current function rather than decompiling the
             // rest of it into a dead file.
@@ -1011,10 +1042,21 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                         return None;
                     }
                     let entry = pending.next()?;
+                    if let Some(hook) = &synth_hook {
+                        hook.borrow_mut().begin(&answers[pulled]);
+                    }
+                    pulled += 1;
                     faults.before_target(dir, entry.addr.get_offset());
                     Some(entry)
                 },
-                &mut |r| {
+                &mut |mut r| {
+                    if let Some(hook) = &synth_hook {
+                        r.synth = Some(hook.borrow_mut().take());
+                    }
+                    if converge {
+                        held.push(r);
+                        return;
+                    }
                     let mut slot = write_error.borrow_mut();
                     if slot.is_none() {
                         if let Err(e) = out.push(&r) {
@@ -1026,10 +1068,33 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
             if let Some(e) = write_error.into_inner() {
                 return Err(e);
             }
+            if converge {
+                converge_synthesized_structs(&mut prog, &opts, &replay, &mut held);
+                for r in &held {
+                    out.push(r)?;
+                }
+            }
         }
         jobs::ack_chunk(idx);
     }
     Ok(())
+}
+
+/// (kuna `structsynth`) Make this worker a forcing one: forget the structures
+/// it minted itself, mint the parent's replayed table in its order, and answer
+/// every later ledger lookup from the chunk specs.
+fn take_synth_table(
+    prog: &mut ConsoleProgram,
+    scratch: &str,
+    held_at_start: &[String],
+) -> Result<shard::ShardHandle, String> {
+    let table = jobs::read_synth_table(scratch)?;
+    shard::forget_minted(prog.arch().types_impl(), held_at_start)
+        .and_then(|()| shard::install_table(prog.arch().types(), &table))
+        .map_err(|e| format!("cannot install the synthesized structures: {e}"))?;
+    let hook = ShardHook::forcing();
+    prog.arch_mut().struct_synth_shard = Some(hook.clone());
+    Ok(hook)
 }
 
 /// Rebuild the parent's [`FunctionEntry`] list from a chunk spec.
@@ -1093,6 +1158,7 @@ fn seed_worker_inventory(prog: &mut ConsoleProgram, path: &str) -> Result<(), St
 /// `load_seconds` is how long the caller's own `load_program` took; the pool's
 /// stall watchdog needs it to know when a worker could plausibly have finished
 /// loading.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn decompile_targets_pooled(
     args: &Args,
     targets: &[FunctionEntry],
@@ -1101,21 +1167,27 @@ pub(crate) fn decompile_targets_pooled(
     want_provenance: bool,
     want_types: bool,
     load_seconds: f64,
+    synth_base: Option<shard::Replay>,
 ) -> Result<jobs::PoolOutput, String> {
     let specs = flatten_targets(targets);
     let inventory = flatten_targets(inventory);
-    jobs::run_pool(
-        &pool_config(
-            args,
-            want_proto,
-            want_provenance,
-            want_types,
-            /* want_callee_hints= */ false,
-            load_seconds,
-        ),
-        &specs,
-        &inventory,
-    )
+    let mut cfg = pool_config(
+        args,
+        want_proto,
+        want_provenance,
+        want_types,
+        /* want_callee_hints= */ false,
+        load_seconds,
+    );
+    cfg.synth_base = synth_base;
+    jobs::run_pool(&cfg, &specs, &inventory)
+}
+
+/// (kuna `structsynth`) The ledger a sharded run replays its workers' lookups
+/// from, read off the parent's program before any decompile: `None` when this
+/// run does not synthesize structures.
+pub(crate) fn synth_base(prog: &ConsoleProgram) -> Option<shard::Replay> {
+    prog.arch().struct_synth.fires().then(|| shard::Replay::probe(prog.arch().types()))
 }
 
 /// Flatten resolved entries into the thread- and process-crossing form
@@ -1132,6 +1204,7 @@ pub(crate) fn flatten_targets(entries: &[FunctionEntry]) -> Vec<jobs::TargetSpec
             object_location: e.object_location.clone(),
             provenance: e.provenance,
             binding: e.binding.clone(),
+            synth: None,
         })
         .collect()
 }
@@ -1166,6 +1239,7 @@ pub(crate) fn pool_config<'a>(
         slice: args.slice.as_deref(),
         target: args.target.as_deref(),
         sleighpath: args.sleighpath.as_deref(),
+        synth_base: None,
     }
 }
 
@@ -1366,6 +1440,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     if args.jobs > 1 {
         let inventory = prog.function_entries_canonical();
         let assertions = prog.assertion_outcomes();
+        let synth = synth_base(&prog);
         drop(prog);
         let pooled = decompile_targets_pooled(
             args,
@@ -1375,6 +1450,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
             /* want_provenance= */ args.json,
             /* want_types= */ false,
             load_seconds,
+            synth,
         )?;
         return Ok(AllRun { funcs: pooled.results, discovered, assertions });
     }
@@ -2590,6 +2666,7 @@ mod provenance_json_tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: Vec::new(),
+            synth: None,
         };
 
         let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[]));
@@ -2731,6 +2808,7 @@ pub(crate) fn parse_args_with_filters(
     let mut jobs_provenance = false;
     let mut jobs_types = false;
     let mut jobs_callees = false;
+    let mut jobs_synth: Option<jobs::SynthWorker> = None;
     // The three whole-binary surfaces the worker POOL serves; `functions`
     // enumerates and never decompiles, so there is nothing for a pool to do
     // there. `--jobs` reaches further than the pool does: it also sizes the
@@ -2792,6 +2870,9 @@ pub(crate) fn parse_args_with_filters(
             "--jobs-provenance" if cmd == "decompile-all" => jobs_provenance = true,
             "--jobs-types" if cmd == "decompile-all" => jobs_types = true,
             "--jobs-callees" if cmd == "decompile-all" => jobs_callees = true,
+            "--jobs-synth" if cmd == "decompile-all" => {
+                jobs_synth = Some(jobs::SynthWorker::parse(&take(argv, &mut i, "--jobs-synth")?)?);
+            }
             "--max-fn-seconds"
                 if cmd == "decompile-all"
                     || cmd == "decompile-project"
@@ -3009,6 +3090,7 @@ pub(crate) fn parse_args_with_filters(
             jobs_provenance,
             jobs_types,
             jobs_callees,
+            jobs_synth,
         },
         filters,
     ))
@@ -3063,9 +3145,10 @@ fn usage_decompile_all() {
          budget becomes its own `error` record and the batch continues.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
-         in-process path). Output is merged in target order, so it is identical to\n\
-         --jobs 1 with --option structsynth off: workers run with structsynth off,\n\
-         because each process would number its own struct_N. Progress goes to\n\
+         in-process path). Output is merged in target order and is identical to\n\
+         --jobs 1, synthesized struct_N names included: the functions that\n\
+         synthesize a structure are decompiled a second time with the names the\n\
+         serial run gives them. Progress goes to\n\
          stderr. Every worker loads the binary itself, so peak memory is roughly\n\
          N times one worker's RSS. --jobs-chunk N sets the functions per worker\n\
          invocation (bigger = less load overhead, more\n\
