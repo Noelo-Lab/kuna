@@ -29,7 +29,7 @@
   }
  },
  "arity": {
-  "instrument": "docs/features/protoorder/callsite-metrics.py over `decompile-all --json` in both arms (off = main d96e3408 byte for byte, vs the default), 60 stripped binaries, 32,406 functions",
+  "instrument": "docs/features/protoorder/callsite-metrics.py over `decompile-all --json` in both arms (off = main a3bf6a15 byte for byte (round 13; d96e3408 in rounds 11-12), vs the default), 60 stripped binaries, 32,406 functions",
   "call_arguments_off": 258249,
   "call_arguments_on": 258249,
   "arguments_added": 0,
@@ -40,8 +40,8 @@
   "functions_gaining_arg_rows": 0,
   "never_assigned_arguments_off": 1179,
   "never_assigned_arguments_on": 1179,
-  "string_literal_arguments_off": 30518,
-  "string_literal_arguments_on": 31017,
+  "string_literal_arguments_off": 30519,
+  "string_literal_arguments_on": 31018,
   "under_arity_sites_off": 13853,
   "under_arity_sites_on": 13853,
   "file": "docs/features/protoorder/callsite.json"
@@ -50,27 +50,27 @@
   "instrument": "docs/features/protoorder/corpus-diff.py (every changed function classified by the first normalizer under which the two bodies agree; frame layout from variables[]; use-before-def from the code) + label-review.py/hand-labels.json for the residue + invariants.py; round 11 adds the struct-number class (struct_N renumbered by order of appearance) and member-reach through ->field_0xN / ->field_0xN[k]",
   "binaries": 60,
   "functions_total": 32406,
-  "functions_changed": 9660,
+  "functions_changed": 9652,
   "classes": {
-   "REVIEW": 103,
-   "casts": 4438,
-   "declarations": 2753,
+   "REVIEW": 100,
+   "casts": 4439,
+   "declarations": 2748,
    "literal": 369,
    "member-reach": 435,
    "merge": 17,
    "pointer-arith": 120,
-   "struct-number": 1425
+   "struct-number": 1424
   },
   "residue_labels": {
    "builtin-string": 4,
    "float-literal": 4,
-   "literal": 11,
+   "literal": 10,
    "member-reach": 13,
    "regroup": 12,
    "spelling": 45,
    "stack-merge": 2,
-   "store-width": 2,
-   "ternary": 6,
+   "store-width": 1,
+   "ternary": 5,
    "wide-read": 4
   },
   "frame": {
@@ -99,8 +99,8 @@
     13
    ],
    "to_float": [
-    1312,
-    1351
+    1305,
+    1344
    ],
    "to_float_note": "per function 199 appear and 159 disappear on hard-float call results read from s0 (a callee returning float), 1 is main's own conversion moved into a temporary, 2 of main's go away"
   },
@@ -122,7 +122,8 @@
    "callsite.json",
    "calls-gained.on.txt"
   ],
-  "measured_on": "round 12: main d96e3408 (= the off arm on 60/60; 75f832e3 differs from it only in docs) vs the round-12 engine (round 11 plus the narrow-pointee refusal); every count above is the round-12 tree's. Round 11's engine differed on 26 functions (analysis.md section 3f)"
+  "measured_on": "round 12: main d96e3408 (= the off arm on 60/60; 75f832e3 differs from it only in docs) vs the round-12 engine (round 11 plus the narrow-pointee refusal); every count above is the round-12 tree's. Round 11's engine differed on 26 functions (analysis.md section 3f)",
+  "base": "round 13: main a3bf6a15 (fresh build) vs this branch at the default, all 60 binaries re-run"
  },
  "benchmark": {
   "corpus": "frozen decbench corpus (results/full_run_address_2026-09-11), 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow; O0 O2 O2-noinline; the campaign's x project has no slice), DECBENCH_NO_CACHE=1, scripts.decbench.typesweep --baseline-only on a main d96e3408 build and on this branch, merged",
@@ -132,17 +133,17 @@
     "n": 267,
     "perfect_off": 19,
     "perfect_on": 28,
-    "mean_off": 0.3664,
-    "mean_on": 0.3884,
+    "mean_off": 0.3644,
+    "mean_on": 0.3864,
     "improved": 14,
     "worse": 0
    },
    "coreutils": {
     "n": 6422,
-    "perfect_off": 610,
-    "perfect_on": 663,
-    "mean_off": 0.2813,
-    "mean_on": 0.2972,
+    "perfect_off": 612,
+    "perfect_on": 665,
+    "mean_off": 0.2803,
+    "mean_on": 0.2961,
     "improved": 428,
     "worse": 2
    },
@@ -150,8 +151,8 @@
     "n": 420,
     "perfect_off": 52,
     "perfect_on": 52,
-    "mean_off": 0.4004,
-    "mean_on": 0.4096,
+    "mean_off": 0.3966,
+    "mean_on": 0.4058,
     "improved": 19,
     "worse": 0
    },
@@ -159,8 +160,8 @@
     "n": 790,
     "perfect_off": 35,
     "perfect_on": 40,
-    "mean_off": 0.1622,
-    "mean_on": 0.2121,
+    "mean_off": 0.1621,
+    "mean_on": 0.212,
     "improved": 149,
     "worse": 0
    },
@@ -168,8 +169,8 @@
     "n": 247,
     "perfect_off": 39,
     "perfect_on": 44,
-    "mean_off": 0.387,
-    "mean_on": 0.4087,
+    "mean_off": 0.3848,
+    "mean_on": 0.4065,
     "improved": 17,
     "worse": 1
    },
@@ -177,8 +178,8 @@
     "n": 368,
     "perfect_off": 88,
     "perfect_on": 100,
-    "mean_off": 0.4858,
-    "mean_on": 0.5142,
+    "mean_off": 0.4863,
+    "mean_on": 0.5148,
     "improved": 26,
     "worse": 0
    },
@@ -186,8 +187,8 @@
     "n": 686,
     "perfect_off": 29,
     "perfect_on": 30,
-    "mean_off": 0.2897,
-    "mean_on": 0.2962,
+    "mean_off": 0.2884,
+    "mean_on": 0.2949,
     "improved": 19,
     "worse": 0
    },
@@ -195,35 +196,39 @@
     "n": 1548,
     "perfect_off": 114,
     "perfect_on": 148,
-    "mean_off": 0.2824,
-    "mean_on": 0.3353,
+    "mean_off": 0.2816,
+    "mean_on": 0.3344,
     "improved": 285,
     "worse": 0
    }
   },
   "pooled": {
    "n": 10748,
-   "perfect_off": 986,
-   "perfect_on": 1105,
-   "mean_off": 0.2895,
-   "mean_on": 0.313,
+   "perfect_off": 988,
+   "perfect_on": 1107,
+   "mean_off": 0.2884,
+   "mean_on": 0.3119,
    "improved": 957,
-   "worse": 3
+   "worse": 3,
+   "aggregate_off": 3099.48,
+   "aggregate_on": 3352.26
   },
-  "aggregate_off": 3111.18,
-  "aggregate_on": 3363.95,
+  "aggregate_off": 3099.48,
+  "aggregate_on": 3352.26,
   "moved_onto_perfect": 119,
   "moved_off_perfect": 0,
-  "control": "6,839 functions with byte-identical variables score identically in both arms",
+  "control": "6,842 functions with byte-identical variables[] in both arms score identically (round 13, main a3bf6a15)",
   "firmware": {
-   "slices": "nuttx mirai betaflight freertos at O2",
-   "perfect_off": 208,
-   "perfect_on": 217,
-   "aggregate_off": 506.93,
-   "aggregate_on": 539.88,
-   "moved_off_perfect": 0,
-   "improved_not_perfect": 112,
-   "worse": 4
+   "n": 3451,
+   "perfect_off": 207,
+   "perfect_on": 216,
+   "mean_off": 0.1466,
+   "mean_on": 0.1562,
+   "improved": 120,
+   "worse": 4,
+   "aggregate_off": 506.08,
+   "aggregate_on": 538.88,
+   "note": "nuttx, mirai, betaflight, freertos at -O2; main a3bf6a15 vs round 13; the same four worse rows as round 12"
   },
   "ablations": {
    "build": "an earlier round-6 build (before the frame-memory refusals), all three arms against the same off base",
@@ -233,7 +238,14 @@
   },
   "worse_rows": "all 7 read, docs/features/protoorder/analysis.md section 6: 5 callee over-typed, 1 ground-truth integer the program uses as a pointer (nxsig_timeout), 1 parameter-order artefact (rpmFilterApply)",
   "note_improved": "projects.*.improved counts rows that reach perfect too (957 = 119 onto perfect + 838 improved)",
-  "rebased_d6c5862f": "after the rebase onto origin/main d6c5862f (foldcallretphi on): main 986 perfect (0 rows move from d96e3408), this branch 1,105 (moved onto 119, off 0, improved 838, worse 3); with --option ptrfromuse void 1,309; firmware 208 -> 217 (worse 4)"
+  "rebased_d6c5862f": "after the rebase onto origin/main d6c5862f (foldcallretphi on): main 986 perfect (0 rows move from d96e3408), this branch 1,105 (moved onto 119, off 0, improved 838, worse 3); with --option ptrfromuse void 1,309; firmware 208 -> 217 (worse 4)",
+  "rebased_a3bf6a15": {
+   "main_vs_branch_default": "988 -> 1,107 (+119), off 0, improved 838, worse 3 (tail file_lines, tail tail_forever, grep O2-noinline buf_has_encoding_errors)",
+   "main_vs_branch_ptrfromuse_void": "988 -> 1,311 (+323), off 0, improved 838, worse 18: 12 ls/dir/vdir *_df_extension comparators (main 0.333 with ptrfromuse void from void *, this branch 0 in both arms: the undefined8 * of callee sub_71f0), tail x2, grep Pexecute x3 and buf_has_encoding_errors; none is worse than this branch at its own default (default -> void: +204 perfect, 85 improved, 0 worse)",
+   "round12_vs_round13": "0 of 10,748 rows move at the default and 0 with ptrfromuse void; firmware: 1 of 3,451 (betaflight read_data_sector 0.286 -> 0.143, main 0.143) in both arms",
+   "firmware_main_vs_branch": "207 -> 216 (+9), off 0, improved 111, worse 4 (both arms: void 207 -> 216, worse 4)",
+   "dirs": ".scratch/r13/cmp/* (not committed); typesweep-report.md/typesweep-moved.csv here are main_vs_J"
+  }
  },
  "speed": {
   "method": "round 12: main (a d96e3408 build; 75f832e3 differs only in docs) vs this branch's round-12 engine vs the round-11 engine, whole-binary `kuna decompile-all --json`, three arms rotated and reversed inside each iteration, min and median of 15, three slice groups side by side (box load 9-41)",
@@ -758,7 +770,7 @@
   }
  },
  "invariants_checked": {
-  "off_is_origin_main": "round 11: `--option protoorder off --json` is byte-identical to a fresh origin/main d96e3408 build on all 60 corpus binaries (and to 6e4f6fa5 on all 60 before the charbyte rebase); round 12: the final engine's `--option protoorder off --json` is byte-identical to main on 10 of 10 re-run binaries (fmt, ls, kmod, libselinux, betaflight, nuttx, dash, grep -O0, zlib, crazyflie cf2); after the rebase onto d6c5862f, off == main on the same 10 binaries, with call arguments 67,928 = 67,928, argument rows 18,930 = 18,930 and never-assigned arguments 468 = 468 between the arms",
+  "off_is_origin_main": "round 11: `--option protoorder off --json` is byte-identical to a fresh origin/main d96e3408 build on all 60 corpus binaries (and to 6e4f6fa5 on all 60 before the charbyte rebase); round 12: the final engine's `--option protoorder off --json` is byte-identical to main on 10 of 10 re-run binaries (fmt, ls, kmod, libselinux, betaflight, nuttx, dash, grep -O0, zlib, crazyflie cf2); after the rebase onto d6c5862f, off == main on the same 10 binaries, with call arguments 67,928 = 67,928, argument rows 18,930 = 18,930 and never-assigned arguments 468 = 468 between the arms; round 13: byte-identical to a fresh a3bf6a15 build on all 60 corpus binaries",
   "determinism": "two default runs of fmt -O2 --json are byte-identical",
   "jobs": "an explicit `--option protoorder` with --jobs N exits 2; under the default a --jobs run states nothing and prints a note on stderr; with --option protoorder off it is byte-identical to the serial run (kuna-cli tests)",
   "assert": "`--assert prototype` declares the entry, so the recovered statement declines and the declared branch of getInputLocal answers first",
@@ -780,7 +792,7 @@
   "docs/options.md": "byte-fresh against the final build (OPTIONS_FRESH)",
   "make rust-test": "RUST_TEST_RC=0 (7,235 passed / 0 failed; lane 2026-09-19T14:06:15Z -> 14:21:33Z on the tree rebased onto d6c5862f; also 13:39:54Z -> 13:56:24Z on 75f832e3)"
  },
- "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main d96e3408 (structsynth, boolbyte and charbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh d96e3408 build; the same engine measured on 6e4f6fa5 first gave the same typesweep rows and class counts; rounds 6-10 were against d3617d64/e1139df9 and are superseded; round 12 measured on 75f832e3 (docs-only over d96e3408) and re-checked after the rebase onto d6c5862f (foldcallretphi on): typesweep, off == main (10 binaries), arity on those 10, gates and rust-test",
+ "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main d96e3408 (structsynth, boolbyte and charbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh d96e3408 build; the same engine measured on 6e4f6fa5 first gave the same typesweep rows and class counts; rounds 6-10 were against d3617d64/e1139df9 and are superseded; round 12 measured on 75f832e3 (docs-only over d96e3408) and re-checked after the rebase onto d6c5862f (foldcallretphi on): typesweep, off == main (10 binaries), arity on those 10, gates and rust-test; round 13 re-measured everything on a3bf6a15 (#687 over d6c5862f): the 60-binary corpus in seven arms (round-12 engine, this branch default/off/ptrfromuse void, main with and without ptrfromuse void), typesweep (444 slices + firmware, both ptrfromuse arms, main/round-12/round-13 engines in one sweep), arity, gates, rust-test and a speed spot check",
  "round12_narrow_pointee": {
   "finding": "found by the ptrfromuse default evaluation (branch feat/ptrfromuse-on): a vote whose pointee is a non-character integer narrower than a constant the caller stores through the pointer split the store, one store per element (SplitDatatype). Default: gzip sub_6e90 '.tar' as five byte stores, betaflight sub_8041e24 1.0f as four, e2fsck sub_3a380 an 8-byte zero as two 4-byte stores; --option ptrfromuse void: bzip2 sub_5a10/sub_60e0 *(unsigned long *)(a0 + 0x5c) = 0x100 as eight byte stores, tar sub_133d0 'ustar  ' as eight",
   "change": "pointee_refuses: a non-character integer, bool or pointer pointee refuses a constant stored wider than itself at a fixed place or a record stride; a stride of the store's own width, a computed value and a character pointee are allowed",
@@ -792,5 +804,16 @@
   "corpus_default": "60 binaries: 26 of 32,406 functions change vs the round-11 engine: 11 store splits undone, 9 caller argument casts follow, 6 refused votes give back main's type; arity 258,249 = 258,249, argument rows 57,938 = 57,938, never-assigned arguments 1,179 = 1,179",
   "corpus_ptrfromuse_void": "13 binaries: 14 of 10,549 functions change: 9 store splits undone, 5 caller casts",
   "residual": "two store-width rows remain by design: a char * vote (libselinux sub_1d4c0, eight '\\0' stores) and a word-at-a-time fill of a byte buffer (betaflight sub_801379c)"
+ },
+ "round13_narrow_pointee_holes": {
+  "finding": "review round after round 12: (1) the narrow-primitive rule read accesses_through() == None (walk gave up after 511 steps) as no wide store and let the vote through: 520 eight-byte constants printed as 4,160 byte stores; (2) the stride == store-width exemption kept the per-element split for a buffer filled a word at a time (st.c loop; betaflight sub_801379c 0xefbeadde fill as four byte stores per word)",
+  "change": "pointee_refuses: a non-character integer, bool or pointer pointee refuses when accesses_through gives up, and refuses any constant stored wider than itself whatever the stride",
+  "fixture": "protoorder_widefill_x86_64 (sha256 ca48818092626783e00d2f69b91c88ed4d6833ddd2ba0398ad9df7faf955ef90): fill_words (word-fill loop) and fill_many (520 stores)",
+  "witness_before": "round-12 engine, default and ptrfromuse void: int fill_words(unsigned char *a0,int a1) with v2[0] = 8; ... v2[7] = 1; and int fill_many(unsigned char *a0,int a1) with 4,160 byte stores",
+  "witness_after": "identical to main a3bf6a15 in both arms: fill_words(unsigned long *a0,...) with *v2 = 0x102030405060708; fill_many(long a0,...) (void: void *a0) with *(unsigned long *)(a0 + 0x10) = 0x2020726174737575;",
+  "tests": "kuna-cli a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole (both functions, default + ptrfromuse void; fails on the round-12 engine), probe tests/cli/protoorder-types-keeps-a-word-fill-whole.json (a-e475e354c99c; passes main and round 13, fails round 12)",
+  "corpus": "60 binaries: 4 of 32,406 functions change vs the round-12 engine, the same 4 in both arms: crond O0 sub_6b7b (walk limit; two argument casts back to main spelling), betaflight sub_801379c (== main), sub_8013818 (== main), sub_80130a4 (integer votes only)",
+  "typesweep": "0 of 10,748 rows move in either arm; firmware 1 of 3,451 (read_data_sector back to main)",
+  "not_taken": "narrower-access refusal (+ undefined pointees): measured +3 improved default / +18 ptrfromuse void, 0 worse, fixes stat O2 sub_df20 (char * -> int *, (char)*a0); changes 209 functions on 33 binaries; analysis §10"
  }
 }
