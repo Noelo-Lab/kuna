@@ -33,14 +33,16 @@
       "eq": 0
     },
     "stdout_matches": [
-      "// Function: "
-    ],
-    "stdout_absent": [
-      "struct_\\d+"
+      "// Function: ",
+      "struct_4 \\*"
     ],
     "stderr_matches": [
-      "\\[kuna --jobs\\] note: structsynth is off in the worker processes: each process would number its own struct_N, so one name could stand for two layouts\\. Re-run with --jobs 1 for synthesized structures\\."
+      "\\[kuna --jobs\\] structsynth: \\d+ decompile\\(s\\) of the functions with synthesized structures again, with the serial names"
+    ],
+    "stderr_absent": [
+      "structsynth is off",
+      "\\[kuna --jobs\\] note:"
     ]
   },
-  "notes": "A serial decompile-all of this fixture synthesizes five struct_N. Each worker process would number its own, so at --jobs 2 the same name stood for different layouts in functions two workers decompiled. Every sharded run now gives its workers structsynth off, stderr says so, and no struct_N reaches the document."
+  "notes": "A serial decompile-all of this fixture synthesizes five struct_N. The workers record every structure-ledger lookup, the parent replays them in target order, and the functions that synthesized anything are decompiled again with the serial names, so all five reach the document under the names --jobs 1 gives them (the kuna-cli integration test compares the documents byte for byte)."
 }

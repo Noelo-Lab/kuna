@@ -1047,15 +1047,44 @@ process's database, so they follow the SET of functions that process decompiled,
 and sharding changes that set. Measured at 2 records in 32,777 on an 18 MB PE,
 both a two-byte string constant rendering as `"BM"` rather than the UTF-16
 `"䵂"`; narrowing a serial run to one of those functions flips it the same way,
-so the dependence is the engine's and not the pool's. The synthesized structures
-of `structsynth` are the same kind of state at a larger scale: each process would
-number its own `struct_N`, so under a pool one name could mean two layouts in
-functions two workers decompiled, in one `decompile-all` document or in the one
-`.h` a `decompile-project` declares every type in. So every sharded run passes its
-workers `--option structsynth off` and says so on stderr
-(`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`); its output is
-then the one a serial `structsynth off` run renders, and `--jobs 1` is how to get
-the structures. The parent resolves the concrete
+so the dependence is the engine's and not the pool's.
+
+The synthesized structures of `structsynth` are the same kind of state at a
+larger scale, and the pool reproduces it instead of living with it. The serial
+run names each `struct_N` in decompile order, every ledger lookup reading what
+the functions before it minted, and then decompiles once more the functions that
+name a structure a later, larger one superseded. A worker left to itself would
+number its own structures. What a function ASKS the ledger, though, does not
+depend on what it is answered: the evidence is collected before anything is
+installed, and a field takes the type an access carried. So the first pool's
+workers record every lookup
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(SynthRequest)`), and the parent, which decompiles nothing, replays the lookups
+in target order through the ledger's own decision
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(Replay)`). The replay yields every answer, every mint, the superseded set and
+the answers the convergence sweep's lookups will get. The functions that asked
+are then decompiled a second time by fresh workers that mint the replayed
+structures before their first function
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(install_table)`) and answer each lookup with its replayed name; a function the
+sweep will decide differently goes out twice in that pool, and the parent applies
+the sweep on the first-pass text exactly as the serial batch does
+(`decompiler/crates/kuna-cli/src/jobs.rs (name_structs_serially)`). The second
+decompile records its lookups as well, and they have to be the first ones. A
+restarted decompile can carry its first attempt's structure into its second, and
+a field whose type another process cannot rebuild cannot travel; either way the
+functions that asked are decompiled again in target order by one worker that runs
+the ledger and the sweep itself, which is the serial computation restricted to the
+only functions that take part in it, and stderr says so. Only a function the
+watchdog or a worker failure cut short is exempt from the check, since it asks a
+different number of questions on every run. Across sixteen x86-64, i386-PE and
+ARM binaries at `--jobs 2` and `--jobs 4`, `decompile-all` (text and `--json`),
+`decompile-graph` and every `decompile-project` artifact are byte-identical to
+`--jobs 1`, and none needed the one-worker path. `decompile-project --stream`
+writes each body as it lands and runs no sweep, so its workers still run with
+`structsynth off` and say so
+(`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`). The parent resolves the concrete
 `--mode`, every `--option` and the watchdog budget once and passes them to every
 worker, so a shard cannot resolve a different policy just because the run was
 sharded. `--assert` and `--raw-image` are refused with a pool: assertion outcomes

@@ -25,15 +25,47 @@
 //! function cannot idle the pool) and deliberately NOT in output order, but it
 //! is merged back **positionally**: every target owns a slot index and its
 //! result is written to that slot, so the emitted document is byte-identical to
-//! a `--jobs 1 --option structsynth off` run regardless of completion order.
-//! Workers run with `structsynth off` because each process would number its own
-//! `struct_N` ([`structsynth_shard_note`]).  The parent resolves the
+//! a `--jobs 1` run regardless of completion order, synthesized structures
+//! included (below).  The parent resolves the
 //! per-function watchdog budget, the concrete `--mode` and every `--option` ONCE
 //! and passes them explicitly, so a worker cannot resolve a different policy
 //! just because the run was sharded.  The one thing that can still differ is the
 //! watchdog itself: it is a wall-clock deadline, so a function that finished
 //! just inside it serially can miss it under N-way contention
 //! ([`warn_about_anomalies`]).
+//!
+//! ## Synthesized structures — the replayed ledger
+//!
+//! `structsynth` names a `struct_N` in decompile order: each ledger lookup reads
+//! what the functions before it minted, and after the batch the functions that
+//! name a structure a later, larger one superseded are decompiled once more.  A
+//! worker sees only its own functions, so the names it mints are its own.  What
+//! a function ASKS the ledger does not depend on the answers, though, so the
+//! first pool's workers record every lookup (`--jobs-synth record`), and the
+//! parent replays them in target order through the ledger's own decision
+//! (`kuna_structsynth::shard::Replay`).  That gives every answer, every mint,
+//! the superseded set and what the sweep's lookups will answer.  The functions
+//! that asked -- a tenth to a fifth of a coreutils binary -- are then decompiled
+//! again by a second pool of fresh workers that mint the replayed structures
+//! before their first function and answer each lookup with its replayed name
+//! (`--jobs-synth force`); a function the sweep redoes with different answers
+//! goes out twice in the same pool, and the parent applies the sweep exactly as
+//! `converge_synthesized_structs` does.  Every worker of that pool renders the
+//! same type block, because all of them minted the same structures first.
+//!
+//! The second decompile records its lookups too, and they must be the first
+//! ones.  If one is not (a restarted decompile can carry the first attempt's
+//! structure into its second), or a structure's field type cannot be rebuilt in
+//! another process, the replay does not speak for the serial run: the functions
+//! that asked are decompiled again in target order by ONE worker running the
+//! ledger and the sweep itself (`--jobs-synth serial`), which is the serial
+//! computation over the only functions that take part in it, and stderr says
+//! so.  A function the watchdog or a dead worker cut short asks a different
+//! number of questions on each run, so its record is taken as it comes -- the
+//! same wall-clock caveat as the watchdog itself.  [`name_structs_serially`].
+//!
+//! `--stream` has no sweep to reproduce and writes each body as it lands, so its
+//! workers still run with `structsynth off` ([`structsynth_shard_note`]).
 //!
 //! ## Worker load equivalence — the inventory hand-off
 //!
@@ -2022,13 +2054,14 @@ pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
     out
 }
 
-/// Why a sharded run gives its workers `structsynth off`, or `None` when the run
-/// had turned it off anyway.
+/// Why a pool gives its workers `structsynth off`, or `None` when the run had
+/// turned it off anyway: the `--stream` pool, whose serial run writes each body
+/// as it lands and runs no convergence sweep for [`name_structs_serially`] to
+/// reproduce.
 ///
 /// A synthesized `struct_N` is named by the process that minted it, so two
 /// workers can each define a different `struct_0`: one document would use a name
-/// for two layouts, and one `.h` cannot declare both. A sharded run is therefore
-/// the `structsynth off` one; `--jobs 1` synthesizes.
+/// for two layouts, and one `.h` cannot declare both.
 fn structsynth_shard_note(cfg: &PoolConfig, tag: &str) -> Option<String> {
     let explicit = cfg.options.iter().rev().find(|(name, _)| name == "structsynth");
     if explicit.is_some_and(|(_, value)| value == "off") {
@@ -3344,8 +3377,9 @@ mod tests {
         }
     }
 
-    /// Every sharded run says why it has no `struct_N`, a project export or not,
-    /// and stays quiet where the run had turned synthesis off itself.
+    /// A pool that runs its workers with `structsynth off` (the `--stream` one)
+    /// says why it has no `struct_N`, and stays quiet where the run had turned
+    /// synthesis off itself.
     #[test]
     fn structsynth_shard_note_for_every_run_that_would_synthesize() {
         let note = structsynth_shard_note(&cfg(0, 0.0), JOBS_TAG).expect("default param");

@@ -3124,9 +3124,10 @@ fn usage_decompile_all() {
          budget becomes its own `error` record and the batch continues.\n\
          --jobs N spreads the per-function loop over N worker processes (auto =\n\
          this machine's parallelism, capped at 16; 1, the default, is the serial\n\
-         in-process path). Output is merged in target order, so it is identical to\n\
-         --jobs 1 with --option structsynth off: workers run with structsynth off,\n\
-         because each process would number its own struct_N. Progress goes to\n\
+         in-process path). Output is merged in target order and is identical to\n\
+         --jobs 1, synthesized struct_N names included: the functions that\n\
+         synthesize a structure are decompiled a second time with the names the\n\
+         serial run gives them. Progress goes to\n\
          stderr. Every worker loads the binary itself, so peak memory is roughly\n\
          N times one worker's RSS. --jobs-chunk N sets the functions per worker\n\
          invocation (bigger = less load overhead, more\n\
