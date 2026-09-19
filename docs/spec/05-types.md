@@ -557,6 +557,107 @@ truncation renderings: the one whose first pass is the `SUB41` the printer emits
 without the arm, and `truncflag`, whose second pass must print
 `(bool)(uint1)(a0 & 0x201)` and never the bare `(bool)(a0 & 0x201)`.
 
+**The char-pointer byte (`charbyte`).** x86 loads a byte with `movzx`
+whether the program meant it signed or not, so `*p` lifts to a `LOAD` whose
+one-byte output is read by an `INT_ZEXT`. `TypeOpIntZext::get_input_local`
+votes `get_base(1, TYPE_UINT)` for that byte, and in the seed fold
+`SUB_UINT_PLAIN` (16) outranks `SUB_INT_CHAR` (19), so the byte is seeded
+`uint1` before any propagation. When a `char *` later reaches the `LOAD`'s
+address, `propagate_from_pointer` offers `char` for the byte and the edge rule
+refuses it, because `char` ranks below `uint1`; and when the byte is visited
+first, it pushes `uint1 *` over a pointer that already carries `char *`, and
+that push wins. Either way a string walk prints in the wrong vocabulary -
+coreutils `fmt` -O2 `get_line` reads ``v1 = (unsigned char *)*dat_c100; v7 =
+strchr("([\'`\"",(int)(char)*v1);``, and every gnulib `mbrtowc` wrapper takes
+`unsigned char *a1` only to pass `(char *)a1` on.
+
+When `charbyte` is `on` (shipped `on`),
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_charbyte.rs (note_edge)` watches
+the `LOAD` edges while `run_infer_types` propagates and records the byte of
+each one where the pointer carries `char *` and the byte holds `uint1` only
+because of the zero-extension: an `INT_ZEXT` reads it and no other reader's
+`get_input_local` votes `TYPE_UINT`. A mask, an unsigned comparison, a logical
+shift, an unsigned division or an `unsigned char` call argument is the program
+using the byte as a number, and such a byte is never recorded. If anything was
+recorded, the pass starts over: the local types are rebuilt,
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_charbyte.rs (seed_char)` seeds
+each recorded byte `char` - the fold it would have had without the
+zero-extension's vote, unless the byte is type-locked or its storage is covered
+by a type-locked symbol, whose type stands - and propagation runs again from the
+new seeds by the unchanged rules. No edge is overridden, and that is what keeps the output sound.
+An edge override (take `char` on the pointer edge although the lattice ranks it
+lower) leaves every Varnode the byte had already typed `uint1` behind: a
+constant compared with the byte keeps `uint1`, and `char v1; ... v1 == 0xe9` is
+never true in C. Re-seeding lets `char` travel with the byte from the start, so
+the constant prints `'\xe9'`, a `uint1` reaching the byte from anywhere else
+still wins it, and the pointer keeps `char *` because the byte now pushes
+`char *`. A fresh propagation can also tip a contest the rule has no stake in -
+on bash -O2 `param_expand` a string pointer joined with an `int *` parameter
+came out `int *` once the byte stopped voting `unsigned char *` - so
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_charbyte.rs (keep_or_restore)`
+compares the two propagations Varnode by Varnode and keeps the second only if
+every type is unchanged or is the same type with `uint1` read as `char`, through
+any depth of pointers and arrays; otherwise the first propagation's types are
+put back and the function prints exactly as upstream. The second propagation
+runs only in a function where something was recorded; with the option off
+nothing is recorded and the pass runs once, exactly as upstream.
+
+Two kinds of byte are never retyped, whether recorded or only reached through
+a pointer the recorded bytes retyped. The first is a byte that reaches a
+`CALL`, `CALLIND` or `CALLOTHER` argument, a `RETURN`, or the `BRANCHIND` of a
+switch, directly or through copies, joins and one-byte arithmetic
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_charbyte.rs (read_without_cast)`).
+kuna shrinks a call argument to the byte when the `movzx` that widened it folds
+away, and C passes a `char` argument through the default promotions with no cast
+to show it, so `logit("%d",c)` would pass -128 for the byte 0x80 where the
+binary passes 128; likewise the switch header prints the byte itself, and a
+`char` switch variable never equals `case 0x80:`. The printed line is the same in
+both arms; only the declaration moves, which is why the check is on the reader
+and not on the text.
+The second is a counter
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_charbyte.rs (is_counter)`): a
+loaded byte whose own one-byte sum or difference is stored back through the
+address it was loaded from (`*p = c + 1`), directly or through copies and joins.
+The only `char *` such a byte meets is the default signed vote of that sum, and
+taking it would turn a genuine `unsigned char *` into `char *` with `c + '\x01'`.
+A digit stored into a different buffer (`*buf = d + '0'`) is character
+arithmetic and is not a counter. Neither kind is recorded, and one found in the
+second propagation - a sibling `a0[1]` read through the retyped pointer, a copy
+or a join of a recorded byte - puts the first propagation's types back. So does
+a byte that took `char` while the pointer it is loaded through did not end at
+`char *`: such a byte prints as a cast of its own load (ssh -O2 printed
+`(uint4)(uint1)(char)v2[1]`), which is the opposite of what the rule is for.
+For the same reason the first propagation is kept when a pointer that took
+`char *` copies into or out of one that stayed `unsigned char *` (through a
+`COPY`, `MULTIEQUAL`, `INDIRECT`, `PTRADD`, `PTRSUB` or pointer arithmetic):
+the two would print as separate variables joined by a cast, as a string
+walker's loop pointer did (`v5 = (unsigned char *)&a0[1]`).
+With `structsynth` on, a synthesized struct whose pointer field moves from
+`unsigned char *` to `char *` can become identical to a struct already
+synthesized and take its name; the `struct_N` numbers of every function
+decompiled after it then shift by one, a renaming with no other effect.
+
+The widened value is never claimed: the `INT_ZEXT` output keeps its own type,
+and the cast tail prints the zero-extension of a `char` as the `(unsigned
+char)` cast it is - `*v2 = (unsigned int)(unsigned char)*a1`, and a ctype
+table index `__ctype_b_loc()[(unsigned char)c]`, the idiom the source wrote. A
+byte read through an `unsigned char *` never meets a `char *` and stays
+`uint1`. Over fmt, ls, sort and grep at -O0 and -O2 the option changes 21 of
+3,248 functions: 39 byte and pointer declarations and 15 signatures move from
+`unsigned char` to `char`, character constants compared with or stored into
+those bytes print as literals (`v3 != '\t'`, `*v4 == '-'`), and no parameter is
+added or removed. A constant added to such a byte takes `char` with it and prints
+the way kuna already prints arithmetic on any `char` - `c + '\xd0'` for `c -
+0x30` - which the 8 binaries never show and bash -O2 shows on 6 lines (its off
+arm already has 14). Because the speculative merge of §6 joins only variables of
+one type, three functions change a declaration count: two split a `char` byte
+or pointer from an unrelated `unsigned char` value that had shared its
+declaration, and one joins two `char *` locals. Every changed comparison was
+checked by compiling both forms and evaluating them over all 256 byte values.
+`tests/stages/kuna-charbyte.xml` pins the witness, the `unsigned char *` and
+unsigned-compare controls, the `0xe9` comparison, and a pointer that is
+`char *` only because `strlen` takes one.
+
 **The Windows segment base (`pebnames`).** A Windows user-mode thread keeps its
 Thread Environment Block at the base of `GS` on x86-64 and of `FS` on x86, and
 x86 SLEIGH lowers a segment-prefixed operand to `GS_OFFSET + disp` /

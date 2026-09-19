@@ -1,0 +1,191 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Type campaign, item charbyte: a byte loaded through a char pointer is
+    declared unsigned char, and so is the pointer.  coreutils fmt -O2 get_line
+    shows it on a string walk:
+
+        v1 = (unsigned char *)*dat_c100;
+        v7 = strchr("([\'`\"",(int)(char)*v1);
+
+    and every gnulib mbrtowc wrapper takes unsigned char *a1 and passes
+    (char *)a1 to mbrtowc.
+
+    Root cause (P5, type propagation).  x86 loads a byte with movzx whether
+    the program meant it signed or not, so *p is a LOAD followed by INT_ZEXT.
+    TypeOpIntZext::getInputLocal votes getBase(1, TYPE_UINT) for the byte, and
+    in the getLocalType fold SUB_UINT_PLAIN (16) outranks SUB_INT_CHAR (19), so
+    the byte is seeded uint1.  The char * that reaches the LOAD's address
+    cannot displace it, and the byte then pushes uint1 * back over the pointer.
+
+    Stage / sub-stage: P5 "type-propagation".  The P0 assertion
+    option charbyte on|off decides whether such a byte is re-seeded char.
+
+    The fixture, SysV x86-64:
+
+        isdash (char *s, uint4 *out):   movzx eax,[rdi]; mov [rsi],eax;
+                                        cmp al,0x2d; sete al
+            the witness: the byte is widened into *out and compared with '-'
+        isdashu (uint1 *t, uint4 *out): the same bytes
+            a control: a byte read through an unsigned char pointer stays
+            uint1 and its constant a number in both passes
+        highbit (char *s, uint4 *out):  cmp al,0x7f; seta al
+            a control: the byte is also compared UNSIGNED, which is the
+            program treating it as a number, so it stays uint1
+        ishigh (char *s, uint4 *out):   cmp al,0xe9; sete al
+            the correctness pin: a constant at or above 0x80 must take char
+            WITH the byte.  A char compared with 0xe9 is never equal in C, so
+            the rule re-seeds the byte and propagates again rather than
+            overriding one edge, and the constant prints as the char it is
+        dashlen (no prototype):         strlen(s); movzx edx,[s];
+                                        mov [out],edx; cmp dl,0x2d
+            the pointer is char * only because strlen takes one; with the
+            option off the byte pushes uint1 * over it and the call needs a
+            (char *) cast
+        strlen: xor eax,eax; ret
+        argbyte (no prototype):         strlen(s); movzx ebx,[s];
+                                        mov esi,ebx; call logit;
+                                        return n + byte
+            a control: the byte reaches the call with its movzx folded
+            into a one-byte argument, where C would sign-extend a char
+            (logit("%d",c) would pass -128 for 0x80, the binary 128), so
+            it keeps uint1 in both passes
+        sibling (no prototype):         strlen(s); movzx ebp,[s];
+                                        movzx esi,[s+1]; call logit
+            a control: s[0] qualifies, but s[1], read through the same
+            pointer, is passed to the call; retyping the pointer would make
+            it a char argument, so the function keeps uint1 * in both passes
+        counter (gcc -O0):              c = *p; *p = c + 1; return c * 4
+            a control: the only char evidence is the default signed vote of
+            the byte's own sum, stored back through the pointer; a counter
+            keeps uint1 in both passes
+        logit: ret
+        highcase (no prototype):        strlen(s); movzx edx,[s];
+                                        jmp [(edx-0x7e)*8 + table]
+            a control: the byte selects a switch whose labels run past
+            0x7f; a char switch variable never equals case 0x80, so it
+            keeps uint1 in both passes
+
+    Pass 1 (option charbyte off) reproduces the bug; pass 2 (on) is the fix.
+-->
+<bytechunk space="ram" offset="0x100000">
+0fb60789063c2d0f94c00fb6c0c30000000000000000000000000000000000000fb60789063c2d0f
+94c00fb6c0c30000000000000000000000000000000000000fb60789063c7f0f97c00fb6c0c30000
+000000000000000000000000000000000fb60789063ce90f94c00fb6c0c300000000000000000000
+000000000000000053554883ec084889fb4889f5e82f0000000fb61389550080fa2d0f94c20fb6d2
+4801d04883c4085d5bc30000000000000000000000000000000000000000000031c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100100">
+55534889fb4883ec08e8b2ffffff0fb61bbf000210004889c531c089dee89e0000004883c4088d04
+2b5b5dc30000000000000000000000000000000000000000415455534889fbe874ffffff0fb62b0f
+b67301bf000210004989c431c0e85e000000428d4425005b5d415cc3000000000000000000000000
+0000000000000000f30f1efa554889e548897de8488b45e80fb6008845ff0fb645ff8d5001488b45
+e888100fb645ffc1e0025dc30000000000000000000000000000000000000000c300000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000256400000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000
+534889fbe877feffff0fb6138d4a8283f9037723ff24cd00031000b8010000005bc3b8020000005b
+c3b8070000005bc3b8090000005bc301d05bc3000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000005b02100000000000
+620210000000000069021000000000007002100000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="isdash"/>
+<symbol space="ram" offset="0x100020" name="isdashu"/>
+<symbol space="ram" offset="0x100040" name="highbit"/>
+<symbol space="ram" offset="0x100060" name="ishigh"/>
+<symbol space="ram" offset="0x100080" name="dashlen"/>
+<symbol space="ram" offset="0x1000c0" name="strlen"/>
+<symbol space="ram" offset="0x100100" name="argbyte"/>
+<symbol space="ram" offset="0x100140" name="sibling"/>
+<symbol space="ram" offset="0x100180" name="counter"/>
+<symbol space="ram" offset="0x1001c0" name="logit"/>
+<symbol space="ram" offset="0x100240" name="highcase"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 isdash(char *s,uint4 *out);</com>
+  <com>parse line extern int4 isdashu(uint1 *t,uint4 *out);</com>
+  <com>parse line extern int4 highbit(char *s,uint4 *out);</com>
+  <com>parse line extern int4 ishigh(char *s,uint4 *out);</com>
+  <com>parse line extern uint8 strlen(char *s);</com>
+  <com>option charbyte off</com>
+  <com>lo fu isdash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu isdashu</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu highbit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ishigh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dashlen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu argbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sibling</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu counter</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu highcase</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option charbyte on</com>
+  <com>lo fu isdash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu isdashu</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu highbit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ishigh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dashlen</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu argbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sibling</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu counter</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu highcase</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="charbyte #1: with the option off a string byte compared with a dash is uint1 and the dash a number (isdash) -- the bug; the unsigned-char-table control keeps that form in both passes" min="3" max="3">return \(int4\)\(v1 == 0x2d\);</stringmatch>
+<stringmatch name="charbyte #2: with the option on the same byte is char and the dash a character literal" min="1" max="1">return \(int4\)\(v1 == '-'\);</stringmatch>
+<stringmatch name="charbyte #3: the widened copy of a char byte prints as the zero-extension it is (isdash, ishigh with the option on)" min="2" max="2">\*out = \(uint4\)\(uint1\)v1;</stringmatch>
+<stringmatch name="charbyte #4: a byte also compared unsigned stays uint1 in both passes" min="2" max="2">return \(int4\)\(0x80 &lt;= v1\);</stringmatch>
+<stringmatch name="charbyte #5: uint1 bytes: all eight functions with the option off; the table, unsigned-compare, call-argument, sibling and counter controls with it on" min="13" max="13">  uint1 v1;</stringmatch>
+<stringmatch name="charbyte #6: char bytes: isdash, ishigh and dashlen with the option on" min="3" max="3">  char v1;</stringmatch>
+<stringmatch name="charbyte #7: with the option off a byte compared with 0xe9 is uint1 against a number" min="1" max="1">return \(int4\)\(v1 == 0xe9\);</stringmatch>
+<stringmatch name="charbyte #8: with the option on the constant takes char with the byte, so the comparison stays true for 0xe9" min="1" max="1">return \(int4\)\(v1 == '\\xe9'\);</stringmatch>
+<stringmatch name="charbyte #9: with the option off the byte pushes uint1 * over the pointer strlen made char *" min="1" max="1">int8 dashlen\(uint1 \*a0,uint4 \*a1\)</stringmatch>
+<stringmatch name="charbyte #10: and the call needs a cast back (dashlen off; argbyte and sibling, whose pointers stay uint1 *, in both passes)" min="5" max="5">v2 = strlen\(\(char \*\)a0\);</stringmatch>
+<stringmatch name="charbyte #11: with the option on the pointer stays char *" min="1" max="1">int8 dashlen\(char \*a0,uint4 \*a1\)</stringmatch>
+<stringmatch name="charbyte #12: and the call takes it as it is" min="1" max="1">v2 = strlen\(a0\);</stringmatch>
+<stringmatch name="charbyte #13: the dash compare in dashlen follows the byte" min="1" max="1">return v2 \+ \(v1 == '-'\);</stringmatch>
+<stringmatch name="charbyte #14: a byte passed straight to a call keeps uint1 and its pointer uint1 * in both passes (argbyte)" min="2" max="2">int4 argbyte\(uint1 \*a0\)</stringmatch>
+<stringmatch name="charbyte #15: the one-byte argument prints as the uint1 it is, so C zero-extends it as the binary does" min="2" max="2">logit\(0x100200,v1\);</stringmatch>
+<stringmatch name="charbyte #16: a sibling byte passed to a call keeps the shared pointer uint1 * in both passes (sibling)" min="2" max="2">int4 sibling\(uint1 \*a0\)</stringmatch>
+<stringmatch name="charbyte #17: and the sibling argument is read through that uint1 *" min="2" max="2">logit\(0x100200,a0\[1\]\);</stringmatch>
+<stringmatch name="charbyte #18: a counter whose own sum is stored back keeps uint1 * in both passes (counter)" min="2" max="2">int8 counter\(uint1 \*a0\)</stringmatch>
+<stringmatch name="charbyte #19: and its increment prints with a number, not a char literal" min="2" max="2">\*a0 = v1 \+ 1;</stringmatch>
+<stringmatch name="charbyte #20: a byte that selects a switch keeps uint1 and its pointer uint1 * in both passes (highcase)" min="2" max="2">int4 highcase\(uint1 \*a0\)</stringmatch>
+<stringmatch name="charbyte #21: so the case labels past 0x7f still match the unsigned switch variable" min="2" max="2">case 0x80:</stringmatch>
+</decompilertest>

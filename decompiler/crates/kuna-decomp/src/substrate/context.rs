@@ -865,6 +865,10 @@ pub struct ArchContext {
     /// (`LangCaps::integer_promotion`).  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
     pub int_promotion: bool,
+    /// (kuna `charbyte`) Keep `char` for a byte loaded through a `char *`.
+    /// Mirror of [`Architecture::char_byte`](crate::architecture::Architecture);
+    /// the rule lives in [`kuna_charbyte`](crate::p5_types::kuna_charbyte).
+    pub char_byte: bool,
 
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be a
     /// LOAD/STORE base as a pointer; mirrors
@@ -1561,6 +1565,7 @@ impl ArchContext {
             bool_byte: true, // (kuna) option boolbyte (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
+            char_byte: true, // (kuna) option charbyte
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch

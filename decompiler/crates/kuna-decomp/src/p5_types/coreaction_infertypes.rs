@@ -546,6 +546,7 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         Some(t) => t,
         None => return false,
     };
+    crate::kuna_charbyte::note_edge(data, op, inslot, outslot, invn, outvn, &newtype, &cur); // (kuna `charbyte`)
     if 0 > newtype.type_order(&cur).unwrap_or(0) {
         let is_mark = data.vbank().get(outvn).map(|v| v.is_mark()).unwrap_or(true);
         if let Some(v) = data.vbank_mut().get_mut(outvn) {
@@ -1786,7 +1787,24 @@ pub fn run_infer_types(data: &mut Funcdata) -> bool {
     // input-Varnode type recommendations (the `this`-pointer collection is the
     // merged tree's only source; a no-op on a recommendation-free function).
     data.apply_type_recommendations();
+    crate::kuna_charbyte::begin(data);
     build_localtypes(data);
+    propagate_all(data);
+    // (kuna `charbyte`) re-seed the bytes a `char *` reached and propagate again.
+    if let Some(bytes) = crate::kuna_charbyte::take_noted() {
+        let upstream = crate::kuna_charbyte::snapshot(data);
+        build_localtypes(data);
+        crate::kuna_charbyte::seed_char(data, &bytes);
+        propagate_all(data);
+        crate::kuna_charbyte::keep_or_restore(data, upstream);
+    }
+    write_back(data)
+}
+
+/// The propagation half of C++ `ActionInferTypes::apply` (coreaction.cc:5640-5667):
+/// every live Varnode's temp type flows along its edges, then across returns and
+/// into the stack frame.
+fn propagate_all(data: &mut Funcdata) {
     let order: Vec<VarnodeId> = data.vbank().iter_loc().collect();
     for vn in order {
         {
@@ -1814,7 +1832,6 @@ pub fn run_infer_types(data: &mut Funcdata) -> bool {
             propagate_spacebase_ref(data, spcvn);
         }
     }
-    write_back(data)
 }
 
 #[cfg(test)]

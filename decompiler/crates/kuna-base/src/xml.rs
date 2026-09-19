@@ -1884,7 +1884,8 @@ mod tests {
         // and mulblob-wide-multiply-operands / a widened multiply operand is a
         // value, not a 16-byte aggregate
         // and kuna-truncarg / a narrowed call argument keeps its truncation
-        assert_eq!(count, 315, "corpus file count drifted");
+        // and kuna-charbyte / a byte read through a char pointer stays char
+        assert_eq!(count, 316, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

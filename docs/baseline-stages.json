@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1156,
-    1156
+    1177,
+    1177
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -841,6 +841,27 @@
     "data:callretmulti #3: same-block fan-out evaluates helper2 once per pass",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
+    "data:charbyte #10: and the call needs a cast back (dashlen off; argbyte and sibling, whose pointers stay uint1 *, in both passes)",
+    "data:charbyte #11: with the option on the pointer stays char *",
+    "data:charbyte #12: and the call takes it as it is",
+    "data:charbyte #13: the dash compare in dashlen follows the byte",
+    "data:charbyte #14: a byte passed straight to a call keeps uint1 and its pointer uint1 * in both passes (argbyte)",
+    "data:charbyte #15: the one-byte argument prints as the uint1 it is, so C zero-extends it as the binary does",
+    "data:charbyte #16: a sibling byte passed to a call keeps the shared pointer uint1 * in both passes (sibling)",
+    "data:charbyte #17: and the sibling argument is read through that uint1 *",
+    "data:charbyte #18: a counter whose own sum is stored back keeps uint1 * in both passes (counter)",
+    "data:charbyte #19: and its increment prints with a number, not a char literal",
+    "data:charbyte #1: with the option off a string byte compared with a dash is uint1 and the dash a number (isdash) -- the bug; the unsigned-char-table control keeps that form in both passes",
+    "data:charbyte #20: a byte that selects a switch keeps uint1 and its pointer uint1 * in both passes (highcase)",
+    "data:charbyte #21: so the case labels past 0x7f still match the unsigned switch variable",
+    "data:charbyte #2: with the option on the same byte is char and the dash a character literal",
+    "data:charbyte #3: the widened copy of a char byte prints as the zero-extension it is (isdash, ishigh with the option on)",
+    "data:charbyte #4: a byte also compared unsigned stays uint1 in both passes",
+    "data:charbyte #5: uint1 bytes: all eight functions with the option off; the table, unsigned-compare, call-argument, sibling and counter controls with it on",
+    "data:charbyte #6: char bytes: isdash, ishigh and dashlen with the option on",
+    "data:charbyte #7: with the option off a byte compared with 0xe9 is uint1 against a number",
+    "data:charbyte #8: with the option on the constant takes char with the byte, so the comparison stays true for 0xe9",
+    "data:charbyte #9: with the option off the byte pushes uint1 * over the pointer strlen made char *",
     "data:checker-stack-aggregate #1: the partial-backed scalar is declared exactly once",
     "data:checker-stack-aggregate #2: the low piece keeps the shared name",
     "data:checker-stack-aggregate #3: the high piece keeps the shared name",
