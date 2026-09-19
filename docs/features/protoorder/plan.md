@@ -91,6 +91,12 @@ One option, `protoorder off|types|lock`, default `types`, P4, subphase
    with `--option ptrfromuse void`). New fixture `protoorder_narrowvote_x86_64`
    with a CLI test over the default and `ptrfromuse void`, and a probe. Taken
    from the `ptrfromuse` branch without that branch's default flip.
+13. **Round 13.** The narrow-pointee rule no longer allows a constant stored at
+   a stride of its own width (a word-at-a-time fill printed one store per byte of
+   each word), and it refuses when the walk over the caller's addresses gives
+   up, as the float and composite rules already did (a caller with 520 wide
+   stores printed 4,160 byte stores). New fixture `protoorder_widefill_x86_64`
+   with a CLI test over the default and `ptrfromuse void`, and a probe.
 
 ## What is deliberately NOT in it
 

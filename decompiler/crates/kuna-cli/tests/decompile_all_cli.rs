@@ -2688,6 +2688,41 @@ fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
     }
 }
 
+/// `fill_words` stores an eight-byte constant at each word of the buffer it hands
+/// the byte-reading `peek`, and `fill_many` stores 520 of them at fixed places,
+/// more addresses than the vote's access walk follows. Taken as a vote, `peek`'s
+/// `unsigned char *` printed every one of those stores as eight byte stores; both
+/// votes are refused, at the default and with `--option ptrfromuse void`.
+#[test]
+fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_widefill_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for void in [false, true] {
+        let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", &sp];
+        if void {
+            args.extend_from_slice(&["--option", "ptrfromuse", "void"]);
+        }
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("protoorder word fills: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for (name, store) in [("fill_words", "= 0x102030405060708;"), ("fill_many", "= 0x2020726174737575;")] {
+            let body = stdout
+                .split("// Function: ")
+                .find(|c| c.starts_with(&format!("{name} ")))
+                .unwrap_or_else(|| panic!("{name} is printed"));
+            assert!(body.contains(store), "{name}'s eight-byte store was split (void={void}):\n{body}");
+            assert!(!body.contains("unsigned char *a0"), "{name} took the byte-pointer vote (void={void}):\n{body}");
+        }
+    }
+}
+
 /// `--jobs-full-load` gives every worker the parent's own load instead of the
 /// inventory hand-off.  It exists as the paranoid option, so it has to agree with
 /// the hand-off, not merely with itself.
