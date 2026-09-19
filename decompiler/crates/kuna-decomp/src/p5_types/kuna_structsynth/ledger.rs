@@ -44,11 +44,20 @@
 //! took the 144-byte layout of `statsobj_if_s`.
 //!
 //! A reader with no typed pointer claim is answered only by a structure of its
-//! own size. What it measured says nothing about what follows its last field,
-//! and records that begin alike part ways exactly there: every netlink reader in
-//! `ip` measures the same `nlmsghdr` words ahead of a payload of its own, and
-//! dpkg's 24-byte `pkg_queue` begins the way a 40-byte command record does. A
-//! structure of the same size can still fill in the holes of what it measured.
+//! own size that claims nothing past the reader's last field. What it measured
+//! says nothing about what follows its last field, and records that begin alike
+//! part ways exactly there: every netlink reader in `ip` measures the same
+//! `nlmsghdr` words ahead of a payload of its own, dpkg's 24-byte `pkg_queue`
+//! begins the way a 40-byte command record does, and it ends in the padding
+//! where the 24-byte `pkg_spec` keeps two flag bytes. A structure of the same
+//! size can still fill in the holes between the fields it measured.
+//!
+//! No structure answers with a member inside the alignment padding that a
+//! reader's claims leave between two of them. Records part ways in their first
+//! words too: every `bash` command record begins with an `int flags`, `if_com`
+//! then has a pointer at 8, and `for_com` puts its `int line` at 4, in exactly
+//! the bytes `if_com` pads. A hole wider than its padding is still room for a
+//! member the reader skipped.
 //!
 //! When the containment runs the other way -- the new layout strictly contains
 //! one already minted -- the minted one cannot be widened, because
@@ -237,6 +246,31 @@ impl Layout {
         slots.peek().is_some() && slots.all(|f| f.opaque)
     }
 
+    /// Where the last claim ends.
+    fn claimed_end(&self) -> int4 {
+        self.fields.iter().map(|f| f.offset.saturating_add(f.width)).max().unwrap_or(0)
+    }
+
+    /// The `[lo, hi)` byte ranges this layout leaves as alignment padding
+    /// between two of its claims: from the end of each claim up to the next
+    /// claim or the next multiple of that claim's width, whichever comes first.
+    fn interior_padding(&self) -> Vec<(int4, int4)> {
+        self.fields
+            .windows(2)
+            .filter_map(|pair| {
+                let lo = pair[0].offset.saturating_add(pair[0].width);
+                let align = if matches!(pair[1].width, 1 | 2 | 4 | 8) { pair[1].width } else { 1 };
+                let hi = pair[1].offset.min(lo.saturating_add(align - 1) / align * align);
+                (lo < hi).then_some((lo, hi))
+            })
+            .collect()
+    }
+
+    /// Does any claim of this layout overlap `[lo, hi)`?
+    fn claims_over(&self, lo: int4, hi: int4) -> bool {
+        self.fields.iter().any(|f| f.offset < hi && f.offset.saturating_add(f.width) > lo)
+    }
+
     /// Is this layout the answer a reader who measured `other` should be given?
     ///
     /// A layout answers for itself and for anything with exactly its shape
@@ -244,8 +278,9 @@ impl Layout {
     /// looking at the same record, and refusing them one name would mint a
     /// second `struct_N` for every function that measured it. Saying strictly
     /// more than the reader measured is where the bounds apply, a table is never
-    /// answered by more than its own shape, and a reader with no typed pointer
-    /// is never answered by a larger structure.
+    /// answered by more than its own shape, no structure answers with a member
+    /// in the reader's alignment padding, and a reader with no typed pointer is
+    /// never answered by a structure that claims anything past its last field.
     pub(super) fn answers_for(&self, other: &Layout) -> bool {
         if !self.subsumes(other) {
             return false;
@@ -253,11 +288,15 @@ impl Layout {
         if self.size == other.size && self.fields.len() == other.fields.len() {
             return true;
         }
+        if other.interior_padding().into_iter().any(|(lo, hi)| self.claims_over(lo, hi)) {
+            return false;
+        }
         let claims = other.fields.len();
         let typed = other.fields.iter().any(|f| f.pointer);
         let evidence = !other.is_table()
             && (claims >= MIN_UNTYPED_CLAIMS || (claims >= MIN_SHARED_CLAIMS && typed))
-            && (typed || self.size == other.size);
+            && (typed
+                || (self.size == other.size && !self.claims_over(other.claimed_end(), self.size)));
         evidence
             && self.size as usize <= (other.size as usize).saturating_mul(MAX_SIZE_GROWTH)
             && self.fields.len() <= claims.saturating_mul(MAX_CLAIM_GROWTH)
@@ -810,6 +849,20 @@ mod tests {
         assert!(command.subsumes(&queue));
         assert!(!command.answers_for(&queue));
         assert_eq!(best_of(&[&command], &queue, any), None);
+        // dpkg `pkg_spec` is 24 bytes too, with two flag bytes at 0x14 and 0x15
+        // where `pkg_queue` has tail padding.
+        let spec = layout(
+            24,
+            vec![
+                u8_(0),
+                u8_(8),
+                f(0x10, 4, type_metatype::TYPE_UINT),
+                f(0x14, 1, type_metatype::TYPE_INT),
+                f(0x15, 1, type_metatype::TYPE_INT),
+            ],
+        );
+        assert!(spec.subsumes(&queue));
+        assert!(!spec.answers_for(&queue));
         // The same extent with its hole filled in still answers.
         let holey = layout(32, vec![u8_(0), u8_(8), u8_(0x18)]);
         let filled = layout(32, vec![u8_(0), u8_(8), u8_(0x10), u8_(0x18)]);
@@ -819,6 +872,42 @@ mod tests {
         let typed = layout(24, vec![p(0, "char"), u8_(8), u8_(0x10)]);
         let wider = layout(40, vec![p(0, "char"), u8_(8), u8_(0x10), u8_(0x18)]);
         assert!(wider.answers_for(&typed));
+        // Including a member in the typed reader's tail: `fmt`'s `WORD` readers.
+        let two_fields = layout(16, vec![p(0, "uint1"), f(8, 4, type_metatype::TYPE_INT)]);
+        let three_fields = layout(
+            16,
+            vec![p(0, "uint1"), f(8, 4, type_metatype::TYPE_INT), f(0xc, 4, type_metatype::TYPE_INT)],
+        );
+        assert!(three_fields.answers_for(&two_fields));
+    }
+
+    /// bash's `if_com` is `{int flags; COMMAND *test, *true_case, *false_case}`
+    /// and `for_com` is `{int flags; int line; WORD_DESC *name; ...}`. A reader
+    /// of the first measures `{0: uint, 8, 0x10, 0x18}`, and the second fills
+    /// in offset 4, exactly the padding the first leaves between its `int` and
+    /// its first pointer. The `it_init_*` readers of `ITEMLIST` measure
+    /// `{0: uint, 0x10: long *}`, and `case_com` has an `int` at 4 as well.
+    #[test]
+    fn a_member_in_the_readers_alignment_padding_is_a_different_record() {
+        let u4 = |o: int4| f(o, 4, type_metatype::TYPE_UINT);
+        let u8_ = |o: int4| f(o, 8, type_metatype::TYPE_UINT);
+        let if_com = layout(32, vec![u4(0), u8_(8), u8_(0x10), u8_(0x18)]);
+        let for_com = layout(32, vec![u4(0), u4(4), u8_(8), u8_(0x10), u8_(0x18)]);
+        assert_eq!(if_com.interior_padding(), vec![(4, 8)]);
+        assert!(for_com.subsumes(&if_com));
+        assert!(!for_com.answers_for(&if_com));
+        assert_eq!(best_of(&[&for_com], &if_com, any), None);
+        assert!(!for_com.strictly_subsumes(&if_com));
+        let items = layout(24, vec![u4(0), p(0x10, "int8")]);
+        let case_com = layout(24, vec![u4(0), u4(4), u8_(8), p(0x10, "int8")]);
+        assert!(case_com.subsumes(&items));
+        assert!(!case_com.answers_for(&items));
+        // Past the padding, a hole is room for a member the reader skipped.
+        let skipped = layout(24, vec![u4(0), u8_(8), p(0x10, "int8")]);
+        assert!(skipped.answers_for(&items));
+        // A byte and then a word leave three bytes of padding.
+        let byte_word = layout(8, vec![f(0, 1, type_metatype::TYPE_UINT), u4(4)]);
+        assert_eq!(byte_word.interior_padding(), vec![(1, 4)]);
     }
 
     /// Reading only the structures inside [`lookup_window`] gives the same
