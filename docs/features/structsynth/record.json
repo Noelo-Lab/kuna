@@ -1031,14 +1031,15 @@
    "note": "0 everywhere except rsyslogd O2, where the one layout left is timeConvertToUTC's own: the unclaimed-bytes rule turns its container away, which the script cannot see because the unclaimed store is not in the header"
   },
   "gates": {
+   "tree": "ca689797, rebased onto main 6e4f6fa5 (structsynth default on)",
    "make_test": "PARITY OK, 675/675",
-   "make_test_stages": "PARITY OK, 1153/1153 (re-recorded on f1ec42a7: +9 shared-layout keys over main's 1144)",
-   "make_test_cli": "186/186",
-   "make_rust_test": "RUST_TEST_RC=0 via the lane script, 416 `test result: ok`, 0 FAILED, launched 2026-09-18T22:15:16Z on the tree rebased onto f1ec42a7 (every .rs change included); the pre-rebase run on e1139df9 was also RC=0 / 416 ok",
+   "make_test_stages": "PARITY OK, 1168/1168 (re-recorded on 6e4f6fa5: +12 structsynth keys over main's 1156, none removed)",
+   "make_test_cli": "190/190",
+   "make_rust_test": "RUST_TEST_RC=0 via the lane script, 416 `test result: ok`, 0 FAILED, 2026-09-19T00:23:46Z-00:38:40Z, after the last code and catalog change",
    "make_check_spec": "OK lenient + strict",
    "catalog_check": "OK",
    "counters_check": "no drift",
-   "options_md": "fresh (regenerated after the phases.toml prose change; phase_catalog.json recaptured)"
+   "options_md": "fresh (regenerated; phase_catalog.json recaptured)"
   },
   "bounds": {
    "rule": "a container saying strictly more than the reader measured must claim <= 2x its claimed fields (MAX_CLAIM_GROWTH) and be <= 4x its size (MAX_SIZE_GROWTH); the reader must claim >= 2 fields of which one is a typed pointer (MIN_SHARED_CLAIMS) or >= 3 without one (MIN_UNTYPED_CLAIMS); a pointer to code, void or an undefined type is not typed; a reader whose every claim past offset 0 is such a pointer is a table and answered only by its own shape; a reader with no typed pointer is answered only by a structure of its own size; two layouts of exactly the same shape always share a name",
