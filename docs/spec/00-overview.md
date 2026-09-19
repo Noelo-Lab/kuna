@@ -1066,11 +1066,14 @@ workers record every lookup
 in target order through the ledger's own decision
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (Replay)`). The replay yields every answer, every mint, the superseded set and
-the answers the convergence sweep's lookups will get. The functions that asked
-are then decompiled a second time by fresh workers that mint the replayed
-structures before their first function
+the answers the convergence sweep's lookups will get. A recording worker skips
+the rendering of a function that asked, whose C would be thrown away. The
+functions that asked are then decompiled a second time by the same workers, each
+of which first destroys the structures it minted itself, and every type built on
+one (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(forget_minted)`), mints the replayed structures in the serial order
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
-(install_table)`) and answer each lookup with its replayed name; a function the
+(install_table)`) and answers each lookup with its replayed name; a function the
 sweep will decide differently goes out twice in that pool, and the parent applies
 the sweep on the first-pass text exactly as the serial batch does
 (`decompiler/crates/kuna-cli/src/jobs.rs (name_structs_serially)`). The second

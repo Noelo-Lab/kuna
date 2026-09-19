@@ -858,6 +858,7 @@ fn export(
         // are exclusive precisely so an unqualified directive cannot bind to
         // every function of the export.
         single_target: false,
+        defer_synthesized: false,
     };
 
     let (mut writer, (mut type_blocks, retries)) = std::thread::scope(

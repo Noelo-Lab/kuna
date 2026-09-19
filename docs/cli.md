@@ -1342,8 +1342,8 @@ Behaviors specific to `decompile-all`:
     record every question a function asks the structure ledger, the parent
     replays those questions in target order and gets the answers the serial run
     gets, and the functions that synthesized anything (a tenth to a fifth of a
-    coreutils binary) are decompiled a second time by fresh workers that are
-    handed those answers. The run says so on stderr:
+    coreutils binary) are decompiled a second time, by the same workers, with
+    those answers. The run says so on stderr:
 
     ```text
     [kuna --jobs] structsynth: 92 decompile(s) of the functions with synthesized structures again, with the serial names, 46 chunk(s), 4 worker process(es)
@@ -2336,8 +2336,8 @@ recovered. Each worker therefore renders its own block and sends it back: when
 they agree — which is what a shard that interned nothing renderable looks like,
 and what every fixture measured here does — that block is the serial answer and is
 emitted as is. The synthesized structures come back the same way: every worker
-that decompiles with the serial names first mints all of them, in the serial
-order. When the blocks disagree the parent says so on stderr and emits their
+that decompiles with the serial names first forgets its own and mints all of the
+replayed ones, in the serial order. When the blocks disagree the parent says so on stderr and emits their
 union, one whole definition at a time, so the `.h` still declares everything the
 `.c` uses.
 

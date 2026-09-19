@@ -176,7 +176,17 @@ pub struct DecompileOptions {
     /// cycle.
     pub park_recovered_proto: bool,
     pub single_target: bool,
+    /// (kuna `structsynth`) Skip rendering a function that asked the
+    /// synthesized-structure ledger anything, and leave a
+    /// [`SYNTH_DEFERRED`] record instead: a `--jobs` recording worker's
+    /// parent decompiles every such function again with the serial names, so
+    /// its first rendering would be thrown away.
+    pub defer_synthesized: bool,
 }
+
+/// The `error` of a record [`DecompileOptions::defer_synthesized`] left in
+/// place of a rendering. Never reaches a document: the pool replaces it.
+pub const SYNTH_DEFERRED: &str = "rendered after the synthesized structures are named";
 
 /// Decompile each `(name, entry)` target in turn against the already-loaded
 /// program, returning one [`FuncResult`] per target (success or per-function
@@ -204,6 +214,7 @@ pub fn decompile_targets(
         header_carries_types: false,
         park_recovered_proto: false,
         single_target: targets.len() == 1,
+        defer_synthesized: false,
     };
     decompile_batch(prog, targets, &opts)
 }
@@ -227,6 +238,7 @@ pub fn decompile_export_targets(
         header_carries_types: true,
         park_recovered_proto: false,
         single_target: targets.len() == 1,
+        defer_synthesized: false,
     };
     decompile_batch(prog, targets, &opts)
 }
@@ -595,6 +607,27 @@ pub fn decompile_pulled(
                     single_target,
                     &fd,
                 );
+                if opts.defer_synthesized
+                    && prog.arch().struct_synth_shard.as_ref().is_some_and(|h| h.borrow().asked())
+                {
+                    sink(FuncResult {
+                        name,
+                        address,
+                        byte_address,
+                        size: size as i64,
+                        code: None,
+                        error: Some(SYNTH_DEFERRED.into()),
+                        proto: None,
+                        variables: Vec::new(),
+                        types: Vec::new(),
+                        line_mappings: Vec::new(),
+                        aliases,
+                        object_location,
+                        callee_hints: Vec::new(),
+                        synth: None,
+                    });
+                    continue;
+                }
                 // Render + extract under `catch_unwind`: the decompile drive only
                 // guards the pipeline (decompile_drive.rs), so a fail-fast invariant
                 // in the printer / type declarator on an exotic recovered function

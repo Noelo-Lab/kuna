@@ -968,14 +968,10 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     // forcing one first mints the parent's replayed structures, in the serial
     // run's order, and then answers each lookup with the name the chunk spec
     // gives it. A serial one keeps its own ledger and converges each chunk.
-    let synth_hook = match args.jobs_synth {
+    let held_at_start = shard::held_names(prog.arch().types());
+    let mut synth_hook = match args.jobs_synth {
         Some(jobs::SynthWorker::Record) => Some(ShardHook::recording()),
-        Some(jobs::SynthWorker::Force) => {
-            let table = jobs::read_synth_table(scratch)?;
-            shard::install_table(prog.arch().types(), &table)
-                .map_err(|e| format!("cannot install the synthesized structures: {e}"))?;
-            Some(ShardHook::forcing())
-        }
+        Some(jobs::SynthWorker::Force) => Some(take_synth_table(&mut prog, scratch, &held_at_start)?),
         _ => None,
     };
     prog.arch_mut().struct_synth_shard = synth_hook.clone();
@@ -989,6 +985,10 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         // state speaks for all of them.
         let idx = match assignment {
             jobs::Assignment::Chunk(idx) => idx,
+            jobs::Assignment::Force => {
+                synth_hook = Some(take_synth_table(&mut prog, scratch, &held_at_start)?);
+                continue;
+            }
             jobs::Assignment::Quit(token) => {
                 if args.jobs_types {
                     jobs::write_type_block(scratch, token, &print_c_types(prog.arch_mut()))?;
@@ -1022,6 +1022,10 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                 header_carries_types: args.jobs_types,
                 park_recovered_proto: false,
                 single_target: false,
+                // A recording worker's function that asked the ledger is
+                // decompiled again with the serial names; its rendering here
+                // would be thrown away.
+                defer_synthesized: synth_hook.as_ref().is_some_and(|h| h.borrow().lets_ledger_answer()),
             };
             let mut pending = entries.into_iter();
             let mut pulled = 0usize;
@@ -1075,6 +1079,23 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         jobs::ack_chunk(idx);
     }
     Ok(())
+}
+
+/// (kuna `structsynth`) Make this worker a forcing one: forget the structures
+/// it minted itself, mint the parent's replayed table in its order, and answer
+/// every later ledger lookup from the chunk specs.
+fn take_synth_table(
+    prog: &mut ConsoleProgram,
+    scratch: &str,
+    held_at_start: &[String],
+) -> Result<shard::ShardHandle, String> {
+    let table = jobs::read_synth_table(scratch)?;
+    shard::forget_minted(prog.arch().types_impl(), held_at_start)
+        .and_then(|()| shard::install_table(prog.arch().types(), &table))
+        .map_err(|e| format!("cannot install the synthesized structures: {e}"))?;
+    let hook = ShardHook::forcing();
+    prog.arch_mut().struct_synth_shard = Some(hook.clone());
+    Ok(hook)
 }
 
 /// Rebuild the parent's [`FunctionEntry`] list from a chunk spec.

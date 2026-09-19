@@ -33,7 +33,7 @@ use std::rc::Rc;
 use kuna_base::types::int4;
 
 use super::ledger::{self, FieldKey, Layout, Member};
-use crate::dtype::{Datatype, DatatypeKind, TypeFactory, TypeField};
+use crate::dtype::{Datatype, DatatypeKind, TypeFactory, TypeFactoryImpl, TypeField};
 
 /// How a field type is rebuilt in another process's factory.
 ///
@@ -215,6 +215,16 @@ impl ShardHook {
         }
     }
 
+    /// Does this hook let the ledger answer?
+    pub fn lets_ledger_answer(&self) -> bool {
+        matches!(self.mode, Mode::Record)
+    }
+
+    /// Has the function under way asked anything yet?
+    pub fn asked(&self) -> bool {
+        !self.record.requests.is_empty()
+    }
+
     /// End a function: what it asked.
     pub fn take(&mut self) -> FunctionRecord {
         let mut record = std::mem::take(&mut self.record);
@@ -394,6 +404,72 @@ impl Replay {
     pub fn table(&self) -> &[(String, SynthRequest)] {
         &self.minted
     }
+}
+
+/// The `struct_<n>` names `types` holds now.
+pub fn held_names(types: &dyn TypeFactory) -> Vec<String> {
+    (0..ledger::MAX_LEDGER_SLOTS as usize)
+        .map(slot_name)
+        .filter(|name| types.find_by_name(name).ok().flatten().is_some())
+        .collect()
+}
+
+/// Destroy every structure this process minted since `held` was taken, and
+/// every type built on one, so a replayed table can take the names.
+///
+/// The types built on a minted structure go too -- the pointer a parameter was
+/// typed with, an array or a partial of it -- because a pointer keeps its
+/// pointee alive, and a header rendered from this factory would otherwise
+/// reach the old structure through it and declare a name twice.
+pub fn forget_minted(types: &TypeFactoryImpl, held: &[String]) -> Result<(), String> {
+    let mut gone: Vec<Rc<Datatype>> = Vec::new();
+    for name in (0..ledger::MAX_LEDGER_SLOTS as usize).map(slot_name) {
+        if held.contains(&name) {
+            continue;
+        }
+        // Completing a structure leaves its incomplete shell under the same
+        // name, so a name is destroyed until nothing minted answers to it.
+        while let Some(ct) = types.find_by_name(&name).ok().flatten() {
+            if ledger::minted_number(&ct).is_none() {
+                break;
+            }
+            types.destroy_type(&ct).map_err(|e| format!("{name}: {}", e.explain()))?;
+            gone.push(ct);
+        }
+    }
+    if gone.is_empty() {
+        return Ok(());
+    }
+    let mut built_on: std::collections::HashMap<*const Datatype, bool> =
+        gone.iter().map(|ct| (Rc::as_ptr(ct), true)).collect();
+    for ct in types.dependent_order() {
+        if reaches(&ct, &mut built_on, 0) && !ct.is_core_type() {
+            types.destroy_type(&ct).map_err(|e| format!("{}: {}", ct.get_name(), e.explain()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Is `ct` a minted structure of `seen`, or built on one?
+fn reaches(ct: &Rc<Datatype>, seen: &mut std::collections::HashMap<*const Datatype, bool>, depth: u32) -> bool {
+    if let Some(&known) = seen.get(&Rc::as_ptr(ct)) {
+        return known;
+    }
+    if depth > MAX_RECIPE_DEPTH * 4 {
+        return false;
+    }
+    let parts: Vec<Rc<Datatype>> = match &ct.kind {
+        DatatypeKind::Pointer { ptrto, .. } => vec![Rc::clone(ptrto)],
+        DatatypeKind::PointerRel { ptrto, parent, .. } => vec![Rc::clone(ptrto), Rc::clone(parent)],
+        DatatypeKind::Array { arrayof, .. } => vec![Rc::clone(arrayof)],
+        DatatypeKind::PartialStruct { container, .. } | DatatypeKind::PartialUnion { container, .. } => {
+            vec![Rc::clone(container)]
+        }
+        _ => ct.get_typedef().map(|t| vec![Rc::clone(t)]).unwrap_or_default(),
+    };
+    let hit = parts.iter().any(|p| reaches(p, seen, depth + 1));
+    seen.insert(Rc::as_ptr(ct), hit);
+    hit
 }
 
 /// Mint every structure of `table` into `types`, in order, exactly as the

@@ -155,6 +155,44 @@ fn a_table_rebuilds_the_same_structures_in_another_factory() {
     }
     // A second install finds its names taken.
     assert!(install_table(&other, &table).is_err());
+
+    // A worker that minted its own structures forgets them, and only them,
+    // before it takes the table.
+    let worker = factory();
+    let foreign = worker.get_type_struct("struct_0").unwrap();
+    let named = vec![TypeField::new(0, 0, "flags", ty(&worker, Ty::Long))];
+    worker.set_fields_struct_raw(&foreign, named, Vec::new(), 8, 1, 0).unwrap();
+    let held = held_names(&worker);
+    assert_eq!(held, ["struct_0"]);
+    let words = fields(&worker, &[(0, Ty::Long), (8, Ty::Long), (0x10, Ty::Long)]);
+    ledger::lookup_or_mint(&worker, words, 24, &[]).unwrap();
+    assert!(install_table(&worker, &table).is_err());
+    forget_minted(&worker, &held).unwrap();
+    assert_eq!(held_names(&worker), ["struct_0"]);
+    let shifted: Vec<(String, SynthRequest)> =
+        table.iter().map(|(n, q)| (n.replace("struct_", "struct_1"), q.clone())).collect();
+    install_table(&worker, &shifted).unwrap();
+
+    // The replayed names are the ones a worker mints first.
+    let fresh = factory();
+    let held = held_names(&fresh);
+    for (spec, size, unclaimed) in script().into_iter().rev() {
+        let st = ledger::lookup_or_mint(&fresh, fields(&fresh, &spec), size, &unclaimed).unwrap();
+        // The parameter's pointer keeps the structure reachable.
+        fresh.get_type_pointer(8, st, 1).unwrap();
+    }
+    assert!(install_table(&fresh, &table).is_err());
+    forget_minted(&fresh, &held).unwrap();
+    assert!(held_names(&fresh).is_empty());
+    assert!(fresh.dependent_order().iter().all(|t| ledger::minted_number(t).is_none()));
+    install_table(&fresh, &table).unwrap();
+    let minted: Vec<String> = fresh
+        .dependent_order()
+        .iter()
+        .filter(|t| ledger::minted_number(t).is_some())
+        .map(|t| t.get_name().to_string())
+        .collect();
+    assert_eq!(minted.len(), 3, "each replayed name exactly once: {minted:?}");
 }
 
 #[test]
