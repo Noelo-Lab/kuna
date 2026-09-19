@@ -84,6 +84,28 @@
     Asserts 8 and 9: `big_if`, decompiled first, mints `struct_3`, and
     `small_if`, whose claims it contains, still mints `struct_4`, so two
     definitions declare slot 0x18.
+
+    The last three pairs are records that agree on every word one of them
+    reads and differ in bytes that reader's own layout leaves as padding. The
+    first of each pair is decompiled first and mints; the second must mint
+    its own record too.
+
+        for_like  @0x100140  {0: 4, 4: 4, 8: 8, 0x10: 8, 0x18: 8}   bash for_com
+        if_like   @0x100160  {0: 4,       8: 8, 0x10: 8, 0x18: 8}   bash if_com
+        case_like @0x100180  {0: 4, 4: 4, 8: 8, 0x10: uchar *}      bash case_com
+        items_like@0x1001a0  {0: 4,             0x10: uchar *}      bash ITEMLIST
+        spec_like @0x1001c0  {0: 8, 8: 8, 0x10: 4, 0x14: 1, 0x15: 1} dpkg pkg_spec
+        queue_like@0x1001e0  {0: 8, 8: 8, 0x10: 4}                  dpkg pkg_queue
+
+    Each reads its fields and sums them (`mov edx, [rdi]` / `add rax, rdx`
+    for a 4-byte word, `movzx edx, byte [rdi+k]` for a byte, and
+    `mov rax, [rdi+0x10]; movzx eax, byte [rax]` for the pointer).
+
+    Assert 10: bytes 4..8 are the padding `if_like` leaves between its `int`
+    and the 8-byte word at 8, and `for_like` has a member there. Assert 11:
+    the same holds for a reader with a typed pointer. Assert 12: `queue_like`
+    has no typed pointer and ends at 0x14, and `spec_like` has members in the
+    padding after it.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 488b078b4f08034f0c0fb60001c8c39090909090488b078b4f080fb60001c8c3
@@ -101,6 +123,14 @@ c3
 <bytechunk space="ram" offset="0x100100" readonly="true">
 c3909090c3909090c3909090c3909090c3909090c3909090c3909090c3909090
 </bytechunk>
+<bytechunk space="ram" offset="0x100140" readonly="true">
+488b470848034710480347188b174801d08b57044801d0c39090909090909090
+488b470848034710480347188b174801d0c39090909090909090909090909090
+488b47100fb600480347088b174801d08b57044801d0c3909090909090909090
+488b47100fb6008b174801d0c390909090909090909090909090909090909090
+488b07480347088b57104801d00fb657144801d00fb657154801d0c390909090
+488b07480347088b57104801d0c3
+</bytechunk>
 <symbol space="ram" offset="0x100000" name="three_fields"/>
 <symbol space="ram" offset="0x100010" name="two_fields"/>
 <symbol space="ram" offset="0x100020" name="four_words"/>
@@ -115,6 +145,12 @@ c3909090c3909090c3909090c3909090c3909090c3909090c3909090c3909090
 <symbol space="ram" offset="0x100114" name="fn_5"/>
 <symbol space="ram" offset="0x100118" name="fn_6"/>
 <symbol space="ram" offset="0x10011c" name="fn_7"/>
+<symbol space="ram" offset="0x100140" name="for_like"/>
+<symbol space="ram" offset="0x100160" name="if_like"/>
+<symbol space="ram" offset="0x100180" name="case_like"/>
+<symbol space="ram" offset="0x1001a0" name="items_like"/>
+<symbol space="ram" offset="0x1001c0" name="spec_like"/>
+<symbol space="ram" offset="0x1001e0" name="queue_like"/>
 </binaryimage>
 <script>
   <com>option structsynth off</com>
@@ -143,16 +179,37 @@ c3909090c3909090c3909090c3909090c3909090c3909090c3909090c3909090
   <com>lo fu small_if</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu for_like</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu if_like</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu case_like</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu items_like</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu spec_like</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu queue_like</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>print C types</com>
   <com>quit</com>
 </script>
 <stringmatch name="STRUCTSYNTH-SHARED #1: option off leaves the offset-8 read raw in BOTH functions" min="2" max="2">\*\(int4 \*\)&amp;a0\[1\]</stringmatch>
 <stringmatch name="STRUCTSYNTH-SHARED #2: both readers name the same synthesized structure" min="2" max="2">struct_0 \*a0</stringmatch>
-<stringmatch name="STRUCTSYNTH-SHARED #3: six readers, five records" min="0" max="0">struct_5</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #3: twelve readers, eleven records" min="0" max="0">struct_11</stringmatch>
 <stringmatch name="STRUCTSYNTH-SHARED #4: only the reader that claims offset 0xc renders it" min="1" max="1">a0-&gt;field_0xc</stringmatch>
 <stringmatch name="STRUCTSYNTH-SHARED #5: one definition serves both readers" min="1" max="1">int4 field_0xc;</stringmatch>
 <stringmatch name="STRUCTSYNTH-SHARED #6: the four-claim reader mints its own record" min="1" max="1">struct_1 \*a0</stringmatch>
 <stringmatch name="STRUCTSYNTH-SHARED #7: two integer words are not answered by a record that begins with them" min="1" max="1">struct_2 \*a0</stringmatch>
 <stringmatch name="STRUCTSYNTH-SHARED #8: each interface table keeps its own definition" min="2" max="2">code \*field_0x18;</stringmatch>
 <stringmatch name="STRUCTSYNTH-SHARED #9: the smaller table is not answered by the larger one" min="1" max="1">small_if\(struct_4 \*a0\)</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #10: a record with a member in the reader's alignment padding does not answer for it" min="1" max="1">if_like\(struct_6 \*a0\)</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #11: nor does it answer a reader with a typed pointer" min="1" max="1">items_like\(struct_8 \*a0\)</stringmatch>
+<stringmatch name="STRUCTSYNTH-SHARED #12: a reader with no typed pointer is not answered by a record with members past its last field" min="1" max="1">queue_like\(struct_10 \*a0\)</stringmatch>
 </decompilertest>
