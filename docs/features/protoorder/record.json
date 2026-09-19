@@ -748,15 +748,15 @@
   "float_votes": "a float vote needs every other reader and writer of the value to be a float op, a copy of the bits (COPY/CAST/MULTIEQUAL/INDIRECT/LOAD), a float-class register of the calling convention, or a declared float: integer ops incl. SUBPIECE/PIECE, a STORE, and a RETURN/other call/call result outside a float register refuse it. Self-review sets over x86-64, MIPS o32, ARM softfp/soft/hard-float: the default differs from main only in int parameters from h(int k, ...) and bit-exact float literals"
  },
  "gates": {
-  "base": "origin/main d96e3408 (charbyte); 223 settables after the rebase (tiers core 70 / transform 89 / analysis 64)",
+  "base": "origin/main 75f832e3 (docs-only over d96e3408); 223 settables (tiers core 70 / transform 89 / analysis 64)",
   "make test": "datatests: 675/675 assertions passed / PARITY OK",
-  "make test-stages": "datatests: 1177/1177 assertions passed / PARITY OK (on d96e3408, which adds the charbyte stage test)",
-  "make test-cli": "tests/cli: 202/202 passed (a first run under the rust-test lane's load timed out the known-flaky disassembling-40-instructions-takes wall_ms probe, 201/202; re-run quiet: 202/202)",
+  "make test-stages": "datatests: 1177/1177 assertions passed / PARITY OK",
+  "make test-cli": "tests/cli: 203/203 passed (adds protoorder-types-keeps-a-wide-store-whole)",
   "check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
-  "counters --check": "no drift: every hard-coded site agrees with the derived truth (223 settables after the rebase)",
-  "docs/options.md": "byte-fresh against the final build",
-  "make rust-test": "RUST_TEST_RC=0 (7,234 passed / 0 failed; lane 2026-09-19T05:02:01Z -> 05:16:46Z on d10962dc, rebased onto d96e3408); on the 6e4f6fa5 base the same engine: 7,230 / 0"
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth (223 settables)",
+  "docs/options.md": "byte-fresh against the final build (OPTIONS_FRESH)",
+  "make rust-test": "RUST_TEST_RC=0 (7,235 passed / 0 failed; lane 2026-09-19T13:39:54Z -> 13:56:24Z on the round-12 final engine, a_byte_pointee_vote_keeps_the_callers_wide_stores included)"
  },
  "measurement_base": "round 11 measured everything on the tree that lands: this branch rebased onto origin/main d96e3408 (structsynth, boolbyte and charbyte on by default). Corpus (60 binaries), arity, typesweep (444 slices + firmware), off==main and speed are against a fresh d96e3408 build; the same engine measured on 6e4f6fa5 first gave the same typesweep rows and class counts; rounds 6-10 were against d3617d64/e1139df9 and are superseded",
  "round12_narrow_pointee": {
