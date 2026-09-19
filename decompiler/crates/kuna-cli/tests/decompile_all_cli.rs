@@ -2688,6 +2688,36 @@ fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
     }
 }
 
+/// The callee-first order runs the batch's `structsynth` convergence sweep too:
+/// `fc` supersedes the structure `fb` minted, and `fb` is decompiled again onto
+/// `fc`'s. The three readers make no direct calls, so the callee-first order is
+/// the address order and the whole document equals the `protoorder off` one.
+#[test]
+fn callee_first_runs_the_structsynth_convergence_sweep() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/structsynthchain_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let base = ["decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "structsynth", "param"];
+    let (default, stderr, ok) = run_kuna(&base);
+    if !ok && is_specs_skip(&stderr) {
+        eprintln!("protoorder structsynth sweep: skipping (no `.sla`; run `make specs`)");
+        return;
+    }
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let mut off_args = base.to_vec();
+    off_args.extend_from_slice(&["--option", "protoorder", "off"]);
+    let (off, stderr, ok) = run_kuna(&off_args);
+    assert!(ok, "kuna decompile-all --option protoorder off failed: {stderr}");
+    let proto = |name: &str| {
+        default.lines().find(|l| l.starts_with(&format!("long {name}("))).map(str::to_string).unwrap_or_default()
+    };
+    assert_eq!(proto("fb").replace("fb", "f"), proto("fc").replace("fc", "f"), "fb was not moved onto fc's structure:\n{default}");
+    assert_eq!(default, off, "the callee-first run differs from the address-order run");
+}
+
 /// `fill_words` stores an eight-byte constant at each word of the buffer it hands
 /// the byte-reading `peek`, and `fill_many` stores 520 of them at fixed places,
 /// more addresses than the vote's access walk follows. Taken as a vote, `peek`'s
