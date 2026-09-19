@@ -235,75 +235,75 @@
   "note_improved": "projects.*.improved counts rows that reach perfect too (957 = 119 onto perfect + 838 improved)"
  },
  "speed": {
-  "method": "main (a 6e4f6fa5 build) vs this branch's final engine, whole-binary `kuna decompile-all --json`, main and branch alternating inside each iteration (order swapped every iteration), min and median of 15, three slice groups side by side on a shared 80-core box (load 3-14)",
+  "method": "main (a d96e3408 build) vs this branch's final engine rebased onto it, whole-binary `kuna decompile-all --json`, main and branch alternating inside each iteration (order swapped every iteration), min and median of 15, three slice groups side by side on a shared 80-core box (load 2-9)",
   "budget_pct": 5,
   "slices": {
    "fmt -O2": {
-    "main_min_ms": 4134,
-    "pr_min_ms": 4158,
-    "main_median_ms": 4177,
-    "pr_median_ms": 4203,
-    "delta_min": "+0.6%",
-    "delta_median": "+0.6%"
+    "main_min_ms": 4111,
+    "pr_min_ms": 4177,
+    "main_median_ms": 4152,
+    "pr_median_ms": 4210,
+    "delta_min": "+1.6%",
+    "delta_median": "+1.4%"
    },
    "kmod -O2": {
-    "main_min_ms": 7167,
-    "pr_min_ms": 7321,
-    "main_median_ms": 7367,
-    "pr_median_ms": 7438,
+    "main_min_ms": 7130,
+    "pr_min_ms": 7280,
+    "main_median_ms": 7182,
+    "pr_median_ms": 7331,
     "delta_min": "+2.1%",
-    "delta_median": "+1.0%"
+    "delta_median": "+2.1%"
    },
    "ls -O2": {
-    "main_min_ms": 13669,
-    "pr_min_ms": 14048,
-    "main_median_ms": 15076,
-    "pr_median_ms": 15617,
-    "delta_min": "+2.8%",
-    "delta_median": "+3.6%"
+    "main_min_ms": 13481,
+    "pr_min_ms": 13735,
+    "main_median_ms": 13877,
+    "pr_median_ms": 14047,
+    "delta_min": "+1.9%",
+    "delta_median": "+1.2%"
    },
    "libselinux -O2": {
-    "main_min_ms": 6499,
-    "pr_min_ms": 6680,
-    "main_median_ms": 6634,
-    "pr_median_ms": 6784,
-    "delta_min": "+2.8%",
+    "main_min_ms": 6460,
+    "pr_min_ms": 6604,
+    "main_median_ms": 6521,
+    "pr_median_ms": 6674,
+    "delta_min": "+2.2%",
     "delta_median": "+2.3%"
    },
    "ip -O2": {
-    "main_min_ms": 27375,
-    "pr_min_ms": 27967,
-    "main_median_ms": 29249,
-    "pr_median_ms": 28836,
-    "delta_min": "+2.2%",
-    "delta_median": "-1.4%"
+    "main_min_ms": 27054,
+    "pr_min_ms": 26811,
+    "main_median_ms": 27548,
+    "pr_median_ms": 27422,
+    "delta_min": "-0.9%",
+    "delta_median": "-0.5%"
    },
    "e2fsck -O2": {
-    "main_min_ms": 26724,
-    "pr_min_ms": 27248,
-    "main_median_ms": 27313,
-    "pr_median_ms": 27878,
-    "delta_min": "+2.0%",
-    "delta_median": "+2.1%"
-   },
-   "tar -O2": {
-    "main_min_ms": 45384,
-    "pr_min_ms": 45838,
-    "main_median_ms": 47024,
-    "pr_median_ms": 47939,
-    "delta_min": "+1.0%",
+    "main_min_ms": 26237,
+    "pr_min_ms": 26902,
+    "main_median_ms": 26631,
+    "pr_median_ms": 27132,
+    "delta_min": "+2.5%",
     "delta_median": "+1.9%"
    },
+   "tar -O2": {
+    "main_min_ms": 44189,
+    "pr_min_ms": 45693,
+    "main_median_ms": 44556,
+    "pr_median_ms": 46051,
+    "delta_min": "+3.4%",
+    "delta_median": "+3.4%"
+   },
    "betaflight -O2": {
-    "main_min_ms": 54652,
-    "pr_min_ms": 55697,
-    "main_median_ms": 55689,
-    "pr_median_ms": 56625,
-    "delta_min": "+1.9%",
+    "main_min_ms": 54296,
+    "pr_min_ms": 55062,
+    "main_median_ms": 54667,
+    "pr_median_ms": 55619,
+    "delta_min": "+1.4%",
     "delta_median": "+1.7%"
    }
   },
-  "verdict": "every slice inside +5% on the minimum: fmt +0.6%, kmod +2.1%, ls +2.8%, libselinux +2.8%, and over 500 KiB ip +2.2%, e2fsck +2.0%, tar +1.0%, betaflight +1.9%",
+  "verdict": "every slice inside +5% on the minimum: fmt +1.6%, kmod +2.1%, ls +1.9%, libselinux +2.2%, ip -0.9%, e2fsck +2.5%, tar +3.4%, betaflight +1.4%",
   "note": "rounds 8-10 measured against e1139df9 and are kept under round8/round9/round10",
   "round9": {
    "method": "main (origin/main e1139df9 build) vs this branch after the round-9 float refusal, whole-binary `kuna decompile-all --json`, interleaved (order swapped every iteration), min and median of 15, two groups side by side on the shared 80-core box (load 13-28); .scratch/r9/speed.py",
@@ -585,6 +585,58 @@
    },
    "verdict": "every slice within +5% on the minimum; the worst is betaflight, +4.2% and +3.2% on the minimum in two runs, +0.5% and +0.7% on the median",
    "note": "scripts.pipeline.timeit times `kuna decompile`, where the option is inert; the narrowed ip run shows the call-graph skip (no fixed cost). ip, tar and e2fsck are the >=500 KiB binaries the round-1 review asked for; libselinux is the shared object it named."
+  },
+  "round11_on_6e4f6fa5": {
+   "slices": {
+    "fmt -O2": {
+     "delta_min": "+0.6%",
+     "delta_median": "+0.6%",
+     "main_min_ms": 4134,
+     "pr_min_ms": 4158
+    },
+    "kmod -O2": {
+     "delta_min": "+2.1%",
+     "delta_median": "+1.0%",
+     "main_min_ms": 7167,
+     "pr_min_ms": 7321
+    },
+    "ls -O2": {
+     "delta_min": "+2.8%",
+     "delta_median": "+3.6%",
+     "main_min_ms": 13669,
+     "pr_min_ms": 14048
+    },
+    "libselinux -O2": {
+     "delta_min": "+2.8%",
+     "delta_median": "+2.3%",
+     "main_min_ms": 6499,
+     "pr_min_ms": 6680
+    },
+    "ip -O2": {
+     "delta_min": "+2.2%",
+     "delta_median": "-1.4%",
+     "main_min_ms": 27375,
+     "pr_min_ms": 27967
+    },
+    "e2fsck -O2": {
+     "delta_min": "+2.0%",
+     "delta_median": "+2.1%",
+     "main_min_ms": 26724,
+     "pr_min_ms": 27248
+    },
+    "tar -O2": {
+     "delta_min": "+1.0%",
+     "delta_median": "+1.9%",
+     "main_min_ms": 45384,
+     "pr_min_ms": 45838
+    },
+    "betaflight -O2": {
+     "delta_min": "+1.9%",
+     "delta_median": "+1.7%",
+     "main_min_ms": 54652,
+     "pr_min_ms": 55697
+    }
+   }
   }
  },
  "invariants_checked": {
