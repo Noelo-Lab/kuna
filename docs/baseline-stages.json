@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1189,
-    1189
+    1204,
+    1204
   ],
   "passing": [
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
@@ -696,6 +696,21 @@
     "data:STRUCTSYNTH-OVERLAP #3: offset 0 is an 8-byte field",
     "data:STRUCTSYNTH-OVERLAP #4: offset 8 is an 8-byte field",
     "data:STRUCTSYNTH-OVERLAP #5: the interior read is a cast off field_0x0, not a field of its own",
+    "data:STRUCTSYNTH-SHARED #10: a record with a member in the reader's alignment padding does not answer for it",
+    "data:STRUCTSYNTH-SHARED #11: nor does it answer a reader with a typed pointer",
+    "data:STRUCTSYNTH-SHARED #12: a reader with no typed pointer is not answered by a record with members past its last field",
+    "data:STRUCTSYNTH-SHARED #1: option off leaves the offset-8 read raw in BOTH functions",
+    "data:STRUCTSYNTH-SHARED #2: both readers name the same synthesized structure",
+    "data:STRUCTSYNTH-SHARED #3: twelve readers, eleven records",
+    "data:STRUCTSYNTH-SHARED #4: only the reader that claims offset 0xc renders it",
+    "data:STRUCTSYNTH-SHARED #5: one definition serves both readers",
+    "data:STRUCTSYNTH-SHARED #6: the four-claim reader mints its own record",
+    "data:STRUCTSYNTH-SHARED #7: two integer words are not answered by a record that begins with them",
+    "data:STRUCTSYNTH-SHARED #8: each interface table keeps its own definition",
+    "data:STRUCTSYNTH-SHARED #9: the smaller table is not answered by the larger one",
+    "data:STRUCTSYNTH-UNCLAIMED #1: each reader loads the word into a local ahead of its store",
+    "data:STRUCTSYNTH-UNCLAIMED #2: no reader spells the load through the writer's byte member",
+    "data:STRUCTSYNTH-UNCLAIMED #3: only the writer names the writer's structure",
     "data:SWITCHSELECTOR #1: the re-rolled switch dispatches on the message parameter, and only the off pass re-rolls",
     "data:SWITCHSELECTOR #2: the case labels exist only in the pass that re-rolled",
     "data:SWITCHSELECTOR #3: with the option on the cascade survives as the compiler lowered it, over the same parameter",

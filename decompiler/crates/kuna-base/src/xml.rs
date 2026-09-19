@@ -1892,7 +1892,7 @@ mod tests {
         // and structsynth-shared-layout / two readers of one record share a name
         // and structsynth-unclaimed-bytes / a shared layout keeps a load ahead
         // of the store that overwrites it
-        assert_eq!(count, 318, "corpus file count drifted");
+        assert_eq!(count, 320, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
