@@ -742,5 +742,117 @@
       }
     },
     "rust_test": "RUST_TEST_RC=0 via the lane script, 2026-09-19 16:04:47-16:20:23Z, started after the last .rs/.toml commit 173efc85 (16:04:33Z); later commits are docs and a stage-file comment. (An earlier lane on 64e37365 was stopped to take the phases.toml text; no failure before it was stopped.)"
+  },
+  "landing": {
+    "rebased_onto": "3831d703f",
+    "why": "main gained #687 (foldcallret short-circuit), #675 (structsynth shared layouts) and #686 (aliasoverlap) after the round-7 measurement on d6c5862f",
+    "typesweep": {
+      "arms": "base = default (static), test = --option formatstring off, both from the rebased build",
+      "projects": {
+        "bzip2": {
+          "n": 267,
+          "perfect_off": 19,
+          "perfect_static": 22,
+          "mean_off": 0.3644,
+          "mean_static": 0.3857,
+          "improved": 10,
+          "worse": 0
+        },
+        "coreutils": {
+          "n": 6422,
+          "perfect_off": 612,
+          "perfect_static": 620,
+          "mean_off": 0.2803,
+          "mean_static": 0.2819,
+          "improved": 43,
+          "worse": 0
+        },
+        "diffutils": {
+          "n": 420,
+          "perfect_off": 52,
+          "perfect_static": 58,
+          "mean_off": 0.3966,
+          "mean_static": 0.4192,
+          "improved": 21,
+          "worse": 0
+        },
+        "findutils": {
+          "n": 790,
+          "perfect_off": 35,
+          "perfect_static": 36,
+          "mean_off": 0.1621,
+          "mean_static": 0.169,
+          "improved": 20,
+          "worse": 0
+        },
+        "grep": {
+          "n": 247,
+          "perfect_off": 39,
+          "perfect_static": 47,
+          "mean_off": 0.3848,
+          "mean_static": 0.4131,
+          "improved": 8,
+          "worse": 0
+        },
+        "gzip": {
+          "n": 368,
+          "perfect_off": 88,
+          "perfect_static": 90,
+          "mean_off": 0.4863,
+          "mean_static": 0.4917,
+          "improved": 2,
+          "worse": 0
+        },
+        "shadow": {
+          "n": 686,
+          "perfect_off": 29,
+          "perfect_static": 30,
+          "mean_off": 0.2884,
+          "mean_static": 0.294,
+          "improved": 29,
+          "worse": 0
+        },
+        "tar": {
+          "n": 1548,
+          "perfect_off": 114,
+          "perfect_static": 123,
+          "mean_off": 0.2816,
+          "mean_static": 0.2902,
+          "improved": 43,
+          "worse": 0
+        }
+      },
+      "pooled": {
+        "n": 10748,
+        "perfect_off": 988,
+        "perfect_static": 1026,
+        "improved": 176,
+        "worse": 0,
+        "aggregate_off": 3099.48,
+        "aggregate_static": 3157.0
+      }
+    },
+    "reclass": {
+      "binaries": "decbench O2 coreutils ls, O2 coreutils sort, O2 tar; Ubuntu /usr/bin/m4 (decompile-all --json)",
+      "method": "off->default delta of every function, pre-rebase build vs rebased build (struct_N names canonicalized); rebased off vs an origin/main build",
+      "per_binary": [
+        "O2-ls: functions=404 off!=main=0 changed_post=13 same=13 same_canon=0 moved=0",
+        "O2-sort: functions=343 off!=main=0 changed_post=17 same=17 same_canon=0 moved=0",
+        "O2-tar: functions=1125 off!=main=0 changed_post=90 same=90 same_canon=0 moved=0",
+        "ub-m4: functions=348 off!=main=0 changed_post=8 same=8 same_canon=0 moved=0"
+      ],
+      "total": {
+        "functions": 2220,
+        "changed_post": 128,
+        "same": 128,
+        "same_canon": 0,
+        "moved": 0,
+        "offmain_diff": 0
+      },
+      "argcount_totals_pre_post": [
+        "TOTAL {\"arity_down\": 1, \"binaries\": 4, \"callarity_toward\": 1, \"callshape\": 0, \"changed\": 128, \"class_mismatch_def\": 0, \"class_mismatch_off\": 0, \"fixed_mismatch\": 18, \"functions\": 2220} <- argcount-pre.txt",
+        "TOTAL {\"arity_down\": 1, \"binaries\": 4, \"callarity_toward\": 1, \"callshape\": 0, \"changed\": 128, \"class_mismatch_def\": 0, \"class_mismatch_off\": 0, \"fixed_mismatch\": 18, \"functions\": 2220} <- argcount-post.txt"
+      ]
+    }
   }
 }
