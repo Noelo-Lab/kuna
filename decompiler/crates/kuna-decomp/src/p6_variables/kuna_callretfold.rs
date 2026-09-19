@@ -59,7 +59,14 @@
 //!      ([`fold_print_point_is_order_safe`], asked once the implied chain below
 //!      the use is classified).  The ops that chain travels through are not
 //!      barriers to it: each consumes the previous one's value, so the call is
-//!      evaluated before them either way.
+//!      evaluated before them either way;
+//!   5. the call's value does not reach the **right-hand operand** of a
+//!      `BOOL_AND`/`BOOL_OR` anywhere along that chain
+//!      ([`chain_reaches_short_circuit_rhs`]).  P-code evaluates both operands,
+//!      but C prints them as `&&`/`||`, which skip the right-hand one, so a
+//!      call folded there stops being made whenever the left-hand side decides
+//!      (GH-684).  Input 0 is printed on the left and always evaluated, so a
+//!      call reaching it still folds.
 //!
 //! (4) asks a narrower question than (3) ([`op_is_write_barrier`] against
 //! [`op_is_barrier`]: no `LOAD`), and deliberately.  Up to the use a read is
@@ -320,11 +327,15 @@ pub(crate) fn print_chain(data: &Funcdata, use_op: OpId) -> Option<Vec<OpId>> {
 ///
 /// Only writes are asked about here, and only opcodes — the INDIRECT question is
 /// decided over the span to the use.  The module header measures what the two
-/// wider forms of this test would cost.
+/// wider forms of this test would cost.  A chain that carries the call into the
+/// right-hand operand of `&&`/`||` declines before the span is looked at.
 fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
     let Some(chain) = print_chain(data, use_op) else {
         return false;
     };
+    if chain_reaches_short_circuit_rhs(data, call, &chain) {
+        return false;
+    }
     let point = *chain.last().expect("print_chain: non-empty");
     let Some(blk) = op_parent(data, call) else {
         return false;
@@ -345,6 +356,35 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
     !ops[ci + 1..pi]
         .iter()
         .any(|&mid| !chain.contains(&mid) && op_is_write_barrier(data, mid))
+}
+
+/// (kuna GH-684) Does the folded call's value reach the right-hand operand of an
+/// `&&` or `||` on its way to the print point?
+///
+/// P-code's `BOOL_AND`/`BOOL_OR` evaluate both operands, and C's `&&`/`||` skip
+/// the right-hand one when the left one decides.  A call folded there could
+/// stop being made, so it keeps its own statement.  The left-hand operand is
+/// always evaluated, and the printer emits input 0 on the left.  Both fold
+/// predicates, this module's and `foldcallretphi`'s, ask it over the same chain.
+pub(crate) fn chain_reaches_short_circuit_rhs(data: &Funcdata, call: OpId, chain: &[OpId]) -> bool {
+    let Some(mut val) = data.obank().get(call).and_then(|o| o.get_out()) else {
+        return true;
+    };
+    for &op in chain {
+        let Some(o) = data.obank().get(op) else {
+            return true;
+        };
+        if matches!(o.code(), OpCode::CPUI_BOOL_AND | OpCode::CPUI_BOOL_OR)
+            && (1..o.num_input()).any(|slot| o.get_in(slot) == Some(val))
+        {
+            return true;
+        }
+        match o.get_out() {
+            Some(out) => val = out,
+            None => break,
+        }
+    }
+    false
 }
 
 /// Is `op` a `CPUI_COPY` back into the storage its input already occupies?
