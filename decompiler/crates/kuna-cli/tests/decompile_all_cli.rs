@@ -2447,8 +2447,9 @@ fn printed_functions(stdout: &str, names: &[&str]) -> String {
 /// storing that word as an integer.  A float vote there printed `(int)v1 + 3`,
 /// `(short)((unsigned int)v1 >> 0x10)` and `a2[1] = (int)v1` -- value conversions
 /// where the machine moves bits -- so it is refused.  The round trip compiles the
-/// seven printed callers (`-no-pie`, so the array's address fits the `int`
-/// parameter) against a bit-preserving `h` and compares them with the source.
+/// seven printed callers (`-no-pie`, so the array's address survives the printed
+/// 32-bit `(int)a1 + 0xc`) against a bit-preserving `h` and compares them with the
+/// source.
 #[test]
 fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     let bin = repo_root()
@@ -2521,7 +2522,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
              static int arr[4] = {{1, 2, 3, 0x3fc00001}};\n\
              static int bits[4] = {{1, 2, 3, 0x3fc01234}};\n\
              static void run(int use_printed) {{\n  \
-             int a = (int)(long)arr, b = (int)(long)bits;\n  \
+             void *a = arr, *b = bits;\n  \
              unsigned short s = 0; char c[2] = {{0, 0}}; int q[2] = {{0, 0}}; int r20, r22, r24;\n  \
              if (use_printed) {{\n    \
              printf(\"%d %d %d %u \", g3(7, a), g5(7, a), g6(7, a), (unsigned)g9(7, a));\n    \
@@ -2557,6 +2558,37 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
 /// NaN as `NAN`, and `s3`'s integer-register parameters as `double`. Both passes,
 /// the default and `--option protoorder off`, compile the six printed callers
 /// against recording callees and must leave the same bytes as the source.
+/// `fill` stores the eight bytes of `"ustar  "` through the buffer it hands
+/// `peek`, whose recovered parameter is `unsigned char *`. Taken as a vote, that
+/// type made `fill`'s parameter a byte pointer and `SplitDatatype` printed the
+/// store as eight byte stores; the vote is refused because the caller writes
+/// wider than the pointee. Checked with `ptrfromuse` at its default and off,
+/// since the default also types `fill`'s parameter from its own dereferences.
+#[test]
+fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_narrowvote_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for off in [false, true] {
+        let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", &sp];
+        if off {
+            args.extend_from_slice(&["--option", "ptrfromuse", "off"]);
+        }
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("protoorder byte pointee: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let fill = stdout.split("// Function: ").find(|c| c.starts_with("fill ")).expect("fill is printed");
+        assert!(fill.contains("= 0x2020726174737575;"), "the eight-byte store was split (off={off}):\n{fill}");
+        assert!(!fill.contains("unsigned char *a0"), "the byte-pointer vote was taken (off={off}):\n{fill}");
+    }
+}
+
 #[test]
 fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
     let bin = repo_root()

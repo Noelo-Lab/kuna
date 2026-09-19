@@ -1,0 +1,34 @@
+{
+ "fmt O2": {
+  "main_ms": 4081.9,
+  "branch_ms": 4091.2,
+  "delta_pct": 0.23,
+  "main_median": 4338.7,
+  "branch_median": 4346.9,
+  "pairs": 15
+ },
+ "ls O2": {
+  "main_ms": 13100.4,
+  "branch_ms": 13154.1,
+  "delta_pct": 0.41,
+  "main_median": 13173.3,
+  "branch_median": 13256.0,
+  "pairs": 15
+ },
+ "sort O2": {
+  "main_ms": 13859.1,
+  "branch_ms": 13974.3,
+  "delta_pct": 0.83,
+  "main_median": 13939.0,
+  "branch_median": 14191.0,
+  "pairs": 15
+ },
+ "bash O2": {
+  "main_ms": 77810.2,
+  "branch_ms": 79149.0,
+  "delta_pct": 1.72,
+  "main_median": 78417.0,
+  "branch_median": 79824.7,
+  "pairs": 15
+ }
+}

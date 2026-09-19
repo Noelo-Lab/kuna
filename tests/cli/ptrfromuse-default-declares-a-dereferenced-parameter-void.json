@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-da01c622bb32",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_narrowvote_x86_64",
+    "binary_sha256": "6c0b1c906cfb2c96e5210178c98ed6d41aaccd6359657d7e5ef61cdfe7e8c0ed",
+    "binary_size": 16104,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_narrowvote_x86_64",
+    "selector": "fill",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int fill\\(void \\*a0,int a1\\)"
+    ],
+    "stdout_absent": [
+      "int fill\\(long a0,int a1\\)"
+    ]
+  },
+  "notes": "DEFAULT on x86-64: ptrfromuse is void by default, so fill's parameter, which the body only ever dereferences (at +0x10 and +0x18), is declared void * rather than long; --option ptrfromuse off gives long back."
+}

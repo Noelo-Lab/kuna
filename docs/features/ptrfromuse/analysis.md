@@ -256,12 +256,18 @@ Interleaved min-of-N `decompile-all` over all three arms on a quiet box
 
 ## 7. Default flip
 
-**None recommended.** An earlier draft of this bundle recommended flipping `void`
-on; that is withdrawn. The evidence behind it is one corpus — gcc-built ELF,
-coreutils family, PIE — containing four instances of the class the rule has to
-get right, and a decompiler default is a claim about every binary rather than
-about this corpus. A flip PR would need, on top of the usual 0/675 + stages +
-speed evidence: a corpus with byte-element global tables (firmware LUTs,
-character-class tables, string tables), at least one non-gcc toolchain, and a
-non-ELF container. Both arms remain safe to reach for by hand, which is what
-`change_kind: opt-in-tool` means.
+**Flipped to `void`** after `protoorder` (#669) landed; the evidence is
+`default-on-evaluation.md`. The earlier recommendation below was made on a tree
+without `protoorder`, where `void` moved no function onto perfect; with the
+callee's `void *` reaching its call sites, `void` moves 204 onto perfect and 85
+more up, `byte` 7, neither any down.
+
+The withdrawn opt-in verdict, kept for the record: an earlier draft of this
+bundle recommended flipping `void` on; that was withdrawn because the evidence
+was one corpus, gcc-built ELF of the coreutils family, containing four instances
+of the class the rule has to get right. The flip sweep adds the ARM32 firmwares
+`chibios` and `freertos` (a second target, bare-metal images) to the
+whole-corpus diff, and the four sites that spell a named global subscripted by a
+parameter (O0 and O2 `dash`, O0 `tar`) were re-checked with the default flipped:
+all four print the same in both arms. The grade is still pinned by
+`tests/stages/kuna-ptrfromuse.xml` (`globalindex`, `blindindex`).

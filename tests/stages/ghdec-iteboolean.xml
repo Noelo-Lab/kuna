@@ -64,6 +64,6 @@ e401d05dc3
 </script>
 <stringmatch name="iteboolean #1: option off leaves the explicit 0/1 constant diamond (gap reproduced)" min="1" max="1">v1 = 1;</stringmatch>
 <stringmatch name="iteboolean #2: option off emits the else arm storing the 0 constant" min="1" max="1">v1 = 0;</stringmatch>
-<stringmatch name="iteboolean #3: option on re-rolls it into one boolean assignment, short-circuit condition intact" min="1" max="1">v1 = \(\(a0\) &amp;&amp; \(\*\(uint4 \*\)\(a0 \+ 4\) &amp; 0x100\)\);</stringmatch>
+<stringmatch name="iteboolean #3: option on re-rolls it into one boolean assignment, short-circuit condition intact" min="1" max="1">v1 = \(\(a0\) &amp;&amp; \(\*\(uint4 \*\)\(\(int8\)a0 \+ 4\) &amp; 0x100\)\);</stringmatch>
 <stringmatch name="iteboolean #4: the re-roll is logged on the function header" min="1" max="1">iteboolean: re-rolled 1 0/1 select diamond\(s\)</stringmatch>
 </decompilertest>

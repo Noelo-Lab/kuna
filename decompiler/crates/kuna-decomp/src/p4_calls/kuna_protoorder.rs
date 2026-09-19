@@ -787,7 +787,18 @@ fn member_at(ct: &Rc<Datatype>, off: i64, size: int4) -> Member {
 }
 
 /// Does what the caller does through a pointer disagree with the pointee a vote
-/// `ct` would give it?  Only a float or composite pointee is checked.
+/// `ct` would give it?  A non-character primitive, float or composite pointee is
+/// checked.
+///
+/// A non-character primitive pointee refuses a constant stored through it wider
+/// than itself at a fixed place or a record stride: `SplitDatatype` reads such a
+/// pointer as an array of its pointee, so an `unsigned char *` vote prints the
+/// field write `*(long *)(a0 + 0x5c) = 0x100` as eight byte stores.  A constant
+/// stored at a stride of its own width is a buffer filled a word at a time,
+/// which the pointee does describe, and a wider store of a computed value prints
+/// as a cast; both are allowed.  A character pointee is left alone, because the
+/// byte stores it produces are what the string-copy idiom prints as
+/// `builtin_strncpy`.
 ///
 /// A composite pointee refuses an access or an address outside it
 /// (`a0[0x33].field_0x4` for a caller that reads offset 0x19c of a callee's
@@ -808,6 +819,22 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
         _ => return false,
     };
     let Some(pointee) = pointee else { return false };
+    if matches!(
+        pointee.get_metatype(),
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_BOOL | type_metatype::TYPE_PTR
+    ) && !pointee.is_char_print()
+    {
+        let width = pointee.get_align_size() as i64;
+        let family = with_sibling_loads(data, family);
+        return accesses_through(data, &family).is_some_and(|(accesses, _)| {
+            accesses.iter().any(|a| {
+                a.store
+                    && a.size as i64 > width
+                    && a.stride.abs() != a.size as i64
+                    && data.vbank().get(a.value).is_some_and(|n| n.is_constant())
+            })
+        });
+    }
     let float = pointee.get_metatype() == type_metatype::TYPE_FLOAT;
     if !float
         && !matches!(

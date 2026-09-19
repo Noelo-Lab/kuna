@@ -56,3 +56,20 @@ is neutral, one below the space's pointer lower bound is a field offset.
 (its three values cannot be expressed by the codegen's bool `live_true`/`live_false`
 pair — the same reason `pebnames` is there), so
 `option_values_live_value_present_for_87` does **not** move.
+
+## Default flip (after `protoorder` #669)
+
+1. Re-measure both non-off values on the tree with `protoorder`: `typesweep`
+   (444 slices) per value, pick the higher perfect count, then aggregate, with
+   worse ≤ improved — `void`.
+2. `make test` / `make test-stages` / `make test-cli` with the default flipped;
+   read every moved assertion and probe.
+3. Whole-corpus `decompile-all`, off against each value, every changed function
+   classified and every unexplained one read (`flip-hunks.txt`), with the arity,
+   argument and variable counters beside it.
+4. Speed, interleaved min-of-15 (`speed.py`).
+5. Fix what the sweep finds rather than document it: the store split came from a
+   `protoorder` vote, so the refusal went there.
+
+The evidence is `default-on-evaluation.md`; `record.json` `default_on_flip`
+carries the numbers.

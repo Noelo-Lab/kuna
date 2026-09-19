@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-190dcc5831b9",
+  "probe_id": "a-05e1a71b1613",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -31,7 +31,7 @@
       "\\*a2 = \\(short\\)\\(\\(unsigned int\\)v1 >> 0x10\\);",
       "a2\\[1\\] = \\(char\\)\\(\\(unsigned int\\)v1 >> 0x10\\);",
       "a2(\\[1\\]|->field_0x4) = v1;",
-      "int g20\\(int a0,int a1,unsigned short \\*a2\\)"
+      "int g20\\(int a0,void \\*a1,unsigned short \\*a2\\)"
     ],
     "stdout_absent": [
       "float v1;",
