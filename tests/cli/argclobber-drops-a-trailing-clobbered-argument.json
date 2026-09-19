@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_x86_64",
+    "binary_sha256": "0a781bf74314261364c092d86f4507ae98cadbfdcc826541e1cd4ab26cdae231",
+    "binary_size": 4928,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_x86_64",
+    "selector": "caller",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "sub_401031\\(a0,5\\);",
+      "unsigned long sub_401031\\(unsigned long a0\\)"
+    ],
+    "stdout_absent": [
+      "sub_401031\\(a0,5,",
+      "// rdx",
+      "% 200"
+    ]
+  },
+  "notes": "rdx at the call is a join of a previous call's clobber and a dead idivl remainder, and `sub_401031`'s own recovered prototype takes one parameter. The default drops the trailing argument, the phantom `// rdx` local it read and the remainder that fed it.",
+  "probe_id": "p-2b1bd69dbec3"
+}

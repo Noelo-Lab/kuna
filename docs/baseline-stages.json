@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1250,
-    1250
+    1249,
+    1249
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -861,10 +861,9 @@
     "data:angr-taildup #1 (bug, off): one residual goto to the shared free();return; tail",
     "data:angr-taildup #2 (bug, off): goto label reference + label definition present, none on",
     "data:angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)",
-    "data:argclobber #1: option off passes a third argument built out of the previous call's clobber and a dead idiv remainder (bug reproduced)",
-    "data:argclobber #2: option on drops the trailing argument, whose every incoming value is a clobber or a division by-product",
-    "data:argclobber #3: the dead remainder that fed the fabricated argument is gone with the option on (only the buggy pass computes it)",
-    "data:argclobber #4: the quotient the caller really uses survives both passes",
+    "data:argclobber #1: the caller's side is the shape the option exists for, a clobber on one path of the argument register's join and a dead idiv remainder on the other",
+    "data:argclobber #2: and the argument survives with the option ON, because no callee was decompiled first and `target` stated no prototype for the rule to read",
+    "data:argclobber #3: the quotient the caller really uses survives both passes",
     "data:argclobber-armreturn #1: the clobber is of r0 and the argument register is r3, so the trailing argument survives both passes",
     "data:argclobber-forward #1: the non-clobber path writes the caller's own parameter, so the trailing argument survives both passes",
     "data:argclobber-forward #2: and caller4 keeps the second parameter that argument reads",
