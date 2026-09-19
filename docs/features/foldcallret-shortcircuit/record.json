@@ -1,0 +1,120 @@
+{
+ "opportunity": "foldcallret (default on) folded a call into the right-hand operand of the && / || the printer emits for a same-block BOOL_AND/BOOL_OR, so the printed C skipped a call the binary always makes: gcc -O0 `int r = tick(a); if ((r == 0) & (a > 5)) puts(\"A\");` printed `if (a0 <= 5 || tick(a0)) return;` and `gflag = (r == 0) & (a > 5)` printed `gflag = (unsigned int)(5 < a0 && !tick(a0));` (GH-684).",
+ "test_name": "kuna-cli/tests/decompile_all_cli.rs a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c (fixtures foldcallret_sc_{gcc_O0,clang_O0,clang_O2}_x86_64) + tests/stages/kuna-foldcallret-shortcircuit.xml (8 assertions; main 2/8, fix 8/8) + kuna_callretfold/tests.rs shortcircuit::*",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/foldcallret_sc_gcc_O0_x86_64 (and the clang -O0 / clang -O2 builds of the same foldcallret_sc_x86_64.c)",
+ "selector": "w1f,w4f",
+ "option": null,
+ "flag": null,
+ "change_kind": "strict correctness fix (no option: the old output skips a call the binary always makes)",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "foldcallretphi's own guard (#681, kuna_foldcallretphi.rs chain_reaches_short_circuit_rhs), now shared",
+ "default_on": true,
+ "ablation_changed": 0,
+ "parity": "OK",
+ "root_cause": "foldcallret's print-point check (kuna_callretfold.rs print_point_is_order_safe) asked only whether anything between the call and the statement the folded expression lands in is a barrier. Every op of CALL -> INT_EQUAL -> BOOL_AND sits in one block, so it passed; but p-code BOOL_AND/BOOL_OR evaluate both operands while the printer emits C's && / ||, which skip input 1 when input 0 decides. foldcallretphi (#681) carried this guard for its own folds; plain foldcallret did not.",
+ "fix": "chain_reaches_short_circuit_rhs moves from kuna_foldcallretphi.rs to kuna_callretfold.rs (pub(crate)) and both print-point checks call it: a fold declines when the call's value, followed op by op along print_chain, reaches input >= 1 of a BOOL_AND/BOOL_OR. Input 0 is printed on the left and always evaluated, so it still folds (clang -O0). The printer's other conditional contexts (the second block of a two-block BlockCondition, iteregion ?: arms, iteboolean) are separate blocks the binary also runs conditionally, and a fold never leaves the call's block; op_flip_in_place_execute swaps BOOL_AND/BOOL_OR without swapping operands, so the side checked is the side printed.",
+ "roundtrip": {
+  "method": "decompile-all <fixture> --functions w1f,w4f, compile the printed C with a driver defining `int calls, gflag; int tick(int x) { calls++; return x - 3; }`, call w1f(1); w4f(1); print calls and gflag; each fixture binary prints `2 0`",
+  "main": {
+   "gcc_O0": "0 0",
+   "clang_O0": "2 0",
+   "clang_O2": "1 0"
+  },
+  "branch": {
+   "gcc_O0": "2 0",
+   "clang_O0": "2 0",
+   "clang_O2": "2 0"
+  }
+ },
+ "corpus_diff": {
+  "method": "decompile-all --json over 34 stripped decbench binaries (15 O0, 18 O2, 1 O2-noinline), main build vs branch, every changed function classified (classify.py -> corpus-diff.txt), plus per-function invariants (invariants.py)",
+  "functions": 25556,
+  "changed": 8,
+  "calls_unfolded": 9,
+  "classes": {
+   "unfold-rhs": 6,
+   "unfold-rhs+operand": 2,
+   "unfold-lhs": 0,
+   "other": 0
+  },
+  "operand_cases": "bash O2 sub_4f0c0 (the stdin_redirects argument load, main's own statement, is printed inside the spilled call again); e2fsck O2 sub_28e90 (main's `v4 = v0[0x6e]` is printed at its two reads, the if condition and the call argument, with nothing between them)",
+  "invariants": "variables[] multiset (kind,type,stack offset,size,arg index) identical 25556/25556; arg rows 49939==49939; signatures identical; callee-name counts identical; goto 19409==19409"
+ },
+ "benchmark": {
+  "typesweep": {
+   "slices": 444,
+   "functions": 10748,
+   "perfect_off": 986,
+   "perfect_on": 986,
+   "agg_off": 3111.18,
+   "agg_on": 3111.18,
+   "improved": 0,
+   "worse": 0,
+   "tp": "18396->18396",
+   "fp": "19788->19788",
+   "fn": "27531->27531",
+   "nvars": "96666->96666",
+   "per_project": "bzip2 19/19, coreutils 610/610, diffutils 52/52, findutils 35/35, grep 39/39, gzip 88/88, shadow 29/29, tar 114/114 perfect; no function moved"
+  }
+ },
+ "speed": {
+  "method": "interleaved main/branch pairs (order alternating), whole-binary `kuna decompile-all <bin> --json`, min-of-15; main = d6c5862f1 release build, branch = this fix; box shared with other lanes",
+  "O2/coreutils/fmt": {
+   "main_min_ms": 4279.4,
+   "pr_min_ms": 4251.6,
+   "main_median_ms": 4583.4,
+   "pr_median_ms": 4727.5,
+   "delta_min_pct": -0.65,
+   "delta_median_pct": 3.14
+  },
+  "O2/coreutils/ls": {
+   "main_min_ms": 14710.1,
+   "pr_min_ms": 14721.6,
+   "main_median_ms": 16025.4,
+   "pr_median_ms": 15668.0,
+   "delta_min_pct": 0.08,
+   "delta_median_pct": -2.23
+  },
+  "O2/coreutils/sort": {
+   "main_min_ms": 15690.7,
+   "pr_min_ms": 15590.2,
+   "main_median_ms": 17446.1,
+   "pr_median_ms": 17678.3,
+   "delta_min_pct": -0.64,
+   "delta_median_pct": 1.33
+  },
+  "O2/bash/bash": {
+   "main_min_ms": 89103.2,
+   "pr_min_ms": 88480.0,
+   "main_median_ms": 94596.5,
+   "pr_median_ms": 97787.6,
+   "delta_min_pct": -0.7,
+   "delta_median_pct": 3.37
+  },
+  "worst_delta_min_pct": 0.08,
+  "budget_pct": 5.0,
+  "within_budget": true
+ },
+ "gates": {
+  "make_test": "675/675 PARITY OK",
+  "make_test_stages": "1189/1189 PARITY OK",
+  "make_rust_test": "RUST_TEST_RC=0 (7207 passed, 0 failed)",
+  "make_test_cli": "189/189",
+  "check_spec": "OK (lenient + strict)",
+  "catalog_check": "OK",
+  "counters_check": "no drift",
+  "options_md": "byte-fresh"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold.rs",
+  "decompiler/crates/kuna-decomp/src/p6_variables/kuna_foldcallretphi.rs",
+  "decompiler/crates/kuna-decomp/src/p6_variables/kuna_callretfold/tests.rs",
+  "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs",
+  "decompiler/crates/kuna-analysis/tests/fixtures/foldcallret_sc_x86_64.c",
+  "decompiler/crates/kuna-analysis/tests/fixtures/foldcallret_sc_{gcc_O0,clang_O0,clang_O2}_x86_64",
+  "tests/stages/kuna-foldcallret-shortcircuit.xml",
+  "docs/spec/06-variables-and-merge.md"
+ ],
+ "notes": "No datatest assertion moves (675/675). The derived-root fan-out test (expression_contains_foldable_call) still counts a call this rule later keeps spilled as foldable, as it already did for GH-657's declines; that only keeps a derived multi-use root explicit, never folds a call."
+}
