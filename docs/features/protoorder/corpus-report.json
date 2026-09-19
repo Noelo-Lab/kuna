@@ -138,8 +138,8 @@
  },
  "O2-noinline_gzip_stripped_gzip": {
   "changed": 46,
-  "class:REVIEW": 2,
-  "class:casts": 29,
+  "class:REVIEW": 1,
+  "class:casts": 30,
   "class:declarations": 9,
   "class:literal": 2,
   "class:pointer-arith": 1,
@@ -177,12 +177,12 @@
   "functions": 92
  },
  "O2_betaflight_stripped_betaflight_STM32F405-elf": {
-  "changed": 1624,
-  "class:REVIEW": 15,
+  "changed": 1623,
+  "class:REVIEW": 13,
   "class:casts": 779,
   "class:declarations": 514,
   "class:literal": 55,
-  "class:member-reach": 59,
+  "class:member-reach": 60,
   "class:merge": 5,
   "class:pointer-arith": 22,
   "class:struct-number": 175,
@@ -208,8 +208,8 @@
   "functions": 398
  },
  "O2_cleanflight_stripped_cleanflight_DALRCF405-elf": {
-  "changed": 735,
-  "class:REVIEW": 8,
+  "changed": 734,
+  "class:REVIEW": 7,
   "class:casts": 343,
   "class:declarations": 229,
   "class:literal": 15,
@@ -277,25 +277,25 @@
   "functions": 343
  },
  "O2_crazyflie_stripped_cf2-elf": {
-  "changed": 747,
-  "class:REVIEW": 12,
+  "changed": 746,
+  "class:REVIEW": 9,
   "class:casts": 418,
   "class:declarations": 111,
   "class:literal": 44,
-  "class:member-reach": 39,
+  "class:member-reach": 40,
   "class:pointer-arith": 10,
-  "class:struct-number": 113,
+  "class:struct-number": 114,
   "functions": 1971
  },
  "O2_crazyflie_stripped_firmware-elf": {
-  "changed": 747,
-  "class:REVIEW": 12,
+  "changed": 746,
+  "class:REVIEW": 9,
   "class:casts": 418,
   "class:declarations": 111,
   "class:literal": 44,
-  "class:member-reach": 39,
+  "class:member-reach": 40,
   "class:pointer-arith": 10,
-  "class:struct-number": 113,
+  "class:struct-number": 114,
   "functions": 1971
  },
  "O2_cronie_stripped_crontab": {
@@ -349,8 +349,8 @@
  },
  "O2_e2fsprogs_stripped_e2fsck": {
   "changed": 600,
-  "class:REVIEW": 9,
-  "class:casts": 235,
+  "class:REVIEW": 8,
+  "class:casts": 236,
   "class:declarations": 117,
   "class:literal": 10,
   "class:member-reach": 34,
@@ -394,13 +394,13 @@
  "O2_iproute2_stripped_ip": {
   "changed": 414,
   "class:REVIEW": 2,
-  "class:casts": 197,
+  "class:casts": 195,
   "class:declarations": 83,
   "class:literal": 72,
   "class:member-reach": 24,
   "class:merge": 2,
   "class:pointer-arith": 1,
-  "class:struct-number": 33,
+  "class:struct-number": 35,
   "functions": 1008
  },
  "O2_kmod_stripped_kmod": {
@@ -536,15 +536,15 @@
   "functions": 184
  },
  "TOTAL": {
-  "changed": 9664,
-  "class:REVIEW": 114,
+  "changed": 9660,
+  "class:REVIEW": 103,
   "class:casts": 4438,
   "class:declarations": 2753,
   "class:literal": 369,
-  "class:member-reach": 432,
+  "class:member-reach": 435,
   "class:merge": 17,
   "class:pointer-arith": 120,
-  "class:struct-number": 1421,
+  "class:struct-number": 1425,
   "functions": 32406,
   "layout:merge": 2
  }

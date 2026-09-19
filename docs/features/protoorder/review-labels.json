@@ -1,13 +1,13 @@
 {
  "tally": {
-  "builtin-string": 5,
+  "builtin-string": 4,
   "float-literal": 4,
   "literal": 11,
   "member-reach": 13,
   "regroup": 12,
   "spelling": 45,
   "stack-merge": 2,
-  "store-width": 12,
+  "store-width": 2,
   "ternary": 6,
   "wide-read": 4
  },
@@ -160,21 +160,6 @@
    ],
    "on": [
     "V=V-V%V;"
-   ]
-  },
-  {
-   "function": "O2-noinline_gzip_stripped_gzip sub_69d0",
-   "class": "builtin-string",
-   "why": "LOSS: `builtin_strncpy(v1,\".tar\",5)` prints as five byte stores; the vote types v1 `unsigned char *` and the idiom recognises only `char`; the same bytes (\u00a79)",
-   "off": [
-    "builtin_strncpy(V,K,5);"
-   ],
-   "on": [
-    "*V=46;",
-    "*(V+1)=116;",
-    "*(V+2)=97;",
-    "*(V+3)=114;",
-    "*(V+4)=0;"
    ]
   },
   {
@@ -333,18 +318,6 @@
    ]
   },
   {
-   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_80251ec",
-   "class": "store-width",
-   "why": "",
-   "off": [],
-   "on": [
-    "*(V+1)=0;",
-    "*(V+2)=0;",
-    "*(V+3)=0;",
-    "*(V+109)=0;"
-   ]
-  },
-  {
    "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_802b2cc",
    "class": "spelling",
    "why": "the same addresses, spelled for a retyped pointer: byte offsets as element indices (`*(T *)(p + 8)` <-> `p[1]`), `p + k` <-> `&p[k]`, casts, 0 <-> NULL, inside the CONCAT operands main already prints",
@@ -354,21 +327,6 @@
    ],
    "on": [
     "V._0_3_=CONCAT21(V,*(V+8));"
-   ]
-  },
-  {
-   "function": "O2_betaflight_stripped_betaflight_STM32F405-elf sub_8041e24",
-   "class": "store-width",
-   "why": "a constant stored through a `uint1 *` / `unsigned char *` vote as byte stores: the same bytes, a narrower access (\u00a79)",
-   "off": [
-    "*(V+V*20+36)=K;"
-   ],
-   "on": [
-    "V=V+V*20+36;",
-    "*V=0;",
-    "*(V+1)=0;",
-    "*(V+2)=128;",
-    "*(V+3)=63;"
    ]
   },
   {
@@ -435,16 +393,6 @@
    ],
    "on": [
     "K(V,*(V+64),&(*(V+64))[((V&1)+V+34)],V,V,V,&V);"
-   ]
-  },
-  {
-   "function": "O2_cleanflight_stripped_cleanflight_DALRCF405-elf sub_80147c4",
-   "class": "store-width",
-   "why": "",
-   "off": [],
-   "on": [
-    "*(V+1)=0;",
-    "*(V+65)=0;"
    ]
   },
   {
@@ -656,18 +604,6 @@
    ]
   },
   {
-   "function": "O2_crazyflie_stripped_cf2-elf sub_8022bd4",
-   "class": "store-width",
-   "why": "",
-   "off": [
-    "*(V+121)=257;"
-   ],
-   "on": [
-    "*(V+121)=1;",
-    "*(V+122)=1;"
-   ]
-  },
-  {
    "function": "O2_crazyflie_stripped_cf2-elf sub_80267e4",
    "class": "spelling",
    "why": "v7 typed `unsigned int *`: byte arithmetic through `(unsigned char *)` casts, `(int)` <-> `(unsigned int)` on call arguments; the same addresses",
@@ -690,27 +626,6 @@
     "}while(V!=(V+(V-1&K)));",
     "}while((V+(V-1&K))!=V);",
     "}while(V!=(V+(V-1&K)));"
-   ]
-  },
-  {
-   "function": "O2_crazyflie_stripped_cf2-elf sub_80270b0",
-   "class": "store-width",
-   "why": "",
-   "off": [
-    "*V=K;",
-    "*(V+1)=544;",
-    "*V=K;",
-    "*V=K;"
-   ],
-   "on": [
-    "*V=4;",
-    "*(V+1)=32;",
-    "*(V+2)=1;",
-    "*(V+3)=0;",
-    "*(V+1)=32;",
-    "*(V+2)=2;",
-    "*V=7;",
-    "*(V+1)=32;"
    ]
   },
   {
@@ -784,17 +699,6 @@
     "K=-(V*K);",
     "K=(V*K+K)*K;",
     "K=(V*K+K)*K;"
-   ]
-  },
-  {
-   "function": "O2_crazyflie_stripped_cf2-elf sub_8039b20",
-   "class": "store-width",
-   "why": "",
-   "off": [],
-   "on": [
-    "*(V+217)=0;",
-    "*(V+218)=0;",
-    "*(V+219)=0;"
    ]
   },
   {
@@ -872,18 +776,6 @@
    ]
   },
   {
-   "function": "O2_crazyflie_stripped_firmware-elf sub_8022bd4",
-   "class": "store-width",
-   "why": "",
-   "off": [
-    "*(V+121)=257;"
-   ],
-   "on": [
-    "*(V+121)=1;",
-    "*(V+122)=1;"
-   ]
-  },
-  {
    "function": "O2_crazyflie_stripped_firmware-elf sub_80267e4",
    "class": "spelling",
    "why": "v7 typed `unsigned int *`: byte arithmetic through `(unsigned char *)` casts, `(int)` <-> `(unsigned int)` on call arguments; the same addresses",
@@ -906,27 +798,6 @@
     "}while(V!=(V+(V-1&K)));",
     "}while((V+(V-1&K))!=V);",
     "}while(V!=(V+(V-1&K)));"
-   ]
-  },
-  {
-   "function": "O2_crazyflie_stripped_firmware-elf sub_80270b0",
-   "class": "store-width",
-   "why": "",
-   "off": [
-    "*V=K;",
-    "*(V+1)=544;",
-    "*V=K;",
-    "*V=K;"
-   ],
-   "on": [
-    "*V=4;",
-    "*(V+1)=32;",
-    "*(V+2)=1;",
-    "*(V+3)=0;",
-    "*(V+1)=32;",
-    "*(V+2)=2;",
-    "*V=7;",
-    "*(V+1)=32;"
    ]
   },
   {
@@ -1000,17 +871,6 @@
     "K=-(V*K);",
     "K=(V*K+K)*K;",
     "K=(V*K+K)*K;"
-   ]
-  },
-  {
-   "function": "O2_crazyflie_stripped_firmware-elf sub_8039b20",
-   "class": "store-width",
-   "why": "",
-   "off": [],
-   "on": [
-    "*(V+217)=0;",
-    "*(V+218)=0;",
-    "*(V+219)=0;"
    ]
   },
   {
@@ -1167,15 +1027,6 @@
    ],
    "on": [
     "uuid_unparse(*(V+0)->*(field_0x20+26),V);"
-   ]
-  },
-  {
-   "function": "O2_e2fsprogs_stripped_e2fsck sub_3a380",
-   "class": "store-width",
-   "why": "",
-   "off": [],
-   "on": [
-    "*(V+4)=0;"
    ]
   },
   {

@@ -6,7 +6,7 @@ functions scored: 3451
 ## control
 
 - baseline vs published type_match: 3381 agree / 70 differ (97.97% agreement)
-- byte-identical variables in both arms: 2526 functions, 0 scored differently (must be 0)
+- byte-identical variables in both arms: 2527 functions, 0 scored differently (must be 0)
 
 ## result
 

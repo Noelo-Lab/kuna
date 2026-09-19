@@ -1,10 +1,10 @@
 {
   "arm": "on",
   "totals": {
-    "changed": 9664,
+    "changed": 9660,
     "goto_delta": 0,
     "return_delta": 0,
-    "stmt_delta": 127,
+    "stmt_delta": 92,
     "calls_gained": 1
   },
   "per_binary": {
@@ -102,7 +102,7 @@
       "changed": 46,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 5
+      "stmt_delta": 1
     },
     "O2-noinline_libexpat_stripped_xmlwf": {
       "changed": 11,
@@ -129,10 +129,10 @@
       "stmt_delta": 2
     },
     "O2_betaflight_stripped_betaflight_STM32F405-elf": {
-      "changed": 1624,
+      "changed": 1623,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 2
+      "stmt_delta": -7
     },
     "O2_bzip2_stripped_bzip2": {
       "changed": 14,
@@ -147,10 +147,10 @@
       "stmt_delta": 5
     },
     "O2_cleanflight_stripped_cleanflight_DALRCF405-elf": {
-      "changed": 735,
+      "changed": 734,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": 5
+      "stmt_delta": 3
     },
     "O2_coreutils_stripped_dd": {
       "changed": 44,
@@ -195,16 +195,16 @@
       "stmt_delta": 10
     },
     "O2_crazyflie_stripped_cf2-elf": {
-      "changed": 747,
+      "changed": 746,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -2
+      "stmt_delta": -12
     },
     "O2_crazyflie_stripped_firmware-elf": {
-      "changed": 747,
+      "changed": 746,
       "goto_delta": 0,
       "return_delta": 0,
-      "stmt_delta": -2
+      "stmt_delta": -12
     },
     "O2_cronie_stripped_crontab": {
       "changed": 18,
