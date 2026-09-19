@@ -63,6 +63,9 @@
 //!   register while the caller goes on to use only the quotient. Nothing else
 //!   qualifies: a join input the caller wrote is an argument on the path that
 //!   wrote it, and one clobber among the inputs does not change that;
+//! * the callee's own **recovered prototype** has no parameter in those register
+//!   bytes ([`callee_prototype_excludes`]). This is the clause that carries the
+//!   rule, and it is the reason the option can be a default at all;
 //! * the callee's own body does not **read** those register bytes before writing
 //!   them;
 //! * it is **trailing** -- no used trial follows it -- so the argument list keeps
@@ -113,29 +116,46 @@
 //! caller(long)`. That shape is
 //! `tests/stages/kuna-argclobber-forward.xml`.
 //!
-//! **The callee.** That still leaves a register the caller never wrote.
-//! u-boot `sub_6083af40` reaches `sub_6086b998(node,name,len)` with `len`
-//! computed on one path and left as a clobber on the other, and `sub_6086b998`
-//! reads `r2` before writing it. The callee's body outranks everything on the
-//! caller's side: bytes it reads at entry are a parameter however the value got
-//! into the register. [`crate::p4_calls::kuna_calleedeadarg`] already decodes
-//! each callee once per image for the opposite claim, so this is its
-//! `proves_input` half, read here for free. It is also what answers for a callee
-//! kuna never recovered as variadic: u-boot's `printf` is called from 1,924
-//! sites, and its prologue spilling `r1`-`r3` into the `va_list` save area
-//! settles all of them at once, which no per-function sibling scan could.
+//! **The callee.** That still leaves a register the caller never wrote, and
+//! nothing on the caller's side can say whether the callee wanted it. Only the
+//! callee can, and the statement that settles it is the callee's own **recovered
+//! prototype**: the parameter list kuna gets from decompiling that function,
+//! which [`crate::p4_calls::kuna_protoorder`] parks for every callee it
+//! decompiles before its callers. A prototype with a parameter overlapping the
+//! register says the callee takes an argument there, and the drop is declined
+//! whatever the caller's side looks like.
+//!
+//! Requiring that prototype to EXIST is most of the clause's strength, because
+//! `protoorder` refuses to state one in exactly the cases where a callee's
+//! parameter list is not knowable: a callee inside a recursive component
+//! (`Decline::Scc` — "callees first" has no meaning in a cycle), a variadic one,
+//! one with no recovered body such as a PLT import, one whose recovery produced
+//! no parameters at all, and one whose prototype is already declared (that case
+//! input-locks the call spec, which this rule declines at its first line). A
+//! callee that was never decompiled in this run states nothing, so a
+//! single-function `kuna decompile`, a narrowed `decompile-all`, a `--jobs N`
+//! run and `--option protoorder off` all leave every call site alone.
+//!
+//! The callee's BODY is still read, as a veto only:
+//! [`crate::p4_calls::kuna_calleedeadarg`] decodes each callee once per image for
+//! the opposite claim, and a bounded entry walk that positively sees those
+//! register bytes read before they are written declines the drop too
+//! (`proves_input`). It cannot admit one.
 //!
 //! # What it cannot know
 //!
-//! A callee that really returns a 16-byte value in `rax:rdx` and forwards the
-//! high half as the next call's trailing argument writes nothing into `rdx`
-//! itself, so it keeps the phantom's shape through every clause above; only the
-//! callee probe can decline it, and only when it covers that callee's entry.
+//! The evidence is a recovery, not a fact. A callee whose own parameter list
+//! kuna under-recovers — it misses a parameter the callee really reads — states
+//! a prototype that admits the drop, and the argument goes. That is the residual
+//! hole, and it is the same hole every callee-derived statement has.
 //!
-//! The option is off by default for that reason, and because what it drops is an
-//! argument: every wrong drop is a deleted expression, which is the kind of
-//! wrong output a reader cannot see. The corpus measurement that bounds it is in
-//! `docs/features/phantomargs/sweep-2026-09-16.txt`.
+//! What the clause removes is the class the bounded entry probe could not see at
+//! all: a read past a jump table, a read beyond the probe's instruction budget, a
+//! read inside an import, and a callee that really returns a 16-byte value in
+//! `rax:rdx` and forwards the high half onward. Each of those is a callee whose
+//! recovered prototype carries the parameter, so each is declined.
+//! `docs/features/argclobber/` holds the four programs and the corpus
+//! measurement that bounds the rule.
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -298,6 +318,39 @@ fn clobber_of_this_register_reaches(data: &Funcdata, vn: VarnodeId, addr: &Addre
     saw_clobber
 }
 
+/// Does the callee's own RECOVERED prototype leave `[addr, addr+size)` free?
+///
+/// `Some(true)` only when [`kuna_protoorder`](crate::p4_calls::kuna_protoorder)
+/// parked a prototype for this entry AND none of its parameters overlaps those
+/// bytes.  `Some(false)` is a parked prototype that claims them.  `None` is no
+/// statement at all, which is also a decline: the rule needs the callee to have
+/// said something.
+///
+/// `protoorder` states a prototype for a function it decompiled before this
+/// caller, and refuses to state one for a callee inside a recursive component, a
+/// variadic callee, one with no recovered body (a PLT import), one that recovered
+/// no parameters, and one whose prototype is already declared.  Those are exactly
+/// the callees whose parameter list is not knowable here, so "nothing parked" and
+/// "cannot tell" are the same answer.
+fn callee_prototype_excludes(data: &Funcdata, entry: &Address, addr: &Address, size: int4) -> bool {
+    let Some(stated) = data.kuna_protoorder_types(entry) else { return false };
+    let Some(space) = addr.get_space() else { return false };
+    let lo = addr.get_offset();
+    let hi = lo.wrapping_add(size.max(0) as u64);
+    for (paddr, psize, _) in &stated.inputs {
+        let Some(pspace) = paddr.get_space() else { return false };
+        if pspace.get_index() != space.get_index() {
+            continue;
+        }
+        let plo = paddr.get_offset();
+        let phi = plo.wrapping_add((*psize).max(0) as u64);
+        if plo < hi && lo < phi {
+            return false;
+        }
+    }
+    true
+}
+
 /// Score the trailing argument of this call no-use when a previous call's
 /// clobber is what put a value in its register.
 ///
@@ -362,14 +415,17 @@ pub fn drop_clobber_tail_arg(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
     if !clobber_of_this_register_reaches(data, vn, &addr) {
         return;
     }
-    // The callee's own body outranks everything on the caller's side: a body
-    // that READS these bytes before writing them is reading a parameter, however
-    // the value got into the register.  This is the clause that scales past one
-    // function -- `sub_60873270` is u-boot's `printf`, called from 1,924 sites
-    // kuna never recovered as variadic, and its prologue spilling `r1`-`r3` into
-    // the `va_list` save area answers for every one of them at once.
+    // The callee's own RECOVERED prototype is the evidence, and it has to exist:
+    // a callee that stated nothing about itself cannot be read as saying this
+    // register is free.
     let entry = fc.get_entry_address().clone();
     let trial_size = fc.active_input().get_trial(idx).get_size();
+    if !callee_prototype_excludes(data, &entry, &addr, trial_size) {
+        return;
+    }
+    // The callee's body is read as a veto on top of that: a bounded entry walk
+    // that positively sees these bytes READ before they are written is looking at
+    // a parameter the recovery missed, however the value got into the register.
     if data
         .kuna_callee_entry_dead(&entry)
         .map(|d| d.proves_input(&addr, trial_size))

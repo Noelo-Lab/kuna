@@ -1,0 +1,52 @@
+argclobber whole-corpus sweep, 2026-09-19 (default-on evaluation)
+kuna decompile-all <stripped binary> --option argclobber off|on, one build (origin/main d96e3408),
+default mode. Corpus: every stripped ELF in decbench results/full_run_address_2026-09-11
+(O0 252, O2 253, O2-noinline 253).
+binaries 758, functions 255115, functions changed 22, binaries changed 22, runs with a non-zero exit 0
+
+Every changed call site. arity = off -> on. recovered = the callee's own prototype as kuna
+decompiles it. truth = DWARF formal_parameter count on the unstripped twin, or the library
+source/header where the callee carries no DWARF. probe = the callee-entry walk:
+'seen-dead' = the argument register written before every non-return terminator (positive
+evidence); 'silent' = walk complete but proves neither a read nor a write.
+
+binary                                     caller                             callee                         arity  recovered truth probe
+O0_openssh-portable_scp                    permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_sftp                   permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_sftp-server            permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_ssh                    permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_ssh-add                permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_ssh-agent              permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_ssh-keygen             permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_ssh-keyscan            permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_ssh-pkcs11-helper      permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_ssh-sk-helper          permute_args                       __addvsi3                      3->2   2         2     silent
+O0_openssh-portable_sshd                   permute_args                       __addvsi3                      3->2   2         2     silent
+O2-noinline_bash_bash                      expand_prompt                      xrealloc                       3->2   2         2     silent
+O2-noinline_coreutils_fmt                  main                               fmt                            3->2   2         2     silent
+O2-noinline_e2fsprogs_e2fsck               ext2fs_read_bb_inode               ext2fs_badblocks_list_create   3->2   0 (tail-call thunk) 2     seen-dead
+O2-noinline_openssh-portable_scp           refresh_progress_meter             __mulvsi3                      3->2   2         2     silent
+O2-noinline_openssh-portable_sftp          refresh_progress_meter             __mulvsi3                      3->2   2         2     silent
+O2-noinline_u-boot_u-boot                  efi_install_protocol_interface     efi_create_handle              2->1   1         1     seen-dead
+O2_bash_bash                               expand_prompt                      xrealloc                       3->2   2         2     silent
+O2_coreutils_fmt                           main                               fmt                            3->2   2         2     silent
+O2_e2fsprogs_e2fsck                        e2fsck_pass2                       ext2fs_dblist_sort2            3->2   2         2     seen-dead
+O2_openssh-portable_scp                    refresh_progress_meter.part.0      __mulvsi3                      3->2   2         2     silent
+O2_openssh-portable_sftp                   refresh_progress_meter.part.0      __mulvsi3                      3->2   2         2     silent
+
+fmt O2 / O2-noinline main also GAIN one argument at the under-recovered sibling site:
+fmt(v) -> fmt(v, name) (calleearity reconciles it once the phantom is gone), 1 -> 2, DWARF 2.
+
+Hunk classes (every changed function read):
+  - the trailing argument deleted: 22 sites, each landing on the truth arity above
+  - the dead division remainder that fed it deleted, with its copies and declarations
+  - braces dropped where a block went from two statements to one
+  - O0 openssh permute_args (11 binaries): the while loop re-renders as a for loop once the
+    loop-carried copy of the phantom is gone; same statements, same order
+  - e2fsck O2-noinline ext2fs_read_bb_inode: the single-use divisor is inlined into the quotient
+  - bash O2 and O2-noinline expand_prompt: the PRECEDING call's output shrinks from 16 bytes
+    to 8 (xmalloc: `v = xmalloc(n); a = SUB168(v,8); b = SUB168(v,0);` -> `v = (char *)xmalloc(n);`)
+    because its rdx half now has no reader. Correct here; not in the option's documented
+    effect, and the same mechanism deletes a real struct half in ce-remainder-or-pair.c
+  - fmt: the sibling site gains its second argument (above)
+No call site is created or destroyed; no wrong drop in the corpus.
