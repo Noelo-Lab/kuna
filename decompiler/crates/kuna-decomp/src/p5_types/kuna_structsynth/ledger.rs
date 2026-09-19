@@ -529,7 +529,7 @@ pub(super) fn lookup_or_mint(
 }
 
 /// The number `N` of a structure this pass minted, or `None` for any other type.
-fn minted_number(ct: &Datatype) -> Option<u32> {
+pub(super) fn minted_number(ct: &Datatype) -> Option<u32> {
     let n = ct.get_name().strip_prefix("struct_")?;
     if n.is_empty() || !n.bytes().all(|c| c.is_ascii_digit()) || layout_of(ct).is_none() {
         return None;
