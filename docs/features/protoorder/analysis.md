@@ -157,7 +157,9 @@ binaries with §3f's refusal: 26 functions differ from the round-11 engine, and
 every table below is the round-12 tree's.
 
 **Off arm vs main:** `--option protoorder off` is byte-identical to a fresh
-d96e3408 build on **60 of 60** binaries. (The same held against 6e4f6fa5 before
+d96e3408 build on **60 of 60** binaries, and the round-12 engine's off arm on
+the 10 of them re-run (fmt, ls, kmod, libselinux, betaflight, nuttx, dash, grep
+-O0, zlib, crazyflie). (The same held against 6e4f6fa5 before
 the charbyte rebase, and every number below is within a few functions of that
 measurement.)
 
