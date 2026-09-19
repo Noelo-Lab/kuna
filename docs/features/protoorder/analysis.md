@@ -102,6 +102,13 @@ the one main prints for the same value through a narrow load
 | (minor) The four rows the typesweep scores worse | Read (§6); three userland rows remain, the fourth is gone. Each is a callee's own over-typing the call site cannot contradict | `typesweep-moved.csv` |
 | (nit) PR body over a screen, numbers stale | Rewritten to one screen with the numbers of this tree | -- |
 
+## 3f. Round 12: the narrow primitive pointee (found by the `ptrfromuse` evaluation)
+
+| Finding | Change | Evidence |
+|---|---|---|
+| A pointer vote whose pointee is a non-character integer narrower than a constant the caller stores through the pointer split the store into one store per element, because `SplitDatatype` reads the pointer as an array of its pointee. At the default: gzip `sub_6e90`'s `".tar"` as five byte stores, betaflight `sub_8041e24`'s `1.0f` as four, e2fsck `sub_3a380`'s 8-byte zero as two 4-byte stores. With `--option ptrfromuse void` (the `ptrfromuse` branch evaluating that value as a default found it): bzip2 `sub_5a10` printed `*(unsigned long *)((long)a0 + 0x5c) = 0x100` as eight byte stores (`a0[0x5c] = 0; a0[0x5d] = 1; ...`), and the same in bzip2 `sub_60e0` and tar `sub_133d0`, because with `ptrfromuse` on a callee's `long` parameter becomes a pointer, the two votes agree in class, and the more specific `unsigned char *` wins. Ten of the twelve `store-width` rows round 11 listed as a residual in §5 were this, and gzip `sub_69d0`'s lost `builtin_strncpy` too | `pointee_refuses`: a vote whose pointee is a non-character integer, `bool` or pointer is refused when the caller stores a constant wider than the pointee through the pointer at a fixed place or at a record stride. A constant stored at a stride of its own width (a buffer filled a word at a time) is allowed, as are a computed value stored wider (it prints as a cast) and a character pointee (its byte stores are what the string-copy idiom prints as `builtin_strncpy`). Taken from the `ptrfromuse` branch's commit without that branch's default flip | fixture `protoorder_narrowvote_x86_64` (`fill` stores `"ustar  "` through the buffer it hands a byte-reading `peek`): the pre-fix engine prints `int fill(unsigned char *a0,int a1)` and eight byte stores at the default and with `ptrfromuse void`, the fixed one `*(unsigned long *)(a0 + 0x10) = 0x2020726174737575;` in both, as main does. CLI test `a_byte_pointee_vote_keeps_the_callers_wide_stores` (both arms) and probe `protoorder-types-keeps-a-wide-store-whole` fail on the pre-fix engine. bzip2 `sub_5a10` and `sub_60e0` under `ptrfromuse void` are now identical to main; tar `sub_133d0` and gzip `sub_6e90` differ from main only in the casts a winning vote adds |
+| What the refusal changes | Nothing else: 0 of 10,748 `type_match` rows move, in either `ptrfromuse` arm, and 0 of 3,451 firmware rows | 60 binaries at the default: 26 of 32,406 functions change against the pre-fix engine -- 11 splits undone, 9 callers whose argument cast follows the callee's new parameter type, and 6 where a refused vote gives back main's own type (crazyflie `sub_801ffc8` `char`, ip `sub_3e220`/`sub_3eee0` `int *` and their two callers' locals). `ptrfromuse void` over 13 binaries: 14 change, 9 splits undone and 5 caller casts. Call arguments, argument rows and never-assigned arguments unchanged (§5) |
+
 ## 4. What the vote may not do
 
 Each refusal, with the witness that motivated it (`call_argument_vote`):
@@ -130,7 +137,10 @@ Each refusal, with the witness that motivated it (`call_argument_vote`):
   or union pointee: an access or address outside it (nuttx's
   `*(int **)&a0[0x33].field_0x4`), an access across or inside members (four byte
   pieces for one word), or integer bits moved through a float member (the union
-  and struct-copy callers of `protoorder_floatpointee_x86_64`, §3e).
+  and struct-copy callers of `protoorder_floatpointee_x86_64`, §3e). For a
+  non-character integer, `bool` or pointer pointee: a constant the caller stores
+  wider than it at a fixed place or a record stride (`protoorder_narrowvote_x86_64`,
+  §3f).
 
 ## 5. The corpus
 
@@ -142,7 +152,9 @@ sort, dd; gzip and xmlwf -O2-noinline; mirai and bzip2 -O0; x0r-usb.exe,
 dexter.dll): **60 stripped binaries, 32,406 functions**, x86-64 userland at
 -O0/-O2/-O2-noinline, ARM Cortex-M firmware and two PE files. Rounds 6-10
 measured the same things against e1139df9; their numbers are superseded by
-these and kept in `git log`.
+these and kept in `git log`. Round 12 re-ran the default arm on the same 60
+binaries with §3f's refusal: 26 functions differ from the round-11 engine, and
+every table below is the round-12 tree's.
 
 **Off arm vs main:** `--option protoorder off` is byte-identical to a fresh
 d96e3408 build on **60 of 60** binaries. (The same held against 6e4f6fa5 before
@@ -169,7 +181,7 @@ both arms; call sites with fewer arguments than the callee's declaration 13,853
 in both arms (`underarity.py`); string-literal arguments 30,518 → 31,017.
 
 **Invariants** (`invariants.py`): 0 calls lost; `goto` delta 0; `return` delta
-0; `;` delta +127. The one "gained call" is a string literal the default arm
+0; `;` delta +92 (+127 before §3f undid the byte stores). The one "gained call" is a string literal the default arm
 recovers, `"Calling prvGetRegistersFromStack() from fault handler"`, which the
 call regex reads as a call.
 
@@ -179,23 +191,23 @@ whose first use is a read **0**. The two merges are nuttx `sub_8007bd0` (-O2
 and -O2-noinline), two adjacent `char`s becoming the `char tmp[]` the code fills
 and prints with `%s`.
 
-**Every changed function classified** (9,664 of 32,406), by the first normalizer
+**Every changed function classified** (9,660 of 32,406), by the first normalizer
 under which the two bodies agree:
 
 | class | functions | what differs |
 |---|---|---|
 | casts | 4,438 | C casts, NULL/0, char/negative/hex spellings, `x += y` as `x = x + y` |
 | declarations | 2,753 | local numbering, declaration types, which locals share a name |
-| struct-number | 1,421 | only the `struct_N` numbers: a callee-first run mints the synthesized structures in another order |
-| member-reach | 432 | the same bytes through a retyped pointer or a struct member (`*(int *)(a0 + 0x28)` ↔ `a0[10]` ↔ `a0->field_0x28`) |
+| struct-number | 1,425 | only the `struct_N` numbers: a callee-first run mints the synthesized structures in another order |
+| member-reach | 435 | the same bytes through a retyped pointer or a struct member (`*(int *)(a0 + 0x28)` ↔ `a0[10]` ↔ `a0->field_0x28`) |
 | literal | 369 | a number became a string or float literal |
 | pointer-arith | 120 | `&p[k]` ↔ `p + k`, `p[k]` ↔ `*(p + k)` |
 | merge | 17 | a parameter and a local trade which one holds a value |
-| REVIEW | 114 | none of the above -- labelled below |
+| REVIEW | 103 | none of the above -- labelled below |
 
 The residue is labelled by `label-review.py` (automatic for store width, `?:`,
 parenthesisation and literal spellings) and `hand-labels.json` (each read in the
-raw diff, with a reason); every one of the 114 also has the same calls, `goto`s
+raw diff, with a reason); every one of the 103 also has the same calls, `goto`s
 and `return`s in both arms:
 
 | label | functions | what |
@@ -203,10 +215,10 @@ and `return`s in both arms:
 | spelling | 45 | the same addresses spelled for a retyped pointer (byte offsets as element indices, `p + k` ↔ `&p[k]`, casts, 0 ↔ NULL) |
 | member-reach | 13 | the same bytes through a struct member or a pointer member the vote typed |
 | regroup | 12 | a temporary inlined, extracted or re-used for the same value |
-| store-width | 12 | a constant stored through a byte pointer as byte stores: the same bytes, a narrower access (§9) |
+| store-width | 2 | a constant stored through a byte pointer as byte stores: the same bytes, a narrower access; both are shapes §3f allows by design (§9) |
 | literal | 11 | a small address printed as its string, or a constant at another width |
 | ternary | 6 | an if/else assignment printed as `?:`, or back |
-| builtin-string | 5 | constant stores ↔ `builtin_strncpy`: three gained, gzip `sub_69d0` lost (§9) |
+| builtin-string | 4 | constant stores ↔ `builtin_strncpy` or `char` stores: two strings gained; a 2-byte constant printed as two `char` stores in ginstall `sub_dd10` and tar `sub_3f9b0` (a `char *` vote, §9) |
 | float-literal | 4 | a float member's bits printed as the exact literal (`0` → `0.0`, `0xbf800000` → `-1.0`) |
 | wide-read | 4 | a narrow load printed as the truncated wider element (`(short)v1[0x19]`): the same value (§3b) |
 | stack-merge | 2 | nuttx `char tmp[]` (an improvement) |
@@ -220,12 +232,15 @@ d96e3408 build and this branch's final build are each scored with `typesweep
 --baseline-only` and merged into one report (`typesweep-report.md`,
 `typesweep-moved.csv`). Every intermediate round-11 engine (§3e's four pointee
 refinements) scored the same 10,748 rows identically, so the pointee refusals
-cost no row.
+cost no row. Round 12's refusal (§3f) moves none either, measured both at the
+default and with `--option ptrfromuse void` (1,309 perfect with and without it;
+the firmware rows too, 217 and 217), against the pre-§3f engine in the same
+sweep.
 
 - PERFECT **986 → 1,105 (+119)**; aggregate 3,111.18 → 3,363.95 (+252.77)
 - moved ONTO perfect **119**, moved OFF perfect **0**
 - improved (not perfect) **838**, worsened **3**
-- control: 6,838 functions with byte-identical `variables` score identically
+- control: 6,839 functions with byte-identical `variables` score identically
 
 `improved` below counts the rows that reach perfect too.
 
@@ -322,21 +337,27 @@ recovery over-counted; `type_match` cannot see a fabricated parameter at all.
 - `decompile-project` and `decompile-graph` are not callee-first; a `--jobs` pool
   states nothing and says so.
 - A winning vote changes spellings, not only declarations: casts at the typed
-  argument, a signed use cast back after an unsigned vote (`(int)a0 >> 2`), and
-  a byte pointee guessed for a pointer splitting one wide constant store through
-  it into byte stores of the same bytes (the 12 `store-width` rows of §5;
-  betaflight `sub_8041e24` stores 0x3f800000 through a `uint1 *` as four bytes).
-  Memory ends up the same; the access width does not, which matters on
-  memory-mapped I/O. A structure or float pointee never splits a store: an access
-  across its members refuses the vote (§3e). A pointer typed by a vote also lets `RuleExpandLoad` print a
+  argument, a signed use cast back after an unsigned vote (`(int)a0 >> 2`), and,
+  in the two shapes §3f allows, a byte pointee splitting one wide constant store
+  through it into byte stores of the same bytes: a `char *` vote (libselinux
+  `sub_1d4c0` prints `*(unsigned long *)(a0 + 0xa0) = 0` as eight `'\0'` stores
+  on a structure the callee reads bytes of; ginstall and tar print a 2-byte
+  constant as two `char`s) and a buffer filled a word at a time (betaflight
+  `sub_801379c` fills a 512-byte sector with the bytes `de ad be ef`, printed as
+  four byte stores per word through its `uint1 *` parameter). Memory ends up the same; the access
+  width does not, which matters on memory-mapped I/O. Any other non-character
+  primitive pointee narrower than a constant stored through it is refused (§3f),
+  and a structure or float pointee never splits a store: an access across its
+  members refuses the vote (§3e). A pointer typed by a vote also lets `RuleExpandLoad` print a
   known-typed narrow load as the truncated element (`(short)v1[0x11]`): the same
   value, a wider read, as main prints for any typed pointer (§3b).
 - A vote of the same class can still override the caller's own evidence: an
   unsigned vote makes a parameter the caller shifts and divides as signed
-  `unsigned int`, with `(int)a0` casts keeping those uses correct, and gzip's
-  `char *` becomes `unsigned char *` beside `strcmp`'s declared `char *`, which
-  turns its `builtin_strncpy(v,".tar",5)` into five byte stores. The refusals
-  are by class (pointer, integer, float), not by the finer type.
+  `unsigned int`, with `(int)a0` casts keeping those uses correct. The refusals
+  are by class (pointer, integer, float), not by the finer type, except where the
+  finer type would split a store (§3f): gzip's `unsigned char *` beside
+  `strcmp`'s declared `char *` no longer turns its `builtin_strncpy(v,".tar",5)`
+  into five byte stores.
 - A float vote is refused on any value the function also stores, even where
   the store lands in float memory (`*a2 = v1` through what becomes a `float *`):
   the vote cannot see which type the store's pointer will settle on, and an

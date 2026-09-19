@@ -9,8 +9,8 @@
   "allargs_on": 258249,
   "allstring_on": 31017,
   "allphantom_on": 1179,
-  "string_off": 6460,
-  "string_on": 6959,
+  "string_off": 6458,
+  "string_on": 6957,
   "phantom_off": 162,
   "phantom_on": 162
  },
@@ -214,8 +214,8 @@
    "allargs_on": 1555,
    "allstring_on": 120,
    "allphantom_on": 11,
-   "string_off": 10,
-   "string_on": 10
+   "string_off": 8,
+   "string_on": 8
   },
   "O2-noinline_libexpat_stripped_xmlwf": {
    "argrows_off": 162,

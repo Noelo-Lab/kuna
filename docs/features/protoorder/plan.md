@@ -83,6 +83,14 @@ One option, `protoorder off|types|lock`, default `types`, P4, subphase
    `struct_N` spellings. Every number re-measured on the rebased tree: corpus
    (60 binaries, including the reviewer's 14), `type_match`, off-arm identity,
    speed and all gates.
+12. **Round 12 (found by the `ptrfromuse` default evaluation).** A vote whose
+   pointee is a non-character integer, `bool` or pointer is refused when the
+   caller stores a constant wider than the pointee through the pointer at a
+   fixed place or a record stride, which `SplitDatatype` printed as one store per
+   element (gzip's `".tar"` and betaflight's `1.0f` at the default; bzip2 and tar
+   with `--option ptrfromuse void`). New fixture `protoorder_narrowvote_x86_64`
+   with a CLI test over the default and `ptrfromuse void`, and a probe. Taken
+   from the `ptrfromuse` branch without that branch's default flip.
 
 ## What is deliberately NOT in it
 
@@ -97,6 +105,6 @@ One option, `protoorder off|types|lock`, default `types`, P4, subphase
   named next lever; `types` composes with `argclobber` today.
 - **A `tests/stages` XML.** The option only exists on the whole-binary
   `decompile-all` surface, which the stage harness does not drive; the two-pass
-  evidence is the thirteen `tests/cli` probes over eight in-repo fixtures, which
+  evidence is the fourteen `tests/cli` probes over nine in-repo fixtures, which
   run the real binary→decompile path, and the two compile-back round trips.
 - **The `RuleExpandLoad` fix.** It is #677, on main before this PR.
