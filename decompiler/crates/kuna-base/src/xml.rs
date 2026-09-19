@@ -1893,7 +1893,7 @@ mod tests {
         // and structsynth-unclaimed-bytes / a shared layout keeps a load ahead
         // of the store that overwrites it
         // and kuna-aliasoverlap / a load stays ahead of a store into its bytes
-        assert_eq!(count, 320, "corpus file count drifted");
+        assert_eq!(count, 321, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
