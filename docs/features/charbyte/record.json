@@ -1,6 +1,6 @@
 {
  "opportunity": "kuna declares a byte read through a `char *` as `unsigned char`, and pushes `unsigned char *` back over the pointer, because x86 loads every byte with movzx and TypeOpIntZext::getInputLocal's uint1 vote outranks char (SUB_UINT_PLAIN 16 < SUB_INT_CHAR 19). Over fmt/ls/sort/grep -O0/-O2: 40 LOAD sites where a char * meets a uint1 byte, 65 where the byte pushes unsigned char * over char *; 39 declarations and 15 signature lines move when fixed. Readability item: type_match strips `unsigned`, so its metric effect is zero by construction.",
- "test_name": "tests/stages/kuna-charbyte.xml (13 two-pass assertions: witness, unsigned char * control, unsigned-compare control, the 0xe9 constant, a pointer that is char * only through strlen) + 4 unit tests",
+ "test_name": "tests/stages/kuna-charbyte.xml (21 two-pass assertions: witness, unsigned char * control, unsigned-compare control, the 0xe9 constant, a pointer that is char * only through strlen, and four controls that keep uint1 in both passes: a byte passed to a call, a sibling byte passed to a call, a counter, a switch with case 0x80) + 4 unit tests",
  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/coreutils/stripped/fmt",
  "selector": "0x79b0",
  "func_addr": "0x79b0",
@@ -46,6 +46,18 @@
    "guard_restored": "0x757a0 param_expand (a string pointer would have come out int4 * at a join with the int * parameter)",
    "char_literal_arithmetic_lines_added": 6,
    "char_literal_arithmetic_lines_already_in_off_arm": 14
+  },
+  "after_review_round_2": {
+   "binaries": "34 (the 8 above + bash/tar/ssh/libedit/dash/diff/cut/tr/expr/od/xmlwf/gzip/bzip2/mirai -O2, coreutils cut/expr/od/tr + cronie/dash/diff/gzip/xmlwf/bzip2/mirai -O0, libopencm3 usart_console), 13,747 functions, both arms of one build on 6e4f6fa5",
+   "functions_changed": 61,
+   "functions_renumbered_only": "26 (sort -O0: a synthesized struct whose pointer field moves to char * dedups with struct_2, so later struct_N numbers shift by one)",
+   "functions_changed_8_binaries": "21 (same hunks as before the round, apart from base changes)",
+   "reviewer_run_functions_changed": 67,
+   "dropped": "mirai -O2 0xce90 (counter + byte passed to its printf); ssh -O2 0x52dd0 (byte whose load pointer did not follow); bash -O2 0x79210, dash -O2 0x8070/0x16310, tar -O2 0x41370 (split pointer web)",
+   "params": "291 -> 291",
+   "json_variables": "1406 -> 1406",
+   "json_type_moves": "only unsigned char -> char: 53 unsigned char * and 7 uint1 * pointers, 10 + 2 scalars, 10 [24] and 1 [125] arrays; plus 29 struct_N renumberings; no size moves",
+   "c_declarations": "1040 -> 1027 (a retyped byte merges with an existing char variable of the same storage, mostly in mirai's 10 printf copies)"
   }
  },
  "corpus_sweep": {
@@ -64,13 +76,19 @@
   "c_declarations": "152 -> 153 (fmt -O2 0x3420 +1 and ls -O2 0x7920 +1: a char value split from an unrelated unsigned char value it had shared a declaration with; ls -O2 0x6d40 -1: two char * locals join)",
   "hunks_outside_documented_effect": 0,
   "guard": "keep_or_restore never fires on the 8 binaries (their output is byte-identical with and without it); it restores bash -O2 0x757a0",
-  "rebased_on_e1139df9": "8-binary on/off hunks byte-identical to the pre-rebase build"
+  "rebased_on_e1139df9": "8-binary on/off hunks byte-identical to the pre-rebase build",
+  "review_round_2": "analysis.md section 5: every line of the 87 changed functions that mentions a retyped identifier, changed or unchanged, classified by context; no retyped scalar is a direct call argument, return or switch variable; unchanged reads are byte copies/stores, truth tests, byte-vs-byte or byte-vs-char-literal comparisons, and pointer copies/arguments"
  },
  "soundness": {
-  "oracle": "docs/features/charbyte/oracle.c: every distinct value-bearing hunk form (all 33 changed comparison lines of the 8 binaries, every changed widening/narrowing/store, and the bash -O2 arithmetic and comparison forms) evaluated with the off-arm types and the on-arm types for all 256 byte values (256x256 for the byte-vs-global compare), x86-64 gcc, signed plain char",
-  "checks": 78848,
+  "oracle": "docs/features/charbyte/oracle.c: every distinct value-bearing form from the 8-binary and then 34-binary decompile-all diffs, on changed lines and on the unchanged lines that read a retyped byte, evaluated with the off-arm types and the on-arm types for all 256 byte values (256x256 for byte-vs-global and byte-vs-byte), x86-64 gcc, signed plain char",
+  "checks": 149248,
   "differ": 0,
-  "control": "a char compared with 0xe9 (what the rejected edge-override design printed) is caught",
+  "controls_caught": {
+   "char compared with 0xe9 (the rejected edge-override design)": 1,
+   "char passed to a variadic call (logit(\"%d\",c))": 128,
+   "char switch variable against case 0x80": 1
+  },
+  "reviewer_recompile_harness": "the review's harnesses recompiled from the final output: gcc -O2 c13 (byte passed to logit) and c10 (sibling a0[1] passed to logit) 0/256 differ (128/256 before); cx2 -O2 (10 functions) 851,968 checks, 0 differ",
   "rejected_design": "overriding the LOAD edge left a compared constant uint1: `char v1; ... v1 == 0xe9` (never true in C); re-seeding + re-propagating prints `v1 == '\\xe9'`"
  },
  "benchmark": {
@@ -99,6 +117,14 @@
     "perfect": "959 -> 959",
     "variables_changed": 24,
     "note": "per_project below is this run"
+   },
+   {
+    "build": "review round 2 (call/return/switch, counter, load-pointer and split-web guards), rebased on 6e4f6fa5, --option charbyte off vs baseline (on)",
+    "improved": 0,
+    "worse": 0,
+    "perfect": "986 -> 986",
+    "variables_changed": 40,
+    "note": "19 are unsigned char * / uint1 * -> char * where GT is char *; 21 are sort -O0 struct_N renumberings, scored the same; per_project below is this run"
    }
   ],
   "control_identical_variables_scored_differently": 0,
@@ -115,37 +141,37 @@
    },
    "coreutils": {
     "n": 6422,
-    "perfect_off": 592,
-    "perfect_on": 592,
-    "mean_off": 0.2726,
-    "mean_on": 0.2726,
+    "perfect_off": 610,
+    "perfect_on": 610,
+    "mean_off": 0.2813,
+    "mean_on": 0.2813,
     "improved": 0,
     "worse": 0
    },
    "diffutils": {
     "n": 420,
-    "perfect_off": 51,
-    "perfect_on": 51,
-    "mean_off": 0.3907,
-    "mean_on": 0.3907,
+    "perfect_off": 52,
+    "perfect_on": 52,
+    "mean_off": 0.4004,
+    "mean_on": 0.4004,
     "improved": 0,
     "worse": 0
    },
    "findutils": {
     "n": 790,
-    "perfect_off": 33,
-    "perfect_on": 33,
-    "mean_off": 0.1588,
-    "mean_on": 0.1588,
+    "perfect_off": 35,
+    "perfect_on": 35,
+    "mean_off": 0.1622,
+    "mean_on": 0.1622,
     "improved": 0,
     "worse": 0
    },
    "grep": {
     "n": 247,
-    "perfect_off": 37,
-    "perfect_on": 37,
-    "mean_off": 0.3689,
-    "mean_on": 0.3689,
+    "perfect_off": 39,
+    "perfect_on": 39,
+    "mean_off": 0.387,
+    "mean_on": 0.387,
     "improved": 0,
     "worse": 0
    },
@@ -153,8 +179,8 @@
     "n": 368,
     "perfect_off": 88,
     "perfect_on": 88,
-    "mean_off": 0.4844,
-    "mean_on": 0.4844,
+    "mean_off": 0.4858,
+    "mean_on": 0.4858,
     "improved": 0,
     "worse": 0
    },
@@ -162,28 +188,28 @@
     "n": 686,
     "perfect_off": 29,
     "perfect_on": 29,
-    "mean_off": 0.2879,
-    "mean_on": 0.2879,
+    "mean_off": 0.2897,
+    "mean_on": 0.2897,
     "improved": 0,
     "worse": 0
    },
    "tar": {
     "n": 1548,
-    "perfect_off": 110,
-    "perfect_on": 110,
-    "mean_off": 0.2791,
-    "mean_on": 0.2791,
+    "perfect_off": 114,
+    "perfect_on": 114,
+    "mean_off": 0.2824,
+    "mean_on": 0.2824,
     "improved": 0,
     "worse": 0
    },
    "pooled": {
     "n": 10748,
-    "perfect_off": 959,
-    "perfect_on": 959,
-    "mean_off": 0.2826,
-    "mean_on": 0.2826,
+    "perfect_off": 986,
+    "perfect_on": 986,
     "improved": 0,
-    "worse": 0
+    "worse": 0,
+    "mean_off": 0.2895,
+    "mean_on": 0.2895
    }
   }
  },
@@ -243,24 +269,25 @@
   "within_budget": true
  },
  "gates": {
-  "measured_on": "feat/charbyte rebased onto origin/main e1139df9",
+  "measured_on": "feat/charbyte 897ad4aa, rebased onto origin/main 6e4f6fa5",
   "make_test": "datatests: 675/675 assertions passed, PARITY OK",
-  "make_test_stages": "datatests: 1154/1154 assertions passed, PARITY OK (+13 charbyte, 0 moved)",
-  "make_test_cli": "tests/cli: 185/185 passed",
+  "make_test_stages": "datatests: 1177/1177 assertions passed, PARITY OK (+21 charbyte, 0 moved)",
+  "make_test_cli": "tests/cli: 189/189 passed",
   "check_spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
   "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "make_rust_test": "RUST_TEST_RC=0 (7194 passed, 0 failed, 417 test binaries)"
+  "make_rust_test": "RUST_TEST_RC=0 (7204 passed, 0 failed, 416 test binaries)"
  },
  "default_on_evaluation": {
   "verdict": "flipped: charbyte ships on",
   "a_datatests": "675/675 PARITY OK with the default on; no assertion moved",
-  "b_stages": "1154/1154 PARITY OK; the only new keys are the 13 charbyte assertions, whose pass 1 sets `option charbyte off`; no existing assertion moved",
-  "c_test_cli": "185/185 with the default on; no probe moved",
-  "d_typesweep": "444 slices: 0 improved, 0 worse, perfect 959 -> 959 (metric-neutral by construction)",
+  "b_stages": "1177/1177 PARITY OK; the only new keys are the 21 charbyte assertions, whose pass 1 sets `option charbyte off`; no existing assertion moved",
+  "c_test_cli": "189/189 with the default on; no probe moved",
+  "d_typesweep": "444 slices: 0 improved, 0 worse, perfect 986 -> 986 (metric-neutral by construction)",
   "e_speed": "worst stable interleaved minimum +3.28% (sort -O2, min-of-31); budget +5%",
-  "f_hunks": "8 binaries: 21 functions, every hunk in the documented classes, 0 outside; comparison oracle 0/78,848 differ",
-  "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope"
+  "f_hunks": "34 binaries: 61 functions + 26 struct renumberings, every hunk in the documented classes; unchanged lines audited; oracle 0/149,248 differ",
+  "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope",
+  "measured_on": "6e4f6fa5 + this branch"
  }
 }
