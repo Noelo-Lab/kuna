@@ -96,7 +96,10 @@ One option, `protoorder off|types|lock`, default `types`, P4, subphase
    each word), and it refuses when the walk over the caller's addresses gives
    up, as the float and composite rules already did (a caller with 520 wide
    stores printed 4,160 byte stores). New fixture `protoorder_widefill_x86_64`
-   with a CLI test over the default and `ptrfromuse void`, and a probe.
+   with a CLI test over the default and `ptrfromuse void`, and a probe. After
+   the rebase onto #675 the callee-first loop also runs structsynth's
+   convergence sweep, which it had skipped (CLI test
+   `callee_first_runs_the_structsynth_convergence_sweep`).
 
 ## What is deliberately NOT in it
 

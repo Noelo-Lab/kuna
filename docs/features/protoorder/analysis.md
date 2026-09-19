@@ -118,6 +118,12 @@ the one main prints for the same value through a narrow load
 | What the two changes do elsewhere | Nothing else | 60 binaries: 4 of 32,406 functions change against the round-12 engine, the same 4 in both arms (§5). `type_match`: 0 of 10,748 rows move in either arm; of 3,451 firmware rows one does, betaflight `read_data_sector` (`sub_801379c`), back to main's 0.143 from 0.286: the byte-pointer parameter the split had come with matched its `uint8_t *sector`. Call arguments, argument rows and never-assigned arguments unchanged |
 | Not changed: a vote with a wider pointee over the caller's own byte reads (stat O2 `sub_df20`'s `char *a0` becomes `int *a0`, printed `v1 = (char)*a0;`) | Kept | The wide-read class of §9: the same value on a little-endian target, read at a different width. It is the same class main prints for any typed pointer, and no store is split by it |
 
+## 3h. Round 13: the rebase onto #675 (structsynth shares one layout)
+
+| Finding | Change | Evidence |
+|---|---|---|
+| #675 decompiles once more, after an address-order batch, the functions that name a structure a later, larger one superseded (`converge_synthesized_structs`). The callee-first path decompiles each target on its own and never reached that sweep, so under the default a function kept the superseded name: `tests/cli/structsynth-sweep-mints-no-third-name` failed on the rebased branch (`long fb(struct_0 *a0)` where main prints `struct_1`, `fc`'s) | The callee-first loop ends with the same sweep, in plan order, each function stating its recovered types again where the plan let it; not under `lock` (§9) | CLI test `callee_first_runs_the_structsynth_convergence_sweep` (the three readers make no direct calls, so the default document must equal the `protoorder off` one) fails on the rebased engine without the sweep and passes with it; the probe passes. REBASE_EVIDENCE |
+
 ## 4. What the vote may not do
 
 Each refusal, with the witness that motivated it (`call_argument_vote`):
@@ -382,6 +388,10 @@ recovery over-counted; `type_match` cannot see a fabricated parameter at all.
   the caller takes it wherever nothing at the call site contradicts it (§6).
 - `decompile-project` and `decompile-graph` are not callee-first; a `--jobs` pool
   states nothing and says so.
+- `lock` runs no `structsynth` convergence sweep (§3h): a prototype it parked is
+  declared, so a second decompile of that function would read its own first
+  answer back, and a function can keep a superseded `struct_N` that the default
+  and an address-order run replace.
 - A winning vote changes spellings, not only declarations: casts at the typed
   argument, a signed use cast back after an unsigned vote (`(int)a0 >> 2`), and,
   in the one shape §3f allows, a character pointee splitting one wide constant

@@ -1757,6 +1757,18 @@ whose output order is already reverse-topological. A component with more than on
 member — and a function that calls itself — is recursion, where "callees first"
 has no meaning: those functions decompile with nothing stated.
 
+The callee-first loop ends with the same `structsynth` convergence sweep as an
+address-order batch (chapter [00](00-overview.md), synthesized structures across
+a batch): the results that name a structure a later, larger one superseded are
+decompiled once more (`decompiler/crates/kuna-cli/src/decompile_all.rs
+(converge_callee_first)`). The redo walks the same plan, callees first, and each
+function states its recovered types again where the plan let it, so a callee
+moved onto the surviving structure states that one before its redone callers
+read it. Without the sweep, a function kept the structure it was first given
+even where the surviving one was in reach, which an address-order run would
+have replaced. `lock` runs no sweep: a prototype it parked is declared, and a
+second decompile would read that function's own first answer back.
+
 The option has two live values, because there are two different things a
 recovered prototype can be asked to say and only one of them is safe to say by
 default.
