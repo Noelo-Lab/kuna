@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-4ef1c24fea3d",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "protoorder",
+    "lock"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64",
+    "binary_sha256": "69e7f12f215e9ba62ef5412171670b0cebcdc7b9c3d7d13d43021fb9e9aac2a9",
+    "binary_size": 9288,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64",
+    "selector": "vfmtcaller",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned long vfmt\\(unsigned char \\*a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5\\)",
+      "void vfmtcaller\\(void\\)",
+      "  vfmt\\(0x402004\\);"
+    ],
+    "stdout_absent": [
+      "vfmt\\(\\(unsigned char \\*\\)0x402004,a1",
+      "void vfmtcaller\\(unsigned long a0"
+    ]
+  },
+  "notes": "`lock` also states ARITY, so it needs a rule `types` does not: `vfmt` opens with the SysV register-save prologue a variadic gets from `va_start`, reads all six argument registers and recovers six parameters against the one its caller passes. A list ending on the LAST argument register is declined; without the rule the site renders five arguments nothing writes."
+}

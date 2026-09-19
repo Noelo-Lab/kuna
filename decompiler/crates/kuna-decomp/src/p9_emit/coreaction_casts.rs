@@ -60,7 +60,7 @@ use kuna_base::types::{int4, int8, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::cast::{CastContext, CastStrategy, CastStrategyC, OpRef, VnRef};
-use crate::coreaction_infertypes::{input_type_local, output_type_local};
+use crate::coreaction_infertypes::{declared_input_type_local as input_type_local, output_type_local};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::context::{OpId, VarnodeId};

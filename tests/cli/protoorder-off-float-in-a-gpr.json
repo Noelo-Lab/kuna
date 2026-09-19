@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-de64c53116df",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "protoorder",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatgpr_mipsel",
+    "binary_sha256": "c6c3e7dd7fce6cfdfa2c6563e99449add76c29b74622018aa3266284133e0ab1",
+    "binary_size": 8080,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatgpr_mipsel",
+    "selector": "g3",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "return \\(int\\)\\(float\\)h\\(a0,v1\\) \\+ v1 \\+ 3;",
+      "\\(unsigned int\\)\\(v1 < 0x3fc00000\\)",
+      "if \\(v1 == 0x3fc00001\\)",
+      "\\(unsigned int\\)\\(0x3fc00000 < v1\\)",
+      "int g3\\(unsigned int a0,int a1\\)"
+    ],
+    "stdout_absent": [
+      "\\(int\\)v1\\b",
+      "\\(unsigned int\\)v1\\b(?! >>)",
+      "float v1;",
+      "1\\.5000001"
+    ]
+  },
+  "notes": "protoorder off on the MIPS o32 float-in-a-GPR fixture: main's output. The default must not move v1: its integer arithmetic and comparisons stay integers. Only g3's first parameter differs (unsigned int here, h's recovered int under the default)."
+}

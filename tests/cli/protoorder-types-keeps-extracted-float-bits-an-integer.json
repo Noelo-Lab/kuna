@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-190dcc5831b9",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatgpr_mipsel",
+    "binary_sha256": "c6c3e7dd7fce6cfdfa2c6563e99449add76c29b74622018aa3266284133e0ab1",
+    "binary_size": 8080,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatgpr_mipsel",
+    "selector": "g20",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\\*a2 = \\(short\\)\\(\\(unsigned int\\)v1 >> 0x10\\);",
+      "a2\\[1\\] = \\(char\\)\\(\\(unsigned int\\)v1 >> 0x10\\);",
+      "a2(\\[1\\]|->field_0x4) = v1;",
+      "int g20\\(int a0,int a1,unsigned short \\*a2\\)"
+    ],
+    "stdout_absent": [
+      "float v1;",
+      "\\(int\\)v1\\b",
+      "\\(float \\*\\)\\(a1 \\+ 0xc\\)"
+    ]
+  },
+  "notes": "DEFAULT on MIPS o32: g20/g22 take a halfword or bytes out of a word whose bits also go to h(int, float) in a GPR, and g24 stores the word through an int *. A float vote printed (short)((unsigned int)v1 >> 0x10) and a2[1] = (int)v1 with float v1, which convert the value; the vote is refused and v1 stays an integer."
+}

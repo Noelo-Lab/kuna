@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-3eae0d13c57a",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatstore_x86_64",
+    "binary_sha256": "d7dbcace280e67bc5fa8c1607e28073c537d7ce4da8d5ad51f167e42da28dedb",
+    "binary_size": 16048,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatstore_x86_64",
+    "selector": "fill",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\\[1\\] = v\\d+;"
+    ],
+    "stdout_absent": [
+      "\\[1\\] = \\(int\\)v\\d+;",
+      "\\(float \\*\\)\\(a1 \\+ 0xc\\)"
+    ]
+  },
+  "notes": "DEFAULT on x86-64: fill loads fp[3], passes it to h(int, float) and stores it into s->f beside the int s->i; kuna types s as int *. A float vote on the loaded value printed v1[1] = (int)v3, a value conversion where the machine copies bits. The vote is refused on a stored value, so the store stays bitwise."
+}

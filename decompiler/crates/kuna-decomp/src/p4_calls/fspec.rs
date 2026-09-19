@@ -3921,10 +3921,18 @@ impl ProtoModel {
     pub fn input(&self) -> &ParamListStandard {
         self.input.as_ref().expect("ProtoModel::input: not built")
     }
+    /// (kuna) The input resource model, or `None` before `build_param_list`.
+    pub fn input_opt(&self) -> Option<&ParamListStandard> {
+        self.input.as_ref()
+    }
     /// Borrow the output resource model (panics if not yet built — C++ would
     /// dereference a null `output`).
     pub fn output(&self) -> &ParamListStandard {
         self.output.as_ref().expect("ProtoModel::output: not built")
+    }
+    /// (kuna) The output resource model, or `None` before `build_param_list`.
+    pub fn output_opt(&self) -> Option<&ParamListStandard> {
+        self.output.as_ref()
     }
     /// Borrow the merged-model state, if this is a merged model.
     pub fn merged(&self) -> Option<&ProtoModelMerged> {
