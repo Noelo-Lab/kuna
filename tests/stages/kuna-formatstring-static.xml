@@ -58,7 +58,9 @@
     hard-float). A %f vararg travels in r2:r3 and a named double in d0, so a
     closed prototype read d0 and d1: f_conv lost its int parameter and printed
     an uninitialized register, f_sum printed (a, b) instead of (a + b, a). ARM
-    declines a floating conversion, and still types the integer site f_is.
+    declines a floating conversion. full still types the integer site f_is;
+    the default types no ARM site (passes 24 to 26 say why), so it renders
+    f_is as off does.
 
     Passes 13 and 14 (off, the default) load fmtedge_x86_64. show passes a
     format that lives in writable .data and is rewritten to "v=%s" before the
@@ -73,14 +75,25 @@
     an unsigned long, show lost the double from xmm0 and grew two phantom
     parameters, and rd's double local became an integer (on ARM an int array).
     x86-64 now passes the double and the int; ARM declines the floating printf
-    conversions, so show and show2 render what off renders, while the scanf
-    pointer is still typed and drops off's phantom trailing argument.
+    conversions, so show and show2 render what off renders, while under full
+    the scanf pointer is still typed and drops off's phantom trailing argument
+    (the default renders rd as off does).
 
     Passes 21 to 23 (off, the default, full) load fmtzu_pe_x86_64, a Win64
     PE32+ whose show_zu and show_td print (n << 32) | 5 with %zu and %td.
     Win64 is LLP64: long is 4 bytes but size_t and ptrdiff_t are 8. Sized as a
     long, the conversion kept only the low half, so the call printed 5 and the
     function lost its parameter. All three passes print the whole expression.
+
+    Passes 24 to 26 (off, the default, full) load fmt_aarch64, pass 1's main
+    built for AArch64 Linux. The default types x86 only. A closed format
+    prototype also changes how the argument trials of the calls around it are
+    scored: a register the format call no longer takes stops vetoing a
+    neighbour's phantom, and one it now takes for certain vetoes a real
+    argument. On x86 every such change measured removed a phantom; on AArch64
+    and ARM32 firmware most added one (an x8 of 0 ahead of the real
+    arguments) or dropped a real one (iproute2 ip's parse_rtattr len). So the
+    default renders AArch64 as off does, and full types it.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -341,12 +354,35 @@ c3
   <com>load function show_td</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_aarch64</com>
+  <com>option listing on</com>
+  <com>option formatstring off</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_aarch64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmt_aarch64</com>
+  <com>option listing on</com>
+  <com>option formatstring full</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="FMTSTATIC #1: off, the %d argument is widened to the register width" min="1" max="1">,\(uint8\)a0,\*a1\);</stringmatch>
-<stringmatch name="FMTSTATIC #2: off, the parameter it came from is unsigned" min="1" max="1">unsigned long main\(uint4 a0,unsigned long \*a1\)</stringmatch>
-<stringmatch name="FMTSTATIC #3: static and full both type the varargs per the specifiers" min="2" max="2">,a0,\(char \*\)\*a1\);</stringmatch>
-<stringmatch name="FMTSTATIC #4: static and full both recover the %d parameter as int" min="2" max="2">unsigned long main\(int4 a0,unsigned long \*a1\)</stringmatch>
+<stringmatch name="FMTSTATIC #1: off, and the default on AArch64, widen the %d argument to the register width" min="3" max="3">,\(uint8\)a0,\*a1\);</stringmatch>
+<stringmatch name="FMTSTATIC #2: off, and the default on AArch64, leave the parameter it came from unsigned" min="3" max="3">unsigned long main\(uint4 a0,unsigned long \*a1\)</stringmatch>
+<stringmatch name="FMTSTATIC #3: static on x86-64 and full on both targets type the varargs per the specifiers" min="3" max="3">,a0,\(char \*\)\*a1\);</stringmatch>
+<stringmatch name="FMTSTATIC #4: static on x86-64 and full on both targets recover the %d parameter as int" min="3" max="3">unsigned long main\(int4 a0,unsigned long \*a1\)</stringmatch>
 <stringmatch name="FMTSTATIC #5: a jump-table join keeps the parameter the %s argument came from" min="3" max="3">void report\(unsigned int a0,unsigned long a1,unsigned long a2\)</stringmatch>
 <stringmatch name="FMTSTATIC #6: a jump-table join keeps both varargs" min="3" max="3">__printf_chk\(1,v1,a1,a2\);</stringmatch>
 <stringmatch name="FMTSTATIC #7: an alloca frame gains no argument past the format's one" min="3" max="3">__printf_chk\(1,"got %s\\n",v3\);</stringmatch>
@@ -355,19 +391,20 @@ c3
 <stringmatch name="FMTSTATIC #10: ARM hard-float keeps the int parameter a %f prints" min="3" max="3">void f_conv\(int4 a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #11: ARM hard-float prints the converted value" min="3" max="3">__printf_chk\(2,"x=%f\\n",SUB84\(\(float8\)\(int8\)a0,0\)</stringmatch>
 <stringmatch name="FMTSTATIC #12: ARM hard-float prints a + b, not d0" min="3" max="3">__printf_chk\(2,"sum=%f a=%f\\n",SUB84\(v2 \+ v3,0\)</stringmatch>
-<stringmatch name="FMTSTATIC #13: ARM still types an integer-only site" min="2" max="2">void f_is\(int4 a0,char \*a1\)</stringmatch>
+<stringmatch name="FMTSTATIC #13: full still types an ARM integer-only site" min="1" max="1">void f_is\(int4 a0,char \*a1\)</stringmatch>
 <stringmatch name="FMTSTATIC #14: a format in writable data is not read" min="2" max="2">void show\(unsigned long a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #15: a %lc argument is not narrowed to char" min="1" max="1">__printf_chk\(1,"&lt;%lc&gt;\\n",a0\);</stringmatch>
 <stringmatch name="FMTSTATIC #16: x86-64 %lf passes the double and the int, no phantom parameter" min="2" max="2">void show\(float8 a0,int4 a1\)</stringmatch>
 <stringmatch name="FMTSTATIC #17: x86-64 %lf prints the double" min="2" max="2">__printf_chk\(1,"value=%lf n=%d\\n",a0,a1\);</stringmatch>
 <stringmatch name="FMTSTATIC #18: x86-64 %lf after an int keeps both arguments" min="2" max="2">__printf_chk\(1,"n=%d v=%lf\\n",a1,a0\);</stringmatch>
-<stringmatch name="FMTSTATIC #19: scanf %lf stores a double on both targets" min="4" max="4">float8 v1; // stack - 0x18</stringmatch>
+<stringmatch name="FMTSTATIC #19: scanf %lf stores a double, under static on x86-64 and full on both targets" min="3" max="3">float8 v1; // stack - 0x18</stringmatch>
 <stringmatch name="FMTSTATIC #20: x86-64 scanf %lf returns the double it read" min="2" max="2">float8 rd\(char \*a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #21: ARM hard-float declines a %lf printf, as off" min="3" max="3">void show\(unsigned int a0,unsigned int a1,unsigned int a2\)</stringmatch>
 <stringmatch name="FMTSTATIC #22: ARM hard-float declines %lf after an int, as off" min="3" max="3">void show2\(unsigned int a0\)</stringmatch>
-<stringmatch name="FMTSTATIC #23: ARM scanf %lf drops the phantom trailing argument" min="1" max="1">__isoc99_sscanf\(a0,"%lf",&amp;v1,0\);</stringmatch>
+<stringmatch name="FMTSTATIC #23: ARM scanf %lf keeps the phantom trailing argument unless full is asked for" min="2" max="2">__isoc99_sscanf\(a0,"%lf",&amp;v1,0\);</stringmatch>
 <stringmatch name="FMTSTATIC #24: no %lf site is typed as an integer" min="0" max="0">void show2?\([a-z0-9]+ a0,unsigned long a1,unsigned long a2,</stringmatch>
 <stringmatch name="FMTSTATIC #25: Win64 %zu prints the whole size_t, not its low half" min="3" max="3">printf\("%zu\\n",a0 &lt;&lt; 0x20 \| 5\);</stringmatch>
 <stringmatch name="FMTSTATIC #26: Win64 %td prints the whole ptrdiff_t, not its low half" min="3" max="3">printf\("%td\\n",a0 &lt;&lt; 0x20 \| 5\);</stringmatch>
 <stringmatch name="FMTSTATIC #27: Win64 %zu and %td keep the 8-byte parameter" min="6" max="6">void show_(zu|td)\(int8 a0\)</stringmatch>
+<stringmatch name="FMTSTATIC #28: the default types no ARM site, so f_is renders as off" min="2" max="2">void f_is\(unsigned int a0,unsigned int a1\)</stringmatch>
 </decompilertest>

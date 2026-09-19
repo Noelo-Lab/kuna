@@ -2567,8 +2567,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "libcsigs" => arch.analysis_libcsigs,
         // (kuna) The LOAD-TIME format-string resolver — a Listing consumer whose
         // per-call-site overrides are computed at the deferred commit point and
-        // applied only when the gate asks for the static half (`static`/`full`).
-        "formatstring" => arch.analysis_formatstring.statik(),
+        // applied only when the gate asks for the static half (`static` on x86,
+        // `full` everywhere).
+        "formatstring" => arch.analysis_formatstring.resolves_at_load(&arch.archid),
         // (kuna) The built-in Win32 API signatures — the Windows half of the
         // `.gdt` stand-in, seeded onto IMPORTED API names only and keyed by entry
         // address. Facts computed at LOAD, COMMITTED only when this gate is on, so

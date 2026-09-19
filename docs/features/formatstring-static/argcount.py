@@ -265,9 +265,13 @@ def other_calls(code):
     """(callee, argument count) per non-format call, in order of appearance."""
     out = []
     code = code[code.find('{') + 1:]
+    code = re.sub(r'//[^\n]*', '', code)
+    lits = [m.span() for m in re.finditer(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'', code)]
     for m in CALLNAME.finditer(code):
         name = m.group(1)
         if name in SLOT or NOTCALL.match(name):
+            continue
+        if any(a <= m.start() < b for a, b in lits):
             continue
         out.append((name, len(split_args(code, m.end()))))
     return out

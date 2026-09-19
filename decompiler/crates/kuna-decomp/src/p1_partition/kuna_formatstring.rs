@@ -16,6 +16,9 @@
 //! assign a named argument's. That is only true where the target passes a
 //! variadic argument the way it passes a named one, which [`VarargAbi`] records
 //! per target and every override is checked against.
+//!
+//! `static` resolves at load on x86 only ([`reached_by_default`]); `full` resolves
+//! on every target [`VarargAbi`] admits.
 
 use kuna_base::error::{KunaError, KunaResult};
 
@@ -56,9 +59,18 @@ impl FormatStringMode {
         !matches!(self, FormatStringMode::Off)
     }
 
-    /// Does the LOAD-TIME resolver run?
+    /// Does the LOAD-TIME resolver run on some target?
     pub fn statik(self) -> bool {
         matches!(self, FormatStringMode::Static | FormatStringMode::Full)
+    }
+
+    /// Does the LOAD-TIME resolver run on the target `archid` names?
+    pub fn resolves_at_load(self, archid: &str) -> bool {
+        match self {
+            FormatStringMode::Off => false,
+            FormatStringMode::Static => reached_by_default(archid),
+            FormatStringMode::Full => true,
+        }
     }
 
     /// Does the decompile→override→re-decompile loop run?
@@ -144,6 +156,19 @@ pub fn vararg_abi(archid: &str, family: Option<ImageFamily>) -> VarargAbi {
     }
 }
 
+/// Does `static`, the default, type the target `archid` names? x86 only.
+///
+/// A closed format prototype also changes how P4 scores the argument trials of
+/// the calls around it: a register the format call no longer takes stops vetoing
+/// a neighbour's trial, and one it now takes for certain starts to. On x86 every
+/// such change measured was a phantom argument removed. On AArch64 and ARM32,
+/// where the argument registers double as the scratch registers, most added a
+/// phantom (an `x8` of `0` ahead of the real arguments) or dropped a real one,
+/// so those targets are typed only when `full` is asked for.
+pub fn reached_by_default(archid: &str) -> bool {
+    archid.split(':').next() == Some("x86")
+}
+
 /// The variadic convention of the loaded target: the loader's answer when it
 /// recorded one, else what the language id alone says.
 pub fn target_vararg_abi(arch: &Architecture) -> VarargAbi {
@@ -218,6 +243,20 @@ mod tests {
         assert!(!VarargAbi::Integer.admits(&dbl, 8));
         assert!(VarargAbi::Named.admits(&dbl, 8));
         assert!(!VarargAbi::Nothing.admits(&int4, 4));
+    }
+
+    #[test]
+    fn static_reaches_x86_and_full_every_target() {
+        for id in ["x86:LE:64:default:gcc", "x86:LE:32:default:windows"] {
+            assert!(FormatStringMode::Static.resolves_at_load(id), "{id}");
+            assert!(FormatStringMode::Full.resolves_at_load(id), "{id}");
+        }
+        for id in ["AARCH64:LE:64:v8A:default", "ARM:LE:32:v8:default", "RISCV:LE:64:RV64GC:gcc"] {
+            assert!(!FormatStringMode::Static.resolves_at_load(id), "{id}");
+            assert!(FormatStringMode::Full.resolves_at_load(id), "{id}");
+            assert!(!FormatStringMode::Off.resolves_at_load(id), "{id}");
+        }
+        assert!(!FormatStringMode::Off.resolves_at_load("x86:LE:64:default:gcc"));
     }
 
     #[test]

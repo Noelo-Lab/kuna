@@ -579,7 +579,7 @@ fn listing_consumer_passes(arch: &Architecture) -> Vec<(bool, Box<dyn AnalysisPa
         // walks. `full` runs it too — the decompile-time loop then covers only
         // the sites it declined.
         (
-            arch.analysis_formatstring.statik(),
+            arch.analysis_formatstring.resolves_at_load(&arch.archid),
             Box::new(crate::formatstring::kuna_fmtstatic::FormatStringStaticPass),
         ),
     ]
@@ -1328,18 +1328,23 @@ mod tests {
             ]
         );
 
-        // `static` and `full` both ask for the load-time resolver; only `off`
-        // leaves it out.
-        for mode in [
-            kuna_decomp::kuna_formatstring::FormatStringMode::Static,
-            kuna_decomp::kuna_formatstring::FormatStringMode::Full,
+        // `static` asks for the load-time resolver on x86 and `full` on every
+        // target; `off` never does.
+        use kuna_decomp::kuna_formatstring::FormatStringMode::{Full, Off, Static};
+        for (archid, mode, want) in [
+            ("x86:LE:64:default:gcc", Static, true),
+            ("x86:LE:64:default:gcc", Full, true),
+            ("x86:LE:64:default:gcc", Off, false),
+            ("AARCH64:LE:64:v8A:default", Static, false),
+            ("AARCH64:LE:64:v8A:default", Full, true),
         ] {
+            arch.archid = archid.to_string();
             arch.analysis_formatstring = mode;
             let enabled = listing_consumer_passes(&arch)
                 .into_iter()
                 .find(|(_, pass)| pass.id() == "formatstring")
                 .map(|(enabled, _)| enabled);
-            assert_eq!(enabled, Some(true), "{}", mode.as_str());
+            assert_eq!(enabled, Some(want), "{archid} {}", mode.as_str());
         }
     }
 
