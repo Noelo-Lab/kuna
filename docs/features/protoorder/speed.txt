@@ -1,26 +1,29 @@
-# protoorder -- speed, round 11 (main 6e4f6fa5 vs this branch)
+# protoorder -- speed, round 11 (main d96e3408 vs this branch)
 
-Main (a fresh `origin/main` 6e4f6fa5 build, structsynth on) against this
-branch's final engine, whole-binary `decompile-all --json`, the two alternating
-inside each iteration (order swapped every iteration), min and median of 15,
-three slice groups side by side (box load 3-14). `scripts.pipeline.timeit`
-cannot measure this option: it times `kuna decompile`, where the option is inert.
+Main (a fresh `origin/main` d96e3408 build: structsynth, boolbyte and charbyte
+on) against this branch's final engine rebased onto it, whole-binary
+`decompile-all --json`, the two alternating inside each iteration (order swapped
+every iteration), min and median of 15, three slice groups side by side (box
+load 2-9). `scripts.pipeline.timeit` cannot measure this option: it times `kuna
+decompile`, where the option is inert. The last column is the same engine
+measured against 6e4f6fa5 before the charbyte rebase (load 3-14).
 
-| slice | main min / median | this branch min / median | delta min / median |
-|---|---|---|---|
-| fmt -O2 (46 KiB) | 4,134 / 4,177 ms | 4,158 / 4,203 ms | +0.6% / +0.6% |
-| kmod -O2 (158 KiB) | 7,167 / 7,367 ms | 7,321 / 7,438 ms | +2.1% / +1.0% |
-| ls -O2 (146 KiB) | 13,669 / 15,076 ms | 14,048 / 15,617 ms | +2.8% / +3.6% |
-| libselinux -O2 (176 KiB) | 6,499 / 6,634 ms | 6,680 / 6,784 ms | +2.8% / +2.3% |
-| ip -O2 (678 KiB) | 27,375 / 29,249 ms | 27,967 / 28,836 ms | +2.2% / -1.4% |
-| e2fsck -O2 (706 KiB) | 26,724 / 27,313 ms | 27,248 / 27,878 ms | +2.0% / +2.1% |
-| tar -O2 (517 KiB) | 45,384 / 47,024 ms | 45,838 / 47,939 ms | +1.0% / +1.9% |
-| betaflight -O2 (520 KiB, ARM) | 54,652 / 55,689 ms | 55,697 / 56,625 ms | +1.9% / +1.7% |
+| slice | main min / median | this branch min / median | delta min / median | on 6e4f6fa5, delta min |
+|---|---|---|---|---|
+| fmt -O2 (46 KiB) | 4,111 / 4,152 ms | 4,177 / 4,210 ms | +1.6% / +1.4% | +0.6% |
+| kmod -O2 (158 KiB) | 7,130 / 7,182 ms | 7,280 / 7,331 ms | +2.1% / +2.1% | +2.1% |
+| ls -O2 (146 KiB) | 13,481 / 13,877 ms | 13,735 / 14,047 ms | +1.9% / +1.2% | +2.8% |
+| libselinux -O2 (176 KiB) | 6,460 / 6,521 ms | 6,604 / 6,674 ms | +2.2% / +2.3% | +2.8% |
+| ip -O2 (678 KiB) | 27,054 / 27,548 ms | 26,811 / 27,422 ms | -0.9% / -0.5% | +2.2% |
+| e2fsck -O2 (706 KiB) | 26,237 / 26,631 ms | 26,902 / 27,132 ms | +2.5% / +1.9% | +2.0% |
+| tar -O2 (517 KiB) | 44,189 / 44,556 ms | 45,693 / 46,051 ms | +3.4% / +3.4% | +1.0% |
+| betaflight -O2 (520 KiB, ARM) | 54,296 / 54,667 ms | 55,062 / 55,619 ms | +1.4% / +1.7% | +1.9% |
 
-Every slice is inside the +5% budget on the minimum; the worst are ls and
-libselinux at +2.8%. ip, e2fsck, tar and betaflight are the binaries over
-500 KiB. The pointee check walks the loads and stores through a pointer vote's
-value only for a float or composite pointee, and stops at 512 steps.
+Every slice is inside the +5% budget on the minimum, in both measurements; the
+worst here is tar at +3.4%. ip, e2fsck, tar and betaflight are
+the binaries over 500 KiB. The pointee check walks the loads and stores through
+a pointer vote's value only for a float or composite pointee, and stops at 512
+steps.
 
 Rounds 8-10 measured the branch against e1139df9 (all within +5% on the
 minimum after re-runs); their tables are in `record.json` under `speed.round8`,
