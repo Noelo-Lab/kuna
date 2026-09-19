@@ -2483,7 +2483,11 @@ every other binary's pass list is byte-identical to before the pass existed):
     registers, and RISC-V also aligns a double-width vararg to an even register
     pair. A site with a floating or wider-than-pointer conversion is declined
     there. Assigned to `d0`, the `%f` of `printf("x=%f\n", (double)x)` dropped
-    the caller's `int` parameter and printed an uninitialized register.
+    the caller's `int` parameter and printed an uninitialized register. On
+    ARM32 this reaches ARM-state code only: the window of a Thumb call site
+    does not fold today, because the resolver's lift does not see the Thumb
+    decode mode the Listing decoded that code with, so every Thumb site is
+    declined and renders exactly as under `off`.
   - Apple AArch64 passes every vararg on the stack, so no site is typed there.
     On the in-tree `macho_imports_arm64`, a closed `printf("%d\n", ...)` read
     `w1`, invented a second parameter and printed it in place of `a0 * 3 + 7`.

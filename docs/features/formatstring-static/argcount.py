@@ -9,6 +9,14 @@ literal, or an arithmetic expression whose known operands agree. `?` (unknown)
 never counts as a mismatch. LFLOAT rows list every printf-family site whose
 format carries `l` on a floating conversion (%lf %le %lg %la), with the class
 of the argument each such conversion received in armB.
+
+CALLARITY rows cover every OTHER call in a changed function: calls to one
+callee are paired in order of appearance, and a pair whose argument count
+differs (and whose per-callee multiset of counts differs, so a reordered
+body is not a change) is listed with the callee's own decompiled arity
+(armA, armB) as the oracle: `toward` when armB now matches it and armA did not, `away` for the
+reverse, `?` otherwise. CALLSHAPE counts functions where a callee's number of
+call sites differs between the arms (restructured; not paired).
 """
 import glob, json, os, re, sys
 from collections import Counter
@@ -249,6 +257,60 @@ def sig_arity(code):
     return None
 
 
+CALLNAME = re.compile(r'(?<![\w.>])([A-Za-z_]\w*)\(')
+NOTCALL = re.compile(r'^(?:if|while|for|switch|return|sizeof|[av]\d+|[A-Z0-9_]+)$')
+
+
+def other_calls(code):
+    """(callee, argument count) per non-format call, in order of appearance."""
+    out = []
+    code = code[code.find('{') + 1:]
+    for m in CALLNAME.finditer(code):
+        name = m.group(1)
+        if name in SLOT or NOTCALL.match(name):
+            continue
+        out.append((name, len(split_args(code, m.end()))))
+    return out
+
+
+def callee_arities(fns):
+    ar = {}
+    for f in fns.values():
+        n = sig_arity(f.get('code') or '')
+        if n is not None and f.get('name'):
+            ar[f['name']] = n
+    return ar
+
+
+def call_changes(ca, cb, ar_a, ar_b):
+    """Paired per-callee argument-count changes, plus the restructured callees."""
+    from collections import defaultdict
+    xa, xb = defaultdict(list), defaultdict(list)
+    for n, c in other_calls(ca):
+        xa[n].append(c)
+    for n, c in other_calls(cb):
+        xb[n].append(c)
+    changes, shape = [], 0
+    for n in sorted(set(xa) | set(xb)):
+        if len(xa[n]) != len(xb[n]):
+            shape += 1
+            continue
+        if sorted(xa[n]) == sorted(xb[n]):
+            continue
+        for i, (p, q) in enumerate(zip(xa[n], xb[n])):
+            if p == q:
+                continue
+            want = {ar_a.get(n), ar_b.get(n)} - {None}
+            if q in want and p not in want:
+                verdict = 'toward'
+            elif p in want and q not in want:
+                verdict = 'away'
+            else:
+                verdict = '?'
+            changes.append((n, i, p, q, ar_a.get(n), ar_b.get(n), verdict))
+    return changes, shape
+
+
 def load(f):
     try:
         return {x['address']: x for x in json.load(open(f))['functions']}
@@ -269,6 +331,7 @@ def main(d, a, b):
         tot['binaries'] += 1
         tot['functions'] += len(B)
         per = Counter()
+        ar_a, ar_b = callee_arities(A), callee_arities(B)
         for k, fbn in B.items():
             cb = fbn.get('code') or ''
             ca = (A[k].get('code') or '') if k in A else None
@@ -302,6 +365,12 @@ def main(d, a, b):
                 if x not in cb_cls:
                     per['fixed_class_mismatch'] += 1
                     rows.append(f'FIXEDCLASS {n} {hex(k)} {x}')
+            cc, shape = call_changes(ca, cb, ar_a, ar_b)
+            per['callshape'] += shape
+            for callee, i, p, q, oa, ob, verdict in cc:
+                per['callarity_' + {'toward': 'toward', 'away': 'away', '?': 'unknown'}[verdict]] += 1
+                rows.append(f'CALLARITY {n} {hex(k)} {fbn.get("name")} -> {callee}#{i} {p}->{q} '
+                            f'callee={oa}/{ob} {verdict}')
             ra, rb = sig_arity(ca), sig_arity(cb)
             if ra is not None and rb is not None and ra != rb:
                 per['arity_up' if rb > ra else 'arity_down'] += 1

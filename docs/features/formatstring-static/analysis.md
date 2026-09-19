@@ -309,6 +309,13 @@ the whole expression with an `int8` parameter, and the round-3 build fails the
   argument's type is right; the literal is rendered from the string markup,
   which reads `h\0\0\0e...` as a one-character narrow string. That is the
   string tier's, not this option's.
+- Thumb code is not typed. The window of a Thumb call site
+  (`ldr r1,[pc,#12]; add r1,pc; blx err@plt`) does not fold, because the
+  resolver's lift does not see the Thumb decode mode the Listing decoded that
+  code with, so every site is declined: a gcc-13 armhf `-mthumb -O2` build of
+  the review's conversion program renders byte-identically to `off`. ARM-state
+  (`-marm`) code is typed. The output is `off`'s, so this is lost coverage,
+  not wrong output.
 
 ## Delay slots
 
