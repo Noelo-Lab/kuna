@@ -24,3 +24,14 @@
    false positive — the 7 structsynth rows among the final re-measure's 8 worse functions are that class.
 11. 2026-09-19 Stage-3 re-measure (`results.md`) against decbench `main` @ 625e892, the checkout the baseline was
    taken with, so the before/after pair shares one metric; newer decbench commits are not mixed in.
+12. 2026-09-20 round-C re-measure: the decbench checkout has moved past `625e892` and the newer
+   `type_match` drops `_effective_offset`, so the campaign's instruments fail against it. The pin is
+   kept by extracting `625e892` read-only (`git archive`) and repointing the venv's PEP-660 editable
+   finder at that copy (`final-c/pindb.py`) — the finder outranks `PYTHONPATH`, so a path-only pin
+   silently measures with the new metric. Verified by re-running the round-B binary: 986 perfect,
+   0 of 10,748 values differ.
+13. protoorder's call-site vote is accepted for `type_match` and rejected for struct identity: it is
+   +363 perfect on the 444 slices and it drops per-parameter layout precision from .89 to .55,
+   because a caller's parameter takes the callee's record even where the caller measured its own
+   (`final-c/layout-ablation.md`). Round C ships it on (the metric the campaign is judged by improves
+   and no wrong C is emitted); the caller-measured-layout carve-out is the first round-D item.
