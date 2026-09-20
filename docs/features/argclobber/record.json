@@ -18,7 +18,7 @@
  "destructive": true,
  "rule_change": {
   "admits": "the callee's RECOVERED prototype (stated by `protoorder types`) exists for this entry, has no parameter overlapping the argument's register bytes, AND accounts -- storage for storage -- for every argument the drop leaves behind",
-  "vetoes": "unchanged caller-side clauses, plus the bounded callee-entry walk (`proves_input`) demoted from admitting to vetoing",
+  "vetoes": "unchanged caller-side clauses, plus TWO readings of the callee's body from the per-image entry-liveness summary: `proves_input` (the bounded entry walk positively sees the register READ before it is written) and `opaque_transfer_free` (the callee must have WRITTEN the register before every control transfer the walk could not NAME -- CALLIND, BRANCHIND, CALLOTHER, an indexed register-file LOAD/STORE, an undecodable instruction; a direct CALL is not one of them, because its target has a name and the callee's own recovery accounted for it). Neither can admit a drop.",
   "inert_where": [
    "kuna decompile (one function per forked process)",
    "decompile-all narrowed by --addr/--functions",
@@ -29,7 +29,8 @@
   ],
   "value_naming": "`on` now means the new rule; no `proto` value was added, because the old rule is unsound where they differ and identical where they do not",
   "why_the_accounting_clause": "a recovery SHORT of what the call passes is not a statement that the tail is unwanted but a statement that the recovery did not reach the tail. A forwarding thunk (`mov (%rdi),%rax; jmp *%rax`) recovers one parameter while the function it tail calls consumes three, and protoorder states that short list in BOTH its modes; the free-bytes test alone deleted the forwarded argument. ce-forward-thunk.{c,s}",
-  "protoorder_does_not_decline_a_variadic": "Decline::UnderRecovered and Decline::RegisterFileFull live in park_recovered's LOCK branch; the default `types` mode returns through state_recovered_types before them. Decline::Variadic is only ever set from a declared `...`, which Decline::Declared rejects one branch earlier, so it cannot fire on a stripped image. Measured: `long vlog(int,long,...)` with a va_arg read, gcc -O2 stripped, prints `[protoorder] state sub_11d0 params=3` under KUNA_PROTOORDER_TRACE=1. What declines the drop at a stripped variadic is the recovered list itself -- a register-save prologue reads every argument register, so the list carries the one the drop would take."
+  "protoorder_does_not_decline_a_variadic": "Decline::UnderRecovered and Decline::RegisterFileFull live in park_recovered's LOCK branch; the default `types` mode returns through state_recovered_types before them. Decline::Variadic is only ever set from a declared `...`, which Decline::Declared rejects one branch earlier, so it cannot fire on a stripped image. Measured: `long vlog(int,long,...)` with a va_arg read, gcc -O2 stripped, prints `[protoorder] state sub_11d0 params=3` under KUNA_PROTOORDER_TRACE=1. What declines the drop at a stripped variadic is the recovered list itself -- a register-save prologue reads every argument register, so the list carries the one the drop would take.",
+  "why_the_opaque_transfer_clause": "a recovered prototype states what a callee NAMES. `long fwd(struct box*o,long a,long b){ if(!a) return 0; return o->fn(o,a,b); }` compiles under gcc -O2 to `test %rsi,%rsi; je; jmp *(%rdi)`, recovering exactly the TWO parameters a drop would leave behind -- so the accounting clause is satisfied and the forwarded third argument was deleted along with the preceding call's rax:rdx return half. At the `jmp` rdx is unwritten, and that is what declines it. An incomplete summary (probe budget, runaway written set) now declines too, which subsumes ce-probe-budget a second, independent way."
  },
  "counterexamples": {
   "programs": [
@@ -37,10 +38,15 @@
    "ce-probe-budget.c (read over the 192-instruction probe budget)",
    "ce-probe-budget.s (same shape, hand written)",
    "ce-import.c + ce-import-lib.c (PLT import, no body)",
-   "ce-forward-thunk.c + ce-forward-thunk.s (indirect tail call; recovers 1 parameter, forwards 3)"
+   "ce-forward-thunk.c + ce-forward-thunk.s (indirect tail call; recovers 1 parameter, forwards 3)",
+   "ce-forward-thunk-2param.c -- a 2-parameter forwarding thunk in plain C (no hand asm); declined by opaque_transfer_free, NOT by the prototype"
   ],
-  "old_rule": "the first four lose the argument under the pre-#689 body-only rule; ce-forward-thunk loses it under the free-bytes-only form of the recovered-prototype rule, which is why the accounting clause was added",
-  "new_rule": "all five are byte-identical to the option-off output"
+  "old_rule": "the first four lose the argument under the pre-#689 body-only rule; ce-forward-thunk loses it under the free-bytes-only prototype clause; ce-forward-thunk-2param loses it under the accounting clause too",
+  "new_rule": "all six are byte-identical to the option-off output",
+  "pinned_by": {
+   "ce-remainder-or-pair": "tests/cli/argclobber-keeps-an-argument-the-callee-takes.json",
+   "ce-forward-thunk-2param": "tests/cli/argclobber-keeps-an-argument-a-thunk-forwards.json"
+  }
  },
  "sweep": {
   "corpus": "every stripped ELF in decbench results/full_run_address_2026-09-11 (O0, O2, O2-noinline)",
@@ -74,7 +80,8 @@
   ],
   "hunks_outside_the_documented_effect": 0,
   "note": "the raw diffs are large only because dropping one declaration renumbers every vN in that function; with names normalized the whole corpus delta is 21 functions x a handful of lines.",
-  "re_measured_after_accounting_clause": "770 binaries re-swept: identical DIFF set (21), and all 21 on-arm outputs byte-identical to the pre-clause run, so every counter and every hunk class in sweep-2026-09-20.txt stands unchanged"
+  "re_measured_after_accounting_clause": "770 binaries re-swept: identical DIFF set (21), and all 21 on-arm outputs byte-identical to the pre-clause run, so every counter and every hunk class in sweep-2026-09-20.txt stands unchanged",
+  "re_measured_after_opaque_clause": "770 binaries re-swept on base d8b9c0b1f: identical DIFF set (21), and every hunk identical to the pre-clause sweep except e2fsck's `int8 v3` -> `void *v3`, which is #690 ptrfromuse on the base and not this option (the dropped argument there is the same). 0 non-zero exits."
  },
  "benchmark": {
   "corpus": "444 campaign slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), scripts.decbench.typesweep, DECBENCH_NO_CACHE=1",
@@ -105,6 +112,20 @@
    "moved_onto_perfect": 0,
    "moved_off_perfect": 0,
    "note": "re-run after the rebase because #690 is type-affecting; the pre-rebase run on 3433e05d5 was 1147 -> 1147, also 0/0"
+  },
+  "rebased_base": {
+   "base": "d8b9c0b1f",
+   "perfect_off": 1351,
+   "perfect_on": 1351,
+   "aggregate_off": 3646.07,
+   "aggregate_on": 3646.07,
+   "improved": 0,
+   "worse": 0,
+   "moved_onto_perfect": 0,
+   "moved_off_perfect": 0,
+   "functions_scored": 10748,
+   "byte_identical_variables": 10746,
+   "scored_differently": 0
   }
  },
  "gates": {
@@ -204,5 +225,42 @@
   "of_those_vN_renumbering_only": 18,
   "of_those_a_real_change": "2 -- bash expand_prompt at O2 and O2-noinline, stack slot -160 undefined8 -> char *, the preceding call's return narrowing; an improvement",
   "note": "the 21 dropped arguments are CALL-SITE arguments, which variables[] does not export, which is why type_match cannot see this change either way"
+ },
+ "arity_counters_after_opaque_clause": {
+  "surface": "kuna decompile-all --json variables[], the 21 changed binaries",
+  "functions": 23510,
+  "functions_gained": 0,
+  "functions_lost": 0,
+  "arg_rows_off": 47887,
+  "arg_rows_on": 47887,
+  "functions_with_a_changed_arg_count": 0,
+  "functions_with_a_changed_var_row_count": 0,
+  "signature_diff_functions": 20,
+  "note": "18 are vN renumbering after one declaration goes; the two bash expand_prompt rows turn an unnamed `local_a0 undefined8` stack slot into a typed `char *` (an improvement). No function gains or loses an argument row, and no variable row is fabricated."
+ },
+ "speed_after_opaque_clause": {
+  "method": "kuna decompile-all, interleaved, min-of-15 (bash min-of-11), same build both arms, base d8b9c0b1f",
+  "fmt_O2": {
+   "off_ms": 4102.9,
+   "on_ms": 4105.6,
+   "delta_pct": 0.07
+  },
+  "ls_O2": {
+   "off_ms": 13568.7,
+   "on_ms": 13545.8,
+   "delta_pct": -0.17
+  },
+  "sort_O2": {
+   "off_ms": 14228.6,
+   "on_ms": 14295.0,
+   "delta_pct": 0.47
+  },
+  "bash_O2": {
+   "off_ms": 80556.1,
+   "on_ms": 80627.3,
+   "delta_pct": 0.09
+  },
+  "worst_delta_pct": 0.47,
+  "budget_pct": 5.0
  }
 }

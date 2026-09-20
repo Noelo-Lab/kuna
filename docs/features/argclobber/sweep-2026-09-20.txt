@@ -200,3 +200,58 @@ Speed spot-check on the rebased build (interleaved min-of-15, quiet machine):
   sort O2  14028.7 ms -> 14059.6 ms  +0.22%
 
 consistent with the full four-case run above.
+
+
+Re-sweep after the unnameable-transfer clause
+----------------------------------------------------------------------
+The callee clause gained a second reading of the callee's body: the register
+must be WRITTEN before every path terminator whose control leaves for a target
+the entry walk could not NAME (CALLIND, BRANCHIND, CALLOTHER, an indexed
+register-file LOAD/STORE, an undecodable instruction). A direct CALL is not one
+of them. `ce-forward-thunk-2param.c` is the program that needs it: a plain-C
+forwarding dispatcher recovers exactly the TWO parameters a drop would leave, so
+the surviving-argument accounting admits it and the forwarded third argument was
+deleted. Strictly narrowing.
+
+All 770 binaries re-swept on base d8b9c0b1f, same build, both arms:
+
+  binaries swept ............ 770
+  runs exiting non-zero ..... 0
+  binaries whose output moved 21   (DIFF SET IDENTICAL to the sweep above)
+  functions changed ......... 21
+  reg-storage locals removed  19   declarations removed, net  38
+  call sites losing one arg   21   call sites gaining one arg  2
+
+Hunk-for-hunk, 20 of the 21 diffs are byte-identical to the pre-clause sweep
+(ignoring @@ line numbers). The exception is e2fsck, where `int8 v3` reads
+`void *v3` and its member accesses carry an `(int8)` cast -- that is #690
+ptrfromuse on the base, not this option: the dropped argument there is the same
+`ext2fs_dblist_sort2(*(void **)((int8)v3 + 0x90),sub_27c40,v10)` -> `(...,sub_27c40)`.
+
+Arity counters on the JSON `variables[]` surface (the 21 changed binaries):
+
+  functions compared ........ 23,510
+  functions gained / lost ... 0 / 0
+  `kind: arg` rows .......... 47,887 off -> 47,887 on
+  functions whose arg count changed .......... 0
+  functions whose variable-row count changed . 0
+  functions whose variable list differs ...... 20
+
+Eighteen of those 20 are vN renumbering behind one dropped declaration. The two
+`bash` `expand_prompt` rows turn an unnamed `local_a0 undefined8` stack slot into
+a typed `char *`. Nothing is fabricated.
+
+Typesweep, 444 slices, same base:
+
+  type_match PERFECT   base 1351 -> test 1351  (+0)
+  aggregate            3646.07 -> 3646.07      (+0.00)
+  improved 0, worsened 0, moved onto/off perfect 0/0
+
+Speed, interleaved min-of-15 (bash min-of-11), whole-binary `decompile-all`:
+
+  fmt  O2   4102.9 ms ->  4105.6 ms   +0.07%
+  ls   O2  13568.7 ms -> 13545.8 ms   -0.17%
+  sort O2  14228.6 ms -> 14295.0 ms   +0.47%
+  bash O2  80556.1 ms -> 80627.3 ms   +0.09%  (min-of-11)
+
+Worst +0.47%, budget +5%.
