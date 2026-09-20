@@ -331,5 +331,77 @@
    "unchanged": "12 of 16 binaries byte-identical in both arms",
    "classification": "every hunk is a fabricated literal replaced by the address it displaced; no statement moved, no arity change"
   }
+ },
+ "speed_round2": {
+  "method": "interleaved min-of-15, three arms rotated per iteration on a contended box: the pre-fix build (== main's default), the new default, and the new default with `charptr on`. `kuna decompile-all <bin> --json --max-fn-seconds 120`, O2 fmt/ls/sort + bash.",
+  "raw": {
+   "fmt": {
+    "main_default": {
+     "min_ms": 4220.0,
+     "median_ms": 4786.1
+    },
+    "new_default": {
+     "min_ms": 4229.7,
+     "median_ms": 4623.9
+    },
+    "new_on": {
+     "min_ms": 4315.1,
+     "median_ms": 4758.9
+    },
+    "delta_min_pct_newdefault_vs_main": 0.23,
+    "delta_min_pct_on_vs_newdefault": 2.02
+   },
+   "ls": {
+    "main_default": {
+     "min_ms": 13647.0,
+     "median_ms": 14115.4
+    },
+    "new_default": {
+     "min_ms": 13674.6,
+     "median_ms": 14155.4
+    },
+    "new_on": {
+     "min_ms": 13716.2,
+     "median_ms": 14292.9
+    },
+    "delta_min_pct_newdefault_vs_main": 0.2,
+    "delta_min_pct_on_vs_newdefault": 0.3
+   },
+   "sort": {
+    "main_default": {
+     "min_ms": 14439.3,
+     "median_ms": 14830.4
+    },
+    "new_default": {
+     "min_ms": 14133.5,
+     "median_ms": 14816.3
+    },
+    "new_on": {
+     "min_ms": 14739.1,
+     "median_ms": 15872.9
+    },
+    "delta_min_pct_newdefault_vs_main": -2.12,
+    "delta_min_pct_on_vs_newdefault": 4.28
+   },
+   "bash": {
+    "main_default": {
+     "min_ms": 86130.4,
+     "median_ms": 89257.3
+    },
+    "new_default": {
+     "min_ms": 85814.0,
+     "median_ms": 90495.6
+    },
+    "new_on": {
+     "min_ms": 87145.4,
+     "median_ms": 90704.0
+    },
+    "delta_min_pct_newdefault_vs_main": -0.37,
+    "delta_min_pct_on_vs_newdefault": 1.55
+   }
+  },
+  "worst_newdefault_vs_main_pct": 0.23,
+  "worst_on_vs_newdefault_pct": 4.28,
+  "verdict": "the loader fix is free (worst +0.23%); the option is within the +5% budget (worst +4.28% on sort)"
  }
 }
