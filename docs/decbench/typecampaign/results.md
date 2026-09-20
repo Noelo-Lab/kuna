@@ -437,9 +437,9 @@ largest single gap to it (−1,119 TP).
 | O0 | du | 920 → 916 → 923 | 6 → 5 → 5 | 41 → 39 → 39 |
 | **total** | | **7,085 → 6,945 → 6,970** | **151 → 66 → 66** | **261 → 252 → 250** |
 
-Round C costs 25 declarations, all at O0, where protoorder's argument casts and `void *`
-parameters split a few expressions that used to fold; single-def/single-read temporaries go
-974 → 1,009 for the same reason. The phantom-`rdx` shape is **11 → 9** (ls's two are gone;
+Round C adds 25 declarations net — +28 at O0, −3 at O2 — where protoorder's argument casts and
+`void *` parameters split a few expressions that used to fold; single-def/single-read temporaries
+go 974 → 1,009 for the same reason. The phantom-`rdx` shape is **11 → 9** (ls's two are gone;
 fmt's 2 and du's 7 remain).
 
 **`fmt::main` is still the named bad case.** By default `sub_3700` is called with one, two and
