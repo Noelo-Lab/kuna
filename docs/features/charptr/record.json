@@ -85,12 +85,13 @@
    "on": {
     "perfect_off": 1349,
     "perfect_on": 1353,
-    "aggregate_off": 3657.76,
-    "aggregate_on": 3662.69,
+    "aggregate_off": 3659.62,
+    "aggregate_on": 3664.55,
     "onto_perfect": 4,
     "off_perfect": 0,
     "improved": 14,
-    "worse": 6
+    "worse": 6,
+    "note": "Re-run in review round 2 on the rebased tree (base 69d252df3 = #694) with the loader fix in. moved.csv is byte-identical to the pre-rebase run; the base aggregate moved 3657.76 -> 3659.62, which is #694's own published delta, so the loader fix costs the metric nothing (it changes how a constant is SPELLED, and decbench scores variables[])."
    },
    "declared_callee_half_only": {
     "perfect_off": 1349,
@@ -141,6 +142,10 @@
    "result": "identical: perfect 1349 -> 1353, aggregate 3657.76 -> 3662.69, 4 onto perfect, 0 off perfect, 14 improved, 6 worse",
    "moved_rows": "byte-identical to the pre-rebase run (.scratch/sweep-uses2/moved.csv), diff empty",
    "note": "Re-measured after the #689 rebase. The later #694 rebase is a p5 constant-vs-function fix plus a stage test; it moved no charptr gate and no charptr row."
+  },
+  "strict_fix_metric_control": {
+   "claim": "the loader-table read-only change is metric-neutral",
+   "evidence": "base perfect 1349 == the campaign number for main, base aggregate 3659.62 == #694's published post-value, and the 24 moved rows are byte-identical to the previous run"
   }
  },
  "corpus_diff": {
