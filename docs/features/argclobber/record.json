@@ -130,6 +130,22 @@
    "functions_scored": 10748,
    "byte_identical_variables": 10746,
    "scored_differently": 0
+  },
+  "post_forwarding_clause_2026_09_20": {
+   "base": "origin/main d8b9c0b1f, same build both arms, DECBENCH_NO_CACHE=1",
+   "slices": 444,
+   "functions_scored": 10748,
+   "perfect_off": 1351,
+   "perfect_on": 1351,
+   "aggregate_off": 3646.07,
+   "aggregate_on": 3646.07,
+   "moved_onto_perfect": 0,
+   "moved_off_perfect": 0,
+   "improved": 0,
+   "worse": 0,
+   "control_byte_identical_variables": 10746,
+   "control_scored_differently": 0,
+   "note": "unchanged from the pre-forwarding measurement: the metric scores variables[], and neither a call's argument nor a register local is one."
   }
  },
  "gates": {
