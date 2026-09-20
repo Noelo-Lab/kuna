@@ -3415,11 +3415,11 @@ fn usage_decompile_all() {
          time with the serial names otherwise. A worker cannot see another\n\
          worker's callees, so the pool does not type call arguments\n\
          callee-first: on this surface it matches --jobs 1 with --option\n\
-         protoorder off on both. Progress goes to\n\
-         stderr. Every worker loads the binary itself, so peak memory is roughly\n\
-         N times one worker's RSS. --jobs-chunk N sets the functions per worker\n\
-         invocation (bigger = less load overhead, more\n\
-         peak RSS); --jobs-full-load makes each worker re-run whole-binary\n\
+         protoorder off on both. Progress goes to stderr. Every worker loads\n\
+         the binary itself, so peak memory is roughly N times one worker's RSS.\n\
+         --jobs-chunk N sets the functions per worker invocation (bigger =\n\
+         less load overhead, more peak RSS); --jobs-full-load makes each\n\
+         worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
          2 MiB, and fast at 2 MiB or larger. Explicit --option values win.\n\

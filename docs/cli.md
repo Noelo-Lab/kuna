@@ -1347,8 +1347,12 @@ Behaviors specific to `decompile-all`:
     the serial answers. The run says so on stderr:
 
     ```text
-    [kuna --jobs] structsynth: 106 function(s) with synthesized structures named as --jobs 1 names them: 100 renamed, 10 decompile(s) again
+    [kuna --jobs] structsynth: 106 function(s) with synthesized structures named as --jobs 1 --option protoorder off names them: 100 renamed, 10 decompile(s) again
     ```
+
+    The line names the serial run it replayed: on `decompile-all` that is the
+    one without the callee-first order, and on `decompile-project` and
+    `decompile-graph`, which never take that order, plain `--jobs 1`.
 
     The second decompile's questions are checked against the first (a question
     asked twice counts once). A function whose answers change what it asks next
