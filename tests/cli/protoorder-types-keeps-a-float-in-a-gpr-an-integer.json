@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-7ad1e5321656",
+  "probe_id": "a-992e4eff99f2",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -32,7 +32,7 @@
       "\\(unsigned int\\)\\(v1 < 0x3fc00000\\)",
       "if \\(v1 == 0x3fc00001\\)",
       "\\(unsigned int\\)\\(0x3fc00000 < v1\\)",
-      "int g3\\(int a0,int a1\\)"
+      "int g3\\(int a0,void \\*a1\\)"
     ],
     "stdout_absent": [
       "\\(int\\)v1\\b",

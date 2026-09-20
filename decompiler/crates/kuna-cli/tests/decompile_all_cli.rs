@@ -2447,8 +2447,9 @@ fn printed_functions(stdout: &str, names: &[&str]) -> String {
 /// storing that word as an integer.  A float vote there printed `(int)v1 + 3`,
 /// `(short)((unsigned int)v1 >> 0x10)` and `a2[1] = (int)v1` -- value conversions
 /// where the machine moves bits -- so it is refused.  The round trip compiles the
-/// seven printed callers (`-no-pie`, so the array's address fits the `int`
-/// parameter) against a bit-preserving `h` and compares them with the source.
+/// seven printed callers (`-no-pie`, so the array's address survives the printed
+/// 32-bit `(int)a1 + 0xc`) against a bit-preserving `h` and compares them with the
+/// source.
 #[test]
 fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     let bin = repo_root()
@@ -2521,7 +2522,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
              static int arr[4] = {{1, 2, 3, 0x3fc00001}};\n\
              static int bits[4] = {{1, 2, 3, 0x3fc01234}};\n\
              static void run(int use_printed) {{\n  \
-             int a = (int)(long)arr, b = (int)(long)bits;\n  \
+             void *a = arr, *b = bits;\n  \
              unsigned short s = 0; char c[2] = {{0, 0}}; int q[2] = {{0, 0}}; int r20, r22, r24;\n  \
              if (use_printed) {{\n    \
              printf(\"%d %d %d %u \", g3(7, a), g5(7, a), g6(7, a), (unsigned)g9(7, a));\n    \
@@ -2661,8 +2662,8 @@ fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
 /// `peek`, whose recovered parameter is `unsigned char *`. Taken as a vote, that
 /// type made `fill`'s parameter a byte pointer and `SplitDatatype` printed the
 /// store as eight byte stores; the vote is refused because the caller writes
-/// wider than the pointee. Checked at the default and with `--option ptrfromuse
-/// void`, which also types `fill`'s parameter from its own dereferences.
+/// wider than the pointee. Checked at the default, which also types `fill`'s
+/// parameter from its own dereferences, and with `--option ptrfromuse off`.
 #[test]
 fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
     let bin = repo_root()
@@ -2671,10 +2672,10 @@ fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
         .unwrap()
         .to_string();
     let sp = specs();
-    for void in [false, true] {
+    for off in [false, true] {
         let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", &sp];
-        if void {
-            args.extend_from_slice(&["--option", "ptrfromuse", "void"]);
+        if off {
+            args.extend_from_slice(&["--option", "ptrfromuse", "off"]);
         }
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok && is_specs_skip(&stderr) {
@@ -2683,8 +2684,8 @@ fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
         }
         assert!(ok, "kuna decompile-all failed: {stderr}");
         let fill = stdout.split("// Function: ").find(|c| c.starts_with("fill ")).expect("fill is printed");
-        assert!(fill.contains("= 0x2020726174737575;"), "the eight-byte store was split (void={void}):\n{fill}");
-        assert!(!fill.contains("unsigned char *a0"), "the byte-pointer vote was taken (void={void}):\n{fill}");
+        assert!(fill.contains("= 0x2020726174737575;"), "the eight-byte store was split (off={off}):\n{fill}");
+        assert!(!fill.contains("unsigned char *a0"), "the byte-pointer vote was taken (off={off}):\n{fill}");
     }
 }
 
@@ -2722,7 +2723,7 @@ fn callee_first_runs_the_structsynth_convergence_sweep() {
 /// the byte-reading `peek`, and `fill_many` stores 520 of them at fixed places,
 /// more addresses than the vote's access walk follows. Taken as a vote, `peek`'s
 /// `unsigned char *` printed every one of those stores as eight byte stores; both
-/// votes are refused, at the default and with `--option ptrfromuse void`.
+/// votes are refused, at the default and with `--option ptrfromuse off`.
 #[test]
 fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
     let bin = repo_root()
@@ -2731,10 +2732,10 @@ fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
         .unwrap()
         .to_string();
     let sp = specs();
-    for void in [false, true] {
+    for off in [false, true] {
         let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", &sp];
-        if void {
-            args.extend_from_slice(&["--option", "ptrfromuse", "void"]);
+        if off {
+            args.extend_from_slice(&["--option", "ptrfromuse", "off"]);
         }
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok && is_specs_skip(&stderr) {
@@ -2747,8 +2748,8 @@ fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
                 .split("// Function: ")
                 .find(|c| c.starts_with(&format!("{name} ")))
                 .unwrap_or_else(|| panic!("{name} is printed"));
-            assert!(body.contains(store), "{name}'s eight-byte store was split (void={void}):\n{body}");
-            assert!(!body.contains("unsigned char *a0"), "{name} took the byte-pointer vote (void={void}):\n{body}");
+            assert!(body.contains(store), "{name}'s eight-byte store was split (off={off}):\n{body}");
+            assert!(!body.contains("unsigned char *a0"), "{name} took the byte-pointer vote (off={off}):\n{body}");
         }
     }
 }
@@ -4120,8 +4121,9 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
 /// the store.  Whether a load may print after a store was decided by comparing
 /// the two pointers alone, and one base plus two different constants counted as
 /// two objects whatever the access widths: `inside` (a 4-byte read at `p+7`, a
-/// byte store at `p+8`) printed `*(char *)(a0 + 8) = a1; return *(unsigned int
-/// *)(a0 + 7);`, which returns the new byte.  `below` stores below the read,
+/// byte store at `p+8`) printed the store first and then `return *(unsigned int
+/// *)(a0 + 7);`, which returns the new byte.  The parameter is declared
+/// `void *` by `ptrfromuse`, so the accesses through it carry a `(long)` cast.  `below` stores below the read,
 /// `indexed` one element into an 8-byte read; `after`, `before` and `next` store
 /// next to the read bytes, not into them, and keep the read folded.  The round
 /// trip compiles the six printed functions and checks each against its source.
@@ -4152,11 +4154,11 @@ fn a_load_is_not_printed_after_a_store_into_its_bytes() {
         rest[..rest.find("// Function:").unwrap_or(rest.len())].to_string()
     };
     let ordered = [
-        ("inside", "*(unsigned int *)(a0 + 7);", "*(char *)(a0 + 8) = "),
-        ("below", "*(unsigned int *)(a0 + 7);", "*(unsigned int *)(a0 + 5) = "),
+        ("inside", "*(unsigned int *)((long)a0 + 7);", "*(char *)((long)a0 + 8) = "),
+        ("below", "*(unsigned int *)((long)a0 + 7);", "*(unsigned int *)((long)a0 + 5) = "),
         ("indexed", "*(unsigned long *)(a0 + a1 * 4);", "*(unsigned int *)(a0 + 4 + a1 * 4) = "),
-        ("after", "*(char *)(a0 + 0xb) = ", "return *(unsigned int *)(a0 + 7);"),
-        ("before", "*(char *)(a0 + 6) = ", "return *(unsigned int *)(a0 + 7);"),
+        ("after", "*(char *)((long)a0 + 0xb) = ", "return *(unsigned int *)((long)a0 + 7);"),
+        ("before", "*(char *)((long)a0 + 6) = ", "return *(unsigned int *)((long)a0 + 7);"),
         ("next", "*(unsigned int *)(a0 + 4 + a1 * 4) = ", "return *(unsigned int *)(a0 + a1 * 4);"),
     ];
     for (name, first, second) in ordered {

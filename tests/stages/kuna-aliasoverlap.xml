@@ -106,9 +106,9 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it" min="2" max="2">v1 = \*\(unsigned int \*\)\(a0 \+ 7\);</stringmatch>
+<stringmatch name="ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it" min="2" max="2">v1 = \*\(unsigned int \*\)\(\(int8\)a0 \+ 7\);</stringmatch>
 <stringmatch name="ALIASOVERLAP #2: the 8-byte indexed read is a local ahead of the element store" min="1" max="1">v1 = \*\(unsigned long \*\)\(a0 \+ a1 \* 4\);</stringmatch>
-<stringmatch name="ALIASOVERLAP #3: only the adjacent-byte stores keep the read folded" min="2" max="2">return \*\(unsigned int \*\)\(a0 \+ 7\);</stringmatch>
+<stringmatch name="ALIASOVERLAP #3: only the adjacent-byte stores keep the read folded" min="2" max="2">return \*\(unsigned int \*\)\(\(int8\)a0 \+ 7\);</stringmatch>
 <stringmatch name="ALIASOVERLAP #4: the adjacent-element store keeps the read folded" min="1" max="1">return \*\(unsigned int \*\)\(a0 \+ a1 \* 4\);</stringmatch>
 <stringmatch name="ALIASOVERLAP #5: splitstore reads s+7 whole before the byte store into it" min="1" max="1">v1 = \*\(uint4 \*\)&amp;s-&gt;c7;
 s-&gt;c9 = \(char\)w;</stringmatch>

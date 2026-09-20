@@ -74,9 +74,9 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="inputparamgap #1: option off drops the live-in registers sitting behind a 3-register gap (bug reproduced)" min="1" max="1">void on_key\(int8 a0\)</stringmatch>
+<stringmatch name="inputparamgap #1: option off drops the live-in registers sitting behind a 3-register gap (bug reproduced)" min="1" max="1">void on_key\(void \*a0\)</stringmatch>
 <stringmatch name="inputparamgap #2: option off leaves r9d read with nothing assigning it (bug reproduced)" min="1" max="1">int4 v2; // r9d</stringmatch>
-<stringmatch name="inputparamgap #3: option on recovers the callback's full ABI signature, filler parameters and all" min="1" max="1">void on_key\(int8 a0,unsigned long a1,unsigned long a2,unsigned long a3,int4 a4,int4 a5\)</stringmatch>
-<stringmatch name="inputparamgap #4: option on renders the incoming key/state registers as the parameters they are" min="1" max="1">\*\(int4 \*\)\(a0 \+ 0x70\) = a4 \+ 8;</stringmatch>
-<stringmatch name="inputparamgap #5: a 2-register gap already recovered and both passes agree (the option moves only the limit)" min="2" max="2">void on_two\(int8 a0,unsigned long a1,unsigned long a2,int4 a3\)</stringmatch>
+<stringmatch name="inputparamgap #3: option on recovers the callback's full ABI signature, filler parameters and all" min="1" max="1">void on_key\(void \*a0,unsigned long a1,unsigned long a2,unsigned long a3,int4 a4,int4 a5\)</stringmatch>
+<stringmatch name="inputparamgap #4: option on renders the incoming key/state registers as the parameters they are" min="1" max="1">\*\(int4 \*\)\(\(int8\)a0 \+ 0x70\) = a4 \+ 8;</stringmatch>
+<stringmatch name="inputparamgap #5: a 2-register gap already recovered and both passes agree (the option moves only the limit)" min="2" max="2">void on_two\(void \*a0,unsigned long a1,unsigned long a2,int4 a3\)</stringmatch>
 </decompilertest>

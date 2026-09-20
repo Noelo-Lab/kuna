@@ -39,8 +39,8 @@ fn option_parses_its_three_values() {
 }
 
 #[test]
-fn off_is_the_default_and_is_not_on() {
-    assert_eq!(PtrFromUseMode::default(), PtrFromUseMode::Off);
+fn void_is_the_default_and_off_is_not_on() {
+    assert_eq!(PtrFromUseMode::default(), PtrFromUseMode::Void);
     assert!(!PtrFromUseMode::Off.is_on());
     assert!(PtrFromUseMode::Byte.is_on());
     assert!(PtrFromUseMode::Void.is_on());

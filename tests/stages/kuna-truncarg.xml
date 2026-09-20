@@ -116,8 +116,8 @@ cf0f1f8000000000c300000000000000
 <stringmatch name="truncarg #5: an input whose promotion zero-extends gets no cast" min="1" max="1">sink\(a0\);</stringmatch>
 <stringmatch name="truncarg #6: a sign extension is untouched" min="1" max="1">sink\(\(int4\)a0\);</stringmatch>
 <stringmatch name="truncarg #7: a declared narrow parameter converts the argument itself" min="1" max="1">sinkd\(a0 \* 3\);</stringmatch>
-<stringmatch name="truncarg #8: a trimmed byte load printed as char keeps its zero-extension" min="1" max="1">sink\(\(uint1\)\*\(char \*\)\(a0 \+ 3\)\);</stringmatch>
-<stringmatch name="truncarg #9: an AND of unsigned byte loads gets no cast" min="1" max="1">sink\(\*\(uint1 \*\)\(a0 \+ 1\) &amp; \*\(uint1 \*\)\(a0 \+ 2\)\);</stringmatch>
+<stringmatch name="truncarg #8: a trimmed byte load printed as char keeps its zero-extension" min="1" max="1">sink\(\(uint1\)\*\(char \*\)\(\(int8\)a0 \+ 3\)\);</stringmatch>
+<stringmatch name="truncarg #9: an AND of unsigned byte loads gets no cast" min="1" max="1">sink\(\*\(uint1 \*\)\(\(int8\)a0 \+ 1\) &amp; \*\(uint1 \*\)\(\(int8\)a0 \+ 2\)\);</stringmatch>
 <stringmatch name="truncarg #10: a sum that provably fits its byte gets no cast" min="1" max="1">sink\(\(a0 != 2\) \+ '\\x06'\);</stringmatch>
 <stringmatch name="truncarg #11: a narrow parameter forwarded untouched keeps its promoted form" min="2" max="2">sinkf\(a0\);</stringmatch>
 <stringmatch name="truncarg #12: a byte nothing zero-extended gets no unsigned cast" min="0" max="0">sinkf\(\(uint1\)</stringmatch>

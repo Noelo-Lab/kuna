@@ -343,7 +343,7 @@ dereferences the same kind of argument at offset 0, prints
 parameter is already named `FILE *` from the callee tables, which is why that
 pair witnesses the *engine* behaviour rather than the shipped default.)
 
-When `ptrfromuse` is `byte` or `void` (shipped `off`),
+When `ptrfromuse` is `byte` or `void` (shipped `void`),
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_ptrfromuse.rs
 (pointer_from_use)` supplies the missing candidate directly. For each function
 *input* Varnode whose width equals the default data space's address size — eight
@@ -407,6 +407,26 @@ silently win instead. Only function inputs are considered, which bounds the
 change to one declaration per function; the declaration is what moves, but the
 body moves with it, because once the parameter is a byte pointer the
 pointer-arithmetic pool rewrites `*(int *)(a0 + 8)` into `*(int *)&a0[8]`.
+
+The shipped value is `void`. A `void *` parameter keeps the byte arithmetic of
+its field accesses, with a cast on the base (`*(long *)((long)a0 + 0x28)`),
+where `byte` rewrites them into indexing; and it is the type that reaches the
+most declared parameters. Through `protoorder` (chapter 04) a callee's recovered
+parameter type becomes a vote on the matching argument at each call, so a
+function that only forwards its arguments to a callee that dereferences them is
+declared with the callee's `void *` — the shape of every `qsort` comparator and
+hash-table callback, whose declared parameters are `void const *`. On the
+444-slice decbench sweep `void` moves 204 functions onto a perfect `type_match`
+(all of them `ls`'s sort comparators, in the three programs built from that
+source at three optimisation levels) and 85 more up, `byte` moves 7, and
+neither moves any function down; arity, argument and variable counts are
+unchanged. The two costs are textual: every field access through the parameter
+gains the `(long)` cast, and where the retyped value no longer merges with a
+temporary the printer may fold that temporary into its uses — an address
+computation or a load recomputed at each reader. `ActionMarkImplied`'s crossing
+test still decides where that may happen: never across a call, and across a
+store only when the two addresses provably differ. `off` is the upstream seed
+fold exactly.
 
 **The truth-valued byte (`boolbyte`).** `TYPE_BOOL` only ever enters the
 lattice as an op's *output*: every `booloutput` opcode's `get_output_local` is

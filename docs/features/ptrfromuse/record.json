@@ -14,8 +14,8 @@
  "subphase": "type-propagation",
  "source_decompiler": "angr",
  "inspiration": "angr typehoon pointer-arithmetic closure (analyses/typehoon/simple_solver.py): anything loaded from or stored to is a pointer, and `ptr + const` is the same pointer",
- "default_on": false,
- "default_value": "off",
+ "default_on": true,
+ "default_value": "void",
  "values": "off|byte|void",
  "ablation_changed": 0,
  "parity": "OK",
@@ -423,7 +423,7 @@
   "option_values_live_value_present_for_87": "unchanged (no live reader; ptrfromuse added to the kuna_phases/tests.rs allowlist beside pebnames)"
  },
  "notes": "Five defects were found by the measurements and fixed before shipping. (1) The rule typed the x86-64 FS_OFFSET segment base, which is a function input but not a parameter, and that stopped `stackguard` recognising the canary on coreutils ls sub_d820 -- fixed by FuncProto::possible_input_param. (2) Not following PTRADD/PTRSUB made the candidate oscillate against the pointer-arithmetic rewrite and run the seven-pass settle ceiling. (3) Overriding a vote that is already a pointer replaced `free`'s correct `void *` with `undefined1 *` and was the entire `worse` column of the first typesweep. (4) [review] An INT_ADD whose constant addend was itself a global object address forwarded the walk, so a parameter indexing a byte table was typed `char *` and the named global was replaced in the body by its raw address. (5) [review] The first fix for (4) refused on the pointer bound alone, which cost nine correct bzFile * declarations in bzip2; it now grades the constant instead.",
- "preset_decision": "default off, and NOT in AGGRESSIVE_OVERRIDES: it commits a parameter to a pointer, which is a claim. No default flip is recommended -- see default_flip.",
+ "preset_decision": "default `void` (docs/features/ptrfromuse/default-on-evaluation.md); multi-valued, so outside aggressive_carries_every_default_off_option, and in no preset: the default applies under every mode",
  "rule": {
   "candidate": "a pointer of the default data space's address size (eight bytes on the 64-bit images the option is named for, four on a 32-bit image), pointing at one unknown byte (`byte`, renders `char *`) or at void (`void`)",
   "considered": "function INPUT varnodes only, and only storage FuncProto::possible_input_param accepts, and not type-locked",
@@ -444,6 +444,204 @@
  "default_flip": {
   "recommendation": "none. The earlier bundle recommended flipping `void` on; that recommendation is withdrawn.",
   "why": "the evidence attached to it is one corpus -- gcc-built ELF, coreutils family, PIE -- which contains zero instances of the shape the rule has to get right, and a decompiler option that commits a parameter to a pointer is a claim about every binary, not about this corpus. A flip PR would need, on top of the usual 0/675 + stages + speed evidence: a corpus with byte-element global tables (firmware LUTs, character-class tables, string tables), at least one non-gcc toolchain, and a non-ELF container.",
-  "what_stands": "both arms are safe to reach for by hand, which is what change_kind opt-in-tool means."
+  "what_stands": "both arms are safe to reach for by hand, which is what change_kind opt-in-tool means.",
+  "superseded_by": "default_on_flip: flipped to void after protoorder (#669) landed"
+ },
+ "default_on_flip": {
+  "base": "origin/main 3433e05d (protoorder #669 merged). The branch is the default value and the spellings that follow it, nothing else, so `--option ptrfromuse off` is main's engine exactly. Typesweep, corpus sweep and speed name every arm explicitly.",
+  "value_choice": {
+   "rule": "maximise perfect, then aggregate, with worse <= improved",
+   "byte": {
+    "perfect": "1147 -> 1154 (+7)",
+    "aggregate": "3413.35 -> 3423.82 (+10.46)",
+    "onto": 7,
+    "off": 0,
+    "improved_not_perfect": 21,
+    "worse": 0
+   },
+   "void": {
+    "perfect": "1147 -> 1351 (+204)",
+    "aggregate": "3413.35 -> 3646.07 (+232.71)",
+    "onto": 204,
+    "off": 0,
+    "improved_not_perfect": 85,
+    "worse": 0
+   },
+   "chosen": "void",
+   "where_void_wins": "all 204 onto-perfect are ls's sort comparators (V a, V b = void const *) in ls/dir/vdir at O0/O2/O2-noinline: ptrfromuse types the dereferencing callee's parameters void *, protoorder carries it to the forwarding wrapper's arguments. The 85 improved are gnulib hash/comparator callbacks and directory walkers (coreutils, tar)."
+  },
+  "typesweep": {
+   "metric": "decbench type_match (main), DECBENCH_NO_CACHE=1, both arms the same binary",
+   "slice_set": "projects coreutils grep gzip diffutils bzip2 findutils tar shadow x, O0/O2/O2-noinline: 444 slices, 10,748 functions",
+   "harness_control": "functions with byte-identical variables in both arms score identically (8,294 functions, 0 discrepancies)",
+   "void": {
+    "bzip2": {
+     "n": 267,
+     "perfect_off": 31,
+     "perfect_on": 31,
+     "mean_off": 0.4077,
+     "mean_on": 0.4077,
+     "aggregate_off": 108.87,
+     "aggregate_on": 108.87,
+     "improved": 0,
+     "worse": 0
+    },
+    "coreutils": {
+     "n": 6422,
+     "perfect_off": 675,
+     "perfect_on": 879,
+     "mean_off": 0.2978,
+     "mean_on": 0.3328,
+     "aggregate_off": 1912.24,
+     "aggregate_on": 2137.05,
+     "improved": 268,
+     "worse": 0
+    },
+    "diffutils": {
+     "n": 420,
+     "perfect_off": 58,
+     "perfect_on": 58,
+     "mean_off": 0.4287,
+     "mean_on": 0.4287,
+     "aggregate_off": 180.06,
+     "aggregate_on": 180.06,
+     "improved": 0,
+     "worse": 0
+    },
+    "findutils": {
+     "n": 790,
+     "perfect_off": 41,
+     "perfect_on": 41,
+     "mean_off": 0.2199,
+     "mean_on": 0.2199,
+     "aggregate_off": 173.72,
+     "aggregate_on": 173.72,
+     "improved": 0,
+     "worse": 0
+    },
+    "grep": {
+     "n": 247,
+     "perfect_off": 51,
+     "perfect_on": 51,
+     "mean_off": 0.4328,
+     "mean_on": 0.4328,
+     "aggregate_off": 106.91,
+     "aggregate_on": 106.91,
+     "improved": 0,
+     "worse": 0
+    },
+    "gzip": {
+     "n": 368,
+     "perfect_off": 102,
+     "perfect_on": 102,
+     "mean_off": 0.5202,
+     "mean_on": 0.5202,
+     "aggregate_off": 191.43,
+     "aggregate_on": 191.43,
+     "improved": 0,
+     "worse": 0
+    },
+    "shadow": {
+     "n": 686,
+     "perfect_off": 31,
+     "perfect_on": 31,
+     "mean_off": 0.2988,
+     "mean_on": 0.2988,
+     "aggregate_off": 205.01,
+     "aggregate_on": 205.01,
+     "improved": 0,
+     "worse": 0
+    },
+    "tar": {
+     "n": 1548,
+     "perfect_off": 158,
+     "perfect_on": 158,
+     "mean_off": 0.3457,
+     "mean_on": 0.3508,
+     "aggregate_off": 535.12,
+     "aggregate_on": 543.02,
+     "improved": 21,
+     "worse": 0
+    }
+   },
+   "pooled": {
+    "n": 10748,
+    "perfect_off": 1147,
+    "perfect_on": 1351,
+    "aggregate_off": 3413.35,
+    "aggregate_on": 3646.07,
+    "improved": 289,
+    "worse": 0,
+    "onto_perfect": 204,
+    "off_perfect": 0
+   }
+  },
+  "arity_counters": {
+   "corpus": "11 binaries, 4,490 functions (kuna decompile-all --json), off vs the flipped default",
+   "call_site_arguments": "36959 -> 36959",
+   "phantom_arguments": "134 -> 134",
+   "variables_arg_rows": "8251 -> 8251",
+   "variables_rows": "28300 -> 28300",
+   "calls_lost": 0,
+   "calls_gained": 0,
+   "goto_delta": 0,
+   "return_delta": 0,
+   "note": "type_match cannot see a fabricated variable or argument; these are the counters that can"
+  },
+  "corpus_sweep": {
+   "binaries": "coreutils fmt/ls O2, sort O0, grep O2+O0, gzip/bzip2/tar/diff O2, chibios + freertos O2 (ARM32)",
+   "functions": 4490,
+   "changed": 836,
+   "classes": {
+    "casts": 716,
+    "declarations": 56,
+    "member-reach": 41,
+    "pointer-arith": 4,
+    "literal": 2,
+    "REVIEW": 17
+   },
+   "read_by_hand": "docs/features/ptrfromuse/flip-hunks.txt -- 10 sums reordered around the new cast, 3 same-address-through-a-retyped-pointer, 1 constant that became a string, 1 value kept in a local, 2 address temporaries folded into their uses (diff sub_9e40, grep sub_af70: the only two statement-count moves)",
+   "statement_delta": "-2 over the whole sweep",
+   "no_load_reordered": "no load crosses a store or a call in either arm"
+  },
+  "firmware_typesweep": {
+   "slices": "nuttx mirai betaflight freertos at O2, 3,451 functions",
+   "perfect": "216 -> 216",
+   "aggregate": "538.88 -> 546.59 (+7.71)",
+   "improved": 30,
+   "worse": 7,
+   "worse_rows_read": "all seven are betaflight bus callbacks declared busStatus_e f(uint32_t arg) whose first statement is T *x = (T *)arg;: mpuIntCallback, bmi160Intcallback, bmi270Intcallback, m25p16_callbackReady, m25p16_callbackWriteComplete, w25n01g_callbackReady, w25n01g_callbackWriteComplete (verified in the compiled sources). The body only dereferences the parameter, so void * is what is inferred."
+  },
+  "speed": {
+   "harness": "docs/features/ptrfromuse/speed.py -- whole-binary decompile-all, off and void alternating inside each round with the order swapped every round; two independent runs of 15 rounds (the box carried other lanes throughout)",
+   "min_of_30": {
+    "fmt O2": "4304.3 -> 4181.6 ms (-2.85%)",
+    "ls O2": "13766.6 -> 13885.0 ms (+0.86%)",
+    "sort O2": "14801.8 -> 14906.0 ms (+0.70%)",
+    "bash O2": "83347.9 -> 85092.7 ms (+2.09%)"
+   },
+   "worst": "+2.09% (bash O2), budget +5%",
+   "per_run_worst": {
+    "run1": "+4.14% (ls O2; does not reproduce, its medians say +0.65%)",
+    "run2": "+2.09% (bash O2)"
+   },
+   "files": [
+    "docs/features/ptrfromuse/flip-speed.json",
+    "docs/features/ptrfromuse/flip-speed-run2.json"
+   ],
+   "note": "the branch differs from main only in the option's default value, so the off arm is main's engine exactly"
+  },
+  "gates": {
+   "make_test": "675/675 assertions passed, PARITY OK (0 datatest assertions move with the default flipped)",
+   "make_test_stages": "1250/1250 assertions passed, PARITY OK after 13 assertions follow the void spelling; no name changed, docs/baseline-stages.json unchanged",
+   "make_test_cli": "207/207 passed (3 protoorder mipsel probes and the wide-store probe follow the void spelling, ids recomputed; 1 new probe)",
+   "check_spec": "OK (lenient) + OK (strict)",
+   "kuna_catalog_check": "catalog OK",
+   "counters_check": "no drift",
+   "options_md": "byte-fresh",
+   "make_rust_test": "RUST_TEST_RC=0 (7,285 passed, 0 failed)",
+   "measured_on": "origin/main 3433e05d (protoorder #669 merged)"
+  },
+  "protoorder_refusal": "The store split the first sweep found (a callee's unsigned char * vote splitting a caller's wide constant store) was fixed in protoorder itself and shipped in #669 (pointee_refuses); it is on main, not in this branch. This branch only switches the second arm of its two fixtures' tests from --option ptrfromuse void to off."
  }
 }
