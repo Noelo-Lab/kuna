@@ -128,9 +128,14 @@ gnulib copy every obstack in this corpus is compiled from, whose `_OBSTACK_SIZE_
 ### type_match, the 444-slice campaign corpus
 
 `scripts.decbench.typesweep` through `final-c/finalsweep.py`, decbench pinned to
-`625e892`, `DECBENCH_NO_CACHE=1`, the two arms being two builds of this tree (`2e28ece4a`
-and this branch) over the same slices. The baseline arm reproduces the campaign's
-published round-D numbers exactly (1,349 perfect, mean 0.3403), which is the control.
+`625e892`, `DECBENCH_NO_CACHE=1`, the two arms being two builds of this tree over the
+same slices. The baseline arm reproduces the campaign's published round-D numbers
+exactly (1,349 perfect, mean 0.3403), which is the control.
+
+Measured twice, at two bases: first against `2e28ece4a`, then re-run in full after the
+rebase onto `724381149` (`argclobber` default-on, #689), whose base arm is the
+origin/main sources of `kuna_libctypes.rs` and `protos/mod.rs` built in this tree. Every
+number below, the per-variable tables included, came out identical on both.
 
 | | off | on |
 |---|---:|---:|
@@ -156,9 +161,9 @@ The 147 newly-correct variables, by the ground-truth type they match:
 
 ```
  47  obstack *      11  timespec (by value)   6  timeval (by value)   4  re_pattern_buffer *
- 37  char *          7  timespec *            5  FILE *               3  __mbstate_t
+ 37  char *          7  timespec *            5  FILE *               3  __mbstate_t, void *
                      6  termios *             5  statfs (by value)    2  __sigset_t, group *,
-                                                                          timeval *
+                                                5  int                     timeval *
                                                                       1  utmp *, lconv *
 ```
 
