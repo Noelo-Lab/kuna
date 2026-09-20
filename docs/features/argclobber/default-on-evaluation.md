@@ -4,10 +4,12 @@
 > `protoorder` lands -- is what `analysis.md` describes and what the option now
 > does. The four `ce-*` programs below are still the negative controls; under the
 > current rule each keeps its argument, and `ce-forward-thunk.s` /
-> `ce-forward-thunk-2param.c` were added afterwards as the two further classes the
-> redesign had to answer -- the second of them is declined by the callee's BODY
-> (`opaque_transfer_free`), not by its recovered prototype. `sweep-2026-09-19.txt`
-> is the OLD rule's corpus sweep; `sweep-2026-09-20.txt` is the current one.
+> `ce-forward-thunk-2param.c`, then `ce-import-forward.c` and
+> `ce-forward-thunk-2frame.c`, were added afterwards as the further classes the
+> redesign had to answer -- each of them is declined by the callee's BODY and by
+> what it forwards to (`resolve_forward_transfer`), not by its recovered
+> prototype. `sweep-2026-09-19.txt` is the OLD rule's corpus sweep;
+> `sweep-2026-09-21.txt` is the current one.
 
 # `argclobber` default-on evaluation
 

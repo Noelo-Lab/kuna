@@ -11,7 +11,7 @@
 
    What declines it is the callee's body, not its prototype: at the `jmp
    *(%rdi)` the callee has not written rdx, so the caller's value can still
-   reach code no recovery saw (`opaque_transfer_free`).
+   reach code no recovery saw (`resolve_forward_transfer`).
 
    Build: gcc -O2 -o ce-forward-thunk-2param ce-forward-thunk-2param.c && strip */
 struct pair { long a; long b; };

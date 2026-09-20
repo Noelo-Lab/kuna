@@ -153,18 +153,24 @@ $ kuna decompile-all ./t3                            # the drop, before this cha
 ```
 
 A prototype states what a callee **names**, and this one names nothing about
-`rdx`. The clause that answers it is therefore not about the prototype at all: at
-every point where the callee's control leaves for a target the entry walk could
-not name — an indirect call or tail call, a `CALLOTHER`, an indexed register-file
-access, an undecodable instruction — the register must already be **written** by
-the callee (`CalleeEntryDead::opaque_transfer_free`). At the `jmp *(%rdi)` it is
-not, so the caller's value is still travelling into code no recovery read, and
-the drop is declined.
+`rdx`. The clause that answers it is therefore not about the prototype at all:
+wherever the callee's control leaves it, the register must already be **written**
+by the callee, unless the target can be answered for
+(`resolve_forward_transfer`). At the `jmp *(%rdi)` it is not and an indirect
+target answers for nothing, so the caller's value is still travelling into code
+no recovery read, and the drop is declined.
 
-A **direct** call is deliberately not one of those transfers: its target has a
-name, so the callee's own recovery accounted for whatever it forwards there. That
-is what keeps the `fmt` witness alive — `fmt(FILE *, char const *)` reaches its
-first call with `rdx` unwritten, and that call is direct.
+A **direct** call has a target to ask, and asking it is the whole of the second
+round of this work. Naming it is not enough: `long wrap(void *o,long a,long b)
+{ if (!a) return 0; return ext3(o,a,b); }` forwards `rdx` to an import nothing
+states a signature for, recovers the same two parameters, and lost the same
+argument (`ce-import-forward.c`, and `ce-forward-thunk-2frame.c` for the same
+thing one ordinary call frame deeper). So a direct call lets the register through
+only when its target carries a **declared, non-variadic** prototype, or when the
+target's own body answers the same question recursively. That is what keeps the
+`fmt` witness alive: `fmt(FILE *, char const *)` reaches its first call with
+`rdx` unwritten, that call is direct, and its target's body reaches only `ret`
+and a call to the declared `fileno(FILE *)`.
 
 An incomplete summary — the probe budget, a runaway written set — now declines
 too, because the clause asks for positive evidence. That subsumes

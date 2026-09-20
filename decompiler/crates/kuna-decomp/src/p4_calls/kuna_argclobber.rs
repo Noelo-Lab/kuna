@@ -166,8 +166,10 @@
 //! [`crate::p4_calls::kuna_calleedeadarg`] decodes each callee once per image; a
 //! bounded entry walk that positively sees those register bytes read before they
 //! are written declines the drop (`proves_input`), and a walk that cannot show
-//! the register is dead at every unnameable control transfer declines it too
-//! (`opaque_transfer_free`). Neither can admit a drop the clauses above refused.
+//! the register is dead wherever the callee forwards it to something nothing
+//! accounts for declines it too
+//! ([`crate::p4_calls::kuna_calleedeadarg::resolve_forward_transfer`]). Neither
+//! can admit a drop the clauses above refused.
 //!
 //! # Why a recovered prototype is not enough on its own
 //!
@@ -179,25 +181,30 @@
 //! recovered list then EQUALS the two arguments the drop would leave behind, the
 //! accounting above is satisfied, and the third argument is deleted although the
 //! program reads it. `docs/features/argclobber/ce-forward-thunk-2param.c` is that
-//! program. The opaque-transfer clause is what answers it: at the `jmp *(%rdi)`
-//! the callee has not written `rdx`, so the caller's value can still be reaching
-//! code no recovery saw, and the drop is declined.
+//! program, `ce-import-forward.c` is the same shape with `ext3(o,a,b)` — an
+//! import nothing states a signature for — in place of the pointer, and
+//! `ce-forward-thunk-2frame.c` puts an ordinary direct call in front of the
+//! first. The forwarding clause is what answers all three: at the `jmp *(%rdi)`,
+//! and at a `call` whose target neither carries a declaration nor answers for
+//! itself, the callee has not written `rdx`, so the caller's value can still be
+//! reaching code no recovery saw, and the drop is declined.
 //!
 //! # What it cannot know
 //!
 //! The evidence is a recovery, not a fact. A callee whose own parameter list
-//! kuna under-recovers — it misses a parameter the callee really reads, through
-//! a path of named calls where no unnameable transfer occurs — states a
-//! prototype that admits the drop, and the argument goes. That is the residual
+//! kuna under-recovers — it misses a parameter the callee really reads, on a
+//! path where every transfer is answered for — states a prototype that admits
+//! the drop, and the argument goes. That is the residual
 //! hole, and it is the same hole every callee-derived statement has. Two things
 //! bound it: the under-recovery has to be exactly one slot deep, at exactly the
 //! register the clobber wrote, with every other argument still accounted for;
-//! and the register has to be dead at every transfer the walk could not follow.
+//! and the register has to be dead at every transfer that cannot be followed or
+//! resolved through its target.
 //!
 //! What the prototype clause removes is the class the bounded entry probe could
 //! not see at all: a read past a jump table, a read beyond the probe's
-//! instruction budget, a read inside an import, and a callee that really returns
-//! a 16-byte value in `rax:rdx` and forwards the high half onward. It removes
+//! instruction budget, and a callee that really returns a 16-byte value in
+//! `rax:rdx` and forwards the high half onward. It removes
 //! those by carrying the parameter in the recovered list — but only when the
 //! recovery reached far enough to name it, which is why the opaque-transfer
 //! clause stands beside it rather than behind it.

@@ -415,27 +415,25 @@ const MAX_FORWARD_NODES: usize = 32;
 
 /// Resolve what `entry`'s body can forward, following its direct calls.
 ///
-/// A recovered parameter list is a statement about the reads the callee's own
-/// decompilation SAW. It saw the reads in the body, and it saw the arguments of
-/// every call whose target had a prototype — so at a direct call this walk asks
-/// the same question of the target, and only three answers let the register
-/// through:
+/// [`CalleeEntryDead`] ends every path at the callee's first call, so on its own
+/// it says nothing about what happens past one. Naming the target is not an
+/// answer either — the callee's recovered parameter list is short exactly when
+/// the recovery could not see what the target reads. So the question is asked of
+/// the target, and only three things let the register through:
 ///
 /// * the target carries a **declared, non-variadic** prototype (a library
-///   signature, DWARF, a console declaration). That prototype is what the
-///   callee's recovery was typed against, and it is authoritative about what the
-///   target reads;
-/// * the target has a **recovered** prototype parked by `protoorder` — it was
-///   decompiled in this run, so the question can be asked of IT, recursively;
+///   signature, DWARF, a console declaration), which is authoritative about what
+///   it reads and is there for a target with no body to read;
+/// * the target's own body answers it, recursively — it neither reads the
+///   register nor forwards it anywhere unaccounted for;
 /// * the register is already written when control reaches the call, so what is
 ///   forwarded is the callee's own value.
 ///
-/// Anything else — a PLT import with no signature, a function this run never
-/// decompiled, a recursive component, an indirect transfer, an incomplete probe
-/// — is a hole the recovery could be short about, and the range is not transfer
-/// free through it.  A `protoorder lock`-parked prototype is declared with
-/// `first_var_arg_slot` set, so it is read here as variadic and never
-/// authoritative: only a real source declaration is.
+/// Everything else is a hole: an import whose PLT stub jumps through its GOT
+/// slot, an undecodable body, a recursive component, an indirect transfer, a
+/// probe that ran out of budget. A `protoorder lock`-parked prototype is parked
+/// with `first_var_arg_slot` set, so it reads as variadic here and is never
+/// mistaken for a declaration.
 pub fn resolve_forward_transfer(
     arch: &mut crate::architecture::Architecture,
     entry: &Address,
@@ -515,15 +513,13 @@ fn resolve_node(
     };
     visiting.push(key);
     let out = fold_node(&dead, reg_idx, |target| {
-        let Some(tsp) = target.get_space() else { return TargetAnswer::Unaccounted };
-        let tkey = (tsp.get_index(), target.get_offset());
-        if arch.kuna_protoorder_types.contains_key(&tkey) {
-            return TargetAnswer::Through(resolve_node(arch, target, reg_idx, visiting, budget));
+        if target.get_space().is_none() {
+            return TargetAnswer::Unaccounted;
         }
         if declared_accounts_for_its_reads(arch, target) {
             return TargetAnswer::Accounted;
         }
-        TargetAnswer::Unaccounted
+        TargetAnswer::Through(resolve_node(arch, target, reg_idx, visiting, budget))
     });
     visiting.pop();
     out

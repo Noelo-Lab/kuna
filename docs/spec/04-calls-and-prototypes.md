@@ -666,23 +666,37 @@ for a callee kuna never recovered as variadic: u-boot's `printf` is called from
 1,924 sites, and its prologue spilling `r1`–`r3` into the `va_list` save area
 speaks for all of them at once, which no per-function sibling scan can.
 
-The second reading is the one a prototype cannot give. At every point where the
-callee's control leaves for a target the walk could not **name** — an indirect
-call or tail call, a `CALLOTHER`, an indexed register-file access, an
-undecodable instruction — the callee must already have written the register
-itself (`opaque_transfer_free`); otherwise the caller's value is still travelling
-into code no recovery read. A direct call is not one of those: its target has a
-name, and the callee's own recovery accounted for what it passes on. This is
-what answers a forwarding thunk written in plain C. `long fwd(struct box *o,long
-a,long b) { if (!a) return 0; return o->fn(o,a,b); }` compiles under `gcc -O2` to
-`test %rsi,%rsi; je; jmp *(%rdi)`, so kuna recovers `(rdi, rsi)` — honestly, the
-two registers the body touches — while the function it jumps to consumes three.
-Two recovered parameters are exactly the two arguments a drop would leave behind,
-so the accounting above is satisfied and the third argument is deleted although
-the program reads it; at the `jmp` `rdx` is unwritten, and that is what declines
-it. `docs/features/argclobber/ce-forward-thunk-2param.c` is the program and
-`tests/cli/argclobber-keeps-an-argument-a-thunk-forwards.json` pins it. Neither
-reading can admit a drop the clauses above refused.
+The second reading is the one a prototype cannot give, and it does not stop at
+the callee's own body. The entry walk ends every path at the callee's first
+call, so what the register meets past one has to be asked of that call's target
+(`resolve_forward_transfer`). Two answers let it through: a **declared,
+non-variadic** prototype — a library signature, DWARF, a console declaration —
+which is authoritative about what the target reads and is the only answer
+available for a target with no body to read; or the target's own body, with the
+same question put to it recursively. Everywhere else the callee must already
+have written the register itself before control leaves, and the register is not
+free if it has not: an indirect call or tail call, a `CALLOTHER`, an indexed
+register-file access, an undecodable instruction, a recursive component, a walk
+that ran out of budget, and an import whose PLT stub jumps through its GOT slot.
+
+Naming a target is not accounting for it, and the difference is what two plain-C
+programs are made of. `long fwd(struct box *o,long a,long b) { if (!a) return 0;
+return o->fn(o,a,b); }` compiles under `gcc -O2` to `test %rsi,%rsi; je; jmp
+*(%rdi)`, so kuna recovers `(rdi, rsi)` — honestly, the two registers the body
+touches — while the function it jumps to consumes three. `long wrap(void *o,long
+a,long b) { if (!a) return 0; return ext3(o,a,b); }` has no function pointer at
+all, but `ext3` is an import nothing states a signature for, so nothing at that
+call site reads `rdx` and kuna recovers two parameters again. In both, two
+recovered parameters are exactly the two arguments a drop would leave behind, the
+accounting above is satisfied, and the third argument is deleted although the
+program reads it. `rdx` is unwritten at the `jmp` in the first and at the `call`
+in the second, and that is what declines them — in the second only because the
+call's target is asked and cannot answer. The programs are
+`docs/features/argclobber/ce-forward-thunk-2param.c` and `ce-import-forward.c`
+(with `ce-forward-thunk-2frame.c` putting an ordinary direct call in front of the
+first), and `tests/cli/argclobber-keeps-an-argument-a-thunk-forwards.json` and
+`…-an-import-reads.json` pin them. Neither reading can admit a drop the clauses
+above refused.
 
 The trial must be **trailing**, so the list keeps its positional shape and no
 other argument moves. At least one argument must remain, since an empty list is
@@ -707,21 +721,22 @@ parameter list kuna under-recovers states a prototype that admits the drop, and
 the argument goes. Two things bound how far that can reach. The
 surviving-argument accounting requires the under-recovery to be exactly one slot
 deep, at exactly the register the clobber wrote, with every other argument still
-accounted for. And the opaque-transfer reading requires the register to be dead
-at every control transfer the walk could not follow, which is what closes the
-case where the recovery is short *because* it never saw the code that reads the
-register.
+accounted for. And the forwarding reading requires the register to be dead at
+every control transfer that cannot be followed or resolved through its target,
+which is what closes the case where the recovery is short *because* it never saw
+the code that reads the register.
 
 The prototype clause and the body walk cover different halves of that, and
 neither covers it alone. What the prototype clause removes is the class a bounded
 body walk cannot see at all: a read past a jump table, a read beyond the walk's
-instruction budget, a read inside an import, and a callee that really returns a
-16-byte value in `rax:rdx` and forwards the high half as the next call's trailing
-argument — in each of those the recovery reached far enough to name the
-parameter, so the recovered prototype carries it and the drop is declined. Where
-the recovery does *not* reach that far — the forwarding thunk above is the whole
-class — the prototype says nothing useful and the opaque-transfer reading is what
-declines the drop.
+instruction budget, and a callee that really returns a 16-byte value in
+`rax:rdx` and forwards the high half as the next call's trailing argument — in
+each of those the recovery reached far enough to name the parameter, so the
+recovered prototype carries it and the drop is declined. Where the recovery does
+*not* reach that far — a register forwarded to something the recovery could not
+read, whether through a pointer, through an import, or through a chain of
+ordinary calls ending in one of those — the prototype says nothing useful and the
+forwarding reading is what declines the drop.
 
 Together the clauses are narrow. Over 770 stripped decbench binaries (O0, O2 and
 O2-noinline) the rule changes 21 functions, one per binary, and each loses
@@ -1094,15 +1109,18 @@ classified:
   write cannot hide a later read. A proven-dead register trial is scored
   `no-use` like any other definitely-unused trial.
 
-  The same walk records a second, narrower fact for `argclobber` to read: which
-  of those terminators leave for a target the walk could not **name** — an
-  indirect call or tail call, a `CALLOTHER`, an indexed register-file access, an
-  undecodable instruction — and what was written on the way to each. A direct
-  call is deliberately not one of them: its target has a name, so the callee's
-  own recovery accounted for whatever it forwards there. A register written
-  before every unnameable transfer cannot carry the caller's value out of the
-  callee, and that is the one thing a recovered parameter list cannot say about
-  a thunk that forwards registers it never names.
+  The same walk records a second, narrower fact for `argclobber` to read: for
+  each terminator that leaves the callee, what was written on the way to it, and
+  where it leaves for — a target the walk could not **name** (an indirect call or
+  tail call, a `CALLOTHER`, an indexed register-file access, an undecodable
+  instruction), or a named one, kept with its entry address. Naming a target is
+  not accounting for what is forwarded there, so `argclobber` resolves each named
+  one in turn (`resolve_forward_transfer`): a declared, non-variadic prototype
+  answers for it, and so does its own body, walked the same way. A register
+  written before every terminator that cannot be answered for cannot carry the
+  caller's value out of the callee, and that is the one thing a recovered
+  parameter list cannot say about a callee that forwards registers it never
+  names.
 
   Requiring the *write* rather than merely the absence of a read is the whole
   safety margin. A callee whose entire body is `ret` reads nothing at all, so a
