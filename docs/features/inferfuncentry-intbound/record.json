@@ -105,14 +105,14 @@
   ]
  },
  "gates": {
-  "make test": "675/675, PARITY OK",
-  "make test-stages": "1255/1255, PARITY OK (baseline re-recorded: the 5 new assertions and nothing else)",
-  "make check-spec": "OK (lenient and --strict)",
-  "make test-cli": "209/209 passed",
-  "kuna catalog --check": "OK",
-  "counters --check": "no drift",
+  "make test": "675/675 assertions passed; PARITY OK",
+  "make test-stages": "1255/1255 assertions passed; PARITY OK",
+  "make check-spec": "check-spec OK (lenient mode); tools/check_spec.py --strict: check-spec OK (strict mode)",
+  "make test-cli": "tests/cli: 209/209 passed",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "byte-fresh (no option added)",
-  "make rust-test": "pending"
+  "make rust-test": "RUST_TEST_RC=0 (416 test-result lines ok, via /home/mahaloz/kwt/rust-test-lane.sh)"
  },
  "files": [
   "decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry.rs",
