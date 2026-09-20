@@ -77,31 +77,51 @@ impl InferFuncEntryOption {
     }
 }
 
-/// (kuna) May the single-bit escape be consulted for a constant read by `opcode`?
+/// (kuna) Does `opcode` read its constant operand as a number?
 ///
-/// The escape suspends the one guard (`bit_transitions < 3`) that keeps integer
-/// flags, masks and round sizes out of the symbol table, so it is only safe where
-/// a raw code address is what the operand means: handed to a callee (GH-6930's
-/// `bufferevent_setcb(..., evhttp_write_cb, ...)`), written into a function-pointer
-/// slot, compared for identity with one, or added to a value already typed as a
-/// pointer.
-///
-/// Everywhere else the constant is being used as a number and the entry it lands
-/// on is a coincidence, which is what a round buffer size looks like in a PIE:
-/// coreutils `tail -O0` computes `MIN (n_remaining, BUFSIZ)`, `BUFSIZ` is `0x2000`
-/// and `0x2000` is `_DT_INIT`, so the bound printed as `if (_DT_INIT < v9)` and
-/// dragged the `uintmax_t` byte counter it was compared with to `void *` — in the
-/// callee, and from there through `protoorder` into the caller's stack variable.
-pub fn entry_escape_applies(opcode: OpCode) -> bool {
+/// An ordering comparison, a multiply, a divide, a remainder or a shift is
+/// arithmetic on the value; C has none of them between a function pointer and
+/// anything else.
+pub fn reads_as_integer(opcode: OpCode) -> bool {
     matches!(
         opcode,
-        OpCode::CPUI_CALL
-            | OpCode::CPUI_CALLIND
-            | OpCode::CPUI_STORE
-            | OpCode::CPUI_INT_ADD
-            | OpCode::CPUI_INT_EQUAL
-            | OpCode::CPUI_INT_NOTEQUAL
+        OpCode::CPUI_INT_LESS
+            | OpCode::CPUI_INT_LESSEQUAL
+            | OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_SLESSEQUAL
+            | OpCode::CPUI_INT_MULT
+            | OpCode::CPUI_INT_DIV
+            | OpCode::CPUI_INT_SDIV
+            | OpCode::CPUI_INT_REM
+            | OpCode::CPUI_INT_SREM
+            | OpCode::CPUI_INT_LEFT
+            | OpCode::CPUI_INT_RIGHT
+            | OpCode::CPUI_INT_SRIGHT
     )
+}
+
+/// (kuna) May the single-bit escape be consulted for this constant?
+///
+/// The escape suspends the one guard (`bit_transitions < 3`) that keeps integer
+/// flags, masks and round sizes out of the symbol table, so it may only be taken
+/// where the operand means a code address.  `opcode` is the reader being decided;
+/// `value_reads_as_integer` says whether the same numeric value is read as a
+/// number ([`reads_as_integer`]) anywhere else in this function.
+///
+/// The second half is what a round buffer size looks like in a
+/// position-independent executable, where `.init` sits at a low, round offset:
+/// coreutils `tail` at `-O0` computes `MIN (n_remaining, BUFSIZ)`, `BUFSIZ` is
+/// `0x2000` and `0x2000` is that image's `_DT_INIT`, so the comparison printed as
+/// `if (_DT_INIT < v9)`, the other arm of the select as `v1 = _DT_INIT`, and the
+/// `uintmax_t` byte counter they bounded became `void *` -- in the callee, and
+/// from there through `protoorder` into its caller's stack variable.  The
+/// comparison alone is not enough to refuse: the assignment is a plain COPY, the
+/// shape a function-pointer table also has (coreutils `od` selects between
+/// `sub_3f20`, `sub_3ff0`, `sub_40a0` and `sub_4150`, and only `sub_3ff0` has
+/// fewer than three bit transitions).  What separates them is that the function
+/// orders the one value and never orders the other.
+pub fn entry_escape_applies(opcode: OpCode, value_reads_as_integer: bool) -> bool {
+    !value_reads_as_integer && !reads_as_integer(opcode)
 }
 
 /// (kuna) Does the constant resolve exactly to a known function entry?

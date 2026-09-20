@@ -90,27 +90,43 @@ fn escape_applies_where_a_code_address_can_appear() {
     for opcode in [
         OpCode::CPUI_CALL,
         OpCode::CPUI_CALLIND,
+        OpCode::CPUI_COPY,
         OpCode::CPUI_STORE,
         OpCode::CPUI_INT_ADD,
         OpCode::CPUI_INT_EQUAL,
         OpCode::CPUI_INT_NOTEQUAL,
     ] {
-        assert!(entry_escape_applies(opcode), "{opcode:?} should keep the escape");
+        assert!(entry_escape_applies(opcode, false), "{opcode:?} should keep the escape");
     }
 }
 
 #[test]
-fn escape_declines_an_integer_use() {
-    // An ordering comparison and a plain assignment are the two shapes a round
-    // buffer size takes; neither is a place a raw code address belongs.
+fn escape_declines_a_reader_that_is_arithmetic() {
     for opcode in [
         OpCode::CPUI_INT_LESS,
         OpCode::CPUI_INT_LESSEQUAL,
-        OpCode::CPUI_COPY,
-        OpCode::CPUI_MULTIEQUAL,
-        OpCode::CPUI_PIECE,
+        OpCode::CPUI_INT_SLESS,
+        OpCode::CPUI_INT_SLESSEQUAL,
         OpCode::CPUI_INT_MULT,
+        OpCode::CPUI_INT_DIV,
+        OpCode::CPUI_INT_SDIV,
+        OpCode::CPUI_INT_REM,
+        OpCode::CPUI_INT_SREM,
+        OpCode::CPUI_INT_LEFT,
+        OpCode::CPUI_INT_RIGHT,
+        OpCode::CPUI_INT_SRIGHT,
     ] {
-        assert!(!entry_escape_applies(opcode), "{opcode:?} should decline the escape");
+        assert!(reads_as_integer(opcode), "{opcode:?} reads its constant as a number");
+        assert!(!entry_escape_applies(opcode, false), "{opcode:?} should decline the escape");
     }
+}
+
+#[test]
+fn escape_declines_a_value_the_function_orders_elsewhere() {
+    // coreutils tail: the COPY arm of MIN (n_remaining, BUFSIZ) is the same shape
+    // as a function-pointer table's `v = handler`, and the only thing that tells
+    // them apart is that one of the two values is also compared as a number.
+    assert!(entry_escape_applies(OpCode::CPUI_COPY, false));
+    assert!(!entry_escape_applies(OpCode::CPUI_COPY, true));
+    assert!(!entry_escape_applies(OpCode::CPUI_CALL, true));
 }

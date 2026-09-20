@@ -19,13 +19,19 @@
               unsigned long bound(unsigned long n) { return MIN (n, 0x100000); }
       reg:    mov esi,0x100000 ; xor edi,edi ; call setcb
               register handler as a callback, GH-6930's own shape
+      dispatch: movabs rax,0x100000 ; test edi,edi ; jne +10 ;
+                movabs rax,0x110000 ; ret
+              pick one of two callbacks, the shape the narrowing must not break
 
     #1 and #2: bound takes and returns a number and its bound prints as
     0x100000.  Before the fix both uses of the constant printed as `handler`
-    and bound was `handler * bound(handler *a0)`.  #3: reg still passes the
-    name, so the GH-6930 escape is intact.  #4: with `option inferfuncentry
-    off` reg passes the bare literal, which is upstream's behaviour and the
-    control that says #3 is the escape firing.
+    and bound was `code * bound(code *a0)`.  #3: reg still passes the
+    name, so the GH-6930 escape is intact.  #4: a COPY of the same address keeps
+    the name too, because nothing in dispatch orders that value: coreutils od
+    selects between four formatters this way and only one of the four has fewer
+    than three bit transitions.  #5: with `option inferfuncentry off` reg passes
+    the bare literal, which is upstream's behaviour and the control that says #3
+    is the escape firing.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">f30f1efac3</bytechunk>
 <bytechunk space="ram" offset="0x100010" readonly="true">
@@ -34,10 +40,14 @@
 <bytechunk space="ram" offset="0x100030" readonly="true">
 4883ec08be0000100031ffe8c0ff00004883c408c3
 </bytechunk>
+<bytechunk space="ram" offset="0x100050" readonly="true">
+48b8000010000000000085ff750a48b80000110000000000c3
+</bytechunk>
 <bytechunk space="ram" offset="0x110000" readonly="true">f30f1efac3</bytechunk>
 <symbol space="ram" offset="0x100000" name="handler"/>
 <symbol space="ram" offset="0x100010" name="bound"/>
 <symbol space="ram" offset="0x100030" name="reg"/>
+<symbol space="ram" offset="0x100050" name="dispatch"/>
 <symbol space="ram" offset="0x110000" name="setcb"/>
 </binaryimage>
 <script>
@@ -45,6 +55,9 @@
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu reg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dispatch</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option inferfuncentry off</com>
@@ -56,5 +69,6 @@
 <stringmatch name="inferfuncentry #1: the bounded value keeps its integer type" min="1" max="1">uint8 bound\(uint8 a0\)</stringmatch>
 <stringmatch name="inferfuncentry #2: an integer bound that lands on a function entry stays a number" min="1" max="1">return 0x100000;</stringmatch>
 <stringmatch name="inferfuncentry #3: a callback argument at the same address still prints its name" min="1" max="1">setcb\(0,handler\)</stringmatch>
-<stringmatch name="inferfuncentry #4: inferfuncentry off restores the bare literal for the argument too" min="1" max="1">setcb\(0,0x100000\)</stringmatch>
+<stringmatch name="inferfuncentry #4: a function pointer the body never orders still prints its name" min="1" max="1">return handler;</stringmatch>
+<stringmatch name="inferfuncentry #5: inferfuncentry off restores the bare literal for the argument too" min="1" max="1">setcb\(0,0x100000\)</stringmatch>
 </decompilertest>
