@@ -1471,7 +1471,7 @@ moves.
   the shipped behaviour exactly — and, unlike a retarget, each also supplies an
   ARITY where there was none.
 
-  Six decisions shape the pass.
+  Eight decisions shape the pass.
 
   *The retarget is enumerated slot by slot, never applied in bulk.* The last
   `void *` of `vasprintf`, `vsnprintf`, `__vasprintf_chk`, `__vfprintf_chk`,
@@ -1559,17 +1559,29 @@ moves.
   — cannot apply to them: `_obstack_*` is the implementation-reserved half of
   `obstack.h`, written only by glibc or by the gnulib copy of the same file, and
   both publish the same `struct obstack`. The reason it is worth an exception is
-  that obstack is essentially never an import: gnulib links its copy in and the
-  linker exports the symbols from the program, so a stripped `grep`, `tar` or
-  `coreutils` binary carries `_obstack_newchunk` in its dynamic symbol table and
-  nothing else in the image says what its first argument addresses. Measured
-  over the corpus's debug twins, `obstack` is the widest aggregate in ground
-  truth after `FILE` — 431 pointer variables, 371 of them inside a function that
-  calls one of those five directly. The size slots are pointer-width rather than
-  the `int` the installed glibc header spells, because two published
-  declarations of the same symbol exist and the corpus's own debug info says
-  which applies; `_obstack_allocated_p` is left out for want of any installed
-  declaration at all, exactly as `__underflow` was.
+  that most images reach obstack that way and no other: gnulib links its copy in
+  and the linker exports the symbols from the program, so a stripped `grep`,
+  `tar` or `coreutils` binary carries `_obstack_newchunk` in its dynamic symbol
+  table and nothing else in the image says what its first argument addresses.
+  Measured over the corpus's debug twins, `obstack` is the widest aggregate in
+  ground truth after `FILE` — 431 pointer variables, 371 of them inside a
+  function that calls one of those five directly. `_obstack_allocated_p` is left
+  out for want of any installed declaration at all, exactly as `__underflow` was.
+
+  *The obstack size slots follow the channel, because the two publishers
+  disagree about them.* gnulib's copy defines its size type as `size_t`; the
+  installed glibc header declares plain `int`. Which one holds is not a property
+  of the corpus — the same results tree contains both, with fifteen slices (the
+  five `dpkg` programs at each optimization level) importing
+  `_obstack_begin`/`_obstack_newchunk` from glibc while everything else links
+  gnulib's copy in — so it is decided per image by which channel the name
+  arrived on. A DEFINED name takes the `size_t` table, an imported one the `int`
+  table; the aggregate slot is the same in both. Getting that backwards is not
+  cosmetic even though both pass the value in a register: the caller of an
+  imported `_obstack_newchunk` would have its own `int` parameter widened and
+  two casts inserted to reach a `size_t` argument that the callee does not have.
+  An operator's `--define-function` is answered from the DEFINED table, since a
+  directive names a body in this image.
 
   *The gate is read at load time, inside the pass.* The named shells are interned
   into the type factory while the signatures are built, which happens during

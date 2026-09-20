@@ -51,14 +51,22 @@ away can still be named. It is the floor that is worth ranking on.
 
 Two findings decided the shape of the change.
 
-**`obstack` is the whole story, and it is not an import.** 431 of the pool's variables
-are `struct obstack *`, and 371 of them sit inside a function that calls
-`_obstack_newchunk` or `_obstack_begin` directly — but the census of imports finds those
-names undefined in **0** of the 444 slices. gnulib links its copy of `obstack.c` into
-the program, and the linker exports the symbols from the program itself, so a stripped
-`grep`, `tar` or `coreutils` binary carries `_obstack_newchunk` in `.dynsym` as a
-DEFINED function. The shipped named tables match imported names only, on purpose, so
+**`obstack` is the whole story, and in these slices it is not an import.** 431 of the
+pool's variables are `struct obstack *`, and 371 of them sit inside a function that
+calls `_obstack_newchunk` or `_obstack_begin` directly — but the census of imports finds
+those names undefined in **0** of the 444 slices. gnulib links its copy of `obstack.c`
+into the program, and the linker exports the symbols from the program itself, so a
+stripped `grep`, `tar` or `coreutils` binary carries `_obstack_newchunk` in `.dynsym` as
+a DEFINED function. The shipped named tables match imported names only, on purpose, so
 nothing in the table could ever have reached it.
+
+Outside the mined 444, the other channel does occur, and it matters: 15 slices of the
+same results tree (the five `dpkg` programs at each optimization level) carry
+`UND _obstack_begin@GLIBC_2.2.5` and `UND _obstack_newchunk@GLIBC_2.2.5`. glibc's
+installed header and gnulib's copy disagree about the size parameters — `int` against
+`size_t` — so the two channels take two tables and the twins confirm each: the `dpkg`
+twins type those parameters `int` at `/usr/include/obstack.h:184`, the `tar` and `grep`
+twins `size_t`.
 
 **The already-named types are nearly saturated.** `stat` has 469 GT variables and 99
 reachable ones, and the table already covers all 99: there is no unused `stat` slot in
@@ -93,6 +101,14 @@ imports. The rule that makes the other tables imports-only — a coincidental `f
 an image's own symbol table is that image's function — cannot apply to `_obstack_*`:
 that is the implementation-reserved half of `obstack.h`, written only by glibc or by the
 gnulib copy of the same file, and both publish the same `struct obstack`.
+
+They publish different size slots for it, though, so the five names live in two tables
+of the same shape: `LIBC_DEFINED_NAMED` (`size_t`, seeded only from the names the image
+DEFINES and does not also import) and `LIBC_IMPORTED_OBSTACK` (`int`, seeded from the
+import channel, by name and by resolver address). Getting that backwards is visible at
+the call site rather than in the declaration alone — on a two-line glibc-obstack program
+built with `gcc -O2`, a `size_t` slot turns the caller's `void f(int n)` into
+`void f(unsigned int n)` and inserts two casts.
 
 `_obstack_allocated_p` is left out: the installed header does not declare it, so there
 is nothing to reduce — the same rule that rejected `__underflow` in the first round.
@@ -160,8 +176,7 @@ against 6 newly-wrong, all of them listed:
 Not one is a named libc struct standing where a correct primitive pointer used
 to. The three `pinky` rows are the register-resident case below; the two
 `EGexecute` rows are a pointee guess spreading into two index variables; the
-`gzip` one is a by-value `struct stat` local that becomes a byte blob once the
-`timespec *` slot of `futimens` changes what the frame merges.
+`gzip` one is the frame re-split described in full below.
 
 `spwd` and `utmpx` win nothing on this corpus: their pools sit behind gnulib
 wrappers that `protoorder` does not reach. They are kept because the declaration
@@ -189,6 +204,53 @@ count moves are the whole of it.
 exports a register local, so they stop being scored at all — they are not mistyped, they
 are invisible. The trigger is `fread_unlocked` gaining a declaration, which changes what
 the O0 frame copies merge with. The same slot wins four `FILE *` elsewhere.
+
+### The gzip `lutimens` row, in full
+
+The `stat` row in that table is not just a name lost. `gzip::O2::lutimens`
+(`0xee90`) on `main` declares the whole 144-byte frame slot as one `stat v5` and
+reads its tail as members; on this branch the slot is `char v5 [80]` handed to
+an `lstat` that writes 144 bytes, and the three words past 80 —
+`st_atim.tv_nsec`, `st_mtim` — detach into `v9`/`v10`/`v11`, which the emitted
+body reads with nothing writing them:
+
+```
+main:    stat v5;           // stack - 0xc8      lstat(a0,&v5)      v8 = v5._88_8_;
+branch:  char v5 [80];      // stack - 0xc8      lstat(a0,(stat *)v5)
+         long v9;           // stack - 0x78      v4._8_8_ = v9;     <- nothing writes v9
+         undefined8 v10;    // stack - 0x70      v7 = v10;
+         long v11;          // stack - 0x68      v8 = v11;
+```
+
+The cause is the `timespec *` slot on `utimensat`/`futimens`: with those two
+slots reverted to `void *` and nothing else changed, `stat v5` comes back whole.
+
+It is kept, and this is the measurement it is kept on. Over all 30 corpus slices
+that import `utimensat` or `futimens` (coreutils `cp`/`ginstall`/`mv`/`touch`,
+gzip, tar, shadow `useradd`/`usermod`, openssh `sshd`/`sftp-server`, three
+optimization levels), the two builds differ in 123 functions:
+
+```
+122  gain a `timespec` rendering (gnulib's own `struct timespec ts[2]` among them)
+  3  lose a whole `stat` declaration
+  1  of those 3 is under-declared: gzip O2 `lutimens`
+```
+
+The other two (`shadow::O2::useradd` `0xc4a0`, `usermod` `0xbd90`) trade a
+`stat v17` for a 152-byte `char v17 [152]` — wider than the struct, not
+narrower, so no write lands outside it — while the adjacent
+`unsigned long v18 [4]` becomes exactly the `timespec v18 [2]` the source
+declares.
+
+The under-declared shape itself is not new. Scanning the same 30 slices for a
+`char vN [K < 144]` that the body casts to `stat *`: `main` already prints 7 of
+them, and this branch prints 8. `coreutils::O2::cp` `0x76f0` is main's, with the
+same detached tail — `char v24 [80]` cast to `(stat *)`, and `v25`, `v89`,
+`v90`, `v91` read with nothing writing them. So the row is one more instance of
+a rendering the option already ships, bought with 122 functions that gain the
+type the source actually declares; it is not a defect this round introduces, and
+fixing the class belongs to the frame-merge seam rather than to a prototype
+table.
 
 ### Whole-corpus output diff
 

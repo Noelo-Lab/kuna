@@ -138,6 +138,7 @@ fn every_named_slot_has_a_width() {
         .iter()
         .chain(LIBC_EXT_NAMED.iter())
         .chain(LIBC_DEFINED_NAMED.iter())
+        .chain(LIBC_IMPORTED_OBSTACK.iter())
     {
         for t in std::iter::once(&sig.ret).chain(sig.params.iter()) {
             if let Ty::NamedPtr(n) = t {
@@ -254,12 +255,12 @@ fn the_tables_have_no_duplicate_names() {
     assert_eq!(aggs.len(), before, "duplicate aggregate name");
 }
 
-/// The one table matched against names the image DEFINES is reserved-namespace
-/// obstack entry points and nothing else. A plain spelling matched that way
+/// The two tables matched against an obstack entry point are reserved-namespace
+/// names and nothing else. A plain spelling matched against a DEFINED name
 /// would retype a function the image wrote itself.
 #[test]
 fn the_defined_table_is_obstack_entry_points_only() {
-    for (name, sig) in LIBC_DEFINED_NAMED {
+    for (name, sig) in LIBC_DEFINED_NAMED.iter().chain(LIBC_IMPORTED_OBSTACK.iter()) {
         assert!(
             name.starts_with("_obstack_"),
             "{name}: only the reserved obstack entry points may match a DEFINED name"
@@ -277,19 +278,51 @@ fn the_defined_table_is_obstack_entry_points_only() {
     assert_eq!(LIBC_DEFINED_NAMED.len(), 5, "`_obstack_allocated_p` has no installed declaration");
 }
 
-/// The size slots of the obstack entry points are pointer-width, not the `int`
-/// the installed glibc header spells: the corpus's obstack is gnulib's copy,
-/// whose `_OBSTACK_SIZE_T` is `size_t`, and an `int` would put a truncating
-/// cast on every call.
+/// The two obstack tables are the SAME five names with the SAME shape, and
+/// differ in exactly the slots the two published headers disagree about: the
+/// sizes and the byte count. Anything else differing would mean one channel
+/// silently lost a slot.
 #[test]
-fn the_obstack_size_slots_are_pointer_width() {
-    let (_, chunk) =
-        LIBC_DEFINED_NAMED.iter().find(|(n, _)| *n == "_obstack_newchunk").expect("newchunk");
-    assert_eq!(chunk.params.len(), 2);
-    assert!(matches!(chunk.params[1], Ty::Size), "the length is a size_t");
-    let (_, used) =
-        LIBC_DEFINED_NAMED.iter().find(|(n, _)| *n == "_obstack_memory_used").expect("used");
-    assert!(matches!(used.ret, Ty::Size), "and so is the byte count it returns");
+fn the_two_obstack_tables_differ_only_in_the_size_slots() {
+    let same = |a: &Ty, b: &Ty| match (a, b) {
+        (Ty::NamedPtr(x), Ty::NamedPtr(y)) => x == y,
+        _ => std::mem::discriminant(a) == std::mem::discriminant(b),
+    };
+    assert_eq!(LIBC_DEFINED_NAMED.len(), LIBC_IMPORTED_OBSTACK.len());
+    for ((dname, dsig), (iname, isig)) in LIBC_DEFINED_NAMED.iter().zip(LIBC_IMPORTED_OBSTACK) {
+        assert_eq!(dname, iname, "the two tables are keyed the same way");
+        assert_eq!(dsig.params.len(), isig.params.len(), "{dname}: same arity");
+        assert_eq!(dsig.vararg, isig.vararg);
+        for (d, i) in dsig.params.iter().zip(isig.params) {
+            assert!(
+                matches!((d, i), (Ty::Size, Ty::Int)) || same(d, i),
+                "{dname}: only a size slot may differ between the channels"
+            );
+        }
+        assert!(
+            matches!((&dsig.ret, &isig.ret), (Ty::Size, Ty::Int)) || same(&dsig.ret, &isig.ret),
+            "{dname}: and the same for the return"
+        );
+    }
+}
+
+/// gnulib's copy of `obstack.c` defines `_OBSTACK_SIZE_T` as `size_t` and the
+/// installed glibc header spells plain `int`
+/// (`gcc -aux-info`: `extern void _obstack_newchunk (struct obstack *, int)`).
+/// Which one a call obeys is decided by the CHANNEL — a linked-in definition or
+/// an import — so each table carries its own header's spelling.
+#[test]
+fn each_obstack_channel_keeps_its_own_size_spelling() {
+    let chunk = |t: &'static [(&str, Sig)]| {
+        &t.iter().find(|(n, _)| *n == "_obstack_newchunk").expect("newchunk").1
+    };
+    let used = |t: &'static [(&str, Sig)]| {
+        &t.iter().find(|(n, _)| *n == "_obstack_memory_used").expect("used").1
+    };
+    assert!(matches!(chunk(LIBC_DEFINED_NAMED).params[1], Ty::Size), "gnulib: size_t");
+    assert!(matches!(used(LIBC_DEFINED_NAMED).ret, Ty::Size), "gnulib: size_t");
+    assert!(matches!(chunk(LIBC_IMPORTED_OBSTACK).params[1], Ty::Int), "glibc: int");
+    assert!(matches!(used(LIBC_IMPORTED_OBSTACK).ret, Ty::Int), "glibc: int");
 }
 
 /// The record readers of the three account databases all end their argument

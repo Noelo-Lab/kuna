@@ -93,10 +93,13 @@
 //! and added seven aggregates and about seventy-five slots
 //! (`docs/features/libcstructs/`). One of them needed a channel that did not
 //! exist: [`LIBC_DEFINED_NAMED`], matched against a name the image DEFINES,
-//! because gnulib links its obstack in and the linker exports it, so obstack is
-//! never an import and is the widest aggregate in that ground truth after
-//! `FILE`. See that table for why five reserved names may take that channel and
-//! nothing else here may.
+//! because gnulib links its obstack in and the linker exports it from the
+//! program itself — and obstack is the widest aggregate in that ground truth
+//! after `FILE`. Most of the corpus reaches it that way; a minority (the `dpkg`
+//! programs) import glibc's instead, and the two publish different size slots
+//! for the same symbol, so the import channel takes its own table
+//! ([`LIBC_IMPORTED_OBSTACK`]). See [`LIBC_DEFINED_NAMED`] for why five
+//! reserved names may match a definition and nothing else here may.
 //!
 //! ## The stream slots
 //!
@@ -119,7 +122,7 @@ use kuna_decomp::dtype::{flags, type_metatype, Datatype, TypeFactory};
 
 use super::{
     resolved_import_addrs, seed_named_prototypes, seed_resolved_prototypes,
-    unambiguous_imported_function_names, unambiguous_present_function_names, Sig, Ty,
+    unambiguous_defined_function_names, unambiguous_imported_function_names, Sig, Ty,
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
@@ -496,8 +499,8 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     ("wcrtomb", Sig { ret: Ty::Size, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("mbstate_t")], vararg: -1 }),
 ];
 
-/// The one table matched against a name the image DEFINES as well as one it
-/// imports — the obstack entry points.
+/// The obstack entry points as the image's OWN definitions declare them — the
+/// one table matched against a DEFINED name.
 ///
 /// Every other table here is imports-only, because a coincidental `fopen` or
 /// `stat` in an image's own symbol table is that image's function and retyping
@@ -506,22 +509,33 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
 /// `obstack.h`, only ever defined by glibc or by the gnulib copy of the same
 /// file, and both publish the same `struct obstack`.
 ///
-/// That distinction is what makes the entry worth having, because in this
-/// corpus obstack is never an import. gnulib links its copy IN, and the linker
-/// exports the symbols from the program itself — so a stripped `grep`, `tar` or
-/// `coreutils` binary still carries `_obstack_newchunk` in `.dynsym` and
-/// nowhere else says what its first argument is. It is the single widest
-/// aggregate in the measured ground truth after `FILE`: 431 pointer variables,
-/// 371 of them inside a function that calls one of these five directly
-/// (`docs/features/libcstructs/analysis.md`).
+/// That channel is what makes the entry worth having. gnulib links its copy IN,
+/// and the linker exports the symbols from the program itself — so a stripped
+/// `grep`, `tar` or `coreutils` binary still carries `_obstack_newchunk` in
+/// `.dynsym` and nowhere else says what its first argument is. obstack is the
+/// single widest aggregate in the measured ground truth after `FILE`: 431
+/// pointer variables, 371 of them inside a function that calls one of these
+/// five directly (`docs/features/libcstructs/analysis.md`).
 ///
-/// The size slots are `size_t`, not the `int` the INSTALLED glibc header spells
-/// at `/usr/include/obstack.h:184`. Two published declarations of one symbol
-/// exist — glibc's, and the gnulib copy every obstack in this corpus is in fact
-/// compiled from, which defines `_OBSTACK_SIZE_T` as `size_t` — and the corpus's
-/// own debug info says which applies here (`size_t` in every `tar` and `grep`
-/// twin). Both pass the value in a register, so only the rendering moves: `int`
-/// would put a truncating `(int)` cast on every call.
+/// ## The size slots are the reason there are two tables
+///
+/// Two published declarations of these symbols exist. gnulib's copy defines
+/// `_OBSTACK_SIZE_T` as `size_t`; the INSTALLED glibc header spells plain `int`
+/// (`/usr/include/obstack.h:184-190`, reduced by `gcc -aux-info` to
+/// `extern void _obstack_newchunk (struct obstack *, int)`). Which applies is
+/// not a corpus-wide fact — it is a fact about the CHANNEL, and both channels
+/// occur in one results tree: 15 slices of the same corpus (the five `dpkg`
+/// programs at each of the three optimization levels) carry
+/// `UND _obstack_begin@GLIBC_2.2.5` and `UND _obstack_newchunk@GLIBC_2.2.5`,
+/// and their own debug twins resolve those size parameters to a 4-byte `int`.
+/// An image that DEFINES the symbol has linked gnulib's copy in, and its twins
+/// say `size_t` in every `tar` and `grep` slice.
+///
+/// So the spelling follows the evidence: this table (`size_t`) is seeded only
+/// from [`super::unambiguous_defined_function_names`], and
+/// [`LIBC_IMPORTED_OBSTACK`] (`int`) from the import channel. Both pass the
+/// value in a register, so only the rendering moves — the wrong one puts a
+/// spurious cast on every call site.
 ///
 /// `_obstack_free` is the one signature here not printed verbatim by
 /// `gcc -aux-info`: the installed `obstack.h` declares it as `__obstack_free`,
@@ -537,10 +551,30 @@ pub(super) const LIBC_DEFINED_NAMED: &[(&str, Sig)] = &[
     ("_obstack_newchunk", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::Size], vararg: -1 }),
 ];
 
+/// The same five entry points as glibc's installed header declares them, for an
+/// image that IMPORTS them: the sizes and the byte count are `int`, everything
+/// else is [`LIBC_DEFINED_NAMED`] verbatim.
+///
+/// A call into `libc.so.6` is answered by glibc's build of `obstack.c`, whose
+/// published prototype is the one in `/usr/include/obstack.h` — so this is the
+/// declaration, and `size_t` here would be kuna printing a false one.
+pub(super) const LIBC_IMPORTED_OBSTACK: &[(&str, Sig)] = &[
+    ("_obstack_begin", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Int, Ty::Int, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_begin_1", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Int, Ty::Int, Ty::VoidPtr, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_free", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_memory_used", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack")], vararg: -1 }),
+    ("_obstack_newchunk", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::Int], vararg: -1 }),
+];
+
 /// The built-in signature for a name the OPERATOR declared, in its named-type
-/// form. `None` when the gate is off or neither named table knows the name, in
-/// which case [`super::declared_libc_prototype`] answers from the `void *`
-/// tables exactly as before.
+/// form. `None` when the gate is off or no named table knows the name, in which
+/// case [`super::declared_libc_prototype`] answers from the `void *` tables
+/// exactly as before.
+///
+/// The obstack pair is answered from [`LIBC_DEFINED_NAMED`]: a
+/// `--define-function 0x…=_obstack_newchunk` names a BODY in this image, which
+/// is the defined channel by construction, and an import needs no directive to
+/// be identified.
 pub(super) fn declared_named_prototype(name: &str) -> Option<&'static Sig> {
     if !enabled() {
         return None;
@@ -591,13 +625,18 @@ impl AnalysisPass for LibcTypesPass {
         // whoever declared it.
         let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
         let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
-        // The one exception, and its own table: the `_obstack_*` entry points
-        // are matched against a name the image DEFINES as well (see
+        // The one exception, and its own pair of tables: the `_obstack_*` entry
+        // points are matched against a name the image DEFINES as well (see
         // `LIBC_DEFINED_NAMED` for why that is safe for those five names and
-        // for nothing else here).
-        let present = unambiguous_present_function_names(ctx.file, ctx.bytes);
-        seed_named_prototypes(&mut out, &present, LIBC_DEFINED_NAMED, types, word_size, layout);
-        seed_resolved_prototypes(&mut out, &resolved, LIBC_DEFINED_NAMED, types, word_size, layout);
+        // for nothing else here). Defined and imported take DIFFERENT
+        // signatures, because gnulib and glibc publish different size slots for
+        // the same symbol, so the defined channel must be the defined names
+        // alone — `unambiguous_present_function_names` is the union and holds an
+        // ordinary import too.
+        let defined = unambiguous_defined_function_names(ctx.file, ctx.bytes);
+        seed_named_prototypes(&mut out, &defined, LIBC_DEFINED_NAMED, types, word_size, layout);
+        seed_named_prototypes(&mut out, &imported, LIBC_IMPORTED_OBSTACK, types, word_size, layout);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_IMPORTED_OBSTACK, types, word_size, layout);
         seed_named_prototypes(&mut out, &imported, LIBC_NAMED, types, word_size, layout);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_NAMED, types, word_size, layout);
         seed_named_prototypes(&mut out, &imported, LIBC_EXT_NAMED, types, word_size, layout);
