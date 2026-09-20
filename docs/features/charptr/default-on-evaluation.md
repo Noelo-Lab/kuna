@@ -15,7 +15,7 @@ benchmark all run.
 | (b) `make test-stages` | **pass** — 1,256/1,256, PARITY OK; the stage test's pass 1 carries its own `option charptr off`. |
 | (c) `make test-cli` | **FAIL** — 208/214. The same six probes move. |
 | (d) 444-slice typesweep, new default vs old | **pass** — perfect 1,349 -> 1,353, aggregate 3657.76 -> 3662.69, 4 onto perfect, 0 off perfect, 14 improved, 6 worse. improved (18) >= worse (6); every worse row is read in `record.json`. |
-| (e) `timeit` interleaved min-of-15, fmt/ls/sort -O2 + bash -O2 | **pass** — option-on against the same build with it off: fmt -1.59%, ls -0.37%, sort +2.67%, bash +4.36%; worst +4.36%, inside the +5% budget. |
+| (e) `timeit` interleaved min-of-15, fmt/ls/sort -O2 + bash -O2 | **pass** — re-run on the rebased base, option-on against the same build with it off: fmt +3.88%, ls +2.11%, sort +4.77%, bash +2.45%; worst +4.77%, inside the +5% budget. (First run, quieter box: -1.59 / -0.37 / +2.67 / +4.36.) |
 | (f) whole-corpus `decompile-all` over 8 binaries, every hunk classified | **pass** — every hunk falls in a documented class; 0 arity changes over 2,290 functions. |
 | (g) `modes.rs` coherent | held as an `EXCLUDED_ON_PURPOSE` entry with this evaluation cited. |
 

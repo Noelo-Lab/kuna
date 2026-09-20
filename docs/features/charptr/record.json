@@ -214,7 +214,42 @@
   "worst_on_vs_default_pct": 4.36,
   "budget_pct": 5.0,
   "within_budget": true,
-  "note": "the default arm produces byte-identical output to main on all 8 corpus binaries, so its 1.2-2.2% is build/box noise between two separately built binaries, not work this change does"
+  "note": "the default arm produces byte-identical output to main on all 8 corpus binaries, so its 1.2-2.2% is build/box noise between two separately built binaries, not work this change does",
+  "re_measured_on_rebased_base": {
+   "method": "interleaved min-of-15, two arms of the SAME build (option off vs `--option charptr on`), `kuna decompile-all --json --max-fn-seconds 120`, fmt/ls/sort -O2 and bash -O2; box contended (load 9-17, about 9 campaign lanes)",
+   "per_binary": {
+    "fmt": {
+     "min_ms": {
+      "default": 4299.7,
+      "on": 4466.4
+     },
+     "delta_min_pct_on_vs_default": 3.88
+    },
+    "ls": {
+     "min_ms": {
+      "default": 14891.4,
+      "on": 15205.2
+     },
+     "delta_min_pct_on_vs_default": 2.11
+    },
+    "sort": {
+     "min_ms": {
+      "default": 15218.2,
+      "on": 15944.3
+     },
+     "delta_min_pct_on_vs_default": 4.77
+    },
+    "bash": {
+     "min_ms": {
+      "default": 90345.4,
+      "on": 92556.8
+     },
+     "delta_min_pct_on_vs_default": 2.45
+    }
+   },
+   "worst_delta_pct": 4.77,
+   "verdict": "worst +4.77% (sort), inside the +5% budget. Higher across the board than the first run (-1.59/-0.37/+2.67/+4.36) because the box is busier; the DEFAULT arm is unaffected either way -- the walk returns at its first line when the option is off, and default output is byte-identical to main on the 8-binary corpus."
+  }
  },
  "known_costs": [
   "Committing a pointer forfeits the metric's width-only free pass on an 8-byte scalar (head::elide_tail_bytes_pipe).",
