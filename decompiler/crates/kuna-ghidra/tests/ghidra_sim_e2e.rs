@@ -516,7 +516,13 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // `sub_3de0`/`sub_31a0`/`sub_3900` and `fseeko` results stay spilled: their
 // outputs are an unlocked `eax` read out of `rax`, which the fold leaves alone.
 // The CLI path loses the same 1 and 2 lines.
-const PIN_FAILLOG_C_LINES: [usize; 3] = [286, 37, 92];
+// sub_2620 286 -> 285 and sub_3320 37 -> 34 with the second round of `libctypes`
+// names: `fseeko` gains a declaration, so its result stops being spilled into an
+// `int` temporary and folds into the `if` that tests it, and one `passwd *` local
+// merges where it used to split. Every other measurement on this fixture is
+// unchanged -- placeholders, the diff ratios, and the getPcode/getMappedSymbols
+// traffic all hold.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [285, 34, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports
