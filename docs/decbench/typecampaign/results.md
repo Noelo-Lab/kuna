@@ -360,7 +360,7 @@ round-B capture exactly, 10,748/10,748 functions, 986 perfect, **0 values differ
 | goal 2: variables | varcensus, fmt/ls/sort/du O0+O2 | 7,085 declarations | 6,945 | 6,970 (+25) | the phantom-`rdx` locals go 11 → 9; `fmt::main` still calls `sub_3700` with 1, 2 and 3 arguments by default |
 | goal 3: structs | structscore TRex mean / layout precision | 3.638 / 1.579, layout 0 | 3.750 / 1.660, P .8945 | **4.108 / 1.893**, P **.5520** | TRex up on all eight builds; per-parameter layout precision is a **regression**, and it is protoorder's (below) |
 | decbench#93 crediting | replay of the same rows | 848 | 986 → 1,159 | 1,349 → **1,575** | +1,569 TP, 226 more functions perfect if a struct pointer counts against a GT pointer-to-struct |
-| speed | whole-binary `decompile-all`, min-of-11 interleaved | — | +0.6…+2.5% vs baseline | SPEED_HEADLINE | SPEED_READING |
+| speed | whole-binary `decompile-all`, interleaved min-of-11 | — | +0.6…+2.5% vs baseline | +0.7…+2.5% vs baseline, ≈+1% vs round B | eight items for about one percent; bash needed the >5% re-run rule and came back at −1.6% |
 
 ### C.1 type_match
 
@@ -507,7 +507,26 @@ exactly) — `final-c/credit93.py`:
 
 ### C.6 Speed
 
-SPEED_SECTION
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation) on the O2
+stripped binaries, the three binaries interleaved with the arm order rotating every round, 11
+rounds each, load average 2.5–5.3 on 80 cores. Driver `final-c/speed3.py`, raw samples
+`final-c/speed.json` and `final-c/speed-bash2.json`.
+
+| binary | functions | baseline min | round B min | **round C min** | Δ C vs B (min / median) | Δ C vs baseline (min) |
+|---|---:|---:|---:|---:|---:|---:|
+| coreutils fmt | 151 | 4,098.3 ms | 4,106.1 ms | 4,128.8 ms | +0.55% / −2.15% | +0.74% |
+| coreutils ls | 404 | 13,192.7 ms | 13,413.0 ms | 13,500.6 ms | +0.65% / +2.52% | +2.33% |
+| coreutils sort | 343 | 13,761.0 ms | 13,966.1 ms | 14,102.0 ms | +0.97% / +0.57% | +2.48% |
+| bash (22 rounds) | 2,538 | 83,477.6 ms | 85,688.2 ms | 84,349.1 ms | **−1.56%** / +1.52% | +1.04% |
+
+bash needed the re-run rule. The first 11 rounds put round C at +4.97% over round B — over the
++5% budget's alarm line — so it was re-run at another moment: 11 more rounds give −1.56%, and the
+pooled min-of-22 above is that. The +4.97% was the box, not the build; both runs are in the JSON.
+
+So the round costs about 1% over round B on the three coreutils binaries and nothing measurable
+on bash, and at most +2.5% over the campaign baseline — inside the +5% budget each PR was
+measured against individually (#669 ≤ +4.1%, #673 −4.6…+0.8%, #681 ≤ +1.04%, #675 −1.0…+1.0%).
+bash is 1.3 MB, so `--mode auto` resolves to `reliable` there rather than `aggressive`.
 
 ### C.7 Every round-C PR and what it measured
 
