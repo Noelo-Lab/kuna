@@ -620,6 +620,19 @@ Nothing regresses: **0 worse, 0 off perfect**, and no other project or opt level
 construction — one changes call arities, which `type_match` does not score, and the other
 changes only `decompile-project`.
 
+`tail` -O2 `dump_remainder`, round C against round D:
+
+```
+$ kuna decompile-all <results>/O2/coreutils/stripped/tail --addr 0x6020
+- int * sub_6020(char a0,char *a1,unsigned int a2,void *a3)          # round C
++ int * sub_6020(char a0,char *a1,unsigned int a2,unsigned long a3)  # round D
+-     v3 = _DT_INIT;                      -     if (v5 <= (void *)0x2000)
++     v3 = 0x2000;                        +     if (v5 <= 0x2000)
+```
+
+`BUFSIZ` is `0x2000` and `.init` starts there in a PIE, so the constant was printed as the
+function that sits at the address and everything it touched became a pointer.
+
 Measured against the campaign baseline the round now stands at 2,615 functions improved and
 8 worse, 502 onto perfect and 1 off.
 
