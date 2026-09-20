@@ -1,0 +1,84 @@
+{
+  "slug": "charptr",
+  "option": "charptr",
+  "values": "on|off",
+  "default": "off",
+  "phase": "P5",
+  "subphase": "type-propagation",
+  "base_commit": "2e28ece4a",
+  "module": "decompiler/crates/kuna-decomp/src/p5_types/kuna_charptr.rs",
+  "stage_test": "tests/stages/kuna-charptr.xml",
+  "class_census": {
+    "source": "docs/decbench/typecampaign/final-c round-C decision dump, 444 slices, metric pinned to decbench 625e892",
+    "gt_char_ptr_total": 14645,
+    "gt_scored_total": 65715,
+    "kuna_true_positives": 4204,
+    "kuna_rate_pct": 28.7,
+    "by_storage": {
+      "arg": {"n": 4186, "kuna": 2717, "binja": 2907, "ida": 1948, "ghidra": 1428},
+      "stack": {"n": 3316, "kuna": 1487, "binja": 2365, "ida": 1590, "ghidra": 1244},
+      "register_only": {"n": 7143, "kuna": 0, "binja": 51, "ida": 5, "ghidra": 3}
+    },
+    "miss_spelling_arg": {"unsigned long": 806, "void *": 247, "long": 180, "int8": 28,
+                          "unsigned long *": 16, "stat *": 9, "other": 35, "unmatched": 148},
+    "miss_spelling_stack": {"undefined8": 932, "unsigned long": 216, "void *": 177, "long": 134,
+                            "undefined16": 79, "int8": 17, "other": 93, "unmatched": 181},
+    "note": "932 of the 1,648 stack misses are framelayout filler slots (no recovered type attached); measured chapter-06 gap, not chapter-05"
+  },
+  "evidence_census": {
+    "instrument": "KUNA_CHARPTR_CENSUS=1, deduplicated per (function, storage)",
+    "sample": "coreutils -O0 cat, 126 functions",
+    "candidates": 298,
+    "buckets": {"none": 240, "refuse_callee_scalar": 22, "refuse_wider_element_or_store": 18,
+                "refuse_arithmetic": 4, "refuse_compare_literal": 2, "refuse_wider_load": 1,
+                "byte_only": 8, "declared_char_ptr_callee": 3, "format_s_argument": 0,
+                "character_array_constant": 0}
+  },
+  "typesweep": {
+    "driver": "scripts.decbench.typesweep with the metric pinned to decbench 625e892 (final-c/pindb.py), DECBENCH_NO_CACHE=1",
+    "slices": 444,
+    "projects": "coreutils grep gzip diffutils bzip2 findutils tar shadow, --opt O0 O2 O2-noinline",
+    "functions": 10748,
+    "arms": {
+      "on": {"perfect_off": 1349, "perfect_on": 1353, "aggregate_off": 3657.76, "aggregate_on": 3662.69,
+             "onto_perfect": 4, "off_perfect": 0, "improved": 14, "worse": 3},
+      "declared_callee_half_only": {"perfect_off": 1349, "perfect_on": 1349, "aggregate_off": 3657.76,
+                                    "aggregate_on": 3657.90, "onto_perfect": 0, "off_perfect": 0,
+                                    "improved": 1, "worse": 0},
+      "rejected_no_offset_guard": {"perfect_off": 1349, "perfect_on": 1357, "aggregate_on": 3667.31,
+                                   "onto_perfect": 8, "off_perfect": 0, "improved": 26, "worse": 13,
+                                   "why_rejected": "four of the extra losses convert a CORRECT void * into char * off a one-byte struct field (coreutils ginstall announce_mkdir reads the bool at options+0x3c)"},
+      "rejected_recovered_callee_vote": {"subset": "grep gzip bzip2 diffutils O0+O2, 812 functions",
+                                         "aggregate_delta": 0.95, "onto_perfect": 0,
+                                         "compared_with_declared_only": 1.78,
+                                         "why_rejected": "a recovered char * is itself a guess; counting it scores lower"}
+    },
+    "worse_rows": [
+      "coreutils::O2::od print_long_double - GT void *block, kuna had void *, now char *",
+      "coreutils::O2-noinline::od print_long_double - same function, same cause",
+      "coreutils::O2-noinline::head elide_tail_bytes_pipe - GT __off_t current_pos, an integer the body also uses as an address"
+    ],
+    "arity_counters": {
+      "functions_compared": 2290,
+      "signature_changes": 14,
+      "arity_changes": 0,
+      "functions_with_a_different_local_declaration_count": 11,
+      "note": "phantom/arity: no function gained or lost an argument on the 8-binary corpus"
+    }
+  },
+  "corpus_diff": {
+    "binaries": ["O0 coreutils basename", "O0 coreutils cat", "O0 coreutils chroot", "O0 grep grep",
+                 "O2 coreutils fmt", "O2 coreutils ls", "O2 coreutils sort", "O2 gzip gzip"],
+    "default_vs_main": "byte-identical on all 8 (the option ships off)",
+    "hunk_classes_option_on": {
+      "declaration retyped to char *": 9,
+      "pointer arithmetic becomes indexing (RulePtrArith)": 17,
+      "a byte constant prints as a character literal": 118,
+      "an explicit (unsigned char) cast on a widened char": 3,
+      "a local renumbered or one declaration more or fewer (merge shift)": 106,
+      "two coreutils ls byte pointers whose signedness moves the other way as a knock-on": 2
+    },
+    "unclassified": 0
+  },
+  "speed_method": "interleaved min-of-15 whole-binary decompile-all, fmt/ls/sort -O2 and bash -O2, main vs new default vs option on"
+}

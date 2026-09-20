@@ -94,15 +94,33 @@ placeholders `ptrfromuse` leaves.
 
 ## What that is worth
 
-Subset sweep (grep gzip bzip2 diffutils, O0 + O2, 16 slices, 812 functions),
-`charptr uses` against the same build with the option off:
+444-slice sweep, 10,748 functions, `charptr on` against the same build with the
+option off:
 
-- perfect `type_match` 183 -> 184, aggregate 427.27 -> 429.05
-- 1 onto perfect, 4 improved, **0 worse, 0 off perfect**
+- perfect `type_match` 1,349 -> 1,353, aggregate 3657.76 -> 3662.69
+- 4 onto perfect, 14 improved, **3 worse, 0 off perfect**
+- across 2,290 functions of the 8-binary corpus diff: 14 signatures change,
+  **0 arities change**, 11 functions gain or lose one local declaration
 
-A variant that also counted `protoorder`'s *recovered* callee parameter type as
-evidence (rather than only declared prototypes) scored **lower** on the same
-slices — 0 onto perfect, aggregate +0.95 — and was dropped: a recovered `char *`
-is itself a guess, and the walk would launder it into a commitment.
+Three variants were measured and rejected.
 
-The full-corpus numbers are in `record.json`.
+- **The declared-callee half alone** (a call argument the callee declares
+  `char *`, and nothing else): +0.14 aggregate, 1 function improved, 0 onto
+  perfect, over the whole 444 slices. That is why it does not ship as its own
+  strength: nearly every reachable declaration already lands on the argument
+  Varnode, where ordinary propagation takes it.
+- **Counting `protoorder`'s recovered callee vote** as evidence rather than only
+  declared prototypes: +0.95 aggregate against +1.78 on the same 812-function
+  subset. A recovered `char *` is itself a guess, and the walk would launder it
+  into a commitment.
+- **Without the fixed-offset guard** (any one-byte dereference counts, wherever
+  it sits): +8 onto perfect and 26 improved, but 13 worse instead of 3. Four of
+  the extra losses convert a *correct* `void *` into `char *` off a one-byte
+  struct field — coreutils `ginstall`'s
+  `announce_mkdir(char const *dir, void *options)` reads the `bool` at
+  `options + 0x3c`. More metric, less truth; rejected.
+
+The three remaining losses are read individually in `record.json`: two are the
+same `od::print_long_double` in two builds (a correct `void *` refined to
+`char *`), and one is `head::elide_tail_bytes_pipe`'s `__off_t`, an integer the
+body also uses as an address.
