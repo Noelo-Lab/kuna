@@ -486,10 +486,22 @@ some other pointer or as a scalar, and everything `ptrfromuse` refuses. The
 candidate is folded by `type_order` exactly as `ptrfromuse`'s is, and it may
 additionally **refine** a pointer that points at nothing — `void *` and
 `undefined1 *`, the placeholders this rule exists to resolve — while a pointer at
-anything named or sized (`FILE *`, `stat *`, `long *`, a synthesized
-`struct_3 *`) is left as it was. Only function inputs and Varnodes in the stack
-space are considered: those are the two kinds of storage a reader sees as a
-declaration.
+a named, aggregate or *wider* pointee (`FILE *`, `stat *`, `long *`, a
+synthesized `struct_3 *`) is left as it was. Only function inputs and Varnodes in
+the stack space are considered: those are the two kinds of storage a reader sees
+as a declaration.
+
+`unsigned char *` is the one spelling that guard does **not** protect, and the
+reason is worth stating rather than hiding. The refusal reads the type *in
+flight* — the `ct` the fold has built so far for this Varnode — not the type the
+function will finally print. Where a `uint1 *` would only have arrived by later
+propagation from a byte-wide use, the `char *` vote is already sitting in the
+fold and wins, so `int callee(unsigned char *a0, int a1)` in the
+`protoorder_x86_64` fixture becomes `int callee(char *a0, int a1)` with the
+option on. That is the same call `charbyte` makes one level down: the element
+width agrees and only its signedness moves, and it is by design, because a
+one-byte pointee reached through byte-only uses is what the rule exists to
+name. `FILE *` next to it in the same signature is untouched.
 
 The shipped value is `off`, and the reason is measured rather than cautious. On
 the 444-slice decbench sweep the ground-truth class `char *` is the largest
