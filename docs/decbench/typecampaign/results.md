@@ -624,10 +624,14 @@ changes only `decompile-project`.
 
 ```
 $ kuna decompile-all <results>/O2/coreutils/stripped/tail --addr 0x6020
-- int * sub_6020(char a0,char *a1,unsigned int a2,void *a3)          # round C
-+ int * sub_6020(char a0,char *a1,unsigned int a2,unsigned long a3)  # round D
--     v3 = _DT_INIT;                      -     if (v5 <= (void *)0x2000)
-+     v3 = 0x2000;                        +     if (v5 <= 0x2000)
+# round C
+int * sub_6020(char a0,char *a1,unsigned int a2,void *a3)
+    v3 = _DT_INIT;
+    if (v5 <= (void *)0x2000)
+# round D
+int * sub_6020(char a0,char *a1,unsigned int a2,unsigned long a3)
+    v3 = 0x2000;
+    if (v5 <= 0x2000)
 ```
 
 `BUFSIZ` is `0x2000` and `.init` starts there in a PIE, so the constant was printed as the
