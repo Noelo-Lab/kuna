@@ -710,11 +710,14 @@ sibling rule promoted outranks the clobber evidence here. The drop is
 definitely-not-used, so none of them puts the argument back.
 
 Dropping the argument also **narrows the preceding call's return value** wherever
-that call was the register's only writer. `bash`'s `expand_prompt` renders
-`v = xmalloc(n); a = SUB168(v,8);` with the option off and
-`v = (char *)xmalloc(n);` with it on, because the `rdx` half has lost its only
-reader. That is right for `xmalloc`, and it is the same mechanism that would
-delete a real struct half at a callee whose own prototype is under-recovered.
+that call was the register's only writer: the `SUB168(v,8)` that extracted the
+`rdx` half of a 16-byte return loses its only reader and goes with the argument.
+No drop in the 770-binary corpus does that under the shipped rule. The witness
+for it is `docs/features/argclobber/ce-forward-thunk-2param.c`, whose third
+argument is real: the forwarding clause declines it here, and with that clause
+ablated the drop takes the producing call's `SUB168(v,8)` with it. It is the
+same mechanism that would delete a real struct half at a callee whose own
+prototype is under-recovered.
 
 What no clause can see is that the evidence is a *recovery*. A callee whose own
 parameter list kuna under-recovers states a prototype that admits the drop, and

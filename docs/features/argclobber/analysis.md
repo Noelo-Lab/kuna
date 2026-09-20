@@ -199,10 +199,14 @@ in this directory are those classes.
 
 One effect belongs in the option's own description rather than in a footnote:
 dropping the argument also **narrows the preceding call's return value** where
-that call was the register's only writer. `bash`'s `expand_prompt` renders
-`v = xmalloc(n); a = SUB168(v,8);` off and `v = (char *)xmalloc(n);` on. That is
-right for `xmalloc`, and it is the same mechanism that would delete a real struct
-half at an under-recovered callee.
+that call was the register's only writer — the `SUB168(v,8)` that extracted the
+`rdx` half of a 16-byte return loses its only reader and goes with the argument.
+No drop in the 770-binary corpus does that under the shipped rule; the one that
+did, `bash`'s `expand_prompt` and its `xrealloc`, is declined now that the import
+its callee reaches has to answer for `rdx`. The witness is
+`ce-forward-thunk-2param.c` above, where the argument is real and the drop takes
+`mk()`'s `SUB168(v2,8)` with it. It is the same mechanism that would delete a
+real struct half at an under-recovered callee.
 
 ## Why `destructive = true` even as a default
 
