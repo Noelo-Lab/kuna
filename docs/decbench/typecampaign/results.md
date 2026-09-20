@@ -517,13 +517,13 @@ SPEED_SECTION
 | #681 | `foldcallretphi` on by default | `on` (was off) | metric-neutral (986 = 986, 0 improved / 0 worse); −14 declarations; worst speed +1.04% |
 | #687 | `foldcallret` never folds a call into the right operand of `&&`/`||` | strict fix | 8 of 25,556 functions change, each one a call the binary always makes that was being skipped; `variables[]` identical |
 | #686 | a load is not moved past a store that overlaps its bytes | strict fix | 1 of 48,235 functions changes (bash `init_line_structures`); typesweep rows identical in 444/444 slices |
-| #688 | `--jobs N` keeps synthesized structs with serial-run names | on with `--jobs` | removes the documented sharded-run limitation from #682; speed within ±3% |
+| #688 | `--jobs N` keeps synthesized structs with serial-run names | on with `--jobs` | removes the documented sharded-run limitation from #682; `--jobs 4` speed −3.1…+2.8% |
 
 **Not landed:**
 
 | PR / lane | item | state | measured |
 |---|---|---|---|
-| #689 | `argclobber` drops a trailing clobber argument only when the callee's recovered prototype says the register is free, default on | open, review CHANGES | 19 of 17,895 functions lose one trailing argument, every one landing on the callee's true arity; `type_match` 1,351 = 1,351; worst speed +0.38% |
+| #689 | `argclobber` drops a trailing clobber argument only when the callee's recovered prototype says the register is free, default on | open, review CHANGES | 19 functions over 770 stripped ELFs lose one trailing argument, every one landing on the callee's true arity; `type_match` 1,351 = 1,351; worst speed +0.38% |
 
 ### C.8 What stays opt-in, and what is open
 
@@ -554,4 +554,19 @@ python3 final/analyze.py            # tables above
 python3 final/goal2.py              # varcensus + never-written locals
 KUNA_BIN=<kuna> ~/.virtualenvs/decbench/bin/python -m scripts.decbench.structscore <R>/{O0,O2}/coreutils/stripped/{fmt,ls,sort,du} --all
 python3 final/speed.py 11           # interleaved whole-binary timing
+```
+
+Round C reruns the same drivers from `final-c/` with the metric pin in front of them
+(`DECBENCH_PIN` points at a `git archive` of decbench `625e892`):
+
+```bash
+export DECBENCH_PIN=<extracted 625e892 tree>     # final-c/pindb.py repoints the editable finder
+KUNA_BIN=<kuna> PYTHONPATH=final-c python -m finalsweep kuna $P --workers 12 --out <dir>
+python3 final-c/analyze3.py                      # baseline / round B / round C, classes, rivals
+python3 final-c/credit93.py base=<rows> roundB=<rows> roundC=<rows>
+python3 final-c/goal2c.py                        # varcensus + argclobber arm
+DECBENCH_PIN=... python final-c/ssrun.py <bin> --all --out <json>      # structscore
+DECBENCH_PIN=... python final-c/layoutrun.py                           # layout precision
+DECBENCH_PIN=... python final-c/layoutdiff.py <bin>                    # per-parameter, default vs protoorder off
+python3 final-c/speed3.py 11 <speed.json>
 ```

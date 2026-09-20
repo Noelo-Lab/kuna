@@ -40,7 +40,7 @@ reviewer + green gates; `[PROPOSAL]` items wait for the user; port TRex/RecStruc
 | B4a-on | foldcallretphi default on | B | merged d6c5862f | — | #681 | 986=986; −14 declarations; speed ≤+1.04% | — |
 | A1-on | libctypes glibc default | A | stays opt-in, no PR | /home/mahaloz/kwt/libctypes-glibc-on | — | 959=959 +0.55 (9/3); the 5 #660 defect classes reproduce | — |
 | A2-on | ptrfromuse void default | A | merged d8b9c0b1 | — | #690 | on the protoorder base: 1105→1309 (+204), 85 improved / 0 worse | — |
-| B1-on | argclobber default (argclobberproto) | B | open, review CHANGES (not landed) | /home/mahaloz/kwt/argclobberproto | #689 | callee's recovered prototype admits the drop: 19/17,895 functions, typesweep 1351=1351, speed +0.38% | address review, land |
+| B1-on | argclobber default (argclobberproto) | B | open, review CHANGES (not landed) | /home/mahaloz/kwt/argclobberproto | #689 | callee's recovered prototype admits the drop: 19 functions over 770 ELFs, typesweep 1351=1351, speed +0.38% | address review, land |
 | S3 | final re-measure (Stage 3) | setup | done 2026-09-19 | /home/mahaloz/kwt/_final | results PR | 848→986 perfect, .2645→.2895; 1,449 improved / 8 worse; per-class + rivals + varcensus + structscore + speed | `results.md` |
 | B9 | foldcallret short-circuit fix (GH-684) | B | merged a3bf6a15 | — | #687 | strict fix; 8/25,556 functions, `variables[]` identical | — |
 | B10 | aliasoverlap (a load past an overlapping store) | B | merged 3831d703 | — | #686 | strict fix; 1/48,235 functions; typesweep rows identical in 444/444 slices | — |
