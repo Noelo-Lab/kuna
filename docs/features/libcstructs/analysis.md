@@ -193,7 +193,10 @@ against 6 newly-wrong, all of them listed:
 Not one is a named libc struct standing where a correct primitive pointer used
 to. The three `pinky` rows are the register-resident case below; the two
 `EGexecute` rows are a pointee guess spreading into two index variables; the
-`gzip` one is the frame re-split described in full below.
+`gzip` one is the frame re-split described in full below. A second re-split of
+the same kind, and the one place this round makes a store escape its object,
+falls outside the scored corpus entirely: the `sigfillset` slot, two sections
+down.
 
 `spwd` and `utmpx` win nothing on this corpus: their pools sit behind gnulib
 wrappers that `protoorder` does not reach. They are kept because the declaration
@@ -269,6 +272,60 @@ type the source actually declares; it is not a defect this round introduces, and
 fixing the class belongs to the frame-merge seam rather than to a prototype
 table.
 
+### The `sigfillset` slot and the `sigaction` frame
+
+The same re-split one binary family further out, and this one detaches a write
+rather than a read. `sigfillset(sigset_t *)` gives the 128-byte `sa_mask`
+sub-object of a `struct sigaction` local an identity of its own, so the 152-byte
+frame slot the caller hands to `sigaction()` splits at 136 and the `sa_flags`
+store lands in a local outside the object. `-O2` openssh `ssh-keygen`
+`sub_4ce20` (`ssh_signal`, `misc.c:0xa24`) is the shape:
+
+```
+base:    sigaction v4;    // stack - 0x158   sigfillset(&v4.field_0x8);
+                                             v4._136_4_ = 0x10000000;
+                                             sigaction(a0,&v4,&v5)
+branch:  char v4 [136];   // stack - 0x158   sigfillset((sigset_t *)&v4[8]);
+         undefined4 v7;   // stack - 0xd0    v7 = 0x10000000;   <- nothing reads v7
+                                             sigaction(a0,(sigaction *)v4,&v5)
+```
+
+`v7` is dead: the flag never reaches the object, and `sigaction()` is handed 136
+bytes of a 152-byte structure. That is worse than the gzip row above — there a
+body read words nothing wrote; here a store escapes the object, which a
+recompile would observe.
+
+Measured by ablation, this branch built twice with nothing but the `sigfillset`
+row removed from the table in the second build:
+
+```
+444-slice corpus       6 slices import sigfillset (coreutils env, shadow su, three -O levels)
+                       0 `sigaction` declarations lost; the slot only adds sigset_t
+                       renderings (+2/+3 in env, +1 in su)
+disjoint openssh -O2   7 binaries, exactly 1 function each, all of them ssh_signal:
+                       ssh 11 -> 10 `sigaction vN` declarations, ssh-keygen 11 -> 10,
+                       ssh-agent 11 -> 10, ssh-add 11 -> 10, sshd 3 -> 2, scp 2 -> 1,
+                       sftp 2 -> 1
+```
+
+Nothing in the scored corpus moves; the visible cost is one function per openssh
+binary.
+
+The shape itself is not new, and the mitigation is the same as the gzip row's:
+`sigemptyset(sigset_t *)` ships on `main` and splits the frame the same way. On
+the ablated build, the five-line `sigaction(2)` program with `sigfillset`
+replaced by `sigemptyset` prints the identical detached `undefined4 v6;
+// stack - 0x30` next to `sigaction(a0,(sigaction *)&v3,a1)`; and ssh-keygen's
+base arm already prints 18 `(sigaction *)` cast-at-use sites against this
+branch's 19, eight of them in one function immediately after a
+`sigemptyset(&v23)`.
+
+The row is kept: typing `sigset_t` where the program passes one is right, the
+scored corpus loses nothing, and dropping `sigfillset` would leave
+`sigemptyset`/`sigaddset`/`sigprocmask` triggering the same split on `main`
+anyway. Fixing the class belongs to the frame-merge seam, not to a prototype
+table.
+
 ### Whole-corpus output diff
 
 `decompile-all` before and after over 14 whole binaries (7,457 functions): 796 functions
@@ -325,6 +382,11 @@ declares the type and calls the function draws
 does for `stat` on a five-line `stat(2)` program. The `.h` emitter already
 guards its side (`\`statfs\` is a type name above; prototype omitted`); the
 body's declaration is the unguarded half, and it is one line per colliding name.
+Plain `decompile-all` shows the collision too, without an export in sight: `O0`
+shadow `usermod` `sub_111a1` declares `statfs v1; // stack - 0x88` and calls
+`statfs(a0,&v1)` two lines later. The typing is right — 120 bytes, the glibc
+size — and the two spellings are the same word, so that body does not compile
+as printed.
 
 ### Speed
 
