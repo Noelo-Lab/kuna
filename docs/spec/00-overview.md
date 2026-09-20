@@ -1083,7 +1083,9 @@ identifiers in its C, prototype, variable types and type definitions
 names would become one, or when the text spells a structure name the renaming
 does not cover or spells one inside a string or character literal
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
-(rename_identifiers)`). On `tar` O2, 100 of the 106 functions that synthesize
+(rename_identifiers)`), and when a name it covers is a symbol's rather than a
+type's -- nothing kuna names spells a `struct_N`, but a binary's own symbols
+could. On `tar` O2, 100 of the 106 functions that synthesize
 are renamed. The rest are decompiled a second time by the same workers, each of
 which first destroys the structures it minted itself, and every type built on
 one (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs

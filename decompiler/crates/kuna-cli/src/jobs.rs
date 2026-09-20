@@ -1191,6 +1191,19 @@ fn name_structs_serially(
     Ok(Named { kind: SynthWorker::Force, table: Some(plan.table) })
 }
 
+/// Whether every name `map` covers in `r` is a TYPE name.
+///
+/// The substitution is textual, so a function, alias or variable literally
+/// called `struct_3` would be rewritten along with the structure of that name.
+/// Nothing kuna names spells one today; a binary whose symbols do takes the
+/// second decompile rather than a wrong rename.
+fn only_types_are_renamed(r: &FuncResult, map: &[(String, String)]) -> bool {
+    let covered = |name: &str| map.iter().any(|(own, _)| own == name);
+    !covered(&r.name)
+        && !r.aliases.iter().any(|a| covered(a))
+        && !r.variables.iter().any(|v| covered(&v.name))
+}
+
 /// `r` with its structures renamed from `own` to `serial`, or `None` when the
 /// two answer lists do not name structures with the same members, or the
 /// function's text names one the renaming does not cover.
@@ -1201,6 +1214,9 @@ fn rename_result(
     held: &[String],
 ) -> Option<FuncResult> {
     let map = shard::renaming(own?, serial)?;
+    if !only_types_are_renamed(r, &map) {
+        return None;
+    }
     let text = |s: &str| shard::rename_identifiers(s, &map, held);
     let mut out = r.clone();
     out.code = match r.code.as_deref() {
@@ -3807,6 +3823,23 @@ mod tests {
         let param = [("structsynth".to_string(), "param".to_string())];
         let asked = PoolConfig { options: &param, ..cfg(0, 0.0) };
         assert!(structsynth_shard_note(&asked, JOBS_TAG).is_some());
+    }
+
+    /// A `struct_N` that is a symbol's name, not a type's, must not be rewritten
+    /// with the type: such a function is decompiled again instead.
+    #[test]
+    fn a_rename_covering_a_symbol_name_is_refused() {
+        let map = [("struct_3".to_string(), "struct_0".to_string())];
+        let mut r = sample_result();
+        assert!(only_types_are_renamed(&r, &map));
+        r.variables[0].name = "struct_3".into();
+        assert!(!only_types_are_renamed(&r, &map));
+        r.variables[0].name = "param_1".into();
+        r.aliases.push("struct_3".into());
+        assert!(!only_types_are_renamed(&r, &map));
+        r.aliases.clear();
+        r.name = "struct_3".into();
+        assert!(!only_types_are_renamed(&r, &map));
     }
 
     /// (kuna `protoorder`) The names a pool replays are a serial run's, and on
