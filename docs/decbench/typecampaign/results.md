@@ -782,8 +782,9 @@ SPEED_TABLE
      Above that sits the 10,559 program-defined names (`hash_entry`, `fileinfo`, …) that no stripped
      binary carries and no decompiler recovers — reachable only under decbench#93's crediting rule,
      which is worth +226 functions today.
-  3. **Struct layout recall 0.0929** — precision is back at 0.87 but nine claimed fields in ten of the
-     ground truth are still not claimed at all, and **nesting F1 is still 0** on every build.
+  3. **Struct layout recall 0.0929** — precision is back at 0.87, but only 877 of the 9,443
+     ground-truth fields are claimed at all, and **nesting F1 is still 0** on every build (a
+     synthesized field is never itself a struct pointer).
   4. **`ptr_void` at O2** and the O2 gap generally: 3.09% perfect against 12.55% pooled.
 * **Ceilings, unchanged.** Register-resident ground truth is 25,821 of 65,715 GT variables (39.3%) and
   kuna exports none of them; the restrict artifact (D.5) is 98.2% inside that same set; signedness,
