@@ -1,0 +1,10 @@
+fmt O0: fields-only P=0.9167 (11/12), filler-counted P=0.8824 (15/17), gt=556
+fmt O2: fields-only P=1.0 (6/6), filler-counted P=1.0 (8/8), gt=402
+ls O0: fields-only P=0.5435 (100/184), filler-counted P=0.4291 (109/254), gt=1761
+ls O2: fields-only P=0.4765 (81/170), filler-counted P=0.417 (93/223), gt=800
+sort O0: fields-only P=0.588 (127/216), filler-counted P=0.4931 (143/290), gt=1779
+sort O2: fields-only P=0.7019 (73/104), filler-counted P=0.6277 (86/137), gt=1113
+du O0: fields-only P=0.5096 (80/157), filler-counted P=0.4434 (94/212), gt=1926
+du O2: fields-only P=0.469 (53/113), filler-counted P=0.4013 (61/152), gt=1106
+POOLED filler counted: precision 609/1293 = 0.4710  recall 609/9443 = 0.0645  F1 0.1135
+POOLED fields only: precision 531/962 = 0.5520  recall 531/9443 = 0.0562  F1 0.1021

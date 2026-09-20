@@ -4,7 +4,8 @@ The campaign ran 2026-09-16 → 2026-09-19 (plan: `~/.claude/plans/today-we-are-
 Its three stated goals were (1) get primitives right (int/char/bool), (2) emit fewer variables, (3) recover
 structs the way angr does; its yardstick was decbench `type_match` against IDA. This page is the Stage-3
 re-measure: the pinned campaign baseline against a fresh release build of `origin/main`, on every
-instrument the campaign built, plus what the numbers cannot see.
+instrument the campaign built, plus what the numbers cannot see. **Round C** (below) repeats every
+measurement on `origin/main` `d8b9c0b1` once the eight items round B left open had landed.
 
 | | binary | commit |
 |---|---|---|
@@ -329,6 +330,236 @@ largest (protoorder, ptrfromuse void) were measured stacked: **1,309 perfect** o
   own instruments (varcensus, structscore, the corpus diffs in each PR), and the headline number moved only through
   pointers, `bool` and by-value libc structs.
 
+## Round C — 2026-09-20
+
+Round B left five measured items open: #669 `protoorder`, #673 `formatstring`, #675
+`structdedup`, #681 `foldcallretphi` and the `ptrfromuse void` flip. All five landed, with two
+fixes and a tooling change beside them (#687, #686, #688); `argclobber` default-on is still open
+as #689. This section re-measures `origin/main` `d8b9c0b1` on the same instruments, keeping the
+round-B binary as the middle column, so every number below reads baseline → round B → round C.
+
+| | binary | commit |
+|---|---|---|
+| **round C** | `/home/mahaloz/kwt/_final-c/kuna` (pinned copy) | main `d8b9c0b1` (2026-09-20, ptrfromuse-on #690) |
+
+**Metric pin.** The decbench checkout moved past `625e892` (the campaign's metric, decisions §11)
+and `type_match._effective_offset` is gone in the newer code, so the instruments import-fail
+against the working tree. Every measurement here runs against `625e892` extracted read-only
+with `git archive`, with the venv's PEP-660 editable finder repointed at that copy
+(`final-c/pindb.py`) — the editable finder outranks `PYTHONPATH`, so pointing the path alone
+silently keeps the new metric. Control: the round-B binary re-run under the pin reproduces the
+round-B capture exactly, 10,748/10,748 functions, 986 perfect, **0 values differ**.
+
+### Headline
+
+| goal | instrument | baseline | round B | round C | reading |
+|---|---|---|---|---|---|
+| type_match | typesweep, 444 slices / 10,748 functions | 848 perfect (7.89%), mean .2645 | 986 (9.17%), .2895 | **1,349** (12.55%), **.3403** | +363 perfect over round B; 1,384 improved, 2 worse, **0 dropped off perfect** |
+| vs the other decompilers | canonical replay, each rival on its own functions | 4th of five | 2nd | **1st** | on binja's 10,366 functions kuna is 12.29% / .3427 against binja's 12.28% / .3422; against IDA's set 12.60% / .3464 vs 8.33% / .2682 |
+| goal 1: primitives | per-GT-class match rate | bool 21.6% | bool 42.8% | unchanged | the int/char/bool classes were already 1st or 2nd and did not move this round |
+| goal 2: variables | varcensus, fmt/ls/sort/du O0+O2 | 7,085 declarations | 6,945 | 6,970 (+25) | the phantom-`rdx` locals go 11 → 9; `fmt::main` still calls `sub_3700` with 1, 2 and 3 arguments by default |
+| goal 3: structs | structscore TRex mean / layout precision | 3.638 / 1.579, layout 0 | 3.750 / 1.660, P .8945 | **4.108 / 1.893**, P **.5520** | TRex up on all eight builds; per-parameter layout precision is a **regression**, and it is protoorder's (below) |
+| decbench#93 crediting | replay of the same rows | 848 | 986 → 1,159 | 1,349 → **1,575** | +1,569 TP, 226 more functions perfect if a struct pointer counts against a GT pointer-to-struct |
+| speed | whole-binary `decompile-all`, interleaved min-of-11 | — | +0.6…+2.5% vs baseline | +0.7…+2.5% vs baseline, ≈+1% vs round B | eight items for about one percent; bash needed the >5% re-run rule and came back at −1.6% |
+
+### C.1 type_match
+
+Same 444 slices, same `--baseline-only` invocation, the round-C binary and the round-B control
+binary running side by side at `--workers 12`.
+
+| slice | functions | base | round B | **round C** | mean base → B → **C** | improved | worse |
+|---|---:|---:|---:|---:|---|---:|---:|
+| **ALL** | 10,748 | 848 (7.89%) | 986 (9.17%) | **1,349 (12.55%)** | .2645 → .2895 → **.3403** | 1,384 | 2 |
+| O0 | 4,286 | 612 | 704 | **895 (20.88%)** | .4167 → .4467 → **.5041** | 577 | 1 |
+| O2 | 2,394 | 42 | 53 | **74 (3.09%)** | .1330 → .1514 → **.1820** | 279 | 0 |
+| O2-noinline | 4,068 | 194 | 229 | **380 (9.34%)** | .1817 → .2050 → **.2609** | 528 | 1 |
+| bzip2 | 267 | 15 | 19 | 31 | .3441 → .3664 → .4097 | 24 | 0 |
+| coreutils | 6,422 | 525 | 610 | 877 | .2560 → .2813 → .3339 | 725 | 1 |
+| diffutils | 420 | 43 | 52 | 58 | .3592 → .4004 → .4325 | 38 | 0 |
+| findutils | 790 | 31 | 35 | 41 | .1444 → .1622 → .2200 | 165 | 0 |
+| grep | 247 | 37 | 39 | 51 | .3614 → .3870 → .4351 | 24 | 1 |
+| gzip | 368 | 83 | 88 | 102 | .4654 → .4858 → .5197 | 28 | 0 |
+| shadow | 686 | 20 | 29 | 31 | .2619 → .2897 → .3001 | 40 | 0 |
+| tar | 1,548 | 94 | 114 | 158 | .2600 → .2824 → .3516 | 340 | 0 |
+
+Every project and every optimization level moved up again, and the improved/worse columns are
+round B → round C (363 functions moved onto perfect and none off). Per project × opt is in
+`final-c/report-slices.md`; the 1,386 functions whose score moved are in `final-c/moved.csv`.
+
+The three type flips were each measured on a different base (#669 +119, ptrfromuse `void` +204
+on top of it, #673 +38), which predicts about +361 on round B's 986; the re-measure lands on
+1,349, +363, so they compose rather than overlap.
+
+**Both worse functions are `ptrfromuse void` on an integer**, the ambiguity #690 documents:
+grep `buf_has_encoding_errors(char *buf)` prints `unsigned long *`, and coreutils `tail_forever`
+gives the `uintmax_t bytes_to_read` local a `void *`.
+
+### C.2 Per ground-truth class
+
+Same classifier (`final/gtclass.py`), same 65,715 GT variables. The rivals' columns are round B's
+replay unchanged — they score the variables the results tree stored for each decompiler, and neither
+the tree nor the pinned metric moved. Only the moved rows are repeated here; the unmoved classes are
+in round B's table and in `final-c/analysis.json`.
+
+| GT class | GT vars | round B | **round C** | ida | binja | ghidra | angr |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `ptr_char` | 14,645 | 20.7% (3,028) | **28.7% (4,204)** | 24.4% | 36.8% (5,323) | 18.3% | 16.4% |
+| `ptr_void` | 3,481 | 1.4% (50) | **17.6% (612)** | 1.6% | 12.8% | 1.3% | 2.4% |
+| `ptr_prim` | 1,242 | 39.3% (488) | **46.8% (581)** | 30.7% | 51.7% | 32.0% | 37.1% |
+| `ptr_struct` | 14,252 | 2.5% (355) | **3.0% (422)** | 2.4% | 2.8% | 2.3% | 2.3% |
+| **all GT variables** | 65,715 | 28.0% (18,396) | **30.9% (20,295)** | 24.1% | 30.7% (19,801) | 21.5% | 24.5% |
+
+| storage | GT vars | round B | **round C** | ida | binja | ghidra | angr |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| argument | 21,577 | 40.4% | **48.9%** | 40.6% | 48.4% | 35.4% | 33.3% |
+| stack | 18,317 | 52.8% | **53.2%** | 38.2% | 51.8% | 35.6% | 46.8% |
+| register only | 25,821 | 0.0% | 0.0% | 0.4% | 1.4% | 0.1% | 0.9% |
+
+Round C is a pointer round: +1,176 `char *`, +562 `void *`, +93 primitive pointers, +67 struct
+pointers, and nothing else moves by more than 4. That is protoorder carrying a callee's recovered
+parameter type back to the call site and `ptrfromuse void` declaring a dereferenced-only
+parameter, which is why the whole gain sits on `argument` (40.4% → 48.9%, now the best of five).
+kuna's overall variable rate passes binja's for the first time (30.9% of 65,715 GT variables
+against binja's 30.7% of the 64,526 in the functions it scored), and `ptr_char` remains the
+largest single gap to it (−1,119 TP).
+
+### C.3 Goal 2 — variables
+
+| opt | binary | declarations (base → B → C) | `[16]` blobs | never-written locals |
+|---|---|---|---|---|
+| O2 | fmt | 332 → 314 → 314 | 23 → 4 → 4 | 5 → 5 → 5 |
+| O2 | ls | 1,278 → 1,244 → 1,236 | 33 → 10 → 10 | 56 → 56 → 54 |
+| O2 | sort | 1,084 → 1,055 → 1,061 | 31 → 12 → 12 | 31 → 30 → 30 |
+| O2 | du | 968 → 951 → 950 | 27 → 7 → 7 | 40 → 38 → 38 |
+| O0 | fmt | 264 → 263 → 271 | 5 → 4 → 4 | 9 → 9 → 9 |
+| O0 | ls | 1,146 → 1,128 → 1,132 | 19 → 18 → 18 | 32 → 31 → 31 |
+| O0 | sort | 1,093 → 1,074 → 1,083 | 7 → 6 → 6 | 47 → 44 → 44 |
+| O0 | du | 920 → 916 → 923 | 6 → 5 → 5 | 41 → 39 → 39 |
+| **total** | | **7,085 → 6,945 → 6,970** | **151 → 66 → 66** | **261 → 252 → 250** |
+
+Round C adds 25 declarations net — +28 at O0, −3 at O2 — where protoorder's argument casts and
+`void *` parameters split a few expressions that used to fold; single-def/single-read temporaries
+go 974 → 1,009 for the same reason. The phantom-`rdx` shape is **11 → 9** (ls's two are gone;
+fmt's 2 and du's 7 remain).
+
+**`fmt::main` is still the named bad case.** By default `sub_3700` is called with one, two and
+three arguments and two `// rdx` locals are declared and never written. `--option argclobber on`
+still turns it into 2/2/2 with no phantom locals (`final-c/fmt-main-c.c` vs
+`final-c/fmt-main-c-argclobber.c`), and #689 is the PR that would make that rule the default —
+it is open with review CHANGES.
+
+### C.4 Goal 3 — structs, and the layout regression
+
+`structscore --all` on the same eight builds, round B vs round C:
+
+| opt | binary | TRex mean 0-6 B → **C** | mean 0-5 | `is_c_struct` passed | `c_primitive` passed | params typed as a struct / GT | layout F1 (filler counted) |
+|---|---|---|---|---|---|---|---|
+| O0 | fmt | 4.032 → **4.370** | 3.642 → 3.935 | 277/293 → 305/325 | 161/228 → 180/256 | 4 → 4 / 34 | 0.052 → 0.052 |
+| O0 | ls | 3.684 → **4.178** | 3.369 → 3.831 | 1139/1260 → 1336/1518 | 586/773 → 644/914 | 32 → 40 / 168 | 0.130 → 0.108 |
+| O0 | sort | 3.715 → **4.005** | 3.403 → 3.657 | 925/1036 → 997/1153 | 471/640 → 526/716 | 35 → 36 / 162 | 0.162 → 0.138 |
+| O0 | du | 3.790 → **4.049** | 3.477 → 3.714 | 918/1026 → 970/1145 | 449/611 → 480/659 | 34 → 38 / 174 | 0.125 → 0.088 |
+| O2 | fmt | 1.848 → **2.183** | 1.675 → 1.950 | 128/138 → 155/169 | 73/109 → 98/136 | 2 → 2 / 23 | 0.039 → 0.039 |
+| O2 | ls | 1.504 → **1.733** | 1.383 → 1.589 | 361/457 → 437/551 | 195/289 → 231/355 | 24 → 24 / 79 | 0.253 → 0.182 |
+| O2 | sort | 1.717 → **1.983** | 1.563 → 1.782 | 330/372 → 386/449 | 187/264 → 243/321 | 22 → 21 / 95 | 0.181 → 0.138 |
+| O2 | du | 1.746 → **1.916** | 1.588 → 1.736 | 329/376 → 359/433 | 186/270 → 212/299 | 29 → 28 / 100 | 0.197 → 0.097 |
+
+Pooled TRex mean: O0 3.750 → **4.108**, O2 1.660 → **1.893**; 193 of the 835 GT pointer-to-struct
+parameters are typed as a struct (182 in round B), and structdedup (#675) cuts the synthesized
+names on these eight builds from 188 to **161**.
+
+Layout, however, went the wrong way. Claimed-field precision against DWARF, fields only
+(`docs/features/structsynth/layoutscore.py`, the round-B instrument unchanged): **0.8945 → 0.5520**,
+F1 0.1376 → 0.1021; filler counted, 0.7816 → 0.4710.
+
+**It is protoorder, not structdedup.** With `--option protoorder off` on the same eight builds the
+pooled filler-counted precision is **0.7993** (F1 **0.1642**) — better than round B's 0.7816 /
+0.1525, which is structdedup's gain showing through. The per-parameter diff
+(`final-c/layoutdiff.py`, du O2) says what happens: 23 parameters lose true fields, and they lose
+them by being given *another function's* record.
+
+```
+hash_rehash(arg 0):     GT hash_table 10 fields | protoorder off -> struct_20, 10 fields, 10 true
+                                                | default        -> struct_9,  11 fields,  5 true
+quotearg_n_options(arg 3): GT quoting_options 5  | off -> struct_27, 5 fields, 5 true
+                                                | default        -> struct_0,  5 fields,  1 true
+```
+
+The callee's recovered pointer type wins the vote at the call site even where the caller measured
+the record itself, so the parameter ends up named after whatever record the callee saw through
+that pointer. `type_match` cannot see that: it scores the spelling `struct_N *`, not the fields, so
+the change that gains the most there (+119 perfect on its own base) is the one that loses the most
+here. The fix belongs in protoorder — a caller that measured fields of its own should keep its
+layout, and the callee's vote should only supply the *kind*. Until it lands, goal 3 reads "shape
+recovered, record identity not reliable at a call site". Per-binary numbers:
+`final-c/layout-ablation.md`.
+
+### C.5 The decbench#93 counterfactual
+
+Replay of the same rows under the crediting rule the user asked decbench for (a struct pointer
+matches a GT pointer-to-struct whatever it is named; primitive pointers still have to match
+exactly) — `final-c/credit93.py`:
+
+| | perfect | credited perfect | TP added | mean → credited mean |
+|---|---:|---:|---:|---|
+| baseline | 848 | 848 | 0 | .2645 → .2645 |
+| round B | 986 | 1,159 (+173) | +1,287 | .2895 → .3275 |
+| **round C** | 1,349 | **1,575 (+226)** | **+1,569** | .3403 → **.3849** |
+
+### C.6 Speed
+
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation) on the O2
+stripped binaries, the three binaries interleaved with the arm order rotating every round, 11
+rounds each, load average 2.5–5.3 on 80 cores. Driver `final-c/speed3.py`, raw samples
+`final-c/speed.json` and `final-c/speed-bash2.json`.
+
+| binary | functions | baseline min | round B min | **round C min** | Δ C vs B (min / median) | Δ C vs baseline (min) |
+|---|---:|---:|---:|---:|---:|---:|
+| coreutils fmt | 151 | 4,098.3 ms | 4,106.1 ms | 4,128.8 ms | +0.55% / −2.15% | +0.74% |
+| coreutils ls | 404 | 13,192.7 ms | 13,413.0 ms | 13,500.6 ms | +0.65% / +2.52% | +2.33% |
+| coreutils sort | 343 | 13,761.0 ms | 13,966.1 ms | 14,102.0 ms | +0.97% / +0.57% | +2.48% |
+| bash (22 rounds) | 2,538 | 83,477.6 ms | 85,688.2 ms | 84,349.1 ms | **−1.56%** / +1.52% | +1.04% |
+
+bash needed the re-run rule. The first 11 rounds put round C at +4.97% over round B — over the
++5% budget's alarm line — so it was re-run at another moment: 11 more rounds give −1.56%, and the
+pooled min-of-22 above is that. The +4.97% was the box, not the build; both runs are in the JSON.
+
+So the round costs about 1% over round B on the three coreutils binaries and nothing measurable
+on bash, and at most +2.5% over the campaign baseline — inside the +5% budget each PR was
+measured against individually (#669 ≤ +4.1%, #673 −4.6…+0.8%, #681 ≤ +1.04%, #675 −1.0…+1.0%).
+bash is 1.3 MB, so `--mode auto` resolves to `reliable` there rather than `aggressive`.
+
+### C.7 Every round-C PR and what it measured
+
+| PR | item | default | measured effect |
+|---|---|---|---|
+| #669 | `protoorder types` — decompile callees first, type call-site arguments from the callee's recovered prototype | `types` (on) | 1,026 → 1,147 perfect on its base; no call gains or loses an argument over 60 binaries; speed ≤ +4.1%. The single largest contributor this round — and the cause of C.4 |
+| #690 | `ptrfromuse void` by default | `void` (was off) | +204 onto perfect / +85 improved / 0 worse on the protoorder base; 836 of 4,490 functions change, declarations and casts only |
+| #673 | `formatstring static` — resolve the format string at load time | `static` (was off) | 988 → 1,026 perfect, 176 better / 0 worse; 428 calls stop disagreeing with their format; `decompile-all` −4.6…+0.8% |
+| #675 | `structsynth` subsumption dedup | part of `structsynth param` | struct names 515 → 471 over twelve builds (188 → 161 here); held-out claimed-field precision 0.8902 → 0.8908; typesweep unchanged |
+| #681 | `foldcallretphi` on by default | `on` (was off) | metric-neutral (986 = 986, 0 improved / 0 worse); −14 declarations; worst speed +1.04% |
+| #687 | `foldcallret` never folds a call into the right operand of a short-circuit `&&` or `\|\|` | strict fix | 8 of 25,556 functions change, each one a call the binary always makes that was being skipped; `variables[]` identical |
+| #686 | a load is not moved past a store that overlaps its bytes | strict fix | 1 of 48,235 functions changes (bash `init_line_structures`); typesweep rows identical in 444/444 slices |
+| #688 | `--jobs N` keeps synthesized structs with serial-run names | on with `--jobs` | removes the documented sharded-run limitation from #682; `--jobs 4` speed −3.1…+2.8% |
+
+**Not landed:**
+
+| PR / lane | item | state | measured |
+|---|---|---|---|
+| #689 | `argclobber` drops a trailing clobber argument only when the callee's recovered prototype says the register is free, default on | open, review CHANGES | 19 functions over 770 stripped ELFs lose one trailing argument, every one landing on the callee's true arity; `type_match` 1,351 = 1,351; worst speed +0.38% |
+
+### C.8 What stays opt-in, and what is open
+
+* **`argclobber`** — #689 is the sound rule (the callee's recovered prototype, not a bounded entry
+  walk); until it lands, `fmt::main`'s 1/2/3 call is the default output.
+* **`libctypes glibc`, `protoorder lock`, `structdefs`, `indirectonly`, `signedness prefer-signed`,
+  `formatstring full`** — unchanged from round B's reasons.
+* **protoorder and struct identity (C.4)** — the one regression this round, and the first item for
+  a round D.
+* **`ptr_char`** — 28.7% against binja's 36.8%, −1,119 TP, still the largest class gap.
+* **Register-resident ground truth (39.3% of GT) and restrict-qualified GT (6.7%)** — unchanged
+  ceilings; the second is a one-line decbench fix (`_parse_type_die` has no `DW_TAG_restrict_type`
+  arm).
+
 ## Reproduce
 
 Tools are in `final/` (paths are this machine's; each is a thin driver over the repo's own instruments).
@@ -345,4 +576,19 @@ python3 final/analyze.py            # tables above
 python3 final/goal2.py              # varcensus + never-written locals
 KUNA_BIN=<kuna> ~/.virtualenvs/decbench/bin/python -m scripts.decbench.structscore <R>/{O0,O2}/coreutils/stripped/{fmt,ls,sort,du} --all
 python3 final/speed.py 11           # interleaved whole-binary timing
+```
+
+Round C reruns the same drivers from `final-c/` with the metric pin in front of them
+(`DECBENCH_PIN` points at a `git archive` of decbench `625e892`):
+
+```bash
+export DECBENCH_PIN=<extracted 625e892 tree>     # final-c/pindb.py repoints the editable finder
+KUNA_BIN=<kuna> PYTHONPATH=final-c python -m finalsweep kuna $P --workers 12 --out <dir>
+python3 final-c/analyze3.py                      # baseline / round B / round C, classes, rivals
+python3 final-c/credit93.py base=<rows> roundB=<rows> roundC=<rows>
+python3 final-c/goal2c.py                        # varcensus + argclobber arm
+DECBENCH_PIN=... python final-c/ssrun.py <bin> --all --out <json>      # structscore
+DECBENCH_PIN=... python final-c/layoutrun.py                           # layout precision
+DECBENCH_PIN=... python final-c/layoutdiff.py <bin>                    # per-parameter, default vs protoorder off
+python3 final-c/speed3.py 11 <speed.json>
 ```
