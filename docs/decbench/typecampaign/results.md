@@ -332,10 +332,11 @@ largest (protoorder, ptrfromuse void) were measured stacked: **1,309 perfect** o
 
 ## Round C — 2026-09-20
 
-Round B closed with eight items measured but not landed. Eight of them landed (a ninth,
-`argclobber` default-on, is open as #689), and this section re-measures `origin/main`
-`d8b9c0b1` on the same instruments. The round-B binary is kept as the middle column, so
-every number below is baseline → round B → round C.
+Round B left five measured items open: #669 `protoorder`, #673 `formatstring`, #675
+`structdedup`, #681 `foldcallretphi` and the `ptrfromuse void` flip. All five landed, with two
+fixes and a tooling change beside them (#687, #686, #688); `argclobber` default-on is still open
+as #689. This section re-measures `origin/main` `d8b9c0b1` on the same instruments, keeping the
+round-B binary as the middle column, so every number below reads baseline → round B → round C.
 
 | | binary | commit |
 |---|---|---|
@@ -363,8 +364,8 @@ round-B capture exactly, 10,748/10,748 functions, 986 perfect, **0 values differ
 
 ### C.1 type_match
 
-Same 444 slices, same `--baseline-only` invocation, `--workers 12` with the two binaries
-running side by side.
+Same 444 slices, same `--baseline-only` invocation, the round-C binary and the round-B control
+binary running side by side at `--workers 12`.
 
 | slice | functions | base | round B | **round C** | mean base → B → **C** |
 |---|---:|---:|---:|---:|---|
@@ -384,8 +385,9 @@ running side by side.
 Every project and every optimization level moved up again. Per project × opt is in
 `final-c/report-slices.md`; the 1,386 functions whose score moved are in `final-c/moved.csv`.
 
-The three flips were measured on stacked bases (#669 986 → 1,105, ptrfromuse `void` 1,105 →
-1,309, #673 +38) and the stack predicted ~1,347; the re-measure lands on 1,349, so they compose.
+The three type flips were each measured on a different base (#669 +119, ptrfromuse `void` +204
+on top of it, #673 +38), which predicts about +361 on round B's 986; the re-measure lands on
+1,349, +363, so they compose rather than overlap.
 
 **Both worse functions are `ptrfromuse void` on an integer**, the ambiguity #690 documents:
 grep `buf_has_encoding_errors(char *buf)` prints `unsigned long *`, and coreutils `tail_forever`
@@ -414,8 +416,9 @@ Round C is a pointer round: +1,176 `char *`, +562 `void *`, +93 primitive pointe
 pointers, and nothing else moves by more than 4. That is protoorder carrying a callee's recovered
 parameter type back to the call site and `ptrfromuse void` declaring a dereferenced-only
 parameter, which is why the whole gain sits on `argument` (40.4% → 48.9%, now the best of five).
-kuna's overall variable rate passes binja's for the first time (30.9% vs 30.7%), and `ptr_char`
-remains the largest single gap to it (−1,119 TP).
+kuna's overall variable rate passes binja's for the first time (30.9% of 65,715 GT variables
+against binja's 30.7% of the 64,526 in the functions it scored), and `ptr_char` remains the
+largest single gap to it (−1,119 TP).
 
 ### C.3 Goal 2 — variables
 
@@ -480,11 +483,12 @@ quotearg_n_options(arg 3): GT quoting_options 5  | off -> struct_27, 5 fields, 5
 
 The callee's recovered pointer type wins the vote at the call site even where the caller measured
 the record itself, so the parameter ends up named after whatever record the callee saw through
-that pointer. `type_match` cannot see it — it scores the spelling `struct_N *`, not the fields —
-which is why the same change is +363 perfect there and −0.34 precision here. The fix belongs in
-protoorder: a caller that measured fields of its own should keep its layout, and the callee's vote
-should only supply the *kind*. Until then the campaign's goal-3 claim is "shape recovered, record
-identity not reliable at a call site".
+that pointer. `type_match` cannot see that: it scores the spelling `struct_N *`, not the fields, so
+the change that gains the most there (+119 perfect on its own base) is the one that loses the most
+here. The fix belongs in protoorder — a caller that measured fields of its own should keep its
+layout, and the callee's vote should only supply the *kind*. Until it lands, goal 3 reads "shape
+recovered, record identity not reliable at a call site". Per-binary numbers:
+`final-c/layout-ablation.md`.
 
 ### C.5 The decbench#93 counterfactual
 
