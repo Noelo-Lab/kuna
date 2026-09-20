@@ -198,6 +198,10 @@ it. Worker-independent names would keep the structures under a pool, but they
 need a renumbering pass over the merged results, which is the `structdedup`
 lane's ground.
 
+*Later:* sharded runs keep the structures with their serial names again; the
+tests and probes named above were replaced along with the limit
+(the `jobs_names_synthesized_structs_as_the_serial_run_does` integration test and the `tests/cli/sharded-*-keeps-serial-*` probes).
+
 **A union member read as a float and as an integer.** gcc -O2 `vread`
 (`struct V { int tag; union { int i; float f; double d; long l; } u; }`) reads
 the member at 8 with `movsd` (case 2) and `cvtsi2sdq` (case 3). The field took

@@ -422,6 +422,9 @@ pub struct Architecture {
     /// constant-offset dereferences: `off` (the default) or `param` (function
     /// parameters).  See [`kuna_structsynth`](crate::kuna_structsynth).
     pub struct_synth: crate::kuna_structsynth::StructSynthMode,
+    /// (kuna `structsynth`) A `--jobs` worker's ledger hook: records every lookup,
+    /// or answers each from the parent's replay. `None` outside a worker.
+    pub struct_synth_shard: Option<crate::kuna_structsynth::shard::ShardHandle>,
     /// (kuna) Did the loader identify the image as a Windows GUI/console PE?  A
     /// FACT, not an option: written once at `load file` and the thing `option
     /// pebnames auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
@@ -2275,6 +2278,7 @@ impl Architecture {
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
+            struct_synth_shard: None,
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             decode_halt: false, // (kuna) option decodehalt; reset_defaults sets the shipped default
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
@@ -4216,6 +4220,7 @@ impl Architecture {
             self.image_windows_user,
         ); // (kuna) pebnames
         ctx.struct_synth = self.struct_synth; // (kuna) structsynth
+        ctx.struct_synth_shard = self.struct_synth_shard.clone();
         // (kuna) resolve the `SYSCALL` user-op ids ONCE per program, for the same
         // reason `simd_shuffle_userops` above is resolved here: the boundary
         // ArchContext carries no userop table.  An op a compiler spec has

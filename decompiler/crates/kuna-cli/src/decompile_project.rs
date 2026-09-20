@@ -55,7 +55,8 @@ use kuna_console::project::{
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
 use crate::decompile_all::{
-    decompile_targets_pooled, load_program, parse_args, resolve_targets, Args, DriverDefaults,
+    decompile_targets_pooled, load_program, parse_args, resolve_targets, synth_base, Args,
+    DriverDefaults,
 };
 
 /// `kuna decompile-project` entry point.
@@ -162,9 +163,9 @@ fn usage() {
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
          serial). The artifacts are identical to a --jobs 1 run without --stream,\n\
-         except that workers run with structsynth off (each process would number\n\
-         its own struct_N); progress goes to stderr, and peak memory is roughly N\n\
-         times one worker's RSS.\n\
+         synthesized struct_N names and the .h included (with --stream, workers\n\
+         run with structsynth off); progress goes to stderr, and peak memory is\n\
+         roughly N times one worker's RSS.\n\
          --stream writes the folder as the run goes instead of at the end: the entry\n\
          point and what it calls are written first, index.jsonl announces each\n\
          finished function and .streaming reports progress until the export\n\
@@ -237,6 +238,11 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
             /* want_provenance= */ false,
             /* want_types= */ true,
             load_seconds,
+            synth_base(&prog),
+            // (kuna `protoorder`) This surface never takes the callee-first
+            // order, serially either (`warn_protoorder_inert`), so the serial
+            // run these names come from is the plain one.
+            /* serial_callee_first= */ false,
         )?;
         (pooled.results, pooled.types)
     } else {

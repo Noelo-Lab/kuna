@@ -1236,6 +1236,7 @@ mod tests {
             object_location: None,
             provenance: EntryProvenance::Mapped,
             binding: None,
+            synth: None,
         }
     }
 
@@ -1254,6 +1255,7 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: hints,
+            synth: None,
         }
     }
 

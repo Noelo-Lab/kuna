@@ -1,0 +1,51 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--max-fn-seconds",
+    "0",
+    "--jobs",
+    "4",
+    "--jobs-chunk",
+    "1"
+  ],
+  "cwd": "{{TMP}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/structsynth_peb_pe_x86_64.exe",
+    "binary_sha256": "ccd7a1940da2a171e76d48df7efb0dd5c5fc5c551c7f144270861884dacb6019",
+    "binary_size": 1536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/structsynth_peb_pe_x86_64.exe",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void store_a\\(struct_0 \\*a0",
+      "a0->field_0x8 = teb->ProcessEnvironmentBlock;"
+    ],
+    "stdout_absent": [
+      "\\(error: "
+    ],
+    "stderr_matches": [
+      "\\[kuna --jobs\\] note: a synthesized structure has a field type another process cannot rebuild"
+    ],
+    "stderr_absent": [
+      "cannot install the synthesized structures",
+      "have no result because their worker process failed"
+    ]
+  },
+  "notes": "pebnames creates the PEB type the first time a function reads gs:[0x60], so only the worker that decompiled store_a holds it, and store_a's structure has a PEB * field. The parent sees a field type with no load-time recipe and names the structures by the one-worker serial path instead of losing the functions to a worker that cannot install them."
+}

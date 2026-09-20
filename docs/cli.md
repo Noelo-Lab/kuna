@@ -1309,9 +1309,11 @@ Behaviors specific to `decompile-all`:
   - **The output of a non-stream run does not depend on how the pool scheduled
     it.** Work is handed out in a longest-first order that is deliberately not
     output order, but every target owns a slot and results are merged
-    positionally, so the document is the same whatever order the workers finish
-    in. It is the `--jobs 1` document only with `--option structsynth off` and
-    `--option protoorder off` on both runs (the next bullets). The concrete `--mode`, every resolved `--option` and the
+    positionally, so the document is identical to `--jobs 1`, synthesized
+    structures included (below), whatever order the workers finish in. On
+    `decompile-all` that holds with `--option protoorder off` on both runs: a
+    worker cannot see another worker's callees, so the pool does not take the
+    callee-first order (the next bullets). The concrete `--mode`, every resolved `--option` and the
     watchdog budget are settled once by the parent and passed to every worker.
     `decompile-project --stream` is the one surface where the schedule *is*
     observable, and only in the order of the `.c`: a streamed export writes each
@@ -1334,14 +1336,37 @@ Behaviors specific to `decompile-all`:
     does not cause it: a serial `--filter '^sub_18073e690$'` over the same load
     prints `"BM"` too, and adding the function that reaches that address first
     turns it back into `"䵂"`. `--jobs 1` is the definition of the answer.
-  - **Workers run with `structsynth off`.** A synthesized `struct_N` is named by
-    the process that minted it, so two workers could each mint a different
-    `struct_0`: a `decompile-all` or `decompile-graph` document would use one name
-    for two layouts, and a `decompile-project` `.h`, which declares every type
-    once, could not declare both. Every sharded run therefore passes its workers
-    `--option structsynth off` and says so on stderr, and its output is the one
-    `--jobs 1 --option structsynth off` produces. `--jobs 1` (serial, or
-    `--stream` without workers) synthesizes.
+  - **Synthesized structures keep their serial names.** `structsynth` names a
+    `struct_N` in decompile order, each function reading what the ones before it
+    minted, so a worker left to itself would number its own. Instead the workers
+    record every question a function asks the structure ledger and what their
+    own ledger answered, and the parent replays the questions in target order to
+    get the answers the serial run gets. A function whose own structures have
+    exactly the members of the serial ones keeps its text with the numbers
+    renamed; the others are decompiled a second time, by the same workers, with
+    the serial answers. The run says so on stderr:
+
+    ```text
+    [kuna --jobs] structsynth: 106 function(s) with synthesized structures named as --jobs 1 --option protoorder off names them: 100 renamed, 10 decompile(s) again
+    ```
+
+    The line names the serial run it replayed: on `decompile-all` that is the
+    one without the callee-first order, and on `decompile-project` and
+    `decompile-graph`, which never take that order, plain `--jobs 1`.
+
+    The second decompile's questions are checked against the first (a question
+    asked twice counts once). A function whose answers change what it asks next
+    has its questions corrected and the replay runs again, which renames or
+    decompiles only what moved. The functions with structures are decompiled
+    once more in order by a single worker, with a `note:` line saying why, when
+    that does not settle, when a structure has a field type another worker may
+    not hold (`PEB`/`TEB`, which `pebnames` creates only in a worker that reads
+    them), or when a second decompile fails where the first did not. The `.h` of
+    a `decompile-project` declares the minted structures after every other
+    type, by number, which is also what makes two serial exports of one binary
+    agree. `decompile-project --stream` still runs its workers with
+    `structsynth off` and says so, since a streamed export writes each body
+    before a later structure could supersede its names.
   - **Memory, not cores, is the limit.** Every worker loads the binary itself, so
     peak memory is roughly `N ×` one worker's resident size, on top of the
     parent's. On an 18 MB PE with 33,214 functions that is 469 MB per worker
@@ -2320,8 +2345,14 @@ into it, so a sharded parent's factory would be missing whatever the workers
 recovered. Each worker therefore renders its own block and sends it back: when
 they agree — which is what a shard that interned nothing renderable looks like,
 and what every fixture measured here does — that block is the serial answer and is
-emitted as is. When they disagree the parent says so on stderr and emits their
-ordered union, so the `.h` still declares everything the `.c` uses.
+emitted as is. The synthesized structures come back the same way: every worker
+that renders them first forgets its own and mints all of the replayed ones, in
+the serial order, and every other worker also sends its block without the
+structures it numbered itself, so the types its own functions interned still
+reach the header. When one block holds every definition the others hold, that
+block is emitted as is; otherwise the parent says so on stderr and emits the
+union, one whole definition at a time, so the `.h` still declares everything
+the `.c` uses.
 
 ### `--stream` — the folder is readable while it fills
 

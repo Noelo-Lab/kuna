@@ -2854,49 +2854,182 @@ fn jobs_auto_and_the_plain_c_surface_match_serial() {
     }
 }
 
-/// A worker process would number its own `struct_N`, so two workers could each
-/// mint a different `struct_0` and one document would use the name for two
-/// layouts. Every sharded run gives its workers `structsynth off`: the document
-/// equals the serial `structsynth off` one where the serial default
-/// synthesizes, and stderr says why unless the run turned synthesis off itself.
-/// The serial side also runs `protoorder off`, the callee-first order a pool
-/// never takes.
+/// A sharded run names every synthesized structure as the serial run does, on
+/// both surfaces and at every job count. `structsynthchain_x86_64` takes the
+/// convergence sweep (`fb` is decided again onto `fc`'s structure while `fa`
+/// keeps the superseded one), `itaniumrtti_x86_64.so` mints five structures,
+/// the i386 PE is a second architecture and loader, and in
+/// `structsynth_teb_pe_x86_64.exe` the `TEB` type comes from a function that
+/// synthesizes nothing. Every path lands on the same document: the renamed
+/// first decompiles, the second decompile with the replayed names that
+/// `synth:force` makes every function take, and the one-worker serial path.
+///
+/// Both sides run `--option protoorder off`: the serial default decompiles
+/// callees first and runs the batch convergence sweep, an order a pool cannot
+/// take ([`jobs_notes_that_the_default_callee_first_order_is_serial_only`]).
 #[test]
-fn jobs_run_workers_with_structsynth_off() {
+fn jobs_names_synthesized_structs_as_the_serial_run_does() {
+    let sp = specs();
+    for (fixture, pinned) in [
+        ("structsynthchain_x86_64", "long fb(struct_1 *a0)"),
+        ("itaniumrtti_x86_64.so", "struct_4 *"),
+        ("explicit_branch_assertion_pe_i386.exe", "struct_0 *"),
+        ("structsynth_teb_pe_x86_64.exe", "TEB *teb;"),
+    ] {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        for json in [false, true] {
+            let mut base = vec![
+                "decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", &sp,
+                "--option", "protoorder", "off",
+            ];
+            if json {
+                base.push("--json");
+            }
+            let (want, stderr, ok) = run_kuna(&base);
+            if !ok {
+                if is_specs_skip(&stderr) {
+                    eprintln!("jobs structsynth: skipping (no `.sla`; run `make specs`): {stderr}");
+                    return;
+                }
+                panic!("kuna decompile-all {fixture} failed: {stderr}");
+            }
+            assert!(want.contains(pinned), "{fixture} stopped synthesizing {pinned:?}");
+            assert!(want.contains("struct_0"), "{fixture} stopped synthesizing");
+            for pool in [&["--jobs", "2", "--jobs-chunk", "1"][..], &["--jobs", "4"][..]] {
+                let (got, stderr, ok) = run_kuna(&[&base[..], pool].concat());
+                assert!(ok, "{fixture} {pool:?} failed: {stderr}");
+                assert!(
+                    stderr.contains("named as --jobs 1 names them"),
+                    "{fixture} {pool:?} never named the structures:\n{stderr}"
+                );
+                assert!(!stderr.contains("[kuna --jobs] note:"), "{fixture} {pool:?} fell back:\n{stderr}");
+                assert_eq!(got, want, "{fixture} {pool:?} (json {json}) moved the document");
+            }
+            for (fault, says) in [
+                ("synth:force", "0 renamed"),
+                ("synth:serial", "decompiled again in order by one worker process"),
+            ] {
+                let (got, stderr, ok) =
+                    run_kuna_env(&[&base[..], &["--jobs", "3", "--jobs-chunk", "1"]].concat(), &[("KUNA_JOBS_FAULT", fault)]);
+                assert!(ok, "{fixture} {fault} failed: {stderr}");
+                assert!(stderr.contains(says), "{fixture} {fault}: {stderr}");
+                assert_eq!(got, want, "{fixture} {fault} moved the document");
+            }
+        }
+    }
+}
+
+/// A worker that cannot install the replayed structures takes its chunk down
+/// with it. The functions it was given are the record pool's, not lost work:
+/// the run decompiles them again by the one-worker serial path instead of
+/// keeping the dead worker's `error` records.
+#[test]
+fn jobs_falls_back_when_a_worker_cannot_install_the_replayed_structures() {
+    let sp = specs();
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so")
+        .to_str()
+        .unwrap()
+        .to_string();
+    // The serial side runs `--option protoorder off`: the callee-first order is
+    // the serial run a pool cannot take, here as everywhere else.
+    let base = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str(),
+        "--option", "protoorder", "off"];
+    let (want, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs structsynth install: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    assert!(want.contains("struct_4 *"), "the fixture stopped synthesizing");
+    let (got, stderr, ok) = run_kuna_env(
+        &[&base[..], &["--jobs", "2", "--jobs-chunk", "1"]].concat(),
+        &[("KUNA_JOBS_FAULT", "synth:force,synth:noinstall")],
+    );
+    assert!(ok, "the run failed: {stderr}");
+    assert!(
+        stderr.contains("a function failed when decompiled again with the serial names"),
+        "no fallback: {stderr}"
+    );
+    assert_eq!(got, want, "a worker that could not install the structures moved the document");
+}
+
+/// `pebnames` creates the `PEB` type the first time a function reads the PEB,
+/// so only the worker that decompiled one holds it, and a synthesized
+/// structure with a `PEB *` field cannot be installed in another. The run
+/// names its structures by the one-worker serial path instead, and loses no
+/// function.
+#[test]
+fn jobs_falls_back_when_a_structure_holds_a_type_other_workers_lack() {
+    let sp = specs();
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/structsynth_peb_pe_x86_64.exe")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let base = ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str(),
+        "--option", "protoorder", "off"];
+    let (want, stderr, ok) = run_kuna(&base);
+    if !ok {
+        if is_specs_skip(&stderr) {
+            eprintln!("jobs structsynth peb: skipping (no `.sla`; run `make specs`): {stderr}");
+            return;
+        }
+        panic!("kuna decompile-all failed: {stderr}");
+    }
+    assert!(want.contains("void store_a(struct_0 *a0"), "the fixture stopped synthesizing:\n{want}");
+    assert!(!want.contains("error"), "{want}");
+    for pool in [&["--jobs", "2"][..], &["--jobs", "4", "--jobs-chunk", "1"][..]] {
+        let (got, stderr, ok) = run_kuna(&[&base[..], pool].concat());
+        assert!(ok, "{pool:?} failed: {stderr}");
+        assert!(stderr.contains("a field type another process cannot rebuild"), "{pool:?}: {stderr}");
+        assert_eq!(got, want, "{pool:?} moved the document");
+    }
+}
+
+/// `--option structsynth off` still reaches every worker, and a run that asked
+/// for it hears nothing about structures.
+#[test]
+fn jobs_structsynth_off_is_the_serial_structsynth_off_document() {
     let bin = repo_root()
         .join("decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so")
         .to_str()
         .unwrap()
         .to_string();
     let sp = specs();
-    let base =
-        ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
-    let (serial, stderr, ok) = run_kuna(&base);
+    let off = [
+        "decompile-all",
+        bin.as_str(),
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        sp.as_str(),
+        "--option",
+        "protoorder",
+        "off",
+        "--option",
+        "structsynth",
+        "off",
+    ];
+    let (want, stderr, ok) = run_kuna(&off);
     if !ok {
         if is_specs_skip(&stderr) {
-            eprintln!("jobs structsynth: skipping (no `.sla`; run `make specs`): {stderr}");
+            eprintln!("jobs structsynth off: skipping (no `.sla`; run `make specs`): {stderr}");
             return;
         }
         panic!("kuna decompile-all failed: {stderr}");
     }
-    assert!(serial.contains("struct_1 *"), "the fixture stopped synthesizing two structures");
-
-    let off = [&base[..], &["--option", "structsynth", "off"]].concat();
-    let (want, stderr, ok) = run_kuna(&[&off[..], &["--option", "protoorder", "off"]].concat());
-    assert!(ok, "structsynth-off decompile-all failed: {stderr}");
-    let pool = ["--jobs", "2", "--jobs-chunk", "1"];
-
-    let (got, stderr, ok) = run_kuna(&[&base[..], &pool].concat());
-    assert!(ok, "--jobs 2 decompile-all failed: {stderr}");
-    assert!(
-        stderr.contains("note: structsynth is off in the worker processes"),
-        "no note on stderr: {stderr}"
-    );
-    assert_eq!(got, want, "--jobs 2 differs from the serial structsynth-off document");
-
-    let (got, stderr, ok) = run_kuna(&[&off[..], &pool].concat());
+    assert!(!want.contains("struct_0"), "structsynth off still synthesized");
+    let (got, stderr, ok) = run_kuna(&[&off[..], &["--jobs", "2", "--jobs-chunk", "1"]].concat());
     assert!(ok, "--jobs 2 structsynth-off decompile-all failed: {stderr}");
-    assert!(!stderr.contains("note: structsynth"), "a note for a run that asked for off: {stderr}");
+    assert!(!stderr.contains("structsynth"), "a structure line for a run that asked for off: {stderr}");
     assert_eq!(got, want, "--jobs 2 --option structsynth off moved the document");
 }
 

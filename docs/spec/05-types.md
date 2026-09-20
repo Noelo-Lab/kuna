@@ -1141,7 +1141,7 @@ body by the time its name could be superseded, so it reports MORE records than
 the eager export of the same program: `cp` O2 exports 31 definitions under
 `--stream` against 30 eagerly (main: 33 and 33). Each is self-consistent, since
 the header prune keeps every definition the document still names. A sharded
-`--jobs N` run does not synthesize at all (below).
+`--jobs N` run replays the ledger and ends with the eager batch's names (below).
 
 The structure is **completed before** its pointer is taken, because completing a
 structure mints a fresh `Rc` and the merge tests compare high types by pointer
@@ -1155,13 +1155,52 @@ Because the ledger lives in the program's `TypeFactory`, `struct_N` is
 program-wide under `kuna decompile-all` and `kuna decompile-project`, which load
 once; `kuna decompile` spawns one engine per function, so there each function
 numbers from `struct_0` again, and so would each worker process of a `--jobs N`
-run. A sharded run cannot live with that: two workers could each mint a different
-`struct_0`, so one `decompile-all` document would use the name for two layouts and
-a `decompile-project` `.h`, which declares every type once, could not declare both.
-Every sharded run's workers therefore run with `structsynth off` and the run says
-so on stderr (`decompiler/crates/kuna-cli/src/jobs.rs (structsynth_shard_note)`);
-`--jobs 1` synthesizes. Neither
-kind of run has anything for the convergence sweep to do.
+run if it were left to itself. It is not. The decision a lookup takes reads only
+data -- the measured layout, its members, the bytes it accessed without claiming,
+and the layouts, members and sizes of the structures held -- so
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs (Replay)`
+can take it without a factory: it scans the `struct_<n>` slots as the ledger
+does, skipping a name another type holds, calls the same `best_of` and
+`keeps_unclaimed`, and mints at the first free slot. A `--jobs` worker records
+each lookup a function makes, with a recipe for every field type (a named type
+by name and id, a pointer or byte array around its rebuilt element), and the
+answer its own ledger gave, with the lookup that minted that structure in the
+worker. The parent replays the records in target order. A structure is its
+members, so when a function's own answers and the serial ones name structures
+built from the same members, lookup for lookup and one name for one name
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(renaming)`), the function's text is the serial text with other numbers and
+is renamed. A structure minted from its own function's lookup is the common
+case: the serial run minted the same members under another number. Every other
+function is decompiled again by a worker that has destroyed the structures it
+minted itself and every type built on one, installed the replayed structures in
+mint order
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
+(install_table)`) and answers each lookup with its replayed name. A named field
+type gets a recipe only if the worker's load created it
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs (AtLoad)`): a pass
+that interns a type the first time a function needs it, as `pebnames` does
+`PEB` and `TEB`, leaves it in some workers and not in others, so a structure
+with such a field is named by one ordered worker instead. The parent also
+answers the sweep: a structure still answers every layout it answered once, so
+the sweep's lookups never mint, and the ones whose answer changes are renamed
+or decompiled in the same pool. The synthesized structures of a sharded run are
+therefore the eager batch's, name for name -- the batch a pool can run, which on
+`decompile-all` means `--option protoorder off`, since the callee-first order
+(chapter [04](04-calls-and-prototypes.md)) decides what a function measures and
+no worker can see another worker's callees. Chapter [00](00-overview.md) has the
+pool's side, including the checks that send a run back to one ordered worker.
+
+The `.h` of a project export lists the minted structures after every other
+type, in ascending `N`
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs
+(in_name_order)`). The factory's tree orders two structures of one size field by
+field and then by the ADDRESS of a field's type, and minted structures always
+agree that far on their first field, `field_0x0`; rendered in tree order, the
+same serial export of `sort` O2 declared its structures in three different
+orders over five runs. A minted structure holds nothing by value but scalars and
+byte arrays, and nothing holds one by value, so after everything else is a valid
+place to define it, and the order is now the same every run and in every worker.
 
 The synthesized layout is printable rather than only inferable: the P9 option
 [`structdefs`](../options.md) prints the definition of every composite a

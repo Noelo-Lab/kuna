@@ -1395,7 +1395,12 @@ definition precedes its uses. Core types, unnamed types, and the internal
 enums (`printc.rs (render_type_definitions)`; the per-type body renderers —
 `compose_type_body`, `compose_enum_body`, `compose_typedef_line` — are pure
 functions for unit-testability, and emission is direct string building, since
-no emitter markup exists for type definitions). Two documented `(kuna)`
+no emitter markup exists for type definitions). The structures `structsynth`
+minted are moved after every other type, in ascending `N`
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs
+(in_name_order)`), because the tree orders them by the address of a field's type
+and the header would otherwise change from run to run (chapter
+[05](05-types.md), struct synthesis). Two documented `(kuna)`
 divergences from the upstream emission, both in service of "the `.h` always
 compiles":
 

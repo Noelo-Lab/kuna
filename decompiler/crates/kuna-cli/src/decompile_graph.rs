@@ -38,8 +38,8 @@ use kuna_console::project::{decompile_targets, FuncResult};
 use object::{Object, ObjectSegment};
 
 use crate::decompile_all::{
-    decompile_targets_pooled, load_program, parse_args, resolve_targets_allow_bodyless, Args,
-    CallGraph, DriverDefaults,
+    decompile_targets_pooled, load_program, parse_args, resolve_targets_allow_bodyless,
+    synth_base, Args, CallGraph, DriverDefaults,
 };
 use crate::jsonfmt::{dumps_indent2, Json};
 
@@ -178,6 +178,11 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
             /* want_provenance= */ false,
             /* want_types= */ false,
             load_seconds,
+            synth_base(&prog),
+            // (kuna `protoorder`) This surface never takes the callee-first
+            // order, serially either (`warn_protoorder_inert`), so the serial
+            // run these names come from is the plain one.
+            /* serial_callee_first= */ false,
         )?
         .results
     } else {
@@ -490,8 +495,7 @@ fn usage() {
          `error` record and the run still exits 0.\n\
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
-         serial). The document is identical to --jobs 1 with --option structsynth\n\
-         off (workers run with structsynth off, because each process would number\n\
-         its own struct_N), and peak memory is roughly N times one worker's RSS."
+         serial). The document is identical to --jobs 1, synthesized struct_N\n\
+         names included, and peak memory is roughly N times one worker's RSS."
     );
 }
