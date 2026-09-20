@@ -335,15 +335,23 @@ fn clobber_of_this_register_reaches(data: &Funcdata, vn: VarnodeId, addr: &Addre
 fn callee_prototype_excludes(data: &Funcdata, entry: &Address, addr: &Address, size: int4) -> bool {
     let Some(stated) = data.kuna_protoorder_types(entry) else { return false };
     let Some(space) = addr.get_space() else { return false };
+    if size <= 0 {
+        return false;
+    }
     let lo = addr.get_offset();
-    let hi = lo.wrapping_add(size.max(0) as u64);
+    let hi = lo.wrapping_add(size as u64);
     for (paddr, psize, _) in &stated.inputs {
+        // A parameter whose storage cannot be compared is one this cannot rule
+        // out, and an argument is not deleted on "cannot tell".
         let Some(pspace) = paddr.get_space() else { return false };
+        if *psize <= 0 {
+            return false;
+        }
         if pspace.get_index() != space.get_index() {
             continue;
         }
         let plo = paddr.get_offset();
-        let phi = plo.wrapping_add((*psize).max(0) as u64);
+        let phi = plo.wrapping_add(*psize as u64);
         if plo < hi && lo < phi {
             return false;
         }
