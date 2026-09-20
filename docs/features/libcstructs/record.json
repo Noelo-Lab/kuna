@@ -270,10 +270,11 @@
     }
   },
   "gates": {
+    "base": "origin/main 3de41f06d (#693, decompile-project callee-first)",
     "make test": "PARITY OK, 675/675",
-    "make test-stages": "PARITY OK, 1254/1254 (4 newly passing: LIBCTYPES #27-#30)",
-    "make rust-test": "rc=0, 7,313 tests, 0 failures",
-    "make test-cli": "209/209",
+    "make test-stages": "PARITY OK, 1260/1260",
+    "make test-cli": "214/214",
+    "make rust-test": "RUST_TEST_RC=0 (lane run on the rebased tree)",
     "make check-spec": "OK (lenient) + OK (strict)",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
@@ -284,6 +285,25 @@
     "gzip::O2::lutimens": "the timespec * slot on utimensat/futimens re-splits a 144-byte stat frame slot into char v5 [80] plus three detached words the body reads and nothing writes; over the 30 corpus slices that import utimensat/futimens, 122 functions gain a timespec rendering, 3 lose a stat declaration, 1 of those is under-declared; main already prints 7 of the same shape, this branch 8",
     "openssh::O2::ssh_signal": "the sigfillset(sigset_t *) slot splits a 152-byte sigaction frame slot at 136, so the sa_flags store escapes the object handed to sigaction(): sigaction v4 -> char v4 [136] + a dead undefined4 v7 at stack - 0xd0. 444-slice corpus: 6 slices import sigfillset (coreutils env, shadow su), 0 sigaction declarations lost, only added sigset_t renderings. Disjoint openssh -O2 sweep: 7 binaries, 1 function each (ssh/ssh-keygen/ssh-agent/ssh-add 11 -> 10, sshd 3 -> 2, scp 2 -> 1, sftp 2 -> 1). Class pre-exists via the shipped sigemptyset slot: on the ablated build the same program with sigemptyset prints the identical split, and ssh-keygen's base arm already prints 18 (sigaction *) cast-at-use sites against this branch's 19",
     "statfs_name_collision": "statfs is both a new aggregate name and a libc function name: O0 shadow usermod sub_111a1 prints `statfs v1;` and calls `statfs(a0,&v1)`, so that body does not compile as printed; the .h emitter already guards its half. Same collision main has for stat",
-    "verdict": "disclosed, kept; all three are instances of classes the option already ships, see analysis.md"
+    "verdict": "disclosed, kept; all three are instances of classes the option already ships, see analysis.md",
+    "decision": "the utimensat/futimens `timespec *` rows are KEPT, and the PR body says in those words that the branch ships one function whose emitted C reads three never-written locals; the alternative (dropping the rows) costs the 122 functions that gain a timespec"
+  },
+  "rebase_3de41f06d": {
+    "why": "#693 gave decompile-project the callee-first schedule and touched the same two files this PR repointed",
+    "resolution": "re-derived, not hand-merged: decompile-project run on all five fixtures in both the default and the `protoorder off` arm on the rebased build",
+    "synthesized_struct_blocks_in_the_exported_h": {
+      "i386_pie_nl": "default 0, protoorder off 0, libctypes off 1 -- the swap is this PR's doing and is still required",
+      "structsynthchain_x86_64": "default 2, protoorder off 2",
+      "itaniumrtti_x86_64.so": "default 5, protoorder off 5",
+      "explicit_branch_assertion_pe_i386.exe": "default 5, protoorder off 5",
+      "structsynth_teb_pe_x86_64.exe": "default 5, protoorder off 5"
+    },
+    "option_off_identity": "`--option libctypes off` on both arms is cmp -s IDENTICAL to a build of 3de41f06d on 9 whole binaries: O2 sysvinit/last, sysvinit/utmpdump, shadow/chage, cronie/crond, dpkg/dpkg-query, tar, kmod; O0 bzip2, findutils/find",
+    "default_arm_unchanged_by_the_rebase": "changed-line counts against the new base reproduce the 69d252df3 numbers exactly: last 60, utmpdump 24, chage 178, crond 9, dpkg-query 39, bzip2 0",
+    "typesweep_not_re-run": "`decompile-all --json`, which is what the sweep scores, is byte-identical between 69d252df3 and 3de41f06d on gzip O2, who O0, grep O2, diff O2, and the branch's own kuna-analysis/phases.toml source is byte-identical to the pre-rebase tip, so the round-3 sweep (1,349 -> 1,353 perfect) stands unmoved"
+  },
+  "minor_review_answers": {
+    "utmp_utmpx_rows": "not unpaid: 24 corpus binaries import getutent/getutxent/pututline and the name reaches a caller's own local, not only the PLT thunk -- O2 coreutils who `short *v4` -> `utmpx *v4` with v4[0x16]/v4[0xbc] becoming v4->field_0x2c/field_0x178, O2 shadow logoutd and sysvinit runlevel the same for `utmp *`",
+    "sizes_are_x86_64": "every size in the table is the x86-64 one and nothing scales it by word size, so on a 32-bit image a shell is oversized (re_pattern_buffer 64 vs i386's 32); only pointers take the name, so the effect is confined to how far a field access through such a pointer is attributed; same class as the shipped FILE 216 and stat 144"
   }
 }
