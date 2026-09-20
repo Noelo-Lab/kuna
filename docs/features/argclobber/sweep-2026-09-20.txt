@@ -193,3 +193,10 @@ so the 444-slice typesweep was re-run on the rebased tree:
   improved 0, worsened 0, moved onto/off perfect 0/0
 
 The pre-rebase run on 3433e05d5 was 1147 -> 1147, also 0 improved / 0 worse.
+
+Speed spot-check on the rebased build (interleaved min-of-15, quiet machine):
+
+  fmt  O2   4071.0 ms -> 4080.5 ms   +0.23%
+  sort O2  14028.7 ms -> 14059.6 ms  +0.22%
+
+consistent with the full four-case run above.

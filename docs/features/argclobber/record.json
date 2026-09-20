@@ -187,7 +187,12 @@
   "worst_delta_pct": 1.21,
   "budget_pct": 5.0,
   "within_budget": true,
-  "re_measured_after_accounting_clause": true
+  "re_measured_after_accounting_clause": true,
+  "post_rebase_spot_check": {
+   "fmt_delta_pct": 0.23,
+   "sort_delta_pct": 0.22,
+   "note": "interleaved min-of-15 on the rebased build (origin/main d8b9c0b1f); the four-case run was on 3433e05d5"
+  }
  },
  "arity_counters": {
   "surface": "kuna decompile-all --json variables[] (name,type,size,stack_offset,arg_index,kind) -- exactly what decbench scores",
