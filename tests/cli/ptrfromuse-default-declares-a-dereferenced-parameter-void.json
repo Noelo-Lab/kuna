@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-2af692806f65",
+  "probe_id": "a-da01c622bb32",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -28,12 +28,11 @@
       "eq": 0
     },
     "stdout_matches": [
-      "\\*\\(unsigned long \\*\\)\\(\\(long\\)a0 \\+ 0x10\\) = 0x2020726174737575;"
+      "int fill\\(void \\*a0,int a1\\)"
     ],
     "stdout_absent": [
-      "a0\\[0x10\\] = 0x75;",
-      "int fill\\(unsigned char \\*a0"
+      "int fill\\(long a0,int a1\\)"
     ]
   },
-  "notes": "DEFAULT on x86-64: peek's recovered parameter is unsigned char *; fill writes eight and four bytes through the buffer it hands peek. Taking peek's type as a vote made fill's parameter a byte pointer and SplitDatatype printed the eight-byte store as eight byte stores. The vote is refused because the caller writes wider than the pointee, and ptrfromuse's default declares fill's own parameter void *."
+  "notes": "DEFAULT on x86-64: ptrfromuse is void by default, so fill's parameter, which the body only ever dereferences (at +0x10 and +0x18), is declared void * rather than long; --option ptrfromuse off gives long back."
 }

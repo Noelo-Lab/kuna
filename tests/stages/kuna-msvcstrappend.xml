@@ -489,7 +489,7 @@ std::string::push_back\(\(void \*\)v1,'u'\);
 std::string::push_back\(\(void \*\)v1,'n'\);
 std::string::push_back\(\(void \*\)v1,'a'\);</stringmatch>
 <stringmatch name="MSVCSTRAPPEND #2: on - the loop appends the byte it read" min="1" max="1">std::string::push_back\(a0,\*a1\);</stringmatch>
-<stringmatch name="MSVCSTRAPPEND #3: on - the two-byte literal append returns the reference its caller uses" min="1" max="1">sub_1400014a0\(std::string::append\(\(void \*\)\(a0 \+ 8\)," \\"",2\)\);</stringmatch>
+<stringmatch name="MSVCSTRAPPEND #3: on - the two-byte literal append returns the reference its caller uses" min="1" max="1">sub_1400014a0\(std::string::append\(\(void \*\)\(\(int8\)a0 \+ 8\)," \\"",2\)\);</stringmatch>
 <stringmatch name="MSVCSTRAPPEND #4: on - zeroing a changed register after the join does not block the collapse" min="1" max="1">grow_pos1\(</stringmatch>
 <stringmatch name="MSVCSTRAPPEND #5: seven synthesized calls, all in the on pass" min="7" max="7">std::string::</stringmatch>
 <stringmatch name="MSVCSTRAPPEND #6: off - four unrolled push_back grow calls, plus the two near misses in each pass" min="8" max="8">sub_140001200\(</stringmatch>

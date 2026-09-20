@@ -34,8 +34,8 @@
 //! function instead of one per local.
 //!
 //! Gated by [`Architecture::ptr_from_use`](crate::architecture::Architecture)
-//! (option `ptrfromuse off|byte|void`); with the option off nothing in this module
-//! is reachable.
+//! (option `ptrfromuse off|byte|void`, shipped `void`); with the option off nothing
+//! in this module is reachable.
 
 use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
@@ -59,11 +59,11 @@ const HOP_CAP: usize = 10;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PtrFromUseMode {
     /// Upstream: a dereferenced-only input keeps its integer vote.
-    #[default]
     Off,
     /// Point at one unknown byte (`undefined1 *`, rendered `char *` by `realtypes`).
     Byte,
-    /// Point at nothing (`void *`).
+    /// Point at nothing (`void *`).  The shipped default.
+    #[default]
     Void,
 }
 

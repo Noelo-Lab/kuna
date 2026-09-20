@@ -1,0 +1,120 @@
+ptrfromuse off -> void: the 17 functions no normaliser explains, each read by hand.
+Tree: origin/main 3433e05d (protoorder #669 merged) + this branch, which is the default value alone.
+Sweep: 11 binaries, 4,490 functions, 836 changed.  Re-run on that base: the same 17 addresses, the same shapes.
+Diffs are after the corpus-diff.py name/cast normalisers; `flip-ndiff.py` prints them.
+
+== O0-grep-grep 0x7f87: sum reordered: (a1 - (v2 + v1)) - a0 == (long)a1 + (-(long)a0 - (v2 + v1)); the pointer difference, same value
+   @@ replace off[4:5] on[4:5]
+      v1 = !((a1 - v2 <= a0) || (*(char *)(a1 + ~v2) != '\r'));
+    - v2 = (a1 - (v2 + (long)v1)) - a0;
+    + v2 = (long)a1 + (-(long)a0 - (v2 + (long)v1));
+      v3 = a0;
+
+== O0-grep-grep 0x127db: terms of an address sum reordered around the (long) cast
+
+== O0-grep-grep 0x13fe9: terms of an address sum reordered around the (long) cast
+
+== O0-grep-grep 0x19334: terms of an address sum reordered around the (long) cast
+
+== O2-bzip2-bzip2 0x5890: terms of an address sum reordered around the (long) cast
+
+== O2-bzip2-bzip2 0x8890: terms of an address sum reordered around the (long) cast
+
+== O2-diffutils-diff 0x9e40: address temporary folded: `a0 += v2;` dropped, v2 added to each field address in the loop; a0 and v2 are not written in the loop; no load moves
+   @@ delete off[5:6] on[5:5]
+      v2 = (long)a1 * 0x130;
+    - a0 += v2;
+      do {
+   @@ replace off[7:8] on[6:7]
+      do {
+    - if ((*(long *)(v1 + v2 + 0x18) == *(long *)(a0 + 0x18)) && (*(long *)(v1 + v2 + 0x10) == *(long *)(a0 + 0x10)))
+    + if ((*(long *)(v1 + v2 + 0x18) == *(long *)((long)a0 + v2 + 0x18)) && (*(long *)(v1 + v2 + 0x10) == *(long *)((long)a0 + v2 + 0x10)))
+      return 1;
+   @@ replace off[11:13] on[10:12]
+      if (v3 != 0x6000) {
+    - if ((v3 != 0x2000) || ((*(unsigned int *)(a0 + 0x28) & 0xf000) != 0x2000)) goto label_9e8a;
+    - if (*(long *)(v1 + 0x38 + v2) == *(long *)(a0 + 0x38))
+    + if ((v3 != 0x2000) || ((*(unsigned int *)((long)a0 + v2 + 0x28) & 0xf000) != 0x2000)) goto label_9e8a;
+    + if (*(long *)(v1 + 0x38 + v2) == *(long *)((long)a0 + v2 + 0x38))
+      return 1;
+   @@ replace off[18:20] on[17:19]
+      else {
+    - if ((*(unsigned int *)(a0 + 0x28) & 0xf000) == 0x6000) {
+    - if (*(long *)(v1 + 0x38 + v2) == *(long *)(a0 + 0x38))
+    + if ((*(unsigned int *)((long)a0 + v2 + 0x28) & 0xf000) == 0x6000) {
+    + if (*(long *)(v1 + 0x38 + v2) == *(long *)((long)a0 + v2 + 0x38))
+      return 1;
+
+== O2-freertos-RTOSDemo.out 0x255c: literal: sub_108c(0x22d5,0xa38,...) -> sub_108c(0x22d5,"Tmr Svc",...), the argument now typed through the callee
+   @@ replace off[6:7] on[6:7]
+      sub_31c0(&v3,&v2,&v1);
+    - dat_200004e8 = sub_108c(0x22d5,0xa38,v1,0,5,v2,v3);
+    + dat_200004e8 = sub_108c(0x22d5,"Tmr Svc",v1,0,5,v2,v3);
+      if (dat_200004e8)
+
+== O2-grep-grep 0xac50: terms of an address sum reordered around the (long) cast
+
+== O2-grep-grep 0xaf70: address temporary folded: `v1 = a0 + 0x70;` dropped, (long)a0 + ... + 0x70 at each read; a0 is not written; no load moves
+   @@ delete off[13:14] on[13:13]
+      }
+    - v1 = a0 + 0x70;
+      v2 = *(unsigned char *)(a0 + 0x988);
+   @@ replace off[23:25] on[22:24]
+      label_b168:
+    - v6 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v15 - 1)) + v15;
+    - v8 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v6 + -1));
+    + v5 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v14 - 1) + 0x70) + v14;
+    + v7 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v5 + -1) + 0x70);
+      v9 = v6 + (unsigned long)v8;
+   @@ replace off[26:27] on[25:26]
+      v9 = v6 + (unsigned long)v8;
+    - if (((!v8) || (v6 = *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v9 - 1)) + v9, v6 = v6 + (unsigned long)*(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v6 + -1)), v8 = *(unsigned char *)(v1 + (
+    + if (((!v7) || (v5 = *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v8 - 1) + 0x70) + v8, v5 = v5 + (unsigned long)*(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v5 + -1) + 0x70), v7 =
+      label_b260:
+   @@ replace off[61:63] on[60:62]
+      }
+    - v6 = v9 + *(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v9 - 1));
+    - v9 = v6 + (unsigned long)*(unsigned char *)(v1 + (unsigned long)*(unsigned char *)(v6 + -1));
+    + v5 = v8 + *(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v8 - 1) + 0x70);
+    + v8 = v5 + (unsigned long)*(unsigned char *)((long)a0 + (unsigned long)*(unsigned char *)(v5 + -1) + 0x70);
+      if (0x7f < (long)(v9 - v15)) goto label_b378;
+   @@ replace off[79:80] on[78:79]
+
+== O2-grep-grep 0x14090: same address through a retyped long *: *(long *)(a0 + 0x1a0) -> a0[0x34]
+   @@ replace off[116:117] on[116:117]
+      v8 = 0;
+    - v13 = &v3[*(long *)(a0 + 0x1a0) * 2];
+    + v13 = &v3[a0[0x34] * 2];
+      do {
+
+== O2-grep-grep 0x144a0: terms of an address sum reordered around the (long) cast
+
+== O2-tar-tar 0x35aa0: terms of an address sum reordered around the (long) cast
+
+== O2-tar-tar 0x35b50: terms of an address sum reordered around the (long) cast
+
+== O2-tar-tar 0x35c30: same address through a retyped long *: *(uint1 **)(a0 + 8 + (v12 + 8) * 8) -> (uint1 *)a0[v12 + 9]
+   @@ replace off[78:79] on[78:79]
+      else {
+    - v10 = *(uint1 **)(a0 + 8 + ((int8)(int4)v12 + 8) * 8);
+    + v10 = (uint1 *)a0[(int8)(int4)v12 + 9];
+      v3 = *v10;
+
+== O2-tar-tar 0x37f80: same address through a retyped long *: *(int8 *)(a0 + 0x80) -> a0[0x10], plus local renumbering
+   @@ replace off[361:362] on[361:362]
+      v22 = *(int8 *)(a0 + 0x80) + 1;
+    - *(void **)(v14 + *(int8 *)(a0 + 0x80) * 8) = v10;
+    + *(void **)(v7 + a0[0x10] * 8) = v9;
+      label_38726:
+
+== O2-tar-tar 0x3c060: v6 keeps the loaded a5[7] and v6 + v15 is spelled at its two readers instead of v6 holding the sum; the load is still before the store it feeds; v6 is not read afterwards
+   @@ replace off[39:42] on[39:42]
+      memcpy(v11,v2,v15);
+    - v6 = *(int8 *)(a5 + 0x38) + v15;
+    - *(int8 *)(a5 + 0x38) = v6;
+    - if (*(uint8 *)(a5 + 0x20) < (uint8)(v6 - *(int8 *)(a5 + 0x30))) {
+    + v6 = a5[7];
+    + a5[7] = v6 + v15;
+    + if ((uint8)a5[4] < (v6 + v15) - a5[6]) {
+      label_3c3e7:
+
