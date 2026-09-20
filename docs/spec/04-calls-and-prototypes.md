@@ -612,23 +612,49 @@ parameter, and `void caller(long,unsigned long)` renders as `void caller(long)` 
 a deletion that reaches the JSON `variables[]` surface as a missing `kind: arg`
 row, not just the C text.
 
-The **callee's own recovered prototype** must exist and must have no parameter
-overlapping those register bytes. This is the clause the rule rests on, and the
-reason it can be a default. Nothing on the caller's side can say whether the
-callee wanted the register; the parameter list kuna gets from decompiling that
-function can, and `protoorder` (above) parks exactly that list for every callee
-it decompiles before the caller.
+The **callee's own recovered prototype** must exist, must have no parameter
+overlapping those register bytes, and must *account for every argument the drop
+leaves behind* — each recovered parameter covered by a surviving argument and
+each surviving argument covered by a recovered parameter. This is the clause the
+rule rests on, and the reason it can be a default. Nothing on the caller's side
+can say whether the callee wanted the register; the parameter list kuna gets from
+decompiling that function can, and `protoorder` (above) states exactly that list
+for every callee it decompiles before the caller.
 
-Requiring the prototype to **exist** carries most of the clause's weight, because
-`protoorder` refuses to state one wherever a callee's parameter list is not
-knowable: a callee inside a recursive component, a variadic one, one with no
-recovered body such as a PLT import, one that recovered no parameters at all, and
-one whose prototype is already *declared* — that last case input-locks the call
-spec, which this rule declines at its first line. "Nothing parked" and "cannot
-tell" are therefore the same answer and both decline, which also makes the rule
-inert wherever no callee was decompiled first: a single-function `kuna decompile`
-(it forks one process per function), a `decompile-all` narrowed by `--addr` or
+The second half is not bookkeeping. A recovery *short* of what the call passes is
+not a statement that the tail is unwanted — it is a statement that the recovery
+did not reach the tail, and from the caller's side the two read identically. A
+forwarding thunk is the sharp case: `mov (%rdi),%rax; jmp *%rax` never names the
+registers it passes through, so kuna recovers one parameter for it while the
+function it tail calls consumes three, and `protoorder` states that short list in
+*both* its modes. With only the free-bytes test the drop is admitted and a
+forwarded argument is deleted; requiring the recovered list to account for the
+two surviving arguments declines it, because one parameter cannot be two
+arguments.
+
+Requiring the prototype to **exist** carries the rest, because `protoorder`
+states nothing for a callee inside a recursive component, one with no recovered
+body such as a PLT import, one that recovered no parameters at all, and one whose
+prototype is already *declared* — that last case input-locks the call spec, which
+this rule declines at its first line. "Nothing parked" and "cannot tell" are
+therefore the same answer and both decline, which also makes the rule inert
+wherever no callee was decompiled first: a single-function `kuna decompile` (it
+forks one process per function), a `decompile-all` narrowed by `--addr` or
 `--functions`, a `--jobs N` run, and `--option protoorder off`.
+
+`protoorder` does **not** decline a variadic callee, and this rule must not be
+read as resting on that. The variadic guards described above — the under-recovery
+walk and the register-file boundary — belong to the branch that parks a prototype
+in the symbol table, and the default `types` mode, which is the one this rule
+reads, returns before them. The declared-`...` decline cannot fire on a stripped
+image at all, because a declared prototype is rejected one branch earlier. A
+stripped SysV variadic is therefore *stated*: `long vlog(int,long,...)` built
+with `gcc -O2` and stripped states three parameters, and `KUNA_PROTOORDER_TRACE=1`
+prints `state sub_11d0 params=3` for it. What declines the drop there is the list
+itself — a register-save prologue reads every argument register the convention
+has, so the recovered list carries the register the drop would take. Where a
+variadic recovers short instead, the surviving-argument accounting and the
+callee-body veto below are what answer for it.
 
 The **callee's own body** is still read, as a veto only: a bounded entry walk
 that positively sees those register bytes read before they are written declines
@@ -661,21 +687,26 @@ delete a real struct half at a callee whose own prototype is under-recovered.
 
 What no clause can see is that the evidence is a *recovery*. A callee whose own
 parameter list kuna under-recovers states a prototype that admits the drop, and
-the argument goes. What the prototype clause does remove is the class a bounded
+the argument goes; the surviving-argument accounting bounds how far that can go —
+the under-recovery has to be exactly one slot deep, at exactly the register the
+clobber wrote, with every other argument still accounted for. What the prototype clause does remove is the class a bounded
 body walk cannot see at all: a read past a jump table, a read beyond the walk's
 instruction budget, a read inside an import, and a callee that really returns a
 16-byte value in `rax:rdx` and forwards the high half as the next call's trailing
 argument. Each of those is a callee whose *recovered prototype* carries the
 parameter, so each is declined.
 
-Together the clauses are narrow: over 46 stripped decbench binaries and 41,258
-functions the rule fires on four functions, and all four are one shape — a call
-clobber on one path of the argument register's join and a dead `idiv` remainder
-on the other. `fmt` -O2 `main` and its `-O2-noinline` twin, `e2fsck`'s
-`ext2fs_dblist_sort2(dblist,sortfunc,…)` and `bash`'s `xrealloc(p,n,…)` each lose
-exactly one trailing argument, landing on the arity the callee's own recovered
-prototype has and, for the three that have one, on the arity DWARF or the
-library's own header gives.
+Together the clauses are narrow. Over 770 stripped decbench binaries (O0, O2 and
+O2-noinline) the rule changes 21 functions, one per binary, and each loses
+exactly one trailing argument at exactly one call site. Every drop lands on the
+callee's true arity, checked against the unstripped twin: `__addvsi3` and
+`__mulvsi3` at 15 openssh sites, `fmt(FILE *, char const *)` at the two coreutils
+`fmt` mains, `xrealloc(void *, size_t)` in `bash`'s `expand_prompt`,
+`ext2fs_dblist_sort2(dblist,sortfunc)` in `e2fsck`, and `efi_create_handle` in
+u-boot. Two call sites *gain* an argument — the under-recovered sibling site in
+each `fmt` main, which is what turns its 1/2/3 into 2/2/2. Every hunk in that
+sweep falls in one of seven documented classes;
+`docs/features/argclobber/sweep-2026-09-20.txt` has the classification.
 
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter

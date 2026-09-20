@@ -35,12 +35,16 @@ identical where they do not.
   `ce-remainder-or-pair` counterexample on
   `argclobber_pair_x86_64`: the argument stays.
 * `tests/stages/kuna-argclobber.xml` becomes the negative control it now is. The
-  harness decompiles one function from a byte image, so nothing is parked and the
+  harness decompiles one function from a byte image, so nothing is stated and the
   argument survives both passes. Its three sibling stage tests
-  (`-forward`, `-guards`, `-armreturn`) already assert survival and are unchanged.
-* The four counterexample programs stay in this directory as the record of what
-  the rule must decline; each is reproduced by the commands in
-  `default-on-evaluation.md`.
+  (`-forward`, `-guards`, `-armreturn`) assert the same survival; each now says
+  in its own header that under the current rule the survival is that blanket
+  decline and not the caller-side clause it describes, and that the live
+  coverage on a real image is in `tests/cli/`.
+* The five counterexample programs stay in this directory as the record of what
+  the rule must decline; the first four are reproduced by the commands in
+  `default-on-evaluation.md`, and `ce-forward-thunk.{c,s}` by the build line in
+  its own header.
 
 ## Measurements
 

@@ -24,6 +24,19 @@
     becomes `void caller4(long)`.  A value the caller demonstrably wrote is an
     argument on the path that wrote it.
 
+    WHY THIS PASSES NOW.  This fixture predates the recovered-prototype rule and
+    pins its clause against the CALLER's side.  Under the current rule the
+    decisive statement is the callee's own recovered prototype, which reaches a
+    call site only through `protoorder`, and this harness decompiles ONE
+    function from a byte image: no callee was decompiled first, nothing is
+    stated, and the drop is declined before any caller-side clause is reached
+    (the same blanket decline tests/stages/kuna-argclobber.xml pins).  So the
+    pass-2 survival here is that decline, not the clause described above.  The
+    clause is kept in prose because it still runs wherever a prototype IS
+    stated, and the live coverage of the rule on a real image is in tests/cli/
+    (argclobber-drops-a-trailing-clobbered-argument.json and its off arm,
+    argclobber-keeps-the-jump-table-callees-argument.json).
+
     Stage / sub-stage: P4 "active-input-trial-scoring".  Both passes must
     render the same three-argument call and the same two-parameter prototype,
     so both assertions count 2.

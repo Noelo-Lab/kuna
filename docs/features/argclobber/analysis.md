@@ -61,31 +61,77 @@ callee-first, and the caller reads it back through
 
 The callee clause is now:
 
-* the callee's recovered prototype must **exist** for this entry, and
-* none of its parameters may overlap the argument's register bytes.
+* the callee's recovered prototype must **exist** for this entry,
+* none of its parameters may overlap the argument's register bytes, and
+* its parameters must **account for every argument the drop leaves behind** —
+  each recovered parameter covered by a surviving argument and each surviving
+  argument covered by a recovered parameter.
 
-Requiring it to exist is most of the clause's strength, because `protoorder`
-refuses to park one in exactly the cases where a callee's parameter list is not
-knowable: a recursive component (`Decline::Scc`), a variadic callee, an import
-with no recovered body, a callee that recovered no parameters, and a callee whose
-prototype is already *declared* (which input-locks the call spec, declined at the
-rule's first line). A callee that was never decompiled first states nothing, so
-the rule is inert on a single-function `kuna decompile`, a narrowed
-`decompile-all`, a `--jobs N` run, and under `--option protoorder off`.
+Requiring it to exist carries part of the clause, because `protoorder` states
+nothing for a recursive component (`Decline::Scc`), an import with no recovered
+body, a callee that recovered no parameters, and a callee whose prototype is
+already *declared* (which input-locks the call spec, declined at the rule's first
+line). A callee that was never decompiled first states nothing, so the rule is
+inert on a single-function `kuna decompile`, a narrowed `decompile-all`, a
+`--jobs N` run, and under `--option protoorder off`.
+
+The accounting clause is what carries the rest, and it exists because of a
+counterexample the free-bytes test alone gets wrong. A recovery *short* of what
+the call passes is not a statement that the tail is unwanted; it is a statement
+that the recovery did not reach the tail. `ce-forward-thunk.s` is that shape:
+
+```
+fwd:    movq (%rdi), %rax
+        jmp  *%rax
+```
+
+The thunk never names `rsi` or `rdx`, so kuna recovers **one** parameter for it
+while the function it tail calls consumes three, and `protoorder` states that
+short list in both its modes (`KUNA_PROTOORDER_TRACE=1` prints
+`state sub_11cd params=1`). With only the free-bytes test the drop is admitted
+and the forwarded `rdx` argument is deleted. The accounting clause declines it:
+one recovered parameter cannot be the two arguments that would remain.
+
+### `protoorder` does not decline a variadic callee
+
+This must not be claimed, and an earlier draft of these docs claimed it. The
+variadic guards in `protoorder` — `Decline::UnderRecovered` and
+`Decline::RegisterFileFull` — live in the branch that parks a prototype in the
+symbol table (`lock`). `park_recovered` returns through `state_recovered_types`
+**before** that branch in the default `types` mode, which is the mode this rule
+reads. `Decline::Variadic` itself is only ever set from a *declared* `...`, and a
+declared prototype is rejected one branch earlier by `Decline::Declared`, so on a
+stripped image it cannot fire at all.
+
+A stripped SysV variadic is therefore *stated*. `long vlog(int op, long a, ...)`
+with a `va_arg` read of the third argument, built `gcc -O2` and stripped, states
+three parameters:
+
+```
+$ KUNA_PROTOORDER_TRACE=1 kuna decompile-all ./vprobe 2>&1 >/dev/null | grep 11d0
+[protoorder] state sub_11d0 @0x11d0 params=3 trimmed=0
+```
+
+What declines the drop there is the **recovered list itself**: a register-save
+prologue reads every argument register the convention has, so the list carries
+the register the drop would take and the free-bytes test refuses. Where a
+variadic recovers short instead, the accounting clause and the body veto answer
+for it.
 
 The bounded entry walk stays, as a **veto only**: it can refuse a drop the
-prototype admitted, never admit one. It is what still answers for a callee kuna
-never recovered as variadic (u-boot's `printf`, 1,924 sites, its `va_list`
-prologue spilling `r1`–`r3`). It is also now seeded only when something is
-parked, so the option costs nothing on a surface where it cannot fire.
+prototype admitted, never admit one (u-boot's `printf`, 1,924 sites, its
+`va_list` prologue spilling `r1`–`r3`). It is also now seeded only when something
+is stated, so the option costs nothing on a surface where it cannot fire.
 
 ## What it still cannot know
 
 The evidence is a recovery, not a fact: a callee whose own parameter list kuna
 under-recovers states a prototype that admits the drop. That is the residual
-hole, and it is the hole every callee-derived statement has. What the clause
-removes is the class a bounded body walk cannot see at all — the four programs
-above.
+hole, and it is the hole every callee-derived statement has. The accounting
+clause bounds it: the under-recovery has to be exactly one slot deep, at exactly
+the register the clobber wrote, with every other argument still accounted for.
+What the clause removes is the class a bounded body walk cannot see at all — the
+five programs above.
 
 One effect belongs in the option's own description rather than in a footnote:
 dropping the argument also **narrows the preceding call's return value** where
