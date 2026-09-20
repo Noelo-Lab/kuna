@@ -313,8 +313,20 @@ binary.
 
 The shape itself is not new, and the mitigation is the same as the gzip row's:
 `sigemptyset(sigset_t *)` ships on `main` and splits the frame the same way. On
-the ablated build, the five-line `sigaction(2)` program with `sigfillset`
-replaced by `sigemptyset` prints the identical detached `undefined4 v6;
+the ablated build, this program
+
+```c
+void setup(int sig, struct sigaction *old) {
+  struct sigaction sa;
+  memset(&sa, 0, sizeof sa);
+  sa.sa_handler = h;
+  sigemptyset(&sa.sa_mask);              /* sigfillset here on the other arm */
+  if (sig != 14) sa.sa_flags = 0x10000000;
+  sigaction(sig, &sa, old);
+}
+```
+
+built `gcc -O2` and stripped, prints the identical detached `undefined4 v6;
 // stack - 0x30` next to `sigaction(a0,(sigaction *)&v3,a1)`; and ssh-keygen's
 base arm already prints 18 `(sigaction *)` cast-at-use sites against this
 branch's 19, eight of them in one function immediately after a
