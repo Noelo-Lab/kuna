@@ -48,4 +48,9 @@ The flip procedure, all on this branch's own base, both arms of the same build:
 `make test`, `make test-stages`, `make test-cli`, the 444-slice `typesweep`,
 interleaved `timeit` min-of-15, and a whole-corpus `decompile-all` before/after
 over every stripped ELF in decbench `full_run_address_2026-09-11` with every hunk
-classified. `record.json` carries the numbers.
+classified. `record.json` carries the numbers, `sweep-2026-09-20.txt` the sweep.
+
+Result: 675/675 and 1249/1249 with PARITY OK, 209/209 CLI probes, `type_match`
+1,147 -> 1,147 with 0 improved and 0 worse over 10,748 scored functions, 21
+functions changed over 770 binaries with every drop on the callee's true arity,
+and a worst speed delta of +1.15%.
