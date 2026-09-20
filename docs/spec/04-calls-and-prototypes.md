@@ -2265,9 +2265,14 @@ the callee has already been decompiled when its types are recorded, so nothing
 re-reads it about itself. And `kuna decompile` — which forks one `decomp_dbg` per
 function — cannot see what another function's decompile stated, so the two
 surfaces may disagree about a call's argument types; the whole-binary surface is
-the one that has the callee. `decompile-project` and `decompile-graph` have their
-own schedules and are not callee-first either; both warn on stderr when the
-option is asked for explicitly, rather than producing identical output silently.
+the one that has the callee. `decompile-project` takes the same order, because
+it keeps a `structsynth` ledger too and the ledger numbers a layout in visit
+order: an export on its own schedule put a different record under the same
+`struct_N` than `decompile-all` did (chapter
+[00](00-overview.md), synthesized structures across a batch). A streamed export
+and `decompile-graph` have their own schedules and are not callee-first; both
+warn on stderr when the option is asked for explicitly, rather than producing
+identical output silently.
 
 A run that selects part of the program — `--functions`, `--addr`, a triage
 filter — or a single function decompiles in address order and builds no call

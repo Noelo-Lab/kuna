@@ -1071,11 +1071,16 @@ outside it states nothing. An explicit `--option protoorder` is refused alongsid
 a `--jobs` run that does not ask for it states nothing and says so on stderr, so
 its output can differ from the serial run's (see the `--jobs` contract below).
 
-`decompile-all` is the only surface that acts on it. `decompile-project` (with or
-without `--stream`) has its own schedule and its own header, and
-`decompile-graph` decompiles one function per row, so both produce the option-off
-output; both say so on stderr when it is asked for explicitly, rather than
-accepting it silently.
+`decompile-project` takes the same order, under the same conditions. It has to:
+both surfaces keep a `structsynth` ledger, which numbers `struct_N` in the order
+the program is visited in, so an export that kept its own address-order schedule
+put a different record under the same name — on coreutils `du` -O2, 29 of the 30
+synthesized names meant something else in the exported header than they did in
+`decompile-all --json`. `--option protoorder off` gives both surfaces the old
+schedule. A streamed export (`--stream`) writes its `.c` in decompile order as
+each function finishes and `decompile-graph` decompiles one function per row, so
+neither takes the order; both produce the option-off output and say so on stderr
+when it is asked for explicitly, rather than accepting it silently.
 
 ### `kuna functions --summary` — orientation in one call
 
@@ -1311,10 +1316,11 @@ Behaviors specific to `decompile-all`:
     output order, but every target owns a slot and results are merged
     positionally, so the document is identical to `--jobs 1`, synthesized
     structures included (below), whatever order the workers finish in. On
-    `decompile-all` that holds with `--option protoorder off` on both runs: a
-    worker cannot see another worker's callees, so the pool does not take the
-    callee-first order (the next bullets). The concrete `--mode`, every resolved `--option` and the
-    watchdog budget are settled once by the parent and passed to every worker.
+    `decompile-all` and `decompile-project` that holds with `--option
+    protoorder off` on both runs: a worker cannot see another worker's callees,
+    so the pool does not take the callee-first order (the next bullets). The
+    concrete `--mode`, every resolved `--option` and the watchdog budget are
+    settled once by the parent and passed to every worker.
     `decompile-project --stream` is the one surface where the schedule *is*
     observable, and only in the order of the `.c`: a streamed export writes each
     function as it finishes, so under `--jobs N` the interleaving is worker
@@ -1322,11 +1328,12 @@ Behaviors specific to `decompile-all`:
     the prototypes and the disassembly are what the same selection produces
     serially; `index.jsonl` indexes the order the run happened to take.
   - **It is the serial answer with `--option protoorder off`.** A serial
-    `decompile-all` decompiles callees first by default and types call arguments
-    from what each callee recovered; a pool worker cannot see another worker's
-    callees, so the pool does not. Under `--jobs N` with the default, the parent
-    prints a note and call-argument types can differ from the serial run; add
-    `--option protoorder off` to both to compare them byte for byte.
+    `decompile-all` or `decompile-project` decompiles callees first by default
+    and types call arguments from what each callee recovered; a pool worker
+    cannot see another worker's callees, so the pool does not. Under `--jobs N`
+    with the default, the parent prints a note and call-argument types can
+    differ from the serial run; add `--option protoorder off` to both to
+    compare them byte for byte.
   - **It can depend on how the work was divided, wherever the engine's own output
     already does.** A few emission decisions are first-toucher-wins in the
     per-process type and symbol database, so they are a function of which *other*
@@ -1350,9 +1357,9 @@ Behaviors specific to `decompile-all`:
     [kuna --jobs] structsynth: 106 function(s) with synthesized structures named as --jobs 1 --option protoorder off names them: 100 renamed, 10 decompile(s) again
     ```
 
-    The line names the serial run it replayed: on `decompile-all` that is the
-    one without the callee-first order, and on `decompile-project` and
-    `decompile-graph`, which never take that order, plain `--jobs 1`.
+    The line names the serial run it replayed: on `decompile-all` and
+    `decompile-project` that is the one without the callee-first order, and on
+    `decompile-graph`, which never takes that order, plain `--jobs 1`.
 
     The second decompile's questions are checked against the first (a question
     asked twice counts once). A function whose answers change what it asks next
@@ -2290,7 +2297,10 @@ including `0` to disable. Explicit `--addr` selections remain exact and
 suppress that whole-image walk by default; named selections keep it so
 generated names can resolve. Explicit `--option fast_funcdisc on` can restore
 its program facts for an address-selected run, but does not add definitions
-outside the selection.
+outside the selection. An unfiltered serial export decompiles callees before
+callers, the same order `decompile-all` takes (`--option protoorder`, above),
+so a `struct_N` in the exported header is the record `decompile-all` means by
+that name.
 
 Project exports use the same aggregate verdict as `decompile-all`. Individual failures
 remain comments/prototype tombstones and count in the final README. A mixed export with

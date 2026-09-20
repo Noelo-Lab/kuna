@@ -1819,3 +1819,60 @@ fn a_sectionless_image_never_reports_a_sweeping_asm_at_jobs_1() {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
+/// Every `struct struct_N { ... }` block in `text`, by name.
+fn synthesized_structs(text: &str) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("\nstruct struct_") {
+        let body = &rest[at + 1..];
+        let Some(open) = body.find(" {\n") else { break };
+        let Some(close) = body.find("\n};") else { break };
+        if close > open {
+            out.entry(body["struct ".len()..open].to_string())
+                .or_insert_with(|| body[open + 3..close].to_string());
+        }
+        rest = &body[open..];
+    }
+    out
+}
+
+/// (kuna `protoorder` + `structsynth`) A `struct_N` names one record across the
+/// whole-program surfaces.
+///
+/// The ledger numbers a synthesized layout in the order the program is visited
+/// in, and `decompile-all` visits callees first. The export used to keep its own
+/// address-order schedule, so the two surfaces put different records under the
+/// same name: three of this fixture's five disagreed, and a reader resolving a
+/// `struct_2 *` in `decompile-all --json` against the exported header read the
+/// wrong layout.
+#[test]
+fn a_struct_name_means_the_same_record_in_the_export_and_in_decompile_all() {
+    let bin = fixture("protoorder_floatpointee_x86_64");
+    for arm in [&[][..], &["--option", "protoorder", "off"][..]] {
+        let dir = out_dir("struct_names");
+        let base = ["decompile-project", &bin, "-o", dir.to_str().unwrap(), "--sleighpath", &specs()];
+        let (_out, stderr, ok) = run_kuna(&[&base[..], arm].concat());
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("decompile_project_cli: skipping (no `.sla`; run `make specs`): {stderr}");
+                return;
+            }
+            panic!("kuna decompile-project failed: {stderr}");
+        }
+        let header =
+            std::fs::read_to_string(dir.join("protoorder_floatpointee_x86_64.h")).unwrap();
+        let all = ["decompile-all", &bin, "--sleighpath", &specs(), "--option", "structdefs", "on"];
+        let (text, stderr, ok) = run_kuna(&[&all[..], arm].concat());
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let (exported, decompiled) = (synthesized_structs(&header), synthesized_structs(&text));
+        assert!(decompiled.len() >= 3, "the fixture stopped synthesizing: {decompiled:?}");
+        for (name, body) in &decompiled {
+            let Some(theirs) = exported.get(name) else {
+                panic!("{name} is decompiled but not exported (arm {arm:?})");
+            };
+            assert_eq!(theirs, body, "{name} is a different record in the export (arm {arm:?})");
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
