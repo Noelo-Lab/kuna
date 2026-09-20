@@ -625,14 +625,10 @@ impl AnalysisPass for LibcTypesPass {
         // whoever declared it.
         let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
         let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
-        // The one exception, and its own pair of tables: the `_obstack_*` entry
-        // points are matched against a name the image DEFINES as well (see
-        // `LIBC_DEFINED_NAMED` for why that is safe for those five names and
-        // for nothing else here). Defined and imported take DIFFERENT
-        // signatures, because gnulib and glibc publish different size slots for
-        // the same symbol, so the defined channel must be the defined names
-        // alone — `unambiguous_present_function_names` is the union and holds an
-        // ordinary import too.
+        // The obstack exception and its two channels (see `LIBC_DEFINED_NAMED`).
+        // The defined channel takes the DEFINED names, not the union: an
+        // ordinary import is in the union, and the two channels disagree about
+        // the size slots.
         let defined = unambiguous_defined_function_names(ctx.file, ctx.bytes);
         seed_named_prototypes(&mut out, &defined, LIBC_DEFINED_NAMED, types, word_size, layout);
         seed_named_prototypes(&mut out, &imported, LIBC_IMPORTED_OBSTACK, types, word_size, layout);
