@@ -23,67 +23,21 @@ No new slot exists (the table already reaches everything reachable):
 | `__dirstream` | 34 | 34 | 34 |
 | `dirent` | 20 | 18 | 18 |
 
-Named in libc headers but UNREACHABLE (no slot in the 444 slices names them):
+Named in libc headers, but NOT reachable by a direct call in the 444 slices
+---------------------------------------------------------------------------
 
-- `hash_entry` 2222 GT vars
-- `hash_table` 1639 GT vars
-- `predicate` 453 GT vars
-- `<anon>` 372 GT vars
-- `tar_stat_info` 369 GT vars
-- `hash_tuning` 352 GT vars
-- `parser_table` 281 GT vars
-- `fileinfo` 258 GT vars
-- `cp_options` 167 GT vars
-- `line` 160 GT vars
-- `xheader` 120 GT vars
-- `name` 119 GT vars
-- `change` 117 GT vars
-- `_ftsent` 100 GT vars
-- `directory` 88 GT vars
-- `valinfo` 77 GT vars
-- `tar_sparse_file` 74 GT vars
-- `Src_to_dest` 69 GT vars
-- `selabel_handle` 65 GT vars
-- `COLUMN` 64 GT vars
-- `dev_ino` 62 GT vars
-- `file_data` 56 GT vars
-- `mount_entry` 55 GT vars
-- `Spec_list` 53 GT vars
-- `error_context` 51 GT vars
-- `File_spec` 48 GT vars
-- `item` 47 GT vars
-- `tempnode` 45 GT vars
-- `keyfield` 44 GT vars
-- `kwset` 44 GT vars
-- `merge_node` 42 GT vars
-- `utmpx` 41 GT vars
-- `linebuffer` 40 GT vars
-- `tree` 39 GT vars
-- `option_locus` 39 GT vars
-- `bin_str` 38 GT vars
-- `diff3_block` 38 GT vars
-- `name_elt` 38 GT vars
-- `Word` 34 GT vars
-- `delayed_set_stat` 32 GT vars
-- `deferred_unlink` 32 GT vars
-- `dir_list` 30 GT vars
-- `color_ext_type` 30 GT vars
-- `diff_block` 30 GT vars
-- `ignore_pattern` 27 GT vars
-- `huft` 27 GT vars
-- `trie` 27 GT vars
-- `ct_data` 26 GT vars
-- `quoting_options` 24 GT vars
-- `rm_options` 24 GT vars
-- `List_element` 24 GT vars
-- `exec_val` 24 GT vars
-- `bufmap` 24 GT vars
-- `buffer_record` 23 GT vars
-- `devlist` 23 GT vars
-- `line_filter` 23 GT vars
-- `Chown_option` 22 GT vars
-- `format_val` 22 GT vars
-- `pending` 21 GT vars
-- `delayed_link` 21 GT vars
-- `namebuf` 21 GT vars
-- `transform` 21 GT vars
+(`obstack` is in the table above only because this round adds the DEFINED-name
+channel; by the imports-only rule it belongs here, with 0 reachable.)
+
+| tag | GT vars | why |
+|---|---:|---|
+| `_ftsent` | 100 | gnulib's fts is linked in the same way, but `fts_open` is an ordinary name a program may define itself, so the reserved-namespace argument does not cover it |
+| `sgrp` | 61 | shadow ships its own gshadow; `getsgnam` is likewise ordinary |
+| `utmpx` | 41 | `getutxent` IS imported in 12 slices, but every variable of this type sits in a gnulib wrapper's caller rather than in the calling function |
+| `argp_state` | 6 | gnulib's argp, same as fts |
+| `statfs` | 4 | `fstatfs`/`statfs` imported in 45/15 slices; same one-hop gap |
+
+Everything else in the pool is a PROGRAM-defined name a stripped binary does not
+carry at all -- `hash_entry` 2,222, `hash_table` 1,639, `predicate` 453,
+`tar_stat_info` 369, `hash_tuning` 352, `parser_table` 281, `fileinfo` 258, and
+189 more. No declaration anywhere names them, so no table can.
