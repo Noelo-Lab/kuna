@@ -142,24 +142,23 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   the grow call on the strength of its argument shape; the callee body is never
   read. That trust is the operator's call to make about a binary, not a default.
 
-- **`argclobber`** — it *deletes* a recovered call argument when a previous call's
-  clobber is what put a value in the trailing argument register. The evidence is
-  one-sided by construction: the register it drops is a possible *output* location
-  of the callee's model, which is why the INDIRECT creation it reads exists at
-  all. Three clauses keep it off a real argument — the creation has to be of the
-  argument register itself, every other value joining into that register has to be
-  a division by-product rather than something the caller wrote, and the callee's
-  own body must not read those bytes before writing them — and what none of them
-  can see is a callee that really returns a 16-byte value in `rax:rdx` and
-  forwards the high half into the next call. Every wrong drop is a deleted
-  expression, which is the kind of wrong output a reader cannot see, so deleting an
-  argument as the default rendering under 500 KiB is the operator's call.
-
-All six therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
-`--option dwarf_lines on`, `--option formatstring on`, `--option ifuncfpret on`,
-`--option msvcstrappend on`, `--option argclobber on`)
+All five therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
+`--option dwarf_lines on`, `--option formatstring full`, `--option ifuncfpret on`,
+`--option msvcstrappend on`)
 even under `--mode aggressive`; a named `--option` still wins over the preset by
-last-write precedence.
+last-write precedence. For `formatstring` only the `full` loop above is excluded:
+its `static` default reads the same format constants out of the image at load, so
+there is no second decompile to pay for and every mode that builds a Listing
+carries it.
+
+`argclobber` used to be on this list, for the same one-sided-evidence reason: the
+register it drops is a possible *output* location of the callee's model, so a
+wrong drop is a deleted expression, which is the kind of wrong output a reader
+cannot see. It now ships **default-on**, because the drop is declined unless the
+callee's own recovered prototype says the register is not read — a callee that
+really returns a 16-byte value in `rax:rdx` and forwards the high half into the
+next call keeps its argument. Flip `--option argclobber off` to keep every
+argument the register model produced, phantom or not.
 
 Separately, five default-off options are **unevaluated** rather than excluded —
 `guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector` and

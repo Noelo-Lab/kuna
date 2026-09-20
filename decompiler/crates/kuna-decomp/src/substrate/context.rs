@@ -1594,8 +1594,10 @@ impl ArchContext {
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,
             callee_proto_stack: true,
-            // argclobber is opt-in (it can drop a real argument at a callee
-            // that returns a 16-byte value), so the fixture seam is off too.
+            // argclobber only drops a trailing argument the callee's own
+            // recovered prototype says it never reads, and declines outright
+            // when there is no callee to ask, so the fixture seam carries the
+            // shipped default.
             arg_clobber: true, // (kuna) option argclobber (default on)
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
