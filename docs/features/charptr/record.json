@@ -5,7 +5,7 @@
  "default": "off",
  "phase": "P5",
  "subphase": "type-propagation",
- "base_commit": "724381149 (rebased from 2e28ece4a; #689 argclobber landed in between)",
+ "base_commit": "69d252df3 (rebased twice from 2e28ece4a: #689 argclobber then #694 inferfuncentry-intbound landed in between)",
  "module": "decompiler/crates/kuna-decomp/src/p5_types/kuna_charptr.rs",
  "stage_test": "tests/stages/kuna-charptr.xml",
  "class_census": {
@@ -139,7 +139,8 @@
    "why": "origin/main gained #689 argclobber, a default-on change to call-site argument lists, after the first measurement",
    "run": ".scratch/sweep-rebase (KUNA_BIN built at 251208cdc on base 724381149)",
    "result": "identical: perfect 1349 -> 1353, aggregate 3657.76 -> 3662.69, 4 onto perfect, 0 off perfect, 14 improved, 6 worse",
-   "moved_rows": "byte-identical to the pre-rebase run (.scratch/sweep-uses2/moved.csv), diff empty"
+   "moved_rows": "byte-identical to the pre-rebase run (.scratch/sweep-uses2/moved.csv), diff empty",
+   "note": "Re-measured after the #689 rebase. The later #694 rebase is a p5 constant-vs-function fix plus a stage test; it moved no charptr gate and no charptr row."
   }
  },
  "corpus_diff": {
