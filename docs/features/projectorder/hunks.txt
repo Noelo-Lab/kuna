@@ -1,0 +1,20 @@
+| build | functions | only in one arm | changed | declarations and field names only | statement text changed | struct_N renumbered only |
+| O0 fmt | 191 | 0 | 30 | 0 | 30 | 0 |
+| O0 ls | 589 | 0 | 215 | 0 | 189 | 26 |
+| O0 sort | 479 | 0 | 113 | 0 | 91 | 22 |
+| O0 du | 441 | 0 | 122 | 4 | 99 | 19 |
+| O2 fmt | 151 | 0 | 30 | 0 | 30 | 0 |
+| O2 ls | 404 | 0 | 133 | 1 | 69 | 63 |
+| O2 sort | 343 | 0 | 87 | 3 | 66 | 18 |
+| O2 du | 320 | 0 | 93 | 1 | 69 | 23 |
+
+statement text changed: 643
+functions: 2918
+changed: 823
+only in one arm: 0
+struct_N renumbered only: 171
+declarations and field names only: 9
+
+statement text changed (643): ['O0/fmt:sub_5f37', 'O0/fmt:sub_7488', 'O0/fmt:sub_5f6d', 'O0/fmt:main', 'O0/fmt:sub_7517', 'O0/fmt:sub_6908', 'O0/fmt:sub_643b', 'O0/fmt:sub_6946', 'O0/fmt:sub_484a', 'O0/fmt:sub_6407', 'O0/fmt:sub_68d5', 'O0/fmt:sub_74ec', 'O0/fmt:sub_7624', 'O0/fmt:sub_4d09', 'O0/fmt:sub_72f5', 'O0/fmt:sub_411d', 'O0/fmt:sub_67dd', 'O0/fmt:sub_73fd', 'O0/fmt:sub_7afa', 'O0/fmt:sub_7545', 'O0/fmt:sub_7062', 'O0/fmt:sub_79c0', 'O0/fmt:sub_7be5', 'O0/fmt:sub_84f4', 'O0/fmt:sub_33b7', 'O0/fmt:sub_6817', 'O0/fmt:sub_4a7a', 'O0/fmt:sub_6fef', 'O0/fmt:sub_74c1', 'O0/fmt:sub_7168', 'O0/ls:sub_1acd7', 'O0/ls:sub_12138', 'O0/ls:sub_bf3d', 'O0/ls:sub_1ae02', 'O0/ls:_obstack_begin', 'O0/ls:sub_b9b2', 'O0/ls:sub_5c82', 'O0/ls:sub_1b3bf', 'O0/ls:sub_1056e', 'O0/ls:sub_1b22b']
+
+declarations and field names only (9): ['O0/du:sub_c426', 'O0/du:sub_17854', 'O0/du:sub_b89b', 'O0/du:sub_10e7b', 'O2/ls:sub_10f10', 'O2/sort:sub_d8f0', 'O2/sort:sub_a0b0', 'O2/sort:sub_11900', 'O2/du:sub_c370']

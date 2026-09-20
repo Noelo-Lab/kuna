@@ -48,6 +48,7 @@ $ kuna decompile-all fmt --option protoorder bogus            -> rc=1
 error: option protoorder: Unknown protoorder value: bogus (expected off|types|lock)
 $ kuna decompile-project fmt -o DIR --option protoorder types
 warning: --option protoorder has no effect on `kuna decompile-project`: the callee-first park is a `decompile-all` surface (see docs/cli.md)
+  [SUPERSEDED: `decompile-project` takes the callee-first order; only `--stream` and `decompile-graph` still warn, in new words.]
 
 $ kuna decompile-all fmt --assert 'prototype sub_3700 int sub_3700(char *, char *)'   (a DECLARED prototype outranks recovery)
           v9 &= sub_3700((char *)v6,v7);

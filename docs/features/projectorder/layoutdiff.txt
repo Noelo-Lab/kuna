@@ -1,0 +1,25 @@
+### O0 fmt
+params typed as a struct: default 4  protoorder-off 4
+params where the default claims fewer true fields: 0
+### O0 ls
+params typed as a struct: default 44  protoorder-off 30
+params where the default claims fewer true fields: 0
+### O0 sort
+params typed as a struct: default 37  protoorder-off 35
+params where the default claims fewer true fields: 0
+### O0 du
+params typed as a struct: default 39  protoorder-off 34
+params where the default claims fewer true fields: 0
+### O2 fmt
+params typed as a struct: default 2  protoorder-off 2
+params where the default claims fewer true fields: 0
+### O2 ls
+params typed as a struct: default 27  protoorder-off 24
+params where the default claims fewer true fields: 0
+### O2 sort
+params typed as a struct: default 22  protoorder-off 22
+params where the default claims fewer true fields: 0
+### O2 du
+params typed as a struct: default 29  protoorder-off 29
+params where the default claims fewer true fields: 0
+LAYOUTDIFF_DONE

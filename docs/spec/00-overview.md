@@ -1015,10 +1015,26 @@ After an eager batch (`decompile_targets` behind `decompile-all`,
 `decompile_export_targets` behind a non-stream `decompile-project`),
 `decompiler/crates/kuna-console/src/project.rs (converge_synthesized_structs)`
 asks the ledger which names have been superseded and decompiles again, once,
-exactly the results that spell one. `decompile-all`'s default callee-first order
+exactly the results that spell one. The default callee-first order
 (`protoorder`, chapter [04](04-calls-and-prototypes.md)) runs the same sweep at
 its end, in its own plan order
-(`decompiler/crates/kuna-cli/src/decompile_all.rs (converge_callee_first)`). If a redo fails where the first pass
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (converge_callee_first)`).
+
+(kuna) Which `struct_N` a layout becomes is decided by the order the program is
+visited in, so the whole-program surfaces that keep a ledger take the SAME
+order. `decompile-project` asks
+`decompiler/crates/kuna-cli/src/decompile_all.rs (callee_first_decision)` the
+question `decompile-all` asks and runs the same loop with the export's own
+per-function options
+(`decompiler/crates/kuna-console/src/project.rs (export_options)`), so a name in
+the exported header is the record `decompile-all` means by it. Without that the
+two disagreed wherever the orders diverged -- on coreutils `du` -O2, 29 of 30
+synthesized names -- and nothing on either surface said so. A streamed export
+writes each body as it finishes and cannot buffer a plan, so it keeps the
+address-order schedule and says on stderr that the option does not reach it; the
+browser front-end's `project` export calls the eager batch directly
+(`decompiler/crates/kuna-wasm/src/lib.rs`) and keeps that schedule too, since the
+plan is a `kuna-cli` driver. If a redo fails where the first pass
 succeeded, for example because it ran past a watchdog budget that the first pass
 fit in, the first body is kept. That body still names a structure that is
 defined. The streamed export has already written its bodies before any name can
@@ -1047,8 +1063,9 @@ index and results are filed positionally, so the merged document is identical to
 `--jobs 1 --option protoorder off`: the serial default decompiles callees first
 (chapter [04](04-calls-and-prototypes.md)) and a worker cannot see another
 worker's callees, so a pool never takes that order and says so on stderr before
-it starts. `decompile-project` and `decompile-graph` do not take it serially
-either, so there the serial run is the plain one. What the pool cannot make
+it starts. `decompile-project` takes the order serially and reports the same
+serial run; `decompile-graph` does not, so there the serial run is the plain
+one. What the pool cannot make
 identical is the emission the engine already makes depend on decompile history:
 a handful of type and symbol decisions are first-toucher-wins inside one
 process's database, so they follow the SET of functions that process decompiled,

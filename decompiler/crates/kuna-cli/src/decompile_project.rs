@@ -111,8 +111,8 @@ pub fn run(argv: &[String]) -> i32 {
         );
         return 2;
     }
-    crate::decompile_all::warn_protoorder_inert(&args.options, "decompile-project");
     let run = if stream {
+        crate::decompile_all::warn_protoorder_inert(&args.options, "decompile-project --stream");
         crate::project_stream::run(&args, output.as_deref())
     } else {
         decompile_project(&args, output.as_deref())
@@ -162,10 +162,12 @@ fn usage() {
          default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
          --jobs N spreads the per-function decompile over N worker processes\n\
          (auto = this machine's parallelism, capped at 16; 1, the default, is\n\
-         serial). The artifacts are identical to a --jobs 1 run without --stream,\n\
-         synthesized struct_N names and the .h included (with --stream, workers\n\
-         run with structsynth off); progress goes to stderr, and peak memory is\n\
-         roughly N times one worker's RSS.\n\
+         serial). Without --stream the artifacts are identical to a --jobs 1 run\n\
+         with --option protoorder off on both, synthesized struct_N names and the\n\
+         .h included: a worker cannot see another worker's callees, so the pool\n\
+         does not type call arguments callee-first the way a serial export does\n\
+         (with --stream, workers run with structsynth off). Progress goes to\n\
+         stderr, and peak memory is roughly N times one worker's RSS.\n\
          --stream writes the folder as the run goes instead of at the end: the entry\n\
          point and what it calls are written first, index.jsonl announces each\n\
          finished function and .streaming reports progress until the export\n\
@@ -228,7 +230,21 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
     // metadata are whole-program artifacts only it can build. The `.h` type
     // block is the exception: `print_c_types` renders types the DECOMPILE
     // interns, so in a sharded run it has to come back from the workers.
+    // (kuna `protoorder`) The export keeps a `structsynth` ledger, and which
+    // `struct_N` a layout becomes is decided by the order the program is
+    // visited in. So it takes `decompile-all`'s callee-first order under the
+    // same conditions: a name means the same record on both surfaces.
+    let whole = args.addrs.is_empty() && args.names.is_none();
+    let (callee_first, explicit) =
+        crate::decompile_all::callee_first_decision(&prog, args, targets.len(), whole);
     let (mut results, pooled_types) = if args.jobs > 1 {
+        if callee_first {
+            eprintln!(
+                "note: --jobs decompiles without the callee-first order (option protoorder, on by \
+                 default), so call-argument types can differ from a serial run; add --option \
+                 protoorder off to make the two byte-identical"
+            );
+        }
         let inventory = prog.function_entries_canonical();
         let pooled = decompile_targets_pooled(
             args,
@@ -239,12 +255,21 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
             /* want_types= */ true,
             load_seconds,
             synth_base(&prog),
-            // (kuna `protoorder`) This surface never takes the callee-first
-            // order, serially either (`warn_protoorder_inert`), so the serial
-            // run these names come from is the plain one.
-            /* serial_callee_first= */ false,
+            callee_first,
         )?;
         (pooled.results, pooled.types)
+    } else if callee_first {
+        if explicit && !whole {
+            eprintln!(
+                "note: --option protoorder: {} of this binary's entries selected; a callee \
+                 outside the selection is not decompiled, so it states nothing",
+                targets.len()
+            );
+        }
+        let base = kuna_console::project::export_options(targets.len() == 1);
+        let funcs =
+            crate::decompile_all::decompile_callee_first(&mut prog, args, targets, explicit, base);
+        (funcs, None)
     } else {
         (decompile_export_targets(&mut prog, targets), None)
     };

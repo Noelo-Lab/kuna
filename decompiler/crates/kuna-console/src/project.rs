@@ -220,16 +220,22 @@ pub fn decompile_export_targets(
     prog: &mut ConsoleProgram,
     targets: Vec<FunctionEntry>,
 ) -> Vec<FuncResult> {
-    let opts = DecompileOptions {
+    let opts = export_options(targets.len() == 1);
+    decompile_batch(prog, targets, &opts)
+}
+
+/// The options [`decompile_export_targets`] runs with, for a driver that owns
+/// the loop itself (the callee-first order) and still wants the export's answer.
+pub fn export_options(single_target: bool) -> DecompileOptions {
+    DecompileOptions {
         no_vars: false,
         want_proto: true,
         want_provenance: false,
         want_callee_hints: false,
         header_carries_types: true,
         park_recovered_proto: false,
-        single_target: targets.len() == 1,
-    };
-    decompile_batch(prog, targets, &opts)
+        single_target,
+    }
 }
 
 fn decompile_batch(

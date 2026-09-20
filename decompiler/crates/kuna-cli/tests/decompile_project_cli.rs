@@ -655,6 +655,10 @@ fn a_binary_with_a_string_over_the_load_window_still_exports() {
 /// can intern a type into it, so a sharded run has one factory per worker where a
 /// serial run has one.  The block therefore travels back from the workers, and
 /// this is what holds it to the serial rendering.
+///
+/// (kuna `protoorder`) The serial run a pool matches is the one without the
+/// callee-first order: a worker cannot see another worker's callees, so both
+/// arms name it.
 #[test]
 fn jobs_project_artifacts_are_byte_identical_to_serial() {
     let bin = fixture("dwarfstructs_x86_64");
@@ -666,6 +670,9 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
         serial.to_str().unwrap(),
         "--max-fn-seconds",
         "0",
+        "--option",
+        "protoorder",
+        "off",
         "--sleighpath",
         &specs(),
     ]);
@@ -700,6 +707,9 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
             dir.to_str().unwrap(),
             "--max-fn-seconds",
             "0",
+            "--option",
+            "protoorder",
+            "off",
             "--jobs",
             jobs,
             "--jobs-chunk",
@@ -727,6 +737,10 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
 /// 32-bit, and in `structsynth_teb_pe_x86_64.exe` the `TEB` type comes from a
 /// function that synthesizes nothing. `synth:force` decompiles every function
 /// that asked again rather than renaming it.
+///
+/// (kuna `protoorder`) With `--option protoorder off` on every arm, which is the
+/// serial run a pool replays: the callee-first order decides what a function
+/// mints as much as the ledger does, and no pool can take it.
 #[test]
 fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
     for fixture_name in
@@ -737,7 +751,7 @@ fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
         let export = |tag: &str, extra: &[&str], env: &[(&str, &str)]| -> (PathBuf, String, bool) {
             let dir = out_dir(&format!("structsynth_{stem}_{tag}"));
             let mut args = vec!["decompile-project", bin.as_str(), "-o", dir.to_str().unwrap()];
-            args.extend_from_slice(&["--max-fn-seconds", "0"]);
+            args.extend_from_slice(&["--max-fn-seconds", "0", "--option", "protoorder", "off"]);
             args.extend_from_slice(extra);
             let sp = specs();
             args.extend_from_slice(&["--sleighpath", sp.as_str()]);
@@ -797,7 +811,11 @@ fn jobs_project_serial_path_keeps_the_types_of_the_other_functions() {
     let export = |tag: &str, extra: &[&str], env: &[(&str, &str)]| -> (PathBuf, String, bool) {
         let dir = out_dir(&format!("structsynth_teb_{tag}"));
         let mut args = vec!["decompile-project", bin.as_str(), "-o", dir.to_str().unwrap()];
-        args.extend_from_slice(&["--max-fn-seconds", "0", "--sleighpath", sp.as_str()]);
+        // (kuna `protoorder`) The serial run a pool replays is the one without
+        // the callee-first order; both arms name it.
+        args.extend_from_slice(
+            &["--max-fn-seconds", "0", "--option", "protoorder", "off", "--sleighpath", sp.as_str()],
+        );
         args.extend_from_slice(extra);
         let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
             .args(&args)
@@ -1816,6 +1834,63 @@ fn a_sectionless_image_never_reports_a_sweeping_asm_at_jobs_1() {
         "the export decompiled nothing"
     );
     for dir in [dir, junk_dir] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// Every `struct struct_N { ... }` block in `text`, by name.
+fn synthesized_structs(text: &str) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("\nstruct struct_") {
+        let body = &rest[at + 1..];
+        let Some(open) = body.find(" {\n") else { break };
+        let Some(close) = body.find("\n};") else { break };
+        if close > open {
+            out.entry(body["struct ".len()..open].to_string())
+                .or_insert_with(|| body[open + 3..close].to_string());
+        }
+        rest = &body[open..];
+    }
+    out
+}
+
+/// (kuna `protoorder` + `structsynth`) A `struct_N` names one record across the
+/// whole-program surfaces.
+///
+/// The ledger numbers a synthesized layout in the order the program is visited
+/// in, and `decompile-all` visits callees first. The export used to keep its own
+/// address-order schedule, so the two surfaces put different records under the
+/// same name: three of this fixture's five disagreed, and a reader resolving a
+/// `struct_2 *` in `decompile-all --json` against the exported header read the
+/// wrong layout.
+#[test]
+fn a_struct_name_means_the_same_record_in_the_export_and_in_decompile_all() {
+    let bin = fixture("protoorder_floatpointee_x86_64");
+    for arm in [&[][..], &["--option", "protoorder", "off"][..]] {
+        let dir = out_dir("struct_names");
+        let base = ["decompile-project", &bin, "-o", dir.to_str().unwrap(), "--sleighpath", &specs()];
+        let (_out, stderr, ok) = run_kuna(&[&base[..], arm].concat());
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("decompile_project_cli: skipping (no `.sla`; run `make specs`): {stderr}");
+                return;
+            }
+            panic!("kuna decompile-project failed: {stderr}");
+        }
+        let header =
+            std::fs::read_to_string(dir.join("protoorder_floatpointee_x86_64.h")).unwrap();
+        let all = ["decompile-all", &bin, "--sleighpath", &specs(), "--option", "structdefs", "on"];
+        let (text, stderr, ok) = run_kuna(&[&all[..], arm].concat());
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let (exported, decompiled) = (synthesized_structs(&header), synthesized_structs(&text));
+        assert!(decompiled.len() >= 3, "the fixture stopped synthesizing: {decompiled:?}");
+        for (name, body) in &decompiled {
+            let Some(theirs) = exported.get(name) else {
+                panic!("{name} is decompiled but not exported (arm {arm:?})");
+            };
+            assert_eq!(theirs, body, "{name} is a different record in the export (arm {arm:?})");
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 }

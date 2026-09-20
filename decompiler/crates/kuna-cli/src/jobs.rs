@@ -32,9 +32,10 @@
 //! just because the run was sharded.  The one thing that can still differ is the
 //! watchdog itself: it is a wall-clock deadline, so a function that finished
 //! just inside it serially can miss it under N-way contention
-//! ([`warn_about_anomalies`]).  The other is `decompile-all`'s callee-first
-//! `protoorder`: a worker cannot see another worker's callees, so the pool
-//! matches the serial run only with `--option protoorder off` on both.
+//! ([`warn_about_anomalies`]).  The other is the callee-first `protoorder`
+//! order, which `decompile-all` and `decompile-project` both take serially: a
+//! worker cannot see another worker's callees, so on those two surfaces the
+//! pool matches the serial run only with `--option protoorder off` on both.
 //!
 //! ## Synthesized structures — the replayed ledger
 //!

@@ -1,0 +1,119 @@
+{
+  "slug": "projectorder",
+  "opportunity": "`kuna decompile-project` kept its own address-order schedule while `kuna decompile-all` decompiles callees first (option `protoorder`, on by default, #669). Both keep a `structsynth` ledger, and the ledger numbers a measured layout `struct_N` in the order the program is visited in, so the two surfaces put different records under the same name and nothing said so: on coreutils du -O2, 29 of the 30 synthesized names meant something else in the exported header than they did in `decompile-all --json`. The type campaign's own layout instrument reads types from one surface and layouts from the other, and that join is the whole of the round-C `structscore --layout` regression blamed on protoorder (results.md C.4).",
+  "status": "Implemented. No new option: the behaviour is `protoorder`'s, and `--option protoorder off` gives `decompile-project` the old schedule exactly as it does `decompile-all`. `decompile-project --stream` (which writes each body as it finishes and cannot buffer a plan) and `decompile-graph` (one function per row) keep their schedules and still warn when the option is named.",
+  "refuted": "results.md C.4's stated mechanism -- 'the callee's recovered pointer type wins the vote at the call site even where the caller measured the record itself'. With KUNA_SS_DEBUG instrumentation on `structsynth::accepts` and its install site, du -O2 installs 36 structures in each arm over the same bases; 32 of the 36 field lists are byte-identical and the other 4 differ only in a field's type spelling, never in an offset or a width. `hash_rehash`'s parameter measures {0,8,16,24,(32),40,48,56,64,72} in both arms. A caller's own layout already wins, because structsynth type-locks the parameter after the vote.",
+  "test_name": "decompile_project_cli.rs (a_struct_name_means_the_same_record_in_the_export_and_in_decompile_all): every `struct struct_N { ... }` the export declares is the block `decompile-all --option structdefs on` prints for that name, in the default and the `protoorder off` arm. On protoorder_floatpointee_x86_64 three of five blocks disagreed before and none does after. tests/cli/sharded-project-export-keeps-serial-structs.json updated: the pool's replay line names `--jobs 1 --option protoorder off` and the parent prints the callee-first note.",
+  "cross_surface_names": {
+    "instrument": "du -O2, names used by decompile-all resolved against the decompile-project header",
+    "before": {
+      "agree": 1,
+      "of": 30
+    },
+    "after": {
+      "agree": 30,
+      "of": 30
+    },
+    "protoorder_off_before": {
+      "agree": 29,
+      "of": 30
+    }
+  },
+  "layout_precision": {
+    "instrument": "docs/features/structsynth/layoutscore.py, fmt/ls/sort/du at O0 and O2",
+    "round_b": {
+      "fields_only": 0.8945,
+      "filler_counted": 0.7816,
+      "f1_fields": 0.1376,
+      "f1_filler": 0.1525
+    },
+    "round_c": {
+      "fields_only": 0.552,
+      "filler_counted": 0.471,
+      "f1_fields": 0.1021,
+      "f1_filler": 0.1135
+    },
+    "after": {
+      "fields_only": 0.8709,
+      "tp": 877,
+      "predicted": 1007,
+      "filler_counted": 0.7836,
+      "filler_tp": 1010,
+      "filler_predicted": 1289,
+      "f1_fields": 0.1678,
+      "f1_filler": 0.1882,
+      "recall_fields": 0.0929
+    },
+    "protoorder_off_after": {
+      "fields_only": 0.9001,
+      "filler_counted": 0.7993
+    },
+    "layoutdiff_du_O2_params_losing_true_fields": {
+      "before": 23,
+      "after": 0
+    },
+    "why_fields_only_is_under_round_b": "ls -O0: the parameters both arms type as a struct are identical (117/128 = 0.9141 each, none worse); the default types 14 MORE parameters as struct pointers, and those claim 131 fields of which 92 are true (0.7023). They claim nothing with the option off, so recall goes 0.0562 -> 0.0929 and F1 0.1021 -> 0.1678.",
+    "layoutdiff_all_eight_builds_params_losing_true_fields": 0
+  },
+  "structscore_du_O2": {
+    "trex_mean_0_6": 1.9159,
+    "round_c": 1.916,
+    "layout_f1": 0.2094,
+    "round_c_layout_f1": 0.097,
+    "round_b_layout_f1": 0.197,
+    "note": "TRex reads `decompile-all` only, so it is unchanged by construction."
+  },
+  "typesweep": {
+    "instrument": "444-slice campaign sweep, coreutils/grep/gzip/diffutils/bzip2/findutils/tar/shadow at O0/O2/O2-noinline, decbench pinned 625e892",
+    "slices": 444,
+    "functions": 10748,
+    "perfect": 1349,
+    "mean": 0.3403,
+    "round_c": {
+      "perfect": 1349,
+      "mean": 0.3403
+    },
+    "note": "identical, and identical by construction: `decompile-all --json` is byte-identical before and after on 20 binaries across 8 projects and 3 optimization levels (decompile-all-identical.txt)."
+  },
+  "corpus_diff": {
+    "instrument": "hunks.py / agree.py over the eight goal-3 builds, `decompile-project` before vs after",
+    "functions": 2918,
+    "changed": 823,
+    "only_in_one_arm": 0,
+    "classified": {
+      "statement text changed": 643,
+      "struct_N renumbered only": 171,
+      "declarations and field names only": 9
+    },
+    "every_hunk": "The export now renders 2918 of 2918 functions exactly as `decompile-all` renders them (before: 2095, 71.8%). Every changed hunk is the export adopting the rendering protoorder already produces on `decompile-all`, measured and reviewed in #669."
+  },
+  "speed": {
+    "instrument": "docs/features/projectorder/speed.py, interleaved min-of-15, `kuna decompile-project --max-fn-seconds 120`, contended box",
+    "fmt O2": {
+      "before_min_ms": 4847.6,
+      "after_min_ms": 4604.1,
+      "delta_min_pct": -5.02,
+      "delta_median_pct": 0.71
+    },
+    "sort O2": {
+      "before_min_ms": 16300.8,
+      "after_min_ms": 16238.3,
+      "delta_min_pct": -0.38,
+      "delta_median_pct": 0.33
+    },
+    "du O0": {
+      "before_min_ms": 6283.9,
+      "after_min_ms": 6387.9,
+      "delta_min_pct": 1.66,
+      "delta_median_pct": 4.14,
+      "pooled_min_of_30": {
+        "before_min_ms": 5372.7,
+        "after_min_ms": 5634.2,
+        "delta_min_pct": 4.87,
+        "delta_median_pct": -0.4,
+        "note": "two sittings of 15 interleaved rounds; they disagree on which statistic moves (+1.66 min / +4.14 median, then +4.87 min / -0.14 median). Within the +5% budget; it is the cost of the order itself, which #669 measured at <= +4.1% on decompile-all."
+      }
+    },
+    "decompile-all": "unchanged: byte-identical output, same code path."
+  }
+}
