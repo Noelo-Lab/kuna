@@ -1448,13 +1448,8 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     } else {
         targets
     };
-    // (kuna `protoorder`) A narrowed run, or a raw image (which has no call graph),
-    // skips the callee-first order unless the option is named.
-    let explicit = args.options.iter().any(|(name, _)| name == "protoorder");
     let whole = targets.len() == discovered && args.addrs.is_empty() && args.names.is_none();
-    let callee_first = prog.arch().protoorder.is_on()
-        && targets.len() > 1
-        && (explicit || (whole && !args.raw_image));
+    let (callee_first, explicit) = callee_first_decision(&prog, args, targets.len(), whole);
     // `--jobs N`: hand the targets to the worker pool and release the parent's
     // program (2.0 GB on an 18 MB PE) before the workers start — nothing below
     // needs it on this surface, and it is the parent's RSS that decides how many
@@ -1527,14 +1522,35 @@ pub(crate) fn decompile_entries(
     )
 }
 
+/// (kuna `protoorder`) Whether this run takes the callee-first order, and
+/// whether the option was named on the command line.
+///
+/// A narrowed run, or a raw image (which has no call graph), skips the order
+/// unless the option is named.  Every whole-program driver asks here, so the
+/// two that keep a ledger -- `decompile-all` and `decompile-project` -- visit
+/// the program in the same order and a `struct_N` means one record on both.
+pub(crate) fn callee_first_decision(
+    prog: &ConsoleProgram,
+    args: &Args,
+    selected: usize,
+    whole: bool,
+) -> (bool, bool) {
+    let explicit = args.options.iter().any(|(name, _)| name == "protoorder");
+    let on = prog.arch().protoorder.is_on()
+        && selected > 1
+        && (explicit || (whole && !args.raw_image));
+    (on, explicit)
+}
+
 /// (kuna `protoorder`) Say so on a surface the option does not reach.
 ///
-/// The callee-first order and the park live in `decompile-all`'s own loop.
-/// `decompile-project` has its own schedule and its own header, and
-/// `decompile-graph` decompiles one function per row, so neither parks
-/// anything: with `protoorder on` they produce exactly the output they produce
-/// with it off. That is a legitimate choice, but it must not be a silent one --
-/// an option accepted with `rc=0` and no effect reads as "it did not help".
+/// The callee-first order and the park live in a whole-program driver's own
+/// loop.  A streamed export writes its `.c` in decompile order as functions
+/// finish, and `decompile-graph` decompiles one function per row, so neither
+/// parks anything: with `protoorder on` they produce exactly the output they
+/// produce with it off. That is a legitimate choice, but it must not be a
+/// silent one -- an option accepted with `rc=0` and no effect reads as "it did
+/// not help".
 pub fn warn_protoorder_inert(options: &[(String, String)], surface: &str) {
     if options.iter().any(|(name, value)| name == "protoorder" && value != "off") {
         eprintln!(
@@ -1565,6 +1581,29 @@ fn decompile_entries_callee_first(
     targets: Vec<FunctionEntry>,
     explicit: bool,
 ) -> Vec<FuncResult> {
+    let base = kuna_console::project::DecompileOptions {
+        no_vars: args.no_vars,
+        want_proto: false,
+        want_provenance: args.json,
+        want_callee_hints: false,
+        header_carries_types: false,
+        park_recovered_proto: false,
+        single_target: targets.len() == 1,
+    };
+    decompile_callee_first(prog, args, targets, explicit, base)
+}
+
+/// (kuna `protoorder`) [`decompile_entries_callee_first`] for a driver that
+/// renders something other than `decompile-all`'s own payload: the order, the
+/// park and the convergence sweep are the same, only the per-function
+/// [`kuna_console::project::DecompileOptions`] differ.
+pub(crate) fn decompile_callee_first(
+    prog: &mut ConsoleProgram,
+    args: &Args,
+    targets: Vec<FunctionEntry>,
+    explicit: bool,
+    base: kuna_console::project::DecompileOptions,
+) -> Vec<FuncResult> {
     if args.max_fn_seconds > 0 {
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
@@ -1577,15 +1616,6 @@ fn decompile_entries_callee_first(
             }
             (0..targets.len()).map(|i| (i, false)).collect()
         }
-    };
-    let base = kuna_console::project::DecompileOptions {
-        no_vars: args.no_vars,
-        want_proto: false,
-        want_provenance: args.json,
-        want_callee_hints: false,
-        header_carries_types: false,
-        park_recovered_proto: false,
-        single_target: targets.len() == 1,
     };
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
     for &(index, park) in &plan {

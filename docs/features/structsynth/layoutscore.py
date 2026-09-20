@@ -25,6 +25,13 @@ BINS = [("fmt","O0"),("fmt","O2"),("ls","O0"),("ls","O2"),("sort","O0"),("sort",
         ("du","O0"),("du","O2")]
 if os.environ.get("KUNA_BIN"):
     SS.KUNA = os.environ["KUNA_BIN"]
+# `LAYOUTSCORE_OPTIONS="protoorder off,..."` adds option arguments to both runs,
+# for an ablation arm.  Both runs, because a layout is joined to the parameter
+# that carries it by the `struct_N` name, and the ledger numbers names in the
+# order the program is visited in.
+OPTS = [["structsynth", "param"]] + [
+    kv.split(" ", 1) for kv in os.environ.get("LAYOUTSCORE_OPTIONS", "").split(",") if kv.strip()
+]
 
 _raw = SS.header_layouts
 
@@ -56,8 +63,8 @@ for b, o in BINS:
     binary = RES / o / "coreutils" / "stripped" / b
     twin = RES / o / "coreutils" / "compiled" / b
     fns = SS.dwarf_functions(twin)
-    payload = SS.run_json(binary, [["structsynth", "param"]], 1800)
-    header = SS.run_header(binary, [["structsynth", "param"]], 1800)
+    payload = SS.run_json(binary, OPTS, 1800)
+    header = SS.run_header(binary, OPTS, 1800)
     row = {}
     for tag, hook in (("filler counted", mark_arrays), ("fields only", drop_filler)):
         SS.header_layouts = hook
