@@ -493,6 +493,18 @@ layout, and the callee's vote should only supply the *kind*. Until it lands, goa
 recovered, record identity not reliable at a call site". Per-binary numbers:
 `final-c/layout-ablation.md`.
 
+**Round D correction.** The paragraph above is wrong about the mechanism. A caller's own
+`structsynth` layout already wins -- it type-locks the parameter after the vote -- and du -O2
+installs the same 36 layouts in both arms, 32 of them field-identical and the other 4 differing
+only in a field's type spelling. What moved is the JOIN: this instrument takes parameter types
+from `decompile-all` and the layouts those names refer to from the `.h` of `decompile-project`,
+and `decompile-project` kept an address-order schedule while `decompile-all` decompiles callees
+first, so the two ledgers numbered `struct_N` differently (du -O2: 1 of 30 names agreed by
+default, 29 of 30 with `protoorder off`). With the export on the same order, pooled precision is
+0.8709 fields-only / 0.7836 filler-counted and F1 0.1678 / 0.1882, above round B on F1 and
+recall; the 0.024 that fields-only sits under round B is the 176 extra parameters the default
+types as struct pointers at all. `docs/features/projectorder/analysis.md`.
+
 ### C.5 The decbench#93 counterfactual
 
 Replay of the same rows under the crediting rule the user asked decbench for (a struct pointer
