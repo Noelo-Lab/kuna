@@ -510,17 +510,22 @@ synthesized `struct_3 *`) is left as it was. Only function inputs and Varnodes i
 the stack space are considered: those are the two kinds of storage a reader sees
 as a declaration.
 
-`unsigned char *` is the one spelling that guard does **not** protect, and the
-reason is worth stating rather than hiding. The refusal reads the type *in
-flight* — the `ct` the fold has built so far for this Varnode — not the type the
-function will finally print. Where a `uint1 *` would only have arrived by later
+The refine guard reads the type *in flight* — the `ct` the fold has built so far
+for this Varnode — not the type the function will finally print, so a pointee
+that would only have arrived by *later* propagation is not there to protect.
+`unsigned char *` is the common case, and it is accepted deliberately. Where a `uint1 *` would only have arrived by later
 propagation from a byte-wide use, the `char *` vote is already sitting in the
 fold and wins, so `int callee(unsigned char *a0, int a1)` in the
 `protoorder_x86_64` fixture becomes `int callee(char *a0, int a1)` with the
 option on. That is the same call `charbyte` makes one level down: the element
 width agrees and only its signedness moves, and it is by design, because a
 one-byte pointee reached through byte-only uses is what the rule exists to
-name. `FILE *` next to it in the same signature is untouched.
+name. `FILE *` next to it in the same signature is untouched. It is not only
+signedness, though, and the measurement says so: over eight whole binaries three
+declarations move from a *wider* pointee, all of them e2fsprogs `e2fsck`'s
+`ext2fs_bitcount(unsigned int *addr, uint4 nbytes)` and its two stack copies —
+a function upstream declares `const void *`. No synthesized `struct_N *`
+declaration moves in that run at all.
 
 The shipped value is `off`, and the reason is measured rather than cautious. On
 the 444-slice decbench sweep the ground-truth class `char *` is the largest
