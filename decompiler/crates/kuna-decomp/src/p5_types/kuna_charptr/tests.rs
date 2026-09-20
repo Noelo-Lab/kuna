@@ -1,9 +1,9 @@
 //! Tests for the character-pointer commitment (kuna `charptr`).
 //!
 //! The walk needs a decompiled function and is covered end to end by
-//! `tests/stages/kuna-charptr.xml` (pass 1 `off` = `unsigned long a0`, pass 2
-//! `uses` = `char *a0`).  What is pinned here is the option surface and the two
-//! properties the design rests on: the candidate outranks every integer vote in
+//! `tests/stages/kuna-charptr.xml` (pass 1 `off` = the bug, pass 2 `on` = the
+//! fix, with four controls).  What is pinned here are the two properties the
+//! design rests on: the candidate outranks every integer vote in
 //! `getLocalType`'s fold, and it refines only a pointer that points at nothing.
 
 use super::*;
@@ -29,27 +29,8 @@ fn char_ptr(f: &TypeFactoryImpl) -> Rc<Datatype> {
     f.get_type_pointer(8, c, 1).unwrap()
 }
 
-#[test]
-fn option_parses_its_three_values() {
-    assert_eq!(OptionCharPtr.apply("off").unwrap().0, CharPtrMode::Off);
-    assert_eq!(OptionCharPtr.apply("libc").unwrap().0, CharPtrMode::Libc);
-    assert_eq!(OptionCharPtr.apply("uses").unwrap().0, CharPtrMode::Uses);
-    assert!(OptionCharPtr.apply("on").is_err());
-    assert!(OptionCharPtr.apply("byte").is_err());
-    assert!(OptionCharPtr.apply("").is_err());
-}
-
-#[test]
-fn off_is_the_default_and_only_uses_reads_dereferences() {
-    assert_eq!(CharPtrMode::default(), CharPtrMode::Off);
-    assert!(!CharPtrMode::Off.is_on());
-    assert!(CharPtrMode::Libc.is_on());
-    assert!(!CharPtrMode::Libc.reads_uses());
-    assert!(CharPtrMode::Uses.reads_uses());
-}
-
-/// The candidate beats every integer vote — that is what makes a parameter passed
-/// to `strlen` stop being `unsigned long`.
+/// The candidate beats every integer vote — that is what makes a parameter a
+/// declared `char *` is one addition away from stop being `unsigned long`.
 #[test]
 fn candidate_folds_over_an_integer_vote() {
     let f = factory();
@@ -74,6 +55,9 @@ fn only_a_pointer_at_nothing_is_refined() {
     let file = f.get_type_struct("FILE").unwrap();
     assert!(!points_at_nothing(&f.get_type_pointer(8, file, 1).unwrap()));
     assert!(!points_at_nothing(&f.get_base(8, type_metatype::TYPE_UINT).unwrap()));
+    // A `char *` the rule would produce is itself a claim, so a second pass over
+    // an already-committed value stops at the guard rather than re-deriving it.
+    assert!(!points_at_nothing(&char_ptr(&f)));
 }
 
 /// A `char *` is recognised as one wherever it arrives from — the callee-parameter
@@ -87,6 +71,24 @@ fn char_pointer_recognition_is_exact() {
     let uchar = f.get_base(1, type_metatype::TYPE_UINT).unwrap();
     assert!(!is_char_pointer(&f.get_type_pointer(8, uchar, 1).unwrap()));
     assert!(!is_char_pointer(&f.get_base(8, type_metatype::TYPE_INT).unwrap()));
+}
+
+/// The census label names the evidence a candidate rests on, and a refusal
+/// outranks every piece of evidence collected before it.
+#[test]
+fn evidence_commits_only_without_a_refusal() {
+    let mut ev = Evidence::default();
+    assert!(!ev.commits());
+    assert_eq!(ev.label(), "none");
+    ev.byte = 2;
+    assert!(ev.commits());
+    assert_eq!(ev.label(), "byte");
+    ev.libc = 1;
+    ev.fmt = 1;
+    assert_eq!(ev.label(), "fmt+byte");
+    ev.refused = Some("elem-wider");
+    assert!(!ev.commits());
+    assert_eq!(ev.label(), "refuse:elem-wider");
 }
 
 /// Two candidates of the same shape are the same `Rc`, so nothing downstream sees

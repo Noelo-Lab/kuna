@@ -24,16 +24,19 @@
 //! copy-like identity and constant-offset addition, asking of every terminal use
 //! whether it is about characters.  Three uses say yes:
 //!
-//! * **`libc`** — the value reaches argument *i* of a call whose callee has a
-//!   DECLARED `char *` there.  Declared means stated from outside the decompile:
-//!   a `libproto`/`libcsigs` signature, a `libctypes` shell, DWARF, a demangled
+//! * the value reaches argument *i* of a call whose callee has a DECLARED
+//!   `char *` there.  Declared means stated from outside the decompile: a
+//!   `libproto`/`libcsigs` signature, a `libctypes` shell, DWARF, a demangled
 //!   name, `--assert prototype`, or the per-call-site override `formatstring`
 //!   installs for a resolved `%s`.  A type another *recovery* voted for is not
-//!   evidence here ([`crate::coreaction_infertypes::declared_input_type_local`]).
-//! * **`uses`** — the value is dereferenced, and every dereference through it is
-//!   one byte wide (`LOAD`/`STORE` of size 1, `PTRADD` of element size 1).
-//! * **`uses`** — the value is defined by, or merges with, a constant that
-//!   resolves to a NUL-terminated character array in the image.
+//!   evidence here ([`crate::coreaction_infertypes::declared_input_type_local`]);
+//!   counting `protoorder`'s callee vote was measured and scored lower.
+//! * the value is dereferenced *at the base* and every such dereference is one
+//!   byte wide, or it is stepped one byte at a time (`PTRADD` of element size
+//!   one).  A byte read at a FIXED non-zero offset is a one-byte struct field,
+//!   not a character, and says nothing.
+//! * the value is defined by, or compared against, a constant that resolves to
+//!   a character array in the image.
 //!
 //! The candidate is one more vote in the same `getLocalType` fold, folded by
 //! [`Datatype::type_order`], and it may also *refine* a pointer that points at
@@ -55,13 +58,13 @@
 //! A register temporary is neither a parameter nor a declaration.
 //!
 //! Gated by [`Architecture::char_ptr`](crate::architecture::Architecture)
-//! (option `charptr off|libc|uses`); with the option off nothing here is reachable.
+//! (option `charptr on|off`, shipped `off`); with the option off nothing here is
+//! reachable.
 
 use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uintb};
 
 use crate::context::{OpId, VarnodeId};
@@ -72,53 +75,6 @@ use kuna_num::opcodes::OpCode;
 /// How many def-use hops the walk follows before giving up; the same bound
 /// [`crate::kuna_ptrfromuse`] uses.
 const HOP_CAP: usize = 10;
-
-/// (kuna) Which evidence may commit a pointer to `char *`: `charptr off|libc|uses`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CharPtrMode {
-    /// Upstream: nothing in this module runs.
-    #[default]
-    Off,
-    /// Only a callee's DECLARED `char *` parameter.
-    Libc,
-    /// Declared parameters, plus byte-only dereference and string constants.
-    Uses,
-}
-
-impl CharPtrMode {
-    /// Is the rule active at all?
-    pub fn is_on(self) -> bool {
-        self != CharPtrMode::Off
-    }
-
-    /// Does this strength weigh how the value is dereferenced?
-    fn reads_uses(self) -> bool {
-        self == CharPtrMode::Uses
-    }
-}
-
-/// (kuna) Parse `option charptr off|libc|uses`; the caller writes the live field.
-pub struct OptionCharPtr;
-
-impl OptionCharPtr {
-    /// The option name.
-    pub const NAME: &'static str = "charptr";
-
-    /// Parse + validate the value.
-    pub fn apply(&self, p1: &str) -> KunaResult<(CharPtrMode, String)> {
-        let mode = match p1 {
-            "off" => CharPtrMode::Off,
-            "libc" => CharPtrMode::Libc,
-            "uses" => CharPtrMode::Uses,
-            other => {
-                return Err(KunaError::parse(format!(
-                    "Unknown charptr value: {other} (expected off|libc|uses)"
-                )))
-            }
-        };
-        Ok((mode, format!("Character-pointer evidence set to {p1}")))
-    }
-}
 
 /// What the walk found.  Kept per kind so the `KUNA_CHARPTR_CENSUS` dump can
 /// report which evidence a candidate rests on, and which use refused it.
@@ -252,9 +208,9 @@ pub fn char_pointer_from_evidence(
     data: &Funcdata,
     vn: VarnodeId,
     cur: &Rc<Datatype>,
-    mode: CharPtrMode,
+    enabled: bool,
 ) -> Option<Rc<Datatype>> {
-    if !mode.is_on() {
+    if !enabled {
         return None;
     }
     if cur.get_metatype() == type_metatype::TYPE_PTR && !points_at_nothing(cur) {
@@ -271,7 +227,7 @@ pub fn char_pointer_from_evidence(
     if ptrsize != spc.get_addr_size() as int4 {
         return None;
     }
-    let ev = walk_is_char(data, vn, mode);
+    let ev = walk_is_char(data, vn);
     if census_on() {
         let v = data.vbank().get(vn)?;
         eprintln!(
@@ -296,7 +252,7 @@ pub fn char_pointer_from_evidence(
 
 /// Bounded breadth-first walk over the transitive descendants of `start`,
 /// collecting what every use says about the element type.
-fn walk_is_char(data: &Funcdata, start: VarnodeId, mode: CharPtrMode) -> Evidence {
+fn walk_is_char(data: &Funcdata, start: VarnodeId) -> Evidence {
     let mut ev = Evidence::default();
     let mut seen: HashSet<VarnodeId> = HashSet::new();
     // The third component is "this Varnode is the base plus a fixed offset".  A
@@ -307,7 +263,7 @@ fn walk_is_char(data: &Funcdata, start: VarnodeId, mode: CharPtrMode) -> Evidenc
     work.push_back((start, 0, false));
     seen.insert(start);
     while let Some((vn, hops, offsetted)) = work.pop_front() {
-        if mode.reads_uses() && defined_by_string_constant(data, vn) {
+        if defined_by_string_constant(data, vn) {
             ev.strconst += 1;
         }
         let descend: Vec<OpId> = match data.vbank().get(vn) {
@@ -316,7 +272,7 @@ fn walk_is_char(data: &Funcdata, start: VarnodeId, mode: CharPtrMode) -> Evidenc
         };
         for op in descend {
             let mut forward = None;
-            match classify_use(data, op, vn, mode, offsetted) {
+            match classify_use(data, op, vn, offsetted) {
                 Use::Refuse(why) => {
                     ev.refused = Some(why);
                     if !census_on() {
@@ -381,13 +337,7 @@ fn is_format_site(data: &Funcdata, op: OpId) -> bool {
 }
 
 /// Classify what `op` does with `vn`.
-fn classify_use(
-    data: &Funcdata,
-    op: OpId,
-    vn: VarnodeId,
-    mode: CharPtrMode,
-    offsetted: bool,
-) -> Use {
+fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, offsetted: bool) -> Use {
     let Some(o) = data.obank().get(op) else { return Use::Neutral };
     let opcode = o.code();
     let slot = o.get_slot(vn);
@@ -397,9 +347,6 @@ fn classify_use(
         // anything wider is a different element and refuses the candidate.
         OpCode::CPUI_LOAD => {
             if slot != 1 {
-                return Use::Neutral;
-            }
-            if !mode.reads_uses() {
                 return Use::Neutral;
             }
             match out.and_then(|o| data.vbank().get(o)).map(|v| v.get_size()) {
@@ -412,9 +359,6 @@ fn classify_use(
         OpCode::CPUI_STORE => {
             if slot != 1 {
                 // The stored VALUE being this pointer says nothing about it.
-                return Use::Neutral;
-            }
-            if !mode.reads_uses() {
                 return Use::Neutral;
             }
             match o.get_in(2).and_then(|v| data.vbank().get(v)).map(|v| v.get_size()) {
@@ -444,9 +388,8 @@ fn classify_use(
             match (elem, out) {
                 // Indexing by one byte is character indexing; the element address
                 // travels on, so `strlen(p + i)` still counts.
-                (Some(1), Some(o)) if mode.reads_uses() => Use::CharForward(CharKind::Byte, o),
-                (Some(1), None) if mode.reads_uses() => Use::Char(CharKind::Byte),
-                (Some(1), _) => Use::Neutral,
+                (Some(1), Some(o)) => Use::CharForward(CharKind::Byte, o),
+                (Some(1), None) => Use::Char(CharKind::Byte),
                 (Some(_), _) => Use::Refuse("elem-wider"),
                 (None, _) => Use::Neutral,
             }
@@ -537,7 +480,7 @@ fn classify_use(
             if ov.get_offset() == 0 {
                 return Use::Neutral;
             }
-            if mode.reads_uses() && constant_is_string(data, op, other_vn) {
+            if constant_is_string(data, op, other_vn) {
                 return Use::Char(CharKind::Str);
             }
             Use::Refuse("compare-literal")

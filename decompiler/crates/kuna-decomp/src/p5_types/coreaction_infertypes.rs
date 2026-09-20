@@ -411,11 +411,11 @@ fn build_localtypes(data: &mut Funcdata) {
         // the call.  Folded by `type_order`, and allowed to refine only a pointer
         // that points at nothing (`void *`, `undefined1 *`).  See `kuna_charptr`.
         let ct = {
-            let mode = data.get_arch().char_ptr;
+            let on = data.get_arch().char_ptr;
             if from_seed {
                 ct
             } else {
-                match crate::kuna_charptr::char_pointer_from_evidence(data, vn, &ct, mode) {
+                match crate::kuna_charptr::char_pointer_from_evidence(data, vn, &ct, on) {
                     Some(cand)
                         if ct.get_metatype() == type_metatype::TYPE_PTR
                             || crate::kuna_charptr::folds_over(&cand, &ct) =>

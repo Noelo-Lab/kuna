@@ -879,10 +879,10 @@ pub struct ArchContext {
     /// lives in [`kuna_ptrfromuse`](crate::p5_types::kuna_ptrfromuse).
     pub ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode,
     /// (kuna `charptr`) Commit a pointer used only on characters to `char *`;
-    /// option `charptr off|libc|uses`.  Copied from
+    /// option `charptr on|off`.  Copied from
     /// [`Architecture::char_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_charptr`](crate::p5_types::kuna_charptr).
-    pub char_ptr: crate::p5_types::kuna_charptr::CharPtrMode,
+    pub char_ptr: bool,
     /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
     /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
     /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
@@ -1579,7 +1579,7 @@ impl ArchContext {
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
             char_byte: true, // (kuna) option charbyte
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
-            char_ptr: crate::p5_types::kuna_charptr::CharPtrMode::Off, // (kuna) option charptr (default off)
+            char_ptr: false, // (kuna) option charptr (default off)
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
             lowered_switch_labels: true, // loweredswitchlabels

@@ -3,63 +3,67 @@
 <!--
     Type campaign, item `charptr`: a pointer the program only ever uses on
     characters is declared as an integer or as `void *`, although the fact is
-    already on the table.  coreutils `[` -O0 shows both halves:
+    already on the table.  coreutils `realpath` -O0 shows it, on
+    `path_prefix(char const *prefix, char const *path)`:
 
-        char *sub_50ba(unsigned long a0, void *a1)
+        bool sub_2bbc(void *a0,void *a1)
 
-    where `a1` is handed straight to `fputs_unlocked`, whose libc signature
-    declares `char *` there.
+    and the body walks both arguments one byte at a time.
 
     Root cause (P5, type propagation).  `TypeOpCall::getInputLocal`
-    (typeop.cc:689) states the callee's declared parameter type about the
-    Varnode that IS the call's operand.  Every hop between the parameter and
-    that operand - an -O0 spill through the frame, a MULTIEQUAL, a `p + k` -
-    is a hop `propagateTypeEdge` will not carry a pointer back over
-    (`TypeOpIntAdd::propagateType`, typeop.cc:1217, is the same refusal
-    `ptrfromuse` documents).  So the declaration reaches the argument and stops
-    there.
+    (typeop.cc:689) states a callee's declared parameter type about the Varnode
+    that IS the call's operand, and `propagateTypeEdge` moves a Varnode only to
+    a MORE specific type.  Every hop between the value a reader sees declared
+    and the use that says "characters" - an -O0 spill through the frame, a
+    MULTIEQUAL, a `p + k` whose INT_ADD refuses to carry a pointer back
+    (typeop.cc:1217, the same refusal `ptrfromuse` documents) - is a hop the
+    fact does not cross.
 
     Stage / sub-stage: P5 "type-propagation".  The P0 assertion
-    `option charptr off|libc|uses` decides which evidence may commit a
+    `option charptr on|off` decides whether character evidence may commit a
     pointer-width parameter or stack local to `char *`.
 
-    The fixture is the same shape on SysV x86-64, plus three controls:
+    The fixture is the same shape on SysV x86-64, plus four controls:
 
-        spillcall:  add rdi,1; call slen     where `char *slen(char *)`
-                    the witness for `libc` - the declaration is one INT_ADD
-                    away from the parameter, which is the hop propagation
-                    cannot cross
-        derefbyte:  movzx eax, byte [rdi+1]
-                    the witness for `uses` - the only dereference through the
-                    parameter is one byte wide.  `ptrfromuse` already makes it
-                    `void *`; this is what decides what it points AT
+        spillcall:  add rdi,1; call slen    where `char *slen(char *)`
+                    the witness - the declaration is one INT_ADD away from the
+                    parameter, which is the hop propagation cannot cross
         scaled:     shl rdi,2; call slen
                     a control - RDI is SHIFTED before it reaches the declared
-                    `char *`, which no pointer survives, so the rule declines
-                    in every pass
-        mixedwidth: movzx eax, byte [rdi+1]; add eax,[rdi+8]
-                    a control - the same parameter is also read four bytes
-                    wide, so the byte read does not establish the element type
-                    and the candidate is withdrawn
-        otherproto: add rdi,1; call ilen     where `int8 ilen(int8 *)`
-                    a control - the callee declares a pointer at something
-                    else, which contradicts a character pointer rather than
+                    `char *`, which no pointer survives
+        fieldbyte:  movzx eax, byte [rdi+0x3c]
+                    a control - a one-byte read at a FIXED offset is a struct
+                    field, not a character.  coreutils `ginstall`'s
+                    `announce_mkdir(char *dir, void *options)` reads the `bool`
+                    at `options + 0x3c`, and typing that `char *` would replace
+                    a correct `void *` with a wrong claim
+        mixedwidth: movzx eax, byte [rdi]; add eax,[rdi+8]
+                    a control - the same value is also read four bytes wide, so
+                    the byte read does not establish the element type
+        otherproto: add rdi,1; call ilen    where `int8 ilen(int8 *)`
+                    a control - the callee declares a pointer at something else,
+                    which contradicts a character pointer rather than
                     supporting one
 
-    Pass 1 (`option charptr off`) reproduces the bug; pass 2 (`libc`) moves the
-    call-site witness only; pass 3 (`uses`) moves the dereference witness too.
-    All three controls are identical in all three passes.
+    `prefixcmp` is the corpus witness written out in full (the byte-at-a-time
+    compare `path_prefix` runs), and it is here as a THIRD control: kuna already
+    types it `char *` without the option, through the PTRADD the
+    pointer-arithmetic pool builds, and it must not move either way.
+
+    Pass 1 (`option charptr off`) reproduces the bug; pass 2 (`on`) is the fix.
+    All five controls are identical in both passes.
 -->
 <bytechunk space="ram" offset="0x100000">
-4883ec084883c701e8f30000004883c408c300000000000000000000000000004883ec0848c1e702e8d30000004883c408c300000000000000000000000000000fb64701c30000000000000000000000000000000000000000000000000000000fb64701034708c30000000000000000000000000000000000000000000000004883ec084883c701e8830000004883c408c300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004889f8c30000000000000000000000004889f8c3000000000000000000000000
+4883ec084883c701e8330100004883c408c300000000000000000000000000004883ec0848c1e702e8130100004883c408c30000000000000000000000000000554889e54883ec2048897de8488975e0488b45e84883c001488945f8488b45e04883c001488945f0488b45f80fb60084c0741e488b45f00fb610488b45f80fb60038d0750c488345f801488345f001ebd7488b45f80fb600c9c300000000000000000000000000000000000000000000000000000000000000000000000000000fb6473cc30000000000000000000000000000000000000000000000000000000fb607034708c3000000000000000000000000000000000000000000000000004883ec084883c701e8430000004883c408c3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004889f8c30000000000000000000000004889f8c3000000000000000000000000
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="spillcall"/>
 <symbol space="ram" offset="0x100020" name="scaled"/>
-<symbol space="ram" offset="0x100040" name="derefbyte"/>
-<symbol space="ram" offset="0x100060" name="mixedwidth"/>
-<symbol space="ram" offset="0x100080" name="otherproto"/>
-<symbol space="ram" offset="0x100100" name="slen"/>
-<symbol space="ram" offset="0x100110" name="ilen"/>
+<symbol space="ram" offset="0x100040" name="prefixcmp"/>
+<symbol space="ram" offset="0x1000c0" name="fieldbyte"/>
+<symbol space="ram" offset="0x1000e0" name="mixedwidth"/>
+<symbol space="ram" offset="0x100100" name="otherproto"/>
+<symbol space="ram" offset="0x100140" name="slen"/>
+<symbol space="ram" offset="0x100150" name="ilen"/>
 </binaryimage>
 <script>
   <com>parse line extern char *slen(char *p);</com>
@@ -71,7 +75,10 @@
   <com>lo fu scaled</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>lo fu derefbyte</com>
+  <com>lo fu prefixcmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fieldbyte</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu mixedwidth</com>
@@ -80,30 +87,17 @@
   <com>lo fu otherproto</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option charptr libc</com>
+  <com>option charptr on</com>
   <com>lo fu spillcall</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu scaled</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>lo fu derefbyte</com>
+  <com>lo fu prefixcmp</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>lo fu mixedwidth</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu otherproto</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option charptr uses</com>
-  <com>lo fu spillcall</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu scaled</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu derefbyte</com>
+  <com>lo fu fieldbyte</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu mixedwidth</com>
@@ -114,11 +108,11 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="charptr #1: with the option off a parameter a declared char * is one addition away from is an integer -- the bug" min="1" max="1">void spillcall\(int8 a0\)</stringmatch>
-<stringmatch name="charptr #2: libc and uses both commit it from the callee's declaration" min="2" max="2">void spillcall\(char \*a0\)</stringmatch>
-<stringmatch name="charptr #3: a byte-only dereference is a void pointer off and under libc, which does not read dereferences" min="2" max="2">char derefbyte\(void \*a0\)</stringmatch>
-<stringmatch name="charptr #4: and uses says what it points at" min="1" max="1">char derefbyte\(char \*a0\)</stringmatch>
-<stringmatch name="charptr #5: a parameter shifted before it reaches the declaration is refused in all three passes" min="3" max="3">void scaled\(int8 a0\)</stringmatch>
-<stringmatch name="charptr #6: a parameter also read four bytes wide keeps the placeholder in all three" min="3" max="3">int4 mixedwidth\(void \*a0\)</stringmatch>
-<stringmatch name="charptr #7: a callee that declares a pointer at something else contradicts a character pointer in all three" min="3" max="3">void otherproto\(int8 a0\)</stringmatch>
+<stringmatch name="charptr #1: with the option off a parameter a declared char * is one addition away from is an integer - the bug" min="1" max="1">void spillcall\(int8 a0\)</stringmatch>
+<stringmatch name="charptr #2: with the option on the callee's declaration reaches it" min="1" max="1">void spillcall\(char \*a0\)</stringmatch>
+<stringmatch name="charptr #3: a parameter shifted before it reaches the declaration is refused in both passes" min="2" max="2">void scaled\(int8 a0\)</stringmatch>
+<stringmatch name="charptr #4: a one-byte read at a fixed offset is a struct field, so the pointer keeps its placeholder in both passes" min="2" max="2">char fieldbyte\(void \*a0\)</stringmatch>
+<stringmatch name="charptr #5: a value also read four bytes wide is not a character pointer in either pass" min="2" max="2">int4 mixedwidth\(struct_0 \*a0\)</stringmatch>
+<stringmatch name="charptr #6: a callee that declares a pointer at something else contradicts a character pointer in both passes" min="2" max="2">void otherproto\(int8 a0\)</stringmatch>
+<stringmatch name="charptr #7: the byte-at-a-time compare is already char * without the option, and the option does not move it" min="2" max="2">char prefixcmp\(char \*a0,char \*a1\)</stringmatch>
 </decompilertest>

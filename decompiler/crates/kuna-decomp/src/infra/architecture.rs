@@ -372,9 +372,9 @@ pub struct Architecture {
 
     /// (kuna `charptr`) Commit a pointer-width parameter or stack local the
     /// program only ever uses on characters to `char *`; option
-    /// `charptr off|libc|uses`.  The rule lives in
+    /// `charptr on|off`.  The rule lives in
     /// [`kuna_charptr`](crate::p5_types::kuna_charptr).
-    pub char_ptr: crate::p5_types::kuna_charptr::CharPtrMode,
+    pub char_ptr: bool,
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be
     /// a LOAD/STORE base as a pointer, and what that pointer points at.  See
     /// [`kuna_ptrfromuse`](crate::p5_types::kuna_ptrfromuse).
@@ -2284,7 +2284,7 @@ impl Architecture {
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
-            char_ptr: crate::p5_types::kuna_charptr::CharPtrMode::Off, // (kuna) option charptr; reset_defaults sets the shipped default
+            char_ptr: false, // (kuna) option charptr; shipped off
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
@@ -3378,11 +3378,7 @@ impl Architecture {
                 self.protoorder = mode;
                 Ok(msg)
             }
-            "charptr" => {
-                let (val, msg) = crate::p5_types::kuna_charptr::OptionCharPtr.apply(p1)?;
-                self.char_ptr = val;
-                Ok(msg)
-            }
+            "charptr" => on_off!(char_ptr, "character-pointer evidence"),
             "ptrfromuse" => {
                 let (val, msg) =
                     crate::p5_types::kuna_ptrfromuse::OptionPtrFromUse.apply(p1)?;
