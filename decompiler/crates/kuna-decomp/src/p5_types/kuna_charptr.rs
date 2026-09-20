@@ -549,12 +549,23 @@ fn constant_is_string(data: &Funcdata, op: OpId, cvn: VarnodeId) -> bool {
     }
     let invalid = Address::new_invalid();
     match glb.query_container_global(&rampoint, 1, &invalid) {
-        Some(entry) => entry
-            .symbol_type
-            .as_ref()
-            .filter(|t| t.get_metatype() == type_metatype::TYPE_ARRAY)
-            .and_then(|t| t.get_array_base())
-            .is_some_and(|e| e.get_size() == 1 && e.is_ascii()),
+        Some(entry) => {
+            if census_on() {
+                eprintln!(
+                    "CHARPTR-STR ram={:#x} entry={:#x} ty={} sz={}",
+                    rampoint.get_offset(),
+                    entry.entry_addr.get_offset(),
+                    entry.symbol_type.as_ref().map(|t| t.get_name().to_string()).unwrap_or_default(),
+                    entry.symbol_type.as_ref().map(|t| t.get_size()).unwrap_or(0),
+                );
+            }
+            entry
+                .symbol_type
+                .as_ref()
+                .filter(|t| t.get_metatype() == type_metatype::TYPE_ARRAY)
+                .and_then(|t| t.get_array_base())
+                .is_some_and(|e| e.get_size() == 1 && e.is_ascii())
+        }
         None => false,
     }
 }

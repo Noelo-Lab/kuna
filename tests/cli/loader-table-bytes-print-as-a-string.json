@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-4f7e76b86e51",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--addr",
+    "0x1149"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/loadertablestring_x86_64",
+    "binary_sha256": "0fcc6813ce6b086de3cb3dfcedd3bb726304b3d617bc7a2db12b5c6b1548f64a",
+    "binary_size": 15960,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/loadertablestring_x86_64",
+    "selector": "0x1149",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "puts\\(\\(char \\*\\)0x4a3\\)"
+    ],
+    "stdout_absent": [
+      "puts\\(\"uts\"\\)"
+    ]
+  },
+  "notes": "0x4a3 is an offset into this PIE's .dynstr (three bytes into the \"puts\" entry). The readonly range covered it because the section is allocated and not writable, so the printer replaced the constant with the characters at it and the call read puts(\"uts\"). The dynamic loader's tables are not initialized program data; ElfFormat::section_bits no longer paints them read-only. Source beside the fixture."
+}
