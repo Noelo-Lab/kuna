@@ -87,3 +87,20 @@ above round B.
 `structscore --all` on du -O2: TRex mean 1.9159 (round C 1.916, unchanged --
 that score reads `decompile-all` only), layout F1 0.2094 (round C 0.097, round B
 0.197).
+
+## Speed
+
+`speed.py`, interleaved min-of-15, `kuna decompile-project --max-fn-seconds 120`,
+contended box:
+
+| build | before min | after min | Δ min | Δ median |
+|---|---:|---:|---:|---:|
+| fmt O2 | 4,847.6 ms | 4,604.1 ms | −5.02% | +0.71% |
+| sort O2 | 16,300.8 ms | 16,238.3 ms | −0.38% | +0.33% |
+| du O0 (pooled min-of-30) | 5,372.7 ms | 5,634.2 ms | +4.87% | −0.40% |
+
+du -O0 was measured twice; the two sittings disagree about which statistic moves
+(+1.66% min / +4.14% median, then +4.87% min / −0.14% median), so the pooled row
+above is the number. It is the cost of the order itself — the call graph plus
+the convergence sweep — which #669 measured at ≤ +4.1% on `decompile-all`.
+`decompile-all` itself is untouched: same code path, byte-identical output.
