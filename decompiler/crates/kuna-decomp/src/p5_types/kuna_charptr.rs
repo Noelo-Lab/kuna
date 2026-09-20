@@ -182,8 +182,11 @@ enum Use {
     Char(CharKind),
     /// Used on characters, and the same address travels on from this Varnode.
     CharForward(CharKind, VarnodeId),
-    /// Identity or constant-offset addition: keep walking from this Varnode.
+    /// Identity: keep walking from this Varnode, at the same distance from the base.
     Forward(VarnodeId),
+    /// A fixed non-zero offset from the base: keep walking, but a byte read from
+    /// there is a one-byte field rather than a character.
+    ForwardOffset(VarnodeId),
     /// Nothing either way.
     Neutral,
     /// Inconsistent with a character pointer: the whole candidate is refused,
@@ -296,10 +299,14 @@ pub fn char_pointer_from_evidence(
 fn walk_is_char(data: &Funcdata, start: VarnodeId, mode: CharPtrMode) -> Evidence {
     let mut ev = Evidence::default();
     let mut seen: HashSet<VarnodeId> = HashSet::new();
-    let mut work: VecDeque<(VarnodeId, usize)> = VecDeque::new();
-    work.push_back((start, 0));
+    // The third component is "this Varnode is the base plus a fixed offset".  A
+    // byte read THERE is a one-byte struct field, not a character: coreutils
+    // `ginstall`'s `announce_mkdir(char *dir, void *options)` reads the `bool` at
+    // `options + 0x3c`, and nothing about that says the object is a string.
+    let mut work: VecDeque<(VarnodeId, usize, bool)> = VecDeque::new();
+    work.push_back((start, 0, false));
     seen.insert(start);
-    while let Some((vn, hops)) = work.pop_front() {
+    while let Some((vn, hops, offsetted)) = work.pop_front() {
         if mode.reads_uses() && defined_by_string_constant(data, vn) {
             ev.strconst += 1;
         }
@@ -309,7 +316,7 @@ fn walk_is_char(data: &Funcdata, start: VarnodeId, mode: CharPtrMode) -> Evidenc
         };
         for op in descend {
             let mut forward = None;
-            match classify_use(data, op, vn, mode) {
+            match classify_use(data, op, vn, mode, offsetted) {
                 Use::Refuse(why) => {
                     ev.refused = Some(why);
                     if !census_on() {
@@ -320,13 +327,14 @@ fn walk_is_char(data: &Funcdata, start: VarnodeId, mode: CharPtrMode) -> Evidenc
                 Use::Neutral => {}
                 Use::CharForward(kind, next) => {
                     count(&mut ev, kind, data, op);
-                    forward = Some(next);
+                    forward = Some((next, offsetted));
                 }
-                Use::Forward(next) => forward = Some(next),
+                Use::Forward(next) => forward = Some((next, offsetted)),
+                Use::ForwardOffset(next) => forward = Some((next, true)),
             }
-            if let Some(next) = forward {
+            if let Some((next, off)) = forward {
                 if hops + 1 < HOP_CAP && seen.insert(next) {
-                    work.push_back((next, hops + 1));
+                    work.push_back((next, hops + 1, off));
                 }
             }
         }
@@ -373,7 +381,13 @@ fn is_format_site(data: &Funcdata, op: OpId) -> bool {
 }
 
 /// Classify what `op` does with `vn`.
-fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, mode: CharPtrMode) -> Use {
+fn classify_use(
+    data: &Funcdata,
+    op: OpId,
+    vn: VarnodeId,
+    mode: CharPtrMode,
+    offsetted: bool,
+) -> Use {
     let Some(o) = data.obank().get(op) else { return Use::Neutral };
     let opcode = o.code();
     let slot = o.get_slot(vn);
@@ -389,6 +403,7 @@ fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, mode: CharPtrMode) -> 
                 return Use::Neutral;
             }
             match out.and_then(|o| data.vbank().get(o)).map(|v| v.get_size()) {
+                Some(1) if offsetted => Use::Neutral,
                 Some(1) => Use::Char(CharKind::Byte),
                 Some(_) => Use::Refuse("load-wider"),
                 None => Use::Neutral,
@@ -403,6 +418,7 @@ fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, mode: CharPtrMode) -> 
                 return Use::Neutral;
             }
             match o.get_in(2).and_then(|v| data.vbank().get(v)).map(|v| v.get_size()) {
+                Some(1) if offsetted => Use::Neutral,
                 Some(1) => Use::Char(CharKind::Byte),
                 Some(_) => Use::Refuse("store-wider"),
                 None => Use::Neutral,
@@ -436,7 +452,14 @@ fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, mode: CharPtrMode) -> 
             }
         }
         OpCode::CPUI_PTRSUB => match (slot, out) {
-            (0, Some(o)) => Use::Forward(o),
+            (0, Some(o)) => {
+                let zero = o_const_is_zero(data, op, 1);
+                if zero {
+                    Use::Forward(o)
+                } else {
+                    Use::ForwardOffset(o)
+                }
+            }
             _ => Use::Neutral,
         },
         // `p + k` with a literal k is still the same object, unless the literal is
@@ -454,8 +477,10 @@ fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, mode: CharPtrMode) -> 
             if crate::kuna_ptrfromuse::constant_is_global_base(data, op, other_vn) {
                 return Use::Refuse("global-base");
             }
+            let zero = data.vbank().get(other_vn).map(|v| v.get_offset() == 0).unwrap_or(false);
             match out {
-                Some(o) => Use::Forward(o),
+                Some(o) if zero => Use::Forward(o),
+                Some(o) => Use::ForwardOffset(o),
                 None => Use::Neutral,
             }
         }
@@ -525,6 +550,16 @@ fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, mode: CharPtrMode) -> 
             }
         }
     }
+}
+
+/// Is input `slot` of `op` the constant zero?
+fn o_const_is_zero(data: &Funcdata, op: OpId, slot: int4) -> bool {
+    data.obank()
+        .get(op)
+        .and_then(|o| o.get_in(slot))
+        .and_then(|v| data.vbank().get(v))
+        .map(|v| v.is_constant() && v.get_offset() == 0)
+        .unwrap_or(false)
 }
 
 /// Is `vn` written by a COPY or MULTIEQUAL whose source is a constant that
