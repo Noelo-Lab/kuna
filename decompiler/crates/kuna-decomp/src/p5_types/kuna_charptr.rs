@@ -25,12 +25,17 @@
 //! whether it is about characters.  Three uses say yes:
 //!
 //! * the value reaches argument *i* of a call whose callee has a DECLARED
-//!   `char *` there.  Declared means stated from outside the decompile: a
-//!   `libproto`/`libcsigs` signature, a `libctypes` shell, DWARF, a demangled
-//!   name, `--assert prototype`, or the per-call-site override `formatstring`
-//!   installs for a resolved `%s`.  A type another *recovery* voted for is not
-//!   evidence here ([`crate::coreaction_infertypes::declared_input_type_local`]);
-//!   counting `protoorder`'s callee vote was measured and scored lower.
+//!   `char *` there, AT THE BASE.  Declared means stated from outside the
+//!   decompile: a `libproto`/`libcsigs` signature, a `libctypes` shell, DWARF,
+//!   a demangled name, `--assert prototype`, or the per-call-site override
+//!   `formatstring` installs for a resolved `%s`.  A type another *recovery*
+//!   voted for is not evidence here
+//!   ([`crate::coreaction_infertypes::declared_input_type_local`]); counting
+//!   `protoorder`'s callee vote was measured and scored lower.  At a FIXED
+//!   non-zero offset the callee is being told about a FIELD, exactly as a
+//!   one-byte read there is: cronie `crond` -O0 `sub_6715` calls
+//!   `strcmp(base + 0x13, ".cron.hostname")` on a `struct dirent *`, and 0x13
+//!   is `offsetof(struct dirent, d_name)`.
 //! * the value is dereferenced *at the base* and every such dereference is one
 //!   byte wide, or it is stepped one byte at a time (`PTRADD` of element size
 //!   one).  A byte read at a FIXED non-zero offset is a one-byte struct field,
@@ -49,9 +54,18 @@
 //! a dereference wider than a byte, a `PTRADD` whose element is wider, a call
 //! argument the callee has declared as something other than a character pointer,
 //! and everything [`crate::kuna_ptrfromuse`] refuses (integer arithmetic, shifts,
-//! float ops, a comparison against a non-zero literal).  One refusal anywhere
-//! withdraws the candidate, so the rule speaks only where the whole function
-//! agrees.
+//! float ops, a comparison against a non-zero literal).  A refusal withdraws the
+//! Varnode it was collected for and nothing else: the walk runs once per
+//! Varnode, the vote is folded per Varnode, and the type that reaches the reader
+//! is the fold over every Varnode of the merged variable.  So a slot walked with
+//! byte evidence in one flow and refused in another prints the commitment --
+//! grep -O0 `sub_6fdd`'s stack slot at -0x20 is walked eight times with `byte`
+//! evidence and four times refused (`KUNA_CHARPTR_CENSUS=1`).  The refusals are
+//! about element WIDTH and contradicting declarations, not about arithmetic
+//! shape: a constant-stride walk is never refused, because a literal-addend
+//! `INT_ADD` only marks the value as offset from its base.  coreutils od -O2
+//! `sub_4270` shows both halves -- its third parameter commits on byte
+//! dereferences at the base and then prints `a2 = &a2[0x10]`.
 //!
 //! Only storage a reader sees declared is considered: a function input the
 //! prototype model could place a parameter in, or a Varnode in the stack space.
@@ -437,7 +451,12 @@ fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, offsetted: bool) -> Us
             let declared =
                 crate::coreaction_infertypes::declared_input_type_local(data, op, slot);
             if is_char_pointer(&declared) {
-                return Use::Char(CharKind::Declared);
+                // At a fixed non-zero offset the callee is being told about a
+                // FIELD, exactly as a one-byte load there is about a field:
+                // `strcmp(base + 0x13, ".cron.hostname")` on cronie's `crond`
+                // reads `d_name` out of a `struct dirent`, and says nothing
+                // about the base.  Same guard, same reason as the byte arm.
+                return if offsetted { Use::Neutral } else { Use::Char(CharKind::Declared) };
             }
             let meta = declared.get_metatype();
             if meta == type_metatype::TYPE_PTR {

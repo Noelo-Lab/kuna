@@ -453,7 +453,7 @@ use whether it is about *characters* rather than whether it is a dereference at
 all. Three uses answer yes.
 
 * A **declared** callee parameter: the value reaches argument *i* of a call whose
-  callee declares `char *` there. Declared means stated from outside the
+  callee declares `char *` there, *at the base*. Declared means stated from outside the
   decompile — a `libproto`/`libcsigs` signature, a `libctypes` shell, DWARF, a
   demangled name, `--assert prototype`, or the per-call-site override
   `formatstring` installs for a resolved `%s` — and it is read through
@@ -468,21 +468,40 @@ all. Three uses answer yes.
 * A **character constant**: the value is defined by, or compared against, a
   constant that resolves to a character array in the image.
 
-A byte read at a *fixed non-zero offset* is pointedly **not** evidence. `p->flag`
-and `p[0]` lower to the same one-byte `LOAD`, and only the offset tells them
-apart: coreutils `ginstall`'s `announce_mkdir(char const *dir, void *options)`
-reads the `bool` at `options + 0x3c`, and reading that as a character replaces a
-*correct* `void *` with a wrong claim. So the walk carries a flag saying "this
-Varnode is the base plus a fixed offset", set by a non-zero literal `INT_ADD` or
-`PTRSUB` and cleared by nothing, and a byte access there is neutral. Measured:
-without that flag the sweep gains more (+8 functions onto perfect against +4)
-and loses more (13 functions down against 3), and four of the extra losses are
-exactly this shape.
+Anything at a *fixed non-zero offset* is pointedly **not** evidence, and that
+applies to both the byte arm and the declared arm. `p->flag` and `p[0]` lower to
+the same one-byte `LOAD`, and only the offset tells them apart: coreutils
+`ginstall`'s `announce_mkdir(char const *dir, void *options)` reads the `bool` at
+`options + 0x3c`, and reading that as a character replaces a *correct* `void *`
+with a wrong claim. A declared `char *` at a fixed offset says the same thing
+about a field rather than about the base: cronie `crond` -O0 `sub_6715` calls
+`strcmp(base + 0x13, ".cron.hostname")` where `base` is a `struct dirent *` and
+`0x13` is `offsetof(struct dirent, d_name)`, so crediting the base would trade a
+correct aggregate pointer for a wrong `char *`. So the walk carries a flag saying
+"this Varnode is the base plus a fixed offset", set by a non-zero literal
+`INT_ADD` or `PTRSUB` and cleared by nothing, and both a byte access and a
+declared parameter there are neutral. A *variable* index is not: `strlen(p + i)`
+and `p[i]` still count, because `PTRADD` with element size one is the walk
+itself. Measured: without the flag on the byte arm the sweep gains more (+8
+functions onto perfect against +4) and loses more (13 functions down against 3),
+and four of the extra losses are exactly this shape.
 
-One refusal anywhere withdraws the candidate, and the refusals are what keep the
-rule honest: a dereference or an element step *wider* than a byte (the program
-saying the element is not a character), a call argument the callee declared as
-some other pointer or as a scalar, and everything `ptrfromuse` refuses. The
+The refusals are what keep the rule honest: a dereference or an element step
+*wider* than a byte (the program saying the element is not a character), a call
+argument the callee declared as some other pointer or as a scalar, and everything
+`ptrfromuse` refuses. A refusal withdraws the Varnode it was collected for and
+nothing else. The walk runs once per Varnode and the vote is folded per Varnode,
+while the type a reader sees belongs to the *merged variable*, so a slot walked
+with byte evidence in one flow and refused in another prints the commitment:
+grep -O0 `sub_6fdd`'s stack slot at `-0x20` is walked eight times with byte
+evidence and four times refused, which `KUNA_CHARPTR_CENSUS=1` reports line by
+line. What the refusals bound is what one Varnode's evidence may claim, not what
+the merged variable may become — and they are about element *width* and
+contradicting declarations, not about arithmetic shape. A constant-stride walk is
+never refused, because a literal-addend `INT_ADD` only marks the value as offset
+from its base: coreutils `od` -O2 `sub_4270` commits its third parameter on byte
+dereferences at the base and then prints `a2 = &a2[0x10]`, a sixteen-byte step
+through a `char *`. The
 candidate is folded by `type_order` exactly as `ptrfromuse`'s is, and it may
 additionally **refine** a pointer that points at nothing — `void *` and
 `undefined1 *`, the placeholders this rule exists to resolve — while a pointer at

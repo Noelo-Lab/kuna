@@ -187,16 +187,17 @@ impl SecRange {
     /// Is this an allocated, read-only data section — the `.rodata` partition a
     /// scalar may point at? `SHF_ALLOC` set, `SHF_WRITE` clear, not executable.
     fn is_readonly_data(&self) -> bool {
-        // (kuna) The dynamic loader's own tables are allocated and not writable,
-        // so the flag test alone accepts `.dynsym`/`.dynstr`/`.gnu.hash`/`.rela.*`
-        // -- and in a position-independent executable `.dynsym` covers `0x1000`,
-        // so a buffer size lands in it and the pass plants a `char[2]` on a
-        // symbol-table field. Same reason as the `.got`/`.plt` exclusion above:
-        // a scalar that lands in the loader's tables is not a data reference.
-        if crate::loader::format::elf::is_loader_table(self.kind) {
-            return false;
-        }
         if self.elf_flags != 0 {
+            // (kuna) The dynamic loader's own tables are allocated and not
+            // writable, so the flag test alone accepts `.dynsym`/`.dynstr`/
+            // `.gnu.hash`/`.rela.*` -- and in a position-independent executable
+            // `.dynsym` covers `0x1000`, so a buffer size lands in it and the
+            // pass plants a `char[2]` on a symbol-table field. Same reason as
+            // the `.got`/`.plt` exclusion above: a scalar that lands in the
+            // loader's tables is not a data reference.
+            if crate::loader::format::elf::is_loader_table(self.kind) {
+                return false;
+            }
             // ELF: the authoritative flags. Allocated, not writable, not code.
             return self.elf_flags & SHF_ALLOC != 0
                 && self.elf_flags & SHF_WRITE == 0
