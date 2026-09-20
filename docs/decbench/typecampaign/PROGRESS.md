@@ -3,7 +3,7 @@
 Plan: `~/.claude/plans/today-we-are-taking-quirky-rabin.md` (session 5b38c0e9). Resumable: every item's
 state lives in this table; agents also leave `<worktree>/.scratch/state.md`.
 
-Started 2026-09-16 on main `809712e9`. Stage 1 landed 2026-09-16/17 (#647 #648 #649 #650 #653). Lane A landed 2026-09-17 (#651 #658 #659); B: #652 #654. Campaign baseline 848/10748 perfect → 964 after #659 (with ptrfromuse byte; 959 default) → 986 / mean .2895 on main d96e3408 (Stage-3) → **1,349 / mean .3403 on main d8b9c0b1 (round C, `results.md`)**. Decisions: three equal lanes; Opus subagents; self-merge after
+Started 2026-09-16 on main `809712e9`. Stage 1 landed 2026-09-16/17 (#647 #648 #649 #650 #653). Lane A landed 2026-09-17 (#651 #658 #659); B: #652 #654. Campaign baseline 848/10748 perfect → 964 after #659 (with ptrfromuse byte; 959 default) → 986 / mean .2895 on main d96e3408 (Stage-3) → 1,349 / mean .3403 on main d8b9c0b1 (round C) → **1,349 / mean .3405 on main 4c7704e0 (round D, `results.md`)**. Decisions: three equal lanes; Opus subagents; self-merge after
 reviewer + green gates; `[PROPOSAL]` items wait for the user; port TRex/RecStruct from source with attribution.
 
 | id | item | lane | state | worktree / branch | PR | last gate result | next step |
@@ -40,12 +40,17 @@ reviewer + green gates; `[PROPOSAL]` items wait for the user; port TRex/RecStruc
 | B4a-on | foldcallretphi default on | B | merged d6c5862f | — | #681 | 986=986; −14 declarations; speed ≤+1.04% | — |
 | A1-on | libctypes glibc default | A | stays opt-in, no PR | /home/mahaloz/kwt/libctypes-glibc-on | — | 959=959 +0.55 (9/3); the 5 #660 defect classes reproduce | — |
 | A2-on | ptrfromuse void default | A | merged d8b9c0b1 | — | #690 | on the protoorder base: 1105→1309 (+204), 85 improved / 0 worse | — |
-| B1-on | argclobber default (argclobberproto) | B | open, review CHANGES (not landed) | /home/mahaloz/kwt/argclobberproto | #689 | callee's recovered prototype admits the drop: 19 functions over 770 ELFs, typesweep 1351=1351, speed +0.38% | address review, land |
+| B1-on | argclobber default (argclobberproto) | B | merged 72438114 | — | #689 | 19 functions over 770 ELFs onto the callee's true arity; typesweep 1,349=1,349; fmt::main 1/2/3 → 2/2/2 with no phantom rdx; speed +0.38% | — |
 | S3 | final re-measure (Stage 3) | setup | done 2026-09-19 | /home/mahaloz/kwt/_final | results PR | 848→986 perfect, .2645→.2895; 1,449 improved / 8 worse; per-class + rivals + varcensus + structscore + speed | `results.md` |
 | B9 | foldcallret short-circuit fix (GH-684) | B | merged a3bf6a15 | — | #687 | strict fix; 8/25,556 functions, `variables[]` identical | — |
 | B10 | aliasoverlap (a load past an overlapping store) | B | merged 3831d703 | — | #686 | strict fix; 1/48,235 functions; typesweep rows identical in 444/444 slices | — |
 | T1 | --jobs N keeps serial-run struct names | tooling | merged 0304334b | — | #688 | removes the sharded-run structsynth limitation from #682 | — |
 | S4 | final re-measure, round C | setup | done 2026-09-20 | /home/mahaloz/kwt/_final-c | results PR | 986→1349 perfect, .2895→.3403; 1,384 improved / 2 worse; 1st of five on perfect% and mean; layout-precision regression attributed to protoorder | `results.md` §Round C |
+| C10 | decompile-project takes the callee-first order (layoutvote) | C | merged 3de41f06 | — | #693 | `decompile-all` byte-identical; export agrees with it 2,918/2,918; layout precision .5520 → .8709 — the round-C regression was this join, not protoorder | — |
+| A6 | inferfuncentry narrowing (ptrfromuseint) | A | merged 69d252df | — | #694 | 13 functions improved / 0 worse on the 444 slices; `int_u8` +15 TP; 18 of 6,882 functions change | — |
+| A7 | charptr (`char *` from use) + loader-table string fix | A | open, review CHANGES | /home/mahaloz/kwt/charptr | #695 | 1,349 → 1,353, 14 improved / 6 down; default off (the flip fails `make test-cli`) | address review, land |
+| A8 | libcstructs — 7 more named libc aggregates | A | open, review CHANGES | /home/mahaloz/kwt/libcstructs | #692 | 1,349 → 1,353, mean .3405 → .3419, 91 improved / 1 worse, `ptr_struct` 422 → 496 | address review, land |
+| S5 | final re-measure, round D | setup | done 2026-09-20 | /home/mahaloz/kwt/_final-d | results PR | 1,349 perfect / .3405; 13 improved / 0 worse; layout precision repaired .5520 → .8709; decbench#94 counterfactual: the restrict artifact is 98.2% register-only | `results.md` §Round D |
 
 2026-09-18: the first account hit its weekly limit mid-run (agents for #669/#673/#675 died after committing+pushing; #671/#672/#674 had already merged). Resumed on a second account; nothing was lost.
 

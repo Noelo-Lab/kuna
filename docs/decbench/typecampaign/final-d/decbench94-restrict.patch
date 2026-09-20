@@ -1,0 +1,11 @@
+--- db625/decbench/metrics/type_match.py	2026-09-02 23:27:20.000000000 +0000
++++ db625-r94/decbench/metrics/type_match.py	2026-09-20 22:20:06.024083334 +0000
+@@ -504,7 +504,7 @@
+         arr_names = [f"{n}[{length}]" for n in child_names]
+         return child_names + arr_names, elem_size * length
+ 
+-    elif tag in ("DW_TAG_const_type", "DW_TAG_volatile_type"):
++    elif tag in ("DW_TAG_const_type", "DW_TAG_volatile_type", "DW_TAG_restrict_type"):
+         return _parse_type_die(type_die, dwarfinfo)
+ 
+     elif tag == "DW_TAG_structure_type":

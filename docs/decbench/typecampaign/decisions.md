@@ -35,3 +35,19 @@
    because a caller's parameter takes the callee's record even where the caller measured its own
    (`final-c/layout-ablation.md`). Round C ships it on (the metric the campaign is judged by improves
    and no wrong C is emitted); the caller-measured-layout carve-out is the first round-D item.
+14. 2026-09-20 round D withdraws §13's attribution. protoorder does NOT overrule a caller's measured
+   layout — structsynth type-locks the parameter after the vote, and du -O2 installs the same 36
+   records in both arms. The .8945 → .5520 drop was the campaign instrument joining parameter types
+   from `decompile-all` against layouts from `decompile-project`, two surfaces that numbered
+   `struct_N` in different orders (#693). With one order the round-D figure is .8709 fields-only and
+   F1 .1678, above round B on F1 and recall. Lesson kept: a measurement that joins two kuna surfaces
+   by a synthesized NAME has to prove the two ledgers agree before the number means anything.
+15. 2026-09-20 `argclobber` is default `on` (#689) on the strength of the callee's own recovered
+   prototype, not a caller-side heuristic. It is inert wherever protoorder parks nothing — a
+   single-function `kuna decompile`, `--addr`/`--functions`, `--jobs N`, `decompile-project`,
+   `decompile-graph` — so a serial `decompile-all` and a sharded one legitimately differ by exactly
+   these dropped arguments, and any ablation of it MUST use a whole-binary serial run.
+16. 2026-09-20 decbench#94 (the missing `DW_TAG_restrict_type` arm) is not a campaign lever. The
+   4,412 GT variables it makes unmatchable are 98.2% register-only, which no decompiler scores:
+   patching a copy of the pinned metric moves kuna by 8 functions and 0.84 aggregate, and does not
+   move a single function onto or off perfect. Worth fixing upstream for honesty, not for score.

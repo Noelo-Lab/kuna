@@ -1,0 +1,14 @@
+slice,function,round_c,round_d,delta
+coreutils::O0::head,copy_fd,0.5,0.8333,0.3333
+coreutils::O0::head,elide_tail_bytes_pipe,0.75,0.8929,0.1429
+coreutils::O0::head,elide_tail_lines_seekable,0.6667,0.75,0.0833
+coreutils::O0::seq,seq_fast,0.7222,0.7778,0.0556
+coreutils::O0::tail,dump_remainder,0.6667,0.8889,0.2222
+coreutils::O0::tail,file_lines,0.6364,0.8182,0.1818
+coreutils::O0::tail,tail_forever,0.75,0.8125,0.0625
+coreutils::O2-noinline::head,copy_fd,0.2,0.4,0.2
+coreutils::O2-noinline::tail,dump_remainder,0.2222,0.3333,0.1111
+coreutils::O2-noinline::tail,file_lines,0.4545,0.5455,0.0909
+coreutils::O2::head,copy_fd,0.2,0.4,0.2
+coreutils::O2::tail,dump_remainder,0.2222,0.3333,0.1111
+coreutils::O2::tail,file_lines,0.3125,0.375,0.0625
