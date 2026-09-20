@@ -831,6 +831,23 @@ Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
   (kuna_const_is_function_entry)`) — a function placed at a power-of-two image
   base is a single-bit value, but it is still a function. Ordinary data
   constants never match, so flag semantics are preserved.
+
+  The rejection this skips is the only guard that keeps integer flags, masks
+  and round sizes out of the symbol table, so the skip is allowed only where
+  the operand means a code address:
+  `decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry.rs
+  (entry_escape_applies)` admits a call argument (GH-6930's own shape, a
+  callback handed to a registrar), a STORE into a function-pointer slot, an
+  identity comparison with one, and an addition onto a value already typed as a
+  pointer. Every other reader — an ordering comparison, a copy, a merge, a
+  PIECE, arithmetic — is using the constant as a number, and the entry it
+  happens to land on is a coincidence of layout. Round buffer sizes collide
+  with entries often enough in a PIE that this is not hypothetical: coreutils
+  `tail` at `-O0` computes `MIN (n_remaining, BUFSIZ)`, `BUFSIZ` is `0x2000`
+  and `0x2000` is that image's `_DT_INIT`, so the bound printed as
+  `if (_DT_INIT < v9)` and carried the `uintmax_t` byte counter it bounded to
+  `void *` — in `dump_remainder`, and through [`protoorder`](../options.md)
+  into its caller's stack variable.
 - **(kuna GH-8471)** [`thumbfuncptr`](../options.md): a Thumb function pointer
   is `fn|1`; constant-pointer recovery produces `PTRSUB(fn) + 1`, and the
   simplification rule that normally deletes out-of-bounds PTRSUBs would

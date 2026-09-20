@@ -84,3 +84,33 @@ fn option_default_is_on_and_apply_flips() {
     assert!(opt.is_enabled());
     assert!(msg.contains("on"));
 }
+
+#[test]
+fn escape_applies_where_a_code_address_can_appear() {
+    for opcode in [
+        OpCode::CPUI_CALL,
+        OpCode::CPUI_CALLIND,
+        OpCode::CPUI_STORE,
+        OpCode::CPUI_INT_ADD,
+        OpCode::CPUI_INT_EQUAL,
+        OpCode::CPUI_INT_NOTEQUAL,
+    ] {
+        assert!(entry_escape_applies(opcode), "{opcode:?} should keep the escape");
+    }
+}
+
+#[test]
+fn escape_declines_an_integer_use() {
+    // An ordering comparison and a plain assignment are the two shapes a round
+    // buffer size takes; neither is a place a raw code address belongs.
+    for opcode in [
+        OpCode::CPUI_INT_LESS,
+        OpCode::CPUI_INT_LESSEQUAL,
+        OpCode::CPUI_COPY,
+        OpCode::CPUI_MULTIEQUAL,
+        OpCode::CPUI_PIECE,
+        OpCode::CPUI_INT_MULT,
+    ] {
+        assert!(!entry_escape_applies(opcode), "{opcode:?} should decline the escape");
+    }
+}
