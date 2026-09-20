@@ -168,3 +168,16 @@ measured directly.
 No argument row is fabricated and none is deleted anywhere in the corpus: the
 21 dropped arguments are all CALL-SITE arguments, which `variables[]` does not
 export at all.
+
+
+Speed, re-measured after the accounting clause
+----------------------------------------------------------------------
+Interleaved min-of-15 `kuna decompile-all --option argclobber off|on`, same
+build, quiet machine:
+
+  fmt  O2   4597.5 ms -> 4653.3 ms   +1.21%
+  ls   O2  14177.5 ms -> 14264.2 ms  +0.61%
+  sort O2  14483.8 ms -> 14428.1 ms  -0.38%
+  bash O2  82367.1 ms -> 81484.8 ms  -1.07%
+
+Worst +1.21%, budget +5%.

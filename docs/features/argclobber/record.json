@@ -101,7 +101,8 @@
   "kuna catalog --check": "OK",
   "counters --check": "no drift",
   "make rust-test": "RUST_TEST_RC=0 (7,741 tests, 0 failed suites) on the final tree",
-  "CI": "parity gates pass; cargo workspace suite pass (full-ci label)"
+  "CI": "parity gates pass; cargo workspace suite pass (full-ci label)",
+  "round2_final_tree": "make test 675/675 PARITY OK; make test-stages 1249/1249 PARITY OK; make test-cli 209/209; check-spec OK + --strict OK; kuna catalog --check OK; counters --check no drift; docs/options.md byte-fresh; make rust-test RUST_TEST_RC=0 (416 suites, 7,285 tests)"
  },
  "files": [
   "decompiler/crates/kuna-decomp/src/p4_calls/kuna_argclobber.rs",
@@ -126,20 +127,53 @@
  "catalog_counts": "unchanged: no option added or removed; `counters --check` reports no drift",
  "preset_decision": "removed from modes.rs EXCLUDED_ON_PURPOSE -- that list is about default-OFF options absent from the `aggressive` preset, and the option now ships on everywhere.",
  "notes": "The stage corpus cannot demonstrate the drop: the datatest harness decompiles one function from a byte image, so no callee is decompiled first and nothing is parked. tests/stages/kuna-argclobber.xml is therefore the negative control (the argument survives both passes) and the positive witness is a tests/cli probe on a committed fixture -- the same shape protoorder itself shipped with. The three sibling stage tests (-forward, -guards, -armreturn) pass on that same blanket decline rather than on the caller-side clause each describes; each now says so in its own header and points at the tests/cli probes for live coverage.",
- "speed_off_ms": 227.21,
- "speed_on_ms": 219.95,
- "speed_delta_pct": -3.2,
+ "speed_off_ms": 4597.5,
+ "speed_on_ms": 4653.3,
+ "speed_delta_pct": 1.21,
  "speed_samples": 15,
  "speed_budget_pct": 5.0,
  "speed_within_budget": true,
  "speed_forced_off": false,
  "speed": {
-  "decompile": "scripts.pipeline.timeit --option argclobber, coreutils fmt O2 main @0x26a0, 15 samples: 227.21 -> 219.95 ms (-3.20%). `kuna decompile` forks one process per function, so nothing is parked and the rule is inert there; the callee-entry probe is no longer decoded for it either.",
-  "decompile_all": "interleaved min-of-15 whole-binary `kuna decompile-all --option argclobber off|on`, the surface where the rule fires: coreutils fmt O2 4274.3 -> 4268.6 ms (-0.13%) min / 4821.4 -> 4678.2 (-2.97%) median; coreutils ls O2 13804.1 -> 13963.0 (+1.15%) / 15347.0 -> 15451.7 (+0.68%); coreutils sort O2 14881.9 -> 14391.5 (-3.30%) / 16233.1 -> 16186.2 (-0.29%); bash O2 82369.0 -> 81401.9 (-1.17%) / 84724.9 -> 83883.5 (-0.99%)",
-  "worst_delta_pct": 1.15,
+  "method": "interleaved min-of-15 `kuna decompile-all --option argclobber off|on`, same build, quiet machine",
+  "cases": {
+   "fmt": {
+    "n": 15,
+    "min_off_ms": 4597.5,
+    "min_on_ms": 4653.3,
+    "delta_pct": 1.21,
+    "median_off_ms": 5159.6,
+    "median_on_ms": 5000.4
+   },
+   "ls": {
+    "n": 15,
+    "min_off_ms": 14177.5,
+    "min_on_ms": 14264.2,
+    "delta_pct": 0.61,
+    "median_off_ms": 15590.2,
+    "median_on_ms": 15362.6
+   },
+   "sort": {
+    "n": 15,
+    "min_off_ms": 14483.8,
+    "min_on_ms": 14428.1,
+    "delta_pct": -0.38,
+    "median_off_ms": 14942.2,
+    "median_on_ms": 14977.5
+   },
+   "bash": {
+    "n": 15,
+    "min_off_ms": 82367.1,
+    "min_on_ms": 81484.8,
+    "delta_pct": -1.07,
+    "median_off_ms": 85835.8,
+    "median_on_ms": 84894.1
+   }
+  },
+  "worst_delta_pct": 1.21,
   "budget_pct": 5.0,
   "within_budget": true,
-  "note": "measured on a box shared with other campaign lanes; interleaved so load falls on both arms alike. The only positive delta (ls, +1.15% on the minimum) is inside its own median's noise (+0.68%)."
+  "re_measured_after_accounting_clause": true
  },
  "arity_counters": {
   "surface": "kuna decompile-all --json variables[] (name,type,size,stack_offset,arg_index,kind) -- exactly what decbench scores",
