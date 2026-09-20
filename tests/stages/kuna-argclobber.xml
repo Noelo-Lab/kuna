@@ -35,7 +35,14 @@
     whole-binary `decompile-all` decompiles the callee first.  This harness
     decompiles ONE function from a byte image: no callee was decompiled first,
     nothing is parked, `target` has stated nothing about itself, and a rule that
-    deletes an argument may not read silence as permission.  So the caller's
+    deletes an argument may not read silence as permission.  The parking flag
+    itself says so: `park_recovered_proto` is written true only in
+    decompiler/crates/kuna-cli/src/decompile_all.rs, and the console paths this
+    harness runs through (kuna-console/src/project.rs, project_stream.rs) pass
+    false, so no stage test can put a parked prototype in front of the rule,
+    whatever it asserts.  The two-pass coverage lives in tests/cli instead,
+    named below, over the whole binary-to-decompile path and run by `make
+    test-cli` in CI.  So the caller's
     side here is the exact shape the option exists for: rdx is a two-input
     join and NEITHER input is a value the caller put there. On one path
     `clobber` destroyed the register, on the other an `idivl` left its remainder

@@ -18,7 +18,7 @@
  "destructive": true,
  "rule_change": {
   "admits": "the callee's RECOVERED prototype (stated by `protoorder types`) exists for this entry, has no parameter overlapping the argument's register bytes, AND accounts -- storage for storage -- for every argument the drop leaves behind",
-  "vetoes": "unchanged caller-side clauses, plus TWO readings of the callee's body from the per-image entry-liveness summary: `proves_input` (the bounded entry walk positively sees the register READ before it is written) and `opaque_transfer_free` (the callee must have WRITTEN the register before every control transfer the walk could not NAME -- CALLIND, BRANCHIND, CALLOTHER, an indexed register-file LOAD/STORE, an undecodable instruction; a direct CALL is not one of them, because its target has a name and the callee's own recovery accounted for it). Neither can admit a drop.",
+  "vetoes": "unchanged caller-side clauses, plus TWO readings of the callee's body from the per-image entry-liveness summary: `proves_input` (the bounded entry walk positively sees the register READ before it is written) and `resolve_forward_transfer` (the callee must have WRITTEN the register before every control transfer that cannot be answered for -- CALLIND, BRANCHIND, CALLOTHER, an indexed register-file LOAD/STORE, an undecodable instruction, and a direct CALL whose target carries neither a declared non-variadic prototype nor a body that answers the same question of itself, recursively, within a 32-body budget). Naming a target is not accounting for it: an import's PLT stub jumps through its GOT slot and answers nothing. Neither reading can admit a drop.",
   "inert_where": [
    "kuna decompile (one function per forked process)",
    "decompile-all narrowed by --addr/--functions",
@@ -30,7 +30,7 @@
   "value_naming": "`on` now means the new rule; no `proto` value was added, because the old rule is unsound where they differ and identical where they do not",
   "why_the_accounting_clause": "a recovery SHORT of what the call passes is not a statement that the tail is unwanted but a statement that the recovery did not reach the tail. A forwarding thunk (`mov (%rdi),%rax; jmp *%rax`) recovers one parameter while the function it tail calls consumes three, and protoorder states that short list in BOTH its modes; the free-bytes test alone deleted the forwarded argument. ce-forward-thunk.{c,s}",
   "protoorder_does_not_decline_a_variadic": "Decline::UnderRecovered and Decline::RegisterFileFull live in park_recovered's LOCK branch; the default `types` mode returns through state_recovered_types before them. Decline::Variadic is only ever set from a declared `...`, which Decline::Declared rejects one branch earlier, so it cannot fire on a stripped image. Measured: `long vlog(int,long,...)` with a va_arg read, gcc -O2 stripped, prints `[protoorder] state sub_11d0 params=3` under KUNA_PROTOORDER_TRACE=1. What declines the drop at a stripped variadic is the recovered list itself -- a register-save prologue reads every argument register, so the list carries the one the drop would take.",
-  "why_the_opaque_transfer_clause": "a recovered prototype states what a callee NAMES. `long fwd(struct box*o,long a,long b){ if(!a) return 0; return o->fn(o,a,b); }` compiles under gcc -O2 to `test %rsi,%rsi; je; jmp *(%rdi)`, recovering exactly the TWO parameters a drop would leave behind -- so the accounting clause is satisfied and the forwarded third argument was deleted along with the preceding call's rax:rdx return half. At the `jmp` rdx is unwritten, and that is what declines it. An incomplete summary (probe budget, runaway written set) now declines too, which subsumes ce-probe-budget a second, independent way."
+  "why_the_forwarding_clause": "a recovered prototype states what a callee NAMES. `long fwd(struct box*o,long a,long b){ if(!a) return 0; return o->fn(o,a,b); }` compiles under gcc -O2 to `test %rsi,%rsi; je; jmp *(%rdi)`, recovering exactly the TWO parameters a drop would leave behind -- so the accounting clause is satisfied and the forwarded third argument was deleted along with the preceding call's rax:rdx return half. At the `jmp` rdx is unwritten, and that is what declines it. The same is true with no pointer anywhere: `long wrap(void*o,long a,long b){ if(!a) return 0; return ext3(o,a,b); }` with ext3 an unsignatured import recovers the same two parameters, and the direct call is declined only because its target cannot answer for rdx (ce-import-forward.c; ce-forward-thunk-2frame.c is the pointer one an ordinary call frame deeper). An incomplete summary (probe budget, runaway written set) declines too, which subsumes ce-probe-budget a second, independent way."
  },
  "counterexamples": {
   "programs": [
@@ -39,13 +39,16 @@
    "ce-probe-budget.s (same shape, hand written)",
    "ce-import.c + ce-import-lib.c (PLT import, no body)",
    "ce-forward-thunk.c + ce-forward-thunk.s (indirect tail call; recovers 1 parameter, forwards 3)",
-   "ce-forward-thunk-2param.c -- a 2-parameter forwarding thunk in plain C (no hand asm); declined by opaque_transfer_free, NOT by the prototype"
+   "ce-forward-thunk-2param.c -- a 2-parameter forwarding thunk in plain C (no hand asm); declined by the forwarding walk, NOT by the prototype",
+   "ce-import-forward.c -- the same, forwarded to an unsignatured PLT import with no function pointer anywhere (committed as fixture argclobber_import_x86_64)",
+   "ce-forward-thunk-2frame.c -- ce-forward-thunk-2param one ordinary direct call frame deeper"
   ],
-  "old_rule": "the first four lose the argument under the pre-#689 body-only rule; ce-forward-thunk loses it under the free-bytes-only prototype clause; ce-forward-thunk-2param loses it under the accounting clause too",
-  "new_rule": "all six are byte-identical to the option-off output",
+  "old_rule": "the first four lose the argument under the pre-#689 body-only rule; ce-forward-thunk loses it under the free-bytes-only prototype clause; ce-forward-thunk-2param under the accounting clause too; ce-import-forward and ce-forward-thunk-2frame under the first version of the forwarding clause, which exempted direct calls -- ablating the direct-call arm of the shipped rule deletes their argument again",
+  "new_rule": "all eight are byte-identical to the option-off output",
   "pinned_by": {
    "ce-remainder-or-pair": "tests/cli/argclobber-keeps-an-argument-the-callee-takes.json",
-   "ce-forward-thunk-2param": "tests/cli/argclobber-keeps-an-argument-a-thunk-forwards.json"
+   "ce-forward-thunk-2param": "tests/cli/argclobber-keeps-an-argument-a-thunk-forwards.json",
+   "ce-import-forward": "tests/cli/argclobber-keeps-an-argument-an-import-reads.json"
   }
  },
  "sweep": {
