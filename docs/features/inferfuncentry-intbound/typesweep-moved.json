@@ -1,0 +1,80 @@
+[
+ {
+  "slice": "coreutils::O0::head",
+  "function": "copy_fd",
+  "main": 0.5,
+  "fix": 0.8333
+ },
+ {
+  "slice": "coreutils::O0::tail",
+  "function": "dump_remainder",
+  "main": 0.6667,
+  "fix": 0.8889
+ },
+ {
+  "slice": "coreutils::O2::head",
+  "function": "copy_fd",
+  "main": 0.2,
+  "fix": 0.4
+ },
+ {
+  "slice": "coreutils::O2-noinline::head",
+  "function": "copy_fd",
+  "main": 0.2,
+  "fix": 0.4
+ },
+ {
+  "slice": "coreutils::O0::tail",
+  "function": "file_lines",
+  "main": 0.6364,
+  "fix": 0.8182
+ },
+ {
+  "slice": "coreutils::O0::head",
+  "function": "elide_tail_bytes_pipe",
+  "main": 0.75,
+  "fix": 0.8929
+ },
+ {
+  "slice": "coreutils::O2::tail",
+  "function": "dump_remainder",
+  "main": 0.2222,
+  "fix": 0.3333
+ },
+ {
+  "slice": "coreutils::O2-noinline::tail",
+  "function": "dump_remainder",
+  "main": 0.2222,
+  "fix": 0.3333
+ },
+ {
+  "slice": "coreutils::O2-noinline::tail",
+  "function": "file_lines",
+  "main": 0.4545,
+  "fix": 0.5455
+ },
+ {
+  "slice": "coreutils::O0::head",
+  "function": "elide_tail_lines_seekable",
+  "main": 0.6667,
+  "fix": 0.75
+ },
+ {
+  "slice": "coreutils::O0::tail",
+  "function": "tail_forever",
+  "main": 0.75,
+  "fix": 0.8125
+ },
+ {
+  "slice": "coreutils::O2::tail",
+  "function": "file_lines",
+  "main": 0.3125,
+  "fix": 0.375
+ },
+ {
+  "slice": "coreutils::O0::seq",
+  "function": "seq_fast",
+  "main": 0.7222,
+  "fix": 0.7778
+ }
+]

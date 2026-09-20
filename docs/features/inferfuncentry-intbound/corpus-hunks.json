@@ -1,0 +1,233 @@
+{
+  "arm": "fix",
+  "total_functions": 6882,
+  "functions_changed": 18,
+  "functions_renumbering_only": 0,
+  "hunks": {
+    "declaration": 24,
+    "decl-set": 15,
+    "OTHER": 55,
+    "cast-change+declaration": 2,
+    "STATEMENT": 4,
+    "index-rewrite": 2,
+    "cast-change": 55,
+    "cast-change+declaration+index-rewrite": 2,
+    "addend-reorder": 4,
+    "cast-change+index-rewrite": 7,
+    "addend-reorder+cast-change": 1
+  },
+  "per_binary": {
+    "coreutils-head-O0": {
+      "functions": 197,
+      "changed": 4,
+      "hunks": {
+        "declaration": 4,
+        "decl-set": 5,
+        "OTHER": 16,
+        "cast-change+declaration": 2,
+        "STATEMENT": 2,
+        "index-rewrite": 1,
+        "cast-change": 6,
+        "cast-change+declaration+index-rewrite": 1
+      },
+      "lines_off": 3210,
+      "lines_on": 3207,
+      "line_delta": -3,
+      "semicolons_off": 1740,
+      "semicolons_on": 1737,
+      "semicolon_delta": -3
+    },
+    "coreutils-head-O2": {
+      "functions": 152,
+      "changed": 3,
+      "hunks": {
+        "declaration": 5,
+        "decl-set": 5,
+        "STATEMENT": 2,
+        "OTHER": 24,
+        "cast-change": 24,
+        "addend-reorder": 3,
+        "cast-change+index-rewrite": 5,
+        "index-rewrite": 1
+      },
+      "lines_off": 3884,
+      "lines_on": 3880,
+      "line_delta": -4,
+      "semicolons_off": 2298,
+      "semicolons_on": 2294,
+      "semicolon_delta": -4
+    },
+    "coreutils-ls-O0": {
+      "functions": 589,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 10924,
+      "lines_on": 10924,
+      "line_delta": 0,
+      "semicolons_off": 6002,
+      "semicolons_on": 6002,
+      "semicolon_delta": 0
+    },
+    "coreutils-ls-O2": {
+      "functions": 404,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 12875,
+      "lines_on": 12875,
+      "line_delta": 0,
+      "semicolons_off": 7653,
+      "semicolons_on": 7653,
+      "semicolon_delta": 0
+    },
+    "coreutils-od-O0": {
+      "functions": 233,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 4274,
+      "lines_on": 4274,
+      "line_delta": 0,
+      "semicolons_off": 2390,
+      "semicolons_on": 2390,
+      "semicolon_delta": 0
+    },
+    "coreutils-od-O2": {
+      "functions": 192,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 6542,
+      "lines_on": 6542,
+      "line_delta": 0,
+      "semicolons_off": 3995,
+      "semicolons_on": 3995,
+      "semicolon_delta": 0
+    },
+    "coreutils-seq-O0": {
+      "functions": 184,
+      "changed": 1,
+      "hunks": {
+        "declaration": 1,
+        "OTHER": 1,
+        "cast-change+index-rewrite": 2,
+        "cast-change": 2
+      },
+      "lines_off": 2839,
+      "lines_on": 2839,
+      "line_delta": 0,
+      "semicolons_off": 1545,
+      "semicolons_on": 1545,
+      "semicolon_delta": 0
+    },
+    "coreutils-seq-O2": {
+      "functions": 152,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 4926,
+      "lines_on": 4926,
+      "line_delta": 0,
+      "semicolons_off": 2954,
+      "semicolons_on": 2954,
+      "semicolon_delta": 0
+    },
+    "coreutils-tail-O0": {
+      "functions": 316,
+      "changed": 6,
+      "hunks": {
+        "declaration": 8,
+        "decl-set": 1,
+        "OTHER": 5,
+        "cast-change": 15,
+        "cast-change+declaration+index-rewrite": 1,
+        "addend-reorder+cast-change": 1
+      },
+      "lines_off": 5973,
+      "lines_on": 5972,
+      "line_delta": -1,
+      "semicolons_off": 3089,
+      "semicolons_on": 3088,
+      "semicolon_delta": -1
+    },
+    "coreutils-tail-O2": {
+      "functions": 225,
+      "changed": 4,
+      "hunks": {
+        "declaration": 6,
+        "decl-set": 4,
+        "cast-change": 8,
+        "OTHER": 9,
+        "addend-reorder": 1
+      },
+      "lines_off": 6464,
+      "lines_on": 6462,
+      "line_delta": -2,
+      "semicolons_off": 3708,
+      "semicolons_on": 3706,
+      "semicolon_delta": -2
+    },
+    "grep-grep-O0": {
+      "functions": 642,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 13821,
+      "lines_on": 13821,
+      "line_delta": 0,
+      "semicolons_off": 7917,
+      "semicolons_on": 7917,
+      "semicolon_delta": 0
+    },
+    "grep-grep-O2": {
+      "functions": 449,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 17468,
+      "lines_on": 17468,
+      "line_delta": 0,
+      "semicolons_off": 10715,
+      "semicolons_on": 10715,
+      "semicolon_delta": 0
+    },
+    "gzip-gzip-O0": {
+      "functions": 248,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 6373,
+      "lines_on": 6373,
+      "line_delta": 0,
+      "semicolons_off": 3828,
+      "semicolons_on": 3828,
+      "semicolon_delta": 0
+    },
+    "gzip-gzip-O2": {
+      "functions": 204,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 8989,
+      "lines_on": 8989,
+      "line_delta": 0,
+      "semicolons_off": 5664,
+      "semicolons_on": 5664,
+      "semicolon_delta": 0
+    },
+    "tar-tar-O0": {
+      "functions": 1570,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 44453,
+      "lines_on": 44453,
+      "line_delta": 0,
+      "semicolons_off": 26198,
+      "semicolons_on": 26198,
+      "semicolon_delta": 0
+    },
+    "tar-tar-O2": {
+      "functions": 1125,
+      "changed": 0,
+      "hunks": {},
+      "lines_off": 54511,
+      "lines_on": 0,
+      "line_delta": -54511,
+      "semicolons_off": 34185,
+      "semicolons_on": 0,
+      "semicolon_delta": -34185
+    }
+  }
+}
