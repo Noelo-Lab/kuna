@@ -1,0 +1,113 @@
+{
+ "opportunity": "coreutils fmt -O2 calls one static function three times from main and kuna renders one, two and three arguments; the three-argument site reads two `// rdx` locals nothing assigns. The callee's own recovered prototype takes two parameters. `argclobber` fixed that in #652 but shipped OFF, because the only clause that could speak for the callee was a bounded walk of its entry, and four ordinary programs hide a real read from that walk (a jump table, the walk's instruction budget, a PLT import, a 16-byte rax:rdx struct return forwarded onward). With protoorder (#669) merged the callee's own RECOVERED prototype is readable at the call site, and it separates every shipped drop from every counterexample.",
+ "test_name": "tests/cli/argclobber-drops-a-trailing-clobbered-argument.json + argclobber-off-keeps-the-clobbered-argument.json + argclobber-keeps-an-argument-the-callee-takes.json; tests/stages/kuna-argclobber{,-forward,-guards,-armreturn}.xml",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_x86_64",
+ "selector": "sub_401000",
+ "func_addr": "0x401000",
+ "angr_version": null,
+ "option": "argclobber",
+ "flag": "arg_clobber",
+ "element_id": 4173,
+ "change_kind": "correctness-fix",
+ "tier": "core",
+ "source_decompiler": "ghidra",
+ "inspiration": "coreutils fmt -O2 main 0x26a0 -> fmt 0x3700 at 0x2ac1; upstream ParamListStandardOut::fillinMap (fspec.cc:1721) and AncestorRealistic::enterNode (funcdata_varnode.cc:2043)",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "destructive": true,
+ "rule_change": {
+  "admits": "the callee's RECOVERED prototype (parked by `protoorder types`) exists for this entry and has no parameter overlapping the argument's register bytes",
+  "vetoes": "unchanged caller-side clauses, plus the bounded callee-entry walk (`proves_input`) demoted from admitting to vetoing",
+  "inert_where": [
+   "kuna decompile (one function per forked process)",
+   "decompile-all narrowed by --addr/--functions",
+   "--jobs N",
+   "decompile-project",
+   "decompile-graph",
+   "--option protoorder off"
+  ],
+  "value_naming": "`on` now means the new rule; no `proto` value was added, because the old rule is unsound where they differ and identical where they do not"
+ },
+ "counterexamples": {
+  "programs": [
+   "ce-remainder-or-pair.c (read past a jump table)",
+   "ce-probe-budget.c (read over the 192-instruction probe budget)",
+   "ce-probe-budget.s (same shape, hand written)",
+   "ce-import.c + ce-import-lib.c (PLT import, no body)"
+  ],
+  "old_rule": "all four lose the argument, and with it the expression that computed it",
+  "new_rule": "all four are byte-identical to the option-off output"
+ },
+ "sweep": {
+  "corpus": "every stripped ELF in decbench results/full_run_address_2026-09-11 (O0, O2, O2-noinline)",
+  "binaries": 770,
+  "runs_nonzero_exit": 0,
+  "binaries_changed": 21,
+  "functions_changed": 21,
+  "call_sites_losing_one_argument": 21,
+  "arguments_dropped": 21,
+  "call_sites_gaining_an_argument": 2,
+  "register_storage_locals_removed": 19,
+  "register_storage_locals_added": 1,
+  "declarations_removed_net": 38,
+  "every_drop_lands_on_the_callee_true_arity": true,
+  "callees": {
+   "__addvsi3(int,int)": "11 openssh O0 permute_args",
+   "__mulvsi3(int,int)": "4 openssh O2/O2-noinline scp+sftp",
+   "fmt(FILE *, char const *)": "2 coreutils fmt main (O2, O2-noinline)",
+   "xrealloc(void *, size_t)": "2 bash expand_prompt (O2, O2-noinline)",
+   "ext2fs_dblist_sort2(dblist, sortfunc)": "1 e2fsck_pass2 (O2)",
+   "efi_create_handle(efi_handle_t *)": "1 u-boot O2-noinline"
+  },
+  "hunk_classes": [
+   "the dropped trailing argument (21)",
+   "the dead idiv remainder that fed it, and its copies",
+   "the phantom register declaration and its copy",
+   "declaration block reordering once one declaration is gone",
+   "one folded single-use divisor (bash)",
+   "a while re-rendered as a for, once the dead loop-tail copy went (11 openssh permute_args)",
+   "the PRECEDING call's return narrowing where that call was the register's only writer: bash expand_prompt `v = xmalloc(n); a = SUB168(v,8);` -> `v = (char *)xmalloc(n);` (2), and the two SUB164 extractions that fed it"
+  ],
+  "hunks_outside_the_documented_effect": 0,
+  "note": "the raw diffs are large only because dropping one declaration renumbers every vN in that function; with names normalized the whole corpus delta is 21 functions x a handful of lines."
+ },
+ "benchmark": {
+  "corpus": "444 campaign slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), scripts.decbench.typesweep, DECBENCH_NO_CACHE=1",
+  "metric": "type_match",
+  "functions_scored": 10748,
+  "perfect_off": 1147,
+  "perfect_on": 1147,
+  "aggregate_off": 3413.35,
+  "aggregate_on": 3413.35,
+  "improved": 0,
+  "worse": 0,
+  "control_byte_identical_variables": 10746,
+  "control_scored_differently": 0,
+  "decomp_vars_total_off": 96671,
+  "decomp_vars_total_on": 96671,
+  "functions_with_a_different_variable_count": 0,
+  "note": "type_match cannot see this change: decbench scores `variables[]` (args + stack symbols + framelayout slots), register locals are never exported, and a call's argument is not a variable of the caller. The arity/phantom counters are the sweep block above."
+ },
+ "gates": {},
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_argclobber.rs",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs",
+  "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+  "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+  "decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs",
+  "decompiler/crates/kuna-decomp/phases.toml",
+  "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
+  "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_x86_64{,.s}",
+  "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_pair_x86_64{,.c}",
+  "tests/cli/argclobber-*.json",
+  "tests/stages/kuna-argclobber.xml",
+  "docs/baseline-stages.json",
+  "docs/spec/04-calls-and-prototypes.md",
+  "docs/options.md",
+  "docs/features/argclobber/"
+ ],
+ "catalog_counts": "unchanged: no option added or removed; `counters --check` reports no drift",
+ "preset_decision": "removed from modes.rs EXCLUDED_ON_PURPOSE -- that list is about default-OFF options absent from the `aggressive` preset, and the option now ships on everywhere.",
+ "notes": "The stage corpus cannot demonstrate the drop: the datatest harness decompiles one function from a byte image, so no callee is decompiled first and nothing is parked. tests/stages/kuna-argclobber.xml is therefore the negative control (the argument survives both passes) and the positive witness is a tests/cli probe on a committed fixture -- the same shape protoorder itself shipped with."
+}
