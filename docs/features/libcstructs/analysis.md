@@ -141,21 +141,25 @@ gnulib copy every obstack in this corpus is compiled from, whose `_OBSTACK_SIZE_
 
 `scripts.decbench.typesweep` through `final-c/finalsweep.py`, decbench pinned to
 `625e892`, `DECBENCH_NO_CACHE=1`, the two arms being two builds of this tree over the
-same slices. The baseline arm reproduces the campaign's published round-D numbers
-exactly (1,349 perfect, mean 0.3403), which is the control.
+same slices. The baseline arm reproduces the campaign's published round-D perfect count
+exactly (1,349), which is the control.
 
-Measured twice, at two bases: first against `2e28ece4a`, then re-run in full after the
-rebase onto `724381149` (`argclobber` default-on, #689), whose base arm is the
-origin/main sources of `kuna_libctypes.rs` and `protos/mod.rs` built in this tree. Every
-number below, the per-variable tables included, came out identical on both.
+Measured three times, at three bases: `2e28ece4a`, then in full again after the rebase
+onto `724381149` (`argclobber` default-on, #689), then in full again after the rebase
+onto `69d252df3` (`inferfuncentry-intbound`, #694). The base arm is always the
+origin/main sources of `kuna_libctypes.rs` and `protos/mod.rs` built in this tree. The
+perfect counts, the improved/worse split and the per-variable tables came out identical
+every time; the only number that moved is the pooled mean, 0.3403 -> 0.3405 off and
+0.3417 -> 0.3419 on, which is #694 lifting both arms alike. The table below is the
+newest run.
 
 | | off | on |
 |---|---:|---:|
 | functions scored | 10,748 | 10,748 |
 | perfect | 1,349 | **1,353** |
-| mean | 0.3403 | **0.3417** |
-| true positives | 20,295 | **20,436** |
-| false positives | 17,889 | **17,748** |
+| mean | 0.3405 | **0.3419** |
+| true positives | 20,314 | **20,455** |
+| false positives | 17,870 | **17,729** |
 | false negatives | 27,531 | 27,531 |
 | improved / worse functions | — | **91 / 1** |
 

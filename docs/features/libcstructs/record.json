@@ -59,9 +59,9 @@
     "off_is_unchanged": "every new name is new to BOTH shipped tables, asserted per row, so `libctypes off` is byte-identical to what it was"
   },
   "benchmark": {
-    "instrument": "scripts.decbench.typesweep through docs/decbench/typecampaign/final-c/finalsweep.py, decbench PINNED to 625e892, DECBENCH_NO_CACHE=1; the two arms are two builds of this tree over the same slices. Run twice: first at base 2e28ece4a, then in full again after the rebase onto 724381149 (argclobber #689) with the base arm built from origin/main's kuna_libctypes.rs + protos/mod.rs in this tree. Identical both times, per-variable tables included.",
+    "instrument": "scripts.decbench.typesweep through docs/decbench/typecampaign/final-c/finalsweep.py, decbench PINNED to 625e892, DECBENCH_NO_CACHE=1; the two arms are two builds of this tree over the same slices. Run three times: at base 2e28ece4a, after the rebase onto 724381149 (argclobber #689), and after the rebase onto 69d252df3 (inferfuncentry-intbound #694), each time with the base arm built from origin/main's kuna_libctypes.rs + protos/mod.rs in this tree. Perfect counts, improved/worse and the per-variable tables came out identical every time; only the pooled mean moved, 0.3403 -> 0.3405 off and 0.3417 -> 0.3419 on, which is #694 moving both arms alike.",
     "corpus": "results/full_run_address_2026-09-11, O0+O2+O2-noinline, 9 projects, 444 slices, 10,748 scored functions",
-    "control": "the baseline arm reproduces the campaign's published round-D numbers exactly: 1,349 perfect, mean 0.3403",
+    "control": "the baseline arm reproduces the campaign's published round-D numbers exactly: 1,349 perfect, mean 0.3405 on this base (0.3403 at 2e28ece4a)",
     "projects": {
       "bzip2": {
         "n": 267,
@@ -76,8 +76,8 @@
         "n": 6422,
         "perfect_off": 877,
         "perfect_on": 880,
-        "mean_off": 0.3339,
-        "mean_on": 0.3351,
+        "mean_off": 0.3341,
+        "mean_on": 0.3354,
         "improved": 53,
         "worse": 1
       },
@@ -140,15 +140,15 @@
       "n": 10748,
       "perfect_off": 1349,
       "perfect_on": 1353,
-      "mean_off": 0.3403,
-      "mean_on": 0.3417,
+      "mean_off": 0.3405,
+      "mean_on": 0.3419,
       "improved": 91,
       "worse": 1
     },
-    "tp_off": 20295,
-    "tp_on": 20436,
-    "fp_off": 17889,
-    "fp_on": 17748,
+    "tp_off": 20314,
+    "tp_on": 20455,
+    "fp_off": 17870,
+    "fp_on": 17729,
     "fn_off": 27531,
     "fn_on": 27531,
     "gt_class_ptr_struct": {
