@@ -1031,7 +1031,10 @@ the exported header is the record `decompile-all` means by it. Without that the
 two disagreed wherever the orders diverged -- on coreutils `du` -O2, 29 of 30
 synthesized names -- and nothing on either surface said so. A streamed export
 writes each body as it finishes and cannot buffer a plan, so it keeps the
-address-order schedule and says on stderr that the option does not reach it. If a redo fails where the first pass
+address-order schedule and says on stderr that the option does not reach it; the
+browser front-end's `project` export calls the eager batch directly
+(`decompiler/crates/kuna-wasm/src/lib.rs`) and keeps that schedule too, since the
+plan is a `kuna-cli` driver. If a redo fails where the first pass
 succeeded, for example because it ran past a watchdog budget that the first pass
 fit in, the first body is kept. That body still names a structure that is
 defined. The streamed export has already written its bodies before any name can
