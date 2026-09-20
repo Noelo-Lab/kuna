@@ -639,6 +639,19 @@ integer type where round C had made it a `void *`; `ptr_void` holds at 17.6% (61
 narrowing costs nothing on the class ptrfromuse won. Storage is unchanged: argument 48.9%,
 stack 53.2%, register-only 0.0%.
 
+The rivals' replay, each decompiler paired with kuna on exactly the functions that decompiler
+scored (`final/rivals/rivals.json`, unchanged since round B):
+
+| decompiler (functions it scored) | rival: perfect % / mean | kuna round C | **kuna round D** |
+|---|---|---|---|
+| **binja** (10,366) | 12.28% / .3422 | 12.29% / .3427 | **12.29% / .3429** |
+| **ida** (10,273) | 8.33% / .2682 | 12.60% / .3464 | **12.60% / .3466** |
+| **angr** (10,502) | 8.27% / .2652 | 12.75% / .3439 | **12.75% / .3441** |
+| **ghidra** (10,673) | 6.84% / .2367 | 12.55% / .3416 | **12.55% / .3418** |
+
+kuna stays 1st of five on perfect % and on mean. binja still leads at O2 (3.43% against kuna's
+2.95% on its own functions) and kuna leads every other cell.
+
 ### D.3 Goal 2 — variables, and `fmt::main`
 
 | opt | binary | declarations (C → **D**) | `[16]` blobs | never-written locals |
