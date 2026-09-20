@@ -23,6 +23,12 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+The A32 single-register `POP {pc}` alias (`ldr pc,[sp],#4`) lifts as a return,
+including its conditional forms. Its address mode still advances SP by four
+bytes and its PC write preserves interworking. Other PC loads retain their
+existing branch behavior; an explicitly prepared LR retains the indirect-call
+form. This is a SLEIGH correctness repair, without an inference option.
+
 Option defaults and flip guidance for every option named below live in the
 generated catalog ([docs/options.md](../options.md)); the rows are defined in
 `decompiler/crates/kuna-decomp/phases.toml` and the intentional

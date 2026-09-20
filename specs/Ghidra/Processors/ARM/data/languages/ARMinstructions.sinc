@@ -6604,5 +6604,14 @@ armEndianNess: "BE" is c0031=0xf1010200 { export 1:1; }
 #}
 
 
-} # End with : ARMcondCk=1
+# Single-register POP alias, unless LR was just prepared for an indirect call.
+:ldr^COND pc,addrmode2 is $(AMODE) & pc & ARMcond=1 & COND & LRset=0 & c2627=1 & I25=0 & B22=0 & L20=1 & Rn=13 & Rd=15 & P24=0 & U23=1 & W21=0 & c0011=4 & addrmode2
+{
+  build COND;
+  build addrmode2;
+  dest:4=*addrmode2;
+  BXWritePC(dest);
+  return [pc];
+}
 
+} # End with : ARMcondCk=1

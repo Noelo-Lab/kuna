@@ -478,7 +478,7 @@ c3
 <stringmatch name="FMTSTATIC #9: Apple arm64 gains no phantom parameter" min="3" max="3">unsigned long _main\(int4 a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #10: ARM hard-float keeps the int parameter a %f prints" min="3" max="3">void f_conv\(int4 a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #11: ARM hard-float prints the converted value" min="3" max="3">__printf_chk\(2,"x=%f\\n",SUB84\(\(float8\)\(int8\)a0,0\)</stringmatch>
-<stringmatch name="FMTSTATIC #12: ARM hard-float prints a + b, not d0" min="3" max="3">__printf_chk\(2,"sum=%f a=%f\\n",SUB84\(v2 \+ v3,0\)</stringmatch>
+<stringmatch name="FMTSTATIC #12: ARM hard-float prints a + b, not d0" min="3" max="3">__printf_chk\(2,"sum=%f a=%f\\n",SUB84\((v1 \+ v2|v2 \+ v3),0\)</stringmatch>
 <stringmatch name="FMTSTATIC #13: full still types an ARM integer-only site" min="1" max="1">void f_is\(int4 a0,char \*a1\)</stringmatch>
 <stringmatch name="FMTSTATIC #14: a format in writable data is not read" min="2" max="2">void show\(unsigned long a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #15: a %lc argument is not narrowed to char" min="1" max="1">__printf_chk\(1,"&lt;%lc&gt;\\n",a0\);</stringmatch>
