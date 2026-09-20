@@ -702,8 +702,9 @@ type-locks the parameter after the vote, and du -O2 installs the same 36 records
 instrument reads parameter types from `decompile-all` and the layouts those names refer to from
 `decompile-project`'s header, and the two surfaces numbered `struct_N` in different orders — 1 of 30
 names agreed by default, 29 of 30 with `protoorder off`. The fields-only 0.024 that still sits under
-round B is the 176 extra parameters the default types as struct pointers at all; recall and F1 are
-both above round B.
+round B is the 176 extra claimed fields the default contributes (1,007 against 831), from parameters
+it types as a struct pointer where `protoorder off` types nothing at all; recall and F1 are both
+above round B.
 
 ### D.5 The two counterfactuals
 
@@ -743,7 +744,7 @@ SPEED_TABLE
 
 | PR | item | default | measured effect |
 |---|---|---|---|
-| #689 | `argclobber` drops a trailing clobber argument only when the callee's recovered prototype says the register is free | `on` (was off) | 19 functions over 770 stripped ELFs each lose one trailing argument, every one landing on the callee's true arity against the unstripped twin; `type_match` 1,349 = 1,349; varcensus −3 declarations, −2 phantom `rdx`; worst speed +0.38% |
+| #689 | `argclobber` drops a trailing clobber argument only when the callee's recovered prototype says the register is free | `on` (was off) | 19 functions over 770 stripped ELFs each lose one trailing argument, every one landing on the callee's true arity against the unstripped twin; `type_match` unmoved (1,351 = 1,351 on its base — the metric cannot see a call's arity); varcensus −3 declarations, −2 phantom `rdx`; worst speed +0.38% |
 | #693 | `decompile-project` takes `decompile-all`'s callee-first order, so one `struct_N` means one record | part of `protoorder types` | `decompile-all` byte-identical; the export's own output changes for 824 of 2,918 functions and then agrees with `decompile-all` 2,918/2,918 (before 2,094); layout precision .5520 → .8709 |
 | #694 | `inferfuncentry` lifts its guard only where the constant is used as an address | strict fix | +13 functions improved / 0 worse on the 444 slices; `int_u8` +15 TP; 18 of 6,882 functions change over 16 builds |
 
