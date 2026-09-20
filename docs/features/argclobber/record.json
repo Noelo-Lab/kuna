@@ -17,7 +17,7 @@
  "values": "on|off",
  "destructive": true,
  "rule_change": {
-  "admits": "the callee's RECOVERED prototype (parked by `protoorder types`) exists for this entry and has no parameter overlapping the argument's register bytes",
+  "admits": "the callee's RECOVERED prototype (stated by `protoorder types`) exists for this entry, has no parameter overlapping the argument's register bytes, AND accounts -- storage for storage -- for every argument the drop leaves behind",
   "vetoes": "unchanged caller-side clauses, plus the bounded callee-entry walk (`proves_input`) demoted from admitting to vetoing",
   "inert_where": [
    "kuna decompile (one function per forked process)",
@@ -27,17 +27,20 @@
    "decompile-graph",
    "--option protoorder off"
   ],
-  "value_naming": "`on` now means the new rule; no `proto` value was added, because the old rule is unsound where they differ and identical where they do not"
+  "value_naming": "`on` now means the new rule; no `proto` value was added, because the old rule is unsound where they differ and identical where they do not",
+  "why_the_accounting_clause": "a recovery SHORT of what the call passes is not a statement that the tail is unwanted but a statement that the recovery did not reach the tail. A forwarding thunk (`mov (%rdi),%rax; jmp *%rax`) recovers one parameter while the function it tail calls consumes three, and protoorder states that short list in BOTH its modes; the free-bytes test alone deleted the forwarded argument. ce-forward-thunk.{c,s}",
+  "protoorder_does_not_decline_a_variadic": "Decline::UnderRecovered and Decline::RegisterFileFull live in park_recovered's LOCK branch; the default `types` mode returns through state_recovered_types before them. Decline::Variadic is only ever set from a declared `...`, which Decline::Declared rejects one branch earlier, so it cannot fire on a stripped image. Measured: `long vlog(int,long,...)` with a va_arg read, gcc -O2 stripped, prints `[protoorder] state sub_11d0 params=3` under KUNA_PROTOORDER_TRACE=1. What declines the drop at a stripped variadic is the recovered list itself -- a register-save prologue reads every argument register, so the list carries the one the drop would take."
  },
  "counterexamples": {
   "programs": [
    "ce-remainder-or-pair.c (read past a jump table)",
    "ce-probe-budget.c (read over the 192-instruction probe budget)",
    "ce-probe-budget.s (same shape, hand written)",
-   "ce-import.c + ce-import-lib.c (PLT import, no body)"
+   "ce-import.c + ce-import-lib.c (PLT import, no body)",
+   "ce-forward-thunk.c + ce-forward-thunk.s (indirect tail call; recovers 1 parameter, forwards 3)"
   ],
-  "old_rule": "all four lose the argument, and with it the expression that computed it",
-  "new_rule": "all four are byte-identical to the option-off output"
+  "old_rule": "the first four lose the argument under the pre-#689 body-only rule; ce-forward-thunk loses it under the free-bytes-only form of the recovered-prototype rule, which is why the accounting clause was added",
+  "new_rule": "all five are byte-identical to the option-off output"
  },
  "sweep": {
   "corpus": "every stripped ELF in decbench results/full_run_address_2026-09-11 (O0, O2, O2-noinline)",
@@ -70,7 +73,8 @@
    "the PRECEDING call's return narrowing where that call was the register's only writer: bash expand_prompt `v = xmalloc(n); a = SUB168(v,8);` -> `v = (char *)xmalloc(n);` (2), and the two SUB164 extractions that fed it"
   ],
   "hunks_outside_the_documented_effect": 0,
-  "note": "the raw diffs are large only because dropping one declaration renumbers every vN in that function; with names normalized the whole corpus delta is 21 functions x a handful of lines."
+  "note": "the raw diffs are large only because dropping one declaration renumbers every vN in that function; with names normalized the whole corpus delta is 21 functions x a handful of lines.",
+  "re_measured_after_accounting_clause": "770 binaries re-swept: identical DIFF set (21), and all 21 on-arm outputs byte-identical to the pre-clause run, so every counter and every hunk class in sweep-2026-09-20.txt stands unchanged"
  },
  "benchmark": {
   "corpus": "444 campaign slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), scripts.decbench.typesweep, DECBENCH_NO_CACHE=1",
@@ -114,11 +118,14 @@
   "docs/baseline-stages.json",
   "docs/spec/04-calls-and-prototypes.md",
   "docs/options.md",
-  "docs/features/argclobber/"
+  "docs/features/argclobber/",
+  "tests/stages/kuna-argclobber-forward.xml",
+  "tests/stages/kuna-argclobber-guards.xml",
+  "tests/stages/kuna-argclobber-armreturn.xml"
  ],
  "catalog_counts": "unchanged: no option added or removed; `counters --check` reports no drift",
  "preset_decision": "removed from modes.rs EXCLUDED_ON_PURPOSE -- that list is about default-OFF options absent from the `aggressive` preset, and the option now ships on everywhere.",
- "notes": "The stage corpus cannot demonstrate the drop: the datatest harness decompiles one function from a byte image, so no callee is decompiled first and nothing is parked. tests/stages/kuna-argclobber.xml is therefore the negative control (the argument survives both passes) and the positive witness is a tests/cli probe on a committed fixture -- the same shape protoorder itself shipped with.",
+ "notes": "The stage corpus cannot demonstrate the drop: the datatest harness decompiles one function from a byte image, so no callee is decompiled first and nothing is parked. tests/stages/kuna-argclobber.xml is therefore the negative control (the argument survives both passes) and the positive witness is a tests/cli probe on a committed fixture -- the same shape protoorder itself shipped with. The three sibling stage tests (-forward, -guards, -armreturn) pass on that same blanket decline rather than on the caller-side clause each describes; each now says so in its own header and points at the tests/cli probes for live coverage.",
  "speed_off_ms": 227.21,
  "speed_on_ms": 219.95,
  "speed_delta_pct": -3.2,

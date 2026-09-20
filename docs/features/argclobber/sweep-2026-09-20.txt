@@ -125,3 +125,22 @@ documented effect:
 
 No hunk falls outside them.
 
+
+
+Re-measured after the accounting clause
+----------------------------------------------------------------------
+The callee clause was later strengthened: the recovered parameters must also
+ACCOUNT, storage for storage, for every argument the drop leaves behind, so that
+a forwarding thunk -- whose own recovery is short of what it forwards -- cannot
+admit a drop (ce-forward-thunk.{c,s}).  The whole sweep was re-run against the
+strengthened build.
+
+  binaries swept ............ 770        (749 SAME + 21 DIFF)
+  runs exiting non-zero ..... 0
+  binaries whose output moved 21         identical SET to the run above
+  on-arm outputs ............ byte-identical to the run above for all 21
+
+Everything in this file therefore stands unchanged: same 21 functions, same 21
+dropped arguments, same 2 gained, same 19 register locals removed / 1 added,
+same 38 declarations net, same seven hunk classes.  The clause costs nothing on
+a real program and declines exactly the shape it was added for.
