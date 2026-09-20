@@ -18,7 +18,16 @@
 * `decompile_project.rs` — the serial arm takes the order; the `--jobs` arm
   passes `callee_first` as the pool's `serial_callee_first` (so the replay line
   names the serial run it actually replays) and prints the same note
-  `decompile-all` prints.
+  `decompile-all` prints. Its `--help` block, the `docs/cli.md` synopsis and
+  `jobs.rs`'s determinism note say what that identity is against now: `--jobs 1
+  --option protoorder off`, not plain `--jobs 1`. Measured on
+  `i386_pie_nl`, `--jobs 4 --jobs-chunk 1` is byte-identical to the option-off
+  serial export on all four artifacts and differs from the default serial
+  export on `.c`/`.h`/`.asm`.
+* `docs/cli.md --stream` and `docs/web-integration.md` — the two surfaces that
+  keep the address-order schedule now say their prototypes are the option-off
+  ones (measured: a streamed `.h`'s prototype set equals the option-off set and
+  differs from the default by 18 lines on `i386_pie_nl`).
 
 No new option: the behaviour is `protoorder`'s, and `--option protoorder off`
 turns it off on this surface exactly as it does on `decompile-all`.
