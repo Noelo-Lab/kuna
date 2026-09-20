@@ -52,11 +52,13 @@ fn summary_with_no_terminator_proves_nothing() {
     assert!(one_cut.proves_dead(&Address::new(reg, 8), 8));
 }
 
-/// A callee that leaves for a target the walk could not NAME can still be
-/// carrying the caller's value out with it, unless it wrote the register first.
-/// `argclobber` reads exactly this before deleting a trailing argument.
+/// A callee that leaves for a target nothing accounts for can still be carrying
+/// the caller's value out with it, unless it wrote the register first.
+/// `argclobber` reads exactly this before deleting a trailing argument, and the
+/// direct-call arm is what the reviewer's two-frame counterexamples land on: a
+/// NAMED target is not an accounted-for one.
 #[test]
-fn an_unnameable_transfer_keeps_the_register_unproven() {
+fn an_unaccounted_transfer_keeps_the_register_unproven() {
     let reg = Rc::new(kuna_base::space::AddrSpace::new(
         spacetype::IPTR_PROCESSOR,
         "register",
@@ -69,35 +71,59 @@ fn an_unnameable_transfer_keeps_the_register_unproven() {
         1,
     ));
     let rdx = Address::new(Rc::clone(&reg), 8);
-    let mut cut = ByteSet::new();
-    for b in 8u64..16 {
-        cut.insert((3, b));
-    }
+    let target = Address::new(Rc::clone(&reg), 0x1000);
+    let rdx_bytes: Vec<(int4, u64)> = (8u64..16).map(|b| (3, b)).collect();
+    let cut: Vec<(int4, u64)> = rdx_bytes.clone();
+    let base = || CalleeEntryDead::from_parts(3, Vec::new(), vec![cut.clone()], true);
+    let free = |d: &CalleeEntryDead, a: TargetAnswer| {
+        let mut once = Some(a);
+        fold_node(d, 3, move |_| once.take().unwrap_or(TargetAnswer::Unaccounted))
+            .transfer_free(&rdx, 8)
+    };
 
-    // No unnameable transfer at all: nothing can leave, so the register is free.
-    let named_only =
-        CalleeEntryDead::from_parts(3, Vec::new(), vec![cut.clone().into_iter().collect()], true);
-    assert!(named_only.opaque_transfer_free(&rdx, 8));
+    // No transfer at all: nothing can leave, so the register is free.
+    assert!(free(&base(), TargetAnswer::Unaccounted));
 
     // A tail call through a pointer, reached without writing rdx.
-    let forwards = CalleeEntryDead::from_parts(
-        3,
-        Vec::new(),
-        vec![cut.clone().into_iter().collect()],
-        true,
-    )
-    .with_opaque_cut(Vec::new());
-    assert!(!forwards.opaque_transfer_free(&rdx, 8));
+    assert!(!free(&base().with_opaque_cut(Vec::new()), TargetAnswer::Unaccounted));
 
     // The same transfer, with rdx written on the way to it.
-    let overwritten =
-        CalleeEntryDead::from_parts(3, Vec::new(), vec![cut.clone().into_iter().collect()], true)
-            .with_opaque_cut((8u64..16).map(|b| (3, b)).collect());
-    assert!(overwritten.opaque_transfer_free(&rdx, 8));
+    assert!(free(&base().with_opaque_cut(rdx_bytes.clone()), TargetAnswer::Unaccounted));
+
+    // A DIRECT call whose target nothing accounts for -- an import with no
+    // signature -- is the same hole, and the one the recovered prototype cannot
+    // see: the callee renders with two parameters either way.
+    let forwards = base().with_named_cut(target.clone(), Vec::new());
+    assert!(!free(&forwards, TargetAnswer::Unaccounted));
+
+    // Declared, so the recovery was typed against it.
+    assert!(free(&forwards, TargetAnswer::Accounted));
+
+    // Recovered, so the question is asked of the target in turn -- and its own
+    // answer carries: a target that forwards to a hole is one too.
+    let denied = fold_node(
+        &CalleeEntryDead::from_parts(3, Vec::new(), vec![cut.clone()], true)
+            .with_opaque_cut(Vec::new()),
+        3,
+        |_| TargetAnswer::Unaccounted,
+    );
+    assert!(!free(&forwards, TargetAnswer::Through(denied)));
+    let clean = fold_node(&base(), 3, |_| TargetAnswer::Unaccounted);
+    assert!(free(&forwards, TargetAnswer::Through(clean)));
+
+    // ... unless the register was written before the forwarding call.
+    let written_first = base().with_named_cut(target, rdx_bytes);
+    let denied2 = fold_node(
+        &CalleeEntryDead::from_parts(3, Vec::new(), vec![cut.clone()], true)
+            .with_opaque_cut(Vec::new()),
+        3,
+        |_| TargetAnswer::Unaccounted,
+    );
+    assert!(free(&written_first, TargetAnswer::Through(denied2)));
 
     // An incomplete walk says nothing, in this direction too.
     let incomplete = CalleeEntryDead::from_parts(3, Vec::new(), Vec::new(), false);
-    assert!(!incomplete.opaque_transfer_free(&rdx, 8));
+    assert!(!free(&incomplete, TargetAnswer::Unaccounted));
 }
 
 /// `xor ecx,ecx`, `and edx,0` and `or rdx,-1` all write a CONSTANT into the

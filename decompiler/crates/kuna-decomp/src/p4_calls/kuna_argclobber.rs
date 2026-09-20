@@ -70,11 +70,16 @@
 //!   clause that carries the rule, and it is the reason the option can be a
 //!   default at all;
 //! * the callee's own body neither **reads** those register bytes before writing
-//!   them nor can **forward** them onward: at every point where its control
-//!   leaves for a target the walk cannot name — an indirect call or tail call, a
-//!   `CALLOTHER`, an indexed register-file access, an undecodable instruction —
-//!   the callee has already written the register itself
-//!   ([`crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead::opaque_transfer_free`]);
+//!   them nor can **forward** them to a read its recovery never saw
+//!   ([`crate::p4_calls::kuna_calleedeadarg::resolve_forward_transfer`]). A
+//!   recovered parameter list accounts for the reads in the body and for the
+//!   arguments of every call whose target had a prototype — so the register has
+//!   to be written already wherever control leaves for anything else: an
+//!   indirect call or tail call, a `CALLOTHER`, an indexed register-file access,
+//!   an undecodable instruction, and a direct call to a target with neither a
+//!   source declaration nor a prototype this run recovered. At a direct call to
+//!   a target `protoorder` parked, the same question is asked of that target in
+//!   turn;
 //! * it is **trailing** -- no used trial follows it -- so the argument list keeps
 //!   its positional shape and no later argument moves;
 //! * at least one used argument remains, since an empty list is
@@ -524,14 +529,21 @@ pub fn drop_clobber_tail_arg(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
     // that positively sees these bytes READ before they are written is looking at
     // a parameter the recovery missed, however the value got into the register.
     //
-    // And the same walk has to show that the value cannot leave the callee for
-    // code the recovery never saw. A recovered parameter list is a statement
-    // about what the callee NAMES, and a thunk that tail-calls through a pointer
-    // names neither the register it forwards nor the function it forwards to.
-    let body_admits = data
+    // And the walk, continued through the callee's own direct calls, has to show
+    // that the value cannot reach a read the recovery never saw. A recovered
+    // parameter list is a statement about the reads that recovery SAW: the ones
+    // in the body, and the arguments of every call whose target had a prototype.
+    // A thunk that tail-calls through a pointer, and one that forwards to an
+    // unsignatured import, are both short for that reason.
+    let reads_it = data
         .kuna_callee_entry_dead(&entry)
-        .map(|d| !d.proves_input(&addr, trial_size) && d.opaque_transfer_free(&addr, trial_size))
+        .map(|d| d.proves_input(&addr, trial_size))
+        .unwrap_or(true);
+    let transfer_free = data
+        .kuna_callee_forward(&entry)
+        .map(|f| f.transfer_free(&addr, trial_size))
         .unwrap_or(false);
+    let body_admits = !reads_it && transfer_free;
     if !body_admits {
         return;
     }

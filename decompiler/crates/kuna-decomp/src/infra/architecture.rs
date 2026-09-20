@@ -1215,6 +1215,15 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
     >,
+    /// (kuna `argclobber`) Per-image cache of the forwarding resolution
+    /// ([`crate::kuna_calleedeadarg::resolve_forward_transfer`]) — what a value
+    /// the caller leaves in a register can reach once the callee at `(space
+    /// index, entry offset)` has it, following its direct calls.  Stays empty
+    /// unless `option argclobber` is live with a prototype parked.
+    pub kuna_callee_forward_cache: std::collections::HashMap<
+        (int4, uintb),
+        std::rc::Rc<crate::kuna_calleedeadarg::ForwardTransfer>,
+    >,
     /// (kuna `protoorder types`) The recovered parameter types each callee stated
     /// for the callers decompiled after it, keyed by `(space index, entry
     /// offset)`.  Copied per function by `seed_protoorder_types`.
@@ -2412,6 +2421,7 @@ impl Architecture {
             kuna_fn_deadline: None, // (kuna) set per drive from kuna_fn_budget
             kuna_callee_write_cache: std::collections::HashMap::new(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
+            kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive

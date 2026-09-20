@@ -193,11 +193,16 @@ pub struct CalleeEntryDead {
     cuts: Vec<ByteSet>,
     /// The subset of [`Self::cuts`] taken where control left for code the walk
     /// could not NAME: an indirect call or tail call, a `CALLOTHER`, an indexed
-    /// register-file access, an undecodable instruction. A direct call is not
-    /// one of these — its target has a name, so the callee's own recovery
-    /// accounted for whatever it passes on. Read by
-    /// [`Self::opaque_transfer_free`].
+    /// register-file access, an undecodable instruction. Nothing a caller left
+    /// in a register survives one of these provably. Read by
+    /// [`resolve_forward_transfer`].
     opaque_cuts: Vec<ByteSet>,
+    /// The subset of [`Self::cuts`] taken at a DIRECT call, with the target's
+    /// entry address. Naming the target is not the same as accounting for what
+    /// is forwarded to it — the callee's own recovery only accounted for a
+    /// target whose prototype it knew — so each of these is resolved against
+    /// that target by [`resolve_forward_transfer`], recursively.
+    named_cuts: Vec<(Address, ByteSet)>,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
 }
@@ -289,35 +294,28 @@ impl CalleeEntryDead {
             .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
     }
 
-    /// Can a value the caller left in `[addr, addr+size)` reach code this walk
-    /// could not name?
-    ///
-    /// `true` says it cannot: the walk completed, and at every point where
-    /// control left for an unnamed target — an indirect call or tail call, a
-    /// `CALLOTHER`, an indexed register-file access, an undecodable instruction
-    /// — the callee had already written those bytes itself, so what it forwards
-    /// there is its own value and not the caller's.
-    ///
-    /// This is what a recovered parameter list cannot say for a forwarding
-    /// thunk. `test %rsi,%rsi; je; jmp *(%rdi)` names `rdi` and `rsi` and
-    /// nothing else, so it RECOVERS two parameters while the function it jumps
-    /// to takes three; the recovery is not wrong about what it saw, it just did
-    /// not see the target. A summary that is incomplete, or that answers for
-    /// another space, says nothing and answers `false`.
-    pub fn opaque_transfer_free(&self, addr: &Address, size: int4) -> bool {
-        if !self.complete || size <= 0 {
-            return false;
+    /// The written sets recorded where control left for a target the walk could
+    /// not name, read by [`resolve_forward_transfer`].
+    fn opaque_cuts(&self) -> &[ByteSet] {
+        &self.opaque_cuts
+    }
+
+    /// The direct-call terminators: target entry, and the bytes written on the
+    /// way to it. Read by [`resolve_forward_transfer`].
+    fn named_cuts(&self) -> &[(Address, ByteSet)] {
+        &self.named_cuts
+    }
+
+    /// Every register byte some path reads before writing, ignoring the
+    /// register-zeroing idiom ([`Self::reads_live`]).
+    fn read_bytes(&self) -> ByteSet {
+        let mut out = ByteSet::new();
+        for &(idx, off, sz) in &self.reads_live {
+            for b in off..off + sz.max(0) as u64 {
+                out.insert((idx, b));
+            }
         }
-        let Some(sp) = addr.get_space() else { return false };
-        if self.reg_idx < 0 || sp.get_index() != self.reg_idx {
-            return false;
-        }
-        let (idx, off) = (self.reg_idx, addr.get_offset());
-        let end = off.wrapping_add(size as u64);
-        if end < off {
-            return false;
-        }
-        self.opaque_cuts.iter().all(|c| (off..end).all(|b| c.contains(&(idx, b))))
+        out
     }
 
     /// Did the walk complete? (Diagnostics and tests.)
@@ -330,6 +328,13 @@ impl CalleeEntryDead {
     #[cfg(test)]
     pub(crate) fn with_opaque_cut(mut self, written: Vec<(int4, u64)>) -> Self {
         self.opaque_cuts.push(written.into_iter().collect());
+        self
+    }
+
+    /// Record one direct-call terminator, for the same reason.
+    #[cfg(test)]
+    pub(crate) fn with_named_cut(mut self, target: Address, written: Vec<(int4, u64)>) -> Self {
+        self.named_cuts.push((target, written.into_iter().collect()));
         self
     }
 
@@ -348,8 +353,196 @@ impl CalleeEntryDead {
             reads,
             cuts: cuts.into_iter().map(|c| c.into_iter().collect()).collect(),
             opaque_cuts: Vec::new(),
+            named_cuts: Vec::new(),
             complete,
         }
+    }
+}
+
+/// What a caller's value in a register can reach once the callee has it.
+///
+/// [`CalleeEntryDead`] answers for ONE body; this answers for the bodies that
+/// body goes on to call, which is what a recovered parameter list is short
+/// about. It is a conjunction of byte sets: a register range is *transfer free*
+/// when it is written before every terminator that leads somewhere unaccounted
+/// for, and is not read anywhere the resolution walked.
+#[derive(Clone, Debug)]
+pub struct ForwardTransfer {
+    /// The register-space manager index this answers for.
+    reg_idx: int4,
+    /// Written sets, one per unaccounted-for terminator in the closure: a range
+    /// is transfer free only if every one of them already contains it.
+    cut_sets: Vec<ByteSet>,
+    /// Bytes read before being written somewhere in the closure, on a path that
+    /// carried the caller's value there.
+    forbidden: ByteSet,
+}
+
+impl ForwardTransfer {
+    /// The answer that proves nothing: a single empty cut set leaves no range
+    /// transfer free.
+    fn denied(reg_idx: int4) -> Self {
+        ForwardTransfer { reg_idx, cut_sets: vec![ByteSet::new()], forbidden: ByteSet::new() }
+    }
+
+    /// Can a value the caller left in `[addr, addr+size)` reach code that reads
+    /// it without the callee's own recovery having accounted for the read?
+    ///
+    /// `true` says it cannot.  A summary that is incomplete, one that answers
+    /// for another space, and one the resolution declined all answer `false`.
+    pub fn transfer_free(&self, addr: &Address, size: int4) -> bool {
+        if size <= 0 {
+            return false;
+        }
+        let Some(sp) = addr.get_space() else { return false };
+        if self.reg_idx < 0 || sp.get_index() != self.reg_idx {
+            return false;
+        }
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size as u64);
+        if end < off {
+            return false;
+        }
+        if (off..end).any(|b| self.forbidden.contains(&(idx, b))) {
+            return false;
+        }
+        self.cut_sets.iter().all(|c| (off..end).all(|b| c.contains(&(idx, b))))
+    }
+}
+
+/// How many callee bodies one resolution walks before giving up.
+const MAX_FORWARD_NODES: usize = 32;
+
+/// Resolve what `entry`'s body can forward, following its direct calls.
+///
+/// A recovered parameter list is a statement about the reads the callee's own
+/// decompilation SAW. It saw the reads in the body, and it saw the arguments of
+/// every call whose target had a prototype — so at a direct call this walk asks
+/// the same question of the target, and only three answers let the register
+/// through:
+///
+/// * the target carries a **declared, non-variadic** prototype (a library
+///   signature, DWARF, a console declaration). That prototype is what the
+///   callee's recovery was typed against, and it is authoritative about what the
+///   target reads;
+/// * the target has a **recovered** prototype parked by `protoorder` — it was
+///   decompiled in this run, so the question can be asked of IT, recursively;
+/// * the register is already written when control reaches the call, so what is
+///   forwarded is the callee's own value.
+///
+/// Anything else — a PLT import with no signature, a function this run never
+/// decompiled, a recursive component, an indirect transfer, an incomplete probe
+/// — is a hole the recovery could be short about, and the range is not transfer
+/// free through it.  A `protoorder lock`-parked prototype is declared with
+/// `first_var_arg_slot` set, so it is read here as variadic and never
+/// authoritative: only a real source declaration is.
+pub fn resolve_forward_transfer(
+    arch: &mut crate::architecture::Architecture,
+    entry: &Address,
+    reg_idx: int4,
+) -> ForwardTransfer {
+    let mut visiting: Vec<(int4, u64)> = Vec::new();
+    let mut budget = MAX_FORWARD_NODES;
+    resolve_node(arch, entry, reg_idx, &mut visiting, &mut budget)
+}
+
+/// What one direct-call target answers about the register it is handed.
+pub enum TargetAnswer {
+    /// Its prototype accounts for what it reads: a source declaration.
+    Accounted,
+    /// Nothing accounts for it: an import with no signature, a body this run
+    /// never decompiled, a recursive component.
+    Unaccounted,
+    /// A prototype this run recovered, with the same question answered of it.
+    Through(ForwardTransfer),
+}
+
+/// Fold one body's terminators, with each direct-call target already answered,
+/// into what the body can forward.
+///
+/// Split out from [`resolve_node`] so the fold can be read — and tested —
+/// without an `Architecture` behind it.
+fn fold_node(
+    dead: &CalleeEntryDead,
+    reg_idx: int4,
+    mut answer: impl FnMut(&Address) -> TargetAnswer,
+) -> ForwardTransfer {
+    if !dead.is_complete() || dead.reg_idx != reg_idx {
+        return ForwardTransfer::denied(reg_idx);
+    }
+    let mut out = ForwardTransfer {
+        reg_idx,
+        cut_sets: dead.opaque_cuts().to_vec(),
+        forbidden: dead.read_bytes(),
+    };
+    for (target, written) in dead.named_cuts() {
+        match answer(target) {
+            TargetAnswer::Accounted => {}
+            TargetAnswer::Unaccounted => out.cut_sets.push(written.clone()),
+            TargetAnswer::Through(sub) => {
+                for c in &sub.cut_sets {
+                    out.cut_sets.push(c.union(written).cloned().collect());
+                }
+                out.forbidden.extend(sub.forbidden.difference(written).cloned());
+            }
+        }
+    }
+    out
+}
+
+/// One node of [`resolve_forward_transfer`]'s walk.
+fn resolve_node(
+    arch: &mut crate::architecture::Architecture,
+    entry: &Address,
+    reg_idx: int4,
+    visiting: &mut Vec<(int4, u64)>,
+    budget: &mut usize,
+) -> ForwardTransfer {
+    let Some(sp) = entry.get_space() else { return ForwardTransfer::denied(reg_idx) };
+    let key = (sp.get_index(), entry.get_offset());
+    // A cycle in the closure is a recursive component: the recovery of every
+    // member of it is short about the others, so nothing is proven.
+    if visiting.contains(&key) || *budget == 0 {
+        return ForwardTransfer::denied(reg_idx);
+    }
+    *budget -= 1;
+    if !arch.kuna_callee_dead_cache.contains_key(&key) {
+        let probed = probe_callee_entry_dead(arch.translate(), entry, reg_idx);
+        arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
+    }
+    let Some(dead) = arch.kuna_callee_dead_cache.get(&key).cloned() else {
+        return ForwardTransfer::denied(reg_idx);
+    };
+    visiting.push(key);
+    let out = fold_node(&dead, reg_idx, |target| {
+        let Some(tsp) = target.get_space() else { return TargetAnswer::Unaccounted };
+        let tkey = (tsp.get_index(), target.get_offset());
+        if arch.kuna_protoorder_types.contains_key(&tkey) {
+            return TargetAnswer::Through(resolve_node(arch, target, reg_idx, visiting, budget));
+        }
+        if declared_accounts_for_its_reads(arch, target) {
+            return TargetAnswer::Accounted;
+        }
+        TargetAnswer::Unaccounted
+    });
+    visiting.pop();
+    out
+}
+
+/// Does a source declaration state what the function at `entry` reads?
+///
+/// True only for a non-variadic prototype parked on its function symbol. A
+/// variadic one says nothing about the registers past its named parameters, and
+/// `protoorder lock` parks its recovered lists with the variadic slot set at the
+/// end of the recovered list for exactly that reason — so a recovered list
+/// parked there is never mistaken for a declaration here.
+fn declared_accounts_for_its_reads(
+    arch: &crate::architecture::Architecture,
+    entry: &Address,
+) -> bool {
+    match arch.symboltab.function_proto_pieces_across_scopes(entry) {
+        Some(pieces) => pieces.first_var_arg_slot < 0,
+        None => false,
     }
 }
 
@@ -414,6 +607,7 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
         reads_live: Vec::new(),
         cuts: Vec::new(),
         opaque_cuts: Vec::new(),
+        named_cuts: Vec::new(),
         complete: true,
     };
     let Some(entry_space) = entry.get_space() else {
@@ -467,6 +661,7 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.reads_live.clear();
         res.cuts.clear();
         res.opaque_cuts.clear();
+        res.named_cuts.clear();
     }
     res
 }
@@ -546,10 +741,17 @@ fn step_instruction(
         }
         match op.opc {
             // Control transfer into code this walk is not reading. A direct
-            // CALL names its target, so whatever it forwards is accounted for
-            // by the callee's own recovery; the indirect forms do not, and are
-            // recorded as opaque as well.
+            // CALL is recorded with its target, so the forwarding question can
+            // be asked of that target in turn; the indirect forms name nothing
+            // to ask, and are recorded as opaque.
             OpCode::CPUI_CALL => {
+                match op.ins.first().and_then(|v| v.space.as_ref()) {
+                    Some(sp) if sp.get_type() == spacetype::IPTR_PROCESSOR => {
+                        let t = Address::new(Rc::clone(sp), op.ins[0].offset);
+                        res.named_cuts.push((t, cur.clone()));
+                    }
+                    _ => res.opaque_cuts.push(cur.clone()),
+                }
                 res.cuts.push(cur);
                 return Some(Vec::new());
             }
@@ -689,6 +891,18 @@ pub fn seed_callee_entry_dead(
         }
         if let Some(d) = arch.kuna_callee_dead_cache.get(&key) {
             data.kuna_set_callee_entry_dead(&e, Rc::clone(d));
+        }
+        // `argclobber` also needs what this callee can FORWARD, which is a walk
+        // over the bodies it calls in turn and so cannot be answered at the
+        // seam either.
+        if clobber_veto {
+            if !arch.kuna_callee_forward_cache.contains_key(&key) {
+                let fwd = resolve_forward_transfer(arch, &e, reg_idx);
+                arch.kuna_callee_forward_cache.insert(key, Rc::new(fwd));
+            }
+            if let Some(f) = arch.kuna_callee_forward_cache.get(&key) {
+                data.kuna_set_callee_forward(&e, Rc::clone(f));
+            }
         }
     }
 }
