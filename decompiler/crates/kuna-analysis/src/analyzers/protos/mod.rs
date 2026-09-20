@@ -501,7 +501,7 @@ fn retain_unambiguous_names(
     candidates.retain(|name| !(imported.contains(name) && defined.contains(name)));
 }
 
-fn unambiguous_present_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
+pub(crate) fn unambiguous_present_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
     let mut present = present_function_names(file, bytes);
     let imported = imported_function_names(file, bytes);
     let defined = defined_function_names(file, bytes);

@@ -106,7 +106,7 @@ use kuna_decomp::dtype::{flags, type_metatype, Datatype, TypeFactory};
 
 use super::{
     resolved_import_addrs, seed_named_prototypes, seed_resolved_prototypes,
-    unambiguous_imported_function_names, Sig, Ty,
+    unambiguous_imported_function_names, unambiguous_present_function_names, Sig, Ty,
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
@@ -158,18 +158,25 @@ pub(super) const NAMED_AGGREGATES: &[NamedAggregate] = &[
     NamedAggregate { name: "FILE", dwarf_alias: Some("_IO_FILE"), size: 216, align: 8 },
     NamedAggregate { name: "dirent", dwarf_alias: None, size: 280, align: 8 },
     NamedAggregate { name: "group", dwarf_alias: None, size: 32, align: 8 },
+    NamedAggregate { name: "lconv", dwarf_alias: None, size: 96, align: 8 },
     NamedAggregate { name: "mbstate_t", dwarf_alias: None, size: 8, align: 4 },
+    NamedAggregate { name: "obstack", dwarf_alias: None, size: 88, align: 8 },
     NamedAggregate { name: "option", dwarf_alias: None, size: 32, align: 8 },
     NamedAggregate { name: "passwd", dwarf_alias: None, size: 48, align: 8 },
     NamedAggregate { name: "pthread_mutex_t", dwarf_alias: None, size: 40, align: 8 },
+    NamedAggregate { name: "re_pattern_buffer", dwarf_alias: None, size: 64, align: 8 },
     NamedAggregate { name: "sigaction", dwarf_alias: None, size: 152, align: 8 },
     NamedAggregate { name: "sigset_t", dwarf_alias: None, size: 128, align: 8 },
     NamedAggregate { name: "sockaddr", dwarf_alias: None, size: 16, align: 2 },
+    NamedAggregate { name: "spwd", dwarf_alias: None, size: 72, align: 8 },
     NamedAggregate { name: "stat", dwarf_alias: None, size: 144, align: 8 },
+    NamedAggregate { name: "statfs", dwarf_alias: None, size: 120, align: 8 },
     NamedAggregate { name: "termios", dwarf_alias: None, size: 60, align: 4 },
     NamedAggregate { name: "timespec", dwarf_alias: None, size: 16, align: 8 },
     NamedAggregate { name: "timeval", dwarf_alias: None, size: 16, align: 8 },
     NamedAggregate { name: "tm", dwarf_alias: None, size: 56, align: 8 },
+    NamedAggregate { name: "utmp", dwarf_alias: None, size: 384, align: 4 },
+    NamedAggregate { name: "utmpx", dwarf_alias: None, size: 384, align: 4 },
 ];
 
 /// The aggregate this table will point at for `name`: the platform's own
@@ -371,6 +378,142 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     ("pthread_mutex_lock", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
     ("pthread_mutex_unlock", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
     ("tcsetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
+    // ---- the second round of names, mined from the corpus's own DWARF ----
+    //
+    // Everything below is NEW to both shipped tables, so `libctypes off` is
+    // still the shipped behaviour exactly. Ranked and selected in
+    // `docs/features/libcstructs/analysis.md`: each row either names a pointee
+    // that ground truth in the measured corpus actually spells, or is the sole
+    // stream/record slot of a name that one of those rows needs.
+    //
+    // stdio.h — more of the stream surface. `fseeko` is the widest import in
+    // the corpus that no shipped table carries (306 of 444 slices).
+    ("__getdelim", Sig { ret: Ty::Long, params: &[Ty::CharPtrPtr, Ty::VoidPtr, Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("feof_unlocked", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fgets_unlocked", Sig { ret: Ty::CharPtr, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fputc_unlocked", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fread_unlocked", Sig { ret: Ty::Size, params: &[Ty::VoidPtr, Ty::Size, Ty::Size, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fseeko", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::Long, Ty::Int], vararg: -1 }),
+    ("ftello", Sig { ret: Ty::Long, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("setbuf", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("FILE"), Ty::CharPtr], vararg: -1 }),
+    // `int vfprintf(FILE *, const char *, va_list)` — the LAST slot is the
+    // `va_list` and stays `void *`, like `__vfprintf_chk` above it.
+    ("vfprintf", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::CharPtr, Ty::VoidPtr], vararg: -1 }),
+    // pwd.h / grp.h — the record-at-a-time and reentrant halves of the two
+    // databases whose one-shot lookups the table already names. The `_r` forms
+    // end in a `struct passwd **` / `struct group **` result slot, which the
+    // vocabulary cannot spell; it stays `void *`.
+    ("fgetgrent", Sig { ret: Ty::NamedPtr("group"), params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fgetpwent", Sig { ret: Ty::NamedPtr("passwd"), params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("getgrent", Sig { ret: Ty::NamedPtr("group"), params: &[], vararg: -1 }),
+    ("getgrgid_r", Sig { ret: Ty::Int, params: &[Ty::UInt, Ty::NamedPtr("group"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("getgrnam_r", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("group"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("getpwent", Sig { ret: Ty::NamedPtr("passwd"), params: &[], vararg: -1 }),
+    ("getpwnam_r", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("passwd"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("getpwuid_r", Sig { ret: Ty::Int, params: &[Ty::UInt, Ty::NamedPtr("passwd"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("putgrent", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("group"), Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("putpwent", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("passwd"), Ty::NamedPtr("FILE")], vararg: -1 }),
+    // shadow.h — `struct spwd` is what every `shadow` binary's password reader
+    // holds, and nothing else in a stripped image says so.
+    ("fgetspent", Sig { ret: Ty::NamedPtr("spwd"), params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("getspent", Sig { ret: Ty::NamedPtr("spwd"), params: &[], vararg: -1 }),
+    ("getspnam", Sig { ret: Ty::NamedPtr("spwd"), params: &[Ty::CharPtr], vararg: -1 }),
+    ("getspnam_r", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("spwd"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("putspent", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("spwd"), Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("sgetspent", Sig { ret: Ty::NamedPtr("spwd"), params: &[Ty::CharPtr], vararg: -1 }),
+    // utmpx.h / utmp.h — the login records. Both structs are 384 bytes and the
+    // two families are kept apart by name, because a `-g` image defines both.
+    ("getutent", Sig { ret: Ty::NamedPtr("utmp"), params: &[], vararg: -1 }),
+    ("getutid", Sig { ret: Ty::NamedPtr("utmp"), params: &[Ty::NamedPtr("utmp")], vararg: -1 }),
+    ("getutline", Sig { ret: Ty::NamedPtr("utmp"), params: &[Ty::NamedPtr("utmp")], vararg: -1 }),
+    ("getutxent", Sig { ret: Ty::NamedPtr("utmpx"), params: &[], vararg: -1 }),
+    ("getutxid", Sig { ret: Ty::NamedPtr("utmpx"), params: &[Ty::NamedPtr("utmpx")], vararg: -1 }),
+    ("getutxline", Sig { ret: Ty::NamedPtr("utmpx"), params: &[Ty::NamedPtr("utmpx")], vararg: -1 }),
+    ("pututline", Sig { ret: Ty::NamedPtr("utmp"), params: &[Ty::NamedPtr("utmp")], vararg: -1 }),
+    ("pututxline", Sig { ret: Ty::NamedPtr("utmpx"), params: &[Ty::NamedPtr("utmpx")], vararg: -1 }),
+    // regex.h — `regex_t` is a typedef of `struct re_pattern_buffer`, and the
+    // bare struct tag is the spelling debug info uses. `regoff_t` is `int`
+    // unless the caller defines `_REGEX_LARGE_OFFSETS`, which nothing in the
+    // corpus does; `regmatch_t *` and `struct re_registers *` have no
+    // width-stable spelling and stay `void *`.
+    ("re_compile_fastmap", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer")], vararg: -1 }),
+    ("re_compile_pattern", Sig { ret: Ty::CharPtr, params: &[Ty::CharPtr, Ty::Size, Ty::NamedPtr("re_pattern_buffer")], vararg: -1 }),
+    ("re_match", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Int, Ty::Int, Ty::VoidPtr], vararg: -1 }),
+    ("re_search", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Int, Ty::Int, Ty::Int, Ty::VoidPtr], vararg: -1 }),
+    ("regcomp", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Int], vararg: -1 }),
+    ("regerror", Sig { ret: Ty::Size, params: &[Ty::Int, Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Size], vararg: -1 }),
+    ("regexec", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Size, Ty::VoidPtr, Ty::Int], vararg: -1 }),
+    ("regfree", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("re_pattern_buffer")], vararg: -1 }),
+    // locale.h / sys/statfs.h
+    ("fstatfs", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("statfs")], vararg: -1 }),
+    ("localeconv", Sig { ret: Ty::NamedPtr("lconv"), params: &[], vararg: -1 }),
+    ("statfs", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("statfs")], vararg: -1 }),
+    // time.h — more `tm`, `timespec` and `timeval` slots. Like `localtime`
+    // above, a `const time_t *` argument has no width-stable spelling and stays
+    // `void *`; only the aggregate slots are named.
+    ("asctime", Sig { ret: Ty::CharPtr, params: &[Ty::NamedPtr("tm")], vararg: -1 }),
+    ("clock_getres", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("timespec")], vararg: -1 }),
+    ("clock_settime", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("timespec")], vararg: -1 }),
+    ("futimens", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("timespec")], vararg: -1 }),
+    ("futimesat", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::CharPtr, Ty::NamedPtr("timeval")], vararg: -1 }),
+    ("gmtime", Sig { ret: Ty::NamedPtr("tm"), params: &[Ty::VoidPtr], vararg: -1 }),
+    ("gmtime_r", Sig { ret: Ty::NamedPtr("tm"), params: &[Ty::VoidPtr, Ty::NamedPtr("tm")], vararg: -1 }),
+    ("mktime", Sig { ret: Ty::Long, params: &[Ty::NamedPtr("tm")], vararg: -1 }),
+    ("nanosleep", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("timespec"), Ty::NamedPtr("timespec")], vararg: -1 }),
+    ("timegm", Sig { ret: Ty::Long, params: &[Ty::NamedPtr("tm")], vararg: -1 }),
+    ("utimensat", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::CharPtr, Ty::NamedPtr("timespec"), Ty::Int], vararg: -1 }),
+    ("utimes", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("timeval")], vararg: -1 }),
+    // termios.h — `speed_t` is a 4-byte unsigned.
+    ("cfgetispeed", Sig { ret: Ty::UInt, params: &[Ty::NamedPtr("termios")], vararg: -1 }),
+    ("cfgetospeed", Sig { ret: Ty::UInt, params: &[Ty::NamedPtr("termios")], vararg: -1 }),
+    ("cfsetispeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
+    ("cfsetospeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
+    ("tcgetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
+    // signal.h — the rest of the `sigset_t` surface.
+    ("pthread_sigmask", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("sigset_t"), Ty::NamedPtr("sigset_t")], vararg: -1 }),
+    ("sigdelset", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::Int], vararg: -1 }),
+    ("sigfillset", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t")], vararg: -1 }),
+    ("sigismember", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::Int], vararg: -1 }),
+    ("sigsuspend", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t")], vararg: -1 }),
+    ("sigwait", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::IntPtr], vararg: -1 }),
+    // dirent.h / wchar.h / pthread.h
+    ("pthread_mutex_destroy", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
+    ("pthread_mutex_init", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t"), Ty::VoidPtr], vararg: -1 }),
+    ("rewinddir", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
+    ("wcrtomb", Sig { ret: Ty::Size, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("mbstate_t")], vararg: -1 }),
+];
+
+/// The one table matched against a name the image DEFINES as well as one it
+/// imports — the obstack entry points.
+///
+/// Every other table here is imports-only, because a coincidental `fopen` or
+/// `stat` in an image's own symbol table is that image's function and retyping
+/// it would assert a declaration nobody made. These five names cannot be
+/// coincidental: `_obstack_*` is the implementation-reserved half of
+/// `obstack.h`, only ever defined by glibc or by the gnulib copy of the same
+/// file, and both publish the same `struct obstack`.
+///
+/// That distinction is what makes the entry worth having, because in this
+/// corpus obstack is never an import. gnulib links its copy IN, and the linker
+/// exports the symbols from the program itself — so a stripped `grep`, `tar` or
+/// `coreutils` binary still carries `_obstack_newchunk` in `.dynsym` and
+/// nowhere else says what its first argument is. It is the single widest
+/// aggregate in the measured ground truth after `FILE`: 431 pointer variables,
+/// 371 of them inside a function that calls one of these five directly
+/// (`docs/features/libcstructs/analysis.md`).
+///
+/// `_obstack_free` is the one signature here not printed verbatim by
+/// `gcc -aux-info`: the installed `obstack.h` declares it as `__obstack_free`,
+/// a macro that gnulib re-points at `_obstack_free`
+/// (`/usr/include/obstack.h:194`). Same declaration, same line, one documented
+/// renaming — not a guess. `_obstack_allocated_p` has no installed declaration
+/// at all and is therefore left out, exactly as `__underflow` was.
+pub(super) const LIBC_DEFINED_NAMED: &[(&str, Sig)] = &[
+    ("_obstack_begin", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Int, Ty::Int, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_begin_1", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Int, Ty::Int, Ty::VoidPtr, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_free", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_memory_used", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack")], vararg: -1 }),
+    ("_obstack_newchunk", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::Int], vararg: -1 }),
 ];
 
 /// The built-in signature for a name the OPERATOR declared, in its named-type
@@ -384,6 +527,7 @@ pub(super) fn declared_named_prototype(name: &str) -> Option<&'static Sig> {
     LIBC_NAMED
         .iter()
         .chain(LIBC_EXT_NAMED.iter())
+        .chain(LIBC_DEFINED_NAMED.iter())
         .find(|(n, _)| *n == name)
         .map(|(_, sig)| sig)
 }
@@ -425,6 +569,13 @@ impl AnalysisPass for LibcTypesPass {
         // import is the whole job; the definition belongs to whoever declared it.
         let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
         let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
+        // The one exception, and its own table: the `_obstack_*` entry points
+        // are matched against a name the image DEFINES as well (see
+        // `LIBC_DEFINED_NAMED` for why that is safe for those five names and
+        // for nothing else here).
+        let present = unambiguous_present_function_names(ctx.file, ctx.bytes);
+        seed_named_prototypes(&mut out, &present, LIBC_DEFINED_NAMED, types, word_size, layout);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_DEFINED_NAMED, types, word_size, layout);
         seed_named_prototypes(&mut out, &imported, LIBC_NAMED, types, word_size, layout);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_NAMED, types, word_size, layout);
         seed_named_prototypes(&mut out, &imported, LIBC_EXT_NAMED, types, word_size, layout);
