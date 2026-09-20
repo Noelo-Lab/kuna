@@ -370,6 +370,11 @@ pub struct Architecture {
     /// [`kuna_charbyte`](crate::p5_types::kuna_charbyte).
     pub char_byte: bool,
 
+    /// (kuna `charptr`) Commit a pointer-width parameter or stack local the
+    /// program only ever uses on characters to `char *`; option
+    /// `charptr off|libc|uses`.  The rule lives in
+    /// [`kuna_charptr`](crate::p5_types::kuna_charptr).
+    pub char_ptr: crate::p5_types::kuna_charptr::CharPtrMode,
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be
     /// a LOAD/STORE base as a pointer, and what that pointer points at.  See
     /// [`kuna_ptrfromuse`](crate::p5_types::kuna_ptrfromuse).
@@ -2279,6 +2284,7 @@ impl Architecture {
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
+            char_ptr: crate::p5_types::kuna_charptr::CharPtrMode::Off, // (kuna) option charptr; reset_defaults sets the shipped default
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
@@ -3372,6 +3378,11 @@ impl Architecture {
                 self.protoorder = mode;
                 Ok(msg)
             }
+            "charptr" => {
+                let (val, msg) = crate::p5_types::kuna_charptr::OptionCharPtr.apply(p1)?;
+                self.char_ptr = val;
+                Ok(msg)
+            }
             "ptrfromuse" => {
                 let (val, msg) =
                     crate::p5_types::kuna_ptrfromuse::OptionPtrFromUse.apply(p1)?;
@@ -4186,6 +4197,7 @@ impl Architecture {
         ctx.int_promotion = self.print.out_lang().profile().caps.integer_promotion;
         ctx.char_byte = self.char_byte; // (kuna) charbyte
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
+        ctx.char_ptr = self.char_ptr; // (kuna) charptr
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.lowered_switch_labels = self.lowered_switch_labels; // loweredswitchlabels

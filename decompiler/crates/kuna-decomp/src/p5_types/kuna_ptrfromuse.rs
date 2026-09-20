@@ -366,7 +366,7 @@ fn const_base_evidence(data: &Funcdata, op: OpId, cvn: VarnodeId) -> BaseEvidenc
 }
 
 /// Any floating-point opcode: a pointer is never one of these operands.
-fn is_float_op(opcode: OpCode) -> bool {
+pub(crate) fn is_float_op(opcode: OpCode) -> bool {
     matches!(
         opcode,
         OpCode::CPUI_FLOAT_EQUAL
@@ -388,6 +388,13 @@ fn is_float_op(opcode: OpCode) -> bool {
             | OpCode::CPUI_FLOAT_FLOOR
             | OpCode::CPUI_FLOAT_ROUND
     )
+}
+
+/// Does the constant `cvn` of `op` resolve to a global object kuna knows about,
+/// making it the BASE of its `INT_ADD` rather than a field offset?  Shared with
+/// [`crate::kuna_charptr`], whose walk grades a literal addend the same way.
+pub(crate) fn constant_is_global_base(data: &Funcdata, op: OpId, cvn: VarnodeId) -> bool {
+    matches!(const_base_evidence(data, op, cvn), BaseEvidence::Object)
 }
 
 /// Is `cand` more specific than `cur` in the `getLocalType` fold?  The seed is one

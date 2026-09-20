@@ -418,6 +418,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "boolbyte",
     "charbyte",
     "ptrfromuse",
+    "charptr",
     "protoorder",
     "cortexmpriv",
     "dedupvardecls",
