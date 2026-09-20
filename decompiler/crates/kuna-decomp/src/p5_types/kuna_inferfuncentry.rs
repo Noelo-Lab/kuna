@@ -35,6 +35,7 @@
 //!     address (`None` == no function at `rampoint`).
 
 use kuna_base::address::Address;
+use kuna_num::opcodes::OpCode;
 
 /// (kuna) Toggle inference of function entries at single-bit image bases
 /// (C++ `OptionInferFuncEntry`, GH-6930).
@@ -74,6 +75,33 @@ impl InferFuncEntryOption {
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
+}
+
+/// (kuna) May the single-bit escape be consulted for a constant read by `opcode`?
+///
+/// The escape suspends the one guard (`bit_transitions < 3`) that keeps integer
+/// flags, masks and round sizes out of the symbol table, so it is only safe where
+/// a raw code address is what the operand means: handed to a callee (GH-6930's
+/// `bufferevent_setcb(..., evhttp_write_cb, ...)`), written into a function-pointer
+/// slot, compared for identity with one, or added to a value already typed as a
+/// pointer.
+///
+/// Everywhere else the constant is being used as a number and the entry it lands
+/// on is a coincidence, which is what a round buffer size looks like in a PIE:
+/// coreutils `tail -O0` computes `MIN (n_remaining, BUFSIZ)`, `BUFSIZ` is `0x2000`
+/// and `0x2000` is `_DT_INIT`, so the bound printed as `if (_DT_INIT < v9)` and
+/// dragged the `uintmax_t` byte counter it was compared with to `void *` — in the
+/// callee, and from there through `protoorder` into the caller's stack variable.
+pub fn entry_escape_applies(opcode: OpCode) -> bool {
+    matches!(
+        opcode,
+        OpCode::CPUI_CALL
+            | OpCode::CPUI_CALLIND
+            | OpCode::CPUI_STORE
+            | OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_EQUAL
+            | OpCode::CPUI_INT_NOTEQUAL
+    )
 }
 
 /// (kuna) Does the constant resolve exactly to a known function entry?

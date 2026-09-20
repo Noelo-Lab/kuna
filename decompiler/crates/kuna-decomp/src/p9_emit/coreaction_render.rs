@@ -1023,7 +1023,8 @@ fn is_pointer(
         // divergence keeps single-bit values that are EXACT function entries; reuse
         // kuna_is_function_entry (no re-special-casing).
         if bit_transitions(vn_offset, vn_size) < 3
-            && !kuna_const_is_function_entry(data, spc, vn_offset, vn_size, &op_addr)
+            && !(crate::kuna_inferfuncentry::entry_escape_applies(opc)
+                && kuna_const_is_function_entry(data, spc, vn_offset, vn_size, &op_addr))
         {
             return None;
         }
