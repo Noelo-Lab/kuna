@@ -351,5 +351,17 @@
   "make rust-test": "RUST_TEST_RC=0, 416 suites ok, 7311 tests ok, 0 failed (.scratch/rust-test-r5.log, 12:12:16Z -> 12:35:42Z)",
   "witness": "fmt O2: --option argclobber off renders sub_3700(v6) / sub_3700(stdin,v7) / sub_3700(stdin,\"-\",v10) with two unassigned `// rdx` locals in main; the default renders sub_3700(v6,v7) / sub_3700(stdin,v7) / sub_3700(stdin,\"-\") and both phantoms are gone",
   "counterexamples": "ce-forward-thunk, ce-forward-thunk-2param, ce-forward-thunk-2frame, ce-import-forward, ce-import and ce-remainder-or-pair all decompile byte-identically to their `--option argclobber off` arm"
+ },
+ "gates_r6": {
+  "base": "origin/main 2e28ece4a; round-6 commit e69df6a81 touches docs/modes.md and one comment in substrate/context.rs, so the typesweep/arity/speed blocks above carry",
+  "make test": "datatests: 675/675 assertions passed / PARITY OK",
+  "make test-stages": "datatests: 1249/1249 assertions passed / PARITY OK",
+  "make check-spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+  "make test-cli": "tests/cli: 214/214 passed",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh",
+  "make rust-test": "RUST_TEST_RC=0, 416 suites ok, 7311 tests ok, 0 failed (.scratch/rust-test-r6.log, 13:26:44Z -> 13:50:44Z)",
+  "witness": "fmt O2 whole-binary decompile-all on this build: default renders sub_3700(v6,v7) / sub_3700(stdin,v7) / sub_3700(stdin,\"-\") = 2/2/2 with no `// rdx` local in main; --option argclobber off renders 1/2/3 with `// rdx` locals at main lines 446 and 458. Single-function `--addr 0x26a0` shows the off rendering in BOTH arms, as designed: no callee is decompiled in that run, so protoorder parks nothing and the drop is declined."
  }
 }
