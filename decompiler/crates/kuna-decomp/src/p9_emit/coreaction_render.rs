@@ -683,15 +683,21 @@ impl Action for ActionConstantPtr {
         // one whenever `.init` sits at a low offset; a value the function also
         // orders or divides is a number wherever else it appears.  Built once per
         // pass from the same snapshot the loop walks.
-        let numeric: HashSet<uintb> = constants
-            .iter()
-            .filter_map(|&c| {
-                let off = data.vbank().get(c)?.get_offset();
-                let dop = data.lone_descend(c)?;
-                let code = data.obank().get(dop)?.code();
-                crate::kuna_inferfuncentry::reads_as_integer(code).then_some(off)
-            })
-            .collect();
+        let mut numeric: HashSet<uintb> = HashSet::new();
+        for &c in &constants {
+            let Some(off) = data.vbank().get(c).map(|v| v.get_offset()) else { continue };
+            let Some(code) = data.lone_descend(c).and_then(|d| data.obank().get(d)).map(|o| o.code())
+            else {
+                continue;
+            };
+            if !crate::kuna_inferfuncentry::reads_as_integer(code) {
+                continue;
+            }
+            numeric.insert(off);
+            if crate::kuna_inferfuncentry::orders_its_constant(code) {
+                numeric.insert(off.wrapping_sub(1));
+            }
+        }
 
         for vn in constants {
             // Re-read each Varnode (earlier iterations may have rewritten the IR).

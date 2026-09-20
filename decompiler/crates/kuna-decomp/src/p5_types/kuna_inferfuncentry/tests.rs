@@ -122,6 +122,21 @@ fn escape_declines_a_reader_that_is_arithmetic() {
 }
 
 #[test]
+fn only_an_ordering_comparison_pins_the_bound_below_it() {
+    for opcode in [
+        OpCode::CPUI_INT_LESS,
+        OpCode::CPUI_INT_LESSEQUAL,
+        OpCode::CPUI_INT_SLESS,
+        OpCode::CPUI_INT_SLESSEQUAL,
+    ] {
+        assert!(orders_its_constant(opcode), "{opcode:?} pins a bound");
+    }
+    for opcode in [OpCode::CPUI_INT_MULT, OpCode::CPUI_INT_LEFT, OpCode::CPUI_COPY] {
+        assert!(!orders_its_constant(opcode), "{opcode:?} pins no bound");
+    }
+}
+
+#[test]
 fn escape_declines_a_value_the_function_orders_elsewhere() {
     // coreutils tail: the COPY arm of MIN (n_remaining, BUFSIZ) is the same shape
     // as a function-pointer table's `v = handler`, and the only thing that tells

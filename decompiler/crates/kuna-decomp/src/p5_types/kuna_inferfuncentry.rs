@@ -77,19 +77,32 @@ impl InferFuncEntryOption {
     }
 }
 
-/// (kuna) Does `opcode` read its constant operand as a number?
+/// (kuna) Does `opcode` order its constant operand against something?
 ///
-/// An ordering comparison, a multiply, a divide, a remainder or a shift is
-/// arithmetic on the value; C has none of them between a function pointer and
-/// anything else.
-pub fn reads_as_integer(opcode: OpCode) -> bool {
+/// An ordering comparison pins a bound, and the strict/non-strict rewrite moves
+/// the literal by one on the way here -- `MIN (n, BUFSIZ)` reaches this pass as
+/// `INT_LESS(0x2000, n)` in coreutils `tail` and as `INT_LESS(0x2001, n)` in
+/// coreutils `head`.  So a bound counts for its own value and for one below it.
+pub fn orders_its_constant(opcode: OpCode) -> bool {
     matches!(
         opcode,
         OpCode::CPUI_INT_LESS
             | OpCode::CPUI_INT_LESSEQUAL
             | OpCode::CPUI_INT_SLESS
             | OpCode::CPUI_INT_SLESSEQUAL
-            | OpCode::CPUI_INT_MULT
+    )
+}
+
+/// (kuna) Does `opcode` read its constant operand as a number?
+///
+/// An ordering comparison, a multiply, a divide, a remainder or a shift is
+/// arithmetic on the value; C has none of them between a function pointer and
+/// anything else.
+pub fn reads_as_integer(opcode: OpCode) -> bool {
+    orders_its_constant(opcode)
+        || matches!(
+        opcode,
+        OpCode::CPUI_INT_MULT
             | OpCode::CPUI_INT_DIV
             | OpCode::CPUI_INT_SDIV
             | OpCode::CPUI_INT_REM
