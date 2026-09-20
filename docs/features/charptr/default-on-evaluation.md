@@ -53,3 +53,18 @@ re-pinning two other features' regression probes. The class census in
 actually is (register-only ground-truth variables, and frame slots kuna reports
 as `undefined8`), so the case for flipping this option should be re-made only
 together with that work, not on its own.
+
+## Addendum (review round 2)
+
+Two costs were under-recorded and are now in `record.json` and in the option's
+`phases.toml` / `docs/spec/05-types.md` prose. A flip attempt has to read both:
+
+1. The fabricated string literal (diffutils `diff`, `sub_2180a`) — a *wrong
+   output* in the option arm, root-caused to the read-only painting of ELF
+   loader tables and fixed in this PR as a strict fix. It is pinned by
+   `tests/cli/loader-table-bytes-print-as-a-string.json`.
+2. The reversal class: a correct `char *` becoming `unsigned char *` as a
+   knock-on. 13 lines in 7 functions on dash `-O0`, which no 444-slice project
+   carries, so criterion (d) cannot see it.
+
+Criterion (c) still fails, so the default stays `off`.

@@ -140,3 +140,43 @@ steps through by one byte, and the option turns `long v6; v6 = 0xff;` into
 `char *v6; v6 = (char *)0xff;`. The emitted C stays equivalent — every widening
 and comparison picks up an explicit cast — but it reads worse, and it is the
 same shape as `head::elide_tail_bytes_pipe`.
+
+## The counterexample that class did not cover (review round 2)
+
+The paragraph above claimed the `cp` shape was value-preserving and left it at
+that. It is not true of the class. diffutils `diff` at `-O0`, `sub_2180a` (an
+`iconv` loop) holds `outbytesleft = 0x1000` — 4096, the size of the `char
+v1[4104]` output buffer — and with the option on the assignment printed a string:
+
+```
+$ kuna decompile-all O0/diffutils/stripped/diff --addr 0x2180a
+    v2 = (char *)0x1000;
+    v8 = iconv(a2,&v5,&v4,&v3,&v2);
+$ kuna decompile-all O0/diffutils/stripped/diff --addr 0x2180a --option charptr on
+    v2 = "5";                       <-- before the fix
+    v8 = iconv(a2,&v5,&v4,&v3,&v2);
+```
+
+`readelf -S` puts `.dynsym` at `0x400..0x10d8`, so `0x1000` is inside the
+dynamic symbol table and the bytes there are `35 00` — the `st_name` field of a
+symbol-table entry, read as the one-character string `"5"`. The same shape gave
+two more sites in the `-O2` build (`v4 = "\x1e\x03";`).
+
+**It is not charptr's vote.** The JSON `variables[]` is identical in both arms —
+`v2` is `char *` with or without the option — and only the *constant's*
+rendering moves. `PrintC::pushPtrCharConstant` replaces a constant with the
+characters at its address, and the only thing it asks first is
+`Scope::isReadOnly`; `ElfFormat::section_bits` painted `.dynsym` read-only
+because it is allocated and not writable. charptr commits the *neighbouring*
+slot (`stack@-4192`, `ev=byte`, the correct `iconv` output buffer) and that is
+enough to reorder the fold so the constant picks up the `char *` its destination
+already had.
+
+The fix is therefore outside this rule, and ships in the same PR as the strict
+fix it is: the dynamic loader's tables no longer carry the read-only bit. Two
+*default-output* defects on main fall out with it — `bash`'s
+`rl_do_lowercase_version` returned `"_ungets"` for `0x1869f` and coreutils `ls`
+compared a pointer against `"loc"` for `0x12c7`, both `.dynstr` offsets. See
+`record.json` → `wrong_output_found`, the fixture
+`loadertablestring_x86_64`, and the probe
+`tests/cli/loader-table-bytes-print-as-a-string.json`.

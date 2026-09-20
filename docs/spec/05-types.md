@@ -518,8 +518,13 @@ none off perfect (aggregate +4.93 over 10,748 functions); the declared-callee
 half *alone* is worth +0.14, which is why it is not a separate strength. Turning
 it on is a claim as well as a gain — committing a pointer forfeits the
 width-only free pass an eight-byte scalar gets, and `char *` rewrites the body's
-arithmetic into indexing the way `ptrfromuse byte` does. `docs/features/charptr/`
-carries the census and the per-function moves.
+arithmetic into indexing the way `ptrfromuse byte` does. The signedness can also
+move the *other* way as a knock-on — a correct `char *` arriving as
+`unsigned char *`, which no sweep slice carries: on dash at `-O0`, 13 lines in
+seven functions and four signatures go that way, two of those bodies losing a
+character literal, against 23 lines that move forward and four `strcmp` casts
+that disappear. `docs/features/charptr/` carries the census, the per-function
+moves and that corpus classification.
 
 **The truth-valued byte (`boolbyte`).** `TYPE_BOOL` only ever enters the
 lattice as an op's *output*: every `booloutput` opcode's `get_output_local` is
