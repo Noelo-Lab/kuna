@@ -134,7 +134,11 @@ fn an_incomplete_struct_of_the_declared_width_is_adopted() {
 /// silently.
 #[test]
 fn every_named_slot_has_a_width() {
-    for (name, sig) in LIBC_NAMED.iter().chain(LIBC_EXT_NAMED.iter()) {
+    for (name, sig) in LIBC_NAMED
+        .iter()
+        .chain(LIBC_EXT_NAMED.iter())
+        .chain(LIBC_DEFINED_NAMED.iter())
+    {
         for t in std::iter::once(&sig.ret).chain(sig.params.iter()) {
             if let Ty::NamedPtr(n) = t {
                 assert!(
@@ -228,18 +232,99 @@ fn uflow_is_new_to_this_table() {
 /// depend on iteration order).
 #[test]
 fn the_tables_have_no_duplicate_names() {
-    for table in [LIBC_NAMED, LIBC_EXT_NAMED] {
+    let mut across: Vec<&str> = Vec::new();
+    for table in [LIBC_NAMED, LIBC_EXT_NAMED, LIBC_DEFINED_NAMED] {
+        across.extend(table.iter().map(|(n, _)| *n));
         let mut names: Vec<&str> = table.iter().map(|(n, _)| *n).collect();
         let before = names.len();
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), before, "duplicate name in a libctypes table");
     }
+    // And across them: `declared_named_prototype` searches all three in order,
+    // so one name in two tables would make the answer depend on that order.
+    let before = across.len();
+    across.sort_unstable();
+    across.dedup();
+    assert_eq!(across.len(), before, "a name is carried by two libctypes tables");
     let mut aggs: Vec<&str> = NAMED_AGGREGATES.iter().map(|a| a.name).collect();
     let before = aggs.len();
     aggs.sort_unstable();
     aggs.dedup();
     assert_eq!(aggs.len(), before, "duplicate aggregate name");
+}
+
+/// The one table matched against names the image DEFINES is reserved-namespace
+/// obstack entry points and nothing else. A plain spelling matched that way
+/// would retype a function the image wrote itself.
+#[test]
+fn the_defined_table_is_obstack_entry_points_only() {
+    for (name, sig) in LIBC_DEFINED_NAMED {
+        assert!(
+            name.starts_with("_obstack_"),
+            "{name}: only the reserved obstack entry points may match a DEFINED name"
+        );
+        assert!(
+            matches!(sig.params.first(), Some(Ty::NamedPtr("obstack"))),
+            "{name}: the handle is the first slot"
+        );
+        assert!(
+            !super::super::LIBC.iter().any(|(n, _)| n == name)
+                && !super::super::kuna_libcsigs::LIBC_EXT.iter().any(|(n, _)| n == name),
+            "{name}: a name only this table carries, so `libctypes off` is unchanged"
+        );
+    }
+    assert_eq!(LIBC_DEFINED_NAMED.len(), 5, "`_obstack_allocated_p` has no installed declaration");
+}
+
+/// The size slots of the obstack entry points are pointer-width, not the `int`
+/// the installed glibc header spells: the corpus's obstack is gnulib's copy,
+/// whose `_OBSTACK_SIZE_T` is `size_t`, and an `int` would put a truncating
+/// cast on every call.
+#[test]
+fn the_obstack_size_slots_are_pointer_width() {
+    let (_, chunk) =
+        LIBC_DEFINED_NAMED.iter().find(|(n, _)| *n == "_obstack_newchunk").expect("newchunk");
+    assert_eq!(chunk.params.len(), 2);
+    assert!(matches!(chunk.params[1], Ty::Size), "the length is a size_t");
+    let (_, used) =
+        LIBC_DEFINED_NAMED.iter().find(|(n, _)| *n == "_obstack_memory_used").expect("used");
+    assert!(matches!(used.ret, Ty::Size), "and so is the byte count it returns");
+}
+
+/// The record readers of the three account databases all end their argument
+/// list with the stream they read from or write to, and all carry the record
+/// type the database is named for. An off-by-one here is invisible in output.
+#[test]
+fn the_account_database_slots_name_both_aggregates() {
+    for (name, record) in [
+        ("fgetpwent", "passwd"),
+        ("fgetgrent", "group"),
+        ("fgetspent", "spwd"),
+    ] {
+        let (_, sig) = LIBC_EXT_NAMED.iter().find(|(n, _)| *n == name).expect(name);
+        assert!(matches!(sig.ret, Ty::NamedPtr(r) if r == record), "{name}: returns the record");
+        assert_eq!(sig.params.len(), 1);
+        assert!(matches!(sig.params[0], Ty::NamedPtr("FILE")), "{name}: reads a stream");
+    }
+    for (name, record) in [("putpwent", "passwd"), ("putgrent", "group"), ("putspent", "spwd")] {
+        let (_, sig) = LIBC_EXT_NAMED.iter().find(|(n, _)| *n == name).expect(name);
+        assert_eq!(sig.params.len(), 2);
+        assert!(matches!(sig.params[0], Ty::NamedPtr(r) if r == record), "{name}: the record");
+        assert!(matches!(sig.params[1], Ty::NamedPtr("FILE")), "{name}: then the stream");
+    }
+    // The reentrant lookups end in a `struct X **` result slot the vocabulary
+    // cannot spell; the RECORD is the second slot, never the last.
+    for (name, record) in [
+        ("getpwnam_r", "passwd"),
+        ("getgrnam_r", "group"),
+        ("getspnam_r", "spwd"),
+    ] {
+        let (_, sig) = LIBC_EXT_NAMED.iter().find(|(n, _)| *n == name).expect(name);
+        assert_eq!(sig.params.len(), 5);
+        assert!(matches!(sig.params[1], Ty::NamedPtr(r) if r == record), "{name}: p1 is the record");
+        assert!(matches!(sig.params[4], Ty::VoidPtr), "{name}: p4 is the result pointer");
+    }
 }
 
 /// The gate decides whether a declared name is answered in its named form; with

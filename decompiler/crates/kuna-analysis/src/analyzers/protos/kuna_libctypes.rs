@@ -502,6 +502,14 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
 /// 371 of them inside a function that calls one of these five directly
 /// (`docs/features/libcstructs/analysis.md`).
 ///
+/// The size slots are `size_t`, not the `int` the INSTALLED glibc header spells
+/// at `/usr/include/obstack.h:184`. Two published declarations of one symbol
+/// exist — glibc's, and the gnulib copy every obstack in this corpus is in fact
+/// compiled from, which defines `_OBSTACK_SIZE_T` as `size_t` — and the corpus's
+/// own debug info says which applies here (`size_t` in every `tar` and `grep`
+/// twin). Both pass the value in a register, so only the rendering moves: `int`
+/// would put a truncating `(int)` cast on every call.
+///
 /// `_obstack_free` is the one signature here not printed verbatim by
 /// `gcc -aux-info`: the installed `obstack.h` declares it as `__obstack_free`,
 /// a macro that gnulib re-points at `_obstack_free`
@@ -509,11 +517,11 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
 /// renaming — not a guess. `_obstack_allocated_p` has no installed declaration
 /// at all and is therefore left out, exactly as `__underflow` was.
 pub(super) const LIBC_DEFINED_NAMED: &[(&str, Sig)] = &[
-    ("_obstack_begin", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Int, Ty::Int, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
-    ("_obstack_begin_1", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Int, Ty::Int, Ty::VoidPtr, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_begin", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Size, Ty::Size, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_begin_1", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Size, Ty::Size, Ty::VoidPtr, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
     ("_obstack_free", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::VoidPtr], vararg: -1 }),
-    ("_obstack_memory_used", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack")], vararg: -1 }),
-    ("_obstack_newchunk", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::Int], vararg: -1 }),
+    ("_obstack_memory_used", Sig { ret: Ty::Size, params: &[Ty::NamedPtr("obstack")], vararg: -1 }),
+    ("_obstack_newchunk", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::Size], vararg: -1 }),
 ];
 
 /// The built-in signature for a name the OPERATOR declared, in its named-type
