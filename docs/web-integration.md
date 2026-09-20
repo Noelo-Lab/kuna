@@ -151,9 +151,13 @@ inventory contains directly reached and validated indirect-only internal
 functions while the exhaustive prologue and AIF scans remain off. The page's
 **Download Binary Source** button runs it and zips the four artifacts inside the module
 Worker (`integrations/web/zip.js`, a dependency-free STORE zip writer). Only the final ZIP
-`ArrayBuffer` is transferred to the main thread. The only artifact difference vs the CLI
-is the README's `Path` row, which shows the display name instead of a canonicalized host
-path (there is none in the virtual FS).
+`ArrayBuffer` is transferred to the main thread. Two things differ from the CLI export.
+The README's `Path` row shows the display name instead of a canonicalized host path
+(there is none in the virtual FS). And the decompile order is address order: the
+callee-first schedule a serial `kuna decompile-project` takes lives in the `kuna-cli`
+driver (`--option protoorder`, `docs/cli.md`), while this command calls the shared eager
+batch directly, so the browser's call-argument types and `struct_N` numbering are the
+ones `--option protoorder off` produces.
 
 ## 3. The virtual filesystem (the whole trick)
 

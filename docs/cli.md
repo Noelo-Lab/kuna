@@ -2277,7 +2277,7 @@ decodes to a wrong image of exactly the right length; only the checksum catches 
 ```bash
 kuna decompile-project ./a.out                         # writes ./a.out.kuna/
 kuna decompile-project ./a.out -o proj --functions main,parse
-kuna decompile-project ./a.out --jobs 12               # the same folder, 12 processes
+kuna decompile-project ./a.out --jobs 12               # 12 processes, protoorder-off artifacts
 kuna decompile-project ./a.out --stream --jobs 12      # readable while it fills
 ```
 
@@ -2427,8 +2427,11 @@ does not protect: with no pool, the parent decompiles every function itself and 
 them can still end the export.
 
 **How the artifacts differ.** The function set is identical to a non-stream export of
-the same selection; the layout differences below are what append-only costs, and they
-are the contract:
+the same selection, and the prototypes are the ones `--option protoorder off` produces:
+an append-only export writes each body as it finishes and so cannot decompile callees
+first, which is what types a call argument from the callee's recovered record in an
+ordinary export. The layout differences below are what append-only costs on top of
+that, and they are the contract:
 
 - `<name>.c` — decompile order, not address order. A block is appended with one write
   and is never rewritten, so an offset a reader took stays valid; `index.jsonl` is the
