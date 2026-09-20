@@ -214,6 +214,15 @@ The name is right — the O0 coreutils `nl` twin's own debug info types that
 parameter `re_pattern_buffer *` — and four field writes render one level less
 directly.
 
+### The export's compile-error cost
+
+The option's documented cost is that `decompile-project`'s exported `.c` reads
+fields out of types its own `.h` declares incomplete. On the `-O2` `ls` export
+that was +58 `cc -fsyntax-only` errors; with this round it is **+102**
+(830 off, 932 on), and the `.h` is still 0 errors in both arms. Seven more
+opaque shells is seven more types a body can read a field out of; the header,
+which is what the rest of the export depends on, is unmoved.
+
 ### Speed
 
 `speed.json` beside this file: interleaved min-of-15, `decompile-all` over five whole
