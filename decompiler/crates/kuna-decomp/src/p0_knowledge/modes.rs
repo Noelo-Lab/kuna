@@ -498,6 +498,19 @@ mod tests {
             // but preset membership is a DIV-recorded default change and the
             // measurement that would justify it needs a `/GS` corpus first.
             "msvcstackguard",
+        // (kuna `charptr`) Commit a pointer the program only ever uses on
+        // characters to `char *`. The sweep says yes and the speed budget says
+        // yes -- 444 slices / 10,748 functions, perfect `type_match` 1,349 ->
+        // 1,353, aggregate +4.93, 14 more improved against 3 worse, none off
+        // perfect, 0 arity changes over the 2,290 functions of the 8-binary
+        // corpus diff -- but the preset run of `make test-cli` moves six probes
+        // that pin the pointer spelling `protoorder` and `ptrfromuse` produce
+        // (`unsigned char *a0` -> `char *a0`, `void *a0` -> `char *a0`, and the
+        // store rendering that follows). +0.13% of the corpus aggregate does not
+        // buy re-pinning another feature's probes, so the commitment stays
+        // opt-in. Full evaluation:
+        // docs/features/charptr/default-on-evaluation.md.
+        "charptr",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();
