@@ -140,5 +140,16 @@
   "budget_pct": 5.0,
   "within_budget": true,
   "note": "measured on a box shared with other campaign lanes; interleaved so load falls on both arms alike. The only positive delta (ls, +1.15% on the minimum) is inside its own median's noise (+0.68%)."
+ },
+ "arity_counters": {
+  "surface": "kuna decompile-all --json variables[] (name,type,size,stack_offset,arg_index,kind) -- exactly what decbench scores",
+  "scope": "all 21 binaries whose output changes, off vs on, same build",
+  "functions": "23510 in both arms",
+  "functions_gaining_or_losing_an_arg_row": 0,
+  "functions_gaining_or_losing_a_variable_row": 0,
+  "functions_with_a_differing_row_signature": 20,
+  "of_those_vN_renumbering_only": 18,
+  "of_those_a_real_change": "2 -- bash expand_prompt at O2 and O2-noinline, stack slot -160 undefined8 -> char *, the preceding call's return narrowing; an improvement",
+  "note": "the 21 dropped arguments are CALL-SITE arguments, which variables[] does not export, which is why type_match cannot see this change either way"
  }
 }

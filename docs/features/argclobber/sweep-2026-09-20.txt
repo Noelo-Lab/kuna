@@ -144,3 +144,27 @@ Everything in this file therefore stands unchanged: same 21 functions, same 21
 dropped arguments, same 2 gained, same 19 register locals removed / 1 added,
 same 38 declarations net, same seven hunk classes.  The clause costs nothing on
 a real program and declines exactly the shape it was added for.
+
+
+Arity counters on the surface decbench scores
+----------------------------------------------------------------------
+`kuna decompile-all --json` off vs on over all 21 changed binaries, comparing
+`variables[]` (the rows the metric reads: name, type, size, stack_offset,
+arg_index, kind).  type_match cannot see a fabricated variable, so this is
+measured directly.
+
+  functions present .............. 23,510 in BOTH arms (no function added/lost)
+  functions whose arg-row COUNT moved ... 0   (0 gained, 0 lost)
+  functions whose variable-row COUNT moved 0
+  functions whose row signature differs .. 20
+      18 of them differ by vN RENUMBERING only -- type, size, stack offset,
+         arg_index and kind identical for every row
+      2 of them (bash expand_prompt at O2 and O2-noinline) have exactly one
+         stack slot change type, and it IMPROVES:
+             slot -160  undefined8 (8)  ->  char * (8)
+         That is the preceding call's return narrowing: `v = xmalloc(n)` loses
+         its dead rdx half, so the slot stops being an untyped 8 bytes.
+
+No argument row is fabricated and none is deleted anywhere in the corpus: the
+21 dropped arguments are all CALL-SITE arguments, which `variables[]` does not
+export at all.
