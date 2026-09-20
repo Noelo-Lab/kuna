@@ -1,0 +1,12 @@
+{
+  "O2/tar/tar": {
+    "base_s": 45.712,
+    "new_s": 46.938,
+    "delta_pct": 2.68
+  },
+  "O2/coreutils/ls": {
+    "base_s": 13.808,
+    "new_s": 13.982,
+    "delta_pct": 1.26
+  }
+}

@@ -254,6 +254,10 @@ which is what the interleaving controls for.
 | `O0` grep | 6.936s | 7.083s | +2.11% |
 | `O2` sort | 14.799s | 14.842s | +0.30% |
 
+Re-measured once this lane's own workspace suite had finished, the two largest
+deltas come down: tar +2.68% (45.712s -> 46.938s) and ls +1.26% (13.808s ->
+13.982s), `speed-confirm.json`.
+
 Worst +3.49%, inside the +5% budget. The cost is where the names land: `tar` and `ls`
 are the two binaries with the most newly-typed pointers, and a named pointee is more
 type-propagation work than a `void *` one. `grep -O2` and `sort`, whose pointers were

@@ -252,7 +252,22 @@
    }
   },
   "worst": 3.49,
-  "note": "measured under campaign load (8 other lanes plus this lane's own workspace suite); interleaving is what controls for it"
+  "note": "measured under campaign load (8 other lanes plus this lane's own workspace suite); interleaving is what controls for it",
+  "confirmation_run": {
+   "why": "the two largest deltas re-measured once this lane's own workspace suite had finished",
+   "runs": {
+    "O2/tar/tar": {
+     "base_s": 45.712,
+     "new_s": 46.938,
+     "delta_pct": 2.68
+    },
+    "O2/coreutils/ls": {
+     "base_s": 13.808,
+     "new_s": 13.982,
+     "delta_pct": 1.26
+    }
+   }
+  }
  },
  "gates": {
   "make test": "PARITY OK, 675/675",
