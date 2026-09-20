@@ -210,8 +210,9 @@ the synthesized structure had a member for renders as a width cast at an offset 
 +        *(unsigned int *)a1 = 0;
 ```
 
-The name is right (nl's own source declares that parameter `struct re_pattern_buffer *`)
-and four field writes render one level less directly.
+The name is right — the O0 coreutils `nl` twin's own debug info types that
+parameter `re_pattern_buffer *` — and four field writes render one level less
+directly.
 
 ### Speed
 
