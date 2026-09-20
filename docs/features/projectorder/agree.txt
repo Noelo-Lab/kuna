@@ -1,0 +1,12 @@
+| build | functions in both | export == decompile-all (before) | (after) |
+|---|---:|---:|---:|
+| O0 fmt | 191 | 161 | 191 |
+| O0 ls | 589 | 374 | 589 |
+| O0 sort | 479 | 366 | 479 |
+| O0 du | 441 | 319 | 441 |
+| O2 fmt | 151 | 121 | 151 |
+| O2 ls | 404 | 271 | 404 |
+| O2 sort | 343 | 256 | 343 |
+| O2 du | 320 | 227 | 320 |
+
+pooled: 2918 functions; export == decompile-all before 2095 (71.8%), after 2918 (100.0%)

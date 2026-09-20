@@ -47,5 +47,5 @@
       "\\[kuna --jobs\\] note:"
     ]
   },
-  "notes": "A serial export of this fixture declares `struct struct_0 {`. Workers used to number their own struct_N and the merged .h tore definitions apart; then they ran with structsynth off. Now every function that synthesizes gets the serial names, and the workers that render the .h hold the same replayed structures, so the merge warning never fires. The serial run those names belong to is `--jobs 1 --option protoorder off`: the export takes the callee-first order too, and no pool can."
+  "notes": "Workers used to number their own struct_N and the merged .h tore definitions apart; then they ran with structsynth off. Now every function that synthesizes gets the serial names and the workers rendering the .h hold the same replayed structures, so the merge warning never fires. That serial run is `--jobs 1 --option protoorder off`: the export takes the callee-first order too, and no pool can."
 }
