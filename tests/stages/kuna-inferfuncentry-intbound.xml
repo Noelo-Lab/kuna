@@ -1,0 +1,74 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna strict fix (P5, ActionConstantPtr::isPointer function-entry escape; no
+    option).
+
+    `inferfuncentry` (GH-6930, gh6930-inferfuncentry.xml) lifts the
+    bit_transitions less-than-3 guard for a constant that resolves to an exact
+    function entry, so a callback at a power-of-two image base still prints as
+    its name.  The lift applied to every use of such a constant, including the
+    ones where the operand is a number: a round buffer size in a PIE lands on a
+    function entry often enough that coreutils tail -O0 hit it, where
+    MIN (n_remaining, BUFSIZ) printed as `if (_DT_INIT < v9)` and dragged the
+    uintmax_t byte counter it bounded to `void *`.
+
+    handler sits at 0x100000, which is 1 shifted left by 20: a single-bit address.
+
+      bound:  mov rax,rdi ; cmp rdi,0x100000 ; jbe +5 ; mov eax,0x100000 ; ret
+              unsigned long bound(unsigned long n) { return MIN (n, 0x100000); }
+      reg:    mov esi,0x100000 ; xor edi,edi ; call setcb
+              register handler as a callback, GH-6930's own shape
+      dispatch: movabs rax,0x100000 ; test edi,edi ; jne +10 ;
+                movabs rax,0x110000 ; ret
+              pick one of two callbacks, the shape the narrowing must not break
+
+    #1 and #2: bound takes and returns a number and its bound prints as
+    0x100000.  Before the fix both uses of the constant printed as `handler`
+    and bound was `code * bound(code *a0)`.  #3: reg still passes the
+    name, so the GH-6930 escape is intact.  #4: a COPY of the same address keeps
+    the name too, because nothing in dispatch orders that value: coreutils od
+    selects between four formatters this way and only one of the four has fewer
+    than three bit transitions.  #5: with `option inferfuncentry off` reg passes
+    the bare literal, which is upstream's behaviour and the control that says #3
+    is the escape firing.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">f30f1efac3</bytechunk>
+<bytechunk space="ram" offset="0x100010" readonly="true">
+4889f84881ff000010007605b800001000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100030" readonly="true">
+4883ec08be0000100031ffe8c0ff00004883c408c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100050" readonly="true">
+48b8000010000000000085ff750a48b80000110000000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x110000" readonly="true">f30f1efac3</bytechunk>
+<symbol space="ram" offset="0x100000" name="handler"/>
+<symbol space="ram" offset="0x100010" name="bound"/>
+<symbol space="ram" offset="0x100030" name="reg"/>
+<symbol space="ram" offset="0x100050" name="dispatch"/>
+<symbol space="ram" offset="0x110000" name="setcb"/>
+</binaryimage>
+<script>
+  <com>lo fu bound</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu reg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option inferfuncentry off</com>
+  <com>lo fu reg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="inferfuncentry #1: the bounded value keeps its integer type" min="1" max="1">uint8 bound\(uint8 a0\)</stringmatch>
+<stringmatch name="inferfuncentry #2: an integer bound that lands on a function entry stays a number" min="1" max="1">return 0x100000;</stringmatch>
+<stringmatch name="inferfuncentry #3: a callback argument at the same address still prints its name" min="1" max="1">setcb\(0,handler\)</stringmatch>
+<stringmatch name="inferfuncentry #4: a function pointer the body never orders still prints its name" min="1" max="1">return handler;</stringmatch>
+<stringmatch name="inferfuncentry #5: inferfuncentry off restores the bare literal for the argument too" min="1" max="1">setcb\(0,0x100000\)</stringmatch>
+</decompilertest>

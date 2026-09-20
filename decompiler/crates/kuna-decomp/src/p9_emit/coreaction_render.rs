@@ -105,6 +105,7 @@
 //! pulls individual constructors rather than a `*_actions()` bundle.  A
 //! [`render_actions`] helper is provided for round-trip identity testing only.
 
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use kuna_base::address::{bit_transitions, Address};
@@ -676,6 +677,28 @@ impl Action for ActionConstantPtr {
             })
             .collect();
 
+        // (kuna) Which constant VALUES this function reads as numbers.  The
+        // function-entry escape below suspends the `bit_transitions` guard for a
+        // constant that lands on a function entry, and a round buffer size lands on
+        // one whenever `.init` sits at a low offset; a value the function also
+        // orders or divides is a number wherever else it appears.  Built once per
+        // pass from the same snapshot the loop walks.
+        let mut numeric: HashSet<uintb> = HashSet::new();
+        for &c in &constants {
+            let Some(off) = data.vbank().get(c).map(|v| v.get_offset()) else { continue };
+            let Some(code) = data.lone_descend(c).and_then(|d| data.obank().get(d)).map(|o| o.code())
+            else {
+                continue;
+            };
+            if !crate::kuna_inferfuncentry::reads_as_integer(code) {
+                continue;
+            }
+            numeric.insert(off);
+            if crate::kuna_inferfuncentry::orders_its_constant(code) {
+                numeric.insert(off.wrapping_sub(1));
+            }
+        }
+
         for vn in constants {
             // Re-read each Varnode (earlier iterations may have rewritten the IR).
             let (offset, is_ptr_check, has_no_descend, is_spacebase, size) = {
@@ -733,7 +756,7 @@ impl Action for ActionConstantPtr {
             }
 
             let mut full_encoding: uintb = 0;
-            let resolved = is_pointer(data, &rspc, vn, op, slot, &mut full_encoding);
+            let resolved = is_pointer(data, &rspc, vn, op, slot, &numeric, &mut full_encoding);
             // Set check flag AFTER searching for the symbol.
             data.vbank_mut().get_mut(vn).expect("constantptr: stale vn").set_ptr_check();
             if let Some((entry, rampoint)) = resolved {
@@ -939,6 +962,7 @@ fn is_pointer(
     vn: VarnodeId,
     op: OpId,
     slot: int4,
+    numeric: &HashSet<uintb>,
     full_encoding: &mut uintb,
 ) -> Option<(GlobalContainer, Address)> {
     let glb = Rc::clone(data.get_arch());
@@ -1023,7 +1047,10 @@ fn is_pointer(
         // divergence keeps single-bit values that are EXACT function entries; reuse
         // kuna_is_function_entry (no re-special-casing).
         if bit_transitions(vn_offset, vn_size) < 3
-            && !kuna_const_is_function_entry(data, spc, vn_offset, vn_size, &op_addr)
+            && !(crate::kuna_inferfuncentry::entry_escape_applies(
+                opc,
+                numeric.contains(&vn_offset),
+            ) && kuna_const_is_function_entry(data, spc, vn_offset, vn_size, &op_addr))
         {
             return None;
         }

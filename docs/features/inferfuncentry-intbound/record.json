@@ -1,0 +1,147 @@
+{
+ "opportunity": "kuna's `inferfuncentry` escape (GH-6930) suspends ActionConstantPtr's `bit_transitions < 3` guard for any constant that resolves to an exact function entry, whatever the operand means. In a position-independent executable `.init` sits at a low round offset, so a round buffer size lands on one: coreutils tail -O0 computes MIN (n_remaining, BUFSIZ), BUFSIZ is 0x2000 and 0x2000 is that image's _DT_INIT, so the bound printed as `if (_DT_INIT < v9)`, the other arm of the select as `v1 = _DT_INIT`, and the uintmax_t byte counter they bounded became `void *` -- in dump_remainder, and through protoorder in tail_forever's `uintmax_t bytes_to_read`.",
+ "test_name": "tests/stages/kuna-inferfuncentry-intbound.xml (5 assertions, four passes: the bounded value, its bound, the GH-6930 callback argument, a function-pointer COPY control, and the option-off control) + 5 unit tests in p5_types/kuna_inferfuncentry/tests.rs",
+ "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/tail",
+ "selector": "0x4649",
+ "func_addr": "0x4649",
+ "option": null,
+ "flag": null,
+ "change_kind": "strict bug fix, no option (it narrows the existing `inferfuncentry` rule; `inferfuncentry off` still means upstream)",
+ "tier": "transform",
+ "phase": "P5",
+ "subphase": "const-pointer",
+ "source_decompiler": null,
+ "inspiration": null,
+ "default_on": true,
+ "parity": "OK",
+ "misattribution_checked": {
+  "claim": "the two rows that moved the wrong way between the round-B and round-C campaign measurements were attributed to `ptrfromuse void`",
+  "verdict": "refuted, twice",
+  "ablation": "444-slice typesweep `--option ptrfromuse off` on main 2e28ece4a: PERFECT 1349 -> 1145 (-204), moved ONTO perfect 0, improved 0, worsened 85. ptrfromuse-void has no measurable false positive on that corpus.",
+  "tail_forever": "0.75 in BOTH arms of that ablation; `bytes_to_read` is `void *` with ptrfromuse off and stays `void *` with protoorder / structsynth / charbyte / boolbyte / foldcallretphi / codescalar / formatstring / libctypes off. Only `inferfuncentry off` changes it. The round-B binary already printed `void *` for dump_remainder; what round C added was protoorder carrying that wrong callee type to the caller.",
+  "buf_has_encoding_errors": "0.2 in BOTH arms. `buf` is `unsigned long *`, not `void *`: skip_easy_bytes reads a uword at a time, so that pointee is what the callee's body says and protoorder carries it. A pointee-granularity question, out of this fix's scope."
+ },
+ "rule": {
+  "reads_as_integer": "INT_LESS / INT_LESSEQUAL / INT_SLESS / INT_SLESSEQUAL / INT_MULT / INT_DIV / INT_SDIV / INT_REM / INT_SREM / INT_LEFT / INT_RIGHT / INT_SRIGHT",
+  "orders_its_constant": "the four comparisons; a bound also pins the value one below its literal, because the strict/non-strict rewrite moves it (tail's MIN arrives as INT_LESS(0x2000, n), head's as INT_LESS(0x2001, n))",
+  "entry_escape_applies": "the escape is available when this reader is not one of those AND the same numeric value is not read as one anywhere else in the function",
+  "why_the_reader_alone_is_not_enough": "the assignment arm of a MIN is a plain COPY and so is every entry of a function-pointer table. coreutils od -O2 decode_one_format selects between sub_3f20, sub_3ff0, sub_40a0 and sub_4150, and 0x3ff0 is the one of the four with fewer than three bit transitions: refusing the escape on COPY alone left `v4 = (void *)0x3ff0;` among three named siblings (measured on an earlier revision of this branch).",
+  "cost": "the set of numerically-read values is built once per ActionConstantPtr pass from the constant snapshot apply() already takes: one lone_descend per constant"
+ },
+ "benchmark": {
+  "instrument": "scripts.decbench.typesweep --baseline-only, decbench pinned at 625e892 (docs/decbench/typecampaign/final-c/pindb.py), DECBENCH_NO_CACHE=1",
+  "slice_set": "projects coreutils grep gzip diffutils bzip2 findutils tar shadow, O0/O2/O2-noinline: 444 slices, 10,748 functions",
+  "main_2e28ece4a": {
+   "perfect": 1349,
+   "aggregate": 3657.76,
+   "mean": 0.3403
+  },
+  "fix": {
+   "perfect": 1349,
+   "aggregate": 3659.62,
+   "mean": 0.3405
+  },
+  "per_function": {
+   "improved": 13,
+   "worse": 0
+  },
+  "named_witness": "coreutils::O0::tail tail_forever 0.75 -> 0.8125 (its round-B value)",
+  "moved_rows": "docs/features/inferfuncentry-intbound/typesweep-moved.json",
+  "rebase_remeasure": {
+   "base": "724381149 (main with argclobber default on, #689)",
+   "why": "argclobber changes call argument lists, so both arms were re-measured on the rebased tree",
+   "base_arm": {
+    "perfect": 1349,
+    "aggregate": 3657.76,
+    "mean": 0.3403
+   },
+   "fix_arm": {
+    "perfect": 1349,
+    "aggregate": 3659.62,
+    "mean": 0.3405
+   },
+   "per_function": {
+    "improved": 13,
+    "worse": 0
+   },
+   "note": "identical to the 2e28ece4a measurement: argclobber moves no type_match row on this slice set",
+   "hunk_reclassification": "coreutils tail/head/od/seq at O0, base arm vs fix arm: od unchanged, the other three are the same cast-change / declaration / renumbering classes as the original bundle, no statement moved or deleted"
+  }
+ },
+ "corpus_diff": {
+  "surface": "whole-binary `kuna decompile-all` C, main vs the fix, 16 builds (coreutils head/od/seq/tail/ls, grep, gzip, tar at O0 and O2), 6,882 functions",
+  "functions_changed": 18,
+  "functions_renumbering_only": 0,
+  "hunks": {
+   "OTHER": 55,
+   "cast-change": 55,
+   "declaration": 24,
+   "decl-set": 15,
+   "cast-change+index-rewrite": 7,
+   "addend-reorder": 4,
+   "STATEMENT": 4,
+   "cast-change+declaration": 2,
+   "cast-change+declaration+index-rewrite": 2,
+   "index-rewrite": 2,
+   "addend-reorder+cast-change": 1
+  },
+  "every_hunk_read": true,
+  "OTHER": "all 55 are the one class: a byte counter that was wrongly a pointer becomes an integer, so `&v[-n]` becomes `v -= n`, `(void *)0xffffffffffffffff` becomes `-1`, `NULL` becomes `0`, `(void *)0xa` becomes `10`, and `_DT_INIT` becomes `0x2000`. The classifier's skeleton normalizer cannot equate a symbol with a literal, which is why they land in its catch-all bucket.",
+  "STATEMENT": "all 4 are one declaration block moving because a `void *` became `unsigned long` and the block re-sorts; nothing is deleted (`char v10; bool v11; void *v12;` -> `char v8; bool v9;` + `unsigned long v39;`). This is the classifier's documented `bool` blind spot, recorded in docs/features/ptrfromuse/record.json.",
+  "statements_deleted_or_moved": 0,
+  "files": [
+   "corpus-hunks.json",
+   "corpus-suspect-hunks.txt"
+  ]
+ },
+ "speed": {
+  "method": "interleaved whole-binary `decompile-all --json`, min-of-15 and median-of-15, alternating arm order; deltas over +5% re-run at a quieter moment with min-of-21",
+  "min_of_15": {
+   "tail-O0": -3.05,
+   "head-O0": 0.79,
+   "ls-O2": 1.79,
+   "grep-O2": 3.7,
+   "gzip-O2": 7.13
+  },
+  "median_of_15": {
+   "tail-O0": 0.22,
+   "head-O0": 3.02,
+   "ls-O2": 0.22,
+   "grep-O2": 2.75,
+   "gzip-O2": 4.21
+  },
+  "rerun_min_of_21": {
+   "gzip-O2": -7.09,
+   "grep-O2": 0.77
+  },
+  "rerun_median_of_21": {
+   "gzip-O2": -4.15,
+   "grep-O2": -0.38
+  },
+  "verdict": "within budget. gzip-O2 brackets zero (+7.13% then -7.09%), so the effect is under this box's noise floor; the worst credible number is ls-O2 at +1.79%.",
+  "files": [
+   "speed.json",
+   "speed-rerun.json"
+  ]
+ },
+ "gates": {
+  "make test": "675/675 assertions passed; PARITY OK",
+  "make test-stages": "1255/1255 assertions passed; PARITY OK",
+  "make check-spec": "check-spec OK (lenient mode); tools/check_spec.py --strict: check-spec OK (strict mode)",
+  "make test-cli": "tests/cli: 209/209 passed",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh (no option added)",
+  "make rust-test": "RUST_TEST_RC=0 (416 test-result lines ok, via /home/mahaloz/kwt/rust-test-lane.sh)"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry.rs",
+  "decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry/tests.rs",
+  "decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs",
+  "decompiler/crates/kuna-base/src/xml.rs",
+  "tests/stages/kuna-inferfuncentry-intbound.xml",
+  "docs/baseline-stages.json",
+  "docs/spec/05-types.md"
+ ],
+ "notes": "The lane was briefed to tighten `ptrfromuse`'s refusal on a value used as an integer. The premise did not survive measurement (see misattribution_checked), and the defect the brief pointed at is real but belongs to `inferfuncentry`. The fix keeps the brief's rule -- a value the function uses as a number is not committed to a pointer -- at the place that was actually committing it."
+}

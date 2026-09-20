@@ -1,0 +1,427 @@
+=== coreutils-head-O0 sub_2e56@0x2e56 [OTHER]
+--- off
+  v5 = _DT_INIT;
++++ fix
+  v4 = 0x2000;
+
+=== coreutils-head-O0 sub_2e56@0x2e56 [OTHER]
+--- off
+    v4 = &v4[-v2];
++++ fix
+    v3 -= v1;
+
+=== coreutils-head-O0 sub_3044@0x3044 [STATEMENT]
+--- off
+  char v10; // stack - 0xd6
+  bool v11; // stack - 0xd3
+  void *v12; // stack - 0xd0
++++ fix
+
+
+=== coreutils-head-O0 sub_3044@0x3044 [STATEMENT]
+--- off
+
++++ fix
+  char v8; // stack - 0xd6
+  bool v9; // stack - 0xd3
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+    v7 = (long)_DT_INIT - (unsigned long)((unsigned int)a2 & 0x1fff);
+    v8 = ((unsigned long)&a2[v7] >> 0xd) + 1;
++++ fix
+    v3 = 0x2000 - (unsigned long)((unsigned int)a2 & 0x1fff);
+    v4 = (v3 + a2 >> 0xd) + 1;
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+        *(unsigned long *)(v15 * 8 + (long)v17) = sub_7d4e(_DT_INIT);
++++ fix
+        *(unsigned long *)(v13 * 8 + (long)v15) = sub_7d4e(0x2000);
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+      v14 = (void *)sub_50d5(a1,*(void **)((long)v17 + v15 * 8),_DT_INIT);
+      if (v14 < _DT_INIT) {
++++ fix
+      v12 = sub_50d5(a1,*(void **)((long)v15 + v13 * 8),0x2000);
+      if (v12 <= 0x1fff) {
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+        v12 = &v12[(long)v14];
++++ fix
+        v10 += v12;
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+        v8 = (long)_DT_INIT - (long)v14;
+        v12 = &v12[v7];
++++ fix
+        v4 = 0x2000 - v12;
+        v10 += v3;
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+          sub_2db6(&v14[*(long *)((long)v17 + v15 * 8)],v8);
++++ fix
+          sub_2db6((void *)(*(long *)((long)v15 + v13 * 8) + v12),v4);
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+          sub_2db6(&v14[*(long *)((long)v17 + v15 * 8)],v7);
++++ fix
+          sub_2db6((void *)(*(long *)((long)v15 + v13 * 8) + v12),v3);
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+        v7 = (long)v14 - ((long)_DT_INIT - v7);
+        v12 = &v12[v7];
++++ fix
+        v3 = v12 - (0x2000 - v3);
+        v10 += v3;
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+    v3 = &_DT_INIT[(long)a2];
++++ fix
+    v3 = a2 + 0x2000;
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+        v12 = &a2[(long)v12 - v13];
+        sub_2db6(&_DT_INIT[(long)(&v9)[(int)(unsigned int)(v11 ^ 1)]],(long)a2 - v13);
++++ fix
+        v10 += a2 - v11;
+        sub_2db6((void *)((long)(&v7)[(int)(unsigned int)(v9 ^ 1)] + 0x2000),a2 - v11);
+
+=== coreutils-head-O0 sub_3044@0x3044 [OTHER]
+--- off
+        v12 = &v4[(long)v12 - (long)a2];
+        sub_2db6((&v9)[(int)(unsigned int)v11],(long)v4 - (long)a2);
++++ fix
+        v10 += v4 - a2;
+        sub_2db6((&v7)[(int)(unsigned int)v9],v4 - a2);
+
+=== coreutils-head-O0 sub_3d5c@0x3d5c [OTHER]
+--- off
+    v8 = _DT_INIT;
+  v9 = a4 - (long)v8;
++++ fix
+    v8 = 0x2000;
+  v9 = a4 - v8;
+
+=== coreutils-head-O0 sub_3d5c@0x3d5c [OTHER]
+--- off
+  v8 = (long)sub_7385(a1,v5,v8);
+  if (v8 == (void *)0xffffffffffffffff) {
++++ fix
+  v8 = sub_7385(a1,v5,v8);
+  if (v8 == -1) {
+
+=== coreutils-head-O0 sub_3d5c@0x3d5c [OTHER]
+--- off
+    v8 = (long)sub_7385(a1,v5,_DT_INIT);
+    if (v8 == (void *)0xffffffffffffffff) {
++++ fix
+    v8 = sub_7385(a1,v5,0x2000);
+    if (v8 == -1) {
+
+=== coreutils-head-O2 main@0x26e0 [STATEMENT]
+--- off
+
++++ fix
+  bool v38; // zf
+  unsigned long v39; // stack - 0x178
+
+=== coreutils-head-O2 main@0x26e0 [STATEMENT]
+--- off
+  bool v40; // zf
+  void *v41; // stack - 0x178
++++ fix
+
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+    v41 = (void *)0xa;
++++ fix
+    v39 = 10;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+  v20 = (long)_DT_INIT - v28;
+  v21 = (unsigned long)&v41[v20] >> 0xd;
++++ fix
+  v20 = 0x2000 - v28;
+  v21 = v39 + v20 >> 0xd;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+              v48 = NULL;
+            if ((v41 < v48) && (v27 = sub_3b50(v6,&v48[-(long)v41]), v27))
++++ fix
+              v46 = 0;
+            if ((v39 < v46) && (v27 = sub_3b50(v6,v46 - v39), v27))
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+        v46 = (void *)v45;
+        v16 = NULL;
++++ fix
+        v44 = v43;
+        v31 = 0;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+          v17 = (char *)v14;
+          v31 = sub_6bd0(v6,v17,_DT_INIT);
++++ fix
+          v18 = v17;
+          v14 = sub_6bd0(v6,v18,0x2000);
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+            v16 = &v16[*(long *)&v17[0x2010]];
+            if (_DT_INIT <= (void *)(*(unsigned long *)&v17[0x2008] + *(long *)&v45[0x2008])) { // branch-flip
++++ fix
+            v31 += *(long *)&v18[0x2010];
+            if (0x2000 <= *(unsigned long *)&v18[0x2008] + *(long *)&v43[0x2008]) { // branch-flip
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+                v47 = &v47[v31];
++++ fix
+                v45 += v16;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+            v47 = &v47[v31];
++++ fix
+            v45 += v14;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+            v16 = &v16[1];
++++ fix
+            v31 += 1;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+              v47 = &v47[v31];
++++ fix
+              v45 += v14;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+              v16 = &v16[-*(long *)&v14[0x2010]];
+              v14 = *(void **)&v14[0x2018];
+            } while (v41 < &v16[-*(long *)&v14[0x2010]]);
++++ fix
+              v31 -= *(long *)&v17[0x2010];
+              v17 = *(char **)&v17[0x2018];
+            } while (v39 < v31 - *(long *)&v17[0x2010]);
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+            v47 = &v47[v31];
++++ fix
+            v45 += v31;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+        v14 = &_DT_INIT[(long)v41];
++++ fix
+        v31 = v39 + 0x2000;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+                  sub_3ad0(&_DT_INIT[(long)(&v25)[v5 ^ 1]],v16);
+                  v46 = v14;
++++ fix
+                  sub_3ad0((void *)((long)(&v25)[v5 ^ 1] + 0x2000),v16);
+                  v44 = (char *)v31;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+            v46 = &v46[(long)v41];
+            if ((!v41) || (sub_3ad0(&_DT_INIT[(long)(&v25)[v5 ^ 1]],v41), v41 < v16)) {
+              v46 = &v46[(long)v16 - (long)v41];
+              sub_3ad0(v13,(long)v16 - (long)v41);
++++ fix
+            v44 = (unsigned long)((long)v44 + v39);
+            if ((!v39) || (sub_3ad0((void *)((long)(&v25)[v5 ^ 1] + 0x2000),v39), v39 < v16)) {
+              v44 = (unsigned long)((long)v44 + (v16 - v39));
+              sub_3ad0(v13,v16 - v39);
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+      v47 = (void *)0x1;
++++ fix
+      v45 = 1;
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+      v11 = sub_4660(v6,(void *)*v37,_DT_INIT);
++++ fix
+      v11 = sub_4660(v6,(void *)*v35,0x2000);
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+                v31 = (long)_DT_INIT - v11;
+                v46 = &v46[v20];
++++ fix
+                v31 = 0x2000 - v11;
+                v44 = (unsigned long)((long)v44 + v20);
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+            v13 = (void *)sub_7350(_DT_INIT);
++++ fix
+            v13 = (void *)sub_7350(0x2000);
+
+=== coreutils-head-O2 main@0x26e0 [OTHER]
+--- off
+            v11 = sub_4660(v6,v13,_DT_INIT);
++++ fix
+            v11 = sub_4660(v6,v13,0x2000);
+
+=== coreutils-head-O2 sub_3b50@0x3b50 [OTHER]
+--- off
+    v2 = _DT_INIT;
+    if (a1 <= (void *)0x2000)
++++ fix
+    v1 = 0x2000;
+    if (a1 <= 0x2000)
+
+=== coreutils-head-O2 sub_3b50@0x3b50 [OTHER]
+--- off
+    a1 = &a1[-v1];
++++ fix
+    a1 -= v1;
+
+=== coreutils-head-O2 sub_3ee0@0x3ee0 [OTHER]
+--- off
+  v2 = (void *)((long)(a4 - a3) % 0x2000);
+  v7 = _DT_INIT;
++++ fix
+  v2 = (long)(a4 - a3) % 0x2000;
+  v7 = 0x2000;
+
+=== coreutils-head-O2 sub_3ee0@0x3ee0 [OTHER]
+--- off
+      v3 = sub_6bd0(a1,v8,_DT_INIT);
++++ fix
+      v3 = sub_6bd0(a1,v8,0x2000);
+
+=== coreutils-seq-O0 sub_397e@0x397e [OTHER]
+--- off
+    v14 = (void *)((v10 + 1) * 2);
+    if (v14 < _DT_INIT)
+      v14 = _DT_INIT;
++++ fix
+    v14 = (v10 + 1) * 2;
+    if (v14 <= 0x1fff)
+      v14 = 0x2000;
+
+=== coreutils-tail-O0 sub_4649@0x4649 [OTHER]
+--- off
+      if (_DT_INIT < v9)
+        v1 = _DT_INIT;
++++ fix
+      if (0x2001 <= v8)
+        v1 = 0x2000;
+
+=== coreutils-tail-O0 sub_4649@0x4649 [OTHER]
+--- off
+    } while (a3 == (void *)0xffffffffffffffff);
+    v9 = &v9[-v2];
++++ fix
+    } while (a3 == 0xffffffffffffffff);
+    v8 -= v1;
+
+=== coreutils-tail-O0 sub_49bd@0x49bd [OTHER]
+--- off
+    v7 = _DT_INIT;
+  v8 = (long)a4 - (long)v7;
++++ fix
+    v7 = 0x2000;
+  v8 = a4 - v7;
+
+=== coreutils-tail-O0 sub_49bd@0x49bd [OTHER]
+--- off
+  v7 = (long)sub_ed34(a1,v4,v7);
+  if (v7 == (void *)0xffffffffffffffff) {
++++ fix
+  v7 = sub_ed34(a1,v4,v7);
+  if (v7 == -1) {
+
+=== coreutils-tail-O0 sub_49bd@0x49bd [OTHER]
+--- off
+    v7 = (long)sub_ed34(a1,v4,_DT_INIT);
+    if (v7 == (void *)0xffffffffffffffff) {
++++ fix
+    v7 = sub_ed34(a1,v4,0x2000);
+    if (v7 == -1) {
+
+=== coreutils-tail-O2 main@0x2960 [OTHER]
+--- off
+            v29 = sub_b540(v11,v28,_DT_INIT);
++++ fix
+            v29 = sub_b540(v11,v28,0x2000);
+
+=== coreutils-tail-O2 main@0x2960 [OTHER]
+--- off
+            if (_DT_INIT <= (void *)(v29 + *(long *)((long)v69 + 0x2000))) { // branch-flip
++++ fix
+            if (0x2000 <= v29 + *(long *)((long)v68 + 0x2000)) { // branch-flip
+
+=== coreutils-tail-O2 main@0x2960 [OTHER]
+--- off
+              if (*(unsigned long *)&_DT_INIT[v50])
+                sub_5c60(v50,*(unsigned long *)&_DT_INIT[v50]);
++++ fix
+              if (*(unsigned long *)(v50 + 0x2000))
+                sub_5c60(v50,*(unsigned long *)(v50 + 0x2000));
+
+=== coreutils-tail-O2 main@0x2960 [OTHER]
+--- off
+            v29 = sub_b540(v11,v57,_DT_INIT);
++++ fix
+            v29 = sub_b540(v11,v57,0x2000);
+
+=== coreutils-tail-O2 main@0x2960 [OTHER]
+--- off
+            if (_DT_INIT <= (void *)(v29 + v50)) {
++++ fix
+            if (0x2000 <= v29 + v50) {
+
+=== coreutils-tail-O2 sub_6020@0x6020 [OTHER]
+--- off
+    v3 = _DT_INIT;
+    if (v5 <= (void *)0x2000)
++++ fix
+    v3 = 0x2000;
+    if (v5 <= 0x2000)
+
+=== coreutils-tail-O2 sub_6020@0x6020 [OTHER]
+--- off
+    if (a3 != (void *)0xffffffffffffffff) {
+      v5 = &v5[-(long)v2];
++++ fix
+    if (a3 != 0xffffffffffffffff) {
+      v5 -= (long)v2;
+
+=== coreutils-tail-O2 sub_6190@0x6190 [OTHER]
+--- off
+  v2 = (void *)((long)((long)a4 - a3) % 0x2000);
+  v9 = _DT_INIT;
++++ fix
+  v2 = (long)(a4 - a3) % 0x2000;
+  v9 = 0x2000;
+
+=== coreutils-tail-O2 sub_6190@0x6190 [OTHER]
+--- off
+      v3 = sub_b540(a1,v10,_DT_INIT);
++++ fix
+      v3 = sub_b540(a1,v10,0x2000);
+

@@ -831,6 +831,36 @@ Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
   (kuna_const_is_function_entry)`) — a function placed at a power-of-two image
   base is a single-bit value, but it is still a function. Ordinary data
   constants never match, so flag semantics are preserved.
+
+  The rejection this skips is the only guard that keeps integer flags, masks
+  and round sizes out of the symbol table, so the skip is allowed only where
+  the constant is being used as an address. Round buffer sizes collide with
+  function entries often enough in a position-independent executable, where
+  `.init` sits at a low round offset, that this is not hypothetical: coreutils
+  `tail` at `-O0` computes `MIN (n_remaining, BUFSIZ)`, `BUFSIZ` is `0x2000`
+  and `0x2000` is that image's `_DT_INIT`, so the bound printed as
+  `if (_DT_INIT < v9)`, the other arm of the select as `v1 = _DT_INIT`, and the
+  `uintmax_t` byte counter they bounded became `void *` — in `dump_remainder`,
+  and through [`protoorder`](../options.md) into its caller's stack variable.
+
+  `decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry.rs
+  (entry_escape_applies)` decides this, on two readings of the same value. The
+  reader itself must not be arithmetic: an ordering comparison, a multiply, a
+  divide, a remainder or a shift reads its constant as a number
+  (`kuna_inferfuncentry.rs (reads_as_integer)`), and C has none of them between
+  a function pointer and anything else. A comparison also pins the value one
+  below its literal (`kuna_inferfuncentry.rs (orders_its_constant)`), because the
+  strict/non-strict rewrite moves the bound by one on the way here: the same
+  `MIN (n, BUFSIZ)` arrives as `INT_LESS(0x2000, n)` in `tail` and as
+  `INT_LESS(0x2001, n)` in `head`. The reader alone does not settle it,
+  because the assignment arm of a `MIN` is a plain COPY and so is every entry of
+  a function-pointer table — coreutils `od` at `-O2` selects between `sub_3f20`,
+  `sub_3ff0`, `sub_40a0` and `sub_4150` that way, and `0x3ff0` is the one of the
+  four with fewer than three bit transitions. What separates them is the rest of
+  the function: the escape is also declined for a value the function reads as a
+  number *anywhere*, which `ActionConstantPtr::apply` collects once per pass from
+  the constant snapshot it already takes
+  (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs`).
 - **(kuna GH-8471)** [`thumbfuncptr`](../options.md): a Thumb function pointer
   is `fn|1`; constant-pointer recovery produces `PTRSUB(fn) + 1`, and the
   simplification rule that normally deletes out-of-bounds PTRSUBs would

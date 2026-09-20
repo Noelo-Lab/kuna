@@ -84,3 +84,64 @@ fn option_default_is_on_and_apply_flips() {
     assert!(opt.is_enabled());
     assert!(msg.contains("on"));
 }
+
+#[test]
+fn escape_applies_where_a_code_address_can_appear() {
+    for opcode in [
+        OpCode::CPUI_CALL,
+        OpCode::CPUI_CALLIND,
+        OpCode::CPUI_COPY,
+        OpCode::CPUI_STORE,
+        OpCode::CPUI_INT_ADD,
+        OpCode::CPUI_INT_EQUAL,
+        OpCode::CPUI_INT_NOTEQUAL,
+    ] {
+        assert!(entry_escape_applies(opcode, false), "{opcode:?} should keep the escape");
+    }
+}
+
+#[test]
+fn escape_declines_a_reader_that_is_arithmetic() {
+    for opcode in [
+        OpCode::CPUI_INT_LESS,
+        OpCode::CPUI_INT_LESSEQUAL,
+        OpCode::CPUI_INT_SLESS,
+        OpCode::CPUI_INT_SLESSEQUAL,
+        OpCode::CPUI_INT_MULT,
+        OpCode::CPUI_INT_DIV,
+        OpCode::CPUI_INT_SDIV,
+        OpCode::CPUI_INT_REM,
+        OpCode::CPUI_INT_SREM,
+        OpCode::CPUI_INT_LEFT,
+        OpCode::CPUI_INT_RIGHT,
+        OpCode::CPUI_INT_SRIGHT,
+    ] {
+        assert!(reads_as_integer(opcode), "{opcode:?} reads its constant as a number");
+        assert!(!entry_escape_applies(opcode, false), "{opcode:?} should decline the escape");
+    }
+}
+
+#[test]
+fn only_an_ordering_comparison_pins_the_bound_below_it() {
+    for opcode in [
+        OpCode::CPUI_INT_LESS,
+        OpCode::CPUI_INT_LESSEQUAL,
+        OpCode::CPUI_INT_SLESS,
+        OpCode::CPUI_INT_SLESSEQUAL,
+    ] {
+        assert!(orders_its_constant(opcode), "{opcode:?} pins a bound");
+    }
+    for opcode in [OpCode::CPUI_INT_MULT, OpCode::CPUI_INT_LEFT, OpCode::CPUI_COPY] {
+        assert!(!orders_its_constant(opcode), "{opcode:?} pins no bound");
+    }
+}
+
+#[test]
+fn escape_declines_a_value_the_function_orders_elsewhere() {
+    // coreutils tail: the COPY arm of MIN (n_remaining, BUFSIZ) is the same shape
+    // as a function-pointer table's `v = handler`, and the only thing that tells
+    // them apart is that one of the two values is also compared as a number.
+    assert!(entry_escape_applies(OpCode::CPUI_COPY, false));
+    assert!(!entry_escape_applies(OpCode::CPUI_COPY, true));
+    assert!(!entry_escape_applies(OpCode::CPUI_CALL, true));
+}

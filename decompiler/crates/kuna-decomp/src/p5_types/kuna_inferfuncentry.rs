@@ -35,6 +35,7 @@
 //!     address (`None` == no function at `rampoint`).
 
 use kuna_base::address::Address;
+use kuna_num::opcodes::OpCode;
 
 /// (kuna) Toggle inference of function entries at single-bit image bases
 /// (C++ `OptionInferFuncEntry`, GH-6930).
@@ -74,6 +75,66 @@ impl InferFuncEntryOption {
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
+}
+
+/// (kuna) Does `opcode` order its constant operand against something?
+///
+/// An ordering comparison pins a bound, and the strict/non-strict rewrite moves
+/// the literal by one on the way here -- `MIN (n, BUFSIZ)` reaches this pass as
+/// `INT_LESS(0x2000, n)` in coreutils `tail` and as `INT_LESS(0x2001, n)` in
+/// coreutils `head`.  So a bound counts for its own value and for one below it.
+pub fn orders_its_constant(opcode: OpCode) -> bool {
+    matches!(
+        opcode,
+        OpCode::CPUI_INT_LESS
+            | OpCode::CPUI_INT_LESSEQUAL
+            | OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_SLESSEQUAL
+    )
+}
+
+/// (kuna) Does `opcode` read its constant operand as a number?
+///
+/// An ordering comparison, a multiply, a divide, a remainder or a shift is
+/// arithmetic on the value; C has none of them between a function pointer and
+/// anything else.
+pub fn reads_as_integer(opcode: OpCode) -> bool {
+    orders_its_constant(opcode)
+        || matches!(
+        opcode,
+        OpCode::CPUI_INT_MULT
+            | OpCode::CPUI_INT_DIV
+            | OpCode::CPUI_INT_SDIV
+            | OpCode::CPUI_INT_REM
+            | OpCode::CPUI_INT_SREM
+            | OpCode::CPUI_INT_LEFT
+            | OpCode::CPUI_INT_RIGHT
+            | OpCode::CPUI_INT_SRIGHT
+    )
+}
+
+/// (kuna) May the single-bit escape be consulted for this constant?
+///
+/// The escape suspends the one guard (`bit_transitions < 3`) that keeps integer
+/// flags, masks and round sizes out of the symbol table, so it may only be taken
+/// where the operand means a code address.  `opcode` is the reader being decided;
+/// `value_reads_as_integer` says whether the same numeric value is read as a
+/// number ([`reads_as_integer`]) anywhere else in this function.
+///
+/// The second half is what a round buffer size looks like in a
+/// position-independent executable, where `.init` sits at a low, round offset:
+/// coreutils `tail` at `-O0` computes `MIN (n_remaining, BUFSIZ)`, `BUFSIZ` is
+/// `0x2000` and `0x2000` is that image's `_DT_INIT`, so the comparison printed as
+/// `if (_DT_INIT < v9)`, the other arm of the select as `v1 = _DT_INIT`, and the
+/// `uintmax_t` byte counter they bounded became `void *` -- in the callee, and
+/// from there through `protoorder` into its caller's stack variable.  The
+/// comparison alone is not enough to refuse: the assignment is a plain COPY, the
+/// shape a function-pointer table also has (coreutils `od` selects between
+/// `sub_3f20`, `sub_3ff0`, `sub_40a0` and `sub_4150`, and only `sub_3ff0` has
+/// fewer than three bit transitions).  What separates them is that the function
+/// orders the one value and never orders the other.
+pub fn entry_escape_applies(opcode: OpCode, value_reads_as_integer: bool) -> bool {
+    !value_reads_as_integer && !reads_as_integer(opcode)
 }
 
 /// (kuna) Does the constant resolve exactly to a known function entry?
