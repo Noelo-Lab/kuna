@@ -69,8 +69,12 @@
 //!   that survives ([`callee_prototype_is_the_argument_list`]). This is the
 //!   clause that carries the rule, and it is the reason the option can be a
 //!   default at all;
-//! * the callee's own body does not **read** those register bytes before writing
-//!   them;
+//! * the callee's own body neither **reads** those register bytes before writing
+//!   them nor can **forward** them onward: at every point where its control
+//!   leaves for a target the walk cannot name — an indirect call or tail call, a
+//!   `CALLOTHER`, an indexed register-file access, an undecodable instruction —
+//!   the callee has already written the register itself
+//!   ([`crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead::opaque_transfer_free`]);
 //! * it is **trailing** -- no used trial follows it -- so the argument list keeps
 //!   its positional shape and no later argument moves;
 //! * at least one used argument remains, since an empty list is
@@ -153,28 +157,46 @@
 //! Where a variadic recovers short instead, the callee-body veto below and the
 //! surviving-argument accounting above are what answer for it.
 //!
-//! The callee's BODY is still read, as a veto only:
-//! [`crate::p4_calls::kuna_calleedeadarg`] decodes each callee once per image for
-//! the opposite claim, and a bounded entry walk that positively sees those
-//! register bytes read before they are written declines the drop too
-//! (`proves_input`). It cannot admit one.
+//! The callee's BODY is read twice more, and both are required, not optional.
+//! [`crate::p4_calls::kuna_calleedeadarg`] decodes each callee once per image; a
+//! bounded entry walk that positively sees those register bytes read before they
+//! are written declines the drop (`proves_input`), and a walk that cannot show
+//! the register is dead at every unnameable control transfer declines it too
+//! (`opaque_transfer_free`). Neither can admit a drop the clauses above refused.
+//!
+//! # Why a recovered prototype is not enough on its own
+//!
+//! A prototype states what the callee NAMES. A forwarding thunk names almost
+//! nothing: `long fwd(struct box *o,long a,long b) { if (!a) return 0; return
+//! o->fn(o,a,b); }` compiles to `test %rsi,%rsi; je; jmp *(%rdi)`, so kuna
+//! recovers `(rdi, rsi)` — two parameters, honestly reporting the two registers
+//! the body touches — while the function it jumps to consumes three. The
+//! recovered list then EQUALS the two arguments the drop would leave behind, the
+//! accounting above is satisfied, and the third argument is deleted although the
+//! program reads it. `docs/features/argclobber/ce-forward-thunk-2param.c` is that
+//! program. The opaque-transfer clause is what answers it: at the `jmp *(%rdi)`
+//! the callee has not written `rdx`, so the caller's value can still be reaching
+//! code no recovery saw, and the drop is declined.
 //!
 //! # What it cannot know
 //!
 //! The evidence is a recovery, not a fact. A callee whose own parameter list
-//! kuna under-recovers — it misses a parameter the callee really reads — states
-//! a prototype that admits the drop, and the argument goes. That is the residual
-//! hole, and it is the same hole every callee-derived statement has. The
-//! surviving-argument accounting bounds it: the under-recovery has to be exactly
-//! one slot deep, at exactly the register the clobber wrote, with every other
-//! argument still accounted for.
+//! kuna under-recovers — it misses a parameter the callee really reads, through
+//! a path of named calls where no unnameable transfer occurs — states a
+//! prototype that admits the drop, and the argument goes. That is the residual
+//! hole, and it is the same hole every callee-derived statement has. Two things
+//! bound it: the under-recovery has to be exactly one slot deep, at exactly the
+//! register the clobber wrote, with every other argument still accounted for;
+//! and the register has to be dead at every transfer the walk could not follow.
 //!
-//! What the clause removes is the class the bounded entry probe could not see at
-//! all: a read past a jump table, a read beyond the probe's instruction budget, a
-//! read inside an import, and a callee that really returns a 16-byte value in
-//! `rax:rdx` and forwards the high half onward. Each of those is a callee whose
-//! recovered prototype carries the parameter, so each is declined.
-//! `docs/features/argclobber/` holds the five programs and the corpus
+//! What the prototype clause removes is the class the bounded entry probe could
+//! not see at all: a read past a jump table, a read beyond the probe's
+//! instruction budget, a read inside an import, and a callee that really returns
+//! a 16-byte value in `rax:rdx` and forwards the high half onward. It removes
+//! those by carrying the parameter in the recovered list — but only when the
+//! recovery reached far enough to name it, which is why the opaque-transfer
+//! clause stands beside it rather than behind it.
+//! `docs/features/argclobber/` holds the six programs and the corpus
 //! measurement that bounds the rule.
 
 use kuna_base::address::Address;
@@ -501,11 +523,16 @@ pub fn drop_clobber_tail_arg(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
     // The callee's body is read as a veto on top of that: a bounded entry walk
     // that positively sees these bytes READ before they are written is looking at
     // a parameter the recovery missed, however the value got into the register.
-    if data
+    //
+    // And the same walk has to show that the value cannot leave the callee for
+    // code the recovery never saw. A recovered parameter list is a statement
+    // about what the callee NAMES, and a thunk that tail-calls through a pointer
+    // names neither the register it forwards nor the function it forwards to.
+    let body_admits = data
         .kuna_callee_entry_dead(&entry)
-        .map(|d| d.proves_input(&addr, trial_size))
-        .unwrap_or(false)
-    {
+        .map(|d| !d.proves_input(&addr, trial_size) && d.opaque_transfer_free(&addr, trial_size))
+        .unwrap_or(false);
+    if !body_admits {
         return;
     }
     // A sibling call to the same callee that really passed an argument here

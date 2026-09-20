@@ -191,6 +191,13 @@ pub struct CalleeEntryDead {
     /// an EMPTY list is no evidence at all rather than every range dead (see
     /// [`Self::proves_dead`]).
     cuts: Vec<ByteSet>,
+    /// The subset of [`Self::cuts`] taken where control left for code the walk
+    /// could not NAME: an indirect call or tail call, a `CALLOTHER`, an indexed
+    /// register-file access, an undecodable instruction. A direct call is not
+    /// one of these — its target has a name, so the callee's own recovery
+    /// accounted for whatever it passes on. Read by
+    /// [`Self::opaque_transfer_free`].
+    opaque_cuts: Vec<ByteSet>,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
 }
@@ -282,6 +289,37 @@ impl CalleeEntryDead {
             .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
     }
 
+    /// Can a value the caller left in `[addr, addr+size)` reach code this walk
+    /// could not name?
+    ///
+    /// `true` says it cannot: the walk completed, and at every point where
+    /// control left for an unnamed target — an indirect call or tail call, a
+    /// `CALLOTHER`, an indexed register-file access, an undecodable instruction
+    /// — the callee had already written those bytes itself, so what it forwards
+    /// there is its own value and not the caller's.
+    ///
+    /// This is what a recovered parameter list cannot say for a forwarding
+    /// thunk. `test %rsi,%rsi; je; jmp *(%rdi)` names `rdi` and `rsi` and
+    /// nothing else, so it RECOVERS two parameters while the function it jumps
+    /// to takes three; the recovery is not wrong about what it saw, it just did
+    /// not see the target. A summary that is incomplete, or that answers for
+    /// another space, says nothing and answers `false`.
+    pub fn opaque_transfer_free(&self, addr: &Address, size: int4) -> bool {
+        if !self.complete || size <= 0 {
+            return false;
+        }
+        let Some(sp) = addr.get_space() else { return false };
+        if self.reg_idx < 0 || sp.get_index() != self.reg_idx {
+            return false;
+        }
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size as u64);
+        if end < off {
+            return false;
+        }
+        self.opaque_cuts.iter().all(|c| (off..end).all(|b| c.contains(&(idx, b))))
+    }
+
     /// Did the walk complete? (Diagnostics and tests.)
     pub fn is_complete(&self) -> bool {
         self.complete
@@ -301,6 +339,7 @@ impl CalleeEntryDead {
             reads_live: reads.clone(),
             reads,
             cuts: cuts.into_iter().map(|c| c.into_iter().collect()).collect(),
+            opaque_cuts: Vec::new(),
             complete,
         }
     }
@@ -366,6 +405,7 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
         reads: Vec::new(),
         reads_live: Vec::new(),
         cuts: Vec::new(),
+        opaque_cuts: Vec::new(),
         complete: true,
     };
     let Some(entry_space) = entry.get_space() else {
@@ -404,6 +444,7 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
             Ok(n) if n > 0 => n,
             // Undecodable: the path ends where the walk cannot see.
             _ => {
+                res.opaque_cuts.push(frame.written.clone());
                 res.cuts.push(frame.written);
                 continue;
             }
@@ -417,6 +458,7 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.reads.clear();
         res.reads_live.clear();
         res.cuts.clear();
+        res.opaque_cuts.clear();
     }
     res
 }
@@ -495,9 +537,16 @@ fn step_instruction(
             }
         }
         match op.opc {
-            // Control transfer into code this walk is not reading.
-            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER
-            | OpCode::CPUI_BRANCHIND => {
+            // Control transfer into code this walk is not reading. A direct
+            // CALL names its target, so whatever it forwards is accounted for
+            // by the callee's own recovery; the indirect forms do not, and are
+            // recorded as opaque as well.
+            OpCode::CPUI_CALL => {
+                res.cuts.push(cur);
+                return Some(Vec::new());
+            }
+            OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
+                res.opaque_cuts.push(cur.clone());
                 res.cuts.push(cur);
                 return Some(Vec::new());
             }
@@ -514,6 +563,7 @@ fn step_instruction(
             // register file: the walk cannot say which register it names.
             OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
                 if op.ins.first().map(|v| v.offset as int4) == Some(res.reg_idx) {
+                    res.opaque_cuts.push(cur.clone());
                     res.cuts.push(cur);
                     return Some(Vec::new());
                 }
@@ -530,6 +580,7 @@ fn step_instruction(
                         }
                     }
                     None => {
+                        res.opaque_cuts.push(cur.clone());
                         res.cuts.push(cur);
                         return Some(Vec::new());
                     }

@@ -37,7 +37,11 @@
     clause is kept in prose because it still runs wherever a prototype IS
     stated, and the live coverage of the rule on a real image is in tests/cli/
     (argclobber-drops-a-trailing-clobbered-argument.json and its off arm,
-    argclobber-keeps-the-jump-table-callees-argument.json).
+    argclobber-keeps-an-argument-the-callee-takes.json,
+    argclobber-keeps-an-argument-a-thunk-forwards.json).  No stage test can
+    carry the callee clause: `park_recovered_proto` is set by
+    kuna-cli/src/decompile_all.rs alone, so the datatest harness never parks a
+    prototype at all.
 
     Stage / sub-stage: P4 "active-input-trial-scoring".  Both passes must
     render the same three-argument call, so the assertion counts 2.
