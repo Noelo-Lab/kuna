@@ -183,18 +183,19 @@ under-recovers states a prototype that admits the drop. That is the residual
 hole, and it is the hole every callee-derived statement has. Two clauses bound
 it. The accounting clause requires the under-recovery to be exactly one slot
 deep, at exactly the register the clobber wrote, with every other argument still
-accounted for. The opaque-transfer clause requires the register to be dead at
-every control transfer the walk could not follow, which is what closes the case
-where the recovery is short *because* it never saw the code that reads the
-register.
+accounted for. The forwarding clause requires the register to be dead at every
+control transfer that cannot be followed or answered for by its target, which is
+what closes the case where the recovery is short *because* it never saw the code
+that reads the register.
 
 Neither covers the other. The prototype clause removes the class a bounded body
 walk cannot see at all — a read past a jump table, a read beyond the probe's
-budget, a read inside an import, the `rax:rdx` struct-return forward — by
-carrying the parameter in the recovered list, which only works where the recovery
-reached far enough to name it. Where it did not, the thunk above is the whole
-class, and the body walk is what answers. The six programs in this directory are
-those classes.
+budget, the `rax:rdx` struct-return forward — by carrying the parameter in the
+recovered list, which only works where the recovery reached far enough to name
+it. Where it did not — a register handed to something no recovery read, through
+a pointer, through an unsignatured import, or through a chain of ordinary calls
+ending in one of those — the forwarding walk is what answers. The eight programs
+in this directory are those classes.
 
 One effect belongs in the option's own description rather than in a footnote:
 dropping the argument also **narrows the preceding call's return value** where
