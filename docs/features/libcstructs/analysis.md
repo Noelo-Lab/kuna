@@ -110,6 +110,18 @@ the call site rather than in the declaration alone — on a two-line glibc-obsta
 built with `gcc -O2`, a `size_t` slot turns the caller's `void f(int n)` into
 `void f(unsigned int n)` and inserts two casts.
 
+The split touches the import channel and nothing else. `decompile-all` over five whole
+binaries, the two builds differing only by it: `-O2` grep, `-O2` tar, `-O0` ls and `-O2`
+gzip are byte-identical, and `-O2` dpkg-query moves 7 lines — the two declarations, and
+one caller that gets its own `int` parameter back:
+
+```
+-void _obstack_newchunk(obstack *a0,unsigned long a1)        -long sub_e080(unsigned int a0)
++void _obstack_newchunk(obstack *a0,int a1)                  +long sub_e080(int a0)
+-    _obstack_newchunk((obstack *)0x22c560,(unsigned long)a0);
++    _obstack_newchunk((obstack *)0x22c560,a0);
+```
+
 `_obstack_allocated_p` is left out: the installed header does not declare it, so there
 is nothing to reduce — the same rule that rejected `__underflow` in the first round.
 `_obstack_free`'s declaration is the one that needed a step of reasoning: the header
