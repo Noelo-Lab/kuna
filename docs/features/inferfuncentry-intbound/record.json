@@ -46,7 +46,27 @@
    "worse": 0
   },
   "named_witness": "coreutils::O0::tail tail_forever 0.75 -> 0.8125 (its round-B value)",
-  "moved_rows": "docs/features/inferfuncentry-intbound/typesweep-moved.json"
+  "moved_rows": "docs/features/inferfuncentry-intbound/typesweep-moved.json",
+  "rebase_remeasure": {
+   "base": "724381149 (main with argclobber default on, #689)",
+   "why": "argclobber changes call argument lists, so both arms were re-measured on the rebased tree",
+   "base_arm": {
+    "perfect": 1349,
+    "aggregate": 3657.76,
+    "mean": 0.3403
+   },
+   "fix_arm": {
+    "perfect": 1349,
+    "aggregate": 3659.62,
+    "mean": 0.3405
+   },
+   "per_function": {
+    "improved": 13,
+    "worse": 0
+   },
+   "note": "identical to the 2e28ece4a measurement: argclobber moves no type_match row on this slice set",
+   "hunk_reclassification": "coreutils tail/head/od/seq at O0, base arm vs fix arm: od unchanged, the other three are the same cast-change / declaration / renumbering classes as the original bundle, no statement moved or deleted"
+  }
  },
  "corpus_diff": {
   "surface": "whole-binary `kuna decompile-all` C, main vs the fix, 16 builds (coreutils head/od/seq/tail/ls, grep, gzip, tar at O0 and O2), 6,882 functions",
