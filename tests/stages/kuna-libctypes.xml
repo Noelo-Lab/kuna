@@ -90,6 +90,13 @@
     named slots at once (#29, #30). Neither body reads a field, so #15 does not
     move.
 
+    `libctypes_obstack_import_x86_64` is the same witness on the other channel:
+    `_obstack_newchunk` imported from glibc, as the corpus's `dpkg` programs
+    import it. The two publishers disagree about the size parameter  -  gnulib's
+    size type is `size_t`, the installed glibc header declares `int`  -  so #32
+    pins `int4` where #28 pins `uint8`, and a table that spelled both the same
+    would fail one of them.
+
     #6 is narrowed to the two aggregates a DWARF definition already described
     (`st`, `f`), because pass 4 is the `opaque` arm and legitimately prints
     `a0-&gt;field_0x8`. #15 pins the count of LINES carrying an offset-named field
@@ -238,6 +245,12 @@ c3
   <com>load function emit</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_import_x86_64</com>
+  <com>read symbols</com>
+  <com>load function grow_import</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option libctypes opaque</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_x86_64</com>
@@ -246,6 +259,12 @@ c3
   <com>decompile</com>
   <com>print C</com>
   <com>load function emit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_import_x86_64</com>
+  <com>read symbols</com>
+  <com>load function grow_import</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -280,4 +299,6 @@ c3
 <stringmatch name="LIBCTYPES #28: on, that same definition -- gnulib's copy, linked in and exported -- names the pointer its caller holds" min="1" max="1">void grow\(obstack \*a0,uint8 a1\)</stringmatch>
 <stringmatch name="LIBCTYPES #29: off, the imported `putspent` leaves both of its aggregate slots unsaid" min="1" max="1">void emit\(void\)</stringmatch>
 <stringmatch name="LIBCTYPES #30: on, its declaration names the shadow record and the stream it is written to" min="1" max="1">void emit\(spwd \*a0,FILE \*a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #31: off, the IMPORTED obstack entry point says nothing either" min="1" max="1">void grow_import\(void\)</stringmatch>
+<stringmatch name="LIBCTYPES #32: on, an import takes glibc's own spelling -- `int`, where the linked-in gnulib copy of #28 takes `size_t`" min="1" max="1">void grow_import\(obstack \*a0,int4 a1\)</stringmatch>
 </decompilertest>
