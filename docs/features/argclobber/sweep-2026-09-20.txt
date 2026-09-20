@@ -1,0 +1,127 @@
+argclobber corpus sweep, 2026-09-20 -- the recovered-prototype rule
+======================================================================
+
+`kuna decompile-all <bin> --option argclobber off|on` over every stripped ELF in
+decbench results/full_run_address_2026-09-11 (O0, O2, O2-noinline).
+
+  binaries swept ............ 770
+  runs exiting non-zero ..... 0
+  binaries whose output moved 21
+  functions changed ......... 21  (one per binary)
+
+Every changed function loses exactly one trailing argument at exactly one call
+site, and every drop lands on the callee's TRUE arity, checked against the
+unstripped twin in the same tree:
+
+  __addvsi3(int,int)                    2   11 sites (openssh O0 permute_args)
+  __mulvsi3(int,int)                    2    4 sites (openssh O2/O2-noinline scp,sftp)
+  fmt(FILE *, char const *)             2    2 sites (coreutils fmt main, DWARF)
+  xrealloc(void *, size_t)              2    2 sites (bash expand_prompt)
+  ext2fs_dblist_sort2(dblist,sortfunc)  2    1 site  (e2fsck_pass2)
+  efi_create_handle(efi_handle_t *)     1    1 site  (u-boot O2-noinline)
+
+Counters
+----------------------------------------------------------------------
+  call sites losing an argument ..... 21
+  arguments dropped ................. 21
+  call sites GAINING an argument .... 2  (the two fmt mains'
+                                        under-recovered sibling site: 1/2/3 -> 2/2/2)
+  register-storage locals removed ... 19, added 1 (bash O2 expand_prompt)
+  declarations removed, net ......... 38
+  SUB164/SUB168 extraction sites gone 4  (the preceding call's return narrowing,
+                                        bash expand_prompt at both O2 levels)
+
+Per function
+----------------------------------------------------------------------
+  O0_openssh-portable_stripped_scp  sub_35590
+      sub_3bf80: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_sftp-server  sub_28371
+      sub_2bbc0: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_sftp  sub_37aa8
+      sub_3e490: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-add  sub_5cea8
+      sub_60810: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-agent  sub_51f23
+      sub_55890: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-keygen  sub_7a97c
+      sub_7fa00: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-keyscan  sub_75817
+      sub_7a080: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-pkcs11-helper  sub_4e59c
+      sub_51f00: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-sk-helper  sub_469db
+      sub_49b30: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh  sub_dfa34
+      sub_e8230: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_sshd  sub_ef1d6
+      sub_f6680: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O2-noinline_bash_stripped_bash  sub_dcac0
+      SUB164: arities off [2, 2] -> on None  (callee's own recovered arity: None)
+      SUB168: arities off [2, 2] -> on None  (callee's own recovered arity: None)
+      xrealloc: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals -0, declarations -2
+  O2-noinline_coreutils_stripped_fmt  main
+      sub_3a30: arities off [1, 2, 3] -> on [2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -2, declarations -3
+  O2-noinline_openssh-portable_stripped_scp  sub_c120
+      sub_355b0: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -1
+  O2-noinline_openssh-portable_stripped_sftp  sub_d190
+      sub_36630: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -1
+  O2-noinline_u-boot_stripped_u-boot  sub_60856a4c
+      sub_60855c90: arities off [2] -> on [1]  (callee's own recovered arity: 1)
+      register locals -1, declarations -1
+  O2_bash_stripped_bash  sub_e30d0
+      SUB164: arities off [2, 2] -> on None  (callee's own recovered arity: None)
+      SUB168: arities off [2, 2] -> on None  (callee's own recovered arity: None)
+      xrealloc: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals --1, declarations -2
+  O2_coreutils_stripped_fmt  main
+      sub_3700: arities off [1, 2, 3] -> on [2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -2, declarations -3
+  O2_e2fsprogs_stripped_e2fsck  e2fsck_pass2
+      ext2fs_dblist_sort2: arities off [3] -> on [2]  (callee's own recovered arity: 2)
+      register locals -0, declarations -1
+  O2_openssh-portable_stripped_scp  sub_b730
+      sub_35150: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -1
+  O2_openssh-portable_stripped_sftp  sub_be70
+      sub_358a0: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -1
+
+Hunk classes
+----------------------------------------------------------------------
+Raw `diff` counts are large (bash -142/+137, e2fsck -115/+111) only because
+dropping one declaration renumbers every `vN` in that function. With names
+normalised (`sed -E 's/\bv[0-9]+\b/V/g'`) the whole corpus delta is:
+
+  openssh O0   x11   -10 / +4        openssh O2      x2   -5  / +2
+  openssh O2ni x2    -7  / +4        coreutils fmt   x2   -11 / +4
+  bash O2      -15/+10, O2ni -16/+11 e2fsck O2            -9  / +5
+  u-boot O2ni        -2  / +1
+
+and each of those lines is one of seven classes, all inside the option's
+documented effect:
+
+  1. the dropped trailing argument (21)
+  2. the dead idiv remainder that fed it, and its copies
+  3. the phantom register declaration and its copy
+  4. declaration block reordering once one declaration is gone
+  5. one folded single-use divisor (bash)
+  6. a while re-rendered as a for, once the dead loop-tail copy went (11 openssh permute_args)
+  7. the PRECEDING call's return narrowing where that call was the register's only writer: bash expand_prompt `v = xmalloc(n); a = SUB168(v,8);` -> `v = (char *)xmalloc(n);` (2), and the two SUB164 extractions that fed it
+
+No hunk falls outside them.
+

@@ -1,3 +1,11 @@
+> **Superseded.** This is the evaluation of the rule as it shipped in #652, whose
+> callee clause was a bounded walk of the callee's entry. Its recommendation --
+> redesign that clause around the callee's own recovered prototype once
+> `protoorder` lands -- is what `analysis.md` describes and what the option now
+> does. The four `ce-*` programs below are still the negative controls; under the
+> current rule each keeps its argument. `sweep-2026-09-19.txt` is the OLD rule's
+> corpus sweep; `sweep-2026-09-20.txt` is the current one.
+
 # `argclobber` default-on evaluation
 
 **Decision: stays off.** A deleted argument that the callee reads counts as a

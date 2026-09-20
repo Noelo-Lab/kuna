@@ -1,3 +1,7 @@
+NOTE: this is the sweep of the OLD rule (the bounded callee-entry walk), kept as
+the record the redesign was argued from. The current rule's sweep is
+sweep-2026-09-20.txt.
+
 argclobber whole-corpus sweep, 2026-09-19 (default-on evaluation)
 kuna decompile-all <stripped binary> --option argclobber off|on, one build (origin/main d96e3408),
 default mode. Corpus: every stripped ELF in decbench results/full_run_address_2026-09-11
