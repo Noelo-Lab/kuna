@@ -146,10 +146,26 @@ The 147 newly-correct variables, by the ground-truth type they match:
                                                                       1  utmp *, lconv *
 ```
 
-against 6 newly-wrong (2 `char *`, 2 `idx_t`, 1 `stat`, 1 `passwd *`). `spwd` and
-`utmpx` win nothing on this corpus: their pools sit behind gnulib wrappers that
-`protoorder` does not reach. They are kept because the declaration is derived and
-correct, not because they scored.
+against 6 newly-wrong, all of them listed:
+
+| slice | function | GT | off | on |
+|---|---|---|---|---|
+| `coreutils::O0::pinky` | `print_long_entry` | `passwd *` | `passwd *` | `undefined8` |
+| `coreutils::O0::pinky` | `print_long_entry` | `char *` | `char *` | `undefined8` |
+| `coreutils::O0::pinky` | `print_long_entry` | `char *` | `char *` | `undefined8` |
+| `grep::O0::grep` | `EGexecute` | `idx_t` | `long` | `char *` |
+| `grep::O0::grep` | `EGexecute` | `idx_t` | `long` | `char *` |
+| `gzip::O2::gzip` | `lutimens` | `stat` | `stat` | `char[80]` |
+
+Not one is a named libc struct standing where a correct primitive pointer used
+to. The three `pinky` rows are the register-resident case below; the two
+`EGexecute` rows are a pointee guess spreading into two index variables; the
+`gzip` one is a by-value `struct stat` local that becomes a byte blob once the
+`timespec *` slot of `futimens` changes what the frame merges.
+
+`spwd` and `utmpx` win nothing on this corpus: their pools sit behind gnulib
+wrappers that `protoorder` does not reach. They are kept because the declaration
+is derived and correct, not because they scored.
 
 ### Arity and fabricated variables
 
