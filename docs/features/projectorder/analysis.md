@@ -73,7 +73,10 @@ address-order schedule and still says the option does not reach it;
 | `--option protoorder off`, same binary | 0.9001 (748/831) | 0.7993 (864/1081) | 0.1456 / 0.1642 |
 
 `final-c/layoutdiff.py` on du -O2: parameters that claim fewer true fields than
-the `protoorder off` arm, **23 -> 0**.
+the `protoorder off` arm, **23 -> 0**. Across all eight builds it is 0 on every
+one (`layoutdiff.txt`), and the default types more parameters as a struct on
+five of them (ls -O0 44 vs 30, du -O0 39 vs 34, sort -O0 37 vs 35, ls -O2 27 vs
+24, du -O2 29 vs 29).
 
 The fields-only precision sits 0.024 under round B's, and `layoutwhere.py`
 (ls -O0) says where: the shared parameters are identical in the two arms

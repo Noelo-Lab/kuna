@@ -52,7 +52,8 @@
       "before": 23,
       "after": 0
     },
-    "why_fields_only_is_under_round_b": "ls -O0: the parameters both arms type as a struct are identical (117/128 = 0.9141 each, none worse); the default types 14 MORE parameters as struct pointers, and those claim 131 fields of which 92 are true (0.7023). They claim nothing with the option off, so recall goes 0.0562 -> 0.0929 and F1 0.1021 -> 0.1678."
+    "why_fields_only_is_under_round_b": "ls -O0: the parameters both arms type as a struct are identical (117/128 = 0.9141 each, none worse); the default types 14 MORE parameters as struct pointers, and those claim 131 fields of which 92 are true (0.7023). They claim nothing with the option off, so recall goes 0.0562 -> 0.0929 and F1 0.1021 -> 0.1678.",
+    "layoutdiff_all_eight_builds_params_losing_true_fields": 0
   },
   "structscore_du_O2": {
     "trex_mean_0_6": 1.9159,
