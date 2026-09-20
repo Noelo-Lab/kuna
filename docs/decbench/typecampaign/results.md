@@ -657,16 +657,18 @@ and are not the clobbered-argument shape).
 and three arguments and declared two `// rdx` locals nothing wrote:
 
 ```
-$ kuna decompile-all .../O2/coreutils/stripped/fmt --option argclobber off | sed -n '/int main(/,/^}/p'
+$ F=<results>/O2/coreutils/stripped/fmt
+$ M="sed -n /^int main(/,/^}/p"
+$ kuna decompile-all $F --option argclobber off | $M | grep -E 'rdx|sub_3700'
   unsigned long v11; // rdx
-  unsigned long v9;  // rdx
-        v12 &= sub_3700(v6);
-        v3   = sub_3700(stdin,v7);
+  unsigned long v9; // rdx
+          v12 &= sub_3700(v6);
+        v3 = sub_3700(stdin,v7);
     v12 = sub_3700(stdin,"-",v10);
 
-$ kuna decompile-all .../O2/coreutils/stripped/fmt          # default
-        v9 &= sub_3700(v6,v7);
-        v3  = sub_3700(stdin,v7);
+$ kuna decompile-all $F | $M | grep -E 'rdx|sub_3700'        # the default
+          v9 &= sub_3700(v6,v7);
+        v3 = sub_3700(stdin,v7);
     v9 = sub_3700(stdin,"-");
 ```
 
