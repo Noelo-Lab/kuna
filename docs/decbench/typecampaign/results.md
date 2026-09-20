@@ -518,7 +518,7 @@ SPEED_SECTION
 | #673 | `formatstring static` — resolve the format string at load time | `static` (was off) | 988 → 1,026 perfect, 176 better / 0 worse; 428 calls stop disagreeing with their format; `decompile-all` −4.6…+0.8% |
 | #675 | `structsynth` subsumption dedup | part of `structsynth param` | struct names 515 → 471 over twelve builds (188 → 161 here); held-out claimed-field precision 0.8902 → 0.8908; typesweep unchanged |
 | #681 | `foldcallretphi` on by default | `on` (was off) | metric-neutral (986 = 986, 0 improved / 0 worse); −14 declarations; worst speed +1.04% |
-| #687 | `foldcallret` never folds a call into the right operand of `&&`/`||` | strict fix | 8 of 25,556 functions change, each one a call the binary always makes that was being skipped; `variables[]` identical |
+| #687 | `foldcallret` never folds a call into the right operand of a short-circuit `&&` or `\|\|` | strict fix | 8 of 25,556 functions change, each one a call the binary always makes that was being skipped; `variables[]` identical |
 | #686 | a load is not moved past a store that overlaps its bytes | strict fix | 1 of 48,235 functions changes (bash `init_line_structures`); typesweep rows identical in 444/444 slices |
 | #688 | `--jobs N` keeps synthesized structs with serial-run names | on with `--jobs` | removes the documented sharded-run limitation from #682; `--jobs 4` speed −3.1…+2.8% |
 
