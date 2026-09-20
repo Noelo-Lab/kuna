@@ -22,11 +22,11 @@
   "timeout_s": 180,
   "repeat": 1,
   "target": {
-    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
-    "binary_sha256": "2cc72cbd21561b5907af240cc9b5396f20821e7cbc5fabd2588319cf01c6d30b",
-    "binary_size": 48024,
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/structsynthchain_x86_64",
+    "binary_sha256": "6dd4ba2be931f9ee31ba0d636613aad25cf7e40646c2e2df0ade0dbb740501c7",
+    "binary_size": 15792,
     "binary_source": "in-repo",
-    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/structsynthchain_x86_64",
     "selector": null,
     "selector_kind": "none"
   },
@@ -35,7 +35,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "wrote .*proj: i386_pie_nl\\.c \\(\\d+ bytes\\), i386_pie_nl\\.h"
+      "wrote .*proj: structsynthchain_x86_64\\.c \\(\\d+ bytes\\), structsynthchain_x86_64\\.h"
     ],
     "stderr_matches": [
       "note: --jobs decompiles without the callee-first order \\(option protoorder, on by default\\)",
@@ -47,5 +47,5 @@
       "\\[kuna --jobs\\] note:"
     ]
   },
-  "notes": "Workers used to number their own struct_N and the merged .h tore definitions apart; then they ran with structsynth off. Now every function that synthesizes gets the serial names and the workers rendering the .h hold the same replayed structures, so the merge warning never fires. That serial run is `--jobs 1 --option protoorder off`: the export takes the callee-first order too, and no pool can."
+  "notes": "Workers used to number their own struct_N and the merged .h tore definitions apart. Now each gets the serial names and the workers rendering the .h hold the same replayed structures, so the merge warning never fires. That serial run is `--jobs 1 --option protoorder off`. Fixture moved off i386_pie_nl: libctypes names its one structure re_pattern_buffer."
 }
