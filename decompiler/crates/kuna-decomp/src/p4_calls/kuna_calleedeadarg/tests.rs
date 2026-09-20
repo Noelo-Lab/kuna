@@ -52,6 +52,54 @@ fn summary_with_no_terminator_proves_nothing() {
     assert!(one_cut.proves_dead(&Address::new(reg, 8), 8));
 }
 
+/// A callee that leaves for a target the walk could not NAME can still be
+/// carrying the caller's value out with it, unless it wrote the register first.
+/// `argclobber` reads exactly this before deleting a trailing argument.
+#[test]
+fn an_unnameable_transfer_keeps_the_register_unproven() {
+    let reg = Rc::new(kuna_base::space::AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        3,
+        kuna_base::space::addrspace_flags::hasphysical,
+        1,
+        1,
+    ));
+    let rdx = Address::new(Rc::clone(&reg), 8);
+    let mut cut = ByteSet::new();
+    for b in 8u64..16 {
+        cut.insert((3, b));
+    }
+
+    // No unnameable transfer at all: nothing can leave, so the register is free.
+    let named_only =
+        CalleeEntryDead::from_parts(3, Vec::new(), vec![cut.clone().into_iter().collect()], true);
+    assert!(named_only.opaque_transfer_free(&rdx, 8));
+
+    // A tail call through a pointer, reached without writing rdx.
+    let forwards = CalleeEntryDead::from_parts(
+        3,
+        Vec::new(),
+        vec![cut.clone().into_iter().collect()],
+        true,
+    )
+    .with_opaque_cut(Vec::new());
+    assert!(!forwards.opaque_transfer_free(&rdx, 8));
+
+    // The same transfer, with rdx written on the way to it.
+    let overwritten =
+        CalleeEntryDead::from_parts(3, Vec::new(), vec![cut.clone().into_iter().collect()], true)
+            .with_opaque_cut((8u64..16).map(|b| (3, b)).collect());
+    assert!(overwritten.opaque_transfer_free(&rdx, 8));
+
+    // An incomplete walk says nothing, in this direction too.
+    let incomplete = CalleeEntryDead::from_parts(3, Vec::new(), Vec::new(), false);
+    assert!(!incomplete.opaque_transfer_free(&rdx, 8));
+}
+
 /// `xor ecx,ecx`, `and edx,0` and `or rdx,-1` all write a CONSTANT into the
 /// register they read, and their p-code reads it.  The read is formal — the
 /// result does not depend on it — so it is kept out of the

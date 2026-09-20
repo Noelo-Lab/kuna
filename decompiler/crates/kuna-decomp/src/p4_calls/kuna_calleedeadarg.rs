@@ -325,6 +325,14 @@ impl CalleeEntryDead {
         self.complete
     }
 
+    /// Record one unnameable-transfer terminator, so a consumer of this
+    /// evidence can unit-test the forwarding case without a translator.
+    #[cfg(test)]
+    pub(crate) fn with_opaque_cut(mut self, written: Vec<(int4, u64)>) -> Self {
+        self.opaque_cuts.push(written.into_iter().collect());
+        self
+    }
+
     /// Build a summary by hand, so a module that only CONSUMES this evidence can
     /// unit-test its own decisions without standing up a translator.
     #[cfg(test)]
