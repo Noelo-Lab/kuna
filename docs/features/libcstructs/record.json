@@ -274,7 +274,7 @@
     "make test": "PARITY OK, 675/675",
     "make test-stages": "PARITY OK, 1260/1260",
     "make test-cli": "214/214",
-    "make rust-test": "RUST_TEST_RC=0 (lane run on the rebased tree)",
+    "make rust-test": "RUST_TEST_RC=0 on the rebased tree, 7,320 passed / 0 failed (lane 2026-09-20T17:52:31Z -> 18:19:53Z; the only commit after it is record.json)",
     "make check-spec": "OK (lenient) + OK (strict)",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
