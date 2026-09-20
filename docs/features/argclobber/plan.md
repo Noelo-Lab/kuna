@@ -41,10 +41,16 @@ identical where they do not.
   in its own header that under the current rule the survival is that blanket
   decline and not the caller-side clause it describes, and that the live
   coverage on a real image is in `tests/cli/`.
-* The five counterexample programs stay in this directory as the record of what
-  the rule must decline; the first four are reproduced by the commands in
-  `default-on-evaluation.md`, and `ce-forward-thunk.{c,s}` by the build line in
-  its own header.
+* `tests/cli/argclobber-keeps-an-argument-a-thunk-forwards.json` and
+  `…-an-import-reads.json` — the two forwarding counterexamples, on the in-repo
+  fixtures `argclobber_thunk_x86_64` and `argclobber_import_x86_64`. Both lose
+  the argument again if the forwarding clause (respectively its direct-call arm)
+  is ablated.
+* The counterexample programs stay in this directory as the record of what the
+  rule must decline; the first four are reproduced by the commands in
+  `default-on-evaluation.md`, and `ce-forward-thunk.{c,s}`,
+  `ce-forward-thunk-2param.c`, `ce-forward-thunk-2frame.c` and
+  `ce-import-forward.c` by the build lines in their own headers.
 
 ## Measurements
 
@@ -52,9 +58,10 @@ The flip procedure, all on this branch's own base, both arms of the same build:
 `make test`, `make test-stages`, `make test-cli`, the 444-slice `typesweep`,
 interleaved `timeit` min-of-15, and a whole-corpus `decompile-all` before/after
 over every stripped ELF in decbench `full_run_address_2026-09-11` with every hunk
-classified. `record.json` carries the numbers, `sweep-2026-09-20.txt` the sweep.
+classified. `record.json` carries the numbers,
+`sweep-2026-09-20-forwarding.txt` the sweep.
 
-Result: 675/675 and 1249/1249 with PARITY OK, 209/209 CLI probes, `type_match`
-1,147 -> 1,147 with 0 improved and 0 worse over 10,748 scored functions, 21
-functions changed over 770 binaries with every drop on the callee's true arity,
-and a worst speed delta of +1.15%.
+Result: 675/675 and 1249/1249 with PARITY OK, 214/214 CLI probes, `type_match`
+unmoved over the 444 slices with 0 improved and 0 worse, 19 functions changed
+over 770 binaries with every drop on the callee's true arity, and a worst speed
+delta inside the +5% budget. The numbers as measured are in `record.json`.
