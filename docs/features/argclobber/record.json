@@ -282,5 +282,17 @@
   },
   "worst_delta_pct": 0.47,
   "budget_pct": 5.0
+ },
+ "arity_counters_after_forwarding_clause": {
+  "surface": "kuna decompile-all --json variables[], the 19 changed binaries",
+  "functions": 17895,
+  "functions_gained": 0,
+  "functions_lost": 0,
+  "arg_rows_off": 40146,
+  "arg_rows_on": 40146,
+  "functions_with_a_changed_arg_count": 0,
+  "functions_with_a_changed_var_row_count": 0,
+  "signature_diff_functions": 18,
+  "note": "all 18 are vN renumbering of the same stack rows after one declaration goes (same name set, same types, same storage kinds). No function gains or loses an argument row, and no variable row is fabricated. The two bash rows that previously turned an untyped stack slot into `char *` are gone with the bash drops."
  }
 }
