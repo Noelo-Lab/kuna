@@ -1,0 +1,124 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Type campaign, item `charptr`: a pointer the program only ever uses on
+    characters is declared as an integer or as `void *`, although the fact is
+    already on the table.  coreutils `[` -O0 shows both halves:
+
+        char *sub_50ba(unsigned long a0, void *a1)
+
+    where `a1` is handed straight to `fputs_unlocked`, whose libc signature
+    declares `char *` there.
+
+    Root cause (P5, type propagation).  `TypeOpCall::getInputLocal`
+    (typeop.cc:689) states the callee's declared parameter type about the
+    Varnode that IS the call's operand.  Every hop between the parameter and
+    that operand - an -O0 spill through the frame, a MULTIEQUAL, a `p + k` -
+    is a hop `propagateTypeEdge` will not carry a pointer back over
+    (`TypeOpIntAdd::propagateType`, typeop.cc:1217, is the same refusal
+    `ptrfromuse` documents).  So the declaration reaches the argument and stops
+    there.
+
+    Stage / sub-stage: P5 "type-propagation".  The P0 assertion
+    `option charptr off|libc|uses` decides which evidence may commit a
+    pointer-width parameter or stack local to `char *`.
+
+    The fixture is the same shape on SysV x86-64, plus three controls:
+
+        spillcall:  add rdi,1; call slen     where `char *slen(char *)`
+                    the witness for `libc` - the declaration is one INT_ADD
+                    away from the parameter, which is the hop propagation
+                    cannot cross
+        derefbyte:  movzx eax, byte [rdi+1]
+                    the witness for `uses` - the only dereference through the
+                    parameter is one byte wide.  `ptrfromuse` already makes it
+                    `void *`; this is what decides what it points AT
+        scaled:     shl rdi,2; call slen
+                    a control - RDI is SHIFTED before it reaches the declared
+                    `char *`, which no pointer survives, so the rule declines
+                    in every pass
+        mixedwidth: movzx eax, byte [rdi+1]; add eax,[rdi+8]
+                    a control - the same parameter is also read four bytes
+                    wide, so the byte read does not establish the element type
+                    and the candidate is withdrawn
+        otherproto: add rdi,1; call ilen     where `int8 ilen(int8 *)`
+                    a control - the callee declares a pointer at something
+                    else, which contradicts a character pointer rather than
+                    supporting one
+
+    Pass 1 (`option charptr off`) reproduces the bug; pass 2 (`libc`) moves the
+    call-site witness only; pass 3 (`uses`) moves the dereference witness too.
+    All three controls are identical in all three passes.
+-->
+<bytechunk space="ram" offset="0x100000">
+4883ec084883c701e8f30000004883c408c300000000000000000000000000004883ec0848c1e702e8d30000004883c408c300000000000000000000000000000fb64701c30000000000000000000000000000000000000000000000000000000fb64701034708c30000000000000000000000000000000000000000000000004883ec084883c701e8830000004883c408c300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004889f8c30000000000000000000000004889f8c3000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="spillcall"/>
+<symbol space="ram" offset="0x100020" name="scaled"/>
+<symbol space="ram" offset="0x100040" name="derefbyte"/>
+<symbol space="ram" offset="0x100060" name="mixedwidth"/>
+<symbol space="ram" offset="0x100080" name="otherproto"/>
+<symbol space="ram" offset="0x100100" name="slen"/>
+<symbol space="ram" offset="0x100110" name="ilen"/>
+</binaryimage>
+<script>
+  <com>parse line extern char *slen(char *p);</com>
+  <com>parse line extern int8 ilen(int8 *p);</com>
+  <com>option charptr off</com>
+  <com>lo fu spillcall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu derefbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixedwidth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu otherproto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option charptr libc</com>
+  <com>lo fu spillcall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu derefbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixedwidth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu otherproto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option charptr uses</com>
+  <com>lo fu spillcall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu derefbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixedwidth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu otherproto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="charptr #1: with the option off a parameter a declared char * is one addition away from is an integer -- the bug" min="1" max="1">void spillcall\(int8 a0\)</stringmatch>
+<stringmatch name="charptr #2: libc and uses both commit it from the callee's declaration" min="2" max="2">void spillcall\(char \*a0\)</stringmatch>
+<stringmatch name="charptr #3: a byte-only dereference is a void pointer off and under libc, which does not read dereferences" min="2" max="2">char derefbyte\(void \*a0\)</stringmatch>
+<stringmatch name="charptr #4: and uses says what it points at" min="1" max="1">char derefbyte\(char \*a0\)</stringmatch>
+<stringmatch name="charptr #5: a parameter shifted before it reaches the declaration is refused in all three passes" min="3" max="3">void scaled\(int8 a0\)</stringmatch>
+<stringmatch name="charptr #6: a parameter also read four bytes wide keeps the placeholder in all three" min="3" max="3">int4 mixedwidth\(void \*a0\)</stringmatch>
+<stringmatch name="charptr #7: a callee that declares a pointer at something else contradicts a character pointer in all three" min="3" max="3">void otherproto\(int8 a0\)</stringmatch>
+</decompilertest>

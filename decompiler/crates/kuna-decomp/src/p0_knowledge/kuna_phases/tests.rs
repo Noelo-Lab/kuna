@@ -935,6 +935,7 @@ fn option_values_live_value_present_for_92() {
     // 88 -> 89: +1 for `boolbyte` (live_field = bool_byte, opt-in).
     // 89 -> 90: +1 for `mulblob` (live_field = mul_blob, default-on).
     // 90 -> 91: +1 for `charbyte` (live_field = char_byte, default-on).
+    // 92 -> 93: +1 for `charptr` (live_field = char_ptr, opt-in).
     assert_eq!(with_live, 92);
 }
 

@@ -428,6 +428,72 @@ test still decides where that may happen: never across a call, and across a
 store only when the two addresses provably differ. `off` is the upstream seed
 fold exactly.
 
+**What the pointer points at (`charptr`).** `ptrfromuse` decides that a value
+*is* a pointer; it cannot say what is on the other end, and the shipped `void`
+says so honestly. The element type is usually on the table already — a callee
+declares `char *` for the argument, a `%s` conversion `formatstring` resolved
+names it, the only dereference through the value is one byte wide — and it is
+lost for the same structural reason the pointer itself was: `TypeOpCall`'s
+`get_input_local` states the callee's declared parameter type about the Varnode
+that *is* the call's operand, and `propagate_type_edge` will not carry a pointer
+back over an `INT_ADD`, a MULTIEQUAL, or the store/load pair an `-O0` spill puts
+between the parameter and that operand. coreutils `[` -O0 shows both ends of it
+at once: `char *sub_50ba(unsigned long a0, void *a1)`, where `a1` is handed
+straight to `fputs_unlocked`, whose libc signature declares `char *` there.
+
+When `charptr` is `libc` or `uses` (shipped `off`),
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_charptr.rs
+(char_pointer_from_evidence)` collects that evidence with the same walk
+`ptrfromuse` uses — the bounded breadth-first worklist over the transitive
+descendants, a visited set, a ten-hop cap, `COPY`/`MULTIEQUAL`/`INDIRECT`/`CAST`
+identity, the base slot of `PTRADD`/`PTRSUB`, a literal-addend `INT_ADD` graded
+by the same three-way `ActionConstantPtr::isPointer` question — and asks of every
+use whether it is about characters rather than whether it is a dereference at
+all. Three uses answer yes, and the option value chooses which count.
+
+* `libc` counts a **declared** callee parameter: the value reaches argument *i*
+  of a call whose callee declares `char *` there. Declared means stated from
+  outside the decompile — a `libproto`/`libcsigs` signature, a `libctypes`
+  shell, DWARF, a demangled name, `--assert prototype`, or the per-call-site
+  override `formatstring` installs for a resolved `%s` — and it is read through
+  `declared_input_type_local`, the same accessor a cast is measured against. A
+  type another *recovery* voted for is deliberately not evidence: counting
+  `protoorder`'s callee vote here was measured on the same sweep and scored
+  lower (+0.95 aggregate against +1.78 over 812 functions), because a recovered
+  `char *` is itself a guess and the walk would launder it into a commitment.
+* `uses` adds the **byte-width dereference**: every `LOAD` or `STORE` through
+  the value is one byte wide and every `PTRADD` steps one byte.
+* `uses` also adds the **character constant**: the value is defined by, or
+  compared against, a constant that resolves to a character array in the image.
+
+One refusal anywhere withdraws the candidate, and the refusals are the part that
+keeps the rule honest: a dereference or an element step *wider* than a byte
+(which is the program telling you the element is not a character), a call
+argument the callee declared as some other pointer or as a scalar, and
+everything `ptrfromuse` refuses. The candidate is folded by `type_order` exactly
+as `ptrfromuse`'s is, and it may additionally **refine** a pointer that points at
+nothing — `void *` and `undefined1 *`, the placeholders this rule exists to
+resolve — while a pointer at anything named or sized (`FILE *`, `stat *`,
+`long *`, a synthesized `struct_3 *`) is left as it was. Only function inputs and
+Varnodes in the stack space are considered: those are the two kinds of storage a
+reader sees as a declaration.
+
+The shipped value is `off`, and the reason is measured rather than cautious. On
+the 444-slice decbench sweep the ground-truth class `char *` is the largest
+single class — 14,645 of the 65,715 scored variables — and kuna matches 28.7% of
+it against Binary Ninja's 36.8%. Split by storage, kuna is already at 64.9% on
+*arguments* against Binary Ninja's 71.5%, and at 44.8% on *stack locals* against
+71.4%: nine tenths of the class gap is stack locals, and within those the
+dominant blocker is not a missing element type but a missing *symbol* — 932 of
+the 1,648 stack misses are frame-layout slots kuna reports as `undefined8`
+because the value that lived there was copy-propagated into a register
+HighVariable, which chapter 06 does not export. `charptr uses` attacks what is
+left and moves what is there to move: it is worth what the record in
+`docs/features/charptr/` states, with nothing measured down. Turning it on is
+a claim as well as a gain — committing a pointer forfeits the width-only free
+pass an eight-byte scalar gets, and `char *` rewrites the body's arithmetic into
+indexing the way `ptrfromuse byte` does.
+
 **The truth-valued byte (`boolbyte`).** `TYPE_BOOL` only ever enters the
 lattice as an op's *output*: every `booloutput` opcode's `get_output_local` is
 `get_base(size, TYPE_BOOL)`, and `CBRANCH`'s slot-1 `get_input_local` is the
