@@ -180,3 +180,42 @@ compared a pointer against `"loc"` for `0x12c7`, both `.dynstr` offsets. See
 `record.json` → `wrong_output_found`, the fixture
 `loadertablestring_x86_64`, and the probe
 `tests/cli/loader-table-bytes-print-as-a-string.json`.
+
+## Layout precision: what a `char *` costs when the object was an aggregate
+
+The item spec asks for this number directly — *a `char *` that was a struct
+pointer is a loss* — so it is measured rather than argued. Eight whole binaries,
+both arms of the same build, `decompile-all` over every function
+(`e2fsprogs e2fsck -O0`, `cronie crond -O0`, `coreutils expr -O0`, `coreutils
+ls/mv/wc -O2`, `shadow passwd -O2`, `libedit.so.0.0.70 -O2`, about 2,300
+functions), keyed on each variable's storage comment so renumbering cannot fake
+a move:
+
+| move | count | what it is |
+|---|---|---|
+| placeholder → `char *` | 9 | the gain: `void *`, `undefined *`, `uint1 *` |
+| scalar → `char *` | 2 | the gain: an integer that held a string |
+| **typed pointer → `char *`** | **3** | the loss, all one function |
+| `char *` → something else | 8 | the signedness knock-on, four functions |
+| `struct_N *` declarations | **1,286 → 1,286** | no synthesized struct pointer ever moves |
+
+The three typed-pointer losses are all `e2fsck::ext2fs_bitcount` (`unsigned
+int *a0` and its two stack copies become `char *`), and they happen for the
+reason the `unsigned char *` note already gives: the refine guard reads the type
+*in flight*, so a pointee that would only have arrived by later propagation is
+not there to protect. Upstream declares that function `int
+ext2fs_bitcount(const void *addr, int nbytes)`, so in this instance `char *` is
+not worse than what it replaced — but the mechanism is the one that would be.
+
+Layout precision proper — a wide field read through a pointer that is now a
+character array — moves on exactly one function of the eight binaries. Lines of
+the shape `*(T *)&p[k]` with `T` wider than a byte go 1,202 → 1,204, both in
+`e2fsck::sub_678f8`, where `v11 = ext2fs_group_desc(...)` (an `int8` with the
+option off) commits and the group descriptor's 2-byte field prints as
+`*(unsigned short *)&v11[0x1e]`; the same statement's zero store splits into
+`v11[0x1e] = '\0'; v11[0x1f] = '\0';`, which is value-preserving and reads
+worse. Nothing else in the eight binaries loses a field boundary.
+
+cronie `crond -O0 sub_6715` — the `strcmp(base + 0x13, ".cron.hostname")` on a
+`struct dirent *` that the offset guard was added for — is byte-identical in
+both arms.

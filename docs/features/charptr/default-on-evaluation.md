@@ -12,7 +12,7 @@ benchmark all run.
 | criterion | result |
 |---|---|
 | (a) `make test` with the new default | **pass** — 675/675, PARITY OK. The datatest harness applies no mode, so no assertion moves. |
-| (b) `make test-stages` | **pass** — 1,256/1,256, PARITY OK; the stage test's pass 1 carries its own `option charptr off`. |
+| (b) `make test-stages` | **pass** — 1,262/1,262, PARITY OK; the stage test's pass 1 carries its own `option charptr off`. |
 | (c) `make test-cli` | **FAIL** — 208/214. The same six probes move. |
 | (d) 444-slice typesweep, new default vs old | **pass** — perfect 1,349 -> 1,353, aggregate 3657.76 -> 3662.69, 4 onto perfect, 0 off perfect, 14 improved, 6 worse. improved (18) >= worse (6); every worse row is read in `record.json`. |
 | (e) `timeit` interleaved min-of-15, fmt/ls/sort -O2 + bash -O2 | **pass** — re-run on the rebased base, option-on against the same build with it off: fmt +3.88%, ls +2.11%, sort +4.77%, bash +2.45%; worst +4.77%, inside the +5% budget. (First run, quieter box: -1.59 / -0.37 / +2.67 / +4.36.) |
