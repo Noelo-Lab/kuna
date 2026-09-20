@@ -91,7 +91,7 @@
         "off_perfect": 0,
         "improved": 14,
         "worse": 6,
-        "note": "Re-run in review round 2 on the rebased tree (base 69d252df3 = #694) with the loader fix in. moved.csv is byte-identical to the pre-rebase run; the base aggregate moved 3657.76 -> 3659.62, which is #694's own published delta, so the loader fix costs the metric nothing (it changes how a constant is SPELLED, and decbench scores variables[])."
+        "note": "Re-run in review round 2 on the rebased tree (base 69d252df3 = #694) with the loader fix in. moved.csv is byte-identical to the pre-rebase run; the base aggregate moved 3657.76 -> 3659.62, which is #694's own published delta, so the loader fix costs the metric nothing (it changes how a constant is SPELLED, and decbench scores variables[]). Re-run again in review round 3 on the build that carries the declared-callee offset guard (.scratch/sweep-r3): identical numbers and a byte-identical moved.csv, with 11 more functions byte-identical between the arms (10,624 -> 10,635) -- the guard removes false positives the metric was not scoring."
       },
       "declared_callee_half_only": {
         "perfect_off": 1349,
