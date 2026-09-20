@@ -526,6 +526,25 @@ mod tests {
             is_got_or_plt: false,
         };
         assert!(!gnuhash.is_readonly_data());
+        // Non-ELF: the loader-table test lives inside the ELF-flags branch, and a
+        // Mach-O/PE range (elf_flags == 0) answers on its SectionKind alone, as it
+        // did before that test existed.
+        let macho_meta = SecRange {
+            lo: 0x1000,
+            hi: 0x2000,
+            elf_flags: 0,
+            kind: SectionKind::Metadata,
+            is_got_or_plt: false,
+        };
+        assert!(!macho_meta.is_readonly_data());
+        let macho_ro = SecRange {
+            lo: 0x2000,
+            hi: 0x3000,
+            elf_flags: 0,
+            kind: SectionKind::ReadOnlyData,
+            is_got_or_plt: false,
+        };
+        assert!(macho_ro.is_readonly_data());
     }
 
     #[test]
