@@ -382,6 +382,58 @@ The name is right — the O0 coreutils `nl` twin's own debug info types that
 parameter `re_pattern_buffer *` — and four field writes render one level less
 directly.
 
+### The `utmp`/`utmpx` rows, measured
+
+The ranked table puts `utmpx` in the "not reachable by a direct call in the 444
+slices" column, so the four `getutx*`/`pututxline` slots ship on a pool count
+rather than on a sweep delta. They are not unpaid: 24 corpus binaries import
+`getutent`, `getutxent` or `pututline`, and the type reaches a caller's own
+local, not only the PLT thunk. `-O2` coreutils `who`:
+
+```
+-  short *v4;                              +  utmpx *v4;
+-  v4 = (short *)getutxent();              +  v4 = getutxent();
+-  v3 = *(int *)&v4[2];                    +  v3 = *(int *)&v4->field_0x4;
+-  if (((char)v4[0x16]) && (*v4 == 7))     +  if ((v4->field_0x2c) && (*(short *)v4 == 7))
+-  v5[0x2f] = *(unsigned long *)&v4[0xbc]; +  v5[0x2f] = *(unsigned long *)&v4->field_0x178;
+```
+
+The GT for that variable is `struct utmpx *`, and the `short *` it replaces was
+an artefact of the 2-byte `ut_type` read. `-O2` shadow `logoutd` and sysvinit
+`runlevel` do the same for `utmp *` (189 and 17 changed lines).
+
+### Pointee sizes are glibc x86-64
+
+Every size in the table is the x86-64 one, and nothing scales it by the image's
+word size, so on a 32-bit image an added shell is oversized —
+`re_pattern_buffer` is declared 64 where i386's is 32. Only pointers take the
+name (the rows are `NamedPtr`; no stack object is ever re-sized by one), so the
+consequence is confined to how far a field access through such a pointer is
+attributed inside the shell. It is the class the shipped `FILE` 216 and `stat`
+144 rows already have, and `i386_pie_nl` — the one 32-bit binary in the
+fixtures — touches nothing past offset 0x14. Scaling the table by word size is a
+separate change: it needs a per-architecture size for every row, not a rule.
+
+### The export fixture swap, re-derived on #693
+
+`libctypes` names `i386_pie_nl`'s only synthesized structure, so the two places
+that used that binary as their "a structure is synthesized here" fixture had to
+move. #693 then gave `decompile-project` the callee-first schedule, which
+decides what a function mints, so the swap was re-derived under it rather than
+carried across:
+
+```
+i386_pie_nl                        default 0   protoorder off 0   (libctypes off: 1)
+structsynthchain_x86_64            default 2   protoorder off 2
+itaniumrtti_x86_64.so              default 5   protoorder off 5
+explicit_branch_assertion_pe_i386.exe  default 5   protoorder off 5
+structsynth_teb_pe_x86_64.exe      default 5   protoorder off 5
+```
+
+(`struct struct_N {` blocks in the exported `.h`.) The four fixtures the rust
+test iterates all still declare `struct_0` in the arm it runs, and the 32-bit
+slot keeps a 32-bit image.
+
 ### The export's compile-error cost
 
 The option's documented cost is that `decompile-project`'s exported `.c` reads
