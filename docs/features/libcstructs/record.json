@@ -221,5 +221,47 @@
    "field becomes a cast at an offset": 4
   }
  },
- "speed": "see speed_* below"
+ "speed": {
+  "method": "interleaved min-of-15, `decompile-all --max-fn-seconds 120` over five whole binaries, the two builds alternating on every repetition (.scratch/speed.py, copied to docs/features/libcstructs/speed.py)",
+  "budget_pct": 5,
+  "runs": {
+   "O2/tar/tar": {
+    "base_s": 48.241,
+    "new_s": 49.924,
+    "delta_pct": 3.49
+   },
+   "O2/grep/grep": {
+    "base_s": 11.98,
+    "new_s": 12.085,
+    "delta_pct": 0.87
+   },
+   "O2/coreutils/ls": {
+    "base_s": 13.635,
+    "new_s": 14.091,
+    "delta_pct": 3.34
+   },
+   "O0/grep/grep": {
+    "base_s": 6.936,
+    "new_s": 7.083,
+    "delta_pct": 2.11
+   },
+   "O2/coreutils/sort": {
+    "base_s": 14.799,
+    "new_s": 14.842,
+    "delta_pct": 0.3
+   }
+  },
+  "worst": 3.49,
+  "note": "measured under campaign load (8 other lanes plus this lane's own workspace suite); interleaving is what controls for it"
+ },
+ "gates": {
+  "make test": "PARITY OK, 675/675",
+  "make test-stages": "PARITY OK, 1254/1254 (4 newly passing: LIBCTYPES #27-#30)",
+  "make rust-test": "rc=0, 7,313 tests, 0 failures",
+  "make test-cli": "209/209",
+  "make check-spec": "OK (lenient) + OK (strict)",
+  "kuna catalog --check": "OK",
+  "counters --check": "no drift",
+  "docs/options.md": "byte-fresh"
+ }
 }

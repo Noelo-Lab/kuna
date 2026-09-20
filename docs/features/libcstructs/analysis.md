@@ -241,5 +241,20 @@ which is what the rest of the export depends on, is unmoved.
 
 ### Speed
 
-`speed.json` beside this file: interleaved min-of-15, `decompile-all` over five whole
-binaries, the two builds alternating on every repetition.
+Interleaved min-of-15, `decompile-all --max-fn-seconds 120` over five whole binaries,
+the two builds alternating on every repetition (`speed.py` / `speed.json` beside this
+file). Under campaign load — eight other lanes plus this one's own workspace suite —
+which is what the interleaving controls for.
+
+| binary | off | on | delta |
+|---|---:|---:|---:|
+| `O2` tar | 48.241s | 49.924s | +3.49% |
+| `O2` grep | 11.980s | 12.085s | +0.87% |
+| `O2` ls | 13.635s | 14.091s | +3.34% |
+| `O0` grep | 6.936s | 7.083s | +2.11% |
+| `O2` sort | 14.799s | 14.842s | +0.30% |
+
+Worst +3.49%, inside the +5% budget. The cost is where the names land: `tar` and `ls`
+are the two binaries with the most newly-typed pointers, and a named pointee is more
+type-propagation work than a `void *` one. `grep -O2` and `sort`, whose pointers were
+already typed, are noise.
