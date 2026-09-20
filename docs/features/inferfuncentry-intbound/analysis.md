@@ -45,11 +45,28 @@ identity comparison with one, and an addition onto a value already typed as a
 pointer. An ordering comparison, a copy, a merge, a PIECE or arithmetic are uses
 of the constant as a *number*; the entry it lands on is a coincidence of layout.
 
-So the narrowing is on the reader, not on the constant:
-`p5_types/kuna_inferfuncentry.rs (entry_escape_applies)`, consulted at the single
-site in `p9_emit/coreaction_render.rs (is_pointer)` where the `bit_transitions`
-rejection is skipped. With the escape declined, the guard does its normal job and
-the constant stays a literal, exactly as upstream leaves it.
+The reader alone is not enough. An ordering comparison is never a code address,
+but the other half of a `MIN` is a plain `COPY` — and a function-pointer table is
+plain COPYs too. coreutils `od -O2` selects between `sub_3f20`, `sub_3ff0`,
+`sub_40a0` and `sub_4150` that way, and `0x3ff0` is the one of the four with fewer
+than three bit transitions, so refusing the escape on COPY alone costs that table
+its name and leaves `v4 = (void *)0x3ff0;` among three named siblings.
+
+What separates them is the rest of the function: `dump_remainder` orders `0x2000`
+against `n_remaining`, and nothing in `od`'s dispatch ever orders `0x3ff0`. So the
+rule is read twice — `p5_types/kuna_inferfuncentry.rs`:
+
+* `reads_as_integer(opcode)` — an ordering comparison, a multiply, a divide, a
+  remainder or a shift reads its constant as a number.
+* `entry_escape_applies(opcode, value_reads_as_integer)` — the escape is available
+  when this reader is not one of those and the same numeric value is not read as
+  one anywhere else in the function.
+
+`ActionConstantPtr::apply` already snapshots every constant Varnode once per pass;
+the set of numerically-read values is built from that same snapshot, so the extra
+cost is one `lone_descend` per constant. With the escape declined the
+`bit_transitions` guard does its normal job and the constant stays a literal,
+exactly as upstream leaves it.
 
 ## What this is not
 
