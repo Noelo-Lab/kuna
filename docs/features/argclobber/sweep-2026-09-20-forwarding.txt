@@ -1,0 +1,105 @@
+argclobber corpus sweep, 2026-09-20 -- the recovered prototype plus the
+forwarding walk (direct calls resolved against their targets)
+======================================================================
+
+`kuna decompile-all <bin> --option argclobber off|on` over every stripped ELF in
+decbench results/full_run_address_2026-09-11 (O0, O2, O2-noinline).
+
+  binaries swept ............ 770
+  runs exiting non-zero ..... 0
+  binaries whose output moved 19
+  functions changed ......... 19  (one per binary)
+
+The diff set is a strict SUBSET of the 2026-09-20 sweep taken before direct
+calls were resolved (sweep-2026-09-20.txt, 21 binaries), and every diff that
+survives is byte-identical to that sweep's for the same binary -- so every hunk
+carries its earlier classification unchanged. What dropped out is bash, at both
+O2 levels:
+
+  O2/O2-noinline bash expand_prompt: `xrealloc(dat_14d868,v5,v11)` keeps its
+  third argument now. xrealloc(void *, size_t) really does take two, so this is
+  a drop LOST, not a bug fixed: xrealloc's entry reaches `call sbrk@plt` with
+  rdx unwritten, kuna has no signature for sbrk (it renders `void sbrk(void)`),
+  and the import's PLT stub jumps through its GOT slot, so nothing can say what
+  becomes of rdx there. The preceding call's `SUB168(v,8)` return narrowing that
+  came with that drop is gone with it.
+
+Every changed function loses exactly one trailing argument at exactly one call
+site, and every drop lands on the callee's TRUE arity, checked against the
+unstripped twin in the same tree:
+
+  __addvsi3(int,int)                    2   11 sites (openssh O0 permute_args)
+  __mulvsi3(int,int)                    2    4 sites (openssh O2/O2-noinline scp,sftp)
+  fmt(FILE *, char const *)             2    2 sites (coreutils fmt main, DWARF)
+  ext2fs_dblist_sort2(dblist,sortfunc)  2    1 site  (e2fsck_pass2)
+  efi_create_handle(efi_handle_t *)     1    1 site  (u-boot O2-noinline)
+
+Counters
+----------------------------------------------------------------------
+  call sites losing an argument ..... 19
+  arguments dropped ................. 19
+  call sites GAINING an argument .... 2  (the two fmt mains'
+                                        under-recovered sibling site: 1/2/3 -> 2/2/2)
+  register-storage locals removed ... 20, added 0
+  declarations removed, net ......... 34
+  SUB164/SUB168 extraction sites gone 0  (the two that moved were bash's)
+
+Per function
+----------------------------------------------------------------------
+  O0_openssh-portable_stripped_scp  sub_35590
+      sub_3bf80: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_sftp-server  sub_28371
+      sub_2bbc0: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_sftp  sub_37aa8
+      sub_3e490: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-add  sub_5cea8
+      sub_60810: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-agent  sub_51f23
+      sub_55890: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-keygen  sub_7a97c
+      sub_7fa00: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-keyscan  sub_75817
+      sub_7a080: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-pkcs11-helper  sub_4e59c
+      sub_51f00: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh-sk-helper  sub_469db
+      sub_49b30: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_ssh  sub_dfa34
+      sub_e8230: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O0_openssh-portable_stripped_sshd  sub_ef1d6
+      sub_f6680: arities off [2, 2, 2, 3] -> on [2, 2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -2
+  O2-noinline_coreutils_stripped_fmt  main
+      sub_3a30: arities off [1, 2, 3] -> on [2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -2, declarations -3
+  O2-noinline_openssh-portable_stripped_scp  sub_c120
+      sub_355b0: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -1
+  O2-noinline_openssh-portable_stripped_sftp  sub_d190
+      sub_36630: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -1
+  O2-noinline_u-boot_stripped_u-boot  sub_60856a4c
+      sub_60855c90: arities off [2] -> on [1]  (callee's own recovered arity: 1)
+      register locals -1, declarations -1
+  O2_coreutils_stripped_fmt  main
+      sub_3700: arities off [1, 2, 3] -> on [2, 2, 2]  (callee's own recovered arity: 2)
+      register locals -2, declarations -3
+  O2_e2fsprogs_stripped_e2fsck  e2fsck_pass2
+      ext2fs_dblist_sort2: arities off [3] -> on [2]  (callee's own recovered arity: 2)
+      register locals -0, declarations -1
+  O2_openssh-portable_stripped_scp  sub_b730
+      sub_35150: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -1
+  O2_openssh-portable_stripped_sftp  sub_be70
+      sub_358a0: arities off [2, 3] -> on [2, 2]  (callee's own recovered arity: 2)
+      register locals -1, declarations -1

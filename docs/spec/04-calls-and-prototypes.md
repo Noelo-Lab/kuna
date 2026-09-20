@@ -739,16 +739,18 @@ ordinary calls ending in one of those — the prototype says nothing useful and 
 forwarding reading is what declines the drop.
 
 Together the clauses are narrow. Over 770 stripped decbench binaries (O0, O2 and
-O2-noinline) the rule changes 21 functions, one per binary, and each loses
+O2-noinline) the rule changes 19 functions, one per binary, and each loses
 exactly one trailing argument at exactly one call site. Every drop lands on the
 callee's true arity, checked against the unstripped twin: `__addvsi3` and
 `__mulvsi3` at 15 openssh sites, `fmt(FILE *, char const *)` at the two coreutils
-`fmt` mains, `xrealloc(void *, size_t)` in `bash`'s `expand_prompt`,
-`ext2fs_dblist_sort2(dblist,sortfunc)` in `e2fsck`, and `efi_create_handle` in
-u-boot. Two call sites *gain* an argument — the under-recovered sibling site in
-each `fmt` main, which is what turns its 1/2/3 into 2/2/2. Every hunk in that
-sweep falls in one of seven documented classes;
-`docs/features/argclobber/sweep-2026-09-20.txt` has the classification.
+`fmt` mains, `ext2fs_dblist_sort2(dblist,sortfunc)` in `e2fsck`, and
+`efi_create_handle` in u-boot. Two call sites *gain* an argument — the
+under-recovered sibling site in each `fmt` main, which is what turns its 1/2/3
+into 2/2/2. Every hunk in that sweep falls in one of seven documented classes;
+`docs/features/argclobber/sweep-2026-09-20-forwarding.txt` has the
+classification, and the two `bash` `xrealloc` drops it no longer takes: there the
+callee reaches `call sbrk@plt` with `rdx` unwritten and kuna has no signature for
+`sbrk`, so the import answers nothing and a correct drop is given up.
 
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter

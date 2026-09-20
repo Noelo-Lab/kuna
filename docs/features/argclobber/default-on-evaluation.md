@@ -9,7 +9,7 @@
 > redesign had to answer -- each of them is declined by the callee's BODY and by
 > what it forwards to (`resolve_forward_transfer`), not by its recovered
 > prototype. `sweep-2026-09-19.txt` is the OLD rule's corpus sweep;
-> `sweep-2026-09-21.txt` is the current one.
+> `sweep-2026-09-20-forwarding.txt` is the current one.
 
 # `argclobber` default-on evaluation
 
