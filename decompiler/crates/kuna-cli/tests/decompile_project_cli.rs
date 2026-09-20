@@ -655,6 +655,10 @@ fn a_binary_with_a_string_over_the_load_window_still_exports() {
 /// can intern a type into it, so a sharded run has one factory per worker where a
 /// serial run has one.  The block therefore travels back from the workers, and
 /// this is what holds it to the serial rendering.
+///
+/// (kuna `protoorder`) The serial run a pool matches is the one without the
+/// callee-first order: a worker cannot see another worker's callees, so both
+/// arms name it.
 #[test]
 fn jobs_project_artifacts_are_byte_identical_to_serial() {
     let bin = fixture("dwarfstructs_x86_64");
@@ -666,6 +670,9 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
         serial.to_str().unwrap(),
         "--max-fn-seconds",
         "0",
+        "--option",
+        "protoorder",
+        "off",
         "--sleighpath",
         &specs(),
     ]);
@@ -700,6 +707,9 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
             dir.to_str().unwrap(),
             "--max-fn-seconds",
             "0",
+            "--option",
+            "protoorder",
+            "off",
             "--jobs",
             jobs,
             "--jobs-chunk",
@@ -727,6 +737,10 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
 /// 32-bit, and in `structsynth_teb_pe_x86_64.exe` the `TEB` type comes from a
 /// function that synthesizes nothing. `synth:force` decompiles every function
 /// that asked again rather than renaming it.
+///
+/// (kuna `protoorder`) With `--option protoorder off` on every arm, which is the
+/// serial run a pool replays: the callee-first order decides what a function
+/// mints as much as the ledger does, and no pool can take it.
 #[test]
 fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
     for fixture_name in
@@ -737,7 +751,7 @@ fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
         let export = |tag: &str, extra: &[&str], env: &[(&str, &str)]| -> (PathBuf, String, bool) {
             let dir = out_dir(&format!("structsynth_{stem}_{tag}"));
             let mut args = vec!["decompile-project", bin.as_str(), "-o", dir.to_str().unwrap()];
-            args.extend_from_slice(&["--max-fn-seconds", "0"]);
+            args.extend_from_slice(&["--max-fn-seconds", "0", "--option", "protoorder", "off"]);
             args.extend_from_slice(extra);
             let sp = specs();
             args.extend_from_slice(&["--sleighpath", sp.as_str()]);
@@ -797,7 +811,11 @@ fn jobs_project_serial_path_keeps_the_types_of_the_other_functions() {
     let export = |tag: &str, extra: &[&str], env: &[(&str, &str)]| -> (PathBuf, String, bool) {
         let dir = out_dir(&format!("structsynth_teb_{tag}"));
         let mut args = vec!["decompile-project", bin.as_str(), "-o", dir.to_str().unwrap()];
-        args.extend_from_slice(&["--max-fn-seconds", "0", "--sleighpath", sp.as_str()]);
+        // (kuna `protoorder`) The serial run a pool replays is the one without
+        // the callee-first order; both arms name it.
+        args.extend_from_slice(
+            &["--max-fn-seconds", "0", "--option", "protoorder", "off", "--sleighpath", sp.as_str()],
+        );
         args.extend_from_slice(extra);
         let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
             .args(&args)
