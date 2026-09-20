@@ -367,22 +367,23 @@ round-B capture exactly, 10,748/10,748 functions, 986 perfect, **0 values differ
 Same 444 slices, same `--baseline-only` invocation, the round-C binary and the round-B control
 binary running side by side at `--workers 12`.
 
-| slice | functions | base | round B | **round C** | mean base → B → **C** |
-|---|---:|---:|---:|---:|---|
-| **ALL** | 10,748 | 848 (7.89%) | 986 (9.17%) | **1,349 (12.55%)** | .2645 → .2895 → **.3403** |
-| O0 | 4,286 | 612 | 704 | **895 (20.88%)** | .4167 → .4467 → **.5041** |
-| O2 | 2,394 | 42 | 53 | **74 (3.09%)** | .1330 → .1514 → **.1820** |
-| O2-noinline | 4,068 | 194 | 229 | **380 (9.34%)** | .1817 → .2050 → **.2609** |
-| bzip2 | 267 | 15 | 19 | 31 | .3441 → .3664 → .4097 |
-| coreutils | 6,422 | 525 | 610 | 877 | .2560 → .2813 → .3339 |
-| diffutils | 420 | 43 | 52 | 58 | .3592 → .4004 → .4325 |
-| findutils | 790 | 31 | 35 | 41 | .1444 → .1622 → .2200 |
-| grep | 247 | 37 | 39 | 51 | .3614 → .3870 → .4351 |
-| gzip | 368 | 83 | 88 | 102 | .4654 → .4858 → .5197 |
-| shadow | 686 | 20 | 29 | 31 | .2619 → .2897 → .3001 |
-| tar | 1,548 | 94 | 114 | 158 | .2600 → .2824 → .3516 |
+| slice | functions | base | round B | **round C** | mean base → B → **C** | improved | worse |
+|---|---:|---:|---:|---:|---|---:|---:|
+| **ALL** | 10,748 | 848 (7.89%) | 986 (9.17%) | **1,349 (12.55%)** | .2645 → .2895 → **.3403** | 1,384 | 2 |
+| O0 | 4,286 | 612 | 704 | **895 (20.88%)** | .4167 → .4467 → **.5041** | 577 | 1 |
+| O2 | 2,394 | 42 | 53 | **74 (3.09%)** | .1330 → .1514 → **.1820** | 279 | 0 |
+| O2-noinline | 4,068 | 194 | 229 | **380 (9.34%)** | .1817 → .2050 → **.2609** | 528 | 1 |
+| bzip2 | 267 | 15 | 19 | 31 | .3441 → .3664 → .4097 | 24 | 0 |
+| coreutils | 6,422 | 525 | 610 | 877 | .2560 → .2813 → .3339 | 725 | 1 |
+| diffutils | 420 | 43 | 52 | 58 | .3592 → .4004 → .4325 | 38 | 0 |
+| findutils | 790 | 31 | 35 | 41 | .1444 → .1622 → .2200 | 165 | 0 |
+| grep | 247 | 37 | 39 | 51 | .3614 → .3870 → .4351 | 24 | 1 |
+| gzip | 368 | 83 | 88 | 102 | .4654 → .4858 → .5197 | 28 | 0 |
+| shadow | 686 | 20 | 29 | 31 | .2619 → .2897 → .3001 | 40 | 0 |
+| tar | 1,548 | 94 | 114 | 158 | .2600 → .2824 → .3516 | 340 | 0 |
 
-Every project and every optimization level moved up again. Per project × opt is in
+Every project and every optimization level moved up again, and the improved/worse columns are
+round B → round C (363 functions moved onto perfect and none off). Per project × opt is in
 `final-c/report-slices.md`; the 1,386 functions whose score moved are in `final-c/moved.csv`.
 
 The three type flips were each measured on a different base (#669 +119, ptrfromuse `void` +204
@@ -395,8 +396,10 @@ gives the `uintmax_t bytes_to_read` local a `void *`.
 
 ### C.2 Per ground-truth class
 
-Same classifier (`final/gtclass.py`), same 65,715 GT variables. Only the moved rows are
-repeated here; the unmoved classes are in round B's table and in `final-c/analysis.json`.
+Same classifier (`final/gtclass.py`), same 65,715 GT variables. The rivals' columns are round B's
+replay unchanged — they score the variables the results tree stored for each decompiler, and neither
+the tree nor the pinned metric moved. Only the moved rows are repeated here; the unmoved classes are
+in round B's table and in `final-c/analysis.json`.
 
 | GT class | GT vars | round B | **round C** | ida | binja | ghidra | angr |
 |---|---:|---:|---:|---:|---:|---:|---:|
