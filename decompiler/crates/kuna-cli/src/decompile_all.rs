@@ -1555,7 +1555,8 @@ pub fn warn_protoorder_inert(options: &[(String, String)], surface: &str) {
     if options.iter().any(|(name, value)| name == "protoorder" && value != "off") {
         eprintln!(
             "warning: --option protoorder has no effect on `kuna {surface}`: the callee-first \
-             order is a `decompile-all` surface (see docs/cli.md)"
+             order belongs to a buffered whole-program run (`decompile-all`, `decompile-project`; \
+             see docs/cli.md)"
         );
     }
 }
