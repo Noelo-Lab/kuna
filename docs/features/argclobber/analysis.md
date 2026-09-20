@@ -123,15 +123,72 @@ prototype admitted, never admit one (u-boot's `printf`, 1,924 sites, its
 `va_list` prologue spilling `r1`–`r3`). It is also now seeded only when something
 is stated, so the option costs nothing on a surface where it cannot fire.
 
+## The clause a prototype cannot carry
+
+The accounting clause above declines `ce-forward-thunk.s` because one recovered
+parameter cannot be two surviving arguments. Add one argument-register read to
+the thunk and the accounting is satisfied again — and the drop is wrong anyway.
+`ce-forward-thunk-2param.c` is that program, in plain C with no hand assembly:
+
+```c
+long fwd(struct box *o, long a, long b)
+{ if (!a) return 0; return o->fn(o, a, b); }
+```
+
+`gcc -O2` emits `test %rsi,%rsi; je; jmp *(%rdi)`. kuna recovers `(rdi, rsi)` —
+two parameters, an honest report of the two registers the body touches — while
+the function it jumps to consumes three. Two recovered parameters are exactly the
+two arguments the drop would leave behind, so `stated.len() == surviving.len()`,
+no parameter lies in `rdx`, and the third argument is deleted together with
+`mk()`'s 16-byte `rax:rdx` return half that feeds it:
+
+```
+$ gcc -O2 -o t3 ce-forward-thunk-2param.c && strip t3
+$ kuna decompile-all ./t3 --option argclobber off
+    v2 = sub_1160(a1); a2 = SUB168(v2,8); v1 = SUB168(v2,0);
+    return sub_1190((unsigned long *)0x4018,v1,a2) + 1;
+$ kuna decompile-all ./t3                            # the drop, before this change
+    a2 = sub_1160(a1);
+    return sub_1190((unsigned long *)0x4018,a2) + 1;
+```
+
+A prototype states what a callee **names**, and this one names nothing about
+`rdx`. The clause that answers it is therefore not about the prototype at all: at
+every point where the callee's control leaves for a target the entry walk could
+not name — an indirect call or tail call, a `CALLOTHER`, an indexed register-file
+access, an undecodable instruction — the register must already be **written** by
+the callee (`CalleeEntryDead::opaque_transfer_free`). At the `jmp *(%rdi)` it is
+not, so the caller's value is still travelling into code no recovery read, and
+the drop is declined.
+
+A **direct** call is deliberately not one of those transfers: its target has a
+name, so the callee's own recovery accounted for whatever it forwards there. That
+is what keeps the `fmt` witness alive — `fmt(FILE *, char const *)` reaches its
+first call with `rdx` unwritten, and that call is direct.
+
+An incomplete summary — the probe budget, a runaway written set — now declines
+too, because the clause asks for positive evidence. That subsumes
+`ce-probe-budget` as a second, independent reason.
+
 ## What it still cannot know
 
 The evidence is a recovery, not a fact: a callee whose own parameter list kuna
 under-recovers states a prototype that admits the drop. That is the residual
-hole, and it is the hole every callee-derived statement has. The accounting
-clause bounds it: the under-recovery has to be exactly one slot deep, at exactly
-the register the clobber wrote, with every other argument still accounted for.
-What the clause removes is the class a bounded body walk cannot see at all — the
-five programs above.
+hole, and it is the hole every callee-derived statement has. Two clauses bound
+it. The accounting clause requires the under-recovery to be exactly one slot
+deep, at exactly the register the clobber wrote, with every other argument still
+accounted for. The opaque-transfer clause requires the register to be dead at
+every control transfer the walk could not follow, which is what closes the case
+where the recovery is short *because* it never saw the code that reads the
+register.
+
+Neither covers the other. The prototype clause removes the class a bounded body
+walk cannot see at all — a read past a jump table, a read beyond the probe's
+budget, a read inside an import, the `rax:rdx` struct-return forward — by
+carrying the parameter in the recovered list, which only works where the recovery
+reached far enough to name it. Where it did not, the thunk above is the whole
+class, and the body walk is what answers. The six programs in this directory are
+those classes.
 
 One effect belongs in the option's own description rather than in a footnote:
 dropping the argument also **narrows the preceding call's return value** where
