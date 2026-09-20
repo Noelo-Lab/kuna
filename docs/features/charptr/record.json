@@ -432,5 +432,10 @@
     "struct_pointer_declarations": "1286 off -> 1286 on: no synthesized struct_N * is ever replaced by char *.",
     "wide_field_reads_through_an_indexed_pointer": "1202 off -> 1204 on (+2), both in e2fsck::sub_678f8, where v11 = ext2fs_group_desc(...) commits and *(unsigned short *)(v11 + 0x1e) prints as *(unsigned short *)&v11[0x1e]; the same statement's zero store splits into two byte stores, value-preserving and worse to read.",
     "crond_dirent_control": "cronie crond -O0 sub_6715 is byte-identical in both arms after the offset guard."
+  },
+  "speed_round3": {
+    "measured": "no new run",
+    "why": "the round-3 code change is one condition inside kuna_charptr::classify_use, which is only reached with the option ON (char_pointer_from_evidence returns before the walk when the option is off), and it can only END a walk earlier. The loader change is a pure reordering of is_readonly_data with the same answer on every input (unit-tested for the non-ELF case). The default arm's instruction stream is unchanged, so the round-2 block stands.",
+    "round2_numbers_that_stand": "3-arm interleaved min-of-15: new_default vs main_default fmt +0.23 ls +0.20 sort -2.12 bash -0.37; on vs new_default fmt +2.02 ls +0.30 sort +4.28 bash +1.55 (worst +4.28, budget +5)."
   }
 }
