@@ -640,7 +640,8 @@ narrowing costs nothing on the class ptrfromuse won. Storage is unchanged: argum
 stack 53.2%, register-only 0.0%.
 
 The rivals' replay, each decompiler paired with kuna on exactly the functions that decompiler
-scored (`final/rivals/rivals.json`, unchanged since round B):
+scored (`final/finalsweep.py rivals`, the round-B replay unchanged — neither the results tree nor the
+pinned metric moved):
 
 | decompiler (functions it scored) | rival: perfect % / mean | kuna round C | **kuna round D** |
 |---|---|---|---|
