@@ -63,8 +63,23 @@
 //!   register while the caller goes on to use only the quotient. Nothing else
 //!   qualifies: a join input the caller wrote is an argument on the path that
 //!   wrote it, and one clobber among the inputs does not change that;
-//! * the callee's own body does not **read** those register bytes before writing
-//!   them;
+//! * the callee's own **recovered prototype** is exactly the argument list this
+//!   call is left with -- no parameter in those register bytes, and the
+//!   parameters it does have account, storage for storage, for every argument
+//!   that survives ([`callee_prototype_is_the_argument_list`]). This is the
+//!   clause that carries the rule, and it is the reason the option can be a
+//!   default at all;
+//! * the callee's own body neither **reads** those register bytes before writing
+//!   them nor can **forward** them to a read its recovery never saw
+//!   ([`crate::p4_calls::kuna_calleedeadarg::resolve_forward_transfer`]). A
+//!   recovered parameter list accounts for the reads in the body and for the
+//!   arguments of every call whose target had a prototype — so the register has
+//!   to be written already wherever control leaves for anything else: an
+//!   indirect call or tail call, a `CALLOTHER`, an indexed register-file access,
+//!   an undecodable instruction, and a direct call to a target with neither a
+//!   source declaration nor a prototype this run recovered. At a direct call to
+//!   a target `protoorder` parked, the same question is asked of that target in
+//!   turn;
 //! * it is **trailing** -- no used trial follows it -- so the argument list keeps
 //!   its positional shape and no later argument moves;
 //! * at least one used argument remains, since an empty list is
@@ -113,29 +128,88 @@
 //! caller(long)`. That shape is
 //! `tests/stages/kuna-argclobber-forward.xml`.
 //!
-//! **The callee.** That still leaves a register the caller never wrote.
-//! u-boot `sub_6083af40` reaches `sub_6086b998(node,name,len)` with `len`
-//! computed on one path and left as a clobber on the other, and `sub_6086b998`
-//! reads `r2` before writing it. The callee's body outranks everything on the
-//! caller's side: bytes it reads at entry are a parameter however the value got
-//! into the register. [`crate::p4_calls::kuna_calleedeadarg`] already decodes
-//! each callee once per image for the opposite claim, so this is its
-//! `proves_input` half, read here for free. It is also what answers for a callee
-//! kuna never recovered as variadic: u-boot's `printf` is called from 1,924
-//! sites, and its prologue spilling `r1`-`r3` into the `va_list` save area
-//! settles all of them at once, which no per-function sibling scan could.
+//! **The callee.** That still leaves a register the caller never wrote, and
+//! nothing on the caller's side can say whether the callee wanted it. Only the
+//! callee can, and the statement that settles it is the callee's own **recovered
+//! prototype**: the parameter list kuna gets from decompiling that function,
+//! which [`crate::p4_calls::kuna_protoorder`] parks for every callee it
+//! decompiles before its callers. A prototype with a parameter overlapping the
+//! register says the callee takes an argument there, and the drop is declined
+//! whatever the caller's side looks like.
+//!
+//! Requiring that prototype to EXIST carries part of the clause, because
+//! `protoorder` states nothing for a callee inside a recursive component
+//! (`Decline::Scc` — "callees first" has no meaning in a cycle), one with no
+//! recovered body such as a PLT import, one whose recovery produced no
+//! parameters at all, and one whose prototype is already declared (that case
+//! input-locks the call spec, which this rule declines at its first line). A
+//! callee that was never decompiled in this run states nothing either, so a
+//! single-function `kuna decompile`, a narrowed `decompile-all`, a `--jobs N`
+//! run and `--option protoorder off` all leave every call site alone.
+//!
+//! It is NOT true that `protoorder` declines a variadic callee, and this rule
+//! must not be read as resting on that. `protoorder`'s variadic guards —
+//! `Decline::UnderRecovered` and `Decline::RegisterFileFull` — live in the
+//! branch that parks a prototype in the symbol table (`lock`), and its default
+//! `types` mode, the one this rule reads, returns before them;
+//! `Decline::Variadic` itself is only ever set from a DECLARED `...`, so on a
+//! stripped image it cannot fire at all. A stripped SysV variadic is STATED:
+//! `long vlog(int,long,...)` built with `gcc -O2` and stripped states three
+//! parameters, and `KUNA_PROTOORDER_TRACE=1` prints `state sub_11d0 params=3`.
+//! What declines the drop there is the list itself — a register-save prologue
+//! reads every argument register there is, so the recovered list CARRIES the
+//! register the drop would take, and the first half of the clause refuses it.
+//! Where a variadic recovers short instead, the callee-body veto below and the
+//! surviving-argument accounting above are what answer for it.
+//!
+//! The callee's BODY is read twice more, and both are required, not optional.
+//! [`crate::p4_calls::kuna_calleedeadarg`] decodes each callee once per image; a
+//! bounded entry walk that positively sees those register bytes read before they
+//! are written declines the drop (`proves_input`), and a walk that cannot show
+//! the register is dead wherever the callee forwards it to something nothing
+//! accounts for declines it too
+//! ([`crate::p4_calls::kuna_calleedeadarg::resolve_forward_transfer`]). Neither
+//! can admit a drop the clauses above refused.
+//!
+//! # Why a recovered prototype is not enough on its own
+//!
+//! A prototype states what the callee NAMES. A forwarding thunk names almost
+//! nothing: `long fwd(struct box *o,long a,long b) { if (!a) return 0; return
+//! o->fn(o,a,b); }` compiles to `test %rsi,%rsi; je; jmp *(%rdi)`, so kuna
+//! recovers `(rdi, rsi)` — two parameters, honestly reporting the two registers
+//! the body touches — while the function it jumps to consumes three. The
+//! recovered list then EQUALS the two arguments the drop would leave behind, the
+//! accounting above is satisfied, and the third argument is deleted although the
+//! program reads it. `docs/features/argclobber/ce-forward-thunk-2param.c` is that
+//! program, `ce-import-forward.c` is the same shape with `ext3(o,a,b)` — an
+//! import nothing states a signature for — in place of the pointer, and
+//! `ce-forward-thunk-2frame.c` puts an ordinary direct call in front of the
+//! first. The forwarding clause is what answers all three: at the `jmp *(%rdi)`,
+//! and at a `call` whose target neither carries a declaration nor answers for
+//! itself, the callee has not written `rdx`, so the caller's value can still be
+//! reaching code no recovery saw, and the drop is declined.
 //!
 //! # What it cannot know
 //!
-//! A callee that really returns a 16-byte value in `rax:rdx` and forwards the
-//! high half as the next call's trailing argument writes nothing into `rdx`
-//! itself, so it keeps the phantom's shape through every clause above; only the
-//! callee probe can decline it, and only when it covers that callee's entry.
+//! The evidence is a recovery, not a fact. A callee whose own parameter list
+//! kuna under-recovers — it misses a parameter the callee really reads, on a
+//! path where every transfer is answered for — states a prototype that admits
+//! the drop, and the argument goes. That is the residual
+//! hole, and it is the same hole every callee-derived statement has. Two things
+//! bound it: the under-recovery has to be exactly one slot deep, at exactly the
+//! register the clobber wrote, with every other argument still accounted for;
+//! and the register has to be dead at every transfer that cannot be followed or
+//! resolved through its target.
 //!
-//! The option is off by default for that reason, and because what it drops is an
-//! argument: every wrong drop is a deleted expression, which is the kind of
-//! wrong output a reader cannot see. The corpus measurement that bounds it is in
-//! `docs/features/phantomargs/sweep-2026-09-16.txt`.
+//! What the prototype clause removes is the class the bounded entry probe could
+//! not see at all: a read past a jump table, a read beyond the probe's
+//! instruction budget, and a callee that really returns a 16-byte value in
+//! `rax:rdx` and forwards the high half onward. It removes
+//! those by carrying the parameter in the recovered list — but only when the
+//! recovery reached far enough to name it, which is why the opaque-transfer
+//! clause stands beside it rather than behind it.
+//! `docs/features/argclobber/` holds the six programs and the corpus
+//! measurement that bounds the rule.
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -153,7 +227,7 @@ use crate::p0_knowledge::options::on_or_off;
 /// Marshaling element `<argclobber>` (kuna 4000+ range).
 pub const ELEM_ARGCLOBBER: ElementId = ElementId::new("argclobber", 4173);
 
-/// `option argclobber on|off` (default off).
+/// `option argclobber on|off` (default on).
 pub struct OptionArgClobber;
 
 impl OptionArgClobber {
@@ -298,6 +372,83 @@ fn clobber_of_this_register_reaches(data: &Funcdata, vn: VarnodeId, addr: &Addre
     saw_clobber
 }
 
+/// Is the callee's own RECOVERED prototype exactly the argument list this call
+/// is left with once `[addr, addr+size)` is dropped?
+///
+/// Two things are asked of it, and both have to hold.  The register bytes the
+/// drop would remove must be free of any recovered parameter -- the callee does
+/// not take an argument there.  And the parameters it DOES have must be, storage
+/// for storage, the arguments that survive: every recovered parameter covered by
+/// a surviving argument and every surviving argument covered by a recovered
+/// parameter.  A recovery that is SHORT of what the call passes is not a
+/// statement that the tail is unwanted, it is a statement that the recovery did
+/// not reach the tail, and those two read identically from the caller's side.
+///
+/// That second half is what answers for a forwarding thunk.  `mov (%rdi),%rax;
+/// jmp *%rax` never names the registers it passes through, so its own recovery
+/// finds one parameter while its real callee consumes three; with only the
+/// free-bytes test the drop is admitted and a forwarded argument is deleted
+/// (`docs/features/argclobber/ce-forward-thunk.s`).  Requiring the recovered
+/// list to ACCOUNT for every surviving argument declines it: one recovered
+/// parameter cannot be the two arguments that would remain.
+///
+/// `false` is also the answer when `protoorder` parked nothing for this entry.
+/// It states a prototype only for a function it decompiled before this caller,
+/// and refuses for a callee inside a recursive component, one with no recovered
+/// body such as a PLT import, one that recovered no parameters at all, and one
+/// whose prototype is already declared.  "Nothing parked" and "cannot tell" are
+/// the same answer here.
+fn callee_prototype_is_the_argument_list(
+    data: &Funcdata,
+    entry: &Address,
+    addr: &Address,
+    size: int4,
+    surviving: &[(Address, int4)],
+) -> bool {
+    let Some(stated) = data.kuna_protoorder_types(entry) else { return false };
+    if size <= 0 {
+        return false;
+    }
+    if stated.inputs.len() != surviving.len() {
+        return false;
+    }
+    for (paddr, psize, _) in &stated.inputs {
+        // A parameter whose storage cannot be compared is one this cannot rule
+        // out, and an argument is not deleted on "cannot tell".
+        if *psize <= 0 || paddr.get_space().is_none() {
+            return false;
+        }
+        if storage_overlaps(paddr, *psize, addr, size) {
+            return false;
+        }
+        if !surviving.iter().any(|(a, sz)| storage_overlaps(paddr, *psize, a, *sz)) {
+            return false;
+        }
+    }
+    for (a, sz) in surviving {
+        if *sz <= 0 || a.get_space().is_none() {
+            return false;
+        }
+        if !stated.inputs.iter().any(|(p, ps, _)| storage_overlaps(p, *ps, a, *sz)) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Do two storages share a byte?  Different spaces never do.
+fn storage_overlaps(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
+    let (Some(aspace), Some(bspace)) = (a.get_space(), b.get_space()) else {
+        return false;
+    };
+    if aspace.get_index() != bspace.get_index() {
+        return false;
+    }
+    let (alo, blo) = (a.get_offset(), b.get_offset());
+    let (ahi, bhi) = (alo.wrapping_add(asize as u64), blo.wrapping_add(bsize as u64));
+    alo < bhi && blo < ahi
+}
+
 /// Score the trailing argument of this call no-use when a previous call's
 /// clobber is what put a value in its register.
 ///
@@ -362,19 +513,45 @@ pub fn drop_clobber_tail_arg(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
     if !clobber_of_this_register_reaches(data, vn, &addr) {
         return;
     }
-    // The callee's own body outranks everything on the caller's side: a body
-    // that READS these bytes before writing them is reading a parameter, however
-    // the value got into the register.  This is the clause that scales past one
-    // function -- `sub_60873270` is u-boot's `printf`, called from 1,924 sites
-    // kuna never recovered as variadic, and its prologue spilling `r1`-`r3` into
-    // the `va_list` save area answers for every one of them at once.
+    // The callee's own RECOVERED prototype is the evidence, and it has to exist
+    // and has to BE the list this call is left with: a callee that stated
+    // nothing about itself, or stated less than the call still passes, cannot be
+    // read as saying this register is free.
     let entry = fc.get_entry_address().clone();
     let trial_size = fc.active_input().get_trial(idx).get_size();
-    if data
+    let mut surviving: Vec<(Address, int4)> = Vec::new();
+    for i in 0..num_trials {
+        if i == idx {
+            continue;
+        }
+        let t = fc.active_input().get_trial(i);
+        if t.is_used() {
+            surviving.push((t.get_address().clone(), t.get_size()));
+        }
+    }
+    if !callee_prototype_is_the_argument_list(data, &entry, &addr, trial_size, &surviving) {
+        return;
+    }
+    // The callee's body is read as a veto on top of that: a bounded entry walk
+    // that positively sees these bytes READ before they are written is looking at
+    // a parameter the recovery missed, however the value got into the register.
+    //
+    // And the walk, continued through the callee's own direct calls, has to show
+    // that the value cannot reach a read the recovery never saw. A recovered
+    // parameter list is a statement about the reads that recovery SAW: the ones
+    // in the body, and the arguments of every call whose target had a prototype.
+    // A thunk that tail-calls through a pointer, and one that forwards to an
+    // unsignatured import, are both short for that reason.
+    let reads_it = data
         .kuna_callee_entry_dead(&entry)
         .map(|d| d.proves_input(&addr, trial_size))
-        .unwrap_or(false)
-    {
+        .unwrap_or(true);
+    let transfer_free = data
+        .kuna_callee_forward(&entry)
+        .map(|f| f.transfer_free(&addr, trial_size))
+        .unwrap_or(false);
+    let body_admits = !reads_it && transfer_free;
+    if !body_admits {
         return;
     }
     // A sibling call to the same callee that really passed an argument here

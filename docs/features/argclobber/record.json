@@ -1,0 +1,367 @@
+{
+ "opportunity": "coreutils fmt -O2 calls one static function three times from main and kuna renders one, two and three arguments; the three-argument site reads two `// rdx` locals nothing assigns. The callee's own recovered prototype takes two parameters. `argclobber` fixed that in #652 but shipped OFF, because the only clause that could speak for the callee was a bounded walk of its entry, and four ordinary programs hide a real read from that walk (a jump table, the walk's instruction budget, a PLT import, a 16-byte rax:rdx struct return forwarded onward). With protoorder (#669) merged the callee's own RECOVERED prototype is readable at the call site, and it separates every shipped drop from every counterexample.",
+ "test_name": "tests/cli/argclobber-drops-a-trailing-clobbered-argument.json + argclobber-off-keeps-the-clobbered-argument.json + argclobber-keeps-an-argument-the-callee-takes.json; tests/stages/kuna-argclobber{,-forward,-guards,-armreturn}.xml",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_x86_64",
+ "selector": "sub_401000",
+ "func_addr": "0x401000",
+ "angr_version": null,
+ "option": "argclobber",
+ "flag": "arg_clobber",
+ "element_id": 4173,
+ "change_kind": "correctness-fix",
+ "tier": "core",
+ "source_decompiler": "ghidra",
+ "inspiration": "coreutils fmt -O2 main 0x26a0 -> fmt 0x3700 at 0x2ac1; upstream ParamListStandardOut::fillinMap (fspec.cc:1721) and AncestorRealistic::enterNode (funcdata_varnode.cc:2043)",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "destructive": true,
+ "rule_change": {
+  "admits": "the callee's RECOVERED prototype (stated by `protoorder types`) exists for this entry, has no parameter overlapping the argument's register bytes, AND accounts -- storage for storage -- for every argument the drop leaves behind",
+  "vetoes": "unchanged caller-side clauses, plus TWO readings of the callee's body from the per-image entry-liveness summary: `proves_input` (the bounded entry walk positively sees the register READ before it is written) and `resolve_forward_transfer` (the callee must have WRITTEN the register before every control transfer that cannot be answered for -- CALLIND, BRANCHIND, CALLOTHER, an indexed register-file LOAD/STORE, an undecodable instruction, and a direct CALL whose target carries neither a declared non-variadic prototype nor a body that answers the same question of itself, recursively, within a 32-body budget). Naming a target is not accounting for it: an import's PLT stub jumps through its GOT slot and answers nothing. Neither reading can admit a drop.",
+  "inert_where": [
+   "kuna decompile (one function per forked process)",
+   "decompile-all narrowed by --addr/--functions",
+   "--jobs N",
+   "decompile-project",
+   "decompile-graph",
+   "--option protoorder off"
+  ],
+  "value_naming": "`on` now means the new rule; no `proto` value was added, because the old rule is unsound where they differ and identical where they do not",
+  "why_the_accounting_clause": "a recovery SHORT of what the call passes is not a statement that the tail is unwanted but a statement that the recovery did not reach the tail. A forwarding thunk (`mov (%rdi),%rax; jmp *%rax`) recovers one parameter while the function it tail calls consumes three, and protoorder states that short list in BOTH its modes; the free-bytes test alone deleted the forwarded argument. ce-forward-thunk.{c,s}",
+  "protoorder_does_not_decline_a_variadic": "Decline::UnderRecovered and Decline::RegisterFileFull live in park_recovered's LOCK branch; the default `types` mode returns through state_recovered_types before them. Decline::Variadic is only ever set from a declared `...`, which Decline::Declared rejects one branch earlier, so it cannot fire on a stripped image. Measured: `long vlog(int,long,...)` with a va_arg read, gcc -O2 stripped, prints `[protoorder] state sub_11d0 params=3` under KUNA_PROTOORDER_TRACE=1. What declines the drop at a stripped variadic is the recovered list itself -- a register-save prologue reads every argument register, so the list carries the one the drop would take.",
+  "why_the_forwarding_clause": "a recovered prototype states what a callee NAMES. `long fwd(struct box*o,long a,long b){ if(!a) return 0; return o->fn(o,a,b); }` compiles under gcc -O2 to `test %rsi,%rsi; je; jmp *(%rdi)`, recovering exactly the TWO parameters a drop would leave behind -- so the accounting clause is satisfied and the forwarded third argument was deleted along with the preceding call's rax:rdx return half. At the `jmp` rdx is unwritten, and that is what declines it. The same is true with no pointer anywhere: `long wrap(void*o,long a,long b){ if(!a) return 0; return ext3(o,a,b); }` with ext3 an unsignatured import recovers the same two parameters, and the direct call is declined only because its target cannot answer for rdx (ce-import-forward.c; ce-forward-thunk-2frame.c is the pointer one an ordinary call frame deeper). An incomplete summary (probe budget, runaway written set) declines too, which subsumes ce-probe-budget a second, independent way."
+ },
+ "counterexamples": {
+  "programs": [
+   "ce-remainder-or-pair.c (read past a jump table)",
+   "ce-probe-budget.c (read over the 192-instruction probe budget)",
+   "ce-probe-budget.s (same shape, hand written)",
+   "ce-import.c + ce-import-lib.c (PLT import, no body)",
+   "ce-forward-thunk.c + ce-forward-thunk.s (indirect tail call; recovers 1 parameter, forwards 3)",
+   "ce-forward-thunk-2param.c -- a 2-parameter forwarding thunk in plain C (no hand asm); declined by the forwarding walk, NOT by the prototype",
+   "ce-import-forward.c -- the same, forwarded to an unsignatured PLT import with no function pointer anywhere (committed as fixture argclobber_import_x86_64)",
+   "ce-forward-thunk-2frame.c -- ce-forward-thunk-2param one ordinary direct call frame deeper"
+  ],
+  "old_rule": "the first four lose the argument under the pre-#689 body-only rule; ce-forward-thunk loses it under the free-bytes-only prototype clause; ce-forward-thunk-2param under the accounting clause too; ce-import-forward and ce-forward-thunk-2frame under the first version of the forwarding clause, which exempted direct calls -- ablating the direct-call arm of the shipped rule deletes their argument again",
+  "new_rule": "all eight are byte-identical to the option-off output",
+  "pinned_by": {
+   "ce-remainder-or-pair": "tests/cli/argclobber-keeps-an-argument-the-callee-takes.json",
+   "ce-forward-thunk-2param": "tests/cli/argclobber-keeps-an-argument-a-thunk-forwards.json",
+   "ce-import-forward": "tests/cli/argclobber-keeps-an-argument-an-import-reads.json"
+  }
+ },
+ "sweep": {
+  "corpus": "every stripped ELF in decbench results/full_run_address_2026-09-11 (O0, O2, O2-noinline)",
+  "binaries": 770,
+  "runs_nonzero_exit": 0,
+  "binaries_changed": 19,
+  "functions_changed": 19,
+  "call_sites_losing_one_argument": 19,
+  "arguments_dropped": 19,
+  "call_sites_gaining_an_argument": 2,
+  "register_storage_locals_removed": 20,
+  "register_storage_locals_added": 0,
+  "declarations_removed_net": 34,
+  "every_drop_lands_on_the_callee_true_arity": true,
+  "callees": {
+   "__addvsi3(int,int)": "11 openssh O0 permute_args",
+   "__mulvsi3(int,int)": "4 openssh O2/O2-noinline scp+sftp",
+   "fmt(FILE *, char const *)": "2 coreutils fmt main (O2, O2-noinline)",
+   "ext2fs_dblist_sort2(dblist, sortfunc)": "1 e2fsck_pass2 (O2)",
+   "efi_create_handle(efi_handle_t *)": "1 u-boot O2-noinline"
+  },
+  "hunk_classes": [
+   "the dropped trailing argument (19)",
+   "the dead idiv remainder that fed it, and its copies",
+   "the phantom register declaration and its copy",
+   "declaration block reordering once one declaration is gone",
+   "a while re-rendered as a for, once the dead loop-tail copy went (11 openssh permute_args)",
+   "the PRECEDING call's return narrowing where that call was the register's only writer: bash expand_prompt `v = xmalloc(n); a = SUB168(v,8);` -> `v = (char *)xmalloc(n);` (2), and the two SUB164 extractions that fed it"
+  ],
+  "hunks_outside_the_documented_effect": 0,
+  "note": "the raw diffs are large only because dropping one declaration renumbers every vN in that function; with names normalized the whole corpus delta is 21 functions x a handful of lines.",
+  "re_measured_after_accounting_clause": "770 binaries re-swept: identical DIFF set (21), and all 21 on-arm outputs byte-identical to the pre-clause run, so every counter and every hunk class in sweep-2026-09-20.txt stands unchanged",
+  "re_measured_after_opaque_clause": "770 binaries re-swept on base d8b9c0b1f: identical DIFF set (21), and every hunk identical to the pre-clause sweep except e2fsck's `int8 v3` -> `void *v3`, which is #690 ptrfromuse on the base and not this option (the dropped argument there is the same). 0 non-zero exits.",
+  "dropped_out_vs_the_pre_forwarding_sweep": "bash O2 and O2-noinline expand_prompt: xrealloc(void *, size_t) keeps its third argument now, a correct drop given up. xrealloc reaches `call sbrk@plt` with rdx unwritten, kuna has no signature for sbrk, and the PLT stub jumps through its GOT slot, so nothing answers for rdx. The SUB168 return narrowing that came with that drop went with it.",
+  "diff_set_vs_the_pre_forwarding_sweep": "strict subset (19 of 21); every surviving diff is byte-identical to sweep-2026-09-20.txt's for the same binary, so every hunk keeps its classification",
+  "report": "docs/features/argclobber/sweep-2026-09-20-forwarding.txt"
+ },
+ "benchmark": {
+  "corpus": "444 campaign slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), scripts.decbench.typesweep, DECBENCH_NO_CACHE=1",
+  "metric": "type_match",
+  "functions_scored": 10748,
+  "perfect_off": 1147,
+  "perfect_on": 1147,
+  "aggregate_off": 3413.35,
+  "aggregate_on": 3413.35,
+  "improved": 0,
+  "worse": 0,
+  "control_byte_identical_variables": 10746,
+  "control_scored_differently": 0,
+  "decomp_vars_total_off": 96671,
+  "decomp_vars_total_on": 96671,
+  "functions_with_a_different_variable_count": 0,
+  "note": "type_match cannot see this change: decbench scores `variables[]` (args + stack symbols + framelayout slots), register locals are never exported, and a call's argument is not a variable of the caller. The arity/phantom counters are the sweep block above.",
+  "post_rebase_2026_09_20": {
+   "base": "origin/main d8b9c0b1f (#690 ptrfromuse landed), rebased",
+   "slices": 444,
+   "functions": 10748,
+   "type_match_perfect_off": 1351,
+   "type_match_perfect_on": 1351,
+   "aggregate_off": 3646.07,
+   "aggregate_on": 3646.07,
+   "improved": 0,
+   "worse": 0,
+   "moved_onto_perfect": 0,
+   "moved_off_perfect": 0,
+   "note": "re-run after the rebase because #690 is type-affecting; the pre-rebase run on 3433e05d5 was 1147 -> 1147, also 0/0"
+  },
+  "rebased_base": {
+   "base": "d8b9c0b1f",
+   "perfect_off": 1351,
+   "perfect_on": 1351,
+   "aggregate_off": 3646.07,
+   "aggregate_on": 3646.07,
+   "improved": 0,
+   "worse": 0,
+   "moved_onto_perfect": 0,
+   "moved_off_perfect": 0,
+   "functions_scored": 10748,
+   "byte_identical_variables": 10746,
+   "scored_differently": 0
+  },
+  "post_forwarding_clause_2026_09_20": {
+   "base": "origin/main d8b9c0b1f, same build both arms, DECBENCH_NO_CACHE=1",
+   "slices": 444,
+   "functions_scored": 10748,
+   "perfect_off": 1351,
+   "perfect_on": 1351,
+   "aggregate_off": 3646.07,
+   "aggregate_on": 3646.07,
+   "moved_onto_perfect": 0,
+   "moved_off_perfect": 0,
+   "improved": 0,
+   "worse": 0,
+   "control_byte_identical_variables": 10746,
+   "control_scored_differently": 0,
+   "note": "unchanged from the pre-forwarding measurement: the metric scores variables[], and neither a call's argument nor a register local is one."
+  }
+ },
+ "gates": {
+  "make test": "675/675 assertions, PARITY OK (no datatest assertion moved)",
+  "make test-stages": "1249/1249 assertions, PARITY OK; docs/baseline-stages.json re-recorded 1250 -> 1249 for the four renamed argclobber assertions",
+  "make test-cli": "209/209 passed (3 new probes)",
+  "make check-spec": "OK lenient and --strict",
+  "kuna catalog --check": "OK",
+  "counters --check": "no drift",
+  "make rust-test": "RUST_TEST_RC=0 (7,741 tests, 0 failed suites) on the final tree",
+  "CI": "parity gates pass; cargo workspace suite pass (full-ci label)",
+  "round2_final_tree": "make test 675/675 PARITY OK; make test-stages 1249/1249 PARITY OK; make test-cli 209/209; check-spec OK + --strict OK; kuna catalog --check OK; counters --check no drift; docs/options.md byte-fresh; make rust-test RUST_TEST_RC=0 (416 suites, 7,285 tests)"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_argclobber.rs",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs",
+  "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+  "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+  "decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs",
+  "decompiler/crates/kuna-decomp/phases.toml",
+  "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
+  "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_x86_64{,.s}",
+  "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_pair_x86_64{,.c}",
+  "tests/cli/argclobber-*.json",
+  "tests/stages/kuna-argclobber.xml",
+  "docs/baseline-stages.json",
+  "docs/spec/04-calls-and-prototypes.md",
+  "docs/options.md",
+  "docs/features/argclobber/",
+  "tests/stages/kuna-argclobber-forward.xml",
+  "tests/stages/kuna-argclobber-guards.xml",
+  "tests/stages/kuna-argclobber-armreturn.xml"
+ ],
+ "catalog_counts": "unchanged: no option added or removed; `counters --check` reports no drift",
+ "preset_decision": "removed from modes.rs EXCLUDED_ON_PURPOSE -- that list is about default-OFF options absent from the `aggressive` preset, and the option now ships on everywhere.",
+ "notes": "The stage corpus cannot demonstrate the drop: the datatest harness decompiles one function from a byte image, so no callee is decompiled first and nothing is parked. tests/stages/kuna-argclobber.xml is therefore the negative control (the argument survives both passes) and the positive witness is a tests/cli probe on a committed fixture -- the same shape protoorder itself shipped with. The three sibling stage tests (-forward, -guards, -armreturn) pass on that same blanket decline rather than on the caller-side clause each describes; each now says so in its own header and points at the tests/cli probes for live coverage.",
+ "speed_off_ms": 4597.5,
+ "speed_on_ms": 4653.3,
+ "speed_delta_pct": 1.21,
+ "speed_samples": 15,
+ "speed_budget_pct": 5.0,
+ "speed_within_budget": true,
+ "speed_forced_off": false,
+ "speed": {
+  "method": "interleaved min-of-15 `kuna decompile-all --option argclobber off|on`, same build, quiet machine",
+  "cases": {
+   "fmt": {
+    "n": 15,
+    "min_off_ms": 4597.5,
+    "min_on_ms": 4653.3,
+    "delta_pct": 1.21,
+    "median_off_ms": 5159.6,
+    "median_on_ms": 5000.4
+   },
+   "ls": {
+    "n": 15,
+    "min_off_ms": 14177.5,
+    "min_on_ms": 14264.2,
+    "delta_pct": 0.61,
+    "median_off_ms": 15590.2,
+    "median_on_ms": 15362.6
+   },
+   "sort": {
+    "n": 15,
+    "min_off_ms": 14483.8,
+    "min_on_ms": 14428.1,
+    "delta_pct": -0.38,
+    "median_off_ms": 14942.2,
+    "median_on_ms": 14977.5
+   },
+   "bash": {
+    "n": 15,
+    "min_off_ms": 82367.1,
+    "min_on_ms": 81484.8,
+    "delta_pct": -1.07,
+    "median_off_ms": 85835.8,
+    "median_on_ms": 84894.1
+   }
+  },
+  "worst_delta_pct": 1.21,
+  "budget_pct": 5.0,
+  "within_budget": true,
+  "re_measured_after_accounting_clause": true,
+  "post_rebase_spot_check": {
+   "fmt_delta_pct": 0.23,
+   "sort_delta_pct": 0.22,
+   "note": "interleaved min-of-15 on the rebased build (origin/main d8b9c0b1f); the four-case run was on 3433e05d5"
+  }
+ },
+ "arity_counters": {
+  "surface": "kuna decompile-all --json variables[] (name,type,size,stack_offset,arg_index,kind) -- exactly what decbench scores",
+  "scope": "all 21 binaries whose output changes, off vs on, same build",
+  "functions": "23510 in both arms",
+  "functions_gaining_or_losing_an_arg_row": 0,
+  "functions_gaining_or_losing_a_variable_row": 0,
+  "functions_with_a_differing_row_signature": 20,
+  "of_those_vN_renumbering_only": 18,
+  "of_those_a_real_change": "2 -- bash expand_prompt at O2 and O2-noinline, stack slot -160 undefined8 -> char *, the preceding call's return narrowing; an improvement",
+  "note": "the 21 dropped arguments are CALL-SITE arguments, which variables[] does not export, which is why type_match cannot see this change either way"
+ },
+ "arity_counters_after_opaque_clause": {
+  "surface": "kuna decompile-all --json variables[], the 21 changed binaries",
+  "functions": 23510,
+  "functions_gained": 0,
+  "functions_lost": 0,
+  "arg_rows_off": 47887,
+  "arg_rows_on": 47887,
+  "functions_with_a_changed_arg_count": 0,
+  "functions_with_a_changed_var_row_count": 0,
+  "signature_diff_functions": 20,
+  "note": "18 are vN renumbering after one declaration goes; the two bash expand_prompt rows turn an unnamed `local_a0 undefined8` stack slot into a typed `char *` (an improvement). No function gains or loses an argument row, and no variable row is fabricated."
+ },
+ "speed_after_opaque_clause": {
+  "method": "kuna decompile-all, interleaved, min-of-15 (bash min-of-11), same build both arms, base d8b9c0b1f",
+  "fmt_O2": {
+   "off_ms": 4102.9,
+   "on_ms": 4105.6,
+   "delta_pct": 0.07
+  },
+  "ls_O2": {
+   "off_ms": 13568.7,
+   "on_ms": 13545.8,
+   "delta_pct": -0.17
+  },
+  "sort_O2": {
+   "off_ms": 14228.6,
+   "on_ms": 14295.0,
+   "delta_pct": 0.47
+  },
+  "bash_O2": {
+   "off_ms": 80556.1,
+   "on_ms": 80627.3,
+   "delta_pct": 0.09
+  },
+  "worst_delta_pct": 0.47,
+  "budget_pct": 5.0
+ },
+ "arity_counters_after_forwarding_clause": {
+  "surface": "kuna decompile-all --json variables[], the 19 changed binaries",
+  "functions": 17895,
+  "functions_gained": 0,
+  "functions_lost": 0,
+  "arg_rows_off": 40146,
+  "arg_rows_on": 40146,
+  "functions_with_a_changed_arg_count": 0,
+  "functions_with_a_changed_var_row_count": 0,
+  "signature_diff_functions": 18,
+  "note": "all 18 are vN renumbering of the same stack rows after one declaration goes (same name set, same types, same storage kinds). No function gains or loses an argument row, and no variable row is fabricated. The two bash rows that previously turned an untyped stack slot into `char *` are gone with the bash drops."
+ },
+ "speed_after_forwarding_clause": {
+  "method": "kuna decompile-all, interleaved, min-of-15 (bash min-of-11), same build both arms, base d8b9c0b1f, contended box",
+  "fmt_O2": {
+   "off_ms": 4257.5,
+   "on_ms": 4133.7,
+   "delta_pct": -2.91
+  },
+  "ls_O2": {
+   "off_ms": 13478.7,
+   "on_ms": 13371.9,
+   "delta_pct": -0.79
+  },
+  "sort_O2": {
+   "off_ms": 14170.1,
+   "on_ms": 14110.0,
+   "delta_pct": -0.42
+  },
+  "bash_O2": {
+   "off_ms": 81906.1,
+   "on_ms": 82215.0,
+   "delta_pct": 0.38
+  },
+  "worst_delta_pct": 0.38,
+  "budget_pct": 5.0,
+  "note": "the forwarding walk probes each direct-call target's body once per image and caches both the probe and the resolution, so the added work is bounded by the number of distinct functions."
+ },
+ "gates_after_forwarding_clause": {
+  "make test": "675/675 PARITY OK",
+  "make test-stages": "1249/1249 PARITY OK",
+  "make test-cli": "214/214",
+  "make check-spec": "OK, --strict OK",
+  "kuna catalog --check": "OK",
+  "counters --check": "no drift",
+  "docs/options.md": "byte-fresh",
+  "make rust-test": "RUST_TEST_RC=0, 416 suites ok, 7311 tests ok, 0 failed (.scratch/rust-test-r4c.log, 08:10:34Z -> 08:33:56Z)"
+ },
+ "forwarding_clause_ablation_r5": {
+  "date": "2026-09-20",
+  "tree": "feat/argclobberproto rebased onto origin/main 2e28ece4a",
+  "method": "one-line ablation of the transfer_free binding in kuna_argclobber.rs (forwarding clause always satisfied), release rebuild, decompile-all of ce-forward-thunk-2param, source restored and rebuilt byte-identical",
+  "shipped": "long sub_11b0(...) { v2 = sub_1160(a1); a2 = SUB168(v2,8); v1 = SUB168(v2,0); return sub_1190((unsigned long *)0x4018,v1,a2) + 1; }",
+  "ablated": "long sub_11b0(...) { a2 = sub_1160(a1); return sub_1190((unsigned long *)0x4018,a2) + 1; }",
+  "reads": "the live third argument goes, and mk()'s 16-byte rax:rdx return is narrowed with it -- both SUB168 extractions disappear. This is the narrowing witness the spec and the option description name; no drop in the 770-binary corpus does it under the shipped rule."
+ },
+ "gates_r5_rebased": {
+  "base": "origin/main 2e28ece4a (docs-only since the round-4 base, so the typesweep/arity/speed blocks above carry)",
+  "make test": "datatests: 675/675 assertions passed / PARITY OK",
+  "make test-stages": "datatests: 1249/1249 assertions passed / PARITY OK",
+  "make check-spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+  "make test-cli": "tests/cli: 214/214 passed",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh",
+  "make rust-test": "RUST_TEST_RC=0, 416 suites ok, 7311 tests ok, 0 failed (.scratch/rust-test-r5.log, 12:12:16Z -> 12:35:42Z)",
+  "witness": "fmt O2: --option argclobber off renders sub_3700(v6) / sub_3700(stdin,v7) / sub_3700(stdin,\"-\",v10) with two unassigned `// rdx` locals in main; the default renders sub_3700(v6,v7) / sub_3700(stdin,v7) / sub_3700(stdin,\"-\") and both phantoms are gone",
+  "counterexamples": "ce-forward-thunk, ce-forward-thunk-2param, ce-forward-thunk-2frame, ce-import-forward, ce-import and ce-remainder-or-pair all decompile byte-identically to their `--option argclobber off` arm"
+ },
+ "gates_r6": {
+  "base": "origin/main 2e28ece4a; round-6 commit e69df6a81 touches docs/modes.md and one comment in substrate/context.rs, so the typesweep/arity/speed blocks above carry",
+  "make test": "datatests: 675/675 assertions passed / PARITY OK",
+  "make test-stages": "datatests: 1249/1249 assertions passed / PARITY OK",
+  "make check-spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+  "make test-cli": "tests/cli: 214/214 passed",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh",
+  "make rust-test": "RUST_TEST_RC=0, 416 suites ok, 7311 tests ok, 0 failed (.scratch/rust-test-r6.log, 13:26:44Z -> 13:50:44Z)",
+  "witness": "fmt O2 whole-binary decompile-all on this build: default renders sub_3700(v6,v7) / sub_3700(stdin,v7) / sub_3700(stdin,\"-\") = 2/2/2 with no `// rdx` local in main; --option argclobber off renders 1/2/3 with `// rdx` locals at main lines 446 and 458. Single-function `--addr 0x26a0` shows the off rendering in BOTH arms, as designed: no callee is decompiled in that run, so protoorder parks nothing and the drop is declined."
+ }
+}

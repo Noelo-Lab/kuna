@@ -28,29 +28,40 @@
     Ghidra emits the identical three-argument call and names the phantom
     `extraout_RDX`.
 
-    The fixture is the same construct, hand assembled.  rdx at the call is a
-    two-input join and NEITHER input is a value the caller put there for this
-    call: on one path `clobber` destroyed the register (and its own first act is
-    a call, so `calleepreserves` cannot narrow the killed set), on the other an
-    `idivl` left its remainder in edx while the caller went on to use only the
-    quotient.  That second half is the `% 200` term of the fmt witness, and it
-    is the only non-clobber shape the rule accepts: upstream scores a trial
-    formed by a remainder exactly like one formed by an indirect creation, on
-    the return side (`ParamListStandardOut::fillinMap`, fspec.cc:1721).
-    `target`'s first act is a call, so `calleedeadarg` cannot prove rdx dead
-    there either.
+    THIS FIXTURE IS THE NEGATIVE CONTROL for the clause that decides the drop.
+    `option argclobber on` drops the trailing argument only when the CALLEE's
+    own recovered prototype says the register is free, and that prototype
+    reaches a call site only through `protoorder`, which parks it when a
+    whole-binary `decompile-all` decompiles the callee first.  This harness
+    decompiles ONE function from a byte image: no callee was decompiled first,
+    nothing is parked, `target` has stated nothing about itself, and a rule that
+    deletes an argument may not read silence as permission.  The parking flag
+    itself says so: `park_recovered_proto` is written true only in
+    decompiler/crates/kuna-cli/src/decompile_all.rs, and the console paths this
+    harness runs through (kuna-console/src/project.rs, project_stream.rs) pass
+    false, so no stage test can put a parked prototype in front of the rule,
+    whatever it asserts.  The two-pass coverage lives in tests/cli instead,
+    named below, over the whole binary-to-decompile path and run by `make
+    test-cli` in CI.  So the caller's
+    side here is the exact shape the option exists for: rdx is a two-input
+    join and NEITHER input is a value the caller put there. On one path
+    `clobber` destroyed the register, on the other an `idivl` left its remainder
+    in edx while the caller went on to use only the quotient. The argument
+    still survives both passes.
+
+    The POSITIVE witness, the same construct as a real program so that
+    `decompile-all` decompiles `target` first, is
+    tests/cli/argclobber-drops-a-trailing-clobbered-argument.json over
+    decompiler/crates/kuna-analysis/tests/fixtures/argclobber_x86_64, where the
+    call renders `sub_401031(a0,5)` and both the phantom `// rdx` local and the
+    dead remainder are gone.  tests/cli/argclobber-off-keeps-the-clobbered-
+    argument.json is its option-off arm.
 
     Stage / sub-stage: P4 "active-input-trial-scoring".  The P0 assertion
     `option argclobber on|off` decides whether the trailing argument of a call
     may be dropped when nothing on the caller's side put a value in its
-    register.
-
-    Pass 1 (`option argclobber off`, the shipped default) reproduces the BUG:
-    `target` takes a third argument built out of the clobber and the dead
-    remainder.
-    Pass 2 (`option argclobber on`) is the FIX: the trailing argument is gone,
-    the dead remainder goes with it, and the quotient the caller really uses is
-    untouched.
+    register.  Pass 1 pins the shipped `off`; pass 2 pins that `on` alone is not
+    enough.
 -->
 <bytechunk space="ram" offset="0x100000">
 534889fb4885f67407e822000000eb0c89d899b9c8000000f7f989c34889dfbe
@@ -72,8 +83,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="argclobber #1: option off passes a third argument built out of the previous call's clobber and a dead idiv remainder (bug reproduced)" min="1" max="1">target\(a0,5,v[0-9]+\)</stringmatch>
-<stringmatch name="argclobber #2: option on drops the trailing argument, whose every incoming value is a clobber or a division by-product" min="1" max="1">target\(a0,5\)</stringmatch>
-<stringmatch name="argclobber #3: the dead remainder that fed the fabricated argument is gone with the option on (only the buggy pass computes it)" min="1" max="1">% 200</stringmatch>
-<stringmatch name="argclobber #4: the quotient the caller really uses survives both passes" min="2" max="2">/ 200</stringmatch>
+<stringmatch name="argclobber #1: the caller's side is the shape the option exists for, a clobber on one path of the argument register's join and a dead idiv remainder on the other" min="2" max="2">target\(a0,5,v[0-9]+\)</stringmatch>
+<stringmatch name="argclobber #2: and the argument survives with the option ON, because no callee was decompiled first and `target` stated no prototype for the rule to read" min="2" max="2">% 200</stringmatch>
+<stringmatch name="argclobber #3: the quotient the caller really uses survives both passes" min="2" max="2">/ 200</stringmatch>
 </decompilertest>

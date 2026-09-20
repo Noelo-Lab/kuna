@@ -31,6 +31,23 @@
     declines: a register the caller wrote is a register the caller is passing,
     whatever the value in it came from.
 
+    WHY THIS PASSES NOW.  This fixture predates the recovered-prototype rule and
+    pins its clause against the CALLER's side.  Under the current rule the
+    decisive statement is the callee's own recovered prototype, which reaches a
+    call site only through `protoorder`, and this harness decompiles ONE
+    function from a byte image: no callee was decompiled first, nothing is
+    stated, and the drop is declined before any caller-side clause is reached
+    (the same blanket decline tests/stages/kuna-argclobber.xml pins).  So the
+    pass-2 survival here is that decline, not the clause described above.  The
+    clause is kept in prose because it still runs wherever a prototype IS
+    stated, and the live coverage of the rule on a real image is in tests/cli/
+    (argclobber-drops-a-trailing-clobbered-argument.json and its off arm,
+    argclobber-keeps-an-argument-the-callee-takes.json,
+    argclobber-keeps-an-argument-a-thunk-forwards.json).  No stage test can
+    carry the callee clause: `park_recovered_proto` is set by
+    kuna-cli/src/decompile_all.rs alone, so the datatest harness never parks a
+    prototype at all.
+
     Stage / sub-stage: P4 "active-input-trial-scoring". Both passes must render
     the same four-argument call, so the assertion counts 2.
 -->

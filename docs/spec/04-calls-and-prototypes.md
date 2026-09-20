@@ -567,7 +567,7 @@ only (the remainder-formed and indirect-creation-formed rejection in
 `fillin_map_standard_out`, below): the input list has no such test, so the
 evidence that disqualifies a return value is ignored for an argument.
 
-(kuna) `argclobber` (default **off**,
+(kuna) `argclobber` (default **on**,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_argclobber.rs`) applies that
 same sentence to the input list, bounded by eight clauses.
 
@@ -612,14 +612,91 @@ parameter, and `void caller(long,unsigned long)` renders as `void caller(long)` 
 a deletion that reaches the JSON `variables[]` surface as a missing `kind: arg`
 row, not just the C text.
 
-The **callee's own body** must not read those register bytes before writing them.
-That is the `proves_input` half of the per-image entry-liveness summary
-`calleedeadarg` (below) already builds, and it settles the case the caller's side
-cannot: bytes the callee reads at entry are a parameter however the value got
-into the register. It is also what answers for a callee kuna never recovered as
-variadic — u-boot's `printf` is called from 1,924 sites, and its prologue
-spilling `r1`–`r3` into the `va_list` save area speaks for all of them at once,
-which no per-function sibling scan can.
+The **callee's own recovered prototype** must exist, must have no parameter
+overlapping those register bytes, and must *account for every argument the drop
+leaves behind* — each recovered parameter covered by a surviving argument and
+each surviving argument covered by a recovered parameter. This is the clause the
+rule rests on, and the reason it can be a default. Nothing on the caller's side
+can say whether the callee wanted the register; the parameter list kuna gets from
+decompiling that function can, and `protoorder` (above) states exactly that list
+for every callee it decompiles before the caller.
+
+The second half is not bookkeeping. A recovery *short* of what the call passes is
+not a statement that the tail is unwanted — it is a statement that the recovery
+did not reach the tail, and from the caller's side the two read identically. A
+forwarding thunk is the sharp case: `mov (%rdi),%rax; jmp *%rax` never names the
+registers it passes through, so kuna recovers one parameter for it while the
+function it tail calls consumes three, and `protoorder` states that short list in
+*both* its modes. With only the free-bytes test the drop is admitted and a
+forwarded argument is deleted; requiring the recovered list to account for the
+two surviving arguments declines it, because one parameter cannot be two
+arguments.
+
+Requiring the prototype to **exist** carries the rest, because `protoorder`
+states nothing for a callee inside a recursive component, one with no recovered
+body such as a PLT import, one that recovered no parameters at all, and one whose
+prototype is already *declared* — that last case input-locks the call spec, which
+this rule declines at its first line. "Nothing parked" and "cannot tell" are
+therefore the same answer and both decline, which also makes the rule inert
+wherever no callee was decompiled first: a single-function `kuna decompile` (it
+forks one process per function), a `decompile-all` narrowed by `--addr` or
+`--functions`, a `--jobs N` run, and `--option protoorder off`.
+
+`protoorder` does **not** decline a variadic callee, and this rule must not be
+read as resting on that. The variadic guards described above — the under-recovery
+walk and the register-file boundary — belong to the branch that parks a prototype
+in the symbol table, and the default `types` mode, which is the one this rule
+reads, returns before them. The declared-`...` decline cannot fire on a stripped
+image at all, because a declared prototype is rejected one branch earlier. A
+stripped SysV variadic is therefore *stated*: `long vlog(int,long,...)` built
+with `gcc -O2` and stripped states three parameters, and `KUNA_PROTOORDER_TRACE=1`
+prints `state sub_11d0 params=3` for it. What declines the drop there is the list
+itself — a register-save prologue reads every argument register the convention
+has, so the recovered list carries the register the drop would take. Where a
+variadic recovers short instead, the surviving-argument accounting and the
+callee-body veto below are what answer for it.
+
+The **callee's own body** is read twice more, and both readings are required.
+Both come from the per-image entry-liveness summary `calleedeadarg` (below)
+already builds. A bounded entry walk that positively sees those register bytes
+read before they are written declines the drop (`proves_input`), and it settles
+a parameter the callee's own recovery missed — bytes the callee reads at entry
+are a parameter however the value got into the register. It is also what answers
+for a callee kuna never recovered as variadic: u-boot's `printf` is called from
+1,924 sites, and its prologue spilling `r1`–`r3` into the `va_list` save area
+speaks for all of them at once, which no per-function sibling scan can.
+
+The second reading is the one a prototype cannot give, and it does not stop at
+the callee's own body. The entry walk ends every path at the callee's first
+call, so what the register meets past one has to be asked of that call's target
+(`resolve_forward_transfer`). Two answers let it through: a **declared,
+non-variadic** prototype — a library signature, DWARF, a console declaration —
+which is authoritative about what the target reads and is the only answer
+available for a target with no body to read; or the target's own body, with the
+same question put to it recursively. Everywhere else the callee must already
+have written the register itself before control leaves, and the register is not
+free if it has not: an indirect call or tail call, a `CALLOTHER`, an indexed
+register-file access, an undecodable instruction, a recursive component, a walk
+that ran out of budget, and an import whose PLT stub jumps through its GOT slot.
+
+Naming a target is not accounting for it, and the difference is what two plain-C
+programs are made of. `long fwd(struct box *o,long a,long b) { if (!a) return 0;
+return o->fn(o,a,b); }` compiles under `gcc -O2` to `test %rsi,%rsi; je; jmp
+*(%rdi)`, so kuna recovers `(rdi, rsi)` — honestly, the two registers the body
+touches — while the function it jumps to consumes three. `long wrap(void *o,long
+a,long b) { if (!a) return 0; return ext3(o,a,b); }` has no function pointer at
+all, but `ext3` is an import nothing states a signature for, so nothing at that
+call site reads `rdx` and kuna recovers two parameters again. In both, two
+recovered parameters are exactly the two arguments a drop would leave behind, the
+accounting above is satisfied, and the third argument is deleted although the
+program reads it. `rdx` is unwritten at the `jmp` in the first and at the `call`
+in the second, and that is what declines them — in the second only because the
+call's target is asked and cannot answer. The programs are
+`docs/features/argclobber/ce-forward-thunk-2param.c` and `ce-import-forward.c`
+(with `ce-forward-thunk-2frame.c` putting an ordinary direct call in front of the
+first), and `tests/cli/argclobber-keeps-an-argument-a-thunk-forwards.json` and
+`…-an-import-reads.json` pin them. Neither reading can admit a drop the clauses
+above refused.
 
 The trial must be **trailing**, so the list keeps its positional shape and no
 other argument moves. At least one argument must remain, since an empty list is
@@ -632,21 +709,51 @@ sibling rule promoted outranks the clobber evidence here. The drop is
 `mark_no_use`, which every deferred member of the family reads as
 definitely-not-used, so none of them puts the argument back.
 
-What no clause can see is a callee that really returns a 16-byte value in
-`rax:rdx` and forwards the high half as the next call's trailing argument: it
-writes nothing into `rdx` itself, so it keeps the phantom's shape on every count,
-and only the callee probe can decline it — and only where the probe covers that
-callee's entry. That, and the fact that a wrong drop is a *deleted* expression
-rather than a visibly odd one, is why it is opt-in.
+Dropping the argument also **narrows the preceding call's return value** wherever
+that call was the register's only writer: the `SUB168(v,8)` that extracted the
+`rdx` half of a 16-byte return loses its only reader and goes with the argument.
+No drop in the 770-binary corpus does that under the shipped rule. The witness
+for it is `docs/features/argclobber/ce-forward-thunk-2param.c`, whose third
+argument is real: the forwarding clause declines it here, and with that clause
+ablated the drop takes the producing call's `SUB168(v,8)` with it. It is the
+same mechanism that would delete a real struct half at a callee whose own
+prototype is under-recovered.
 
-Together the clauses are narrow: over 46 stripped decbench binaries and 41,258
-functions the rule fires on four functions, and all four are one shape — a call
-clobber on one path of the argument register's join and a dead `idiv` remainder
-on the other. `fmt` -O2 `main` and its `-O2-noinline` twin, `e2fsck`'s
-`ext2fs_dblist_sort2(dblist,sortfunc,…)` and `bash`'s `xrealloc(p,n,…)` each lose
-exactly one trailing argument, landing on the arity the callee's own recovered
-prototype has and, for the three that have one, on the arity DWARF or the
-library's own header gives.
+What no clause can see is that the evidence is a *recovery*. A callee whose own
+parameter list kuna under-recovers states a prototype that admits the drop, and
+the argument goes. Two things bound how far that can reach. The
+surviving-argument accounting requires the under-recovery to be exactly one slot
+deep, at exactly the register the clobber wrote, with every other argument still
+accounted for. And the forwarding reading requires the register to be dead at
+every control transfer that cannot be followed or resolved through its target,
+which is what closes the case where the recovery is short *because* it never saw
+the code that reads the register.
+
+The prototype clause and the body walk cover different halves of that, and
+neither covers it alone. What the prototype clause removes is the class a bounded
+body walk cannot see at all: a read past a jump table, a read beyond the walk's
+instruction budget, and a callee that really returns a 16-byte value in
+`rax:rdx` and forwards the high half as the next call's trailing argument — in
+each of those the recovery reached far enough to name the parameter, so the
+recovered prototype carries it and the drop is declined. Where the recovery does
+*not* reach that far — a register forwarded to something the recovery could not
+read, whether through a pointer, through an import, or through a chain of
+ordinary calls ending in one of those — the prototype says nothing useful and the
+forwarding reading is what declines the drop.
+
+Together the clauses are narrow. Over 770 stripped decbench binaries (O0, O2 and
+O2-noinline) the rule changes 19 functions, one per binary, and each loses
+exactly one trailing argument at exactly one call site. Every drop lands on the
+callee's true arity, checked against the unstripped twin: `__addvsi3` and
+`__mulvsi3` at 15 openssh sites, `fmt(FILE *, char const *)` at the two coreutils
+`fmt` mains, `ext2fs_dblist_sort2(dblist,sortfunc)` in `e2fsck`, and
+`efi_create_handle` in u-boot. Two call sites *gain* an argument — the
+under-recovered sibling site in each `fmt` main, which is what turns its 1/2/3
+into 2/2/2. Every hunk in that sweep falls in one of seven documented classes;
+`docs/features/argclobber/sweep-2026-09-20-forwarding.txt` has the
+classification, and the two `bash` `xrealloc` drops it no longer takes: there the
+callee reaches `call sbrk@plt` with `rdx` unwritten and kuna has no signature for
+`sbrk`, so the import answers nothing and a correct drop is given up.
 
 The `Register` (unordered) variant skips all ordering logic: every active
 trial that lands justified in an entry is a parameter
@@ -1006,6 +1113,19 @@ classified:
   was entered with and credits none of its writes, so a conditionally-executed
   write cannot hide a later read. A proven-dead register trial is scored
   `no-use` like any other definitely-unused trial.
+
+  The same walk records a second, narrower fact for `argclobber` to read: for
+  each terminator that leaves the callee, what was written on the way to it, and
+  where it leaves for — a target the walk could not **name** (an indirect call or
+  tail call, a `CALLOTHER`, an indexed register-file access, an undecodable
+  instruction), or a named one, kept with its entry address. Naming a target is
+  not accounting for what is forwarded there, so `argclobber` resolves each named
+  one in turn (`resolve_forward_transfer`): a declared, non-variadic prototype
+  answers for it, and so does its own body, walked the same way. A register
+  written before every terminator that cannot be answered for cannot carry the
+  caller's value out of the callee, and that is the one thing a recovered
+  parameter list cannot say about a callee that forwards registers it never
+  names.
 
   Requiring the *write* rather than merely the absence of a read is the whole
   safety margin. A callee whose entire body is `ret` reads nothing at all, so a

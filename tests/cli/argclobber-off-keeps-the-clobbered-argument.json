@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "argclobber",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_x86_64",
+    "binary_sha256": "fa268d72a59ecbde694dcc6204adeffa03a041f6d23ca237cac3d22f12e4db31",
+    "binary_size": 4928,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/argclobber_x86_64",
+    "selector": "caller",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "sub_401031\\(a0,5,v[0-9]+\\);",
+      "// rdx",
+      "% 200"
+    ],
+    "stdout_absent": [
+      "sub_401031\\(a0,5\\);"
+    ]
+  },
+  "notes": "The same call with the option off: the trailing argument, the local nothing assigns and the dead remainder are all still there, so the probe above measures the option and not the base.",
+  "probe_id": "p-42badc406d11"
+}
