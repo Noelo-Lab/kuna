@@ -5,7 +5,7 @@
  "default": "off",
  "phase": "P5",
  "subphase": "type-propagation",
- "base_commit": "2e28ece4a",
+ "base_commit": "724381149 (rebased from 2e28ece4a; #689 argclobber landed in between)",
  "module": "decompiler/crates/kuna-decomp/src/p5_types/kuna_charptr.rs",
  "stage_test": "tests/stages/kuna-charptr.xml",
  "class_census": {
@@ -90,7 +90,7 @@
     "onto_perfect": 4,
     "off_perfect": 0,
     "improved": 14,
-    "worse": 3
+    "worse": 6
    },
    "declared_callee_half_only": {
     "perfect_off": 1349,
@@ -121,9 +121,12 @@
    }
   },
   "worse_rows": [
-   "coreutils::O2::od print_long_double - GT void *block, kuna had void *, now char *",
-   "coreutils::O2-noinline::od print_long_double - same function, same cause",
-   "coreutils::O2-noinline::head elide_tail_bytes_pipe - GT __off_t current_pos, an integer the body also uses as an address"
+   "coreutils::O2::od print_long_double 0.3333 -> 0.2667 - GT void *block, kuna had void *, now char *",
+   "coreutils::O2-noinline::od print_long_double 0.3333 -> 0.2667 - same function, same cause",
+   "coreutils::O2-noinline::head elide_tail_bytes_pipe 0.2593 -> 0.2222 - GT __off_t current_pos, an integer the body also uses as an address",
+   "tar::O0::tar check_compressed_archive 0.5 -> 0.25 - GT `_Bool temp` at fbreg -41; kuna reports undefined1, credited on WIDTH alone, and typing the pointer it is read through knocks the byte on to char, which is then scored exactly and rejected",
+   "tar::O2::tar check_compressed_archive 0.25 -> 0.0 - same function, same cause",
+   "tar::O2-noinline::tar check_compressed_archive 0.25 -> 0.0 - same function, same cause"
   ],
   "arity_counters": {
    "functions_compared": 2290,
@@ -131,6 +134,12 @@
    "arity_changes": 0,
    "functions_with_a_different_local_declaration_count": 11,
    "note": "phantom/arity: no function gained or lost an argument on the 8-binary corpus"
+  },
+  "re_measured_on_rebased_base": {
+   "why": "origin/main gained #689 argclobber, a default-on change to call-site argument lists, after the first measurement",
+   "run": ".scratch/sweep-rebase (KUNA_BIN built at 251208cdc on base 724381149)",
+   "result": "identical: perfect 1349 -> 1353, aggregate 3657.76 -> 3662.69, 4 onto perfect, 0 off perfect, 14 improved, 6 worse",
+   "moved_rows": "byte-identical to the pre-rebase run (.scratch/sweep-uses2/moved.csv), diff empty"
   }
  },
  "corpus_diff": {
@@ -206,5 +215,11 @@
   "budget_pct": 5.0,
   "within_budget": true,
   "note": "the default arm produces byte-identical output to main on all 8 corpus binaries, so its 1.2-2.2% is build/box noise between two separately built binaries, not work this change does"
- }
+ },
+ "known_costs": [
+  "Committing a pointer forfeits the metric's width-only free pass on an 8-byte scalar (head::elide_tail_bytes_pipe).",
+  "Committing a byte forfeits the same free pass one level down (tar::check_compressed_archive, GT _Bool).",
+  "A value that is not a pointer at all can be committed: coreutils cp -O0 sub_f8ce holds a NAME_MAX limit in a slot the body also steps by one byte, and `long v6; v6 = 0xff;` becomes `char *v6; v6 = (char *)0xff;` with `if (v2 > (long)v6)`. Verified semantically equivalent -- every widening and comparison picks up an explicit cast -- but it reads worse. Not a metric loss; the same shape as head::elide_tail_bytes_pipe.",
+  "`unsigned char *` is not protected by the refine guard: the vote is read against the type IN FLIGHT, so `char *` lands where `uint1 *` would only have arrived by later propagation (decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64: `int callee(unsigned char *a0,int a1)` -> `int callee(char *a0,int a1)`). A `FILE *` in the same signature is untouched."
+ ]
 }

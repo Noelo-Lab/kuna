@@ -98,7 +98,7 @@ placeholders `ptrfromuse` leaves.
 option off:
 
 - perfect `type_match` 1,349 -> 1,353, aggregate 3657.76 -> 3662.69
-- 4 onto perfect, 14 improved, **3 worse, 0 off perfect**
+- 4 onto perfect, 14 improved, **6 worse, 0 off perfect**
 - across 2,290 functions of the 8-binary corpus diff: 14 signatures change,
   **0 arities change**, 11 functions gain or lose one local declaration
 
@@ -114,13 +114,29 @@ Three variants were measured and rejected.
   subset. A recovered `char *` is itself a guess, and the walk would launder it
   into a commitment.
 - **Without the fixed-offset guard** (any one-byte dereference counts, wherever
-  it sits): +8 onto perfect and 26 improved, but 13 worse instead of 3. Four of
+  it sits): +8 onto perfect and 26 improved, but 13 worse instead of 6. Four of
   the extra losses convert a *correct* `void *` into `char *` off a one-byte
   struct field — coreutils `ginstall`'s
   `announce_mkdir(char const *dir, void *options)` reads the `bool` at
   `options + 0x3c`. More metric, less truth; rejected.
 
-The three remaining losses are read individually in `record.json`: two are the
-same `od::print_long_double` in two builds (a correct `void *` refined to
-`char *`), and one is `head::elide_tail_bytes_pipe`'s `__off_t`, an integer the
-body also uses as an address.
+The six remaining losses are read individually in `record.json`, and they are
+three functions seen in more than one build.
+
+- `od::print_long_double` (O2 and O2-noinline): a *correct* `void *block`
+  parameter refined to `char *`.
+- `head::elide_tail_bytes_pipe` (O2-noinline): a GT `__off_t`, an integer the
+  body also uses as an address.
+- `tar::check_compressed_archive` (O0, O2, O2-noinline): the byte at
+  `fbreg -41` is GT `_Bool temp`; kuna reports it `undefined1`, which the metric
+  credits on width alone, and typing the pointer it is read through knocks the
+  byte on to `char`, which the metric then scores exactly and rejects. That is
+  the same cost in the other direction: committing a type forfeits the
+  width-only free pass a placeholder gets.
+
+One further shape is visible in the corpus diff without being a metric loss:
+coreutils `cp` -O0 `sub_f8ce` holds a `NAME_MAX` limit in a slot the body also
+steps through by one byte, and the option turns `long v6; v6 = 0xff;` into
+`char *v6; v6 = (char *)0xff;`. The emitted C stays equivalent — every widening
+and comparison picks up an explicit cast — but it reads worse, and it is the
+same shape as `head::elide_tail_bytes_pipe`.

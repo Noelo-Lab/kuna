@@ -513,7 +513,7 @@ dominant blocker is not a missing element type but a missing *symbol* — 932 of
 the 1,648 stack misses are frame-layout slots kuna reports as `undefined8`
 because the value that lived there was copy-propagated into a register
 HighVariable, which chapter 06 does not export. What is left for this rule is
-worth 4 functions onto a perfect `type_match` and 14 more up, against 3 down and
+worth 4 functions onto a perfect `type_match` and 14 more up, against 6 down and
 none off perfect (aggregate +4.93 over 10,748 functions); the declared-callee
 half *alone* is worth +0.14, which is why it is not a separate strength. Turning
 it on is a claim as well as a gain — committing a pointer forfeits the
