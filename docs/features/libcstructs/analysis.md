@@ -301,6 +301,14 @@ that was +58 `cc -fsyntax-only` errors; with this round it is **+102**
 opaque shells is seven more types a body can read a field out of; the header,
 which is what the rest of the export depends on, is unmoved.
 
+One of the seven adds an instance of a collision the option already had:
+`statfs` is both an aggregate name and a libc function name, so an export that
+declares the type and calls the function draws
+`'statfs' redeclared as different kind of symbol` — exactly what `main` already
+does for `stat` on a five-line `stat(2)` program. The `.h` emitter already
+guards its side (`\`statfs\` is a type name above; prototype omitted`); the
+body's declaration is the unguarded half, and it is one line per colliding name.
+
 ### Speed
 
 Interleaved min-of-15, `decompile-all --max-fn-seconds 120` over five whole binaries,
