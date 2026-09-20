@@ -294,5 +294,41 @@
   "functions_with_a_changed_var_row_count": 0,
   "signature_diff_functions": 18,
   "note": "all 18 are vN renumbering of the same stack rows after one declaration goes (same name set, same types, same storage kinds). No function gains or loses an argument row, and no variable row is fabricated. The two bash rows that previously turned an untyped stack slot into `char *` are gone with the bash drops."
+ },
+ "speed_after_forwarding_clause": {
+  "method": "kuna decompile-all, interleaved, min-of-15 (bash min-of-11), same build both arms, base d8b9c0b1f, contended box",
+  "fmt_O2": {
+   "off_ms": 4257.5,
+   "on_ms": 4133.7,
+   "delta_pct": -2.91
+  },
+  "ls_O2": {
+   "off_ms": 13478.7,
+   "on_ms": 13371.9,
+   "delta_pct": -0.79
+  },
+  "sort_O2": {
+   "off_ms": 14170.1,
+   "on_ms": 14110.0,
+   "delta_pct": -0.42
+  },
+  "bash_O2": {
+   "off_ms": 81906.1,
+   "on_ms": 82215.0,
+   "delta_pct": 0.38
+  },
+  "worst_delta_pct": 0.38,
+  "budget_pct": 5.0,
+  "note": "the forwarding walk probes each direct-call target's body once per image and caches both the probe and the resolution, so the added work is bounded by the number of distinct functions."
+ },
+ "gates_after_forwarding_clause": {
+  "make test": "675/675 PARITY OK",
+  "make test-stages": "1249/1249 PARITY OK",
+  "make test-cli": "214/214",
+  "make check-spec": "OK, --strict OK",
+  "kuna catalog --check": "OK",
+  "counters --check": "no drift",
+  "docs/options.md": "byte-fresh",
+  "make rust-test": "RUST_TEST_RC=0, 416 suites ok, 7311 tests ok, 0 failed (.scratch/rust-test-r4c.log, 08:10:34Z -> 08:33:56Z)"
  }
 }
