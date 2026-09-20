@@ -63,9 +63,12 @@
 //!   register while the caller goes on to use only the quotient. Nothing else
 //!   qualifies: a join input the caller wrote is an argument on the path that
 //!   wrote it, and one clobber among the inputs does not change that;
-//! * the callee's own **recovered prototype** has no parameter in those register
-//!   bytes ([`callee_prototype_excludes`]). This is the clause that carries the
-//!   rule, and it is the reason the option can be a default at all;
+//! * the callee's own **recovered prototype** is exactly the argument list this
+//!   call is left with -- no parameter in those register bytes, and the
+//!   parameters it does have account, storage for storage, for every argument
+//!   that survives ([`callee_prototype_is_the_argument_list`]). This is the
+//!   clause that carries the rule, and it is the reason the option can be a
+//!   default at all;
 //! * the callee's own body does not **read** those register bytes before writing
 //!   them;
 //! * it is **trailing** -- no used trial follows it -- so the argument list keeps
@@ -125,16 +128,30 @@
 //! register says the callee takes an argument there, and the drop is declined
 //! whatever the caller's side looks like.
 //!
-//! Requiring that prototype to EXIST is most of the clause's strength, because
-//! `protoorder` refuses to state one in exactly the cases where a callee's
-//! parameter list is not knowable: a callee inside a recursive component
-//! (`Decline::Scc` — "callees first" has no meaning in a cycle), a variadic one,
-//! one with no recovered body such as a PLT import, one whose recovery produced
-//! no parameters at all, and one whose prototype is already declared (that case
+//! Requiring that prototype to EXIST carries part of the clause, because
+//! `protoorder` states nothing for a callee inside a recursive component
+//! (`Decline::Scc` — "callees first" has no meaning in a cycle), one with no
+//! recovered body such as a PLT import, one whose recovery produced no
+//! parameters at all, and one whose prototype is already declared (that case
 //! input-locks the call spec, which this rule declines at its first line). A
-//! callee that was never decompiled in this run states nothing, so a
+//! callee that was never decompiled in this run states nothing either, so a
 //! single-function `kuna decompile`, a narrowed `decompile-all`, a `--jobs N`
 //! run and `--option protoorder off` all leave every call site alone.
+//!
+//! It is NOT true that `protoorder` declines a variadic callee, and this rule
+//! must not be read as resting on that. `protoorder`'s variadic guards —
+//! `Decline::UnderRecovered` and `Decline::RegisterFileFull` — live in the
+//! branch that parks a prototype in the symbol table (`lock`), and its default
+//! `types` mode, the one this rule reads, returns before them;
+//! `Decline::Variadic` itself is only ever set from a DECLARED `...`, so on a
+//! stripped image it cannot fire at all. A stripped SysV variadic is STATED:
+//! `long vlog(int,long,...)` built with `gcc -O2` and stripped states three
+//! parameters, and `KUNA_PROTOORDER_TRACE=1` prints `state sub_11d0 params=3`.
+//! What declines the drop there is the list itself — a register-save prologue
+//! reads every argument register there is, so the recovered list CARRIES the
+//! register the drop would take, and the first half of the clause refuses it.
+//! Where a variadic recovers short instead, the callee-body veto below and the
+//! surviving-argument accounting above are what answer for it.
 //!
 //! The callee's BODY is still read, as a veto only:
 //! [`crate::p4_calls::kuna_calleedeadarg`] decodes each callee once per image for
@@ -147,14 +164,17 @@
 //! The evidence is a recovery, not a fact. A callee whose own parameter list
 //! kuna under-recovers — it misses a parameter the callee really reads — states
 //! a prototype that admits the drop, and the argument goes. That is the residual
-//! hole, and it is the same hole every callee-derived statement has.
+//! hole, and it is the same hole every callee-derived statement has. The
+//! surviving-argument accounting bounds it: the under-recovery has to be exactly
+//! one slot deep, at exactly the register the clobber wrote, with every other
+//! argument still accounted for.
 //!
 //! What the clause removes is the class the bounded entry probe could not see at
 //! all: a read past a jump table, a read beyond the probe's instruction budget, a
 //! read inside an import, and a callee that really returns a 16-byte value in
 //! `rax:rdx` and forwards the high half onward. Each of those is a callee whose
 //! recovered prototype carries the parameter, so each is declined.
-//! `docs/features/argclobber/` holds the four programs and the corpus
+//! `docs/features/argclobber/` holds the five programs and the corpus
 //! measurement that bounds the rule.
 
 use kuna_base::address::Address;
@@ -173,7 +193,7 @@ use crate::p0_knowledge::options::on_or_off;
 /// Marshaling element `<argclobber>` (kuna 4000+ range).
 pub const ELEM_ARGCLOBBER: ElementId = ElementId::new("argclobber", 4173);
 
-/// `option argclobber on|off` (default off).
+/// `option argclobber on|off` (default on).
 pub struct OptionArgClobber;
 
 impl OptionArgClobber {
@@ -318,45 +338,81 @@ fn clobber_of_this_register_reaches(data: &Funcdata, vn: VarnodeId, addr: &Addre
     saw_clobber
 }
 
-/// Does the callee's own RECOVERED prototype leave `[addr, addr+size)` free?
+/// Is the callee's own RECOVERED prototype exactly the argument list this call
+/// is left with once `[addr, addr+size)` is dropped?
 ///
-/// `Some(true)` only when [`kuna_protoorder`](crate::p4_calls::kuna_protoorder)
-/// parked a prototype for this entry AND none of its parameters overlaps those
-/// bytes.  `Some(false)` is a parked prototype that claims them.  `None` is no
-/// statement at all, which is also a decline: the rule needs the callee to have
-/// said something.
+/// Two things are asked of it, and both have to hold.  The register bytes the
+/// drop would remove must be free of any recovered parameter -- the callee does
+/// not take an argument there.  And the parameters it DOES have must be, storage
+/// for storage, the arguments that survive: every recovered parameter covered by
+/// a surviving argument and every surviving argument covered by a recovered
+/// parameter.  A recovery that is SHORT of what the call passes is not a
+/// statement that the tail is unwanted, it is a statement that the recovery did
+/// not reach the tail, and those two read identically from the caller's side.
 ///
-/// `protoorder` states a prototype for a function it decompiled before this
-/// caller, and refuses to state one for a callee inside a recursive component, a
-/// variadic callee, one with no recovered body (a PLT import), one that recovered
-/// no parameters, and one whose prototype is already declared.  Those are exactly
-/// the callees whose parameter list is not knowable here, so "nothing parked" and
-/// "cannot tell" are the same answer.
-fn callee_prototype_excludes(data: &Funcdata, entry: &Address, addr: &Address, size: int4) -> bool {
+/// That second half is what answers for a forwarding thunk.  `mov (%rdi),%rax;
+/// jmp *%rax` never names the registers it passes through, so its own recovery
+/// finds one parameter while its real callee consumes three; with only the
+/// free-bytes test the drop is admitted and a forwarded argument is deleted
+/// (`docs/features/argclobber/ce-forward-thunk.s`).  Requiring the recovered
+/// list to ACCOUNT for every surviving argument declines it: one recovered
+/// parameter cannot be the two arguments that would remain.
+///
+/// `false` is also the answer when `protoorder` parked nothing for this entry.
+/// It states a prototype only for a function it decompiled before this caller,
+/// and refuses for a callee inside a recursive component, one with no recovered
+/// body such as a PLT import, one that recovered no parameters at all, and one
+/// whose prototype is already declared.  "Nothing parked" and "cannot tell" are
+/// the same answer here.
+fn callee_prototype_is_the_argument_list(
+    data: &Funcdata,
+    entry: &Address,
+    addr: &Address,
+    size: int4,
+    surviving: &[(Address, int4)],
+) -> bool {
     let Some(stated) = data.kuna_protoorder_types(entry) else { return false };
-    let Some(space) = addr.get_space() else { return false };
     if size <= 0 {
         return false;
     }
-    let lo = addr.get_offset();
-    let hi = lo.wrapping_add(size as u64);
+    if stated.inputs.len() != surviving.len() {
+        return false;
+    }
     for (paddr, psize, _) in &stated.inputs {
         // A parameter whose storage cannot be compared is one this cannot rule
         // out, and an argument is not deleted on "cannot tell".
-        let Some(pspace) = paddr.get_space() else { return false };
-        if *psize <= 0 {
+        if *psize <= 0 || paddr.get_space().is_none() {
             return false;
         }
-        if pspace.get_index() != space.get_index() {
-            continue;
+        if storage_overlaps(paddr, *psize, addr, size) {
+            return false;
         }
-        let plo = paddr.get_offset();
-        let phi = plo.wrapping_add(*psize as u64);
-        if plo < hi && lo < phi {
+        if !surviving.iter().any(|(a, sz)| storage_overlaps(paddr, *psize, a, *sz)) {
+            return false;
+        }
+    }
+    for (a, sz) in surviving {
+        if *sz <= 0 || a.get_space().is_none() {
+            return false;
+        }
+        if !stated.inputs.iter().any(|(p, ps, _)| storage_overlaps(p, *ps, a, *sz)) {
             return false;
         }
     }
     true
+}
+
+/// Do two storages share a byte?  Different spaces never do.
+fn storage_overlaps(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
+    let (Some(aspace), Some(bspace)) = (a.get_space(), b.get_space()) else {
+        return false;
+    };
+    if aspace.get_index() != bspace.get_index() {
+        return false;
+    }
+    let (alo, blo) = (a.get_offset(), b.get_offset());
+    let (ahi, bhi) = (alo.wrapping_add(asize as u64), blo.wrapping_add(bsize as u64));
+    alo < bhi && blo < ahi
 }
 
 /// Score the trailing argument of this call no-use when a previous call's
@@ -423,12 +479,23 @@ pub fn drop_clobber_tail_arg(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
     if !clobber_of_this_register_reaches(data, vn, &addr) {
         return;
     }
-    // The callee's own RECOVERED prototype is the evidence, and it has to exist:
-    // a callee that stated nothing about itself cannot be read as saying this
-    // register is free.
+    // The callee's own RECOVERED prototype is the evidence, and it has to exist
+    // and has to BE the list this call is left with: a callee that stated
+    // nothing about itself, or stated less than the call still passes, cannot be
+    // read as saying this register is free.
     let entry = fc.get_entry_address().clone();
     let trial_size = fc.active_input().get_trial(idx).get_size();
-    if !callee_prototype_excludes(data, &entry, &addr, trial_size) {
+    let mut surviving: Vec<(Address, int4)> = Vec::new();
+    for i in 0..num_trials {
+        if i == idx {
+            continue;
+        }
+        let t = fc.active_input().get_trial(i);
+        if t.is_used() {
+            surviving.push((t.get_address().clone(), t.get_size()));
+        }
+    }
+    if !callee_prototype_is_the_argument_list(data, &entry, &addr, trial_size, &surviving) {
         return;
     }
     // The callee's body is read as a veto on top of that: a bounded entry walk
