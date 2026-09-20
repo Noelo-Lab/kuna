@@ -337,3 +337,7 @@ Worst +3.49%, inside the +5% budget. The cost is where the names land: `tar` and
 are the two binaries with the most newly-typed pointers, and a named pointee is more
 type-propagation work than a `void *` one. `grep -O2` and `sort`, whose pointers were
 already typed, are noise.
+
+Splitting the obstack channel afterwards added one more symbol-table walk to the load
+(the defined-name set), which is below the noise floor of the path it is on: min-of-9
+interleaved `kuna functions` over `-O2` tar, 0.144s before against 0.142s after.
