@@ -85,6 +85,19 @@
 //! O0+O2 decbench ELFs, where every name kept here has at least 17 (`rewind` 117,
 //! `__uflow` 77, `fgetc` 57; the census is in `docs/features/libctypes/`).
 //!
+//! ## The second round, and the one table that matches a DEFINED name
+//!
+//! The names above were chosen from the headers. A second round was chosen from
+//! the corpus's ground truth instead — which pointer-to-named-struct variables
+//! the debug twins hold, and which libc slot each one could be reached from —
+//! and added seven aggregates and about seventy-five slots
+//! (`docs/features/libcstructs/`). One of them needed a channel that did not
+//! exist: [`LIBC_DEFINED_NAMED`], matched against a name the image DEFINES,
+//! because gnulib links its obstack in and the linker exports it, so obstack is
+//! never an import and is the widest aggregate in that ground truth after
+//! `FILE`. See that table for why five reserved names may take that channel and
+//! nothing else here may.
+//!
 //! ## The stream slots
 //!
 //! `stdin`/`stdout`/`stderr` are the one place this table types STORAGE rather
@@ -152,7 +165,7 @@ pub(super) struct NamedAggregate {
 }
 
 /// Every aggregate [`Ty::NamedPtr`] may name. Sorted by name; the table is
-/// searched linearly (16 rows, a handful of times per load).
+/// searched linearly (23 rows, a handful of times per load).
 pub(super) const NAMED_AGGREGATES: &[NamedAggregate] = &[
     NamedAggregate { name: "DIR", dwarf_alias: None, size: 1, align: 1 },
     NamedAggregate { name: "FILE", dwarf_alias: Some("_IO_FILE"), size: 216, align: 8 },
@@ -570,11 +583,12 @@ impl AnalysisPass for LibcTypesPass {
         out.libctypes_glibc = layout == Layout::Glibc;
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
-        // IMPORTED names only, for both tables — where `LibProtoPass` also matches
-        // a name the image DEFINES. A defined `fopen` is this image's own
-        // function, and on a `-g` image it has a DWARF prototype that this pass,
-        // merged after `DwarfPass`, would otherwise outrank. Retargeting the
-        // import is the whole job; the definition belongs to whoever declared it.
+        // IMPORTED names only, for the two name tables — where `LibProtoPass`
+        // also matches a name the image DEFINES. A defined `fopen` is this
+        // image's own function, and on a `-g` image it has a DWARF prototype
+        // that this pass, merged after `DwarfPass`, would otherwise outrank.
+        // Retargeting the import is the whole job; the definition belongs to
+        // whoever declared it.
         let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
         let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
         // The one exception, and its own table: the `_obstack_*` entry points
