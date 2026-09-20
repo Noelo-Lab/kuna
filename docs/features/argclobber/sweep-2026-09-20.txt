@@ -181,3 +181,15 @@ build, quiet machine:
   bash O2  82367.1 ms -> 81484.8 ms  -1.07%
 
 Worst +1.21%, budget +5%.
+
+
+Typesweep re-run after the rebase onto #690
+----------------------------------------------------------------------
+`origin/main` gained #690 (ptrfromuse void by default), which is type-affecting,
+so the 444-slice typesweep was re-run on the rebased tree:
+
+  type_match PERFECT   base 1351 -> test 1351  (+0)
+  aggregate            3646.07 -> 3646.07      (+0.00)
+  improved 0, worsened 0, moved onto/off perfect 0/0
+
+The pre-rebase run on 3433e05d5 was 1147 -> 1147, also 0 improved / 0 worse.

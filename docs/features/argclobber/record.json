@@ -91,7 +91,21 @@
   "decomp_vars_total_off": 96671,
   "decomp_vars_total_on": 96671,
   "functions_with_a_different_variable_count": 0,
-  "note": "type_match cannot see this change: decbench scores `variables[]` (args + stack symbols + framelayout slots), register locals are never exported, and a call's argument is not a variable of the caller. The arity/phantom counters are the sweep block above."
+  "note": "type_match cannot see this change: decbench scores `variables[]` (args + stack symbols + framelayout slots), register locals are never exported, and a call's argument is not a variable of the caller. The arity/phantom counters are the sweep block above.",
+  "post_rebase_2026_09_20": {
+   "base": "origin/main d8b9c0b1f (#690 ptrfromuse landed), rebased",
+   "slices": 444,
+   "functions": 10748,
+   "type_match_perfect_off": 1351,
+   "type_match_perfect_on": 1351,
+   "aggregate_off": 3646.07,
+   "aggregate_on": 3646.07,
+   "improved": 0,
+   "worse": 0,
+   "moved_onto_perfect": 0,
+   "moved_off_perfect": 0,
+   "note": "re-run after the rebase because #690 is type-affecting; the pre-rebase run on 3433e05d5 was 1147 -> 1147, also 0/0"
+  }
  },
  "gates": {
   "make test": "675/675 assertions, PARITY OK (no datatest assertion moved)",
