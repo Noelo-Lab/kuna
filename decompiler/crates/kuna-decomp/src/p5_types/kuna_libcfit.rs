@@ -12,13 +12,14 @@
 //! `pthread_mutex_t` at the head of a larger record is the same shape.
 //!
 //! What the caller does through the pointer says which one it is. [`overruns`]
-//! walks the value the call reads with the walkers `protoorder` holds its own
-//! recovered votes to (`kuna_protoorder::accesses_through`), and looks for a
+//! walks the Varnode the call reads, through its descendants, with the walker
+//! `protoorder` holds its own recovered votes to
+//! (`kuna_protoorder::accesses_through`), and looks for a
 //! load, a store or a derived address outside the aggregate: at a constant
 //! offset at or past its end or before its start, or stepped by a constant at
-//! least as large as the aggregate but not a whole number of them (coreutils
-//! `wc` walks `&fstatus[i].st`, a `stat` 8 bytes into a 152-byte record, and
-//! reads `failed` at -8). One is enough. The vote then falls back to `void *`,
+//! least as large as the aggregate but not equal to it (coreutils `wc` walks
+//! `&fstatus[i].st`, a `stat` 8 bytes into a 152-byte record, and reads
+//! `failed` at -8). One is enough. The vote then falls back to `void *`,
 //! the width-stable spelling the shipped tables give the same slot. The declared
 //! type is still what the call's cast is measured against
 //! (`declared_input_type_local`), so a value that settles on another type
@@ -28,6 +29,12 @@
 //! vote (an unknown index, a word-at-a-time struct copy, a phi between two
 //! fields), so does an array of the aggregate itself (sdiff's `struct sigaction`
 //! table, stepped by exactly 152), and so does a walk that runs out of budget.
+//!
+//! The same question guards type PROPAGATION ([`refuses`]): the type is not
+//! carried onto a Varnode whose own descendants reach past the end, whichever
+//! call it came from. Walking descendants rather than the whole COPY family is
+//! what keeps the answer per Varnode: at `-O0` a macro local holding a copy of
+//! the pointer and the pointer itself are different Varnodes.
 //! The rule applies to the names `libctypes` owns
 //! ([`crate::kuna_libctypes::AGGREGATE_NAMES`]) and only while that option is
 //! on, so `libctypes off` is untouched.
@@ -47,6 +54,16 @@ pub(crate) fn overruns(data: &Funcdata, op: OpId, slot: int4, ct: &Datatype) -> 
     }
     let Some(size) = libc_pointee_size(ct) else { return false };
     let Some(vn) = data.obank().get(op).and_then(|o| o.get_in(slot)) else { return false };
+    reached_outside(data, vn, size)
+}
+
+/// Should type propagation refuse to carry `ct` onto `vn`? The same question
+/// [`overruns`] asks at a call, asked of the Varnode the type would land on.
+pub(crate) fn refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    if !data.get_arch().libctypes {
+        return false;
+    }
+    let Some(size) = libc_pointee_size(ct) else { return false };
     reached_outside(data, vn, size)
 }
 
@@ -72,24 +89,28 @@ fn libc_pointee_size(ct: &Datatype) -> Option<i64> {
 }
 
 fn reached_outside(data: &Funcdata, vn: VarnodeId, size: i64) -> bool {
-    use crate::kuna_protoorder::{accesses_through, value_family, with_sibling_loads};
-    let family = with_sibling_loads(data, &value_family(data, vn));
-    let Some((accesses, places)) = accesses_through(data, &family) else { return false };
-    places.iter().any(|&(at, stride)| !fits(at, stride, 0, size))
+    let Some((accesses, places)) = crate::kuna_protoorder::accesses_through(data, &[vn]) else {
+        return false;
+    };
+    places.iter().any(|&(at, stride)| !fits(at, stride, 1, size))
         || accesses.iter().any(|a| !fits(a.at, a.stride, a.size as i64, size))
 }
 
 /// Can `width` bytes at `at` (plus any multiple of `stride`) lie inside an
-/// object of `size` bytes, or inside one element of an array of them? A step
-/// smaller than the aggregate proves nothing: it is an unknown index (one byte),
-/// a copy loop walking the object a word at a time, or a phi choosing between
-/// two of its fields, whose offsets differ by less than its size.
+/// object of `size` bytes, or inside one element of an array of them? A derived
+/// address is measured as one byte, so a pointer one past the end (`&v1[1]`
+/// handed to `pthread_cond_init`) is outside. A step smaller than the aggregate
+/// proves nothing: it is an unknown index (one byte), a copy loop walking the
+/// object a word at a time, or a phi choosing between two of its fields. An
+/// array of the aggregate is stepped by exactly its size; any other step at least
+/// that large is a record the aggregate sits inside (libselinux indexes 120-byte
+/// records holding a 40-byte mutex at +0x38).
 fn fits(at: i64, stride: i64, width: i64, size: i64) -> bool {
     match stride.abs() {
         0 => at >= 0 && at + width <= size,
         s if s < size => true,
-        s if s % size != 0 => false,
-        _ => at.rem_euclid(size) + width <= size,
+        s if s == size => at.rem_euclid(size) + width <= size,
+        _ => false,
     }
 }
 

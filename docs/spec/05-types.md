@@ -441,15 +441,22 @@ struct printed `&v1[0x1b].field_0x38`. An rsyslog instance record that begins
 with its mutex printed `a0[9].field_0xc`.
 
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_libcfit.rs (overruns)` asks what
-the caller does through the argument before the vote is taken. It walks the
-argument's value family and every load, store and derived address reached from
-it, with the walkers `protoorder` holds its own recovered votes to
-(`value_family`, `with_sibling_loads` and `accesses_through` in
+the caller does through the argument before the vote is taken. It walks every
+load, store and derived address reached from the argument Varnode through its
+descendants, with the walker `protoorder` holds its own recovered votes to
+(`accesses_through` in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs`), and declines
-when any of them lies outside the aggregate: at a constant offset at or past its
-end or before its start, or stepped by a constant at least as large as the
-aggregate that is not a whole number of them. coreutils `wc` is the stepped case: it walks `&fstatus[i].st`, a
-`stat` 8 bytes into a 152-byte record, and reads `failed` at -8. A declined vote
+when any of them lies outside the aggregate: an access at a constant offset past
+its end or before its start, a derived address at or past the end (rsyslog hands
+`&v1[1]`, one mutex past the one it initialised, to `pthread_cond_init`), or a
+step at least as large as the aggregate that is not exactly its size. coreutils
+`wc` is the stepped case: it walks `&fstatus[i].st`, a `stat` 8 bytes into a
+152-byte record, and reads `failed` at -8; libselinux indexes 120-byte records
+that hold a 40-byte mutex at +0x38, and 120 being three mutexes does not make
+them an array of mutexes. The same question guards propagation
+(`kuna_libcfit::refuses`, called from `propagate_type_edge` just before a type is
+adopted): a libc aggregate pointer is not carried onto a Varnode whose own
+descendants reach past the end, whichever call it came from. A declined vote
 falls back to `void *`, what the shipped width-stable tables say for the same
 slot, so the argument settles on whatever other evidence it has (grep's
 `kwsprep` prints `unsigned long *a0`, exactly as with `libctypes off`). The
@@ -460,10 +467,13 @@ proves nothing is left alone: a step smaller than the aggregate, which is an
 unknown index, a word-at-a-time struct copy (grep `main` copying its stack
 `stat`) or a phi between two fields (stty's `termios *mode`); an array of the
 aggregate itself (sdiff's `struct sigaction` table, stepped by exactly 152); and
-a walk that runs out of budget. The rule decides per VALUE, and at `-O0` that is
-visible: gnulib's obstack macros copy `&kwset->obstack` into locals of their own
-(`__h`, `__o`), which hold the same value `kwset` does, so grep `-O0`'s
-`kwsprep` declines those locals' `obstack *` along with `kwset`'s. The rule speaks
+a walk that runs out of budget. Walking descendants rather than the whole COPY
+family keeps the answer per Varnode, but not per source variable: at `-O0`
+gnulib's obstack macros copy `&kwset->obstack` into locals of their own (`__h`,
+`__o`), and once copy propagation has made every call read `kwset` itself, those
+locals only ever hold a copy of it. They took `obstack *` by propagating it
+down from `kwset`, and with `kwset` declined nothing gives it to them, so grep
+`-O0`'s `kwsprep` loses those locals' names along with the wrong one. The rule speaks
 only about the names `libctypes` can mint or adopt (`AGGREGATE_NAMES` in
 `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_libctypes.rs`), only while
 that option is on (`ArchContext::libctypes`), and only about the vote. It never

@@ -598,6 +598,11 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
     };
     crate::kuna_charbyte::note_edge(data, op, inslot, outslot, invn, outvn, &newtype, &cur); // (kuna `charbyte`)
     if 0 > newtype.type_order(&cur).unwrap_or(0) {
+        // (kuna `libctypes`) A libc aggregate pointer is not carried onto a Varnode
+        // the function reads past that aggregate's end. See `kuna_libcfit`.
+        if crate::kuna_libcfit::refuses(data, outvn, &newtype) {
+            return false;
+        }
         let is_mark = data.vbank().get(outvn).map(|v| v.is_mark()).unwrap_or(true);
         if let Some(v) = data.vbank_mut().get_mut(outvn) {
             v.set_temp_type(newtype);
