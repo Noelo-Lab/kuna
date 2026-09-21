@@ -1,0 +1,89 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structsynth locals: a pointer a call returned, read or written at constant
+    offsets, is declared a pointer to a record of its own.
+
+    Source (gcc -O2 -fcf-protection=none -fno-pic, xalloc/lookup/consume
+    left outside the image so nothing declares what they return):
+
+        struct node { struct node *next; long key; int count; char tag; };
+        extern void *xalloc(unsigned long);
+        extern struct node *lookup(long key);
+        extern void consume(char *);
+
+        struct node *make(long key, struct node *next)        // @0x100000
+        { struct node *n = xalloc(sizeof *n);
+          n->next = next; n->key = key; n->count = 1; n->tag = 'n';
+          return n; }
+
+        long weigh(long key)                                   // @0x100030
+        { struct node *n = lookup(key);
+          return n->key + n->count + (long)n->next; }
+
+        void label(void)                                       // @0x100050
+        { char *p = xalloc(16);
+          __builtin_memcpy(p, "SCHILY.xattr.", 14); consume(p); }
+
+    With option structsynth param (asserts 1 and 2): only parameters are
+    measured, so every access through the returned pointer is raw offset
+    arithmetic, *(char *)((int8)v1 + 0x14) = 0x6e and (int8)(int4)v1[2].
+
+    With option structsynth locals (asserts 3 to 6): the returned value is the
+    local's only definition, so its accesses are measured like a parameter's
+    and it is declared struct_0 * / struct_1 *, the reads and writes naming
+    field_0x0, field_0x8, field_0x10 and field_0x14.
+
+    label's buffer is filled with the bytes of a string literal, and a buffer
+    of text is not a record: it keeps its pointer type in both passes
+    (assert 7).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+554889f5534889fbbf180000004883ec08e8eaff0f0048892848895808c74010
+01000000c640146e4883c4085b5dc3904883ec08e8d7ff0f004889c248634010
+480342084803024883c408c30f1f40004883ec08bf10000000e8a2ff0f004889
+c748b8534348494c592e78488907b82e000000c74708617474726689470c4883
+c408e999ff0f00
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="make"/>
+<symbol space="ram" offset="0x100030" name="weigh"/>
+<symbol space="ram" offset="0x100050" name="label"/>
+</binaryimage>
+<script>
+  <com>option structsynth param</com>
+  <com>lo fu make</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu weigh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu label</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structsynth locals</com>
+  <com>lo fu make</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu weigh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu label</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print C types</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTSYNTH-LOCALS #1: param writes a returned record through raw offsets" min="1" max="1">\*\(char \*\)\(\(int8\)v1 \+ 0x14\) = 0x6e;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #2: param reads a returned record as an array of longs" min="1" max="1">return \(int8\)\(int4\)v1\[2\] \+ v1\[1\] \+ \*v1;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #3: locals declares the allocation a record pointer" min="1" max="1">v1 = \(struct_0 \*\)sub_200000\(0x18\);</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #4: locals writes the allocation's fields by name" min="1" max="1">v1-&gt;field_0x10 = 1;
+.*v1-&gt;field_0x14 = 0x6e;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #5: locals reads the returned record's fields by name" min="1" max="1">return \(int8\)v1-&gt;field_0x10 \+ v1-&gt;field_0x8 \+ v1-&gt;field_0x0;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #6: the returned record is the three reads, padded to its alignment" min="1" max="1">^struct struct_1 \{$
+^    int8 field_0x0;$
+^    int8 field_0x8;$
+^    int4 field_0x10;$
+^    char field_0x14\[4\];$
+^\};$</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #7: a buffer filled with text is not a record" min="2" max="2">\*v1 = 0x782e594c49484353;</stringmatch>
+</decompilertest>

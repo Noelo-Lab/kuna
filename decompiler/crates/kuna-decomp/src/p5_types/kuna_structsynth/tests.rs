@@ -3,11 +3,55 @@
 use super::*;
 
 #[test]
-fn option_parses_off_and_param_and_rejects_anything_else() {
+fn option_parses_every_mode_and_rejects_anything_else() {
     assert_eq!(OptionStructSynth.apply("off").unwrap().0, StructSynthMode::Off);
     assert_eq!(OptionStructSynth.apply("param").unwrap().0, StructSynthMode::Param);
-    assert!(OptionStructSynth.apply("all").is_err());
+    assert_eq!(OptionStructSynth.apply("locals").unwrap().0, StructSynthMode::Locals);
+    assert_eq!(OptionStructSynth.apply("all").unwrap().0, StructSynthMode::All);
     assert!(OptionStructSynth.apply("on").is_err());
+    assert!(OptionStructSynth.apply("global").is_err());
+}
+
+#[test]
+fn locals_and_all_measure_returned_pointers_and_only_all_also_nests() {
+    assert!(StructSynthMode::Locals.fires() && StructSynthMode::Locals.locals());
+    assert!(!StructSynthMode::Locals.nests());
+    assert!(StructSynthMode::All.locals() && StructSynthMode::All.nests());
+    for m in [StructSynthMode::Off, StructSynthMode::Param, StructSynthMode::Nest] {
+        assert!(!m.locals(), "{m:?}");
+    }
+}
+
+/// `tar`'s xattr buffer takes "SCHILY.xattr." as an 8-, a 4- and a 1-byte
+/// store; a record's initializer stores small integers, a flag character, or
+/// zero, and zero says nothing either way.
+#[test]
+fn a_stored_constant_reads_as_text_only_when_its_bytes_are_characters() {
+    assert_eq!(constant_text(0x782e594c49484353, 8), Some(true));
+    assert_eq!(constant_text(0x72747461, 4), Some(true));
+    assert_eq!(constant_text(0x2e, 1), Some(true));
+    assert_eq!(constant_text(0x2e, 2), Some(true), "a character and its terminator");
+    assert_eq!(constant_text(0, 8), None);
+    assert_eq!(constant_text(1, 4), Some(false));
+    assert_eq!(constant_text(0xffff_ffff, 4), Some(false));
+    assert_eq!(constant_text(0x41, 8), Some(false), "one character in eight bytes is a number");
+}
+
+/// A text store marks the base; any other access, or a store of something
+/// that is not text, keeps it a record candidate. Zero is neither.
+#[test]
+fn only_a_base_whose_every_access_is_text_is_a_string_buffer() {
+    let mut buf = Evidence::default();
+    buf.text_store = true;
+    assert!(buf.text_store && !buf.other_access);
+    let mut rec = Evidence::default();
+    rec.text_store = true;
+    rec.other_access = true;
+    let mut merged = Evidence::default();
+    merged.absorb(&buf);
+    assert!(merged.text_store && !merged.other_access);
+    merged.absorb(&rec);
+    assert!(merged.other_access, "absorb carries the other base's accesses");
 }
 
 #[test]

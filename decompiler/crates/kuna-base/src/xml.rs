@@ -1895,7 +1895,9 @@ mod tests {
         // and kuna-aliasoverlap / a load stays ahead of a store into its bytes
         // and kuna-formatstring-static / printf/scanf varargs typed from the
         // format constant the LOAD-TIME resolver read out of the image
-        assert_eq!(count, 329, "corpus file count drifted");
+        // and structsynth-locals / a record a call returned, and a text buffer
+        // that is not one
+        assert_eq!(count, 330, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

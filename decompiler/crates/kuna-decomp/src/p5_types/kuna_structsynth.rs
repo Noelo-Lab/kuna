@@ -1,5 +1,5 @@
 //! (kuna `structsynth`) Synthesize a structure type from the constant-offset
-//! dereferences of a pointer parameter.
+//! dereferences of a pointer parameter, or of a pointer a call returned.
 //!
 //! # The gap
 //!
@@ -107,6 +107,33 @@
 //! `chPipeReset` indexes its parameter exactly that way. The size is the last
 //! field rounded up to the widest field, with the tail covered by filler like
 //! any other gap.
+//!
+//! # Records a call returned (`locals`)
+//!
+//! A function that fills in the record an allocator returned
+//! (`v1 = (unsigned long *)xmalloc(0x18); *(char *)((long)v1 + 0x14) = 0x6e`)
+//! or reads the one a lookup returned has the same evidence a parameter has,
+//! over a value that is not a parameter. Under `locals` the value a `CALL` or
+//! `CALLIND` returns is a base too: single assignment makes it the local's only
+//! definition, and every condition a parameter is held to still applies. Three
+//! more are about the value rather than its accesses:
+//!
+//! * a callee declared to return a pointer to something (`char *`, `struct
+//!   stat *`) has said what the pointer is; only `void *` says nothing;
+//! * the value must not share a variable with anything else. A copy is merged
+//!   with what it copies, a phi input with the other inputs, and a value in
+//!   address-tied storage with everything else stored there, so a value that
+//!   reaches a phi through a copy, lands in tied storage, or sits in the
+//!   function's return register where a phi joins that register (it is tied
+//!   once merging starts) declines: the locked record type would otherwise
+//!   become the whole variable's, and `tar`'s `wordsplit_add_segm` would return
+//!   its status as a `struct_N *`;
+//! * a buffer whose every access stores the bytes of a string literal is text,
+//!   not a record, however unevenly the compiler split the copy.
+//!
+//! `all` is `locals` and `nest` together. Globals are not bases: every access to
+//! a global record is an absolute address of its own, and a global pointer is
+//! re-read after every call, so it always reaches a phi.
 //!
 //! # Known limits
 //!
@@ -783,9 +810,6 @@ fn synthesize(data: &mut Funcdata) -> bool {
     let ptrsize = types.get_size_of_pointer();
     let mut installs: Vec<(VarnodeId, Rc<Datatype>)> = Vec::new();
 
-    if std::env::var_os("KUNA_SSDIAG").is_some() {
-        diag(data, &raw);
-    }
     for (base, e) in raw.iter() {
         let e = e.pruned();
         if !accepts(data, *base, &e) {
@@ -816,119 +840,6 @@ fn synthesize(data: &mut Funcdata) -> bool {
         }
     }
     changed
-}
-
-fn diag_class(data: &Funcdata, base: VarnodeId) -> String {
-    let Some(v) = data.vbank().get(base) else { return "gone".into() };
-    if v.is_spacebase() || v.get_space().get_type() == spacetype::IPTR_SPACEBASE {
-        return "spacebase".into();
-    }
-    if v.is_input() {
-        return if v.get_space().get_type() == spacetype::IPTR_PROCESSOR { "param".into() } else { format!("input_{:?}", v.get_space().get_type()) };
-    }
-    if v.is_constant() {
-        return "const".into();
-    }
-    let Some(def) = v.get_def() else { return "free".into() };
-    let Some(op) = data.obank().get(def) else { return "free".into() };
-    match op.code() {
-        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-            let t = data
-                .get_call_specs_index(def)
-                .map(|i| data.get_call_specs(i).get_entry_address().get_offset())
-                .unwrap_or(0);
-            format!("callret callee=0x{t:x} at=0x{:x}", op.get_addr().get_offset())
-        }
-        OpCode::CPUI_LOAD => {
-            let a = op.get_in(1);
-            let mut cur = a;
-            for _ in 0..8 {
-                let Some(av) = cur.and_then(|x| data.vbank().get(x)) else { break };
-                if av.is_constant() {
-                    return "load_global".into();
-                }
-                if av.is_input() {
-                    return if av.is_spacebase() { "load_stack".into() } else { "load_param".into() };
-                }
-                let Some(d) = av.get_def().and_then(|d| data.obank().get(d)) else { break };
-                match d.code() {
-                    OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_PTRADD => cur = d.get_in(0),
-                    OpCode::CPUI_LOAD => return "load_load".into(),
-                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => return "load_callret".into(),
-                    OpCode::CPUI_MULTIEQUAL => return "load_phi".into(),
-                    _ => return format!("load_{:?}", d.code()),
-                }
-            }
-            "load_other".into()
-        }
-        c => format!("{c:?}"),
-    }
-}
-
-fn diag(data: &mut Funcdata, raw: &BTreeMap<VarnodeId, Evidence>) {
-    let addr = data.get_address().get_offset();
-    let ptrsize = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
-    for (base, e) in raw.iter() {
-        let p = e.pruned();
-        let class = diag_class(data, *base);
-        let Some(v) = data.vbank().get(*base) else { continue };
-        let locked = v.is_type_lock();
-        let persist = v.is_persist();
-        let stackcopy = {
-            let mut seen = vec![*base];
-            let mut i = 0;
-            let mut hit = false;
-            while i < seen.len() && i < 32 {
-                let cur = seen[i];
-                i += 1;
-                let Some(cv) = data.vbank().get(cur) else { continue };
-                if cv.get_space().get_type() == spacetype::IPTR_SPACEBASE && cur != *base {
-                    hit = true;
-                }
-                for u in cv.descend_iter() {
-                    if let Some(op) = data.obank().get(u) {
-                        if matches!(op.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
-                            if let Some(o) = op.get_out() {
-                                if !seen.contains(&o) {
-                                    seen.push(o);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            hit
-        };
-        let ct = vn_type(data, *base);
-        let isptr = ct.as_ref().is_some_and(|t| t.get_metatype() == type_metatype::TYPE_PTR);
-        let named = ct.as_ref().is_some_and(|t| points_at_named_composite(t));
-        let ok = ct.as_ref().is_some_and(|t| accepts_record(data, t, &p));
-        let arr = is_array_shaped(&p.slots, ptrsize);
-        let acc = accepts(data, *base, &p);
-        let joins = joins_other_values(data, *base);
-        let text = p.text_store && !p.other_access;
-        eprintln!(
-            "SSDIAG fn=0x{addr:x} class={class} slots={} rawslots={} has0={} ptr={} named={} locked={} persist={} dyn={} int={} phi={} arr={} stackcopy={} ok={} ty={} offs={} acc={} joins={} text={}",
-            p.slots.len(),
-            e.slots.len(),
-            p.slots.contains_key(&0) as u8,
-            isptr as u8,
-            named as u8,
-            locked as u8,
-            persist as u8,
-            p.dynamic_offset as u8,
-            p.integer_use as u8,
-            p.phi_reached as u8,
-            arr as u8,
-            stackcopy as u8,
-            ok as u8,
-            ct.map(|t| t.get_name().to_string()).unwrap_or_default().replace(' ', "_"),
-            p.slots.iter().map(|(o, s)| format!("{o:x}:{}", s.width)).collect::<Vec<_>>().join(","),
-            acc as u8,
-            joins as u8,
-            text as u8,
-        );
-    }
 }
 
 /// The program-wide structure for one measured layout: the shard hook's answer
@@ -1154,7 +1065,7 @@ pub fn resolve_self_pointer(types: &dyn TypeFactory, ct: &Datatype) -> Option<Rc
 }
 
 /// (kuna) `ActionStructSynth` -- synthesize `struct_N` over a dereferenced
-/// pointer parameter (option `structsynth`).
+/// pointer parameter or returned pointer (option `structsynth`).
 pub struct ActionStructSynth {
     base: ActionBase,
     /// Has this function already been offered to the synthesizer?
