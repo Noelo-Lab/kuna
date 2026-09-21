@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "_main",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_rustlike_symbol",
+    "binary_sha256": "3808fdc17810b86da4b4c5cdf61322808c7709206f77f04691626b885b00408b",
+    "binary_size": 16688,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_rustlike_symbol",
+    "selector": "_main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\"language\": \"c-language\"",
+      "unsigned long _main\\(int a0\\)"
+    ],
+    "stdout_absent": [
+      "rust-language",
+      "unsafe fn"
+    ]
+  },
+  "notes": "The image is a C program whose one helper is named `Runtime`; Mach-O spells that `_Runtime`, which shares its first two bytes with the Rust v0 mangling scheme without being a v0 path. Detecting the program as rustc off that prefix picked the Rust output language for the whole binary.",
+  "probe_id": "p-6eeeb4c398df"
+}

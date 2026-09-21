@@ -71,7 +71,9 @@
 //!
 //! - **Rust** — a Rust-mangled symbol (`_R…` v0 / `_ZN…17h<hex>E` legacy:
 //!   [`symbols_indicate_rust`] over `file.symbols()`/`dynamic_symbols()`, which
-//!   are format-neutral in `object`).
+//!   are format-neutral in `object`). The v0 arm parses the name against the
+//!   scheme's grammar and knows which formats prepend a platform underscore, so
+//!   an ordinary C `_Runtime`/`_RC4_set_key` on Mach-O is not taken for one.
 //! - **Go** — a Go build-info section under *any* format's naming
 //!   (`.go.buildinfo`/`.note.go.buildid` on ELF, `__go_buildinfo` on Mach-O):
 //!   [`golang_section_present`].
@@ -389,12 +391,16 @@ fn record_text(record: &[u8]) -> &str {
 /// removed, and **format-neutral** (`file.symbols()`/`dynamic_symbols()` work for
 /// ELF/PE/Mach-O alike), so it is the shared Rust signal every format arm uses.
 /// Mirrors what the loader's demangle gate already recognizes (`rustc_demangle`).
+///
+/// The test is [`is_rust_mangled_in`], not [`is_rust_mangled`]: the format is in
+/// hand here, and on Mach-O it decides whether a `_R…` symbol can be Rust at all.
 fn symbols_indicate_rust(file: &object::File) -> bool {
+    let format = file.format();
     file.symbols()
         .chain(file.dynamic_symbols())
         .filter(|s| s.kind() == SymbolKind::Text)
         .filter_map(|s| s.name().ok())
-        .any(is_rust_mangled)
+        .any(|name| is_rust_mangled_in(name, format))
 }
 
 /// Detect the source language straight from an image's bytes.
@@ -411,33 +417,58 @@ pub fn detect_compiler_bytes(bytes: &[u8]) -> Compiler {
 }
 
 /// `true` if `name` is a Rust-mangled symbol name. Recognizes:
-/// - **v0**: `_R...` (or `__R...` with a platform leading underscore).
+/// - **v0**: `_R<path>` (or `__R<path>` with a platform leading underscore),
+///   parsed against the scheme's grammar — the prefix alone is not evidence.
 /// - **legacy**: `_ZN...17h<hex16>E` — the Itanium-`_ZN` form rustc emits with a
 ///   trailing 16-hex-digit `17h…` hash component, which distinguishes it from a
 ///   plain C++ `_ZN…` symbol.
+///
+/// Format-agnostic, for a caller holding a bare name (the demangle pass). Where
+/// the object format is known, use [`is_rust_mangled_in`].
 pub fn is_rust_mangled(name: &str) -> bool {
-    // v0: leading `_R` (allow one extra platform underscore: `__R`). The
-    // underscore is load-bearing: `strip_prefix('_').unwrap_or(name)` KEEPS the
-    // original name when there is none, which degrades the test to "starts with
-    // `R`" and claims every OpenSSL `RSA_new`/`RAND_bytes` importer is Rust.
-    let v0 = name.strip_prefix("__R").or_else(|| name.strip_prefix("_R"));
-    if v0.is_some_and(|rest| !rest.is_empty()) {
-        return true;
-    }
-    // legacy: a `17h<16 hex>E` hash tail anywhere after a `_ZN` prefix.
+    is_rust_v0(name, false) || is_rust_legacy(name)
+}
+
+/// [`is_rust_mangled`] with the object format in hand — the form the detector uses.
+///
+/// Mach-O prepends a platform underscore to every symbol it carries, so a rustc
+/// v0 symbol is spelled `__R…` there and a single-underscore `_R…` is an ordinary
+/// C name (`_Runtime`, `_RC4_set_key`). Every other format spells v0 `_R…`, and
+/// for them this is exactly [`is_rust_mangled`].
+pub fn is_rust_mangled_in(name: &str, format: BinaryFormat) -> bool {
+    is_rust_v0(name, format == BinaryFormat::MachO) || is_rust_legacy(name)
+}
+
+/// `true` if `name` is a well-formed v0 symbol; `platform_underscore` demands the
+/// `__R…` spelling (see [`is_rust_mangled_in`]).
+///
+/// The prefix is a necessary condition, never a sufficient one: `_R` opens every
+/// Mach-O C symbol whose name starts with `R`, so a prefix-only test reads
+/// `_Read`, `_Runtime` and `_RC4_set_key` as rustc output and hands the whole
+/// image the Rust output language, the Rust ABI rules and the Rust no-return
+/// list. The grammar decides instead, and `rustc_demangle` — the scheme's
+/// reference implementation, and the crate the demangle pass already hands these
+/// names to — is what parses it.
+fn is_rust_v0(name: &str, platform_underscore: bool) -> bool {
+    let prefixed = name.starts_with("__R") || (!platform_underscore && name.starts_with("_R"));
+    prefixed && rustc_demangle::try_demangle(name).is_ok()
+}
+
+/// `true` if `name` is a legacy Rust symbol: an Itanium `_ZN…E` name carrying the
+/// `17h<16 hex>` hash component rustc appends and a plain C++ `_ZN…` lacks.
+fn is_rust_legacy(name: &str) -> bool {
     let zn = name.strip_prefix('_').unwrap_or(name);
     let zn = zn.strip_prefix('_').unwrap_or(zn);
     if !zn.starts_with("ZN") {
         return false;
     }
-    if let Some(pos) = name.rfind("17h") {
-        let tail = &name[pos + 3..];
-        // The hash is exactly 16 lowercase hex digits, then the trailing `E`.
-        if let Some(hex) = tail.strip_suffix('E') {
-            return hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit());
-        }
-    }
-    false
+    let Some(pos) = name.rfind("17h") else {
+        return false;
+    };
+    let Some(hex) = name[pos + 3..].strip_suffix('E') else {
+        return false;
+    };
+    hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// `true` if the `.rodata` section carries any [`RUST_SIGNATURES`] byte signature
@@ -707,6 +738,49 @@ mod tests {
         assert!(is_rust_mangled("__RNvCs1234_4core5panic"));
         // a bare `_R` with nothing after it is not a symbol
         assert!(!is_rust_mangled("_R"));
+    }
+
+    /// The v0 arm parses the grammar. `_R` is also the start of every Mach-O C
+    /// symbol whose name begins with `R`, so the prefix alone claimed `_Run`,
+    /// `_Read` and `_RC4_set_key` for rustc — and one such symbol re-languages a
+    /// whole C program to Rust.
+    #[test]
+    fn v0_names_must_parse_as_v0_paths() {
+        // a path tag is one of `C M X Y N I B`; anything else ends it.
+        for c_name in [
+            "_Run", "_Read", "_Runtime", "_Rename", "_RSA_new", "_RAND_bytes", "_Rabbit",
+        ] {
+            assert!(!is_rust_mangled(c_name), "{c_name} is a C name, not a v0 symbol");
+        }
+        // `C` then a digit LOOKS like a crate-root identifier, so the tag alone is
+        // not enough: `RC4_set_key` declares a 4-byte crate named `set_` and then
+        // leaves `key` over, which is no instantiating-crate path.
+        assert!(!is_rust_mangled("_RC4_set_key"));
+        assert!(!is_rust_mangled("_RC2_key"));
+        // real v0 symbols, including a generic instantiation.
+        assert!(is_rust_mangled("_RNvCs1234_4core5panic"));
+        assert!(is_rust_mangled("_RINvNtC3std3mem8align_ofdE"));
+        assert!(is_rust_mangled("_RNvNtCs1234_4core3fmt5write"));
+    }
+
+    /// The detector knows the format, and on Mach-O every symbol carries a
+    /// platform underscore — so rustc's v0 symbols read `__R…` there and a
+    /// single-underscore `_R…` is a C name however well it parses.
+    #[test]
+    fn macho_needs_the_platform_underscore_for_v0() {
+        let v0 = "_RNvCs1234_4core5panic";
+        assert!(is_rust_mangled_in(v0, BinaryFormat::Elf));
+        assert!(is_rust_mangled_in(v0, BinaryFormat::Pe));
+        assert!(!is_rust_mangled_in(v0, BinaryFormat::MachO));
+        // the Mach-O spelling of that same symbol.
+        let macho_v0 = "__RNvCs1234_4core5panic";
+        assert!(is_rust_mangled_in(macho_v0, BinaryFormat::MachO));
+        assert!(is_rust_mangled_in(macho_v0, BinaryFormat::Elf));
+        // legacy is unaffected by the format.
+        let legacy = "_ZN4core9panicking5panic17h0123456789abcdefE";
+        for f in [BinaryFormat::Elf, BinaryFormat::Pe, BinaryFormat::MachO] {
+            assert!(is_rust_mangled_in(legacy, f));
+        }
     }
 
     #[test]
