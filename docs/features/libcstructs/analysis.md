@@ -578,3 +578,12 @@ recovered either way (110 calls with one argument in both arms).
 `pthread_mutex_init(x)` without the `NULL` attribute and 2 gain a fourth
 argument. Its container case, a record whose first member is the mutex, is what
 the fit rule declines.
+
+### Speed
+
+Interleaved min-of-15, `decompile-all --max-fn-seconds 120`, `main` against #706
+alternating on every repetition (`followup-speed.py`), on the binaries the rule
+fires in: O2 grep 11.83 -> 11.71 s (-0.97%), O2 sort 14.11 -> 13.99 s (-0.88%),
+O2 wc 4.45 -> 4.44 s (-0.43%), O0 grep 6.80 -> 6.71 s (-1.34%), O2 rsyslogd
+25.93 -> 25.79 s (-0.55%). The walk runs only for a vote or a propagation step
+that would put a libc aggregate pointer on a Varnode.
