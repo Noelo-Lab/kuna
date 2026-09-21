@@ -1,5 +1,68 @@
 # `charptr` default-on evaluation — HELD OPT-IN, and no longer a candidate
 
+## Re-evaluation on main `ce008ce2b` (after #695, #704 and #692)
+
+The flip was measured again on current main, both arms from one build: the
+option off (the shipped default) against `("charptr", "on")` in
+`AGGRESSIVE_OVERRIDES`, which is what `--mode auto` runs under 500 KiB. It fails
+two criteria, so there is no flip PR.
+
+| criterion | result |
+|---|---|
+| (c) `make test-cli` with the new default | **FAIL**, 213/219. The same six probes move. Three of them catch a real rendering regression, described below, so they cannot be re-pinned. |
+| (d) 444-slice typesweep, new default against old | **FAIL**. Perfect stays at 1,353, the aggregate goes from 3670.31 to 3669.74 (-0.57), and 2 functions improve while 4 get worse. The criterion needs improved >= worse. |
+| (a), (b), (e), (f) | Not re-run, because (c) and (d) already decide the flip. (a) and (b) cannot move anyway, since the datatest harness applies no mode. |
+
+The "known state" the flip lane was started from (1,349 -> 1,353, +4.93, 14 up
+and 6 down) was measured before #704. #704 made a constant `PTRADD` index count
+as a field offset, and that removed nearly all of the gain. On this base the
+typesweep moves six functions:
+
+| slice | function | GT variable | off | on | what it is |
+|---|---|---|---|---|---|
+| coreutils O0 tac | `output` | `char *start` (arg) | `void *` miss | `char *` hit | better |
+| tar O0 tar | `read_header` | `char *bp` (stack) | `unsigned long *` miss | `char *` hit | better |
+| coreutils O2-noinline head | `elide_tail_bytes_pipe` | `__off_t current_pos` (arg 4) | `unsigned long`, credited | `char *` miss | worse. An integer the body adds byte counts to and passes to `elseek`. The census walk gets `ev=byte` on its stack copy (`stack@-152`), so an integer accumulator becomes a pointer. This is a false positive. |
+| tar O0 / O2 / O2-noinline | `check_compressed_archive` | `_Bool temp` (stack) | `undefined1`, credited on width | `char` miss | worse, three rows for one function. The byte is read through `pshort`, which kuna already types `char *` in both arms. With the option on, that commit spreads to the byte, and the metric then scores `char` exactly against `_Bool`. |
+
+The two `od print_long_double` rows from the earlier table no longer move.
+
+### What (c) actually catches
+
+```
+$ kuna decompile-all decompiler/crates/kuna-analysis/tests/fixtures/protoorder_widefill_x86_64 --option charptr on
+int fill_words(char *a0,int a1)
+      builtin_strncpy(v2,"\b\a\x06\x05\x04\x03\x02\x01",8);      <-- was *v2 = 0x102030405060708;
+int fill_many(char *a0,int a1)
+  a0[0x10] = 'u';                                               <-- 520 eight-byte stores become
+  a0[0x11] = 'u';                                                   4,160 one-byte stores
+```
+
+The narrow-vote fixture shows the same thing. `fill`'s single
+`*(unsigned long *)((long)a0 + 0x10) = 0x2020726174737575;` becomes eight byte
+stores, and the `int` store beside it moves ahead of them. The cause is an
+interaction between the two options, not the flip's own vote.
+`kuna_protoorder::pointee_refuses` refuses a narrow pointer vote when the caller
+stores wider constants through it. It exempts a *character* pointee on purpose,
+because byte stores through a `char *` are what the string-copy idiom prints as
+`builtin_strncpy`. With `charptr` on, `peek` recovers `char *` instead of
+`unsigned char *`, and the exemption lets that vote reach every caller that
+fills the buffer a word at a time. With `--option protoorder off`, `fill_words`
+stays `unsigned long *`. The three probes that pin whole wide stores
+(`protoorder-types-keeps-a-wide-store-whole`,
+`protoorder-types-keeps-a-word-fill-whole`,
+`ptrfromuse-default-declares-a-dereferenced-parameter-void`) are right to fail.
+The other three (`protoorder-types-the-callers-argument`,
+`protoorder-off-loses-the-callee-type`,
+`protoorder-lock-declines-a-register-saturating-callee`) change only in
+signedness: `unsigned char *` becomes `char *`, and a `(unsigned char)` cast
+appears on each `movzbl` read. That spelling change is legitimate but reads
+worse.
+
+A future flip needs `pointee_refuses` to stop exempting a character pointee
+when the wide store is a non-string constant. The metric cost has its own
+causes, which `next-levers.md` covers.
+
 ## Update after the offset rule was completed
 
 Once a constant `PTRADD` index counts as a field offset, as a literal `INT_ADD`
