@@ -513,6 +513,9 @@ def header_layouts(header: str) -> dict:
     """
     sizes = dict(PRIMITIVES)
     layouts: dict[str, dict] = {}
+    # A pointer member may name a struct defined later in the header, or the
+    # struct it belongs to; every header forward-declares them all first.
+    defined = {name for name, _ in STRUCT_RE.findall(header)}
     for name, body in STRUCT_RE.findall(header):
         fields, cursor, complete = [], 0, True
         for line in body.split("\n"):
@@ -535,7 +538,7 @@ def header_layouts(header: str) -> dict:
                 complete = False
             fields.append({"offset": offset, "size": size, "name": m.group("name"),
                            "kind": "pointer" if ptr else "scalar", "ptr": ptr,
-                           "pointee": base if ptr == 1 and base in layouts else None})
+                           "pointee": base if ptr == 1 and base in defined else None})
             cursor = offset + (size or 0)
         layouts[name] = {"name": name, "size": cursor, "fields": fields,
                          "complete": complete}
@@ -1228,6 +1231,15 @@ struct nest_1 {
     struct_0 *field_0x0;
     long field_0x8;
 };
+
+struct node_2 {
+    node_2 *field_0x0;
+    later_3 *field_0x8;
+};
+
+struct later_3 {
+    long field_0x0;
+};
 """
 
 SELFTEST_TEXT = """// Function: sub_3000 @ 0x3000
@@ -1379,6 +1391,10 @@ def selftest() -> int:
          [f["offset"] for f in header["struct_0"]["fields"]] == [0, 8]),
         ("a struct-pointer member records its pointee",
          header["nest_1"]["fields"][0]["pointee"] == "struct_0"),
+        ("a member pointing at its own struct records it",
+         header["node_2"]["fields"][0]["pointee"] == "node_2"),
+        ("a member pointing at a struct defined later records it",
+         header["node_2"]["fields"][1]["pointee"] == "later_3"),
         ("a base with 3 distinct offsets is a candidate",
          census["candidates"].get("a0")
          == {"offsets": ["0x0", "0x8", "0xc"], "offset_or_field": True}),

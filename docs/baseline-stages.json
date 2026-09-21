@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1281,
-    1281
+    1289,
+    1289
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -753,6 +753,14 @@
     "data:STRUCTSYNTH-HOLE #3: the body names the undereferenced offset",
     "data:STRUCTSYNTH-HOLE #4: and the layout declares a member there",
     "data:STRUCTSYNTH-HOLE #5: no part of the structure is padding the header would not name",
+    "data:STRUCTSYNTH-NEST #1: param reads a loaded field as raw offsets",
+    "data:STRUCTSYNTH-NEST #2: param loads a tree node through a cast",
+    "data:STRUCTSYNTH-NEST #3: nest reads the loaded record through its fields",
+    "data:STRUCTSYNTH-NEST #4: the outer field points at the nested record",
+    "data:STRUCTSYNTH-NEST #5: the nested record is the three reads, not padded",
+    "data:STRUCTSYNTH-NEST #6: a tree node's links point at its own record",
+    "data:STRUCTSYNTH-NEST #7: the parameter is the self-pointing record",
+    "data:STRUCTSYNTH-NEST #8: every unrolled node reads its label as a field",
     "data:STRUCTSYNTH-OVERLAP #1: off leaves the offset-8 store as raw pointer arithmetic",
     "data:STRUCTSYNTH-OVERLAP #2: the parameter is retyped to the synthesized structure",
     "data:STRUCTSYNTH-OVERLAP #3: offset 0 is an 8-byte field",

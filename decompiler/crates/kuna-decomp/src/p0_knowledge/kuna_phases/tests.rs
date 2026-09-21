@@ -800,7 +800,7 @@ fn option_values_live_value_present_for_93() {
                             // the same reason `pebnames` is here. Its live value
                             // is `Architecture::ptr_from_use`.
                             | "ptrfromuse"
-                            // (kuna) `structsynth` takes a MODE (`off|param`),
+                            // (kuna) `structsynth` takes a MODE (`off|param|nest`),
                             // for the same reason.  Its live value is
                             // `Architecture::struct_synth`.
                             | "structsynth"

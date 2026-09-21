@@ -1,0 +1,98 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structsynth nest: a pointer field whose loads are dereferenced at constant
+    offsets is typed as a pointer to a record of its own, or to the record that
+    holds it.
+
+    Source (gcc -O2 -fcf-protection=none, max-inline-recursive-depth-auto=3,
+    the shape of grep's kwset treenext):
+
+        struct inner { long a; int b; int c; };
+        struct outer { struct inner *in; long x; int y; };
+        struct tree  { struct tree *llink, *rlink; long val; unsigned char label; };
+
+        long use_outer(struct outer *o)                        // @0x100000
+        { return o->in->a + o->in->b + o->in->c + o->x + o->y; }
+
+        void treewalk(struct tree const *t, long *next) {      // @0x100020
+          if (!t) return;
+          treewalk(t->llink, next);
+          treewalk(t->rlink, next);
+          next[t->label] = t->val;
+        }
+
+    use_outer loads o->in once and reads it at 0, 8 and 0xc. treewalk is
+    unrolled three levels deep, so a node loaded from llink or rlink is read at
+    0, 8, 0x10 and 0x18 with the same types the parameter's own node is.
+
+    With option structsynth param (asserts 1 and 2): the parameter is a
+    struct_N, but every read through a loaded field is raw offset arithmetic
+    again, (int8)*(int4 *)((int8)v1 + 0xc) and (unsigned long *)*v2.
+
+    With option structsynth nest (asserts 3 to 8): the loads of o->in are
+    measured as one record, {0: int8, 8: int4, 0xc: int4}, minted as struct_2,
+    and the outer field is struct_2 *. Each node loaded in treewalk holds
+    everything the parameter's node holds, so llink and rlink point at the
+    parameter's own record: struct_4 holds two struct_4 * members, and every
+    level reads v->field_0x18 instead of *(uint1 *)&v[3].
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488b17486342084803024863520c4801d048635710480347084801d0c30f1f00
+4885ff0f8427020000415641554989fd41545553488b2f4889f34885ed0f84ef
+0000004c8b65004d85e474674d8b34244d85f67421498b3ee8c3ffffff498b7e
+084889dee8b7ffffff498b5610410fb64618488914c34d8b7424084d85f67424
+498b3e4889dee895ffffff498b7e084889dee889ffffff498b5610410fb64618
+488914c3498b542410410fb6442418488914c34c8b65084d85e4746a4d8b3424
+4d85f67424498b3e4889dee850ffffff498b7e084889dee844ffffff498b5610
+410fb64618488914c34d8b7424084d85f67424498b3e4889dee822ffffff498b
+7e084889dee816ffffff498b5610410fb64618488914c3498b542410410fb644
+2418488914c3488b55100fb64518488914c3498b6d084885ed0f84f20000004c
+8b65004d85e4746a4d8b34244d85f67424498b3e4889dee8c4feffff498b7e08
+4889dee8b8feffff498b5610410fb64618488914c34d8b7424084d85f6742449
+8b3e4889dee896feffff498b7e084889dee88afeffff498b5610410fb6461848
+8914c3498b542410410fb6442418488914c34c8b65084d85e4746a4d8b34244d
+85f67424498b3e4889dee851feffff498b7e084889dee845feffff498b561041
+0fb64618488914c34d8b7424084d85f67424498b3e4889dee823feffff498b7e
+084889dee817feffff498b5610410fb64618488914c3498b542410410fb64424
+18488914c3488b55100fb64518488914c3498b5510410fb64518488914c35b5d
+415c415d415ec3660f1f840000000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="use_outer"/>
+<symbol space="ram" offset="0x100020" name="treewalk"/>
+</binaryimage>
+<script>
+  <com>option structsynth param</com>
+  <com>lo fu use_outer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu treewalk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structsynth nest</com>
+  <com>lo fu use_outer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu treewalk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print C types</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTSYNTH-NEST #1: param reads a loaded field as raw offsets" min="1" max="1">\(int8\)\*\(int4 \*\)\(\(int8\)v1 \+ 0xc\)</stringmatch>
+<stringmatch name="STRUCTSYNTH-NEST #2: param loads a tree node through a cast" min="4" max="4">\(unsigned long \*\)\*v2</stringmatch>
+<stringmatch name="STRUCTSYNTH-NEST #3: nest reads the loaded record through its fields" min="1" max="1">\(int8\)v1-&gt;field_0x8 \+ v1-&gt;field_0x0 \+ \(int8\)v1-&gt;field_0xc</stringmatch>
+<stringmatch name="STRUCTSYNTH-NEST #4: the outer field points at the nested record" min="1" max="1">struct_2 \*field_0x0;</stringmatch>
+<stringmatch name="STRUCTSYNTH-NEST #5: the nested record is the three reads, not padded" min="1" max="1">^struct struct_2 \{$
+^    int8 field_0x0;$
+^    int4 field_0x8;$
+^    int4 field_0xc;$
+^\};$</stringmatch>
+<stringmatch name="STRUCTSYNTH-NEST #6: a tree node's links point at its own record" min="1" max="1">^struct struct_4 \{$
+^    struct_4 \*field_0x0;$
+^    struct_4 \*field_0x8;$
+^    int8 field_0x10;$
+^    uint1 field_0x18;$</stringmatch>
+<stringmatch name="STRUCTSYNTH-NEST #7: the parameter is the self-pointing record" min="1" max="1">void treewalk\(struct_4 \*a0,int8 a1\)</stringmatch>
+<stringmatch name="STRUCTSYNTH-NEST #8: every unrolled node reads its label as a field" min="8" max="8">v3-&gt;field_0x18</stringmatch>
+</decompilertest>
