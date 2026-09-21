@@ -464,34 +464,27 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     ("fstatfs", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("statfs")], vararg: -1 }),
     ("localeconv", Sig { ret: Ty::NamedPtr("lconv"), params: &[], vararg: -1 }),
     ("statfs", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("statfs")], vararg: -1 }),
-    // time.h — more `tm`, `timespec` and `timeval` slots. Like `localtime`
-    // above, a `const time_t *` argument has no width-stable spelling and stays
-    // `void *`; only the aggregate slots are named.
+    // time.h — more `tm` and `timespec` slots. Like `localtime` above, a
+    // `const time_t *` argument has no width-stable spelling and stays
+    // `void *`; only the aggregate slots are named. `utimensat`, `futimens`,
+    // `utimes` and `futimesat` are left out: their slot is a two-element array,
+    // and naming one element shrinks the caller's frame object to it.
     ("asctime", Sig { ret: Ty::CharPtr, params: &[Ty::NamedPtr("tm")], vararg: -1 }),
     ("clock_getres", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("timespec")], vararg: -1 }),
     ("clock_settime", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("timespec")], vararg: -1 }),
-    ("futimens", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("timespec")], vararg: -1 }),
-    ("futimesat", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::CharPtr, Ty::NamedPtr("timeval")], vararg: -1 }),
     ("gmtime", Sig { ret: Ty::NamedPtr("tm"), params: &[Ty::VoidPtr], vararg: -1 }),
     ("gmtime_r", Sig { ret: Ty::NamedPtr("tm"), params: &[Ty::VoidPtr, Ty::NamedPtr("tm")], vararg: -1 }),
     ("mktime", Sig { ret: Ty::Long, params: &[Ty::NamedPtr("tm")], vararg: -1 }),
     ("nanosleep", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("timespec"), Ty::NamedPtr("timespec")], vararg: -1 }),
     ("timegm", Sig { ret: Ty::Long, params: &[Ty::NamedPtr("tm")], vararg: -1 }),
-    ("utimensat", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::CharPtr, Ty::NamedPtr("timespec"), Ty::Int], vararg: -1 }),
-    ("utimes", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("timeval")], vararg: -1 }),
     // termios.h — `speed_t` is a 4-byte unsigned.
     ("cfgetispeed", Sig { ret: Ty::UInt, params: &[Ty::NamedPtr("termios")], vararg: -1 }),
     ("cfgetospeed", Sig { ret: Ty::UInt, params: &[Ty::NamedPtr("termios")], vararg: -1 }),
     ("cfsetispeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
     ("cfsetospeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
     ("tcgetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
-    // signal.h — the rest of the `sigset_t` surface.
-    ("pthread_sigmask", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("sigset_t"), Ty::NamedPtr("sigset_t")], vararg: -1 }),
-    ("sigdelset", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::Int], vararg: -1 }),
-    ("sigismember", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::Int], vararg: -1 }),
-    ("sigsuspend", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t")], vararg: -1 }),
-    ("sigwait", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::IntPtr], vararg: -1 }),
-    // dirent.h / wchar.h / pthread.h
+    // dirent.h / wchar.h / pthread.h. No more `sigset_t` slots: one handed
+    // `&sa.sa_mask` splits the caller's `struct sigaction` at the mask.
     ("pthread_mutex_destroy", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
     ("pthread_mutex_init", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t"), Ty::VoidPtr], vararg: -1 }),
     ("rewinddir", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
