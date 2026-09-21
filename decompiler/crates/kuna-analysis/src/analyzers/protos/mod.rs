@@ -233,8 +233,9 @@ fn build_pieces(
 }
 
 /// (kuna) The named-aggregate layout this image's built-in prototypes are built
-/// under: the `libctypes` gate, narrowed by whether the published glibc layouts
-/// are true of THIS object.
+/// under: the `libctypes` gate, narrowed by whether the aggregate widths are
+/// true of THIS object (`Off` when they are not) and then by whether the
+/// published glibc layouts are.
 ///
 /// The decision `LibcTypesPass` makes, factored out so a second consumer
 /// (`formatstring static`, which must spell `fprintf`'s `FILE *` exactly as the
@@ -245,6 +246,7 @@ pub(crate) fn effective_libctypes_layout(
     use kuna_decomp::kuna_libctypes::LibcTypesLayout as L;
     match kuna_decomp::kuna_libctypes::libctypes_layout() {
         L::Off => L::Off,
+        _ if !kuna_libctypes::glibc::target_takes_the_widths(file) => L::Off,
         L::Glibc if kuna_libctypes::glibc::target_is_glibc_x86_64(file) => L::Glibc,
         _ => L::Opaque,
     }
@@ -388,8 +390,14 @@ pub fn declared_libc_prototype(
     // (`AnalysisOutput::libctypes_glibc`). It cannot be re-derived here: the
     // object file is out of reach by the time a `--define-function` directive is
     // answered, and the program alone cannot stand in for it -- a MIPS32 image's
-    // DWARF `stat` also puts `st_dev` at offset 0.
-    if let Some(sig) = kuna_libctypes::declared_named_prototype(name) {
+    // DWARF `stat` also puts `st_dev` at offset 0. `Off` is how the console
+    // passes on a target whose ABI the aggregate widths are not measured for.
+    let named = if layout == kuna_libctypes::Layout::Off {
+        None
+    } else {
+        kuna_libctypes::declared_named_prototype(name)
+    };
+    if let Some(sig) = named {
         if let Ok(pieces) = build_pieces(name, sig, types, word_size, layout) {
             return Some(pieces);
         }

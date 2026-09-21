@@ -1,0 +1,157 @@
+Whole-corpus decompile-all diff for #706 (the width gate and the fit rule), 663 x86-64 binaries,
+base = main eaa19ebbb, new = #706 final. 199,963 functions compared, 136 changed. Classes:
+
+    81  same statements and calls, accesses rendered differently
+    35  types/casts only
+    12  plt-thunk prototype
+     8  same calls, statement count moved
+
+'same calls, statement count moved' (8): call sequence and memory-store count identical in both arms;
+a register temporary is folded into its use or kept. Read in full: grep kwsinit (O2, O2-noinline), rsyslogd
+0x230e0 (a load of offset 200 moves past a store to offset 0x38, which it cannot alias), O0 sort 0xb8b3 (a
+comma-expression while becomes while(true)/break once pthread_mutex_destroy has no prototype). All equivalent.
+'plt-thunk prototype' (12): the pthread_mutex_destroy thunk in sort, e2fsck, libselinux, rsyslogd x 3 opts.
+'same statements and calls, accesses rendered differently' (81): an obstack/mutex/stat element index becomes a
+byte offset (`&a0[0x1b].field_0x38` -> `(long)a0 + 0x980`) or a cast moves; no statement added or removed.
+'types/casts only' (35): identical after removing casts and renumbering.
+
+== same statements and calls, accesses rendered differently
+  O0::base-passwd::update-passwd 0x4b64 sub_4b64  stmts 27->27
+  O0::base-passwd::update-passwd 0x4d11 sub_4d11  stmts 27->27
+  O0::e2fsprogs::e2fsck 0x42fca init_resource_track  stmts 16->16
+  O0::gnutls::gnutls-cli 0x15589 sub_15589  stmts 6->6
+  O0::grep::grep 0xc89b sub_c89b  stmts 26->26
+  O0::grep::grep 0xd9b5 sub_d9b5  stmts 176->176
+  O0::grep::grep 0xcacb sub_cacb  stmts 178->178
+  O0::rsyslog::rsyslogd 0x8d599 actionDestruct  stmts 22->22
+  O0::rsyslog::rsyslogd 0x27261 sub_27261  stmts 7->7
+  O0::rsyslog::rsyslogd 0x947f8 sub_947f8  stmts 29->29
+  O0::rsyslog::rsyslogd 0x52954 msgDestruct  stmts 57->57
+  O0::rsyslog::rsyslogd 0x941e2 sub_941e2  stmts 6->6
+  O0::rsyslog::rsyslogd 0x88d8f sub_88d8f  stmts 80->80
+  O0::rsyslog::rsyslogd 0x2509d sub_2509d  stmts 26->26
+  O0::rsyslog::rsyslogd 0x8179a qqueueDestruct  stmts 60->60
+  O0::rsyslog::rsyslogd 0x749c3 strmDestruct  stmts 35->35
+  O0::rsyslog::rsyslogd 0x24fcb sub_24fcb  stmts 8->8
+  O0::rsyslog::rsyslogd 0x6e980 sub_6e980  stmts 59->59
+  O0::rsyslog::rsyslogd 0x8913b sub_8913b  stmts 10->10
+  O0::rsyslog::rsyslogd 0x6de11 sub_6de11  stmts 16->16
+  O0::rsyslog::rsyslogd 0x94252 sub_94252  stmts 16->16
+  O0::rsyslog::rsyslogd 0x783c0 wtpDestruct  stmts 19->19
+  O0::rsyslog::rsyslogd 0x252f9 sub_252f9  stmts 21->21
+  O0::rsyslog::rsyslogd 0x24de9 sub_24de9  stmts 20->20
+  O0::rsyslog::rsyslogd 0x9431a sub_9431a  stmts 37->37
+  O0::rsyslog::rsyslogd 0x6d885 statsobjDestruct  stmts 13->13
+  O2-noinline::base-passwd::update-passwd 0x4700 sub_4700  stmts 26->26
+  O2-noinline::base-passwd::update-passwd 0x48a0 sub_48a0  stmts 26->26
+  O2-noinline::coreutils::sort 0x7cd0 sub_7cd0  stmts 10->10
+  O2-noinline::coreutils::wc 0x32f0 sub_32f0  stmts 26->26
+  O2-noinline::diffutils::diff 0x8e70 sub_8e70  stmts 477->477
+  O2-noinline::e2fsprogs::e2fsck 0x34a70 init_resource_track  stmts 17->17
+  O2-noinline::gnutls::gnutls-cli 0x12770 sub_12770  stmts 7->7
+  O2-noinline::grep::grep 0xbab0 sub_bab0  stmts 202->202
+  O2-noinline::libacl::libacl.so.1.1.2301 0x3ad0 acl_get_file  stmts 98->98
+  O2-noinline::libacl::libacl.so.1.1.2301 0x3910 acl_get_fd  stmts 73->73
+  O2-noinline::rsyslog::rsyslogd 0x21440 sub_21440  stmts 9->9
+  O2-noinline::rsyslog::rsyslogd 0x70be0 sub_70be0  stmts 16->16
+  O2-noinline::rsyslog::rsyslogd 0x21810 sub_21810  stmts 21->21
+  O2-noinline::rsyslog::rsyslogd 0x41d40 msgDestruct  stmts 53->53
+  O2-noinline::rsyslog::rsyslogd 0x23a70 sub_23a70  stmts 18->18
+  O2-noinline::rsyslog::rsyslogd 0x687c0 sub_687c0  stmts 10->10
+  O2-noinline::rsyslog::rsyslogd 0x70820 sub_70820  stmts 40->40
+  O2-noinline::rsyslog::rsyslogd 0x70690 sub_70690  stmts 28->28
+  O2-noinline::rsyslog::rsyslogd 0x22120 sub_22120  stmts 12->12
+  O2-noinline::rsyslog::rsyslogd 0x6e3c0 actionDestruct  stmts 22->22
+  O2-noinline::rsyslog::rsyslogd 0x21f40 sub_21f40  stmts 25->25
+  O2-noinline::rsyslog::rsyslogd 0x56070 sub_56070  stmts 17->17
+  O2-noinline::rsyslog::rsyslogd 0x54dd0 statsobjDestruct  stmts 11->11
+  O2-noinline::rsyslog::rsyslogd 0x62b90 qqueueDestruct  stmts 74->74
+  O2-noinline::rsyslog::rsyslogd 0x5b890 strmDestruct  stmts 32->32
+  O2-noinline::rsyslog::rsyslogd 0x70640 sub_70640  stmts 7->7
+  O2-noinline::sysvinit::halt 0x2ff0 sub_2ff0  stmts 35->35
+  O2-noinline::sysvinit::halt 0x3180 sub_3180  stmts 73->73
+  O2::base-passwd::update-passwd 0x4db0 sub_4db0  stmts 30->30
+  O2::base-passwd::update-passwd 0x4c00 sub_4c00  stmts 30->30
+  O2::bash::bash 0xc02f0 glob_vector  stmts 476->476
+  O2::coreutils::du 0x69c0 sub_69c0  stmts 66->66
+  O2::coreutils::wc 0x2860 main  stmts 275->275
+  O2::diffutils::diff 0x104d0 sub_104d0  stmts 66->66
+  O2::diffutils::diff 0x8f90 sub_8f90  stmts 478->478
+  O2::e2fsprogs::e2fsck 0x339d0 init_resource_track  stmts 17->17
+  O2::gnutls::gnutls-cli 0x12150 sub_12150  stmts 7->7
+  O2::grep::grep 0x16b90 sub_16b90  stmts 66->66
+  O2::grep::grep 0xc9d0 sub_c9d0  stmts 202->202
+  O2::kmod::kmod 0xede0 sub_ede0  stmts 82->82
+  O2::libselinux::libselinux.so.1 0x12b20 sub_12b20  stmts 165->165
+  O2::rsyslog::rsyslogd 0x22a80 sub_22a80  stmts 54->54
+  O2::rsyslog::rsyslogd 0x71080 sub_71080  stmts 28->28
+  O2::rsyslog::rsyslogd 0x219f0 sub_219f0  stmts 22->22
+  O2::rsyslog::rsyslogd 0x71660 thrdCreate  stmts 13->13
+  O2::rsyslog::rsyslogd 0x41e40 msgDestruct  stmts 63->63
+  O2::rsyslog::rsyslogd 0x21a90 sub_21a90  stmts 42->42
+  O2::rsyslog::rsyslogd 0x71210 sub_71210  stmts 40->40
+  O2::rsyslog::rsyslogd 0x6e6d0 actionDestruct  stmts 34->34
+  O2::rsyslog::rsyslogd 0x5a640 strmDestruct  stmts 32->32
+  O2::rsyslog::rsyslogd 0x63230 qqueueDestruct  stmts 139->139
+  O2::rsyslog::rsyslogd 0x22500 sub_22500  stmts 162->162
+  O2::rsyslog::rsyslogd 0x715d0 sub_715d0  stmts 16->16
+  O2::sysvinit::halt 0x3170 sub_3170  stmts 73->73
+  O2::sysvinit::halt 0x2ff0 sub_2ff0  stmts 35->35
+== same calls, statement count moved
+  O0::coreutils::sort 0xb8b3 sub_b8b3  stmts 9->11
+  O2-noinline::grep::grep 0xb960 sub_b960  stmts 37->36
+  O2-noinline::grep::grep 0xbfa0 sub_bfa0  stmts 347->344
+  O2::coreutils::sort 0x3ec0 main  stmts 1167->1168
+  O2::grep::grep 0xcec0 sub_cec0  stmts 811->808
+  O2::grep::grep 0xc880 sub_c880  stmts 37->36
+  O2::rsyslog::rsyslogd 0x21c20 sub_21c20  stmts 270->267
+  O2::rsyslog::rsyslogd 0x230e0 sub_230e0  stmts 202->201
+== plt-thunk prototype
+  O0::coreutils::sort 0x3e80 pthread_mutex_destroy  stmts 2->2
+  O0::e2fsprogs::e2fsck 0x15e00 pthread_mutex_destroy  stmts 2->2
+  O0::libselinux::libselinux.so.1 0x7f20 pthread_mutex_destroy  stmts 2->2
+  O0::rsyslog::rsyslogd 0x16d60 pthread_mutex_destroy  stmts 2->2
+  O2-noinline::coreutils::sort 0x3ea0 pthread_mutex_destroy  stmts 2->2
+  O2-noinline::e2fsprogs::e2fsck 0x15e70 pthread_mutex_destroy  stmts 2->2
+  O2-noinline::libselinux::libselinux.so.1 0x7f90 pthread_mutex_destroy  stmts 2->2
+  O2-noinline::rsyslog::rsyslogd 0x17de0 pthread_mutex_destroy  stmts 2->2
+  O2::coreutils::sort 0x3e00 pthread_mutex_destroy  stmts 2->2
+  O2::e2fsprogs::e2fsck 0x15e30 pthread_mutex_destroy  stmts 2->2
+  O2::libselinux::libselinux.so.1 0x7f70 pthread_mutex_destroy  stmts 2->2
+  O2::rsyslog::rsyslogd 0x17d80 pthread_mutex_destroy  stmts 2->2
+== types/casts only
+  O0::coreutils::sort 0xbbc5 sub_bbc5  stmts 4->4
+  O0::e2fsprogs::e2fsck 0x993b9 sub_993b9  stmts 102->102
+  O0::e2fsprogs::e2fsck 0x1ad8a main  stmts 522->522
+  O0::e2fsprogs::e2fsck 0x99b87 sub_99b87  stmts 22->22
+  O0::grep::grep 0xc03f sub_c03f  stmts 37->37
+  O0::grep::grep 0x51b4 sub_51b4  stmts 24->24
+  O0::libselinux::libselinux.so.1 0x17f33 sub_17f33  stmts 33->33
+  O0::libselinux::libselinux.so.1 0x20308 sub_20308  stmts 9->9
+  O0::rsyslog::rsyslogd 0x1b5c1 main  stmts 33->33
+  O0::rsyslog::rsyslogd 0x2866c sub_2866c  stmts 7->7
+  O0::rsyslog::rsyslogd 0x88ba9 ratelimitDestruct  stmts 14->14
+  O0::rsyslog::rsyslogd 0x6dc37 statsobjClassExit  stmts 5->5
+  O2-noinline::coreutils::sort 0x7d10 sub_7d10  stmts 4->4
+  O2-noinline::e2fsprogs::e2fsck 0x71730 sub_71730  stmts 22->22
+  O2-noinline::e2fsprogs::e2fsck 0x165c0 main  stmts 606->606
+  O2-noinline::e2fsprogs::e2fsck 0x71860 sub_71860  stmts 116->116
+  O2-noinline::grep::grep 0xa820 sub_a820  stmts 38->38
+  O2-noinline::grep::grep 0x6350 sub_6350  stmts 28->28
+  O2-noinline::libselinux::libselinux.so.1 0x12df0 sub_12df0  stmts 44->44
+  O2-noinline::libselinux::libselinux.so.1 0x19e80 sub_19e80  stmts 10->10
+  O2-noinline::rsyslog::rsyslogd 0x24a10 sub_24a10  stmts 6->6
+  O2-noinline::rsyslog::rsyslogd 0x55ac0 statsobjClassExit  stmts 5->5
+  O2-noinline::rsyslog::rsyslogd 0x18020 main  stmts 32->32
+  O2-noinline::rsyslog::rsyslogd 0x68420 ratelimitDestruct  stmts 14->14
+  O2::e2fsprogs::e2fsck 0x715a0 sub_715a0  stmts 24->24
+  O2::e2fsprogs::e2fsck 0x165b0 main  stmts 1286->1286
+  O2::grep::grep 0x6a70 sub_6a70  stmts 167->167
+  O2::grep::grep 0xa570 sub_a570  stmts 38->38
+  O2::libselinux::libselinux.so.1 0x129a0 sub_129a0  stmts 59->59
+  O2::libselinux::libselinux.so.1 0x1a4e0 sub_1a4e0  stmts 10->10
+  O2::rsyslog::rsyslogd 0x243c0 sub_243c0  stmts 6->6
+  O2::rsyslog::rsyslogd 0x17fc0 main  stmts 82->82
+  O2::rsyslog::rsyslogd 0x68a90 ratelimitDestruct  stmts 18->18
+  O2::rsyslog::rsyslogd 0x56420 statsobjClassExit  stmts 5->5
+  O2::rsyslog::rsyslogd 0x56820 sub_56820  stmts 18->18

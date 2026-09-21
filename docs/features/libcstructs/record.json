@@ -349,5 +349,127 @@
       "utimes, futimesat": "same two-element slot; utimes shrank openssh scp/sftp struct timeval tv[2] (6 functions)"
     },
     "kept_off_pool": "every kept row not in ranked-pool.md's NEW column carries a one-line note there (reach, changed, +i/-w, extra costs)"
+  },
+  "followup_706": {
+    "pr": "https://github.com/Noelo-Lab/kuna/pull/706",
+    "why": "post-merge review of #692: (1) the x86-64 widths grow frame objects on other ABIs; (2) a struct whose first member is a libc aggregate was typed as that aggregate",
+    "changes": {
+      "width_gate": "glibc::target_takes_the_widths: x86-64 ELF not linked against another libc (no .dynstr, or glibc .dynstr); everything else gets the void * tables and no stream symbol; carried to the declared-name path as AnalysisOutput::libctypes_refused",
+      "fit_rule": "p5_types/kuna_libcfit.rs: the call vote declines to void * and propagate_type_edge refuses the type when the Varnode's descendants reach outside the aggregate (constant access past the end or before the start, address at or past the end, step >= size and != size)",
+      "rows": "pthread_mutex_destroy dropped (bought nothing); pthread_mutex_init kept for arity (without it 12 calls lose the NULL attr, 2 gain a 4th argument)"
+    },
+    "base": "main eaa19ebbb (#692 merged), which reproduces #692's published sweep exactly (1,353 perfect, mean .3415). Repeated after rebasing onto a26b99db1 (#704 charptr fix + strict loader fix, #705 structsynth nesting): main a26b99db1 scores the same 1,353 / .34149 and the branch moves it identically (0 improved / 1 worse, TP 20,419 -> 20,405, exported variables 97,350 both)",
+    "benchmark": {
+      "slices": 444,
+      "functions": 10748,
+      "perfect": [
+        1353,
+        1353
+      ],
+      "mean": [
+        0.34149,
+        0.34145
+      ],
+      "tp": [
+        20419,
+        20405
+      ],
+      "fp": [
+        17765,
+        17779
+      ],
+      "fn": [
+        27531,
+        27531
+      ],
+      "improved": 0,
+      "worse": 1,
+      "worse_rows": {
+        "grep::O0::grep kwsprep": "0.6667 -> 0.3077: the -O0 obstack macro locals (__h, __o, __o1) hold a copy of the kwset pointer and took obstack * only by propagation from it"
+      },
+      "ptr_struct_correct": [
+        487,
+        474
+      ],
+      "exported_variables": [
+        97350,
+        97350
+      ],
+      "functions_more_vars": 0,
+      "functions_fewer_vars": 0
+    },
+    "corpus": {
+      "binaries": 663,
+      "functions": 199963,
+      "changed": 136,
+      "classes": {
+        "same statements and calls, accesses rendered differently": 81,
+        "types/casts only": 35,
+        "plt-thunk prototype (pthread_mutex_destroy)": 12,
+        "register temporary folded or kept, same stores and calls": 8
+      },
+      "calls_gained_or_lost": 0,
+      "indexed_past_element_0": [
+        71,
+        8
+      ],
+      "indexed_left": "8 x struct sigaction tables (sdiff, dpkg), stepped by exactly 152",
+      "element_indexed_field_lines": [
+        1141,
+        584
+      ],
+      "undefinedN_locals": [
+        1269,
+        1269
+      ],
+      "classification": "docs/features/libcstructs/followup-hunk-classification.txt"
+    },
+    "identity": {
+      "libctypes_off": "byte-identical to main on O2 grep, wc, sort, logoutd and O0 grep",
+      "non_x86_64": "default == main --option libctypes off on i386_pie_nl, libctypes_widths_i386, declaredlibcproto_i386, armlibcmain_le32, armlibcmain_got_le32, pe_iatincode_i386.exe, libctypes_mips32_glibc_le32, macho_imports, pe_imports.exe"
+    },
+    "false_declines_fixed_before_measuring": "the first cut read any step not a whole aggregate as an overrun and declined stty termios *mode, logoutd termios, grep main stat (O2, O2-noinline); a step smaller than the aggregate now proves nothing",
+    "speed": {
+      "method": "interleaved min-of-15, `decompile-all --max-fn-seconds 120`, main eaa19ebbb vs #706 alternating every repetition (followup-speed.py; followup-speed.json)",
+      "budget_pct": 5,
+      "runs": {
+        "O2/grep/grep": {
+          "base_s": 11.826,
+          "new_s": 11.711,
+          "delta_pct": -0.97
+        },
+        "O2/coreutils/sort": {
+          "base_s": 14.113,
+          "new_s": 13.988,
+          "delta_pct": -0.88
+        },
+        "O2/coreutils/wc": {
+          "base_s": 4.454,
+          "new_s": 4.435,
+          "delta_pct": -0.43
+        },
+        "O0/grep/grep": {
+          "base_s": 6.801,
+          "new_s": 6.709,
+          "delta_pct": -1.34
+        },
+        "O2/rsyslog/rsyslogd": {
+          "base_s": 25.931,
+          "new_s": 25.789,
+          "delta_pct": -0.55
+        }
+      }
+    },
+    "gates": {
+      "tree": "feat/libcstructs-followup rebased on origin/main a26b99db1 (#705)",
+      "make test": "PARITY OK, 675/675",
+      "make test-stages": "PARITY OK, 1296/1296 (baseline re-recorded: +7 LIBCTYPES keys, #15 renamed)",
+      "make test-cli": "219/219",
+      "make check-spec": "OK lenient and strict",
+      "kuna catalog --check": "OK",
+      "counters --check": "no drift",
+      "docs/options.md": "byte-fresh; phase_catalog.json recaptured",
+      "make rust-test": "lane RUST_TEST_RC=0, 7,374 passed / 0 failed on acc5bd5a0 (2026-09-21T21:31:57Z -> 21:59:06Z); only docs changed after it"
+    }
   }
 }

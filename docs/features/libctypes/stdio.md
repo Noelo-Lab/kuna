@@ -83,8 +83,9 @@ while its `stdin` is undefined and reaches the program only through the GOT.
 Those defined GOT slots are already filled by the relocation pass and folded by
 RELRO; a second claim on them would say nothing new.
 
-Linked ELF only, on the four architectures whose relocation numbering the loader
-knows (x86-64, AArch64, i386, ARM). A spelling that occurs more than once in
+Linked ELF only, and since `docs/features/libcstructs/` (the width gate) x86-64
+against glibc only: the slots mint the table's `FILE` at its x86-64 width, which
+is not i386's or ARM's. A spelling that occurs more than once in
 `.dynsym` is declined outright. The `FILE` the slots point at is the one
 `named_aggregate` hands the rest of the table, so `opaque` prints
 `stdout->field_0x28`, `glibc` prints `stdout->_IO_write_ptr`, and an image whose

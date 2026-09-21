@@ -1489,7 +1489,7 @@ moves.
   and `sigprocmask` slots already do this; fixing it belongs to frame merging,
   not to more slots.
 
-  Eight decisions shape the pass.
+  Nine decisions shape the pass.
 
   *The retarget is enumerated slot by slot, never applied in bulk.* The last
   `void *` of `vasprintf`, `vsnprintf`, `__vasprintf_chk`, `__vfprintf_chk`,
@@ -1525,6 +1525,35 @@ moves.
   only by-value named returns at all, nothing wider than a register pair reaches
   a return slot, and no `rethidden` appears in either arm — but the table does
   not forbid the wider case; the width is what would answer it correctly.
+
+  *The widths are glibc's x86-64 ones, so nothing is named on another ABI.* A
+  width is a claim about the caller's frame too, not only about offsets inside
+  the shell. A named pointer handed the address of a frame object gives that
+  object the aggregate's width, so the object grows to the declared width
+  wherever frame recovery had seen less of it. On x86-64 against glibc the growth
+  is right, and it does happen: `char v1 [12]` becomes `termios v1` when the
+  program touched only twelve bytes of the 60-byte struct `tcgetattr` fills. On
+  another ABI the same growth runs past the real object and folds the caller's
+  neighbouring locals into it. An i386 `struct timespec` is 8 bytes; handed to
+  `clock_getres` as a 16-byte one, it swallowed the two `int` locals above it
+  (`v1._12_4_ = a0 + 2`), and an `int k[12]` beside an i386 obstack became a
+  field of an 88-byte one. So the pass runs only where the widths are the ABI's:
+  an ELF for x86-64 that is not dynamically linked against another C library —
+  no `.dynstr` at all (a relocatable object, a static link), or one naming glibc
+  (`decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes/glibc.rs
+  (target_takes_the_widths)`). i386, ARM, AArch64 (whose `stat` is 128 bytes and
+  `pthread_mutex_t` 48), MIPS, PE and Mach-O get no named slot, no stream symbol
+  and no shell — the shipped `void *` tables, byte for byte what `libctypes off`
+  gives. `formatstring static` reads the same decision
+  (`effective_libctypes_layout`), and the declared-name path below is handed it as
+  a fact about the image. Scaling the table per architecture would need a
+  measured width for every row on every ABI, and is not attempted.
+  `tests/stages/kuna-libctypes.xml` pass 14 is the i386 witness.
+
+  Growth is also why a named vote is held to what the caller does with the
+  pointer. A libc aggregate is often the first member of a larger object, whose
+  address is then the one the call reads; the vote is declined for a call whose
+  argument the caller reads past the aggregate's end (chapter 05, `kuna_libcfit`).
 
   *The shells stay incomplete, and the names are bare.* `type_incomplete` stays
   set on the sized shell so the project exporter declares it
@@ -1680,7 +1709,9 @@ moves.
   `stat` alike — so a program that looks glibc-shaped from the inside is not
   evidence that its `FILE` is 216 bytes with `_fileno` at `0x70`. An image the
   gate refused gets the opaque shell for a declared name too, whatever it holds
-  and whatever the run asked for.
+  and whatever the run asked for. The width gate travels the same way
+  (`AnalysisOutput::libctypes_refused`): on an image it refused, a declared
+  `fopen` gets the width-stable `void *` signature, as an imported one does.
 
   The default is `opaque`. No datatest loads a file, so the 675 assertions
   cannot see this tier either way; the stage corpus can, and
@@ -1764,9 +1795,10 @@ moves.
   make the emitted `*stdout_ptr` read as an indirection the program does not
   perform. A `GLOB_DAT` whose symbol is DEFINED — the same image's own copy slot,
   in a mixed executable — is not a stream fact at all; the relocation fill and
-  the RELRO constant-fold already render it. Linked ELF only, on the four
-  architectures whose relocation numbering the loader knows, and a spelling that
-  occurs more than once in `.dynsym` is declined outright.
+  the RELRO constant-fold already render it. Linked ELF only, and only where the
+  width gate above passes: the slots mint the same `FILE` at the same width, and
+  `structdefs` reports that width, so an i386 image gets no stream symbol. A
+  spelling that occurs more than once in `.dynsym` is declined outright.
 
   The `FILE` the slots point at is the one `named_aggregate` hands the rest of
   the table, so `opaque` gives `stdout->field_0x28` and `glibc`

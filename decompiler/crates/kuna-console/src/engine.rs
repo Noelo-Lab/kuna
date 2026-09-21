@@ -469,6 +469,12 @@ pub struct ConsoleProgram {
     /// `false` on every path with no analysis tier (the XML datatests), which is
     /// the opaque shell — what `--option libctypes opaque` gives.
     libctypes_glibc: bool,
+    /// (kuna `libctypes`) The load-time pass refused this image because the
+    /// named aggregates' widths are not its ABI's
+    /// (`AnalysisOutput::libctypes_refused`). A declared name then gets the
+    /// width-stable `void *` signature, exactly as an imported one did. `false`
+    /// on every path with no analysis tier.
+    libctypes_refused: bool,
     /// (kuna) The image bytes + path stashed at load for the **deferred Listing
     /// build** (the Listing/xref PR6 build-timing fix). The Listing is gated on
     /// `--option listing on`, a flag the live CLI sets AFTER `load file` (before
@@ -2087,7 +2093,9 @@ impl ConsoleProgram {
         // The layout is the load-time pass's decision, not a fresh one: only an
         // image whose own target gate passed may be handed the glibc field
         // layouts (see `Self::libctypes_glibc`).
-        let layout = if self.libctypes_glibc {
+        let layout = if self.libctypes_refused {
+            kuna_decomp::kuna_libctypes::LibcTypesLayout::Off
+        } else if self.libctypes_glibc {
             kuna_decomp::kuna_libctypes::LibcTypesLayout::Glibc
         } else {
             kuna_decomp::kuna_libctypes::LibcTypesLayout::Opaque
@@ -3322,6 +3330,7 @@ fn empty_program(
         analysis_code_space: None,
         dwarf_locals: Vec::new(),
         libctypes_glibc: false,
+        libctypes_refused: false,
         analysis_image: None,
         loader_data_objects: Vec::new(),
         declared_extents: BTreeMap::new(),
@@ -4030,6 +4039,7 @@ fn commit_analysis_output(
     //     (`seed_declared_libc_prototype`). Set unconditionally so a second
     //     `load file` of a foreign-arch image clears what the first established.
     prog.libctypes_glibc = out.libctypes_glibc;
+    prog.libctypes_refused = out.libctypes_refused;
 
     // 1. Extra symbols a pass discovered. Function symbols install like the
     //    funcsym stream (idempotent); Data symbols (typed string/data objects)

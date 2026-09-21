@@ -827,3 +827,83 @@ fn the_frame_splitting_slots_stay_out() {
         );
     }
 }
+
+/// The aggregate WIDTHS are glibc's x86-64 ones, and a width larger than the real
+/// one folds a caller's neighbouring locals into the struct it hands over. So no
+/// slot is named on any other ABI: i386 (the stage test's witness), ARM, AArch64,
+/// MIPS, an x86-64 PE and an x86-64 Mach-O are refused. An x86-64 ELF with no
+/// `.dynstr` (a relocatable object) says nothing against glibc and is accepted.
+#[test]
+fn only_an_x86_64_glibc_abi_takes_the_widths() {
+    for (name, want) in [
+        ("libctypes_glibc_x86_64", true),
+        ("libctypes_stat_x86_64", true),
+        ("libctypes_container_x86_64", true),
+        ("fid_lib_x86_64.o", true),
+        ("libctypes_widths_i386", false),
+        ("i386_pie_nl", false),
+        ("armlibcmain_le32", false),
+        ("et_rel_status_aarch64.o", false),
+        ("libctypes_mips32_glibc_le32", false),
+        ("win32sigs_pe_i386.exe", false),
+        ("crtmain_x86_64.exe", false),
+        ("macho_imports", false),
+    ] {
+        let bytes = fixture_bytes(name);
+        let file = object::File::parse(bytes.as_slice()).unwrap_or_else(|e| panic!("parse {name}: {e}"));
+        assert_eq!(
+            glibc::target_takes_the_widths(&file),
+            want,
+            "`{name}` should {} the glibc x86-64 aggregate widths",
+            if want { "take" } else { "refuse" }
+        );
+    }
+}
+
+/// The pass and `formatstring static` share one decision, and on a refused target
+/// it is `Off` whatever the option asked for: the i386 witness gets the shipped
+/// `void *` tables, and so does a name the operator declares there.
+#[test]
+fn a_refused_target_is_off_whatever_was_asked() {
+    use kuna_decomp::kuna_libctypes::{set_libctypes_env_layout, LibcTypesLayout, LIBCTYPES_ENV};
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    for asked in [LibcTypesLayout::Opaque, LibcTypesLayout::Glibc] {
+        set_libctypes_env_layout(asked);
+        let i386 = fixture_bytes("libctypes_widths_i386");
+        let file = object::File::parse(i386.as_slice()).expect("parse the i386 witness");
+        assert_eq!(super::super::effective_libctypes_layout(&file), Layout::Off, "{asked:?} on i386");
+        let x86_64 = fixture_bytes("libctypes_container_x86_64");
+        let file = object::File::parse(x86_64.as_slice()).expect("parse the x86-64 fixture");
+        assert_ne!(super::super::effective_libctypes_layout(&file), Layout::Off, "{asked:?} on x86-64");
+    }
+    std::env::remove_var(LIBCTYPES_ENV);
+    let types = factory();
+    let pieces = super::super::declared_libc_prototype("fopen", &types, 1, Layout::Off).expect("fopen");
+    let pointee = pieces.outtype.as_ref().and_then(|t| t.get_ptr_to()).expect("a pointer result");
+    assert_eq!(pointee.get_metatype(), kuna_decomp::dtype::type_metatype::TYPE_VOID, "`void *`, not `FILE *`");
+    assert!(types.find_by_name("FILE").expect("lookup").is_none(), "and no shell is minted");
+}
+
+/// The P5 fit rule (`kuna_decomp::kuna_libcfit`) recognises this table's
+/// aggregates by name, from a list kept beside the option's gate; it must name
+/// exactly what this table can mint or adopt.
+#[test]
+fn the_fit_rule_knows_every_aggregate_this_table_names() {
+    let mut ours: Vec<&str> = NAMED_AGGREGATES
+        .iter()
+        .flat_map(|a| std::iter::once(a.name).chain(a.dwarf_alias))
+        .collect();
+    let mut theirs = kuna_decomp::kuna_libctypes::AGGREGATE_NAMES.to_vec();
+    ours.sort_unstable();
+    theirs.sort_unstable();
+    assert_eq!(ours, theirs);
+}
+
+/// `pthread_mutex_destroy` was added off the measured pool and bought nothing:
+/// its one argument is recovered with or without a declaration, and it scored
+/// +0/-0. (`pthread_mutex_init` stays for its arity.)
+#[test]
+fn the_mutex_destroy_slot_stays_out() {
+    assert!(!LIBC_NAMED.iter().chain(LIBC_EXT_NAMED.iter()).any(|(n, _)| *n == "pthread_mutex_destroy"));
+    assert!(LIBC_EXT_NAMED.iter().any(|(n, _)| *n == "pthread_mutex_init"));
+}

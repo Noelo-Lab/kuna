@@ -372,7 +372,7 @@ fn storage_disagrees(proto: &FuncProto, addr: &Address, size: int4, ct: &Datatyp
 /// reloaded for every call it is passed to and merged through its stack slot's
 /// phi-nodes, so the readers that speak about the same value are spread over
 /// many varnodes.
-fn value_family(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
+pub(crate) fn value_family(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
     let joins = |o: &crate::op::PcodeOp| {
         matches!(
             o.code(),
@@ -568,7 +568,7 @@ fn a_float_can_arrive_in(data: &Funcdata, node: &crate::varnode::Varnode) -> boo
 /// the same base and constant offset, at the same width.  A type the vote gives
 /// one of those loads reaches the field it was loaded from, and through it every
 /// other load of that field (`v2 = a0->field_0x0` elsewhere in the function).
-fn with_sibling_loads(data: &Funcdata, family: &[VarnodeId]) -> Vec<VarnodeId> {
+pub(crate) fn with_sibling_loads(data: &Funcdata, family: &[VarnodeId]) -> Vec<VarnodeId> {
     let mut out = family.to_vec();
     let place = |mut v: VarnodeId| -> Option<(VarnodeId, uintb)> {
         let mut off: uintb = 0;
@@ -633,13 +633,13 @@ fn with_sibling_loads(data: &Funcdata, family: &[VarnodeId]) -> Vec<VarnodeId> {
 
 /// A load or store through a pointer, at `at` bytes from where the vote's value
 /// points (plus any multiple of `stride` when the pointer is indexed or stepped).
-struct Access {
-    op: OpId,
-    value: VarnodeId,
-    at: i64,
-    stride: i64,
-    size: int4,
-    store: bool,
+pub(crate) struct Access {
+    pub(crate) op: OpId,
+    pub(crate) value: VarnodeId,
+    pub(crate) at: i64,
+    pub(crate) stride: i64,
+    pub(crate) size: int4,
+    pub(crate) store: bool,
 }
 
 fn gcd(a: i64, b: i64) -> i64 {
@@ -653,7 +653,7 @@ fn gcd(a: i64, b: i64) -> i64 {
 /// Every load and store the caller makes through the pointer `family` holds,
 /// following constant offsets, indexing and copies, and where every address it
 /// derives points.  `None` when there are too many to follow.
-fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<(Vec<Access>, Vec<(i64, i64)>)> {
+pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<(Vec<Access>, Vec<(i64, i64)>)> {
     let mut place: std::collections::HashMap<VarnodeId, (i64, i64)> =
         family.iter().map(|&v| (v, (0, 0))).collect();
     let mut work: Vec<VarnodeId> = family.to_vec();

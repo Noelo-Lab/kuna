@@ -404,15 +404,17 @@ an artefact of the 2-byte `ut_type` read. `-O2` shadow `logoutd` and sysvinit
 
 ### Pointee sizes are glibc x86-64
 
-Every size in the table is the x86-64 one, and nothing scales it by the image's
-word size, so on a 32-bit image an added shell is oversized —
-`re_pattern_buffer` is declared 64 where i386's is 32. Only pointers take the
-name (the rows are `NamedPtr`; no stack object is ever re-sized by one), so the
-consequence is confined to how far a field access through such a pointer is
-attributed inside the shell. It is the class the shipped `FILE` 216 and `stat`
-144 rows already have, and `i386_pie_nl` — the one 32-bit binary in the
-fixtures — touches nothing past offset 0x14. Scaling the table by word size is a
-separate change: it needs a per-architecture size for every row, not a rule.
+Every size in the table is the x86-64 one. As merged, this subsection said that
+only pointers take the name, "no stack object is ever re-sized by one", so a
+wrong width could only move where a field access is attributed. That was false.
+A named pointer handed the address of a frame object gives that object the
+aggregate's width. On x86-64 against glibc the growth is right (`char v1 [12]`
+becomes `termios v1` where the program touched twelve bytes of the struct
+`tcgetattr` fills), but on a 32-bit image it runs past the real object: an i386
+`timespec` handed to `clock_getres` as a 16-byte one swallowed two `int` locals,
+and an obstack grown to 88 bytes swallowed an `int[12]`. The shipped `stat` row
+already did this on i386. #706 names nothing unless the image is an x86-64 ELF
+not linked against another C library; see "After merge" below.
 
 ### The export fixture swap, re-derived on #693
 
@@ -433,6 +435,10 @@ structsynth_teb_pe_x86_64.exe      default 5   protoorder off 5
 (`struct struct_N {` blocks in the exported `.h`.) The four fixtures the rust
 test iterates all still declare `struct_0` in the arm it runs, and the 32-bit
 slot keeps a 32-bit image.
+
+Since #706 `libctypes` names nothing on i386, so `i386_pie_nl` has its
+synthesized structure back by default (the `libctypes off: 1` column). The
+swapped fixtures still witness the same thing and stay.
 
 ### The export's compile-error cost
 
@@ -480,3 +486,106 @@ its confirmation run.
 Splitting the obstack channel added one more symbol-table walk to the load
 (the defined-name set), which is below the noise floor of the path it is on: min-of-9
 interleaved `kuna functions` over `-O2` tar, 0.144s before against 0.142s after.
+
+## After merge: the width gate and the fit rule (#706)
+
+A review after this merged found two ways the table put the wrong struct into a
+function. #706 fixes both; this section is its measurement. Base is `main`
+`eaa19ebbb` (this PR, merged), which reproduces this PR's own published sweep
+exactly (1,353 perfect, mean .3415), which is the control. The sweep was repeated
+after rebasing onto `a26b99db1` (#704, #705): that `main` scores the same, and
+the branch moves it by exactly the same rows.
+
+### The widths only hold on x86-64 against glibc
+
+The section above explains why a wrong width grows a frame object. The i386
+witness (`tests/fixtures/libctypes_widths_i386`, stage pass 14) shows both
+shapes. On `main`, an 8-byte i386 `timespec` declared as 16 gives
+`v1._12_4_ = a0 + 2`, and an `int k[12]` next to an obstack becomes a field of
+it. #706 names nothing unless the image is an x86-64 ELF that is not linked
+against another C library. Eight non-x86-64 fixtures (i386 `i386_pie_nl`,
+`libctypes_widths_i386`, `declaredlibcproto_i386`; ARM `armlibcmain_le32`,
+`armlibcmain_got_le32`; PE `pe_iatincode_i386.exe`; MIPS32; Mach-O
+`macho_imports`) and the x86-64 PE `pe_imports.exe` now decompile byte-identically
+to `main --option libctypes off`. That also returns `pe_imports.exe`'s
+`__report_error` va_list spill stores (`v4 = v1; v5 = v2; v6 = v3;`), which the
+`vfprintf` row had dropped. The stream slots are refused with the rest, because
+they mint the same 216-byte `FILE` and `structdefs` reports that size. Two
+`tests/cli` probes pinned that size on `i386_pie_nl` and were retargeted to
+`datasyms_faillog_x86_64`.
+
+### A struct that starts with a libc aggregate is not that aggregate
+
+`kuna_libcfit` declines a table's struct vote when the caller reaches the
+argument outside the struct, and propagation refuses the same type on the same
+evidence (spec 05). Over the 663 x86-64 binaries:
+
+```
+functions indexing a named libc pointer past element 0   71 -> 8
+  (obstack 9 -> 0, pthread_mutex_t 31 -> 0, sigaction 8 -> 8, stat 3 -> 0,
+   group 3 -> 0, spwd 3 -> 0, re_pattern_buffer 3 -> 0, FILE 4 -> 0, ...)
+lines with an element-indexed field `[k].field_0x`      1,141 -> 584
+```
+
+The eight left are sdiff's and dpkg's `struct sigaction` tables, which really are
+arrays of sigaction and are stepped by exactly 152. grep's `kwsincr` prints
+`sub_ed20(void *a0,...)` and `kwsprep` `sub_f210(unsigned long *a0)`, which is
+what `libctypes off` gives. rsyslog's instance records and libselinux's 120-byte
+records holding a mutex at +0x38 lose their `pthread_mutex_t *`.
+
+The first cut of the rule counted any step that was not a whole number of
+aggregates as an overrun. That wrongly declined four real uses (stty's `termios
+*mode`, logoutd's stack `termios`, grep `main`'s stack `stat` at `-O2` and
+`-O2 -fno-inline`), because a word-at-a-time struct copy or a phi between two
+fields also has a step smaller than the struct. A step smaller than the aggregate
+now proves nothing, and all four are back.
+
+### Measured
+
+Same instrument, pin and slices as above:
+
+| | main | #706 |
+|---|---:|---:|
+| perfect | 1,353 | 1,353 |
+| mean | 0.34149 | 0.34145 |
+| true positives | 20,419 | 20,405 |
+| false positives | 17,765 | 17,779 |
+| improved / worse functions | — | 0 / 1 |
+| exported variables | 97,350 | 97,350 (no function gains or loses one) |
+| `ptr_struct` correct | 487 | 474 |
+
+The one worse function is grep `-O0` `kwsprep`, 0.6667 -> 0.3077. gnulib's obstack
+macros copy `&kwset->obstack` into locals of their own (`__h`, `__o`, `__o1`), and
+after copy propagation every call reads `kwset` itself. Those locals took `obstack
+*` only by propagation from `kwset`, and with `kwset` declined nothing gives it to
+them. Their ground truth is `obstack *`, and nothing in the function tells them
+apart from the kwset pointer they copy. That is the whole 14-variable loss.
+`O2` `kwsprep`/`kwsincr` score the same as before: their `obstack *a0` was never
+credited against the `kwset *` ground truth.
+
+Whole-corpus diff: 136 of 199,963 functions change
+(`followup-hunk-classification.txt`). 81 render the same statements and calls
+with byte offsets instead of element indexes, 35 differ only in types and casts,
+12 are the `pthread_mutex_destroy` PLT thunks, and 8 fold or keep a register
+temporary with the same stores and calls in the same order. No call is gained or
+lost anywhere. `libctypes off` is byte-identical to `main` (checked on O2 grep,
+wc, sort, logoutd and O0 grep). `undefinedN` locals stay at 1,269. The +69 the
+review counted for this PR is from its first round and unchanged here.
+
+### The mutex rows
+
+`pthread_mutex_destroy` is dropped. It scored nothing and its single argument is
+recovered either way (110 calls with one argument in both arms).
+`pthread_mutex_init` is kept for its arity: without it, 12 corpus calls print
+`pthread_mutex_init(x)` without the `NULL` attribute and 2 gain a fourth
+argument. Its container case, a record whose first member is the mutex, is what
+the fit rule declines.
+
+### Speed
+
+Interleaved min-of-15, `decompile-all --max-fn-seconds 120`, `main` against #706
+alternating on every repetition (`followup-speed.py`), on the binaries the rule
+fires in: O2 grep 11.83 -> 11.71 s (-0.97%), O2 sort 14.11 -> 13.99 s (-0.88%),
+O2 wc 4.45 -> 4.44 s (-0.43%), O0 grep 6.80 -> 6.71 s (-1.34%), O2 rsyslogd
+25.93 -> 25.79 s (-0.55%). The walk runs only for a vote or a propagation step
+that would put a libc aggregate pointer on a Varnode.

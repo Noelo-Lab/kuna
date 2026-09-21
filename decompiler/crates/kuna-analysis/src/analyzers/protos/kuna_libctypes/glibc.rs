@@ -319,18 +319,42 @@ pub(super) fn build_fields(
 /// place. Everything refused here keeps the sized opaque shells, which is the
 /// `opaque` value's behaviour exactly.
 pub(crate) fn target_is_glibc_x86_64(file: &object::File) -> bool {
+    x86_64_elf(file) && dynstr(file).is_some_and(names_glibc)
+}
+
+/// Is this image one the WIDTHS in [`super::NAMED_AGGREGATES`] are true of?
+///
+/// A width is not cosmetic. A named pointer handed the address of a frame
+/// object gives that object the aggregate's width, so a width larger than the
+/// real one folds the caller's neighbouring locals into the struct the callee is
+/// declared to fill (on i386, where `struct statfs` is 84 bytes and not 120,
+/// fourteen `int` locals became `v1._116_4_`, `v1._64_4_`, ...). The widths are
+/// glibc's x86-64 ones, so the named slots are offered only where that is the
+/// ABI:
+///
+/// * the image is an **ELF** for **x86-64**, and
+/// * it is not dynamically linked against some other C library: either it has no
+///   `.dynstr` at all (a relocatable object, a static link), or its `.dynstr`
+///   names glibc exactly as [`target_is_glibc_x86_64`] requires.
+///
+/// i386, ARM, AArch64 (whose `stat` is 128 bytes and `pthread_mutex_t` 48), PE
+/// and Mach-O are all refused, and keep the width-stable `void *` signatures.
+pub(crate) fn target_takes_the_widths(file: &object::File) -> bool {
+    x86_64_elf(file) && dynstr(file).is_none_or(names_glibc)
+}
+
+fn x86_64_elf(file: &object::File) -> bool {
+    use object::Object;
+    file.format() == object::BinaryFormat::Elf
+        && file.architecture() == object::Architecture::X86_64
+}
+
+fn dynstr<'d>(file: &object::File<'d>) -> Option<&'d [u8]> {
     use object::{Object, ObjectSection};
-    if file.format() != object::BinaryFormat::Elf
-        || file.architecture() != object::Architecture::X86_64
-    {
-        return false;
-    }
-    let Some(dynstr) = file.section_by_name(".dynstr") else {
-        return false;
-    };
-    let Ok(data) = dynstr.data() else {
-        return false;
-    };
+    file.section_by_name(".dynstr")?.data().ok()
+}
+
+fn names_glibc(data: &[u8]) -> bool {
     data.split(|b| *b == 0)
         .any(|s| s == b"libc.so.6" || s.starts_with(b"GLIBC_"))
 }

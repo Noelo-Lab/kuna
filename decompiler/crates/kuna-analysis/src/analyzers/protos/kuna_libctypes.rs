@@ -28,11 +28,12 @@
 //! emitter prints `typedef struct FILE FILE; /* opaque */` with no body rather
 //! than a struct with a width and no members.
 //!
-//! The widths are the glibc **x86-64** ones, which is the ABI of the corpus this
-//! option was measured on. On another ABI a width can be a few bytes off, and the
-//! only thing that can change is whether an access at a given offset renders as a
-//! field or as a cast — the NAME, which is the whole point, is ABI-independent,
-//! and a wrong width can never make a pointer point at the wrong thing.
+//! The widths are the glibc **x86-64** ones, and a width is a claim about the
+//! caller's frame as well: a named pointer handed a frame object's address grows
+//! that object to the declared width, so a width larger than the ABI's folds the
+//! caller's neighbouring locals into the struct it hands over (an i386
+//! `timespec` is 8 bytes, not 16). The pass therefore names nothing unless the
+//! widths are the image's ABI ([`glibc::target_takes_the_widths`]).
 //!
 //! ## `glibc` fills the shells in
 //!
@@ -485,7 +486,11 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     ("tcgetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
     // dirent.h / wchar.h / pthread.h. No more `sigset_t` slots: one handed
     // `&sa.sa_mask` splits the caller's `struct sigaction` at the mask.
-    ("pthread_mutex_destroy", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
+    // `pthread_mutex_init` was added off the measured pool and scores nothing on
+    // it; what it buys is the ARITY (without it 12 calls in the corpus print one
+    // argument and 2 print four). `pthread_mutex_destroy` bought nothing -- its
+    // one argument is recovered either way -- and is left out. A mutex is often
+    // the first member of a larger record, which `kuna_libcfit` declines per call.
     ("pthread_mutex_init", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t"), Ty::VoidPtr], vararg: -1 }),
     ("rewinddir", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
     ("wcrtomb", Sig { ret: Ty::Size, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("mbstate_t")], vararg: -1 }),
@@ -594,19 +599,27 @@ impl AnalysisPass for LibcTypesPass {
         // the type factory by `build_pieces` below, and with the gate off not one
         // of them may exist (an interned `stat` is exactly what the DWARF
         // importer would meet). Off is therefore the shipped tables, untouched.
-        //
-        // `glibc` asks for the published field layouts; whether they are TRUE of
-        // this image is a separate question, and the only one that can make a
-        // field name wrong. Refused => the `opaque` shells, exactly.
-        let layout = match kuna_decomp::kuna_libctypes::libctypes_layout() {
-            Layout::Off => return out,
-            Layout::Glibc if glibc::target_is_glibc_x86_64(ctx.file) => Layout::Glibc,
-            _ => Layout::Opaque,
-        };
-        // The gate decision itself is a FACT about this image, and the only
-        // consumer that cannot re-derive it is the one that runs after the object
-        // file is gone: a `--define-function 0x..=fopen` directive. Carry it.
+        if kuna_decomp::kuna_libctypes::libctypes_layout() == Layout::Off {
+            return out;
+        }
+        // Two questions about THIS image, each able to make a declaration wrong.
+        // The widths are glibc x86-64's, and a width larger than the real one
+        // folds a caller's neighbouring locals into the struct it hands over, so
+        // on any other ABI no slot is named at all (`Off`). `glibc` then asks for
+        // the published field layouts, which need the same image to name glibc
+        // (refused => the `opaque` shells). See `super::effective_libctypes_layout`.
+        let layout = super::effective_libctypes_layout(ctx.file);
+        // Both decisions are FACTS about this image, and the only consumer that
+        // cannot re-derive them is the one that runs after the object file is
+        // gone: a `--define-function 0x..=fopen` directive. Carry them.
         out.libctypes_glibc = layout == Layout::Glibc;
+        out.libctypes_refused = layout == Layout::Off;
+        // The stream slots mint the same `FILE` at the same width, so they are
+        // refused with the rest: the shell's size is a claim too (`structdefs`
+        // reports it).
+        if layout == Layout::Off {
+            return out;
+        }
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         // IMPORTED names only, for the two name tables — where `LibProtoPass`

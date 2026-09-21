@@ -473,6 +473,12 @@ pub struct AnalysisOutput {
     /// evidence about its libc, because `st_dev` sits at offset 0 of a MIPS32
     /// `stat` too.
     pub libctypes_glibc: bool,
+    /// (kuna `libctypes`) The same pass REFUSED this object: its ABI is not the
+    /// one the named aggregates' widths were measured on (x86-64 ELF against
+    /// glibc, `glibc::target_takes_the_widths`), so no prototype slot was named.
+    /// Carried for the same late consumer as [`Self::libctypes_glibc`], which
+    /// must then answer from the width-stable `void *` tables too.
+    pub libctypes_refused: bool,
 }
 
 impl AnalysisOutput {
@@ -597,6 +603,7 @@ impl AnalysisOutput {
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
         self.format_sites.extend(other.format_sites);
         self.libctypes_glibc |= other.libctypes_glibc;
+        self.libctypes_refused |= other.libctypes_refused;
     }
 }
 

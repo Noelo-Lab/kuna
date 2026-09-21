@@ -38,17 +38,17 @@
         "value": 216
       },
       {
-        "path": "functions[0].types[1].name",
+        "path": "functions[0].types[2].name",
         "op": "eq",
         "value": "option"
       },
       {
-        "path": "functions[0].types[1].definition",
+        "path": "functions[0].types[2].definition",
         "op": "contains",
         "value": "typedef struct option option; /* opaque */"
       },
       {
-        "path": "functions[0].types[1].size",
+        "path": "functions[0].types[2].size",
         "op": "eq",
         "value": 32
       },
@@ -60,13 +60,13 @@
     ]
   },
   "target": {
-    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
-    "binary_sha256": "2cc72cbd21561b5907af240cc9b5396f20821e7cbc5fabd2588319cf01c6d30b",
-    "binary_size": 48024,
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/datasyms_faillog_x86_64",
+    "binary_sha256": "d3b414256e4878f86ff281a7f315b399116c95cf930f0654aecc2125c7ff9578",
+    "binary_size": 22992,
     "binary_source": "in-repo",
-    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/datasyms_faillog_x86_64",
     "selector": "main",
     "selector_kind": "name"
   },
-  "notes": "structdefs on: main references two libc shells  -  the `struct option` it hands `getopt_long`, and the `FILE` behind the `stdin` slot its `rpl_fclose` reads (`libctypes` types that slot). The `types` array carries both in definition-before-use order, each pinned by name, .h text and size; structscore.py parses that text, so a consumer never parses C out of `code`."
+  "notes": "structdefs on: main references four libc shells, among them the `FILE` it reads and the `struct option` it hands `getopt_long`; the `types` array carries them definition-before-use, two pinned by name, .h text and size. On x86-64 because the shells carry glibc's x86-64 widths, which libctypes offers nowhere else."
 }
