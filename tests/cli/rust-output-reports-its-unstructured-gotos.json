@@ -1,0 +1,45 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "irreducible",
+    "--language",
+    "rust",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/irreducible_x86_64",
+    "binary_sha256": "3ef272099901ec20081010317d3f80e06bd4a568af804c7af5d52b22b3cd2e70",
+    "binary_size": 5008,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/irreducible_x86_64",
+    "selector": "irreducible",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "panic!\\(\\\\\"kuna: unstructured goto to label_",
+      "\"unstructured_gotos\": 1",
+      "\"error\": null"
+    ],
+    "stderr_matches": [
+      "note: 1 unstructured goto in irreducible",
+      "--language c"
+    ]
+  },
+  "notes": "The two-entry loop in this fixture keeps one residual goto, which Rust cannot spell, so the body panics where the binary jumps. The run still succeeds on purpose -- the rest of the body is a translation -- so the note on stderr and the per-function unstructured_gotos count are the only way a consumer learns the render is lossy there.",
+  "probe_id": "p-5988c7bfd825"
+}

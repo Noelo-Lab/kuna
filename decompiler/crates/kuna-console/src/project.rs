@@ -115,6 +115,21 @@ pub struct FuncResult {
     pub synth: Option<kuna_decomp::kuna_structsynth::shard::FunctionRecord>,
 }
 
+impl FuncResult {
+    /// (kuna outlang) How many jumps this body takes that the Rust back-end had
+    /// no form for, each rendered as a diverging `panic!` whose path is not a
+    /// translation of the binary.
+    ///
+    /// Derived from the rendered text rather than carried as a counter, because
+    /// the text is the one thing every surface holds: the forked `decomp_dbg`
+    /// transcript, the in-process record, a `--jobs` worker's framed result and
+    /// the WASM document all round-trip `code` and none of them round-trip
+    /// engine state. Zero for C output, which spells the jump as a real `goto`.
+    pub fn unstructured_gotos(&self) -> usize {
+        self.code.as_deref().map_or(0, kuna_decomp::kuna_langrust::count_unstructured_gotos)
+    }
+}
+
 /// The run-level verdict of a non-empty decompile batch.
 ///
 /// Per-function failures stay isolated records while at least one body was

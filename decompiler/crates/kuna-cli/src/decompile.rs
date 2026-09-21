@@ -769,6 +769,10 @@ struct DecompileOutcome {
     failure: Option<String>,
     /// One row per `--assert` directive, recovered from the transcript.
     assertions: Vec<kuna_console::assertions::Outcome>,
+    /// The name the console decompiled under, for a diagnostic that has to say
+    /// which function it is about -- `--addr` selection names an address, and
+    /// the transcript is where the resolved name lives on this surface.
+    name: String,
 }
 
 /// Run the decompile and return its [`DecompileOutcome`].
@@ -1144,6 +1148,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     regions: None,
                     failure: None,
                     assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
+                    name: args.target.clone(),
                 });
             }
             return Err((
@@ -1190,6 +1195,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             regions: regions_text,
             failure,
             assertions: assertion_outcomes(&stdout_text, &args.assertions, selected),
+            name: decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone()),
         })
     };
 
@@ -1235,6 +1241,11 @@ pub fn run(args: &DecompileArgs) -> i32 {
             // survived (DIV-45): a closed reader is not evidence the decompile
             // worked.  Emitting first keeps the stdout-then-stderr order.
             let written = crate::output::emit(&text);
+            // (kuna outlang) The Rust back-end's unrepresentable gotos, counted
+            // off the rendered text: this surface drives `decomp_dbg` as a
+            // subprocess, so an in-engine counter would never reach it.
+            let gotos = kuna_decomp::kuna_langrust::count_unstructured_gotos(&out.c);
+            decompile_all::report_unstructured_goto_sites(&[(out.name.as_str(), gotos)]);
             // A rejected assertion is reported and the run continues;
             // `--assert-strict` makes it the verdict.  A directive the PIPELINE
             // refused is the verdict either way: the C above was produced without
@@ -1732,6 +1743,7 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
             format!("decompilation failed for {} in {}: {reason}", f.name, args.binary)
         })
     });
+    decompile_all::report_unstructured_gotos(&funcs);
     // A rejected assertion is reported and the run continues; `--assert-strict`
     // makes it the run's verdict (see `report_rejected_assertions`).
     let rejected = decompile_all::report_rejected_assertions(&assertions);

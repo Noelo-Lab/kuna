@@ -923,6 +923,7 @@ pub fn run(argv: &[String]) -> i32 {
             } else {
                 render_c(&run.funcs)
             };
+            report_unstructured_gotos(&run.funcs);
             // A rejected assertion is reported and the run continues (an agent
             // batching forty renames against a re-decompiled binary must not lose
             // all forty to one stale name); `--assert-strict` makes it fatal.
@@ -1293,6 +1294,52 @@ pub(crate) fn report_rejected_assertions(
 /// describing a program the directive was never applied to.
 pub(crate) fn any_refused_assertion(outcomes: &[kuna_console::assertions::Outcome]) -> bool {
     outcomes.iter().any(|o| o.fatal)
+}
+
+/// (kuna outlang) Report the Rust back-end's unrepresentable gotos on stderr.
+///
+/// A `panic!` where the binary jumps is a FIDELITY warning, not a failed run:
+/// the rest of the body is a translation, the marker says where it stops being
+/// one, and every caller that already treats a zero exit as "usable output"
+/// stays correct. So this speaks and the verdict does not move -- what was
+/// missing was any channel at all, not a harsher one.
+pub(crate) fn report_unstructured_gotos(funcs: &[FuncResult]) {
+    let hits: Vec<(&str, usize)> = funcs
+        .iter()
+        .map(|f| (f.name.as_str(), f.unstructured_gotos()))
+        .filter(|(_, count)| *count > 0)
+        .collect();
+    report_unstructured_goto_sites(&hits);
+}
+
+/// [`report_unstructured_gotos`] for a surface that holds rendered text rather
+/// than records -- the forked `decomp_dbg` path.
+pub(crate) fn report_unstructured_goto_sites(hits: &[(&str, usize)]) {
+    let total: usize = hits.iter().map(|(_, count)| *count).sum();
+    if total == 0 {
+        return;
+    }
+    let scope = if hits.len() == 1 {
+        format!("in {}", hits[0].0)
+    } else {
+        let named: Vec<&str> = hits.iter().take(3).map(|(name, _)| *name).collect();
+        let more = if hits.len() > 3 {
+            format!(", and {} more", hits.len() - 3)
+        } else {
+            String::new()
+        };
+        format!("in {} functions ({}{more})", hits.len(), named.join(", "))
+    };
+    let (plural, subject) = if total == 1 {
+        ("", "that path is")
+    } else {
+        ("s", "those paths are")
+    };
+    eprintln!(
+        "note: {total} unstructured goto{plural} {scope}: no Rust form, rendered as a diverging \
+         panic!(), so {subject} not a translation of the binary -- re-run with --language c for a \
+         real goto, or try a P8 structuring option (kuna catalog)"
+    );
 }
 
 fn emit_with_run_error(text: &str, run_error: Option<&str>) -> i32 {
@@ -2754,6 +2801,14 @@ fn result_json(
                     (
                         "error".into(),
                         f.error.clone().map(Json::Str).unwrap_or(Json::Null),
+                    ),
+                    // (kuna outlang) The fidelity counter for Rust output: how
+                    // many jumps in `code` are a diverging `panic!` instead of a
+                    // translation. Always present, `0` on every C render, so a
+                    // consumer can filter or re-run without inspecting the text.
+                    (
+                        "unstructured_gotos".into(),
+                        Json::Number(f.unstructured_gotos().to_string()),
                     ),
                     ("line_mappings".into(), line_mappings),
                     ("variables".into(), vars),
