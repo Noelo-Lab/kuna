@@ -15,11 +15,16 @@ fn factory() -> TypeFactoryImpl {
     let f = TypeFactoryImpl::new();
     f.set_default_alignment_map();
     f.set_max_basetype_size(8);
-    f.set_core_type("undefined", 1, type_metatype::TYPE_UNKNOWN, false).unwrap();
-    f.set_core_type("undefined8", 8, type_metatype::TYPE_UNKNOWN, false).unwrap();
-    f.set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
-    f.set_core_type("int8", 8, type_metatype::TYPE_INT, false).unwrap();
-    f.set_core_type("uint8", 8, type_metatype::TYPE_UINT, false).unwrap();
+    f.set_core_type("undefined", 1, type_metatype::TYPE_UNKNOWN, false)
+        .unwrap();
+    f.set_core_type("undefined8", 8, type_metatype::TYPE_UNKNOWN, false)
+        .unwrap();
+    f.set_core_type("char", 1, type_metatype::TYPE_INT, true)
+        .unwrap();
+    f.set_core_type("int8", 8, type_metatype::TYPE_INT, false)
+        .unwrap();
+    f.set_core_type("uint8", 8, type_metatype::TYPE_UINT, false)
+        .unwrap();
     f.cache_core_types().unwrap();
     f
 }
@@ -35,7 +40,11 @@ fn char_ptr(f: &TypeFactoryImpl) -> Rc<Datatype> {
 fn candidate_folds_over_an_integer_vote() {
     let f = factory();
     let cand = char_ptr(&f);
-    for meta in [type_metatype::TYPE_INT, type_metatype::TYPE_UINT, type_metatype::TYPE_UNKNOWN] {
+    for meta in [
+        type_metatype::TYPE_INT,
+        type_metatype::TYPE_UINT,
+        type_metatype::TYPE_UNKNOWN,
+    ] {
         let cur = f.get_base(8, meta).unwrap();
         assert!(folds_over(&cand, &cur), "char * should outrank {meta:?}");
     }
@@ -54,7 +63,9 @@ fn only_a_pointer_at_nothing_is_refined() {
     assert!(!points_at_nothing(&f.get_type_pointer(8, long, 1).unwrap()));
     let file = f.get_type_struct("FILE").unwrap();
     assert!(!points_at_nothing(&f.get_type_pointer(8, file, 1).unwrap()));
-    assert!(!points_at_nothing(&f.get_base(8, type_metatype::TYPE_UINT).unwrap()));
+    assert!(!points_at_nothing(
+        &f.get_base(8, type_metatype::TYPE_UINT).unwrap()
+    ));
     // A `char *` the rule would produce is itself a claim, so a second pass over
     // an already-committed value stops at the guard rather than re-deriving it.
     assert!(!points_at_nothing(&char_ptr(&f)));
@@ -70,7 +81,9 @@ fn char_pointer_recognition_is_exact() {
     assert!(!is_char_pointer(&f.get_type_pointer(8, byte, 1).unwrap()));
     let uchar = f.get_base(1, type_metatype::TYPE_UINT).unwrap();
     assert!(!is_char_pointer(&f.get_type_pointer(8, uchar, 1).unwrap()));
-    assert!(!is_char_pointer(&f.get_base(8, type_metatype::TYPE_INT).unwrap()));
+    assert!(!is_char_pointer(
+        &f.get_base(8, type_metatype::TYPE_INT).unwrap()
+    ));
 }
 
 /// The census label names the evidence a candidate rests on, and a refusal
