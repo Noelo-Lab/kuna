@@ -264,11 +264,11 @@
     "verdict": "within budget: worst confirmed delta +0.98% (grep O2); the round-5 change only removes table rows"
   },
   "gates": {
-    "base": "origin/main 68c599453 (#695 charptr, default off) -- rebased by the lander under the merge lock; head bc2653ded",
+    "base": "origin/main 69a947074 (#703); rebased by the lander under the merge lock (main moved #695 -> #700/#701/#702 -> #703 while it was held)",
     "make test": "PARITY OK, 675/675",
     "make test-stages": "PARITY OK, 1278/1278",
-    "make test-cli": "215/215",
-    "make rust-test": "RUST_TEST_RC=0, 7,333 passed / 0 failed (lane 2026-09-21T16:40:58Z -> 17:08:53Z, on bc2653ded)",
+    "make test-cli": "219/219",
+    "make rust-test": "lane RUST_TEST_RC=0, 7,353 passed / 0 failed on the #702-rebased tree (2026-09-21T17:54:27Z -> 18:21:17Z); earlier 7,333/0 on the #695-rebased tree. #703 touches no file this PR touches; on the #703-rebased tree its own new/changed targets (kuna-cli ambiguous_selector_cli, kuna-console verify_entry_selectors + verify_assertplane) and this PR's (kuna-analysis --lib 878, kuna-cli decompile_project_cli, kuna-ghidra ghidra_sim_e2e) pass, and CI runs the full workspace suite on the head (full-ci)",
     "make check-spec": "OK (lenient) + OK (strict)",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
