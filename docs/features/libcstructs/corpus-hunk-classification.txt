@@ -1,31 +1,32 @@
 binary               fns  changed  hunks
+O0-coreutils-cp      530        5     11
 O0-coreutils-pinky   197        6     25
 O0-coreutils-who     200        4      9
-O0-diffutils-diff    507       20     61
+O0-diffutils-diff    507       18     57
 O0-findutils-find    862       19     60
 O0-grep-grep         642       63    208
-O0-shadow-useradd    483       42    104
-O0-tar-tar          1570      248    446
+O0-shadow-useradd    483       36     80
+O0-tar-tar          1570      240    434
 O2-coreutils-du      320       15     49
 O2-coreutils-fmt     151        2      4
-O2-coreutils-ls      404       75    229
-O2-coreutils-sort    343       40    318
+O2-coreutils-ls      404       73    219
+O2-coreutils-sort    343       34    299
 O2-grep-grep         449       53    361
-O2-gzip-gzip         204       11     47
-O2-tar-tar          1125      198    529
+O2-gzip-gzip         204        2      4
+O2-tar-tar          1125      193    517
 
-total               7457      796   2450
+total               7987      763   2337
 
 hunks by class:
-     638  local renumbering only
-     587  synthesized struct_N renumbered (one fewer slot in the ledger)
-     485  other, downstream of a changed pointee
-     173  signature gains a named pointee
-     165  a named cast appears
-     115  cast at an offset becomes a field
-      99  declaration gains a named pointee
-      84  a PLT thunk gains the return the declaration states
-      45  other, mentions a named type
+     626  local renumbering only
+     586  synthesized struct_N renumbered (one fewer slot in the ledger)
+     443  other, downstream of a changed pointee
+     154  signature gains a named pointee
+     153  a named cast appears
+     110  cast at an offset becomes a field
+      93  declaration gains a named pointee
+      70  a PLT thunk gains the return the declaration states
+      44  other, mentions a named type
       33  a field access gains or loses its width cast
-      22  a local's spelling or width moves under the new pointee
+      21  a local's spelling or width moves under the new pointee
        4  field becomes a cast at an offset
