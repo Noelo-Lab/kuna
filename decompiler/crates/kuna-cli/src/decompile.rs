@@ -550,9 +550,13 @@ fn check_errors(
         return Some(format!("read symbols (analysis commit) failed: {reason}"));
     }
     if !by_address && is_unknown_function(out) {
-        return Some(format!(
-            "no function {target:?} in {binary}; for a stripped binary pass an address with --addr"
-        ));
+        // The selector model knows what the image DOES carry; this surface only
+        // has the transcript. So its explanation wins where it has one, and the
+        // stripped-binary advice is the answer only when it has none.
+        let hint = name_miss_hint(out).unwrap_or_else(|| {
+            "for a stripped binary pass an address with --addr".to_string()
+        });
+        return Some(format!("no function {target:?} in {binary}; {hint}"));
     }
     // An ambiguous or unmapped selector is answered by the selector model, whose
     // report names every candidate. Return it verbatim: the transcript dump the
@@ -578,6 +582,20 @@ fn is_unknown_function(out: &str) -> bool {
     out.contains("Unknown function name:")
         || out.contains("no function matches")
         || out.contains("Bad namespace:")
+}
+
+/// (kuna, issue #666) What the console said about a name miss beyond the miss
+/// itself — a near-miss spelling, or that the image names functions and none is
+/// spelled that way.
+///
+/// `EntryLookupError::NotFound` renders that as a `; `-separated tail on its own
+/// line; a bare `no function matches "x"` carries none, which is the stripped
+/// image the `--addr` advice exists for.
+fn name_miss_hint(out: &str) -> Option<String> {
+    let reason = selection_failure(out)?;
+    let (_selector, hint) = reason.strip_prefix("no function matches ")?.split_once("\"; ")?;
+    let hint = hint.trim();
+    (!hint.is_empty()).then(|| hint.to_string())
 }
 
 /// The console identifies undefined externals from the selected entry's

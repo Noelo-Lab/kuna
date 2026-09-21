@@ -58,7 +58,7 @@ use kuna_sleigh::translate::register_translate_ids;
 
 use crate::entry_selector::ObjectSectionLocation;
 pub use crate::entry_selector::{
-    EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, ObjectLocation,
+    EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, NameSuggestion, ObjectLocation,
 };
 
 /// One function symbol discovered in the `<binaryimage>` (name → entry address).
@@ -559,6 +559,17 @@ pub struct ConsoleProgram {
     /// entry, which is what [`Self::function_entries_executable`] reads this for.
     /// Empty on the XML datatest path and for every non-PE image.
     import_slots: Vec<(u64, u64)>,
+    /// (kuna, issue #666) Does this container decorate a C identifier with a
+    /// leading `_` in its symbol table?
+    ///
+    /// Mach-O does: `int main(void)` is stored as `_main`, so the spelling a
+    /// caller reads in the source is not a name the image carries at all. ELF,
+    /// PE and COFF-on-x86-64 store the identifier verbatim. A one-bit property
+    /// of the image, read from the container magic at bootstrap, so name
+    /// resolution ([`ConsoleProgram::resolve_entry`]) can retry the decorated
+    /// spelling without guessing at an underscore on every format. `false` on
+    /// the XML datatest path and every other container.
+    symbol_underscore_prefix: bool,
 }
 
 fn code_offset_in_target_units(value: u64, word_size: u64) -> u64 {
@@ -1011,21 +1022,30 @@ impl ConsoleProgram {
                 // binary's ORIGINAL name must still resolve. Idempotent, so the
                 // bounded spelling resolves as well.
                 let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
-                let candidates: Vec<FunctionEntry> = self
-                    .function_entries_canonical()
-                    .into_iter()
-                    .filter(|entry| {
-                        entry.name == *want || entry.aliases.iter().any(|alias| alias == want)
-                    })
-                    .collect();
-                // (kuna, RE-need `string-owner-function-name`) Nothing carries
-                // that name, so read it as the placeholder it looks like: a
-                // `sub_<addr>` this build would mint at a mapped address denotes
-                // that address and nothing else.  Only on a MISS, so a binary
-                // that really does have a symbol spelled that way still wins.
+                let entries = self.function_entries_canonical();
+                let mut candidates = entries_spelled(&entries, want);
                 if candidates.is_empty() {
+                    // (kuna, RE-need `string-owner-function-name`) Nothing carries
+                    // that name, so read it as the placeholder it looks like: a
+                    // `sub_<addr>` this build would mint at a mapped address denotes
+                    // that address and nothing else.  Only on a MISS, so a binary
+                    // that really does have a symbol spelled that way still wins.
                     if let Some(entry) = self.entry_by_placeholder_name(want) {
                         return Ok(entry);
+                    }
+                    // (kuna, issue #666) Then the platform-decorated spelling on a
+                    // container that decorates: Mach-O stores `main` as `_main`, so
+                    // the C spelling names the same function. Only on a MISS, so an
+                    // image carrying both spellings answers the one it was asked.
+                    if self.symbol_underscore_prefix && !want.starts_with('_') {
+                        candidates = entries_spelled(&entries, &format!("_{want}"));
+                    }
+                    if candidates.is_empty() {
+                        return Err(EntryLookupError::NotFound {
+                            selector: selector.display(),
+                            suggestion: nearest_spelling(&entries, want),
+                            named_entries: named_entry_count(&entries),
+                        });
                     }
                 }
                 self.one_candidate(selector, candidates)
@@ -1117,6 +1137,8 @@ impl ConsoleProgram {
             .print_raw(&mut selector)
             .map_err(|_| EntryLookupError::NotFound {
                 selector: format!("0x{:x}", address.get_offset()),
+                suggestion: None,
+                named_entries: 0,
             })?;
         let known = self.entry_at_exact_address(address);
         if self.entry_bytes_mapped(address) {
@@ -1202,6 +1224,8 @@ impl ConsoleProgram {
         if sections.is_empty() {
             return Err(EntryLookupError::NotFound {
                 selector: selector.display(),
+                suggestion: None,
+                named_entries: 0,
             });
         }
         let candidates = sections
@@ -1226,6 +1250,8 @@ impl ConsoleProgram {
         match candidates.len() {
             0 => Err(EntryLookupError::NotFound {
                 selector: selector.display(),
+                suggestion: None,
+                named_entries: 0,
             }),
             1 => Ok(candidates.remove(0)),
             _ => Err(EntryLookupError::Ambiguous {
@@ -2712,6 +2738,56 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
     }
 }
 
+/// The canonical entries `want` names, by reported name or by alias.
+fn entries_spelled(entries: &[FunctionEntry], want: &str) -> Vec<FunctionEntry> {
+    entries
+        .iter()
+        .filter(|entry| entry.name == want || entry.aliases.iter().any(|alias| alias == want))
+        .cloned()
+        .collect()
+}
+
+/// (kuna, issue #666) The name the image carries that a caller most likely meant
+/// by `want`, or `None`.
+///
+/// One rule: the same identifier, differently decorated. A leading underscore is
+/// an ABI decoration rather than part of the name (Mach-O's `_main`, a 32-bit
+/// MSVC object's `_main`), so two spellings that agree once it is stripped are
+/// one name. Deliberately not a general edit-distance guess — a near-miss that
+/// is merely *similar* to what was asked is how a caller ends up reading the
+/// wrong function.
+fn nearest_spelling(entries: &[FunctionEntry], want: &str) -> Option<NameSuggestion> {
+    let bare = want.trim_start_matches('_');
+    if bare.is_empty() {
+        return None;
+    }
+    entries.iter().find_map(|entry| {
+        std::iter::once(&entry.name)
+            .chain(entry.aliases.iter())
+            .find(|name| name.trim_start_matches('_') == bare && name.as_str() != want)
+            .map(|name| NameSuggestion {
+                name: name.clone(),
+                address: entry.addr.get_offset(),
+            })
+    })
+}
+
+/// (kuna, issue #666) How many entries carry a name the IMAGE supplied.
+///
+/// An engine placeholder (`sub_<addr>`) and a synthesized table name
+/// (`_INIT_<i>`) are minted from the address and the container layout, so an
+/// inventory of nothing else is a stripped image: no name can select in it, and
+/// only an address can. Any other name means a by-name selector works here and
+/// the one that was asked for is simply not among them.
+fn named_entry_count(entries: &[FunctionEntry]) -> usize {
+    entries
+        .iter()
+        .filter(|entry| {
+            !is_generic_placeholder_name(&entry.name) && !is_structural_entry_name(&entry.name)
+        })
+        .count()
+}
+
 /// (kuna, RE-need `changing-namestyle-invalidates-discovered`) Every default
 /// function name kuna's naming vocabularies would mint at `addr` — the angr
 /// `sub_<addr>`, the upstream `func_<raw-addr>` and the ghidra-mode `FUN_%08x`.
@@ -3255,6 +3331,7 @@ fn empty_program(
         pending_prototypes: BTreeMap::new(),
         raw_address_units: None,
         import_slots: Vec::new(),
+        symbol_underscore_prefix: false,
     }
 }
 
@@ -3825,6 +3902,13 @@ pub fn bootstrap_from_object_with_isa(
     // (kuna `formatstring`) And one more: does this target pass a variadic
     // argument the way it passes a named one? On AArch64 that is the container's
     // answer (Apple puts every vararg on the stack), which only the image knows.
+    // (kuna, issue #666) And the last one-bit image fact: does this container
+    // decorate a C identifier with a leading `_`? Read off the container magic
+    // rather than the parsed file, so it costs nothing on the load path.
+    let symbol_underscore_prefix = matches!(
+        object::FileKind::parse(&*bytes),
+        Ok(object::FileKind::MachO32 | object::FileKind::MachO64)
+    );
     let vararg_abi = kuna_decomp::kuna_formatstring::vararg_abi(
         &sleigh.base().unwrap().archid,
         Some(kuna_analysis::formatstring::kuna_fmtstatic::image_family(&bytes)),
@@ -3853,6 +3937,7 @@ pub fn bootstrap_from_object_with_isa(
     prog.analysis_image = Some((path.to_string(), bytes));
     prog.loader_data_objects = loader_data_objects;
     prog.import_slots = import_slots;
+    prog.symbol_underscore_prefix = symbol_underscore_prefix;
     if let Ok(loc) = prog.arch().get_register_varnode(b"r2") {
         if loc.size == 8 {
             for (entry, val) in elfv1_tocs {

@@ -33,6 +33,14 @@ fn boot_fixture(name: &str) -> Option<ConsoleProgram> {
     }
 }
 
+/// [`boot_fixture`] plus the gated analysis commit `read symbols` performs, so
+/// the inventory a selector sees is the one every front-end sees.
+fn boot_committed(name: &str) -> Option<ConsoleProgram> {
+    let mut program = boot_fixture(name)?;
+    program.commit_pending_analysis().expect("analysis commit succeeds");
+    Some(program)
+}
+
 fn boot_xml_fixture(name: &str) -> Option<ConsoleProgram> {
     let root = repo_root();
     let fixture = root.join("tests/datatests").join(name);
@@ -471,4 +479,86 @@ fn same_named_code_definitions_are_still_ambiguous() {
         .resolve_entry(&EntrySelector::Name("duplicate_local".into()))
         .expect_err("two .text definitions are both executable");
     assert!(matches!(error, EntryLookupError::Ambiguous { .. }), "{error}");
+}
+
+/// (kuna, issue #666) Mach-O stores a C identifier with a leading `_`, so the
+/// spelling a caller reads in the source is not a name the image carries. It
+/// selects anyway, and reaches the same entry the decorated spelling does.
+#[test]
+fn a_macho_c_name_resolves_through_the_platform_underscore() {
+    let Some(program) = boot_committed("macho_imports") else {
+        return;
+    };
+    for (bare, decorated) in [("main", "_main"), ("compute", "_compute")] {
+        let carried = program
+            .resolve_entry(&EntrySelector::Name(decorated.into()))
+            .expect("the image carries the decorated spelling");
+        let asked = program
+            .resolve_entry(&EntrySelector::Name(bare.into()))
+            .unwrap_or_else(|error| panic!("the C spelling must select {decorated}: {error}"));
+        assert_eq!(asked.addr.get_offset(), carried.addr.get_offset());
+        assert_eq!(asked.name, decorated, "the entry keeps the name the image gave it");
+    }
+}
+
+/// The retry is a MISS path only, and it is scoped to the container that
+/// decorates: an ELF spells its identifiers verbatim, so `start` is a miss
+/// there however many `_start`s the image has.
+#[test]
+fn an_elf_name_is_never_read_through_an_underscore() {
+    let Some(program) = boot_committed("fauxware") else {
+        return;
+    };
+    let main = program
+        .resolve_entry(&EntrySelector::Name("main".into()))
+        .expect("fauxware names main");
+    assert_eq!(main.name, "main");
+
+    let error = program
+        .resolve_entry(&EntrySelector::Name("start".into()))
+        .expect_err("ELF carries _start, not start");
+    assert!(matches!(error, EntryLookupError::NotFound { .. }), "{error}");
+    assert!(
+        error.to_string().contains(r#"did you mean "_start" (0x400580)?"#),
+        "the miss must name the spelling the image does carry; got {error}"
+    );
+}
+
+/// (kuna, issue #666) A miss on an image that names functions says so, and
+/// leaves nothing for a front-end to read as "this binary is stripped".
+#[test]
+fn a_name_miss_reports_what_the_image_does_carry() {
+    let Some(program) = boot_committed("fauxware") else {
+        return;
+    };
+    let error = program
+        .resolve_entry(&EntrySelector::Name("zork".into()))
+        .expect_err("no function is spelled zork");
+    let EntryLookupError::NotFound { suggestion, named_entries, .. } = &error else {
+        panic!("expected a name miss, got {error}");
+    };
+    assert!(suggestion.is_none(), "nothing in fauxware is spelled like zork");
+    assert!(*named_entries > 0, "fauxware is not stripped");
+    assert!(
+        error.to_string().contains("none spelled that way"),
+        "{error}"
+    );
+}
+
+/// ...and a genuinely stripped image reports no names at all, which is what
+/// leaves a front-end its by-address advice.
+#[test]
+fn a_stripped_image_reports_no_names_at_all() {
+    let Some(program) = boot_committed("argclobber_x86_64") else {
+        return;
+    };
+    let error = program
+        .resolve_entry(&EntrySelector::Name("zork".into()))
+        .expect_err("a stripped image answers no name");
+    let EntryLookupError::NotFound { suggestion, named_entries, .. } = &error else {
+        panic!("expected a name miss, got {error}");
+    };
+    assert_eq!(*named_entries, 0, "every entry here is an engine placeholder");
+    assert!(suggestion.is_none());
+    assert_eq!(error.to_string(), r#"no function matches "zork""#);
 }
