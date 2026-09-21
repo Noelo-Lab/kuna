@@ -68,5 +68,5 @@
     "selector": "main",
     "selector_kind": "name"
   },
-  "notes": "structdefs on: main references four libc shells, among them the `FILE` its streams are and the `struct option` it hands `getopt_long`. The `types` array carries them in definition-before-use order, and two are pinned by name, .h text and size; structscore.py parses that text, so a consumer never parses C out of `code`. Retargeted from the i386 `i386_pie_nl`: the shells carry glibc's x86-64 widths (FILE 216), which are not i386's, so libctypes names nothing there."
+  "notes": "structdefs on: main references four libc shells, among them the `FILE` it reads and the `struct option` it hands `getopt_long`; the `types` array carries them definition-before-use, two pinned by name, .h text and size. On x86-64 because the shells carry glibc's x86-64 widths, which libctypes offers nowhere else."
 }

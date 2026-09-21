@@ -404,15 +404,17 @@ an artefact of the 2-byte `ut_type` read. `-O2` shadow `logoutd` and sysvinit
 
 ### Pointee sizes are glibc x86-64
 
-Every size in the table is the x86-64 one, and nothing scales it by the image's
-word size, so on a 32-bit image an added shell is oversized —
-`re_pattern_buffer` is declared 64 where i386's is 32. Only pointers take the
-name (the rows are `NamedPtr`; no stack object is ever re-sized by one), so the
-consequence is confined to how far a field access through such a pointer is
-attributed inside the shell. It is the class the shipped `FILE` 216 and `stat`
-144 rows already have, and `i386_pie_nl` — the one 32-bit binary in the
-fixtures — touches nothing past offset 0x14. Scaling the table by word size is a
-separate change: it needs a per-architecture size for every row, not a rule.
+Every size in the table is the x86-64 one. As merged, this subsection said that
+only pointers take the name, "no stack object is ever re-sized by one", so a
+wrong width could only move where a field access is attributed. That was false.
+A named pointer handed the address of a frame object gives that object the
+aggregate's width. On x86-64 against glibc the growth is right (`char v1 [12]`
+becomes `termios v1` where the program touched twelve bytes of the struct
+`tcgetattr` fills), but on a 32-bit image it runs past the real object: an i386
+`timespec` handed to `clock_getres` as a 16-byte one swallowed two `int` locals,
+and an obstack grown to 88 bytes swallowed an `int[12]`. The shipped `stat` row
+already did this on i386. #706 names nothing unless the image is an x86-64 ELF
+not linked against another C library; see "After merge" below.
 
 ### The export fixture swap, re-derived on #693
 
