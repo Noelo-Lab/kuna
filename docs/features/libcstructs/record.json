@@ -220,63 +220,60 @@
     }
   },
   "speed": {
-    "method": "interleaved min-of-15, `decompile-all --max-fn-seconds 120` over five whole binaries, the two builds alternating on every repetition (.scratch/speed.py, copied to docs/features/libcstructs/speed.py)",
+    "method": "interleaved min-of-15, `decompile-all --max-fn-seconds 120` over five whole binaries, the two builds (main f39f67b6e and the same commit plus this branch) alternating on every repetition (speed.py; speed.json)",
     "budget_pct": 5,
     "runs": {
       "O2/tar/tar": {
-        "base_s": 48.241,
-        "new_s": 49.924,
-        "delta_pct": 3.49
+        "base_s": 49.753,
+        "new_s": 49.02,
+        "delta_pct": -1.47
       },
       "O2/grep/grep": {
-        "base_s": 11.98,
-        "new_s": 12.085,
-        "delta_pct": 0.87
+        "base_s": 12.405,
+        "new_s": 12.527,
+        "delta_pct": 0.98
       },
       "O2/coreutils/ls": {
-        "base_s": 13.635,
-        "new_s": 14.091,
-        "delta_pct": 3.34
+        "base_s": 14.614,
+        "new_s": 14.632,
+        "delta_pct": 0.12
       },
       "O0/grep/grep": {
-        "base_s": 6.936,
-        "new_s": 7.083,
-        "delta_pct": 2.11
+        "base_s": 7.141,
+        "new_s": 6.983,
+        "delta_pct": -2.21
       },
       "O2/coreutils/sort": {
-        "base_s": 14.799,
-        "new_s": 14.842,
-        "delta_pct": 0.3
+        "base_s": 15.025,
+        "new_s": 15.743,
+        "delta_pct": 4.78
       }
     },
-    "worst": 3.49,
-    "note": "measured under campaign load (8 other lanes plus this lane's own workspace suite); interleaving is what controls for it",
+    "worst": 4.78,
+    "note": "measured while this lane's lander ran the workspace suite; the one delta near the budget (sort +4.78%) was re-measured at a quieter moment",
     "confirmation_run": {
-      "why": "the two largest deltas re-measured once this lane's own workspace suite had finished",
+      "why": "sort re-measured with the workspace suite finished",
       "runs": {
-        "O2/tar/tar": {
-          "base_s": 45.712,
-          "new_s": 46.938,
-          "delta_pct": 2.68
-        },
-        "O2/coreutils/ls": {
-          "base_s": 13.808,
-          "new_s": 13.982,
-          "delta_pct": 1.26
+        "O2/coreutils/sort": {
+          "base_s": 14.655,
+          "new_s": 14.659,
+          "delta_pct": 0.02
         }
       }
-    }
+    },
+    "verdict": "within budget: worst confirmed delta +0.98% (grep O2); the round-5 change only removes table rows"
   },
   "gates": {
-    "base": "origin/main 3de41f06d (#693, decompile-project callee-first)",
+    "base": "origin/main 68c599453 (#695 charptr, default off) -- rebased by the lander under the merge lock; head bc2653ded",
     "make test": "PARITY OK, 675/675",
-    "make test-stages": "PARITY OK, 1260/1260",
-    "make test-cli": "214/214",
-    "make rust-test": "RUST_TEST_RC=0 on the rebased tree, 7,320 passed / 0 failed (lane 2026-09-20T17:52:31Z -> 18:19:53Z; the only commit after it is record.json)",
+    "make test-stages": "PARITY OK, 1278/1278",
+    "make test-cli": "215/215",
+    "make rust-test": "RUST_TEST_RC=0, 7,333 passed / 0 failed (lane 2026-09-21T16:40:58Z -> 17:08:53Z, on bc2653ded)",
     "make check-spec": "OK (lenient) + OK (strict)",
     "kuna catalog --check": "OK",
     "counters --check": "no drift",
-    "docs/options.md": "byte-fresh"
+    "docs/options.md": "byte-fresh",
+    "carry_over": "the typesweep and corpus runs used main f39f67b6e vs f39f67b6e+branch; since then #699 (opt-in stackaddrargtrial, off) and #695 (charptr, off, plus a strict loader-table fix) landed. decompile-all on O2 grep, O0 cp, O2 gzip, O2-noinline find is byte-identical between the measured build and the final one; O2 ls and O0 useradd differ by one line each, both #695's loader fix (a constant no longer printed as a string from .dynstr)"
   },
   "known_regressions": {
     "method": "branch built twice, the second build with only the named table row removed",

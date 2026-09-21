@@ -460,27 +460,23 @@ as printed.
 ### Speed
 
 Interleaved min-of-15, `decompile-all --max-fn-seconds 120` over five whole binaries,
-the two builds alternating on every repetition (`speed.py` / `speed.json` beside this
-file). Under campaign load — eight other lanes plus this one's own workspace suite —
-which is what the interleaving controls for.
+the two builds (`main` at `f39f67b6e`, and the same commit plus this branch)
+alternating on every repetition (`speed.py` / `speed.json` beside this file), measured
+while this lane's own workspace suite was running:
 
 | binary | off | on | delta |
 |---|---:|---:|---:|
-| `O2` tar | 48.241s | 49.924s | +3.49% |
-| `O2` grep | 11.980s | 12.085s | +0.87% |
-| `O2` ls | 13.635s | 14.091s | +3.34% |
-| `O0` grep | 6.936s | 7.083s | +2.11% |
-| `O2` sort | 14.799s | 14.842s | +0.30% |
+| `O2` tar | 49.753s | 49.020s | -1.47% |
+| `O2` grep | 12.405s | 12.527s | +0.98% |
+| `O2` ls | 14.614s | 14.632s | +0.12% |
+| `O0` grep | 7.141s | 6.983s | -2.21% |
+| `O2` sort | 15.025s | 15.743s | +4.78% |
 
-Re-measured once this lane's own workspace suite had finished, the two largest
-deltas come down: tar +2.68% (45.712s -> 46.938s) and ls +1.26% (13.808s ->
-13.982s), `speed-confirm.json`.
+`sort`, the one delta near the budget, re-measured once the suite had finished:
+14.655s -> 14.659s, +0.02% (`speed-confirm.json`). Round 5 only removes rows, and
+every binary is inside the +5% budget; round 4's worst was tar at +3.49%, +2.68% on
+its confirmation run.
 
-Worst +3.49%, inside the +5% budget. The cost is where the names land: `tar` and `ls`
-are the two binaries with the most newly-typed pointers, and a named pointee is more
-type-propagation work than a `void *` one. `grep -O2` and `sort`, whose pointers were
-already typed, are noise.
-
-Splitting the obstack channel afterwards added one more symbol-table walk to the load
+Splitting the obstack channel added one more symbol-table walk to the load
 (the defined-name set), which is below the noise floor of the path it is on: min-of-9
 interleaved `kuna functions` over `-O2` tar, 0.144s before against 0.142s after.
