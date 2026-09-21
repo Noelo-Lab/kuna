@@ -1582,7 +1582,7 @@ impl ArchContext {
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
             ptrdepthcap: false,          // (kuna) option ptrdepthcap
-            struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Param, // (kuna) option structsynth, default `param`; the real value is copied from the engine Architecture in `build_arch_handle`
+            struct_synth: crate::p5_types::kuna_structsynth::StructSynthMode::Locals, // (kuna) option structsynth, default `locals`; the real value is copied from the engine Architecture in `build_arch_handle`
             struct_synth_shard: None,
             codescalar: false,           // (kuna) option codescalar
             bool_byte: true, // (kuna) option boolbyte (default on)

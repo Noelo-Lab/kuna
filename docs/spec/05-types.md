@@ -1065,7 +1065,7 @@ Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
 binary keeps no record of the aggregate a pointer points at, so the lattice above
 gives a dereferenced parameter a pointee it can prove and stops there:
 `unsigned long *`, and every field read rendered as `*(unsigned int *)&a0[1]`.
-[`structsynth`](../options.md) (`off|param|nest`, default `param`) invents the missing
+[`structsynth`](../options.md) (`off|param|locals|nest|all`, default `locals`) invents the missing
 layout from the accesses themselves.
 
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
@@ -1525,7 +1525,96 @@ from the dereferences, and dropping the offset-0 condition for a nested record,
 adds 31 nested fields, each a pointer to a structure in DWARF. It is not done
 here, because pointer-ness is the one fact this pass does not invent.
 
-**The default is `param`.** Flipping it on moves **no** datatest assertion
+**Returned records (`locals`).** Under `param` only a parameter is measured,
+so a record a function obtains from a call keeps whatever pointee the lattice
+gave it: an allocation it fills in prints as `v1 = (unsigned long *)xmalloc(0x18);
+*(char *)((long)v1 + 0x14) = 0x6e;`, and a pointer a lookup returns as
+`(long)(int)v1[2] + v1[1] + *v1`. The value `locals` of `structsynth` makes the
+value a `CALL` or `CALLIND` returns a base too
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs (is_call_return)`).
+Single assignment makes that value the local's only definition, and it is held
+to every condition a parameter is: already a pointer, not type-locked, no phi,
+index or integer use, two offsets including 0, not an array run, settled
+lattice. The peel already stops at a `CALL`'s output, so the evidence is the
+same walk. Three conditions are new, and each is about the value rather than
+its accesses. A callee declared to return a pointer to something (`char *`,
+`struct stat *`) has said what the pointer is, so only a `void *` or unlocked
+return is measured. The value must not end up sharing a variable with anything
+else (`kuna_structsynth.rs (joins_other_values)`): a copy is merged with what it
+copies, a phi input with the phi's other inputs, and a value in address-tied
+storage with everything else stored there, so the value declines when it, or a
+`COPY`/`CAST` of it, reaches a `MULTIEQUAL` or `INDIRECT`, lands in tied storage,
+or is the function's return register at a place where a phi joins that register
+(`kuna_structsynth.rs (storage_is_tied)`) -- the return register is tied as a
+whole-function local once merging starts
+(`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs (mark_output_storage_addr_tied)`),
+long after this pass has run. Without that condition the locked record type
+became the type of the whole merged variable, because a type-locked member
+decides a variable's type: `tar`'s `wordsplit_add_segm` keeps a `calloc` record
+in the `rax` it returns its status in and was declared to return `struct_N *`,
+and `parse_transform_expr` returned its string as one. Last, a base whose every
+access is a `STORE` of a constant whose bytes read as text
+(`kuna_structsynth.rs (constant_text)`) is a string buffer, however unevenly the
+compiler split the copy: `tar` builds `"SCHILY.xattr."` in a fresh allocation as
+an 8-, a 4- and a 1-byte store, and a record would print those as integer
+constants where the buffer prints `builtin_strncpy`. A store of zero is neither
+text nor evidence against it, since a record's initializer stores zeros as often
+as a string's terminator. `all` is `locals` and `nest` together.
+
+Globals are not bases, and that was measured rather than assumed. Over the eight
+layout builds (`fmt`, `ls`, `sort`, `du` at O0 and O2) thirteen global-RAM
+varnodes are dereferenced at two or more constant offsets, and every one reaches
+a phi or an `INDIRECT` -- a global pointer is re-read after every call -- so none
+passes a parameter's conditions; and a global *record* is not one base in the IR
+at all, because each access to it is an absolute address of its own. Recognizing
+one is a question about a symbol's extent across functions, which this
+per-function action does not see. A pointer loaded from an array element or
+from a record's field is left to `nest` and to the array hypothesis.
+
+The class is small, and it is not on `type_match`'s surface. The same eight
+builds hold 750 ground-truth struct-pointer locals against 816 struct-pointer
+parameters, but at -O2 a local lives in a register, which `variables[]` never
+exports, and at -O0 the stack slot a returned pointer is stored to is
+copy-propagated away, so `framelayout` exports it from the first restructure
+pass, before type recovery starts, as `undefined8`. Of the call-returned values
+dereferenced at two or more constant offsets 37 (O0) and 17 (O2) meet a
+parameter's conditions; 24 and 11 are accepted, the rest decline because the
+value shares a variable. Over 14 builds (`fmt`, `ls`, `sort`, `du`, `grep` and
+`tar` at O0 and O2, `find` and `diff` at O2) the locals declared a record pointer
+and defined by a call go from 40 to 128. Joined to DWARF at the call site (the
+`mov %rax,-K(%rbp)` after the call at -O0, a location list starting at the return
+address in `rax` at -O2, the callee's return type failing both), 105 are struct
+pointers, 3 are not (`grep`'s `realtrans`, an array of two pointers, the
+pointer-pair class the array rule keeps as a record) and 20 do not join; the
+claimed fields of the new records are 187 of 223 exact by offset and width
+(0.839, against 0.862 for parameters; the misses are merged byte stores such as
+`mode_change`'s `op`/`flag` pair and a union member measured at its first
+word). Parameter layouts do not move (claimed-field precision 0.8622 → 0.8623,
+recall 0.0666 in both arms, nesting unchanged) and the headers carry 548
+structures instead of 500.
+
+**The default is `locals`.** Flipping it moves no datatest assertion
+(675/675) and no stage assertion of another feature (1296/1296; the only new
+keys are `tests/stages/structsynth-locals.xml`'s, whose first pass pins
+`param`), and `make test-cli` is 219/219. The 444-slice typesweep is 1,353
+perfect in both arms with no function better or worse and every one of the
+65,377 scored decisions the same type up to `struct_N` numbering; no function's
+variable count changes. Over 16 binaries and 8,682 functions (x86-64 coreutils
+`fmt`, `ls`, `sort` and `du` at O0 and O2, `grep` and `tar` at O0 and O2,
+`find` and `diff` at O2, and the ARM32 `chibios` and `freertos` at O0) 682
+functions change against `param`: 610 only in `struct_N` numbering, because a
+returned record is minted between parameter records; 61 are the same statements
+with each access through the returned pointer respelled from its byte offset to
+a field (checked mechanically); and the last 11 were read: an address past the
+record spelled `&v1[1]`, a zero field store spelled `NULL`, a constant spelled
+`4U` for an unsigned field, one temporary holding `field - 0x20` instead of
+`field`, one pair of 4-byte zero stores merged into the 8-byte field they fill,
+and one float field read as raw bytes. No function's control flow or call
+sequence changes, nothing on ARM32 changes, and every return type that moves
+(11) becomes the record the function builds, each a struct pointer in DWARF.
+SPEEDTXT JOBSTXT
+
+**`param` was the first default.** Flipping it on moves **no** datatest assertion
 (675/675). In `tests/stages` it reaches four assertions of other features, each
 the intended rendering of a pointer input: `PEBNAMES-X86 #6`/`#8`, where the
 FS-segment base of an SEH-linking function that `pebnames` leaves untyped becomes
@@ -1589,9 +1678,9 @@ bytes). The other 1,295 decisions it touches were already misses: a
 `struct_N *` where the ground truth names the aggregate (`Hash_table *`,
 `stat *`, `fileinfo *`, …), which a metric that credits an anonymous structure
 against a named one would count. The pass is not a member of any `--mode` preset
-list: `reliable` is the shipped defaults, so it synthesizes; `aggressive` inherits
-the default rather than pinning `param` below a future `all`; `fast` changes
-discovery only.
+list: `reliable` is the shipped defaults, so it synthesizes `locals`;
+`aggressive` inherits the default rather than pinning a value below `all`;
+`fast` changes discovery only.
 
 Type facts are *consumed* back into the graph by the typerecovery rules: the
 `oppool2` pool (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_5.rs

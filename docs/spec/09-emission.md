@@ -505,6 +505,24 @@ address comes from `printc.rs (spacebase_unnamed_address)`, the C++
 emitting either makes the whole function something no C parser accepts
 (`tests/stages/ghdec-spacebase-unnamed.xml`, DIV-46).
 
+The structure arm has the same failure through a different door. C++
+`opPtrsub` reads the pointer type of the *variable* the base belongs to
+(`getHighTypeReadFacing`), and the kuna printer reads the base Varnode's own
+type, which is the same thing until one member of a merged variable carries a
+narrower pointer than the rest. A global assigned a `struct_N *` and also read
+back into a loop over `unsigned int *` is such a variable: `ActionSetCasts`
+inserted `PTRSUB(dat_263f0, #0)` against the variable's `struct_N *`, and the
+member feeding it reads `unsigned int *`, whose pointee is no structure, so the
+op fell to the functional render and printed `v4 = PTRSUB(dat_263f0,0);`.
+`printc.rs (ptrsub_resolves)` asks whether the member's own type can name a
+member at all (a pointer to a structure, union, array or spacebase, or a
+relative pointer), and only when it cannot does the arm take the variable's
+type instead (`printc.rs (high_pointer_type)`: a mapped symbol's type, else
+the merged variable's type representative), which prints
+`v4 = &dat_263f0->field_0x0;`. Every output this changes was the functional
+render before; on `main` one `tar` O0 function printed it
+(`a0->field_0x8 = PTRSUB(dat_9f6a8,0);`).
+
 **Precedence without an AST.** Operators and leaves are not buffered into a
 tree; they stream through a reverse-polish stack. `printc.rs (PrintC::push_op)`
 pushes an operator's static token — the singleton table `printc.rs (tokens)`
