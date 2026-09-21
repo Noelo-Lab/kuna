@@ -438,8 +438,9 @@ slot keeps a 32-bit image.
 
 The option's documented cost is that `decompile-project`'s exported `.c` reads
 fields out of types its own `.h` declares incomplete. On the `-O2` `ls` export
-that was +58 `cc -fsyntax-only` errors; with this round it is **+102**
-(830 off, 932 on), and the `.h` is still 0 errors in both arms. Seven more
+that was +58 `cc -fsyntax-only` errors; with this round it is **+106**
+(835 off, 941 on, re-measured on the round-5 build with `cc -fsyntax-only -w`), and
+the `.h` is still 0 errors in both arms. Seven more
 opaque shells is seven more types a body can read a field out of; the header,
 which is what the rest of the export depends on, is unmoved.
 

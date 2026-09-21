@@ -21,14 +21,14 @@
     "ranked_table": "docs/features/libcstructs/ranked-pool.md",
     "top_new": {
       "obstack": 371,
-      "timespec": 12,
+      "timespec": "12 -- slots (utimensat, futimens) DROPPED in round 5",
       "passwd": 9,
       "re_pattern_buffer": 9,
       "lconv": 8,
       "_IO_FILE": 6,
       "termios": 6,
       "spwd": 6,
-      "timeval": 6,
+      "timeval": "6 -- slots (utimes, futimesat) DROPPED in round 5",
       "utmp": 3,
       "group": 2
     },
@@ -51,17 +51,18 @@
       "statfs": 120
     },
     "named_aggregates_total": 23,
-    "new_slots": 80,
-    "new_LIBC_EXT_NAMED_entries": 75,
+    "new_slots": 66,
+    "new_LIBC_EXT_NAMED_entries": 61,
     "LIBC_DEFINED_NAMED_entries": 5,
     "defined_name_rule": "the only table matched against `unambiguous_present_function_names` rather than the imported names: the `_obstack_*` entry points are the implementation-reserved half of obstack.h, written only by glibc or by the gnulib copy of the same file, and both publish the same `struct obstack`. Every other table stays imports-only.",
     "obstack_size_slot_rule": "pointer-width, not the `int` the installed glibc header spells at obstack.h:184. Two published declarations of one symbol exist (glibc's, and the gnulib copy every obstack in this corpus is compiled from, whose _OBSTACK_SIZE_T is size_t); the corpus's own debug info says which applies. Both pass in a register, so only the rendering moves -- `int` would put a truncating cast on every call.",
-    "off_is_unchanged": "every new name is new to BOTH shipped tables, asserted per row, so `libctypes off` is byte-identical to what it was"
+    "off_is_unchanged": "every new name is new to BOTH shipped tables, asserted per row, so `libctypes off` is byte-identical to what it was",
+    "LIBC_IMPORTED_OBSTACK_entries": 5
   },
   "benchmark": {
     "instrument": "scripts.decbench.typesweep through docs/decbench/typecampaign/final-c/finalsweep.py, decbench PINNED to 625e892, DECBENCH_NO_CACHE=1; the two arms are two builds of this tree over the same slices. Run three times: at base 2e28ece4a, after the rebase onto 724381149 (argclobber #689), and after the rebase onto 69d252df3 (inferfuncentry-intbound #694), each time with the base arm built from origin/main's kuna_libctypes.rs + protos/mod.rs in this tree. Perfect counts, improved/worse and the per-variable tables came out identical every time; only the pooled mean moved, 0.3403 -> 0.3405 off and 0.3417 -> 0.3419 on, which is #694 moving both arms alike.",
     "corpus": "results/full_run_address_2026-09-11, O0+O2+O2-noinline, 9 projects, 444 slices, 10,748 scored functions",
-    "control": "the baseline arm reproduces the campaign's published round-D numbers exactly: 1,349 perfect, mean 0.3405 on this base (0.3403 at 2e28ece4a)",
+    "control": "the baseline arm is main f39f67b6e built from a clean export and reproduces the campaign's published round-D numbers exactly: 1,349 perfect, mean 0.3405. The branch now sits on 2e8e407be, which adds only the opt-in stackaddrargtrial (off by default).",
     "projects": {
       "bzip2": {
         "n": 267,
@@ -77,8 +78,8 @@
         "perfect_off": 877,
         "perfect_on": 880,
         "mean_off": 0.3341,
-        "mean_on": 0.3354,
-        "improved": 53,
+        "mean_on": 0.3352,
+        "improved": 45,
         "worse": 1
       },
       "diffutils": {
@@ -113,8 +114,8 @@
         "perfect_off": 102,
         "perfect_on": 102,
         "mean_off": 0.5197,
-        "mean_on": 0.524,
-        "improved": 6,
+        "mean_on": 0.5197,
+        "improved": 0,
         "worse": 0
       },
       "shadow": {
@@ -131,8 +132,8 @@
         "perfect_off": 158,
         "perfect_on": 158,
         "mean_off": 0.3516,
-        "mean_on": 0.3531,
-        "improved": 18,
+        "mean_on": 0.3524,
+        "improved": 12,
         "worse": 0
       }
     },
@@ -141,54 +142,49 @@
       "perfect_off": 1349,
       "perfect_on": 1353,
       "mean_off": 0.3405,
-      "mean_on": 0.3419,
-      "improved": 91,
+      "mean_on": 0.3415,
+      "improved": 71,
       "worse": 1
     },
     "tp_off": 20314,
-    "tp_on": 20455,
+    "tp_on": 20419,
     "fp_off": 17870,
-    "fp_on": 17729,
+    "fp_on": 17765,
     "fn_off": 27531,
     "fn_on": 27531,
     "gt_class_ptr_struct": {
       "n": 14252,
       "off": 422,
-      "on": 496
+      "on": 487
     },
     "gt_class_ptr_char": {
       "n": 14645,
       "off": 4204,
-      "on": 4239
+      "on": 4233
     },
     "newly_correct_by_gt_type": {
       "obstack *": 47,
-      "char *": 37,
-      "timespec (by value)": 11,
-      "timespec *": 7,
+      "char *": 31,
       "termios *": 6,
-      "timeval (by value)": 6,
-      "int": 5,
-      "FILE *": 5,
       "statfs (by value)": 5,
+      "FILE *": 5,
       "re_pattern_buffer *": 4,
       "__mbstate_t": 3,
       "void *": 3,
-      "timeval *": 2,
-      "__sigset_t": 2,
+      "int": 2,
       "group *": 2,
-      "utmp *": 1,
-      "lconv *": 1
+      "lconv *": 1,
+      "utmp *": 1
     },
     "newly_wrong_by_gt_type": {
       "char *": 2,
       "idx_t": 2,
-      "stat": 1,
       "passwd *": 1
     },
     "worse_functions": {
       "coreutils::O0::pinky print_long_entry": "0.4286 -> 0.2143; three variables move from a stack slot to a register and decbench never exports a register local, so they stop being scored rather than being mistyped"
-    }
+    },
+    "round4_vs_round5": "the ten dropped rows cost 20 improved functions and 0.0004 of pooled mean (0.3419 -> 0.3415), and no perfect function (1,353 either way); the gzip lutimens `stat` newly-wrong row is gone"
   },
   "arity": {
     "why": "every new name is new to both shipped tables, so each supplies an ARITY where there was none -- the user's rule asks for arity/phantom counters beside type_match",
@@ -198,26 +194,28 @@
     "variables_the_metric_saw_on": 96671,
     "functions_with_more_exported_variables": 2,
     "functions_with_fewer": 1,
-    "verdict": "nothing is fabricated; the change is a retyping"
+    "verdict": "nothing is fabricated; the change is a retyping",
+    "call_site_arity": "over all 663 x86-64 binaries: main prints 196 fseeko calls with one argument where the callee takes three; this branch prints all 348 with three. re_match: 2 one-argument calls -> 0. The only calls that gain an argument are the alloca-frame artifact (alloca_trailing_argument)."
   },
   "corpus_diff": {
-    "binaries": 14,
-    "functions": 7457,
-    "functions_changed": 796,
-    "hunks": 2450,
+    "binaries": 15,
+    "added_in_round5": "O0 coreutils cp",
+    "functions": 7987,
+    "functions_changed": 763,
+    "hunks": 2337,
     "classification": "docs/features/libcstructs/corpus-hunk-classification.txt",
     "by_class": {
-      "local renumbering only": 638,
-      "synthesized struct_N renumbered (one fewer slot in the ledger)": 587,
-      "other, downstream of a changed pointee": 485,
-      "signature gains a named pointee": 173,
-      "a named cast appears": 165,
-      "cast at an offset becomes a field": 115,
-      "declaration gains a named pointee": 99,
-      "a PLT thunk gains the return the declaration states": 84,
-      "other, mentions a named type": 45,
+      "local renumbering only": 626,
+      "synthesized struct_N renumbered (one fewer slot in the ledger)": 586,
+      "other, downstream of a changed pointee": 443,
+      "signature gains a named pointee": 154,
+      "a named cast appears": 153,
+      "cast at an offset becomes a field": 110,
+      "declaration gains a named pointee": 93,
+      "a PLT thunk gains the return the declaration states": 70,
+      "other, mentions a named type": 44,
       "a field access gains or loses its width cast": 33,
-      "a local's spelling or width moves under the new pointee": 22,
+      "a local's spelling or width moves under the new pointee": 21,
       "field becomes a cast at an offset": 4
     }
   },
@@ -282,11 +280,10 @@
   },
   "known_regressions": {
     "method": "branch built twice, the second build with only the named table row removed",
-    "gzip::O2::lutimens": "the timespec * slot on utimensat/futimens re-splits a 144-byte stat frame slot into char v5 [80] plus three detached words the body reads and nothing writes; over the 30 corpus slices that import utimensat/futimens, 122 functions gain a timespec rendering, 3 lose a stat declaration, 1 of those is under-declared; main already prints 7 of the same shape, this branch 8",
-    "openssh::O2::ssh_signal": "the sigfillset(sigset_t *) slot splits a 152-byte sigaction frame slot at 136, so the sa_flags store escapes the object handed to sigaction(): sigaction v4 -> char v4 [136] + a dead undefined4 v7 at stack - 0xd0. 444-slice corpus: 6 slices import sigfillset (coreutils env, shadow su), 0 sigaction declarations lost, only added sigset_t renderings. Disjoint openssh -O2 sweep: 7 binaries, 1 function each (ssh/ssh-keygen/ssh-agent/ssh-add 11 -> 10, sshd 3 -> 2, scp 2 -> 1, sftp 2 -> 1). Class pre-exists via the shipped sigemptyset slot: on the ablated build the same program with sigemptyset prints the identical split, and ssh-keygen's base arm already prints 18 (sigaction *) cast-at-use sites against this branch's 19",
     "statfs_name_collision": "statfs is both a new aggregate name and a libc function name: O0 shadow usermod sub_111a1 prints `statfs v1;` and calls `statfs(a0,&v1)`, so that body does not compile as printed; the .h emitter already guards its half. Same collision main has for stat",
-    "verdict": "disclosed, kept; all three are instances of classes the option already ships, see analysis.md",
-    "decision": "the utimensat/futimens `timespec *` rows are KEPT, and the PR body says in those words that the branch ships one function whose emitted C reads three never-written locals; the alternative (dropping the rows) costs the 122 functions that gain a timespec"
+    "verdict": "the statfs name collision is disclosed and kept (the same class main ships for stat); the alloca trailing argument and the dat_4 high half are pre-existing renderings the new declarations reach, counted in alloca_trailing_argument and undefined_high_half",
+    "decision": "utimensat/futimens DROPPED (round 5), per the orchestrator's decision standing in for the owner",
+    "resolved_in_round5": "gzip lutimens and openssh ssh_signal: both rows dropped, both functions byte-identical to main"
   },
   "rebase_3de41f06d": {
     "why": "#693 gave decompile-project the callee-first schedule and touched the same two files this PR repointed",
@@ -305,5 +302,55 @@
   "minor_review_answers": {
     "utmp_utmpx_rows": "not unpaid: 24 corpus binaries import getutent/getutxent/pututline and the name reaches a caller's own local, not only the PLT thunk -- O2 coreutils who `short *v4` -> `utmpx *v4` with v4[0x16]/v4[0xbc] becoming v4->field_0x2c/field_0x178, O2 shadow logoutd and sysvinit runlevel the same for `utmp *`",
     "sizes_are_x86_64": "every size in the table is the x86-64 one and nothing scales it by word size, so on a 32-bit image a shell is oversized (re_pattern_buffer 64 vs i386's 32); only pointers take the name, so the effect is confined to how far a field access through such a pointer is attributed; same class as the shipped FILE 216 and stat 144"
+  },
+  "frame_check": {
+    "tool": "docs/features/libcstructs/framecheck.py (+ framecheck_lib.py)",
+    "binaries": 663,
+    "functions": 199963,
+    "functions_changed": 5338,
+    "functions_with_a_split_frame_object": 0,
+    "functions_losing_a_named_local": 0,
+    "named_casts_onto_smaller_char_arrays": {
+      "main": 82,
+      "branch": 131,
+      "the_49_new": "34 on arrays this branch GREW toward the type size (merged words), 13 tar struct obstack locals newly declared over loose words, 2 same size on both arms; none shrank"
+    },
+    "calibration": "over the 108 signal/utime importers the round-4 rows are flagged in exactly gzip lutimens, 6 scp/sftp utimes callers, and shadow useradd/usermod (lost stat)"
+  },
+  "alloca_trailing_argument": {
+    "what": "in a function that grows its stack with alloca, every DECLARED call prints one extra trailing argument: the call's own pushed return address read back (O0 cp 0x4793: main prints gettext(\"...\",v13[v4 + -8]) and __errno_location(v3))",
+    "alloca_functions": 251,
+    "main_sites": 3249,
+    "main_functions": 179,
+    "branch_sites": 3258,
+    "branch_new": {
+      "getutent": 6,
+      "pthread_mutex_init": 2,
+      "__getdelim": 1
+    },
+    "round4_utimensat_sites": 12,
+    "argclobber": "on by default (#689) and does not remove it: the value is a stack read, not a register",
+    "O0_cp_witness": "round 4 printed utimensat(v18,v26,&v12,0,v3); with the row dropped this branch prints main's utimensat(v18,v26,&v12,0)"
+  },
+  "undefined_high_half": {
+    "what": "a declared int return feeding a caller kuna recovered as returning 8 bytes renders the upper half of rax as dat_4",
+    "main_occurrences": 1408,
+    "branch_added": 121,
+    "functions": 109,
+    "by_row": {
+      "fseeko": "98, all O0 gnulib rpl_fseeko wrappers",
+      "nanosleep": "21, coreutils sleep/sort/tail wrappers at all three levels",
+      "re_match": "2, find"
+    },
+    "bought_by_the_same_rows": "every fseeko call gets its three arguments (196 had one); nanosleep's timespec is one object in coreutils sleep where main split it"
+  },
+  "round5": {
+    "dropped": {
+      "sigfillset": "splits struct sigaction in openssh ssh_signal (every -O2 openssh program); ssh-keygen 0x4ce20 is now byte-identical to main (sigaction v4 whole, v4._136_4_ = 0x10000000 inside)",
+      "sigsuspend, pthread_sigmask, sigdelset, sigismember, sigwait": "0 splits over the 87 corpus importers, but docs/features/libcstructs/sigsplit.c splits the object under every one of them (O0: char v1 [136] + detached flags store; pthread_sigmask also O2, reading sa_flags from a local sigaction() never writes); they buy nothing in the pool",
+      "utimensat, futimens": "orchestrator's decision: no function whose emitted C reads never-written locals; the slot is a two-element array the vocabulary cannot spell, so there is no narrower slot -- dropped; gzip O2 lutimens is byte-identical to main",
+      "utimes, futimesat": "same two-element slot; utimes shrank openssh scp/sftp struct timeval tv[2] (6 functions)"
+    },
+    "kept_off_pool": "every kept row not in ranked-pool.md's NEW column carries a one-line note there (reach, changed, +i/-w, extra costs)"
   }
 }
