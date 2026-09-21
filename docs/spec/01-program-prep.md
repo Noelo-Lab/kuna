@@ -2206,6 +2206,26 @@ moves.
   the pclntab pass; PE detection reads the MSVC Rich header / MinGW `GCC:` records,
   Mach-O the `LC_BUILD_VERSION` family. The `Gcc`/`Clang` values are a kuna
   convenience nothing gates on.
+  "Rust-mangled" is decided by the mangling grammar, not by a prefix
+  (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
+  (is_rust_mangled)`). The v0 scheme spells a symbol `_R` followed by a path, and a
+  path opens with one of the tags `C M X Y N I B` — but `_R` is not private to
+  Rust. Mach-O prepends a platform underscore to every symbol it carries, so an
+  ordinary C function named `Run`, `Read` or `RC4_set_key` is spelled `_Run`,
+  `_Read`, `_RC4_set_key` in the image and opens the same two bytes. The name is
+  therefore parsed, by the same `rustc_demangle` the demangle pass hands it to, and
+  a name that does not parse is not evidence: `_RC4_set_key` gets as far as
+  declaring a four-byte crate named `set_` and is then left holding `key`, which is
+  no instantiating-crate path. On top of that the detector knows which formats
+  carry the platform underscore
+  (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
+  (is_rust_mangled_in)`): on Mach-O rustc's own v0 symbols read `__R…`, so a
+  single-underscore `_R…` there is a C name however well it parses. The demangle
+  pass keeps the format-agnostic test, since what it holds is a bare name with no
+  image behind it. The strictness is load-bearing rather than tidy: `Rustc`
+  selects the Rust output language for the whole binary, turns `rustabi auto` on
+  and widens the no-return list, so a single misread symbol re-languages a C
+  program.
 - **Call fixups** (`callfixup`,
   `decompiler/crates/kuna-analysis/src/analyzers/callfixup/mod.rs`, the
   `CallFixupAnalyzer` analog): a function whose name matches a cspec call-fixup
