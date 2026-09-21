@@ -178,8 +178,12 @@ pub enum StructSynthMode {
     Off,
     /// Function parameters only.
     Param,
+    /// Function parameters, and the pointers calls return.
+    Locals,
     /// Function parameters, and the records their pointer fields point at.
     Nest,
+    /// `locals` and `nest` together.
+    All,
 }
 
 impl StructSynthMode {
@@ -190,11 +194,17 @@ impl StructSynthMode {
 
     /// Is a pointer field loaded and dereferenced in turn given a record?
     pub fn nests(self) -> bool {
-        self == StructSynthMode::Nest
+        matches!(self, StructSynthMode::Nest | StructSynthMode::All)
+    }
+
+    /// Is a pointer a call returned given a record?
+    pub fn locals(self) -> bool {
+        matches!(self, StructSynthMode::Locals | StructSynthMode::All)
     }
 }
 
-/// (kuna) Parse `option structsynth off|param|nest`; the caller writes the live field.
+/// (kuna) Parse `option structsynth off|param|locals|nest|all`; the caller
+/// writes the live field.
 pub struct OptionStructSynth;
 
 impl OptionStructSynth {
@@ -206,10 +216,12 @@ impl OptionStructSynth {
         let mode = match p1 {
             "off" => StructSynthMode::Off,
             "param" => StructSynthMode::Param,
+            "locals" => StructSynthMode::Locals,
             "nest" => StructSynthMode::Nest,
+            "all" => StructSynthMode::All,
             other => {
                 return Err(KunaError::parse(format!(
-                    "Unknown structsynth value: {other} (expected off|param|nest)"
+                    "Unknown structsynth value: {other} (expected off|param|locals|nest|all)"
                 )))
             }
         };
@@ -744,6 +756,9 @@ fn synthesize(data: &mut Funcdata) -> bool {
     let ptrsize = types.get_size_of_pointer();
     let mut installs: Vec<(VarnodeId, Rc<Datatype>)> = Vec::new();
 
+    if std::env::var_os("KUNA_SSDIAG").is_some() {
+        diag(data, &raw);
+    }
     for (base, e) in raw.iter() {
         let e = e.pruned();
         if !accepts(data, *base, &e) {
@@ -776,6 +791,113 @@ fn synthesize(data: &mut Funcdata) -> bool {
     changed
 }
 
+fn diag_class(data: &Funcdata, base: VarnodeId) -> String {
+    let Some(v) = data.vbank().get(base) else { return "gone".into() };
+    if v.is_spacebase() || v.get_space().get_type() == spacetype::IPTR_SPACEBASE {
+        return "spacebase".into();
+    }
+    if v.is_input() {
+        return if v.get_space().get_type() == spacetype::IPTR_PROCESSOR { "param".into() } else { format!("input_{:?}", v.get_space().get_type()) };
+    }
+    if v.is_constant() {
+        return "const".into();
+    }
+    let Some(def) = v.get_def() else { return "free".into() };
+    let Some(op) = data.obank().get(def) else { return "free".into() };
+    match op.code() {
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+            let t = data
+                .get_call_specs_index(def)
+                .map(|i| data.get_call_specs(i).get_entry_address().get_offset())
+                .unwrap_or(0);
+            format!("callret callee=0x{t:x} at=0x{:x}", op.get_addr().get_offset())
+        }
+        OpCode::CPUI_LOAD => {
+            let a = op.get_in(1);
+            let mut cur = a;
+            for _ in 0..8 {
+                let Some(av) = cur.and_then(|x| data.vbank().get(x)) else { break };
+                if av.is_constant() {
+                    return "load_global".into();
+                }
+                if av.is_input() {
+                    return if av.is_spacebase() { "load_stack".into() } else { "load_param".into() };
+                }
+                let Some(d) = av.get_def().and_then(|d| data.obank().get(d)) else { break };
+                match d.code() {
+                    OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_PTRADD => cur = d.get_in(0),
+                    OpCode::CPUI_LOAD => return "load_load".into(),
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => return "load_callret".into(),
+                    OpCode::CPUI_MULTIEQUAL => return "load_phi".into(),
+                    _ => return format!("load_{:?}", d.code()),
+                }
+            }
+            "load_other".into()
+        }
+        c => format!("{c:?}"),
+    }
+}
+
+fn diag(data: &mut Funcdata, raw: &BTreeMap<VarnodeId, Evidence>) {
+    let addr = data.get_address().get_offset();
+    let ptrsize = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
+    for (base, e) in raw.iter() {
+        let p = e.pruned();
+        let class = diag_class(data, *base);
+        let Some(v) = data.vbank().get(*base) else { continue };
+        let locked = v.is_type_lock();
+        let persist = v.is_persist();
+        let stackcopy = {
+            let mut seen = vec![*base];
+            let mut i = 0;
+            let mut hit = false;
+            while i < seen.len() && i < 32 {
+                let cur = seen[i];
+                i += 1;
+                let Some(cv) = data.vbank().get(cur) else { continue };
+                if cv.get_space().get_type() == spacetype::IPTR_SPACEBASE && cur != *base {
+                    hit = true;
+                }
+                for u in cv.descend_iter() {
+                    if let Some(op) = data.obank().get(u) {
+                        if matches!(op.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+                            if let Some(o) = op.get_out() {
+                                if !seen.contains(&o) {
+                                    seen.push(o);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            hit
+        };
+        let ct = vn_type(data, *base);
+        let isptr = ct.as_ref().is_some_and(|t| t.get_metatype() == type_metatype::TYPE_PTR);
+        let named = ct.as_ref().is_some_and(|t| points_at_named_composite(t));
+        let ok = ct.as_ref().is_some_and(|t| accepts_record(data, t, &p));
+        let arr = is_array_shaped(&p.slots, ptrsize);
+        eprintln!(
+            "SSDIAG fn=0x{addr:x} class={class} slots={} rawslots={} has0={} ptr={} named={} locked={} persist={} dyn={} int={} phi={} arr={} stackcopy={} ok={} ty={} offs={}",
+            p.slots.len(),
+            e.slots.len(),
+            p.slots.contains_key(&0) as u8,
+            isptr as u8,
+            named as u8,
+            locked as u8,
+            persist as u8,
+            p.dynamic_offset as u8,
+            p.integer_use as u8,
+            p.phi_reached as u8,
+            arr as u8,
+            stackcopy as u8,
+            ok as u8,
+            ct.map(|t| t.get_name().to_string()).unwrap_or_default().replace(' ', "_"),
+            p.slots.iter().map(|(o, s)| format!("{o:x}:{}", s.width)).collect::<Vec<_>>().join(","),
+        );
+    }
+}
+
 /// The program-wide structure for one measured layout: the shard hook's answer
 /// in a `--jobs` worker, the ledger's otherwise.
 fn answer(
@@ -792,13 +914,14 @@ fn answer(
     }
 }
 
-/// Every decline condition for a parameter, in one place.
+/// Every decline condition for a base, in one place.
 fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     let Some(v) = data.vbank().get(base) else { return false };
 
-    // A record is synthesized over a parameter, and under `nest` over what the
-    // parameter's pointer fields hold ([`nest`]).
-    if !v.is_input() {
+    // A record is synthesized over a parameter, under `locals` over a pointer a
+    // call returned, and under `nest` over what a record's pointer fields hold
+    // ([`nest`]).
+    if !v.is_input() && !(data.get_arch().struct_synth.locals() && is_call_return(data, base)) {
         return false;
     }
     // A user/DWARF/declared type is authoritative.
@@ -812,6 +935,27 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     }
     let Some(ct) = vn_type(data, base) else { return false };
     accepts_record(data, &ct, e)
+}
+
+/// Is `vn` the value a `CALL` or `CALLIND` returned, and did the callee's
+/// declaration leave its pointee open?  Single assignment makes that value the
+/// local's only definition, so nothing else is merged into it; a declared
+/// `char *` or `struct stat *` return is what the pointer is, and only `void *`
+/// (an allocator) says nothing.
+fn is_call_return(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(def) = data.vbank().get(vn).and_then(|v| v.get_def()) else { return false };
+    let Some(op) = data.obank().get(def) else { return false };
+    if !matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) || op.get_out() != Some(vn) {
+        return false;
+    }
+    let Some(i) = data.get_call_specs_index(def) else { return true };
+    let proto = data.get_call_specs(i).proto();
+    if !proto.is_output_locked() {
+        return true;
+    }
+    proto.get_output_type().and_then(|t| t.get_ptr_to()).is_some_and(|p| {
+        matches!(p.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN)
+    })
 }
 
 /// The decline conditions every synthesized record shares, a parameter's or a
