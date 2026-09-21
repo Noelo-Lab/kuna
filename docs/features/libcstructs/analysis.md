@@ -38,14 +38,14 @@ away can still be named. It is the floor that is worth ranking on.
 | GT struct tag | GT vars | reachable | a slot the table already had | NEW | the new slots |
 |---|---:|---:|---:|---:|---|
 | `obstack` | 431 | 371 | 0 | **371** | `_obstack_newchunk`, `_obstack_begin` |
-| `timespec` | 47 | 14 | 2 | **12** | `utimensat`, `futimens` |
+| `timespec` | 47 | 14 | 2 | **12** | ~~`utimensat`, `futimens`~~ dropped, see below |
 | `passwd` | 204 | 107 | 98 | **9** | `getpwent` |
 | `re_pattern_buffer` | 9 | 9 | 0 | **9** | `re_compile_pattern`, `re_compile_fastmap` |
 | `lconv` | 8 | 8 | 0 | **8** | `localeconv` |
 | `_IO_FILE` | 577 | 431 | 425 | **6** | `fread_unlocked`, `feof_unlocked`, `__getdelim`, `fputc_unlocked` |
 | `termios` | 22 | 6 | 0 | **6** | `cfgetispeed`, `cfgetospeed`, `cfsetispeed`, `cfsetospeed` |
 | `spwd` | 44 | 6 | 0 | **6** | `getspnam` |
-| `timeval` | 6 | 6 | 0 | **6** | `utimes`, `futimesat` |
+| `timeval` | 6 | 6 | 0 | **6** | ~~`utimes`, `futimesat`~~ dropped, see below |
 | `utmp` | 12 | 3 | 0 | **3** | `getutent` |
 | `group` | 161 | 63 | 61 | **2** | `getgrent` |
 
@@ -91,8 +91,11 @@ obstack 88/8   spwd 72/8   utmpx 384/4   utmp 384/4
 re_pattern_buffer 64/8     lconv 96/8    statfs 120/8
 ```
 
-About seventy-five new slots, every one of them new to BOTH shipped tables (so
-`libctypes off` is byte-identical to what it was), and one new table.
+Sixty-six new slots (61 imported names and the five obstack entry points), every one
+of them new to BOTH shipped tables (so `libctypes off` is byte-identical to what it
+was), and the obstack pair of tables. Round 4 had ten more; why they were dropped is under
+*Measured*. Every kept row either supplies a NEW slot in `ranked-pool.md` or carries a
+one-line off-pool note there saying what it costs.
 
 ### `LIBC_DEFINED_NAMED`, and why it is five names long
 
@@ -140,50 +143,44 @@ gnulib copy every obstack in this corpus is compiled from, whose `_OBSTACK_SIZE_
 ### type_match, the 444-slice campaign corpus
 
 `scripts.decbench.typesweep` through `final-c/finalsweep.py`, decbench pinned to
-`625e892`, `DECBENCH_NO_CACHE=1`, the two arms being two builds of this tree over the
-same slices. The baseline arm reproduces the campaign's published round-D perfect count
-exactly (1,349), which is the control.
-
-Measured three times, at three bases: `2e28ece4a`, then in full again after the rebase
-onto `724381149` (`argclobber` default-on, #689), then in full again after the rebase
-onto `69d252df3` (`inferfuncentry-intbound`, #694). The base arm is always the
-origin/main sources of `kuna_libctypes.rs` and `protos/mod.rs` built in this tree. The
-perfect counts, the improved/worse split and the per-variable tables came out identical
-every time; the only number that moved is the pooled mean, 0.3403 -> 0.3405 off and
-0.3417 -> 0.3419 on, which is #694 lifting both arms alike. The table below is the
-newest run.
+`625e892`, `DECBENCH_NO_CACHE=1`, over the same slices. The base arm is `main` at
+`f39f67b6e` built from a clean export of that commit; the other arm is the same commit
+plus this branch. (`2e8e407be`, the base the branch now sits on, adds only the opt-in
+`stackaddrargtrial`, off by default.) The base arm reproduces the campaign's published
+round-D perfect count and mean exactly (1,349, 0.3405), which is the control.
 
 | | off | on |
 |---|---:|---:|
 | functions scored | 10,748 | 10,748 |
 | perfect | 1,349 | **1,353** |
-| mean | 0.3405 | **0.3419** |
-| true positives | 20,314 | **20,455** |
-| false positives | 17,870 | **17,729** |
+| mean | 0.3405 | **0.3415** |
+| true positives | 20,314 | **20,419** |
+| false positives | 17,870 | **17,765** |
 | false negatives | 27,531 | 27,531 |
-| improved / worse functions | — | **91 / 1** |
+| improved / worse functions | — | **71 / 1** |
+
+The rows dropped in round 5 (the four two-element time slots and six `sigset_t` rows,
+below) cost 20 improved functions and 0.0004 of mean against the round-4 build, and no
+perfect function: 1,353 either way.
 
 The `ptr_struct` ground-truth class, which is what this was aimed at:
 
 | GT class | GT vars | off | on |
 |---|---:|---:|---:|
-| `ptr_struct` | 14,252 | 422 (2.96%) | **496 (3.48%)** |
-| `ptr_char` | 14,645 | 4,204 | **4,239** |
+| `ptr_struct` | 14,252 | 422 (2.96%) | **487 (3.42%)** |
+| `ptr_char` | 14,645 | 4,204 | **4,233** |
 | `ptr_void` | 3,481 | 612 | **615** |
-| `struct_val` | 1,769 | 497 | **506** |
-| `array` | 750 | 145 | **162** |
+| `struct_val` | 1,769 | 497 | **505** |
 
-The 147 newly-correct variables, by the ground-truth type they match:
+The 110 newly-correct variables, by the ground-truth type they match:
 
 ```
- 47  obstack *      11  timespec (by value)   6  timeval (by value)   4  re_pattern_buffer *
- 37  char *          7  timespec *            5  FILE *               3  __mbstate_t, void *
-                     6  termios *             5  statfs (by value)    2  __sigset_t, group *,
-                                                5  int                     timeval *
-                                                                      1  utmp *, lconv *
+ 47  obstack *      6  termios *   5  FILE *              3  __mbstate_t, void *
+ 31  char *         5  statfs      4  re_pattern_buffer *  2  int, group *
+                                                           1  utmp *, lconv *
 ```
 
-against 6 newly-wrong, all of them listed:
+against 5 newly-wrong, all of them listed:
 
 | slice | function | GT | off | on |
 |---|---|---|---|---|
@@ -192,15 +189,10 @@ against 6 newly-wrong, all of them listed:
 | `coreutils::O0::pinky` | `print_long_entry` | `char *` | `char *` | `undefined8` |
 | `grep::O0::grep` | `EGexecute` | `idx_t` | `long` | `char *` |
 | `grep::O0::grep` | `EGexecute` | `idx_t` | `long` | `char *` |
-| `gzip::O2::gzip` | `lutimens` | `stat` | `stat` | `char[80]` |
 
 Not one is a named libc struct standing where a correct primitive pointer used
 to. The three `pinky` rows are the register-resident case below; the two
-`EGexecute` rows are a pointee guess spreading into two index variables; the
-`gzip` one is the frame re-split described in full below. A second re-split of
-the same kind, and the one place this round makes a store escape its object,
-falls outside the scored corpus entirely: the `sigfillset` slot, two sections
-down.
+`EGexecute` rows are a pointee guess spreading into two index variables.
 
 `spwd` and `utmpx` win nothing on this corpus: their pools sit behind gnulib
 wrappers that `protoorder` does not reach. They are kept because the declaration
@@ -219,7 +211,12 @@ functions with FEWER                  1 (-2)
 ```
 
 Nothing is fabricated: the change is a retyping, and the three functions whose variable
-count moves are the whole of it.
+count moves are the whole of it. At call sites the change REMOVES missing arguments
+rather than adding phantom ones: over all 663 x86-64 binaries of the results tree,
+`main` prints 196 `fseeko` calls with one argument where the callee takes three
+(`return fseeko(a0); // tail-call` in `-O2` gzip), and this branch prints all 348
+`fseeko` calls with three; `re_match` goes from 2 one-argument calls to 0. The only
+calls that gain an argument are the alloca-frame artifact below.
 
 ### The one worse function
 
@@ -229,139 +226,142 @@ exports a register local, so they stop being scored at all — they are not mist
 are invisible. The trigger is `fread_unlocked` gaining a declaration, which changes what
 the O0 frame copies merge with. The same slot wins four `FILE *` elsewhere.
 
-### The gzip `lutimens` row, in full
+### Dropped: the two-element time slots
 
-The `stat` row in that table is not just a name lost. `gzip::O2::lutimens`
-(`0xee90`) on `main` declares the whole 144-byte frame slot as one `stat v5` and
-reads its tail as members; on this branch the slot is `char v5 [80]` handed to
-an `lstat` that writes 144 bytes, and the three words past 80 —
-`st_atim.tv_nsec`, `st_mtim` — detach into `v9`/`v10`/`v11`, which the emitted
-body reads with nothing writing them:
-
-```
-main:    stat v5;           // stack - 0xc8      lstat(a0,&v5)      v8 = v5._88_8_;
-branch:  char v5 [80];      // stack - 0xc8      lstat(a0,(stat *)v5)
-         long v9;           // stack - 0x78      v4._8_8_ = v9;     <- nothing writes v9
-         undefined8 v10;    // stack - 0x70      v7 = v10;
-         long v11;          // stack - 0x68      v8 = v11;
-```
-
-The cause is the `timespec *` slot on `utimensat`/`futimens`: with those two
-slots reverted to `void *` and nothing else changed, `stat v5` comes back whole.
-
-It is kept, and this is the measurement it is kept on. Over all 30 corpus slices
-that import `utimensat` or `futimens` (coreutils `cp`/`ginstall`/`mv`/`touch`,
-gzip, tar, shadow `useradd`/`usermod`, openssh `sshd`/`sftp-server`, three
-optimization levels), the two builds differ in 123 functions:
+`utimensat`, `futimens`, `utimes` and `futimesat` were in round 4 and are not in this
+one. Their aggregate slot is `const struct timespec[2]` / `const struct timeval[2]`,
+and the vocabulary can only name one element, so the caller's frame object shrinks to
+16 bytes of a 32-byte array. gzip `-O2` `lutimens` (`0xee90`) was the visible case: the
+neighbouring 144-byte `stat` slot split at 80, and the body read `st_atim.tv_nsec` and
+`st_mtim` from locals nothing wrote:
 
 ```
-122  gain a `timespec` rendering (gnulib's own `struct timespec ts[2]` among them)
-  3  lose a whole `stat` declaration
-  1  of those 3 is under-declared: gzip O2 `lutimens`
+main, and this branch:  stat v5;          // stack - 0xc8      lstat(a0,&v5)      v8 = v5._88_8_;
+round 4:                char v5 [80];     // stack - 0xc8      lstat(a0,(stat *)v5)
+                        long v9;          // stack - 0x78      v4._8_8_ = v9;     <- nothing writes v9
 ```
 
-The other two (`shadow::O2::useradd` `0xc4a0`, `usermod` `0xbd90`) trade a
-`stat v17` for a 152-byte `char v17 [152]` — wider than the struct, not
-narrower, so no write lands outside it — while the adjacent
-`unsigned long v18 [4]` becomes exactly the `timespec v18 [2]` the source
-declares.
+The same slot shrank openssh's `struct timeval tv[2]` before `utimes` in 6 `scp`/`sftp`
+functions (`unsigned long v28 [3]` -> `timeval v28` plus two detached words), and
+lost a whole `stat` declaration in shadow `useradd`/`usermod`. No spelling of the slot
+avoids it without an array type in the vocabulary, so the four rows are gone; the
+`timespec` pool entries they reached (12 variables, `ranked-pool.md`) are unclaimed
+again. `lutimens` is byte-identical to `main` on this branch.
 
-The under-declared shape itself is not new. Scanning the same 30 slices for a
-`char vN [K < 144]` that the body casts to `stat *`: `main` already prints 7 of
-them, and this branch prints 8. `coreutils::O2::cp` `0x76f0` is main's, with the
-same detached tail — `char v24 [80]` cast to `(stat *)`, and `v25`, `v89`,
-`v90`, `v91` read with nothing writing them. So the row is one more instance of
-a rendering the option already ships, bought with 122 functions that gain the
-type the source actually declares; it is not a defect this round introduces, and
-fixing the class belongs to the frame-merge seam rather than to a prototype
-table.
+### Dropped: `sigfillset` and the five other `sigset_t` rows
 
-### The `sigfillset` slot and the `sigaction` frame
-
-The same re-split one binary family further out, and this one detaches a write
-rather than a read. `sigfillset(sigset_t *)` gives the 128-byte `sa_mask`
-sub-object of a `struct sigaction` local an identity of its own, so the 152-byte
-frame slot the caller hands to `sigaction()` splits at 136 and the `sa_flags`
-store lands in a local outside the object. `-O2` openssh `ssh-keygen`
-`sub_4ce20` (`ssh_signal`, `misc.c:0xa24`) is the shape:
+`sigfillset(&sa.sa_mask)` split a `struct sigaction` local at the mask in openssh's
+`ssh_signal` (every `-O2` openssh program), so the `sa_flags` store landed outside the
+object `sigaction()` is handed. With the row gone, `-O2` `ssh-keygen` `0x4ce20` is
+byte-identical to `main`, the object whole and the store inside it:
 
 ```
-base:    sigaction v4;    // stack - 0x158   sigfillset(&v4.field_0x8);
-                                             v4._136_4_ = 0x10000000;
-                                             sigaction(a0,&v4,&v5)
-branch:  char v4 [136];   // stack - 0x158   sigfillset((sigset_t *)&v4[8]);
-         undefined4 v7;   // stack - 0xd0    v7 = 0x10000000;   <- nothing reads v7
-                                             sigaction(a0,(sigaction *)v4,&v5)
+  sigaction v4; // stack - 0x158
+  sigfillset(&v4.field_0x8);
+    v4._136_4_ = 0x10000000;
+  if (sigaction(a0,&v4,&v5) != -1)
 ```
 
-`v7` is dead: the flag never reaches the object, and `sigaction()` is handed 136
-bytes of a 152-byte structure. That is worse than the gzip row above — there a
-body read words nothing wrote; here a store escapes the object, which a
-recompile would observe.
+The five other `sigset_t` rows were checked for the same split before keeping them.
+Over the 87 corpus binaries that import any of them, none splits anything. But an
+8-line program that hands `&sa.sa_mask` of a `struct sigaction` local to each one
+(`gcc -O0`/`-O2`, both arms of `decompile-all`) splits the object under every one of
+them: `sigdelset`, `sigismember`, `sigsuspend` and `sigwait` at `-O0`
+(`char v1 [136]` plus a detached `v2 = 0x10000000;`), `pthread_sigmask` at both levels
+(`sigaction(a0,NULL,(sigaction *)v1); ... if (v2 & 4)` — `sa_flags` read from a local
+that `sigaction()` never writes). They buy nothing in the mined pool, so all five are
+dropped rather than kept on the corpus's silence. The shipped `sigemptyset`,
+`sigaddset` and `sigprocmask` rows split the same way on `main` (sysvinit `wall` prints
+`sigemptyset((sigset_t *)&v13[8])` beside a detached `v26 = 0;`); that is a frame-merge
+fix, not this PR's.
 
-Measured by ablation, this branch built twice with nothing but the `sigfillset`
-row removed from the table in the second build:
+### Whole-corpus frame check
+
+Both builds over every x86-64 ELF in the results tree — 663 binaries, all 35 projects,
+three optimization levels, 199,963 functions — with a checker that flags a function
+when a stack object of 16 bytes or more on `main` gains a declaration starting inside
+it (a split), or loses a named libc aggregate local (`stat vN;` becoming `char vN [K]`):
 
 ```
-444-slice corpus       6 slices import sigfillset (coreutils env, shadow su, three -O levels)
-                       0 `sigaction` declarations lost; the slot only adds sigset_t
-                       renderings (+2/+3 in env, +1 in su)
-disjoint openssh -O2   7 binaries, exactly 1 function each, all of them ssh_signal:
-                       ssh 11 -> 10 `sigaction vN` declarations, ssh-keygen 11 -> 10,
-                       ssh-agent 11 -> 10, ssh-add 11 -> 10, sshd 3 -> 2, scp 2 -> 1,
-                       sftp 2 -> 1
+functions whose text changes           5,338
+functions with a split frame object        0
+functions that lose a named local          0
 ```
 
-Nothing in the scored corpus moves; the visible cost is one function per openssh
-binary.
+It also counts named casts onto a char array smaller than the type (`(stat *)v5` on a
+`char v5 [80]`): 82 on `main`, 131 here. None of the 49 new ones is a shrink. 34 sit on
+an array this branch GREW toward the type's real size by merging words `main` declared
+separately (openssh's `struct tm` before `mktime`/`timegm`, 16 -> 32 bytes of 56; grep's
+and expr's `regex_t`, one 8-byte word -> 32 bytes of 64), 13 are tar's `struct obstack`
+locals now declared as one 16-24 byte array where `main` declared loose words or
+nothing, and 2 are arrays of the same size on both arms (bash `sh_regmatch` hands
+`char v7 [16]` to `regcomp` either way; this branch only spells the cast).
 
-The shape itself is not new, and the mitigation is the same as the gzip row's:
-`sigemptyset(sigset_t *)` ships on `main` and splits the frame the same way. On
-the ablated build, this program
+The checker was calibrated on round 4's rows: over the 108 binaries that import a
+signal or utime name, the round-4 build (without `sigfillset`) is flagged in exactly the
+functions described above — gzip `lutimens`, the six `scp`/`sftp` `utimes` callers, and
+the lost `stat` in shadow `useradd`/`usermod`.
 
-```c
-void setup(int sig, struct sigaction *old) {
-  struct sigaction sa;
-  memset(&sa, 0, sizeof sa);
-  sa.sa_handler = h;
-  sigemptyset(&sa.sa_mask);              /* sigfillset here on the other arm */
-  if (sig != 14) sa.sa_flags = 0x10000000;
-  sigaction(sig, &sa, old);
-}
+### The trailing argument in alloca functions (`O0` coreutils `cp`)
+
+Round 4 printed `utimensat(v18,v26,&v12,0,v3)` against a four-parameter declaration in
+`-O0` `cp` `0x4793`. That is not the declaration being appended to: it is an artifact
+`main` already prints for every declared callee in a function that grows its stack
+with `alloca`. The call's own pushed return address is read back as one extra trailing
+argument, and `main` shows it on the same lines of the same function:
+
+```
+v10 = gettext("failed to preserve times for %s",v13[v4 + -8]);
+v3 = v13[v4 + -8];
+v6 = *__errno_location(v3);
 ```
 
-built `gcc -O2` and stripped, prints the identical detached `undefined4 v6;
-// stack - 0x30` next to `sigaction(a0,(sigaction *)&v3,a1)`; and ssh-keygen's
-base arm already prints 18 `(sigaction *)` cast-at-use sites against this
-branch's 19, eight of them in one function immediately after a
-`sigemptyset(&v23)`.
+Over the 663 binaries, 251 functions carry an alloca stack probe; `main` prints 3,249
+declared calls with exactly one extra argument in 179 of them (`free` 768, `memcpy`
+416, `__errno_location` 384, `dcgettext` 243, ...). `utimensat` added 12 more in
+round 4; with it dropped, this branch adds 9 (`getutent` 6 in sysvinit `wall`/`shutdown`,
+`pthread_mutex_init` 2 and `__getdelim` 1 in libselinux), all in functions that
+already print the artifact. `argclobber` (on by default since #689) does not remove it,
+because the extra value is a stack read, not a register. `-O0` `cp` is in the hunk
+classification set below.
 
-The row is kept: typing `sigset_t` where the program passes one is right, the
-scored corpus loses nothing, and dropping `sigfillset` would leave
-`sigemptyset`/`sigaddset`/`sigprocmask` triggering the same split on `main`
-anyway. Fixing the class belongs to the frame-merge seam, not to a prototype
-table.
+### The undefined high half (`dat_4`)
+
+A declared `int` return feeding a caller kuna recovered as returning 8 bytes renders
+the upper half of `rax` as `dat_4`: `return CONCAT44(dat_4,fclose(a0));` appears 1,408
+times on `main`. This branch adds 121, in 109 functions: 98 `-O0` gnulib `rpl_fseeko`
+wrappers (`return CONCAT44(dat_4,fseeko(a0,a1,a2));`, where `main` printed a `void`
+`fseeko` in return position), 21 in gnulib's `nanosleep` wrappers in coreutils
+`sleep`/`sort`/`tail` at all three levels, and 2 in find's `re_match` caller.
+It is the caller's return width that is wrong, and the value really is undefined
+there. What the same rows buy: every `fseeko` call gets its three arguments (196 were
+printed with one), and `nanosleep`'s `timespec` is one object in coreutils `sleep`
+where `main` split it into `v2` and `v4`.
 
 ### Whole-corpus output diff
 
-`decompile-all` before and after over 14 whole binaries (7,457 functions): 796 functions
-change, 2,450 hunks, classified by `classify.py` beside this file into
-`corpus-hunk-classification.txt`:
+`decompile-all` before and after over 15 whole binaries (7,987 functions; round 4's
+14 plus `-O0` coreutils `cp`): 763 functions change, 2,337 hunks, classified by
+`classify.py` beside this file into `corpus-hunk-classification.txt`:
 
 ```
- 638  local renumbering only
- 587  synthesized struct_N renumbered (one fewer slot in the ledger)
- 485  other, downstream of a changed pointee
- 173  signature gains a named pointee
- 165  a named cast appears
- 115  cast at an offset becomes a field
-  99  declaration gains a named pointee
-  84  a PLT thunk gains the return the declaration states
-  45  other, mentions a named type
+ 626  local renumbering only
+ 586  synthesized struct_N renumbered (one fewer slot in the ledger)
+ 443  other, downstream of a changed pointee
+ 154  signature gains a named pointee
+ 153  a named cast appears
+ 110  cast at an offset becomes a field
+  93  declaration gains a named pointee
+  70  a PLT thunk gains the return the declaration states
+  44  other, mentions a named type
   33  a field access gains or loses its width cast
-  22  a local's spelling or width moves under the new pointee
+  21  a local's spelling or width moves under the new pointee
    4  field becomes a cast at an offset
 ```
+
+`-O0` `cp` is 5 functions and 11 hunks: three PLT thunks, `rpl_fseeko`'s signature and
+tail call, and `fstatfs` filling a whole `statfs v5` where `main` had
+`unsigned long v5 [15]`. Its `utimensat` call is `main`'s four-argument one.
 
 The two largest buckets are renumbering: a synthesized structure that is now a named
 libc type leaves the ledger, so every later `struct_N` shifts down one ordinal. That is
