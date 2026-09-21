@@ -537,5 +537,46 @@
       },
       "reading": "The default arm is free (-1.24 / -0.72 / -0.67) and the fix does not slow the option-on arm (-0.54 / -2.07 / +1.00 against main's option-on). The option itself costs sort +7.23% over the default in this run (main's option-on arm: +5.46%), above the +5% budget; it is default off and not a flip candidate."
     }
+  },
+  "default_on_reevaluation": {
+    "base_commit": "ce008ce2b (main after #695, #704, #692)",
+    "arms": "one build: option off (shipped) vs ('charptr','on') in AGGRESSIVE_OVERRIDES / --option charptr on",
+    "decision": "held off; criteria (c) and (d) fail",
+    "typesweep": {
+      "slices": 444,
+      "functions": 10748,
+      "perfect_off": 1353,
+      "perfect_on": 1353,
+      "aggregate_off": 3670.31,
+      "aggregate_on": 3669.74,
+      "improved": 2,
+      "worse": 4,
+      "onto_perfect": 0,
+      "off_perfect": 0,
+      "control_scored_differently": 0,
+      "worse_rows": [
+        "coreutils::O2-noinline::head elide_tail_bytes_pipe current_pos (__off_t) unsigned long -> char *",
+        "tar::O0::tar check_compressed_archive temp (_Bool) undefined1 -> char",
+        "tar::O2::tar check_compressed_archive (same)",
+        "tar::O2-noinline::tar check_compressed_archive (same)"
+      ]
+    },
+    "test_cli": {
+      "passed": 213,
+      "total": 219,
+      "substantive": [
+        "protoorder-types-keeps-a-wide-store-whole",
+        "protoorder-types-keeps-a-word-fill-whole",
+        "ptrfromuse-default-declares-a-dereferenced-parameter-void"
+      ],
+      "signedness_only": [
+        "protoorder-types-the-callers-argument",
+        "protoorder-off-loses-the-callee-type",
+        "protoorder-lock-declines-a-register-saturating-callee"
+      ],
+      "cause": "kuna_protoorder::pointee_refuses exempts a character pointee; charptr turns peek's recovered unsigned char * into char *, so the vote reaches callers that store wide constants and each 8-byte store prints as 8 byte stores"
+    },
+    "not_rerun": "(a) (b) (e) (f): the decision is fixed by (c) and (d)",
+    "next_levers": "next-levers.md"
   }
 }

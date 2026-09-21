@@ -1,0 +1,16 @@
+diff --git a/decompiler/crates/kuna-cli/src/decompile_all.rs b/decompiler/crates/kuna-cli/src/decompile_all.rs
+index 71bd7219b..d54cabeef 100644
+--- a/decompiler/crates/kuna-cli/src/decompile_all.rs
++++ b/decompiler/crates/kuna-cli/src/decompile_all.rs
+@@ -1744,9 +1744,10 @@ fn callee_first_plan(graph: &CallGraph, targets: &[FunctionEntry]) -> Vec<(usize
+         edges[i] = out;
+     }
+     let (order, component_size) = tarjan_scc(&edges);
++    let exp = std::env::var("KUNA_EXP_SCCPARK").unwrap_or_default();
+     order
+         .into_iter()
+-        .map(|i| (i, component_size[i] == 1 && !self_recursive[i]))
++        .map(|i| (i, exp == "all" || (component_size[i] == 1 && (exp == "self" || !self_recursive[i]))))
+         .collect()
+ }
+ 
