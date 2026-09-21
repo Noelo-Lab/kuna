@@ -91,11 +91,23 @@ fn parse_number(token: &str) -> Option<u64> {
         .flatten()
 }
 
+/// A name the image does carry, offered when a by-name selector missed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameSuggestion {
+    pub name: String,
+    pub address: u64,
+}
+
 /// A selector did not identify exactly one usable entry.
 #[derive(Debug, Clone)]
 pub enum EntryLookupError {
     NotFound {
         selector: String,
+        /// The nearest spelling the image carries, when one exists.
+        suggestion: Option<NameSuggestion>,
+        /// How many entries carry a name the image supplied rather than one the
+        /// engine minted. Zero is a stripped image, where no name can select.
+        named_entries: usize,
     },
     Unmapped {
         selector: String,
@@ -115,7 +127,29 @@ pub enum EntryLookupError {
 impl fmt::Display for EntryLookupError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NotFound { selector } => write!(f, "no function matches {selector:?}"),
+            Self::NotFound {
+                selector,
+                suggestion,
+                named_entries,
+            } => {
+                write!(f, "no function matches {selector:?}")?;
+                match suggestion {
+                    Some(near) => write!(
+                        f,
+                        "; did you mean {:?} (0x{:x})?",
+                        near.name, near.address
+                    ),
+                    // Nothing is appended for a stripped image: a front-end's
+                    // own advice (`--addr`) is the only thing left to say, and
+                    // it says it.
+                    None if *named_entries > 0 => write!(
+                        f,
+                        "; this image names {named_entries} function{}, none spelled that way",
+                        if *named_entries == 1 { "" } else { "s" }
+                    ),
+                    None => Ok(()),
+                }
+            }
             Self::Unmapped {
                 selector,
                 relocatable,

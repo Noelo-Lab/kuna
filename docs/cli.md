@@ -197,6 +197,34 @@ kuna decompile ./graphy sub_deadbeef
 #          an address with --addr
 ```
 
+**The C spelling works on Mach-O.** Mach-O decorates a C identifier with a
+leading underscore, so `int main(void)` is stored as `_main` and the name a
+caller reads in the source is not one the image carries. kuna tries the name as
+given first and, only on a miss, retries it decorated — so an image that really
+does carry both spellings still answers the one that was asked for, and no other
+container gains an underscore it never had.
+
+```bash
+kuna decompile ./mre main            # the image spells it _main
+#   unsigned int main(void) { ... }
+```
+
+**A miss says what the image does carry.** The by-address advice is for a
+stripped image, and it is given only when the image really is one — every entry
+named by an engine placeholder. Otherwise the miss names the near spelling, or
+says how many names the image has:
+
+```bash
+kuna decompile ./mre decode
+#   error: no function "decode" in ./mre; did you mean "_decode" (0x100000378)?
+kuna decompile ./mre zork
+#   error: no function "zork" in ./mre; this image names 6 functions, none
+#          spelled that way
+```
+
+`kuna functions` lists them. A near spelling is the same identifier under a
+different ABI decoration, never a merely similar name.
+
 **An import name selects the code half.** A dynamically linked image spells an
 import's name twice — on the forwarding veneer a direct `call` targets, and on
 the IAT/GOT slot that veneer reads — so `strcmp` matches two entries. The

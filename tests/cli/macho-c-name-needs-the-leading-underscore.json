@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "main"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_imports",
+    "binary_sha256": "0394e1be81c4ccdfb28a50cf5dba55a6d95a692cd5504f2305a8f139e8f86675",
+    "binary_size": 16688,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_imports",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "main\\("
+    ],
+    "stderr_absent": [
+      "for a stripped binary"
+    ]
+  },
+  "notes": "Mach-O stores `int main(void)` as `_main`, and the by-name selector matched the symbol table exactly, so the C spelling missed and the miss advised `--addr` `for a stripped binary` on an image whose symbols are all present. The name as given is still tried first, so an image carrying both spellings is unaffected.",
+  "probe_id": "p-52643e1f0e5a"
+}

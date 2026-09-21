@@ -239,7 +239,38 @@ Four front-ends drive one engine assembly:
   strings` names a literal's owner from the reference walk's own flow attribution
   (`decompiler/crates/kuna-cli/src/strings.rs (owning_function)`), which reaches
   starts the inventory never recorded — so the name kuna printed was one the
-  by-name selector then refused. On an
+  by-name selector then refused.
+
+  (kuna, issue #666) A second miss retry covers the ABI decoration the container
+  applies to a C identifier. Mach-O stores `int main(void)` as `_main`, so the
+  spelling a caller reads in the source is not a name the image carries at all,
+  and `kuna decompile <macho> main` missed on an image whose symbol table held
+  every name it needed. The decoration is a one-bit property of the container,
+  read off its magic at bootstrap
+  (`decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_object_with_isa)`
+  → `ConsoleProgram::symbol_underscore_prefix`) rather than guessed from the
+  names, so ELF, PE and COFF are untouched: an ELF that carries `_start` and not
+  `start` still answers `start` as a miss. The name as GIVEN is tried first and
+  the decorated spelling only after it found nothing, so an image carrying both
+  `main` and `_main` resolves `main` to `main`. The retry is one-directional:
+  a caller who types the decorated spelling has typed a name the image carries,
+  and reading `_main` as `main` would invent a decoration rather than strip one.
+
+  (kuna, issue #666) A miss that remains a miss reports what the image DOES
+  carry, because the front-end cannot know. `EntryLookupError::NotFound`
+  (`decompiler/crates/kuna-console/src/entry_selector.rs`) carries two facts the
+  selector model is the only thing in a position to state: the nearest spelling
+  the image holds — the same identifier under a different leading-underscore
+  decoration, never a merely similar name
+  (`decompiler/crates/kuna-console/src/engine.rs (nearest_spelling)`) — and how
+  many entries carry a name the image supplied rather than one the engine minted
+  (`decompiler/crates/kuna-console/src/engine.rs (named_entry_count)`). Zero of
+  the latter is the stripped image, where no name can select and only an address
+  can; that, and only that, is what the CLI's "for a stripped binary pass an
+  address with `--addr`" is the answer to
+  (`decompiler/crates/kuna-cli/src/decompile.rs (name_miss_hint)`). Before this,
+  every by-name miss carried that sentence, so an unstripped Mach-O with all its
+  symbols present was reported as stripped. On an
   ARM-family spec the grouping key folds away the Thumb mode bit (`vma & !1`, the
   same normalization
   `decompiler/crates/kuna-console/src/project.rs (build_asm)` applies to its
