@@ -37,18 +37,26 @@
 //!   `strcmp(base + 0x13, ".cron.hostname")` on a `struct dirent *`, and 0x13
 //!   is `offsetof(struct dirent, d_name)`.
 //! * the value is dereferenced *at the base* and every such dereference is one
-//!   byte wide, or it is stepped one byte at a time (`PTRADD` of element size
-//!   one).  A byte read at a FIXED non-zero offset is a one-byte struct field,
-//!   not a character, and says nothing.
+//!   byte wide, or it is indexed one byte at a time by an index the program
+//!   computes (`PTRADD` of element size one whose index is not a constant).
+//!   Nothing at a FIXED non-zero offset says anything: a byte read there is a
+//!   one-byte field, and a constant displacement is a field whether it is an
+//!   `INT_ADD` or, once the base is typed, a `PTRADD` -- `&d->d_name[0]` on a
+//!   `struct dirent *` is `PTRADD(d, 0x13, 1)`, and walking the array from there
+//!   is walking the field.  So is skipping a string's first character
+//!   (`p + 1`), which the walk cannot tell from a field at offset one.
 //! * the value is defined by, or compared against, a constant that resolves to
 //!   a character array in the image.
 //!
 //! The candidate is one more vote in the same `getLocalType` fold, folded by
-//! [`Datatype::type_order`], and it may also *refine* a pointer that points at
-//! nothing: `void *` and `undefined1 *` become `char *`, while a pointer to a
-//! named or sized thing — `FILE *`, `stat *`, `long *`, a synthesized
-//! `struct_3 *` — is left exactly as it was.  A type-locked Varnode and a
-//! Varnode seeded from a type-locked symbol are never touched.
+//! [`Datatype::type_order`], and it may also *refine* a pointer vote that points
+//! at nothing: `void *` and `undefined1 *` become `char *`, while a pointer vote
+//! at a named or sized thing — `FILE *`, `stat *`, `long *`, a synthesized
+//! `struct_3 *` — is left as it was.  The guard reads the vote in flight, so a
+//! pointee that would only arrive by later propagation is not protected:
+//! e2fsck's `ext2fs_bitcount(unsigned int *a0, ...)` becomes `char *a0`.  A
+//! type-locked Varnode and a Varnode seeded from a type-locked symbol are never
+//! touched.
 //!
 //! The walk refuses outright on any use a character pointer does not survive:
 //! a dereference wider than a byte, a `PTRADD` whose element is wider, a call
@@ -154,8 +162,8 @@ enum Use {
     CharForward(CharKind, VarnodeId),
     /// Identity: keep walking from this Varnode, at the same distance from the base.
     Forward(VarnodeId),
-    /// A fixed non-zero offset from the base: keep walking, but a byte read from
-    /// there is a one-byte field rather than a character.
+    /// A fixed non-zero offset from the base: keep walking, but nothing from
+    /// there on is about the base.
     ForwardOffset(VarnodeId),
     /// Nothing either way.
     Neutral,

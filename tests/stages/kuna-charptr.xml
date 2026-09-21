@@ -2,13 +2,14 @@
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
     Type campaign, item `charptr`: a pointer the program only ever uses on
-    characters is declared as an integer or as `void *`, although the fact is
-    already on the table.  coreutils `realpath` -O0 shows it, on
-    `path_prefix(char const *prefix, char const *path)`:
+    characters is declared with the wrong element type, although the fact is
+    already on the table.  GNU tar -O0 shows it, on
+    `drop_volume_label_suffix(char const *label)`:
 
-        bool sub_2bbc(void *a0,void *a1)
+        void * dropsuffix(uint1 *a0)
 
-    and the body walks both arguments one byte at a time.
+    and the body passes `label` to `strlen`, whose declared parameter is
+    `char *`.
 
     Root cause (P5, type propagation).  `TypeOpCall::getInputLocal`
     (typeop.cc:689) states a callee's declared parameter type about the Varnode
@@ -17,19 +18,19 @@
     and the use that says "characters" - an -O0 spill through the frame, a
     MULTIEQUAL, a `p + k` whose INT_ADD refuses to carry a pointer back
     (typeop.cc:1217, the same refusal `ptrfromuse` documents) - is a hop the
-    fact does not cross.
+    fact does not cross, and the byte-wide read the body does for its
+    `isspace` test votes `uint1` instead.
 
     Stage / sub-stage: P5 "type-propagation".  The P0 assertion
     `option charptr on|off` decides whether character evidence may commit a
     pointer-width parameter or stack local to `char *`.
 
-    The witness is that function itself, 197 bytes of `coreutils realpath -O0`
-    0x2bbc copied in whole, plus six controls:
+    The witness is that function itself, 266 bytes of `tar -O0` 0xe680 copied
+    in whole at its own address, with a `ret` stub at each callee's PLT slot,
+    plus nine controls:
 
-        pathprefix: the witness - `path_prefix(char const *, char const *)`,
-                    whose two parameters are spilled to the frame and then
-                    walked in place one byte at a time.  Off it is
-                    `bool pathprefix(void *a0,void *a1)`
+        dropsuffix: the witness - `strlen(label)` at the base, through the
+                    -O0 spill.  Off it is `void * dropsuffix(uint1 *a0)`
         scaled:     shl rdi,2; call slen
                     a control - RDI is SHIFTED before it reaches the declared
                     `char *`, which no pointer survives
@@ -46,6 +47,16 @@
                     `announce_mkdir(char *dir, void *options)` reads the `bool`
                     at `options + 0x3c`, and typing that `char *` would replace
                     a correct `void *` with a wrong claim
+        fieldwalk:  gcc -O0 of `for (p = d->d_name; *p; p++) n += *p;` on a
+                    `struct dirent *d`
+        fieldwalk2: the same at -O2
+                    two controls - a char array EMBEDDED in a struct, walked
+                    one byte at a time.  Once the base is typed, `d + 0x13`
+                    is `PTRADD(d, 0x13, 1)`, and a constant displacement is the
+                    same field offset in that spelling as in an INT_ADD, so
+                    the walk from there says nothing about the base.  dpkg's
+                    `dpkg-trigger` -O2 and `dpkg-statoverride` -O0 are the
+                    corpus cases
         mixedwidth: movzx eax, byte [rdi]; add eax,[rdi+8]
                     a control - the same value is also read four bytes wide, so
                     the byte read does not establish the element type
@@ -53,14 +64,20 @@
                     a control - the callee declares a pointer at something else,
                     which contradicts a character pointer rather than
                     supporting one
+        pathprefix: 197 bytes of coreutils `realpath` -O0
+                    `path_prefix(char const *, char const *)`, which advances
+                    both arguments one character before its first read.  A
+                    control - `p + 1` is the same shape as a field at offset
+                    one, and the walk cannot tell them apart, so it is not
+                    evidence in either pass
 
     `prefixcmp` is the same byte-at-a-time compare written out by hand, and it
-    is here as a SEVENTH control: kuna already types it `char *` without the
+    is here as a tenth control: kuna already types it `char *` without the
     option, through the PTRADD the pointer-arithmetic pool builds, and it must
     not move either way.
 
     Pass 1 (`option charptr off`) reproduces the bug; pass 2 (`on`) is the fix.
-    All seven controls are identical in both passes.
+    All ten controls are identical in both passes.
 -->
 <bytechunk space="ram" offset="0x100000">
 4883ec084883c713e8330100004883c408c300000000000000000000000000004883ec0848c1e702e8130100004883c408c30000000000000000000000000000554889e54883ec2048897de8488975e0488b45e84883c001488945f8488b45e04883c001488945f0488b45f80fb60084c0741e488b45f00fb610488b45f80fb60038d0750c488345f801488345f001ebd7488b45f80fb600c9c300000000000000000000000000000000000000000000000000000000000000000000000000000fb6473cc30000000000000000000000000000000000000000000000000000000fb607034708c3000000000000000000000000000000000000000000000000004883ec084883c701e8430000004883c408c3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004889f8c30000000000000000000000004889f8c3000000000000000000000000f30f1efa554889e548897df8488975f0488345f801488345f001488b45f80fb60084c07511488b45f00fb6003c2f0f95c0e98d000000488b45f80fb6003c2f7539488b45f84883c0010fb60084c0752a488b45f00fb6003c2f0f94c0eb65488b45f80fb610488b45f00fb60038c27522488345f801488345f001488b45f80fb60084c0740e488b45f00fb60084c075ceeb0190488b45f80fb60084c0751d488b45f00fb6003c2f740b488b45f00fb60084c07507b801000000eb05b80000000083e0015dc3
@@ -77,11 +94,43 @@
 <symbol space="ram" offset="0x100160" name="pathprefix"/>
 <symbol space="ram" offset="0x100230" name="fieldwalk"/>
 <symbol space="ram" offset="0x100280" name="fieldwalk2"/>
+<bytechunk space="ram" offset="0xa080">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0xa2f0">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0xa440">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0xaa00">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x60b5b">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0xe680">
+f30f1efa554889e54883ec3048897dd8488b45d84889c7e8e4b9ffff488945f048837df000750ab800000000e9d7000000488b45f0488d50ff488b45d84801d0488945e8eb0548836de801488b45e8483b45d87627e826c3ffff488b10488b45e80fb6000fb6c04801c04801d00fb7000fb7c0250008000085c075ca488b45e8483b45d8767d488b45e84883e807483945d8736f48836de807488b45e8ba08000000488d0d361f07004889ce4889c7e8bcbbffff85c0754b488b45e8482b45d8488945f0488b45f04883c0014889c7e807240500488945f8488b55f0488b4dd8488b45f84889ce4889c7e8d1bcffff488b55f8488b45f04801d0c60000488b45f8eb05b800000000c9c3
+</bytechunk>
+<symbol space="ram" offset="0xa080" name="strlen"/>
+<symbol space="ram" offset="0xa2f0" name="memcmp"/>
+<symbol space="ram" offset="0xa440" name="memcpy"/>
+<symbol space="ram" offset="0xaa00" name="__ctype_b_loc"/>
+<symbol space="ram" offset="0x60b5b" name="xmalloc"/>
+<symbol space="ram" offset="0xe680" name="dropsuffix"/>
 </binaryimage>
 <script>
   <com>parse line extern char *slen(char *p);</com>
   <com>parse line extern int8 ilen(int8 *p);</com>
+  <com>parse line extern uint8 strlen(char *s);</com>
+  <com>parse line extern uint2 **__ctype_b_loc(void);</com>
+  <com>parse line extern int4 memcmp(void *a,void *b,uint8 n);</com>
+  <com>parse line extern void *memcpy(void *d,void *s,uint8 n);</com>
+  <com>parse line extern void *xmalloc(uint8 n);</com>
   <com>option charptr off</com>
+  <com>lo fu dropsuffix</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>lo fu pathprefix</com>
   <com>decompile</com>
   <com>print C</com>
@@ -110,6 +159,9 @@
   <com>decompile</com>
   <com>print C</com>
   <com>option charptr on</com>
+  <com>lo fu dropsuffix</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>lo fu pathprefix</com>
   <com>decompile</com>
   <com>print C</com>
@@ -139,12 +191,15 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="charptr #1: with the option off the two string parameters the body walks a byte at a time are void * - the bug" min="1" max="1">bool pathprefix\(void \*a0,void \*a1\)</stringmatch>
-<stringmatch name="charptr #2: with the option on the byte walk names the element type" min="1" max="1">bool pathprefix\(char \*a0,char \*a1\)</stringmatch>
+<stringmatch name="charptr #1: with the option off a string parameter passed to strlen reads as uint1 * - the bug" min="1" max="1">void \* dropsuffix\(uint1 \*a0\)</stringmatch>
+<stringmatch name="charptr #2: with the option on the callee declaration names the element type" min="1" max="1">void \* dropsuffix\(char \*a0\)</stringmatch>
 <stringmatch name="charptr #3: a parameter shifted before it reaches the declaration is refused in both passes" min="2" max="2">void scaled\(int8 a0\)</stringmatch>
 <stringmatch name="charptr #4: a one-byte read at a fixed offset is a struct field, so the pointer keeps its placeholder in both passes" min="2" max="2">char fieldbyte\(void \*a0\)</stringmatch>
 <stringmatch name="charptr #5: a value also read four bytes wide is not a character pointer in either pass" min="2" max="2">int4 mixedwidth\(struct_0 \*a0\)</stringmatch>
 <stringmatch name="charptr #6: a callee that declares a pointer at something else contradicts a character pointer in both passes" min="2" max="2">void otherproto\(int8 a0\)</stringmatch>
 <stringmatch name="charptr #7: the byte-at-a-time compare is already char * without the option, and the option does not move it" min="2" max="2">char prefixcmp\(char \*a0,char \*a1\)</stringmatch>
 <stringmatch name="charptr #8: a declared char * reached at a fixed non-zero offset is about the field, not the base, in both passes" min="2" max="2">void offsetcall\(int8 a0\)</stringmatch>
+<stringmatch name="charptr #9: a char array embedded in a struct and walked from a constant PTRADD offset says nothing about the base, in both passes (-O0)" min="2" max="2">int8 fieldwalk\(void \*a0\)</stringmatch>
+<stringmatch name="charptr #10: the same struct-embedded walk at -O2 keeps its placeholder in both passes" min="2" max="2">int8 fieldwalk2\(void \*a0\)</stringmatch>
+<stringmatch name="charptr #11: a string whose first character is skipped before any read cannot be told from a field at offset one, so it is void * in both passes" min="2" max="2">bool pathprefix\(void \*a0,void \*a1\)</stringmatch>
 </decompilertest>

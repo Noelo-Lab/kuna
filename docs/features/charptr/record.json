@@ -437,5 +437,65 @@
     "measured": "no new run",
     "why": "the round-3 code change is one condition inside kuna_charptr::classify_use, which is only reached with the option ON (char_pointer_from_evidence returns before the walk when the option is off), and it can only END a walk earlier. The loader change is a pure reordering of is_readonly_data with the same answer on every input (unit-tested for the non-ELF case). The default arm's instruction stream is unchanged, so the round-2 block stands.",
     "round2_numbers_that_stand": "3-arm interleaved min-of-15: new_default vs main_default fmt +0.23 ls +0.20 sort -2.12 bash -0.37; on vs new_default fmt +2.02 ls +0.30 sort +4.28 bash +1.55 (worst +4.28, budget +5)."
+  },
+  "offset_rule_round5": {
+    "what": "Follow-up to #695 (post-merge review). kuna_charptr::classify_use's PTRADD arm now reads the index: a constant non-zero index is a field offset (ForwardOffset), index zero is identity, and a one-byte step taken from an already-offset value forwards without counting. Only a computed index from the base is character evidence. Before, a constant PTRADD counted as a byte step, so `&d->d_name[0]` on a `struct dirent *` -- an INT_ADD while `d` was an integer, PTRADD(d, 0x13, 1) once an earlier fold typed it void * -- committed the base to char *.",
+    "counterexamples_fixed": [
+      "dpkg-trigger -O2 sub_58d0: (char *a0) on main with charptr on -> (void *a0)",
+      "dpkg-statoverride -O0 sub_9aaf: (char *a0) -> (void *a0)",
+      "gcc -O0 / -O2 of `for (p = d->d_name; *p; p++)` on struct dirent *: (char *a0) -> (void *a0); stage controls #9/#10"
+    ],
+    "cost": "Two correct idioms have exactly the shape of a field and are now declined with it. (1) Skipping a string's first character before the first read (`p + 1`): coreutils realpath path_prefix, env scan_varname, printf print_esc, od -O2 sub_4270 keep void * with the option on; stage control #11 pins path_prefix. (2) Writing a number backwards from the end of a caller's buffer, gnulib umaxtostr/imaxtostr/inttostr (`p = buf + 20; *p = 0; *--p = ...`): tar -O0 sub_54bde/sub_54d1c/sub_54e5a (and sysinttostr above them), ls -O2 sub_12680/sub_12720, sort -O2 sub_e120/sub_e1b0/sub_e200 keep `void *buf` and, as in the default arm, get a separate `char *v2` for the moving cursor instead of reusing the parameter.",
+    "typesweep": {
+      "driver": "same as typesweep (pinned decbench 625e892, DECBENCH_NO_CACHE=1), .scratch/sweep-r5",
+      "slices": 444,
+      "functions": 10748,
+      "perfect_off": 1349,
+      "perfect_on": 1349,
+      "aggregate_off": 3659.62,
+      "aggregate_on": 3659.05,
+      "onto_perfect": 0,
+      "off_perfect": 0,
+      "improved": 2,
+      "worse": 4,
+      "improved_rows": [
+        "coreutils::O0::tac output 0.0 -> 0.1667",
+        "tar::O0::tar read_header 0.4762 -> 0.5238"
+      ],
+      "worse_rows": [
+        "coreutils::O2-noinline::head elide_tail_bytes_pipe 0.2593 -> 0.2222",
+        "tar::O0::tar check_compressed_archive 0.5 -> 0.25",
+        "tar::O2-noinline::tar check_compressed_archive 0.25 -> 0.0",
+        "tar::O2::tar check_compressed_archive 0.25 -> 0.0"
+      ],
+      "byte_identical_functions": 10654,
+      "base_matches_previous_base": "aggregate_off 3659.62 equals the round-2/3 base, so the .interp/SHT_NOTE loader change moves nothing the metric scores",
+      "verdict": "the option no longer earns a default flip: criterion (d) of default-on-evaluation.md now fails"
+    },
+    "corpus_diff": {
+      "binaries": [
+        "O0 coreutils basename",
+        "O0 coreutils cat",
+        "O0 coreutils chroot",
+        "O0 coreutils env",
+        "O0 coreutils printf",
+        "O0 coreutils realpath",
+        "O0 diffutils diff",
+        "O0 grep grep",
+        "O0 tar tar",
+        "O2 coreutils fmt",
+        "O2 coreutils ls",
+        "O2 coreutils od",
+        "O2 coreutils sort",
+        "O2 findutils find",
+        "O2 gzip gzip",
+        "O2-noinline bzip2 bzip2"
+      ],
+      "default_main_vs_new": "byte-identical on all 16",
+      "option_on_main_vs_new": "147 changed lines in 8 binaries, every one the offset rule withdrawing a commitment and the function returning to what the default arm prints: the base parameter goes char * -> void * and `&a0[k]` goes back to `(char *)((long)a0 + k)`. By function: chroot sub_7fa8, env sub_2fa8 (scan_varname), printf sub_3288 (print_esc), realpath sub_2bbc (path_prefix), od sub_4270, and the umaxtostr family in tar/ls/sort (see cost); in those the moving cursor becomes its own `char *v2` again and two tar stores print `0x2d`/`0x20` instead of '-'/' ' because the pointer they go through is void * again. No arity change, no new string literal, no value or statement order moved.",
+      "option_on_new_def_vs_on": "what the option still does: mostly unsigned char * / uint1 * -> char * (signedness), a few knock-ons the other way (tar sub_27831.. char * -> uint1 *), tar -O0 mode_from_header's bool *hbits (store-only) void * -> char *"
+    },
+    "loader": "Strict fix beside it, no flag: .interp (by name; it is SHT_PROGBITS) and SHT_NOTE (SectionKind::Note) join the loader tables that lose the READONLY bit and that operand_refs refuses as data targets. ObjectFormat::section_bits now takes the section name. loadertablestring_x86_64 gains puts((char *)0x320) (.interp) and puts((char *)0x3a0) (.note.ABI-tag); main printed puts(\"d-linux-x86-64.so.2\") and puts(\"\\x03\").",
+    "stage_test": "tests/stages/kuna-charptr.xml: witness is now tar -O0 drop_volume_label_suffix (off `void * dropsuffix(uint1 *a0)`, on `char *a0`, via strlen's declared char *); controls #9 fieldwalk (-O0), #10 fieldwalk2 (-O2), #11 pathprefix. The pre-fix decomp_test_dbg fails exactly #9, #10, #11."
   }
 }

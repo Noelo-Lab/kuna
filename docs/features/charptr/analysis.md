@@ -219,3 +219,57 @@ worse. Nothing else in the eight binaries loses a field boundary.
 cronie `crond -O0 sub_6715` — the `strcmp(base + 0x13, ".cron.hostname")` on a
 `struct dirent *` that the offset guard was added for — is byte-identical in
 both arms.
+
+## The offset rule, completed (follow-up to #695)
+
+The offset guard above read a fixed displacement only when it arrived as a
+literal `INT_ADD` or a `PTRSUB`. The same displacement has a third spelling: once
+an earlier fold has typed the base `void *`, `RulePtrArith` rewrites `d + 0x13`
+as `PTRADD(d, 0x13, 1)`, and the `PTRADD` arm counted any one-byte element step
+as a character step and forwarded the value as if it were still at the base. A
+`struct dirent *` whose `d_name` is walked to its NUL therefore committed to
+`char *` on the second fold after declining on the first (census: `ev=none`,
+then `ev=byte` three times). dpkg shows it twice: `dpkg-trigger` -O2 `sub_58d0`
+and `dpkg-statoverride` -O0 `sub_9aaf` both print `(char *a0)` with the option
+on before this change and `(void *a0)` after.
+
+The `PTRADD` arm now reads its index: a constant non-zero index sets the offset
+flag, index zero is identity, and a one-byte step taken from an offset value
+forwards without counting. Only an index the program computes, from the base,
+is character evidence (`kuna_charptr::ptradd_step`, unit-tested).
+
+That removes nearly all of what the option was measured to gain, because the
+gain was the same shape. Two correct idioms start at a fixed offset from the
+base and cannot be told from a field by anything the walk sees:
+
+* skipping a string's first character before the first read (`p + 1`):
+  coreutils `realpath` `path_prefix`, `env` `scan_varname`, `printf`
+  `print_esc`, three of the four functions that had moved onto a perfect score;
+* writing a number backwards from the end of a caller's buffer, gnulib
+  `umaxtostr` (`p = buf + 20; *p = 0; *--p = ...`): tar `sysinttostr`, the
+  fourth, and the `umaxtostr` family in tar, ls and sort.
+
+| 444-slice sweep, option on vs off | before (a constant `PTRADD` counted) | after |
+|---|---|---|
+| perfect `type_match` | 1,349 -> 1,353 | 1,349 -> 1,349 |
+| aggregate | +4.93 | -0.57 |
+| onto / off perfect | 4 / 0 | 0 / 0 |
+| improved / worse | 14 / 6 | 2 / 4 |
+
+The four worse rows are the ones already read above (`head`
+`elide_tail_bytes_pipe`, `tar` `check_compressed_archive` in three builds); the
+two improved are `tac` `output` and `tar` `read_header`. The base aggregate,
+3659.62, is the same as before, so the `.interp`/note loader change beside this
+one moves nothing the metric scores.
+
+Corpus check over 16 whole binaries: the default arm is byte-identical to main
+on all of them. With the option on, 147 lines in 8 binaries change, and every
+hunk is the rule withdrawing a commitment so that the function prints what the
+default arm prints: a parameter back from `char *` to `void *`, `&a0[k]` back to
+`(char *)((long)a0 + k)`, the `umaxtostr` cursor back in its own `char *v2`, two
+tar stores back from `'-'`/`' '` to `0x2d`/`0x20`. No arity change, no new
+literal, nothing reordered. What the option still does on those binaries is
+mostly signedness (`unsigned char *`/`uint1 *` to `char *`, and a few knock-ons
+the other way) plus one store-only `bool *` (`tar` `mode_from_header`'s
+`hbits`) that becomes `char *`. `default-on-evaluation.md` records what this
+means for the default.

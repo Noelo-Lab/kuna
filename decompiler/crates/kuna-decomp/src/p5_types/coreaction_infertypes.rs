@@ -409,7 +409,7 @@ fn build_localtypes(data: &mut Funcdata) {
         // walk rather than left to `propagateTypeEdge`, which will not carry a
         // pointer back over the hops an `-O0` spill puts between the parameter and
         // the call.  Folded by `type_order`, and allowed to refine only a pointer
-        // that points at nothing (`void *`, `undefined1 *`).  See `kuna_charptr`.
+        // vote that points at nothing (`void *`, `undefined1 *`).  See `kuna_charptr`.
         let ct = {
             let on = data.get_arch().char_ptr;
             if from_seed {

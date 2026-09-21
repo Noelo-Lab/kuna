@@ -4,7 +4,7 @@
 //! `tests/stages/kuna-charptr.xml` (pass 1 `off` = the bug, pass 2 `on` = the
 //! fix, with four controls).  What is pinned here are the two properties the
 //! design rests on: the candidate outranks every integer vote in
-//! `getLocalType`'s fold, and it refines only a pointer that points at nothing.
+//! `getLocalType`'s fold, and it refines only a pointer vote that points at nothing.
 
 use super::*;
 
