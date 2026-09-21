@@ -428,6 +428,46 @@ test still decides where that may happen: never across a call, and across a
 store only when the two addresses provably differ. `off` is the upstream seed
 fold exactly.
 
+**A libc aggregate the caller reaches past (`libctypes`).** `TypeOpCall`'s
+`get_input_local` turns a locked callee parameter into a vote about the argument
+Varnode, and `libctypes` (chapter 01) locks many of them to a named libc
+aggregate: `_obstack_newchunk(obstack *, size_t)`, `pthread_mutex_lock(pthread_mutex_t *)`.
+The vote is right when the argument points at that aggregate and wrong when it
+points at an object whose first member is one, because the two addresses are the
+same value. grep's `struct kwset` begins with its obstack, so
+`kwsincr(kwset_t, char const *, idx_t)` was declared `obstack *a0` and every other
+member rendered as an element of an obstack array: offset 0x980 of the 88-byte
+struct printed `&v1[0x1b].field_0x38`. An rsyslog instance record that begins
+with its mutex printed `a0[9].field_0xc`.
+
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_libcfit.rs (overruns)` asks what
+the caller does through the argument before the vote is taken. It walks the
+argument's value family and every load, store and derived address reached from
+it, with the walkers `protoorder` holds its own recovered votes to
+(`value_family`, `with_sibling_loads` and `accesses_through` in
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs`), and declines
+when any of them lies outside the aggregate: at a constant offset at or past its
+end or before its start, or stepped by a constant that is not a whole number of
+aggregates. coreutils `wc` is the stepped case: it walks `&fstatus[i].st`, a
+`stat` 8 bytes into a 152-byte record, and reads `failed` at -8. A declined vote
+falls back to `void *`, what the shipped width-stable tables say for the same
+slot, so the argument settles on whatever other evidence it has (grep's
+`kwsprep` prints `unsigned long *a0`, exactly as with `libctypes off`). The
+declared type is untouched and is still what `ActionSetCasts` measures the call
+against (`declared_input_type_local`), so a value that settles on another type
+passes with a cast, `stat(v10,(stat *)v15)`, and a `void *` needs none. What
+proves nothing is left alone: a one-byte step, which is what an unknown index
+looks like; an array of the aggregate itself (sdiff's `struct sigaction` table,
+stepped by exactly 152); and a walk that runs out of budget. The rule speaks
+only about the names `libctypes` can mint or adopt (`AGGREGATE_NAMES` in
+`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_libctypes.rs`), only while
+that option is on (`ArchContext::libctypes`), and only about the vote. It never
+touches a type that arrives by another road: a call's OUTPUT (`getpwnam`'s
+`passwd *`), or propagation between Varnodes that are later merged into one
+variable, which is how bash's `glob_vector` still prints one `DIR *` local that
+also holds an unrelated `sh_malloc` result. `tests/stages/kuna-libctypes.xml`
+pass 13 pins the obstack and mutex shapes and a control that keeps its name.
+
 **What the pointer points at (`charptr`).** `ptrfromuse` decides that a value
 *is* a pointer; it cannot say what is on the other end, and the shipped `void`
 says so honestly. The element type is often on the table already — a callee
