@@ -668,8 +668,11 @@ fn a_named_prototype_rejects_two_executable_candidates() {
     assert_eq!(report[0].status, "rejected", "{report:?}");
     let detail = report[0].detail.as_deref().unwrap_or_default();
     assert!(detail.contains("ambiguous"), "unhelpful rejection: {detail}");
-    assert!(detail.matches("synthetic 0x").count() >= 2,
+    // A linked PE maps its candidates itself, so they are reported at their own
+    // addresses; `synthetic` belongs to a relocatable load (kuna, issue #667).
+    assert!(detail.matches(" at 0x").count() >= 2,
         "the rejection must identify both executable candidates: {detail}");
+    assert!(!detail.contains("synthetic"), "a linked image has no synthetic VMA: {detail}");
 }
 
 /// A true miss remains a pending by-name prototype for the interactive

@@ -1255,6 +1255,19 @@ Behaviors specific to `decompile-all`:
   addresses are errors. Only symbols marked undefined/import by the object are reported as
   external.
 
+- **An ambiguity offers a selector the input actually has.** Section-qualified coordinates
+  exist only in a relocatable object, so a linked image whose name identifies two entries
+  is offered the address form instead, one per candidate — and its candidates are reported
+  at the addresses the image is mapped at, not as synthetic VMAs:
+
+  ```bash
+  kuna decompile ./mre _decode
+  #   error: selector "_decode" is ambiguous; candidates:
+  #     _decode at 0x10000039c
+  #     _decode at 0x1000003e0
+  #   use an address selector to choose one candidate: --addr 0x10000039c, --addr 0x1000003e0
+  ```
+
 - **Relocation diagnostics** — supported relocations are applied before decoding. Entries
   that cannot be applied are grouped by architecture, relocation type, and failure reason,
   with exact totals, at most eight groups, and at most three samples per group. A public load

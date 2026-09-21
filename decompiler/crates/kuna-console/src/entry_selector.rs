@@ -116,6 +116,10 @@ pub enum EntryLookupError {
     Ambiguous {
         selector: String,
         candidates: Vec<FunctionEntry>,
+        /// Was this loaded from a relocatable object? Only there do the
+        /// section coordinates a `.section+0xOFFSET` selector needs exist, and
+        /// only there is every candidate's address a synthetic load VMA.
+        relocatable: bool,
     },
     BodylessImport {
         selector: String,
@@ -166,6 +170,7 @@ impl fmt::Display for EntryLookupError {
             Self::Ambiguous {
                 selector,
                 candidates,
+                relocatable,
             } => {
                 writeln!(f, "selector {selector:?} is ambiguous; candidates:")?;
                 for candidate in candidates {
@@ -180,18 +185,39 @@ impl fmt::Display for EntryLookupError {
                             candidate.addr.get_offset(),
                             candidate.binding.as_deref().unwrap_or("unknown binding")
                         )?,
+                        // A linked image is mapped where it was linked for, so
+                        // only a relocatable load and an undefined external are
+                        // given an address that is not the program's own.
                         None => writeln!(
                             f,
-                            "  {} at synthetic 0x{:x}",
+                            "  {} at {}0x{:x}",
                             candidate.name,
+                            if *relocatable
+                                || candidate.provenance == EntryProvenance::UndefinedExternal
+                            {
+                                "synthetic "
+                            } else {
+                                ""
+                            },
                             candidate.addr.get_offset()
                         )?,
                     }
                 }
-                write!(
-                    f,
-                    "use a section-qualified selector to choose one candidate"
-                )
+                if *relocatable {
+                    return write!(f, "use a section-qualified selector to choose one candidate");
+                }
+                // A linked image has no section coordinates to qualify with, so
+                // the address is the only selector that separates these.
+                write!(f, "use an address selector to choose one candidate:")?;
+                for (i, candidate) in candidates.iter().enumerate() {
+                    write!(
+                        f,
+                        "{} --addr 0x{:x}",
+                        if i == 0 { "" } else { "," },
+                        candidate.addr.get_offset()
+                    )?;
+                }
+                Ok(())
             }
             Self::BodylessImport {
                 selector,

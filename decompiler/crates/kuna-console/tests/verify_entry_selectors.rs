@@ -162,6 +162,7 @@ fn duplicate_raw_offsets_are_reported_instead_of_guessed() {
     let message = EntryLookupError::Ambiguous {
         selector: "0x0".into(),
         candidates,
+        relocatable: true,
     }
     .to_string();
     assert!(message.contains(".text+0x0"), "{message}");
@@ -212,6 +213,7 @@ fn duplicate_local_names_are_ambiguous_and_section_selectors_are_exact() {
     let message = EntryLookupError::Ambiguous {
         selector: "duplicate_local".into(),
         candidates,
+        relocatable: true,
     }
     .to_string();
     assert!(message.contains(".text.selector_a+0x0"), "{message}");
@@ -561,4 +563,55 @@ fn a_stripped_image_reports_no_names_at_all() {
     assert_eq!(*named_entries, 0, "every entry here is an engine placeholder");
     assert!(suggestion.is_none());
     assert_eq!(error.to_string(), r#"no function matches "zork""#);
+}
+
+/// (kuna, issue #667) A linked image has no object-file section coordinates, so
+/// a section-qualified selector cannot separate two same-named entries in one.
+/// The report offers the selector that can, and calls a mapped address what it
+/// is.
+#[test]
+fn a_linked_image_ambiguity_offers_the_address_form() {
+    let Some(program) = boot_committed("macho_dup_main") else {
+        return;
+    };
+    let error = program
+        .resolve_entry(&EntrySelector::Name("_main".into()))
+        .expect_err("two definitions are spelled _main");
+    let EntryLookupError::Ambiguous { relocatable, .. } = &error else {
+        panic!("expected an ambiguity, got {error}");
+    };
+    assert!(!relocatable);
+    let message = error.to_string();
+    assert!(
+        message.contains("--addr 0x1000005a0") && message.contains("--addr 0x1000005b0"),
+        "every candidate must be offered as an address selector; got:\n{message}"
+    );
+    assert!(
+        !message.contains("section-qualified"),
+        "a linked image has no section-qualified selector to offer; got:\n{message}"
+    );
+    assert!(
+        message.contains("_main at 0x1000005a0") && !message.contains("synthetic"),
+        "a linked image's candidates are mapped, not synthetic; got:\n{message}"
+    );
+}
+
+/// The relocatable report is unchanged: its coordinates exist, its addresses
+/// really are synthetic, and the section-qualified selector really does work.
+#[test]
+fn a_relocatable_ambiguity_keeps_the_section_form() {
+    let Some(program) = boot_committed("entry_selectors_x86_64.o") else {
+        return;
+    };
+    let error = program
+        .resolve_entry(&EntrySelector::Name("duplicate_local".into()))
+        .expect_err("two .text definitions are both executable");
+    let EntryLookupError::Ambiguous { relocatable, .. } = &error else {
+        panic!("expected an ambiguity, got {error}");
+    };
+    assert!(relocatable);
+    let message = error.to_string();
+    assert!(message.contains("section-qualified"), "{message}");
+    assert!(message.contains("synthetic 0x"), "{message}");
+    assert!(!message.contains("--addr"), "{message}");
 }
