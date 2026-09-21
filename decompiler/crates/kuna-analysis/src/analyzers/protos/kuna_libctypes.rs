@@ -488,7 +488,6 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     // signal.h — the rest of the `sigset_t` surface.
     ("pthread_sigmask", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("sigset_t"), Ty::NamedPtr("sigset_t")], vararg: -1 }),
     ("sigdelset", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::Int], vararg: -1 }),
-    ("sigfillset", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t")], vararg: -1 }),
     ("sigismember", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::Int], vararg: -1 }),
     ("sigsuspend", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t")], vararg: -1 }),
     ("sigwait", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("sigset_t"), Ty::IntPtr], vararg: -1 }),
