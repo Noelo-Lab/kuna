@@ -463,6 +463,7 @@ fn result_json(binary: &str, funcs: &[FuncResult], kinds: &[&'static str]) -> St
         s.push_str(&format!("      \"size\": {},\n", f.size));
         s.push_str(&format!("      \"code\": {},\n", json_opt_str(f.code.as_deref())));
         s.push_str(&format!("      \"error\": {},\n", json_opt_str(f.error.as_deref())));
+        s.push_str(&format!("      \"unstructured_gotos\": {},\n", f.unstructured_gotos()));
         s.push_str("      \"variables\": [");
         for (j, v) in f.variables.iter().enumerate() {
             s.push_str(if j == 0 { "\n" } else { ",\n" });

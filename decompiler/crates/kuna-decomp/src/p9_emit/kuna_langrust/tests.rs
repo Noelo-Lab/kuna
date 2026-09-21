@@ -215,3 +215,29 @@ fn rust_emits_an_allow_attribute() {
     assert!(attrs[0].contains("non_snake_case"));
     assert!(attrs[0].contains("unused_parens"));
 }
+
+/// The two halves of the marker are one sentence, so a counter that matches the
+/// diverging half is matching what the comment says.
+#[test]
+fn the_goto_marker_halves_agree() {
+    assert_eq!(UNSTRUCTURED_GOTO_MARKER, format!("panic!(\"{UNSTRUCTURED_GOTO_NOTE}"));
+}
+
+/// One per goto, not one per half, and never one for C.
+#[test]
+fn unstructured_gotos_are_counted_once_each() {
+    let rendered = "  if a0 <= 0 {\n    /* kuna: unstructured goto to label_1157 */ \
+                    panic!(\"kuna: unstructured goto to label_1157\");\n  }\n";
+    assert_eq!(count_unstructured_gotos(rendered), 1);
+    assert_eq!(count_unstructured_gotos(&rendered.repeat(3)), 3);
+    assert_eq!(count_unstructured_gotos("  goto label_1157;\n"), 0);
+    assert_eq!(count_unstructured_gotos(""), 0);
+}
+
+/// A decompiled program's own data cannot inflate the count: the printer escapes
+/// an interior quote, so the marker's `panic!("` never appears inside a literal.
+#[test]
+fn a_string_literal_cannot_fake_the_marker() {
+    let rendered = "  v1 = \"panic!(\\\"kuna: unstructured goto to label_1157\\\")\";\n";
+    assert_eq!(count_unstructured_gotos(rendered), 0);
+}

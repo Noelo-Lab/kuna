@@ -1349,6 +1349,32 @@ parsing the emitted document. Decompiled output calls functions that have no
 definition, `CARRY4(a, b)` has no Rust spelling, and `[u8; 3]` does not do
 arithmetic; making the output compile is a separate and much larger project.
 
+**The marker is reported, not only emitted** (GH-668). A body whose jump became a
+`panic!` is a translation up to that jump and not past it, so a consumer that
+reads only the exit code, stderr and the `error` field used to be told a lossy
+render was a clean one. Two channels carry the fact now. Every surface that
+renders a function names it on stderr in one line — the count, the function, and
+the two ways out (`--language c`, which spells the jump as a real `goto`, or a
+P8 structuring option that removes it) — and every per-function JSON record
+carries `unstructured_gotos`, which is `0` on a C render and on a Rust one with
+nothing lost. The **verdict does not move**: exit stays `0` and `error` stays
+`null`, because the rest of the body is usable output and a caller that already
+treats success as "there is code here" is not wrong.
+
+Both channels count occurrences of `UNSTRUCTURED_GOTO_MARKER` in the *rendered
+text*, exported from `p9_emit/kuna_langrust.rs` beside the printer that builds
+the marker from it. Counting the text rather than the emitter is what makes one
+mechanism serve every surface: `kuna decompile` drives `decomp_dbg` as a
+subprocess and would never see an in-engine counter, a `--jobs` worker ships
+framed records across a pipe, and the WASM front-end holds only the document —
+but all of them hold `code`. The matched text includes the marker's unescaped
+`"`, which a Rust string literal in the decompiled program can never contain
+(the printer escapes an interior quote), so program data cannot inflate the
+count. The switch fall-through marker is a comment with no diverging call and is
+deliberately outside this count: it is a different lossy construct, and naming
+one number `unstructured_gotos` that meant two things would be worse than
+reporting the one.
+
 Two surfaces refuse the language rather than half-honouring it. `kuna-ghidra`
 pins its Clang token-markup document to C (`process.rs`), because that document
 is consumed by Ghidra's C token model and Rust text in C token slots is a GUI

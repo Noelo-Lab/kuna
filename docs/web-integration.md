@@ -80,7 +80,8 @@ metadata(binary).len() → auto_mode_for_size(...) // <500 KiB aggressive; <2 Mi
 ```
 
 Its `--json` is `kuna decompile-all --json`'s fields (`name`, `address`, `address_hex`,
-`aliases`, `size`, `code`, `error`, `variables[{name,type,kind,arg_index,stack_offset,size}]`)
+`aliases`, `size`, `code`, `error`, `unstructured_gotos`,
+`variables[{name,type,kind,arg_index,stack_offset,size}]`)
 — including the one-record-per-entry contract and the `aliases` array documented in
 `docs/cli.md`. Wasm `list` reports the full canonical callable-symbol inventory
 under the selected mode. In `fast`, that inventory includes the bounded Listing's

@@ -584,6 +584,29 @@ impl PrintC {
     }
 }
 
+/// The sentence both halves of the unrepresentable-goto marker are built from;
+/// the target label follows it.
+pub const UNSTRUCTURED_GOTO_NOTE: &str = "kuna: unstructured goto to ";
+
+/// The diverging half of the marker, and the one a counter matches: it is
+/// emitted exactly once per unrepresentable goto, where the comment half would
+/// double the count.
+///
+/// The unescaped `"` is what makes matching this over rendered text sound. A
+/// decompiled program that embedded this very sentence in a string constant is
+/// printed as a Rust string literal, and the printer escapes an interior quote
+/// (`panic!(\"kuna: ...`), so program data cannot produce a match.
+pub const UNSTRUCTURED_GOTO_MARKER: &str = "panic!(\"kuna: unstructured goto to ";
+
+/// How many unrepresentable gotos a rendered function body contains.
+///
+/// Every reporting surface counts through here rather than re-spelling the
+/// marker, so the printer and the counter cannot drift. C output has none by
+/// construction: a C `goto` is a real statement, not a defect.
+pub fn count_unstructured_gotos(code: &str) -> usize {
+    code.matches(UNSTRUCTURED_GOTO_MARKER).count()
+}
+
 impl PrintC {
     /// A jump the target language cannot express.
     ///
@@ -597,20 +620,19 @@ impl PrintC {
     /// value position still type-checks and the document still parses. Loud
     /// because a bare comment is silently wrong: a reader would see code that
     /// looks like a translation and is not. And greppable, because
-    /// `panic!("kuna: unstructured goto` counted over a whole-binary render IS
-    /// the quality number for this back-end -- exactly what `gotoreduce`,
-    /// `taildup`, `ifelseflatten` and `crossjumprevert` reduce.
+    /// [`UNSTRUCTURED_GOTO_MARKER`] counted over a render IS the quality number
+    /// for this back-end -- exactly what `gotoreduce`, `taildup`,
+    /// `ifelseflatten` and `crossjumprevert` reduce, and what every CLI surface
+    /// reports through [`count_unstructured_gotos`].
     pub(crate) fn emit_unrepresentable_goto(&mut self, fd: &Funcdata, target: BlockId) {
         let name = self.block_label_name(fd, target);
         self.emit.print(
-            &format!("/* kuna: unstructured goto to {name} */"),
+            &format!("/* {UNSTRUCTURED_GOTO_NOTE}{name} */"),
             SyntaxHighlight::CommentColor,
         );
         self.emit.spaces(1, 0);
-        self.emit.print(
-            &format!("panic!(\"kuna: unstructured goto to {name}\")"),
-            SyntaxHighlight::NoColor,
-        );
+        self.emit
+            .print(&format!("{UNSTRUCTURED_GOTO_MARKER}{name}\")"), SyntaxHighlight::NoColor);
     }
 }
 

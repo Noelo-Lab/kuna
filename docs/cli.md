@@ -738,9 +738,13 @@ primitive spelling, `x as T` casts, `loop`/`while c {}`, and `match v { A | B =>
 compilation: the output calls functions that have no definition and does no type
 checking. Constructs Rust cannot express — an unstructured `goto` the structurer
 could not remove, a C switch fall-through — render as a comment plus a diverging
-`panic!("kuna: …")` so a lossy site is never mistaken for a translation; grep
-that marker to measure them, and `--option gotoreduce on --option taildup on
---option ifelseflatten on` to reduce them. `--language` also works on
+`panic!("kuna: …")` so a lossy site is never mistaken for a translation. An
+emitted `goto` marker is also **reported**: one `note:` line on stderr naming the
+function and the count, and a per-function `unstructured_gotos` in the `--json`
+record (`0` on a C render). The run still exits `0` with a `null` `error` — the
+body either side of the marker is a translation, so this is a fidelity warning,
+not a failed run. `--language c` spells the jump as a real `goto`; a P8
+structuring option (`kuna catalog`) can remove it instead. `--language` also works on
 `decompile-all`; `decompile-project` is C-only -- it never auto-selects, and errors on an
 explicit non-C language -- and the Ghidra front-end pins its markup document to
 C. The browser decompiler carries the same three choices in its **Language**
@@ -1126,7 +1130,7 @@ numbers a caller orients by are the ones `kuna functions` reports.
 
 `--json` emits
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
-line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
+unstructured_gotos,line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`kuna functions --json` emits
 `name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
@@ -1134,8 +1138,14 @@ definition it is `{section_index,section,offset,offset_hex}`. `count` is what th
 `functions` array holds. `kuna functions --json` also carries `total`, the count
 before any triage narrowing; `decompile-all --json` carries `total` only when a
 triage flag actually narrowed it, so an unfiltered whole-binary document — the one
-the decbench backend and `kuna decompile --json` read — is byte-identical to
-before. `line_mappings` maps 1-based
+the decbench backend and `kuna decompile --json` read — carries the same keys as
+before plus `unstructured_gotos`. That is how many jumps in `code` the Rust
+back-end had no form for and rendered as a diverging `panic!` instead of a
+translation; it is `0` on every C render, and a non-zero one is also spoken as a
+`note:` on stderr. It does not change the run's verdict — a record with a
+`null` `error` and a non-zero `unstructured_gotos` is usable output with named
+lossy sites, which is what makes it worth filtering or re-running on.
+`line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the
 mapped instruction addresses on those lines. Both are empty when no backed use is
