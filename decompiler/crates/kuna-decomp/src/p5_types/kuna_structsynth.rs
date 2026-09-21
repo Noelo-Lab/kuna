@@ -808,8 +808,7 @@ fn synthesize(data: &mut Funcdata) -> bool {
     let raw = collect(data);
     let nests = data.get_arch().struct_synth.nests();
     let ptrsize = types.get_size_of_pointer();
-    let mut installs: Vec<(VarnodeId, Rc<Datatype>)> = Vec::new();
-
+    let mut asks = Vec::new();
     for (base, e) in raw.iter() {
         let e = e.pruned();
         if !accepts(data, *base, &e) {
@@ -822,7 +821,18 @@ fn synthesize(data: &mut Funcdata) -> bool {
         } else {
             Vec::new()
         };
-        let unclaimed = e.unclaimed_ranges();
+        asks.push((*base, e.slots.len(), fields, size, e.unclaimed_ranges(), selfs));
+    }
+    // A function whose own later layout contains its earlier one would see its
+    // earlier answer superseded, which a `--jobs` replay cannot reproduce; asked
+    // widest first, a later layout never contains an earlier one. Parameters
+    // alone keep the order `param` always had.
+    if data.get_arch().struct_synth.locals() {
+        asks.sort_by(|a, b| b.1.cmp(&a.1));
+    }
+
+    let mut installs: Vec<(VarnodeId, Rc<Datatype>)> = Vec::new();
+    for (base, _, fields, size, unclaimed, selfs) in asks {
         let Some(st) = answer(data, types.as_ref(), fields, size, &unclaimed, &selfs) else {
             continue;
         };
@@ -830,7 +840,7 @@ fn synthesize(data: &mut Funcdata) -> bool {
         // structure mints a fresh `Rc`, and merge compares high types by `Rc`
         // identity, so a pointer to the incomplete shell would never match.
         let Ok(ptr) = types.get_type_pointer(ptrsize, st, 1) else { continue };
-        installs.push((*base, ptr));
+        installs.push((base, ptr));
     }
 
     let mut changed = false;
@@ -865,12 +875,7 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     // A record is synthesized over a parameter, under `locals` over a pointer a
     // call returned, and under `nest` over what a record's pointer fields hold
     // ([`nest`]).
-    if !v.is_input()
-        && !(data.get_arch().struct_synth.locals()
-            && is_call_return(data, base)
-            && !joins_other_values(data, base)
-            && !(e.text_store && !e.other_access))
-    {
+    if !v.is_input() && !(data.get_arch().struct_synth.locals() && is_local_base(data, base, e)) {
         return false;
     }
     // A user/DWARF/declared type is authoritative.
@@ -886,11 +891,16 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     accepts_record(data, &ct, e)
 }
 
+/// Does `locals` measure `base`: a value a call returned, alone in its
+/// variable, that is not a buffer of text?
+fn is_local_base(data: &Funcdata, base: VarnodeId, e: &Evidence) -> bool {
+    is_call_return(data, base) && !joins_other_values(data, base) && !(e.text_store && !e.other_access)
+}
+
 /// Is `vn` the value a `CALL` or `CALLIND` returned, and did the callee's
 /// declaration leave its pointee open?  Single assignment makes that value the
-/// local's only definition, so nothing else is merged into it; a declared
-/// `char *` or `struct stat *` return is what the pointer is, and only `void *`
-/// (an allocator) says nothing.
+/// local's only definition; a declared `char *` or `struct stat *` return is
+/// what the pointer is, and only `void *` (an allocator) says nothing.
 fn is_call_return(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(def) = data.vbank().get(vn).and_then(|v| v.get_def()) else { return false };
     let Some(op) = data.obank().get(def) else { return false };
