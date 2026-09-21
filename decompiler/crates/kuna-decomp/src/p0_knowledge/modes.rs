@@ -501,7 +501,7 @@ mod tests {
         // (kuna `charptr`) Commit a pointer the program only ever uses on
         // characters to `char *`. The sweep says yes and the speed budget says
         // yes -- 444 slices / 10,748 functions, perfect `type_match` 1,349 ->
-        // 1,353, aggregate +4.93, 14 more improved against 3 worse, none off
+        // 1,353, aggregate +4.93, 14 more improved against 6 worse, none off
         // perfect, 0 arity changes over the 2,290 functions of the 8-binary
         // corpus diff -- but the preset run of `make test-cli` moves six probes
         // that pin the pointer spelling `protoorder` and `ptrfromuse` produce

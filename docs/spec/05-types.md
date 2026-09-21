@@ -483,7 +483,7 @@ correct aggregate pointer for a wrong `char *`. So the walk carries a flag sayin
 declared parameter there are neutral. A *variable* index is not: `strlen(p + i)`
 and `p[i]` still count, because `PTRADD` with element size one is the walk
 itself. Measured: without the flag on the byte arm the sweep gains more (+8
-functions onto perfect against +4) and loses more (13 functions down against 3),
+functions onto perfect against +4) and loses more (13 functions down against 6),
 and four of the extra losses are exactly this shape.
 
 The refusals are what keep the rule honest: a dereference or an element step

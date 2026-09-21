@@ -29,8 +29,8 @@ fn char_ptr(f: &TypeFactoryImpl) -> Rc<Datatype> {
     f.get_type_pointer(8, c, 1).unwrap()
 }
 
-/// The candidate beats every integer vote — that is what makes a parameter a
-/// declared `char *` is one addition away from stop being `unsigned long`.
+/// The candidate beats every integer vote, which is what turns a parameter the
+/// callee declares `char *` from `unsigned long` into `char *`.
 #[test]
 fn candidate_folds_over_an_integer_vote() {
     let f = factory();
