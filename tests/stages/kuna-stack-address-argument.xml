@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!-- Synthetic halfword output: a register argument takes the address of a
+     local initialized before a null-output check, then read after the call. -->
+<bytechunk space="ram" offset="0x1000">10482de900c0a0e3004053e208b08de20cd04de2bec04be10500000a0e304be2f60300ebbe305be1003084e508d04be21088bde80000e0e3fbffffea</bytechunk>
+<bytechunk space="ram" offset="0x2000">1eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1000" name="widen_value"/>
+<symbol space="ram" offset="0x2000" name="read_half"/>
+</binaryimage>
+<script>
+<com>load function widen_value</com><com>decompile</com><com>print C</com>
+<com>option stackaddrargtrial on</com>
+<com>load function widen_value</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="STACK ADDRESS #1: default loses the output argument" min="1" max="1">read_half\(\)</stringmatch>
+<stringmatch name="STACK ADDRESS #2: enabled retains the local address" min="1" max="1">read_half\(a0,a1,a2,v</stringmatch>
+<stringmatch name="STACK ADDRESS #3: only the default folds the output to zero" min="1" max="1">\*a3 = 0;</stringmatch>
+</decompilertest>

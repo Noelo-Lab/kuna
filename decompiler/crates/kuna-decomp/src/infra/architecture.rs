@@ -575,6 +575,8 @@ pub struct Architecture {
     /// `only_op_use` through
     /// [`crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call`].
     pub exclusive_arg_use: bool,
+    /// Opt-in stack-address evidence for call input trials.
+    pub stack_addr_arg_trial: bool,
     /// (kuna) `option callretpair`: complete the two-register CALL output arm of
     /// `FuncCallSpecs::buildOutputFromTrials` on any image, not only a detected
     /// rustc one.  Read by [`crate::p4_calls::kuna_callretpair`] through the
@@ -2319,6 +2321,7 @@ impl Architecture {
             ret_pushed_half: false, // (kuna) option retpushedhalf; reset_defaults sets the shipped default
             noreturn_ret_use: false, // (kuna) option noreturnretuse; reset_defaults sets the shipped default
             zero_idiom_use: false, // (kuna) option zeroidiomuse; reset_defaults sets the shipped default
+            stack_addr_arg_trial: false,
             exclusive_arg_use: false, // (kuna) option exclusivearguse; reset_defaults sets the shipped default
             call_ret_pair: false, // (kuna) option callretpair; reset_defaults sets the shipped default
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
@@ -2602,6 +2605,7 @@ impl Architecture {
         self.ret_pushed_half = true; // (kuna) DIV-156 default-on: a register the function only ever PUSHED is stack maintenance, not a value it placed in a return register, so the alignment `push %r8` / `pop %rdx` idiom no longer invents a fifth argument and a 128-bit return. Narrows `retinputhalf` only; 0/675 byte-identical on the datatest corpus. Restore the address-only placement test with `option retpushedhalf off`
         self.noreturn_ret_use = true; // (kuna) DIV-118 default-on: a status value handed to a no-return failure call at the end of its block cannot compete with the same value at the function's RETURN, so it no longer forces the prototype to void. 0/675 byte-identical on the datatest corpus and 0 changed lines across 23 linked binaries; restore the upstream blanket rejection with `option noreturnretuse off`
         self.zero_idiom_use = true; // (kuna) DIV-PENDING default-on: `INT_XOR(v,v)` is 0 whatever v is, so the x86 register-clearing idiom is not a competing use of the value it consumes and no longer sinks a call's input trials. An identity, one-directional (it can only decline a veto); 0/675 byte-identical on the datatest corpus. Restore the upstream walk with `option zeroidiomuse off`
+        self.stack_addr_arg_trial = false;
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
         self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
@@ -2972,6 +2976,7 @@ impl Architecture {
             "retpushedhalf" => on_off!(ret_pushed_half, "Push-only register placement rejection"),
             "noreturnretuse" => on_off!(noreturn_ret_use, "No-return call argument use in return trials"),
             "zeroidiomuse" => on_off!(zero_idiom_use, "Self-cancelling zeroing-idiom use in input trials"),
+            "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
             "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
             "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
             "rustabi" => {
@@ -4127,6 +4132,7 @@ impl Architecture {
         // (kuna) carry the mutually-exclusive-path dereference gate so `only_op_use`
         // reaches `option exclusivearguse` via `glb`.
         ctx.exclusive_arg_use = self.exclusive_arg_use;
+        ctx.stack_addr_arg_trial = self.stack_addr_arg_trial;
         // (kuna) carry the two-register CALL output gate so `kuna_callretpair`
         // reaches `option callretpair` via `glb`.
         ctx.call_ret_pair = self.call_ret_pair;
