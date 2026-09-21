@@ -49,3 +49,20 @@ fn a_zero_width_declaration_has_no_end_to_read_past() {
     let f = factory();
     assert_eq!(libc_pointee_size(&sized_ptr(&f, "stat", 0)), None);
 }
+
+#[test]
+fn an_offset_past_the_end_or_before_the_start_does_not_fit() {
+    assert!(fits(0x18, 0, 8, 88));
+    assert!(fits(88, 0, 0, 88), "the one-past-the-end address is still the object's");
+    assert!(!fits(88, 0, 8, 88), "kwset's first word after its obstack");
+    assert!(!fits(-8, 0, 4, 144));
+}
+
+#[test]
+fn a_step_must_be_a_whole_number_of_aggregates() {
+    assert!(!fits(-8, 152, 4, 144), "wc: `failed` before `&fstatus[i].st`");
+    assert!(fits(8, 16, 8, 16), "an array of timespec keeps the name");
+    assert!(fits(0x88 - 144, 144, 4, 144), "`p[-1].field` of an array of stat");
+    assert!(!fits(0x8c - 144, 144, 8, 144), "an access straddling two elements");
+    assert!(fits(0x2c, 1, 1, 60), "an unknown index proves nothing");
+}

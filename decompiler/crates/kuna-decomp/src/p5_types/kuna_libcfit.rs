@@ -14,16 +14,19 @@
 //! What the caller does through the pointer says which one it is. [`overruns`]
 //! walks the value the call reads with the walkers `protoorder` holds its own
 //! recovered votes to (`kuna_protoorder::accesses_through`), and looks for a
-//! load, a store or a derived address at a constant offset outside the
-//! aggregate. One is enough: nothing reads an N-byte object at offset N or past
-//! it, or at a negative offset. The vote then falls back to `void *`, the
+//! load, a store or a derived address outside the aggregate: at a constant
+//! offset at or past its end or before its start, or stepped by a constant that
+//! is not a whole number of aggregates (coreutils `wc` walks `&fstatus[i].st`,
+//! a `stat` 8 bytes into a 152-byte record, and reads `failed` at -8). One is
+//! enough. The vote then falls back to `void *`, the
 //! width-stable spelling the shipped tables give the same slot. The declared
 //! type is still what the call's cast is measured against
 //! (`declared_input_type_local`), so a value that settles on another type
 //! prints `_obstack_newchunk((obstack *)a0,n)`, and a `void *` needs no cast.
 //!
-//! Only what is proven is refused: a variable index and a walk that runs out of
-//! budget keep the vote. The rule applies to the names `libctypes` owns
+//! Only what is proven is refused: an unknown index (a one-byte step) and a
+//! walk that runs out of budget keep the vote, and so does an array of the
+//! aggregate itself (sdiff's `struct sigaction` table, stepped by 152). The rule applies to the names `libctypes` owns
 //! ([`crate::kuna_libctypes::AGGREGATE_NAMES`]) and only while that option is on,
 //! so `libctypes off` is untouched.
 
@@ -70,10 +73,20 @@ fn reached_outside(data: &Funcdata, vn: VarnodeId, size: i64) -> bool {
     use crate::kuna_protoorder::{accesses_through, value_family, with_sibling_loads};
     let family = with_sibling_loads(data, &value_family(data, vn));
     let Some((accesses, places)) = accesses_through(data, &family) else { return false };
-    places.iter().any(|&(at, stride)| stride == 0 && !(0..=size).contains(&at))
-        || accesses
-            .iter()
-            .any(|a| a.stride == 0 && (a.at < 0 || a.at + a.size as i64 > size))
+    places.iter().any(|&(at, stride)| !fits(at, stride, 0, size))
+        || accesses.iter().any(|a| !fits(a.at, a.stride, a.size as i64, size))
+}
+
+/// Can `width` bytes at `at` (plus any multiple of `stride`) lie inside an
+/// object of `size` bytes, or inside one element of an array of them? A step of
+/// one byte is what an unknown index looks like, and proves nothing.
+fn fits(at: i64, stride: i64, width: i64, size: i64) -> bool {
+    match stride.abs() {
+        0 => at >= 0 && at + width <= size,
+        1 => true,
+        s if s % size != 0 => false,
+        _ => at.rem_euclid(size) + width <= size,
+    }
 }
 
 #[cfg(test)]

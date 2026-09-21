@@ -898,16 +898,3 @@ fn the_fit_rule_knows_every_aggregate_this_table_names() {
     theirs.sort_unstable();
     assert_eq!(ours, theirs);
 }
-
-/// `pthread_mutex_init` and `pthread_mutex_destroy` were added off the measured
-/// pool, scored nothing on it, and are the calls an instance record whose FIRST
-/// member is its mutex makes with the record's own address.
-#[test]
-fn the_mutex_lifecycle_slots_stay_out() {
-    for name in ["pthread_mutex_init", "pthread_mutex_destroy"] {
-        assert!(
-            !LIBC_NAMED.iter().chain(LIBC_EXT_NAMED.iter()).any(|(n, _)| *n == name),
-            "{name} is not in the named tables"
-        );
-    }
-}

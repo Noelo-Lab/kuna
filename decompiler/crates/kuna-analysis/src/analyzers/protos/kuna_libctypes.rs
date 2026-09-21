@@ -483,11 +483,14 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     ("cfsetispeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
     ("cfsetospeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
     ("tcgetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
-    // dirent.h / wchar.h. No more `sigset_t` slots: one handed `&sa.sa_mask`
-    // splits the caller's `struct sigaction` at the mask. No more
-    // `pthread_mutex_t` slots either: `pthread_mutex_init`/`_destroy` scored
-    // nothing on the measured pool, and the mutex is most often the FIRST
-    // member of a larger object whose address is what gets passed.
+    // dirent.h / wchar.h / pthread.h. No more `sigset_t` slots: one handed
+    // `&sa.sa_mask` splits the caller's `struct sigaction` at the mask. The two
+    // mutex rows were added off the measured pool and score nothing on it; what
+    // they buy is the ARITY (without them 12 `pthread_mutex_init` calls in the
+    // corpus print one argument and 2 print four). A mutex is often the first
+    // member of a larger record, which `kuna_libcfit` declines per call site.
+    ("pthread_mutex_destroy", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
+    ("pthread_mutex_init", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t"), Ty::VoidPtr], vararg: -1 }),
     ("rewinddir", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
     ("wcrtomb", Sig { ret: Ty::Size, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("mbstate_t")], vararg: -1 }),
 ];
