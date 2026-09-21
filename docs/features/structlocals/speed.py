@@ -5,8 +5,8 @@ ALL = {"fmt": f"{R}/coreutils/stripped/fmt", "ls": f"{R}/coreutils/stripped/ls",
        "sort": f"{R}/coreutils/stripped/sort", "bash": f"{R}/bash/stripped/bash"}
 SP = "/home/mahaloz/kwt/structlocals/specs"
 K = {"main": ("/home/mahaloz/kwt/structlocals-base/decompiler/target/release/kuna", []),
-     "param": ("/home/mahaloz/kwt/structlocals/.scratch/bin-flip/kuna", ["--option", "structsynth", "param"]),
-     "locals": ("/home/mahaloz/kwt/structlocals/.scratch/bin-flip/kuna", [])}
+     "param": ("/home/mahaloz/kwt/structlocals/.scratch/bin-final/kuna", ["--option", "structsynth", "param"]),
+     "locals": ("/home/mahaloz/kwt/structlocals/.scratch/bin-final/kuna", [])}
 ARMS = list(K)
 N = int(sys.argv[1]); outf = sys.argv[2]; which = sys.argv[3].split(",")
 out = {}
