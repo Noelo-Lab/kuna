@@ -8047,6 +8047,11 @@ impl PrintC {
             Some(t) => t,
             None => return,
         };
+        let ptype = if ptrsub_resolves(&ptype) {
+            ptype
+        } else {
+            high_pointer_type(fd, in0).filter(|t| ptrsub_resolves(t)).unwrap_or(ptype)
+        };
         if ptype.get_metatype() != crate::dtype::type_metatype::TYPE_PTR {
             // C++ throws; fall to the functional render so output stays parseable.
             self.op_func_ir(fd, arch, op);
@@ -9041,6 +9046,36 @@ fn sblocks_basic_block_index(fd: &Funcdata, bb: BlockId) -> int4 {
     } else {
         fd.sblocks_ref().block(bb).get_index()
     }
+}
+
+/// Can `opPtrsub` name a member through a pointer of this type?
+fn ptrsub_resolves(ptype: &crate::dtype::Datatype) -> bool {
+    use crate::dtype::type_metatype;
+    ptype.get_metatype() == type_metatype::TYPE_PTR
+        && (ptype.is_formal_pointer_rel()
+            || ptype.get_ptr_to().is_some_and(|ct| {
+                matches!(
+                    ct.get_metatype(),
+                    type_metatype::TYPE_STRUCT
+                        | type_metatype::TYPE_UNION
+                        | type_metatype::TYPE_ARRAY
+                        | type_metatype::TYPE_SPACEBASE
+                )
+            }))
+}
+
+/// The pointer type of the variable `vn` belongs to, which C++ `opPtrsub` reads
+/// (`getHighTypeReadFacing`): a PTRSUB is inserted against the merged
+/// variable's type, and one member of the variable may still carry a
+/// narrower pointer (`unsigned int *` for a global also assigned a
+/// `struct_N *`), which cannot name the member.
+fn high_pointer_type(fd: &Funcdata, vn: VarnodeId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    let high = fd.vbank().get(vn)?.get_high()?;
+    if let Some(t) = fd.high_bank().get(high).and_then(|h| h.kuna_symbol_type()) {
+        return Some(std::rc::Rc::clone(t));
+    }
+    let rep = crate::kuna_declhightype::type_representative(fd, high)?;
+    fd.vbank().get(rep).map(|v| std::rc::Rc::clone(v.get_type()))
 }
 
 /// (kuna) The declarator a Symbol-keyed collapse imposes on the surviving

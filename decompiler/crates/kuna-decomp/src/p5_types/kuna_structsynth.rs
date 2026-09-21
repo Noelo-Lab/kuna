@@ -921,7 +921,11 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     // A record is synthesized over a parameter, under `locals` over a pointer a
     // call returned, and under `nest` over what a record's pointer fields hold
     // ([`nest`]).
-    if !v.is_input() && !(data.get_arch().struct_synth.locals() && is_call_return(data, base)) {
+    if !v.is_input()
+        && !(data.get_arch().struct_synth.locals()
+            && is_call_return(data, base)
+            && !joins_other_values(data, base))
+    {
         return false;
     }
     // A user/DWARF/declared type is authoritative.
@@ -957,6 +961,98 @@ fn is_call_return(data: &Funcdata, vn: VarnodeId) -> bool {
         matches!(p.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN)
     })
 }
+
+/// The most copies of one returned value [`joins_other_values`] follows.
+const MAX_COPIES: usize = 64;
+
+/// Will the value `vn` holds share a variable with some other value?
+///
+/// A copy is merged with the value it copies, a phi input with every other
+/// input of the phi, and a value in address-tied storage with everything else
+/// stored there, so a returned value that reaches a phi through a copy, or
+/// lands in tied storage, ends up in one variable with whatever else that
+/// storage held -- and a locked member decides the whole variable's type.
+/// `tar`'s `wordsplit_add_segm` keeps a record from `calloc` in the `rax` it
+/// returns its status in, and typing the record would declare the status a
+/// `struct_N *` too.
+fn joins_other_values(data: &Funcdata, vn: VarnodeId) -> bool {
+    let mut seen = vec![vn];
+    let mut i = 0;
+    while i < seen.len() {
+        let cur = seen[i];
+        i += 1;
+        if storage_is_tied(data, cur) {
+            return true;
+        }
+        let Some(v) = data.vbank().get(cur) else { return true };
+        for u in v.descend_iter() {
+            let Some(op) = data.obank().get(u) else { continue };
+            match op.code() {
+                OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => return true,
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
+                    let Some(out) = op.get_out() else { continue };
+                    if !seen.contains(&out) {
+                        if seen.len() >= MAX_COPIES {
+                            return true;
+                        }
+                        seen.push(out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
+/// Will every value stored where `vn` lives be one variable?  That is so when a
+/// value overlapping it is address-tied, and when it is the function's return
+/// register and a phi joins that register somewhere: the return register is
+/// then tied as a whole-function local once merging starts
+/// (`mark_output_storage_addr_tied`), long after this pass has run.
+fn storage_is_tied(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return true };
+    if v.is_addr_tied() {
+        return true;
+    }
+    let Some(spc) = v.get_addr().get_space().cloned() else { return false };
+    if spc.get_type() == spacetype::IPTR_INTERNAL {
+        return false;
+    }
+    let (addr, size) = (v.get_addr().clone(), v.get_size());
+    if is_return_storage(data, &addr, size)
+        && data.vbank().iter_loc_size_addr(size, &addr).any(|id| {
+            let def = data.vbank().get(id).and_then(|w| w.get_def());
+            def.and_then(|d| data.obank().get(d)).is_some_and(|op| {
+                matches!(op.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT)
+            })
+        })
+    {
+        return true;
+    }
+    let off = v.get_offset();
+    let end = off.saturating_add(size as uintb);
+    let lo = kuna_base::address::Address::new(Rc::clone(&spc), off.saturating_sub(MAX_OVERLAP_BACK));
+    let hi = kuna_base::address::Address::new(spc, end);
+    data.vbank().iter_loc_addr_range(&lo, &hi).any(|id| {
+        data.vbank().get(id).is_some_and(|w| {
+            let wend = w.get_offset().saturating_add(w.get_size() as uintb);
+            w.get_offset() < end && off < wend && w.is_addr_tied()
+        })
+    })
+}
+
+/// Is `(addr, size)` where the function returns its value?
+fn is_return_storage(data: &Funcdata, addr: &kuna_base::address::Address, size: int4) -> bool {
+    let Some(ret) = data.get_first_return_op() else { return false };
+    let Some(rv) = data.obank().get(ret).and_then(|o| if o.num_input() < 2 { None } else { o.get_in(1) }) else {
+        return false;
+    };
+    data.vbank().get(rv).is_some_and(|r| r.get_size() == size && r.get_addr() == addr)
+}
+
+/// How far below a value's storage an overlapping wider value may start.
+const MAX_OVERLAP_BACK: uintb = 16;
 
 /// The decline conditions every synthesized record shares, a parameter's or a
 /// nested field's: `ct` is the type the base already carries.
