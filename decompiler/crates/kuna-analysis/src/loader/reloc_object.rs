@@ -325,7 +325,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
             index: sec.index(),
             vma,
             size,
-            flags: fmt.section_bits(sec.kind(), sec.flags()),
+            flags: fmt.section_bits(sec.name().unwrap_or(""), sec.kind(), sec.flags()),
             data,
         });
         cursor = vma.wrapping_add(size);

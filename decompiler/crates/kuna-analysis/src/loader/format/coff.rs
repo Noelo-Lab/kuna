@@ -60,7 +60,7 @@ impl ObjectFormat for CoffFormat {
         Some("windows")
     }
 
-    fn section_bits(&self, kind: SectionKind, flags: SectionFlags) -> u32 {
+    fn section_bits(&self, _name: &str, kind: SectionKind, flags: SectionFlags) -> u32 {
         // PE and COFF share the `Characteristics`-based section-flag model.
         crate::loader::format::pe::coff_section_bits(kind, flags)
     }
@@ -124,7 +124,7 @@ mod tests {
         use object::pe::{IMAGE_SCN_CNT_CODE, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ};
         let f = CoffFormat;
         let text = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ;
-        let bits = f.section_bits(SectionKind::Text, SectionFlags::Coff { characteristics: text });
+        let bits = f.section_bits("", SectionKind::Text, SectionFlags::Coff { characteristics: text });
         assert!(bits & section_flags::CODE != 0, "exec section is CODE");
         assert!(bits & section_flags::READONLY != 0, "non-writable section is READONLY");
     }

@@ -115,7 +115,7 @@ impl ObjectFormat for MachOFormat {
         }
     }
 
-    fn section_bits(&self, kind: SectionKind, flags: SectionFlags) -> u32 {
+    fn section_bits(&self, _name: &str, kind: SectionKind, flags: SectionFlags) -> u32 {
         let mflags = match flags {
             SectionFlags::MachO { flags } => flags,
             _ => 0,
@@ -192,6 +192,7 @@ mod tests {
     fn macho_section_bits_text_and_bss() {
         let f = MachOFormat;
         let bits = f.section_bits(
+            "",
             SectionKind::Text,
             SectionFlags::MachO { flags: S_ATTR_PURE_INSTRUCTIONS },
         );
@@ -199,6 +200,7 @@ mod tests {
         assert!(bits & section_flags::READONLY != 0, "__text is READONLY");
 
         let bss = f.section_bits(
+            "",
             SectionKind::UninitializedData,
             SectionFlags::MachO { flags: S_ZEROFILL },
         );

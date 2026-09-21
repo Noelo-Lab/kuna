@@ -175,26 +175,31 @@ symbol-table property map eagerly at bootstrap (loader markup, not a gated pass)
 they are what lets the printer prove a constant points into read-only memory and
 render a string literal.
 
-(kuna) **The dynamic loader's tables are not read-only program data**
+(kuna) **The loader's tables, the notes and `.interp` are not read-only program data**
 (`decompiler/crates/kuna-analysis/src/loader/format/elf.rs (is_loader_table)`).
 BFD sets the read-only bit on any allocated, non-writable section, which is as
-true of `.dynsym`, `.dynstr`, `.gnu.hash`, `.rela.*` and the version tables as it
-is of `.rodata`. Nothing in the program reads those, but the read-only range is
-the *only* thing `PrintC::pushPtrCharConstant` asks before it replaces a constant
-with the characters at that address, so a number whose value happens to land in
-one came out as a string: a six-line PIE that calls `puts((char *)0x4a3)` printed
-`puts("uts")`, the tail of the dynamic string table's own `"puts"` entry
-(`decompiler/crates/kuna-analysis/tests/fixtures/loadertablestring_x86_64`), and
-in real builds `bash`'s `rl_do_lowercase_version` returned `"_ungets"` for
+true of `.interp`, the `SHT_NOTE` sections, `.dynsym`, `.dynstr`, `.gnu.hash`,
+`.rela.*` and the version tables as it is of `.rodata`. Nothing in the program
+reads those, but the read-only range is the *only* thing
+`PrintC::pushPtrCharConstant` asks before it replaces a constant with the
+characters at that address, so a number whose value happens to land in one came
+out as a string. A PIE that calls `puts((char *)0x4a3)`, `puts((char *)0x320)`
+and `puts((char *)0x3a0)` printed `puts("uts")`, the tail of the dynamic string
+table's own `"puts"` entry, `puts("d-linux-x86-64.so.2")`, the middle of the
+loader path in `.interp` at `0x318`, and `puts("\x03")`, a byte of the
+`.note.ABI-tag` kernel version
+(`decompiler/crates/kuna-analysis/tests/fixtures/loadertablestring_x86_64`). In
+real builds `bash`'s `rl_do_lowercase_version` returned `"_ungets"` for
 `0x1869f` and coreutils `ls` compared a pointer against `"loc"` for `0x12c7`.
 Those sections therefore do not carry the read-only bit: `SectionKind::Metadata`
 (the `SHT_SYMTAB`/`SHT_DYNSYM`/`SHT_STRTAB`/`SHT_RELA`/`SHT_REL`/`SHT_RELR`/
-`SHT_HASH`/`SHT_DYNAMIC` family) and the GNU dynamic-info types `SHT_GNU_HASH`
-and `SHT_GNU_verdef`/`verneed`/`versym`, which `object` reports as
-`SectionKind::Elf(sh_type)`. `SHT_NOTE` keeps the bit — a note is data a
-toolchain wrote for a reader. The same classification gates `operand_refs`: a
-scalar operand that lands in a loader table is not a data reference, for the
-reason its `.got`/`.plt` exclusion already exists.
+`SHT_HASH`/`SHT_DYNAMIC` family), `SectionKind::Note`, the GNU dynamic-info types
+`SHT_GNU_HASH` and `SHT_GNU_verdef`/`verneed`/`versym`, which `object` reports
+as `SectionKind::Elf(sh_type)`, and the section named `.interp`, which is plain
+`SHT_PROGBITS` and differs from `.rodata` only in its name. The same
+classification gates `operand_refs`: a scalar operand that lands in one of these
+sections is not a data reference, for the reason its `.got`/`.plt` exclusion
+already exists.
 
 (kuna) **An unusable section table is dropped, not fatal**
 (`decompiler/crates/kuna-analysis/src/loader/elf_shdr.rs

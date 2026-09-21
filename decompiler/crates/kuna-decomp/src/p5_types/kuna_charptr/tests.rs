@@ -111,3 +111,20 @@ fn candidate_is_stable_across_calls() {
     let f = factory();
     assert!(Rc::ptr_eq(&char_ptr(&f), &char_ptr(&f)));
 }
+
+/// A one-byte element step is character evidence only at a varying index from
+/// the base.  A constant displacement is a field, whether it arrives as an
+/// `INT_ADD` or, once the base is typed, as a `PTRADD`, and a step taken from
+/// a field forwards without counting.
+#[test]
+fn ptradd_counts_only_a_varying_index_from_the_base() {
+    assert_eq!(ptradd_step(Some(1), None, false), PtraddStep::Char);
+    assert_eq!(ptradd_step(Some(1), None, true), PtraddStep::Offset);
+    assert_eq!(ptradd_step(Some(1), Some(0x13), false), PtraddStep::Offset);
+    assert_eq!(ptradd_step(Some(1), Some(1), false), PtraddStep::Offset);
+    assert_eq!(ptradd_step(Some(1), Some(1), true), PtraddStep::Offset);
+    assert_eq!(ptradd_step(Some(1), Some(0), false), PtraddStep::Same);
+    assert_eq!(ptradd_step(Some(4), None, false), PtraddStep::Refuse);
+    assert_eq!(ptradd_step(Some(4), Some(2), true), PtraddStep::Refuse);
+    assert_eq!(ptradd_step(None, None, false), PtraddStep::Neutral);
+}

@@ -400,23 +400,23 @@ fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, offsetted: bool) -> Us
                 None => Use::Neutral,
             }
         }
-        // `PTRADD(base, index, elemsize)`: the element size is the pointee's width.
         OpCode::CPUI_PTRADD => {
             if slot != 0 {
                 return Use::Neutral;
             }
-            let elem = o
-                .get_in(2)
-                .and_then(|v| data.vbank().get(v))
-                .filter(|v| v.is_constant())
-                .map(|v| v.get_offset());
-            match (elem, out) {
-                // Indexing by one byte is character indexing; the element address
-                // travels on, so `strlen(p + i)` still counts.
-                (Some(1), Some(o)) => Use::CharForward(CharKind::Byte, o),
-                (Some(1), None) => Use::Char(CharKind::Byte),
-                (Some(_), _) => Use::Refuse("elem-wider"),
-                (None, _) => Use::Neutral,
+            let constant_in = |i: int4| {
+                o.get_in(i)
+                    .and_then(|v| data.vbank().get(v))
+                    .filter(|v| v.is_constant())
+                    .map(|v| v.get_offset())
+            };
+            match (ptradd_step(constant_in(2), constant_in(1), offsetted), out) {
+                (PtraddStep::Char, Some(o)) => Use::CharForward(CharKind::Byte, o),
+                (PtraddStep::Char, None) => Use::Char(CharKind::Byte),
+                (PtraddStep::Same, Some(o)) => Use::Forward(o),
+                (PtraddStep::Offset, Some(o)) => Use::ForwardOffset(o),
+                (PtraddStep::Refuse, _) => Use::Refuse("elem-wider"),
+                _ => Use::Neutral,
             }
         }
         OpCode::CPUI_PTRSUB => match (slot, out) {
@@ -538,6 +538,41 @@ fn classify_use(data: &Funcdata, op: OpId, vn: VarnodeId, offsetted: bool) -> Us
                 Use::Neutral
             }
         }
+    }
+}
+
+/// What a `PTRADD(base, index, elemsize)` step on the walked value says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PtraddStep {
+    /// A one-byte element at a varying index from the base: character indexing.
+    Char,
+    /// Index zero: the same address, at the same distance from the base.
+    Same,
+    /// A fixed non-zero distance from the base, or any step once the walk is
+    /// already there: an element of a field, which says nothing about the base.
+    Offset,
+    /// An element wider than a byte.
+    Refuse,
+    /// The element size is not a constant.
+    Neutral,
+}
+
+/// Classify a `PTRADD` from its constant element size and index (`None` when
+/// that input is not a constant) and from whether the walked value already sits
+/// at a fixed offset from the base.
+///
+/// `&s->name[0]` with `s` a `struct dirent *` is `PTRADD(s, 0x13, 1)`: a
+/// one-byte element, but at `offsetof(d_name)`, and walking the array from there
+/// is walking a field.  Only an index the program varies, from the base itself,
+/// is evidence that the base is a character array.
+fn ptradd_step(elem: Option<uintb>, index: Option<uintb>, offsetted: bool) -> PtraddStep {
+    match (elem, index) {
+        (None, _) => PtraddStep::Neutral,
+        (Some(1), Some(0)) => PtraddStep::Same,
+        (Some(1), Some(_)) => PtraddStep::Offset,
+        (Some(1), None) if offsetted => PtraddStep::Offset,
+        (Some(1), None) => PtraddStep::Char,
+        (Some(_), _) => PtraddStep::Refuse,
     }
 }
 
