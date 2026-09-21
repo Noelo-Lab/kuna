@@ -883,6 +883,11 @@ pub struct ArchContext {
     /// [`Architecture::char_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
+    /// (kuna `libctypes`) The named libc aggregate tables are on.  Copied from
+    /// [`Architecture::analysis_libctypes`](crate::architecture::Architecture);
+    /// read by [`kuna_libcfit`](crate::p5_types::kuna_libcfit), which holds a
+    /// named libc pointer vote to what the caller does through it.
+    pub libctypes: bool,
     /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
     /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
     /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
@@ -1580,6 +1585,7 @@ impl ArchContext {
             char_byte: true, // (kuna) option charbyte
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
+            libctypes: false, // (kuna) option libctypes, copied from Architecture
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
             lowered_switch_labels: true, // loweredswitchlabels

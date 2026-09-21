@@ -483,10 +483,11 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     ("cfsetispeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
     ("cfsetospeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
     ("tcgetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
-    // dirent.h / wchar.h / pthread.h. No more `sigset_t` slots: one handed
-    // `&sa.sa_mask` splits the caller's `struct sigaction` at the mask.
-    ("pthread_mutex_destroy", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
-    ("pthread_mutex_init", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t"), Ty::VoidPtr], vararg: -1 }),
+    // dirent.h / wchar.h. No more `sigset_t` slots: one handed `&sa.sa_mask`
+    // splits the caller's `struct sigaction` at the mask. No more
+    // `pthread_mutex_t` slots either: `pthread_mutex_init`/`_destroy` scored
+    // nothing on the measured pool, and the mutex is most often the FIRST
+    // member of a larger object whose address is what gets passed.
     ("rewinddir", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
     ("wcrtomb", Sig { ret: Ty::Size, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("mbstate_t")], vararg: -1 }),
 ];
@@ -594,21 +595,30 @@ impl AnalysisPass for LibcTypesPass {
         // the type factory by `build_pieces` below, and with the gate off not one
         // of them may exist (an interned `stat` is exactly what the DWARF
         // importer would meet). Off is therefore the shipped tables, untouched.
-        //
-        // `glibc` asks for the published field layouts; whether they are TRUE of
-        // this image is a separate question, and the only one that can make a
-        // field name wrong. Refused => the `opaque` shells, exactly.
-        let layout = match kuna_decomp::kuna_libctypes::libctypes_layout() {
-            Layout::Off => return out,
-            Layout::Glibc if glibc::target_is_glibc_x86_64(ctx.file) => Layout::Glibc,
-            _ => Layout::Opaque,
-        };
-        // The gate decision itself is a FACT about this image, and the only
-        // consumer that cannot re-derive it is the one that runs after the object
-        // file is gone: a `--define-function 0x..=fopen` directive. Carry it.
+        if kuna_decomp::kuna_libctypes::libctypes_layout() == Layout::Off {
+            return out;
+        }
+        // Two questions about THIS image, each able to make a declaration wrong.
+        // The widths are glibc x86-64's, and a width larger than the real one
+        // folds a caller's neighbouring locals into the struct it hands over, so
+        // on any other ABI no slot is named at all (`Off`). `glibc` then asks for
+        // the published field layouts, which need the same image to name glibc
+        // (refused => the `opaque` shells). See `super::effective_libctypes_layout`.
+        let layout = super::effective_libctypes_layout(ctx.file);
+        // Both decisions are FACTS about this image, and the only consumer that
+        // cannot re-derive them is the one that runs after the object file is
+        // gone: a `--define-function 0x..=fopen` directive. Carry them.
         out.libctypes_glibc = layout == Layout::Glibc;
+        out.libctypes_refused = layout == Layout::Off;
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
+        // The stream slots type STORAGE, which never sizes a frame object, and
+        // the relocation that binds them is its own evidence; they keep their four
+        // architectures (see `streams`).
+        if layout == Layout::Off {
+            out.typed_data = streams::stream_data_symbols(ctx.file, types, word_size, Layout::Opaque);
+            return out;
+        }
         // IMPORTED names only, for the two name tables — where `LibProtoPass`
         // also matches a name the image DEFINES. A defined `fopen` is this
         // image's own function, and on a `-g` image it has a DWARF prototype

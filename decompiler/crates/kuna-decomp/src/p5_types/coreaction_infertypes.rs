@@ -227,6 +227,12 @@ fn call_input_type_local(
             let ct = param.get_type()?;
             // (ct->metatype != VOID) && (ct->size <= op->getIn(slot)->size)
             if ct.get_metatype() != type_metatype::TYPE_VOID && ct.get_size() <= arg_size {
+                // (kuna `libctypes`) A libc aggregate the caller reads past the end
+                // of is a larger object that starts with one; the vote (never the
+                // cast's required type) falls back to `void *`. See `kuna_libcfit`.
+                if recovered && crate::kuna_libcfit::overruns(data, op, slot, ct) {
+                    return crate::kuna_libcfit::width_stable_vote(data, ct);
+                }
                 return Some(Rc::clone(ct));
             }
             return None;

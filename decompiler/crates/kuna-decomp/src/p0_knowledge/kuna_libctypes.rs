@@ -94,6 +94,17 @@ pub fn libctypes_enabled() -> bool {
     libctypes_layout() != LibcTypesLayout::Off
 }
 
+/// Every aggregate the table may name, under the spelling it is interned and
+/// printed with, plus `_IO_FILE`: glibc's own tag for `FILE`, which an image's
+/// debug info defines and the table adopts. Kept in step with the widths in
+/// `kuna_analysis`'s `NAMED_AGGREGATES` by a test there.
+pub const AGGREGATE_NAMES: &[&str] = &[
+    "DIR", "FILE", "_IO_FILE", "dirent", "group", "lconv", "mbstate_t", "obstack",
+    "option", "passwd", "pthread_mutex_t", "re_pattern_buffer", "sigaction", "sigset_t",
+    "sockaddr", "spwd", "stat", "statfs", "termios", "timespec", "timeval", "tm", "utmp",
+    "utmpx",
+];
+
 /// Bridge a `set_kuna_option("libctypes", val)` choice to [`LIBCTYPES_ENV`] so a
 /// later `load file` in the *same* process sees it (the interactive
 /// `option libctypes glibc` before `load file` path; the CLI sets the env var on
