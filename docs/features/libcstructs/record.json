@@ -459,6 +459,17 @@
           "delta_pct": -0.55
         }
       }
+    },
+    "gates": {
+      "tree": "feat/libcstructs-followup rebased on origin/main a26b99db1 (#705)",
+      "make test": "PARITY OK, 675/675",
+      "make test-stages": "PARITY OK, 1296/1296 (baseline re-recorded: +7 LIBCTYPES keys, #15 renamed)",
+      "make test-cli": "219/219",
+      "make check-spec": "OK lenient and strict",
+      "kuna catalog --check": "OK",
+      "counters --check": "no drift",
+      "docs/options.md": "byte-fresh; phase_catalog.json recaptured",
+      "make rust-test": "lane RUST_TEST_RC=0, 7,374 passed / 0 failed on acc5bd5a0 (2026-09-21T21:31:57Z -> 21:59:06Z); only docs changed after it"
     }
   }
 }
