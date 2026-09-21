@@ -517,6 +517,20 @@ fn unambiguous_imported_function_names(file: &object::File, bytes: &[u8]) -> Has
     imported
 }
 
+/// The names this image DEFINES and does not also import — the mirror of
+/// [`unambiguous_imported_function_names`], and the only set that can tell a
+/// linked-in copy of a library function from a call into the system one.
+///
+/// [`unambiguous_present_function_names`] cannot: it is the union, minus the
+/// collisions, so an ordinary import is in it.
+fn unambiguous_defined_function_names(file: &object::File, bytes: &[u8]) -> HashSet<String> {
+    let mut defined = defined_function_names(file, bytes);
+    let imported = imported_function_names(file, bytes);
+    let defined_evidence = defined.clone();
+    retain_unambiguous_names(&mut defined, &imported, &defined_evidence);
+    defined
+}
+
 impl AnalysisPass for LibProtoPass {
     fn phase(&self) -> Phase {
         Phase::P1

@@ -1,0 +1,353 @@
+{
+  "opportunity": "The first round of `libctypes` was designed from the platform headers. This one was designed from the corpus's ground truth: of the 11,687 pointer-to-named-struct variables the 444 corpus twins hold, which could a libc declaration have named, and which declaration? The answer is dominated by one name the shipped table could never reach -- `obstack`, 431 GT variables, 371 of them inside a function that calls `_obstack_newchunk` or `_obstack_begin` DIRECTLY, and imported in 0 of the 444 slices because gnulib links its copy in and the linker exports the symbols from the program (15 slices elsewhere in the same results tree -- the five dpkg programs at each optimization level -- do import glibc's, which is why the size slots follow the channel rather than the corpus).",
+  "test_name": "tests/stages/kuna-libctypes.xml #27-#32 (two new fixtures: libctypes_obstack_x86_64, where _obstack_newchunk is DEFINED by the image and putspent imported, and libctypes_obstack_import_x86_64, where _obstack_newchunk is imported from glibc and must take that header's `int` size slot) + 6 unit tests in analyzers::protos::kuna_libctypes::tests (the_defined_table_is_obstack_entry_points_only, the_two_obstack_tables_differ_only_in_the_size_slots, each_obstack_channel_keeps_its_own_size_spelling, the_account_database_slots_name_both_aggregates, and the duplicate/width tests) + tests/cli/sharded-project-export-keeps-serial-structs.json",
+  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/grep/stripped/grep",
+  "selector": "0xcec0",
+  "func_addr": "0xcec0",
+  "option": "libctypes",
+  "flag": "KUNA_LIBCTYPES (load-time env bridge) -- no new option",
+  "element_id": null,
+  "change_kind": "analysis-enablement",
+  "tier": "analysis",
+  "source_decompiler": "ghidra",
+  "inspiration": "Ghidra ApplyDataArchiveAnalyzer applying generic_clib_64.gdt; signatures reduced from `gcc -aux-info` over the platform headers (_GNU_SOURCE + _FORTIFY_SOURCE=2); widths from sizeof/_Alignof, cross-checked against the corpus's own DWARF",
+  "values": "off|opaque|glibc",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "mining": {
+    "method": "decbench's own DIE walk (final/gtclass.py) over the unstripped twin of all 444 slices, recording the pointee struct tag of every `ptr_struct` GT variable; `readelf --dyn-syms` for what a STRIPPED image carries (imported vs defined-and-exported); `objdump -d` per function for what each variable's own function calls; `gcc -aux-info` (3,428 declarations) for which aggregate each libc function traffics in",
+    "gt_ptr_struct_variables": 11687,
+    "distinct_struct_tags": 196,
+    "ranked_table": "docs/features/libcstructs/ranked-pool.md",
+    "top_new": {
+      "obstack": 371,
+      "timespec": "12 -- slots (utimensat, futimens) DROPPED in round 5",
+      "passwd": 9,
+      "re_pattern_buffer": 9,
+      "lconv": 8,
+      "_IO_FILE": 6,
+      "termios": 6,
+      "spwd": 6,
+      "timeval": "6 -- slots (utimes, futimesat) DROPPED in round 5",
+      "utmp": 3,
+      "group": 2
+    },
+    "refused": {
+      "_ftsent": "100 GT vars; gnulib's fts is linked in like obstack, but `fts_open` is an ordinary name a program may define itself",
+      "sgrp": "61 GT vars; same, for shadow's own gshadow",
+      "argp_state": "6 GT vars; same, for gnulib's argp",
+      "_obstack_allocated_p": "no installed declaration to reduce, exactly as `__underflow` in round one"
+    }
+  },
+  "table": {
+    "new_named_aggregates": 7,
+    "new_named_aggregate_widths": {
+      "obstack": 88,
+      "spwd": 72,
+      "utmpx": 384,
+      "utmp": 384,
+      "re_pattern_buffer": 64,
+      "lconv": 96,
+      "statfs": 120
+    },
+    "named_aggregates_total": 23,
+    "new_slots": 66,
+    "new_LIBC_EXT_NAMED_entries": 61,
+    "LIBC_DEFINED_NAMED_entries": 5,
+    "defined_name_rule": "the only table matched against `unambiguous_present_function_names` rather than the imported names: the `_obstack_*` entry points are the implementation-reserved half of obstack.h, written only by glibc or by the gnulib copy of the same file, and both publish the same `struct obstack`. Every other table stays imports-only.",
+    "obstack_size_slot_rule": "pointer-width, not the `int` the installed glibc header spells at obstack.h:184. Two published declarations of one symbol exist (glibc's, and the gnulib copy every obstack in this corpus is compiled from, whose _OBSTACK_SIZE_T is size_t); the corpus's own debug info says which applies. Both pass in a register, so only the rendering moves -- `int` would put a truncating cast on every call.",
+    "off_is_unchanged": "every new name is new to BOTH shipped tables, asserted per row, so `libctypes off` is byte-identical to what it was",
+    "LIBC_IMPORTED_OBSTACK_entries": 5
+  },
+  "benchmark": {
+    "instrument": "scripts.decbench.typesweep through docs/decbench/typecampaign/final-c/finalsweep.py, decbench PINNED to 625e892, DECBENCH_NO_CACHE=1; the two arms are two builds of this tree over the same slices. Run three times: at base 2e28ece4a, after the rebase onto 724381149 (argclobber #689), and after the rebase onto 69d252df3 (inferfuncentry-intbound #694), each time with the base arm built from origin/main's kuna_libctypes.rs + protos/mod.rs in this tree. Perfect counts, improved/worse and the per-variable tables came out identical every time; only the pooled mean moved, 0.3403 -> 0.3405 off and 0.3417 -> 0.3419 on, which is #694 moving both arms alike.",
+    "corpus": "results/full_run_address_2026-09-11, O0+O2+O2-noinline, 9 projects, 444 slices, 10,748 scored functions",
+    "control": "the baseline arm is main f39f67b6e built from a clean export and reproduces the campaign's published round-D numbers exactly: 1,349 perfect, mean 0.3405. The branch now sits on 2e8e407be, which adds only the opt-in stackaddrargtrial (off by default).",
+    "projects": {
+      "bzip2": {
+        "n": 267,
+        "perfect_off": 31,
+        "perfect_on": 31,
+        "mean_off": 0.4097,
+        "mean_on": 0.4097,
+        "improved": 0,
+        "worse": 0
+      },
+      "coreutils": {
+        "n": 6422,
+        "perfect_off": 877,
+        "perfect_on": 880,
+        "mean_off": 0.3341,
+        "mean_on": 0.3352,
+        "improved": 45,
+        "worse": 1
+      },
+      "diffutils": {
+        "n": 420,
+        "perfect_off": 58,
+        "perfect_on": 58,
+        "mean_off": 0.4325,
+        "mean_on": 0.4325,
+        "improved": 0,
+        "worse": 0
+      },
+      "findutils": {
+        "n": 790,
+        "perfect_off": 41,
+        "perfect_on": 41,
+        "mean_off": 0.22,
+        "mean_on": 0.2201,
+        "improved": 1,
+        "worse": 0
+      },
+      "grep": {
+        "n": 247,
+        "perfect_off": 51,
+        "perfect_on": 51,
+        "mean_off": 0.4351,
+        "mean_on": 0.4418,
+        "improved": 10,
+        "worse": 0
+      },
+      "gzip": {
+        "n": 368,
+        "perfect_off": 102,
+        "perfect_on": 102,
+        "mean_off": 0.5197,
+        "mean_on": 0.5197,
+        "improved": 0,
+        "worse": 0
+      },
+      "shadow": {
+        "n": 686,
+        "perfect_off": 31,
+        "perfect_on": 32,
+        "mean_off": 0.3001,
+        "mean_on": 0.3012,
+        "improved": 3,
+        "worse": 0
+      },
+      "tar": {
+        "n": 1548,
+        "perfect_off": 158,
+        "perfect_on": 158,
+        "mean_off": 0.3516,
+        "mean_on": 0.3524,
+        "improved": 12,
+        "worse": 0
+      }
+    },
+    "pooled": {
+      "n": 10748,
+      "perfect_off": 1349,
+      "perfect_on": 1353,
+      "mean_off": 0.3405,
+      "mean_on": 0.3415,
+      "improved": 71,
+      "worse": 1
+    },
+    "tp_off": 20314,
+    "tp_on": 20419,
+    "fp_off": 17870,
+    "fp_on": 17765,
+    "fn_off": 27531,
+    "fn_on": 27531,
+    "gt_class_ptr_struct": {
+      "n": 14252,
+      "off": 422,
+      "on": 487
+    },
+    "gt_class_ptr_char": {
+      "n": 14645,
+      "off": 4204,
+      "on": 4233
+    },
+    "newly_correct_by_gt_type": {
+      "obstack *": 47,
+      "char *": 31,
+      "termios *": 6,
+      "statfs (by value)": 5,
+      "FILE *": 5,
+      "re_pattern_buffer *": 4,
+      "__mbstate_t": 3,
+      "void *": 3,
+      "int": 2,
+      "group *": 2,
+      "lconv *": 1,
+      "utmp *": 1
+    },
+    "newly_wrong_by_gt_type": {
+      "char *": 2,
+      "idx_t": 2,
+      "passwd *": 1
+    },
+    "worse_functions": {
+      "coreutils::O0::pinky print_long_entry": "0.4286 -> 0.2143; three variables move from a stack slot to a register and decbench never exports a register local, so they stop being scored rather than being mistyped"
+    },
+    "round4_vs_round5": "the ten dropped rows cost 20 improved functions and 0.0004 of pooled mean (0.3419 -> 0.3415), and no perfect function (1,353 either way); the gzip lutimens `stat` newly-wrong row is gone"
+  },
+  "arity": {
+    "why": "every new name is new to both shipped tables, so each supplies an ARITY where there was none -- the user's rule asks for arity/phantom counters beside type_match",
+    "exported_variables_off": 97350,
+    "exported_variables_on": 97350,
+    "variables_the_metric_saw_off": 96671,
+    "variables_the_metric_saw_on": 96671,
+    "functions_with_more_exported_variables": 2,
+    "functions_with_fewer": 1,
+    "verdict": "nothing is fabricated; the change is a retyping",
+    "call_site_arity": "over all 663 x86-64 binaries: main prints 196 fseeko calls with one argument where the callee takes three; this branch prints all 348 with three. re_match: 2 one-argument calls -> 0. The only calls that gain an argument are the alloca-frame artifact (alloca_trailing_argument)."
+  },
+  "corpus_diff": {
+    "binaries": 15,
+    "added_in_round5": "O0 coreutils cp",
+    "functions": 7987,
+    "functions_changed": 763,
+    "hunks": 2337,
+    "classification": "docs/features/libcstructs/corpus-hunk-classification.txt",
+    "by_class": {
+      "local renumbering only": 626,
+      "synthesized struct_N renumbered (one fewer slot in the ledger)": 586,
+      "other, downstream of a changed pointee": 443,
+      "signature gains a named pointee": 154,
+      "a named cast appears": 153,
+      "cast at an offset becomes a field": 110,
+      "declaration gains a named pointee": 93,
+      "a PLT thunk gains the return the declaration states": 70,
+      "other, mentions a named type": 44,
+      "a field access gains or loses its width cast": 33,
+      "a local's spelling or width moves under the new pointee": 21,
+      "field becomes a cast at an offset": 4
+    }
+  },
+  "speed": {
+    "method": "interleaved min-of-15, `decompile-all --max-fn-seconds 120` over five whole binaries, the two builds (main f39f67b6e and the same commit plus this branch) alternating on every repetition (speed.py; speed.json)",
+    "budget_pct": 5,
+    "runs": {
+      "O2/tar/tar": {
+        "base_s": 49.753,
+        "new_s": 49.02,
+        "delta_pct": -1.47
+      },
+      "O2/grep/grep": {
+        "base_s": 12.405,
+        "new_s": 12.527,
+        "delta_pct": 0.98
+      },
+      "O2/coreutils/ls": {
+        "base_s": 14.614,
+        "new_s": 14.632,
+        "delta_pct": 0.12
+      },
+      "O0/grep/grep": {
+        "base_s": 7.141,
+        "new_s": 6.983,
+        "delta_pct": -2.21
+      },
+      "O2/coreutils/sort": {
+        "base_s": 15.025,
+        "new_s": 15.743,
+        "delta_pct": 4.78
+      }
+    },
+    "worst": 4.78,
+    "note": "measured while this lane's lander ran the workspace suite; the one delta near the budget (sort +4.78%) was re-measured at a quieter moment",
+    "confirmation_run": {
+      "why": "sort re-measured with the workspace suite finished",
+      "runs": {
+        "O2/coreutils/sort": {
+          "base_s": 14.655,
+          "new_s": 14.659,
+          "delta_pct": 0.02
+        }
+      }
+    },
+    "verdict": "within budget: worst confirmed delta +0.98% (grep O2); the round-5 change only removes table rows"
+  },
+  "gates": {
+    "base": "origin/main 69a947074 (#703); rebased by the lander under the merge lock (main moved #695 -> #700/#701/#702 -> #703 while it was held)",
+    "make test": "PARITY OK, 675/675",
+    "make test-stages": "PARITY OK, 1278/1278",
+    "make test-cli": "219/219",
+    "make rust-test": "lane RUST_TEST_RC=0, 7,353 passed / 0 failed on the #702-rebased tree (2026-09-21T17:54:27Z -> 18:21:17Z); earlier 7,333/0 on the #695-rebased tree. #703 touches no file this PR touches; on the #703-rebased tree its own new/changed targets (kuna-cli ambiguous_selector_cli, kuna-console verify_entry_selectors + verify_assertplane) and this PR's (kuna-analysis --lib 878, kuna-cli decompile_project_cli, kuna-ghidra ghidra_sim_e2e) pass, and CI runs the full workspace suite on the head (full-ci)",
+    "make check-spec": "OK (lenient) + OK (strict)",
+    "kuna catalog --check": "OK",
+    "counters --check": "no drift",
+    "docs/options.md": "byte-fresh",
+    "carry_over": "the typesweep and corpus runs used main f39f67b6e vs f39f67b6e+branch; since then #699 (opt-in stackaddrargtrial, off) and #695 (charptr, off, plus a strict loader-table fix) landed. decompile-all on O2 grep, O0 cp, O2 gzip, O2-noinline find is byte-identical between the measured build and the final one; O2 ls and O0 useradd differ by one line each, both #695's loader fix (a constant no longer printed as a string from .dynstr)"
+  },
+  "known_regressions": {
+    "method": "branch built twice, the second build with only the named table row removed",
+    "statfs_name_collision": "statfs is both a new aggregate name and a libc function name: O0 shadow usermod sub_111a1 prints `statfs v1;` and calls `statfs(a0,&v1)`, so that body does not compile as printed; the .h emitter already guards its half. Same collision main has for stat",
+    "verdict": "the statfs name collision is disclosed and kept (the same class main ships for stat); the alloca trailing argument and the dat_4 high half are pre-existing renderings the new declarations reach, counted in alloca_trailing_argument and undefined_high_half",
+    "decision": "utimensat/futimens DROPPED (round 5), per the orchestrator's decision standing in for the owner",
+    "resolved_in_round5": "gzip lutimens and openssh ssh_signal: both rows dropped, both functions byte-identical to main"
+  },
+  "rebase_3de41f06d": {
+    "why": "#693 gave decompile-project the callee-first schedule and touched the same two files this PR repointed",
+    "resolution": "re-derived, not hand-merged: decompile-project run on all five fixtures in both the default and the `protoorder off` arm on the rebased build",
+    "synthesized_struct_blocks_in_the_exported_h": {
+      "i386_pie_nl": "default 0, protoorder off 0, libctypes off 1 -- the swap is this PR's doing and is still required",
+      "structsynthchain_x86_64": "default 2, protoorder off 2",
+      "itaniumrtti_x86_64.so": "default 5, protoorder off 5",
+      "explicit_branch_assertion_pe_i386.exe": "default 5, protoorder off 5",
+      "structsynth_teb_pe_x86_64.exe": "default 5, protoorder off 5"
+    },
+    "option_off_identity": "`--option libctypes off` on both arms is cmp -s IDENTICAL to a build of 3de41f06d on 9 whole binaries: O2 sysvinit/last, sysvinit/utmpdump, shadow/chage, cronie/crond, dpkg/dpkg-query, tar, kmod; O0 bzip2, findutils/find",
+    "default_arm_unchanged_by_the_rebase": "changed-line counts against the new base reproduce the 69d252df3 numbers exactly: last 60, utmpdump 24, chage 178, crond 9, dpkg-query 39, bzip2 0",
+    "typesweep_not_re-run": "`decompile-all --json`, which is what the sweep scores, is byte-identical between 69d252df3 and 3de41f06d on gzip O2, who O0, grep O2, diff O2, and the branch's own kuna-analysis/phases.toml source is byte-identical to the pre-rebase tip, so the round-3 sweep (1,349 -> 1,353 perfect) stands unmoved"
+  },
+  "minor_review_answers": {
+    "utmp_utmpx_rows": "not unpaid: 24 corpus binaries import getutent/getutxent/pututline and the name reaches a caller's own local, not only the PLT thunk -- O2 coreutils who `short *v4` -> `utmpx *v4` with v4[0x16]/v4[0xbc] becoming v4->field_0x2c/field_0x178, O2 shadow logoutd and sysvinit runlevel the same for `utmp *`",
+    "sizes_are_x86_64": "every size in the table is the x86-64 one and nothing scales it by word size, so on a 32-bit image a shell is oversized (re_pattern_buffer 64 vs i386's 32); only pointers take the name, so the effect is confined to how far a field access through such a pointer is attributed; same class as the shipped FILE 216 and stat 144"
+  },
+  "frame_check": {
+    "tool": "docs/features/libcstructs/framecheck.py (+ framecheck_lib.py)",
+    "binaries": 663,
+    "functions": 199963,
+    "functions_changed": 5338,
+    "functions_with_a_split_frame_object": 0,
+    "functions_losing_a_named_local": 0,
+    "named_casts_onto_smaller_char_arrays": {
+      "main": 82,
+      "branch": 131,
+      "the_49_new": "34 on arrays this branch GREW toward the type size (merged words), 13 tar struct obstack locals newly declared over loose words, 2 same size on both arms; none shrank"
+    },
+    "calibration": "over the 108 signal/utime importers the round-4 rows are flagged in exactly gzip lutimens, 6 scp/sftp utimes callers, and shadow useradd/usermod (lost stat)"
+  },
+  "alloca_trailing_argument": {
+    "what": "in a function that grows its stack with alloca, every DECLARED call prints one extra trailing argument: the call's own pushed return address read back (O0 cp 0x4793: main prints gettext(\"...\",v13[v4 + -8]) and __errno_location(v3))",
+    "alloca_functions": 251,
+    "main_sites": 3249,
+    "main_functions": 179,
+    "branch_sites": 3258,
+    "branch_new": {
+      "getutent": 6,
+      "pthread_mutex_init": 2,
+      "__getdelim": 1
+    },
+    "round4_utimensat_sites": 12,
+    "argclobber": "on by default (#689) and does not remove it: the value is a stack read, not a register",
+    "O0_cp_witness": "round 4 printed utimensat(v18,v26,&v12,0,v3); with the row dropped this branch prints main's utimensat(v18,v26,&v12,0)"
+  },
+  "undefined_high_half": {
+    "what": "a declared int return feeding a caller kuna recovered as returning 8 bytes renders the upper half of rax as dat_4",
+    "main_occurrences": 1408,
+    "branch_added": 121,
+    "functions": 109,
+    "by_row": {
+      "fseeko": "98, all O0 gnulib rpl_fseeko wrappers",
+      "nanosleep": "21, coreutils sleep/sort/tail wrappers at all three levels",
+      "re_match": "2, find"
+    },
+    "bought_by_the_same_rows": "every fseeko call gets its three arguments (196 had one); nanosleep's timespec is one object in coreutils sleep where main split it"
+  },
+  "round5": {
+    "dropped": {
+      "sigfillset": "splits struct sigaction in openssh ssh_signal (every -O2 openssh program); ssh-keygen 0x4ce20 is now byte-identical to main (sigaction v4 whole, v4._136_4_ = 0x10000000 inside)",
+      "sigsuspend, pthread_sigmask, sigdelset, sigismember, sigwait": "0 splits over the 87 corpus importers, but docs/features/libcstructs/sigsplit.c splits the object under every one of them (O0: char v1 [136] + detached flags store; pthread_sigmask also O2, reading sa_flags from a local sigaction() never writes); they buy nothing in the pool",
+      "utimensat, futimens": "orchestrator's decision: no function whose emitted C reads never-written locals; the slot is a two-element array the vocabulary cannot spell, so there is no narrower slot -- dropped; gzip O2 lutimens is byte-identical to main",
+      "utimes, futimesat": "same two-element slot; utimes shrank openssh scp/sftp struct timeval tv[2] (6 functions)"
+    },
+    "kept_off_pool": "every kept row not in ranked-pool.md's NEW column carries a one-line note there (reach, changed, +i/-w, extra costs)"
+  }
+}

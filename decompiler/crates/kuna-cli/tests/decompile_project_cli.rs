@@ -733,19 +733,26 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
 /// worker's block adds the types its own functions interned, and the minted
 /// structures are declared in name order, which also makes two serial exports
 /// agree with each other. `structsynthchain_x86_64` takes the convergence
-/// sweep, `itaniumrtti_x86_64.so` mints five structures, `i386_pie_nl` is
-/// 32-bit, and in `structsynth_teb_pe_x86_64.exe` the `TEB` type comes from a
-/// function that synthesizes nothing. `synth:force` decompiles every function
-/// that asked again rather than renaming it.
+/// sweep, `itaniumrtti_x86_64.so` mints five structures,
+/// `explicit_branch_assertion_pe_i386.exe` is 32-bit, and in
+/// `structsynth_teb_pe_x86_64.exe` the `TEB` type comes from a function that
+/// synthesizes nothing. `synth:force` decompiles every function that asked
+/// again rather than renaming it. The 32-bit slot was `i386_pie_nl` until
+/// `libctypes` gained `re_pattern_buffer`: that binary's ONE synthesized
+/// structure is the regex buffer, which is now named from
+/// `re_compile_pattern`'s declaration instead of synthesized.
 ///
 /// (kuna `protoorder`) With `--option protoorder off` on every arm, which is the
 /// serial run a pool replays: the callee-first order decides what a function
 /// mints as much as the ledger does, and no pool can take it.
 #[test]
 fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
-    for fixture_name in
-        ["structsynthchain_x86_64", "itaniumrtti_x86_64.so", "i386_pie_nl", "structsynth_teb_pe_x86_64.exe"]
-    {
+    for fixture_name in [
+        "structsynthchain_x86_64",
+        "itaniumrtti_x86_64.so",
+        "explicit_branch_assertion_pe_i386.exe",
+        "structsynth_teb_pe_x86_64.exe",
+    ] {
         let bin = fixture(fixture_name);
         let stem = std::path::Path::new(fixture_name).file_name().unwrap().to_str().unwrap();
         let export = |tag: &str, extra: &[&str], env: &[(&str, &str)]| -> (PathBuf, String, bool) {

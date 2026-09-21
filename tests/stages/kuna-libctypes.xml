@@ -81,6 +81,22 @@
     typed symbol has nothing to install onto (#26). It runs last and restores
     `datasyms on`, because the corpus runs in one process.
 
+    Passes 11 and 12 are the second round of names, on `libctypes_obstack_x86_64`
+    (no debug info, so every name in it is MINTED). `grow` is the one channel
+    that is new in kind: `_obstack_newchunk` is DEFINED by the image rather than
+    imported  -  which is how gnulib's obstack reaches every coreutils, grep and
+    tar binary  -  and it is the only thing in the file that says what `grow`'s
+    pointer addresses (#27, #28). `emit` is the ordinary import channel with two
+    named slots at once (#29, #30). Neither body reads a field, so #15 does not
+    move.
+
+    `libctypes_obstack_import_x86_64` is the same witness on the other channel:
+    `_obstack_newchunk` imported from glibc, as the corpus's `dpkg` programs
+    import it. The two publishers disagree about the size parameter  -  gnulib's
+    size type is `size_t`, the installed glibc header declares `int`  -  so #32
+    pins `int4` where #28 pins `uint8`, and a table that spelled both the same
+    would fail one of them.
+
     #6 is narrowed to the two aggregates a DWARF definition already described
     (`st`, `f`), because pass 4 is the `opaque` arm and legitimately prints
     `a0-&gt;field_0x8`. #15 pins the count of LINES carrying an offset-named field
@@ -219,7 +235,38 @@ c3
   <com>decompile</com>
   <com>print C</com>
   <com>option datasyms on</com>
+  <com>option libctypes off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_x86_64</com>
+  <com>read symbols</com>
+  <com>load function grow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function emit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_import_x86_64</com>
+  <com>read symbols</com>
+  <com>load function grow_import</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option libctypes opaque</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_x86_64</com>
+  <com>read symbols</com>
+  <com>load function grow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function emit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_import_x86_64</com>
+  <com>read symbols</com>
+  <com>load function grow_import</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="LIBCTYPES #1: off, the stream parameter is an opaque void *" min="1" max="1">int4 fclose\(void \*a0\)</stringmatch>
@@ -248,4 +295,10 @@ c3
 <stringmatch name="LIBCTYPES #24: a stream handed to a libc call the table already typed does not move" min="2" max="2">fputs\(a0,stdout\);</stringmatch>
 <stringmatch name="LIBCTYPES #25: and the library's loses the cast the untyped slot needed" min="1" max="1">fputs\(a0,\*stdout_ptr\);</stringmatch>
 <stringmatch name="LIBCTYPES #26: `datasyms off` still restores the raw address -- naming a data object stays that option's call" min="1" max="1">return \*\(int8 \*\)\(dat_4010 \+ 0x28\) - \*\(int8 \*\)\(dat_4010 \+ 0x20\);</stringmatch>
+<stringmatch name="LIBCTYPES #27: off, an obstack entry point the image DEFINES says nothing, so its caller has neither arity nor a pointee" min="1" max="1">void grow\(void\)</stringmatch>
+<stringmatch name="LIBCTYPES #28: on, that same definition -- gnulib's copy, linked in and exported -- names the pointer its caller holds" min="1" max="1">void grow\(obstack \*a0,uint8 a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #29: off, the imported `putspent` leaves both of its aggregate slots unsaid" min="1" max="1">void emit\(void\)</stringmatch>
+<stringmatch name="LIBCTYPES #30: on, its declaration names the shadow record and the stream it is written to" min="1" max="1">void emit\(spwd \*a0,FILE \*a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #31: off, the IMPORTED obstack entry point says nothing either" min="1" max="1">void grow_import\(void\)</stringmatch>
+<stringmatch name="LIBCTYPES #32: on, an import takes glibc's own spelling -- `int`, where the linked-in gnulib copy of #28 takes `size_t`" min="1" max="1">void grow_import\(obstack \*a0,int4 a1\)</stringmatch>
 </decompilertest>

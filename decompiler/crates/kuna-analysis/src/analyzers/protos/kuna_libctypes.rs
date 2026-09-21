@@ -85,6 +85,22 @@
 //! O0+O2 decbench ELFs, where every name kept here has at least 17 (`rewind` 117,
 //! `__uflow` 77, `fgetc` 57; the census is in `docs/features/libctypes/`).
 //!
+//! ## The second round, and the one table that matches a DEFINED name
+//!
+//! The names above were chosen from the headers. A second round was chosen from
+//! the corpus's ground truth instead — which pointer-to-named-struct variables
+//! the debug twins hold, and which libc slot each one could be reached from —
+//! and added seven aggregates and sixty-six slots
+//! (`docs/features/libcstructs/`). One of them needed a channel that did not
+//! exist: [`LIBC_DEFINED_NAMED`], matched against a name the image DEFINES,
+//! because gnulib links its obstack in and the linker exports it from the
+//! program itself — and obstack is the widest aggregate in that ground truth
+//! after `FILE`. Most of the corpus reaches it that way; a minority (the `dpkg`
+//! programs) import glibc's instead, and the two publish different size slots
+//! for the same symbol, so the import channel takes its own table
+//! ([`LIBC_IMPORTED_OBSTACK`]). See [`LIBC_DEFINED_NAMED`] for why five
+//! reserved names may match a definition and nothing else here may.
+//!
 //! ## The stream slots
 //!
 //! `stdin`/`stdout`/`stderr` are the one place this table types STORAGE rather
@@ -106,7 +122,7 @@ use kuna_decomp::dtype::{flags, type_metatype, Datatype, TypeFactory};
 
 use super::{
     resolved_import_addrs, seed_named_prototypes, seed_resolved_prototypes,
-    unambiguous_imported_function_names, Sig, Ty,
+    unambiguous_defined_function_names, unambiguous_imported_function_names, Sig, Ty,
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
@@ -152,24 +168,31 @@ pub(super) struct NamedAggregate {
 }
 
 /// Every aggregate [`Ty::NamedPtr`] may name. Sorted by name; the table is
-/// searched linearly (16 rows, a handful of times per load).
+/// searched linearly (23 rows, a handful of times per load).
 pub(super) const NAMED_AGGREGATES: &[NamedAggregate] = &[
     NamedAggregate { name: "DIR", dwarf_alias: None, size: 1, align: 1 },
     NamedAggregate { name: "FILE", dwarf_alias: Some("_IO_FILE"), size: 216, align: 8 },
     NamedAggregate { name: "dirent", dwarf_alias: None, size: 280, align: 8 },
     NamedAggregate { name: "group", dwarf_alias: None, size: 32, align: 8 },
+    NamedAggregate { name: "lconv", dwarf_alias: None, size: 96, align: 8 },
     NamedAggregate { name: "mbstate_t", dwarf_alias: None, size: 8, align: 4 },
+    NamedAggregate { name: "obstack", dwarf_alias: None, size: 88, align: 8 },
     NamedAggregate { name: "option", dwarf_alias: None, size: 32, align: 8 },
     NamedAggregate { name: "passwd", dwarf_alias: None, size: 48, align: 8 },
     NamedAggregate { name: "pthread_mutex_t", dwarf_alias: None, size: 40, align: 8 },
+    NamedAggregate { name: "re_pattern_buffer", dwarf_alias: None, size: 64, align: 8 },
     NamedAggregate { name: "sigaction", dwarf_alias: None, size: 152, align: 8 },
     NamedAggregate { name: "sigset_t", dwarf_alias: None, size: 128, align: 8 },
     NamedAggregate { name: "sockaddr", dwarf_alias: None, size: 16, align: 2 },
+    NamedAggregate { name: "spwd", dwarf_alias: None, size: 72, align: 8 },
     NamedAggregate { name: "stat", dwarf_alias: None, size: 144, align: 8 },
+    NamedAggregate { name: "statfs", dwarf_alias: None, size: 120, align: 8 },
     NamedAggregate { name: "termios", dwarf_alias: None, size: 60, align: 4 },
     NamedAggregate { name: "timespec", dwarf_alias: None, size: 16, align: 8 },
     NamedAggregate { name: "timeval", dwarf_alias: None, size: 16, align: 8 },
     NamedAggregate { name: "tm", dwarf_alias: None, size: 56, align: 8 },
+    NamedAggregate { name: "utmp", dwarf_alias: None, size: 384, align: 4 },
+    NamedAggregate { name: "utmpx", dwarf_alias: None, size: 384, align: 4 },
 ];
 
 /// The aggregate this table will point at for `name`: the platform's own
@@ -371,12 +394,179 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     ("pthread_mutex_lock", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
     ("pthread_mutex_unlock", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
     ("tcsetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
+    // ---- the second round of names, mined from the corpus's own DWARF ----
+    //
+    // Everything below is NEW to both shipped tables, so `libctypes off` is
+    // still the shipped behaviour exactly. Ranked and selected in
+    // `docs/features/libcstructs/analysis.md`: each row either names a pointee
+    // that ground truth in the measured corpus actually spells, or is the sole
+    // stream/record slot of a name that one of those rows needs.
+    //
+    // stdio.h — more of the stream surface. `fseeko` is the widest import in
+    // the corpus that no shipped table carries (306 of 444 slices).
+    ("__getdelim", Sig { ret: Ty::Long, params: &[Ty::CharPtrPtr, Ty::VoidPtr, Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("feof_unlocked", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fgets_unlocked", Sig { ret: Ty::CharPtr, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fputc_unlocked", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fread_unlocked", Sig { ret: Ty::Size, params: &[Ty::VoidPtr, Ty::Size, Ty::Size, Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fseeko", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::Long, Ty::Int], vararg: -1 }),
+    ("ftello", Sig { ret: Ty::Long, params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("setbuf", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("FILE"), Ty::CharPtr], vararg: -1 }),
+    // `int vfprintf(FILE *, const char *, va_list)` — the LAST slot is the
+    // `va_list` and stays `void *`, like `__vfprintf_chk` above it.
+    ("vfprintf", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("FILE"), Ty::CharPtr, Ty::VoidPtr], vararg: -1 }),
+    // pwd.h / grp.h — the record-at-a-time and reentrant halves of the two
+    // databases whose one-shot lookups the table already names. The `_r` forms
+    // end in a `struct passwd **` / `struct group **` result slot, which the
+    // vocabulary cannot spell; it stays `void *`.
+    ("fgetgrent", Sig { ret: Ty::NamedPtr("group"), params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("fgetpwent", Sig { ret: Ty::NamedPtr("passwd"), params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("getgrent", Sig { ret: Ty::NamedPtr("group"), params: &[], vararg: -1 }),
+    ("getgrgid_r", Sig { ret: Ty::Int, params: &[Ty::UInt, Ty::NamedPtr("group"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("getgrnam_r", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("group"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("getpwent", Sig { ret: Ty::NamedPtr("passwd"), params: &[], vararg: -1 }),
+    ("getpwnam_r", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("passwd"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("getpwuid_r", Sig { ret: Ty::Int, params: &[Ty::UInt, Ty::NamedPtr("passwd"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("putgrent", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("group"), Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("putpwent", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("passwd"), Ty::NamedPtr("FILE")], vararg: -1 }),
+    // shadow.h — `struct spwd` is what every `shadow` binary's password reader
+    // holds, and nothing else in a stripped image says so.
+    ("fgetspent", Sig { ret: Ty::NamedPtr("spwd"), params: &[Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("getspent", Sig { ret: Ty::NamedPtr("spwd"), params: &[], vararg: -1 }),
+    ("getspnam", Sig { ret: Ty::NamedPtr("spwd"), params: &[Ty::CharPtr], vararg: -1 }),
+    ("getspnam_r", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("spwd"), Ty::CharPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("putspent", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("spwd"), Ty::NamedPtr("FILE")], vararg: -1 }),
+    ("sgetspent", Sig { ret: Ty::NamedPtr("spwd"), params: &[Ty::CharPtr], vararg: -1 }),
+    // utmpx.h / utmp.h — the login records. Both structs are 384 bytes and the
+    // two families are kept apart by name, because a `-g` image defines both.
+    ("getutent", Sig { ret: Ty::NamedPtr("utmp"), params: &[], vararg: -1 }),
+    ("getutid", Sig { ret: Ty::NamedPtr("utmp"), params: &[Ty::NamedPtr("utmp")], vararg: -1 }),
+    ("getutline", Sig { ret: Ty::NamedPtr("utmp"), params: &[Ty::NamedPtr("utmp")], vararg: -1 }),
+    ("getutxent", Sig { ret: Ty::NamedPtr("utmpx"), params: &[], vararg: -1 }),
+    ("getutxid", Sig { ret: Ty::NamedPtr("utmpx"), params: &[Ty::NamedPtr("utmpx")], vararg: -1 }),
+    ("getutxline", Sig { ret: Ty::NamedPtr("utmpx"), params: &[Ty::NamedPtr("utmpx")], vararg: -1 }),
+    ("pututline", Sig { ret: Ty::NamedPtr("utmp"), params: &[Ty::NamedPtr("utmp")], vararg: -1 }),
+    ("pututxline", Sig { ret: Ty::NamedPtr("utmpx"), params: &[Ty::NamedPtr("utmpx")], vararg: -1 }),
+    // regex.h — `regex_t` is a typedef of `struct re_pattern_buffer`, and the
+    // bare struct tag is the spelling debug info uses. `regoff_t` is `int`
+    // unless the caller defines `_REGEX_LARGE_OFFSETS`, which nothing in the
+    // corpus does; `regmatch_t *` and `struct re_registers *` have no
+    // width-stable spelling and stay `void *`.
+    ("re_compile_fastmap", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer")], vararg: -1 }),
+    ("re_compile_pattern", Sig { ret: Ty::CharPtr, params: &[Ty::CharPtr, Ty::Size, Ty::NamedPtr("re_pattern_buffer")], vararg: -1 }),
+    ("re_match", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Int, Ty::Int, Ty::VoidPtr], vararg: -1 }),
+    ("re_search", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Int, Ty::Int, Ty::Int, Ty::VoidPtr], vararg: -1 }),
+    ("regcomp", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Int], vararg: -1 }),
+    ("regerror", Sig { ret: Ty::Size, params: &[Ty::Int, Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Size], vararg: -1 }),
+    ("regexec", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("re_pattern_buffer"), Ty::CharPtr, Ty::Size, Ty::VoidPtr, Ty::Int], vararg: -1 }),
+    ("regfree", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("re_pattern_buffer")], vararg: -1 }),
+    // locale.h / sys/statfs.h
+    ("fstatfs", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("statfs")], vararg: -1 }),
+    ("localeconv", Sig { ret: Ty::NamedPtr("lconv"), params: &[], vararg: -1 }),
+    ("statfs", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::NamedPtr("statfs")], vararg: -1 }),
+    // time.h — more `tm` and `timespec` slots. Like `localtime` above, a
+    // `const time_t *` argument has no width-stable spelling and stays
+    // `void *`; only the aggregate slots are named. `utimensat`, `futimens`,
+    // `utimes` and `futimesat` are left out: their slot is a two-element array,
+    // and naming one element shrinks the caller's frame object to it.
+    ("asctime", Sig { ret: Ty::CharPtr, params: &[Ty::NamedPtr("tm")], vararg: -1 }),
+    ("clock_getres", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("timespec")], vararg: -1 }),
+    ("clock_settime", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("timespec")], vararg: -1 }),
+    ("gmtime", Sig { ret: Ty::NamedPtr("tm"), params: &[Ty::VoidPtr], vararg: -1 }),
+    ("gmtime_r", Sig { ret: Ty::NamedPtr("tm"), params: &[Ty::VoidPtr, Ty::NamedPtr("tm")], vararg: -1 }),
+    ("mktime", Sig { ret: Ty::Long, params: &[Ty::NamedPtr("tm")], vararg: -1 }),
+    ("nanosleep", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("timespec"), Ty::NamedPtr("timespec")], vararg: -1 }),
+    ("timegm", Sig { ret: Ty::Long, params: &[Ty::NamedPtr("tm")], vararg: -1 }),
+    // termios.h — `speed_t` is a 4-byte unsigned.
+    ("cfgetispeed", Sig { ret: Ty::UInt, params: &[Ty::NamedPtr("termios")], vararg: -1 }),
+    ("cfgetospeed", Sig { ret: Ty::UInt, params: &[Ty::NamedPtr("termios")], vararg: -1 }),
+    ("cfsetispeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
+    ("cfsetospeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
+    ("tcgetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
+    // dirent.h / wchar.h / pthread.h. No more `sigset_t` slots: one handed
+    // `&sa.sa_mask` splits the caller's `struct sigaction` at the mask.
+    ("pthread_mutex_destroy", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
+    ("pthread_mutex_init", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t"), Ty::VoidPtr], vararg: -1 }),
+    ("rewinddir", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
+    ("wcrtomb", Sig { ret: Ty::Size, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("mbstate_t")], vararg: -1 }),
+];
+
+/// The obstack entry points as the image's OWN definitions declare them — the
+/// one table matched against a DEFINED name.
+///
+/// Every other table here is imports-only, because a coincidental `fopen` or
+/// `stat` in an image's own symbol table is that image's function and retyping
+/// it would assert a declaration nobody made. These five names cannot be
+/// coincidental: `_obstack_*` is the implementation-reserved half of
+/// `obstack.h`, only ever defined by glibc or by the gnulib copy of the same
+/// file, and both publish the same `struct obstack`.
+///
+/// That channel is what makes the entry worth having. gnulib links its copy IN,
+/// and the linker exports the symbols from the program itself — so a stripped
+/// `grep`, `tar` or `coreutils` binary still carries `_obstack_newchunk` in
+/// `.dynsym` and nowhere else says what its first argument is. obstack is the
+/// single widest aggregate in the measured ground truth after `FILE`: 431
+/// pointer variables, 371 of them inside a function that calls one of these
+/// five directly (`docs/features/libcstructs/analysis.md`).
+///
+/// ## The size slots are the reason there are two tables
+///
+/// Two published declarations of these symbols exist. gnulib's copy defines
+/// `_OBSTACK_SIZE_T` as `size_t`; the INSTALLED glibc header spells plain `int`
+/// (`/usr/include/obstack.h:184-190`, reduced by `gcc -aux-info` to
+/// `extern void _obstack_newchunk (struct obstack *, int)`). Which applies is
+/// not a corpus-wide fact — it is a fact about the CHANNEL, and both channels
+/// occur in one results tree: 15 slices of the same corpus (the five `dpkg`
+/// programs at each of the three optimization levels) carry
+/// `UND _obstack_begin@GLIBC_2.2.5` and `UND _obstack_newchunk@GLIBC_2.2.5`,
+/// and their own debug twins resolve those size parameters to a 4-byte `int`.
+/// An image that DEFINES the symbol has linked gnulib's copy in, and its twins
+/// say `size_t` in every `tar` and `grep` slice.
+///
+/// So the spelling follows the evidence: this table (`size_t`) is seeded only
+/// from [`super::unambiguous_defined_function_names`], and
+/// [`LIBC_IMPORTED_OBSTACK`] (`int`) from the import channel. Both pass the
+/// value in a register, so only the rendering moves — the wrong one puts a
+/// spurious cast on every call site.
+///
+/// `_obstack_free` is the one signature here not printed verbatim by
+/// `gcc -aux-info`: the installed `obstack.h` declares it as `__obstack_free`,
+/// a macro that gnulib re-points at `_obstack_free`
+/// (`/usr/include/obstack.h:194`). Same declaration, same line, one documented
+/// renaming — not a guess. `_obstack_allocated_p` has no installed declaration
+/// at all and is therefore left out, exactly as `__underflow` was.
+pub(super) const LIBC_DEFINED_NAMED: &[(&str, Sig)] = &[
+    ("_obstack_begin", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Size, Ty::Size, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_begin_1", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Size, Ty::Size, Ty::VoidPtr, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_free", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_memory_used", Sig { ret: Ty::Size, params: &[Ty::NamedPtr("obstack")], vararg: -1 }),
+    ("_obstack_newchunk", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::Size], vararg: -1 }),
+];
+
+/// The same five entry points as glibc's installed header declares them, for an
+/// image that IMPORTS them: the sizes and the byte count are `int`, everything
+/// else is [`LIBC_DEFINED_NAMED`] verbatim.
+///
+/// A call into `libc.so.6` is answered by glibc's build of `obstack.c`, whose
+/// published prototype is the one in `/usr/include/obstack.h` — so this is the
+/// declaration, and `size_t` here would be kuna printing a false one.
+pub(super) const LIBC_IMPORTED_OBSTACK: &[(&str, Sig)] = &[
+    ("_obstack_begin", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Int, Ty::Int, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_begin_1", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack"), Ty::Int, Ty::Int, Ty::VoidPtr, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_free", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::VoidPtr], vararg: -1 }),
+    ("_obstack_memory_used", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("obstack")], vararg: -1 }),
+    ("_obstack_newchunk", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("obstack"), Ty::Int], vararg: -1 }),
 ];
 
 /// The built-in signature for a name the OPERATOR declared, in its named-type
-/// form. `None` when the gate is off or neither named table knows the name, in
-/// which case [`super::declared_libc_prototype`] answers from the `void *`
-/// tables exactly as before.
+/// form. `None` when the gate is off or no named table knows the name, in which
+/// case [`super::declared_libc_prototype`] answers from the `void *` tables
+/// exactly as before.
+///
+/// The obstack pair is answered from [`LIBC_DEFINED_NAMED`]: a
+/// `--define-function 0x…=_obstack_newchunk` names a BODY in this image, which
+/// is the defined channel by construction, and an import needs no directive to
+/// be identified.
 pub(super) fn declared_named_prototype(name: &str) -> Option<&'static Sig> {
     if !enabled() {
         return None;
@@ -384,6 +574,7 @@ pub(super) fn declared_named_prototype(name: &str) -> Option<&'static Sig> {
     LIBC_NAMED
         .iter()
         .chain(LIBC_EXT_NAMED.iter())
+        .chain(LIBC_DEFINED_NAMED.iter())
         .find(|(n, _)| *n == name)
         .map(|(_, sig)| sig)
 }
@@ -418,13 +609,22 @@ impl AnalysisPass for LibcTypesPass {
         out.libctypes_glibc = layout == Layout::Glibc;
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
-        // IMPORTED names only, for both tables — where `LibProtoPass` also matches
-        // a name the image DEFINES. A defined `fopen` is this image's own
-        // function, and on a `-g` image it has a DWARF prototype that this pass,
-        // merged after `DwarfPass`, would otherwise outrank. Retargeting the
-        // import is the whole job; the definition belongs to whoever declared it.
+        // IMPORTED names only, for the two name tables — where `LibProtoPass`
+        // also matches a name the image DEFINES. A defined `fopen` is this
+        // image's own function, and on a `-g` image it has a DWARF prototype
+        // that this pass, merged after `DwarfPass`, would otherwise outrank.
+        // Retargeting the import is the whole job; the definition belongs to
+        // whoever declared it.
         let resolved = resolved_import_addrs(ctx.file, ctx.bytes);
         let imported = unambiguous_imported_function_names(ctx.file, ctx.bytes);
+        // The obstack exception and its two channels (see `LIBC_DEFINED_NAMED`).
+        // The defined channel takes the DEFINED names, not the union: an
+        // ordinary import is in the union, and the two channels disagree about
+        // the size slots.
+        let defined = unambiguous_defined_function_names(ctx.file, ctx.bytes);
+        seed_named_prototypes(&mut out, &defined, LIBC_DEFINED_NAMED, types, word_size, layout);
+        seed_named_prototypes(&mut out, &imported, LIBC_IMPORTED_OBSTACK, types, word_size, layout);
+        seed_resolved_prototypes(&mut out, &resolved, LIBC_IMPORTED_OBSTACK, types, word_size, layout);
         seed_named_prototypes(&mut out, &imported, LIBC_NAMED, types, word_size, layout);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_NAMED, types, word_size, layout);
         seed_named_prototypes(&mut out, &imported, LIBC_EXT_NAMED, types, word_size, layout);

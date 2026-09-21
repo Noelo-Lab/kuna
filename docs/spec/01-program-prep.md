@@ -1455,7 +1455,36 @@ moves.
   nothing else in the body says what the stream argument is, so that one
   declaration is the whole evidence for the enclosing function's first parameter.
 
-  Five decisions shape the pass.
+  A second round of names was added after the first was measured against the
+  ground truth of the benchmark corpus, by asking which pointer-to-named-struct
+  variables the debug twins actually hold and which libc slot each one could be
+  reached from. That adds seven aggregates — `obstack`, `spwd`, `utmpx`, `utmp`,
+  `re_pattern_buffer` (the struct tag `regex_t` is a typedef of),
+  `lconv` and `statfs` — and sixty-six further slots: the rest of the stream
+  surface (`fseeko`, `ftello`, `fread_unlocked`, `fputc_unlocked`,
+  `feof_unlocked`, `fgets_unlocked`, `setbuf`, `vfprintf`, `__getdelim`), the
+  record-at-a-time and reentrant halves of the three account databases
+  (`getpwent`, `fgetpwent`, `putpwent`, `getpwnam_r`, … and their `group` and
+  `spwd` twins), more `tm`, `timespec` and `termios` slots, the regex entry
+  points and the obstack entry points. Every one of them is new to both shipped
+  tables, so `libctypes off` is still the shipped behaviour exactly — and,
+  unlike a retarget, each also supplies an ARITY where there was none.
+
+  Two kinds of slot are left out because naming them makes the caller's frame
+  worse. `utimensat`, `futimens`, `utimes` and `futimesat` take a two-element
+  array; the vocabulary can only name one element, and a one-element pointee
+  shrinks the caller's frame object to it, so the second element's stores
+  detach into locals of their own (and in gzip's `lutimens` the neighbouring
+  `struct stat` splits, leaving its tail read from locals nothing writes). And no
+  further `sigset_t` slot is added: `sigdelset`, `sigismember`, `sigsuspend`,
+  `pthread_sigmask`, `sigwait` and `sigfillset` are handed `&sa.sa_mask` of a
+  `struct sigaction` local as readily as a standalone set, and a `sigset_t` at
+  offset 8 splits the 152-byte object at 136, so the `sa_flags` store lands
+  outside what `sigaction()` is handed. The shipped `sigemptyset`, `sigaddset`
+  and `sigprocmask` slots already do this; fixing it belongs to frame merging,
+  not to more slots.
+
+  Eight decisions shape the pass.
 
   *The retarget is enumerated slot by slot, never applied in bulk.* The last
   `void *` of `vasprintf`, `vsnprintf`, `__vasprintf_chk`, `__vfprintf_chk`,
@@ -1535,6 +1564,37 @@ moves.
   the shipped `LibProtoPass` also matches a name the image defines: a defined
   `fopen` is that image's own function and its DWARF prototype outranks a table
   entry.
+
+  *One table is the exception, and it is what makes obstack reachable at all.*
+  The five `_obstack_*` entry points are matched against a name the image
+  DEFINES as well as one it imports. The reason the general rule exists —
+  that a plain spelling in an image's own symbol table is that image's function
+  — cannot apply to them: `_obstack_*` is the implementation-reserved half of
+  `obstack.h`, written only by glibc or by the gnulib copy of the same file, and
+  both publish the same `struct obstack`. The reason it is worth an exception is
+  that most images reach obstack that way and no other: gnulib links its copy in
+  and the linker exports the symbols from the program, so a stripped `grep`,
+  `tar` or `coreutils` binary carries `_obstack_newchunk` in its dynamic symbol
+  table and nothing else in the image says what its first argument addresses.
+  Measured over the corpus's debug twins, `obstack` is the widest aggregate in
+  ground truth after `FILE` — 431 pointer variables, 371 of them inside a
+  function that calls one of those five directly. `_obstack_allocated_p` is left
+  out for want of any installed declaration at all, exactly as `__underflow` was.
+
+  *The obstack size slots follow the channel, because the two publishers
+  disagree about them.* gnulib's copy defines its size type as `size_t`; the
+  installed glibc header declares plain `int`. Which one holds is not a property
+  of the corpus — the same results tree contains both, with fifteen slices (the
+  five `dpkg` programs at each optimization level) importing
+  `_obstack_begin`/`_obstack_newchunk` from glibc while everything else links
+  gnulib's copy in — so it is decided per image by which channel the name
+  arrived on. A DEFINED name takes the `size_t` table, an imported one the `int`
+  table; the aggregate slot is the same in both. Getting that backwards is not
+  cosmetic even though both pass the value in a register: the caller of an
+  imported `_obstack_newchunk` would have its own `int` parameter widened and
+  two casts inserted to reach a `size_t` argument that the callee does not have.
+  An operator's `--define-function` is answered from the DEFINED table, since a
+  directive names a body in this image.
 
   *The gate is read at load time, inside the pass.* The named shells are interned
   into the type factory while the signatures are built, which happens during

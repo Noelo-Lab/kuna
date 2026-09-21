@@ -1,0 +1,27 @@
+{
+  "O2/tar/tar": {
+    "base_s": 49.753,
+    "new_s": 49.02,
+    "delta_pct": -1.47
+  },
+  "O2/grep/grep": {
+    "base_s": 12.405,
+    "new_s": 12.527,
+    "delta_pct": 0.98
+  },
+  "O2/coreutils/ls": {
+    "base_s": 14.614,
+    "new_s": 14.632,
+    "delta_pct": 0.12
+  },
+  "O0/grep/grep": {
+    "base_s": 7.141,
+    "new_s": 6.983,
+    "delta_pct": -2.21
+  },
+  "O2/coreutils/sort": {
+    "base_s": 15.025,
+    "new_s": 15.743,
+    "delta_pct": 4.78
+  }
+}
