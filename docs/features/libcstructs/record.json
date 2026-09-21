@@ -358,7 +358,7 @@
       "fit_rule": "p5_types/kuna_libcfit.rs: the call vote declines to void * and propagate_type_edge refuses the type when the Varnode's descendants reach outside the aggregate (constant access past the end or before the start, address at or past the end, step >= size and != size)",
       "rows": "pthread_mutex_destroy dropped (bought nothing); pthread_mutex_init kept for arity (without it 12 calls lose the NULL attr, 2 gain a 4th argument)"
     },
-    "base": "main eaa19ebbb (#692 merged); reproduces #692's published sweep exactly (1,353 perfect, mean .3415). Rebased afterwards onto ce008ce2b (#704: charptr, default off, and a strict .interp/notes loader fix), which touches no libctypes path",
+    "base": "main eaa19ebbb (#692 merged), which reproduces #692's published sweep exactly (1,353 perfect, mean .3415). Repeated after rebasing onto a26b99db1 (#704 charptr fix + strict loader fix, #705 structsynth nesting): main a26b99db1 scores the same 1,353 / .34149 and the branch moves it identically (0 improved / 1 worse, TP 20,419 -> 20,405, exported variables 97,350 both)",
     "benchmark": {
       "slices": 444,
       "functions": 10748,

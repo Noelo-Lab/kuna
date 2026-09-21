@@ -492,7 +492,9 @@ interleaved `kuna functions` over `-O2` tar, 0.144s before against 0.142s after.
 A review after this merged found two ways the table put the wrong struct into a
 function. #706 fixes both; this section is its measurement. Base is `main`
 `eaa19ebbb` (this PR, merged), which reproduces this PR's own published sweep
-exactly (1,353 perfect, mean .3415), which is the control.
+exactly (1,353 perfect, mean .3415), which is the control. The sweep was repeated
+after rebasing onto `a26b99db1` (#704, #705): that `main` scores the same, and
+the branch moves it by exactly the same rows.
 
 ### The widths only hold on x86-64 against glibc
 
