@@ -28,11 +28,12 @@
 //! emitter prints `typedef struct FILE FILE; /* opaque */` with no body rather
 //! than a struct with a width and no members.
 //!
-//! The widths are the glibc **x86-64** ones, which is the ABI of the corpus this
-//! option was measured on. On another ABI a width can be a few bytes off, and the
-//! only thing that can change is whether an access at a given offset renders as a
-//! field or as a cast — the NAME, which is the whole point, is ABI-independent,
-//! and a wrong width can never make a pointer point at the wrong thing.
+//! The widths are the glibc **x86-64** ones, and a width is a claim about the
+//! caller's frame as well: a named pointer handed a frame object's address grows
+//! that object to the declared width, so a width larger than the ABI's folds the
+//! caller's neighbouring locals into the struct it hands over (an i386
+//! `timespec` is 8 bytes, not 16). The pass therefore names nothing unless the
+//! widths are the image's ABI ([`glibc::target_takes_the_widths`]).
 //!
 //! ## `glibc` fills the shells in
 //!
@@ -484,12 +485,12 @@ pub(super) const LIBC_EXT_NAMED: &[(&str, Sig)] = &[
     ("cfsetospeed", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("termios"), Ty::UInt], vararg: -1 }),
     ("tcgetattr", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::NamedPtr("termios")], vararg: -1 }),
     // dirent.h / wchar.h / pthread.h. No more `sigset_t` slots: one handed
-    // `&sa.sa_mask` splits the caller's `struct sigaction` at the mask. The two
-    // mutex rows were added off the measured pool and score nothing on it; what
-    // they buy is the ARITY (without them 12 `pthread_mutex_init` calls in the
-    // corpus print one argument and 2 print four). A mutex is often the first
-    // member of a larger record, which `kuna_libcfit` declines per call site.
-    ("pthread_mutex_destroy", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t")], vararg: -1 }),
+    // `&sa.sa_mask` splits the caller's `struct sigaction` at the mask.
+    // `pthread_mutex_init` was added off the measured pool and scores nothing on
+    // it; what it buys is the ARITY (without it 12 calls in the corpus print one
+    // argument and 2 print four). `pthread_mutex_destroy` bought nothing -- its
+    // one argument is recovered either way -- and is left out. A mutex is often
+    // the first member of a larger record, which `kuna_libcfit` declines per call.
     ("pthread_mutex_init", Sig { ret: Ty::Int, params: &[Ty::NamedPtr("pthread_mutex_t"), Ty::VoidPtr], vararg: -1 }),
     ("rewinddir", Sig { ret: Ty::Void, params: &[Ty::NamedPtr("DIR")], vararg: -1 }),
     ("wcrtomb", Sig { ret: Ty::Size, params: &[Ty::CharPtr, Ty::Int, Ty::NamedPtr("mbstate_t")], vararg: -1 }),

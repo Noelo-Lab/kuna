@@ -898,3 +898,12 @@ fn the_fit_rule_knows_every_aggregate_this_table_names() {
     theirs.sort_unstable();
     assert_eq!(ours, theirs);
 }
+
+/// `pthread_mutex_destroy` was added off the measured pool and bought nothing:
+/// its one argument is recovered with or without a declaration, and it scored
+/// +0/-0. (`pthread_mutex_init` stays for its arity.)
+#[test]
+fn the_mutex_destroy_slot_stays_out() {
+    assert!(!LIBC_NAMED.iter().chain(LIBC_EXT_NAMED.iter()).any(|(n, _)| *n == "pthread_mutex_destroy"));
+    assert!(LIBC_EXT_NAMED.iter().any(|(n, _)| *n == "pthread_mutex_init"));
+}
