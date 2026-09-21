@@ -497,6 +497,45 @@
       "option_on_new_def_vs_on": "what the option still does: mostly unsigned char * / uint1 * -> char * (signedness), a few knock-ons the other way (tar sub_27831.. char * -> uint1 *), tar -O0 mode_from_header's bool *hbits (store-only) void * -> char *"
     },
     "loader": "Strict fix beside it, no flag: .interp (by name; it is SHT_PROGBITS) and SHT_NOTE (SectionKind::Note) join the loader tables that lose the READONLY bit and that operand_refs refuses as data targets. ObjectFormat::section_bits now takes the section name. loadertablestring_x86_64 gains puts((char *)0x320) (.interp) and puts((char *)0x3a0) (.note.ABI-tag); main printed puts(\"d-linux-x86-64.so.2\") and puts(\"\\x03\").",
-    "stage_test": "tests/stages/kuna-charptr.xml: witness is now tar -O0 drop_volume_label_suffix (off `void * dropsuffix(uint1 *a0)`, on `char *a0`, via strlen's declared char *); controls #9 fieldwalk (-O0), #10 fieldwalk2 (-O2), #11 pathprefix. The pre-fix decomp_test_dbg fails exactly #9, #10, #11."
+    "stage_test": "tests/stages/kuna-charptr.xml: witness is now tar -O0 drop_volume_label_suffix (off `void * dropsuffix(uint1 *a0)`, on `char *a0`, via strlen's declared char *); controls #9 fieldwalk (-O0), #10 fieldwalk2 (-O2), #11 pathprefix. The pre-fix decomp_test_dbg fails exactly #9, #10, #11.",
+    "speed": {
+      "method": "interleaved min-of-15 whole-binary `kuna decompile-all --json --max-fn-seconds 120`, four arms rotated per iteration: main b6d572c26 and this branch, each with the option off and on; coreutils -O2 fmt/ls/sort. bash was left out: its 86 s per run makes 60 runs an hour and a half, and the only default-path change is one section-name compare per section at load.",
+      "results_min_ms": {
+        "fmt": {
+          "main_default": 4215.7,
+          "new_default": 4163.3,
+          "main_on": 4226.8,
+          "new_on": 4204.0
+        },
+        "ls": {
+          "main_default": 13925.3,
+          "new_default": 13824.6,
+          "main_on": 14278.5,
+          "new_on": 13983.1
+        },
+        "sort": {
+          "main_default": 14590.8,
+          "new_default": 14493.1,
+          "main_on": 15387.4,
+          "new_on": 15541.4
+        }
+      },
+      "new_default_vs_main_default_pct": {
+        "fmt": -1.24,
+        "ls": -0.72,
+        "sort": -0.67
+      },
+      "new_on_vs_main_on_pct": {
+        "fmt": -0.54,
+        "ls": -2.07,
+        "sort": 1.0
+      },
+      "new_on_vs_new_default_pct": {
+        "fmt": 0.98,
+        "ls": 1.15,
+        "sort": 7.23
+      },
+      "reading": "The default arm is free (-1.24 / -0.72 / -0.67) and the fix does not slow the option-on arm (-0.54 / -2.07 / +1.00 against main's option-on). The option itself costs sort +7.23% over the default in this run (main's option-on arm: +5.46%), above the +5% budget; it is default off and not a flip candidate."
+    }
   }
 }
