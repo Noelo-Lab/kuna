@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1272,
-    1272
+    1278,
+    1278
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -469,7 +469,13 @@
     "data:LIBCTYPES #24: a stream handed to a libc call the table already typed does not move",
     "data:LIBCTYPES #25: and the library's loses the cast the untyped slot needed",
     "data:LIBCTYPES #26: `datasyms off` still restores the raw address -- naming a data object stays that option's call",
+    "data:LIBCTYPES #27: off, an obstack entry point the image DEFINES says nothing, so its caller has neither arity nor a pointee",
+    "data:LIBCTYPES #28: on, that same definition -- gnulib's copy, linked in and exported -- names the pointer its caller holds",
+    "data:LIBCTYPES #29: off, the imported `putspent` leaves both of its aggregate slots unsaid",
     "data:LIBCTYPES #2: on, the same parameter is a minted FILE *",
+    "data:LIBCTYPES #30: on, its declaration names the shadow record and the stream it is written to",
+    "data:LIBCTYPES #31: off, the IMPORTED obstack entry point says nothing either",
+    "data:LIBCTYPES #32: on, an import takes glibc's own spelling -- `int`, where the linked-in gnulib copy of #28 takes `size_t`",
     "data:LIBCTYPES #3: off, the fopen result is an opaque void *",
     "data:LIBCTYPES #4: on, the fopen result is a minted FILE *",
     "data:LIBCTYPES #5: the DWARF layout of `stat` reads the same in both passes -- the named table adopted it instead of shadowing it",
