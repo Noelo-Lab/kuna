@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1289,
-    1289
+    1296,
+    1296
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -456,7 +456,7 @@
     "data:LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset",
     "data:LIBCTYPES #13: glibc on, that read is the field",
     "data:LIBCTYPES #14: and the value carries the FIELD's type, so the sentinel is a signed -1",
-    "data:LIBCTYPES #15: and the lines carrying an offset-named field anywhere in this file are exactly the four of pass 4 plus the four of the opaque stream passes",
+    "data:LIBCTYPES #15: and the lines carrying an offset-named field anywhere in this file are exactly the four of pass 4, the four of the opaque stream passes and the one of pass 13's control",
     "data:LIBCTYPES #16: off, the copy-relocated stream slot is an untyped word and its fields are raw offsets",
     "data:LIBCTYPES #17: off, the GOT slot of a shared object is not even named",
     "data:LIBCTYPES #18: on, the copy-relocated slot is the stream itself, so the reads are fields of it",
@@ -476,6 +476,13 @@
     "data:LIBCTYPES #30: on, its declaration names the shadow record and the stream it is written to",
     "data:LIBCTYPES #31: off, the IMPORTED obstack entry point says nothing either",
     "data:LIBCTYPES #32: on, an import takes glibc's own spelling -- `int`, where the linked-in gnulib copy of #28 takes `size_t`",
+    "data:LIBCTYPES #33: an obstack at the head of a larger object -- the function reads past the obstack's 88 bytes, so the pointer is the object's",
+    "data:LIBCTYPES #34: and a member past the obstack is an offset from it, not an element of an obstack array",
+    "data:LIBCTYPES #35: the same with a pthread_mutex_t at the head of an instance record",
+    "data:LIBCTYPES #36: the control -- a pointer that stays inside the obstack keeps the name",
+    "data:LIBCTYPES #37: on i386 the x86-64 widths are refused, so the timespec slot no longer swallows the local beside it",
+    "data:LIBCTYPES #38: and the int array beside the obstack stays an int array",
+    "data:LIBCTYPES #39: and no local anywhere in this file is a piece of a grown struct",
     "data:LIBCTYPES #3: off, the fopen result is an opaque void *",
     "data:LIBCTYPES #4: on, the fopen result is a minted FILE *",
     "data:LIBCTYPES #5: the DWARF layout of `stat` reads the same in both passes -- the named table adopted it instead of shadowing it",
