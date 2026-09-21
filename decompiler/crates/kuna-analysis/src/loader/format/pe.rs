@@ -112,7 +112,7 @@ impl ObjectFormat for PeFormat {
         Some("windows")
     }
 
-    fn section_bits(&self, kind: SectionKind, flags: SectionFlags) -> u32 {
+    fn section_bits(&self, _name: &str, kind: SectionKind, flags: SectionFlags) -> u32 {
         coff_section_bits(kind, flags)
     }
 
@@ -221,13 +221,13 @@ mod tests {
     fn pe_section_bits_text_is_code_readonly() {
         let f = PeFormat;
         let text = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ;
-        let bits = f.section_bits(SectionKind::Text, SectionFlags::Coff { characteristics: text });
+        let bits = f.section_bits("", SectionKind::Text, SectionFlags::Coff { characteristics: text });
         assert!(bits & section_flags::CODE != 0, "exec section is CODE");
         assert!(bits & section_flags::READONLY != 0, "non-writable section is READONLY");
         assert!(bits & section_flags::UNALLOC == 0, "PE sections are never UNALLOC");
 
         let data = IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE;
-        let bits = f.section_bits(SectionKind::Data, SectionFlags::Coff { characteristics: data });
+        let bits = f.section_bits("", SectionKind::Data, SectionFlags::Coff { characteristics: data });
         assert!(bits & section_flags::DATA != 0, "data section is DATA");
         assert!(bits & section_flags::READONLY == 0, "writable section is not READONLY");
     }

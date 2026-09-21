@@ -109,8 +109,8 @@ pub trait ObjectFormat {
     fn compiler_model(&self, arch: Architecture) -> Option<&'static str>;
 
     /// Per-format arm of today's `section_kind_flags` (translate an `object`
-    /// section kind + flags into the kuna `section_flags` bitset).
-    fn section_bits(&self, kind: SectionKind, flags: SectionFlags) -> u32;
+    /// section's name, kind and flags into the kuna `section_flags` bitset).
+    fn section_bits(&self, name: &str, kind: SectionKind, flags: SectionFlags) -> u32;
 
     /// Format-dispatching replacement for `elf_plt::resolve_plt_imports`.
     ///

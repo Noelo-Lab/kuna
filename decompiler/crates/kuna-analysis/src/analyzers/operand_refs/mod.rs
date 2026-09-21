@@ -177,6 +177,9 @@ struct SecRange {
     /// `.got` / `.plt` (and `.got.plt`, `.plt.sec`): the `ElfScalarOperandAnalyzer`
     /// exclusion sections.
     is_got_or_plt: bool,
+    /// The loader's tables, the notes and `.interp`
+    /// ([`crate::loader::format::elf::is_loader_table`]).
+    is_loader_table: bool,
 }
 
 impl SecRange {
@@ -188,14 +191,13 @@ impl SecRange {
     /// scalar may point at? `SHF_ALLOC` set, `SHF_WRITE` clear, not executable.
     fn is_readonly_data(&self) -> bool {
         if self.elf_flags != 0 {
-            // (kuna) The dynamic loader's own tables are allocated and not
-            // writable, so the flag test alone accepts `.dynsym`/`.dynstr`/
-            // `.gnu.hash`/`.rela.*` -- and in a position-independent executable
-            // `.dynsym` covers `0x1000`, so a buffer size lands in it and the
-            // pass plants a `char[2]` on a symbol-table field. Same reason as
-            // the `.got`/`.plt` exclusion above: a scalar that lands in the
-            // loader's tables is not a data reference.
-            if crate::loader::format::elf::is_loader_table(self.kind) {
+            // (kuna) The loader's tables, the notes and `.interp` are allocated
+            // and not writable, so the flag test alone accepts them -- and in a
+            // position-independent executable `.dynsym` covers `0x1000`, so a
+            // buffer size lands in it and the pass plants a `char[2]` on a
+            // symbol-table field. Same reason as the `.got`/`.plt` exclusion
+            // above: a scalar that lands in them is not a data reference.
+            if self.is_loader_table {
                 return false;
             }
             // ELF: the authoritative flags. Allocated, not writable, not code.
@@ -228,7 +230,15 @@ fn section_ranges(file: &object::File) -> Vec<SecRange> {
         // `ElfScalarOperandAnalyzer` exclusion set (a scalar that lands here is not
         // a data reference — those targets are already named by `elf_plt`).
         let is_got_or_plt = name.starts_with(".got") || name.starts_with(".plt");
-        out.push(SecRange { lo, hi: lo.saturating_add(sz), elf_flags, kind: sec.kind(), is_got_or_plt });
+        let is_loader_table = crate::loader::format::elf::is_loader_table(name, sec.kind());
+        out.push(SecRange {
+            lo,
+            hi: lo.saturating_add(sz),
+            elf_flags,
+            kind: sec.kind(),
+            is_got_or_plt,
+            is_loader_table,
+        });
     }
     out
 }
@@ -487,6 +497,7 @@ mod tests {
             elf_flags: SHF_ALLOC,
             kind: SectionKind::ReadOnlyData,
             is_got_or_plt: false,
+            is_loader_table: false,
         };
         assert!(ro.is_readonly_data());
         // .data: ALLOC + WRITE -> not readonly.
@@ -496,6 +507,7 @@ mod tests {
             elf_flags: SHF_ALLOC | SHF_WRITE,
             kind: SectionKind::Data,
             is_got_or_plt: false,
+            is_loader_table: false,
         };
         assert!(!rw.is_readonly_data());
         // .text: ALLOC + EXEC -> not readonly data.
@@ -505,6 +517,7 @@ mod tests {
             elf_flags: SHF_ALLOC | SHF_EXECINSTR,
             kind: SectionKind::Text,
             is_got_or_plt: false,
+            is_loader_table: false,
         };
         assert!(!code.is_readonly_data());
         // .dynsym: ALLOC, not WRITE, not EXEC -- the flags of `.rodata`, but a
@@ -515,6 +528,7 @@ mod tests {
             elf_flags: SHF_ALLOC,
             kind: SectionKind::Metadata,
             is_got_or_plt: false,
+            is_loader_table: true,
         };
         assert!(!dynsym.is_readonly_data());
         // .gnu.hash has no SectionKind of its own.
@@ -524,8 +538,22 @@ mod tests {
             elf_flags: SHF_ALLOC,
             kind: SectionKind::Elf(0x6fff_fff6),
             is_got_or_plt: false,
+            is_loader_table: true,
         };
         assert!(!gnuhash.is_readonly_data());
+        // .interp is SHT_PROGBITS with the flags of `.rodata`; its name marks it.
+        let interp = SecRange {
+            lo: 0x318,
+            hi: 0x334,
+            elf_flags: SHF_ALLOC,
+            kind: SectionKind::ReadOnlyData,
+            is_got_or_plt: false,
+            is_loader_table: crate::loader::format::elf::is_loader_table(
+                ".interp",
+                SectionKind::ReadOnlyData,
+            ),
+        };
+        assert!(!interp.is_readonly_data());
         // Non-ELF: the loader-table test lives inside the ELF-flags branch, and a
         // Mach-O/PE range (elf_flags == 0) answers on its SectionKind alone, as it
         // did before that test existed.
@@ -535,6 +563,7 @@ mod tests {
             elf_flags: 0,
             kind: SectionKind::Metadata,
             is_got_or_plt: false,
+            is_loader_table: false,
         };
         assert!(!macho_meta.is_readonly_data());
         let macho_ro = SecRange {
@@ -543,6 +572,7 @@ mod tests {
             elf_flags: 0,
             kind: SectionKind::ReadOnlyData,
             is_got_or_plt: false,
+            is_loader_table: false,
         };
         assert!(macho_ro.is_readonly_data());
     }

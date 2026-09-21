@@ -1,4 +1,16 @@
-# `charptr` default-on evaluation — HELD OPT-IN
+# `charptr` default-on evaluation — HELD OPT-IN, and no longer a candidate
+
+## Update after the offset rule was completed
+
+Once a constant `PTRADD` index counts as a field offset, as a literal `INT_ADD`
+always did, criterion (d) fails as well: the 444-slice sweep with the option on
+moves no function onto or off a perfect `type_match`, 2 up and 4 down, aggregate
+-0.57 (it was +4 onto perfect, 14 up, 6 down, +4.93). Nearly all of the earlier
+gain was the skip-the-first-character idiom, which has the shape of a struct
+field (see `analysis.md`, "The offset rule, completed"). There is no longer a
+measured case for the flip, whatever happens to the six probes below. The table
+and the rest of this page are the evaluation as it stood before that change.
+
 
 Evaluated on `feat/charptr` over base `724381149` (re-run after the rebase that
 brought in #689 `argclobber`, a default-on change to call-site argument lists;

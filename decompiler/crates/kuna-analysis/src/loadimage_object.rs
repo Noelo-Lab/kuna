@@ -752,7 +752,7 @@ impl ObjectLoadImage {
         let mut sections: Vec<SectionInfo> = Vec::new();
         let mut section_metadata: Vec<ObjectSectionMetadata> = Vec::new();
         for sec in file.sections() {
-            let flags = fmt.section_bits(sec.kind(), sec.flags());
+            let flags = fmt.section_bits(sec.name().unwrap_or(""), sec.kind(), sec.flags());
             sections.push(SectionInfo { vma: sec.address(), size: sec.size(), flags });
             if let Ok(name) = sec.name() {
                 section_metadata.push(ObjectSectionMetadata::new(

@@ -499,17 +499,14 @@ mod tests {
             // measurement that would justify it needs a `/GS` corpus first.
             "msvcstackguard",
             // (kuna `charptr`) Commit a pointer the program only ever uses on
-            // characters to `char *`. The sweep says yes and the speed budget says
-            // yes -- 444 slices / 10,748 functions, perfect `type_match` 1,349 ->
-            // 1,353, aggregate +4.93, 14 more improved against 6 worse, none off
-            // perfect, 0 arity changes over the 2,290 functions of the 8-binary
-            // corpus diff -- but the preset run of `make test-cli` moves six probes
-            // that pin the pointer spelling `protoorder` and `ptrfromuse` produce
-            // (`unsigned char *a0` -> `char *a0`, `void *a0` -> `char *a0`, and the
-            // store rendering that follows). +0.13% of the corpus aggregate does not
-            // buy re-pinning another feature's probes, so the commitment stays
-            // opt-in. Full evaluation:
-            // docs/features/charptr/default-on-evaluation.md.
+            // characters to `char *`. The sweep says no: once a constant PTRADD
+            // index counts as a field offset (as a literal INT_ADD always did), 444
+            // slices / 10,748 functions move none onto perfect `type_match`, 2 up
+            // and 4 down, aggregate -0.57. Nearly all of the earlier +4.93 was the
+            // skip-the-first-character idiom, which is indistinguishable from a
+            // struct field. The preset run of `make test-cli` also moves six probes
+            // that pin the pointer spelling `protoorder` and `ptrfromuse` produce.
+            // Full evaluation: docs/features/charptr/default-on-evaluation.md.
             "charptr",
         ];
 

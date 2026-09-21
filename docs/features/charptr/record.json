@@ -293,10 +293,11 @@
   "known_costs": [
     "Committing a pointer forfeits the metric's width-only free pass on an 8-byte scalar (head::elide_tail_bytes_pipe).",
     "Committing a byte forfeits the same free pass one level down (tar::check_compressed_archive, GT _Bool).",
-    "A value that is not a pointer at all can be committed: coreutils cp -O0 sub_f8ce holds a NAME_MAX limit in a slot the body also steps by one byte, and `long v6; v6 = 0xff;` becomes `char *v6; v6 = (char *)0xff;` with `if (v2 > (long)v6)`. That particular row is value-preserving (every widening and comparison picks up an explicit cast) but reads worse. It is NOT true of the class as a whole: diffutils diff -O0 sub_2180a (review round 2) showed the same shape printing a fabricated string literal -- see wrong_output_found. The earlier blanket 'verified semantically equivalent' claim for this class was wrong and is withdrawn.",
+    "A value that is not a pointer at all can be committed: coreutils cp -O0 sub_f8ce holds a NAME_MAX limit in a slot the body also steps by one byte, and `long v6; v6 = 0xff;` becomes `char *v6; v6 = (char *)0xff;` with `if (v2 > (long)v6)`. That particular row is value-preserving (every widening and comparison picks up an explicit cast) but reads worse. It is NOT true of the class as a whole: diffutils diff -O0 sub_2180a (review round 2) showed the same shape printing a fabricated string literal -- see wrong_output_found. The earlier blanket 'verified semantically equivalent' claim for this class was wrong and is withdrawn. (Re-checked on b6d572c26: `long v6; v6 = 0xff;` in both the pre-fix and the fixed build with the option on, so this row no longer reproduces.)",
     "`unsigned char *` is not protected by the refine guard: the vote is read against the type IN FLIGHT, so `char *` lands where `uint1 *` would only have arrived by later propagation (decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64: `int callee(unsigned char *a0,int a1)` -> `int callee(char *a0,int a1)`). A `FILE *` in the same signature is untouched.",
     "The signedness can move the OTHER way as a knock-on: a correct `char *` arrives as `unsigned char *`. No 444-slice project carries it; measured on dash -O0, 13 lines in 7 functions (4 signatures: sub_68c3, sub_128e1, sub_1295d, sub_155e7), 2 of those bodies losing a character literal (`*a0 != '_'` -> `*a0 != 0x5f`). Against it in the same binary: 23 lines forward to `char *` and 4 `strcmp` casts dropped.",
-    "LAYOUT PRECISION (measured, 8 binaries / ~2,300 functions): no `struct_N *` declaration ever moves (1,286 in both arms); 3 typed-pointer declarations become `char *`, all of them e2fsck::ext2fs_bitcount, through the in-flight refine guard; and wide field reads rendered through an indexed character pointer go 1,202 -> 1,204, both lines in e2fsck::sub_678f8's group descriptor. See layout_precision and analysis.md."
+    "LAYOUT PRECISION (measured, 8 binaries / ~2,300 functions): no `struct_N *` declaration ever moves (1,286 in both arms); 3 typed-pointer declarations become `char *`, all of them e2fsck::ext2fs_bitcount, through the in-flight refine guard; and wide field reads rendered through an indexed character pointer go 1,202 -> 1,204, both lines in e2fsck::sub_678f8's group descriptor. See layout_precision and analysis.md.",
+    "The offset rule declines two correct idioms with the shape of a field: skipping a string's first character (`p + 1`) and writing a number backwards from `buf + 20` (gnulib umaxtostr). See offset_rule_round5.cost."
   ],
   "wrong_output_found": {
     "reported_by": "adversarial review round 2",
@@ -437,5 +438,104 @@
     "measured": "no new run",
     "why": "the round-3 code change is one condition inside kuna_charptr::classify_use, which is only reached with the option ON (char_pointer_from_evidence returns before the walk when the option is off), and it can only END a walk earlier. The loader change is a pure reordering of is_readonly_data with the same answer on every input (unit-tested for the non-ELF case). The default arm's instruction stream is unchanged, so the round-2 block stands.",
     "round2_numbers_that_stand": "3-arm interleaved min-of-15: new_default vs main_default fmt +0.23 ls +0.20 sort -2.12 bash -0.37; on vs new_default fmt +2.02 ls +0.30 sort +4.28 bash +1.55 (worst +4.28, budget +5)."
+  },
+  "offset_rule_round5": {
+    "what": "Follow-up to #695 (post-merge review). kuna_charptr::classify_use's PTRADD arm now reads the index: a constant non-zero index is a field offset (ForwardOffset), index zero is identity, and a one-byte step taken from an already-offset value forwards without counting. Only a computed index from the base is character evidence. Before, a constant PTRADD counted as a byte step, so `&d->d_name[0]` on a `struct dirent *` -- an INT_ADD while `d` was an integer, PTRADD(d, 0x13, 1) once an earlier fold typed it void * -- committed the base to char *.",
+    "counterexamples_fixed": [
+      "dpkg-trigger -O2 sub_58d0: (char *a0) on main with charptr on -> (void *a0)",
+      "dpkg-statoverride -O0 sub_9aaf: (char *a0) -> (void *a0)",
+      "gcc -O0 / -O2 of `for (p = d->d_name; *p; p++)` on struct dirent *: (char *a0) -> (void *a0); stage controls #9/#10"
+    ],
+    "cost": "Two correct idioms have exactly the shape of a field and are now declined with it. (1) Skipping a string's first character before the first read (`p + 1`): coreutils realpath path_prefix, env scan_varname, printf print_esc, od -O2 sub_4270 keep void * with the option on; stage control #11 pins path_prefix. (2) Writing a number backwards from the end of a caller's buffer, gnulib umaxtostr/imaxtostr/inttostr (`p = buf + 20; *p = 0; *--p = ...`): tar -O0 sub_54bde/sub_54d1c/sub_54e5a (and sysinttostr above them), ls -O2 sub_12680/sub_12720, sort -O2 sub_e120/sub_e1b0/sub_e200 keep `void *buf` and, as in the default arm, get a separate `char *v2` for the moving cursor instead of reusing the parameter.",
+    "typesweep": {
+      "driver": "same as typesweep (pinned decbench 625e892, DECBENCH_NO_CACHE=1), .scratch/sweep-r5",
+      "slices": 444,
+      "functions": 10748,
+      "perfect_off": 1349,
+      "perfect_on": 1349,
+      "aggregate_off": 3659.62,
+      "aggregate_on": 3659.05,
+      "onto_perfect": 0,
+      "off_perfect": 0,
+      "improved": 2,
+      "worse": 4,
+      "improved_rows": [
+        "coreutils::O0::tac output 0.0 -> 0.1667",
+        "tar::O0::tar read_header 0.4762 -> 0.5238"
+      ],
+      "worse_rows": [
+        "coreutils::O2-noinline::head elide_tail_bytes_pipe 0.2593 -> 0.2222",
+        "tar::O0::tar check_compressed_archive 0.5 -> 0.25",
+        "tar::O2-noinline::tar check_compressed_archive 0.25 -> 0.0",
+        "tar::O2::tar check_compressed_archive 0.25 -> 0.0"
+      ],
+      "byte_identical_functions": 10654,
+      "base_matches_previous_base": "aggregate_off 3659.62 equals the round-2/3 base, so the .interp/SHT_NOTE loader change moves nothing the metric scores",
+      "verdict": "the option no longer earns a default flip: criterion (d) of default-on-evaluation.md now fails"
+    },
+    "corpus_diff": {
+      "binaries": [
+        "O0 coreutils basename",
+        "O0 coreutils cat",
+        "O0 coreutils chroot",
+        "O0 coreutils env",
+        "O0 coreutils printf",
+        "O0 coreutils realpath",
+        "O0 diffutils diff",
+        "O0 grep grep",
+        "O0 tar tar",
+        "O2 coreutils fmt",
+        "O2 coreutils ls",
+        "O2 coreutils od",
+        "O2 coreutils sort",
+        "O2 findutils find",
+        "O2 gzip gzip",
+        "O2-noinline bzip2 bzip2"
+      ],
+      "default_main_vs_new": "byte-identical on all 16",
+      "option_on_main_vs_new": "147 changed lines in 8 binaries, every one the offset rule withdrawing a commitment and the function returning to what the default arm prints: the base parameter goes char * -> void * and `&a0[k]` goes back to `(char *)((long)a0 + k)`. By function: chroot sub_7fa8, env sub_2fa8 (scan_varname), printf sub_3288 (print_esc), realpath sub_2bbc (path_prefix), od sub_4270, and the umaxtostr family in tar/ls/sort (see cost); in those the moving cursor becomes its own `char *v2` again and two tar stores print `0x2d`/`0x20` instead of '-'/' ' because the pointer they go through is void * again. No arity change, no new string literal, no value or statement order moved.",
+      "option_on_new_def_vs_on": "what the option still does: mostly unsigned char * / uint1 * -> char * (signedness), a few knock-ons the other way (tar sub_27831.. char * -> uint1 *), tar -O0 mode_from_header's bool *hbits (store-only) void * -> char *"
+    },
+    "loader": "Strict fix beside it, no flag: .interp (by name; it is SHT_PROGBITS) and SHT_NOTE (SectionKind::Note) join the loader tables that lose the READONLY bit and that operand_refs refuses as data targets. ObjectFormat::section_bits now takes the section name. loadertablestring_x86_64 gains puts((char *)0x320) (.interp) and puts((char *)0x3a0) (.note.ABI-tag); main printed puts(\"d-linux-x86-64.so.2\") and puts(\"\\x03\").",
+    "stage_test": "tests/stages/kuna-charptr.xml: witness is now tar -O0 drop_volume_label_suffix (off `void * dropsuffix(uint1 *a0)`, on `char *a0`, via strlen's declared char *); controls #9 fieldwalk (-O0), #10 fieldwalk2 (-O2), #11 pathprefix. The pre-fix decomp_test_dbg fails exactly #9, #10, #11.",
+    "speed": {
+      "method": "interleaved min-of-15 whole-binary `kuna decompile-all --json --max-fn-seconds 120`, four arms rotated per iteration: main b6d572c26 and this branch, each with the option off and on; coreutils -O2 fmt/ls/sort. bash was left out: its 86 s per run makes 60 runs an hour and a half, and the only default-path change is one section-name compare per section at load.",
+      "results_min_ms": {
+        "fmt": {
+          "main_default": 4215.7,
+          "new_default": 4163.3,
+          "main_on": 4226.8,
+          "new_on": 4204.0
+        },
+        "ls": {
+          "main_default": 13925.3,
+          "new_default": 13824.6,
+          "main_on": 14278.5,
+          "new_on": 13983.1
+        },
+        "sort": {
+          "main_default": 14590.8,
+          "new_default": 14493.1,
+          "main_on": 15387.4,
+          "new_on": 15541.4
+        }
+      },
+      "new_default_vs_main_default_pct": {
+        "fmt": -1.24,
+        "ls": -0.72,
+        "sort": -0.67
+      },
+      "new_on_vs_main_on_pct": {
+        "fmt": -0.54,
+        "ls": -2.07,
+        "sort": 1.0
+      },
+      "new_on_vs_new_default_pct": {
+        "fmt": 0.98,
+        "ls": 1.15,
+        "sort": 7.23
+      },
+      "reading": "The default arm is free (-1.24 / -0.72 / -0.67) and the fix does not slow the option-on arm (-0.54 / -2.07 / +1.00 against main's option-on). The option itself costs sort +7.23% over the default in this run (main's option-on arm: +5.46%), above the +5% budget; it is default off and not a flip candidate."
+    }
   }
 }
