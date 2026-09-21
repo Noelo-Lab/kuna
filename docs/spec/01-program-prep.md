@@ -1460,16 +1460,29 @@ moves.
   variables the debug twins actually hold and which libc slot each one could be
   reached from. That adds seven aggregates — `obstack`, `spwd`, `utmpx`, `utmp`,
   `re_pattern_buffer` (the struct tag `regex_t` is a typedef of),
-  `lconv` and `statfs` — and about seventy-five further slots on names the
-  table already had: the rest of the stream surface (`fseeko`, `ftello`,
-  `fread_unlocked`, `fputc_unlocked`, `feof_unlocked`, `fgets_unlocked`,
-  `setbuf`, `vfprintf`, `__getdelim`), the record-at-a-time and reentrant halves
-  of the three account databases (`getpwent`, `fgetpwent`, `putpwent`,
-  `getpwnam_r`, … and their `group` and `spwd` twins), the rest of `tm`,
-  `timespec`, `timeval`, `termios` and `sigset_t`, and the regex entry points.
-  Every one of them is new to both shipped tables, so `libctypes off` is still
-  the shipped behaviour exactly — and, unlike a retarget, each also supplies an
-  ARITY where there was none.
+  `lconv` and `statfs` — and sixty-six further slots: the rest of the stream
+  surface (`fseeko`, `ftello`, `fread_unlocked`, `fputc_unlocked`,
+  `feof_unlocked`, `fgets_unlocked`, `setbuf`, `vfprintf`, `__getdelim`), the
+  record-at-a-time and reentrant halves of the three account databases
+  (`getpwent`, `fgetpwent`, `putpwent`, `getpwnam_r`, … and their `group` and
+  `spwd` twins), more `tm`, `timespec` and `termios` slots, the regex entry
+  points and the obstack entry points. Every one of them is new to both shipped
+  tables, so `libctypes off` is still the shipped behaviour exactly — and,
+  unlike a retarget, each also supplies an ARITY where there was none.
+
+  Two kinds of slot are left out because naming them makes the caller's frame
+  worse. `utimensat`, `futimens`, `utimes` and `futimesat` take a two-element
+  array; the vocabulary can only name one element, and a one-element pointee
+  shrinks the caller's frame object to it, so the second element's stores
+  detach into locals of their own (and in gzip's `lutimens` the neighbouring
+  `struct stat` splits, leaving its tail read from locals nothing writes). And no
+  further `sigset_t` slot is added: `sigdelset`, `sigismember`, `sigsuspend`,
+  `pthread_sigmask`, `sigwait` and `sigfillset` are handed `&sa.sa_mask` of a
+  `struct sigaction` local as readily as a standalone set, and a `sigset_t` at
+  offset 8 splits the 152-byte object at 136, so the `sa_flags` store lands
+  outside what `sigaction()` is handed. The shipped `sigemptyset`, `sigaddset`
+  and `sigprocmask` slots already do this; fixing it belongs to frame merging,
+  not to more slots.
 
   Eight decisions shape the pass.
 
