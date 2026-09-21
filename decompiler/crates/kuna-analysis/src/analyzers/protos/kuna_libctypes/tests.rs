@@ -811,3 +811,19 @@ fn a_relocatable_or_non_elf_image_yields_no_stream_symbol() {
         );
     }
 }
+
+/// Two kinds of slot stay out because naming them splits the caller's frame
+/// object: a two-element time array (one element named shrinks the object to
+/// it) and a `sigset_t` a caller hands as `&sa.sa_mask` of a `struct sigaction`.
+#[test]
+fn the_frame_splitting_slots_stay_out() {
+    for name in [
+        "utimensat", "futimens", "utimes", "futimesat", "sigfillset", "sigsuspend",
+        "pthread_sigmask", "sigdelset", "sigismember", "sigwait",
+    ] {
+        assert!(
+            !LIBC_NAMED.iter().chain(LIBC_EXT_NAMED.iter()).any(|(n, _)| *n == name),
+            "{name}: naming this slot splits the caller's frame object"
+        );
+    }
+}

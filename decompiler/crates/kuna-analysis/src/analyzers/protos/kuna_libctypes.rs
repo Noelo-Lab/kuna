@@ -90,7 +90,7 @@
 //! The names above were chosen from the headers. A second round was chosen from
 //! the corpus's ground truth instead — which pointer-to-named-struct variables
 //! the debug twins hold, and which libc slot each one could be reached from —
-//! and added seven aggregates and about seventy-five slots
+//! and added seven aggregates and sixty-six slots
 //! (`docs/features/libcstructs/`). One of them needed a channel that did not
 //! exist: [`LIBC_DEFINED_NAMED`], matched against a name the image DEFINES,
 //! because gnulib links its obstack in and the linker exports it from the
