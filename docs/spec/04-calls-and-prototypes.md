@@ -989,7 +989,11 @@ classified:
   value-preserving and constant-displacing ops (INDIRECT, COPY, INT_ADD,
   INT_SUB), carrying the running offset delta; a pointer whose delta equals the
   store's offset addresses the same slot. MULTIEQUAL is not followed, since a
-  phi's other arm may carry a different frame.
+  phi's other arm may carry a different frame. Frame-pointer aliases are resolved
+  backwards through at most 64 same-width copies and constant additions or
+  subtractions to a particular SP value. Both walks wrap offsets at pointer width,
+  so a 32-bit subtraction and an addition of its two's-complement displacement
+  identify the same slot. Unknown bases, width changes, and phi merges are declined.
 
   This is a deliberate **divergence from upstream**, not a port repair:
   `only_op_use` is faithful to `funcdata_varnode.cc:1891`, and relaxing its

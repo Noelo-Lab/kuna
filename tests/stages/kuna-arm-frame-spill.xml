@@ -1,0 +1,30 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!--
+  Synthetic caller-save spill through FP. The frame is established from SP,
+  r0-r2 receive constants, and r3 is XORed with one, spilled at [fp-24], passed
+  to consume, then reloaded and stored through an output pointer.
+  P4 active-input-trial scoring: spillargtrial off retains the conservative
+  three-argument call; reload must recognize the FP-relative spill/reload pair.
+-->
+<bytechunk space="ram" offset="0x1000">
+10482de908b08de214d04de204409be50100a0e30210a0e30320a0e30130
+23e218300be5f50300eb18301be5003084e508d04be21088bde8
+</bytechunk>
+<bytechunk space="ram" offset="0x2000">1eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1000" name="spill_argument"/>
+<symbol space="ram" offset="0x2000" name="consume"/>
+</binaryimage>
+<script>
+  <com>option spillargtrial off</com>
+  <com>load function spill_argument</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option spillargtrial reload</com>
+  <com>load function spill_argument</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="ARM FRAME SPILL #1: off retains the three-argument call" min="1" max="1">consume\(1,2,3\);</stringmatch>
+<stringmatch name="ARM FRAME SPILL #2: reload recovers the fourth argument" min="1" max="1">consume\(1,2,3,</stringmatch>
+</decompilertest>
