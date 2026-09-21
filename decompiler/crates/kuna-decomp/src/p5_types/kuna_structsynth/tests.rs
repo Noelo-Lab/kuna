@@ -18,6 +18,143 @@ fn off_does_not_fire_and_param_does() {
 }
 
 #[test]
+fn nest_fires_and_is_the_only_mode_that_nests() {
+    assert_eq!(OptionStructSynth.apply("nest").unwrap().0, StructSynthMode::Nest);
+    assert!(StructSynthMode::Nest.fires());
+    assert!(StructSynthMode::Nest.nests());
+    assert!(!StructSynthMode::Param.nests());
+    assert!(!StructSynthMode::Off.nests());
+}
+
+/// A factory with the core types a real architecture mints.
+fn core_factory() -> crate::dtype::TypeFactoryImpl {
+    let f = crate::dtype::TypeFactoryImpl::new();
+    f.set_default_alignment_map();
+    f.set_max_basetype_size(8);
+    for (name, size, meta, chartp) in [
+        ("undefined", 1, type_metatype::TYPE_UNKNOWN, false),
+        ("undefined8", 8, type_metatype::TYPE_UNKNOWN, false),
+        ("char", 1, type_metatype::TYPE_INT, true),
+        ("int4", 4, type_metatype::TYPE_INT, false),
+        ("uint4", 4, type_metatype::TYPE_UINT, false),
+        ("int8", 8, type_metatype::TYPE_INT, false),
+    ] {
+        f.set_core_type(name, size, meta, chartp).unwrap();
+    }
+    f.cache_core_types().unwrap();
+    f
+}
+
+/// Every load of one field is a value of the field's type, so their accesses
+/// are merged exactly as if they had all been made through one base: widest
+/// wins, a sign contest stays contested, and negative evidence carries over.
+#[test]
+fn absorbed_evidence_is_the_replay_of_every_access() {
+    let f = core_factory();
+    let long = f.get_base(8, type_metatype::TYPE_INT).unwrap();
+    let int4 = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+    let uint4 = f.get_base(4, type_metatype::TYPE_UINT).unwrap();
+    let mut first = Evidence::default();
+    first.record(0, 8, Some(Rc::clone(&long)));
+    first.record(8, 4, Some(Rc::clone(&int4)));
+    let mut second = Evidence::default();
+    second.record(8, 4, Some(Rc::clone(&uint4)));
+    second.record(8, 2, None);
+    second.record(0x10, 1, None);
+    second.phi_reached = true;
+
+    let mut merged = Evidence::default();
+    merged.absorb(&first);
+    merged.absorb(&second);
+    let mut replay = Evidence::default();
+    replay.record(0, 8, Some(Rc::clone(&long)));
+    replay.record(8, 4, Some(Rc::clone(&int4)));
+    replay.record(8, 4, Some(Rc::clone(&uint4)));
+    replay.record(8, 2, None);
+    replay.record(0x10, 1, None);
+
+    assert_eq!(merged.slots.keys().collect::<Vec<_>>(), replay.slots.keys().collect::<Vec<_>>());
+    for (off, slot) in merged.slots.iter() {
+        let want = &replay.slots[off];
+        assert_eq!(slot.width, want.width, "width at {off:#x}");
+        assert_eq!(slot.committed().is_some(), want.committed().is_some(), "commitment at {off:#x}");
+    }
+    assert!(merged.slots[&8].committed().is_none(), "a signed and an unsigned load stay contested");
+    assert!(merged.phi_reached, "one loop-carried load declines the whole field");
+
+    // The first access of a width names its type, even when it has none.
+    let mut untyped_first = Evidence::default();
+    untyped_first.record(0, 8, None);
+    let mut typed = Evidence::default();
+    typed.record(0, 8, Some(Rc::clone(&long)));
+    let mut replay_untyped = Evidence::default();
+    replay_untyped.record(0, 8, None);
+    replay_untyped.record(0, 8, Some(Rc::clone(&long)));
+    let mut merged_untyped = Evidence::default();
+    merged_untyped.absorb(&untyped_first);
+    merged_untyped.absorb(&typed);
+    assert_eq!(merged_untyped.slots[&0].ctype.is_some(), replay_untyped.slots[&0].ctype.is_some());
+    assert!(!merged.dynamic_offset && !merged.integer_use);
+}
+
+/// grep's kwset `treenext`: a tree node's `llink` holds a node. The record is
+/// minted around its own shell, its layout spells the field as a self pointer,
+/// the same measurement is answered by it, and a reader that measured a plain
+/// pointer at that offset is a different record.
+#[test]
+fn a_record_that_points_at_itself_is_minted_around_its_shell() {
+    let f = core_factory();
+    let long = f.get_base(8, type_metatype::TYPE_INT).unwrap();
+    let ulong_ptr = f.get_type_pointer(8, f.get_base(8, type_metatype::TYPE_UINT).unwrap(), 1).unwrap();
+    let fields = vec![
+        TypeField::new(0, 0, "field_0x0", Rc::clone(&ulong_ptr)),
+        TypeField::new(1, 8, "field_0x8", Rc::clone(&ulong_ptr)),
+        TypeField::new(2, 0x10, "field_0x10", Rc::clone(&long)),
+    ];
+    let st = ledger::lookup_or_mint(&f, fields.clone(), 0x18, &[], &[0, 8]).unwrap();
+    assert!(!st.is_incomplete());
+    for i in 0..2 {
+        let pointee = st.get_field(i).unwrap().field_type.get_ptr_to().unwrap();
+        assert_eq!(pointee.get_name(), st.get_name());
+        assert!(pointee.is_incomplete(), "the self pointer names the shell");
+    }
+    let layout = ledger::layout_of(&st).unwrap();
+    assert_eq!(layout.fields[0].ty, ledger::SELF_KEY);
+    assert_eq!(layout.fields[1].ty, ledger::SELF_KEY);
+    assert_eq!(layout, ledger::layout_of_fields(&fields, 0x18, &[0, 8]));
+
+    let again = ledger::lookup_or_mint(&f, fields.clone(), 0x18, &[], &[0, 8]).unwrap();
+    assert!(Rc::ptr_eq(&again, &st));
+    let plain = ledger::lookup_or_mint(&f, fields, 0x18, &[], &[]).unwrap();
+    assert_ne!(plain.get_name(), st.get_name());
+}
+
+/// A value loaded through the self pointer names the shell, which has no
+/// members; the value type resolves to the completed record so the reads
+/// through it render as fields. Nothing else resolves.
+#[test]
+fn only_a_records_own_shell_resolves_to_the_record() {
+    let f = core_factory();
+    let long = f.get_base(8, type_metatype::TYPE_INT).unwrap();
+    let fields = vec![
+        TypeField::new(0, 0, "field_0x0", f.get_type_pointer(8, Rc::clone(&long), 1).unwrap()),
+        TypeField::new(1, 8, "field_0x8", Rc::clone(&long)),
+    ];
+    let st = ledger::lookup_or_mint(&f, fields, 0x10, &[], &[0]).unwrap();
+    let shell_ptr = Rc::clone(&st.get_field(0).unwrap().field_type);
+    let resolved = resolve_self_pointer(&f, &shell_ptr).unwrap();
+    assert!(Rc::ptr_eq(&resolved.get_ptr_to().unwrap(), &st));
+    assert_eq!(resolved.get_size(), 8);
+
+    let complete = f.get_type_pointer(8, Rc::clone(&st), 1).unwrap();
+    assert!(resolve_self_pointer(&f, &complete).is_none(), "already the completed record");
+    let orphan = f.get_type_struct("struct_7").unwrap();
+    let orphan_ptr = f.get_type_pointer(8, orphan, 1).unwrap();
+    assert!(resolve_self_pointer(&f, &orphan_ptr).is_none(), "a shell with no completed record");
+    assert!(resolve_self_pointer(&f, &long).is_none());
+}
+
+#[test]
 fn a_constant_offset_sign_extends_by_its_own_width() {
     assert_eq!(sign_extend(0xff, 1), -1);
     assert_eq!(sign_extend(0xfff8, 2), -8);

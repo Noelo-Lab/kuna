@@ -1,0 +1,321 @@
+{
+ "opportunity": "structsynth param never nests: a pointer field of a synthesized record keeps the scalar its loads carried, so every read through a loaded field is raw offset arithmetic again (`v1 = a0->field_0x0; ... (long)*(int *)((long)v1 + 0xc)`), and results.md D.8 ranked struct layout recall 0.093 / nesting F1 0 as the third lever.",
+ "test_name": "tests/stages/structsynth-nest.xml (8 two-pass assertions: pass 1 `option structsynth param` = raw reads through loaded fields, pass 2 `nest` = nested record + self-pointing tree node) + unit tests (kuna_structsynth::tests nest/absorb/self-mint/resolve, nest::tests same-record, shard::tests self request not portable)",
+ "binary": "tests/stages/structsynth-nest.xml bytechunk (gcc -O2, max-inline-recursive-depth-auto=3: use_outer + treewalk)",
+ "selector": "use_outer, treewalk",
+ "func_addr": "0x100000, 0x100020",
+ "angr_version": null,
+ "option": "structsynth",
+ "value": "nest",
+ "values": "off|param|nest",
+ "flag": "Architecture::struct_synth (StructSynthMode::Nest)",
+ "element_id": null,
+ "change_kind": "structure-recovery",
+ "tier": "transform",
+ "source_decompiler": "angr",
+ "inspiration": "angr simple_solver / TRex USENIX Security 2025: type a loaded pointer by its own dereferences, recursive where the loaded value is the same record",
+ "default_on": false,
+ "default_value": "param",
+ "ablation_changed": 0,
+ "parity": {
+  "datatests": "675/675 PARITY OK",
+  "stages": "1280/1280 PARITY OK; only new keys STRUCTSYNTH-NEST #1-#8",
+  "test_cli": "214/214",
+  "flip_arm": "with nest as the default (reverted): datatests 675/675, stages 1272/1272 with only the 8 new keys, test-cli 214/214"
+ },
+ "design": {
+  "evidence": "every LOAD of one pointer-sized field of an accepted record is merged (Evidence::absorb, the replay of Evidence::record) and held to accepts_record: already TYPE_PTR, not type-locked, no phi/index/integer use, 2+ offsets incl. 0, < MAX_FIELD_OFFSET, not an array run; pruned and made dense like a parameter",
+  "same_record": "the loaded record's claims are a subset of the enclosing record's (offset, width, type spelling) with its unclaimed bytes laid out alike (ledger::keeps_unclaimed); checked after the standalone rules so one coincident word never counts (obstack/_obstack_newchunk)",
+  "self_mint": "ledger::mint completes the structure around its incomplete shell (a completed struct is a fresh Rc); the self field is keyed SELF so self-pointing layouts of one shape dedupe; SynthRequest with a self or nested field has no recipe (non-portable) so --jobs names it in its one ordered worker",
+  "shell_resolution": "kuna_structsynth::resolve_self_pointer: a LOAD/STORE value type that is a pointer to a synthesized record's own shell takes the pointer to the completed record (infertypes propagate_load_store, casts get_output_token_load/get_input_cast_store); DWARF shells untouched",
+  "depth": "MAX_NEST_DEPTH = 2 records below the parameter; only the immediately enclosing record is compared for self-reference"
+ },
+ "instrument_fix": "scripts/decbench/structscore.header_layouts recorded a pointee only for a struct defined earlier in the header; now any struct the header defines (selftest 35/35, 2 new cases). With the fix param already has 68 struct-pointer members on 14 builds (62 real), carried by protoorder.",
+ "opportunity_census": {
+  "builds": 12,
+  "ptr_fields_whose_loads_are_dereferenced": 274,
+  "phi_or_index": 153,
+  "strict_pass": 10,
+  "integer_typed_loads_otherwise_passing": 11
+ },
+ "nesting_census_vs_dwarf": {
+  "builds": "ls/du/sort O2, grep O2+O0, tar O2+O0, find O2, ls O0, diff O2",
+  "param": {
+   "struct_ptr_members": 67,
+   "real_struct_ptr": 61,
+   "on_nonptr_gt_field": 6
+  },
+  "nest": {
+   "struct_ptr_members": 69,
+   "real_struct_ptr": 63,
+   "on_nonptr_gt_field": 6
+  },
+  "new_in_nest": [
+   {
+    "fn": "tar O2 comma",
+    "off": "0x10",
+    "gt": "hol_help_state",
+    "inner": "2/2"
+   },
+   {
+    "fn": "tar O2 re_compile_fastmap_iter",
+    "off": "0x0",
+    "gt": "re_dfa_t",
+    "inner": "3/3"
+   }
+  ],
+  "not_visible": "grep O2 treenext/treedelta self-reference: DWARF params via DW_AT_abstract_origin, which the instrument does not follow"
+ },
+ "layoutscore": {
+  "builds": 14,
+  "param": {
+   "fields_only_precision": "2954/3423=0.8630",
+   "recall": "2954/42304=0.0698",
+   "nesting": "62/68 P .9118 R .0091 F1 .0181",
+   "structs": 508
+  },
+  "nest": {
+   "fields_only_precision": "2956/3423=0.8636",
+   "recall": "2956/42304=0.0699",
+   "nesting": "63/70 P .9000 R .0093 F1 .0184",
+   "structs": 511
+  }
+ },
+ "trex_fig6": {
+  "grep O2": 1.6362,
+  "tar O2": 1.663,
+  "ls O2": 1.7331,
+  "du O0": 4.0488,
+  "note": "identical in both arms"
+ },
+ "typesweep": {
+  "corpus": "444 slices, projects coreutils grep gzip diffutils bzip2 findutils tar shadow x O0 O2 O2-noinline, metric pinned decbench 625e892, DECBENCH_NO_CACHE=1, both arms the same binary",
+  "arms": "base = default param, test = --option structsynth nest",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 31,
+    "perfect_on": 31,
+    "mean_off": 0.4097,
+    "mean_on": 0.4097,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 877,
+    "perfect_on": 877,
+    "mean_off": 0.3341,
+    "mean_on": 0.3341,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 58,
+    "perfect_on": 58,
+    "mean_off": 0.4325,
+    "mean_on": 0.4325,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 41,
+    "perfect_on": 41,
+    "mean_off": 0.22,
+    "mean_on": 0.22,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 51,
+    "perfect_on": 51,
+    "mean_off": 0.4351,
+    "mean_on": 0.4351,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 102,
+    "perfect_on": 102,
+    "mean_off": 0.5197,
+    "mean_on": 0.5197,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 31,
+    "perfect_on": 31,
+    "mean_off": 0.3001,
+    "mean_on": 0.3001,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 158,
+    "perfect_on": 158,
+    "mean_off": 0.3516,
+    "mean_on": 0.3516,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1349,
+   "perfect_on": 1349,
+   "mean_off": 0.3405,
+   "mean_on": 0.3405,
+   "improved": 0,
+   "worse": 0
+  },
+  "control": "10679 functions byte-identical variables, 0 scored differently; 69 differ only in struct_N numbering, all scored identically"
+ },
+ "arity_phantom": {
+  "functions": 7819,
+  "arity_changes": 0,
+  "params_off": 13879,
+  "params_on": 13879,
+  "declared_locals_off": 34765,
+  "declared_locals_on": 34766,
+  "functions_with_local_count_delta": 1,
+  "note": "tar O2 0x1f3f0: a uint8 count and an int8 word no longer share a declaration"
+ },
+ "hunks": {
+  "binaries": 15,
+  "functions": 7819,
+  "changed": 93,
+  "struct_numbering_only": 86,
+  "real": 7,
+  "real_functions": [
+   "grep O2 0xba10 treenext (self-pointing node)",
+   "grep O2 0xc100 treedelta (self-pointing node; byte address held in a temporary)",
+   "tar O2 0x1e120 dumpdir_next",
+   "tar O2 0x1f3f0 (dumpdir caller; +1 local)",
+   "tar O2 0x1f810 (dumpdir caller)",
+   "tar O2 0x3be20 comma",
+   "tar O2 0x52de0 re_compile_fastmap_iter"
+  ],
+  "skeleton_deltas": 0,
+  "arm32": "chibios O0, chibios O2-noinline, freertos O0: 0 changes",
+  "tool": "docs/features/structnest/hunks.py"
+ },
+ "round_trip": {
+  "offsetof": "487 synthesized structs over 10 project exports (8 x86-64, 2 ARM32 --m32), 0 misplaced",
+  "syntax": "gcc -fsyntax-only error counts identical in both arms on grep O2 (1031), tar O2 (4153), tar O0 (3125), find O2 (1384); 0 'has no member' in either",
+  "recursive": "struct_0 { struct_0 *field_0x0; struct_0 *field_0x8; ... } after `typedef struct struct_0 struct_0;` compiles standalone with offsetof asserts"
+ },
+ "relaxations_measured_not_shipped": {
+  "builds": 10,
+  "strict": {
+   "new": 2,
+   "real": 2,
+   "inner": "5/5"
+  },
+  "no_offset0": {
+   "new": 5,
+   "real": 5,
+   "inner": "17/21"
+  },
+  "pointer_from_use": {
+   "new": 17,
+   "real": 17,
+   "inner": "42/44"
+  },
+  "both": {
+   "new": 33,
+   "real": 33,
+   "self": 1,
+   "inner": "106/134"
+  },
+  "why_not": "pointer-ness is the one fact structsynth does not invent; the campaign brief keeps it for nested records"
+ },
+ "known_limits": [
+  "A loaded value the lattice types as an integer declines however it is dereferenced; that is most dereferenced field loads (see relaxations_measured_not_shipped).",
+  "Only the immediately enclosing record is compared for self-reference; a record reached through two links (A->B->A) gets a second name.",
+  "A record whose types only nearly agree with its holder (a one-level unrolling reads the inner links as unsigned long) is nested as a record of its own: correct offsets, a second name.",
+  "Under nest the convergence sweep can mint: a redone reader's outer layout names the surviving inner record.",
+  "A request with a nested or self field is non-portable, so a --jobs run names it in its one ordered worker (correct, serial for those functions).",
+  "A loop-carried pointer chase (n = n->next) reaches a phi and declines, as a parameter walk does."
+ ],
+ "speed": {
+  "method": "interleaved min-of-15 whole-binary decompile-all --json, three arms rotated each round: main 97315551d (default param), this build --option structsynth param, this build --option structsynth nest; box shared with other campaign lanes",
+  "per_binary": {
+   "fmt": {
+    "min_ms": {
+     "main": 4306.0,
+     "param": 4325.5,
+     "nest": 4240.6
+    },
+    "delta_min_pct_nest_vs_param": -1.96,
+    "delta_min_pct_nest_vs_main": -1.52,
+    "delta_min_pct_param_vs_main": 0.45
+   },
+   "ls": {
+    "min_ms": {
+     "main": 15124.3,
+     "param": 15078.1,
+     "nest": 14319.7
+    },
+    "delta_min_pct_nest_vs_param": -5.03,
+    "delta_min_pct_nest_vs_main": -5.32,
+    "delta_min_pct_param_vs_main": -0.31
+   },
+   "sort": {
+    "min_ms": {
+     "main": 15826.6,
+     "param": 15722.8,
+     "nest": 15251.5
+    },
+    "delta_min_pct_nest_vs_param": -3.0,
+    "delta_min_pct_nest_vs_main": -3.63,
+    "delta_min_pct_param_vs_main": -0.66
+   },
+   "bash": {
+    "min_ms": {
+     "main": 91293.6,
+     "param": 89705.5,
+     "nest": 88208.1
+    },
+    "delta_min_pct_nest_vs_param": -1.67,
+    "delta_min_pct_nest_vs_main": -3.38,
+    "delta_min_pct_param_vs_main": -1.74
+   }
+  },
+  "worst_delta_min_pct_nest_vs_param": -1.67,
+  "worst_delta_min_pct_nest_vs_main": -1.52,
+  "budget_pct": 5
+ },
+ "gates": {
+  "tree": "3ad74a0d2 on main d07234191",
+  "make_test": "datatests: 675/675 assertions passed; PARITY OK",
+  "make_test_stages": "datatests: 1280/1280 assertions passed; PARITY OK",
+  "make_test_cli": "tests/cli: 218/218 passed (a first run under rust-test load failed only cold-load-xref-lookup wall_ms 1195 vs < 1100, the known timing flake)",
+  "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+  "catalog_check": "catalog OK: documents exactly the registered kuna options",
+  "counters_check": "no drift: every hard-coded site agrees with the derived truth",
+  "options_md": "byte-fresh",
+  "rust_test": "RUST_TEST_RC=0, 7354 passed, 0 failed",
+  "structscore_selftest": "35/35"
+ },
+ "default_decision": "not flipped: criteria (a)-(g) pass (see default-on-evaluation.md), but decompile-all --jobs 8 --option protoorder off on tar O2 is 15.9 s under param and 26.0 s under nest (+63%), because a nested or self request is non-portable and the pool names every structure-bearing function in one ordered worker; the accuracy gain (2 nested fields / 10 builds, 7 functions respelled / 15 binaries) does not pay for it",
+ "sharded_speed": {
+  "surface": "decompile-all --jobs 8 --option protoorder off, tar O2, min of 3",
+  "param_s": 15.93,
+  "nest_s": 26.02,
+  "delta_pct": 63.3,
+  "why": "param: 106 structure-bearing functions, 100 renamed in place, 10 redone in 8 workers; nest: all 106 in one ordered worker",
+  "output": "identical to the serial run (grep O2 --jobs 4 cmp)"
+ },
+ "base": "measured on 97315551d and re-measured (typesweep) on 2e8e407be; gates on d07234191 (#695 charptr is default off)",
+ "counters": {
+  "stage_corpus": "328 -> 329 (kuna-base xml.rs, via counters --fix)",
+  "settables": "unchanged (a value of an existing option)",
+  "phase_catalog_json": "recaptured: structsynth values off|param|nest"
+ }
+}

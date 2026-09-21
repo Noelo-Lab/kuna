@@ -1010,7 +1010,7 @@ Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
 binary keeps no record of the aggregate a pointer points at, so the lattice above
 gives a dereferenced parameter a pointee it can prove and stops there:
 `unsigned long *`, and every field read rendered as `*(unsigned int *)&a0[1]`.
-[`structsynth`](../options.md) (`off|param`, default `param`) invents the missing
+[`structsynth`](../options.md) (`off|param|nest`, default `param`) invents the missing
 layout from the accesses themselves.
 
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
@@ -1382,8 +1382,11 @@ field and then by the ADDRESS of a field's type, and minted structures always
 agree that far on their first field, `field_0x0`; rendered in tree order, the
 same serial export of `sort` O2 declared its structures in three different
 orders over five runs. A minted structure holds nothing by value but scalars and
-byte arrays, and nothing holds one by value, so after everything else is a valid
-place to define it, and the order is now the same every run and in every worker.
+byte arrays, and nothing holds one by value. Under `nest` (below) it can also
+hold a pointer to another minted structure or to itself, which the forward
+declarations at the top of the header already name. So after everything else
+is a valid place to define it, and the order is now the same every run and in
+every worker.
 
 The synthesized layout is printable rather than only inferable: the P9 option
 [`structdefs`](../options.md) prints the definition of every composite a
@@ -1393,6 +1396,79 @@ whose parameter this pass retyped, and carries the same text in the per-function
 `types` array of `decompile-all --json`. `structdefs` is off by default, so the
 layouts of a default run live in the `decompile-project` header and nowhere in a
 function's own text.
+
+**Nested records (`nest`).** Under `param` a field that holds a pointer keeps
+the scalar its loads carried, so every read through it is raw offset arithmetic
+again: `fmt`-style code that loads `o->in` and reads it three times prints
+`v1 = a0->field_0x0; ... (long)*(int *)((long)v1 + 0xc)`. The value `nest` of
+`structsynth` (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/nest.rs
+(nest_fields)`) also measures the records the pointer fields of an accepted
+record point at. Every `LOAD` of one pointer-sized field is a value of that
+field's type, so the dereferences made through all of them are one base's
+evidence, merged exactly as `Evidence::record` merges the accesses of one base
+(`Evidence::absorb`): the widest access wins, a sign contest stays contested,
+and one loop-carried load, index or integer use of any of them declines the
+whole field. That evidence is held to the conditions a parameter is. Each loaded
+value must already carry `TYPE_PTR` and must not be type-locked. The lattice must
+have settled. There must be two distinct offsets, one of them 0, and they must
+not be an array's uniform run. What passes is pruned and made dense as a
+parameter's layout is, looked up in the ledger like any other layout, and the
+field is typed as a pointer to the completed structure the ledger answered. The
+nested record is looked up before the record that holds it, so the pointer names
+a completed type. This goes at most two records below the parameter. A field
+whose loads fail any condition keeps the type it had.
+
+A loaded record is the **same** record when everything it was seen to hold, the
+enclosing record also holds: each of its claims at the same offset, width and
+type, with the bytes it accessed without claiming laid out alike
+(`ledger::keeps_unclaimed`). Then the field points at the enclosing record
+itself. `grep`'s kwset `treenext` is the shape: unrolled by the compiler, it
+reads `{0, 8, 0x10, 0x18}` of a tree node and the same four fields, with the
+same types, of the nodes its `llink` and `rlink` point at, so both links become
+`struct_N *` of the node's own `struct_N`. The test runs after the standalone
+conditions, so a single word is never enough: `obstack`'s `_obstack_newchunk`
+reads the chunk's `prev` at 8 where the obstack keeps an integer word, and its
+chunk is not an obstack. Only the record directly holding the field is compared,
+since a record two levels up would have to be minted together with the one in
+between. A record whose types only nearly agree (an unrolling one level deep
+reads the inner node's links as `unsigned long` because they are only passed to
+calls) gets a record of its own with the same offsets: correct, but a second name.
+
+A structure that points at itself cannot be completed first, because its own
+field names it, and completing a structure mints a fresh `Rc`. The ledger
+therefore mints it around its incomplete shell
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs (mint)`):
+`get_type_struct`, a pointer to the shell, then the members. That is the model
+a DWARF `struct node { struct node *next; }` already lives with (chapter 01), and
+it costs the same thing there: a value loaded through the self pointer has a type
+with no members, and every read through it printed as
+`*(long **)((long)v1 + 8)`. For a synthesized structure the shell is resolved.
+Where a `LOAD` or `STORE` value type is a pointer to such a shell, and the
+completed structure of that name is a synthesized one that itself points at that
+exact shell,
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs (resolve_self_pointer)`
+gives the pointer to the completed structure instead. It is called from the
+propagation edge (`coreaction_infertypes.rs (propagate_load_store)`) and from the
+load and store cast tokens of chapter 09. A DWARF forward declaration, or any
+other incomplete type, is left alone. A node three links down then reads
+`v3->field_0x18`, not `*(uint1 *)&v3[3]`. In the ledger a self pointer is keyed
+`SELF` rather than by its pointee's name (`ledger.rs (SELF_KEY)`), so two
+self-pointing layouts of one shape are one record whatever each was going to be
+called. Every other nested pointer is keyed by its pointee, which makes the
+nested record part of the field's identity: two readers that nested different
+records at one offset are different records.
+
+Three limits follow. The convergence sweep can mint under `nest`. A reader
+decided again after its inner record was superseded measures an outer layout
+whose pointer names the survivor, and no structure held answers for that. A
+`--jobs` worker records a request whose field points at a synthesized structure
+or at itself with no recipe, so such a structure is named by the one ordered
+worker (chapter 00). And a loaded value the lattice types as an integer declines
+however it is dereferenced. Over ten builds of the campaign corpus that is most
+of the field loads that are dereferenced at constant offsets: taking pointer-ness
+from the dereferences, and dropping the offset-0 condition for a nested record,
+adds 31 nested fields, each a pointer to a structure in DWARF. It is not done
+here, because pointer-ness is the one fact this pass does not invent.
 
 **The default is `param`.** Flipping it on moves **no** datatest assertion
 (675/675). In `tests/stages` it reaches four assertions of other features, each
@@ -1420,6 +1496,31 @@ exports compile with every `offsetof(struct_N, field_0xK)` equal to K.
 Whole-binary `decompile-all` time moves between −3.4% and +2.9% (interleaved
 min-of-15 over `fmt`, `ls` and `sort` at O2 and the 1.3 MB `bash` O2), against a
 +5% budget.
+
+**`nest` stays opt-in.** Against `param` on the same build it moves no datatest
+assertion (675/675) and no stage assertion of any other feature (the only new
+keys are `tests/stages/structsynth-nest.xml`'s, whose first pass pins `param`).
+Over 15 binaries and 7,819 functions (x86-64 coreutils `fmt`, `ls`, `sort` and
+`du`, findutils `find`, grep, gzip, bzip2, diffutils `diff` and tar, and the ARM32
+firmwares `chibios` at O0 and O2-noinline and `freertos` at O0) 93 functions
+change. 86 of them differ only in `struct_N` numbering, because a nested record is
+minted before the record that holds it. The other 7 are reads respelled through
+the nested record, together with two effects of the new pointee type: one local
+that no longer shares a declaration with a word of another type, and one byte
+address held in a temporary that its compare and its store both use. No control
+flow moves, and nothing on ARM32 changes. The 444-slice typesweep is 1,349
+perfect in both arms with no function better or worse, the TRex score is
+unchanged, and 487 structures over ten project exports compile with every
+`offsetof` exact. Serial whole-binary `decompile-all` time moves by −1.7% to −5.0%
+against `param` (interleaved min-of-15 over `fmt`, `ls` and `sort` at O2 and `bash`
+O2). What keeps it off by default is the sharded run. A structure with a nested
+or self field has no recipe another process can rebuild, so `--jobs` names every
+function with a synthesized structure in its one ordered worker, where `param`
+renames most of them in place. `decompile-all --jobs 8` on tar O2 takes 26.0 s
+under `nest` against 15.9 s under `param`, with output identical to the serial
+run either way. Giving the shard protocol a recipe for a field that points at
+another request's structure, or at its own, is what would make `nest` a default
+candidate.
 
 The cost is on decbench's `type_match`, and it is accepted: the metric compares
 pointee spellings by name, so a synthesized `struct_0 *` can never intersect a

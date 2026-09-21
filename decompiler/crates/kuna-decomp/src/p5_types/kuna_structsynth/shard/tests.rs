@@ -57,7 +57,7 @@ fn fields(f: &TypeFactoryImpl, spec: &[(int4, Ty)]) -> Vec<TypeField> {
 
 /// A request as a worker records it, every core type held at load.
 fn req(fs: &[TypeField], size: int4, unclaimed: &[(int4, int4)]) -> SynthRequest {
-    SynthRequest::of(fs, size, unclaimed, &AtLoad::of(&factory()))
+    SynthRequest::of(fs, size, unclaimed, &[], &AtLoad::of(&factory()))
 }
 
 fn at_load() -> Rc<AtLoad> {
@@ -93,7 +93,7 @@ fn a_replay_names_every_structure_as_the_ledger_does() {
         let fs = fields(&live, &spec);
         let request = req(&fs, size, &unclaimed);
         let real =
-            ledger::lookup_or_mint(&live, fs, size, &unclaimed).map(|t| t.get_name().to_string());
+            ledger::lookup_or_mint(&live, fs, size, &unclaimed, &[]).map(|t| t.get_name().to_string());
         assert_eq!(replay.lookup_or_mint(&request), real);
         named.push(real.unwrap());
     }
@@ -136,7 +136,7 @@ fn a_held_name_is_never_minted_over() {
     let mut replay = Replay::probe(&live);
     let fs = fields(&live, &[(0, Ty::CharPtr), (8, Ty::Long)]);
     let request = req(&fs, 16, &[]);
-    let real = ledger::lookup_or_mint(&live, fs, 16, &[]).map(|t| t.get_name().to_string());
+    let real = ledger::lookup_or_mint(&live, fs, 16, &[], &[]).map(|t| t.get_name().to_string());
     assert_eq!(real.as_deref(), Some("struct_1"));
     assert_eq!(replay.lookup_or_mint(&request), real);
     let again = Replay::probe(&live);
@@ -150,7 +150,7 @@ fn a_table_rebuilds_the_same_structures_in_another_factory() {
     for (spec, size, unclaimed) in script() {
         let fs = fields(&live, &spec);
         replay.lookup_or_mint(&req(&fs, size, &unclaimed));
-        ledger::lookup_or_mint(&live, fs, size, &unclaimed);
+        ledger::lookup_or_mint(&live, fs, size, &unclaimed, &[]);
     }
     let other = factory();
     let table = decode_table(&encode_table(replay.table())).unwrap();
@@ -174,7 +174,7 @@ fn a_table_rebuilds_the_same_structures_in_another_factory() {
     let held = held_names(&worker);
     assert_eq!(held, ["struct_0"]);
     let words = fields(&worker, &[(0, Ty::Long), (8, Ty::Long), (0x10, Ty::Long)]);
-    ledger::lookup_or_mint(&worker, words, 24, &[]).unwrap();
+    ledger::lookup_or_mint(&worker, words, 24, &[], &[]).unwrap();
     assert!(install_table(&worker, &table).is_err());
     forget_minted(&worker, &held).unwrap();
     assert_eq!(held_names(&worker), ["struct_0"]);
@@ -186,7 +186,7 @@ fn a_table_rebuilds_the_same_structures_in_another_factory() {
     let fresh = factory();
     let held = held_names(&fresh);
     for (spec, size, unclaimed) in script().into_iter().rev() {
-        let st = ledger::lookup_or_mint(&fresh, fields(&fresh, &spec), size, &unclaimed).unwrap();
+        let st = ledger::lookup_or_mint(&fresh, fields(&fresh, &spec), size, &unclaimed, &[]).unwrap();
         // The parameter's pointer keeps the structure reachable.
         fresh.get_type_pointer(8, st, 1).unwrap();
     }
@@ -216,7 +216,7 @@ fn a_field_type_is_rebuilt_only_when_it_is_the_same_type() {
     }
     // A structure the ledger minted is named by its process, so it never travels.
     let minted =
-        ledger::lookup_or_mint(&f, fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]), 16, &[]).unwrap();
+        ledger::lookup_or_mint(&f, fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]), 16, &[], &[]).unwrap();
     assert_eq!(TypeRecipe::of(&minted), None);
     let to_minted = f.get_type_pointer(8, minted, 1).unwrap();
     assert_eq!(TypeRecipe::of(&to_minted), None);
@@ -264,22 +264,22 @@ fn a_record_survives_the_wire() {
 fn a_forced_hook_answers_in_order_and_notices_a_changed_script() {
     let f = factory();
     let first = fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]);
-    let minted = ledger::lookup_or_mint(&f, first.clone(), 16, &[]).unwrap();
+    let minted = ledger::lookup_or_mint(&f, first.clone(), 16, &[], &[]).unwrap();
     let hook = ShardHook::forcing(at_load());
 
     let second = fields(&f, &[(0, Ty::Long), (8, Ty::Long), (0x10, Ty::Long)]);
     hook.borrow_mut().begin(&[Some(minted.get_name().to_string()), None]);
-    let a = lookup(&hook, &f, first.clone(), 16, &[]);
+    let a = lookup(&hook, &f, first.clone(), 16, &[], &[]);
     assert!(a.is_some_and(|t| Rc::ptr_eq(&t, &minted)));
-    assert!(lookup(&hook, &f, second, 24, &[]).is_none());
+    assert!(lookup(&hook, &f, second, 24, &[], &[]).is_none());
     let record = hook.borrow_mut().take();
     assert_eq!(record.requests.len(), 2);
     assert!(!record.off_script);
 
     // A repeated lookup is answered as the first one was and takes no answer.
     hook.borrow_mut().begin(&[Some(minted.get_name().to_string())]);
-    assert!(lookup(&hook, &f, first.clone(), 16, &[]).is_some());
-    assert!(lookup(&hook, &f, first.clone(), 16, &[]).is_some_and(|t| Rc::ptr_eq(&t, &minted)));
+    assert!(lookup(&hook, &f, first.clone(), 16, &[], &[]).is_some());
+    assert!(lookup(&hook, &f, first.clone(), 16, &[], &[]).is_some_and(|t| Rc::ptr_eq(&t, &minted)));
     let record = hook.borrow_mut().take();
     assert!(!record.off_script);
     assert_eq!(record.requests.len(), 2);
@@ -287,14 +287,14 @@ fn a_forced_hook_answers_in_order_and_notices_a_changed_script() {
 
     // One answer too few, one too many, and a name nobody minted.
     hook.borrow_mut().begin(&[]);
-    assert!(lookup(&hook, &f, first.clone(), 16, &[]).is_none());
+    assert!(lookup(&hook, &f, first.clone(), 16, &[], &[]).is_none());
     assert!(hook.borrow_mut().take().off_script);
     hook.borrow_mut().begin(&[None, None]);
-    lookup(&hook, &f, first.clone(), 16, &[]);
-    lookup(&hook, &f, first.clone(), 16, &[]);
+    lookup(&hook, &f, first.clone(), 16, &[], &[]);
+    lookup(&hook, &f, first.clone(), 16, &[], &[]);
     assert!(hook.borrow_mut().take().off_script);
     hook.borrow_mut().begin(&[Some("struct_9".into())]);
-    assert!(lookup(&hook, &f, first, 16, &[]).is_none());
+    assert!(lookup(&hook, &f, first, 16, &[], &[]).is_none());
     assert!(hook.borrow_mut().take().off_script);
 }
 
@@ -304,8 +304,8 @@ fn a_recording_hook_lets_the_ledger_answer() {
     let hook = ShardHook::recording(at_load());
     hook.borrow_mut().begin(&[]);
     let fs = fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]);
-    let a = lookup(&hook, &f, fs.clone(), 16, &[]).unwrap();
-    let b = lookup(&hook, &f, fs.clone(), 16, &[]).unwrap();
+    let a = lookup(&hook, &f, fs.clone(), 16, &[], &[]).unwrap();
+    let b = lookup(&hook, &f, fs.clone(), 16, &[], &[]).unwrap();
     assert!(Rc::ptr_eq(&a, &b));
     assert_eq!(a.get_name(), "struct_0");
     let record = hook.borrow_mut().take();
@@ -324,7 +324,7 @@ fn minted_structures_are_rendered_by_number() {
         (vec![(0, Ty::Uint), (4, Ty::Uint), (8, Ty::Long)], 16),
     ]
     .into_iter()
-    .map(|(spec, size)| ledger::lookup_or_mint(&f, fields(&f, &spec), size, &[]).unwrap())
+    .map(|(spec, size)| ledger::lookup_or_mint(&f, fields(&f, &spec), size, &[], &[]).unwrap())
     .collect();
     let long = ty(&f, Ty::Long);
     let order = vec![
@@ -353,8 +353,8 @@ fn a_type_interned_after_the_load_does_not_travel() {
         TypeField::new(0, 0, "field_0x0", ty(&f, Ty::Uint)),
         TypeField::new(1, 8, "field_0x8", peb_ptr),
     ];
-    assert!(!SynthRequest::of(&fs, 16, &[], &loaded).portable());
-    assert!(SynthRequest::of(&fs, 16, &[], &AtLoad::of(&f)).portable());
+    assert!(!SynthRequest::of(&fs, 16, &[], &[], &loaded).portable());
+    assert!(SynthRequest::of(&fs, 16, &[], &[], &AtLoad::of(&f)).portable());
     assert!(req(&fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]), 16, &[]).portable());
 }
 
@@ -364,14 +364,14 @@ fn a_type_interned_after_the_load_does_not_travel() {
 fn a_recording_hook_reports_its_own_answers() {
     let f = factory();
     let flags = fields(&f, &[(0, Ty::Long)]);
-    ledger::lookup_or_mint(&f, flags.clone(), 8, &[]).unwrap();
+    ledger::lookup_or_mint(&f, flags.clone(), 8, &[], &[]).unwrap();
     let hook = ShardHook::recording(Rc::new(AtLoad::of(&f)));
     let pair = fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]);
     let minting = req(&pair, 16, &[]);
 
     hook.borrow_mut().begin(&[]);
-    lookup(&hook, &f, pair.clone(), 16, &[]).unwrap();
-    lookup(&hook, &f, pair.clone(), 16, &[]).unwrap();
+    lookup(&hook, &f, pair.clone(), 16, &[], &[]).unwrap();
+    lookup(&hook, &f, pair.clone(), 16, &[], &[]).unwrap();
     let first = hook.borrow_mut().take();
     let own = Some(("struct_1".to_string(), Some(minting.clone())));
     assert_eq!(first.answers, vec![own.clone(), own.clone()]);
@@ -380,8 +380,8 @@ fn a_recording_hook_reports_its_own_answers() {
     // A later function that reuses the structure reports the lookup that
     // minted it, not its own.
     hook.borrow_mut().begin(&[]);
-    lookup(&hook, &f, pair, 16, &[(0x10, 8)]);
-    lookup(&hook, &f, flags, 8, &[]).unwrap();
+    lookup(&hook, &f, pair, 16, &[(0x10, 8)], &[]);
+    lookup(&hook, &f, flags, 8, &[], &[]).unwrap();
     let second = hook.borrow_mut().take();
     assert_eq!(second.answers[0], own);
     assert_eq!(second.answers[1], Some(("struct_0".to_string(), None)));
@@ -453,4 +453,20 @@ fn the_replay_knows_the_names_held_before_the_run() {
     replay.lookup_or_mint(&req(&fields(&live, &[(0, Ty::CharPtr), (8, Ty::Long)]), 16, &[]));
     assert_eq!(replay.table()[0].0, "struct_0");
     assert_eq!(replay.held(), ["struct_1"]);
+}
+
+/// A field that points at its own structure names a type only the minting
+/// process can number, so the request is not portable and its layout spells
+/// the field as a self pointer.
+#[test]
+fn a_self_pointing_request_is_not_portable() {
+    let f = factory();
+    let fs = fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]);
+    let plain = SynthRequest::of(&fs, 16, &[], &[], &AtLoad::of(&f));
+    assert!(plain.portable());
+    let selfish = SynthRequest::of(&fs, 16, &[], &[0], &AtLoad::of(&f));
+    assert!(!selfish.portable());
+    assert_eq!(selfish.want.fields[0].ty, ledger::SELF_KEY);
+    assert_eq!(selfish.own[0].claim.as_ref().map(|k| k.ty.as_str()), Some(ledger::SELF_KEY));
+    assert!(!selfish.defines_same(&selfish.clone()));
 }

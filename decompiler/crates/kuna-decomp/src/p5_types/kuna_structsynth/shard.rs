@@ -27,8 +27,9 @@
 //! type an access carried. The one path by which an earlier answer reaches a
 //! later request is a restarted decompile, whose parameter can keep the type
 //! the first attempt locked; that is why the forced run's requests are compared
-//! with the recorded ones, and why a field typed by a synthesized structure is
-//! never given a recipe. Nor is a field typed by a named type the worker's load
+//! with the recorded ones, and why a field typed by a synthesized structure --
+//! a nested record's pointer, or a record's pointer to itself -- is never given
+//! a recipe. Nor is a field typed by a named type the worker's load
 //! did not create ([`AtLoad`]): a pass that interns a type the first time a
 //! function needs it (`pebnames`' `PEB` and `TEB`) leaves it in some workers and
 //! not in others, so no other process is sure to rebuild it.
@@ -178,12 +179,19 @@ pub struct SynthRequest {
 
 impl SynthRequest {
     /// Record the arguments of one `lookup_or_mint` call. A field type gets a
-    /// recipe only when every named type it reaches was held at load.
-    fn of(fields: &[TypeField], size: int4, unclaimed: &[(int4, int4)], at_load: &AtLoad) -> SynthRequest {
+    /// recipe only when every named type it reaches was held at load, and a
+    /// field pointing at its own structure (`selfs`) never gets one.
+    fn of(
+        fields: &[TypeField],
+        size: int4,
+        unclaimed: &[(int4, int4)],
+        selfs: &[int4],
+        at_load: &AtLoad,
+    ) -> SynthRequest {
         SynthRequest {
             size,
-            want: ledger::layout_of_fields(fields, size),
-            own: fields.iter().map(Member::of).collect(),
+            want: ledger::layout_of_fields(fields, size, selfs),
+            own: fields.iter().map(|f| Member::of_with(f, selfs)).collect(),
             unclaimed: unclaimed.to_vec(),
             fields: fields
                 .iter()
@@ -191,7 +199,8 @@ impl SynthRequest {
                     ident: f.ident,
                     offset: f.offset,
                     name: f.name.clone(),
-                    ty: TypeRecipe::of(&f.field_type).filter(|r| r.held_at_load(at_load)),
+                    ty: TypeRecipe::of(&f.field_type)
+                        .filter(|r| r.held_at_load(at_load) && !selfs.contains(&f.offset)),
                 })
                 .collect(),
         }
@@ -350,13 +359,14 @@ pub(super) fn lookup(
     fields: Vec<TypeField>,
     size: int4,
     unclaimed: &[(int4, int4)],
+    selfs: &[int4],
 ) -> Option<Rc<Datatype>> {
     let mut hook = handle.borrow_mut();
-    let request = SynthRequest::of(&fields, size, unclaimed, &hook.at_load);
+    let request = SynthRequest::of(&fields, size, unclaimed, selfs, &hook.at_load);
     hook.record.requests.push(request.clone());
     if matches!(hook.mode, Mode::Record(_)) {
         drop(hook);
-        let answer = ledger::lookup_or_mint(types, fields, size, unclaimed);
+        let answer = ledger::lookup_or_mint(types, fields, size, unclaimed, selfs);
         handle.borrow_mut().own_answer(answer.as_deref(), request);
         return answer;
     }

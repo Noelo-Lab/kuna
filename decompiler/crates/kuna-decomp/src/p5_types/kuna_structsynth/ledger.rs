@@ -94,6 +94,18 @@
 //! when a live structure contains it, so that entry can be superseded from the
 //! moment it exists.
 //!
+//! # Records that point at themselves
+//!
+//! A field `structsynth nest` found to hold the record it belongs to is spelled
+//! [`SELF_KEY`] rather than by the pointer's own type: the pointer names the
+//! structure it sits in, whose number a layout measured in another function
+//! cannot know in advance, and two self-pointing layouts of the same shape are
+//! the same record whatever they are called. A structure holding such a field is
+//! minted around its own incomplete shell -- `get_type_struct`, a pointer to the
+//! shell, then the members -- since a completed structure is a fresh `Rc` and
+//! cannot hold a pointer to itself. The pointer keeps naming the shell, which is
+//! the model a DWARF `struct node { struct node *next; }` already lives with.
+//!
 //! # Order
 //!
 //! `decompile-all` visits functions in address order, so the ledger's shape
@@ -127,6 +139,9 @@ const MAX_POINTEE_DEPTH: u32 = 3;
 /// same-named type from somewhere else (DWARF, a parsed header) out of the
 /// ledger.
 const FIELD_PREFIX: &str = "field_0x";
+
+/// How a field that points at its own structure is spelled in a [`FieldKey`].
+pub(super) const SELF_KEY: &str = "SELF";
 
 /// How many times as many fields a container may claim as the layout it answers.
 ///
@@ -325,6 +340,18 @@ fn opaque_pointee(ct: &Datatype) -> bool {
     })
 }
 
+/// The key of a field that points at the structure holding it.
+fn self_key(offset: int4, width: int4) -> FieldKey {
+    FieldKey { offset, width, ty: SELF_KEY.to_string(), pointer: true, opaque: false }
+}
+
+/// Does this field point at the structure named `owner`?
+fn points_at(f: &TypeField, owner: &str) -> bool {
+    f.field_type.get_ptr_to().is_some_and(|p| {
+        p.get_metatype() == type_metatype::TYPE_STRUCT && !owner.is_empty() && p.get_name() == owner
+    })
+}
+
 /// The key of one field of a completed structure, or `None` for a filler member.
 fn key_of(f: &TypeField) -> Option<FieldKey> {
     if f.field_type.get_metatype() == type_metatype::TYPE_ARRAY {
@@ -358,16 +385,27 @@ pub(super) fn layout_of(ct: &Datatype) -> Option<Layout> {
         if !f.name.starts_with(FIELD_PREFIX) {
             return None;
         }
-        if let Some(k) = key_of(f) {
+        if points_at(f, ct.get_name()) {
+            fields.push(self_key(f.offset, f.field_type.get_size()));
+        } else if let Some(k) = key_of(f) {
             fields.push(k);
         }
     }
     Some(Layout { size: ct.get_size(), fields })
 }
 
-/// The same reading for a field list that has not been completed yet.
-pub(super) fn layout_of_fields(fields: &[TypeField], size: int4) -> Layout {
-    Layout { size, fields: fields.iter().filter_map(key_of).collect() }
+/// The same reading for a field list that has not been completed yet, the
+/// fields at `selfs` pointing at the structure they will belong to.
+pub(super) fn layout_of_fields(fields: &[TypeField], size: int4, selfs: &[int4]) -> Layout {
+    Layout { size, fields: fields.iter().filter_map(|f| field_key(f, selfs)).collect() }
+}
+
+/// [`key_of`], with a field at one of `selfs` spelled as a self pointer.
+fn field_key(f: &TypeField, selfs: &[int4]) -> Option<FieldKey> {
+    if selfs.contains(&f.offset) {
+        return Some(self_key(f.offset, f.field_type.get_size()));
+    }
+    key_of(f)
 }
 
 /// One member of a structure as a body sees it: where it starts, how many bytes
@@ -384,13 +422,24 @@ pub(super) struct Member {
 
 impl Member {
     pub(super) fn of(f: &TypeField) -> Member {
-        Member { offset: f.offset, size: f.field_type.get_size(), claim: key_of(f) }
+        Member::of_with(f, &[])
+    }
+
+    /// [`Member::of`], with a field at one of `selfs` claimed as a self pointer.
+    pub(super) fn of_with(f: &TypeField, selfs: &[int4]) -> Member {
+        Member { offset: f.offset, size: f.field_type.get_size(), claim: field_key(f, selfs) }
     }
 }
 
 /// Every member of a completed structure, filler included.
 pub(super) fn members_of(ct: &Datatype) -> Vec<Member> {
-    (0..ct.num_depend()).filter_map(|i| ct.get_field(i)).map(Member::of).collect()
+    (0..ct.num_depend())
+        .filter_map(|i| ct.get_field(i))
+        .map(|f| {
+            let own = if points_at(f, ct.get_name()) { vec![f.offset] } else { Vec::new() };
+            Member::of_with(f, &own)
+        })
+        .collect()
 }
 
 /// Does `held` lay exactly the members `own` does over every byte range in
@@ -503,6 +552,9 @@ pub(super) fn lookup_window(size: int4) -> std::ops::RangeInclusive<i64> {
 /// claiming a field; a structure answers only if it lays the reader's own
 /// members over those bytes ([`keeps_unclaimed`]).
 ///
+/// `selfs` are the offsets of the fields that point at the structure itself;
+/// minting one around its shell is [`mint`].
+///
 /// `find_add` rejects a second, different definition of a held name with a hard
 /// `Err`, so the mint declines rather than propagating and the caller keeps the
 /// parameter untyped.
@@ -511,11 +563,12 @@ pub(super) fn lookup_or_mint(
     fields: Vec<TypeField>,
     size: int4,
     unclaimed: &[(int4, int4)],
+    selfs: &[int4],
 ) -> Option<Rc<Datatype>> {
-    let want = layout_of_fields(&fields, size);
+    let want = layout_of_fields(&fields, size, selfs);
     let (held, free) = entries(types, lookup_window(size));
     let layouts: Vec<&Layout> = held.iter().map(|e| &e.layout).collect();
-    let own: Vec<Member> = fields.iter().map(Member::of).collect();
+    let own: Vec<Member> = fields.iter().map(|f| Member::of_with(f, selfs)).collect();
     let fits = |i: usize| unclaimed.is_empty() || keeps_unclaimed(&members_of(&held[i].ct), &own, unclaimed);
     if let Some(i) = best_of(&layouts, &want, fits) {
         return Some(Rc::clone(&held[i].ct));
@@ -523,8 +576,23 @@ pub(super) fn lookup_or_mint(
     // Nothing held answers for this layout. Minting it supersedes every entry
     // it strictly contains; that is derived from the minted set on the next
     // lookup, so there is nothing to record here.
-    let name = free?;
-    let shell = types.get_type_struct(&name).ok()?;
+    mint(types, &free?, fields, size, selfs)
+}
+
+/// Complete `struct <name>` from `fields`, the fields at `selfs` retyped as a
+/// pointer to the structure itself. A completed structure is a fresh `Rc`, so
+/// such a pointer names the incomplete shell the members are installed on.
+pub(super) fn mint(
+    types: &dyn TypeFactory,
+    name: &str,
+    mut fields: Vec<TypeField>,
+    size: int4,
+    selfs: &[int4],
+) -> Option<Rc<Datatype>> {
+    let shell = types.get_type_struct(name).ok()?;
+    for f in fields.iter_mut().filter(|f| selfs.contains(&f.offset)) {
+        f.field_type = types.get_type_pointer(f.field_type.get_size(), Rc::clone(&shell), 1).ok()?;
+    }
     types.set_fields_struct_raw(&shell, fields, Vec::new(), size, 1, 0).ok()
 }
 
@@ -546,10 +614,11 @@ pub(super) fn minted_number(ct: &Datatype) -> Option<u32> {
 /// Minted structures agree that far all the time -- every one starts with
 /// `field_0x0` -- so a header rendered in tree order lists them in an order that
 /// changes from one run of the same export to the next. A minted structure
-/// holds nothing by value but scalars and byte arrays, and nothing holds one by
-/// value, so it may be defined anywhere after the forward declarations; after
-/// everything else, in ascending `N`, is the same place every run and in every
-/// process.
+/// holds nothing by value but scalars and byte arrays -- under `nest` also a
+/// pointer to another minted structure or to itself, which the forward
+/// declarations already name -- and nothing holds one by value, so it may be
+/// defined anywhere after the forward declarations; after everything else, in
+/// ascending `N`, is the same place every run and in every process.
 pub fn in_name_order(order: Vec<Rc<Datatype>>) -> Vec<Rc<Datatype>> {
     let (mut minted, mut rest): (Vec<Rc<Datatype>>, Vec<Rc<Datatype>>) =
         order.into_iter().partition(|ct| minted_number(ct).is_some());

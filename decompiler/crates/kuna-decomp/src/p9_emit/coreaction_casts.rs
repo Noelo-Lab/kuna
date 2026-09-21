@@ -455,7 +455,7 @@ fn get_input_cast_store(
     let tlst = data.get_arch().types_rc()?;
 
     let (pointed_to, dest_size) = if pointer_type.get_metatype() == type_metatype::TYPE_PTR {
-        let pt = pointer_type.get_ptr_to()?;
+        let pt = resolve_self_pointer(data, pointer_type.get_ptr_to()?);
         let sz = pt.get_size();
         (pt, sz)
     } else {
@@ -1048,6 +1048,16 @@ fn subpiece_composite_byte_offset(data: &Funcdata, op: OpId) -> i64 {
     }
 }
 
+/// (kuna `structsynth nest`) `ct`, or the completed record when `ct` is a
+/// synthesized record's pointer to its own shell
+/// (`kuna_structsynth::resolve_self_pointer`).
+fn resolve_self_pointer(data: &Funcdata, ct: Rc<Datatype>) -> Rc<Datatype> {
+    match data.get_arch().types() {
+        Some(tlst) => crate::kuna_structsynth::resolve_self_pointer(tlst, &ct).unwrap_or(ct),
+        None => ct,
+    }
+}
+
 /// TypeOpLoad::getOutputToken (typeop.cc:473-486).
 fn get_output_token_load(data: &mut Funcdata, op: OpId) -> Rc<Datatype> {
     let invn = match data.obank().get(op).and_then(|o| o.get_in(1)) {
@@ -1065,7 +1075,7 @@ fn get_output_token_load(data: &mut Funcdata, op: OpId) -> Rc<Datatype> {
     if ct.get_metatype() == type_metatype::TYPE_PTR {
         if let Some(pt) = ct.get_ptr_to() {
             if pt.get_size() == outsize {
-                return pt;
+                return resolve_self_pointer(data, pt);
             }
         }
     }

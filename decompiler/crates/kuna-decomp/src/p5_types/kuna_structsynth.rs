@@ -128,8 +128,9 @@
 //!   whole program (`kuna decompile-all`, `kuna decompile-project`);
 //!   `kuna decompile` spawns one `decomp_dbg` per function, so each function
 //!   starts its numbering again.
-//! * A field whose value is itself a synthesis base is not nested in this
-//!   version; it keeps the scalar type the accesses agree on.
+//! * Under `param`, a field whose value is itself a synthesis base keeps the
+//!   scalar type the accesses agree on; `nest` types it as a pointer to a
+//!   synthesized record of its own ([`nest`]).
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -142,7 +143,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::context::VarnodeId;
-use crate::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
+use crate::dtype::{type_metatype, Datatype, DatatypeKind, TypeFactory, TypeField};
 use crate::funcdata::Funcdata;
 
 /// (kuna `structsynth`) The program-wide layout ledger: which minted `struct_N`
@@ -152,6 +153,10 @@ pub mod ledger;
 /// (kuna `structsynth`) The ledger as data, for a whole-program run split across
 /// worker processes: record, replay, install, force.
 pub mod shard;
+
+/// (kuna `structsynth nest`) A field loaded and dereferenced in turn is a
+/// pointer to a record of its own, or to the record that holds it.
+mod nest;
 
 
 /// The largest constant offset that is still believed to be a field.
@@ -173,6 +178,8 @@ pub enum StructSynthMode {
     Off,
     /// Function parameters only.
     Param,
+    /// Function parameters, and the records their pointer fields point at.
+    Nest,
 }
 
 impl StructSynthMode {
@@ -180,9 +187,14 @@ impl StructSynthMode {
     pub fn fires(self) -> bool {
         self != StructSynthMode::Off
     }
+
+    /// Is a pointer field loaded and dereferenced in turn given a record?
+    pub fn nests(self) -> bool {
+        self == StructSynthMode::Nest
+    }
 }
 
-/// (kuna) Parse `option structsynth off|param`; the caller writes the live field.
+/// (kuna) Parse `option structsynth off|param|nest`; the caller writes the live field.
 pub struct OptionStructSynth;
 
 impl OptionStructSynth {
@@ -194,9 +206,10 @@ impl OptionStructSynth {
         let mode = match p1 {
             "off" => StructSynthMode::Off,
             "param" => StructSynthMode::Param,
+            "nest" => StructSynthMode::Nest,
             other => {
                 return Err(KunaError::parse(format!(
-                    "Unknown structsynth value: {other} (expected off|param)"
+                    "Unknown structsynth value: {other} (expected off|param|nest)"
                 )))
             }
         };
@@ -205,7 +218,7 @@ impl OptionStructSynth {
 }
 
 /// What one offset of one base was seen to hold.
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Slot {
     /// The widest access seen at this offset.
     width: int4,
@@ -259,7 +272,7 @@ impl Slot {
 }
 
 /// Everything one candidate base accumulated.
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Evidence {
     /// Observed offset -> widest access.
     slots: BTreeMap<intb, Slot>,
@@ -272,6 +285,9 @@ struct Evidence {
     /// `(offset, width)` of every access the prune dropped: bytes this
     /// function touched without claiming a field for them.
     unclaimed: Vec<(intb, int4)>,
+    /// Offset -> `(width, value)` of every `LOAD` through this base, pruned or
+    /// not: the values a nested record is measured on.
+    loads: BTreeMap<intb, Vec<(int4, VarnodeId)>>,
 }
 
 impl Evidence {
@@ -299,6 +315,39 @@ impl Evidence {
         if let Some(t) = ctype.as_deref() {
             slot.seen.note(t);
         }
+    }
+
+    /// Take another base's accesses in as if they had been made through this
+    /// one, in order after its own: the same widest-wins and agreement rules
+    /// [`Evidence::record`] applies, and the other base's negative evidence.
+    fn absorb(&mut self, other: &Evidence) {
+        for (off, theirs) in other.slots.iter() {
+            let slot = self.slots.entry(*off).or_default();
+            if theirs.width < slot.width {
+                continue;
+            }
+            if theirs.width > slot.width {
+                *slot = theirs.clone();
+                continue;
+            }
+            slot.seen.signed |= theirs.seen.signed;
+            slot.seen.unsigned |= theirs.seen.unsigned;
+            slot.seen.float |= theirs.seen.float;
+            slot.seen.other |= theirs.seen.other;
+        }
+        self.dynamic_offset |= other.dynamic_offset;
+        self.integer_use |= other.integer_use;
+        self.phi_reached |= other.phi_reached;
+        for (off, vs) in other.loads.iter() {
+            self.loads.entry(*off).or_default().extend(vs.iter().copied());
+        }
+    }
+
+    /// This evidence with the layout prune applied.
+    fn pruned(&self) -> Evidence {
+        let mut e = self.clone();
+        e.prune();
+        e
     }
 
     /// Prune the evidence to a layout a C compiler lays out byte for byte.
@@ -454,80 +503,87 @@ fn collect(data: &mut Funcdata) -> BTreeMap<VarnodeId, Evidence> {
             let Some((base, off)) = peel(data, addr, &mut ev, MAX_PEEL_DEPTH) else { continue };
             let Some(width) = data.vbank().get(value).map(|v| v.get_size()) else { continue };
             let ctype = vn_type(data, value);
-            ev.entry(base).or_default().record(off, width, ctype);
+            let e = ev.entry(base).or_default();
+            e.record(off, width, ctype);
+            if opc == OpCode::CPUI_LOAD {
+                e.loads.entry(off).or_default().push((width, value));
+            }
         }
     }
 
-    // Negative evidence that is not about an address: the base used as a plain
-    // integer, and the base flowing into a phi (an induction variable).
     let bases: Vec<VarnodeId> = ev.keys().copied().collect();
     for base in bases {
-        let Some(v) = data.vbank().get(base) else { continue };
-        let uses: Vec<_> = v.descend_iter().collect();
         let e = ev.entry(base).or_default();
-        for u in uses {
-            let Some(op) = data.obank().get(u) else { continue };
-            match op.code() {
-                OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => e.phi_reached = true,
-                // `p + n` for a non-constant `n` is an index, whether or not
-                // this function dereferences the result: `mpsort` passes
-                // `&base[n]` to its recursive callee and reads `base[0]` and
-                // `base[1]` itself, and it is indexing a `void **`, not reading
-                // the first two fields of a record.
-                OpCode::CPUI_INT_ADD
-                | OpCode::CPUI_INT_SUB
-                | OpCode::CPUI_PTRADD
-                | OpCode::CPUI_PTRSUB => {
-                    let other = if op.code() == OpCode::CPUI_PTRADD {
-                        op.get_in(1)
-                    } else if op.get_in(0) == Some(base) {
-                        op.get_in(1)
-                    } else {
-                        op.get_in(0)
-                    };
-                    let constant = other
-                        .and_then(|o| data.vbank().get(o))
-                        .map(|v| v.is_constant())
-                        .unwrap_or(false);
-                    if !constant {
-                        e.dynamic_offset = true;
-                    }
-                }
-                // An address is added to, subtracted from, compared for
-                // (in)equality and passed around; everything else treats it as a
-                // number.
-                OpCode::CPUI_INT_ZEXT
-                | OpCode::CPUI_INT_SEXT
-                | OpCode::CPUI_INT_CARRY
-                | OpCode::CPUI_INT_SCARRY
-                | OpCode::CPUI_INT_SBORROW
-                | OpCode::CPUI_INT_2COMP
-                | OpCode::CPUI_INT_NEGATE
-                | OpCode::CPUI_INT_XOR
-                | OpCode::CPUI_INT_AND
-                | OpCode::CPUI_INT_OR
-                | OpCode::CPUI_INT_LEFT
-                | OpCode::CPUI_INT_RIGHT
-                | OpCode::CPUI_INT_SRIGHT
-                | OpCode::CPUI_INT_MULT
-                | OpCode::CPUI_INT_DIV
-                | OpCode::CPUI_INT_SDIV
-                | OpCode::CPUI_INT_REM
-                | OpCode::CPUI_INT_SREM
-                | OpCode::CPUI_INT_SLESS
-                | OpCode::CPUI_INT_SLESSEQUAL
-                | OpCode::CPUI_BOOL_NEGATE
-                | OpCode::CPUI_BOOL_XOR
-                | OpCode::CPUI_BOOL_AND
-                | OpCode::CPUI_BOOL_OR
-                | OpCode::CPUI_PIECE
-                | OpCode::CPUI_SUBPIECE => e.integer_use = true,
-                _ => {}
-            }
-        }
-        e.prune();
+        note_uses(data, base, e);
     }
     ev
+}
+
+/// Negative evidence that is not about an address: the base used as a plain
+/// integer, as an index, or flowing into a phi (an induction variable).
+fn note_uses(data: &Funcdata, base: VarnodeId, e: &mut Evidence) {
+    let Some(v) = data.vbank().get(base) else { return };
+    let uses: Vec<_> = v.descend_iter().collect();
+    for u in uses {
+        let Some(op) = data.obank().get(u) else { continue };
+        match op.code() {
+            OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => e.phi_reached = true,
+            // `p + n` for a non-constant `n` is an index, whether or not
+            // this function dereferences the result: `mpsort` passes
+            // `&base[n]` to its recursive callee and reads `base[0]` and
+            // `base[1]` itself, and it is indexing a `void **`, not reading
+            // the first two fields of a record.
+            OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_PTRADD
+            | OpCode::CPUI_PTRSUB => {
+                let other = if op.code() == OpCode::CPUI_PTRADD {
+                    op.get_in(1)
+                } else if op.get_in(0) == Some(base) {
+                    op.get_in(1)
+                } else {
+                    op.get_in(0)
+                };
+                let constant = other
+                    .and_then(|o| data.vbank().get(o))
+                    .map(|v| v.is_constant())
+                    .unwrap_or(false);
+                if !constant {
+                    e.dynamic_offset = true;
+                }
+            }
+            // An address is added to, subtracted from, compared for
+            // (in)equality and passed around; everything else treats it as a
+            // number.
+            OpCode::CPUI_INT_ZEXT
+            | OpCode::CPUI_INT_SEXT
+            | OpCode::CPUI_INT_CARRY
+            | OpCode::CPUI_INT_SCARRY
+            | OpCode::CPUI_INT_SBORROW
+            | OpCode::CPUI_INT_2COMP
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_LEFT
+            | OpCode::CPUI_INT_RIGHT
+            | OpCode::CPUI_INT_SRIGHT
+            | OpCode::CPUI_INT_MULT
+            | OpCode::CPUI_INT_DIV
+            | OpCode::CPUI_INT_SDIV
+            | OpCode::CPUI_INT_REM
+            | OpCode::CPUI_INT_SREM
+            | OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_SLESSEQUAL
+            | OpCode::CPUI_BOOL_NEGATE
+            | OpCode::CPUI_BOOL_XOR
+            | OpCode::CPUI_BOOL_AND
+            | OpCode::CPUI_BOOL_OR
+            | OpCode::CPUI_PIECE
+            | OpCode::CPUI_SUBPIECE => e.integer_use = true,
+            _ => {}
+        }
+    }
 }
 
 /// Is `ct` a pointer whose pointee is a named aggregate a person or a named-type
@@ -683,26 +739,30 @@ fn layout_plan(slots: &BTreeMap<intb, Slot>) -> Option<(Vec<(int4, int4, bool)>,
 /// Returns whether anything was installed.
 fn synthesize(data: &mut Funcdata) -> bool {
     let Some(types) = data.get_arch().types_rc() else { return false };
-    let ev = collect(data);
+    let raw = collect(data);
+    let nests = data.get_arch().struct_synth.nests();
+    let ptrsize = types.get_size_of_pointer();
     let mut installs: Vec<(VarnodeId, Rc<Datatype>)> = Vec::new();
 
-    for (base, e) in ev.iter() {
-        if !accepts(data, *base, e) {
+    for (base, e) in raw.iter() {
+        let e = e.pruned();
+        if !accepts(data, *base, &e) {
             continue;
         }
-        let Some((fields, size)) = fields_for(types.as_ref(), e) else { continue };
-        let unclaimed = e.unclaimed_ranges();
-        let answer = match &data.get_arch().struct_synth_shard {
-            Some(hook) => shard::lookup(hook, types.as_ref(), fields, size, &unclaimed),
-            None => ledger::lookup_or_mint(types.as_ref(), fields, size, &unclaimed),
+        let Some((mut fields, size)) = fields_for(types.as_ref(), &e) else { continue };
+        let selfs = if nests {
+            let cx = nest::Nesting { ev: &raw, types: types.as_ref(), ptr_size: ptrsize };
+            nest::nest_fields(data, &cx, &e, &mut fields, size, 0)
+        } else {
+            Vec::new()
         };
-        let Some(st) = answer else {
+        let unclaimed = e.unclaimed_ranges();
+        let Some(st) = answer(data, types.as_ref(), fields, size, &unclaimed, &selfs) else {
             continue;
         };
         // The pointer is taken only once the structure is COMPLETE: completing a
         // structure mints a fresh `Rc`, and merge compares high types by `Rc`
         // identity, so a pointer to the incomplete shell would never match.
-        let ptrsize = types.get_size_of_pointer();
         let Ok(ptr) = types.get_type_pointer(ptrsize, st, 1) else { continue };
         installs.push((*base, ptr));
     }
@@ -716,11 +776,28 @@ fn synthesize(data: &mut Funcdata) -> bool {
     changed
 }
 
-/// Every decline condition, in one place.
+/// The program-wide structure for one measured layout: the shard hook's answer
+/// in a `--jobs` worker, the ledger's otherwise.
+fn answer(
+    data: &Funcdata,
+    types: &dyn TypeFactory,
+    fields: Vec<TypeField>,
+    size: int4,
+    unclaimed: &[(int4, int4)],
+    selfs: &[int4],
+) -> Option<Rc<Datatype>> {
+    match &data.get_arch().struct_synth_shard {
+        Some(hook) => shard::lookup(hook, types, fields, size, unclaimed, selfs),
+        None => ledger::lookup_or_mint(types, fields, size, unclaimed, selfs),
+    }
+}
+
+/// Every decline condition for a parameter, in one place.
 fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     let Some(v) = data.vbank().get(base) else { return false };
 
-    // `param` is the only mode this version ships.
+    // A record is synthesized over a parameter, and under `nest` over what the
+    // parameter's pointer fields hold ([`nest`]).
     if !v.is_input() {
         return false;
     }
@@ -733,12 +810,18 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     if v.is_spacebase() || v.is_persist() || v.get_space().get_type() == spacetype::IPTR_SPACEBASE {
         return false;
     }
-    // Pointer-ness is not invented here.
     let Some(ct) = vn_type(data, base) else { return false };
+    accepts_record(data, &ct, e)
+}
+
+/// The decline conditions every synthesized record shares, a parameter's or a
+/// nested field's: `ct` is the type the base already carries.
+fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence) -> bool {
+    // Pointer-ness is not invented here.
     if ct.get_metatype() != type_metatype::TYPE_PTR {
         return false;
     }
-    if points_at_named_composite(&ct) {
+    if points_at_named_composite(ct) {
         return false;
     }
     // Negative evidence.
@@ -761,6 +844,39 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
         return false;
     }
     true
+}
+
+/// (kuna `structsynth nest`) The completed record a pointer to its own shell
+/// stands for, or `None` for any other type.
+///
+/// A record that points at itself is minted around its incomplete shell
+/// (`ledger::mint`), so the field's pointer names a type with no members, and a
+/// value loaded through it would print every access as raw offset arithmetic
+/// (`*(long **)((long)v1 + 8)`). A LOAD or STORE whose value type is such a
+/// pointer takes the pointer to the completed record instead. Only a shell the
+/// completed synthesized record itself points at is resolved; a DWARF forward
+/// declaration, or any other incomplete type, is left alone.
+pub fn resolve_self_pointer(types: &dyn TypeFactory, ct: &Datatype) -> Option<Rc<Datatype>> {
+    let DatatypeKind::Pointer { ptrto, spaceid: None, truncate: None, wordsize } = &ct.kind else {
+        return None;
+    };
+    if !ptrto.is_incomplete()
+        || ptrto.get_metatype() != type_metatype::TYPE_STRUCT
+        || !ptrto.get_name().starts_with("struct_")
+    {
+        return None;
+    }
+    let full = types.find_by_name(ptrto.get_name()).ok().flatten()?;
+    if full.is_incomplete() || ledger::minted_number(&full).is_none() {
+        return None;
+    }
+    let holds = (0..full.num_depend())
+        .filter_map(|i| full.get_field(i))
+        .any(|f| f.field_type.get_ptr_to().is_some_and(|p| Rc::ptr_eq(&p, ptrto)));
+    if !holds {
+        return None;
+    }
+    types.get_type_pointer(ct.get_size(), full, *wordsize).ok()
 }
 
 /// (kuna) `ActionStructSynth` -- synthesize `struct_N` over a dereferenced
