@@ -300,6 +300,10 @@ struct Evidence {
     /// Offset -> `(width, value)` of every `LOAD` through this base, pruned or
     /// not: the values a nested record is measured on.
     loads: BTreeMap<intb, Vec<(int4, VarnodeId)>>,
+    /// A `STORE` of a constant whose bytes read as text.
+    text_store: bool,
+    /// An access that is neither such a store nor a store of zero.
+    other_access: bool,
 }
 
 impl Evidence {
@@ -350,6 +354,8 @@ impl Evidence {
         self.dynamic_offset |= other.dynamic_offset;
         self.integer_use |= other.integer_use;
         self.phi_reached |= other.phi_reached;
+        self.text_store |= other.text_store;
+        self.other_access |= other.other_access;
         for (off, vs) in other.loads.iter() {
             self.loads.entry(*off).or_default().extend(vs.iter().copied());
         }
@@ -515,8 +521,18 @@ fn collect(data: &mut Funcdata) -> BTreeMap<VarnodeId, Evidence> {
             let Some((base, off)) = peel(data, addr, &mut ev, MAX_PEEL_DEPTH) else { continue };
             let Some(width) = data.vbank().get(value).map(|v| v.get_size()) else { continue };
             let ctype = vn_type(data, value);
+            let stored = if opc == OpCode::CPUI_STORE {
+                data.vbank().get(value).filter(|v| v.is_constant()).map(|v| constant_text(v.get_offset(), width))
+            } else {
+                None
+            };
             let e = ev.entry(base).or_default();
             e.record(off, width, ctype);
+            match stored {
+                Some(Some(true)) => e.text_store = true,
+                Some(None) => {}
+                _ => e.other_access = true,
+            }
             if opc == OpCode::CPUI_LOAD {
                 e.loads.entry(off).or_default().push((width, value));
             }
@@ -529,6 +545,17 @@ fn collect(data: &mut Funcdata) -> BTreeMap<VarnodeId, Evidence> {
         note_uses(data, base, e);
     }
     ev
+}
+
+/// Do the `width` bytes of a stored constant read as text?  `None` for zero,
+/// which a record's initializer stores as often as a string's terminator.
+fn constant_text(val: uintb, width: int4) -> Option<bool> {
+    if val == 0 {
+        return None;
+    }
+    let bytes = (0..width.clamp(0, 8) as u32).map(|i| ((val >> (8 * i)) & 0xff) as u8);
+    Some(bytes.clone().all(|b| b == 0 || b == b'\t' || b == b'\n' || (0x20..0x7f).contains(&b))
+        && bytes.filter(|b| (0x20..0x7f).contains(b)).count() * 2 >= width.clamp(1, 8) as usize)
 }
 
 /// Negative evidence that is not about an address: the base used as a plain
@@ -877,8 +904,11 @@ fn diag(data: &mut Funcdata, raw: &BTreeMap<VarnodeId, Evidence>) {
         let named = ct.as_ref().is_some_and(|t| points_at_named_composite(t));
         let ok = ct.as_ref().is_some_and(|t| accepts_record(data, t, &p));
         let arr = is_array_shaped(&p.slots, ptrsize);
+        let acc = accepts(data, *base, &p);
+        let joins = joins_other_values(data, *base);
+        let text = p.text_store && !p.other_access;
         eprintln!(
-            "SSDIAG fn=0x{addr:x} class={class} slots={} rawslots={} has0={} ptr={} named={} locked={} persist={} dyn={} int={} phi={} arr={} stackcopy={} ok={} ty={} offs={}",
+            "SSDIAG fn=0x{addr:x} class={class} slots={} rawslots={} has0={} ptr={} named={} locked={} persist={} dyn={} int={} phi={} arr={} stackcopy={} ok={} ty={} offs={} acc={} joins={} text={}",
             p.slots.len(),
             e.slots.len(),
             p.slots.contains_key(&0) as u8,
@@ -894,6 +924,9 @@ fn diag(data: &mut Funcdata, raw: &BTreeMap<VarnodeId, Evidence>) {
             ok as u8,
             ct.map(|t| t.get_name().to_string()).unwrap_or_default().replace(' ', "_"),
             p.slots.iter().map(|(o, s)| format!("{o:x}:{}", s.width)).collect::<Vec<_>>().join(","),
+            acc as u8,
+            joins as u8,
+            text as u8,
         );
     }
 }
@@ -924,7 +957,8 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     if !v.is_input()
         && !(data.get_arch().struct_synth.locals()
             && is_call_return(data, base)
-            && !joins_other_values(data, base))
+            && !joins_other_values(data, base)
+            && !(e.text_store && !e.other_access))
     {
         return false;
     }
