@@ -65,4 +65,6 @@ fn a_step_must_be_a_whole_number_of_aggregates() {
     assert!(fits(0x88 - 144, 144, 4, 144), "`p[-1].field` of an array of stat");
     assert!(!fits(0x8c - 144, 144, 8, 144), "an access straddling two elements");
     assert!(fits(0x2c, 1, 1, 60), "an unknown index proves nothing");
+    assert!(fits(0, 8, 8, 144), "a word-at-a-time copy of a stat");
+    assert!(fits(0x10, 8, 4, 60), "a phi between two termios fields");
 }

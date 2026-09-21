@@ -447,8 +447,8 @@ it, with the walkers `protoorder` holds its own recovered votes to
 (`value_family`, `with_sibling_loads` and `accesses_through` in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs`), and declines
 when any of them lies outside the aggregate: at a constant offset at or past its
-end or before its start, or stepped by a constant that is not a whole number of
-aggregates. coreutils `wc` is the stepped case: it walks `&fstatus[i].st`, a
+end or before its start, or stepped by a constant at least as large as the
+aggregate that is not a whole number of them. coreutils `wc` is the stepped case: it walks `&fstatus[i].st`, a
 `stat` 8 bytes into a 152-byte record, and reads `failed` at -8. A declined vote
 falls back to `void *`, what the shipped width-stable tables say for the same
 slot, so the argument settles on whatever other evidence it has (grep's
@@ -456,9 +456,14 @@ slot, so the argument settles on whatever other evidence it has (grep's
 declared type is untouched and is still what `ActionSetCasts` measures the call
 against (`declared_input_type_local`), so a value that settles on another type
 passes with a cast, `stat(v10,(stat *)v15)`, and a `void *` needs none. What
-proves nothing is left alone: a one-byte step, which is what an unknown index
-looks like; an array of the aggregate itself (sdiff's `struct sigaction` table,
-stepped by exactly 152); and a walk that runs out of budget. The rule speaks
+proves nothing is left alone: a step smaller than the aggregate, which is an
+unknown index, a word-at-a-time struct copy (grep `main` copying its stack
+`stat`) or a phi between two fields (stty's `termios *mode`); an array of the
+aggregate itself (sdiff's `struct sigaction` table, stepped by exactly 152); and
+a walk that runs out of budget. The rule decides per VALUE, and at `-O0` that is
+visible: gnulib's obstack macros copy `&kwset->obstack` into locals of their own
+(`__h`, `__o`), which hold the same value `kwset` does, so grep `-O0`'s
+`kwsprep` declines those locals' `obstack *` along with `kwset`'s. The rule speaks
 only about the names `libctypes` can mint or adopt (`AGGREGATE_NAMES` in
 `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_libctypes.rs`), only while
 that option is on (`ArchContext::libctypes`), and only about the vote. It never
