@@ -572,6 +572,262 @@ bash is 1.3 MB, so `--mode auto` resolves to `reliable` there rather than `aggre
   ceilings; the second is a one-line decbench fix (`_parse_type_die` has no `DW_TAG_restrict_type`
   arm).
 
+## Round D — 2026-09-20
+
+Round C closed with one named regression (per-parameter struct layout precision) and one
+default-on flip still open. Three items landed: `argclobber` default-on (#689), the
+`decompile-project` order fix (#693) and the `inferfuncentry` narrowing (#694). This section
+re-measures `origin/main` `4c7704e0` on the same instruments under the same metric pin, keeping
+round C as the previous column, so every number reads baseline → round B → round C → round D.
+
+| | binary | commit |
+|---|---|---|
+| **round D** | `/home/mahaloz/kwt/_final-d/kuna` (pinned copy) | main `4c7704e0` (2026-09-20) |
+
+Metric pin unchanged (decisions §12): decbench `625e892` extracted read-only, the venv's
+editable finder repointed at it by `final-c/pindb.py`.
+
+### Headline
+
+| goal | instrument | round C | round D | reading |
+|---|---|---|---|---|
+| type_match | typesweep, 444 slices / 10,748 functions | 1,349 perfect (12.55%), mean .3403 | **1,349** (12.55%), mean **.3405** | 13 improved, **0 worse**, none on or off perfect; aggregate 3,657.76 → 3,659.62 |
+| vs the other decompilers | canonical replay, each rival on its own functions | 1st of five | **1st**, unchanged | on binja's 10,366 functions kuna is 12.29% / .3429 against binja's 12.28% / .3422 |
+| goal 1: primitives | per-GT-class match rate | — | `int_u8` 50.8% → **51.0%** | +15 `unsigned long` and +4 `long`, all #694; every other class is byte-identical |
+| goal 2: variables | varcensus, fmt/ls/sort/du O0+O2 | 6,970 declarations, 9 phantom `// rdx` | 6,967, **7** | **`fmt::main` now calls `sub_3700` with 2, 2 and 2 arguments by default** and declares no phantom `rdx` local |
+| goal 3: structs | structscore TRex / per-parameter layout precision | 4.108 / 1.893, P **.5520** | 4.108 / 1.893, P **.8709** | the round-C regression is **repaired**; F1 .1021 → **.1678**, above round B's .1376 |
+| decbench#93 crediting | replay of the same rows | 1,349 → 1,575 | 1,349 → **1,575** | +1,569 TP, +226 functions onto perfect — unchanged |
+| decbench#94 (restrict) | patched copy of the pinned metric | — | 1,349, mean **.3406** | the 4,412 unmatchable GT variables are **98.2% register-only**; fixing the metric is worth 8 functions |
+| speed | whole-binary `decompile-all`, interleaved min-of-11 | +0.7…+2.5% vs baseline | −3.1…+2.6% vs baseline | −1.3…+0.9% against round C; no case near the +5% line, so none needed a re-run |
+
+### D.1 type_match
+
+Same 444 slices, same `--baseline-only` invocation at `--workers 12`. Control: `scripts/decbench/`
+is byte-identical between round C's `d8b9c0b1` and this round's `4c7704e0`, so the only thing that
+differs between the two columns is the kuna binary.
+
+| slice | functions | base | round B | round C | **round D** | mean C → **D** |
+|---|---:|---:|---:|---:|---:|---|
+| **ALL** | 10,748 | 848 | 986 | 1,349 | **1,349 (12.55%)** | .3403 → **.3405** |
+| O0 | 4,286 | 612 | 704 | 895 | **895 (20.88%)** | .5041 → **.5044** |
+| O2 | 2,394 | 42 | 53 | 74 | **74 (3.09%)** | .1820 → **.1822** |
+| O2-noinline | 4,068 | 194 | 229 | 380 | **380 (9.34%)** | .2609 → **.2610** |
+
+Thirteen functions move and every one of them is #694: `head::copy_fd`, `tail::dump_remainder`,
+`tail::file_lines`, `tail::tail_forever`, `head::elide_tail_bytes_pipe`,
+`head::elide_tail_lines_seekable` and `seq::seq_fast` at the optimization levels where each is
+compiled, all coreutils, all the `MIN (n, BUFSIZ)` shape where `0x2000` is a PIE's `.init`.
+Nothing regresses: **0 worse, 0 off perfect**, and no other project or opt level moves at all
+(`final-d/report-slices.md`, `final-d/moved.csv`). #689 and #693 are metric-neutral by
+construction — one changes call arities, which `type_match` does not score, and the other
+changes only `decompile-project`.
+
+`tail` -O2 `dump_remainder`, round C against round D:
+
+```
+$ kuna decompile-all <results>/O2/coreutils/stripped/tail --addr 0x6020
+# round C
+int * sub_6020(char a0,char *a1,unsigned int a2,void *a3)
+    v3 = _DT_INIT;
+    if (v5 <= (void *)0x2000)
+# round D
+int * sub_6020(char a0,char *a1,unsigned int a2,unsigned long a3)
+    v3 = 0x2000;
+    if (v5 <= 0x2000)
+```
+
+`BUFSIZ` is `0x2000` and `.init` starts there in a PIE, so the constant was printed as the
+function that sits at the address and everything it touched became a pointer.
+
+Measured against the campaign baseline the round now stands at 2,615 functions improved and
+8 worse, 502 onto perfect and 1 off.
+
+### D.2 Per ground-truth class
+
+Same classifier (`final/gtclass.py`), same 65,715 GT variables, rivals' columns unchanged
+(the results tree and the pinned metric did not move). Only the rows that moved:
+
+| GT class | GT vars | round B | round C | **round D** | ida | binja | ghidra | angr |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `int_u8` | 7,657 | 50.8% (3,888) | 50.8% (3,887) | **51.0% (3,902)** | 42.0% | 51.2% (3,887) | 40.9% | 50.7% |
+| `int_s8` | 2,478 | 58.5% (1,450) | 58.4% (1,446) | **58.5% (1,450)** | 48.6% | 58.1% | 46.4% | 56.2% |
+| **all GT variables** | 65,715 | 28.0% (18,396) | 30.9% (20,295) | **30.9% (20,314)** | 24.1% | 30.7% (19,801) | 21.5% | 24.5% |
+
+`int_u8` passing binja's 51.2% (3,902 against 3,887 TP) is #694 giving a `uintmax_t` back its
+integer type where round C had made it a `void *`; `ptr_void` holds at 17.6% (612), so the
+narrowing costs nothing on the class ptrfromuse won. Storage is unchanged: argument 48.9%,
+stack 53.2%, register-only 0.0%.
+
+The rivals' replay, each decompiler paired with kuna on exactly the functions that decompiler
+scored (`final/finalsweep.py rivals`, the round-B replay unchanged — neither the results tree nor the
+pinned metric moved):
+
+| decompiler (functions it scored) | rival: perfect % / mean | kuna round C | **kuna round D** |
+|---|---|---|---|
+| **binja** (10,366) | 12.28% / .3422 | 12.29% / .3427 | **12.29% / .3429** |
+| **ida** (10,273) | 8.33% / .2682 | 12.60% / .3464 | **12.60% / .3466** |
+| **angr** (10,502) | 8.27% / .2652 | 12.75% / .3439 | **12.75% / .3441** |
+| **ghidra** (10,673) | 6.84% / .2367 | 12.55% / .3416 | **12.55% / .3418** |
+
+kuna stays 1st of five on perfect % and on mean. binja still leads at O2 (3.43% against kuna's
+2.95% on its own functions) and kuna leads every other cell.
+
+### D.3 Goal 2 — variables, and `fmt::main`
+
+| opt | binary | declarations (C → **D**) | `[16]` blobs | never-written locals |
+|---|---|---|---|---|
+| O2 | fmt | 314 → **311** | 4 | 5 → **3** |
+| O2 | ls / sort / du | 1,236 / 1,061 / 950 | 10 / 12 / 7 | 54 / 30 / 38 |
+| O0 | fmt / ls / sort / du | 271 / 1,132 / 1,083 / 923 | 4 / 18 / 6 / 5 | 9 / 31 / 44 / 39 |
+| **total** | | **6,970 → 6,967** | **66** | **250 → 248** |
+
+`--option argclobber off` reproduces round C's numbers exactly on all eight builds, so the
+whole delta is #689 and all of it is in `fmt::main`. The phantom-`rdx` shape — a never-written
+local carrying a `// rdx` storage comment — goes 11 → 11 → 9 → **7** (the seven left are du -O2
+and are not the clobbered-argument shape).
+
+**`fmt::main` is fixed by default.** Round C's named bad case called `sub_3700` with one, two
+and three arguments and declared two `// rdx` locals nothing wrote:
+
+```
+$ F=<results>/O2/coreutils/stripped/fmt
+$ M="sed -n /^int main(/,/^}/p"
+$ kuna decompile-all $F --option argclobber off | $M | grep -E 'rdx|sub_3700'
+  unsigned long v11; // rdx
+  unsigned long v9; // rdx
+          v12 &= sub_3700(v6);
+        v3 = sub_3700(stdin,v7);
+    v12 = sub_3700(stdin,"-",v10);
+
+$ kuna decompile-all $F | $M | grep -E 'rdx|sub_3700'        # the default
+          v9 &= sub_3700(v6,v7);
+        v3 = sub_3700(stdin,v7);
+    v9 = sub_3700(stdin,"-");
+```
+
+All three sites land on the callee's DWARF arity of two and both phantom locals are gone. The
+rule needs the callee's own recovered prototype, which `protoorder` parks only when the callee
+is decompiled first, so it is **inert under `--addr`, `--functions`, `--jobs N`,
+`decompile-project`, `decompile-graph`, a single-function `kuna decompile` and
+`--option protoorder off`** — measuring this function with `kuna decompile-all fmt --addr 0x26a0`
+reproduces round C's output exactly and says nothing about the default.
+
+### D.4 Goal 3 — the layout regression is repaired
+
+`structscore --all` on the same eight builds scores the TRex ladder from `decompile-all`, which
+#693 leaves byte-identical: TRex mean pooled O0 **4.108** and O2 **1.893**, every step count and
+both per-binary means equal to round C's to four decimals. What moves is the layout join.
+
+| arm | fields only | filler counted | F1 (fields / filler) | recall |
+|---|---|---|---|---|
+| round B (before protoorder) | 0.8945 | 0.7816 (798/1,021) | 0.1376 / 0.1525 | 0.0746 |
+| round C (the join defect) | 0.5520 | 0.4710 (609/1,293) | 0.1021 / 0.1135 | 0.0562 |
+| **round D** | **0.8709** (877/1,007) | **0.7836** (1,010/1,289) | **0.1678 / 0.1882** | **0.0929** |
+| round D, `--option protoorder off` | 0.9001 (748/831) | 0.7993 (864/1,081) | 0.1456 / 0.1642 | 0.0792 |
+
+`final-c/layoutdiff.py` on du -O2: parameters where the default claims fewer true fields than the
+`protoorder off` arm, round C **23** → round D **0**, with 29 parameters typed as a struct in both
+arms. Per-binary layout F1 rises on six of the eight builds (ls -O0 0.108 → 0.229, du -O2 0.097 →
+0.209, ls -O2 0.182 → 0.301) and on none does it fall; parameters typed as a struct across the
+eight go 193 → 206 of 835.
+
+Round C attributed the drop to protoorder overruling a caller's measured layout. That was wrong,
+and `docs/features/projectorder/analysis.md` says why: a caller's own layout already wins (structsynth
+type-locks the parameter after the vote, and du -O2 installs the same 36 records in both arms). The
+instrument reads parameter types from `decompile-all` and the layouts those names refer to from
+`decompile-project`'s header, and the two surfaces numbered `struct_N` in different orders — 1 of 30
+names agreed by default, 29 of 30 with `protoorder off`. The fields-only 0.024 that still sits under
+round B is the 176 extra claimed fields the default contributes (1,007 against 831), from parameters
+it types as a struct pointer where `protoorder off` types nothing at all; recall and F1 are both
+above round B.
+
+### D.5 The two counterfactuals
+
+**decbench#93** (a struct pointer credits against a GT pointer-to-struct, `final-c/credit93.py`) is
+unchanged from round C, as it must be — the rows are the same:
+
+| | perfect | credited perfect | TP added | mean → credited |
+|---|---:|---:|---:|---|
+| baseline | 848 | 848 | 0 | .2645 → .2645 |
+| round B | 986 | 1,159 (+173) | +1,287 | .2895 → .3275 |
+| round C | 1,349 | 1,575 (+226) | +1,569 | .3403 → .3849 |
+| **round D** | 1,349 | **1,575 (+226)** | +1,569 | .3405 → **.3850** |
+
+**decbench#94** (`_parse_type_die` has no `DW_TAG_restrict_type` arm, so `char *restrict` arrives as
+the GT type `void`) is new this round, and the answer is that the bug costs kuna almost nothing.
+A copy of the pinned checkout with the tag added to the `const`/`volatile` arm — one line, the
+checkout itself untouched — re-scores all 444 slices:
+
+| metric | perfect | mean | aggregate | improved | worse |
+|---|---:|---:|---:|---:|---:|
+| pinned `625e892` | 1,349 | .3405 | 3,659.62 | — | — |
+| **+ `DW_TAG_restrict_type`** | **1,349** | **.3406** | 3,660.46 | **8** | **0** |
+
+4,412 GT variables carry the artifact (2,951 `ptr_char`, 1,221 `ptr_struct`, 240 `ptr_void`) and
+none of them can be matched under the pinned metric. But **4,334 of the 4,412 — 98.2% — are
+register-only**, which no decompiler in the corpus scores at all (best: binja 1.4%); only 31 are
+arguments and 47 are stack slots. The "6.7% of ground truth is unmatchable" ceiling round C
+recorded is really a 0.1% one once it is intersected with the register ceiling below it. The
+fix is still worth making upstream — it is one line and it makes the class honest — but it is not
+a lever on this corpus.
+
+### D.6 Speed
+
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation) on the O2
+stripped binaries, the four binaries run one arm after another with the arm order rotating every
+round, 11 rounds each, load average 3.4–7.1 on 80 cores. Driver `final-d/speed4.py`, raw samples
+`final-d/speed.json`.
+
+| binary | functions | baseline min | round B min | round C min | **round D min** | Δ D vs C (min / median) | Δ D vs baseline (min) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| coreutils fmt | 151 | 4,171.3 ms | 4,099.4 ms | 4,158.0 ms | **4,160.1 ms** | +0.05% / +0.67% | −0.27% |
+| coreutils ls | 404 | 14,075.0 ms | 13,788.6 ms | 13,525.1 ms | **13,639.9 ms** | +0.85% / +1.56% | −3.09% |
+| coreutils sort | 343 | 14,025.6 ms | 14,325.1 ms | 14,589.6 ms | **14,396.3 ms** | −1.32% / +1.82% | +2.64% |
+| bash | 2,538 | 85,019.6 ms | 87,257.9 ms | 86,055.5 ms | **86,141.8 ms** | +0.10% / +2.23% | +1.32% |
+
+Nothing in the round costs more than 1.4% either way and no case reached the +5% re-run line, so
+none was re-run. Against the campaign baseline the four binaries sit between −3.1% and +2.6%:
+the whole campaign's default-on work, five days of it, is inside the box's own variance. Medians
+put round D 0.7–2.2% above round C on all four and disagree with min on sign only for sort; min
+is the statistic the campaign has reported throughout. bash is 1.3 MB, so `--mode auto` resolves
+to `reliable` there rather than `aggressive`.
+
+### D.7 Every round-D PR and what it measured
+
+| PR | item | default | measured effect |
+|---|---|---|---|
+| #689 | `argclobber` drops a trailing clobber argument only when the callee's recovered prototype says the register is free | `on` (was off) | 19 functions over 770 stripped ELFs each lose one trailing argument, every one landing on the callee's true arity against the unstripped twin; `type_match` unmoved (1,351 = 1,351 on its base — the metric cannot see a call's arity); varcensus −3 declarations, −2 phantom `rdx`; worst speed +0.38% |
+| #693 | `decompile-project` takes `decompile-all`'s callee-first order, so one `struct_N` means one record | part of `protoorder types` | `decompile-all` byte-identical; the export's own output changes for 824 of 2,918 functions and then agrees with `decompile-all` 2,918/2,918 (before 2,094); layout precision .5520 → .8709 |
+| #694 | `inferfuncentry` lifts its guard only where the constant is used as an address | strict fix | +13 functions improved / 0 worse on the 444 slices; `int_u8` +15 TP; 18 of 6,882 functions change over 16 builds |
+
+**Not landed:**
+
+| PR | item | state | measured on this base |
+|---|---|---|---|
+| #695 | `charptr` — recover `char *` from what the program does with a pointer, plus a strict loader fix (a constant in a dynamic-loader table stopped printing as a string) | open, review CHANGES; default **off** | 1,349 → **1,353**, aggregate +4.93, 14 improved / 6 down, none off perfect. The flip to on fails `make test-cli` (six probes pin the old spellings) |
+| #692 | `libcstructs` — seven more named libc aggregates (`obstack`, `spwd`, `utmpx`, `utmp`, `re_pattern_buffer`, `lconv`, `statfs`) and ~75 more slots | open, review CHANGES | 1,349 → **1,353**, mean .3405 → .3419, 91 improved / 1 worse, `ptr_struct` 422 → **496**; two known regressions of one shape (a named sub-object splits a frame slot) |
+
+### D.8 What stays opt-in, and the ranked levers left
+
+* **`libctypes glibc`, `protoorder lock`, `structdefs`, `indirectonly`, `signedness prefer-signed`,
+  `formatstring full`** — unchanged from round B's reasons. `argclobber` is no longer on this list.
+* **Ranked next levers**, by TP on the table above:
+  1. **`ptr_char`** — 28.7% against binja's 36.8%, **−1,119 TP**, still the largest single gap and
+     14,645 GT variables wide. #695 is the lever and it is worth +4 perfect today; the class is where
+     the next hundred perfects are.
+  2. **`ptr_struct`** — 3.0% (422 of 14,252). #692 takes it to 496 by naming seven more libc records.
+     Above that sits the 10,559 program-defined names (`hash_entry`, `fileinfo`, …) that no stripped
+     binary carries and no decompiler recovers — reachable only under decbench#93's crediting rule,
+     which is worth +226 functions today.
+  3. **Struct layout recall 0.0929** — precision is back at 0.87, but only 877 of the 9,443
+     ground-truth fields are claimed at all, and **nesting F1 is still 0** on every build (a
+     synthesized field is never itself a struct pointer).
+  4. **`ptr_void` at O2** and the O2 gap generally: 3.09% perfect against 12.55% pooled.
+* **Ceilings, unchanged.** Register-resident ground truth is 25,821 of 65,715 GT variables (39.3%) and
+  kuna exports none of them; the restrict artifact (D.5) is 98.2% inside that same set; signedness,
+  variable count and call arity are worth zero on `type_match` by construction, which is why #689's
+  fix to `fmt::main` shows up in varcensus and nowhere else.
+
 ## Reproduce
 
 Tools are in `final/` (paths are this machine's; each is a thin driver over the repo's own instruments).
@@ -603,4 +859,20 @@ DECBENCH_PIN=... python final-c/ssrun.py <bin> --all --out <json>      # structs
 DECBENCH_PIN=... python final-c/layoutrun.py                           # layout precision
 DECBENCH_PIN=... python final-c/layoutdiff.py <bin>                    # per-parameter, default vs protoorder off
 python3 final-c/speed3.py 11 <speed.json>
+```
+
+Round D uses `final-d/` the same way, with two additions — the four-arm timing driver and the
+decbench#94 counterfactual, which runs the whole sweep a second time against a patched COPY of the
+pinned checkout (`final-d/decbench94-restrict.patch`; the checkout itself is never edited):
+
+```bash
+cp -a <625e892 tree> <tree>-r94 && patch -p1 -d <tree>-r94 < final-d/decbench94-restrict.patch
+for PIN in <625e892 tree> <tree>-r94; do
+  DECBENCH_PIN=$PIN KUNA_BIN=<kuna> PYTHONPATH=final-c python -m finalsweep kuna $P --workers 12 --out <dir>
+done
+python3 final-d/analyze4.py       # base / B / C / D, classes, rivals, the #94 replay
+python3 final-d/moved4.py         # moved.csv + report-slices.md
+python3 final-d/goal2d.py         # varcensus, default vs `argclobber off`
+python3 final-d/sstable.py        # structscore C vs D
+python3 final-d/speed4.py 11 <speed.json> fmt,ls,sort,bash
 ```
