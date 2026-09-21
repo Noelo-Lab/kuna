@@ -55,8 +55,8 @@ that improved/got worse (co-occurrence, not ablation). Corpus-wide, over all
 | `_obstack_begin_1` | obstack entry point | 24 def | 0 | 0 | +0/-0 | off-pool. |
 | `_obstack_free` | obstack entry point | 24 def | 0 | 34 | +0/-0 | off-pool. |
 | `_obstack_memory_used` | obstack entry point | 24 def | 0 | 0 | +0/-0 | off-pool. |
-| `pthread_mutex_destroy` | pthread_mutex_t surface | 3 | 0 | 5 | +0/-0 | off-pool. |
-| `pthread_mutex_init` | pthread_mutex_t surface | 3 | 0 | 8 | +0/-0 | off-pool. 2 calls gain the alloca trailing argument (libselinux) |
+| `pthread_mutex_destroy` | pthread_mutex_t surface | 3 | 0 | 5 | +0/-0 | off-pool. DROPPED in #706: its one argument is recovered without it, so it bought nothing. |
+| `pthread_mutex_init` | pthread_mutex_t surface | 3 | 0 | 8 | +0/-0 | off-pool. Kept for arity: without it 12 calls lose the `NULL` attr and 2 gain a fourth argument. 2 calls gain the alloca trailing argument (libselinux). A record that starts with its mutex is declined by `kuna_libcfit` (#706). |
 | `re_match` | regex family | 12 | 0 | 14 | +3/-0 | off-pool. 2 callers print `dat_4`; buys 5 args at 2 one-argument calls |
 | `re_search` | regex family | 18 | 0 | 21 | +3/-0 | off-pool. |
 | `regcomp` | regex family | 9 | 0 | 9 | +0/-0 | off-pool. |
