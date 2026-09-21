@@ -313,7 +313,21 @@ Four front-ends drive one engine assembly:
   veneer exists, and it requires EXACTLY one executable candidate: two
   same-named definitions in different code sections of a relocatable object are
   both executable and keep the ambiguity error, as does every candidate set on a
-  sectionless image, where the test reads every address as executable. This is
+  sectionless image, where the test reads every address as executable.
+
+  (kuna, issue #667) An ambiguity that survives that narrowing has to offer a
+  selector the INPUT has. `.section+0xOFFSET` and `SECTION_INDEX:0xOFFSET`
+  resolve against `object_sections`, which a relocatable load fills and a linked
+  one leaves empty, so the unconditional "use a section-qualified selector" hint
+  sent a caller to a form that could only answer `no function matches` there.
+  `EntryLookupError::Ambiguous` therefore carries the same `relocatable` bit
+  `Unmapped` already does: the section-qualified hint is for a relocatable
+  input, and a linked image is given the address form, spelled out once per
+  candidate so the answer is pasteable rather than a grammar to apply. The
+  per-candidate line follows the same fact. A relocatable object's definitions
+  and an undefined external really do sit at addresses kuna minted, and stay
+  labelled `synthetic`; a candidate a linked image maps itself does not, and is
+  reported at the address the program runs at. This is
   what makes Mach-O behave the way ELF already did by naming only the PLT stub.
   A **caller-declared** entry (the declared-extent plane below) is kept whatever the section flags say
   (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::is_declared_entry)`).

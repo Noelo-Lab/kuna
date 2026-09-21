@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "_main"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_dup_main",
+    "binary_sha256": "3436d99cbb7679bbda4ea32777bba11003c26c1f3173b55d71c11efe9edfcebb",
+    "binary_size": 16688,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_dup_main",
+    "selector": "_main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "ne": 0
+    },
+    "stderr_matches": [
+      "--addr 0x1000005a0",
+      "--addr 0x1000005b0"
+    ],
+    "stderr_absent": [
+      "section-qualified",
+      "synthetic"
+    ]
+  },
+  "notes": "Two same-named entries in a LINKED image were reported with a section-qualified hint, a selector form that only resolves against a relocatable object's section table -- following it gave a second, unrelated error. The candidates were also labelled `synthetic`, which is the relocatable-object wording; these are the addresses the image is mapped at.",
+  "probe_id": "p-4d0af2e7a6d2"
+}

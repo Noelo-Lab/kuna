@@ -1257,6 +1257,7 @@ impl ConsoleProgram {
             _ => Err(EntryLookupError::Ambiguous {
                 selector: selector.display(),
                 candidates,
+                relocatable: !self.object_sections.is_empty(),
             }),
         }
     }
