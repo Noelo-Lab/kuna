@@ -428,6 +428,128 @@ test still decides where that may happen: never across a call, and across a
 store only when the two addresses provably differ. `off` is the upstream seed
 fold exactly.
 
+**What the pointer points at (`charptr`).** `ptrfromuse` decides that a value
+*is* a pointer; it cannot say what is on the other end, and the shipped `void`
+says so honestly. The element type is usually on the table already — a callee
+declares `char *` for the argument, a `%s` conversion `formatstring` resolved
+names it, the object is walked one byte at a time — and it is lost for the same
+structural reason the pointer itself was: `TypeOpCall`'s `get_input_local`
+states the callee's declared parameter type about the Varnode that *is* the
+call's operand, and `propagate_type_edge` will not carry a pointer back over an
+`INT_ADD`, a MULTIEQUAL, or the store/load pair an `-O0` spill puts between the
+value a reader sees declared and the use that says "characters". coreutils
+`realpath` -O0 shows it on `path_prefix(char const *prefix, char const *path)`,
+which kuna prints `bool sub_2bbc(void *a0, void *a1)` while its body compares
+both arguments byte by byte.
+
+When `charptr` is on (shipped `off`),
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_charptr.rs
+(char_pointer_from_evidence)` collects that evidence with the same walk
+`ptrfromuse` uses — the bounded breadth-first worklist over the transitive
+descendants, a visited set, a ten-hop cap, `COPY`/`MULTIEQUAL`/`INDIRECT`/`CAST`
+identity, the base slot of `PTRADD`/`PTRSUB`, a literal-addend `INT_ADD` graded
+by the same three-way `ActionConstantPtr::isPointer` question — and asks of every
+use whether it is about *characters* rather than whether it is a dereference at
+all. Three uses answer yes.
+
+* A **declared** callee parameter: the value reaches argument *i* of a call whose
+  callee declares `char *` there, *at the base*. Declared means stated from outside the
+  decompile — a `libproto`/`libcsigs` signature, a `libctypes` shell, DWARF, a
+  demangled name, `--assert prototype`, or the per-call-site override
+  `formatstring` installs for a resolved `%s` — and it is read through
+  `declared_input_type_local`, the accessor a cast is measured against. A type
+  another *recovery* voted for is deliberately not evidence: counting
+  `protoorder`'s callee vote was measured on the same 444-slice sweep and scored
+  lower, because a recovered `char *` is itself a guess and the walk would
+  launder it into a commitment.
+* A **byte-wide dereference at the base**: every `LOAD` or `STORE` through the
+  value itself is one byte wide, or the value is stepped one byte at a time
+  (`PTRADD` of element size one).
+* A **character constant**: the value is defined by, or compared against, a
+  constant that resolves to a character array in the image.
+
+Anything at a *fixed non-zero offset* is pointedly **not** evidence, and that
+applies to both the byte arm and the declared arm. `p->flag` and `p[0]` lower to
+the same one-byte `LOAD`, and only the offset tells them apart: coreutils
+`ginstall`'s `announce_mkdir(char const *dir, void *options)` reads the `bool` at
+`options + 0x3c`, and reading that as a character replaces a *correct* `void *`
+with a wrong claim. A declared `char *` at a fixed offset says the same thing
+about a field rather than about the base: cronie `crond` -O0 `sub_6715` calls
+`strcmp(base + 0x13, ".cron.hostname")` where `base` is a `struct dirent *` and
+`0x13` is `offsetof(struct dirent, d_name)`, so crediting the base would trade a
+correct aggregate pointer for a wrong `char *`. So the walk carries a flag saying
+"this Varnode is the base plus a fixed offset", set by a non-zero literal
+`INT_ADD` or `PTRSUB` and cleared by nothing, and both a byte access and a
+declared parameter there are neutral. A *variable* index is not: `strlen(p + i)`
+and `p[i]` still count, because `PTRADD` with element size one is the walk
+itself. Measured: without the flag on the byte arm the sweep gains more (+8
+functions onto perfect against +4) and loses more (13 functions down against 6),
+and four of the extra losses are exactly this shape.
+
+The refusals are what keep the rule honest: a dereference or an element step
+*wider* than a byte (the program saying the element is not a character), a call
+argument the callee declared as some other pointer or as a scalar, and everything
+`ptrfromuse` refuses. A refusal withdraws the Varnode it was collected for and
+nothing else. The walk runs once per Varnode and the vote is folded per Varnode,
+while the type a reader sees belongs to the *merged variable*, so a slot walked
+with byte evidence in one flow and refused in another prints the commitment:
+grep -O0 `sub_6fdd`'s stack slot at `-0x20` is walked eight times with byte
+evidence and four times refused, which `KUNA_CHARPTR_CENSUS=1` reports line by
+line. What the refusals bound is what one Varnode's evidence may claim, not what
+the merged variable may become — and they are about element *width* and
+contradicting declarations, not about arithmetic shape. A constant-stride walk is
+never refused, because a literal-addend `INT_ADD` only marks the value as offset
+from its base: coreutils `od` -O2 `sub_4270` commits its third parameter on byte
+dereferences at the base and then prints `a2 = &a2[0x10]`, a sixteen-byte step
+through a `char *`. The
+candidate is folded by `type_order` exactly as `ptrfromuse`'s is, and it may
+additionally **refine** a pointer that points at nothing — `void *` and
+`undefined1 *`, the placeholders this rule exists to resolve — while a pointer at
+a named, aggregate or *wider* pointee (`FILE *`, `stat *`, `long *`, a
+synthesized `struct_3 *`) is left as it was. Only function inputs and Varnodes in
+the stack space are considered: those are the two kinds of storage a reader sees
+as a declaration.
+
+The refine guard reads the type *in flight* — the `ct` the fold has built so far
+for this Varnode — not the type the function will finally print, so a pointee
+that would only have arrived by *later* propagation is not there to protect.
+`unsigned char *` is the common case, and it is accepted deliberately. Where a `uint1 *` would only have arrived by later
+propagation from a byte-wide use, the `char *` vote is already sitting in the
+fold and wins, so `int callee(unsigned char *a0, int a1)` in the
+`protoorder_x86_64` fixture becomes `int callee(char *a0, int a1)` with the
+option on. That is the same call `charbyte` makes one level down: the element
+width agrees and only its signedness moves, and it is by design, because a
+one-byte pointee reached through byte-only uses is what the rule exists to
+name. `FILE *` next to it in the same signature is untouched. It is not only
+signedness, though, and the measurement says so: over eight whole binaries three
+declarations move from a *wider* pointee, all of them e2fsprogs `e2fsck`'s
+`ext2fs_bitcount(unsigned int *addr, uint4 nbytes)` and its two stack copies —
+a function upstream declares `const void *`. No synthesized `struct_N *`
+declaration moves in that run at all.
+
+The shipped value is `off`, and the reason is measured rather than cautious. On
+the 444-slice decbench sweep the ground-truth class `char *` is the largest
+single class — 14,645 of the 65,715 scored variables — and kuna matches 28.7% of
+it against Binary Ninja's 36.8%. Split by storage, kuna is already at 64.9% on
+*arguments* against Binary Ninja's 71.5%, and at 44.8% on *stack locals* against
+71.4%: nine tenths of the class gap is stack locals, and within those the
+dominant blocker is not a missing element type but a missing *symbol* — 932 of
+the 1,648 stack misses are frame-layout slots kuna reports as `undefined8`
+because the value that lived there was copy-propagated into a register
+HighVariable, which chapter 06 does not export. What is left for this rule is
+worth 4 functions onto a perfect `type_match` and 14 more up, against 6 down and
+none off perfect (aggregate +4.93 over 10,748 functions); the declared-callee
+half *alone* is worth +0.14, which is why it is not a separate strength. Turning
+it on is a claim as well as a gain — committing a pointer forfeits the
+width-only free pass an eight-byte scalar gets, and `char *` rewrites the body's
+arithmetic into indexing the way `ptrfromuse byte` does. The signedness can also
+move the *other* way as a knock-on — a correct `char *` arriving as
+`unsigned char *`, which no sweep slice carries: on dash at `-O0`, 13 lines in
+seven functions and four signatures go that way, two of those bodies losing a
+character literal, against 23 lines that move forward and four `strcmp` casts
+that disappear. `docs/features/charptr/` carries the census, the per-function
+moves and that corpus classification.
+
 **The truth-valued byte (`boolbyte`).** `TYPE_BOOL` only ever enters the
 lattice as an op's *output*: every `booloutput` opcode's `get_output_local` is
 `get_base(size, TYPE_BOOL)`, and `CBRANCH`'s slot-1 `get_input_local` is the

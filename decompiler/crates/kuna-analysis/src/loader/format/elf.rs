@@ -21,6 +21,31 @@ use kuna_sleigh::loadimage::section_flags;
 
 use super::{FormatKind, ImportSym, ObjectFormat};
 
+/// Is this section one of the run-time loader's own tables rather than
+/// initialized program data?
+///
+/// `object` folds `SHT_SYMTAB`/`SHT_DYNSYM`/`SHT_STRTAB`/`SHT_RELA`/`SHT_REL`/
+/// `SHT_RELR`/`SHT_HASH`/`SHT_DYNAMIC` into [`SectionKind::Metadata`]; the GNU
+/// dynamic-info types (`.gnu.hash`, `.gnu.version*`) have no `SectionKind` of
+/// their own and arrive as `SectionKind::Elf(sh_type)`, so they are named here.
+/// `SHT_NOTE` is left alone: a note is data a toolchain wrote for a reader, and
+/// nothing has been observed to go wrong there.
+pub(crate) fn is_loader_table(kind: SectionKind) -> bool {
+    /// `SHT_GNU_HASH`.
+    const SHT_GNU_HASH: u32 = 0x6fff_fff6;
+    /// `SHT_GNU_verdef`, `SHT_GNU_verneed`, `SHT_GNU_versym`.
+    const SHT_GNU_VERDEF: u32 = 0x6fff_fffd;
+    const SHT_GNU_VERNEED: u32 = 0x6fff_fffe;
+    const SHT_GNU_VERSYM: u32 = 0x6fff_ffff;
+    match kind {
+        SectionKind::Metadata => true,
+        SectionKind::Elf(t) => {
+            matches!(t, SHT_GNU_HASH | SHT_GNU_VERDEF | SHT_GNU_VERNEED | SHT_GNU_VERSYM)
+        }
+        _ => false,
+    }
+}
+
 /// The ELF object format.
 pub struct ElfFormat;
 
@@ -70,8 +95,20 @@ impl ObjectFormat for ElfFormat {
         if matches!(kind, SectionKind::UninitializedData) || !alloc {
             out |= section_flags::NOLOAD;
         }
-        // SEC_READONLY: an allocated, non-writable section (the BFD readonly bit).
-        if alloc && !write {
+        // SEC_READONLY: an allocated, non-writable section (the BFD readonly bit),
+        // minus the run-time loader's own tables.
+        //
+        // (kuna) BFD sets the bit on `.dynsym`, `.dynstr`, `.gnu.hash`, `.rela.*`
+        // and the version tables as readily as on `.rodata`: they are allocated
+        // and not writable.  Nothing in the program reads them, but the readonly
+        // range is also what licenses the printer to replace a constant with the
+        // characters at that address, and a round number lands in them.  In a
+        // position-independent executable `.dynsym` covers `0x1000`, so
+        // diffutils `diff`'s `outbytesleft = 4096` printed as the string literal
+        // at the `st_name` field it happens to overlap.  A section the dynamic
+        // loader owns is not initialized program data, so it is not readonly
+        // program data either.
+        if alloc && !write && !is_loader_table(kind) {
             out |= section_flags::READONLY;
         }
         // SEC_CODE / SEC_DATA.
@@ -158,5 +195,38 @@ mod tests {
         let bits = f.section_bits(SectionKind::Data, SectionFlags::Elf { sh_flags: 0x2 | 0x1 });
         assert!(bits & section_flags::DATA != 0, "data section is DATA");
         assert!(bits & section_flags::READONLY == 0, "writable section is not READONLY");
+    }
+
+    /// The dynamic loader's tables are allocated and non-writable, and BFD calls
+    /// them read-only for that reason alone.  They hold no program data, and the
+    /// read-only range is what licenses the printer to spell a constant as the
+    /// characters at it, so they are excluded.
+    #[test]
+    fn elf_section_bits_leaves_loader_tables_out_of_readonly() {
+        use kuna_sleigh::loadimage::section_flags;
+        let f = ElfFormat;
+        let alloc_ro = SectionFlags::Elf { sh_flags: 0x2 };
+        for kind in [
+            SectionKind::Metadata,           // .dynsym/.dynstr/.rela.*/.hash/.dynamic
+            SectionKind::Elf(0x6fff_fff6),   // .gnu.hash
+            SectionKind::Elf(0x6fff_fffd),   // .gnu.version_d
+            SectionKind::Elf(0x6fff_fffe),   // .gnu.version_r
+            SectionKind::Elf(0x6fff_ffff),   // .gnu.version
+        ] {
+            assert!(is_loader_table(kind), "{kind:?} is a loader table");
+            let bits = f.section_bits(kind, alloc_ro);
+            assert!(bits & section_flags::READONLY == 0, "{kind:?} must not be READONLY");
+        }
+        for kind in [
+            SectionKind::ReadOnlyData,
+            SectionKind::ReadOnlyString,
+            SectionKind::Text,
+            SectionKind::Note,
+            SectionKind::Elf(0x7000_0001), // .ARM.exidx
+        ] {
+            assert!(!is_loader_table(kind), "{kind:?} is not a loader table");
+            let bits = f.section_bits(kind, alloc_ro);
+            assert!(bits & section_flags::READONLY != 0, "{kind:?} keeps READONLY");
+        }
     }
 }

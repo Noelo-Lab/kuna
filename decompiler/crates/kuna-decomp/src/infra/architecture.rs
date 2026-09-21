@@ -370,6 +370,11 @@ pub struct Architecture {
     /// [`kuna_charbyte`](crate::p5_types::kuna_charbyte).
     pub char_byte: bool,
 
+    /// (kuna `charptr`) Commit a pointer-width parameter or stack local the
+    /// program only ever uses on characters to `char *`; option
+    /// `charptr on|off`.  The rule lives in
+    /// [`kuna_charptr`](crate::p5_types::kuna_charptr).
+    pub char_ptr: bool,
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be
     /// a LOAD/STORE base as a pointer, and what that pointer points at.  See
     /// [`kuna_ptrfromuse`](crate::p5_types::kuna_ptrfromuse).
@@ -2279,6 +2284,7 @@ impl Architecture {
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
+            char_ptr: false, // (kuna) option charptr; shipped off
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
@@ -2694,6 +2700,7 @@ impl Architecture {
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
+        self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Types; // (kuna) option protoorder default `types`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, so the call renders with exactly the arguments it renders with off; `lock` also states the arity and stays opt-in
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
@@ -3372,6 +3379,7 @@ impl Architecture {
                 self.protoorder = mode;
                 Ok(msg)
             }
+            "charptr" => on_off!(char_ptr, "character-pointer evidence"),
             "ptrfromuse" => {
                 let (val, msg) =
                     crate::p5_types::kuna_ptrfromuse::OptionPtrFromUse.apply(p1)?;
@@ -4186,6 +4194,7 @@ impl Architecture {
         ctx.int_promotion = self.print.out_lang().profile().caps.integer_promotion;
         ctx.char_byte = self.char_byte; // (kuna) charbyte
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
+        ctx.char_ptr = self.char_ptr; // (kuna) charptr
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.lowered_switch_labels = self.lowered_switch_labels; // loweredswitchlabels

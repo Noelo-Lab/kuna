@@ -1,0 +1,135 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Type campaign, item `charptr`: a pointer the program only ever uses on
+    characters is declared as an integer or as `void *`, although the fact is
+    already on the table.  coreutils `realpath` -O0 shows it, on
+    `path_prefix(char const *prefix, char const *path)`:
+
+        bool sub_2bbc(void *a0,void *a1)
+
+    and the body walks both arguments one byte at a time.
+
+    Root cause (P5, type propagation).  `TypeOpCall::getInputLocal`
+    (typeop.cc:689) states a callee's declared parameter type about the Varnode
+    that IS the call's operand, and `propagateTypeEdge` moves a Varnode only to
+    a MORE specific type.  Every hop between the value a reader sees declared
+    and the use that says "characters" - an -O0 spill through the frame, a
+    MULTIEQUAL, a `p + k` whose INT_ADD refuses to carry a pointer back
+    (typeop.cc:1217, the same refusal `ptrfromuse` documents) - is a hop the
+    fact does not cross.
+
+    Stage / sub-stage: P5 "type-propagation".  The P0 assertion
+    `option charptr on|off` decides whether character evidence may commit a
+    pointer-width parameter or stack local to `char *`.
+
+    The witness is that function itself, 197 bytes of `coreutils realpath -O0`
+    0x2bbc copied in whole, plus six controls:
+
+        pathprefix: the witness - `path_prefix(char const *, char const *)`,
+                    whose two parameters are spilled to the frame and then
+                    walked in place one byte at a time.  Off it is
+                    `bool pathprefix(void *a0,void *a1)`
+        scaled:     shl rdi,2; call slen
+                    a control - RDI is SHIFTED before it reaches the declared
+                    `char *`, which no pointer survives
+        offsetcall: add rdi,0x13; call slen    where `char *slen(char *)`
+                    a control - a declared `char *` reached at a FIXED non-zero
+                    offset is about the FIELD there, not about the base, exactly
+                    as a one-byte read at a fixed offset is.  cronie `crond` -O0
+                    `sub_6715` is the corpus case: `strcmp(base + 0x13, ...)`
+                    reads `d_name` out of a `struct dirent`, and 0x13 is
+                    `offsetof(struct dirent, d_name)` on x86-64
+        fieldbyte:  movzx eax, byte [rdi+0x3c]
+                    a control - a one-byte read at a FIXED offset is a struct
+                    field, not a character.  coreutils `ginstall`'s
+                    `announce_mkdir(char *dir, void *options)` reads the `bool`
+                    at `options + 0x3c`, and typing that `char *` would replace
+                    a correct `void *` with a wrong claim
+        mixedwidth: movzx eax, byte [rdi]; add eax,[rdi+8]
+                    a control - the same value is also read four bytes wide, so
+                    the byte read does not establish the element type
+        otherproto: add rdi,1; call ilen    where `int8 ilen(int8 *)`
+                    a control - the callee declares a pointer at something else,
+                    which contradicts a character pointer rather than
+                    supporting one
+
+    `prefixcmp` is the same byte-at-a-time compare written out by hand, and it
+    is here as a SEVENTH control: kuna already types it `char *` without the
+    option, through the PTRADD the pointer-arithmetic pool builds, and it must
+    not move either way.
+
+    Pass 1 (`option charptr off`) reproduces the bug; pass 2 (`on`) is the fix.
+    All seven controls are identical in both passes.
+-->
+<bytechunk space="ram" offset="0x100000">
+4883ec084883c713e8330100004883c408c300000000000000000000000000004883ec0848c1e702e8130100004883c408c30000000000000000000000000000554889e54883ec2048897de8488975e0488b45e84883c001488945f8488b45e04883c001488945f0488b45f80fb60084c0741e488b45f00fb610488b45f80fb60038d0750c488345f801488345f001ebd7488b45f80fb600c9c300000000000000000000000000000000000000000000000000000000000000000000000000000fb6473cc30000000000000000000000000000000000000000000000000000000fb607034708c3000000000000000000000000000000000000000000000000004883ec084883c701e8430000004883c408c3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004889f8c30000000000000000000000004889f8c3000000000000000000000000f30f1efa554889e548897df8488975f0488345f801488345f001488b45f80fb60084c07511488b45f00fb6003c2f0f95c0e98d000000488b45f80fb6003c2f7539488b45f84883c0010fb60084c0752a488b45f00fb6003c2f0f94c0eb65488b45f80fb610488b45f00fb60038c27522488345f801488345f001488b45f80fb60084c0740e488b45f00fb60084c075ceeb0190488b45f80fb60084c0751d488b45f00fb6003c2f740b488b45f00fb60084c07507b801000000eb05b80000000083e0015dc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="offsetcall"/>
+<symbol space="ram" offset="0x100020" name="scaled"/>
+<symbol space="ram" offset="0x100040" name="prefixcmp"/>
+<symbol space="ram" offset="0x1000c0" name="fieldbyte"/>
+<symbol space="ram" offset="0x1000e0" name="mixedwidth"/>
+<symbol space="ram" offset="0x100100" name="otherproto"/>
+<symbol space="ram" offset="0x100140" name="slen"/>
+<symbol space="ram" offset="0x100150" name="ilen"/>
+<symbol space="ram" offset="0x100160" name="pathprefix"/>
+</binaryimage>
+<script>
+  <com>parse line extern char *slen(char *p);</com>
+  <com>parse line extern int8 ilen(int8 *p);</com>
+  <com>option charptr off</com>
+  <com>lo fu pathprefix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu prefixcmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fieldbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixedwidth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu otherproto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu offsetcall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option charptr on</com>
+  <com>lo fu pathprefix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu prefixcmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fieldbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixedwidth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu otherproto</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu offsetcall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="charptr #1: with the option off the two string parameters the body walks a byte at a time are void * - the bug" min="1" max="1">bool pathprefix\(void \*a0,void \*a1\)</stringmatch>
+<stringmatch name="charptr #2: with the option on the byte walk names the element type" min="1" max="1">bool pathprefix\(char \*a0,char \*a1\)</stringmatch>
+<stringmatch name="charptr #3: a parameter shifted before it reaches the declaration is refused in both passes" min="2" max="2">void scaled\(int8 a0\)</stringmatch>
+<stringmatch name="charptr #4: a one-byte read at a fixed offset is a struct field, so the pointer keeps its placeholder in both passes" min="2" max="2">char fieldbyte\(void \*a0\)</stringmatch>
+<stringmatch name="charptr #5: a value also read four bytes wide is not a character pointer in either pass" min="2" max="2">int4 mixedwidth\(struct_0 \*a0\)</stringmatch>
+<stringmatch name="charptr #6: a callee that declares a pointer at something else contradicts a character pointer in both passes" min="2" max="2">void otherproto\(int8 a0\)</stringmatch>
+<stringmatch name="charptr #7: the byte-at-a-time compare is already char * without the option, and the option does not move it" min="2" max="2">char prefixcmp\(char \*a0,char \*a1\)</stringmatch>
+<stringmatch name="charptr #8: a declared char * reached at a fixed non-zero offset is about the field, not the base, in both passes" min="2" max="2">void offsetcall\(int8 a0\)</stringmatch>
+</decompilertest>

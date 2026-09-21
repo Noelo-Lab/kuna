@@ -188,6 +188,16 @@ impl SecRange {
     /// scalar may point at? `SHF_ALLOC` set, `SHF_WRITE` clear, not executable.
     fn is_readonly_data(&self) -> bool {
         if self.elf_flags != 0 {
+            // (kuna) The dynamic loader's own tables are allocated and not
+            // writable, so the flag test alone accepts `.dynsym`/`.dynstr`/
+            // `.gnu.hash`/`.rela.*` -- and in a position-independent executable
+            // `.dynsym` covers `0x1000`, so a buffer size lands in it and the
+            // pass plants a `char[2]` on a symbol-table field. Same reason as
+            // the `.got`/`.plt` exclusion above: a scalar that lands in the
+            // loader's tables is not a data reference.
+            if crate::loader::format::elf::is_loader_table(self.kind) {
+                return false;
+            }
             // ELF: the authoritative flags. Allocated, not writable, not code.
             return self.elf_flags & SHF_ALLOC != 0
                 && self.elf_flags & SHF_WRITE == 0
@@ -497,6 +507,44 @@ mod tests {
             is_got_or_plt: false,
         };
         assert!(!code.is_readonly_data());
+        // .dynsym: ALLOC, not WRITE, not EXEC -- the flags of `.rodata`, but a
+        // loader table. In a PIE it covers 0x1000, so a buffer size lands in it.
+        let dynsym = SecRange {
+            lo: 0x400,
+            hi: 0x10d8,
+            elf_flags: SHF_ALLOC,
+            kind: SectionKind::Metadata,
+            is_got_or_plt: false,
+        };
+        assert!(!dynsym.is_readonly_data());
+        // .gnu.hash has no SectionKind of its own.
+        let gnuhash = SecRange {
+            lo: 0x3b0,
+            hi: 0x400,
+            elf_flags: SHF_ALLOC,
+            kind: SectionKind::Elf(0x6fff_fff6),
+            is_got_or_plt: false,
+        };
+        assert!(!gnuhash.is_readonly_data());
+        // Non-ELF: the loader-table test lives inside the ELF-flags branch, and a
+        // Mach-O/PE range (elf_flags == 0) answers on its SectionKind alone, as it
+        // did before that test existed.
+        let macho_meta = SecRange {
+            lo: 0x1000,
+            hi: 0x2000,
+            elf_flags: 0,
+            kind: SectionKind::Metadata,
+            is_got_or_plt: false,
+        };
+        assert!(!macho_meta.is_readonly_data());
+        let macho_ro = SecRange {
+            lo: 0x2000,
+            hi: 0x3000,
+            elf_flags: 0,
+            kind: SectionKind::ReadOnlyData,
+            is_got_or_plt: false,
+        };
+        assert!(macho_ro.is_readonly_data());
     }
 
     #[test]
