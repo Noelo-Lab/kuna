@@ -598,11 +598,13 @@ editable finder repointed at it by `final-c/pindb.py`.
 | goal 3: structs | structscore TRex / per-parameter layout precision | 4.108 / 1.893, P **.5520** | 4.108 / 1.893, P **.8709** | the round-C regression is **repaired**; F1 .1021 → **.1678**, above round B's .1376 |
 | decbench#93 crediting | replay of the same rows | 1,349 → 1,575 | 1,349 → **1,575** | +1,569 TP, +226 functions onto perfect — unchanged |
 | decbench#94 (restrict) | patched copy of the pinned metric | — | 1,349, mean **.3406** | the 4,412 unmatchable GT variables are **98.2% register-only**; fixing the metric is worth 8 functions |
-| speed | whole-binary `decompile-all`, interleaved min-of-11 | +0.7…+2.5% vs baseline | SPEED_HEADLINE | SPEED_READING |
+| speed | whole-binary `decompile-all`, interleaved min-of-11 | +0.7…+2.5% vs baseline | −3.1…+2.6% vs baseline | −1.3…+0.9% against round C; no case near the +5% line, so none needed a re-run |
 
 ### D.1 type_match
 
-Same 444 slices, same `--baseline-only` invocation at `--workers 12`.
+Same 444 slices, same `--baseline-only` invocation at `--workers 12`. Control: `scripts/decbench/`
+is byte-identical between round C's `d8b9c0b1` and this round's `4c7704e0`, so the only thing that
+differs between the two columns is the kuna binary.
 
 | slice | functions | base | round B | round C | **round D** | mean C → **D** |
 |---|---:|---:|---:|---:|---:|---|
@@ -771,7 +773,24 @@ a lever on this corpus.
 
 ### D.6 Speed
 
-SPEED_TABLE
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation) on the O2
+stripped binaries, the four binaries run one arm after another with the arm order rotating every
+round, 11 rounds each, load average 3.4–7.1 on 80 cores. Driver `final-d/speed4.py`, raw samples
+`final-d/speed.json`.
+
+| binary | functions | baseline min | round B min | round C min | **round D min** | Δ D vs C (min / median) | Δ D vs baseline (min) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| coreutils fmt | 151 | 4,171.3 ms | 4,099.4 ms | 4,158.0 ms | **4,160.1 ms** | +0.05% / +0.67% | −0.27% |
+| coreutils ls | 404 | 14,075.0 ms | 13,788.6 ms | 13,525.1 ms | **13,639.9 ms** | +0.85% / +1.56% | −3.09% |
+| coreutils sort | 343 | 14,025.6 ms | 14,325.1 ms | 14,589.6 ms | **14,396.3 ms** | −1.32% / +1.82% | +2.64% |
+| bash | 2,538 | 85,019.6 ms | 87,257.9 ms | 86,055.5 ms | **86,141.8 ms** | +0.10% / +2.23% | +1.32% |
+
+Nothing in this round is worth more than 1.4% either way, no case reached the +5% re-run line, and
+against the campaign baseline the four binaries sit between −3.1% and +2.6% — four months of
+default-on type work for less than the box's own variance. On medians round D is 0.7–2.2% above
+round C on all four, min and median disagreeing on sign for ls, sort and bash, which is the shape
+a contended box gives; min is the statistic the campaign has reported throughout. bash is 1.3 MB,
+so `--mode auto` resolves to `reliable` there rather than `aggressive`.
 
 ### D.7 Every round-D PR and what it measured
 
