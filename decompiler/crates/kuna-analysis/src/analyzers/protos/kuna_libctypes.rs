@@ -610,15 +610,14 @@ impl AnalysisPass for LibcTypesPass {
         // gone: a `--define-function 0x..=fopen` directive. Carry them.
         out.libctypes_glibc = layout == Layout::Glibc;
         out.libctypes_refused = layout == Layout::Off;
-        let types = ctx.arch.types();
-        let (_addr_size, word_size) = ctx.arch.data_org();
-        // The stream slots type STORAGE, which never sizes a frame object, and
-        // the relocation that binds them is its own evidence; they keep their four
-        // architectures (see `streams`).
+        // The stream slots mint the same `FILE` at the same width, so they are
+        // refused with the rest: the shell's size is a claim too (`structdefs`
+        // reports it).
         if layout == Layout::Off {
-            out.typed_data = streams::stream_data_symbols(ctx.file, types, word_size, Layout::Opaque);
             return out;
         }
+        let types = ctx.arch.types();
+        let (_addr_size, word_size) = ctx.arch.data_org();
         // IMPORTED names only, for the two name tables — where `LibProtoPass`
         // also matches a name the image DEFINES. A defined `fopen` is this
         // image's own function, and on a `-g` image it has a DWARF prototype

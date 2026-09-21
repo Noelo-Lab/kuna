@@ -20,9 +20,11 @@
 //!    `.dynstr` names `libc.so.6` and `GLIBC_2.4`, so only the ARCHITECTURE half
 //!    of the gate refuses it, and which carries debug info defining `struct stat`
 //!    and `struct timespec` with `st_dev` and `tv_sec` at offset 0. That is the
-//!    combination that once bought the x86-64 layouts from inside. `group` is the
-//!    fieldless shell. Every pointer on that target is four bytes, so `gr_passwd`
-//!    is not at offset 8 and `sizeof(struct group)` is not 32.
+//!    combination that once bought the x86-64 layouts from inside. Every pointer
+//!    on that target is four bytes, so `gr_passwd` is not at offset 8 and
+//!    `sizeof(struct group)` is not 32 — and since the aggregate WIDTHS are
+//!    x86-64's too, the declaration mints no `group` at all there
+//!    (`AnalysisOutput::libctypes_refused`).
 //!
 //! ## `.sla` precondition
 //!
@@ -52,9 +54,9 @@ fn repo_root() -> PathBuf {
 }
 
 /// Bootstrap `fixture` with `libctypes` asking for `glibc`, declare `getgrnam` at
-/// `entry`, and hand back the `group` the declaration minted. `None` ⇒ a
+/// `entry`, and hand back the `group` the declaration minted, if any. `None` ⇒ a
 /// specs-less skip.
-fn declared_group(fixture: &str, entry: u64) -> Option<Rc<kuna_decomp::dtype::Datatype>> {
+fn declared_group(fixture: &str, entry: u64) -> Option<Option<Rc<kuna_decomp::dtype::Datatype>>> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
@@ -79,7 +81,7 @@ fn declared_group(fixture: &str, entry: u64) -> Option<Rc<kuna_decomp::dtype::Da
         .expect("the declaration lands");
     let held = prog.arch().types().find_by_name("group").expect("type lookup");
     std::env::remove_var(LIBCTYPES_ENV);
-    Some(held.expect("the declaration mints a `group` either way"))
+    Some(held)
 }
 
 /// The gate accepts: the declared `getgrnam` returns the published layout.
@@ -87,6 +89,7 @@ fn declared_group(fixture: &str, entry: u64) -> Option<Rc<kuna_decomp::dtype::Da
 fn an_accepted_target_mints_the_published_group() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(group) = declared_group("libctypes_glibc_x86_64", X86_64_ENTRY) else { return };
+    let group = group.expect("an x86-64 glibc ELF takes the named declaration");
     assert!(!group.is_incomplete(), "an x86-64 glibc ELF takes the fields");
     assert_eq!(group.get_size(), 32, "the published width");
     let first = group.get_field(0).expect("a first member");
@@ -95,15 +98,14 @@ fn an_accepted_target_mints_the_published_group() {
 }
 
 /// The gate refuses on architecture alone: `.dynstr` names glibc, the image is
-/// MIPS32, and the declared `getgrnam` gets the sized, fieldless shell — never
-/// the x86-64 offsets.
+/// MIPS32, and the declared `getgrnam` gets the width-stable `void *` signature —
+/// neither the x86-64 offsets nor the x86-64 width.
 #[test]
 fn a_mips32_glibc_image_cannot_reach_the_layouts() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(group) = declared_group("libctypes_mips32_glibc_le32", MIPS_ENTRY) else { return };
     assert!(
-        group.is_incomplete(),
-        "a refused target keeps the opaque shell, whatever its own debug info says"
+        group.is_none(),
+        "a refused target mints no `group`, whatever its own debug info says"
     );
-    assert_eq!(group.num_depend(), 0, "and has no member to read an offset under");
 }

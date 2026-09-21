@@ -55,6 +55,11 @@
 //! [`super::named_aggregate`], which declines when the name is already held by
 //! something else — so an image whose own debug info defines a different `FILE`
 //! contributes no stream symbol at all rather than a contradictory one.
+//!
+//! The slots mint that `FILE` at glibc's x86-64 width, so the pass calls in here
+//! only on a target that width is true of (`glibc::target_takes_the_widths`).
+//! The relocation numbering below still lists four architectures because it is
+//! [`crate::loader::kuna_dynrelocs`]'s; the other three are never reached.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;

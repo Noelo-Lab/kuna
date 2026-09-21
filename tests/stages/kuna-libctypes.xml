@@ -103,6 +103,23 @@
     the same way: four in pass 4 and four in the two `opaque` stream passes (one
     `pending` line and one `flush_mark` line per link kind), so a new fallback in
     any pass moves it.
+
+    Pass 13 is the fit rule, on `libctypes_container_x86_64`. A libc aggregate is
+    often the FIRST member of a larger object (grep's kwset starts with its
+    obstack), and then the object's address is the one the libc call reads. The
+    table's vote used to win anyway, and every other member rendered as an
+    element of an obstack array: `a0[0x1b].field_0x28` for offset 0x970. The
+    function reads past the aggregate's end, so the vote declines to the
+    width-stable void * (#33, #34), for a pthread_mutex_t head too (#35).
+    `grow_in` stays inside its obstack and keeps the name (#36); its one
+    offset-named line is counted by #15.
+
+    Pass 14 is the width gate, on the stripped i386 `libctypes_widths_i386`. The
+    named slots carry glibc's x86-64 widths, and a named pointer handed a frame
+    object's address grows the object to the declared width: an 8-byte i386
+    timespec grown to 16 swallowed the two locals beside it, and an obstack
+    grown to 88 swallowed an int[12]. No slot is named on i386 now, so both
+    frames are the functions' own (#37, #38, #39).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -267,6 +284,27 @@ c3
   <com>load function grow_import</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_container_x86_64</com>
+  <com>read symbols</com>
+  <com>load function kws_grow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function inst_refs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function grow_in</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_widths_i386</com>
+  <com>read symbols</com>
+  <com>load function sub_8049040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sub_804911e</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="LIBCTYPES #1: off, the stream parameter is an opaque void *" min="1" max="1">int4 fclose\(void \*a0\)</stringmatch>
@@ -283,7 +321,7 @@ c3
 <stringmatch name="LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset" min="1" max="1">&amp;a1-&gt;field_0x30</stringmatch>
 <stringmatch name="LIBCTYPES #13: glibc on, that read is the field" min="1" max="1">return a1-&gt;st_size;</stringmatch>
 <stringmatch name="LIBCTYPES #14: and the value carries the FIELD's type, so the sentinel is a signed -1" min="1" max="1">return -1;</stringmatch>
-<stringmatch name="LIBCTYPES #15: and the lines carrying an offset-named field anywhere in this file are exactly the four of pass 4 plus the four of the opaque stream passes" min="8" max="8">field_0x</stringmatch>
+<stringmatch name="LIBCTYPES #15: and the lines carrying an offset-named field anywhere in this file are exactly the four of pass 4, the four of the opaque stream passes and the one of pass 13's control" min="9" max="9">field_0x</stringmatch>
 <stringmatch name="LIBCTYPES #16: off, the copy-relocated stream slot is an untyped word and its fields are raw offsets" min="1" max="1">return \*\(int8 \*\)\(stdout \+ 0x28\) - \*\(int8 \*\)\(stdout \+ 0x20\);</stringmatch>
 <stringmatch name="LIBCTYPES #17: off, the GOT slot of a shared object is not even named" min="1" max="1">return \*\(int8 \*\)\(\*dat_3fd8 \+ 0x28\) - \*\(int8 \*\)\(\*dat_3fd8 \+ 0x20\);</stringmatch>
 <stringmatch name="LIBCTYPES #18: on, the copy-relocated slot is the stream itself, so the reads are fields of it" min="1" max="1">return \*\(int8 \*\)&amp;stdout-&gt;field_0x28 - \*\(int8 \*\)&amp;stdout-&gt;field_0x20;</stringmatch>
@@ -301,4 +339,11 @@ c3
 <stringmatch name="LIBCTYPES #30: on, its declaration names the shadow record and the stream it is written to" min="1" max="1">void emit\(spwd \*a0,FILE \*a1\)</stringmatch>
 <stringmatch name="LIBCTYPES #31: off, the IMPORTED obstack entry point says nothing either" min="1" max="1">void grow_import\(void\)</stringmatch>
 <stringmatch name="LIBCTYPES #32: on, an import takes glibc's own spelling -- `int`, where the linked-in gnulib copy of #28 takes `size_t`" min="1" max="1">void grow_import\(obstack \*a0,int4 a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #33: an obstack at the head of a larger object -- the function reads past the obstack's 88 bytes, so the pointer is the object's" min="1" max="1">void kws_grow\(void \*a0,int4 a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #34: and a member past the obstack is an offset from it, not an element of an obstack array" min="1" max="1">\*\(int8 \*\)\(\(int8\)a0 \+ 0x970\) = \(int8\)a1;</stringmatch>
+<stringmatch name="LIBCTYPES #35: the same with a pthread_mutex_t at the head of an instance record" min="1" max="1">unsigned int inst_refs\(void \*a0\)</stringmatch>
+<stringmatch name="LIBCTYPES #36: the control -- a pointer that stays inside the obstack keeps the name" min="1" max="1">void grow_in\(obstack \*a0,int4 a1\)</stringmatch>
+<stringmatch name="LIBCTYPES #37: on i386 the x86-64 widths are refused, so the timespec slot no longer swallows the local beside it" min="1" max="1">v4 = a0 \+ 2;</stringmatch>
+<stringmatch name="LIBCTYPES #38: and the int array beside the obstack stays an int array" min="1" max="1">v1\[v3\] = a0 \* v3;</stringmatch>
+<stringmatch name="LIBCTYPES #39: and no local anywhere in this file is a piece of a grown struct" min="0" max="0">v1\._[0-9]+_4_</stringmatch>
 </decompilertest>
