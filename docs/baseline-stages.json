@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1296,
-    1296
+    1303,
+    1303
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
