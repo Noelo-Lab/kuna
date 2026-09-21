@@ -785,12 +785,12 @@ round, 11 rounds each, load average 3.4–7.1 on 80 cores. Driver `final-d/speed
 | coreutils sort | 343 | 14,025.6 ms | 14,325.1 ms | 14,589.6 ms | **14,396.3 ms** | −1.32% / +1.82% | +2.64% |
 | bash | 2,538 | 85,019.6 ms | 87,257.9 ms | 86,055.5 ms | **86,141.8 ms** | +0.10% / +2.23% | +1.32% |
 
-Nothing in this round is worth more than 1.4% either way, no case reached the +5% re-run line, and
-against the campaign baseline the four binaries sit between −3.1% and +2.6% — four months of
-default-on type work for less than the box's own variance. On medians round D is 0.7–2.2% above
-round C on all four, min and median disagreeing on sign for ls, sort and bash, which is the shape
-a contended box gives; min is the statistic the campaign has reported throughout. bash is 1.3 MB,
-so `--mode auto` resolves to `reliable` there rather than `aggressive`.
+Nothing in the round costs more than 1.4% either way and no case reached the +5% re-run line, so
+none was re-run. Against the campaign baseline the four binaries sit between −3.1% and +2.6%:
+the whole campaign's default-on work, five days of it, is inside the box's own variance. Medians
+put round D 0.7–2.2% above round C on all four and disagree with min on sign only for sort; min
+is the statistic the campaign has reported throughout. bash is 1.3 MB, so `--mode auto` resolves
+to `reliable` there rather than `aggressive`.
 
 ### D.7 Every round-D PR and what it measured
 
