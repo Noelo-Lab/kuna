@@ -1599,12 +1599,14 @@ one is a question about a symbol's extent across functions, which this
 per-function action does not see. A pointer loaded from an array element or
 from a record's field is left to `nest` and to the array hypothesis.
 
-The class is small, and it is not on `type_match`'s surface. The same eight
-builds hold 750 ground-truth struct-pointer locals against 816 struct-pointer
-parameters, but at -O2 a local lives in a register, which `variables[]` never
-exports, and at -O0 the stack slot a returned pointer is stored to is
-copy-propagated away, so `framelayout` exports it from the first restructure
-pass, before type recovery starts, as `undefined8`. Of the call-returned values
+The class is small, and most of it is not on `type_match`'s surface. The same
+eight builds hold 750 ground-truth struct-pointer locals against 816
+struct-pointer parameters, but at -O2 a local lives in a register, which
+`variables[]` never exports. At -O0 the stack slot a returned pointer is stored
+to is copy-propagated away, so `framelayout` exports it from the first
+restructure pass, before type recovery starts; `slotptr` (chapter 06) types
+such a slot from the value stored into it, which is how a returned record
+reaches `variables[]` at all. Of the call-returned values
 dereferenced at two or more constant offsets 37 (O0) and 17 (O2) meet a
 parameter's conditions. Over 14 builds (`fmt`, `ls`, `sort`, `du`, `grep` and
 `tar` at O0 and O2, `find` and `diff` at O2) the locals declared a record pointer
@@ -1621,10 +1623,15 @@ arms, nesting unchanged) and the headers carry 539 structures instead of 500.
 **The default is `locals`.** Flipping it moves no datatest assertion
 (675/675) and no stage assertion of another feature (1306/1306; the only new
 keys are `tests/stages/structsynth-locals.xml`'s, whose first pass pins
-`param`), and `make test-cli` is 219/219. The 444-slice typesweep is 1,353
-perfect in both arms with no function better or worse; of the 65,377 scored
-decisions 676 differ, all only in `struct_N` numbering, and no function's scored
-variable count changes. Over 29 binaries and 12,939 functions (x86-64
+`param`), and `make test-cli` is 221/221. The 444-slice typesweep is 1,472
+perfect in both arms (aggregate 3,773.19) with no function better or worse and
+no function's scored variable count changed. Of its 65,377 scored decisions
+708 differ only in `struct_N` numbering and 95 change type: each is a -O0 stack
+slot a returned record is stored to, `undefined8`, `long *` or `int8 *` under
+`param` and `struct_N *` under `locals`, and in every one DWARF names a struct
+pointer (44 `hash_entry *`, 9 `predicate *`, 8 `group *`, 7 `dev_ino *`,
+6 `passwd *`, ...). None replaces a correct pointer; the pinned metric scores
+them the same in both arms because it compares pointee names. Over 29 binaries and 12,939 functions (x86-64
 coreutils `fmt`, `ls`, `sort` and `du` at O0 and O2, `grep`, `tar` and `gzip` at
 O0 and O2, `find` at O0 and O2, `diff`, `sdiff`, `cp`, `bzip2`, `useradd`,
 `dash`, `crond`, `kmod` and `xmlwf` at O2, `diff3` at O0, `sort` at
