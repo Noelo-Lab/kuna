@@ -315,9 +315,10 @@ fn stated(params: &[(Address, int4, Rc<Datatype>)]) -> RecoveredTypes {
 }
 
 #[test]
-fn option_parses_the_three_values() {
+fn option_parses_the_four_values() {
     assert_eq!(OptionProtoOrder.apply("off").unwrap().0, ProtoOrderMode::Off);
     assert_eq!(OptionProtoOrder.apply("types").unwrap().0, ProtoOrderMode::Types);
+    assert_eq!(OptionProtoOrder.apply("cycles").unwrap().0, ProtoOrderMode::Cycles);
     assert_eq!(OptionProtoOrder.apply("lock").unwrap().0, ProtoOrderMode::Lock);
     // `on` was the round-3 spelling of what is now `lock`; accepting it as an
     // alias for either value would silently change what an old command means.
@@ -325,6 +326,19 @@ fn option_parses_the_three_values() {
     assert!(OptionProtoOrder.apply("").is_err());
     assert!(!ProtoOrderMode::Off.is_on());
     assert!(ProtoOrderMode::Types.is_on() && ProtoOrderMode::Lock.is_on());
+    assert!(ProtoOrderMode::Cycles.is_on());
+}
+
+#[test]
+fn only_cycles_states_inside_a_cycle_and_it_never_locks() {
+    for mode in [ProtoOrderMode::Off, ProtoOrderMode::Types, ProtoOrderMode::Cycles, ProtoOrderMode::Lock] {
+        assert_eq!(ProtoOrderMode::from_u8(mode.as_u8()), mode);
+        assert_eq!(OptionProtoOrder.apply(mode.as_str()).unwrap().0, mode);
+    }
+    assert!(ProtoOrderMode::Cycles.states_in_cycles());
+    assert!(!ProtoOrderMode::Types.states_in_cycles() && !ProtoOrderMode::Lock.states_in_cycles());
+    assert!(ProtoOrderMode::Cycles.states_types_only() && ProtoOrderMode::Types.states_types_only());
+    assert!(!ProtoOrderMode::Lock.states_types_only());
 }
 
 #[test]
@@ -478,4 +492,23 @@ fn strides_combine_by_their_common_divisor() {
     assert_eq!(gcd(24, 16), 8);
     assert_eq!(gcd(-8, 12), 4);
     assert_eq!(gcd(0, 0), 0);
+}
+
+fn named_struct(name: &str) -> Rc<Datatype> {
+    let mut t = Datatype::new(0x28, type_metatype::TYPE_STRUCT);
+    t.name = name.to_string();
+    Rc::new(t)
+}
+
+/// The convergence sweep forgets a statement that names a superseded structure
+/// at any pointer depth, and nothing else: `struct_1` does not answer for
+/// `struct_10`.
+#[test]
+fn a_statement_naming_a_superseded_structure_is_recognised_through_pointers() {
+    let stale = vec!["struct_1".to_string()];
+    assert!(names_type(&ptr_to(named_struct("struct_1")), &stale));
+    assert!(names_type(&ptr_to(ptr_to(named_struct("struct_1"))), &stale));
+    assert!(!names_type(&ptr_to(named_struct("struct_10")), &stale));
+    assert!(!names_type(&int8(), &stale));
+    assert!(!names_type(&ptr_to(named_struct("struct_1")), &[]));
 }

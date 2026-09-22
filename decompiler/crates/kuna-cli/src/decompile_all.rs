@@ -1656,8 +1656,9 @@ pub(crate) fn decompile_callee_first(
         prog.arch_mut().kuna_fn_budget =
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
+    let cycles = prog.arch().protoorder.states_in_cycles();
     let plan = match CallGraph::build(prog, &args.binary, args.slice_pref()) {
-        Ok(graph) => callee_first_plan(&graph, &targets),
+        Ok(graph) => callee_first_plan(&graph, &targets, cycles),
         Err(e) => {
             if explicit {
                 eprintln!("warning: --option protoorder: no call graph for {}: {e}", args.binary);
@@ -1680,8 +1681,11 @@ pub(crate) fn decompile_callee_first(
 /// (`converge_synthesized_structs`) for the callee-first order: decompile once
 /// more, in plan order and with each target's own park decision, exactly the
 /// results that name a superseded structure. A redone callee states its survivor
-/// type again before its redone callers read it. Not under `lock`, where a
-/// parked prototype is declared and a second decompile would read its own.
+/// type again before its redone callers read it, and a statement naming a
+/// superseded structure is forgotten before anything is redone, so no redo reads
+/// one: not a recursive function's own, and not a cycle partner planned after it.
+/// Not under `lock`, where a parked prototype is declared and a second decompile
+/// would read its own.
 fn converge_callee_first(
     prog: &mut ConsoleProgram,
     targets: &[FunctionEntry],
@@ -1696,6 +1700,7 @@ fn converge_callee_first(
     if stale.is_empty() {
         return;
     }
+    kuna_decomp::kuna_protoorder::forget_statements_naming(prog.arch_mut(), &stale);
     for &(index, park) in plan {
         if !slots[index].as_ref().is_some_and(|r| kuna_console::project::names_any_type(r, &stale)) {
             continue;
@@ -1715,12 +1720,13 @@ fn converge_callee_first(
 /// output order is already reverse-topological — a component is emitted only
 /// once everything it calls has been.  Roots and neighbours are walked in
 /// ascending address order and the members of one component are emitted in
-/// ascending address order, so the plan is a function of the program alone.
+/// ascending address order (in [`cycle_order`] under `cycles`), so the plan is a
+/// function of the program alone.
 ///
 /// A component with more than one member, and a function that calls itself, are
-/// recursion: "callees first" has no meaning inside a cycle, so every member
-/// decompiles with nothing parked (`Decline::Scc`).
-fn callee_first_plan(graph: &CallGraph, targets: &[FunctionEntry]) -> Vec<(usize, bool)> {
+/// recursion, where "callees first" has no meaning.  Unless `cycles`, every
+/// member decompiles with nothing parked (`Decline::Scc`).
+fn callee_first_plan(graph: &CallGraph, targets: &[FunctionEntry], cycles: bool) -> Vec<(usize, bool)> {
     let mut index_of: BTreeMap<u64, usize> = BTreeMap::new();
     for (i, t) in targets.iter().enumerate() {
         index_of.entry(t.addr.get_offset()).or_insert(i);
@@ -1743,11 +1749,86 @@ fn callee_first_plan(graph: &CallGraph, targets: &[FunctionEntry]) -> Vec<(usize
         out.dedup();
         edges[i] = out;
     }
-    let (order, component_size) = tarjan_scc(&edges);
-    order
-        .into_iter()
-        .map(|i| (i, component_size[i] == 1 && !self_recursive[i]))
-        .collect()
+    plan_from_components(&edges, &self_recursive, cycles)
+}
+
+/// [`callee_first_plan`] over the call edges (self-calls removed and recorded
+/// in `self_recursive`).
+///
+/// With `cycles`, every function parks.  The members of a component with more
+/// than one are decompiled once each, in [`cycle_order`], and each states its
+/// types as it finishes, so a member decompiled later and every caller outside
+/// the component read them.  An earlier member does not see a later one's
+/// statement: a second round was measured and costs far more than it recovers
+/// (docs/spec/04-calls-and-prototypes.md).
+fn plan_from_components(edges: &[Vec<usize>], self_recursive: &[bool], cycles: bool) -> Vec<(usize, bool)> {
+    let (order, component_size) = tarjan_scc(edges);
+    if !cycles {
+        return order.into_iter().map(|i| (i, component_size[i] == 1 && !self_recursive[i])).collect();
+    }
+    let mut component = vec![0usize; edges.len()];
+    let mut at = 0;
+    while at < order.len() {
+        let n = component_size[order[at]];
+        for &m in &order[at..at + n] {
+            component[m] = at;
+        }
+        at += n;
+    }
+    let mut entered = vec![false; edges.len()];
+    for (u, out) in edges.iter().enumerate() {
+        for &v in out {
+            if component[u] != component[v] {
+                entered[v] = true;
+            }
+        }
+    }
+    let mut plan: Vec<(usize, bool)> = Vec::with_capacity(order.len());
+    let mut at = 0;
+    while at < order.len() {
+        let n = component_size[order[at]];
+        let members = &order[at..at + n];
+        at += n;
+        if n == 1 {
+            plan.push((members[0], true));
+        } else {
+            plan.extend(cycle_order(members, edges, &entered).into_iter().map(|m| (m, true)));
+        }
+    }
+    plan
+}
+
+/// The decompile order inside one recursive component (`members` ascending).
+///
+/// A depth-first walk over the component's own edges that emits each member
+/// after the partners it reaches, started first from the members something
+/// outside the component calls.  Only a call back to a member already on the
+/// walk is left unanswered, and a member called from outside -- the one the
+/// component's callers read -- decompiles after the partners it reaches.
+fn cycle_order(members: &[usize], edges: &[Vec<usize>], entered: &[bool]) -> Vec<usize> {
+    let inside: BTreeSet<usize> = members.iter().copied().collect();
+    let roots = members.iter().filter(|&&m| entered[m]).chain(members.iter().filter(|&&m| !entered[m]));
+    let mut seen: BTreeSet<usize> = BTreeSet::new();
+    let mut out: Vec<usize> = Vec::with_capacity(members.len());
+    for &root in roots {
+        if !seen.insert(root) {
+            continue;
+        }
+        let mut work: Vec<(usize, usize)> = vec![(root, 0)];
+        while let Some(&mut (v, ref mut edge)) = work.last_mut() {
+            if *edge < edges[v].len() {
+                let w = edges[v][*edge];
+                *edge += 1;
+                if inside.contains(&w) && seen.insert(w) {
+                    work.push((w, 0));
+                }
+                continue;
+            }
+            work.pop();
+            out.push(v);
+        }
+    }
+    out
 }
 
 /// Tarjan's SCC over `edges`, iteratively (a 100k-function binary would
@@ -2964,6 +3045,53 @@ fn var_json(v: &VarInfo) -> Json {
             ),
         ),
     ])
+}
+
+#[cfg(test)]
+mod callee_first_plan_tests {
+    use super::*;
+
+    #[test]
+    fn a_chain_decompiles_callees_first_and_every_step_parks() {
+        let edges = vec![vec![1], vec![2], vec![]];
+        for cycles in [false, true] {
+            assert_eq!(plan_from_components(&edges, &[false; 3], cycles), vec![(2, true), (1, true), (0, true)]);
+        }
+    }
+
+    #[test]
+    fn a_function_that_calls_itself_parks_only_under_cycles() {
+        let edges = vec![vec![1], vec![]];
+        let recursive = [false, true];
+        assert_eq!(plan_from_components(&edges, &recursive, false), vec![(1, false), (0, true)]);
+        assert_eq!(plan_from_components(&edges, &recursive, true), vec![(1, true), (0, true)]);
+    }
+
+    #[test]
+    fn a_cycle_member_called_from_outside_decompiles_after_its_partner() {
+        // 2 calls 0; 0 and 1 call each other.
+        let edges = vec![vec![1], vec![0], vec![0]];
+        assert_eq!(plan_from_components(&edges, &[false; 3], false), vec![(0, false), (1, false), (2, true)]);
+        assert_eq!(plan_from_components(&edges, &[false; 3], true), vec![(1, true), (0, true), (2, true)]);
+    }
+
+    #[test]
+    fn every_member_of_a_larger_cycle_decompiles_once_before_its_callers() {
+        // 3 calls 0; 0 -> 1 -> 2 -> 0, and 2 also calls 1.
+        let edges = vec![vec![1], vec![2], vec![0, 1], vec![0]];
+        assert_eq!(
+            plan_from_components(&edges, &[false; 4], true),
+            vec![(2, true), (1, true), (0, true), (3, true)]
+        );
+    }
+
+    #[test]
+    fn the_cycle_order_starts_from_the_members_called_from_outside() {
+        let edges = vec![vec![1], vec![0], vec![]];
+        assert_eq!(cycle_order(&[0, 1], &edges, &[false, true, false]), vec![0, 1]);
+        assert_eq!(cycle_order(&[0, 1], &edges, &[true, false, false]), vec![1, 0]);
+        assert_eq!(cycle_order(&[0, 1], &edges, &[false, false, false]), vec![1, 0]);
+    }
 }
 
 #[cfg(test)]

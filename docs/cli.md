@@ -1061,21 +1061,37 @@ to 876,577 bytes / 2.5 s**, with the answer still inside it. Adding `--min-size
 `decompile-all` used to decompile in address order, so each function was typed
 from its own evidence and what one function recovered about its parameters never
 reached the calls to it. It now orders the run by the call graph — callees before
-callers, cycles broken by address — and each callee states the types its own
-recovery found for the callers still ahead of it, so a call's arguments carry the
-types the callee actually has. The output is still emitted in address order; only
-the decompile order changes.
+callers — and each callee states the types its own recovery found for the callers
+still ahead of it, so a call's arguments carry the types the callee actually has.
+The output is still emitted in address order; only the decompile order changes.
 
 ```bash
 kuna decompile-all ./fmt | grep sub_3700          # unsigned long sub_3700(FILE *a0,char *a1)
 kuna decompile-all ./fmt --option protoorder off  # unsigned long sub_3700(FILE *a0,unsigned long a1)
 ```
 
-The default value is `types`, which states ONLY types: nothing is locked and no
-call gains or loses an argument, so the shape of every call is what `--option
-protoorder off` renders. A stated type is one more vote about the value passed,
-not a declaration the argument is converted to: where the caller's own evidence
-wins, the argument renders exactly as it does with the option off. Where the vote
+The default value is `cycles`, which states ONLY types: nothing is locked, so no
+call gains an argument and every call recovers its own argument list as `--option
+protoorder off` does. The one argument a call can lose is a trailing register
+argument that `argclobber` (on by default) drops when the callee's stated list and
+its body both say nothing reads that register; under `cycles` that can now happen
+at a call to a recursive function too.
+
+A recursive function states its types too: a cycle has no callee-first order, so
+its members are decompiled once each, the ones something outside the cycle calls
+last, and each states what it recovered as it finishes.
+`--option protoorder types` is the same without recursive functions, which then
+state nothing, so every caller of a self-recursive string walker such as gnulib's
+`quotearg_buffer_restyled` keeps an integer where the walker takes a `char *`:
+
+```bash
+kuna decompile-all ./cp | grep 'sub_a6db('                            # void sub_a6db(char *a0,char *a1,char *a2)
+kuna decompile-all ./cp --option protoorder types | grep 'sub_a6db('  # void sub_a6db(unsigned long a0,unsigned long a1,long a2)
+```
+
+A stated type is one more vote about the value passed, not a declaration the
+argument is converted to: where the caller's own evidence wins, the argument
+renders exactly as it does with the option off. Where the vote
 wins, the spelling can change beyond the type: a constant it makes a pointer
 prints with a cast (`caller((unsigned char *)0x402000,3)`), a character pointee
 it guesses can split a wide constant store into character stores of the same

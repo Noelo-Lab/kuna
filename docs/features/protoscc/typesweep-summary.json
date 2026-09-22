@@ -1,0 +1,97 @@
+{
+ "projects": {
+  "bzip2": {
+   "n": 267,
+   "perfect_off": 31,
+   "perfect_on": 31,
+   "mean_off": 0.4097,
+   "mean_on": 0.4097,
+   "improved": 0,
+   "worse": 0
+  },
+  "coreutils": {
+   "n": 6422,
+   "perfect_off": 880,
+   "perfect_on": 898,
+   "mean_off": 0.3352,
+   "mean_on": 0.3383,
+   "improved": 99,
+   "worse": 1
+  },
+  "diffutils": {
+   "n": 420,
+   "perfect_off": 58,
+   "perfect_on": 58,
+   "mean_off": 0.4325,
+   "mean_on": 0.4325,
+   "improved": 0,
+   "worse": 0
+  },
+  "findutils": {
+   "n": 790,
+   "perfect_off": 41,
+   "perfect_on": 47,
+   "mean_off": 0.2201,
+   "mean_on": 0.2327,
+   "improved": 29,
+   "worse": 0
+  },
+  "grep": {
+   "n": 247,
+   "perfect_off": 51,
+   "perfect_on": 51,
+   "mean_off": 0.4404,
+   "mean_on": 0.4404,
+   "improved": 0,
+   "worse": 0
+  },
+  "gzip": {
+   "n": 368,
+   "perfect_off": 102,
+   "perfect_on": 102,
+   "mean_off": 0.5197,
+   "mean_on": 0.5197,
+   "improved": 0,
+   "worse": 0
+  },
+  "shadow": {
+   "n": 686,
+   "perfect_off": 32,
+   "perfect_on": 32,
+   "mean_off": 0.3012,
+   "mean_on": 0.3012,
+   "improved": 0,
+   "worse": 0
+  },
+  "tar": {
+   "n": 1548,
+   "perfect_off": 158,
+   "perfect_on": 180,
+   "mean_off": 0.3524,
+   "mean_on": 0.3619,
+   "improved": 34,
+   "worse": 0
+  }
+ },
+ "pooled": {
+  "n": 10748,
+  "perfect_off": 1353,
+  "perfect_on": 1399,
+  "aggregate_off": 3669.96,
+  "aggregate_on": 3714.21,
+  "mean_off": 0.3415,
+  "mean_on": 0.3456,
+  "improved": 162,
+  "worse": 1
+ },
+ "classes": {
+  "ptr_char": {
+   "gt": 14587,
+   "tp_off": 4232,
+   "tp_on": 4423,
+   "gained": 192,
+   "lost": 1
+  }
+ },
+ "unjoined_gt_vars": 0
+}

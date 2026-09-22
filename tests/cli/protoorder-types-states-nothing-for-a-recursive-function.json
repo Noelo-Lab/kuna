@@ -1,0 +1,45 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-9fac4a10ac03",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "protoorder",
+    "types"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cycles_x86_64",
+    "binary_sha256": "6a45512de067c0fb7e56097c5cd3c0dbd7c605e113c4ff3a4d23b5d5767570ff",
+    "binary_size": 9168,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cycles_x86_64",
+    "selector": "wrap",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void wrap\\(unsigned long a0\\)",
+      "void wrap2\\(unsigned long a0\\)",
+      "  rtarget\\(a0,5,v3\\);",
+      "  rkeep\\(a0,5,v3\\);"
+    ],
+    "stdout_absent": [
+      "void wrap\\(char \\*a0\\)",
+      "void wrap2\\(char \\*a0\\)"
+    ]
+  },
+  "notes": "The option-off arm of protoorder-cycles-types-the-callers-of-a-recursive-function: under `protoorder types` a function in a recursive component states nothing, so the callers of `strwalk` and `even` keep an integer parameter and `argclobber` has no recovered list to read at `rtarget`, whose caller keeps the clobbered argument."
+}

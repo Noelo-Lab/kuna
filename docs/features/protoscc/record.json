@@ -1,0 +1,320 @@
+{
+ "slug": "protoscc",
+ "option": "protoorder",
+ "values": "off|types|cycles|lock",
+ "default_value": "cycles",
+ "previous_default": "types",
+ "default_on": true,
+ "change_kind": "analysis-enablement",
+ "tier": "transform",
+ "phase": "P4",
+ "subphase": "prototype-source",
+ "source_decompiler": "angr",
+ "base_commit": "2888a2a94 (origin/main)",
+ "modules": [
+  "decompiler/crates/kuna-cli/src/decompile_all.rs (callee_first_plan, plan_from_components, cycle_order)",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs (ProtoOrderMode::Cycles)",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs (forget_statements_naming, seed_protoorder_types: no function reads its own statement)",
+  "decompiler/crates/kuna-cli/src/decompile_all.rs (converge_callee_first: forget stale statements before the sweep)"
+ ],
+ "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cycles_x86_64 (sha256 6a45512de067c0fb7e56097c5cd3c0dbd7c605e113c4ff3a4d23b5d5767570ff)",
+ "probes": [
+  "tests/cli/protoorder-cycles-types-the-callers-of-a-recursive-function.json",
+  "tests/cli/protoorder-types-states-nothing-for-a-recursive-function.json"
+ ],
+ "stage_test": "none: the stage harness's console path never parks (park_recovered_proto is written true only by the whole-program drivers); the two-pass coverage is the CLI probe pair, as for protoorder itself",
+ "witness": {
+  "binary": "results/full_run_address_2026-09-11/O0/coreutils/stripped/cp",
+  "types": [
+   "void sub_a6db(unsigned long a0,unsigned long a1,long a2)",
+   "void * sub_185de(int a0,unsigned long a1,unsigned long a2,struct_0 *a3)"
+  ],
+  "cycles": [
+   "void sub_a6db(char *a0,char *a1,char *a2)",
+   "void * sub_185de(int a0,char *a1,unsigned long a2,struct_0 *a3)"
+  ]
+ },
+ "design": {
+  "order": "Tarjan components; a larger component's members once each in a depth-first order over the component's own edges, roots = members called from outside the component then the rest, each member after the partners it reaches",
+  "second_round": "rejected: +0.39 aggregate type_match (5 more improved, 0 more perfect) for about +35% on bash -O2 (single whole-binary runs: types 108.9 s and 112.4 s, re-pass 149.5 s; the parser and executor are one component, each ~11-12 s per decompile, and both are decompiled twice)",
+  "arms": {
+   "types": {
+    "perfect": 1353,
+    "aggregate": 3669.96
+   },
+   "cycles_one_pass": {
+    "perfect": 1399,
+    "aggregate": 3714.21,
+    "improved": 162,
+    "worse": 1
+   },
+   "cycles_repass": {
+    "perfect": 1399,
+    "aggregate": 3714.6,
+    "improved": 167,
+    "worse": 1
+   },
+   "experiment_all_address_order_on_ce008ce2b": {
+    "perfect_delta": 46,
+    "aggregate_delta": 43.72
+   }
+  }
+ },
+ "benchmark": {
+  "corpus": "frozen decbench corpus (results/full_run_address_2026-09-11), 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x; O0 O2 O2-noinline), metric pinned to decbench 625e892, DECBENCH_NO_CACHE=1, scripts.decbench.typesweep --option protoorder cycles --dump-decisions on a build whose default was types (output byte-identical to this branch's)",
+  "metric": "type_match",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 31,
+    "perfect_on": 31,
+    "mean_off": 0.4097,
+    "mean_on": 0.4097,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 880,
+    "perfect_on": 898,
+    "mean_off": 0.3352,
+    "mean_on": 0.3383,
+    "improved": 99,
+    "worse": 1
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 58,
+    "perfect_on": 58,
+    "mean_off": 0.4325,
+    "mean_on": 0.4325,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 41,
+    "perfect_on": 47,
+    "mean_off": 0.2201,
+    "mean_on": 0.2327,
+    "improved": 29,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 51,
+    "perfect_on": 51,
+    "mean_off": 0.4404,
+    "mean_on": 0.4404,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 102,
+    "perfect_on": 102,
+    "mean_off": 0.5197,
+    "mean_on": 0.5197,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 32,
+    "perfect_on": 32,
+    "mean_off": 0.3012,
+    "mean_on": 0.3012,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 158,
+    "perfect_on": 180,
+    "mean_off": 0.3524,
+    "mean_on": 0.3619,
+    "improved": 34,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1353,
+   "perfect_on": 1399,
+   "aggregate_off": 3669.96,
+   "aggregate_on": 3714.21,
+   "mean_off": 0.3415,
+   "mean_on": 0.3456,
+   "improved": 162,
+   "worse": 1
+  },
+  "classes": {
+   "ptr_char": {
+    "gt": 14587,
+    "tp_off": 4232,
+    "tp_on": 4423,
+    "gained": 192,
+    "lost": 1
+   }
+  },
+  "worse_rows": [
+   {
+    "slice": "coreutils::O2::ginstall",
+    "function": "install_file_in_file",
+    "off": 0.16,
+    "on": 0.12,
+    "why": "to_relname char * -> stat *: copy_internal (in a cycle with copy_dir) recovers dst_relname as stat * under both values; cycles lets it state that, copy() and then install_file_in_file take it"
+   }
+  ],
+  "lander_note": "the default is now cycles: re-measure with --option protoorder types as the OLD arm (a plain typesweep --option protoorder cycles compares the default with itself)"
+ },
+ "arity": {
+  "binaries": 15,
+  "call_arguments": {
+   "types": 90420,
+   "cycles": 90420
+  },
+  "arg_rows": {
+   "types": 18556,
+   "cycles": 18556
+  },
+  "phantom_args": {
+   "types": 342,
+   "cycles": 342
+  },
+  "calls_lost": 0,
+  "calls_gained": 0,
+  "argclobber_touched_functions": {
+   "types": 1,
+   "cycles": 1,
+   "same_set": true
+  }
+ },
+ "corpus_diff": {
+  "instrument": "docs/features/protoorder/corpus-diff.py + invariants.py + callsite-metrics.py; REVIEW rows read by hand (review-labels.json)",
+  "functions_total": 10288,
+  "functions_changed": 708,
+  "classes": {
+   "casts": 295,
+   "declarations": 280,
+   "struct-number": 80,
+   "literal": 19,
+   "member-reach": 19,
+   "pointer-arith": 3,
+   "merge": 1,
+   "REVIEW": 11
+  },
+  "review_labels": {
+   "member-reach": 4,
+   "regroup": 3,
+   "store-width": 2,
+   "pointer-arith": 1,
+   "wrong-callee-vote": 1
+  },
+  "frame": {
+   "stack_objects_split": 0,
+   "stack_objects_merged": 0,
+   "locals_read_never_written": 0,
+   "locals_first_used_as_read": 0
+  }
+ },
+ "argclobber": {
+  "counterexamples_unchanged": [
+   "ce-forward-thunk",
+   "ce-forward-thunk-2frame",
+   "ce-forward-thunk-2param",
+   "ce-remainder-or-pair",
+   "ce-probe-budget.c",
+   "ce-probe-budget.s",
+   "ce-import",
+   "argclobber_import_x86_64",
+   "argclobber_thunk_x86_64",
+   "argclobber_pair_x86_64",
+   "argclobber_x86_64"
+  ],
+  "recursive_counterexamples": {
+   "ce-rec-forward.c": "fwd states (rdi,rsi); caller keeps sub_1190(0x4018,v1,a2)",
+   "ce-rec-mutual.c": "wrapa/wrapb state 2 params each; caller keeps sub_11f0(0x4018,v1,a2)",
+   "ce-rec-pair.s": "a states params=2, b params=3; caller keeps its third argument"
+  },
+  "fixture": "rtarget writes rdx before recursing: rtarget(a0,5,v3) -> rtarget(a0,5); rkeep forwards rdx: rkeep(a0,5,v3) in both"
+ },
+ "speed": {
+  "method": "docs/features/protoscc/speed.py: one build of this branch, whole-binary `kuna decompile-all --json --max-fn-seconds 120`, arms `--option protoorder types` and `--option protoorder cycles` rotated inside each iteration, min and median of 15 (box load 15-64)",
+  "budget_pct": 5,
+  "slices": {
+   "fmt -O2": {
+    "types_min_ms": 5306.1,
+    "cycles_min_ms": 5230.7,
+    "types_median_ms": 5988.6,
+    "cycles_median_ms": 6194.5,
+    "delta_min_pct": -1.42,
+    "delta_median_pct": 3.44
+   },
+   "ls -O2": {
+    "types_min_ms": 14690.3,
+    "cycles_min_ms": 14950.3,
+    "types_median_ms": 19236.2,
+    "cycles_median_ms": 18469.1,
+    "delta_min_pct": 1.77,
+    "delta_median_pct": -3.99
+   },
+   "sort -O2": {
+    "types_min_ms": 16484.0,
+    "cycles_min_ms": 15366.2,
+    "types_median_ms": 18044.4,
+    "cycles_median_ms": 17235.7,
+    "delta_min_pct": -6.78,
+    "delta_median_pct": -4.48
+   },
+   "bash -O2": {
+    "types_min_ms": 90780.7,
+    "cycles_min_ms": 95537.8,
+    "types_median_ms": 105390.7,
+    "cycles_median_ms": 102687.0,
+    "delta_min_pct": 5.24,
+    "delta_median_pct": -2.57,
+    "rerun": {
+     "types_min_ms": 93763.0,
+     "cycles_min_ms": 92940.2,
+     "types_median_ms": 101463.9,
+     "cycles_median_ms": 101740.0,
+     "delta_min_pct": -0.88,
+     "delta_median_pct": 0.27,
+     "note": "re-run at a quieter moment (load 15-23) because run 1's +5.24% min exceeded the budget while its median was -2.57% and both arms' samples spread 90-124 s (run 1 overlapped this branch's own rust-test lane)"
+    }
+   }
+  },
+  "worst_min_delta_pct": 1.77,
+  "within_budget": true,
+  "repass_rejected": "a second round over each component: bash -O2 whole-binary 108.9 s / 112.4 s (types) -> 149.5 s (re-pass), about +35%"
+ },
+ "gates": {
+  "base": "origin/main 2888a2a94; 227 settables (count unchanged: a new VALUE, not a new option)",
+  "make test": "datatests: 675/675 assertions passed / PARITY OK",
+  "make test-stages": "datatests: 1296/1296 assertions passed / PARITY OK (nothing re-recorded)",
+  "make test-cli": "tests/cli: 221/221 passed (219 existing + the two new protoorder cycles/types probes)",
+  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh: 7391 passed, 0 failed, 38 ignored",
+  "check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "regenerated with kuna catalog --markdown",
+  "phase_catalog.json": "recaptured (phase catalog, no program loaded)"
+ },
+ "fixture_sweep": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cyclestruct_x86_64 (sha256 7b7ce35c2c064285d759484bb98af47a0b49b0d5590229564c0d844054f20ba0); test kuna-cli/tests/decompile_all_cli.rs a_redone_recursive_function_reads_no_statement_of_its_own (fails on d4b827902)",
+ "sweep_stale_check": {
+  "finding": "review: tar -O2 make_hol (sub_3b0c0), redone by the structsynth sweep under cycles, read its own first-pass statement and passed (struct_54 *)*v22 while its prototype takes struct_59 *",
+  "fix": "seed_protoorder_types skips the function's own entry; converge_callee_first forgets stated lists naming a superseded structure before any redo",
+  "rejected": "rebuilding the stated table in plan order: moved types output (tar -O0 sub_3854d: sub_34a6f(\"-f\") -> sub_34a6f(0x8746d), a callee the call graph plans after its caller)",
+  "binaries": 26,
+  "types_vs_main": "byte-identical on all 26",
+  "cycles_vs_reviewed_head": "identical on 25; tar -O2 sub_3b0c0 loses the stale cast (one line)",
+  "results_naming_a_superseded_structure_after_sweep": {
+   "types": 0,
+   "cycles": 0
+  },
+  "new_stale_argument_casts": 0,
+  "evidence": "docs/features/protoscc/r3c-stale.txt",
+  "typesweep_rerun": "444 slices on this build, base = cycles, test = --option protoorder types: perfect 1,399 vs 1,353, aggregate 3714.21 vs 3669.96, 46 onto / 0 off, 116 improved / 1 worse; every slice scores exactly as in the previous head's run; one slice's variable signature moved (grep -O0 treedelta sub_d7f4, self-recursive and redone: struct_36 * -> struct_22 *, same score)"
+ }
+}

@@ -2350,7 +2350,8 @@ fn jobs_output_is_byte_identical_to_serial() {
     }
 }
 
-/// With the default `protoorder types`, a serial run types `caller`'s argument
+/// With the default `protoorder cycles` (on this acyclic fixture the same as
+/// `types`), a serial run types `caller`'s argument
 /// from `callee`'s own recovery and a pool run cannot: the pool says so on
 /// stderr instead of silently producing a different document.
 #[test]
@@ -2403,6 +2404,92 @@ fn a_narrowed_run_orders_callees_first_only_when_asked() {
     assert!(ok, "{stderr}");
     assert!(stderr.contains("note: --option protoorder: 2 of this binary's entries selected"), "{stderr}");
     assert!(got.contains("caller(unsigned char *a0,int a1)"), "{got}");
+}
+
+/// (kuna `protoorder cycles`) A function that calls itself, or sits in a
+/// two-member cycle, states its recovered types under `cycles` and nothing under
+/// `types`.  The one call whose arity moves is `argclobber`'s drop of a clobbered
+/// trailing argument at a recursive callee whose stated list and body both say
+/// the register is free; a callee that forwards the register into its own
+/// recursion keeps the argument under both values.
+#[test]
+fn recursive_callees_state_their_types_under_cycles() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cycles_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for (value, param, rcall) in [
+        ("types", "(unsigned long a0)", "rtarget(a0,5,v3);"),
+        ("cycles", "(char *a0)", "rtarget(a0,5);"),
+    ] {
+        let (got, stderr, ok) =
+            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value]);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("protoorder cycles: skipping (no `.sla`; run `make specs`): {stderr}");
+                return;
+            }
+            panic!("kuna decompile-all --option protoorder {value} failed: {stderr}");
+        }
+        for f in ["wrap", "wrap2"] {
+            assert!(got.contains(&format!("void {f}{param}")), "{value}: {f}{param} missing:\n{got}");
+        }
+        assert!(got.contains(rcall), "{value}: {rcall} missing:\n{got}");
+        assert!(got.contains("rkeep(a0,5,v3);"), "{value}: rkeep lost its forwarded argument:\n{got}");
+    }
+}
+
+/// (kuna `protoorder cycles` + `structsynth`) The convergence sweep decompiles a
+/// self-recursive function again once a later layout supersedes the structure
+/// its first decompile minted.  The redo must not read the statement that first
+/// decompile made: at its own recursive call it typed the child pointer as the
+/// superseded `struct_0` while its parameter took the survivor.  `walk` names
+/// one structure, the one `look` names too, under both values.
+#[test]
+fn a_redone_recursive_function_reads_no_statement_of_its_own() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cyclestruct_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for value in ["types", "cycles"] {
+        let (got, stderr, ok) =
+            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value]);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("protoorder cyclestruct: skipping (no `.sla`; run `make specs`): {stderr}");
+                return;
+            }
+            panic!("kuna decompile-all --option protoorder {value} failed: {stderr}");
+        }
+        let chunk = |name: &str| -> String {
+            got.split("// Function: ")
+                .find(|c| c.starts_with(&format!("{name} @")))
+                .unwrap_or_else(|| panic!("{value}: no `{name}` in:\n{got}"))
+                .to_string()
+        };
+        let structs = |text: &str| -> std::collections::BTreeSet<String> {
+            let mut out = std::collections::BTreeSet::new();
+            let mut rest = text;
+            while let Some(at) = rest.find("struct_") {
+                let digits: String =
+                    rest[at + 7..].chars().take_while(|c| c.is_ascii_digit()).collect();
+                if !digits.is_empty() {
+                    out.insert(format!("struct_{digits}"));
+                }
+                rest = &rest[at + 7..];
+            }
+            out
+        };
+        let walk = structs(&chunk("walk"));
+        let look = structs(&chunk("look"));
+        assert_eq!(walk.len(), 1, "{value}: walk names more than one structure:\n{}", chunk("walk"));
+        assert_eq!(walk, look, "{value}: walk and look name different structures:\n{got}");
+        assert!(!chunk("walk").contains(" *)"), "{value}: walk casts a pointer:\n{}", chunk("walk"));
+    }
 }
 
 /// The functions of a `decompile-all` document whose headers start with one of

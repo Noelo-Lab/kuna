@@ -138,11 +138,14 @@
 //! whatever the caller's side looks like.
 //!
 //! Requiring that prototype to EXIST carries part of the clause, because
-//! `protoorder` states nothing for a callee inside a recursive component
-//! (`Decline::Scc` — "callees first" has no meaning in a cycle), one with no
-//! recovered body such as a PLT import, one whose recovery produced no
-//! parameters at all, and one whose prototype is already declared (that case
-//! input-locks the call spec, which this rule declines at its first line). A
+//! `protoorder` states nothing for a callee with no recovered body such as a
+//! PLT import, one whose recovery produced no parameters at all, one whose
+//! prototype is already declared (that case input-locks the call spec, which
+//! this rule declines at its first line), and, except under `protoorder
+//! cycles`, one inside a recursive component (`Decline::Scc`). Under `cycles`
+//! a recursive callee states its list like any other, and a member that hands
+//! a register on to a partner is answered by the forwarding walk below, which
+//! follows the partner's body and proves nothing about a cycle it re-enters. A
 //! callee that was never decompiled in this run states nothing either, so a
 //! single-function `kuna decompile`, a narrowed `decompile-all`, a `--jobs N`
 //! run and `--option protoorder off` all leave every call site alone.
@@ -394,10 +397,10 @@ fn clobber_of_this_register_reaches(data: &Funcdata, vn: VarnodeId, addr: &Addre
 ///
 /// `false` is also the answer when `protoorder` parked nothing for this entry.
 /// It states a prototype only for a function it decompiled before this caller,
-/// and refuses for a callee inside a recursive component, one with no recovered
-/// body such as a PLT import, one that recovered no parameters at all, and one
-/// whose prototype is already declared.  "Nothing parked" and "cannot tell" are
-/// the same answer here.
+/// and refuses for a callee with no recovered body such as a PLT import, one
+/// that recovered no parameters at all, one whose prototype is already
+/// declared, and, except under `cycles`, one inside a recursive component.
+/// "Nothing parked" and "cannot tell" are the same answer here.
 fn callee_prototype_is_the_argument_list(
     data: &Funcdata,
     entry: &Address,

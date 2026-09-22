@@ -1,0 +1,111 @@
+{
+ "O0-coreutils-cp": {
+  "changed": 45,
+  "class:casts": 6,
+  "class:declarations": 38,
+  "class:pointer-arith": 1,
+  "functions": 530
+ },
+ "O0-diffutils-diff": {
+  "changed": 27,
+  "class:casts": 4,
+  "class:declarations": 23,
+  "functions": 507
+ },
+ "O0-findutils-find": {
+  "changed": 88,
+  "class:casts": 29,
+  "class:declarations": 55,
+  "class:literal": 2,
+  "class:struct-number": 2,
+  "functions": 862
+ },
+ "O0-tar-tar": {
+  "changed": 206,
+  "class:REVIEW": 2,
+  "class:casts": 63,
+  "class:declarations": 88,
+  "class:literal": 2,
+  "class:member-reach": 3,
+  "class:pointer-arith": 1,
+  "class:struct-number": 47,
+  "functions": 1570
+ },
+ "O2-bash-bash": {
+  "changed": 297,
+  "class:REVIEW": 6,
+  "class:casts": 162,
+  "class:declarations": 70,
+  "class:literal": 15,
+  "class:member-reach": 15,
+  "class:merge": 1,
+  "class:pointer-arith": 1,
+  "class:struct-number": 27,
+  "functions": 2538
+ },
+ "O2-chibios-ch": {
+  "changed": 2,
+  "class:struct-number": 2,
+  "functions": 398
+ },
+ "O2-coreutils-fmt": {
+  "functions": 151
+ },
+ "O2-coreutils-ls": {
+  "changed": 7,
+  "class:casts": 6,
+  "class:member-reach": 1,
+  "functions": 404
+ },
+ "O2-coreutils-sort": {
+  "changed": 2,
+  "class:REVIEW": 1,
+  "class:casts": 1,
+  "functions": 343
+ },
+ "O2-freertos-RTOSDemo": {
+  "changed": 1,
+  "class:casts": 1,
+  "functions": 126
+ },
+ "O2-grep-grep": {
+  "changed": 2,
+  "class:REVIEW": 1,
+  "class:casts": 1,
+  "functions": 449
+ },
+ "O2-gzip-gzip": {
+  "functions": 204
+ },
+ "O2-noinline-coreutils-cp": {
+  "changed": 2,
+  "class:casts": 2,
+  "functions": 540
+ },
+ "O2-noinline-findutils-find": {
+  "changed": 18,
+  "class:casts": 14,
+  "class:declarations": 2,
+  "class:struct-number": 2,
+  "functions": 874
+ },
+ "O2-nuttx-nuttx": {
+  "changed": 11,
+  "class:REVIEW": 1,
+  "class:casts": 6,
+  "class:declarations": 4,
+  "functions": 792
+ },
+ "TOTAL": {
+  "changed": 708,
+  "class:REVIEW": 11,
+  "class:casts": 295,
+  "class:declarations": 280,
+  "class:literal": 19,
+  "class:member-reach": 19,
+  "class:merge": 1,
+  "class:pointer-arith": 3,
+  "class:struct-number": 80,
+  "functions": 10288
+ }
+}

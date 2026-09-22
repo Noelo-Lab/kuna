@@ -4,11 +4,12 @@
 //! `kuna-cli/src/decompile_all.rs`); after each function this module decides what
 //! may be said about it, and at each later call site what a caller may take.
 //!
-//! `types` (the default) records the recovered parameter types against the
-//! storage they were recovered in ([`RecoveredTypes`]).  A caller's argument takes
-//! one as a vote in `Varnode::getLocalType`'s fold ([`call_argument_vote`]),
-//! refused wherever the caller holds evidence the fold cannot weigh.  Nothing is
-//! locked, so no call's arity can move.
+//! `types` records the recovered parameter types against the storage they were
+//! recovered in ([`RecoveredTypes`]).  A caller's argument takes one as a vote in
+//! `Varnode::getLocalType`'s fold ([`call_argument_vote`]), refused wherever the
+//! caller holds evidence the fold cannot weigh.  Nothing is locked, so no call's
+//! arity can move.  `cycles` (the default) is `types` for the members of a
+//! call-graph cycle too, which the driver decompiles in an order of its own.
 //!
 //! `lock` parks the recovered prototype on the callee's `FunctionSymbol`, where
 //! `ActionDefaultParams` reads a declared one from ([`park_recovered`]).  That
@@ -30,7 +31,9 @@ use crate::p4_calls::fspec::{FuncCallSpecs, FuncProto, PrototypePieces};
 
 /// What a recovered prototype is allowed to say about a call site.
 ///
-/// The two modes differ in ONE thing -- whether the parked prototype can move a
+/// [`ProtoOrderMode::Cycles`] is [`ProtoOrderMode::Types`] with the members of
+/// a recursive component stating their types as well.  `types` and `lock`
+/// differ in ONE thing -- whether the parked prototype can move a
 /// call's ARITY -- and that one thing is the whole difference between a type
 /// recovery and a rewrite of what the program does.
 ///
@@ -60,6 +63,9 @@ pub enum ProtoOrderMode {
     Types,
     /// Callees first; park the recovered prototype as a locked one.
     Lock,
+    /// [`ProtoOrderMode::Types`], and a function in a call-graph cycle states
+    /// its recovered types too, in the order the driver gives the cycle.
+    Cycles,
 }
 
 impl ProtoOrderMode {
@@ -69,6 +75,7 @@ impl ProtoOrderMode {
             ProtoOrderMode::Off => "off",
             ProtoOrderMode::Types => "types",
             ProtoOrderMode::Lock => "lock",
+            ProtoOrderMode::Cycles => "cycles",
         }
     }
 
@@ -77,11 +84,22 @@ impl ProtoOrderMode {
         !matches!(self, ProtoOrderMode::Off)
     }
 
+    /// Does this mode state types only, never the arity?
+    pub fn states_types_only(self) -> bool {
+        matches!(self, ProtoOrderMode::Types | ProtoOrderMode::Cycles)
+    }
+
+    /// May a member of a call-graph cycle state its recovered types?
+    pub fn states_in_cycles(self) -> bool {
+        self == ProtoOrderMode::Cycles
+    }
+
     /// The mode for a `u8` live value (the console's live reader).
     pub fn from_u8(v: u8) -> ProtoOrderMode {
         match v {
             1 => ProtoOrderMode::Types,
             2 => ProtoOrderMode::Lock,
+            3 => ProtoOrderMode::Cycles,
             _ => ProtoOrderMode::Off,
         }
     }
@@ -92,11 +110,12 @@ impl ProtoOrderMode {
             ProtoOrderMode::Off => 0,
             ProtoOrderMode::Types => 1,
             ProtoOrderMode::Lock => 2,
+            ProtoOrderMode::Cycles => 3,
         }
     }
 }
 
-/// (kuna) Parse `option protoorder off|types|lock`.
+/// (kuna) Parse `option protoorder off|types|cycles|lock`.
 pub struct OptionProtoOrder;
 
 impl OptionProtoOrder {
@@ -108,10 +127,11 @@ impl OptionProtoOrder {
         let mode = match p1 {
             "off" => ProtoOrderMode::Off,
             "types" => ProtoOrderMode::Types,
+            "cycles" => ProtoOrderMode::Cycles,
             "lock" => ProtoOrderMode::Lock,
             other => {
                 return Err(kuna_base::error::KunaError::parse(format!(
-                    "Unknown protoorder value: {other} (expected off|types|lock)"
+                    "Unknown protoorder value: {other} (expected off|types|cycles|lock)"
                 )))
             }
         };
@@ -1046,8 +1066,9 @@ pub enum Decline {
     /// one, always.
     Declared,
     /// The function is in a call-graph cycle with more than one member, or calls
-    /// itself: "callees first" has no meaning inside a cycle, so the prototype
-    /// the cycle happens to produce first is not a fact about the program.
+    /// itself: "callees first" has no meaning inside a cycle.  `types` and
+    /// `lock` state nothing there; `cycles` states the types and the driver
+    /// orders the cycle ([`ProtoOrderMode::Cycles`]).
     Scc,
     /// The callee's own body PROVABLY reads the argument register that would
     /// hold its next parameter, so its recovered list is short of what the
@@ -1404,7 +1425,7 @@ pub fn park_recovered(
         return Err(Decline::Declared);
     }
     let (mut pieces, mut storage) = recovered_pieces(proto, name)?;
-    if mode == ProtoOrderMode::Types {
+    if mode.states_types_only() {
         return state_recovered_types(arch, entry, pieces, storage);
     }
     let mut trimmed = 0usize;
@@ -1464,14 +1485,47 @@ fn state_recovered_types(
     if inputs.is_empty() {
         return Err(Decline::VoidVoid);
     }
-    let Some(space) = entry.get_space() else {
+    let Some(key) = stated_key(entry) else {
         return Err(Decline::InvalidStorage);
     };
-    arch.kuna_protoorder_types.insert(
-        (space.get_index(), entry.get_offset()),
-        Rc::new(RecoveredTypes { inputs }),
-    );
+    arch.kuna_protoorder_types.insert(key, Rc::new(RecoveredTypes { inputs }));
     Ok(Recovered { pieces, trimmed: 0 })
+}
+
+/// The key a function's statement is filed under in
+/// `Architecture::kuna_protoorder_types`.
+pub fn stated_key(entry: &Address) -> Option<(int4, uintb)> {
+    Some((entry.get_space()?.get_index(), entry.get_offset()))
+}
+
+/// Forget every statement with a parameter type that names one of `names`,
+/// through any depth of pointer.
+///
+/// The `structsynth` convergence sweep calls this with the superseded structures
+/// before it decompiles anything again.  Such a statement was made before the
+/// survivor existed, and a redo that read it would type an argument with the
+/// structure the redo exists to replace.  A callee the sweep redoes states again.
+pub fn forget_statements_naming(arch: &mut Architecture, names: &[String]) {
+    if names.is_empty() {
+        return;
+    }
+    arch.kuna_protoorder_types
+        .retain(|_, stated| !stated.inputs.iter().any(|(_, _, ct)| names_type(ct, names)));
+}
+
+/// Is `ct`, or what it points at at any depth, named one of `names`?
+fn names_type(ct: &Rc<Datatype>, names: &[String]) -> bool {
+    let mut cur = Rc::clone(ct);
+    for _ in 0..8 {
+        if names.iter().any(|n| n == cur.get_name()) {
+            return true;
+        }
+        match cur.get_ptr_to() {
+            Some(next) => cur = next,
+            None => return false,
+        }
+    }
+    false
 }
 
 /// Copy onto `data` the types every callee it calls stated about itself.
@@ -1483,10 +1537,15 @@ fn state_recovered_types(
 /// `calleedeadarg` and `rustabi` take for their own callee-body probes, and at
 /// the same two points.  A map lookup per call; inert unless `option protoorder
 /// types` is live and a callee was decompiled first.
+///
+/// A function never reads its own statement: at its call to itself the
+/// statement is what an earlier decompile of this same function said, and a
+/// redo exists because that answer changed.
 pub fn seed_protoorder_types(arch: &Architecture, data: &mut crate::substrate::funcdata::Funcdata) {
     if arch.kuna_protoorder_types.is_empty() {
         return;
     }
+    let own = stated_key(data.get_address());
     let mut entries: Vec<Address> = Vec::new();
     for i in 0..data.num_calls() {
         let e = data.get_call_specs(i).get_entry_address().clone();
@@ -1496,8 +1555,11 @@ pub fn seed_protoorder_types(arch: &Architecture, data: &mut crate::substrate::f
         entries.push(e);
     }
     for e in entries {
-        let Some(sp) = e.get_space() else { continue };
-        if let Some(stated) = arch.kuna_protoorder_types.get(&(sp.get_index(), e.get_offset())) {
+        let Some(key) = stated_key(&e) else { continue };
+        if Some(key) == own {
+            continue;
+        }
+        if let Some(stated) = arch.kuna_protoorder_types.get(&key) {
             data.kuna_set_protoorder_types(&e, Rc::clone(stated));
         }
     }
