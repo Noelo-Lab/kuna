@@ -808,7 +808,7 @@ fn option_values_live_value_present_for_94() {
                             // `Architecture::struct_synth`.
                             | "structsynth"
                             // (kuna) `protoorder` takes a MODE
-                            // (`off|types|lock`) over an enum field, for the
+                            // (`off|types|cycles|lock`) over an enum field, for the
                             // same reason.  Its live value is
                             // `Architecture::protoorder`.
                             | "protoorder"

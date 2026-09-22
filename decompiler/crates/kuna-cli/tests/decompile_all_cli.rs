@@ -2405,6 +2405,41 @@ fn a_narrowed_run_orders_callees_first_only_when_asked() {
     assert!(got.contains("caller(unsigned char *a0,int a1)"), "{got}");
 }
 
+/// (kuna `protoorder cycles`) A function that calls itself, or sits in a
+/// two-member cycle, states its recovered types under `cycles` and nothing under
+/// `types`.  The one call whose arity moves is `argclobber`'s drop of a clobbered
+/// trailing argument at a recursive callee whose stated list and body both say
+/// the register is free; a callee that forwards the register into its own
+/// recursion keeps the argument under both values.
+#[test]
+fn recursive_callees_state_their_types_under_cycles() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cycles_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for (value, param, rcall) in [
+        ("types", "(unsigned long a0)", "rtarget(a0,5,v3);"),
+        ("cycles", "(char *a0)", "rtarget(a0,5);"),
+    ] {
+        let (got, stderr, ok) =
+            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value]);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("protoorder cycles: skipping (no `.sla`; run `make specs`): {stderr}");
+                return;
+            }
+            panic!("kuna decompile-all --option protoorder {value} failed: {stderr}");
+        }
+        for f in ["wrap", "wrap2"] {
+            assert!(got.contains(&format!("void {f}{param}")), "{value}: {f}{param} missing:\n{got}");
+        }
+        assert!(got.contains(rcall), "{value}: {rcall} missing:\n{got}");
+        assert!(got.contains("rkeep(a0,5,v3);"), "{value}: rkeep lost its forwarded argument:\n{got}");
+    }
+}
+
 /// The functions of a `decompile-all` document whose headers start with one of
 /// `names`, each `struct_N` typedef and definition that `structdefs` printed
 /// above them kept once and hoisted, so the set compiles as one file.

@@ -3107,6 +3107,72 @@ fn var_json(v: &VarInfo) -> Json {
 }
 
 #[cfg(test)]
+mod callee_first_plan_tests {
+    use super::*;
+
+    fn steps(plan: &[PlanStep]) -> Vec<(usize, bool, Vec<usize>)> {
+        plan.iter().map(|s| (s.index, s.park, s.again_for.clone())).collect()
+    }
+
+    #[test]
+    fn a_chain_decompiles_callees_first_and_every_step_parks() {
+        let edges = vec![vec![1], vec![2], vec![]];
+        for cycles in [false, true] {
+            let plan = plan_from_components(&edges, &[false; 3], cycles);
+            assert_eq!(steps(&plan), vec![(2, true, vec![]), (1, true, vec![]), (0, true, vec![])]);
+        }
+    }
+
+    #[test]
+    fn a_function_that_calls_itself_parks_only_under_cycles() {
+        let edges = vec![vec![1], vec![]];
+        let recursive = [false, true];
+        let off = plan_from_components(&edges, &recursive, false);
+        assert_eq!(steps(&off), vec![(1, false, vec![]), (0, true, vec![])]);
+        let on = plan_from_components(&edges, &recursive, true);
+        assert_eq!(steps(&on), vec![(1, true, vec![]), (0, true, vec![])]);
+    }
+
+    #[test]
+    fn a_cycle_member_called_from_outside_decompiles_after_its_partner() {
+        // 2 calls 0; 0 and 1 call each other.
+        let edges = vec![vec![1], vec![0], vec![0]];
+        let off = plan_from_components(&edges, &[false; 3], false);
+        assert_eq!(steps(&off), vec![(0, false, vec![]), (1, false, vec![]), (2, true, vec![])]);
+        let on = plan_from_components(&edges, &[false; 3], true);
+        assert_eq!(
+            steps(&on),
+            vec![(1, true, vec![]), (0, true, vec![]), (1, true, vec![0]), (2, true, vec![])]
+        );
+    }
+
+    #[test]
+    fn a_second_decompile_names_only_partners_decompiled_later() {
+        // 3 calls 0; 0 -> 1 -> 2 -> 0, and 2 also calls 1.
+        let edges = vec![vec![1], vec![2], vec![0, 1], vec![0]];
+        let on = plan_from_components(&edges, &[false; 4], true);
+        assert_eq!(
+            steps(&on),
+            vec![
+                (2, true, vec![]),
+                (1, true, vec![]),
+                (0, true, vec![]),
+                (2, true, vec![0, 1]),
+                (3, true, vec![]),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_cycle_order_starts_from_the_members_called_from_outside() {
+        let edges = vec![vec![1], vec![0], vec![]];
+        assert_eq!(cycle_order(&[0, 1], &edges, &[false, true, false]), vec![0, 1]);
+        assert_eq!(cycle_order(&[0, 1], &edges, &[true, false, false]), vec![1, 0]);
+        assert_eq!(cycle_order(&[0, 1], &edges, &[false, false, false]), vec![1, 0]);
+    }
+}
+
+#[cfg(test)]
 mod provenance_json_tests {
     use super::*;
 
