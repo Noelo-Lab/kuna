@@ -1,0 +1,206 @@
+{
+ "opportunity": "At -O0 each C local has its own spill slot. The dataflow folds the stored value into its readers, so framelayout reports the emptied slot from an early pass as the width-only undefinedN while the C body prints the value as char * (or FILE *, passwd *, ...). 805 of the 1,625 ground-truth char * variables Binary Ninja gets and kuna missed on the campaign's 444 slices were such slots.",
+ "test_name": "kuna-console verify_slotptr (two-pass e2e over every function of fauxware) + 6 unit tests in kuna_slotptr/tests.rs + the tests/cli probe pair slotptr-types-a-spilled-string-slot{,-option-off}",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+ "selector": "authenticate",
+ "func_addr": "0x400664",
+ "angr_version": null,
+ "option": "slotptr",
+ "flag": "slot_ptr",
+ "element_id": null,
+ "change_kind": "presentation-default",
+ "tier": "core",
+ "source_decompiler": "binja",
+ "inspiration": "Binary Ninja types each -O0 spill slot from the value stored into it",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "ablation_changed": 0,
+ "parity": "OK",
+ "witness": {
+  "binary": "results/full_run_address_2026-09-11/O0/coreutils/stripped/pinky",
+  "address": "0x3075",
+  "ground_truth": "print_entry: struct passwd *pw; char *comma; char *display_name;",
+  "before": "local_1f0 undefined8, local_1e8 undefined8, local_1e0 undefined8",
+  "after": "local_1f0 passwd *, local_1e8 char *, local_1e0 char *",
+  "emitted_c": "byte-identical in both arms",
+  "in_repo_equivalent": "fauxware authenticate: local_28 / local_20 (the spilled char * arguments) undefined8 -> char *; local_30 (call return-address pushes, non-zero constants) keeps undefined8"
+ },
+ "sweep": {
+  "surface": "kuna decompile-all --json, --option slotptr off vs the new default, every function compared field by field",
+  "binaries": "coreutils fmt/ls/sort at O0 and O2, bash O2, tar O0",
+  "functions": 6265,
+  "functions_with_differing_c": 0,
+  "functions_with_differing_variable_count": 0,
+  "rows_changed": 1979,
+  "rows_changed_in_any_other_way": 0,
+  "classification": {
+   "filler undefinedN -> pointer, same name/offset/size": 1979
+  },
+  "per_binary": {
+   "O0/coreutils/stripped/fmt": {
+    "functions": 191,
+    "rows_changed": 61
+   },
+   "O0/coreutils/stripped/ls": {
+    "functions": 589,
+    "rows_changed": 354
+   },
+   "O0/coreutils/stripped/sort": {
+    "functions": 479,
+    "rows_changed": 229
+   },
+   "O2/coreutils/stripped/fmt": {
+    "functions": 151,
+    "rows_changed": 5
+   },
+   "O2/coreutils/stripped/ls": {
+    "functions": 404,
+    "rows_changed": 12
+   },
+   "O2/coreutils/stripped/sort": {
+    "functions": 343,
+    "rows_changed": 13
+   },
+   "O2/bash/stripped/bash": {
+    "functions": 2538,
+    "rows_changed": 71
+   },
+   "O0/tar/stripped/tar": {
+    "functions": 1570,
+    "rows_changed": 1234
+   }
+  }
+ },
+ "benchmark": {
+  "corpus": "frozen decbench C corpus (results/full_run_address_2026-09-11), 444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow at O0/O2/O2-noinline",
+  "metric": "type_match, decbench pinned at 625e892 (DECBENCH_PIN), DECBENCH_NO_CACHE=1",
+  "arms": "off = --option slotptr off, on = the new default; same build",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 31,
+    "perfect_on": 34,
+    "mean_off": 0.4097,
+    "mean_on": 0.4155,
+    "improved": 6,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 880,
+    "perfect_on": 917,
+    "mean_off": 0.3352,
+    "mean_on": 0.3409,
+    "improved": 182,
+    "worse": 3
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 58,
+    "perfect_on": 63,
+    "mean_off": 0.4325,
+    "mean_on": 0.4445,
+    "improved": 32,
+    "worse": 1
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 102,
+    "perfect_on": 107,
+    "mean_off": 0.5197,
+    "mean_on": 0.527,
+    "improved": 10,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 32,
+    "perfect_on": 86,
+    "mean_off": 0.3012,
+    "mean_on": 0.3545,
+    "improved": 108,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 51,
+    "perfect_on": 51,
+    "mean_off": 0.4404,
+    "mean_on": 0.4458,
+    "improved": 8,
+    "worse": 1
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 41,
+    "perfect_on": 44,
+    "mean_off": 0.2201,
+    "mean_on": 0.223,
+    "improved": 9,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 158,
+    "perfect_on": 170,
+    "mean_off": 0.3524,
+    "mean_on": 0.3635,
+    "improved": 63,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1353,
+   "perfect_on": 1472,
+   "mean_off": 0.3415,
+   "mean_on": 0.3511,
+   "improved": 418,
+   "worse": 5
+  },
+  "aggregate_off": 3669.96,
+  "aggregate_on": 3773.19,
+  "onto_perfect": 120,
+  "off_perfect": 1,
+  "nvars_differ": 0,
+  "class_tp_stack": {
+   "ptr_char": [
+    1506,
+    2133
+   ],
+   "ptr_struct": [
+    108,
+    202
+   ],
+   "ptr_void": [
+    7,
+    13
+   ],
+   "int_u8": [
+    2216,
+    2213
+   ],
+   "int_s8": [
+    958,
+    954
+   ]
+  },
+  "all_tp": [
+   20405,
+   21140
+  ],
+  "worse_rows": [
+   "coreutils O0 shred dorewind",
+   "coreutils O0 tail tail_lines",
+   "coreutils O2 split main",
+   "diffutils O0 diff scan_char_literal",
+   "grep O2 grep main"
+  ],
+  "worse_cause": "each slot takes the type kuna's own C body already gives the stored value, and that type is wrong (pointer difference printed as pointer arithmetic; a register variable merging an lseek result with an errno pointer)"
+ },
+ "speed": null,
+ "gates": null,
+ "files": [],
+ "notes": "JSON surface only. Recording is gated on ArchContext::slot_ptr, so slotptr off does no extra work."
+}

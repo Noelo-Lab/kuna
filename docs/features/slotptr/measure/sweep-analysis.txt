@@ -1,0 +1,77 @@
+errors {'off': 0, 'on': 0}
+off: n=10748 perfect=1353 sum=3669.96 mean=0.3415
+on: n=10748 perfect=1472 sum=3773.19 mean=0.3511
+off->on: improved 418 worse 5 onto-perfect 120 off-perfect 1 agg +103.23
+  nvars differ: 0
+  bzip2@O0                 n=  108 perfect 26->29 imp 6 wor 0 mean 0.6552->0.6694
+  bzip2@O2                 n=   56 perfect 2->2 imp 0 wor 0 mean 0.2484->0.2484
+  bzip2@O2-noinline        n=  103 perfect 3->3 imp 0 wor 0 mean 0.2401->0.2401
+  coreutils@O0             n= 2585 perfect 595->632 imp 160 wor 2 mean 0.4969->0.5105
+  coreutils@O2             n= 1401 perfect 28->28 imp 9 wor 1 mean 0.1586->0.1590
+  coreutils@O2-noinline    n= 2436 perfect 257->257 imp 13 wor 0 mean 0.2652->0.2656
+  diffutils@O0             n=  165 perfect 32->37 imp 22 wor 1 mean 0.5887->0.6154
+  diffutils@O2             n=   97 perfect 9->9 imp 4 wor 0 mean 0.3129->0.3153
+  diffutils@O2-noinline    n=  158 perfect 17->17 imp 6 wor 0 mean 0.3428->0.3453
+  findutils@O0             n=  306 perfect 24->27 imp 9 wor 0 mean 0.3013->0.3088
+  findutils@O2             n=  194 perfect 1->1 imp 0 wor 0 mean 0.1161->0.1161
+  findutils@O2-noinline    n=  290 perfect 16->16 imp 0 wor 0 mean 0.2041->0.2041
+  grep@O0                  n=  101 perfect 29->29 imp 7 wor 0 mean 0.6112->0.6244
+  grep@O2                  n=   52 perfect 3->3 imp 1 wor 1 mean 0.2488->0.2490
+  grep@O2-noinline         n=   94 perfect 19->19 imp 0 wor 0 mean 0.3628->0.3628
+  gzip@O0                  n=  134 perfect 72->77 imp 10 wor 0 mean 0.8000->0.8202
+  gzip@O2                  n=   99 perfect 10->10 imp 0 wor 0 mean 0.3447->0.3447
+  gzip@O2-noinline         n=  135 perfect 20->20 imp 0 wor 0 mean 0.3698->0.3698
+  shadow@O0                n=  270 perfect 25->79 imp 105 wor 0 mean 0.5469->0.6818
+  shadow@O2                n=  131 perfect 3->3 imp 1 wor 0 mean 0.1383->0.1387
+  shadow@O2-noinline       n=  285 perfect 4->4 imp 2 wor 0 mean 0.1433->0.1436
+  tar@O0                   n=  617 perfect 95->107 imp 61 wor 0 mean 0.4940->0.5217
+  tar@O2                   n=  364 perfect 18->18 imp 1 wor 0 mean 0.2306->0.2308
+  tar@O2-noinline          n=  567 perfect 45->45 imp 1 wor 0 mean 0.2766->0.2767
+  WORSE rows:
+    ('coreutils::O0::shred', 'dorewind') 0.500->0.250
+    ('coreutils::O0::tail', 'tail_lines') 1.000->0.875
+    ('coreutils::O2::split', 'main') 0.111->0.099
+    ('diffutils::O0::diff', 'scan_char_literal') 0.857->0.714
+    ('grep::O2::grep', 'main') 0.192->0.179
+class table (TP):
+  ptr_char     reg   n=  7143 off=0 on=0
+  ptr_struct   reg   n=  6078 off=0 on=0
+  ptr_struct   arg   n=  5560 off=366 on=366
+  ptr_char     arg   n=  4186 off=2726 on=2726
+  int_s4       reg   n=  3615 off=0 on=0
+  int_u8       reg   n=  3419 off=0 on=0
+  ptr_char     stack n=  3316 off=1506 on=2133
+  int_s4       arg   n=  2622 off=2414 on=2414
+  ptr_struct   stack n=  2614 off=108 on=202
+  int_s4       stack n=  2551 off=2279 on=2279
+  int_u8       stack n=  2441 off=2216 on=2213
+  ptr_void     arg   n=  2439 off=608 on=608
+  int_u8       arg   n=  1797 off=1686 on=1686
+  struct_val   stack n=  1563 off=505 on=505
+  ptr_ptr      arg   n=  1395 off=496 on=496
+  bool         stack n=  1329 off=852 on=852
+  int_s8       stack n=  1088 off=958 on=954
+  bool         reg   n=  1087 off=0 on=0
+  array_char   stack n=   979 off=190 on=190
+  ptr_prim     arg   n=   902 off=553 on=553
+  int_s8       reg   n=   877 off=0 on=0
+  bool         arg   n=   806 off=526 on=526
+  ptr_void     reg   n=   748 off=0 on=0
+  int_u4       reg   n=   629 off=0 on=0
+  array        stack n=   571 off=145 on=145
+  int_u4       stack n=   553 off=497 on=497
+  int_s8       arg   n=   513 off=490 on=490
+  array_char   reg   n=   469 off=0 on=0
+  int_u4       arg   n=   414 off=374 on=374
+  funcptr      arg   n=   378 off=0 on=0
+  char         reg   n=   354 off=0 on=0
+  ptr_void     stack n=   294 off=7 on=13
+  ptr_ptr      reg   n=   292 off=4 on=4
+  char         stack n=   250 off=230 on=230
+  char         arg   n=   242 off=224 on=224
+  ptr_prim     reg   n=   213 off=0 on=0
+  enum         stack n=   197 off=176 on=176
+  enum         reg   n=   193 off=0 on=0
+  array        reg   n=   179 off=0 on=0
+  float        stack n=   169 off=41 on=41
+all TP {'off': 20405, 'on': 21140}
