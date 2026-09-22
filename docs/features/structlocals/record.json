@@ -372,12 +372,12 @@
  "gates": {
   "make_test": "datatests: 675/675 assertions passed; PARITY OK",
   "make_test_stages": "datatests: 1306/1306 assertions passed; PARITY OK (only new keys STRUCTSYNTH-LOCALS #1-#10)",
-  "make_test_cli": "tests/cli: 221/221 passed (rebased; 219/219 before #710 added two probes)",
+  "make_test_cli": "tests/cli: 221/221 passed (rebased; one run during the rust-test lane failed only the known disassembling-40-instructions-takes wall_ms probe, 220/221, and passed on the quiet re-run)",
   "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
   "catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "rust_test": "RUST_TEST_RC=0 (7379 passed, 0 failed)"
+  "rust_test": "RUST_TEST_RC=0 (7386 passed, 0 failed; lane 08:22:10-08:50:17Z on ddb777fbb, the last .rs/.toml/fixture commit)"
  },
  "default_decision": "flipped param -> locals after the review round: (a) 0/675 datatest assertions move; (b) stages 1306/1306, no assertion of another feature moves, 10 new keys; (c) test-cli 221/221, no probe moves; (d) typesweep on the rebased tree 1,472 -> 1,472, 0 improved / 0 worse, 95 of 65,377 decisions change from undefined8/long */int8 * to struct_N * on a DWARF struct pointer (none replacing a correct pointer), 708 only in numbering, scored variable counts identical; (e) worst min delta +3.43% (sort O2, byte-identical output, A/A control +6.66%); fmt -8.19%, ls -1.28%, bash +1.20%; (f) 29-binary hunks all classified with declarations and casts, none outside the documented effect (hunks.md); (g) modes.rs names no structsynth value (every preset inherits the default)",
  "base": "origin/main 656e6c701 (#710 slotptr); the review-round measurements were taken on 2888a2a94 and the typesweep, hunk sweep and gates re-run after the rebase",
