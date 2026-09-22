@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_226() {
+fn settable_count_is_227() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -162,12 +162,12 @@ fn settable_count_is_226() {
     // +1 for `protoorder` (P4 callee-first recovered parameter types).
     // +1 for `charbyte` (P5 char-pointer byte typing).
     // +1 for `slotptr` (P6 frame-slot pointer typing on the JSON variables surface).
-    assert_eq!(kuna_num_settables(), 226);
-    assert_eq!(SETTABLE_TABLE.len(), 226);
+    assert_eq!(kuna_num_settables(), 227);
+    assert_eq!(SETTABLE_TABLE.len(), 227);
 }
 
 #[test]
-fn tier_counts_are_71_core_91_transform_64_analysis() {
+fn tier_counts_are_72_core_91_transform_64_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -313,7 +313,7 @@ fn tier_counts_are_71_core_91_transform_64_analysis() {
     // core 69 -> 70: +1 for `charbyte` (P5 char-pointer byte typing).
     // core 70 -> 71: +1 for `slotptr` (P6 frame-slot pointer typing on the JSON
     // variables surface).
-    assert_eq!((core, transform, analysis), (71, 91, 64));
+    assert_eq!((core, transform, analysis), (72, 91, 64));
 }
 
 #[test]
@@ -1111,7 +1111,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 217 -> 218: +1 for `mulblob`; its P3 row sits mid-table, so it
     // increments it again.
     // 224 -> 225: +1 for `slotptr`; its P6 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 225);
+    assert_eq!(json.matches("},\n").count(), 226);
 }
 
 #[test]
