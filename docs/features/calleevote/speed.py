@@ -6,7 +6,9 @@ ALL = {"fmt": f"{R}/coreutils/stripped/fmt", "ls": f"{R}/coreutils/stripped/ls",
        "sort": f"{R}/coreutils/stripped/sort", "bash": f"{R}/bash/stripped/bash",
        "dash_O2ni": f"{D}/O2-noinline/dash/stripped/dash", "cmp_O0": f"{D}/O0/diffutils/stripped/cmp",
        "cf2_O2ni": f"{D}/O2-noinline/crazyflie/stripped/cf2.elf",
-       "kmod_O2ni": f"{D}/O2-noinline/kmod/stripped/kmod"}
+       "kmod_O2ni": f"{D}/O2-noinline/kmod/stripped/kmod",
+       "crontab_O2ni": f"{D}/O2-noinline/cronie/stripped/crontab",
+       "dpkgdivert_O2": f"{R}/dpkg/stripped/dpkg-divert"}
 K = sys.argv[1]; N = int(sys.argv[2]); outf = sys.argv[3]
 which = sys.argv[4].split(",") if len(sys.argv) > 4 else list(ALL)
 SP = "/home/mahaloz/kwt/calleevote/specs"

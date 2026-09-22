@@ -391,7 +391,9 @@ pub fn decide_ledger(
             });
             if trace {
                 let seen: Vec<String> = sites.iter().map(|s| match s.args.get(j) {
-                    Some(Some(a)) => format!("{}@{:x}:{}", spell(&a.ct), a.addr.get_offset(), a.size),
+                    Some(Some(a)) => {
+                        format!("{}@{:x}:{}{}", spell(&a.ct), a.addr.get_offset(), a.size, if a.frame { " frame" } else { "" })
+                    }
                     Some(None) => "unread".into(),
                     None => "absent".into(),
                 }).collect();
@@ -484,7 +486,10 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
     if !uncommitted(ct, ptr_size) || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
         return None;
     }
-    if want.frame && crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct) {
+    if want.frame
+        && (std::env::var("KUNA_CV_DROPFRAME").is_ok()
+            || crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct))
+    {
         return None;
     }
     Some(Rc::clone(&want.ct))

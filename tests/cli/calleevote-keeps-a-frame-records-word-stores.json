@@ -41,6 +41,6 @@
       "mkpipe\\(struct_"
     ]
   },
-  "notes": "DEFAULT: main passes &cfg, a frame record whose first member is a char *, to add and drop as a char **. add stores a node through it whose word stores would print one character at a time through a char *, and drop reads cfg->head past the first member, so neither takes char ** and both keep their one-field record; advance(&cursor) only reads and writes *cursor and takes char **. mkpipe hands p to pipe (int *) and keeps int * instead of a one-field record.",
+  "notes": "DEFAULT: main passes &cfg, a frame record whose first member is a char *, as a char **. add writes a node through it whose word stores a char * would split into characters, and drop reads past the first member, so neither takes char **; advance(&cursor) does. mkpipe keeps the int * pipe declares.",
   "probe_id": "a-3a8ba0c13a38"
 }

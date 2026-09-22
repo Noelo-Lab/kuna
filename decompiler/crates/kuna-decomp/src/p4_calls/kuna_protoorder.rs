@@ -452,7 +452,22 @@ enum Reading<'a> {
 pub(crate) fn input_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
     class_of(ct).is_none()
         || family_refuses(data, vn, Reading::Input, ct)
+        || indexes_a_pointer(data, vn)
         || splits_a_wide_constant(data, &value_family(data, vn), ct, 0)
+}
+
+/// Is the value `vn` the index of a pointer addition (`((char *)0x1018)[a0]`,
+/// a constant the recovery took for the pointer)?  The function then adds it
+/// to an address as a number, and a pointer type for it prints as a cast at
+/// every such use (`[(long)a0]`).
+fn indexes_a_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
+    value_family(data, vn).into_iter().any(|v| {
+        data.vbank().get(v).is_some_and(|node| {
+            node.descend_iter().any(|r| {
+                data.obank().get(r).is_some_and(|o| o.code() == OpCode::CPUI_PTRADD && o.get_in(1) == Some(v))
+            })
+        })
+    })
 }
 
 /// (kuna `calleevote`) Is the value `vn` handed to a call whose declared

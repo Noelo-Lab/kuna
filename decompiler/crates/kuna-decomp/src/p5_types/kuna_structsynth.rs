@@ -988,7 +988,7 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
         return false;
     }
     let Some(ct) = vn_type(data, base) else { return false };
-    let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct);
+    let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct, e);
     accepts_record(data, &ct, e, lone)
 }
 
@@ -1238,17 +1238,29 @@ fn is_lone_field(e: &Evidence) -> bool {
 }
 
 /// (kuna `calleevote fields`) Did something outside the function's own reading
-/// give the parameter `base` its pointee `ct`: a declared prototype it is handed
-/// to (`pipe (int *)`), or the type every caller passes, which the input took?
-/// Such a pointee is kept; one the recovery guessed from a load (a callee's
-/// `int *` for a record whose first member is an enum) gives way to a record.
-fn pointee_is_given(data: &Funcdata, base: VarnodeId, ct: &Datatype) -> bool {
-    let untyped = ct
-        .get_ptr_to()
-        .is_none_or(|p| matches!(p.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN));
-    !untyped
-        && (crate::kuna_calleevote::took_stated_type(data, base, ct)
-            || crate::kuna_protoorder::handed_to_a_declared_pointer(data, base))
+/// give the parameter `base` its pointee `ct`, so that its lone field `e` does
+/// not make it a record?  A declared prototype it is handed to (`pipe (int *)`)
+/// always did. The type every caller passes, which the input took, did for a
+/// record, and for a `char **` where the field is one of its elements, a whole
+/// pointer at a multiple of the pointer width (`argv[1]`). An `int` read at offset 4 of a
+/// `char **`, or a word read out of a `char *`, is the function's own evidence
+/// against its callers. A pointee the recovery guessed (a callee's `int *` for
+/// a record whose first member is an enum) gives way too.
+fn pointee_is_given(data: &Funcdata, base: VarnodeId, ct: &Datatype, e: &Evidence) -> bool {
+    let Some(pointee) = ct.get_ptr_to() else { return false };
+    if matches!(pointee.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN) {
+        return false;
+    }
+    if crate::kuna_protoorder::handed_to_a_declared_pointer(data, base) {
+        return true;
+    }
+    let width = pointee.get_size() as intb;
+    let fits = match pointee.get_metatype() {
+        type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION => true,
+        type_metatype::TYPE_PTR => width > 0 && e.slots.iter().all(|(off, s)| s.width as intb == width && off % width == 0),
+        _ => false,
+    };
+    fits && crate::kuna_calleevote::took_stated_type(data, base, ct)
 }
 
 /// (kuna `calleevote fields`) Is `ct` a pointer to a synthesized record that
