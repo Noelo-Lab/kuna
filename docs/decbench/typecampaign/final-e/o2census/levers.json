@@ -1,0 +1,868 @@
+{
+ "O2": {
+  "solo": {
+   "S:struct->void*": 20,
+   "P:void*->int/prim*": 24,
+   "S:struct_N*(credited by #93)": 29,
+   "P:arity-short": 24,
+   "P:T**->int/prim*": 3,
+   "P:other(stack/array_char)": 1,
+   "P:char*->int/void*": 17,
+   "P:other(stack/struct_val)": 2,
+   "S:struct->int/prim-ptr": 11,
+   "S:struct-arg-missing": 1,
+   "P:libc-struct*->other": 9,
+   "P:int32->64-bit": 1,
+   "P:bool->int/uchar": 1,
+   "P:other(arg/funcptr)": 2
+  },
+  "one": {
+   "S:struct->void*": 19,
+   "S:struct_N*(credited by #93)": 29,
+   "P:void*->int/prim*": 2,
+   "P:arity-short": 17,
+   "P:T**->int/prim*": 3,
+   "P:other(stack/array_char)": 1,
+   "P:char*->int/void*": 13,
+   "P:other(stack/struct_val)": 2,
+   "S:struct->int/prim-ptr": 11,
+   "S:struct-arg-missing": 1,
+   "P:libc-struct*->other": 6,
+   "P:int32->64-bit": 1,
+   "P:bool->int/uchar": 1,
+   "P:other(arg/funcptr)": 2
+  },
+  "vars_nonperfect": {
+   "S:struct->int/prim-ptr": 338,
+   "P:int32->64-bit": 88,
+   "U": 13170,
+   "P:stack-slot-missing": 480,
+   "S:struct_N*(credited by #93)": 394,
+   "P:libc-struct*->other": 125,
+   "P:other(stack/array)": 185,
+   "P:bool->int/uchar": 186,
+   "P:char*->int/void*": 475,
+   "P:other(stack/ptr_prim)": 15,
+   "P:T**->int/prim*": 214,
+   "S:struct->void*": 355,
+   "P:other(stack/array_char)": 188,
+   "P:void*->int/prim*": 352,
+   "P:other(arg/funcptr)": 104,
+   "P:other(stack/struct_val)": 259,
+   "S:struct-arg-missing": 86,
+   "P:arity-short": 250,
+   "P:other(stack/int_s4)": 28,
+   "P:other(stack/float)": 8,
+   "P:void*->struct_N*": 220,
+   "P:other(stack/char)": 5,
+   "P:other(arg/ptr_prim)": 50,
+   "P:other(stack/enum)": 6,
+   "P:other(arg/int_u4)": 3,
+   "P:other(stack/ptr_other)": 1,
+   "P:other(stack/int_u8)": 37,
+   "P:other(arg/float)": 3,
+   "P:other(arg/struct_val)": 14,
+   "P:other(arg/int_u8)": 11,
+   "P:other(arg/int_other)": 1,
+   "P:other(stack/int_s8)": 29,
+   "P:other(stack/int_u4)": 13,
+   "P:other(stack/union_val)": 5,
+   "P:other(arg/char)": 2,
+   "P:other(stack/funcptr)": 2,
+   "P:other(arg/int_s4)": 11,
+   "P:other(arg/int_s2)": 1,
+   "P:other(arg/ptr_union)": 7,
+   "P:other(stack/ptr_union)": 3
+  },
+  "ex": {
+   "S:struct->void*": [
+    [
+     1,
+     1,
+     "coreutils::O2::chgrp",
+     "chopt_free"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2::chown",
+     "chopt_free"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2::cp",
+     "dest_info_init"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2::cp",
+     "src_info_init"
+    ]
+   ],
+   "P:void*->int/prim*": [
+    [
+     1,
+     2,
+     "bzip2::O2::bzip2",
+     "default_bzfree"
+    ],
+    [
+     1,
+     3,
+     "bzip2::O2::bzip2",
+     "default_bzalloc"
+    ],
+    [
+     2,
+     2,
+     "coreutils::O2::chcon",
+     "raw_comparator"
+    ],
+    [
+     2,
+     2,
+     "coreutils::O2::chgrp",
+     "raw_comparator"
+    ]
+   ],
+   "S:struct_N*(credited by #93)": [
+    [
+     1,
+     1,
+     "coreutils::O2::chcon",
+     "hash_reset_tuning"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2::chgrp",
+     "chopt_init"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2::chgrp",
+     "hash_reset_tuning"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2::chmod",
+     "hash_reset_tuning"
+    ]
+   ],
+   "P:arity-short": [
+    [
+     1,
+     1,
+     "bzip2::O2::bzip2",
+     "BZ2_bzflush"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2::dd",
+     "siginfo_handler"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2::timeout",
+     "chld"
+    ],
+    [
+     1,
+     1,
+     "gzip::O2::gzip",
+     "gzip_base_name"
+    ]
+   ],
+   "P:T**->int/prim*": [
+    [
+     1,
+     1,
+     "coreutils::O2::expand",
+     "set_file_list"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2::unexpand",
+     "set_file_list"
+    ],
+    [
+     1,
+     2,
+     "diffutils::O2::diff",
+     "print_1_line"
+    ]
+   ],
+   "P:other(stack/array_char)": [
+    [
+     1,
+     2,
+     "coreutils::O2::du",
+     "print_only_size"
+    ]
+   ],
+   "P:char*->int/void*": [
+    [
+     1,
+     1,
+     "coreutils::O2::sort",
+     "add_temp_dir"
+    ],
+    [
+     1,
+     1,
+     "diffutils::O2::diff",
+     "set_color_palette"
+    ],
+    [
+     1,
+     1,
+     "gzip::O2::gzip",
+     "gzip_error"
+    ],
+    [
+     1,
+     1,
+     "gzip::O2::gzip",
+     "warning"
+    ]
+   ],
+   "P:other(stack/struct_val)": [
+    [
+     1,
+     1,
+     "coreutils::O2::sort",
+     "exit_cleanup"
+    ],
+    [
+     1,
+     1,
+     "tar::O2::tar",
+     "compute_duration"
+    ]
+   ],
+   "S:struct->int/prim-ptr": [
+    [
+     1,
+     1,
+     "diffutils::O2::diff",
+     "pr_forward_ed_script"
+    ],
+    [
+     1,
+     1,
+     "diffutils::O2::diff",
+     "print_ed_script"
+    ],
+    [
+     1,
+     1,
+     "diffutils::O2::diff",
+     "print_normal_script"
+    ],
+    [
+     1,
+     1,
+     "diffutils::O2::diff",
+     "print_rcs_script"
+    ]
+   ],
+   "S:struct-arg-missing": [
+    [
+     1,
+     1,
+     "coreutils::O2::tsort",
+     "count_items"
+    ]
+   ],
+   "P:libc-struct*->other": [
+    [
+     1,
+     1,
+     "gzip::O2::gzip",
+     "fseterr"
+    ],
+    [
+     1,
+     1,
+     "shadow::O2::groupmod",
+     "new_sgent"
+    ],
+    [
+     1,
+     2,
+     "diffutils::O2::diff",
+     "groups_letter_value"
+    ],
+    [
+     1,
+     2,
+     "gzip::O2::gzip",
+     "utimens"
+    ]
+   ],
+   "P:int32->64-bit": [
+    [
+     1,
+     1,
+     "gzip::O2::gzip",
+     "dup_safer"
+    ]
+   ],
+   "P:bool->int/uchar": [
+    [
+     1,
+     2,
+     "findutils::O2::find",
+     "looks_like_expression"
+    ]
+   ],
+   "P:other(arg/funcptr)": [
+    [
+     1,
+     1,
+     "findutils::O2::find",
+     "is_exec_in_local_dir"
+    ],
+    [
+     1,
+     3,
+     "tar::O2::tar",
+     "file_removed_diag"
+    ]
+   ]
+  }
+ },
+ "O2-noinline": {
+  "solo": {
+   "S:struct->int/prim-ptr": 41,
+   "S:struct->void*": 143,
+   "P:void*->int/prim*": 104,
+   "P:arity-short": 51,
+   "P:other(arg/char)": 2,
+   "P:bool->int/uchar": 7,
+   "S:struct_N*(credited by #93)": 66,
+   "P:char*->int/void*": 36,
+   "P:other(stack/array_char)": 4,
+   "P:other(stack/int_u4)": 1,
+   "P:T**->int/prim*": 10,
+   "P:int32->64-bit": 21,
+   "P:libc-struct*->other": 20,
+   "P:void*->struct_N*": 24,
+   "P:other(stack/struct_val)": 9,
+   "P:other(arg/struct_val)": 3,
+   "S:struct-arg-missing": 2,
+   "P:other(arg/funcptr)": 3,
+   "P:other(stack/array)": 1,
+   "P:other(arg/ptr_union)": 2
+  },
+  "one": {
+   "S:struct->int/prim-ptr": 38,
+   "S:struct->void*": 141,
+   "P:void*->int/prim*": 4,
+   "P:arity-short": 40,
+   "P:bool->int/uchar": 7,
+   "S:struct_N*(credited by #93)": 65,
+   "P:char*->int/void*": 28,
+   "P:other(stack/array_char)": 4,
+   "P:other(stack/int_u4)": 1,
+   "P:T**->int/prim*": 9,
+   "P:int32->64-bit": 21,
+   "P:libc-struct*->other": 16,
+   "P:other(stack/struct_val)": 8,
+   "P:other(arg/struct_val)": 1,
+   "S:struct-arg-missing": 2,
+   "P:other(arg/funcptr)": 3,
+   "P:other(stack/array)": 1,
+   "P:other(arg/char)": 1,
+   "P:other(arg/ptr_union)": 2
+  },
+  "vars_nonperfect": {
+   "S:struct->int/prim-ptr": 530,
+   "P:char*->int/void*": 697,
+   "U": 12207,
+   "P:stack-slot-missing": 317,
+   "S:struct_N*(credited by #93)": 457,
+   "P:libc-struct*->other": 239,
+   "P:arity-short": 323,
+   "P:T**->int/prim*": 296,
+   "P:other(stack/int_s4)": 24,
+   "P:other(stack/array_char)": 212,
+   "P:void*->int/prim*": 525,
+   "P:other(stack/struct_val)": 328,
+   "P:other(stack/float)": 18,
+   "S:struct->void*": 738,
+   "P:other(stack/ptr_prim)": 18,
+   "P:int32->64-bit": 124,
+   "P:other(arg/ptr_prim)": 93,
+   "P:void*->struct_N*": 91,
+   "P:other(stack/array)": 107,
+   "P:other(stack/char)": 5,
+   "P:other(arg/char)": 10,
+   "P:bool->int/uchar": 209,
+   "P:other(arg/funcptr)": 130,
+   "S:struct-arg-missing": 99,
+   "P:other(stack/enum)": 5,
+   "P:other(stack/int_u4)": 5,
+   "P:other(arg/ptr_union)": 13,
+   "P:other(stack/union_val)": 11,
+   "P:other(stack/int_u8)": 29,
+   "P:other(arg/struct_val)": 24,
+   "P:other(arg/int_u4)": 4,
+   "P:other(stack/ptr_other)": 1,
+   "P:other(arg/float)": 9,
+   "P:other(arg/ptr_other)": 3,
+   "P:other(arg/int_other)": 2,
+   "P:other(arg/int_u8)": 14,
+   "P:other(stack/int_s8)": 20,
+   "P:other(arg/enum)": 3,
+   "P:other(arg/int_s4)": 13,
+   "P:other(stack/funcptr)": 3,
+   "P:other(stack/ptr_union)": 4
+  },
+  "ex": {
+   "S:struct->int/prim-ptr": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::cp",
+     "cp_option_init"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::du",
+     "duinfo_init"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::factor",
+     "mp_factor_init"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::join",
+     "initseq"
+    ]
+   ],
+   "S:struct->void*": [
+    [
+     1,
+     1,
+     "bzip2::O2-noinline::bzip2",
+     "BZ2_bsInitWrite"
+    ],
+    [
+     1,
+     1,
+     "bzip2::O2-noinline::bzip2",
+     "bsFinishWrite"
+    ],
+    [
+     1,
+     1,
+     "bzip2::O2-noinline::bzip2",
+     "flush_RL"
+    ],
+    [
+     1,
+     1,
+     "bzip2::O2-noinline::bzip2",
+     "init_RL"
+    ]
+   ],
+   "P:void*->int/prim*": [
+    [
+     1,
+     1,
+     "gzip::O2-noinline::gzip",
+     "nonnull"
+    ],
+    [
+     1,
+     1,
+     "tar::O2-noinline::tar",
+     "diff_init"
+    ],
+    [
+     1,
+     2,
+     "bzip2::O2-noinline::bzip2",
+     "default_bzfree"
+    ],
+    [
+     1,
+     3,
+     "bzip2::O2-noinline::bzip2",
+     "default_bzalloc"
+    ]
+   ],
+   "P:arity-short": [
+    [
+     1,
+     1,
+     "bzip2::O2-noinline::bzip2",
+     "BZ2_bzflush"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::dd",
+     "siginfo_handler"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::dir",
+     "get_stat_btime"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::dir",
+     "stophandler"
+    ]
+   ],
+   "P:other(arg/char)": [
+    [
+     1,
+     1,
+     "diffutils::O2-noinline::diff",
+     "c_escape_char"
+    ],
+    [
+     3,
+     3,
+     "bzip2::O2-noinline::bzip2",
+     "mmed3"
+    ]
+   ],
+   "P:bool->int/uchar": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::[",
+     "three_arguments"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::test",
+     "three_arguments"
+    ],
+    [
+     1,
+     1,
+     "grep::O2-noinline::grep",
+     "skip_devices"
+    ],
+    [
+     1,
+     2,
+     "findutils::O2-noinline::find",
+     "looks_like_expression"
+    ]
+   ],
+   "S:struct_N*(credited by #93)": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::chcon",
+     "hash_reset_tuning"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::chgrp",
+     "chopt_init"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::chgrp",
+     "hash_reset_tuning"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::chmod",
+     "hash_reset_tuning"
+    ]
+   ],
+   "P:char*->int/void*": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::env",
+     "append_unset_var"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::id",
+     "print_stuff"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::sort",
+     "add_temp_dir"
+    ],
+    [
+     1,
+     1,
+     "diffutils::O2-noinline::diff",
+     "set_color_palette"
+    ]
+   ],
+   "P:other(stack/array_char)": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::dd",
+     "alloc_obuf"
+    ],
+    [
+     1,
+     2,
+     "coreutils::O2-noinline::chgrp",
+     "uid_to_str"
+    ],
+    [
+     1,
+     2,
+     "coreutils::O2-noinline::chown",
+     "uid_to_str"
+    ],
+    [
+     1,
+     2,
+     "coreutils::O2-noinline::du",
+     "print_only_size"
+    ]
+   ],
+   "P:other(stack/int_u4)": [
+    [
+     1,
+     4,
+     "coreutils::O2-noinline::cksum",
+     "pclmul_supported"
+    ]
+   ],
+   "P:T**->int/prim*": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::expand",
+     "set_file_list"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::sort",
+     "create_temp"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::unexpand",
+     "set_file_list"
+    ],
+    [
+     1,
+     2,
+     "diffutils::O2-noinline::diff",
+     "print_1_line"
+    ]
+   ],
+   "P:int32->64-bit": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::dir",
+     "format_group_width"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::dir",
+     "format_user_width"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::ls",
+     "format_group_width"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::ls",
+     "format_user_width"
+    ]
+   ],
+   "P:libc-struct*->other": [
+    [
+     1,
+     1,
+     "diffutils::O2-noinline::diff",
+     "set_mtime_to_now"
+    ],
+    [
+     1,
+     1,
+     "gzip::O2-noinline::gzip",
+     "fseterr"
+    ],
+    [
+     1,
+     1,
+     "shadow::O2-noinline::chage",
+     "get_defaults"
+    ],
+    [
+     1,
+     1,
+     "shadow::O2-noinline::groupmod",
+     "new_grent"
+    ]
+   ],
+   "P:void*->struct_N*": [
+    [
+     2,
+     2,
+     "coreutils::O2-noinline::dir",
+     "rev_strcmp_size"
+    ],
+    [
+     2,
+     2,
+     "coreutils::O2-noinline::dir",
+     "rev_strcmp_width"
+    ],
+    [
+     2,
+     2,
+     "coreutils::O2-noinline::dir",
+     "rev_xstrcoll_size"
+    ],
+    [
+     2,
+     2,
+     "coreutils::O2-noinline::dir",
+     "rev_xstrcoll_width"
+    ]
+   ],
+   "P:other(stack/struct_val)": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::sort",
+     "exit_cleanup"
+    ],
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::timeout",
+     "install_sigchld"
+    ],
+    [
+     1,
+     1,
+     "gzip::O2-noinline::gzip",
+     "current_timespec"
+    ],
+    [
+     1,
+     1,
+     "tar::O2-noinline::tar",
+     "compute_duration"
+    ]
+   ],
+   "P:other(arg/struct_val)": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::stat",
+     "neg_to_zero"
+    ],
+    [
+     2,
+     2,
+     "findutils::O2-noinline::find",
+     "ts_difference"
+    ],
+    [
+     2,
+     2,
+     "tar::O2-noinline::tar",
+     "tar_timespec_cmp"
+    ]
+   ],
+   "S:struct-arg-missing": [
+    [
+     1,
+     1,
+     "coreutils::O2-noinline::tsort",
+     "count_items"
+    ],
+    [
+     1,
+     1,
+     "tar::O2-noinline::tar",
+     "oldgnu_sparse_member_p"
+    ]
+   ],
+   "P:other(arg/funcptr)": [
+    [
+     1,
+     1,
+     "findutils::O2-noinline::find",
+     "is_exec_in_local_dir"
+    ],
+    [
+     1,
+     2,
+     "diffutils::O2-noinline::sdiff",
+     "signal_handler"
+    ],
+    [
+     1,
+     3,
+     "tar::O2-noinline::tar",
+     "file_removed_diag"
+    ]
+   ],
+   "P:other(stack/array)": [
+    [
+     1,
+     6,
+     "diffutils::O2-noinline::diff",
+     "format_ifdef"
+    ]
+   ],
+   "P:other(arg/ptr_union)": [
+    [
+     1,
+     1,
+     "tar::O2-noinline::tar",
+     "available_space_after"
+    ],
+    [
+     1,
+     1,
+     "tar::O2-noinline::tar",
+     "set_next_block_after"
+    ]
+   ]
+  }
+ }
+}

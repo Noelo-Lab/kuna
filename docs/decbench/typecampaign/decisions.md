@@ -51,3 +51,19 @@
    4,412 GT variables it makes unmatchable are 98.2% register-only, which no decompiler scores:
    patching a copy of the pinned metric moves kuna by 8 functions and 0.84 aggregate, and does not
    move a single function onto or off perfect. Worth fixing upstream for honesty, not for score.
+17. 2026-09-22 round E: the layout instrument scores only synthesized records, because a libc
+   record is a sized shell with no members in the exported header. When libctypes names a record
+   that structsynth used to synthesize, the parameter leaves the layout join: recall falls while
+   `type_match` and TRex rise. Round E's recall drop (.0929 → .0859) is exactly the nine `obstack *`
+   parameters of ls and sort. Read the layout rows beside the class table, never alone.
+18. 2026-09-22 `charptr` stays `off` and is no longer a flip candidate. After #704 counts a constant
+   `PTRADD` index as a field offset, the option arm is net negative on the 444 slices and the flip
+   still fails `make test-cli`. The measured `char *` levers are protoorder parking the recovered
+   types of recursive functions (+36 to +46 perfect) and typing `framelayout` filler slots.
+19. 2026-09-22 the O2 gap is the metric's ceiling before it is the engine's. At O2 85.8% of scored
+   functions hold a GT variable no stripped decompiler can match; on the reachable ones kuna converts
+   43.8%, level with O0's 43.5%. The next O2 perfects come from decbench first (inlined-callee
+   variables counted as locals: 74 → 153 with no engine change), the way #93 and #94 did.
+20. 2026-09-22 `structsynth nest` ships opt-in although every default criterion passes literally:
+   its gain is 2 nested fields on 10 builds, and a sharded `--jobs 8` run costs +63% because a
+   nested or self field has no portable recipe. The flip waits for a request-relative recipe.
