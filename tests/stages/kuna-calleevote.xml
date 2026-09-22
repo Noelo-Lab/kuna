@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    calleevote: the complete caller set of a function decides its parameters.
+
+    The CLI fixture decompiler/crates/kuna-analysis/tests/fixtures/calleevote_x86_64
+    has a one-field getter called directly:
+
+        long get_cap(const struct table *t) { return t->cap; }
+
+        48 8b 47 18     mov    rax,[rdi+0x18]
+        c3              ret
+
+    NEGATIVE CONTROL. Both halves of the option read what a whole-binary
+    `decompile-all` knows about a function's callers: `types` needs every call
+    recorded, and `fields` gives a lone field a record only in a function whose
+    callers are all known direct calls. This harness decompiles ONE function from
+    a byte image, so no caller was recorded and nothing marks the function
+    closed; the getter must read the same in both passes, a raw offset over an
+    untyped pointer and no synthesized record. A rule that reads a lone field as
+    a record here would do the same to a qsort comparator or a hash-table
+    callback, whose contracts declare `void *`.
+
+    The two-pass coverage over the whole binary-to-decompile path is
+    tests/cli/calleevote-off-leaves-the-callee-untyped.json (off),
+    calleevote-types-takes-what-every-caller-passes.json (types) and
+    calleevote-fields-reads-a-closed-getters-lone-field.json (the default).
+
+    Stage / sub-stage: P4 "prototype-source". Pass 1 pins `off`, pass 2 the
+    shipped `fields`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488b4718c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="get_cap"/>
+</binaryimage>
+<script>
+  <com>option calleevote off</com>
+  <com>lo fu get_cap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleevote fields</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEEVOTE #1: the lone field stays raw offset arithmetic in both passes" min="2" max="2">return \*\(unsigned long \*\)\(\(int8\)a0 \+ 0x18\);</stringmatch>
+<stringmatch name="CALLEEVOTE #2: no record is synthesized without a closed caller set" min="0" max="0">struct_</stringmatch>
+</decompilertest>

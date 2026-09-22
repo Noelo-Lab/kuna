@@ -979,6 +979,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, fd);
+        crate::p4_calls::kuna_calleevote::seed(arch, fd);
         // (kuna `calleepreserves`) And for the call-guard seam's view of the
         // callee's writes; shares rustabi's cache, so this is a map lookup.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, fd);
@@ -1283,6 +1284,8 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
         // (kuna `protoorder types`) The parameter types callees decompiled earlier stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, &mut fd);
+        // (kuna `calleevote`) What every caller of this function passes.
+        crate::p4_calls::kuna_calleevote::seed(arch, &mut fd);
         // (kuna `calleepreserves`) The call-guard seam's view of the same
         // decode: the registers the callee is proven NOT to write; inert unless
         // `option calleepreserves` is live.

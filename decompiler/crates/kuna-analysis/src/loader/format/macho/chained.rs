@@ -97,6 +97,11 @@ impl ChainedFixups {
     pub fn resolved_ptr(&self, va: u64) -> Option<u64> {
         self.rebases.get(&va).copied()
     }
+
+    /// Every resolved rebase target, in no particular order.
+    pub fn targets(&self) -> impl Iterator<Item = u64> + '_ {
+        self.rebases.values().copied()
+    }
 }
 
 /// A segment's `(vmaddr, fileoff, filesize)` — the address arithmetic the chained

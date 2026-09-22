@@ -490,6 +490,29 @@ impl CallGraph {
         CallGraph { index, entries }
     }
 
+    /// (kuna `calleevote`) Every direct call and tail jump to the function
+    /// entered at `entry` from another function, by instruction address, or
+    /// `None` when its callers cannot all be listed: it is in `open`
+    /// ([`open_function_entries`]), its address is taken in code, or a
+    /// reference comes from no known function.
+    pub(crate) fn direct_call_sites(&self, entry: u64, open: &BTreeSet<u64>) -> Option<Vec<u64>> {
+        if open.contains(&entry) {
+            return None;
+        }
+        let mut out = Vec::new();
+        for r in self.index.refs_to(entry) {
+            match r.kind {
+                XrefKind::Call | XrefKind::Jump => {
+                    if self.owner_of(r.from)? != entry {
+                        out.push(r.from);
+                    }
+                }
+                XrefKind::Data | XrefKind::Read | XrefKind::Write => return None,
+            }
+        }
+        Some(out)
+    }
+
     /// Every inventory entry reachable from `spec` through call, tail-jump, and
     /// address-taken-function-pointer edges, `spec`'s own function included.
     ///
@@ -648,6 +671,126 @@ impl CallGraph {
             .refs_to(vma)
             .iter()
             .any(|r| r.kind == XrefKind::Call)
+    }
+}
+
+/// (kuna `calleevote`) The function entries among `entries` whose callers the
+/// image cannot list by its instructions alone.
+///
+/// The reference walk reads one instruction at a time, so it sees a function's
+/// address taken in code only where one instruction carries all of it. That
+/// holds on x86-64 (a RIP-relative `lea`, an immediate); elsewhere an address
+/// is commonly built from two instructions (AArch64 `adrp`+`add`, MIPS
+/// `lui`+`addiu`, ARM `movw`+`movt`, a PIC base plus an offset on i386), so on
+/// every other architecture no function has every caller known. Neither does
+/// one of a relocatable object, whose sections the loader lays out itself (a
+/// stored address is a relocation against a zero word), nor of an image whose
+/// sections hold none of its entries (no section headers).
+///
+/// Otherwise an entry is open when its address is stored in the image: a
+/// pointer-width word of a section the image loads (`SHF_ALLOC` on ELF, at
+/// any address, code included), a Mach-O chained-fixup rebase target, a
+/// dynamic relocation's target, an exported symbol, or the entry point. A data
+/// word that only happens to equal an entry leaves that function open, which
+/// states nothing about it.
+fn open_function_entries(file: &object::File, bytes: &[u8], entries: &[u64]) -> BTreeSet<u64> {
+    use object::{ObjectSymbol, ObjectSymbolTable};
+    let code_at = |e: u64| {
+        file.sections().any(|s| {
+            s.kind() == object::SectionKind::Text && s.address() <= e && e < s.address().saturating_add(s.size())
+        })
+    };
+    if file.architecture() != object::Architecture::X86_64
+        || file.kind() == object::ObjectKind::Relocatable
+        || !entries.iter().any(|&e| code_at(e))
+    {
+        return entries.iter().copied().collect();
+    }
+    let mut scan = StoredScan::new(entries);
+    let width: u64 = if file.is_64() { 8 } else { 4 };
+    let little = file.is_little_endian();
+    for section in file.sections() {
+        if !image_loads(&section) {
+            continue;
+        }
+        if let Ok(data) = section.data() {
+            scan.words(section.address(), data, width, little);
+        }
+    }
+    for v in kuna_analysis::loader::format::macho::resolve_chained_fixups(file, bytes).targets() {
+        scan.note(v);
+    }
+    if let Some(relocs) = file.dynamic_relocations() {
+        for (_, r) in relocs {
+            let base = match r.target() {
+                object::RelocationTarget::Symbol(i) => {
+                    file.dynamic_symbol_table().and_then(|t| t.symbol_by_index(i).ok()).map(|s| s.address())
+                }
+                object::RelocationTarget::Absolute => Some(0),
+                _ => None,
+            };
+            if let Some(b) = base {
+                scan.note(b.wrapping_add(r.addend() as u64));
+            }
+        }
+    }
+    for sym in file.dynamic_symbols() {
+        if sym.is_definition() {
+            scan.note(sym.address());
+        }
+    }
+    for export in file.exports().unwrap_or_default() {
+        scan.note(export.address());
+    }
+    scan.note(file.entry());
+    scan.out
+}
+
+/// (kuna `calleevote`) Does the image put this section's bytes in memory? On
+/// ELF that is the `SHF_ALLOC` flag, whatever the address (firmware loads code
+/// at 0); other formats map every section they carry bytes for.
+fn image_loads(section: &object::Section) -> bool {
+    if section.kind() == object::SectionKind::UninitializedData {
+        return false;
+    }
+    match section.flags() {
+        object::SectionFlags::Elf { sh_flags } => sh_flags & u64::from(object::elf::SHF_ALLOC) != 0,
+        _ => !matches!(section.kind(), object::SectionKind::Debug | object::SectionKind::DebugString),
+    }
+}
+
+/// (kuna `calleevote`) The function entries found stored so far.
+struct StoredScan {
+    wanted: std::collections::HashSet<u64>,
+    out: BTreeSet<u64>,
+}
+
+impl StoredScan {
+    fn new(entries: &[u64]) -> StoredScan {
+        StoredScan { wanted: entries.iter().copied().collect(), out: BTreeSet::new() }
+    }
+
+    /// A stored value.
+    fn note(&mut self, v: u64) {
+        if self.wanted.contains(&v) {
+            self.out.insert(v);
+        }
+    }
+
+    /// Every `width`-byte word of `data`, loaded at `addr`, that sits on a
+    /// `width`-aligned address.
+    fn words(&mut self, addr: u64, data: &[u8], width: u64, little: bool) {
+        let skip = ((width - addr % width) % width) as usize;
+        let Some(data) = data.get(skip..) else { return };
+        for w in data.chunks_exact(width as usize) {
+            let v = match (width, little) {
+                (8, true) => u64::from_le_bytes(w.try_into().unwrap_or_default()),
+                (8, false) => u64::from_be_bytes(w.try_into().unwrap_or_default()),
+                (_, true) => u32::from_le_bytes(w.try_into().unwrap_or_default()) as u64,
+                (_, false) => u32::from_be_bytes(w.try_into().unwrap_or_default()) as u64,
+            };
+            self.note(v);
+        }
     }
 }
 
@@ -1657,14 +1800,21 @@ pub(crate) fn decompile_callee_first(
             Some(std::time::Duration::from_secs(args.max_fn_seconds));
     }
     let cycles = prog.arch().protoorder.states_in_cycles();
-    let plan = match CallGraph::build(prog, &args.binary, args.slice_pref()) {
-        Ok(graph) => callee_first_plan(&graph, &targets, cycles),
+    let graph = CallGraph::build(prog, &args.binary, args.slice_pref());
+    let plan = match &graph {
+        Ok(graph) => callee_first_plan(graph, &targets, cycles),
         Err(e) => {
             if explicit {
                 eprintln!("warning: --option protoorder: no call graph for {}: {e}", args.binary);
             }
             (0..targets.len()).map(|i| (i, false)).collect()
         }
+    };
+    let expected = match &graph {
+        Ok(graph) if prog.arch().calleevote.is_on() => {
+            Some(open_callee_votes(prog, graph, &targets, &args.binary, args.slice_pref()))
+        }
+        _ => None,
     };
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
     for &(index, park) in &plan {
@@ -1673,8 +1823,110 @@ pub(crate) fn decompile_callee_first(
         slots[index] =
             Some(kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts));
     }
+    if let Some(expected) = expected {
+        callee_vote_rounds(prog, &targets, &plan, &base, &mut slots, &expected);
+    }
     converge_callee_first(prog, &targets, &plan, &base, &mut slots);
     slots.into_iter().flatten().collect()
+}
+
+/// (kuna `calleevote`) How many times the callers' statements are decided and
+/// the functions they name decompiled again: a forwarding wrapper passes on the
+/// type its own callers gave it only once it has been decompiled with it.
+const CALLEE_VOTE_ROUNDS: usize = 3;
+
+/// (kuna `calleevote`) The key the ledger files a function under.
+fn vote_key(t: &FunctionEntry) -> Option<(i32, u64)> {
+    Some((t.addr.get_space()?.get_index(), t.addr.get_offset()))
+}
+
+/// (kuna `calleevote`) Start recording, mark the functions whose callers are all
+/// known direct calls, and return every target's expected call sites. An image
+/// that cannot be read again leaves every function open.
+fn open_callee_votes(
+    prog: &mut ConsoleProgram,
+    graph: &CallGraph,
+    targets: &[FunctionEntry],
+    binary: &str,
+    pref: SlicePref,
+) -> BTreeMap<(i32, u64), Vec<u64>> {
+    let seeds: Vec<u64> = graph.entries.iter().map(|(entry, _)| *entry).collect();
+    let open = image_bytes(binary, pref)
+        .ok()
+        .and_then(|bytes| {
+            let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
+            Some(open_function_entries(&file, &bytes, &seeds))
+        })
+        .unwrap_or_else(|| seeds.iter().copied().collect());
+    let mut expected = BTreeMap::new();
+    let mut closed = std::collections::HashSet::new();
+    for t in targets {
+        let Some(key) = vote_key(t) else { continue };
+        let Some(sites) = graph.direct_call_sites(key.1, &open) else { continue };
+        if !sites.is_empty() {
+            closed.insert(key);
+        }
+        expected.insert(key, sites);
+    }
+    let ledger = &mut prog.arch_mut().kuna_calleevote;
+    *ledger = kuna_decomp::kuna_calleevote::Ledger::default();
+    ledger.closed = closed;
+    ledger.recording = true;
+    expected
+}
+
+/// (kuna `calleevote`) Decide what every function's callers state about it and
+/// decompile the functions whose statement is new, in plan order so a redone
+/// callee states its types again before its redone callers read them; then
+/// decide again over what the redone functions pass, up to
+/// [`CALLEE_VOTE_ROUNDS`] times. A redo that fails keeps the first body.
+fn callee_vote_rounds(
+    prog: &mut ConsoleProgram,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut [Option<FuncResult>],
+    expected: &BTreeMap<(i32, u64), Vec<u64>>,
+) {
+    for round in 0..CALLEE_VOTE_ROUNDS {
+        let changed = kuna_decomp::kuna_calleevote::decide(prog.arch_mut(), &|k| expected.get(&k).cloned());
+        if kuna_decomp::kuna_calleevote::trace() {
+            eprintln!("[calleevote] round {}: {} functions decompiled again", round + 1, changed.len());
+        }
+        if changed.is_empty() {
+            break;
+        }
+        let changed: std::collections::HashSet<(i32, u64)> = changed.into_iter().collect();
+        for &(index, park) in plan {
+            let Some(key) = vote_key(&targets[index]).filter(|k| changed.contains(k)) else { continue };
+            let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
+            let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
+            match slots[index].as_ref() {
+                Some(first) if !same_arity(first, &again) => prog.arch_mut().kuna_calleevote.forget(key),
+                Some(first) if !kuna_console::project::redo_replaces(first, &again) => {}
+                _ => slots[index] = Some(again),
+            }
+        }
+    }
+    prog.arch_mut().kuna_calleevote.recording = false;
+}
+
+/// (kuna `calleevote`) Does a redo keep the first decompile's parameters and
+/// variables, by count? A caller's vote moves types only, so a redo that moves
+/// either is not the vote's doing: decompiling a function a second time in one
+/// session can recover a stack parameter the first decompile did not (bash
+/// -O2 `sub_7ea70` gains an unused `unsigned int a6`), and such a redo keeps
+/// the first body.
+fn same_arity(first: &FuncResult, again: &FuncResult) -> bool {
+    let params = |r: &FuncResult| r.variables.iter().filter(|v| v.is_param).count();
+    let declared = |r: &FuncResult| {
+        let head = r.code.as_deref().and_then(|c| c.lines().next()).unwrap_or("");
+        let inner = head.find('(').and_then(|o| head.rfind(')').map(|c| &head[o + 1..c])).unwrap_or("");
+        if inner.trim().is_empty() || inner.trim() == "void" { 0 } else { inner.matches(',').count() + 1 }
+    };
+    first.variables.len() == again.variables.len()
+        && params(first) == params(again)
+        && declared(first) == declared(again)
 }
 
 /// (kuna `protoorder` + `structsynth`) The batch's convergence sweep
@@ -1701,6 +1953,7 @@ fn converge_callee_first(
         return;
     }
     kuna_decomp::kuna_protoorder::forget_statements_naming(prog.arch_mut(), &stale);
+    kuna_decomp::kuna_calleevote::forget_statements_naming(prog.arch_mut(), &stale);
     for &(index, park) in plan {
         if !slots[index].as_ref().is_some_and(|r| kuna_console::project::names_any_type(r, &stale)) {
             continue;
@@ -3893,6 +4146,63 @@ mod discovery_tests {
         ];
         assert!(render_result_json("f", &[], &options, None, &[]).contains("\"c-language\""));
         assert!(render_result_json("f", &[], &[], None, &[]).contains("\"c-language\""));
+    }
+}
+
+#[cfg(test)]
+mod calleevote_stored_tests {
+    use super::*;
+
+    fn fixture(name: &str) -> Vec<u8> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../kuna-analysis/tests/fixtures")
+            .join(name);
+        std::fs::read(path).expect("the fixture is checked in")
+    }
+
+    /// Only aligned words are read, and a word one past an entry is not that
+    /// entry.
+    #[test]
+    fn only_an_aligned_word_equal_to_an_entry_stores_it() {
+        let mut scan = StoredScan::new(&[0x68f0, 0x7000]);
+        let mut data = vec![0u8; 4];
+        data.extend_from_slice(&0x68f1u64.to_le_bytes());
+        data.extend_from_slice(&0x7000u64.to_le_bytes());
+        scan.words(0x3ffc, &data, 8, true);
+        assert_eq!(scan.out.into_iter().collect::<Vec<_>>(), vec![0x7000]);
+    }
+
+    /// A relocatable object's table words are zero until a relocation fills
+    /// them, so no function in it has every caller known.
+    #[test]
+    fn every_function_of_a_relocatable_object_is_open() {
+        let bytes = fixture("calleevote_ops_x86_64.o");
+        let file = kuna_analysis::loadimage_object::parse_object(&*bytes).expect("an ELF object");
+        let entries = [0x400000, 0x400010, 0x400020, 0x400040, 0x400060];
+        assert_eq!(open_function_entries(&file, &bytes, &entries).len(), entries.len());
+    }
+
+    /// MIPS builds a function's address from `lui`+`addiu`, which the
+    /// one-instruction reference walk does not see, so off x86-64 no function
+    /// has every caller known, even one whose address no data word holds.
+    #[test]
+    fn every_function_off_x86_64_is_open() {
+        let bytes = fixture("calleevote_callback_mipsel");
+        let file = kuna_analysis::loadimage_object::parse_object(&*bytes).expect("an ELF image");
+        let entries = [0x400110, 0x40011c, 0x400144, 0x400168, 0x40018c];
+        assert_eq!(open_function_entries(&file, &bytes, &entries).len(), entries.len());
+    }
+
+    /// A const table in a `.text` loaded at address 0: the section is read
+    /// because the image loads it, so both functions the table names are
+    /// stored, and the ones it does not name are not.
+    #[test]
+    fn a_table_in_code_loaded_at_zero_stores_its_entries() {
+        let bytes = fixture("calleevote_zero_x86_64");
+        let file = kuna_analysis::loadimage_object::parse_object(&*bytes).expect("an ELF image");
+        let entries = [0x10, 0x20, 0x30, 0x60, 0x80];
+        let open = open_function_entries(&file, &bytes, &entries);
+        assert_eq!(open.into_iter().collect::<Vec<_>>(), vec![0x10, 0x20]);
     }
 }
 

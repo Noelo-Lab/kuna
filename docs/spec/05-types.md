@@ -1117,6 +1117,41 @@ false-positive shape: `ls`'s `strmode` fills a `char[12]` with ten one-byte
 stores and one two-byte store, so the widths are not uniform and the wide store
 is past the narrow ones rather than over them.
 
+**A lone field (`calleevote fields`).** "Fewer than two distinct offsets" and
+"no access at offset 0" have one exception, and it is decided outside the
+function. A pointer parameter read at exactly one constant offset other than
+zero, with an access of four bytes or more, is a one-field record when the
+function's callers are all known direct calls: the whole-binary driver marks
+such a function on its `Funcdata` (`kuna_calleevote_closed`; chapter
+[04](04-calls-and-prototypes.md), `calleevote`), and
+`kuna_structsynth.rs (is_lone_field)` admits it. The condition is what keeps
+the callbacks out: a `qsort` comparator or a hash-table hasher reads one field
+of what it was handed exactly the way gnulib's `hash_get_n_buckets` does, but
+its address is stored or taken, its contract declares `void *`, and it keeps
+`void *`. Chapter 04 lists what counts as stored and where no function is
+closed at all: every architecture but x86-64 (a function address there is
+built from two instructions, which the one-instruction reference walk does not
+join), a relocatable object, and an image without section headers. So the lone
+field is read only in an x86-64 image, and there only for a function whose
+address is not stored as a pointer-width word; a callback reached through an
+offset table is not seen. A byte or halfword at a fixed offset is as often a character of a
+buffer as a field, so those still need a second field. So does a base from
+which an address at a constant offset reaches a phi (`address_walks`): that is
+a pointer stepped through a loop over an array, `argv[1]` read and then
+`argv + 2` walked, where a lone field would read one element as a record and
+step through the array at the record's size. An address at a constant offset
+handed to a call (`getfilecon (name, &f->scontext)`) is not a walk; a record's
+member is passed that way all the time, and refusing it was measured to cost
+21 functions whose record decbench credits. An array read at one constant
+index and nothing else (`return a[2];`) is indistinguishable from a getter and
+does become a one-field record; its C is still exact. The same closed function also gets
+one more propagation pass when it has such a candidate and its main loop would
+end on the pass that first typed it (`wants_settle_pass`): the plateau flag is
+set only by a pass that changes nothing, and a short getter's loop ends before a
+second pass runs, so without it the synthesizer is never offered the function at
+all. A one-field record answers only for its own shape in the ledger below, and
+it gives way to the record every caller passes (`points_at_lone_record`).
+
 At a conflicting offset the **widest** access wins. A field wider than an access
 renders as a cast of the field (`(uint4)w->b`); a field narrower than an access
 loses the field name altogether (`*(uint1 **)w`).

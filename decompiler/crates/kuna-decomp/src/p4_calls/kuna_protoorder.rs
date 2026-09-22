@@ -442,6 +442,26 @@ pub(crate) fn value_family(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
 enum Reading<'a> {
     Argument(OpId, int4),
     Member(&'a std::collections::HashSet<OpId>),
+    Input,
+}
+
+/// (kuna `calleevote`) Does anything the function does with its input `vn`
+/// outrank a caller's type `ct` for it?  The refusals a callee's vote meets at
+/// a call site, asked of the callee's own uses, and one more for a `char *`:
+/// a constant the function stores through the value wider than a byte, which
+/// the printer would spell as one character store per byte.
+pub(crate) fn input_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    class_of(ct).is_none() || family_refuses(data, vn, Reading::Input, ct) || splits_a_wide_constant(data, vn, ct)
+}
+
+fn splits_a_wide_constant(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    let Some(pointee) = ct.get_ptr_to() else { return false };
+    if pointee.get_size() != 1 || !pointee.is_char_print() {
+        return false;
+    }
+    let family = with_sibling_loads(data, &value_family(data, vn));
+    let Some((accesses, _)) = accesses_through(data, &family) else { return true };
+    accesses.iter().any(|a| a.store && a.size > 1 && data.vbank().get(a.value).is_some_and(|n| n.is_constant()))
 }
 
 /// Does anything else about the value `vn` outrank the vote `ct`?
@@ -1579,7 +1599,7 @@ pub fn forget_statements_naming(arch: &mut Architecture, names: &[String]) {
 }
 
 /// Is `ct`, or what it points at at any depth, named one of `names`?
-fn names_type(ct: &Rc<Datatype>, names: &[String]) -> bool {
+pub(crate) fn names_type(ct: &Rc<Datatype>, names: &[String]) -> bool {
     let mut cur = Rc::clone(ct);
     for _ in 0..8 {
         if names.iter().any(|n| n == cur.get_name()) {

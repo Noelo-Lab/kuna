@@ -2543,3 +2543,132 @@ clobbered forward and a variadic callee as its controls, and the three shapes
 above (`noop(); twoarg(p,3)`, `vout(p); twoarg(p,3)` as a tail and as a plain
 call, and `sysinttostr`) as controls that must keep every argument the
 option-off run gives them.
+
+### (kuna) `calleevote` — the type every caller passes
+
+`protoorder` carries what a callee's own recovery found to its callers. Nothing
+carried anything the other way, so a function that only forwards, compares or
+stores a pointer kept `void *` or `long` while every one of its callers held a
+named record or a `char *` for the same value. `calleevote` (values
+`off|types|fields`, default `fields`;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs`) closes that
+direction on the one surface that decompiles every caller: the callee-first
+whole-binary run `protoorder` drives (`decompile-all`, `decompile-project`). The
+driver is `callee_vote_rounds` in `decompiler/crates/kuna-cli/src/decompile_all.rs`.
+
+**Recording.** During the callee-first pass the driver sets
+`Ledger::recording`, and after each successful decompile `record` files two
+things on `Architecture::kuna_calleevote`: the function's own recovered
+parameters (storage and type), and for every direct CALL it makes the callee's
+entry, the call instruction and, per argument slot, the storage the recovery
+finalized (`FuncCallSpecs::final_input_storage`) with the HighVariable type the
+caller gave the value. A function with a declared prototype, a `...`, an
+input-locked prototype, or a hidden, indirect-storage, `this` or type-locked
+parameter files no parameters and is never voted on. A later decompile of the
+same function replaces the calls it recorded; its parameters stay those of the
+first decompile (below).
+
+**Knowing every caller.** The claim is about the whole program, so it is
+checked against the call graph, not against what the decompiles happened to
+see. `CallGraph::direct_call_sites` lists, for a function, the address of every
+direct call and tail jump to it from another function, and answers "unknown"
+when the reference walk sees its address taken in code (a data reference), or
+when `open_function_entries` names it.
+
+The reference walk reads one instruction at a time, so it sees an address
+taken in code only where a single instruction carries all of it. That holds on
+x86-64, where code takes a function's address with a RIP-relative `lea` or an
+immediate. It does not hold elsewhere: AArch64 takes every function address in
+code as `adrp`+`add`, MIPS as `lui`+`addiu`, ARM as `movw`+`movt` or a literal,
+PowerPC and RISC-V as a high and a low half, and i386 position-independent code
+as a base register plus an offset; the walk finds no reference from either
+half, so a callback that is also called directly would count as closed. On
+every architecture but x86-64 `open_function_entries` therefore names every
+function, and nothing is stated. Two kinds of x86-64 image are open the same
+way: a relocatable object, whose sections the loader lays out itself, so the
+walk classifies no data reference and a stored callback is a relocation
+against a zero word; and an image whose sections hold none of its entries (no
+section headers).
+
+Otherwise a function is open when its address is stored in the image: as a
+pointer-width word, on a pointer-width boundary, of any section the image
+loads, code sections included (a const ops table placed in `.text`); a Mach-O
+chained-fixup rebase target; the target of a dynamic relocation; an exported
+symbol; or the entry point. A section is one the image loads by its
+`SHF_ALLOC` flag on ELF, never by its address, since firmware loads code at
+address 0. A word that merely happens to equal an entry leaves that function
+open, which only means nothing is stated about it. What the scan cannot see is
+an address stored in a shape other than a pointer-width word: an offset added
+to another address at run time (a 32-bit offset table, a relative C++ vtable,
+a self-relative pointer). A callback reached only that way and also called
+directly can still be voted on. A function is decided only when its recorded
+calls from other functions are exactly the listed addresses: a caller that
+failed to decompile, or a call the walk found and no decompile reached, states
+nothing. A self-recursive call is not a vote.
+
+**The decision** (`decide_ledger`). A parameter is a candidate when the callee
+typed it only as a pointer to nothing (`void *`, `undefined1 *`), a
+pointer-width integer, or a one-field synthesized record (below). It takes a
+type when every call passes the argument in exactly the storage the callee
+recovered it in and every call passes the SAME committed pointer: a pointer to
+a named record or union (a libc shell, a synthesized `struct_N` the layout
+ledger shares), a `char *` or a `char **`. Two types are the same when they are
+one factory entry or have the same name and shape down the pointer chain; a
+layout comparison alone would equate two records that merely have the same size.
+
+**The vote.** Each function whose statement is new is decompiled again, in plan
+order, so a redone callee states its types again before a redone caller reads
+them. `seed` copies the statement onto the `Funcdata` at the same two seams
+`protoorder` seeds from, and `ActionInferTypes::buildLocaltypes` offers it as one
+more vote for the function input in that storage, ahead of the `ptrfromuse` and
+`charptr` candidates (`input_vote`). It replaces the fold only where the fold
+says no more than "a pointer-width value", and it is refused where the callee's
+own uses disagree: the family refusals `protoorder` applies to its own votes
+(`kuna_protoorder::input_refuses` — an integer operation on the value, a pointer
+difference included; a family member that is type-locked, a global or frame
+memory; a class conflict at another call; a load or store that does not land on
+exactly one member of the record, which includes a read of bytes the caller's
+record only covers with filler). Only the value's own family is checked: a
+pointer the function derives from it (loaded from a field, or returned by a
+call it is handed to) is not, so where the callers' record is smaller than
+what the function reaches that way, the printer indexes past it as an array of
+records (`*(unsigned long *)v1[1].field_0x0 = a1;` for a store at `v1 + 0x10`
+into a 16-byte record), which is the same memory. A `char *` vote is also refused when the
+callee stores a constant wider than a byte through the value: the printer
+would spell `*(unsigned int *)(a0 + 0x34) = 0xffffffff` through a `char *` as
+four character stores (`a0[0x34] = '\xff'; ...`), which is the same memory
+but no longer reads as one store. A value the callee only hands to a parameter
+declared `void *` is NOT refused: that is what a wrapper around `memcpy` or
+`fwrite` does with the `char *` its callers pass (`dired_outbuf`,
+`samedir_template`), and refusing it was measured to lose 28 functions to gain 3.
+The three it would have kept are gnulib's `xmemdup (void const *p, size_t s)`,
+whose callers all happen to pass strings. The redone
+functions record their calls again and the decision repeats, up to three
+rounds, so a wrapper passes on what its own callers gave it. Every round
+decides against the parameters a function's FIRST decompile recovered: a
+redo's parameters carry the votes it took, and deciding against them would
+leave an earlier vote out of the next statement, which replaces the old one,
+so the next redo would lose it. A first statement that only repeats the types
+the function already has (a one-field record its callers were handed back
+through `protoorder`) is not made, since decompiling it again changes nothing.
+A redo that fails keeps the first body.
+
+**`fields`.** The same closed caller set decides one more thing. A function
+whose callers are all known direct calls (at least one, none unknown) is marked
+on its `Funcdata` (`kuna_calleevote_closed`), and `structsynth` then accepts a
+pointer parameter read at exactly one constant offset other than zero with an
+access of four bytes or more as a one-field record (chapter
+[05](05-types.md), `structsynth`). A one-field record is itself a candidate for
+the vote above, so it gives way to the record every caller passes, and the
+getter and its callers name one record. Its callers see the new type through
+`protoorder`: where what a caller does with the value does not fit the one-field
+record, that vote is refused, and a caller local that held the callee's old
+`void *` only because the callee declared it keeps no pointer type; it is
+declared as a pointer-width integer and may merge with another integer local
+of its size (dash `sub_eb30`).
+
+Everything is inert where there is no callee-first pass: `kuna decompile`
+(one `decomp_dbg` per function), a run narrowed by `--addr`, `--functions` or a
+triage filter, `--jobs N`, a raw image and `--option protoorder off`. The
+variable rows a function exports keep their number; only their types move.
+`KUNA_CALLEEVOTE_TRACE=1` prints every decision and its reason on stderr.

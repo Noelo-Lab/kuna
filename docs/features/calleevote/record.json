@@ -1,0 +1,628 @@
+{
+ "opportunity": "Round E's O2 census: the largest O2-noinline blocker bucket is a program struct pointer declared void * in an otherwise-right function (143 functions O2-noinline, 20 O2; 66 gnulib Hash_table getters). Two causes: structsynth wants two offsets including 0 and never runs in a function whose lattice settles on its first pass, and nothing flows caller -> callee (protoorder is callee -> caller).",
+ "test_name": "tests/cli calleevote-off-leaves-the-callee-untyped / calleevote-types-takes-what-every-caller-passes / calleevote-fields-reads-a-closed-getters-lone-field (two-pass over the whole-binary path) + calleevote-leaves-a-relocatable-objects-callbacks-open (.o callback table) + tests/stages/kuna-calleevote.xml (negative control) + 16 unit tests",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_x86_64",
+ "selector": "peek_used",
+ "func_addr": "0x1220",
+ "angr_version": null,
+ "option": "calleevote",
+ "flag": "calleevote",
+ "element_id": null,
+ "change_kind": "type-inference",
+ "tier": "transform",
+ "source_decompiler": "angr",
+ "inspiration": "angr joins call-site argument types into the parameters of a callee whose prototype is guessed rather than declared",
+ "default_on": true,
+ "default_value": "fields",
+ "values": "off|types|fields",
+ "ablation_changed": 0,
+ "parity": "OK",
+ "step1": {
+  "bucket": "S:struct->void* solo functions, O2 + O2-noinline, round-E rows: 166",
+  "reverse_vote_alone_reaches": "<= 8 of 166 (callers: 44 pass no argument, 31 void *, 34 disagree, 4 struct_N *)",
+  "reverse_vote_population": "all O2 wrong args: 131 pinned wrong->right, 41 more credited, 18 wrong",
+  "lone_field_arms_O2_296_slices": {
+   "main": [
+    455,
+    557
+   ],
+   "settle_only": [
+    455,
+    557,
+    0
+   ],
+   "settle_plus_lone_any_width": [
+    455,
+    704,
+    24
+   ],
+   "settle_plus_lone_w4": [
+    455,
+    694,
+    22
+   ],
+   "note": "[pinned perfect, credited perfect, worse]; every worse row a qsort/hash callback, address taken"
+  },
+  "types_O2": [
+   475,
+   590,
+   "145 up / 2 down"
+  ],
+  "fields_O2": [
+   475,
+   716,
+   "credited 589 up / 2 down"
+  ],
+  "bucket_now_struct_pointer": 97,
+  "bucket_now_credited_perfect": 97
+ },
+ "benchmark": {
+  "corpus": "444-slice campaign set (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0 O2 O2-noinline), decbench 625e892 pinned (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same build (--option calleevote off vs default)",
+  "metric": "type_match",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4155,
+    "mean_on": 0.416,
+    "improved": 1,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 917,
+    "perfect_on": 970,
+    "mean_off": 0.3409,
+    "mean_on": 0.3505,
+    "improved": 263,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 63,
+    "perfect_on": 64,
+    "mean_off": 0.4445,
+    "mean_on": 0.4496,
+    "improved": 9,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 44,
+    "perfect_on": 49,
+    "mean_off": 0.223,
+    "mean_on": 0.2275,
+    "improved": 18,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 51,
+    "perfect_on": 52,
+    "mean_off": 0.4458,
+    "mean_on": 0.4526,
+    "improved": 7,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 107,
+    "perfect_on": 110,
+    "mean_off": 0.527,
+    "mean_on": 0.5354,
+    "improved": 4,
+    "worse": 3
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 86,
+    "perfect_on": 86,
+    "mean_off": 0.3545,
+    "mean_on": 0.3578,
+    "improved": 13,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 170,
+    "perfect_on": 174,
+    "mean_off": 0.3635,
+    "mean_on": 0.3664,
+    "improved": 19,
+    "worse": 0
+   }
+  },
+  "levels": {
+   "O0": {
+    "n": 4286,
+    "perfect_off": 1017,
+    "perfect_on": 1064,
+    "mean_off": 0.5289,
+    "mean_on": 0.5392,
+    "improved": 188,
+    "worse": 1
+   },
+   "O2": {
+    "n": 2394,
+    "perfect_off": 74,
+    "perfect_on": 80,
+    "mean_off": 0.1834,
+    "mean_on": 0.1863,
+    "improved": 31,
+    "worse": 1
+   },
+   "O2-noinline": {
+    "n": 4068,
+    "perfect_off": 381,
+    "perfect_on": 395,
+    "mean_off": 0.2624,
+    "mean_on": 0.2692,
+    "improved": 115,
+    "worse": 1
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1472,
+   "perfect_on": 1539,
+   "mean_off": 0.3511,
+   "mean_on": 0.3584,
+   "improved": 334,
+   "worse": 3
+  },
+  "credited_93": {
+   "perfect_off": 1717,
+   "perfect_on": 2083,
+   "improved": 1196,
+   "worse": 3,
+   "mean_off": 0.3975,
+   "mean_on": 0.4398
+  },
+  "classes_tp": {
+   "ptr_char": [
+    4859,
+    5181
+   ],
+   "ptr_other": [
+    0,
+    6
+   ],
+   "ptr_ptr": [
+    525,
+    593
+   ],
+   "ptr_void": [
+    621,
+    618
+   ]
+  },
+  "decomp_var_count_changed_functions": 0,
+  "worse_rows": "gzip xmemdup at O0/O2/O2-noinline: GT void const *p, every caller passes a string, so the parameter takes char * (the same three rows as every earlier round)",
+  "control": "the off arm is main at 656e6c701: 1,472 perfect, the figure #710 reports for slotptr on",
+  "base": "origin/main 656e6c701 (#710 slotptr, default on); off arm build .scratch/v12, default arm the final build (v14, 05786ff39 code); the off arm is unchanged by every later commit",
+  "new_struct_pointers": "911 parameters or slots newly typed struct_N * (not a struct before); every one has a program-defined struct pointer as its DWARF type, none replaces a primitive pointer and none a correct type",
+  "rounds_note": "v12 (the build before rounds decided against first-decompile parameters) gave 332 up / 3 down, credited 2,082; the final build keeps two more char * votes a later round had dropped (coreutils ginstall need_copy dest_name O0, copy dst_relname O2-noinline): 334 up / 3 down"
+ },
+ "sweep": {
+  "surface": "kuna decompile-all --json --max-fn-seconds 120, --option calleevote off vs default, 21 stripped binaries / 13,173 functions, build .scratch/v12 on 656e6c701 (docs/features/calleevote/corpus-hunks.json)",
+  "binaries": "coreutils fmt ls sort du (O2), cp (O0), chcon wc (O2-noinline); grep (O0, O2-noinline); gzip (O0, O2); diff (O2), cmp (O0); find (O2); bzip2 tar dash xmlwf mirai (O2-noinline); bash (O2); crazyflie cf2.elf (ARM Thumb, O2-noinline)",
+  "changed": 1272,
+  "classification": {
+   "struct_N renumbering only (a one-field record takes a ledger slot)": 773,
+   "a parameter's type only": 142,
+   "a parameter's type and how accesses through it print (fields, casts, indexing); statements, calls and argument counts identical": 353,
+   "an expression folded into its uses by the new type": 4
+  },
+  "tags": {
+   "register-local count moved (merge follows the new type)": 16,
+   "a local that held a callee's old void * declared as an integer": 17,
+   "byte-split stores": 0
+  },
+  "shape_hunks_read": [
+   "diff O2 0x11680: returns its char * parameter, so the return type follows (long -> char *, return 0 -> return NULL)",
+   "bash O2 0xdc760, 0xf48e0: char * parameter; *(char *)(a0 + k) prints a0[k] and the loaded temporary is inlined at its uses",
+   "bash O2 0x7dfc0: a (uint1) cast temporary inlined at its two uses"
+  ],
+  "arity_or_error_changes": 0,
+  "off_equals_main": "--option calleevote off matches origin/main 656e6c701 byte-for-byte (code, variables, errors) on chcon, wc, grep O2-noinline, dash, xmlwf, mirai, gzip O2, cmp O0 and cf2.elf; on cf2.elf the default matches it too",
+  "redo_drift_guard": "without same_arity two bash O2 functions (0x7ea70, 0x7f600) gained an unused stack parameter from a pre-existing redo instability; the guard keeps the first body",
+  "per_architecture": "crazyflie cf2.elf (ARM Thumb, 2,838 functions): 0 changed, since no function off x86-64 has every caller known; it was 482 before this round. The 20 x86-64 binaries: 1,272 changed, 5 more than before, all struct_N renumbering (cp O0 +1, cmp O0 +3, grep O2-noinline +1) from main gaining slotptr",
+  "final_build": "the final build's default output equals the v12 default output byte-for-byte (code, variables, errors) on all 21 binaries (13,173 functions), so the classification holds for it"
+ },
+ "speed": {
+  "round_3": {
+   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs default, same final build (.scratch/v15 = 540319563 code) on the rebased tree, arm order alternating, 15 rounds each (docs/features/calleevote/speed.py; raw samples speed.json under round_3)",
+   "fmt_O2": {
+    "min_ms": [
+     4127.5,
+     4147.5
+    ],
+    "median_ms": [
+     4515.0,
+     4179.5
+    ],
+    "delta_min_pct": 0.48,
+    "delta_median_pct": -7.43,
+    "loadavg": [
+     9.4,
+     11.2,
+     14.5
+    ]
+   },
+   "ls_O2": {
+    "min_ms": [
+     13464.0,
+     13610.8
+    ],
+    "median_ms": [
+     13781.3,
+     13813.9
+    ],
+    "delta_min_pct": 1.09,
+    "delta_median_pct": 0.24,
+    "loadavg": [
+     4.5,
+     6.3,
+     10.2
+    ]
+   },
+   "sort_O2": {
+    "min_ms": [
+     14234.0,
+     14357.4
+    ],
+    "median_ms": [
+     14666.1,
+     14869.3
+    ],
+    "delta_min_pct": 0.87,
+    "delta_median_pct": 1.39,
+    "loadavg": [
+     5.5,
+     5.7,
+     8.4
+    ]
+   },
+   "bash_O2": {
+    "min_ms": [
+     86216.2,
+     87008.7
+    ],
+    "median_ms": [
+     86812.4,
+     87338.4
+    ],
+    "delta_min_pct": 0.92,
+    "delta_median_pct": 0.61,
+    "loadavg": [
+     2.8,
+     3.0,
+     3.3
+    ]
+   },
+   "kmod_O2-noinline": {
+    "min_ms": [
+     3814.3,
+     4188.3
+    ],
+    "median_ms": [
+     3847.0,
+     4247.9
+    ],
+    "delta_min_pct": 9.81,
+    "delta_median_pct": 10.42,
+    "loadavg": [
+     5.0,
+     8.8,
+     13.2
+    ],
+    "note": "541 functions; the vote rounds decompile 56 of them again (49 + 6 + 1), 0.42 s on a 3.3 s first pass; types alone costs +8.8% min (min of 7), so the cost is the second decompile itself, not the lone-field pass. Review measurement on the round-2 build: +11.3% min, +7.4% median (min of 9); skipping statements that repeat a callee's own record cut round 1 from 73 redos to 49",
+    "quiet_rerun": {
+     "min_ms": [
+      3784.5,
+      4155.2
+     ],
+     "delta_min_pct": 9.8,
+     "delta_median_pct": 9.84,
+     "loadavg": [
+      4.3,
+      3.4,
+      3.7
+     ]
+    }
+   },
+   "cmp_O0": {
+    "min_ms": [
+     1471.3,
+     1584.5
+    ],
+    "median_ms": [
+     1495.7,
+     1613.1
+    ],
+    "delta_min_pct": 7.69,
+    "delta_median_pct": 7.85,
+    "loadavg": [
+     4.4,
+     8.1,
+     12.8
+    ],
+    "note": "214 functions, 9 decompiled again, 0.12 s; most of it one 217-line function (0x8b5d) whose two char * votes its own uses refuse, so it prints as before. Round 2 measured +5.43% min",
+    "quiet_rerun": {
+     "min_ms": [
+      1467.0,
+      1582.2
+     ],
+     "delta_min_pct": 7.85,
+     "delta_median_pct": 8.03,
+     "loadavg": [
+      4.0,
+      3.5,
+      3.7
+     ]
+    }
+   },
+   "budget_binaries": {
+    "fmt_O2": 0.48,
+    "ls_O2": 1.09,
+    "sort_O2": 0.87,
+    "bash_O2": 0.92
+   },
+   "worst_budget_delta_min_pct": 1.09,
+   "budget_pct": 5.0,
+   "within_budget": true,
+   "outside_budget_set": "kmod O2-noinline +9.81% min (+10.42% median) and cmp O0 +7.69% min: the price of decompiling again the functions whose callers state a type; a binary where few functions take a vote pays almost nothing"
+  },
+  "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs default, same build, arm order alternating, 15 rounds each (docs/features/calleevote/speed.py; raw samples speed.json). Review-round build; box shared with other lanes (load 11-43). fmt, ls, bash, dash, cf2 and the first sort/cmp runs used the build before the walked-address check was limited to closed functions (same output, and the off arm then paid that check too); the sort and cmp reruns are the final build.",
+  "cmp_O0": {
+   "min_ms": [
+    1525.4,
+    1671.3
+   ],
+   "delta_min_pct": 9.56,
+   "delta_median_pct": 12.87,
+   "loadavg": [
+    13.8,
+    15.0,
+    17.6
+   ],
+   "rerun": {
+    "min_ms": [
+     1684.4,
+     1775.8
+    ],
+    "delta_min_pct": 5.43,
+    "delta_median_pct": 13.37,
+    "loadavg": [
+     18.0,
+     20.3,
+     20.3
+    ]
+   },
+   "note": "1.6 s binary: 9 of 214 functions are decompiled a second time and 2 print differently (7 are a char * vote over an undefined1 * that prints the same, or a vote the callee's own uses refuse); +5.43% min on the rerun, +9.56% with a rust-test lane beside it"
+  },
+  "dash_O2-noinline": {
+   "min_ms": [
+    4169.8,
+    4269.3
+   ],
+   "delta_min_pct": 2.39,
+   "delta_median_pct": 7.48,
+   "loadavg": [
+    11.1,
+    14.0,
+    16.9
+   ]
+  },
+  "fmt_O2": {
+   "min_ms": [
+    4449.1,
+    4469.7
+   ],
+   "delta_min_pct": 0.46,
+   "delta_median_pct": 3.75,
+   "loadavg": [
+    17.6,
+    15.3,
+    17.0
+   ]
+  },
+  "ls_O2": {
+   "min_ms": [
+    15476.4,
+    15543.9
+   ],
+   "delta_min_pct": 0.44,
+   "delta_median_pct": -4.32,
+   "loadavg": [
+    16.9,
+    20.2,
+    19.7
+   ]
+  },
+  "sort_O2": {
+   "min_ms": [
+    16087.2,
+    18438.7
+   ],
+   "delta_min_pct": 14.62,
+   "delta_median_pct": -0.53,
+   "loadavg": [
+    43.1,
+    33.2,
+    25.7
+   ],
+   "rerun": {
+    "min_ms": [
+     16340.6,
+     16241.0
+    ],
+    "delta_min_pct": -0.61,
+    "delta_median_pct": 6.42,
+    "loadavg": [
+     43.4,
+     35.2,
+     26.4
+    ]
+   },
+   "note": "the first run's +14.62% min is one off-arm sample at 16.1 s against 18.6-19.4 s for the rest (median -0.53%); the rerun is -0.61% min"
+  },
+  "cf2_O2-noinline_ARM_Thumb": {
+   "min_ms": [
+    26993.8,
+    27519.9
+   ],
+   "delta_min_pct": 1.95,
+   "delta_median_pct": 1.54,
+   "loadavg": [
+    19.3,
+    22.2,
+    24.4
+   ]
+  },
+  "bash_O2": {
+   "min_ms": [
+    100495.6,
+    101940.3
+   ],
+   "delta_min_pct": 1.44,
+   "delta_median_pct": 0.14,
+   "loadavg": [
+    16.1,
+    20.6,
+    20.4
+   ]
+  },
+  "budget_binaries": {
+   "fmt_O2": 0.46,
+   "ls_O2": 0.44,
+   "sort_O2": -0.61,
+   "bash_O2": 1.44
+  },
+  "worst_budget_delta_min_pct": 1.44,
+  "budget_pct": 5.0,
+  "within_budget": true,
+  "outside_budget_set": "dash O2-noinline +2.39, crazyflie ARM +1.95, cmp O0 +5.43 (small binary, see its note)",
+  "first_version": {
+   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120 (decbench's invocation), --option calleevote off vs default, same binary, arm order alternating, 15 rounds each (docs/features/calleevote/speed.py, raw samples speed.json)",
+   "fmt_O2": {
+    "min_ms": [
+     4801.5,
+     4789.4
+    ],
+    "delta_min_pct": -0.25,
+    "delta_median_pct": 2.87
+   },
+   "ls_O2": {
+    "min_ms": [
+     14320.2,
+     14294.7
+    ],
+    "delta_min_pct": -0.18,
+    "delta_median_pct": 1.82
+   },
+   "sort_O2": {
+    "min_ms": [
+     14785.3,
+     15198.1
+    ],
+    "delta_min_pct": 2.79,
+    "delta_median_pct": 5.15,
+    "rerun_quieter": {
+     "delta_min_pct": -0.42,
+     "delta_median_pct": 1.08
+    }
+   },
+   "bash_O2": {
+    "min_ms": [
+     95421.0,
+     97942.4
+    ],
+    "delta_min_pct": 2.64,
+    "delta_median_pct": 2.5,
+    "note": "1.3 MB, --mode auto resolves to reliable"
+   },
+   "worst_delta_min_pct": 2.79,
+   "budget_pct": 5.0,
+   "within_budget": true,
+   "load": "load average 9-30 on 80 cores (other campaign lanes); the first sort run's +5.15% median re-ran at -0.42% min / +1.08% median"
+  }
+ },
+ "gates": {
+  "make test": "datatests: 675/675 assertions passed; PARITY OK (final build, 540319563 code)",
+  "make test-stages": "datatests: 1298/1298 assertions passed; PARITY OK (final build)",
+  "make check-spec": "check-spec OK (lenient mode)",
+  "check_spec --strict": "check-spec OK (strict mode)",
+  "make test-cli": "tests/cli: 227/227 passed (final build)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh (regenerated)",
+  "make rust-test (lane script)": "RUST_TEST_RC=0; 7,409 passed, 0 failed, 38 ignored (lane 09:21:53-09:47:14Z on 540319563, the last code and catalog-text commit; later commits touch only docs/spec and the feature bundle)"
+ },
+ "notes": "Measured and not shipped: refusing a value handed to a declared void * (-8 perfect, -28 improved, +3), byte/halfword lone fields (+10 credited, +2 worse), a settle pass for every structsynth candidate (no scored change). Known secondary effect: a callee's one-field record stated by protoorder can make a caller's interior-pointer argument a cast and leave the caller's own parameter long (diff O0 print_context_header: void * -> long, 5 scored rows, all misses either way).",
+ "files": {
+  "engine": [
+   "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs",
+   "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote/tests.rs",
+   "decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs",
+   "decompiler/crates/kuna-decomp/src/p5_types/coreaction_infertypes.rs",
+   "decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs"
+  ],
+  "driver": [
+   "decompiler/crates/kuna-cli/src/decompile_all.rs",
+   "decompiler/crates/kuna-console/src/project.rs",
+   "decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs"
+  ],
+  "tests": [
+   "tests/cli/calleevote-off-leaves-the-callee-untyped.json",
+   "tests/cli/calleevote-types-takes-what-every-caller-passes.json",
+   "tests/cli/calleevote-fields-reads-a-closed-getters-lone-field.json",
+   "tests/stages/kuna-calleevote.xml",
+   "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_x86_64(.c)",
+   "tests/cli/calleevote-leaves-a-relocatable-objects-callbacks-open.json",
+   "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_ops_x86_64.o(.c)",
+   "tests/cli/calleevote-leaves-a-mips-callback-open.json",
+   "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_callback_mipsel(.c)",
+   "tests/cli/calleevote-reads-a-table-in-code-at-address-zero.json",
+   "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_zero_x86_64(.c)"
+  ],
+  "docs": [
+   "docs/spec/04-calls-and-prototypes.md",
+   "docs/spec/05-types.md",
+   "docs/cli.md",
+   "docs/options.md"
+  ]
+ },
+ "catalog_counts": {
+  "settables": 227,
+  "transform_tier": 92,
+  "angr_source_decompiler_bucket": 38,
+  "stage_corpus_files": 330
+ },
+ "review_round": {
+  "round_2": {
+   "closed_set": "stored_function_addresses now scans every allocated section including code on the pointer grid, clears bit 0 on ARM/MIPS, adds Mach-O chained-fixup targets, and closes no function in a relocatable object or an image with no section holding an entry",
+   "witnesses_now_as_off": [
+    "calleevote_ops_x86_64.o get_c/get_b/fwd (cx3.o, cx5.o shape)",
+    "cf2.elf sub_801d6a4 sub_801d6a8 sub_801d6b0 sub_801d658 (Thumb ops table in .text)",
+    "cf2.elf sub_801ab08 sub_8016760 (char * over a wide constant store)"
+   ],
+   "lone_field_walk": "dash O2-noinline sub_7460 (char **argv walked from argv+2) is no longer a one-field record and takes the char ** its callers pass",
+   "typesweep_vs_first_version": "pinned identical (1,415 perfect, 331 up / 3 down vs off); credited perfect 1,936 unchanged; one function's credited value 0.5 -> 0 (bzip2 O2-noinline makeMaps_e walks s->inUse[] in a loop)",
+   "measured_and_dropped": "refusing a lone field whose derived address reaches anything but a load or store (a call included), or that sits beside a pruned access: 21 functions lost their credited record (file_has_acl_cache, getfilecon_cache, xheader_store, ...), so only a loop-walked address is refused"
+  },
+  "round_3": {
+   "pair_built_addresses": "the reference walk reads one instruction at a time; AArch64 adrp+add, MIPS lui+addiu, ARM movw+movt, PPC/RISC-V halves and i386 PIC base+offset take an address in two, so a callback also called directly counted as closed (AArch64 sg.c sub_401018(struct_0 *a0), MIPS sf.c sub_400110(struct_0 *a0)). open_function_entries now closes functions only in an x86-64 image; the ARM/MIPS bit-0 handling of round 2 is gone with it",
+   "sections_by_flag": "the stored-word scan chose sections by address != 0 and missed a const ops table in a .text loaded at 0 (si.c sub_20/sub_30); it now reads every SHF_ALLOC section whatever its address, and exported symbols (PE, Mach-O, ELF exports()) are open",
+   "forget_clears_statement": "Ledger::forget also drops what the callers stated, so the convergence sweep does not apply a vote the arity guard rejected",
+   "witnesses_now_as_off": [
+    "calleevote_callback_mipsel get_c/run (new fixture + probe)",
+    "calleevote_zero_x86_64 get_c/get_b (new fixture + probe + unit test)",
+    "reviewer builds sg_a64, sf_a64, se_a64, sf_mips, se_mips, si_x64: default output == --option calleevote off"
+   ],
+   "probes_restored": "protoorder-types-keeps-a-float-in-a-gpr-an-integer and -extracted-float-bits-an-integer (MIPS) return to main's text: g3/g20 keep void *",
+   "typesweep": "off vs default on the rebased tree: 1,472 -> 1,539 perfect, 334 up / 3 down (gzip xmemdup), credited 1,717 -> 2,083, exported variable counts identical"
+  }
+ }
+}

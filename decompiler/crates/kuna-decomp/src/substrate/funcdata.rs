@@ -446,6 +446,11 @@ pub struct Funcdata {
     /// block read the return register, which carries no argument, before it
     /// writes it (`test %al,%al` in a SysV register-save prologue)?
     kuna_passthrough_variadic: bool,
+    /// (kuna `calleevote`) The types every caller of this function passes for its
+    /// inputs, copied off the `Architecture` after the flow build.
+    kuna_calleevote_inputs: Option<std::rc::Rc<crate::kuna_calleevote::CallerTypes>>,
+    /// (kuna `calleevote fields`) Every caller of this function is a known direct call.
+    kuna_calleevote_closed: bool,
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
@@ -563,6 +568,8 @@ impl Funcdata {
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
+            kuna_calleevote_inputs: None,
+            kuna_calleevote_closed: false,
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
         })
     }
@@ -793,6 +800,29 @@ impl Funcdata {
         if let Some(sp) = entry.get_space() {
             self.kuna_protoorder_types.insert((sp.get_index(), entry.get_offset()), stated);
         }
+    }
+
+    /// (kuna `calleevote`) Record what this function's callers pass for its inputs.
+    pub fn kuna_set_calleevote_inputs(
+        &mut self,
+        stated: Option<std::rc::Rc<crate::kuna_calleevote::CallerTypes>>,
+    ) {
+        self.kuna_calleevote_inputs = stated;
+    }
+
+    /// (kuna `calleevote`) What this function's callers pass for its inputs.
+    pub fn kuna_calleevote_inputs(&self) -> Option<&crate::kuna_calleevote::CallerTypes> {
+        self.kuna_calleevote_inputs.as_deref()
+    }
+
+    /// (kuna `calleevote fields`) Mark every caller of this function as known.
+    pub fn kuna_set_calleevote_closed(&mut self, closed: bool) {
+        self.kuna_calleevote_closed = closed;
+    }
+
+    /// (kuna `calleevote fields`) Are all of this function's callers known direct calls?
+    pub fn kuna_calleevote_closed(&self) -> bool {
+        self.kuna_calleevote_closed
     }
 
     /// (kuna `protoorder types`) The types a callee's own recovery stated for

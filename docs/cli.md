@@ -1130,6 +1130,36 @@ each function finishes and `decompile-graph` decompiles one function per row, so
 neither takes the order; both produce the option-off output and say so on stderr
 when it is asked for explicitly, rather than accepting it silently.
 
+### `--option calleevote` — what every caller passes (on by default)
+
+The callee-first run also works the other way. After the pass, a parameter a
+function typed only as `void *` or `long` takes the type every call to it passes,
+when that is one committed pointer (a named record, a synthesized `struct_N`, a
+`char *`) and every caller is a direct call the call graph knows: a function
+whose address code takes, or the image stores as a pointer-width word, has
+callers nobody can list and states nothing. The callee is decompiled once more
+with that type as a vote its own uses can refuse. The default value `fields`
+also reads a one-field getter's lone field as a record field, for a function
+whose callers are all known direct calls; a `qsort` comparator reads a field
+the same way but keeps its `void *`.
+
+Only an x86-64 image qualifies. The call graph reads one instruction at a time,
+and on AArch64, ARM, MIPS, PowerPC, RISC-V and i386 PIC a function's address is
+built from two instructions it does not join, so there, in a relocatable object
+(`.o`), and in an image without section headers the option changes nothing. An
+address kept as an offset from another one (a 32-bit offset table, a relative
+vtable) is not seen either.
+
+```bash
+kuna decompile-all ./calleevote_x86_64 --option calleevote off | grep peek_used   # long peek_used(void *a0)
+kuna decompile-all ./calleevote_x86_64 | grep peek_used                           # long peek_used(struct_1 *a0)
+```
+
+`types` states only the callers' types; `off` restores the one-way run. Like
+`protoorder` it needs the callee-first pass, so it is inert on `kuna decompile`,
+a narrowed or `--jobs` run and under `--option protoorder off`.
+`KUNA_CALLEEVOTE_TRACE=1` prints each decision and its reason.
+
 ### `kuna functions --summary` — orientation in one call
 
 ```bash
