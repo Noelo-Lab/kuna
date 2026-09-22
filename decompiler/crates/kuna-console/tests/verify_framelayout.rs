@@ -64,7 +64,7 @@ fn variables_for(framelayout: bool) -> Option<Vec<(String, Vec<VarInfo>)>> {
     };
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
     prog.arch_mut().framelayout = framelayout;
-    prog.arch_mut().slot_ptr = kuna_decomp::kuna_slotptr::SlotPtrMode::Off;
+    prog.arch_mut().slot_ptr = false;
 
     let entries: Vec<(String, _)> =
         prog.function_entries().map(|(n, a)| (n.to_string(), a.clone())).collect();

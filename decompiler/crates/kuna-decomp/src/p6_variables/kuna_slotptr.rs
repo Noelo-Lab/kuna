@@ -36,39 +36,6 @@ use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::infra::architecture::Architecture;
 
-/// Which pointer types a filler slot may take from its stores.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SlotPtrMode {
-    /// Report every filler slot by width, as `framelayout` always did.
-    Off,
-    /// Take a pointer whose pointee the recovery committed (`char *`, `T *`,
-    /// `struct_N *`, `T **`); a `void *` or pointer-to-unknown keeps the width.
-    On,
-    /// As `On`, and `void *` too.
-    Void,
-}
-
-impl SlotPtrMode {
-    /// Parse an option value.
-    pub fn parse(v: &str) -> Option<SlotPtrMode> {
-        match v {
-            "off" => Some(SlotPtrMode::Off),
-            "on" => Some(SlotPtrMode::On),
-            "void" => Some(SlotPtrMode::Void),
-            _ => None,
-        }
-    }
-
-    /// The option value spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            SlotPtrMode::Off => "off",
-            SlotPtrMode::On => "on",
-            SlotPtrMode::Void => "void",
-        }
-    }
-}
-
 /// The durable identity of one value stored into a slot.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SlotStore {
@@ -96,9 +63,29 @@ impl SlotEvidence {
         self.accesses.clear();
     }
 
-    /// The stores recorded at exactly `(off, size)`.
-    pub fn stores_at(&self, off: i64, size: int4) -> Vec<SlotStore> {
-        self.stores.get(&(off, size)).cloned().unwrap_or_default()
+    /// Note a live stack Varnode at `(off, size)`.
+    pub fn note_access(&mut self, off: i64, size: int4) {
+        self.accesses.insert((off, size));
+    }
+
+    /// Note one value stored into exactly `(off, size)`.
+    pub fn note_store(&mut self, off: i64, size: int4, store: SlotStore) {
+        let list = self.stores.entry((off, size)).or_default();
+        if !list.contains(&store) {
+            list.push(store);
+        }
+    }
+
+    /// The distinct values stored into exactly `(off, size)`.
+    pub fn stores_at(&self, off: i64, size: int4) -> &[SlotStore] {
+        self.stores.get(&(off, size)).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Whether any pass saw a Varnode overlapping `[off, off + size)` at another
+    /// offset or width.
+    pub fn foreign_access(&self, off: i64, size: int4) -> bool {
+        let end = off + size as i64;
+        self.accesses.iter().any(|&(o, s)| (o, s) != (off, size) && o < end && off < o + s as i64)
     }
 }
 
@@ -182,12 +169,11 @@ pub fn record_pass(fd: &Funcdata, space: &Rc<AddrSpace>) {
         stores.push((key, store));
     }
     fd.with_slot_evidence(|ev| {
-        ev.accesses.extend(accesses);
-        for (key, store) in stores {
-            let list = ev.stores.entry(key).or_default();
-            if !list.contains(&store) {
-                list.push(store);
-            }
+        for (off, size) in accesses {
+            ev.note_access(off, size);
+        }
+        for ((off, size), store) in stores {
+            ev.note_store(off, size, store);
         }
     });
 }
@@ -199,10 +185,6 @@ fn declared_type(fd: &Funcdata, arch: &Architecture, vn: VarnodeId) -> Option<Rc
         .and_then(|h| crate::printc::decl_type_representative(fd, arch, h))
         .unwrap_or(vn);
     Some(Rc::clone(fd.vbank().get(rep)?.get_type()))
-}
-
-fn variant() -> u8 {
-    std::env::var("KUNA_SLOTPTR_VARIANT").ok().and_then(|v| v.bytes().next()).unwrap_or(b'A')
 }
 
 fn value_type(fd: &Funcdata, arch: &Architecture, store: &SlotStore) -> Option<Rc<Datatype>> {
@@ -217,9 +199,7 @@ fn value_type(fd: &Funcdata, arch: &Architecture, store: &SlotStore) -> Option<R
             op.get_out()?
         }
     };
-    let own = Rc::clone(fd.vbank().get(produced)?.get_type());
-    let v = fd.vbank().get(produced)?;
-    let held = if v.is_implied() {
+    let held = if fd.vbank().get(produced)?.is_implied() {
         match fd.lone_descend(produced).and_then(|d| fd.obank().get(d)) {
             Some(c) if c.code() == OpCode::CPUI_CAST => c.get_out().unwrap_or(produced),
             _ => produced,
@@ -227,16 +207,7 @@ fn value_type(fd: &Funcdata, arch: &Architecture, store: &SlotStore) -> Option<R
     } else {
         produced
     };
-    let declared = declared_type(fd, arch, held)?;
-    match variant() {
-        b'B' => Some(own),
-        b'C' => {
-            let a = crate::printc::type_to_c_string(arch, &own);
-            let b = crate::printc::type_to_c_string(arch, &declared);
-            (a == b).then_some(declared)
-        }
-        _ => Some(declared),
-    }
+    declared_type(fd, arch, held)
 }
 
 /// The pointer type a filler slot at `(off, size)` takes from the values stored
@@ -244,14 +215,15 @@ fn value_type(fd: &Funcdata, arch: &Architecture, store: &SlotStore) -> Option<R
 pub fn slot_pointer_type(
     fd: &Funcdata,
     arch: &Architecture,
-    mode: SlotPtrMode,
     off: i64,
     size: int4,
 ) -> Result<Rc<Datatype>, Decline> {
     let ev = fd.slot_evidence();
-    let Some(stores) = ev.stores.get(&(off, size)) else { return Err(Decline::NoStore) };
-    let end = off + size as i64;
-    if ev.accesses.iter().any(|&(o, s)| (o, s) != (off, size) && o < end && off < o + s as i64) {
+    let stores = ev.stores_at(off, size);
+    if stores.is_empty() {
+        return Err(Decline::NoStore);
+    }
+    if ev.foreign_access(off, size) {
         return Err(Decline::Overlap);
     }
     let mut found: Option<(String, Rc<Datatype>)> = None;
@@ -268,21 +240,26 @@ pub fn slot_pointer_type(
         }
     }
     let (_, ty) = found.ok_or(Decline::NoStore)?;
+    admit(&ty, size)?;
+    Ok(ty)
+}
+
+/// Whether `ty` is a pointer a slot of `size` bytes may report: the slot's
+/// width, and a pointee the recovery committed to.  `void *` is admitted; a
+/// pointer to unknown bytes names no type, and a pointer to code is spelled
+/// `void *` by the C printer and came, in every measured case, from a constant
+/// the recovery mistook for a code address.
+pub fn admit(ty: &Datatype, size: int4) -> Result<(), Decline> {
     if ty.get_metatype() != type_metatype::TYPE_PTR {
         return Err(Decline::NotPointer);
     }
     if ty.get_size() != size {
         return Err(Decline::Width);
     }
-    let pointee = ty.get_ptr_to().map(|p| p.get_metatype());
-    match pointee {
-        None | Some(type_metatype::TYPE_UNKNOWN) => return Err(Decline::Pointee),
-        Some(type_metatype::TYPE_VOID | type_metatype::TYPE_CODE) if mode != SlotPtrMode::Void => {
-            return Err(Decline::Pointee)
-        }
-        _ => {}
+    match ty.get_ptr_to().map(|p| p.get_metatype()) {
+        None | Some(type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_CODE) => Err(Decline::Pointee),
+        _ => Ok(()),
     }
-    Ok(ty)
 }
 
 #[cfg(test)]

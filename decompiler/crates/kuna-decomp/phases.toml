@@ -4340,6 +4340,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "slotptr"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P6"
+issue = "kuna-slotptr"
+summary = "Give a `framelayout` filler slot -- a frame slot an early `restructure_varnode` pass recovered and the dataflow later folded away -- the pointer type of the value stored into it on the `decompile-all --json` `variables` surface, instead of the width-only `undefinedN` the early pass recorded. At -O0 each C local has its own spill slot: the store/load pair becomes a stack COPY, copy propagation replaces every read of the slot with the stored value, and dead-code removal takes the slot's Varnode, so the slot reaches `variables` from a pass that ran before any type was committed while the C body prints the value itself as `char *`. When on, every `restructure_varnode` pass also notes, per exact (offset, size), the durable identity of each value stored into the frame -- the root op that computed it (through COPY chains; an indirect-creation stands for its call's eventual output), the function input it came from, or a null constant -- and every stack range any live Varnode touched. `extract_variables` then resolves those identities in the FINAL function and takes the value's declared type (the type its HighVariable is declared with, following an output CAST). The slot is re-spelled only when every non-null store resolves, all agree on one type, the type is a pointer of the slot's width whose pointee is committed (`char *`, `T *`, a named libc record, `struct_N *`, `T **`, `void *`; never a pointer to unknown bytes or to code, which the C printer spells `void *`), no Varnode touched the slot at another offset or width, and the slot overlaps no other exported variable. Pointer types only: committing a scalar would trade the honest width-only answer for a guess. JSON surface (and decompile-project's `.asm` variable comments) only: no p-code, no emitted C."
+use_when = "On by default. A consumer reads `variables[]` as the recovered frame -- the `decompile-all --json` / `decompile-project` surface decbench's type_match scores and IDA's stack view and Binary Ninja's variable list are the analogues of -- and wants a -O0 local that holds a string, a `FILE *` or a `passwd *` reported as that pointer rather than as eight bytes of unknown type. The type reported is the one kuna's own C body gives the stored value, so where the body is wrong the slot is wrong the same way: a length computed as a pointer difference that the body prints as `&p[-(long)q]` reports `char *`, and a register variable that merges an `lseek` result with an `errno` pointer reports `int *`. Flip OFF to get the pre-feature surface, where every filler slot keeps the width-only spelling framelayout recorded. The emitted C never changes either way."
+example = "option slotptr off"
+source_decompiler = "binja"
+inspiration = "Binary Ninja keeps every -O0 spill slot as a variable and types it from the value stored into it. Over the campaign's 444 decbench slices 805 of the 1,625 ground-truth `char *` variables binja gets right and kuna missed were such slots, which kuna reported as `undefined8` while its own C body printed the stored value as `char *`."
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "a -O0 stack slot is reported as undefined8 although the C body prints the value stored into it as char *|a local that holds a FILE * or a libc record pointer is reported as eight bytes of unknown type|the variables array has fewer pointer-typed locals than the C body declares|a spilled pointer argument's home slot is reported as undefined8"
+live_field = "slot_ptr"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "ctypes"
 values = "on|off"
 default = "off"

@@ -2259,7 +2259,7 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
                 addresses: Vec::new(),
             });
         }
-        if arch.slot_ptr != crate::kuna_slotptr::SlotPtrMode::Off {
+        if arch.slot_ptr {
             type_filler_slots_from_stores(arch, fd, &mut out, first_slot);
         }
     }
@@ -2291,13 +2291,7 @@ fn type_filler_slots_from_stores(
         if overlaps {
             continue;
         }
-        let verdict =
-            crate::kuna_slotptr::slot_pointer_type(fd, arch, arch.slot_ptr, lo, out[i].size as int4);
-        if std::env::var_os("KUNA_SLOTPTR_TRACE").is_some() {
-            let shown = verdict.as_ref().map(|t| crate::printc::type_to_c_string(arch, t));
-            eprintln!("[slotptr] {} {} {:?}", fd.get_name(), out[i].name, shown);
-        }
-        if let Ok(ty) = verdict {
+        if let Ok(ty) = crate::kuna_slotptr::slot_pointer_type(fd, arch, lo, out[i].size as int4) {
             out[i].type_name = crate::printc::type_to_c_string(arch, &ty);
         }
     }

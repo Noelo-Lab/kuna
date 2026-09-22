@@ -884,8 +884,8 @@ pub struct ArchContext {
     /// lives in [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
     /// (kuna `slotptr`) Record what each `restructure_varnode` pass sees stored
-    /// into the stack frame; set when
-    /// [`Architecture::slot_ptr`](crate::architecture::Architecture) is not `off`.
+    /// into the stack frame; mirrors
+    /// [`Architecture::slot_ptr`](crate::architecture::Architecture).
     /// Read by `Funcdata::record_frame_layout_pass`; the evidence is consumed by
     /// [`kuna_slotptr`](crate::p6_variables::kuna_slotptr).
     pub slot_ptr: bool,
@@ -1591,7 +1591,7 @@ impl ArchContext {
             char_byte: true, // (kuna) option charbyte
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
-            slot_ptr: false, // (kuna) option slotptr, copied from Architecture
+            slot_ptr: true, // (kuna) option slotptr (default on), copied from Architecture
             libctypes: false, // (kuna) option libctypes, copied from Architecture
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch

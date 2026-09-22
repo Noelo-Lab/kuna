@@ -24,7 +24,6 @@ use kuna_console::engine::bootstrap_from_object;
 use kuna_decomp::decompile_drive::{
     decompile_func_full_with_override_dyn, extract_variables, print_c, VarInfo,
 };
-use kuna_decomp::kuna_slotptr::SlotPtrMode;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -35,7 +34,7 @@ fn fauxware() -> PathBuf {
 }
 
 /// Every function's `extract_variables` output and emitted C for one setting.
-fn run(mode: SlotPtrMode) -> Option<Vec<(String, Vec<VarInfo>, String)>> {
+fn run(slot_ptr: bool) -> Option<Vec<(String, Vec<VarInfo>, String)>> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = fauxware().to_str()?.to_string();
@@ -52,7 +51,7 @@ fn run(mode: SlotPtrMode) -> Option<Vec<(String, Vec<VarInfo>, String)>> {
     };
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
     prog.arch_mut().framelayout = true;
-    prog.arch_mut().slot_ptr = mode;
+    prog.arch_mut().slot_ptr = slot_ptr;
 
     let entries: Vec<(String, _)> =
         prog.function_entries().map(|(n, a)| (n.to_string(), a.clone())).collect();
@@ -77,8 +76,8 @@ fn is_pointer_spelling(t: &str) -> bool {
 
 #[test]
 fn slotptr_types_filler_slots_from_their_stores_and_changes_nothing_else() {
-    let Some(off) = run(SlotPtrMode::Off) else { return };
-    let Some(on) = run(SlotPtrMode::On) else { return };
+    let Some(off) = run(false) else { return };
+    let Some(on) = run(true) else { return };
     assert_eq!(off.len(), on.len(), "the two arms must decompile the same functions");
 
     let mut respelled = Vec::new();

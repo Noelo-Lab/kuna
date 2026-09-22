@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_225() {
+fn settable_count_is_226() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -161,12 +161,13 @@ fn settable_count_is_225() {
     // +1 for `rawdiscover` (P1 raw-image function inventory).
     // +1 for `protoorder` (P4 callee-first recovered parameter types).
     // +1 for `charbyte` (P5 char-pointer byte typing).
-    assert_eq!(kuna_num_settables(), 225);
-    assert_eq!(SETTABLE_TABLE.len(), 225);
+    // +1 for `slotptr` (P6 frame-slot pointer typing on the JSON variables surface).
+    assert_eq!(kuna_num_settables(), 226);
+    assert_eq!(SETTABLE_TABLE.len(), 226);
 }
 
 #[test]
-fn tier_counts_are_70_core_91_transform_64_analysis() {
+fn tier_counts_are_71_core_91_transform_64_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -310,7 +311,9 @@ fn tier_counts_are_70_core_91_transform_64_analysis() {
     // transform 88 -> 89: +1 for `protoorder` (P4 callee-first recovered
     // parameter types).
     // core 69 -> 70: +1 for `charbyte` (P5 char-pointer byte typing).
-    assert_eq!((core, transform, analysis), (70, 91, 64));
+    // core 70 -> 71: +1 for `slotptr` (P6 frame-slot pointer typing on the JSON
+    // variables surface).
+    assert_eq!((core, transform, analysis), (71, 91, 64));
 }
 
 #[test]
@@ -500,7 +503,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_93() {
+fn option_values_live_value_present_for_94() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -936,7 +939,8 @@ fn option_values_live_value_present_for_93() {
     // 89 -> 90: +1 for `mulblob` (live_field = mul_blob, default-on).
     // 90 -> 91: +1 for `charbyte` (live_field = char_byte, default-on).
     // 92 -> 93: +1 for `charptr` (live_field = char_ptr, opt-in).
-    assert_eq!(with_live, 93);
+    // 93 -> 94: +1 for `slotptr` (live_field = slot_ptr, default-on).
+    assert_eq!(with_live, 94);
 }
 
 #[test]
@@ -1105,7 +1109,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // increments it again.
     // 217 -> 218: +1 for `mulblob`; its P3 row sits mid-table, so it
     // increments it again.
-    assert_eq!(json.matches("},\n").count(), 224);
+    // 224 -> 225: +1 for `slotptr`; its P6 row sits mid-table.
+    assert_eq!(json.matches("},\n").count(), 225);
 }
 
 #[test]
