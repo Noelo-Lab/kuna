@@ -2350,7 +2350,8 @@ fn jobs_output_is_byte_identical_to_serial() {
     }
 }
 
-/// With the default `protoorder types`, a serial run types `caller`'s argument
+/// With the default `protoorder cycles` (on this acyclic fixture the same as
+/// `types`), a serial run types `caller`'s argument
 /// from `callee`'s own recovery and a pool run cannot: the pool says so on
 /// stderr instead of silently producing a different document.
 #[test]

@@ -37,5 +37,5 @@
       "&sub_8130\\[1\\]"
     ]
   },
-  "notes": "The DEFAULT (`protoorder types`) on a Thumb image: `sub_8120` recovers a byte-pointer parameter and `sub_8110` passes it `0x8131`, the Thumb address of `sub_8130`. A pointer vote on that constant renders it `&sub_8130[1]`, a subscript of a function, which is not C; the vote is refused on a constant inside a function's code, so the literal stays a number."
+  "notes": "The DEFAULT (`protoorder cycles`, the same as `types` on this acyclic image) on a Thumb image: `sub_8120` recovers a byte-pointer parameter and `sub_8110` passes it `0x8131`, the Thumb address of `sub_8130`. A pointer vote on that constant renders it `&sub_8130[1]`, a subscript of a function, which is not C; the vote is refused on a constant inside a function's code, so the literal stays a number."
 }

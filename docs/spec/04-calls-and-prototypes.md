@@ -645,10 +645,14 @@ two surviving arguments declines it, because one parameter cannot be two
 arguments.
 
 Requiring the prototype to **exist** carries the rest, because `protoorder`
-states nothing for a callee inside a recursive component, one with no recovered
-body such as a PLT import, one that recovered no parameters at all, and one whose
-prototype is already *declared* — that last case input-locks the call spec, which
-this rule declines at its first line. "Nothing parked" and "cannot tell" are
+states nothing for a callee with no recovered body such as a PLT import, one that
+recovered no parameters at all, one whose prototype is already *declared* — that
+case input-locks the call spec, which this rule declines at its first line — and,
+under `types`, one inside a recursive component. Under the default `cycles` a
+recursive callee states its list like any other; a member whose list is short
+because it hands a register on to a partner is answered by the callee-body walk
+below, which follows the partner's body and proves nothing about a cycle it
+re-enters. "Nothing parked" and "cannot tell" are
 therefore the same answer and both decline, which also makes the rule inert
 wherever no callee was decompiled first: a single-function `kuna decompile` (it
 forks one process per function), a `decompile-all` narrowed by `--addr` or
@@ -657,8 +661,8 @@ forks one process per function), a `decompile-all` narrowed by `--addr` or
 `protoorder` does **not** decline a variadic callee, and this rule must not be
 read as resting on that. The variadic guards described above — the under-recovery
 walk and the register-file boundary — belong to the branch that parks a prototype
-in the symbol table, and the default `types` mode, which is the one this rule
-reads, returns before them. The declared-`...` decline cannot fire on a stripped
+in the symbol table, and the stating modes (`types` and the default `cycles`),
+which are the ones this rule reads, return before them. The declared-`...` decline cannot fire on a stripped
 image at all, because a declared prototype is rejected one branch earlier. A
 stripped SysV variadic is therefore *stated*: `long vlog(int,long,...)` built
 with `gcc -O2` and stripped states three parameters, and `KUNA_PROTOORDER_TRACE=1`
@@ -1891,7 +1895,9 @@ order of the output does not.
 Ordering is Tarjan's strongly-connected components over the direct-call edges,
 whose output order is already reverse-topological. A component with more than one
 member — and a function that calls itself — is recursion, where "callees first"
-has no meaning: those functions decompile with nothing stated.
+has no meaning. Under `types` and `lock` those functions decompile with nothing
+stated; under `cycles` (the default, below) they state their types in an order of
+the driver's own.
 
 The callee-first loop ends with the same `structsynth` convergence sweep as an
 address-order batch (chapter [00](00-overview.md), synthesized structures across
@@ -1905,11 +1911,12 @@ even where the surviving one was in reach, which an address-order run would
 have replaced. `lock` runs no sweep: a prototype it parked is declared, and a
 second decompile would read that function's own first answer back.
 
-The option has two live values, because there are two different things a
+The option has three live values, because there are two different things a
 recovered prototype can be asked to say and only one of them is safe to say by
-default.
+default, and one question the safe one can answer two ways: whether a function
+in a recursive component says anything at all.
 
-#### `types` (the default) — the callee's parameter types, never its arity
+#### `types` — the callee's parameter types, never its arity
 
 A recovered prototype is not a fact about the program; it is a summary of what
 one decompile managed to recover, and recovery is wrong in both directions. It
@@ -2129,6 +2136,72 @@ where nothing at the call site contradicts it. Over the 444-slice campaign corpu
 that costs three functions a lower score against 851 that gain, and
 none that leave a perfect score against 115 that reach one.
 
+#### `cycles` (the default) — recursive functions state their types too
+
+Under `types`, a function in a recursive component states nothing, and that
+stops the chain at the first recursion. Much of the character-level work in
+coreutils and gnulib bottoms out in recursive functions — `quotearg_buffer_restyled`
+calls itself, `copy_internal` and `copy_dir` call each other — so on cp -O0 the
+quoting helper is recovered as taking `char *`, and every function that hands it a
+file name keeps an integer: `emit_verbose` renders
+`void sub_a6db(unsigned long a0,unsigned long a1,long a2)`.
+
+`cycles` is `types` with one change: a member of a recursive component states
+its recovered types too, as every other function does, through the same table
+and the same refusals. What stays open is the order, because inside a cycle there
+is no callee-first one (`decompiler/crates/kuna-cli/src/decompile_all.rs
+(plan_from_components)`). A function that only calls itself is decompiled once,
+like any other function, and its own call to itself reads nothing. The members of
+a larger component are decompiled once each in a depth-first order over the
+component's own edges (`cycle_order`), which emits each member after the partners
+it reaches and starts from the members something outside the component calls.
+Each member states its types as it finishes, so a member decompiled later reads
+every partner decompiled before it, and a member called from outside — the one
+the component's callers read — is decompiled after the partners it reaches. A
+member decompiled before a partner it calls does not read that partner's
+statement: what it states was recovered from its own body and the callees outside
+the component, which is the same evidence a function whose callees all declined
+has. The component's callers come after every member, so they read all of them.
+The order is a function of the program alone (roots and edges in address order),
+so the output is deterministic. On cp -O0 `emit_verbose` becomes
+`void sub_a6db(char *a0,char *a1,char *a2)`.
+
+A second round — decompiling each member that called a later partner once more,
+after the whole component, so it too reads that partner — was measured and is not
+taken: over the 444-slice corpus it adds 0.39 to the aggregate `type_match` (5
+more functions improve, no more reach a perfect score), and on bash -O2 it costs
++30%, because the parser and the command executor are the two largest members of
+one component and each is decompiled twice.
+
+`lock` keeps declining a recursive component: a parked prototype is declared, so
+a member decompiled first would lock its partners' calls to a list recovered
+without them, and a redone member would read its own first answer back.
+
+Nothing about arity changes: `cycles` locks nothing, exactly as `types` does.
+`argclobber` (above) reads the stated lists, so a call to a recursive callee can
+now lose a trailing clobbered argument where it could not before — but only by
+that rule, and only where the callee's stated list accounts for every surviving
+argument and its body neither reads nor forwards the register. The body walk is
+what answers for a member whose recovery is short because it hands a register on
+to a partner: `resolve_forward_transfer` follows the partner's body, and a cycle it
+re-enters proves nothing, so a register the callee has not written before its
+recursive call can still reach a read and the drop is declined. The fixture
+`protoorder_cycles_x86_64` shows both sides: `rtarget` writes `rdx` before calling
+itself and its caller's clobbered third argument is dropped, `rkeep` forwards
+`rdx` into its own recursion and its caller keeps it; C counterexamples where a
+recursive forwarding thunk, and a two-member cycle feeding one, recover short keep
+the argument too (`docs/features/protoscc/`).
+
+Measured against `types` over the 444-slice campaign corpus: 46 functions reach a
+perfect `type_match` and none leave it, 116 more improve, and one gets worse
+(coreutils -O2 `install_file_in_file`, whose `to_relname` takes `stat *` from
+`copy_internal`'s own recovery of the same argument — a wrong recovered type, the
+known cost of any vote). The class that moves is `char *`. Over fifteen binaries
+(x86-64 -O0, -O2 and -O2-noinline userland and three ARM Cortex-M images) both
+values render the same 90,420 call arguments and 18,556 argument rows, no call is
+made or lost, no `goto` or `return` moves, and no stack object is split, merged
+or read without a write (`docs/features/protoscc/`).
+
 #### `lock` — the arity claim, opt-in
 
 The other value parks the recovered prototype in the symbol table, where
@@ -2239,16 +2312,17 @@ counters unmoved (785 functions gaining `variables[]` argument rows either way)
 and deleted nineteen more arguments. The callees that fabricate are the ones
 that call something, which is exactly where that walk stops.
 
-#### What both values decline
+#### What every value declines
 
-Both values decline when
+Every value declines when
 
 - the function's decompile errored, or left no parameter store;
 - it says nothing: no parameters and a `void` return;
 - model selection did not settle on a known model;
 - a parameter is a hidden return pointer, an indirect-storage parameter or a
   `this` pointer, or carries no type or no real storage;
-- the function is in a call-graph cycle of more than one member;
+- under `types` and `lock`, the function is in a recursive component (a
+  call-graph cycle of more than one member, or a function that calls itself);
 - a prototype is already **declared** for that entry. A `--assert prototype`, a
   libc/`libctypes` signature, a DWARF (`cppproto`) or demangled (`cppsig`) one
   are all stated facts that outrank anything recovery found — and under `types`

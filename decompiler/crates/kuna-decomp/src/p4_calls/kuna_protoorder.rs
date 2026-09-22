@@ -4,11 +4,12 @@
 //! `kuna-cli/src/decompile_all.rs`); after each function this module decides what
 //! may be said about it, and at each later call site what a caller may take.
 //!
-//! `types` (the default) records the recovered parameter types against the
-//! storage they were recovered in ([`RecoveredTypes`]).  A caller's argument takes
-//! one as a vote in `Varnode::getLocalType`'s fold ([`call_argument_vote`]),
-//! refused wherever the caller holds evidence the fold cannot weigh.  Nothing is
-//! locked, so no call's arity can move.
+//! `types` records the recovered parameter types against the storage they were
+//! recovered in ([`RecoveredTypes`]).  A caller's argument takes one as a vote in
+//! `Varnode::getLocalType`'s fold ([`call_argument_vote`]), refused wherever the
+//! caller holds evidence the fold cannot weigh.  Nothing is locked, so no call's
+//! arity can move.  `cycles` (the default) is `types` for the members of a
+//! call-graph cycle too, which the driver decompiles in an order of its own.
 //!
 //! `lock` parks the recovered prototype on the callee's `FunctionSymbol`, where
 //! `ActionDefaultParams` reads a declared one from ([`park_recovered`]).  That
@@ -30,7 +31,9 @@ use crate::p4_calls::fspec::{FuncCallSpecs, FuncProto, PrototypePieces};
 
 /// What a recovered prototype is allowed to say about a call site.
 ///
-/// The two modes differ in ONE thing -- whether the parked prototype can move a
+/// [`ProtoOrderMode::Cycles`] is [`ProtoOrderMode::Types`] with the members of
+/// a recursive component stating their types as well.  The two stating modes
+/// differ in ONE thing -- whether the parked prototype can move a
 /// call's ARITY -- and that one thing is the whole difference between a type
 /// recovery and a rewrite of what the program does.
 ///

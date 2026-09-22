@@ -40,5 +40,5 @@
       "vfmt\\(\\(unsigned char \\*\\)0x402004,a1"
     ]
   },
-  "notes": "The DEFAULT (`protoorder types`): `callee` is decompiled first and states the types it recovered, so the argument `caller` forwards to it is typed and `caller`'s own parameter becomes `unsigned char *a0`. Every call keeps exactly the arguments the OFF arm renders -- `thunk` recovers one parameter and its call still passes five."
+  "notes": "The DEFAULT (`protoorder cycles`, the same as `types` on this acyclic fixture): `callee` is decompiled first and states the types it recovered, so the argument `caller` forwards to it is typed and `caller`'s own parameter becomes `unsigned char *a0`. Every call keeps exactly the arguments the OFF arm renders -- `thunk` recovers one parameter and its call still passes five."
 }
