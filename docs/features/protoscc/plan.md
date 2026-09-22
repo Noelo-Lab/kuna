@@ -21,7 +21,11 @@ untouched and keeps refusing components.
   emitted after the partners it reaches.
 
 No second round (analysis.md table: +0.39 aggregate for about +35% on bash -O2). The
-`structsynth` convergence sweep walks the same plan with the same park flags.
+`structsynth` convergence sweep walks the same plan with the same park flags. It
+first forgets every stated list that names a superseded structure
+(`forget_statements_naming`), and `seed_protoorder_types` never offers a function
+its own statement, so a redone recursive function cannot type its recursive
+argument with the record the redo replaces.
 
 ## 3. Default
 
@@ -35,7 +39,10 @@ evaluation is `default-on-evaluation.md`.
   mode predicates in `kuna_protoorder/tests.rs`;
 - integration: `recursive_callees_state_their_types_under_cycles`
   (`kuna-cli/tests/decompile_all_cli.rs`) over the new fixture
-  `protoorder_cycles_x86_64` (`as && ld`, symbols kept);
+  `protoorder_cycles_x86_64` (`as && ld`, symbols kept), and
+  `a_redone_recursive_function_reads_no_statement_of_its_own` over
+  `protoorder_cyclestruct_x86_64` (`gcc -O2 -fno-inline`), which fails without the
+  sweep rules above;
 - two-pass CLI probes: `tests/cli/protoorder-cycles-types-the-callers-of-a-recursive-function.json`
   (the default) and `tests/cli/protoorder-types-states-nothing-for-a-recursive-function.json`
   (`--option protoorder types`, the old behaviour).

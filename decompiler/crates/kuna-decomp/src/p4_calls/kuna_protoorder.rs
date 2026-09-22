@@ -1498,6 +1498,36 @@ pub fn stated_key(entry: &Address) -> Option<(int4, uintb)> {
     Some((entry.get_space()?.get_index(), entry.get_offset()))
 }
 
+/// Forget every statement with a parameter type that names one of `names`,
+/// through any depth of pointer.
+///
+/// The `structsynth` convergence sweep calls this with the superseded structures
+/// before it decompiles anything again.  Such a statement was made before the
+/// survivor existed, and a redo that read it would type an argument with the
+/// structure the redo exists to replace.  A callee the sweep redoes states again.
+pub fn forget_statements_naming(arch: &mut Architecture, names: &[String]) {
+    if names.is_empty() {
+        return;
+    }
+    arch.kuna_protoorder_types
+        .retain(|_, stated| !stated.inputs.iter().any(|(_, _, ct)| names_type(ct, names)));
+}
+
+/// Is `ct`, or what it points at at any depth, named one of `names`?
+fn names_type(ct: &Rc<Datatype>, names: &[String]) -> bool {
+    let mut cur = Rc::clone(ct);
+    for _ in 0..8 {
+        if names.iter().any(|n| n == cur.get_name()) {
+            return true;
+        }
+        match cur.get_ptr_to() {
+            Some(next) => cur = next,
+            None => return false,
+        }
+    }
+    false
+}
+
 /// Copy onto `data` the types every callee it calls stated about itself.
 ///
 /// The `Architecture` holding the table is not reachable from the type-inference

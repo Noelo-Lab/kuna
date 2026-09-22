@@ -55,9 +55,11 @@ then decompiled after the partners it reaches, so what it states includes theirs
 
 ## What does not change
 
-- `types` mode never locks, so no call gains or loses an argument. Over 15 binaries
-  both values render the same 90,420 call arguments and 18,556 `variables[]`
-  argument rows (`callsite.json`).
+- Neither value locks, so no call gains an argument; the one argument a call can
+  lose is the trailing clobbered one `argclobber` drops (below), which under
+  `cycles` includes a call to a recursive callee (`rtarget(a0,5)`). Over 15
+  binaries both values render the same 90,420 call arguments and 18,556
+  `variables[]` argument rows (`callsite.json`).
 - `lock` still declines a recursive component: a parked prototype is declared, so a
   first-decompiled member would lock its partners' calls to a list recovered
   without them.
@@ -66,6 +68,33 @@ then decompiled after the partners it reaches, so what it states includes theirs
 - `--jobs N` takes no callee-first order at all (a worker cannot see another
   worker's callees), so it states nothing under either value; the pool's
   serial-replay contract is still "`--jobs 1 --option protoorder off`".
+
+## The structsynth convergence sweep
+
+The sweep decompiles again every result that names a structure a later, larger
+layout superseded (`converge_callee_first`). Under `types` a recursive function
+states nothing, so no redo can read a stale statement of its own. Under `cycles`
+it could: tar -O2 `make_hol` (`sub_3b0c0`) was redone onto `struct_59 *a0` and read
+its own first-pass statement at its recursive call, so it passed
+`(struct_54 *)*v22`, the superseded record, while its own prototype takes
+`struct_59 *`. A cycle member redone before a partner has the same
+exposure to the partner's stale statement.
+
+Two rules close it. `seed_protoorder_types` never offers a function its own
+statement, and the sweep first forgets every stated list that names a superseded
+structure (`forget_statements_naming`); a redone callee states again before its
+redone callers. Rebuilding the table in plan order, so that a redo reads exactly
+what its first decompile read, was tried first and rejected: under `types` it moved
+tar -O0 `sub_3854d`, whose callees the call graph plans after it, from
+`sub_34a6f("-f")` to `sub_34a6f(0x8746d)`. The rule taken keeps `types`
+byte-identical to main.
+
+Checked on 26 binaries (the 15 below plus mv, dash, gzip, bzip2, scp and e2fsck at
+-O0 and ginstall, dash, tar, xmlwf and crazyflie at -O2): no result names a
+superseded structure after the sweep under either value, no call argument is cast
+to a `struct_N *` other than the callee's own parameter where `types` has none
+(`r3c-stale.txt`), and `types` is byte-identical to main on all 26. Regression
+fixture `protoorder_cyclestruct_x86_64`.
 
 ## argclobber
 

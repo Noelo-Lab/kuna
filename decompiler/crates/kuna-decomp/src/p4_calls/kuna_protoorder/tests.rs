@@ -493,3 +493,28 @@ fn strides_combine_by_their_common_divisor() {
     assert_eq!(gcd(-8, 12), 4);
     assert_eq!(gcd(0, 0), 0);
 }
+
+fn named_struct(name: &str) -> Rc<Datatype> {
+    let mut t = Datatype::new(0x28, type_metatype::TYPE_STRUCT);
+    t.name = name.to_string();
+    Rc::new(t)
+}
+
+fn ptr_to(elem: Rc<Datatype>) -> Rc<Datatype> {
+    let mut t = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
+    t.kind = crate::dtype::DatatypeKind::Pointer { ptrto: elem, spaceid: None, truncate: None, wordsize: 1 };
+    Rc::new(t)
+}
+
+/// The convergence sweep forgets a statement that names a superseded structure
+/// at any pointer depth, and nothing else: `struct_1` does not answer for
+/// `struct_10`.
+#[test]
+fn a_statement_naming_a_superseded_structure_is_recognised_through_pointers() {
+    let stale = vec!["struct_1".to_string()];
+    assert!(names_type(&ptr_to(named_struct("struct_1")), &stale));
+    assert!(names_type(&ptr_to(ptr_to(named_struct("struct_1"))), &stale));
+    assert!(!names_type(&ptr_to(named_struct("struct_10")), &stale));
+    assert!(!names_type(&int8(), &stale));
+    assert!(!names_type(&ptr_to(named_struct("struct_1")), &[]));
+}

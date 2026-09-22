@@ -1911,6 +1911,24 @@ even where the surviving one was in reach, which an address-order run would
 have replaced. `lock` runs no sweep: a prototype it parked is declared, and a
 second decompile would read that function's own first answer back.
 
+Before it decompiles anything again, the sweep forgets every stated type list
+that names a superseded structure, at any pointer depth
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs
+(forget_statements_naming)`). A redone callee states again before its redone
+callers read it, so a callee planned first loses nothing, and a statement that is
+still stale when a redo reaches the call is not read at all. Under `types` a
+function's callees are planned before it (a call the graph misses is the
+exception), so on the corpus measured this changes nothing there. Under `cycles`
+it is what keeps a redo from reading a stale answer made after its own first
+decompile: a function that calls itself, and a cycle member that calls a partner
+planned after it, would otherwise type the argument with the structure the redo
+exists to replace. On tar -O2 the recursive `make_hol` (`sub_3b0c0`) was redone
+onto the survivor `struct_59 *a0` and still passed its child as
+`(struct_54 *)*v22`, from its own first answer. A later partner's statement that
+names no superseded structure is still read by the redo: it states a current
+type, as any callee's does. A function is never offered its own statement
+(`seed_protoorder_types`), so its call to itself reads nothing on any pass.
+
 The option has three live values, because there are two different things a
 recovered prototype can be asked to say and only one of them is safe to say by
 default, and one question the safe one can answer two ways: whether a function
@@ -1927,7 +1945,7 @@ values the program really passes. The COUNT it recovered is a claim about the
 program's shape, and stating a wrong one rewrites what the emitted C says the
 machine code does.
 
-So the default value states only the parameter types. Nothing is written to the
+So `types`, like the default `cycles` below, states only the parameter types. Nothing is written to the
 symbol table: the recovered parameter types and the storage they were recovered
 in go into `Architecture::kuna_protoorder_types`, keyed by the callee's entry.
 The type-inference seam that reads them cannot reach the `Architecture`
@@ -2116,7 +2134,11 @@ worse, `grep`'s `memchr_kwset` family among them.
 
 No call spec is input-locked, so `ActionFuncLink` runs the caller's own argument
 recovery at every call exactly as it does with the option off, and nothing about
-the call's shape can move. That is checkable rather than merely arguable, and it
+the call's shape can move by this option. The one rule that reads a stated list as
+evidence about arity is `argclobber` (above, on by default), which drops a
+trailing argument only where the callee's stated list and its body both prove the
+register free; the counts that follow were taken before it was on. That the
+option itself moves no arity is checkable rather than merely arguable, and it
 is checked: over 46 stripped binaries (25,038 functions, x86-64 userland
 at -O0, -O2 and -O2-noinline plus ARM Cortex-M firmware) the two arms render
 **the same 209,487 call arguments**, no function gains or loses a
@@ -2151,7 +2173,8 @@ its recovered types too, as every other function does, through the same table
 and the same refusals. What stays open is the order, because inside a cycle there
 is no callee-first one (`decompiler/crates/kuna-cli/src/decompile_all.rs
 (plan_from_components)`). A function that only calls itself is decompiled once,
-like any other function, and its own call to itself reads nothing. The members of
+like any other function, and its own call to itself reads nothing, in the
+`structsynth` sweep's redo as well (above). The members of
 a larger component are decompiled once each in a depth-first order over the
 component's own edges (`cycle_order`), which emits each member after the partners
 it reaches and starts from the members something outside the component calls.
@@ -2177,10 +2200,11 @@ one component and each is decompiled twice.
 a member decompiled first would lock its partners' calls to a list recovered
 without them, and a redone member would read its own first answer back.
 
-Nothing about arity changes: `cycles` locks nothing, exactly as `types` does.
-`argclobber` (above) reads the stated lists, so a call to a recursive callee can
-now lose a trailing clobbered argument where it could not before — but only by
-that rule, and only where the callee's stated list accounts for every surviving
+`cycles` locks nothing, exactly as `types` does, so no call gains an argument and
+no call spec is decided by a statement. One arity can move, and only by
+`argclobber` (above, on by default), which reads the stated lists: a call to a
+recursive callee can now lose a trailing clobbered argument where it could not
+before, and only where the callee's stated list accounts for every surviving
 argument and its body neither reads nor forwards the register. The body walk is
 what answers for a member whose recovery is short because it hands a register on
 to a partner: `resolve_forward_transfer` follows the partner's body, and a cycle it
