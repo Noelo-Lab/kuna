@@ -503,7 +503,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_94() {
+fn option_values_live_value_present_for_95() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -940,7 +940,8 @@ fn option_values_live_value_present_for_94() {
     // 90 -> 91: +1 for `charbyte` (live_field = char_byte, default-on).
     // 92 -> 93: +1 for `charptr` (live_field = char_ptr, opt-in).
     // 93 -> 94: +1 for `slotptr` (live_field = slot_ptr, default-on).
-    assert_eq!(with_live, 94);
+    // 94 -> 95: +1 for `passthrough` (live_field = pass_through).
+    assert_eq!(with_live, 95);
 }
 
 #[test]

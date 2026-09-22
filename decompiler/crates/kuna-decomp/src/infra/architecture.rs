@@ -721,6 +721,10 @@ pub struct Architecture {
     /// (kuna) Drop a trailing register argument a previous call's clobber put
     /// there (option `argclobber`).  See [`crate::p4_calls::kuna_argclobber`].
     pub arg_clobber: bool,
+    /// (kuna) A register forwarded untouched to a callee whose recovered
+    /// prototype reads it becomes a parameter (option `passthrough`).  See
+    /// [`crate::p4_calls::kuna_passthrough`].
+    pub pass_through: bool,
     /// (kuna) Let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (option `calleedeadarg`).
     pub callee_dead_arg: bool,
@@ -2366,6 +2370,7 @@ impl Architecture {
             callee_pop: true,
             callee_proto_stack: true,
             arg_clobber: true, // (kuna) option argclobber; reset_defaults sets the shipped default
+            pass_through: false, // (kuna) option passthrough; reset_defaults sets the shipped default
             callee_dead_arg: true,
             callee_preserves: true,
             callee_ret_preserves: true,
@@ -2707,6 +2712,7 @@ impl Architecture {
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
+        self.pass_through = false; // (kuna) option passthrough; shipped off
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
@@ -3091,6 +3097,11 @@ impl Architecture {
             "argclobber" => {
                 let (val, msg) = crate::p4_calls::kuna_argclobber::OptionArgClobber.apply(p1)?;
                 self.arg_clobber = val;
+                Ok(msg)
+            }
+            "passthrough" => {
+                let (val, msg) = crate::p4_calls::kuna_passthrough::OptionPassThrough.apply(p1)?;
+                self.pass_through = val;
                 Ok(msg)
             }
             "calleedeadarg" => {
@@ -4221,6 +4232,7 @@ impl Architecture {
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.arg_clobber = self.arg_clobber; // argclobber
+        ctx.pass_through = self.pass_through; // passthrough
         ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves

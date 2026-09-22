@@ -2399,3 +2399,147 @@ output would depend on how the chunks fell. A `--jobs` run under the default is
 not refused; it states nothing and says so on stderr, since its call-argument
 types can then differ from the serial run's, and `--option protoorder off` on
 both makes them byte-identical.
+
+### (kuna) `passthrough` — the register a function forwards to a callee that reads it
+
+(kuna) `passthrough` (default off,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_passthrough.rs`) reads the
+statement `protoorder` makes in the one direction `types` never takes: it lets a
+callee's recovered parameter list add an argument at a call site, and so a
+parameter to the function making the call.
+
+**The gap.** A call's argument trials exist only for storage heritage visits
+(§4.2, *Trials are populated by heritage*), and heritage visits a range only when
+some op of the function reads or writes it. A function that hands its own
+incoming register straight to a callee names that register nowhere: gzip -O2
+`gzip_base_name` is `endbr64; jmp last_component`, the call gets no `rdi` trial,
+and kuna printed `void sub_d290(void) { sub_dfd0(); }` while printing the callee
+in the same output as `char *sub_dfd0(char *a0)`. coreutils df `dir_name`
+(`call mdir_name; test %rax,%rax; ...`) is the same shape without the tail call.
+Where the register *is* heritaged — the function also reads it — upstream's
+`AncestorRealistic::execute` refuses a trial whose Varnode is the function's own
+input outright, because it expects to see a value moved into the register.
+
+**The evidence.** Only the callee can say it wanted the register. A register `R`
+at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
+
+- the callee's recovered prototype (`RecoveredTypes`, stated by `protoorder` for a
+  callee decompiled first) has a parameter starting at `R`;
+- that list is one `lock` would accept as an **arity claim**
+  (`RecoveredTypes::arity_sound`, computed only while the option is on): every
+  parameter is in a register, the callee's body does not read the register its
+  next parameter would arrive in (a variadic's register-save prologue does,
+  however much of it recovery kept — gnulib `rpl_fcntl(int,int,...)` recovers
+  three parameters and saves three more registers), the list does not end on the
+  last argument register, and the model would put those types where recovery
+  found them. The next-slot read is asked without the register-zeroing idiom:
+  `xor %esi,%esi` writes a constant;
+- the callee's body reads `R` before writing it on some path, for a value that
+  reaches something (`calleedeadarg`'s `proves_input`), so the parameter is not an
+  artifact of the callee's own recovery;
+- the caller did not set the call up as variadic. A register that carries no
+  argument but the return value, written and not read again between the call and
+  the call or block start before it, is SysV's vector-register count (`xor
+  %eax,%eax`), and a variadic callee may state an optional tail register it saves
+  (gnulib `open_safer(char const *,int,...)` saves only `rdx`);
+- the calling function is not variadic itself: its entry block does not read that
+  return-only register before writing it or calling anything (`test %al,%al`). Its
+  own recovery would read every register its prologue saves, and one argument
+  supplied here is enough to tip the saved tail into its list;
+- the value at the call is the function's own input Varnode for exactly the
+  trial's storage.
+
+The argument is as wide as the callee's body reads it — the narrowest of the
+trial, the stated parameter and the widest body read starting at `R` — so a
+parameter recovered as `rdi` but read as `edi` is passed, and becomes the
+caller's parameter, as an `int`, through a truncating `SUBPIECE`.
+
+**The rule only adds.** Every other rule decides a call's argument list first,
+exactly as with the option off, and `passthrough` extends the result. That order
+is the design, not a detail: the list upstream scoring settles on is often
+finished by a later rule — a call left empty because `onlyOpUse` rejected a
+value that also feeds a sibling call is filled by `calleearityfwd` from that
+sibling — and an argument supplied during scoring makes the list non-empty and
+turns that rescue off. tar `sysinttostr` (`mov %rcx,%rsi; cmp %rdx,%rdi; ja;
+jmp umaxtostr; jmp imaxtostr`) lost `buf` at its first tail call that way, and
+the gnulib `xpalloc` copies lost `xrealloc`'s size. So the scoring of every
+heritaged register is upstream's (the function's own input at a call slot is
+*inactive*: a candidate for `forceInactiveChain` to fill a hole before a later
+argument, never an argument on its own), and the pass acts twice outside it:
+
+- `build_input_from_trials` first asks the pass which unused register trials
+  stand on the function's own input Varnode for exactly the trial's storage and
+  satisfy the evidence, and keeps those Varnodes;
+- at the end of `ActionActiveParam::apply`, after `calleearityfwd`,
+  `calleearitylive` and `calleearitybody`, each such call's final list is
+  extended with the registers its callee's stated list names next, in order,
+  stopping at the first one the function does not forward. The final list must
+  be a leading run of the stated one, and a list holding a stack argument is
+  left alone.
+
+**Making the register visible.** At the end of `ActionFuncLink`, before the
+first heritage, a register no Varnode of the function touches gets a trial and a
+read on the CALL — the same thing the locked-prototype branch of `funcLinkInput`
+does for a declared parameter — at each call whose callee satisfies the evidence
+and that no other CALL or CALLIND can precede: the first call of a block every
+path from the entry reaches without passing one. There heritage can only link
+the read to the function's input; after another call the register may be that
+call's clobber or its return value, and claiming it there gains nothing and
+costs the claimed range's heritage everywhere else. The claim is recorded on the
+`Funcdata`. Heritage then registers the visible range at every other call as it
+would any heritaged range, argument and return-value trials alike, and only
+`guard_returns` is kept off it, so the function gains no return value in a
+claimed argument register. Registering rather than suppressing is what the
+option-off run does one heritage pass later whenever a hole fill reads the
+range, and it matters twice. An earlier call keeps the return value a later read
+asks for: suppressing it cut a Cortex-M `double` returned in r0:r1 to r0.
+And a later hole fill finds the trial already there instead of adding a read to
+a range dead-code removal has visited, which forces a restart with a longer
+dead-code delay and a different result.
+
+A trial on a claimed range, at any call, is never scored: `check_input_trial_use`
+marks it inactive, which is where the option-off run's trial for that slot
+starts (an unreferenced one `fillinMap` adds to fill a hole before a later
+argument, whose fresh Varnode heritage links to the same value). Scoring it
+would be wrong in both directions. Marked active, it would pre-empt the rescues
+above. Left to `AncestorRealistic`, a register that reaches the call through an
+earlier call fails as "killed by call" and is marked definitely-not-used, and
+`forceNoUse` then drops every argument after it: gcc -O2 does not re-save `rdi`
+around a callee its IPA-RA knows leaves it alone, so `noop(); glob =
+twoarg(p,3);` rendered `sub_11a0()` for `sub_11a0(a0,3)` and the function lost
+`a0`. When the trial ends unused it is retired (marked definitely-not-used after
+`fillinMap` has run, where that no longer propagates) before the sibling and body
+rescues read the trials, so they see the candidates the option-off run gives
+them and nothing more; the extension above then adds the register if the
+function forwards it.
+
+**The tail call's result.** When every live RETURN of the function is reached
+from a direct CALL with no join, indirect call or user op in between (walking at
+most four single-predecessor blocks back), every such callee states a non-void
+return in the same register, the function's own output is not locked and no op
+of the function touches that register, each RETURN gets a read of it and the
+function's return trial is registered for it. Upstream's `ancestorOpUse` refuses
+an INDIRECT creation at a RETURN ("an indication of an output trial"), so
+`ActionReturnRecovery` marks the trial active when its Varnode is the creation
+planted at one of those calls; that call keeps its return-value trial, and its
+output takes the callee's recovered return type in `call_output_type_local`.
+`gzip_base_name` becomes `char * sub_d290(char *a0) { return sub_dfd0(a0); }`.
+This is the claim a declared callee already gets whenever the caller names the
+return register; its cost is a void wrapper that tail-calls a value-returning
+function, which is handed that value, and a callee whose own recovered return is
+wrong (a void function that ends by tail-calling `fprintf` is recovered
+returning `long`) passes the error up one level.
+
+Nothing is added where a callee stated nothing: a single-function `kuna
+decompile`, a narrowed or sharded `decompile-all`, an import, `--option
+protoorder off`, and under `--option protoorder types` a callee in a recursive
+component, leave every call as the option-off run renders it. Under the default
+`cycles` a recursive callee states its list like any other, and this rule reads
+it on the same terms. `tests/stages/kuna-passthrough.xml` is the negative
+control for that clause (the console states no prototype); the positive witness
+is `decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64` under
+`tests/cli/passthrough-gives-a-forwarding-function-its-parameter.json`, with a
+clobbered forward and a variadic callee as its controls, and the three shapes
+above (`noop(); twoarg(p,3)`, `vout(p); twoarg(p,3)` as a tail and as a plain
+call, and `sysinttostr`) as controls that must keep every argument the
+option-off run gives them.

@@ -2338,7 +2338,10 @@ impl Heritage {
         _write: &mut [crate::context::VarnodeId],
     ) {
         use kuna_num::opcodes::OpCode;
-        if fd.get_active_output().is_some() && fd.get_func_proto().has_model() {
+        if fd.get_active_output().is_some()
+            && fd.get_func_proto().has_model()
+            && !crate::p4_calls::kuna_passthrough::suppresses_return_trial(fd, addr, size)
+        {
             let output_character = fd.get_func_proto().characterize_as_output(addr, size);
             if output_character == crate::fspec::Containment::ContainedBy {
                 self.guard_returns_overlapping(fd, addr, size);

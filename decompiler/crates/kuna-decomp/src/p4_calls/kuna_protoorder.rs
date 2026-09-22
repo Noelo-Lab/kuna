@@ -146,6 +146,16 @@ pub struct RecoveredTypes {
     /// One entry per recovered parameter, in the callee's own order: the storage
     /// recovery put it in, and the type recovery gave it.
     pub inputs: Vec<(Address, int4, Rc<Datatype>)>,
+    /// Would [`ProtoOrderMode::Lock`]'s arity policy accept this list -- it does
+    /// not end on the register-file boundary a variadic's register-save prologue
+    /// leaves, and it is where the convention would put those types?  Computed
+    /// only when `option passthrough` is on, the one reader that moves arity on
+    /// a stated list ([`crate::p4_calls::kuna_passthrough`]); `false` otherwise.
+    pub arity_sound: bool,
+    /// The recovered return value -- storage, size and type -- when it is not
+    /// `void`.  Recorded only when `option passthrough` is on, whose tail-call
+    /// arm is its one reader; `None` otherwise.
+    pub output: Option<(Address, int4, Rc<Datatype>)>,
 }
 
 impl RecoveredTypes {
@@ -1426,7 +1436,9 @@ pub fn park_recovered(
     }
     let (mut pieces, mut storage) = recovered_pieces(proto, name)?;
     if mode.states_types_only() {
-        return state_recovered_types(arch, entry, pieces, storage);
+        let arity_sound = arch.pass_through && arity_claim_sound(arch, entry, &pieces, &storage);
+        let output = if arch.pass_through { recovered_output(proto) } else { None };
+        return state_recovered_types(arch, entry, pieces, storage, arity_sound, output);
     }
     let mut trimmed = 0usize;
     if let Some(facts) = entry_facts(arch, entry) {
@@ -1450,6 +1462,57 @@ pub fn park_recovered(
     }
     arch.set_function_prototype_pieces_at(entry, pieces.clone());
     Ok(Recovered { pieces, trimmed })
+}
+
+/// Would [`park_recovered`]'s locking branch accept `storage` as a statement of
+/// the callee's arity?
+///
+/// The three declines that answer for the list as a whole, and between them
+/// for a variadic's register-save prologue however much of it recovery kept: a
+/// body that reads the register the next parameter would arrive in
+/// ([`Decline::UnderRecovered`] -- gnulib `rpl_fcntl(int,int,...)` recovers
+/// `(int,int,unsigned long)` and then saves `rcx`, `r8` and `r9` too), a list
+/// ending on the last argument register the convention has
+/// ([`Decline::RegisterFileFull`]), and a list the model would put elsewhere
+/// ([`Decline::NonCanonicalStorage`]). A list that already reaches the stack
+/// has crossed that boundary too, and a walk that cannot see the callee's body
+/// states nothing sound.
+///
+/// The next-slot read is asked with the register-zeroing idiom excluded
+/// (`proves_input`, not the locking branch's `proves_read`): `xor esi,esi` in
+/// gnulib `last_component(char const *)` writes a constant, and a save prologue
+/// stores the register's value, which is a read either way.
+fn arity_claim_sound(
+    arch: &mut Architecture,
+    entry: &Address,
+    pieces: &PrototypePieces,
+    storage: &[(Address, int4)],
+) -> bool {
+    let Some(facts) = entry_facts(arch, entry) else { return false };
+    if !storage.iter().all(|(a, _)| crate::kuna_calleearitybody::is_register(a)) {
+        return false;
+    }
+    let next = next_slot_storage(pieces, arch);
+    let next_read = next.as_ref().is_some_and(|(a, sz)| facts.proves_input(a, *sz));
+    if next_read || ends_at_the_register_boundary(storage.last(), next) {
+        return false;
+    }
+    matches!(model_storage(pieces, arch), Some(model) if model == storage)
+}
+
+/// The recovered return value of `proto` -- storage, size, type -- or `None`
+/// for a `void` or storage-less one.
+fn recovered_output(proto: &FuncProto) -> Option<(Address, int4, Rc<Datatype>)> {
+    let out = proto.get_output();
+    let ct = out.get_type()?;
+    if ct.get_metatype() == type_metatype::TYPE_VOID {
+        return None;
+    }
+    let addr = out.get_address();
+    if addr.is_invalid() || out.get_size() <= 0 {
+        return None;
+    }
+    Some((addr, out.get_size(), Rc::clone(ct)))
 }
 
 /// State the callee's recovered TYPES for the callers still ahead of it, without
@@ -1476,6 +1539,8 @@ fn state_recovered_types(
     entry: &Address,
     pieces: PrototypePieces,
     storage: Vec<(Address, int4)>,
+    arity_sound: bool,
+    output: Option<(Address, int4, Rc<Datatype>)>,
 ) -> Result<Recovered, Decline> {
     let inputs: Vec<(Address, int4, Rc<Datatype>)> = storage
         .iter()
@@ -1488,7 +1553,7 @@ fn state_recovered_types(
     let Some(key) = stated_key(entry) else {
         return Err(Decline::InvalidStorage);
     };
-    arch.kuna_protoorder_types.insert(key, Rc::new(RecoveredTypes { inputs }));
+    arch.kuna_protoorder_types.insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output }));
     Ok(Recovered { pieces, trimmed: 0 })
 }
 

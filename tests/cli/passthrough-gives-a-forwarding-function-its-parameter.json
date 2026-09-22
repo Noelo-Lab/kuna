@@ -1,0 +1,55 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "passthrough",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64",
+    "binary_sha256": "e74292f2d09e3051b18a994569efe68958c29d4fe0cceb06bcf1accbe47668bc",
+    "binary_size": 8568,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64",
+    "selector": "sub_401019",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "char \\* sub_401019\\(char \\*a0\\)",
+      "return sub_401000\\(a0\\); // tail-call",
+      "void sub_40101b\\(char \\*a0\\)",
+      "if \\(sub_401000\\(a0\\)\\)",
+      "void sub_40106f\\(void\\)",
+      "sub_401143\\([a-z ]+a0\\)",
+      "dat_402006 = sub_40112f\\(a0,3\\);",
+      "sub_401139\\(a0\\);",
+      "return sub_40112f\\(a0,3\\); // tail-call",
+      "return sub_40117d\\(a0,a3\\); // tail-call",
+      "return sub_401185\\(a0,a3\\); // tail-call"
+    ],
+    "stdout_absent": [
+      "sub_401036\\(char",
+      "sub_401033\\(a0",
+      "sub_401045\\(a0",
+      "sub_40112f\\(\\)",
+      "sub_40117d\\(a0\\)"
+    ]
+  },
+  "notes": "0x401019 (jmp) and 0x40101b (call; test) forward rdi to a callee that reads it: each gains the parameter. 0x401036 (rdi is a helper's leftover) and 0x40106f (variadic callee) gain nothing. Controls keep every option-off argument: 0x401143 noop();twoarg(p,3), 0x401159/0x401165 vout(p);twoarg(p,3), 0x401190 sysinttostr.",
+  "probe_id": "p-5a9acb7814fb"
+}

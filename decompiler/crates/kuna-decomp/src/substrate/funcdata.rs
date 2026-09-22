@@ -433,6 +433,19 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna `passthrough`) The register ranges `ActionFuncLink` made visible to
+    /// heritage for a call whose callee states them, with the calls that own
+    /// each ([`crate::p4_calls::kuna_passthrough`]).  Empty unless the option is
+    /// live and a callee stated a register this function never touches.
+    kuna_passthrough_claims: Vec<crate::p4_calls::kuna_passthrough::PassThroughClaim>,
+    /// (kuna `passthrough`) The CALL ops set up as variadic calls -- the caller
+    /// writes the return register, which carries no argument, just before them
+    /// (`xor %eax,%eax` is SysV's vector-register count).
+    kuna_passthrough_vararg_calls: Vec<crate::context::OpId>,
+    /// (kuna `passthrough`) Is this function itself variadic -- does its entry
+    /// block read the return register, which carries no argument, before it
+    /// writes it (`test %al,%al` in a SysV register-save prologue)?
+    kuna_passthrough_variadic: bool,
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
@@ -547,6 +560,9 @@ impl Funcdata {
             kuna_callee_entry_dead: std::collections::HashMap::new(),
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_passthrough_claims: Vec::new(),
+            kuna_passthrough_vararg_calls: Vec::new(),
+            kuna_passthrough_variadic: false,
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
         })
     }
@@ -790,6 +806,39 @@ impl Funcdata {
         }
         let sp = entry.get_space()?;
         self.kuna_protoorder_types.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `passthrough`) Record the register ranges claimed at `ActionFuncLink`.
+    pub fn kuna_set_passthrough_claims(
+        &mut self,
+        claims: Vec<crate::p4_calls::kuna_passthrough::PassThroughClaim>,
+    ) {
+        self.kuna_passthrough_claims = claims;
+    }
+
+    /// (kuna `passthrough`) The register ranges claimed at `ActionFuncLink`.
+    pub fn kuna_passthrough_claims(&self) -> &[crate::p4_calls::kuna_passthrough::PassThroughClaim] {
+        &self.kuna_passthrough_claims
+    }
+
+    /// (kuna `passthrough`) Record the CALL ops set up as variadic calls.
+    pub fn kuna_set_passthrough_vararg_calls(&mut self, ops: Vec<crate::context::OpId>) {
+        self.kuna_passthrough_vararg_calls = ops;
+    }
+
+    /// (kuna `passthrough`) The CALL ops set up as variadic calls.
+    pub fn kuna_passthrough_vararg_calls(&self) -> &[crate::context::OpId] {
+        &self.kuna_passthrough_vararg_calls
+    }
+
+    /// (kuna `passthrough`) Record whether this function is itself variadic.
+    pub fn kuna_set_passthrough_variadic(&mut self, v: bool) {
+        self.kuna_passthrough_variadic = v;
+    }
+
+    /// (kuna `passthrough`) Is this function itself variadic?
+    pub fn kuna_passthrough_variadic(&self) -> bool {
+        self.kuna_passthrough_variadic
     }
 
     /// (kuna `retpushedhalf`) The flow build's record of registers this function
@@ -2605,6 +2654,9 @@ impl Funcdata {
         // (kuna `slotptr`) The evidence names ops by SeqNum, which a rebuilt op
         // bank reissues.
         self.slot_evidence.borrow_mut().clear();
+        self.kuna_passthrough_claims.clear();
+        self.kuna_passthrough_vararg_calls.clear();
+        self.kuna_passthrough_variadic = false;
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).

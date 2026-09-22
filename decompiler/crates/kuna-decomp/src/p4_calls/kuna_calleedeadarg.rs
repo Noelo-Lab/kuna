@@ -294,6 +294,31 @@ impl CalleeEntryDead {
             .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
     }
 
+    /// How many low bytes of `[addr, addr+size)` the reads [`Self::proves_input`]
+    /// counts consume: the widest such read, measured from `addr`.
+    ///
+    /// `None` when no counted read overlaps the range, when the walk is
+    /// incomplete, or when an overlapping read starts above `addr` (on a
+    /// big-endian register file the low bytes are not at `addr`).
+    pub fn live_input_width(&self, addr: &Address, size: int4) -> Option<int4> {
+        if !self.proves_input(addr, size) {
+            return None;
+        }
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size as u64);
+        let mut width = 0u64;
+        for &(ridx, roff, rsz) in &self.reads_live {
+            if ridx != idx || roff >= end || roff + rsz as u64 <= off {
+                continue;
+            }
+            if roff != off {
+                return None;
+            }
+            width = width.max(rsz as u64);
+        }
+        (width > 0).then(|| width.min(size as u64) as int4)
+    }
+
     /// The written sets recorded where control left for a target the walk could
     /// not name, read by [`resolve_forward_transfer`].
     fn opaque_cuts(&self) -> &[ByteSet] {
@@ -850,10 +875,12 @@ pub fn seed_callee_entry_dead(
     // prototype clause already admitted, so with nothing parked it can never
     // consult it and the decode is pure cost.
     let clobber_veto = arch.arg_clobber && !arch.kuna_protoorder_types.is_empty();
+    let pass_through = arch.pass_through && !arch.kuna_protoorder_types.is_empty();
     if !arch.callee_dead_arg
         && !clobber_veto
         && !(arch.callee_arity && arch.callee_arity_live)
         && !body_arity
+        && !pass_through
     {
         return;
     }
@@ -862,7 +889,7 @@ pub fn seed_callee_entry_dead(
     // its callees would be pure cost.  This matters most in ghidra mode, where a
     // decode is a round trip to the host.  `calleearitybody` is the exception:
     // its whole subject is the callee that is called ONCE.
-    if data.num_calls() < 2 && !body_arity {
+    if data.num_calls() < 2 && !body_arity && !pass_through {
         return;
     }
     let reg_idx =
