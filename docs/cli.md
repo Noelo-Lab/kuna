@@ -1136,7 +1136,7 @@ The callee-first run also works the other way. After the pass, a parameter a
 function typed only as `void *` or `long` takes the type every call to it passes,
 when that is one committed pointer (a named record, a synthesized `struct_N`, a
 `char *`) and every caller is a direct call the call graph knows: a function
-whose address code takes, or the image stores as a pointer-width word, has
+whose address code takes, or the image stores as an aligned pointer-width word, has
 callers nobody can list and states nothing. The callee is decompiled once more
 with that type as a vote its own uses can refuse. The default value `fields`
 also reads a one-field getter's lone field as a record field, for a function
@@ -1148,7 +1148,8 @@ and on AArch64, ARM, MIPS, PowerPC, RISC-V and i386 PIC a function's address is
 built from two instructions it does not join, so there, in a relocatable object
 (`.o`), and in an image without section headers the option changes nothing. An
 address kept as an offset from another one (a 32-bit offset table, a relative
-vtable) is not seen either.
+vtable) is not seen either, and neither is a function pointer at an unaligned
+offset of a packed struct in an image with no dynamic relocation for it.
 
 ```bash
 kuna decompile-all ./calleevote_x86_64 --option calleevote off | grep peek_used   # long peek_used(void *a0)
@@ -1157,7 +1158,8 @@ kuna decompile-all ./calleevote_x86_64 | grep peek_used                         
 
 `types` states only the callers' types; `off` restores the one-way run. Like
 `protoorder` it needs the callee-first pass, so it is inert on `kuna decompile`,
-a narrowed or `--jobs` run and under `--option protoorder off`.
+a narrowed or `--jobs` run, `decompile-project --stream` and under
+`--option protoorder off`.
 `KUNA_CALLEEVOTE_TRACE=1` prints each decision and its reason.
 
 ### `kuna functions --summary` — orientation in one call

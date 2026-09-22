@@ -1121,12 +1121,16 @@ is past the narrow ones rather than over them.
 "no access at offset 0" have one exception, and it is decided outside the
 function. A pointer parameter read at exactly one constant offset other than
 zero, with an access of four bytes or more, is a one-field record when the
-recovery left it `void *` or a pointer to untyped bytes and the function's
-callers are all known direct calls. A pointee something else committed to is
-kept (`says_only_a_pointer`): `int mkpipe (int *p)` hands `p` to `pipe`,
-whose declaration types it `int *`, and reads `p[1]`, which is one field at
-offset 4 but not a record; so is a `char **` a caller's vote gave the
-parameter. The whole-binary driver marks
+function's callers are all known direct calls, unless something outside the
+function's own reading gave the parameter its pointee (`pointee_is_given`):
+`int mkpipe (int *p)` hands `p` to `pipe`, whose declared prototype types it
+`int *`, and reads `p[1]`, one field at offset 4 of what is not a record; and
+a `char **` the parameter took from its callers' vote (chapter 04) is theirs.
+A pointee the recovery guessed is not a commitment and gives way: find's
+`insert_primary (const struct parser_table *entry)` is `int *` only because
+a callee read the enum at offset 0 and `protoorder` stated that, and making
+it keep `int *` was measured to lose the record on 137 functions. The
+whole-binary driver marks
 such a function on its `Funcdata` (`kuna_calleevote_closed`; chapter
 [04](04-calls-and-prototypes.md), `calleevote`), and
 `kuna_structsynth.rs (is_lone_field)` admits it. The condition is what keeps

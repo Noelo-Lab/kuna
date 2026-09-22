@@ -2671,9 +2671,9 @@ A redo that fails keeps the first body.
 **`fields`.** The same closed caller set decides one more thing. A function
 whose callers are all known direct calls (at least one, none unknown) is marked
 on its `Funcdata` (`kuna_calleevote_closed`), and `structsynth` then accepts a
-pointer parameter that its recovery left `void *` or a pointer to untyped
-bytes (not `int *` from `pipe (int *)`, and not a pointer type a caller's vote
-gave it) read at exactly one constant offset other than zero with an
+pointer parameter whose pointee neither a declared prototype it is handed to
+(`pipe (int *)`) nor its callers' vote gave it, read at exactly one constant
+offset other than zero with an
 access of four bytes or more as a one-field record (chapter
 [05](05-types.md), `structsynth`). A one-field record is itself a candidate for
 the vote above, so it gives way to the record every caller passes, and the
