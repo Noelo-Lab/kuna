@@ -34,7 +34,7 @@
  },
  "design": {
   "order": "Tarjan components; a larger component's members once each in a depth-first order over the component's own edges, roots = members called from outside the component then the rest, each member after the partners it reaches",
-  "second_round": "rejected: +0.39 aggregate type_match (5 more improved, 0 more perfect) for +30% on bash -O2 (parser and executor are one component, each ~11-12 s per decompile)",
+  "second_round": "rejected: +0.39 aggregate type_match (5 more improved, 0 more perfect) for about +35% on bash -O2 (single whole-binary runs: types 108.9 s and 112.4 s, re-pass 149.5 s; the parser and executor are one component, each ~11-12 s per decompile, and both are decompiled twice)",
   "arms": {
    "types": {
     "perfect": 1353,
@@ -237,7 +237,56 @@
   },
   "fixture": "rtarget writes rdx before recursing: rtarget(a0,5,v3) -> rtarget(a0,5); rkeep forwards rdx: rkeep(a0,5,v3) in both"
  },
- "speed": "SPEED_PLACEHOLDER",
+ "speed": {
+  "method": "docs/features/protoscc/speed.py: one build of this branch, whole-binary `kuna decompile-all --json --max-fn-seconds 120`, arms `--option protoorder types` and `--option protoorder cycles` rotated inside each iteration, min and median of 15 (box load 15-64)",
+  "budget_pct": 5,
+  "slices": {
+   "fmt -O2": {
+    "types_min_ms": 5306.1,
+    "cycles_min_ms": 5230.7,
+    "types_median_ms": 5988.6,
+    "cycles_median_ms": 6194.5,
+    "delta_min_pct": -1.42,
+    "delta_median_pct": 3.44
+   },
+   "ls -O2": {
+    "types_min_ms": 14690.3,
+    "cycles_min_ms": 14950.3,
+    "types_median_ms": 19236.2,
+    "cycles_median_ms": 18469.1,
+    "delta_min_pct": 1.77,
+    "delta_median_pct": -3.99
+   },
+   "sort -O2": {
+    "types_min_ms": 16484.0,
+    "cycles_min_ms": 15366.2,
+    "types_median_ms": 18044.4,
+    "cycles_median_ms": 17235.7,
+    "delta_min_pct": -6.78,
+    "delta_median_pct": -4.48
+   },
+   "bash -O2": {
+    "types_min_ms": 90780.7,
+    "cycles_min_ms": 95537.8,
+    "types_median_ms": 105390.7,
+    "cycles_median_ms": 102687.0,
+    "delta_min_pct": 5.24,
+    "delta_median_pct": -2.57,
+    "rerun": {
+     "types_min_ms": 93763.0,
+     "cycles_min_ms": 92940.2,
+     "types_median_ms": 101463.9,
+     "cycles_median_ms": 101740.0,
+     "delta_min_pct": -0.88,
+     "delta_median_pct": 0.27,
+     "note": "re-run at a quieter moment (load 15-23) because run 1's +5.24% min exceeded the budget while its median was -2.57% and both arms' samples spread 90-124 s (run 1 overlapped this branch's own rust-test lane)"
+    }
+   }
+  },
+  "worst_min_delta_pct": 1.77,
+  "within_budget": true,
+  "repass_rejected": "a second round over each component: bash -O2 whole-binary 108.9 s / 112.4 s (types) -> 149.5 s (re-pass), about +35%"
+ },
  "gates": {
   "base": "origin/main 2888a2a94; 227 settables (count unchanged: a new VALUE, not a new option)",
   "make test": "datatests: 675/675 assertions passed / PARITY OK",

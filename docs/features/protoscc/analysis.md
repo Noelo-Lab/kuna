@@ -40,11 +40,11 @@ partners' statements. Three answers were built and measured on the same base:
 |---|---|---|---|---|---|---|
 | main (`types`) | — | — | 1,353 | 3669.96 | | |
 | experiment `all` (ce008ce2b) | address | no | +46 | +43.72 | 160 / 1 | |
-| `cycles`, one pass | depth-first from the entered members | no | 1,399 (+46) | 3714.21 (+44.26) | 162 / 1 | about +1% (per-step sum) |
-| `cycles` + re-pass | same | members that called a later partner, once | 1,399 (+46) | 3714.60 (+44.65) | 167 / 1 | +30% |
+| `cycles`, one pass | depth-first from the entered members | no | 1,399 (+46) | 3714.21 (+44.26) | 162 / 1 | -0.9% min, +0.3% median (interleaved min-of-15) |
+| `cycles` + re-pass | same | members that called a later partner, once | 1,399 (+46) | 3714.60 (+44.65) | 167 / 1 | +33..+37% (single runs, 108.9 s / 112.4 s -> 149.5 s) |
 
 The second round buys 0.39 aggregate and five more improved functions (none
-reaching a perfect score) and costs +30% on bash -O2, whose parser and command
+reaching a perfect score) and costs about +35% on bash -O2, whose parser and command
 executor are the two largest members of one component and each decompiled twice
 (12 s and 11 s per decompile on this box). It is not taken.
 

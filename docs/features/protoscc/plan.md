@@ -20,7 +20,7 @@ untouched and keeps refusing components.
   from outside the component (ascending) then the rest (ascending), each member
   emitted after the partners it reaches.
 
-No second round (analysis.md table: +0.39 aggregate for +30% on bash -O2). The
+No second round (analysis.md table: +0.39 aggregate for about +35% on bash -O2). The
 `structsynth` convergence sweep walks the same plan with the same park flags.
 
 ## 3. Default

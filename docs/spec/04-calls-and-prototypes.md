@@ -2170,7 +2170,7 @@ A second round — decompiling each member that called a later partner once more
 after the whole component, so it too reads that partner — was measured and is not
 taken: over the 444-slice corpus it adds 0.39 to the aggregate `type_match` (5
 more functions improve, no more reach a perfect score), and on bash -O2 it costs
-+30%, because the parser and the command executor are the two largest members of
+about +35%, because the parser and the command executor are the two largest members of
 one component and each is decompiled twice.
 
 `lock` keeps declining a recursive component: a parked prototype is declared, so
