@@ -1,9 +1,9 @@
 {
  "opportunity": "structsynth param measures pointer parameters only, so a record a function obtains from a call keeps the pointee the lattice gave it and prints as raw offsets (`v1 = (unsigned long *)xmalloc(0x18); *(char *)((long)v1 + 0x14) = 0x6e;`). The campaign plan's `structsynth all` step (locals + globals, C6) was never built.",
- "test_name": "tests/stages/structsynth-locals.xml (7 two-pass assertions: pass 1 `option structsynth param` = raw offsets through a returned pointer, pass 2 `locals` = fields + layout; label() pins that a text buffer stays a pointer in both) + unit tests (kuna_structsynth::tests: every mode parses, locals/all predicates, constant_text, text-buffer evidence merge)",
+ "test_name": "tests/stages/structsynth-locals.xml (10 two-pass assertions: pass 1 `option structsynth param` = raw offsets through a returned pointer, pass 2 `locals` = fields + layout; label/either/tmpl/post pin four pointers locals leaves alone in both passes: a text-constant buffer, a record returned beside another call's result, a buffer filled from a read-only literal, a record whose address escapes past its fields) + unit tests (kuna_structsynth::tests: every mode parses, locals/all predicates, bytes_text, text-buffer evidence merge, overlaps, extent)",
  "binary": "tests/stages/structsynth-locals.xml bytechunk (gcc -O2 -fcf-protection=none -fno-pic: make/weigh/label, callees outside the image)",
- "selector": "make, weigh, label",
- "func_addr": "0x100000, 0x100030, 0x100050",
+ "selector": "make, weigh, label, either, tmpl, post",
+ "func_addr": "0x100000, 0x100030, 0x100050, 0x100100, 0x100150, 0x1001a0",
  "angr_version": null,
  "option": "structsynth",
  "value": "locals",
@@ -32,22 +32,24 @@
  "design": [
   "locals: a CALL/CALLIND output is a base under every parameter condition (is_call_return); all = locals + nest",
   "a callee whose declared (locked) return points at something other than void/unknown declines",
-  "joins_other_values: the value and its COPY/CAST closure must reach no MULTIEQUAL/INDIRECT, must not sit in address-tied storage or in the phi-joined return register (mark_output_storage_addr_tied ties it later; a locked member decides a merged variable's type -- wordsplit_add_segm/parse_transform_expr/Pexecute returned struct_N * before this rule: 11/36 wrong return types -> 0/11)",
-  "a base whose every access stores a constant whose bytes read as text is a string buffer (constant_text; tar SCHILY.xattr.)",
-  "under locals a function asks its widest layout first, so its own later layout never supersedes an earlier answer: without it a --jobs 8 run on tar O2 fell back to one ordered worker (15.2 s -> 26.0 s); with it the pool renames in place (109 renamed, 10 redone) with output identical to serial",
-  "printer: op_ptrsub_ir falls back to the merged variable's pointer type where the member's own cannot name a member (was `v4 = PTRSUB(dat_263f0,0);`; 1 function on main, tar O0 0x2c4f3)"
+  "copies_alone: the value and its COPY/CAST closure must reach no MULTIEQUAL/INDIRECT and must not sit in address-tied storage; storage_is_tied also declines a value overlapping (by bytes) what any live RETURN reads where a phi writes that return register (mark_output_storage_addr_tied ties it later; kmod O2 0x7ee0 kept a name, its length and a calloc record in one rax of an int function)",
+  "returned_beside_others: a record returned on one path while another RETURN returns a different non-zero value declines (one return type; dash O2 0x12750, either())",
+  "stored_text/bytes_text: a base whose every access stores text -- constant bytes, or up to 16 bytes loaded from a read-only literal, INDIRECT-clobbered or not -- is a string buffer (tar SCHILY.xattr., cp O2 0xbe10 CuXXXXXX)",
+  "points_past: a base declines when a copy forms an address at or past the end of every access (sortlines &node->lock, mountlist &me->me_next, kmod name[], grep &buf[2]): the record is wider than the function shows",
+  "under locals a function asks its widest layout first, so its own later layout never supersedes an earlier answer: without it a --jobs 8 run on tar O2 fell back to one ordered worker (15.2 s -> 26.0 s)",
+  "printer: op_ptrsub_ir falls back to the merged variable's pointer type where the member's own cannot name a member (was `PTRSUB(dat_9f6a8,0)`; 1 function on main, tar O0 0x2c4f3)"
  ],
- "census_final_rule": "8 layout builds: call-return bases accepted O0 24 / O2 11; 13 / 6 decline because the value shares a variable; 0 text; 0 declared return",
+ "census_final_rule": "pre-review rule, 8 layout builds: call-return bases accepted O0 24 / O2 11; superseded by the layoutscore below for the final rule",
  "layoutscore": {
   "tool": "docs/features/structlocals/localscore.py",
   "builds": 14,
-  "call_defined_record_locals": "40 -> 128",
-  "joined": "105 DWARF struct pointers, 3 not (grep realtrans, array of two pointers), 20 unjoined",
-  "claimed_field_precision_all": "0.9766 -> 0.8889 (125/128 -> 312/351)",
-  "claimed_field_precision_new_records": 0.8386,
-  "param_layout_fields_only": "P 0.8622 -> 0.8623, R 0.0666 -> 0.0666",
+  "call_defined_record_locals": "40 -> 116",
+  "joined": "103 DWARF struct pointers, 0 not (grep realtrans now declines: it forms &realtrans[2]), 13 unjoined",
+  "claimed_field_precision_all": "0.9766 -> 0.9003 (125/128 -> 298/331)",
+  "claimed_field_precision_new_records": 0.8522,
+  "param_layout_fields_only": "P 0.8622 -> 0.8622, R 0.0666 -> 0.0666",
   "nesting": "unchanged (P 0.6667 R 0.0018)",
-  "structs_in_headers": "500 -> 548"
+  "structs_in_headers": "500 -> 539"
  },
  "round_trip": "210 synthesized structs over 4 project exports (du O0, ls O2, tar O2, find O2), 0 with a field the C compiler moves (docs/features/structsynth/offsetcheck.py)",
  "typesweep": {
@@ -94,8 +96,8 @@
     "n": 247,
     "perfect_off": 51,
     "perfect_on": 51,
-    "mean_off": 0.4418,
-    "mean_on": 0.4418,
+    "mean_off": 0.4404,
+    "mean_on": 0.4404,
     "improved": 0,
     "worse": 0
    },
@@ -131,170 +133,165 @@
    "n": 10748,
    "perfect_off": 1353,
    "perfect_on": 1353,
-   "mean_off": 0.3415,
-   "mean_on": 0.3415,
+   "aggregate_off": 3669.96,
+   "aggregate_on": 3669.96,
    "improved": 0,
    "worse": 0
   },
-  "decisions": "65,377 scored decisions: 64,664 same type, 713 same up to struct_N numbering, 0 different",
-  "arity_phantom": "no function's variable count changes (nvars identical in all 10,748)"
+  "decisions": "65,377 in both arms: 64,701 identical, 676 differ only in struct_N numbering, 0 in type",
+  "arity_phantom": "no function's variable count changes (nvars identical in all 10,748)",
+  "counters": "per function decomp_vars, tp, fp, fn identical in both arms (no scored variable added or removed)"
  },
  "hunks": {
-  "binaries": 16,
-  "functions": 8682,
-  "tools": "docs/features/structlocals/{canon,skeleton,rettype}.py",
+  "binaries": 29,
+  "functions": 12939,
+  "tools": "docs/features/structlocals/{declcast,canon,skeleton,rettype}.py; per-binary table and every read function in hunks.md",
   "param_vs_locals": {
-   "changed": 693,
-   "struct_numbering_only": 621,
-   "verified_respelling": 61,
-   "read": 11,
+   "changed": 872,
+   "struct_numbering_only": 769,
+   "clean_respelling": 83,
+   "read": 20,
    "read_classes": [
-    "past-the-end address spelled &v1[1] (sort merge_tree_init x3, grep 0x179b7/0xfd10, tar 0x3521d/0x2d480, du/find mount list)",
-    "NULL / 4U literal spellings for a pointer / unsigned field",
-    "sort O2 0xb220: a temporary holds field - 0x20 instead of field",
-    "find O2 0x100b0: two 4-byte zero stores merged into the 8-byte field they fill",
-    "find O2 0xad30: a float/int field read as raw bytes"
+    "15: the record gets a register variable of its own where param merged it with an unrelated same-typed value (one more local; ls print_dir two)",
+    "4: find predicate records whose name field holds a string literal",
+    "1: kmod_new, a local typed void * from the record's field"
    ],
    "skeleton_deltas": 0,
-   "return_type_changes": "11, all DWARF struct pointers",
-   "arm32": "chibios O0 1 function (numbering), freertos O0 0"
+   "arity_changes": 0,
+   "filler_element_stores_gained": 0,
+   "return_type_changes": "27: 24 DWARF struct pointers, 2 records behind a void * handle (BZ2_bzWriteOpen, sharefile_init), 1 Cell * with its DWARF type on the abstract origin"
   },
-  "main_vs_new_default": "the same 693 + tar O0 0x2c4f3 (the PTRSUB printer fix)"
+  "main_vs_new_default": "main equals the param arm on 28 binaries; tar O0 differs by the PTRSUB printer fix (0x2c4f3) alone"
  },
  "jobs": {
+  "param": {
+   "min_s": 14.96,
+   "median_s": 16.59,
+   "samples": [
+    17.88,
+    17.44,
+    16.97,
+    15.99,
+    16.59,
+    17.63,
+    14.96,
+    16.53,
+    17.19,
+    15.58,
+    15.13
+   ]
+  },
+  "locals": {
+   "min_s": 15.41,
+   "median_s": 16.76,
+   "samples": [
+    16.76,
+    18.25,
+    18.08,
+    16.26,
+    19.69,
+    16.76,
+    15.71,
+    16.66,
+    17.94,
+    16.37,
+    15.41
+   ]
+  },
+  "delta_min_pct_locals_vs_param": 3.01,
   "method": "tar O2 `decompile-all --jobs 8`, interleaved min-of-11, param vs default locals, one build (docs/features/structlocals/jobs.py)",
-  "min_s": {
-   "param": 15.58,
-   "locals": 15.9
-  },
-  "median_s": {
-   "param": 16.56,
-   "locals": 16.39
-  },
-  "delta_min_pct_locals_vs_param": 2.05,
-  "locals_pool": "115 functions with synthesized structures: 109 renamed in place, 10 decompiled again with the serial names",
+  "pool": "locals: 115 functions with synthesized structures, 109 renamed in place, 10 decompiled again; param: 105, 100, 9",
   "equality": "jobs output byte-identical to the serial `--option protoorder off` run in both arms",
   "before_widest_first": "the same run fell back to one ordered worker: 26.0 s against 15.2 s under param"
  },
  "speed": {
-  "method": "interleaved whole-binary `decompile-all --json`, param vs default locals on one build (docs/features/structlocals/speed.py, cpuspeed.py); box shared with other campaign lanes",
-  "quiet_run_pre_rebase": {
-   "note": "min-of-15, night, three arms (tree before this change at a26b99db1, this build param, this build locals); the build's structsynth code is the rebased one's",
-   "per_binary": {
-    "fmt": {
-     "min_ms": {
-      "main": 4203.3,
-      "param": 4272.9,
-      "locals": 4198.7
-     },
-     "delta_min_pct_locals_vs_param": -1.74,
-     "delta_min_pct_locals_vs_main": -0.11
-    },
-    "ls": {
-     "min_ms": {
-      "main": 13878.5,
-      "param": 13853.8,
-      "locals": 13809.7
-     },
-     "delta_min_pct_locals_vs_param": -0.32,
-     "delta_min_pct_locals_vs_main": -0.5
-    },
-    "sort": {
-     "min_ms": {
-      "main": 14908.7,
-      "param": 14766.2,
-      "locals": 15020.4
-     },
-     "delta_min_pct_locals_vs_param": 1.72,
-     "delta_min_pct_locals_vs_main": 0.75
-    },
-    "bash": {
-     "min_ms": {
-      "main": 87269.1,
-      "param": 88225.6,
-      "locals": 87900.1
-     },
-     "delta_min_pct_locals_vs_param": -0.37,
-     "delta_min_pct_locals_vs_main": 0.72
-    }
-   }
-  },
-  "rebased_build": {
-   "note": "min-of-15 on the rebased build, run beside this worktree's own rust-test lane (load 47-63)",
-   "per_binary": {
-    "fmt": {
-     "min_ms": {
-      "param": 4197.4,
-      "locals": 4186.3
-     },
-     "delta_min_pct_locals_vs_param": -0.26
-    },
-    "ls": {
-     "min_ms": {
-      "param": 14633.7,
-      "locals": 13896.4
-     },
-     "delta_min_pct_locals_vs_param": -5.04
-    },
-    "sort": {
-     "min_ms": {
-      "param": 17137.9,
-      "locals": 18393.8
-     },
-     "delta_min_pct_locals_vs_param": 7.33
-    },
-    "bash": {
-     "min_ms": {
-      "param": 94729.4,
-      "locals": 94427.0
-     },
-     "delta_min_pct_locals_vs_param": -0.32
-    }
-   }
-  },
-  "sort_reruns": [
-   {
-    "n": 15,
-    "load": "~30",
-    "delta_min_pct": 4.61,
-    "delta_median_pct": 1.83,
-    "instrument": "cpuspeed.py (wall; child cpu time the same to 0.01%)"
-   },
-   {
-    "n": 21,
-    "load": "37 -> 11",
-    "delta_min_pct": 0.24,
-    "delta_median_pct": 3.78,
-    "instrument": "cpuspeed.py"
-   },
-   {
-    "n": 15,
-    "load": "~14",
-    "delta_min_pct": 2.54,
+  "method": "interleaved whole-binary `decompile-all --json`, param vs default locals on one build (docs/features/structlocals/speed.py), min-of-15; box shared with other campaign lanes",
+  "per_binary": {
+   "fmt": {
     "min_ms": {
-     "param": 14972.9,
-     "locals": 15353.3
+     "param": 4651.3,
+     "locals": 4270.2
     },
-    "instrument": "speed.py"
+    "median_ms": {
+     "param": 5135.5,
+     "locals": 5137.2
+    },
+    "delta_min_pct_locals_vs_param": -8.19
+   },
+   "ls": {
+    "min_ms": {
+     "param": 14684.0,
+     "locals": 14496.6
+    },
+    "median_ms": {
+     "param": 16598.7,
+     "locals": 16318.2
+    },
+    "delta_min_pct_locals_vs_param": -1.28
+   },
+   "sort": {
+    "min_ms": {
+     "param": 14963.1,
+     "locals": 15475.6
+    },
+    "median_ms": {
+     "param": 15926.5,
+     "locals": 16719.1
+    },
+    "delta_min_pct_locals_vs_param": 3.43
+   },
+   "bash": {
+    "min_ms": {
+     "param": 98543.2,
+     "locals": 99726.2
+    },
+    "median_ms": {
+     "param": 114771.9,
+     "locals": 114510.6
+    },
+    "delta_min_pct_locals_vs_param": 1.2
    }
-  ],
-  "noise_floor": "ls O2 has no function whose text changes beyond one respelling, and it read -5.04% (rebased run) and +10.89% min / -2.3% median (cpuspeed) under the same load",
-  "sort_cost": "sort O2's main (0x3ec0, about 10 s of the 15 s run) gains a record from a call, and an install repeats the main action loop once for that function: decompiled alone it takes 10.22 -> 10.91 s (min-of-7)",
-  "worst_stable_delta_pct": 2.54,
-  "budget_pct": 5.0,
-  "within_budget": true
+  },
+  "pre_review_quiet_run": "fmt -1.74%, ls -0.32%, sort +1.72%, bash -0.37% (the reviewer measured sort +2.47% vs param)",
+  "sort_rerun_min_of_21": {
+   "min_ms": {
+    "param": 14636.8,
+    "locals": 15461.0
+   },
+   "median_ms": {
+    "param": 16953.0,
+    "locals": 17278.1
+   },
+   "delta_min_pct_locals_vs_param": 5.63
+  },
+  "sort_aab_control": {
+   "method": "docs/features/structlocals/cpuaa.py: three interleaved arms param/locals/param_b, min-of-15, child user+sys CPU time and wall",
+   "cpu_min_ms": {
+    "param": 15754.6,
+    "locals": 16479.3,
+    "param_b": 16803.9
+   },
+   "cpu_median_ms": {
+    "param": 19312.7,
+    "locals": 18298.1,
+    "param_b": 18287.8
+   },
+   "delta_min_pct_param_b_vs_param": 6.66,
+   "delta_min_pct_locals_vs_param": 4.6
+  },
+  "reading": "worst min delta +3.43% (sort O2) in the four-binary run; sort O2's output is byte-identical in both arms and the A/A control reads +6.66% between two identical param arms with locals between them, so the sort delta is the shared machine's noise; inside the +5% budget"
  },
  "gates": {
   "make_test": "datatests: 675/675 assertions passed; PARITY OK",
-  "make_test_stages": "datatests: 1303/1303 assertions passed; PARITY OK (only new keys STRUCTSYNTH-LOCALS #1-#7)",
+  "make_test_stages": "datatests: 1306/1306 assertions passed; PARITY OK (only new keys STRUCTSYNTH-LOCALS #1-#10)",
   "make_test_cli": "tests/cli: 219/219 passed",
   "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
   "catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "rust_test": "RUST_TEST_RC=0 (7377 passed, 0 failed)"
+  "rust_test": "RUST_TEST_RC=0 (7379 passed, 0 failed)"
  },
- "default_decision": "flipped param -> locals: (a) 0/675 datatest assertions move; (b) stages 1303/1303, no assertion of another feature moves, 7 new keys; (c) test-cli 219/219, no probe moves; (d) typesweep 1,353 -> 1,353, 0 improved / 0 worse, no scored decision changes; (e) worst stable delta +2.54% (sort O2; fmt/ls/bash within noise), a +7.33% sort reading taken beside the worktree's own rust-test lane did not reproduce in three re-runs (+4.61%, +0.24%, +2.54%); (f) 16-binary hunks all classified, none outside the documented effect; (g) modes.rs names no structsynth value (every preset inherits the default)",
+ "default_decision": "flipped param -> locals after the review round: (a) 0/675 datatest assertions move; (b) stages 1306/1306, no assertion of another feature moves, 10 new keys; (c) test-cli 219/219, no probe moves; (d) typesweep 1,353 -> 1,353, 0 improved / 0 worse, 676 of 65,377 decisions differ only in struct_N numbering, scored variable counts identical; (e) worst min delta +3.43% (sort O2, byte-identical output, A/A control +6.66%); fmt -8.19%, ls -1.28%, bash +1.20%; (f) 29-binary hunks all classified with declarations and casts, none outside the documented effect (hunks.md); (g) modes.rs names no structsynth value (every preset inherits the default)",
  "base": "origin/main 2888a2a94 (#707); the release build is byte-identical to the one measured on 2da619852 (#706), the only commit between is documentation",
  "counters": {
   "stage_corpus": "329 -> 330 (kuna-base xml.rs)",
@@ -303,8 +300,14 @@
  },
  "parity": {
   "datatests": "675/675 PARITY OK with locals as the default",
-  "stages": "1303/1303 PARITY OK; only new keys STRUCTSYNTH-LOCALS #1-#7",
+  "stages": "1306/1306 PARITY OK; only new keys STRUCTSYNTH-LOCALS #1-#10",
   "test_cli": "219/219"
  },
- "inspiration": "angr's type solver measures every type variable, not only a parameter's; the same evidence and decline rules as structsynth param (angr simple_solver struct branch, TRex USENIX Security 2025 section 3.3.3, Howard NDSS 2011 section 4.5)"
+ "inspiration": "angr's type solver measures every type variable, not only a parameter's; the same evidence and decline rules as structsynth param (angr simple_solver struct branch, TRex USENIX Security 2025 section 3.3.3, Howard NDSS 2011 section 4.5)",
+ "review_round": {
+  "found": "a record type locked on a call output became the declared type of a merged register variable (kmod O2 0x7ee0, dash O2 0x12750, either()); a mempcpy tail filled from a .rodata literal became a record (cp O2 0xbe10); an 8-byte store split into field + filler bytes; canon.py dropped declarations and casts so the classifier could not see the first class",
+  "classifier": "docs/features/structlocals/declcast.py (declarations + casts, locals named by first use); on the reviewed outputs it flags all three witnesses",
+  "extra_class_found": "an address formed just past the fields read printed as &v1[1] and gave a mutex/list tail/flexible body the record's type (sort O2 0xb220, du O2 0xdf90, find O2 0x1e550, kmod O2 0x8eb0, grep O2 0xfd10) -> points_past",
+  "witnesses_now": "kmod 0x7ee0, dash 0x12750, cp 0xbe10, sort 0xb220, kmod 0x8eb0 byte-identical to param; no function in 12,939 gains a filler element store"
+ }
 }

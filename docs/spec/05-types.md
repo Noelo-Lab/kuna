@@ -1619,32 +1619,39 @@ layouts do not move (claimed-field precision 0.8622 and recall 0.0666 in both
 arms, nesting unchanged) and the headers carry 539 structures instead of 500.
 
 **The default is `locals`.** Flipping it moves no datatest assertion
-(675/675) and no stage assertion of another feature (1303/1303; the only new
+(675/675) and no stage assertion of another feature (1306/1306; the only new
 keys are `tests/stages/structsynth-locals.xml`'s, whose first pass pins
 `param`), and `make test-cli` is 219/219. The 444-slice typesweep is 1,353
-perfect in both arms with no function better or worse and every one of the
-65,377 scored decisions the same type up to `struct_N` numbering; no function's
-variable count changes. Over 16 binaries and 8,682 functions (x86-64 coreutils
-`fmt`, `ls`, `sort` and `du` at O0 and O2, `grep` and `tar` at O0 and O2,
-`find` and `diff` at O2, and the ARM32 `chibios` and `freertos` at O0) 693
-functions change against `param`: 621 only in `struct_N` numbering, because a
-returned record is minted between parameter records; 61 are the same statements
-with each access through the returned pointer respelled from its byte offset to
-a field (checked mechanically); and the last 11 were read: an address past the
-record spelled `&v1[1]`, a zero field store spelled `NULL`, a constant spelled
-`4U` for an unsigned field, one temporary holding `field - 0x20` instead of
-`field`, one pair of 4-byte zero stores merged into the 8-byte field they fill,
-and one field written both as a `float` and as an integer constant, which stays
-a 4-byte filler array stored through its address. No function's control flow
-or call sequence changes, one ARM32 function changes (a `chibios` respelling),
-and every return type that moves (11) becomes the record the function builds,
-each a struct pointer in DWARF.
+perfect in both arms with no function better or worse; of the 65,377 scored
+decisions 676 differ, all only in `struct_N` numbering, and no function's scored
+variable count changes. Over 29 binaries and 12,939 functions (x86-64
+coreutils `fmt`, `ls`, `sort` and `du` at O0 and O2, `grep`, `tar` and `gzip` at
+O0 and O2, `find` at O0 and O2, `diff`, `sdiff`, `cp`, `bzip2`, `useradd`,
+`dash`, `crond`, `kmod` and `xmlwf` at O2, `diff3` at O0, `sort` at
+O2-noinline, and the ARM32 `chibios` and `freertos` at O0) 872 functions change
+against `param`: 769 only in `struct_N` numbering, because a returned record is
+minted between parameter records; 83 are the same statements with each access
+through the returned pointer respelled from its byte offset to a field, every
+declaration that changes being a pointer that became a record defined by one
+callee's result (checked by a classifier that compares declarations and casts,
+not only bodies); and 20 were read. In 15 of those the record gets a register
+variable of its own where `param` had merged it with an unrelated value of the
+same primitive pointer type (gnulib's `transfer_entries` kept the bucket and
+the new entry in one variable; the source has two), so the function declares
+one more local (`ls`'s `print_dir` two); 4 are `find` predicate records whose
+name field holds a string literal; one is a local typed `void *` because it is
+stored to a `void *` field. No function's control flow, call sequence or
+argument count changes, and of the 27 return types that move 24 are struct
+pointers in DWARF, two return a record behind a `void *` handle and one builds
+a `Cell` whose DWARF type sits on an inlined abstract origin.
+
 Serial whole-binary `decompile-all` time (interleaved min-of-15 against `param`
-over `fmt`, `ls` and `sort` at O2 and `bash` O2) does not move on `fmt`, `ls` or
-`bash` beyond noise, and `sort` pays about 2% (+1.7% and +2.5% on the quieter
-runs): its `main`, two thirds of the run, gains a record from a call, and an
-install repeats the main action loop once for the function that received it.
-That is inside the +5% budget.
+over `fmt`, `ls` and `sort` at O2 and `bash` O2, on a machine shared with other
+work) moves by -8.2% on `fmt` (its median by 0.0%), -1.3% on `ls`, +3.4% on
+`sort` and +1.2% on `bash`, inside the +5% budget. `sort`'s output is identical
+in both arms, and an A/A control, a second `param` arm interleaved in the same
+run, reads 6.7% slower than the first with `locals` between the two, so its
+delta is the machine's noise rather than work this value does.
 A sharded run keeps pace because a function asks for its widest layout first
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs (synthesize)`).
 A returned record and a parameter of one function are often two layouts of one
@@ -1653,11 +1660,11 @@ own ledger supersedes its earlier answer, which a `--jobs` replay cannot
 reproduce, so the pool sent every function with a synthesized structure back to
 its one ordered worker: tar O2 `decompile-all --jobs 8` took 26.0 s against
 15.2 s under `param`. Asked widest first, a later layout never contains an
-earlier one, the pool renames in place (109 functions renamed and 10 decompiled
-again on tar O2), the output is identical to the serial run with
-`--option protoorder off`, and `--jobs 8` takes 15.9 s against 15.6 s under
-`param` (interleaved min-of-11). Parameters alone keep the order `param` always
-had.
+earlier one, the pool renames in place (on tar O2, 109 functions renamed and 10
+decompiled again, against 100 and 9 under `param`), the output is identical to
+the serial run with `--option protoorder off`, and `--jobs 8` takes 15.4 s
+against 15.0 s under `param` (interleaved min-of-11). Parameters alone keep the
+order `param` always had.
 
 **`param` was the first default.** Flipping it on moves **no** datatest assertion
 (675/675). In `tests/stages` it reaches four assertions of other features, each
