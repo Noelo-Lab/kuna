@@ -1,0 +1,47 @@
+{
+ "instrument": "docs/features/protoorder/callsite-metrics.py over <slice>.{off,on}.json (off = --option protoorder types, on = the default cycles); invariants.py for calls/gotos/returns",
+ "argclobber_on": {
+  "argrows_off": 18556,
+  "argrows_on": 18556,
+  "functions": 10288,
+  "allargs_off": 90420,
+  "allstring_off": 11537,
+  "allphantom_off": 342,
+  "allargs_on": 90420,
+  "allstring_on": 11560,
+  "allphantom_on": 342,
+  "string_off": 629,
+  "string_on": 652,
+  "phantom_off": 7,
+  "phantom_on": 7
+ },
+ "argclobber_off": {
+  "argrows_off": 18556,
+  "argrows_on": 18556,
+  "functions": 10288,
+  "allargs_off": 90420,
+  "allstring_off": 11537,
+  "allphantom_off": 342,
+  "allargs_on": 90420,
+  "allstring_on": 11560,
+  "allphantom_on": 342,
+  "string_off": 629,
+  "string_on": 652,
+  "phantom_off": 7,
+  "phantom_on": 7
+ },
+ "invariants": {
+  "changed": 708,
+  "calls_lost": 0,
+  "calls_gained": 0,
+  "goto_delta": 0,
+  "return_delta": 0,
+  "stmt_delta": 14
+ },
+ "argclobber_touched_functions": {
+  "types": 1,
+  "cycles": 1,
+  "same_set": true,
+  "note": "coreutils fmt -O2 main (sub_3700's phantom rdx) in both arms; no argclobber drop at a recursive callee anywhere in the 15 binaries"
+ }
+}
