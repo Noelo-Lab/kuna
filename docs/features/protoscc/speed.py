@@ -1,4 +1,8 @@
-"""Interleaved min-of-N decompile-all timing of protoorder arms on one build."""
+"""Interleaved min-of-N decompile-all timing of protoorder arms on one build.
+
+    python3 speed.py <kuna> <N> <out.json> fmt,ls,sort,bash [types,cycles]
+
+SLEIGHHOME / KUNA_SPECS are taken from the environment."""
 import json, os, statistics, subprocess, sys, time
 R = "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2"
 ALL = {"fmt": f"{R}/coreutils/stripped/fmt", "ls": f"{R}/coreutils/stripped/ls",
@@ -8,10 +12,9 @@ N = int(sys.argv[2])
 outf = sys.argv[3]
 which = sys.argv[4].split(",")
 ARMS = {"types": (["--option", "protoorder", "types"], {}),
-        "cycles": (["--option", "protoorder", "cycles"], {}),
-        "cycles_norepass": (["--option", "protoorder", "cycles"], {"KUNA_EXP_PROTOSCC": "norepass"})}
+        "cycles": (["--option", "protoorder", "cycles"], {})}
 arms = sys.argv[5].split(",") if len(sys.argv) > 5 else list(ARMS)
-sp = "/home/mahaloz/kwt/protoscc/specs"
+sp = os.environ["SLEIGHHOME"]
 out = {}
 for name in which:
     t = {a: [] for a in arms}
@@ -20,7 +23,6 @@ for name in which:
         for lab in order:
             opts, extra = ARMS[lab]
             env = dict(os.environ, SLEIGHHOME=sp, KUNA_SPECS=sp, **extra)
-            env.pop("KUNA_EXP_PROTOSCC", None) if not extra else None
             t0 = time.perf_counter()
             p = subprocess.run([K, "decompile-all", ALL[name], "--json", "--max-fn-seconds", "120"] + opts,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
