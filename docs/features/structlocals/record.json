@@ -53,42 +53,141 @@
  },
  "round_trip": "210 synthesized structs over 4 project exports (du O0, ls O2, tar O2, find O2), 0 with a field the C compiler moves (docs/features/structsynth/offsetcheck.py)",
  "typesweep": {
-  "corpus": "444 slices, projects coreutils grep gzip diffutils bzip2 findutils tar shadow x, O0 O2 O2-noinline, metric pinned decbench 625e892, DECBENCH_NO_CACHE=1, both arms one binary",
+  "corpus": "444 slices, projects coreutils grep gzip diffutils bzip2 findutils tar shadow x, O0 O2 O2-noinline, metric pinned decbench 625e892, DECBENCH_NO_CACHE=1, both arms one binary (rebased on 656e6c701)",
   "arms": "on = default locals, off = --option structsynth param",
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1472,
+   "perfect_on": 1472,
+   "aggregate_off": 3773.19,
+   "aggregate_on": 3773.19,
+   "improved": 0,
+   "worse": 0
+  },
+  "decisions": "65,377 in both arms: 64,574 identical, 708 differ only in struct_N numbering, 95 change type: all O0 stack slots (slotptr types them from the stored value), param undefined8 x47 / long * x47 / int8 * x1 -> locals struct_N *, every one a DWARF struct pointer (44 hash_entry*, 9 predicate*, 8 group*, 7 dev_ino*, 6 passwd*, 5 List_element*, 4 sgrp*, 2 BitStream*, 10 others), 67 functions; none replaces a correct pointer; the pinned metric scores them the same (compares pointee names)",
+  "arity_phantom": "no function's variable count changes (nvars identical in all 10,748)",
+  "counters": "per function decomp_vars, tp, fp, fn identical in both arms (no scored variable added or removed)",
+  "pre_rebase_2888a2a94": {
+   "pooled": {
+    "n": 10748,
+    "perfect_off": 1353,
+    "perfect_on": 1353,
+    "aggregate_off": 3669.96,
+    "aggregate_on": 3669.96,
+    "improved": 0,
+    "worse": 0
+   },
+   "decisions": "65,377 in both arms: 64,701 identical, 676 differ only in struct_N numbering, 0 in type",
+   "counters": "per function decomp_vars, tp, fp, fn identical in both arms (no scored variable added or removed)",
+   "projects": {
+    "bzip2": {
+     "n": 267,
+     "perfect_off": 31,
+     "perfect_on": 31,
+     "mean_off": 0.4097,
+     "mean_on": 0.4097,
+     "improved": 0,
+     "worse": 0
+    },
+    "coreutils": {
+     "n": 6422,
+     "perfect_off": 880,
+     "perfect_on": 880,
+     "mean_off": 0.3352,
+     "mean_on": 0.3352,
+     "improved": 0,
+     "worse": 0
+    },
+    "diffutils": {
+     "n": 420,
+     "perfect_off": 58,
+     "perfect_on": 58,
+     "mean_off": 0.4325,
+     "mean_on": 0.4325,
+     "improved": 0,
+     "worse": 0
+    },
+    "findutils": {
+     "n": 790,
+     "perfect_off": 41,
+     "perfect_on": 41,
+     "mean_off": 0.2201,
+     "mean_on": 0.2201,
+     "improved": 0,
+     "worse": 0
+    },
+    "grep": {
+     "n": 247,
+     "perfect_off": 51,
+     "perfect_on": 51,
+     "mean_off": 0.4404,
+     "mean_on": 0.4404,
+     "improved": 0,
+     "worse": 0
+    },
+    "gzip": {
+     "n": 368,
+     "perfect_off": 102,
+     "perfect_on": 102,
+     "mean_off": 0.5197,
+     "mean_on": 0.5197,
+     "improved": 0,
+     "worse": 0
+    },
+    "shadow": {
+     "n": 686,
+     "perfect_off": 32,
+     "perfect_on": 32,
+     "mean_off": 0.3012,
+     "mean_on": 0.3012,
+     "improved": 0,
+     "worse": 0
+    },
+    "tar": {
+     "n": 1548,
+     "perfect_off": 158,
+     "perfect_on": 158,
+     "mean_off": 0.3524,
+     "mean_on": 0.3524,
+     "improved": 0,
+     "worse": 0
+    }
+   }
+  },
   "projects": {
    "bzip2": {
     "n": 267,
-    "perfect_off": 31,
-    "perfect_on": 31,
-    "mean_off": 0.4097,
-    "mean_on": 0.4097,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4155,
+    "mean_on": 0.4155,
     "improved": 0,
     "worse": 0
    },
    "coreutils": {
     "n": 6422,
-    "perfect_off": 880,
-    "perfect_on": 880,
-    "mean_off": 0.3352,
-    "mean_on": 0.3352,
+    "perfect_off": 917,
+    "perfect_on": 917,
+    "mean_off": 0.3409,
+    "mean_on": 0.3409,
     "improved": 0,
     "worse": 0
    },
    "diffutils": {
     "n": 420,
-    "perfect_off": 58,
-    "perfect_on": 58,
-    "mean_off": 0.4325,
-    "mean_on": 0.4325,
+    "perfect_off": 63,
+    "perfect_on": 63,
+    "mean_off": 0.4445,
+    "mean_on": 0.4445,
     "improved": 0,
     "worse": 0
    },
    "findutils": {
     "n": 790,
-    "perfect_off": 41,
-    "perfect_on": 41,
-    "mean_off": 0.2201,
-    "mean_on": 0.2201,
+    "perfect_off": 44,
+    "perfect_on": 44,
+    "mean_off": 0.223,
+    "mean_on": 0.223,
     "improved": 0,
     "worse": 0
    },
@@ -96,51 +195,39 @@
     "n": 247,
     "perfect_off": 51,
     "perfect_on": 51,
-    "mean_off": 0.4404,
-    "mean_on": 0.4404,
+    "mean_off": 0.4458,
+    "mean_on": 0.4458,
     "improved": 0,
     "worse": 0
    },
    "gzip": {
     "n": 368,
-    "perfect_off": 102,
-    "perfect_on": 102,
-    "mean_off": 0.5197,
-    "mean_on": 0.5197,
+    "perfect_off": 107,
+    "perfect_on": 107,
+    "mean_off": 0.527,
+    "mean_on": 0.527,
     "improved": 0,
     "worse": 0
    },
    "shadow": {
     "n": 686,
-    "perfect_off": 32,
-    "perfect_on": 32,
-    "mean_off": 0.3012,
-    "mean_on": 0.3012,
+    "perfect_off": 86,
+    "perfect_on": 86,
+    "mean_off": 0.3545,
+    "mean_on": 0.3545,
     "improved": 0,
     "worse": 0
    },
    "tar": {
     "n": 1548,
-    "perfect_off": 158,
-    "perfect_on": 158,
-    "mean_off": 0.3524,
-    "mean_on": 0.3524,
+    "perfect_off": 170,
+    "perfect_on": 170,
+    "mean_off": 0.3635,
+    "mean_on": 0.3635,
     "improved": 0,
     "worse": 0
    }
-  },
-  "pooled": {
-   "n": 10748,
-   "perfect_off": 1353,
-   "perfect_on": 1353,
-   "aggregate_off": 3669.96,
-   "aggregate_on": 3669.96,
-   "improved": 0,
-   "worse": 0
-  },
-  "decisions": "65,377 in both arms: 64,701 identical, 676 differ only in struct_N numbering, 0 in type",
-  "arity_phantom": "no function's variable count changes (nvars identical in all 10,748)",
-  "counters": "per function decomp_vars, tp, fp, fn identical in both arms (no scored variable added or removed)"
+  }
  },
  "hunks": {
   "binaries": 29,
@@ -161,7 +248,8 @@
    "filler_element_stores_gained": 0,
    "return_type_changes": "27: 24 DWARF struct pointers, 2 records behind a void * handle (BZ2_bzWriteOpen, sharefile_init), 1 Cell * with its DWARF type on the abstract origin"
   },
-  "main_vs_new_default": "main equals the param arm on 28 binaries; tar O0 differs by the PTRSUB printer fix (0x2c4f3) alone"
+  "main_vs_new_default": "main equals the param arm on 28 binaries; tar O0 differs by the PTRSUB printer fix (0x2c4f3) alone",
+  "rebased_656e6c701": "identical classification: 872 changed, 769 numbering, 83 clean, the same 20 read; 0 skeleton deltas; locals +1 in 14 functions, +2 in 1; 0 arity changes"
  },
  "jobs": {
   "param": {
@@ -284,15 +372,15 @@
  "gates": {
   "make_test": "datatests: 675/675 assertions passed; PARITY OK",
   "make_test_stages": "datatests: 1306/1306 assertions passed; PARITY OK (only new keys STRUCTSYNTH-LOCALS #1-#10)",
-  "make_test_cli": "tests/cli: 219/219 passed",
+  "make_test_cli": "tests/cli: 221/221 passed (rebased; 219/219 before #710 added two probes)",
   "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
   "catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
   "rust_test": "RUST_TEST_RC=0 (7379 passed, 0 failed)"
  },
- "default_decision": "flipped param -> locals after the review round: (a) 0/675 datatest assertions move; (b) stages 1306/1306, no assertion of another feature moves, 10 new keys; (c) test-cli 219/219, no probe moves; (d) typesweep 1,353 -> 1,353, 0 improved / 0 worse, 676 of 65,377 decisions differ only in struct_N numbering, scored variable counts identical; (e) worst min delta +3.43% (sort O2, byte-identical output, A/A control +6.66%); fmt -8.19%, ls -1.28%, bash +1.20%; (f) 29-binary hunks all classified with declarations and casts, none outside the documented effect (hunks.md); (g) modes.rs names no structsynth value (every preset inherits the default)",
- "base": "origin/main 2888a2a94 (#707); the release build is byte-identical to the one measured on 2da619852 (#706), the only commit between is documentation",
+ "default_decision": "flipped param -> locals after the review round: (a) 0/675 datatest assertions move; (b) stages 1306/1306, no assertion of another feature moves, 10 new keys; (c) test-cli 221/221, no probe moves; (d) typesweep on the rebased tree 1,472 -> 1,472, 0 improved / 0 worse, 95 of 65,377 decisions change from undefined8/long */int8 * to struct_N * on a DWARF struct pointer (none replacing a correct pointer), 708 only in numbering, scored variable counts identical; (e) worst min delta +3.43% (sort O2, byte-identical output, A/A control +6.66%); fmt -8.19%, ls -1.28%, bash +1.20%; (f) 29-binary hunks all classified with declarations and casts, none outside the documented effect (hunks.md); (g) modes.rs names no structsynth value (every preset inherits the default)",
+ "base": "origin/main 656e6c701 (#710 slotptr); the review-round measurements were taken on 2888a2a94 and the typesweep, hunk sweep and gates re-run after the rebase",
  "counters": {
   "stage_corpus": "329 -> 330 (kuna-base xml.rs)",
   "settables": "unchanged (values of an existing option)",
@@ -301,7 +389,7 @@
  "parity": {
   "datatests": "675/675 PARITY OK with locals as the default",
   "stages": "1306/1306 PARITY OK; only new keys STRUCTSYNTH-LOCALS #1-#10",
-  "test_cli": "219/219"
+  "test_cli": "221/221"
  },
  "inspiration": "angr's type solver measures every type variable, not only a parameter's; the same evidence and decline rules as structsynth param (angr simple_solver struct branch, TRex USENIX Security 2025 section 3.3.3, Howard NDSS 2011 section 4.5)",
  "review_round": {

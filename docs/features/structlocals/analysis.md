@@ -154,6 +154,13 @@ Re-measured on the fixed build (both arms of one build):
   struct pointers, 0 not (`grep`'s `realtrans` pair now declines: it forms `&realtrans[2]`), 13 unjoined;
   new records' claimed fields 173/203 exact (0.852). Parameter layouts unchanged.
 
+* **After the rebase onto 656e6c701** (#710 `slotptr`): the hunk
+  classification is identical; the typesweep is 1,472 perfect in both arms, and
+  95 scored decisions now change type, each an -O0 slot `slotptr` types from the
+  stored record, from `undefined8`/`long *`/`int8 *` to `struct_N *` where DWARF
+  names a struct pointer. None replaces a correct pointer; the pinned metric
+  scores them the same because it compares pointee names.
+
 ## Default
 
 See `default-on-evaluation.md` and `record.json` (`default_decision`).

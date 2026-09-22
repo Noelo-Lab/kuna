@@ -1,7 +1,8 @@
 # structsynth `locals` -- every changed function, classified
 
 `decompile-all` over 29 stripped binaries (decbench `full_run_address_2026-09-11`),
-one build, `--option structsynth param` against the default `locals`.
+one build, `--option structsynth param` against the default `locals`; measured
+on 2888a2a94 and re-run on 656e6c701 with the same result.
 Classified by `declcast.py` (signature, declarations and casts compared, locals
 named by first use so a split variable does not renumber the rest) on top of
 `canon.py` (each access rewritten to `<var>@<offset>`); `skeleton.py` compares
