@@ -542,18 +542,158 @@
    "budget_pct": 5.0,
    "within_budget": true,
    "load": "load average 9-30 on 80 cores (other campaign lanes); the first sort run's +5.15% median re-ran at -0.42% min / +1.08% median"
+  },
+  "round_4": {
+   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs default, same final build (.scratch/v28 = e5e65a8cd code) on 3a42d864b, arm order alternating, 15 rounds each (docs/features/calleevote/speed.py; raw samples speed.json under round_4); bash ran beside the final rust-test lane, the others on a quiet box (load 2-4)",
+   "fmt_O2": {
+    "min_ms": [
+     4100.1,
+     4115.0
+    ],
+    "median_ms": [
+     4111.4,
+     4127.5
+    ],
+    "delta_min_pct": 0.36,
+    "delta_median_pct": 0.39,
+    "loadavg": [
+     2.3,
+     2.9,
+     5.0
+    ]
+   },
+   "ls_O2": {
+    "min_ms": [
+     13463.4,
+     13565.1
+    ],
+    "median_ms": [
+     13489.8,
+     13617.8
+    ],
+    "delta_min_pct": 0.76,
+    "delta_median_pct": 0.95,
+    "loadavg": [
+     2.2,
+     2.4,
+     3.6
+    ]
+   },
+   "sort_O2": {
+    "min_ms": [
+     14075.9,
+     14217.4
+    ],
+    "median_ms": [
+     14125.2,
+     14285.5
+    ],
+    "delta_min_pct": 1.01,
+    "delta_median_pct": 1.13,
+    "loadavg": [
+     3.8,
+     2.8,
+     3.3
+    ]
+   },
+   "bash_O2": {
+    "min_ms": [
+     86139.1,
+     85637.6
+    ],
+    "median_ms": [
+     87255.4,
+     87629.2
+    ],
+    "delta_min_pct": -0.58,
+    "delta_median_pct": 0.43,
+    "loadavg": [
+     2.3,
+     2.3,
+     2.8
+    ]
+   },
+   "kmod_O2-noinline": {
+    "min_ms": [
+     3746.7,
+     4175.8
+    ],
+    "median_ms": [
+     3760.2,
+     4187.8
+    ],
+    "delta_min_pct": 11.45,
+    "delta_median_pct": 11.37,
+    "loadavg": [
+     2.4,
+     2.7,
+     4.7
+    ]
+   },
+   "crontab_O2-noinline": {
+    "min_ms": [
+     1110.1,
+     1210.5
+    ],
+    "median_ms": [
+     1113.6,
+     1213.6
+    ],
+    "delta_min_pct": 9.04,
+    "delta_median_pct": 8.98,
+    "loadavg": [
+     2.2,
+     2.7,
+     4.6
+    ]
+   },
+   "dpkg-divert_O2": {
+    "min_ms": [
+     3239.5,
+     3503.1
+    ],
+    "median_ms": [
+     3247.3,
+     3511.4
+    ],
+    "delta_min_pct": 8.14,
+    "delta_median_pct": 8.13,
+    "loadavg": [
+     2.4,
+     2.7,
+     4.3
+    ]
+   },
+   "cmp_O0": {
+    "min_ms": [
+     1478.3,
+     1591.0
+    ],
+    "median_ms": [
+     1484.4,
+     1599.1
+    ],
+    "delta_min_pct": 7.62,
+    "delta_median_pct": 7.73,
+    "loadavg": [
+     2.7,
+     2.7,
+     4.5
+    ]
+   },
+   "budget_verdict": "budget set (fmt, ls, sort, bash -O2) within +5%; outside it the second decompile of the functions whose callers state a type costs +7.6% (cmp -O0) to +11.5% (kmod -O2-noinline), stated in the PR body for the lander"
   }
  },
  "gates": {
-  "make test": "datatests: 675/675 assertions passed; PARITY OK (final build on 3a42d864b)",
+  "make test": "datatests: 675/675 assertions passed; PARITY OK (final build e5e65a8cd on 3a42d864b)",
   "make test-stages": "datatests: 1298/1298 assertions passed; PARITY OK (final build)",
   "make check-spec": "check-spec OK (lenient mode)",
   "check_spec --strict": "check-spec OK (strict mode)",
-  "make test-cli": "tests/cli: 229/229 passed (final build)",
+  "make test-cli": "tests/cli: 231/231 passed (final build)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
-  "docs/options.md": "byte-fresh (regenerated)",
-  "make rust-test (lane script)": "RUST_TEST_RC=0; 7,429 passed, 0 failed, 38 ignored (lane 11:04:02-11:28:55Z on 4f59a6eb1, the last code, test and catalog-text commit). The run before it, on b36f340b6, failed only #712's recursive_callees_state_their_types_under_cycles, which now passes --option calleevote off"
+  "docs/options.md": "byte-fresh (regenerated from the final build)",
+  "make rust-test (lane script)": "RUST_TEST_RC=0; 7,431 passed, 0 failed, 38 ignored (lane 14:09:48-14:34:48Z on e5e65a8cd, after its last code, catalog and docs commit at 13:27:32Z)"
  },
  "notes": "Measured and not shipped: refusing a value handed to a declared void * (-8 perfect, -28 improved, +3), byte/halfword lone fields (+10 credited, +2 worse), a settle pass for every structsynth candidate (no scored change). Known secondary effect: a callee's one-field record stated by protoorder can make a caller's interior-pointer argument a cast and leave the caller's own parameter long (diff O0 print_context_header: void * -> long, 5 scored rows, all misses either way).",
  "files": {
