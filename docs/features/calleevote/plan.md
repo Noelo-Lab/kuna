@@ -50,7 +50,10 @@ inert wherever that pass is (single-function `kuna decompile`, narrowed runs,
   `kuna-cli` `decompile_all.rs` `calleevote_stored_tests` (4: only an aligned
   word equal to an entry stores it, a relocatable object is open, every MIPS
   function is open, a table in a `.text` loaded at address 0 is read);
-  `kuna_calleevote/tests.rs` `a_forgotten_function_keeps_no_statement`.
+  `kuna_calleevote/tests.rs` `a_forgotten_function_keeps_no_statement`,
+  `a_first_statement_that_repeats_the_callees_record_is_not_made`,
+  `a_callers_record_replaces_the_callees_lone_record`,
+  `a_statement_naming_a_superseded_record_is_forgotten`.
 * CLI, two-pass over the whole binary path, fixture
   `decompiler/crates/kuna-analysis/tests/fixtures/calleevote_x86_64` (+ `.c`):
   `tests/cli/calleevote-off-leaves-the-callee-untyped.json`,
