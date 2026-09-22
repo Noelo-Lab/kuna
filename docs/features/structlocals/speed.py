@@ -1,19 +1,23 @@
-"""Interleaved min-of-N decompile-all timing: main vs this build (param) vs this build (default locals)."""
+"""Interleaved min-of-N decompile-all timing: this build under param vs under the default (locals),
+optionally with a third arm for the tree before this change.
+
+    python3 speed.py <N> <out.json> fmt,ls,sort,bash <kuna> [<main-kuna>]
+"""
 import json, os, statistics, subprocess, sys, time
 R = "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2"
 ALL = {"fmt": f"{R}/coreutils/stripped/fmt", "ls": f"{R}/coreutils/stripped/ls",
        "sort": f"{R}/coreutils/stripped/sort", "bash": f"{R}/bash/stripped/bash"}
-SP = "/home/mahaloz/kwt/structlocals/specs"
-K = {"main": ("/home/mahaloz/kwt/structlocals-base/decompiler/target/release/kuna", []),
-     "param": ("/home/mahaloz/kwt/structlocals/.scratch/bin-final/kuna", ["--option", "structsynth", "param"]),
-     "locals": ("/home/mahaloz/kwt/structlocals/.scratch/bin-final/kuna", [])}
-ARMS = list(K)
+SP = os.environ["KUNA_SPECS"]
 N = int(sys.argv[1]); outf = sys.argv[2]; which = sys.argv[3].split(",")
+K = {"param": (sys.argv[4], ["--option", "structsynth", "param"]), "locals": (sys.argv[4], [])}
+if len(sys.argv) > 5:
+    K["main"] = (sys.argv[5], [])
+ARMS = list(K)
 out = {}
 for name in which:
     b = ALL[name]; t = {a: [] for a in ARMS}
     for i in range(N):
-        order = ARMS[i % 3:] + ARMS[:i % 3]
+        order = ARMS[i % len(ARMS):] + ARMS[:i % len(ARMS)]
         for lab in order:
             kb, extra = K[lab]
             env = dict(os.environ, SLEIGHHOME=SP, KUNA_SPECS=SP)
@@ -24,8 +28,8 @@ for name in which:
             if p.returncode != 0: print("RC", lab, name, p.returncode, flush=True)
     r = {lab: {"min_ms": min(v), "median_ms": statistics.median(v), "samples": v} for lab, v in t.items()}
     r["delta_min_pct_locals_vs_param"] = round((r["locals"]["min_ms"] - r["param"]["min_ms"]) / r["param"]["min_ms"] * 100, 2)
-    r["delta_min_pct_locals_vs_main"] = round((r["locals"]["min_ms"] - r["main"]["min_ms"]) / r["main"]["min_ms"] * 100, 2)
-    r["delta_min_pct_param_vs_main"] = round((r["param"]["min_ms"] - r["main"]["min_ms"]) / r["main"]["min_ms"] * 100, 2)
+    if "main" in r:
+        r["delta_min_pct_locals_vs_main"] = round((r["locals"]["min_ms"] - r["main"]["min_ms"]) / r["main"]["min_ms"] * 100, 2)
     out[name] = r
     print(name, {k: v for k, v in r.items() if k.startswith("delta")}, {l: r[l]["min_ms"] for l in ARMS}, flush=True)
     json.dump(out, open(outf, "w"), indent=1)

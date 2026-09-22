@@ -94,10 +94,11 @@ confirms it: nothing this value types is scored.
   perfect in both arms, 0 improved, 0 worse; all 65,377 scored decisions the same
   type up to `struct_N` numbering; no function's variable count changes.
 * **Hunks** (16 binaries, 8,682 functions incl. ARM32 chibios/freertos O0):
-  682 change against `param`, 610 only in `struct_N` numbering, 61 verified by
+  693 change against `param`, 621 only in `struct_N` numbering, 61 verified by
   `canon.py` as the same statements respelled through the returned record, 11
   read (past-the-end `&v1[1]`, `NULL`/`4U`, one temporary holding `field - 0x20`,
-  one zero-store pair merged into its 8-byte field, one float field as raw bytes).
+  one zero-store pair merged into its 8-byte field, one 4-byte filler field
+  `char field_0x24[4]` stored through its decayed address).
   `skeleton.py`: 0 control-flow or call-sequence deltas. Return types: 11 change,
   11 DWARF struct pointers (`rettype.py`).
 * **Speed**: see `record.json` (`speed`).
