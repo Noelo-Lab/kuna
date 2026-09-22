@@ -1,0 +1,40 @@
+{
+ "roundD_4c7704e09->69a947074": {
+  "perfect": 1349,
+  "sum": 3659.62,
+  "improved": 0,
+  "worse": [],
+  "onto_perfect": 0,
+  "off_perfect": 0
+ },
+ "69a947074->eaa19ebbb": {
+  "perfect": 1353,
+  "sum": 3670.31,
+  "improved": 71,
+  "worse": [
+   [
+    "coreutils::O0::pinky",
+    "print_long_entry",
+    0.4286,
+    0.2143
+   ]
+  ],
+  "onto_perfect": 4,
+  "off_perfect": 0
+ },
+ "eaa19ebbb->roundE_2da619852": {
+  "perfect": 1353,
+  "sum": 3669.96,
+  "improved": 0,
+  "worse": [
+   [
+    "grep::O0::grep",
+    "kwsprep",
+    0.6667,
+    0.3077
+   ]
+  ],
+  "onto_perfect": 0,
+  "off_perfect": 0
+ }
+}

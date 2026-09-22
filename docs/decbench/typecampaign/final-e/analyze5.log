@@ -1,0 +1,110 @@
+{
+ "headline": {
+  "base": {
+   "n": 10748,
+   "perfect": 848,
+   "perfect_pct": 7.89,
+   "sum": 2843.28,
+   "mean": 0.2645
+  },
+  "roundB": {
+   "n": 10748,
+   "perfect": 986,
+   "perfect_pct": 9.17,
+   "sum": 3111.18,
+   "mean": 0.2895
+  },
+  "roundC": {
+   "n": 10748,
+   "perfect": 1349,
+   "perfect_pct": 12.55,
+   "sum": 3657.76,
+   "mean": 0.3403
+  },
+  "roundD": {
+   "n": 10748,
+   "perfect": 1349,
+   "perfect_pct": 12.55,
+   "sum": 3659.62,
+   "mean": 0.3405
+  },
+  "roundE": {
+   "n": 10748,
+   "perfect": 1353,
+   "perfect_pct": 12.59,
+   "sum": 3669.96,
+   "mean": 0.3415
+  },
+  "roundDctl": {
+   "n": 10748,
+   "perfect": 1349,
+   "perfect_pct": 12.55,
+   "sum": 3659.62,
+   "mean": 0.3405
+  }
+ },
+ "moves_roundD_to_roundE": {
+  "functions": 10748,
+  "improved": 70,
+  "worse": 1,
+  "onto_perfect": 4,
+  "off_perfect": 0
+ },
+ "moves_roundD_to_roundDctl": {
+  "functions": 10748,
+  "improved": 0,
+  "worse": 0,
+  "onto_perfect": 0,
+  "off_perfect": 0
+ },
+ "moves_base_to_roundE": {
+  "functions": 10748,
+  "improved": 2653,
+  "worse": 9,
+  "onto_perfect": 506,
+  "off_perfect": 1
+ },
+ "per_project_moves_D_to_E": {
+  "bzip2": {
+   "improved": 0,
+   "worse": 0
+  },
+  "coreutils": {
+   "improved": 45,
+   "worse": 1
+  },
+  "diffutils": {
+   "improved": 0,
+   "worse": 0
+  },
+  "findutils": {
+   "improved": 1,
+   "worse": 0
+  },
+  "grep": {
+   "improved": 9,
+   "worse": 0
+  },
+  "gzip": {
+   "improved": 0,
+   "worse": 0
+  },
+  "shadow": {
+   "improved": 3,
+   "worse": 0
+  },
+  "tar": {
+   "improved": 12,
+   "worse": 0
+  }
+ },
+ "worse_D_to_E": [
+  [
+   -0.2143,
+   "coreutils::O0::pinky",
+   "print_long_entry",
+   0.4286,
+   0.2143
+  ]
+ ]
+}
