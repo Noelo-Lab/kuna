@@ -161,20 +161,34 @@
   },
   "main_vs_new_default": "the same 693 + tar O0 0x2c4f3 (the PTRSUB printer fix)"
  },
- "jobs": "JOBS_PLACEHOLDER",
+ "jobs": {
+  "method": "tar O2 `decompile-all --jobs 8`, interleaved min-of-11, param vs default locals, one build (docs/features/structlocals/jobs.py)",
+  "min_s": {
+   "param": 15.58,
+   "locals": 15.9
+  },
+  "median_s": {
+   "param": 16.56,
+   "locals": 16.39
+  },
+  "delta_min_pct_locals_vs_param": 2.05,
+  "locals_pool": "115 functions with synthesized structures: 109 renamed in place, 10 decompiled again with the serial names",
+  "equality": "jobs output byte-identical to the serial `--option protoorder off` run in both arms",
+  "before_widest_first": "the same run fell back to one ordered worker: 26.0 s against 15.2 s under param"
+ },
  "speed": "SPEED_PLACEHOLDER",
  "gates": {
   "make_test": "datatests: 675/675 assertions passed; PARITY OK",
-  "make_test_stages": "datatests: 1296/1296 assertions passed; PARITY OK (only new keys STRUCTSYNTH-LOCALS #1-#7)",
+  "make_test_stages": "datatests: 1303/1303 assertions passed; PARITY OK (only new keys STRUCTSYNTH-LOCALS #1-#7)",
   "make_test_cli": "tests/cli: 219/219 passed",
   "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
   "catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "rust_test": "RUST_TEST_RC=0 (7368 passed, 0 failed)"
+  "rust_test": "RUSTTEST"
  },
- "default_decision": "flipped param -> locals: (a) 0/675 datatest assertions move; (b) stages 1296/1296, no assertion of another feature moves, 7 new keys; (c) test-cli 219/219, no probe moves; (d) typesweep 1,353 -> 1,353, 0 improved / 0 worse, no scored decision changes; (e) SPEEDDEC; (f) 16-binary hunks all classified, none outside the documented effect; (g) modes.rs names no structsynth value (every preset inherits the default)",
- "base": "origin/main a26b99db1 (#705 structnest)",
+ "default_decision": "flipped param -> locals: (a) 0/675 datatest assertions move; (b) stages 1303/1303, no assertion of another feature moves, 7 new keys; (c) test-cli 219/219, no probe moves; (d) typesweep 1,353 -> 1,353, 0 improved / 0 worse, no scored decision changes; (e) SPEEDDEC; (f) 16-binary hunks all classified, none outside the documented effect; (g) modes.rs names no structsynth value (every preset inherits the default)",
+ "base": "origin/main 2888a2a94 (#707); the release build is byte-identical to the one measured on 2da619852 (#706), the only commit between is documentation",
  "counters": {
   "stage_corpus": "329 -> 330 (kuna-base xml.rs)",
   "settables": "unchanged (values of an existing option)",
@@ -182,7 +196,7 @@
  },
  "parity": {
   "datatests": "675/675 PARITY OK with locals as the default",
-  "stages": "1296/1296 PARITY OK; only new keys STRUCTSYNTH-LOCALS #1-#7",
+  "stages": "1303/1303 PARITY OK; only new keys STRUCTSYNTH-LOCALS #1-#7",
   "test_cli": "219/219"
  },
  "inspiration": "angr's type solver measures every type variable, not only a parameter's; the same evidence and decline rules as structsynth param (angr simple_solver struct branch, TRex USENIX Security 2025 section 3.3.3, Howard NDSS 2011 section 4.5)"
