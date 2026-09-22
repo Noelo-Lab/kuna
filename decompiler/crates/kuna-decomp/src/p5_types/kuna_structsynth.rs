@@ -1201,7 +1201,7 @@ fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence, lone: bool) -> b
     if e.slots.keys().any(|off| *off < 0 || *off >= MAX_FIELD_OFFSET) {
         return false;
     }
-    if lone && is_lone_field(e) {
+    if lone && is_lone_field(e) && says_only_a_pointer(ct) {
         return true;
     }
     // Two distinct offsets is the minimum evidence for a layout; a lone field at
@@ -1234,6 +1234,13 @@ fn is_lone_field(e: &Evidence) -> bool {
     e.slots.len() == 1
         && !e.derived_walk
         && e.slots.iter().all(|(off, s)| *off > 0 && s.width >= LONE_FIELD_MIN_WIDTH)
+}
+
+/// (kuna `calleevote fields`) Does `ct` say no more than that the value is a
+/// pointer: `void *`, or a pointer to bytes nothing has typed?  A pointee a
+/// declaration or another use committed to (`int *` from `pipe`) is kept.
+fn says_only_a_pointer(ct: &Datatype) -> bool {
+    ct.get_ptr_to().is_some_and(|p| matches!(p.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN))
 }
 
 /// (kuna `calleevote fields`) Is `ct` a pointer to a synthesized record that

@@ -66,7 +66,7 @@ fn long8() -> Rc<Datatype> {
 }
 
 fn typed(space: &Rc<AddrSpace>, off: uintb, ct: &Rc<Datatype>) -> Typed {
-    Typed { addr: at(space, off), size: 8, ct: Rc::clone(ct) }
+    Typed { addr: at(space, off), size: 8, ct: Rc::clone(ct), frame: false }
 }
 
 const CALLEE: (int4, uintb) = (1, 0x5c70);
@@ -127,7 +127,7 @@ fn every_caller_passing_one_record_states_it() {
     let got = decide_ledger(&l, 8, &all_calls(&l));
     assert_eq!(got.len(), 1);
     let stated = &got[0].1;
-    let ct = stated.at(&at(&reg(), 0x38), 8).expect("stated for rdi");
+    let ct = &stated.at(&at(&reg(), 0x38), 8).expect("stated for rdi").ct;
     assert!(Rc::ptr_eq(ct, &rec));
     assert!(stated.at(&at(&reg(), 0x30), 8).is_none());
 }
@@ -233,7 +233,7 @@ fn a_callers_record_replaces_the_callees_lone_record() {
     l.own.insert(CALLEE, vec![typed(&r, 0x38, &mine)]);
     let got = decide_ledger(&l, 8, &all_calls(&l));
     assert_eq!(got.len(), 1);
-    assert!(Rc::ptr_eq(got[0].1.at(&at(&r, 0x38), 8).expect("stated"), &theirs));
+    assert!(Rc::ptr_eq(&got[0].1.at(&at(&r, 0x38), 8).expect("stated").ct, &theirs));
 }
 
 #[test]

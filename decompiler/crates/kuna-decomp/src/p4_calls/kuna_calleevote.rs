@@ -98,6 +98,9 @@ pub struct Typed {
     pub addr: Address,
     pub size: int4,
     pub ct: Rc<Datatype>,
+    /// A pointer to a pointer that is the address of one of the caller's own
+    /// frame objects (`&v4`), or, for a statement, passed so by some caller.
+    pub frame: bool,
 }
 
 /// One direct call: the caller, the call instruction, and what each argument
@@ -116,9 +119,9 @@ pub struct CallerTypes {
 }
 
 impl CallerTypes {
-    /// The stated type for an input in exactly this storage.
-    pub fn at(&self, addr: &Address, size: int4) -> Option<&Rc<Datatype>> {
-        self.inputs.iter().find(|t| t.size == size && &t.addr == addr).map(|t| &t.ct)
+    /// The statement for an input in exactly this storage.
+    pub fn at(&self, addr: &Address, size: int4) -> Option<&Typed> {
+        self.inputs.iter().find(|t| t.size == size && &t.addr == addr)
     }
 }
 
@@ -163,6 +166,11 @@ impl Ledger {
         self.stated
             .retain(|_, stated| !stated.inputs.iter().any(|t| crate::kuna_protoorder::names_type(&t.ct, names)));
     }
+}
+
+/// Is `ct` a pointer to a pointer?
+fn points_at_a_pointer(ct: &Datatype) -> bool {
+    ct.get_ptr_to().is_some_and(|p| p.get_metatype() == type_metatype::TYPE_PTR)
 }
 
 fn key_of(a: &Address) -> Option<(int4, uintb)> {
@@ -249,7 +257,10 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &mut Funcdata) {
                 continue;
             };
             let ct = fd.high_get_type(vn).or_else(|| fd.vbank().get(vn).map(|v| Rc::clone(v.get_type())));
-            args.push(ct.map(|ct| Typed { addr, size, ct }));
+            args.push(ct.map(|ct| {
+                let frame = points_at_a_pointer(&ct) && crate::kuna_protoorder::addresses_a_frame_object(fd, vn);
+                Typed { addr, size, ct, frame }
+            }));
         }
         calls.push((callee, CallSite { caller: me.1, at, args }));
     }
@@ -289,7 +300,7 @@ fn own_params(arch: &Architecture, entry: &Address, fd: &Funcdata) -> Option<Vec
         if addr.is_invalid() || p.get_size() <= 0 {
             return None;
         }
-        out.push(Typed { addr, size: p.get_size(), ct: Rc::clone(p.get_type()?) });
+        out.push(Typed { addr, size: p.get_size(), ct: Rc::clone(p.get_type()?), frame: false });
     }
     Some(out)
 }
@@ -355,11 +366,13 @@ pub fn decide_ledger(
                 continue;
             }
             let mut agreed: Option<Rc<Datatype>> = None;
+            let mut frame = false;
             let all = sites.iter().all(|s| {
                 let Some(Some(a)) = s.args.get(j) else { return false };
                 if a.addr != p.addr || a.size != p.size || !committed(&a.ct) {
                     return false;
                 }
+                frame |= a.frame;
                 match &agreed {
                     None => {
                         agreed = Some(Rc::clone(&a.ct));
@@ -377,7 +390,7 @@ pub fn decide_ledger(
                 eprintln!("[calleevote] 0x{:x} param {j} ({}@{:x}:{}) callers {:?} -> {}", key.1, spell(&p.ct), p.addr.get_offset(), p.size, seen, all && agreed.is_some());
             }
             if let (true, Some(ct)) = (all, agreed) {
-                inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct });
+                inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame });
             }
         }
         if inputs.is_empty() {
@@ -391,7 +404,9 @@ pub fn decide_ledger(
         }
         let unchanged = ledger.stated.get(key).is_some_and(|old| {
             old.inputs.len() == inputs.len()
-                && old.inputs.iter().zip(&inputs).all(|(a, b)| a.addr == b.addr && same_type(&a.ct, &b.ct))
+                && old.inputs.iter().zip(&inputs).all(|(a, b)| {
+                    a.addr == b.addr && a.frame == b.frame && same_type(&a.ct, &b.ct)
+                })
         });
         if !unchanged {
             decided.push((*key, CallerTypes { inputs }));
@@ -446,7 +461,10 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
 /// Only where the fold so far says no more than "a pointer-width value" and the
 /// callee's own uses of the value do not contradict the pointer: the same
 /// refusals `protoorder` applies to a callee's vote at a call site, a loaded or
-/// stored member that is not one of the record's own included.
+/// stored member that is not one of the record's own included. A pointer to a
+/// pointer some caller passes as the address of its own frame object types
+/// that one object, so a callee that reaches past it (`cfg_free(&cfg)` reading
+/// the members after a `char *` first one) is not taking the object's type.
 pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<Rc<Datatype>> {
     let stated = data.kuna_calleevote_inputs()?;
     let v = data.vbank().get(vn)?;
@@ -455,10 +473,16 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
     }
     let want = stated.at(v.get_addr(), v.get_size())?;
     let ptr_size = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
-    if !uncommitted(ct, ptr_size) || crate::kuna_protoorder::input_refuses(data, vn, want) {
+    if !uncommitted(ct, ptr_size) || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
         return None;
     }
-    Some(Rc::clone(want))
+    if want.frame
+        && std::env::var("KUNA_CV_NOFRAME").is_err()
+        && crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct)
+    {
+        return None;
+    }
+    Some(Rc::clone(&want.ct))
 }
 
 #[cfg(test)]

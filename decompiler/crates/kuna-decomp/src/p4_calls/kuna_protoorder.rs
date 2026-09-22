@@ -261,7 +261,7 @@ fn stated_argument_type<'a>(data: &'a Funcdata, fc: &FuncCallSpecs, slot: int4) 
 /// Is `vn` computed from the stack pointer -- the address of something in the
 /// frame?  `gatherOpen` turns a pointer's pointee at a frame address into a
 /// range hint, so a vote there re-lays the frame rather than typing a value.
-fn addresses_a_frame_object(data: &Funcdata, vn: VarnodeId) -> bool {
+pub(crate) fn addresses_a_frame_object(data: &Funcdata, vn: VarnodeId) -> bool {
     let mut work = vec![vn];
     let mut seen: Vec<VarnodeId> = Vec::new();
     while let Some(v) = work.pop() {
@@ -447,21 +447,44 @@ enum Reading<'a> {
 
 /// (kuna `calleevote`) Does anything the function does with its input `vn`
 /// outrank a caller's type `ct` for it?  The refusals a callee's vote meets at
-/// a call site, asked of the callee's own uses, and one more for a `char *`:
-/// a constant the function stores through the value wider than a byte, which
-/// the printer would spell as one character store per byte.
+/// a call site, asked of the callee's own uses, and one more for a character
+/// pointer ([`splits_a_wide_constant`]).
 pub(crate) fn input_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
-    class_of(ct).is_none() || family_refuses(data, vn, Reading::Input, ct) || splits_a_wide_constant(data, vn, ct)
+    class_of(ct).is_none()
+        || family_refuses(data, vn, Reading::Input, ct)
+        || splits_a_wide_constant(data, &value_family(data, vn), ct, 0)
 }
 
-fn splits_a_wide_constant(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+/// (kuna `calleevote`) Does the function load or store through its input `vn`
+/// anywhere but the one pointee of `ct` at offset zero?
+pub(crate) fn reaches_past_the_pointee(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
     let Some(pointee) = ct.get_ptr_to() else { return false };
-    if pointee.get_size() != 1 || !pointee.is_char_print() {
+    let Some((accesses, _)) = accesses_through(data, &value_family(data, vn)) else { return true };
+    accesses.iter().any(|a| a.stride != 0 || a.at < 0 || a.at + a.size as i64 > pointee.get_size() as i64)
+}
+
+/// Would `ct` on the values in `family` make the printer spell a constant
+/// stored through a `char *` wider than a byte as one character store per
+/// byte?  For a `char *` the stores are the ones through the value itself; for
+/// a pointer to a pointer, the ones through every pointer-width value loaded
+/// through it or stored through it, which take the pointee.
+fn splits_a_wide_constant(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: u32) -> bool {
+    let Some(pointee) = ct.get_ptr_to() else { return false };
+    let character = pointee.get_size() == 1 && pointee.is_char_print();
+    if !character && (pointee.get_metatype() != type_metatype::TYPE_PTR || depth >= 2) {
         return false;
     }
-    let family = with_sibling_loads(data, &value_family(data, vn));
+    let family = with_sibling_loads(data, family);
     let Some((accesses, _)) = accesses_through(data, &family) else { return true };
-    accesses.iter().any(|a| a.store && a.size > 1 && data.vbank().get(a.value).is_some_and(|n| n.is_constant()))
+    if character {
+        return accesses
+            .iter()
+            .any(|a| a.store && a.size > 1 && data.vbank().get(a.value).is_some_and(|n| n.is_constant()));
+    }
+    accesses.iter().filter(|a| a.size == pointee.get_size()).any(|a| {
+        data.vbank().get(a.value).is_some_and(|n| !n.is_constant())
+            && splits_a_wide_constant(data, &value_family(data, a.value), &pointee, depth + 1)
+    })
 }
 
 /// Does anything else about the value `vn` outrank the vote `ct`?
