@@ -314,6 +314,7 @@
    "cycles": 0
   },
   "new_stale_argument_casts": 0,
-  "evidence": "docs/features/protoscc/r3c-stale.txt"
+  "evidence": "docs/features/protoscc/r3c-stale.txt",
+  "typesweep_rerun": "444 slices on this build, base = cycles, test = --option protoorder types: perfect 1,399 vs 1,353, aggregate 3714.21 vs 3669.96, 46 onto / 0 off, 116 improved / 1 worse; every slice scores exactly as in the previous head's run; one slice's variable signature moved (grep -O0 treedelta sub_d7f4, self-recursive and redone: struct_36 * -> struct_22 *, same score)"
  }
 }
