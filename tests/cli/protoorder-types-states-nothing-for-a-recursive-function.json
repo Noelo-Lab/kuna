@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-9fac4a10ac03",
+  "probe_id": "a-ba470e02dbc0",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -8,7 +8,10 @@
     "{{BIN}}",
     "--option",
     "protoorder",
-    "types"
+    "types",
+    "--option",
+    "calleevote",
+    "off"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -41,5 +44,5 @@
       "void wrap2\\(char \\*a0\\)"
     ]
   },
-  "notes": "The option-off arm of protoorder-cycles-types-the-callers-of-a-recursive-function: under `protoorder types` a function in a recursive component states nothing, so the callers of `strwalk` and `even` keep an integer parameter and `argclobber` has no recovered list to read at `rtarget`, whose caller keeps the clobbered argument."
+  "notes": "The option-off arm of protoorder-cycles-types-the-callers-of-a-recursive-function: under `protoorder types` a function in a recursive component states nothing, so the callers of `strwalk` and `even` keep an integer parameter and `argclobber` has no recovered list for `rtarget`. `calleevote off` isolates protoorder (by default wrap and wrap2 take the char * their callers pass)."
 }
