@@ -864,7 +864,7 @@ Between round D's `4c7704e0` and `2da619852`, `scripts/decbench/` changes only i
 | goal 3: layout | per-parameter precision / recall / F1, fields only | .8709 / .0929 / .1678 | .8702 / .0859 / .1563 | the only parameters that move are ones now typed `obstack *`, the exact GT name, whose fields the instrument cannot read (E.4) |
 | goal 3: nesting | nesting F1, fixed instrument | 0 (old instrument); **.0036** re-read | **.0036** (3 of 5 claimed, of 1,660) | `nest` adds nothing on these eight builds |
 | decbench#93 crediting | replay of the same rows | 1,349 → 1,575 | 1,353 → **1,579** | +226 functions either way; 1,536 TP added, 33 fewer than round D because #692 turned `struct_N *` into the right libc name |
-| speed | whole-binary `decompile-all`, interleaved min-of-11 | −3.1…+2.6% vs baseline | SPEED_HEAD_BASE vs baseline | SPEED_HEAD_READING |
+| speed | whole-binary `decompile-all`, interleaved min-of-11 | −3.1…+2.6% vs baseline | **+1.0…+3.3%** vs baseline | +0.3…+1.7% against round D; no case near the +5% line, so none needed a re-run |
 
 ### E.1 type_match
 
@@ -969,8 +969,7 @@ every cell against IDA, angr and ghidra.
 | O0 | fmt / ls / sort / du | 271 / 1,132 → **1,133** / 1,083 → **1,084** / 923 | 4 / 18 / 6 / 5 | 9 / 31 / 44 / 39 |
 | **total** | | **6,967 → 6,967** | **66 → 65** | **248 → 247** |
 
-Net zero declarations: two fewer at O2, two more at O0, where the new libc aggregates split a few
-frame slots (the class #692 documents). The phantom-`rdx` shape is 7 → 7, all du -O2, not the
+Net zero declarations: two fewer at O2 and two more at O0. The phantom-`rdx` shape is 7 → 7, all du -O2, not the
 clobbered-argument shape. **`fmt::main` is byte-identical to round D** (`final-e/fmt-main-e.c`):
 `sub_3700` is called as `(v6,v7)`, `(stdin,v7)` and `(stdin,"-")` and no `// rdx` local is
 declared. The one fmt -O2 change is outside `main`: the `fseeko` thunk now carries
@@ -1008,12 +1007,16 @@ Per-parameter layout against DWARF (`docs/features/structsynth/layoutscore.py`, 
 
 The drop in recall is a join the instrument cannot make, not a lost layout. fmt and du are
 identical in both arms. In ls and sort, every parameter that leaves the join is an `obstack *`
-parameter that round D typed as a synthesized `struct_N *` (7 of 10 fields right) and round E
-types with the exact GT name (`final-e/layoutdiffDE-ls.log`: `_obstack_newchunk`,
+parameter that round D typed as a synthesized `struct_N *` (ls -O0's `struct_4`, 7 of its 10
+fields right) and round E
+types with the exact GT name (ls -O0: `_obstack_newchunk`,
 `print_name_with_quoting` arg 2, `push_current_dired_pos`, `quote_name` arg 5). A libc shell has no
 fields in the exported header, so `layoutscore` has nothing to score for it; `type_match` credits
 all of them. Taking those parameters out of round D gives round E's row exactly (877 − 66 = 811 of
-1,007 − 75 = 932). SORT_LAYOUT_CHECK
+1,007 − 75 = 932). sort
+loses `_obstack_newchunk` the same way at both levels: nine parameters in all (4 + 3 in ls, 1 + 1
+in sort), which is the whole 206 → 197 drop in parameters typed as a struct, and no other
+parameter's layout changes (`final-e/layoutdiffDE.log`).
 
 **Nesting.** Under the fixed instrument the eight builds claim 5 nested struct pointers, 3 of them
 right, against 1,660 GT nestings: P .60, R .0018, **F1 .0036** — in round D and round E alike.
@@ -1034,13 +1037,31 @@ pointer fields are dereferenced only at non-zero offsets and typed `long`; relax
 | round D | 1,349 | 1,575 (+226) | +1,569 | .3405 → .3850 |
 | **round E** | 1,353 | **1,579 (+226)** | +1,536 | .3415 → **.3857** |
 
-Crediting adds 33 fewer TP than in round D, because 33 parameters that the rule would have
-credited as an anonymous `struct_N *` are now the named record and score under the pinned
-metric already.
+Crediting adds 33 fewer TP than in round D, mostly because 36 variables it would have credited
+as an anonymous `struct_N *` are now `obstack *` (33) or `re_pattern_buffer *` (3) and score
+under the pinned metric already.
 
 ### E.6 Speed
 
-SPEED_SECTION
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation) on the O2
+stripped binaries: four arms (baseline, round C, round D, round E) run one after another with the
+arm order rotating every round, 11 rounds each, load average 2.8–8.6 on 80 cores. Driver
+`final-e/speed5.py` (round D's, with round B swapped for round E), raw samples `final-e/speed.json`.
+
+| binary | functions | baseline min | round C min | round D min | **round E min** | Δ E vs D (min / median) | Δ E vs baseline (min) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| coreutils fmt | 151 | 4,068.3 ms | 4,089.8 ms | 4,083.8 ms | **4,108.7 ms** | +0.61% / −1.43% | +0.99% |
+| coreutils ls | 404 | 13,337.7 ms | 13,700.9 ms | 13,603.1 ms | **13,643.0 ms** | +0.29% / +0.35% | +2.29% |
+| coreutils sort | 343 | 14,061.8 ms | 14,268.6 ms | 14,217.5 ms | **14,461.1 ms** | +1.71% / +1.10% | +2.84% |
+| bash | 2,538 | 85,398.1 ms | 87,239.2 ms | 87,454.5 ms | **88,187.8 ms** | +0.84% / +1.08% | +3.27% |
+
+Round E costs +0.3% to +1.7% over round D, and no case came near the +5% re-run line, so none
+was re-run. Against the campaign baseline the four binaries sit at +1.0% to +3.3%. bash's +3.27% is
+the widest; in the same run round D is +2.41% against the baseline, where round D's own run put it
+at +1.32%, so a point of that is the box between runs. sort is the one binary where min and median
+agree on a cost above 1% (+1.71% / +1.10%); #692 measured its own worst case at +0.98% after a
+quiet re-run. bash is 1.3 MB, so `--mode auto` resolves to `reliable` there rather than
+`aggressive`.
 
 ### E.7 Every round-E PR and what it measured
 
@@ -1051,7 +1072,7 @@ SPEED_SECTION
 | #692 | `libcstructs` — `obstack`, `spwd`, `utmpx`, `utmp`, `re_pattern_buffer`, `lconv`, `statfs` and ~75 more slots | on (part of `libctypes`) | **the whole round**: 1,349 → 1,353 perfect, +10.70 aggregate, 71 improved / 1 worse, `ptr_struct` 422 → 487, `ptr_char` +29, `struct_val` +8 |
 | #706 | `libctypes` names a libc struct only on x86-64 ELF against glibc, and declines it for an argument reached outside the struct | strict fix | −0.36 aggregate, 0 improved / 1 worse (grep `kwsprep`), `ptr_struct` 487 → 474; 136 of 199,963 functions change over 663 binaries, no call gains or loses an argument |
 | #705 | `structsynth nest` — a record pointer loaded from a field, recursive where it is the same record; plus the `structscore` header fix | `param` (nest opt-in) | default output unmoved; `nest` vs `param`: typesweep 1,349 = 1,349, +2 nested fields on 10 builds, 7 functions respelled over 15 binaries. Not flipped: `--jobs 8` on tar -O2 is 15.9 s → 26.0 s |
-| #698, #699 | another author: ARM call arguments spilled through the frame pointer; opt-in stack output arguments | on / off | no function moves on the 444 slices (x86-64 only) |
+| #698, #699 | another author: ARM call arguments spilled through the frame pointer; opt-in stack output arguments | default / opt-in | no function moves on the 444 slices (x86-64 only) |
 
 **Not landed:**
 
@@ -1090,7 +1111,8 @@ has 49.7% right.
   functions (17.4%) are blocked only by such variables, mostly glibc FORTIFY wrappers (`__fmt` 404,
   `__stream` 123); in 79 of them every own variable is already right. Leaving inlined-callee
   variables out upstream would take O2 **74 → 153** and O2-noinline **380 → 498** with no engine
-  change — the largest single number the campaign has found, and a metric fix like #93 and #94.
+  change — +197 perfect, more than any engine lever measured this round, and a metric fix like
+  #93 and #94.
 * **Restrict** is 1,798 O2 GT variables, 98.5% of them register-only (round D's #94 finding again).
 * **binja's O2 lead** (79 against 68 perfect on its functions) is 23 wins: `dir_name`, where kuna
   drops a pass-through argument, and register-only GT named `result` or `i` that binja's own
@@ -1120,8 +1142,8 @@ The reachable blockers, as functions that would become perfect if only that buck
      the `char *` work in coreutils and gnulib bottoms out in recursion (`quotearg_buffer_restyled`
      calls itself), so every forwarding caller above it keeps an integer. An env-gated experiment on
      `feat/charptr-on`: `self` **+36 perfect**, +163 `ptr_char` TP, 136 up / 1 down; `all` (cycles
-     too) **+46**, +188, 160 up / 1 down. About nine times the best `charptr` ever measured (+4 perfect), and a
-     few lines behind an option value. Needs the corpus diff, speed and a stage test.
+     too) **+46**, +188, 160 up / 1 down. About nine times the best `charptr` ever measured
+     (+4 perfect), and a few lines behind an option value. Needs the corpus diff, speed and a stage test.
   2. **Type a `framelayout` filler slot from the value stored into it, pointer types only.** 805 of
      the 1,625 `char *` variables only binja gets right are -O0 slots kuna exports as `undefined8`
      while its own C body types the value `char *`; 3,018 stack GT variables across all classes land

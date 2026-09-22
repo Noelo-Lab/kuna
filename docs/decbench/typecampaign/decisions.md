@@ -54,7 +54,7 @@
 17. 2026-09-22 round E: the layout instrument scores only synthesized records, because a libc
    record is a sized shell with no members in the exported header. When libctypes names a record
    that structsynth used to synthesize, the parameter leaves the layout join: recall falls while
-   `type_match` and TRex rise. Round E's recall drop (.0929 → .0859) is exactly the seven `obstack *`
+   `type_match` and TRex rise. Round E's recall drop (.0929 → .0859) is exactly the nine `obstack *`
    parameters of ls and sort. Read the layout rows beside the class table, never alone.
 18. 2026-09-22 `charptr` stays `off` and is no longer a flip candidate. After #704 counts a constant
    `PTRADD` index as a field offset, the option arm is net negative on the 444 slices and the flip
