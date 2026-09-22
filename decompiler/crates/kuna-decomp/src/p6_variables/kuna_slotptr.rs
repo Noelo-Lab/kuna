@@ -147,12 +147,14 @@ fn call_of_iop(fd: &Funcdata, iop: VarnodeId) -> Option<SeqNum> {
 /// Note the stores into, and the ranges touched in, the stack frame as this
 /// `restructure_varnode` pass sees it.
 pub fn record_pass(fd: &Funcdata, space: &Rc<AddrSpace>) {
-    let index = space.get_index();
     let mut stores: Vec<((i64, int4), SlotStore)> = Vec::new();
     let mut accesses: Vec<(i64, int4)> = Vec::new();
-    for vn in fd.vbank().iter_loc() {
-        let Some(v) = fd.vbank().get(vn) else { continue };
-        if v.get_addr().get_space().map(|s| s.get_index()) != Some(index) || v.is_free() {
+    let at = |off: u64| Address::new(Rc::clone(space), off);
+    let vbank = fd.vbank();
+    let whole_space = vbank.iter_loc_addr_range(&at(0), &at(1)).chain(vbank.iter_loc_addr_range(&at(1), &at(0)));
+    for vn in whole_space {
+        let Some(v) = vbank.get(vn) else { continue };
+        if v.is_free() {
             continue;
         }
         let key = (signed_offset(space, v.get_offset()), v.get_size());
