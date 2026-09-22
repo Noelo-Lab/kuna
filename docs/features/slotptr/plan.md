@@ -54,9 +54,12 @@ Three ways of reading "the stored value's type" were swept on all 444 slices
 
 | variant | perfect | aggregate | improved / worse | ptr_char stack TP |
 |---|---|---|---|---|
-| A: declared type of the value's HighVariable (shipped) | 1,467 | +100.90 | 412 / 5 | 2,133 |
+| A: declared type of the value's HighVariable (shipped rule, `void *` still excluded) | 1,467 | +100.90 | 412 / 5 | 2,133 |
 | B: the producing op's own output type | 1,440 | +72.60 | 295 / 4 | 1,969 |
 | C: both must agree | 1,439 | +71.46 | 291 / 4 | 1,948 |
+| shipped: A, plus `void *` admitted and a pointer to code declined | 1,472 | +103.23 | 418 / 5 | 2,133 |
+
+The base (option off) is 1,353 perfect of 10,748 scored functions.
 
 B and C lose a third of the gain (a call to an unprototyped function returns
 `unsigned long` and is cast to the variable's `char *`) and still keep four of
