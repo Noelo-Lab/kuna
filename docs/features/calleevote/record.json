@@ -202,31 +202,39 @@
   "control": "the off arm is main at 3a42d864b: 1,522 perfect, the figure #712 reports for protoorder cycles",
   "base": "origin/main 3a42d864b (#712 protoorder cycles, default on; #710 slotptr); both arms the final build (.scratch/v16, 47e308025 code)",
   "new_struct_pointers": "909 parameters or slots newly typed struct_N * (not a struct before); every one has a program-defined struct pointer as its DWARF type, none replaces a primitive pointer and none a correct type",
-  "earlier_base": "on 656e6c701 (before #712) the same option measured 1,472 -> 1,539 perfect, 334 up / 3 down, credited 1,717 -> 2,083; #712 now types some of the same parameters from recursive callees, so the gain on top of it is smaller"
+  "earlier_base": "on 656e6c701 (before #712) the same option measured 1,472 -> 1,539 perfect, 334 up / 3 down, credited 1,717 -> 2,083; #712 now types some of the same parameters from recursive callees, so the gain on top of it is smaller",
+  "round_4": "re-measured on the round-4 build (.scratch/v26, the final code) against the same off arm: every per-function value is identical to the numbers above, pinned and #93-credited (1,522 -> 1,575 perfect, 264 up / 3 down, all three gnulib xmemdup; credited 1,771 -> 2,128; exported variable count identical for every function). Struct ground truths typed char * or char ** by the default: 8 -> 2 (the shadow new_sgent/new_spent frame records now keep their own type; rm's rm_options, a frame record whose first member is a bool, takes char * and reads a2[8], a2[9] where off prints *(char *)((long)a2 + 8))"
  },
  "sweep": {
-  "surface": "kuna decompile-all --json --max-fn-seconds 120, --option calleevote off vs default, 21 stripped binaries / 13,173 functions, final build .scratch/v16 on 3a42d864b (docs/features/calleevote/corpus-hunks.json)",
-  "binaries": "coreutils fmt ls sort du (O2), cp (O0), chcon wc (O2-noinline); grep (O0, O2-noinline); gzip (O0, O2); diff (O2), cmp (O0); find (O2); bzip2 tar dash xmlwf mirai (O2-noinline); bash (O2); crazyflie cf2.elf (ARM Thumb, O2-noinline)",
-  "changed": 1287,
+  "surface": "kuna decompile-all --json --max-fn-seconds 120, --option calleevote off vs default, 31 stripped binaries / 16,843 functions, final build .scratch/v26 on 3a42d864b (docs/features/calleevote/corpus-hunks.json, classes by corpus-classes.py)",
+  "binaries": "the 21 of round 3 (coreutils fmt ls sort du, cp O0, chcon wc O2-noinline; grep O0 + O2-noinline; gzip O0 + O2; diff O2, cmp O0; find O2; bzip2 tar dash xmlwf mirai O2-noinline; bash O2; crazyflie cf2.elf ARM Thumb) plus the reviewer's 10: od O2, ptx O2-noinline, libz.so O2-noinline, ssh-add O2, crontab O2-noinline, init O0, setfacl O2, libedit.so O2-noinline, dpkg-divert O2, kmod O2",
+  "changed": 1854,
   "classification": {
-   "struct_N renumbering only (a one-field record takes a ledger slot)": 806,
-   "a parameter's type only": 135,
-   "a parameter's type and how accesses through it print (fields, casts, indexing); statements, calls and argument counts identical": 343,
-   "an expression folded into its uses by the new type": 3
+   "struct_N renumbering only (a one-field record takes a ledger slot)": 1120,
+   "a parameter's type only": 179,
+   "a parameter's type and how accesses through it print (fields, casts, indexing); statements, calls and argument counts identical": 551,
+   "an expression folded into its uses by the new type": 4
   },
   "tags": {
-   "register-local count moved (merge follows the new type)": 15,
-   "a local that held a callee's old void * declared as an integer": 15,
-   "byte-split stores": 0
+   "register-local count moved (merge follows the new type)": 24,
+   "a local that held a callee's old void * declared as an integer": 25,
+   "byte-split stores (more character-literal stores AND more statements)": 0
   },
   "shape_hunks_read": [
    "diff O2 0x11680: returns its char * parameter, so the return type follows (long -> char *, return 0 -> return NULL)",
-   "bash O2 0xdc760, 0xf48e0: char * parameter; *(char *)(a0 + k) prints a0[k] and the loaded temporary is inlined at its uses"
+   "bash O2 0xdc760, 0xf48e0: char * parameter; *(char *)(a0 + k) prints a0[k] and the loaded temporary is inlined at its uses",
+   "kmod O2 0x9030: char ** parameter; the element address temporary v1 = (unsigned long *)((long)v6 + v7 * 8) is inlined as &v6[v7 * 8] at its three uses"
   ],
+  "reviewer_witnesses": {
+   "kmod O2 0x9240 cfg_search_add": "was 12 character stores for two word stores; now void sub_9240(long a0,char *a1), no character stores: its accesses are ((char *)0x1020)[a0] (a constant the recovery took for the pointer, with the option off too), so the index refusal refuses the char **; in the cx5 reduction, where a0 + 0xd0 is an ordinary offset, the frame reach-past rule and the wide-constant rule each refuse it",
+   "kmod O2 0x7680 cfg_free": "keeps long a0 (index refusal: its only uses are ((char *)0x1018)[a0], a constant the recovery took for the pointer, present with the option off too)",
+   "kmod O2 0x8990 cfg_kernel_matches": "still char **: it reads only cfg->kversion at offset 0, which a char ** describes",
+   "cx2 mkpipe": "int mkpipe(int *a0), pipe(a0), a0[1]: the int * pipe declares is kept",
+   "cx5 add": "struct_0 *a0 with v2[1] = 0x506070801020304; no character stores"
+  },
   "arity_or_error_changes": 0,
-  "off_equals_main": "--option calleevote off matches origin/main 3a42d864b byte-for-byte (code, variables, errors) on chcon, wc, grep O2-noinline, dash, xmlwf, mirai, gzip O2, cmp O0, fmt O2 and cf2.elf; on cf2.elf the default matches it too",
-  "redo_drift_guard": "without same_arity two bash O2 functions (0x7ea70, 0x7f600) gained an unused stack parameter from a pre-existing redo instability; the guard keeps the first body",
-  "per_architecture": "crazyflie cf2.elf (ARM Thumb, 2,838 functions): 0 changed, since no function off x86-64 has every caller known (482 before this review round). All 1,287 changes are in the 20 x86-64 binaries"
+  "off_equals_main": "the off path is untouched by round 4 (every new check runs only on a function with a caller statement or a closed caller set); round 3 matched origin/main 3a42d864b byte for byte on 10 binaries and the reviewer confirmed it on 10 more",
+  "per_architecture": "crazyflie cf2.elf (ARM Thumb, 2,838 functions): default == off; libz.so O2-noinline (203): default == off"
  },
  "speed": {
   "round_3": {
@@ -572,7 +580,11 @@
    "tests/cli/calleevote-leaves-a-mips-callback-open.json",
    "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_callback_mipsel(.c)",
    "tests/cli/calleevote-reads-a-table-in-code-at-address-zero.json",
-   "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_zero_x86_64(.c)"
+   "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_zero_x86_64(.c)",
+   "tests/cli/calleevote-keeps-a-frame-records-word-stores.json",
+   "tests/cli/calleevote-off-keeps-a-frame-records-word-stores.json",
+   "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_frame_x86_64(.c)",
+   "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs (a_frame_records_char_pointer_pointer_is_not_its_type)"
   ],
   "docs": [
    "docs/spec/04-calls-and-prototypes.md",
@@ -612,6 +624,12 @@
    "typesweep": "off vs default on 3a42d864b: 1,522 -> 1,575 perfect, 264 up / 3 down (gzip xmemdup), credited 1,771 -> 2,128, exported variable counts identical",
    "rounds_decide_against_first_decompile": "each round decided against the parameters the LAST decompile recovered, so a vote an earlier round made fell out of the next statement and the next redo lost it (coreutils ginstall need_copy O0 and copy O2-noinline ended unsigned long; tar O2-noinline 0x35910 needed three rounds); every round now decides against the first decompile's parameters, and a first statement that only repeats the callee's own record is not made (kmod round 1: 73 -> 49 redos). On 656e6c701 this moved 332/3 to 334/3 and changed nothing else over 21 binaries",
    "rebased_onto_712": "main gained #712 (protoorder cycles); the convergence sweep now also forgets calleevote statements that name a superseded structure (kuna_calleevote::forget_statements_naming), mirroring #712 for protoorder. #712's probe protoorder-types-states-nothing-for-a-recursive-function runs with --option calleevote off: by default wrap and wrap2 take the char * their one caller passes"
+  },
+  "round_4": {
+   "char_pointer_pointer": "a char ** vote is refused where a pointer-width value loaded through the input or stored through it has a constant wider than a byte stored through it (splits_a_wide_constant, one level down); a pointer-to-pointer passed as the address of a caller's frame object is marked (Typed.frame) and refused where the callee loads or stores through it anywhere but [0, pointer width) (reaches_past_the_pointee); any vote is refused for a value used as the index of a PTRADD (indexes_a_pointer). Refusing every frame address instead costs 17 functions (parse_line(&keyword,&arg), next_field(&line), simple_strtoul(&p), quote_name_buf(&inbuf)): measured, not shipped",
+   "lone_field": "a lone field no longer replaces a pointee a declared prototype the parameter is handed to gave it (pipe (int *)); a taken caller vote is kept for a record, and for a char ** when the field is a whole aligned pointer; a char * vote, or a char ** read as an int at offset 4 (expr getsize), yields to the record. The reviewer's literal rule (keep every committed pointee, only void * / undefined accept) was measured: -137 functions credited (find O0 insert_primary etc.: an int * protoorder carried from a callee reading the enum at offset 0), 2,128 -> 2,120 credited perfect; the shipped rule is identical to round 3 on the typesweep",
+   "tests": "fixture calleevote_frame_x86_64(.c) (add, drop, advance, mkpipe) with probes calleevote-keeps-a-frame-records-word-stores (default) and calleevote-off-keeps-a-frame-records-word-stores (off); CLI test a_frame_records_char_pointer_pointer_is_not_its_type (types and fields); unit test a_frame_address_from_any_caller_marks_the_statement",
+   "documented_not_fixed": "an unaligned function pointer (packed struct, non-PIE) is not seen by the stored-word scan (spec 04, cli.md, catalog now say aligned); setfacl parse_acl_seq's char cursor merged with a struct result keeps struct_0 * plus casts"
   }
  }
 }

@@ -231,3 +231,38 @@ before #712 the same build measured kmod +9.8% and cmp +7.7-7.9%. Whether a vote
 refused is known only by running the pipeline with it, since the refusals read
 the function's own uses in the redo, so no cheaper filter was found.
 
+
+## 7. Review round 4: a frame record's `char **`, and a declared `int *`
+
+Two defects, both from the reviewer's reductions (`cx5.c`, `cx2.c`), now the fixture
+`calleevote_frame_x86_64`:
+
+- `main` keeps `struct cfg` in its frame, first member `const char *name`, so it passes `&cfg` as
+  a `char **`. `add` stores a malloc'd node through the record (`cfg->head = s`), the node took
+  the pointee `char *`, and its `unsigned int`/`unsigned long` constant stores printed as twelve
+  character stores (kmod -O2 `cfg_search_add` 0x9240). The `char *` wide-constant refusal only
+  looked at the input itself. Now a `char **` is refused one level down: any pointer-width value
+  loaded through the input or stored through it that has a wider-than-byte constant stored
+  through it. Separately, a pointer-to-pointer argument that is the address of a caller's frame
+  object is marked, and the callee's redo refuses it where it reaches past `[0, 8)`: `drop(&cfg)`
+  reading `cfg->head` keeps its own type, `advance(&cursor)` takes `char **`. Dropping every frame
+  address instead loses 17 functions whose out-parameter really is `char **` (`parse_line`,
+  `next_field`, `simple_strtoul`, `quote_name_buf`). kmod's real functions use a constant the
+  recovery took for the pointer (`((char *)0x1020)[a0]`, identical with the option off), so the
+  walk finds no access through `a0`; any vote for a value used as a `PTRADD` index is refused,
+  which keeps `cfg_search_add` and `cfg_free` `long`. `cfg_kernel_matches` reads only
+  `cfg->kversion` at offset 0 and keeps `char **`.
+- `int mkpipe(int *p){ return pipe(p) + p[1]; }` became `struct_1 *` under `fields`: the lone
+  field path accepted any pointer. The reviewer's rule (only `void *`/untyped pointees) was
+  measured: -137 functions' credited score, because find's `parser_table *entry` parameters are
+  `int *` only by a `protoorder` statement from a callee that reads the enum at offset 0. The
+  shipped rule keeps a pointee a declared prototype the parameter is handed to gave it (`pipe
+  (int *)`), and a taken caller vote when the field fits it (a record; a `char **` read as whole
+  aligned pointers); a `char *` or a `char **` read as an `int` at offset 4 (coreutils `expr`
+  `getsize`) yields to the record, as in round 3. Typesweep: identical to round 3, value for
+  value.
+
+Whole corpus (31 binaries, the round-3 21 plus the reviewer's 10): 1,854 of 16,843 functions
+change, 0 variable-count or error changes, 0 character-store splits (a hunk counts only when both
+the character-literal stores and the statement count go up; 19 one-byte `= 0` -> `= '\0'`
+spellings do not), 4 folded expressions read.

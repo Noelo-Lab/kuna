@@ -24,6 +24,10 @@
    "types-and-spelling": 2,
    "signature-only": 1
   },
+  "O0/sysvinit/init": {
+   "functions": 162,
+   "types-and-spelling": 1
+  },
   "O2-noinline/bzip2/bzip2": {
    "functions": 154,
    "types-and-spelling": 4,
@@ -35,6 +39,10 @@
    "signature-only": 8,
    "types-and-spelling": 15
   },
+  "O2-noinline/coreutils/ptx": {
+   "functions": 263,
+   "types-and-spelling": 1
+  },
   "O2-noinline/coreutils/wc": {
    "functions": 233,
    "types-and-spelling": 1,
@@ -42,6 +50,10 @@
   },
   "O2-noinline/crazyflie/cf2.elf": {
    "functions": 2838
+  },
+  "O2-noinline/cronie/crontab": {
+   "functions": 160,
+   "types-and-spelling": 1
   },
   "O2-noinline/dash/dash": {
    "functions": 442,
@@ -54,6 +66,12 @@
    "renumber-only": 55,
    "types-and-spelling": 34,
    "signature-only": 7
+  },
+  "O2-noinline/libedit/libedit.so.0.0.70": {
+   "functions": 744,
+   "types-and-spelling": 32,
+   "signature-only": 3,
+   "renumber-only": 70
   },
   "O2-noinline/libexpat/xmlwf": {
    "functions": 134,
@@ -69,7 +87,10 @@
    "functions": 1585,
    "renumber-only": 191,
    "types-and-spelling": 111,
-   "signature-only": 36
+   "signature-only": 35
+  },
+  "O2-noinline/zlib/libz.so.1.2.13": {
+   "functions": 203
   },
   "O2/bash/bash": {
    "functions": 2538,
@@ -95,6 +116,10 @@
    "renumber-only": 67,
    "types-and-spelling": 12
   },
+  "O2/coreutils/od": {
+   "functions": 192,
+   "types-and-spelling": 1
+  },
   "O2/coreutils/sort": {
    "functions": 343,
    "renumber-only": 28,
@@ -108,6 +133,12 @@
    "types-and-spelling": 17,
    "SHAPE": 1
   },
+  "O2/dpkg/dpkg-divert": {
+   "functions": 564,
+   "renumber-only": 75,
+   "types-and-spelling": 43,
+   "signature-only": 17
+  },
   "O2/findutils/find": {
    "functions": 658,
    "renumber-only": 80,
@@ -117,19 +148,37 @@
   "O2/gzip/gzip": {
    "functions": 204,
    "signature-only": 3
+  },
+  "O2/kmod/kmod": {
+   "functions": 394,
+   "renumber-only": 50,
+   "types-and-spelling": 94,
+   "SHAPE": 1,
+   "signature-only": 18
+  },
+  "O2/libacl/setfacl": {
+   "functions": 112,
+   "renumber-only": 3,
+   "types-and-spelling": 6
+  },
+  "O2/openssh-portable/ssh-add": {
+   "functions": 876,
+   "renumber-only": 116,
+   "types-and-spelling": 29,
+   "signature-only": 7
   }
  },
  "total": {
-  "types-and-spelling": 343,
-  "renumber-only": 806,
-  "signature-only": 135,
-  "SHAPE": 3,
-  "changed": 1287,
-  "functions": 13173
+  "types-and-spelling": 551,
+  "renumber-only": 1120,
+  "signature-only": 179,
+  "SHAPE": 4,
+  "changed": 1854,
+  "functions": 16843
  },
  "tags": {
-  "local-pointer-to-integer": 15,
-  "local-count-moved": 15
+  "local-pointer-to-integer": 25,
+  "local-count-moved": 24
  },
  "examples": {
   "local-pointer-to-integer": [
@@ -147,7 +196,17 @@
    "O2-noinline/tar/tar 0x37590",
    "O2-noinline/tar/tar 0x52610",
    "O2/coreutils/du 0x3c50",
-   "O2/diffutils/diff 0xb070"
+   "O2/diffutils/diff 0xb070",
+   "O2/dpkg/dpkg-divert 0x5d50",
+   "O2/dpkg/dpkg-divert 0x6100",
+   "O2/dpkg/dpkg-divert 0xfb10",
+   "O2/kmod/kmod 0x9e20",
+   "O2/kmod/kmod 0x110a0",
+   "O2/kmod/kmod 0x15670",
+   "O2/kmod/kmod 0x15a50",
+   "O2/kmod/kmod 0x172f0",
+   "O2/openssh-portable/ssh-add 0x13ec0",
+   "O2/openssh-portable/ssh-add 0x19e70"
   ],
   "local-count-moved": [
    "O0/coreutils/cp 0xabda",
@@ -158,18 +217,28 @@
    "O2-noinline/dash/dash 0xeb30",
    "O2-noinline/dash/dash 0x10050",
    "O2-noinline/grep/grep 0x6c90",
+   "O2-noinline/libedit/libedit.so.0.0.70 0x1b1b0",
    "O2-noinline/tar/tar 0x28fd0",
    "O2-noinline/tar/tar 0x36180",
    "O2-noinline/tar/tar 0x37190",
    "O2-noinline/tar/tar 0x37590",
    "O2-noinline/tar/tar 0x561d0",
    "O2/bash/bash 0xdc760",
-   "O2/diffutils/diff 0xb070"
+   "O2/diffutils/diff 0xb070",
+   "O2/dpkg/dpkg-divert 0x6df0",
+   "O2/kmod/kmod 0x9e20",
+   "O2/kmod/kmod 0x14600",
+   "O2/kmod/kmod 0x15240",
+   "O2/kmod/kmod 0x15670",
+   "O2/kmod/kmod 0x15a50",
+   "O2/kmod/kmod 0x172f0",
+   "O2/openssh-portable/ssh-add 0x19e70"
   ],
   "SHAPE": [
    "O2/bash/bash 0xdc760",
    "O2/bash/bash 0xf48e0",
-   "O2/diffutils/diff 0x11680"
+   "O2/diffutils/diff 0x11680",
+   "O2/kmod/kmod 0x9030"
   ]
  }
 }
