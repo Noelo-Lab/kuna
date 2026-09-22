@@ -1121,7 +1121,12 @@ is past the narrow ones rather than over them.
 "no access at offset 0" have one exception, and it is decided outside the
 function. A pointer parameter read at exactly one constant offset other than
 zero, with an access of four bytes or more, is a one-field record when the
-function's callers are all known direct calls: the whole-binary driver marks
+recovery left it `void *` or a pointer to untyped bytes and the function's
+callers are all known direct calls. A pointee something else committed to is
+kept (`says_only_a_pointer`): `int mkpipe (int *p)` hands `p` to `pipe`,
+whose declaration types it `int *`, and reads `p[1]`, which is one field at
+offset 4 but not a record; so is a `char **` a caller's vote gave the
+parameter. The whole-binary driver marks
 such a function on its `Funcdata` (`kuna_calleevote_closed`; chapter
 [04](04-calls-and-prototypes.md), `calleevote`), and
 `kuna_structsynth.rs (is_lone_field)` admits it. The condition is what keeps
@@ -1133,8 +1138,9 @@ closed at all: every architecture but x86-64 (a function address there is
 built from two instructions, which the one-instruction reference walk does not
 join), a relocatable object, and an image without section headers. So the lone
 field is read only in an x86-64 image, and there only for a function whose
-address is not stored as a pointer-width word; a callback reached through an
-offset table is not seen. A byte or halfword at a fixed offset is as often a character of a
+address is not stored as an aligned pointer-width word; a callback reached
+through an offset table, or stored unaligned in a packed struct of an image
+without a dynamic relocation for it, is not seen. A byte or halfword at a fixed offset is as often a character of a
 buffer as a field, so those still need a second field. So does a base from
 which an address at a constant offset reaches a phi (`address_walks`): that is
 a pointer stepped through a loop over an array, `argv[1]` read and then

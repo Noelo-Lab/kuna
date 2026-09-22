@@ -988,7 +988,8 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
         return false;
     }
     let Some(ct) = vn_type(data, base) else { return false };
-    accepts_record(data, &ct, e, data.kuna_calleevote_closed())
+    let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct);
+    accepts_record(data, &ct, e, lone)
 }
 
 /// Does `locals` measure `base`: a value a call returned, alone in its
@@ -1201,7 +1202,7 @@ fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence, lone: bool) -> b
     if e.slots.keys().any(|off| *off < 0 || *off >= MAX_FIELD_OFFSET) {
         return false;
     }
-    if lone && is_lone_field(e) && says_only_a_pointer(ct) {
+    if lone && is_lone_field(e) {
         return true;
     }
     // Two distinct offsets is the minimum evidence for a layout; a lone field at
@@ -1236,11 +1237,18 @@ fn is_lone_field(e: &Evidence) -> bool {
         && e.slots.iter().all(|(off, s)| *off > 0 && s.width >= LONE_FIELD_MIN_WIDTH)
 }
 
-/// (kuna `calleevote fields`) Does `ct` say no more than that the value is a
-/// pointer: `void *`, or a pointer to bytes nothing has typed?  A pointee a
-/// declaration or another use committed to (`int *` from `pipe`) is kept.
-fn says_only_a_pointer(ct: &Datatype) -> bool {
-    ct.get_ptr_to().is_some_and(|p| matches!(p.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN))
+/// (kuna `calleevote fields`) Did something outside the function's own reading
+/// give the parameter `base` its pointee `ct`: a declared prototype it is handed
+/// to (`pipe (int *)`), or the type every caller passes, which the input took?
+/// Such a pointee is kept; one the recovery guessed from a load (a callee's
+/// `int *` for a record whose first member is an enum) gives way to a record.
+fn pointee_is_given(data: &Funcdata, base: VarnodeId, ct: &Datatype) -> bool {
+    let untyped = ct
+        .get_ptr_to()
+        .is_none_or(|p| matches!(p.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN));
+    !untyped
+        && (crate::kuna_calleevote::took_stated_type(data, base, ct)
+            || crate::kuna_protoorder::handed_to_a_declared_pointer(data, base))
 }
 
 /// (kuna `calleevote fields`) Is `ct` a pointer to a synthesized record that

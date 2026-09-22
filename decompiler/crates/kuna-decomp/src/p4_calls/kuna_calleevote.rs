@@ -215,8 +215,8 @@ pub fn uncommitted(ct: &Datatype, ptr_size: int4) -> bool {
 /// The same type: one factory entry, or the same name and shape all the way
 /// down its pointer chain. A layout comparison alone would equate two records
 /// that merely have the same size.
-fn same_type(a: &Rc<Datatype>, b: &Rc<Datatype>) -> bool {
-    if Rc::ptr_eq(a, b) {
+fn same_type(a: &Datatype, b: &Datatype) -> bool {
+    if std::ptr::eq(a, b) {
         return true;
     }
     match (a.get_ptr_to(), b.get_ptr_to()) {
@@ -224,6 +224,14 @@ fn same_type(a: &Rc<Datatype>, b: &Rc<Datatype>) -> bool {
         (None, None) => a.get_name() == b.get_name() && a.compare(b, 10).is_ok_and(|c| c == 0),
         _ => false,
     }
+}
+
+/// Is `ct`, the type the function input `vn` carries, the one its callers
+/// stated for it?
+pub fn took_stated_type(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    let Some(stated) = data.kuna_calleevote_inputs() else { return false };
+    let Some(v) = data.vbank().get(vn) else { return false };
+    v.is_input() && stated.at(v.get_addr(), v.get_size()).is_some_and(|t| same_type(&t.ct, ct))
 }
 
 /// Record a finished decompile: every direct call it makes, replacing what an
@@ -476,10 +484,7 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
     if !uncommitted(ct, ptr_size) || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
         return None;
     }
-    if want.frame
-        && std::env::var("KUNA_CV_NOFRAME").is_err()
-        && crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct)
-    {
+    if want.frame && crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct) {
         return None;
     }
     Some(Rc::clone(&want.ct))

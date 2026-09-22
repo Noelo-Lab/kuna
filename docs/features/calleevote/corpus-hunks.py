@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 K = sys.argv[1]; OUT = sys.argv[2]; BINS = sys.argv[3:]
 os.makedirs(OUT, exist_ok=True)
 CALL = re.compile(r"\b([A-Za-z_]\w*)\(")
+CHAR_STORE = re.compile(r"= '(?:\\.|[^'\\])+';")
 KW = re.compile(r"\b(if|while|for|do|goto|return|switch|case|break|continue|else)\b")
 def run(b, arm):
     tag = b.replace("/", "_")
@@ -60,6 +61,8 @@ def one(b):
             continue
         if len(x["variables"]) != len(y["variables"]):
             out.append((b, a, "var-count")); continue
+        if len(CHAR_STORE.findall(cy)) > len(CHAR_STORE.findall(cx)) and shape(cy)[0] > shape(cx)[0]:
+            out.append((b, a, "CHAR-SPLIT")); continue
         px, py = cx.split("\n", 1)[0], cy.split("\n", 1)[0]
         bx, by = cx.split("\n", 1)[1:] or [""], cy.split("\n", 1)[1:] or [""]
         if bx == by:

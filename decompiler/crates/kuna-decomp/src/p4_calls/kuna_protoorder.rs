@@ -455,6 +455,29 @@ pub(crate) fn input_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bo
         || splits_a_wide_constant(data, &value_family(data, vn), ct, 0)
 }
 
+/// (kuna `calleevote`) Is the value `vn` handed to a call whose declared
+/// prototype types that parameter a pointer to something (`pipe (int *)`)?
+pub(crate) fn handed_to_a_declared_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
+    value_family(data, vn).into_iter().any(|v| {
+        let Some(node) = data.vbank().get(v) else { return false };
+        node.descend_iter().any(|r| {
+            let Some(o) = data.obank().get(r) else { return false };
+            if !matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+                return false;
+            }
+            let Some(fc) = data.get_call_specs_index(r).map(|i| data.get_call_specs(i)) else { return false };
+            (1..o.num_input()).filter(|&s| o.get_in(s) == Some(v)).any(|s| {
+                fc.proto().get_param(s - 1).is_some_and(|p| {
+                    p.is_type_locked()
+                        && p.get_type().and_then(|t| t.get_ptr_to()).is_some_and(|pt| {
+                            !matches!(pt.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN)
+                        })
+                })
+            })
+        })
+    })
+}
+
 /// (kuna `calleevote`) Does the function load or store through its input `vn`
 /// anywhere but the one pointee of `ct` at offset zero?
 pub(crate) fn reaches_past_the_pointee(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {

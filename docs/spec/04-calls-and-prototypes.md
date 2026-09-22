@@ -2591,17 +2591,20 @@ against a zero word; and an image whose sections hold none of its entries (no
 section headers).
 
 Otherwise a function is open when its address is stored in the image: as a
-pointer-width word, on a pointer-width boundary, of any section the image
-loads, code sections included (a const ops table placed in `.text`); a Mach-O
+pointer-width word at an aligned offset (a multiple of the pointer width) of
+any section the image loads, code sections included (a const ops table placed
+in `.text`); a Mach-O
 chained-fixup rebase target; the target of a dynamic relocation; an exported
 symbol; or the entry point. A section is one the image loads by its
 `SHF_ALLOC` flag on ELF, never by its address, since firmware loads code at
 address 0. A word that merely happens to equal an entry leaves that function
 open, which only means nothing is stated about it. What the scan cannot see is
-an address stored in a shape other than a pointer-width word: an offset added
-to another address at run time (a 32-bit offset table, a relative C++ vtable,
-a self-relative pointer). A callback reached only that way and also called
-directly can still be voted on. A function is decided only when its recorded
+an address stored in any other shape: a pointer-width word at an unaligned
+offset (a function pointer member of a packed struct, in an image with no
+dynamic relocation for it; a position-independent image has one, which is
+seen), or an offset added to another address at run time (a 32-bit offset
+table, a relative C++ vtable, a self-relative pointer). A callback reached
+only that way and also called directly can still be voted on. A function is decided only when its recorded
 calls from other functions are exactly the listed addresses: a caller that
 failed to decompile, or a call the walk found and no decompile reached, states
 nothing. A self-recursive call is not a vote.
@@ -2637,7 +2640,19 @@ into a 16-byte record), which is the same memory. A `char *` vote is also refuse
 callee stores a constant wider than a byte through the value: the printer
 would spell `*(unsigned int *)(a0 + 0x34) = 0xffffffff` through a `char *` as
 four character stores (`a0[0x34] = '\xff'; ...`), which is the same memory
-but no longer reads as one store. A value the callee only hands to a parameter
+but no longer reads as one store. A `char **` vote is refused the same way one
+level down: every pointer-width value the callee loads through the value or
+stores through it takes `char *`, so a constant wider than a byte stored
+through any of those refuses it (`add(&cfg, path)` storing a new node into the
+record and then writing the node's words; `kuna_protoorder::splits_a_wide_constant`).
+A pointer to a pointer that some caller passes as the address of one of its
+own frame objects (`&v4`) types that one object, not what follows it in the
+frame: a caller keeping a record whose first member is a `char *` passes
+`&cfg` as a `char **`. Such a vote is refused when the callee loads or stores
+through the value anywhere but that one pointer at offset zero
+(`reaches_past_the_pointee`), so `drop(&cfg)` reading `cfg->head` keeps its
+own type, and `advance(&cursor)`, which only reads and writes `*cursor`, takes
+`char **`. A value the callee only hands to a parameter
 declared `void *` is NOT refused: that is what a wrapper around `memcpy` or
 `fwrite` does with the `char *` its callers pass (`dired_outbuf`,
 `samedir_template`), and refusing it was measured to lose 28 functions to gain 3.
@@ -2656,7 +2671,9 @@ A redo that fails keeps the first body.
 **`fields`.** The same closed caller set decides one more thing. A function
 whose callers are all known direct calls (at least one, none unknown) is marked
 on its `Funcdata` (`kuna_calleevote_closed`), and `structsynth` then accepts a
-pointer parameter read at exactly one constant offset other than zero with an
+pointer parameter that its recovery left `void *` or a pointer to untyped
+bytes (not `int *` from `pipe (int *)`, and not a pointer type a caller's vote
+gave it) read at exactly one constant offset other than zero with an
 access of four bytes or more as a one-field record (chapter
 [05](05-types.md), `structsynth`). A one-field record is itself a candidate for
 the vote above, so it gives way to the record every caller passes, and the
@@ -2669,6 +2686,7 @@ of its size (dash `sub_eb30`).
 
 Everything is inert where there is no callee-first pass: `kuna decompile`
 (one `decomp_dbg` per function), a run narrowed by `--addr`, `--functions` or a
-triage filter, `--jobs N`, a raw image and `--option protoorder off`. The
+triage filter, `--jobs N`, `decompile-project --stream`, a raw image and
+`--option protoorder off`. The
 variable rows a function exports keep their number; only their types move.
 `KUNA_CALLEEVOTE_TRACE=1` prints every decision and its reason on stderr.
