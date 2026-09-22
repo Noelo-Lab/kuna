@@ -500,12 +500,6 @@ fn named_struct(name: &str) -> Rc<Datatype> {
     Rc::new(t)
 }
 
-fn ptr_to(elem: Rc<Datatype>) -> Rc<Datatype> {
-    let mut t = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
-    t.kind = crate::dtype::DatatypeKind::Pointer { ptrto: elem, spaceid: None, truncate: None, wordsize: 1 };
-    Rc::new(t)
-}
-
 /// The convergence sweep forgets a statement that names a superseded structure
 /// at any pointer depth, and nothing else: `struct_1` does not answer for
 /// `struct_10`.
