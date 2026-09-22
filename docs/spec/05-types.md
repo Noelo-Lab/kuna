@@ -1614,9 +1614,12 @@ a 4-byte filler array stored through its address. No function's control flow
 or call sequence changes, one ARM32 function changes (a `chibios` respelling),
 and every return type that moves (11) becomes the record the function builds,
 each a struct pointer in DWARF.
-Serial whole-binary `decompile-all` time moves by −1.7% to +1.7% against
-`param` (interleaved min-of-15 over `fmt`, `ls` and `sort` at O2 and `bash` O2;
-−0.5% to +0.8% against the tree before this change), inside the +5% budget.
+Serial whole-binary `decompile-all` time (interleaved min-of-15 against `param`
+over `fmt`, `ls` and `sort` at O2 and `bash` O2) does not move on `fmt`, `ls` or
+`bash` beyond noise, and `sort` pays about 2% (+1.7% and +2.5% on the quieter
+runs): its `main`, two thirds of the run, gains a record from a call, and an
+install repeats the main action loop once for the function that received it.
+That is inside the +5% budget.
 A sharded run keeps pace because a function asks for its widest layout first
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs (synthesize)`).
 A returned record and a parameter of one function are often two layouts of one

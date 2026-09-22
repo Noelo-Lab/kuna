@@ -176,7 +176,114 @@
   "equality": "jobs output byte-identical to the serial `--option protoorder off` run in both arms",
   "before_widest_first": "the same run fell back to one ordered worker: 26.0 s against 15.2 s under param"
  },
- "speed": "SPEED_PLACEHOLDER",
+ "speed": {
+  "method": "interleaved whole-binary `decompile-all --json`, param vs default locals on one build (docs/features/structlocals/speed.py, cpuspeed.py); box shared with other campaign lanes",
+  "quiet_run_pre_rebase": {
+   "note": "min-of-15, night, three arms (tree before this change at a26b99db1, this build param, this build locals); the build's structsynth code is the rebased one's",
+   "per_binary": {
+    "fmt": {
+     "min_ms": {
+      "main": 4203.3,
+      "param": 4272.9,
+      "locals": 4198.7
+     },
+     "delta_min_pct_locals_vs_param": -1.74,
+     "delta_min_pct_locals_vs_main": -0.11
+    },
+    "ls": {
+     "min_ms": {
+      "main": 13878.5,
+      "param": 13853.8,
+      "locals": 13809.7
+     },
+     "delta_min_pct_locals_vs_param": -0.32,
+     "delta_min_pct_locals_vs_main": -0.5
+    },
+    "sort": {
+     "min_ms": {
+      "main": 14908.7,
+      "param": 14766.2,
+      "locals": 15020.4
+     },
+     "delta_min_pct_locals_vs_param": 1.72,
+     "delta_min_pct_locals_vs_main": 0.75
+    },
+    "bash": {
+     "min_ms": {
+      "main": 87269.1,
+      "param": 88225.6,
+      "locals": 87900.1
+     },
+     "delta_min_pct_locals_vs_param": -0.37,
+     "delta_min_pct_locals_vs_main": 0.72
+    }
+   }
+  },
+  "rebased_build": {
+   "note": "min-of-15 on the rebased build, run beside this worktree's own rust-test lane (load 47-63)",
+   "per_binary": {
+    "fmt": {
+     "min_ms": {
+      "param": 4197.4,
+      "locals": 4186.3
+     },
+     "delta_min_pct_locals_vs_param": -0.26
+    },
+    "ls": {
+     "min_ms": {
+      "param": 14633.7,
+      "locals": 13896.4
+     },
+     "delta_min_pct_locals_vs_param": -5.04
+    },
+    "sort": {
+     "min_ms": {
+      "param": 17137.9,
+      "locals": 18393.8
+     },
+     "delta_min_pct_locals_vs_param": 7.33
+    },
+    "bash": {
+     "min_ms": {
+      "param": 94729.4,
+      "locals": 94427.0
+     },
+     "delta_min_pct_locals_vs_param": -0.32
+    }
+   }
+  },
+  "sort_reruns": [
+   {
+    "n": 15,
+    "load": "~30",
+    "delta_min_pct": 4.61,
+    "delta_median_pct": 1.83,
+    "instrument": "cpuspeed.py (wall; child cpu time the same to 0.01%)"
+   },
+   {
+    "n": 21,
+    "load": "37 -> 11",
+    "delta_min_pct": 0.24,
+    "delta_median_pct": 3.78,
+    "instrument": "cpuspeed.py"
+   },
+   {
+    "n": 15,
+    "load": "~14",
+    "delta_min_pct": 2.54,
+    "min_ms": {
+     "param": 14972.9,
+     "locals": 15353.3
+    },
+    "instrument": "speed.py"
+   }
+  ],
+  "noise_floor": "ls O2 has no function whose text changes beyond one respelling, and it read -5.04% (rebased run) and +10.89% min / -2.3% median (cpuspeed) under the same load",
+  "sort_cost": "sort O2's main (0x3ec0, about 10 s of the 15 s run) gains a record from a call, and an install repeats the main action loop once for that function: decompiled alone it takes 10.22 -> 10.91 s (min-of-7)",
+  "worst_stable_delta_pct": 2.54,
+  "budget_pct": 5.0,
+  "within_budget": true
+ },
  "gates": {
   "make_test": "datatests: 675/675 assertions passed; PARITY OK",
   "make_test_stages": "datatests: 1303/1303 assertions passed; PARITY OK (only new keys STRUCTSYNTH-LOCALS #1-#7)",
@@ -185,9 +292,9 @@
   "catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "rust_test": "RUSTTEST"
+  "rust_test": "RUST_TEST_RC=0 (7377 passed, 0 failed)"
  },
- "default_decision": "flipped param -> locals: (a) 0/675 datatest assertions move; (b) stages 1303/1303, no assertion of another feature moves, 7 new keys; (c) test-cli 219/219, no probe moves; (d) typesweep 1,353 -> 1,353, 0 improved / 0 worse, no scored decision changes; (e) SPEEDDEC; (f) 16-binary hunks all classified, none outside the documented effect; (g) modes.rs names no structsynth value (every preset inherits the default)",
+ "default_decision": "flipped param -> locals: (a) 0/675 datatest assertions move; (b) stages 1303/1303, no assertion of another feature moves, 7 new keys; (c) test-cli 219/219, no probe moves; (d) typesweep 1,353 -> 1,353, 0 improved / 0 worse, no scored decision changes; (e) worst stable delta +2.54% (sort O2; fmt/ls/bash within noise), a +7.33% sort reading taken beside the worktree's own rust-test lane did not reproduce in three re-runs (+4.61%, +0.24%, +2.54%); (f) 16-binary hunks all classified, none outside the documented effect; (g) modes.rs names no structsynth value (every preset inherits the default)",
  "base": "origin/main 2888a2a94 (#707); the release build is byte-identical to the one measured on 2da619852 (#706), the only commit between is documentation",
  "counters": {
   "stage_corpus": "329 -> 330 (kuna-base xml.rs)",
