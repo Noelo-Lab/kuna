@@ -1485,14 +1485,17 @@ fn state_recovered_types(
     if inputs.is_empty() {
         return Err(Decline::VoidVoid);
     }
-    let Some(space) = entry.get_space() else {
+    let Some(key) = stated_key(entry) else {
         return Err(Decline::InvalidStorage);
     };
-    arch.kuna_protoorder_types.insert(
-        (space.get_index(), entry.get_offset()),
-        Rc::new(RecoveredTypes { inputs }),
-    );
+    arch.kuna_protoorder_types.insert(key, Rc::new(RecoveredTypes { inputs }));
     Ok(Recovered { pieces, trimmed: 0 })
+}
+
+/// The key a function's statement is filed under in
+/// `Architecture::kuna_protoorder_types`.
+pub fn stated_key(entry: &Address) -> Option<(int4, uintb)> {
+    Some((entry.get_space()?.get_index(), entry.get_offset()))
 }
 
 /// Copy onto `data` the types every callee it calls stated about itself.
@@ -1504,10 +1507,15 @@ fn state_recovered_types(
 /// `calleedeadarg` and `rustabi` take for their own callee-body probes, and at
 /// the same two points.  A map lookup per call; inert unless `option protoorder
 /// types` is live and a callee was decompiled first.
+///
+/// A function never reads its own statement: at its call to itself the
+/// statement is what an earlier decompile of this same function said, and a
+/// redo exists because that answer changed.
 pub fn seed_protoorder_types(arch: &Architecture, data: &mut crate::substrate::funcdata::Funcdata) {
     if arch.kuna_protoorder_types.is_empty() {
         return;
     }
+    let own = stated_key(data.get_address());
     let mut entries: Vec<Address> = Vec::new();
     for i in 0..data.num_calls() {
         let e = data.get_call_specs(i).get_entry_address().clone();
@@ -1517,8 +1525,11 @@ pub fn seed_protoorder_types(arch: &Architecture, data: &mut crate::substrate::f
         entries.push(e);
     }
     for e in entries {
-        let Some(sp) = e.get_space() else { continue };
-        if let Some(stated) = arch.kuna_protoorder_types.get(&(sp.get_index(), e.get_offset())) {
+        let Some(key) = stated_key(&e) else { continue };
+        if Some(key) == own {
+            continue;
+        }
+        if let Some(stated) = arch.kuna_protoorder_types.get(&key) {
             data.kuna_set_protoorder_types(&e, Rc::clone(stated));
         }
     }

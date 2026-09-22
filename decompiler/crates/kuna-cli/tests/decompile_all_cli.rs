@@ -2441,6 +2441,57 @@ fn recursive_callees_state_their_types_under_cycles() {
     }
 }
 
+/// (kuna `protoorder cycles` + `structsynth`) The convergence sweep decompiles a
+/// self-recursive function again once a later layout supersedes the structure
+/// its first decompile minted.  The redo must not read the statement that first
+/// decompile made: at its own recursive call it typed the child pointer as the
+/// superseded `struct_0` while its parameter took the survivor.  `walk` names
+/// one structure, the one `look` names too, under both values.
+#[test]
+fn a_redone_recursive_function_reads_no_statement_of_its_own() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cyclestruct_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for value in ["types", "cycles"] {
+        let (got, stderr, ok) =
+            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value]);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("protoorder cyclestruct: skipping (no `.sla`; run `make specs`): {stderr}");
+                return;
+            }
+            panic!("kuna decompile-all --option protoorder {value} failed: {stderr}");
+        }
+        let chunk = |name: &str| -> String {
+            got.split("// Function: ")
+                .find(|c| c.starts_with(&format!("{name} @")))
+                .unwrap_or_else(|| panic!("{value}: no `{name}` in:\n{got}"))
+                .to_string()
+        };
+        let structs = |text: &str| -> std::collections::BTreeSet<String> {
+            let mut out = std::collections::BTreeSet::new();
+            let mut rest = text;
+            while let Some(at) = rest.find("struct_") {
+                let digits: String =
+                    rest[at + 7..].chars().take_while(|c| c.is_ascii_digit()).collect();
+                if !digits.is_empty() {
+                    out.insert(format!("struct_{digits}"));
+                }
+                rest = &rest[at + 7..];
+            }
+            out
+        };
+        let walk = structs(&chunk("walk"));
+        let look = structs(&chunk("look"));
+        assert_eq!(walk.len(), 1, "{value}: walk names more than one structure:\n{}", chunk("walk"));
+        assert_eq!(walk, look, "{value}: walk and look name different structures:\n{got}");
+        assert!(!chunk("walk").contains(" *)"), "{value}: walk casts a pointer:\n{}", chunk("walk"));
+    }
+}
+
 /// The functions of a `decompile-all` document whose headers start with one of
 /// `names`, each `struct_N` typedef and definition that `structdefs` printed
 /// above them kept once and hoisted, so the set compiles as one file.

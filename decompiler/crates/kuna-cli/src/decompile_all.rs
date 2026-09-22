@@ -1680,9 +1680,15 @@ pub(crate) fn decompile_callee_first(
 /// (kuna `protoorder` + `structsynth`) The batch's convergence sweep
 /// (`converge_synthesized_structs`) for the callee-first order: decompile once
 /// more, in plan order and with each target's own park decision, exactly the
-/// results that name a superseded structure. A redone callee states its survivor
-/// type again before its redone callers read it. Not under `lock`, where a
-/// parked prototype is declared and a second decompile would read its own.
+/// results that name a superseded structure. Not under `lock`, where a parked
+/// prototype is declared and a second decompile would read its own.
+///
+/// A redo reads the statements its first decompile read and no others. The
+/// stated table is rebuilt in plan order as the sweep walks it, so a redone
+/// function reads what every function planned before it stated (restated first
+/// when that one was redone too), and never its own statement or a later cycle
+/// partner's: both were made after its first decompile, and both can name the
+/// superseded structure the redo exists to replace.
 fn converge_callee_first(
     prog: &mut ConsoleProgram,
     targets: &[FunctionEntry],
@@ -1697,14 +1703,27 @@ fn converge_callee_first(
     if stale.is_empty() {
         return;
     }
+    let first_pass = std::mem::take(&mut prog.arch_mut().kuna_protoorder_types);
+    let mut planned = BTreeSet::new();
     for &(index, park) in plan {
+        let key = kuna_decomp::kuna_protoorder::stated_key(&targets[index].addr);
+        planned.extend(key);
         if !slots[index].as_ref().is_some_and(|r| kuna_console::project::names_any_type(r, &stale)) {
+            if let Some((key, stated)) = key.and_then(|k| first_pass.get_key_value(&k)) {
+                prog.arch_mut().kuna_protoorder_types.insert(*key, std::rc::Rc::clone(stated));
+            }
             continue;
         }
         let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
         let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
         if slots[index].as_ref().is_none_or(|first| kuna_console::project::redo_replaces(first, &again)) {
             slots[index] = Some(again);
+        }
+    }
+    let table = &mut prog.arch_mut().kuna_protoorder_types;
+    for (key, stated) in first_pass {
+        if !planned.contains(&key) {
+            table.entry(key).or_insert(stated);
         }
     }
 }
