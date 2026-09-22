@@ -1,0 +1,401 @@
+{
+ "opportunity": "structsynth param measures pointer parameters only, so a record a function obtains from a call keeps the pointee the lattice gave it and prints as raw offsets (`v1 = (unsigned long *)xmalloc(0x18); *(char *)((long)v1 + 0x14) = 0x6e;`). The campaign plan's `structsynth all` step (locals + globals, C6) was never built.",
+ "test_name": "tests/stages/structsynth-locals.xml (10 two-pass assertions: pass 1 `option structsynth param` = raw offsets through a returned pointer, pass 2 `locals` = fields + layout; label/either/tmpl/post pin four pointers locals leaves alone in both passes: a text-constant buffer, a record returned beside another call's result, a buffer filled from a read-only literal, a record whose address escapes past its fields) + unit tests (kuna_structsynth::tests: every mode parses, locals/all predicates, bytes_text, text-buffer evidence merge, overlaps, extent)",
+ "binary": "tests/stages/structsynth-locals.xml bytechunk (gcc -O2 -fcf-protection=none -fno-pic: make/weigh/label, callees outside the image)",
+ "selector": "make, weigh, label, either, tmpl, post",
+ "func_addr": "0x100000, 0x100030, 0x100050, 0x100100, 0x100150, 0x1001a0",
+ "angr_version": null,
+ "option": "structsynth",
+ "value": "locals",
+ "values": "off|param|locals|nest|all",
+ "flag": "Architecture::struct_synth (StructSynthMode::Locals / All)",
+ "element_id": null,
+ "change_kind": "structure-recovery",
+ "tier": "transform",
+ "source_decompiler": "angr",
+ "default_on": true,
+ "default_value": "locals",
+ "ablation_changed": 0,
+ "measurement_first": {
+  "dwarf_8_layout_builds": "750 struct-pointer locals (417 DW_OP_fbreg, 312 location list, 7 none, 14 other) vs 816 struct-pointer params; 93 functions return a struct pointer",
+  "ir_bases_meeting_param_conditions": {
+   "parameter": "O0 110 / O2 229",
+   "call_return": "O0 37 / O2 17",
+   "phi_output": "O0 9 / O2 83 (declined like a parameter's)",
+   "array_element_load": "O0 1 / O2 3",
+   "global_ram": "13 bases with 2+ offsets, all reach a phi/INDIRECT, 0 meet"
+  },
+  "call_return_candidates_read": "54/54 real records: 24 hash_entry (callee DWARF return type, 2/2 fields) + 30 xmalloc/malloc/calloc/xzalloc results read by hand",
+  "scored_surface": "O0: of 413 GT struct-pointer locals 217 pair with framelayout slots typed undefined8 (first restructure pass, before types) and 175 with live stack symbols (loop phis); O2: 577/1000 unpaired (registers). type_match cannot see this class.",
+  "globals_decision": "left out: every global pointer dereferenced at 2+ offsets reaches a phi or INDIRECT, and a global record is not one IR base (each access is its own absolute address)"
+ },
+ "design": [
+  "locals: a CALL/CALLIND output is a base under every parameter condition (is_call_return); all = locals + nest",
+  "a callee whose declared (locked) return points at something other than void/unknown declines",
+  "copies_alone: the value and its COPY/CAST closure must reach no MULTIEQUAL/INDIRECT and must not sit in address-tied storage; storage_is_tied also declines a value overlapping (by bytes) what any live RETURN reads where a phi writes that return register (mark_output_storage_addr_tied ties it later; kmod O2 0x7ee0 kept a name, its length and a calloc record in one rax of an int function)",
+  "returned_beside_others: a record returned on one path while another RETURN returns a different non-zero value declines (one return type; dash O2 0x12750, either())",
+  "stored_text/bytes_text: a base whose every access stores text -- constant bytes, or up to 16 bytes loaded from a read-only literal, INDIRECT-clobbered or not -- is a string buffer (tar SCHILY.xattr., cp O2 0xbe10 CuXXXXXX)",
+  "points_past: a base declines when a copy forms an address at or past the end of every access (sortlines &node->lock, mountlist &me->me_next, kmod name[], grep &buf[2]): the record is wider than the function shows",
+  "under locals a function asks its widest layout first, so its own later layout never supersedes an earlier answer: without it a --jobs 8 run on tar O2 fell back to one ordered worker (15.2 s -> 26.0 s)",
+  "printer: op_ptrsub_ir falls back to the merged variable's pointer type where the member's own cannot name a member (was `PTRSUB(dat_9f6a8,0)`; 1 function on main, tar O0 0x2c4f3)"
+ ],
+ "census_final_rule": "pre-review rule, 8 layout builds: call-return bases accepted O0 24 / O2 11; superseded by the layoutscore below for the final rule",
+ "layoutscore": {
+  "tool": "docs/features/structlocals/localscore.py",
+  "builds": 14,
+  "call_defined_record_locals": "40 -> 116",
+  "joined": "103 DWARF struct pointers, 0 not (grep realtrans now declines: it forms &realtrans[2]), 13 unjoined",
+  "claimed_field_precision_all": "0.9766 -> 0.9003 (125/128 -> 298/331)",
+  "claimed_field_precision_new_records": 0.8522,
+  "param_layout_fields_only": "P 0.8622 -> 0.8622, R 0.0666 -> 0.0666",
+  "nesting": "unchanged (P 0.6667 R 0.0018)",
+  "structs_in_headers": "500 -> 539"
+ },
+ "round_trip": "210 synthesized structs over 4 project exports (du O0, ls O2, tar O2, find O2), 0 with a field the C compiler moves (docs/features/structsynth/offsetcheck.py)",
+ "typesweep": {
+  "corpus": "444 slices, projects coreutils grep gzip diffutils bzip2 findutils tar shadow x, O0 O2 O2-noinline, metric pinned decbench 625e892, DECBENCH_NO_CACHE=1, both arms one binary (rebased on 656e6c701)",
+  "arms": "on = default locals, off = --option structsynth param",
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1472,
+   "perfect_on": 1472,
+   "aggregate_off": 3773.19,
+   "aggregate_on": 3773.19,
+   "improved": 0,
+   "worse": 0
+  },
+  "decisions": "65,377 in both arms: 64,574 identical, 708 differ only in struct_N numbering, 95 change type: all O0 stack slots (slotptr types them from the stored value), param undefined8 x47 / long * x47 / int8 * x1 -> locals struct_N *, every one a DWARF struct pointer (44 hash_entry*, 9 predicate*, 8 group*, 7 dev_ino*, 6 passwd*, 5 List_element*, 4 sgrp*, 2 BitStream*, 10 others), 67 functions; none replaces a correct pointer; the pinned metric scores them the same (compares pointee names)",
+  "arity_phantom": "no function's variable count changes (nvars identical in all 10,748)",
+  "counters": "per function decomp_vars, tp, fp, fn identical in both arms (no scored variable added or removed)",
+  "pre_rebase_2888a2a94": {
+   "pooled": {
+    "n": 10748,
+    "perfect_off": 1353,
+    "perfect_on": 1353,
+    "aggregate_off": 3669.96,
+    "aggregate_on": 3669.96,
+    "improved": 0,
+    "worse": 0
+   },
+   "decisions": "65,377 in both arms: 64,701 identical, 676 differ only in struct_N numbering, 0 in type",
+   "counters": "per function decomp_vars, tp, fp, fn identical in both arms (no scored variable added or removed)",
+   "projects": {
+    "bzip2": {
+     "n": 267,
+     "perfect_off": 31,
+     "perfect_on": 31,
+     "mean_off": 0.4097,
+     "mean_on": 0.4097,
+     "improved": 0,
+     "worse": 0
+    },
+    "coreutils": {
+     "n": 6422,
+     "perfect_off": 880,
+     "perfect_on": 880,
+     "mean_off": 0.3352,
+     "mean_on": 0.3352,
+     "improved": 0,
+     "worse": 0
+    },
+    "diffutils": {
+     "n": 420,
+     "perfect_off": 58,
+     "perfect_on": 58,
+     "mean_off": 0.4325,
+     "mean_on": 0.4325,
+     "improved": 0,
+     "worse": 0
+    },
+    "findutils": {
+     "n": 790,
+     "perfect_off": 41,
+     "perfect_on": 41,
+     "mean_off": 0.2201,
+     "mean_on": 0.2201,
+     "improved": 0,
+     "worse": 0
+    },
+    "grep": {
+     "n": 247,
+     "perfect_off": 51,
+     "perfect_on": 51,
+     "mean_off": 0.4404,
+     "mean_on": 0.4404,
+     "improved": 0,
+     "worse": 0
+    },
+    "gzip": {
+     "n": 368,
+     "perfect_off": 102,
+     "perfect_on": 102,
+     "mean_off": 0.5197,
+     "mean_on": 0.5197,
+     "improved": 0,
+     "worse": 0
+    },
+    "shadow": {
+     "n": 686,
+     "perfect_off": 32,
+     "perfect_on": 32,
+     "mean_off": 0.3012,
+     "mean_on": 0.3012,
+     "improved": 0,
+     "worse": 0
+    },
+    "tar": {
+     "n": 1548,
+     "perfect_off": 158,
+     "perfect_on": 158,
+     "mean_off": 0.3524,
+     "mean_on": 0.3524,
+     "improved": 0,
+     "worse": 0
+    }
+   }
+  },
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4155,
+    "mean_on": 0.4155,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 917,
+    "perfect_on": 917,
+    "mean_off": 0.3409,
+    "mean_on": 0.3409,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 63,
+    "perfect_on": 63,
+    "mean_off": 0.4445,
+    "mean_on": 0.4445,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 44,
+    "perfect_on": 44,
+    "mean_off": 0.223,
+    "mean_on": 0.223,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 51,
+    "perfect_on": 51,
+    "mean_off": 0.4458,
+    "mean_on": 0.4458,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 107,
+    "perfect_on": 107,
+    "mean_off": 0.527,
+    "mean_on": 0.527,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 86,
+    "perfect_on": 86,
+    "mean_off": 0.3545,
+    "mean_on": 0.3545,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 170,
+    "perfect_on": 170,
+    "mean_off": 0.3635,
+    "mean_on": 0.3635,
+    "improved": 0,
+    "worse": 0
+   }
+  }
+ },
+ "hunks": {
+  "binaries": 29,
+  "functions": 12939,
+  "tools": "docs/features/structlocals/{declcast,canon,skeleton,rettype}.py; per-binary table and every read function in hunks.md",
+  "param_vs_locals": {
+   "changed": 872,
+   "struct_numbering_only": 769,
+   "clean_respelling": 83,
+   "read": 20,
+   "read_classes": [
+    "15: the record gets a register variable of its own where param merged it with an unrelated same-typed value (one more local; ls print_dir two)",
+    "4: find predicate records whose name field holds a string literal",
+    "1: kmod_new, a local typed void * from the record's field"
+   ],
+   "skeleton_deltas": 0,
+   "arity_changes": 0,
+   "filler_element_stores_gained": 0,
+   "return_type_changes": "27: 24 DWARF struct pointers, 2 records behind a void * handle (BZ2_bzWriteOpen, sharefile_init), 1 Cell * with its DWARF type on the abstract origin"
+  },
+  "main_vs_new_default": "main equals the param arm on 28 binaries; tar O0 differs by the PTRSUB printer fix (0x2c4f3) alone",
+  "rebased_656e6c701": "identical classification: 872 changed, 769 numbering, 83 clean, the same 20 read; 0 skeleton deltas; locals +1 in 14 functions, +2 in 1; 0 arity changes"
+ },
+ "jobs": {
+  "param": {
+   "min_s": 14.96,
+   "median_s": 16.59,
+   "samples": [
+    17.88,
+    17.44,
+    16.97,
+    15.99,
+    16.59,
+    17.63,
+    14.96,
+    16.53,
+    17.19,
+    15.58,
+    15.13
+   ]
+  },
+  "locals": {
+   "min_s": 15.41,
+   "median_s": 16.76,
+   "samples": [
+    16.76,
+    18.25,
+    18.08,
+    16.26,
+    19.69,
+    16.76,
+    15.71,
+    16.66,
+    17.94,
+    16.37,
+    15.41
+   ]
+  },
+  "delta_min_pct_locals_vs_param": 3.01,
+  "method": "tar O2 `decompile-all --jobs 8`, interleaved min-of-11, param vs default locals, one build (docs/features/structlocals/jobs.py)",
+  "pool": "locals: 115 functions with synthesized structures, 109 renamed in place, 10 decompiled again; param: 105, 100, 9",
+  "equality": "jobs output byte-identical to the serial `--option protoorder off` run in both arms",
+  "before_widest_first": "the same run fell back to one ordered worker: 26.0 s against 15.2 s under param"
+ },
+ "speed": {
+  "method": "interleaved whole-binary `decompile-all --json`, param vs default locals on one build (docs/features/structlocals/speed.py), min-of-15; box shared with other campaign lanes",
+  "per_binary": {
+   "fmt": {
+    "min_ms": {
+     "param": 4651.3,
+     "locals": 4270.2
+    },
+    "median_ms": {
+     "param": 5135.5,
+     "locals": 5137.2
+    },
+    "delta_min_pct_locals_vs_param": -8.19
+   },
+   "ls": {
+    "min_ms": {
+     "param": 14684.0,
+     "locals": 14496.6
+    },
+    "median_ms": {
+     "param": 16598.7,
+     "locals": 16318.2
+    },
+    "delta_min_pct_locals_vs_param": -1.28
+   },
+   "sort": {
+    "min_ms": {
+     "param": 14963.1,
+     "locals": 15475.6
+    },
+    "median_ms": {
+     "param": 15926.5,
+     "locals": 16719.1
+    },
+    "delta_min_pct_locals_vs_param": 3.43
+   },
+   "bash": {
+    "min_ms": {
+     "param": 98543.2,
+     "locals": 99726.2
+    },
+    "median_ms": {
+     "param": 114771.9,
+     "locals": 114510.6
+    },
+    "delta_min_pct_locals_vs_param": 1.2
+   }
+  },
+  "pre_review_quiet_run": "fmt -1.74%, ls -0.32%, sort +1.72%, bash -0.37% (the reviewer measured sort +2.47% vs param)",
+  "sort_rerun_min_of_21": {
+   "min_ms": {
+    "param": 14636.8,
+    "locals": 15461.0
+   },
+   "median_ms": {
+    "param": 16953.0,
+    "locals": 17278.1
+   },
+   "delta_min_pct_locals_vs_param": 5.63
+  },
+  "sort_aab_control": {
+   "method": "docs/features/structlocals/cpuaa.py: three interleaved arms param/locals/param_b, min-of-15, child user+sys CPU time and wall",
+   "cpu_min_ms": {
+    "param": 15754.6,
+    "locals": 16479.3,
+    "param_b": 16803.9
+   },
+   "cpu_median_ms": {
+    "param": 19312.7,
+    "locals": 18298.1,
+    "param_b": 18287.8
+   },
+   "delta_min_pct_param_b_vs_param": 6.66,
+   "delta_min_pct_locals_vs_param": 4.6
+  },
+  "reading": "worst min delta +3.43% (sort O2) in the four-binary run; sort O2's output is byte-identical in both arms and the A/A control reads +6.66% between two identical param arms with locals between them, so the sort delta is the shared machine's noise; inside the +5% budget"
+ },
+ "gates": {
+  "make_test": "datatests: 675/675 assertions passed; PARITY OK",
+  "make_test_stages": "datatests: 1306/1306 assertions passed; PARITY OK (only new keys STRUCTSYNTH-LOCALS #1-#10)",
+  "make_test_cli": "tests/cli: 221/221 passed (rebased; one run during the rust-test lane failed only the known disassembling-40-instructions-takes wall_ms probe, 220/221, and passed on the quiet re-run)",
+  "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+  "catalog_check": "catalog OK: documents exactly the registered kuna options",
+  "counters_check": "no drift: every hard-coded site agrees with the derived truth",
+  "options_md": "byte-fresh",
+  "rust_test": "RUST_TEST_RC=0 (7386 passed, 0 failed; lane 08:22:10-08:50:17Z on ddb777fbb, the last .rs/.toml/fixture commit)"
+ },
+ "default_decision": "flipped param -> locals after the review round: (a) 0/675 datatest assertions move; (b) stages 1306/1306, no assertion of another feature moves, 10 new keys; (c) test-cli 221/221, no probe moves; (d) typesweep on the rebased tree 1,472 -> 1,472, 0 improved / 0 worse, 95 of 65,377 decisions change from undefined8/long */int8 * to struct_N * on a DWARF struct pointer (none replacing a correct pointer), 708 only in numbering, scored variable counts identical; (e) worst min delta +3.43% (sort O2, byte-identical output, A/A control +6.66%); fmt -8.19%, ls -1.28%, bash +1.20%; (f) 29-binary hunks all classified with declarations and casts, none outside the documented effect (hunks.md); (g) modes.rs names no structsynth value (every preset inherits the default)",
+ "base": "origin/main 656e6c701 (#710 slotptr); the review-round measurements were taken on 2888a2a94 and the typesweep, hunk sweep and gates re-run after the rebase",
+ "counters": {
+  "stage_corpus": "329 -> 330 (kuna-base xml.rs)",
+  "settables": "unchanged (values of an existing option)",
+  "phase_catalog_json": "recaptured: structsynth values off|param|locals|nest|all, default locals"
+ },
+ "parity": {
+  "datatests": "675/675 PARITY OK with locals as the default",
+  "stages": "1306/1306 PARITY OK; only new keys STRUCTSYNTH-LOCALS #1-#10",
+  "test_cli": "221/221"
+ },
+ "inspiration": "angr's type solver measures every type variable, not only a parameter's; the same evidence and decline rules as structsynth param (angr simple_solver struct branch, TRex USENIX Security 2025 section 3.3.3, Howard NDSS 2011 section 4.5)",
+ "review_round": {
+  "found": "a record type locked on a call output became the declared type of a merged register variable (kmod O2 0x7ee0, dash O2 0x12750, either()); a mempcpy tail filled from a .rodata literal became a record (cp O2 0xbe10); an 8-byte store split into field + filler bytes; canon.py dropped declarations and casts so the classifier could not see the first class",
+  "classifier": "docs/features/structlocals/declcast.py (declarations + casts, locals named by first use); on the reviewed outputs it flags all three witnesses",
+  "extra_class_found": "an address formed just past the fields read printed as &v1[1] and gave a mutex/list tail/flexible body the record's type (sort O2 0xb220, du O2 0xdf90, find O2 0x1e550, kmod O2 0x8eb0, grep O2 0xfd10) -> points_past",
+  "witnesses_now": "kmod 0x7ee0, dash 0x12750, cp 0xbe10, sort 0xb220, kmod 0x8eb0 byte-identical to param; no function in 12,939 gains a filler element store"
+ }
+}

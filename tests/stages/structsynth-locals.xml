@@ -1,0 +1,155 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structsynth locals: a pointer a call returned, read or written at constant
+    offsets, is declared a pointer to a record of its own.
+
+    Source (gcc -O2 -fcf-protection=none -fno-pic, xalloc/lookup/consume
+    left outside the image so nothing declares what they return):
+
+        struct node { struct node *next; long key; int count; char tag; };
+        extern void *xalloc(unsigned long);
+        extern struct node *lookup(long key);
+        extern void consume(char *);
+
+        struct node *make(long key, struct node *next)        // @0x100000
+        { struct node *n = xalloc(sizeof *n);
+          n->next = next; n->key = key; n->count = 1; n->tag = 'n';
+          return n; }
+
+        long weigh(long key)                                   // @0x100030
+        { struct node *n = lookup(key);
+          return n->key + n->count + (long)n->next; }
+
+        void label(void)                                       // @0x100050
+        { char *p = xalloc(16);
+          __builtin_memcpy(p, "SCHILY.xattr.", 14); consume(p); }
+
+    With option structsynth param (asserts 1 and 2): only parameters are
+    measured, so every access through the returned pointer is raw offset
+    arithmetic, *(char *)((int8)v1 + 0x14) = 0x6e and (int8)(int4)v1[2].
+
+    With option structsynth locals (asserts 3 to 6): the returned value is the
+    local's only definition, so its accesses are measured like a parameter's
+    and it is declared struct_0 * / struct_1 *, the reads and writes naming
+    field_0x0, field_0x8, field_0x10 and field_0x14.
+
+    label's buffer is filled with the bytes of a string literal, and a buffer
+    of text is not a record: it keeps its pointer type in both passes
+    (assert 7).
+
+    Three more functions (same flags, sfx in read-only data at 0x101000,
+    getname/tok/mempcpy outside the image) are pointers locals leaves alone:
+
+        struct rec { int type; int bg; void *list; };
+        struct msg { long len; long seq; char body[]; };
+        const char sfx[9] = "CuXXXXXX";
+
+        void *either(int c, long k)                            // @0x100100
+        { void *r;
+          if (c) { r = getname(); if (tok()) return r; }
+          struct rec *p = xalloc(16); p->type = 3; p->bg = (int)k; p->list = 0;
+          return p; }
+
+        char *tmpl(const char *dir, unsigned long n)           // @0x100150
+        { char *b = xalloc(n + 9); char *e = mempcpy(b, dir, n);
+          __builtin_memcpy(e, sfx, sizeof sfx); return b; }
+
+        void post(long seq, long len)                          // @0x1001a0
+        { struct msg *m = xalloc(sizeof *m + len); m->len = len; m->seq = seq;
+          consume(m->body); }
+
+    either returns the record on one path and the name on the other, and a
+    function has one return type: typing the record would declare the name a
+    struct_N * too, so the name keeps the pointer type param gives it
+    (assert 8). tmpl fills mempcpy's tail with bytes loaded from the literal,
+    which is text however it is copied (assert 9). post passes the address
+    just past the two fields it writes, so the record is wider than its
+    accesses; a record measured on them would print that address as &v1[1]
+    (assert 10).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+554889f5534889fbbf180000004883ec08e8eaff0f0048892848895808c74010
+01000000c640146e4883c4085b5dc3904883ec08e8d7ff0f004889c248634010
+480342084803024883c408c30f1f40004883ec08bf10000000e8a2ff0f004889
+c748b8534348494c592e78488907b82e000000c74708617474726689470c4883
+c408e999ff0f00
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+4154534889f34883ec0885ff7411e81dff0f004989c4e825ff0f0085c0751ebf
+10000000e8d7fe0f00c700030000004989c489580448c74008000000004883c4
+084c89e05b415cc30f1f84000000000041554989f54154554889fd488d7e09e8
+9cfe0f004c89ea4889ee4889c74989c4e8dbfe0f00488b15840e00004889100f
+b615820e00008850084c89e05d415c415dc366662e0f1f8400000000000f1f00
+554889fd488d7e10534889f34883ec08e84bfe0f00488918488d781048896808
+4883c4085b5de955fe0f00
+</bytechunk>
+<bytechunk space="ram" offset="0x101000" readonly="true">
+437558585858585800
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="make"/>
+<symbol space="ram" offset="0x100030" name="weigh"/>
+<symbol space="ram" offset="0x100050" name="label"/>
+<symbol space="ram" offset="0x100100" name="either"/>
+<symbol space="ram" offset="0x100150" name="tmpl"/>
+<symbol space="ram" offset="0x1001a0" name="post"/>
+</binaryimage>
+<script>
+  <com>option structsynth param</com>
+  <com>lo fu make</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu weigh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu label</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu either</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tmpl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu post</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structsynth locals</com>
+  <com>lo fu make</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu weigh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu label</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu either</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tmpl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu post</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print C types</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTSYNTH-LOCALS #1: param writes a returned record through raw offsets" min="1" max="1">\*\(char \*\)\(\(int8\)v1 \+ 0x14\) = 0x6e;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #2: param reads a returned record as an array of longs" min="1" max="1">return \(int8\)\(int4\)v1\[2\] \+ v1\[1\] \+ \*v1;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #3: locals declares the allocation a record pointer" min="1" max="1">v1 = \(struct_0 \*\)sub_200000\(0x18\);</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #4: locals writes the allocation's fields by name" min="1" max="1">v1-&gt;field_0x10 = 1;
+.*v1-&gt;field_0x14 = 0x6e;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #5: locals reads the returned record's fields by name" min="1" max="1">return \(int8\)v1-&gt;field_0x10 \+ v1-&gt;field_0x8 \+ v1-&gt;field_0x0;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #6: the returned record is the three reads, padded to its alignment" min="1" max="1">^struct struct_1 \{$
+^    int8 field_0x0;$
+^    int8 field_0x8;$
+^    int4 field_0x10;$
+^    char field_0x14\[4\];$
+^\};$</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #7: a buffer filled with text is not a record" min="2" max="2">\*v1 = 0x782e594c49484353;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #8: a record returned beside another value is not typed" min="2" max="2">v1 = \(unsigned int \*\)sub_200030\(\);</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #9: a buffer filled from a string literal is not a record" min="2" max="2">\*v2 = dat_101000;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #10: a record whose address escapes past its fields is not typed" min="2" max="2">sub_200020\(&amp;v1\[2\]\);</stringmatch>
+</decompilertest>

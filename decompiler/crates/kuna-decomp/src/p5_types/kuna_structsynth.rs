@@ -1,5 +1,5 @@
 //! (kuna `structsynth`) Synthesize a structure type from the constant-offset
-//! dereferences of a pointer parameter.
+//! dereferences of a pointer parameter, or of a pointer a call returned.
 //!
 //! # The gap
 //!
@@ -108,6 +108,41 @@
 //! field rounded up to the widest field, with the tail covered by filler like
 //! any other gap.
 //!
+//! # Records a call returned (`locals`)
+//!
+//! A function that fills in the record an allocator returned
+//! (`v1 = (unsigned long *)xmalloc(0x18); *(char *)((long)v1 + 0x14) = 0x6e`)
+//! or reads the one a lookup returned has the same evidence a parameter has,
+//! over a value that is not a parameter. Under `locals` the value a `CALL` or
+//! `CALLIND` returns is a base too: single assignment makes it the local's only
+//! definition, and every condition a parameter is held to still applies. Three
+//! more are about the value rather than its accesses:
+//!
+//! * a callee declared to return a pointer to something (`char *`, `struct
+//!   stat *`) has said what the pointer is; only `void *` says nothing;
+//! * the value must not share a variable with anything else. A copy is merged
+//!   with what it copies, a phi input with the other inputs, and a value in
+//!   address-tied storage with everything else stored there, so a value that
+//!   reaches a phi through a copy, lands in tied storage, or overlaps a return
+//!   register some phi joins (it is tied once merging starts, and `kmod`'s
+//!   `rax` is merged with the `eax` its `int` function returns) declines: the
+//!   locked record type would otherwise become the whole variable's, and
+//!   `tar`'s `wordsplit_add_segm` would return its status as a `struct_N *`;
+//! * a function has one return type, so a record returned on one path while
+//!   another path returns a different value (a name, a count, an error code)
+//!   declines; only a constant zero may be returned beside it;
+//! * a buffer whose every access stores the bytes of a string literal -- as
+//!   constants, or loaded from the literal in read-only memory -- is text, not
+//!   a record, however unevenly the compiler split the copy;
+//! * an address formed at or past the end of every access (`&node->lock` just
+//!   past the fields `sortlines` reads, a flexible array member) says the
+//!   record is wider than this function shows; typed on its accesses, that
+//!   address would print as `&v[1]` and give the mutex the record's type.
+//!
+//! `all` is `locals` and `nest` together. Globals are not bases: every access to
+//! a global record is an absolute address of its own, and a global pointer is
+//! re-read after every call, so it always reaches a phi.
+//!
 //! # Known limits
 //!
 //! * The structure is as wide as its *surviving* fields, rounded up to the
@@ -178,8 +213,12 @@ pub enum StructSynthMode {
     Off,
     /// Function parameters only.
     Param,
+    /// Function parameters, and the pointers calls return.
+    Locals,
     /// Function parameters, and the records their pointer fields point at.
     Nest,
+    /// `locals` and `nest` together.
+    All,
 }
 
 impl StructSynthMode {
@@ -190,11 +229,17 @@ impl StructSynthMode {
 
     /// Is a pointer field loaded and dereferenced in turn given a record?
     pub fn nests(self) -> bool {
-        self == StructSynthMode::Nest
+        matches!(self, StructSynthMode::Nest | StructSynthMode::All)
+    }
+
+    /// Is a pointer a call returned given a record?
+    pub fn locals(self) -> bool {
+        matches!(self, StructSynthMode::Locals | StructSynthMode::All)
     }
 }
 
-/// (kuna) Parse `option structsynth off|param|nest`; the caller writes the live field.
+/// (kuna) Parse `option structsynth off|param|locals|nest|all`; the caller
+/// writes the live field.
 pub struct OptionStructSynth;
 
 impl OptionStructSynth {
@@ -206,10 +251,12 @@ impl OptionStructSynth {
         let mode = match p1 {
             "off" => StructSynthMode::Off,
             "param" => StructSynthMode::Param,
+            "locals" => StructSynthMode::Locals,
             "nest" => StructSynthMode::Nest,
+            "all" => StructSynthMode::All,
             other => {
                 return Err(KunaError::parse(format!(
-                    "Unknown structsynth value: {other} (expected off|param|nest)"
+                    "Unknown structsynth value: {other} (expected off|param|locals|nest|all)"
                 )))
             }
         };
@@ -288,6 +335,10 @@ struct Evidence {
     /// Offset -> `(width, value)` of every `LOAD` through this base, pruned or
     /// not: the values a nested record is measured on.
     loads: BTreeMap<intb, Vec<(int4, VarnodeId)>>,
+    /// A `STORE` of a constant whose bytes read as text.
+    text_store: bool,
+    /// An access that is neither such a store nor a store of zero.
+    other_access: bool,
 }
 
 impl Evidence {
@@ -338,6 +389,8 @@ impl Evidence {
         self.dynamic_offset |= other.dynamic_offset;
         self.integer_use |= other.integer_use;
         self.phi_reached |= other.phi_reached;
+        self.text_store |= other.text_store;
+        self.other_access |= other.other_access;
         for (off, vs) in other.loads.iter() {
             self.loads.entry(*off).or_default().extend(vs.iter().copied());
         }
@@ -393,6 +446,13 @@ impl Evidence {
             self.slots.remove(off);
         }
         self.unclaimed = dropped;
+    }
+
+    /// Where the last byte this function accessed through the base ends.
+    fn extent(&self) -> intb {
+        let fields = self.slots.iter().map(|(o, s)| o.saturating_add(s.width as intb));
+        let dropped = self.unclaimed.iter().map(|(o, w)| o.saturating_add(*w as intb));
+        fields.chain(dropped).max().unwrap_or(0)
     }
 
     /// Every byte range this function dereferenced without a typed field of its
@@ -503,8 +563,14 @@ fn collect(data: &mut Funcdata) -> BTreeMap<VarnodeId, Evidence> {
             let Some((base, off)) = peel(data, addr, &mut ev, MAX_PEEL_DEPTH) else { continue };
             let Some(width) = data.vbank().get(value).map(|v| v.get_size()) else { continue };
             let ctype = vn_type(data, value);
+            let stored = if opc == OpCode::CPUI_STORE { stored_text(data, value, width) } else { None };
             let e = ev.entry(base).or_default();
             e.record(off, width, ctype);
+            match stored {
+                Some(Some(true)) => e.text_store = true,
+                Some(None) => {}
+                _ => e.other_access = true,
+            }
             if opc == OpCode::CPUI_LOAD {
                 e.loads.entry(off).or_default().push((width, value));
             }
@@ -517,6 +583,48 @@ fn collect(data: &mut Funcdata) -> BTreeMap<VarnodeId, Evidence> {
         note_uses(data, base, e);
     }
     ev
+}
+
+/// Does a stored value copy text: a constant whose bytes read as text, or bytes
+/// read from a read-only string literal (`cp`'s `mempcpy` tail filled from
+/// `"CuXXXXXX"`)?  `None` for a value that is neither, `Some(None)` for zero.
+/// A call's clobber of read-only memory changes nothing, so a literal the heap
+/// model re-defines at a call is still the image's bytes.
+fn stored_text(data: &Funcdata, value: VarnodeId, width: int4) -> Option<Option<bool>> {
+    let root = copy_root(data, value);
+    let v = data.vbank().get(root)?;
+    if v.is_constant() {
+        let n = width.clamp(0, 8) as u32;
+        let bytes: Vec<u8> = (0..n).map(|i| ((v.get_offset() >> (8 * i)) & 0xff) as u8).collect();
+        return Some(bytes_text(&bytes));
+    }
+    let clobber = v.get_def().and_then(|d| data.obank().get(d)).is_some_and(|o| o.code() == OpCode::CPUI_INDIRECT);
+    if (v.is_written() && !clobber) || !v.is_read_only() || v.get_size() != width || !(1..=MAX_LITERAL).contains(&width) {
+        return None;
+    }
+    if v.get_addr().get_space()?.get_type() != spacetype::IPTR_PROCESSOR {
+        return None;
+    }
+    let mut buf = vec![0u8; width as usize];
+    data.get_arch().loader_fill(&mut buf, v.get_addr()).ok()?;
+    Some(bytes_text(&buf))
+}
+
+/// The widest read of a string literal [`stored_text`] reads back: one vector
+/// register.
+const MAX_LITERAL: int4 = 16;
+
+/// Do these stored bytes read as text?  `None` when they are all zero, which a
+/// record's initializer stores as often as a string's terminator.
+fn bytes_text(bytes: &[u8]) -> Option<bool> {
+    if bytes.iter().all(|&b| b == 0) {
+        return None;
+    }
+    let printable = |b: &u8| (0x20..0x7f).contains(b);
+    Some(
+        bytes.iter().all(|b| *b == 0 || *b == b'\t' || *b == b'\n' || printable(b))
+            && bytes.iter().filter(|b| printable(b)).count() * 2 >= bytes.len().max(1),
+    )
 }
 
 /// Negative evidence that is not about an address: the base used as a plain
@@ -742,8 +850,7 @@ fn synthesize(data: &mut Funcdata) -> bool {
     let raw = collect(data);
     let nests = data.get_arch().struct_synth.nests();
     let ptrsize = types.get_size_of_pointer();
-    let mut installs: Vec<(VarnodeId, Rc<Datatype>)> = Vec::new();
-
+    let mut asks = Vec::new();
     for (base, e) in raw.iter() {
         let e = e.pruned();
         if !accepts(data, *base, &e) {
@@ -756,7 +863,18 @@ fn synthesize(data: &mut Funcdata) -> bool {
         } else {
             Vec::new()
         };
-        let unclaimed = e.unclaimed_ranges();
+        asks.push((*base, e.slots.len(), fields, size, e.unclaimed_ranges(), selfs));
+    }
+    // A function whose own later layout contains its earlier one would see its
+    // earlier answer superseded, which a `--jobs` replay cannot reproduce; asked
+    // widest first, a later layout never contains an earlier one. Parameters
+    // alone keep the order `param` always had.
+    if data.get_arch().struct_synth.locals() {
+        asks.sort_by(|a, b| b.1.cmp(&a.1));
+    }
+
+    let mut installs: Vec<(VarnodeId, Rc<Datatype>)> = Vec::new();
+    for (base, _, fields, size, unclaimed, selfs) in asks {
         let Some(st) = answer(data, types.as_ref(), fields, size, &unclaimed, &selfs) else {
             continue;
         };
@@ -764,7 +882,7 @@ fn synthesize(data: &mut Funcdata) -> bool {
         // structure mints a fresh `Rc`, and merge compares high types by `Rc`
         // identity, so a pointer to the incomplete shell would never match.
         let Ok(ptr) = types.get_type_pointer(ptrsize, st, 1) else { continue };
-        installs.push((*base, ptr));
+        installs.push((base, ptr));
     }
 
     let mut changed = false;
@@ -792,13 +910,14 @@ fn answer(
     }
 }
 
-/// Every decline condition for a parameter, in one place.
+/// Every decline condition for a base, in one place.
 fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     let Some(v) = data.vbank().get(base) else { return false };
 
-    // A record is synthesized over a parameter, and under `nest` over what the
-    // parameter's pointer fields hold ([`nest`]).
-    if !v.is_input() {
+    // A record is synthesized over a parameter, under `locals` over a pointer a
+    // call returned, and under `nest` over what a record's pointer fields hold
+    // ([`nest`]).
+    if !v.is_input() && !(data.get_arch().struct_synth.locals() && is_local_base(data, base, e)) {
         return false;
     }
     // A user/DWARF/declared type is authoritative.
@@ -813,6 +932,198 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     let Some(ct) = vn_type(data, base) else { return false };
     accepts_record(data, &ct, e)
 }
+
+/// Does `locals` measure `base`: a value a call returned, alone in its
+/// variable, that is not a buffer of text and whose record ends where its
+/// accesses end?
+fn is_local_base(data: &Funcdata, base: VarnodeId, e: &Evidence) -> bool {
+    if !is_call_return(data, base) || (e.text_store && !e.other_access) {
+        return false;
+    }
+    let rets = returned_values(data);
+    let Some(copies) = copies_alone(data, base, &rets) else { return false };
+    !returned_beside_others(data, &copies, &rets) && !points_past(data, &copies, e.extent())
+}
+
+/// Is `vn` the value a `CALL` or `CALLIND` returned, and did the callee's
+/// declaration leave its pointee open?  Single assignment makes that value the
+/// local's only definition; a declared `char *` or `struct stat *` return is
+/// what the pointer is, and only `void *` (an allocator) says nothing.
+fn is_call_return(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(def) = data.vbank().get(vn).and_then(|v| v.get_def()) else { return false };
+    let Some(op) = data.obank().get(def) else { return false };
+    if !matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) || op.get_out() != Some(vn) {
+        return false;
+    }
+    let Some(i) = data.get_call_specs_index(def) else { return true };
+    let proto = data.get_call_specs(i).proto();
+    if !proto.is_output_locked() {
+        return true;
+    }
+    proto.get_output_type().and_then(|t| t.get_ptr_to()).is_some_and(|p| {
+        matches!(p.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN)
+    })
+}
+
+/// The most copies of one returned value [`joins_other_values`] follows.
+const MAX_COPIES: usize = 64;
+
+/// The copies of the value `vn` holds, or `None` when it will share a variable
+/// with some other value.
+///
+/// A copy is merged with the value it copies, a phi input with every other
+/// input of the phi, and a value in address-tied storage with everything else
+/// stored there, so a returned value that reaches a phi through a copy, or
+/// lands in tied storage, ends up in one variable with whatever else that
+/// storage held -- and a locked member decides the whole variable's type.
+/// `tar`'s `wordsplit_add_segm` keeps a record from `calloc` in the `rax` it
+/// returns its status in, and typing the record would declare the status a
+/// `struct_N *` too.
+fn copies_alone(data: &Funcdata, vn: VarnodeId, rets: &[VarnodeId]) -> Option<Vec<VarnodeId>> {
+    let mut seen = vec![vn];
+    let mut i = 0;
+    while i < seen.len() {
+        let cur = seen[i];
+        i += 1;
+        if storage_is_tied(data, cur, rets) {
+            return None;
+        }
+        let v = data.vbank().get(cur)?;
+        for u in v.descend_iter() {
+            let Some(op) = data.obank().get(u) else { continue };
+            match op.code() {
+                OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => return None,
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
+                    let Some(out) = op.get_out() else { continue };
+                    if !seen.contains(&out) {
+                        if seen.len() >= MAX_COPIES {
+                            return None;
+                        }
+                        seen.push(out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Some(seen)
+}
+
+/// Does a copy of the base form an address at or past `extent`, the end of
+/// every access?  `sortlines` takes `&node->lock` just past the fields it
+/// reads, and `mountlist` keeps `&me->me_next` as its list tail: the record is
+/// wider than this function's accesses show, and a record measured on them
+/// would type `&node[1]` -- the mutex, the tail -- as a record too.
+fn points_past(data: &Funcdata, copies: &[VarnodeId], extent: intb) -> bool {
+    copies.iter().filter_map(|&c| data.vbank().get(c).map(|v| (c, v))).any(|(c, v)| {
+        v.descend_iter().filter_map(|u| data.obank().get(u)).any(|op| {
+            let term = |slot: int4| op.get_in(slot).and_then(|t| data.vbank().get(t)).filter(|t| t.is_constant());
+            let off = match op.code() {
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB => {
+                    let other = if op.get_in(0) == Some(c) { 1 } else { 0 };
+                    term(other).map(|t| sign_extend(t.get_offset(), t.get_size()))
+                }
+                OpCode::CPUI_PTRADD if op.get_in(0) == Some(c) => term(1).zip(term(2)).map(|(i, s)| {
+                    sign_extend(i.get_offset(), i.get_size()).wrapping_mul(s.get_offset() as intb)
+                }),
+                _ => None,
+            };
+            off.is_some_and(|k| k >= extent)
+        })
+    })
+}
+
+/// The value every live `RETURN` returns.
+fn returned_values(data: &Funcdata) -> Vec<VarnodeId> {
+    data.obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter_map(|r| data.obank().get(r))
+        .filter(|o| !o.is_dead() && o.get_halt_type() == 0 && o.num_input() >= 2)
+        .filter_map(|o| o.get_in(1))
+        .collect()
+}
+
+/// Is one of `copies` returned while some `RETURN` returns a different value?
+/// A function has one return type, so a value returned on one path types what
+/// every other path returns: a record returned where another path returns a
+/// name or a count declines. A constant zero is the null every pointer can be.
+fn returned_beside_others(data: &Funcdata, copies: &[VarnodeId], rets: &[VarnodeId]) -> bool {
+    if !rets.iter().any(|r| copies.contains(r)) {
+        return false;
+    }
+    rets.iter().any(|&r| {
+        let root = copy_root(data, r);
+        !copies.contains(&root)
+            && !data.vbank().get(root).is_some_and(|v| v.is_constant() && v.get_offset() == 0)
+    })
+}
+
+/// The value `vn` copies, through any chain of `COPY` and `CAST`.
+fn copy_root(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
+    for _ in 0..MAX_COPIES {
+        let Some(op) = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+            break;
+        };
+        if !matches!(op.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+            break;
+        }
+        let Some(src) = op.get_in(0) else { break };
+        vn = src;
+    }
+    vn
+}
+
+/// Will every value stored where `vn` lives be one variable?  That is so when a
+/// value overlapping it is address-tied, and when it overlaps the storage a
+/// `RETURN` reads and a phi writes that return register somewhere: the return
+/// register is then tied as a whole-function local once merging starts
+/// (`mark_output_storage_addr_tied`), long after this pass has run, and a
+/// `rax` value is merged with the `eax` an `int` function returns.
+fn storage_is_tied(data: &Funcdata, vn: VarnodeId, rets: &[VarnodeId]) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return true };
+    if v.is_addr_tied() {
+        return true;
+    }
+    let Some(spc) = v.get_addr().get_space().cloned() else { return false };
+    if spc.get_type() == spacetype::IPTR_INTERNAL {
+        return false;
+    }
+    let (off, size) = (v.get_offset(), v.get_size());
+    let joined_return = rets.iter().filter_map(|&r| data.vbank().get(r)).any(|r| {
+        r.get_addr().get_space().is_some_and(|s| s.get_index() == spc.get_index())
+            && overlaps(off, size, r.get_offset(), r.get_size())
+            && overlapping(data, &spc, r.get_offset(), r.get_size()).any(|id| {
+                let def = data.vbank().get(id).and_then(|w| w.get_def());
+                def.and_then(|d| data.obank().get(d)).is_some_and(|op| {
+                    matches!(op.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT)
+                })
+            })
+    });
+    joined_return
+        || overlapping(data, &spc, off, size).any(|id| data.vbank().get(id).is_some_and(|w| w.is_addr_tied()))
+}
+
+/// Do the byte ranges `[a, a+asize)` and `[b, b+bsize)` intersect?
+fn overlaps(a: uintb, asize: int4, b: uintb, bsize: int4) -> bool {
+    a < b.saturating_add(bsize as uintb) && b < a.saturating_add(asize as uintb)
+}
+
+/// Every varnode in `spc` whose bytes intersect `[off, off+size)`.
+fn overlapping<'a>(
+    data: &'a Funcdata,
+    spc: &Rc<kuna_base::space::AddrSpace>,
+    off: uintb,
+    size: int4,
+) -> impl Iterator<Item = VarnodeId> + 'a {
+    let lo = kuna_base::address::Address::new(Rc::clone(spc), off.saturating_sub(MAX_OVERLAP_BACK));
+    let hi = kuna_base::address::Address::new(Rc::clone(spc), off.saturating_add(size as uintb));
+    data.vbank()
+        .iter_loc_addr_range(&lo, &hi)
+        .filter(move |&id| data.vbank().get(id).is_some_and(|w| overlaps(w.get_offset(), w.get_size(), off, size)))
+}
+
+/// How far below a value's storage an overlapping wider value may start.
+const MAX_OVERLAP_BACK: uintb = 16;
 
 /// The decline conditions every synthesized record shares, a parameter's or a
 /// nested field's: `ct` is the type the base already carries.
@@ -880,7 +1191,7 @@ pub fn resolve_self_pointer(types: &dyn TypeFactory, ct: &Datatype) -> Option<Rc
 }
 
 /// (kuna) `ActionStructSynth` -- synthesize `struct_N` over a dereferenced
-/// pointer parameter (option `structsynth`).
+/// pointer parameter or returned pointer (option `structsynth`).
 pub struct ActionStructSynth {
     base: ActionBase,
     /// Has this function already been offered to the synthesizer?
