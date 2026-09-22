@@ -4211,6 +4211,7 @@ impl Architecture {
         ctx.char_byte = self.char_byte; // (kuna) charbyte
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
+        ctx.slot_ptr = self.slot_ptr != crate::kuna_slotptr::SlotPtrMode::Off; // (kuna) slotptr
         ctx.libctypes = self.analysis_libctypes; // (kuna) libctypes (kuna_libcfit)
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch

@@ -883,6 +883,12 @@ pub struct ArchContext {
     /// [`Architecture::char_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
+    /// (kuna `slotptr`) Record what each `restructure_varnode` pass sees stored
+    /// into the stack frame; set when
+    /// [`Architecture::slot_ptr`](crate::architecture::Architecture) is not `off`.
+    /// Read by `Funcdata::record_frame_layout_pass`; the evidence is consumed by
+    /// [`kuna_slotptr`](crate::p6_variables::kuna_slotptr).
+    pub slot_ptr: bool,
     /// (kuna `libctypes`) The named libc aggregate tables are on.  Copied from
     /// [`Architecture::analysis_libctypes`](crate::architecture::Architecture);
     /// read by [`kuna_libcfit`](crate::p5_types::kuna_libcfit), which holds a
@@ -1585,6 +1591,7 @@ impl ArchContext {
             char_byte: true, // (kuna) option charbyte
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
+            slot_ptr: false, // (kuna) option slotptr, copied from Architecture
             libctypes: false, // (kuna) option libctypes, copied from Architecture
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch

@@ -664,7 +664,9 @@ impl Funcdata {
             slots.push((off, crate::funcdata::FrameSlot { name, dtype: ct, size }));
         }
         self.record_frame_slots(slots);
-        crate::kuna_slotptr::record_pass(self, space);
+        if self.get_arch().slot_ptr {
+            crate::kuna_slotptr::record_pass(self, space);
+        }
     }
 
     /// C++ `ScopeLocal::checkUnaliasedReturn` (`varmap.cc:414-428`): if the return

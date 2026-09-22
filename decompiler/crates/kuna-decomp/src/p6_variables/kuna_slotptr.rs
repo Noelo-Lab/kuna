@@ -201,26 +201,41 @@ fn declared_type(fd: &Funcdata, arch: &Architecture, vn: VarnodeId) -> Option<Rc
     Some(Rc::clone(fd.vbank().get(rep)?.get_type()))
 }
 
-fn value_varnode(fd: &Funcdata, store: &SlotStore) -> Option<VarnodeId> {
-    match store {
-        SlotStore::Null | SlotStore::Opaque => None,
-        SlotStore::Input(addr, size) => fd.find_varnode_input(*size, addr),
+fn variant() -> u8 {
+    std::env::var("KUNA_SLOTPTR_VARIANT").ok().and_then(|v| v.bytes().next()).unwrap_or(b'A')
+}
+
+fn value_type(fd: &Funcdata, arch: &Architecture, store: &SlotStore) -> Option<Rc<Datatype>> {
+    let produced = match store {
+        SlotStore::Null | SlotStore::Opaque => return None,
+        SlotStore::Input(addr, size) => fd.find_varnode_input(*size, addr)?,
         SlotStore::Op(seq) => {
             let op = fd.obank().get(fd.obank().find_op(seq)?)?;
             if op.is_dead() {
                 return None;
             }
-            let out = op.get_out()?;
-            let v = fd.vbank().get(out)?;
-            if !v.is_implied() {
-                return Some(out);
-            }
-            let cast = fd.lone_descend(out).and_then(|d| fd.obank().get(d));
-            match cast {
-                Some(c) if c.code() == OpCode::CPUI_CAST => c.get_out().or(Some(out)),
-                _ => Some(out),
-            }
+            op.get_out()?
         }
+    };
+    let own = Rc::clone(fd.vbank().get(produced)?.get_type());
+    let v = fd.vbank().get(produced)?;
+    let held = if v.is_implied() {
+        match fd.lone_descend(produced).and_then(|d| fd.obank().get(d)) {
+            Some(c) if c.code() == OpCode::CPUI_CAST => c.get_out().unwrap_or(produced),
+            _ => produced,
+        }
+    } else {
+        produced
+    };
+    let declared = declared_type(fd, arch, held)?;
+    match variant() {
+        b'B' => Some(own),
+        b'C' => {
+            let a = crate::printc::type_to_c_string(arch, &own);
+            let b = crate::printc::type_to_c_string(arch, &declared);
+            (a == b).then_some(declared)
+        }
+        _ => Some(declared),
     }
 }
 
@@ -244,9 +259,7 @@ pub fn slot_pointer_type(
         if *store == SlotStore::Null {
             continue;
         }
-        let ty = value_varnode(fd, store)
-            .and_then(|vn| declared_type(fd, arch, vn))
-            .ok_or(Decline::Untraced)?;
+        let ty = value_type(fd, arch, store).ok_or(Decline::Untraced)?;
         let spelled = crate::printc::type_to_c_string(arch, &ty);
         match &found {
             Some((s, _)) if *s != spelled => return Err(Decline::Disagree),
@@ -264,7 +277,9 @@ pub fn slot_pointer_type(
     let pointee = ty.get_ptr_to().map(|p| p.get_metatype());
     match pointee {
         None | Some(type_metatype::TYPE_UNKNOWN) => return Err(Decline::Pointee),
-        Some(type_metatype::TYPE_VOID) if mode != SlotPtrMode::Void => return Err(Decline::Pointee),
+        Some(type_metatype::TYPE_VOID | type_metatype::TYPE_CODE) if mode != SlotPtrMode::Void => {
+            return Err(Decline::Pointee)
+        }
         _ => {}
     }
     Ok(ty)
