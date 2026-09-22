@@ -1,0 +1,77 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "authenticate",
+    "--json",
+    "--option",
+    "slotptr",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].variables[6].name",
+        "op": "eq",
+        "value": "local_28"
+      },
+      {
+        "path": "functions[0].variables[6].type",
+        "op": "eq",
+        "value": "undefined8"
+      },
+      {
+        "path": "functions[0].variables[6].size",
+        "op": "eq",
+        "value": 8
+      },
+      {
+        "path": "functions[0].variables[7].name",
+        "op": "eq",
+        "value": "local_20"
+      },
+      {
+        "path": "functions[0].variables[7].type",
+        "op": "eq",
+        "value": "undefined8"
+      },
+      {
+        "path": "functions[0].variables[5].name",
+        "op": "eq",
+        "value": "local_30"
+      },
+      {
+        "path": "functions[0].variables[5].type",
+        "op": "eq",
+        "value": "undefined8"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "unsigned long authenticate(char *a0,char *a1)"
+      }
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "authenticate",
+    "selector_kind": "name"
+  },
+  "notes": "slotptr off: the pre-feature surface. The same two spilled-argument slots of authenticate keep the width-only undefined8 framelayout recorded; the C text is the same as with the option on."
+}

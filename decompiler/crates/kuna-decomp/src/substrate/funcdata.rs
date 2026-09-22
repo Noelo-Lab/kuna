@@ -270,6 +270,9 @@ pub struct Funcdata {
     /// Ninja's variable list do.  This side table accumulates the union so
     /// `extract_variables` can report it; it never feeds back into the IR.
     frame_slots: std::cell::RefCell<std::collections::BTreeMap<i64, FrameSlot>>,
+    /// (kuna `slotptr`) What each `restructure_varnode` pass saw stored into, and
+    /// touched in, the stack frame; read only by `extract_variables`.
+    slot_evidence: std::cell::RefCell<crate::kuna_slotptr::SlotEvidence>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -522,6 +525,7 @@ impl Funcdata {
             activeoutput: None,
             localmap,
             frame_slots: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            slot_evidence: std::cell::RefCell::new(Default::default()),
             jumpvec: Vec::new(),
             vbank,
             obank: PcodeOpBank::new(),
@@ -1307,6 +1311,16 @@ impl Funcdata {
     /// (kuna `framelayout`) The union of every stack-frame slot any pass recovered.
     pub fn frame_slots(&self) -> Vec<(i64, FrameSlot)> {
         self.frame_slots.borrow().iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
+    /// (kuna `slotptr`) Fold one pass's stack-store evidence into the running record.
+    pub fn with_slot_evidence(&self, f: impl FnOnce(&mut crate::kuna_slotptr::SlotEvidence)) {
+        f(&mut self.slot_evidence.borrow_mut());
+    }
+
+    /// (kuna `slotptr`) The stack-store evidence every pass recorded.
+    pub fn slot_evidence(&self) -> std::cell::Ref<'_, crate::kuna_slotptr::SlotEvidence> {
+        self.slot_evidence.borrow()
     }
     /// Mutably borrow the local function scope (C++ non-const `getScopeLocal`).
     /// The console `map` commands and `ActionRestructureVarnode` reach the
@@ -2588,6 +2602,9 @@ impl Funcdata {
         // id and hand the GUI the wrong rename target.
         self.kuna_wire_symbols.clear();
         self.kuna_wire_symbol_for_high.clear();
+        // (kuna `slotptr`) The evidence names ops by SeqNum, which a rebuilt op
+        // bank reissues.
+        self.slot_evidence.borrow_mut().clear();
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).

@@ -549,6 +549,46 @@ must be legal C, while `variables[]` is a *report* of what the recovery
 established — so the option changes no p-code and no emitted C, and a consumer
 that wants the printer's spelling on both surfaces flips it off.
 
+**Typing a filler slot from its stores (`option slotptr`).** The frame-slot
+union reports a slot with the type the pass that first saw it recorded, and
+that pass ran before type recovery committed anything, so at -O0 almost every
+filler slot reads `undefined8` while the C body prints the value that lived in
+it as `char *`. The value is still in the final function; only the link from
+the slot to it is gone. Under `option slotptr` (default ON)
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_slotptr.rs (record_pass)`
+runs beside the union at the tail of every `restructure_varnode` and notes, per
+exact `(offset, size)`, every value stored into the frame by its durable
+identity: the root op that computed it (walked back through COPY chains; an
+indirect-creation stands for the call whose output return recovery later
+attaches), the function input it came from, or a null constant. It also notes
+every stack range any live Varnode touched. Op identities are SeqNums, so the
+record is cleared with the op bank on a restart. `extract_variables` then asks
+`kuna_slotptr.rs (slot_pointer_type)` for each filler row, which resolves each
+store in the FINAL function and reads the type the stored value is declared
+with (its HighVariable's declaration type, following the output CAST when the
+producing op writes an implied temporary). The row is re-spelled only when
+every non-null store resolves, they all agree, the type is a pointer of the
+slot's width whose pointee was committed (`kuna_slotptr.rs (admit)`: `char *`,
+`T *`, a named libc record, `struct_N *`, `T **` and `void *` qualify; a pointer
+to unknown bytes names nothing, and a pointer to code prints as `void *` and in
+every measured case came from a constant mistaken for a code address), no
+Varnode touched the slot at another offset or width, and the slot overlaps no
+other exported row. Scalars are never taken: a width-only `undefinedN` is the
+honest answer for a slot whose scalar type is unsettled, and a guessed scalar
+would be scored exactly where the width-only spelling is not. The null store is
+neutral because `p = NULL; ... p = strchr(...)` is the ordinary shape of a
+pointer local. Pinky -O0 `print_entry` shows the effect: `local_1f0` (`pw`),
+`local_1e8` (`comma`) and `local_1e0` (the full name) go from `undefined8` to
+`passwd *`, `char *` and `char *`.
+
+The type is the one kuna's own C body gives the value, so where the body is
+wrong the slot is wrong the same way. A length computed as a pointer difference
+that the body prints as `&p[-(long)q]` reports `char *`, and a register variable
+that merges an `lseek` result with an `errno` pointer reports `int *` for the
+slot the `lseek` result was spilled to. Like `bytehonest` this changes no p-code
+and no emitted C; it moves only `variables[]` and the `; stack:` comments
+`decompile-project` writes into its `.asm` files from the same rows.
+
 The JSON use evidence is joined after extraction. A scalar high can be matched by
 its exact storage, but an array's emitted uses normally belong to smaller highs for
 individual elements or to constants representing the aggregate's base address.

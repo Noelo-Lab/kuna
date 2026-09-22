@@ -834,6 +834,10 @@ Three tiers:
 | a one-byte parameter of a boolean-valued function is reported as char | [`bytehonest`](#bytehonest) |
 | the variables array claims a committed type the C text only picked for legibility | [`bytehonest`](#bytehonest) |
 | xunknown1 appears as a type name with realtypes off | [`bytehonest`](#bytehonest) |
+| a -O0 stack slot is reported as undefined8 although the C body prints the value stored into it as char * | [`slotptr`](#slotptr) |
+| a local that holds a FILE * or a libc record pointer is reported as eight bytes of unknown type | [`slotptr`](#slotptr) |
+| the variables array has fewer pointer-typed locals than the C body declares | [`slotptr`](#slotptr) |
+| a spilled pointer argument's home slot is reported as undefined8 | [`slotptr`](#slotptr) |
 | int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes) |
 | the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes) |
 | `code *` appears as a function-pointer type | [`ctypes`](#ctypes) |
@@ -2613,6 +2617,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. A consumer reads `variables[]` as a report of what kuna RECOVERED rather than as C source -- the `decompile-all --json`/`decompile-project` surface, which is what decbench's type_match metric scores and what IDA's stack view and Binary Ninja's variable list are the analogues of. Flip OFF to get the pre-feature surface, where an uncommitted byte is spelled exactly as the printer spells it (`char` under the default `realtypes`, `xunknown1` with `realtypes off`). The emitted C never changes either way.
 - **Where / provenance:** P6/naming-policy · kuna · presentation-default · kuna-bytehonest
 - **Example:** `option bytehonest off`
+
+### `slotptr` -- on | off, default `on`
+
+- **Symptoms:** a -O0 stack slot is reported as undefined8 although the C body prints the value stored into it as char *; a local that holds a FILE * or a libc record pointer is reported as eight bytes of unknown type; the variables array has fewer pointer-typed locals than the C body declares; a spilled pointer argument's home slot is reported as undefined8.
+- **What it does:** Give a `framelayout` filler slot -- a frame slot an early `restructure_varnode` pass recovered and the dataflow later folded away -- the pointer type of the value stored into it on the `decompile-all --json` `variables` surface, instead of the width-only `undefinedN` the early pass recorded. At -O0 each C local has its own spill slot: the store/load pair becomes a stack COPY, copy propagation replaces every read of the slot with the stored value, and dead-code removal takes the slot's Varnode, so the slot reaches `variables` from a pass that ran before any type was committed while the C body prints the value itself as `char *`. When on, every `restructure_varnode` pass also notes, per exact (offset, size), the durable identity of each value stored into the frame -- the root op that computed it (through COPY chains; an indirect-creation stands for its call's eventual output), the function input it came from, or a null constant -- and every stack range any live Varnode touched. `extract_variables` then resolves those identities in the FINAL function and takes the value's declared type (the type its HighVariable is declared with, following an output CAST). The slot is re-spelled only when every non-null store resolves, all agree on one type, the type is a pointer of the slot's width whose pointee is committed (`char *`, `T *`, a named libc record, `struct_N *`, `T **`, `void *`; never a pointer to unknown bytes or to code, which the C printer spells `void *`), no Varnode touched the slot at another offset or width, and the slot overlaps no other exported variable. Pointer types only: committing a scalar would trade the honest width-only answer for a guess. JSON surface (and decompile-project's `.asm` variable comments) only: no p-code, no emitted C.
+- **When to flip:** On by default. A consumer reads `variables[]` as the recovered frame -- the `decompile-all --json` / `decompile-project` surface decbench's type_match scores and IDA's stack view and Binary Ninja's variable list are the analogues of -- and wants a -O0 local that holds a string, a `FILE *` or a `passwd *` reported as that pointer rather than as eight bytes of unknown type. The type reported is the one kuna's own C body gives the stored value, so where the body is wrong the slot is wrong the same way: a length computed as a pointer difference that the body prints as `&p[-(long)q]` reports `char *`, and a register variable that merges an `lseek` result with an `errno` pointer reports `int *`. Flip OFF to get the pre-feature surface, where every filler slot keeps the width-only spelling framelayout recorded. The emitted C never changes either way.
+- **Where / provenance:** P6/naming-policy · binja · presentation-default · kuna-slotptr
+- **Example:** `option slotptr off`
 
 ### `ctypes` -- on | off, default `off`
 

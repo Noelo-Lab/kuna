@@ -1,0 +1,82 @@
+{
+ "O0/coreutils/stripped/fmt": {
+  "functions": 191,
+  "code_diffs": 0,
+  "count_diffs": 0,
+  "classes": {
+   "filler undefinedN -> pointer, same size/name/offset": 61
+  },
+  "unclassified": [],
+  "n_unclassified": 0
+ },
+ "O0/coreutils/stripped/ls": {
+  "functions": 589,
+  "code_diffs": 0,
+  "count_diffs": 0,
+  "classes": {
+   "filler undefinedN -> pointer, same size/name/offset": 354
+  },
+  "unclassified": [],
+  "n_unclassified": 0
+ },
+ "O0/coreutils/stripped/sort": {
+  "functions": 479,
+  "code_diffs": 0,
+  "count_diffs": 0,
+  "classes": {
+   "filler undefinedN -> pointer, same size/name/offset": 229
+  },
+  "unclassified": [],
+  "n_unclassified": 0
+ },
+ "O2/coreutils/stripped/fmt": {
+  "functions": 151,
+  "code_diffs": 0,
+  "count_diffs": 0,
+  "classes": {
+   "filler undefinedN -> pointer, same size/name/offset": 5
+  },
+  "unclassified": [],
+  "n_unclassified": 0
+ },
+ "O2/coreutils/stripped/ls": {
+  "functions": 404,
+  "code_diffs": 0,
+  "count_diffs": 0,
+  "classes": {
+   "filler undefinedN -> pointer, same size/name/offset": 12
+  },
+  "unclassified": [],
+  "n_unclassified": 0
+ },
+ "O2/coreutils/stripped/sort": {
+  "functions": 343,
+  "code_diffs": 0,
+  "count_diffs": 0,
+  "classes": {
+   "filler undefinedN -> pointer, same size/name/offset": 13
+  },
+  "unclassified": [],
+  "n_unclassified": 0
+ },
+ "O2/bash/stripped/bash": {
+  "functions": 2538,
+  "code_diffs": 0,
+  "count_diffs": 0,
+  "classes": {
+   "filler undefinedN -> pointer, same size/name/offset": 71
+  },
+  "unclassified": [],
+  "n_unclassified": 0
+ },
+ "O0/tar/stripped/tar": {
+  "functions": 1570,
+  "code_diffs": 0,
+  "count_diffs": 0,
+  "classes": {
+   "filler undefinedN -> pointer, same size/name/offset": 1234
+  },
+  "unclassified": [],
+  "n_unclassified": 0
+ }
+}

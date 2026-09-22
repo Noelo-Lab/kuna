@@ -19,6 +19,10 @@
 //! name or the misleading `char[N]` spelling for a type the recovery never
 //! committed to.
 //!
+//! Both arms pin `slotptr off`.  That option re-spells an added slot with the
+//! pointer type of the value stored into it (`verify_slotptr.rs` gates it), so
+//! the width-only spelling this gate checks is the union's own, before that step.
+//!
 //! ## `.sla` precondition
 //!
 //! Like the sibling loader gates, bootstrapping needs the built `x86` `.sla` under
@@ -60,6 +64,7 @@ fn variables_for(framelayout: bool) -> Option<Vec<(String, Vec<VarInfo>)>> {
     };
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
     prog.arch_mut().framelayout = framelayout;
+    prog.arch_mut().slot_ptr = false;
 
     let entries: Vec<(String, _)> =
         prog.function_entries().map(|(n, a)| (n.to_string(), a.clone())).collect();
