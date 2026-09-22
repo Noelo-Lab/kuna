@@ -103,6 +103,57 @@ confirms it: nothing this value types is scored.
   11 DWARF struct pointers (`rettype.py`).
 * **Speed**: see `record.json` (`speed`).
 
+## Review round: holes in "alone in its variable"
+
+The first review found wrong types the numbering/respelling classifier could
+not see, because `canon.py` drops declarations and strips casts:
+
+* `kmod` O2 0x7ee0: a `calloc` record in the `rax` variable that also held a
+  name from `strdup` and its length from `strlen` (`struct_38 *v11;`, `v11 =
+  (unsigned long)strlen((char *)v11);`). The function returns `int` in `eax`; the
+  old rule matched return storage by exact size on the first `RETURN` only.
+* `dash` O2 0x12750 and a two-path `either()`: a record returned on one path,
+  another call's result on the other, both typed by the one return type
+  (`v2 = (struct_6 *)sub_12010();`). Kuna duplicates the return block, so there
+  was no phi to decline on.
+* `cp` O2 0xbe10: a `mempcpy` tail filled by loads from `"CuXXXXXX"` in
+  `.rodata`; the text rule looked at constant stores only.
+
+Fixes (`kuna_structsynth.rs`): return storage is matched by overlap on every
+live `RETURN` (`storage_is_tied`); a record returned beside a different
+non-zero value declines (`returned_beside_others`); bytes loaded from a
+read-only literal, INDIRECT-clobbered or not, count as text up to 16 bytes
+(`stored_text`). A declaration- and cast-aware classifier (`declcast.py`)
+flagged all three witnesses on the reviewed outputs, and on a 29-binary sweep
+it found one more class: an address formed just past the fields a function
+reads (`sortlines`' `&node->lock`, `mountlist`'s `&me->me_next`, `kmod`'s
+flexible `name[]`, `grep`'s `&buf[2]`) printed as `&v1[1]` and gave the mutex or
+the list tail the record's type. `points_past` declines those bases.
+
+The 8-byte store split into a 4-byte field and four filler bytes
+(`v3->field_0x4[0] = 0; ...`) was a record type reaching a value that was never
+measured, through the return type; with `returned_beside_others` no function in
+the sweep gains such a store.
+
+Re-measured on the fixed build (both arms of one build):
+
+* **Hunks** (29 binaries, 12,939 functions: the 16 above plus gzip O0/O2,
+  bzip2, useradd, diff3 O0, sdiff, cp, dash, crond, kmod, sort O2-noinline,
+  xmlwf, find O0): 872 change against `param`; 769 only in `struct_N`
+  numbering; 83 are the same statements respelled with clean declarations and
+  casts; 20 flagged and read: 15 give the record a variable of its own where
+  `param` merged it with an unrelated same-typed value in one register (one
+  more local; `ls` `print_dir` two), 4 are `find` predicate records whose name
+  field holds a string literal, 1 is a local typed `void *` from the record's
+  field (`kmod_new`). 0 control-flow or call deltas, 0 arity changes, 0 filler
+  element stores. Return types: 27 change, 24 DWARF struct pointers, 2 records
+  behind a `void *` handle (`BZ2_bzWriteOpen`, `sharefile_init`), 1 a `Cell *`
+  whose DWARF type sits on its abstract origin. `main` equals the `param` arm on
+  28 binaries and differs on tar O0 by the PTRSUB printer fix alone.
+* **Layout vs DWARF** (14 builds): 40 -> 116 call-defined record locals, 103
+  struct pointers, 0 not (`grep`'s `realtrans` pair now declines: it forms `&realtrans[2]`), 13 unjoined;
+  new records' claimed fields 173/203 exact (0.852). Parameter layouts unchanged.
+
 ## Default
 
 See `default-on-evaluation.md` and `record.json` (`default_decision`).

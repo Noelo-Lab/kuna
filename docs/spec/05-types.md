@@ -1536,30 +1536,58 @@ Single assignment makes that value the local's only definition, and it is held
 to every condition a parameter is: already a pointer, not type-locked, no phi,
 index or integer use, two offsets including 0, not an array run, settled
 lattice. The peel already stops at a `CALL`'s output, so the evidence is the
-same walk. Three conditions are new, and each is about the value rather than
+same walk. Five conditions are new, and each is about the value rather than
 its accesses. A callee declared to return a pointer to something (`char *`,
 `struct stat *`) has said what the pointer is, so only a `void *` or unlocked
-return is measured. The value must not end up sharing a variable with anything
-else (`kuna_structsynth.rs (joins_other_values)`): a copy is merged with what it
+return is measured.
+
+The value must not end up sharing a variable with anything else
+(`kuna_structsynth.rs (copies_alone)`), because a type-locked member decides the
+type of the whole variable it is merged into. A copy is merged with what it
 copies, a phi input with the phi's other inputs, and a value in address-tied
 storage with everything else stored there, so the value declines when it, or a
-`COPY`/`CAST` of it, reaches a `MULTIEQUAL` or `INDIRECT`, lands in tied storage,
-or is the function's return register at a place where a phi joins that register
-(`kuna_structsynth.rs (storage_is_tied)`) -- the return register is tied as a
-whole-function local once merging starts
+`COPY`/`CAST` of it, reaches a `MULTIEQUAL` or `INDIRECT` or lands in tied
+storage. The return register needs one more look
+(`kuna_structsynth.rs (storage_is_tied)`): it is tied as a whole-function local
+once merging starts
 (`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs (mark_output_storage_addr_tied)`),
-long after this pass has run. Without that condition the locked record type
-became the type of the whole merged variable, because a type-locked member
-decides a variable's type: `tar`'s `wordsplit_add_segm` keeps a `calloc` record
-in the `rax` it returns its status in and was declared to return `struct_N *`,
-and `parse_transform_expr` returned its string as one. Last, a base whose every
-access is a `STORE` of a constant whose bytes read as text
-(`kuna_structsynth.rs (constant_text)`) is a string buffer, however unevenly the
-compiler split the copy: `tar` builds `"SCHILY.xattr."` in a fresh allocation as
-an 8-, a 4- and a 1-byte store, and a record would print those as integer
-constants where the buffer prints `builtin_strncpy`. A store of zero is neither
-text nor evidence against it, since a record's initializer stores zeros as often
-as a string's terminator. `all` is `locals` and `nest` together.
+long after this pass has run, whenever a phi writes it. So a value whose storage
+overlaps what any live `RETURN` reads, where some varnode overlapping that
+return storage is a phi's output, declines too. The match is by overlapping
+bytes, not by exact size: an `int` function returns `eax`, the call's result is
+the 8-byte `rax`, and `kmod`'s module loader kept one `rax` variable for a name
+from `strdup`, its length from `strlen` and a `calloc` record, which the record
+type would have declared `struct_N *`. `tar`'s `wordsplit_add_segm` is the same
+shape with the status in `rax`.
+
+A function also has one return type, and every value it returns is typed by it
+(`kuna_structsynth.rs (returned_beside_others)`). A record returned on one path
+while another `RETURN` returns a different value declines; a constant zero is
+the only other value allowed, since it is the null any pointer can be. Without
+this, `dash`'s `pipeline`, which returns either what `command()` returned or a
+new record, cast `command()`'s result to the record
+(`v2 = (struct_6 *)sub_12010();`), and a two-path function returning
+`getname()` or a filled-in record declared the name a record pointer.
+
+A base whose every access stores text is a string buffer, however unevenly the
+compiler split the copy (`kuna_structsynth.rs (stored_text)`). Text is either
+a constant whose bytes are characters (`bytes_text`) or bytes loaded from a
+read-only string literal, read back from the image: `tar` builds
+`"SCHILY.xattr."` in a fresh allocation as an 8-, a 4- and a 1-byte constant
+store, and `cp` fills the tail `mempcpy` returns with an 8-byte and a 1-byte
+load of `"CuXXXXXX"`. A literal the heap model re-defines at a call (an
+`INDIRECT` on read-only memory) is still the image's bytes. A store of zero is
+neither text nor evidence against it, since a record's initializer stores zeros
+as often as a string's terminator.
+
+Last, a record ends where this function's accesses end, so a base declines
+when a copy of it forms an address at or past that end
+(`kuna_structsynth.rs (points_past)`). `sortlines` reads a merge node up to the
+byte at 0x54 and passes `&node->lock` at 0x58 to `pthread_mutex_lock`; `mountlist`
+keeps `&me->me_next` as its list tail; a message allocation passes its flexible
+body. Typed on the accesses, each of those addresses prints as `&v1[1]`, and the
+mutex, the tail or the body takes the record's type. `all` is `locals` and
+`nest` together.
 
 Globals are not bases, and that was measured rather than assumed. Over the eight
 layout builds (`fmt`, `ls`, `sort`, `du` at O0 and O2) thirteen global-RAM
@@ -1578,20 +1606,17 @@ exports, and at -O0 the stack slot a returned pointer is stored to is
 copy-propagated away, so `framelayout` exports it from the first restructure
 pass, before type recovery starts, as `undefined8`. Of the call-returned values
 dereferenced at two or more constant offsets 37 (O0) and 17 (O2) meet a
-parameter's conditions; 24 and 11 are accepted, the rest decline because the
-value shares a variable. Over 14 builds (`fmt`, `ls`, `sort`, `du`, `grep` and
+parameter's conditions. Over 14 builds (`fmt`, `ls`, `sort`, `du`, `grep` and
 `tar` at O0 and O2, `find` and `diff` at O2) the locals declared a record pointer
-and defined by a call go from 40 to 128. Joined to DWARF at the call site (the
+and defined by a call go from 40 to 116. Joined to DWARF at the call site (the
 `mov %rax,-K(%rbp)` after the call at -O0, a location list starting at the return
-address in `rax` at -O2, the callee's return type failing both), 105 are struct
-pointers, 3 are not (`grep`'s `realtrans`, an array of two pointers, the
-pointer-pair class the array rule keeps as a record) and 20 do not join; the
-claimed fields of the new records are 187 of 223 exact by offset and width
-(0.839, against 0.862 for parameters; the misses are merged byte stores such as
-`mode_change`'s `op`/`flag` pair and a union member measured at its first
-word). Parameter layouts do not move (claimed-field precision 0.8622 → 0.8623,
-recall 0.0666 in both arms, nesting unchanged) and the headers carry 548
-structures instead of 500.
+address in `rax` at -O2, the callee's return type failing both), 103 are struct
+pointers, none is anything else, and 13 do not join; the claimed fields of the
+new records are 173 of 203 exact by offset and width (0.852, against 0.862 for
+parameters; the misses are merged byte stores such as `mode_change`'s
+`op`/`flag` pair and a union member measured at its first word). Parameter
+layouts do not move (claimed-field precision 0.8622 and recall 0.0666 in both
+arms, nesting unchanged) and the headers carry 539 structures instead of 500.
 
 **The default is `locals`.** Flipping it moves no datatest assertion
 (675/675) and no stage assertion of another feature (1303/1303; the only new
