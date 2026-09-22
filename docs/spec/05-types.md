@@ -1122,14 +1122,20 @@ is past the narrow ones rather than over them.
 function. A pointer parameter read at exactly one constant offset other than
 zero, with an access of four bytes or more, is a one-field record when the
 function's callers are all known direct calls, unless something outside the
-function's own reading gave the parameter its pointee (`pointee_is_given`):
-`int mkpipe (int *p)` hands `p` to `pipe`, whose declared prototype types it
-`int *`, and reads `p[1]`, one field at offset 4 of what is not a record; and
-a `char **` the parameter took from its callers' vote (chapter 04) is theirs.
-A pointee the recovery guessed is not a commitment and gives way: find's
-`insert_primary (const struct parser_table *entry)` is `int *` only because
-a callee read the enum at offset 0 and `protoorder` stated that, and making
-it keep `int *` was measured to lose the record on 137 functions. The
+function's own reading gave the parameter its pointee (`pointee_is_given`).
+A declared prototype it is handed to always did: `int mkpipe (int *p)` hands
+`p` to `pipe (int *)` and reads `p[1]`, one field at offset 4 of what is not a
+record, and keeps `int *`. The type its callers passed (chapter 04), once the
+input took it, did for a record, and for a `char **` where the field is one of
+its elements, a whole pointer at a multiple of the pointer width (`argv[1]`).
+Otherwise the field is the function's own evidence against its callers and
+the record wins: coreutils `expr`'s `getsize (mpz_t i)` is handed `char **`
+by callers holding the address of a `char *` field, and reads an `int` at
+offset 4. A `char *` vote never survives a lone field, which is at least four
+bytes wide. A pointee the recovery guessed is not a commitment either: find's
+`insert_primary (const struct parser_table *entry)` is `int *` only because a
+callee read the enum at offset 0 and `protoorder` stated that; keeping every
+committed pointee was measured to lose the record on 137 functions. The
 whole-binary driver marks
 such a function on its `Funcdata` (`kuna_calleevote_closed`; chapter
 [04](04-calls-and-prototypes.md), `calleevote`), and

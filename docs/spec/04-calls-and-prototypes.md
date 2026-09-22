@@ -2652,7 +2652,14 @@ frame: a caller keeping a record whose first member is a `char *` passes
 through the value anywhere but that one pointer at offset zero
 (`reaches_past_the_pointee`), so `drop(&cfg)` reading `cfg->head` keeps its
 own type, and `advance(&cursor)`, which only reads and writes `*cursor`, takes
-`char **`. A value the callee only hands to a parameter
+`char **`; refusing every frame address instead was measured to lose 17
+functions whose out-parameter is a real `char **` (`parse_line (char **keyword,
+char **arg)`). A callee that only reads the first member (kmod
+`cfg_kernel_matches` reading `cfg->kversion`) cannot tell the record from the
+pointer and takes `char **`. Any vote is refused for a value the callee adds
+to an address as an index (`((char *)0x1018)[a0]`, a constant the recovery
+took for the pointer), where a pointer type would print as a cast at every
+use (`indexes_a_pointer`). A value the callee only hands to a parameter
 declared `void *` is NOT refused: that is what a wrapper around `memcpy` or
 `fwrite` does with the `char *` its callers pass (`dired_outbuf`,
 `samedir_template`), and refusing it was measured to lose 28 functions to gain 3.
@@ -2671,9 +2678,9 @@ A redo that fails keeps the first body.
 **`fields`.** The same closed caller set decides one more thing. A function
 whose callers are all known direct calls (at least one, none unknown) is marked
 on its `Funcdata` (`kuna_calleevote_closed`), and `structsynth` then accepts a
-pointer parameter whose pointee neither a declared prototype it is handed to
-(`pipe (int *)`) nor its callers' vote gave it, read at exactly one constant
-offset other than zero with an
+pointer parameter whose pointee no declared prototype it is handed to
+(`pipe (int *)`) gave it, and no callers' vote that the field fits (chapter
+05), read at exactly one constant offset other than zero with an
 access of four bytes or more as a one-field record (chapter
 [05](05-types.md), `structsynth`). A one-field record is itself a candidate for
 the vote above, so it gives way to the record every caller passes, and the

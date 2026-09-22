@@ -249,3 +249,23 @@ fn a_statement_naming_a_superseded_record_is_forgotten() {
     l.forget_naming(&["struct_2".to_string()]);
     assert!(!l.stated.contains_key(&CALLEE));
 }
+
+/// A `char **` one caller passes as the address of its own frame object marks
+/// the statement, so the callee's redo can refuse it where it reads past that
+/// one pointer; a statement no caller passes that way is unmarked.
+#[test]
+fn a_frame_address_from_any_caller_marks_the_statement() {
+    let pp = ptr_to(ptr_to(char1()));
+    let r = reg();
+    for (frames, marked) in [([false, false], false), ([false, true], true)] {
+        let mut l = ledger(&[(0x6600, Rc::clone(&pp)), (0x6800, Rc::clone(&pp))]);
+        for (site, frame) in l.sites.get_mut(&CALLEE).unwrap().iter_mut().zip(frames) {
+            site.args[0].as_mut().unwrap().frame = frame;
+        }
+        let got = decide_ledger(&l, 8, &all_calls(&l));
+        assert_eq!(got.len(), 1);
+        let t = got[0].1.at(&at(&r, 0x38), 8).expect("stated for rdi");
+        assert!(Rc::ptr_eq(&t.ct, &pp));
+        assert_eq!(t.frame, marked);
+    }
+}
