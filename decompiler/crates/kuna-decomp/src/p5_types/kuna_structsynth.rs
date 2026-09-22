@@ -440,6 +440,13 @@ impl Evidence {
         self.unclaimed = dropped;
     }
 
+    /// Where the last byte this function accessed through the base ends.
+    fn extent(&self) -> intb {
+        let fields = self.slots.iter().map(|(o, s)| o.saturating_add(s.width as intb));
+        let dropped = self.unclaimed.iter().map(|(o, w)| o.saturating_add(*w as intb));
+        fields.chain(dropped).max().unwrap_or(0)
+    }
+
     /// Every byte range this function dereferenced without a typed field of its
     /// own: the accesses the prune dropped and the fields read as raw bytes. The
     /// ledger never answers with a structure that lays other members over them.
@@ -548,11 +555,7 @@ fn collect(data: &mut Funcdata) -> BTreeMap<VarnodeId, Evidence> {
             let Some((base, off)) = peel(data, addr, &mut ev, MAX_PEEL_DEPTH) else { continue };
             let Some(width) = data.vbank().get(value).map(|v| v.get_size()) else { continue };
             let ctype = vn_type(data, value);
-            let stored = if opc == OpCode::CPUI_STORE {
-                data.vbank().get(value).filter(|v| v.is_constant()).map(|v| constant_text(v.get_offset(), width))
-            } else {
-                None
-            };
+            let stored = if opc == OpCode::CPUI_STORE { stored_text(data, value, width) } else { None };
             let e = ev.entry(base).or_default();
             e.record(off, width, ctype);
             match stored {
@@ -574,15 +577,46 @@ fn collect(data: &mut Funcdata) -> BTreeMap<VarnodeId, Evidence> {
     ev
 }
 
-/// Do the `width` bytes of a stored constant read as text?  `None` for zero,
-/// which a record's initializer stores as often as a string's terminator.
-fn constant_text(val: uintb, width: int4) -> Option<bool> {
-    if val == 0 {
+/// Does a stored value copy text: a constant whose bytes read as text, or bytes
+/// read from a read-only string literal (`cp`'s `mempcpy` tail filled from
+/// `"CuXXXXXX"`)?  `None` for a value that is neither, `Some(None)` for zero.
+/// A call's clobber of read-only memory changes nothing, so a literal the heap
+/// model re-defines at a call is still the image's bytes.
+fn stored_text(data: &Funcdata, value: VarnodeId, width: int4) -> Option<Option<bool>> {
+    let root = copy_root(data, value);
+    let v = data.vbank().get(root)?;
+    if v.is_constant() {
+        let n = width.clamp(0, 8) as u32;
+        let bytes: Vec<u8> = (0..n).map(|i| ((v.get_offset() >> (8 * i)) & 0xff) as u8).collect();
+        return Some(bytes_text(&bytes));
+    }
+    let clobber = v.get_def().and_then(|d| data.obank().get(d)).is_some_and(|o| o.code() == OpCode::CPUI_INDIRECT);
+    if (v.is_written() && !clobber) || !v.is_read_only() || v.get_size() != width || !(1..=MAX_LITERAL).contains(&width) {
         return None;
     }
-    let bytes = (0..width.clamp(0, 8) as u32).map(|i| ((val >> (8 * i)) & 0xff) as u8);
-    Some(bytes.clone().all(|b| b == 0 || b == b'\t' || b == b'\n' || (0x20..0x7f).contains(&b))
-        && bytes.filter(|b| (0x20..0x7f).contains(b)).count() * 2 >= width.clamp(1, 8) as usize)
+    if v.get_addr().get_space()?.get_type() != spacetype::IPTR_PROCESSOR {
+        return None;
+    }
+    let mut buf = vec![0u8; width as usize];
+    data.get_arch().loader_fill(&mut buf, v.get_addr()).ok()?;
+    Some(bytes_text(&buf))
+}
+
+/// The widest read of a string literal [`stored_text`] reads back: one vector
+/// register.
+const MAX_LITERAL: int4 = 16;
+
+/// Do these stored bytes read as text?  `None` when they are all zero, which a
+/// record's initializer stores as often as a string's terminator.
+fn bytes_text(bytes: &[u8]) -> Option<bool> {
+    if bytes.iter().all(|&b| b == 0) {
+        return None;
+    }
+    let printable = |b: &u8| (0x20..0x7f).contains(b);
+    Some(
+        bytes.iter().all(|b| *b == 0 || *b == b'\t' || *b == b'\n' || printable(b))
+            && bytes.iter().filter(|b| printable(b)).count() * 2 >= bytes.len().max(1),
+    )
 }
 
 /// Negative evidence that is not about an address: the base used as a plain
@@ -892,9 +926,15 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
 }
 
 /// Does `locals` measure `base`: a value a call returned, alone in its
-/// variable, that is not a buffer of text?
+/// variable, that is not a buffer of text and whose record ends where its
+/// accesses end?
 fn is_local_base(data: &Funcdata, base: VarnodeId, e: &Evidence) -> bool {
-    is_call_return(data, base) && !joins_other_values(data, base) && !(e.text_store && !e.other_access)
+    if !is_call_return(data, base) || (e.text_store && !e.other_access) {
+        return false;
+    }
+    let rets = returned_values(data);
+    let Some(copies) = copies_alone(data, base, &rets) else { return false };
+    !returned_beside_others(data, &copies, &rets) && !points_past(data, &copies, e.extent())
 }
 
 /// Is `vn` the value a `CALL` or `CALLIND` returned, and did the callee's
@@ -920,7 +960,8 @@ fn is_call_return(data: &Funcdata, vn: VarnodeId) -> bool {
 /// The most copies of one returned value [`joins_other_values`] follows.
 const MAX_COPIES: usize = 64;
 
-/// Will the value `vn` holds share a variable with some other value?
+/// The copies of the value `vn` holds, or `None` when it will share a variable
+/// with some other value.
 ///
 /// A copy is merged with the value it copies, a phi input with every other
 /// input of the phi, and a value in address-tied storage with everything else
@@ -930,25 +971,25 @@ const MAX_COPIES: usize = 64;
 /// `tar`'s `wordsplit_add_segm` keeps a record from `calloc` in the `rax` it
 /// returns its status in, and typing the record would declare the status a
 /// `struct_N *` too.
-fn joins_other_values(data: &Funcdata, vn: VarnodeId) -> bool {
+fn copies_alone(data: &Funcdata, vn: VarnodeId, rets: &[VarnodeId]) -> Option<Vec<VarnodeId>> {
     let mut seen = vec![vn];
     let mut i = 0;
     while i < seen.len() {
         let cur = seen[i];
         i += 1;
-        if storage_is_tied(data, cur) {
-            return true;
+        if storage_is_tied(data, cur, rets) {
+            return None;
         }
-        let Some(v) = data.vbank().get(cur) else { return true };
+        let v = data.vbank().get(cur)?;
         for u in v.descend_iter() {
             let Some(op) = data.obank().get(u) else { continue };
             match op.code() {
-                OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => return true,
+                OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => return None,
                 OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
                     let Some(out) = op.get_out() else { continue };
                     if !seen.contains(&out) {
                         if seen.len() >= MAX_COPIES {
-                            return true;
+                            return None;
                         }
                         seen.push(out);
                     }
@@ -957,15 +998,80 @@ fn joins_other_values(data: &Funcdata, vn: VarnodeId) -> bool {
             }
         }
     }
-    false
+    Some(seen)
+}
+
+/// Does a copy of the base form an address at or past `extent`, the end of
+/// every access?  `sortlines` takes `&node->lock` just past the fields it
+/// reads, and `mountlist` keeps `&me->me_next` as its list tail: the record is
+/// wider than this function's accesses show, and a record measured on them
+/// would type `&node[1]` -- the mutex, the tail -- as a record too.
+fn points_past(data: &Funcdata, copies: &[VarnodeId], extent: intb) -> bool {
+    copies.iter().filter_map(|&c| data.vbank().get(c).map(|v| (c, v))).any(|(c, v)| {
+        v.descend_iter().filter_map(|u| data.obank().get(u)).any(|op| {
+            let term = |slot: int4| op.get_in(slot).and_then(|t| data.vbank().get(t)).filter(|t| t.is_constant());
+            let off = match op.code() {
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB => {
+                    let other = if op.get_in(0) == Some(c) { 1 } else { 0 };
+                    term(other).map(|t| sign_extend(t.get_offset(), t.get_size()))
+                }
+                OpCode::CPUI_PTRADD if op.get_in(0) == Some(c) => term(1).zip(term(2)).map(|(i, s)| {
+                    sign_extend(i.get_offset(), i.get_size()).wrapping_mul(s.get_offset() as intb)
+                }),
+                _ => None,
+            };
+            off.is_some_and(|k| k >= extent)
+        })
+    })
+}
+
+/// The value every live `RETURN` returns.
+fn returned_values(data: &Funcdata) -> Vec<VarnodeId> {
+    data.obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter_map(|r| data.obank().get(r))
+        .filter(|o| !o.is_dead() && o.get_halt_type() == 0 && o.num_input() >= 2)
+        .filter_map(|o| o.get_in(1))
+        .collect()
+}
+
+/// Is one of `copies` returned while some `RETURN` returns a different value?
+/// A function has one return type, so a value returned on one path types what
+/// every other path returns: a record returned where another path returns a
+/// name or a count declines. A constant zero is the null every pointer can be.
+fn returned_beside_others(data: &Funcdata, copies: &[VarnodeId], rets: &[VarnodeId]) -> bool {
+    if !rets.iter().any(|r| copies.contains(r)) {
+        return false;
+    }
+    rets.iter().any(|&r| {
+        let root = copy_root(data, r);
+        !copies.contains(&root)
+            && !data.vbank().get(root).is_some_and(|v| v.is_constant() && v.get_offset() == 0)
+    })
+}
+
+/// The value `vn` copies, through any chain of `COPY` and `CAST`.
+fn copy_root(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
+    for _ in 0..MAX_COPIES {
+        let Some(op) = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+            break;
+        };
+        if !matches!(op.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+            break;
+        }
+        let Some(src) = op.get_in(0) else { break };
+        vn = src;
+    }
+    vn
 }
 
 /// Will every value stored where `vn` lives be one variable?  That is so when a
-/// value overlapping it is address-tied, and when it is the function's return
-/// register and a phi joins that register somewhere: the return register is
-/// then tied as a whole-function local once merging starts
-/// (`mark_output_storage_addr_tied`), long after this pass has run.
-fn storage_is_tied(data: &Funcdata, vn: VarnodeId) -> bool {
+/// value overlapping it is address-tied, and when it overlaps the storage a
+/// `RETURN` reads and a phi writes that return register somewhere: the return
+/// register is then tied as a whole-function local once merging starts
+/// (`mark_output_storage_addr_tied`), long after this pass has run, and a
+/// `rax` value is merged with the `eax` an `int` function returns.
+fn storage_is_tied(data: &Funcdata, vn: VarnodeId, rets: &[VarnodeId]) -> bool {
     let Some(v) = data.vbank().get(vn) else { return true };
     if v.is_addr_tied() {
         return true;
@@ -974,36 +1080,38 @@ fn storage_is_tied(data: &Funcdata, vn: VarnodeId) -> bool {
     if spc.get_type() == spacetype::IPTR_INTERNAL {
         return false;
     }
-    let (addr, size) = (v.get_addr().clone(), v.get_size());
-    if is_return_storage(data, &addr, size)
-        && data.vbank().iter_loc_size_addr(size, &addr).any(|id| {
-            let def = data.vbank().get(id).and_then(|w| w.get_def());
-            def.and_then(|d| data.obank().get(d)).is_some_and(|op| {
-                matches!(op.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT)
+    let (off, size) = (v.get_offset(), v.get_size());
+    let joined_return = rets.iter().filter_map(|&r| data.vbank().get(r)).any(|r| {
+        r.get_addr().get_space().is_some_and(|s| s.get_index() == spc.get_index())
+            && overlaps(off, size, r.get_offset(), r.get_size())
+            && overlapping(data, &spc, r.get_offset(), r.get_size()).any(|id| {
+                let def = data.vbank().get(id).and_then(|w| w.get_def());
+                def.and_then(|d| data.obank().get(d)).is_some_and(|op| {
+                    matches!(op.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT)
+                })
             })
-        })
-    {
-        return true;
-    }
-    let off = v.get_offset();
-    let end = off.saturating_add(size as uintb);
-    let lo = kuna_base::address::Address::new(Rc::clone(&spc), off.saturating_sub(MAX_OVERLAP_BACK));
-    let hi = kuna_base::address::Address::new(spc, end);
-    data.vbank().iter_loc_addr_range(&lo, &hi).any(|id| {
-        data.vbank().get(id).is_some_and(|w| {
-            let wend = w.get_offset().saturating_add(w.get_size() as uintb);
-            w.get_offset() < end && off < wend && w.is_addr_tied()
-        })
-    })
+    });
+    joined_return
+        || overlapping(data, &spc, off, size).any(|id| data.vbank().get(id).is_some_and(|w| w.is_addr_tied()))
 }
 
-/// Is `(addr, size)` where the function returns its value?
-fn is_return_storage(data: &Funcdata, addr: &kuna_base::address::Address, size: int4) -> bool {
-    let Some(ret) = data.get_first_return_op() else { return false };
-    let Some(rv) = data.obank().get(ret).and_then(|o| if o.num_input() < 2 { None } else { o.get_in(1) }) else {
-        return false;
-    };
-    data.vbank().get(rv).is_some_and(|r| r.get_size() == size && r.get_addr() == addr)
+/// Do the byte ranges `[a, a+asize)` and `[b, b+bsize)` intersect?
+fn overlaps(a: uintb, asize: int4, b: uintb, bsize: int4) -> bool {
+    a < b.saturating_add(bsize as uintb) && b < a.saturating_add(asize as uintb)
+}
+
+/// Every varnode in `spc` whose bytes intersect `[off, off+size)`.
+fn overlapping<'a>(
+    data: &'a Funcdata,
+    spc: &Rc<kuna_base::space::AddrSpace>,
+    off: uintb,
+    size: int4,
+) -> impl Iterator<Item = VarnodeId> + 'a {
+    let lo = kuna_base::address::Address::new(Rc::clone(spc), off.saturating_sub(MAX_OVERLAP_BACK));
+    let hi = kuna_base::address::Address::new(Rc::clone(spc), off.saturating_add(size as uintb));
+    data.vbank()
+        .iter_loc_addr_range(&lo, &hi)
+        .filter(move |&id| data.vbank().get(id).is_some_and(|w| overlaps(w.get_offset(), w.get_size(), off, size)))
 }
 
 /// How far below a value's storage an overlapping wider value may start.

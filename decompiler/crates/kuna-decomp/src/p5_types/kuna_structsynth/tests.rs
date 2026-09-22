@@ -27,14 +27,14 @@ fn locals_and_all_measure_returned_pointers_and_only_all_also_nests() {
 /// zero, and zero says nothing either way.
 #[test]
 fn a_stored_constant_reads_as_text_only_when_its_bytes_are_characters() {
-    assert_eq!(constant_text(0x782e594c49484353, 8), Some(true));
-    assert_eq!(constant_text(0x72747461, 4), Some(true));
-    assert_eq!(constant_text(0x2e, 1), Some(true));
-    assert_eq!(constant_text(0x2e, 2), Some(true), "a character and its terminator");
-    assert_eq!(constant_text(0, 8), None);
-    assert_eq!(constant_text(1, 4), Some(false));
-    assert_eq!(constant_text(0xffff_ffff, 4), Some(false));
-    assert_eq!(constant_text(0x41, 8), Some(false), "one character in eight bytes is a number");
+    assert_eq!(bytes_text(b"SCHILY.x"), Some(true));
+    assert_eq!(bytes_text(b"attr"), Some(true));
+    assert_eq!(bytes_text(b"."), Some(true));
+    assert_eq!(bytes_text(b".\0"), Some(true), "a character and its terminator");
+    assert_eq!(bytes_text(&[0; 8]), None);
+    assert_eq!(bytes_text(&[1, 0, 0, 0]), Some(false));
+    assert_eq!(bytes_text(&[0xff; 4]), Some(false));
+    assert_eq!(bytes_text(b"A\0\0\0\0\0\0\0"), Some(false), "one character in eight bytes is a number");
 }
 
 /// A text store marks the base; any other access, or a store of something
