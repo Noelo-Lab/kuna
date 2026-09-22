@@ -1,0 +1,35 @@
+# structsynth sweep: stale-statement check, 26 binaries (build 69f061aa3)
+# arms: cyc = default (protoorder cycles), typ = --option protoorder types
+# 1) results naming a superseded structure after the sweep (engine's own superseded_struct_names):
+cyc 0  typ 0
+# 2) call arguments cast to a struct_N * other than the callee's own struct_M * parameter (per binary, typ vs cyc; NEW = only in cyc):
+O0-bzip2-bzip2 typ 0 cyc 0
+O0-coreutils-cp typ 0 cyc 0
+O0-coreutils-mv typ 0 cyc 0
+O0-dash-dash typ 0 cyc 0
+O0-diffutils-diff typ 0 cyc 0
+O0-e2fsprogs-e2fsck typ 0 cyc 0
+O0-findutils-find typ 0 cyc 0
+O0-gzip-gzip typ 0 cyc 0
+O0-openssh-portable-scp typ 0 cyc 0
+O0-tar-tar typ 0 cyc 0
+O2-bash-bash typ 0 cyc 0
+O2-chibios-ch typ 0 cyc 0
+O2-coreutils-fmt typ 0 cyc 0
+O2-coreutils-ginstall typ 0 cyc 0
+O2-coreutils-ls typ 0 cyc 0
+O2-coreutils-sort typ 0 cyc 0
+O2-crazyflie-cf2 typ 0 cyc 0
+O2-dash-dash typ 0 cyc 0
+O2-freertos-RTOSDemo typ 0 cyc 0
+O2-grep-grep typ 1 cyc 1
+O2-gzip-gzip typ 0 cyc 0
+O2-libexpat-xmlwf typ 0 cyc 0
+O2-noinline-coreutils-cp typ 0 cyc 0
+O2-noinline-findutils-find typ 0 cyc 0
+O2-nuttx-nuttx typ 14 cyc 14
+O2-tar-tar typ 0 cyc 0
+# 3) typ byte-identical to origin/main 2888a2a94 (11 binaries) / to the previous types arm (15): all 26 identical
+# 4) cyc vs the previous PR head d4b827902: identical on 25; O2 tar differs in one line of sub_3b0c0 (make_hol):
+-        v11 = (unsigned long *)sub_3b0c0((struct_54 *)*v22,v10);
++        v11 = (unsigned long *)sub_3b0c0(*v22,v10);

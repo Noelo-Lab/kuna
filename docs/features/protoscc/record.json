@@ -13,7 +13,9 @@
  "base_commit": "2888a2a94 (origin/main)",
  "modules": [
   "decompiler/crates/kuna-cli/src/decompile_all.rs (callee_first_plan, plan_from_components, cycle_order)",
-  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs (ProtoOrderMode::Cycles)"
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs (ProtoOrderMode::Cycles)",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs (forget_statements_naming, seed_protoorder_types: no function reads its own statement)",
+  "decompiler/crates/kuna-cli/src/decompile_all.rs (converge_callee_first: forget stale statements before the sweep)"
  ],
  "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cycles_x86_64 (sha256 6a45512de067c0fb7e56097c5cd3c0dbd7c605e113c4ff3a4d23b5d5767570ff)",
  "probes": [
@@ -298,5 +300,20 @@
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "regenerated with kuna catalog --markdown",
   "phase_catalog.json": "recaptured (phase catalog, no program loaded)"
+ },
+ "fixture_sweep": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_cyclestruct_x86_64 (sha256 7b7ce35c2c064285d759484bb98af47a0b49b0d5590229564c0d844054f20ba0); test kuna-cli/tests/decompile_all_cli.rs a_redone_recursive_function_reads_no_statement_of_its_own (fails on d4b827902)",
+ "sweep_stale_check": {
+  "finding": "review: tar -O2 make_hol (sub_3b0c0), redone by the structsynth sweep under cycles, read its own first-pass statement and passed (struct_54 *)*v22 while its prototype takes struct_59 *",
+  "fix": "seed_protoorder_types skips the function's own entry; converge_callee_first forgets stated lists naming a superseded structure before any redo",
+  "rejected": "rebuilding the stated table in plan order: moved types output (tar -O0 sub_3854d: sub_34a6f(\"-f\") -> sub_34a6f(0x8746d), a callee the call graph plans after its caller)",
+  "binaries": 26,
+  "types_vs_main": "byte-identical on all 26",
+  "cycles_vs_reviewed_head": "identical on 25; tar -O2 sub_3b0c0 loses the stale cast (one line)",
+  "results_naming_a_superseded_structure_after_sweep": {
+   "types": 0,
+   "cycles": 0
+  },
+  "new_stale_argument_casts": 0,
+  "evidence": "docs/features/protoscc/r3c-stale.txt"
  }
 }
