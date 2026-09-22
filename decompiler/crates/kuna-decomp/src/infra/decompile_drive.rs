@@ -2231,6 +2231,7 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
     if arch.framelayout {
         let covered: std::collections::BTreeSet<i64> =
             out.iter().filter_map(|v| v.stack_offset).collect();
+        let first_slot = out.len();
         for (off, slot) in fd.frame_slots() {
             if covered.contains(&off) {
                 continue;
@@ -2258,8 +2259,48 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
                 addresses: Vec::new(),
             });
         }
+        if arch.slot_ptr != crate::kuna_slotptr::SlotPtrMode::Off {
+            type_filler_slots_from_stores(arch, fd, &mut out, first_slot);
+        }
     }
     out
+}
+
+/// (kuna `slotptr`) Re-spell each `framelayout` filler slot (the rows from
+/// `first_slot` on) whose stores agree on one pointer type, as long as its byte
+/// range overlaps no other exported variable.
+fn type_filler_slots_from_stores(
+    arch: &Architecture,
+    fd: &Funcdata,
+    out: &mut [VarInfo],
+    first_slot: usize,
+) {
+    let ranges: Vec<(i64, i64)> = out
+        .iter()
+        .map(|v| v.stack_offset.map(|o| (o, o + v.size.max(1))).unwrap_or((0, 0)))
+        .collect();
+    for i in first_slot..out.len() {
+        let (lo, hi) = ranges[i];
+        if hi <= lo {
+            continue;
+        }
+        let overlaps = ranges
+            .iter()
+            .enumerate()
+            .any(|(j, &(a, b))| j != i && b > a && a < hi && lo < b);
+        if overlaps {
+            continue;
+        }
+        let verdict =
+            crate::kuna_slotptr::slot_pointer_type(fd, arch, arch.slot_ptr, lo, out[i].size as int4);
+        if std::env::var_os("KUNA_SLOTPTR_TRACE").is_some() {
+            let shown = verdict.as_ref().map(|t| crate::printc::type_to_c_string(arch, t));
+            eprintln!("[slotptr] {} {} {:?}", fd.get_name(), out[i].name, shown);
+        }
+        if let Ok(ty) = verdict {
+            out[i].type_name = crate::printc::type_to_c_string(arch, &ty);
+        }
+    }
 }
 
 /// Emit an injection payload's p-code (C++ `InjectPayloadSleigh::inject` vs

@@ -9999,7 +9999,7 @@ fn lowered_switch_label_form(
 /// local high's declaration: the `declhightype` type representative when that
 /// option is on and the high has no Symbol of its own, else the declaration
 /// (storage) representative.
-fn decl_type_representative(
+pub(crate) fn decl_type_representative(
     fd: &Funcdata,
     arch: &Architecture,
     high: crate::context::HighVariableId,

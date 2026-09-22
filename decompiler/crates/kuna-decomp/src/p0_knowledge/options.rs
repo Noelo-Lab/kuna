@@ -412,6 +412,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "ctypes",
     "framelayout",
     "bytehonest",
+    "slotptr",
     "voidtailreturn",
     "ptrdepthcap",
     "codescalar",

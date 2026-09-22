@@ -1153,6 +1153,13 @@ pub struct Architecture {
     /// Affects the JSON surface only: no p-code, no emitted C, and the exported
     /// `size` is unchanged.
     pub byte_honest: bool,
+    /// (kuna `slotptr`) Type a `framelayout` filler slot from the pointer stored
+    /// into it, instead of the width-only `undefinedN` the early pass that saw
+    /// the slot recorded.  Every store must trace to a value the final function
+    /// still has, all must agree on one pointer type of the slot's width, and
+    /// nothing may touch the slot at another width.  `void` also admits `void *`.
+    /// Affects the JSON surface only: no p-code, no emitted C.
+    pub slot_ptr: crate::kuna_slotptr::SlotPtrMode,
     /// (kuna `voidtailreturn`) Elide the trailing bare `return;` of a void
     /// function -- the one the C source it came from does not have, because the
     /// source just falls off the end of the body.
@@ -2421,6 +2428,7 @@ impl Architecture {
             ctypes: false, // (kuna) option ctypes; reset_defaults sets the shipped default
             framelayout: false, // (kuna) option framelayout; reset_defaults sets the shipped default
             byte_honest: false, // (kuna) option bytehonest; reset_defaults sets the shipped default
+            slot_ptr: crate::kuna_slotptr::SlotPtrMode::Off, // (kuna) option slotptr; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
@@ -2693,6 +2701,7 @@ impl Architecture {
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so valid C is the default RENDERING everywhere a real binary is decompiled
         self.framelayout = true; // (kuna) DIV-97: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +1,027 type_match-perfect / -1 over 82,035 decbench functions
+        self.slot_ptr = crate::kuna_slotptr::SlotPtrMode::Off; // (kuna) option slotptr; default decided by docs/features/slotptr/default-on-evaluation.md
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
@@ -3369,6 +3378,13 @@ impl Architecture {
             "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
             "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
             "bytehonest" => on_off!(byte_honest, "uncommitted-byte width reporting"),
+            "slotptr" => {
+                let mode = crate::kuna_slotptr::SlotPtrMode::parse(p1).ok_or_else(|| {
+                    KunaError::parse(format!("Unknown slotptr value: {p1} (expected off|on|void)"))
+                })?;
+                self.slot_ptr = mode;
+                Ok(format!("Frame-slot pointer typing set to {p1}"))
+            }
             "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
             "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
             "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
