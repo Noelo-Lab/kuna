@@ -613,3 +613,28 @@ fn unclaimed_ranges_cover_pruned_accesses_and_raw_byte_fields() {
     got.sort();
     assert_eq!(got, vec![(7, 4), (0x10, 8)]);
 }
+
+/// The `rax` a call returns overlaps the `eax` an `int` function returns, so
+/// storage is matched by its bytes, not by an exact size.
+#[test]
+fn storage_overlaps_by_bytes_not_by_exact_size() {
+    assert!(overlaps(0, 8, 0, 4));
+    assert!(overlaps(0, 4, 0, 8));
+    assert!(overlaps(4, 4, 0, 8));
+    assert!(!overlaps(8, 8, 0, 8));
+    assert!(!overlaps(0x10, 8, 0, 8));
+}
+
+/// `sortlines` reads a queue node up to its byte at 0x54 and takes the mutex
+/// at 0x58: an address formed at or past the extent is past every access, a
+/// dropped access included.
+#[test]
+fn extent_is_where_the_last_access_ends_dropped_or_not() {
+    let mut e = Evidence::default();
+    e.record(0, 8, None);
+    e.record(0x50, 4, None);
+    e.record(0x54, 1, None);
+    assert_eq!(e.extent(), 0x55);
+    e.unclaimed.push((0x60, 8));
+    assert_eq!(e.extent(), 0x68);
+}

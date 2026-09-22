@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1303,
-    1303
+    1306,
+    1306
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -760,6 +760,7 @@
     "data:STRUCTSYNTH-HOLE #3: the body names the undereferenced offset",
     "data:STRUCTSYNTH-HOLE #4: and the layout declares a member there",
     "data:STRUCTSYNTH-HOLE #5: no part of the structure is padding the header would not name",
+    "data:STRUCTSYNTH-LOCALS #10: a record whose address escapes past its fields is not typed",
     "data:STRUCTSYNTH-LOCALS #1: param writes a returned record through raw offsets",
     "data:STRUCTSYNTH-LOCALS #2: param reads a returned record as an array of longs",
     "data:STRUCTSYNTH-LOCALS #3: locals declares the allocation a record pointer",
@@ -767,6 +768,8 @@
     "data:STRUCTSYNTH-LOCALS #5: locals reads the returned record's fields by name",
     "data:STRUCTSYNTH-LOCALS #6: the returned record is the three reads, padded to its alignment",
     "data:STRUCTSYNTH-LOCALS #7: a buffer filled with text is not a record",
+    "data:STRUCTSYNTH-LOCALS #8: a record returned beside another value is not typed",
+    "data:STRUCTSYNTH-LOCALS #9: a buffer filled from a string literal is not a record",
     "data:STRUCTSYNTH-NEST #1: param reads a loaded field as raw offsets",
     "data:STRUCTSYNTH-NEST #2: param loads a tree node through a cast",
     "data:STRUCTSYNTH-NEST #3: nest reads the loaded record through its fields",

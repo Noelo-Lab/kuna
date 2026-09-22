@@ -123,13 +123,21 @@
 //! * the value must not share a variable with anything else. A copy is merged
 //!   with what it copies, a phi input with the other inputs, and a value in
 //!   address-tied storage with everything else stored there, so a value that
-//!   reaches a phi through a copy, lands in tied storage, or sits in the
-//!   function's return register where a phi joins that register (it is tied
-//!   once merging starts) declines: the locked record type would otherwise
-//!   become the whole variable's, and `tar`'s `wordsplit_add_segm` would return
-//!   its status as a `struct_N *`;
-//! * a buffer whose every access stores the bytes of a string literal is text,
-//!   not a record, however unevenly the compiler split the copy.
+//!   reaches a phi through a copy, lands in tied storage, or overlaps a return
+//!   register some phi joins (it is tied once merging starts, and `kmod`'s
+//!   `rax` is merged with the `eax` its `int` function returns) declines: the
+//!   locked record type would otherwise become the whole variable's, and
+//!   `tar`'s `wordsplit_add_segm` would return its status as a `struct_N *`;
+//! * a function has one return type, so a record returned on one path while
+//!   another path returns a different value (a name, a count, an error code)
+//!   declines; only a constant zero may be returned beside it;
+//! * a buffer whose every access stores the bytes of a string literal -- as
+//!   constants, or loaded from the literal in read-only memory -- is text, not
+//!   a record, however unevenly the compiler split the copy;
+//! * an address formed at or past the end of every access (`&node->lock` just
+//!   past the fields `sortlines` reads, a flexible array member) says the
+//!   record is wider than this function shows; typed on its accesses, that
+//!   address would print as `&v[1]` and give the mutex the record's type.
 //!
 //! `all` is `locals` and `nest` together. Globals are not bases: every access to
 //! a global record is an absolute address of its own, and a global pointer is
