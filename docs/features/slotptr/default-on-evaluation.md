@@ -11,7 +11,7 @@ C-text gates cannot move by construction; they were run anyway.
 | (b) `make test-stages` | PARITY OK, 1296/1296, no baseline change (no stage test pins a JSON row) |
 | (c) `make test-cli` | 221/221; no existing probe moved; two new probes pin the fauxware witness on and off |
 | (d) 444-slice typesweep, new default vs old | 1,353 -> 1,472 perfect, 418 improved / 5 worse (read below) |
-| (e) speed, interleaved min-of-15 | SPEED_TABLE |
+| (e) speed, interleaved min-of-15 | within budget: fmt +0.04%, ls -2.65%, sort +0.65%, bash -0.02% (worst +0.65%), `decompile-all` O2 whole-binary, `slotptr off` vs default |
 | (f) whole-binary `decompile-all` before/after, 8 binaries | 6,265 functions, 0 C diffs, 0 variable-count diffs, 1,979 changed rows, every one a filler `undefinedN -> pointer` at the same name, offset and size |
 | (g) `p0_knowledge/modes.rs` | no entry needed: the option is a shipped default that every preset inherits, and the modes' default-off invariant only covers default-off options |
 

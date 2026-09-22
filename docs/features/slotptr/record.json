@@ -199,7 +199,40 @@
   ],
   "worse_cause": "each slot takes the type kuna's own C body already gives the stored value, and that type is wrong (pointer difference printed as pointer arithmetic; a register variable merging an lseek result with an errno pointer)"
  },
- "speed": null,
+ "speed": {
+  "method": "interleaved min-of-15 whole-binary kuna decompile-all --json, --option slotptr off vs on, same build (docs/features/slotptr/measure/speed.py)",
+  "binaries": "O2 coreutils fmt/ls/sort + bash",
+  "results": {
+   "fmt": {
+    "off_min_ms": 4254.7,
+    "on_min_ms": 4256.2,
+    "delta_min_pct": 0.04,
+    "delta_median_pct": 6.44
+   },
+   "ls": {
+    "off_min_ms": 14586.2,
+    "on_min_ms": 14199.0,
+    "delta_min_pct": -2.65,
+    "delta_median_pct": -1.96
+   },
+   "sort": {
+    "off_min_ms": 15979.8,
+    "on_min_ms": 16083.1,
+    "delta_min_pct": 0.65,
+    "delta_median_pct": 2.17
+   },
+   "bash": {
+    "off_min_ms": 91210.7,
+    "on_min_ms": 91188.3,
+    "delta_min_pct": -0.02,
+    "delta_median_pct": -0.73
+   }
+  },
+  "worst_delta_min_pct": 0.65,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "note": "a first run before record_pass was narrowed to the stack space read fmt +3.76 / sort +7.88 min (median +1.3 / +1.33) on a box at load 36-51; the narrowing leaves the output byte-identical"
+ },
  "gates": null,
  "files": [],
  "notes": "JSON surface only. Recording is gated on ArchContext::slot_ptr, so slotptr off does no extra work."
