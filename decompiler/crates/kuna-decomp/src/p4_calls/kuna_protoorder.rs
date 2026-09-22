@@ -32,7 +32,7 @@ use crate::p4_calls::fspec::{FuncCallSpecs, FuncProto, PrototypePieces};
 /// What a recovered prototype is allowed to say about a call site.
 ///
 /// [`ProtoOrderMode::Cycles`] is [`ProtoOrderMode::Types`] with the members of
-/// a recursive component stating their types as well.  The two stating modes
+/// a recursive component stating their types as well.  `types` and `lock`
 /// differ in ONE thing -- whether the parked prototype can move a
 /// call's ARITY -- and that one thing is the whole difference between a type
 /// recovery and a rewrite of what the program does.

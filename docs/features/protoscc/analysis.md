@@ -79,8 +79,9 @@ written before the recursive call can still reach a read and the drop declines.
 
 Checked on:
 
-- every existing counterexample (`docs/features/argclobber/ce-*`, plus the three
-  committed argclobber fixtures): byte-identical output under both values;
+- every existing counterexample (the seven `docs/features/argclobber/ce-*`
+  builds, and the four committed `argclobber_*` fixtures): byte-identical output
+  under both values;
 - `ce-rec-forward.c` (the two-parameter forwarding thunk made self-recursive),
   `ce-rec-mutual.c` (a two-member cycle handing its registers to the thunk) and
   `ce-rec-pair.s` (a member that never names rdx, a partner that reads it first):
