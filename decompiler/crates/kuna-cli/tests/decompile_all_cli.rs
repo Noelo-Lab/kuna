@@ -2411,7 +2411,9 @@ fn a_narrowed_run_orders_callees_first_only_when_asked() {
 /// `types`.  The one call whose arity moves is `argclobber`'s drop of a clobbered
 /// trailing argument at a recursive callee whose stated list and body both say
 /// the register is free; a callee that forwards the register into its own
-/// recursion keeps the argument under both values.
+/// recursion keeps the argument under both values. `calleevote` is off: by
+/// default it gives `wrap` and `wrap2` the `char *` their one caller passes,
+/// the other direction.
 #[test]
 fn recursive_callees_state_their_types_under_cycles() {
     let bin = repo_root()
@@ -2425,7 +2427,10 @@ fn recursive_callees_state_their_types_under_cycles() {
         ("cycles", "(char *a0)", "rtarget(a0,5);"),
     ] {
         let (got, stderr, ok) =
-            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value]);
+            run_kuna(&[
+                "decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value, "--option",
+                "calleevote", "off",
+            ]);
         if !ok {
             if is_specs_skip(&stderr) {
                 eprintln!("protoorder cycles: skipping (no `.sla`; run `make specs`): {stderr}");
