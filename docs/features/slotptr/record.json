@@ -233,7 +233,30 @@
   "speed_within_budget": true,
   "note": "a first run before record_pass was narrowed to the stack space read fmt +3.76 / sort +7.88 min (median +1.3 / +1.33) on a box at load 36-51; the narrowing leaves the output byte-identical"
  },
- "gates": null,
- "files": [],
+ "gates": {
+  "make_test": "PARITY OK 675/675",
+  "make_test_stages": "PARITY OK 1296/1296 (no baseline change)",
+  "make_test_cli": "221/221",
+  "make_rust_test": "RUST_TEST_RC=0 (7381 passed, 0 failed)",
+  "check_spec": "OK lenient + strict",
+  "catalog_check": "OK",
+  "counters_check": "no drift",
+  "options_md": "fresh"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p6_variables/kuna_slotptr.rs",
+  "decompiler/crates/kuna-decomp/src/p6_variables/kuna_slotptr/tests.rs",
+  "decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs",
+  "decompiler/crates/kuna-decomp/src/p6_variables/funcdata_spacebase.rs",
+  "decompiler/crates/kuna-decomp/src/substrate/funcdata.rs",
+  "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+  "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+  "decompiler/crates/kuna-decomp/phases.toml",
+  "decompiler/crates/kuna-console/tests/verify_slotptr.rs",
+  "decompiler/crates/kuna-console/tests/verify_framelayout.rs",
+  "tests/cli/slotptr-types-a-spilled-string-slot.json",
+  "tests/cli/slotptr-types-a-spilled-string-slot-option-off.json",
+  "docs/spec/06-variables-and-merge.md"
+ ],
  "notes": "JSON surface only. Recording is gated on ArchContext::slot_ptr, so slotptr off does no extra work."
 }
