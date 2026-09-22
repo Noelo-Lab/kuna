@@ -2,9 +2,9 @@
  "binaries": {
   "O0/coreutils/cp": {
    "functions": 530,
-   "types-and-spelling": 36,
-   "signature-only": 23,
-   "renumber-only": 30
+   "types-and-spelling": 33,
+   "renumber-only": 31,
+   "signature-only": 16
   },
   "O0/diffutils/cmp": {
    "functions": 214,
@@ -14,9 +14,9 @@
   },
   "O0/grep/grep": {
    "functions": 642,
-   "renumber-only": 63,
+   "renumber-only": 65,
    "types-and-spelling": 42,
-   "signature-only": 6
+   "signature-only": 5
   },
   "O0/gzip/gzip": {
    "functions": 248,
@@ -45,13 +45,13 @@
   },
   "O2-noinline/dash/dash": {
    "functions": 442,
-   "renumber-only": 21,
+   "renumber-only": 22,
    "signature-only": 11,
-   "types-and-spelling": 14
+   "types-and-spelling": 10
   },
   "O2-noinline/grep/grep": {
    "functions": 634,
-   "renumber-only": 53,
+   "renumber-only": 55,
    "types-and-spelling": 34,
    "signature-only": 7
   },
@@ -67,16 +67,16 @@
   },
   "O2-noinline/tar/tar": {
    "functions": 1585,
-   "renumber-only": 188,
-   "types-and-spelling": 112,
-   "signature-only": 37
+   "renumber-only": 191,
+   "types-and-spelling": 111,
+   "signature-only": 36
   },
   "O2/bash/bash": {
    "functions": 2538,
-   "signature-only": 16,
-   "renumber-only": 115,
-   "types-and-spelling": 19,
-   "SHAPE": 3
+   "signature-only": 18,
+   "renumber-only": 136,
+   "types-and-spelling": 17,
+   "SHAPE": 2
   },
   "O2/coreutils/du": {
    "functions": 320,
@@ -110,7 +110,7 @@
   },
   "O2/findutils/find": {
    "functions": 658,
-   "renumber-only": 77,
+   "renumber-only": 80,
    "types-and-spelling": 19,
    "signature-only": 16
   },
@@ -120,20 +120,19 @@
   }
  },
  "total": {
-  "types-and-spelling": 353,
-  "signature-only": 142,
-  "renumber-only": 773,
-  "SHAPE": 4,
-  "changed": 1272,
+  "types-and-spelling": 343,
+  "renumber-only": 806,
+  "signature-only": 135,
+  "SHAPE": 3,
+  "changed": 1287,
   "functions": 13173
  },
  "tags": {
-  "local-pointer-to-integer": 17,
-  "local-count-moved": 16
+  "local-pointer-to-integer": 15,
+  "local-count-moved": 15
  },
  "examples": {
   "local-pointer-to-integer": [
-   "O0/coreutils/cp 0x6ea8",
    "O0/coreutils/cp 0xabda",
    "O0/grep/grep 0x5d23",
    "O2-noinline/dash/dash 0x9250",
@@ -147,12 +146,10 @@
    "O2-noinline/tar/tar 0x37190",
    "O2-noinline/tar/tar 0x37590",
    "O2-noinline/tar/tar 0x52610",
-   "O2/bash/bash 0x7dfc0",
    "O2/coreutils/du 0x3c50",
    "O2/diffutils/diff 0xb070"
   ],
   "local-count-moved": [
-   "O0/coreutils/cp 0x6ea8",
    "O0/coreutils/cp 0xabda",
    "O0/coreutils/cp 0x19a10",
    "O0/grep/grep 0x5d23",
@@ -170,7 +167,6 @@
    "O2/diffutils/diff 0xb070"
   ],
   "SHAPE": [
-   "O2/bash/bash 0x7dfc0",
    "O2/bash/bash 0xdc760",
    "O2/bash/bash 0xf48e0",
    "O2/diffutils/diff 0x11680"

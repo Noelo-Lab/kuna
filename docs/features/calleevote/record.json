@@ -71,11 +71,11 @@
    },
    "coreutils": {
     "n": 6422,
-    "perfect_off": 917,
-    "perfect_on": 970,
-    "mean_off": 0.3409,
-    "mean_on": 0.3505,
-    "improved": 263,
+    "perfect_off": 938,
+    "perfect_on": 979,
+    "mean_off": 0.3441,
+    "mean_on": 0.3516,
+    "improved": 200,
     "worse": 0
    },
    "diffutils": {
@@ -89,11 +89,11 @@
    },
    "findutils": {
     "n": 790,
-    "perfect_off": 44,
-    "perfect_on": 49,
-    "mean_off": 0.223,
-    "mean_on": 0.2275,
-    "improved": 18,
+    "perfect_off": 51,
+    "perfect_on": 55,
+    "mean_off": 0.2358,
+    "mean_on": 0.2394,
+    "improved": 17,
     "worse": 0
    },
    "grep": {
@@ -125,22 +125,22 @@
    },
    "tar": {
     "n": 1548,
-    "perfect_off": 170,
-    "perfect_on": 174,
-    "mean_off": 0.3635,
-    "mean_on": 0.3664,
-    "improved": 19,
+    "perfect_off": 192,
+    "perfect_on": 195,
+    "mean_off": 0.3733,
+    "mean_on": 0.375,
+    "improved": 13,
     "worse": 0
    }
   },
   "levels": {
    "O0": {
     "n": 4286,
-    "perfect_off": 1017,
-    "perfect_on": 1064,
-    "mean_off": 0.5289,
-    "mean_on": 0.5392,
-    "improved": 188,
+    "perfect_off": 1065,
+    "perfect_on": 1098,
+    "mean_off": 0.5391,
+    "mean_on": 0.5459,
+    "improved": 123,
     "worse": 1
    },
    "O2": {
@@ -148,41 +148,41 @@
     "perfect_off": 74,
     "perfect_on": 80,
     "mean_off": 0.1834,
-    "mean_on": 0.1863,
-    "improved": 31,
+    "mean_on": 0.1862,
+    "improved": 29,
     "worse": 1
    },
    "O2-noinline": {
     "n": 4068,
-    "perfect_off": 381,
-    "perfect_on": 395,
-    "mean_off": 0.2624,
-    "mean_on": 0.2692,
-    "improved": 115,
+    "perfect_off": 383,
+    "perfect_on": 397,
+    "mean_off": 0.2628,
+    "mean_on": 0.2695,
+    "improved": 112,
     "worse": 1
    }
   },
   "pooled": {
    "n": 10748,
-   "perfect_off": 1472,
-   "perfect_on": 1539,
-   "mean_off": 0.3511,
-   "mean_on": 0.3584,
-   "improved": 334,
+   "perfect_off": 1522,
+   "perfect_on": 1575,
+   "mean_off": 0.3553,
+   "mean_on": 0.3612,
+   "improved": 264,
    "worse": 3
   },
   "credited_93": {
-   "perfect_off": 1717,
-   "perfect_on": 2083,
-   "improved": 1196,
+   "perfect_off": 1771,
+   "perfect_on": 2128,
+   "improved": 1124,
    "worse": 3,
-   "mean_off": 0.3975,
-   "mean_on": 0.4398
+   "mean_off": 0.4023,
+   "mean_on": 0.443
   },
   "classes_tp": {
    "ptr_char": [
-    4859,
-    5181
+    5060,
+    5297
    ],
    "ptr_other": [
     0,
@@ -190,7 +190,7 @@
    ],
    "ptr_ptr": [
     525,
-    593
+    592
    ],
    "ptr_void": [
     621,
@@ -199,36 +199,34 @@
   },
   "decomp_var_count_changed_functions": 0,
   "worse_rows": "gzip xmemdup at O0/O2/O2-noinline: GT void const *p, every caller passes a string, so the parameter takes char * (the same three rows as every earlier round)",
-  "control": "the off arm is main at 656e6c701: 1,472 perfect, the figure #710 reports for slotptr on",
-  "base": "origin/main 656e6c701 (#710 slotptr, default on); off arm build .scratch/v12, default arm the final build (v14, 05786ff39 code); the off arm is unchanged by every later commit",
-  "new_struct_pointers": "911 parameters or slots newly typed struct_N * (not a struct before); every one has a program-defined struct pointer as its DWARF type, none replaces a primitive pointer and none a correct type",
-  "rounds_note": "v12 (the build before rounds decided against first-decompile parameters) gave 332 up / 3 down, credited 2,082; the final build keeps two more char * votes a later round had dropped (coreutils ginstall need_copy dest_name O0, copy dst_relname O2-noinline): 334 up / 3 down"
+  "control": "the off arm is main at 3a42d864b: 1,522 perfect, the figure #712 reports for protoorder cycles",
+  "base": "origin/main 3a42d864b (#712 protoorder cycles, default on; #710 slotptr); both arms the final build (.scratch/v16, 47e308025 code)",
+  "new_struct_pointers": "909 parameters or slots newly typed struct_N * (not a struct before); every one has a program-defined struct pointer as its DWARF type, none replaces a primitive pointer and none a correct type",
+  "earlier_base": "on 656e6c701 (before #712) the same option measured 1,472 -> 1,539 perfect, 334 up / 3 down, credited 1,717 -> 2,083; #712 now types some of the same parameters from recursive callees, so the gain on top of it is smaller"
  },
  "sweep": {
-  "surface": "kuna decompile-all --json --max-fn-seconds 120, --option calleevote off vs default, 21 stripped binaries / 13,173 functions, build .scratch/v12 on 656e6c701 (docs/features/calleevote/corpus-hunks.json)",
+  "surface": "kuna decompile-all --json --max-fn-seconds 120, --option calleevote off vs default, 21 stripped binaries / 13,173 functions, final build .scratch/v16 on 3a42d864b (docs/features/calleevote/corpus-hunks.json)",
   "binaries": "coreutils fmt ls sort du (O2), cp (O0), chcon wc (O2-noinline); grep (O0, O2-noinline); gzip (O0, O2); diff (O2), cmp (O0); find (O2); bzip2 tar dash xmlwf mirai (O2-noinline); bash (O2); crazyflie cf2.elf (ARM Thumb, O2-noinline)",
-  "changed": 1272,
+  "changed": 1287,
   "classification": {
-   "struct_N renumbering only (a one-field record takes a ledger slot)": 773,
-   "a parameter's type only": 142,
-   "a parameter's type and how accesses through it print (fields, casts, indexing); statements, calls and argument counts identical": 353,
-   "an expression folded into its uses by the new type": 4
+   "struct_N renumbering only (a one-field record takes a ledger slot)": 806,
+   "a parameter's type only": 135,
+   "a parameter's type and how accesses through it print (fields, casts, indexing); statements, calls and argument counts identical": 343,
+   "an expression folded into its uses by the new type": 3
   },
   "tags": {
-   "register-local count moved (merge follows the new type)": 16,
-   "a local that held a callee's old void * declared as an integer": 17,
+   "register-local count moved (merge follows the new type)": 15,
+   "a local that held a callee's old void * declared as an integer": 15,
    "byte-split stores": 0
   },
   "shape_hunks_read": [
    "diff O2 0x11680: returns its char * parameter, so the return type follows (long -> char *, return 0 -> return NULL)",
-   "bash O2 0xdc760, 0xf48e0: char * parameter; *(char *)(a0 + k) prints a0[k] and the loaded temporary is inlined at its uses",
-   "bash O2 0x7dfc0: a (uint1) cast temporary inlined at its two uses"
+   "bash O2 0xdc760, 0xf48e0: char * parameter; *(char *)(a0 + k) prints a0[k] and the loaded temporary is inlined at its uses"
   ],
   "arity_or_error_changes": 0,
-  "off_equals_main": "--option calleevote off matches origin/main 656e6c701 byte-for-byte (code, variables, errors) on chcon, wc, grep O2-noinline, dash, xmlwf, mirai, gzip O2, cmp O0 and cf2.elf; on cf2.elf the default matches it too",
+  "off_equals_main": "--option calleevote off matches origin/main 3a42d864b byte-for-byte (code, variables, errors) on chcon, wc, grep O2-noinline, dash, xmlwf, mirai, gzip O2, cmp O0, fmt O2 and cf2.elf; on cf2.elf the default matches it too",
   "redo_drift_guard": "without same_arity two bash O2 functions (0x7ea70, 0x7f600) gained an unused stack parameter from a pre-existing redo instability; the guard keeps the first body",
-  "per_architecture": "crazyflie cf2.elf (ARM Thumb, 2,838 functions): 0 changed, since no function off x86-64 has every caller known; it was 482 before this round. The 20 x86-64 binaries: 1,272 changed, 5 more than before, all struct_N renumbering (cp O0 +1, cmp O0 +3, grep O2-noinline +1) from main gaining slotptr",
-  "final_build": "the final build's default output equals the v12 default output byte-for-byte (code, variables, errors) on all 21 binaries (13,173 functions), so the classification holds for it"
+  "per_architecture": "crazyflie cf2.elf (ARM Thumb, 2,838 functions): 0 changed, since no function off x86-64 has every caller known (482 before this review round). All 1,287 changes are in the 20 x86-64 binaries"
  },
  "speed": {
   "round_3": {
@@ -622,7 +620,9 @@
     "reviewer builds sg_a64, sf_a64, se_a64, sf_mips, se_mips, si_x64: default output == --option calleevote off"
    ],
    "probes_restored": "protoorder-types-keeps-a-float-in-a-gpr-an-integer and -extracted-float-bits-an-integer (MIPS) return to main's text: g3/g20 keep void *",
-   "typesweep": "off vs default on the rebased tree: 1,472 -> 1,539 perfect, 334 up / 3 down (gzip xmemdup), credited 1,717 -> 2,083, exported variable counts identical"
+   "typesweep": "off vs default on 3a42d864b: 1,522 -> 1,575 perfect, 264 up / 3 down (gzip xmemdup), credited 1,771 -> 2,128, exported variable counts identical",
+   "rounds_decide_against_first_decompile": "each round decided against the parameters the LAST decompile recovered, so a vote an earlier round made fell out of the next statement and the next redo lost it (coreutils ginstall need_copy O0 and copy O2-noinline ended unsigned long; tar O2-noinline 0x35910 needed three rounds); every round now decides against the first decompile's parameters, and a first statement that only repeats the callee's own record is not made (kmod round 1: 73 -> 49 redos). On 656e6c701 this moved 332/3 to 334/3 and changed nothing else over 21 binaries",
+   "rebased_onto_712": "main gained #712 (protoorder cycles); the convergence sweep now also forgets calleevote statements that name a superseded structure (kuna_calleevote::forget_statements_naming), mirroring #712 for protoorder. #712's probe protoorder-types-states-nothing-for-a-recursive-function runs with --option calleevote off: by default wrap and wrap2 take the char * their one caller passes"
   }
  }
 }
