@@ -60,6 +60,9 @@ pub enum ProtoOrderMode {
     Types,
     /// Callees first; park the recovered prototype as a locked one.
     Lock,
+    /// [`ProtoOrderMode::Types`], and a function in a call-graph cycle states
+    /// its recovered types too, in the order the driver gives the cycle.
+    Cycles,
 }
 
 impl ProtoOrderMode {
@@ -69,6 +72,7 @@ impl ProtoOrderMode {
             ProtoOrderMode::Off => "off",
             ProtoOrderMode::Types => "types",
             ProtoOrderMode::Lock => "lock",
+            ProtoOrderMode::Cycles => "cycles",
         }
     }
 
@@ -77,11 +81,22 @@ impl ProtoOrderMode {
         !matches!(self, ProtoOrderMode::Off)
     }
 
+    /// Does this mode state types only, never the arity?
+    pub fn states_types_only(self) -> bool {
+        matches!(self, ProtoOrderMode::Types | ProtoOrderMode::Cycles)
+    }
+
+    /// May a member of a call-graph cycle state its recovered types?
+    pub fn states_in_cycles(self) -> bool {
+        self == ProtoOrderMode::Cycles
+    }
+
     /// The mode for a `u8` live value (the console's live reader).
     pub fn from_u8(v: u8) -> ProtoOrderMode {
         match v {
             1 => ProtoOrderMode::Types,
             2 => ProtoOrderMode::Lock,
+            3 => ProtoOrderMode::Cycles,
             _ => ProtoOrderMode::Off,
         }
     }
@@ -92,11 +107,12 @@ impl ProtoOrderMode {
             ProtoOrderMode::Off => 0,
             ProtoOrderMode::Types => 1,
             ProtoOrderMode::Lock => 2,
+            ProtoOrderMode::Cycles => 3,
         }
     }
 }
 
-/// (kuna) Parse `option protoorder off|types|lock`.
+/// (kuna) Parse `option protoorder off|types|cycles|lock`.
 pub struct OptionProtoOrder;
 
 impl OptionProtoOrder {
@@ -108,10 +124,11 @@ impl OptionProtoOrder {
         let mode = match p1 {
             "off" => ProtoOrderMode::Off,
             "types" => ProtoOrderMode::Types,
+            "cycles" => ProtoOrderMode::Cycles,
             "lock" => ProtoOrderMode::Lock,
             other => {
                 return Err(kuna_base::error::KunaError::parse(format!(
-                    "Unknown protoorder value: {other} (expected off|types|lock)"
+                    "Unknown protoorder value: {other} (expected off|types|cycles|lock)"
                 )))
             }
         };
@@ -1046,8 +1063,9 @@ pub enum Decline {
     /// one, always.
     Declared,
     /// The function is in a call-graph cycle with more than one member, or calls
-    /// itself: "callees first" has no meaning inside a cycle, so the prototype
-    /// the cycle happens to produce first is not a fact about the program.
+    /// itself: "callees first" has no meaning inside a cycle.  `types` and
+    /// `lock` state nothing there; `cycles` states the types and the driver
+    /// orders the cycle ([`ProtoOrderMode::Cycles`]).
     Scc,
     /// The callee's own body PROVABLY reads the argument register that would
     /// hold its next parameter, so its recovered list is short of what the
@@ -1404,7 +1422,7 @@ pub fn park_recovered(
         return Err(Decline::Declared);
     }
     let (mut pieces, mut storage) = recovered_pieces(proto, name)?;
-    if mode == ProtoOrderMode::Types {
+    if mode.states_types_only() {
         return state_recovered_types(arch, entry, pieces, storage);
     }
     let mut trimmed = 0usize;
