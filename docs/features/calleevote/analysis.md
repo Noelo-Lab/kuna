@@ -223,10 +223,11 @@ the build before either change; on the 444 slices the two `ginstall`
 functions improve (334 up / 3 down, was 332 / 3).
 
 What the second decompile still costs (interleaved min of 15, same build, the
-option off vs default): fmt, ls, sort and bash -O2 +0.48, +1.09, +0.87 and
-+0.92%; kmod -O2-noinline +9.8% (56 of its 541 functions decompiled again)
-and cmp -O0 +7.9% (9 of 214, most of it one 217-line function whose `char *`
-votes its own uses refuse), both confirmed at load 3-4. Whether a vote will be
+option off vs default, on main with #712): fmt, ls, sort and bash -O2 +0.42,
++0.93, +0.88 and +0.63%; kmod -O2-noinline +11.3% (55 of its 541 functions
+decompiled again) and cmp -O0 +7.9% (9 of 214, most of it one 217-line
+function whose `char *` votes its own uses refuse), at load 2-3. On the base
+before #712 the same build measured kmod +9.8% and cmp +7.7-7.9%. Whether a vote will be
 refused is known only by running the pipeline with it, since the refusals read
 the function's own uses in the redo, so no cheaper filter was found.
 

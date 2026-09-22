@@ -230,147 +230,136 @@
  },
  "speed": {
   "round_3": {
-   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs default, same final build (.scratch/v15 = 540319563 code) on the rebased tree, arm order alternating, 15 rounds each (docs/features/calleevote/speed.py; raw samples speed.json under round_3)",
+   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs default, same final build (.scratch/v17 = 4f59a6eb1) on 3a42d864b (#712), arm order alternating, 15 rounds each (docs/features/calleevote/speed.py; raw samples speed.json under round_3)",
    "fmt_O2": {
     "min_ms": [
-     4127.5,
-     4147.5
+     4083.5,
+     4100.5
     ],
     "median_ms": [
-     4515.0,
-     4179.5
+     4101.3,
+     4115.8
     ],
-    "delta_min_pct": 0.48,
-    "delta_median_pct": -7.43,
+    "delta_min_pct": 0.42,
+    "delta_median_pct": 0.35,
     "loadavg": [
-     9.4,
-     11.2,
-     14.5
+     2.4,
+     3.0,
+     3.6
     ]
    },
    "ls_O2": {
     "min_ms": [
-     13464.0,
-     13610.8
+     13384.6,
+     13509.7
     ],
     "median_ms": [
-     13781.3,
-     13813.9
+     13417.1,
+     13530.0
     ],
-    "delta_min_pct": 1.09,
-    "delta_median_pct": 0.24,
+    "delta_min_pct": 0.93,
+    "delta_median_pct": 0.84,
     "loadavg": [
-     4.5,
-     6.3,
-     10.2
+     2.2,
+     2.4,
+     3.1
     ]
    },
    "sort_O2": {
     "min_ms": [
-     14234.0,
-     14357.4
+     14005.5,
+     14128.4
     ],
     "median_ms": [
-     14666.1,
-     14869.3
+     14042.5,
+     14176.1
     ],
-    "delta_min_pct": 0.87,
-    "delta_median_pct": 1.39,
+    "delta_min_pct": 0.88,
+    "delta_median_pct": 0.95,
     "loadavg": [
-     5.5,
-     5.7,
-     8.4
+     2.3,
+     2.3,
+     2.8
     ]
    },
    "bash_O2": {
     "min_ms": [
-     86216.2,
-     87008.7
+     85527.6,
+     86065.9
     ],
     "median_ms": [
-     86812.4,
-     87338.4
+     85727.0,
+     86187.2
     ],
-    "delta_min_pct": 0.92,
-    "delta_median_pct": 0.61,
+    "delta_min_pct": 0.63,
+    "delta_median_pct": 0.54,
     "loadavg": [
-     2.8,
-     3.0,
-     3.3
+     2.7,
+     2.4,
+     2.3
     ]
    },
    "kmod_O2-noinline": {
     "min_ms": [
-     3814.3,
-     4188.3
+     3729.8,
+     4150.5
     ],
     "median_ms": [
-     3847.0,
-     4247.9
+     3747.1,
+     4166.8
     ],
-    "delta_min_pct": 9.81,
-    "delta_median_pct": 10.42,
+    "delta_min_pct": 11.28,
+    "delta_median_pct": 11.2,
     "loadavg": [
-     5.0,
-     8.8,
-     13.2
+     2.4,
+     2.3,
+     2.7
     ],
-    "note": "541 functions; the vote rounds decompile 56 of them again (49 + 6 + 1), 0.42 s on a 3.3 s first pass; types alone costs +8.8% min (min of 7), so the cost is the second decompile itself, not the lone-field pass. Review measurement on the round-2 build: +11.3% min, +7.4% median (min of 9); skipping statements that repeat a callee's own record cut round 1 from 73 redos to 49",
-    "quiet_rerun": {
-     "min_ms": [
-      3784.5,
-      4155.2
-     ],
-     "delta_min_pct": 9.8,
-     "delta_median_pct": 9.84,
-     "loadavg": [
-      4.3,
-      3.4,
-      3.7
-     ]
-    }
+    "note": "541 functions; the vote rounds decompile 55 of them again (48 + 6 + 1), about 0.4 s on a 3.3 s first pass; types alone costs +8.8% min (min of 7), so the cost is the second decompile itself, not the lone-field pass. Review measurement on the round-2 build: +11.3% min, +7.4% median (min of 9); skipping statements that repeat a callee's own record cut round 1 from 73 redos to 49"
    },
    "cmp_O0": {
     "min_ms": [
-     1471.3,
-     1584.5
+     1467.1,
+     1583.1
     ],
     "median_ms": [
-     1495.7,
-     1613.1
+     1475.1,
+     1589.7
     ],
-    "delta_min_pct": 7.69,
-    "delta_median_pct": 7.85,
+    "delta_min_pct": 7.91,
+    "delta_median_pct": 7.77,
     "loadavg": [
-     4.4,
-     8.1,
-     12.8
+     2.2,
+     2.3,
+     2.7
     ],
-    "note": "214 functions, 9 decompiled again, 0.12 s; most of it one 217-line function (0x8b5d) whose two char * votes its own uses refuse, so it prints as before. Round 2 measured +5.43% min",
-    "quiet_rerun": {
-     "min_ms": [
-      1467.0,
-      1582.2
-     ],
-     "delta_min_pct": 7.85,
-     "delta_median_pct": 8.03,
-     "loadavg": [
-      4.0,
-      3.5,
-      3.7
-     ]
-    }
+    "note": "214 functions, 9 decompiled again, 0.12 s; most of it one 217-line function (0x8b5d) whose two char * votes its own uses refuse, so it prints as before. Round 2 measured +5.43% min"
    },
-   "budget_binaries": {
+   "earlier_base": {
+    "base": "656e6c701, build .scratch/v15 (540319563 code)",
     "fmt_O2": 0.48,
     "ls_O2": 1.09,
     "sort_O2": 0.87,
-    "bash_O2": 0.92
+    "bash_O2": 0.92,
+    "kmod_O2-noinline": [
+     9.81,
+     "quiet rerun 9.8"
+    ],
+    "cmp_O0": [
+     7.69,
+     "quiet rerun 7.85"
+    ]
    },
-   "worst_budget_delta_min_pct": 1.09,
+   "budget_binaries": {
+    "fmt_O2": 0.42,
+    "ls_O2": 0.93,
+    "sort_O2": 0.88,
+    "bash_O2": 0.63
+   },
+   "worst_budget_delta_min_pct": 0.93,
    "budget_pct": 5.0,
    "within_budget": true,
-   "outside_budget_set": "kmod O2-noinline +9.81% min (+10.42% median) and cmp O0 +7.69% min: the price of decompiling again the functions whose callers state a type; a binary where few functions take a vote pays almost nothing"
+   "outside_budget_set": "kmod O2-noinline +11.28% min (+11.20% median) and cmp O0 +7.91% min: the price of decompiling again the functions whose callers state a type; a binary where few functions take a vote pays almost nothing"
   },
   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs default, same build, arm order alternating, 15 rounds each (docs/features/calleevote/speed.py; raw samples speed.json). Review-round build; box shared with other lanes (load 11-43). fmt, ls, bash, dash, cf2 and the first sort/cmp runs used the build before the walked-address check was limited to closed functions (same output, and the off arm then paid that check too); the sort and cmp reruns are the final build.",
   "cmp_O0": {
@@ -548,15 +537,15 @@
   }
  },
  "gates": {
-  "make test": "datatests: 675/675 assertions passed; PARITY OK (final build, 540319563 code)",
+  "make test": "datatests: 675/675 assertions passed; PARITY OK (final build on 3a42d864b)",
   "make test-stages": "datatests: 1298/1298 assertions passed; PARITY OK (final build)",
   "make check-spec": "check-spec OK (lenient mode)",
   "check_spec --strict": "check-spec OK (strict mode)",
-  "make test-cli": "tests/cli: 227/227 passed (final build)",
+  "make test-cli": "tests/cli: 229/229 passed (final build)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "byte-fresh (regenerated)",
-  "make rust-test (lane script)": "RUST_TEST_RC=0; 7,409 passed, 0 failed, 38 ignored (lane 09:21:53-09:47:14Z on 540319563, the last code and catalog-text commit; later commits touch only docs/spec and the feature bundle)"
+  "make rust-test (lane script)": "RUST_TEST_RC=0; 7,429 passed, 0 failed, 38 ignored (lane 11:04:02-11:28:55Z on 4f59a6eb1, the last code, test and catalog-text commit). The run before it, on b36f340b6, failed only #712's recursive_callees_state_their_types_under_cycles, which now passes --option calleevote off"
  },
  "notes": "Measured and not shipped: refusing a value handed to a declared void * (-8 perfect, -28 improved, +3), byte/halfword lone fields (+10 credited, +2 worse), a settle pass for every structsynth candidate (no scored change). Known secondary effect: a callee's one-field record stated by protoorder can make a caller's interior-pointer argument a cast and leave the caller's own parameter long (diff O0 print_context_header: void * -> long, 5 scored rows, all misses either way).",
  "files": {
