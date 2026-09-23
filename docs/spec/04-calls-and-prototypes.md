@@ -2473,8 +2473,35 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   return-only register before writing it or calling anything (`test %al,%al`). Its
   own recovery would read every register its prologue saves, and one argument
   supplied here is enough to tip the saved tail into its list;
+- the callee's read of `R` is for something other than a **variadic tail**
+  (`kuna_varargtail.rs`). A stated parameter whose value, through
+  value-preserving operations (copies, phis, width changes, a mask by a
+  constant), only ever reaches an argument slot of a variadic call — one the
+  callee set up as variadic, or a declared `...` prototype past its named
+  parameters — is recorded on the statement and never claimed: the ABI lets a
+  caller leave that register unset, so the callee's read of it says nothing
+  about what its callers put there. openssh `xcalloc(size_t,size_t)` is
+  recovered with a third parameter because the call to the variadic `sshfatal`
+  is set up with `push %rdx; …; xor %eax,%eax`, and that push is gcc's
+  stack-alignment filler; gnulib `open_safer` reads `rdx` only to pass it to
+  `open`'s `mode`;
+- the claim does not fill a **hole** (`no_hole_before`). Parameters are
+  positional: a claim at the third stated register gives the function three
+  parameters. Every earlier stated register must be one the function could be
+  carrying — claimed here too, or one its own entry walk (the same
+  `calleedeadarg` probe, asked of this function's entry) does not prove it
+  WRITES before reading. Otherwise the register becomes a parameter nothing
+  sets: the `protoorder` fixture's `overrec` sets `rsi` to 16 and forwards
+  `rdx`, and rendered `void overrec(unsigned long *a0,unsigned long a1,long a2)`
+  with `a1` in no statement, against the call site `overrec(v1)`;
 - the value at the call is the function's own input Varnode for exactly the
   trial's storage.
+
+The variadic-call test itself reads the writing instruction's own ops as its own:
+`xor %eax,%eax` reads the register it zeroes, as its operand and again in `ZF =
+(EAX == 0)`, so counting every read as a competing one made the test answer `no`
+for the idiom gcc actually emits (0 calls recognized over ssh-keygen). A read at
+the same instruction address as the write is that instruction's.
 
 The argument is as wide as the callee's body reads it — the narrowest of the
 trial, the stated parameter and the widest body read starting at `R` — so a
@@ -2569,7 +2596,9 @@ call's `RAX` clobber, so kuna recovers it as returning `long`; the relaxed quest
 calls the `CONCAT44(<leftover>, __fprintf_chk(...))` it returns computed and the
 strict one does not. Without the gate every `version_etc_ar` wrapper inherited that
 wrong return: 212 of 4,267 gained returns over 444 decbench slices, against 6 of
-4,088 with it (`docs/features/passthrough/dwarf-confirmation.md`).
+4,087 with it (`docs/features/passthrough/dwarf-confirmation.md`). The walk's node
+budget answers `false` when it runs out, because `true` there states a return on a
+body it never finished reading.
 
 Nothing is added where a callee stated nothing: a single-function `kuna
 decompile`, a narrowed or sharded `decompile-all`, an import, `--option
@@ -2585,16 +2614,30 @@ above (`noop(); twoarg(p,3)`, `vout(p); twoarg(p,3)` as a tail and as a plain
 call, and `sysinttostr`) as controls that must keep every argument the
 option-off run gives them.
 
-**Default.** On. Every function that gains something over the 444-slice decbench
-corpus was checked against its unstripped twin's DWARF prototype: 2,783 of 2,910
-gained parameters are confirmed, 4 are contradicted (gnulib `savewd_save`, whose
-forwarded register reaches a variadic `open_safer` whose recovered list closes
-over one vararg slot) and 123 belong to 69 forwarding thunks the toolchain
-emitted with no debug entry at all; 4,012 of 4,088 gained returns are confirmed
-and 6 contradicted. No function and no call site loses an argument, and nothing
-moves at -O0, where the register is already named by an op. The evidence is
+**Default.** On, on the strength of the parameter arm. Every function that gains
+something was checked against its unstripped twin's DWARF prototype over two
+corpora: the 444-slice decbench corpus (8 GNU projects) and 130 slices of 17
+projects disjoint from it (openssh, e2fsprogs, dpkg, kmod, dash, iproute2,
+gnutls, zlib, …), 574 slices in all. **4,107 of 4,346 gained parameters are
+confirmed, none contradicted, and the remaining 239 belong to forwarding thunks
+the toolchain emitted with no debug entry at all**; no function and no call site
+loses an argument, and nothing moves at -O0, where the register is already named
+by an op. The two refusals above are what that costs: measured on the disjoint
+corpus first, the rule contradicted DWARF on 159 of 1,691 checkable parameters
+(9.4%, every one the openssh `xcalloc` shape), and removing them costs 208
+confirmed parameters, 5% of the gain.
+
+The **return** arm is a judgement rather than a proof, and it is where the
+default costs something. 5,458 of 5,615 gained returns are confirmed, 157
+contradicted — 6 on the decbench corpus but 151 on the disjoint one, all of one
+shape: a source-`void` wrapper that tail-calls a value-returning function
+compiles to exactly the `jmp` a wrapper that returns what it calls does, and
+`rax` holds the callee's result at the RETURN either way
+(`ext2fs_fast_mark_block_bitmap` is DWARF `void` and gets `unsigned long`;
+gzip's `char *gzip_base_name` is the same code and is right). The rate follows
+the project's style, not the optimisation level. The evidence is
 `docs/features/passthrough/dwarf-confirmation.md`; set `off` to get upstream's
-reading back.
+reading back, for the returns as much as the arguments.
 
 ### (kuna) `calleevote` — the type every caller passes
 
