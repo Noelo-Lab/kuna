@@ -103,6 +103,6 @@
 27. 2026-09-23 attribute a round by BUILDING each landed commit, not only by ablating options. #714 is
    ungated and its libc table cannot be isolated with `--option libcsigs off` (that arm drops the whole
    28-name base table too), so round G swept `9e07ab931` and `1c57f06b6` as their own binaries. Each
-   build needs its own directory: `kuna` forks the `decomp_dbg` BESIDE IT, so two builds sharing a
-   directory silently measure one engine (the catalog of an old `kuna` printed the new default until
-   the pair was separated).
+   build needs its own directory: `kuna` resolves the `decomp_dbg` BESIDE IT, and an old `kuna` sharing a
+   directory with a newer `decomp_dbg` printed the NEWER build's option defaults from `kuna catalog` —
+   caught before any arm was swept, and every arm here ran from its own directory with its own pair.
