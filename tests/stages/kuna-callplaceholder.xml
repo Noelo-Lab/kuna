@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The call-site stack placeholder strip.
+
+    A call that may take stack arguments cannot find them until the caller's
+    stack-pointer value at that site is known, so ActionFuncLink appends a
+    placeholder input to every CALL and the rule pool later reads the offset
+    back out of it. Where the site resolves, the placeholder is removed on the
+    success path; where the call spec recovered its own arguments, the final
+    input rewrite drops it. Neither happens here: the buffer is alloca'd, so the
+    stack pointer at the call sites is not a constant offset from the frame
+    base and nothing resolves, and both callees carry a declared prototype
+    (strncpy, strlen are in the 28-entry base table), so the call's input list
+    is locked and never rewritten. The placeholder then rendered as one
+    argument past the declared arity, reading the very slot the `call` pushed
+    its return address into:
+
+        strncpy(...,a0,(int8)(a1 + -1),v4[v1 + -8]);
+        strlen(v7,v4[v1 + -8]);
+
+    Stripping it unconditionally when the stack space is heritaged is what the
+    C++ Heritage::clearStackPlaceholders does. No option: the emitted call
+    contradicted the prototype the same output declares, in a direction with no
+    reading under which it is right.
+
+    Only the base table is involved, so `libcsigs` does not reach this test.
+
+    Source: decompiler/crates/kuna-analysis/tests/fixtures/callplaceholder_x86_64.c
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/callplaceholder_x86_64</com>
+  <com>read symbols</com>
+  <com>lo fu probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-CALLPLACEHOLDER #1: strncpy takes its three declared arguments" min="1" max="1">strncpy\([^;]*,a0,\(int8\)\(a1 \+ -1\)\);</stringmatch>
+<stringmatch name="KUNA-CALLPLACEHOLDER #2: strlen takes its one declared argument" min="1" max="1">strlen\(v7\);</stringmatch>
+<stringmatch name="KUNA-CALLPLACEHOLDER #3: no call reads the return-address slot as an argument" min="0" max="0">,v4\[v1 \+ -8\]\);</stringmatch>
+</decompilertest>

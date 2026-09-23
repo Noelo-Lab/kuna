@@ -1,0 +1,12069 @@
+{
+"remove": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:152"
+},
+"rename": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:154"
+},
+"renameat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:158"
+},
+"renameat2": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int",
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:170"
+},
+"fclose": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:178"
+},
+"tmpfile": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdio.h:188"
+},
+"tmpfile64": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdio.h:200"
+},
+"tmpnam": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:205"
+},
+"tmpnam_r": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:210"
+},
+"tempnam": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:222"
+},
+"fflush": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:230"
+},
+"fflush_unlocked": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:239"
+},
+"fcloseall": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdio.h:249"
+},
+"fopen": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:258"
+},
+"freopen": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:265"
+},
+"fopen64": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:283"
+},
+"freopen64": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:286"
+},
+"fdopen": {
+"ret": "VoidPtr",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:293"
+},
+"fmemopen": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Size",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:308"
+},
+"open_memstream": {
+"ret": "VoidPtr",
+"params": [
+"CharPtrPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:314"
+},
+"setbuf": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:328"
+},
+"setvbuf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Int",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:332"
+},
+"setbuffer": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:338"
+},
+"setlinebuf": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:342"
+},
+"fprintf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/stdio.h:350"
+},
+"printf": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": 1,
+"src": "/usr/include/stdio.h:356"
+},
+"sprintf": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/stdio.h:358"
+},
+"vfprintf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:365"
+},
+"vprintf": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:371"
+},
+"vsprintf": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:373"
+},
+"snprintf": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"CharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/stdio.h:378"
+},
+"vsnprintf": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:382"
+},
+"vasprintf": {
+"ret": "Int",
+"params": [
+"CharPtrPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:390"
+},
+"__asprintf": {
+"ret": "Int",
+"params": [
+"CharPtrPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/stdio.h:393"
+},
+"asprintf": {
+"ret": "Int",
+"params": [
+"CharPtrPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/stdio.h:396"
+},
+"vdprintf": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:403"
+},
+"dprintf": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/stdio.h:406"
+},
+"fscanf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/stdio.h:434"
+},
+"scanf": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": 1,
+"src": "/usr/include/stdio.h:437"
+},
+"sscanf": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/stdio.h:439"
+},
+"vfscanf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:479"
+},
+"vscanf": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:484"
+},
+"vsscanf": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:487"
+},
+"fgetc": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:513"
+},
+"getc": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:514"
+},
+"getchar": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdio.h:520"
+},
+"getc_unlocked": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:527"
+},
+"getchar_unlocked": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdio.h:528"
+},
+"fgetc_unlocked": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:538"
+},
+"fputc": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:549"
+},
+"putc": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:550"
+},
+"putchar": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:556"
+},
+"fputc_unlocked": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:565"
+},
+"putc_unlocked": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:573"
+},
+"putchar_unlocked": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:574"
+},
+"getw": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:581"
+},
+"putw": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:584"
+},
+"fgets": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:592"
+},
+"fgets_unlocked": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:615"
+},
+"__getdelim": {
+"ret": "Long",
+"params": [
+"CharPtrPtr",
+"VoidPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:632"
+},
+"getdelim": {
+"ret": "Long",
+"params": [
+"CharPtrPtr",
+"VoidPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:635"
+},
+"getline": {
+"ret": "Long",
+"params": [
+"CharPtrPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:645"
+},
+"fputs": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:655"
+},
+"puts": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:661"
+},
+"ungetc": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:668"
+},
+"fread": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:675"
+},
+"fwrite": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:681"
+},
+"fputs_unlocked": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:691"
+},
+"fread_unlocked": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:702"
+},
+"fwrite_unlocked": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:704"
+},
+"fseek": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Long",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:713"
+},
+"ftell": {
+"ret": "Long",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:718"
+},
+"rewind": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:723"
+},
+"fgetpos": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:760"
+},
+"fsetpos": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:765"
+},
+"fgetpos64": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:781"
+},
+"fsetpos64": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:782"
+},
+"clearerr": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:786"
+},
+"feof": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:788"
+},
+"ferror": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:790"
+},
+"clearerr_unlocked": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:794"
+},
+"feof_unlocked": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:795"
+},
+"ferror_unlocked": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:796"
+},
+"perror": {
+"ret": "Void",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:804"
+},
+"fileno": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:809"
+},
+"fileno_unlocked": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:814"
+},
+"pclose": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:823"
+},
+"popen": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:829"
+},
+"ctermid": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:837"
+},
+"cuserid": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:844"
+},
+"obstack_printf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/stdio.h:853"
+},
+"obstack_vprintf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:856"
+},
+"flockfile": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:867"
+},
+"ftrylockfile": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:871"
+},
+"funlockfile": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:874"
+},
+"__uflow": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:885"
+},
+"__overflow": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdio.h:886"
+},
+"__sprintf_chk": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int",
+"Size",
+"CharPtr"
+],
+"vararg": 4,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:26"
+},
+"__vsprintf_chk": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int",
+"Size",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:29"
+},
+"__snprintf_chk": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"Int",
+"Size",
+"CharPtr"
+],
+"vararg": 5,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:58"
+},
+"__vsnprintf_chk": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"Int",
+"Size",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:62"
+},
+"__fprintf_chk": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"CharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:93"
+},
+"__printf_chk": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:95"
+},
+"__vfprintf_chk": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:96"
+},
+"__vprintf_chk": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:98"
+},
+"__dprintf_chk": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"CharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:139"
+},
+"__vdprintf_chk": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:141"
+},
+"__asprintf_chk": {
+"ret": "Int",
+"params": [
+"CharPtrPtr",
+"Int",
+"CharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:166"
+},
+"__vasprintf_chk": {
+"ret": "Int",
+"params": [
+"CharPtrPtr",
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:169"
+},
+"__obstack_printf_chk": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"CharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:172"
+},
+"__obstack_vprintf_chk": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:176"
+},
+"__fgets_chk": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:248"
+},
+"__fgets_alias": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:251"
+},
+"__fgets_chk_warn": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:255"
+},
+"__fread_chk": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:272"
+},
+"__fread_alias": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:275"
+},
+"__fread_chk_warn": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:279"
+},
+"__fgets_unlocked_chk": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:300"
+},
+"__fgets_unlocked_alias": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:303"
+},
+"__fgets_unlocked_chk_warn": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:307"
+},
+"__fread_unlocked_chk": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:327"
+},
+"__fread_unlocked_alias": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:330"
+},
+"__fread_unlocked_chk_warn": {
+"ret": "Size",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdio2.h:334"
+},
+"__ctype_get_mb_cur_max": {
+"ret": "Size",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:98"
+},
+"atoi": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:105"
+},
+"atol": {
+"ret": "Long",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:108"
+},
+"atoll": {
+"ret": "I64:s",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:113"
+},
+"strtol": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:177"
+},
+"strtoul": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:181"
+},
+"strtoq": {
+"ret": "I64:s",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:188"
+},
+"strtouq": {
+"ret": "I64:u",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:193"
+},
+"strtoll": {
+"ret": "I64:s",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:201"
+},
+"strtoull": {
+"ret": "I64:u",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:206"
+},
+"l64a": {
+"ret": "CharPtr",
+"params": [
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:386"
+},
+"a64l": {
+"ret": "Long",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:389"
+},
+"select": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/select.h:102"
+},
+"pselect": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"VoidPtr",
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/select.h:127"
+},
+"__fdelt_chk": {
+"ret": "Long",
+"params": [
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/select2.h:24"
+},
+"__fdelt_warn": {
+"ret": "Long",
+"params": [
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/select2.h:25"
+},
+"random": {
+"ret": "Long",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:402"
+},
+"srandom": {
+"ret": "Void",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:405"
+},
+"initstate": {
+"ret": "CharPtr",
+"params": [
+"UInt",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:411"
+},
+"setstate": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:416"
+},
+"random_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:435"
+},
+"srandom_r": {
+"ret": "Int",
+"params": [
+"UInt",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:438"
+},
+"initstate_r": {
+"ret": "Int",
+"params": [
+"UInt",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:441"
+},
+"setstate_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:446"
+},
+"rand": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:454"
+},
+"srand": {
+"ret": "Void",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:456"
+},
+"rand_r": {
+"ret": "Int",
+"params": [
+"UIntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:460"
+},
+"lrand48": {
+"ret": "Long",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:472"
+},
+"nrand48": {
+"ret": "Long",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:473"
+},
+"mrand48": {
+"ret": "Long",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:477"
+},
+"jrand48": {
+"ret": "Long",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:478"
+},
+"srand48": {
+"ret": "Void",
+"params": [
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:482"
+},
+"seed48": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:483"
+},
+"lcong48": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:485"
+},
+"drand48_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:502"
+},
+"erand48_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:504"
+},
+"lrand48_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:509"
+},
+"nrand48_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:512"
+},
+"mrand48_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:518"
+},
+"jrand48_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:521"
+},
+"srand48_r": {
+"ret": "Int",
+"params": [
+"Long",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:527"
+},
+"seed48_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:530"
+},
+"lcong48_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:533"
+},
+"malloc": {
+"ret": "VoidPtr",
+"params": [
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:540"
+},
+"calloc": {
+"ret": "VoidPtr",
+"params": [
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:543"
+},
+"realloc": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:551"
+},
+"free": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:555"
+},
+"reallocarray": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:569"
+},
+"alloca": {
+"ret": "VoidPtr",
+"params": [
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/alloca.h:32"
+},
+"valloc": {
+"ret": "VoidPtr",
+"params": [
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:580"
+},
+"posix_memalign": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:586"
+},
+"aligned_alloc": {
+"ret": "VoidPtr",
+"params": [
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:592"
+},
+"abort": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:598"
+},
+"exit": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:624"
+},
+"quick_exit": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:630"
+},
+"_Exit": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:636"
+},
+"getenv": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:641"
+},
+"secure_getenv": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:646"
+},
+"putenv": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:654"
+},
+"setenv": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:660"
+},
+"unsetenv": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:664"
+},
+"clearenv": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:671"
+},
+"mktemp": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:682"
+},
+"mkstemp": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:695"
+},
+"mkstemp64": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:705"
+},
+"mkstemps": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:717"
+},
+"mkstemps64": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:727"
+},
+"mkdtemp": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:738"
+},
+"mkostemp": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:749"
+},
+"mkostemp64": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:759"
+},
+"mkostemps": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:769"
+},
+"mkostemps64": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:781"
+},
+"system": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:791"
+},
+"canonicalize_file_name": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:797"
+},
+"realpath": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:808"
+},
+"abs": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:848"
+},
+"labs": {
+"ret": "Long",
+"params": [
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:849"
+},
+"llabs": {
+"ret": "I64:s",
+"params": [
+"I64:s"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:852"
+},
+"mblen": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:930"
+},
+"mbtowc": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:933"
+},
+"mbstowcs": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:941"
+},
+"wcstombs": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:945"
+},
+"rpmatch": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:956"
+},
+"getsubopt": {
+"ret": "Int",
+"params": [
+"CharPtrPtr",
+"CharPtrPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:967"
+},
+"posix_openpt": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:978"
+},
+"grantpt": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:986"
+},
+"unlockpt": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:990"
+},
+"ptsname": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:995"
+},
+"ptsname_r": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:1002"
+},
+"getpt": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:1006"
+},
+"getloadavg": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/stdlib.h:1013"
+},
+"__realpath_chk": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:23"
+},
+"__realpath_alias": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:26"
+},
+"__realpath_chk_warn": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:29"
+},
+"__ptsname_r_chk": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:52"
+},
+"__ptsname_r_alias": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:55"
+},
+"__ptsname_r_chk_warn": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:58"
+},
+"__mbstowcs_chk": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:95"
+},
+"__mbstowcs_alias": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:99"
+},
+"__mbstowcs_chk_warn": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:104"
+},
+"__wcstombs_chk": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:121"
+},
+"__wcstombs_alias": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:125"
+},
+"__wcstombs_chk_warn": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/stdlib.h:130"
+},
+"memcpy": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:43"
+},
+"memmove": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:47"
+},
+"memccpy": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Int",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:54"
+},
+"memset": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Int",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:61"
+},
+"memcmp": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:64"
+},
+"__memcmpeq": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:80"
+},
+"memchr": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Int",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:107"
+},
+"rawmemchr": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:120"
+},
+"memrchr": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Int",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:133"
+},
+"strcpy": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:141"
+},
+"strncpy": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:144"
+},
+"strcat": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:149"
+},
+"strncat": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:152"
+},
+"strcmp": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:156"
+},
+"strncmp": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:159"
+},
+"strcoll": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:163"
+},
+"strxfrm": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:166"
+},
+"strdup": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:187"
+},
+"strndup": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:195"
+},
+"strchr": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:246"
+},
+"strrchr": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:273"
+},
+"strchrnul": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:286"
+},
+"strcspn": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:293"
+},
+"strspn": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:297"
+},
+"strpbrk": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:323"
+},
+"strstr": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:350"
+},
+"strtok": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:356"
+},
+"__strtok_r": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:361"
+},
+"strtok_r": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:366"
+},
+"strcasestr": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:380"
+},
+"memmem": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Size",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:389"
+},
+"__mempcpy": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:397"
+},
+"mempcpy": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:400"
+},
+"strlen": {
+"ret": "Size",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:407"
+},
+"strnlen": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:413"
+},
+"strerror": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:419"
+},
+"strerror_r": {
+"ret": "CharPtr",
+"params": [
+"Int",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:444"
+},
+"strerrordesc_np": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:450"
+},
+"strerrorname_np": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:452"
+},
+"bcmp": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:34"
+},
+"bcopy": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:38"
+},
+"bzero": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:42"
+},
+"index": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:68"
+},
+"rindex": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:96"
+},
+"ffs": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:104"
+},
+"ffsl": {
+"ret": "Int",
+"params": [
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:110"
+},
+"ffsll": {
+"ret": "Int",
+"params": [
+"I64:s"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:111"
+},
+"strcasecmp": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:116"
+},
+"strncasecmp": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/strings.h:120"
+},
+"explicit_bzero": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:466"
+},
+"strsep": {
+"ret": "CharPtr",
+"params": [
+"CharPtrPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:471"
+},
+"strsignal": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:478"
+},
+"sigabbrev_np": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:482"
+},
+"sigdescr_np": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:485"
+},
+"__stpcpy": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:489"
+},
+"stpcpy": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:491"
+},
+"__stpncpy": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:496"
+},
+"stpncpy": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:499"
+},
+"strverscmp": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:506"
+},
+"strfry": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:510"
+},
+"memfrob": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:513"
+},
+"basename": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/string.h:527"
+},
+"__explicit_bzero_chk": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/string_fortified.h:66"
+},
+"access": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:287"
+},
+"euidaccess": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:292"
+},
+"eaccess": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:296"
+},
+"execveat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"CharPtrPtr",
+"CharPtrPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:300"
+},
+"faccessat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:309"
+},
+"close": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:358"
+},
+"closefrom": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:363"
+},
+"read": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:371"
+},
+"write": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:378"
+},
+"pipe": {
+"ret": "Int",
+"params": [
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:437"
+},
+"pipe2": {
+"ret": "Int",
+"params": [
+"IntPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:442"
+},
+"alarm": {
+"ret": "UInt",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:452"
+},
+"sleep": {
+"ret": "UInt",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:464"
+},
+"ualarm": {
+"ret": "UInt",
+"params": [
+"UInt",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:472"
+},
+"usleep": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:480"
+},
+"pause": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:489"
+},
+"chown": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:493"
+},
+"fchown": {
+"ret": "Int",
+"params": [
+"Int",
+"UInt",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:498"
+},
+"lchown": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:503"
+},
+"fchownat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"UInt",
+"UInt",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:511"
+},
+"chdir": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:517"
+},
+"fchdir": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:521"
+},
+"getcwd": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:531"
+},
+"get_current_dir_name": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:537"
+},
+"getwd": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:545"
+},
+"dup": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:552"
+},
+"dup2": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:555"
+},
+"dup3": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:560"
+},
+"execve": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:572"
+},
+"fexecve": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:578"
+},
+"execv": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:584"
+},
+"execle": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/unistd.h:589"
+},
+"execl": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/unistd.h:594"
+},
+"execvp": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:599"
+},
+"execlp": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/unistd.h:605"
+},
+"execvpe": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:611"
+},
+"nice": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:619"
+},
+"_exit": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:624"
+},
+"pathconf": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:633"
+},
+"fpathconf": {
+"ret": "Long",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:637"
+},
+"sysconf": {
+"ret": "Long",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:640"
+},
+"confstr": {
+"ret": "Size",
+"params": [
+"Int",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:644"
+},
+"getpid": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:650"
+},
+"getppid": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:653"
+},
+"getpgrp": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:656"
+},
+"__getpgid": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:659"
+},
+"getpgid": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:661"
+},
+"setpgid": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:668"
+},
+"setpgrp": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:682"
+},
+"setsid": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:689"
+},
+"getsid": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:693"
+},
+"getuid": {
+"ret": "UInt",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:697"
+},
+"geteuid": {
+"ret": "UInt",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:700"
+},
+"getgid": {
+"ret": "UInt",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:703"
+},
+"getegid": {
+"ret": "UInt",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:706"
+},
+"getgroups": {
+"ret": "Int",
+"params": [
+"Int",
+"UIntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:711"
+},
+"group_member": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:715"
+},
+"setuid": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:722"
+},
+"setreuid": {
+"ret": "Int",
+"params": [
+"UInt",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:727"
+},
+"seteuid": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:732"
+},
+"setgid": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:739"
+},
+"setregid": {
+"ret": "Int",
+"params": [
+"UInt",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:744"
+},
+"setegid": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:749"
+},
+"getresuid": {
+"ret": "Int",
+"params": [
+"UIntPtr",
+"UIntPtr",
+"UIntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:755"
+},
+"getresgid": {
+"ret": "Int",
+"params": [
+"UIntPtr",
+"UIntPtr",
+"UIntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:760"
+},
+"setresuid": {
+"ret": "Int",
+"params": [
+"UInt",
+"UInt",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:765"
+},
+"setresgid": {
+"ret": "Int",
+"params": [
+"UInt",
+"UInt",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:770"
+},
+"fork": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:778"
+},
+"vfork": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:786"
+},
+"_Fork": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:793"
+},
+"ttyname": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:799"
+},
+"ttyname_r": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:803"
+},
+"isatty": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:809"
+},
+"ttyslot": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:814"
+},
+"link": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:819"
+},
+"linkat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:825"
+},
+"symlink": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:832"
+},
+"readlink": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:838"
+},
+"symlinkat": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:847"
+},
+"readlinkat": {
+"ret": "Long",
+"params": [
+"Int",
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:851"
+},
+"unlink": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:858"
+},
+"unlinkat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:862"
+},
+"rmdir": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:867"
+},
+"tcgetpgrp": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:871"
+},
+"tcsetpgrp": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:874"
+},
+"getlogin": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:881"
+},
+"getlogin_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:889"
+},
+"setlogin": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:895"
+},
+"getopt": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/getopt_core.h:91"
+},
+"gethostname": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:911"
+},
+"sethostname": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:919"
+},
+"sethostid": {
+"ret": "Int",
+"params": [
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:924"
+},
+"getdomainname": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:930"
+},
+"setdomainname": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:933"
+},
+"vhangup": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:939"
+},
+"revoke": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:942"
+},
+"profil": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:950"
+},
+"acct": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:958"
+},
+"getusershell": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:962"
+},
+"endusershell": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:963"
+},
+"setusershell": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:964"
+},
+"daemon": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:970"
+},
+"chroot": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:977"
+},
+"getpass": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:981"
+},
+"fsync": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:989"
+},
+"syncfs": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:995"
+},
+"gethostid": {
+"ret": "Long",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1002"
+},
+"sync": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1005"
+},
+"getpagesize": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1011"
+},
+"getdtablesize": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1016"
+},
+"brk": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1070"
+},
+"sbrk": {
+"ret": "VoidPtr",
+"params": [
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1076"
+},
+"syscall": {
+"ret": "Long",
+"params": [
+"Long"
+],
+"vararg": 1,
+"src": "/usr/include/unistd.h:1091"
+},
+"copy_file_range": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Int",
+"VoidPtr",
+"Size",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1142"
+},
+"fdatasync": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1150"
+},
+"crypt": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/crypt.h:63"
+},
+"swab": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1168"
+},
+"getentropy": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1198"
+},
+"close_range": {
+"ret": "Int",
+"params": [
+"UInt",
+"UInt",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/unistd.h:1208"
+},
+"__read_chk": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:23"
+},
+"__read_alias": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:26"
+},
+"__read_chk_warn": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:29"
+},
+"__readlink_chk": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:100"
+},
+"__readlink_alias": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:104"
+},
+"__readlink_chk_warn": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:108"
+},
+"__readlinkat_chk": {
+"ret": "Long",
+"params": [
+"Int",
+"CharPtr",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:126"
+},
+"__readlinkat_alias": {
+"ret": "Long",
+"params": [
+"Int",
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:130"
+},
+"__readlinkat_chk_warn": {
+"ret": "Long",
+"params": [
+"Int",
+"CharPtr",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:135"
+},
+"__getcwd_chk": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:153"
+},
+"__getcwd_alias": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:155"
+},
+"__getcwd_chk_warn": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:157"
+},
+"__getwd_chk": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:172"
+},
+"__getwd_warn": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:174"
+},
+"__confstr_chk": {
+"ret": "Size",
+"params": [
+"Int",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:187"
+},
+"__confstr_alias": {
+"ret": "Size",
+"params": [
+"Int",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:190"
+},
+"__confstr_chk_warn": {
+"ret": "Size",
+"params": [
+"Int",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:193"
+},
+"__getgroups_chk": {
+"ret": "Int",
+"params": [
+"Int",
+"UIntPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:208"
+},
+"__getgroups_alias": {
+"ret": "Int",
+"params": [
+"Int",
+"UIntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:210"
+},
+"__getgroups_chk_warn": {
+"ret": "Int",
+"params": [
+"Int",
+"UIntPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:212"
+},
+"__ttyname_r_chk": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:227"
+},
+"__ttyname_r_alias": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:230"
+},
+"__ttyname_r_chk_warn": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:233"
+},
+"__getlogin_r_chk": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:249"
+},
+"__getlogin_r_alias": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:251"
+},
+"__getlogin_r_chk_warn": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:253"
+},
+"__gethostname_chk": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:270"
+},
+"__gethostname_alias": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:272"
+},
+"__gethostname_chk_warn": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:275"
+},
+"__getdomainname_chk": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:292"
+},
+"__getdomainname_alias": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:294"
+},
+"__getdomainname_chk_warn": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd.h:298"
+},
+"gettid": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/unistd_ext.h:34"
+},
+"vmsplice": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl-linux.h:414"
+},
+"splice": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Int",
+"VoidPtr",
+"Size",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl-linux.h:421"
+},
+"tee": {
+"ret": "Long",
+"params": [
+"Int",
+"Int",
+"Size",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl-linux.h:429"
+},
+"name_to_handle_at": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr",
+"IntPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl-linux.h:454"
+},
+"open_by_handle_at": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl-linux.h:462"
+},
+"fcntl": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": 2,
+"src": "/usr/include/fcntl.h:149"
+},
+"fcntl64": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": 2,
+"src": "/usr/include/fcntl.h:158"
+},
+"open": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": 2,
+"src": "/usr/include/fcntl.h:181"
+},
+"open64": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": 2,
+"src": "/usr/include/fcntl.h:191"
+},
+"openat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": 3,
+"src": "/usr/include/fcntl.h:205"
+},
+"openat64": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": 3,
+"src": "/usr/include/fcntl.h:216"
+},
+"creat": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/fcntl.h:227"
+},
+"creat64": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/fcntl.h:237"
+},
+"__open_2": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:26"
+},
+"__open_alias": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": 2,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:27"
+},
+"__open_too_many_args": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:35"
+},
+"__open_missing_mode": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:37"
+},
+"__open64_2": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:64"
+},
+"__open64_alias": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": 2,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:65"
+},
+"__open64_too_many_args": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:67"
+},
+"__open64_missing_mode": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:69"
+},
+"__openat_2": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:98"
+},
+"__openat_alias": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:100"
+},
+"__openat_too_many_args": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:111"
+},
+"__openat_missing_mode": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:113"
+},
+"__openat64_2": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:140"
+},
+"__openat64_alias": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:142"
+},
+"__openat64_too_many_args": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:145"
+},
+"__openat64_missing_mode": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/fcntl2.h:147"
+},
+"stat": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:205"
+},
+"fstat": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:210"
+},
+"stat64": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:240"
+},
+"fstat64": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:242"
+},
+"fstatat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:264"
+},
+"fstatat64": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:291"
+},
+"lstat": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:313"
+},
+"lstat64": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:338"
+},
+"chmod": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:352"
+},
+"lchmod": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:359"
+},
+"fchmod": {
+"ret": "Int",
+"params": [
+"Int",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:365"
+},
+"fchmodat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"UInt",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:371"
+},
+"umask": {
+"ret": "UInt",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:380"
+},
+"getumask": {
+"ret": "UInt",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:385"
+},
+"mkdir": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:389"
+},
+"mkdirat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:396"
+},
+"mkfifo": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:418"
+},
+"mkfifoat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:425"
+},
+"utimensat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:433"
+},
+"futimens": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/stat.h:452"
+},
+"statx": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"Int",
+"UInt",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/statx-generic.h:60"
+},
+"kill": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:112"
+},
+"killpg": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:119"
+},
+"raise": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:123"
+},
+"gsignal": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:129"
+},
+"psignal": {
+"ret": "Void",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:134"
+},
+"psiginfo": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:137"
+},
+"sigpause": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:151"
+},
+"sigblock": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:173"
+},
+"sigsetmask": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:176"
+},
+"siggetmask": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/signal.h:179"
+},
+"sigemptyset": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:199"
+},
+"sigfillset": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:202"
+},
+"sigaddset": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:205"
+},
+"sigdelset": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:208"
+},
+"sigismember": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:211"
+},
+"sigisemptyset": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:216"
+},
+"sigandset": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:219"
+},
+"sigorset": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:223"
+},
+"sigprocmask": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:232"
+},
+"sigsuspend": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:240"
+},
+"sigaction": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:243"
+},
+"sigpending": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:247"
+},
+"sigwait": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:255"
+},
+"sigwaitinfo": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:264"
+},
+"sigtimedwait": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:273"
+},
+"sigreturn": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:304"
+},
+"siginterrupt": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:324"
+},
+"sigaltstack": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:333"
+},
+"sigstack": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:347"
+},
+"sighold": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:355"
+},
+"sigrelse": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:359"
+},
+"sigignore": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/signal.h:363"
+},
+"pthread_sigmask": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/sigthread.h:31"
+},
+"__libc_current_sigrtmin": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/signal.h:383"
+},
+"__libc_current_sigrtmax": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/signal.h:385"
+},
+"tgkill": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/signal_ext.h:29"
+},
+"wait": {
+"ret": "Int",
+"params": [
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/wait.h:88"
+},
+"waitpid": {
+"ret": "Int",
+"params": [
+"Int",
+"IntPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/wait.h:111"
+},
+"waitid": {
+"ret": "Int",
+"params": [
+"Int",
+"UInt",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/wait.h:132"
+},
+"wait3": {
+"ret": "Int",
+"params": [
+"IntPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/wait.h:148"
+},
+"wait4": {
+"ret": "Int",
+"params": [
+"Int",
+"IntPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/wait.h:164"
+},
+"gettimeofday": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/time.h:67"
+},
+"settimeofday": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/time.h:86"
+},
+"adjtime": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/time.h:94"
+},
+"utimes": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/time.h:162"
+},
+"lutimes": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/time.h:189"
+},
+"futimes": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/time.h:193"
+},
+"futimesat": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/time.h:214"
+},
+"ioctl": {
+"ret": "Int",
+"params": [
+"Int",
+"Size"
+],
+"vararg": 2,
+"src": "/usr/include/x86_64-linux-gnu/sys/ioctl.h:42"
+},
+"__cmsg_nxthdr": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/socket.h:307"
+},
+"socket": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:102"
+},
+"socketpair": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"Int",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:108"
+},
+"send": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:138"
+},
+"recv": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:145"
+},
+"sendmsg": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:174"
+},
+"sendmmsg": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"UInt",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:195"
+},
+"recvmsg": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:216"
+},
+"recvmmsg": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"UInt",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:235"
+},
+"getsockopt": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"Int",
+"VoidPtr",
+"UIntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:255"
+},
+"setsockopt": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"Int",
+"VoidPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:277"
+},
+"listen": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:296"
+},
+"shutdown": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:324"
+},
+"sockatmark": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:329"
+},
+"isfdtype": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/socket.h:337"
+},
+"__recv_chk": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/socket2.h:23"
+},
+"__recv_alias": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/socket2.h:25"
+},
+"__recv_chk_warn": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/socket2.h:27"
+},
+"memfd_create": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mman-shared.h:51"
+},
+"mlock2": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mman-shared.h:55"
+},
+"pkey_alloc": {
+"ret": "Int",
+"params": [
+"UInt",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mman-shared.h:61"
+},
+"pkey_set": {
+"ret": "Int",
+"params": [
+"Int",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mman-shared.h:65"
+},
+"pkey_get": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mman-shared.h:69"
+},
+"pkey_free": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mman-shared.h:73"
+},
+"pkey_mprotect": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mman-shared.h:77"
+},
+"munmap": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:76"
+},
+"mprotect": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:81"
+},
+"msync": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:89"
+},
+"madvise": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:94"
+},
+"posix_madvise": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:98"
+},
+"mlock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:103"
+},
+"munlock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:106"
+},
+"mlockall": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:111"
+},
+"munlockall": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:115"
+},
+"mincore": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:123"
+},
+"mremap": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Size",
+"Size",
+"Int"
+],
+"vararg": 4,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:133"
+},
+"remap_file_pages": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"Int",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:138"
+},
+"shm_open": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:144"
+},
+"shm_unlink": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/mman.h:147"
+},
+"readv": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/uio.h:41"
+},
+"writev": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/uio.h:52"
+},
+"process_vm_readv": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"VoidPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/uio-ext.h:29"
+},
+"process_vm_writev": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size",
+"VoidPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/uio-ext.h:37"
+},
+"statvfs": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/statvfs.h:51"
+},
+"statvfs64": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/statvfs.h:65"
+},
+"fstatvfs": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/statvfs.h:73"
+},
+"fstatvfs64": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/statvfs.h:84"
+},
+"uname": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/utsname.h:81"
+},
+"opendir": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:134"
+},
+"fdopendir": {
+"ret": "VoidPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:141"
+},
+"closedir": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:149"
+},
+"readdir": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:162"
+},
+"readdir64": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:173"
+},
+"readdir_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:183"
+},
+"readdir64_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:201"
+},
+"rewinddir": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:209"
+},
+"seekdir": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"Long"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:215"
+},
+"telldir": {
+"ret": "Long",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:218"
+},
+"dirfd": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:224"
+},
+"__sysconf": {
+"ret": "Long",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h:24"
+},
+"alphasort": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:325"
+},
+"alphasort64": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:340"
+},
+"getdirentries": {
+"ret": "Long",
+"params": [
+"Int",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:353"
+},
+"getdirentries64": {
+"ret": "Long",
+"params": [
+"Int",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:370"
+},
+"versionsort": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:380"
+},
+"versionsort64": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dirent.h:396"
+},
+"getdents64": {
+"ret": "Long",
+"params": [
+"Int",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/dirent_ext.h:29"
+},
+"clock_adjtime": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/time.h:78"
+},
+"strftime": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"Size",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:100"
+},
+"strptime": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:107"
+},
+"gmtime": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:132"
+},
+"localtime": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:136"
+},
+"gmtime_r": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:154"
+},
+"localtime_r": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:159"
+},
+"asctime": {
+"ret": "CharPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:179"
+},
+"ctime": {
+"ret": "CharPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:183"
+},
+"asctime_r": {
+"ret": "CharPtr",
+"params": [
+"VoidPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:197"
+},
+"ctime_r": {
+"ret": "CharPtr",
+"params": [
+"VoidPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:202"
+},
+"tzset": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/time.h:228"
+},
+"dysize": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:262"
+},
+"nanosleep": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:272"
+},
+"clock_getres": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:276"
+},
+"clock_gettime": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:279"
+},
+"clock_settime": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:282"
+},
+"clock_nanosleep": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:311"
+},
+"clock_getcpuclockid": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:326"
+},
+"timer_create": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:331"
+},
+"timespec_get": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:371"
+},
+"timespec_getres": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:387"
+},
+"getdate": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:422"
+},
+"getdate_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/time.h:436"
+},
+"utime": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utime.h:50"
+},
+"setlocale": {
+"ret": "CharPtr",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/locale.h:122"
+},
+"localeconv": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/locale.h:125"
+},
+"gettext": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:39"
+},
+"dgettext": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:44"
+},
+"__dgettext": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:46"
+},
+"dcgettext": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:51"
+},
+"__dcgettext": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:54"
+},
+"ngettext": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:61"
+},
+"dngettext": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:67"
+},
+"dcngettext": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"CharPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:73"
+},
+"textdomain": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:82"
+},
+"bindtextdomain": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:86"
+},
+"bind_textdomain_codeset": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/libintl.h:91"
+},
+"__ctype_b_loc": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/ctype.h:79"
+},
+"__ctype_tolower_loc": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/ctype.h:81"
+},
+"__ctype_toupper_loc": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/ctype.h:83"
+},
+"isalnum": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:108"
+},
+"isalpha": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:109"
+},
+"iscntrl": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:110"
+},
+"isdigit": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:111"
+},
+"islower": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:112"
+},
+"isgraph": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:113"
+},
+"isprint": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:114"
+},
+"ispunct": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:115"
+},
+"isspace": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:116"
+},
+"isupper": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:117"
+},
+"isxdigit": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:118"
+},
+"tolower": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:122"
+},
+"toupper": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:125"
+},
+"isblank": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:130"
+},
+"isctype": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:135"
+},
+"isascii": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:142"
+},
+"toascii": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:146"
+},
+"_toupper": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:150"
+},
+"_tolower": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/ctype.h:151"
+},
+"iswalnum": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:95"
+},
+"iswalpha": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:101"
+},
+"iswcntrl": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:104"
+},
+"iswdigit": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:108"
+},
+"iswgraph": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:112"
+},
+"iswlower": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:117"
+},
+"iswprint": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:120"
+},
+"iswpunct": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:125"
+},
+"iswspace": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:130"
+},
+"iswupper": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:135"
+},
+"iswxdigit": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:140"
+},
+"iswblank": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:146"
+},
+"towlower": {
+"ret": "UInt",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:166"
+},
+"towupper": {
+"ret": "UInt",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:169"
+},
+"wcscpy": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:87"
+},
+"wcsncpy": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:92"
+},
+"wcscat": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:97"
+},
+"wcsncat": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:101"
+},
+"wcscmp": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:106"
+},
+"wcsncmp": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:109"
+},
+"wcscasecmp": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:114"
+},
+"wcsncasecmp": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:117"
+},
+"wcscoll": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:131"
+},
+"wcsxfrm": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:135"
+},
+"wcsdup": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:154"
+},
+"wcscspn": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:188"
+},
+"wcsspn": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:192"
+},
+"wcspbrk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:202"
+},
+"wcsstr": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:213"
+},
+"wcstok": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:218"
+},
+"wcslen": {
+"ret": "Size",
+"params": [
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:223"
+},
+"wcswcs": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:234"
+},
+"wcsnlen": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:241"
+},
+"wmemcmp": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:259"
+},
+"wmemcpy": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:263"
+},
+"wmemmove": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:268"
+},
+"wmempcpy": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:277"
+},
+"btowc": {
+"ret": "UInt",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:285"
+},
+"wctob": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:289"
+},
+"mbsinit": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:293"
+},
+"mbrtowc": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:297"
+},
+"__mbrlen": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:306"
+},
+"mbrlen": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:308"
+},
+"__btowc_alias": {
+"ret": "UInt",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:317"
+},
+"__wctob_alias": {
+"ret": "Int",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:323"
+},
+"mbsrtowcs": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtrPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:338"
+},
+"wcsrtombs": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"VoidPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:344"
+},
+"mbsnrtowcs": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtrPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:352"
+},
+"wcsnrtombs": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:358"
+},
+"wcswidth": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:372"
+},
+"wcstol": {
+"ret": "Long",
+"params": [
+"WCharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:429"
+},
+"wcstoul": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:434"
+},
+"wcstoll": {
+"ret": "I64:s",
+"params": [
+"WCharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:442"
+},
+"wcstoull": {
+"ret": "I64:u",
+"params": [
+"WCharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:449"
+},
+"wcstoq": {
+"ret": "I64:s",
+"params": [
+"WCharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:458"
+},
+"wcstouq": {
+"ret": "I64:u",
+"params": [
+"WCharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:465"
+},
+"wcpcpy": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:552"
+},
+"wcpncpy": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:557"
+},
+"open_wmemstream": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:581"
+},
+"fwide": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:588"
+},
+"fwprintf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"WCharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/wchar.h:595"
+},
+"wprintf": {
+"ret": "Int",
+"params": [
+"WCharPtr"
+],
+"vararg": 1,
+"src": "/usr/include/wchar.h:602"
+},
+"swprintf": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"Size",
+"WCharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/wchar.h:605"
+},
+"vfwprintf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:613"
+},
+"vwprintf": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:621"
+},
+"vswprintf": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"Size",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:626"
+},
+"fwscanf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"WCharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/wchar.h:657"
+},
+"wscanf": {
+"ret": "Int",
+"params": [
+"WCharPtr"
+],
+"vararg": 1,
+"src": "/usr/include/wchar.h:661"
+},
+"swscanf": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/wchar.h:664"
+},
+"vfwscanf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:711"
+},
+"vwscanf": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:715"
+},
+"vswscanf": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:718"
+},
+"fgetwc": {
+"ret": "UInt",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:744"
+},
+"getwc": {
+"ret": "UInt",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:745"
+},
+"getwchar": {
+"ret": "UInt",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/wchar.h:751"
+},
+"fgetws": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:773"
+},
+"fputws": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:780"
+},
+"ungetwc": {
+"ret": "UInt",
+"params": [
+"UInt",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:788"
+},
+"getwc_unlocked": {
+"ret": "UInt",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:799"
+},
+"getwchar_unlocked": {
+"ret": "UInt",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/wchar.h:800"
+},
+"fgetwc_unlocked": {
+"ret": "UInt",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:808"
+},
+"fgetws_unlocked": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:835"
+},
+"fputws_unlocked": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:844"
+},
+"wcsftime": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"Size",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/wchar.h:852"
+},
+"__wmemcpy_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:24"
+},
+"__wmemcpy_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:27"
+},
+"__wmemcpy_chk_warn": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:31"
+},
+"__wmemmove_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:48"
+},
+"__wmemmove_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:50"
+},
+"__wmemmove_chk_warn": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:53"
+},
+"__wmempcpy_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:69"
+},
+"__wmempcpy_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:72"
+},
+"__wmempcpy_chk_warn": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:76"
+},
+"__wcscpy_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:113"
+},
+"__wcscpy_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:116"
+},
+"__wcpcpy_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:130"
+},
+"__wcpcpy_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:133"
+},
+"__wcsncpy_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:147"
+},
+"__wcsncpy_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:150"
+},
+"__wcsncpy_chk_warn": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:154"
+},
+"__wcpncpy_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:171"
+},
+"__wcpncpy_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:174"
+},
+"__wcpncpy_chk_warn": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:178"
+},
+"__wcscat_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:195"
+},
+"__wcscat_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:198"
+},
+"__wcsncat_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:212"
+},
+"__wcsncat_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"WCharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:215"
+},
+"__swprintf_chk": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"Size",
+"Int",
+"Size",
+"WCharPtr"
+],
+"vararg": 5,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:231"
+},
+"__swprintf_alias": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"Size",
+"WCharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:236"
+},
+"__vswprintf_chk": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"Size",
+"Int",
+"Size",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:261"
+},
+"__vswprintf_alias": {
+"ret": "Int",
+"params": [
+"WCharPtr",
+"Size",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:267"
+},
+"__fwprintf_chk": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"WCharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:286"
+},
+"__wprintf_chk": {
+"ret": "Int",
+"params": [
+"Int",
+"WCharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:288"
+},
+"__vfwprintf_chk": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:290"
+},
+"__vwprintf_chk": {
+"ret": "Int",
+"params": [
+"Int",
+"WCharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:293"
+},
+"__fgetws_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"Size",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:331"
+},
+"__fgetws_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:333"
+},
+"__fgetws_chk_warn": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"Size",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:336"
+},
+"__fgetws_unlocked_chk": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"Size",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:354"
+},
+"__fgetws_unlocked_alias": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:357"
+},
+"__fgetws_unlocked_chk_warn": {
+"ret": "WCharPtr",
+"params": [
+"WCharPtr",
+"Size",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:361"
+},
+"__mbsrtowcs_chk": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtrPtr",
+"Size",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:407"
+},
+"__mbsrtowcs_alias": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtrPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:411"
+},
+"__mbsrtowcs_chk_warn": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtrPtr",
+"Size",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:416"
+},
+"__wcsrtombs_chk": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"VoidPtr",
+"Size",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:434"
+},
+"__wcsrtombs_alias": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"VoidPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:438"
+},
+"__wcsrtombs_chk_warn": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"VoidPtr",
+"Size",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:443"
+},
+"__mbsnrtowcs_chk": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtrPtr",
+"Size",
+"Size",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:461"
+},
+"__mbsnrtowcs_alias": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtrPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:465"
+},
+"__mbsnrtowcs_chk_warn": {
+"ret": "Size",
+"params": [
+"WCharPtr",
+"CharPtrPtr",
+"Size",
+"Size",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:470"
+},
+"__wcsnrtombs_chk": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:488"
+},
+"__wcsnrtombs_alias": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:493"
+},
+"__wcsnrtombs_chk_warn": {
+"ret": "Size",
+"params": [
+"CharPtr",
+"VoidPtr",
+"Size",
+"Size",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/wchar2.h:498"
+},
+"__errno_location": {
+"ret": "IntPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/errno.h:37"
+},
+"setpwent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/pwd.h:72"
+},
+"endpwent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/pwd.h:78"
+},
+"getpwent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/pwd.h:84"
+},
+"fgetpwent": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pwd.h:94"
+},
+"putpwent": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pwd.h:102"
+},
+"getpwuid": {
+"ret": "VoidPtr",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/pwd.h:110"
+},
+"getpwnam": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pwd.h:116"
+},
+"getpwent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pwd.h:139"
+},
+"getpwuid_r": {
+"ret": "Int",
+"params": [
+"UInt",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pwd.h:146"
+},
+"getpwnam_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pwd.h:153"
+},
+"fgetpwent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pwd.h:169"
+},
+"getpw": {
+"ret": "Int",
+"params": [
+"UInt",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pwd.h:188"
+},
+"setgrent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/grp.h:61"
+},
+"endgrent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/grp.h:67"
+},
+"getgrent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/grp.h:73"
+},
+"fgetgrent": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:83"
+},
+"putgrent": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:93"
+},
+"getgrgid": {
+"ret": "VoidPtr",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:101"
+},
+"getgrnam": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:107"
+},
+"getgrent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:131"
+},
+"getgrgid_r": {
+"ret": "Int",
+"params": [
+"UInt",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:140"
+},
+"getgrnam_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:148"
+},
+"fgetgrent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:161"
+},
+"setgroups": {
+"ret": "Int",
+"params": [
+"Size",
+"UIntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:176"
+},
+"getgrouplist": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt",
+"UIntPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:186"
+},
+"initgroups": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/grp.h:197"
+},
+"setspent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/shadow.h:66"
+},
+"endspent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/shadow.h:74"
+},
+"getspent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/shadow.h:82"
+},
+"getspnam": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/shadow.h:90"
+},
+"sgetspent": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/shadow.h:98"
+},
+"fgetspent": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/shadow.h:106"
+},
+"putspent": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/shadow.h:114"
+},
+"getspent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/shadow.h:124"
+},
+"getspnam_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/shadow.h:127"
+},
+"sgetspent_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/shadow.h:131"
+},
+"fgetspent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/shadow.h:135"
+},
+"lckpwdf": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/shadow.h:145"
+},
+"ulckpwdf": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/shadow.h:148"
+},
+"tcgetattr": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/termios.h:66"
+},
+"tcsetattr": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/termios.h:70"
+},
+"cfmakeraw": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/termios.h:76"
+},
+"tcsendbreak": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/termios.h:80"
+},
+"tcdrain": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/termios.h:86"
+},
+"tcflush": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/termios.h:90"
+},
+"tcflow": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/termios.h:94"
+},
+"tcgetsid": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/termios.h:99"
+},
+"imaxabs": {
+"ret": "I64:s",
+"params": [
+"I64:s"
+],
+"vararg": -1,
+"src": "/usr/include/inttypes.h:290"
+},
+"strtoimax": {
+"ret": "I64:s",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/inttypes.h:297"
+},
+"strtoumax": {
+"ret": "I64:u",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/inttypes.h:301"
+},
+"wcstoimax": {
+"ret": "I64:s",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/inttypes.h:305"
+},
+"wcstoumax": {
+"ret": "I64:u",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/inttypes.h:310"
+},
+"fnmatch": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/fnmatch.h:56"
+},
+"globfree": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/glob.h:151"
+},
+"globfree64": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/glob.h:187"
+},
+"glob_pattern_p": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/glob.h:198"
+},
+"re_compile_pattern": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/regex.h:562"
+},
+"re_compile_fastmap": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/regex.h:570"
+},
+"regcomp": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/regex.h:675"
+},
+"regexec": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/regex.h:679"
+},
+"regerror": {
+"ret": "Size",
+"params": [
+"Int",
+"VoidPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/regex.h:685"
+},
+"regfree": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/regex.h:689"
+},
+"getopt_long": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr",
+"CharPtr",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/getopt_ext.h:66"
+},
+"getopt_long_only": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr",
+"CharPtr",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/getopt_ext.h:70"
+},
+"closelog": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/syslog.h:175"
+},
+"openlog": {
+"ret": "Void",
+"params": [
+"CharPtr",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/syslog.h:181"
+},
+"setlogmask": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/syslog.h:184"
+},
+"syslog": {
+"ret": "Void",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/x86_64-linux-gnu/sys/syslog.h:190"
+},
+"vsyslog": {
+"ret": "Void",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/syslog.h:200"
+},
+"__syslog_chk": {
+"ret": "Void",
+"params": [
+"Int",
+"Int",
+"CharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/syslog.h:24"
+},
+"__vsyslog_chk": {
+"ret": "Void",
+"params": [
+"Int",
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/syslog.h:40"
+},
+"ntohl": {
+"ret": "UInt",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:382"
+},
+"htonl": {
+"ret": "UInt",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:385"
+},
+"bindresvport": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:510"
+},
+"bindresvport6": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:513"
+},
+"inet6_option_space": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:559"
+},
+"inet6_option_init": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:561"
+},
+"inet6_option_append": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:563"
+},
+"inet6_option_alloc": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Int",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:566"
+},
+"inet6_option_next": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:569"
+},
+"inet6_option_find": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:572"
+},
+"inet6_opt_init": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:578"
+},
+"inet6_opt_finish": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"UInt",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:582"
+},
+"inet6_opt_set_val": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"VoidPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:584"
+},
+"inet6_opt_next": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"UInt",
+"Int",
+"VoidPtr",
+"UIntPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:586"
+},
+"inet6_opt_get_val": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"VoidPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:592"
+},
+"inet6_rth_space": {
+"ret": "UInt",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:597"
+},
+"inet6_rth_init": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"UInt",
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:598"
+},
+"inet6_rth_add": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:600"
+},
+"inet6_rth_reverse": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:601"
+},
+"inet6_rth_segments": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:602"
+},
+"inet6_rth_getaddr": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:603"
+},
+"getsourcefilter": {
+"ret": "Int",
+"params": [
+"Int",
+"UInt",
+"VoidPtr",
+"UInt",
+"UIntPtr",
+"UIntPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:624"
+},
+"setsourcefilter": {
+"ret": "Int",
+"params": [
+"Int",
+"UInt",
+"VoidPtr",
+"UInt",
+"UInt",
+"UInt",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netinet/in.h:631"
+},
+"setrpcent": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/rpc/netdb.h:53"
+},
+"endrpcent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/rpc/netdb.h:54"
+},
+"getrpcbyname": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/rpc/netdb.h:55"
+},
+"getrpcbynumber": {
+"ret": "VoidPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/rpc/netdb.h:56"
+},
+"getrpcent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/rpc/netdb.h:57"
+},
+"getrpcbyname_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/rpc/netdb.h:60"
+},
+"getrpcbynumber_r": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/rpc/netdb.h:64"
+},
+"getrpcent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/rpc/netdb.h:68"
+},
+"__h_errno_location": {
+"ret": "IntPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:59"
+},
+"herror": {
+"ret": "Void",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:90"
+},
+"hstrerror": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:93"
+},
+"sethostent": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:115"
+},
+"endhostent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:121"
+},
+"gethostent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:128"
+},
+"gethostbyaddr": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"UInt",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:135"
+},
+"gethostbyname": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:142"
+},
+"gethostbyname2": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:153"
+},
+"gethostent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:165"
+},
+"gethostbyaddr_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"UInt",
+"Int",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:170"
+},
+"gethostbyname_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:177"
+},
+"gethostbyname2_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:183"
+},
+"setnetent": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:196"
+},
+"endnetent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:202"
+},
+"getnetent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:209"
+},
+"getnetbyaddr": {
+"ret": "VoidPtr",
+"params": [
+"UInt",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:216"
+},
+"getnetbyname": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:222"
+},
+"getnetent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:235"
+},
+"getnetbyaddr_r": {
+"ret": "Int",
+"params": [
+"UInt",
+"Int",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:240"
+},
+"getnetbyname_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:246"
+},
+"setservent": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:268"
+},
+"endservent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:274"
+},
+"getservent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:281"
+},
+"getservbyname": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:288"
+},
+"getservbyport": {
+"ret": "VoidPtr",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:295"
+},
+"getservent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:306"
+},
+"getservbyname_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:310"
+},
+"getservbyport_r": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:316"
+},
+"setprotoent": {
+"ret": "Void",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:336"
+},
+"endprotoent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:342"
+},
+"getprotoent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:349"
+},
+"getprotobyname": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:355"
+},
+"getprotobynumber": {
+"ret": "VoidPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:361"
+},
+"getprotoent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:372"
+},
+"getprotobyname_r": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:376"
+},
+"getprotobynumber_r": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"CharPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:381"
+},
+"setnetgrent": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:393"
+},
+"endnetgrent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/netdb.h:401"
+},
+"getnetgrent": {
+"ret": "Int",
+"params": [
+"CharPtrPtr",
+"CharPtrPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:410"
+},
+"innetgr": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:421"
+},
+"getnetgrent_r": {
+"ret": "Int",
+"params": [
+"CharPtrPtr",
+"CharPtrPtr",
+"CharPtrPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:430"
+},
+"rexec": {
+"ret": "Int",
+"params": [
+"CharPtrPtr",
+"Int",
+"CharPtr",
+"CharPtr",
+"CharPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:477"
+},
+"ruserok": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int",
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:503"
+},
+"iruserok": {
+"ret": "Int",
+"params": [
+"UInt",
+"Int",
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:526"
+},
+"rresvport": {
+"ret": "Int",
+"params": [
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:549"
+},
+"getaddrinfo": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:660"
+},
+"freeaddrinfo": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:666"
+},
+"gai_strerror": {
+"ret": "CharPtr",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:669"
+},
+"getnameinfo": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"UInt",
+"CharPtr",
+"UInt",
+"CharPtr",
+"UInt",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:675"
+},
+"getaddrinfo_a": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:690"
+},
+"gai_suspend": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:701"
+},
+"gai_error": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:716"
+},
+"gai_cancel": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/netdb.h:719"
+},
+"inet_pton": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/arpa/inet.h:58"
+},
+"inet_ntop": {
+"ret": "CharPtr",
+"params": [
+"Int",
+"VoidPtr",
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/arpa/inet.h:64"
+},
+"inet_aton": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/arpa/inet.h:73"
+},
+"inet_net_ntop": {
+"ret": "CharPtr",
+"params": [
+"Int",
+"VoidPtr",
+"Int",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/arpa/inet.h:83"
+},
+"inet_net_pton": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/arpa/inet.h:89"
+},
+"inet_nsap_addr": {
+"ret": "UInt",
+"params": [
+"CharPtr",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/arpa/inet.h:95"
+},
+"inet_nsap_ntoa": {
+"ret": "CharPtr",
+"params": [
+"Int",
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/arpa/inet.h:100"
+},
+"unshare": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/sched.h:86"
+},
+"sched_getcpu": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/sched.h:89"
+},
+"getcpu": {
+"ret": "Int",
+"params": [
+"UIntPtr",
+"UIntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/sched.h:92"
+},
+"setns": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/sched.h:95"
+},
+"__sched_cpucount": {
+"ret": "Int",
+"params": [
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/cpu-set.h:117"
+},
+"__sched_cpualloc": {
+"ret": "VoidPtr",
+"params": [
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/cpu-set.h:119"
+},
+"__sched_cpufree": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/cpu-set.h:120"
+},
+"sched_setparam": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/sched.h:54"
+},
+"sched_getparam": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/sched.h:58"
+},
+"sched_setscheduler": {
+"ret": "Int",
+"params": [
+"Int",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/sched.h:61"
+},
+"sched_getscheduler": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/sched.h:65"
+},
+"sched_yield": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/sched.h:68"
+},
+"sched_get_priority_max": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/sched.h:71"
+},
+"sched_get_priority_min": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/sched.h:74"
+},
+"sched_rr_get_interval": {
+"ret": "Int",
+"params": [
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/sched.h:78"
+},
+"sched_setaffinity": {
+"ret": "Int",
+"params": [
+"Int",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/sched.h:130"
+},
+"sched_getaffinity": {
+"ret": "Int",
+"params": [
+"Int",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/sched.h:134"
+},
+"pthread_exit": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:211"
+},
+"pthread_attr_init": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:285"
+},
+"pthread_attr_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:288"
+},
+"pthread_attr_getdetachstate": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:292"
+},
+"pthread_attr_setdetachstate": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:297"
+},
+"pthread_attr_getguardsize": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:303"
+},
+"pthread_attr_setguardsize": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:308"
+},
+"pthread_attr_getschedparam": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:314"
+},
+"pthread_attr_setschedparam": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:319"
+},
+"pthread_attr_getschedpolicy": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:324"
+},
+"pthread_attr_setschedpolicy": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:329"
+},
+"pthread_attr_getinheritsched": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:333"
+},
+"pthread_attr_setinheritsched": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:338"
+},
+"pthread_attr_getscope": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:344"
+},
+"pthread_attr_setscope": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:349"
+},
+"pthread_attr_getstackaddr": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:353"
+},
+"pthread_attr_setstackaddr": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:361"
+},
+"pthread_attr_getstacksize": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:366"
+},
+"pthread_attr_setstacksize": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:373"
+},
+"pthread_attr_getstack": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:379"
+},
+"pthread_attr_setstack": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:387"
+},
+"pthread_attr_setaffinity_np": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:394"
+},
+"pthread_attr_getaffinity_np": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:401"
+},
+"pthread_getattr_default_np": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:407"
+},
+"pthread_attr_setsigmask_np": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:411"
+},
+"pthread_attr_getsigmask_np": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:417"
+},
+"pthread_setattr_default_np": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:426"
+},
+"pthread_getconcurrency": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/pthread.h:470"
+},
+"pthread_setconcurrency": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:473"
+},
+"pthread_yield": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/pthread.h:479"
+},
+"pthread_setcancelstate": {
+"ret": "Int",
+"params": [
+"Int",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:521"
+},
+"pthread_setcanceltype": {
+"ret": "Int",
+"params": [
+"Int",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:525"
+},
+"pthread_testcancel": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/pthread.h:533"
+},
+"__pthread_register_cancel": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:697"
+},
+"__pthread_unregister_cancel": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:709"
+},
+"__pthread_register_cancel_defer": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:732"
+},
+"__pthread_unregister_cancel_restore": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:745"
+},
+"__pthread_unwind_next": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:750"
+},
+"__sigsetjmp_cancel": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:766"
+},
+"pthread_mutex_init": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:781"
+},
+"pthread_mutex_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:786"
+},
+"pthread_mutex_trylock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:790"
+},
+"pthread_mutex_lock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:794"
+},
+"pthread_mutex_timedlock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:800"
+},
+"pthread_mutex_clocklock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:817"
+},
+"pthread_mutex_unlock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:835"
+},
+"pthread_mutex_getprioceiling": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:840"
+},
+"pthread_mutex_setprioceiling": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:847"
+},
+"pthread_mutex_consistent": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:855"
+},
+"pthread_mutex_consistent_np": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:859"
+},
+"pthread_mutexattr_init": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:874"
+},
+"pthread_mutexattr_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:878"
+},
+"pthread_mutexattr_getpshared": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:882"
+},
+"pthread_mutexattr_setpshared": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:888"
+},
+"pthread_mutexattr_gettype": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:894"
+},
+"pthread_mutexattr_settype": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:901"
+},
+"pthread_mutexattr_getprotocol": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:906"
+},
+"pthread_mutexattr_setprotocol": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:913"
+},
+"pthread_mutexattr_getprioceiling": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:918"
+},
+"pthread_mutexattr_setprioceiling": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:924"
+},
+"pthread_mutexattr_getrobust": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:930"
+},
+"pthread_mutexattr_getrobust_np": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:935"
+},
+"pthread_mutexattr_setrobust": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:946"
+},
+"pthread_mutexattr_setrobust_np": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:951"
+},
+"pthread_rwlock_init": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:967"
+},
+"pthread_rwlock_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:972"
+},
+"pthread_rwlock_rdlock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:976"
+},
+"pthread_rwlock_tryrdlock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:980"
+},
+"pthread_rwlock_timedrdlock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:986"
+},
+"pthread_rwlock_clockrdlock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1004"
+},
+"pthread_rwlock_wrlock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1023"
+},
+"pthread_rwlock_trywrlock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1027"
+},
+"pthread_rwlock_timedwrlock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1033"
+},
+"pthread_rwlock_clockwrlock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1051"
+},
+"pthread_rwlock_unlock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1071"
+},
+"pthread_rwlockattr_init": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1078"
+},
+"pthread_rwlockattr_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1082"
+},
+"pthread_rwlockattr_getpshared": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1086"
+},
+"pthread_rwlockattr_setpshared": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1092"
+},
+"pthread_rwlockattr_getkind_np": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1097"
+},
+"pthread_rwlockattr_setkind_np": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1103"
+},
+"pthread_cond_init": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1112"
+},
+"pthread_cond_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1117"
+},
+"pthread_cond_signal": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1121"
+},
+"pthread_cond_broadcast": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1125"
+},
+"pthread_cond_wait": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1133"
+},
+"pthread_cond_timedwait": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1145"
+},
+"pthread_cond_clockwait": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1171"
+},
+"pthread_condattr_init": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1194"
+},
+"pthread_condattr_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1198"
+},
+"pthread_condattr_getpshared": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1202"
+},
+"pthread_condattr_setpshared": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1208"
+},
+"pthread_condattr_getclock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1213"
+},
+"pthread_condattr_setclock": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1219"
+},
+"pthread_spin_init": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1230"
+},
+"pthread_spin_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1234"
+},
+"pthread_spin_lock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1238"
+},
+"pthread_spin_trylock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1242"
+},
+"pthread_spin_unlock": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1246"
+},
+"pthread_barrier_init": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1254"
+},
+"pthread_barrier_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1260"
+},
+"pthread_barrier_wait": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1264"
+},
+"pthread_barrierattr_init": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1269"
+},
+"pthread_barrierattr_destroy": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1273"
+},
+"pthread_barrierattr_getpshared": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1277"
+},
+"pthread_barrierattr_setpshared": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/pthread.h:1283"
+},
+"_dl_mcount_wrapper_check": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/dlfcn.h:60"
+},
+"dlopen": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/dlfcn.h:58"
+},
+"dlclose": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dlfcn.h:62"
+},
+"dlsym": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dlfcn.h:66"
+},
+"dlvsym": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dlfcn.h:75"
+},
+"dlerror": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/dlfcn.h:84"
+},
+"dladdr": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dlfcn.h:100"
+},
+"dladdr1": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/dlfcn.h:104"
+},
+"dlinfo": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dlfcn.h:125"
+},
+"_dl_find_object": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/dlfcn.h:222"
+},
+"setjmp": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/setjmp.h:36"
+},
+"__sigsetjmp": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/setjmp.h:41"
+},
+"_setjmp": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/setjmp.h:45"
+},
+"longjmp": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/setjmp2.h:25"
+},
+"_longjmp": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/setjmp2.h:28"
+},
+"siglongjmp": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/setjmp2.h:31"
+},
+"__assert_fail": {
+"ret": "Void",
+"params": [
+"CharPtr",
+"CharPtr",
+"UInt",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/assert.h:69"
+},
+"__assert_perror_fail": {
+"ret": "Void",
+"params": [
+"Int",
+"CharPtr",
+"UInt",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/assert.h:74"
+},
+"__assert": {
+"ret": "Void",
+"params": [
+"CharPtr",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/assert.h:81"
+},
+"canonicalize": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:370"
+},
+"totalorder": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:411"
+},
+"totalordermag": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:416"
+},
+"canonicalizef": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:370"
+},
+"totalorderf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:411"
+},
+"totalordermagf": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:416"
+},
+"canonicalizel": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:370"
+},
+"totalorderl": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:411"
+},
+"totalordermagl": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:416"
+},
+"canonicalizef32": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:370"
+},
+"totalorderf32": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:411"
+},
+"totalordermagf32": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:416"
+},
+"canonicalizef64": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:370"
+},
+"totalorderf64": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:411"
+},
+"totalordermagf64": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:416"
+},
+"canonicalizef128": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:370"
+},
+"totalorderf128": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:411"
+},
+"totalordermagf128": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:416"
+},
+"canonicalizef32x": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:370"
+},
+"totalorderf32x": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:411"
+},
+"totalordermagf32x": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:416"
+},
+"canonicalizef64x": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:370"
+},
+"totalorderf64x": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:411"
+},
+"totalordermagf64x": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/bits/mathcalls.h:416"
+},
+"login_tty": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:41"
+},
+"login": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:45"
+},
+"logout": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:48"
+},
+"logwtmp": {
+"ret": "Void",
+"params": [
+"CharPtr",
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:51"
+},
+"updwtmp": {
+"ret": "Void",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:55"
+},
+"utmpname": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:59"
+},
+"getutent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/utmp.h:62"
+},
+"setutent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/utmp.h:65"
+},
+"endutent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/utmp.h:68"
+},
+"getutid": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:72"
+},
+"getutline": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:76"
+},
+"pututline": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:79"
+},
+"getutent_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:84"
+},
+"getutid_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:86"
+},
+"getutline_r": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmp.h:89"
+},
+"setutxent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:53"
+},
+"endutxent": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:59"
+},
+"getutxent": {
+"ret": "VoidPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:65"
+},
+"getutxid": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:71"
+},
+"getutxline": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:77"
+},
+"pututxline": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:83"
+},
+"utmpxname": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:93"
+},
+"updwtmpx": {
+"ret": "Void",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:101"
+},
+"getutmp": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:111"
+},
+"getutmpx": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/utmpx.h:120"
+},
+"setxattr": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:41"
+},
+"lsetxattr": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:48"
+},
+"fsetxattr": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr",
+"Size",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:54"
+},
+"getxattr": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:59"
+},
+"lgetxattr": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:65"
+},
+"fgetxattr": {
+"ret": "Long",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:70"
+},
+"listxattr": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:76"
+},
+"llistxattr": {
+"ret": "Long",
+"params": [
+"CharPtr",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:82"
+},
+"flistxattr": {
+"ret": "Long",
+"params": [
+"Int",
+"CharPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:87"
+},
+"removexattr": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:92"
+},
+"lremovexattr": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:97"
+},
+"fremovexattr": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/xattr.h:101"
+},
+"flock": {
+"ret": "Int",
+"params": [
+"Int",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/file.h:50"
+},
+"sysinfo": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/sysinfo.h:29"
+},
+"get_nprocs_conf": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/sysinfo.h:33"
+},
+"get_nprocs": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/sysinfo.h:36"
+},
+"get_phys_pages": {
+"ret": "Long",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/sysinfo.h:40"
+},
+"get_avphys_pages": {
+"ret": "Long",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/x86_64-linux-gnu/sys/sysinfo.h:43"
+},
+"setmntent": {
+"ret": "VoidPtr",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/mntent.h:64"
+},
+"getmntent": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/mntent.h:69"
+},
+"getmntent_r": {
+"ret": "VoidPtr",
+"params": [
+"VoidPtr",
+"VoidPtr",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/mntent.h:73"
+},
+"addmntent": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/mntent.h:81"
+},
+"endmntent": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/mntent.h:85"
+},
+"hasmntopt": {
+"ret": "CharPtr",
+"params": [
+"VoidPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/mntent.h:89"
+},
+"warn": {
+"ret": "Void",
+"params": [
+"CharPtr"
+],
+"vararg": 1,
+"src": "/usr/include/err.h:34"
+},
+"vwarn": {
+"ret": "Void",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/err.h:36"
+},
+"warnx": {
+"ret": "Void",
+"params": [
+"CharPtr"
+],
+"vararg": 1,
+"src": "/usr/include/err.h:40"
+},
+"vwarnx": {
+"ret": "Void",
+"params": [
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/err.h:42"
+},
+"err": {
+"ret": "Void",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/err.h:46"
+},
+"verr": {
+"ret": "Void",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/err.h:48"
+},
+"errx": {
+"ret": "Void",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": 2,
+"src": "/usr/include/err.h:50"
+},
+"verrx": {
+"ret": "Void",
+"params": [
+"Int",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/err.h:52"
+},
+"error": {
+"ret": "Void",
+"params": [
+"Int",
+"Int",
+"CharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/error.h:31"
+},
+"error_at_line": {
+"ret": "Void",
+"params": [
+"Int",
+"Int",
+"CharPtr",
+"UInt",
+"CharPtr"
+],
+"vararg": 5,
+"src": "/usr/include/error.h:34"
+},
+"__error_alias": {
+"ret": "Void",
+"params": [
+"Int",
+"Int",
+"CharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/error.h:24"
+},
+"__error_noreturn": {
+"ret": "Void",
+"params": [
+"Int",
+"Int",
+"CharPtr"
+],
+"vararg": 3,
+"src": "/usr/include/x86_64-linux-gnu/bits/error.h:28"
+},
+"__error_at_line_alias": {
+"ret": "Void",
+"params": [
+"Int",
+"Int",
+"CharPtr",
+"UInt",
+"CharPtr"
+],
+"vararg": 5,
+"src": "/usr/include/x86_64-linux-gnu/bits/error.h:46"
+},
+"__error_at_line_noreturn": {
+"ret": "Void",
+"params": [
+"Int",
+"Int",
+"CharPtr",
+"UInt",
+"CharPtr"
+],
+"vararg": 5,
+"src": "/usr/include/x86_64-linux-gnu/bits/error.h:52"
+},
+"_obstack_newchunk": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/obstack.h:184"
+},
+"_obstack_memory_used": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/obstack.h:190"
+},
+"obstack_free": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/obstack.h:197"
+},
+"insque": {
+"ret": "Void",
+"params": [
+"VoidPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/search.h:44"
+},
+"remque": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/search.h:47"
+},
+"hcreate": {
+"ret": "Int",
+"params": [
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/search.h:90"
+},
+"hdestroy": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/search.h:93"
+},
+"hcreate_r": {
+"ret": "Int",
+"params": [
+"Size",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/search.h:108"
+},
+"hdestroy_r": {
+"ret": "Void",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/search.h:109"
+},
+"dirname": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/libgen.h:26"
+},
+"__xpg_basename": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/libgen.h:34"
+},
+"crypt_r": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/crypt.h:116"
+},
+"crypt_rn": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/crypt.h:128"
+},
+"crypt_ra": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/crypt.h:142"
+},
+"crypt_gensalt": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/crypt.h:167"
+},
+"crypt_gensalt_rn": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"CharPtr",
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/crypt.h:178"
+},
+"crypt_gensalt_r": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"CharPtr",
+"Int",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/crypt.h:189"
+},
+"crypt_gensalt_ra": {
+"ret": "CharPtr",
+"params": [
+"CharPtr",
+"Size",
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/crypt.h:201"
+},
+"crypt_checksalt": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/crypt.h:209"
+},
+"crypt_preferred_method": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/crypt.h:225"
+},
+"is_selinux_enabled": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:12"
+},
+"is_selinux_mls_enabled": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:14"
+},
+"freecon": {
+"ret": "Void",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:24"
+},
+"freeconary": {
+"ret": "Void",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:27"
+},
+"getcon": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:33"
+},
+"getcon_raw": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:34"
+},
+"setcon": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:44"
+},
+"setcon_raw": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:45"
+},
+"getpidcon": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:49"
+},
+"getpidcon_raw": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:50"
+},
+"getprevcon": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:54"
+},
+"getprevcon_raw": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:55"
+},
+"getexeccon": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:60"
+},
+"getexeccon_raw": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:61"
+},
+"setexeccon": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:65"
+},
+"setexeccon_raw": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:66"
+},
+"getfscreatecon": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:71"
+},
+"getfscreatecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:72"
+},
+"setfscreatecon": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:76"
+},
+"setfscreatecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:77"
+},
+"getkeycreatecon": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:82"
+},
+"getkeycreatecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:83"
+},
+"setkeycreatecon": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:87"
+},
+"setkeycreatecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:88"
+},
+"getsockcreatecon": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:93"
+},
+"getsockcreatecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:94"
+},
+"setsockcreatecon": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:98"
+},
+"setsockcreatecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:99"
+},
+"getfilecon": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:105"
+},
+"getfilecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:106"
+},
+"lgetfilecon": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:107"
+},
+"lgetfilecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:108"
+},
+"fgetfilecon": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:109"
+},
+"fgetfilecon_raw": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:110"
+},
+"setfilecon": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:113"
+},
+"setfilecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:114"
+},
+"lsetfilecon": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:115"
+},
+"lsetfilecon_raw": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:116"
+},
+"fsetfilecon": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:117"
+},
+"fsetfilecon_raw": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:118"
+},
+"getpeercon": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:124"
+},
+"getpeercon_raw": {
+"ret": "Int",
+"params": [
+"Int",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:125"
+},
+"security_compute_user": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:261"
+},
+"security_compute_user_raw": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:264"
+},
+"security_load_policy": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"Size"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:282"
+},
+"security_get_initial_context": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:286"
+},
+"security_get_initial_context_raw": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:288"
+},
+"selinux_mkload_policy": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:301"
+},
+"selinux_init_load_policy": {
+"ret": "Int",
+"params": [
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:318"
+},
+"security_set_boolean_list": {
+"ret": "Int",
+"params": [
+"Size",
+"VoidPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:328"
+},
+"security_load_booleans": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:334"
+},
+"security_check_context": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:341"
+},
+"security_check_context_raw": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:342"
+},
+"security_canonicalize_context": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:345"
+},
+"security_canonicalize_context_raw": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:347"
+},
+"security_getenforce": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:351"
+},
+"security_setenforce": {
+"ret": "Int",
+"params": [
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:354"
+},
+"security_reject_unknown": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:357"
+},
+"security_deny_unknown": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:360"
+},
+"security_get_checkreqprot": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:363"
+},
+"security_disable": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:366"
+},
+"security_policyvers": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:369"
+},
+"security_get_boolean_names": {
+"ret": "Int",
+"params": [
+"VoidPtr",
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:372"
+},
+"security_get_boolean_pending": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:375"
+},
+"security_get_boolean_active": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:378"
+},
+"security_set_boolean": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"Int"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:381"
+},
+"security_commit_booleans": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:384"
+},
+"selinux_set_mapping": {
+"ret": "Int",
+"params": [
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:411"
+},
+"selinux_flush_class_cache": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:436"
+},
+"set_matchpathcon_flags": {
+"ret": "Void",
+"params": [
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:464"
+},
+"matchpathcon_init": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:474"
+},
+"matchpathcon_init_prefix": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:482"
+},
+"matchpathcon_fini": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:485"
+},
+"realpath_not_final": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:494"
+},
+"matchpathcon": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:502"
+},
+"matchpathcon_index": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:511"
+},
+"matchpathcon_filespec_destroy": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:523"
+},
+"matchpathcon_filespec_eval": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:526"
+},
+"matchpathcon_checkmatches": {
+"ret": "Void",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:530"
+},
+"matchmediacon": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:535"
+},
+"selinux_getenforcemode": {
+"ret": "Int",
+"params": [
+"IntPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:542"
+},
+"selinux_boolean_sub": {
+"ret": "CharPtr",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:550"
+},
+"selinux_getpolicytype": {
+"ret": "Int",
+"params": [
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:557"
+},
+"selinux_policy_root": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:564"
+},
+"selinux_set_policy_root": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:570"
+},
+"selinux_current_policy_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:574"
+},
+"selinux_binary_policy_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:575"
+},
+"selinux_failsafe_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:576"
+},
+"selinux_removable_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:577"
+},
+"selinux_default_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:578"
+},
+"selinux_user_contexts_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:579"
+},
+"selinux_file_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:580"
+},
+"selinux_file_context_homedir_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:581"
+},
+"selinux_file_context_local_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:582"
+},
+"selinux_file_context_subs_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:583"
+},
+"selinux_file_context_subs_dist_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:584"
+},
+"selinux_homedir_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:585"
+},
+"selinux_media_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:586"
+},
+"selinux_virtual_domain_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:587"
+},
+"selinux_virtual_image_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:588"
+},
+"selinux_lxc_contexts_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:589"
+},
+"selinux_x_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:590"
+},
+"selinux_sepgsql_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:591"
+},
+"selinux_openrc_contexts_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:592"
+},
+"selinux_openssh_contexts_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:593"
+},
+"selinux_snapperd_contexts_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:594"
+},
+"selinux_systemd_contexts_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:595"
+},
+"selinux_contexts_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:596"
+},
+"selinux_securetty_types_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:597"
+},
+"selinux_booleans_subs_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:598"
+},
+"selinux_booleans_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:600"
+},
+"selinux_customizable_types_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:605"
+},
+"selinux_users_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:607"
+},
+"selinux_usersconf_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:612"
+},
+"selinux_translations_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:613"
+},
+"selinux_colors_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:614"
+},
+"selinux_netfilter_context_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:615"
+},
+"selinux_path": {
+"ret": "CharPtr",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:616"
+},
+"selinux_check_access": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"CharPtr",
+"CharPtr",
+"VoidPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:635"
+},
+"selinux_check_securetty_context": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:653"
+},
+"set_selinuxmnt": {
+"ret": "Void",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:659"
+},
+"selinuxfs_exists": {
+"ret": "Int",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:662"
+},
+"fini_selinuxmnt": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:665"
+},
+"setexecfilecon": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:669"
+},
+"rpm_execcon": {
+"ret": "Int",
+"params": [
+"UInt",
+"CharPtr",
+"CharPtrPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:673"
+},
+"is_context_customizable": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:684"
+},
+"selinux_trans_to_raw_context": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:691"
+},
+"selinux_raw_to_trans_context": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:693"
+},
+"selinux_raw_context_to_color": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:701"
+},
+"getseuserbyname": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtrPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:709"
+},
+"getseuser": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr",
+"CharPtrPtr",
+"CharPtrPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:716"
+},
+"selinux_file_context_cmp": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:720"
+},
+"selinux_file_context_verify": {
+"ret": "Int",
+"params": [
+"CharPtr",
+"UInt"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:727"
+},
+"selinux_lsetfilecon_default": {
+"ret": "Int",
+"params": [
+"CharPtr"
+],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:730"
+},
+"selinux_reset_config": {
+"ret": "Void",
+"params": [],
+"vararg": -1,
+"src": "/usr/include/selinux/selinux.h:737"
+}
+}

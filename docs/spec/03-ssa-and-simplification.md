@@ -43,6 +43,17 @@ pointer have a chance to materialize as located varnodes first (the
 no user assertion). A space whose `delay` has not elapsed is skipped for the
 round.
 
+A spacebase space additionally carries `has_call_placeholders`, and reaching it
+for the first time is the moment the call sites' stack-pointer placeholders come
+back off (`heritage.rs (Heritage::clear_stack_placeholders)`, which strips every
+call spec's placeholder input through
+`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+(FuncCallSpecs::abort_spacebase_relative)`). The placeholder exists only to let a
+call's stack offset be read out of the data flow before the stack is in SSA
+(§4.3); once the space is being heritaged it has either been resolved or never
+will be, and leaving it on the op would put a spurious stack read in the CALL's
+argument list.
+
 **Address-range worklists.** The unit of work is an address range, not a
 varnode. Two disjoint-cover maps drive each pass
 (`heritage.rs (LocationMap::add)`): `globaldisjoint` accumulates every range

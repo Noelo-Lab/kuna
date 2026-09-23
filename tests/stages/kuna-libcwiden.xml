@@ -1,0 +1,85 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The widened half of the measured libc signature table (`option libcsigs
+    on|off`).
+
+    `libcsigs` shipped 206 signatures, chosen by which callee would move the
+    type_match metric on the cases a rival decompiler already got right. That
+    question leaves out every import the corpus simply uses: the `*at` family,
+    the SELinux surface coreutils links against, the account and xattr names.
+    A caller that only ever hands its argument to one of those keeps the
+    inferred integer, because nothing in the program says what the pointer
+    addresses and the callee has no declaration to say it either.
+
+    The selection rule for the widened set is mechanical: an UNDEFINED FUNC
+    symbol in at least three of the frozen corpus's 665 dynamically linked
+    binaries, not already carried, whose platform declaration reduces WHOLE to
+    the width-stable `Ty` vocabulary. Derivation, ranking and the rejected set
+    are in docs/features/libcwiden/.
+
+    The XML wrapper only supplies the harness architecture (the `option` command
+    needs one before the first `load file`). Both passes clear it and load the
+    same real ELF.
+
+    The fixture's four wrappers each pass a `const char *` parameter to exactly
+    one of the new imports (`faccessat`, `renameat`, `mkdirat`, `chroot`) and do
+    nothing else with it, so the parameter's type comes from the callee's
+    declaration or from nowhere. Pass 1 (`option libcsigs off`) reproduces the
+    bug and pass 2 is the default; the callees are named in both passes, so the
+    only thing that moves is the signature. The gate is an Architecture flag read
+    at the DEFERRED analysis commit, so the option command sits between
+    `load file` and `read symbols` - after `clear architecture` it is back at its
+    default, which is what makes pass 2 the shipped arm with no command at all.
+
+    Source: decompiler/crates/kuna-analysis/tests/fixtures/libcwiden_x86_64.c
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcwiden_x86_64</com>
+  <com>option libcsigs off</com>
+  <com>read symbols</com>
+  <com>lo fu can_write</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu move_entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu make_dir</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu jail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcwiden_x86_64</com>
+  <com>read symbols</com>
+  <com>lo fu can_write</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu move_entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu make_dir</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu jail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-LIBCWIDEN #1: off, the faccessat wrapper's path stays a width-only integer" min="1" max="1">can_write\(unsigned int a0,unsigned long a1\)</stringmatch>
+<stringmatch name="KUNA-LIBCWIDEN #2: on, faccessat's declaration types it" min="1" max="1">can_write\(int4 a0,char \*a1\)</stringmatch>
+<stringmatch name="KUNA-LIBCWIDEN #3: off, both of renameat's names stay integers" min="1" max="1">move_entry\(unsigned int a0,unsigned long a1,unsigned int a2,unsigned long a3\)</stringmatch>
+<stringmatch name="KUNA-LIBCWIDEN #4: on, both are char \*" min="1" max="1">move_entry\(int4 a0,char \*a1,int4 a2,char \*a3\)</stringmatch>
+<stringmatch name="KUNA-LIBCWIDEN #5: off, the mkdirat wrapper's name is an integer" min="1" max="1">make_dir\(unsigned int a0,unsigned long a1\)</stringmatch>
+<stringmatch name="KUNA-LIBCWIDEN #6: on, it is char \*" min="1" max="1">make_dir\(int4 a0,char \*a1\)</stringmatch>
+<stringmatch name="KUNA-LIBCWIDEN #7: off, chroot's one argument is an integer" min="1" max="1">jail\(unsigned long a0\)</stringmatch>
+<stringmatch name="KUNA-LIBCWIDEN #8: on, it is char \*" min="1" max="1">jail\(char \*a0\)</stringmatch>
+<stringmatch name="KUNA-LIBCWIDEN #9: every wrapper is named in both passes, so naming is not what moved" min="0" max="0">sub_11</stringmatch>
+</decompilertest>

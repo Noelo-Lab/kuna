@@ -1,0 +1,555 @@
+{
+ "opportunity": "The 206-entry `libcsigs` table was selected by which callee would move type_match on a case a rival already gets right -- a narrow question that never asks which callees the corpus actually imports. On the campaign's 444 slices, 158 of the 878 ground-truth `char *` variables binja gets right and kuna does not sit in a function that calls a libc import kuna cannot type, across 35 distinct names (docs/features/libcwiden/gap.md).",
+ "test_name": "tests/stages/kuna-libcwiden.xml (9 two-pass assertions over one real ELF) + 3 table-invariant unit tests in kuna_libcsigs.rs",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/libcwiden_x86_64",
+ "selector": "can_write / move_entry / make_dir / jail",
+ "witness_binary": "decbench full_run_address_2026-09-11/O0/coreutils/stripped/ginstall",
+ "witness_addr": "0xb57a",
+ "witness_before": "unsigned int sub_b57a(unsigned int a0,unsigned long a1,unsigned int a2)",
+ "witness_after": "unsigned int sub_b57a(int a0,char *a1,unsigned int a2)",
+ "option": "libcsigs",
+ "flag": "analysis_libcsigs",
+ "new_option": false,
+ "new_option_reason": "`libcsigs` already gates this table; `off` still renders exactly what the 27-entry base table alone renders. A second flag would split one measured table for no reason a reader would use.",
+ "change_kind": "correctness-fix",
+ "tier": "analysis",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "parity": {
+  "datatests": "PARITY OK 675/675",
+  "stages": "PARITY OK 1318/1318 (9 new assertions, none moved)",
+  "test_cli": "225/225",
+  "catalog": "OK",
+  "counters": "no drift",
+  "check_spec": "OK lenient + strict",
+  "options_md": "byte-fresh (no option added)"
+ },
+ "table": {
+  "entries_before": 206,
+  "entries_added": 333,
+  "entries_after": 539,
+  "base_table_entries_untouched": 27,
+  "zero_parameter": null,
+  "corpus_binaries_scanned": 665,
+  "distinct_undefined_names_in_corpus": 1775,
+  "already_carried": 264,
+  "reducible_and_missing": 338,
+  "rejected_for_a_64_bit_return": 5
+ },
+ "selection_rule": "an UNDEFINED FUNC symbol (not also defined) in >= 3 of the 665 dynamically linked binaries of the frozen decbench corpus, not already carried by LIBC/LIBC_EXT/the libctypes tables, and whose platform declaration reduces WHOLE to the width-stable Ty vocabulary",
+ "signature_provenance": {
+  "gcc_aux_info": "all 333 reduced by a fixed rule (docs/features/libcwiden/reduce.py) from the 3,182 NC-line prototypes `gcc -aux-info` emits over docs/features/libcwiden/tu.c -- the platform headers with _GNU_SOURCE + _FORTIFY_SOURCE=2, plus <selinux/selinux.h>",
+  "regenerable": "docs/features/libcwiden/gentable.py emits the Rust fragment from selected.json, so the table is generated, not hand-kept"
+ },
+ "rejected_rather_than_approximated": {
+  "rule": "unchanged -- every modelled slot must be void, exactly 4 bytes, or exactly pointer-width on every ILP32/LP64 target",
+  "names": [
+   "lseek (__off_t, 321 binaries)",
+   "qsort (__compar_fn_t, 141)",
+   "strtoll (long long int, 130)",
+   "strtoumax (uintmax_t, 108)",
+   "signal (__sighandler_t, 84)",
+   "posix_fadvise (off_t, 69)",
+   "time (time_t, 57)",
+   "strtoimax (intmax_t, 45)",
+   "strtoull (uintmax_t, 39)",
+   "iconv/iconv_open (iconv_t, 24)",
+   "context_* (context_t, 24)",
+   "llabs (long long int, 18)"
+  ],
+  "pinned_by": "a_sixty_four_bit_return_is_still_rejected",
+  "note": "strtoll and strtoumax are the two most widely imported names kuna still cannot type, and both are rejected only for their RETURN; their char*/char** parameters are exactly this lane's evidence. Admitting them needs a fixed-width 64-bit Ty, which is its own PR."
+ },
+ "wrongness_axis": {
+  "rule": "unchanged -- an entry applies ONLY to a name the image IMPORTS and does not itself define",
+  "measured_collision_surface": "20 of the 333 names are also DEFINED somewhere in the 665-binary corpus, all in the same three images: 17 by libselinux (which implements the genuine API) plus putenv, posix_memalign and wcsdup from its gnulib half. The guard makes all 20 inert there."
+ },
+ "benchmark": {
+  "instrument": "444-slice pinned typesweep (decbench 625e892 via final-c/pindb.py), finalsweep, --workers 12. Re-run after the rebase onto #711 (calleevote): base arm = a fresh worktree built at origin/main 9e07ab931, new arm = this tree. Both my own builds.",
+  "control": "the pre-rebase pair (base 31ac2b26e) read 1,522 -> 1,548 perfect, 260 improved / 4 worse; calleevote lifts the base to 1,567 and absorbs part of the same win",
+  "functions": 10748,
+  "perfect_off": 1567,
+  "perfect_on": 1582,
+  "mean_off": 0.3597,
+  "mean_on": 0.3637,
+  "aggregate_off": 3866.26,
+  "aggregate_on": 3909.56,
+  "improved": 202,
+  "worse": 4,
+  "onto_perfect": 15,
+  "off_perfect": 0,
+  "by_opt": {
+   "O0": [
+    1090,
+    1104,
+    78,
+    4
+   ],
+   "O2": [
+    80,
+    80,
+    53,
+    0
+   ],
+   "O2-noinline": [
+    397,
+    398,
+    71,
+    0
+   ]
+  },
+  "by_project": {
+   "coreutils": [
+    974,
+    982,
+    158,
+    4
+   ],
+   "tar": [
+    195,
+    196,
+    16,
+    0
+   ],
+   "gzip": [
+    110,
+    110,
+    0,
+    0
+   ],
+   "shadow": [
+    86,
+    88,
+    7,
+    0
+   ],
+   "diffutils": [
+    64,
+    64,
+    6,
+    0
+   ],
+   "findutils": [
+    53,
+    57,
+    14,
+    0
+   ],
+   "grep": [
+    51,
+    51,
+    0,
+    0
+   ],
+   "bzip2": [
+    34,
+    34,
+    1,
+    0
+   ]
+  },
+  "by_project_note": "[perfect_off, perfect_on, improved, worse]",
+  "per_gt_class": {
+   "ptr_char": {
+    "gt": 14645,
+    "off": 5203,
+    "on": 5488,
+    "off_pct": 35.5,
+    "on_pct": 37.5,
+    "binja": 5323,
+    "binja_pct": 36.8
+   },
+   "ptr_ptr": {
+    "gt": 1834,
+    "off": 541,
+    "on": 566
+   },
+   "ptr_prim": {
+    "gt": 1242,
+    "off": 594,
+    "on": 603
+   },
+   "int_s4": {
+    "gt": 8788,
+    "off": 4693,
+    "on": 4714
+   },
+   "all_gt_variables": {
+    "gt": 65715,
+    "off": 21497,
+    "on": 21835,
+    "off_pct": 32.7,
+    "on_pct": 33.2
+   },
+   "bool": {
+    "gt": 3222,
+    "off": 1378,
+    "on": 1368,
+    "note": "the placeholder strip's whole cost: -10, the only class that moves the wrong way"
+   }
+  },
+  "classes_regressed": 1,
+  "storage": {
+   "argument": [
+    10941,
+    11093
+   ],
+   "stack": [
+    10552,
+    10738
+   ],
+   "register_only": [
+    4,
+    4
+   ]
+  },
+  "worse_rows": [
+   "coreutils::O0::ls gobble_file .6970 -> .6061 (have_acl, have_scontext, need_lstat)",
+   "coreutils::O0::dir gobble_file .6970 -> .6061 (same program as ls)",
+   "coreutils::O0::vdir gobble_file .6970 -> .6061 (same program as ls)",
+   "coreutils::O0::cp make_dir_parents_private .7200 -> .6800 (missing_dir)"
+  ],
+  "worse_rows_read": "All four are the placeholder strip, not the table: against the table-alone arm the table has 0 worse rows, and the strip alone is 0 improved / 4 worse / aggregate -0.31. Every one is the same class -- a GT `_Bool` one-byte stack local that spelled `bool` and now spells `char`, in two distinct functions (ls/dir/vdir are one program). Both functions have an alloca-shaped frame whose stack pointer is itself a variable, which is the shape that kept the placeholder in the first place. It is core type inference, not `boolbyte`: `--option boolbyte off` changes neither arm's rendering of those slots. Read at the statement level (cp make_dir_parents_private, slot -0x1ad): the callee whose parameter the slot feeds still declares `bool a3` in BOTH arms, the defs and tests are the same statements, and the emitted C stays correct -- the slot is `char` and each test casts it (`if ((bool)v26)`). What moves is which vote the merged variable folds, alongside one extra level of block nesting around the def. A metric loss on the `bool` class, not wrong output, and not `boolbyte`'s."
+ },
+ "sweep": {
+  "surface": "kuna decompile-all, 12 stripped binaries / 6,886 functions, both arms, every hunk classified",
+  "binaries": "coreutils cp/ginstall/mv (O0), coreutils ls (O2), coreutils du (O2-noinline), tar (O0), grep (O0), findutils find (O0), gzip (O2), shadow useradd (O2), diffutils diff (O2-noinline), bzip2 (O0)",
+  "functions_off": 6886,
+  "functions_on": 6886,
+  "function_count_identical_everywhere": true,
+  "hunks": 539,
+  "classification": {
+   "an import thunk takes its declared return/arity": 220,
+   "typing-only (same statements, a type or a cast moves)": 199,
+   "a cast or NULL appears at a newly typed call argument": "the bulk of the remainder",
+   "local renumbering after a typed call folds into its condition": "the rest",
+   "other": 0,
+   "a 4-byte libc return inside an 8-byte recovered return widens into CONCAT44(dat_4, ...)": "Measured on the placeholder_strip corpus (a DIFFERENT 12 binaries from this block's, named there), same off-vs-on axis: 34 -> 56 with the widened table, where main's own off-vs-on is 34 -> 40. The strip contributes none of it (both off arms are 34). Per binary chcon 2->4, ginstall 3->4, gzip 2->4, find 7->12, tar 7->13. A PRE-EXISTING rendering, not new behaviour: where a wrapper's own return is recovered as 8 bytes and the call it returns now has a declared 4-byte return, the unset upper half prints as the dat_4 pseudo-global -- coreutils chcon `return lsetfilecon(a1,a2);` -> `return CONCAT44(dat_4,lsetfilecon(a1,a2));`. The upper half genuinely is not set by the call, so the C is not wrong, but it is the one hunk class this change grows and it was missing from this list."
+  },
+  "structural": "gotos 3,402 = 3,402; labels 605 = 605; no function gains or loses an error or a timeout.",
+  "declarations": {
+   "inside a newly typed import thunk": [
+    51,
+    654
+   ],
+   "everywhere else": [
+    38417,
+    38434
+   ],
+   "note": "+603 of the +620 declaration lines are inside the 220 import thunks that stopped being `(void)`; +17 over the other 6,666 functions."
+  },
+  "arity": {
+   "import thunks whose parameter count moved": 220,
+   "of which not a new-table name": 0,
+   "parameter slots gained": 554,
+   "new_name_call_sites": 445,
+   "sites rendering one argument past the declared non-variadic arity": 0,
+   "pre_existing_rate_same_arm": "575 of 13,036 on main's own already-declared names, which is what identified the bug as the engine's, not the table's",
+   "note": "Heritage::clearStackPlaceholders was an unported stub; with it ported the count is 0 in both arms. The measured counts and their definition are in placeholder_strip.corpus (149 -> 0 over the 12 binaries).",
+   "before_the_placeholder_strip": 24
+  }
+ },
+ "speed": {
+  "instrument": "scripts.pipeline.timeit shape: `kuna decompile-all <bin> --json --max-fn-seconds 120`, interleaved arm order per iteration, min-of-15, -O2 binaries; arm-base = origin/main, arm-fix = what ships (the table plus the placeholder strip). Run 2026-09-23 05:33-06:50Z with ~8 other campaign lanes on the box (load 17-37), which is why the medians are quoted beside the minima.",
+  "budget": "+5% worst case",
+  "worst": "fmt +3.01% min",
+  "fmt": {
+   "base_min_ms": 4374.5,
+   "new_min_ms": 4506.1,
+   "delta_min_pct": 3.01,
+   "delta_median_pct": 1.44
+  },
+  "ls": {
+   "base_min_ms": 15991.4,
+   "new_min_ms": 16189.2,
+   "delta_min_pct": 1.24,
+   "delta_median_pct": 1.76
+  },
+  "sort": {
+   "base_min_ms": 17170.4,
+   "new_min_ms": 16630.9,
+   "delta_min_pct": -3.14,
+   "delta_median_pct": -2.39
+  },
+  "bash": {
+   "base_min_ms": 103878.9,
+   "new_min_ms": 102239.5,
+   "delta_min_pct": -1.58,
+   "delta_median_pct": 0.9
+  },
+  "note": "The table alone measured ls at +4.46% min; with the placeholder strip in the same arm ls is +1.24% and two of the four binaries are faster than main. The strip takes an input off every CALL, which is work the rest of the pipeline then does not do. Measured against 31ac2b26e before the rebase; calleevote is orthogonal to both halves of this PR, so the deltas were not re-run against 9e07ab931.",
+  "samples": {
+   "fmt": {
+    "base": {
+     "min_ms": 4374.5,
+     "median_ms": 5276.0,
+     "samples": [
+      4977.3,
+      4924.5,
+      4374.5,
+      6516.5,
+      5660.8,
+      6427.8,
+      5204.5,
+      5276.0,
+      6373.0,
+      5679.9,
+      6507.0,
+      5211.8,
+      4639.1,
+      5547.7,
+      4973.4
+     ]
+    },
+    "new": {
+     "min_ms": 4506.1,
+     "median_ms": 5352.2,
+     "samples": [
+      4766.6,
+      4724.4,
+      5192.0,
+      4506.1,
+      5596.0,
+      5312.2,
+      6262.2,
+      5352.2,
+      6075.2,
+      5617.8,
+      5913.7,
+      5802.8,
+      5005.8,
+      4529.8,
+      6606.9
+     ]
+    },
+    "delta_min_pct": 3.01,
+    "delta_median_pct": 1.44
+   },
+   "ls": {
+    "base": {
+     "min_ms": 15991.4,
+     "median_ms": 17596.4,
+     "samples": [
+      17075.3,
+      17445.7,
+      17222.9,
+      18732.1,
+      18081.1,
+      18338.1,
+      16291.8,
+      18997.5,
+      17596.4,
+      19517.5,
+      15991.4,
+      19168.3,
+      18065.0,
+      16613.7,
+      16832.0
+     ]
+    },
+    "new": {
+     "min_ms": 16189.2,
+     "median_ms": 17905.3,
+     "samples": [
+      16635.1,
+      17637.5,
+      17664.5,
+      17359.8,
+      17905.3,
+      17339.6,
+      18915.7,
+      16189.2,
+      19349.1,
+      20163.9,
+      19420.4,
+      19018.1,
+      19660.2,
+      19068.6,
+      16628.3
+     ]
+    },
+    "delta_min_pct": 1.24,
+    "delta_median_pct": 1.76
+   },
+   "sort": {
+    "base": {
+     "min_ms": 17170.4,
+     "median_ms": 18931.2,
+     "samples": [
+      18732.8,
+      18931.2,
+      17902.7,
+      19485.5,
+      19704.8,
+      18242.4,
+      17297.5,
+      19821.1,
+      20084.8,
+      17170.4,
+      18964.8,
+      19567.7,
+      17658.1,
+      20102.5,
+      17620.2
+     ]
+    },
+    "new": {
+     "min_ms": 16630.9,
+     "median_ms": 18478.9,
+     "samples": [
+      17805.8,
+      19257.2,
+      19505.6,
+      16630.9,
+      17828.6,
+      18776.6,
+      16741.5,
+      18478.9,
+      16777.3,
+      19842.3,
+      18688.6,
+      17688.1,
+      17109.8,
+      20011.2,
+      20294.3
+     ]
+    },
+    "delta_min_pct": -3.14,
+    "delta_median_pct": -2.39
+   },
+   "bash": {
+    "base": {
+     "min_ms": 103878.9,
+     "median_ms": 109356.0,
+     "samples": [
+      106218.1,
+      105674.4,
+      110083.7,
+      108376.6,
+      109356.0,
+      120193.8,
+      122336.6,
+      103878.9,
+      106173.8,
+      107116.7,
+      112638.6,
+      110055.7,
+      113563.9,
+      113907.3,
+      108318.1
+     ]
+    },
+    "new": {
+     "min_ms": 102239.5,
+     "median_ms": 110342.6,
+     "samples": [
+      114691.4,
+      106509.3,
+      106058.1,
+      110342.6,
+      116065.4,
+      114995.1,
+      109745.7,
+      102458.5,
+      112344.8,
+      108067.1,
+      110492.3,
+      107992.3,
+      111399.2,
+      102239.5,
+      127936.9
+     ]
+    },
+    "delta_min_pct": -1.58,
+    "delta_median_pct": 0.9
+   }
+  }
+ },
+ "follow_ups": [
+  "the variadic register save area (gap.md bucket (a)): 52 ptr_char rows and 306 phantom parameters over 42 sampled functions; the seam is ActionInputPrototype's trial loop",
+  "a fixed-width 64-bit Ty, which unlocks strtoll (130 binaries) and strtoumax (108)",
+  "LIBC_EXT_NAMED rows for the *64 LFS aliases and for the new names with a libc aggregate behind a void * slot"
+ ],
+ "placeholder_strip": {
+  "what": "Heritage::clearStackPlaceholders was an unported stub (only the flag was cleared), so the stack-pointer placeholder ActionFuncLink appends to every CALL was never removed from a call whose callee carries a DECLARED prototype -- such a call's input list is locked, so no later pass rewrites it. It rendered as one argument past the declared arity, reading the slot the `call` pushed its return address into.",
+  "pre_existing": "On origin/main the class is already there: 149 calls over the 12-binary corpus, 100 of them on names the 28-entry base table alone declares (free 44, memcpy 19, realloc 12, malloc 10 ...). The widened table grows it by 49 because it declares 333 more names. Both arms are fixed.",
+  "no_option": "A strict bug fix: the emitted call contradicted the prototype the same output declares, and reading the return-address slot has no reading under which it is right.",
+  "corpus": {
+   "binaries": 12,
+   "phantom_trailing_arguments": [
+    149,
+    0
+   ],
+   "function_count": "identical",
+   "gotos": [
+    2232,
+    2232
+   ],
+   "labels": [
+    1170,
+    1170
+   ],
+   "local_declarations": [
+    21904,
+    21899
+   ],
+   "phantom_trailing_arguments_note": "Counted by docs/features/libcwiden/phantom_args.py over the whole-binary decompile-all output of the same 12 binaries in both arms: a call to a name the SAME output declares non-variadic, carrying exactly one argument more than that declared arity, whose last argument is a bare stack-array element at a negative displacement. 149 on origin/main (9e07ab931) with its own default; 100 of those survive `--option libcsigs off`, i.e. they come from the 28-entry base table alone; 0 in BOTH arms of this branch. Per binary: ginstall 45 (12 with libcsigs off), df 39 (34), stat -O2-noinline 39 (34), tar 14 (12), diff 7 (5), find 5 (3), the other six 0. The earlier figures 144/161 in this file came from two ad-hoc counts with different declaration matching and are superseded by the committed script.",
+   "phantom_trailing_arguments_script": "docs/features/libcwiden/phantom_args.py",
+   "binaries_list": "O0 bzip2, coreutils chcon/ginstall/stty, diffutils diff, findutils find, grep, gzip, shadow chage, tar; O2 coreutils df; O2-noinline coreutils stat. 5,925 functions, identical in both arms. NOT the same 12 binaries as sweep.binaries.",
+   "arms": "origin/main 9e07ab931 default vs this branch default, each also run with `--option libcsigs off`."
+  },
+  "typesweep_alone": {
+   "improved": 0,
+   "worse": 4,
+   "perfect": [
+    1548,
+    1548
+   ],
+   "aggregate": [
+    3879.52,
+    3879.21
+   ],
+   "all_gt_variables": [
+    21737,
+    21727
+   ],
+   "note": "measured against the table-alone arm on the pre-rebase base; the rebase does not change what the strip alone does"
+  },
+  "gates": "make test 675/675 PARITY OK and make test-stages PARITY OK with ZERO moved assertions; the only new keys are the three KUNA-CALLPLACEHOLDER ones.",
+  "test": "tests/stages/kuna-callplaceholder.xml over decompiler/crates/kuna-analysis/tests/fixtures/callplaceholder_x86_64",
+  "stack_arguments_unaffected": "A call with more arguments than the six register slots still renders all of them, byte-identically in both arms: an -O0 `printf(\"%d ...\", argc, argc+1 ... argc+7)` (8 args) and a 6-arg `snprintf`. The resolved sites take their offset from `resolve_spacebase_relative`'s own record, which is made before the strip, not from the placeholder."
+ },
+ "gates": {
+  "base": "origin/main 9e07ab931 (#711 calleevote), rebased 2026-09-23 06:5xZ",
+  "make test": "675/675 assertions passed, PARITY OK",
+  "make test-stages": "1323/1323 assertions passed, PARITY OK (1,311 -> 1,323 is exactly the 12 new assertions; none moved)",
+  "make test-cli": "235/235 passed",
+  "make rust-test": "RUST_TEST_RC=0 -- 7,452 passed, 0 failed, 38 ignored; options_md_matches_the_generator_byte_for_byte ok. Lane started 06:57:39Z on the rebased tree, after the last source change (06:55:40Z), finished 07:27:24Z.",
+  "kuna catalog --check": "OK",
+  "scripts.repipe.counters --check": "no drift",
+  "check-spec": "OK lenient and strict",
+  "docs/options.md": "byte-fresh (regenerated, git diff empty)",
+  "corpus file count": "334 (main's 332 plus this PR's two stage tests)"
+ },
+ "speed_on_the_rebased_base": {
+  "base": "origin/main 9e07ab931 (the PR's base, i.e. after #711 calleevote), built in a throwaway worktree; arm `new` is this branch's release build.",
+  "method": "scripts-free interleaved min-of-15, `kuna decompile-all <bin> --json --max-fn-seconds 120`, -O2 stripped coreutils fmt/ls/sort and bash; the box carried 13-27 load average throughout, so read the min, not the median.",
+  "delta_min_pct": {
+   "fmt": 0.75,
+   "ls": -1.21,
+   "sort": -0.62,
+   "bash": 1.48
+  },
+  "delta_median_pct": {
+   "fmt": -1.78,
+   "ls": 2.77,
+   "sort": 4.55,
+   "bash": 5.71
+  },
+  "worst_min_pct": 1.48,
+  "budget": "+5%; worst is bash at +1.48%.",
+  "samples": "docs/features/libcwiden/speed-rebased.json",
+  "note": "The earlier docs/features/libcwiden/speed.json was measured against 31ac2b26e, before the rebase; it is kept for the record (worst +3.01% on fmt)."
+ }
+}
