@@ -82,3 +82,27 @@
    `--option slotptr off` on a whole-binary serial run, and its regressions are only visible in the
    JSON surface. The campaign's rule — measure the surface decbench scores, not the C text — cuts
    both ways.
+24. 2026-09-23 `passthrough` (#716) flips ON, and the evidence is DWARF, not this metric. `type_match`
+   cannot see a call's arity, so its +27 is a side effect; what moved the decision is 4,107 of 4,346
+   gained parameters confirmed by the unstripped twins over two corpora — the 444 slices and 130 slices
+   of 17 disjoint projects — with 0 contradicted and 0 arguments lost. The three refusals shipped with
+   it are exactly metric-neutral here: `--option passthrough off` on the round-G build reproduces the
+   pre-flip commit value for value (1,582 perfect, mean .3637, aggregate 3,909.56), so the flip is the
+   whole gain — and the only round-G lever that moves -O2.
+25. 2026-09-23 `calleevote fields` (#711) ships default with its one known cost. A parameter every
+   caller passes a string to gets `char *` even where the declaration says `void *`: that is gnulib
+   `xmemdup`, three of its three losses. The vote is right about the program and wrong about the
+   prototype, and it buys +34 perfect on the metric, the whole of goal 3's movement (TRex O0
+   4.4317 → 4.4747, struct-typed parameters 123 → 173, layout recall .0865 → .0932) and +322 credited
+   functions under decbench#93. A caller vote is accepted when it is right about the program.
+26. 2026-09-23 a strict fix may cost the metric and still ship ungated. #714 strips the stack
+   placeholder a call carries into its printed argument list — the call contradicted its own prototype
+   in the same output — and four `_Bool` slots lose `boolbyte`'s reading as a side effect
+   (`ls::gobble_file` ×3, `cp::make_dir_parents_private`). Correct output first; the `boolbyte`
+   follow-up is a lever, not a reason to gate a fix.
+27. 2026-09-23 attribute a round by BUILDING each landed commit, not only by ablating options. #714 is
+   ungated and its libc table cannot be isolated with `--option libcsigs off` (that arm drops the whole
+   28-name base table too), so round G swept `9e07ab931` and `1c57f06b6` as their own binaries. Each
+   build needs its own directory: `kuna` forks the `decomp_dbg` BESIDE IT, so two builds sharing a
+   directory silently measure one engine (the catalog of an old `kuna` printed the new default until
+   the pair was separated).
