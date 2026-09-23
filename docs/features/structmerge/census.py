@@ -12,14 +12,17 @@ Joins three views of the same eight builds:
     pass, which says what the function actually dereferenced (pre-prune), what
     the layout prune left, and the exact decline reason.
 
-Usage:  KUNA_CENSUS_BIN=.scratch/kuna-census ~/.virtualenvs/decbench/bin/python .scratch/census.py
+Usage (from the worktree root, with DECBENCH_PIN set):
+
+    KUNA_CENSUS_BIN=<census build of kuna> CENSUS_OUT=/tmp/census.json \
+        ~/.virtualenvs/decbench/bin/python docs/features/structmerge/census.py
 """
 import json, os, re, subprocess, sys, tempfile, shutil
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / ".scratch"))
+ROOT = Path(__file__).resolve().parents[3]   # the worktree root
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pindb  # noqa: E402
 pindb.pin()
 sys.path.insert(0, str(ROOT))
@@ -28,7 +31,7 @@ from scripts.decbench import structscore as SS
 RES = Path("/home/mahaloz/github/decbench/results/full_run_address_2026-09-11")
 BINS = [("fmt", "O0"), ("fmt", "O2"), ("ls", "O0"), ("ls", "O2"),
         ("sort", "O0"), ("sort", "O2"), ("du", "O0"), ("du", "O2")]
-CENSUS_BIN = os.environ.get("KUNA_CENSUS_BIN", str(ROOT / ".scratch/kuna-census"))
+CENSUS_BIN = os.environ["KUNA_CENSUS_BIN"]   # a build with census.patch applied
 OPTS = ["--option", "structsynth", os.environ.get("CENSUS_MODE", "param")]
 
 # x86-64 SLEIGH register-space offsets of the SysV integer argument registers,
@@ -232,6 +235,6 @@ if __name__ == "__main__":
     with ProcessPoolExecutor(max_workers=8) as ex:
         for rows in ex.map(job, BINS):
             allrows += rows
-    out = os.environ.get("CENSUS_OUT", str(ROOT / ".scratch/census.json"))
+    out = os.environ.get("CENSUS_OUT", "/tmp/structmerge-census.json")
     json.dump(allrows, open(out, "w"))
     print(f"{len(allrows)} ptr-to-struct parameters, {sum(r['gt_fields'] for r in allrows)} GT fields -> {out}")

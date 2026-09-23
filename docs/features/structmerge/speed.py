@@ -3,13 +3,13 @@ import json, os, statistics, subprocess, sys, time
 R = "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2"
 ALL = {"fmt": f"{R}/coreutils/stripped/fmt", "ls": f"{R}/coreutils/stripped/ls",
        "sort": f"{R}/coreutils/stripped/sort", "bash": f"{R}/bash/stripped/bash"}
-KUNA = "/home/mahaloz/kwt/layoutrecall/.scratch/kuna-A"
-SPECS = "/home/mahaloz/kwt/layoutrecall/specs"
+KUNA = os.environ.get("KUNA_BIN", "decompiler/target/release/kuna")
+SPECS = os.environ.get("KUNA_SPECS", "specs")
 ARMS = {"off": ["--option", "structmerge", "off"],
         "siblings": ["--option", "structmerge", "siblings"]}
 NAMES = list(ARMS)
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 15
-outf = sys.argv[2] if len(sys.argv) > 2 else "/home/mahaloz/kwt/layoutrecall/.scratch/speed.json"
+outf = sys.argv[2] if len(sys.argv) > 2 else "/tmp/structmerge-speed.json"
 which = sys.argv[3].split(",") if len(sys.argv) > 3 else list(ALL)
 out = {}
 for name in which:

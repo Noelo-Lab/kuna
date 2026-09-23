@@ -8,7 +8,7 @@ way), `field accesses only` (every differing body line differs only where a
 field reference, a struct spelling or a cast appears), and `read` for the rest.
 """
 import re, sys, pathlib, collections, difflib
-sys.path.insert(0, "/home/mahaloz/kwt/layoutrecall/docs/features/structsynth")
+
 KEYWORDS = "if|else|while|do|for|goto|return|switch|case|default|break|continue"
 NOTCALL = {"if", "while", "for", "switch", "sizeof", "return", "do", "case"}
 CAST = re.compile(r"\((?:unsigned |signed |const |struct )*[A-Za-z_]\w*\s*\**\)")

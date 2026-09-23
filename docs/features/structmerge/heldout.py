@@ -25,8 +25,8 @@ import json, os, re, subprocess, sys, tempfile, shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
-WT = Path("/home/mahaloz/kwt/layoutrecall")
-sys.path.insert(0, str(WT / ".scratch"))
+WT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pindb; pindb.pin()
 sys.path.insert(0, str(WT))
 from scripts.decbench import structscore as SS
