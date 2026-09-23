@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "structheadless",
+    "closed"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/structheadless_x86_64",
+    "binary_sha256": "ff88739d9abde3af1e716fb7540318d69a2f174fd66c5a3e38d10e1b2b6452e1",
+    "binary_size": 16176,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/structheadless_x86_64",
+    "selector": "mode_of",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned int mode_of\\((struct_\\d+) \\*a0\\)\\n\\{\\n  if \\(\\(a0->field_0x19\\) && \\(1 <= a0->field_0x8\\)\\)\\n    return a0->field_0x14;\\n  return a0->field_0x10;",
+      "int by_link\\(void \\*a0,void \\*a1\\)",
+      "long name_len\\(struct_\\d+ \\*a0\\)"
+    ]
+  },
+  "notes": "CLOSED: `mode_of` is called directly, so its parameter is a record read past its start and every read is a field. `by_link` reads past the start too, but its address goes to qsort, so its parameters stay `void *`.",
+  "probe_id": "a-3952659fe248"
+}

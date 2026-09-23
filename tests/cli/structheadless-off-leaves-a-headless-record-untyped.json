@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "structheadless",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/structheadless_x86_64",
+    "binary_sha256": "ff88739d9abde3af1e716fb7540318d69a2f174fd66c5a3e38d10e1b2b6452e1",
+    "binary_size": 16176,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/structheadless_x86_64",
+    "selector": "mode_of",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned int mode_of\\(void \\*a0\\)\\n\\{\\n  if \\(\\(\\*\\(char \\*\\)\\(\\(long\\)a0 \\+ 0x19\\)\\) && \\(1 <= \\*\\(long \\*\\)\\(\\(long\\)a0 \\+ 8\\)\\)\\)\\n    return \\*\\(unsigned int \\*\\)\\(\\(long\\)a0 \\+ 0x14\\);",
+      "int by_link\\(void \\*a0,void \\*a1\\)"
+    ]
+  },
+  "notes": "OFF: `mode_of` reads its `struct entry` at 8, 0x10, 0x14 and 0x19 and never at 0, so structsynth declines it and every read is two casts over a `void *`.",
+  "probe_id": "a-e79e2c00dca3"
+}
