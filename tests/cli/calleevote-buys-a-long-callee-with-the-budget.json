@@ -32,6 +32,6 @@
       "long use\\(int a0,struct_\\d+ \\*a1,unsigned long a2\\)"
     ]
   },
-  "notes": "DEFAULT. The vote costs a second decompile, charged the lines the first one printed, and the redo pass may spend CALLEE_VOTE_BUDGET_PCT (5) % of what the whole binary printed (kuna-cli decompile_all.rs). scan_short (19 lines) and scan_long (45) do the same thing with the pointer use hands them; this binary prints 2,275 lines, so the 113-line budget covers both and both take the record. Its twin calleevote-leaves-a-long-callee-alone.json is the same program without the room. On a build with the old flat 32-line refusal scan_long is void *.",
+  "notes": "DEFAULT. A redo is charged the lines the first decompile printed, and the pass may spend 5% of what the whole binary printed (CALLEE_VOTE_BUDGET_PCT, kuna-cli decompile_all.rs). This binary prints 2,275 lines, so the 113-line budget covers scan_long's 45 and both callees take the record. Its twin calleevote-leaves-a-long-callee-alone.json is the same program without the room.",
   "probe_id": "p-188672227ea1"
 }

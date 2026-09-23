@@ -230,7 +230,8 @@ fn a_forgotten_function_keeps_no_statement() {
 fn a_declined_function_keeps_the_statement_its_kept_body_used() {
     let first = ptr_to(record("struct_2"));
     let mut l = ledger(&[(0x6600, Rc::clone(&first))]);
-    for (k, st) in decide_ledger(&l, 8, &all_calls(&l)) {
+    let decided = decide_ledger(&l, 8, &all_calls(&l));
+    for (k, st) in decided {
         l.stated.insert(k, Rc::new(st));
     }
     // Round one bought the redo and the driver kept that body.
@@ -248,7 +249,8 @@ fn a_declined_function_keeps_the_statement_its_kept_body_used() {
 fn a_declined_function_that_was_never_redone_keeps_no_statement() {
     let rec = ptr_to(record("struct_2"));
     let mut l = ledger(&[(0x6600, Rc::clone(&rec))]);
-    for (k, st) in decide_ledger(&l, 8, &all_calls(&l)) {
+    let decided = decide_ledger(&l, 8, &all_calls(&l));
+    for (k, st) in decided {
         l.stated.insert(k, Rc::new(st));
     }
     l.decline(CALLEE);
