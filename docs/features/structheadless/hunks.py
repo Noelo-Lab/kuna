@@ -7,15 +7,17 @@ Each arm is a `castbench.py run` directory (`<opt>/<project>/<binary>.c`, one
 `// Function:` block per function, `kuna decompile-all` output). Buckets, in
 order: a skeleton delta (a control-flow keyword or a call token moved), a
 declaration-count delta, `record name only` (identical once every `struct_N`
-number and every `vN`/`aN` is spelled the same way), `field accesses only`
-(every differing line differs only where a field reference or a record
-spelling appears on one side), and `read` for the rest. Everything outside the
+number and every `vN`/`aN` is spelled the same way), `fields, declared types
+and casts` (every differing line names a field or a record, is a declaration or
+a signature, or is the same line once its casts are removed), and `read` for the
+rest. Everything outside the
 last two buckets is printed for reading.
 """
 import collections, difflib, pathlib, re, sys
 
 KEYWORDS = "if|else|while|do|for|goto|return|switch|case|default|break|continue"
-NOTCALL = {"if", "while", "for", "switch", "sizeof", "return", "do", "case"}
+NOTCALL = {"if", "while", "for", "switch", "sizeof", "return", "do", "case",
+           "char", "short", "int", "long", "float", "double", "void", "unsigned", "signed", "bool", "code"}
 RENUM = re.compile(r"\b[av]\d+\b")
 SNUM = re.compile(r"\bstruct_\d+\b")
 
@@ -83,9 +85,25 @@ def classify(a, b):
         for t in range(max(len(rem), len(add))):
             r = (rem[t] if t < len(rem) else "").strip()
             d = (add[t] if t < len(add) else "").strip()
-            if r != d and not any(x in s for s in (r, d) for x in ("->field_0x", "S *", "S*", "(S)")):
+            if r != d and not accounted(r, d):
                 diffs.append((r, d))
-    return ("field accesses only", []) if not diffs else ("read", diffs)
+    return ("fields, declared types and casts", []) if not diffs else ("read", diffs)
+
+
+CAST = re.compile(r"\((?:unsigned |signed |const |struct )*[A-Za-z_]\w*\s*\**\s*\)")
+DECLARATION = re.compile(r"^[A-Za-z_][\w ]*\**\s*\**\s*[\w]+(\s*\[.*\])?(;|\(.*\))\s*(//.*)?$")
+
+
+def accounted(r, d):
+    """A differing line the option's documented effect explains: it names a
+    field or a record, it is a declaration or a signature (a type changed), or
+    it is the same line once every cast is removed (a cast added or dropped)."""
+    if any(x in t for t in (r, d) for x in ("->field_0x", "S *", "S*", "(S)")):
+        return True
+    if (not r or DECLARATION.match(r)) and (not d or DECLARATION.match(d)):
+        return True
+    strip = lambda t: re.sub(r"\s+", "", CAST.sub("", t))
+    return strip(r) == strip(d)
 
 
 def main():
@@ -100,11 +118,11 @@ def main():
                 continue
             c, diffs = classify(a.get(k, []), b.get(k, []))
             per[c] += 1
-            if c not in ("record name only", "field accesses only"):
+            if c not in ("record name only", "fields, declared types and casts"):
                 reads.append((str(rel), k, c, diffs[:3]))
         rows.append((str(rel), len(set(a) | set(b)), sum(per.values()), per))
         total.update(per)
-    cols = ["record name only", "field accesses only", "skeleton delta", "declaration-count delta", "read"]
+    cols = ["record name only", "fields, declared types and casts", "skeleton delta", "declaration-count delta", "read"]
     print("| binary | functions | changed | " + " | ".join(cols) + " |")
     print("|---|---:|---:|" + "---:|" * len(cols))
     for name, n, ch, per in rows:
