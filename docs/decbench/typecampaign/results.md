@@ -1162,6 +1162,264 @@ The reachable blockers, as functions that would become perfect if only that buck
   and kuna exports none of them; at O2 that ceiling alone makes 85.8% of functions unreachable.
   Signedness, variable count and call arity are worth zero on `type_match` by construction.
 
+## Round F — 2026-09-23
+
+Round E ranked five levers. Round F built the top two and the two O2 blockers under them: `protoorder`
+for recursive components (#712), a `framelayout` filler slot typed from the pointer stored into it
+(#710), records for call-returned pointers (#709) and pass-through arity (#708). All four landed;
+`calleevote` (#711) is open with review CHANGES. This section re-measures `origin/main` `810b7dc86`
+on the same instruments under the same metric pin, so every number reads
+baseline → round B → round C → round D → round E → round F.
+
+| | binary | commit |
+|---|---|---|
+| **round F** | `/home/mahaloz/kwt/_final-f/kuna` (pinned copy) | main `810b7dc86` (2026-09-23, #708) |
+
+Metric pin unchanged (decisions §12): decbench `625e892` extracted read-only, with the venv's editable
+finder repointed at it by `final-c/pindb.py`. Two controls. `scripts/decbench/`,
+`docs/features/structsynth/layoutscore.py`, `docs/features/structnest/nestscore.py` and
+`scripts/pipeline/varcensus.py` are **byte-identical** between round E's `2da619852` and this round's
+`810b7dc86`, so no instrument moved; and the round-E binary re-run on this tree reproduces round E's
+rows exactly — 10,748/10,748 functions, **0 values differ**.
+
+### Headline
+
+| goal | instrument | round E | round F | reading |
+|---|---|---|---|---|
+| type_match | typesweep, 444 slices / 10,748 functions | 1,353 perfect (12.59%), mean .3415 | **1,522** (14.16%), mean **.3553** | 581 improved, 6 worse; 170 onto perfect, 1 off; aggregate 3,669.96 → 3,818.77 |
+| vs the other decompilers | canonical replay, each rival on its own functions | 1st of five | **1st**, and O0 is no longer close | on binja's 10,366 functions kuna is 13.95% / .3582 against binja's 12.28% / .3422; at O0 **24.82% against 20.36%** |
+| `ptr_char` | per-GT-class match rate | 28.9% (4,232) | **34.6% (5,060)** | round E's largest gap closes from −1,091 TP to −263 against binja's 36.8% (5,323); +653 of the +828 are stack slots |
+| `ptr_struct` | per-GT-class match rate | 3.3% (474) | **4.0% (568)** | +94, all stack slots; binja 2.8% (389) |
+| storage | stack / argument match rate | 53.4% / 49.2% | **57.6% / 50.0%** | +761 stack TP and +175 argument TP; register-only stays 0.0% |
+| goal 2: variables | varcensus, fmt/ls/sort/du O0+O2 | 6,967 declarations, 65 `[16]` blobs, 7 phantom `// rdx` | 6,975, 65, 7 | +8 declarations, all the new `struct_N *` locals; `fmt::main` is byte-identical to round E (2/2/2, no phantom local) |
+| goal 3: structs | TRex mean pooled O0 / O2 | 4.129 / 1.915 | **4.420 / 1.918** | the largest TRex move of the campaign, on all four O0 builds |
+| goal 3: layout | per-parameter precision / recall / F1, fields only | .8702 / .0859 / .1563 | **.8710 / .0865 / .1574** | two more `ls` parameters typed as a record; nothing else moves |
+| goal 3: nesting | nesting F1 | .0036 (3 of 5 claimed, of 1,660) | .0036, unchanged | `structsynth nest` still claims the same 5 on these eight builds |
+| decbench#93 crediting | replay of the same rows | 1,353 → 1,579 (+226) | 1,522 → **1,781 (+259)** | +1,779 TP; mean .3553 → **.4038** |
+| speed | whole-binary `decompile-all`, interleaved min-of-11 | +1.0…+3.3% vs baseline | SPEED_HEADLINE | SPEED_NOTE |
+
+### F.1 type_match
+
+Same 444 slices, same `--baseline-only` invocation at `--workers 12`.
+
+| slice | functions | base | round B | round C | round D | round E | **round F** | mean E → **F** |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **ALL** | 10,748 | 848 | 986 | 1,349 | 1,349 | 1,353 | **1,522 (14.16%)** | .3415 → **.3553** |
+| O0 | 4,286 | 612 | 704 | 895 | 895 | 898 | **1,065 (24.85%)** | .5054 → **.5391** |
+| O2 | 2,394 | 42 | 53 | 74 | 74 | 74 | **74 (3.09%)** | .1830 → **.1834** |
+| O2-noinline | 4,068 | 194 | 229 | 380 | 380 | 381 | **383 (9.41%)** | .2620 → **.2628** |
+| shadow | 686 | 20 | 29 | 31 | 31 | 32 | **86** | .3012 → .3545 (108 up) |
+| tar | 1,548 | 94 | 114 | 158 | 158 | 158 | **192** | .3524 → .3733 (98 up) |
+| coreutils | 6,422 | 525 | 610 | 877 | 877 | 880 | **938** | .3352 → .3441 (282 up, 4 down) |
+| findutils | 790 | 31 | 35 | 41 | 41 | 41 | **51** | .2201 → .2358 (37 up) |
+| diffutils | 420 | 43 | 52 | 58 | 58 | 58 | **63** | .4325 → .4445 (32 up, 1 down) |
+| gzip / bzip2 / grep | 882 | | | | | 184 | **192** | 24 up, 1 down |
+
+The round is an **O0 round**: 167 of the 169 new perfects are at O0, and the whole of it is the two
+levers round E ranked first and second.
+
+**Which PR moved it**, measured on this tree by ablating each option in turn (`final-f/sweep-*`):
+
+| PR | option arm | perfect | improved / worse | onto / off perfect |
+|---|---|---:|---:|---:|
+| #710 `slotptr` | `off` → on (default) | 1,399 → **1,522** (+123) | 425 / 5 | 124 / 1 |
+| #712 `protoscc` | `protoorder types` → `cycles` (default) | 1,472 → **1,522** (+50) | 171 / 1 | 50 / 0 |
+| #709 `structlocals` | `structsynth param` → `locals` (default) | 1,522 → **1,522** | 0 / 0 | 0 / 0 |
+| #708 `passthrough` | `off` (default) → `on` | 1,522 → **1,546** (+24) | 128 / 6 | 24 / 0 |
+
+Taking `slotptr` out leaves #712 and #709 worth +46 together (1,353 → 1,399, 162 up / 1 down), so the
+two levers reinforce: a slot typed from its stored pointer is worth more once the recursive callee has
+stated what that pointer is. `structsynth locals` is exactly metric-neutral here — its records are call-defined
+locals, which live in registers or in slots the metric reads through `slotptr` anyway.
+
+A `slotptr` win, runnable against the unpatched tree (`shadow::faillog::print`, GT `struct passwd *pwent`):
+
+```
+$ F=<results>/O0/shadow/stripped/faillog
+$ kuna decompile-all $F --json --option slotptr off | jq '.functions[]|select(.address==0x2be8).variables[]|"\(.name) \(.type)"'
+"local_20 undefined8"  "local_18 undefined8"  "local_10 undefined8"  "local_8 undefined8"
+$ kuna decompile-all $F --json | jq ...            # the default
+"local_20 undefined8"  "local_18 undefined8"  "local_10 passwd *"   "local_8 undefined8"
+```
+
+A `protoscc` win is an argument instead: `mv::emit_verbose(char *src, char *dst, char *backup_dst_name)`
+was `unsigned long, unsigned long, long` and is all three `char *`, because the `char *` work in coreutils
+bottoms out in recursion.
+
+**The six worse functions, all read.** Five are `slotptr` and one shape:
+
+| function | GT | round E | round F |
+|---|---|---|---|
+| `shred::dorewind` -O0 | `__off_t offset` | `undefined8` | `int *` |
+| `diff::scan_char_literal` -O0 | `long int digits` | `undefined8` | `char *` |
+| `tail::tail_lines` -O0 | `__off_t end_pos` | `undefined8` | `int *` |
+| `grep::main` -O2 | `idx_t newkeycc` | `undefined8` | `long *` |
+| `split::main` -O2 | `long int to_write` | `undefined8` | `char *` |
+
+The pinned metric credits an exported `undefined8` against an 8-byte integer, so a filler slot kuna says
+nothing about scores for free; once `slotptr` gives it the type of the value stored into it, a wrong body
+type becomes a visible miss. In `shred::dorewind` the body is `v1 = (int *)lseek(fd,0,0)` — `lseek`'s
+`long` return is merged with `__errno_location()`'s `int *` two statements later, which is a pre-existing
+defect `slotptr` only makes legible. The sixth is #712: `ginstall::install_file_in_file` -O2, where
+`to_relname` (`char *`) takes `stat *` from a caller's vote.
+
+Measured against the campaign baseline the round stands at **3,016 functions improved and 11 worse, 675
+onto perfect and 1 off**. Per project × opt is in `final-f/report-slices.md`; every moved function is in
+`final-f/moved.csv`.
+
+### F.2 Per ground-truth class
+
+Same classifier (`final/gtclass.py`), same 65,715 GT variables, rivals' columns unchanged (neither the
+results tree nor the pinned metric moved). Only the rows that moved, plus the two ceilings:
+
+| GT class | GT vars | round D | round E | **round F** | ida | binja | ghidra | angr |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `ptr_char` | 14,645 | 28.7% (4,204) | 28.9% (4,232) | **34.6% (5,060)** | 24.4% (3,543) | **36.8% (5,323)** | 18.3% | 16.4% |
+| `ptr_struct` | 14,252 | 3.0% (422) | 3.3% (474) | **4.0% (568)** | 2.4% (328) | 2.8% (389) | 2.3% | 2.3% |
+| `ptr_void` | 3,481 | 17.6% (612) | 17.7% (615) | **17.8% (621)** | 1.6% | 12.8% | 1.3% | 2.4% |
+| `ptr_prim` | 1,242 | 46.8% (581) | 46.8% (581) | **47.8% (594)** | 30.7% | 51.7% (607) | 32.0% | 37.1% |
+| `ptr_ptr` | 1,834 | 28.5% (523) | 28.5% (523) | **28.6% (525)** | 38.3% (670) | 30.8% | 1.5% | 5.6% |
+| `int_u8` / `int_s8` | 7,657 / 2,478 | 3,902 / 1,450 | 3,902 / 1,448 | 3,899 / 1,444 | | | | |
+| `funcptr` / `ptr_union` | 525 / 143 | 0 | 0 | **0** | 0 | 0 | 0 | 0 |
+| **all GT variables** | 65,715 | 30.9% (20,314) | 31.1% (20,405) | **32.5% (21,341)** | 24.1% | 30.7% (19,801) | 21.5% | 24.5% |
+
+| storage | GT vars | round E | **round F** | ida | binja |
+|---|---:|---:|---:|---:|---:|
+| argument | 21,577 | 49.2% | **50.0%** | 40.6% | 48.4% |
+| stack | 18,317 | 53.4% | **57.6%** | 38.2% | 51.8% |
+| register only | 25,821 | 0.0% | 0.0% | 0.4% | 1.4% |
+
+`ptr_char` gains 828 TP, 653 of them stack slots — round E's lever 2 predicted "805 of the 1,625 `char *`
+variables only binja gets right are -O0 slots kuna exports as `undefined8`", and that is what `slotptr`
+collected. `ptr_struct` TPs by name, round E → F: `FILE *` 310 → 337, `obstack *` 34 → 58, `passwd *`
+17 → 34, `group *` 13 → 23, `tm *` 15 → 19, `DIR *` 10 → 14, `dirent *` 2 → 5, `lconv *` 1 → 3,
+`spwd *` 0 → 2; `stat *` 55 and `termios *` 6 are unchanged. The nine-point `ptr_char` gap to binja is
+now 2.2 points, down from 7.9.
+
+The rivals' replay, each decompiler paired with kuna on exactly the functions that decompiler scored:
+
+| decompiler (functions it scored) | rival: perfect % / mean | kuna round E | **kuna round F** |
+|---|---|---|---|
+| **binja** (10,366) | 12.28% / .3422 | 12.33% / .3439 | **13.95% / .3582** |
+| **ida** (10,273) | 8.33% / .2682 | 12.64% / .3476 | **14.28% / .3621** |
+| **angr** (10,502) | 8.27% / .2652 | 12.79% / .3451 | **14.40% / .3592** |
+| **ghidra** (10,673) | 6.84% / .2367 | 12.58% / .3428 | **14.17% / .3567** |
+
+kuna stays 1st of five and its O0 lead over binja goes from 0.6 points to **4.5** (24.82% / .5389 against
+20.36% / .4956 on binja's own functions). binja still leads at O2 (3.43% / .1868 against 2.95% / .1847)
+and at O2-noinline (8.52% / .2632 against 8.33% / .2591) — both cells `passthrough` would take (F.7).
+
+### F.3 Goal 2 — variables, and `fmt::main`
+
+`final-f/goal2f.py` (round E's driver, both binaries re-run side by side):
+
+| opt | binary | declarations (E → **F**) | `[16]` blobs | never-written locals |
+|---|---|---|---|---|
+| O2 | fmt / ls / sort / du | 311 / 1,236 → **1,239** / 1,060 / 949 → **950** | 4 / 10 / 11 / 7 | 3 / 53 / 30 / 38 |
+| O0 | fmt / ls / sort / du | 271 / 1,133 → **1,135** / 1,084 → **1,085** / 923 → **924** | 4 / 18 / 6 / 5 | 9 / 31 / 44 / 39 |
+| **total** | | **6,967 → 6,975** | **65 = 65** | **247 = 247** |
+
+Eight more declarations over 2,918 functions (+0.11%), all the extra `struct_N *` locals #709 declares
+for a pointer a call returns; `ls` -O0 `sub_1c68b(0x10)` now gives `struct_6 *v1` with `v1->field_0x0`
+and `v1->field_0x8` where round E had `unsigned long *v1` and `v1[1]`. The phantom-`rdx` shape is
+**7 → 7**, all du -O2 and none the clobbered-argument shape, and **`fmt::main` is byte-identical to
+round E** (`final-f/fmt-main-f.c`): `sub_3700` is called as `(v6,v7)`, `(stdin,v7)` and `(stdin,"-")`
+and no `// rdx` local is declared.
+
+### F.4 Goal 3 — structs
+
+`structscore --all` on the same eight builds, same instrument (`final-f/structscore-table.md`):
+
+| opt | binary | TRex mean 0-6 E → **F** | `c_primitive` passed | params typed as a struct / GT | layout F1 (filler) |
+|---|---|---|---|---|---|
+| O0 | fmt | 4.3753 → **4.8571** | 182/256 → 218/295 | 4 / 34 | 0.052 |
+| O0 | ls | 4.2017 → **4.4691** | 660/924 → 745/1,016 | 42 → 44 / 168 | 0.206 → 0.210 |
+| O0 | sort | 4.0444 → **4.3172** | 545/729 → 613/799 | 36 / 162 | 0.173 |
+| O0 | du | 4.0523 → **4.3368** | 483/660 → 545/730 | 39 / 174 | 0.153 |
+| O2 | fmt / sort | 2.1872 / 2.0222, unchanged | unchanged | 2 / 23, 21 / 95 | 0.039 / 0.180 |
+| O2 | ls | 1.7575 → **1.7606** | 241/365 → 242/366 | 24 → 25 / 79 | 0.250 → 0.254 |
+| O2 | du | 1.9201 → **1.9286** | 215/300 → 217/302 | 29 / 100 | 0.209 |
+
+Pooled TRex mean O0 **4.129 → 4.420**, O2 **1.915 → 1.918**. The O0 move is the largest of the campaign
+and both levers pay: with `--option slotptr off` the same build scores 4.2404 (E 4.1288), so #712 and
+#709 are worth +0.112 and `slotptr` the remaining +0.179. The `c_primitive` step is where it lands —
+1,870 of 2,569 reached at round E, 2,121 of 2,840 now: a slot that used to arrive as `undefined8` is
+reached by the ladder at all.
+
+Per-parameter layout against DWARF (`docs/features/structsynth/layoutscore.py`, unchanged):
+
+| arm | fields only | filler counted | F1 (fields / filler) | recall (fields) |
+|---|---|---|---|---|
+| round D | 0.8709 (877/1,007) | 0.7836 | 0.1678 / 0.1882 | 0.0929 |
+| round E (re-run on this tree) | 0.8702 (811/932) | 0.7851 (935/1,191) | 0.1563 / 0.1759 | 0.0859 |
+| **round F** | **0.8710** (817/938) | **0.7861** (941/1,197) | **0.1574 / 0.1769** | **0.0865** |
+
+The round-E binary reproduces round E's published row to four decimals. Only `ls` moves, by three
+parameters (`final-f/layoutdiffEF.log`): `print_color_indicator` arg 0 and `quote_name` arg 3 at -O0, and
+`quote_name` arg 3 at -O2, each an untyped parameter that #712's cycle vote now types `struct_2 *` with
+2 of its 2 claimed fields right. Nothing regresses. **Nesting** is 3 of 5 claimed against 1,660 GT
+nestings — P .60, R .0018, F1 **.0036** — identical to round E, and `--option structsynth nest` claims
+the same 5 on these builds.
+
+### F.5 The decbench#93 counterfactual
+
+| | perfect | credited perfect | TP added | mean → credited |
+|---|---:|---:|---:|---|
+| baseline | 848 | 848 | 0 | .2645 → .2645 |
+| round B | 986 | 1,159 (+173) | +1,287 | .2895 → .3275 |
+| round C / D | 1,349 | 1,575 (+226) | +1,569 | .3403 → .3849 |
+| round E | 1,353 | 1,579 (+226) | +1,536 | .3415 → .3857 |
+| **round F** | 1,522 | **1,781 (+259)** | **+1,779** | .3553 → **.4038** |
+
+Crediting is worth 33 more functions than in round E and 243 more TP: the `struct_N *` records #709
+puts on call-returned pointers and #710 propagates into their slots are, by construction, exactly the
+anonymous struct pointers the rule would credit.
+
+### F.6 Speed
+
+SPEED_SECTION
+
+### F.7 Every round-F PR and what it measured
+
+| PR | item | default | measured effect |
+|---|---|---|---|
+| #710 | `slotptr` — a `framelayout` filler stack slot takes the declared type of the pointer stored into it, when every store resolves and agrees, the type is a committed pointer of the slot's width, and nothing touches the slot at another width | `on` | **the round's biggest lever**: 1,399 → 1,522 perfect on this tree, 425 up / 5 down, `ptr_char` +653 stack TP, `ptr_struct` +94, stack storage 53.4% → 57.6%. P-code and C output are byte-identical — only `variables[]` and the `; stack:` comments move |
+| #712 | `protoorder cycles` — the members of a recursive component state the parameter types they recovered, decompiled once each in a depth-first order over the cycle's own calls | `cycles` (was `types`) | 1,472 → 1,522 perfect, 171 up / 1 down (`ginstall::install_file_in_file`); argument TP 49.2% → 50.0%; three `ls` parameters gain a scored layout |
+| #709 | `structsynth locals` — a pointer a call returns and reads at two or more constant offsets is declared `struct_N *`, under five rules about the value | `locals` (was `param`) | `type_match` exactly neutral (1,522 = 1,522, 0 up / 0 down); +8 declarations over 2,918 functions; TRex and decbench#93 crediting both rise because the records are real |
+| #708 | `passthrough` — a register a function hands untouched to a callee becomes a parameter of the caller and an argument at the call, when the callee's recovered prototype has a parameter there and its body reads it | **`off`** | option on: 1,522 → 1,546 perfect, 128 up / 6 down, and it is **the only round-F lever that moves O2** (74 → 81) **and O2-noinline** (383 → 400). Off by default because it adds arguments the metric cannot check: 454 of 506 gained parameters are confirmed by DWARF over 26 binaries and 0 contradicted, but nothing proves the remaining 52 |
+
+**Not landed:**
+
+| PR | item | state | measured on its base |
+|---|---|---|---|
+| #711 | `calleevote` — a parameter only read at one fixed offset, or only forwarded, takes the type every caller passes; `fields` turns its lone field into a record | open, review CHANGES (round 4); default would be `fields` | on `3a42d864b`: 1,522 → **1,575** perfect, 264 up / 3 down (gnulib `xmemdup`), credited 1,771 → 2,128. Speed inside the budget on fmt/ls/sort/bash (+0.4…+1.0%) but the second decompile costs +11.5% on kmod -O2-noinline, +9.0% on crontab and +8.1% on dpkg-divert |
+
+### F.8 What stays opt-in, and the ranked levers left
+
+* **Opt-in, with reasons.** `passthrough` (F.7 — arity the metric cannot check); `charptr` (the flip
+  fails `test-cli` and the typesweep after #704); `structsynth nest` (every criterion passes but a
+  sharded run is +63%); `libctypes glibc`, `protoorder lock`, `structdefs`, `indirectonly`,
+  `signedness prefer-signed`, `formatstring full` — unchanged from round B.
+* **Ranked next levers**, by measured effect:
+  1. **Land `calleevote` (#711)** — +53 perfect and +357 credited on its base, the largest measured
+     unlanded item, and the only one that also attacks the O2 one-field getter E.8 named. Its blocker is
+     the redo cost on binaries outside the speed set, not accuracy.
+  2. **Flip `passthrough` on, or find the proof it needs** — +24 perfect, and unlike everything else this
+     round it moves O2 (74 → 81) and O2-noinline (383 → 400). What is missing is a check on the 52 of 506
+     gained parameters DWARF does not confirm.
+  3. **Upstream metric fixes, still worth more than any engine change.** Inlined-callee variables:
+     O2 74 → 153, O2-noinline 380 → 498 (E.8). decbench#93 crediting: **+259** perfect now.
+  4. **`ptr_char`'s last 263 TP to binja** — the class gap is 2.2 points, down from 7.9. What is left is
+     the variadic register-save slots (52 arguments), the 133 libc imports with a `char *` parameter
+     missing from the signature table, and register-only `char *`, which nothing can reach.
+  5. **Struct layout recall .0865 and nesting F1 .0036** — precision is .87 and stable across three
+     rounds, but 8,626 of 9,443 ground-truth fields are still never claimed, and a synthesized field is
+     almost never itself a struct pointer.
+* **Ceilings, unchanged.** Register-resident ground truth is 25,821 of 65,715 GT variables (39.3%) and
+  kuna exports none of them; at O2 that ceiling alone makes 85.8% of functions unreachable (E.8).
+  Signedness, variable count and call arity are worth zero on `type_match` by construction — which is why
+  #708, the round's only arity change, has to be judged on DWARF rather than on this page.
+
 ## Reproduce
 
 Tools are in `final/` (paths are this machine's; each is a thin driver over the repo's own instruments).
@@ -1228,3 +1486,21 @@ python3 final-e/speed5.py 11 <speed.json> fmt,ls,sort,bash
 
 The O2 census re-scores the O2 and O2-noinline slices with provenance-tagged ground truth
 (`final-e/o2census/run.sh`, then `census.py`, `ceiling.py`, `levers.py`, `rivals.py`).
+
+Round F uses `final-f/` the same way. It adds per-option arms on the final binary in place of round E's
+bisect builds (`finalsweepopt.py` reads `SWEEP_OPTS="<name> <value>"` and runs the whole sweep with that
+flip), and a `structscore` arm with the same flip:
+
+```bash
+DECBENCH_PIN=<625e892 tree> KUNA_BIN=<kuna> PYTHONPATH=final-f python -m finalsweep kuna $P --workers 12 --out <dir>
+bash final-f/sweep-arms.sh && bash final-f/sweep-arm2.sh   # slotptr off, passthrough on, structsynth param, protoorder types
+python3 final-f/analyze6.py       # base / B / C / D / E / F (+ the E control), classes, rivals
+python3 final-f/moved6.py         # moved.csv + report-slices.md
+python3 final-c/credit93.py base=<rows> ... roundF=<rows>
+python3 final-f/goal2f.py         # varcensus, round E vs round F
+bash final-f/ss.sh && python3 final-f/sstable6.py   # structscore E vs F
+bash final-f/ss-ablate.sh         # the same eight builds with `--option slotptr off`
+bash final-f/layout.sh            # layout P/R (F, E control) + nestscore param vs nest
+python3 final-f/layoutdiffEF.py <bin>               # per-parameter layout, round E vs round F
+python3 final-f/speed6.py 11 <speed.json> fmt,ls,sort,bash
+```

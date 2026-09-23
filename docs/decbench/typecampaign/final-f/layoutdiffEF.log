@@ -1,0 +1,7 @@
+=== ls O0
+params typed as a struct with a header layout: E 40  F 42
+  print_color_indicator(arg 0): E None | F ('bin_str', 2, 'struct_2', 2, 2) | F type 'struct_2 *'
+  quote_name(arg 3): E None | F ('bin_str', 2, 'struct_2', 2, 2) | F type 'struct_2 *'
+=== ls O2
+params typed as a struct with a header layout: E 24  F 25
+  quote_name(arg 3): E None | F ('bin_str', 2, 'struct_1', 2, 2) | F type 'struct_1 *'

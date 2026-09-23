@@ -67,3 +67,18 @@
 20. 2026-09-22 `structsynth nest` ships opt-in although every default criterion passes literally:
    its gain is 2 nested fields on 10 builds, and a sharded `--jobs 8` run costs +63% because a
    nested or self field has no portable recipe. The flip waits for a request-relative recipe.
+21. 2026-09-23 `slotptr` (#710) is default on although it turns five free matches into misses. The
+   pinned metric credits an exported `undefined8` against an 8-byte integer, so a filler slot kuna
+   says nothing about scores by luck; typing it from the pointer stored into it is +123 perfect and
+   −5, and every one of the five is a body type that was already wrong (`shred::dorewind` merges
+   `lseek`'s return with `__errno_location()`'s `int *`). An honest wrong type beats a lucky silence.
+22. 2026-09-23 `passthrough` (#708) stays default off even though it is the only round-F lever that
+   moves O2 (74 → 81) and O2-noinline (383 → 400). It adds arguments, and `type_match` cannot see a
+   call's arity, so the metric's +24 is not evidence for it; DWARF confirms 454 of 506 gained
+   parameters over 26 binaries and contradicts none, but nothing yet speaks for the other 52. The
+   flip waits for that check, not for a better score.
+23. 2026-09-23 a default change that only moves `variables[]` is still a default change. #710 leaves
+   P-code and C output byte-identical and moves 425 functions on the metric; ablating it needs
+   `--option slotptr off` on a whole-binary serial run, and its regressions are only visible in the
+   JSON surface. The campaign's rule — measure the surface decbench scores, not the C text — cuts
+   both ways.
