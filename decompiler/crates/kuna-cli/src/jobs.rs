@@ -203,7 +203,7 @@ use std::time::{Duration, Instant};
 
 use kuna_console::engine::{EntryProvenance, ObjectLocation};
 use kuna_console::project::FuncResult;
-use kuna_decomp::decompile_drive::{LineMapping, TypeInfo, VarInfo};
+use kuna_decomp::decompile_drive::{GlobalInfo, LineMapping, TypeInfo, VarInfo};
 use kuna_decomp::kuna_structsynth::shard::{self, FunctionRecord, Replay, SynthRequest};
 
 /// Ceiling on an automatically planned chunk, when `--jobs-chunk` is omitted.
@@ -713,6 +713,15 @@ impl ResultWriter {
             put_str(&mut body, &t.definition);
             body.extend_from_slice(&t.size.to_le_bytes());
         }
+        // (kuna `globalref`) The globals the body names by address, for the
+        // project header the parent writes.
+        put_u32(&mut body, r.globals.len() as u32);
+        for g in &r.globals {
+            put_u64(&mut body, g.address);
+            put_str(&mut body, &g.name);
+            put_str(&mut body, &g.declaration);
+            body.push(u8::from(g.unknown));
+        }
         put_u64s(&mut body, &r.callee_hints);
         match &r.synth {
             Some(record) => {
@@ -821,6 +830,15 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         let tsize = r.i64()?;
         types.push(TypeInfo { name: tname, definition, size: tsize });
     }
+    let ng = r.u32()? as usize;
+    let mut globals = r.sized(ng);
+    for _ in 0..ng {
+        let address = r.u64()?;
+        let gname = r.string()?;
+        let declaration = r.string()?;
+        let unknown = r.u8()? != 0;
+        globals.push(GlobalInfo { address, name: gname, declaration, unknown });
+    }
     let callee_hints = r.u64s()?;
     let synth = match r.u8()? {
         0 => None,
@@ -841,6 +859,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         proto,
         variables,
         types,
+        globals,
         line_mappings,
         aliases,
         object_location,
@@ -2758,6 +2777,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         proto: None,
         variables: Vec::new(),
         types: Vec::new(),
+        globals: Vec::new(),
         line_mappings: Vec::new(),
         aliases: t.aliases.clone(),
         object_location: t.object_location.clone(),
@@ -3336,6 +3356,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            globals: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
@@ -3763,6 +3784,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            globals: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,

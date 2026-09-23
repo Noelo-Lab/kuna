@@ -1793,6 +1793,45 @@ pub fn extract_type_definitions(arch: &Architecture, fd: &Funcdata) -> Vec<TypeI
         .collect()
 }
 
+/// (kuna `globalref`) A global the printed C names by address (`&dat_2b080`),
+/// with the declaration the `decompile-project` header gives it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalInfo {
+    /// The byte address the name stands for.
+    pub address: u64,
+    /// The printed name (`dat_2b080`, or `DAT_0002b080` in ghidra naming).
+    pub name: String,
+    /// The C declaration without `extern` or `;` (`struct_2 dat_2b080`).
+    pub declaration: String,
+    /// True when the function only ever used the address through `void *`, so
+    /// the declared type is the unknown byte.
+    pub unknown: bool,
+}
+
+/// The globals the C `print_c` just rendered for `fd` names by address
+/// ([`crate::kuna_globalref`]). Read from the printer, so it must follow the
+/// `print_c` of the same function.
+pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
+    let print = arch.print();
+    let minted = print.globalref_minted();
+    if minted.is_empty() {
+        return Vec::new();
+    }
+    let rt = crate::printc::RealTypeCtx::from_arch(arch, print.out_lang());
+    minted
+        .iter()
+        .map(|(&address, m)| {
+            let name = crate::printc::global_data_name(arch, address);
+            GlobalInfo {
+                address,
+                declaration: crate::printc::declaration_text(&m.decl_type, &name, rt),
+                name,
+                unknown: m.unknown,
+            }
+        })
+        .collect()
+}
+
 /// One 1-based pseudocode line and its associated machine instruction addresses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineMapping {

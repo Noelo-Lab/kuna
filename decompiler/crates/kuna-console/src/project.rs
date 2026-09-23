@@ -26,7 +26,7 @@ use std::path::Path;
 use kuna_base::address::Address;
 use kuna_decomp::decompile_drive::{
     extract_type_definitions, extract_variables, print_c, print_c_prototype,
-    print_c_with_provenance, LineMapping, TypeInfo, VarInfo,
+    print_c_with_provenance, GlobalInfo, LineMapping, TypeInfo, VarInfo,
 };
 use kuna_decomp::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
@@ -84,6 +84,10 @@ pub struct FuncResult {
     /// function's C names, in definition-before-use order. Empty unless the
     /// option is on — the same decision that prints them above the body.
     pub types: Vec<TypeInfo>,
+    /// (kuna `globalref`) The globals the C names by address (`&dat_2b080`),
+    /// with the declaration the project header gives each. Never serialized
+    /// into `decompile-all --json`; the `decompile-project` header declares them.
+    pub globals: Vec<GlobalInfo>,
     pub line_mappings: Vec<LineMapping>,
     /// (kuna, issue #197) Every OTHER name this entry carries — a generic
     /// `sub_<addr>` placeholder, an ELF weak/strong twin, a PE
@@ -341,6 +345,7 @@ pub fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
         || r.proto.as_deref().is_some_and(&mut hit)
         || r.variables.iter().any(|v| hit(&v.type_name))
         || r.types.iter().any(|t| hit(&t.name))
+        || r.globals.iter().any(|g| hit(&g.declaration))
 }
 
 /// Is `needle` in `hay` as a whole C identifier?
@@ -444,6 +449,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                globals: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -475,6 +481,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                globals: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -494,6 +501,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                globals: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -662,6 +670,7 @@ pub fn decompile_pulled(
                         (print_c(prog.arch_mut(), &fd), Default::default())
                     };
                     let code = untrimmed.trim_matches('\n').to_string();
+                    let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
                     // (kuna `structdefs`) The layout side of the same function:
@@ -692,10 +701,10 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, types, proto, line_mappings, callee_hints)
+                    (code, variables, types, globals, proto, line_mappings, callee_hints)
                 }));
                 match rendered {
-                    Ok((code, variables, types, proto, line_mappings, callee_hints)) => sink(FuncResult {
+                    Ok((code, variables, types, globals, proto, line_mappings, callee_hints)) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -705,6 +714,7 @@ pub fn decompile_pulled(
                         proto,
                         variables,
                         types,
+                        globals,
                         line_mappings,
                         aliases,
                         object_location,
@@ -721,6 +731,7 @@ pub fn decompile_pulled(
                         proto: None,
                         variables: Vec::new(),
                         types: Vec::new(),
+                        globals: Vec::new(),
                         line_mappings: Vec::new(),
                         aliases,
                         object_location,
@@ -739,6 +750,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                globals: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -1010,6 +1022,11 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
         out.push_str("\n/* user-defined types */\n");
         out.push_str(types);
     }
+    let globals = global_declarations(results);
+    if !globals.is_empty() {
+        out.push_str("\n/* globals the code names by address */\n");
+        out.push_str(&globals);
+    }
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
@@ -1035,6 +1052,48 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
         }
     }
     out.push_str(&format!("\n#endif /* {guard} */\n"));
+    out
+}
+
+/// (kuna `globalref`) One `extern` line per global the functions name by address,
+/// in address order.
+///
+/// Each function declares the object at the type IT uses it at, so two
+/// functions can disagree. A type is preferred to the unknown byte a `void *`
+/// use stands for, then the type more functions use (the first in address
+/// order on a tie); the others are listed in a comment on the line, because the
+/// body that used one of them now passes a pointer of another type.
+fn global_declarations(results: &[FuncResult]) -> String {
+    let mut by_addr: BTreeMap<u64, Vec<&GlobalInfo>> = BTreeMap::new();
+    for g in results.iter().flat_map(|r| r.globals.iter()) {
+        by_addr.entry(g.address).or_default().push(g);
+    }
+    let mut out = String::new();
+    for uses in by_addr.values() {
+        let known: Vec<&&GlobalInfo> = uses.iter().filter(|g| !g.unknown).collect();
+        let pool: Vec<&GlobalInfo> =
+            if known.is_empty() { uses.to_vec() } else { known.into_iter().copied().collect() };
+        let mut counts: Vec<(&str, usize)> = Vec::new();
+        for g in &pool {
+            match counts.iter_mut().find(|(d, _)| *d == g.declaration) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((&g.declaration, 1)),
+            }
+        }
+        let Some(&(chosen, _)) = counts.iter().max_by(|a, b| a.1.cmp(&b.1).then(std::cmp::Ordering::Greater)) else {
+            continue;
+        };
+        let others: Vec<String> = counts
+            .iter()
+            .filter(|(d, _)| *d != chosen)
+            .map(|(d, _)| d.replace("/*", "/ *").replace("*/", "* /"))
+            .collect();
+        if others.is_empty() {
+            let _ = writeln!(out, "extern {chosen};");
+        } else {
+            let _ = writeln!(out, "extern {chosen}; /* also used as: {} */", others.join(", "));
+        }
+    }
     out
 }
 

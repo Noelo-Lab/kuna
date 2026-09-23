@@ -293,6 +293,13 @@ pub struct Architecture {
     /// object bootstrap beside [`Self::dynreloc_const`]. Empty on every other
     /// path, so it is inert for the XML datatest oracle.
     pub litpool_const: Rc<Vec<(u64, u64)>>,
+    /// (kuna `globalref`) Sorted, merged `[start, stop]` (inclusive) byte ranges
+    /// of the loaded sections a program's own data objects live in, as the
+    /// object loader classifies them (`ObjectLoadImage::data_object_ranges`).
+    /// A pointer-typed constant prints as `&dat_<addr>` only inside one. Empty
+    /// on every path without a section table, so it is inert for the XML
+    /// datatest oracle.
+    pub globalref_ranges: Rc<Vec<(u64, u64)>>,
     /// (kuna) Fold a read from executable read-only memory to the constant it
     /// holds (`litpoolconst`); default **on** (DIV-136). An ARM immediate too
     /// wide for the instruction encoding is parked in a literal pool in `.text`
@@ -2299,6 +2306,7 @@ impl Architecture {
             readonlypropagate: false,
             dynreloc_const: Rc::new(Vec::new()),
             litpool_const: Rc::new(Vec::new()),
+            globalref_ranges: Rc::new(Vec::new()),
             litpoolconst: false,
             infer_pointers: false,
             funcptr_align: 0,
@@ -2950,6 +2958,11 @@ impl Architecture {
             "structdefs" => {
                 let (val, msg) = crate::kuna_structdefs::OptionStructDefs.apply(p1)?;
                 self.print_mut().options.set_struct_defs(val);
+                Ok(msg)
+            }
+            "globalref" => {
+                let (val, msg) = crate::kuna_globalref::OptionGlobalRef.apply(p1)?;
+                self.print_mut().options.set_global_ref(val);
                 Ok(msg)
             }
             "thumbfuncptr" => on_off!(preserve_thumb_funcptr, "Thumb function-pointer preservation"),

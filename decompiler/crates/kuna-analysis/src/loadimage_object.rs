@@ -443,6 +443,10 @@ pub struct ObjectLoadImage {
     /// Defined data symbols (`STT_OBJECT`), in symbol-table order. See
     /// [`DataSym`]; surfaced through [`ObjectLoadImage::data_symbols`].
     datasyms: Vec<DataSym>,
+    /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
+    /// the program's own data objects live in; see
+    /// [`crate::loader::kuna_globalref`].
+    data_objects: Vec<(u64, u64)>,
     /// (kuna) Extra `[start, stop]` (inclusive) byte ranges to treat as *constant*
     /// (read-only) beyond the section-flag scan — the MIPS GOT external slots,
     /// whose static contents (the `.MIPS.stubs` stub addresses) the engine folds
@@ -751,9 +755,18 @@ impl ObjectLoadImage {
         // `ElfFormat::section_bits`.
         let mut sections: Vec<SectionInfo> = Vec::new();
         let mut section_metadata: Vec<ObjectSectionMetadata> = Vec::new();
+        let mut data_object_rows: Vec<(u64, u64)> = Vec::new();
         for sec in file.sections() {
             let flags = fmt.section_bits(sec.name().unwrap_or(""), sec.kind(), sec.flags());
             sections.push(SectionInfo { vma: sec.address(), size: sec.size(), flags });
+            if flags & section_flags::UNALLOC == 0
+                && crate::loader::kuna_globalref::holds_program_objects(
+                    sec.name().unwrap_or(""),
+                    sec.kind(),
+                )
+            {
+                data_object_rows.push((sec.address(), sec.size()));
+            }
             if let Ok(name) = sec.name() {
                 section_metadata.push(ObjectSectionMetadata::new(
                     name,
@@ -911,6 +924,7 @@ impl ObjectLoadImage {
             reloc_sections: Vec::new(),
             reloc_symbols: Vec::new(),
             datasyms,
+            data_objects: crate::loader::kuna_globalref::merged_ranges(data_object_rows),
             const_ranges,
             dynreloc_const,
             import_slots,
@@ -991,6 +1005,11 @@ impl ObjectLoadImage {
                 Some(ObjectSectionMetadata::new(sec.name().ok()?, vma, sec.size(), sec.kind()))
             })
             .collect();
+        let data_objects = crate::loader::kuna_globalref::merged_ranges(file.sections().filter_map(|sec| {
+            let vma = *layout.section_vma.get(&sec.index())?;
+            crate::loader::kuna_globalref::holds_program_objects(sec.name().ok()?, sec.kind())
+                .then_some((vma, sec.size()))
+        }));
 
         // Defined functions (rebased) + extern call targets, demangled + deduped
         // by address — the same `seen`/`demangle_funcsym_name` discipline the
@@ -1033,6 +1052,7 @@ impl ObjectLoadImage {
             // function half only (`RelocLayout::funcsyms`).  Data-symbol naming is
             // therefore linked-image-only; an `ET_REL` load keeps today's behavior.
             datasyms: Vec::new(),
+            data_objects,
             const_ranges: Vec::new(),
             // (kuna) The foldable-range exception list. `dynrelocs` itself is
             // linked-image only (a relocatable object's relocations are already
@@ -1125,6 +1145,12 @@ impl ObjectLoadImage {
     /// varnode inside one even when global propagation is off.
     pub fn dynreloc_const_ranges(&self) -> &[(u64, u64)] {
         &self.dynreloc_const
+    }
+
+    /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
+    /// a program's own data objects live in ([`crate::loader::kuna_globalref`]).
+    pub fn data_object_ranges(&self) -> &[(u64, u64)] {
+        &self.data_objects
     }
 
     /// (kuna) The image's import pointer slots as half-open `[lo, hi)` VMA
@@ -1384,6 +1410,10 @@ impl LoadImage for ObjectLoadImage {
             r.1 = r.1.wadd(badjust);
         }
         for r in &mut self.dynreloc_const {
+            r.0 = r.0.wadd(badjust);
+            r.1 = r.1.wadd(badjust);
+        }
+        for r in &mut self.data_objects {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }
