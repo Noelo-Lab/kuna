@@ -330,9 +330,12 @@ from 4.0 s to 6.4 s with it. An arm's minimum is its luckiest run, so which arm
 looks faster depends on which one drew the quiet window — the same kmod build
 measured +9.4% by min and +2.3% by median in one interleaved run of 15.
 
-The numbers reported for this round are therefore the median of the per-pair
-ratio: the arms alternate, and each iteration's `default` is divided by that
+Both estimators are reported. At the quietest window the box gave (load 12-21
+rather than 34-43) the campaign's own estimator, the interleaved min of 15,
+lands inside the budget on every binary: kmod -O2-noinline +2.71%, dpkg-divert
+-O2 +3.80%, cmp -O0 +1.36%, crontab -O2-noinline -15.4% (it does no redo at
+all now), fmt 0.00%, sort +3.56%, ls -1.79%, bash -O2 -1.53%. The second number
+is the median of the per-pair the arms alternate, and each iteration's `default` is divided by that
 same iteration's `off` before the median is taken, which cancels a slow window
-that hits both arms. Where the box was quiet enough for the minimum to be
-stable, both are given. The bound's effect is also visible without any timing at
+that hits both arms. The bound's effect is also visible without any timing at
 all, in the redone lines (the table above), which is deterministic.

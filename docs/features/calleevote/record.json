@@ -593,6 +593,22 @@
      "delta_paired_median_pct": -2.17,
      "loadavg1": 43.4,
      "n": 15
+    },
+    "sort": {
+     "wall_min_off_ms": 17344.2,
+     "wall_min_on_ms": 17960.8,
+     "delta_wall_min_pct": 3.56,
+     "delta_paired_median_pct": -0.16,
+     "loadavg1": 18.7,
+     "n": 15
+    },
+    "bash": {
+     "wall_min_off_ms": 104175.7,
+     "wall_min_on_ms": 102577.2,
+     "delta_wall_min_pct": -1.53,
+     "delta_paired_median_pct": -3.25,
+     "loadavg1": 23.6,
+     "n": 15
     }
    },
    "round_4_unbounded_quiet_box": {
@@ -605,19 +621,52 @@
     "dpkgdivert_O2": 8.14,
     "cmp_O0": 7.62,
     "note": "min of 15 at load 2.5, the measurement that put three binaries over the +5% budget and asked for the bound"
+   },
+   "wall_interleaved_n15_quietest_window": {
+    "note": "the same measurement re-run at the quietest window the box gave (load 14-21 rather than 34-43)",
+    "kmod_O2ni": {
+     "delta_wall_min_pct": 2.71,
+     "delta_paired_median_pct": 1.79,
+     "loadavg1": 14.2,
+     "n": 15
+    },
+    "dpkgdivert_O2": {
+     "delta_wall_min_pct": 3.8,
+     "delta_paired_median_pct": -0.13,
+     "loadavg1": 14.2,
+     "n": 15
+    },
+    "crontab_O2ni": {
+     "delta_wall_min_pct": -15.36,
+     "delta_paired_median_pct": -2.86,
+     "loadavg1": 12.5,
+     "n": 15
+    },
+    "cmp_O0": {
+     "delta_wall_min_pct": 1.36,
+     "delta_paired_median_pct": 2.08,
+     "loadavg1": 20.9,
+     "n": 15
+    },
+    "fmt": {
+     "delta_wall_min_pct": 0.0,
+     "delta_paired_median_pct": -0.99,
+     "loadavg1": 32.0,
+     "n": 15
+    }
    }
   }
  },
  "gates": {
-  "make test": "datatests: 675/675 assertions passed; PARITY OK (final build e5e65a8cd on 3a42d864b)",
-  "make test-stages": "datatests: 1298/1298 assertions passed; PARITY OK (final build)",
+  "make test": "datatests: 675/675 assertions passed; PARITY OK (final build f350ee650 on origin/main 31ac2b26e)",
+  "make test-stages": "datatests: 1311/1311 assertions passed; PARITY OK (baseline re-recorded on the rebased tree: +2 CALLEEVOTE keys and the angr-provenance assertion's option list)",
   "make check-spec": "check-spec OK (lenient mode)",
   "check_spec --strict": "check-spec OK (strict mode)",
-  "make test-cli": "tests/cli: 231/231 passed (final build)",
+  "make test-cli": "tests/cli: 235/235 passed",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
-  "docs/options.md": "byte-fresh (regenerated from the final build)",
-  "make rust-test (lane script)": "RUST_TEST_RC=0; 7,431 passed, 0 failed, 38 ignored (lane 14:09:48-14:34:48Z on e5e65a8cd, after its last code, catalog and docs commit at 13:27:32Z)"
+  "docs/options.md": "byte-fresh (regenerated from the final build; phase_catalog.json re-captured after the catalog text moved)",
+  "make rust-test (lane script)": "RUST_TEST_RC=0; 7,449 passed, 0 failed, 38 ignored (lane 04:47-05:16Z on f350ee650, the final commit)"
  },
  "notes": "Measured and not shipped: refusing a value handed to a declared void * (-8 perfect, -28 improved, +3), byte/halfword lone fields (+10 credited, +2 worse), a settle pass for every structsynth candidate (no scored change). Known secondary effect: a callee's one-field record stated by protoorder can make a caller's interior-pointer argument a cast and leave the caller's own parameter long (diff O0 print_context_header: void * -> long, 5 scored rows, all misses either way).",
  "files": {
