@@ -6130,6 +6130,10 @@ impl PrintC {
             Some(t) => t,
             None => return self.op_func_ir(fd, arch, op),
         };
+        crate::p9_emit::cast::census::bump(format!("EXT\tZEXT\treader={:?}\thide={}\timplied={}",
+            read_op.and_then(|r| fd.obank().get(r)).map(|o| o.code()),
+            self.options.hide_exts,
+            self.is_extension_cast_implied(fd, &strat, op, read_op)));
         if strat.is_zext_cast(&outtype, &intype) {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
@@ -6159,6 +6163,10 @@ impl PrintC {
             Some(t) => t,
             None => return self.op_func_ir(fd, arch, op),
         };
+        crate::p9_emit::cast::census::bump(format!("EXT\tSEXT\treader={:?}\thide={}\timplied={}",
+            read_op.and_then(|r| fd.obank().get(r)).map(|o| o.code()),
+            self.options.hide_exts,
+            self.is_extension_cast_implied(fd, &strat, op, read_op)));
         if strat.is_sext_cast(&outtype, &intype) {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);

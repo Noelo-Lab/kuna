@@ -1244,6 +1244,8 @@ impl Funcdata {
             false
         };
         if !fits {
+            census::bump(format!("DEMOTE\tptradd->intadd\tptrto={}",
+                ct.get_ptr_to().map(|p| format!("{:?}/{}", p.get_metatype(), p.get_size())).unwrap_or("-".into())));
             self.op_undo_ptradd(op, true);
         }
     }
@@ -1265,6 +1267,8 @@ impl Funcdata {
         let curtype = self.vn_type_read_facing(in0, op);
         let matching = self.is_ptrsub_matching_scope(&curtype, in1off as i64, 0i64, 0i64);
         if !matching {
+            census::bump(format!("DEMOTE\tptrsub->{}\tptrto={}", if in1off == 0 {"copy"} else {"intadd"},
+                curtype.get_ptr_to().map(|p| format!("{:?}/{}", p.get_metatype(), p.get_size())).unwrap_or("-".into())));
             if in1off == 0 {
                 self.op_remove_input(op, 1);
                 self.op_set_opcode_code(op, OpCode::CPUI_COPY);
@@ -1429,7 +1433,18 @@ impl Funcdata {
             return 1;
         }
         // Generate the CAST op.
-        census::bump(format!("IN\t{:?}\t{}\t{}\t{:?}", self.obank().get(op).map(|o| o.code()).unwrap(), census::take_arm(), census::take_reason(), census::take_meta()));
+        {
+            let opc0 = self.obank().get(op).map(|o| o.code()).unwrap();
+            let mut extra = String::new();
+            if matches!(opc0, OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB) {
+                let cur = self.vn_high_type_read_facing(vn, op);
+                let pte = cur.get_ptr_to().map(|p| format!("{:?}/{}", p.get_metatype(), p.get_size())).unwrap_or("-".into());
+                let othervn = self.obank().get(op).and_then(|o| o.get_in(1 - slot));
+                let oc = othervn.and_then(|v| self.vbank().get(v)).map(|v| v.is_constant()).unwrap_or(false);
+                extra = format!("\tptrto={}\totherconst={}", pte, oc);
+            }
+            census::bump(format!("IN\t{:?}\t{}\t{}\t{:?}{}", opc0, census::take_arm(), census::take_reason(), census::take_meta(), extra));
+        }
         let vnin_size = self.vbank().get(vnin).map(|v| v.get_size()).unwrap_or(1);
         let addr = match self.obank().get(op) {
             Some(o) => o.get_addr().clone(),

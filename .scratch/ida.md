@@ -7,7 +7,8 @@ No engine change, no PR.
 a symptom of a worse one. IDA types 52% of parameters as a 64-bit integer where kuna types
 60% as a pointer; IDA then does address arithmetic in integers (one cast at the load) while
 kuna does it in integers too *after converting the pointer back* (two casts at the load).
-The single largest lever — 2,944 sites, ~40% of the whole gap — is to keep pointer
+The single largest lever — 3,771 casts at 2,944 pointer-based sites, half the whole gap —
+is to keep pointer
 arithmetic in pointer terms. Nothing in the top five levers requires weakening a type, and
 one of them (records for `void *` bases) *improves* the type while removing two casts.
 
@@ -110,20 +111,22 @@ pointer→integer conversions and 2,483 more casts that C would perform on its o
 
 ## 3. The five things IDA does instead, with counts and examples
 
-### 3.1 It never converts a pointer to an integer to add an offset — 2,944 sites
+### 3.1 It never converts a pointer to an integer to add an offset — 3,771 casts
 
 Measured over the whole paired corpus:
 
 | idiom | IDA | kuna |
 |---|---|---|
-| `*(T *)( (long)p + … )` — pointer cast to int inside a deref cast | **0** | **4,358** |
+| `*(T *)( (long)p + … )` — a **pointer-declared** variable converted to an integer inside a deref-cast operand | **22** | **3,771** |
 | `*((T *)p + k)` — cast the pointer, then index | **2,202** | **0** |
 | `p->field` | 632 | 3,418 |
 | `*(T *)(x + k)` where `x` is an integer | 7,542 | 7,266 |
 
-IDA emits this construct **zero** times in 100k lines. kuna emits it 4,358 times; of the
-3,236 whose base is a simple identifier, **2,944 have a base that kuna itself declared as a
-pointer**:
+IDA emits this construct 22 times in 100k lines — and all 22 are my matcher firing on
+`(int)a1[30]`, i.e. a cast of an *element*, not of `a1`; the true IDA count is zero. kuna
+emits it **3,771** times. Restricting to the simple `*(T *)((long)p + rest)` shape with a
+bare identifier base gives 3,236 sites, of which **2,944 have a base kuna itself declared as
+a pointer**:
 
 | kuna's base | sites | what IDA prints | casts saved per site |
 |---|---|---|---|
@@ -288,15 +291,15 @@ gap to IDA +7,445).
 
 | # | behaviour to copy | estimated removal | risk |
 |---|---|---|---|
-| 1 | **Never print `(long)p` for a pointer `p`.** Emit `*(T *)((char *)p + K)`, or `*((T *)p + K/sizeof T)` when `K` divides, in place of `*(T *)((long)p + K)`. | **−2,944** (one per site; 1,817 of them become −2 if #2 also lands) | none — `char *` arithmetic is byte-wise and value-identical |
+| 1 | **Never print `(long)p` for a pointer `p`.** Emit `*(T *)((char *)p + K)`, or `*((T *)p + K/sizeof T)` when `K` divides, in place of `*(T *)((long)p + K)`. | **−3,771** (one per occurrence; 2,944 of them are the simple `p + K` shape, and 1,817 become −2 if #2 also lands) | none — `char *` arithmetic is byte-wise and value-identical |
 | 2 | **Synthesize a record for the `void *` bases that #1 leaves.** 1,817 sites whose base is an untyped pointer with constant field offsets. | **−1,800 additional** (the second cast at each site), and a *better* type | the known `struct_N` naming cost under decbench; already an accepted trade |
 | 3 | **Name every referenced static address** so a global operand is a symbol, not `(T *)0x1234`. | **−817** | none; improves readability too |
 | 4 | **Delete the casts that are already provably redundant**: assign-RHS with LHS == cast type (238), `return` with return type == cast type (57), identity casts (42), removable inner of a stacked pair (410). | **−747** | none — verified against the declarations at each site |
 | 5 | **Split partially-written variables** instead of `*(T *)&v = x` (do *not* adopt `LOBYTE`). | **−400 to −1,000** | needs real variable splitting; the macro shortcut is rejected |
 | 6 | **Drop call-argument casts whose type equals the recovered parameter type.** | **−300** | only where the prototype is trusted |
-| | **total** | **≈ −7,000 of a +7,445 gap** | |
+| | **total** | **≈ −7,800 of a +7,445 gap** (the levers overlap at the `void *` sites, so the realistic floor is parity with IDA, not below it) | |
 
-Levers 1–4 are ~4,500 casts of pure printing and naming work with no semantic exposure at
+Levers 1–4 are ~5,300 casts of pure printing and naming work with no semantic exposure at
 all, and lever 2 makes the type strictly better while removing casts. None of the six
 requires weakening a declared type, and the one behaviour that would (IDA's `long long`
 parameters) is explicitly excluded.
