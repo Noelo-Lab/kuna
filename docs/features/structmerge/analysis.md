@@ -176,9 +176,10 @@ it buys nothing for a rule that is harder to state.
   two_records_that_begin_alike_are_fused_at_the_agreement_floor`.
 
   The floor is where a large share of real merges sit, not a corner:
-  `KUNA_STRUCTMERGE_TRACE=1` over sixteen builds (coreutils `fmt`/`ls`/`sort`/`du`,
-  `grep`, `diff`, `gzip`, `find` at -O0 and -O2) records 63 merges, **19 at two
-  shared claims**, 38 at three, 6 at four. Priced over 177 builds: 189 of the
+  `KUNA_STRUCTMERGE_TRACE=1 kuna decompile-all <bin> --json --option structsynth
+  param --option structmerge siblings` over sixteen builds (coreutils
+  `fmt`/`ls`/`sort`/`du`, `grep`, `diff`, `gzip`, `find` at -O0 and -O2) records 63
+  merges, **19 at two shared claims**, 38 at three, 6 at four. Priced over 177 builds: 189 of the
   1,105 added fields are not DWARF fields, pooled precision 0.9330 -> 0.9312.
   This is the reason the option ships `off`.
 * The merge is a property of one process's ledger. `kuna decompile` numbers each
