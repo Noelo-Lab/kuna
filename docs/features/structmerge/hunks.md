@@ -93,6 +93,8 @@ all classes: {'record name only': 175, 'field accesses only': 9, 'declaration-co
 a body, four change a variable's type rather than its record's number. Over the
 binary's 18,080 exported variables (`--json variables[]`, which is what decbench
 scores) the value changes 265: 254 a record renamed, 1 gained, 3 lost, 7 other.
+One function's variable SET moves as well -- `ext2fs_extent_get`, the
+declaration-count delta at 0x6e770, declares `v11` where it declared `v7`.
 
 ```
 $ kuna decompile-all .../O0/e2fsprogs/stripped/e2fsck --option structmerge off --json
