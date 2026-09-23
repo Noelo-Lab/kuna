@@ -235,9 +235,43 @@
   }
  },
  "speed": {
-  "instrument": "interleaved min-of-15 whole-binary `kuna decompile-all --json --max-fn-seconds 120`, both arms alternating, box load average 30 on 80 cores",
-  "samples": "docs/features/libcwiden/speed.json",
-  "results": "PENDING"
+  "instrument": "interleaved min-of-15 whole-binary `kuna decompile-all --json --max-fn-seconds 120`, the two arms alternating within each round; samples in docs/features/libcwiden/speed.json",
+  "box": "80 cores, load average 30-35 during the first pass (eight other campaign lanes), 15-26 during the ls re-run",
+  "results": {
+   "fmt -O2": {
+    "base_min_ms": 4794.7,
+    "new_min_ms": 4227.3,
+    "delta_min_pct": -11.83,
+    "delta_median_pct": -1.93
+   },
+   "ls -O2": {
+    "base_min_ms": 16005.0,
+    "new_min_ms": 16718.4,
+    "delta_min_pct": 4.46,
+    "delta_median_pct": -0.93
+   },
+   "sort -O2": {
+    "base_min_ms": 17487.6,
+    "new_min_ms": 16461.1,
+    "delta_min_pct": -5.87,
+    "delta_median_pct": -0.01
+   },
+   "bash -O2": {
+    "base_min_ms": 105238.2,
+    "new_min_ms": 100976.7,
+    "delta_min_pct": -4.05,
+    "delta_median_pct": -1.2
+   }
+  },
+  "ls_rerun_on_a_quieter_box": {
+   "base_min_ms": 15703.5,
+   "new_min_ms": 16358.7,
+   "delta_min_pct": 4.17,
+   "delta_median_pct": 3.09
+  },
+  "worst_delta_pct": 4.17,
+  "budget": "+5%",
+  "verdict": "inside the budget. ls is the only positive and it is real (it re-reads at +4.17/+3.09 on a quieter box): ls imports 14 of the new names, so more prototypes are seeded and more type propagation runs. fmt, sort and bash are all faster, which on a contended box means no measurable cost."
  },
  "follow_ups": [
   "the variadic register save area (gap.md bucket (a)): 52 ptr_char rows and 306 phantom parameters over 42 sampled functions; the seam is ActionInputPrototype's trial loop",
