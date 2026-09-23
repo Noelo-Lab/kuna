@@ -1,0 +1,7 @@
+O2 byte:
+  "casts": 5879,
+  "per_kloc": 146.9,
+O2 void(default):
+  "casts": 6522,
+  "per_kloc": 163.0,
+O2ABL_DONE

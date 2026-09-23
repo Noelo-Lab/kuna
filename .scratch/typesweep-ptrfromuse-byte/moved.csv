@@ -1,0 +1,4 @@
+direction,slice,function,base,test
+better,grep::O0::grep,bmexec_trans,0.4666666666666667,0.5333333333333333
+better,grep::O0::grep,wordchar_prev,0.2,0.8
+better,grep::O2::grep,wordchar_prev,0.0,0.42857142857142855

@@ -1,0 +1,125 @@
+CASTCENSUS	1407	PRINT	typecast	CPUI_CAST
+CASTCENSUS	387	OUT	CPUI_INT_ADD	cs	cs:meta	("ptr", "int")	cast
+CASTCENSUS	195	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_VOID/0	otherconst=true
+CASTCENSUS	133	PRINT	typecast	CPUI_INT_SEXT
+CASTCENSUS	111	PRINT	typecast	CPUI_INT_ZEXT
+CASTCENSUS	109	OUT	CPUI_CALL	cs	cs:meta	("ptr", "unknown")	cast
+CASTCENSUS	105	IN	CPUI_LOAD	load	cs:size-change	("", "")
+CASTCENSUS	98	OUT	CPUI_INT_ADD	cs	cs:meta	("ptr", "uint")	cast
+CASTCENSUS	64	PRINT	typecast	CPUI_SUBPIECE
+CASTCENSUS	63	PRINT	ptr-constant
+CASTCENSUS	54	DEMOTE	ptradd->intadd	ptrto=TYPE_PTR/8
+CASTCENSUS	50	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_PTR/8	otherconst=true
+CASTCENSUS	46	OUT	CPUI_LOAD	cs	cs:meta	("ptr", "int")	cast
+CASTCENSUS	44	IN	CPUI_STORE	store	?	("", "")
+CASTCENSUS	41	OUT	CPUI_LOAD	cs	cs:meta	("ptr", "unknown")	cast
+CASTCENSUS	38	EXT	SEXT	reader=Some(CPUI_CALL)	hide=true	implied=false
+CASTCENSUS	38	OUT	CPUI_CALLIND	cs	cs:meta	("ptr", "unknown")	cast
+CASTCENSUS	33	IN	CPUI_CALL	call	?	("", "")
+CASTCENSUS	32	EXT	SEXT	reader=Some(CPUI_INT_MULT)	hide=true	implied=false
+CASTCENSUS	32	IN	CPUI_INT_SUB	intsub	cs:meta	("int", "ptr")	ptrto=TYPE_INT/1	otherconst=false
+CASTCENSUS	26	IN	CPUI_INT_SLESSEQUAL	sless	cs:meta	("int", "uint")
+CASTCENSUS	25	IN	CPUI_INT_LESSEQUAL	less	cs:meta	("uint", "int")
+CASTCENSUS	23	PRINT	int2float
+CASTCENSUS	22	EXT	SEXT	reader=None	hide=true	implied=false
+CASTCENSUS	20	EXT	SEXT	reader=Some(CPUI_INT_ADD)	hide=true	implied=false
+CASTCENSUS	20	EXT	ZEXT	reader=Some(CPUI_INT_SUB)	hide=true	implied=false
+CASTCENSUS	19	EXT	ZEXT	reader=Some(CPUI_INT_MULT)	hide=true	implied=false
+CASTCENSUS	18	EXT	SEXT	reader=Some(CPUI_INT_SUB)	hide=true	implied=false
+CASTCENSUS	16	IN	CPUI_COPY	copy	cs:meta	("ptr", "unknown")
+CASTCENSUS	16	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_UNKNOWN/8	otherconst=true
+CASTCENSUS	16	IN	CPUI_STORE	store	cs:meta	("int", "ptr")
+CASTCENSUS	14	EXT	ZEXT	reader=None	hide=true	implied=false
+CASTCENSUS	14	EXT	ZEXT	reader=Some(CPUI_CAST)	hide=true	implied=false
+CASTCENSUS	14	EXT	ZEXT	reader=Some(CPUI_INT_ADD)	hide=true	implied=false
+CASTCENSUS	14	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_INT/8	otherconst=true
+CASTCENSUS	14	IN	CPUI_INT_LESS	less	cs:meta	("uint", "int")
+CASTCENSUS	14	IN	CPUI_INT_SEXT	ext	cs:meta	("int", "uint")
+CASTCENSUS	13	EXT	SEXT	reader=Some(CPUI_PTRADD)	hide=true	implied=true
+CASTCENSUS	12	IN	CPUI_CALL	call	cs:size-change	("", "")
+CASTCENSUS	10	EXT	SEXT	reader=Some(CPUI_INT_ADD)	hide=true	implied=true
+CASTCENSUS	9	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_VOID/0	otherconst=false
+CASTCENSUS	9	IN	CPUI_INT_SLESS	sless	cs:meta	("int", "uint")
+CASTCENSUS	8	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_INT/8	otherconst=false
+CASTCENSUS	8	OUT	CPUI_CALL	cs	cs:meta	("uint", "int")	cast
+CASTCENSUS	8	PRINT	typecast	CPUI_FLOAT_TRUNC
+CASTCENSUS	7	EXT	ZEXT	reader=Some(CPUI_PTRADD)	hide=true	implied=true
+CASTCENSUS	7	IN	CPUI_INT_SUB	intsub	cs:meta	("int", "ptr")	ptrto=TYPE_INT/8	otherconst=false
+CASTCENSUS	7	OUT	CPUI_LOAD	cs	cs:meta	("ptr", "uint")	cast
+CASTCENSUS	6	EXT	ZEXT	reader=Some(CPUI_COPY)	hide=true	implied=false
+CASTCENSUS	6	EXT	ZEXT	reader=Some(CPUI_INT_OR)	hide=true	implied=false
+CASTCENSUS	6	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_UNKNOWN/4	otherconst=true
+CASTCENSUS	6	IN	CPUI_INT_SUB	intsub	cs:meta	("int", "ptr")	ptrto=TYPE_VOID/0	otherconst=false
+CASTCENSUS	6	IN	CPUI_INT_ZEXT	ext	cs:meta	("uint", "unknown")
+CASTCENSUS	6	IN	CPUI_LOAD	load	cs:size-change	("int", "unknown")
+CASTCENSUS	6	OUT	CPUI_INT_ZEXT	cs	cs:meta	("ptr", "uint")	cast
+CASTCENSUS	5	EXT	ZEXT	reader=Some(CPUI_INT_ADD)	hide=true	implied=true
+CASTCENSUS	5	EXT	ZEXT	reader=Some(CPUI_INT_LEFT)	hide=true	implied=false
+CASTCENSUS	5	EXT	ZEXT	reader=Some(CPUI_STORE)	hide=true	implied=false
+CASTCENSUS	5	IN	CPUI_CALL	call	cs:meta	("uint", "ptr")
+CASTCENSUS	5	IN	CPUI_COPY	copy	cs:meta	("int", "ptr")
+CASTCENSUS	5	IN	CPUI_INT_SREM	divshift	cs:meta	("int", "uint")
+CASTCENSUS	5	IN	CPUI_INT_ZEXT	ext	cs:meta	("uint", "int")
+CASTCENSUS	5	OUT	CPUI_INT_SUB	cs	cs:meta	("ptr", "uint")	cast
+CASTCENSUS	4	EXT	ZEXT	reader=Some(CPUI_CALL)	hide=true	implied=false
+CASTCENSUS	4	EXT	ZEXT	reader=Some(CPUI_INT_2COMP)	hide=true	implied=false
+CASTCENSUS	4	IN	CPUI_CALL	call	cs:meta	("int", "unknown")
+CASTCENSUS	4	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_INT/1	otherconst=false
+CASTCENSUS	4	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_PTR/8	otherconst=false
+CASTCENSUS	4	IN	CPUI_INT_RIGHT	divshift	cs:meta	("uint", "int")
+CASTCENSUS	4	IN	CPUI_LOAD	load	cs:from-void	("", "")
+CASTCENSUS	4	OUT	CPUI_PTRADD	cs	cs:size-change	("", "")	cast
+CASTCENSUS	3	EXT	SEXT	reader=Some(CPUI_INT_NOTEQUAL)	hide=true	implied=false
+CASTCENSUS	3	IN	CPUI_FLOAT_INT2FLOAT	int2float	cs:meta	("int", "uint")
+CASTCENSUS	3	IN	CPUI_INT_NOTEQUAL	equal	cs:meta	("bool", "int")
+CASTCENSUS	3	IN	CPUI_INT_SUB	intsub	cs:meta	("int", "ptr")	ptrto=TYPE_INT/1	otherconst=true
+CASTCENSUS	3	IN	CPUI_LOAD	load	cs:from-void	("uint", "unknown")
+CASTCENSUS	3	OUT	CPUI_LOAD	cs	cs:size-change	("", "")	cast
+CASTCENSUS	2	EXT	SEXT	reader=Some(CPUI_CAST)	hide=true	implied=false
+CASTCENSUS	2	EXT	SEXT	reader=Some(CPUI_INT_SUB)	hide=true	implied=true
+CASTCENSUS	2	EXT	ZEXT	reader=Some(CPUI_INT_LESSEQUAL)	hide=true	implied=true
+CASTCENSUS	2	EXT	ZEXT	reader=Some(CPUI_RETURN)	hide=true	implied=false
+CASTCENSUS	2	IN	CPUI_CALL	call	cs:size-change	("struct", "struct")
+CASTCENSUS	2	IN	CPUI_COPY	copy	cs:size-change	("", "")
+CASTCENSUS	2	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_UNKNOWN/8	otherconst=false
+CASTCENSUS	2	IN	CPUI_INT_RIGHT	divshift	cs:meta	("uint", "unknown")
+CASTCENSUS	2	IN	CPUI_INT_SDIV	divshift	cs:meta	("int", "uint")
+CASTCENSUS	2	IN	CPUI_INT_SLESSEQUAL	sless	cs:meta	("int", "unknown")
+CASTCENSUS	2	IN	CPUI_INT_SRIGHT	divshift	cs:meta	("int", "uint")
+CASTCENSUS	2	OUT	CPUI_INT_AND	cs	cs:meta	("ptr", "uint")	cast
+CASTCENSUS	2	OUT	CPUI_PTRSUB	cs	cs:size-change	("", "")	cast
+CASTCENSUS	2	PRINT	partialsymbol-finalcast
+CASTCENSUS	1	EXT	SEXT	reader=Some(CPUI_INT_2COMP)	hide=true	implied=false
+CASTCENSUS	1	EXT	SEXT	reader=Some(CPUI_INT_SCARRY)	hide=true	implied=false
+CASTCENSUS	1	EXT	SEXT	reader=Some(CPUI_INT_SLESS)	hide=true	implied=false
+CASTCENSUS	1	EXT	SEXT	reader=Some(CPUI_INT_SLESSEQUAL)	hide=true	implied=false
+CASTCENSUS	1	EXT	ZEXT	reader=Some(CPUI_INT_AND)	hide=true	implied=false
+CASTCENSUS	1	EXT	ZEXT	reader=Some(CPUI_INT_DIV)	hide=true	implied=true
+CASTCENSUS	1	EXT	ZEXT	reader=Some(CPUI_INT_EQUAL)	hide=true	implied=true
+CASTCENSUS	1	EXT	ZEXT	reader=Some(CPUI_INT_LESS)	hide=true	implied=true
+CASTCENSUS	1	EXT	ZEXT	reader=Some(CPUI_INT_MULT)	hide=true	implied=true
+CASTCENSUS	1	EXT	ZEXT	reader=Some(CPUI_INT_OR)	hide=true	implied=true
+CASTCENSUS	1	EXT	ZEXT	reader=Some(CPUI_INT_REM)	hide=true	implied=false
+CASTCENSUS	1	IN	CPUI_BOOL_NEGATE	other	cs:meta	("bool", "int")
+CASTCENSUS	1	IN	CPUI_CALL	call	cs:meta	("uint", "unknown")
+CASTCENSUS	1	IN	CPUI_CBRANCH	other	cs:meta	("bool", "unknown")
+CASTCENSUS	1	IN	CPUI_COPY	copy	cs:meta	("bool", "unknown")
+CASTCENSUS	1	IN	CPUI_COPY	copy	cs:meta	("ptr", "int")
+CASTCENSUS	1	IN	CPUI_INT_ADD	intadd	cs:meta	("int", "ptr")	ptrto=TYPE_ARRAY/16	otherconst=true
+CASTCENSUS	1	IN	CPUI_INT_EQUAL	equal	cs:meta	("bool", "int")
+CASTCENSUS	1	IN	CPUI_INT_LESSEQUAL	less	cs:meta	("uint", "unknown")
+CASTCENSUS	1	IN	CPUI_INT_NOTEQUAL	equal	cs:meta	("bool", "uint")
+CASTCENSUS	1	IN	CPUI_INT_REM	divshift	cs:meta	("uint", "unknown")
+CASTCENSUS	1	IN	CPUI_INT_SLESS	sless	cs:meta	("int", "unknown")
+CASTCENSUS	1	IN	CPUI_INT_SUB	intsub	cs:meta	("int", "ptr")	ptrto=TYPE_ARRAY/16	otherconst=false
+CASTCENSUS	1	IN	CPUI_INT_SUB	intsub	cs:meta	("int", "ptr")	ptrto=TYPE_PTR/8	otherconst=false
+CASTCENSUS	1	IN	CPUI_INT_SUB	intsub	cs:meta	("int", "ptr")	ptrto=TYPE_UNKNOWN/1	otherconst=false
+CASTCENSUS	1	IN	CPUI_LOAD	load	cs:size-change	("ptr", "int")
+CASTCENSUS	1	IN	CPUI_LOAD	load	cs:size-change	("ptr", "unknown")
+CASTCENSUS	1	IN	CPUI_PTRADD	ptradd	cs:meta	("int", "ptr")
+CASTCENSUS	1	IN	CPUI_STORE	store	cs:meta	("int", "unknown")
+CASTCENSUS	1	IN	CPUI_STORE	store	cs:meta	("ptr", "int")
+CASTCENSUS	1	OUT	CPUI_CALL	cs	cs:meta	("struct", "struct")	cast
+CASTCENSUS	1	OUT	CPUI_INT_SEXT	cs	cs:meta	("ptr", "int")	cast
+CASTCENSUS	1	OUT	CPUI_INT_SUB	cs	cs:meta	("ptr", "int")	cast
+CASTCENSUS	1	OUT	CPUI_PTRADD	cs	cs:size-change	("uint", "unknown")	cast

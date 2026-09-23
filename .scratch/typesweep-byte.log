@@ -1,0 +1,38 @@
+slices: 18 total, 18 to run, arms=['base', 'test']
+[1/18] bzip2::O2::bzip2recover
+[2/18] bzip2::O0::bzip2recover
+[3/18] diffutils::O0::sdiff
+[4/18] diffutils::O0::cmp
+[5/18] diffutils::O2::sdiff
+[6/18] diffutils::O2::cmp
+[7/18] diffutils::O0::diff3
+[8/18] gzip::O0::gzip
+[9/18] diffutils::O2::diff3
+[10/18] gzip::O2::gzip
+[11/18] diffutils::O0::diff
+[12/18] bzip2::O2::bzip2
+[13/18] grep::O0::grep
+[14/18] bzip2::O0::bzip2
+[15/18] findutils::O0::find
+[16/18] findutils::O2::find
+[17/18] diffutils::O2::diff
+[18/18] grep::O2::grep
+# typesweep ptrfromuse=byte
+
+slices scored: 18
+functions scored: 1312
+
+## control
+
+- baseline vs published type_match: 895 agree / 417 differ (68.22% agreement)
+- byte-identical variables in both arms: 1097 functions, 0 scored differently (must be 0)
+
+## result
+
+- type_match PERFECT: base 241 -> test 241 (+0)
+- aggregate type_match: base 575.62 -> test 576.71 (+1.10)
+- moved ONTO perfect: 0
+- moved OFF perfect: 0
+- improved (not perfect): 3
+- worsened (not perfect): 0
+
