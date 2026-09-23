@@ -914,7 +914,7 @@
    "decline_keeps_a_printed_statement": "Ledger::keep records the statement a kept redo was printed with, and Ledger::decline restores it instead of dropping it, so the convergence sweep prints the body the batch printed; a function never redone still drops it, which is main's behaviour. Unit-tested both ways and mutation-checked; spec 04 paragraph added",
    "no_output_moved": "the review-round build against the build the PR measured: decompile-all --json byte-identical on the same 12 binaries, so the typesweep and speed blocks above stand",
    "pr_body": "the '0 worse' row count marked single-run; the perfect-count delta is the claim",
-   "gates": "make test PARITY OK 675/675; make test-stages PARITY OK; make test-cli 237/237; check-spec OK lenient+strict; catalog OK; counters no drift; docs/options.md byte-fresh",
+   "gates": "on 0e85c41a2: make test PARITY OK 675/675; make test-stages PARITY OK; make test-cli 237/237; check-spec OK lenient+strict; kuna catalog --check OK; counters no drift; docs/options.md byte-fresh; make rust-test (lane) RUST_TEST_RC=0, 7,467 passed / 0 failed / 38 ignored. The earlier lane's single red was embedded_docs_match_the_files_on_disk, the stale-binary artifact of reflowing docs/cli.md after that lane's compile",
    "typesweep_at_final_code": "re-run at the review-round code, same driver and pin: 1,615 perfect of 10,748 (15.03%), mean .3697 -- the same numbers the PR measured, so nothing the review changed moved a score. Per-slice counts retained this time in docs/features/calleevote/budget-sweep.json (the full per-function rows.json is 16.7 MB and stays out of the tree)"
   }
  }
