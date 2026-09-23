@@ -366,7 +366,16 @@ pub(super) fn lookup(
     hook.record.requests.push(request.clone());
     if matches!(hook.mode, Mode::Record(_)) {
         drop(hook);
-        let answer = ledger::lookup_or_mint(types, fields, size, unclaimed, selfs);
+        // A shard replay records the layout each request measured, so a mint of
+        // a union neither side asked for has nothing to replay: a worker never merges.
+        let answer = ledger::lookup_or_mint(
+            types,
+            fields,
+            size,
+            unclaimed,
+            selfs,
+            crate::kuna_structmerge::StructMergeMode::Off,
+        );
         handle.borrow_mut().own_answer(answer.as_deref(), request);
         return answer;
     }

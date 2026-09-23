@@ -432,6 +432,10 @@ pub struct Architecture {
     /// (kuna `structsynth`) A `--jobs` worker's ledger hook: records every lookup,
     /// or answers each from the parent's replay. `None` outside a worker.
     pub struct_synth_shard: Option<crate::kuna_structsynth::shard::ShardHandle>,
+    /// (kuna `structmerge`) Does a synthesized record take in the claims of a
+    /// sibling reader of the same record?  See
+    /// [`kuna_structmerge`](crate::kuna_structmerge).
+    pub struct_merge: crate::kuna_structmerge::StructMergeMode,
     /// (kuna) Did the loader identify the image as a Windows GUI/console PE?  A
     /// FACT, not an option: written once at `load file` and the thing `option
     /// pebnames auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
@@ -2313,6 +2317,7 @@ impl Architecture {
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
             struct_synth_shard: None,
+            struct_merge: crate::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge; reset_defaults sets the shipped default
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             decode_halt: false, // (kuna) option decodehalt; reset_defaults sets the shipped default
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
@@ -2980,6 +2985,11 @@ impl Architecture {
             "structsynth" => {
                 let (mode, msg) = crate::kuna_structsynth::OptionStructSynth.apply(p1)?;
                 self.struct_synth = mode;
+                Ok(msg)
+            }
+            "structmerge" => {
+                let (mode, msg) = crate::kuna_structmerge::OptionStructMerge.apply(p1)?;
+                self.struct_merge = mode;
                 Ok(msg)
             }
             "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
@@ -4284,6 +4294,7 @@ impl Architecture {
         ); // (kuna) pebnames
         ctx.struct_synth = self.struct_synth; // (kuna) structsynth
         ctx.struct_synth_shard = self.struct_synth_shard.clone();
+        ctx.struct_merge = self.struct_merge; // (kuna) structmerge
         // (kuna) resolve the `SYSCALL` user-op ids ONCE per program, for the same
         // reason `simd_shuffle_userops` above is resolved here: the boundary
         // ArchContext carries no userop table.  An op a compiler spec has

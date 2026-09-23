@@ -1,0 +1,100 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structmerge: two functions that read overlapping-but-different parts of one
+    record get ONE synthesized structure carrying both readers' fields, instead
+    of a record each carrying only its own.
+
+    Source shape (hand-assembled, no prologue, so each parameter arrives in RDI
+    with nothing declaring its type). Every function loads the word at offset 0
+    and dereferences it, so offset 0 is a pointer with a pointee, the typed
+    claim the merge rule asks for, and adds the 8-byte word at offset 8.
+
+        long off_a(void *p) {             // @0x100000  {0: uchar *, 8, 0x20}
+            return *(unsigned char *)*(void **)p
+                 + *(long *)((char *)p + 8) + *(long *)((char *)p + 0x20);
+        }
+        long off_b(void *p) {             // @0x100020  {0: uchar *, 8, 0x14}
+            return *(unsigned char *)*(void **)p
+                 + *(long *)((char *)p + 8) + *(int *)((char *)p + 0x14);
+        }
+        long on_a(void *p) {              // @0x100040  {0: int *, 8, 0x20}
+            return *(int *)*(void **)p
+                 + *(long *)((char *)p + 8) + *(long *)((char *)p + 0x20);
+        }
+        long on_b(void *p) {              // @0x100060  {0: int *, 8, 0x18}
+            return *(int *)*(void **)p
+                 + *(long *)((char *)p + 8) + *(long *)((char *)p + 0x18);
+        }
+
+        off_a                              off_b
+        48 8b 07     mov rax,[rdi]         48 8b 07     mov rax,[rdi]
+        0f b6 00     movzx eax,[rax]       0f b6 00     movzx eax,[rax]
+        48 8b 57 08  mov rdx,[rdi+8]       48 8b 57 08  mov rdx,[rdi+8]
+        48 01 d0     add rax,rdx           48 01 d0     add rax,rdx
+        48 8b 57 20  mov rdx,[rdi+0x20]    8b 57 14     mov edx,[rdi+0x14]
+        48 01 d0     add rax,rdx           48 01 d0     add rax,rdx
+        c3           ret                   c3           ret
+
+    `on_a` and `on_b` are the same two functions with a four-byte load through
+    the pointer at offset 0 (`8b 00` for `0f b6 00`), so their offset-0 field is
+    a different type and neither of the first pair's records can answer them.
+
+    The two pairs are the two arms of the same experiment. `off_a`/`off_b` run
+    with `option structmerge off`: neither layout contains the other, so each
+    reader mints a record of its own and re-deciding `off_a` changes nothing.
+    `on_a`/`on_b` run with `option structmerge siblings`: they agree about
+    offsets 0 and 8, one of the two agreeing claims is a pointer with a pointee,
+    so the union of the two layouts is minted, `on_a`'s own record is superseded
+    by it, and re-deciding `on_a` answers with the union, the one record both
+    readers name.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488b070fb600488b57084801d0488b57204801d0c39090909090909090909090
+</bytechunk>
+<bytechunk space="ram" offset="0x100020" readonly="true">
+488b070fb600488b57084801d08b57144801d0c3909090909090909090909090
+</bytechunk>
+<bytechunk space="ram" offset="0x100040" readonly="true">
+488b078b00488b57084801d0488b57204801d0c3909090909090909090909090
+</bytechunk>
+<bytechunk space="ram" offset="0x100060" readonly="true">
+488b078b00488b57084801d0488b57184801d0c3909090909090909090909090
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="off_a"/>
+<symbol space="ram" offset="0x100020" name="off_b"/>
+<symbol space="ram" offset="0x100040" name="on_a"/>
+<symbol space="ram" offset="0x100060" name="on_b"/>
+</binaryimage>
+<script>
+  <com>option structsynth param</com>
+  <com>option structmerge off</com>
+  <com>lo fu off_a</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu off_b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu off_a</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structmerge siblings</com>
+  <com>lo fu on_a</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu on_b</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu on_a</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>print C types</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTMERGE #1: option off, the first reader keeps its own record both times" min="2" max="2">off_a\(struct_0 \*a0\)</stringmatch>
+<stringmatch name="STRUCTMERGE #2: option off, the second reader mints a record of its own" min="1" max="1">off_b\(struct_1 \*a0\)</stringmatch>
+<stringmatch name="STRUCTMERGE #3: on, the first reader mints its own record before the second is seen" min="1" max="1">on_a\(struct_2 \*a0\)</stringmatch>
+<stringmatch name="STRUCTMERGE #4: on, the second reader is answered with the union, not a record of its own" min="1" max="1">on_b\(struct_3 \*a0\)</stringmatch>
+<stringmatch name="STRUCTMERGE #5: on, the first reader is answered with the union once it exists" min="1" max="1">on_a\(struct_3 \*a0\)</stringmatch>
+<stringmatch name="STRUCTMERGE #6: four readers, four records: the union is minted beside them, not a fifth name" min="0" max="0">struct_4</stringmatch>
+</decompilertest>

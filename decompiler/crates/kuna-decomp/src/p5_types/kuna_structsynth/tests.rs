@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// The sibling merge is a separate option; these tests hold it off.
+const OFF: crate::kuna_structmerge::StructMergeMode = crate::kuna_structmerge::StructMergeMode::Off;
+
 #[test]
 fn option_parses_every_mode_and_rejects_anything_else() {
     assert_eq!(OptionStructSynth.apply("off").unwrap().0, StructSynthMode::Off);
@@ -155,7 +158,7 @@ fn a_record_that_points_at_itself_is_minted_around_its_shell() {
         TypeField::new(1, 8, "field_0x8", Rc::clone(&ulong_ptr)),
         TypeField::new(2, 0x10, "field_0x10", Rc::clone(&long)),
     ];
-    let st = ledger::lookup_or_mint(&f, fields.clone(), 0x18, &[], &[0, 8]).unwrap();
+    let st = ledger::lookup_or_mint(&f, fields.clone(), 0x18, &[], &[0, 8], OFF).unwrap();
     assert!(!st.is_incomplete());
     for i in 0..2 {
         let pointee = st.get_field(i).unwrap().field_type.get_ptr_to().unwrap();
@@ -167,9 +170,9 @@ fn a_record_that_points_at_itself_is_minted_around_its_shell() {
     assert_eq!(layout.fields[1].ty, ledger::SELF_KEY);
     assert_eq!(layout, ledger::layout_of_fields(&fields, 0x18, &[0, 8]));
 
-    let again = ledger::lookup_or_mint(&f, fields.clone(), 0x18, &[], &[0, 8]).unwrap();
+    let again = ledger::lookup_or_mint(&f, fields.clone(), 0x18, &[], &[0, 8], OFF).unwrap();
     assert!(Rc::ptr_eq(&again, &st));
-    let plain = ledger::lookup_or_mint(&f, fields, 0x18, &[], &[]).unwrap();
+    let plain = ledger::lookup_or_mint(&f, fields, 0x18, &[], &[], OFF).unwrap();
     assert_ne!(plain.get_name(), st.get_name());
 }
 
@@ -184,7 +187,7 @@ fn only_a_records_own_shell_resolves_to_the_record() {
         TypeField::new(0, 0, "field_0x0", f.get_type_pointer(8, Rc::clone(&long), 1).unwrap()),
         TypeField::new(1, 8, "field_0x8", Rc::clone(&long)),
     ];
-    let st = ledger::lookup_or_mint(&f, fields, 0x10, &[], &[0]).unwrap();
+    let st = ledger::lookup_or_mint(&f, fields, 0x10, &[], &[0], OFF).unwrap();
     let shell_ptr = Rc::clone(&st.get_field(0).unwrap().field_type);
     let resolved = resolve_self_pointer(&f, &shell_ptr).unwrap();
     assert!(Rc::ptr_eq(&resolved.get_ptr_to().unwrap(), &st));

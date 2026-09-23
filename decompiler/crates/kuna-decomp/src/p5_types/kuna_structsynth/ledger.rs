@@ -205,7 +205,7 @@ const MIN_UNTYPED_CLAIMS: usize = 3;
 /// offset 0 is a pointer, and the body then prints
 /// `field_0x0 = (void *)0x3f80000000000000`.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub(super) struct FieldKey {
+pub(crate) struct FieldKey {
     /// Byte offset inside the structure.
     pub offset: int4,
     /// Width of the access that minted it.
@@ -239,7 +239,7 @@ fn type_key(ct: &Datatype) -> String {
 /// A synthesized structure reduced to what the dedup decision needs: its size
 /// and its claimed fields, in offset order.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub(super) struct Layout {
+pub(crate) struct Layout {
     /// The structure's size in bytes, holes and tail rounding included.
     pub size: int4,
     /// Claimed fields, ascending by offset.
@@ -296,7 +296,7 @@ impl Layout {
     /// answered by more than its own shape, no structure answers with a member
     /// in the reader's alignment padding, and a reader with no typed pointer is
     /// never answered by a structure that claims anything past its last field.
-    pub(super) fn answers_for(&self, other: &Layout) -> bool {
+    pub(crate) fn answers_for(&self, other: &Layout) -> bool {
         if !self.subsumes(other) {
             return false;
         }
@@ -375,7 +375,7 @@ fn key_of(f: &TypeField) -> Option<FieldKey> {
 /// member named anything else says the name `struct_N` is held by a type that
 /// came from somewhere else -- a DWARF record, a parsed header -- and such a
 /// type is never handed out as the answer to an access pattern.
-pub(super) fn layout_of(ct: &Datatype) -> Option<Layout> {
+pub(crate) fn layout_of(ct: &Datatype) -> Option<Layout> {
     if ct.get_metatype() != type_metatype::TYPE_STRUCT {
         return None;
     }
@@ -396,7 +396,7 @@ pub(super) fn layout_of(ct: &Datatype) -> Option<Layout> {
 
 /// The same reading for a field list that has not been completed yet, the
 /// fields at `selfs` pointing at the structure they will belong to.
-pub(super) fn layout_of_fields(fields: &[TypeField], size: int4, selfs: &[int4]) -> Layout {
+pub(crate) fn layout_of_fields(fields: &[TypeField], size: int4, selfs: &[int4]) -> Layout {
     Layout { size, fields: fields.iter().filter_map(|f| field_key(f, selfs)).collect() }
 }
 
@@ -411,7 +411,7 @@ fn field_key(f: &TypeField, selfs: &[int4]) -> Option<FieldKey> {
 /// One member of a structure as a body sees it: where it starts, how many bytes
 /// it covers, and the field it claims (`None` for filler).
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub(super) struct Member {
+pub(crate) struct Member {
     /// Byte offset inside the structure.
     pub offset: int4,
     /// Bytes covered.
@@ -426,7 +426,7 @@ impl Member {
     }
 
     /// [`Member::of`], with a field at one of `selfs` claimed as a self pointer.
-    pub(super) fn of_with(f: &TypeField, selfs: &[int4]) -> Member {
+    pub(crate) fn of_with(f: &TypeField, selfs: &[int4]) -> Member {
         Member { offset: f.offset, size: f.field_type.get_size(), claim: field_key(f, selfs) }
     }
 }
@@ -444,7 +444,7 @@ pub(super) fn members_of(ct: &Datatype) -> Vec<Member> {
 
 /// Does `held` lay exactly the members `own` does over every byte range in
 /// `unclaimed`? See "Unclaimed bytes" in the module documentation.
-pub(super) fn keeps_unclaimed(held: &[Member], own: &[Member], unclaimed: &[(int4, int4)]) -> bool {
+pub(crate) fn keeps_unclaimed(held: &[Member], own: &[Member], unclaimed: &[(int4, int4)]) -> bool {
     let over = |members: &[Member], lo: int4, hi: int4| -> Vec<Member> {
         members
             .iter()
@@ -558,12 +558,13 @@ pub(super) fn lookup_window(size: int4) -> std::ops::RangeInclusive<i64> {
 /// `find_add` rejects a second, different definition of a held name with a hard
 /// `Err`, so the mint declines rather than propagating and the caller keeps the
 /// parameter untyped.
-pub(super) fn lookup_or_mint(
+pub(crate) fn lookup_or_mint(
     types: &dyn TypeFactory,
     fields: Vec<TypeField>,
     size: int4,
     unclaimed: &[(int4, int4)],
     selfs: &[int4],
+    merge: crate::kuna_structmerge::StructMergeMode,
 ) -> Option<Rc<Datatype>> {
     let want = layout_of_fields(&fields, size, selfs);
     let (held, free) = entries(types, lookup_window(size));
@@ -573,16 +574,42 @@ pub(super) fn lookup_or_mint(
     if let Some(i) = best_of(&layouts, &want, fits) {
         return Some(Rc::clone(&held[i].ct));
     }
-    // Nothing held answers for this layout. Minting it supersedes every entry
-    // it strictly contains; that is derived from the minted set on the next
-    // lookup, so there is nothing to record here.
-    mint(types, &free?, fields, size, selfs)
+    let free = free?;
+    // Nothing held answers for this layout. Under `structmerge` a held
+    // structure measured over the same record may still be merged with it and
+    // the union minted in its place; the union strictly contains that entry, so
+    // the convergence sweep moves its readers onto it.
+    if merge.fires() {
+        let (wide, _) = entries(types, merge_window(size));
+        let pairs: Vec<(Rc<Datatype>, Layout)> =
+            wide.into_iter().map(|e| (e.ct, e.layout)).collect();
+        if let Some((mfields, msize, mselfs)) =
+            crate::kuna_structmerge::merge(types, &pairs, &want, &fields, size, selfs, unclaimed)
+        {
+            return mint(types, &free, mfields, msize, &mselfs);
+        }
+    }
+    // Minting this layout supersedes every entry it strictly contains; that is
+    // derived from the minted set on the next lookup, so there is nothing to
+    // record here.
+    mint(types, &free, fields, size, selfs)
+}
+
+/// The sizes a [`crate::kuna_structmerge`] partner search has to read.
+///
+/// The union is at least as large as either side and answers for both, so it is
+/// at most [`MAX_SIZE_GROWTH`] times each of them: a partner is no smaller than
+/// this layout divided by that bound and no larger than this layout times it.
+fn merge_window(size: int4) -> std::ops::RangeInclusive<i64> {
+    let lo = i64::from(size);
+    let growth = MAX_SIZE_GROWTH as i64;
+    (lo / growth).max(1)..=lo.saturating_mul(growth)
 }
 
 /// Complete `struct <name>` from `fields`, the fields at `selfs` retyped as a
 /// pointer to the structure itself. A completed structure is a fresh `Rc`, so
 /// such a pointer names the incomplete shell the members are installed on.
-pub(super) fn mint(
+pub(crate) fn mint(
     types: &dyn TypeFactory,
     name: &str,
     mut fields: Vec<TypeField>,
