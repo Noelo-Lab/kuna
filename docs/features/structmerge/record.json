@@ -150,13 +150,13 @@
  "jobs": "a --jobs N worker answers through the shard replay, which records the layout each request measured, so it never merges and a sharded run behaves as off -- the same divergence structsynth already has. Verified: coreutils fmt -O2 with --jobs 2 is byte-identical with the option off and with siblings.",
  "gates": {
   "make test": "PARITY OK, datatests 675/675",
-  "make test-stages": "PARITY OK, datatests 1315/1315",
-  "make test-cli": "tests/cli 225/225 passed",
+  "make test-stages": "PARITY OK, datatests 1317/1317 (rebased)",
+  "make test-cli": "tests/cli 235/235 passed (rebased)",
   "make check-spec": "OK (lenient) + OK (strict)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "byte-fresh from `kuna catalog --markdown`",
-  "make rust-test": "RUST_TEST_RC=0, 0 FAILED test-result blocks (lane script, env -u KUNA_DECOMP_TEST). The first run was RC=2 on two sites this change owns -- the live-value allowlist in kuna_phases/tests.rs and the docs/options.md kuna-cli embeds -- both fixed before the second run."
+  "make rust-test": "RUST_TEST_RC=0, 0 FAILED test-result blocks on the rebased tree (lane script, env -u KUNA_DECOMP_TEST). The first pre-rebase run was RC=2 on two sites this change owns -- the live-value allowlist in kuna_phases/tests.rs and the docs/options.md kuna-cli embeds -- both fixed and green on the re-run."
  },
  "counters": "settables 227 -> 228; kuna-catalog.xml #7 structure-recovery 31 -> 32; phases-tests catalog-json-records 226 -> 227; catalog_bytecompat fixture recaptured; tests/stages corpus file count 331 -> 332; docs/baseline-stages.json re-recorded (+6 assertions, nothing moved)",
  "base": "rebased onto 9e07ab931 (#711 calleevote); designed and tuned on 31ac2b26e",
