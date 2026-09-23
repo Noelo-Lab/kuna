@@ -1928,6 +1928,8 @@ fn callee_vote_rounds(
         .map(|s| s.as_ref().and_then(|r| r.code.as_deref()).map_or(0, |c| c.lines().count()))
         .sum();
     let mut budget = printed * CALLEE_VOTE_EXTRA_PCT / 100;
+    let opening = budget;
+    let mut redone = 0usize;
     if kuna_decomp::kuna_calleevote::trace() {
         eprintln!("[calleevote] {printed} lines printed, redo budget {budget} lines");
     }
@@ -1945,12 +1947,16 @@ fn callee_vote_rounds(
             let Some(key) = vote_key(&targets[index]).filter(|k| admitted.contains(k)) else { continue };
             let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
             let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
+            redone += 1;
             match slots[index].as_ref() {
                 Some(first) if !same_arity(first, &again) => prog.arch_mut().kuna_calleevote.forget(key),
                 Some(first) if !kuna_console::project::redo_replaces(first, &again) => {}
                 _ => slots[index] = Some(again),
             }
         }
+    }
+    if kuna_decomp::kuna_calleevote::trace() {
+        eprintln!("[calleevote] redo pass: {redone} decompiles, {} of {opening} budget lines spent", opening - budget);
     }
     prog.arch_mut().kuna_calleevote.recording = false;
 }
@@ -4234,20 +4240,48 @@ mod discovery_tests {
 mod calleevote_stored_tests {
     use super::*;
 
-    /// (kuna `calleevote`) The bound on the redo pass: a getter is decompiled
-    /// again, a long body is not, and a function that failed has no body to
-    /// measure.
+    /// (kuna `calleevote`) What a redo is charged: a getter and a body at the
+    /// free bound cost nothing, a longer one costs its printed lines, and a
+    /// function that failed has no body to measure.
     #[test]
-    fn a_long_first_decompile_is_not_decompiled_again() {
+    fn a_long_first_decompile_is_charged_its_lines() {
         let getter = "long get_cap(void *a0)\n{\n  return *(long *)((long)a0 + 0x18);\n}\n";
-        assert!(!too_long_to_vote_on(Some(getter)));
+        assert_eq!(redo_charge(Some(getter)), 0);
         let long: String =
             (0..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
-        assert!(too_long_to_vote_on(Some(&long)));
+        assert_eq!(redo_charge(Some(&long)), CALLEE_VOTE_MAX_LINES + 1);
         let at_the_bound: String =
             (1..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
-        assert!(!too_long_to_vote_on(Some(&at_the_bound)));
-        assert!(!too_long_to_vote_on(None));
+        assert_eq!(redo_charge(Some(&at_the_bound)), 0);
+        assert_eq!(redo_charge(None), 0);
+    }
+
+    /// (kuna `calleevote`) The budget is a share of what the binary printed, so
+    /// a long body is bought where the run has room for it and refused where it
+    /// does not -- and the short ones are free either way.
+    #[test]
+    fn the_budget_is_a_share_of_what_the_first_pass_printed() {
+        let spend = |printed: usize, charges: &[usize]| {
+            let mut budget = printed * CALLEE_VOTE_EXTRA_PCT / 100;
+            let mut taken = Vec::new();
+            let mut sorted = charges.to_vec();
+            sorted.sort_unstable();
+            for c in sorted {
+                if c <= budget {
+                    budget -= c;
+                    taken.push(c);
+                }
+            }
+            taken
+        };
+        // A 20,000-line binary buys a 90-line and a 300-line body; a 2,000-line
+        // one buys neither, and the shortest is bought first.
+        assert_eq!(spend(20_000, &[300, 90]), vec![90, 300]);
+        assert_eq!(spend(2_000, &[300, 90]), vec![]);
+        assert_eq!(spend(5_000, &[300, 90]), vec![90]);
+        // Short bodies are charged nothing at all, so they are redone whatever
+        // the binary's size.
+        assert_eq!(spend(40, &[0, 0, 0]), vec![0, 0, 0]);
     }
 
     fn fixture(name: &str) -> Vec<u8> {
