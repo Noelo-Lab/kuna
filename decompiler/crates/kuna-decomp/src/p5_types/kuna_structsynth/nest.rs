@@ -127,7 +127,8 @@ pub(super) fn nest_fields(
 /// TEMPORARY census: why one pointer-width field of an accepted record is not
 /// given a record of its own, and what two relaxations would do with it.
 fn census_field(data: &mut Funcdata, cx: &Nesting, rec: &Evidence, field: &TypeField) {
-    let tag = |s: String| eprintln!("SSCENSUS nest/{s}");
+    let fa = data.get_address().get_offset();
+    let tag = |s: String| eprintln!("SSCENSUS nest {fa:x} {:x} {s}", field.offset);
     let off = intb::from(field.offset);
     let Some(loads) = rec.loads.get(&off) else {
         return tag("noload".into());
