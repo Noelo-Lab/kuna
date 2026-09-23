@@ -225,7 +225,7 @@
    "a cast or NULL appears at a newly typed call argument": "the bulk of the remainder",
    "local renumbering after a typed call folds into its condition": "the rest",
    "other": 0,
-   "a 4-byte libc return inside an 8-byte recovered return widens into CONCAT44(dat_4, ...)": "40 -> 56 over the 12 binaries (chcon 2->4, ginstall 3->4, gzip 2->4, find 7->12, tar 7->13). A PRE-EXISTING rendering, not new behaviour: where a wrapper's own return is recovered as 8 bytes and the call it returns now has a declared 4-byte return, the unset upper half prints as the dat_4 pseudo-global. coreutils chcon: `return lsetfilecon(a1,a2);` -> `return CONCAT44(dat_4,lsetfilecon(a1,a2));`. The upper half genuinely is not set by the call, so the C is not wrong, but it is the one hunk class this change grows and it was missing from this list."
+   "a 4-byte libc return inside an 8-byte recovered return widens into CONCAT44(dat_4, ...)": "Measured on the placeholder_strip corpus (a DIFFERENT 12 binaries from this block's, named there), same off-vs-on axis: 34 -> 56 with the widened table, where main's own off-vs-on is 34 -> 40. The strip contributes none of it (both off arms are 34). Per binary chcon 2->4, ginstall 3->4, gzip 2->4, find 7->12, tar 7->13. A PRE-EXISTING rendering, not new behaviour: where a wrapper's own return is recovered as 8 bytes and the call it returns now has a declared 4-byte return, the unset upper half prints as the dat_4 pseudo-global -- coreutils chcon `return lsetfilecon(a1,a2);` -> `return CONCAT44(dat_4,lsetfilecon(a1,a2));`. The upper half genuinely is not set by the call, so the C is not wrong, but it is the one hunk class this change grows and it was missing from this list."
   },
   "structural": "gotos 3,402 = 3,402; labels 605 = 605; no function gains or loses an error or a timeout.",
   "declarations": {
@@ -495,7 +495,9 @@
     21899
    ],
    "phantom_trailing_arguments_note": "Counted by docs/features/libcwiden/phantom_args.py over the whole-binary decompile-all output of the same 12 binaries in both arms: a call to a name the SAME output declares non-variadic, carrying exactly one argument more than that declared arity, whose last argument is a bare stack-array element at a negative displacement. 148 on origin/main (9e07ab931) with its own default; 100 of those survive `--option libcsigs off`, i.e. they come from the 28-entry base table alone; 0 in BOTH arms of this branch. Per binary: ginstall 44 (12 with libcsigs off), df 39 (34), stat -O2-noinline 39 (34), tar 14 (12), diff 7 (5), find 5 (3), the other six 0. The earlier figures 144/161 in this file came from two ad-hoc counts with different declaration matching and are superseded by the committed script.",
-   "phantom_trailing_arguments_script": "docs/features/libcwiden/phantom_args.py"
+   "phantom_trailing_arguments_script": "docs/features/libcwiden/phantom_args.py",
+   "binaries_list": "O0 bzip2, coreutils chcon/ginstall/stty, diffutils diff, findutils find, grep, gzip, shadow chage, tar; O2 coreutils df; O2-noinline coreutils stat. 5,925 functions, identical in both arms. NOT the same 12 binaries as sweep.binaries.",
+   "arms": "origin/main 9e07ab931 default vs this branch default, each also run with `--option libcsigs off`."
   },
   "typesweep_alone": {
    "improved": 0,
