@@ -94,6 +94,11 @@ use crate::funcdata::Funcdata;
 /// enough that this never shows up in a profile.
 const MAX_DEPTH: u32 = 24;
 
+/// How many Varnodes the whole-function walk ([`computes_everywhere`]) visits
+/// before giving up and answering `true`, the no-change answer. A move-only
+/// closure that large is not a return value anyone can read anyway.
+const MAX_NODES: u32 = 4096;
+
 /// Does `vn` carry a value the function actually computed?
 ///
 /// Walks back through move-only operations; see the module docs for the
@@ -103,7 +108,8 @@ fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
 }
 
 /// [`computes_from`], asked of every byte and every path instead of any one of
-/// them: a reshaping op or a phi is computed only when ALL of its inputs are.
+/// them: a value is computed only when NO terminal reachable through the
+/// move-only operations is one the function never produced.
 ///
 /// The relaxed question is the right one for the pair repair, which asks it of
 /// one half at a time and has to keep a genuine wide return. A caller reading a
@@ -111,37 +117,52 @@ fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
 /// from a call's narrow result and a leftover, or merged from one path that
 /// computes it and one that does not, is not a return value the caller can hand
 /// on.
-fn computes_everywhere(data: &Funcdata, vn: VarnodeId, depth: u32, placed_at: Option<&Address>) -> bool {
-    if depth >= MAX_DEPTH {
-        return true;
-    }
-    let Some(v) = data.vbank().get(vn) else { return true };
-    if v.is_constant() {
-        return true;
-    }
-    let Some(def) = v.get_def() else {
-        if placed_at.is_some_and(|a| a == v.get_addr()) {
+///
+/// Written as a worklist over the reachable move-only closure rather than the
+/// recursion [`computes_from`] uses: "every input" over a phi-rich -O0 body
+/// revisits the same Varnodes exponentially, and this runs once per decompiled
+/// function instead of once per returned register pair.
+fn computes_everywhere(data: &Funcdata, vn: VarnodeId, placed_at: Option<&Address>) -> bool {
+    let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::new();
+    let mut work: Vec<VarnodeId> = vec![vn];
+    let mut budget = MAX_NODES;
+    while let Some(cur) = work.pop() {
+        if budget == 0 {
+            return true;
+        }
+        budget -= 1;
+        if !seen.insert(cur) {
+            continue;
+        }
+        let Some(v) = data.vbank().get(cur) else { continue };
+        if v.is_constant() {
+            continue;
+        }
+        let Some(def) = v.get_def() else {
+            if placed_at.is_some_and(|a| a == v.get_addr()) {
+                return false;
+            }
+            if !crate::kuna_retinputhalf::is_input_parameter(data, cur) {
+                return false;
+            }
+            continue;
+        };
+        let Some(op) = data.obank().get(def) else { continue };
+        if op.code() == OpCode::CPUI_INDIRECT && op.is_indirect_creation() {
             return false;
         }
-        return crate::kuna_retinputhalf::is_input_parameter(data, vn);
-    };
-    let Some(op) = data.obank().get(def) else { return true };
-    if op.code() == OpCode::CPUI_INDIRECT && op.is_indirect_creation() {
-        return false;
-    }
-    let inputs: Vec<VarnodeId> = match op.code() {
-        OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT | OpCode::CPUI_SUBPIECE => {
-            op.get_in(0).into_iter().collect()
+        match op.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT | OpCode::CPUI_SUBPIECE => {
+                work.extend(op.get_in(0));
+            }
+            OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_PIECE => {
+                work.extend((0..op.num_input()).filter_map(|i| op.get_in(i)));
+            }
+            // Anything else produces a value; the walk stops here.
+            _ => continue,
         }
-        OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_PIECE => {
-            (0..op.num_input()).filter_map(|i| op.get_in(i)).collect()
-        }
-        _ => return true,
-    };
-    if inputs.is_empty() {
-        return true;
     }
-    inputs.into_iter().all(|i| computes_everywhere(data, i, depth + 1, placed_at))
+    true
 }
 
 /// The walk, carrying the input-parameter carve-out's **placement** test.
@@ -217,7 +238,7 @@ pub fn every_return_computes(data: &Funcdata) -> bool {
         }
         let Some(value) = o.get_in(1) else { continue };
         let placed = data.vbank().get(value).map(|v| v.get_addr().clone());
-        if !computes_everywhere(data, value, 0, placed.as_ref()) {
+        if !computes_everywhere(data, value, placed.as_ref()) {
             return false;
         }
     }
