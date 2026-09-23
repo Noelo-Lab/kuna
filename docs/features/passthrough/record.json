@@ -114,7 +114,17 @@
   "options_md_fresh": true,
   "check_spec": "OK lenient + strict",
   "make_rust_test": "RUST_TEST_RC=0 (lane script; 423 test-result lines, 0 failed)",
-  "full_ci_label": true
+  "full_ci_label": true,
+  "rebased_tree": {
+   "make_test": "PARITY OK, 675/675",
+   "make_test_stages": "PARITY OK, 1311/1311",
+   "make_test_cli": "235/235",
+   "kuna_catalog_check": "OK",
+   "counters_check": "no drift",
+   "options_md_fresh": true,
+   "phase_catalog_fresh": true,
+   "check_spec": "OK lenient + strict"
+  }
  },
  "catalog_counts": {
   "settables": 226,
@@ -190,6 +200,8 @@
   "f_corpus": "8 binaries (fmt/ls/df O2, sort O2-noinline, gzip O2, grep O2-noinline, tar O2, shadow useradd O2): 290 functions change and every changed LINE is explained by the documented effect -- 537 type/spelling moves, 292 call-argument gains, 172 RETURNs handing back a tail call, 30 `return;` -> `return <call>;`, 28 result captures, 26 declarations for the captured result, 16 declarations renumbered; the 2 rows the classifier could not fold were read (grep 0x1c0c0 `*a0` -> `a0->field_0x0` on a newly typed pointer, tar 0x255c0 two tail calls becoming `return sub_45370(...)` / `return sub_45230(...)`)",
   "g_modes": "the UNEVALUATED entry is removed -- a default-on option needs no aggressive override",
   "dwarf": "docs/features/passthrough/dwarf-confirmation.md",
-  "dwarf_summary": "parameters 2,910 rows / 2,783 confirmed / 4 contradicted / 123 no twin (69 thunks); returns 4,088 rows / 4,012 confirmed / 6 contradicted / 69 no twin; before the return gate 212 of 4,267 returns were contradicted"
+  "dwarf_summary": "parameters 2,910 rows / 2,783 confirmed / 4 contradicted / 123 no twin (69 thunks); returns 4,088 rows / 4,012 confirmed / 6 contradicted / 69 no twin; before the return gate 212 of 4,267 returns were contradicted",
+  "d_typesweep_rebased": "re-run on the rebased tree (origin/main 9e07ab931, after #711 calleevote): PERFECT 1,569 -> 1,593 (+24), aggregate 3,853.89 -> 3,913.37 (+59.48), 24 onto perfect, 0 off, 104 improved, 6 worse -- the same six rows, so the delta is unchanged by the neighbouring type PR",
+  "rebase": "rebased onto 9e07ab931; one conflict, in docs/spec/04-calls-and-prototypes.md, where this PR's `**Default.** On.` paragraph and #711's new `calleevote` section land at the same anchor -- resolved by keeping both"
  }
 }

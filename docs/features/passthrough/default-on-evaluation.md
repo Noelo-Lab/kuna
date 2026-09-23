@@ -44,7 +44,7 @@ and no call site loses an argument.
 | (a) `make test` | PARITY OK, 675/675 — the console decompiles no callee first, so no datatest can reach the rule |
 | (b) `make test-stages` | PARITY OK, 1309/1309; `tests/stages/kuna-passthrough.xml` already pins `option passthrough off` in pass 1 |
 | (c) `make test-cli` | 225/225 after re-pinning two `protoorder` probes (below) |
-| (d) 444-slice typesweep, new default vs `--option passthrough off` | PERFECT 1,524 → **1,548** (+24), aggregate 3,806.41 → 3,865.67, 24 onto perfect, 0 off, 104 improved, 6 worse |
+| (d) 444-slice typesweep, new default vs `--option passthrough off` | PERFECT 1,524 → **1,548** (+24), aggregate 3,806.41 → 3,865.67, 24 onto perfect, 0 off, 104 improved, 6 worse; re-run after rebasing onto `calleevote`: 1,569 → **1,593**, the same +24 and the same six worse rows |
 | (e) interleaved min-of-15, fmt/ls/sort -O2 + bash -O2 | fmt -2.59%, ls -6.65%, sort -2.98%, bash +2.09%; worst **+2.09%**, budget +5% |
 | (f) whole-corpus `decompile-all` before/after, 8 binaries | 290 functions change and every changed line is one of the documented effects; a second control over all 444 slices (100,198 functions) shows the `off` arm identical to the pristine origin/main build |
 | (g) `modes.rs` | the `UNEVALUATED` entry is removed: a default-on option needs no preset override |
