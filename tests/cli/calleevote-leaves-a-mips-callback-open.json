@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_callback_mipsel",
+    "binary_sha256": "569880a2c8b83ed6c1c0714c3bd864aee31b73b176b7a5e4c9fd488d863ddb9e",
+    "binary_size": 1924,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_callback_mipsel",
+    "selector": "get_c",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned int get_c\\(void \\*a0\\)\\n\\{\\n  return \\*\\(unsigned int \\*\\)\\(\\(int\\)a0 \\+ 8\\);",
+      "void run\\(void \\*a0,unsigned int a1\\)"
+    ],
+    "stdout_absent": [
+      "struct_\\d+",
+      "run\\(void \\*a0,char \\*"
+    ]
+  },
+  "notes": "DEFAULT on MIPS32: get_c is called directly with a struct node * and its address, built by lui+addiu, goes to run, which calls it on a char buffer. The reference walk reads one instruction at a time, so off x86-64 no function has every caller known: get_c keeps void * and run keeps its integer second parameter.",
+  "probe_id": "a-2b536e594ad1"
+}

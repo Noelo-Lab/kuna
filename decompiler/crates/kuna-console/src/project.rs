@@ -608,7 +608,7 @@ pub fn decompile_pulled(
             other => other,
         };
         match result {
-            Ok(fd) => {
+            Ok(mut fd) => {
                 // (kuna `--assert`) The flow overrides the follower REFUSED are only
                 // known now: `function_seed` recorded `applied` when it seeded them.
                 crate::assertions::record_rejected_flow_overrides(
@@ -646,6 +646,10 @@ pub fn decompile_pulled(
                             ),
                         }
                     }
+                }
+                // (kuna `calleevote`) Record what this function passes at each call.
+                if prog.arch().kuna_calleevote.recording {
+                    kuna_decomp::kuna_calleevote::record(prog.arch_mut(), &park_entry, &mut fd);
                 }
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     // Trim the surrounding newlines the same way `kuna decompile`

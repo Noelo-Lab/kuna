@@ -1,0 +1,46 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_frame_x86_64",
+    "binary_sha256": "e4b3a4b350a8621b5ab27cecfc577bf78c2208b7a07312c431a41f98f631aeaa",
+    "binary_size": 16288,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_frame_x86_64",
+    "selector": "add",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void add\\(struct_\\d+ \\*a0,char \\*a1\\)",
+      "v2\\[1\\] = 0x506070801020304;",
+      "v2\\[2\\] = 0x1122334455667788;",
+      "long drop\\(struct_\\d+ \\*a0\\)",
+      "int advance\\(char \\*\\*a0\\)",
+      "int mkpipe\\(int \\*a0\\)\\n\\{\\n  int v1; // eax\\n  \\n  v1 = pipe\\(a0\\);\\n  return v1 \\+ a0\\[1\\];"
+    ],
+    "stdout_absent": [
+      "\\] = '\\\\x",
+      "drop\\(char \\*\\*",
+      "add\\(char \\*\\*",
+      "mkpipe\\(struct_"
+    ]
+  },
+  "notes": "DEFAULT: main passes &cfg, a frame record whose first member is a char *, as a char **. add writes a node through it whose word stores a char * would split into characters, and drop reads past the first member, so neither takes char **; advance(&cursor) does. mkpipe keeps the int * pipe declares.",
+  "probe_id": "a-3a8ba0c13a38"
+}

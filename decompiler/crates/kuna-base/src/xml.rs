@@ -1896,8 +1896,8 @@ mod tests {
         // and kuna-formatstring-static / printf/scanf varargs typed from the
         // format constant the LOAD-TIME resolver read out of the image
         // and structsynth-locals / a record a call returned, and a text buffer
-        // that is not one
-        assert_eq!(count, 331, "corpus file count drifted");
+        // that is not one, and calleevote
+        assert_eq!(count, 332, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -2411,7 +2411,9 @@ fn a_narrowed_run_orders_callees_first_only_when_asked() {
 /// `types`.  The one call whose arity moves is `argclobber`'s drop of a clobbered
 /// trailing argument at a recursive callee whose stated list and body both say
 /// the register is free; a callee that forwards the register into its own
-/// recursion keeps the argument under both values.
+/// recursion keeps the argument under both values. `calleevote` is off: by
+/// default it gives `wrap` and `wrap2` the `char *` their one caller passes,
+/// the other direction.
 #[test]
 fn recursive_callees_state_their_types_under_cycles() {
     let bin = repo_root()
@@ -2425,7 +2427,10 @@ fn recursive_callees_state_their_types_under_cycles() {
         ("cycles", "(char *a0)", "rtarget(a0,5);"),
     ] {
         let (got, stderr, ok) =
-            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value]);
+            run_kuna(&[
+                "decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value, "--option",
+                "calleevote", "off",
+            ]);
         if !ok {
             if is_specs_skip(&stderr) {
                 eprintln!("protoorder cycles: skipping (no `.sla`; run `make specs`): {stderr}");
@@ -2438,6 +2443,37 @@ fn recursive_callees_state_their_types_under_cycles() {
         }
         assert!(got.contains(rcall), "{value}: {rcall} missing:\n{got}");
         assert!(got.contains("rkeep(a0,5,v3);"), "{value}: rkeep lost its forwarded argument:\n{got}");
+    }
+}
+
+/// (kuna `calleevote`) A caller's frame record whose first member is a
+/// `char *` is passed as a `char **`. `add` writes a node through it whose word
+/// stores a `char *` would print one character at a time, and `drop` reads past
+/// the first member, so neither takes it; `advance(&cursor)` does. `mkpipe`
+/// keeps the `int *` that `pipe` declares instead of a one-field record.
+#[test]
+fn a_frame_records_char_pointer_pointer_is_not_its_type() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/calleevote_frame_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    for value in ["types", "fields"] {
+        let (got, stderr, ok) =
+            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "calleevote", value]);
+        if !ok {
+            if is_specs_skip(&stderr) {
+                eprintln!("calleevote frame: skipping (no `.sla`; run `make specs`): {stderr}");
+                return;
+            }
+            panic!("kuna decompile-all --option calleevote {value} failed: {stderr}");
+        }
+        assert!(got.contains("v2[1] = 0x506070801020304;"), "{value}: the node's word store split:\n{got}");
+        assert!(!got.contains("] = '\\x"), "{value}: a character store:\n{got}");
+        assert!(!got.contains("drop(char **a0)"), "{value}: drop took the frame char **:\n{got}");
+        assert!(got.contains("int advance(char **a0)"), "{value}: advance lost its char **:\n{got}");
+        assert!(got.contains("int mkpipe(int *a0)"), "{value}: mkpipe lost pipe's int *:\n{got}");
     }
 }
 

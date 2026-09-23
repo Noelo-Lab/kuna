@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_x86_64",
+    "binary_sha256": "87748df9fd521469bdb5a5bbd4ae3946ea8781c775fdea0b1c186d535bfd7648",
+    "binary_size": 16176,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_x86_64",
+    "selector": "peek_used",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "long peek_used\\((struct_\\d+) \\*a0\\)\\n\\{\\n  return a0->field_0x8 \\* 3;[\\s\\S]*long report\\(\\1 \\*a0\\)",
+      "bool same\\(char \\*a0,char \\*a1\\)",
+      "unsigned long get_cap\\(struct_\\d+ \\*a0\\)\\n\\{\\n  return a0->field_0x18;",
+      "bool by_used\\(void \\*a0,void \\*a1\\)\\n\\{\\n  return \\*\\(long \\*\\)\\(\\(long\\)a0 \\+ 8\\) < \\*\\(long \\*\\)\\(\\(long\\)a1 \\+ 8\\);"
+    ],
+    "stdout_absent": [
+      "a0\\[4\\] = '"
+    ]
+  },
+  "notes": "DEFAULT (`fields`): as `types`, and the directly-called getter `get_cap` reads its one field as a record field. `peek_used`'s own one-field record gives way to the one `report` passes. `by_used` reads one field of each argument exactly like a getter, but its address goes to qsort, so its callers are unknown and both parameters stay `void *`.",
+  "probe_id": "a-0b1811b2619f"
+}

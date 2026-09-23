@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "calleevote",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_long_x86_64",
+    "binary_sha256": "4a5459e4ffd5fe36c2d20d9300ac8174b4ddafb4209432c76051370a1c113d9c",
+    "binary_size": 16104,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_long_x86_64",
+    "selector": "scan_long",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int scan_short\\(void \\*a0,unsigned long a1\\)",
+      "int scan_long\\(void \\*a0,unsigned long a1\\)"
+    ]
+  },
+  "notes": "OFF arm of calleevote-leaves-a-long-callee-alone: nothing flows from use to either callee, so the short one keeps void * as well. The record use itself holds (struct_N *) comes from its own field reads, not from the vote.",
+  "probe_id": "p-cdc0abc37b46"
+}

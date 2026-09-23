@@ -257,6 +257,30 @@ fn a_uniform_contiguous_run_reads_as_an_array() {
     assert!(!is_array_shaped(&gapped.slots, 8));
 }
 
+/// (kuna `calleevote fields`) One field at a constant offset other than zero, a
+/// word or wider, is a lone field; offset 0, a byte or halfword, a second field,
+/// or an address derived from the base that a loop steps through (`argv[1]`
+/// read, then `argv + 2` walked) is not.
+#[test]
+fn a_lone_field_is_one_wide_access_away_from_the_base() {
+    let one = |off, width| {
+        let mut e = Evidence::default();
+        e.record(off, width, None);
+        e
+    };
+    assert!(is_lone_field(&one(0x10, 8)));
+    assert!(is_lone_field(&one(0x5c, 4)));
+    assert!(!is_lone_field(&one(0, 8)));
+    assert!(!is_lone_field(&one(0x3c, 1)));
+    assert!(!is_lone_field(&one(0x3c, 2)));
+    let mut two = one(0x10, 8);
+    two.record(0x18, 8, None);
+    assert!(!is_lone_field(&two));
+    let mut walked = one(0x8, 8);
+    walked.derived_walk = true;
+    assert!(!is_lone_field(&walked));
+}
+
 /// A buffer the function does not write every byte of is still a buffer.
 /// Demanding exact contiguity made a `char[5]` written at 0, 1, 3 and 4 a
 /// four-field structure; three or more offsets on the grid is the array

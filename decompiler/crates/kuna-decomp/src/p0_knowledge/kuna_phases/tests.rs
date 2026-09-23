@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_227() {
+fn settable_count_is_228() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -162,12 +162,13 @@ fn settable_count_is_227() {
     // +1 for `protoorder` (P4 callee-first recovered parameter types).
     // +1 for `charbyte` (P5 char-pointer byte typing).
     // +1 for `slotptr` (P6 frame-slot pointer typing on the JSON variables surface).
-    assert_eq!(kuna_num_settables(), 227);
-    assert_eq!(SETTABLE_TABLE.len(), 227);
+    // +1 for `calleevote` (P4 caller-to-callee parameter types).
+    assert_eq!(kuna_num_settables(), 228);
+    assert_eq!(SETTABLE_TABLE.len(), 228);
 }
 
 #[test]
-fn tier_counts_are_72_core_91_transform_64_analysis() {
+fn tier_counts_are_72_core_92_transform_64_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -313,7 +314,9 @@ fn tier_counts_are_72_core_91_transform_64_analysis() {
     // core 69 -> 70: +1 for `charbyte` (P5 char-pointer byte typing).
     // core 70 -> 71: +1 for `slotptr` (P6 frame-slot pointer typing on the JSON
     // variables surface).
-    assert_eq!((core, transform, analysis), (72, 91, 64));
+    // transform 91 -> 92: +1 for `calleevote` (P4 caller-to-callee parameter
+    // types).
+    assert_eq!((core, transform, analysis), (72, 92, 64));
 }
 
 #[test]
@@ -812,6 +815,11 @@ fn option_values_live_value_present_for_95() {
                             // same reason.  Its live value is
                             // `Architecture::protoorder`.
                             | "protoorder"
+                            // (kuna) `calleevote` takes a MODE
+                            // (`off|types|fields`) over an enum field, for the
+                            // same reason.  Its live value is
+                            // `Architecture::calleevote`.
+                            | "calleevote"
                             | "arraycoverwidth"
                             | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like
@@ -1111,7 +1119,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 217 -> 218: +1 for `mulblob`; its P3 row sits mid-table, so it
     // increments it again.
     // 224 -> 225: +1 for `slotptr`; its P6 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 226);
+    // 225 -> 226: +1 for `calleevote`.
+    assert_eq!(json.matches("},\n").count(), 227);
 }
 
 #[test]

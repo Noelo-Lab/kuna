@@ -422,6 +422,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "ptrfromuse",
     "charptr",
     "protoorder",
+    "calleevote",
     "cortexmpriv",
     "dedupvardecls",
     "paramrefdecl",

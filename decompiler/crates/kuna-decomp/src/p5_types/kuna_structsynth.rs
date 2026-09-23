@@ -200,6 +200,9 @@ const MAX_FIELD_OFFSET: intb = 0x8000;
 /// The deepest `COPY`/`CAST`/pointer-arithmetic chain the address peel follows.
 const MAX_PEEL_DEPTH: u32 = 8;
 
+/// (kuna `calleevote fields`) The narrowest access a lone field may be.
+const LONE_FIELD_MIN_WIDTH: int4 = 4;
+
 /// The access widths that may become a field: the ones whose C spelling in the
 /// exported header is the same number of bytes the decompiler believes, and
 /// whose alignment therefore divides their offset when the offset does.
@@ -329,6 +332,10 @@ struct Evidence {
     integer_use: bool,
     /// The base flows into a phi, so some dereference of it is loop-carried.
     phi_reached: bool,
+    /// (kuna `calleevote fields`) An address the base yields by a constant
+    /// offset reaches a phi: a pointer stepped through a loop, which walks an
+    /// array, where a lone field would read one element as a record.
+    derived_walk: bool,
     /// `(offset, width)` of every access the prune dropped: bytes this
     /// function touched without claiming a field for them.
     unclaimed: Vec<(intb, int4)>,
@@ -391,6 +398,7 @@ impl Evidence {
         self.phi_reached |= other.phi_reached;
         self.text_store |= other.text_store;
         self.other_access |= other.other_access;
+        self.derived_walk |= other.derived_walk;
         for (off, vs) in other.loads.iter() {
             self.loads.entry(*off).or_default().extend(vs.iter().copied());
         }
@@ -658,6 +666,8 @@ fn note_uses(data: &Funcdata, base: VarnodeId, e: &mut Evidence) {
                     .unwrap_or(false);
                 if !constant {
                     e.dynamic_offset = true;
+                } else if data.kuna_calleevote_closed() {
+                    e.derived_walk |= op.get_out().is_some_and(|out| address_walks(data, out, 0));
                 }
             }
             // An address is added to, subtracted from, compared for
@@ -692,6 +702,31 @@ fn note_uses(data: &Funcdata, base: VarnodeId, e: &mut Evidence) {
             _ => {}
         }
     }
+}
+
+/// (kuna `calleevote fields`) Does the address `vn` reach a phi through copies,
+/// casts and further constant offsets?
+fn address_walks(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return false };
+    v.descend_iter().any(|u| {
+        let Some(op) = data.obank().get(u) else { return false };
+        let onward = |data: &Funcdata| {
+            depth < MAX_PEEL_DEPTH && op.get_out().is_some_and(|o| address_walks(data, o, depth + 1))
+        };
+        match op.code() {
+            OpCode::CPUI_MULTIEQUAL => true,
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST => onward(data),
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_PTRADD => {
+                let term = if op.code() == OpCode::CPUI_PTRADD || op.get_in(0) == Some(vn) {
+                    op.get_in(1)
+                } else {
+                    op.get_in(0)
+                };
+                term.and_then(|t| data.vbank().get(t)).is_some_and(|t| t.is_constant()) && onward(data)
+            }
+            _ => false,
+        }
+    })
 }
 
 /// Is `ct` a pointer whose pointee is a named aggregate a person or a named-type
@@ -894,6 +929,29 @@ fn synthesize(data: &mut Funcdata) -> bool {
     changed
 }
 
+/// (kuna `calleevote fields`) Does a closed function with a lone-field candidate
+/// need one more propagation pass before its lattice can be read?
+///
+/// The plateau signal is set by a propagation pass that changes nothing, and a
+/// short function's main loop can end on the pass that first typed it: nothing
+/// after it changes an op, so no second pass runs and the lattice is never seen
+/// settled. Asking for one pass there, once, is what lets a one-field getter be
+/// read at all.
+fn wants_settle_pass(data: &mut Funcdata) -> bool {
+    if !data.kuna_calleevote_closed()
+        || !data.has_type_recovery_started()
+        || data.is_type_recovery_exceeded()
+        || data.kuna_infertypes_settled()
+    {
+        return false;
+    }
+    let raw = collect(data);
+    raw.iter().any(|(base, e)| {
+        let e = e.pruned();
+        is_lone_field(&e) && accepts(data, *base, &e)
+    })
+}
+
 /// The program-wide structure for one measured layout: the shard hook's answer
 /// in a `--jobs` worker, the ledger's otherwise.
 fn answer(
@@ -930,7 +988,8 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
         return false;
     }
     let Some(ct) = vn_type(data, base) else { return false };
-    accepts_record(data, &ct, e)
+    let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct, e);
+    accepts_record(data, &ct, e, lone)
 }
 
 /// Does `locals` measure `base`: a value a call returned, alone in its
@@ -1126,8 +1185,9 @@ fn overlapping<'a>(
 const MAX_OVERLAP_BACK: uintb = 16;
 
 /// The decline conditions every synthesized record shares, a parameter's or a
-/// nested field's: `ct` is the type the base already carries.
-fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence) -> bool {
+/// nested field's: `ct` is the type the base already carries. `lone` admits a
+/// parameter read at one constant offset other than zero ([`is_lone_field`]).
+fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence, lone: bool) -> bool {
     // Pointer-ness is not invented here.
     if ct.get_metatype() != type_metatype::TYPE_PTR {
         return false;
@@ -1139,12 +1199,15 @@ fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence) -> bool {
     if e.dynamic_offset || e.integer_use || e.phi_reached {
         return false;
     }
+    if e.slots.keys().any(|off| *off < 0 || *off >= MAX_FIELD_OFFSET) {
+        return false;
+    }
+    if lone && is_lone_field(e) {
+        return true;
+    }
     // Two distinct offsets is the minimum evidence for a layout; a lone field at
     // offset 0 is the pointee, not a structure.
     if e.slots.len() < 2 {
-        return false;
-    }
-    if e.slots.keys().any(|off| *off < 0 || *off >= MAX_FIELD_OFFSET) {
         return false;
     }
     if !e.slots.contains_key(&0) {
@@ -1155,6 +1218,57 @@ fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence) -> bool {
         return false;
     }
     true
+}
+
+/// (kuna `calleevote fields`) Is this one field, read at a constant offset other
+/// than zero, at least [`LONE_FIELD_MIN_WIDTH`] bytes wide, with no address
+/// derived from the pointer stepped through a loop?
+///
+/// One field is evidence of a record only in a function every caller of which
+/// is known (`Funcdata::kuna_calleevote_closed`): a function reached through a
+/// pointer -- a `qsort` comparator, a hash-table callback -- takes the generic
+/// `void *` its contract declares and casts inside, and reads one field of what
+/// it was handed exactly the way a getter does. A byte or halfword at a fixed
+/// offset is as often a character of a buffer as a field, so those still need
+/// a second field.
+fn is_lone_field(e: &Evidence) -> bool {
+    e.slots.len() == 1
+        && !e.derived_walk
+        && e.slots.iter().all(|(off, s)| *off > 0 && s.width >= LONE_FIELD_MIN_WIDTH)
+}
+
+/// (kuna `calleevote fields`) Did something outside the function's own reading
+/// give the parameter `base` its pointee `ct`, so that its lone field `e` does
+/// not make it a record?  A declared prototype it is handed to (`pipe (int *)`)
+/// always did. The type every caller passes, which the input took, did for a
+/// record, and for a `char **` where the field is one of its elements, a whole
+/// pointer at a multiple of the pointer width (`argv[1]`). An `int` read at offset 4 of a
+/// `char **`, or a word read out of a `char *`, is the function's own evidence
+/// against its callers. A pointee the recovery guessed (a callee's `int *` for
+/// a record whose first member is an enum) gives way too.
+fn pointee_is_given(data: &Funcdata, base: VarnodeId, ct: &Datatype, e: &Evidence) -> bool {
+    let Some(pointee) = ct.get_ptr_to() else { return false };
+    if matches!(pointee.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN) {
+        return false;
+    }
+    if crate::kuna_protoorder::handed_to_a_declared_pointer(data, base) {
+        return true;
+    }
+    let width = pointee.get_size() as intb;
+    let fits = match pointee.get_metatype() {
+        type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION => true,
+        type_metatype::TYPE_PTR => width > 0 && e.slots.iter().all(|(off, s)| s.width as intb == width && off % width == 0),
+        _ => false,
+    };
+    fits && crate::kuna_calleevote::took_stated_type(data, base, ct)
+}
+
+/// (kuna `calleevote fields`) Is `ct` a pointer to a synthesized record that
+/// claims exactly one field -- what a lone field read mints? Such a record
+/// gives way to the one every caller of the function passes.
+pub fn points_at_lone_record(ct: &Datatype) -> bool {
+    let Some(pt) = ct.get_ptr_to() else { return false };
+    ledger::minted_number(&pt).is_some() && ledger::layout_of(&pt).is_some_and(|l| l.fields.len() == 1)
 }
 
 /// (kuna `structsynth nest`) The completed record a pointer to its own shell
@@ -1196,12 +1310,14 @@ pub struct ActionStructSynth {
     base: ActionBase,
     /// Has this function already been offered to the synthesizer?
     fired: bool,
+    /// Has one more propagation pass been asked for ([`wants_settle_pass`])?
+    requested: bool,
 }
 
 impl ActionStructSynth {
     /// Construct the action in the given group.
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
-        Box::new(ActionStructSynth { base: ActionBase::new(0, "structsynth", g), fired: false })
+        Box::new(ActionStructSynth { base: ActionBase::new(0, "structsynth", g), fired: false, requested: false })
     }
 }
 
@@ -1216,13 +1332,19 @@ impl Action for ActionStructSynth {
         if !grouplist.contains(self.get_group()) {
             return None;
         }
-        Some(Box::new(ActionStructSynth { base: self.base.clone(), fired: false }))
+        Some(Box::new(ActionStructSynth { base: self.base.clone(), fired: false, requested: false }))
     }
     fn reset(&mut self, _data: &mut Funcdata) {
         self.fired = false;
+        self.requested = false;
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         if !data.get_arch().struct_synth.fires() || self.fired {
+            return 0;
+        }
+        if !self.requested && wants_settle_pass(data) {
+            self.requested = true;
+            self.base.count += 1;
             return 0;
         }
         // A lattice that is still moving has not decided what is a pointer, and

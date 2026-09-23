@@ -387,6 +387,13 @@ fn build_localtypes(data: &mut Funcdata) {
             // No type-locked cover, or the piece floated: fall back to getLocalType.
             None => get_local_type(data, vn),
         };
+        // (kuna `calleevote`) The type every caller passes for this input, where
+        // the fold says no more than "a pointer-width value".  See `kuna_calleevote`.
+        let ct = if from_seed {
+            ct
+        } else {
+            crate::kuna_calleevote::input_vote(data, vn, &ct).unwrap_or(ct)
+        };
         // (kuna `ptrfromuse`) A function input whose only memory role is to be a
         // LOAD/STORE base has no pointer candidate in the fold above, because
         // `TypeOpIntAdd` votes `int<N>` for it and refuses to carry the pointer
