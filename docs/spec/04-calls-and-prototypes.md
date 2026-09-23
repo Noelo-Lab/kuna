@@ -1360,6 +1360,22 @@ is silently dropped by the final input rewrite (`funcdata_callsite.rs
 never registered as trials at all: `Heritage::guard_calls` skips spacebase
 ranges while `get_spacebase_offset()` still reads `OFFSET_UNKNOWN`.
 
+That final rewrite only runs where the call spec recovered its own arguments. A
+call whose callee carries a **declared** prototype is input-locked before
+`ActionFuncLink` ever registers a trial (§4.2), so no later pass rewrites its
+input list, and a placeholder that was never resolved would stay on the op
+forever — rendering as a trailing argument past the declared arity, reading the
+very stack slot the `call` pushed its return address into, and contradicting the
+prototype the same output declares. The unconditional strip is therefore the
+stack space's own heritage step: once
+`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs (Heritage::heritage)`
+reaches a spacebase space it flagged `has_call_placeholders`, it calls
+`abort_spacebase_relative` on **every** call spec in the function before
+heritaging that space, whether or not the site resolved. The placeholder has
+done its work by then — the offset, if it was recoverable, was recorded on the
+success path above — and the LOAD it hung off is destroyed with it when nothing
+else reads it.
+
 ### De-indirection and the proto-change restart
 
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs

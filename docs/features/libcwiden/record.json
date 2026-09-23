@@ -6,7 +6,7 @@
  "witness_binary": "decbench full_run_address_2026-09-11/O0/coreutils/stripped/ginstall",
  "witness_addr": "0xb57a",
  "witness_before": "unsigned int sub_b57a(unsigned int a0,unsigned long a1,unsigned int a2)",
- "witness_after": "bool sub_b57a(int a0,char *a1,unsigned int a2)",
+ "witness_after": "unsigned int sub_b57a(int a0,char *a1,unsigned int a2)",
  "option": "libcsigs",
  "flag": "analysis_libcsigs",
  "new_option": false,

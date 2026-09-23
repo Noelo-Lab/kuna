@@ -3323,12 +3323,21 @@ impl Heritage {
     /// Clear stack placeholders before heritaging the stack space (C++
     /// `Heritage::clearStackPlaceholders`, `heritage.cc:2048`).
     ///
-    /// STUB(W4): the per-call `abortSpacebaseRelative` needs the callspec
-    /// subsystem (`numCalls`/`getCallSpecs`).  With no calls the loop is empty;
-    /// only the flag is cleared (faithful).
-    fn clear_stack_placeholders(&mut self, info_idx: usize) {
-        // for i in 0..fd.num_calls() { getCallSpecs(i)->abortSpacebaseRelative(*fd); }
-        // numCalls()==0 in the merged tree.
+    /// Every call site carries a stack-pointer placeholder input that
+    /// `ActionFuncLink` inserted so the call's stack offset could be recovered
+    /// from the data flow.  Once the stack space is heritaged the placeholder has
+    /// served its purpose and must come back out of the CALL, or it renders as a
+    /// trailing argument the callee never takes.
+    fn clear_stack_placeholders(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        info_idx: usize,
+    ) {
+        for i in 0..fd.num_calls() {
+            let mut fc = fd.replace_call_specs(i);
+            fc.abort_spacebase_relative(fd);
+            fd.restore_call_specs_at(i, fc);
+        }
         self.infolist[info_idx].has_call_placeholders = false;
     }
 
@@ -4807,7 +4816,7 @@ impl Heritage {
                 continue; // too soon to heritage this space
             }
             if self.infolist[i].has_call_placeholders {
-                self.clear_stack_placeholders(i);
+                self.clear_stack_placeholders(fd, i);
             }
             let space = self.infolist[i]
                 .space
