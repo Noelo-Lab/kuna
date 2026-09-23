@@ -888,6 +888,7 @@ fn synthesize(data: &mut Funcdata) -> bool {
     let mut asks = Vec::new();
     for (base, e) in raw.iter() {
         let e = e.pruned();
+        census_base(data, *base, &e);
         if !accepts(data, *base, &e) {
             continue;
         }
@@ -973,6 +974,69 @@ fn answer(
             data.get_arch().struct_merge,
         ),
     }
+}
+
+/// TEMPORARY census: why each record-shaped base is refused.
+fn census_base(data: &mut Funcdata, base: VarnodeId, e: &Evidence) {
+    if std::env::var_os("KUNA_SSCENSUS").is_none() {
+        return;
+    }
+    let shaped = e.slots.len() >= 2 && e.slots.contains_key(&0);
+    let tag = |s: &str| eprintln!("SSCENSUS {s}");
+    let Some(v) = data.vbank().get(base) else { return };
+    let (input, lock, persist, spacebase) = (
+        v.is_input(),
+        v.is_type_lock(),
+        v.is_persist(),
+        v.is_spacebase() || v.get_space().get_type() == spacetype::IPTR_SPACEBASE,
+    );
+    let call_ret = is_call_return(data, base);
+    let kind = if input {
+        "param"
+    } else if spacebase {
+        "frame"
+    } else if persist {
+        "global"
+    } else if call_ret {
+        "callret"
+    } else {
+        "value"
+    };
+    let ct = vn_type(data, base);
+    let is_ptr = ct.as_ref().is_some_and(|c| c.get_metatype() == type_metatype::TYPE_PTR);
+    let named = ct.as_ref().is_some_and(|c| points_at_named_composite(c));
+    let ptrtag = if named { "named" } else if is_ptr { "ptr" } else { "int" };
+    if !shaped {
+        tag(&format!("unshaped/{kind}/{ptrtag}"));
+        return;
+    }
+    if accepts(data, base, e) {
+        tag(&format!("ACCEPT/{kind}"));
+        return;
+    }
+    let why = if lock {
+        "typelock"
+    } else if !is_ptr {
+        "notptr"
+    } else if named {
+        "named"
+    } else if e.dynamic_offset {
+        "dynoff"
+    } else if e.integer_use {
+        "intuse"
+    } else if e.phi_reached {
+        "phi"
+    } else if e.slots.keys().any(|o| *o < 0 || *o >= MAX_FIELD_OFFSET) {
+        "range"
+    } else {
+        let ps = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
+        if is_array_shaped(&e.slots, ps) {
+            "arrayrun"
+        } else {
+            "localrule"
+        }
+    };
+    tag(&format!("REFUSE/{kind}/{why}"));
 }
 
 /// Every decline condition for a base, in one place.

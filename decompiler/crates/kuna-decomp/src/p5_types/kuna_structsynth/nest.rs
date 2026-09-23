@@ -89,9 +89,16 @@ pub(super) fn nest_fields(
 ) -> Vec<int4> {
     let own: Vec<TypeField> = fields.to_vec();
     let mut selfs = Vec::new();
+    let census = std::env::var_os("KUNA_SSCENSUS").is_some();
     for i in 0..fields.len() {
         let field = &own[i];
-        if field.field_type.get_size() != cx.ptr_size || !is_record_pointer(&field.field_type) {
+        if field.field_type.get_size() != cx.ptr_size {
+            continue;
+        }
+        if census && depth == 0 {
+            census_field(data, cx, rec, field);
+        }
+        if !is_record_pointer(&field.field_type) {
             continue;
         }
         let Some(inner) = loaded_record(data, cx, rec, intb::from(field.offset)) else { continue };
@@ -115,6 +122,70 @@ pub(super) fn nest_fields(
         fields[i].field_type = ptr;
     }
     selfs
+}
+
+/// TEMPORARY census: why one pointer-width field of an accepted record is not
+/// given a record of its own, and what two relaxations would do with it.
+fn census_field(data: &mut Funcdata, cx: &Nesting, rec: &Evidence, field: &TypeField) {
+    let tag = |s: String| eprintln!("SSCENSUS nest/{s}");
+    let off = intb::from(field.offset);
+    let Some(loads) = rec.loads.get(&off) else {
+        return tag("noload".into());
+    };
+    let mut values: Vec<VarnodeId> = Vec::new();
+    for (w, v) in loads {
+        if *w == cx.ptr_size && !values.contains(v) {
+            values.push(*v);
+        }
+    }
+    if values.is_empty() {
+        return tag("narrowload".into());
+    }
+    let mut merged = Evidence::default();
+    let mut valptr = true;
+    for v in values {
+        let Some(vn) = data.vbank().get(v) else { return tag("novn".into()) };
+        if vn.is_type_lock() || vn.is_persist() || vn.is_spacebase() {
+            return tag("valuelocked".into());
+        }
+        let Some(ct) = vn_type(data, v) else { return tag("novaltype".into()) };
+        if !is_record_pointer(&ct) {
+            valptr = false;
+        }
+        match cx.ev.get(&v) {
+            Some(e) => merged.absorb(e),
+            None => {
+                let mut uses = Evidence::default();
+                note_uses(data, v, &mut uses);
+                merged.absorb(&uses);
+            }
+        }
+    }
+    if merged.slots.is_empty() {
+        return tag("noderef".into());
+    }
+    let inner = merged.pruned();
+    let fieldptr = is_record_pointer(&field.field_type);
+    // The two relaxations, reported independently of each other.
+    let neg = inner.dynamic_offset || inner.integer_use || inner.phi_reached;
+    let zero = inner.slots.contains_key(&0);
+    let two = inner.slots.len() >= 2;
+    let arr = {
+        let slots = &inner.slots;
+        super::is_array_shaped(slots, cx.ptr_size)
+    };
+    let why = if neg {
+        "negative"
+    } else if !two {
+        "onefield"
+    } else if arr {
+        "arrayrun"
+    } else if !zero {
+        "nozero"
+    } else {
+        "clean"
+    };
+    tag(format!("{}/{}/{}", if fieldptr { "fptr" } else { "fint" }, if valptr { "vptr" } else { "vint" }, why));
 }
 
 /// Is this field type a pointer a record may be put behind?  A pointer to a
