@@ -1,0 +1,29 @@
+structsynth=off      casts=26627   /kloc=237.5   d=  +653 (+2.5%)  lines=112130
+calleevote=off       casts=26317   /kloc=234.8   d=  +343 (+1.3%)  lines=112074
+charbyte=off         casts=26011   /kloc=232.1   d=   +37 (+0.1%)  lines=112082
+charptr=on           casts=25979   /kloc=231.8   d=    +5 (+0.0%)  lines=112068
+baseline             casts=25974   /kloc=231.8   d=    +0 (+0.0%)  lines=112077
+slotptr=off          casts=25974   /kloc=231.8   d=    +0 (+0.0%)  lines=112077
+framelayout=off      casts=25974   /kloc=231.8   d=    +0 (+0.0%)  lines=112077
+typedepth=off        casts=25974   /kloc=231.8   d=    +0 (+0.0%)  lines=112077
+passthrough=off      casts=25971   /kloc=231.7   d=    -3 (-0.0%)  lines=112069
+boolbyte=off         casts=25967   /kloc=231.7   d=    -7 (-0.0%)  lines=112083
+libctypes=off        casts=25936   /kloc=231.4   d=   -38 (-0.1%)  lines=112093
+structsynth=all      casts=25722   /kloc=229.4   d=  -252 (-1.0%)  lines=112111
+protoorder=off       casts=25657   /kloc=229.0   d=  -317 (-1.2%)  lines=112052
+libctypes=glibc      casts=25582   /kloc=228.2   d=  -392 (-1.5%)  lines=112081
+ptrfromuse=off       casts=23665   /kloc=211.1   d= -2309 (-8.9%)  lines=112077
+ptrfromuse=byte      casts=22943   /kloc=204.7   d= -3031 (-11.7%)  lines=112069
+ERR ('libcwiden=off', 'O0', 'fmt', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O0', 'ls', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O0', 'sort', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O0', 'du', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O2', 'fmt', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O2', 'ls', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O2', 'sort', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O2', 'du', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O0', 'grep', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O0', 'gzip', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O2', 'grep', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+ERR ('libcwiden=off', 'O2', 'gzip', 'and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n')
+RC=0

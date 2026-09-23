@@ -1,0 +1,1232 @@
+{
+ "agg": [
+  {
+   "flip": "structsynth=off",
+   "lines": 112130,
+   "stmts": 67626,
+   "casts": 26627,
+   "kloc": 237.5,
+   "d_casts": 653,
+   "d_kloc": 5.7,
+   "pct": 2.5
+  },
+  {
+   "flip": "calleevote=off",
+   "lines": 112074,
+   "stmts": 67570,
+   "casts": 26317,
+   "kloc": 234.8,
+   "d_casts": 343,
+   "d_kloc": 3.1,
+   "pct": 1.3
+  },
+  {
+   "flip": "charbyte=off",
+   "lines": 112082,
+   "stmts": 67578,
+   "casts": 26011,
+   "kloc": 232.1,
+   "d_casts": 37,
+   "d_kloc": 0.3,
+   "pct": 0.1
+  },
+  {
+   "flip": "charptr=on",
+   "lines": 112068,
+   "stmts": 67564,
+   "casts": 25979,
+   "kloc": 231.8,
+   "d_casts": 5,
+   "d_kloc": 0.1,
+   "pct": 0.0
+  },
+  {
+   "flip": "baseline",
+   "lines": 112077,
+   "stmts": 67573,
+   "casts": 25974,
+   "kloc": 231.8,
+   "d_casts": 0,
+   "d_kloc": 0.0,
+   "pct": 0.0
+  },
+  {
+   "flip": "slotptr=off",
+   "lines": 112077,
+   "stmts": 67573,
+   "casts": 25974,
+   "kloc": 231.8,
+   "d_casts": 0,
+   "d_kloc": 0.0,
+   "pct": 0.0
+  },
+  {
+   "flip": "framelayout=off",
+   "lines": 112077,
+   "stmts": 67573,
+   "casts": 25974,
+   "kloc": 231.8,
+   "d_casts": 0,
+   "d_kloc": 0.0,
+   "pct": 0.0
+  },
+  {
+   "flip": "typedepth=off",
+   "lines": 112077,
+   "stmts": 67573,
+   "casts": 25974,
+   "kloc": 231.8,
+   "d_casts": 0,
+   "d_kloc": 0.0,
+   "pct": 0.0
+  },
+  {
+   "flip": "passthrough=off",
+   "lines": 112069,
+   "stmts": 67565,
+   "casts": 25971,
+   "kloc": 231.7,
+   "d_casts": -3,
+   "d_kloc": -0.0,
+   "pct": -0.0
+  },
+  {
+   "flip": "boolbyte=off",
+   "lines": 112083,
+   "stmts": 67579,
+   "casts": 25967,
+   "kloc": 231.7,
+   "d_casts": -7,
+   "d_kloc": -0.1,
+   "pct": -0.0
+  },
+  {
+   "flip": "libctypes=off",
+   "lines": 112093,
+   "stmts": 67589,
+   "casts": 25936,
+   "kloc": 231.4,
+   "d_casts": -38,
+   "d_kloc": -0.4,
+   "pct": -0.1
+  },
+  {
+   "flip": "structsynth=all",
+   "lines": 112111,
+   "stmts": 67607,
+   "casts": 25722,
+   "kloc": 229.4,
+   "d_casts": -252,
+   "d_kloc": -2.3,
+   "pct": -1.0
+  },
+  {
+   "flip": "protoorder=off",
+   "lines": 112052,
+   "stmts": 67538,
+   "casts": 25657,
+   "kloc": 229.0,
+   "d_casts": -317,
+   "d_kloc": -2.8,
+   "pct": -1.2
+  },
+  {
+   "flip": "libctypes=glibc",
+   "lines": 112081,
+   "stmts": 67577,
+   "casts": 25582,
+   "kloc": 228.2,
+   "d_casts": -392,
+   "d_kloc": -3.5,
+   "pct": -1.5
+  },
+  {
+   "flip": "ptrfromuse=off",
+   "lines": 112077,
+   "stmts": 67573,
+   "casts": 23665,
+   "kloc": 211.1,
+   "d_casts": -2309,
+   "d_kloc": -20.6,
+   "pct": -8.9
+  },
+  {
+   "flip": "ptrfromuse=byte",
+   "lines": 112069,
+   "stmts": 67566,
+   "casts": 22943,
+   "kloc": 204.7,
+   "d_casts": -3031,
+   "d_kloc": -27.0,
+   "pct": -11.7
+  }
+ ],
+ "per": {
+  "baseline": {
+   "O0/fmt": [
+    2730,
+    1503,
+    297
+   ],
+   "O0/ls": [
+    10358,
+    5881,
+    1756
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1878
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1769
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    436
+   ],
+   "O2/ls": [
+    12507,
+    7642,
+    2172
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    2048
+   ],
+   "O2/du": [
+    10083,
+    6166,
+    1983
+   ],
+   "O0/grep": [
+    13212,
+    7649,
+    4720
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1770
+   ],
+   "O2/grep": [
+    17052,
+    10700,
+    5109
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2036
+   ]
+  },
+  "structsynth=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    311
+   ],
+   "O0/ls": [
+    10357,
+    5880,
+    1721
+   ],
+   "O0/sort": [
+    8732,
+    5180,
+    1830
+   ],
+   "O0/du": [
+    8404,
+    4726,
+    1856
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    442
+   ],
+   "O2/ls": [
+    12504,
+    7639,
+    2594
+   ],
+   "O2/sort": [
+    10453,
+    6631,
+    2025
+   ],
+   "O2/du": [
+    10099,
+    6182,
+    2061
+   ],
+   "O0/grep": [
+    13231,
+    7668,
+    4689
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1783
+   ],
+   "O2/grep": [
+    17061,
+    10709,
+    5250
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2065
+   ]
+  },
+  "structsynth=all": {
+   "O0/fmt": [
+    2730,
+    1503,
+    297
+   ],
+   "O0/ls": [
+    10358,
+    5881,
+    1756
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1878
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1769
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    436
+   ],
+   "O2/ls": [
+    12507,
+    7642,
+    2172
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    2048
+   ],
+   "O2/du": [
+    10083,
+    6166,
+    1983
+   ],
+   "O0/grep": [
+    13212,
+    7649,
+    4720
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1770
+   ],
+   "O2/grep": [
+    17086,
+    10734,
+    4857
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2036
+   ]
+  },
+  "slotptr=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    297
+   ],
+   "O0/ls": [
+    10358,
+    5881,
+    1756
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1878
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1769
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    436
+   ],
+   "O2/ls": [
+    12507,
+    7642,
+    2172
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    2048
+   ],
+   "O2/du": [
+    10083,
+    6166,
+    1983
+   ],
+   "O0/grep": [
+    13212,
+    7649,
+    4720
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1770
+   ],
+   "O2/grep": [
+    17052,
+    10700,
+    5109
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2036
+   ]
+  },
+  "calleevote=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    297
+   ],
+   "O0/ls": [
+    10357,
+    5880,
+    1812
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1916
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1833
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    436
+   ],
+   "O2/ls": [
+    12507,
+    7642,
+    2183
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    2053
+   ],
+   "O2/du": [
+    10083,
+    6166,
+    2007
+   ],
+   "O0/grep": [
+    13211,
+    7648,
+    4840
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1774
+   ],
+   "O2/grep": [
+    17051,
+    10699,
+    5130
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2036
+   ]
+  },
+  "protoorder=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    288
+   ],
+   "O0/ls": [
+    10369,
+    5883,
+    1697
+   ],
+   "O0/sort": [
+    8733,
+    5181,
+    1954
+   ],
+   "O0/du": [
+    8386,
+    4708,
+    1724
+   ],
+   "O2/fmt": [
+    3626,
+    2198,
+    427
+   ],
+   "O2/ls": [
+    12503,
+    7638,
+    2113
+   ],
+   "O2/sort": [
+    10447,
+    6625,
+    1984
+   ],
+   "O2/du": [
+    10076,
+    6159,
+    1884
+   ],
+   "O0/grep": [
+    13207,
+    7644,
+    4630
+   ],
+   "O0/gzip": [
+    6139,
+    3662,
+    1712
+   ],
+   "O2/grep": [
+    17037,
+    10685,
+    5254
+   ],
+   "O2/gzip": [
+    8799,
+    5652,
+    1990
+   ]
+  },
+  "ptrfromuse=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    286
+   ],
+   "O0/ls": [
+    10358,
+    5881,
+    1612
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1675
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1536
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    426
+   ],
+   "O2/ls": [
+    12507,
+    7642,
+    2007
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    1910
+   ],
+   "O2/du": [
+    10082,
+    6165,
+    1800
+   ],
+   "O0/grep": [
+    13210,
+    7647,
+    3865
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1743
+   ],
+   "O2/grep": [
+    17055,
+    10703,
+    4789
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2016
+   ]
+  },
+  "ptrfromuse=byte": {
+   "O0/fmt": [
+    2728,
+    1502,
+    290
+   ],
+   "O0/ls": [
+    10358,
+    5881,
+    1570
+   ],
+   "O0/sort": [
+    8735,
+    5183,
+    1621
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1405
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    430
+   ],
+   "O2/ls": [
+    12507,
+    7642,
+    1989
+   ],
+   "O2/sort": [
+    10456,
+    6634,
+    1876
+   ],
+   "O2/du": [
+    10084,
+    6167,
+    1708
+   ],
+   "O0/grep": [
+    13210,
+    7647,
+    3653
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1748
+   ],
+   "O2/grep": [
+    17052,
+    10700,
+    4623
+   ],
+   "O2/gzip": [
+    8796,
+    5649,
+    2030
+   ]
+  },
+  "charptr=on": {
+   "O0/fmt": [
+    2729,
+    1502,
+    298
+   ],
+   "O0/ls": [
+    10357,
+    5880,
+    1755
+   ],
+   "O0/sort": [
+    8733,
+    5181,
+    1876
+   ],
+   "O0/du": [
+    8383,
+    4705,
+    1770
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    436
+   ],
+   "O2/ls": [
+    12505,
+    7640,
+    2179
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    2046
+   ],
+   "O2/du": [
+    10083,
+    6166,
+    1983
+   ],
+   "O0/grep": [
+    13211,
+    7648,
+    4724
+   ],
+   "O0/gzip": [
+    6139,
+    3662,
+    1771
+   ],
+   "O2/grep": [
+    17051,
+    10699,
+    5105
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2036
+   ]
+  },
+  "libctypes=off": {
+   "O0/fmt": [
+    2728,
+    1501,
+    288
+   ],
+   "O0/ls": [
+    10367,
+    5890,
+    1716
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1835
+   ],
+   "O0/du": [
+    8371,
+    4693,
+    1746
+   ],
+   "O2/fmt": [
+    3617,
+    2190,
+    461
+   ],
+   "O2/ls": [
+    12515,
+    7650,
+    2211
+   ],
+   "O2/sort": [
+    10462,
+    6640,
+    2034
+   ],
+   "O2/du": [
+    10068,
+    6151,
+    1975
+   ],
+   "O0/grep": [
+    13219,
+    7656,
+    4744
+   ],
+   "O0/gzip": [
+    6156,
+    3679,
+    1752
+   ],
+   "O2/grep": [
+    17045,
+    10693,
+    5138
+   ],
+   "O2/gzip": [
+    8811,
+    5664,
+    2036
+   ]
+  },
+  "libctypes=glibc": {
+   "O0/fmt": [
+    2730,
+    1503,
+    288
+   ],
+   "O0/ls": [
+    10362,
+    5885,
+    1692
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1867
+   ],
+   "O0/du": [
+    8388,
+    4710,
+    1709
+   ],
+   "O2/fmt": [
+    3618,
+    2191,
+    399
+   ],
+   "O2/ls": [
+    12506,
+    7641,
+    2082
+   ],
+   "O2/sort": [
+    10456,
+    6634,
+    2017
+   ],
+   "O2/du": [
+    10085,
+    6168,
+    1927
+   ],
+   "O0/grep": [
+    13214,
+    7651,
+    4717
+   ],
+   "O0/gzip": [
+    6139,
+    3662,
+    1760
+   ],
+   "O2/grep": [
+    17049,
+    10697,
+    5101
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2023
+   ]
+  },
+  "framelayout=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    297
+   ],
+   "O0/ls": [
+    10358,
+    5881,
+    1756
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1878
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1769
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    436
+   ],
+   "O2/ls": [
+    12507,
+    7642,
+    2172
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    2048
+   ],
+   "O2/du": [
+    10083,
+    6166,
+    1983
+   ],
+   "O0/grep": [
+    13212,
+    7649,
+    4720
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1770
+   ],
+   "O2/grep": [
+    17052,
+    10700,
+    5109
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2036
+   ]
+  },
+  "boolbyte=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    297
+   ],
+   "O0/ls": [
+    10358,
+    5881,
+    1754
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1878
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1768
+   ],
+   "O2/fmt": [
+    3620,
+    2193,
+    436
+   ],
+   "O2/ls": [
+    12509,
+    7644,
+    2171
+   ],
+   "O2/sort": [
+    10459,
+    6637,
+    2048
+   ],
+   "O2/du": [
+    10084,
+    6167,
+    1982
+   ],
+   "O0/grep": [
+    13212,
+    7649,
+    4720
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1770
+   ],
+   "O2/grep": [
+    17053,
+    10701,
+    5107
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2036
+   ]
+  },
+  "charbyte=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    297
+   ],
+   "O0/ls": [
+    10361,
+    5884,
+    1764
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1879
+   ],
+   "O0/du": [
+    8385,
+    4707,
+    1770
+   ],
+   "O2/fmt": [
+    3618,
+    2191,
+    439
+   ],
+   "O2/ls": [
+    12509,
+    7644,
+    2190
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    2046
+   ],
+   "O2/du": [
+    10082,
+    6165,
+    1992
+   ],
+   "O0/grep": [
+    13213,
+    7650,
+    4722
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1770
+   ],
+   "O2/grep": [
+    17052,
+    10700,
+    5106
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2036
+   ]
+  },
+  "typedepth=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    297
+   ],
+   "O0/ls": [
+    10358,
+    5881,
+    1756
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1878
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1769
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    436
+   ],
+   "O2/ls": [
+    12507,
+    7642,
+    2172
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    2048
+   ],
+   "O2/du": [
+    10083,
+    6166,
+    1983
+   ],
+   "O0/grep": [
+    13212,
+    7649,
+    4720
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1770
+   ],
+   "O2/grep": [
+    17052,
+    10700,
+    5109
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2036
+   ]
+  },
+  "passthrough=off": {
+   "O0/fmt": [
+    2730,
+    1503,
+    297
+   ],
+   "O0/ls": [
+    10358,
+    5881,
+    1756
+   ],
+   "O0/sort": [
+    8734,
+    5182,
+    1878
+   ],
+   "O0/du": [
+    8384,
+    4706,
+    1769
+   ],
+   "O2/fmt": [
+    3619,
+    2192,
+    436
+   ],
+   "O2/ls": [
+    12503,
+    7638,
+    2172
+   ],
+   "O2/sort": [
+    10458,
+    6636,
+    2048
+   ],
+   "O2/du": [
+    10079,
+    6162,
+    1983
+   ],
+   "O0/grep": [
+    13212,
+    7649,
+    4720
+   ],
+   "O0/gzip": [
+    6140,
+    3663,
+    1770
+   ],
+   "O2/grep": [
+    17052,
+    10700,
+    5108
+   ],
+   "O2/gzip": [
+    8800,
+    5653,
+    2034
+   ]
+  }
+ },
+ "errs": [
+  [
+   "libcwiden=off",
+   "O0",
+   "fmt",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O0",
+   "ls",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O0",
+   "sort",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O0",
+   "du",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O2",
+   "fmt",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O2",
+   "ls",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O2",
+   "sort",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O2",
+   "du",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O0",
+   "grep",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O0",
+   "gzip",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O2",
+   "grep",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ],
+  [
+   "libcwiden=off",
+   "O2",
+   "gzip",
+   "and --limit N caps. A narrowed --json document also\ncarries `total`, the count before narrowing. --summary skips the decompile\nentirely and reports the orientation document (see `kuna functions -h`).\n"
+  ]
+ ]
+}

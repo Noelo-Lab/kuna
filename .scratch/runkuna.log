@@ -1,0 +1,23 @@
+O0__coreutils__fmt rc=0 size=655126
+O0__coreutils__ls rc=0 size=2478999
+O0__coreutils__sort rc=0 size=2138975
+O0__coreutils__du rc=0 size=1971225
+O2__coreutils__fmt rc=0 size=597006
+O2__coreutils__ls rc=0 size=2011756
+O2__coreutils__sort rc=0 size=1683404
+O2__coreutils__du rc=0 size=1604385
+O2-noinline__coreutils__fmt rc=0 size=628969
+O2-noinline__coreutils__ls rc=0 size=2096368
+O2-noinline__coreutils__sort rc=0 size=1895540
+O2-noinline__coreutils__du rc=0 size=1701524
+O0__grep__grep rc=0 size=3224828
+O0__gzip__gzip rc=0 size=1202422
+O2__grep__grep rc=0 size=2705060
+O2__gzip__gzip rc=0 size=1277565
+O0__diffutils__diff rc=0 size=2640599
+O2__diffutils__diff rc=0 size=2297818
+O0__findutils__find rc=0 size=4304673
+O2__findutils__find rc=0 size=3236279
+O0__bzip2__bzip2 rc=0 size=1650916
+O2__bzip2__bzip2 rc=0 size=1489364
+RUNKUNA_DONE

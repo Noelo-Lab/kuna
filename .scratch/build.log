@@ -1,0 +1,173 @@
+cd /home/mahaloz/kwt/castcensus/decompiler && cargo build --release -p kuna-console -p kuna-harness -p kuna-slacomp -p kuna-cli
+    Blocking waiting for file lock on build directory
+warning: function `input_is_recorded_value` is never used
+   --> crates/kuna-decomp/src/p2_lift/kuna_loweredswitchvalue.rs:356:15
+    |
+356 | pub(crate) fn input_is_recorded_value(data: &Funcdata, input: VarnodeId, recorded: &ValueName, size: int4) -> bool {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: function `unimplemented_stub` is never used
+    --> crates/kuna-decomp/src/p3_dataflow/heritage.rs:5025:4
+     |
+5025 | fn unimplemented_stub(what: &str) -> ! {
+     |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `computes_a_value` is never used
+   --> crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs:111:4
+    |
+111 | fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: field `sink` is never read
+   --> crates/kuna-decomp/src/p8_structure/kuna_outline.rs:701:5
+    |
+697 | struct Scratch {
+    |        ------- field in this struct
+...
+701 |     sink: KunaNodeId,
+    |     ^^^^
+
+   Compiling kuna-analysis v0.1.0 (/home/mahaloz/kwt/castcensus/decompiler/crates/kuna-analysis)
+warning: method `index` is never used
+   --> crates/kuna-analysis/src/listing/kuna_pdecode.rs:249:14
+    |
+214 | impl Refusal {
+    | ------------ method in this implementation
+...
+249 |     const fn index(self) -> usize {
+    |              ^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: constant `DIR_TLS` is never used
+  --> crates/kuna-analysis/src/upx/pe.rs:55:7
+   |
+55 | const DIR_TLS: usize = 9;
+   |       ^^^^^^^
+
+   Compiling kuna-harness v0.1.0 (/home/mahaloz/kwt/castcensus/decompiler/crates/kuna-harness)
+warning: `kuna-analysis` (lib) generated 2 warnings
+warning: `kuna-decomp` (lib) generated 5 warnings
+   Compiling kuna-cli v0.1.0 (/home/mahaloz/kwt/castcensus/decompiler/crates/kuna-cli)
+    Finished `release` profile [optimized] target(s) in 52.86s
+BUILD_RC=0
+warning: value assigned to `isflipped` is never read
+   --> crates/kuna-decomp/src/p3_dataflow/ruleaction_3.rs:285:17
+    |
+285 |         let mut isflipped = false;
+    |                 ^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` on by default
+
+warning: function `input_is_recorded_value` is never used
+   --> crates/kuna-decomp/src/p2_lift/kuna_loweredswitchvalue.rs:356:15
+    |
+356 | pub(crate) fn input_is_recorded_value(data: &Funcdata, input: VarnodeId, recorded: &ValueName, size: int4) -> bool {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: function `unimplemented_stub` is never used
+    --> crates/kuna-decomp/src/p3_dataflow/heritage.rs:5025:4
+     |
+5025 | fn unimplemented_stub(what: &str) -> ! {
+     |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `computes_a_value` is never used
+   --> crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs:111:4
+    |
+111 | fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: field `sink` is never read
+   --> crates/kuna-decomp/src/p8_structure/kuna_outline.rs:701:5
+    |
+697 | struct Scratch {
+    |        ------- field in this struct
+...
+701 |     sink: KunaNodeId,
+    |     ^^^^
+
+warning: `kuna-decomp` (lib) generated 5 warnings
+warning: method `index` is never used
+   --> crates/kuna-analysis/src/listing/kuna_pdecode.rs:249:14
+    |
+214 | impl Refusal {
+    | ------------ method in this implementation
+...
+249 |     const fn index(self) -> usize {
+    |              ^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: constant `DIR_TLS` is never used
+  --> crates/kuna-analysis/src/upx/pe.rs:55:7
+   |
+55 | const DIR_TLS: usize = 9;
+   |       ^^^^^^^
+
+warning: `kuna-analysis` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 51.95s
+BUILD_RC=0
+warning: value assigned to `isflipped` is never read
+   --> crates/kuna-decomp/src/p3_dataflow/ruleaction_3.rs:285:17
+    |
+285 |         let mut isflipped = false;
+    |                 ^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` on by default
+
+warning: function `input_is_recorded_value` is never used
+   --> crates/kuna-decomp/src/p2_lift/kuna_loweredswitchvalue.rs:356:15
+    |
+356 | pub(crate) fn input_is_recorded_value(data: &Funcdata, input: VarnodeId, recorded: &ValueName, size: int4) -> bool {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: function `unimplemented_stub` is never used
+    --> crates/kuna-decomp/src/p3_dataflow/heritage.rs:5025:4
+     |
+5025 | fn unimplemented_stub(what: &str) -> ! {
+     |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `computes_a_value` is never used
+   --> crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs:111:4
+    |
+111 | fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: field `sink` is never read
+   --> crates/kuna-decomp/src/p8_structure/kuna_outline.rs:701:5
+    |
+697 | struct Scratch {
+    |        ------- field in this struct
+...
+701 |     sink: KunaNodeId,
+    |     ^^^^
+
+warning: `kuna-decomp` (lib) generated 5 warnings
+warning: method `index` is never used
+   --> crates/kuna-analysis/src/listing/kuna_pdecode.rs:249:14
+    |
+214 | impl Refusal {
+    | ------------ method in this implementation
+...
+249 |     const fn index(self) -> usize {
+    |              ^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: constant `DIR_TLS` is never used
+  --> crates/kuna-analysis/src/upx/pe.rs:55:7
+   |
+55 | const DIR_TLS: usize = 9;
+   |       ^^^^^^^
+
+warning: `kuna-analysis` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 36.23s
+BUILD_RC=0

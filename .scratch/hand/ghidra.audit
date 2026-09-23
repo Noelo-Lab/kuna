@@ -1,0 +1,179 @@
+L2371  no   ("! command_line_arg || inode == NOT_AN_INODE_NUMBER","sr...   next=';'          pred='__assert_fail';succ=';';not-a-type-name
+L2374  no   (DAT_0012b338==DAT_0012b330)                                   next='{'          succ='{';not-a-type-name
+L2375  no   (DAT_0012b328,DAT_0012b330,0x1a0)                              next=';'          pred='FUN_0011c638';succ=';';not-a-type-name
+L2378  CAST (undefined8*)                                                  next='('          
+L2378  no   (DAT_0012b338*0xd0+DAT_0012b328)                               next=';'          succ=';';not-a-type-name
+L2379  no   (local_380,0,0xd0)                                             next=';'          pred='memset';succ=';';not-a-type-name
+L2381  CAST (int*)                                                         next='('          
+L2381  no   (local_380+0x15)                                               next='='          succ='=';not-a-type-name
+L2382  CAST (undefined4*)                                                  next='('          
+L2382  no   ((long)local_380+0xc4)                                         next='='          succ='=';not-a-type-name
+L2382  CAST (long)                                                         next='local_380'  
+L2383  no   ((DAT_0012b340!='\x01')&&(DAT_0012b341!='\0'))                 next='{'          succ='{';not-a-type-name
+L2383  no   (DAT_0012b340!='\x01')                                         next='&&'         succ='&&';not-a-type-name
+L2383  no   (DAT_0012b341!='\0')                                           next=')'          succ=')';not-a-type-name
+L2384  no   (local_3d0)                                                    next=';'          pred='FUN_001099b1';succ=';';not-a-type-name
+L2385  CAST (uint*)                                                        next='('          
+L2385  no   ((long)local_380+0xc4)                                         next='='          succ='=';not-a-type-name
+L2385  CAST (long)                                                         next='local_380'  
+L2385  CAST (uint)                                                         next='bVar6'      
+L2386  no   (*(int*)((long)local_380+0xc4)!=0)                             next='{'          succ='{';not-a-type-name
+L2386  CAST (int*)                                                         next='('          
+L2386  no   ((long)local_380+0xc4)                                         next='!='         succ='!=';not-a-type-name
+L2386  CAST (long)                                                         next='local_380'  
+L2390  no   (((((((local_3d8!='\0')||(DAT_0012b3d5!='\0'))||(DAT_0012...   next='{'          succ='{';not-a-type-name
+L2390  no   ((((((local_3d8!='\0')||(DAT_0012b3d5!='\0'))||(DAT_0012b...   next='||'         succ='||';not-a-type-name
+L2390  no   (((((local_3d8!='\0')||(DAT_0012b3d5!='\0'))||(DAT_0012b4...   next='||'         succ='||';not-a-type-name
+L2390  no   ((((local_3d8!='\0')||(DAT_0012b3d5!='\0'))||(DAT_0012b44...   next='||'         succ='||';not-a-type-name
+L2390  no   (((local_3d8!='\0')||(DAT_0012b3d5!='\0'))||(DAT_0012b440...   next='||'         succ='||';not-a-type-name
+L2390  no   ((local_3d8!='\0')||(DAT_0012b3d5!='\0'))                      next='||'         succ='||';not-a-type-name
+L2390  no   (local_3d8!='\0')                                              next='||'         succ='||';not-a-type-name
+L2390  no   (DAT_0012b3d5!='\0')                                           next=')'          succ=')';not-a-type-name
+L2390  no   (DAT_0012b440!='\0')                                           next=')'          succ=')';not-a-type-name
+L2391  no   (((local_3d4==3&&(DAT_0012b3d4!='\0'))&&((cVar7=FUN_00106...   next=')'          succ=')';not-a-type-name
+L2391  no   ((local_3d4==3&&(DAT_0012b3d4!='\0'))&&((cVar7=FUN_001063...   next=')'          succ=')';not-a-type-name
+L2391  no   (local_3d4==3&&(DAT_0012b3d4!='\0'))                           next='&&'         succ='&&';not-a-type-name
+L2391  no   (DAT_0012b3d4!='\0')                                           next=')'          succ=')';not-a-type-name
+L2392  no   ((cVar7=FUN_00106325(0x13),cVar7!='\0'||((cVar7=FUN_00106...   next=')'          succ=')';not-a-type-name
+L2392  no   (cVar7=FUN_00106325(0x13),cVar7!='\0'||((cVar7=FUN_001063...   next=')'          succ=')';not-a-type-name
+L2392  no   (0x13)                                                         next=','          pred='FUN_00106325';succ=',';not-a-type-name
+L2393  no   ((cVar7=FUN_00106325(0x12),cVar7!='\0'||(cVar7=FUN_001063...   next=')'          succ=')';not-a-type-name
+L2393  no   (cVar7=FUN_00106325(0x12),cVar7!='\0'||(cVar7=FUN_0010632...   next=')'          succ=')';not-a-type-name
+L2393  no   (0x12)                                                         next=','          pred='FUN_00106325';succ=',';not-a-type-name
+L2393  no   (cVar7=FUN_00106325(0x14),cVar7!='\0')                         next=')'          succ=')';not-a-type-name
+L2393  no   (0x14)                                                         next=','          pred='FUN_00106325';succ=',';not-a-type-name
+L2395  no   (((DAT_0012b3e9!='\0'||(DAT_0012b441!='\0'))&&(((local_3d...   next=')'          succ=')';not-a-type-name
+L2395  no   ((DAT_0012b3e9!='\0'||(DAT_0012b441!='\0'))&&(((local_3d4...   next=')'          succ=')';not-a-type-name
+L2395  no   (DAT_0012b3e9!='\0'||(DAT_0012b441!='\0'))                     next='&&'         succ='&&';not-a-type-name
+L2395  no   (DAT_0012b441!='\0')                                           next=')'          succ=')';not-a-type-name
+L2396  no   (((local_3d4==6||(local_3d4==0))&&((DAT_0012b3ec==4||((DA...   next=')'          succ=')';not-a-type-name
+L2396  no   ((local_3d4==6||(local_3d4==0))&&((DAT_0012b3ec==4||((DAT...   next=')'          succ=')';not-a-type-name
+L2396  no   (local_3d4==6||(local_3d4==0))                                 next='&&'         succ='&&';not-a-type-name
+L2396  no   (local_3d4==0)                                                 next=')'          succ=')';not-a-type-name
+L2397  no   ((DAT_0012b3ec==4||((DAT_0012b358!='\0'||(DAT_0012b3e8!='...   next=')'          succ=')';not-a-type-name
+L2397  no   (DAT_0012b3ec==4||((DAT_0012b358!='\0'||(DAT_0012b3e8!='\...   next=')'          succ=')';not-a-type-name
+L2397  no   ((DAT_0012b358!='\0'||(DAT_0012b3e8!='\0')))                   next=')'          succ=')';not-a-type-name
+L2397  no   (DAT_0012b358!='\0'||(DAT_0012b3e8!='\0'))                     next=')'          succ=')';not-a-type-name
+L2397  no   (DAT_0012b3e8!='\0')                                           next=')'          succ=')';not-a-type-name
+L2398  no   ((DAT_0012b3e9!='\0'&&(local_3e0==0)))                         next=')'          succ=')';not-a-type-name
+L2398  no   (DAT_0012b3e9!='\0'&&(local_3e0==0))                           next=')'          succ=')';not-a-type-name
+L2398  no   (local_3e0==0)                                                 next=')'          succ=')';not-a-type-name
+L2399  no   ((ppcVar19=&local_3e8,DAT_0012b441!='\0'&&(((local_3d4==0...   next=')'          succ=')';not-a-type-name
+L2399  no   (ppcVar19=&local_3e8,DAT_0012b441!='\0'&&(((local_3d4==0|...   next=')'          succ=')';not-a-type-name
+L2400  no   (((local_3d4==0||(local_3d8!='\0'))||((ppcVar19=&local_3e...   next=')'          succ=')';not-a-type-name
+L2400  no   ((local_3d4==0||(local_3d8!='\0'))||((ppcVar19=&local_3e8...   next=')'          succ=')';not-a-type-name
+L2400  no   (local_3d4==0||(local_3d8!='\0'))                              next='||'         succ='||';not-a-type-name
+L2400  no   (local_3d8!='\0')                                              next=')'          succ=')';not-a-type-name
+L2401  no   ((ppcVar19=&local_3e8,local_3d4==5&&((DAT_0012b3d0==3||((...   next=')'          succ=')';not-a-type-name
+L2401  no   (ppcVar19=&local_3e8,local_3d4==5&&((DAT_0012b3d0==3||((p...   next=')'          succ=')';not-a-type-name
+L2402  no   ((DAT_0012b3d0==3||((ppcVar19=&local_3e8,DAT_0012b3d4!='\...   next=')'          succ=')';not-a-type-name
+L2402  no   (DAT_0012b3d0==3||((ppcVar19=&local_3e8,DAT_0012b3d4!='\0...   next=')'          succ=')';not-a-type-name
+L2403  no   ((ppcVar19=&local_3e8,DAT_0012b3d4!='\0'&&((((cVar7=FUN_0...   next=')'          succ=')';not-a-type-name
+L2403  no   (ppcVar19=&local_3e8,DAT_0012b3d4!='\0'&&((((cVar7=FUN_00...   next=')'          succ=')';not-a-type-name
+L2404  no   ((((cVar7=FUN_00106325(0xe),cVar7!='\0'||(cVar7=FUN_00106...   next=')'          succ=')';not-a-type-name
+L2404  no   (((cVar7=FUN_00106325(0xe),cVar7!='\0'||(cVar7=FUN_001063...   next=')'          succ=')';not-a-type-name
+L2404  no   ((cVar7=FUN_00106325(0xe),cVar7!='\0'||(cVar7=FUN_0010632...   next='||'         succ='||';not-a-type-name
+L2404  no   (cVar7=FUN_00106325(0xe),cVar7!='\0'||(cVar7=FUN_00106325...   next='||'         succ='||';not-a-type-name
+L2404  no   (0xe)                                                          next=','          pred='FUN_00106325';succ=',';not-a-type-name
+L2405  no   (cVar7=FUN_00106325(0x10),cVar7!='\0')                         next=')'          succ=')';not-a-type-name
+L2405  no   (0x10)                                                         next=','          pred='FUN_00106325';succ=',';not-a-type-name
+L2406  no   (cVar7=FUN_00106325(0x11),cVar7!='\0')                         next=')'          succ=')';not-a-type-name
+L2406  no   (0x11)                                                         next=','          pred='FUN_00106325';succ=',';not-a-type-name
+L2407  no   (cVar7=FUN_00106325(0x15),ppcVar19=&local_3e8,cVar7!='\0')     next=')'          succ=')';not-a-type-name
+L2407  no   (0x15)                                                         next=','          pred='FUN_00106325';succ=',';not-a-type-name
+L2408  no   ((*local_3d0=='/')||(*local_3e8=='\0'))                        next='{'          succ='{';not-a-type-name
+L2408  no   (*local_3d0=='/')                                              next='||'         succ='||';not-a-type-name
+L2408  no   (*local_3e8=='\0')                                             next=')'          succ=')';not-a-type-name
+L2413  no   (local_3d0)                                                    next=';'          pred='strlen';succ=';';not-a-type-name
+L2414  no   (local_3e8)                                                    next=';'          pred='strlen';succ=';';not-a-type-name
+L2415  no   ((sVar12+sVar16+0x19)/0x10)                                    next='*'          not-a-type-name
+L2415  no   (sVar12+sVar16+0x19)                                           next='/'          succ='/';not-a-type-name
+L2416  no   (;ppcVar18!=(char**)((long)&local_3e8-(uVar13&0xfffffffff...   next='{'          succ='{';not-a-type-name
+L2416  CAST (char**)                                                       next='('          
+L2416  no   ((long)&local_3e8-(uVar13&0xfffffffffffff000))                 next=';'          succ=';';not-a-type-name
+L2416  CAST (long)                                                         next='&'          
+L2416  no   (uVar13&0xfffffffffffff000)                                    next=')'          succ=')';not-a-type-name
+L2417  CAST (char**)                                                       next='('          
+L2417  no   ((long)ppcVar18+-0x1000)                                       next=')'          succ=')';not-a-type-name
+L2417  CAST (long)                                                         next='ppcVar18'   
+L2418  CAST (undefined8*)                                                  next='('          
+L2418  no   ((long)ppcVar18+-8)                                            next='='          succ='=';not-a-type-name
+L2418  CAST (long)                                                         next='ppcVar18'   
+L2418  CAST (undefined8*)                                                  next='('          
+L2418  no   ((long)ppcVar18+-8)                                            next=';'          succ=';';not-a-type-name
+L2418  CAST (long)                                                         next='ppcVar18'   
+L2420  CAST (ulong)                                                        next='('          
+L2420  no   ((uint)uVar13&0xfff)                                           next=';'          succ=';';not-a-type-name
+L2420  CAST (uint)                                                         next='uVar13'     
+L2421  CAST (char**)                                                       next='('          
+L2421  no   ((long)ppcVar18+lVar3)                                         next=';'          succ=';';not-a-type-name
+L2421  CAST (long)                                                         next='ppcVar18'   
+L2422  no   ((uVar13&0xfff)!=0)                                            next='{'          succ='{';not-a-type-name
+L2422  no   (uVar13&0xfff)                                                 next='!='         succ='!=';not-a-type-name
+L2423  CAST (undefined8*)                                                  next='('          
+L2423  no   ((long)ppcVar18+((ulong)((uint)uVar13&0xfff)-8)+lVar3)         next='='          succ='=';not-a-type-name
+L2423  CAST (long)                                                         next='ppcVar18'   
+L2423  no   ((ulong)((uint)uVar13&0xfff)-8)                                next='+'          not-a-type-name
+L2423  CAST (ulong)                                                        next='('          
+L2423  no   ((uint)uVar13&0xfff)                                           next='-'          not-a-type-name
+L2423  CAST (uint)                                                         next='uVar13'     
+L2424  CAST (undefined8*)                                                  next='('          
+L2424  no   ((long)ppcVar18+((ulong)((uint)uVar13&0xfff)-8)+lVar3)         next=';'          succ=';';not-a-type-name
+L2424  CAST (long)                                                         next='ppcVar18'   
+L2424  no   ((ulong)((uint)uVar13&0xfff)-8)                                next='+'          not-a-type-name
+L2424  CAST (ulong)                                                        next='('          
+L2424  no   ((uint)uVar13&0xfff)                                           next='-'          not-a-type-name
+L2424  CAST (uint)                                                         next='uVar13'     
+L2428  CAST (char*)                                                        next='('          
+L2428  no   ((ulong)((long)ppcVar18+lVar3+0xf)&0xfffffffffffffff0)         next=';'          succ=';';not-a-type-name
+L2428  CAST (ulong)                                                        next='('          
+L2428  no   ((long)ppcVar18+lVar3+0xf)                                     next='&'          not-a-type-name
+L2428  CAST (long)                                                         next='ppcVar18'   
+L2429  CAST (undefined8*)                                                  next='('          
+L2429  no   ((long)ppcVar18+lVar3+-8)                                      next='='          succ='=';not-a-type-name
+L2429  CAST (long)                                                         next='ppcVar18'   
+L2430  no   ((char*)((ulong)((long)ppcVar18+lVar3+0xf)&0xffffffffffff...   next=';'          pred='FUN_0010eb94';succ=';';not-a-type-name
+L2430  CAST (char*)                                                        next='('          
+L2430  no   ((ulong)((long)ppcVar18+lVar3+0xf)&0xfffffffffffffff0)         next=','          succ=',';not-a-type-name
+L2430  CAST (ulong)                                                        next='('          
+L2430  no   ((long)ppcVar18+lVar3+0xf)                                     next='&'          not-a-type-name
+L2430  CAST (long)                                                         next='ppcVar18'   
+L2434  no   (DAT_0012b3d5!='\0')                                           next='{'          succ='{';not-a-type-name
+L2435  CAST (undefined8*)                                                  next='('          
+L2435  no   ((long)ppcVar19+-8)                                            next='='          succ='=';not-a-type-name
+L2435  CAST (long)                                                         next='ppcVar19'   
+L2436  no   (pcVar17,2)                                                    next=';'          pred='FUN_0011101b';succ=';';not-a-type-name
+L2438  no   (local_380[2]==0)                                              next='{'          succ='{';not-a-type-name
+L2439  CAST (undefined8*)                                                  next='('          
+L2439  no   ((long)ppcVar19+-8)                                            next='='          succ='=';not-a-type-name
+L2439  CAST (long)                                                         next='ppcVar19'   
+L2440  no   ("error canonicalizing %s")                                    next=';'          pred='gettext';succ=';';not-a-type-name
+L2443  CAST (undefined8*)                                                  next='('          
+L2443  no   ((long)ppcVar19+-8)                                            next='='          succ='=';not-a-type-name
+L2443  CAST (long)                                                         next='ppcVar19'   
+L2444  no   (cVar7,uVar14,pcVar17)                                         next=';'          pred='FUN_00108de7';succ=';';not-a-type-name
+L2448  no   (DAT_0012b3ec<4)                                               next='{'          succ='{';not-a-type-name
+L2449  no   ((DAT_0012b3ec<2)||(local_3d8=='\0'))                          next='goto'       not-a-type-name
+L2449  no   (DAT_0012b3ec<2)                                               next='||'         succ='||';not-a-type-name
+L2449  no   (local_3d8=='\0')                                              next=')'          succ=')';not-a-type-name
+L2451  CAST (undefined8*)                                                  next='('          
+L2451  no   ((long)ppcVar19+-8)                                            next='='          succ='=';not-a-type-name
+L2451  CAST (long)                                                         next='ppcVar19'   
+L2452  no   (pcVar17,puVar1)                                               next=';'          pred='FUN_00105c0e';succ=';';not-a-type-name
+L2454  no   (DAT_0012b3ec!=2)                                              next='{'          succ='{';not-a-type-name
+L2455  no   ((int)local_3c0<0)                                             next='{'          succ='{';not-a-type-name
+L2455  CAST (int)                                                          next='local_3c0'  
+L2456  CAST (undefined8*)                                                  next='('          
+L2456  no   ((long)ppcVar19+-8)                                            next='='          succ='=';not-a-type-name
+L2456  CAST (long)                                                         next='ppcVar19'   
+L2457  no   ()                                                             next=';'          pred='__errno_location';succ=';';not-a-type-name
+L2461  no   (*(uint*)(local_380+6)&0xf000)                                 next='!='         succ='!=';not-a-type-name
+L2461  CAST (uint*)                                                        next='('          
+L2461  no   (local_380+6)                                                  next='&'          not-a-type-name
+L2463  no   ((bool)local_3c1==true)                                        next='goto'       not-a-type-name
+L2463  CAST (bool)                                                         next='local_3c1'  
+L2467  no   (DAT_0012b3ec==4)                                              next='{'          succ='{';not-a-type-name
+L2469  CAST (undefined8*)                                                  next='('          
+L2469  no   ((long)ppcVar19+-8)                                            next='='          succ='=';not-a-type-name
+L2469  CAST (long)                                                         next='ppcVar19'   
+L2470  no   (pcVar17,puVar1)                                               next=';'          pred='FUN_00105c0e';succ=';';not-a-type-name
