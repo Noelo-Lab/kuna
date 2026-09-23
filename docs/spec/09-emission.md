@@ -2135,23 +2135,42 @@ a compare against a pointer of another type. An address the function only ever
 uses through `void *` is declared at the one type it reads the storage at
 directly (`Plan::direct_type_at`), or as the unknown byte.
 
-**The declaration.** `decompile_drive.rs (extract_global_objects)` reads what the
-printer named back off it after `print_c` — the address, the name, the C
-declaration built with the structure-member declarator (`printc.rs
-(declaration_text)`), its size and whether it stood for `void` — into
-`FuncResult::globals`, which the `--jobs` wire carries like the type records.
-`decompiler/crates/kuna-console/src/project.rs (global_declarations)` turns them
-into one `extern` line per address in the `decompile-project` header, in a block
-of its own between the type definitions and the prototypes. Each function
-declares the object at the type *it* uses it at, and two can disagree: a type is
-preferred to the unknown byte, then the larger object (a record over the member
-at its start), then the declaration more functions make; the others are listed
-in a comment on the line, because a body that used one of them now passes a
-pointer of the declared type. `project.rs (names_any_type)` reads the
-declarations too, so a `struct_N` that only a global names is still redone by the
-`structsynth` convergence sweep and kept by the header's type pruning. The
-recompile prelude does not declare the directly read `dat_<addr>` names, and did
-not before; only the names this rule mints are declared.
+**The declaration.** `decompile_drive.rs (extract_global_objects)` reads back
+off the printer, after `print_c`, every address the function named and every
+piece of unnamed program data it read or wrote directly, each with the C
+declaration the structure-member declarator builds for it (`printc.rs
+(declaration_text)`), its size, and whether it stood for `void`, was a direct
+access, or is a record or union. They travel as `FuncResult::globals`, which
+the `--jobs` wire carries like the type records, and
+`decompiler/crates/kuna-console/src/project.rs (global_declarations)` turns
+them into one `extern` line per named address in the `decompile-project`
+header, in a block of its own between the type definitions and the
+prototypes. The header can hold one declaration per address, and every
+function declares the object at the type *it* uses it at, so the choice is
+constrained by what the declaration does to the other functions: it is what
+every direct `dat_<addr>` read and write compiles against, and a scalar of
+another type than theirs would silently change what they compute — a signed
+compare turned unsigned, a store truncated — where a pointer of the wrong
+type in a body that takes the address is a diagnosed mismatch. So a record or
+union some function takes the address of wins, the larger first (a scalar
+access of it does not compile at all); otherwise the one type the direct
+accesses agree on; otherwise, when the program reads the address directly at
+two types, nothing is declared and a comment says why; and with no direct
+access, a type is preferred to the unknown byte a `void *` use stands for,
+then the larger object, then the declaration more functions make. Every other
+type is listed in a comment on the line. Over the 45 exports of the cast
+corpus that is 891 declarations, 173 of them with such a comment and 60
+addresses left undeclared; `gcc -fsyntax-only` reports 36,471 errors against
+36,648 without the option, because direct reads of a now-declared name
+compile, and 15,348 warnings against 14,962, the difference being the
+incompatible-pointer warnings of those 173 addresses and pre-existing
+diagnostics a declared name lets the compiler reach. An array is not a record
+for this purpose: it decays to a pointer, so a scalar compare against it
+compiles to something else. `project.rs (names_any_type)` reads the
+declarations too, so a `struct_N` that only a global names is still redone by
+the `structsynth` convergence sweep and kept by the header's type pruning.
+The directly read `dat_<addr>` names are still not declared on their own
+account; only an address some function takes is.
 
 **The value is the binary's.** `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
 (a_constant_address_named_as_a_global_round_trips_through_the_printed_c)`

@@ -2431,8 +2431,9 @@ binary and attempt recompilation:
   `extern` declaration for every global the `.c` names by address (`&dat_2b080`, from
   `option globalref`) at the type the code uses it at, and one prototype per decompiled
   function, token-identical to the `.c` definition line. A global two functions use at
-  two types is declared once, the larger object winning, with the other types listed in
-  a comment on its line.
+  two types is declared once, never as a scalar that disagrees with a direct `dat_<addr>`
+  read or write elsewhere in the program (a record wins; direct accesses at two types
+  leave it undeclared), with the other types listed in a comment on its line.
   These are recovered signatures, not source-language declarations invented by the
   exporter. In particular, a `main` whose return register is not recovered can appear
   as `void main(void)`, which strict C compilers reject because `main` is a reserved
