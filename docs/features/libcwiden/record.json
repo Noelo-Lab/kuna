@@ -531,5 +531,25 @@
   "check-spec": "OK lenient and strict",
   "docs/options.md": "byte-fresh (regenerated, git diff empty)",
   "corpus file count": "334 (main's 332 plus this PR's two stage tests)"
+ },
+ "speed_on_the_rebased_base": {
+  "base": "origin/main 9e07ab931 (the PR's base, i.e. after #711 calleevote), built in a throwaway worktree; arm `new` is this branch's release build.",
+  "method": "scripts-free interleaved min-of-15, `kuna decompile-all <bin> --json --max-fn-seconds 120`, -O2 stripped coreutils fmt/ls/sort and bash; the box carried 13-27 load average throughout, so read the min, not the median.",
+  "delta_min_pct": {
+   "fmt": 0.75,
+   "ls": -1.21,
+   "sort": -0.62,
+   "bash": 1.48
+  },
+  "delta_median_pct": {
+   "fmt": -1.78,
+   "ls": 2.77,
+   "sort": 4.55,
+   "bash": 5.71
+  },
+  "worst_min_pct": 1.48,
+  "budget": "+5%; worst is bash at +1.48%.",
+  "samples": "docs/features/libcwiden/speed-rebased.json",
+  "note": "The earlier docs/features/libcwiden/speed.json was measured against 31ac2b26e, before the rebase; it is kept for the record (worst +3.01% on fmt)."
  }
 }
