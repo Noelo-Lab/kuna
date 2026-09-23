@@ -134,7 +134,7 @@
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "byte-fresh from `kuna catalog --markdown`",
-  "make rust-test": "see default_decision/notes -- first run RC=2 on two sites this change owns (the live-value allowlist and the embedded docs/options.md), both fixed and re-run"
+  "make rust-test": "RUST_TEST_RC=0, 0 FAILED test-result blocks (lane script, env -u KUNA_DECOMP_TEST). The first run was RC=2 on two sites this change owns -- the live-value allowlist in kuna_phases/tests.rs and the docs/options.md kuna-cli embeds -- both fixed before the second run."
  },
  "counters": "settables 227 -> 228; kuna-catalog.xml #7 structure-recovery 31 -> 32; phases-tests catalog-json-records 226 -> 227; catalog_bytecompat fixture recaptured; tests/stages corpus file count 331 -> 332; docs/baseline-stages.json re-recorded (+6 assertions, nothing moved)",
  "base": "31ac2b26e",
