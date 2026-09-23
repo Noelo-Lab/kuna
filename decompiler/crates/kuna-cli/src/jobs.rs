@@ -721,7 +721,7 @@ impl ResultWriter {
             put_str(&mut body, &g.name);
             put_str(&mut body, &g.declaration);
             body.extend_from_slice(&g.size.to_le_bytes());
-            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1);
+            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2);
         }
         put_u64s(&mut body, &r.callee_hints);
         match &r.synth {
@@ -846,6 +846,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             size: gsize,
             unknown: bits & 1 != 0,
             direct: bits & 2 != 0,
+            aggregate: bits & 4 != 0,
         });
     }
     let callee_hints = r.u64s()?;

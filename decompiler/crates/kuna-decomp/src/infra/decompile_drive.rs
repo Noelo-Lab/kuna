@@ -1811,6 +1811,10 @@ pub struct GlobalInfo {
     /// True for storage the body reads or writes directly rather than takes the
     /// address of; its declaration is the type it is accessed at.
     pub direct: bool,
+    /// True when the declared type is a record or union: a scalar read or write
+    /// of the name does not compile against it. (An array decays to a pointer,
+    /// so a scalar compare against one would compile to something else.)
+    pub aggregate: bool,
 }
 
 /// The globals the C `print_c` just rendered for `fd` names
@@ -1823,6 +1827,7 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
     let rt = crate::printc::RealTypeCtx::from_arch(arch, print.out_lang());
     let info = |address: u64, ty: &std::rc::Rc<crate::dtype::Datatype>, unknown: bool, direct: bool| {
         let name = crate::printc::global_data_name(arch, address);
+        use crate::dtype::type_metatype::{TYPE_STRUCT, TYPE_UNION};
         GlobalInfo {
             address,
             declaration: crate::printc::declaration_text(ty, &name, rt),
@@ -1830,6 +1835,7 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
             name,
             unknown,
             direct,
+            aggregate: matches!(ty.get_metatype(), TYPE_STRUCT | TYPE_UNION),
         }
     };
     let mut out: Vec<GlobalInfo> =

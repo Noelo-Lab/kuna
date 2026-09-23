@@ -1060,16 +1060,21 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///
 /// Each function declares the object at the type IT uses it at, so two
 /// functions can disagree, and a function that reads the same `dat_<addr>`
-/// directly reads it at the type IT printed. A direct access decides: the
-/// header's declaration is what every direct read and write compiles against,
-/// so a declaration of another type would silently change what they compute (a
+/// directly reads it at the type IT printed. The declaration is what every
+/// direct read and write compiles against, so it must never be a scalar of
+/// another type than theirs: that would silently change what they compute (a
 /// signed compare turned unsigned, a store truncated), where a pointer of the
-/// wrong type in an address-taking body is only a diagnosed mismatch. So one
-/// direct type is declared as is; two different ones declare nothing and say
-/// so. Without a direct access, a type is preferred to the unknown byte a
-/// `void *` use stands for, then the larger object (a record over the member at
-/// its start), then the declaration more functions make, then the earlier
-/// function. Every other type is listed in a comment on the line.
+/// wrong type in an address-taking body is a diagnosed mismatch. The choice:
+///
+/// * a record or union some function takes the address of, the larger one
+///   first: a scalar access of the name does not compile against it;
+/// * otherwise the one type the direct accesses agree on;
+/// * otherwise, with direct accesses at two types, nothing, and a comment says so;
+/// * with no direct access, a type over the unknown byte a `void *` use stands
+///   for, then the larger object, then the declaration more functions make,
+///   then the earlier function.
+///
+/// Every other type is listed in a comment on the line.
 fn global_declarations(results: &[FuncResult]) -> String {
     let mut by_addr: BTreeMap<u64, (Vec<&GlobalInfo>, Vec<&GlobalInfo>)> = BTreeMap::new();
     for g in results.iter().flat_map(|r| r.globals.iter()) {
@@ -1089,23 +1094,19 @@ fn global_declarations(results: &[FuncResult]) -> String {
                 None => decls.push((g, 1)),
             }
         }
+        let best = |pool: &mut dyn Iterator<Item = &(&GlobalInfo, usize)>| -> Option<String> {
+            pool.max_by(|(a, an), (b, bn)| (!a.unknown, a.size, *an).cmp(&(!b.unknown, b.size, *bn)).then(std::cmp::Ordering::Greater))
+                .map(|(g, _)| g.declaration.clone())
+        };
         let mut direct_decls: Vec<&str> = direct.iter().map(|g| g.declaration.as_str()).collect();
-        direct_decls.dedup();
         direct_decls.sort_unstable();
         direct_decls.dedup();
-        let chosen: &str = match direct_decls.as_slice() {
-            [] => {
-                let mut best = 0;
-                for (i, (g, n)) in decls.iter().enumerate() {
-                    let (b, bn) = decls[best];
-                    if (!g.unknown, g.size, *n) > (!b.unknown, b.size, bn) {
-                        best = i;
-                    }
-                }
-                &decls[best].0.declaration
-            }
-            [one] => one,
-            _ => {
+        let record = best(&mut decls.iter().filter(|(g, _)| !g.direct && g.aggregate));
+        let chosen = match (record, direct_decls.as_slice()) {
+            (Some(r), _) => r,
+            (None, [one]) => one.to_string(),
+            (None, []) => best(&mut decls.iter()).unwrap_or_default(),
+            (None, _) => {
                 let all: Vec<String> = decls.iter().map(|(g, _)| quote(&g.declaration)).collect();
                 let _ = writeln!(out, "/* {} is read at two types, so it is not declared: {} */", taken[0].name, all.join(", "));
                 continue;
