@@ -264,3 +264,51 @@ fn off_mints_a_record_per_reader() {
     assert_eq!(claimed(&b), vec![0, 8]);
     assert!(ledger::superseded_names(&f).is_empty());
 }
+
+/// The limit, pinned: agreement is a shape, not an identity. `struct Job {char
+/// *name; long n; long deadline; char *tag;}` and `struct Conn {char *host; long
+/// n; int port; long unused;}` are different records, but a reader of each that
+/// skips one member measures the SAME two claim sets as the two readers of one
+/// record above -- `{0: char *, 8: long, 0x18: char *}` and `{0: char *, 8:
+/// long, 0x10: int}` -- so the union is minted here too, and each reader ends up
+/// declaring a field its own object does not have. Two shared claims one of
+/// which is a pointer is where the floor sits, and 19 of the 63 merges measured
+/// over sixteen real builds fire there;
+/// `docs/features/structmerge/default-on-evaluation.md`
+/// prices the class (189 of 1,105 added fields are not DWARF fields), and it is
+/// why the option ships `off`.
+#[test]
+fn two_records_that_begin_alike_are_fused_at_the_agreement_floor() {
+    let f = core_factory();
+    let (int4t, int8t, cp) = (
+        f.get_base(4, type_metatype::TYPE_INT).unwrap(),
+        f.get_base(8, type_metatype::TYPE_INT).unwrap(),
+        charptr(&f),
+    );
+    // A reader of `Job` that never touches `deadline`.
+    let job = vec![
+        TypeField::new(0, 0, "field_0x0", Rc::clone(&cp)),
+        TypeField::new(1, 8, "field_0x8", Rc::clone(&int8t)),
+        filler(&f, 2, 0x10, 8),
+        TypeField::new(3, 0x18, "field_0x18", Rc::clone(&cp)),
+    ];
+    // A reader of `Conn` that never touches `unused`.
+    let conn = vec![
+        TypeField::new(0, 0, "field_0x0", Rc::clone(&cp)),
+        TypeField::new(1, 8, "field_0x8", Rc::clone(&int8t)),
+        TypeField::new(2, 0x10, "field_0x10", Rc::clone(&int4t)),
+        filler(&f, 3, 0x14, 4),
+    ];
+    let a = ledger::lookup_or_mint(&f, job, 0x20, &[], &[], ON).unwrap();
+    let union = ledger::lookup_or_mint(&f, conn, 0x18, &[], &[], ON).unwrap();
+    assert_eq!(
+        claimed(&union),
+        vec![0, 8, 0x10, 0x18],
+        "the two share `char *` at 0 and `long` at 8, which clears the floor"
+    );
+    assert_eq!(
+        ledger::superseded_names(&f),
+        vec![a.get_name().to_string()],
+        "the Job reader is moved onto a record carrying Conn's `port` as well"
+    );
+}

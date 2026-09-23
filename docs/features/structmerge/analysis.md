@@ -151,6 +151,36 @@ it buys nothing for a rule that is harder to state.
 
 ## Limits
 
+* **Agreement is a shape, not an identity.** At the floor -- two shared claims
+  one of which is a pointer -- the agreement is `{0: char *, 8: long}`, how a
+  large share of C records begin, so two readers of two DIFFERENT records of that
+  shape are merged and each is then declared to hold a field its own object does
+  not have. `two_records.c` below is a five-line witness: its two readers measure
+  the same claim sets as the two readers of ONE record in the repro at the top of
+  this file, so nothing in the rule can separate the cases.
+
+  ```c
+  struct Job {char *name; long n; long deadline; char *tag;};
+  struct Conn {char *host; long n; int port; long unused;};
+  long use_job(struct Job*j){return *j->name+j->n+*j->tag;}
+  long use_conn(struct Conn*c){return *c->host+c->n+c->port;}
+  int main(int c,char**v){struct Job j={v[0],c,c,v[0]};struct Conn n={v[0],c,c,c};return use_job(&j)+use_conn(&n);}
+  ```
+
+  `gcc -O1`, stripped, `--option structsynth param`: `off` gives
+  `struct_0{char*;long;char[8];char*@0x18}` and `struct_1{char*;long;int@0x10;char[4]}`,
+  one per reader; `siblings` gives both readers the union
+  `struct_1{char*;long;int@0x10;char[4];char*@0x18}`, so the `Job` reader gains
+  `Conn`'s `port` and the `Conn` reader gains `Job`'s `tag`. Pinned as
+  `kuna_structmerge::tests
+  two_records_that_begin_alike_are_fused_at_the_agreement_floor`.
+
+  The floor is where a large share of real merges sit, not a corner:
+  `KUNA_STRUCTMERGE_TRACE=1` over sixteen builds (coreutils `fmt`/`ls`/`sort`/`du`,
+  `grep`, `diff`, `gzip`, `find` at -O0 and -O2) records 63 merges, **19 at two
+  shared claims**, 38 at three, 6 at four. Priced over 177 builds: 189 of the
+  1,105 added fields are not DWARF fields, pooled precision 0.9330 -> 0.9312.
+  This is the reason the option ships `off`.
 * The merge is a property of one process's ledger. `kuna decompile` numbers each
   function's records from `struct_0` again, and a `--jobs N` worker answers
   through the shard replay, which records the layout each request measured and so

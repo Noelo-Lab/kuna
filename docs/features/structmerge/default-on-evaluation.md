@@ -35,7 +35,7 @@ and the evidence for flipping it is in `analysis.md` for whoever wants to.
 | (e) interleaved min-of-15 on `fmt`, `ls`, `sort` and `bash` at -O2 | +0.91%, -4.08%, -0.42%, +0.32%; worst +0.91% against a +5% budget |
 | (f) whole-corpus `decompile-all` before/after, ten binaries | 92 of 4,904 functions change; 91 are the record rename the option is for, 1 is a field respelling, 0 skeleton deltas, 0 declaration-count deltas, nothing unclassified (`hunks.md`) |
 | (g) `p0_knowledge/modes.rs` | nothing to do: the preset-membership test covers `on|off` options with a shipped default of `off`, and `structmerge` is `off|siblings`, exactly as `structsynth` is |
-| record identity | 567 absorptions over 177 builds; 31 confirmed on the same DWARF record, **0 on a different one** |
+| record identity | 567 absorptions over 177 builds; 31 confirmed on the same DWARF record, 0 on a different one, **536 uncheckable** (the union is a shape neither reader had on the off arm) |
 
 (a) `make test`, (b) `make test-stages` and (c) `make test-cli` were not re-run
 with the default flipped, because the deciding criterion above already fails. The
@@ -45,7 +45,14 @@ default goes.
 
 ## What would change the answer
 
-The precision trade is the growth bound, not the agreement rule. A reader is
+The false merges are real and are not rare: at the agreement floor -- two shared
+claims one of which is a pointer -- two records that merely begin `{char *; long}`
+are indistinguishable (`analysis.md` **Limits** has the five-line witness, and
+`kuna_structmerge::tests
+two_records_that_begin_alike_are_fused_at_the_agreement_floor` pins it), and 19 of
+the 63 merges traced over sixteen builds clear the bar exactly there.
+
+The precision trade is the growth bound as much as the agreement rule. A reader is
 declared to hold at most twice the fields it measured, and most readers claim two
 or three, so the union is usually a third or fourth field added to a two-field
 record -- which is where a wrong one costs the most proportionally. A rule that

@@ -1474,10 +1474,27 @@ On the eight layout builds, per-parameter claimed-field precision against DWARF
 rises from 0.8713 to 0.8730 and recall from 0.0932 to 0.0960 (F1 0.1684 to
 0.1731), with seven fewer `struct_N` names covering the same records and no
 ground-truth record newly given two names
-(`docs/features/structsynth/layoutscore.py`). The option is `off` by default:
-`on` a record states what one further function proved about it, `off` it states
-exactly what its own reader measured, which is the more conservative reading and
-what every earlier round measured. `tests/stages/structmerge-siblings.xml` is the
+(`docs/features/structsynth/layoutscore.py`).
+
+Agreement is a shape, not an identity, and the option is `off` by default because
+of what that costs. At the floor -- two shared claims one of which is a pointer
+-- the agreement is `{0: char *, 8: long}`, which is how a large share of C
+records begin, so two functions reading two DIFFERENT records of that shape are
+merged and each is then declared to hold a field its own object does not have. A
+five-line C file with a `{char *; long; long; char *}` and a `{char *; long; int;
+long}`, one reader each, is a witness; the two readers measure the same pair of
+claim sets whether they share a record or not, which is the whole of the limit
+(`kuna_structmerge::tests`
+`two_records_that_begin_alike_are_fused_at_the_agreement_floor`). It is not a
+corner: 19 of the 63 merges over sixteen coreutils/grep/diffutils/gzip/findutils
+builds clear the bar at exactly that floor, 38 at three claims and 6 at four.
+Over 177 builds the merge adds 1,105 claimed fields of which 916 are real DWARF
+fields and 189 are not, so pooled claimed-field precision falls 0.9330 -> 0.9312
+while F1 rises on all eight sets
+(`docs/features/structmerge/default-on-evaluation.md`). `on` a record states what
+one further function proved about it; `off` it states exactly what its own reader
+measured, which is the more conservative reading and what every earlier round
+measured. `tests/stages/structmerge-siblings.xml` is the
 two-arm witness. Like the rest of the ledger the merge needs one process holding
 the whole program: `kuna decompile` numbers each function's records from
 `struct_0` again, and a `--jobs N` worker answers through the shard replay, which

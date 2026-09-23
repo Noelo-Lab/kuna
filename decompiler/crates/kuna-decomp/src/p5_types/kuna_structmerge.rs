@@ -60,6 +60,20 @@
 //!
 //! # Limits
 //!
+//! Agreement is a shape, not an identity, so the rule fuses records it cannot
+//! tell apart. At the floor -- two shared claims, one of them a pointer -- the
+//! agreement is `{0: char *, 8: long}`, which is how a large share of C records
+//! begin: two functions reading two DIFFERENT records of that shape are merged,
+//! and each then declares a field its own object does not have. The witness is
+//! the same claim set either way (`tests.rs`
+//! `two_records_that_begin_alike_are_fused_at_the_agreement_floor` builds it out
+//! of a `Job` and a `Conn`, the one above out of one record), and 19 of the 63
+//! merges over sixteen coreutils/grep/diffutils/gzip/findutils builds clear the
+//! bar at exactly that floor (38 clear it at three claims, 6 at four).
+//! `docs/features/structmerge/default-on-evaluation.md` prices the class: 189 of
+//! the 1,105 fields the merge adds over 177 builds are not DWARF fields, pooled
+//! precision 0.9330 -> 0.9312. That is why the option ships `off`.
+//!
 //! Only the live ledger merges. A `--jobs N` worker answers through the shard
 //! table, whose replay records the layout each request measured, so a mint of
 //! something neither side asked for has nothing to replay; a sharded run
