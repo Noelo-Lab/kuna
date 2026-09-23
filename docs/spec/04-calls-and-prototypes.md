@@ -1553,6 +1553,17 @@ This subsumes `returnpair` on the GH-6990 case it was written for (`tests/stages
 gh6990-returnpair.xml` now records both passes agreeing); the flag remains as the
 blunt per-function instrument for a pair this rule judges genuine.
 
+The same walk answers a second, stricter question for `passthrough`:
+`every_return_computes` asks it of the whole function and of a lone return
+register, where this repair cannot act, and requires *every* input of a phi or a
+`PIECE` to be computed rather than any one of them, so a value merged from one
+path that computes it and one that does not is not computed. It is what decides
+whether a callee's recovered return may be stated to its callers at all; see
+*The register a function forwards to a callee that reads it* below. It runs once
+per decompiled function and only when that option is on, as a worklist over the
+reachable move-only closure -- the recursive "every input" form revisits the same
+Varnodes exponentially on a phi-rich -O0 body.
+
 #### (kuna) The half that is an input parameter (`retinputhalf`)
 
 The "unwritten means uncomputed" terminal is too coarse in one direction: a
@@ -2418,7 +2429,7 @@ both makes them byte-identical.
 
 ### (kuna) `passthrough` — the register a function forwards to a callee that reads it
 
-(kuna) `passthrough` (default off,
+(kuna) `passthrough` (default on,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_passthrough.rs`) reads the
 statement `protoorder` makes in the one direction `types` never takes: it lets a
 callee's recovered parameter list add an argument at a call site, and so a
@@ -2542,9 +2553,23 @@ output takes the callee's recovered return type in `call_output_type_local`.
 `gzip_base_name` becomes `char * sub_d290(char *a0) { return sub_dfd0(a0); }`.
 This is the claim a declared callee already gets whenever the caller names the
 return register; its cost is a void wrapper that tail-calls a value-returning
-function, which is handed that value, and a callee whose own recovered return is
-wrong (a void function that ends by tail-calling `fprintf` is recovered
-returning `long`) passes the error up one level.
+function, which is handed that value.
+
+A callee states a return at all only where its own body computed one. `protoorder`
+passes the callee's `Funcdata` to `recovered_output`, which asks
+`kuna_returnuncomputed::every_return_computes`: each live RETURN must hand back a
+value produced in every byte and on every path -- no terminal reachable through the
+move-only operations may be an unwritten Varnode at the return register or an
+INDIRECT creation standing for a callee's clobber. The pair repair of §4.9 asks the
+relaxed form of the same question, computed if *any* input of a phi or a `PIECE` is,
+because it is choosing between two halves of a wide return and must keep a genuine
+one; a caller about to adopt the whole value needs the strict form. gnulib's `void
+version_etc_arn` ends its fallthrough path in a `__fprintf_chk` and keeps that
+call's `RAX` clobber, so kuna recovers it as returning `long`; the relaxed question
+calls the `CONCAT44(<leftover>, __fprintf_chk(...))` it returns computed and the
+strict one does not. Without the gate every `version_etc_ar` wrapper inherited that
+wrong return: 212 of 4,267 gained returns over 444 decbench slices, against 5 with
+it (`docs/features/passthrough/dwarf-confirmation.md`).
 
 Nothing is added where a callee stated nothing: a single-function `kuna
 decompile`, a narrowed or sharded `decompile-all`, an import, `--option
@@ -2559,6 +2584,17 @@ clobbered forward and a variadic callee as its controls, and the three shapes
 above (`noop(); twoarg(p,3)`, `vout(p); twoarg(p,3)` as a tail and as a plain
 call, and `sysinttostr`) as controls that must keep every argument the
 option-off run gives them.
+
+**Default.** On. Every function that gains something over the 444-slice decbench
+corpus was checked against its unstripped twin's DWARF prototype: 2,730 of 2,857
+gained parameters are confirmed, 4 are contradicted (gnulib `savewd_save`, whose
+forwarded register reaches a variadic `open_safer` whose recovered list closes
+over one vararg slot) and 123 belong to 69 forwarding thunks the toolchain
+emitted with no debug entry at all; 3,986 of 4,060 gained returns are confirmed
+and 5 contradicted. No function and no call site loses an argument, and nothing
+moves at -O0, where the register is already named by an op. The evidence is
+`docs/features/passthrough/dwarf-confirmation.md`; set `off` to get upstream's
+reading back.
 
 ### (kuna) `calleevote` — the type every caller passes
 
