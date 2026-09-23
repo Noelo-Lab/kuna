@@ -998,7 +998,9 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     }
     let Some(ct) = vn_type(data, base) else { return false };
     let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct, e);
-    let headless = lone && crate::kuna_structheadless::admits(data, base);
+    let headless = lone
+        && crate::kuna_structheadless::admits(data, base)
+        && !(crate::kuna_structheadless::is_headless(e.slots.keys()) && points_past(data, &[base], e.extent()));
     accepts_record(data, &ct, e, lone, headless)
 }
 

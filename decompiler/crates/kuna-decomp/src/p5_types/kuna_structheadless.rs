@@ -24,8 +24,12 @@
 //! is zero is a record when every caller of its function is a known direct call
 //! (`Funcdata::kuna_calleevote_closed`) and nothing outside the function gave
 //! the parameter its pointee (`kuna_structsynth::pointee_is_given`). Every other
-//! condition a parameter is held to still applies. The bytes before the first
-//! access become `undefined1` filler, exactly as a hole does.
+//! condition a parameter is held to still applies, and the one `locals` adds for
+//! a partial view: no address is formed at or past the end of every access
+//! (`kuna_structsynth::points_past`), since a record typed on the accesses would
+//! spell that address as an element of a record array (`&a0[1].field_0x0[0x14]`).
+//! The bytes before the first access become `undefined1` filler, exactly as a
+//! hole does.
 //!
 //! # Why a closed function
 //!
@@ -100,15 +104,16 @@ pub(crate) fn admits(data: &Funcdata, base: VarnodeId) -> bool {
         && data.vbank().get(base).is_some_and(|v| v.is_input())
 }
 
-/// Does a declared call in `family` -- one that returns the value or takes it --
-/// name the record the value points at, while `vote` is a callee's synthesized
-/// record?  The declaration then outranks the recovery at the call site: `newgrp`
+/// Does a declared call in `vn`'s value family -- one that returns the value or
+/// takes it -- name the record the value points at, while `vote` is a callee's
+/// synthesized record?  The declaration then outranks the recovery at the call site: `newgrp`
 /// holds `getgrnam`'s `struct group *` and hands it to a function that reads the
 /// group past its start, whose own record would otherwise retype the variable.
-pub(crate) fn yields_to_a_declared_record(data: &Funcdata, family: &[VarnodeId], vote: &Datatype) -> bool {
+pub(crate) fn yields_to_a_declared_record(data: &Funcdata, vn: VarnodeId, vote: &Datatype) -> bool {
     if !data.get_arch().struct_headless.fires() || !crate::kuna_structsynth::points_at_synthesized_record(vote) {
         return false;
     }
+    let family = crate::kuna_protoorder::value_family(data, vn);
     let names_a_record = |t: &Datatype| {
         crate::kuna_structsynth::points_at_named_composite(t) && !crate::kuna_structsynth::points_at_synthesized_record(t)
     };
