@@ -4164,6 +4164,121 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
     }
 }
 
+/// (kuna `castimplied`) A cast C's own conversion already performs is left out,
+/// and a cast that changes the value stays.  The fixture widens values into libc
+/// arguments, into variables of the wider type, out through `return`, and under
+/// another conversion; its last functions change the value (a sign change under
+/// a widening, a varargs argument) or pass a type C would convert differently.
+/// The round trip compiles the printed functions, option off and on, with gcc
+/// and clang, and checks every build prints what the original binary prints.
+#[test]
+fn an_implied_cast_round_trips_through_the_printed_c() {
+    const FUNCS: &str = "arg_memchr,arg_toupper,arg_strchr,asg_char,asg_uint,asg_short,asg_uchar,\
+                         ret_int,ret_uint,ret_char,ret_less,to_uchar,lookup,keep_inner,keep_inner2,\
+                         keep_size,keep_vararg";
+    const WANT: &str = "2 2 -1 82 251 1\n1648 936 1300 50\n-7 4294967280 -100 1 0\n-89 27\n\
+                        2147483645 -2 2147483647 1\n-42\n";
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+int main(void) {
+  static const char neg[] = {-5, 7, -40, 3};
+  static const unsigned int big[] = {0xfffffff0u, 5, 0x80000001u};
+  static const short sh[] = {-300, 1300, -2};
+  static const unsigned char uc[] = {250, 3, 128};
+  char table[256];
+  for (int i = 0; i < 256; i++) table[i] = (char)(i ^ 0x5a);
+  printf("%ld %ld %ld %d %d %ld\n", F(long, arg_memchr)("ab\xfb" "c", -5, 4),
+         F(long, arg_memchr)("abc", 'c', 3), F(long, arg_memchr)("abc", 'z', 3),
+         F(int, arg_toupper)('q'), F(int, arg_toupper)(250), F(long, arg_strchr)("x\xfey", -2));
+  printf("%ld %ld %d %d\n", F(long, asg_char)(neg, 4), F(long, asg_uint)(big, 3),
+         F(int, asg_short)(sh, 3), F(int, asg_uchar)(uc, 3));
+  printf("%ld %lu %d %d %d\n", F(long, ret_int)(-7), (unsigned long)F(unsigned int, ret_uint)(0xfffffff0u),
+         F(int, ret_char)(-100), (int)F(_Bool, ret_less)(-1, 1), (int)F(_Bool, ret_less)(2, 1));
+  printf("%d %d\n", F(char, lookup)(table, -3), F(char, lookup)(table, 'A'));
+  unsigned int half;
+  long k2 = F(long, keep_inner2)(0xfffffffeu, &half);
+  printf("%ld %ld %u %ld\n", F(long, keep_inner)(0xfffffffeu), k2, half, F(long, keep_size)("abc", 'b', 3));
+  F(void, keep_vararg)(-42);
+  return 0;
+}
+"#;
+    let changed: [(&str, &str); 6] = [
+        ("memchr(a0,(int)a1,(unsigned long)a2);", "memchr(a0,a1,a2);"),
+        ("strchr(a0,(int)a1);", "strchr(a0,a1);"),
+        ("v1 = (long)*(char *)(a0 + v2);", "v1 = *(char *)(a0 + v2);"),
+        (
+            "(int)(unsigned int)(unsigned char)to_uchar((int)a1)",
+            "(int)(unsigned char)to_uchar((int)a1)",
+        ),
+        ("long ret_int(int a0)\n{\n  return (long)a0;", "long ret_int(int a0)\n{\n  return a0;"),
+        ("*a1 = a0 >> 1;\n  return (long)(int)a0;", "*a1 = a0 >> 1;\n  return (int)a0;"),
+    ];
+    let kept: [&str; 3] = ["(long)(int)a0", "(long)a2);", "printf(\"%ld\\n\",(long)a0);"];
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .collect();
+    for fixture in ["castimplied_gcc_O0_x86_64", "castimplied_clang_O0_x86_64"] {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        for opt in ["off", "on"] {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
+                "--option", "castimplied", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("castimplied round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            for want in kept {
+                assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
+            }
+            for (off, on) in changed {
+                let want = if opt == "on" { on } else { off };
+                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+            }
+            for cc in &compilers {
+                let dir = std::env::temp_dir()
+                    .join(format!("kuna-castimplied-rt-{}-{fixture}-{opt}-{cc}", std::process::id()));
+                std::fs::create_dir_all(&dir).unwrap();
+                let src = dir.join("rt.c");
+                let exe = dir.join("rt");
+                std::fs::write(
+                    &src,
+                    format!(
+                        "#include <ctype.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <string.h>\n\
+                         {stdout}\n{MAIN}"
+                    ),
+                )
+                .unwrap();
+                let out = Command::new(cc)
+                    .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .output()
+                    .expect("spawn the C compiler");
+                assert!(
+                    out.status.success(),
+                    "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                let run = Command::new(&exe).output().expect("run the round trip");
+                let _ = std::fs::remove_dir_all(&dir);
+                assert_eq!(
+                    String::from_utf8_lossy(&run.stdout),
+                    WANT,
+                    "{fixture} printed with option {opt} and built by {cc} computes a different value:\n{stdout}"
+                );
+            }
+        }
+    }
+}
+
 /// A call whose result meets a comparison through a non-short-circuit `&` is
 /// always made by the binary.  `foldcallret` used to fold it into the right-hand
 /// operand of the `&&`/`||` the printer emits, `if (a0 <= 5 || tick(a0))`, so

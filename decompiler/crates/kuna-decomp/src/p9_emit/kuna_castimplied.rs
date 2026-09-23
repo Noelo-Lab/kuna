@@ -62,8 +62,10 @@
 //! C even when the IR types the loaded value `unsigned char`.  So the operand's
 //! type is only taken as known when the printed text states it: a variable (its
 //! declaration), a cast that stays (its target), a conversion this rule leaves
-//! out (its own operand's type, which it preserves), and a truncation printed as
-//! a cast.  Anything else is unknown, and an unknown operand never lets a
+//! out (its own operand's type, which it preserves), a truncation printed as a
+//! cast, and a load `*(T *)p` through a pointer printed with that cast or
+//! declared `T *`.  An implied `COPY` prints as its operand, so it is looked
+//! through.  Anything else is unknown, and an unknown operand never lets a
 //! conversion below the top go.  For the top, an unknown operand falls back to
 //! the IR type to judge "widening", which is safe because the destination then
 //! performs the very same conversion the cast did.
@@ -155,7 +157,9 @@ impl ImpliedCasts {
         if !self.enabled {
             return false;
         }
-        let below = read_op.is_some_and(|r| fixes_type(p, fd, r));
+        let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) else { return false };
+        let (reader, _) = through_copies(fd, read_op, out);
+        let below = reader.is_some_and(|r| fixes_type(p, fd, r));
         self.decide(p, fd, op, read_op, below)
     }
 
@@ -203,7 +207,8 @@ impl ImpliedCasts {
         if !preserves(src.as_ref().unwrap_or(&ir_src), &target) {
             return false;
         }
-        match read_op {
+        let (reader, value) = through_copies(fd, read_op, outvn);
+        match reader {
             None => {
                 p.is_statement(op)
                     && self.declared_spelling(p, fd, outvn).as_deref() == Some(want.as_str())
@@ -211,10 +216,10 @@ impl ImpliedCasts {
             Some(r) => {
                 let Some(ro) = fd.obank().get(r) else { return false };
                 match ro.code() {
-                    OpCode::CPUI_CALL => trusted_param(fd, r, outvn)
+                    OpCode::CPUI_CALL => trusted_param(fd, r, value)
                         .is_some_and(|t| p.spell(&t) == want),
                     OpCode::CPUI_RETURN => {
-                        ro.get_slot(outvn) == 1 && self.ret.as_deref() == Some(want.as_str())
+                        ro.get_slot(value) == 1 && self.ret.as_deref() == Some(want.as_str())
                     }
                     OpCode::CPUI_COPY => p.is_statement(r) && ro.get_out().is_some_and(|lhs| {
                         fd.vbank().get(lhs).is_some_and(|v| v.is_explicit())
@@ -268,6 +273,24 @@ impl ImpliedCasts {
                 int_range(&t)?;
                 Some(t)
             }
+            OpCode::CPUI_COPY => self.operand_type(p, fd, d.get_in(0)?, def),
+            OpCode::CPUI_LOAD => {
+                int_range(&t)?;
+                let ptr = d.get_in(1)?;
+                let pv = fd.vbank().get(ptr)?;
+                let ptr_ty = if pv.is_explicit() {
+                    self.declared_type_any(p, fd, ptr, def)?
+                } else if pv.get_def().and_then(|c| fd.obank().get(c)).is_some_and(|c| c.code() == OpCode::CPUI_CAST) {
+                    pv.get_type_def_facing().clone()
+                } else {
+                    return None;
+                };
+                if ptr_ty.get_metatype() != type_metatype::TYPE_PTR {
+                    return None;
+                }
+                let pointee = ptr_ty.get_ptr_to()?;
+                (p.spell(&pointee) == p.spell(&t)).then_some(t)
+            }
             _ => None,
         }
     }
@@ -291,6 +314,21 @@ impl ImpliedCasts {
         self.params.get(&name).cloned()
     }
 
+    /// The type an explicit `vn` is declared with, of any kind.
+    fn declared_type_any(
+        &self,
+        p: &dyn PrintedForms,
+        fd: &Funcdata,
+        vn: VarnodeId,
+        reader: OpId,
+    ) -> Option<Rc<Datatype>> {
+        let spelling = self.declared_spelling(p, fd, vn)?;
+        let v = fd.vbank().get(vn)?;
+        [v.get_type_read_facing(reader).clone(), v.get_type().clone()]
+            .into_iter()
+            .find(|t| p.spell(t) == spelling)
+    }
+
     /// The type an explicit `vn` is declared with, as one of the types kuna
     /// holds for it whose spelling is the declaration's.
     fn declared_type(
@@ -312,6 +350,34 @@ impl ImpliedCasts {
         .flatten()
         .find(|t| int_range(t).is_some() && p.spell(t) == spelling)
     }
+}
+
+/// The op that reads the value `vn` carries once `read_op` is known, looking
+/// through implied `COPY`s (which print as their operand), with the varnode that
+/// op reads it as.
+fn through_copies(fd: &Funcdata, read_op: Option<OpId>, vn: VarnodeId) -> (Option<OpId>, VarnodeId) {
+    let (mut reader, mut value) = (read_op, vn);
+    for _ in 0..8 {
+        let Some(r) = reader else { break };
+        let Some(ro) = fd.obank().get(r) else { break };
+        if ro.code() != OpCode::CPUI_COPY {
+            break;
+        }
+        let Some(out) = ro.get_out() else { break };
+        let Some(ov) = fd.vbank().get(out) else { break };
+        if ov.is_explicit() {
+            break;
+        }
+        let mut it = ov.descend_iter();
+        match (it.next(), it.next()) {
+            (Some(only), None) => {
+                reader = Some(only);
+                value = out;
+            }
+            _ => break,
+        }
+    }
+    (reader, value)
 }
 
 /// Does the conversion `r` fix the C type of whatever it reads, so a

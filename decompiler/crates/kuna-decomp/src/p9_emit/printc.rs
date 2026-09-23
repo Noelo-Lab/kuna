@@ -6162,7 +6162,7 @@ impl PrintC {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
             } else if self.implied_cast_drops(fd, arch, op, read_op) {
-                self.op_hidden_func_ir(fd, arch, op);
+                self.op_type_cast_ir_with(fd, arch, op, true);
             } else {
                 self.op_type_cast_ir(fd, arch, op);
             }
@@ -6193,7 +6193,7 @@ impl PrintC {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
             } else if self.implied_cast_drops(fd, arch, op, read_op) {
-                self.op_hidden_func_ir(fd, arch, op);
+                self.op_type_cast_ir_with(fd, arch, op, true);
             } else {
                 self.op_type_cast_ir(fd, arch, op);
             }
