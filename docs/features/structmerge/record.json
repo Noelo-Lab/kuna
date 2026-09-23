@@ -125,7 +125,7 @@
   "unclassified": 0,
   "the_one_respelling": "grep -O2 sub_7110: the record gains a long member where it had undefined1 filler, so `v1 = a0->field_0x20` (an array member decaying to its address) becomes `v1 = &a0->field_0x20`, the same address with the pointer typed by the member"
  },
- "jobs": "a --jobs N worker answers through the shard replay, which records the layout each request measured, so it never merges and a sharded run behaves as off -- the same divergence structsynth already has",
+ "jobs": "a --jobs N worker answers through the shard replay, which records the layout each request measured, so it never merges and a sharded run behaves as off -- the same divergence structsynth already has. Verified: coreutils fmt -O2 with --jobs 2 is byte-identical with the option off and with siblings.",
  "gates": {},
  "counters": "settables 227 -> 228; kuna-catalog.xml #7 structure-recovery 31 -> 32; phases-tests catalog-json-records 226 -> 227; catalog_bytecompat fixture recaptured; tests/stages corpus file count 331 -> 332; docs/baseline-stages.json re-recorded (+6 assertions, nothing moved)",
  "base": "31ac2b26e",
