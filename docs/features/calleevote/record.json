@@ -755,6 +755,103 @@
     "off": 1522
    },
    "why_not_an_oracle": "Skipping only the redos that change nothing would leave kmod at about +8.5% and crontab at +9.0%: 20 of kmod's 58 redos are wasted but they are 147 of its 571 ms, and crontab's whole cost is one 189-line redo that does change its body."
+  },
+  "round_6": {
+   "what": "The flat 32-line refusal on the redo became a budget: the pass may reprint CALLEE_VOTE_BUDGET_PCT (5) percent of the lines the first pass printed, one budget for all three rounds, admitted shortest first (ties to the lower address), and a function printing at most CALLEE_VOTE_MAX_LINES (32) lines is admitted even once that is spent. A function the budget cannot reach is declined for the run (Ledger::decline: own + stated removed, so no later round proposes it and the convergence sweep has nothing to apply).",
+   "why_not_incremental": "A redo costs exactly what the first decompile of the same function cost -- median ratio 1.01 over kmod -O2-noinline's 55 redos (range 0.97-1.05) -- so there is no overhead of its own to remove. Of a redo, 12.3% is the flow follow and 58.5% is the action pipeline before the first effective ActionInferTypes (it is inert until ActionStartTypes, which runs in fullloop after a whole mainloop), so 70.8% is work the vote provably cannot change. Re-running 'only type propagation and the emit tier' is not available either: ActionInferTypes sits inside the repeating mainloop and the pools that rewrite ops from the types it decides (ptrarith, ptrsubundo, structoffset0, structsynth) run after it in the same iteration. Reusing that 70.8% means checkpointing the Funcdata where ActionStartTypes first fires and re-entering the action tree at a position -- a pipeline-substrate change (Funcdata deep copy + positional re-entry), PROPOSAL-class, and the one lever that would make an unbounded redo affordable (kmod 10.5% -> about 3%).",
+   "instrument": "The redo pass is one call in decompile_callee_first, so its cost is read off a single run (its ms over the run's wall clock) instead of differenced from two whole-binary wall times, which on this box is noisier than the effect (round 5 measured the same kmod build +9.4% by min-of-15 and +2.3% by median). KUNA_CALLEEVOTE_TRACE=1 also prints the pass's deterministic line spend.",
+   "redo_pass_share_of_a_run": {
+    "flat_32_bound": {
+     "kmod_O2-noinline": 3.4,
+     "check_subid_range_O0": 3.7,
+     "dpkg-divert_O2": 2.0,
+     "cmp_O0": 1.3,
+     "mv_O0": 1.0,
+     "fmt_O2": 0.2,
+     "ls_O2": 0.2,
+     "sort_O2": 0.2,
+     "bash_O2": 0.1,
+     "crontab_O2-noinline": 0.0
+    },
+    "unbounded": {
+     "mv_O0": 30.1,
+     "kmod_O2-noinline": 10.5,
+     "check_subid_range_O0": 9.2,
+     "dpkg-divert_O2": 7.3,
+     "cmp_O0": 6.9,
+     "stty_O2": 7.0,
+     "factor_O0": 5.6,
+     "fmt_O2": 0.4,
+     "crontab_O2-noinline": 0.0
+    },
+    "note": "percent of the whole `kuna decompile-all --json` wall clock; the flat-bound column is what shipped in #711, so the option was already inside the project's +5% on every one of them and the round-G +5.54%/+5.92% were wall-difference noise"
+   },
+   "line_spend_shipped": {
+    "kmod_O2-noinline": "708 of 13,366 printed (5.3%), 40 redos (36 under the flat bound)",
+    "fmt_O2": "96 of 3,718 (2.6%), 4 redos (3)",
+    "check_subid_range_O0": "165 of 2,702 (6.1% -- its short functions alone are over the budget, which is today's behaviour), 8 redos (7)"
+   },
+   "typesweep_444_slices": {
+    "surface": "typesweep --baseline-only over the campaign's 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), decbench pinned at 625e892, four builds of this tree differing only in CALLEE_VOTE_BUDGET_PCT",
+    "budget_0_equals_todays_flat_bound": {
+     "perfect": 1609,
+     "pct": 14.97,
+     "mean": 0.3688
+    },
+    "budget_5_shipped": {
+     "perfect": 1615,
+     "pct": 15.03,
+     "mean": 0.3697,
+     "improved": 69,
+     "worse": 0
+    },
+    "unbounded": {
+     "perfect": 1618,
+     "pct": 15.05,
+     "mean": 0.3699,
+     "improved": 88,
+     "worse": 0
+    },
+    "flat_extra_2pct_variant_not_shipped": {
+     "perfect": 1615,
+     "mean": 0.3696,
+     "improved": 47,
+     "worse": 0,
+     "why_not": "same perfect count, fewer improved, and it hands kmod the same extra percent as fmt (6.2% of kmod's lines against the shipped 5.3%)"
+    },
+    "onto_perfect_shipped": [
+     "coreutils O0 dir/ls/vdir abmon_init",
+     "coreutils O0 tail parse_obsolete_option",
+     "findutils O0 find process_leading_options",
+     "grep O0 grep grepbuf"
+    ],
+    "still_out_of_budget": [
+     "coreutils O0 dd scanargs",
+     "diffutils O0 diff3 read_diff",
+     "findutils O0 find check_path_safety"
+    ]
+   },
+   "byte_identity": "with the budget at 0 the admitted set is the old one by construction (only the short functions are admitted, and a declined statement is withdrawn before anything is decompiled); checked as well -- decompile-all --json byte-identical to the pre-change build on 12 binaries (fmt/ls/sort O2, cmp O0, kmod O2-noinline, dpkg-divert O2, crontab O2-noinline, mv/factor O0, stty O2, check_subid_range O0, pwunconv O2), and the 444-slice typesweep reproducing main's 1,609 / .3688 exactly",
+   "corpus_sweep": {
+    "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, the pre-change build against this one, both at their defaults, over the same 31 binaries the option's own sweep used (docs/features/calleevote/budget-hunks.py)",
+    "binaries": 31,
+    "changed": 57,
+    "classification": {
+     "signature-only": 23,
+     "types-and-spelling": 31,
+     "SHAPE": 3
+    },
+    "tags": {
+     "var-count": 0,
+     "error-flip": 0,
+     "char-split": 0
+    },
+    "shape_hunks_read": [
+     "O2/bash 0xdc760: a0 takes char *, so *(uint1 *)(a0 + v3) prints as a0[v2] and the two loaded bytes no longer need their own temporaries (55 -> 52 statements, 2 -> 2 variables, same memory)",
+     "O2/bash 0xf48e0: the same, a0 char * (180 -> 179 statements, 12 -> 12 variables); one `v3 = a0[v8 + 2]` fold removes the temporary the branch-flip had read twice",
+     "O2/kmod 0x9030: a0 takes char **, so the element address *(long *)((long)v6 + v7 * 8) prints as *(long *)&v6[v7 * 8] and the memmove's source temporary folds into the index (57 -> 56 statements, 17 -> 17 variables)"
+    ]
+   }
   }
  }
 }
