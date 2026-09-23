@@ -917,5 +917,151 @@
    "gates": "on 0e85c41a2: make test PARITY OK 675/675; make test-stages PARITY OK; make test-cli 237/237; check-spec OK lenient+strict; kuna catalog --check OK; counters no drift; docs/options.md byte-fresh; make rust-test (lane) RUST_TEST_RC=0, 7,467 passed / 0 failed / 38 ignored. The earlier lane's single red was embedded_docs_match_the_files_on_disk, the stale-binary artifact of reflowing docs/cli.md after that lane's compile",
    "typesweep_at_final_code": "re-run at the review-round code, same driver and pin: 1,615 perfect of 10,748 (15.03%), mean .3697 -- the same numbers the PR measured, so nothing the review changed moved a score. Per-slice counts retained this time in docs/features/calleevote/budget-sweep.json (the full per-function rows.json is 16.7 MB and stays out of the tree)"
   }
+ },
+ "landing_remeasure": {
+  "why": "origin/main gained #715 (structmerge, type-affecting) after this PR was measured on 796939d54; everything below is re-run on the rebased tree (the reviewed commits replayed on dbe854ba3, range-diff content-identical) against a build of dbe854ba3",
+  "main_build": "/home/mahaloz/kwt/castbench/bin-dbe854ba3/kuna (origin/main dbe854ba3)",
+  "typesweep_444": {
+   "surface": "444-slice campaign set, decbench 625e892 pinned (final-c/pindb.py), DECBENCH_NO_CACHE=1, both builds at their defaults",
+   "main": {
+    "n": 10748,
+    "perfect": 1609,
+    "mean": 0.3688
+   },
+   "branch": {
+    "n": 10748,
+    "perfect": 1615,
+    "mean": 0.3697
+   },
+   "onto_perfect": 6,
+   "off_perfect": 0,
+   "improved": 69,
+   "worse": 0,
+   "note": "reproduces the PR's own same-tree measurement exactly (budget 0 = 1,609 / .3688, budget 5% = 1,615 / .3697, 69 improved, 0 worse)"
+  },
+  "castbench_full": {
+   "surface": "castbench.py full set (45 binaries), functions both kuna and IDA emit at one address",
+   "shared_functions": 4815,
+   "ida": {
+    "casts": 37821,
+    "lines": 243379,
+    "per_kloc": 155.4,
+    "vs_ida": 1.0
+   },
+   "main": {
+    "casts": 45126,
+    "lines": 190590,
+    "per_kloc": 236.8,
+    "vs_ida": 1.193
+   },
+   "branch": {
+    "casts": 45039,
+    "lines": 190585,
+    "per_kloc": 236.3,
+    "vs_ida": 1.191
+   },
+   "functions_fewer_casts": [
+    20,
+    92
+   ],
+   "functions_more_casts": [
+    2,
+    5
+   ],
+   "more_cast_functions_read": [
+    "O0/grep 0x862e (+4): the PR's own witness; a0/a1 become char *, and the pointer difference a1 - v3 prints as (long)a1 - (long)v3 (twice) -- the existing pointer-difference lowering, not a new cast shape",
+    "O2/grep 0x7a20 (+1): a3 becomes char * and is stored into a long field of a record, so the store prints (long)a3"
+   ]
+  },
+  "hunks_4_binaries": {
+   "surface": "budget-hunks.py, main build vs this branch at their defaults, over O2 kmod, O2 bash, O2 dpkg-divert, O0 grep",
+   "changed": 19,
+   "classification": {
+    "signature-only": 10,
+    "SHAPE": 3,
+    "types-and-spelling": 6
+   },
+   "shape_hunks_read": "the same three the round-6 corpus sweep read (kmod 0x9030, bash 0xdc760, bash 0xf48e0), unchanged: a parameter becomes char * / char **, so byte loads print as indexing and one temporary folds; same memory, no store crossed, variable counts equal"
+  },
+  "speed": {
+   "surface": "budget-speed.py, interleaved min-of-15, main build vs this branch at their defaults, on a box running other lanes (load 20-40)",
+   "crontab_O2ni": {
+    "delta_min_pct": -2.26,
+    "delta_median_of_ratios_pct": -2.26,
+    "min_ms": [
+     1246.0,
+     1217.8
+    ]
+   },
+   "dpkgdivert_O2": {
+    "delta_min_pct": 1.68,
+    "delta_median_of_ratios_pct": 0.99,
+    "min_ms": [
+     3348.6,
+     3404.9
+    ]
+   },
+   "kmod_O2ni": {
+    "delta_min_pct": -0.67,
+    "delta_median_of_ratios_pct": -1.87,
+    "min_ms": [
+     4119.2,
+     4091.7
+    ]
+   },
+   "fmt_O2": {
+    "delta_min_pct": 4.18,
+    "delta_median_of_ratios_pct": 3.7,
+    "min_ms": [
+     4673.7,
+     4868.9
+    ]
+   },
+   "ls_O2": {
+    "delta_min_pct": -0.87,
+    "delta_median_of_ratios_pct": 3.98,
+    "min_ms": [
+     16453.3,
+     16310.1
+    ]
+   },
+   "sort_O2": {
+    "delta_min_pct": 0.43,
+    "delta_median_of_ratios_pct": -1.68,
+    "min_ms": [
+     14641.3,
+     14704.7
+    ]
+   },
+   "bash_O2": {
+    "delta_min_pct": -1.43,
+    "delta_median_of_ratios_pct": -1.96,
+    "min_ms": [
+     93562.5,
+     92222.1
+    ]
+   },
+   "fmt_O2_rerun": {
+    "delta_min_pct": 0.24,
+    "delta_median_of_ratios_pct": 0.24,
+    "min_ms": [
+     4949.9,
+     4961.9
+    ],
+    "note": "fmt's first run (+4.18%) ran at load 58; re-run alone right after the batch, its redo reprints 96 of 3,718 lines"
+   },
+   "worst_delta_min_pct_after_rerun": 1.68,
+   "within_budget": true
+  },
+  "gates": {
+   "make test": "675/675 PARITY OK",
+   "make test-stages": "1329/1329 PARITY OK; baseline re-recorded identical to origin/main's",
+   "check-spec": "OK lenient and strict",
+   "make test-cli": "237/237",
+   "kuna catalog --check": "OK",
+   "counters --check": "no drift",
+   "docs/options.md": "byte-fresh",
+   "make rust-test (lane script)": "RUST_TEST_RC=0; 7,475 passed, 0 failed, 38 ignored"
+  }
  }
 }
