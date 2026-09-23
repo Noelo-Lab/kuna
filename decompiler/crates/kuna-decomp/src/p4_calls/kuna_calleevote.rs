@@ -143,6 +143,8 @@ pub struct Ledger {
     pub stated: HashMap<(int4, uintb), Rc<CallerTypes>>,
     /// Functions whose callers are all known direct calls.
     pub closed: HashSet<(int4, uintb)>,
+    /// Function key -> the statement the body the driver kept was printed with.
+    applied: HashMap<(int4, uintb), Rc<CallerTypes>>,
 }
 
 impl Ledger {
@@ -154,8 +156,44 @@ impl Ledger {
     pub fn forget(&mut self, key: (int4, uintb)) {
         self.own.remove(&key);
         self.stated.remove(&key);
+        self.applied.remove(&key);
         for sites in self.sites.values_mut() {
             sites.retain(|s| s.caller != key.1);
+        }
+    }
+
+    /// The function at `key` was decompiled again and that body kept: remember
+    /// the statement it was printed with. The batch decompiles a function again
+    /// after the rounds are over -- the convergence sweep -- and [`seed`] hands
+    /// that decompile whatever `stated` holds, so this is what a later
+    /// [`decline`] has to put back.
+    pub fn keep(&mut self, key: (int4, uintb)) {
+        if let Some(stated) = self.stated.get(&key) {
+            let stated = Rc::clone(stated);
+            self.applied.insert(key, stated);
+        }
+    }
+
+    /// Decline to vote on the function at `key`: the driver will not decompile
+    /// it again, so no later round proposes it, while what it recorded as a
+    /// CALLER stays -- its own callees still see the call it makes, exactly as
+    /// for a function nothing was ever stated about.
+    ///
+    /// The statement just decided goes with it, since no body will be printed
+    /// with it -- but only back to the one the function's kept body WAS printed
+    /// with, where an earlier round already bought it a redo. Dropping that one
+    /// too would leave the convergence sweep printing a body without the vote
+    /// the batch's own output used.
+    pub fn decline(&mut self, key: (int4, uintb)) {
+        self.own.remove(&key);
+        match self.applied.get(&key) {
+            Some(applied) => {
+                let applied = Rc::clone(applied);
+                self.stated.insert(key, applied);
+            }
+            None => {
+                self.stated.remove(&key);
+            }
         }
     }
 }

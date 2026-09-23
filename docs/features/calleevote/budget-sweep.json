@@ -1,0 +1,2230 @@
+{
+ "what": "444-slice typesweep of the shipped default at the final review-round code (kuna decompile-all, decbench 625e892 pinned, DECBENCH_NO_CACHE=1), per slice",
+ "total": {
+  "functions": 10748,
+  "perfect": 1615,
+  "mean": 0.3697
+ },
+ "slices": {
+  "bzip2::O0::bzip2": {
+   "n": 97,
+   "perfect": 26,
+   "sum": 65.878943
+  },
+  "bzip2::O0::bzip2recover": {
+   "n": 11,
+   "perfect": 3,
+   "sum": 6.888889
+  },
+  "bzip2::O2-noinline::bzip2": {
+   "n": 94,
+   "perfect": 3,
+   "sum": 23.603185
+  },
+  "bzip2::O2-noinline::bzip2recover": {
+   "n": 9,
+   "perfect": 0,
+   "sum": 1.131579
+  },
+  "bzip2::O2::bzip2": {
+   "n": 51,
+   "perfect": 2,
+   "sum": 13.594155
+  },
+  "bzip2::O2::bzip2recover": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 0.313636
+  },
+  "coreutils::O0::[": {
+   "n": 15,
+   "perfect": 9,
+   "sum": 12.575397
+  },
+  "coreutils::O0::basename": {
+   "n": 5,
+   "perfect": 3,
+   "sum": 4.633333
+  },
+  "coreutils::O0::cat": {
+   "n": 7,
+   "perfect": 2,
+   "sum": 3.864469
+  },
+  "coreutils::O0::chcon": {
+   "n": 38,
+   "perfect": 4,
+   "sum": 11.741198
+  },
+  "coreutils::O0::chgrp": {
+   "n": 46,
+   "perfect": 8,
+   "sum": 17.419949
+  },
+  "coreutils::O0::chmod": {
+   "n": 38,
+   "perfect": 5,
+   "sum": 12.251587
+  },
+  "coreutils::O0::chown": {
+   "n": 45,
+   "perfect": 7,
+   "sum": 16.253283
+  },
+  "coreutils::O0::chroot": {
+   "n": 6,
+   "perfect": 4,
+   "sum": 5.75641
+  },
+  "coreutils::O0::cksum": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 3.734848
+  },
+  "coreutils::O0::comm": {
+   "n": 5,
+   "perfect": 1,
+   "sum": 3.1
+  },
+  "coreutils::O0::cp": {
+   "n": 96,
+   "perfect": 12,
+   "sum": 42.0641
+  },
+  "coreutils::O0::csplit": {
+   "n": 37,
+   "perfect": 10,
+   "sum": 20.636111
+  },
+  "coreutils::O0::cut": {
+   "n": 12,
+   "perfect": 6,
+   "sum": 10.623834
+  },
+  "coreutils::O0::date": {
+   "n": 6,
+   "perfect": 2,
+   "sum": 4.386667
+  },
+  "coreutils::O0::dd": {
+   "n": 44,
+   "perfect": 23,
+   "sum": 36.60094
+  },
+  "coreutils::O0::df": {
+   "n": 66,
+   "perfect": 9,
+   "sum": 25.871749
+  },
+  "coreutils::O0::dir": {
+   "n": 209,
+   "perfect": 72,
+   "sum": 106.749996
+  },
+  "coreutils::O0::dircolors": {
+   "n": 8,
+   "perfect": 3,
+   "sum": 5.248918
+  },
+  "coreutils::O0::dirname": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.857143
+  },
+  "coreutils::O0::du": {
+   "n": 45,
+   "perfect": 4,
+   "sum": 13.245312
+  },
+  "coreutils::O0::echo": {
+   "n": 3,
+   "perfect": 2,
+   "sum": 2.5
+  },
+  "coreutils::O0::env": {
+   "n": 19,
+   "perfect": 4,
+   "sum": 13.503175
+  },
+  "coreutils::O0::expand": {
+   "n": 11,
+   "perfect": 5,
+   "sum": 8.414286
+  },
+  "coreutils::O0::expr": {
+   "n": 24,
+   "perfect": 3,
+   "sum": 10.65
+  },
+  "coreutils::O0::factor": {
+   "n": 37,
+   "perfect": 6,
+   "sum": 24.985111
+  },
+  "coreutils::O0::false": {
+   "n": 2,
+   "perfect": 2,
+   "sum": 2.0
+  },
+  "coreutils::O0::fmt": {
+   "n": 20,
+   "perfect": 10,
+   "sum": 15.433333
+  },
+  "coreutils::O0::fold": {
+   "n": 4,
+   "perfect": 3,
+   "sum": 3.833333
+  },
+  "coreutils::O0::getlimits": {
+   "n": 6,
+   "perfect": 2,
+   "sum": 3.3
+  },
+  "coreutils::O0::ginstall": {
+   "n": 110,
+   "perfect": 14,
+   "sum": 51.795542
+  },
+  "coreutils::O0::groups": {
+   "n": 5,
+   "perfect": 2,
+   "sum": 4.309091
+  },
+  "coreutils::O0::head": {
+   "n": 17,
+   "perfect": 5,
+   "sum": 13.963294
+  },
+  "coreutils::O0::hostid": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.666667
+  },
+  "coreutils::O0::id": {
+   "n": 9,
+   "perfect": 5,
+   "sum": 7.766234
+  },
+  "coreutils::O0::join": {
+   "n": 25,
+   "perfect": 5,
+   "sum": 14.586508
+  },
+  "coreutils::O0::kill": {
+   "n": 6,
+   "perfect": 3,
+   "sum": 5.464286
+  },
+  "coreutils::O0::libstdbuf": {
+   "n": 3,
+   "perfect": 2,
+   "sum": 2.5
+  },
+  "coreutils::O0::link": {
+   "n": 2,
+   "perfect": 2,
+   "sum": 2.0
+  },
+  "coreutils::O0::ln": {
+   "n": 47,
+   "perfect": 7,
+   "sum": 18.969697
+  },
+  "coreutils::O0::logname": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.666667
+  },
+  "coreutils::O0::ls": {
+   "n": 209,
+   "perfect": 72,
+   "sum": 106.749996
+  },
+  "coreutils::O0::make-prime-list": {
+   "n": 6,
+   "perfect": 1,
+   "sum": 3.597619
+  },
+  "coreutils::O0::mkdir": {
+   "n": 43,
+   "perfect": 5,
+   "sum": 14.756197
+  },
+  "coreutils::O0::mkfifo": {
+   "n": 39,
+   "perfect": 5,
+   "sum": 12.896601
+  },
+  "coreutils::O0::mknod": {
+   "n": 39,
+   "perfect": 5,
+   "sum": 12.960772
+  },
+  "coreutils::O0::mktemp": {
+   "n": 5,
+   "perfect": 2,
+   "sum": 4.456522
+  },
+  "coreutils::O0::mv": {
+   "n": 105,
+   "perfect": 15,
+   "sum": 46.060882
+  },
+  "coreutils::O0::nice": {
+   "n": 3,
+   "perfect": 3,
+   "sum": 3.0
+  },
+  "coreutils::O0::nl": {
+   "n": 7,
+   "perfect": 5,
+   "sum": 5.4
+  },
+  "coreutils::O0::nohup": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.95
+  },
+  "coreutils::O0::nproc": {
+   "n": 6,
+   "perfect": 5,
+   "sum": 5.5
+  },
+  "coreutils::O0::numfmt": {
+   "n": 34,
+   "perfect": 14,
+   "sum": 22.867774
+  },
+  "coreutils::O0::od": {
+   "n": 32,
+   "perfect": 10,
+   "sum": 26.319982
+  },
+  "coreutils::O0::paste": {
+   "n": 6,
+   "perfect": 4,
+   "sum": 5.622222
+  },
+  "coreutils::O0::pathchk": {
+   "n": 7,
+   "perfect": 5,
+   "sum": 6.789855
+  },
+  "coreutils::O0::pinky": {
+   "n": 11,
+   "perfect": 5,
+   "sum": 8.820879
+  },
+  "coreutils::O0::pr": {
+   "n": 38,
+   "perfect": 13,
+   "sum": 28.047619
+  },
+  "coreutils::O0::printenv": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.818182
+  },
+  "coreutils::O0::printf": {
+   "n": 11,
+   "perfect": 4,
+   "sum": 9.015476
+  },
+  "coreutils::O0::ptx": {
+   "n": 18,
+   "perfect": 4,
+   "sum": 12.763305
+  },
+  "coreutils::O0::pwd": {
+   "n": 9,
+   "perfect": 2,
+   "sum": 5.054762
+  },
+  "coreutils::O0::readlink": {
+   "n": 34,
+   "perfect": 4,
+   "sum": 9.494444
+  },
+  "coreutils::O0::realpath": {
+   "n": 41,
+   "perfect": 7,
+   "sum": 14.577778
+  },
+  "coreutils::O0::rm": {
+   "n": 47,
+   "perfect": 8,
+   "sum": 15.950884
+  },
+  "coreutils::O0::rmdir": {
+   "n": 7,
+   "perfect": 6,
+   "sum": 6.0
+  },
+  "coreutils::O0::runcon": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.666667
+  },
+  "coreutils::O0::seq": {
+   "n": 11,
+   "perfect": 3,
+   "sum": 8.270635
+  },
+  "coreutils::O0::shred": {
+   "n": 18,
+   "perfect": 6,
+   "sum": 13.489494
+  },
+  "coreutils::O0::shuf": {
+   "n": 44,
+   "perfect": 6,
+   "sum": 16.416089
+  },
+  "coreutils::O0::sleep": {
+   "n": 3,
+   "perfect": 3,
+   "sum": 3.0
+  },
+  "coreutils::O0::sort": {
+   "n": 131,
+   "perfect": 21,
+   "sum": 60.986444
+  },
+  "coreutils::O0::split": {
+   "n": 17,
+   "perfect": 4,
+   "sum": 13.174837
+  },
+  "coreutils::O0::stat": {
+   "n": 30,
+   "perfect": 12,
+   "sum": 21.508254
+  },
+  "coreutils::O0::stdbuf": {
+   "n": 8,
+   "perfect": 4,
+   "sum": 6.833333
+  },
+  "coreutils::O0::stty": {
+   "n": 25,
+   "perfect": 7,
+   "sum": 16.779412
+  },
+  "coreutils::O0::sync": {
+   "n": 3,
+   "perfect": 3,
+   "sum": 3.0
+  },
+  "coreutils::O0::tac": {
+   "n": 9,
+   "perfect": 2,
+   "sum": 6.228175
+  },
+  "coreutils::O0::tail": {
+   "n": 68,
+   "perfect": 9,
+   "sum": 32.583947
+  },
+  "coreutils::O0::tee": {
+   "n": 3,
+   "perfect": 1,
+   "sum": 2.477273
+  },
+  "coreutils::O0::test": {
+   "n": 15,
+   "perfect": 9,
+   "sum": 12.575397
+  },
+  "coreutils::O0::timeout": {
+   "n": 13,
+   "perfect": 8,
+   "sum": 10.438095
+  },
+  "coreutils::O0::touch": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 2.727273
+  },
+  "coreutils::O0::tr": {
+   "n": 36,
+   "perfect": 5,
+   "sum": 19.90211
+  },
+  "coreutils::O0::true": {
+   "n": 2,
+   "perfect": 2,
+   "sum": 2.0
+  },
+  "coreutils::O0::truncate": {
+   "n": 3,
+   "perfect": 3,
+   "sum": 3.0
+  },
+  "coreutils::O0::tsort": {
+   "n": 11,
+   "perfect": 2,
+   "sum": 3.122222
+  },
+  "coreutils::O0::tty": {
+   "n": 2,
+   "perfect": 2,
+   "sum": 2.0
+  },
+  "coreutils::O0::uname": {
+   "n": 5,
+   "perfect": 1,
+   "sum": 3.178571
+  },
+  "coreutils::O0::unexpand": {
+   "n": 11,
+   "perfect": 6,
+   "sum": 8.533333
+  },
+  "coreutils::O0::uniq": {
+   "n": 8,
+   "perfect": 3,
+   "sum": 5.878788
+  },
+  "coreutils::O0::unlink": {
+   "n": 2,
+   "perfect": 2,
+   "sum": 2.0
+  },
+  "coreutils::O0::uptime": {
+   "n": 4,
+   "perfect": 2,
+   "sum": 3.514706
+  },
+  "coreutils::O0::users": {
+   "n": 5,
+   "perfect": 2,
+   "sum": 3.321429
+  },
+  "coreutils::O0::vdir": {
+   "n": 209,
+   "perfect": 72,
+   "sum": 106.749996
+  },
+  "coreutils::O0::wc": {
+   "n": 12,
+   "perfect": 3,
+   "sum": 9.238817
+  },
+  "coreutils::O0::who": {
+   "n": 17,
+   "perfect": 1,
+   "sum": 8.5007
+  },
+  "coreutils::O0::whoami": {
+   "n": 2,
+   "perfect": 2,
+   "sum": 2.0
+  },
+  "coreutils::O0::yes": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.769231
+  },
+  "coreutils::O2-noinline::[": {
+   "n": 15,
+   "perfect": 3,
+   "sum": 5.017857
+  },
+  "coreutils::O2-noinline::basename": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 1.908333
+  },
+  "coreutils::O2-noinline::cat": {
+   "n": 7,
+   "perfect": 0,
+   "sum": 1.348333
+  },
+  "coreutils::O2-noinline::chcon": {
+   "n": 37,
+   "perfect": 1,
+   "sum": 4.552994
+  },
+  "coreutils::O2-noinline::chgrp": {
+   "n": 44,
+   "perfect": 1,
+   "sum": 7.546248
+  },
+  "coreutils::O2-noinline::chmod": {
+   "n": 36,
+   "perfect": 2,
+   "sum": 5.570346
+  },
+  "coreutils::O2-noinline::chown": {
+   "n": 43,
+   "perfect": 1,
+   "sum": 7.074026
+  },
+  "coreutils::O2-noinline::chroot": {
+   "n": 5,
+   "perfect": 1,
+   "sum": 2.325
+  },
+  "coreutils::O2-noinline::cksum": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 1.744746
+  },
+  "coreutils::O2-noinline::comm": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 1.783333
+  },
+  "coreutils::O2-noinline::cp": {
+   "n": 89,
+   "perfect": 4,
+   "sum": 21.755845
+  },
+  "coreutils::O2-noinline::csplit": {
+   "n": 34,
+   "perfect": 3,
+   "sum": 10.172619
+  },
+  "coreutils::O2-noinline::cut": {
+   "n": 12,
+   "perfect": 4,
+   "sum": 6.123252
+  },
+  "coreutils::O2-noinline::date": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 1.908333
+  },
+  "coreutils::O2-noinline::dd": {
+   "n": 39,
+   "perfect": 5,
+   "sum": 12.348233
+  },
+  "coreutils::O2-noinline::df": {
+   "n": 63,
+   "perfect": 2,
+   "sum": 12.459661
+  },
+  "coreutils::O2-noinline::dir": {
+   "n": 195,
+   "perfect": 50,
+   "sum": 69.358849
+  },
+  "coreutils::O2-noinline::dircolors": {
+   "n": 8,
+   "perfect": 0,
+   "sum": 2.52197
+  },
+  "coreutils::O2-noinline::dirname": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.485714
+  },
+  "coreutils::O2-noinline::du": {
+   "n": 43,
+   "perfect": 1,
+   "sum": 5.691799
+  },
+  "coreutils::O2-noinline::echo": {
+   "n": 3,
+   "perfect": 1,
+   "sum": 1.431818
+  },
+  "coreutils::O2-noinline::env": {
+   "n": 18,
+   "perfect": 0,
+   "sum": 3.130159
+  },
+  "coreutils::O2-noinline::expand": {
+   "n": 11,
+   "perfect": 0,
+   "sum": 3.548413
+  },
+  "coreutils::O2-noinline::expr": {
+   "n": 24,
+   "perfect": 1,
+   "sum": 4.516026
+  },
+  "coreutils::O2-noinline::factor": {
+   "n": 36,
+   "perfect": 0,
+   "sum": 10.721108
+  },
+  "coreutils::O2-noinline::false": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.25
+  },
+  "coreutils::O2-noinline::fmt": {
+   "n": 20,
+   "perfect": 3,
+   "sum": 7.205556
+  },
+  "coreutils::O2-noinline::fold": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 1.702381
+  },
+  "coreutils::O2-noinline::getlimits": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 0.267094
+  },
+  "coreutils::O2-noinline::ginstall": {
+   "n": 103,
+   "perfect": 5,
+   "sum": 30.333352
+  },
+  "coreutils::O2-noinline::groups": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 1.195455
+  },
+  "coreutils::O2-noinline::head": {
+   "n": 17,
+   "perfect": 2,
+   "sum": 8.480949
+  },
+  "coreutils::O2-noinline::hostid": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.75
+  },
+  "coreutils::O2-noinline::id": {
+   "n": 7,
+   "perfect": 1,
+   "sum": 2.573106
+  },
+  "coreutils::O2-noinline::join": {
+   "n": 24,
+   "perfect": 1,
+   "sum": 7.250794
+  },
+  "coreutils::O2-noinline::kill": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 2.366667
+  },
+  "coreutils::O2-noinline::libstdbuf": {
+   "n": 3,
+   "perfect": 1,
+   "sum": 1.25
+  },
+  "coreutils::O2-noinline::link": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.25
+  },
+  "coreutils::O2-noinline::ln": {
+   "n": 46,
+   "perfect": 3,
+   "sum": 9.980772
+  },
+  "coreutils::O2-noinline::logname": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.916667
+  },
+  "coreutils::O2-noinline::ls": {
+   "n": 195,
+   "perfect": 50,
+   "sum": 69.358849
+  },
+  "coreutils::O2-noinline::make-prime-list": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 1.200433
+  },
+  "coreutils::O2-noinline::mkdir": {
+   "n": 42,
+   "perfect": 1,
+   "sum": 7.007287
+  },
+  "coreutils::O2-noinline::mkfifo": {
+   "n": 38,
+   "perfect": 1,
+   "sum": 5.580014
+  },
+  "coreutils::O2-noinline::mknod": {
+   "n": 38,
+   "perfect": 1,
+   "sum": 5.415182
+  },
+  "coreutils::O2-noinline::mktemp": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 2.677536
+  },
+  "coreutils::O2-noinline::mv": {
+   "n": 94,
+   "perfect": 6,
+   "sum": 22.870754
+  },
+  "coreutils::O2-noinline::nice": {
+   "n": 3,
+   "perfect": 1,
+   "sum": 1.309524
+  },
+  "coreutils::O2-noinline::nl": {
+   "n": 8,
+   "perfect": 1,
+   "sum": 1.966667
+  },
+  "coreutils::O2-noinline::nohup": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.316667
+  },
+  "coreutils::O2-noinline::nproc": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 1.069048
+  },
+  "coreutils::O2-noinline::numfmt": {
+   "n": 28,
+   "perfect": 5,
+   "sum": 9.508159
+  },
+  "coreutils::O2-noinline::od": {
+   "n": 32,
+   "perfect": 2,
+   "sum": 10.596295
+  },
+  "coreutils::O2-noinline::paste": {
+   "n": 6,
+   "perfect": 1,
+   "sum": 2.472222
+  },
+  "coreutils::O2-noinline::pathchk": {
+   "n": 7,
+   "perfect": 1,
+   "sum": 3.007576
+  },
+  "coreutils::O2-noinline::pinky": {
+   "n": 10,
+   "perfect": 0,
+   "sum": 2.932756
+  },
+  "coreutils::O2-noinline::pr": {
+   "n": 38,
+   "perfect": 4,
+   "sum": 10.769048
+  },
+  "coreutils::O2-noinline::printenv": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.381818
+  },
+  "coreutils::O2-noinline::printf": {
+   "n": 11,
+   "perfect": 3,
+   "sum": 4.952778
+  },
+  "coreutils::O2-noinline::ptx": {
+   "n": 18,
+   "perfect": 0,
+   "sum": 2.788375
+  },
+  "coreutils::O2-noinline::pwd": {
+   "n": 9,
+   "perfect": 0,
+   "sum": 2.016667
+  },
+  "coreutils::O2-noinline::readlink": {
+   "n": 33,
+   "perfect": 1,
+   "sum": 3.68254
+  },
+  "coreutils::O2-noinline::realpath": {
+   "n": 40,
+   "perfect": 2,
+   "sum": 6.613095
+  },
+  "coreutils::O2-noinline::rm": {
+   "n": 42,
+   "perfect": 3,
+   "sum": 6.55197
+  },
+  "coreutils::O2-noinline::rmdir": {
+   "n": 7,
+   "perfect": 3,
+   "sum": 3.631818
+  },
+  "coreutils::O2-noinline::runcon": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.65
+  },
+  "coreutils::O2-noinline::seq": {
+   "n": 10,
+   "perfect": 0,
+   "sum": 3.146825
+  },
+  "coreutils::O2-noinline::shred": {
+   "n": 16,
+   "perfect": 2,
+   "sum": 6.891758
+  },
+  "coreutils::O2-noinline::shuf": {
+   "n": 43,
+   "perfect": 1,
+   "sum": 7.414683
+  },
+  "coreutils::O2-noinline::sleep": {
+   "n": 3,
+   "perfect": 1,
+   "sum": 1.535714
+  },
+  "coreutils::O2-noinline::sort": {
+   "n": 122,
+   "perfect": 8,
+   "sum": 32.445968
+  },
+  "coreutils::O2-noinline::split": {
+   "n": 16,
+   "perfect": 2,
+   "sum": 7.15525
+  },
+  "coreutils::O2-noinline::stat": {
+   "n": 28,
+   "perfect": 2,
+   "sum": 11.401746
+  },
+  "coreutils::O2-noinline::stdbuf": {
+   "n": 8,
+   "perfect": 1,
+   "sum": 3.875
+  },
+  "coreutils::O2-noinline::stty": {
+   "n": 19,
+   "perfect": 2,
+   "sum": 7.533136
+  },
+  "coreutils::O2-noinline::sync": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.722222
+  },
+  "coreutils::O2-noinline::tac": {
+   "n": 8,
+   "perfect": 0,
+   "sum": 1.559524
+  },
+  "coreutils::O2-noinline::tail": {
+   "n": 62,
+   "perfect": 3,
+   "sum": 15.541105
+  },
+  "coreutils::O2-noinline::tee": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.964286
+  },
+  "coreutils::O2-noinline::test": {
+   "n": 15,
+   "perfect": 3,
+   "sum": 5.017857
+  },
+  "coreutils::O2-noinline::timeout": {
+   "n": 12,
+   "perfect": 4,
+   "sum": 6.091667
+  },
+  "coreutils::O2-noinline::touch": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 1.169192
+  },
+  "coreutils::O2-noinline::tr": {
+   "n": 35,
+   "perfect": 1,
+   "sum": 9.778355
+  },
+  "coreutils::O2-noinline::true": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.25
+  },
+  "coreutils::O2-noinline::truncate": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 1.145833
+  },
+  "coreutils::O2-noinline::tsort": {
+   "n": 10,
+   "perfect": 1,
+   "sum": 1.961111
+  },
+  "coreutils::O2-noinline::tty": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.65
+  },
+  "coreutils::O2-noinline::uname": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 1.535714
+  },
+  "coreutils::O2-noinline::unexpand": {
+   "n": 11,
+   "perfect": 0,
+   "sum": 3.238889
+  },
+  "coreutils::O2-noinline::uniq": {
+   "n": 7,
+   "perfect": 1,
+   "sum": 3.135714
+  },
+  "coreutils::O2-noinline::unlink": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.25
+  },
+  "coreutils::O2-noinline::uptime": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 1.972857
+  },
+  "coreutils::O2-noinline::users": {
+   "n": 5,
+   "perfect": 1,
+   "sum": 1.866667
+  },
+  "coreutils::O2-noinline::vdir": {
+   "n": 195,
+   "perfect": 50,
+   "sum": 69.358849
+  },
+  "coreutils::O2-noinline::wc": {
+   "n": 12,
+   "perfect": 2,
+   "sum": 5.44697
+  },
+  "coreutils::O2-noinline::who": {
+   "n": 13,
+   "perfect": 0,
+   "sum": 3.30264
+  },
+  "coreutils::O2-noinline::whoami": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.75
+  },
+  "coreutils::O2-noinline::yes": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.403846
+  },
+  "coreutils::O2::[": {
+   "n": 11,
+   "perfect": 1,
+   "sum": 2.241546
+  },
+  "coreutils::O2::basename": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.882576
+  },
+  "coreutils::O2::cat": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.590909
+  },
+  "coreutils::O2::chcon": {
+   "n": 24,
+   "perfect": 0,
+   "sum": 2.079322
+  },
+  "coreutils::O2::chgrp": {
+   "n": 29,
+   "perfect": 0,
+   "sum": 3.074398
+  },
+  "coreutils::O2::chmod": {
+   "n": 24,
+   "perfect": 0,
+   "sum": 2.240506
+  },
+  "coreutils::O2::chown": {
+   "n": 29,
+   "perfect": 0,
+   "sum": 3.102176
+  },
+  "coreutils::O2::chroot": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.79329
+  },
+  "coreutils::O2::cksum": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.768319
+  },
+  "coreutils::O2::comm": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 1.424242
+  },
+  "coreutils::O2::cp": {
+   "n": 61,
+   "perfect": 0,
+   "sum": 11.717705
+  },
+  "coreutils::O2::csplit": {
+   "n": 14,
+   "perfect": 1,
+   "sum": 3.184199
+  },
+  "coreutils::O2::cut": {
+   "n": 8,
+   "perfect": 1,
+   "sum": 2.296041
+  },
+  "coreutils::O2::date": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.513127
+  },
+  "coreutils::O2::dd": {
+   "n": 22,
+   "perfect": 1,
+   "sum": 5.749026
+  },
+  "coreutils::O2::df": {
+   "n": 35,
+   "perfect": 0,
+   "sum": 4.117298
+  },
+  "coreutils::O2::dir": {
+   "n": 103,
+   "perfect": 3,
+   "sum": 14.150788
+  },
+  "coreutils::O2::dircolors": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 0.9689
+  },
+  "coreutils::O2::dirname": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.340909
+  },
+  "coreutils::O2::du": {
+   "n": 26,
+   "perfect": 0,
+   "sum": 2.67916
+  },
+  "coreutils::O2::echo": {
+   "n": 3,
+   "perfect": 1,
+   "sum": 1.330769
+  },
+  "coreutils::O2::env": {
+   "n": 7,
+   "perfect": 0,
+   "sum": 1.843468
+  },
+  "coreutils::O2::expand": {
+   "n": 8,
+   "perfect": 0,
+   "sum": 1.508081
+  },
+  "coreutils::O2::expr": {
+   "n": 9,
+   "perfect": 0,
+   "sum": 0.424242
+  },
+  "coreutils::O2::factor": {
+   "n": 18,
+   "perfect": 0,
+   "sum": 4.792624
+  },
+  "coreutils::O2::false": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.1
+  },
+  "coreutils::O2::fmt": {
+   "n": 11,
+   "perfect": 0,
+   "sum": 2.295455
+  },
+  "coreutils::O2::fold": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.519048
+  },
+  "coreutils::O2::getlimits": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 0.117094
+  },
+  "coreutils::O2::ginstall": {
+   "n": 62,
+   "perfect": 0,
+   "sum": 11.331787
+  },
+  "coreutils::O2::groups": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.966667
+  },
+  "coreutils::O2::head": {
+   "n": 7,
+   "perfect": 1,
+   "sum": 2.829608
+  },
+  "coreutils::O2::hostid": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.6
+  },
+  "coreutils::O2::id": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 1.110823
+  },
+  "coreutils::O2::join": {
+   "n": 11,
+   "perfect": 0,
+   "sum": 2.229119
+  },
+  "coreutils::O2::kill": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.647727
+  },
+  "coreutils::O2::libstdbuf": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.2
+  },
+  "coreutils::O2::link": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.1
+  },
+  "coreutils::O2::ln": {
+   "n": 33,
+   "perfect": 0,
+   "sum": 5.342075
+  },
+  "coreutils::O2::logname": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.766667
+  },
+  "coreutils::O2::ls": {
+   "n": 103,
+   "perfect": 3,
+   "sum": 14.150788
+  },
+  "coreutils::O2::make-prime-list": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.634085
+  },
+  "coreutils::O2::mkdir": {
+   "n": 31,
+   "perfect": 0,
+   "sum": 3.909679
+  },
+  "coreutils::O2::mkfifo": {
+   "n": 28,
+   "perfect": 0,
+   "sum": 3.406216
+  },
+  "coreutils::O2::mknod": {
+   "n": 28,
+   "perfect": 0,
+   "sum": 3.282293
+  },
+  "coreutils::O2::mktemp": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.369231
+  },
+  "coreutils::O2::mv": {
+   "n": 59,
+   "perfect": 0,
+   "sum": 10.546757
+  },
+  "coreutils::O2::nice": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.208333
+  },
+  "coreutils::O2::nl": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.683333
+  },
+  "coreutils::O2::nohup": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.22619
+  },
+  "coreutils::O2::nproc": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.719048
+  },
+  "coreutils::O2::numfmt": {
+   "n": 8,
+   "perfect": 1,
+   "sum": 2.170155
+  },
+  "coreutils::O2::od": {
+   "n": 24,
+   "perfect": 1,
+   "sum": 6.546054
+  },
+  "coreutils::O2::paste": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.855556
+  },
+  "coreutils::O2::pathchk": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.306897
+  },
+  "coreutils::O2::pinky": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 0.605997
+  },
+  "coreutils::O2::pr": {
+   "n": 25,
+   "perfect": 2,
+   "sum": 6.156061
+  },
+  "coreutils::O2::printenv": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.257576
+  },
+  "coreutils::O2::printf": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.689593
+  },
+  "coreutils::O2::ptx": {
+   "n": 8,
+   "perfect": 0,
+   "sum": 1.25
+  },
+  "coreutils::O2::pwd": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 0.774242
+  },
+  "coreutils::O2::readlink": {
+   "n": 24,
+   "perfect": 0,
+   "sum": 2.016822
+  },
+  "coreutils::O2::realpath": {
+   "n": 27,
+   "perfect": 0,
+   "sum": 2.683489
+  },
+  "coreutils::O2::rm": {
+   "n": 26,
+   "perfect": 0,
+   "sum": 2.006535
+  },
+  "coreutils::O2::rmdir": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.663636
+  },
+  "coreutils::O2::runcon": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.452941
+  },
+  "coreutils::O2::seq": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 1.053917
+  },
+  "coreutils::O2::shred": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 1.541066
+  },
+  "coreutils::O2::shuf": {
+   "n": 24,
+   "perfect": 0,
+   "sum": 1.876411
+  },
+  "coreutils::O2::sleep": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.385714
+  },
+  "coreutils::O2::sort": {
+   "n": 62,
+   "perfect": 5,
+   "sum": 16.800582
+  },
+  "coreutils::O2::split": {
+   "n": 8,
+   "perfect": 0,
+   "sum": 2.217813
+  },
+  "coreutils::O2::stat": {
+   "n": 14,
+   "perfect": 0,
+   "sum": 3.268978
+  },
+  "coreutils::O2::stdbuf": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.891667
+  },
+  "coreutils::O2::stty": {
+   "n": 7,
+   "perfect": 0,
+   "sum": 1.361204
+  },
+  "coreutils::O2::sync": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.225
+  },
+  "coreutils::O2::tac": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.475
+  },
+  "coreutils::O2::tail": {
+   "n": 33,
+   "perfect": 0,
+   "sum": 5.48466
+  },
+  "coreutils::O2::tee": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.742857
+  },
+  "coreutils::O2::test": {
+   "n": 11,
+   "perfect": 1,
+   "sum": 2.241546
+  },
+  "coreutils::O2::timeout": {
+   "n": 7,
+   "perfect": 0,
+   "sum": 1.684957
+  },
+  "coreutils::O2::touch": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.363158
+  },
+  "coreutils::O2::tr": {
+   "n": 10,
+   "perfect": 0,
+   "sum": 2.037879
+  },
+  "coreutils::O2::true": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.1
+  },
+  "coreutils::O2::truncate": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.377778
+  },
+  "coreutils::O2::tsort": {
+   "n": 5,
+   "perfect": 1,
+   "sum": 1.232479
+  },
+  "coreutils::O2::tty": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.433333
+  },
+  "coreutils::O2::uname": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.6
+  },
+  "coreutils::O2::unexpand": {
+   "n": 8,
+   "perfect": 0,
+   "sum": 1.422222
+  },
+  "coreutils::O2::uniq": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.833333
+  },
+  "coreutils::O2::unlink": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.1
+  },
+  "coreutils::O2::uptime": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 1.898352
+  },
+  "coreutils::O2::users": {
+   "n": 3,
+   "perfect": 1,
+   "sum": 1.090909
+  },
+  "coreutils::O2::vdir": {
+   "n": 103,
+   "perfect": 3,
+   "sum": 14.150788
+  },
+  "coreutils::O2::wc": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 1.123077
+  },
+  "coreutils::O2::who": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 1.433384
+  },
+  "coreutils::O2::whoami": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.6
+  },
+  "coreutils::O2::yes": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.253846
+  },
+  "diffutils::O0::cmp": {
+   "n": 10,
+   "perfect": 2,
+   "sum": 6.516234
+  },
+  "diffutils::O0::diff": {
+   "n": 101,
+   "perfect": 17,
+   "sum": 59.541138
+  },
+  "diffutils::O0::diff3": {
+   "n": 24,
+   "perfect": 5,
+   "sum": 14.792106
+  },
+  "diffutils::O0::sdiff": {
+   "n": 30,
+   "perfect": 14,
+   "sum": 22.516381
+  },
+  "diffutils::O2-noinline::cmp": {
+   "n": 10,
+   "perfect": 2,
+   "sum": 4.518272
+  },
+  "diffutils::O2-noinline::diff": {
+   "n": 99,
+   "perfect": 7,
+   "sum": 31.108487
+  },
+  "diffutils::O2-noinline::diff3": {
+   "n": 21,
+   "perfect": 3,
+   "sum": 8.741677
+  },
+  "diffutils::O2-noinline::sdiff": {
+   "n": 28,
+   "perfect": 5,
+   "sum": 10.863787
+  },
+  "diffutils::O2::cmp": {
+   "n": 5,
+   "perfect": 1,
+   "sum": 2.565476
+  },
+  "diffutils::O2::diff": {
+   "n": 71,
+   "perfect": 3,
+   "sum": 18.734018
+  },
+  "diffutils::O2::diff3": {
+   "n": 8,
+   "perfect": 2,
+   "sum": 3.758654
+  },
+  "diffutils::O2::sdiff": {
+   "n": 13,
+   "perfect": 3,
+   "sum": 5.928261
+  },
+  "findutils::O0::find": {
+   "n": 306,
+   "perfect": 41,
+   "sum": 107.300726
+  },
+  "findutils::O2-noinline::find": {
+   "n": 290,
+   "perfect": 18,
+   "sum": 64.064848
+  },
+  "findutils::O2::find": {
+   "n": 194,
+   "perfect": 2,
+   "sum": 26.750076
+  },
+  "grep::O0::grep": {
+   "n": 101,
+   "perfect": 30,
+   "sum": 64.168235
+  },
+  "grep::O2-noinline::grep": {
+   "n": 94,
+   "perfect": 20,
+   "sum": 35.993463
+  },
+  "grep::O2::grep": {
+   "n": 52,
+   "perfect": 3,
+   "sum": 13.026942
+  },
+  "gzip::O0::gzip": {
+   "n": 134,
+   "perfect": 76,
+   "sum": 109.404419
+  },
+  "gzip::O2-noinline::gzip": {
+   "n": 135,
+   "perfect": 23,
+   "sum": 52.717447
+  },
+  "gzip::O2::gzip": {
+   "n": 99,
+   "perfect": 13,
+   "sum": 36.922743
+  },
+  "shadow::O0::chage": {
+   "n": 12,
+   "perfect": 4,
+   "sum": 7.916667
+  },
+  "shadow::O0::check_subid_range": {
+   "n": 1,
+   "perfect": 1,
+   "sum": 1.0
+  },
+  "shadow::O0::chfn": {
+   "n": 10,
+   "perfect": 3,
+   "sum": 6.811111
+  },
+  "shadow::O0::chgpasswd": {
+   "n": 5,
+   "perfect": 2,
+   "sum": 3.766667
+  },
+  "shadow::O0::chpasswd": {
+   "n": 6,
+   "perfect": 2,
+   "sum": 3.871429
+  },
+  "shadow::O0::chsh": {
+   "n": 8,
+   "perfect": 3,
+   "sum": 6.55
+  },
+  "shadow::O0::expiry": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 2.966667
+  },
+  "shadow::O0::faillog": {
+   "n": 10,
+   "perfect": 4,
+   "sum": 7.776768
+  },
+  "shadow::O0::free_subid_range": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.666667
+  },
+  "shadow::O0::get_subid_owners": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.8
+  },
+  "shadow::O0::getsubids": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.833333
+  },
+  "shadow::O0::gpasswd": {
+   "n": 18,
+   "perfect": 4,
+   "sum": 8.333333
+  },
+  "shadow::O0::groupadd": {
+   "n": 8,
+   "perfect": 3,
+   "sum": 4.633333
+  },
+  "shadow::O0::groupdel": {
+   "n": 6,
+   "perfect": 2,
+   "sum": 4.416667
+  },
+  "shadow::O0::groupmems": {
+   "n": 11,
+   "perfect": 3,
+   "sum": 6.633333
+  },
+  "shadow::O0::groupmod": {
+   "n": 9,
+   "perfect": 2,
+   "sum": 4.483333
+  },
+  "shadow::O0::groups": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.8
+  },
+  "shadow::O0::grpck": {
+   "n": 11,
+   "perfect": 3,
+   "sum": 6.89127
+  },
+  "shadow::O0::grpconv": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 2.916667
+  },
+  "shadow::O0::grpunconv": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 3.019231
+  },
+  "shadow::O0::id": {
+   "n": 1,
+   "perfect": 1,
+   "sum": 1.0
+  },
+  "shadow::O0::lastlog": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 3.15974
+  },
+  "shadow::O0::login": {
+   "n": 8,
+   "perfect": 4,
+   "sum": 6.968306
+  },
+  "shadow::O0::logoutd": {
+   "n": 3,
+   "perfect": 1,
+   "sum": 2.151515
+  },
+  "shadow::O0::new_subid_range": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.714286
+  },
+  "shadow::O0::newgidmap": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 1.719048
+  },
+  "shadow::O0::newgrp": {
+   "n": 5,
+   "perfect": 2,
+   "sum": 4.05336
+  },
+  "shadow::O0::newuidmap": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 1.169231
+  },
+  "shadow::O0::newusers": {
+   "n": 9,
+   "perfect": 3,
+   "sum": 5.940909
+  },
+  "shadow::O0::nologin": {
+   "n": 1,
+   "perfect": 1,
+   "sum": 1.0
+  },
+  "shadow::O0::passwd": {
+   "n": 8,
+   "perfect": 2,
+   "sum": 5.504487
+  },
+  "shadow::O0::pwck": {
+   "n": 8,
+   "perfect": 3,
+   "sum": 5.511905
+  },
+  "shadow::O0::pwconv": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 3.0
+  },
+  "shadow::O0::pwunconv": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 3.019231
+  },
+  "shadow::O0::su": {
+   "n": 13,
+   "perfect": 5,
+   "sum": 11.085678
+  },
+  "shadow::O0::sulogin": {
+   "n": 2,
+   "perfect": 1,
+   "sum": 1.833333
+  },
+  "shadow::O0::useradd": {
+   "n": 25,
+   "perfect": 7,
+   "sum": 17.579816
+  },
+  "shadow::O0::userdel": {
+   "n": 10,
+   "perfect": 4,
+   "sum": 6.886364
+  },
+  "shadow::O0::usermod": {
+   "n": 18,
+   "perfect": 4,
+   "sum": 13.122784
+  },
+  "shadow::O0::vipw": {
+   "n": 5,
+   "perfect": 1,
+   "sum": 3.904762
+  },
+  "shadow::O2-noinline::chage": {
+   "n": 13,
+   "perfect": 0,
+   "sum": 1.626263
+  },
+  "shadow::O2-noinline::check_subid_range": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.333333
+  },
+  "shadow::O2-noinline::chfn": {
+   "n": 9,
+   "perfect": 0,
+   "sum": 1.106057
+  },
+  "shadow::O2-noinline::chgpasswd": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 0.529304
+  },
+  "shadow::O2-noinline::chpasswd": {
+   "n": 7,
+   "perfect": 0,
+   "sum": 0.577381
+  },
+  "shadow::O2-noinline::chsh": {
+   "n": 6,
+   "perfect": 1,
+   "sum": 1.980159
+  },
+  "shadow::O2-noinline::expiry": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.722222
+  },
+  "shadow::O2-noinline::faillog": {
+   "n": 10,
+   "perfect": 0,
+   "sum": 1.452262
+  },
+  "shadow::O2-noinline::free_subid_range": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.285714
+  },
+  "shadow::O2-noinline::get_subid_owners": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.285714
+  },
+  "shadow::O2-noinline::getsubids": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.25
+  },
+  "shadow::O2-noinline::gpasswd": {
+   "n": 18,
+   "perfect": 0,
+   "sum": 2.07619
+  },
+  "shadow::O2-noinline::groupadd": {
+   "n": 10,
+   "perfect": 0,
+   "sum": 0.972222
+  },
+  "shadow::O2-noinline::groupdel": {
+   "n": 7,
+   "perfect": 0,
+   "sum": 1.4
+  },
+  "shadow::O2-noinline::groupmems": {
+   "n": 12,
+   "perfect": 0,
+   "sum": 1.094444
+  },
+  "shadow::O2-noinline::groupmod": {
+   "n": 13,
+   "perfect": 0,
+   "sum": 1.383333
+  },
+  "shadow::O2-noinline::groups": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.333333
+  },
+  "shadow::O2-noinline::grpck": {
+   "n": 10,
+   "perfect": 0,
+   "sum": 1.92702
+  },
+  "shadow::O2-noinline::grpconv": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.930077
+  },
+  "shadow::O2-noinline::grpunconv": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.935185
+  },
+  "shadow::O2-noinline::id": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.086957
+  },
+  "shadow::O2-noinline::lastlog": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 0.654762
+  },
+  "shadow::O2-noinline::login": {
+   "n": 9,
+   "perfect": 0,
+   "sum": 1.766074
+  },
+  "shadow::O2-noinline::logoutd": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.738095
+  },
+  "shadow::O2-noinline::new_subid_range": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.222222
+  },
+  "shadow::O2-noinline::newgidmap": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.313596
+  },
+  "shadow::O2-noinline::newgrp": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 1.040634
+  },
+  "shadow::O2-noinline::newuidmap": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.31677
+  },
+  "shadow::O2-noinline::newusers": {
+   "n": 8,
+   "perfect": 0,
+   "sum": 2.318597
+  },
+  "shadow::O2-noinline::nologin": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.0
+  },
+  "shadow::O2-noinline::passwd": {
+   "n": 8,
+   "perfect": 0,
+   "sum": 0.70202
+  },
+  "shadow::O2-noinline::pwck": {
+   "n": 7,
+   "perfect": 0,
+   "sum": 1.265173
+  },
+  "shadow::O2-noinline::pwconv": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.915165
+  },
+  "shadow::O2-noinline::pwunconv": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.935185
+  },
+  "shadow::O2-noinline::su": {
+   "n": 12,
+   "perfect": 2,
+   "sum": 3.671429
+  },
+  "shadow::O2-noinline::sulogin": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.25
+  },
+  "shadow::O2-noinline::useradd": {
+   "n": 29,
+   "perfect": 1,
+   "sum": 3.248243
+  },
+  "shadow::O2-noinline::userdel": {
+   "n": 11,
+   "perfect": 1,
+   "sum": 1.721818
+  },
+  "shadow::O2-noinline::usermod": {
+   "n": 19,
+   "perfect": 0,
+   "sum": 1.722741
+  },
+  "shadow::O2-noinline::vipw": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 1.164286
+  },
+  "shadow::O2::chage": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.676329
+  },
+  "shadow::O2::check_subid_range": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.333333
+  },
+  "shadow::O2::chfn": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.29878
+  },
+  "shadow::O2::chgpasswd": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.219298
+  },
+  "shadow::O2::chpasswd": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.247748
+  },
+  "shadow::O2::chsh": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.630952
+  },
+  "shadow::O2::expiry": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.416667
+  },
+  "shadow::O2::faillog": {
+   "n": 6,
+   "perfect": 0,
+   "sum": 0.769444
+  },
+  "shadow::O2::free_subid_range": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.222222
+  },
+  "shadow::O2::get_subid_owners": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.222222
+  },
+  "shadow::O2::getsubids": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.25
+  },
+  "shadow::O2::gpasswd": {
+   "n": 10,
+   "perfect": 0,
+   "sum": 0.577473
+  },
+  "shadow::O2::groupadd": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.355263
+  },
+  "shadow::O2::groupdel": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.361111
+  },
+  "shadow::O2::groupmems": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.406566
+  },
+  "shadow::O2::groupmod": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.340909
+  },
+  "shadow::O2::groups": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.142857
+  },
+  "shadow::O2::grpck": {
+   "n": 5,
+   "perfect": 0,
+   "sum": 0.954701
+  },
+  "shadow::O2::grpconv": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.423611
+  },
+  "shadow::O2::grpunconv": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.427778
+  },
+  "shadow::O2::id": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.083333
+  },
+  "shadow::O2::lastlog": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.552198
+  },
+  "shadow::O2::login": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.253968
+  },
+  "shadow::O2::logoutd": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.225806
+  },
+  "shadow::O2::new_subid_range": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.2
+  },
+  "shadow::O2::newgidmap": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.297571
+  },
+  "shadow::O2::newgrp": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.09375
+  },
+  "shadow::O2::newuidmap": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.16
+  },
+  "shadow::O2::newusers": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.308824
+  },
+  "shadow::O2::nologin": {
+   "n": 1,
+   "perfect": 0,
+   "sum": 0.0
+  },
+  "shadow::O2::passwd": {
+   "n": 7,
+   "perfect": 0,
+   "sum": 0.675627
+  },
+  "shadow::O2::pwck": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.424941
+  },
+  "shadow::O2::pwconv": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.411111
+  },
+  "shadow::O2::pwunconv": {
+   "n": 3,
+   "perfect": 0,
+   "sum": 0.427778
+  },
+  "shadow::O2::su": {
+   "n": 7,
+   "perfect": 2,
+   "sum": 2.439907
+  },
+  "shadow::O2::sulogin": {
+   "n": 2,
+   "perfect": 0,
+   "sum": 0.25
+  },
+  "shadow::O2::useradd": {
+   "n": 9,
+   "perfect": 0,
+   "sum": 0.669847
+  },
+  "shadow::O2::userdel": {
+   "n": 4,
+   "perfect": 1,
+   "sum": 1.322258
+  },
+  "shadow::O2::usermod": {
+   "n": 8,
+   "perfect": 0,
+   "sum": 0.701941
+  },
+  "shadow::O2::vipw": {
+   "n": 4,
+   "perfect": 0,
+   "sum": 0.816667
+  },
+  "tar::O0::tar": {
+   "n": 617,
+   "perfect": 131,
+   "sum": 337.738933
+  },
+  "tar::O2-noinline::tar": {
+   "n": 567,
+   "perfect": 57,
+   "sum": 176.92169
+  },
+  "tar::O2::tar": {
+   "n": 364,
+   "perfect": 25,
+   "sum": 94.947832
+  }
+ }
+}

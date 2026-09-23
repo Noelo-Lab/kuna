@@ -1,14 +1,20 @@
-/* calleevote fixture: the bound on the redo pass (x86-64).
+/* calleevote fixture: the redo budget declines a long callee (x86-64).
  *
  * `scan_short` and `scan_long` do the same thing with the pointer `use` hands
  * them -- nothing but pass it on to `memcmp`, which declares `const void *` --
  * and `use` holds the record, so both are candidates for the caller's type.
- * The vote costs a second decompile of the callee, so only a short body is
- * decompiled again: `scan_short` (19 printed lines) takes `struct_1 *`, and
- * `scan_long` (45 lines, past CALLEE_VOTE_MAX_LINES = 32) keeps `void *`. The
- * global array is there only to make one body long; both functions do the
- * same thing with the pointer, and `use` takes the record in a register the
- * calls have to move, so both calls carry their arguments.
+ * The vote costs a second decompile of the callee, charged the lines the
+ * first one printed, and the redo pass may spend 5% of what the whole binary
+ * printed: this one prints 170 lines, so `scan_short` (19 printed lines, and
+ * inside the CALLEE_VOTE_MAX_LINES = 32 floor that is redone whatever the
+ * budget says) takes `struct_1 *` while `scan_long` (45 lines) is more than
+ * the whole 8-line budget and is declined, keeping `void *`. Its twin
+ * `calleevote_budget_x86_64.c` is the same program in a binary with the
+ * room for it, where both take the record.
+ *
+ * The global array is there only to make one body long; both functions do
+ * the same thing with the pointer, and `use` takes the record in a register
+ * the calls have to move, so both calls carry their arguments.
  *
  * Build (symbols kept, no DWARF):
  *   gcc -O2 -fno-inline -fno-stack-protector -fcf-protection=none \

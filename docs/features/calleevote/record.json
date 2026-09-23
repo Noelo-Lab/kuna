@@ -655,18 +655,67 @@
      "n": 15
     }
    }
+  },
+  "round_6": {
+   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, the pre-change build against this one, BOTH at their defaults (so the delta is the budget's, not the option's), arm order alternating, on a box running two other workspace-test lanes (load 6-20). docs/features/calleevote/budget-speed.py; raw samples in speed.json under round_6",
+   "estimators": "interleaved min of N, and the median of the per-iteration after/before ratio -- each iteration's two runs sit in the same window, so the ratio cancels a load spike that hits both",
+   "fmt_O2": {
+    "n": 15,
+    "delta_min_pct": -0.05,
+    "delta_median_of_ratios_pct": -3.69
+   },
+   "ls_O2": {
+    "n": 9,
+    "delta_min_pct": 0.48,
+    "delta_median_of_ratios_pct": 0.25
+   },
+   "sort_O2": {
+    "n": 9,
+    "delta_min_pct": 0.59,
+    "delta_median_of_ratios_pct": -0.18
+   },
+   "bash_O2": {
+    "n": 5,
+    "delta_min_pct": -1.9,
+    "delta_median_of_ratios_pct": 2.0,
+    "note": "the workspace-test lane's compile landed inside this run; bash's redo pass is 0.6% of its own wall clock, so neither number is the change"
+   },
+   "kmod_O2-noinline": {
+    "n": 15,
+    "delta_min_pct": 1.64,
+    "delta_median_of_ratios_pct": -1.55
+   },
+   "dpkg-divert_O2": {
+    "n": 15,
+    "delta_min_pct": 1.61,
+    "delta_median_of_ratios_pct": 2.07
+   },
+   "crontab_O2-noinline": {
+    "n": 15,
+    "delta_min_pct": -0.17,
+    "delta_median_of_ratios_pct": -0.28
+   },
+   "cmp_O0": {
+    "n": 15,
+    "delta_min_pct": 1.58,
+    "delta_median_of_ratios_pct": 1.96
+   },
+   "worst_delta_min_pct": 1.64,
+   "budget_pct": 5.0,
+   "within_budget": true,
+   "option_total_cost_after": "the redo pass measured directly against the whole run: kmod -O2-noinline 708 reprinted lines, about 4.2% of the run (3.4% before); fmt -O2 96 lines, 0.3%; crontab -O2-noinline nothing. The option's cost against `calleevote off` is that pass plus the ledger bookkeeping."
   }
  },
  "gates": {
-  "make test": "datatests: 675/675 assertions passed; PARITY OK (final build f350ee650 on origin/main 31ac2b26e)",
-  "make test-stages": "datatests: 1311/1311 assertions passed; PARITY OK (baseline re-recorded on the rebased tree: +2 CALLEEVOTE keys and the angr-provenance assertion's option list)",
+  "make test": "datatests: 675/675 assertions passed; PARITY OK (final build on origin/main 796939d54)",
+  "make test-stages": "datatests: 1323/1323 assertions passed; PARITY OK (baseline untouched)",
   "make check-spec": "check-spec OK (lenient mode)",
   "check_spec --strict": "check-spec OK (strict mode)",
-  "make test-cli": "tests/cli: 235/235 passed",
+  "make test-cli": "tests/cli: 236/236 passed",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "byte-fresh (regenerated from the final build; phase_catalog.json re-captured after the catalog text moved)",
-  "make rust-test (lane script)": "RUST_TEST_RC=0; 7,449 passed, 0 failed, 38 ignored (lane 04:47-05:16Z on f350ee650, the final commit)"
+  "make rust-test (lane script)": "RUST_TEST_RC=0; 7,462 passed, 0 failed, 38 ignored (lane 15:39-16:04Z on 391d06448)"
  },
  "notes": "Measured and not shipped: refusing a value handed to a declared void * (-8 perfect, -28 improved, +3), byte/halfword lone fields (+10 credited, +2 worse), a settle pass for every structsynth candidate (no scored change). Known secondary effect: a callee's one-field record stated by protoorder can make a caller's interior-pointer argument a cast and leave the caller's own parameter long (diff O0 print_context_header: void * -> long, 5 scored rows, all misses either way).",
  "files": {
@@ -697,13 +746,17 @@
    "tests/cli/calleevote-keeps-a-frame-records-word-stores.json",
    "tests/cli/calleevote-off-keeps-a-frame-records-word-stores.json",
    "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_frame_x86_64(.c)",
-   "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs (a_frame_records_char_pointer_pointer_is_not_its_type)"
+   "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs (a_frame_records_char_pointer_pointer_is_not_its_type)",
+   "tests/cli/calleevote-buys-a-long-callee-with-the-budget.json",
+   "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_budget_x86_64(.c)"
   ],
   "docs": [
    "docs/spec/04-calls-and-prototypes.md",
    "docs/spec/05-types.md",
    "docs/cli.md",
-   "docs/options.md"
+   "docs/options.md",
+   "docs/features/calleevote/budget-fixture.py",
+   "docs/features/calleevote/budget-sweep.json"
   ]
  },
  "catalog_counts": {
@@ -755,6 +808,260 @@
     "off": 1522
    },
    "why_not_an_oracle": "Skipping only the redos that change nothing would leave kmod at about +8.5% and crontab at +9.0%: 20 of kmod's 58 redos are wasted but they are 147 of its 571 ms, and crontab's whole cost is one 189-line redo that does change its body."
+  },
+  "round_6": {
+   "what": "The flat 32-line refusal on the redo became a budget: the pass may reprint CALLEE_VOTE_BUDGET_PCT (5) percent of the lines the first pass printed, one budget for all three rounds, admitted shortest first (ties to the lower address), and a function printing at most CALLEE_VOTE_MAX_LINES (32) lines is admitted even once that is spent. A function the budget cannot reach is declined for the run (Ledger::decline: own + stated removed, so no later round proposes it and the convergence sweep has nothing to apply).",
+   "why_not_incremental": "A redo costs exactly what the first decompile of the same function cost -- median ratio 1.01 over kmod -O2-noinline's 55 redos (range 0.97-1.05) -- so there is no overhead of its own to remove. Of a redo, 12.3% is the flow follow and 58.5% is the action pipeline before the first effective ActionInferTypes (it is inert until ActionStartTypes, which runs in fullloop after a whole mainloop), so 70.8% is work the vote provably cannot change. Re-running 'only type propagation and the emit tier' is not available either: ActionInferTypes sits inside the repeating mainloop and the pools that rewrite ops from the types it decides (ptrarith, ptrsubundo, structoffset0, structsynth) run after it in the same iteration. Reusing that 70.8% means checkpointing the Funcdata where ActionStartTypes first fires and re-entering the action tree at a position -- a pipeline-substrate change (Funcdata deep copy + positional re-entry), PROPOSAL-class, and the one lever that would make an unbounded redo affordable (kmod 10.5% -> about 3%).",
+   "instrument": "The redo pass is one call in decompile_callee_first, so its cost is read off a single run (its ms over the run's wall clock) instead of differenced from two whole-binary wall times, which on this box is noisier than the effect (round 5 measured the same kmod build +9.4% by min-of-15 and +2.3% by median). KUNA_CALLEEVOTE_TRACE=1 also prints the pass's deterministic line spend.",
+   "redo_pass_share_of_a_run": {
+    "flat_32_bound": {
+     "kmod_O2-noinline": 3.4,
+     "check_subid_range_O0": 3.7,
+     "dpkg-divert_O2": 2.0,
+     "cmp_O0": 1.3,
+     "mv_O0": 1.0,
+     "fmt_O2": 0.2,
+     "ls_O2": 0.2,
+     "sort_O2": 0.2,
+     "bash_O2": 0.1,
+     "crontab_O2-noinline": 0.0
+    },
+    "unbounded": {
+     "mv_O0": 30.1,
+     "kmod_O2-noinline": 10.5,
+     "check_subid_range_O0": 9.2,
+     "dpkg-divert_O2": 7.3,
+     "cmp_O0": 6.9,
+     "stty_O2": 7.0,
+     "factor_O0": 5.6,
+     "fmt_O2": 0.4,
+     "crontab_O2-noinline": 0.0
+    },
+    "note": "percent of the whole `kuna decompile-all --json` wall clock; the flat-bound column is what shipped in #711, so the option was already inside the project's +5% on every one of them and the round-G +5.54%/+5.92% were wall-difference noise"
+   },
+   "line_spend_shipped": {
+    "kmod_O2-noinline": "708 of 13,366 printed (5.3%), 40 redos (36 under the flat bound)",
+    "fmt_O2": "96 of 3,718 (2.6%), 4 redos (3)",
+    "check_subid_range_O0": "165 of 2,702 (6.1% -- its short functions alone are over the budget, which is today's behaviour), 8 redos (7)"
+   },
+   "typesweep_444_slices": {
+    "surface": "typesweep --baseline-only over the campaign's 444 slices (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), decbench pinned at 625e892, four builds of this tree differing only in CALLEE_VOTE_BUDGET_PCT",
+    "budget_0_equals_todays_flat_bound": {
+     "perfect": 1609,
+     "pct": 14.97,
+     "mean": 0.3688
+    },
+    "budget_5_shipped": {
+     "perfect": 1615,
+     "pct": 15.03,
+     "mean": 0.3697,
+     "improved": 69,
+     "worse": 0
+    },
+    "unbounded": {
+     "perfect": 1618,
+     "pct": 15.05,
+     "mean": 0.3699,
+     "improved": 88,
+     "worse": 0
+    },
+    "flat_extra_2pct_variant_not_shipped": {
+     "perfect": 1615,
+     "mean": 0.3696,
+     "improved": 47,
+     "worse": 0,
+     "why_not": "same perfect count, fewer improved, and it hands kmod the same extra percent as fmt (6.2% of kmod's lines against the shipped 5.3%)"
+    },
+    "onto_perfect_shipped": [
+     "coreutils O0 dir/ls/vdir abmon_init",
+     "coreutils O0 tail parse_obsolete_option",
+     "findutils O0 find process_leading_options",
+     "grep O0 grep grepbuf"
+    ],
+    "still_out_of_budget": [
+     "coreutils O0 dd scanargs",
+     "diffutils O0 diff3 read_diff",
+     "findutils O0 find check_path_safety"
+    ]
+   },
+   "byte_identity": "with the budget at 0 the admitted set is the old one by construction (only the short functions are admitted, and a declined statement is withdrawn before anything is decompiled); checked as well -- decompile-all --json byte-identical to the pre-change build on 12 binaries (fmt/ls/sort O2, cmp O0, kmod O2-noinline, dpkg-divert O2, crontab O2-noinline, mv/factor O0, stty O2, check_subid_range O0, pwunconv O2), and the 444-slice typesweep reproducing main's 1,609 / .3688 exactly",
+   "corpus_sweep": {
+    "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, the pre-change build against this one, both at their defaults, over the same 31 binaries the option's own sweep used (docs/features/calleevote/budget-hunks.py)",
+    "binaries": 31,
+    "changed": 57,
+    "classification": {
+     "signature-only": 23,
+     "types-and-spelling": 31,
+     "SHAPE": 3
+    },
+    "tags": {
+     "var-count": 0,
+     "error-flip": 0,
+     "char-split": 0
+    },
+    "shape_hunks_read": [
+     "O2/bash 0xdc760: a0 takes char *, so *(uint1 *)(a0 + v3) prints as a0[v2] and the two loaded bytes no longer need their own temporaries (55 -> 52 statements, 2 -> 2 variables, same memory)",
+     "O2/bash 0xf48e0: the same, a0 char * (180 -> 179 statements, 12 -> 12 variables); one `v3 = a0[v8 + 2]` fold removes the temporary the branch-flip had read twice",
+     "O2/kmod 0x9030: a0 takes char **, so the element address *(long *)((long)v6 + v7 * 8) prints as *(long *)&v6[v7 * 8] and the memmove's source temporary folds into the index (57 -> 56 statements, 17 -> 17 variables)"
+    ]
+   }
+  },
+  "round_6_review_1": {
+   "verdict_in": "CHANGES (5 required changes; the reviewer found no wrong-output defect, and re-ran every gate green)",
+   "phases_toml_use_when": "rewritten for the shipped default: the two stale sentences (the flat bound 'costs 8 functions', 'the 32-line bound keeps it at 3.4-4.3%') replaced by the same-tree 1,609 -> 1,615 (unbounded 1,618) and the measured reprint shares -- fmt -O2 96/3,718 (2.6%), ls 362/12,833 (2.8%), sort 419/10,708 (3.9%), cmp -O0 185/3,840 (4.8%), dpkg-divert -O2 569/11,965 (4.8%), kmod -O2-noinline 708/13,366 (5.3%, the 32-line floor past the share), crontab -O2-noinline 0. docs/options.md regenerated, phase_catalog.json recaptured",
+   "admission_test": "admit_within_budget is now the pure decision (queue -> admitted + declined) the driver applies, and the unit test drives it instead of a local closure, asserting the admitted and declined sets, the budget left and the lines spent, plus a second test that the budget carries across rounds. Mutation-checked: reversing the sort order fails it",
+   "admitted_direction_probe": "tests/cli/calleevote-buys-a-long-callee-with-the-budget.json over the new fixture calleevote_budget_x86_64 -- the same program as calleevote_long_x86_64 in a binary printing 2,275 lines, so the 113-line budget covers the 45-line scan_long: it prints `int scan_long(struct_1 *a0,unsigned long a1)` here and `int scan_long(void *a0,unsigned long a1)` on a build of origin/main",
+   "decline_keeps_a_printed_statement": "Ledger::keep records the statement a kept redo was printed with, and Ledger::decline restores it instead of dropping it, so the convergence sweep prints the body the batch printed; a function never redone still drops it, which is main's behaviour. Unit-tested both ways and mutation-checked; spec 04 paragraph added",
+   "no_output_moved": "the review-round build against the build the PR measured: decompile-all --json byte-identical on the same 12 binaries, so the typesweep and speed blocks above stand",
+   "pr_body": "the '0 worse' row count marked single-run; the perfect-count delta is the claim",
+   "gates": "on 0e85c41a2: make test PARITY OK 675/675; make test-stages PARITY OK; make test-cli 237/237; check-spec OK lenient+strict; kuna catalog --check OK; counters no drift; docs/options.md byte-fresh; make rust-test (lane) RUST_TEST_RC=0, 7,467 passed / 0 failed / 38 ignored. The earlier lane's single red was embedded_docs_match_the_files_on_disk, the stale-binary artifact of reflowing docs/cli.md after that lane's compile",
+   "typesweep_at_final_code": "re-run at the review-round code, same driver and pin: 1,615 perfect of 10,748 (15.03%), mean .3697 -- the same numbers the PR measured, so nothing the review changed moved a score. Per-slice counts retained this time in docs/features/calleevote/budget-sweep.json (the full per-function rows.json is 16.7 MB and stays out of the tree)"
+  }
+ },
+ "landing_remeasure": {
+  "why": "origin/main gained #715 (structmerge, type-affecting) after this PR was measured on 796939d54; everything below is re-run on the rebased tree (the reviewed commits replayed on dbe854ba3, range-diff content-identical) against a build of dbe854ba3",
+  "main_build": "/home/mahaloz/kwt/castbench/bin-dbe854ba3/kuna (origin/main dbe854ba3)",
+  "typesweep_444": {
+   "surface": "444-slice campaign set, decbench 625e892 pinned (final-c/pindb.py), DECBENCH_NO_CACHE=1, both builds at their defaults",
+   "main": {
+    "n": 10748,
+    "perfect": 1609,
+    "mean": 0.3688
+   },
+   "branch": {
+    "n": 10748,
+    "perfect": 1615,
+    "mean": 0.3697
+   },
+   "onto_perfect": 6,
+   "off_perfect": 0,
+   "improved": 69,
+   "worse": 0,
+   "note": "reproduces the PR's own same-tree measurement exactly (budget 0 = 1,609 / .3688, budget 5% = 1,615 / .3697, 69 improved, 0 worse)"
+  },
+  "castbench_full": {
+   "surface": "castbench.py full set (45 binaries), functions both kuna and IDA emit at one address",
+   "shared_functions": 4815,
+   "ida": {
+    "casts": 37821,
+    "lines": 243379,
+    "per_kloc": 155.4,
+    "vs_ida": 1.0
+   },
+   "main": {
+    "casts": 45126,
+    "lines": 190590,
+    "per_kloc": 236.8,
+    "vs_ida": 1.193
+   },
+   "branch": {
+    "casts": 45039,
+    "lines": 190585,
+    "per_kloc": 236.3,
+    "vs_ida": 1.191
+   },
+   "functions_fewer_casts": [
+    20,
+    92
+   ],
+   "functions_more_casts": [
+    2,
+    5
+   ],
+   "more_cast_functions_read": [
+    "O0/grep 0x862e (+4): the PR's own witness; a0/a1 become char *, and the pointer difference a1 - v3 prints as (long)a1 - (long)v3 (twice) -- the existing pointer-difference lowering, not a new cast shape",
+    "O2/grep 0x7a20 (+1): a3 becomes char * and is stored into a long field of a record, so the store prints (long)a3"
+   ]
+  },
+  "hunks_4_binaries": {
+   "surface": "budget-hunks.py, main build vs this branch at their defaults, over O2 kmod, O2 bash, O2 dpkg-divert, O0 grep",
+   "changed": 19,
+   "classification": {
+    "signature-only": 10,
+    "SHAPE": 3,
+    "types-and-spelling": 6
+   },
+   "shape_hunks_read": "the same three the round-6 corpus sweep read (kmod 0x9030, bash 0xdc760, bash 0xf48e0), unchanged: a parameter becomes char * / char **, so byte loads print as indexing and one temporary folds; same memory, no store crossed, variable counts equal"
+  },
+  "speed": {
+   "surface": "budget-speed.py, interleaved min-of-15, main build vs this branch at their defaults, on a box running other lanes (load 20-40)",
+   "crontab_O2ni": {
+    "delta_min_pct": -2.26,
+    "delta_median_of_ratios_pct": -2.26,
+    "min_ms": [
+     1246.0,
+     1217.8
+    ]
+   },
+   "dpkgdivert_O2": {
+    "delta_min_pct": 1.68,
+    "delta_median_of_ratios_pct": 0.99,
+    "min_ms": [
+     3348.6,
+     3404.9
+    ]
+   },
+   "kmod_O2ni": {
+    "delta_min_pct": -0.67,
+    "delta_median_of_ratios_pct": -1.87,
+    "min_ms": [
+     4119.2,
+     4091.7
+    ]
+   },
+   "fmt_O2": {
+    "delta_min_pct": 4.18,
+    "delta_median_of_ratios_pct": 3.7,
+    "min_ms": [
+     4673.7,
+     4868.9
+    ]
+   },
+   "ls_O2": {
+    "delta_min_pct": -0.87,
+    "delta_median_of_ratios_pct": 3.98,
+    "min_ms": [
+     16453.3,
+     16310.1
+    ]
+   },
+   "sort_O2": {
+    "delta_min_pct": 0.43,
+    "delta_median_of_ratios_pct": -1.68,
+    "min_ms": [
+     14641.3,
+     14704.7
+    ]
+   },
+   "bash_O2": {
+    "delta_min_pct": -1.43,
+    "delta_median_of_ratios_pct": -1.96,
+    "min_ms": [
+     93562.5,
+     92222.1
+    ]
+   },
+   "fmt_O2_rerun": {
+    "delta_min_pct": 0.24,
+    "delta_median_of_ratios_pct": 0.24,
+    "min_ms": [
+     4949.9,
+     4961.9
+    ],
+    "note": "fmt's first run (+4.18%) ran at load 58; re-run alone right after the batch, its redo reprints 96 of 3,718 lines"
+   },
+   "worst_delta_min_pct_after_rerun": 1.68,
+   "within_budget": true
+  },
+  "gates": {
+   "make test": "675/675 PARITY OK",
+   "make test-stages": "1329/1329 PARITY OK; baseline re-recorded identical to origin/main's",
+   "check-spec": "OK lenient and strict",
+   "make test-cli": "237/237",
+   "kuna catalog --check": "OK",
+   "counters --check": "no drift",
+   "docs/options.md": "byte-fresh",
+   "make rust-test (lane script)": "RUST_TEST_RC=0; 7,475 passed, 0 failed, 38 ignored"
   }
  }
 }

@@ -1835,19 +1835,30 @@ pub(crate) fn decompile_callee_first(
 /// type its own callers gave it only once it has been decompiled with it.
 const CALLEE_VOTE_ROUNDS: usize = 3;
 
-/// (kuna `calleevote`) The longest first decompile that is worth doing again.
-/// A redo costs what the first decompile of that function cost and the redo
-/// pass is the option's whole cost, so this is what keeps it inside the
-/// project's +5% speed budget: on `kmod -O2-noinline` the redos longer than
-/// this are 67% of the redo time and move 12 of the 38 bodies that move, and
-/// the one redo `crontab -O2-noinline` does is 189 lines and 9% of the run.
-/// The shapes the vote exists for -- a forwarder, a getter, a comparator --
-/// print a few lines.
+/// (kuna `calleevote`) The longest first decompile that is always done again.
+/// A redo costs what the first decompile of that function cost (measured 1.01x
+/// over `kmod -O2-noinline`'s 55 redos), and the redo pass is the option's whole
+/// cost, so a function's printed length is what it charges. The shapes the vote
+/// exists for -- a forwarder, a getter, a comparator -- print a few lines, and
+/// those are redone on any binary.
 const CALLEE_VOTE_MAX_LINES: usize = 32;
 
-/// (kuna `calleevote`) Is this first decompile too long to do again?
-fn too_long_to_vote_on(code: Option<&str>) -> bool {
-    code.is_some_and(|c| c.lines().count() > CALLEE_VOTE_MAX_LINES)
+/// (kuna `calleevote`) What the redo pass may reprint, as a share of what the
+/// first pass printed.
+///
+/// A flat refusal above [`CALLEE_VOTE_MAX_LINES`] costs the same nine perfect
+/// functions on every binary, including the ones with room to spare: `fmt -O2`
+/// spends 0.2% of its run on the redo pass and `ls`/`sort`/`bash` less, while
+/// `kmod -O2-noinline` spends 3.4%. A share of the binary's own output spends
+/// that room where it exists and stops where it does not: a binary whose short
+/// functions already fill it buys no long ones, and one that barely uses the
+/// vote redoes every candidate it has.
+const CALLEE_VOTE_BUDGET_PCT: usize = 5;
+
+/// (kuna `calleevote`) What redoing this function is charged: the lines its
+/// first decompile printed.
+fn redo_charge(code: Option<&str>) -> usize {
+    code.map_or(0, |c| c.lines().count())
 }
 
 /// (kuna `calleevote`) The key the ledger files a function under.
@@ -1896,9 +1907,15 @@ fn open_callee_votes(
 /// decide again over what the redone functions pass, up to
 /// [`CALLEE_VOTE_ROUNDS`] times. A redo that fails keeps the first body.
 ///
-/// A function whose first decompile printed more than [`CALLEE_VOTE_MAX_LINES`]
-/// lines drops out of the ledger before anything is decided, so nothing is ever
-/// stated about it and no round pays for it.
+/// Each round's redos are admitted shortest first, against one budget for the
+/// whole pass: every redo is charged the lines it reprints,
+/// [`CALLEE_VOTE_BUDGET_PCT`] of what the first pass printed is what there is to
+/// spend, and a function printing at most [`CALLEE_VOTE_MAX_LINES`] lines is
+/// admitted even once that is gone. A function the budget cannot reach leaves
+/// the ledger with its statement withdrawn, so nothing is stated about it, no
+/// later round proposes it again and the convergence sweep has nothing to apply
+/// to it -- exactly what a function over the flat bound used to get, on the
+/// binaries that have no room for it.
 fn callee_vote_rounds(
     prog: &mut ConsoleProgram,
     targets: &[FunctionEntry],
@@ -1907,17 +1924,16 @@ fn callee_vote_rounds(
     slots: &mut [Option<FuncResult>],
     expected: &BTreeMap<(i32, u64), Vec<u64>>,
 ) {
-    let long: Vec<(i32, u64)> = slots
+    let printed: usize = slots
         .iter()
-        .enumerate()
-        .filter(|(_, s)| too_long_to_vote_on(s.as_ref().and_then(|r| r.code.as_deref())))
-        .filter_map(|(i, _)| vote_key(&targets[i]))
-        .collect();
-    if kuna_decomp::kuna_calleevote::trace() && !long.is_empty() {
-        eprintln!("[calleevote] {} functions too long to decompile again", long.len());
-    }
-    for key in long {
-        prog.arch_mut().kuna_calleevote.own.remove(&key);
+        .map(|s| s.as_ref().and_then(|r| r.code.as_deref()).map_or(0, |c| c.lines().count()))
+        .sum();
+    let mut budget = printed * CALLEE_VOTE_BUDGET_PCT / 100;
+    let opening = budget;
+    let mut spent = 0usize;
+    let mut redone = 0usize;
+    if kuna_decomp::kuna_calleevote::trace() {
+        eprintln!("[calleevote] {printed} lines printed, redo budget {budget} lines");
     }
     for round in 0..CALLEE_VOTE_ROUNDS {
         let changed = kuna_decomp::kuna_calleevote::decide(prog.arch_mut(), &|k| expected.get(&k).cloned());
@@ -1928,18 +1944,71 @@ fn callee_vote_rounds(
             break;
         }
         let changed: std::collections::HashSet<(i32, u64)> = changed.into_iter().collect();
+        let queue: Vec<(usize, (i32, u64))> = plan
+            .iter()
+            .filter_map(|&(index, _)| {
+                let key = vote_key(&targets[index]).filter(|k| changed.contains(k))?;
+                Some((redo_charge(slots[index].as_ref().and_then(|r| r.code.as_deref())), key))
+            })
+            .collect();
+        let (admitted, declined) = admit_within_budget(queue, &mut budget, &mut spent);
+        for (charge, key) in declined {
+            if kuna_decomp::kuna_calleevote::trace() {
+                eprintln!("[calleevote] 0x{:x} declined: {charge} lines, {budget} left", key.1);
+            }
+            prog.arch_mut().kuna_calleevote.decline(key);
+        }
         for &(index, park) in plan {
-            let Some(key) = vote_key(&targets[index]).filter(|k| changed.contains(k)) else { continue };
+            let Some(key) = vote_key(&targets[index]).filter(|k| admitted.contains(k)) else { continue };
             let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
             let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
+            redone += 1;
             match slots[index].as_ref() {
                 Some(first) if !same_arity(first, &again) => prog.arch_mut().kuna_calleevote.forget(key),
                 Some(first) if !kuna_console::project::redo_replaces(first, &again) => {}
-                _ => slots[index] = Some(again),
+                _ => {
+                    prog.arch_mut().kuna_calleevote.keep(key);
+                    slots[index] = Some(again);
+                }
             }
         }
     }
+    if kuna_decomp::kuna_calleevote::trace() {
+        eprintln!("[calleevote] redo pass: {redone} decompiles, {spent} lines reprinted of {opening} budgeted");
+    }
     prog.arch_mut().kuna_calleevote.recording = false;
+}
+
+/// (kuna `calleevote`) Split this round's candidates -- one `(charge, key)` pair
+/// per function the decision changed, charged the lines its first decompile
+/// printed -- into the ones the pass decompiles again and the ones it declines.
+///
+/// Admitted: every function printing at most [`CALLEE_VOTE_MAX_LINES`] lines --
+/// the shapes the vote exists for, which are redone whatever the budget says --
+/// plus the longest prefix of the rest, shortest first, that `budget` still
+/// covers. `budget` and `spent` carry across rounds, so what an early round
+/// bought a later one cannot.
+///
+/// Ties go to the lower address, so the admitted set is a function of the
+/// program and not of the order the plan visits it.
+fn admit_within_budget(
+    mut queue: Vec<(usize, (i32, u64))>,
+    budget: &mut usize,
+    spent: &mut usize,
+) -> (std::collections::HashSet<(i32, u64)>, Vec<(usize, (i32, u64))>) {
+    queue.sort_unstable();
+    let mut admitted = std::collections::HashSet::new();
+    let mut declined = Vec::new();
+    for (charge, key) in queue {
+        if charge <= CALLEE_VOTE_MAX_LINES || charge <= *budget {
+            *budget = budget.saturating_sub(charge);
+            *spent += charge;
+            admitted.insert(key);
+        } else {
+            declined.push((charge, key));
+        }
+    }
+    (admitted, declined)
 }
 
 /// (kuna `calleevote`) Does a redo keep the first decompile's parameters and
@@ -4184,20 +4253,65 @@ mod discovery_tests {
 mod calleevote_stored_tests {
     use super::*;
 
-    /// (kuna `calleevote`) The bound on the redo pass: a getter is decompiled
-    /// again, a long body is not, and a function that failed has no body to
-    /// measure.
+    /// (kuna `calleevote`) What a redo is charged: the lines it reprints, and a
+    /// function that failed has no body to measure.
     #[test]
-    fn a_long_first_decompile_is_not_decompiled_again() {
+    fn a_redo_is_charged_the_lines_it_reprints() {
         let getter = "long get_cap(void *a0)\n{\n  return *(long *)((long)a0 + 0x18);\n}\n";
-        assert!(!too_long_to_vote_on(Some(getter)));
+        assert_eq!(redo_charge(Some(getter)), 4);
         let long: String =
             (0..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
-        assert!(too_long_to_vote_on(Some(&long)));
-        let at_the_bound: String =
-            (1..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
-        assert!(!too_long_to_vote_on(Some(&at_the_bound)));
-        assert!(!too_long_to_vote_on(None));
+        assert_eq!(redo_charge(Some(&long)), CALLEE_VOTE_MAX_LINES + 1);
+        assert_eq!(redo_charge(None), 0);
+    }
+
+    /// (kuna `calleevote`) The budget is a share of what the binary printed:
+    /// a long body is bought where the run has room for it and refused where it
+    /// is not, while a short one is redone either way.
+    #[test]
+    fn the_budget_is_a_share_of_what_the_first_pass_printed() {
+        /// One round through the real admission, over a binary that printed
+        /// `printed` lines: the charges admitted and the charges declined (both
+        /// sorted), what is left of the budget, and what was spent.
+        fn spend(printed: usize, charges: &[usize]) -> (Vec<usize>, Vec<usize>, usize, usize) {
+            let queue: Vec<(usize, (i32, u64))> =
+                charges.iter().enumerate().map(|(i, &c)| (c, (1i32, 0x1000 + i as u64))).collect();
+            let by_key: std::collections::HashMap<(i32, u64), usize> =
+                queue.iter().map(|&(c, k)| (k, c)).collect();
+            let mut budget = printed * CALLEE_VOTE_BUDGET_PCT / 100;
+            let mut spent = 0usize;
+            let (admitted, declined) = admit_within_budget(queue, &mut budget, &mut spent);
+            let mut taken: Vec<usize> = admitted.iter().map(|k| by_key[k]).collect();
+            taken.sort_unstable();
+            (taken, declined.iter().map(|&(c, _)| c).collect(), budget, spent)
+        }
+        // A 20,000-line binary buys a 90-line and a 300-line body; a 2,000-line
+        // one buys only the 90; a 1,000-line one buys neither.
+        assert_eq!(spend(20_000, &[300, 90]).0, vec![90, 300]);
+        assert_eq!(spend(2_000, &[300, 90]), (vec![90], vec![300], 10, 90));
+        assert_eq!(spend(1_000, &[300, 90]), (vec![], vec![90, 300], 50, 0));
+        // The short bodies the vote exists for are redone whatever is left, and
+        // what they spend is what leaves no room for a long one. Once the budget
+        // is gone it stays at zero rather than wrapping.
+        assert_eq!(spend(400, &[30, 30, 90]), (vec![30, 30], vec![90], 0, 60));
+        assert_eq!(spend(40, &[30, 30]), (vec![30, 30], vec![], 0, 60));
+        // Shortest first is by charge, not by the order the plan lists them:
+        // the 40-line body is bought and the 60-line one declined either way.
+        let budgeted = spend(1_000, &[60, 40]);
+        assert_eq!(budgeted, (vec![40], vec![60], 10, 40));
+        assert_eq!(spend(1_000, &[40, 60]), budgeted);
+    }
+
+    /// (kuna `calleevote`) The budget is one pass-wide allowance: what an early
+    /// round spends a later one no longer has.
+    #[test]
+    fn the_budget_carries_across_rounds() {
+        let mut budget = 100usize;
+        let mut spent = 0usize;
+        let first = admit_within_budget(vec![(90, (1, 0x2000))], &mut budget, &mut spent);
+        assert_eq!((first.0.len(), first.1.len(), budget, spent), (1, 0, 10, 90));
+        let second = admit_within_budget(vec![(90, (1, 0x3000))], &mut budget, &mut spent);
+        assert_eq!((second.0.len(), second.1.len(), budget, spent), (0, 1, 10, 90));
     }
 
     fn fixture(name: &str) -> Vec<u8> {

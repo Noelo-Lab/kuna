@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_budget_x86_64",
+    "binary_sha256": "2f4ef0e61038dc0ca955eb0fbb879b831f65712fe336c1ced48f0d493cd02c1f",
+    "binary_size": 41760,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_budget_x86_64",
+    "selector": "scan_long",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int scan_short\\(struct_\\d+ \\*a0,unsigned long a1\\)",
+      "int scan_long\\(struct_\\d+ \\*a0,unsigned long a1\\)",
+      "long use\\(int a0,struct_\\d+ \\*a1,unsigned long a2\\)"
+    ]
+  },
+  "notes": "DEFAULT. A redo is charged the lines the first decompile printed, and the pass may spend 5% of what the whole binary printed (CALLEE_VOTE_BUDGET_PCT, kuna-cli decompile_all.rs). This binary prints 2,275 lines, so the 113-line budget covers scan_long's 45 and both callees take the record. Its twin calleevote-leaves-a-long-callee-alone.json is the same program without the room.",
+  "probe_id": "p-188672227ea1"
+}

@@ -339,3 +339,139 @@ is the median of the per-pair the arms alternate, and each iteration's `default`
 same iteration's `off` before the median is taken, which cancels a slow window
 that hits both arms. The bound's effect is also visible without any timing at
 all, in the redone lines (the table above), which is deterministic.
+
+## 9. The redo pass measured directly, and the budget that replaced the bound
+
+### The instrument
+
+Every earlier number for this option came from differencing two whole-binary
+wall times (`--option calleevote off` against the default). On this box that
+estimator is worse than the effect it measures: section 8 records the same kmod
+build at +9.4% by min-of-15 and +2.3% by median in one run.
+
+The redo pass is a phase of its own, though — one call, after the first pass and
+before the convergence sweep — so what it costs can be read off a single run
+instead of inferred from two. Timing `callee_vote_rounds` and dividing by the
+run's own wall clock gives a number with no second arm in it, and the pass's
+line spend (`KUNA_CALLEEVOTE_TRACE=1`, `redo pass: N decompiles, S of B budget
+lines spent`) is deterministic.
+
+At the shipped flat 32-line bound the redo pass is:
+
+| binary | redo pass | redos |
+|---|---|---|
+| kmod -O2-noinline | 3.4% | 36 |
+| check_subid_range -O0 (shadow) | 3.7% | 7 |
+| dpkg-divert -O2 | 2.0% | 21 |
+| cmp -O0 | 1.3% | 7 |
+| mv -O0 | 1.0% | 22 |
+| fmt / ls / sort -O2 | 0.2% | 3 / 8 / 5 |
+| bash -O2 | 0.1% | 8 |
+| crontab -O2-noinline | 0.0% | 0 |
+
+So the option was already inside the project's +5% on all of them, crontab's
+189-line redo included (it makes none on current main). What the flat bound
+actually did was refuse the same long bodies on every binary, including the ones
+spending a fifth of a percent.
+
+### Why the redo cannot be made incremental here
+
+A redo costs exactly what the first decompile of the same function cost — median
+1.01x over the 55 functions kmod redoes, ranging 0.97 to 1.05 — so there is no
+overhead of the redo's own to remove. The only saving available is to stop
+redoing work the vote cannot change, and the measurements say where that would
+have to start:
+
+| part of a redo (kmod, 59 redos) | share |
+|---|---|
+| flow follow | 12.3% |
+| action pipeline before the first effective `ActionInferTypes` | 58.5% |
+| the rest | 29.2% |
+
+The vote reaches the pipeline at exactly one place, `input_vote` in
+`ActionInferTypes::buildLocaltypes`, and `ActionInferTypes` does nothing until
+`ActionStartTypes` has run, which is in `fullloop` after a whole `mainloop`. So
+70.8% of a redo is work the vote provably cannot change, and re-running only
+"type propagation and the emit tier" is not an option either: `ActionInferTypes`
+sits inside the repeating `mainloop`, and the pools that rewrite ops from the
+types it decides (`ptrarith`, `ptrsubundo`, `structoffset0`, `structsynth`) run
+after it in the same iteration, so the body a vote produces is not a re-emission
+of the first body.
+
+Reusing that 70.8% therefore means checkpointing the `Funcdata` at the moment
+`ActionStartTypes` first fires and resuming the action tree from there — a
+`Funcdata` deep copy (it owns the varnode and op banks, both block graphs, the
+HighVariable arena, the heritage state, the local scope and the call specs) plus
+positional re-entry into the action tree, which today only knows how to run a
+named root from its start. That is a change to the pipeline substrate, not to
+this option, and it is the one lever that would make an unbounded redo free: it
+would cut kmod's unbounded 10.5% to about 3%.
+
+### The budget
+
+Since a redo costs what the first decompile cost, and the first decompile's
+length is known when the decision is made, the length is what a redo charges.
+The flat bound becomes the floor of a budget:
+
+* the pass may reprint `CALLEE_VOTE_BUDGET_PCT` (5) percent of the lines the
+  whole first pass printed, one budget for all three rounds;
+* each round admits from what it decided shortest first, ties to the lower
+  address, and charges each redo the lines it reprints;
+* a function printing at most `CALLEE_VOTE_MAX_LINES` (32) lines is admitted
+  even once the budget is gone, so nothing the option was built for is ever
+  refused;
+* anything else — `Ledger::decline`: the statement just decided is withdrawn,
+  no later round proposes it, and the convergence sweep has nothing to apply.
+
+Charging the short functions to the same budget is what makes the share
+self-limiting. A binary that leans on the vote spends the budget on them and
+buys no long bodies: `kmod -O2-noinline` reprints 708 lines, 5.3% of its own
+output, and 4 of its 40 redos are new. One that barely uses it has the room to
+spare: `fmt -O2` reprints 96 of the 185 lines it is given and redoes every
+candidate it has. A flat allowance on top of the old set does neither — it
+would hand `kmod` the same extra percent as `fmt`, which is what pushed the
+option over budget on `kmod` in the first place.
+
+With the budget at 0 the admitted set is the old one, function for function:
+only the short functions are admitted, the declined statements are withdrawn
+before anything is decompiled, and nothing else reads them. That is what makes
+the mechanism provably output-neutral, and it is also checked — the same
+`decompile-all --json` over twelve binaries, byte-identical to the build before
+it, and the 444-slice typesweep reproducing main's 1,609 perfect functions and
+.3688 mean exactly.
+
+### What it costs and what it buys
+
+Typesweep over the 444 slices, four builds of this tree differing only in the
+constant:
+
+| build | perfect | mean | improved | worse |
+|---|---|---|---|---|
+| budget 0 (today's flat bound) | 1,609 | .3688 | — | — |
+| **budget 5% (shipped)** | **1,615** | **.3697** | **69** | **0** |
+| no bound at all | 1,618 | .3699 | 88 | 0 |
+| a flat +2% on top of today (not shipped) | 1,615 | .3696 | 47 | 0 |
+
+The flat +2% variant reaches the same perfect count by spending more: it hands
+`kmod` the same extra percent as `fmt`, 6.2% of kmod's own lines against the
+shipped 5.3%, for fewer functions improved.
+
+Speed, the two builds at their defaults, interleaved, on a box running two other
+workspace-test lanes (load 6-20), reported both by the campaign's min-of-N and
+by the median of the per-iteration ratio (which cancels a window that is slow
+for both arms):
+
+| binary | n | min | median of ratios |
+|---|---|---|---|
+| fmt -O2 | 15 | -0.05% | -3.69% |
+| ls -O2 | 9 | +0.48% | +0.25% |
+| sort -O2 | 9 | +0.59% | -0.18% |
+| bash -O2 | 5 | -1.9% | +2.0% (a lane's compile landed inside the run; its redo pass is 0.6% of the binary) |
+| kmod -O2-noinline | 15 | +1.64% | -1.55% |
+| dpkg-divert -O2 | 15 | +1.61% | +2.07% |
+| crontab -O2-noinline | 15 | -0.17% | -0.28% |
+| cmp -O0 | 15 | +1.58% | +1.96% |
+
+and the same thing without a stopwatch: the redo pass now reprints 708 of kmod's
+13,366 lines where the flat bound reprinted about 570, which is the +1% those
+runs measure.
