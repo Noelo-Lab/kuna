@@ -5364,6 +5364,7 @@ impl PrintC {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
                     let cast = lowered_switch_label_form(fd, arch, op).and_then(|(_, cast)| cast);
                     if let Some(ct) = &cast {
+                        crate::p9_emit::cast::census::bump("PRINT\tswitchlabel".to_string());
                         self.push_cast_open(ct, op);
                     }
                     self.push_vn_ir(fd, arch, vn, op);
@@ -5868,6 +5869,7 @@ impl PrintC {
         let vn0 = absorb_zext(fd, op)
             .and_then(|zext| fd.obank().get(zext).and_then(|o| o.get_in(0)))
             .or(in0);
+        crate::p9_emit::cast::census::bump("PRINT\tint2float".to_string());
         let cast_ty = if self.options.nocasts {
             None
         } else {
@@ -5930,6 +5932,7 @@ impl PrintC {
         // (kuna `signedness`) A `(int)`/`(unsigned int)` whose operand is now
         // declared at that very type is a no-op token: dropping it leaves an
         // expression of exactly the same C type.
+        crate::p9_emit::cast::census::bump(format!("PRINT\ttypecast\t{:?}", fd.obank().get(op).map(|o| o.code()).unwrap()));
         let cast_ty = if self.options.nocasts || self.sign_plan.drop_cast(fd, op) {
             None
         } else {
@@ -6286,6 +6289,7 @@ impl PrintC {
             (Some(o), Some(b)) if !self.options.nocasts => (o, b),
             _ => return self.op_type_cast_ir(fd, arch, op),
         };
+        crate::p9_emit::cast::census::bump("PRINT\tboolbyte(x2)".to_string());
         self.push_cast_open(&out_ty, op);
         self.push_cast_open(&byte_ty, op);
         if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
@@ -7276,6 +7280,7 @@ impl PrintC {
         // `as T`, closed at the single exit below).
         let final_cast_open = match (&finalcast, self.options.nocasts) {
             (Some(fc), false) => {
+                crate::p9_emit::cast::census::bump("PRINT\tpartialsymbol-finalcast".to_string());
                 self.push_cast_open(fc, op);
                 Some(fc.clone())
             }
@@ -7625,6 +7630,7 @@ impl PrintC {
                     return;
                 }
                 if !self.options.nocasts {
+                    crate::p9_emit::cast::census::bump("PRINT\tptr-constant".to_string());
                     self.push_cast_open(&ct, op);
                 }
                 self.context.push_mod();

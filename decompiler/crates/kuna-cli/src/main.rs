@@ -92,6 +92,7 @@ fn main() -> ExitCode {
             2
         }
     };
+    kuna_decomp::p9_emit::cast::census::dump();
     ExitCode::from(code as u8)
 }
 

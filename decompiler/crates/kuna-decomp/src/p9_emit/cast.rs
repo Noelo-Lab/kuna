@@ -67,6 +67,18 @@ use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype, DatatypeKind, TypeFactory};
 
+fn mt_name(m: type_metatype) -> &'static str {
+    use type_metatype::*;
+    match m {
+        TYPE_VOID=>"void",TYPE_PTR=>"ptr",TYPE_ARRAY=>"array",TYPE_STRUCT=>"struct",
+        TYPE_UNION=>"union",TYPE_UINT=>"uint",TYPE_INT=>"int",TYPE_BOOL=>"bool",
+        TYPE_CODE=>"code",TYPE_FLOAT=>"float",TYPE_UNKNOWN=>"unknown",
+        TYPE_PARTIALSTRUCT=>"partialstruct",TYPE_PARTIALUNION=>"partialunion",
+        _=>"other",
+    }
+}
+
+
 /// Types of integer promotion (C++ `CastStrategy::IntPromotionCode`,
 /// cast.hh:48-54).  For many languages small integers are automatically
 /// *promoted* to a standard size; these codes describe how an expression is or
@@ -677,7 +689,7 @@ impl CastStrategy for CastStrategyC {
         }
         let mut care_uint_int = care_uint_int;
         if curtype.get_metatype() == type_metatype::TYPE_VOID {
-            return Some(Rc::clone(reqtype)); // If coming from "void" (a dereferenced pointer) we need a cast
+            {census::set_reason("cs:from-void"); return Some(Rc::clone(reqtype));} // If coming from "void" (a dereferenced pointer) we need a cast
         }
         let mut reqbase: Rc<Datatype> = Rc::clone(reqtype);
         let mut curbase: Rc<Datatype> = Rc::clone(curtype);
@@ -686,7 +698,7 @@ impl CastStrategy for CastStrategyC {
             && curbase.get_metatype() == type_metatype::TYPE_PTR
         {
             if reqbase.get_word_size() != curbase.get_word_size() {
-                return Some(Rc::clone(reqtype));
+                {census::set_reason("cs:ptr-wordsize"); return Some(Rc::clone(reqtype));}
             }
             let req_space = reqbase.get_pointer_space();
             let cur_space = curbase.get_pointer_space();
@@ -695,7 +707,7 @@ impl CastStrategy for CastStrategyC {
             #[allow(clippy::collapsible_if)]
             if !addr_space_eq(&req_space, &cur_space) {
                 if req_space.is_some() && cur_space.is_some() {
-                    return Some(Rc::clone(reqtype)); // Pointers to different address spaces.  We must cast
+                    {census::set_reason("cs:ptr-space"); return Some(Rc::clone(reqtype));} // Pointers to different address spaces
                 }
                 // If one pointer doesn't have an address, assume a conversion to/from
                 // sub-type and don't need a cast
@@ -731,7 +743,7 @@ impl CastStrategy for CastStrategyC {
             {
                 return None; // Don't need a cast
             }
-            return Some(Rc::clone(reqtype)); // Otherwise, always cast change in size
+            {census::set_reason("cs:size-change"); return Some(Rc::clone(reqtype));} // Otherwise, always cast change in size
         }
         match reqbase.get_metatype() {
             type_metatype::TYPE_UNKNOWN
@@ -812,6 +824,8 @@ impl CastStrategy for CastStrategyC {
             _ => {}
         }
 
+        census::set_meta(mt_name(reqbase.get_metatype()), mt_name(curbase.get_metatype()));
+        census::set_reason("cs:meta");
         Some(Rc::clone(reqtype))
     }
 
@@ -1162,3 +1176,46 @@ fn code_prototype_is_null(ct: &Datatype) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+// ===== SCRATCH CENSUS INSTRUMENTATION (castcensus lane; never to be merged) =====
+pub mod census {
+    use std::cell::RefCell;
+    use std::collections::BTreeMap;
+    pub static COUNTS_G: std::sync::Mutex<BTreeMap<String, u64>> = std::sync::Mutex::new(BTreeMap::new());
+    thread_local! {
+        pub static REASON: RefCell<&'static str> = const { RefCell::new("?") };
+        pub static META: RefCell<(&'static str, &'static str)> = const { RefCell::new(("", "")) };
+        pub static ARM: RefCell<&'static str> = const { RefCell::new("?") };
+    }
+    pub fn on() -> bool {
+        std::env::var_os("KUNA_CASTCENSUS").is_some()
+    }
+    pub fn set_reason(r: &'static str) {
+        if on() { REASON.with(|x| *x.borrow_mut() = r); }
+    }
+    pub fn set_arm(a: &'static str) {
+        if on() { ARM.with(|x| *x.borrow_mut() = a); }
+    }
+    pub fn take_arm() -> &'static str {
+        ARM.with(|x| { let r = *x.borrow(); *x.borrow_mut() = "?"; r })
+    }
+    pub fn set_meta(a: &'static str, b: &'static str) {
+        if on() { META.with(|x| *x.borrow_mut() = (a, b)); }
+    }
+    pub fn take_meta() -> (&'static str, &'static str) {
+        META.with(|x| { let r = *x.borrow(); *x.borrow_mut() = ("", ""); r })
+    }
+    pub fn take_reason() -> &'static str {
+        REASON.with(|x| { let r = *x.borrow(); *x.borrow_mut() = "?"; r })
+    }
+    pub fn bump(k: String) {
+        if on() { *COUNTS_G.lock().unwrap().entry(k).or_insert(0) += 1; }
+    }
+    pub fn dump() {
+        if !on() { return; }
+        let m = COUNTS_G.lock().unwrap();
+        let mut v: Vec<_> = m.iter().collect();
+        v.sort_by(|a, b| b.1.cmp(a.1));
+        for (k, n) in v { eprintln!("CASTCENSUS\t{}\t{}", n, k); }
+    }
+}

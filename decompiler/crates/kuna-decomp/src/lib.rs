@@ -67,7 +67,7 @@ mod p5_types;
 mod p6_variables;
 mod p7_regions;
 mod p8_structure;
-mod p9_emit;
+pub mod p9_emit;
 mod infra;
 
 pub use substrate::*;

@@ -60,6 +60,7 @@ use kuna_base::types::{int4, int8, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::cast::{CastContext, CastStrategy, CastStrategyC, OpRef, VnRef};
+use crate::p9_emit::cast::census;
 use crate::coreaction_infertypes::{declared_input_type_local as input_type_local, output_type_local};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
@@ -309,6 +310,28 @@ pub(crate) fn get_input_cast(
     slot: int4,
 ) -> Option<Rc<Datatype>> {
     let opc = data.obank().get(op)?.code();
+    census::set_arm(match opc {
+        OpCode::CPUI_COPY => "copy",
+        OpCode::CPUI_LOAD => "load",
+        OpCode::CPUI_STORE => "store",
+        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => "equal",
+        OpCode::CPUI_INT_SLESS | OpCode::CPUI_INT_SLESSEQUAL => "sless",
+        OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL => "less",
+        OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => "ext",
+        OpCode::CPUI_PTRADD => "ptradd",
+        OpCode::CPUI_PTRSUB => "ptrsub",
+        OpCode::CPUI_INT_DIV | OpCode::CPUI_INT_REM | OpCode::CPUI_INT_RIGHT
+        | OpCode::CPUI_INT_SDIV | OpCode::CPUI_INT_SREM | OpCode::CPUI_INT_SRIGHT => "divshift",
+        OpCode::CPUI_FLOAT_INT2FLOAT => "int2float",
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => "call",
+        OpCode::CPUI_RETURN => "return",
+        OpCode::CPUI_INT_ADD => "intadd",
+        OpCode::CPUI_INT_SUB => "intsub",
+        OpCode::CPUI_INT_MULT => "intmult",
+        OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => "intlogic",
+        OpCode::CPUI_INT_LEFT => "intleft",
+        _ => "other",
+    });
     match opc {
         // TypeOpCopy::getInputCast (typeop.cc:398-404): require input == output type.
         OpCode::CPUI_COPY => {
@@ -1406,6 +1429,7 @@ impl Funcdata {
             return 1;
         }
         // Generate the CAST op.
+        census::bump(format!("IN\t{:?}\t{}\t{}\t{:?}", self.obank().get(op).map(|o| o.code()).unwrap(), census::take_arm(), census::take_reason(), census::take_meta()));
         let vnin_size = self.vbank().get(vnin).map(|v| v.get_size()).unwrap_or(1);
         let addr = match self.obank().get(op) {
             Some(o) => o.get_addr().clone(),
@@ -1515,6 +1539,7 @@ impl Funcdata {
             }
         }
         // Generate the cast op.
+        census::bump(format!("OUT\t{:?}\t{}\t{}\t{:?}\t{}", self.obank().get(op).map(|o| o.code()).unwrap(), if force {"forced"} else {"cs"}, census::take_reason(), census::take_meta(), if opc == OpCode::CPUI_CAST {"cast"} else {"ptrsub"}));
         let outvn_size = self.vbank().get(outvn).map(|v| v.get_size()).unwrap_or(1);
         let vn = self.new_unique(outvn_size, None);
         let _ = self.vn_update_type(vn, Rc::clone(&tokenct));
