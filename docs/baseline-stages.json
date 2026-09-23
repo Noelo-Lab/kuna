@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1311,
-    1311
+    1323,
+    1323
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -401,6 +401,9 @@
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism",
+    "data:KUNA-CALLPLACEHOLDER #1: strncpy takes its three declared arguments",
+    "data:KUNA-CALLPLACEHOLDER #2: strlen takes its one declared argument",
+    "data:KUNA-CALLPLACEHOLDER #3: no call reads the return-address slot as an argument",
     "data:KUNA-CATALOG #10: fast whole-project discovery is default-off but live-toggleable",
     "data:KUNA-CATALOG #11: mapped ELF x86 flow recovery is default-on in P2",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -427,6 +430,15 @@
     "data:KUNA-ENTRYMAINPROTO #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x <= 8 renders identically in all three passes",
     "data:KUNA-ENTRYMAINPROTO #2: the catalog documents it as a default-on P1 prototype-source correctness fix, live-toggled back on",
     "data:KUNA-ENTRYMAINPROTO #3: the catalog row names the CRT accessors an agent would grep for",
+    "data:KUNA-LIBCWIDEN #1: off, the faccessat wrapper's path stays a width-only integer",
+    "data:KUNA-LIBCWIDEN #2: on, faccessat's declaration types it",
+    "data:KUNA-LIBCWIDEN #3: off, both of renameat's names stay integers",
+    "data:KUNA-LIBCWIDEN #4: on, both are char \\*",
+    "data:KUNA-LIBCWIDEN #5: off, the mkdirat wrapper's name is an integer",
+    "data:KUNA-LIBCWIDEN #6: on, it is char \\*",
+    "data:KUNA-LIBCWIDEN #7: off, chroot's one argument is an integer",
+    "data:KUNA-LIBCWIDEN #8: on, it is char \\*",
+    "data:KUNA-LIBCWIDEN #9: every wrapper is named in both passes, so naming is not what moved",
     "data:KUNA-LISTING #1: option listing on parses and round-trips, and is inert: the source form x <= 8 renders identically in both passes (default-off + flag-on parity)",
     "data:KUNA-NORETURN-DISCSTRICT #1: option noreturn_discstrict off/on parses and round-trips, and is inert on the XML path (no Listing built): the source form x <= 8 renders identically in all three passes (default-on + flag-off + flag-on parity)",
     "data:KUNA-PICBASE #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x <= 8 renders identically in all three passes",
