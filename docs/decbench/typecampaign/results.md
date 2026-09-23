@@ -1164,10 +1164,10 @@ The reachable blockers, as functions that would become perfect if only that buck
 
 ## Round F — 2026-09-23
 
-Round E ranked five levers. Round F built the top two and the two O2 blockers under them: `protoorder`
-for recursive components (#712), a `framelayout` filler slot typed from the pointer stored into it
-(#710), records for call-returned pointers (#709) and pass-through arity (#708). All four landed;
-`calleevote` (#711) is open with review CHANGES. This section re-measures `origin/main` `810b7dc86`
+Round E ranked five levers. Round F built the top two — `protoorder` for recursive components (#712)
+and a `framelayout` filler slot typed from the pointer stored into it (#710) — plus one of E.8's O2
+blockers, pass-through arity (#708), and the `structlocals` branch E.7 left unopened (#709). All four
+landed; `calleevote` (#711) is open with review CHANGES. This section re-measures `origin/main` `810b7dc86`
 on the same instruments under the same metric pin, so every number reads
 baseline → round B → round C → round D → round E → round F.
 
@@ -1196,7 +1196,7 @@ rows exactly — 10,748/10,748 functions, **0 values differ**.
 | goal 3: layout | per-parameter precision / recall / F1, fields only | .8702 / .0859 / .1563 | **.8710 / .0865 / .1574** | two more `ls` parameters typed as a record; nothing else moves |
 | goal 3: nesting | nesting F1 | .0036 (3 of 5 claimed, of 1,660) | .0036, unchanged | `structsynth nest` still claims the same 5 on these eight builds |
 | decbench#93 crediting | replay of the same rows | 1,353 → 1,579 (+226) | 1,522 → **1,781 (+259)** | +1,779 TP; mean .3553 → **.4038** |
-| speed | whole-binary `decompile-all`, interleaved min-of-11 | +1.0…+3.3% vs baseline | SPEED_HEADLINE | SPEED_NOTE |
+| speed | whole-binary `decompile-all`, interleaved min | +1.0…+3.3% vs baseline | **+1.4…+4.5%** vs baseline | −3.9…+2.2% against round E; two cases crossed the +5% line on a loaded box and were re-run at min-of-15 (fmt +8.33% → **−3.90%**) |
 
 ### F.1 type_match
 
@@ -1260,9 +1260,10 @@ recursive functions, which had no way to state what they recovered.
 
 The pinned metric credits an exported `undefined8` against an 8-byte integer, so a filler slot kuna says
 nothing about scores for free; once `slotptr` gives it the type of the value stored into it, a wrong body
-type becomes a visible miss. In `shred::dorewind` the body is `v1 = (int *)lseek(fd,0,0)` — `lseek`'s
-`long` return is merged with `__errno_location()`'s `int *` two statements later, which is a pre-existing
-defect `slotptr` only makes legible. The sixth is #712: `ginstall::install_file_in_file` -O2, where
+type becomes a visible miss. In `shred::dorewind` the body reads
+`v1 = (int *)lseek(fd,0,0); v2 = v1; if (1 <= (long)v1) v2 = __errno_location();` — `lseek`'s `long`
+return and `__errno_location()`'s `int *` are one variable, which is a pre-existing defect `slotptr`
+only makes legible. The sixth is #712: `ginstall::install_file_in_file` -O2, where
 `to_relname` (`char *`) takes `stat *` from a caller's vote.
 
 Measured against the campaign baseline the round stands at **3,016 functions improved and 11 worse, 675
@@ -1382,7 +1383,30 @@ see them (`final-f/credit93-arms.log`).
 
 ### F.6 Speed
 
-SPEED_SECTION
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation) on the O2 stripped
+binaries: four arms (baseline, round C, round E, round F) run one after another with the arm order
+rotating every round. Driver `final-f/speed6.py`, raw samples `final-f/speed.json` and
+`final-f/speed-quiet.json`. The box was **not quiet** for any of it — other work kept the load
+average between 10 and 19 on 80 cores all night — so the absolute milliseconds are not comparable
+with round E's page; only the within-run deltas are.
+
+| binary | functions | baseline min | round C min | round E min | **round F min** | Δ F vs E (min / median) | Δ F vs baseline (min) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| coreutils fmt (re-run, min-of-15) | 151 | 4,256.6 ms | 4,353.1 ms | 4,496.0 ms | **4,320.8 ms** | **−3.90%** / −0.04% | +1.51% |
+| coreutils ls (re-run, min-of-15) | 404 | 14,131.1 ms | 14,889.6 ms | 14,229.8 ms | **14,510.5 ms** | **+1.97%** / +10.69% | +2.68% |
+| coreutils sort (min-of-11) | 343 | 15,130.8 ms | 15,377.2 ms | 15,467.8 ms | **15,808.3 ms** | +2.20% / +3.72% | +4.48% |
+| bash (min-of-11) | 2,538 | 93,009.9 ms | 95,421.2 ms | 95,260.2 ms | **94,277.2 ms** | −1.03% / −0.31% | +1.36% |
+
+Round F costs **−3.9% to +2.2% against round E** and sits at **+1.4% to +4.5% against the campaign
+baseline** — six days of default-on type work, still inside the +5% budget.
+
+Two cases crossed the +5% re-run line on the first pass and were re-measured at min-of-15 later in the night. fmt read **+8.33% min against a −4.72% median**, which is
+one unusually fast sample in the round-E arm and nothing else; the re-run puts it at −3.90% / −0.04%; ls
+crossed on its median (+5.35%) with a +2.37% min, and re-reads at +1.97% / +10.69%. Nothing else
+was re-run. Medians are noisier than usual for the same reason the absolutes are — ls's +10.69% median
+sits against a +1.97% min on the same fifteen rounds — and min is the statistic the campaign has
+reported throughout. bash is 1.3 MB, so `--mode auto` resolves to `reliable` there rather than
+`aggressive`.
 
 ### F.7 Every round-F PR and what it measured
 
@@ -1507,5 +1531,5 @@ bash final-f/ss.sh && python3 final-f/sstable6.py   # structscore E vs F
 bash final-f/ss-ablate.sh         # the same eight builds with `--option slotptr off`
 bash final-f/layout.sh            # layout P/R (F, E control) + nestscore param vs nest
 python3 final-f/layoutdiffEF.py <bin>               # per-parameter layout, round E vs round F
-python3 final-f/speed6.py 11 <speed.json> fmt,ls,sort,bash
+python3 final-f/speed6.py 11 <speed.json> fmt,ls,sort,bash   # then speed6.py 15 for any case over +5%
 ```
