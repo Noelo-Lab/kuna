@@ -123,8 +123,8 @@
   "projects": "coreutils grep gzip diffutils bzip2 findutils tar shadow",
   "opts": "O0 O2 O2-noinline",
   "perfect": {
-   "base": 1522,
-   "test": 1522,
+   "base": 1609,
+   "test": 1609,
    "delta": 0
   },
   "aggregate": {
@@ -134,7 +134,7 @@
   "improved": 0,
   "worsened": 0,
   "note": "type_match cannot see a record's MEMBERS: a struct_2 * and a struct_3 * score the same, which is why 444 slices move by 0. It does see a record appearing or disappearing, and those 444 slices cover eight projects that happen not to contain that. e2fsprogs does: on e2fsck -O0 the value gives one function a five-field record where it had `void *`, takes the record off three other variables, and turns reconfigure_bool's two `char *` parameters into `unsigned long` -- type_match 0.6667 -> 0.3333 there, the binary's aggregate 201.21 -> 200.88 at an unchanged 12 perfect functions (typesweep --project e2fsprogs --opt O0 --opt O2: 631 functions, perfect +0, 1 worsened, 0 improved). So the option is not metric-neutral by construction; it is metric-neutral over the eight projects the campaign sweep measures. docs/features/structmerge/hunks.md works the class.",
-  "measured_on": "run on the pre-rebase tree (31ac2b26e-era base, where main's own headline was 1,522 perfect); not re-run after the rebase, because the option is default OFF, so the base arm is main's own number whatever it is, and the test arm moves 0 functions on these 444 slices."
+  "measured_on": "re-run on the rebased tree (origin/main with #711 calleevote, #714 libcwiden and #716 passthrough in): 1,609 perfect in both arms, 0 functions moved either way. The first run, on the 31ac2b26e-era base, read 1,522 in both arms."
  },
  "hunks": {
   "doc": "docs/features/structmerge/hunks.md",
@@ -149,7 +149,8 @@
   "the_one_respelling": "grep -O2 sub_7110: the record gains a long member where it had undefined1 filler, so `v1 = a0->field_0x20` (an array member decaying to its address) becomes `v1 = &a0->field_0x20`, the same address with the pointer typed by the member Outside this set the class is larger: e2fsprogs e2fsck -O2 (1,421 functions) changes 56, 54 record-name-only, 2 respelled bodies, 1 of them a declaration-count delta (dict_insert 7 -> 6 declarations, every access at the same address; ext2fs_file_read passes &a0->field_0x14 where filler decayed to a0->field_0x14). Worked in hunks.md.",
   "scope": "the counts below are these ten binaries, not a general rate",
   "eleventh_binary": "e2fsprogs e2fsck -O0 (1,908 functions, 18,080 exported variables) holds a class the ten do not: 185 functions change (175 record-name-only, 9 field-accesses-only, 1 declaration-count delta) and 265 variables, of which 3 LOSE a synthesized record for `void *`, 1 gains one, and reconfigure_bool's two `char *` parameters become `unsigned long` (type_match 0.6667 -> 0.3333). So `siblings` can leave a function worse typed than `off`. The cause is the convergence sweep's redo of every reader of a superseded record, not the union: `--option protoorder lock` leaves not one variable on the binary changing type. Worked in hunks.md.",
-  "merged_mint_fallback": "lookup_or_mint falls through to the reader's own claims when the union will not mint, so a declined union never leaves a reader untyped where `off` types it. Measured inert on the corpus: KUNA_STRUCTMERGE_TRACE=1 over e2fsck -O0 plus twelve campaign binaries (ls/sort/du/fmt -O0 and -O2, grep, gzip, diff, tar, find, useradd, bzip2) traces 37,571 candidates and 0 mint failures, so the typesweep and layoutscore numbers above are unchanged by it."
+  "merged_mint_fallback": "lookup_or_mint falls through to the reader's own claims when the union will not mint, so a declined union never leaves a reader untyped where `off` types it. Measured inert on the corpus: KUNA_STRUCTMERGE_TRACE=1 over e2fsck -O0 plus twelve campaign binaries (ls/sort/du/fmt -O0 and -O2, grep, gzip, diff, tar, find, useradd, bzip2) traces 37,571 candidates and 0 mint failures, so the typesweep and layoutscore numbers above are unchanged by it.",
+  "rebase_recheck": "four of the ten binaries (coreutils du -O2, findutils find -O2, grep -O2, tar -O2) re-classified on the rebased tree: | **total** | 2552 | 76 | 76 | 0 | 0 | (columns: functions, changed, record name only, field accesses only, read) -- no skeleton delta, no declaration-count delta, nothing unclassified."
  },
  "jobs": "a --jobs N worker answers through the shard replay, which records the layout each request measured, so it never merges and a sharded run behaves as off -- the same divergence structsynth already has. Verified: coreutils fmt -O2 with --jobs 2 is byte-identical with the option off and with siblings.",
  "gates": {
