@@ -105,15 +105,15 @@
   "extra_binaries": "8 more (O2-noinline sort/df/cp/grep/find/bzip2, O2 od, O0 tar): 245 functions change, lostargs 0/0, call-site deletions 0, 226 arguments added; sort O2-noinline 0x13070 keeps xrealloc's size `sub_12f00(a0,v3)`."
  },
  "gates": {
-  "tested_commit": "7da4afecf (later commits change comments and docs only)",
-  "make_test": "PARITY OK 675/675",
-  "make_test_stages": "PARITY OK 1299/1299",
-  "make_test_cli": "221/221",
-  "kuna_catalog_check": "OK",
-  "counters_check": "no drift",
+  "tested_commit": "this branch's head (feat/passthrough-on)",
+  "make_test": "PARITY OK, datatests: 675/675 assertions passed",
+  "make_test_stages": "PARITY OK, datatests: 1309/1309 assertions passed",
+  "make_test_cli": "tests/cli: 225/225 passed",
+  "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
+  "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md_fresh": true,
   "check_spec": "OK lenient + strict",
-  "make_rust_test": "RUST_TEST_RC=0 (lane script, commit 7da4afecf; 421 test-result lines, 0 failed)",
+  "make_rust_test": "RUST_TEST_RC=0 (lane script; 423 test-result lines, 0 failed)",
   "full_ci_label": true
  },
  "catalog_counts": {
@@ -145,32 +145,38 @@
   "docs/features/passthrough/dwarf-confirmation.md"
  ],
  "speed": {
-  "method": "interleaved min-of-15, SAME binary (commit 7da4afecf), --option passthrough off vs on, whole-binary `kuna decompile-all --max-fn-seconds 120` (the option is inert under single-function `kuna decompile`, so scripts.pipeline.timeit would measure nothing)",
-  "O2/coreutils/fmt": {
-   "off_s": 4.258,
-   "on_s": 4.14,
-   "delta_pct": -2.78
+  "method": "interleaved min-of-15, SAME build, whole-binary `kuna decompile-all --json --max-fn-seconds 120`, `--option passthrough off` against the new default; the option is inert under single-function `kuna decompile`",
+  "measured": "2026-09-23, contended (another campaign lane was running its own min-of-15 sweep); min-of-15 takes the least-contended sample",
+  "O2": {
+   "coreutils": {
+    "fmt": {
+     "off_s": 4.494,
+     "on_s": 4.378,
+     "delta_pct": -2.59
+    },
+    "ls": {
+     "off_s": 15.713,
+     "on_s": 14.668,
+     "delta_pct": -6.65
+    },
+    "sort": {
+     "off_s": 16.288,
+     "on_s": 15.803,
+     "delta_pct": -2.98
+    }
+   },
+   "bash": {
+    "bash": {
+     "off_s": 101.103,
+     "on_s": 103.218,
+     "delta_pct": 2.09
+    }
+   }
   },
-  "O2/coreutils/ls": {
-   "off_s": 13.931,
-   "on_s": 13.892,
-   "delta_pct": -0.28
-  },
-  "O2/coreutils/sort": {
-   "off_s": 15.328,
-   "on_s": 15.312,
-   "delta_pct": -0.11,
-   "note": "re-run alone; the first run, measured while this lane's rust-test was building, read 14.792 -> 15.901 (+7.50%)"
-  },
-  "O2/bash/bash": {
-   "off_s": 86.5,
-   "on_s": 89.934,
-   "delta_pct": 3.97,
-   "note": "measured while two other lanes ran their own speed sweeps"
-  },
-  "worst_delta_pct": 3.97,
+  "worst_delta_pct": 2.09,
   "budget_pct": 5.0,
-  "within_budget": true
+  "within_budget": true,
+  "samples": 15
  },
  "default_flip": {
   "round": "G",
