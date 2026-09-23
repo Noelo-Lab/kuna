@@ -521,7 +521,7 @@
   "make test": "675/675 assertions passed, PARITY OK",
   "make test-stages": "1323/1323 assertions passed, PARITY OK (1,311 -> 1,323 is exactly the 12 new assertions; none moved)",
   "make test-cli": "235/235 passed",
-  "make rust-test": "re-run on the rebased tree; see the lane log",
+  "make rust-test": "RUST_TEST_RC=0 -- 7,452 passed, 0 failed, 38 ignored; options_md_matches_the_generator_byte_for_byte ok. Lane started 06:57:39Z on the rebased tree, after the last source change (06:55:40Z), finished 07:27:24Z.",
   "kuna catalog --check": "OK",
   "scripts.repipe.counters --check": "no drift",
   "check-spec": "OK lenient and strict",
