@@ -224,7 +224,8 @@
    "typing-only (same statements, a type or a cast moves)": 199,
    "a cast or NULL appears at a newly typed call argument": "the bulk of the remainder",
    "local renumbering after a typed call folds into its condition": "the rest",
-   "other": 0
+   "other": 0,
+   "a 4-byte libc return inside an 8-byte recovered return widens into CONCAT44(dat_4, ...)": "40 -> 56 over the 12 binaries (chcon 2->4, ginstall 3->4, gzip 2->4, find 7->12, tar 7->13). A PRE-EXISTING rendering, not new behaviour: where a wrapper's own return is recovered as 8 bytes and the call it returns now has a declared 4-byte return, the unset upper half prints as the dat_4 pseudo-global. coreutils chcon: `return lsetfilecon(a1,a2);` -> `return CONCAT44(dat_4,lsetfilecon(a1,a2));`. The upper half genuinely is not set by the call, so the C is not wrong, but it is the one hunk class this change grows and it was missing from this list."
   },
   "structural": "gotos 3,402 = 3,402; labels 605 = 605; no function gains or loses an error or a timeout.",
   "declarations": {
@@ -245,7 +246,7 @@
    "new_name_call_sites": 445,
    "sites rendering one argument past the declared non-variadic arity": 0,
    "pre_existing_rate_same_arm": "575 of 13,036 on main's own already-declared names, which is what identified the bug as the engine's, not the table's",
-   "note": "Heritage::clearStackPlaceholders was an unported stub; with it ported the count is 0 in both arms and 144 such arguments disappear over the 12 binaries. See placeholder_strip.",
+   "note": "Heritage::clearStackPlaceholders was an unported stub; with it ported the count is 0 in both arms. The measured counts and their definition are in placeholder_strip.corpus (148 -> 0 over the 12 binaries).",
    "before_the_placeholder_strip": 24
   }
  },
@@ -472,12 +473,12 @@
  ],
  "placeholder_strip": {
   "what": "Heritage::clearStackPlaceholders was an unported stub (only the flag was cleared), so the stack-pointer placeholder ActionFuncLink appends to every CALL was never removed from a call whose callee carries a DECLARED prototype -- such a call's input list is locked, so no later pass rewrites it. It rendered as one argument past the declared arity, reading the slot the `call` pushed its return address into.",
-  "pre_existing": "On origin/main, ginstall alone renders 13 such calls (free, strlen, strcmp, stat, fstatat ...); the widened table made the class visible on 24 more sites because it declares 333 more names. Both arms are fixed.",
+  "pre_existing": "On origin/main the class is already there: 148 calls over the 12-binary corpus, 100 of them on names the 28-entry base table alone declares (free 44, memcpy 19, realloc 12, malloc 10 ...). The widened table grows it by 48 because it declares 333 more names. Both arms are fixed.",
   "no_option": "A strict bug fix: the emitted call contradicted the prototype the same output declares, and reading the return-address slot has no reading under which it is right.",
   "corpus": {
    "binaries": 12,
    "phantom_trailing_arguments": [
-    161,
+    148,
     0
    ],
    "function_count": "identical",
@@ -493,7 +494,8 @@
     21904,
     21899
    ],
-   "phantom_trailing_arguments_note": "161 on origin/main's OWN default over the 12 binaries (103 of them with `libcsigs off` as well, i.e. from the 28-entry base table alone) -- 0 in every arm of this branch. Counted as a call argument that is a bare stack-array element at a negative displacement."
+   "phantom_trailing_arguments_note": "Counted by docs/features/libcwiden/phantom_args.py over the whole-binary decompile-all output of the same 12 binaries in both arms: a call to a name the SAME output declares non-variadic, carrying exactly one argument more than that declared arity, whose last argument is a bare stack-array element at a negative displacement. 148 on origin/main (9e07ab931) with its own default; 100 of those survive `--option libcsigs off`, i.e. they come from the 28-entry base table alone; 0 in BOTH arms of this branch. Per binary: ginstall 44 (12 with libcsigs off), df 39 (34), stat -O2-noinline 39 (34), tar 14 (12), diff 7 (5), find 5 (3), the other six 0. The earlier figures 144/161 in this file came from two ad-hoc counts with different declaration matching and are superseded by the committed script.",
+   "phantom_trailing_arguments_script": "docs/features/libcwiden/phantom_args.py"
   },
   "typesweep_alone": {
    "improved": 0,

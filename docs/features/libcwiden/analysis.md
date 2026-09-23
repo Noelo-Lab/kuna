@@ -109,9 +109,11 @@ The guard makes all 20 inert on the image that defines them.
 ## 5. Why no new option
 
 `libcsigs` is the option. It exists to ablate exactly this table, its `off` arm
-renders what the 28-entry base table alone renders, and that is still true with
-333 more rows in it. Adding a second flag would make the two halves of one
-measured table separately ablatable for no reason a reader would use. The stage
+declares exactly the names the 28-entry base table carries, and that is still
+true with 333 more rows in it. It does NOT ablate the placeholder strip below,
+which is ungated and runs in both arms, so `off` is not `origin/main`. Adding a
+second flag would make the two halves of one measured table separately ablatable
+for no reason a reader would use. The stage
 test `tests/stages/kuna-libcwiden.xml` pins both arms.
 
 ## 6. What it costs
@@ -125,11 +127,13 @@ make visible. `Heritage::clearStackPlaceholders` was an unported stub, so the
 stack-pointer placeholder `ActionFuncLink` hangs on every CALL was never taken
 off a call whose input list is locked. It printed as one argument past the
 declared arity, reading the slot the `call` pushed its return address into, and
-on `origin/main` ginstall's function at 0xbdda alone renders 47 of them.
+on `origin/main` ginstall's function at 0xbdda alone carries 47 of them
+(`kuna decompile-all .../O0/coreutils/stripped/ginstall --addr 0xbdda | grep -c 'v26\[-8\])'`).
 
 So the cost is now zero and something on main is fixed with it: over 12 whole
-binaries the trailing argument goes **166 to 0** (103 of them on main's own already-declared names) with function count, gotos and
-labels identical. Its own price is ten ground-truth `_Bool` variables of 65,715
+binaries the trailing argument goes **148 to 0** (100 of them on main's own
+already-declared names), counted by the committed `phantom_args.py`, with
+function count, gotos and labels identical. Its own price is ten ground-truth `_Bool` variables of 65,715
 that spelled `bool` and now spell `char`, in two functions whose frame is
 alloca-shaped -- the same shape that kept the placeholder. Against all of it, 220
 import thunks go from `(void)` to their real declared arity and 554 parameter
