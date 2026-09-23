@@ -2058,6 +2058,15 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   same value `off_t`, and the pointer, had it won, would have reached
   `end_pos = stats.st_size`, split `struct stat` in two, and left the output
   reading an `st_blksize` local nothing writes.
+- **Under `structheadless`, the vote is a synthesized record and a declared call
+  names the record the value is.** When a call that returns the family's value,
+  or takes it, is declared with a pointer to a named record that the synthesizer
+  did not mint (`libctypes`' `group`, a DWARF struct), a callee's `struct_N *` is
+  refused (`kuna_structheadless::yields_to_a_declared_record`). shadow's `newgrp`
+  holds `getgrnam`'s `group *` and hands it to a function that reads the group
+  past its start; that callee's own record otherwise retyped the variable
+  `struct_2 *`, a name no ground truth has. The rule is gated on the option
+  because headless records are what made it reachable on the campaign corpus.
 - **Float-ness disagrees**: the family is produced or read by a float op and the
   vote is not a float; a pointer vote on a value the caller multiplies, divides,
   shifts, masks or reads as a float; or an integer or pointer vote in a
