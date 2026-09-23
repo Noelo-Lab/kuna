@@ -1415,7 +1415,21 @@ moves.
   names it carries was *measured*, not guessed — a PLT call-site histogram over the
   frozen decbench C corpus plus a per-callee ranking of the cases where a rival
   decompiler recovers a perfect parameter typing and kuna does not; a name is in
-  the table when it clears 100 corpus call sites or 3 such cases. The signatures
+  the table when it clears 100 corpus call sites or 3 such cases. A second,
+  widened pass over the same corpus admits every remaining name on the same terms
+  with a broader question asked of it: not "which callee would move the metric"
+  but "which callee does this corpus actually import", so a name is admitted when
+  it is an **undefined** `FUNC` symbol in at least three of the corpus's
+  dynamically linked binaries, kuna does not already carry it, and its platform
+  declaration reduces *whole* to the width-stable vocabulary. That admits the
+  `*at` family (`renameat`, `mkdirat`, `fchownat`, `faccessat`, `utimensat`,
+  `linkat`, `symlinkat`, `readlinkat`), the SELinux surface coreutils links
+  against (`getfilecon`, `freecon`, `setfscreatecon`), the account, xattr, socket
+  and pthread names, and the `_chk` and LFS spellings the fortified headers
+  redirect to. It admits no name the rule does not reach: `strtoll`, `strtoull`,
+  `strtoimax`, `strtoumax` and `llabs` are the widest-imported names still
+  missing, all rejected for returning a type — `long long`, `intmax_t` — whose
+  width is not fixed by the data model. The signatures
   themselves are reduced from the platform's own C declarations (`gcc -aux-info`
   over the standard headers, GCC's builtin types for the FORTIFY `_chk` entry
   points, the `<stdio.h>` `__REDIRECT` for the `__isoc99_*` aliases), never written
