@@ -1236,15 +1236,17 @@ A `slotptr` win, runnable against the unpatched tree (`shadow::faillog::print`, 
 
 ```
 $ F=<results>/O0/shadow/stripped/faillog
-$ kuna decompile-all $F --json --option slotptr off | jq '.functions[]|select(.address==0x2be8).variables[]|"\(.name) \(.type)"'
-"local_20 undefined8"  "local_18 undefined8"  "local_10 undefined8"  "local_8 undefined8"
-$ kuna decompile-all $F --json | jq ...            # the default
-"local_20 undefined8"  "local_18 undefined8"  "local_10 passwd *"   "local_8 undefined8"
+$ V='.functions[]|select(.address_hex=="0x2be8").variables[]|"\(.name) \(.type)"'
+$ kuna decompile-all $F --json --option slotptr off | jq -r "$V"
+local_20 undefined8   local_18 undefined8   local_10 undefined8   local_8 undefined8
+$ kuna decompile-all $F --json | jq -r "$V"        # the default
+local_20 undefined8   local_18 undefined8   local_10 passwd *     local_8 undefined8
 ```
 
-A `protoscc` win is an argument instead: `mv::emit_verbose(char *src, char *dst, char *backup_dst_name)`
-was `unsigned long, unsigned long, long` and is all three `char *`, because the `char *` work in coreutils
-bottoms out in recursion.
+A `protoscc` win is an argument instead. `mv::emit_verbose(char *src, char *dst, char *backup_dst_name)`
+and `tar::close_diag(char *name)` are 1.0 by default and 0.0 under `--option protoorder types`, where
+their parameters are `unsigned long` and `long`: the `char *` work in coreutils and gnulib bottoms out in
+recursive functions, which had no way to state what they recovered.
 
 **The six worse functions, all read.** Five are `slotptr` and one shape:
 
@@ -1293,7 +1295,7 @@ results tree nor the pinned metric moved). Only the rows that moved, plus the tw
 variables only binja gets right are -O0 slots kuna exports as `undefined8`", and that is what `slotptr`
 collected. `ptr_struct` TPs by name, round E → F: `FILE *` 310 → 337, `obstack *` 34 → 58, `passwd *`
 17 → 34, `group *` 13 → 23, `tm *` 15 → 19, `DIR *` 10 → 14, `dirent *` 2 → 5, `lconv *` 1 → 3,
-`spwd *` 0 → 2; `stat *` 55 and `termios *` 6 are unchanged. The nine-point `ptr_char` gap to binja is
+`spwd *` 0 → 2; `stat *` 55 and `termios *` 6 are unchanged. The `ptr_char` gap to binja is
 now 2.2 points, down from 7.9.
 
 The rivals' replay, each decompiler paired with kuna on exactly the functions that decompiler scored:
@@ -1357,7 +1359,8 @@ Per-parameter layout against DWARF (`docs/features/structsynth/layoutscore.py`, 
 The round-E binary reproduces round E's published row to four decimals. Only `ls` moves, by three
 parameters (`final-f/layoutdiffEF.log`): `print_color_indicator` arg 0 and `quote_name` arg 3 at -O0, and
 `quote_name` arg 3 at -O2, each an untyped parameter that #712's cycle vote now types `struct_2 *` with
-2 of its 2 claimed fields right. Nothing regresses. **Nesting** is 3 of 5 claimed against 1,660 GT
+2 of its 2 claimed fields right (`ls` -O0 `sub_d87f` arg 3 is `long` under `--option protoorder types`
+and `struct_2 *` under `cycles`, with `structsynth param` and `slotptr off` making no difference). Nothing regresses. **Nesting** is 3 of 5 claimed against 1,660 GT
 nestings — P .60, R .0018, F1 **.0036** — identical to round E, and `--option structsynth nest` claims
 the same 5 on these builds.
 
