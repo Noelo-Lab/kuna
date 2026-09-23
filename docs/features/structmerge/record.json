@@ -133,7 +133,7 @@
   },
   "improved": 0,
   "worsened": 0,
-  "note": "type_match cannot see a record's members: a struct_2 * and a struct_3 * score the same. The option is metric-neutral by construction and the sweep confirms it."
+  "note": "type_match cannot see a record's MEMBERS: a struct_2 * and a struct_3 * score the same, which is why 444 slices move by 0. It does see a record appearing or disappearing, and those 444 slices cover eight projects that happen not to contain that. e2fsprogs does: on e2fsck -O0 the value gives one function a five-field record where it had `void *`, takes the record off three other variables, and turns reconfigure_bool's two `char *` parameters into `unsigned long` -- type_match 0.6667 -> 0.3333 there, the binary's aggregate 201.21 -> 200.88 at an unchanged 12 perfect functions (typesweep --project e2fsprogs --opt O0 --opt O2: 631 functions, perfect +0, 1 worsened, 0 improved). So the option is not metric-neutral by construction; it is metric-neutral over the eight projects the campaign sweep measures. docs/features/structmerge/hunks.md works the class."
  },
  "hunks": {
   "doc": "docs/features/structmerge/hunks.md",

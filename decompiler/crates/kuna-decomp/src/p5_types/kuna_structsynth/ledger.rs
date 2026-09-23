@@ -586,7 +586,13 @@ pub(crate) fn lookup_or_mint(
         if let Some((mfields, msize, mselfs)) =
             crate::kuna_structmerge::merge(types, &pairs, &want, &fields, size, selfs, unclaimed)
         {
-            return mint(types, &free, mfields, msize, &mselfs);
+            // A union that will not mint is not a reason to leave the reader
+            // untyped: the layout it measured is still minted below, exactly as
+            // `off` mints it.
+            if let Some(ct) = mint(types, &free, mfields, msize, &mselfs) {
+                return Some(ct);
+            }
+            crate::kuna_structmerge::trace_mint_failed(&free, &want);
         }
     }
     // Minting this layout supersedes every entry it strictly contains; that is

@@ -74,6 +74,19 @@
 //! the 1,105 fields the merge adds over 177 builds are not DWARF fields, pooled
 //! precision 0.9330 -> 0.9312. That is why the option ships `off`.
 //!
+//! The second limit is the sweep. The union supersedes the thinner record it
+//! contains, so that record's readers decompile again -- and the containment
+//! bounds that keep a reader of two fields off a record of five put the union
+//! out of its reach, so a redo can settle on a weaker answer than the one it
+//! replaces. On e2fsprogs `e2fsck` -O0 three variables fall from a synthesized
+//! record to `void *` and two `char *` parameters become `unsigned long`, while
+//! one function gains a five-field record;
+//! `docs/features/structmerge/hunks.md` works the class, and
+//! `--option protoorder lock`, which turns the sweep off, makes that binary
+//! identical under both values. A union the factory will not complete is not
+//! part of it: [`ledger::lookup_or_mint`] falls through to the reader's own
+//! claims, exactly as `off` mints them.
+//!
 //! Only the live ledger merges. A `--jobs N` worker answers through the shard
 //! table, whose replay records the layout each request measured, so a mint of
 //! something neither side asked for has nothing to replay; a sharded run
@@ -301,6 +314,21 @@ pub(crate) fn merge(
         }
     }
     best.map(|(_, f, s, sel)| (f, s, sel))
+}
+
+/// The union was accepted and the factory still refused to complete it, so the
+/// reader falls back to a record of its own claims. One `structmerge:` line on
+/// stderr under `KUNA_STRUCTMERGE_TRACE=1`.
+pub(crate) fn trace_mint_failed(name: &str, want: &Layout) {
+    if std::env::var_os("KUNA_STRUCTMERGE_TRACE").is_none() {
+        return;
+    }
+    eprintln!(
+        "structmerge: the union for a layout of {} claims and {} bytes would not mint as {name} \
+         -- falling back to the reader's own claims",
+        want.fields.len(),
+        want.size
+    );
 }
 
 /// One `structmerge:` line per candidate on stderr under

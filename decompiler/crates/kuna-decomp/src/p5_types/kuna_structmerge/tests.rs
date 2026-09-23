@@ -207,35 +207,59 @@ fn the_union_may_not_outgrow_either_reader() {
     assert_eq!(claimed(&b), vec![0, 8, 0x40]);
 }
 
-/// The reader dereferenced four bytes at 7 without claiming a field for them.
-/// A union that puts a member boundary inside that access would print the load
-/// through a different member than the reader's own layout does, which is what
-/// lets it move past an overlapping store; it is refused.
+/// The reader dereferenced four bytes at 0x10 without claiming a field for
+/// them; the held structure claims an `int4` there. A union that puts a member
+/// boundary inside that access would print the load through a different member
+/// than the reader's own layout does, which is what lets it move past an
+/// overlapping store; it is refused, and the reader keeps its own claims.
+///
+/// The same two layouts with no unclaimed bytes merge, so the veto is what the
+/// two outcomes differ by.
 #[test]
 fn a_union_may_not_split_bytes_the_reader_accessed_without_claiming() {
+    let held = |f: &crate::dtype::TypeFactoryImpl| {
+        vec![
+            TypeField::new(0, 0, "field_0x0", charptr(f)),
+            TypeField::new(1, 8, "field_0x8", f.get_base(8, type_metatype::TYPE_INT).unwrap()),
+            TypeField::new(2, 0x10, "field_0x10", f.get_base(4, type_metatype::TYPE_INT).unwrap()),
+            filler(f, 3, 0x14, 4),
+        ]
+    };
+    // The reader claims nothing at 0x10: its own member there is the eight bytes
+    // of filler between `field_0x8` and `field_0x18`.
+    let reader = |f: &crate::dtype::TypeFactoryImpl| {
+        vec![
+            TypeField::new(0, 0, "field_0x0", charptr(f)),
+            TypeField::new(1, 8, "field_0x8", f.get_base(8, type_metatype::TYPE_INT).unwrap()),
+            filler(f, 2, 0x10, 8),
+            TypeField::new(3, 0x18, "field_0x18", f.get_base(8, type_metatype::TYPE_INT).unwrap()),
+        ]
+    };
+
+    let g = core_factory();
+    let ga = ledger::lookup_or_mint(&g, held(&g), 0x18, &[], &[], ON).unwrap();
+    let union = ledger::lookup_or_mint(&g, reader(&g), 0x20, &[], &[], ON).unwrap();
+    assert_eq!(claimed(&ga), vec![0, 8, 0x10]);
+    assert_eq!(
+        claimed(&union),
+        vec![0, 8, 0x10, 0x18],
+        "with nothing unclaimed the two merge, and the union claims the held `int4` at 0x10"
+    );
+    assert_eq!(ledger::superseded_names(&g), vec![ga.get_name().to_string()]);
+
     let f = core_factory();
-    let (int4t, int8t, cp) =
-        (f.get_base(4, type_metatype::TYPE_INT).unwrap(),
-         f.get_base(8, type_metatype::TYPE_INT).unwrap(),
-         charptr(&f));
-    let writer = vec![
-        TypeField::new(0, 0, "field_0x0", Rc::clone(&cp)),
-        TypeField::new(1, 8, "field_0x8", Rc::clone(&int8t)),
-        TypeField::new(2, 0x10, "field_0x10", Rc::clone(&int4t)),
-        filler(&f, 3, 0x14, 4),
-    ];
-    let a = ledger::lookup_or_mint(&f, writer, 0x18, &[], &[], ON).unwrap();
-    let reader = vec![
-        TypeField::new(0, 0, "field_0x0", Rc::clone(&cp)),
-        TypeField::new(1, 8, "field_0x8", Rc::clone(&int8t)),
-        TypeField::new(2, 0x10, "field_0x10", Rc::clone(&int4t)),
-        filler(&f, 3, 0x14, 4),
-        TypeField::new(4, 0x18, "field_0x18", Rc::clone(&int8t)),
-    ];
-    // Same claims plus one, and an unaligned access the prune dropped over the
-    // bytes at 0x10: the held structure lays a claim there, this reader does not.
-    let b = ledger::lookup_or_mint(&f, reader, 0x20, &[(0x10, 4)], &[], ON).unwrap();
+    let a = ledger::lookup_or_mint(&f, held(&f), 0x18, &[], &[], ON).unwrap();
+    let b = ledger::lookup_or_mint(&f, reader(&f), 0x20, &[(0x10, 4)], &[], ON).unwrap();
     assert_ne!(b.get_name(), a.get_name());
+    assert_eq!(
+        claimed(&b),
+        vec![0, 8, 0x18],
+        "the union would split the access at 0x10, so the reader keeps its own claims"
+    );
+    assert!(
+        ledger::superseded_names(&f).is_empty(),
+        "nothing was merged, so the held structure still answers for its own reader"
+    );
 }
 
 /// `off` is the whole rule: every lookup answers exactly as it did before the

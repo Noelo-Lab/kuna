@@ -1494,7 +1494,27 @@ while F1 rises on all eight sets
 (`docs/features/structmerge/default-on-evaluation.md`). `on` a record states what
 one further function proved about it; `off` it states exactly what its own reader
 measured, which is the more conservative reading and what every earlier round
-measured. `tests/stages/structmerge-siblings.xml` is the
+measured.
+
+The second limit is the sweep, not the union. The union is minted under a fresh
+name and supersedes the thinner record it contains, so every function naming that
+record decompiles again -- and the redo is not guaranteed to land on the union,
+since the containment bounds that keep a reader of two fields off a record of
+five put it out of that reader's reach. What the redo settles on can be weaker
+than what it replaces, so `siblings` can leave a function WORSE typed than `off`
+does. On e2fsprogs `e2fsck` -O0 (1,908 functions, 18,080 exported variables,
+outside the eight layout builds) the value changes 265 variables: 254 are a
+record renamed, one function gains a five-field record where it had `void *`,
+three fall from `struct_35 */struct_87 *` to `void *`, and `reconfigure_bool`'s
+two `char *` parameters become `unsigned long` -- type_match 0.67 -> 0.33 for
+that function, and 201.21 -> 200.88 aggregate over the binary at an unchanged 12
+perfect functions. With the sweep disabled (`--option protoorder lock`) that
+binary is byte-identical under both values, which is where the class lives. A
+union the factory declines to complete is not part of it: the lookup falls
+through to the reader's own claims, exactly as `off` mints them
+(`ledger.rs (lookup_or_mint)`, traced by `KUNA_STRUCTMERGE_TRACE=1`).
+
+`tests/stages/structmerge-siblings.xml` is the
 two-arm witness. Like the rest of the ledger the merge needs one process holding
 the whole program: `kuna decompile` numbers each function's records from
 `struct_0` again, and a `--jobs N` worker answers through the shard replay, which

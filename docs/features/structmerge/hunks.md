@@ -77,3 +77,58 @@ scalar member's needs the `&` -- with the pointer now typed by the member it
 points at. Taking a field's address is not a dereference, so it is not an
 unclaimed access and the veto has nothing to say about it; this is the
 documented consequence of the layout having no holes.
+
+## The eleventh binary: a reader can come out worse
+
+`e2fsck` -O0 (1,908 functions) holds a class none of the ten above do, and one
+none of the tables here would show: the value can leave a function WORSE typed
+than `off` leaves it.
+
+```
+| e2fsck-O0 | 1908 | 185 | 175 | 9 | 1 |
+all classes: {'record name only': 175, 'field accesses only': 9, 'declaration-count delta': 1}
+```
+
+175 of the 185 are a record rename, as everywhere else. Of the nine that respell
+a body, four change a variable's type rather than its record's number. Over the
+binary's 18,080 exported variables (`--json variables[]`, which is what decbench
+scores) the value changes 265: 254 a record renamed, 1 gained, 3 lost, 7 other.
+
+```
+$ kuna decompile-all .../O0/e2fsprogs/stripped/e2fsck --option structmerge off --json
+$ kuna decompile-all .../O0/e2fsprogs/stripped/e2fsck --option structmerge siblings --json
+
+sub_724c2  void *a0                              -> struct_81 *a0          (gained: 5 claims)
+sub_73069  struct_87 *a0                         -> void *a0               (lost)
+sub_2390b  struct_35 *a0, struct_35 *local_30    -> void *                 (lost)
+sub_4618d  char *a2, char *a4                    -> unsigned long a2, a4   (lost)
+```
+
+`sub_4618d` is `reconfigure_bool`, and it is the only one of the four decbench
+can price: type_match 0.6667 -> 0.3333, the binary's aggregate 201.21 -> 200.88
+over an unchanged 12 perfect functions (`typesweep --project e2fsprogs --opt O0
+--opt O2`). The other three are functions with no matched ground-truth variable,
+so the metric never sees them; they are a quality loss all the same.
+
+The cause is the convergence sweep, not the union. The union is minted under a
+fresh name and supersedes the thinner record it contains, so every function that
+named the thinner record decompiles again -- and the containment bounds that keep
+a reader of two fields off a record of five put the union out of its reach, so
+the redo measures something else and can settle lower than the answer it
+replaces. `sub_724c2` and `sub_73069` read the same e2fs file handle: `off`
+gives the two-field reader `struct_87` and the five-field reader nothing, and
+`siblings` gives the five-field reader the union and leaves the two-field reader
+with `void *`. With the sweep disabled the whole binary is byte-identical under
+both values, which localizes the class exactly:
+
+```
+$ for m in off siblings; do kuna decompile-all .../O0/e2fsprogs/stripped/e2fsck \
+    --option structmerge $m --option protoorder lock --json > lock-$m.json; done
+$ # sub_73069, sub_2390b, sub_4618d, sub_724c2 identical in both
+```
+
+A union the factory declines to complete is not this class: `lookup_or_mint`
+falls through to the reader's own claims, exactly as `off` mints them
+(`KUNA_STRUCTMERGE_TRACE=1` prints the fall-through). That path does not fire
+here -- 27,282 traced candidates on this binary, 41 merged, 0 mint failures --
+so it is not the explanation for the three lost records.
