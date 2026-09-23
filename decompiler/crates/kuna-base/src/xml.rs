@@ -1902,7 +1902,7 @@ mod tests {
         // path argument as an integer
         // and kuna-callplaceholder / a call to a declared callee stops taking
         // the return-address slot as a trailing argument
-        assert_eq!(count, 335, "corpus file count drifted");
+        assert_eq!(count, 336, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1329,
-    1329
+    1341,
+    1341
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -970,6 +970,18 @@
     "data:callretmulti #3: same-block fan-out evaluates helper2 once per pass",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
+    "data:castimplied #10: with the option on the widening under (int4) goes and the (uint1) sign change stays",
+    "data:castimplied #11: with the option off the return widens a sign-changed value",
+    "data:castimplied #12: with the option on the widening goes and the (int4) sign change stays",
+    "data:castimplied #1: with the option off a char passed to a declared int4 parameter carries the (int4) C applies itself",
+    "data:castimplied #2: with the option on the argument is passed bare",
+    "data:castimplied #3: a callee with no declared prototype keeps the cast in both passes",
+    "data:castimplied #4: a varargs argument keeps the cast in both passes",
+    "data:castimplied #5: with the option off a widening assigned to a local declared int8 carries an (int8)",
+    "data:castimplied #6: with the option on the assignment converts",
+    "data:castimplied #7: with the option off an int4 returned from an int8 function carries an (int8)",
+    "data:castimplied #8: with the option on the return converts",
+    "data:castimplied #9: with the option off one byte is widened through three casts",
     "data:charbyte #10: and the call needs a cast back (dashlen off; argbyte and sibling, whose pointers stay uint1 *, in both passes)",
     "data:charbyte #11: with the option on the pointer stays char *",
     "data:charbyte #12: and the call takes it as it is",
