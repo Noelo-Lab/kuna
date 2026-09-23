@@ -129,7 +129,7 @@
   "options_md_fresh": true,
   "phase_catalog_fresh": true,
   "check_spec": "OK lenient + strict",
-  "make_rust_test": "pending re-run after the tightening (lane script)",
+  "make_rust_test": "RUST_TEST_RC=0 (lane script on the tightened head; 422 `test result: ok` lines, 0 FAILED, 7,456 passing tests)",
   "full_ci_label": true
  },
  "catalog_counts": {
@@ -164,37 +164,37 @@
  ],
  "speed": {
   "method": "interleaved min-of-15, SAME build, whole-binary `kuna decompile-all --json --max-fn-seconds 120`, `--option passthrough off` against the new default; the option is inert under single-function `kuna decompile`",
-  "measured": "2026-09-23, contended (another campaign lane was running its own min-of-15 sweep); min-of-15 takes the least-contended sample",
+  "measured": "2026-09-23 on the tightened head, contended (other campaign lanes running); min-of-15 takes the least-contended sample",
   "O2": {
    "coreutils": {
     "fmt": {
-     "off_s": 4.494,
-     "on_s": 4.378,
-     "delta_pct": -2.59
+     "off_s": 4.111,
+     "on_s": 4.127,
+     "delta_pct": 0.39
     },
     "ls": {
-     "off_s": 15.713,
-     "on_s": 14.668,
-     "delta_pct": -6.65
+     "off_s": 13.381,
+     "on_s": 13.383,
+     "delta_pct": 0.02
     },
     "sort": {
-     "off_s": 16.288,
-     "on_s": 15.803,
-     "delta_pct": -2.98
+     "off_s": 13.992,
+     "on_s": 14.012,
+     "delta_pct": 0.15
     }
    },
    "bash": {
     "bash": {
-     "off_s": 101.103,
-     "on_s": 103.218,
-     "delta_pct": 2.09
+     "off_s": 85.192,
+     "on_s": 85.366,
+     "delta_pct": 0.2
     }
    }
   },
-  "worst_delta_pct": 2.09,
+  "worst_delta_pct": 0.39,
   "budget_pct": 5.0,
-  "within_budget": true,
-  "samples": 15
+  "verdict": "within budget",
+  "history": "before the tightening the same harness gave fmt -2.59%, ls -6.65%, sort -2.98%, bash +2.09% (worst +2.09%); the run above is on a quieter box, and the two refusals only ever remove work"
  },
  "default_flip": {
   "round": "G (second pass, after an adversarial review on a corpus outside the 8 projects)",

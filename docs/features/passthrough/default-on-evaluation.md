@@ -61,11 +61,12 @@ arms of the same build.
 |---|---|
 | (a) `make test` | PARITY OK, 675/675 — the console decompiles no callee first, so no datatest can reach the rule |
 | (b) `make test-stages` | PARITY OK, 1311/1311; `tests/stages/kuna-passthrough.xml` already pins `option passthrough off` in pass 1, so nothing was re-recorded |
-| (c) `make test-cli` | 235/235, with one probe re-pinned (below) |
+| (c) `make test-cli` | 236/236, with one probe re-pinned (below) and one added for the vararg-tail refusal |
 | (d) 444-slice typesweep, new default vs `--option passthrough off` | PERFECT **1,593 → 1,569** reading the flip backwards, i.e. the flip is **+24** (24 onto perfect, 0 off); aggregate 3,853.89 → 3,905.63; 83 improved, **3 worse** |
-| (e) interleaved min-of-15, fmt/ls/sort -O2 + bash -O2 | see `record.json`; budget +5% |
+| (e) interleaved min-of-15, fmt/ls/sort -O2 + bash -O2 | fmt +0.39%, ls +0.02%, sort +0.15%, bash +0.20%; worst **+0.39%**, budget +5% |
 | (f) whole-corpus `decompile-all` before/after, 8 binaries | 276 functions change; every changed line is one of the documented effects bar two, both hand-read (a `*a0 = *a0 + 1` that became `a0->field_0x0 = a0->field_0x0 + 1` under a struct pointee, and a `sub_45230(a0,a3); return;` that became `return sub_45230(a0,a3);`) |
 | (g) `modes.rs` | the `UNEVALUATED` entry is removed: a default-on option needs no preset override |
+| `make rust-test` | RUST_TEST_RC=0 (lane script; 422 `test result: ok` lines, 0 FAILED) |
 
 The three worse rows are `print_group_list` (groups, id) and `print_stuff` (id):
 a `char *` parameter that already matched is retyped `long` by a callee's vote.
