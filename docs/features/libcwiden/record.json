@@ -66,17 +66,17 @@
   "measured_collision_surface": "20 of the 333 names are also DEFINED somewhere in the 665-binary corpus, all in the same three images: 17 by libselinux (which implements the genuine API) plus putenv, posix_memalign and wcsdup from its gnulib half. The guard makes all 20 inert there."
  },
  "benchmark": {
-  "instrument": "444-slice pinned typesweep (decbench 625e892 via final-c/pindb.py), finalsweep, --workers 12; BOTH arms built from this tree (.scratch/arm-base and .scratch/arm-new)",
+  "instrument": "444-slice pinned typesweep (decbench 625e892 via final-c/pindb.py), finalsweep, --workers 12; ALL arms built from this tree (.scratch/arm-base = origin/main, arm-new = the table alone, arm-fix = what ships: the table plus the placeholder strip)",
   "control": "the base arm reproduces round F exactly: 1,522 perfect, mean .3553, aggregate 3818.77",
   "functions": 10748,
   "perfect_off": 1522,
   "perfect_on": 1548,
   "mean_off": 0.3553,
-  "mean_on": 0.361,
+  "mean_on": 0.3609,
   "aggregate_off": 3818.77,
-  "aggregate_on": 3879.52,
+  "aggregate_on": 3879.21,
   "improved": 260,
-  "worse": 0,
+  "worse": 4,
   "onto_perfect": 26,
   "off_perfect": 0,
   "by_opt": {
@@ -84,7 +84,7 @@
     1065,
     1083,
     109,
-    0
+    4
    ],
    "O2": [
     74,
@@ -104,12 +104,18 @@
     938,
     955,
     213,
-    0
+    4
    ],
    "tar": [
     192,
     195,
     19,
+    0
+   ],
+   "gzip": [
+    107,
+    107,
+    0,
     0
    ],
    "shadow": [
@@ -118,22 +124,16 @@
     7,
     0
    ],
-   "findutils": [
-    51,
-    55,
-    14,
-    0
-   ],
    "diffutils": [
     63,
     63,
     6,
     0
    ],
-   "bzip2": [
-    34,
-    34,
-    1,
+   "findutils": [
+    51,
+    55,
+    14,
     0
    ],
    "grep": [
@@ -142,10 +142,10 @@
     0,
     0
    ],
-   "gzip": [
-    107,
-    107,
-    0,
+   "bzip2": [
+    34,
+    34,
+    1,
     0
    ]
   },
@@ -177,12 +177,18 @@
    "all_gt_variables": {
     "gt": 65715,
     "off": 21341,
-    "on": 21737,
+    "on": 21727,
     "off_pct": 32.5,
     "on_pct": 33.1
+   },
+   "bool": {
+    "gt": 3222,
+    "off": 1378,
+    "on": 1368,
+    "note": "the placeholder strip's whole cost: -10, the only class that moves against the table-alone arm"
    }
   },
-  "classes_regressed": 0,
+  "classes_regressed": 1,
   "storage": {
    "argument": [
     10794,
@@ -190,13 +196,20 @@
    ],
    "stack": [
     10543,
-    10739
+    10729
    ],
    "register_only": [
     4,
     4
    ]
-  }
+  },
+  "worse_rows": [
+   "coreutils::O0::ls gobble_file .6970 -> .6061 (have_acl, have_scontext, need_lstat)",
+   "coreutils::O0::dir gobble_file .6970 -> .6061 (same program as ls)",
+   "coreutils::O0::vdir gobble_file .6970 -> .6061 (same program as ls)",
+   "coreutils::O0::cp make_dir_parents_private .7200 -> .6800 (missing_dir)"
+  ],
+  "worse_rows_read": "All four are the placeholder strip, not the table: against the table-alone arm the table has 0 worse rows, and the strip alone is 0 improved / 4 worse / aggregate -0.31. Every one is the same class -- a GT `_Bool` one-byte stack local that spelled `bool` and now spells `char`, in two distinct functions (ls/dir/vdir are one program). Both functions have an alloca-shaped frame whose stack pointer is itself a variable, which is the shape that kept the placeholder in the first place. It is core type inference, not `boolbyte`: `--option boolbyte off` changes neither arm's rendering of those slots."
  },
  "sweep": {
   "surface": "kuna decompile-all, 12 stripped binaries / 6,886 functions, both arms, every hunk classified",
@@ -277,5 +290,48 @@
   "the variadic register save area (gap.md bucket (a)): 52 ptr_char rows and 306 phantom parameters over 42 sampled functions; the seam is ActionInputPrototype's trial loop",
   "a fixed-width 64-bit Ty, which unlocks strtoll (130 binaries) and strtoumax (108)",
   "LIBC_EXT_NAMED rows for the *64 LFS aliases and for the new names with a libc aggregate behind a void * slot"
- ]
+ ],
+ "placeholder_strip": {
+  "what": "Heritage::clearStackPlaceholders was an unported stub (only the flag was cleared), so the stack-pointer placeholder ActionFuncLink appends to every CALL was never removed from a call whose callee carries a DECLARED prototype -- such a call's input list is locked, so no later pass rewrites it. It rendered as one argument past the declared arity, reading the slot the `call` pushed its return address into.",
+  "pre_existing": "On origin/main, ginstall alone renders 13 such calls (free, strlen, strcmp, stat, fstatat ...); the widened table made the class visible on 24 more sites because it declares 333 more names. Both arms are fixed.",
+  "no_option": "A strict bug fix: the emitted call contradicted the prototype the same output declares, and reading the return-address slot has no reading under which it is right.",
+  "corpus": {
+   "binaries": 12,
+   "phantom_trailing_arguments": [
+    144,
+    0
+   ],
+   "function_count": "identical",
+   "gotos": [
+    2232,
+    2232
+   ],
+   "labels": [
+    1170,
+    1170
+   ],
+   "local_declarations": [
+    21904,
+    21899
+   ]
+  },
+  "typesweep_alone": {
+   "improved": 0,
+   "worse": 4,
+   "perfect": [
+    1548,
+    1548
+   ],
+   "aggregate": [
+    3879.52,
+    3879.21
+   ],
+   "all_gt_variables": [
+    21737,
+    21727
+   ]
+  },
+  "gates": "make test 675/675 PARITY OK and make test-stages PARITY OK with ZERO moved assertions; the only new keys are the three KUNA-CALLPLACEHOLDER ones.",
+  "test": "tests/stages/kuna-callplaceholder.xml over decompiler/crates/kuna-analysis/tests/fixtures/callplaceholder_x86_64"
+ }
 }
