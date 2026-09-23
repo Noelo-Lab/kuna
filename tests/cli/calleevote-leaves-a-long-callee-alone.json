@@ -32,6 +32,6 @@
       "long use\\(int a0,struct_\\d+ \\*a1,unsigned long a2\\)"
     ]
   },
-  "notes": "DEFAULT. The vote costs a second decompile, so a function whose first decompile printed more than 40 lines (CALLEE_VOTE_MAX_LINES, kuna-cli decompile_all.rs) is never decompiled again. scan_short (19 lines) and scan_long (45) do the same thing with the pointer use hands them; only the short one takes the record. Without the bound scan_long is struct_1 * too.",
+  "notes": "DEFAULT. The vote costs a second decompile, so a function whose first decompile printed more than 32 lines (CALLEE_VOTE_MAX_LINES, kuna-cli decompile_all.rs) is never decompiled again. scan_short (19 lines) and scan_long (45) do the same thing with the pointer use hands them; only the short one takes the record. Without the bound scan_long is struct_1 * too.",
   "probe_id": "p-4f3a99b11f25"
 }

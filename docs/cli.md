@@ -1142,7 +1142,7 @@ callers nobody can list and states nothing. A name with no layout is not a
 commitment: `FILE *` is voted only where the shell carries its fields
 (`--option libctypes glibc`). The callee is decompiled once more
 with that type as a vote its own uses can refuse, and a function whose first
-decompile printed more than 40 lines is not decompiled again at all — the redo
+decompile printed more than 32 lines is not decompiled again at all — the redo
 is the option's whole cost. The default value `fields`
 also reads a one-field getter's lone field as a record field, for a function
 whose callers are all known direct calls; a `qsort` comparator reads a field

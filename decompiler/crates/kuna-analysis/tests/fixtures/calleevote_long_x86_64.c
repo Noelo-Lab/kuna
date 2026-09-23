@@ -5,7 +5,7 @@
  * and `use` holds the record, so both are candidates for the caller's type.
  * The vote costs a second decompile of the callee, so only a short body is
  * decompiled again: `scan_short` (19 printed lines) takes `struct_1 *`, and
- * `scan_long` (45 lines, past CALLEE_VOTE_MAX_LINES) keeps `void *`. The
+ * `scan_long` (45 lines, past CALLEE_VOTE_MAX_LINES = 32) keeps `void *`. The
  * global array is there only to make one body long; both functions do the
  * same thing with the pointer, and `use` takes the record in a register the
  * calls have to move, so both calls carry their arguments.

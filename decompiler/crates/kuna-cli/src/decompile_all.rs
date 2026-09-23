@@ -1835,21 +1835,19 @@ pub(crate) fn decompile_callee_first(
 /// type its own callers gave it only once it has been decompiled with it.
 const CALLEE_VOTE_ROUNDS: usize = 3;
 
-/// (kuna `calleevote`) The longest first decompile that is worth doing again:
-/// a redo costs what the first decompile cost, and the whole option's cost is
-/// the redo pass. The shapes the vote exists for -- a forwarder, a getter, a
-/// comparator -- print a few lines, while a long body has enough of its own
-/// evidence that the vote is usually refused: on `kmod -O2-noinline` the ten
-/// redos longer than this cost 55% of the redo time and moved 8 of 38 bodies.
-const CALLEE_VOTE_MAX_LINES: usize = 40;
+/// (kuna `calleevote`) The longest first decompile that is worth doing again.
+/// A redo costs what the first decompile of that function cost and the redo
+/// pass is the option's whole cost, so this is what keeps it inside the
+/// project's +5% speed budget: on `kmod -O2-noinline` the redos longer than
+/// this are 67% of the redo time and move 12 of the 38 bodies that move, and
+/// the one redo `crontab -O2-noinline` does is 189 lines and 9% of the run.
+/// The shapes the vote exists for -- a forwarder, a getter, a comparator --
+/// print a few lines.
+const CALLEE_VOTE_MAX_LINES: usize = 32;
 
 /// (kuna `calleevote`) Is this first decompile too long to do again?
 fn too_long_to_vote_on(code: Option<&str>) -> bool {
-    let cap = std::env::var("KUNA_CV_MAXLINES")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(CALLEE_VOTE_MAX_LINES);
-    code.is_some_and(|c| c.lines().count() > cap)
+    code.is_some_and(|c| c.lines().count() > CALLEE_VOTE_MAX_LINES)
 }
 
 /// (kuna `calleevote`) The key the ledger files a function under.

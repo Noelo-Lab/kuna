@@ -57,8 +57,6 @@
   "bucket_now_credited_perfect": 97
  },
  "benchmark": {
-  "corpus": "444-slice campaign set (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0 O2 O2-noinline), decbench 625e892 pinned (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same build (--option calleevote off vs default)",
-  "metric": "type_match",
   "projects": {
    "bzip2": {
     "n": 267,
@@ -72,10 +70,10 @@
    "coreutils": {
     "n": 6422,
     "perfect_off": 938,
-    "perfect_on": 979,
+    "perfect_on": 974,
     "mean_off": 0.3441,
-    "mean_on": 0.3516,
-    "improved": 200,
+    "mean_on": 0.35,
+    "improved": 115,
     "worse": 0
    },
    "diffutils": {
@@ -83,26 +81,26 @@
     "perfect_off": 63,
     "perfect_on": 64,
     "mean_off": 0.4445,
-    "mean_on": 0.4496,
-    "improved": 9,
+    "mean_on": 0.4477,
+    "improved": 3,
     "worse": 0
    },
    "findutils": {
     "n": 790,
     "perfect_off": 51,
-    "perfect_on": 55,
+    "perfect_on": 53,
     "mean_off": 0.2358,
-    "mean_on": 0.2394,
-    "improved": 17,
+    "mean_on": 0.2378,
+    "improved": 4,
     "worse": 0
    },
    "grep": {
     "n": 247,
     "perfect_off": 51,
-    "perfect_on": 52,
+    "perfect_on": 51,
     "mean_off": 0.4458,
-    "mean_on": 0.4526,
-    "improved": 7,
+    "mean_on": 0.4491,
+    "improved": 4,
     "worse": 0
    },
    "gzip": {
@@ -119,8 +117,8 @@
     "perfect_off": 86,
     "perfect_on": 86,
     "mean_off": 0.3545,
-    "mean_on": 0.3578,
-    "improved": 13,
+    "mean_on": 0.3559,
+    "improved": 5,
     "worse": 0
    },
    "tar": {
@@ -128,8 +126,8 @@
     "perfect_off": 192,
     "perfect_on": 195,
     "mean_off": 0.3733,
-    "mean_on": 0.375,
-    "improved": 13,
+    "mean_on": 0.3744,
+    "improved": 8,
     "worse": 0
    }
   },
@@ -137,10 +135,10 @@
    "O0": {
     "n": 4286,
     "perfect_off": 1065,
-    "perfect_on": 1098,
+    "perfect_on": 1090,
     "mean_off": 0.5391,
-    "mean_on": 0.5459,
-    "improved": 123,
+    "mean_on": 0.5443,
+    "improved": 72,
     "worse": 1
    },
    "O2": {
@@ -148,8 +146,8 @@
     "perfect_off": 74,
     "perfect_on": 80,
     "mean_off": 0.1834,
-    "mean_on": 0.1862,
-    "improved": 29,
+    "mean_on": 0.1854,
+    "improved": 11,
     "worse": 1
    },
    "O2-noinline": {
@@ -157,40 +155,36 @@
     "perfect_off": 383,
     "perfect_on": 397,
     "mean_off": 0.2628,
-    "mean_on": 0.2695,
-    "improved": 112,
+    "mean_on": 0.2678,
+    "improved": 61,
     "worse": 1
    }
   },
   "pooled": {
    "n": 10748,
    "perfect_off": 1522,
-   "perfect_on": 1575,
+   "perfect_on": 1567,
    "mean_off": 0.3553,
-   "mean_on": 0.3612,
-   "improved": 264,
+   "mean_on": 0.3597,
+   "improved": 144,
    "worse": 3
   },
   "credited_93": {
-   "perfect_off": 1771,
-   "perfect_on": 2128,
-   "improved": 1124,
+   "perfect_off": 1781,
+   "perfect_on": 2133,
+   "improved": 1004,
    "worse": 3,
-   "mean_off": 0.4023,
-   "mean_on": 0.443
+   "mean_off": 0.4038,
+   "mean_on": 0.4432
   },
   "classes_tp": {
    "ptr_char": [
     5060,
-    5297
-   ],
-   "ptr_other": [
-    0,
-    6
+    5203
    ],
    "ptr_ptr": [
     525,
-    592
+    541
    ],
    "ptr_void": [
     621,
@@ -198,12 +192,9 @@
    ]
   },
   "decomp_var_count_changed_functions": 0,
-  "worse_rows": "gzip xmemdup at O0/O2/O2-noinline: GT void const *p, every caller passes a string, so the parameter takes char * (the same three rows as every earlier round)",
-  "control": "the off arm is main at 3a42d864b: 1,522 perfect, the figure #712 reports for protoorder cycles",
-  "base": "origin/main 3a42d864b (#712 protoorder cycles, default on; #710 slotptr); both arms the final build (.scratch/v16, 47e308025 code)",
-  "new_struct_pointers": "909 parameters or slots newly typed struct_N * (not a struct before); every one has a program-defined struct pointer as its DWARF type, none replaces a primitive pointer and none a correct type",
-  "earlier_base": "on 656e6c701 (before #712) the same option measured 1,472 -> 1,539 perfect, 334 up / 3 down, credited 1,717 -> 2,083; #712 now types some of the same parameters from recursive callees, so the gain on top of it is smaller",
-  "round_4": "re-measured on the round-4 build (.scratch/v26, the final code) against the same off arm: every per-function value is identical to the numbers above, pinned and #93-credited (1,522 -> 1,575 perfect, 264 up / 3 down, all three gnulib xmemdup; credited 1,771 -> 2,128; exported variable count identical for every function). Struct ground truths typed char * or char ** by the default: 8 -> 2 (the shadow new_sgent/new_spent frame records now keep their own type; rm's rm_options, a frame record whose first member is a bool, takes char * and reads a2[8], a2[9] where off prints *(char *)((long)a2 + 8))"
+  "corpus": "444-slice campaign set (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0 O2 O2-noinline), decbench 625e892 pinned (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same build (--option calleevote off vs default), on origin/main 31ac2b26e",
+  "metric": "type_match",
+  "base": "31ac2b26e (#708 passthrough, #709 structsynth locals, #710 slotptr, #712 protoorder cycles)"
  },
  "sweep": {
   "surface": "kuna decompile-all --json --max-fn-seconds 120, --option calleevote off vs default, 31 stripped binaries / 16,843 functions, final build .scratch/v26 on 3a42d864b (docs/features/calleevote/corpus-hunks.json, classes by corpus-classes.py)",

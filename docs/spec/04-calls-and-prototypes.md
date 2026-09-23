@@ -2683,16 +2683,18 @@ A redo that fails keeps the first body.
 **What a redo costs, and the bound on it.** The option's whole cost is the
 second decompile: a redo costs what the first decompile of that function cost,
 and nothing else about the run changes. So a function whose first decompile
-printed more than `CALLEE_VOTE_MAX_LINES` (40) lines is dropped from the ledger
+printed more than `CALLEE_VOTE_MAX_LINES` (32) lines is dropped from the ledger
 before anything is decided (`too_long_to_vote_on`): nothing is stated about it,
 no round pays for it, and its parameters keep what its own body found. The
-shapes the vote exists for — a forwarder, a getter, a comparator, a wrapper —
-print a few lines, while a long body has enough of its own evidence that the
-vote is usually refused: on `kmod -O2-noinline`, of 58 redos the 10 longer than
-40 lines cost 55% of the redo time and changed 8 bodies, and on `cmp -O0` one
-217-line function was 96% of the redo time for no change at all. Without the
-bound the same three binaries cost +11.5%, +9.0% and +8.1% of a whole-binary
-run, over the project's +5% budget; with it they are inside it.
+shapes the vote exists for — a forwarder, a getter, a comparator — print a few
+lines, while a long body has enough of its own evidence that the vote is often
+refused: on `kmod -O2-noinline` the redos past 32 lines are 67% of the redo
+time and move 12 of the 38 bodies that move; on `cmp -O0` one 217-line function
+is 96% of the redo time and changes nothing; `crontab -O2-noinline` does one
+redo, 189 lines, worth 9% of its whole run. Unbounded those three cost +11.5%,
++9.0% and +8.1% of a whole-binary run, over the project's +5% budget; bounded
+they are inside it, and the bound costs 8 of the 53 functions the vote makes
+perfect on the 444-slice typesweep.
 
 **`fields`.** The same closed caller set decides one more thing. A function
 whose callers are all known direct calls (at least one, none unknown) is marked

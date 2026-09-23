@@ -266,3 +266,73 @@ Whole corpus (31 binaries, the round-3 21 plus the reviewer's 10): 1,854 of 16,8
 change, 0 variable-count or error changes, 0 character-store splits (a hunk counts only when both
 the character-literal stores and the statement count go up; 19 one-byte `= 0` -> `= '\0'`
 spellings do not), 4 folded expressions read.
+
+## 8. Review round 5: what a shell commits to, and a bound on the redo
+
+**A name is not a commitment.** `committed()` has always required a record to
+carry its layout (`!is_incomplete()`), but the catalog, the spec, the CLI manual
+and the PR body all said "a named record, a libc shell, a `FILE *`". Under the
+default `libctypes` the `FILE` shell is interned with a name, a size and no
+fields, so it never passed that test and no `FILE *` was ever voted. The claim
+now says what the code does: a record that carries its layout — a synthesized
+`struct_N`, or one the program declares — and `FILE *` only under
+`--option libctypes glibc`. Letting the shells count was the other way out and
+was not taken: a shell says no more about the object than `void *` does, and the
+refusals that read the pointee's members (`reaches_past_the_pointee`, the
+member-fit test) have nothing to read for a type with no fields. The unit test
+now asserts an incomplete `FILE` shell is not committed and a laid-out record of
+the same name is.
+
+### The redo pass, bounded
+
+The second decompile is the option's whole cost, and on three binaries outside
+the budget set it was over the project's +5%: kmod -O2-noinline +11.5%, crontab
+-O2-noinline +9.0%, dpkg-divert -O2 +8.1%. Every redo was logged (its length,
+its milliseconds, and whether the body it produced differs) to see where the
+time goes:
+
+| binary | redos | ms | redos that change the body | ms spent on ones that do not |
+|---|---|---|---|---|
+| kmod -O2-noinline | 58 | 571 | 38 | 147 |
+| dpkg-divert -O2 | 30 | 316 | 25 | 179 |
+| cmp -O0 | 9 | 151 | 2 | 145 (one 217-line function) |
+| crontab -O2-noinline | 1 | 177 | 1 | 0 |
+
+So a perfect oracle that skipped every redo which changes nothing would leave
+kmod at about +8.5% and crontab at +9.0% — the wasted redos are not the
+problem. The length of the body is: the kmod redos past 32 lines are 67% of its
+redo time, and crontab's whole cost is one 189-line redo.
+
+A function whose first decompile printed more than `CALLEE_VOTE_MAX_LINES` (32)
+lines is therefore dropped from the ledger before anything is decided
+(`too_long_to_vote_on`): nothing is stated about it, no round pays for it, and
+`seed` and the convergence sweep have nothing to apply. kmod goes from 58 redos
+to 31. The fixture `calleevote_long_x86_64` is the end-to-end witness —
+`scan_short` (19 printed lines) and `scan_long` (45) do the same thing with the
+pointer `use` hands them, and only the short one takes the record; with the
+bound removed `scan_long` takes it too.
+
+What the bound costs, on the 444 slices (perfect, `calleevote off` = 1,522):
+
+| bound | perfect | credited (#93) | kmod redo time kept |
+|---|---|---|---|
+| none | 1,575 | 2,142 | 100% |
+| 40 lines | 1,570 | 2,136 | 45% |
+| **32 lines (shipped)** | **1,567** | **2,133** | **33%** |
+| 25 lines | 1,555 | 2,120 | 26% |
+
+### Measuring it on a loaded box
+
+The campaign's speed rule is an interleaved min of 15. That estimator broke down
+here: these runs share the machine with about eight other agents, the load
+average sat at 30-40 throughout, and a 4-second binary's own CPU time varied
+from 4.0 s to 6.4 s with it. An arm's minimum is its luckiest run, so which arm
+looks faster depends on which one drew the quiet window — the same kmod build
+measured +9.4% by min and +2.3% by median in one interleaved run of 15.
+
+The numbers reported for this round are therefore the median of the per-pair
+ratio: the arms alternate, and each iteration's `default` is divided by that
+same iteration's `off` before the median is taken, which cancels a slow window
+that hits both arms. Where the box was quiet enough for the minimum to be
+stable, both are given. The bound's effect is also visible without any timing at
+all, in the redone lines (the table above), which is deterministic.
