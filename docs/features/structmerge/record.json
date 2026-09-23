@@ -126,8 +126,49 @@
   "the_one_respelling": "grep -O2 sub_7110: the record gains a long member where it had undefined1 filler, so `v1 = a0->field_0x20` (an array member decaying to its address) becomes `v1 = &a0->field_0x20`, the same address with the pointer typed by the member"
  },
  "jobs": "a --jobs N worker answers through the shard replay, which records the layout each request measured, so it never merges and a sharded run behaves as off -- the same divergence structsynth already has. Verified: coreutils fmt -O2 with --jobs 2 is byte-identical with the option off and with siblings.",
- "gates": {},
+ "gates": {
+  "make test": "PARITY OK, datatests 675/675",
+  "make test-stages": "PARITY OK, datatests 1315/1315",
+  "make test-cli": "tests/cli 225/225 passed",
+  "make check-spec": "OK (lenient) + OK (strict)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh from `kuna catalog --markdown`",
+  "make rust-test": "see default_decision/notes -- first run RC=2 on two sites this change owns (the live-value allowlist and the embedded docs/options.md), both fixed and re-run"
+ },
  "counters": "settables 227 -> 228; kuna-catalog.xml #7 structure-recovery 31 -> 32; phases-tests catalog-json-records 226 -> 227; catalog_bytecompat fixture recaptured; tests/stages corpus file count 331 -> 332; docs/baseline-stages.json re-recorded (+6 assertions, nothing moved)",
  "base": "31ac2b26e",
- "default_decision": "off"
+ "default_decision": "off",
+ "speed": {
+  "method": "interleaved whole-binary `kuna decompile-all --json --max-fn-seconds 120`, `--option structmerge off` against `siblings`, arms alternating, min-of-15 (docs/features/structmerge/speed.py); the box carried eight other campaign lanes throughout, load average 17-27 on 80 cores, so only the within-run deltas are comparable",
+  "per_binary": {
+   "coreutils fmt -O2": {
+    "off_min_ms": 4607.7,
+    "siblings_min_ms": 4649.5,
+    "delta_min_pct": 0.91,
+    "delta_median_pct": -4.4
+   },
+   "coreutils ls -O2": {
+    "off_min_ms": 15728.0,
+    "siblings_min_ms": 15086.4,
+    "delta_min_pct": -4.08,
+    "delta_median_pct": 3.27
+   },
+   "coreutils sort -O2": {
+    "off_min_ms": 16693.8,
+    "siblings_min_ms": 16623.0,
+    "delta_min_pct": -0.42,
+    "delta_median_pct": 0.46
+   },
+   "bash -O2": {
+    "off_min_ms": 100571.5,
+    "siblings_min_ms": 100893.2,
+    "delta_min_pct": 0.32,
+    "delta_median_pct": 6.12
+   }
+  },
+  "worst_delta_min_pct": 0.91,
+  "budget_pct": 5,
+  "verdict": "within budget: the worst min-of-15 delta is +0.91%. The off arm is the shipped default and costs nothing at all -- the whole rule is behind `merge.fires()`, and the second ledger scan only runs for a layout that would otherwise mint."
+ }
 }

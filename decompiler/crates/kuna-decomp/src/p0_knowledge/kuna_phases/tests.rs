@@ -812,6 +812,11 @@ fn option_values_live_value_present_for_95() {
                             // for the same reason.  Its live value is
                             // `Architecture::struct_synth`.
                             | "structsynth"
+                            // (kuna) `structmerge` takes a MODE
+                            // (`off|siblings`) over an enum field, for the same
+                            // reason.  Its live value is
+                            // `Architecture::struct_merge`.
+                            | "structmerge"
                             // (kuna) `protoorder` takes a MODE
                             // (`off|types|cycles|lock`) over an enum field, for the
                             // same reason.  Its live value is
