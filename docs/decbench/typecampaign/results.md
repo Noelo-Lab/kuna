@@ -1374,9 +1374,11 @@ the same 5 on these builds.
 | round E | 1,353 | 1,579 (+226) | +1,536 | .3415 → .3857 |
 | **round F** | 1,522 | **1,781 (+259)** | **+1,779** | .3553 → **.4038** |
 
-Crediting is worth 33 more functions than in round E and 243 more TP: the `struct_N *` records #709
-puts on call-returned pointers and #710 propagates into their slots are, by construction, exactly the
-anonymous struct pointers the rule would credit.
+Crediting is worth 33 more functions than in round E and 243 more TP. Per option arm, credited perfect
+and credited TP: `slotptr off` 1,628 / +1,553, `structsynth param` 1,771 / +1,684, the default
+1,781 / +1,779. So **#709 is worth +10 credited functions and +95 credited TP while being exactly
+zero on `type_match`** — its records are real, and only the rule the campaign asked decbench for can
+see them (`final-f/credit93-arms.log`).
 
 ### F.6 Speed
 
@@ -1388,7 +1390,7 @@ SPEED_SECTION
 |---|---|---|---|
 | #710 | `slotptr` — a `framelayout` filler stack slot takes the declared type of the pointer stored into it, when every store resolves and agrees, the type is a committed pointer of the slot's width, and nothing touches the slot at another width | `on` | **the round's biggest lever**: 1,399 → 1,522 perfect on this tree, 425 up / 5 down, `ptr_char` +653 stack TP, `ptr_struct` +94, stack storage 53.4% → 57.6%. P-code and C output are byte-identical — only `variables[]` and the `; stack:` comments move |
 | #712 | `protoorder cycles` — the members of a recursive component state the parameter types they recovered, decompiled once each in a depth-first order over the cycle's own calls | `cycles` (was `types`) | 1,472 → 1,522 perfect, 171 up / 1 down (`ginstall::install_file_in_file`); argument TP 49.2% → 50.0%; three `ls` parameters gain a scored layout |
-| #709 | `structsynth locals` — a pointer a call returns and reads at two or more constant offsets is declared `struct_N *`, under five rules about the value | `locals` (was `param`) | `type_match` exactly neutral (1,522 = 1,522, 0 up / 0 down); +8 declarations over 2,918 functions; TRex and decbench#93 crediting both rise because the records are real |
+| #709 | `structsynth locals` — a pointer a call returns and reads at two or more constant offsets is declared `struct_N *`, under five rules about the value | `locals` (was `param`) | `type_match` exactly neutral (1,522 = 1,522, 0 up / 0 down); +8 declarations over 2,918 functions; under decbench#93 crediting it is +10 functions and +95 TP (F.5), so the records are real and only the crediting rule can see them |
 | #708 | `passthrough` — a register a function hands untouched to a callee becomes a parameter of the caller and an argument at the call, when the callee's recovered prototype has a parameter there and its body reads it | **`off`** | option on: 1,522 → 1,546 perfect, 128 up / 6 down, and it is **the only round-F lever that moves O2** (74 → 81) **and O2-noinline** (383 → 400). Off by default because it adds arguments the metric cannot check: 454 of 506 gained parameters are confirmed by DWARF over 26 binaries and 0 contradicted, but nothing proves the remaining 52 |
 
 **Not landed:**
@@ -1499,7 +1501,7 @@ DECBENCH_PIN=<625e892 tree> KUNA_BIN=<kuna> PYTHONPATH=final-f python -m finalsw
 bash final-f/sweep-arms.sh && bash final-f/sweep-arm2.sh   # slotptr off, passthrough on, structsynth param, protoorder types
 python3 final-f/analyze6.py       # base / B / C / D / E / F (+ the E control), classes, rivals
 python3 final-f/moved6.py         # moved.csv + report-slices.md
-python3 final-c/credit93.py base=<rows> ... roundF=<rows>
+python3 final-c/credit93.py base=<rows> ... roundF=<rows>   # and once per option arm
 python3 final-f/goal2f.py         # varcensus, round E vs round F
 bash final-f/ss.sh && python3 final-f/sstable6.py   # structscore E vs F
 bash final-f/ss-ablate.sh         # the same eight builds with `--option slotptr off`
