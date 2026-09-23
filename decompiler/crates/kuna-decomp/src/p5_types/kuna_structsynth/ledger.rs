@@ -609,7 +609,7 @@ fn merge_window(size: int4) -> std::ops::RangeInclusive<i64> {
 /// Complete `struct <name>` from `fields`, the fields at `selfs` retyped as a
 /// pointer to the structure itself. A completed structure is a fresh `Rc`, so
 /// such a pointer names the incomplete shell the members are installed on.
-pub(crate) fn mint(
+pub(super) fn mint(
     types: &dyn TypeFactory,
     name: &str,
     mut fields: Vec<TypeField>,
