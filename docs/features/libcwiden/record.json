@@ -1,0 +1,247 @@
+{
+ "opportunity": "The 206-entry `libcsigs` table was selected by which callee would move type_match on a case a rival already gets right -- a narrow question that never asks which callees the corpus actually imports. On the campaign's 444 slices, 158 of the 878 ground-truth `char *` variables binja gets right and kuna does not sit in a function that calls a libc import kuna cannot type, across 35 distinct names (docs/features/libcwiden/gap.md).",
+ "test_name": "tests/stages/kuna-libcwiden.xml (9 two-pass assertions over one real ELF) + 3 table-invariant unit tests in kuna_libcsigs.rs",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/libcwiden_x86_64",
+ "selector": "can_write / move_entry / make_dir / jail",
+ "witness_binary": "decbench full_run_address_2026-09-11/O0/coreutils/stripped/ginstall",
+ "witness_addr": "0xb57a",
+ "witness_before": "unsigned int sub_b57a(unsigned int a0,unsigned long a1,unsigned int a2)",
+ "witness_after": "bool sub_b57a(int a0,char *a1,unsigned int a2)",
+ "option": "libcsigs",
+ "flag": "analysis_libcsigs",
+ "new_option": false,
+ "new_option_reason": "`libcsigs` already gates this table; `off` still renders exactly what the 27-entry base table alone renders. A second flag would split one measured table for no reason a reader would use.",
+ "change_kind": "correctness-fix",
+ "tier": "analysis",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "parity": {
+  "datatests": "PARITY OK 675/675",
+  "stages": "PARITY OK 1318/1318 (9 new assertions, none moved)",
+  "test_cli": "225/225",
+  "catalog": "OK",
+  "counters": "no drift",
+  "check_spec": "OK lenient + strict",
+  "options_md": "byte-fresh (no option added)"
+ },
+ "table": {
+  "entries_before": 206,
+  "entries_added": 333,
+  "entries_after": 539,
+  "base_table_entries_untouched": 27,
+  "zero_parameter": null,
+  "corpus_binaries_scanned": 665,
+  "distinct_undefined_names_in_corpus": 1775,
+  "already_carried": 264,
+  "reducible_and_missing": 338,
+  "rejected_for_a_64_bit_return": 5
+ },
+ "selection_rule": "an UNDEFINED FUNC symbol (not also defined) in >= 3 of the 665 dynamically linked binaries of the frozen decbench corpus, not already carried by LIBC/LIBC_EXT/the libctypes tables, and whose platform declaration reduces WHOLE to the width-stable Ty vocabulary",
+ "signature_provenance": {
+  "gcc_aux_info": "all 333 reduced by a fixed rule (docs/features/libcwiden/reduce.py) from the 3,182 NC-line prototypes `gcc -aux-info` emits over docs/features/libcwiden/tu.c -- the platform headers with _GNU_SOURCE + _FORTIFY_SOURCE=2, plus <selinux/selinux.h>",
+  "regenerable": "docs/features/libcwiden/gentable.py emits the Rust fragment from selected.json, so the table is generated, not hand-kept"
+ },
+ "rejected_rather_than_approximated": {
+  "rule": "unchanged -- every modelled slot must be void, exactly 4 bytes, or exactly pointer-width on every ILP32/LP64 target",
+  "names": [
+   "lseek (__off_t, 321 binaries)",
+   "qsort (__compar_fn_t, 141)",
+   "strtoll (long long int, 130)",
+   "strtoumax (uintmax_t, 108)",
+   "signal (__sighandler_t, 84)",
+   "posix_fadvise (off_t, 69)",
+   "time (time_t, 57)",
+   "strtoimax (intmax_t, 45)",
+   "strtoull (uintmax_t, 39)",
+   "iconv/iconv_open (iconv_t, 24)",
+   "context_* (context_t, 24)",
+   "llabs (long long int, 18)"
+  ],
+  "pinned_by": "a_sixty_four_bit_return_is_still_rejected",
+  "note": "strtoll and strtoumax are the two most widely imported names kuna still cannot type, and both are rejected only for their RETURN; their char*/char** parameters are exactly this lane's evidence. Admitting them needs a fixed-width 64-bit Ty, which is its own PR."
+ },
+ "wrongness_axis": {
+  "rule": "unchanged -- an entry applies ONLY to a name the image IMPORTS and does not itself define",
+  "measured_collision_surface": "20 of the 333 names are also DEFINED somewhere in the 665-binary corpus, all in the same three images: 17 by libselinux (which implements the genuine API) plus putenv, posix_memalign and wcsdup from its gnulib half. The guard makes all 20 inert there."
+ },
+ "benchmark": {
+  "instrument": "444-slice pinned typesweep (decbench 625e892 via final-c/pindb.py), finalsweep, --workers 12; BOTH arms built from this tree (.scratch/arm-base and .scratch/arm-new)",
+  "control": "the base arm reproduces round F exactly: 1,522 perfect, mean .3553, aggregate 3818.77",
+  "functions": 10748,
+  "perfect_off": 1522,
+  "perfect_on": 1548,
+  "mean_off": 0.3553,
+  "mean_on": 0.361,
+  "aggregate_off": 3818.77,
+  "aggregate_on": 3879.52,
+  "improved": 260,
+  "worse": 0,
+  "onto_perfect": 26,
+  "off_perfect": 0,
+  "by_opt": {
+   "O0": [
+    1065,
+    1083,
+    109,
+    0
+   ],
+   "O2": [
+    74,
+    74,
+    53,
+    0
+   ],
+   "O2-noinline": [
+    383,
+    391,
+    98,
+    0
+   ]
+  },
+  "by_project": {
+   "coreutils": [
+    938,
+    955,
+    213,
+    0
+   ],
+   "tar": [
+    192,
+    195,
+    19,
+    0
+   ],
+   "shadow": [
+    86,
+    88,
+    7,
+    0
+   ],
+   "findutils": [
+    51,
+    55,
+    14,
+    0
+   ],
+   "diffutils": [
+    63,
+    63,
+    6,
+    0
+   ],
+   "bzip2": [
+    34,
+    34,
+    1,
+    0
+   ],
+   "grep": [
+    51,
+    51,
+    0,
+    0
+   ],
+   "gzip": [
+    107,
+    107,
+    0,
+    0
+   ]
+  },
+  "by_project_note": "[perfect_off, perfect_on, improved, worse]",
+  "per_gt_class": {
+   "ptr_char": {
+    "gt": 14645,
+    "off": 5060,
+    "on": 5405,
+    "off_pct": 34.6,
+    "on_pct": 36.9,
+    "binja": 5323
+   },
+   "ptr_ptr": {
+    "gt": 1834,
+    "off": 525,
+    "on": 538
+   },
+   "ptr_prim": {
+    "gt": 1242,
+    "off": 594,
+    "on": 603
+   },
+   "int_s4": {
+    "gt": 8788,
+    "off": 4693,
+    "on": 4714
+   },
+   "all_gt_variables": {
+    "gt": 65715,
+    "off": 21341,
+    "on": 21737,
+    "off_pct": 32.5,
+    "on_pct": 33.1
+   }
+  },
+  "classes_regressed": 0,
+  "storage": {
+   "argument": [
+    10794,
+    10994
+   ],
+   "stack": [
+    10543,
+    10739
+   ],
+   "register_only": [
+    4,
+    4
+   ]
+  }
+ },
+ "sweep": {
+  "surface": "kuna decompile-all, 12 stripped binaries / 6,886 functions, both arms, every hunk classified",
+  "binaries": "coreutils cp/ginstall/mv (O0), coreutils ls (O2), coreutils du (O2-noinline), tar (O0), grep (O0), findutils find (O0), gzip (O2), shadow useradd (O2), diffutils diff (O2-noinline), bzip2 (O0)",
+  "functions_off": 6886,
+  "functions_on": 6886,
+  "function_count_identical_everywhere": true,
+  "hunks": 539,
+  "classification": {
+   "an import thunk takes its declared return/arity": 220,
+   "typing-only (same statements, a type or a cast moves)": 199,
+   "a cast or NULL appears at a newly typed call argument": "the bulk of the remainder",
+   "local renumbering after a typed call folds into its condition": "the rest",
+   "other": 0
+  },
+  "structural": "gotos 3,402 = 3,402; labels 605 = 605; no function gains or loses an error or a timeout.",
+  "declarations": {
+   "inside a newly typed import thunk": [
+    51,
+    654
+   ],
+   "everywhere else": [
+    38417,
+    38434
+   ],
+   "note": "+603 of the +620 declaration lines are inside the 220 import thunks that stopped being `(void)`; +17 over the other 6,666 functions."
+  },
+  "arity": {
+   "import thunks whose parameter count moved": 220,
+   "of which not a new-table name": 0,
+   "parameter slots gained": 554,
+   "new_name_call_sites": 445,
+   "sites rendering one argument past the declared non-variadic arity": 24,
+   "pre_existing_rate_same_arm": "575 of 13,036 (4.4%) for the names the table already carried",
+   "note": "a declared prototype that is not LOCKED can still pick up a recovered argument; 24/445 = 5.4% against a pre-existing 4.4%, so the rate is the table's, not these rows'."
+  }
+ },
+ "speed": {
+  "instrument": "interleaved min-of-15 whole-binary `kuna decompile-all --json --max-fn-seconds 120`, both arms alternating, box load average 30 on 80 cores",
+  "samples": "docs/features/libcwiden/speed.json",
+  "results": "PENDING"
+ },
+ "follow_ups": [
+  "the variadic register save area (gap.md bucket (a)): 52 ptr_char rows and 306 phantom parameters over 42 sampled functions; the seam is ActionInputPrototype's trial loop",
+  "a fixed-width 64-bit Ty, which unlocks strtoll (130 binaries) and strtoumax (108)",
+  "LIBC_EXT_NAMED rows for the *64 LFS aliases and for the new names with a libc aggregate behind a void * slot"
+ ]
+}

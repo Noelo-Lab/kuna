@@ -105,9 +105,15 @@ the callee's private copy of registers the *caller* passed, and the only thing
 that ever reads them is `va_arg`; a `%s` conversion that `formatstring` resolves
 gives a type to the *caller's* argument, not to the callee's save slot, which is
 a different object in a different frame. So the change is an arity change in
-p4_calls, not a typing change — worth 52 `ptr_char` true positives and, far more
+p4_calls, not a typing change - worth 52 `ptr_char` true positives and, far more
 than that, 306 phantom parameters over 42 functions in a six-binary sample.
-It is a separate PR and is not in this one.
+
+The seam is the trial-gathering loop in `ActionInputPrototype::apply`
+(`p4_calls/coreaction_protos.rs`, at `active.register_trial(&addr, size)`): an
+input register whose only descendant is a store into the geometry above is not a
+parameter, and a `kuna_<slug>.rs` module beside `kuna_inputparamgap` is where
+that test belongs. It is a separate PR behind its own option and is not in this
+one.
 
 ### (b) Imports kuna has no signature for — 158 rows
 
