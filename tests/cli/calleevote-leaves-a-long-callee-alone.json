@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_long_x86_64",
+    "binary_sha256": "4a5459e4ffd5fe36c2d20d9300ac8174b4ddafb4209432c76051370a1c113d9c",
+    "binary_size": 16104,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_long_x86_64",
+    "selector": "scan_long",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int scan_short\\(struct_\\d+ \\*a0,unsigned long a1\\)",
+      "int scan_long\\(void \\*a0,unsigned long a1\\)",
+      "long use\\(int a0,struct_\\d+ \\*a1,unsigned long a2\\)"
+    ]
+  },
+  "notes": "DEFAULT. The vote costs a second decompile, so a function whose first decompile printed more than 40 lines (CALLEE_VOTE_MAX_LINES, kuna-cli decompile_all.rs) is never decompiled again. scan_short (19 lines) and scan_long (45) do the same thing with the pointer use hands them; only the short one takes the record. Without the bound scan_long is struct_1 * too.",
+  "probe_id": "p-4f3a99b11f25"
+}
