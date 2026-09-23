@@ -836,6 +836,9 @@ fn option_values_live_value_present_for_98() {
                             // codegen live reader (an `Architecture` bool
                             // member) cannot reach.
                             | "structdefs"
+                            // (kuna) `globalref` is a PrintC option too:
+                            // `PrintC::options.global_ref`.
+                            | "globalref"
                             | "callsitestackargs"
                             | "varargstackargs"
                             | "calleearity"

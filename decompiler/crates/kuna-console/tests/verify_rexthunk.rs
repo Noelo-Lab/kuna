@@ -143,7 +143,13 @@ fn caller_names_both_thunks_and_keeps_the_wrapper() {
     let Some(prog) = boot(None) else { return };
     let out = decompile_at(prog, ENTRY);
     assert!(out.contains("sub_140001030();"), "got:\n{out}");
-    assert!(out.contains("InitializeSListHead((void *)0x140002100);"), "got:\n{out}");
+    // `globalref` (default on) names the list head `&dat_140002100`; either
+    // spelling types the argument.
+    assert!(
+        out.contains("InitializeSListHead((void *)0x140002100);")
+            || out.contains("InitializeSListHead(&dat_140002100);"),
+        "got:\n{out}"
+    );
     assert!(out.contains("ExitProcess(0); // no-return"), "got:\n{out}");
 }
 

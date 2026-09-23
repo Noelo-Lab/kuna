@@ -93,8 +93,11 @@ fn caller_body(option_on: bool) -> Option<String> {
 #[test]
 fn a_declared_libc_name_types_the_call_it_names() {
     let Some(body) = caller_body(true) else { return };
+    // The last argument is typed `void *` either way: as a cast, or (`globalref`,
+    // default on) as the address of the global it names.
     assert!(
-        body.contains("ptrace(2,") && body.contains(",NULL,(void *)0x804a004)"),
+        body.contains("ptrace(2,")
+            && (body.contains(",NULL,(void *)0x804a004)") || body.contains(",NULL,&dat_804a004)")),
         "the parked signature must type the pointer arguments, got:\n{body}"
     );
 }
