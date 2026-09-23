@@ -113,11 +113,11 @@
 <stringmatch name="PEBNAMES-X86 #8: the record is linked and unlinked through the base's first member, not a TEB name, in both passes" min="4" max="4">v[0-9]+-&gt;field_0x0 = v[0-9]+;</stringmatch>
 <stringmatch name="PEBNAMES-X86 #9: the register storage comment survives in every pass" min="10" max="10">; // fs_offset</stringmatch>
 <stringmatch name="PEBNAMES-X86 #10: fs:[0x1010] lies inside the Windows 11 WOW64 TEB32 and is offset-named, not a field of a phantom neighbour" min="1" max="1">\*\(unsigned int \*\)&amp;teb-&gt;field_0x1010;</stringmatch>
-<stringmatch name="PEBNAMES-X86 #11: a read past the largest TEB32 stays an integer addition" min="1" max="1">\*\(unsigned int \*\)\(\(int4\)teb \+ 0x1040\);</stringmatch>
+<stringmatch name="PEBNAMES-X86 #11: a read past the largest TEB32 stays an offset from it" min="1" max="1">\(\(unsigned int \*\)teb\)\[0x410\];</stringmatch>
 <stringmatch name="PEBNAMES-X86 #12: no read is split into an index of a neighbouring TEB or PEB" min="0" max="0">(teb|ProcessEnvironmentBlock|Self)\[</stringmatch>
 <stringmatch name="PEBNAMES-X86 #13: PEB+3 and PEB+0x38 changed meaning between Windows releases and stay offset-named" min="1" max="1">teb-&gt;ProcessEnvironmentBlock-&gt;field_0x3 \+ \*\(int4 \*\)&amp;teb-&gt;ProcessEnvironmentBlock-&gt;field_0x38;</stringmatch>
 <stringmatch name="PEBNAMES-X86 #14: no version-dependent PEB name is ever printed" min="0" max="0">BitField|SpareBool|ApiSetMap|CrossProcessFlags|FreeList</stringmatch>
-<stringmatch name="PEBNAMES-X86 #15: a read past the largest PEB32 stays an integer addition" min="1" max="1">\*\(unsigned int \*\)\(\(int4\)teb-&gt;ProcessEnvironmentBlock \+ 0x490\);</stringmatch>
+<stringmatch name="PEBNAMES-X86 #15: a read past the largest PEB32 stays an offset from it" min="1" max="1">\(\(unsigned int \*\)teb-&gt;ProcessEnvironmentBlock\)\[0x124\];</stringmatch>
 <stringmatch name="PEBNAMES-X86 #16: GS is not the TEB on x86, so gs:[0x14] stays an untyped register read under on" min="1" max="1">return \*\(unsigned int \*\)\(v[0-9]+ \+ 0x14\);</stringmatch>
 <stringmatch name="PEBNAMES-X86 #17: the GS base keeps an untyped declaration on x86" min="1" max="1">int4 v[0-9]+; // gs_offset</stringmatch>
 <stringmatch name="PEBNAMES-X86 #18: the C++ EH registration record keeps its three-slot extent under on" min="2" max="2">int4 v[0-9]+ \[3\]; // stack - 0xc</stringmatch>

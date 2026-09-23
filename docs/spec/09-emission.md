@@ -357,6 +357,74 @@ same last-chance the C++ takes. A resolved pointer edge materializes as a
 compatible field choice instead of casting when one exists, so unions prefer
 field syntax over cast syntax.
 
+**Pointer arithmetic in pointer terms (kuna, `castarith`).** A pointer plus a
+constant byte offset reaches this pass as a plain `INT_ADD` whenever chapter 05
+could build no `PTRSUB` or `PTRADD` for it: a `void *` base has no field at the
+offset and no element size, and a typed base whose element is not the access
+width has neither either. The rules above price an `INT_ADD` as integer
+arithmetic, so the default arm casts the pointer to `long` on the way in and
+the output arm casts the sum back to a pointer on the way out, and a 4-byte
+read at `+0xac` prints `*(unsigned int *)((long)a0 + 0xac)`, two casts for one
+read. With `option castarith` on (the default, C output only) the driver hands
+every such `INT_ADD` to `decompiler/crates/kuna-decomp/src/p9_emit/kuna_castarith.rs
+(rewrite)` right after the PTRADD/PTRSUB repairs, so a sum that a repair has just
+demoted is seen too, and before any input or output of the op is cast.
+
+`kuna_castarith.rs (plan)` accepts it when one input is a non-constant whose
+read-facing type is a pointer into a byte-addressed space, the other is a
+constant, and the sum is used as a `T *`. When a lone LOAD reads through the
+sum, or a lone STORE writes through it, `T` is the value it moves, which is the
+type the LOAD/STORE input cast would otherwise have recast the pointer to
+(`kuna_castarith.rs (access_type)`); the sum's own pointee takes precedence when
+it is the same type or an integer of the same width, so the pointer keeps the
+spelling the old output had. Any other use takes the sum's own pointee, and a
+`void` pointee counts in bytes (`char`) only for a value that stays inside the
+function (`kuna_castarith.rs (stays_in_function)`): a call argument or return
+value carries its type to the whole-program prototype votes of chapter 04, which
+must not learn a `char *` the analysis never derived. `T` must be a scalar or a
+pointer whose size equals its aligned size. When the offset, read as a signed
+constant, is a whole number of `T`s, the op becomes `PTRADD(base, #k,
+#sizeof T)` with `k` typed as a signed pointer-sized integer, so a negative
+offset is a negative index.
+
+The base is cast to `T *` by a new implied `CPUI_CAST` inserted before the op,
+with two exceptions. A variable whose own type is its read-facing type and whose
+printed declaration (a parameter's prototype type or a local's declared type,
+`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (declared_variable_type)`,
+the lookup the switch printer uses) points at `T` or at an integer of `T`'s width
+is used bare (`kuna_castarith.rs (declared_as)`), so the declaration a reader
+sees scales the index the same way; a float element never counts, because
+converting it changes the bits. An implied CAST read only by this op is
+retargeted to `T *`, the way the input machinery above retypes a cast rather
+than stack a second one. The printer then renders the `PTRADD` like any other
+(§9.2, §9.5): `((unsigned int *)a0)[0x2b]` under a dereference, and
+`&((T *)p)[k]` as a value, or `(T *)p + k` with `arraynotation off`, so the one
+spelling decision stays with that option.
+
+The computed value is unchanged: `k * sizeof(T)` is the original offset, the
+base is converted pointer to pointer with no integer in between, and the element
+is the access width. The integer form stays wherever the printed C could
+otherwise convert a value or cost a cast. An offset that is not a whole number of
+elements (`*(unsigned int *)((long)a0 + 0x6a)`), a variable index, an aggregate
+or padded element, and a word-addressed space keep it. So does a sum read as an
+integer (integer arithmetic on it, or a store of it into an integer slot, where
+`(long)&((T *)p)[k]` would cost one cast more), and an address several LOADs or
+STOREs share, since only a lone access fixes the element. A STORE of a value
+whose defining op the pass has not reached keeps it too, because that op's own
+output cast may still retype the value (a float operation's result becomes
+`float`) and an integer element would then convert it; it is accepted only when
+the opcode fixes the kind, float arithmetic for a float element and integer
+arithmetic for a non-`bool` integer one (`kuna_castarith.rs
+(store_value_settled)`). Finally, a constant that names a global keeps it, and
+so does an address-like constant beside an integer that was cast to a pointer:
+`table[i]` compiles to the same `INT_ADD`, with the table as the constant and the
+subscript as the "pointer" (`decompiler/crates/kuna-decomp/src/p5_types/kuna_ptrfromuse.rs
+(constant_may_be_global_base)`). A record base is untouched because its accesses
+are already `PTRSUB`s printed as `p->field`. Upstream Ghidra prints the integer
+round trip. Pinned by `tests/stages/kuna-castarith.xml` and by the compiled
+round trip `a_pointer_plus_whole_elements_round_trips_through_the_printed_c` in
+`decompiler/crates/kuna-cli/tests/decompile_all_cli.rs`.
+
 **Repairs and failure mode.** Late type propagation can invalidate the pointer
 model a PTRADD/PTRSUB was built on; the driver demotes them back to raw
 arithmetic (`cast_fixup_ptradd` undoes the scaling; `cast_fixup_ptrsub`

@@ -27,7 +27,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "unsigned long get_c\\(void \\*a0\\)\\n\\{\\n  return \\*\\(unsigned long \\*\\)\\(\\(long\\)a0 \\+ 0x10\\);",
+      "unsigned long get_c\\(void \\*a0\\)\\n\\{\\n  return \\(\\(unsigned long \\*\\)a0\\)\\[2\\];",
       "unsigned long get_b\\(void \\*a0\\)"
     ],
     "stdout_absent": [
@@ -35,5 +35,5 @@
     ]
   },
   "notes": "DEFAULT on x86-64, .text loaded at 0: get_c and get_b are called directly with a struct node * and also named by the const table ops inside .text, through which run calls them on a char buffer. Every SHF_ALLOC section's words are read whatever its address, so both keep void *.",
-  "probe_id": "a-fb55b57565df"
+  "probe_id": "a-92751f99c4f9"
 }

@@ -1155,6 +1155,12 @@ impl Funcdata {
                 } else if opc == OpCode::CPUI_PTRSUB {
                     self.cast_fixup_ptrsub(op);
                 }
+                // (kuna `castarith`) A pointer plus whole elements stays pointer arithmetic.
+                if self.get_arch().cast_arith
+                    && self.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_INT_ADD)
+                {
+                    crate::kuna_castarith::rewrite(self, op);
+                }
                 // Allow unresolved high data-types to resolve.
                 let numin = self.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
                 for i in 0..numin {

@@ -27,7 +27,7 @@
 
     With option structsynth param (asserts 1 and 2): only parameters are
     measured, so every access through the returned pointer is raw offset
-    arithmetic, *(char *)((int8)v1 + 0x14) = 0x6e and (int8)(int4)v1[2].
+    arithmetic, ((char *)v1)[0x14] = 0x6e and (int8)(int4)v1[2].
 
     With option structsynth locals (asserts 3 to 6): the returned value is the
     local's only definition, so its accesses are measured like a parameter's
@@ -136,7 +136,7 @@ b615820e00008850084c89e05d415c415dc366662e0f1f8400000000000f1f00
   <com>print C types</com>
   <com>quit</com>
 </script>
-<stringmatch name="STRUCTSYNTH-LOCALS #1: param writes a returned record through raw offsets" min="1" max="1">\*\(char \*\)\(\(int8\)v1 \+ 0x14\) = 0x6e;</stringmatch>
+<stringmatch name="STRUCTSYNTH-LOCALS #1: param writes a returned record through raw offsets" min="1" max="1">\(\(char \*\)v1\)\[0x14\] = 0x6e;</stringmatch>
 <stringmatch name="STRUCTSYNTH-LOCALS #2: param reads a returned record as an array of longs" min="1" max="1">return \(int8\)\(int4\)v1\[2\] \+ v1\[1\] \+ \*v1;</stringmatch>
 <stringmatch name="STRUCTSYNTH-LOCALS #3: locals declares the allocation a record pointer" min="1" max="1">v1 = \(struct_0 \*\)sub_200000\(0x18\);</stringmatch>
 <stringmatch name="STRUCTSYNTH-LOCALS #4: locals writes the allocation's fields by name" min="1" max="1">v1-&gt;field_0x10 = 1;
