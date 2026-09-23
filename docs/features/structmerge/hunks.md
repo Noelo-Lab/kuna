@@ -23,10 +23,44 @@ accesses only`, and `read` for anything else.
 | kmod-kmod-O2      | 394 | 12 | 12 | 0 | 0 |
 | **total** | 4904 | 92 | 91 | 1 | 0 |
 
-No skeleton delta, no declaration-count delta and nothing unclassified in 4,904
-functions. 91 of the 92 changed functions are a record rename: the parameter's
-`struct_N` number moves and its record gains members, and the body is otherwise
-identical.
+No skeleton delta, no declaration-count delta and nothing unclassified in these
+4,904 functions. 91 of the 92 changed functions are a record rename: the
+parameter's `struct_N` number moves and its record gains members, and the body is
+otherwise identical.
+
+Those counts are this set of ten binaries, not a general rate: how many bodies
+change depends on how much filler the merge fills in, and on a binary with more
+synthesized records the respelling class is larger. `e2fsprogs` `e2fsck` -O2
+(1,421 functions, outside this table) is the worked example -- 56 functions
+change, 54 of them record-name-only, 2 with a respelled body, one of those with a
+declaration-count delta:
+
+```
+$ kuna decompile-all .../O2/e2fsprogs/stripped/e2fsck --option structmerge off > off.c
+$ kuna decompile-all .../O2/e2fsprogs/stripped/e2fsck --option structmerge siblings > on.c
+$ python3 docs/features/structmerge/hunks.py e2fsck-O2
+| e2fsck-O2 | 1421 | 56 | 54 | 1 | 1 |
+all classes: {'record name only': 54, 'declaration-count delta': 1, 'field accesses only': 1}
+```
+
+`dict_insert` is the declaration-count one. Its record's `char field_0x8[...]`
+filler is replaced by real members, so the accesses are respelled off the member
+that now covers them -- every one at the same address:
+
+```
+-  *(unsigned long *)&a1->field_0x8[0x18] = a2;        // 0x8 + 0x18
++  *(unsigned long *)&a1->field_0x10[0x10] = a2;       // 0x10 + 0x10
+-  *(struct_47 **)&a1->field_0x8[8] = v7;              // 0x8 + 8
++  *(struct_140 **)a1->field_0x10 = v6;                // 0x10, array decay
+```
+
+and its declarations go 7 -> 6, because `int8 v2` and `int8 *v3` become one
+`int8 *v2` once both hold the same typed member. `ext2fs_file_read` is the other:
+`ext2fs_inline_data_get(v1,a0->field_0x10,a0->field_0x14,...)` becomes
+`...,&a0->field_0x14,...` -- offset 0x14 is `char field_0x14[4]` filler on the off
+arm, which decays to its address, and `unsigned int field_0x14` once the merge
+claims it, which needs the `&`. Same address, and a field the merge could only
+have added.
 
 The one respelling is `grep` -O2 `sub_7110`, whose record had `undefined1`
 filler at offset 0x20 and gains a `long` member there:

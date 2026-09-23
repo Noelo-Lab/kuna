@@ -14,8 +14,11 @@ the metric cannot see a record's members at all -- a `struct_2 *` and a
 So the accuracy question is the goal-3 instrument's, and it answers two ways:
 
 * on the eight layout builds the instrument is published on, per-parameter
-  claimed-field precision RISES, 0.8710 -> 0.8737, with recall 0.0865 -> 0.0894
-  and F1 0.1574 -> 0.1622;
+  claimed-field precision RISES, 0.8713 -> 0.8730, with recall 0.0932 -> 0.0960
+  and F1 0.1684 -> 0.1731 (this branch's base, origin/main 796939d54; the same
+  measurement on 31ac2b26e, where the option was designed, is 0.8710 -> 0.8737,
+  0.0865 -> 0.0894, F1 0.1574 -> 0.1622 -- both rows are in `analysis.md` and in
+  `record.json`'s `layoutscore`);
 * over the 177 builds of `dedup_heldout.py`'s eight sets, F1 rises on every set
   and true fields rise by 813, but pooled claimed-field precision FALLS, 0.9330
   -> 0.9312, and falls on five of the eight sets (the largest, HELDOUT2, by 0.62
@@ -33,7 +36,7 @@ and the evidence for flipping it is in `analysis.md` for whoever wants to.
 |---|---|
 | (d) 444-slice typesweep, new default vs old | perfect 1,522 -> 1,522; 0 improved, 0 worsened; aggregate identical |
 | (e) interleaved min-of-15 on `fmt`, `ls`, `sort` and `bash` at -O2 | +0.91%, -4.08%, -0.42%, +0.32%; worst +0.91% against a +5% budget |
-| (f) whole-corpus `decompile-all` before/after, ten binaries | 92 of 4,904 functions change; 91 are the record rename the option is for, 1 is a field respelling, 0 skeleton deltas, 0 declaration-count deltas, nothing unclassified (`hunks.md`) |
+| (f) whole-corpus `decompile-all` before/after, ten binaries | 92 of 4,904 functions change; 91 are the record rename the option is for, 1 is a field respelling, 0 skeleton deltas, 0 declaration-count deltas, nothing unclassified. Those are this set of ten: on `e2fsck` -O2, outside it, 56 of 1,421 change with 2 respelled bodies and 1 declaration-count delta, every access still at the same address (`hunks.md`) |
 | (g) `p0_knowledge/modes.rs` | nothing to do: the preset-membership test covers `on|off` options with a shipped default of `off`, and `structmerge` is `off|siblings`, exactly as `structsynth` is |
 | record identity | 567 absorptions over 177 builds; 31 confirmed on the same DWARF record, 0 on a different one, **536 uncheckable** (the union is a shape neither reader had on the off arm) |
 
