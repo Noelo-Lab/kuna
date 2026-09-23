@@ -2067,6 +2067,15 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   past its start; that callee's own record otherwise retyped the variable
   `struct_2 *`, a name no ground truth has. The rule is gated on the option
   because headless records are what made it reachable on the campaign corpus.
+  The same option adds the one fallback in this list: a callee's headless
+  record refused for any reason is offered again as `void *`, held to every
+  refusal above (`kuna_structheadless::bare_pointer_for`). A headless record is
+  the callee's partial view of what it was handed, and the caller's reads often
+  disagree with it -- five of `fts_build`'s callees each read their own part of
+  one `FTSENT` -- so refusing it outright left the caller's value, which the
+  same callees state as `void *` when the option is off, with no pointer
+  evidence at all: `v21 = a0->field_0x0` turned from `void *` into `long`. Any
+  other refused record is refused with the option off too, and says nothing.
 - **Float-ness disagrees**: the family is produced or read by a float op and the
   vote is not a float; a pointer vote on a value the caller multiplies, divides,
   shifts, masks or reads as a float; or an integer or pointer vote in a

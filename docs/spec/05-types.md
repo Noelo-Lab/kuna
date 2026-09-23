@@ -1175,9 +1175,14 @@ functions the lone field is (`kuna_structheadless.rs (admits)`), when nothing
 outside the function gave the parameter its pointee (`pointee_is_given`, as
 above). Everything else a parameter is held to still applies -- already a
 pointer, no named pointee, no index, integer use or phi, inside `0x8000`, not an
-array run -- and the bytes before the first access become the same `undefined1`
-filler a hole becomes, so the exported header still puts every field at its own
-offset. It is the common shape of a record a function reads only partly: `ls`
+array run -- and so does the condition `locals` adds for a view it knows is
+partial: no address may be formed at or past the end of every access
+(`points_past`). `cp`'s directory-entry code hands `(char *)a1 + 0x100`, the
+name member past everything it reads, to `strrchr` and `memmove`; typed on its
+accesses the record would print that address as `&a1[2].field_0x30`, an element
+of a record array. The bytes before the first access become the same
+`undefined1` filler a hole becomes, so the exported header still puts every
+field at its own offset. It is the common shape of a record a function reads only partly: `ls`
 `-O0`'s `sub_53e7` reads `struct fileinfo`'s `stat.st_mode`, `linkmode` and
 `linkok` at 0x30, 0xac and 0xb9 and nothing at 0, and printed each read as two
 casts over a `void *` (`*(unsigned int *)((long)a0 + 0xac)`); `statx_to_stat`
@@ -1205,7 +1210,9 @@ is not the same `struct_N` unless the ledger's containment rule answers one with
 the other, and one program object can be given several names. At a call site a
 callee's headless or any other synthesized record does not replace a named record
 the caller's value is declared as (chapter [04](04-calls-and-prototypes.md),
-`kuna_structheadless.rs (yields_to_a_declared_record)`).
+`kuna_structheadless.rs (yields_to_a_declared_record)`), and a headless record
+the caller's own reads refuse falls back to the `void *` the callee states
+without it (`kuna_structheadless.rs (bare_pointer_for)`).
 
 At a conflicting offset the **widest** access wins. A field wider than an access
 renders as a cast of the field (`(uint4)w->b`); a field narrower than an access
