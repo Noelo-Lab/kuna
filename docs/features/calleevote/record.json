@@ -754,7 +754,8 @@
    "docs/spec/04-calls-and-prototypes.md",
    "docs/spec/05-types.md",
    "docs/cli.md",
-   "docs/options.md"
+   "docs/options.md",
+   "docs/features/calleevote/budget-fixture.py"
   ]
  },
  "catalog_counts": {
