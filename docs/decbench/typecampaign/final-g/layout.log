@@ -1,0 +1,51 @@
+=== ROUND G DEFAULT
+fmt O0: fields-only P=0.9167 (11/12), filler-counted P=0.8824 (15/17), gt=556
+fmt O2: fields-only P=1.0 (6/6), filler-counted P=1.0 (8/8), gt=402
+ls O0: fields-only P=0.8047 (206/256), filler-counted P=0.722 (226/313), gt=1761
+ls O2: fields-only P=0.8284 (111/134), filler-counted P=0.7095 (127/179), gt=800
+sort O0: fields-only P=0.8729 (158/181), filler-counted P=0.7574 (178/235), gt=1779
+sort O2: fields-only P=0.8807 (96/109), filler-counted P=0.7862 (114/145), gt=1113
+du O0: fields-only P=0.9326 (166/178), filler-counted P=0.7558 (195/258), gt=1926
+du O2: fields-only P=0.9403 (126/134), filler-counted P=0.7957 (148/186), gt=1106
+POOLED filler counted: precision 1011/1341 = 0.7539  recall 1011/9443 = 0.1071  F1 0.1875
+POOLED fields only: precision 880/1010 = 0.8713  recall 880/9443 = 0.0932  F1 0.1684
+RC_G=0
+=== ROUND F DEFAULT (control, this tree's instrument)
+fmt O0: fields-only P=0.9167 (11/12), filler-counted P=0.8824 (15/17), gt=556
+fmt O2: fields-only P=1.0 (6/6), filler-counted P=1.0 (8/8), gt=402
+ls O0: fields-only P=0.8075 (193/239), filler-counted P=0.7698 (214/278), gt=1761
+ls O2: fields-only P=0.8548 (106/124), filler-counted P=0.7531 (122/162), gt=800
+sort O0: fields-only P=0.8686 (152/175), filler-counted P=0.7864 (173/220), gt=1779
+sort O2: fields-only P=0.8796 (95/108), filler-counted P=0.7902 (113/143), gt=1113
+du O0: fields-only P=0.9205 (139/151), filler-counted P=0.7951 (163/205), gt=1926
+du O2: fields-only P=0.935 (115/123), filler-counted P=0.811 (133/164), gt=1106
+POOLED filler counted: precision 941/1197 = 0.7861  recall 941/9443 = 0.0997  F1 0.1769
+POOLED fields only: precision 817/938 = 0.8710  recall 817/9443 = 0.0865  F1 0.1574
+RC_F=0
+=== NESTING (round G build, 8 builds, default vs nest)
+fmt O0     param layoutF P=0.9167 (11/12) R=0.0198 | nest tp=0 pred=0 gt=86 F1=0.0 | structs=4 typed=4
+fmt O0     nest  layoutF P=0.9167 (11/12) R=0.0198 | nest tp=0 pred=0 gt=86 F1=0.0 | structs=4 typed=4
+fmt O2     param layoutF P=1.0 (6/6) R=0.0149 | nest tp=0 pred=0 gt=62 F1=0.0 | structs=3 typed=2
+fmt O2     nest  layoutF P=1.0 (6/6) R=0.0149 | nest tp=0 pred=0 gt=62 F1=0.0 | structs=3 typed=2
+ls O0      param layoutF P=0.8047 (206/256) R=0.117 | nest tp=0 pred=0 gt=176 F1=0.0 | structs=32 typed=63
+ls O0      nest  layoutF P=0.8047 (206/256) R=0.117 | nest tp=0 pred=0 gt=176 F1=0.0 | structs=32 typed=63
+ls O2      param layoutF P=0.8284 (111/134) R=0.1388 | nest tp=0 pred=0 gt=128 F1=0.0 | structs=31 typed=31
+ls O2      nest  layoutF P=0.8284 (111/134) R=0.1388 | nest tp=0 pred=0 gt=128 F1=0.0 | structs=31 typed=31
+sort O0    param layoutF P=0.8729 (158/181) R=0.0888 | nest tp=0 pred=0 gt=357 F1=0.0 | structs=32 typed=45
+sort O0    nest  layoutF P=0.8729 (158/181) R=0.0888 | nest tp=0 pred=0 gt=357 F1=0.0 | structs=32 typed=45
+sort O2    param layoutF P=0.8807 (96/109) R=0.0863 | nest tp=0 pred=0 gt=215 F1=0.0 | structs=23 typed=22
+sort O2    nest  layoutF P=0.8807 (96/109) R=0.0863 | nest tp=0 pred=0 gt=215 F1=0.0 | structs=23 typed=22
+du O0      param layoutF P=0.9326 (166/178) R=0.0862 | nest tp=1 pred=1 gt=391 F1=0.0051 | structs=40 typed=61
+du O0      nest  layoutF P=0.9326 (166/178) R=0.0862 | nest tp=1 pred=1 gt=391 F1=0.0051 | structs=40 typed=61
+du O2      param layoutF P=0.9403 (126/134) R=0.1139 | nest tp=2 pred=4 gt=245 F1=0.0161 | structs=37 typed=40
+du O2      nest  layoutF P=0.9403 (126/134) R=0.1139 | nest tp=2 pred=4 gt=245 F1=0.0161 | structs=37 typed=40
+POOLED param layout_fields: P 880/1010=0.8713 R 880/9443=0.0932 F1 0.1684
+POOLED param layout_filler: P 1011/1341=0.7539 R 1011/9443=0.1071 F1 0.1875
+POOLED param nesting: P 3/5=0.6000 R 3/1660=0.0018 F1 0.0036
+POOLED param structs=202 typed_params=268
+POOLED nest layout_fields: P 880/1010=0.8713 R 880/9443=0.0932 F1 0.1684
+POOLED nest layout_filler: P 1011/1341=0.7539 R 1011/9443=0.1071 F1 0.1875
+POOLED nest nesting: P 3/5=0.6000 R 3/1660=0.0018 F1 0.0036
+POOLED nest structs=202 typed_params=268
+RC_NEST=0
+LAYOUT_DONE

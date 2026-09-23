@@ -1,0 +1,6 @@
+roundF {"functions_with_gt": 10748, "tp_added": 1779, "perfect": 1522, "perfect_credited": 1781, "onto_perfect": 259, "mean": 0.3553, "mean_credited": 0.4038}
+s711 {"functions_with_gt": 10748, "tp_added": 2686, "perfect": 1567, "perfect_credited": 2133, "onto_perfect": 566, "mean": 0.3597, "mean_credited": 0.4432}
+s714 {"functions_with_gt": 10748, "tp_added": 2686, "perfect": 1582, "perfect_credited": 2154, "onto_perfect": 572, "mean": 0.3637, "mean_credited": 0.4472}
+calleevote_off {"functions_with_gt": 10748, "tp_added": 1797, "perfect": 1575, "perfect_credited": 1859, "onto_perfect": 284, "mean": 0.3659, "mean_credited": 0.4149}
+passthrough_off {"functions_with_gt": 10748, "tp_added": 2686, "perfect": 1582, "perfect_credited": 2154, "onto_perfect": 572, "mean": 0.3637, "mean_credited": 0.4472}
+default {"functions_with_gt": 10748, "tp_added": 2723, "perfect": 1609, "perfect_credited": 2181, "onto_perfect": 572, "mean": 0.3688, "mean_credited": 0.4532}
