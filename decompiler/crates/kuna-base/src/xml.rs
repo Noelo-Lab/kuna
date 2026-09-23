@@ -1899,7 +1899,9 @@ mod tests {
         // that is not one, and calleevote
         // and kuna-libcwiden / a wrapper around an *at import stops spelling its
         // path argument as an integer
-        assert_eq!(count, 333, "corpus file count drifted");
+        // and kuna-callplaceholder / a call to a declared callee stops taking
+        // the return-address slot as a trailing argument
+        assert_eq!(count, 334, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
