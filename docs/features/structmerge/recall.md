@@ -8,8 +8,7 @@ claimed at all. This is a census of the 8,626, measured rather than argued.
 ## How it was measured
 
 Three views of the same eight builds are joined per parameter
-([`census.py`](census.py), raw rows `.scratch/census.json`, summary
-[`census-report.txt`](census-report.txt)):
+([`census.py`](census.py), summary [`census-report.txt`](census-report.txt)):
 
 * the DWARF ground truth for every pointer-to-struct parameter — `structscore.dwarf_functions`
   and `struct_layout`, the layout instrument's own denominator (835 parameters, 9,443 fields,
@@ -94,6 +93,14 @@ its own fields. The census says exactly how often that happens:
 * Merging the claims of the readers `structsynth` already accepts, into the records it already
   installs, has a ceiling of **1,451** correct fields against today's 817 — recall 0.0865 →
   0.1537 — without typing a single new parameter.
+
+That ceiling is a ceiling on the evidence, not on what the ledger's rules will hand out.
+The containment rule declares a reader to hold at most twice the fields it measured and at
+most four times its bytes, and most readers claim two or three fields, so a reader of a
+ten-field record is answered with at most six of them however many siblings prove the rest.
+`structmerge siblings` spends what is reachable under those bounds -- 817 -> 844 claimed
+fields, precision 0.8710 -> 0.8737 -- and `docs/features/structmerge/analysis.md` records
+what relaxing each bound was measured to cost.
 
 Two smaller levers sit behind the same mechanism and are worth measuring after it:
 `fewer_than_two_offsets` (91 parameters whose siblings touch 484 fields) and `no_offset_zero`
