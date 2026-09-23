@@ -89,16 +89,9 @@ pub(super) fn nest_fields(
 ) -> Vec<int4> {
     let own: Vec<TypeField> = fields.to_vec();
     let mut selfs = Vec::new();
-    let census = std::env::var_os("KUNA_SSCENSUS").is_some();
     for i in 0..fields.len() {
         let field = &own[i];
-        if field.field_type.get_size() != cx.ptr_size {
-            continue;
-        }
-        if census && depth == 0 {
-            census_field(data, cx, rec, field);
-        }
-        if !is_record_pointer(&field.field_type) {
+        if field.field_type.get_size() != cx.ptr_size || !is_record_pointer(&field.field_type) {
             continue;
         }
         let Some(inner) = loaded_record(data, cx, rec, intb::from(field.offset)) else { continue };
@@ -122,96 +115,6 @@ pub(super) fn nest_fields(
         fields[i].field_type = ptr;
     }
     selfs
-}
-
-/// TEMPORARY census: why one pointer-width field of an accepted record is not
-/// given a record of its own, and what two relaxations would do with it.
-fn census_field(data: &mut Funcdata, cx: &Nesting, rec: &Evidence, field: &TypeField) {
-    let fa = data.get_address().get_offset();
-    let tag = |s: String| eprintln!("SSCENSUS nest {fa:x} {:x} {s}", field.offset);
-    let off = intb::from(field.offset);
-    let Some(loads) = rec.loads.get(&off) else {
-        return tag("noload".into());
-    };
-    let mut values: Vec<VarnodeId> = Vec::new();
-    for (w, v) in loads {
-        if *w == cx.ptr_size && !values.contains(v) {
-            values.push(*v);
-        }
-    }
-    if values.is_empty() {
-        return tag("narrowload".into());
-    }
-    let mut merged = Evidence::default();
-    let mut valptr = true;
-    for v in values {
-        let Some(vn) = data.vbank().get(v) else { return tag("novn".into()) };
-        if vn.is_type_lock() || vn.is_persist() || vn.is_spacebase() {
-            return tag("valuelocked".into());
-        }
-        let Some(ct) = vn_type(data, v) else { return tag("novaltype".into()) };
-        if !is_record_pointer(&ct) {
-            valptr = false;
-        }
-        match cx.ev.get(&v) {
-            Some(e) => merged.absorb(e),
-            None => {
-                let mut uses = Evidence::default();
-                note_uses(data, v, &mut uses);
-                merged.absorb(&uses);
-            }
-        }
-    }
-    if merged.slots.is_empty() {
-        let mut vt = String::new();
-        let mut uses = String::new();
-        for (w, v) in loads {
-            if *w != cx.ptr_size {
-                continue;
-            }
-            if let Some(ct) = vn_type(data, *v) {
-                let named = points_at_named_composite(&ct);
-                let pm = ct.get_ptr_to().map(|p| format!("{:?}", p.get_metatype())).unwrap_or_else(|| format!("{:?}", ct.get_metatype()));
-                vt = format!("{}{}", if named { "NAMED-" } else { "" }, pm.trim_start_matches("TYPE_").to_lowercase());
-            }
-            if let Some(vn) = data.vbank().get(*v) {
-                for u in vn.descend_iter() {
-                    if let Some(op) = data.obank().get(u) {
-                        let c = format!("{:?}", op.code());
-                        let c = c.trim_start_matches("CPUI_").to_lowercase();
-                        if !uses.contains(&c) {
-                            uses.push_str(&c);
-                            uses.push('+');
-                        }
-                    }
-                }
-            }
-        }
-        let ft = field.field_type.get_ptr_to().map(|p| format!("{:?}", p.get_metatype())).unwrap_or_else(|| format!("{:?}", field.field_type.get_metatype()));
-        return tag(format!("noderef/{}/{}/{}", ft.trim_start_matches("TYPE_").to_lowercase(), vt, uses));
-    }
-    let inner = merged.pruned();
-    let fieldptr = is_record_pointer(&field.field_type);
-    // The two relaxations, reported independently of each other.
-    let neg = inner.dynamic_offset || inner.integer_use || inner.phi_reached;
-    let zero = inner.slots.contains_key(&0);
-    let two = inner.slots.len() >= 2;
-    let arr = {
-        let slots = &inner.slots;
-        super::is_array_shaped(slots, cx.ptr_size)
-    };
-    let why = if neg {
-        "negative"
-    } else if !two {
-        "onefield"
-    } else if arr {
-        "arrayrun"
-    } else if !zero {
-        "nozero"
-    } else {
-        "clean"
-    };
-    tag(format!("{}/{}/{}", if fieldptr { "fptr" } else { "fint" }, if valptr { "vptr" } else { "vint" }, why));
 }
 
 /// Is this field type a pointer a record may be put behind?  A pointer to a

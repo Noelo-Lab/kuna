@@ -888,7 +888,6 @@ fn synthesize(data: &mut Funcdata) -> bool {
     let mut asks = Vec::new();
     for (base, e) in raw.iter() {
         let e = e.pruned();
-        census_base(data, *base, &e);
         if !accepts(data, *base, &e) {
             continue;
         }
@@ -976,96 +975,6 @@ fn answer(
             data.get_arch().struct_merge,
         ),
     }
-}
-
-/// TEMPORARY census: why each base with constant-offset accesses is refused.
-fn census_base(data: &mut Funcdata, base: VarnodeId, e: &Evidence) {
-    if std::env::var_os("KUNA_SSCENSUS").is_none() {
-        return;
-    }
-    let fa = data.get_address().get_offset();
-    let Some(v) = data.vbank().get(base) else { return };
-    let (input, lock, persist, spacebase, constant) = (
-        v.is_input(),
-        v.is_type_lock(),
-        v.is_persist(),
-        v.is_spacebase() || v.get_space().get_type() == spacetype::IPTR_SPACEBASE,
-        v.is_constant(),
-    );
-    let stor = format!(
-        "{}:{:x}:{}",
-        v.get_space().get_name(),
-        v.get_offset(),
-        v.get_size()
-    );
-    let defop = v.get_def().and_then(|d| data.obank().get(d)).map(|o| format!("{:?}", o.code()));
-    let call_ret = is_call_return(data, base);
-    let kind = if input {
-        "param".to_string()
-    } else if spacebase {
-        "frame".to_string()
-    } else if constant {
-        "const".to_string()
-    } else if persist {
-        "global".to_string()
-    } else if call_ret {
-        "callret".to_string()
-    } else {
-        format!("value-{}", defop.unwrap_or_else(|| "none".into()).trim_start_matches("CPUI_").to_lowercase())
-    };
-    let ct = vn_type(data, base);
-    let is_ptr = ct.as_ref().is_some_and(|c| c.get_metatype() == type_metatype::TYPE_PTR);
-    let named = ct.as_ref().is_some_and(|c| points_at_named_composite(c));
-    let pointee = match ct.as_ref().and_then(|c| c.get_ptr_to()) {
-        Some(p) => format!("{:?}", p.get_metatype()).trim_start_matches("TYPE_").to_lowercase(),
-        None => format!("{:?}", ct.as_ref().map(|c| c.get_metatype())).to_lowercase(),
-    };
-    let offs: Vec<String> = e.slots.iter().map(|(o, s)| format!("{o:x}/{}", s.width)).collect();
-    let ok = accepts(data, base, e);
-    let why = if ok {
-        "ACCEPT"
-    } else if !input && !call_ret {
-        "notbase"
-    } else if !input && !data.get_arch().struct_synth.locals() {
-        "localsoff"
-    } else if !input && !is_local_base(data, base, e) {
-        "localrule"
-    } else if lock {
-        "typelock"
-    } else if spacebase || persist {
-        "frameglobal"
-    } else if !is_ptr {
-        "notptr"
-    } else if named {
-        "named"
-    } else if e.dynamic_offset {
-        "dynoff"
-    } else if e.integer_use {
-        "intuse"
-    } else if e.phi_reached {
-        "phi"
-    } else if e.slots.keys().any(|o| *o < 0 || *o >= MAX_FIELD_OFFSET) {
-        "range"
-    } else if e.slots.is_empty() {
-        "noslots"
-    } else if e.slots.len() < 2 {
-        "onefield"
-    } else if !e.slots.contains_key(&0) {
-        "nozero"
-    } else {
-        let ps = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
-        if is_array_shaped(&e.slots, ps) {
-            "arrayrun"
-        } else {
-            "other"
-        }
-    };
-    eprintln!(
-        "SSCENSUS base {fa:x} {kind} {stor} {} {pointee} {why} {} {}",
-        e.slots.len(),
-        if offs.is_empty() { "-".to_string() } else { offs.join(",") },
-        data.kuna_calleevote_closed() as u8
-    );
 }
 
 /// Every decline condition for a base, in one place.
@@ -1456,15 +1365,6 @@ impl Action for ActionStructSynth {
             || data.is_type_recovery_exceeded()
             || !data.kuna_infertypes_settled()
         {
-            if std::env::var_os("KUNA_SSCENSUS").is_some() {
-                eprintln!(
-                    "SSCENSUS unsettled {:x} {} {} {}",
-                    data.get_address().get_offset(),
-                    data.has_type_recovery_started() as u8,
-                    data.is_type_recovery_exceeded() as u8,
-                    data.kuna_infertypes_settled() as u8
-                );
-            }
             return 0;
         }
         self.fired = true;
