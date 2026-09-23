@@ -951,6 +951,11 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_argclobber::drop_clobber_tail_arg`]; off by
     /// default, so the fixture seam carries `false`.
     pub arg_clobber: bool,
+    /// (kuna) a register forwarded untouched to a callee whose recovered
+    /// prototype reads it becomes a parameter (`passthrough`).  Read by
+    /// [`crate::p4_calls::kuna_passthrough`]; it needs a prototype `protoorder`
+    /// parked, which no fixture has, so the seam carries the shipped default.
+    pub pass_through: bool,
     /// (kuna) let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (`calleedeadarg`).  Read by
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
@@ -1621,6 +1626,7 @@ impl ArchContext {
             // when there is no callee to ask, so the fixture seam carries the
             // shipped default.
             arg_clobber: true, // (kuna) option argclobber (default on)
+            pass_through: false, // (kuna) option passthrough (shipped off)
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,

@@ -1,0 +1,163 @@
+{
+ "opportunity": "gzip -O2 gzip_base_name (0xd290) is `endbr64; jmp last_component`: it forwards its own rdi and returns the callee's rax, and kuna renders `void sub_d290(void) { sub_dfd0(); }` while recovering the callee as `char *sub_dfd0(char *a0)` in the same run. DWARF says `char *gzip_base_name(char const *fname)`. A call's argument trials come from Heritage::guardCalls, one per HERITAGED range, and a register the function only forwards is heritaged nowhere, so the call gets no trial and the function no parameter. df dir_name 0x7550 and tar *_diag are the same shape. The O2 census counts 25 register-forward arity-short functions.",
+ "test_name": "tests/cli/passthrough-gives-a-forwarding-function-its-parameter.json + passthrough-off-leaves-the-forwarded-register-unread.json; tests/stages/kuna-passthrough.xml; unit tests in kuna_passthrough/tests.rs",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64",
+ "selector": "sub_401019",
+ "func_addr": "0x401019",
+ "option": "passthrough",
+ "flag": "pass_through",
+ "element_id": 4177,
+ "change_kind": "correctness-fix",
+ "tier": "core",
+ "source_decompiler": "ghidra",
+ "inspiration": "gzip -O2 gzip_base_name 0xd290, df -O2 dir_name 0x7550, tar -O2 *_diag (decbench full_run_address_2026-09-11); the locked branch of ActionFuncLink::funcLinkInput (coreaction.cc:1500) materializes a declared parameter's read at the call, which is the seam this reuses for a recovered one; AncestorRealistic::execute (funcdata_varnode.cc:2159) refuses an input Varnode at a call slot",
+ "default_on": false,
+ "default_value": "off",
+ "values": "on|off",
+ "destructive": false,
+ "rule_change": {
+  "adds_argument": "a register R at a direct, unlocked, non-variadic call is an argument when the callee's recovered prototype (protoorder) has a parameter starting at R and the list is an arity claim (RecoveredTypes::arity_sound: all in registers, body does not read the next arg register, does not saturate the register file, canonical storage), the callee's body proves_input(R), the caller did not set the call up as variadic and is not variadic itself, and the value at the call is the function's own input Varnode. Width is the narrowest of the trial, the parameter and the callee's low-justified body read.",
+  "adds_return": "when every live RETURN is reached from a direct call with nothing between (<=4 single-pred blocks), every such callee states a non-void return in the same register, the function's output is not locked and no op touches that register, the RETURN reads it and the tail call's result is the function's return value, typed by the callee's recovered return.",
+  "mechanism": "claim_untouched_registers (end of ActionFuncLink) registers a trial + a CALL read for an untouched register only at a call no other CALL/CALLIND can precede (first_calls); heritage registers the range at every other call as usual and only guardReturns is kept off it (suppresses_return_trial); check_input_trial_use never scores a trial on a claimed range (claimed_range -> inactive, never no-use); capture (first in build_input_from_trials) keeps unused trials standing on the function's own input with the evidence and retires unused claimed-range trials; extend_pending (last in ActionActiveParam, after calleearityfwd/calleearitylive/calleearitybody) appends the stated registers that follow a final list that is a leading run of the stated one; returns_tail_result scores the RETURN trial; tail_return_type feeds call_output_type_local.",
+  "inert_where": [
+   "kuna decompile (one function per forked process)",
+   "decompile-all narrowed by --addr/--functions",
+   "--jobs N",
+   "callee in a recursive component under --option protoorder types",
+   "an import",
+   "--option protoorder off"
+  ],
+  "only_adds": "the rule runs after every other argument rule and only appends: no call loses an argument it has with the option off (lostargs.py over 26 binaries: call_lost_args=0 param_lost=0; callsite_metrics deleted=0)."
+ },
+ "benchmark": {
+  "metric": "type_match, pinned decbench 625e892, DECBENCH_NO_CACHE=1, KUNA_BIN the same build both arms, --option passthrough on vs off",
+  "slices": 444,
+  "functions": 10748,
+  "perfect_off": 1353,
+  "perfect_on": 1377,
+  "perfect_delta": 24,
+  "moved_onto_perfect": 24,
+  "moved_off_perfect": 0,
+  "aggregate_off": 3669.96,
+  "aggregate_on": 3728.72,
+  "improved": 102,
+  "worsened": 6,
+  "control_byte_identical": "10469 functions, 0 scored differently",
+  "worsened_detail": "pointer and int losses through the callee's own recovered type, not signedness: print_group_list (groups and id O2, .50->.417) username char* -> long and print_stuff (id O2, .071->0) pw_name char* -> long -- the forwarded parameter now also reaches the mgetgroups copy, recovered as `long a0`, whose integer beats the char* the caller's other uses give it; copy_reg (cp/ginstall/mv O2-noinline, .382->.353) dst_dirfd int -> unsigned long the same way.",
+  "build": "commit 7da4afecf, same binary both arms"
+ },
+ "arity_counters": {
+  "why": "type_match scores variables[] (args+stack+framelayout), never the return type, and a fabricated register arg on a function with no DWARF twin is never a false positive -- so arity/return fabrication is measured here against the decbench DWARF twins, off vs on, over 26 binaries (O0/O2/O2-noinline coreutils/gzip/grep/tar/diff/bzip2/shadow + betaflight/crazyflie/nuttx/u-boot).",
+  "build": "commit 7da4afecf",
+  "args_gained_functions": 259,
+  "args_gained": 506,
+  "args_gained_real_vs_dwarf": 454,
+  "args_gained_fabricated": 0,
+  "args_gained_no_dwarf_twin": 52,
+  "returns_gained_functions": 318,
+  "returns_real_vs_dwarf": 281,
+  "returns_fabricated": 23,
+  "returns_no_dwarf_twin": 14,
+  "params_lost": 0,
+  "callsite_metrics": {
+   "tool": "docs/decbench/typecampaign/final/callsite_metrics.py",
+   "deleted": 0,
+   "added": 724,
+   "added_sites": 427,
+   "phantom_args_changed_functions": "1 -> 0",
+   "phantom_args_all": "817 -> 816",
+   "string_args": "73 -> 74",
+   "new_over_arity_groups": 0,
+   "fixed_over_arity_groups": 77,
+   "site_count_changed": 0,
+   "argrows": "36179 -> 36685"
+  },
+  "fabrication_shapes": "returns only: 16 gnulib version_etc_ar copies + 2 version_etc_hook inherit version_etc_arn's own mis-recovered `long` (DWARF void), 2 tar print_total_stats, and 3 ARM (cf2 estimatorKalmanGetEstimatedRot, vEventGroupSetBitsCallback, nuttx nxsched_timeout) -- each a wrapper handing back what a callee kuna already gets wrong returns.",
+  "verdict": "the argument arm is clean on every architecture measured (the earlier ~55 ARM over-claims were claims at a call after another call; claiming only where no call precedes removed them); the return arm's 23 inherited returns are the open criterion."
+ },
+ "corpus_diff": {
+  "binaries": 26,
+  "build": "commit 7da4afecf",
+  "functions_changed": 1179,
+  "off_arm": "byte-identical (text and --json) to the previous head's off arm, which was verified against origin/main",
+  "lost_argument_detector": "docs/features/passthrough/lostargs.py: call_lost_args=0 param_lost=0 callsites_moved=0",
+  "classification": {
+   "signature type only (a forwarded param's type propagated)": 335,
+   "gained a return; RETURN now returns the tail call": 234,
+   "type propagation only in the body (casts, NULL for 0, struct_N renumbered)": 146,
+   "signature type + a call gained arguments": 134,
+   "gained a parameter + a call gained arguments": 123,
+   "a call gained arguments (body only)": 70,
+   "gained a parameter and a return + a call gained arguments": 65,
+   "gained a return + a call gained arguments": 19,
+   "body retype the textual normaliser misses: casts to a callee's newly typed parameter or return, a struct synthesized on a newly typed pointer, a variable renumbered (same statement count in all 53)": 53
+  },
+  "every_class_is_the_documented_effect": "a function gains a parameter or a tail-call return, calls gain (never lose) arguments, and types propagate from those. The 53 hunks the textual normaliser leaves were read: every changed line is a declaration or cast retyped, a struct_N renumbered or synthesized, or a variable renumbered, and each keeps its statement count.",
+  "extra_binaries": "8 more (O2-noinline sort/df/cp/grep/find/bzip2, O2 od, O0 tar): 245 functions change, lostargs 0/0, call-site deletions 0, 226 arguments added; sort O2-noinline 0x13070 keeps xrealloc's size `sub_12f00(a0,v3)`."
+ },
+ "gates": {
+  "tested_commit": "7da4afecf (later commits change comments and docs only)",
+  "make_test": "PARITY OK 675/675",
+  "make_test_stages": "PARITY OK 1299/1299",
+  "make_test_cli": "221/221",
+  "kuna_catalog_check": "OK",
+  "counters_check": "no drift",
+  "options_md_fresh": true,
+  "check_spec": "OK lenient + strict",
+  "make_rust_test": "RUST_TEST_RC=0 (lane script, commit 7da4afecf; 421 test-result lines, 0 failed)",
+  "full_ci_label": true
+ },
+ "catalog_counts": {
+  "settables": 226,
+  "core_transform_analysis": [
+   71,
+   91,
+   64
+  ],
+  "live_value_present_for": 94,
+  "stage_corpus_files": 330,
+  "element_id": 4177
+ },
+ "preset_decision": "OFF, and listed in modes.rs UNEVALUATED with the arity/return-fabrication reason -- not in AGGRESSIVE_OVERRIDES.",
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_passthrough.rs (+tests)",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs (RecoveredTypes::arity_sound + output)",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs (live_input_width)",
+  "decompiler/crates/kuna-decomp/src/p4_calls/coreaction_protos.rs (ActionFuncLink claim, ActionActiveParam extend_pending, ActionReturnRecovery hooks)",
+  "decompiler/crates/kuna-decomp/src/p4_calls/funcdata_callsite.rs (claimed_range arm in check_input_trial_use; capture in build_input_from_trials)",
+  "decompiler/crates/kuna-decomp/src/p5_types/coreaction_infertypes.rs (tail_return_type)",
+  "decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (claim/vararg/variadic state)",
+  "tests/stages/kuna-passthrough.xml, tests/cli/passthrough-*.json",
+  "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64(.s)",
+  "decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs (guardReturns skips a claimed range)",
+  "docs/features/passthrough/lostargs.py (corpus lost-argument detector)"
+ ],
+ "speed": {
+  "method": "interleaved min-of-15, SAME binary (commit 7da4afecf), --option passthrough off vs on, whole-binary `kuna decompile-all --max-fn-seconds 120` (the option is inert under single-function `kuna decompile`, so scripts.pipeline.timeit would measure nothing)",
+  "O2/coreutils/fmt": {
+   "off_s": 4.258,
+   "on_s": 4.14,
+   "delta_pct": -2.78
+  },
+  "O2/coreutils/ls": {
+   "off_s": 13.931,
+   "on_s": 13.892,
+   "delta_pct": -0.28
+  },
+  "O2/coreutils/sort": {
+   "off_s": 15.328,
+   "on_s": 15.312,
+   "delta_pct": -0.11,
+   "note": "re-run alone; the first run, measured while this lane's rust-test was building, read 14.792 -> 15.901 (+7.50%)"
+  },
+  "O2/bash/bash": {
+   "off_s": 86.5,
+   "on_s": 89.934,
+   "delta_pct": 3.97,
+   "note": "measured while two other lanes ran their own speed sweeps"
+  },
+  "worst_delta_pct": 3.97,
+  "budget_pct": 5.0,
+  "within_budget": true
+ }
+}

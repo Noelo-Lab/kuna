@@ -1021,6 +1021,7 @@ impl Action for ActionFuncLink {
             ActionFuncLink::func_link_input(i, data);
             ActionFuncLink::func_link_output(i, data);
         }
+        crate::p4_calls::kuna_passthrough::claim_untouched_registers(data);
         0
     }
 }
@@ -1188,6 +1189,9 @@ impl Action for ActionActiveParam {
         // the sibling rules have had their turn.  See
         // [`crate::p4_calls::kuna_calleearitybody`].
         let mut pending_body = Vec::new();
+        // (kuna) `passthrough`: call sites that may still take a register the
+        // function forwards untouched, extended after every other rule.
+        let mut pending_pass = Vec::new();
 
         // INDEX-BASED (CORRECTION-7 #3): keep the call specs ON `data.qlst` so
         // each sub-function's input-trial ancestor walk can look up the *other*
@@ -1275,6 +1279,9 @@ impl Action for ActionActiveParam {
                 if let Some(p) = fixup.body {
                     pending_body.push(p);
                 }
+                if let Some(p) = fixup.pass_through {
+                    pending_pass.push(p);
+                }
                 fc.clear_active_input();
                 data.restore_call_specs_at(idx, fc);
                 self.base.count += 1;
@@ -1291,6 +1298,8 @@ impl Action for ActionActiveParam {
         // (kuna) `calleearitybody`: last, so a site a sibling could speak for is
         // already non-empty and is left alone.
         crate::p4_calls::kuna_calleearitybody::recover_pending(data, &pending_body);
+        // (kuna) `passthrough`: last of all, so it only ever adds to a final list.
+        crate::p4_calls::kuna_passthrough::extend_pending(data, &pending_pass);
         0
     }
 }
@@ -1610,6 +1619,17 @@ impl Action for ActionReturnRecovery {
                         data.ancestor_op_use(maxancestor, vn, op, trial, 0, 0)
                     };
                     if only {
+                        active.get_trial_mut(i).mark_active();
+                    }
+                }
+                // (kuna) `passthrough`: the result of a tail call whose callee's
+                // recovered prototype returns a value in this storage.
+                if !active.get_trial(i).is_active() {
+                    let (taddr, tsize) = {
+                        let t = active.get_trial(i);
+                        (t.get_address().clone(), t.get_size())
+                    };
+                    if crate::p4_calls::kuna_passthrough::returns_tail_result(data, vn, &taddr, tsize) {
                         active.get_trial_mut(i).mark_active();
                     }
                 }

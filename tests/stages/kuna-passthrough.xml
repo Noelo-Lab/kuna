@@ -1,0 +1,88 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Type-recovery campaign, gzip -O2 (stripped): `gzip_base_name` @0xd290 is
+    `endbr64; jmp last_component` - it hands its own rdi to the callee and
+    returns what the callee returns - and kuna printed
+
+        void sub_d290(void) { sub_dfd0(); } // tail-call
+
+    while recovering the callee as `char *sub_dfd0(char *a0)` in the same run.
+    DWARF says `char *gzip_base_name(char const *fname)`.  coreutils df
+    `dir_name` (`call mdir_name; test %rax,%rax; ...`) is the same shape without
+    the tail call.
+
+    Root cause (P4, active-input trial scoring).  A call's argument trials come
+    from `Heritage::guardCalls` (heritage.cc:1444), one per HERITAGED storage
+    range, and a range is heritaged only when some op of the function reads or
+    writes it.  `fwd` and `fwdtest` below never name rdi, so their calls get no
+    rdi trial, no argument, and neither function gets the parameter it
+    forwards.  Where rdi is heritaged, `AncestorRealistic::execute`
+    (funcdata_varnode.cc:2159) refuses an input Varnode at the call slot anyway.
+
+    THIS FIXTURE IS THE NEGATIVE CONTROL for the clause that decides the
+    argument.  `option passthrough on` adds a forwarded register only when the
+    CALLEE's own recovered prototype reads it, and that prototype reaches a
+    call site only through `protoorder`, which parks it when a whole-binary
+    `decompile-all` decompiles the callee first.  This harness decompiles ONE
+    function from a byte image: no callee was decompiled first, `target` has
+    stated nothing about itself, and a rule that adds an argument may not read
+    silence as evidence.  `park_recovered_proto` is written true only in
+    decompiler/crates/kuna-cli/src/decompile_all.rs; the console paths this
+    harness runs through (kuna-console/src/project.rs, project_stream.rs) pass
+    false, so no stage test can put a parked prototype in front of the rule.
+    Both passes therefore render the forwarding functions without the
+    parameter.
+
+    The POSITIVE witness is the same code as a real program,
+    decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64 (source
+    beside it), under `make test-cli`:
+    tests/cli/passthrough-gives-a-forwarding-function-its-parameter.json
+    renders `char * sub_401019(char *a0) { return sub_401000(a0); }` and
+    `void sub_40101b(char *a0)`, and keeps the clobbered and variadic controls
+    unchanged; tests/cli/passthrough-off-leaves-the-forwarded-register-unread.json
+    is its option-off arm.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring".  The P0 assertion
+    `option passthrough on|off` decides whether a register the function
+    forwards untouched to a callee whose recovered prototype reads it is an
+    argument (and the function's parameter).  Pass 1 pins the shipped `off`;
+    pass 2 pins that `on` alone, with nothing stated, adds nothing.
+-->
+<bytechunk space="ram" offset="0x401000">
+4889f80fb61784d2740e4883c70180fa2f75f04889f8ebebc3ebe54883ec08e8
+dcffffff4885c074054883c408c3e88d00000031c0c34883ec08e8f4ffffff48
+83c408ebbb4883ec384889742408488954241048894c24184c894424204c894c
+2428488b4424084801f84883c438c331c0ebd2488d3d860f0000e89affffff48
+8d3d7a0f0000e890ffffff488d3d6e0f0000e89fffffffbf03000000be040000
+00e8c9ffffffbf05000000be0600000031c0e88effffffb83c00000031ff0f05
+b83c000000bf010000000f05f4
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="target"/>
+<symbol space="ram" offset="0x401019" name="fwd"/>
+<symbol space="ram" offset="0x40101b" name="fwdtest"/>
+<symbol space="ram" offset="0x401033" name="helper"/>
+<symbol space="ram" offset="0x401036" name="fwdclob"/>
+<symbol space="ram" offset="0x4010c0" name="halt"/>
+</binaryimage>
+<script>
+  <com>option passthrough off</com>
+  <com>lo fu fwd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fwdtest</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough on</com>
+  <com>lo fu fwd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fwdtest</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="passthrough #1: the tail-call thunk never names rdi, so it has no parameter in either pass" min="2" max="2">void fwd\(void\)</stringmatch>
+<stringmatch name="passthrough #2: the function that tests the result never names rdi either, and has no parameter in either pass" min="2" max="2">void fwdtest\(void\)</stringmatch>
+<stringmatch name="passthrough #3: the calls pass nothing in both passes, because no callee stated a prototype for the rule to read" min="4" max="4">target\(\)</stringmatch>
+</decompilertest>

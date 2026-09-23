@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "passthrough",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64",
+    "binary_sha256": "e74292f2d09e3051b18a994569efe68958c29d4fe0cceb06bcf1accbe47668bc",
+    "binary_size": 8568,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64",
+    "selector": "sub_401019",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void sub_401019\\(void\\)",
+      "  sub_401000\\(\\); // tail-call",
+      "void sub_40101b\\(void\\)"
+    ],
+    "stdout_absent": [
+      "sub_401019\\(char \\*a0\\)",
+      "sub_40101b\\(char \\*a0\\)"
+    ]
+  },
+  "notes": "The same program with the option off: no op of 0x401019 or 0x40101b names rdi, so heritage registers no trial for it at their calls and neither function gets the parameter it forwards, so the probe above measures the option and not the base.",
+  "probe_id": "p-f92005b6a446"
+}

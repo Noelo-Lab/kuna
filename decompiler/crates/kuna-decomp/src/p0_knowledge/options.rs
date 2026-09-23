@@ -349,6 +349,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "calleeprotostack",
     "calleedeadarg",
     "argclobber",
+    "passthrough",
     "calleepreserves",
     "calleeretpreserves",
     "calleescratchbody",

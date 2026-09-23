@@ -311,7 +311,7 @@ fn ptr_to(ptrto: Rc<Datatype>) -> Rc<Datatype> {
 }
 
 fn stated(params: &[(Address, int4, Rc<Datatype>)]) -> RecoveredTypes {
-    RecoveredTypes { inputs: params.to_vec() }
+    RecoveredTypes { inputs: params.to_vec(), arity_sound: false, output: None }
 }
 
 #[test]

@@ -51,6 +51,8 @@ pub struct PendingCallFixup {
     pub extend: Option<crate::p4_calls::kuna_calleearitylive::PendingExtend>,
     /// The no-sibling body-recovery candidate (`calleearitybody`).
     pub body: Option<crate::p4_calls::kuna_calleearitybody::PendingBodyArgs>,
+    /// The forwarded-register extension candidate (`passthrough`).
+    pub pass_through: Option<crate::p4_calls::kuna_passthrough::PendingPassThrough>,
 }
 
 /// C++ `FuncCallSpecs::checkInputTrialUse` (`fspec.cc:5592`).
@@ -182,6 +184,13 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 }
             }
         } else if {
+            // (kuna) `passthrough`: a trial on a range the pass claimed is left
+            // where the option-off run's hole-filling trial would start.
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            crate::p4_calls::kuna_passthrough::claimed_range(data, t.get_address(), t.get_size())
+        } {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
+        } else if {
             // (kuna) `calleedeadarg`: the callee's OWN body can settle a register
             // trial the caller's data flow cannot.  A register the callee
             // overwrites (or returns without touching) on every path from its
@@ -296,6 +305,10 @@ pub fn build_input_from_trials(
     data: &mut Funcdata,
 ) -> PendingCallFixup {
     let op = fc.get_op();
+    // (kuna) `passthrough`: capture the forwarded registers the call may still
+    // take, and retire the trials the pass registered, before any other rule
+    // reads the trials.  Inert with the option off.
+    let pass_through = crate::p4_calls::kuna_passthrough::capture(fc, data);
     let mut newparam: Vec<VarnodeId> = Vec::new();
     // Preserve the fspec parameter (in0).
     if let Some(in0) = data.obank().get(op).and_then(|o| o.get_in(0)) {
@@ -398,12 +411,14 @@ pub fn build_input_from_trials(
             rescue: crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data),
             extend: None,
             body: crate::p4_calls::kuna_calleearitybody::capture_lone_call(fc, data),
+            pass_through,
         }
     } else {
         PendingCallFixup {
             rescue: None,
             extend: crate::p4_calls::kuna_calleearitylive::capture_partial_call(fc, data),
             body: None,
+            pass_through,
         }
     };
     let _ = data.op_set_all_input(op, &newparam);

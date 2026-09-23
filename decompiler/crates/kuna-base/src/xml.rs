@@ -1897,7 +1897,7 @@ mod tests {
         // format constant the LOAD-TIME resolver read out of the image
         // and structsynth-locals / a record a call returned, and a text buffer
         // that is not one
-        assert_eq!(count, 330, "corpus file count drifted");
+        assert_eq!(count, 331, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
