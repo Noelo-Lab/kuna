@@ -46,6 +46,23 @@ re-check in (f)/(h) caught it; the operand's type now comes from its declaration
 and a declaration that spells none of the IR's types refuses the drop. The numbers
 above are after the fix (it cost 401 of the 1,767 removals the first cut made).
 
+## Re-measured on the landing base
+
+Rebased onto `22df4282c` (#719, calleevote's redo budget, which changes types and
+calls), both arms from the rebased build, `--option castimplied off` against the
+default:
+
+- 444-slice typesweep: 1,615 -> 1,615 perfect, 0 moved on or off, 0 improved, 0 worse;
+  `variables[]` scores identically in all 10,748 functions, and the off arm matches
+  origin/main's own sweep row for row.
+- castbench full: 45,039 -> 43,673 casts (-1,366), 236.3 -> 229.2 per kloc,
+  1.191 -> 1.155 x IDA; 570 functions fewer, 0 more. The off arm is byte-identical to
+  origin/main's castbench output.
+- Hunk classification: whole corpus 3,360 casts removed, the same class counts as
+  above, 0 OTHER lines; the 4-binary corpus (bzip2 O0, kmod, dpkg-divert, crontab O2)
+  555 removed, identical to the measurement on `dbe854ba3`. All assignments re-checked
+  (890 and 48): 0 flagged.
+
 ## Decision
 
 Default ON.
