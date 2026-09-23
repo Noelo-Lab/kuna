@@ -267,6 +267,66 @@ where the binary's 32-bit write zero-extended it. It is left alone because
 nearly every `int` argument on x86-64 is such a trim, and the cast would land
 on all of them to fix the few whose callee reads the full register.
 
+**Casts C already performs (kuna `castimplied`).** `is_extension_cast_implied`
+hides an extension only when integer arithmetic, or a comparison against an
+explicit operand of the same metatype, reads it; for every other reader, and for
+any extension at the top of a statement, it answers no. So upstream prints
+`memchr(v10,(int)v4,n)` where `memchr` declares an `int`, `v2 = (long)v1;` into
+a `long v2`, `return (unsigned long)v1;` from an `unsigned long` function, and
+`(long)(int)(unsigned int)(unsigned char)c` for one byte widened to 64 bits. C
+performs each of those conversions itself: an argument is converted to its
+parameter's type when a prototype is in scope, the right side of `=` to the type
+of the left, a returned value to the return type, and a conversion between
+integer types depends only on the value converted. With the option
+`castimplied` on, the printer leaves such a cast out
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_castimplied.rs (ImpliedCasts::drops)`,
+asked from `printc.rs (PrintC::implied_cast_drops)` by the `CPUI_CAST` arm and
+by both extension arms). The IR keeps every CAST op; only the token is omitted,
+and the operand is pushed bare, as a `signedness`-dropped cast's is (§9.3).
+
+Only integer conversions are considered: a `CPUI_CAST` between integer types,
+or an INT_SEXT/INT_ZEXT the strategy renders as a cast. Consecutive conversions
+form a chain whose top is the first one read by something that is not an
+integer conversion. The top fixes the type of the whole chain, so a conversion
+below it goes when it keeps its operand's value: every value of the operand's
+printed C type lies in the conversion's target range (`kuna_castimplied.rs
+(preserves)`). The operand's C type is taken as known only where the text states
+it: a declared variable (the spelling the declaration line wrote), a conversion
+that still prints (its target), a conversion this rule leaves out (its own
+operand's type, which it preserved), a truncation printed as a cast, and a load
+`*(T *)p` through a pointer printed with that cast or declared `T *`. An
+arithmetic operand is not known, because C promotes `a - b` over two
+`unsigned char`s to a negative `int` where the p-code wraps; neither is a
+constant or a call. Under that rule `(long)(int)(unsigned int)(unsigned char)c`
+becomes `(long)(unsigned char)c`: the `unsigned char` value passes through
+`unsigned int` and `int` unchanged. A sign change or a narrowing below the top
+always stays, as does anything under a pointer or float conversion.
+
+The top itself goes when it is an identity (its operand already has exactly
+that C type), or when it is a value-preserving widening whose value flows
+straight into one of three places C converts at. The first is an argument of a
+direct call whose parameter is type-locked (a declared prototype or a measured
+libc signature), spelled exactly as the cast; a trial prototype, a varargs
+position, a call carrying a per-call-site prototype override (a resolved format
+string closes its varargs into ordinary parameters that way), and an argument
+`truncarg` narrowed on purpose are all refused (`kuna_castimplied.rs
+(trusted_param)`). The second is the right side of a `lhs = e;` statement whose
+left side is a local or parameter the printer declared with exactly that
+spelling. The arms of `c ? a : b` do not count: their type is the two arms'
+common type, not the destination's. The third is `return` from a function whose
+printed return type is that spelling. The declarations are recorded as the
+printer writes them (the header's return type and parameters, each local's
+declaration line), so the comparison is on the text C will see. An implied
+COPY prints as its operand and is looked through (`kuna_castimplied.rs
+(through_copies)`). `truncarg`'s argument casts and `boolbyte`'s
+`(bool)(unsigned char)` are never candidates, and nothing is dropped for an
+output language without implicit integer conversions (Rust). The ported
+`CastStrategyC` and its pinned decision matrix are unchanged. Pinned by
+`tests/stages/kuna-castimplied.xml`, and by a compiled round trip
+(`kuna-cli/tests/decompile_all_cli.rs`, `an_implied_cast_round_trips_through_the_printed_c`)
+whose functions print the same values with the option off and on, under gcc and
+clang.
+
 **Casting an output.** `coreaction_casts.rs (Funcdata::cast_output)` compares
 the *token* type the operator naturally produces — `coreaction_casts.rs
 (get_output_token)`: COPY/PTRADD echo the input, arithmetic takes the
