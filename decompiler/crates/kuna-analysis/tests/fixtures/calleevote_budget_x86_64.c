@@ -1,0 +1,1276 @@
+/* calleevote fixture: the redo budget buys a long callee (x86-64).
+ *
+ * The twin of `calleevote_long_x86_64`. `scan_short` and `scan_long` do the
+ * same thing with the pointer `use` hands them -- nothing but pass it on to
+ * `memcmp`, which declares `const void *` -- and `use` holds the record, so
+ * both are candidates for the caller's type. The vote costs a second
+ * decompile, charged the lines the first one printed, and the redo pass may
+ * spend 5% of what the whole binary printed: there `scan_long` (45 lines) is
+ * more than the 70-line binary's whole budget and keeps `void *`, while here
+ * the 150 `filler_N` functions print enough that 5% of them covers it, so
+ * BOTH take `struct_N *`. Nothing else differs between the two files.
+ *
+ * Generated: the `filler_N` bodies and the calls to them are emitted by the
+ * loop in this file's git history; edit the count there, not by hand.
+ *
+ * Build (symbols kept, no DWARF):
+ *   gcc -O2 -fno-inline -fno-stack-protector -fcf-protection=none \
+ *       -o calleevote_budget_x86_64 calleevote_budget_x86_64.c
+ */
+#include <stdio.h>
+#include <string.h>
+#define NI __attribute__((noinline))
+struct rec { int n; long used; long buckets; long cap; };
+static long g[24];
+NI int scan_short(const void *p, unsigned long n)
+{
+    long s = (long)n;
+    g[0] += s; g[1] ^= s + 1; g[2] |= s << 1; g[3] -= s + 3;
+    g[4] += s; g[5] ^= s + 5; g[6] |= s << 1; g[7] -= s + 7;
+    g[0] ^= g[5] + 2; g[1] += g[7] ^ s; g[2] -= g[9] + 4; g[3] |= g[11] << 2;
+    g[4] ^= g[9] + 6; g[5] += g[11] ^ s; g[6] -= g[13] + 8; g[7] |= g[15] << 2;
+    return (int)(g[7] + g[0]) + memcmp(p, "abcdefgh", n);
+}
+NI int scan_long(const void *p, unsigned long n)
+{
+    long s = (long)n;
+    g[0] += s; g[1] ^= s + 1; g[2] |= s << 1; g[3] -= s + 3;
+    g[4] += s; g[5] ^= s + 5; g[6] |= s << 1; g[7] -= s + 7;
+    g[8] += s; g[9] ^= s + 9; g[10] |= s << 1; g[11] -= s + 11;
+    g[12] += s; g[13] ^= s + 13; g[14] |= s << 1; g[15] -= s + 15;
+    g[16] += s; g[17] ^= s + 17; g[18] |= s << 1; g[19] -= s + 19;
+    g[20] += s; g[21] ^= s + 21; g[22] |= s << 1; g[23] -= s + 23;
+    g[0] ^= g[5] + 2; g[1] += g[7] ^ s; g[2] -= g[9] + 4; g[3] |= g[11] << 2;
+    g[4] ^= g[9] + 6; g[5] += g[11] ^ s; g[6] -= g[13] + 8; g[7] |= g[15] << 2;
+    g[8] ^= g[13] + 10; g[9] += g[15] ^ s; g[10] -= g[17] + 12; g[11] |= g[19] << 2;
+    g[12] ^= g[17] + 14; g[13] += g[19] ^ s; g[14] -= g[21] + 16; g[15] |= g[23] << 2;
+    g[16] ^= g[21] + 18; g[17] += g[23] ^ s; g[18] -= g[1] + 20; g[19] |= g[3] << 2;
+    g[20] ^= g[1] + 22; g[21] += g[3] ^ s; g[22] -= g[5] + 24; g[23] |= g[7] << 2;
+    return (int)(g[23] + g[0]) + memcmp(p, "abcdefgh", n);
+}
+NI long fill(struct rec *r, int c)
+{
+    r->n = c; r->used = c * 2; r->buckets = c * 3; r->cap = 16;
+    return r->used + r->buckets;
+}
+NI long use(int k, struct rec *r, unsigned long n)
+{
+    long s = k + r->n + r->used + r->buckets + r->cap;
+    s += scan_short(r, n);
+    s += scan_long(r, n);
+    return s;
+}
+NI long filler_0(long x)
+{
+    long t = x + 1;
+    g[0] += t; g[1] ^= t + 2; g[2] |= t << 1;
+    g[3] -= t + 3; g[5] += t * 2;
+    return t + g[0] + g[7];
+}
+NI long filler_1(long x)
+{
+    long t = x + 2;
+    g[1] += t; g[2] ^= t + 3; g[3] |= t << 1;
+    g[4] -= t + 4; g[6] += t * 3;
+    return t + g[1] + g[8];
+}
+NI long filler_2(long x)
+{
+    long t = x + 3;
+    g[2] += t; g[3] ^= t + 4; g[4] |= t << 1;
+    g[5] -= t + 5; g[7] += t * 4;
+    return t + g[2] + g[9];
+}
+NI long filler_3(long x)
+{
+    long t = x + 4;
+    g[3] += t; g[4] ^= t + 5; g[5] |= t << 1;
+    g[6] -= t + 6; g[8] += t * 5;
+    return t + g[3] + g[10];
+}
+NI long filler_4(long x)
+{
+    long t = x + 5;
+    g[4] += t; g[5] ^= t + 6; g[6] |= t << 1;
+    g[7] -= t + 7; g[9] += t * 6;
+    return t + g[4] + g[11];
+}
+NI long filler_5(long x)
+{
+    long t = x + 6;
+    g[5] += t; g[6] ^= t + 7; g[7] |= t << 1;
+    g[8] -= t + 8; g[10] += t * 7;
+    return t + g[5] + g[12];
+}
+NI long filler_6(long x)
+{
+    long t = x + 7;
+    g[6] += t; g[7] ^= t + 8; g[8] |= t << 1;
+    g[9] -= t + 9; g[11] += t * 8;
+    return t + g[6] + g[13];
+}
+NI long filler_7(long x)
+{
+    long t = x + 8;
+    g[7] += t; g[8] ^= t + 9; g[9] |= t << 1;
+    g[10] -= t + 10; g[12] += t * 2;
+    return t + g[7] + g[14];
+}
+NI long filler_8(long x)
+{
+    long t = x + 9;
+    g[8] += t; g[9] ^= t + 10; g[10] |= t << 1;
+    g[11] -= t + 11; g[13] += t * 3;
+    return t + g[8] + g[15];
+}
+NI long filler_9(long x)
+{
+    long t = x + 10;
+    g[9] += t; g[10] ^= t + 11; g[11] |= t << 1;
+    g[12] -= t + 12; g[14] += t * 4;
+    return t + g[9] + g[16];
+}
+NI long filler_10(long x)
+{
+    long t = x + 11;
+    g[10] += t; g[11] ^= t + 12; g[12] |= t << 1;
+    g[13] -= t + 13; g[15] += t * 5;
+    return t + g[10] + g[17];
+}
+NI long filler_11(long x)
+{
+    long t = x + 12;
+    g[11] += t; g[12] ^= t + 13; g[13] |= t << 1;
+    g[14] -= t + 14; g[16] += t * 6;
+    return t + g[11] + g[18];
+}
+NI long filler_12(long x)
+{
+    long t = x + 13;
+    g[12] += t; g[13] ^= t + 14; g[14] |= t << 1;
+    g[15] -= t + 15; g[17] += t * 7;
+    return t + g[12] + g[19];
+}
+NI long filler_13(long x)
+{
+    long t = x + 14;
+    g[13] += t; g[14] ^= t + 15; g[15] |= t << 1;
+    g[16] -= t + 16; g[18] += t * 8;
+    return t + g[13] + g[20];
+}
+NI long filler_14(long x)
+{
+    long t = x + 15;
+    g[14] += t; g[15] ^= t + 16; g[16] |= t << 1;
+    g[17] -= t + 17; g[19] += t * 2;
+    return t + g[14] + g[21];
+}
+NI long filler_15(long x)
+{
+    long t = x + 16;
+    g[15] += t; g[16] ^= t + 17; g[17] |= t << 1;
+    g[18] -= t + 18; g[20] += t * 3;
+    return t + g[15] + g[22];
+}
+NI long filler_16(long x)
+{
+    long t = x + 17;
+    g[16] += t; g[17] ^= t + 18; g[18] |= t << 1;
+    g[19] -= t + 19; g[21] += t * 4;
+    return t + g[16] + g[23];
+}
+NI long filler_17(long x)
+{
+    long t = x + 18;
+    g[17] += t; g[18] ^= t + 19; g[19] |= t << 1;
+    g[20] -= t + 20; g[22] += t * 5;
+    return t + g[17] + g[0];
+}
+NI long filler_18(long x)
+{
+    long t = x + 19;
+    g[18] += t; g[19] ^= t + 20; g[20] |= t << 1;
+    g[21] -= t + 21; g[23] += t * 6;
+    return t + g[18] + g[1];
+}
+NI long filler_19(long x)
+{
+    long t = x + 20;
+    g[19] += t; g[20] ^= t + 21; g[21] |= t << 1;
+    g[22] -= t + 22; g[0] += t * 7;
+    return t + g[19] + g[2];
+}
+NI long filler_20(long x)
+{
+    long t = x + 21;
+    g[20] += t; g[21] ^= t + 22; g[22] |= t << 1;
+    g[23] -= t + 23; g[1] += t * 8;
+    return t + g[20] + g[3];
+}
+NI long filler_21(long x)
+{
+    long t = x + 22;
+    g[21] += t; g[22] ^= t + 23; g[23] |= t << 1;
+    g[0] -= t + 24; g[2] += t * 2;
+    return t + g[21] + g[4];
+}
+NI long filler_22(long x)
+{
+    long t = x + 23;
+    g[22] += t; g[23] ^= t + 24; g[0] |= t << 1;
+    g[1] -= t + 25; g[3] += t * 3;
+    return t + g[22] + g[5];
+}
+NI long filler_23(long x)
+{
+    long t = x + 24;
+    g[23] += t; g[0] ^= t + 25; g[1] |= t << 1;
+    g[2] -= t + 26; g[4] += t * 4;
+    return t + g[23] + g[6];
+}
+NI long filler_24(long x)
+{
+    long t = x + 25;
+    g[0] += t; g[1] ^= t + 26; g[2] |= t << 1;
+    g[3] -= t + 27; g[5] += t * 5;
+    return t + g[0] + g[7];
+}
+NI long filler_25(long x)
+{
+    long t = x + 26;
+    g[1] += t; g[2] ^= t + 27; g[3] |= t << 1;
+    g[4] -= t + 28; g[6] += t * 6;
+    return t + g[1] + g[8];
+}
+NI long filler_26(long x)
+{
+    long t = x + 27;
+    g[2] += t; g[3] ^= t + 28; g[4] |= t << 1;
+    g[5] -= t + 29; g[7] += t * 7;
+    return t + g[2] + g[9];
+}
+NI long filler_27(long x)
+{
+    long t = x + 28;
+    g[3] += t; g[4] ^= t + 29; g[5] |= t << 1;
+    g[6] -= t + 30; g[8] += t * 8;
+    return t + g[3] + g[10];
+}
+NI long filler_28(long x)
+{
+    long t = x + 29;
+    g[4] += t; g[5] ^= t + 30; g[6] |= t << 1;
+    g[7] -= t + 31; g[9] += t * 2;
+    return t + g[4] + g[11];
+}
+NI long filler_29(long x)
+{
+    long t = x + 30;
+    g[5] += t; g[6] ^= t + 31; g[7] |= t << 1;
+    g[8] -= t + 32; g[10] += t * 3;
+    return t + g[5] + g[12];
+}
+NI long filler_30(long x)
+{
+    long t = x + 31;
+    g[6] += t; g[7] ^= t + 32; g[8] |= t << 1;
+    g[9] -= t + 33; g[11] += t * 4;
+    return t + g[6] + g[13];
+}
+NI long filler_31(long x)
+{
+    long t = x + 32;
+    g[7] += t; g[8] ^= t + 33; g[9] |= t << 1;
+    g[10] -= t + 34; g[12] += t * 5;
+    return t + g[7] + g[14];
+}
+NI long filler_32(long x)
+{
+    long t = x + 33;
+    g[8] += t; g[9] ^= t + 34; g[10] |= t << 1;
+    g[11] -= t + 35; g[13] += t * 6;
+    return t + g[8] + g[15];
+}
+NI long filler_33(long x)
+{
+    long t = x + 34;
+    g[9] += t; g[10] ^= t + 35; g[11] |= t << 1;
+    g[12] -= t + 36; g[14] += t * 7;
+    return t + g[9] + g[16];
+}
+NI long filler_34(long x)
+{
+    long t = x + 35;
+    g[10] += t; g[11] ^= t + 36; g[12] |= t << 1;
+    g[13] -= t + 37; g[15] += t * 8;
+    return t + g[10] + g[17];
+}
+NI long filler_35(long x)
+{
+    long t = x + 36;
+    g[11] += t; g[12] ^= t + 37; g[13] |= t << 1;
+    g[14] -= t + 38; g[16] += t * 2;
+    return t + g[11] + g[18];
+}
+NI long filler_36(long x)
+{
+    long t = x + 37;
+    g[12] += t; g[13] ^= t + 38; g[14] |= t << 1;
+    g[15] -= t + 39; g[17] += t * 3;
+    return t + g[12] + g[19];
+}
+NI long filler_37(long x)
+{
+    long t = x + 38;
+    g[13] += t; g[14] ^= t + 39; g[15] |= t << 1;
+    g[16] -= t + 40; g[18] += t * 4;
+    return t + g[13] + g[20];
+}
+NI long filler_38(long x)
+{
+    long t = x + 39;
+    g[14] += t; g[15] ^= t + 40; g[16] |= t << 1;
+    g[17] -= t + 41; g[19] += t * 5;
+    return t + g[14] + g[21];
+}
+NI long filler_39(long x)
+{
+    long t = x + 40;
+    g[15] += t; g[16] ^= t + 41; g[17] |= t << 1;
+    g[18] -= t + 42; g[20] += t * 6;
+    return t + g[15] + g[22];
+}
+NI long filler_40(long x)
+{
+    long t = x + 41;
+    g[16] += t; g[17] ^= t + 42; g[18] |= t << 1;
+    g[19] -= t + 43; g[21] += t * 7;
+    return t + g[16] + g[23];
+}
+NI long filler_41(long x)
+{
+    long t = x + 42;
+    g[17] += t; g[18] ^= t + 43; g[19] |= t << 1;
+    g[20] -= t + 44; g[22] += t * 8;
+    return t + g[17] + g[0];
+}
+NI long filler_42(long x)
+{
+    long t = x + 43;
+    g[18] += t; g[19] ^= t + 44; g[20] |= t << 1;
+    g[21] -= t + 45; g[23] += t * 2;
+    return t + g[18] + g[1];
+}
+NI long filler_43(long x)
+{
+    long t = x + 44;
+    g[19] += t; g[20] ^= t + 45; g[21] |= t << 1;
+    g[22] -= t + 46; g[0] += t * 3;
+    return t + g[19] + g[2];
+}
+NI long filler_44(long x)
+{
+    long t = x + 45;
+    g[20] += t; g[21] ^= t + 46; g[22] |= t << 1;
+    g[23] -= t + 47; g[1] += t * 4;
+    return t + g[20] + g[3];
+}
+NI long filler_45(long x)
+{
+    long t = x + 46;
+    g[21] += t; g[22] ^= t + 47; g[23] |= t << 1;
+    g[0] -= t + 48; g[2] += t * 5;
+    return t + g[21] + g[4];
+}
+NI long filler_46(long x)
+{
+    long t = x + 47;
+    g[22] += t; g[23] ^= t + 48; g[0] |= t << 1;
+    g[1] -= t + 49; g[3] += t * 6;
+    return t + g[22] + g[5];
+}
+NI long filler_47(long x)
+{
+    long t = x + 48;
+    g[23] += t; g[0] ^= t + 49; g[1] |= t << 1;
+    g[2] -= t + 50; g[4] += t * 7;
+    return t + g[23] + g[6];
+}
+NI long filler_48(long x)
+{
+    long t = x + 49;
+    g[0] += t; g[1] ^= t + 50; g[2] |= t << 1;
+    g[3] -= t + 51; g[5] += t * 8;
+    return t + g[0] + g[7];
+}
+NI long filler_49(long x)
+{
+    long t = x + 50;
+    g[1] += t; g[2] ^= t + 51; g[3] |= t << 1;
+    g[4] -= t + 52; g[6] += t * 2;
+    return t + g[1] + g[8];
+}
+NI long filler_50(long x)
+{
+    long t = x + 51;
+    g[2] += t; g[3] ^= t + 52; g[4] |= t << 1;
+    g[5] -= t + 53; g[7] += t * 3;
+    return t + g[2] + g[9];
+}
+NI long filler_51(long x)
+{
+    long t = x + 52;
+    g[3] += t; g[4] ^= t + 53; g[5] |= t << 1;
+    g[6] -= t + 54; g[8] += t * 4;
+    return t + g[3] + g[10];
+}
+NI long filler_52(long x)
+{
+    long t = x + 53;
+    g[4] += t; g[5] ^= t + 54; g[6] |= t << 1;
+    g[7] -= t + 55; g[9] += t * 5;
+    return t + g[4] + g[11];
+}
+NI long filler_53(long x)
+{
+    long t = x + 54;
+    g[5] += t; g[6] ^= t + 55; g[7] |= t << 1;
+    g[8] -= t + 56; g[10] += t * 6;
+    return t + g[5] + g[12];
+}
+NI long filler_54(long x)
+{
+    long t = x + 55;
+    g[6] += t; g[7] ^= t + 56; g[8] |= t << 1;
+    g[9] -= t + 57; g[11] += t * 7;
+    return t + g[6] + g[13];
+}
+NI long filler_55(long x)
+{
+    long t = x + 56;
+    g[7] += t; g[8] ^= t + 57; g[9] |= t << 1;
+    g[10] -= t + 58; g[12] += t * 8;
+    return t + g[7] + g[14];
+}
+NI long filler_56(long x)
+{
+    long t = x + 57;
+    g[8] += t; g[9] ^= t + 58; g[10] |= t << 1;
+    g[11] -= t + 59; g[13] += t * 2;
+    return t + g[8] + g[15];
+}
+NI long filler_57(long x)
+{
+    long t = x + 58;
+    g[9] += t; g[10] ^= t + 59; g[11] |= t << 1;
+    g[12] -= t + 60; g[14] += t * 3;
+    return t + g[9] + g[16];
+}
+NI long filler_58(long x)
+{
+    long t = x + 59;
+    g[10] += t; g[11] ^= t + 60; g[12] |= t << 1;
+    g[13] -= t + 61; g[15] += t * 4;
+    return t + g[10] + g[17];
+}
+NI long filler_59(long x)
+{
+    long t = x + 60;
+    g[11] += t; g[12] ^= t + 61; g[13] |= t << 1;
+    g[14] -= t + 62; g[16] += t * 5;
+    return t + g[11] + g[18];
+}
+NI long filler_60(long x)
+{
+    long t = x + 61;
+    g[12] += t; g[13] ^= t + 62; g[14] |= t << 1;
+    g[15] -= t + 63; g[17] += t * 6;
+    return t + g[12] + g[19];
+}
+NI long filler_61(long x)
+{
+    long t = x + 62;
+    g[13] += t; g[14] ^= t + 63; g[15] |= t << 1;
+    g[16] -= t + 64; g[18] += t * 7;
+    return t + g[13] + g[20];
+}
+NI long filler_62(long x)
+{
+    long t = x + 63;
+    g[14] += t; g[15] ^= t + 64; g[16] |= t << 1;
+    g[17] -= t + 65; g[19] += t * 8;
+    return t + g[14] + g[21];
+}
+NI long filler_63(long x)
+{
+    long t = x + 64;
+    g[15] += t; g[16] ^= t + 65; g[17] |= t << 1;
+    g[18] -= t + 66; g[20] += t * 2;
+    return t + g[15] + g[22];
+}
+NI long filler_64(long x)
+{
+    long t = x + 65;
+    g[16] += t; g[17] ^= t + 66; g[18] |= t << 1;
+    g[19] -= t + 67; g[21] += t * 3;
+    return t + g[16] + g[23];
+}
+NI long filler_65(long x)
+{
+    long t = x + 66;
+    g[17] += t; g[18] ^= t + 67; g[19] |= t << 1;
+    g[20] -= t + 68; g[22] += t * 4;
+    return t + g[17] + g[0];
+}
+NI long filler_66(long x)
+{
+    long t = x + 67;
+    g[18] += t; g[19] ^= t + 68; g[20] |= t << 1;
+    g[21] -= t + 69; g[23] += t * 5;
+    return t + g[18] + g[1];
+}
+NI long filler_67(long x)
+{
+    long t = x + 68;
+    g[19] += t; g[20] ^= t + 69; g[21] |= t << 1;
+    g[22] -= t + 70; g[0] += t * 6;
+    return t + g[19] + g[2];
+}
+NI long filler_68(long x)
+{
+    long t = x + 69;
+    g[20] += t; g[21] ^= t + 70; g[22] |= t << 1;
+    g[23] -= t + 71; g[1] += t * 7;
+    return t + g[20] + g[3];
+}
+NI long filler_69(long x)
+{
+    long t = x + 70;
+    g[21] += t; g[22] ^= t + 71; g[23] |= t << 1;
+    g[0] -= t + 72; g[2] += t * 8;
+    return t + g[21] + g[4];
+}
+NI long filler_70(long x)
+{
+    long t = x + 71;
+    g[22] += t; g[23] ^= t + 72; g[0] |= t << 1;
+    g[1] -= t + 73; g[3] += t * 2;
+    return t + g[22] + g[5];
+}
+NI long filler_71(long x)
+{
+    long t = x + 72;
+    g[23] += t; g[0] ^= t + 73; g[1] |= t << 1;
+    g[2] -= t + 74; g[4] += t * 3;
+    return t + g[23] + g[6];
+}
+NI long filler_72(long x)
+{
+    long t = x + 73;
+    g[0] += t; g[1] ^= t + 74; g[2] |= t << 1;
+    g[3] -= t + 75; g[5] += t * 4;
+    return t + g[0] + g[7];
+}
+NI long filler_73(long x)
+{
+    long t = x + 74;
+    g[1] += t; g[2] ^= t + 75; g[3] |= t << 1;
+    g[4] -= t + 76; g[6] += t * 5;
+    return t + g[1] + g[8];
+}
+NI long filler_74(long x)
+{
+    long t = x + 75;
+    g[2] += t; g[3] ^= t + 76; g[4] |= t << 1;
+    g[5] -= t + 77; g[7] += t * 6;
+    return t + g[2] + g[9];
+}
+NI long filler_75(long x)
+{
+    long t = x + 76;
+    g[3] += t; g[4] ^= t + 77; g[5] |= t << 1;
+    g[6] -= t + 78; g[8] += t * 7;
+    return t + g[3] + g[10];
+}
+NI long filler_76(long x)
+{
+    long t = x + 77;
+    g[4] += t; g[5] ^= t + 78; g[6] |= t << 1;
+    g[7] -= t + 79; g[9] += t * 8;
+    return t + g[4] + g[11];
+}
+NI long filler_77(long x)
+{
+    long t = x + 78;
+    g[5] += t; g[6] ^= t + 79; g[7] |= t << 1;
+    g[8] -= t + 80; g[10] += t * 2;
+    return t + g[5] + g[12];
+}
+NI long filler_78(long x)
+{
+    long t = x + 79;
+    g[6] += t; g[7] ^= t + 80; g[8] |= t << 1;
+    g[9] -= t + 81; g[11] += t * 3;
+    return t + g[6] + g[13];
+}
+NI long filler_79(long x)
+{
+    long t = x + 80;
+    g[7] += t; g[8] ^= t + 81; g[9] |= t << 1;
+    g[10] -= t + 82; g[12] += t * 4;
+    return t + g[7] + g[14];
+}
+NI long filler_80(long x)
+{
+    long t = x + 81;
+    g[8] += t; g[9] ^= t + 82; g[10] |= t << 1;
+    g[11] -= t + 83; g[13] += t * 5;
+    return t + g[8] + g[15];
+}
+NI long filler_81(long x)
+{
+    long t = x + 82;
+    g[9] += t; g[10] ^= t + 83; g[11] |= t << 1;
+    g[12] -= t + 84; g[14] += t * 6;
+    return t + g[9] + g[16];
+}
+NI long filler_82(long x)
+{
+    long t = x + 83;
+    g[10] += t; g[11] ^= t + 84; g[12] |= t << 1;
+    g[13] -= t + 85; g[15] += t * 7;
+    return t + g[10] + g[17];
+}
+NI long filler_83(long x)
+{
+    long t = x + 84;
+    g[11] += t; g[12] ^= t + 85; g[13] |= t << 1;
+    g[14] -= t + 86; g[16] += t * 8;
+    return t + g[11] + g[18];
+}
+NI long filler_84(long x)
+{
+    long t = x + 85;
+    g[12] += t; g[13] ^= t + 86; g[14] |= t << 1;
+    g[15] -= t + 87; g[17] += t * 2;
+    return t + g[12] + g[19];
+}
+NI long filler_85(long x)
+{
+    long t = x + 86;
+    g[13] += t; g[14] ^= t + 87; g[15] |= t << 1;
+    g[16] -= t + 88; g[18] += t * 3;
+    return t + g[13] + g[20];
+}
+NI long filler_86(long x)
+{
+    long t = x + 87;
+    g[14] += t; g[15] ^= t + 88; g[16] |= t << 1;
+    g[17] -= t + 89; g[19] += t * 4;
+    return t + g[14] + g[21];
+}
+NI long filler_87(long x)
+{
+    long t = x + 88;
+    g[15] += t; g[16] ^= t + 89; g[17] |= t << 1;
+    g[18] -= t + 90; g[20] += t * 5;
+    return t + g[15] + g[22];
+}
+NI long filler_88(long x)
+{
+    long t = x + 89;
+    g[16] += t; g[17] ^= t + 90; g[18] |= t << 1;
+    g[19] -= t + 91; g[21] += t * 6;
+    return t + g[16] + g[23];
+}
+NI long filler_89(long x)
+{
+    long t = x + 90;
+    g[17] += t; g[18] ^= t + 91; g[19] |= t << 1;
+    g[20] -= t + 92; g[22] += t * 7;
+    return t + g[17] + g[0];
+}
+NI long filler_90(long x)
+{
+    long t = x + 91;
+    g[18] += t; g[19] ^= t + 92; g[20] |= t << 1;
+    g[21] -= t + 93; g[23] += t * 8;
+    return t + g[18] + g[1];
+}
+NI long filler_91(long x)
+{
+    long t = x + 92;
+    g[19] += t; g[20] ^= t + 93; g[21] |= t << 1;
+    g[22] -= t + 94; g[0] += t * 2;
+    return t + g[19] + g[2];
+}
+NI long filler_92(long x)
+{
+    long t = x + 93;
+    g[20] += t; g[21] ^= t + 94; g[22] |= t << 1;
+    g[23] -= t + 95; g[1] += t * 3;
+    return t + g[20] + g[3];
+}
+NI long filler_93(long x)
+{
+    long t = x + 94;
+    g[21] += t; g[22] ^= t + 95; g[23] |= t << 1;
+    g[0] -= t + 96; g[2] += t * 4;
+    return t + g[21] + g[4];
+}
+NI long filler_94(long x)
+{
+    long t = x + 95;
+    g[22] += t; g[23] ^= t + 96; g[0] |= t << 1;
+    g[1] -= t + 97; g[3] += t * 5;
+    return t + g[22] + g[5];
+}
+NI long filler_95(long x)
+{
+    long t = x + 96;
+    g[23] += t; g[0] ^= t + 97; g[1] |= t << 1;
+    g[2] -= t + 98; g[4] += t * 6;
+    return t + g[23] + g[6];
+}
+NI long filler_96(long x)
+{
+    long t = x + 97;
+    g[0] += t; g[1] ^= t + 98; g[2] |= t << 1;
+    g[3] -= t + 99; g[5] += t * 7;
+    return t + g[0] + g[7];
+}
+NI long filler_97(long x)
+{
+    long t = x + 98;
+    g[1] += t; g[2] ^= t + 99; g[3] |= t << 1;
+    g[4] -= t + 100; g[6] += t * 8;
+    return t + g[1] + g[8];
+}
+NI long filler_98(long x)
+{
+    long t = x + 99;
+    g[2] += t; g[3] ^= t + 100; g[4] |= t << 1;
+    g[5] -= t + 101; g[7] += t * 2;
+    return t + g[2] + g[9];
+}
+NI long filler_99(long x)
+{
+    long t = x + 100;
+    g[3] += t; g[4] ^= t + 101; g[5] |= t << 1;
+    g[6] -= t + 102; g[8] += t * 3;
+    return t + g[3] + g[10];
+}
+NI long filler_100(long x)
+{
+    long t = x + 101;
+    g[4] += t; g[5] ^= t + 102; g[6] |= t << 1;
+    g[7] -= t + 103; g[9] += t * 4;
+    return t + g[4] + g[11];
+}
+NI long filler_101(long x)
+{
+    long t = x + 102;
+    g[5] += t; g[6] ^= t + 103; g[7] |= t << 1;
+    g[8] -= t + 104; g[10] += t * 5;
+    return t + g[5] + g[12];
+}
+NI long filler_102(long x)
+{
+    long t = x + 103;
+    g[6] += t; g[7] ^= t + 104; g[8] |= t << 1;
+    g[9] -= t + 105; g[11] += t * 6;
+    return t + g[6] + g[13];
+}
+NI long filler_103(long x)
+{
+    long t = x + 104;
+    g[7] += t; g[8] ^= t + 105; g[9] |= t << 1;
+    g[10] -= t + 106; g[12] += t * 7;
+    return t + g[7] + g[14];
+}
+NI long filler_104(long x)
+{
+    long t = x + 105;
+    g[8] += t; g[9] ^= t + 106; g[10] |= t << 1;
+    g[11] -= t + 107; g[13] += t * 8;
+    return t + g[8] + g[15];
+}
+NI long filler_105(long x)
+{
+    long t = x + 106;
+    g[9] += t; g[10] ^= t + 107; g[11] |= t << 1;
+    g[12] -= t + 108; g[14] += t * 2;
+    return t + g[9] + g[16];
+}
+NI long filler_106(long x)
+{
+    long t = x + 107;
+    g[10] += t; g[11] ^= t + 108; g[12] |= t << 1;
+    g[13] -= t + 109; g[15] += t * 3;
+    return t + g[10] + g[17];
+}
+NI long filler_107(long x)
+{
+    long t = x + 108;
+    g[11] += t; g[12] ^= t + 109; g[13] |= t << 1;
+    g[14] -= t + 110; g[16] += t * 4;
+    return t + g[11] + g[18];
+}
+NI long filler_108(long x)
+{
+    long t = x + 109;
+    g[12] += t; g[13] ^= t + 110; g[14] |= t << 1;
+    g[15] -= t + 111; g[17] += t * 5;
+    return t + g[12] + g[19];
+}
+NI long filler_109(long x)
+{
+    long t = x + 110;
+    g[13] += t; g[14] ^= t + 111; g[15] |= t << 1;
+    g[16] -= t + 112; g[18] += t * 6;
+    return t + g[13] + g[20];
+}
+NI long filler_110(long x)
+{
+    long t = x + 111;
+    g[14] += t; g[15] ^= t + 112; g[16] |= t << 1;
+    g[17] -= t + 113; g[19] += t * 7;
+    return t + g[14] + g[21];
+}
+NI long filler_111(long x)
+{
+    long t = x + 112;
+    g[15] += t; g[16] ^= t + 113; g[17] |= t << 1;
+    g[18] -= t + 114; g[20] += t * 8;
+    return t + g[15] + g[22];
+}
+NI long filler_112(long x)
+{
+    long t = x + 113;
+    g[16] += t; g[17] ^= t + 114; g[18] |= t << 1;
+    g[19] -= t + 115; g[21] += t * 2;
+    return t + g[16] + g[23];
+}
+NI long filler_113(long x)
+{
+    long t = x + 114;
+    g[17] += t; g[18] ^= t + 115; g[19] |= t << 1;
+    g[20] -= t + 116; g[22] += t * 3;
+    return t + g[17] + g[0];
+}
+NI long filler_114(long x)
+{
+    long t = x + 115;
+    g[18] += t; g[19] ^= t + 116; g[20] |= t << 1;
+    g[21] -= t + 117; g[23] += t * 4;
+    return t + g[18] + g[1];
+}
+NI long filler_115(long x)
+{
+    long t = x + 116;
+    g[19] += t; g[20] ^= t + 117; g[21] |= t << 1;
+    g[22] -= t + 118; g[0] += t * 5;
+    return t + g[19] + g[2];
+}
+NI long filler_116(long x)
+{
+    long t = x + 117;
+    g[20] += t; g[21] ^= t + 118; g[22] |= t << 1;
+    g[23] -= t + 119; g[1] += t * 6;
+    return t + g[20] + g[3];
+}
+NI long filler_117(long x)
+{
+    long t = x + 118;
+    g[21] += t; g[22] ^= t + 119; g[23] |= t << 1;
+    g[0] -= t + 120; g[2] += t * 7;
+    return t + g[21] + g[4];
+}
+NI long filler_118(long x)
+{
+    long t = x + 119;
+    g[22] += t; g[23] ^= t + 120; g[0] |= t << 1;
+    g[1] -= t + 121; g[3] += t * 8;
+    return t + g[22] + g[5];
+}
+NI long filler_119(long x)
+{
+    long t = x + 120;
+    g[23] += t; g[0] ^= t + 121; g[1] |= t << 1;
+    g[2] -= t + 122; g[4] += t * 2;
+    return t + g[23] + g[6];
+}
+NI long filler_120(long x)
+{
+    long t = x + 121;
+    g[0] += t; g[1] ^= t + 122; g[2] |= t << 1;
+    g[3] -= t + 123; g[5] += t * 3;
+    return t + g[0] + g[7];
+}
+NI long filler_121(long x)
+{
+    long t = x + 122;
+    g[1] += t; g[2] ^= t + 123; g[3] |= t << 1;
+    g[4] -= t + 124; g[6] += t * 4;
+    return t + g[1] + g[8];
+}
+NI long filler_122(long x)
+{
+    long t = x + 123;
+    g[2] += t; g[3] ^= t + 124; g[4] |= t << 1;
+    g[5] -= t + 125; g[7] += t * 5;
+    return t + g[2] + g[9];
+}
+NI long filler_123(long x)
+{
+    long t = x + 124;
+    g[3] += t; g[4] ^= t + 125; g[5] |= t << 1;
+    g[6] -= t + 126; g[8] += t * 6;
+    return t + g[3] + g[10];
+}
+NI long filler_124(long x)
+{
+    long t = x + 125;
+    g[4] += t; g[5] ^= t + 126; g[6] |= t << 1;
+    g[7] -= t + 127; g[9] += t * 7;
+    return t + g[4] + g[11];
+}
+NI long filler_125(long x)
+{
+    long t = x + 126;
+    g[5] += t; g[6] ^= t + 127; g[7] |= t << 1;
+    g[8] -= t + 128; g[10] += t * 8;
+    return t + g[5] + g[12];
+}
+NI long filler_126(long x)
+{
+    long t = x + 127;
+    g[6] += t; g[7] ^= t + 128; g[8] |= t << 1;
+    g[9] -= t + 129; g[11] += t * 2;
+    return t + g[6] + g[13];
+}
+NI long filler_127(long x)
+{
+    long t = x + 128;
+    g[7] += t; g[8] ^= t + 129; g[9] |= t << 1;
+    g[10] -= t + 130; g[12] += t * 3;
+    return t + g[7] + g[14];
+}
+NI long filler_128(long x)
+{
+    long t = x + 129;
+    g[8] += t; g[9] ^= t + 130; g[10] |= t << 1;
+    g[11] -= t + 131; g[13] += t * 4;
+    return t + g[8] + g[15];
+}
+NI long filler_129(long x)
+{
+    long t = x + 130;
+    g[9] += t; g[10] ^= t + 131; g[11] |= t << 1;
+    g[12] -= t + 132; g[14] += t * 5;
+    return t + g[9] + g[16];
+}
+NI long filler_130(long x)
+{
+    long t = x + 131;
+    g[10] += t; g[11] ^= t + 132; g[12] |= t << 1;
+    g[13] -= t + 133; g[15] += t * 6;
+    return t + g[10] + g[17];
+}
+NI long filler_131(long x)
+{
+    long t = x + 132;
+    g[11] += t; g[12] ^= t + 133; g[13] |= t << 1;
+    g[14] -= t + 134; g[16] += t * 7;
+    return t + g[11] + g[18];
+}
+NI long filler_132(long x)
+{
+    long t = x + 133;
+    g[12] += t; g[13] ^= t + 134; g[14] |= t << 1;
+    g[15] -= t + 135; g[17] += t * 8;
+    return t + g[12] + g[19];
+}
+NI long filler_133(long x)
+{
+    long t = x + 134;
+    g[13] += t; g[14] ^= t + 135; g[15] |= t << 1;
+    g[16] -= t + 136; g[18] += t * 2;
+    return t + g[13] + g[20];
+}
+NI long filler_134(long x)
+{
+    long t = x + 135;
+    g[14] += t; g[15] ^= t + 136; g[16] |= t << 1;
+    g[17] -= t + 137; g[19] += t * 3;
+    return t + g[14] + g[21];
+}
+NI long filler_135(long x)
+{
+    long t = x + 136;
+    g[15] += t; g[16] ^= t + 137; g[17] |= t << 1;
+    g[18] -= t + 138; g[20] += t * 4;
+    return t + g[15] + g[22];
+}
+NI long filler_136(long x)
+{
+    long t = x + 137;
+    g[16] += t; g[17] ^= t + 138; g[18] |= t << 1;
+    g[19] -= t + 139; g[21] += t * 5;
+    return t + g[16] + g[23];
+}
+NI long filler_137(long x)
+{
+    long t = x + 138;
+    g[17] += t; g[18] ^= t + 139; g[19] |= t << 1;
+    g[20] -= t + 140; g[22] += t * 6;
+    return t + g[17] + g[0];
+}
+NI long filler_138(long x)
+{
+    long t = x + 139;
+    g[18] += t; g[19] ^= t + 140; g[20] |= t << 1;
+    g[21] -= t + 141; g[23] += t * 7;
+    return t + g[18] + g[1];
+}
+NI long filler_139(long x)
+{
+    long t = x + 140;
+    g[19] += t; g[20] ^= t + 141; g[21] |= t << 1;
+    g[22] -= t + 142; g[0] += t * 8;
+    return t + g[19] + g[2];
+}
+NI long filler_140(long x)
+{
+    long t = x + 141;
+    g[20] += t; g[21] ^= t + 142; g[22] |= t << 1;
+    g[23] -= t + 143; g[1] += t * 2;
+    return t + g[20] + g[3];
+}
+NI long filler_141(long x)
+{
+    long t = x + 142;
+    g[21] += t; g[22] ^= t + 143; g[23] |= t << 1;
+    g[0] -= t + 144; g[2] += t * 3;
+    return t + g[21] + g[4];
+}
+NI long filler_142(long x)
+{
+    long t = x + 143;
+    g[22] += t; g[23] ^= t + 144; g[0] |= t << 1;
+    g[1] -= t + 145; g[3] += t * 4;
+    return t + g[22] + g[5];
+}
+NI long filler_143(long x)
+{
+    long t = x + 144;
+    g[23] += t; g[0] ^= t + 145; g[1] |= t << 1;
+    g[2] -= t + 146; g[4] += t * 5;
+    return t + g[23] + g[6];
+}
+NI long filler_144(long x)
+{
+    long t = x + 145;
+    g[0] += t; g[1] ^= t + 146; g[2] |= t << 1;
+    g[3] -= t + 147; g[5] += t * 6;
+    return t + g[0] + g[7];
+}
+NI long filler_145(long x)
+{
+    long t = x + 146;
+    g[1] += t; g[2] ^= t + 147; g[3] |= t << 1;
+    g[4] -= t + 148; g[6] += t * 7;
+    return t + g[1] + g[8];
+}
+NI long filler_146(long x)
+{
+    long t = x + 147;
+    g[2] += t; g[3] ^= t + 148; g[4] |= t << 1;
+    g[5] -= t + 149; g[7] += t * 8;
+    return t + g[2] + g[9];
+}
+NI long filler_147(long x)
+{
+    long t = x + 148;
+    g[3] += t; g[4] ^= t + 149; g[5] |= t << 1;
+    g[6] -= t + 150; g[8] += t * 2;
+    return t + g[3] + g[10];
+}
+NI long filler_148(long x)
+{
+    long t = x + 149;
+    g[4] += t; g[5] ^= t + 150; g[6] |= t << 1;
+    g[7] -= t + 151; g[9] += t * 3;
+    return t + g[4] + g[11];
+}
+NI long filler_149(long x)
+{
+    long t = x + 150;
+    g[5] += t; g[6] ^= t + 151; g[7] |= t << 1;
+    g[8] -= t + 152; g[10] += t * 4;
+    return t + g[5] + g[12];
+}
+NI long fillers(long x)
+{
+    long s = 0;
+    s += filler_0(x + 0);
+    s += filler_1(x + 1);
+    s += filler_2(x + 2);
+    s += filler_3(x + 3);
+    s += filler_4(x + 4);
+    s += filler_5(x + 5);
+    s += filler_6(x + 6);
+    s += filler_7(x + 7);
+    s += filler_8(x + 8);
+    s += filler_9(x + 9);
+    s += filler_10(x + 10);
+    s += filler_11(x + 11);
+    s += filler_12(x + 12);
+    s += filler_13(x + 13);
+    s += filler_14(x + 14);
+    s += filler_15(x + 15);
+    s += filler_16(x + 16);
+    s += filler_17(x + 17);
+    s += filler_18(x + 18);
+    s += filler_19(x + 19);
+    s += filler_20(x + 20);
+    s += filler_21(x + 21);
+    s += filler_22(x + 22);
+    s += filler_23(x + 23);
+    s += filler_24(x + 24);
+    s += filler_25(x + 25);
+    s += filler_26(x + 26);
+    s += filler_27(x + 27);
+    s += filler_28(x + 28);
+    s += filler_29(x + 29);
+    s += filler_30(x + 30);
+    s += filler_31(x + 31);
+    s += filler_32(x + 32);
+    s += filler_33(x + 33);
+    s += filler_34(x + 34);
+    s += filler_35(x + 35);
+    s += filler_36(x + 36);
+    s += filler_37(x + 37);
+    s += filler_38(x + 38);
+    s += filler_39(x + 39);
+    s += filler_40(x + 40);
+    s += filler_41(x + 41);
+    s += filler_42(x + 42);
+    s += filler_43(x + 43);
+    s += filler_44(x + 44);
+    s += filler_45(x + 45);
+    s += filler_46(x + 46);
+    s += filler_47(x + 47);
+    s += filler_48(x + 48);
+    s += filler_49(x + 49);
+    s += filler_50(x + 50);
+    s += filler_51(x + 51);
+    s += filler_52(x + 52);
+    s += filler_53(x + 53);
+    s += filler_54(x + 54);
+    s += filler_55(x + 55);
+    s += filler_56(x + 56);
+    s += filler_57(x + 57);
+    s += filler_58(x + 58);
+    s += filler_59(x + 59);
+    s += filler_60(x + 60);
+    s += filler_61(x + 61);
+    s += filler_62(x + 62);
+    s += filler_63(x + 63);
+    s += filler_64(x + 64);
+    s += filler_65(x + 65);
+    s += filler_66(x + 66);
+    s += filler_67(x + 67);
+    s += filler_68(x + 68);
+    s += filler_69(x + 69);
+    s += filler_70(x + 70);
+    s += filler_71(x + 71);
+    s += filler_72(x + 72);
+    s += filler_73(x + 73);
+    s += filler_74(x + 74);
+    s += filler_75(x + 75);
+    s += filler_76(x + 76);
+    s += filler_77(x + 77);
+    s += filler_78(x + 78);
+    s += filler_79(x + 79);
+    s += filler_80(x + 80);
+    s += filler_81(x + 81);
+    s += filler_82(x + 82);
+    s += filler_83(x + 83);
+    s += filler_84(x + 84);
+    s += filler_85(x + 85);
+    s += filler_86(x + 86);
+    s += filler_87(x + 87);
+    s += filler_88(x + 88);
+    s += filler_89(x + 89);
+    s += filler_90(x + 90);
+    s += filler_91(x + 91);
+    s += filler_92(x + 92);
+    s += filler_93(x + 93);
+    s += filler_94(x + 94);
+    s += filler_95(x + 95);
+    s += filler_96(x + 96);
+    s += filler_97(x + 97);
+    s += filler_98(x + 98);
+    s += filler_99(x + 99);
+    s += filler_100(x + 100);
+    s += filler_101(x + 101);
+    s += filler_102(x + 102);
+    s += filler_103(x + 103);
+    s += filler_104(x + 104);
+    s += filler_105(x + 105);
+    s += filler_106(x + 106);
+    s += filler_107(x + 107);
+    s += filler_108(x + 108);
+    s += filler_109(x + 109);
+    s += filler_110(x + 110);
+    s += filler_111(x + 111);
+    s += filler_112(x + 112);
+    s += filler_113(x + 113);
+    s += filler_114(x + 114);
+    s += filler_115(x + 115);
+    s += filler_116(x + 116);
+    s += filler_117(x + 117);
+    s += filler_118(x + 118);
+    s += filler_119(x + 119);
+    s += filler_120(x + 120);
+    s += filler_121(x + 121);
+    s += filler_122(x + 122);
+    s += filler_123(x + 123);
+    s += filler_124(x + 124);
+    s += filler_125(x + 125);
+    s += filler_126(x + 126);
+    s += filler_127(x + 127);
+    s += filler_128(x + 128);
+    s += filler_129(x + 129);
+    s += filler_130(x + 130);
+    s += filler_131(x + 131);
+    s += filler_132(x + 132);
+    s += filler_133(x + 133);
+    s += filler_134(x + 134);
+    s += filler_135(x + 135);
+    s += filler_136(x + 136);
+    s += filler_137(x + 137);
+    s += filler_138(x + 138);
+    s += filler_139(x + 139);
+    s += filler_140(x + 140);
+    s += filler_141(x + 141);
+    s += filler_142(x + 142);
+    s += filler_143(x + 143);
+    s += filler_144(x + 144);
+    s += filler_145(x + 145);
+    s += filler_146(x + 146);
+    s += filler_147(x + 147);
+    s += filler_148(x + 148);
+    s += filler_149(x + 149);
+    return s;
+}
+int main(int argc, char **argv)
+{
+    struct rec a, b;
+    long s = fill(&a, argc) + fill(&b, argc + 1);
+    s += use(argc, &a, (unsigned long)argc) + use(argc + 1, &b, 8);
+    s += fillers(argc);
+    printf("%ld %s\n", s, argv[0]);
+    return 0;
+}

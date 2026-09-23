@@ -32,6 +32,6 @@
       "long use\\(int a0,struct_\\d+ \\*a1,unsigned long a2\\)"
     ]
   },
-  "notes": "DEFAULT. The vote costs a second decompile, so a function whose first decompile printed more than 32 lines (CALLEE_VOTE_MAX_LINES, kuna-cli decompile_all.rs) is never decompiled again. scan_short (19 lines) and scan_long (45) do the same thing with the pointer use hands them; only the short one takes the record. Without the bound scan_long is struct_1 * too.",
+  "notes": "DEFAULT. The vote costs a second decompile, charged the lines the first one printed, and the redo pass may spend CALLEE_VOTE_BUDGET_PCT (5) % of what the whole binary printed (kuna-cli decompile_all.rs). This binary prints 170 lines, so scan_long (45 lines) is more than the whole 8-line budget and is declined, while scan_short (19 lines) is inside the CALLEE_VOTE_MAX_LINES (32) floor and is redone whatever the budget says. Both do the same thing with the pointer use hands them, so only the short one takes the record. Its twin calleevote-buys-a-long-callee-with-the-budget.json is the same program in a binary with the room.",
   "probe_id": "p-4f3a99b11f25"
 }

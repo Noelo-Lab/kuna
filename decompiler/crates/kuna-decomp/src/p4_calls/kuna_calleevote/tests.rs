@@ -227,6 +227,36 @@ fn a_forgotten_function_keeps_no_statement() {
 }
 
 #[test]
+fn a_declined_function_keeps_the_statement_its_kept_body_used() {
+    let first = ptr_to(record("struct_2"));
+    let mut l = ledger(&[(0x6600, Rc::clone(&first))]);
+    for (k, st) in decide_ledger(&l, 8, &all_calls(&l)) {
+        l.stated.insert(k, Rc::new(st));
+    }
+    // Round one bought the redo and the driver kept that body.
+    l.keep(CALLEE);
+    // A later round decides something else about it, and the budget is gone.
+    let second = ptr_to(record("struct_9"));
+    l.stated.insert(CALLEE, Rc::new(CallerTypes { inputs: vec![typed(&reg(), 0x38, &second)] }));
+    l.decline(CALLEE);
+    let kept = l.stated.get(&CALLEE).expect("the statement its body was printed with");
+    assert!(Rc::ptr_eq(&kept.at(&at(&reg(), 0x38), 8).expect("stated").ct, &first));
+    assert!(decide_ledger(&l, 8, &all_calls(&l)).is_empty());
+}
+
+#[test]
+fn a_declined_function_that_was_never_redone_keeps_no_statement() {
+    let rec = ptr_to(record("struct_2"));
+    let mut l = ledger(&[(0x6600, Rc::clone(&rec))]);
+    for (k, st) in decide_ledger(&l, 8, &all_calls(&l)) {
+        l.stated.insert(k, Rc::new(st));
+    }
+    l.decline(CALLEE);
+    assert!(!l.stated.contains_key(&CALLEE));
+    assert!(decide_ledger(&l, 8, &all_calls(&l)).is_empty());
+}
+
+#[test]
 fn a_first_statement_that_repeats_the_callees_record_is_not_made() {
     let rec = ptr_to(lone("struct_7"));
     assert!(uncommitted(&rec, 8) && committed(&rec));

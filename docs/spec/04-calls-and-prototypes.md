@@ -2806,6 +2806,16 @@ its parameters keep what its own body found — exactly what a function over the
 old flat 32-line refusal used to get, now only on the binaries with no room for
 it.
 
+One function is declined differently: the one an earlier round already bought a
+redo for and whose new body the driver kept (`Ledger::keep`). Withdrawing a
+statement there would withdraw one a printed body was already printed with, and
+the convergence sweep — which decompiles a function again after the rounds are
+over and takes whatever the ledger states about it — would then print that
+function without the vote the batch's own output used. So its statement goes
+back to the one its kept body used rather than away, while the decision itself
+still stops: nothing further is proposed about it and no more of the budget is
+spent on it.
+
 What that is worth is measurable without a stopwatch, because the redo pass is
 a phase of its own: its share of a whole-binary run is 3.4% on
 `kmod -O2-noinline`, 2.0% on `dpkg-divert -O2`, 1.3% on `cmp -O0` and 0.2% on
