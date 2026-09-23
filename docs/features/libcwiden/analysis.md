@@ -127,11 +127,11 @@ make visible. `Heritage::clearStackPlaceholders` was an unported stub, so the
 stack-pointer placeholder `ActionFuncLink` hangs on every CALL was never taken
 off a call whose input list is locked. It printed as one argument past the
 declared arity, reading the slot the `call` pushed its return address into, and
-on `origin/main` ginstall's function at 0xbdda alone carries 47 of them
-(`kuna decompile-all .../O0/coreutils/stripped/ginstall --addr 0xbdda | grep -c 'v26\[-8\])'`).
+on `origin/main` ginstall's function at 0xbdda alone carries 45 of them --
+every one in that binary (`phantom_args.py` over its whole-binary output).
 
 So the cost is now zero and something on main is fixed with it: over 12 whole
-binaries the trailing argument goes **148 to 0** (100 of them on main's own
+binaries the trailing argument goes **149 to 0** (100 of them on main's own
 already-declared names), counted by the committed `phantom_args.py`, with
 function count, gotos and labels identical. Its own price is ten ground-truth `_Bool` variables of 65,715
 that spelled `bool` and now spell `char`, in two functions whose frame is

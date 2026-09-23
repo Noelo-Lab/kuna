@@ -10,7 +10,7 @@ Usage:  python3 phantom_args.py <file.c> [<file.c> ...]
 
 Measured over 12 whole binaries (coreutils ginstall/stty/chcon/df/stat,
 grep, gzip, tar, findutils find, diffutils diff, bzip2, shadow chage):
-origin/main 9e07ab931 = 148, main with `--option libcsigs off` = 100,
+origin/main 9e07ab931 = 149, main with `--option libcsigs off` = 100,
 this branch = 0 in both arms.
 """
 import collections
@@ -38,6 +38,29 @@ def split_args(s):
     return out
 
 
+def balanced(line, open_idx):
+    """Text between line[open_idx] == '(' and its matching ')', or None."""
+    depth, i, in_str = 0, open_idx, None
+    while i < len(line):
+        ch = line[i]
+        if in_str:
+            if ch == '\\':
+                i += 2
+                continue
+            if ch == in_str:
+                in_str = None
+        elif ch in '"\'':
+            in_str = ch
+        elif ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+            if depth == 0:
+                return line[open_idx + 1:i]
+        i += 1
+    return None
+
+
 def scan(path):
     lines = open(path).read().splitlines()
     arity = {}
@@ -49,11 +72,14 @@ def scan(path):
                 arity.setdefault(h.group(1), 0 if params in ([], ['void']) else len(params))
     n, by_name = 0, collections.Counter()
     for line in lines:
-        for m in re.finditer(r'\b([A-Za-z_]\w*)\(([^;{}]*)\)', line):
+        for m in re.finditer(r'\b([A-Za-z_]\w*)\(', line):
             name = m.group(1)
             if name not in arity:
                 continue
-            args = split_args(m.group(2))
+            inner = balanced(line, m.end() - 1)
+            if inner is None:
+                continue
+            args = split_args(inner)
             if len(args) == arity[name] + 1 and PLACEHOLDER.match(args[-1]):
                 n += 1
                 by_name[name] += 1
