@@ -1,0 +1,302 @@
+{
+ "opportunity": "structsynth requires an access at offset 0 before it believes a pointer points at a record, so a function that reads a record's later members and never its first keeps `void *` and every access costs two casts. Over the 45 castbench binaries 1,238 parameters are refused for this reason alone (965 in closed functions, 883 of them DWARF struct pointers, none `void *`), against 1,716 accepted; they carry 366 of the 1,080 `*(T *)((long)p + K)` sites over a `void *` base on the kuna-and-IDA shared set.",
+ "test_name": "tests/stages/structheadless-closed-only.xml (negative control: the console never marks a function closed, so both passes keep raw offsets and mint no record) + tests/cli/structheadless-off-leaves-a-headless-record-untyped.json and structheadless-closed-reads-a-record-past-its-start.json (the two-pass coverage over decompile-all) + unit tests kuna_structheadless::tests (2) and kuna_structsynth::tests::a_record_read_only_past_its_start_needs_the_headless_rule",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/structheadless_x86_64 (gcc -O2 -fno-inline, symbols kept; source beside it) and the decbench full_run_address_2026-09-11 tree",
+ "selector": "name",
+ "func_addr": "mode_of (fixture); coreutils ls -O0 sub_53e7 @0x53e7 and sub_5297 @0x5297",
+ "option": "structheadless",
+ "value": "closed",
+ "values": "off|closed",
+ "flag": "Architecture::struct_headless (StructHeadlessMode::Closed)",
+ "element_id": "n/a (no new ElementId)",
+ "change_kind": "structure-recovery",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "The cast census (kuna 1.19x IDA's casts on 4,815 shared functions; 1,080 sites over a void * base). angr's simple_solver struct branch takes any set of constant offsets as a record; kuna keeps its own gates and adds the closed-caller condition calleevote fields introduced for lone fields.",
+ "default_on": false,
+ "default_value": "off",
+ "default_decision": "off: fields-only layout precision on the published instrument falls .8713 -> .8298 (gate >= .8713), and the typesweep has 1 improved row against 2 worse (criterion d). See default-on-evaluation.md.",
+ "base": "main dbe854ba3 (#715 structmerge in); measured on build e2071591f, both arms of one build",
+ "census": {
+  "instrument": "docs/features/structheadless/census.patch (a census build of the pass, never committed) over the 45 castbench binaries",
+  "functions": 20230,
+  "never_offered_lattice_unsettled": 12888,
+  "newly_offered_with_extra_pass": 1475,
+  "newly_accepted_with_extra_pass_under_old_rules": 0,
+  "param_bases_2plus_offsets": {
+   "total": 3860,
+   "accepted": 1716,
+   "no_offset_0": 1238,
+   "uniform_run": 362,
+   "named_pointee": 170,
+   "index": 148,
+   "phi": 94,
+   "type_locked": 67,
+   "frame_or_global": 39,
+   "not_a_pointer": 15,
+   "integer_use": 11
+  },
+  "callret_bases": {
+   "total": 1023,
+   "accepted": 246,
+   "locals_rule": 534,
+   "not_a_pointer": 112,
+   "uniform_run": 98,
+   "index": 17,
+   "integer_use": 8,
+   "named": 5,
+   "no_offset_0": 3
+  },
+  "not_bases": {
+   "phi_output": 1618,
+   "frame": 799,
+   "loaded_pointer": 736,
+   "global": 104
+  },
+  "no_offset_0_ground_truth": {
+   "closed": {
+    "struct_ptr": 883,
+    "void_ptr": 0,
+    "other_ptr": 2,
+    "integer": 3,
+    "dwarf_blind_abstract_origin": 75
+   },
+   "address_stored": {
+    "struct_ptr": 202,
+    "void_ptr": 53,
+    "dwarf_blind": 17
+   }
+  },
+  "void_base_cast_sites_shared_set": {
+   "total": 1080,
+   "bases": 329,
+   "headless_closed": [
+    366,
+    49
+   ],
+   "headless_address_stored": [
+    228,
+    74
+   ],
+   "one_field_address_stored": [
+    117,
+    91
+   ],
+   "unjoined_or_stack_param": [
+    143,
+    31
+   ],
+   "locals": 150,
+   "indexed": 34
+  },
+  "nest_members_8_builds": {
+   "loaded_never_dereferenced": 970,
+   "never_loaded": 251,
+   "negative_evidence": 26,
+   "one_offset": 13,
+   "uniform_run": 6,
+   "no_offset_0": 2,
+   "clean": 0
+  }
+ },
+ "castbench": {
+  "instrument": "/home/mahaloz/kwt/castbench/castbench.py (full set, 45 binaries, 4,815 functions kuna and IDA share)",
+  "ida": {
+   "casts": 37821,
+   "per_kloc": 155.4
+  },
+  "off": {
+   "casts": 45126,
+   "per_kloc": 236.8,
+   "vs_ida": 1.193,
+   "O0": 1.234,
+   "O2": 1.208,
+   "O2_noinline": 1.135
+  },
+  "closed": {
+   "casts": 42008,
+   "per_kloc": 220.4,
+   "vs_ida": 1.111,
+   "O0": 1.115,
+   "O2": 1.159,
+   "O2_noinline": 1.053
+  },
+  "delta": -3118,
+  "functions_fewer": [
+   221,
+   -3150
+  ],
+  "functions_more": [
+   20,
+   32
+  ],
+  "off_arm_equals_main": "cb-off is byte-identical to /home/mahaloz/kwt/castbench/main-dbe854ba3 (0 functions differ)"
+ },
+ "typesweep": {
+  "slices": 444,
+  "functions": 10748,
+  "projects": "coreutils grep gzip diffutils bzip2 findutils tar shadow",
+  "opts": "O0 O2 O2-noinline",
+  "per_project": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4173,
+    "mean_on": 0.4148,
+    "improved": 0,
+    "worse": 2
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 985,
+    "perfect_on": 985,
+    "mean_off": 0.358,
+    "mean_on": 0.358,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 64,
+    "mean_off": 0.4499,
+    "mean_on": 0.4499,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 60,
+    "perfect_on": 60,
+    "mean_off": 0.2495,
+    "mean_on": 0.2495,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 52,
+    "perfect_on": 52,
+    "mean_off": 0.4547,
+    "mean_on": 0.455,
+    "improved": 1,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 112,
+    "mean_off": 0.5409,
+    "mean_on": 0.5409,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 89,
+    "perfect_on": 89,
+    "mean_off": 0.3593,
+    "mean_on": 0.3593,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 213,
+    "mean_off": 0.3934,
+    "mean_on": 0.3934,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1609,
+   "perfect_on": 1609,
+   "mean_off": 0.3688,
+   "mean_on": 0.3687,
+   "improved": 1,
+   "worse": 2
+  },
+  "worse_rows": [
+   "bzip2 O0 BZ2_bzReadClose .6667 -> .3333",
+   "bzip2 O2-noinline BZ2_bzReadClose .6667 -> .3333 (BZFILE is typedef void)"
+  ],
+  "improved_rows": [
+   "grep O0 bmexec_trans .4667 -> .5333"
+  ]
+ },
+ "credit93": {
+  "instrument": "/home/mahaloz/kwt/_final-g/tools/credit93.py over the typesweep rows",
+  "off": {
+   "perfect_credited": 2181,
+   "mean_credited": 0.4532,
+   "tp_added": 2723
+  },
+  "closed": {
+   "perfect_credited": 2305,
+   "mean_credited": 0.4691,
+   "tp_added": 3330
+  }
+ },
+ "layoutscore": {
+  "instrument": "nestscore-style arms (structsynth param and locals, each +/- structheadless closed), eight layout builds fmt/ls/sort/du -O0/-O2",
+  "param": {
+   "fields_only": "880/1010 = 0.8713",
+   "recall": 0.0932,
+   "f1": 0.1684,
+   "filler_counted": "1011/1341 = 0.7539",
+   "nesting": "3/5, F1 0.0036",
+   "structs": 202,
+   "typed_params": 268
+  },
+  "param_closed": {
+   "fields_only": "1068/1287 = 0.8298",
+   "recall": 0.1131,
+   "f1": 0.1991,
+   "filler_counted": "1232/1797 = 0.6856",
+   "nesting": "6/9, F1 0.0072",
+   "structs": 258,
+   "typed_params": 326
+  },
+  "locals_default": "identical to param on every layout number (locals adds no parameter)",
+  "at_depth": {
+   "instrument": "docs/features/structheadless/layoutdepth.py (named embedded records, arrays of records and unions flattened)",
+   "param": "969/1010 = 0.9594",
+   "param_closed": "1226/1287 = 0.9526",
+   "added_claims_real_at_depth": "262/282 = 0.929"
+  },
+  "gate": "fields-only precision >= 0.8713: FAILS (0.8298)"
+ },
+ "trex": {
+  "instrument": "scripts/decbench/structscore.py --trex, eight layout builds",
+  "O0": {
+   "off": 4.4747,
+   "closed": 4.5027
+  },
+  "O2": {
+   "off": 1.952,
+   "closed": 1.9594
+  }
+ },
+ "hunks": {
+  "doc": "docs/features/structheadless/hunks.md",
+  "binaries": 45,
+  "functions": 20230,
+  "changed": 3450,
+  "record_name_only": 2308,
+  "fields_types_casts": 1081,
+  "skeleton_deltas": 0,
+  "declaration_count_deltas": 33,
+  "read": 28,
+  "unclassified": 0,
+  "pointer_to_integer_declarations": 12,
+  "integer_to_pointer_declarations": 43
+ },
+ "speed": {
+  "method": "interleaved whole-binary `kuna decompile-all --json --max-fn-seconds 120`, --option structheadless off against closed, arms alternating, min-of-15 (speed.py); box shared with other campaign lanes",
+  "per_binary": {}
+ }
+}
