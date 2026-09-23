@@ -3293,6 +3293,16 @@ mod tests {
                 definition: "struct mystruct {\n    int a;\n};\n".into(),
                 size: 4,
             }],
+            // (kuna `globalref`) One global, so the codec's flag byte is exercised.
+            globals: vec![GlobalInfo {
+                address: 0x404010,
+                name: "dat_404010".into(),
+                declaration: "struct_0 dat_404010".into(),
+                size: 16,
+                unknown: false,
+                direct: true,
+                aggregate: true,
+            }],
             line_mappings: vec![LineMapping { line_number: 3, addresses: vec![0x401004] }],
             aliases: vec!["_main".into()],
             object_location: Some(ObjectLocation {
@@ -3317,6 +3327,7 @@ mod tests {
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
             && a.line_mappings == b.line_mappings
+            && a.globals == b.globals
             && a.types.len() == b.types.len()
             && a.types.iter().zip(&b.types).all(|(x, y)| {
                 x.name == y.name && x.definition == y.definition && x.size == y.size

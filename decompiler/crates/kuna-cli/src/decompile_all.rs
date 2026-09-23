@@ -3476,6 +3476,7 @@ mod provenance_json_tests {
                 definition: "struct mystruct {\n    int a;\n};\n".into(),
                 size: 4,
             }],
+            globals: Vec::new(),
             line_mappings: vec![LineMapping {
                 line_number: 3,
                 addresses: vec![0x401004, 0x401008],

@@ -1415,6 +1415,7 @@ mod tests {
                 addresses: vec![],
             }],
             types: vec![],
+            globals: vec![],
             line_mappings: vec![],
             aliases: vec![],
             object_location: None,
