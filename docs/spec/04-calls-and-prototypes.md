@@ -2485,9 +2485,10 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   is set up with `push %rdx; …; xor %eax,%eax`, and that push is gcc's
   stack-alignment filler; gnulib `open_safer` reads `rdx` only to pass it to
   `open`'s `mode`;
-- the claim does not fill a **hole** (`no_hole_before`). Parameters are
-  positional: a claim at the third stated register gives the function three
-  parameters. Every earlier stated register must be one the function could be
+- where the function touches the register nowhere, so that this pass has to
+  claim it into existence (*The claim*, below), the claim does not fill a
+  **hole** (`no_hole_before`). Parameters are positional: a claim at the third
+  stated register gives the function three parameters. Every earlier stated register must be one the function could be
   carrying — claimed here too, or one its own entry walk (the same
   `calleedeadarg` probe, asked of this function's entry) does not prove it
   WRITES before reading. Otherwise the register becomes a parameter nothing
