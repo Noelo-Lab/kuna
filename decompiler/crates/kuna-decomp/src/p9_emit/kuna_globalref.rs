@@ -64,8 +64,8 @@ impl OptionGlobalRef {
 pub struct Minted {
     /// The type the function uses the object at.
     pub decl_type: Rc<Datatype>,
-    /// True when the pointer pointed at `void`, so `decl_type` is the unknown
-    /// byte standing in for an object whose type this function does not know.
+    /// True when `decl_type` is the unknown byte: the function only ever used
+    /// the address through `void *` and never reads the storage there directly.
     pub unknown: bool,
 }
 
@@ -243,12 +243,13 @@ impl Plan {
         if fd.get_arch().query_container_global(&addr, 1, &invalid).is_some() {
             return Err(Refusal::Symbol);
         }
-        let decl_type = if !unknown {
-            object
+        let (decl_type, unknown) = if !unknown {
+            (object, false)
         } else if let Some(read) = self.direct_type_at(off) {
-            read
+            (read, false)
         } else {
-            arch.types_impl().get_base(1, type_metatype::TYPE_UNKNOWN).map_err(|_| Refusal::NotAPointer)?
+            let byte = arch.types_impl().get_base(1, type_metatype::TYPE_UNKNOWN).map_err(|_| Refusal::NotAPointer)?;
+            (byte, true)
         };
         let size = decl_type.get_size().max(1) as u64;
         if let Some(d) = self.direct.iter().find(|d| overlaps(d, off, size) && !same_object(d, off, size, &decl_type)) {
