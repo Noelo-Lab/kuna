@@ -40,8 +40,10 @@
 //! * what they agree on is itself evidence: three shared claims, or two of which
 //!   one is a pointer with a pointee (its pointee is part of the field's
 //!   identity, which is what a pair of integer words at 0 and 8 -- `struct stat`,
-//!   a `timespec`, a list node -- has none of). Both layouts always claim offset
-//!   0, so the anchor of the agreement is always the first word;
+//!   a `timespec`, a list node -- has none of). A layout claims offset 0 unless
+//!   it is a lone field or a `structheadless` record, and neither lowers the
+//!   floor: a lone field has one claim to share, and a headless record agrees
+//!   on its first claim the way any other agrees on offset 0;
 //! * the union ANSWERS FOR both sides under the containment rule itself
 //!   ([`ledger::Layout::answers_for`]): the growth bounds, the table rule, the
 //!   alignment-padding rule and the untyped-reader rule all apply to the merged

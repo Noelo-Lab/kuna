@@ -102,7 +102,7 @@ pub(super) fn nest_fields(
             continue;
         }
         let Some(inner) = loaded_record(data, cx, rec, intb::from(field.offset)) else { continue };
-        if !accepts_record(data, &field.field_type, &inner, false) {
+        if !accepts_record(data, &field.field_type, &inner, false, false) {
             continue;
         }
         let Some((mut inner_fields, inner_size)) = fields_for(cx.types, &inner) else { continue };
@@ -163,7 +163,32 @@ fn census_field(data: &mut Funcdata, cx: &Nesting, rec: &Evidence, field: &TypeF
         }
     }
     if merged.slots.is_empty() {
-        return tag("noderef".into());
+        let mut vt = String::new();
+        let mut uses = String::new();
+        for (w, v) in loads {
+            if *w != cx.ptr_size {
+                continue;
+            }
+            if let Some(ct) = vn_type(data, *v) {
+                let named = points_at_named_composite(&ct);
+                let pm = ct.get_ptr_to().map(|p| format!("{:?}", p.get_metatype())).unwrap_or_else(|| format!("{:?}", ct.get_metatype()));
+                vt = format!("{}{}", if named { "NAMED-" } else { "" }, pm.trim_start_matches("TYPE_").to_lowercase());
+            }
+            if let Some(vn) = data.vbank().get(*v) {
+                for u in vn.descend_iter() {
+                    if let Some(op) = data.obank().get(u) {
+                        let c = format!("{:?}", op.code());
+                        let c = c.trim_start_matches("CPUI_").to_lowercase();
+                        if !uses.contains(&c) {
+                            uses.push_str(&c);
+                            uses.push('+');
+                        }
+                    }
+                }
+            }
+        }
+        let ft = field.field_type.get_ptr_to().map(|p| format!("{:?}", p.get_metatype())).unwrap_or_else(|| format!("{:?}", field.field_type.get_metatype()));
+        return tag(format!("noderef/{}/{}/{}", ft.trim_start_matches("TYPE_").to_lowercase(), vt, uses));
     }
     let inner = merged.pruned();
     let fieldptr = is_record_pointer(&field.field_type);

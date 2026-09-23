@@ -946,10 +946,12 @@ fn wants_settle_pass(data: &mut Funcdata) -> bool {
     {
         return false;
     }
+    let headless = data.get_arch().struct_headless.fires();
     let raw = collect(data);
     raw.iter().any(|(base, e)| {
         let e = e.pruned();
-        is_lone_field(&e) && accepts(data, *base, &e)
+        (is_lone_field(&e) || (headless && crate::kuna_structheadless::is_headless(e.slots.keys())))
+            && accepts(data, *base, &e)
     })
 }
 
@@ -1059,9 +1061,10 @@ fn census_base(data: &mut Funcdata, base: VarnodeId, e: &Evidence) {
         }
     };
     eprintln!(
-        "SSCENSUS base {fa:x} {kind} {stor} {} {pointee} {why} {}",
+        "SSCENSUS base {fa:x} {kind} {stor} {} {pointee} {why} {} {}",
         e.slots.len(),
-        offs.join(",")
+        if offs.is_empty() { "-".to_string() } else { offs.join(",") },
+        data.kuna_calleevote_closed() as u8
     );
 }
 
@@ -1086,7 +1089,8 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     }
     let Some(ct) = vn_type(data, base) else { return false };
     let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct, e);
-    accepts_record(data, &ct, e, lone)
+    let headless = lone && crate::kuna_structheadless::admits(data, base);
+    accepts_record(data, &ct, e, lone, headless)
 }
 
 /// Does `locals` measure `base`: a value a call returned, alone in its
@@ -1283,8 +1287,10 @@ const MAX_OVERLAP_BACK: uintb = 16;
 
 /// The decline conditions every synthesized record shares, a parameter's or a
 /// nested field's: `ct` is the type the base already carries. `lone` admits a
-/// parameter read at one constant offset other than zero ([`is_lone_field`]).
-fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence, lone: bool) -> bool {
+/// parameter read at one constant offset other than zero ([`is_lone_field`]),
+/// `headless` one read at two or more with none of them zero
+/// ([`crate::kuna_structheadless`]).
+fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence, lone: bool, headless: bool) -> bool {
     // Pointer-ness is not invented here.
     if ct.get_metatype() != type_metatype::TYPE_PTR {
         return false;
@@ -1307,7 +1313,7 @@ fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence, lone: bool) -> b
     if e.slots.len() < 2 {
         return false;
     }
-    if !e.slots.contains_key(&0) {
+    if !e.slots.contains_key(&0) && !headless {
         return false;
     }
     let ptr_size = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
