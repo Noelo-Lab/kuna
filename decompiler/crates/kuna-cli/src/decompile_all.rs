@@ -4278,10 +4278,11 @@ mod calleevote_stored_tests {
             taken
         };
         // A 20,000-line binary buys a 90-line and a 300-line body; a 2,000-line
-        // one buys neither, and the shorter is bought first.
+        // one buys only the 90; a 1,000-line one buys neither. The shorter is
+        // always bought first.
         assert_eq!(spend(20_000, &[300, 90]), vec![90, 300]);
-        assert_eq!(spend(2_000, &[300, 90]), vec![]);
-        assert_eq!(spend(8_000, &[300, 90]), vec![90]);
+        assert_eq!(spend(2_000, &[300, 90]), vec![90]);
+        assert_eq!(spend(1_000, &[300, 90]), vec![]);
         // The short bodies the vote exists for are redone whatever is left,
         // and what they spend is what leaves no room for a long one.
         assert_eq!(spend(400, &[30, 30, 90]), vec![30, 30]);
