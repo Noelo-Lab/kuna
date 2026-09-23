@@ -249,43 +249,220 @@
   }
  },
  "speed": {
-  "instrument": "interleaved min-of-15 whole-binary `kuna decompile-all --json --max-fn-seconds 120`, the two arms alternating within each round; samples in docs/features/libcwiden/speed.json",
-  "box": "80 cores, load average 30-35 during the first pass (eight other campaign lanes), 15-26 during the ls re-run",
-  "results": {
-   "fmt -O2": {
-    "base_min_ms": 4794.7,
-    "new_min_ms": 4227.3,
-    "delta_min_pct": -11.83,
-    "delta_median_pct": -1.93
+  "instrument": "scripts.pipeline.timeit shape: `kuna decompile-all <bin> --json --max-fn-seconds 120`, interleaved arm order per iteration, min-of-15, -O2 binaries; arm-base = origin/main, arm-fix = what ships (the table plus the placeholder strip). Run 2026-09-23 05:33-06:50Z with ~8 other campaign lanes on the box (load 17-37), which is why the medians are quoted beside the minima.",
+  "budget": "+5% worst case",
+  "worst": "fmt +3.01% min",
+  "fmt": {
+   "base_min_ms": 4374.5,
+   "new_min_ms": 4506.1,
+   "delta_min_pct": 3.01,
+   "delta_median_pct": 1.44
+  },
+  "ls": {
+   "base_min_ms": 15991.4,
+   "new_min_ms": 16189.2,
+   "delta_min_pct": 1.24,
+   "delta_median_pct": 1.76
+  },
+  "sort": {
+   "base_min_ms": 17170.4,
+   "new_min_ms": 16630.9,
+   "delta_min_pct": -3.14,
+   "delta_median_pct": -2.39
+  },
+  "bash": {
+   "base_min_ms": 103878.9,
+   "new_min_ms": 102239.5,
+   "delta_min_pct": -1.58,
+   "delta_median_pct": 0.9
+  },
+  "note": "The table alone measured ls at +4.46% min; with the placeholder strip in the same arm ls is +1.24% and two of the four binaries are faster than main. The strip takes an input off every CALL, which is work the rest of the pipeline then does not do.",
+  "samples": {
+   "fmt": {
+    "base": {
+     "min_ms": 4374.5,
+     "median_ms": 5276.0,
+     "samples": [
+      4977.3,
+      4924.5,
+      4374.5,
+      6516.5,
+      5660.8,
+      6427.8,
+      5204.5,
+      5276.0,
+      6373.0,
+      5679.9,
+      6507.0,
+      5211.8,
+      4639.1,
+      5547.7,
+      4973.4
+     ]
+    },
+    "new": {
+     "min_ms": 4506.1,
+     "median_ms": 5352.2,
+     "samples": [
+      4766.6,
+      4724.4,
+      5192.0,
+      4506.1,
+      5596.0,
+      5312.2,
+      6262.2,
+      5352.2,
+      6075.2,
+      5617.8,
+      5913.7,
+      5802.8,
+      5005.8,
+      4529.8,
+      6606.9
+     ]
+    },
+    "delta_min_pct": 3.01,
+    "delta_median_pct": 1.44
    },
-   "ls -O2": {
-    "base_min_ms": 16005.0,
-    "new_min_ms": 16718.4,
-    "delta_min_pct": 4.46,
-    "delta_median_pct": -0.93
+   "ls": {
+    "base": {
+     "min_ms": 15991.4,
+     "median_ms": 17596.4,
+     "samples": [
+      17075.3,
+      17445.7,
+      17222.9,
+      18732.1,
+      18081.1,
+      18338.1,
+      16291.8,
+      18997.5,
+      17596.4,
+      19517.5,
+      15991.4,
+      19168.3,
+      18065.0,
+      16613.7,
+      16832.0
+     ]
+    },
+    "new": {
+     "min_ms": 16189.2,
+     "median_ms": 17905.3,
+     "samples": [
+      16635.1,
+      17637.5,
+      17664.5,
+      17359.8,
+      17905.3,
+      17339.6,
+      18915.7,
+      16189.2,
+      19349.1,
+      20163.9,
+      19420.4,
+      19018.1,
+      19660.2,
+      19068.6,
+      16628.3
+     ]
+    },
+    "delta_min_pct": 1.24,
+    "delta_median_pct": 1.76
    },
-   "sort -O2": {
-    "base_min_ms": 17487.6,
-    "new_min_ms": 16461.1,
-    "delta_min_pct": -5.87,
-    "delta_median_pct": -0.01
+   "sort": {
+    "base": {
+     "min_ms": 17170.4,
+     "median_ms": 18931.2,
+     "samples": [
+      18732.8,
+      18931.2,
+      17902.7,
+      19485.5,
+      19704.8,
+      18242.4,
+      17297.5,
+      19821.1,
+      20084.8,
+      17170.4,
+      18964.8,
+      19567.7,
+      17658.1,
+      20102.5,
+      17620.2
+     ]
+    },
+    "new": {
+     "min_ms": 16630.9,
+     "median_ms": 18478.9,
+     "samples": [
+      17805.8,
+      19257.2,
+      19505.6,
+      16630.9,
+      17828.6,
+      18776.6,
+      16741.5,
+      18478.9,
+      16777.3,
+      19842.3,
+      18688.6,
+      17688.1,
+      17109.8,
+      20011.2,
+      20294.3
+     ]
+    },
+    "delta_min_pct": -3.14,
+    "delta_median_pct": -2.39
    },
-   "bash -O2": {
-    "base_min_ms": 105238.2,
-    "new_min_ms": 100976.7,
-    "delta_min_pct": -4.05,
-    "delta_median_pct": -1.2
+   "bash": {
+    "base": {
+     "min_ms": 103878.9,
+     "median_ms": 109356.0,
+     "samples": [
+      106218.1,
+      105674.4,
+      110083.7,
+      108376.6,
+      109356.0,
+      120193.8,
+      122336.6,
+      103878.9,
+      106173.8,
+      107116.7,
+      112638.6,
+      110055.7,
+      113563.9,
+      113907.3,
+      108318.1
+     ]
+    },
+    "new": {
+     "min_ms": 102239.5,
+     "median_ms": 110342.6,
+     "samples": [
+      114691.4,
+      106509.3,
+      106058.1,
+      110342.6,
+      116065.4,
+      114995.1,
+      109745.7,
+      102458.5,
+      112344.8,
+      108067.1,
+      110492.3,
+      107992.3,
+      111399.2,
+      102239.5,
+      127936.9
+     ]
+    },
+    "delta_min_pct": -1.58,
+    "delta_median_pct": 0.9
    }
-  },
-  "ls_rerun_on_a_quieter_box": {
-   "base_min_ms": 15703.5,
-   "new_min_ms": 16358.7,
-   "delta_min_pct": 4.17,
-   "delta_median_pct": 3.09
-  },
-  "worst_delta_pct": 4.17,
-  "budget": "+5%",
-  "verdict": "inside the budget. ls is the only positive and it is real (it re-reads at +4.17/+3.09 on a quieter box): ls imports 14 of the new names, so more prototypes are seeded and more type propagation runs. fmt, sort and bash are all faster, which on a contended box means no measurable cost."
+  }
  },
  "follow_ups": [
   "the variadic register save area (gap.md bucket (a)): 52 ptr_char rows and 306 phantom parameters over 42 sampled functions; the seam is ActionInputPrototype's trial loop",
@@ -336,5 +513,15 @@
   "gates": "make test 675/675 PARITY OK and make test-stages PARITY OK with ZERO moved assertions; the only new keys are the three KUNA-CALLPLACEHOLDER ones.",
   "test": "tests/stages/kuna-callplaceholder.xml over decompiler/crates/kuna-analysis/tests/fixtures/callplaceholder_x86_64",
   "stack_arguments_unaffected": "A call with more arguments than the six register slots still renders all of them, byte-identically in both arms: an -O0 `printf(\"%d ...\", argc, argc+1 ... argc+7)` (8 args) and a 6-arg `snprintf`. The resolved sites take their offset from `resolve_spacebase_relative`'s own record, which is made before the strip, not from the placeholder."
+ },
+ "gates": {
+  "make test": "675/675 assertions passed, PARITY OK",
+  "make test-stages": "1321/1321 assertions passed, PARITY OK",
+  "make test-cli": "225/225 passed",
+  "make rust-test": "RUST_TEST_RC=0 -- 7,418 passed, 0 failed, 38 ignored; options_md_matches_the_generator_byte_for_byte ok. Lane started 05:43Z, after the last .rs / .toml / fixture change, and finished 06:12:37Z.",
+  "kuna catalog --check": "OK",
+  "scripts.repipe.counters --check": "no drift",
+  "check-spec": "OK lenient and strict",
+  "docs/options.md": "byte-fresh (regenerated, git diff empty)"
  }
 }
