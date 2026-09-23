@@ -1,0 +1,85 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Cast campaign, lever `globalref`: a constant address used as a pointer
+    prints as the global it names.
+
+    A pointer-typed constant that ActionConstantPtr cannot link to an existing
+    global Symbol reaches PrintC::pushConstant's pointer arm, which has one
+    spelling for it: the forced-hex integer behind a cast. A stripped image
+    carries no symbol for most of its data, so every address a declared or
+    recovered pointer type reaches prints as `(void *)0x300040c0`, where IDA
+    prints `&unk_300040C0` and no cast. kuna already names an unnamed global
+    it reads directly `dat_<addr>`; `option globalref on|off` (P9,
+    constant-address-global) decides whether the taken address uses that name
+    too, with the global declared at the type the function uses it at.
+
+    The fixture is a non-PIE x86-64 ELF whose file-scope data has no symbol
+    (linked with -x). Every witness calls a libc function with a declared
+    signature, so the constant's pointer type does not depend on which callee
+    was decompiled first:
+
+        w_buffer: memset(scratch, 'x', 8)  - a void * argument (.bss)
+        w_glyph:  strlen(glyph)            - a char * that is not a string
+                                             (GB18030 bytes, so no literal)
+        w_width:  strlen(namebuf) + *(long *)namebuf
+                  a control - the function also reads the storage directly
+                  as a long, so a declared `char` would contradict it
+        w_count:  memset(scratch, 0, 4); n / (unsigned long)scratch
+                  a control - the function also divides by the value, the
+                  same number-or-address question as inferfuncentry's BUFSIZ
+
+    Pass 1 (`option globalref off`) reproduces the casts and pass 2 is the
+    default. The option is a printer flag, so it can be set anywhere before
+    `print C`; after `clear architecture` it is back at its default.
+
+    Source: decompiler/crates/kuna-analysis/tests/fixtures/globalref_x86_64.c
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalref_x86_64</com>
+  <com>option globalref off</com>
+  <com>read symbols</com>
+  <com>lo fu w_buffer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_glyph</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_width</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalref_x86_64</com>
+  <com>read symbols</com>
+  <com>lo fu w_buffer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_glyph</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_width</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-GLOBALREF #1: off, memset's buffer is a cast integer" min="1" max="1">memset\(\(void \*\)0x300040c0,0x78,8\);</stringmatch>
+<stringmatch name="KUNA-GLOBALREF #2: on, it is the address of the global" min="1" max="1">memset\(&amp;dat_300040c0,0x78,8\);</stringmatch>
+<stringmatch name="KUNA-GLOBALREF #3: off, the non-string char pointer is a cast integer" min="1" max="1">strlen\(\(char \*\)0x30002034\)</stringmatch>
+<stringmatch name="KUNA-GLOBALREF #4: on, it is the address of the global" min="1" max="1">strlen\(&amp;dat_30002034\)</stringmatch>
+<stringmatch name="KUNA-GLOBALREF #5: storage also read directly as a long keeps the cast in both passes" min="2" max="2">dat_300040a0 \+ strlen\(\(char \*\)0x300040a0\)</stringmatch>
+<stringmatch name="KUNA-GLOBALREF #6: a value the function also divides by keeps the cast in both passes" min="2" max="2">memset\(\(void \*\)0x300040c0,0,4\);</stringmatch>
+<stringmatch name="KUNA-GLOBALREF #7: the direct read beside the named buffer is unchanged" min="2" max="2">return dat_300040c3 \+ 1;</stringmatch>
+<stringmatch name="KUNA-GLOBALREF #8: the buffer the function also reads as a long is never named by address" min="0" max="0">&amp;dat_300040a0</stringmatch>
+</decompilertest>

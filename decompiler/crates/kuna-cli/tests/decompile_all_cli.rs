@@ -4922,16 +4922,18 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
 /// placed at `<addr>` and the fixture's data mapped where the binary keeps it,
 /// and runs it: both arms must print what the binary prints. The witnesses
 /// cover a record, two scalars, a table and its one-past-the-end, a `void *`
-/// libc argument, a pointer compare and a `char *` that is not a string; two
-/// controls keep the cast (the storage also read directly, the value also
-/// ordered as a number).
+/// libc argument, a pointer compare and a `char *` that is not a string; four
+/// controls keep the cast (storage also read directly at another width or
+/// type, twice, and a value also ordered or divided as a number, twice).
 #[test]
 fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let bin = fixtures.join("globalref_x86_64");
     let sp = specs();
-    let witnesses =
-        ["w_struct", "w_scalar", "w_range", "w_buffer", "w_compare", "w_glyph", "w_direct", "w_numeric"];
+    let witnesses = [
+        "w_struct", "w_scalar", "w_range", "w_buffer", "w_compare", "w_glyph", "w_direct", "w_numeric", "w_width",
+        "w_count",
+    ];
     let arms: [(&str, &[&str], &[&str]); 2] = [
         (
             "on",
@@ -4939,11 +4941,13 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
                 "return put(&dat_30004070) + 1;",
                 "return setbits(&dat_30004090,&dat_30004098) + 1;",
                 "return sum(&dat_30002020,&dat_30002030) + 1;",
-                "memset(&dat_300040b0,0x78,8);",
+                "memset(&dat_300040c0,0x78,8);",
                 "(a0 == &dat_30004060)",
                 "return strlen(&dat_30002034) + 1;",
                 "return put((struct_0 *)0x30004060) + v1;",
                 "setbits((unsigned int *)0x30004090,&dat_30004098);",
+                "return dat_300040a0 + strlen((char *)0x300040a0);",
+                "memset((void *)0x300040c0,0,4);",
             ],
             &["extern struct_0 dat_30004070;", "extern unsigned int dat_30004090;", "extern int dat_30002030;"],
         ),
@@ -4952,7 +4956,8 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
             &[
                 "return put((struct_0 *)0x30004070) + 1;",
                 "return setbits((unsigned int *)0x30004090,(long *)0x30004098) + 1;",
-                "memset((void *)0x300040b0,0x78,8);",
+                "memset((void *)0x300040c0,0x78,8);",
+                "(a0 == (long *)0x30004060)",
             ],
             &[],
         ),
@@ -4962,7 +4967,7 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
         eprintln!("globalref round trip: the x86-64 fixture does not run here, spelling checked only");
         return;
     };
-    assert_eq!(expected, "210 21 27 121 1 0 4 229 1", "the fixture itself");
+    assert_eq!(expected, "210 21 27 121 1 0 4 229 1 -8608764254683430263 2", "the fixture itself");
     let dir = std::env::temp_dir().join(format!("kuna-globalref-rt-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -5016,7 +5021,7 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
             .iter()
             .filter(|n| !header.contains(&format!(" {n};")))
             .map(|n| match n.as_str() {
-                "dat_300040b3" => format!("extern char {n};\n"),
+                "dat_300040c3" => format!("extern char {n};\n"),
                 _ => format!("extern long {n};\n"),
             })
             .collect();
@@ -5072,6 +5077,7 @@ const GLOBALREF_HARNESS: &str = r#"#include <elf.h>
 #include <unistd.h>
 long w_struct(void); long w_scalar(void); long w_range(void); int w_buffer(void);
 unsigned long w_compare(void *); long w_glyph(void); long w_direct(void); _Bool w_numeric(unsigned long);
+long w_width(void); unsigned long w_count(unsigned long);
 int main(void) {
   int fd = open("@FIXTURE@", O_RDONLY);
   Elf64_Ehdr eh; pread(fd, &eh, sizeof eh, 0);
@@ -5084,8 +5090,9 @@ int main(void) {
   }
   long a = w_struct(); long b = w_scalar(); long c = w_range(); int d = w_buffer();
   int e = (int)w_compare((void *)0x30004060); int f = (int)w_compare((void *)0x30004070);
-  long g = w_glyph(); long h = w_direct(); long i = w_numeric(1);
-  printf("%ld %ld %ld %d %d %d %ld %ld %ld\n", a, b, c, d, e, f, g, h, i);
+  long g = w_glyph(); long h = w_direct(); long i = w_numeric(1); long j = w_width();
+  long k = (long)w_count(0x7fffffff);
+  printf("%ld %ld %ld %d %d %d %ld %ld %ld %ld %ld\n", a, b, c, d, e, f, g, h, i, j, k);
   return 0;
 }
 "#;

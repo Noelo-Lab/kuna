@@ -16,15 +16,16 @@ fn group_count_is_39() {
 }
 
 #[test]
-fn subphase_count_is_46() {
+fn subphase_count_is_47() {
     // +1 for the P9 `condition-form` subphase (truthycond, DIV-36),
     // +1 for the P9 `brace-form` subphase (braceelide, DIV-37),
     // +1 for the P9 `warning-style` subphase (warnstyle, DIV-38),
     // +1 for the P9 `array-cover-width` subphase (arraycoverwidth, DIV-122).
     // +1 for the P9 `empty-string-constant` subphase (emptystrconst, DIV-125).
     // +1 for the P9 `type-definition-preamble` subphase (structdefs).
-    assert_eq!(kuna_num_subphases(), 46);
-    assert_eq!(SUBPHASE_TABLE.len(), 46);
+    // +1 for the P9 `constant-address-global` subphase (globalref).
+    assert_eq!(kuna_num_subphases(), 47);
+    assert_eq!(SUBPHASE_TABLE.len(), 47);
 }
 
 #[test]

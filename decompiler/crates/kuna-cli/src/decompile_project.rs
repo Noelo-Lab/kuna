@@ -18,7 +18,8 @@
 //!   headers, exactly the `decompile-all` rendering), `#include "<name>.h"`.
 //! * `<name>.h`   — include-guarded recompile prelude (core scalar +
 //!   `undefined` typedefs), the user-defined type definitions
-//!   (`print_c_types`), and one prototype per decompiled function
+//!   (`print_c_types`), an `extern` declaration for every global the `.c`
+//!   names by address (`globalref`), and one prototype per decompiled function
 //!   (`print_c_prototype` — token-identical to the `.c` definition line).
 //! * `<name>.asm` — full labeled linear disassembly of every CODE section:
 //!   `<name>:` labels matching the `.c` function names, per-function
@@ -154,7 +155,8 @@ fn usage() {
          Decompile a whole binary in one in-process load and write a project folder\n\
          (default `<binary-filename>.kuna/` next to the binary; -o DIR overrides):\n\
          \x20 <name>.c    every selected executable function (#include \"<name>.h\")\n\
-         \x20 <name>.h    recompile prelude + type definitions + prototypes\n\
+         \x20 <name>.h    recompile prelude + type definitions + globals named by\n\
+         \x20             address + prototypes\n\
          \x20 <name>.asm  labeled disassembly (function labels, stack-var comments,\n\
          \x20             dat_<hex> data labels with raw bytes)\n\
          \x20 README.md   binary metadata (size, arch, entry, sections, counts)\n\

@@ -45,6 +45,7 @@ static long total = 5;
 static const int weights[5] = {3, 5, 7, 11, 0x7f80};
 static char scratch[16];
 static const char glyph[] = "\xa1\x07" "e";
+static char namebuf[16] = "\x81\x82\x83\x84\x85\x86\x87\x88";
 
 long w_struct(void)
 {
@@ -90,6 +91,17 @@ long w_numeric(unsigned long n)
     return n < (unsigned long)&flags;
 }
 
+long w_width(void)
+{
+    return (long)strlen(namebuf) + *(long *)namebuf;
+}
+
+long w_count(unsigned long n)
+{
+    memset(scratch, 0, 4);
+    return (long)(n / (unsigned long)scratch);
+}
+
 int main(void)
 {
     long a = w_struct();
@@ -101,7 +113,9 @@ int main(void)
     long g = w_glyph();
     long h = w_direct();
     long i = w_numeric(1);
-    printf("%ld %ld %ld %d %d %d %ld %ld %ld\n", a, b, c, d, e, f, g, h, i);
+    long j = w_width();
+    long k = w_count(0x7fffffff);
+    printf("%ld %ld %ld %d %d %d %ld %ld %ld %ld %ld\n", a, b, c, d, e, f, g, h, i, j, k);
     return 0;
 }
 
