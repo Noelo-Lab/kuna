@@ -17,7 +17,7 @@ dbe854ba3 plus this branch), both arms of the same build.
 | (a) `make test` with the rule on | inert by construction: the console harness never marks a function closed, so no datatest can reach the rule (675/675 either way) |
 | (b) `make test-stages` | inert for the same reason; the new stage test pins both passes |
 | (c) `make test-cli` | not run with the rule as the default: the flip already fails above. With the option off the suite passes, and the two new probes pin both values |
-| (e) speed, interleaved min-of-15, `decompile-all --json` | see `record.json` `speed` (fmt -O2 -0.18%) |
+| (e) speed, interleaved min-of-15, `decompile-all --json`, -O2 | fmt -0.18%, ls -2.60%, sort -1.37%, bash +2.98%: worst +2.98% against +5% |
 | (f) whole-corpus hunks, 45 binaries | 3,450 of 20,230 functions change; 0 skeleton deltas; every other hunk read and classified (`hunks.md`) |
 | (g) `p0_knowledge/modes.rs` | nothing to do: the option is `off|closed`, not in any preset, as `structmerge` is |
 | (h) castbench full, both directions | 45,126 -> 42,008 casts (1.193 -> 1.111 times IDA); 221 functions fewer (-3,150), 20 more (+32), every one read (`analysis.md`) |

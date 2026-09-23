@@ -297,6 +297,69 @@
  },
  "speed": {
   "method": "interleaved whole-binary `kuna decompile-all --json --max-fn-seconds 120`, --option structheadless off against closed, arms alternating, min-of-15 (speed.py); box shared with other campaign lanes",
-  "per_binary": {}
- }
+  "per_binary": {
+   "fmt": {
+    "off": {
+     "min_ms": 4197.8,
+     "median_ms": 4465.3
+    },
+    "closed": {
+     "min_ms": 4190.4,
+     "median_ms": 4491.1
+    },
+    "delta_min_pct": -0.18,
+    "delta_median_pct": 0.58
+   },
+   "ls": {
+    "off": {
+     "min_ms": 14635.3,
+     "median_ms": 15943.1
+    },
+    "closed": {
+     "min_ms": 14255.3,
+     "median_ms": 15315.8
+    },
+    "delta_min_pct": -2.6,
+    "delta_median_pct": -3.93
+   },
+   "sort": {
+    "off": {
+     "min_ms": 14814.7,
+     "median_ms": 15739.5
+    },
+    "closed": {
+     "min_ms": 14612.2,
+     "median_ms": 15998.0
+    },
+    "delta_min_pct": -1.37,
+    "delta_median_pct": 1.64
+   },
+   "bash": {
+    "off": {
+     "min_ms": 90256.2,
+     "median_ms": 95037.4
+    },
+    "closed": {
+     "min_ms": 92944.9,
+     "median_ms": 99561.8
+    },
+    "delta_min_pct": 2.98,
+    "delta_median_pct": 4.76
+   }
+  },
+  "worst_delta_min_pct": 2.98,
+  "budget_pct": 5,
+  "verdict": "within budget: fmt -0.18%, ls -2.60%, sort -1.37%, bash +2.98% (min-of-15, -O2). An earlier fmt reading of +6.34% on a loaded box was noise: KUNA_ACTION_PROF shows both arms doing identical work there (154 decompiles, 802 main-loop runs)."
+ },
+ "gates": {
+  "make test": "PARITY OK, datatests 675/675",
+  "make test-stages": "PARITY OK, datatests 1331/1331 (baseline re-recorded: +2 STRUCTHEADLESS assertions and the renamed KUNA-CATALOG #7 key, nothing moved)",
+  "make test-cli": "tests/cli 238/238 passed",
+  "make check-spec": "OK (lenient) + OK (strict)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh from `kuna catalog --markdown`",
+  "make rust-test": "RUST_TEST_RC=0 via the lane script, 422 test-result blocks, none failed (2026-09-23 20:12:38Z -> 20:38:49Z, after the last source and catalog write)"
+ },
+ "counters": "settables 229 -> 230; tiers 72 core / 93 -> 94 transform / 64 analysis; kuna-catalog.xml #7 structure-recovery 32 -> 33; phases-tests catalog-json-records 228 -> 229; catalog_bytecompat fixture recaptured (230 options); tests/stages corpus 335 -> 336; docs/baseline-stages.json re-recorded"
 }
