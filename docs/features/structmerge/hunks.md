@@ -120,8 +120,10 @@ the redo measures something else and can settle lower than the answer it
 replaces. `sub_724c2` and `sub_73069` read the same e2fs file handle: `off`
 gives the two-field reader `struct_87` and the five-field reader nothing, and
 `siblings` gives the five-field reader the union and leaves the two-field reader
-with `void *`. With the sweep disabled the whole binary is byte-identical under
-both values, which localizes the class exactly:
+with `void *`. With the sweep disabled not one variable on the whole binary changes type --
+all that is left is one function whose filler is respelled at the same address
+(`ext2fs_compare_generic_bmap`, `&a1->field_0x18[8]` -> `&a1->field_0x1c[4]`,
+both 0x20). That localizes the class exactly:
 
 ```
 $ for m in off siblings; do kuna decompile-all .../O0/e2fsprogs/stripped/e2fsck \
@@ -133,4 +135,7 @@ A union the factory declines to complete is not this class: `lookup_or_mint`
 falls through to the reader's own claims, exactly as `off` mints them
 (`KUNA_STRUCTMERGE_TRACE=1` prints the fall-through). That path does not fire
 here -- 27,282 traced candidates on this binary, 41 merged, 0 mint failures --
-so it is not the explanation for the three lost records.
+so it is not the explanation for the three lost records. Nor does it fire
+anywhere else measured: the same trace over twelve campaign binaries
+(`ls`/`sort`/`du`/`fmt` at -O0 and -O2, `grep`, `gzip`, `diff`, `tar`, `find`,
+`useradd`, `bzip2`) adds 10,289 candidates and 0 mint failures.

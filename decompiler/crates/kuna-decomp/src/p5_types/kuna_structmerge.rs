@@ -82,10 +82,10 @@
 //! record to `void *` and two `char *` parameters become `unsigned long`, while
 //! one function gains a five-field record;
 //! `docs/features/structmerge/hunks.md` works the class, and
-//! `--option protoorder lock`, which turns the sweep off, makes that binary
-//! identical under both values. A union the factory will not complete is not
-//! part of it: [`ledger::lookup_or_mint`] falls through to the reader's own
-//! claims, exactly as `off` mints them.
+//! `--option protoorder lock`, which turns the sweep off, leaves not one
+//! variable on that binary changing type. A union the factory will not complete
+//! is not part of it: [`ledger::lookup_or_mint`] falls through to the reader's
+//! own claims, exactly as `off` mints them.
 //!
 //! Only the live ledger merges. A `--jobs N` worker answers through the shard
 //! table, whose replay records the layout each request measured, so a mint of

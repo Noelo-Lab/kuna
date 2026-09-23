@@ -1508,8 +1508,8 @@ record renamed, one function gains a five-field record where it had `void *`,
 three fall from `struct_35 */struct_87 *` to `void *`, and `reconfigure_bool`'s
 two `char *` parameters become `unsigned long` -- type_match 0.67 -> 0.33 for
 that function, and 201.21 -> 200.88 aggregate over the binary at an unchanged 12
-perfect functions. With the sweep disabled (`--option protoorder lock`) that
-binary is byte-identical under both values, which is where the class lives. A
+perfect functions. With the sweep disabled (`--option protoorder lock`) not one
+variable on that binary changes type, which is where the class lives. A
 union the factory declines to complete is not part of it: the lookup falls
 through to the reader's own claims, exactly as `off` mints them
 (`ledger.rs (lookup_or_mint)`, traced by `KUNA_STRUCTMERGE_TRACE=1`).
