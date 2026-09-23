@@ -1,0 +1,46 @@
+{
+ "corpus8 (default on vs --option castimplied off)": {
+  "hunkclass": [
+   "files 8  removed casts by class: {'stacked-inner': 451, 'assign': 1253, 'return': 192, 'call-arg': 50, 'paren/comma': 1}  total 1947  OTHER lines 2",
+   "== stacked-inner",
+   "    O0/bzip2/bzip2.c | v3 = (long)(long)v5; => v3 = (long)v5;",
+   "    O0/bzip2/bzip2.c | v3 = (long)(long)v6; => v3 = (long)v6;",
+   "    O0/bzip2/bzip2.c | v1 = *(char *)((long)a0 + (long)(int)(unsigned int)*(unsigned char *)(v4 + v11) + 0x180); => v1 = *(char *)((long)a0 + (long)*(unsigned char *)(v4 + v11) + 0x180);",
+   "== assign",
+   "    O0/bzip2/bzip2.c | for (v6 = 1; v3 = (long)(long)v6, v3 = (char *)((long)v3 + *v8), *(char *)v3; v6 = v6 + 1) { => for (v6 = 1; v3 = (long)v6, v3 = (char *)((long)v3 + *v8), *(char *)v3; v6 = v6 + 1) {",
+   "    O0/bzip2/bzip2.c | v2 = (unsigned int)**(unsigned char **)*a0; => v2 = **(unsigned char **)*a0;",
+   "    O0/bzip2/bzip2.c | v2 = (unsigned int)**(unsigned char **)*a0; => v2 = **(unsigned char **)*a0;",
+   "== return",
+   "    O0/bzip2/bzip2.c | return (unsigned short)(*(unsigned char *)(a2 + (unsigned long)v5) < *(unsigned char *)(a2 + (unsigned long)v6)); => return *(unsigned char *)(a2 + (unsigned long)v5) < *(unsigned char *)(a2 + (unsigned long)v6);",
+   "    O0/bzip2/bzip2.c | return (unsigned short)(v2 < v1); => return v2 < v1;",
+   "    O0/bzip2/bzip2.c | return (unsigned short)(v2 < v1); => return v2 < v1;",
+   "== call-arg"
+  ],
+  "assigncheck": [
+   "{'assign var=(T)var': 541, 'policy ok': 541}",
+   "flagged 0"
+  ]
+ },
+ "castbench full (45 binaries, vs main dbe854ba3 arm)": {
+  "hunkclass": [
+   "files 45  removed casts by class: {'assign': 2161, 'return': 495, 'stacked-inner': 461, 'call-arg': 219, 'paren/comma': 19, 'other:?': 5}  total 3360  OTHER lines 0",
+   "== assign",
+   "    O0/coreutils/cp.c | v7 = (unsigned int)v18; => v7 = v18;",
+   "    O0/coreutils/cp.c | v14 = (unsigned int)*v30; => v14 = *v30;",
+   "    O0/coreutils/cp.c | v6 = (unsigned long)(v3 != -1); => v6 = v3 != -1;",
+   "== return",
+   "    O0/coreutils/cp.c | return (unsigned long)v27; => return v27;",
+   "    O0/coreutils/cp.c | return (int)(sub_5522(argc,&argv[v8],v14,(unsigned char)v11,&v9) ^ 1); => return sub_5522(argc,&argv[v8],v14,(unsigned char)v11,&v9) ^ 1;",
+   "    O0/coreutils/cp.c | return (unsigned long)v3; => return v3;",
+   "== stacked-inner",
+   "    O0/coreutils/cp.c | v15 = (unsigned long)(unsigned long)v14; => v15 = (unsigned long)v14;",
+   "    O0/coreutils/du.c | v2 = (unsigned long)(unsigned long)v4; => v2 = (unsigned long)v4;",
+   "    O0/coreutils/du.c | for (v54 = 0; v54 < (unsigned long)(long)v11; v54 = v54 + 1) { => for (v54 = 0; v54 < (unsigned long)v11; v54 = v54 + 1) {",
+   "== call-arg"
+  ],
+  "assigncheck": [
+   "{'assign var=(T)var': 890, 'policy ok': 890}",
+   "flagged 0"
+  ]
+ }
+}

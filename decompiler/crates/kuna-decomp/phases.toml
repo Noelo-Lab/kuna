@@ -4170,6 +4170,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "castimplied"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "cast-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-castimplied"
+summary = "Leave out a cast that C's own conversion rules already perform on exactly those types. `CastStrategyC::isExtensionCastImplied` (cast.cc:249) hides an extension only when integer arithmetic or a comparison against an explicit operand of the same metatype reads it, and returns false for every other reader, so kuna prints `memchr(v10,(int)v4,n)` where `memchr` takes an `int`, `v2 = (long)v1;` into a `long`, `return (unsigned long)v1;` from a function declared `unsigned long`, and `(long)(int)(unsigned int)(unsigned char)c` for one byte widened to 64 bits. C converts an argument to its parameter's type when a prototype is in scope (C11 6.5.2.2p7), the right operand of `=` to the type of the left (6.5.16.1p2), and a returned value to the return type (6.8.6.4p3), and an integer conversion depends only on the value it converts (6.3.1.3). When on, `kuna_castimplied` decides at print time -- the IR is not changed -- which integer conversions (`CPUI_CAST` between integer types, `INT_SEXT`/`INT_ZEXT` printed as a cast) can go. A conversion BELOW another integer conversion that fixes the result type goes when it preserves its operand's value, judged on the operand's printed C type (a declared variable, a cast that stays, a truncation printed as a cast, a load through a pointer printed `T *`); an operand whose C type the text does not state (arithmetic, which C promotes; a constant; a call) never lets it go, and a sign change or a narrowing always stays. The TOP of a chain goes when it is an identity (its operand already has that C type), or when it is a value-preserving widening that flows straight into a direct call's argument whose parameter type is type-locked (a declared or measured prototype -- never a trial, never a varargs position, never a per-call-site override such as a resolved format string, never an argument `truncarg` narrowed), into the right side of a `lhs = e;` statement whose local or parameter is declared with exactly that spelling (not an arm of `c ? a : b`, whose type is the arms' common type), or into `return` from a function declared with exactly that spelling. Implied `COPY`s print as their operand and are looked through. Float conversions, pointer conversions, conversions to `bool`, enums, truncations, `truncarg`'s argument casts and `boolbyte`'s `(bool)(unsigned char)` are never touched. C output only; Rust has no implicit integer conversions."
+use_when = "On by default: a cast C would perform by itself is left out -- `strchr(s,c)` rather than `strchr(s,(int)c)`, `v3 = v5;` into a `long v3` rather than `v3 = (long)v5;`, `return v1;` from an `unsigned long` function, and one cast rather than four over a byte widened to 64 bits. Set it off to see every conversion ActionSetCasts inserted, exactly as upstream Ghidra prints them, for example when checking which conversions the binary performs at a call or an assignment."
+example = "option castimplied on"
+source_decompiler = "ida"
+inspiration = "The 2026-09-23 cast census: kuna printed 1.19x IDA's casts on the same 4,815 functions, and IDA relies on C's implicit conversions at call arguments, assignments and returns where kuna prints each widening (census ida.md 3.3/3.5, engine.md 4.2)"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "a libc argument is cast to the very type the parameter declares, memchr(v10,(int)v4,n)|a widening cast assigned to a variable already declared that type, v2 = (long)v1; with long v2|return (unsigned long)v1; from a function declared unsigned long|several casts stacked over one byte, (long)(int)(unsigned int)(unsigned char)c|kuna prints more casts than IDA on the same function"
+live_field = "cast_implied"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "ptrdepthcap"
 values = "on|off"
 default = "off"

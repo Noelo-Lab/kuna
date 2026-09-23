@@ -1,0 +1,264 @@
+{
+ "option": "castimplied",
+ "values": [
+  "on",
+  "off"
+ ],
+ "default_on": true,
+ "default_value": "on",
+ "phase": "P9",
+ "subphase": "cast-policy",
+ "change_kind": "presentation-default",
+ "tier": "core",
+ "source_decompiler": "ida",
+ "inspiration": "2026-09-23 cast census (kwt/castcensus: measure/engine/ida lanes), plan lever 4",
+ "witness": {
+  "repro": "gcc -O0 t.c (memchr + table lookup, see PR body); kuna decompile-all t --functions f",
+  "before": [
+   "v1 = memchr(a0,(int)a2,(unsigned long)a3);",
+   "v2 = (long)*(char *)(a1 + (int)(unsigned int)(unsigned char)up((int)a2));"
+  ],
+  "after": [
+   "v1 = memchr(a0,a2,a3);",
+   "v2 = *(char *)(a1 + (int)(unsigned char)up((int)a2));"
+  ]
+ },
+ "castbench": {
+  "set": "full: 45 binaries (coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find) x O0/O2/O2-noinline; functions kuna and IDA both emit",
+  "base": "main dbe854ba3 arm (/home/mahaloz/kwt/castbench/main-dbe854ba3)",
+  "shared_functions": 4815,
+  "ida_casts": 37821,
+  "main_casts": 45126,
+  "castimplied_casts": 43760,
+  "removed": 1366,
+  "per_kloc": {
+   "ida": 155.4,
+   "main": 236.8,
+   "castimplied": 229.6
+  },
+  "vs_ida": {
+   "main": 1.193,
+   "castimplied": 1.157
+  },
+  "by_opt": {
+   "O0": [
+    15052,
+    14653
+   ],
+   "O2": [
+    16265,
+    15740
+   ],
+   "O2-noinline": [
+    13809,
+    13367
+   ]
+  },
+  "functions_fewer": 570,
+  "functions_more": 0,
+  "whole_corpus_removed": 3360,
+  "whole_corpus_by_position": {
+   "assign": 2161,
+   "return": 495,
+   "stacked_inner": 461,
+   "call_arg": 238,
+   "ternary_arm_inner": 5
+  },
+  "whole_corpus_non_cast_changes": 0
+ },
+ "benchmark": {
+  "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow, each at O0, O2 and O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
+  "metric": "type_match",
+  "arms": "on = default build, off = --option castimplied off, same binary",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4173,
+    "mean_on": 0.4173,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 985,
+    "perfect_on": 985,
+    "mean_off": 0.358,
+    "mean_on": 0.358,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 64,
+    "mean_off": 0.4499,
+    "mean_on": 0.4499,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 60,
+    "perfect_on": 60,
+    "mean_off": 0.2495,
+    "mean_on": 0.2495,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 52,
+    "perfect_on": 52,
+    "mean_off": 0.4547,
+    "mean_on": 0.4547,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 112,
+    "mean_off": 0.5409,
+    "mean_on": 0.5409,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 89,
+    "perfect_on": 89,
+    "mean_off": 0.3593,
+    "mean_on": 0.3593,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 213,
+    "mean_off": 0.3934,
+    "mean_on": 0.3934,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1609,
+   "perfect_on": 1609,
+   "mean_off": 0.3688,
+   "mean_on": 0.3688,
+   "improved": 0,
+   "worse": 0
+  },
+  "control": "byte-identical variables[] in both arms: 10748/10748 functions (no variable or argument added or removed)"
+ },
+ "corpus_sweep": {
+  "binaries": [
+   "O0 bzip2",
+   "O2 bash",
+   "O2 kmod",
+   "O2 dpkg-divert",
+   "O0 chage",
+   "O2 crontab",
+   "O2-noinline dash",
+   "O0 crond"
+  ],
+  "removed": 1947,
+  "by_position": {
+   "assign": 1253,
+   "return": 192,
+   "stacked_inner": 451,
+   "call_arg": 51
+  },
+  "non_cast_changes": 0,
+  "assignment_declaration_check": "541 of 541 `v = (T)v2;` removals: v declared T, v2's declared type widens into T with no sign change",
+  "evidence": "docs/features/castimplied/corpus-hunks.json (hunkclass.py, assigncheck.py, corpus8.py)"
+ },
+ "speed": {
+  "method": "docs/features/castimplied/speed.py: kuna decompile-all <bin> --json --max-fn-seconds 120, --option castimplied off vs the default (on), the same final build, arm order alternating, 15 rounds each; min is the cleaner figure on a shared box (loadavg recorded)",
+  "measurements": {
+   "fmt": {
+    "off_min_ms": 4256.3,
+    "on_min_ms": 4253.1,
+    "off_median_ms": 4812.6,
+    "on_median_ms": 5096.6,
+    "delta_min_pct": -0.08,
+    "delta_median_pct": 5.9,
+    "loadavg": [
+     31.57958984375,
+     37.70166015625,
+     36.39501953125
+    ]
+   },
+   "ls": {
+    "off_min_ms": 14679.3,
+    "on_min_ms": 14833.0,
+    "off_median_ms": 15772.5,
+    "on_median_ms": 16066.4,
+    "delta_min_pct": 1.05,
+    "delta_median_pct": 1.86,
+    "loadavg": [
+     19.9560546875,
+     23.16845703125,
+     29.5830078125
+    ]
+   },
+   "sort": {
+    "off_min_ms": 14802.5,
+    "on_min_ms": 14848.9,
+    "off_median_ms": 16579.6,
+    "on_median_ms": 15940.2,
+    "delta_min_pct": 0.31,
+    "delta_median_pct": -3.86,
+    "loadavg": [
+     14.11669921875,
+     17.19287109375,
+     24.0283203125
+    ]
+   },
+   "bash": {
+    "off_min_ms": 89445.3,
+    "on_min_ms": 89865.1,
+    "off_median_ms": 93972.4,
+    "on_median_ms": 100162.9,
+    "delta_min_pct": 0.47,
+    "delta_median_pct": 6.59,
+    "loadavg": [
+     9.03515625,
+     10.322265625,
+     11.3759765625
+    ]
+   },
+   "fmt_rerun": {
+    "off_min_ms": 4183.6,
+    "on_min_ms": 4247.9,
+    "off_median_ms": 4481.1,
+    "on_median_ms": 4589.1,
+    "delta_min_pct": 1.54,
+    "delta_median_pct": 2.41,
+    "loadavg": [
+     8.21337890625,
+     9.2587890625,
+     10.78076171875
+    ]
+   }
+  },
+  "worst_min_delta_pct": 1.54,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true
+ },
+ "parity": {
+  "datatests": "675/675 PARITY OK; Union #26 opts out (pins upstream's form)",
+  "stages": "1341/1341 PARITY OK; 10 assertions of other options updated to the new form, 12 new castimplied keys",
+  "test_cli": "236/236"
+ },
+ "soundness": {
+  "round_trip": "kuna-cli/tests/decompile_all_cli.rs an_implied_cast_round_trips_through_the_printed_c: castimplied_{gcc,clang}_O0_x86_64 printed functions, option off and on, compiled by gcc and clang: all print the binary's output",
+  "unit": "p9_emit/kuna_castimplied/tests.rs: preserves() == C integer conversion over all 1/2/4/8-byte signed/unsigned pairs and bool",
+  "found_and_fixed": "first cut took an explicit operand's type from the IR when its declaration disagreed and removed `v36 = (unsigned long)v9;` with `int *v9`; fixed (declaration is authoritative; a mismatch refuses)"
+ },
+ "default_on_evaluation": "docs/features/castimplied/default-on-evaluation.md"
+}

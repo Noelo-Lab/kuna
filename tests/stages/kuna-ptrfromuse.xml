@@ -122,5 +122,5 @@
 <stringmatch name="ptrfromuse #8: and a parameter that upstream already typed is untouched in all three" min="3" max="3">unsigned int derefzero\(unsigned int \*a0\)</stringmatch>
 <stringmatch name="ptrfromuse #9: a parameter that subscripts a global byte table is refused in all three passes" min="3" max="3">int4 globalindex\(int8 a0\)</stringmatch>
 <stringmatch name="ptrfromuse #11: an address-like constant that names nothing is ambiguous, so that parameter is refused too in all three passes" min="3" max="3">int4 blindindex\(int8 a0\)</stringmatch>
-<stringmatch name="ptrfromuse #10: and the named global it indexes survives in all three, instead of becoming a raw address" min="3" max="3">\(int4\)\(char\)table\[a0\]</stringmatch>
+<stringmatch name="ptrfromuse #10: and the named global it indexes survives in all three, instead of becoming a raw address" min="3" max="3">return \(char\)table\[a0\];</stringmatch>
 </decompilertest>

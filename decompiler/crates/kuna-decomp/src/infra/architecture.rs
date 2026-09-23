@@ -1181,6 +1181,12 @@ pub struct Architecture {
     /// one op across several leaves, and suppressing by identity would delete
     /// genuine mid-body early returns).
     pub voidtailreturn: bool,
+    /// (kuna `castimplied`) Leave out a cast C's own conversion rules already
+    /// perform: a value-preserving integer widening passed to a trusted
+    /// parameter, assigned to or returned as exactly its type, or stacked under
+    /// another conversion that fixes the result type.  See
+    /// [`crate::kuna_castimplied`].
+    pub cast_implied: bool,
     /// (kuna `cortexmpriv`) Assume the Cortex-M core is privileged, folding away
     /// the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around
     /// every VERSION_7M MRS/MSR (`kuna_cortexmpriv`).
@@ -2446,6 +2452,7 @@ impl Architecture {
             byte_honest: false, // (kuna) option bytehonest; reset_defaults sets the shipped default
             slot_ptr: false, // (kuna) option slotptr; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
+            cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2722,6 +2729,7 @@ impl Architecture {
         self.slot_ptr = true; // (kuna) option slotptr default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; evidence in docs/features/slotptr/default-on-evaluation.md
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
+        self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
@@ -3410,6 +3418,7 @@ impl Architecture {
             "bytehonest" => on_off!(byte_honest, "uncommitted-byte width reporting"),
             "slotptr" => on_off!(slot_ptr, "frame-slot pointer typing"),
             "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
+            "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
             "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
             "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
             "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),

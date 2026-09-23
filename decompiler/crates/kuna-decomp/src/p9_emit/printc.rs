@@ -1522,6 +1522,12 @@ pub struct PrintC {
     /// (the ones whose now-redundant `(int)` casts may be dropped).  Empty under
     /// `signedness upstream`.  See [`crate::kuna_typeround`].
     sign_plan: crate::kuna_typeround::SignPlan,
+    /// (kuna `castimplied`) The declarations written for the function being
+    /// emitted, which decide the casts C's own conversions make redundant.  See
+    /// [`crate::kuna_castimplied`].
+    cast_implied: crate::kuna_castimplied::ImpliedCasts,
+    /// (kuna `castimplied`) The op being printed as the statement `lhs = <op>;`.
+    stmt_op: Option<OpId>,
 }
 
 impl Default for PrintC {
@@ -1553,6 +1559,8 @@ impl PrintC {
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
             sign_plan: crate::kuna_typeround::SignPlan::default(),
+            cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
+            stmt_op: None,
         }
     }
 
@@ -2382,6 +2390,12 @@ impl PrintC {
                     .map(|v| v.get_type().clone())
             },
         );
+        self.cast_implied.begin(
+            arch.cast_implied
+                && !self.options.nocasts
+                && self.out_lang.profile().caps.integer_promotion,
+        );
+        self.stmt_op = None;
         // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /
         // emit_op) to resolve op/varnode arena keys to the <ast> ids while markup
         // is active.  SAFETY: `fd` outlives this call; it is only ever read
@@ -2555,6 +2569,7 @@ impl PrintC {
             ("void".to_string(), String::new())
         };
 
+        self.cast_implied.record_return(format!("{ret_type}{ret_back}"));
         let idp = self.emit.begin_func_proto();
         let idret = self.emit.begin_return_type(markup);
         self.emit.tag_type(&ret_type, SyntaxHighlight::TypeColor, markup);
@@ -2703,6 +2718,7 @@ impl PrintC {
                 match param.get_type() {
                     Some(ty) => {
                         let (front, back) = declarator_parts(ty, self.rt_ctx);
+                        self.cast_implied.record_param(name, format!("{front}{back}"));
                         // C++ `pushTypeStart(type, noident)`: the separating token is
                         // `type_expr_nospace` only when there is no identifier AND no
                         // declarator modifier (`noident && typestack.size()==1`); else
@@ -3185,6 +3201,9 @@ impl PrintC {
                 if decl_type == want.0 && decl_back == want.1 && array_count.is_none() {
                     self.sign_plan.record_applied(*high, rounded);
                 }
+            }
+            if array_count.is_none() {
+                self.cast_implied.record_local(*high, format!("{decl_type}{decl_back}"));
             }
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
@@ -5239,7 +5258,9 @@ impl PrintC {
             self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
             self.push_vn_explicit_ir(fd, arch, out, op);
         }
+        self.stmt_op = outvn.map(|_| op);
         self.op_push_ir(fd, arch, op, None);
+        self.stmt_op = None;
     }
 
     /// C++ `op->getOpcode()->push(this,op,readop)` — the per-opcode RPN push
@@ -5467,6 +5488,10 @@ impl PrintC {
                     // form.  CPUI_CAST / CPUI_FLOAT_FLOAT2FLOAT / CPUI_FLOAT_TRUNC
                     // all reduce to opTypeCast (printc.hh:332-341) — they render as
                     // a parenthesized type cast, not a functional `OPC(args)`.
+                    OpEmitKind::TypeCast if opc == OpCode::CPUI_CAST => {
+                        let implied = self.implied_cast_drops(fd, arch, op, read_op);
+                        self.op_type_cast_ir_with(fd, arch, op, implied)
+                    }
                     OpEmitKind::TypeCast => self.op_type_cast_ir(fd, arch, op),
                     OpEmitKind::Func | OpEmitKind::Custom => {
                         // opFunc / hand-written: the functional `OPC(args)` form.
@@ -5905,6 +5930,12 @@ impl PrintC {
     /// float-conversion casts this routes (whose output is a scalar `floatN`/`intN`,
     /// not a pointer-to-array).
     fn op_type_cast_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        self.op_type_cast_ir_with(fd, arch, op, false)
+    }
+
+    /// [`op_type_cast_ir`](Self::op_type_cast_ir), leaving the cast out when
+    /// `implied` (kuna `castimplied`: C's own conversion performs it).
+    fn op_type_cast_ir_with(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, implied: bool) {
         // C++ `opTypeCast` (printc.cc:468-484): when the target type is a
         // pointer-to-array, a CAST that is really an address-of an array Symbol
         // renders as `&sym` (dropping the spurious `(T(*)[n])` cast) instead of the
@@ -5930,7 +5961,7 @@ impl PrintC {
         // (kuna `signedness`) A `(int)`/`(unsigned int)` whose operand is now
         // declared at that very type is a no-op token: dropping it leaves an
         // expression of exactly the same C type.
-        let cast_ty = if self.options.nocasts || self.sign_plan.drop_cast(fd, op) {
+        let cast_ty = if self.options.nocasts || implied || self.sign_plan.drop_cast(fd, op) {
             None
         } else {
             fd.obank()
@@ -6130,6 +6161,8 @@ impl PrintC {
         if strat.is_zext_cast(&outtype, &intype) {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
+            } else if self.implied_cast_drops(fd, arch, op, read_op) {
+                self.op_type_cast_ir_with(fd, arch, op, true);
             } else {
                 self.op_type_cast_ir(fd, arch, op);
             }
@@ -6159,6 +6192,8 @@ impl PrintC {
         if strat.is_sext_cast(&outtype, &intype) {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
+            } else if self.implied_cast_drops(fd, arch, op, read_op) {
+                self.op_type_cast_ir_with(fd, arch, op, true);
             } else {
                 self.op_type_cast_ir(fd, arch, op);
             }
@@ -6386,6 +6421,23 @@ impl PrintC {
         let op_ref = ctx.op_ref(op);
         let read_ref = read_op.map(|r| ctx.op_ref(r));
         strat.is_extension_cast_implied(&ctx, op_ref, read_ref)
+    }
+
+    /// (kuna `castimplied`) Does C's own conversion already perform the cast `op`
+    /// prints where `read_op` reads it?  See [`crate::kuna_castimplied`].
+    fn implied_cast_drops(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        read_op: Option<OpId>,
+    ) -> bool {
+        if !self.cast_implied.is_enabled() {
+            return false;
+        }
+        let Some(strat) = cast_strategy_for(arch) else { return false };
+        let view = ImpliedView { pc: self, fd, arch, strat };
+        self.cast_implied.drops(&view, fd, op, read_op)
     }
 
     /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the
@@ -9718,6 +9770,62 @@ fn absorb_zext(fd: &Funcdata, op: OpId) -> Option<OpId> {
 fn cast_strategy_for(arch: &Architecture) -> Option<CastStrategyC> {
     let tlst = arch.types_rc() as std::rc::Rc<dyn crate::dtype::TypeFactory>;
     Some(CastStrategyC::new(tlst))
+}
+
+/// (kuna `castimplied`) The printer's answers to what
+/// [`crate::kuna_castimplied`] asks about how an op prints.
+struct ImpliedView<'a> {
+    pc: &'a PrintC,
+    fd: &'a Funcdata,
+    arch: &'a Architecture,
+    strat: CastStrategyC,
+}
+
+impl crate::kuna_castimplied::PrintedForms for ImpliedView<'_> {
+    fn spell(&self, ty: &std::rc::Rc<crate::dtype::Datatype>) -> String {
+        let (front, back) = declarator_parts(ty, self.pc.rt_ctx);
+        front + &back
+    }
+
+    fn extension_is_cast(&self, op: OpId) -> bool {
+        let Some((out, inn)) = self.pc.sext_zext_facing_types(self.fd, op) else {
+            return false;
+        };
+        match self.fd.obank().get(op).map(|o| o.code()) {
+            Some(OpCode::CPUI_INT_SEXT) => self.strat.is_sext_cast(&out, &inn),
+            Some(OpCode::CPUI_INT_ZEXT) => self.strat.is_zext_cast(&out, &inn),
+            _ => false,
+        }
+    }
+
+    fn extension_hidden(&self, op: OpId, read_op: Option<OpId>) -> bool {
+        self.pc.options.hide_exts
+            && self.pc.is_extension_cast_implied(self.fd, &self.strat, op, read_op)
+    }
+
+    fn sign_dropped(&self, op: OpId) -> bool {
+        self.pc.sign_plan.drop_cast(self.fd, op)
+    }
+
+    fn truncation_is_cast(&self, op: OpId) -> bool {
+        !self.fd.obank().get(op).is_some_and(|o| o.does_special_printing())
+            && self.pc.subpiece_cast_form(self.fd, self.arch, op).is_some()
+    }
+
+    fn high_name(&self, high: crate::context::HighVariableId) -> Option<String> {
+        self.pc.emitted_high_name(self.fd, high)
+    }
+
+    fn planned_decl_type(
+        &self,
+        high: crate::context::HighVariableId,
+    ) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        self.pc.sign_plan.decl_type(high).cloned()
+    }
+
+    fn is_statement(&self, op: OpId) -> bool {
+        self.pc.stmt_op == Some(op)
+    }
 }
 
 /// An immutable [`CastContext`] over `&Funcdata` for the print-time

@@ -121,6 +121,6 @@
 <stringmatch name="PEBNAMES #14: the FS base keeps an untyped declaration in 64-bit mode" min="1" max="1">int8 v[0-9]+; // fs_offset</stringmatch>
 <stringmatch name="PEBNAMES #15: a function that writes through the base keeps its PEB probe untyped under on" min="1" max="1">return \*\(char \*\)\(\*\(int8 \*\)\(v[0-9]+ \+ 0x60\) \+ 2\);</stringmatch>
 <stringmatch name="PEBNAMES #17: a second decompile keeps the one named TEB Symbol instead of mapping an anonymous copy" min="2" max="2">v[0-9]+ = teb-&gt;ProcessEnvironmentBlock;</stringmatch>
-<stringmatch name="PEBNAMES #18: the jump-table cases read PEB fields by name in both decompiles" min="2" max="2">return \(uint8\)v[0-9]+-&gt;NtGlobalFlag;</stringmatch>
+<stringmatch name="PEBNAMES #18: the jump-table cases read PEB fields by name in both decompiles" min="2" max="2">return v[0-9]+-&gt;NtGlobalFlag;</stringmatch>
 <stringmatch name="PEBNAMES #16: the write itself stays a store through the untyped base" min="1" max="1">\*\(unsigned int \*\)\(v[0-9]+ \+ 0x68\) = a0;</stringmatch>
 </decompilertest>
