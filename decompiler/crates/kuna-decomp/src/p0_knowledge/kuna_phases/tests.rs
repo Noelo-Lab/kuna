@@ -165,6 +165,7 @@ fn settable_count_is_233() {
     // +1 for `slotptr` (P6 frame-slot pointer typing on the JSON variables surface).
     // +1 for `calleevote` (P4 caller-to-callee parameter types).
     // +1 for `structmerge` (P5 sibling layout union).
+    // +1 for `structheadless` (P5 a closed function's record read past its start).
     assert_eq!(kuna_num_settables(), 233);
     assert_eq!(SETTABLE_TABLE.len(), 233);
 }
@@ -319,6 +320,8 @@ fn tier_counts_are_75_core_94_transform_64_analysis() {
     // transform 91 -> 92: +1 for `calleevote` (P4 caller-to-callee parameter
     // types).
     // transform 92 -> 93: +1 for `structmerge` (P5 sibling layout union).
+    // transform 94 -> 95: +1 for `structheadless` (P5 a closed function's record
+    // read past its start).
     assert_eq!((core, transform, analysis), (75, 94, 64));
 }
 
@@ -818,6 +821,11 @@ fn option_values_live_value_present_for_98() {
                             // reason.  Its live value is
                             // `Architecture::struct_merge`.
                             | "structmerge"
+                            // (kuna) `structheadless` takes a MODE
+                            // (`off|closed`) over an enum field, for the same
+                            // reason.  Its live value is
+                            // `Architecture::struct_headless`.
+                            | "structheadless"
                             // (kuna) `protoorder` takes a MODE
                             // (`off|types|cycles|lock`) over an enum field, for the
                             // same reason.  Its live value is
@@ -1134,6 +1142,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 224 -> 225: +1 for `slotptr`; its P6 row sits mid-table.
     // 225 -> 226: +1 for `calleevote`.
     // 226 -> 227: +1 for `structmerge`; its P5 row sits mid-table.
+    // 231 -> 232: +1 for `structheadless`; its P5 row sits mid-table.
     assert_eq!(json.matches("},\n").count(), 232);
 }
 

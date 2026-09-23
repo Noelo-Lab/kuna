@@ -4451,6 +4451,25 @@ tier = "transform"
 symptoms = "one object has two or more struct_N names whose fields agree as far as both go|a synthesized record declares fewer fields than the program's own accesses show|two functions take a pointer to the same thing and their parameter types differ|the exported header defines struct_2 and struct_7 with the same first members"
 
 [[settable]]
+option = "structheadless"
+values = "off|closed"
+default = "off"
+destructive = false
+phase = "P5"
+subphase = "aggregate-union"
+strength = "HARD"
+rewind = "P5"
+issue = "typecampaign-structdeep"
+summary = "Give a record to a parameter a function reads only past the record's start. `structsynth` requires an access at offset 0 before it believes a pointer points at a record, so a function that reads a record's later members and never its first keeps the pointee it had -- `void *` for a pointer known only by its dereferences -- and every access costs two casts: coreutils `ls` -O0 `sub_53e7` renders `if ((dat_2b358) && (*(char *)((long)a0 + 0xb9))) v1 = *(unsigned int *)((long)a0 + 0xac); else v1 = *(unsigned int *)((long)a0 + 0x30);` for `struct fileinfo`'s `linkok`, `linkmode` and `stat.st_mode`, and `statx_to_stat` reads eighteen members of a `struct statx` and none of them `stx_mask` at 0. Over the 45 castbench binaries 1,238 parameters are refused for this reason alone, against 1,716 accepted. With `closed`, a parameter read at two or more constant offsets, none of them zero, is a record when every caller of its function is a known direct call (the `calleevote fields` closed set) and nothing outside the function gave the parameter its pointee; every other `structsynth` condition still applies, and the bytes before the first access are `undefined1` filler like any hole. The closed condition is what keeps callbacks out: a `qsort` comparator or a hash-table callback reads members of what it was handed exactly like a record reader, and its declared parameter is `void *`. Against DWARF the headless parameters of closed functions are 883 struct pointers, no `void *`, two `char **` and three integers (75 more are -O2 parameters DWARF describes only through an abstract origin); those of functions whose address is stored are 202 struct pointers and 53 `void *`. A function whose main loop ends on the propagation pass that first typed it is never offered to `structsynth`, and a headless record gives the pointer-arithmetic rules nothing to rewrite, so such a function asks for one more pass, as a closed lone field already does. A headless record, like a lone field's, is the part of a record this function happened to read, so it gives way to the record every caller of the function passes (`calleevote`)."
+use_when = "Default OFF. Flip it on when a stripped function reads one pointer at several fixed offsets and the listing is a wall of `*(unsigned int *)((long)a0 + 0xac)` over a `void *` parameter -- the offsets are all past the start, so `structsynth` never took it -- and you want the reads as `a0->field_0xac`. It acts only on a parameter of a function every caller of which is a known direct call in a whole-binary `decompile-all`/`decompile-project` run on x86-64 (the `calleevote fields` closed set), so it is inert under `kuna decompile`, a `--jobs` worker, `calleevote off`, and every other architecture; and only where `structsynth` fires. The record's first bytes are `undefined1` filler, so the exported header declares a member the program has at offset 0 as raw bytes. Leave it off when you need one `struct_N` per program object: a function that reads only part of a record mints its own partial view where it used to inherit the record its callers or callees carry, so one object can be given several names, each declaring only the members its reader measured."
+example = "option structheadless closed"
+source_decompiler = "kuna"
+inspiration = "The cast census (the casts kuna prints against IDA over 4,815 address-matched functions): 1,080 `*(T *)((long)p + K)` sites sit on a `void *` base, and structsynth's offset-0 condition declines 49 of those bases in closed functions. angr's `simple_solver.py` struct branch takes any set of constant offsets as a record; kuna keeps its own precision gates and adds the closed-caller condition `calleevote fields` introduced for lone fields."
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "a parameter is declared `void *` and every read of it is `*(T *)((long)a0 + K)` with no read at offset 0|a function reads a record's later members and the listing shows two casts per access|`statx_to_stat` or a `fileinfo` accessor renders as raw offset arithmetic|a record reader keeps `void *` while a sibling that reads the first member gets `struct_N *`"
+
+[[settable]]
 option = "framelayout"
 values = "on|off"
 default = "on"
