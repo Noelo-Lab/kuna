@@ -1897,7 +1897,9 @@ mod tests {
         // format constant the LOAD-TIME resolver read out of the image
         // and structsynth-locals / a record a call returned, and a text buffer
         // that is not one, and calleevote
-        assert_eq!(count, 332, "corpus file count drifted");
+        // and kuna-libcwiden / a wrapper around an *at import stops spelling its
+        // path argument as an integer
+        assert_eq!(count, 333, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
