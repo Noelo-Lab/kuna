@@ -158,6 +158,16 @@ impl Ledger {
             sites.retain(|s| s.caller != key.1);
         }
     }
+
+    /// Decline to vote on the function at `key`: the driver will not decompile
+    /// it again, so the statement just decided is withdrawn and no later round
+    /// proposes it, while what it recorded as a CALLER stays -- its own callees
+    /// still see the call it makes, exactly as for a function nothing was ever
+    /// stated about.
+    pub fn decline(&mut self, key: (int4, uintb)) {
+        self.own.remove(&key);
+        self.stated.remove(&key);
+    }
 }
 
 impl Ledger {

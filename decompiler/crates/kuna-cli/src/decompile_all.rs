@@ -1835,19 +1835,30 @@ pub(crate) fn decompile_callee_first(
 /// type its own callers gave it only once it has been decompiled with it.
 const CALLEE_VOTE_ROUNDS: usize = 3;
 
-/// (kuna `calleevote`) The longest first decompile that is worth doing again.
-/// A redo costs what the first decompile of that function cost and the redo
-/// pass is the option's whole cost, so this is what keeps it inside the
-/// project's +5% speed budget: on `kmod -O2-noinline` the redos longer than
-/// this are 67% of the redo time and move 12 of the 38 bodies that move, and
-/// the one redo `crontab -O2-noinline` does is 189 lines and 9% of the run.
-/// The shapes the vote exists for -- a forwarder, a getter, a comparator --
-/// print a few lines.
+/// (kuna `calleevote`) The longest first decompile that is always done again.
+/// A redo costs what the first decompile of that function cost (measured 1.01x
+/// over `kmod -O2-noinline`'s 55 redos), and the redo pass is the option's whole
+/// cost, so a function's printed length is what it charges. The shapes the vote
+/// exists for -- a forwarder, a getter, a comparator -- print a few lines, and
+/// those are redone on any binary.
 const CALLEE_VOTE_MAX_LINES: usize = 32;
 
-/// (kuna `calleevote`) Is this first decompile too long to do again?
-fn too_long_to_vote_on(code: Option<&str>) -> bool {
-    code.is_some_and(|c| c.lines().count() > CALLEE_VOTE_MAX_LINES)
+/// (kuna `calleevote`) What the redo pass may reprint beyond those short
+/// functions, as a share of what the first pass printed.
+///
+/// A flat refusal above [`CALLEE_VOTE_MAX_LINES`] costs the same eight perfect
+/// functions on every binary, including the ones with room to spare: `fmt -O2`
+/// spends 0.23% of its run on the redo pass and `ls`/`sort`/`bash` less, while
+/// `kmod -O2-noinline` spends 3.4%. Charging the longer functions against a
+/// share of the binary's own output spends that room where it exists and stops
+/// where it does not -- shortest first, so the cheapest bodies are bought first.
+const CALLEE_VOTE_EXTRA_PCT: usize = 2;
+
+/// (kuna `calleevote`) What redoing this function is charged: the lines its
+/// first decompile printed, or 0 for one short enough to be redone unbudgeted.
+fn redo_charge(code: Option<&str>) -> usize {
+    let lines = code.map_or(0, |c| c.lines().count());
+    if lines <= CALLEE_VOTE_MAX_LINES { 0 } else { lines }
 }
 
 /// (kuna `calleevote`) The key the ledger files a function under.
@@ -1896,9 +1907,14 @@ fn open_callee_votes(
 /// decide again over what the redone functions pass, up to
 /// [`CALLEE_VOTE_ROUNDS`] times. A redo that fails keeps the first body.
 ///
-/// A function whose first decompile printed more than [`CALLEE_VOTE_MAX_LINES`]
-/// lines drops out of the ledger before anything is decided, so nothing is ever
-/// stated about it and no round pays for it.
+/// Each round's redos are admitted shortest first, against one budget for the
+/// whole pass: a function printing at most [`CALLEE_VOTE_MAX_LINES`] lines is
+/// free, a longer one is charged its lines, and the budget is
+/// [`CALLEE_VOTE_EXTRA_PCT`] of the lines the first pass printed. A function the
+/// budget cannot reach leaves the ledger with its statement withdrawn, so
+/// nothing is stated about it, no later round proposes it again and the
+/// convergence sweep has nothing to apply to it -- exactly what a function over
+/// the flat bound used to get, on the binaries that have no room for it.
 fn callee_vote_rounds(
     prog: &mut ConsoleProgram,
     targets: &[FunctionEntry],
@@ -1907,17 +1923,13 @@ fn callee_vote_rounds(
     slots: &mut [Option<FuncResult>],
     expected: &BTreeMap<(i32, u64), Vec<u64>>,
 ) {
-    let long: Vec<(i32, u64)> = slots
+    let printed: usize = slots
         .iter()
-        .enumerate()
-        .filter(|(_, s)| too_long_to_vote_on(s.as_ref().and_then(|r| r.code.as_deref())))
-        .filter_map(|(i, _)| vote_key(&targets[i]))
-        .collect();
-    if kuna_decomp::kuna_calleevote::trace() && !long.is_empty() {
-        eprintln!("[calleevote] {} functions too long to decompile again", long.len());
-    }
-    for key in long {
-        prog.arch_mut().kuna_calleevote.own.remove(&key);
+        .map(|s| s.as_ref().and_then(|r| r.code.as_deref()).map_or(0, |c| c.lines().count()))
+        .sum();
+    let mut budget = printed * CALLEE_VOTE_EXTRA_PCT / 100;
+    if kuna_decomp::kuna_calleevote::trace() {
+        eprintln!("[calleevote] {printed} lines printed, redo budget {budget} lines");
     }
     for round in 0..CALLEE_VOTE_ROUNDS {
         let changed = kuna_decomp::kuna_calleevote::decide(prog.arch_mut(), &|k| expected.get(&k).cloned());
@@ -1928,8 +1940,9 @@ fn callee_vote_rounds(
             break;
         }
         let changed: std::collections::HashSet<(i32, u64)> = changed.into_iter().collect();
+        let admitted = admit_within_budget(prog, targets, plan, slots, &changed, &mut budget);
         for &(index, park) in plan {
-            let Some(key) = vote_key(&targets[index]).filter(|k| changed.contains(k)) else { continue };
+            let Some(key) = vote_key(&targets[index]).filter(|k| admitted.contains(k)) else { continue };
             let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
             let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
             match slots[index].as_ref() {
@@ -1940,6 +1953,43 @@ fn callee_vote_rounds(
         }
     }
     prog.arch_mut().kuna_calleevote.recording = false;
+}
+
+/// (kuna `calleevote`) The functions of `changed` this round pays to decompile
+/// again: the short ones, plus the longest prefix of the rest, shortest first,
+/// that `budget` covers. The others are declined for the whole run.
+///
+/// Ties go to the lower address, so the admitted set is a function of the
+/// program and not of the order the plan visits it.
+fn admit_within_budget(
+    prog: &mut ConsoleProgram,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    slots: &[Option<FuncResult>],
+    changed: &std::collections::HashSet<(i32, u64)>,
+    budget: &mut usize,
+) -> std::collections::HashSet<(i32, u64)> {
+    let mut queue: Vec<(usize, (i32, u64))> = plan
+        .iter()
+        .filter_map(|&(index, _)| {
+            let key = vote_key(&targets[index]).filter(|k| changed.contains(k))?;
+            Some((redo_charge(slots[index].as_ref().and_then(|r| r.code.as_deref())), key))
+        })
+        .collect();
+    queue.sort_unstable();
+    let mut admitted = std::collections::HashSet::new();
+    for (charge, key) in queue {
+        if charge <= *budget {
+            *budget -= charge;
+            admitted.insert(key);
+        } else {
+            if kuna_decomp::kuna_calleevote::trace() {
+                eprintln!("[calleevote] 0x{:x} declined: {charge} lines, {budget} left", key.1);
+            }
+            prog.arch_mut().kuna_calleevote.decline(key);
+        }
+    }
+    admitted
 }
 
 /// (kuna `calleevote`) Does a redo keep the first decompile's parameters and
