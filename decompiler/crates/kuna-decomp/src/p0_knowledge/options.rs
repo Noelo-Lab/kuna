@@ -418,6 +418,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "bytehonest",
     "slotptr",
     "voidtailreturn",
+    // (kuna) leave out a cast C's own conversion rules already perform.
+    "castimplied",
     "ptrdepthcap",
     "codescalar",
     "boolbyte",
