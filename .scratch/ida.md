@@ -324,3 +324,45 @@ widen.py         widening-cast contexts
 
 Build used: `make binaries` at 796939d54 in this worktree, `SLEIGHHOME`/`KUNA_SPECS` pointed
 at the worktree's linked `specs/`.
+
+---
+
+## 8. Implementation anchors (for whoever acts on §6)
+
+Not part of the census, but found while checking that a lever is not already shipped:
+
+- **`PrintCOptions::hide_exts` is already `true` by default** (`p9_emit/printc.rs:497`). The
+  2,568 widening casts in §3.3 are the ones `is_extension_cast_implied` declines
+  (`p9_emit/cast.rs:622`, port of `CastStrategyC::isExtensionCastImplied`, cast.cc:249). Its
+  first branch is the one that matters here: when the extension's output is **explicit** —
+  that is, it got its own declared variable — the predicate falls straight through to
+  `false`. That is exactly the §3.3 "assign-RHS with LHS == cast type" (238) and
+  "`return` with return type == cast type" (57) populations. Upstream declines them
+  unconditionally; accepting them when the explicit variable's declared type *equals* the
+  extension result type is value-preserving by construction.
+- The other declines are: the read op is not one of the listed INT arithmetic/compare ops, the
+  other operand is neither explicit nor a small constant, or the two metatypes differ.
+- **`structsynth`'s own symptom line** in `docs/options.md` is literally "the body is a wall
+  of `*(int *)(p + 0x18)` casts over one pointer" — §3.1 and §4 are that symptom, still
+  unfixed at 1,817 `void *`-based sites.
+- **`arraynotation`** (default on) already renders standalone pointer arithmetic as
+  `&base[index]`; it is not reaching the `*(T *)((long)p + K)` form.
+- `nocastprinting` exists and is the thing the user explicitly does not want: it suppresses
+  casts wholesale rather than removing them.
+
+## 9. Measurement hygiene
+
+**This worktree is shared with another castcensus lane**, which committed
+`271cf0d07 wip(castcensus): scratch cast-attribution instrumentation (NOT for merge)` at
+18:10 and rebuilt `target/release` at 18:19. My `make binaries` finished ~18:04 and every
+`decompile-all` run completed by 18:10, so all numbers above come from a build of clean
+`796939d54`.
+
+Verified independently anyway: re-running `O0/fmt` and `O0/bzip2` through the **main tree's**
+untouched release `kuna` (built 2026-09-21 at `69a947074`) gives 296 vs 296 casts on fmt's
+191 common functions and 6,805 vs 6,775 on bzip2's 154 — a 0.4% drift attributable to the
+three PRs merged between the two commits. `.scratch/verify_*.json`.
+
+The sibling lane's instrumentation is env-gated (`KUNA_CASTCENSUS`, `census::` in
+`p9_emit/cast.rs`) and emits nothing when the variable is unset, so it cannot have moved any
+of these counts even where it was compiled in.
