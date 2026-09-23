@@ -95,8 +95,13 @@ use crate::funcdata::Funcdata;
 const MAX_DEPTH: u32 = 24;
 
 /// How many Varnodes the whole-function walk ([`computes_everywhere`]) visits
-/// before giving up and answering `true`, the no-change answer. A move-only
-/// closure that large is not a return value anyone can read anyway.
+/// before giving up and answering `false` -- "not computed", which is the
+/// refusal: the callee's recovered return is not stated, and every caller reads
+/// the call exactly as it does with `passthrough` off. Exhausting it takes a
+/// move-only closure of 4,096 Varnodes reachable from ONE returned value, which
+/// is two orders of magnitude past the deepest copy/phi chain measured over the
+/// decbench corpus, so the cap is a guard against a pathological body rather
+/// than a budget the walk is expected to spend.
 const MAX_NODES: u32 = 4096;
 
 /// Does `vn` carry a value the function actually computed?
@@ -122,13 +127,20 @@ fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
 /// recursion [`computes_from`] uses: "every input" over a phi-rich -O0 body
 /// revisits the same Varnodes exponentially, and this runs once per decompiled
 /// function instead of once per returned register pair.
+///
+/// Running out of budget answers `false`, not `true`: the answer is read by
+/// [`crate::p4_calls::kuna_protoorder`]'s `recovered_output`, where `true` states
+/// the callee's return to every caller ahead of it and `false` states nothing at
+/// all, so the unfinished walk has to take the second.
 fn computes_everywhere(data: &Funcdata, vn: VarnodeId, placed_at: Option<&Address>) -> bool {
     let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::new();
     let mut work: Vec<VarnodeId> = vec![vn];
     let mut budget = MAX_NODES;
     while let Some(cur) = work.pop() {
         if budget == 0 {
-            return true;
+            // `true` here would STATE the callee's return on a body the walk
+            // never finished reading, which is the direction that invents one.
+            return false;
         }
         budget -= 1;
         if !seen.insert(cur) {

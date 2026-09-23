@@ -46,6 +46,19 @@
 //! * the callee's own body READS `R` before writing it on some path, for a value
 //!   that reaches something ([`crate::p4_calls::kuna_calleedeadarg`]'s
 //!   `proves_input`), so the parameter is not a recovery artifact of the callee;
+//! * that read is for something other than a variadic tail
+//!   ([`crate::p4_calls::kuna_varargtail`]): a callee whose parameter only
+//!   reaches an argument slot the ABI lets a caller leave unset says nothing
+//!   about what its callers put there -- openssh `xcalloc`'s third parameter is
+//!   gcc's `push %rdx` alignment filler at a variadic call, gnulib `open_safer`'s
+//!   is `open`'s `mode`;
+//! * every EARLIER parameter the callee states is either forwarded here too or
+//!   is one this function's own entry does not write before reading
+//!   ([`no_hole_before`]): a claim the positional list can only reach across a
+//!   register this function loads itself materializes that register as a
+//!   parameter that is nothing -- the `overrec(unsigned long *a0,unsigned long
+//!   a1,long a2)` of the `protoorder` fixture, whose `a1` occurs in no
+//!   statement and whose one call site passes one argument;
 //! * the caller did not set the call up as variadic (`set_up_as_variadic`:
 //!   `xor %eax,%eax` before a SysV call), and is not variadic itself
 //!   (`reads_the_vararg_count`: `test %al,%al` in its entry block);
@@ -177,7 +190,7 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
     }
     let entry = fc.get_entry_address();
     let stated = data.kuna_protoorder_types(entry)?;
-    if !stated.arity_sound {
+    if !stated.arity_sound || stated.vararg_tail.iter().any(|a| a == addr) {
         return None;
     }
     let stated_size = stated.inputs.iter().find(|(a, _, _)| a == addr).map(|(_, s, _)| *s)?;
@@ -201,9 +214,10 @@ fn return_only(proto: &crate::fspec::FuncProto, addr: &Address, size: int4) -> b
 /// Did the caller set call spec `idx` up as a variadic call?
 ///
 /// A register that carries no argument but the return value is written, and
-/// not read again except by the writing instruction's own flag computation,
-/// between the call and the last call or block start before it: `xor
-/// %eax,%eax` before a SysV variadic call is the vector-register count in `al`,
+/// not read again except by the writing instruction's own ops -- its operands
+/// and its flag computation -- between the call and the last call or block start
+/// before it: `xor %eax,%eax` before a SysV variadic call is the
+/// vector-register count in `al`,
 /// and nothing else has a reason to write the register the call is about to
 /// overwrite. A variadic callee's recovered list can stop on a tail
 /// register its body saves (gnulib `open_safer(char const *,int,...)` saves only
@@ -212,6 +226,14 @@ fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
     let fc = data.get_call_specs(idx);
     let proto = fc.proto();
     let mut cur = data.op_previous_op(fc.get_op());
+    // The instruction whose ops have read the register so far. Walking back, an
+    // instruction's flag computation is reached BEFORE the write it derives
+    // from, and `xor %eax,%eax` -- the idiom gcc actually emits for the vector
+    // count -- reads the register it zeroes twice over: once as its own operand,
+    // once in `ZF = (EAX == 0)`. Those reads are the writing instruction's own,
+    // and only a read by some OTHER instruction says the register was carrying
+    // something the call is about to take.
+    let mut read_at: Option<Address> = None;
     while let Some(op) = cur {
         let Some(o) = data.obank().get(op) else { return false };
         if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER) {
@@ -221,7 +243,11 @@ fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
             data.vbank().get(v).map(|v| return_only(proto, v.get_addr(), v.get_size())).unwrap_or(false)
         });
         if reads_it {
-            return false;
+            match &read_at {
+                Some(a) if a != o.get_addr() => return false,
+                Some(_) => {}
+                None => read_at = Some(o.get_addr().clone()),
+            }
         }
         let writes_it = o
             .get_out()
@@ -229,7 +255,7 @@ fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
             .map(|v| return_only(proto, v.get_addr(), v.get_size()))
             .unwrap_or(false);
         if writes_it {
-            return true;
+            return read_at.as_ref().is_none_or(|a| a == o.get_addr());
         }
         cur = data.op_previous_op(op);
     }
@@ -386,8 +412,11 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
             None => continue,
         };
         let op = data.get_call_specs(idx).get_op();
-        for (addr, stated_size) in stated {
+        for (pos, (addr, stated_size)) in stated.iter().cloned().enumerate() {
             let Some(size) = stated_width(data, data.get_call_specs(idx), &addr, stated_size) else { continue };
+            if !no_hole_before(data, &stated, pos, &claims) {
+                continue;
+            }
             if data.get_call_specs(idx).active_input().which_trial(&addr, stated_size) >= 0 {
                 continue;
             }
@@ -414,6 +443,33 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
         claim_tail_return(data, &mut claims, ret);
     }
     data.kuna_set_passthrough_claims(claims);
+}
+
+/// Can the claim of the register at `pos` in the callee's stated list be made
+/// without materializing a parameter this function does not have?
+///
+/// Parameters are positional: a claim at the third stated register gives the
+/// function a third parameter, and the first two come with it whether or not
+/// anything put a value in them. Every earlier stated register must therefore be
+/// one this function could be carrying -- already claimed here (so forwarded
+/// untouched), or one its own entry does not WRITE before reading on every path
+/// ([`crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead::proves_dead`],
+/// asked of this function's own body). A register the function loads for itself
+/// before the call is not a parameter, and a claim reaching across it prints an
+/// argument-less slot: the `protoorder` fixture's `overrec` sets `rsi` to 16 and
+/// forwards `rdx`, and rendered `void overrec(unsigned long *a0,unsigned long
+/// a1,long a2)` against the call site `overrec(v1)`.
+///
+/// The evidence is one-sided, as everywhere this walk is read: a body the walk
+/// cannot settle keeps the claim.
+fn no_hole_before(data: &Funcdata, stated: &[(Address, int4)], pos: usize, claims: &[PassThroughClaim]) -> bool {
+    if pos == 0 {
+        return true;
+    }
+    let Some(facts) = data.kuna_callee_entry_dead(data.get_address()) else { return true };
+    stated[..pos]
+        .iter()
+        .all(|(a, sz)| overlaps_claim(claims, a, *sz) || !facts.proves_dead(a, *sz))
 }
 
 /// How many blocks [`producing_call`] walks back from a RETURN.

@@ -156,6 +156,13 @@ pub struct RecoveredTypes {
     /// `void`.  Recorded only when `option passthrough` is on, whose tail-call
     /// arm is its one reader; `None` otherwise.
     pub output: Option<(Address, int4, Rc<Datatype>)>,
+    /// The storage of every parameter in [`Self::inputs`] the callee's body only
+    /// ever feeds to a variadic tail
+    /// ([`crate::p4_calls::kuna_varargtail`]): read by the callee, but only
+    /// where the ABI lets a caller leave the register unset, so
+    /// [`crate::p4_calls::kuna_passthrough`] never claims it.  Recorded only when
+    /// `option passthrough` is on; empty otherwise.
+    pub vararg_tail: Vec<Address>,
 }
 
 impl RecoveredTypes {
@@ -1520,7 +1527,12 @@ pub fn park_recovered(
     if mode.states_types_only() {
         let arity_sound = arch.pass_through && arity_claim_sound(arch, entry, &pieces, &storage);
         let output = if arch.pass_through { recovered_output(proto, data) } else { None };
-        return state_recovered_types(arch, entry, pieces, storage, arity_sound, output);
+        let vararg_tail = if arch.pass_through {
+            crate::kuna_varargtail::vararg_tail_inputs(data, &storage)
+        } else {
+            Vec::new()
+        };
+        return state_recovered_types(arch, entry, pieces, storage, arity_sound, output, vararg_tail);
     }
     let mut trimmed = 0usize;
     if let Some(facts) = entry_facts(arch, entry) {
@@ -1635,6 +1647,7 @@ fn state_recovered_types(
     storage: Vec<(Address, int4)>,
     arity_sound: bool,
     output: Option<(Address, int4, Rc<Datatype>)>,
+    vararg_tail: Vec<Address>,
 ) -> Result<Recovered, Decline> {
     let inputs: Vec<(Address, int4, Rc<Datatype>)> = storage
         .iter()
@@ -1647,7 +1660,8 @@ fn state_recovered_types(
     let Some(key) = stated_key(entry) else {
         return Err(Decline::InvalidStorage);
     };
-    arch.kuna_protoorder_types.insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output }));
+    arch.kuna_protoorder_types
+        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, vararg_tail }));
     Ok(Recovered { pieces, trimmed: 0 })
 }
 
