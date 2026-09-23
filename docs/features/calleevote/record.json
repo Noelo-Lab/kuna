@@ -360,180 +360,6 @@
    "within_budget": true,
    "outside_budget_set": "kmod O2-noinline +11.28% min (+11.20% median) and cmp O0 +7.91% min: the price of decompiling again the functions whose callers state a type; a binary where few functions take a vote pays almost nothing"
   },
-  "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs default, same build, arm order alternating, 15 rounds each (docs/features/calleevote/speed.py; raw samples speed.json). Review-round build; box shared with other lanes (load 11-43). fmt, ls, bash, dash, cf2 and the first sort/cmp runs used the build before the walked-address check was limited to closed functions (same output, and the off arm then paid that check too); the sort and cmp reruns are the final build.",
-  "cmp_O0": {
-   "min_ms": [
-    1525.4,
-    1671.3
-   ],
-   "delta_min_pct": 9.56,
-   "delta_median_pct": 12.87,
-   "loadavg": [
-    13.8,
-    15.0,
-    17.6
-   ],
-   "rerun": {
-    "min_ms": [
-     1684.4,
-     1775.8
-    ],
-    "delta_min_pct": 5.43,
-    "delta_median_pct": 13.37,
-    "loadavg": [
-     18.0,
-     20.3,
-     20.3
-    ]
-   },
-   "note": "1.6 s binary: 9 of 214 functions are decompiled a second time and 2 print differently (7 are a char * vote over an undefined1 * that prints the same, or a vote the callee's own uses refuse); +5.43% min on the rerun, +9.56% with a rust-test lane beside it"
-  },
-  "dash_O2-noinline": {
-   "min_ms": [
-    4169.8,
-    4269.3
-   ],
-   "delta_min_pct": 2.39,
-   "delta_median_pct": 7.48,
-   "loadavg": [
-    11.1,
-    14.0,
-    16.9
-   ]
-  },
-  "fmt_O2": {
-   "min_ms": [
-    4449.1,
-    4469.7
-   ],
-   "delta_min_pct": 0.46,
-   "delta_median_pct": 3.75,
-   "loadavg": [
-    17.6,
-    15.3,
-    17.0
-   ]
-  },
-  "ls_O2": {
-   "min_ms": [
-    15476.4,
-    15543.9
-   ],
-   "delta_min_pct": 0.44,
-   "delta_median_pct": -4.32,
-   "loadavg": [
-    16.9,
-    20.2,
-    19.7
-   ]
-  },
-  "sort_O2": {
-   "min_ms": [
-    16087.2,
-    18438.7
-   ],
-   "delta_min_pct": 14.62,
-   "delta_median_pct": -0.53,
-   "loadavg": [
-    43.1,
-    33.2,
-    25.7
-   ],
-   "rerun": {
-    "min_ms": [
-     16340.6,
-     16241.0
-    ],
-    "delta_min_pct": -0.61,
-    "delta_median_pct": 6.42,
-    "loadavg": [
-     43.4,
-     35.2,
-     26.4
-    ]
-   },
-   "note": "the first run's +14.62% min is one off-arm sample at 16.1 s against 18.6-19.4 s for the rest (median -0.53%); the rerun is -0.61% min"
-  },
-  "cf2_O2-noinline_ARM_Thumb": {
-   "min_ms": [
-    26993.8,
-    27519.9
-   ],
-   "delta_min_pct": 1.95,
-   "delta_median_pct": 1.54,
-   "loadavg": [
-    19.3,
-    22.2,
-    24.4
-   ]
-  },
-  "bash_O2": {
-   "min_ms": [
-    100495.6,
-    101940.3
-   ],
-   "delta_min_pct": 1.44,
-   "delta_median_pct": 0.14,
-   "loadavg": [
-    16.1,
-    20.6,
-    20.4
-   ]
-  },
-  "budget_binaries": {
-   "fmt_O2": 0.46,
-   "ls_O2": 0.44,
-   "sort_O2": -0.61,
-   "bash_O2": 1.44
-  },
-  "worst_budget_delta_min_pct": 1.44,
-  "budget_pct": 5.0,
-  "within_budget": true,
-  "outside_budget_set": "dash O2-noinline +2.39, crazyflie ARM +1.95, cmp O0 +5.43 (small binary, see its note)",
-  "first_version": {
-   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120 (decbench's invocation), --option calleevote off vs default, same binary, arm order alternating, 15 rounds each (docs/features/calleevote/speed.py, raw samples speed.json)",
-   "fmt_O2": {
-    "min_ms": [
-     4801.5,
-     4789.4
-    ],
-    "delta_min_pct": -0.25,
-    "delta_median_pct": 2.87
-   },
-   "ls_O2": {
-    "min_ms": [
-     14320.2,
-     14294.7
-    ],
-    "delta_min_pct": -0.18,
-    "delta_median_pct": 1.82
-   },
-   "sort_O2": {
-    "min_ms": [
-     14785.3,
-     15198.1
-    ],
-    "delta_min_pct": 2.79,
-    "delta_median_pct": 5.15,
-    "rerun_quieter": {
-     "delta_min_pct": -0.42,
-     "delta_median_pct": 1.08
-    }
-   },
-   "bash_O2": {
-    "min_ms": [
-     95421.0,
-     97942.4
-    ],
-    "delta_min_pct": 2.64,
-    "delta_median_pct": 2.5,
-    "note": "1.3 MB, --mode auto resolves to reliable"
-   },
-   "worst_delta_min_pct": 2.79,
-   "budget_pct": 5.0,
-   "within_budget": true,
-   "load": "load average 9-30 on 80 cores (other campaign lanes); the first sort run's +5.15% median re-ran at -0.42% min / +1.08% median"
-  },
   "round_4": {
    "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs default, same final build (.scratch/v28 = e5e65a8cd code) on 3a42d864b, arm order alternating, 15 rounds each (docs/features/calleevote/speed.py; raw samples speed.json under round_4); bash ran beside the final rust-test lane, the others on a quiet box (load 2-4)",
    "fmt_O2": {
@@ -673,6 +499,118 @@
     ]
    },
    "budget_verdict": "budget set (fmt, ls, sort, bash -O2) within +5%; outside it the second decompile of the functions whose callers state a type costs +7.6% (cmp -O0) to +11.5% (kmod -O2-noinline), stated in the PR body for the lander"
+  },
+  "round_5": {
+   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs the default, same build (.scratch/bins/kuna-cap32) on origin/main 31ac2b26e",
+   "note": "This box carried about eight other agents throughout (load average 30-41), and a 4-second binary's own CPU time varied 4.0-6.4 s with it, so an arm's minimum is its luckiest run and the interleaved min-of-15 is not reliable at the +-5% scale (kmod measured +9.4% by min and +1.7% by the median of the per-pair ratio in the SAME run). The primary number is therefore the redo pass's share of the run's own first pass, measured inside one process, which is what the option costs: nothing else about the run changes.",
+   "redo_share_of_first_pass_pct": {
+    "method": "KUNA_CV_PHASELOG build (.scratch/bins/kuna-phase2, measurement only): time(callee_vote_rounds)/time(pass 1) in one process",
+    "kmod_O2-noinline": [
+     3.81,
+     3.37,
+     4.26
+    ],
+    "dpkgdivert_O2": [
+     2.22,
+     2.52,
+     2.31
+    ],
+    "cmp_O0": [
+     1.52,
+     1.89,
+     1.38
+    ],
+    "fmt_O2": [
+     0.23
+    ],
+    "sort_O2": [
+     0.2
+    ],
+    "ls_O2": [
+     0.17
+    ],
+    "bash_O2": [
+     0.1,
+     0.11
+    ],
+    "crontab_O2-noinline": [
+     0.02,
+     0.01
+    ],
+    "same_measure_at_other_bounds_kmod": {
+     "40_lines": [
+      7.61,
+      6.08,
+      5.71
+     ],
+     "unbounded": [
+      13.66,
+      14.53,
+      13.65
+     ]
+    }
+   },
+   "wall_interleaved_n15": {
+    "kmod_O2ni": {
+     "wall_min_off_ms": 4035.6,
+     "wall_min_on_ms": 4415.4,
+     "delta_wall_min_pct": 9.41,
+     "delta_paired_median_pct": 1.67,
+     "loadavg1": 40.8,
+     "n": 15
+    },
+    "crontab_O2ni": {
+     "wall_min_off_ms": 1373.9,
+     "wall_min_on_ms": 1375.5,
+     "delta_wall_min_pct": 0.12,
+     "delta_paired_median_pct": 0.31,
+     "loadavg1": 40.7,
+     "n": 15
+    },
+    "dpkgdivert_O2": {
+     "wall_min_off_ms": 3890.6,
+     "wall_min_on_ms": 4092.6,
+     "delta_wall_min_pct": 5.19,
+     "delta_paired_median_pct": -4.6,
+     "loadavg1": 35.1,
+     "n": 15
+    },
+    "cmp_O0": {
+     "wall_min_off_ms": 1772.2,
+     "wall_min_on_ms": 1799.9,
+     "delta_wall_min_pct": 1.56,
+     "delta_paired_median_pct": 5.82,
+     "loadavg1": 38.1,
+     "n": 15
+    },
+    "fmt": {
+     "wall_min_off_ms": 4797.4,
+     "wall_min_on_ms": 4885.9,
+     "delta_wall_min_pct": 1.84,
+     "delta_paired_median_pct": -0.63,
+     "loadavg1": 34.1,
+     "n": 15
+    },
+    "ls": {
+     "wall_min_off_ms": 16866.9,
+     "wall_min_on_ms": 16565.6,
+     "delta_wall_min_pct": -1.79,
+     "delta_paired_median_pct": -2.17,
+     "loadavg1": 43.4,
+     "n": 15
+    }
+   },
+   "round_4_unbounded_quiet_box": {
+    "fmt_O2": 0.36,
+    "ls_O2": 0.76,
+    "sort_O2": 1.01,
+    "bash_O2": -0.58,
+    "kmod_O2-noinline": 11.45,
+    "crontab_O2-noinline": 9.04,
+    "dpkgdivert_O2": 8.14,
+    "cmp_O0": 7.62,
+    "note": "min of 15 at load 2.5, the measurement that put three binaries over the +5% budget and asked for the bound"
+   }
   }
  },
  "gates": {
