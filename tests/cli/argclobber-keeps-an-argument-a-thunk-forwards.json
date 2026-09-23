@@ -27,12 +27,12 @@
       "eq": 0
     },
     "stdout_matches": [
-      "sub_401030\\(\\(unsigned long \\*\\)0x404000,v[0-9]+,a2\\) \\+ 1"
+      "sub_401030\\((?:\\(unsigned long \\*\\)0x404000|&dat_404000),v[0-9]+,a2\\) \\+ 1"
     ],
     "stdout_absent": [
-      "sub_401030\\(\\(unsigned long \\*\\)0x404000,a2\\)"
+      "sub_401030\\((?:\\(unsigned long \\*\\)0x404000|&dat_404000),a2\\)"
     ]
   },
   "notes": "sub_401030 is `test %rsi,%rsi; je; jmp *(%rdi)`: it names rdi and rsi, so kuna recovers two parameters while the function it tail-calls consumes three. Those two are exactly the arguments a drop would leave, so the prototype accounting admits it and the callee's BODY declines it -- rdx is unwritten at the indirect jump.",
-  "probe_id": "p-028b609cd38f"
+  "probe_id": "p-fb4510197066"
 }

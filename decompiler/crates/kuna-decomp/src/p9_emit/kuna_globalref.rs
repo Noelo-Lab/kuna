@@ -75,6 +75,8 @@ struct Direct {
     start: u64,
     size: u64,
     ty: Rc<Datatype>,
+    /// No global Symbol covers it, so the body prints it as `dat_<start>`.
+    unnamed: bool,
 }
 
 /// What one function reads an address at.
@@ -152,10 +154,13 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
                 pointees.insert(off, Seen::merge(seen, to));
             }
         } else if data_space.is_some() && v.get_addr().get_space().map(|s| s.get_index()) == data_space {
+            let unnamed = in_ranges(&arch.globalref_ranges, v.get_offset())
+                && fd.get_arch().query_container_global(v.get_addr(), v.get_size(), &Address::new_invalid()).is_none();
             direct.push(Direct {
                 start: v.get_offset(),
                 size: v.get_size().max(1) as u64,
                 ty: Rc::clone(v.get_type()),
+                unnamed,
             });
         }
     }
@@ -266,6 +271,12 @@ impl Plan {
 }
 
 impl Plan {
+    /// The unnamed program data this function reads or writes directly, by
+    /// start and type: the `dat_<addr>` it prints that are not addresses taken.
+    pub fn direct_objects(&self) -> impl Iterator<Item = (u64, &Rc<Datatype>)> + '_ {
+        self.direct.iter().filter(|d| d.unnamed).map(|d| (d.start, &d.ty))
+    }
+
     /// The one type this function reads or writes the storage at `off` at,
     /// when every direct access that touches it starts there at that type.
     fn direct_type_at(&self, off: u64) -> Option<Rc<Datatype>> {
@@ -329,16 +340,18 @@ fn overlaps(d: &Direct, off: u64, size: u64) -> bool {
 }
 
 /// Is the direct access `d` a read or write of exactly the object `off` names,
-/// at a type that spells the same C type as `ty`? An unknown of the same size
-/// is the unsigned integer the export's prelude defines it as.
+/// at a type that spells the same C type as `ty`? A wider unknown is the
+/// unsigned integer of its size on every surface; a one-byte unknown is `char`
+/// on one and `unsigned char` on another, so it matches only itself.
 fn same_object(d: &Direct, off: u64, size: u64, ty: &Rc<Datatype>) -> bool {
     if d.start != off || d.size != size {
         return false;
     }
     same_type(&d.ty, ty)
         || (d.ty.get_metatype() == type_metatype::TYPE_UNKNOWN
-            && matches!(ty.get_metatype(), type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)
-            && ty.get_size() == d.ty.get_size())
+            && ty.get_metatype() == type_metatype::TYPE_UINT
+            && ty.get_size() == d.ty.get_size()
+            && ty.get_size() > 1)
 }
 
 fn same_type(a: &Rc<Datatype>, b: &Rc<Datatype>) -> bool {

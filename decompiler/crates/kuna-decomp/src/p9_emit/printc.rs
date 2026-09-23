@@ -8127,10 +8127,10 @@ impl PrintC {
         ));
     }
 
-    /// (kuna `globalref`) The globals the last function printed names by
-    /// address, with the type each is used at.
-    pub fn globalref_minted(&self) -> &std::collections::BTreeMap<u64, crate::kuna_globalref::Minted> {
-        &self.globalref.minted
+    /// (kuna `globalref`) The plan of the last function printed: the globals it
+    /// names by address and the unnamed data it reads directly.
+    pub fn globalref_plan(&self) -> &crate::kuna_globalref::Plan {
+        &self.globalref
     }
 
     fn op_ptrsub_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {

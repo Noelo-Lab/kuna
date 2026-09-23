@@ -1059,38 +1059,60 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 /// in address order.
 ///
 /// Each function declares the object at the type IT uses it at, so two
-/// functions can disagree. A type is preferred to the unknown byte a `void *`
-/// use stands for, then the larger object (a record over the member at its
-/// start), then the declaration more functions make, then the earlier function.
-/// The others are listed in a comment on the line: the body that used one of
-/// them now passes a pointer of another type.
+/// functions can disagree, and a function that reads the same `dat_<addr>`
+/// directly reads it at the type IT printed. A direct access decides: the
+/// header's declaration is what every direct read and write compiles against,
+/// so a declaration of another type would silently change what they compute (a
+/// signed compare turned unsigned, a store truncated), where a pointer of the
+/// wrong type in an address-taking body is only a diagnosed mismatch. So one
+/// direct type is declared as is; two different ones declare nothing and say
+/// so. Without a direct access, a type is preferred to the unknown byte a
+/// `void *` use stands for, then the larger object (a record over the member at
+/// its start), then the declaration more functions make, then the earlier
+/// function. Every other type is listed in a comment on the line.
 fn global_declarations(results: &[FuncResult]) -> String {
-    let mut by_addr: BTreeMap<u64, Vec<&GlobalInfo>> = BTreeMap::new();
+    let mut by_addr: BTreeMap<u64, (Vec<&GlobalInfo>, Vec<&GlobalInfo>)> = BTreeMap::new();
     for g in results.iter().flat_map(|r| r.globals.iter()) {
-        by_addr.entry(g.address).or_default().push(g);
+        let e = by_addr.entry(g.address).or_default();
+        if g.direct { e.1.push(g) } else { e.0.push(g) }
     }
+    let quote = |d: &str| d.replace("/*", "/ *").replace("*/", "* /");
     let mut out = String::new();
-    for uses in by_addr.values() {
+    for (taken, direct) in by_addr.values() {
+        if taken.is_empty() {
+            continue;
+        }
         let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
-        for g in uses {
+        for g in taken.iter().chain(direct.iter()) {
             match decls.iter_mut().find(|(d, _)| d.declaration == g.declaration) {
                 Some((_, n)) => *n += 1,
                 None => decls.push((g, 1)),
             }
         }
-        let mut best = 0;
-        for (i, (g, n)) in decls.iter().enumerate() {
-            let (b, bn) = decls[best];
-            if (!g.unknown, g.size, *n) > (!b.unknown, b.size, bn) {
-                best = i;
+        let mut direct_decls: Vec<&str> = direct.iter().map(|g| g.declaration.as_str()).collect();
+        direct_decls.dedup();
+        direct_decls.sort_unstable();
+        direct_decls.dedup();
+        let chosen: &str = match direct_decls.as_slice() {
+            [] => {
+                let mut best = 0;
+                for (i, (g, n)) in decls.iter().enumerate() {
+                    let (b, bn) = decls[best];
+                    if (!g.unknown, g.size, *n) > (!b.unknown, b.size, bn) {
+                        best = i;
+                    }
+                }
+                &decls[best].0.declaration
             }
-        }
-        let chosen = &decls[best].0.declaration;
-        let others: Vec<String> = decls
-            .iter()
-            .filter(|(g, _)| g.declaration != *chosen)
-            .map(|(g, _)| g.declaration.replace("/*", "/ *").replace("*/", "* /"))
-            .collect();
+            [one] => one,
+            _ => {
+                let all: Vec<String> = decls.iter().map(|(g, _)| quote(&g.declaration)).collect();
+                let _ = writeln!(out, "/* {} is read at two types, so it is not declared: {} */", taken[0].name, all.join(", "));
+                continue;
+            }
+        };
+        let others: Vec<String> =
+            decls.iter().filter(|(g, _)| g.declaration != chosen).map(|(g, _)| quote(&g.declaration)).collect();
         if others.is_empty() {
             let _ = writeln!(out, "extern {chosen};");
         } else {

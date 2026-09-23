@@ -19,7 +19,7 @@ fn void() -> Rc<Datatype> {
 }
 
 fn direct(start: u64, size: u64, ty: Rc<Datatype>) -> Direct {
-    Direct { start, size, ty }
+    Direct { start, size, ty, unnamed: true }
 }
 
 #[test]
@@ -64,6 +64,9 @@ fn a_direct_access_shares_storage_only_as_the_same_c_type() {
     assert!(!same_object(&direct(0x10, 4, Rc::clone(&unk)), 0x10, 4, &int));
     assert!(!same_object(&direct(0x14, 4, Rc::clone(&uint)), 0x10, 4, &uint), "another start");
     assert!(!same_object(&direct(0x10, 8, unk), 0x10, 4, &uint), "another width");
+    let ubyte = core(1, type_metatype::TYPE_UINT, "uint1");
+    let unk1 = core(1, type_metatype::TYPE_UNKNOWN, "xunknown1");
+    assert!(!same_object(&direct(0x10, 1, unk1), 0x10, 1, &ubyte), "a byte unknown may print as char");
 }
 
 #[test]
