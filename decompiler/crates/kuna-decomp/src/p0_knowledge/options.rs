@@ -271,6 +271,9 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (kuna) synthesize `struct_N` over a pointer parameter dereferenced at two
     // or more constant offsets. Default OFF.
     "structsynth",
+    // (kuna) a synthesized record takes in the claims of a sibling reader of the
+    // same record. Default OFF.
+    "structmerge",
     "decodehalt",
     "msvcftol",
     "tailcalljump",

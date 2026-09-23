@@ -1,0 +1,201 @@
+{
+ "opportunity": "structsynth measures one function at a time and the layout ledger shares a struct_N only when one reader's claims are a SUBSET of the other's, so two functions that read overlapping-but-different parts of one record get a name each and each is declared to have only the fields its own function touched. On the eight layout builds 23 of the 77 ground-truth records kuna types at all are given more than one struct_N.",
+ "test_name": "tests/stages/structmerge-siblings.xml (6 two-arm assertions: with `option structmerge off` each of two overlapping readers keeps its own record and re-deciding the first changes nothing; with `siblings` the second reader is answered by the union and re-deciding the first moves it onto the union) + unit tests (kuna_structmerge::tests: the option surface, the union of two overlapping readers with the first superseded, a contradicted claim at the same offset and one over the same bytes at a different offset, a single shared claim, the growth bound, the unclaimed-bytes veto, and off minting a record per reader)",
+ "binary": "/tmp/layoutrecall-demo/two (gcc -O1, stripped; source in docs/features/structmerge/analysis.md) and the decbench full_run_address_2026-09-11 tree",
+ "selector": "name",
+ "func_addr": "0x1149 / 0x115d in the demo binary",
+ "option": "structmerge",
+ "value": "siblings",
+ "values": "off|siblings",
+ "flag": "Architecture::struct_merge (StructMergeMode::Siblings)",
+ "element_id": "n/a (no new ElementId)",
+ "change_kind": "structure-recovery",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "RecStruct (ASE 2021) section 4.2 merges the access patterns of every function that reaches one allocation site before deciding a layout; kuna had the per-function measurement and the program-wide ledger but no rule for combining two readers that merely overlap.",
+ "default_on": false,
+ "default_value": "off",
+ "census": {
+  "doc": "docs/features/structmerge/recall.md",
+  "builds": "fmt/ls/sort/du at O0 and O2",
+  "gt_parameters": 835,
+  "gt_fields": 9443,
+  "per_function_touch_ceiling": 1469,
+  "cross_function_touch_ceiling": 5922,
+  "cross_function_ceiling_over_accepted_readers": 3818,
+  "ceiling_on_the_200_params_kuna_types": 1451,
+  "kuna_claims_correct_today": 817,
+  "records_given_more_than_one_struct_N": "23 of 77",
+  "struct_N_covering_more_than_one_record": "1 of 136",
+  "fields_lost_to_the_layout_prune": 4,
+  "instrument": "docs/features/structmerge/census.py with docs/features/structmerge/census.patch (a census build of the pass; never committed to the engine)"
+ },
+ "layoutscore": {
+  "instrument": "docs/features/structsynth/layoutscore.py, --option structsynth param, eight layout builds",
+  "on_711": {
+   "off": {
+    "fields_only": "880/1010 = 0.8713",
+    "recall": 0.0932,
+    "f1": 0.1684,
+    "filler_counted": "1011/1341 = 0.7539"
+   },
+   "siblings": {
+    "fields_only": "907/1039 = 0.8730",
+    "recall": 0.096,
+    "f1": 0.1731,
+    "filler_counted": "1044/1367 = 0.7637"
+   }
+  },
+  "on_31ac2b26e": {
+   "off": {
+    "fields_only": "817/938 = 0.8710",
+    "recall": 0.0865,
+    "f1": 0.1574,
+    "filler_counted": "941/1197 = 0.7861"
+   },
+   "siblings": {
+    "fields_only": "844/966 = 0.8737",
+    "recall": 0.0894,
+    "f1": 0.1622,
+    "filler_counted": "974/1222 = 0.7971"
+   }
+  },
+  "record_names": {
+   "on_711": "205 -> 198",
+   "on_31ac2b26e": "163 -> 156",
+   "records_with_two_names": "unchanged in both arms on both bases",
+   "struct_N_covering_two_records": "unchanged in both arms on both bases"
+  },
+  "gate": "fields-only precision must stay >= 0.8710; it rises on both bases"
+ },
+ "heldout": {
+  "instrument": "docs/features/structmerge/heldout.py (docs/features/structsynth/dedup_heldout.py with an EXTRA_OPTS env), 177 builds in eight sets",
+  "f1_rises_on": "all eight sets",
+  "pooled_true_fields": {
+   "off": 53077,
+   "siblings": 53890,
+   "delta": 813
+  },
+  "pooled_precision": {
+   "off": 0.933,
+   "siblings": 0.9312
+  },
+  "per_set_precision": {
+   "TUNING": [
+    0.871,
+    0.8737
+   ],
+   "HELDOUT": [
+    0.8976,
+    0.8991
+   ],
+   "HELDOUT2": [
+    0.9051,
+    0.8989
+   ],
+   "HELDOUT3": [
+    0.8626,
+    0.8609
+   ],
+   "HELDOUT4": [
+    0.9035,
+    0.9019
+   ],
+   "REVIEW1": [
+    0.9707,
+    0.9708
+   ],
+   "REVIEW2": [
+    0.9602,
+    0.9587
+   ],
+   "FRESH6": [
+    0.9113,
+    0.9073
+   ]
+  },
+  "added_fields_true": "916 of 1105 (82.9%)",
+  "record_identity": "567 absorptions, 31 confirmed same record, 0 different record, the rest uncheckable (the union is a shape neither reader had on the off arm)"
+ },
+ "typesweep": {
+  "slices": 444,
+  "functions": 10748,
+  "projects": "coreutils grep gzip diffutils bzip2 findutils tar shadow",
+  "opts": "O0 O2 O2-noinline",
+  "perfect": {
+   "base": 1609,
+   "test": 1609,
+   "delta": 0
+  },
+  "aggregate": {
+   "base": 3818.77,
+   "test": 3818.77
+  },
+  "improved": 0,
+  "worsened": 0,
+  "note": "type_match cannot see a record's MEMBERS: a struct_2 * and a struct_3 * score the same, which is why 444 slices move by 0. It does see a record appearing or disappearing, and those 444 slices cover eight projects that happen not to contain that. e2fsprogs does: on e2fsck -O0 the value gives one function a five-field record where it had `void *`, takes the record off three other variables, and turns reconfigure_bool's two `char *` parameters into `unsigned long` -- type_match 0.6667 -> 0.3333 there, the binary's aggregate 201.21 -> 200.88 at an unchanged 12 perfect functions (typesweep --project e2fsprogs --opt O0 --opt O2: 631 functions, perfect +0, 1 worsened, 0 improved). So the option is not metric-neutral by construction; it is metric-neutral over the eight projects the campaign sweep measures. docs/features/structmerge/hunks.md works the class.",
+  "measured_on": "re-run on the rebased tree (origin/main with #711 calleevote, #714 libcwiden and #716 passthrough in): 1,609 perfect in both arms, 0 functions moved either way. The first run, on the 31ac2b26e-era base, read 1,522 in both arms."
+ },
+ "hunks": {
+  "doc": "docs/features/structmerge/hunks.md",
+  "binaries": 10,
+  "functions": 4904,
+  "changed": 92,
+  "record_name_only": 91,
+  "field_accesses_only": 1,
+  "skeleton_deltas": 0,
+  "declaration_count_deltas": 0,
+  "unclassified": 0,
+  "the_one_respelling": "grep -O2 sub_7110: the record gains a long member where it had undefined1 filler, so `v1 = a0->field_0x20` (an array member decaying to its address) becomes `v1 = &a0->field_0x20`, the same address with the pointer typed by the member Outside this set the class is larger: e2fsprogs e2fsck -O2 (1,421 functions) changes 56, 54 record-name-only, 2 respelled bodies, 1 of them a declaration-count delta (dict_insert 7 -> 6 declarations, every access at the same address; ext2fs_file_read passes &a0->field_0x14 where filler decayed to a0->field_0x14). Worked in hunks.md.",
+  "scope": "the counts below are these ten binaries, not a general rate",
+  "eleventh_binary": "e2fsprogs e2fsck -O0 (1,908 functions, 18,080 exported variables) holds a class the ten do not: 185 functions change (175 record-name-only, 9 field-accesses-only, 1 declaration-count delta) and 265 variables, of which 3 LOSE a synthesized record for `void *`, 1 gains one, and reconfigure_bool's two `char *` parameters become `unsigned long` (type_match 0.6667 -> 0.3333). So `siblings` can leave a function worse typed than `off`. The cause is the convergence sweep's redo of every reader of a superseded record, not the union: `--option protoorder lock` leaves not one variable on the binary changing type. Worked in hunks.md.",
+  "merged_mint_fallback": "lookup_or_mint falls through to the reader's own claims when the union will not mint, so a declined union never leaves a reader untyped where `off` types it. Measured inert on the corpus: KUNA_STRUCTMERGE_TRACE=1 over e2fsck -O0 plus twelve campaign binaries (ls/sort/du/fmt -O0 and -O2, grep, gzip, diff, tar, find, useradd, bzip2) traces 37,571 candidates and 0 mint failures, so the typesweep and layoutscore numbers above are unchanged by it.",
+  "rebase_recheck": "four of the ten binaries (coreutils du -O2, findutils find -O2, grep -O2, tar -O2) re-classified on the rebased tree: | **total** | 2552 | 76 | 76 | 0 | 0 | (columns: functions, changed, record name only, field accesses only, read) -- no skeleton delta, no declaration-count delta, nothing unclassified."
+ },
+ "jobs": "a --jobs N worker answers through the shard replay, which records the layout each request measured, so it never merges and a sharded run behaves as off -- the same divergence structsynth already has. Verified: coreutils fmt -O2 with --jobs 2 is byte-identical with the option off and with siblings.",
+ "gates": {
+  "make test": "PARITY OK, datatests 675/675",
+  "make test-stages": "PARITY OK, datatests 1329/1329 (rebased)",
+  "make test-cli": "tests/cli 236/236 passed (rebased)",
+  "make check-spec": "OK (lenient) + OK (strict)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh from `kuna catalog --markdown`",
+  "make rust-test": "RUST_TEST_RC=0 on the rebased tree, 422 test-result blocks and none with a failure (lane script, env -u KUNA_DECOMP_TEST). Run 2026-09-23 15:54:16Z -> 16:19:28Z, after the last source write at 15:52:46Z, with all eight kuna_structmerge tests green; re-run 16:30:52Z -> 16:56:31Z for the phases.toml/phase_catalog.json/doc-comment edit that followed (RUST_TEST_RC=0 again, 422 blocks, none failed, after the newest source write at 16:28:33Z). Earlier runs: 14:43:19Z -> 15:09:00Z RC=0, and one pre-rebase RC=2 on two sites this change owns (the live-value allowlist in kuna_phases/tests.rs and the docs/options.md kuna-cli embeds), both fixed and green since."
+ },
+ "counters": "settables 228 -> 229; tier counts 72 core / 92 -> 93 transform / 64 analysis; kuna-catalog.xml #7 structure-recovery 31 -> 32; phases-tests catalog-json-records 227 -> 228; catalog_bytecompat fixture recaptured (229 options); tests/stages corpus file count 334 -> 335; docs/baseline-stages.json re-recorded (+6 STRUCTMERGE assertions and the renamed KUNA-CATALOG #7 key, nothing moved)",
+ "base": "rebased onto origin/main 796939d54 (round G: slotptr, protoorder cycles, structsynth locals, calleevote, libcwiden, passthrough all in); designed and tuned on 31ac2b26e",
+ "default_decision": "off",
+ "speed": {
+  "method": "interleaved whole-binary `kuna decompile-all --json --max-fn-seconds 120`, `--option structmerge off` against `siblings`, arms alternating, min-of-15 (docs/features/structmerge/speed.py); the box carried eight other campaign lanes throughout, load average 17-27 on 80 cores, so only the within-run deltas are comparable",
+  "per_binary": {
+   "coreutils fmt -O2": {
+    "off_min_ms": 4607.7,
+    "siblings_min_ms": 4649.5,
+    "delta_min_pct": 0.91,
+    "delta_median_pct": -4.4
+   },
+   "coreutils ls -O2": {
+    "off_min_ms": 15728.0,
+    "siblings_min_ms": 15086.4,
+    "delta_min_pct": -4.08,
+    "delta_median_pct": 3.27
+   },
+   "coreutils sort -O2": {
+    "off_min_ms": 16693.8,
+    "siblings_min_ms": 16623.0,
+    "delta_min_pct": -0.42,
+    "delta_median_pct": 0.46
+   },
+   "bash -O2": {
+    "off_min_ms": 100571.5,
+    "siblings_min_ms": 100893.2,
+    "delta_min_pct": 0.32,
+    "delta_median_pct": 6.12
+   }
+  },
+  "worst_delta_min_pct": 0.91,
+  "budget_pct": 5,
+  "verdict": "within budget: the worst min-of-15 delta is +0.91%. The off arm is the shipped default and costs nothing at all -- the whole rule is behind `merge.fires()`, and the second ledger scan only runs for a layout that would otherwise mint."
+ }
+}

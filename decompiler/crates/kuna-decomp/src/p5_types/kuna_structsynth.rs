@@ -964,7 +964,14 @@ fn answer(
 ) -> Option<Rc<Datatype>> {
     match &data.get_arch().struct_synth_shard {
         Some(hook) => shard::lookup(hook, types, fields, size, unclaimed, selfs),
-        None => ledger::lookup_or_mint(types, fields, size, unclaimed, selfs),
+        None => ledger::lookup_or_mint(
+            types,
+            fields,
+            size,
+            unclaimed,
+            selfs,
+            data.get_arch().struct_merge,
+        ),
     }
 }
 

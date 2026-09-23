@@ -93,7 +93,7 @@ fn a_replay_names_every_structure_as_the_ledger_does() {
         let fs = fields(&live, &spec);
         let request = req(&fs, size, &unclaimed);
         let real =
-            ledger::lookup_or_mint(&live, fs, size, &unclaimed, &[]).map(|t| t.get_name().to_string());
+            ledger::lookup_or_mint(&live, fs, size, &unclaimed, &[], crate::kuna_structmerge::StructMergeMode::Off).map(|t| t.get_name().to_string());
         assert_eq!(replay.lookup_or_mint(&request), real);
         named.push(real.unwrap());
     }
@@ -136,7 +136,7 @@ fn a_held_name_is_never_minted_over() {
     let mut replay = Replay::probe(&live);
     let fs = fields(&live, &[(0, Ty::CharPtr), (8, Ty::Long)]);
     let request = req(&fs, 16, &[]);
-    let real = ledger::lookup_or_mint(&live, fs, 16, &[], &[]).map(|t| t.get_name().to_string());
+    let real = ledger::lookup_or_mint(&live, fs, 16, &[], &[], crate::kuna_structmerge::StructMergeMode::Off).map(|t| t.get_name().to_string());
     assert_eq!(real.as_deref(), Some("struct_1"));
     assert_eq!(replay.lookup_or_mint(&request), real);
     let again = Replay::probe(&live);
@@ -150,7 +150,7 @@ fn a_table_rebuilds_the_same_structures_in_another_factory() {
     for (spec, size, unclaimed) in script() {
         let fs = fields(&live, &spec);
         replay.lookup_or_mint(&req(&fs, size, &unclaimed));
-        ledger::lookup_or_mint(&live, fs, size, &unclaimed, &[]);
+        ledger::lookup_or_mint(&live, fs, size, &unclaimed, &[], crate::kuna_structmerge::StructMergeMode::Off);
     }
     let other = factory();
     let table = decode_table(&encode_table(replay.table())).unwrap();
@@ -174,7 +174,7 @@ fn a_table_rebuilds_the_same_structures_in_another_factory() {
     let held = held_names(&worker);
     assert_eq!(held, ["struct_0"]);
     let words = fields(&worker, &[(0, Ty::Long), (8, Ty::Long), (0x10, Ty::Long)]);
-    ledger::lookup_or_mint(&worker, words, 24, &[], &[]).unwrap();
+    ledger::lookup_or_mint(&worker, words, 24, &[], &[], crate::kuna_structmerge::StructMergeMode::Off).unwrap();
     assert!(install_table(&worker, &table).is_err());
     forget_minted(&worker, &held).unwrap();
     assert_eq!(held_names(&worker), ["struct_0"]);
@@ -186,7 +186,7 @@ fn a_table_rebuilds_the_same_structures_in_another_factory() {
     let fresh = factory();
     let held = held_names(&fresh);
     for (spec, size, unclaimed) in script().into_iter().rev() {
-        let st = ledger::lookup_or_mint(&fresh, fields(&fresh, &spec), size, &unclaimed, &[]).unwrap();
+        let st = ledger::lookup_or_mint(&fresh, fields(&fresh, &spec), size, &unclaimed, &[], crate::kuna_structmerge::StructMergeMode::Off).unwrap();
         // The parameter's pointer keeps the structure reachable.
         fresh.get_type_pointer(8, st, 1).unwrap();
     }
@@ -216,7 +216,7 @@ fn a_field_type_is_rebuilt_only_when_it_is_the_same_type() {
     }
     // A structure the ledger minted is named by its process, so it never travels.
     let minted =
-        ledger::lookup_or_mint(&f, fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]), 16, &[], &[]).unwrap();
+        ledger::lookup_or_mint(&f, fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]), 16, &[], &[], crate::kuna_structmerge::StructMergeMode::Off).unwrap();
     assert_eq!(TypeRecipe::of(&minted), None);
     let to_minted = f.get_type_pointer(8, minted, 1).unwrap();
     assert_eq!(TypeRecipe::of(&to_minted), None);
@@ -264,7 +264,7 @@ fn a_record_survives_the_wire() {
 fn a_forced_hook_answers_in_order_and_notices_a_changed_script() {
     let f = factory();
     let first = fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]);
-    let minted = ledger::lookup_or_mint(&f, first.clone(), 16, &[], &[]).unwrap();
+    let minted = ledger::lookup_or_mint(&f, first.clone(), 16, &[], &[], crate::kuna_structmerge::StructMergeMode::Off).unwrap();
     let hook = ShardHook::forcing(at_load());
 
     let second = fields(&f, &[(0, Ty::Long), (8, Ty::Long), (0x10, Ty::Long)]);
@@ -324,7 +324,7 @@ fn minted_structures_are_rendered_by_number() {
         (vec![(0, Ty::Uint), (4, Ty::Uint), (8, Ty::Long)], 16),
     ]
     .into_iter()
-    .map(|(spec, size)| ledger::lookup_or_mint(&f, fields(&f, &spec), size, &[], &[]).unwrap())
+    .map(|(spec, size)| ledger::lookup_or_mint(&f, fields(&f, &spec), size, &[], &[], crate::kuna_structmerge::StructMergeMode::Off).unwrap())
     .collect();
     let long = ty(&f, Ty::Long);
     let order = vec![
@@ -364,7 +364,7 @@ fn a_type_interned_after_the_load_does_not_travel() {
 fn a_recording_hook_reports_its_own_answers() {
     let f = factory();
     let flags = fields(&f, &[(0, Ty::Long)]);
-    ledger::lookup_or_mint(&f, flags.clone(), 8, &[], &[]).unwrap();
+    ledger::lookup_or_mint(&f, flags.clone(), 8, &[], &[], crate::kuna_structmerge::StructMergeMode::Off).unwrap();
     let hook = ShardHook::recording(Rc::new(AtLoad::of(&f)));
     let pair = fields(&f, &[(0, Ty::CharPtr), (8, Ty::Long)]);
     let minting = req(&pair, 16, &[]);

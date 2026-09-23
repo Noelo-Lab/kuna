@@ -1424,6 +1424,106 @@ again measures the same layout it measured the first time. The fixture
 the CLI probe `tests/cli/structsynth-sweep-mints-no-third-name.json` pin this
 shape. A batch that synthesized nothing pays one ledger probe for the whole run.
 
+**(kuna) The union of two readers of one record (`structmerge`).** Containment
+shares a name only when one reader's claims are a subset of the other's, and two
+functions that read overlapping-but-different parts of one object are the common
+case, not the exception. Measured against DWARF over the eight layout builds
+(`fmt`, `ls`, `sort` and `du` at -O0 and -O2: 835 pointer-to-struct parameters
+and 9,443 fields), 23 of the 77 ground-truth records kuna types at all are given
+more than one `struct_N`, while the opposite error -- one `struct_N` standing for
+two different records -- is 1 of 136. The census behind those numbers, and the
+two ceilings it establishes (the reading function itself dereferences 1,469 of
+the 9,443 fields; every function taking a pointer to the same record dereferences
+5,922 between them), is `docs/features/structmerge/recall.md`.
+
+[`structmerge`](../options.md) (`off|siblings`, default `off`) spends the second
+number. When nothing held answers a freshly measured layout, the lookup looks for
+a held structure the layout was measured to AGREE with and mints the UNION of the
+two in place of the layout alone
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structmerge.rs (merge)`, called
+from `ledger.rs (lookup_or_mint)`). The union strictly contains the held
+structure, so that structure is superseded the moment the union exists and the
+convergence sweep above moves its readers onto it.
+
+Agreement is the whole rule. Every offset both layouts claim must carry the same
+field -- offset, width, type and pointee spelled exactly as the ledger's field
+keys spell them, a field pointing at its own record included -- and no claim of
+one may cover bytes the other claims at a different offset, because two fields
+over the same bytes belong to two different records. What the two agree on must
+itself be evidence: three shared claims, or two of which one is a pointer with a
+pointee, since two integer words at 0 and 8 are how `struct stat`, a `timespec`
+and a list node all begin. Every layout that reaches the ledger claims offset 0,
+so the anchor of the agreement is always the first word. The union is then held
+to the containment rule (`Layout::answers_for`) against each side separately, so
+a reader is still never declared to hold more than twice the fields it measured
+or four times its bytes, a table of opaque slots is still answered only by its
+own shape, and no member lands in the alignment padding a reader's own claims
+leave between two of them. The reader doing the lookup must also keep its
+unclaimed bytes under the union (`ledger::keeps_unclaimed`); the earlier reader is
+held to the same test by the sweep, which measures its layout and its unclaimed
+bytes again with the union present, and leaves it on the structure it had when
+the union does not fit.
+
+The partner is the held structure sharing the most claims, then the smallest,
+then the first minted, so the answer does not depend on how the factory happens
+to store its types. The search reads the held structures whose size lies between
+a quarter of the measured layout's size and four times it, which is every size
+the growth bounds can reach.
+
+On the eight layout builds, per-parameter claimed-field precision against DWARF
+rises from 0.8713 to 0.8730 and recall from 0.0932 to 0.0960 (F1 0.1684 to
+0.1731), with seven fewer `struct_N` names covering the same records and no
+ground-truth record newly given two names
+(`docs/features/structsynth/layoutscore.py`).
+
+Agreement is a shape, not an identity, and the option is `off` by default because
+of what that costs. At the floor -- two shared claims one of which is a pointer
+-- the agreement is `{0: char *, 8: long}`, which is how a large share of C
+records begin, so two functions reading two DIFFERENT records of that shape are
+merged and each is then declared to hold a field its own object does not have. A
+five-line C file with a `{char *; long; long; char *}` and a `{char *; long; int;
+long}`, one reader each, is a witness; the two readers measure the same pair of
+claim sets whether they share a record or not, which is the whole of the limit
+(`kuna_structmerge::tests`
+`two_records_that_begin_alike_are_fused_at_the_agreement_floor`). It is not a
+corner: 19 of the 63 merges over sixteen coreutils/grep/diffutils/gzip/findutils
+builds clear the bar at exactly that floor, 38 at three claims and 6 at four.
+Over 177 builds the merge adds 1,105 claimed fields of which 916 are real DWARF
+fields and 189 are not, so pooled claimed-field precision falls 0.9330 -> 0.9312
+while F1 rises on all eight sets
+(`docs/features/structmerge/default-on-evaluation.md`). `on` a record states what
+one further function proved about it; `off` it states exactly what its own reader
+measured, which is the more conservative reading and what every earlier round
+measured.
+
+The second limit is the sweep, not the union. The union is minted under a fresh
+name and supersedes the thinner record it contains, so every function naming that
+record decompiles again -- and the redo is not guaranteed to land on the union,
+since the containment bounds that keep a reader of two fields off a record of
+five put it out of that reader's reach. What the redo settles on can be weaker
+than what it replaces, so `siblings` can leave a function WORSE typed than `off`
+does. On e2fsprogs `e2fsck` -O0 (1,908 functions, 18,080 exported variables,
+outside the eight layout builds) the value changes 265 variables: 254 are a
+record renamed, one function gains a five-field record where it had `void *`,
+three fall from `struct_35 */struct_87 *` to `void *`, and `reconfigure_bool`'s
+two `char *` parameters become `unsigned long` -- type_match 0.67 -> 0.33 for
+that function, and 201.21 -> 200.88 aggregate over the binary at an unchanged 12
+perfect functions. With the sweep disabled (`--option protoorder lock`) not one
+variable on that binary changes type, which is where the class lives. A
+union the factory declines to complete is not part of it: the lookup falls
+through to the reader's own claims, exactly as `off` mints them
+(`ledger.rs (lookup_or_mint)`, traced by `KUNA_STRUCTMERGE_TRACE=1`).
+
+`tests/stages/structmerge-siblings.xml` is the
+two-arm witness. Like the rest of the ledger the merge needs one process holding
+the whole program: `kuna decompile` numbers each function's records from
+`struct_0` again, and a `--jobs N` worker answers through the shard replay, which
+records the layout each request measured and so has nothing to replay for a mint
+of a union neither side asked for -- both behave as `off`. The sweep is one pass,
+so a union that supersedes a structure whose readers would themselves merge again
+can still leave a record with two names, which is the non-transitivity above
+rather than a new limit.
+
 The convergence is a property of the eager batch (`decompile_targets`,
 `decompile_export_targets`). The streaming project export has already written a
 body by the time its name could be superseded, so it reports MORE records than

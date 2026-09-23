@@ -1,0 +1,37 @@
+params 835 gt_fields 9443
+fields-only claimed 938 tp 817
+CEILINGS  per-function 1469  cross-function(all readers) 5922  cross-function(accepted readers only) 3818
+  restricted to the 200 params kuna types: 1451
+
+=== per build ===
+build      params typed    gt   tp touch union
+du O0         174    39  1926  139   258  1192
+du O2         100    29  1106  115   198   663
+fmt O0         34     4   556   11    21   179
+fmt O2         23     2   402    6    24   122
+ls O0         168    44  1761  193   266  1465
+ls O2          79    25   800  106   197   604
+sort O0       162    36  1779  152   295  1069
+sort O2        95    21  1113   95   210   628
+
+=== untyped params by reason (touched = GT fields the function dereferences) ===
+  reason                 params    gt touched sibling-union
+  gate_unsettled            217  2514       0           940
+  no_base                   140  2222       0           220
+  fewer_than_two_offsets     91   806      90           484
+  no_offset_zero             59   766     235           406
+  array_shaped               36   239     205            72
+  named_composite            27   673      83            18
+  type_lock                  20   200      74           140
+  not_a_pointer              13    65       0             0
+  gate_exceeded              12   131       0            70
+  dynamic_offset             10    85       8             8
+  phi_reached                 9    80      53             5
+  spacebase_or_global         1     0       0             4
+  TOTAL                     635  7781     748          2367
+
+=== typed params ===
+  reasons: {'accepted': 174, 'gate_unsettled': 12, 'no_base': 5, 'named_composite': 9}
+  touched 721  after prune 717  touched-but-unclaimed 37
+  GT records given >1 struct_N: 23 of 77
+  struct_N shared by >1 GT record: 1 of 136

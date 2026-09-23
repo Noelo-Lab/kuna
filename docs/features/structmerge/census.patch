@@ -1,0 +1,182 @@
+diff --git a/decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs b/decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+index 3644a02ce..3f978684c 100644
+--- a/decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
++++ b/decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
+@@ -5256,6 +5256,10 @@ impl FuncProto {
+             self.store = Some(Box::new(ProtoStoreInternal::new(void_type)));
+         }
+     }
++    /// CENSUS: is a store attached at all?
++    pub fn kuna_has_store(&self) -> bool {
++        self.store.is_some()
++    }
+     /// Borrow the store (panics if none).
+     fn store(&self) -> &dyn ProtoStore {
+         self.store.as_deref().expect("FuncProto::store: null")
+diff --git a/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs b/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
+index 3debbba8d..4a913bb59 100644
+--- a/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
++++ b/decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs
+@@ -843,11 +843,149 @@ fn layout_plan(slots: &BTreeMap<intb, Slot>) -> Option<(Vec<(int4, int4, bool)>,
+     Some((plan, size))
+ }
+ 
++// ---- CENSUS INSTRUMENTATION (scratch only, never committed) ----
++/// The parameter index of the varnode `base`, when it is one.
++fn census_arg_index(data: &Funcdata, base: VarnodeId) -> Option<usize> {
++    let addr = data.vbank().get(base)?.get_addr().clone();
++    let proto = data.get_func_proto();
++    if !proto.kuna_has_store() {
++        return None;
++    }
++    let mut pos = 0usize;
++    for i in 0..proto.num_params() {
++        let p = proto.get_param(i)?;
++        if p.is_hidden_return() {
++            continue;
++        }
++        let pa = p.get_address();
++        let same = pa.get_space().map(|s| s.get_index()) == addr.get_space().map(|s| s.get_index())
++            && pa.get_offset() == addr.get_offset();
++        if same {
++            return Some(pos);
++        }
++        pos += 1;
++    }
++    None
++}
++
++/// Why `accepts` turned this base away, in the order it checks.
++fn census_reason(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> &'static str {
++    let Some(v) = data.vbank().get(base) else { return "no_varnode" };
++    let is_input = v.is_input();
++    let lock = v.is_type_lock();
++    let spacey = v.is_spacebase() || v.is_persist()
++        || v.get_space().get_type() == spacetype::IPTR_SPACEBASE;
++    if !is_input && !(data.get_arch().struct_synth.locals() && is_local_base(data, base, e)) {
++        return if is_call_return(data, base) { "local_declined" } else { "not_a_base" };
++    }
++    if lock {
++        return "type_lock";
++    }
++    if spacey {
++        return "spacebase_or_global";
++    }
++    let Some(ct) = vn_type(data, base) else { return "no_type" };
++    if ct.get_metatype() != type_metatype::TYPE_PTR {
++        return "not_a_pointer";
++    }
++    if points_at_named_composite(&ct) {
++        return "named_composite";
++    }
++    if e.dynamic_offset {
++        return "dynamic_offset";
++    }
++    if e.integer_use {
++        return "integer_use";
++    }
++    if e.phi_reached {
++        return "phi_reached";
++    }
++    if e.slots.len() < 2 {
++        return "fewer_than_two_offsets";
++    }
++    if e.slots.keys().any(|off| *off < 0 || *off >= MAX_FIELD_OFFSET) {
++        return "offset_out_of_range";
++    }
++    if !e.slots.contains_key(&0) {
++        return "no_offset_zero";
++    }
++    let ptr_size = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
++    if is_array_shaped(&e.slots, ptr_size) {
++        return "array_shaped";
++    }
++    "accepted"
++}
++
++/// One `SSCENSUS` line per candidate base, on stderr, when `KUNA_SS_CENSUS` is set.
++fn census_dump(data: &mut Funcdata, raw: &BTreeMap<VarnodeId, Evidence>) {
++    if std::env::var_os("KUNA_SS_CENSUS").is_none() {
++        return;
++    }
++    let fnaddr = data.get_address().get_offset();
++    let bases: Vec<VarnodeId> = raw.keys().copied().collect();
++    for base in bases {
++        let e = raw[&base].pruned();
++        let arg = census_arg_index(data, base).map(|i| i as i64).unwrap_or(-1);
++        let reason = census_reason(data, base, &e);
++        let raw_e = &raw[&base];
++        let spell = |m: &BTreeMap<intb, Slot>| -> String {
++            m.iter().map(|(o, s)| format!("{o}:{}", s.width)).collect::<Vec<_>>().join(",")
++        };
++        let dropped = e
++            .unclaimed
++            .iter()
++            .map(|(o, w)| format!("{o}:{w}"))
++            .collect::<Vec<_>>()
++            .join(",");
++        let vaddr = data
++            .vbank()
++            .get(base)
++            .map(|v| {
++                format!(
++                    "{}:{:x}:{}",
++                    v.get_addr().get_space().map(|s| s.get_index()).unwrap_or(-1),
++                    v.get_offset(),
++                    v.get_size()
++                )
++            })
++            .unwrap_or_default();
++        let hasstore = data.get_func_proto().kuna_has_store();
++        let nparams = if hasstore { data.get_func_proto().num_params() } else { -1 };
++        let ty = vn_type(data, base)
++            .map(|t| format!("{:?}/{}", t.get_metatype(), t.get_name()))
++            .unwrap_or_else(|| "none".into());
++        eprintln!(
++            "SSCENSUS fn=0x{fnaddr:x} arg={arg} input={} reason={reason} ty={ty} \
++             vn={vaddr} store={hasstore} np={nparams} \
++             raw={} pruned={} dropped=[{dropped}] dyn={} int={} phi={}",
++            data.vbank().get(base).map(|v| v.is_input()).unwrap_or(false),
++            spell(&raw_e.slots),
++            spell(&e.slots),
++            raw_e.dynamic_offset,
++            raw_e.integer_use,
++            raw_e.phi_reached,
++        );
++    }
++}
++// ---- END CENSUS INSTRUMENTATION ----
++
++/// One `SSGATE` line per function the action turned away before `synthesize`.
++fn census_gate(data: &Funcdata, started: bool, exceeded: bool, settled: bool) {
++    if std::env::var_os("KUNA_SS_CENSUS").is_none() {
++        return;
++    }
++    eprintln!(
++        "SSGATE fn=0x{:x} started={started} exceeded={exceeded} settled={settled}",
++        data.get_address().get_offset()
++    );
++}
++
+ /// The one pass: decide every candidate base and install the accepted ones.
+ /// Returns whether anything was installed.
+ fn synthesize(data: &mut Funcdata) -> bool {
+     let Some(types) = data.get_arch().types_rc() else { return false };
+     let raw = collect(data);
++    census_dump(data, &raw);
+     let nests = data.get_arch().struct_synth.nests();
+     let ptrsize = types.get_size_of_pointer();
+     let mut asks = Vec::new();
+@@ -1231,6 +1369,12 @@ impl Action for ActionStructSynth {
+             || data.is_type_recovery_exceeded()
+             || !data.kuna_infertypes_settled()
+         {
++            census_gate(
++                data,
++                data.has_type_recovery_started(),
++                data.is_type_recovery_exceeded(),
++                data.kuna_infertypes_settled(),
++            );
+             return 0;
+         }
+         self.fired = true;
