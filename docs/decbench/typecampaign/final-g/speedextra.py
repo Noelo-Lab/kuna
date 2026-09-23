@@ -9,8 +9,10 @@ K = {"roundF": ("/home/mahaloz/kwt/_final-f/kuna", "/home/mahaloz/kwt/_final-mai
 ARMS = ["roundF", "roundG"]
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 15
 outf = sys.argv[2] if len(sys.argv) > 2 else "/home/mahaloz/kwt/_final-g/speed-extra.json"
+which = sys.argv[3].split(",") if len(sys.argv) > 3 else list(ALL)
 out = {}
-for name, b in ALL.items():
+for name in which:
+    b = ALL[name]
     t = {a: [] for a in ARMS}
     for i in range(N):
         order = ARMS[i % 2:] + ARMS[:i % 2]

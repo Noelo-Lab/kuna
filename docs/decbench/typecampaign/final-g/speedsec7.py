@@ -18,7 +18,7 @@ print("| binary | functions | baseline min | round E min | round F min | **round
 print("|---|---:|---:|---:|---:|---:|---:|---:|")
 for name, r, s, tag in rows:
     f = lambda v: f"{v:,.1f} ms"
-    print(f"| {LAB[name]}{tag} | {FN[name]} | {f(s['base']['min_ms'])} | {f(s['roundC']['min_ms'])} | "
+    print(f"| {LAB[name]}{tag} | {FN[name]} | {f(s['base']['min_ms'])} | {f(s['roundE']['min_ms'])} | "
           f"{f(s['roundF']['min_ms'])} | **{f(s['roundG']['min_ms'])}** | "
           f"{s['delta_min_pct_roundG_vs_roundF']:+.2f}% / {s['delta_median_pct_roundG_vs_roundF']:+.2f}% | "
           f"{s['delta_min_pct_vs_base_roundG']:+.2f}% |")

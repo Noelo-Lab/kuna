@@ -5,8 +5,9 @@ Its three stated goals were (1) get primitives right (int/char/bool), (2) emit f
 structs the way angr does; its yardstick was decbench `type_match` against IDA. This page is the Stage-3
 re-measure: the pinned campaign baseline against a fresh release build of `origin/main`, on every
 instrument the campaign built, plus what the numbers cannot see. **Round C** (below) repeats every
-measurement on `origin/main` `d8b9c0b1` once the eight items round B left open had landed. **Round D**
-and **Round E** repeat them again on `4c7704e0` and `2da619852`.
+measurement on `origin/main` `d8b9c0b1` once the eight items round B left open had landed. **Round D**,
+**Round E**, **Round F** and **Round G** repeat them again on `4c7704e0`, `2da619852`, `810b7dc86`
+and `10a0db235`.
 
 | | binary | commit |
 |---|---|---|
@@ -1449,6 +1450,307 @@ reported throughout. bash is 1.3 MB, so `--mode auto` resolves to `reliable` the
   Signedness, variable count and call arity are worth zero on `type_match` by construction — which is why
   #708, the round's only arity change, has to be judged on DWARF rather than on this page.
 
+## Round G — 2026-09-23
+
+Round F ranked two engine levers first: land `calleevote` (#711), and find the proof `passthrough`
+needed to be turned on. Both landed, together with `libcwiden` (#714), which widens the measured libc
+signature table by 333 names and strips the stack placeholder a call carries into its printed argument
+list. The `layoutrecall` lane opened #715 (`structmerge siblings`, default off) and nobody has reviewed
+it. This section re-measures `origin/main` `10a0db235` on the same instruments under the same metric
+pin, so every number reads baseline → round B → C → D → E → F → G.
+
+| | binary | commit |
+|---|---|---|
+| **round G** | `/home/mahaloz/kwt/_final-g/kuna` (pinned copy) | main `10a0db235` (2026-09-23, #716) |
+
+Metric pin unchanged (decisions §12): decbench `625e892` extracted read-only, with the venv's editable
+finder repointed at it by `final-c/pindb.py`. Three controls this round. `scripts/decbench/`,
+`docs/features/structsynth/layoutscore.py`, `docs/features/structnest/nestscore.py` and
+`scripts/pipeline/varcensus.py` are **byte-identical** between round F's `810b7dc86` and this round's
+`10a0db235`; the round-F binary re-run on this tree reproduces round F's rows exactly — 10,748/10,748
+functions, **0 values differ** — and so does the round-C binary, 1,349 and mean .3403 to four decimals.
+
+### Headline
+
+| goal | instrument | round F | round G | reading |
+|---|---|---|---|---|
+| type_match | typesweep, 444 slices / 10,748 functions | 1,522 perfect (14.16%), mean .3553 | **1,609** (14.97%), mean **.3688** | 457 improved, 7 worse; 88 onto perfect, 1 off; aggregate 3,818.77 → 3,963.45 |
+| vs the other decompilers | canonical replay, each rival on its own functions | 1st of five, binja still ahead at O2 | **1st at every optimization level** | on binja's 10,366 functions kuna is 14.76% / .3707 against 12.28% / .3422; O0 **25.71 vs 20.36**, O2 **3.60 vs 3.43**, O2-noinline **9.15 vs 8.52** |
+| the O2 wall | perfect at -O2 | 74 (3.09%), unmoved since round C | **89 (3.72%)** | the first -O2 movement in four rounds; -O2-noinline 383 → **416** |
+| `ptr_char` | per-GT-class match rate | 34.6% (5,060) | **38.0% (5,572)** | kuna passes binja (36.8%, 5,323) on the class that was 1,091 TP behind at round E; +330 of the +512 are arguments |
+| `ptr_ptr` | per-GT-class match rate | 28.6% (525) | **31.0% (569)** | binja 30.8%; ida still leads at 38.3% |
+| storage | argument / stack match rate | 50.0% / 57.6% | **52.0% / 58.6%** | +430 argument TP and +195 stack TP; register-only stays 0.0% |
+| goal 2: variables | varcensus, fmt/ls/sort/du O0+O2 | 6,975 declarations, 65 `[16]` blobs, 7 phantom `// rdx` | **6,970**, 65, 7 | five fewer declarations over 2,918 functions; `fmt::main` is byte-identical to round F (2/2/2, no phantom local) |
+| goal 3: structs | TRex mean pooled O0 / O2 | 4.420 / 1.918 | **4.475 / 1.952** | -O2 TRex moves for the first time; struct-typed parameters 123 → **173** of 538 at O0 |
+| goal 3: layout | per-parameter precision / recall / F1, fields only | .8710 / .0865 / .1574 | **.8713 / .0932 / .1684** | 72 more claimed fields at the same precision; filler-counted precision falls .7861 → .7539 |
+| goal 3: nesting | nesting F1 | .0036 (3 of 5 claimed, of 1,660) | .0036, unchanged | nothing this round touches nesting |
+| decbench#93 crediting | replay of the same rows | 1,522 → 1,781 (+259) | 1,609 → **2,181 (+572)** | +2,723 TP; mean .3688 → **.4532** |
+| speed | whole-binary `decompile-all`, interleaved min | +1.4…+4.5% vs baseline | **+2.4…+4.8%** vs baseline | +1.5…+2.3% against round F on the canonical set (fmt, ls, sort, bash); on two binaries outside it the round costs +5.5% (kmod -O2-noinline) and +5.9% (dpkg-divert), over the budget |
+
+### G.1 type_match
+
+Same 444 slices, same `--baseline-only` invocation at `--workers 12`.
+
+| slice | functions | base | round B | round C | round D | round E | round F | **round G** | mean F → **G** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| **ALL** | 10,748 | 848 | 986 | 1,349 | 1,349 | 1,353 | 1,522 | **1,609 (14.97%)** | .3553 → **.3688** |
+| O0 | 4,286 | 612 | 704 | 895 | 895 | 898 | 1,065 | **1,104 (25.76%)** | .5391 → **.5485** |
+| O2 | 2,394 | 42 | 53 | 74 | 74 | 74 | 74 | **89 (3.72%)** | .1834 → **.1980** |
+| O2-noinline | 4,068 | 194 | 229 | 380 | 380 | 381 | 383 | **416 (10.23%)** | .2628 → **.2799** |
+| coreutils | 6,422 | 525 | 610 | 877 | 877 | 880 | 938 | **985** | .3441 → .3580 (307 up, 4 down) |
+| tar | 1,548 | 94 | 114 | 158 | 158 | 158 | 192 | **213** | .3733 → .3934 (76 up) |
+| findutils | 790 | 31 | 35 | 41 | 41 | 41 | 51 | **60** | .2358 → .2495 (34 up) |
+| shadow | 686 | 20 | 29 | 31 | 31 | 32 | 86 | **89** | .3545 → .3593 (15 up) |
+| diffutils | 420 | 43 | 52 | 58 | 58 | 58 | 63 | **64** | .4445 → .4499 (11 up) |
+| gzip / bzip2 / grep | 882 | | | | | | 192 | **198** | 14 up, 3 down |
+
+Unlike round F, which was almost entirely -O0, round G moves **every optimization level**: +39 at O0,
++15 at O2 and +33 at O2-noinline. It is also an **argument** round — +430 of the +625 new true
+positives are parameters, where round F's were stack slots.
+
+**Which PR moved it.** Each landed commit was built and swept in turn, so the ladder is exact, and the
+two option-gated ones were also ablated on the final binary:
+
+| PR | step | perfect | improved / worse | onto / off | O0 / O2 / O2-noinline |
+|---|---|---:|---:|---:|---|
+| #711 `calleevote` | round F → `9e07ab931` | 1,522 → **1,567** (+45) | 144 / 3 | 46 / 1 | +25 / +6 / +14 |
+| #714 `libcwiden` | → `1c57f06b6` | 1,567 → **1,582** (+15) | 202 / 4 | 15 / 0 | +14 / 0 / +1 |
+| #716 `passthrough` on | → `10a0db235` | 1,582 → **1,609** (+27) | 111 / 0 | 27 / 0 | 0 / **+9** / **+18** |
+| #711, ablated on the final tree | `--option calleevote off` | 1,575 → **1,609** (+34) | 101 / 3 | 35 / 1 | +21 / +7 / +6 |
+| #716, ablated on the final tree | `--option passthrough off` | 1,582 → **1,609** (+27) | 111 / 0 | 27 / 0 | 0 / +9 / +18 |
+
+`--option passthrough off` on the round-G build reproduces the `1c57f06b6` step **exactly** — 1,609 →
+1,582 perfect, aggregate 3,909.56 in both — so the three refusals #716 adds (`returnuncomputed`,
+`varargtail`, the written-register decline) cost nothing on this corpus and the whole of its +27 is the
+flip. `passthrough` is also the only lever that moves -O2 this round, as it was in round F.
+
+A `calleevote` win, runnable against the unpatched tree (`gzip::gzip_error`, GT `char const *m`):
+
+```
+$ F=<results>/O2-noinline/gzip/stripped/gzip
+$ V='.functions[]|select(.address_hex=="0xd510")|.code'
+$ kuna decompile-all $F --json --option calleevote off | jq -r "$V" | head -2
+void sub_d510(unsigned long a0)
+$ kuna decompile-all $F --json | jq -r "$V" | head -2        # the default
+void sub_d510(char *a0)
+```
+
+**The seven worse functions, all read**, and each attributable to one step:
+
+| function | GT | round F | round G | PR |
+|---|---|---|---|---|
+| `gzip::xmemdup` -O0 / -O2 / -O2-noinline | `void *p` | `void *` | `char *` | #711 |
+| `ls::gobble_file`, `dir`, `vdir` -O0 | three `_Bool` slots | `bool` | `char` | #714 |
+| `cp::make_dir_parents_private` -O0 | `_Bool missing_dir` | `bool` | `char` | #714 |
+
+`xmemdup(void const *p, size_t s)` is the metric's hardest case for a caller vote: every caller passes a
+string, so the vote is right about the program and wrong about the declaration. The four `bool` losses
+are the price of #714's placeholder strip: each is a one-byte 0/1 slot filled from a comparison whose
+call loses a phantom trailing argument (`strcmp("_",v8,v3)` → `strcmp("_",v9)`,
+`fstatat(...,v1)` → `fstatat(...)`), and `boolbyte` no longer calls the slot `bool` afterwards.
+
+Measured against the campaign baseline the round stands at **3,341 functions improved and 17 worse, 763
+onto perfect and 2 off**; against round C's binary, re-run here as the second control, 1,077 improved and
+12 worse. Those 17 are the 11 round F read (`factor::powm2` ×3 and `millerrabin2` ×3 from `structsynth`,
+`shred::dorewind`, `shred::passname`, `diff::scan_char_literal`, `grep::buf_has_encoding_errors`,
+`ginstall::install_file_in_file`) plus the six this round adds. Per project × opt is in
+`final-g/report-slices.md`; every moved function is in `final-g/moved.csv`.
+
+### G.2 Per ground-truth class
+
+Same classifier (`final/gtclass.py`), same 65,715 GT variables, rivals' columns unchanged (neither the
+results tree nor the pinned metric moved). Only the rows that moved, plus the two ceilings:
+
+| GT class | GT vars | round E | round F | **round G** | ida | binja | ghidra | angr |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `ptr_char` | 14,645 | 28.9% (4,232) | 34.6% (5,060) | **38.0% (5,572)** | 24.4% (3,543) | 36.8% (5,323) | 18.3% | 16.4% |
+| `ptr_ptr` | 1,834 | 28.5% (523) | 28.6% (525) | **31.0% (569)** | **38.3% (670)** | 30.8% (542) | 1.5% | 5.6% |
+| `ptr_prim` | 1,242 | 46.8% (581) | 47.8% (594) | **49.4% (614)** | 30.7% | 51.7% (607) | 32.0% | 37.1% |
+| `ptr_struct` | 14,252 | 3.3% (474) | 4.0% (568) | 4.0% (568) | 2.4% (328) | 2.8% (389) | 2.3% | 2.3% |
+| `ptr_void` | 3,481 | 17.7% (615) | 17.8% (621) | 17.8% (618) | 1.6% | 12.8% | 1.3% | 2.4% |
+| `int_s4` | 8,788 | 53.4% (4,693) | 53.4% (4,693) | **53.8% (4,728)** | 48.0% | 57.5% (5,012) | 43.1% | 53.4% |
+| `int_u8` / `int_s8` | 7,657 / 2,478 | 3,902 / 1,448 | 3,899 / 1,444 | **3,913 / 1,451** | 3,101 / 1,201 | 3,887 / 1,431 | | |
+| `bool` | 3,222 | 42.8% (1,378) | 42.8% (1,378) | 42.5% (1,368) | 9.1% | 2.6% | 15.4% | 0.0% |
+| `funcptr` / `ptr_union` | 525 / 143 | 0 | 0 | **0** | 0 | 0 | 0 | 0 |
+| **all GT variables** | 65,715 | 31.1% (20,405) | 32.5% (21,341) | **33.4% (21,966)** | 24.1% | 30.7% (19,801) | 21.5% | 24.5% |
+
+| storage | GT vars | round F | **round G** | ida | binja |
+|---|---:|---:|---:|---:|---:|
+| argument | 21,577 | 50.0% | **52.0%** | 40.6% | 48.4% |
+| stack | 18,317 | 57.6% | **58.6%** | 38.2% | 51.8% |
+| register only | 25,821 | 0.0% | 0.0% | 0.4% | 1.4% |
+
+The whole round lands on arguments: `ptr_char` +330 argument TP and +182 stack, `ptr_ptr` +44 argument,
+`int_s4` +29, `ptr_prim` +11/+9, against −10 `bool` stack (G.1) and −3 `ptr_void` argument (`xmemdup`).
+`ptr_char` is the class the campaign has chased since round D, and at 38.0% kuna now holds it: +249 TP
+over binja, having been 1,119 behind at round D. `ptr_struct` does not move at all — `calleevote fields`
+synthesizes records, and a synthesized `struct_N *` is not a GT struct name under the pinned metric —
+the same records are worth +322 credited functions under decbench#93 (G.5).
+
+The rivals' replay, each decompiler paired with kuna on exactly the functions that decompiler scored:
+
+| decompiler (functions it scored) | rival: perfect % / mean | kuna round F | **kuna round G** |
+|---|---|---|---|
+| **binja** (10,366) | 12.28% / .3422 | 13.95% / .3582 | **14.76% / .3707** |
+| **ida** (10,273) | 8.33% / .2682 | 14.28% / .3621 | **15.09% / .3751** |
+| **angr** (10,502) | 8.27% / .2652 | 14.40% / .3592 | **15.23% / .3729** |
+| **ghidra** (10,673) | 6.84% / .2367 | 14.17% / .3567 | **14.94% / .3698** |
+
+kuna is 1st of five, and for the first time it leads **at every optimization level**: against binja on
+binja's own functions, O0 25.71% / .5481 against 20.36% / .4956, O2 3.60% / .1979 against 3.43% / .1868,
+and O2-noinline 9.15% / .2751 against 8.52% / .2632. Both -O2 cells were binja's in round F, and
+`passthrough` is what took them.
+
+### G.3 Goal 2 — variables, and `fmt::main`
+
+`final-g/goal2g.py` (round F's driver, both binaries re-run side by side):
+
+| opt | binary | declarations (F → **G**) | `[16]` blobs | never-written locals |
+|---|---|---|---|---|
+| O2 | fmt / ls / sort / du | 311 / 1,239 → **1,237** / 1,060 / 950 → **951** | 4 / 10 / 11 / 7 | 3 / 53 / 30 / 38 |
+| O0 | fmt / ls / sort / du | 271 / 1,135 / 1,085 → **1,081** / 924 | 4 / 18 / 6 / 5 | 9 / 31 / 44 / 39 |
+| **total** | | **6,975 → 6,970** | **65 = 65** | **247 = 247** |
+
+Five fewer declarations over 2,918 functions (−0.07%): a caller vote or a recovered pass-through
+parameter replaces a local that used to be declared separately. The phantom-`rdx` shape is **7 → 7**,
+all `du` -O2 `main`, and **`fmt::main` is byte-identical to round F** (`final-g/fmt-main-g.c`):
+`sub_3700` is called as `(v6,v7)`, `(stdin,v7)` and `(stdin,"-")` and no `// rdx` local is declared.
+Call arguments over the eight builds go 17,251 → 17,289 (+38, +0.2%) — `passthrough` adds them and
+#714's placeholder strip removes them, and `ls` -O0 is the one build where the strip wins (−14).
+
+### G.4 Goal 3 — structs
+
+`structscore --all` on the same eight builds, same instrument (`final-g/structscore-table.md`):
+
+| opt | binary | TRex mean 0-6 F → **G** | `c_primitive` passed | params typed as a struct / GT | layout F1 (filler) |
+|---|---|---|---|---|---|
+| O0 | fmt | 4.8571, unchanged | 218/295 | 4 / 34 | 0.052 |
+| O0 | ls | 4.4691 → **4.5390** | 745/1,016 → 779/1,047 | 44 → **63** / 168 | 0.210 → 0.218 |
+| O0 | sort | 4.3172 → **4.3623** | 613/799 → 632/818 | 36 → **45** / 162 | 0.173 → 0.177 |
+| O0 | du | 4.3368 → **4.3996** | 545/730 → 573/757 | 39 → **61** / 174 | 0.153 → 0.179 |
+| O2 | fmt | 2.1872 → **2.2014** | 100/136 → 101/138 | 2 / 23 | 0.039 |
+| O2 | ls | 1.7606 → **1.8019** | 242/366 → 257/382 | 25 → **31** / 79 | 0.254 → 0.259 |
+| O2 | sort | 2.0222 → **2.0371** | 256/334 → 260/337 | 21 → **22** / 95 | 0.180 → 0.181 |
+| O2 | du | 1.9286 → **1.9788** | 217/302 → 230/315 | 29 → **40** / 100 | 0.209 → 0.229 |
+
+Pooled TRex mean O0 **4.4195 → 4.4747**, O2 **1.9182 → 1.9520**; struct-typed parameters O0 123 → **173**
+of 538 and O2 77 → **95** of 297. `--option calleevote off` on the same eight builds reads 4.4317 / 1.9377
+and 123 / 77 struct parameters, so **#711 is the whole of it** and the other two PRs are worth +0.012 at
+O0. This is the first round in which -O2 TRex moves at all.
+
+Per-parameter layout against DWARF (`docs/features/structsynth/layoutscore.py`, unchanged):
+
+| arm | fields only | filler counted | F1 (fields / filler) | recall (fields) |
+|---|---|---|---|---|
+| round E | 0.8702 (811/932) | 0.7851 (935/1,191) | 0.1563 / 0.1759 | 0.0859 |
+| round F (re-run on this tree) | 0.8710 (817/938) | 0.7861 (941/1,197) | 0.1574 / 0.1769 | 0.0865 |
+| **round G** | **0.8713** (880/1,010) | 0.7539 (1,011/1,341) | **0.1684** / 0.1875 | **0.0932** |
+
+The round-F binary reproduces round F's published row to four decimals. Round G claims 72 more fields at
+the same fields-only precision — recall .0865 → .0932, back above round D's .0929 for the first time — because
+`calleevote fields` gives a layout to parameters that had none: on `ls` -O0 alone, 30 parameters change
+(`final-g/layoutdiffFG.log`), 12 of them from no record at all (`hash_lookup`, `hash_find_entry`,
+`is_directory`, `transfer_entries`, `localtime_rz`, `rpl_timegm`, …). The filler-counted precision falls
+because some of those one-field records claim a field that is not there — `seen_file` arg 0 and
+`has_capability_cache` arg 1 each claim 2 and get 0 — which is the cost of typing a parameter from one
+observed access. **Nesting** is 3 of 5 claimed against 1,660 GT nestings — P .60, R .0018, F1 **.0036** —
+identical to round F, and `--option structsynth nest` claims the same 5 on these builds.
+
+### G.5 The decbench#93 counterfactual
+
+| | perfect | credited perfect | TP added | mean → credited |
+|---|---:|---:|---:|---|
+| baseline | 848 | 848 | 0 | .2645 → .2645 |
+| round C / D | 1,349 | 1,575 (+226) | +1,569 | .3403 → .3849 |
+| round E | 1,353 | 1,579 (+226) | +1,536 | .3415 → .3857 |
+| round F | 1,522 | 1,781 (+259) | +1,779 | .3553 → .4038 |
+| **round G** | 1,609 | **2,181 (+572)** | **+2,723** | .3688 → **.4532** |
+
+Crediting is worth 313 more functions than in round F and 944 more TP, and the whole of that increase is
+`calleevote fields`: with `--option calleevote off` the credited number is 1,859 (+284 over its own
+1,575), and the default is 2,181 (+572) — so #711 alone is **+322 credited functions and +926 credited
+TP** (`final-g/credit93-arms.log`). A parameter the metric scores as a miss because `struct_9 *` is not
+`hash_table *` is a correct pointer-to-structure under the rule the campaign asked decbench for. Under
+#93 round G would be **2,181 of 10,748 (20.3%)** with mean .4532.
+
+### G.6 Speed
+
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation) on the -O2 stripped
+binaries: four arms (baseline, round E, round F, round G) run one after another with the arm order
+rotating every round, min-of-11. Driver `final-g/speed7.py`, raw samples `final-g/speed.json`. The box
+was quiet for this run — load average between 2 and 6 on 80 cores — unlike round F's page, so the
+absolute milliseconds are comparable with round E's and not with round F's.
+
+| binary | functions | baseline min | round E min | round F min | **round G min** | Δ G vs F (min / median) | Δ G vs baseline (min) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| coreutils fmt | 151 | 4,074.6 ms | 4,124.0 ms | 4,108.8 ms | **4,170.9 ms** | +1.51% / +1.49% | +2.36% |
+| coreutils ls | 404 | 13,241.5 ms | 13,441.0 ms | 13,416.7 ms | **13,670.5 ms** | +1.89% / +1.66% | +3.24% |
+| coreutils sort | 343 | 13,895.0 ms | 14,129.3 ms | 14,113.8 ms | **14,407.7 ms** | +2.08% / +2.19% | +3.69% |
+| bash | 2,538 | 83,623.9 ms | 85,939.1 ms | 85,628.4 ms | **87,630.5 ms** | +2.34% / +2.79% | +4.79% |
+
+Round G costs **+1.5% to +2.3% against round F** and **+2.4% to +4.8% against the campaign baseline** — a
+week of default-on type work, inside the +5% budget on this set, and nothing here crossed the re-run
+line.
+
+Round F held #711 partly on speed: a second decompile of a callee cost +11.5% on kmod -O2-noinline,
++9.0% on crontab and +8.1% on dpkg-divert. Those three were re-measured here against the round-F binary
+at interleaved min-of-15 (`final-g/speedextra.py`, `final-g/speed-extra.json`):
+
+| binary | round F min | **round G min** | Δ G vs F (min / median) | round F's page |
+|---|---:|---:|---:|---:|
+| kmod -O2-noinline (min-of-15, quiet) | 3,731.5 ms | **3,938.2 ms** | **+5.54%** / +5.60% | +11.5% |
+| cronie crontab -O2-noinline (min-of-15) | 1,100.4 ms | **1,120.4 ms** | +1.82% / +1.78% | +9.0% |
+| dpkg dpkg-divert -O2-noinline (min-of-15, quiet) | 2,982.8 ms | **3,159.3 ms** | **+5.92%** / +6.08% | +8.1% |
+
+`crontab` is now well inside the budget; kmod and dpkg-divert are **still over it**, and both were
+re-measured at a quiet moment (load 2.2) because they crossed the +5% line — first pass +5.47% and
++6.11%, re-run +5.54% and +5.92%, so the reading is real and not contention. That is the round's only
+budget breach, it is outside the canonical speed set, and it is the redo `calleevote` asks for rather
+than the vote itself (G.8, lever 5).
+
+
+### G.7 Every round-G PR and what it measured
+
+| PR | item | default | measured effect |
+|---|---|---|---|
+| #711 | `calleevote` — a parameter only read at one fixed offset, or only forwarded, takes the type every caller passes; `fields` turns its lone field into a record | `fields` | +45 on its own step and +34 ablated on the final tree (101 up / 3 down); the whole of goal 3's movement (TRex O0 4.4317 → 4.4747, struct-typed parameters 123 → 173, layout recall .0865 → .0932) and of the decbench#93 jump (+322 credited functions, +926 credited TP); its three losses are gnulib `xmemdup`, where every caller passes a string to a `void *` parameter |
+| #714 | `libcwiden` — 333 more measured libc signatures (the `*at` family, SELinux, account, xattr, socket and pthread names), each reduced by script from `gcc -aux-info`; and `Heritage::clearStackPlaceholders`, so a call stops printing the slot it pushed its return address into as an argument | ungated (strict) | 1,567 → 1,582 perfect (+15), 202 up / 4 down; phantom trailing arguments 149 → 0 over 12 binaries (its own corpus); the four losses are one-byte `bool` slots that lose `boolbyte`'s reading once the call that fills them loses its phantom argument |
+| #716 | `passthrough` on by default, plus three refusals: a callee states a return only where its body computed one on every path (`returnuncomputed`), a stated parameter whose value only reaches a variadic tail is never claimed (`varargtail`), and a claim that can only reach across a register the function writes first is declined | **`on`** (was `off`) | 1,582 → 1,609 (+27), 111 up / **0 worse**, and the only lever that moves -O2 (80 → 89) and -O2-noinline (398 → 416); the refusals are exactly metric-neutral here, so `--option passthrough off` reproduces the pre-flip build value for value. The evidence for the flip is DWARF, not this page: 4,107 of 4,346 gained parameters confirmed over two corpora — the 444 slices and 130 slices of 17 disjoint projects — 0 contradicted, 0 arguments lost |
+
+**Not landed:**
+
+| PR | item | state | measured on its base |
+|---|---|---|---|
+| #715 | `structmerge siblings` — when two functions measure overlapping parts of one record, the ledger mints the union instead of a second `struct_N`, under an agreement rule and the existing containment bound | open, gates green, **no review**; default would be `off` | on this tree: per-parameter layout precision .8713 → .8730 and recall .0932 → .0960 on the eight layout builds, seven fewer `struct_N` names over the same records, +813 true fields over 177 builds with 0 of 567 absorptions landing on a different DWARF record; `type_match` cannot see a record's members and is 1,522 either way |
+
+### G.8 What stays opt-in, and the ranked levers left
+
+* **Opt-in, with reasons.** `charptr` (the flip fails `test-cli` and the typesweep after #704);
+  `structsynth nest` (every criterion passes but a sharded run is +63%); `libctypes glibc`,
+  `protoorder lock`, `structdefs`, `indirectonly`, `signedness prefer-signed`, `formatstring full` —
+  unchanged from round B. `passthrough` left this list this round.
+* **Ranked next levers**, by measured effect:
+  1. **Upstream metric fixes, now worth more than any engine change.** decbench#93 crediting is
+     **+572** functions (G.5) and the inlined-callee fix E.8 measured is worth O2 74 → 153 and
+     O2-noinline 380 → 498. Both are larger than any lever kuna has left on its own.
+  2. **Naming a synthesized record.** `ptr_struct` is 4.0% (568 of 14,252) and did not move this round,
+     yet `calleevote` made 2,723 of those misses correct pointers-to-structure under #93. The only
+     mechanism that converts one under the pinned metric is giving the record the library type's name,
+     as `libcstructs` does for seven aggregates.
+  3. **Struct layout recall .0932 and nesting F1 .0036** — precision has been .87 for four rounds and
+     8,563 of 9,443 ground-truth fields are still never claimed. #715 is the first measured move on it
+     (recall .0960, precision .8730) and needs a review; nesting has had none.
+  4. **`ptr_char`'s reachable misses are down to 1,930.** Of the 9,073 misses, 7,143 are register-only
+     and nothing can reach them; what is left is 955 arguments and 975 stack slots. The class gap to
+     binja is now +249 TP in kuna's favour, so this stops being the campaign's first lever.
+  5. **`calleevote`'s redo cost** — the accuracy is settled, but a second decompile of a callee costs
+     +5.5% on kmod -O2-noinline and +5.9% on dpkg-divert, the only budget breach of the round.
+     Making the vote incremental would return it.
+* **Ceilings, unchanged.** Register-resident ground truth is 25,821 of 65,715 GT variables (39.3%) and
+  kuna exports none of them; at O2 that ceiling alone makes 85.8% of functions unreachable (E.8).
+  Signedness, variable count and call arity are worth zero on `type_match` by construction — which is why
+  #716, an arity change, had to be judged on DWARF rather than on this page.
+
 ## Reproduce
 
 Tools are in `final/` (paths are this machine's; each is a thin driver over the repo's own instruments).
@@ -1532,4 +1834,25 @@ bash final-f/ss-ablate.sh         # the same eight builds with `--option slotptr
 bash final-f/layout.sh            # layout P/R (F, E control) + nestscore param vs nest
 python3 final-f/layoutdiffEF.py <bin>               # per-parameter layout, round E vs round F
 python3 final-f/speed6.py 11 <speed.json> fmt,ls,sort,bash   # then speed6.py 15 for any case over +5%
+```
+
+Round G uses `final-g/` the same way, and adds per-COMMIT arms: #714 is ungated and its libc table
+cannot be isolated with an option, so each landed commit is built in its OWN directory (`kuna` resolves
+the `decomp_dbg` beside it) and swept like the round binary, alongside the two option arms:
+
+```bash
+bash final-g/sweep.sh              # round G, plus the round-F and round-C binaries as controls
+bash final-g/sweep-arms.sh         # calleevote off, passthrough off, and the #711 / #714 step builds
+python3 final-g/analyze7.py        # base / B / C / D / E / F / G (+ both controls), classes, rivals
+python3 final-g/moved7.py          # moved.csv + report-slices.md
+python3 final-c/credit93.py base=<rows> ... roundG=<rows>    # and once per arm -> credit93-arms.log
+python3 final-g/whyworse.py <rowsA> <rowsB> 'slice|function' # per-GT-variable diff of two arms
+python3 final-g/goal2g.py          # varcensus, round F vs round G
+bash final-g/ss.sh && python3 final-g/sstable7.py            # structscore F vs G
+bash final-g/ss-ablate.sh          # the same eight builds with `--option calleevote off`
+bash final-g/layout.sh             # layout P/R (G, F control) + nestscore param vs nest
+LAYOUTSCORE_OPTIONS="calleevote off" python final-g/layoutrun.py             # the layout ablation
+python3 final-g/layoutdiffFG.py <bin>                        # per-parameter layout, round F vs round G
+python3 final-g/speed7.py 11 <speed.json> fmt,ls,sort,bash
+python3 final-g/speedextra.py 15 <speed-extra.json> kmod-O2ni,crontab-O2ni,dpkg-divert-O2ni
 ```

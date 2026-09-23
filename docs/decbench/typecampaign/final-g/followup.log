@@ -1,0 +1,16 @@
+=== LAYOUT with calleevote off
+fmt O0: fields-only P=0.9167 (11/12), filler-counted P=0.8824 (15/17), gt=556
+fmt O2: fields-only P=1.0 (6/6), filler-counted P=1.0 (8/8), gt=402
+ls O0: fields-only P=0.8075 (193/239), filler-counted P=0.7698 (214/278), gt=1761
+ls O2: fields-only P=0.8548 (106/124), filler-counted P=0.7531 (122/162), gt=800
+sort O0: fields-only P=0.8686 (152/175), filler-counted P=0.7864 (173/220), gt=1779
+sort O2: fields-only P=0.8796 (95/108), filler-counted P=0.7902 (113/143), gt=1113
+du O0: fields-only P=0.9205 (139/151), filler-counted P=0.7951 (163/205), gt=1926
+du O2: fields-only P=0.935 (115/123), filler-counted P=0.811 (133/164), gt=1106
+POOLED filler counted: precision 941/1197 = 0.7861  recall 941/9443 = 0.0997  F1 0.1769
+POOLED fields only: precision 817/938 = 0.8710  recall 817/9443 = 0.0865  F1 0.1574
+LAYOUT_ABL_DONE
+kmod-O2ni {'roundF': 3731.5, 'roundG': 3938.2} G/F min 5.54 med 5.6 (2.27197265625, 2.1474609375, 2.19970703125)
+dpkg-divert-O2ni {'roundF': 2982.8, 'roundG': 3159.3} G/F min 5.92 med 6.08 (2.3037109375, 2.19189453125, 2.20654296875)
+SPEEDEXTRA_DONE
+FOLLOWUP_DONE
