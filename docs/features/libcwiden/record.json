@@ -334,6 +334,7 @@
    ]
   },
   "gates": "make test 675/675 PARITY OK and make test-stages PARITY OK with ZERO moved assertions; the only new keys are the three KUNA-CALLPLACEHOLDER ones.",
-  "test": "tests/stages/kuna-callplaceholder.xml over decompiler/crates/kuna-analysis/tests/fixtures/callplaceholder_x86_64"
+  "test": "tests/stages/kuna-callplaceholder.xml over decompiler/crates/kuna-analysis/tests/fixtures/callplaceholder_x86_64",
+  "stack_arguments_unaffected": "A call with more arguments than the six register slots still renders all of them, byte-identically in both arms: an -O0 `printf(\"%d ...\", argc, argc+1 ... argc+7)` (8 args) and a 6-arg `snprintf`. The resolved sites take their offset from `resolve_spacebase_relative`'s own record, which is made before the strip, not from the placeholder."
  }
 }
