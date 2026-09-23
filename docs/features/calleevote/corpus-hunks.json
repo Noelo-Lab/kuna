@@ -2,9 +2,10 @@
  "binaries": {
   "O0/coreutils/cp": {
    "functions": 530,
-   "types-and-spelling": 33,
-   "renumber-only": 31,
-   "signature-only": 16
+   "renumber-only": 30,
+   "signature-only": 12,
+   "types-and-spelling": 30,
+   "SHAPE": 1
   },
   "O0/diffutils/cmp": {
    "functions": 214,
@@ -14,8 +15,8 @@
   },
   "O0/grep/grep": {
    "functions": 642,
-   "renumber-only": 65,
-   "types-and-spelling": 42,
+   "renumber-only": 66,
+   "types-and-spelling": 41,
    "signature-only": 5
   },
   "O0/gzip/gzip": {
@@ -25,53 +26,49 @@
    "signature-only": 1
   },
   "O0/sysvinit/init": {
-   "functions": 162,
-   "types-and-spelling": 1
+   "functions": 162
   },
   "O2-noinline/bzip2/bzip2": {
    "functions": 154,
-   "types-and-spelling": 4,
-   "renumber-only": 10
+   "renumber-only": 12,
+   "types-and-spelling": 3
   },
   "O2-noinline/coreutils/chcon": {
    "functions": 321,
    "renumber-only": 23,
-   "signature-only": 8,
-   "types-and-spelling": 15
+   "types-and-spelling": 16,
+   "signature-only": 1
   },
   "O2-noinline/coreutils/ptx": {
-   "functions": 263,
-   "types-and-spelling": 1
+   "functions": 263
   },
   "O2-noinline/coreutils/wc": {
    "functions": 233,
-   "types-and-spelling": 1,
-   "signature-only": 1
+   "types-and-spelling": 1
   },
   "O2-noinline/crazyflie/cf2.elf": {
    "functions": 2838
   },
   "O2-noinline/cronie/crontab": {
-   "functions": 160,
-   "types-and-spelling": 1
+   "functions": 160
   },
   "O2-noinline/dash/dash": {
    "functions": 442,
-   "renumber-only": 22,
-   "signature-only": 11,
-   "types-and-spelling": 10
+   "renumber-only": 26,
+   "signature-only": 10,
+   "types-and-spelling": 9
   },
   "O2-noinline/grep/grep": {
    "functions": 634,
-   "renumber-only": 55,
+   "renumber-only": 56,
    "types-and-spelling": 34,
-   "signature-only": 7
+   "signature-only": 6
   },
   "O2-noinline/libedit/libedit.so.0.0.70": {
    "functions": 744,
-   "types-and-spelling": 32,
-   "signature-only": 3,
-   "renumber-only": 70
+   "types-and-spelling": 31,
+   "renumber-only": 74,
+   "signature-only": 2
   },
   "O2-noinline/libexpat/xmlwf": {
    "functions": 134,
@@ -80,30 +77,29 @@
   },
   "O2-noinline/mirai/mirai": {
    "functions": 182,
-   "renumber-only": 1,
    "types-and-spelling": 3
   },
   "O2-noinline/tar/tar": {
    "functions": 1585,
-   "renumber-only": 191,
-   "types-and-spelling": 111,
-   "signature-only": 35
+   "renumber-only": 201,
+   "types-and-spelling": 108,
+   "signature-only": 29
   },
   "O2-noinline/zlib/libz.so.1.2.13": {
    "functions": 203
   },
   "O2/bash/bash": {
    "functions": 2538,
-   "signature-only": 18,
-   "renumber-only": 136,
-   "types-and-spelling": 17,
-   "SHAPE": 2
+   "signature-only": 16,
+   "renumber-only": 179,
+   "types-and-spelling": 16
   },
   "O2/coreutils/du": {
    "functions": 320,
-   "types-and-spelling": 12,
-   "signature-only": 2,
-   "renumber-only": 43
+   "types-and-spelling": 14,
+   "renumber-only": 42,
+   "SHAPE": 2,
+   "signature-only": 1
   },
   "O2/coreutils/fmt": {
    "functions": 151,
@@ -113,8 +109,8 @@
   "O2/coreutils/ls": {
    "functions": 404,
    "signature-only": 3,
-   "renumber-only": 67,
-   "types-and-spelling": 12
+   "renumber-only": 68,
+   "types-and-spelling": 10
   },
   "O2/coreutils/od": {
    "functions": 192,
@@ -123,27 +119,27 @@
   "O2/coreutils/sort": {
    "functions": 343,
    "renumber-only": 28,
-   "types-and-spelling": 7,
-   "signature-only": 2
+   "types-and-spelling": 4,
+   "signature-only": 1
   },
   "O2/diffutils/diff": {
    "functions": 398,
-   "renumber-only": 46,
+   "renumber-only": 47,
    "signature-only": 4,
-   "types-and-spelling": 17,
+   "types-and-spelling": 16,
    "SHAPE": 1
   },
   "O2/dpkg/dpkg-divert": {
    "functions": 564,
-   "renumber-only": 75,
-   "types-and-spelling": 43,
-   "signature-only": 17
+   "renumber-only": 84,
+   "types-and-spelling": 41,
+   "signature-only": 16
   },
   "O2/findutils/find": {
    "functions": 658,
-   "renumber-only": 80,
-   "types-and-spelling": 19,
-   "signature-only": 16
+   "renumber-only": 92,
+   "types-and-spelling": 15,
+   "signature-only": 15
   },
   "O2/gzip/gzip": {
    "functions": 204,
@@ -151,10 +147,9 @@
   },
   "O2/kmod/kmod": {
    "functions": 394,
-   "renumber-only": 50,
-   "types-and-spelling": 94,
-   "SHAPE": 1,
-   "signature-only": 18
+   "renumber-only": 53,
+   "types-and-spelling": 102,
+   "signature-only": 9
   },
   "O2/libacl/setfacl": {
    "functions": 112,
@@ -163,28 +158,27 @@
   },
   "O2/openssh-portable/ssh-add": {
    "functions": 876,
-   "renumber-only": 116,
+   "renumber-only": 121,
    "types-and-spelling": 29,
-   "signature-only": 7
+   "signature-only": 5
   }
  },
  "total": {
-  "types-and-spelling": 551,
-  "renumber-only": 1120,
-  "signature-only": 179,
+  "renumber-only": 1213,
+  "signature-only": 141,
+  "types-and-spelling": 536,
   "SHAPE": 4,
-  "changed": 1854,
+  "changed": 1894,
   "functions": 16843
  },
  "tags": {
-  "local-pointer-to-integer": 25,
-  "local-count-moved": 24
+  "local-pointer-to-integer": 24,
+  "local-count-moved": 23
  },
  "examples": {
   "local-pointer-to-integer": [
    "O0/coreutils/cp 0xabda",
    "O0/grep/grep 0x5d23",
-   "O2-noinline/dash/dash 0x9250",
    "O2-noinline/dash/dash 0xe280",
    "O2-noinline/dash/dash 0xeb30",
    "O2-noinline/dash/dash 0x10050",
@@ -212,7 +206,6 @@
    "O0/coreutils/cp 0xabda",
    "O0/coreutils/cp 0x19a10",
    "O0/grep/grep 0x5d23",
-   "O2-noinline/dash/dash 0x9250",
    "O2-noinline/dash/dash 0xe280",
    "O2-noinline/dash/dash 0xeb30",
    "O2-noinline/dash/dash 0x10050",
@@ -223,7 +216,6 @@
    "O2-noinline/tar/tar 0x37190",
    "O2-noinline/tar/tar 0x37590",
    "O2-noinline/tar/tar 0x561d0",
-   "O2/bash/bash 0xdc760",
    "O2/diffutils/diff 0xb070",
    "O2/dpkg/dpkg-divert 0x6df0",
    "O2/kmod/kmod 0x9e20",
@@ -232,13 +224,14 @@
    "O2/kmod/kmod 0x15670",
    "O2/kmod/kmod 0x15a50",
    "O2/kmod/kmod 0x172f0",
-   "O2/openssh-portable/ssh-add 0x19e70"
+   "O2/openssh-portable/ssh-add 0x19e70",
+   "O2/openssh-portable/ssh-add 0x3a0b0"
   ],
   "SHAPE": [
-   "O2/bash/bash 0xdc760",
-   "O2/bash/bash 0xf48e0",
-   "O2/diffutils/diff 0x11680",
-   "O2/kmod/kmod 0x9030"
+   "O0/coreutils/cp 0xde9c",
+   "O2/coreutils/du 0x6080",
+   "O2/coreutils/du 0xd880",
+   "O2/diffutils/diff 0x11680"
   ]
  }
 }

@@ -197,35 +197,30 @@
   "base": "31ac2b26e (#708 passthrough, #709 structsynth locals, #710 slotptr, #712 protoorder cycles)"
  },
  "sweep": {
-  "surface": "kuna decompile-all --json --max-fn-seconds 120, --option calleevote off vs default, 31 stripped binaries / 16,843 functions, final build .scratch/v26 on 3a42d864b (docs/features/calleevote/corpus-hunks.json, classes by corpus-classes.py)",
-  "binaries": "the 21 of round 3 (coreutils fmt ls sort du, cp O0, chcon wc O2-noinline; grep O0 + O2-noinline; gzip O0 + O2; diff O2, cmp O0; find O2; bzip2 tar dash xmlwf mirai O2-noinline; bash O2; crazyflie cf2.elf ARM Thumb) plus the reviewer's 10: od O2, ptx O2-noinline, libz.so O2-noinline, ssh-add O2, crontab O2-noinline, init O0, setfacl O2, libedit.so O2-noinline, dpkg-divert O2, kmod O2",
-  "changed": 1854,
+  "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, --option calleevote off vs the default, same build, on origin/main 31ac2b26e (docs/features/calleevote/corpus-hunks.py + corpus-classes.py; per-binary counts in corpus-hunks.json)",
+  "binaries": 31,
+  "functions": 16843,
+  "changed": 1894,
   "classification": {
-   "struct_N renumbering only (a one-field record takes a ledger slot)": 1120,
-   "a parameter's type only": 179,
-   "a parameter's type and how accesses through it print (fields, casts, indexing); statements, calls and argument counts identical": 551,
-   "an expression folded into its uses by the new type": 4
+   "renumber-only": 1213,
+   "signature-only": 141,
+   "types-and-spelling": 536,
+   "SHAPE": 4
   },
   "tags": {
-   "register-local count moved (merge follows the new type)": 24,
-   "a local that held a callee's old void * declared as an integer": 25,
-   "byte-split stores (more character-literal stores AND more statements)": 0
+   "local-pointer-to-integer": 24,
+   "local-count-moved": 23,
+   "byte-split-stores": 0,
+   "var-count": 0,
+   "error-flip": 0
   },
   "shape_hunks_read": [
-   "diff O2 0x11680: returns its char * parameter, so the return type follows (long -> char *, return 0 -> return NULL)",
-   "bash O2 0xdc760, 0xf48e0: char * parameter; *(char *)(a0 + k) prints a0[k] and the loaded temporary is inlined at its uses",
-   "kmod O2 0x9030: char ** parameter; the element address temporary v1 = (unsigned long *)((long)v6 + v7 * 8) is inlined as &v6[v7 * 8] at its three uses"
+   "O0/coreutils/cp 0xde9c: the malloc'd node takes struct_16 {char field_0x0[16]; unsigned long field_0x10;}; the two 8-byte stores at +0 and +8 print through the array field (*(unsigned long *)v1->field_0x0), the same memory, 18 statements both ways",
+   "O2/coreutils/du 0x6080 and 0xd880: the same for struct_15 {char field_0x0[8]; long field_0x8;}, 31 and 32 statements both ways",
+   "O2/diffutils/diff 0x11680: the parameter and the return take char *, so the two `return 0` print as NULL, 27 statements both ways"
   ],
-  "reviewer_witnesses": {
-   "kmod O2 0x9240 cfg_search_add": "was 12 character stores for two word stores; now void sub_9240(long a0,char *a1), no character stores: its accesses are ((char *)0x1020)[a0] (a constant the recovery took for the pointer, with the option off too), so the index refusal refuses the char **; in the cx5 reduction, where a0 + 0xd0 is an ordinary offset, the frame reach-past rule and the wide-constant rule each refuse it",
-   "kmod O2 0x7680 cfg_free": "keeps long a0 (index refusal: its only uses are ((char *)0x1018)[a0], a constant the recovery took for the pointer, present with the option off too)",
-   "kmod O2 0x8990 cfg_kernel_matches": "still char **: it reads only cfg->kversion at offset 0, which a char ** describes",
-   "cx2 mkpipe": "int mkpipe(int *a0), pipe(a0), a0[1]: the int * pipe declares is kept",
-   "cx5 add": "struct_0 *a0 with v2[1] = 0x506070801020304; no character stores"
-  },
   "arity_or_error_changes": 0,
-  "off_equals_main": "the off path is untouched by round 4 (every new check runs only on a function with a caller statement or a closed caller set); round 3 matched origin/main 3a42d864b byte for byte on 10 binaries and the reviewer confirmed it on 10 more",
-  "per_architecture": "crazyflie cf2.elf (ARM Thumb, 2,838 functions): default == off; libz.so O2-noinline (203): default == off"
+  "per_architecture": "the ARM Thumb image (crazyflie cf2.elf) changes nothing: no function is closed on any architecture but x86-64"
  },
  "speed": {
   "round_3": {
