@@ -1,6 +1,6 @@
 {
  "opportunity": "Round E's O2 census: the largest O2-noinline blocker bucket is a program struct pointer declared void * in an otherwise-right function (143 functions O2-noinline, 20 O2; 66 gnulib Hash_table getters). Two causes: structsynth wants two offsets including 0 and never runs in a function whose lattice settles on its first pass, and nothing flows caller -> callee (protoorder is callee -> caller).",
- "test_name": "tests/cli calleevote-off-leaves-the-callee-untyped / calleevote-types-takes-what-every-caller-passes / calleevote-fields-reads-a-closed-getters-lone-field (two-pass over the whole-binary path) + calleevote-leaves-a-relocatable-objects-callbacks-open (.o callback table) + tests/stages/kuna-calleevote.xml (negative control) + 16 unit tests",
+ "test_name": "tests/cli calleevote-off-leaves-the-callee-untyped / calleevote-types-takes-what-every-caller-passes / calleevote-fields-reads-a-closed-getters-lone-field (two-pass over the whole-binary path), calleevote-leaves-a-relocatable-objects-callbacks-open (.o callback table), calleevote-leaves-a-mips-callback-open, calleevote-reads-a-table-in-code-at-address-zero, calleevote-keeps-a-frame-records-word-stores (+ its off arm), calleevote-leaves-a-long-callee-alone (+ calleevote-off-leaves-both-callees-untyped: the 32-line redo bound) + tests/stages/kuna-calleevote.xml (negative control) + 18 unit tests",
  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_x86_64",
  "selector": "peek_used",
  "func_addr": "0x1220",
@@ -694,6 +694,18 @@
    "lone_field": "a lone field no longer replaces a pointee a declared prototype the parameter is handed to gave it (pipe (int *)); a taken caller vote is kept for a record, and for a char ** when the field is a whole aligned pointer; a char * vote, or a char ** read as an int at offset 4 (expr getsize), yields to the record. The reviewer's literal rule (keep every committed pointee, only void * / undefined accept) was measured: -137 functions credited (find O0 insert_primary etc.: an int * protoorder carried from a callee reading the enum at offset 0), 2,128 -> 2,120 credited perfect; the shipped rule is identical to round 3 on the typesweep",
    "tests": "fixture calleevote_frame_x86_64(.c) (add, drop, advance, mkpipe) with probes calleevote-keeps-a-frame-records-word-stores (default) and calleevote-off-keeps-a-frame-records-word-stores (off); CLI test a_frame_records_char_pointer_pointer_is_not_its_type (types and fields); unit test a_frame_address_from_any_caller_marks_the_statement",
    "documented_not_fixed": "an unaligned function pointer (packed struct, non-PIE) is not seen by the stored-word scan (spec 04, cli.md, catalog now say aligned); setfacl parse_acl_seq's char cursor merged with a struct result keeps struct_0 * plus casts"
+  },
+  "round_5": {
+   "committed_claim": "(a) taken: the code always required a record to carry its layout, so the catalog, spec 04, cli.md, the module doc and the PR body no longer claim a libc shell or FILE *; a FILE * is voted only under --option libctypes glibc. The unit test asserts an incomplete FILE shell is NOT committed and a laid-out record of the same name is. (b) was refused: a shell says no more than void * and the member-fit and reaches_past_the_pointee refusals have no fields to read, so letting shells vote would loosen the option rather than fix a claim.",
+   "redo_bound": "CALLEE_VOTE_MAX_LINES = 32 printed lines of the FIRST decompile; the function is dropped from the ledger before decide(), so nothing is stated, no round pays, and seed/converge have nothing to apply. Chosen from the measured redo profile (per-redo length, ms and whether the body changed) and validated by the redo share: 32 lines keeps kmod at 3.4-4.3% (40 lines 5.7-7.6%, unbounded 13.6-14.5%).",
+   "bound_cost": {
+    "perfect_unbounded": 1575,
+    "perfect_40_lines": 1570,
+    "perfect_32_lines_shipped": 1567,
+    "perfect_25_lines": 1555,
+    "off": 1522
+   },
+   "why_not_an_oracle": "Skipping only the redos that change nothing would leave kmod at about +8.5% and crontab at +9.0%: 20 of kmod's 58 redos are wasted but they are 147 of its 571 ms, and crontab's whole cost is one 189-line redo that does change its body."
   }
  }
 }
