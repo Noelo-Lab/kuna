@@ -1,43 +1,43 @@
 {
-  "schema": "re-probe/1",
-  "probe_id": "a-26f11563753f",
-  "kind": "cli",
-  "cmd": [
-    "{{KUNA}}",
-    "decompile-all",
-    "{{BIN}}"
+ "schema": "re-probe/1",
+ "probe_id": "p-111b75dcf1b4",
+ "kind": "cli",
+ "cmd": [
+  "{{KUNA}}",
+  "decompile-all",
+  "{{BIN}}"
+ ],
+ "cwd": "{{WORK}}",
+ "env": {
+  "SLEIGHHOME": "{{SPECS}}"
+ },
+ "stdin": null,
+ "timeout_s": 120,
+ "repeat": 1,
+ "target": {
+  "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatpointee_x86_64",
+  "binary_sha256": "4dcdf4fc9990870be79aeed722c88f0f986be801fbdd9c481b78e91e1b0e1f6c",
+  "binary_size": 16296,
+  "binary_source": "in-repo",
+  "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatpointee_x86_64",
+  "selector": "u1",
+  "selector_kind": "name"
+ },
+ "expect": {
+  "exit_code": {
+   "eq": 0
+  },
+  "stdout_matches": [
+   "a0->field_0x0 = a1 \\+ 1;",
+   "a0\\[1\\] = 0x7ff0000000000001;",
+   "double s3\\(struct_\\d+ \\*a0,unsigned long a1,unsigned long a2\\)"
   ],
-  "cwd": "{{WORK}}",
-  "env": {
-    "SLEIGHHOME": "{{SPECS}}"
-  },
-  "stdin": null,
-  "timeout_s": 120,
-  "repeat": 1,
-  "target": {
-    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatpointee_x86_64",
-    "binary_sha256": "4dcdf4fc9990870be79aeed722c88f0f986be801fbdd9c481b78e91e1b0e1f6c",
-    "binary_size": 16296,
-    "binary_source": "in-repo",
-    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_floatpointee_x86_64",
-    "selector": "u1",
-    "selector_kind": "name"
-  },
-  "expect": {
-    "exit_code": {
-      "eq": 0
-    },
-    "stdout_matches": [
-      "a0->field_0x0 = a1 \\+ 1;",
-      "a0\\[1\\] = 0x7ff0000000000001;",
-      "void s3\\(struct_\\d+ \\*a0,unsigned long a1,unsigned long a2\\)"
-    ],
-    "stdout_absent": [
-      "= \\(double\\)\\(",
-      "= \\(float\\)v",
-      "\\bNAN\\b",
-      "double a[12]\\b"
-    ]
-  },
-  "notes": "DEFAULT on x86-64: callees read u1..cp5's argument as double * or a struct with float members; the callers store integer bits. A pointer vote printed (double)(a1 + 1), (float)v2 and NAN and typed s3's rsi/rdx double. It is refused where the caller's accesses disagree with the pointee."
+  "stdout_absent": [
+   "= \\(double\\)\\(",
+   "= \\(float\\)v",
+   "\\bNAN\\b",
+   "double a[12]\\b"
+  ]
+ },
+ "notes": "DEFAULT on x86-64: callees read u1..cp5's argument as double * or a struct with float members; the callers store integer bits. A pointer vote printed (double)(a1 + 1), (float)v2 and NAN and typed s3's rsi/rdx double. Refused where the caller's accesses disagree with the pointee. s3 returns double because `passthrough` hands it its tail call's result."
 }

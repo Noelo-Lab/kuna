@@ -1,42 +1,45 @@
 {
-  "schema": "re-probe/1",
-  "probe_id": "a-9808e9ae27fb",
-  "kind": "cli",
-  "cmd": [
-    "{{KUNA}}",
-    "decompile-all",
-    "{{BIN}}"
+ "schema": "re-probe/1",
+ "probe_id": "p-721f52b65fdc",
+ "kind": "cli",
+ "cmd": [
+  "{{KUNA}}",
+  "decompile-all",
+  "{{BIN}}",
+  "--option",
+  "passthrough",
+  "off"
+ ],
+ "cwd": "{{WORK}}",
+ "env": {
+  "SLEIGHHOME": "{{SPECS}}"
+ },
+ "stdin": null,
+ "timeout_s": 120,
+ "repeat": 1,
+ "target": {
+  "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64",
+  "binary_sha256": "69e7f12f215e9ba62ef5412171670b0cebcdc7b9c3d7d13d43021fb9e9aac2a9",
+  "binary_size": 9288,
+  "binary_source": "in-repo",
+  "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64",
+  "selector": "mixed",
+  "selector_kind": "name"
+ },
+ "expect": {
+  "exit_code": {
+   "eq": 0
+  },
+  "stdout_matches": [
+   "sink\\(a0,a1\\);",
+   "overrec\\(v1\\);",
+   "void overrec\\((unsigned )?long \\*a0\\)"
   ],
-  "cwd": "{{WORK}}",
-  "env": {
-    "SLEIGHHOME": "{{SPECS}}"
-  },
-  "stdin": null,
-  "timeout_s": 120,
-  "repeat": 1,
-  "target": {
-    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64",
-    "binary_sha256": "69e7f12f215e9ba62ef5412171670b0cebcdc7b9c3d7d13d43021fb9e9aac2a9",
-    "binary_size": 9288,
-    "binary_source": "in-repo",
-    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/protoorder_x86_64",
-    "selector": "mixed",
-    "selector_kind": "name"
-  },
-  "expect": {
-    "exit_code": {
-      "eq": 0
-    },
-    "stdout_matches": [
-      "sink\\(a0,a1\\);",
-      "overrec\\(v1\\);",
-      "void overrec\\((unsigned )?long \\*a0\\)"
-    ],
-    "stdout_absent": [
-      "sink\\(\\);",
-      "overrec\\(v1,a1,a2\\);",
-      "void overrec\\(long \\*a0,unsigned long a1"
-    ]
-  },
-  "notes": "`overrec` takes one parameter and its own recovery reports three, because a nested call reads an `rdx` it never writes. Stating that as a prototype gives `overrec` two parameters nothing sets and takes `rsi` from the EARLIER `sink(a0,a1)`. `types` states types only, so both calls render as they do with the option off."
+  "stdout_absent": [
+   "sink\\(\\);",
+   "overrec\\(v1,a1,a2\\);",
+   "void overrec\\(long \\*a0,unsigned long a1"
+  ]
+ },
+ "notes": "`overrec` takes one parameter and its own recovery reports three, because a nested call reads an `rdx` it never writes. Stating that as a prototype gives `overrec` two parameters nothing sets and takes `rsi` from the EARLIER `sink(a0,a1)`. `types` states types only, so both calls render as with the option off. `passthrough off` is pinned: the default gives `overrec` the `rdx` it forwards."
 }
