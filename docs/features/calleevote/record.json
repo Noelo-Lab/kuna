@@ -746,7 +746,9 @@
    "tests/cli/calleevote-keeps-a-frame-records-word-stores.json",
    "tests/cli/calleevote-off-keeps-a-frame-records-word-stores.json",
    "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_frame_x86_64(.c)",
-   "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs (a_frame_records_char_pointer_pointer_is_not_its_type)"
+   "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs (a_frame_records_char_pointer_pointer_is_not_its_type)",
+   "tests/cli/calleevote-buys-a-long-callee-with-the-budget.json",
+   "decompiler/crates/kuna-analysis/tests/fixtures/calleevote_budget_x86_64(.c)"
   ],
   "docs": [
    "docs/spec/04-calls-and-prototypes.md",
@@ -901,6 +903,16 @@
      "O2/kmod 0x9030: a0 takes char **, so the element address *(long *)((long)v6 + v7 * 8) prints as *(long *)&v6[v7 * 8] and the memmove's source temporary folds into the index (57 -> 56 statements, 17 -> 17 variables)"
     ]
    }
+  },
+  "round_6_review_1": {
+   "verdict_in": "CHANGES (5 required changes; the reviewer found no wrong-output defect, and re-ran every gate green)",
+   "phases_toml_use_when": "rewritten for the shipped default: the two stale sentences (the flat bound 'costs 8 functions', 'the 32-line bound keeps it at 3.4-4.3%') replaced by the same-tree 1,609 -> 1,615 (unbounded 1,618) and the measured reprint shares -- fmt -O2 96/3,718 (2.6%), ls 362/12,833 (2.8%), sort 419/10,708 (3.9%), cmp -O0 185/3,840 (4.8%), dpkg-divert -O2 569/11,965 (4.8%), kmod -O2-noinline 708/13,366 (5.3%, the 32-line floor past the share), crontab -O2-noinline 0. docs/options.md regenerated, phase_catalog.json recaptured",
+   "admission_test": "admit_within_budget is now the pure decision (queue -> admitted + declined) the driver applies, and the unit test drives it instead of a local closure, asserting the admitted and declined sets, the budget left and the lines spent, plus a second test that the budget carries across rounds. Mutation-checked: reversing the sort order fails it",
+   "admitted_direction_probe": "tests/cli/calleevote-buys-a-long-callee-with-the-budget.json over the new fixture calleevote_budget_x86_64 -- the same program as calleevote_long_x86_64 in a binary printing 2,275 lines, so the 113-line budget covers the 45-line scan_long: it prints `int scan_long(struct_1 *a0,unsigned long a1)` here and `int scan_long(void *a0,unsigned long a1)` on a build of origin/main",
+   "decline_keeps_a_printed_statement": "Ledger::keep records the statement a kept redo was printed with, and Ledger::decline restores it instead of dropping it, so the convergence sweep prints the body the batch printed; a function never redone still drops it, which is main's behaviour. Unit-tested both ways and mutation-checked; spec 04 paragraph added",
+   "no_output_moved": "the review-round build against the build the PR measured: decompile-all --json byte-identical on the same 12 binaries, so the typesweep and speed blocks above stand",
+   "pr_body": "the '0 worse' row count marked single-run; the perfect-count delta is the claim",
+   "gates": "make test PARITY OK 675/675; make test-stages PARITY OK; make test-cli 237/237; check-spec OK lenient+strict; catalog OK; counters no drift; docs/options.md byte-fresh"
   }
  }
 }

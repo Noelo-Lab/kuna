@@ -1144,8 +1144,8 @@ commitment: `FILE *` is voted only where the shell carries its fields
 with that type as a vote its own uses can refuse. That second decompile is the
 option's whole cost, so a function's printed length is what redoing it charges:
 the redo pass may reprint 5% of what the first pass printed, shortest function
-first, and one printing at most 32 lines is redone even once that is spent. The default value `fields`
-also reads a one-field getter's lone field as a record field, for a function
+first, and one printing at most 32 lines is redone even once that is spent.
+The default value `fields` also reads a one-field getter's lone field as a record field, for a function
 whose callers are all known direct calls; a `qsort` comparator reads a field
 the same way but keeps its `void *`.
 
