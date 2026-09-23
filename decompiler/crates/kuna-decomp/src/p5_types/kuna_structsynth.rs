@@ -1290,6 +1290,14 @@ pub fn points_at_synthesized_record(ct: &Datatype) -> bool {
     ct.get_ptr_to().is_some_and(|pt| ledger::minted_number(&pt).is_some())
 }
 
+/// (kuna `structheadless`) Is `ct` a pointer to a record this pass minted with
+/// two or more claims and none at offset 0 -- what only a headless read mints?
+pub fn points_at_headless_record(ct: &Datatype) -> bool {
+    let Some(pt) = ct.get_ptr_to() else { return false };
+    ledger::minted_number(&pt).is_some()
+        && ledger::layout_of(&pt).is_some_and(|l| l.fields.len() >= 2 && l.fields.first().is_some_and(|f| f.offset > 0))
+}
+
 /// (kuna `structsynth nest`) The completed record a pointer to its own shell
 /// stands for, or `None` for any other type.
 ///

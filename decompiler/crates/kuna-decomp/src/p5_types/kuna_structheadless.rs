@@ -139,7 +139,7 @@ pub(crate) fn yields_to_a_declared_record(data: &Funcdata, vn: VarnodeId, vote: 
     })
 }
 
-/// The `void *` a callee's synthesized record falls back to at a call site where
+/// The `void *` a callee's headless record falls back to at a call site where
 /// the record itself is refused, under `closed`.
 ///
 /// A record a callee measured is its own partial view of what it was handed, and
@@ -147,9 +147,11 @@ pub(crate) fn yields_to_a_declared_record(data: &Funcdata, vn: VarnodeId, vote: 
 /// `fts_build`'s callees each read their own part of one `FTSENT`. Refused, the
 /// vote said nothing, and a value the callee would have stated `void *` without
 /// its record lost even that it is a pointer: `v21 = a0->field_0x0` became a
-/// `long`. The fallback is what the callee states when it declines the record.
+/// `long`. The fallback is what such a callee states when it declines the
+/// record. It stands in for a headless record only: any other refused record
+/// is one `off` refuses too, where the vote says nothing.
 pub(crate) fn bare_pointer_for(data: &Funcdata, vote: &Datatype) -> Option<std::rc::Rc<Datatype>> {
-    if !data.get_arch().struct_headless.fires() || !crate::kuna_structsynth::points_at_synthesized_record(vote) {
+    if !data.get_arch().struct_headless.fires() || !crate::kuna_structsynth::points_at_headless_record(vote) {
         return None;
     }
     let types = data.get_arch().types()?;
