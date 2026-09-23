@@ -1283,6 +1283,16 @@ pub fn points_at_lone_record(ct: &Datatype) -> bool {
     ledger::minted_number(&pt).is_some() && ledger::layout_of(&pt).is_some_and(|l| l.fields.len() == 1)
 }
 
+/// (kuna `structheadless`) Is `ct` a pointer to a synthesized record whose first
+/// claim lies past offset 0 -- what a lone field or a headless read mints? Such
+/// a record gives way to the one every caller of the function passes, as a lone
+/// field's does: it is the part of the record this function happened to read.
+pub fn points_at_headless_record(ct: &Datatype) -> bool {
+    let Some(pt) = ct.get_ptr_to() else { return false };
+    ledger::minted_number(&pt).is_some()
+        && ledger::layout_of(&pt).is_some_and(|l| l.fields.first().is_some_and(|f| f.offset > 0))
+}
+
 /// (kuna `structsynth nest`) The completed record a pointer to its own shell
 /// stands for, or `None` for any other type.
 ///

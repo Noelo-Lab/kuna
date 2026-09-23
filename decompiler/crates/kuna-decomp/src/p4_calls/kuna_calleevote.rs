@@ -242,11 +242,18 @@ pub fn committed(ct: &Datatype) -> bool {
 /// width, or a record synthesized from one field read, which the callers'
 /// record replaces?
 pub fn uncommitted(ct: &Datatype, ptr_size: int4) -> bool {
+    uncommitted_under(ct, ptr_size, false)
+}
+
+/// [`uncommitted`], and under `structheadless` a record synthesized from reads
+/// past its start too (`kuna_structsynth::points_at_headless_record`).
+pub fn uncommitted_under(ct: &Datatype, ptr_size: int4, headless: bool) -> bool {
     match ct.get_metatype() {
         type_metatype::TYPE_PTR => {
             ct.get_ptr_to().is_some_and(|p| {
                 matches!(p.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN)
             }) || crate::kuna_structsynth::points_at_lone_record(ct)
+                || (headless && crate::kuna_structsynth::points_at_headless_record(ct))
         }
         type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN => {
             ct.get_size() == ptr_size
@@ -371,7 +378,8 @@ pub fn decide(
     expected: &dyn Fn((int4, uintb)) -> Option<Vec<uintb>>,
 ) -> Vec<(int4, uintb)> {
     let ptr_size = arch.types().get_size_of_pointer();
-    let decided = decide_ledger(&arch.kuna_calleevote, ptr_size, expected);
+    let headless = arch.struct_headless.fires();
+    let decided = decide_ledger_under(&arch.kuna_calleevote, ptr_size, headless, expected);
     let changed = decided.iter().map(|(k, _)| *k).collect();
     for (key, stated) in decided {
         arch.kuna_calleevote.stated.insert(key, Rc::new(stated));
@@ -385,12 +393,22 @@ pub fn decide_ledger(
     ptr_size: int4,
     expected: &dyn Fn((int4, uintb)) -> Option<Vec<uintb>>,
 ) -> Vec<((int4, uintb), CallerTypes)> {
+    decide_ledger_under(ledger, ptr_size, false, expected)
+}
+
+/// [`decide_ledger`], a headless record given way to as `structheadless` has it.
+pub fn decide_ledger_under(
+    ledger: &Ledger,
+    ptr_size: int4,
+    headless: bool,
+    expected: &dyn Fn((int4, uintb)) -> Option<Vec<uintb>>,
+) -> Vec<((int4, uintb), CallerTypes)> {
     let mut decided: Vec<((int4, uintb), CallerTypes)> = Vec::new();
     let mut keys: Vec<&(int4, uintb)> = ledger.own.keys().collect();
     keys.sort_unstable();
     for key in keys {
         let own = &ledger.own[key];
-        if !own.iter().any(|p| uncommitted(&p.ct, ptr_size)) {
+        if !own.iter().any(|p| uncommitted_under(&p.ct, ptr_size, headless)) {
             continue;
         }
         let trace = trace();
@@ -413,7 +431,7 @@ pub fn decide_ledger(
         }
         let mut inputs: Vec<Typed> = Vec::new();
         for (j, p) in own.iter().enumerate() {
-            if !uncommitted(&p.ct, ptr_size) {
+            if !uncommitted_under(&p.ct, ptr_size, headless) {
                 continue;
             }
             let mut agreed: Option<Rc<Datatype>> = None;
@@ -526,7 +544,8 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
     }
     let want = stated.at(v.get_addr(), v.get_size())?;
     let ptr_size = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
-    if !uncommitted(ct, ptr_size) || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
+    let headless = data.get_arch().struct_headless.fires();
+    if !uncommitted_under(ct, ptr_size, headless) || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
         return None;
     }
     if want.frame && crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct) {
