@@ -134,6 +134,24 @@ pub(crate) fn yields_to_a_declared_record(data: &Funcdata, family: &[VarnodeId],
     })
 }
 
+/// The `void *` a callee's synthesized record falls back to at a call site where
+/// the record itself is refused, under `closed`.
+///
+/// A record a callee measured is its own partial view of what it was handed, and
+/// the caller's reads through the same value can disagree with it -- five of
+/// `fts_build`'s callees each read their own part of one `FTSENT`. Refused, the
+/// vote said nothing, and a value the callee would have stated `void *` without
+/// its record lost even that it is a pointer: `v21 = a0->field_0x0` became a
+/// `long`. The fallback is what the callee states when it declines the record.
+pub(crate) fn bare_pointer_for(data: &Funcdata, vote: &Datatype) -> Option<std::rc::Rc<Datatype>> {
+    if !data.get_arch().struct_headless.fires() || !crate::kuna_structsynth::points_at_synthesized_record(vote) {
+        return None;
+    }
+    let types = data.get_arch().types()?;
+    let void = types.get_type_void().ok()?;
+    types.get_type_pointer(vote.get_size(), void, 1).ok()
+}
+
 /// Do these offsets read as a record past its start: two or more, none of them
 /// zero?
 pub(crate) fn is_headless<'a>(mut offsets: impl Iterator<Item = &'a kuna_base::types::intb>) -> bool {
