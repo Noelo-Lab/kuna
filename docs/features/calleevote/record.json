@@ -674,6 +674,12 @@
     "delta_min_pct": 0.59,
     "delta_median_of_ratios_pct": -0.18
    },
+   "bash_O2": {
+    "n": 5,
+    "delta_min_pct": -1.9,
+    "delta_median_of_ratios_pct": 2.0,
+    "note": "the workspace-test lane's compile landed inside this run; bash's redo pass is 0.6% of its own wall clock, so neither number is the change"
+   },
    "kmod_O2-noinline": {
     "n": 15,
     "delta_min_pct": 1.64,

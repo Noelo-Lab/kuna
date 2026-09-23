@@ -466,6 +466,7 @@ for both arms):
 | fmt -O2 | 15 | -0.05% | -3.69% |
 | ls -O2 | 9 | +0.48% | +0.25% |
 | sort -O2 | 9 | +0.59% | -0.18% |
+| bash -O2 | 5 | -1.9% | +2.0% (a lane's compile landed inside the run; its redo pass is 0.6% of the binary) |
 | kmod -O2-noinline | 15 | +1.64% | -1.55% |
 | dpkg-divert -O2 | 15 | +1.61% | +2.07% |
 | crontab -O2-noinline | 15 | -0.17% | -0.28% |
