@@ -1845,7 +1845,11 @@ const CALLEE_VOTE_MAX_LINES: usize = 40;
 
 /// (kuna `calleevote`) Is this first decompile too long to do again?
 fn too_long_to_vote_on(code: Option<&str>) -> bool {
-    code.is_some_and(|c| c.lines().count() > CALLEE_VOTE_MAX_LINES)
+    let cap = std::env::var("KUNA_CV_MAXLINES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(CALLEE_VOTE_MAX_LINES);
+    code.is_some_and(|c| c.lines().count() > cap)
 }
 
 /// (kuna `calleevote`) The key the ledger files a function under.
@@ -1911,6 +1915,9 @@ fn callee_vote_rounds(
         .filter(|(_, s)| too_long_to_vote_on(s.as_ref().and_then(|r| r.code.as_deref())))
         .filter_map(|(i, _)| vote_key(&targets[i]))
         .collect();
+    if kuna_decomp::kuna_calleevote::trace() && !long.is_empty() {
+        eprintln!("[calleevote] {} functions too long to decompile again", long.len());
+    }
     for key in long {
         prog.arch_mut().kuna_calleevote.own.remove(&key);
     }
@@ -4179,6 +4186,22 @@ mod discovery_tests {
 mod calleevote_stored_tests {
     use super::*;
 
+    /// (kuna `calleevote`) The bound on the redo pass: a getter is decompiled
+    /// again, a long body is not, and a function that failed has no body to
+    /// measure.
+    #[test]
+    fn a_long_first_decompile_is_not_decompiled_again() {
+        let getter = "long get_cap(void *a0)\n{\n  return *(long *)((long)a0 + 0x18);\n}\n";
+        assert!(!too_long_to_vote_on(Some(getter)));
+        let long: String =
+            (0..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
+        assert!(too_long_to_vote_on(Some(&long)));
+        let at_the_bound: String =
+            (1..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
+        assert!(!too_long_to_vote_on(Some(&at_the_bound)));
+        assert!(!too_long_to_vote_on(None));
+    }
+
     fn fixture(name: &str) -> Vec<u8> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../kuna-analysis/tests/fixtures")
@@ -4608,19 +4631,4 @@ mod triage_tests {
         assert_eq!(DEFAULT_SUMMARY_LARGEST, 10);
     }
 
-    /// (kuna `calleevote`) The bound on the redo pass: a getter is decompiled
-    /// again, a long body is not, and a function that failed has no body to
-    /// measure.
-    #[test]
-    fn a_long_first_decompile_is_not_decompiled_again() {
-        let getter = "long get_cap(void *a0)\n{\n  return *(long *)((long)a0 + 0x18);\n}\n";
-        assert!(!too_long_to_vote_on(Some(getter)));
-        let long: String =
-            (0..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
-        assert!(too_long_to_vote_on(Some(&long)));
-        let at_the_bound: String =
-            (1..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
-        assert!(!too_long_to_vote_on(Some(&at_the_bound)));
-        assert!(!too_long_to_vote_on(None));
-    }
 }
