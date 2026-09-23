@@ -6,10 +6,11 @@
 //! Two functions that take a pointer to the same object rarely read the same
 //! part of it. The layout ledger already shares one `struct_N` between them when
 //! one reader's claims are a SUBSET of the other's, but not when they merely
-//! overlap: `ls`'s `sub_9e40` measures `{0: char *, 0x60: long}` and its
-//! `sub_a2d0` measures `{0: char *, 0x48: int}`, neither contains the other, and
-//! each gets a name carrying only its own two fields. The reader of either is
-//! then told a record has two members when the binary proves three.
+//! overlap. Two readers of a `{char *name; long n; int flags; long tail;}` that
+//! each skip one of its members measure `{0: char *, 8: long, 0x18: long}` and
+//! `{0: char *, 8: long, 0x10: int}`; neither contains the other, so each gets a
+//! name of its own and neither declaration is the record -- one has a hole where
+//! `flags` is and the other stops before `tail`.
 //!
 //! Measured on the eight layout builds (`docs/features/structmerge/recall.md`):
 //! 23 of the 77 ground-truth records kuna types at all are given more than one
