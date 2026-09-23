@@ -50,6 +50,7 @@
 use kuna_base::error::{KunaError, KunaResult};
 
 use crate::context::VarnodeId;
+use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
 
 /// (kuna) Whether a record needs an access at offset 0.
@@ -97,6 +98,40 @@ pub(crate) fn admits(data: &Funcdata, base: VarnodeId) -> bool {
     data.get_arch().struct_headless.fires()
         && data.kuna_calleevote_closed()
         && data.vbank().get(base).is_some_and(|v| v.is_input())
+}
+
+/// Does a declared call in `family` -- one that returns the value or takes it --
+/// name the record the value points at, while `vote` is a callee's synthesized
+/// record?  The declaration then outranks the recovery at the call site: `newgrp`
+/// holds `getgrnam`'s `struct group *` and hands it to a function that reads the
+/// group past its start, whose own record would otherwise retype the variable.
+pub(crate) fn yields_to_a_declared_record(data: &Funcdata, family: &[VarnodeId], vote: &Datatype) -> bool {
+    if !data.get_arch().struct_headless.fires() || !crate::kuna_structsynth::points_at_synthesized_record(vote) {
+        return false;
+    }
+    let names_a_record = |t: &Datatype| {
+        crate::kuna_structsynth::points_at_named_composite(t) && !crate::kuna_structsynth::points_at_synthesized_record(t)
+    };
+    family.iter().filter_map(|&v| data.vbank().get(v).map(|n| (v, n))).any(|(v, node)| {
+        let written = node.get_def().and_then(|d| {
+            let fc = data.get_call_specs(data.get_call_specs_index(d)?);
+            let proto = fc.proto();
+            (proto.is_output_locked() && data.obank().get(d)?.get_out() == Some(v))
+                .then(|| proto.get_output_type().cloned())
+                .flatten()
+        });
+        written.is_some_and(|t| names_a_record(&t))
+            || node.descend_iter().any(|r| {
+                let Some(o) = data.obank().get(r) else { return false };
+                let Some(i) = data.get_call_specs_index(r) else { return false };
+                let fc = data.get_call_specs(i);
+                (1..o.num_input()).filter(|&s| o.get_in(s) == Some(v)).any(|s| {
+                    fc.proto().get_param(s - 1).is_some_and(|p| {
+                        p.is_type_locked() && p.get_type().is_some_and(|t| names_a_record(t))
+                    })
+                })
+            })
+    })
 }
 
 /// Do these offsets read as a record past its start: two or more, none of them

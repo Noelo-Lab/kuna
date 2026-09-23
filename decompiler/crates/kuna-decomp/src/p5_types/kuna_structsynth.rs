@@ -731,7 +731,7 @@ fn address_walks(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
 
 /// Is `ct` a pointer whose pointee is a named aggregate a person or a named-type
 /// pass supplied?  Such a type always wins over a synthesized one.
-fn points_at_named_composite(ct: &Datatype) -> bool {
+pub(crate) fn points_at_named_composite(ct: &Datatype) -> bool {
     let Some(pt) = ct.get_ptr_to() else { return false };
     matches!(
         pt.get_metatype(),
@@ -1283,14 +1283,9 @@ pub fn points_at_lone_record(ct: &Datatype) -> bool {
     ledger::minted_number(&pt).is_some() && ledger::layout_of(&pt).is_some_and(|l| l.fields.len() == 1)
 }
 
-/// (kuna `structheadless`) Is `ct` a pointer to a synthesized record whose first
-/// claim lies past offset 0 -- what a lone field or a headless read mints? Such
-/// a record gives way to the one every caller of the function passes, as a lone
-/// field's does: it is the part of the record this function happened to read.
-pub fn points_at_headless_record(ct: &Datatype) -> bool {
-    let Some(pt) = ct.get_ptr_to() else { return false };
-    ledger::minted_number(&pt).is_some()
-        && ledger::layout_of(&pt).is_some_and(|l| l.fields.first().is_some_and(|f| f.offset > 0))
+/// (kuna `structheadless`) Is `ct` a pointer to a record this pass minted?
+pub fn points_at_synthesized_record(ct: &Datatype) -> bool {
+    ct.get_ptr_to().is_some_and(|pt| ledger::minted_number(&pt).is_some())
 }
 
 /// (kuna `structsynth nest`) The completed record a pointer to its own shell
