@@ -11,13 +11,13 @@
  "tier": "core",
  "source_decompiler": "ghidra",
  "inspiration": "gzip -O2 gzip_base_name 0xd290, df -O2 dir_name 0x7550, tar -O2 *_diag (decbench full_run_address_2026-09-11); the locked branch of ActionFuncLink::funcLinkInput (coreaction.cc:1500) materializes a declared parameter's read at the call, which is the seam this reuses for a recovered one; AncestorRealistic::execute (funcdata_varnode.cc:2159) refuses an input Varnode at a call slot",
- "default_on": false,
- "default_value": "off",
+ "default_on": true,
+ "default_value": "on",
  "values": "on|off",
  "destructive": false,
  "rule_change": {
   "adds_argument": "a register R at a direct, unlocked, non-variadic call is an argument when the callee's recovered prototype (protoorder) has a parameter starting at R and the list is an arity claim (RecoveredTypes::arity_sound: all in registers, body does not read the next arg register, does not saturate the register file, canonical storage), the callee's body proves_input(R), the caller did not set the call up as variadic and is not variadic itself, and the value at the call is the function's own input Varnode. Width is the narrowest of the trial, the parameter and the callee's low-justified body read.",
-  "adds_return": "when every live RETURN is reached from a direct call with nothing between (<=4 single-pred blocks), every such callee states a non-void return in the same register, the function's output is not locked and no op touches that register, the RETURN reads it and the tail call's result is the function's return value, typed by the callee's recovered return.",
+  "adds_return": "when every live RETURN is reached from a direct call with nothing between (<=4 single-pred blocks), every such callee states a non-void return in the same register, the function's output is not locked and no op touches that register, the RETURN reads it and the tail call's result is the function's return value, typed by the callee's recovered return. A callee states a return only where its own body computed one: every live RETURN must hand back a value produced in every byte and on every path (kuna_returnuncomputed::every_return_computes), which is the strict form of the question the uncomputed-half pair repair asks.",
   "mechanism": "claim_untouched_registers (end of ActionFuncLink) registers a trial + a CALL read for an untouched register only at a call no other CALL/CALLIND can precede (first_calls); heritage registers the range at every other call as usual and only guardReturns is kept off it (suppresses_return_trial); check_input_trial_use never scores a trial on a claimed range (claimed_range -> inactive, never no-use); capture (first in build_input_from_trials) keeps unused trials standing on the function's own input with the evidence and retires unused claimed-range trials; extend_pending (last in ActionActiveParam, after calleearityfwd/calleearitylive/calleearitybody) appends the stated registers that follow a final list that is a leading run of the stated one; returns_tail_result scores the RETURN trial; tail_return_type feeds call_output_type_local.",
   "inert_where": [
    "kuna decompile (one function per forked process)",
@@ -49,15 +49,15 @@
  "arity_counters": {
   "why": "type_match scores variables[] (args+stack+framelayout), never the return type, and a fabricated register arg on a function with no DWARF twin is never a false positive -- so arity/return fabrication is measured here against the decbench DWARF twins, off vs on, over 26 binaries (O0/O2/O2-noinline coreutils/gzip/grep/tar/diff/bzip2/shadow + betaflight/crazyflie/nuttx/u-boot).",
   "build": "commit 7da4afecf",
-  "args_gained_functions": 259,
+  "args_gained_functions": 1446,
   "args_gained": 506,
-  "args_gained_real_vs_dwarf": 454,
-  "args_gained_fabricated": 0,
-  "args_gained_no_dwarf_twin": 52,
+  "args_gained_real_vs_dwarf": 2773,
+  "args_gained_fabricated": 4,
+  "args_gained_no_dwarf_twin": 123,
   "returns_gained_functions": 318,
-  "returns_real_vs_dwarf": 281,
-  "returns_fabricated": 23,
-  "returns_no_dwarf_twin": 14,
+  "returns_real_vs_dwarf": 4002,
+  "returns_fabricated": 6,
+  "returns_no_dwarf_twin": 69,
   "params_lost": 0,
   "callsite_metrics": {
    "tool": "docs/decbench/typecampaign/final/callsite_metrics.py",
@@ -72,8 +72,16 @@
    "site_count_changed": 0,
    "argrows": "36179 -> 36685"
   },
-  "fabrication_shapes": "returns only: 16 gnulib version_etc_ar copies + 2 version_etc_hook inherit version_etc_arn's own mis-recovered `long` (DWARF void), 2 tar print_total_stats, and 3 ARM (cf2 estimatorKalmanGetEstimatedRot, vEventGroupSetBitsCallback, nuttx nxsched_timeout) -- each a wrapper handing back what a callee kuna already gets wrong returns.",
-  "verdict": "the argument arm is clean on every architecture measured (the earlier ~55 ARM over-claims were claims at a call after another call; claiming only where no call precedes removed them); the return arm's 23 inherited returns are the open criterion."
+  "fabrication_shapes": "parameters: gnulib savewd_save in mkdir and ginstall (2 functions, 4 rows), whose forwarded register reaches a variadic open_safer whose recovered list closes over one vararg slot. returns: fts_skip_tree (mv, rm), clear_random_data (shred x2), print_total_stats (tar x2).",
+  "verdict": "the argument arm is 95.6% DWARF-confirmed and 0.14% contradicted over the whole corpus with nothing ever lost; with the return gate the return arm is 98.2% confirmed. Default ON.",
+  "corpus": "the whole 444-slice decbench measurement corpus (8 projects x O0/O2/O2-noinline), every function that gains something",
+  "args_gained_rows": 2900,
+  "args_gained_no_twin_functions": 69,
+  "args_class_agrees_with_dwarf": 2658,
+  "returns_rows": 4077,
+  "returns_fabricated_before_the_gate": 212,
+  "returns_rows_before_the_gate": 4267,
+  "no_twin_shape": "69 single-statement forwarding thunks, every one outside every DW_TAG_subprogram range in the twin; their gained list is exactly the callee's own recovered list"
  },
  "corpus_diff": {
   "binaries": 26,
@@ -118,7 +126,7 @@
   "stage_corpus_files": 330,
   "element_id": 4177
  },
- "preset_decision": "OFF, and listed in modes.rs UNEVALUATED with the arity/return-fabrication reason -- not in AGGRESSIVE_OVERRIDES.",
+ "preset_decision": "ON by default; the UNEVALUATED entry in modes.rs is removed and nothing is added to AGGRESSIVE_OVERRIDES (a default-on option needs no override).",
  "files": [
   "decompiler/crates/kuna-decomp/src/p4_calls/kuna_passthrough.rs (+tests)",
   "decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs (RecoveredTypes::arity_sound + output)",
@@ -130,7 +138,10 @@
   "tests/stages/kuna-passthrough.xml, tests/cli/passthrough-*.json",
   "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64(.s)",
   "decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs (guardReturns skips a claimed range)",
-  "docs/features/passthrough/lostargs.py (corpus lost-argument detector)"
+  "docs/features/passthrough/lostargs.py (corpus lost-argument detector)",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs (every_return_computes + computes_everywhere, +4 unit tests)",
+  "decompiler/crates/kuna-console/src/project.rs (park_recovered takes the callee's Funcdata)",
+  "docs/features/passthrough/dwarf-confirmation.md"
  ],
  "speed": {
   "method": "interleaved min-of-15, SAME binary (commit 7da4afecf), --option passthrough off vs on, whole-binary `kuna decompile-all --max-fn-seconds 120` (the option is inert under single-function `kuna decompile`, so scripts.pipeline.timeit would measure nothing)",
@@ -159,5 +170,18 @@
   "worst_delta_pct": 3.97,
   "budget_pct": 5.0,
   "within_budget": true
+ },
+ "default_flip": {
+  "round": "G",
+  "base": "origin/main 31ac2b26e",
+  "what_changed": "default off -> on; recovered_output gates a stated callee return on every_return_computes",
+  "a_make_test": "PARITY OK 675/675",
+  "b_make_test_stages": "PARITY OK 1309/1309 (tests/stages/kuna-passthrough.xml already pins `option passthrough off` in pass 1; no assertion moved, no baseline re-recorded)",
+  "c_make_test_cli": "225/225; two protoorder probes re-pinned: protoorder-types-never-moves-an-arity now runs `--option passthrough off` (the default gives `overrec` the rdx it forwards to `vararg`), protoorder-types-keeps-a-float-pointee-bitwise expects `double s3(...)` (s3 hands back its tail call's result)",
+  "d_typesweep": "444 slices / 10,748 functions, same build, new default vs `--option passthrough off`: PERFECT 1,524 -> 1,548 (+24), aggregate 3,806.41 -> 3,865.67 (+59.26), 24 moved onto perfect, 0 off, 104 improved, 6 worse; control 10,466 byte-identical-variables functions, 0 scored differently",
+  "d_worse_rows": "the same 6 as round F, all a parameter the function already had being retyped by the callee that now receives it: print_group_list (groups O2, id O2) a0 char* -> long, print_stuff (id O2), copy_reg (cp/ginstall/mv O2-noinline) a2 int -> unsigned long",
+  "f_corpus": "8 binaries (fmt/ls/df O2, sort O2-noinline, gzip O2, grep O2-noinline, tar O2, shadow useradd O2): 290 functions change and every changed LINE is explained by the documented effect -- 537 type/spelling moves, 292 call-argument gains, 172 RETURNs handing back a tail call, 30 `return;` -> `return <call>;`, 28 result captures, 26 declarations for the captured result, 16 declarations renumbered; the 2 rows the classifier could not fold were read (grep 0x1c0c0 `*a0` -> `a0->field_0x0` on a newly typed pointer, tar 0x255c0 two tail calls becoming `return sub_45370(...)` / `return sub_45230(...)`)",
+  "g_modes": "the UNEVALUATED entry is removed -- a default-on option needs no aggressive override",
+  "dwarf": "docs/features/passthrough/dwarf-confirmation.md"
  }
 }
