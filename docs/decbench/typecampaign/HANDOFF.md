@@ -144,6 +144,9 @@ user's rule is that a removed cast must not change the value the program compute
    gained #715 (type-affecting) since it was measured. Discard
    `/home/mahaloz/kwt/calleevoteperf-land-artifacts/` (a stopped peer session's half-run with no
    baseline arm — see `/home/mahaloz/kwt/calleevoteperf/.scratch/ORCHESTRATOR_NOTICE.md`).
+   Its `make rust-test` lane was still running when the stop came and was killed with the rest of the
+   campaign's processes, so that gate is **unrun for `65da6af10`** — the lander re-runs it on the
+   rebased tree anyway.
 2. **Finish #718** — the three required changes above, then re-review. Note
    `/home/mahaloz/kwt/callbacktype/.scratch/ORCHESTRATOR_NOTICE.md`: two commits on that branch came
    from another session and **their gates were never run**, despite what `state.md` says.
