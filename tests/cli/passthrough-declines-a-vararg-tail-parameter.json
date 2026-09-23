@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-987e645333b1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/varargtail_x86_64",
+    "binary_sha256": "966c775f303a06a34578fc4ba74bd437e011bb3becd1fd7cf660e53563fc534b",
+    "binary_size": 8560,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/varargtail_x86_64",
+    "selector": "sub_40105e",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "long sub_40105e\\(long a0,long a1\\)",
+      "return sub_40101d\\(a0 \\+ 1,a1 \\+ 2\\); // tail-call",
+      "long sub_40101d\\(long a0,long a1,long a2\\)",
+      "char sub_40106c\\(char \\*a0\\)"
+    ],
+    "stdout_absent": [
+      "long sub_40105e\\(long a0,long a1,long a2\\)",
+      "sub_40101d\\(a0 \\+ 1,a1 \\+ 2,a2\\)"
+    ]
+  },
+  "notes": "xfail (0x40101d) recovers a third parameter in every arm: the `push %rdx` before its variadic-style call is gcc's alignment filler and rdx is loaded after it. fwdx (0x40105e) forwards rdx untouched, so passthrough would hand it that phantom parameter; the vararg-tail refusal keeps it at two. 0x40106c is the positive control and gains its forwarded `char *a0`."
+}

@@ -508,18 +508,6 @@ mod tests {
             // that pin the pointer spelling `protoorder` and `ptrfromuse` produce.
             // Full evaluation: docs/features/charptr/default-on-evaluation.md.
             "charptr",
-            // (kuna `passthrough`) Give a function the register it forwards
-            // untouched to a callee whose recovered prototype reads it, and the
-            // value a tail call it hands back returns. The argument arm is clean
-            // on 26 whole binaries (454 parameters DWARF confirms, 0 it does
-            // not, 0 call arguments lost; typesweep +24 perfect / 0 off), but
-            // the tail-return arm inherits a callee's own wrong return: 23
-            // functions DWARF says are `void` (gnulib version_etc_ar returns
-            // what version_etc_arn is mis-recovered to return). type_match
-            // cannot see a return type, so preset membership would add those
-            // with no metric offset. Full evaluation:
-            // docs/features/passthrough/default-on-evaluation.md.
-            "passthrough",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

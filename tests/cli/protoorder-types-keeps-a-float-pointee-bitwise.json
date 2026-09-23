@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-26f11563753f",
+  "probe_id": "a-111b75dcf1b4",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -30,7 +30,7 @@
     "stdout_matches": [
       "a0->field_0x0 = a1 \\+ 1;",
       "a0\\[1\\] = 0x7ff0000000000001;",
-      "void s3\\(struct_\\d+ \\*a0,unsigned long a1,unsigned long a2\\)"
+      "double s3\\(struct_\\d+ \\*a0,unsigned long a1,unsigned long a2\\)"
     ],
     "stdout_absent": [
       "= \\(double\\)\\(",
@@ -39,5 +39,5 @@
       "double a[12]\\b"
     ]
   },
-  "notes": "DEFAULT on x86-64: callees read u1..cp5's argument as double * or a struct with float members; the callers store integer bits. A pointer vote printed (double)(a1 + 1), (float)v2 and NAN and typed s3's rsi/rdx double. It is refused where the caller's accesses disagree with the pointee."
+  "notes": "DEFAULT on x86-64: callees read u1..cp5's argument as double * or a struct with float members; the callers store integer bits. A pointer vote printed (double)(a1 + 1), (float)v2 and NAN and typed s3's rsi/rdx double. It is refused where the caller's accesses disagree with the pointee. s3 returns double because `passthrough` hands it its tail call's result, which the fixture source confirms."
 }

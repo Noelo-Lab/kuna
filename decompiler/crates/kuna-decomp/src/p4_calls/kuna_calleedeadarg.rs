@@ -898,6 +898,13 @@ pub fn seed_callee_entry_dead(
         return;
     }
     let mut entries: Vec<Address> = Vec::new();
+    // `passthrough` asks this walk of the function's OWN body too: a register it
+    // writes before reading is not a parameter it can be carrying, which is what
+    // says a claim across that slot would materialize one
+    // ([`crate::p4_calls::kuna_passthrough`]'s `no_hole_before`).
+    if pass_through && !data.get_address().is_invalid() {
+        entries.push(data.get_address().clone());
+    }
     for i in 0..data.num_calls() {
         let e = data.get_call_specs(i).get_entry_address().clone();
         if e.is_invalid() {

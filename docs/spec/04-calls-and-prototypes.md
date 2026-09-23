@@ -1553,6 +1553,17 @@ This subsumes `returnpair` on the GH-6990 case it was written for (`tests/stages
 gh6990-returnpair.xml` now records both passes agreeing); the flag remains as the
 blunt per-function instrument for a pair this rule judges genuine.
 
+The same walk answers a second, stricter question for `passthrough`:
+`every_return_computes` asks it of the whole function and of a lone return
+register, where this repair cannot act, and requires *every* input of a phi or a
+`PIECE` to be computed rather than any one of them, so a value merged from one
+path that computes it and one that does not is not computed. It is what decides
+whether a callee's recovered return may be stated to its callers at all; see
+*The register a function forwards to a callee that reads it* below. It runs once
+per decompiled function and only when that option is on, as a worklist over the
+reachable move-only closure -- the recursive "every input" form revisits the same
+Varnodes exponentially on a phi-rich -O0 body.
+
 #### (kuna) The half that is an input parameter (`retinputhalf`)
 
 The "unwritten means uncomputed" terminal is too coarse in one direction: a
@@ -2418,7 +2429,7 @@ both makes them byte-identical.
 
 ### (kuna) `passthrough` — the register a function forwards to a callee that reads it
 
-(kuna) `passthrough` (default off,
+(kuna) `passthrough` (default on,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_passthrough.rs`) reads the
 statement `protoorder` makes in the one direction `types` never takes: it lets a
 callee's recovered parameter list add an argument at a call site, and so a
@@ -2462,8 +2473,36 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   return-only register before writing it or calling anything (`test %al,%al`). Its
   own recovery would read every register its prologue saves, and one argument
   supplied here is enough to tip the saved tail into its list;
+- the callee's read of `R` is for something other than a **variadic tail**
+  (`kuna_varargtail.rs`). A stated parameter whose value, through
+  value-preserving operations (copies, phis, width changes, a mask by a
+  constant), only ever reaches an argument slot of a variadic call — one the
+  callee set up as variadic, or a declared `...` prototype past its named
+  parameters — is recorded on the statement and never claimed: the ABI lets a
+  caller leave that register unset, so the callee's read of it says nothing
+  about what its callers put there. openssh `xcalloc(size_t,size_t)` is
+  recovered with a third parameter because the call to the variadic `sshfatal`
+  is set up with `push %rdx; …; xor %eax,%eax`, and that push is gcc's
+  stack-alignment filler; gnulib `open_safer` reads `rdx` only to pass it to
+  `open`'s `mode`;
+- where the function touches the register nowhere, so that this pass has to
+  claim it into existence (*The claim*, below), the claim does not fill a
+  **hole** (`no_hole_before`). Parameters are positional: a claim at the third
+  stated register gives the function three parameters. Every earlier stated register must be one the function could be
+  carrying — claimed here too, or one its own entry walk (the same
+  `calleedeadarg` probe, asked of this function's entry) does not prove it
+  WRITES before reading. Otherwise the register becomes a parameter nothing
+  sets: the `protoorder` fixture's `overrec` sets `rsi` to 16 and forwards
+  `rdx`, and rendered `void overrec(unsigned long *a0,unsigned long a1,long a2)`
+  with `a1` in no statement, against the call site `overrec(v1)`;
 - the value at the call is the function's own input Varnode for exactly the
   trial's storage.
+
+The variadic-call test itself reads the writing instruction's own ops as its own:
+`xor %eax,%eax` reads the register it zeroes, as its operand and again in `ZF =
+(EAX == 0)`, so counting every read as a competing one made the test answer `no`
+for the idiom gcc actually emits (0 calls recognized over ssh-keygen). A read at
+the same instruction address as the write is that instruction's.
 
 The argument is as wide as the callee's body reads it — the narrowest of the
 trial, the stated parameter and the widest body read starting at `R` — so a
@@ -2542,9 +2581,25 @@ output takes the callee's recovered return type in `call_output_type_local`.
 `gzip_base_name` becomes `char * sub_d290(char *a0) { return sub_dfd0(a0); }`.
 This is the claim a declared callee already gets whenever the caller names the
 return register; its cost is a void wrapper that tail-calls a value-returning
-function, which is handed that value, and a callee whose own recovered return is
-wrong (a void function that ends by tail-calling `fprintf` is recovered
-returning `long`) passes the error up one level.
+function, which is handed that value.
+
+A callee states a return at all only where its own body computed one. `protoorder`
+passes the callee's `Funcdata` to `recovered_output`, which asks
+`kuna_returnuncomputed::every_return_computes`: each live RETURN must hand back a
+value produced in every byte and on every path -- no terminal reachable through the
+move-only operations may be an unwritten Varnode at the return register or an
+INDIRECT creation standing for a callee's clobber. The pair repair of §4.9 asks the
+relaxed form of the same question, computed if *any* input of a phi or a `PIECE` is,
+because it is choosing between two halves of a wide return and must keep a genuine
+one; a caller about to adopt the whole value needs the strict form. gnulib's `void
+version_etc_arn` ends its fallthrough path in a `__fprintf_chk` and keeps that
+call's `RAX` clobber, so kuna recovers it as returning `long`; the relaxed question
+calls the `CONCAT44(<leftover>, __fprintf_chk(...))` it returns computed and the
+strict one does not. Without the gate every `version_etc_ar` wrapper inherited that
+wrong return: 212 of 4,267 gained returns over 444 decbench slices, against 6 of
+4,087 with it (`docs/features/passthrough/dwarf-confirmation.md`). The walk's node
+budget answers `false` when it runs out, because `true` there states a return on a
+body it never finished reading.
 
 Nothing is added where a callee stated nothing: a single-function `kuna
 decompile`, a narrowed or sharded `decompile-all`, an import, `--option
@@ -2558,7 +2613,38 @@ is `decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64` under
 clobbered forward and a variadic callee as its controls, and the three shapes
 above (`noop(); twoarg(p,3)`, `vout(p); twoarg(p,3)` as a tail and as a plain
 call, and `sysinttostr`) as controls that must keep every argument the
-option-off run gives them.
+option-off run gives them. The vararg tail has its own fixture,
+`varargtail_x86_64` under
+`tests/cli/passthrough-declines-a-vararg-tail-parameter.json`: `xfail` pushes an
+unloaded `rdx` as gcc's alignment filler before a variadic-style call and so
+recovers a third parameter in every arm, and the function that forwards `rdx` to
+it must keep two, while the `jmp`-forwarding control beside it still gains its
+`char *`.
+
+**Default.** On, on the strength of the parameter arm. Every function that gains
+something was checked against its unstripped twin's DWARF prototype over two
+corpora: the 444-slice decbench corpus (8 GNU projects) and 130 slices of 17
+projects disjoint from it (openssh, e2fsprogs, dpkg, kmod, dash, iproute2,
+gnutls, zlib, …), 574 slices in all. **4,107 of 4,346 gained parameters are
+confirmed, none contradicted, and the remaining 239 belong to forwarding thunks
+the toolchain emitted with no debug entry at all**; no function and no call site
+loses an argument, and nothing moves at -O0, where the register is already named
+by an op. The two refusals above are what that costs: measured on the disjoint
+corpus first, the rule contradicted DWARF on 159 of 1,691 checkable parameters
+(9.4%, every one the openssh `xcalloc` shape), and removing them costs 208
+confirmed parameters, 5% of the gain.
+
+The **return** arm is a judgement rather than a proof, and it is where the
+default costs something. 5,458 of 5,615 gained returns are confirmed, 157
+contradicted — 6 on the decbench corpus but 151 on the disjoint one, all of one
+shape: a source-`void` wrapper that tail-calls a value-returning function
+compiles to exactly the `jmp` a wrapper that returns what it calls does, and
+`rax` holds the callee's result at the RETURN either way
+(`ext2fs_fast_mark_block_bitmap` is DWARF `void` and gets `unsigned long`;
+gzip's `char *gzip_base_name` is the same code and is right). The rate follows
+the project's style, not the optimisation level. The evidence is
+`docs/features/passthrough/dwarf-confirmation.md`; set `off` to get upstream's
+reading back, for the returns as much as the arguments.
 
 ### (kuna) `calleevote` — the type every caller passes
 

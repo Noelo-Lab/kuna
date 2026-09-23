@@ -1626,7 +1626,7 @@ impl ArchContext {
             // when there is no callee to ask, so the fixture seam carries the
             // shipped default.
             arg_clobber: true, // (kuna) option argclobber (default on)
-            pass_through: false, // (kuna) option passthrough (shipped off)
+            pass_through: true, // (kuna) option passthrough (default on)
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.
             callee_dead_arg: true,

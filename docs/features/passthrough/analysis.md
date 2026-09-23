@@ -112,29 +112,44 @@ claimed call (`returns_tail_result`); that call keeps its return-value trial, an
 its output takes the callee's recovered return type (`tail_return_type`).
 `gzip_base_name` becomes `char * sub_d290(char *a0) { return sub_dfd0(a0); }`.
 
-## What it cannot know, and why it ships off
+## What it cannot know, and why it ships on
 
 The evidence is a recovery, not a fact.
 
 - **A callee whose own return is wrong.** `version_etc_arn` is DWARF `void`, but
   kuna over-recovers it as returning `long` (its body ends in a `__fprintf_chk`
-  whose result stays live at the RETURN). The wrapper `version_etc_ar` then
-  inherits that wrong `long` return through the tail-return half: 23 of the 304
-  gained returns with a DWARF twin across 26 binaries, all downstream of a
-  callee already wrong in the base output.
+  whose result stays live at the RETURN), and every `version_etc_ar` wrapper
+  inherited that through the tail-return half. This is now gated: a callee
+  states a return only where `every_return_computes` holds of its body -- every
+  live RETURN hands back a value produced in every byte and on every path. Over
+  444 decbench slices that takes the contradicted returns from 212 of 4,267 to
+  6 of 4,088, and the six that remain (`fts_skip_tree`, `clear_random_data`,
+  `print_total_stats`) are callees whose last computed value is not the one the
+  source returns.
 - **A callee's type.** The forwarded parameter now also reaches the callee, so
   the callee's recovered type votes on it: where that type is an integer the
   caller's `char *` can lose (the mgetgroups copy recovered as `long a0` turns
   `print_group_list`'s `username` into `long`; 6 of the 444 typesweep slices).
 - **A callee that over-recovers its list.** The first cut claimed at every call
   and gave ARM firmware ~55 parameters DWARF does not list; a register that
-  reaches a call only after another call is not claimed any more, and the
-  argument half now has none that DWARF contradicts (454 confirmed, 52 without
-  a twin).
+  reaches a call only after another call is not claimed any more. What was left
+  was the vararg tail: a callee that reads a register only to hand it to a
+  variadic call (openssh `xcalloc`'s `push %rdx` alignment filler, gnulib
+  `open_safer`'s `mode`) was believed, which cost 159 contradicted parameters of
+  1,691 checkable on a corpus outside the eight projects this campaign is scored
+  on. Such a parameter is now recorded on the statement and never claimed
+  (`kuna_varargtail`), and neither is a claim that could only reach its slot by
+  materializing a register the function writes before reading (`no_hole_before`).
+  Across both corpora — 574 slices, 25 projects — nothing DWARF contradicts is
+  left.
 
 `type_match` scores `variables[]` (args, stack symbols and framelayout slots),
-never a return type, so the returns are the reason the option ships **off**
-(`default-on-evaluation.md`).
+never a return type, so the returns were the reason the option first shipped
+**off**. It ships **on** on the strength of the parameter arm
+(`dwarf-confirmation.md`: 4,107 of 4,346 gained parameters confirmed, none
+contradicted, nothing lost, over two corpora), with the return arm's residual
+2.8% — the undecidable `void` tail-call wrapper — stated rather than claimed
+away (`default-on-evaluation.md`).
 
 Nothing is added where a callee stated nothing: `kuna decompile`, a narrowed or
 sharded `decompile-all`, an import, `--option protoorder off`, and under

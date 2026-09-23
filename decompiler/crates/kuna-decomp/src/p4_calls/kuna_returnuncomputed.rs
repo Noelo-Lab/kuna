@@ -94,12 +94,87 @@ use crate::funcdata::Funcdata;
 /// enough that this never shows up in a profile.
 const MAX_DEPTH: u32 = 24;
 
+/// How many Varnodes the whole-function walk ([`computes_everywhere`]) visits
+/// before giving up and answering `false` -- "not computed", which is the
+/// refusal: the callee's recovered return is not stated, and every caller reads
+/// the call exactly as it does with `passthrough` off. Exhausting it takes a
+/// move-only closure of 4,096 Varnodes reachable from ONE returned value, which
+/// is two orders of magnitude past the deepest copy/phi chain measured over the
+/// decbench corpus, so the cap is a guard against a pathological body rather
+/// than a budget the walk is expected to spend.
+const MAX_NODES: u32 = 4096;
+
 /// Does `vn` carry a value the function actually computed?
 ///
 /// Walks back through move-only operations; see the module docs for the
 /// classification. Errs toward `true` (computed), which is the no-change answer.
 fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     computes_from(data, vn, depth, None)
+}
+
+/// [`computes_from`], asked of every byte and every path instead of any one of
+/// them: a value is computed only when NO terminal reachable through the
+/// move-only operations is one the function never produced.
+///
+/// The relaxed question is the right one for the pair repair, which asks it of
+/// one half at a time and has to keep a genuine wide return. A caller reading a
+/// callee's recovered return type needs the strict one: a value pieced together
+/// from a call's narrow result and a leftover, or merged from one path that
+/// computes it and one that does not, is not a return value the caller can hand
+/// on.
+///
+/// Written as a worklist over the reachable move-only closure rather than the
+/// recursion [`computes_from`] uses: "every input" over a phi-rich -O0 body
+/// revisits the same Varnodes exponentially, and this runs once per decompiled
+/// function instead of once per returned register pair.
+///
+/// Running out of budget answers `false`, not `true`: the answer is read by
+/// [`crate::p4_calls::kuna_protoorder`]'s `recovered_output`, where `true` states
+/// the callee's return to every caller ahead of it and `false` states nothing at
+/// all, so the unfinished walk has to take the second.
+fn computes_everywhere(data: &Funcdata, vn: VarnodeId, placed_at: Option<&Address>) -> bool {
+    let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::new();
+    let mut work: Vec<VarnodeId> = vec![vn];
+    let mut budget = MAX_NODES;
+    while let Some(cur) = work.pop() {
+        if budget == 0 {
+            // `true` here would STATE the callee's return on a body the walk
+            // never finished reading, which is the direction that invents one.
+            return false;
+        }
+        budget -= 1;
+        if !seen.insert(cur) {
+            continue;
+        }
+        let Some(v) = data.vbank().get(cur) else { continue };
+        if v.is_constant() {
+            continue;
+        }
+        let Some(def) = v.get_def() else {
+            if placed_at.is_some_and(|a| a == v.get_addr()) {
+                return false;
+            }
+            if !crate::kuna_retinputhalf::is_input_parameter(data, cur) {
+                return false;
+            }
+            continue;
+        };
+        let Some(op) = data.obank().get(def) else { continue };
+        if op.code() == OpCode::CPUI_INDIRECT && op.is_indirect_creation() {
+            return false;
+        }
+        match op.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT | OpCode::CPUI_SUBPIECE => {
+                work.extend(op.get_in(0));
+            }
+            OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_PIECE => {
+                work.extend((0..op.num_input()).filter_map(|i| op.get_in(i)));
+            }
+            // Anything else produces a value; the walk stops here.
+            _ => continue,
+        }
+    }
+    true
 }
 
 /// The walk, carrying the input-parameter carve-out's **placement** test.
@@ -151,6 +226,35 @@ fn computes_from(data: &Funcdata, vn: VarnodeId, depth: u32, placed_at: Option<&
         return true;
     }
     inputs.into_iter().any(|i| computes_from(data, i, depth + 1, placed_at))
+}
+
+/// Does every live RETURN of `data` hand back a value the function computed?
+///
+/// The same walk the pair repair runs, asked of the whole function and of a
+/// single return register, where the repair cannot act: it only ever chooses
+/// between two active trials and never deactivates the last survivor, so a
+/// function recovered with ONE return register keeps whatever reached the
+/// RETURN. gnulib's `version_etc_arn` is `void`, ends its fallthrough path in a
+/// `__fprintf_chk` and keeps that call's `RAX` clobber -- an INDIRECT creation --
+/// as its "result", so kuna recovers it as returning `long`. A caller has no way
+/// to see that from the recovered prototype alone, which is why `passthrough`
+/// asks this question of the callee (see [`crate::kuna_passthrough`]).
+///
+/// `false` means at least one RETURN hands back a terminal the function never
+/// computed. A function with no live RETURN answers `true`, the no-change answer.
+pub fn every_return_computes(data: &Funcdata) -> bool {
+    for retop in data.obank().iter_code(OpCode::CPUI_RETURN).collect::<Vec<_>>() {
+        let Some(o) = data.obank().get(retop) else { continue };
+        if o.is_dead() || o.get_halt_type() != 0 || o.num_input() < 2 {
+            continue;
+        }
+        let Some(value) = o.get_in(1) else { continue };
+        let placed = data.vbank().get(value).map(|v| v.get_addr().clone());
+        if !computes_everywhere(data, value, placed.as_ref()) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Repair a RETURN whose value is a return-recovery register **pair** with an
