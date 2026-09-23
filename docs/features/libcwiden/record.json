@@ -242,9 +242,10 @@
    "of which not a new-table name": 0,
    "parameter slots gained": 554,
    "new_name_call_sites": 445,
-   "sites rendering one argument past the declared non-variadic arity": 24,
-   "pre_existing_rate_same_arm": "575 of 13,036 (4.4%) for the names the table already carried",
-   "note": "a declared prototype that is not LOCKED can still pick up a recovered argument; 24/445 = 5.4% against a pre-existing 4.4%, so the rate is the table's, not these rows'."
+   "sites rendering one argument past the declared non-variadic arity": 0,
+   "pre_existing_rate_same_arm": "575 of 13,036 on main's own already-declared names, which is what identified the bug as the engine's, not the table's",
+   "note": "Heritage::clearStackPlaceholders was an unported stub; with it ported the count is 0 in both arms and 144 such arguments disappear over the 12 binaries. See placeholder_strip.",
+   "before_the_placeholder_strip": 24
   }
  },
  "speed": {
@@ -298,7 +299,7 @@
   "corpus": {
    "binaries": 12,
    "phantom_trailing_arguments": [
-    144,
+    166,
     0
    ],
    "function_count": "identical",
@@ -313,7 +314,8 @@
    "local_declarations": [
     21904,
     21899
-   ]
+   ],
+   "phantom_trailing_arguments_note": "166 with the widened table on, 103 with it off (i.e. on main's own already-declared names) -- 0 in both arms after the strip. Counted as a call argument that is a bare stack-array element at a negative displacement."
   },
   "typesweep_alone": {
    "improved": 0,

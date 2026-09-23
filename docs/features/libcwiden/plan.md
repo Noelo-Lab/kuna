@@ -5,7 +5,7 @@
 One change: 333 rows appended to `LIBC_EXT` in
 `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs`. No new
 module, no new inference, no new option -- `libcsigs` already gates the table and
-its `off` arm still renders exactly what the 27-entry base table renders.
+its `off` arm still renders exactly what the 28-entry base table renders.
 
 ## Steps
 
