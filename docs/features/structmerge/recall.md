@@ -1,6 +1,8 @@
 # Where the 8,626 unclaimed ground-truth fields are
 
-`structsynth`'s per-parameter layout precision is 0.8710 and its recall is 0.0865: of the
+Measured on kuna 31ac2b26e (`#711` has since raised both arms; the option's own
+effect is unchanged -- see `analysis.md`). `structsynth`'s per-parameter layout
+precision is 0.8710 and its recall is 0.0865: of the
 9,443 DWARF fields behind the 835 pointer-to-struct parameters of the eight layout builds
 (`fmt`/`ls`/`sort`/`du` at -O0 and -O2), 817 are claimed correctly and 8,626 are never
 claimed at all. This is a census of the 8,626, measured rather than argued.
@@ -98,8 +100,8 @@ That ceiling is a ceiling on the evidence, not on what the ledger's rules will h
 The containment rule declares a reader to hold at most twice the fields it measured and at
 most four times its bytes, and most readers claim two or three fields, so a reader of a
 ten-field record is answered with at most six of them however many siblings prove the rest.
-`structmerge siblings` spends what is reachable under those bounds -- 817 -> 844 claimed
-fields, precision 0.8710 -> 0.8737 -- and `docs/features/structmerge/analysis.md` records
+`structmerge siblings` spends what is reachable under those bounds -- 27 more claimed
+fields, precision 0.8710 -> 0.8737 on this base -- and `docs/features/structmerge/analysis.md` records
 what relaxing each bound was measured to cost.
 
 Two smaller levers sit behind the same mechanism and are worth measuring after it:

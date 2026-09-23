@@ -32,19 +32,41 @@
  },
  "layoutscore": {
   "instrument": "docs/features/structsynth/layoutscore.py, --option structsynth param, eight layout builds",
-  "off": {
-   "fields_only": "817/938 = 0.8710",
-   "recall": 0.0865,
-   "f1": 0.1574,
-   "filler_counted": "941/1197 = 0.7861"
+  "on_711": {
+   "off": {
+    "fields_only": "880/1010 = 0.8713",
+    "recall": 0.0932,
+    "f1": 0.1684,
+    "filler_counted": "1011/1341 = 0.7539"
+   },
+   "siblings": {
+    "fields_only": "907/1039 = 0.8730",
+    "recall": 0.096,
+    "f1": 0.1731,
+    "filler_counted": "1044/1367 = 0.7637"
+   }
   },
-  "siblings": {
-   "fields_only": "844/966 = 0.8737",
-   "recall": 0.0894,
-   "f1": 0.1622,
-   "filler_counted": "974/1222 = 0.7971"
+  "on_31ac2b26e": {
+   "off": {
+    "fields_only": "817/938 = 0.8710",
+    "recall": 0.0865,
+    "f1": 0.1574,
+    "filler_counted": "941/1197 = 0.7861"
+   },
+   "siblings": {
+    "fields_only": "844/966 = 0.8737",
+    "recall": 0.0894,
+    "f1": 0.1622,
+    "filler_counted": "974/1222 = 0.7971"
+   }
   },
-  "gate": "fields-only precision must stay >= 0.8710; it rises"
+  "record_names": {
+   "on_711": "205 -> 198",
+   "on_31ac2b26e": "163 -> 156",
+   "records_with_two_names": "unchanged in both arms on both bases",
+   "struct_N_covering_two_records": "unchanged in both arms on both bases"
+  },
+  "gate": "fields-only precision must stay >= 0.8710; it rises on both bases"
  },
  "heldout": {
   "instrument": "docs/features/structmerge/heldout.py (docs/features/structsynth/dedup_heldout.py with an EXTRA_OPTS env), 177 builds in eight sets",
@@ -137,7 +159,7 @@
   "make rust-test": "RUST_TEST_RC=0, 0 FAILED test-result blocks (lane script, env -u KUNA_DECOMP_TEST). The first run was RC=2 on two sites this change owns -- the live-value allowlist in kuna_phases/tests.rs and the docs/options.md kuna-cli embeds -- both fixed before the second run."
  },
  "counters": "settables 227 -> 228; kuna-catalog.xml #7 structure-recovery 31 -> 32; phases-tests catalog-json-records 226 -> 227; catalog_bytecompat fixture recaptured; tests/stages corpus file count 331 -> 332; docs/baseline-stages.json re-recorded (+6 assertions, nothing moved)",
- "base": "31ac2b26e",
+ "base": "rebased onto 9e07ab931 (#711 calleevote); designed and tuned on 31ac2b26e",
  "default_decision": "off",
  "speed": {
   "method": "interleaved whole-binary `kuna decompile-all --json --max-fn-seconds 120`, `--option structmerge off` against `siblings`, arms alternating, min-of-15 (docs/features/structmerge/speed.py); the box carried eight other campaign lanes throughout, load average 17-27 on 80 cores, so only the within-run deltas are comparable",

@@ -90,10 +90,20 @@ Per-parameter claimed-field precision against DWARF
 (`docs/features/structsynth/layoutscore.py`, the published instrument, `--option
 structsynth param`):
 
-| arm | fields only | recall | F1 | filler counted |
-|---|---|---|---|---|
-| off | 0.8710 (817/938) | 0.0865 | 0.1574 | 0.7861 (941/1,197) |
-| **siblings** | **0.8737 (844/966)** | **0.0894** | **0.1622** | **0.7971 (974/1,222)** |
+| base | arm | fields only | recall | F1 | filler counted |
+|---|---|---|---|---|---|
+| on #711 | off | 0.8713 (880/1,010) | 0.0932 | 0.1684 | 0.7539 (1,011/1,341) |
+| on #711 | **siblings** | **0.8730 (907/1,039)** | **0.0960** | **0.1731** | **0.7637 (1,044/1,367)** |
+| 31ac2b26e | off | 0.8710 (817/938) | 0.0865 | 0.1574 | 0.7861 (941/1,197) |
+| 31ac2b26e | siblings | 0.8737 (844/966) | 0.0894 | 0.1622 | 0.7971 (974/1,222) |
+
+The second pair is the tree this was designed and tuned on; the first is the same
+measurement after the rebase onto #711, which types more parameters and so raises
+both arms. The option is worth +27 claimed-correct fields either way. Seven
+`struct_N` names disappear on both bases (205 -> 198 after the rebase, 163 -> 156
+before), covering the same records: the number of ground-truth records given more
+than one name does not move, and neither does the number of `struct_N` covering
+two records.
 
 Over 177 builds in eight sets (`docs/features/structsynth/dedup_heldout.py`, the
 sets the ledger's own rules were drawn from and held out against): **F1 rises on
@@ -125,7 +135,8 @@ improved, 0 worsened.
 
 ## Rejected variants
 
-All measured on the same eight builds, all below the 0.8710 precision bar:
+All measured on the same eight builds on 31ac2b26e, all below that tree's 0.8710
+precision bar:
 
 | variant | fields-only P | recall |
 |---|---|---|

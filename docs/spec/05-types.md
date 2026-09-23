@@ -1471,8 +1471,8 @@ a quarter of the measured layout's size and four times it, which is every size
 the growth bounds can reach.
 
 On the eight layout builds, per-parameter claimed-field precision against DWARF
-rises from 0.8710 to 0.8737 and recall from 0.0865 to 0.0894 (F1 0.1574 to
-0.1622), with seven fewer `struct_N` names covering the same records and no
+rises from 0.8713 to 0.8730 and recall from 0.0932 to 0.0960 (F1 0.1684 to
+0.1731), with seven fewer `struct_N` names covering the same records and no
 ground-truth record newly given two names
 (`docs/features/structsynth/layoutscore.py`). The option is `off` by default:
 `on` a record states what one further function proved about it, `off` it states
