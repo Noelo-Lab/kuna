@@ -2782,21 +2782,40 @@ the function already has (a one-field record its callers were handed back
 through `protoorder`) is not made, since decompiling it again changes nothing.
 A redo that fails keeps the first body.
 
-**What a redo costs, and the bound on it.** The option's whole cost is the
-second decompile: a redo costs what the first decompile of that function cost,
-and nothing else about the run changes. So a function whose first decompile
-printed more than `CALLEE_VOTE_MAX_LINES` (32) lines is dropped from the ledger
-before anything is decided (`too_long_to_vote_on`): nothing is stated about it,
-no round pays for it, and its parameters keep what its own body found. The
-shapes the vote exists for — a forwarder, a getter, a comparator — print a few
-lines, while a long body has enough of its own evidence that the vote is often
-refused: on `kmod -O2-noinline` the redos past 32 lines are 67% of the redo
-time and move 12 of the 38 bodies that move; on `cmp -O0` one 217-line function
-is 96% of the redo time and changes nothing; `crontab -O2-noinline` does one
-redo, 189 lines, worth 9% of its whole run. Unbounded those three cost +11.5%,
-+9.0% and +8.1% of a whole-binary run, over the project's +5% budget; bounded
-they are inside it, and the bound costs 8 of the 53 functions the vote makes
-perfect on the 444-slice typesweep.
+**What a redo costs, and the budget for it.** The option's whole cost is the
+second decompile, and a redo costs exactly what the first decompile of that
+function cost: median 1.01x over the 55 functions `kmod -O2-noinline` redoes,
+because a redo runs the same pipeline over the same bytes and only the type
+lattice starts differently. A function's printed length is therefore what
+redoing it charges.
+
+The pass is given one budget for all three rounds,
+`CALLEE_VOTE_BUDGET_PCT` (5) percent of the lines the first pass printed, and
+every redo is charged the lines it reprints (`redo_charge`). Each round admits
+from what it decided shortest first, ties to the lower address
+(`admit_within_budget`), so the cheapest bodies are bought first and the
+admitted set is a function of the program rather than of the order the plan
+visits it. A function printing at most `CALLEE_VOTE_MAX_LINES` (32) lines — the
+shapes the vote exists for: a forwarder, a getter, a comparator — is admitted
+even once the budget is gone, so a binary that uses the vote heavily keeps
+every one of them and buys no long bodies at all, while one that barely uses it
+redoes every candidate it has. A function the budget cannot reach is declined
+for the run (`Ledger::decline`): the statement just decided is withdrawn, no
+later round proposes it, the convergence sweep has nothing to apply to it, and
+its parameters keep what its own body found — exactly what a function over the
+old flat 32-line refusal used to get, now only on the binaries with no room for
+it.
+
+What that is worth is measurable without a stopwatch, because the redo pass is
+a phase of its own: its share of a whole-binary run is 3.4% on
+`kmod -O2-noinline`, 2.0% on `dpkg-divert -O2`, 1.3% on `cmp -O0` and 0.2% on
+`fmt -O2` under the flat refusal. With no bound at all the same pass is 10.5%,
+7.3%, 6.9% and 0.4%, and 30.1% on `mv -O0` — over the project's +5% budget on a
+binary that redoes many long bodies, and far under it on one that redoes a
+handful. The budget spends that room where it exists: `fmt -O2` reprints 96
+of the 185 lines it is given and redoes every candidate it has, while `kmod`
+reprints 708 lines (5.3% of its own output, its short functions being most of
+it) and buys only the shortest of its long bodies.
 
 **`fields`.** The same closed caller set decides one more thing. A function
 whose callers are all known direct calls (at least one, none unknown) is marked
