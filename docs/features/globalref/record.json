@@ -42,7 +42,8 @@
   "constant_address_casts_all_functions": [
    3232,
    1253
-  ]
+  ],
+  "measured_on": "main dbe854ba3 (base arm /home/mahaloz/kwt/castbench/main-dbe854ba3)"
  },
  "hunks": {
   "surface": "castbench decompile-all, same build, --option globalref off vs default, all 45 binaries, every function",
@@ -176,7 +177,19 @@
    "slices": 444,
    "slice_errors": 0
   },
-  "note": "every slice's variables byte-identical in both arms: the rule changes only printed text"
+  "note": "every slice's variables byte-identical in both arms: the rule changes only printed text",
+  "rebased": {
+   "measured_on": "the branch rebased onto origin/main 22df4282c, both arms of that build",
+   "slices": 444,
+   "functions": 10748,
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "aggregate_off": 3973.97,
+   "aggregate_on": 3973.97,
+   "improved": 0,
+   "worse": 0,
+   "note": "variables byte-identical in all 10,748 functions"
+  }
  },
  "speed": {
   "method": "interleaved min-of-15 whole-binary decompile-all --json, O2, three arms (main dbe854ba3, branch default, branch --option globalref off)",
@@ -245,5 +258,32 @@
   "decompiler/crates/kuna-console/src/project.rs",
   "decompiler/crates/kuna-analysis/tests/fixtures/globalref_x86_64.c",
   "tests/stages/kuna-globalref.xml"
- ]
+ ],
+ "castbench_rebased": {
+  "measured_on": "origin/main 22df4282c (#719), a fresh base arm built from it; the branch rebased onto it",
+  "shared_functions": 4815,
+  "casts_main": 45039,
+  "casts_branch": 43914,
+  "per_kloc_main": 236.3,
+  "per_kloc_branch": 230.4,
+  "ratio_to_ida_main": 1.191,
+  "ratio_to_ida_branch": 1.161,
+  "functions_fewer": 486,
+  "functions_more": 0,
+  "by_opt": {
+   "O0": [
+    15011,
+    14654
+   ],
+   "O2": [
+    16250,
+    15879
+   ],
+   "O2-noinline": [
+    13778,
+    13381
+   ]
+  },
+  "hunks": "1,883 changed lines, 1,979 casts removed, 0 unexplained; --option globalref off byte-identical to the 22df4282c build on all 45 binaries"
+ }
 }
