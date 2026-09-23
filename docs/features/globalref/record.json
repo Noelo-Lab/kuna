@@ -237,17 +237,52 @@
   },
   "budget_pct": 5.0,
   "worst_min_pct_on_vs_main": 2.01,
-  "within_budget": true
+  "within_budget": true,
+  "measured_on": "main dbe854ba3 (the bash row and the first three)",
+  "rebased": {
+   "measured_on": "origin/main 22df4282c vs the rebased branch, interleaved min-of-15, O2",
+   "binaries": {
+    "fmt": {
+     "min_ms": {
+      "main": 4151.0,
+      "on": 4194.3,
+      "off": 4177.6
+     },
+     "min_pct_on_vs_main": 1.04,
+     "min_pct_on_vs_off": 0.4
+    },
+    "ls": {
+     "min_ms": {
+      "main": 13719.7,
+      "on": 13856.6,
+      "off": 14085.3
+     },
+     "min_pct_on_vs_main": 1.0,
+     "min_pct_on_vs_off": -1.62
+    },
+    "sort": {
+     "min_ms": {
+      "main": 14148.5,
+      "on": 14460.0,
+      "off": 14761.0
+     },
+     "min_pct_on_vs_main": 2.2,
+     "min_pct_on_vs_off": -2.04
+    }
+   },
+   "worst_min_pct_on_vs_main": 2.2
+  }
  },
  "gates": {
   "make_test": "datatests: 675/675 assertions passed; PARITY OK",
   "make_test_stages": "datatests: 1337/1337 assertions passed; PARITY OK (baseline re-recorded: +8 KUNA-GLOBALREF keys, no other key moved)",
-  "make_test_cli": "tests/cli: 236/236 passed (argclobber-keeps-an-argument-a-thunk-forwards, binary-maze-pointer-becomes, both-argument-recovery-options, protoorder-types-the-callers-argument accept either spelling of a typed constant; ids re-derived)",
-  "make_rust_test": "RUST_TEST_RC=0: 7478 passed, 0 failed, 38 ignored (lane script)",
+  "make_test_cli": "tests/cli: 237/237 passed on the rebased tree (four probes accept either spelling of a typed constant; ids re-derived)",
+  "make_rust_test": "RUST_TEST_RC=0 on the rebased tree: 7486 passed, 0 failed, 38 ignored (lane script)",
   "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
   "catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
-  "options_md": "byte-fresh"
+  "options_md": "byte-fresh",
+  "rebased_onto": "origin/main 22df4282c"
  },
  "files": [
   "decompiler/crates/kuna-decomp/src/p9_emit/kuna_globalref.rs",
