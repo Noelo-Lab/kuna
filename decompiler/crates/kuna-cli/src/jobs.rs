@@ -720,6 +720,7 @@ impl ResultWriter {
             put_u64(&mut body, g.address);
             put_str(&mut body, &g.name);
             put_str(&mut body, &g.declaration);
+            body.extend_from_slice(&g.size.to_le_bytes());
             body.push(u8::from(g.unknown));
         }
         put_u64s(&mut body, &r.callee_hints);
@@ -836,8 +837,9 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         let address = r.u64()?;
         let gname = r.string()?;
         let declaration = r.string()?;
+        let gsize = r.i64()?;
         let unknown = r.u8()? != 0;
-        globals.push(GlobalInfo { address, name: gname, declaration, unknown });
+        globals.push(GlobalInfo { address, name: gname, declaration, size: gsize, unknown });
     }
     let callee_hints = r.u64s()?;
     let synth = match r.u8()? {

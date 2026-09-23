@@ -4914,6 +4914,182 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
     }
 }
 
+/// `globalref`: a constant address used as a pointer prints as the global it
+/// names (`put(&dat_30004070)`), and the project header declares it at the
+/// type the function uses it at (`extern struct_0 dat_30004070;`). The round
+/// trip exports the fixture both ways, compiles each witness caller exactly as
+/// printed against the export's own header, links it with every `dat_<addr>`
+/// placed at `<addr>` and the fixture's data mapped where the binary keeps it,
+/// and runs it: both arms must print what the binary prints. The witnesses
+/// cover a record, two scalars, a table and its one-past-the-end, a `void *`
+/// libc argument, a pointer compare and a `char *` that is not a string; two
+/// controls keep the cast (the storage also read directly, the value also
+/// ordered as a number).
+#[test]
+fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
+    let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let bin = fixtures.join("globalref_x86_64");
+    let sp = specs();
+    let witnesses =
+        ["w_struct", "w_scalar", "w_range", "w_buffer", "w_compare", "w_glyph", "w_direct", "w_numeric"];
+    let arms: [(&str, &[&str], &[&str]); 2] = [
+        (
+            "on",
+            &[
+                "return put(&dat_30004070) + 1;",
+                "return setbits(&dat_30004090,&dat_30004098) + 1;",
+                "return sum(&dat_30002020,&dat_30002030) + 1;",
+                "memset(&dat_300040b0,0x78,8);",
+                "(a0 == &dat_30004060)",
+                "return strlen(&dat_30002034) + 1;",
+                "return put((struct_0 *)0x30004060) + v1;",
+                "setbits((unsigned int *)0x30004090,&dat_30004098);",
+            ],
+            &["extern struct_0 dat_30004070;", "extern unsigned int dat_30004090;", "extern int dat_30002030;"],
+        ),
+        (
+            "off",
+            &[
+                "return put((struct_0 *)0x30004070) + 1;",
+                "return setbits((unsigned int *)0x30004090,(long *)0x30004098) + 1;",
+                "memset((void *)0x300040b0,0x78,8);",
+            ],
+            &[],
+        ),
+    ];
+    let expected = Command::new(&bin).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let Ok(expected) = expected else {
+        eprintln!("globalref round trip: the x86-64 fixture does not run here, spelling checked only");
+        return;
+    };
+    assert_eq!(expected, "210 21 27 121 1 0 4 229 1", "the fixture itself");
+    let dir = std::env::temp_dir().join(format!("kuna-globalref-rt-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let harness = dir.join("main.c");
+    std::fs::write(&harness, GLOBALREF_HARNESS.replace("@FIXTURE@", bin.to_str().unwrap())).unwrap();
+    for (arm, want, decls) in arms {
+        let out = dir.join(arm);
+        let (_, stderr, ok) = run_kuna(&[
+            "decompile-project",
+            bin.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--sleighpath",
+            sp.as_str(),
+            "--option",
+            "globalref",
+            arm,
+        ]);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("globalref round trip: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-project failed: {stderr}");
+        let header = std::fs::read_to_string(out.join("globalref_x86_64.h")).unwrap();
+        let code = std::fs::read_to_string(out.join("globalref_x86_64.c")).unwrap();
+        for w in want {
+            assert!(code.contains(w), "{arm}: missing `{w}`:\n{code}");
+        }
+        for d in decls {
+            assert!(header.contains(d), "{arm}: the header does not declare `{d}`:\n{header}");
+        }
+        if arm == "off" {
+            assert!(!header.contains("globals the code names by address"), "{header}");
+        }
+        let mut printed = String::from("#include \"globalref_x86_64.h\"\n");
+        for w in witnesses {
+            let head = format!("// Function: {w} @ ");
+            let at = code.find(&head).unwrap_or_else(|| panic!("{arm}: no `{w}` in the export"));
+            let end = code[at + head.len()..].find("// Function: ").map_or(code.len(), |e| at + head.len() + e);
+            printed.push_str(&code[at..end]);
+        }
+        let mut names: Vec<String> = Vec::new();
+        for (i, _) in printed.match_indices("dat_") {
+            let hex: String = printed[i + 4..].chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+            let name = format!("dat_{hex}");
+            if !hex.is_empty() && !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        let undeclared: String = names
+            .iter()
+            .filter(|n| !header.contains(&format!(" {n};")))
+            .map(|n| match n.as_str() {
+                "dat_300040b3" => format!("extern char {n};\n"),
+                _ => format!("extern long {n};\n"),
+            })
+            .collect();
+        printed.insert_str(printed.find('\n').unwrap() + 1, &undeclared);
+        std::fs::write(out.join("printed.c"), &printed).unwrap();
+        for cc in ["gcc", "clang"] {
+            if Command::new(cc).arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+                eprintln!("globalref round trip: no `{cc}`");
+                continue;
+            }
+            let exe = out.join(format!("rt-{cc}"));
+            let mut args: Vec<String> = [
+                "-std=gnu11",
+                "-w",
+                "-O0",
+                "-fno-builtin",
+                "-no-pie",
+                "-DGLOBALREF_CALLEES_ONLY",
+                "-o",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+            args.push(exe.to_str().unwrap().to_string());
+            args.push(harness.to_str().unwrap().to_string());
+            args.push(out.join("printed.c").to_str().unwrap().to_string());
+            args.push(fixtures.join("globalref_x86_64.c").to_str().unwrap().to_string());
+            for n in &names {
+                args.push(format!("-Wl,--defsym,{n}=0x{}", &n[4..]));
+            }
+            let built = Command::new(cc).args(&args).current_dir(&out).output().expect("spawn cc");
+            assert!(
+                built.status.success(),
+                "{arm}/{cc}: the printed callers did not compile:\n{}\n{printed}",
+                String::from_utf8_lossy(&built.stderr)
+            );
+            let run = Command::new(&exe).output().expect("run the round trip");
+            let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
+            assert_eq!(got, expected, "{arm}/{cc}: the printed callers compute something else:\n{printed}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The `globalref` round trip's `main`: map the fixture's non-executable load
+/// segments at their own addresses, then call the printed witnesses in the
+/// order the fixture's own `main` does.
+const GLOBALREF_HARNESS: &str = r#"#include <elf.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <unistd.h>
+long w_struct(void); long w_scalar(void); long w_range(void); int w_buffer(void);
+unsigned long w_compare(void *); long w_glyph(void); long w_direct(void); _Bool w_numeric(unsigned long);
+int main(void) {
+  int fd = open("@FIXTURE@", O_RDONLY);
+  Elf64_Ehdr eh; pread(fd, &eh, sizeof eh, 0);
+  for (int i = 0; i < eh.e_phnum; i++) {
+    Elf64_Phdr ph; pread(fd, &ph, sizeof ph, eh.e_phoff + i * sizeof ph);
+    if (ph.p_type != PT_LOAD || (ph.p_flags & PF_X)) continue;
+    unsigned long lo = ph.p_vaddr & ~0xfffUL, hi = (ph.p_vaddr + ph.p_memsz + 0xfff) & ~0xfffUL;
+    if (mmap((void *)lo, hi - lo, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) != (void *)lo) return 2;
+    pread(fd, (void *)ph.p_vaddr, ph.p_filesz, ph.p_offset);
+  }
+  long a = w_struct(); long b = w_scalar(); long c = w_range(); int d = w_buffer();
+  int e = (int)w_compare((void *)0x30004060); int f = (int)w_compare((void *)0x30004070);
+  long g = w_glyph(); long h = w_direct(); long i = w_numeric(1);
+  printf("%ld %ld %ld %d %d %d %ld %ld %ld\n", a, b, c, d, e, f, g, h, i);
+  return 0;
+}
+"#;
+
 /// A call whose result meets a comparison through a non-short-circuit `&` is
 /// always made by the binary.  `foldcallret` used to fold it into the right-hand
 /// operand of the `&&`/`||` the printer emits, `if (a0 <= 5 || tick(a0))`, so

@@ -1803,6 +1803,8 @@ pub struct GlobalInfo {
     pub name: String,
     /// The C declaration without `extern` or `;` (`struct_2 dat_2b080`).
     pub declaration: String,
+    /// The declared object's size in bytes.
+    pub size: i64,
     /// True when the function only ever used the address through `void *`, so
     /// the declared type is the unknown byte.
     pub unknown: bool,
@@ -1825,6 +1827,7 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
             GlobalInfo {
                 address,
                 declaration: crate::printc::declaration_text(&m.decl_type, &name, rt),
+                size: i64::from(m.decl_type.get_size()),
                 name,
                 unknown: m.unknown,
             }

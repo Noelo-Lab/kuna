@@ -1060,9 +1060,10 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///
 /// Each function declares the object at the type IT uses it at, so two
 /// functions can disagree. A type is preferred to the unknown byte a `void *`
-/// use stands for, then the type more functions use (the first in address
-/// order on a tie); the others are listed in a comment on the line, because the
-/// body that used one of them now passes a pointer of another type.
+/// use stands for, then the larger object (a record over the member at its
+/// start), then the declaration more functions make, then the earlier function.
+/// The others are listed in a comment on the line: the body that used one of
+/// them now passes a pointer of another type.
 fn global_declarations(results: &[FuncResult]) -> String {
     let mut by_addr: BTreeMap<u64, Vec<&GlobalInfo>> = BTreeMap::new();
     for g in results.iter().flat_map(|r| r.globals.iter()) {
@@ -1070,23 +1071,25 @@ fn global_declarations(results: &[FuncResult]) -> String {
     }
     let mut out = String::new();
     for uses in by_addr.values() {
-        let known: Vec<&&GlobalInfo> = uses.iter().filter(|g| !g.unknown).collect();
-        let pool: Vec<&GlobalInfo> =
-            if known.is_empty() { uses.to_vec() } else { known.into_iter().copied().collect() };
-        let mut counts: Vec<(&str, usize)> = Vec::new();
-        for g in &pool {
-            match counts.iter_mut().find(|(d, _)| *d == g.declaration) {
+        let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
+        for g in uses {
+            match decls.iter_mut().find(|(d, _)| d.declaration == g.declaration) {
                 Some((_, n)) => *n += 1,
-                None => counts.push((&g.declaration, 1)),
+                None => decls.push((g, 1)),
             }
         }
-        let Some(&(chosen, _)) = counts.iter().max_by(|a, b| a.1.cmp(&b.1).then(std::cmp::Ordering::Greater)) else {
-            continue;
-        };
-        let others: Vec<String> = counts
+        let mut best = 0;
+        for (i, (g, n)) in decls.iter().enumerate() {
+            let (b, bn) = decls[best];
+            if (!g.unknown, g.size, *n) > (!b.unknown, b.size, bn) {
+                best = i;
+            }
+        }
+        let chosen = &decls[best].0.declaration;
+        let others: Vec<String> = decls
             .iter()
-            .filter(|(d, _)| *d != chosen)
-            .map(|(d, _)| d.replace("/*", "/ *").replace("*/", "* /"))
+            .filter(|(g, _)| g.declaration != *chosen)
+            .map(|(g, _)| g.declaration.replace("/*", "/ *").replace("*/", "* /"))
             .collect();
         if others.is_empty() {
             let _ = writeln!(out, "extern {chosen};");
