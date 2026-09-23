@@ -655,6 +655,49 @@
      "n": 15
     }
    }
+  },
+  "round_6": {
+   "surface": "kuna decompile-all <bin> --json --max-fn-seconds 120, the pre-change build against this one, BOTH at their defaults (so the delta is the budget's, not the option's), arm order alternating, on a box running two other workspace-test lanes (load 6-20). docs/features/calleevote/budget-speed.py; raw samples in speed.json under round_6",
+   "estimators": "interleaved min of N, and the median of the per-iteration after/before ratio -- each iteration's two runs sit in the same window, so the ratio cancels a load spike that hits both",
+   "fmt_O2": {
+    "n": 15,
+    "delta_min_pct": -0.05,
+    "delta_median_of_ratios_pct": -3.69
+   },
+   "ls_O2": {
+    "n": 9,
+    "delta_min_pct": 0.48,
+    "delta_median_of_ratios_pct": 0.25
+   },
+   "sort_O2": {
+    "n": 9,
+    "delta_min_pct": 0.59,
+    "delta_median_of_ratios_pct": -0.18
+   },
+   "kmod_O2-noinline": {
+    "n": 15,
+    "delta_min_pct": 1.64,
+    "delta_median_of_ratios_pct": -1.55
+   },
+   "dpkg-divert_O2": {
+    "n": 15,
+    "delta_min_pct": 1.61,
+    "delta_median_of_ratios_pct": 2.07
+   },
+   "crontab_O2-noinline": {
+    "n": 15,
+    "delta_min_pct": -0.17,
+    "delta_median_of_ratios_pct": -0.28
+   },
+   "cmp_O0": {
+    "n": 15,
+    "delta_min_pct": 1.58,
+    "delta_median_of_ratios_pct": 1.96
+   },
+   "worst_delta_min_pct": 1.64,
+   "budget_pct": 5.0,
+   "within_budget": true,
+   "option_total_cost_after": "the redo pass measured directly against the whole run: kmod -O2-noinline 708 reprinted lines, about 4.2% of the run (3.4% before); fmt -O2 96 lines, 0.3%; crontab -O2-noinline nothing. The option's cost against `calleevote off` is that pass plus the ledger bookkeeping."
   }
  },
  "gates": {

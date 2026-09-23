@@ -439,3 +439,38 @@ the mechanism provably output-neutral, and it is also checked — the same
 `decompile-all --json` over twelve binaries, byte-identical to the build before
 it, and the 444-slice typesweep reproducing main's 1,609 perfect functions and
 .3688 mean exactly.
+
+### What it costs and what it buys
+
+Typesweep over the 444 slices, four builds of this tree differing only in the
+constant:
+
+| build | perfect | mean | improved | worse |
+|---|---|---|---|---|
+| budget 0 (today's flat bound) | 1,609 | .3688 | — | — |
+| **budget 5% (shipped)** | **1,615** | **.3697** | **69** | **0** |
+| no bound at all | 1,618 | .3699 | 88 | 0 |
+| a flat +2% on top of today (not shipped) | 1,615 | .3696 | 47 | 0 |
+
+The flat +2% variant reaches the same perfect count by spending more: it hands
+`kmod` the same extra percent as `fmt`, 6.2% of kmod's own lines against the
+shipped 5.3%, for fewer functions improved.
+
+Speed, the two builds at their defaults, interleaved, on a box running two other
+workspace-test lanes (load 6-20), reported both by the campaign's min-of-N and
+by the median of the per-iteration ratio (which cancels a window that is slow
+for both arms):
+
+| binary | n | min | median of ratios |
+|---|---|---|---|
+| fmt -O2 | 15 | -0.05% | -3.69% |
+| ls -O2 | 9 | +0.48% | +0.25% |
+| sort -O2 | 9 | +0.59% | -0.18% |
+| kmod -O2-noinline | 15 | +1.64% | -1.55% |
+| dpkg-divert -O2 | 15 | +1.61% | +2.07% |
+| crontab -O2-noinline | 15 | -0.17% | -0.28% |
+| cmp -O0 | 15 | +1.58% | +1.96% |
+
+and the same thing without a stopwatch: the redo pass now reprints 708 of kmod's
+13,366 lines where the flat bound reprinted about 570, which is the +1% those
+runs measure.
