@@ -1134,11 +1134,16 @@ when it is asked for explicitly, rather than accepting it silently.
 
 The callee-first run also works the other way. After the pass, a parameter a
 function typed only as `void *` or `long` takes the type every call to it passes,
-when that is one committed pointer (a named record, a synthesized `struct_N`, a
-`char *`) and every caller is a direct call the call graph knows: a function
+when that is one committed pointer (a record with a layout — a synthesized
+`struct_N` or one the program declares — or a `char *`) and every caller is a
+direct call the call graph knows: a function
 whose address code takes, or the image stores as an aligned pointer-width word, has
-callers nobody can list and states nothing. The callee is decompiled once more
-with that type as a vote its own uses can refuse. The default value `fields`
+callers nobody can list and states nothing. A name with no layout is not a
+commitment: `FILE *` is voted only where the shell carries its fields
+(`--option libctypes glibc`). The callee is decompiled once more
+with that type as a vote its own uses can refuse, and a function whose first
+decompile printed more than 40 lines is not decompiled again at all — the redo
+is the option's whole cost. The default value `fields`
 also reads a one-field getter's lone field as a record field, for a function
 whose callers are all known direct calls; a `qsort` comparator reads a field
 the same way but keeps its `void *`.

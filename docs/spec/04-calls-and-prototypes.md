@@ -2614,8 +2614,13 @@ typed it only as a pointer to nothing (`void *`, `undefined1 *`), a
 pointer-width integer, or a one-field synthesized record (below). It takes a
 type when every call passes the argument in exactly the storage the callee
 recovered it in and every call passes the SAME committed pointer: a pointer to
-a named record or union (a libc shell, a synthesized `struct_N` the layout
-ledger shares), a `char *` or a `char **`. Two types are the same when they are
+a named record or union that carries its layout (a synthesized `struct_N` the
+layout ledger shares, a record a program declares), a `char *` or a `char **`.
+A name with no layout behind it is not a commitment: the `FILE` shell
+`libctypes` interns says no more about the object than `void *` does, and the
+refusals below that read the pointee's members have nothing to read, so a
+`FILE *` is voted only where the shell carries its fields
+(`--option libctypes glibc`). Two types are the same when they are
 one factory entry or have the same name and shape down the pointer chain; a
 layout comparison alone would equate two records that merely have the same size.
 
@@ -2674,6 +2679,20 @@ so the next redo would lose it. A first statement that only repeats the types
 the function already has (a one-field record its callers were handed back
 through `protoorder`) is not made, since decompiling it again changes nothing.
 A redo that fails keeps the first body.
+
+**What a redo costs, and the bound on it.** The option's whole cost is the
+second decompile: a redo costs what the first decompile of that function cost,
+and nothing else about the run changes. So a function whose first decompile
+printed more than `CALLEE_VOTE_MAX_LINES` (40) lines is dropped from the ledger
+before anything is decided (`too_long_to_vote_on`): nothing is stated about it,
+no round pays for it, and its parameters keep what its own body found. The
+shapes the vote exists for — a forwarder, a getter, a comparator, a wrapper —
+print a few lines, while a long body has enough of its own evidence that the
+vote is usually refused: on `kmod -O2-noinline`, of 58 redos the 10 longer than
+40 lines cost 55% of the redo time and changed 8 bodies, and on `cmp -O0` one
+217-line function was 96% of the redo time for no change at all. Without the
+bound the same three binaries cost +11.5%, +9.0% and +8.1% of a whole-binary
+run, over the project's +5% budget; with it they are inside it.
 
 **`fields`.** The same closed caller set decides one more thing. A function
 whose callers are all known direct calls (at least one, none unknown) is marked

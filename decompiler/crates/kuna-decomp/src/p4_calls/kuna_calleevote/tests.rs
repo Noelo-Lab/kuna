@@ -51,6 +51,15 @@ fn lone(name: &str) -> Rc<Datatype> {
     Rc::new(t)
 }
 
+/// A libc shell as `libctypes` interns one without `glibc` layouts: a name, a
+/// size, and no fields.
+fn shell(name: &str) -> Rc<Datatype> {
+    let mut t = Datatype::new(0xd8, type_metatype::TYPE_STRUCT);
+    t.name = name.to_string();
+    t.flags |= flags::type_incomplete;
+    Rc::new(t)
+}
+
 fn char1() -> Rc<Datatype> {
     let mut t = Datatype::new(1, type_metatype::TYPE_INT);
     t.flags |= flags::chartype;
@@ -100,15 +109,18 @@ fn option_parses_the_three_values() {
 }
 
 #[test]
-fn a_record_or_a_character_pointer_is_committed_and_void_is_not() {
+fn a_laid_out_record_or_a_character_pointer_is_committed_and_a_shell_is_not() {
     assert!(committed(&ptr_to(record("struct_2"))));
-    assert!(committed(&ptr_to(record("FILE"))));
     assert!(committed(&ptr_to(char1())));
     assert!(committed(&ptr_to(ptr_to(char1()))));
     assert!(!committed(&ptr_to(voidt())));
     assert!(!committed(&ptr_to(long8())));
     assert!(!committed(&ptr_to(record(""))));
     assert!(!committed(&long8()));
+    // `FILE *` is a commitment only where the shell carries its fields, which
+    // is `--option libctypes glibc`; the default interns the name alone.
+    assert!(!committed(&ptr_to(shell("FILE"))));
+    assert!(committed(&ptr_to(record("FILE"))));
 }
 
 #[test]

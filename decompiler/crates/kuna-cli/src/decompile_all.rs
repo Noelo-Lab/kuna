@@ -1835,6 +1835,19 @@ pub(crate) fn decompile_callee_first(
 /// type its own callers gave it only once it has been decompiled with it.
 const CALLEE_VOTE_ROUNDS: usize = 3;
 
+/// (kuna `calleevote`) The longest first decompile that is worth doing again:
+/// a redo costs what the first decompile cost, and the whole option's cost is
+/// the redo pass. The shapes the vote exists for -- a forwarder, a getter, a
+/// comparator -- print a few lines, while a long body has enough of its own
+/// evidence that the vote is usually refused: on `kmod -O2-noinline` the ten
+/// redos longer than this cost 55% of the redo time and moved 8 of 38 bodies.
+const CALLEE_VOTE_MAX_LINES: usize = 40;
+
+/// (kuna `calleevote`) Is this first decompile too long to do again?
+fn too_long_to_vote_on(code: Option<&str>) -> bool {
+    code.is_some_and(|c| c.lines().count() > CALLEE_VOTE_MAX_LINES)
+}
+
 /// (kuna `calleevote`) The key the ledger files a function under.
 fn vote_key(t: &FunctionEntry) -> Option<(i32, u64)> {
     Some((t.addr.get_space()?.get_index(), t.addr.get_offset()))
@@ -1880,6 +1893,10 @@ fn open_callee_votes(
 /// callee states its types again before its redone callers read them; then
 /// decide again over what the redone functions pass, up to
 /// [`CALLEE_VOTE_ROUNDS`] times. A redo that fails keeps the first body.
+///
+/// A function whose first decompile printed more than [`CALLEE_VOTE_MAX_LINES`]
+/// lines drops out of the ledger before anything is decided, so nothing is ever
+/// stated about it and no round pays for it.
 fn callee_vote_rounds(
     prog: &mut ConsoleProgram,
     targets: &[FunctionEntry],
@@ -1888,6 +1905,15 @@ fn callee_vote_rounds(
     slots: &mut [Option<FuncResult>],
     expected: &BTreeMap<(i32, u64), Vec<u64>>,
 ) {
+    let long: Vec<(i32, u64)> = slots
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| too_long_to_vote_on(s.as_ref().and_then(|r| r.code.as_deref())))
+        .filter_map(|(i, _)| vote_key(&targets[i]))
+        .collect();
+    for key in long {
+        prog.arch_mut().kuna_calleevote.own.remove(&key);
+    }
     for round in 0..CALLEE_VOTE_ROUNDS {
         let changed = kuna_decomp::kuna_calleevote::decide(prog.arch_mut(), &|k| expected.get(&k).cloned());
         if kuna_decomp::kuna_calleevote::trace() {
@@ -4580,5 +4606,21 @@ mod triage_tests {
             assert_eq!(hits, 1, "size {size} lands in {hits} buckets");
         }
         assert_eq!(DEFAULT_SUMMARY_LARGEST, 10);
+    }
+
+    /// (kuna `calleevote`) The bound on the redo pass: a getter is decompiled
+    /// again, a long body is not, and a function that failed has no body to
+    /// measure.
+    #[test]
+    fn a_long_first_decompile_is_not_decompiled_again() {
+        let getter = "long get_cap(void *a0)\n{\n  return *(long *)((long)a0 + 0x18);\n}\n";
+        assert!(!too_long_to_vote_on(Some(getter)));
+        let long: String =
+            (0..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
+        assert!(too_long_to_vote_on(Some(&long)));
+        let at_the_bound: String =
+            (1..=CALLEE_VOTE_MAX_LINES).map(|i| format!("  v{i} = v{i} + 1;\n")).collect();
+        assert!(!too_long_to_vote_on(Some(&at_the_bound)));
+        assert!(!too_long_to_vote_on(None));
     }
 }

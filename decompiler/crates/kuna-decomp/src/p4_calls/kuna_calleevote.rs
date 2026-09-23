@@ -5,9 +5,12 @@
 //! function, so after the first pass it knows the type each caller gave the
 //! value it passes in every argument slot. Where the callee typed a parameter
 //! only as `void *` or an integer, and every call to it passes the same
-//! committed pointer -- a named record, a synthesized `struct_N *` the ledger
-//! shares, a `char *` -- the callee is decompiled once more with that type as
-//! one more vote for its input.
+//! committed pointer -- a record with a layout, a synthesized `struct_N *` the
+//! ledger shares, a `char *` -- the callee is decompiled once more with that
+//! type as one more vote for its input. A name with no layout behind it (the
+//! `FILE` shell `libctypes` interns) is not one: it would say no more about the
+//! object than `void *` does, and the refusals that read the pointee's members
+//! have nothing to read.
 //!
 //! "Every call" is a claim about the whole program, so it is checked against
 //! the call graph rather than against what the decompiles happened to see: the
@@ -177,8 +180,10 @@ fn key_of(a: &Address) -> Option<(int4, uintb)> {
     Some((a.get_space()?.get_index(), a.get_offset()))
 }
 
-/// Is `ct` a pointer a caller commits to: a named record or union, a
-/// character, or a pointer to a character pointer?
+/// Is `ct` a pointer a caller commits to: a named record or union that carries
+/// its layout, a character, or a pointer to a character pointer? An incomplete
+/// shell -- `FILE` as `libctypes` interns it without `glibc` layouts -- is a
+/// name and nothing else, so it is not a commitment.
 pub fn committed(ct: &Datatype) -> bool {
     if ct.get_metatype() != type_metatype::TYPE_PTR {
         return false;
