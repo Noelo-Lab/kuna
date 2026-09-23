@@ -278,7 +278,8 @@ performs each of those conversions itself: an argument is converted to its
 parameter's type when a prototype is in scope, the right side of `=` to the type
 of the left, a returned value to the return type, and a conversion between
 integer types depends only on the value converted. With the option
-`castimplied` on, the printer leaves such a cast out
+`castimplied` on (the default; `off` restores upstream's rendering), the printer
+leaves such a cast out
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_castimplied.rs (ImpliedCasts::drops)`,
 asked from `printc.rs (PrintC::implied_cast_drops)` by the `CPUI_CAST` arm and
 by both extension arms). The IR keeps every CAST op; only the token is omitted,
