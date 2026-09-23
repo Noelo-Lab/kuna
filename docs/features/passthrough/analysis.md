@@ -118,24 +118,29 @@ The evidence is a recovery, not a fact.
 
 - **A callee whose own return is wrong.** `version_etc_arn` is DWARF `void`, but
   kuna over-recovers it as returning `long` (its body ends in a `__fprintf_chk`
-  whose result stays live at the RETURN). The wrapper `version_etc_ar` then
-  inherits that wrong `long` return through the tail-return half: 23 of the 304
-  gained returns with a DWARF twin across 26 binaries, all downstream of a
-  callee already wrong in the base output.
+  whose result stays live at the RETURN), and every `version_etc_ar` wrapper
+  inherited that through the tail-return half. This is now gated: a callee
+  states a return only where `every_return_computes` holds of its body -- every
+  live RETURN hands back a value produced in every byte and on every path. Over
+  444 decbench slices that takes the contradicted returns from 212 of 4,267 to
+  6 of 4,088, and the six that remain (`fts_skip_tree`, `clear_random_data`,
+  `print_total_stats`) are callees whose last computed value is not the one the
+  source returns.
 - **A callee's type.** The forwarded parameter now also reaches the callee, so
   the callee's recovered type votes on it: where that type is an integer the
   caller's `char *` can lose (the mgetgroups copy recovered as `long a0` turns
   `print_group_list`'s `username` into `long`; 6 of the 444 typesweep slices).
 - **A callee that over-recovers its list.** The first cut claimed at every call
   and gave ARM firmware ~55 parameters DWARF does not list; a register that
-  reaches a call only after another call is not claimed any more, and the
-  argument half now has none that DWARF contradicts (454 confirmed, 52 without
-  a twin).
+  reaches a call only after another call is not claimed any more. What is left
+  over the whole decbench corpus is gnulib `savewd_save`, whose forwarded
+  register reaches a variadic `open_safer` whose recovered list closes over one
+  vararg slot: 4 rows of 2,910.
 
 `type_match` scores `variables[]` (args, stack symbols and framelayout slots),
 never a return type, so the returns were the reason the option first shipped
 **off**. With the gate and the whole-corpus check (`dwarf-confirmation.md`:
-2,773 of 2,900 gained parameters confirmed, 4 contradicted, nothing lost) it
+2,783 of 2,910 gained parameters confirmed, 4 contradicted, nothing lost) it
 ships **on** (`default-on-evaluation.md`).
 
 Nothing is added where a callee stated nothing: `kuna decompile`, a narrowed or

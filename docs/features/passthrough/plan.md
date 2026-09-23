@@ -54,5 +54,5 @@ On, per `default-on-evaluation.md` and `dwarf-confirmation.md`. It shipped off
 in round F because the tail-return arm inherited a callee's own wrong return;
 `recovered_output` now refuses a return the callee did not compute in every byte
 and on every path (`kuna_returnuncomputed::every_return_computes`), and the
-whole-corpus check confirms 2,773 of 2,900 gained parameters and 4,002 of 4,077
+whole-corpus check confirms 2,783 of 2,910 gained parameters and 4,012 of 4,088
 gained returns against DWARF, with 0 parameters and 0 call arguments lost.

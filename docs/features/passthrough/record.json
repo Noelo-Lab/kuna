@@ -49,13 +49,13 @@
  "arity_counters": {
   "why": "type_match scores variables[] (args+stack+framelayout), never the return type, and a fabricated register arg on a function with no DWARF twin is never a false positive -- so arity/return fabrication is measured here against the decbench DWARF twins, off vs on, over 26 binaries (O0/O2/O2-noinline coreutils/gzip/grep/tar/diff/bzip2/shadow + betaflight/crazyflie/nuttx/u-boot).",
   "build": "commit 7da4afecf",
-  "args_gained_functions": 1446,
+  "args_gained_functions": 1450,
   "args_gained": 506,
-  "args_gained_real_vs_dwarf": 2773,
+  "args_gained_real_vs_dwarf": 2783,
   "args_gained_fabricated": 4,
   "args_gained_no_dwarf_twin": 123,
   "returns_gained_functions": 318,
-  "returns_real_vs_dwarf": 4002,
+  "returns_real_vs_dwarf": 4012,
   "returns_fabricated": 6,
   "returns_no_dwarf_twin": 69,
   "params_lost": 0,
@@ -72,16 +72,17 @@
    "site_count_changed": 0,
    "argrows": "36179 -> 36685"
   },
-  "fabrication_shapes": "parameters: gnulib savewd_save in mkdir and ginstall (2 functions, 4 rows), whose forwarded register reaches a variadic open_safer whose recovered list closes over one vararg slot. returns: fts_skip_tree (mv, rm), clear_random_data (shred x2), print_total_stats (tar x2).",
+  "fabrication_shapes": "parameters: gnulib savewd_save in mkdir and ginstall (2 functions, 4 rows of 2,910), whose forwarded register reaches a variadic open_safer whose recovered list closes over one vararg slot. returns: fts_skip_tree (mv, rm), clear_random_data (shred x2), print_total_stats (tar x2).",
   "verdict": "the argument arm is 95.6% DWARF-confirmed and 0.14% contradicted over the whole corpus with nothing ever lost; with the return gate the return arm is 98.2% confirmed. Default ON.",
   "corpus": "the whole 444-slice decbench measurement corpus (8 projects x O0/O2/O2-noinline), every function that gains something",
-  "args_gained_rows": 2900,
+  "args_gained_rows": 2910,
   "args_gained_no_twin_functions": 69,
-  "args_class_agrees_with_dwarf": 2658,
-  "returns_rows": 4077,
+  "args_class_agrees_with_dwarf": 2668,
+  "returns_rows": 4088,
   "returns_fabricated_before_the_gate": 212,
   "returns_rows_before_the_gate": 4267,
-  "no_twin_shape": "69 single-statement forwarding thunks, every one outside every DW_TAG_subprogram range in the twin; their gained list is exactly the callee's own recovered list"
+  "no_twin_shape": "69 single-statement forwarding thunks, every one outside every DW_TAG_subprogram range in the twin; their gained list is exactly the callee's own recovered list",
+  "control_off_arm": "the off arm is unchanged: over 444 slices and 100,198 functions the recovered argument list and return spelling under `--option passthrough off` are identical to the pristine origin/main build's default output"
  },
  "corpus_diff": {
   "binaries": 26,
@@ -182,6 +183,7 @@
   "d_worse_rows": "the same 6 as round F, all a parameter the function already had being retyped by the callee that now receives it: print_group_list (groups O2, id O2) a0 char* -> long, print_stuff (id O2), copy_reg (cp/ginstall/mv O2-noinline) a2 int -> unsigned long",
   "f_corpus": "8 binaries (fmt/ls/df O2, sort O2-noinline, gzip O2, grep O2-noinline, tar O2, shadow useradd O2): 290 functions change and every changed LINE is explained by the documented effect -- 537 type/spelling moves, 292 call-argument gains, 172 RETURNs handing back a tail call, 30 `return;` -> `return <call>;`, 28 result captures, 26 declarations for the captured result, 16 declarations renumbered; the 2 rows the classifier could not fold were read (grep 0x1c0c0 `*a0` -> `a0->field_0x0` on a newly typed pointer, tar 0x255c0 two tail calls becoming `return sub_45370(...)` / `return sub_45230(...)`)",
   "g_modes": "the UNEVALUATED entry is removed -- a default-on option needs no aggressive override",
-  "dwarf": "docs/features/passthrough/dwarf-confirmation.md"
+  "dwarf": "docs/features/passthrough/dwarf-confirmation.md",
+  "dwarf_summary": "parameters 2,910 rows / 2,783 confirmed / 4 contradicted / 123 no twin (69 thunks); returns 4,088 rows / 4,012 confirmed / 6 contradicted / 69 no twin; before the return gate 212 of 4,267 returns were contradicted"
  }
 }

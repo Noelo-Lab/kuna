@@ -25,11 +25,11 @@ address at all.
 
 | | rows | confirmed | contradicted | no twin |
 |---|---:|---:|---:|---:|
-| **all** | **2,900** | **2,773 (95.6%)** | **4 (0.14%)** | **123 (4.2%)** |
+| **all** | **2,910** | **2,783 (95.6%)** | **4 (0.14%)** | **123 (4.2%)** |
 | O0 | 0 | 0 | 0 | 0 |
 | O2 | 1,112 | 1,105 | 0 | 7 |
-| O2-noinline | 1,788 | 1,668 | 4 | 116 |
-| coreutils | 2,077 | 1,985 | 4 | 88 |
+| O2-noinline | 1,798 | 1,678 | 4 | 116 |
+| coreutils | 2,087 | 1,995 | 4 | 88 |
 | shadow | 372 | 358 | 0 | 14 |
 | diffutils | 153 | 148 | 0 | 5 |
 | tar | 141 | 137 | 0 | 4 |
@@ -37,12 +37,12 @@ address at all.
 | grep | 50 | 46 | 0 | 4 |
 | gzip | 5 | 5 | 0 | 0 |
 
-1,446 functions gain a parameter (548 at O2, 898 at O2-noinline). **No function
+1,450 functions gain a parameter (548 at O2, 902 at O2-noinline). **No function
 and no call site loses one** (`lost = 0` over all 444 slices, and
 `lostargs.py` reports `call_lost_args=0 param_lost=0`). Nothing moves at O0,
 where the register is already named by an op.
 
-Of the 2,773 confirmed parameters, 2,658 (95.9%) also agree with DWARF on the
+Of the 2,783 confirmed parameters, 2,668 (95.9%) also agree with DWARF on the
 type's *class*; 115 do not, and 112 of those are a real pointer parameter kuna
 types `long`/`unsigned long` (`chroot` `0x6d10` takes DWARF `char *`, kuna says
 `long`). That is the `ptr_char` gap the campaign already tracks, not a
@@ -94,18 +94,18 @@ With the gate:
 
 | | rows | confirmed | contradicted | no twin |
 |---|---:|---:|---:|---:|
-| **all** | **4,077** | **4,002 (98.2%)** | **6 (0.15%)** | **69** |
-| O2 | 1,918 | 1,909 | 2 | 7 |
-| O2-noinline | 2,159 | 2,093 | 4 | 62 |
+| **all** | **4,088** | **4,012 (98.1%)** | **6 (0.15%)** | **69** |
+| O2 | 1,919 | 1,909 | 2 | 7 |
+| O2-noinline | 2,169 | 2,103 | 4 | 62 |
 
 The remaining six are `fts_skip_tree` (mv, rm), `clear_random_data` (shred ×2)
 and `print_total_stats` (tar ×2): callees that DWARF says are `void` and whose
-last computed value kuna reads as a result. 4,002 functions that printed
+last computed value kuna reads as a result. 4,012 functions that printed
 `void f(...)` against a non-void twin now return something. One more return is
 *retyped* rather than gained (tar `write_extended`, `unsigned long` to
 `unsigned long *` against DWARF `union block *`).
 
-The type class of a gained return agrees with DWARF on 3,477 of 4,002; the 525
+The type class of a gained return agrees with DWARF on 3,487 of 4,012; the 525
 that differ are `long`/`unsigned long` where the twin says a pointer, the same
 under-typing as the parameters (116 more are a `char (*)[16]` spelling this
 check's textual return-type parser cannot compare).

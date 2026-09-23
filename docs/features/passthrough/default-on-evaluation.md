@@ -28,9 +28,9 @@ something, checked against its unstripped twin — `dwarf-confirmation.md`):
 
 | | rows | confirmed | contradicted | no twin |
 |---|---:|---:|---:|---:|
-| parameters | 2,900 | 2,773 (95.6%) | 4 | 123 |
+| parameters | 2,910 | 2,783 (95.6%) | 4 | 123 |
 | returns, before the gate | 4,267 | — | 212 | — |
-| returns, with the gate | 4,077 | 4,002 (98.2%) | 6 | 69 |
+| returns, with the gate | 4,088 | 4,012 (98.1%) | 6 | 69 |
 
 The 4 contradicted parameters are gnulib `savewd_save` in two binaries, whose
 forwarded register reaches a variadic `open_safer`; the 123 rows with no twin

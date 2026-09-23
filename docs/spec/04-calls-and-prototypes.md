@@ -2569,7 +2569,7 @@ call's `RAX` clobber, so kuna recovers it as returning `long`; the relaxed quest
 calls the `CONCAT44(<leftover>, __fprintf_chk(...))` it returns computed and the
 strict one does not. Without the gate every `version_etc_ar` wrapper inherited that
 wrong return: 212 of 4,267 gained returns over 444 decbench slices, against 6 of
-4,077 with it (`docs/features/passthrough/dwarf-confirmation.md`).
+4,088 with it (`docs/features/passthrough/dwarf-confirmation.md`).
 
 Nothing is added where a callee stated nothing: a single-function `kuna
 decompile`, a narrowed or sharded `decompile-all`, an import, `--option
@@ -2586,11 +2586,11 @@ call, and `sysinttostr`) as controls that must keep every argument the
 option-off run gives them.
 
 **Default.** On. Every function that gains something over the 444-slice decbench
-corpus was checked against its unstripped twin's DWARF prototype: 2,773 of 2,900
+corpus was checked against its unstripped twin's DWARF prototype: 2,783 of 2,910
 gained parameters are confirmed, 4 are contradicted (gnulib `savewd_save`, whose
 forwarded register reaches a variadic `open_safer` whose recovered list closes
 over one vararg slot) and 123 belong to 69 forwarding thunks the toolchain
-emitted with no debug entry at all; 4,002 of 4,077 gained returns are confirmed
+emitted with no debug entry at all; 4,012 of 4,088 gained returns are confirmed
 and 6 contradicted. No function and no call site loses an argument, and nothing
 moves at -O0, where the register is already named by an op. The evidence is
 `docs/features/passthrough/dwarf-confirmation.md`; set `off` to get upstream's
