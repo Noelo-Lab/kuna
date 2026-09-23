@@ -112,7 +112,7 @@ claimed call (`returns_tail_result`); that call keeps its return-value trial, an
 its output takes the callee's recovered return type (`tail_return_type`).
 `gzip_base_name` becomes `char * sub_d290(char *a0) { return sub_dfd0(a0); }`.
 
-## What it cannot know, and why it ships off
+## What it cannot know, and why it ships on
 
 The evidence is a recovery, not a fact.
 
@@ -133,8 +133,10 @@ The evidence is a recovery, not a fact.
   a twin).
 
 `type_match` scores `variables[]` (args, stack symbols and framelayout slots),
-never a return type, so the returns are the reason the option ships **off**
-(`default-on-evaluation.md`).
+never a return type, so the returns were the reason the option first shipped
+**off**. With the gate and the whole-corpus check (`dwarf-confirmation.md`:
+2,773 of 2,900 gained parameters confirmed, 4 contradicted, nothing lost) it
+ships **on** (`default-on-evaluation.md`).
 
 Nothing is added where a callee stated nothing: `kuna decompile`, a narrowed or
 sharded `decompile-all`, an import, `--option protoorder off`, and under

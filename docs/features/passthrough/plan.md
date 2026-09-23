@@ -50,6 +50,9 @@ callee-body probes are `calleedeadarg`'s existing bounded walks.
 
 ## Default
 
-Off, per `default-on-evaluation.md`: the arg arm is a clean x86-64 win but
-over-claims on ARM firmware, and the tail-return arm inherits a callee's own
-wrong return; off keeps the shipped output byte-identical.
+On, per `default-on-evaluation.md` and `dwarf-confirmation.md`. It shipped off
+in round F because the tail-return arm inherited a callee's own wrong return;
+`recovered_output` now refuses a return the callee did not compute in every byte
+and on every path (`kuna_returnuncomputed::every_return_computes`), and the
+whole-corpus check confirms 2,773 of 2,900 gained parameters and 4,002 of 4,077
+gained returns against DWARF, with 0 parameters and 0 call arguments lost.
