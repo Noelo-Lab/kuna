@@ -157,7 +157,7 @@
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "byte-fresh from `kuna catalog --markdown`",
-  "make rust-test": "RUST_TEST_RC=0, 0 FAILED test-result blocks on the rebased tree (lane script, env -u KUNA_DECOMP_TEST). The first pre-rebase run was RC=2 on two sites this change owns -- the live-value allowlist in kuna_phases/tests.rs and the docs/options.md kuna-cli embeds -- both fixed and green on the re-run."
+  "make rust-test": "RUST_TEST_RC=0 on the rebased tree, 422 test-result blocks and none with a failure (lane script, env -u KUNA_DECOMP_TEST). Last run 2026-09-23 14:43:19Z -> 15:09:00Z, after the catalog-row edit at 14:37:22Z, with all eight kuna_structmerge tests green. The first pre-rebase run was RC=2 on two sites this change owns -- the live-value allowlist in kuna_phases/tests.rs and the docs/options.md kuna-cli embeds -- both fixed and green since."
  },
  "counters": "settables 228 -> 229; tier counts 72 core / 92 -> 93 transform / 64 analysis; kuna-catalog.xml #7 structure-recovery 31 -> 32; phases-tests catalog-json-records 227 -> 228; catalog_bytecompat fixture recaptured (229 options); tests/stages corpus file count 334 -> 335; docs/baseline-stages.json re-recorded (+6 STRUCTMERGE assertions and the renamed KUNA-CATALOG #7 key, nothing moved)",
  "base": "rebased onto origin/main 796939d54 (round G: slotptr, protoorder cycles, structsynth locals, calleevote, libcwiden, passthrough all in); designed and tuned on 31ac2b26e",
