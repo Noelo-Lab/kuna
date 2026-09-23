@@ -123,7 +123,8 @@
    "counters_check": "no drift",
    "options_md_fresh": true,
    "phase_catalog_fresh": true,
-   "check_spec": "OK lenient + strict"
+   "check_spec": "OK lenient + strict",
+   "make_rust_test": "RUST_TEST_RC=0 (lane script, rebased tree; 423 test-result lines, 0 failed)"
   }
  },
  "catalog_counts": {
