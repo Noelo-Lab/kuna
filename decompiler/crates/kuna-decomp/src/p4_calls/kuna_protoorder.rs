@@ -1509,6 +1509,7 @@ pub fn park_recovered(
     arch: &mut Architecture,
     entry: &Address,
     name: &str,
+    data: &crate::funcdata::Funcdata,
     proto: &FuncProto,
     mode: ProtoOrderMode,
 ) -> Result<Recovered, Decline> {
@@ -1518,7 +1519,7 @@ pub fn park_recovered(
     let (mut pieces, mut storage) = recovered_pieces(proto, name)?;
     if mode.states_types_only() {
         let arity_sound = arch.pass_through && arity_claim_sound(arch, entry, &pieces, &storage);
-        let output = if arch.pass_through { recovered_output(proto) } else { None };
+        let output = if arch.pass_through { recovered_output(proto, data) } else { None };
         return state_recovered_types(arch, entry, pieces, storage, arity_sound, output);
     }
     let mut trimmed = 0usize;
@@ -1582,11 +1583,23 @@ fn arity_claim_sound(
 }
 
 /// The recovered return value of `proto` -- storage, size, type -- or `None`
-/// for a `void` or storage-less one.
-fn recovered_output(proto: &FuncProto) -> Option<(Address, int4, Rc<Datatype>)> {
+/// for a `void` or storage-less one, or one the function never computed.
+///
+/// A recovered return is stated only when every live RETURN hands back a value
+/// the body produced ([`crate::kuna_returnuncomputed::every_return_computes`]).
+/// A function that ends on a call and keeps that call's return-register clobber
+/// is recovered as returning it -- gnulib's `void version_etc_arn` comes out
+/// `long` -- and a wrapper told so hands the same wrong value back.
+fn recovered_output(
+    proto: &FuncProto,
+    data: &crate::funcdata::Funcdata,
+) -> Option<(Address, int4, Rc<Datatype>)> {
     let out = proto.get_output();
     let ct = out.get_type()?;
     if ct.get_metatype() == type_metatype::TYPE_VOID {
+        return None;
+    }
+    if !crate::kuna_returnuncomputed::every_return_computes(data) {
         return None;
     }
     let addr = out.get_address();

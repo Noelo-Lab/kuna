@@ -102,6 +102,48 @@ fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     computes_from(data, vn, depth, None)
 }
 
+/// [`computes_from`], asked of every byte and every path instead of any one of
+/// them: a reshaping op or a phi is computed only when ALL of its inputs are.
+///
+/// The relaxed question is the right one for the pair repair, which asks it of
+/// one half at a time and has to keep a genuine wide return. A caller reading a
+/// callee's recovered return type needs the strict one: a value pieced together
+/// from a call's narrow result and a leftover, or merged from one path that
+/// computes it and one that does not, is not a return value the caller can hand
+/// on.
+fn computes_everywhere(data: &Funcdata, vn: VarnodeId, depth: u32, placed_at: Option<&Address>) -> bool {
+    if depth >= MAX_DEPTH {
+        return true;
+    }
+    let Some(v) = data.vbank().get(vn) else { return true };
+    if v.is_constant() {
+        return true;
+    }
+    let Some(def) = v.get_def() else {
+        if placed_at.is_some_and(|a| a == v.get_addr()) {
+            return false;
+        }
+        return crate::kuna_retinputhalf::is_input_parameter(data, vn);
+    };
+    let Some(op) = data.obank().get(def) else { return true };
+    if op.code() == OpCode::CPUI_INDIRECT && op.is_indirect_creation() {
+        return false;
+    }
+    let inputs: Vec<VarnodeId> = match op.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT | OpCode::CPUI_SUBPIECE => {
+            op.get_in(0).into_iter().collect()
+        }
+        OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_PIECE => {
+            (0..op.num_input()).filter_map(|i| op.get_in(i)).collect()
+        }
+        _ => return true,
+    };
+    if inputs.is_empty() {
+        return true;
+    }
+    inputs.into_iter().all(|i| computes_everywhere(data, i, depth + 1, placed_at))
+}
+
 /// The walk, carrying the input-parameter carve-out's **placement** test.
 ///
 /// `placed_at` is the storage of the return half the walk started from, which
@@ -151,6 +193,35 @@ fn computes_from(data: &Funcdata, vn: VarnodeId, depth: u32, placed_at: Option<&
         return true;
     }
     inputs.into_iter().any(|i| computes_from(data, i, depth + 1, placed_at))
+}
+
+/// Does every live RETURN of `data` hand back a value the function computed?
+///
+/// The same walk the pair repair runs, asked of the whole function and of a
+/// single return register, where the repair cannot act: it only ever chooses
+/// between two active trials and never deactivates the last survivor, so a
+/// function recovered with ONE return register keeps whatever reached the
+/// RETURN. gnulib's `version_etc_arn` is `void`, ends its fallthrough path in a
+/// `__fprintf_chk` and keeps that call's `RAX` clobber -- an INDIRECT creation --
+/// as its "result", so kuna recovers it as returning `long`. A caller has no way
+/// to see that from the recovered prototype alone, which is why `passthrough`
+/// asks this question of the callee (see [`crate::kuna_passthrough`]).
+///
+/// `false` means at least one RETURN hands back a terminal the function never
+/// computed. A function with no live RETURN answers `true`, the no-change answer.
+pub fn every_return_computes(data: &Funcdata) -> bool {
+    for retop in data.obank().iter_code(OpCode::CPUI_RETURN).collect::<Vec<_>>() {
+        let Some(o) = data.obank().get(retop) else { continue };
+        if o.is_dead() || o.get_halt_type() != 0 || o.num_input() < 2 {
+            continue;
+        }
+        let Some(value) = o.get_in(1) else { continue };
+        let placed = data.vbank().get(value).map(|v| v.get_addr().clone());
+        if !computes_everywhere(data, value, 0, placed.as_ref()) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Repair a RETURN whose value is a return-recovery register **pair** with an

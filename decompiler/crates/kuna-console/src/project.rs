@@ -630,6 +630,7 @@ pub fn decompile_pulled(
                         prog.arch_mut(),
                         &park_entry,
                         &name,
+                        &fd,
                         fd.get_func_proto(),
                         mode,
                     );
