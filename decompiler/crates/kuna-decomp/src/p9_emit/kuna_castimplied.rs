@@ -102,6 +102,27 @@ pub(crate) trait PrintedForms {
     fn is_statement(&self, op: OpId) -> bool;
 }
 
+/// What is known about the C type of a printed operand.
+#[derive(Debug)]
+enum CType {
+    /// The printed text states this type.
+    Known(Rc<Datatype>),
+    /// Nothing states it; C's type is at most a promotion of the IR's.
+    Unknown,
+    /// The text states a type that is none of the IR's (a pointer declaration
+    /// over an integer read): refuse.
+    Opaque,
+}
+
+impl CType {
+    fn known(&self) -> Option<&Rc<Datatype>> {
+        match self {
+            CType::Known(t) => Some(t),
+            _ => None,
+        }
+    }
+}
+
 /// The per-function state: the declarations the printer wrote, by spelling.
 #[derive(Debug, Default)]
 pub(crate) struct ImpliedCasts {
@@ -196,15 +217,20 @@ impl ImpliedCasts {
         }
         let src = self.operand_type(p, fd, invn, op);
         if below {
-            return src.is_some_and(|s| preserves(&s, &target));
+            return src.known().is_some_and(|s| preserves(s, &target));
         }
         let want = p.spell(&target);
         if code == OpCode::CPUI_CAST
-            && src.as_ref().is_some_and(|s| p.spell(s) == want)
+            && src.known().is_some_and(|s| int_range(s).is_some() && p.spell(s) == want)
         {
             return true;
         }
-        if !preserves(src.as_ref().unwrap_or(&ir_src), &target) {
+        let from = match &src {
+            CType::Known(s) => s,
+            CType::Unknown => &ir_src,
+            CType::Opaque => return false,
+        };
+        if !preserves(from, &target) {
             return false;
         }
         let (reader, value) = through_copies(fd, read_op, outvn);
@@ -232,66 +258,101 @@ impl ImpliedCasts {
         }
     }
 
-    /// The C type of `vn` as printed where `reader` reads it, when the printed
-    /// text states it.
-    fn operand_type(
-        &self,
-        p: &dyn PrintedForms,
-        fd: &Funcdata,
-        vn: VarnodeId,
-        reader: OpId,
-    ) -> Option<Rc<Datatype>> {
-        let v = fd.vbank().get(vn)?;
-        if v.is_constant() || v.is_annotation() {
-            return None;
+    /// The C type of `vn` as printed where `reader` reads it.
+    fn operand_type(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId) -> CType {
+        let Some(v) = fd.vbank().get(vn) else { return CType::Opaque };
+        if v.is_annotation() {
+            return CType::Opaque;
+        }
+        if v.is_constant() {
+            return CType::Unknown;
         }
         if v.is_explicit() {
-            return self.declared_type(p, fd, vn, reader);
+            return self.explicit_type(p, fd, vn, reader);
         }
-        let def = v.get_def()?;
-        let d = fd.obank().get(def)?;
+        let Some(def) = v.get_def() else { return CType::Unknown };
+        let Some(d) = fd.obank().get(def) else { return CType::Unknown };
         let t = v.get_type_def_facing().clone();
+        let int = int_range(&t).is_some();
         match d.code() {
-            OpCode::CPUI_CAST => {
-                int_range(&t)?;
+            OpCode::CPUI_CAST if int => {
                 if p.sign_dropped(def) || !self.decide(p, fd, def, Some(reader), true) {
-                    return Some(t);
+                    return CType::Known(t);
                 }
-                self.operand_type(p, fd, d.get_in(0)?, def)
+                d.get_in(0).map_or(CType::Unknown, |i| self.operand_type(p, fd, i, def))
             }
-            OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT => {
-                int_range(&t)?;
+            OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT if int => {
                 if !p.extension_is_cast(def) || p.extension_hidden(def, Some(reader)) {
-                    return None;
+                    return CType::Unknown;
                 }
                 if !self.decide(p, fd, def, Some(reader), true) {
-                    return Some(t);
+                    return CType::Known(t);
                 }
-                self.operand_type(p, fd, d.get_in(0)?, def)
+                d.get_in(0).map_or(CType::Unknown, |i| self.operand_type(p, fd, i, def))
             }
-            OpCode::CPUI_SUBPIECE if p.truncation_is_cast(def) => {
-                int_range(&t)?;
-                Some(t)
+            OpCode::CPUI_SUBPIECE if int && p.truncation_is_cast(def) => CType::Known(t),
+            OpCode::CPUI_COPY => {
+                d.get_in(0).map_or(CType::Unknown, |i| self.operand_type(p, fd, i, def))
             }
-            OpCode::CPUI_COPY => self.operand_type(p, fd, d.get_in(0)?, def),
-            OpCode::CPUI_LOAD => {
-                int_range(&t)?;
-                let ptr = d.get_in(1)?;
-                let pv = fd.vbank().get(ptr)?;
+            OpCode::CPUI_LOAD if int => {
+                let Some(ptr) = d.get_in(1) else { return CType::Unknown };
+                let Some(pv) = fd.vbank().get(ptr) else { return CType::Unknown };
                 let ptr_ty = if pv.is_explicit() {
-                    self.declared_type_any(p, fd, ptr, def)?
-                } else if pv.get_def().and_then(|c| fd.obank().get(c)).is_some_and(|c| c.code() == OpCode::CPUI_CAST) {
+                    match self.explicit_type(p, fd, ptr, def) {
+                        CType::Known(pt) => pt,
+                        _ => return CType::Unknown,
+                    }
+                } else if pv
+                    .get_def()
+                    .and_then(|c| fd.obank().get(c))
+                    .is_some_and(|c| c.code() == OpCode::CPUI_CAST)
+                {
                     pv.get_type_def_facing().clone()
                 } else {
-                    return None;
+                    return CType::Unknown;
                 };
                 if ptr_ty.get_metatype() != type_metatype::TYPE_PTR {
-                    return None;
+                    return CType::Unknown;
                 }
-                let pointee = ptr_ty.get_ptr_to()?;
-                (p.spell(&pointee) == p.spell(&t)).then_some(t)
+                match ptr_ty.get_ptr_to() {
+                    Some(pointee) if p.spell(&pointee) == p.spell(&t) => CType::Known(t),
+                    _ => CType::Unknown,
+                }
             }
-            _ => None,
+            _ => CType::Unknown,
+        }
+    }
+
+    /// The C type of an explicit `vn`: the type its declaration line (or the
+    /// signature) spells, else, for a global, its symbol's type.  A declaration that
+    /// spells none of the types kuna holds for `vn` -- a merged variable declared
+    /// `int *` whose member here reads as a `long` -- is `Opaque`: the text C
+    /// sees is not the IR's type, so nothing can be concluded from the IR.
+    fn explicit_type(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId) -> CType {
+        let Some(v) = fd.vbank().get(vn) else { return CType::Opaque };
+        let Some(high) = v.get_high() else { return CType::Opaque };
+        if let Some(spelling) = self.declared_spelling(p, fd, vn) {
+            let planned = p.planned_decl_type(high);
+            return [
+                planned,
+                Some(v.get_type_read_facing(reader).clone()),
+                Some(v.get_type().clone()),
+            ]
+            .into_iter()
+            .flatten()
+            .find(|t| p.spell(t) == spelling)
+            .map_or(CType::Opaque, CType::Known);
+        }
+        let Some(h) = fd.high_bank().get(high) else { return CType::Opaque };
+        let global = h.kuna_global()
+            || (0..h.num_instances())
+                .any(|i| fd.vbank().get(h.get_instance(i)).is_some_and(|m| m.is_persist()));
+        if !global {
+            return CType::Opaque;
+        }
+        match h.kuna_symbol_type().cloned() {
+            Some(st) if st.get_size() == v.get_size() && int_range(&st).is_some() => CType::Known(st),
+            _ => CType::Opaque,
         }
     }
 
@@ -314,42 +375,6 @@ impl ImpliedCasts {
         self.params.get(&name).cloned()
     }
 
-    /// The type an explicit `vn` is declared with, of any kind.
-    fn declared_type_any(
-        &self,
-        p: &dyn PrintedForms,
-        fd: &Funcdata,
-        vn: VarnodeId,
-        reader: OpId,
-    ) -> Option<Rc<Datatype>> {
-        let spelling = self.declared_spelling(p, fd, vn)?;
-        let v = fd.vbank().get(vn)?;
-        [v.get_type_read_facing(reader).clone(), v.get_type().clone()]
-            .into_iter()
-            .find(|t| p.spell(t) == spelling)
-    }
-
-    /// The type an explicit `vn` is declared with, as one of the types kuna
-    /// holds for it whose spelling is the declaration's.
-    fn declared_type(
-        &self,
-        p: &dyn PrintedForms,
-        fd: &Funcdata,
-        vn: VarnodeId,
-        reader: OpId,
-    ) -> Option<Rc<Datatype>> {
-        let spelling = self.declared_spelling(p, fd, vn)?;
-        let v = fd.vbank().get(vn)?;
-        let planned = v.get_high().and_then(|h| p.planned_decl_type(h));
-        [
-            planned,
-            Some(v.get_type_read_facing(reader).clone()),
-            Some(v.get_type().clone()),
-        ]
-        .into_iter()
-        .flatten()
-        .find(|t| int_range(t).is_some() && p.spell(t) == spelling)
-    }
 }
 
 /// The op that reads the value `vn` carries once `read_op` is known, looking
