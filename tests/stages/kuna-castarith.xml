@@ -87,7 +87,7 @@
 <stringmatch name="castarith #1: with the option off a 4-byte read through a void pointer is an integer round trip -- the bug" min="1" max="1">return \*\(unsigned int \*\)\(\(int8\)a0 \+ 0xac\);</stringmatch>
 <stringmatch name="castarith #2: and a pointer passed on is converted to an integer and back" min="1" max="1">take\(\(uint4 \*\)\(\(int8\)a0 \+ 0x10\)\);</stringmatch>
 <stringmatch name="castarith #3: by default the read is element 0x2b of an unsigned int pointer, one cast" min="1" max="1">return \(\(unsigned int \*\)a0\)\[0x2b\];</stringmatch>
-<stringmatch name="castarith #4: a negative offset is a negative index" min="1" max="1">return \(int4\)\(\(int2 \*\)a0\)\[-0xd\];</stringmatch>
+<stringmatch name="castarith #4: a negative offset is a negative index" min="1" max="1">return \(\(int2 \*\)a0\)\[-0xd\];</stringmatch>
 <stringmatch name="castarith #5: a store indexes the stored width" min="1" max="1">\(\(unsigned short \*\)a0\)\[0x41\] = a1;</stringmatch>
 <stringmatch name="castarith #6: a pointer passed on stays a pointer, spelled the arraynotation way" min="1" max="1">take\(&amp;\(\(uint4 \*\)a0\)\[4\]\);</stringmatch>
 <stringmatch name="castarith #7: with arraynotation off the same pointer is base plus index" min="1" max="1">take\(\(uint4 \*\)a0 \+ 4\);</stringmatch>

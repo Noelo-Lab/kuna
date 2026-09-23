@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_230() {
+fn settable_count_is_231() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -164,12 +164,12 @@ fn settable_count_is_230() {
     // +1 for `slotptr` (P6 frame-slot pointer typing on the JSON variables surface).
     // +1 for `calleevote` (P4 caller-to-callee parameter types).
     // +1 for `structmerge` (P5 sibling layout union).
-    assert_eq!(kuna_num_settables(), 230);
-    assert_eq!(SETTABLE_TABLE.len(), 230);
+    assert_eq!(kuna_num_settables(), 231);
+    assert_eq!(SETTABLE_TABLE.len(), 231);
 }
 
 #[test]
-fn tier_counts_are_73_core_93_transform_64_analysis() {
+fn tier_counts_are_74_core_93_transform_64_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -318,7 +318,7 @@ fn tier_counts_are_73_core_93_transform_64_analysis() {
     // transform 91 -> 92: +1 for `calleevote` (P4 caller-to-callee parameter
     // types).
     // transform 92 -> 93: +1 for `structmerge` (P5 sibling layout union).
-    assert_eq!((core, transform, analysis), (73, 93, 64));
+    assert_eq!((core, transform, analysis), (74, 93, 64));
 }
 
 #[test]
@@ -1130,7 +1130,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 224 -> 225: +1 for `slotptr`; its P6 row sits mid-table.
     // 225 -> 226: +1 for `calleevote`.
     // 226 -> 227: +1 for `structmerge`; its P5 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 229);
+    assert_eq!(json.matches("},\n").count(), 230);
 }
 
 #[test]
