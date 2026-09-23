@@ -74,6 +74,14 @@ They are type votes on an existing parameter, not arity moves — verified again
 DWARF — and 83 functions improve against them. The `copy_reg` trio that was worse
 before the tightening no longer is.
 
+Re-measured at landing on `1c57f06b6` (`libcwiden` merged in between), the same
+two arms of a build of that tree give PERFECT **1,584 → 1,611**, i.e. **+27** (27
+onto perfect, 0 off), aggregate 3,897.08 → 3,950.97, 84 improved and **0 worse**:
+the three functions above score the same in both arms there (0.500, 0.500 and
+0.071), so the flip no longer moves them. `make test-stages` is 1,323/1,323 there.
+The 8-binary diff is unchanged — the same 276 functions, the same two hand-read
+lines — and no call site or function loses an argument.
+
 One `tests/cli` probe pins output the new default moves:
 
 * `protoorder-types-keeps-a-float-pointee-bitwise` expects `double s3(...)`
