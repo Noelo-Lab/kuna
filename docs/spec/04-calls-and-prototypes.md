@@ -2612,7 +2612,13 @@ is `decompiler/crates/kuna-analysis/tests/fixtures/passthrough_x86_64` under
 clobbered forward and a variadic callee as its controls, and the three shapes
 above (`noop(); twoarg(p,3)`, `vout(p); twoarg(p,3)` as a tail and as a plain
 call, and `sysinttostr`) as controls that must keep every argument the
-option-off run gives them.
+option-off run gives them. The vararg tail has its own fixture,
+`varargtail_x86_64` under
+`tests/cli/passthrough-declines-a-vararg-tail-parameter.json`: `xfail` pushes an
+unloaded `rdx` as gcc's alignment filler before a variadic-style call and so
+recovers a third parameter in every arm, and the function that forwards `rdx` to
+it must keep two, while the `jmp`-forwarding control beside it still gains its
+`char *`.
 
 **Default.** On, on the strength of the parameter arm. Every function that gains
 something was checked against its unstripped twin's DWARF prototype over two
