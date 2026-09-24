@@ -291,7 +291,37 @@
    }
   },
   "worst_min_delta_pct": 1.06,
-  "budget_pct": 5
+  "budget_pct": 5,
+  "after_lock_check": {
+   "build": "51f5e35ac (the type-lock check), same method, 15 rounds, docs/features/castsign/speed-after-lock.json",
+   "measurements": {
+    "fmt": {
+     "off_min_ms": 4109.9,
+     "on_min_ms": 4179.1,
+     "delta_min_pct": 1.68,
+     "delta_median_pct": 4.0
+    },
+    "ls": {
+     "off_min_ms": 13687.6,
+     "on_min_ms": 13786.8,
+     "delta_min_pct": 0.72,
+     "delta_median_pct": 0.3
+    },
+    "sort": {
+     "off_min_ms": 14537.5,
+     "on_min_ms": 14500.2,
+     "delta_min_pct": -0.26,
+     "delta_median_pct": -0.06
+    },
+    "bash": {
+     "off_min_ms": 87738.2,
+     "on_min_ms": 87371.8,
+     "delta_min_pct": -0.42,
+     "delta_median_pct": 0.3
+    }
+   },
+   "worst_min_delta_pct": 1.68
+  }
  },
  "parity": {
   "datatests": "675/675 PARITY OK, no assertion moved",
