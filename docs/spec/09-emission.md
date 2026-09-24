@@ -1008,6 +1008,13 @@ no other high in the function printing the same name
 address-taken local out. `&v15` is a high of its own bound to the same name,
 and re-declaring `v15` would change the C type of `&v15` under a pointer that
 was typed for the old declaration. A split slot is kept out by the same test.
+No high bound to a type-locked Symbol is re-declared, whichever relaxation
+admitted it (`kuna_castsign.rs (symbol_type_locked)`). A `--assert type`, a
+DWARF local and a type committed from Ghidra each lock the Symbol, and the
+member varnodes the evidence walk checks for a lock do not carry it, so the
+test reads the Symbol itself: the naming pass's bind, a dynamic Symbol, and
+the Symbol containing each address-tied member. A declared `unsigned long`
+keeps its declaration and its `(long)` casts even when every reader is signed.
 The declaration line is the one the printer writes from that high. The frame
 Symbol's type is not changed, so the `variables` JSON surface still reports the
 type inference chose for the slot. A `PTRADD` index at pointer width and a
@@ -1044,10 +1051,13 @@ passes it only when the language's `integer_promotion` capability is set, the ga
 `signedness` alone. Pinned by
 `tests/stages/kuna-castsign.xml` (pass 1 off, pass 2 on: a stack index
 compared signed and used as `a0[v1]`; a logically shifted value and an
-address-taken stack value stay unsigned in both passes) and by a compiled round
+address-taken stack value stay unsigned in both passes; pass 3 maps the index's
+slot `uint8`, and the locked declaration keeps its cast), by a compiled round
 trip (`kuna-cli/tests/decompile_all_cli.rs`,
 `a_signed_only_variable_round_trips_through_the_printed_c`) over gcc and clang
-at `-O0` and `-O1`.
+at `-O0` and `-O1`, and by `castsign_leaves_a_locked_declaration_alone` in the
+same file (a `--assert type` on a stack and a register local, and a DWARF local
+declared `unsigned long`, stay unsigned with the option on).
 
 What the rule reads is the compiler's instruction selection, not the source. The
 emitted C keeps computing what the binary computes, but where a compiler proved

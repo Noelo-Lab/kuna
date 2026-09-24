@@ -29,7 +29,10 @@
     dropped (#3, #4); the `a0[v1]` pointer index is signedness-neutral at
     pointer width.  Both passes keep halved's register value unsigned, since it
     is shifted right logically (#5), and through_ptr's stack value unsigned,
-    since its address is passed as a uint8 * (#6).
+    since its address is passed as a uint8 * (#6).  Pass 3 (option castsign
+    still on) maps trim_right's slot as `uint8 idx`, which locks its type the
+    way a DWARF local or a `--assert type` does: the declaration and its cast
+    stay (#7, #8).
 -->
 <bytechunk space="ram" offset="0x1000">
 554889e548897de848c745f800000000eb05488345f801488b55e8488b45f848
@@ -71,6 +74,10 @@ ffff4883e802488945f8488b45f84885c0790948c7c0ffffffffeb07488b45f8
   <com>lo fu through_ptr</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu trim_right</com>
+  <com>map addr s0xfffffffffffffff0 uint8 idx</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="castsign #1: a stack index the body only compares signed is declared uint8 under option castsign off, beside through_ptr's uint8 in both passes (bug reproduces, three times)" min="3" max="3">^  uint8 v1; // stack - 0x10$</stringmatch>
@@ -79,4 +86,6 @@ ffff4883e802488945f8488b45f84885c0790948c7c0ffffffffeb07488b45f8
 <stringmatch name="castsign #4: and the cast the declaration makes a no-op is dropped (fix, once)" min="1" max="1">0 &lt;= v1 &amp;&amp; \(a0\[v1\] == ' '\)</stringmatch>
 <stringmatch name="castsign #5: a value shifted right logically stays unsigned in both passes (twice)" min="2" max="2">^  return v1 &gt;&gt; 1;$</stringmatch>
 <stringmatch name="castsign #6: the stack value whose address is passed as a uint8 * keeps its cast in both passes, as does halved's shifted value (four times)" min="4" max="4">\(int8\)v1 &lt;= -1\)</stringmatch>
+<stringmatch name="castsign #7: a stack slot whose type is locked keeps uint8 under option castsign on (lock, once)" min="1" max="1">^  uint8 idx; // stack - 0x10$</stringmatch>
+<stringmatch name="castsign #8: and keeps the cast its signed comparison needs (lock, once)" min="1" max="1">0 &lt;= \(int8\)idx &amp;&amp; \(a0\[idx\] == ' '\)</stringmatch>
 </decompilertest>

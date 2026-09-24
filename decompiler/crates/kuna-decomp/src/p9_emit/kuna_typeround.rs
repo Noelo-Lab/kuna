@@ -728,7 +728,8 @@ pub fn plan(
         }
         // A high the Symbol table describes as a composite, or a piece of one, is
         // declared from the Symbol - not from this type.  `castsign` admits the
-        // one mapping that is neither: a frame local covering its Symbol whole.
+        // one mapping that is neither: a frame local covering its Symbol whole,
+        // unless the Symbol's type is locked.
         let frame_local = h.kuna_symbol_offset() >= 0;
         if frame_local && !castsign {
             continue;
@@ -773,6 +774,9 @@ pub fn plan(
         if frame_local
             && !crate::kuna_castsign::whole_slot_local(fd, high, cur.get_size(), &names, is_plain_integer)
         {
+            continue;
+        }
+        if castsign && crate::kuna_castsign::symbol_type_locked(fd, high) {
             continue;
         }
         let (ev, widened) = evidence_for(fd, high, castsign);

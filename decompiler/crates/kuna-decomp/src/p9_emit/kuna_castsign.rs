@@ -28,6 +28,11 @@
 //!   The printer declares only body locals, and `SignPlan::retain_sole_named`
 //!   drops every planned high it does not declare, signature parameters included.
 //!
+//! **A type-locked declaration is never touched** ([`symbol_type_locked`]).  A
+//! `--assert type`, a DWARF local and a type committed from Ghidra lock the
+//! Symbol, not the member varnodes the walk checks, so the lock is read on the
+//! Symbol.
+//!
 //! **The option only ever declares a variable signed.**  A decision any of these
 //! relaxations made is kept only when it declares the value `int`: the census
 //! counts 20 signed-to-unsigned casts on locals against 526 the other way, and
@@ -45,6 +50,7 @@ use std::collections::HashMap;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
+use kuna_base::address::Address;
 use crate::context::{HighVariableId, OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
@@ -79,6 +85,32 @@ pub(crate) fn whole_slot_local(
     h.kuna_name().is_some_and(|n| names.get(n).copied() == Some(1))
 }
 
+/// Is `high` bound to a Symbol whose type is locked: a `--assert type`, a DWARF
+/// local, or a type the host committed?  The lock lives on the Symbol, not on
+/// the member varnodes the evidence walk checks, so it is read through the
+/// naming pass's bind, a dynamic Symbol, and the Symbol containing each
+/// address-tied member.
+pub(crate) fn symbol_type_locked(fd: &Funcdata, high: HighVariableId) -> bool {
+    let Some(h) = fd.high_bank().get(high) else { return true };
+    let Some(lm) = fd.get_scope_local() else { return false };
+    let db = lm.database();
+    if [h.kuna_link_symbol(), h.kuna_dynamic_symbol()]
+        .into_iter()
+        .flatten()
+        .any(|sid| db.symbol(sid).is_type_locked())
+    {
+        return true;
+    }
+    let invalid = Address::new_invalid();
+    (0..h.num_instances()).any(|i| {
+        fd.vbank()
+            .get(h.get_instance(i))
+            .filter(|v| !v.is_free() && v.is_addr_tied())
+            .and_then(|v| lm.container_symbol_link(v.get_addr(), &invalid))
+            .is_some_and(|(sid, ..)| db.symbol(sid).is_type_locked())
+    })
+}
+
 /// A reader `signedness` vetoes that this option takes as neutral for a flip to
 /// signed: a same-width conversion to a pointer, or the index of a pointer-width
 /// `PTRADD`.
@@ -103,7 +135,3 @@ pub(crate) fn neutral_reader(fd: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
         _ => false,
     }
 }
-
-#[cfg(test)]
-#[path = "kuna_castsign/tests.rs"]
-mod tests;

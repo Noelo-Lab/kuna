@@ -4433,6 +4433,91 @@ int main(void) {
     assert_eq!(rust[0], rust[1], "castsign changed Rust output");
 }
 
+/// (kuna `castsign`) A declaration whose type is locked is never re-signed.  A
+/// `--assert type` on a stack local and on a register local, and a DWARF local
+/// the source declares `unsigned long`, keep that type and the `(long)` their
+/// signed comparison needs, option on as off.  Unlocked, the same variables are
+/// declared `long`, so each case also checks that the option fires there.
+#[test]
+fn castsign_leaves_a_locked_declaration_alone() {
+    let sp = specs();
+    let fixture = |name: &str| {
+        repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(name)
+            .to_str()
+            .unwrap()
+            .to_string()
+    };
+    let unsigned_v1: &[&str] = &["\n  unsigned long v1; // stack - 0x10", "0 <= (long)v1 && (a0[v1] == ' ')"];
+    let signed_v1: &[&str] = &["\n  long v1; // stack - 0x10", "0 <= v1 && (a0[v1] == ' ')"];
+    let unsigned_v3: &[&str] = &["\n  unsigned long v3; // rcx", "if (a2 <= (long)v3) {"];
+    let signed_v3: &[&str] = &["\n  long v3; // rcx", "if (a2 <= v3) {"];
+    // (fixture, function, assertion, printed unlocked with the option on, printed locked)
+    let asserted = [
+        ("castsign_gcc_O0_x86_64", "trim_right", "type v1 unsigned long", signed_v1, unsigned_v1),
+        ("castsign_gcc_O1_x86_64", "run_len", "type v3 unsigned long", signed_v3, unsigned_v3),
+    ];
+    for (name, func, assertion, unlocked, locked) in asserted {
+        let bin = fixture(name);
+        let (stdout, stderr, ok) =
+            run_kuna(&["decompile", &bin, func, "--sleighpath", &sp, "--option", "castsign", "on"]);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("castsign locked declaration: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile failed: {stderr}");
+        for want in unlocked {
+            assert!(stdout.contains(want), "{name} {func} unlocked does not print `{want}`:\n{stdout}");
+        }
+        for opt in ["on", "off"] {
+            let args = [
+                "decompile", bin.as_str(), func, "--sleighpath", sp.as_str(), "--assert", assertion,
+                "--option", "castsign", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile --assert failed: {stderr}");
+            for want in locked {
+                assert!(
+                    stdout.contains(want),
+                    "{name} {func} under `{assertion}`, option {opt}, does not print `{want}`:\n{stdout}"
+                );
+            }
+        }
+    }
+    let dwarf = fixture("castsign_dwarf_gcc_O0_x86_64");
+    let locked: &[&str] = &["\n  unsigned long n; // stack - 0x18", "0 <= (long)n && (s[n] == ' ')"];
+    for opt in ["on", "off"] {
+        let args = [
+            "decompile-all", dwarf.as_str(), "--functions", "tail_blanks", "--sleighpath", sp.as_str(),
+            "--option", "castsign", opt,
+        ];
+        let (stdout, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for want in locked {
+            assert!(stdout.contains(want), "the DWARF local, option {opt}, does not print `{want}`:\n{stdout}");
+        }
+    }
+    let dir = std::env::temp_dir().join(format!("kuna-castsign-lock-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stripped = dir.join("tail_blanks");
+    let strip = Command::new("objcopy")
+        .args(["--strip-debug", dwarf.as_str(), stripped.to_str().unwrap()])
+        .output();
+    if strip.is_ok_and(|o| o.status.success()) {
+        let args = [
+            "decompile-all", stripped.to_str().unwrap(), "--functions", "tail_blanks", "--sleighpath",
+            sp.as_str(), "--option", "castsign", "on",
+        ];
+        let (stdout, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-all (debug info stripped) failed: {stderr}");
+        for want in ["\n  long v1; // stack - 0x18", "0 <= v1 && (a0[v1] == ' ')"] {
+            assert!(stdout.contains(want), "stripped, the slot does not print `{want}`:\n{stdout}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A call whose result meets a comparison through a non-short-circuit `&` is
 /// always made by the binary.  `foldcallret` used to fold it into the right-hand
 /// operand of the `&&`/`||` the printer emits, `if (a0 <= 5 || tick(a0))`, so
