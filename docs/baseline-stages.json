@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1347,
-    1347
+    1349,
+    1349
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -988,6 +988,8 @@
     "data:castsign #4: and the cast the declaration makes a no-op is dropped (fix, once)",
     "data:castsign #5: a value shifted right logically stays unsigned in both passes (twice)",
     "data:castsign #6: the stack value whose address is passed as a uint8 * keeps its cast in both passes, as does halved's shifted value (four times)",
+    "data:castsign #7: a stack slot whose type is locked keeps uint8 under option castsign on (lock, once)",
+    "data:castsign #8: and keeps the cast its signed comparison needs (lock, once)",
     "data:charbyte #10: and the call needs a cast back (dashlen off; argbyte and sibling, whose pointers stay uint1 *, in both passes)",
     "data:charbyte #11: with the option on the pointer stays char *",
     "data:charbyte #12: and the call takes it as it is",

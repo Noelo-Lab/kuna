@@ -31,7 +31,7 @@
     is shifted right logically (#5), and through_ptr's stack value unsigned,
     since its address is passed as a uint8 * (#6).  Pass 3 (option castsign
     still on) maps trim_right's slot as `uint8 idx`, which locks its type the
-    way a DWARF local or a `--assert type` does: the declaration and its cast
+    way a DWARF local or a type assertion does: the declaration and its cast
     stay (#7, #8).
 -->
 <bytechunk space="ram" offset="0x1000">
