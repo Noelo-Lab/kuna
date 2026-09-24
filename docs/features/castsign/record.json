@@ -170,7 +170,8 @@
    "improved": 0,
    "worse": 0
   },
-  "control": "all 10,748 functions score identically in both arms; the off arm matches origin/main's sweep row for row; variables[] byte-identical off vs on over 6 more binaries (6,673 functions): no variable or argument added or removed"
+  "control": "all 10,748 functions score identically in both arms; the off arm matches origin/main's sweep row for row; variables[] byte-identical off vs on over 6 more binaries (6,673 functions): no variable or argument added or removed",
+  "after_lock_check": "re-run on the build with the type-lock check (51f5e35ac): rows.json identical to the earlier default-on arm on all 444 slices (1,615 perfect)"
  },
  "corpus_sweep": {
   "classifier": "docs/features/castsign/hunkclass.py (decl = `unsigned T vN;` -> `T vN;`; sign-cast = `(T)vN` dropped on a re-declared vN; def-widen = an integer cast dropped at the top of `vN = ...;` where vN is declared an integer of the cast's width; anything else is OTHER)",
@@ -184,7 +185,8 @@
     "sign-cast": 371,
     "def-widen": 94
    },
-   "other_lines": 0
+   "other_lines": 0,
+   "after_lock_check": "the 45 binaries' C output is byte-identical before and after the type-lock check (stripped binaries carry no locked Symbol)"
   },
   "extra_corpus": {
    "arms": "--option castsign off vs the default, same final build",
@@ -205,9 +207,40 @@
     "def-widen": 94
    },
    "other_lines": 0,
-   "variables_json_identical": "6/6 binaries byte-identical"
+   "variables_json_identical": "6/6 binaries byte-identical",
+   "after_lock_check": "byte-identical before and after the type-lock check, both arms, C and variables[]"
   },
-  "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 11/11 (extra), 0 flagged"
+  "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 11/11 (extra), 0 flagged",
+  "dwarf_corpus": {
+   "arms": "--option castsign off vs the default, same build (commit 51f5e35ac); plus the build before the type-lock check as a third arm",
+   "script": "docs/features/castsign/corpus-dwarf.py (unstripped decbench 'compiled/' binaries: every DWARF stack local is mapped typelock|namelock)",
+   "binaries": [
+    "O0 wc",
+    "O0 fmt",
+    "O0 sort",
+    "O0 gzip",
+    "O0 find",
+    "O0 bzip2",
+    "O0 diff",
+    "O0 grep",
+    "O2 sort",
+    "O2-noinline ls"
+   ],
+   "functions": 4254,
+   "files": 10,
+   "functions_changed": 40,
+   "by_class": {
+    "decl": 34,
+    "sign-cast": 52,
+    "def-widen": 19
+   },
+   "other_lines": 0,
+   "hand_classified": "gzip O0 gen_codes @0xb76a `len = (unsigned int)tree[n].dl.freq;` -> `len = tree[n].dl.freq;`: def-widen on a register local named `len` (hunkclass.py only recognizes vN names). `len` is not type-locked (not in variables[]); `signedness` already declares it `int` in both arms, and an unsigned short converts to the same int either way",
+   "locked_declarations_re_signed": 0,
+   "before_the_lock_check": "42 functions changed, with 3 DWARF-locked declarations re-signed: wc `wc` @0x3591 `unsigned long chars;` and `unsigned long words;` (source `uintmax_t`) printed `long`, bzip2 fallbackQSort3 `unsigned int med;` (source `UInt32`) printed `int`. The type-lock check restores exactly those 3 lines; nothing else differs between the two builds",
+   "variables_json_identical": "10/10 binaries byte-identical off vs on",
+   "assignment_recheck": "assigncheck.py: 5 `lhs = (T)rhs;` became `lhs = rhs;`, 0 flagged: 4 with lhs declared an integer of T's width, 1 (grep O0 `v17 = (int)v15;`, v17 `long`) whose rhs v15 is itself re-declared `int`, so `(int)v15` was the no-op sign-cast"
+  }
  },
  "speed": {
   "method": "docs/features/castsign/speed.py: kuna decompile-all <bin> --json --max-fn-seconds 120, --option castsign off vs the default (on), the same final build, arm order alternating, 15 rounds each; min is the cleaner figure on a shared box (loadavg recorded)",
@@ -262,12 +295,12 @@
  },
  "parity": {
   "datatests": "675/675 PARITY OK, no assertion moved",
-  "stages": "1347/1347 PARITY OK; 0 existing assertions moved, 6 new castsign keys",
+  "stages": "1349/1349 PARITY OK; 0 existing assertions moved, 8 new castsign keys (#7 and #8: a type-locked slot keeps its declaration and cast)",
   "test_cli": "237/237"
  },
  "soundness": {
   "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_signed_only_variable_round_trips_through_the_printed_c: castsign_{gcc,clang}_O{0,1}_x86_64 printed functions, option off and on, compiled by gcc and clang: all print the binary's output; both must-stay-unsigned functions keep `unsigned long v1;` and their casts",
-  "unit": "p9_emit/kuna_castsign/tests.rs: the modular conversion behind the assignment drop over every width/sign, the pointer-index and pointer-conversion bit identities"
+  "type_lock": "kuna-cli/tests/decompile_all_cli.rs castsign_leaves_a_locked_declaration_alone: `--assert type` on a stack local (castsign_gcc_O0_x86_64 trim_right) and a register local (castsign_gcc_O1_x86_64 run_len), and a DWARF local declared `unsigned long` (castsign_dwarf_gcc_O0_x86_64 tail_blanks), keep the locked type and its `(long)` cast with the option on and off; unlocked (no assertion, debug info stripped) the same variables are declared `long`. Stage pass 3 checks a console `map addr` lock the same way"
  },
  "default_on_evaluation": "docs/features/castsign/default-on-evaluation.md"
 }

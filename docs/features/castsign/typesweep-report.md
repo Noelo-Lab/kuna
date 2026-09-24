@@ -20,3 +20,7 @@ arms: the same final build, `--option castsign off` against the default
 castsign changes C declarations only; the frame Symbol types that `variables[]`
 reports are untouched (and `variables[]` is byte-identical off vs on over the six
 extra-corpus binaries, 6,673 functions).
+
+After the type-lock check (commit `51f5e35ac`) the default-on arm was re-run: its
+`rows.json` is identical to the arm above on all 444 slices. decbench scores
+stripped binaries, which carry no locked Symbol.
