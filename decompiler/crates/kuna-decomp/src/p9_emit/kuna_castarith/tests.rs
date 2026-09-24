@@ -26,6 +26,10 @@ impl Fx {
     }
 
     fn with(cast_arith: bool) -> Fx {
+        Fx::with_index(cast_arith, true)
+    }
+
+    fn with_index(cast_arith: bool, cast_index: bool) -> Fx {
         let mut m = AddrSpaceManager::new();
         m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
         m.insert_space(Rc::new(UniqueSpace::new(1, 0, false)))
@@ -52,6 +56,7 @@ impl Fx {
         let mut arch = ArchContext::new(m);
         arch.types = Some(Rc::clone(&tf));
         arch.cast_arith = cast_arith;
+        arch.cast_index = cast_index;
         let glb = Rc::new(arch);
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let mut fd = Funcdata::new(
@@ -785,5 +790,387 @@ fn an_element_c_sizes_differently_keeps_the_integer_form() {
         fx.load(out, t);
         fx.high();
         rewritten(&mut fx, add, 0x18, size as u64, 0x18 / size as i64);
+    }
+}
+
+// ---- castindex: a variable index and a byte-pointer difference ----
+
+impl Fx {
+    fn strat(&self) -> CastStrategyC {
+        CastStrategyC::new(Rc::clone(&self.tf) as Rc<dyn TypeFactory>)
+    }
+
+    /// `out = <opc>(ins..)`, `out` an implied temporary typed `ty`.
+    fn implied(&mut self, opc: OpCode, ins: &[VarnodeId], ty: Rc<Datatype>) -> (OpId, VarnodeId) {
+        let op = self.op(ins.len() as int4, opc);
+        for (k, &vn) in ins.iter().enumerate() {
+            self.fd.op_set_input(op, vn, k as int4).unwrap();
+        }
+        let out = self.fd.new_unique_out(ty.get_size(), op).unwrap();
+        self.fd.vn_update_type(out, ty);
+        self.fd.vbank_mut().get_mut(out).unwrap().set_implied();
+        (op, out)
+    }
+
+    fn konst(&mut self, size: int4, k: u64) -> VarnodeId {
+        self.fd.new_constant(size, k)
+    }
+
+    /// `p + ext(i) * scale` read (or, with `store`, written) as a `t`; returns
+    /// the add, the extension's output and the multiply.
+    fn scaled(
+        &mut self,
+        p: VarnodeId,
+        i: VarnodeId,
+        ext: OpCode,
+        scale: u64,
+        t: Rc<Datatype>,
+    ) -> (OpId, VarnodeId, OpId) {
+        let long = self.base(8, type_metatype::TYPE_INT);
+        let (_, x) = self.implied(ext, &[i], Rc::clone(&long));
+        let k = self.konst(8, scale);
+        let (mul, iv) = self.implied(OpCode::CPUI_INT_MULT, &[x, k], long);
+        let tp = self.ptr(Rc::clone(&t));
+        let (add, out) = self.implied(OpCode::CPUI_INT_ADD, &[p, iv], tp);
+        self.load(out, t);
+        (add, x, mul)
+    }
+}
+
+fn index_rewritten(fx: &mut Fx, add: OpId, index: VarnodeId, elem: u64) -> VarnodeId {
+    let strat = fx.strat();
+    assert!(rewrite_index(&mut fx.fd, &strat, add), "the add was not rewritten");
+    let o = fx.fd.obank().get(add).unwrap();
+    assert_eq!(o.code(), OpCode::CPUI_PTRADD);
+    assert_eq!(fx.input(add, 1), index, "the index is the unscaled value");
+    assert_eq!(fx.offset(fx.input(add, 2)), elem, "the element is the scale");
+    fx.input(add, 0)
+}
+
+fn index_plan(fx: &mut Fx, add: OpId) -> Result<IndexPlan, Leave> {
+    let strat = fx.strat();
+    plan_index(&mut fx.fd, &strat, add)
+}
+
+/// `p + (long)i * sizeof(T)` read as a `T` is `((T *)p)[i]`: the multiply goes,
+/// the extension stays as the index (and prints bare under the `PTRADD`, C's own
+/// conversion of an `int` or `unsigned int` subscript), and the base is cast.
+#[test]
+fn a_scaled_index_becomes_a_subscript_of_that_element() {
+    for (size, meta, ext, isize, imeta) in [
+        (2, type_metatype::TYPE_INT, OpCode::CPUI_INT_SEXT, 4, type_metatype::TYPE_INT),
+        (4, type_metatype::TYPE_UINT, OpCode::CPUI_INT_ZEXT, 4, type_metatype::TYPE_UINT),
+        (8, type_metatype::TYPE_INT, OpCode::CPUI_INT_SEXT, 2, type_metatype::TYPE_INT),
+        (8, type_metatype::TYPE_FLOAT, OpCode::CPUI_INT_ZEXT, 1, type_metatype::TYPE_UINT),
+    ] {
+        let mut fx = Fx::new();
+        let vp = fx.void_ptr();
+        let t = fx.base(size, meta);
+        let it = fx.base(isize, imeta);
+        let p = fx.var(8, vp);
+        let i = fx.var(isize, it);
+        let (add, x, mul) = fx.scaled(p, i, ext, size as u64, Rc::clone(&t));
+        fx.high();
+        let base = index_rewritten(&mut fx, add, x, size as u64);
+        assert_eq!(cast_input_of(&fx, base), Some(p), "size {size}: the base is a cast of p");
+        let tp = fx.ptr(t);
+        assert!(Rc::ptr_eq(fx.fd.vbank().get(base).unwrap().get_type(), &tp));
+        assert!(fx.fd.obank().get(mul).unwrap().is_dead(), "size {size}: the multiply is gone");
+    }
+}
+
+/// A shift by `log2 sizeof(T)` scales the same way.
+#[test]
+fn a_shifted_index_becomes_a_subscript() {
+    let mut fx = Fx::new();
+    let vp = fx.void_ptr();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let t = fx.base(8, type_metatype::TYPE_UINT);
+    let tp = fx.ptr(Rc::clone(&t));
+    let p = fx.var(8, vp);
+    let i = fx.var(8, Rc::clone(&long));
+    let three = fx.konst(4, 3);
+    let (_, iv) = fx.implied(OpCode::CPUI_INT_LEFT, &[i, three], long);
+    let (add, out) = fx.implied(OpCode::CPUI_INT_ADD, &[p, iv], tp);
+    fx.load(out, t);
+    fx.high();
+    index_rewritten(&mut fx, add, i, 8);
+}
+
+/// A one-byte element takes the variable itself as the index, whatever it is.
+#[test]
+fn a_byte_element_is_indexed_by_the_variable_itself() {
+    let mut fx = Fx::new();
+    let vp = fx.void_ptr();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let c = fx.base(1, type_metatype::TYPE_INT);
+    let cp = fx.ptr(Rc::clone(&c));
+    let p = fx.var(8, vp);
+    let i = fx.var(8, Rc::clone(&long));
+    let six = fx.konst(8, 6);
+    let (_, iv) = fx.implied(OpCode::CPUI_INT_MULT, &[i, six], long);
+    let (add, out) = fx.implied(OpCode::CPUI_INT_ADD, &[p, iv], cp);
+    fx.load(out, c);
+    fx.high();
+    index_rewritten(&mut fx, add, iv, 1);
+}
+
+/// A scale that is not the element's size -- a 16-byte record read at 8 bytes,
+/// a 12-byte stride read at 4 -- keeps the integer form, as does a byte offset
+/// read at a wider element.
+#[test]
+fn a_scale_that_is_not_the_element_keeps_the_integer_form() {
+    for (scale, size) in [(16u64, 8), (12, 4), (6, 2)] {
+        let mut fx = Fx::new();
+        let vp = fx.void_ptr();
+        let int = fx.base(4, type_metatype::TYPE_INT);
+        let t = fx.base(size, type_metatype::TYPE_INT);
+        let p = fx.var(8, vp);
+        let i = fx.var(4, int);
+        let (add, _, _) = fx.scaled(p, i, OpCode::CPUI_INT_SEXT, scale, t);
+        fx.high();
+        assert!(matches!(index_plan(&mut fx, add), Err(Leave::ScaleMismatch)), "scale {scale}");
+    }
+    let mut fx = Fx::new();
+    let vp = fx.void_ptr();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let lp = fx.ptr(Rc::clone(&long));
+    let p = fx.var(8, vp);
+    let off = fx.var(8, Rc::clone(&long));
+    let (add, out) = fx.implied(OpCode::CPUI_INT_ADD, &[p, off], lp);
+    fx.load(out, long);
+    fx.high();
+    assert!(matches!(index_plan(&mut fx, add), Err(Leave::ScaleMismatch)));
+}
+
+/// The index must convert the way the integer form adds it: a pointer (the sum
+/// of two pointers), a float and a value the pass already cast keep the form.
+#[test]
+fn an_index_that_is_not_a_plain_integer_keeps_the_integer_form() {
+    let mut fx = Fx::new();
+    let vp = fx.void_ptr();
+    let c = fx.base(1, type_metatype::TYPE_INT);
+    let cp = fx.ptr(Rc::clone(&c));
+    let p = fx.var(8, Rc::clone(&vp));
+    let q = fx.var(8, vp);
+    let (add, out) = fx.implied(OpCode::CPUI_INT_ADD, &[p, q], Rc::clone(&cp));
+    fx.load(out, Rc::clone(&c));
+    fx.high();
+    assert!(matches!(index_plan(&mut fx, add), Err(Leave::TwoPointers)));
+
+    let mut fx = Fx::new();
+    let vp = fx.void_ptr();
+    let dbl = fx.base(8, type_metatype::TYPE_FLOAT);
+    let c = fx.base(1, type_metatype::TYPE_INT);
+    let cp = fx.ptr(Rc::clone(&c));
+    let p = fx.var(8, vp);
+    let f = fx.var(8, dbl);
+    let (add, out) = fx.implied(OpCode::CPUI_INT_ADD, &[p, f], cp);
+    fx.load(out, c);
+    fx.high();
+    assert!(matches!(index_plan(&mut fx, add), Err(Leave::IndexNotInteger)));
+
+    let mut fx = Fx::new();
+    let vp = fx.void_ptr();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let c = fx.base(1, type_metatype::TYPE_INT);
+    let cp = fx.ptr(Rc::clone(&c));
+    let p = fx.var(8, Rc::clone(&vp));
+    let q = fx.var(8, vp);
+    let (_, cast) = fx.implied(OpCode::CPUI_CAST, &[q], long);
+    let (add, out) = fx.implied(OpCode::CPUI_INT_ADD, &[p, cast], cp);
+    fx.load(out, c);
+    fx.high();
+    assert!(matches!(index_plan(&mut fx, add), Err(Leave::IndexNotInteger)));
+}
+
+/// A sum that is itself another pointer's subscript is an integer: the integer
+/// form spells it with one cast, a subscript would need two.
+#[test]
+fn a_sum_used_as_a_subscript_keeps_the_integer_form() {
+    let mut fx = Fx::new();
+    let vp = fx.void_ptr();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let lp = fx.ptr(Rc::clone(&long));
+    let c = fx.base(1, type_metatype::TYPE_INT);
+    let cp = fx.ptr(c);
+    let p = fx.var(8, vp);
+    let i = fx.var(8, Rc::clone(&long));
+    let arr = fx.var(8, Rc::clone(&lp));
+    let (add, out) = fx.implied(OpCode::CPUI_INT_ADD, &[p, i], cp);
+    let eight = fx.konst(8, 8);
+    let (_, elt) = fx.implied(OpCode::CPUI_PTRADD, &[arr, out, eight], lp);
+    fx.load(elt, long);
+    fx.high();
+    assert!(matches!(index_plan(&mut fx, add), Err(Leave::IntegerUse)));
+}
+
+/// A multiply the pass has not reached yet could still be retyped there.
+#[test]
+fn a_scale_after_the_add_keeps_the_integer_form() {
+    let mut fx = Fx::new();
+    let vp = fx.void_ptr();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let t = fx.base(8, type_metatype::TYPE_INT);
+    let tp = fx.ptr(Rc::clone(&t));
+    let p = fx.var(8, vp);
+    let i = fx.var(8, Rc::clone(&long));
+    let add = fx.op(2, OpCode::CPUI_INT_ADD);
+    let out = fx.fd.new_unique_out(8, add).unwrap();
+    fx.fd.vn_update_type(out, tp);
+    fx.fd.vbank_mut().get_mut(out).unwrap().set_implied();
+    let eight = fx.konst(8, 8);
+    let (_, iv) = fx.implied(OpCode::CPUI_INT_MULT, &[i, eight], long);
+    fx.fd.op_set_input(add, p, 0).unwrap();
+    fx.fd.op_set_input(add, iv, 1).unwrap();
+    fx.load(out, t);
+    fx.high();
+    assert!(matches!(index_plan(&mut fx, add), Err(Leave::ScaleUnsettled)));
+}
+
+/// A value whose consumer needs its own cast anyway saves nothing: a sum typed
+/// `unsigned int *` copied into a `long *` variable keeps the integer form,
+/// and copied into an `unsigned int *` one is rewritten.
+#[test]
+fn a_value_use_is_rewritten_only_where_it_saves_a_cast() {
+    for (same, want) in [(false, false), (true, true)] {
+        let mut fx = Fx::new();
+        let vp = fx.void_ptr();
+        let long = fx.base(8, type_metatype::TYPE_INT);
+        let u = fx.base(4, type_metatype::TYPE_UINT);
+        let up = fx.ptr(Rc::clone(&u));
+        let lp = fx.ptr(Rc::clone(&long));
+        let p = fx.var(8, vp);
+        let i = fx.var(8, Rc::clone(&long));
+        let four = fx.konst(8, 4);
+        let (_, iv) = fx.implied(OpCode::CPUI_INT_MULT, &[i, four], long);
+        let (add, out) = fx.implied(OpCode::CPUI_INT_ADD, &[p, iv], Rc::clone(&up));
+        fx.binary(OpCode::CPUI_COPY, out, out, if same { up } else { lp });
+        fx.high();
+        let strat = fx.strat();
+        assert_eq!(rewrite_index(&mut fx.fd, &strat, add), want, "same type {same}");
+    }
+}
+
+#[test]
+fn the_cast_pass_rewrites_a_scaled_index_only_when_the_option_is_on() {
+    for (on, want) in [(true, OpCode::CPUI_PTRADD), (false, OpCode::CPUI_INT_ADD)] {
+        let mut fx = Fx::with_index(true, on);
+        let vp = fx.void_ptr();
+        let int = fx.base(4, type_metatype::TYPE_INT);
+        let t = fx.base(4, type_metatype::TYPE_UINT);
+        let p = fx.var(8, vp);
+        let i = fx.var(4, int);
+        let (add, _, _) = fx.scaled(p, i, OpCode::CPUI_INT_SEXT, 4, t);
+        fx.high();
+        let _ = fx.fd.action_set_casts();
+        assert_eq!(fx.fd.obank().get(add).unwrap().code(), want, "castindex {on}");
+    }
+}
+
+/// `sub = a - b` of two pointers typed `pa` and `pb`, `sub` an explicit `long`.
+fn difference(fx: &mut Fx, pa: Rc<Datatype>, pb: Rc<Datatype>, out: Rc<Datatype>) -> (OpId, VarnodeId, VarnodeId) {
+    let a = fx.var(8, pa);
+    let b = fx.var(8, pb);
+    let op = fx.binary(OpCode::CPUI_INT_SUB, a, b, out);
+    (op, a, b)
+}
+
+/// Two `char *` (or two `unsigned char *`) subtract to their byte difference:
+/// the difference keeps both operands, and the result is cast from `long`.
+#[test]
+fn a_difference_of_two_byte_pointers_keeps_its_operands() {
+    for meta in [type_metatype::TYPE_INT, type_metatype::TYPE_UINT] {
+        for out_meta in [type_metatype::TYPE_INT, type_metatype::TYPE_UINT] {
+            let mut fx = Fx::new();
+            let c = fx.base(1, meta);
+            let cp = fx.ptr(c);
+            let out = fx.base(8, out_meta);
+            let (op, _, _) = difference(&mut fx, Rc::clone(&cp), cp, out);
+            fx.high();
+            let long = fx.base(8, type_metatype::TYPE_INT);
+            let tok = pointer_difference(&mut fx.fd, op).expect("a byte-pointer difference");
+            assert!(Rc::ptr_eq(&tok, &long), "the result is a ptrdiff_t");
+        }
+    }
+}
+
+/// Wider pointees subtract to an element count, not the byte count the integer
+/// form computes; two different byte types, or `void *`, do not subtract in C;
+/// and a result that is not a pointer-width integer is not `ptrdiff_t`.
+#[test]
+fn other_differences_keep_the_integer_form() {
+    let mut fx = Fx::new();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let lp = fx.ptr(Rc::clone(&long));
+    let (op, _, _) = difference(&mut fx, Rc::clone(&lp), lp, Rc::clone(&long));
+    fx.high();
+    assert!(matches!(pointer_difference(&mut fx.fd, op), Err(Leave::DiffPointee)));
+
+    let mut fx = Fx::new();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let c = fx.base(1, type_metatype::TYPE_INT);
+    let uc = fx.base(1, type_metatype::TYPE_UINT);
+    let (pc, puc) = (fx.ptr(c), fx.ptr(uc));
+    let (op, _, _) = difference(&mut fx, pc, puc, Rc::clone(&long));
+    fx.high();
+    assert!(matches!(pointer_difference(&mut fx.fd, op), Err(Leave::DiffPointee)));
+
+    let mut fx = Fx::new();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let vp = fx.void_ptr();
+    let (op, _, _) = difference(&mut fx, Rc::clone(&vp), vp, long);
+    fx.high();
+    assert!(matches!(pointer_difference(&mut fx.fd, op), Err(Leave::DiffPointee)));
+
+    let mut fx = Fx::new();
+    let c = fx.base(1, type_metatype::TYPE_INT);
+    let cp = fx.ptr(c);
+    let (op, _, _) = difference(&mut fx, Rc::clone(&cp), Rc::clone(&cp), cp);
+    fx.high();
+    assert!(matches!(pointer_difference(&mut fx.fd, op), Err(Leave::DiffResult)));
+
+    let mut fx = Fx::new();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let c = fx.base(1, type_metatype::TYPE_INT);
+    let cp = fx.ptr(c);
+    let b = fx.var(8, Rc::clone(&cp));
+    let k = fx.konst(8, 0x1000);
+    let op = fx.binary(OpCode::CPUI_INT_SUB, b, k, long);
+    fx.high();
+    assert!(matches!(pointer_difference(&mut fx.fd, op), Err(Leave::DiffNotPointers)));
+}
+
+/// An operand that is an integer the pass cast to a pointer costs the integer
+/// form nothing when its `long` input is read directly, so the pointer form
+/// would only move the cast: kept.
+#[test]
+fn a_difference_that_saves_no_cast_keeps_the_integer_form() {
+    let mut fx = Fx::new();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let c = fx.base(1, type_metatype::TYPE_INT);
+    let cp = fx.ptr(c);
+    let n = fx.var(8, Rc::clone(&long));
+    let (_, a) = fx.implied(OpCode::CPUI_CAST, &[n], Rc::clone(&cp));
+    fx.binary(OpCode::CPUI_COPY, a, a, Rc::clone(&cp));
+    let (_, b2) = fx.implied(OpCode::CPUI_CAST, &[n], Rc::clone(&cp));
+    fx.binary(OpCode::CPUI_COPY, b2, b2, Rc::clone(&cp));
+    let op = fx.binary(OpCode::CPUI_INT_SUB, a, b2, Rc::clone(&long));
+    fx.high();
+    assert!(matches!(pointer_difference(&mut fx.fd, op), Err(Leave::NoCastSaved)));
+}
+
+#[test]
+fn the_cast_pass_leaves_a_byte_pointer_difference_uncast_only_when_the_option_is_on() {
+    for on in [true, false] {
+        let mut fx = Fx::with_index(true, on);
+        let long = fx.base(8, type_metatype::TYPE_INT);
+        let c = fx.base(1, type_metatype::TYPE_INT);
+        let cp = fx.ptr(c);
+        let (op, a, b) = difference(&mut fx, Rc::clone(&cp), cp, long);
+        fx.high();
+        let _ = fx.fd.action_set_casts();
+        let uncast = fx.input(op, 0) == a && fx.input(op, 1) == b;
+        assert_eq!(uncast, on, "castindex {on}");
     }
 }
