@@ -224,7 +224,7 @@
   "within_budget": true
  },
  "gates": {
-  "measured_on": "feat/castarith on origin/main 5458b7ab5 (final engine 7d2dfc716)",
+  "measured_on": "feat/castarith on origin/main 5458b7ab5 (enum refusal, 1760723ae)",
   "make_test": "datatests: 675/675 assertions passed, PARITY OK (default on)",
   "make_test_stages": "datatests: 1353/1353 assertions passed, PARITY OK (baseline re-recorded: 12 castarith keys; 4 keys renamed with their assertion, see default_on_evaluation.b_stages)",
   "make_test_cli": "tests/cli: 237/237 passed (6 probes updated, see default_on_evaluation.c_test_cli)",
@@ -232,7 +232,7 @@
   "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "make_rust_test": "RUST_TEST_RC=0 (7,506 passed, 0 failed; 423 test results); lane started 03:17:28Z after the last code change (4554ae4a6, 03:17:14Z)"
+  "make_rust_test": "RUST_TEST_RC=0 (7,509 passed, 0 failed; 422 test results); lane started 04:22:48Z after the last code change (1760723ae, 04:21:20Z)"
  },
  "default_on_evaluation": {
   "verdict": "flipped: castarith ships on",
