@@ -16,10 +16,13 @@ SIZES = {"char": 1, "unsigned char": 1, "bool": 1, "signed char": 1, "uchar": 1,
          "undefined": 1, "byte": 1, "uchar": 1, "ushort": 2, "uint": 4, "ulong": 8, "code": 1}
 
 
+PTR = 8
+
+
 def tsize(t):
     t = t.strip()
     if t.endswith("*"):
-        return 8
+        return PTR
     if t in SIZES:
         return SIZES[t]
     return None
@@ -71,7 +74,7 @@ def reverse(line):
                 continue
             name, stars = m.group(1), m.group(2)
             cast = "(" + name + stars + ")"
-            sz = 8 if stars.count("*") >= 2 else tsize(name)
+            sz = PTR if stars.count("*") >= 2 else tsize(name)
             if sz is None:
                 continue
             X = line[m.end():end]
@@ -92,7 +95,7 @@ def reverse(line):
 
 def norm(s):
     s = s.strip()
-    return re.sub(r"(?<![A-Za-z0-9_])(0x[0-9a-fA-F]+|\d+)(?![A-Za-z0-9_])", lambda m: str(int(m.group(1), 0)), s)
+    return re.sub(r"(?<![A-Za-z0-9_])(0x[0-9a-fA-F]+|\d+)(?![A-Za-z0-9_])", lambda m: str(int(m.group(1), 16 if m.group(1)[:2] in ("0x", "0X") else 10)), s)
 
 
 def reverse_direct(new, old):
@@ -100,7 +103,7 @@ def reverse_direct(new, old):
     out = new
     for m in re.finditer(r"\*\(([A-Za-z_][A-Za-z0-9_ ]*?)( ?\*+)\)\(\(long\)([A-Za-z_][A-Za-z0-9_]*) \+ (-?(?:0x[0-9a-f]+|\d+))\)", old):
             name, stars, var, koff = m.group(1), m.group(2), m.group(3), m.group(4)
-            sz = 8 if stars.count("*") >= 2 else tsize(name)
+            sz = PTR if stars.count("*") >= 2 else tsize(name)
             if not sz:
                 continue
             K = parse_int(koff)
@@ -117,6 +120,27 @@ def reverse_direct(new, old):
 
 def unsign(x):
     return re.sub(r"\(u(int[1248])", r"(\1", x.replace("(unsigned ", "("))
+
+
+SPELL = {"int1": "char", "uint1": "unsigned char", "int2": "short", "uint2": "unsigned short",
+         "int4": "int", "uint4": "unsigned int", "int8": "long", "uint8": "unsigned long"}
+
+
+def spell(x):
+    """The console spells integers int4/uint2/...; a large binary prints both spellings."""
+    return re.sub(r"\b(u?int[1248])\b", lambda m: SPELL[m.group(1)], x)
+
+
+def lhs_only(old, rev):
+    """Is the only difference the element type of the store the statement makes,
+    `*(T *)X = e;` against `*(U *)X = e;` with T and U one integer type up to sign?"""
+    i, j = old.find(" = "), rev.find(" = ")
+    if i <= 0 or j <= 0 or norm(old[i:]) != norm(rev[j:]):
+        return False
+    pat = r"^\s*\*\(([A-Za-z_][A-Za-z0-9_ ]*?) \*\)(.*)$"
+    mo, mr = re.match(pat, old[:i]), re.match(pat, rev[:j])
+    return bool(mo and mr and norm(mo.group(2)) == norm(mr.group(2))
+                and mo.group(1) != mr.group(1) and unsign("(" + mo.group(1)) == unsign("(" + mr.group(1)))
 
 
 def declared(func_lines):
@@ -142,7 +166,7 @@ def pointee_size(decl):
         return None
     inner = decl[:-1].strip()
     if inner.endswith("*"):
-        return 8
+        return PTR
     return tsize(inner)
 
 
@@ -177,9 +201,13 @@ DECLS = {}
 def classify(old, new):
     old = old.replace("(int8)", "(long)")
     new = new.replace("(int8)", "(long)")
+    if PTR == 4:
+        old = old.replace("(int4)", "(long)").replace("(int)", "(long)")
+        new = new.replace("(int4)", "(long)").replace("(int)", "(long)")
     decl = re.match(r"^\s*[A-Za-z_][A-Za-z0-9_ ]*[ *]+[A-Za-z_][A-Za-z0-9_]*\s*(\(|;|\[)", old)
     if decl and not re.search(r"[=(]\s*\(|\[", old.split("(")[0] if "(" in old else old):
         pass
+    old, new = spell(old), spell(new)
     r, n = reverse(new)
     if n and norm(r) == norm(old):
         return "exact", n
@@ -188,7 +216,7 @@ def classify(old, new):
         return "direct", n + 1
     # void target: old spelled the sum (void *)(...) or with no outer cast
     if n and unsign(norm(r)) == unsign(norm(old)):
-        return "sign-of-element", n
+        return ("sign-of-store-element" if lhs_only(old, r) else "sign-of-element-elsewhere"), n
     if n and unsign(norm(rd)) == unsign(norm(old)):
         return "direct-sign", n + 1
     if n and strip_parens(norm(r)) == strip_parens(norm(old)):
@@ -229,6 +257,11 @@ def main(a, b):
     for fa in sorted(Path(a).rglob("*.c")):
         fb = Path(b) / fa.relative_to(a)
         A, B = funcs(fa), funcs(fb)
+        global PTR
+        text = fa.read_text(errors="replace")
+        wide = text.count("((long)") + text.count("((int8)")
+        narrow = text.count("((int)") + text.count("((int4)")
+        PTR = 4 if narrow > wide else 8
         for addr in A:
             if A[addr] == B.get(addr):
                 continue
@@ -247,6 +280,8 @@ def main(a, b):
                 if cls:
                     stats[cls] += 1
                     stats["sites"] += n
+                    if cls == "sign-of-element-elsewhere":
+                        bad.append((str(fa), addr, x.strip(), y.strip(), "[" + cls + "] " + reverse(spell(y))[0].strip()))
                 else:
                     stats["UNCLASSIFIED"] += 1
                     bad.append((str(fa), addr, x.strip(), y.strip(), reverse(y)[0].strip()))

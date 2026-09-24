@@ -4289,7 +4289,8 @@ int main(void) {
 /// loads and stores of 1, 2, 4 and 8 bytes signed and unsigned, a double, a
 /// negative offset, an offset that is not whole elements (kept), a pointer
 /// passed on, compared, and stepped in a loop, a base typed as another pointer,
-/// and a record base, which keeps its fields.
+/// a record base, which keeps its fields, loaded bytes and words widened under
+/// the subscript, and an integer base, which keeps the integer form.
 #[test]
 fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
     let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
@@ -4343,6 +4344,8 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
                     "((unsigned short *)a0)[3]",
                     "&((char *)",
                     "*(unsigned int *)((long)a0 + 0x6a)",
+                    "a1 <= (int)((unsigned char *)a0)[0x11]",
+                    "((unsigned short *)a0)[0x24] << 4",
                 ]
             } else {
                 &["take((unsigned int *)((long)a0 + 0x10));", "*(unsigned int *)((long)a0 + 0x6a)"]
@@ -4350,6 +4353,10 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
             for w in want {
                 assert!(body.contains(w), "{build} castarith {arm}: expected `{w}`\n{body}");
             }
+            assert!(
+                !body.contains("(unsigned int)((unsigned char *)"),
+                "{build} castarith {arm}: a widening castimplied leaves out came back over a subscript\n{body}"
+            );
             if !runs_here || !have_cc {
                 eprintln!("castarith round trip: no x86-64 host or no `cc`, spelling checked only");
                 continue;

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1349,
-    1349
+    1353,
+    1353
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -970,6 +970,9 @@
     "data:callretmulti #3: same-block fan-out evaluates helper2 once per pass",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
+    "data:castarith #10: by default the byte is a subscript and its one widening cast stays alone",
+    "data:castarith #11: a word widened twice keeps only the outer cast, as in the integer form",
+    "data:castarith #12: no widening below the outer one is printed over a subscript",
     "data:castarith #1: with the option off a 4-byte read through a void pointer is an integer round trip -- the bug",
     "data:castarith #2: and a pointer passed on is converted to an integer and back",
     "data:castarith #3: by default the read is element 0x2b of an unsigned int pointer, one cast",
@@ -978,6 +981,7 @@
     "data:castarith #6: a pointer passed on stays a pointer, spelled the arraynotation way",
     "data:castarith #7: with arraynotation off the same pointer is base plus index",
     "data:castarith #8: an offset that is not a whole number of elements keeps the integer form in both passes",
+    "data:castarith #9: with the option off a widened byte reads through the integer round trip",
     "data:castimplied #10: with the option on the widening under (int4) goes and the (uint1) sign change stays",
     "data:castimplied #11: with the option off the return widens a sign-changed value",
     "data:castimplied #12: with the option on the widening goes and the (int4) sign change stays",

@@ -14,7 +14,9 @@
 //! elements of `T` past the base.  [`rewrite`] turns the `INT_ADD` into
 //! `PTRADD(base, #k, #sizeof T)` before the cast rules see it, with the base
 //! cast to `T *` unless it is a variable declared as a pointer to `T` (or to an
-//! integer of `T`'s width).  The printer then renders it the way it renders
+//! integer of `T`'s width); a base that is an implied cast is retargeted when
+//! only this op reads it, and otherwise cast again from its own input, so no
+//! cast stacks on another.  The printer then renders it the way it renders
 //! every `PTRADD`: `((unsigned int *)a0)[0x2b]` under a dereference and
 //! `&((T *)p)[k]` (or `(T *)p + k` with `arraynotation off`) as a value.
 //!
@@ -24,9 +26,10 @@
 //! pointer type the sum had.  The integer form stays wherever the printed C
 //! could convert a value or cost a cast instead: an offset that is not a
 //! multiple of `sizeof(T)`, an index that is not a constant, an aggregate
-//! target, a word-addressed space, a sum read as an integer, an address several
-//! accesses share, a store of a value the pass has not typed yet, a `void *` sum
-//! that leaves the function, and a constant that names a global or is
+//! target, a word-addressed space, a sum read as an integer or assigned to a
+//! variable declared as one, an address several accesses share, a store of a
+//! value the pass has not typed yet, a `void *` sum that leaves the function,
+//! and a constant that names a global or is
 //! address-like beside an integer cast to a pointer (`table[i]` compiles to the
 //! same `INT_ADD`, with the table as the constant).
 
@@ -252,6 +255,15 @@ fn read_as_integer(data: &mut Funcdata, out: VarnodeId) -> bool {
             _ => integer_result(code) && !is_comparison(code),
         }
     })
+}
+
+/// Is `out` a variable the printed C declares as something other than a
+/// pointer?  The sum then lands in an integer, which the integer form fills
+/// with no cast and pointer arithmetic would fill through two.
+fn declared_non_pointer(data: &Funcdata, out: VarnodeId) -> bool {
+    data.vbank().get(out).is_some_and(|v| v.is_explicit())
+        && crate::printc::declared_variable_type(data, data.get_arch().decl_high_type, out)
+            .is_some_and(|t| t.get_metatype() != type_metatype::TYPE_PTR)
 }
 
 /// Is the implied `out` the address of a LOAD or STORE that is not its only
@@ -524,7 +536,7 @@ pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
             if outty.get_metatype() != type_metatype::TYPE_PTR {
                 return Err(Leave::OutNotPointer);
             }
-            if read_as_integer(data, out) {
+            if read_as_integer(data, out) || declared_non_pointer(data, out) {
                 return Err(Leave::IntegerUse);
             }
             if shared_address(data, out) {

@@ -16,6 +16,7 @@ KEEP void sink(long x) { printf("%ld\n", x); }
 KEEP void take(unsigned int *q) { printf("take %u\n", *q); }
 KEEP void *getv(void);
 unsigned char gbuf[256];
+struct hold { long a; long b; };
 /* tested */
 KEEP void rd_u8(void *p) { sink(*(unsigned char *)((char *)p + 0x11)); }
 KEEP void rd_s8(void *p) { sink(*(signed char *)((char *)p + 0x13)); }
@@ -69,7 +70,6 @@ KEEP void wide_idx(void *p)
     sink((long)(int)*(unsigned short *)((char *)p + 0x48) << 4);
     sink((long)(int)*(short *)((char *)p + 0x4a) * 3);
 }
-struct hold { long a; long b; };
 KEEP void via_int(struct hold *h) { sink(*(unsigned char *)(h->b + 10)); sink((long)*(unsigned long *)h->b); }
 /* main */
 KEEP void *getv(void) { return gbuf + 8; }

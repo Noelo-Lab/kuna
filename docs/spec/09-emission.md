@@ -294,8 +294,10 @@ printed C type lies in the conversion's target range (`kuna_castimplied.rs
 (preserves)`). The operand's C type is taken as known only where the text states
 it: a declared variable (the spelling the declaration line wrote), a conversion
 that still prints (its target), a conversion this rule leaves out (its own
-operand's type, which it preserved), a truncation printed as a cast, and a load
-`*(T *)p` through a pointer printed with that cast or declared `T *`. An
+operand's type, which it preserved), a truncation printed as a cast, a load
+`*(T *)p` through a pointer printed with that cast or declared `T *`, and a
+subscript `((T *)p)[k]` whose base prints with that cast (the form `castarith`
+below gives a load). An
 arithmetic operand is not known, because C promotes `a - b` over two
 `unsigned char`s to a negative `int` where the p-code wraps; neither is a
 constant or a call. Under that rule `(long)(int)(unsigned int)(unsigned char)c`
@@ -396,19 +398,27 @@ is used bare (`kuna_castarith.rs (declared_as)`), so the declaration a reader
 sees scales the index the same way; a float element never counts, because
 converting it changes the bits. An implied CAST read only by this op is
 retargeted to `T *`, the way the input machinery above retypes a cast rather
-than stack a second one. The printer then renders the `PTRADD` like any other
-(§9.2, §9.5): `((unsigned int *)a0)[0x2b]` under a dereference, and
+than stack a second one. An implied CAST that other ops read too is left alone,
+and the new cast reads that cast's input instead, when the input is an integer
+or a pointer (`kuna_castarith.rs (implied_cast_source)`): both casts only
+reinterpret the same pointer-sized bits, so `*(uint1 *)(a0[1] + 10)`, whose
+integer `a0[1]` the integer form converted to a pointer and straight back,
+becomes `((uint1 *)a0[1])[10]` and not `((uint1 *)(unsigned long *)a0[1])[10]`.
+The printer then renders the `PTRADD` like any other (§9.2, §9.5):
+`((unsigned int *)a0)[0x2b]` under a dereference, and
 `&((T *)p)[k]` as a value, or `(T *)p + k` with `arraynotation off`, so the one
 spelling decision stays with that option.
 
 The computed value is unchanged: `k * sizeof(T)` is the original offset, the
-base is converted pointer to pointer with no integer in between, and the element
+base is converted pointer to pointer with no integer in between (or, under a
+shared cast, from the integer the integer form converted too), and the element
 is the access width. The integer form stays wherever the printed C could
 otherwise convert a value or cost a cast. An offset that is not a whole number of
 elements (`*(unsigned int *)((long)a0 + 0x6a)`), a variable index, an aggregate
 or padded element, and a word-addressed space keep it. So does a sum read as an
-integer (integer arithmetic on it, or a store of it into an integer slot, where
-`(long)&((T *)p)[k]` would cost one cast more), and an address several LOADs or
+integer (integer arithmetic on it, a store of it into an integer slot, or an
+assignment to a variable declared as an integer, where the pointer form costs
+more casts than the integer form), and an address several LOADs or
 STOREs share, since only a lone access fixes the element. A STORE of a value
 whose defining op the pass has not reached keeps it too, because that op's own
 output cast may still retype the value (a float operation's result becomes
@@ -430,8 +440,8 @@ it) or inside a field (`((int *)&a0->field_0x10)[1]`, the upper half of an
 `a_pointer_plus_whole_elements_round_trips_through_the_printed_c` in
 `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs`.
 
-The rewrite only removes ops: a converted access costs one `CAST` or none where
-the integer form cost two. That can move one structuring decision. The tail
+The rewrite only removes ops: the integer form's two casts become one or none.
+That can move one structuring decision. The tail
 duplication passes of chapter 08 (`gotoreduce`, `taildup`, `crossjumprevert`)
 run after this pass and bound the tail they copy by its op count, `CAST`s
 included, so a tail that was just over the bound can fit after the rewrite, and
@@ -440,6 +450,7 @@ duplicate computes what the goto reached. It is rare: when this shipped, 4 of
 75,296 functions over 201 binaries changed their control flow, all of them this
 way and all through `taildup`, and with `option taildup off` both arms printed
 the same `goto`s.
+
 The JSON surface loses a little provenance: a subscript is a surround token and
 carries no op, as for every native subscript, so an instruction whose only
 printed ops were the add and the access through it maps to no line in
