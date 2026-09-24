@@ -1,46 +1,42 @@
 //! (kuna `castsign`) Declare a variable signed when the program only ever reads it
-//! as signed, including the stack-frame locals and the readers the `signedness`
-//! walk leaves alone.
+//! signed, in the places the `signedness` walk leaves alone.
 //!
 //! `signedness auto` ([`crate::kuna_typeround`]) already re-declares a register
-//! local `int` when every signedness-sensitive reader of it is signed.  Three
+//! local `int` when every signedness-sensitive reader of it is signed.  Four
 //! limits of that walk leave the same cast in place elsewhere:
 //!
 //! ```text
-//!   unsigned long v15; // stack - 0x60
-//!   v15 = read(a0,v17,v11);
-//!   if (0 <= (long)v15) {
+//!   unsigned long v1; // stack - 0x10
+//!   v1 = strlen(a0);
+//!   while ((v1 = v1 - 1, 0 <= (long)v1 && (a0[v1] == ' '))) {
 //! ```
 //!
-//! - **A local that lives in the frame is never considered.**  Every high mapped
-//!   onto a Symbol is skipped, and a stack local is mapped onto its frame Symbol
-//!   at offset 0.  This option admits a high that covers its Symbol whole: offset
-//!   0, a Symbol type (if any) that is a plain integer of the declaration's width,
-//!   not a parameter, and no other high in the function printing the same name.
-//!   The last condition is what keeps an address-taken local out: `&v15` is a
-//!   high of its own bound to the same name, and re-signing the declaration would
-//!   change the C type of `&v15` under a pointer that was typed for the old one.
-//! - **A same-width conversion to a pointer vetoes.**  `(char *)v` converts the
-//!   same bits whichever signedness `v` is declared with when the integer and the
-//!   pointer are the same width (gcc and clang both define it that way), so it is
-//!   neutral here.
+//! - **A frame local is never considered.**  Every high mapped onto a Symbol is
+//!   skipped, and a stack local is mapped onto its frame Symbol at offset 0.  This
+//!   option admits a high that covers its Symbol whole ([`whole_slot_local`]):
+//!   offset 0, a Symbol type (if any) that is a plain integer of the declaration's
+//!   width, and no other high in the function printing the same name.  The last
+//!   condition keeps an address-taken local out: `&v1` is a high of its own bound
+//!   to the same name, and re-signing the declaration would change the C type of
+//!   `&v1` under a pointer typed for the old one.
 //! - **A pointer index vetoes.**  `p[v]` with a pointer-width `v` computes
-//!   `p + v * size` modulo the address width under either declaration; the signed
-//!   reading is the one that stays inside C's defined behaviour for a negative
-//!   index, so it is neutral for a flip to signed.
+//!   `p + v * size` modulo the address width under either declaration, and the
+//!   signed reading keeps a negative index defined ([`neutral_reader`]).
+//! - **A same-width conversion to a pointer vetoes.**  gcc and clang convert an
+//!   integer to a pointer of its own width by keeping the bits.
+//! - **A body local with an input member is skipped** as if it were a parameter.
+//!   The printer declares only body locals, and `SignPlan::retain_sole_named`
+//!   drops every planned high it does not declare, signature parameters included.
 //!
-//! Two uses that do not change what C computes still say what the value is, and
-//! this option counts them as unsigned evidence so that a flip never goes against
-//! a declared type: a direct call argument whose parameter is type-locked (a
-//! declared or measured prototype) as an unsigned integer of the same width, and
-//! a value stored through a pointer to an unsigned integer of the same width.
-//!
-//! **The option only ever declares a variable signed.**  Every relaxation above
-//! is sound for the unsigned direction too except the pointer index, but IDA's
-//! census shows the opposite bias costs as many casts as it saves, so a verdict
-//! that would need any of these relaxations to declare something unsigned is left
-//! exactly as `signedness` decided it.  With the option off, `signedness` is
-//! byte-identical to what it was.
+//! **The option only ever declares a variable signed.**  A decision any of these
+//! relaxations made is kept only when it declares the value `int`: the census
+//! counts 20 signed-to-unsigned casts on locals against 526 the other way, and
+//! IDA's opposite bias costs it 587.  A type-locked unsigned parameter and a store
+//! through an unsigned pointer are deliberately not unsigned evidence: a
+//! same-width conversion computes the same bits, gnulib's signed `idx_t` reaches
+//! `size_t` parameters everywhere, and a stored-through pointer's pointee is
+//! usually typed from the stored value itself.  With the option off,
+//! `signedness` is byte-identical to what it was.
 
 use std::collections::HashMap;
 

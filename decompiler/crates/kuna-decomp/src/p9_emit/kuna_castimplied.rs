@@ -355,12 +355,12 @@ impl ImpliedCasts {
     }
 
     /// May `lhs = (want)e;` print as `lhs = e;`?  When `lhs` is declared `want`,
-    /// always (the caller has already checked the conversion preserves `e`).  When
-    /// `castsign` re-signed `lhs`'s declaration, also when the declared type is as
-    /// wide as the cast's: a conversion to an N-bit integer depends only on the
-    /// value modulo 2^N (C11 6.3.1.3, and gcc and clang define the signed case
-    /// that way), so converting `e` straight to the declaration yields the bits
-    /// the cast followed by the assignment's conversion would.
+    /// always (the caller has already checked the conversion preserves `e`).  With
+    /// `castsign` on and `lhs`'s declaration re-signed by `signedness`, also when
+    /// the declared type is as wide as the cast's: a conversion to an N-bit integer
+    /// depends only on the value modulo 2^N (C11 6.3.1.3, and gcc and clang define
+    /// the signed case that way), so converting `e` straight to the declaration
+    /// yields the bits the cast followed by the assignment's conversion would.
     fn assigns_to(&self, p: &dyn PrintedForms, fd: &Funcdata, lhs: VarnodeId, want: &str, target: &Datatype) -> bool {
         if self.declared_spelling(p, fd, lhs).as_deref() == Some(want) {
             return true;
@@ -368,8 +368,8 @@ impl ImpliedCasts {
         self.resigned_type(p, fd, lhs).is_some_and(|d| d.get_size() == target.get_size())
     }
 
-    /// The type `castsign` re-declared `vn`'s variable as, when that is the
-    /// declaration the printer wrote.
+    /// The type `signedness` re-declared `vn`'s variable as, when `castsign` is on
+    /// and that is the declaration the printer wrote.
     fn resigned_type(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId) -> Option<Rc<Datatype>> {
         if !self.resigned {
             return None;
@@ -464,7 +464,7 @@ fn fixes_type(p: &dyn PrintedForms, fd: &Funcdata, r: OpId) -> bool {
 
 /// The declared type of the parameter `arg` fills at the direct call `call`,
 /// when that declaration is one C sees at this call.
-pub(crate) fn trusted_param(fd: &Funcdata, call: OpId, arg: VarnodeId) -> Option<Rc<Datatype>> {
+fn trusted_param(fd: &Funcdata, call: OpId, arg: VarnodeId) -> Option<Rc<Datatype>> {
     let o = fd.obank().get(call)?;
     if o.code() != OpCode::CPUI_CALL {
         return None;
