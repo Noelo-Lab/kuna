@@ -1,0 +1,5 @@
+kmod-O2ni {'roundF': 3702.9, 'roundG': 3921.4, 'roundI': 3893.5} I/G min -0.71 med -0.61 I/F min 5.15 G/F min 5.9 (1.1396484375, 1.40625, 1.41015625)
+crontab-O2ni {'roundF': 1098.4, 'roundG': 1121.3, 'roundI': 1107.3} I/G min -1.25 med -1.71 I/F min 0.81 G/F min 2.08 (1.05908203125, 1.34130859375, 1.3857421875)
+dpkg-divert-O2ni {'roundF': 2973.2, 'roundG': 3153.7, 'roundI': 3144.3} I/G min -0.3 med -0.22 I/F min 5.75 G/F min 6.07 (1.080078125, 1.26318359375, 1.34814453125)
+SPEEDEXTRA_DONE
+SPEEDF_DONE

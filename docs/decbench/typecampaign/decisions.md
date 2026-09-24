@@ -130,6 +130,8 @@
    there could compute a different address.
 32. 2026-09-24 `calleevote`'s redo is bounded by a budget (5% of the lines the first pass printed,
    shortest callee first), not by a flat 32-line refusal and not by an incremental redo. The budget
-   returns six perfect functions the refusal cost and holds kmod / dpkg-divert level with round G; an
-   incremental redo would need a checkpointed `Funcdata` re-entering the action tree, a substrate change
-   out of proportion to the remaining cost.
+   returns six perfect functions the refusal cost and holds kmod / dpkg-divert -O2-noinline level with
+   round G, but it does not return what the vote cost: against the build before `calleevote` those two
+   stay +4.9% and +5.6% (re-run twice). A redo costs what the first decompile of that function cost, so
+   the remaining lever is an incremental redo — a checkpointed `Funcdata` re-entering the action tree, a
+   substrate change — and the breach is carried as an open lever rather than hidden by a smaller budget.

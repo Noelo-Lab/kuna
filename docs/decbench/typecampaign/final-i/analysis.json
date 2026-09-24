@@ -1894,14 +1894,14 @@
   ],
   [
    -0.2857,
-   "coreutils::O2-noinline::factor",
+   "coreutils::O2::factor",
    "powm2",
    0.7143,
    0.4286
   ],
   [
    -0.2857,
-   "coreutils::O2::factor",
+   "coreutils::O2-noinline::factor",
    "powm2",
    0.7143,
    0.4286
@@ -1922,14 +1922,14 @@
   ],
   [
    -0.2,
-   "gzip::O2::gzip",
+   "gzip::O2-noinline::gzip",
    "xmemdup",
    0.4,
    0.2
   ],
   [
    -0.2,
-   "gzip::O2-noinline::gzip",
+   "gzip::O2::gzip",
    "xmemdup",
    0.4,
    0.2
@@ -1978,7 +1978,7 @@
   ],
   [
    -0.0606,
-   "coreutils::O0::ls",
+   "coreutils::O0::vdir",
    "gobble_file",
    0.6667,
    0.6061
@@ -1992,7 +1992,7 @@
   ],
   [
    -0.0606,
-   "coreutils::O0::vdir",
+   "coreutils::O0::ls",
    "gobble_file",
    0.6667,
    0.6061
@@ -2018,6 +2018,11 @@
   ],
   [
    0.3333,
+   "coreutils::O2-noinline::numfmt",
+   "next_field"
+  ],
+  [
+   0.3333,
    "coreutils::O0::dircolors",
    "parse_line"
   ],
@@ -2027,18 +2032,38 @@
    "strip"
   ],
   [
-   0.3333,
-   "coreutils::O2-noinline::numfmt",
-   "next_field"
+   0.25,
+   "findutils::O0::find",
+   "process_leading_options"
   ],
   [
    0.25,
-   "coreutils::O2-noinline::cp",
-   "copy_attr"
+   "coreutils::O0::wc",
+   "get_input_fstatus"
+  ],
+  [
+   0.25,
+   "coreutils::O0::ginstall",
+   "strip"
+  ],
+  [
+   0.25,
+   "diffutils::O0::diff3",
+   "process_diff_control"
+  ],
+  [
+   0.25,
+   "tar::O2::tar",
+   "xattrs_mask_add"
   ],
   [
    0.25,
    "coreutils::O2-noinline::ginstall",
+   "copy_attr"
+  ],
+  [
+   0.25,
+   "coreutils::O2-noinline::mv",
    "copy_attr"
   ],
   [
@@ -2048,33 +2073,8 @@
   ],
   [
    0.25,
-   "tar::O2::tar",
-   "xattrs_mask_add"
-  ],
-  [
-   0.25,
-   "coreutils::O0::ginstall",
-   "strip"
-  ],
-  [
-   0.25,
-   "coreutils::O2-noinline::mv",
-   "copy_attr"
-  ],
-  [
-   0.25,
-   "coreutils::O0::wc",
-   "get_input_fstatus"
-  ],
-  [
-   0.25,
    "shadow::O0::su",
    "save_caller_context"
-  ],
-  [
-   0.25,
-   "shadow::O2::grpck",
-   "compare_members_lists"
   ],
   [
    0.25,
@@ -2083,13 +2083,13 @@
   ],
   [
    0.25,
-   "diffutils::O0::diff3",
-   "process_diff_control"
+   "shadow::O2::grpck",
+   "compare_members_lists"
   ],
   [
    0.25,
-   "findutils::O0::find",
-   "process_leading_options"
+   "coreutils::O2-noinline::cp",
+   "copy_attr"
   ],
   [
    0.2222,
@@ -2113,12 +2113,12 @@
   ],
   [
    0.1667,
-   "tar::O2::tar",
+   "tar::O2-noinline::tar",
    "get_date_or_file"
   ],
   [
    0.1667,
-   "tar::O2-noinline::tar",
+   "tar::O2::tar",
    "get_date_or_file"
   ],
   [
@@ -2133,17 +2133,17 @@
   ],
   [
    0.15,
+   "coreutils::O0::mv",
+   "copy_dir"
+  ],
+  [
+   0.15,
    "coreutils::O0::ginstall",
    "copy_dir"
   ],
   [
    0.15,
    "coreutils::O0::cp",
-   "copy_dir"
-  ],
-  [
-   0.15,
-   "coreutils::O0::mv",
    "copy_dir"
   ],
   [
@@ -2158,27 +2158,12 @@
   ],
   [
    0.125,
-   "coreutils::O2-noinline::dir",
-   "abmon_init"
+   "shadow::O2-noinline::grpck",
+   "compare_members_lists"
   ],
   [
    0.125,
-   "coreutils::O0::vdir",
-   "abmon_init"
-  ],
-  [
-   0.125,
-   "coreutils::O0::csplit",
-   "parse_patterns"
-  ],
-  [
-   0.125,
-   "coreutils::O0::dir",
-   "abmon_init"
-  ],
-  [
-   0.125,
-   "coreutils::O2-noinline::vdir",
+   "coreutils::O0::ls",
    "abmon_init"
   ],
   [
@@ -2193,13 +2178,28 @@
   ],
   [
    0.125,
-   "coreutils::O0::ls",
+   "coreutils::O0::vdir",
    "abmon_init"
   ],
   [
    0.125,
-   "shadow::O2-noinline::grpck",
-   "compare_members_lists"
+   "coreutils::O2-noinline::dir",
+   "abmon_init"
+  ],
+  [
+   0.125,
+   "coreutils::O2-noinline::vdir",
+   "abmon_init"
+  ],
+  [
+   0.125,
+   "coreutils::O0::dir",
+   "abmon_init"
+  ],
+  [
+   0.125,
+   "coreutils::O0::csplit",
+   "parse_patterns"
   ],
   [
    0.1111,

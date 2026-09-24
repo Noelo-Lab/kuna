@@ -20,7 +20,7 @@ end, and the raw rows are in `final-i/`.
 | goal 2: declarations, fmt/ls/sort/du O0+O2 | 7,085; 151 `[16]` blobs; 11 phantom `// rdx` | **6,970; 65; 7** | −1.6%, −57%; `fmt::main` calls `sub_3700` with 2/2/2 arguments (was 1/2/3) and declares no phantom |
 | goal 3: TRex mean, pooled O0 / O2 | 3.638 / 1.579 | **4.477 / 1.960** | +23% / +24%; GT struct parameters typed as a struct 0 → 173 of 538 (O0), 0 → 95 of 297 (O2) |
 | goal 3: layout, fields only (P / R / F1) | none (no records) | **.8713 / .0932 / .1684** | nesting F1 0 → .0036 |
-| speed, whole-binary `decompile-all` -O2 | — | SUMMARY_SPEED | SUMMARY_SPEED_READING |
+| speed, whole-binary `decompile-all` -O2 | — | **+1.7% / +3.5% / +3.4% / +4.0%** (fmt / ls / sort / bash) | inside the +5% budget; the one breach left is dpkg-divert -O2-noinline, +5.6% over the build before `calleevote` |
 
 **What each goal achieved.** *Primitives:* `bool` doubled (boolbyte, bytehonest) and kuna is 1st or 2nd
 on every integer and `char` class; the signedness work is real in the C and in TRex but worth zero on a
@@ -61,7 +61,8 @@ variable count and call arity score zero by construction, so every arity change 
 4. **Naming a synthesized record.** `ptr_struct` is 4.0% (568 of 14,252); under the pinned metric only a
    library type's name converts one.
 5. **Layout recall .0932 and nesting F1 .0036** — 8,563 of 9,443 ground-truth fields are never claimed.
-6. **`calleevote`'s redo.** LEVER6_SPEED An incremental redo needs a checkpointed `Funcdata` that
+6. **`calleevote`'s redo.** The budget holds kmod and dpkg-divert -O2-noinline level with round G, but
+   against the build before `calleevote` they stay +4.9% and +5.6% (I.7). An incremental redo needs a checkpointed `Funcdata` that
    re-enters the action tree, a substrate change.
 
 ## Stage 3 — the first re-measure (2026-09-19)
@@ -1832,7 +1833,8 @@ measured by sweeping its own build (`dbe854ba3`, the castbench `bin-dbe854ba3` p
 
 With the option on (`--option structmerge siblings`, on the final build) the eight layout builds read
 fields-only precision **.8713 → .8730**, recall **.0932 → .0960**, F1 .1684 → .1731, and filler-counted
-precision .7539 → .7637. That is the PR's own measurement reproduced on the final tree. It stays off
+precision .7539 → .7637 — the PR's own measurement, reproduced on the final tree — while the typesweep
+does not move (0 of 10,748 values) and castbench reads 38,602 → 38,604 (one function, +2). It stays off
 for the two reasons its catalog row gives: agreement between two readers is a shape, not an identity
 (two records that begin with the same words get fused), and on `e2fsck` -O0 the convergence sweep
 settles `reconfigure_bool`'s two `char *` parameters to `unsigned long`.
@@ -1879,7 +1881,7 @@ Stage-3 figures exactly (7,085 declarations, 151 blobs; TRex 3.638 / 1.579).
 | goal 2: variables | varcensus, fmt/ls/sort/du O0+O2 | 6,970 declarations, 65 `[16]` blobs, 7 phantom `// rdx` | identical | `fmt::main` byte-identical |
 | goal 3: structs | TRex pooled O0 / O2; layout P / R; nesting F1 | 4.4747 / 1.9520; .8713 / .0932; .0036 | **4.4770 / 1.9597**; identical; identical | TRex rises on four of the eight builds; nothing else moves |
 | decbench#93 crediting | replay of the same rows | 2,181 (+572), mean .4532 | **2,188** (+573), mean **.4543** | |
-| speed | whole-binary `decompile-all`, interleaved min | +2.4…+4.8% vs baseline; kmod +5.54%, dpkg-divert +5.92% vs F | SPEED_HEADLINE | SPEED_READING |
+| speed | whole-binary `decompile-all`, interleaved min | +2.4…+4.8% vs baseline; kmod +5.54%, dpkg-divert +5.92% vs F | **−0.3…−1.0% vs round G**; +1.7…+4.0% vs baseline | inside the budget on fmt/ls/sort/bash; dpkg-divert -O2-noinline stays +5.6% over round F (`calleevote`'s redo), re-run |
 
 ### I.1 Casts
 
@@ -2051,14 +2053,45 @@ Under #93 the final build would be **2,188 of 10,748 (20.4%)**.
 
 ### I.7 Speed
 
-SPEED_SECTION
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation) on the -O2 stripped
+binaries: four arms (baseline, round G, round H, final) run one after another with the arm order
+rotating every round, min-of-11, on a quiet box (load average 1–5 on 80 cores). Driver
+`final-i/speed8.py`, raw samples `final-i/speed.json`.
+
+| binary | functions | baseline min | round G min | round H min | **final min** | Δ final vs G (min / median) | Δ final vs baseline (min) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| coreutils fmt | 151 | 4,037.9 ms | 4,141.4 ms | 4,091.3 ms | **4,105.7 ms** | −0.86% / −0.87% | +1.68% |
+| coreutils ls | 404 | 13,023.2 ms | 13,530.5 ms | 13,349.6 ms | **13,477.4 ms** | −0.39% / −0.32% | +3.49% |
+| coreutils sort | 343 | 13,702.3 ms | 14,208.8 ms | 13,990.2 ms | **14,167.2 ms** | −0.29% / −0.24% | +3.39% |
+| bash | 2,538 | 82,430.0 ms | 86,550.2 ms | 84,914.5 ms | **85,701.2 ms** | −0.98% / −1.00% | +3.97% |
+
+The final build is **0.3–1.0% faster than round G** and **+1.7% to +4.0% over the campaign baseline**:
+the whole campaign, casts included, inside the +5% budget on this set. Round G itself reads +2.6…+5.0%
+against the baseline in this run (its own page: +2.4…+4.8%). The round-H build reads 1.2–1.9% under
+round G although its one change is off by default; the final build is +0.4…+1.3% over it.
+
+The three binaries where `calleevote`'s redo broke the budget in round G, interleaved min-of-15 against
+the build before `calleevote` (round F) and round G (`final-i/speedextraF.py`, `speed-extraF.json`):
+
+| binary | round F min | round G min | **final min** | Δ final vs G | Δ final vs F |
+|---|---:|---:|---:|---:|---:|
+| kmod -O2-noinline | 3,707.3 ms | 3,921.3 ms | **3,888.0 ms** | −0.85% | **+4.87%** (first pass +5.15%) |
+| dpkg dpkg-divert -O2-noinline | 2,973.4 ms | 3,149.4 ms | **3,138.9 ms** | −0.33% | **+5.57%** (first pass +5.75%) |
+| cronie crontab -O2-noinline | 1,098.4 ms | 1,121.3 ms | **1,107.3 ms** | −1.25% | +0.81% |
+
+Both over-line cases were re-run at a quiet moment (load 0.8–1.5; the table shows the re-run). #719's
+budget holds these binaries level with round G while it redoes more functions (a second G / H / final
+run agrees: −0.67%, −1.16%, −0.30%), but it does not return what `calleevote` cost: against round F,
+dpkg-divert stays **+5.6%** and kmod sits at the line (+4.9% / +5.2%). That is the one budget breach the
+campaign ends with, off the canonical set, and it is the redo itself — a second decompile of a callee
+costs what the first one did — so it is a substrate lever (summary, lever 6), not a tuning one.
 
 ### I.8 Every round-H/I PR and what it measured
 
 | PR | item | default | measured effect |
 |---|---|---|---|
-| #715 | `structmerge siblings` — two functions measuring one record get the union | `off` | default output identical to round G on every instrument; the option arm: layout P .8713 → .8730, R .0932 → .0960 |
-| #719 | `calleevote` redo budget: 5% of the first pass's printed lines, shortest first, one budget for three rounds; a function the budget cannot reach is declined for the run | ungated | 1,609 → 1,615 perfect, 69 up / 0 down; casts 45,126 → 45,039; SPEED_719 |
+| #715 | `structmerge siblings` — two functions measuring one record get the union | `off` | default output identical to round G on every instrument; the option arm on the final build: layout P .8713 → .8730, R .0932 → .0960, typesweep unmoved, casts +2 |
+| #719 | `calleevote` redo budget: 5% of the first pass's printed lines, shortest first, one budget for three rounds; a function the budget cannot reach is declined for the run | ungated | 1,609 → 1,615 perfect, 69 up / 0 down; casts 45,126 → 45,039; speed vs round G −0.3…−1.2% on kmod / crontab / dpkg-divert -O2-noinline, which stay +4.9% / +0.8% / +5.6% over round F |
 | #721 | `castimplied` — a cast C's conversion already performs is not printed (type-locked parameters only; never varargs, truncations, sign changes, float, pointer, `bool`, `truncarg`'s or `boolbyte`'s casts) | `on` | casts −1,366 on its step (570 functions fewer, 0 more); type_match identical |
 | #722 | `castarith` — `INT_ADD(p, K)` used as `T *` becomes `PTRADD(p, K/sizeof T)` when `sizeof T` divides K; prints `((T *)p)[k]` | `on` | casts −4,970 (952 functions fewer, 0 more) — the largest single cast lever; type_match identical; enum elements, 2^31-element negative indexes, aggregate elements and shared addresses keep the integer form |
 | #724 | `castsign` — a stack local compared only signed is declared signed; never one that `+ - * <<` reads (signed overflow is undefined) or that meets a top-bit constant | `on` | casts −101 (41 functions fewer, 0 more); type_match identical (decbench strips signedness) |
@@ -2181,4 +2214,27 @@ LAYOUTSCORE_OPTIONS="calleevote off" python final-g/layoutrun.py             # t
 python3 final-g/layoutdiffFG.py <bin>                        # per-parameter layout, round F vs round G
 python3 final-g/speed7.py 11 <speed.json> fmt,ls,sort,bash
 python3 final-g/speedextra.py 15 <speed-extra.json> kmod-O2ni,crontab-O2ni,dpkg-divert-O2ni
+```
+
+Rounds H and I use `final-i/` the same way. The round-H arm is its own build (`dbe854ba3`, with the
+`decomp_dbg` beside it); the three cast levers are option-gated, so their ladder is option arms on the
+final build; and the cast instrument is `castbench` (`/home/mahaloz/kwt/castbench/`), read through
+`cast4.py`, which puts every arm and IDA on one address-matched function set:
+
+```bash
+bash final-i/sweep.sh               # final, round H, and the round-G and round-C binaries as controls
+bash final-i/phase2.sh              # cast options off (typesweep + castbench), structscore, goal 2, ablations, layout
+bash final-i/cb.sh <arm> <kuna>     # castbench full for one binary (base, g, i)
+bash final-i/cbopt.sh <arm> <name> <value> ...          # castbench on the final build with options flipped
+python3 final-i/analyze8.py         # base / B / C / D / E / F / G / H / I (+ controls, cast-off arm), classes, rivals
+python3 final-i/moved8.py           # moved.csv + report-slices.md
+python3 final-c/credit93.py base=<rows> ... roundI=<rows>
+python3 final-i/cast4.py base=<dir> g=<dir> h=<dir> i=<dir> --pairs=g:i,base:i   # the cast table
+python3 final-i/castshow.py <armA> <armB> <opt> <project> <bin> <addr>          # one function, two arms and IDA
+python3 final-i/goal2i.py           # varcensus, baseline vs round G vs final
+bash final-i/ss.sh && bash final-i/ss-base.sh && python3 final-i/sstable8.py   # structscore G vs final (+ baseline)
+bash final-i/layout.sh              # layout P/R (final, G, H), structmerge siblings arm, nesting
+python3 final-i/speed8.py 11 <speed.json> fmt,ls,sort,bash   # baseline / G / H / final
+python3 final-i/speedextra8.py 15 <speed-extra.json>          # kmod, crontab, dpkg-divert: G / H / final
+python3 final-i/speedextraF.py 15 <speed-extraF.json>         # the same three: round F / G / final
 ```
