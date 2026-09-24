@@ -1166,7 +1166,7 @@ impl Funcdata {
                 if self.get_arch().cast_index {
                     match self.obank().get(op).map(|o| o.code()) {
                         Some(OpCode::CPUI_INT_ADD) => {
-                            crate::kuna_castarith::rewrite_index(self, op);
+                            crate::kuna_castarith::rewrite_index(self, &strat, op);
                         }
                         Some(OpCode::CPUI_INT_SUB) => {
                             diff_token = crate::kuna_castarith::pointer_difference(self, op).ok();
