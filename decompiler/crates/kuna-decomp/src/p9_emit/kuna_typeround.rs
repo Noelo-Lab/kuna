@@ -578,17 +578,28 @@ fn def_evidence(opc: OpCode) -> Evidence {
     }
 }
 
-/// Accumulate the op set reachable from `high`'s explicit members and fold it into
-/// one verdict.  With `castsign`, the readers [`crate::kuna_castsign`] adds are
-/// consulted too, and the second value says whether any of them decided anything
-/// (such a verdict may only ever declare the value signed).
-fn evidence_for(fd: &Funcdata, high: HighVariableId, castsign: bool) -> (Evidence, bool) {
-    let mut widened = false;
-    let verdict = evidence_walk(fd, high, castsign, &mut widened);
-    (verdict, widened)
+/// What the walk saw that only [`crate::kuna_castsign`] reads.
+#[derive(Debug, Default)]
+struct CastsignWalk {
+    /// A reader castsign takes as neutral decided the verdict.
+    widened: bool,
+    /// An operator that overflows over a signed operand reads the value.
+    wraps: bool,
+    /// The same-width integer casts that read a declared member.
+    casts: Vec<OpId>,
 }
 
-fn evidence_walk(fd: &Funcdata, high: HighVariableId, castsign: bool, widened: &mut bool) -> Evidence {
+/// Accumulate the op set reachable from `high`'s explicit members and fold it into
+/// one verdict.  With `castsign`, the readers [`crate::kuna_castsign`] adds are
+/// consulted too, and the walk also reports what that option checks before a flip
+/// (a verdict it widened may only ever declare the value signed).
+fn evidence_for(fd: &Funcdata, high: HighVariableId, castsign: bool) -> (Evidence, CastsignWalk) {
+    let mut cs = CastsignWalk::default();
+    let verdict = evidence_walk(fd, high, castsign, &mut cs);
+    (verdict, cs)
+}
+
+fn evidence_walk(fd: &Funcdata, high: HighVariableId, castsign: bool, cs: &mut CastsignWalk) -> Evidence {
     let Some(h) = fd.high_bank().get(high) else { return Evidence::Veto };
     let mut verdict = Evidence::None;
     let mut seen: HashSet<VarnodeId> = HashSet::new();
@@ -650,8 +661,11 @@ fn evidence_walk(fd: &Funcdata, high: HighVariableId, castsign: bool, widened: &
                     && castsign
                     && crate::kuna_castsign::neutral_reader(fd, op, vn)
                 {
-                    *widened = true;
+                    cs.widened = true;
                     continue;
+                }
+                if castsign && cast_ev != Evidence::Veto && fd.vbank().get(vn).is_some_and(|v| v.is_explicit()) {
+                    cs.casts.push(op);
                 }
                 verdict = verdict.join(cast_ev);
                 if verdict == Evidence::Veto {
@@ -665,6 +679,9 @@ fn evidence_walk(fd: &Funcdata, high: HighVariableId, castsign: bool, widened: &
                 if o.get_in(slot) != Some(vn) {
                     continue;
                 }
+                if castsign && crate::kuna_castsign::can_overflow(opc, slot) {
+                    cs.wraps = true;
+                }
                 match classify_reader(opc, slot) {
                     ReaderClass::Demands(ev) => verdict = verdict.join(ev),
                     ReaderClass::DemandsCarrying(ev) => {
@@ -675,7 +692,7 @@ fn evidence_walk(fd: &Funcdata, high: HighVariableId, castsign: bool, widened: &
                     ReaderClass::Opaque => {}
                     ReaderClass::Veto => {
                         if castsign && crate::kuna_castsign::neutral_reader(fd, op, vn) {
-                            *widened = true;
+                            cs.widened = true;
                         } else {
                             verdict = Evidence::Veto;
                         }
@@ -779,7 +796,7 @@ pub fn plan(
         if castsign && crate::kuna_castsign::symbol_type_locked(fd, high) {
             continue;
         }
-        let (ev, widened) = evidence_for(fd, high, castsign);
+        let (ev, cs) = evidence_for(fd, high, castsign);
         let want = match (ev, policy) {
             (Evidence::Veto, _) | (Evidence::None, SignPolicy::Auto) => continue,
             (Evidence::Signed, _) => type_metatype::TYPE_INT,
@@ -791,7 +808,8 @@ pub fn plan(
         if cur.get_metatype() == want {
             continue;
         }
-        if (frame_local || is_param || widened) && want != type_metatype::TYPE_INT {
+        let castsign_only = frame_local || is_param || cs.widened;
+        if castsign_only && (want != type_metatype::TYPE_INT || cs.wraps) {
             continue;
         }
         // `get_base_no_char` so a re-signed byte declares `int1`, never `char`:
@@ -804,6 +822,9 @@ pub fn plan(
             continue;
         };
         if !is_plain_integer(&newty) {
+            continue;
+        }
+        if castsign_only && !crate::kuna_castsign::drops_printed_cast(fd, &cs.casts, &newty) {
             continue;
         }
         out.decls.insert(high, newty);

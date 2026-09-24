@@ -7,8 +7,10 @@
 //!
 //! ```text
 //!   unsigned long v1; // stack - 0x10
-//!   v1 = strlen(a0);
-//!   while ((v1 = v1 - 1, 0 <= (long)v1 && (a0[v1] == ' '))) {
+//!   v1 = strtoul(a0,NULL,0);
+//!   if ((long)v1 <= -1)
+//!     v1 = strtoul(a1,NULL,0);
+//!   if (0 <= (long)v1)
 //! ```
 //!
 //! - **A frame local is never considered.**  Every high mapped onto a Symbol is
@@ -27,6 +29,21 @@
 //! - **A body local with an input member is skipped** as if it were a parameter.
 //!   The printer declares only body locals, and `SignPlan::retain_sole_named`
 //!   drops every planned high it does not declare, signature parameters included.
+//!
+//! **Arithmetic keeps the declaration unsigned** ([`can_overflow`]).  Declaring
+//! `v` signed changes `v + 1`, `v - 1`, `v * k`, `-v` and `v << k` from unsigned
+//! arithmetic, which wraps, to signed arithmetic, which is undefined on overflow,
+//! and gcc and clang fold on that: `0 <= (long)(v - 1)` over a `long v` becomes
+//! `0 < v`, and `v = v - 1, 0 <= v` exits at once for `v == LONG_MIN`, where the
+//! binary loops.  So a high this option admits is left alone when any of those
+//! operators reads it, directly or through the expression its value is printed
+//! into.  (The walk `signedness` runs for register locals accepts that trade; this
+//! option does not extend it.)
+//!
+//! **A flip must remove a cast** ([`drops_printed_cast`]).  A high this option
+//! admits is re-declared only when a `(T)v` the new declaration makes a no-op is
+//! printed today: its value lands in an expression, not in a call argument, an
+//! assignment or a `return`, where `castimplied` already leaves it out.
 //!
 //! **A type-locked declaration is never touched** ([`symbol_type_locked`]).  A
 //! `--assert type`, a DWARF local and a type committed from Ghidra lock the
@@ -134,4 +151,55 @@ pub(crate) fn neutral_reader(fd: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
         }
         _ => false,
     }
+}
+
+/// Can `opc` overflow when its operand at `slot` is signed: `+ - *`, unary `-`,
+/// and the shiftee of `<<`?  Over an unsigned operand each of these wraps, which
+/// is defined; over a signed one each is undefined on overflow.
+pub(crate) fn can_overflow(opc: OpCode, slot: int4) -> bool {
+    match opc {
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_2COMP => true,
+        OpCode::CPUI_INT_LEFT => slot == 0,
+        _ => false,
+    }
+}
+
+/// Is one of `casts` (each a `CPUI_CAST` reading a declared member of the high)
+/// a `(newty)` cast that prints today and that declaring the high `newty` makes a
+/// no-op?  The cast prints when its value is inlined into an expression: a
+/// value that only feeds a call argument, an assignment, a `return`, a store or
+/// another conversion may already be left out by `castimplied`.
+pub(crate) fn drops_printed_cast(fd: &Funcdata, casts: &[OpId], newty: &Datatype) -> bool {
+    casts.iter().any(|&op| {
+        let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) else { return false };
+        let Some(v) = fd.vbank().get(out) else { return false };
+        let t = v.get_type_def_facing();
+        if t.get_size() != newty.get_size()
+            || t.get_metatype() != newty.get_metatype()
+            || t.get_sub_meta() != newty.get_sub_meta()
+            || t.get_name() != newty.get_name()
+            || v.is_explicit()
+        {
+            return false;
+        }
+        v.descend_iter().any(|r| {
+            fd.obank().get(r).is_some_and(|ro| {
+                !matches!(
+                    ro.code(),
+                    OpCode::CPUI_CALL
+                        | OpCode::CPUI_CALLIND
+                        | OpCode::CPUI_CALLOTHER
+                        | OpCode::CPUI_RETURN
+                        | OpCode::CPUI_COPY
+                        | OpCode::CPUI_CAST
+                        | OpCode::CPUI_INT_SEXT
+                        | OpCode::CPUI_INT_ZEXT
+                        | OpCode::CPUI_SUBPIECE
+                        | OpCode::CPUI_STORE
+                        | OpCode::CPUI_MULTIEQUAL
+                        | OpCode::CPUI_INDIRECT
+                )
+            })
+        })
+    })
 }
