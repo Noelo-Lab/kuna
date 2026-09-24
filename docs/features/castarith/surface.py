@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """JSON-surface check for castarith: run `decompile-all --json` with the option
-off and on (one build) and count, per function, the instruction addresses that
+off and on (one build) and count, per function, signature and variable
+(name, kind, type) differences, and the instruction addresses that
 `line_mappings` and `variables[].addresses` carry in one arm and not the other.
 
   surface.py KUNA OUTDIR OPT/PROJECT/BIN...
@@ -29,6 +30,10 @@ def lines(f):
     return {a for e in f.get("line_mappings") or [] for a in e.get("addresses", [])}
 
 
+def vartypes(f):
+    return [(v.get("name"), v.get("kind"), v.get("type")) for v in f.get("variables") or []]
+
+
 def varaddrs(f):
     return {(v.get("name"), a) for v in f.get("variables") or [] for a in v.get("addresses") or []}
 
@@ -36,13 +41,21 @@ def varaddrs(f):
 def main():
     kuna, out = sys.argv[1], Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
-    tot = dict(funcs=0, mapped_off=0, lm_lost=0, lm_gained=0, lm_funcs=0, va_lost=0, va_gained=0, va_funcs=0)
+    tot = dict(funcs=0, sig_diff=0, var_diff=0, vars_off=0, vars_on=0, mapped_off=0, lm_lost=0, lm_gained=0, lm_funcs=0, va_lost=0, va_gained=0, va_funcs=0)
     for spec in sys.argv[3:]:
         binary = R / spec.split("/")[0] / spec.split("/")[1] / "stripped" / spec.split("/")[2]
         off, on = load(kuna, binary, out, "off"), load(kuna, binary, out, "on")
         for addr in sorted(set(off) & set(on)):
             a, b = off[addr], on[addr]
             tot["funcs"] += 1
+            tot["vars_off"] += len(a.get("variables") or [])
+            tot["vars_on"] += len(b.get("variables") or [])
+            if (a.get("code") or "").split("\n", 1)[0] != (b.get("code") or "").split("\n", 1)[0]:
+                tot["sig_diff"] += 1
+                print(f"SIGNATURE {spec} {hex(addr)}")
+            if vartypes(a) != vartypes(b):
+                tot["var_diff"] += 1
+                print(f"VARIABLES {spec} {hex(addr)}")
             la, lb = lines(a), lines(b)
             tot["mapped_off"] += len(la)
             if la != lb:

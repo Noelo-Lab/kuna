@@ -1,6 +1,6 @@
 {
  "opportunity": "kuna prints a pointer plus a constant byte offset as an integer round trip, *(T *)((long)p + K): two casts per access where IDA prints one (or none). The cast census measured 3,771 such casts on the 4,815 functions kuna and IDA share (IDA: 0), 99.8% with sizeof(T) dividing K. The ops are INT_ADD from the start (PTRSUB->INT_ADD demotion fires 0 times): a void * base has no field and no element size, so P5 builds neither PTRSUB nor PTRADD.",
- "test_name": "tests/stages/kuna-castarith.xml (8 assertions, pass 1 option castarith off, pass 2 on, pass 3 arraynotation off) + 21 unit tests (p9_emit/kuna_castarith/tests.rs) + compiled round trip decompile_all_cli.rs a_pointer_plus_whole_elements_round_trips_through_the_printed_c (fixture castarith_x86_64.c, gcc -O0 / clang -O0 / gcc -O2, option on and off)",
+ "test_name": "tests/stages/kuna-castarith.xml (12 assertions, pass 1 option castarith off, pass 2 on, pass 3 arraynotation off) + 22 unit tests (p9_emit/kuna_castarith/tests.rs) + compiled round trip decompile_all_cli.rs a_pointer_plus_whole_elements_round_trips_through_the_printed_c (fixture castarith_x86_64.c, 23 functions, gcc -O0 / clang -O0 / gcc -O2, option on and off)",
  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/ls",
  "selector": "0x53e7",
  "func_addr": "0x53e7",
@@ -52,37 +52,62 @@
   }
  },
  "corpus_sweep": {
-  "method": "castbench full (45 binaries: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find x O0/O2/O2-noinline), kuna decompile-all both arms of one build (--option castarith off vs default); every changed line classified by docs/features/castarith/hunks.py",
-  "base": "origin/main 5458b7ab5 (after castimplied #721); the off arm is byte-identical to a build of the base (45/45 files); also measured on dbe854ba3 before the rebase (2,344 functions, 13,341 lines, same classes)",
-  "functions_changed": 2338,
-  "lines_changed": 13246,
-  "classes": {
-   "exact_reverse": 12986,
-   "assignment_outer_cast": 130,
-   "element_signedness_store": 63,
-   "bare_base_checked_against_declaration": 12,
-   "void_in_bytes": 5,
-   "parentheses_only": 2,
-   "read_by_hand": 48
-  },
-  "read_by_hand": "12 stack-probe loop steps (old outer cast (char *), same address); 19 stores whose element spelling differs in sign only (int4 vs unsigned int) or whose old offset carried a U suffix; 5 assignments inside an expression (outer cast only); 4 pointer-to-array elements ((char (**)[16])v3)[10] == +0x50; 2 pointer compares; 1 nested subscript; 6 (unsigned long)(long)((int *)a0)[2] % a1 where castimplied left out the inner (long) of the integer form (same conversion, same cast count)",
+  "method": "kuna decompile-all both arms of one build (--option castarith off vs default), every changed line classified by docs/features/castarith/hunks.py (pointer width and console spellings taken from the file); control flow compared by docs/features/castarith/structural.py",
+  "base": "origin/main 5458b7ab5; the off arm is byte-identical to a build of the base on all 201 binaries",
+  "read_by_hand": "138 lines over both sets, all the same address: 41 nested subscripts (&(*(uint2 **)((int8)a0 + 8))[2] -> &((uint2 **)a0)[1][2]), 21 integer bases under a shared cast (*(uint1 *)(a0[1] + 10) -> ((uint1 *)a0[1])[10], one cast each), 13 wchar_t elements, 24 stack-probe loop steps (old outer cast (char *)), 16 pointer-to-array elements, 10 assigned pointers or stores inside an expression differing in element sign only, 11 assignments whose outer cast differs, 2 offsets with a U suffix",
   "hunks_outside_documented_effect": 0,
-  "json_variables": "12 binaries (fmt ls sort du O0+O2, bash O2, kmod O2-noinline, bzip2 O0, gzip O2), 6,355 functions: variables 39,262 -> 39,262, parameters 11,219 -> 11,219, signatures 0 differ, variable types 0 differ; 3 functions' variables[].addresses lose one instruction (a load printed as a subscript carries no token of its own, upstream PrintC::opLoad under array notation)",
-  "rust_output": "identical on/off (C output only)"
+  "rust_output": "identical on/off (C output only)",
+  "castbench_full": {
+   "binaries": 45,
+   "functions": 20230,
+   "functions_changed": 2337,
+   "lines_changed": 13245,
+   "classes": {
+    "exact_reverse": 12993,
+    "assignment_outer_cast": 130,
+    "store_element_sign": 79,
+    "bare_base_checked_against_declaration": 12,
+    "void_in_bytes": 5,
+    "parentheses_only": 2,
+    "read_by_hand": 24
+   },
+   "control_flow_changed": 0
+  },
+  "disjoint": {
+   "binaries": 156,
+   "projects": "kmod dash bzip2 cronie dpkg libedit sysvinit zlib libbsd libacl libselinux nuttx freertos minipig mydoom x0r-usb libexpat base-passwd e2fsprogs rsyslog iproute2 bash, x O0/O2/O2-noinline (x86-64, ARM32, PE32)",
+   "functions": 55066,
+   "functions_changed": 10021,
+   "lines_changed": 58963,
+   "classes": {
+    "exact_reverse": 57312,
+    "store_element_sign": 1307,
+    "assignment_outer_cast": 167,
+    "parentheses_only": 40,
+    "void_in_bytes": 12,
+    "bare_base_checked_against_declaration": 11,
+    "read_by_hand": 114
+   },
+   "control_flow_changed": 4
+  },
+  "structural": "4 of 75,296 functions change control flow, all the same shape (a goto and its label gone, one more duplicated return marked // return-dupe) and all through taildup: its 12-printed-op return-tail budget counts CASTs and runs after the cast pass, so a tail the removed casts bring within budget is duplicated. kmod -O2-noinline sub_b200, rsyslogd -O2 sub_69b50, rsyslogd -O2-noinline sub_69570, libedit -O0 sub_1fe22; with --option taildup off both arms print the same gotos. taildup preserves the value by design (the copy runs on the one path that reached the goto). Documented in 09-emission.md, 08-structuring.md (taildup) and the option's catalog row.",
+  "json_surface": "13 binaries (fmt ls sort du O0+O2, bash O2, kmod O2-noinline, bzip2 O0, gzip O2, dash O2), 6,690 functions (surface.py): signatures 0 differ, variables (name, kind, type) 0 differ, 41,302 variables in both arms; line_mappings: 4 of 175,526 mapped instructions in 3 functions map to no line (dash -O2 sub_12b50 0x12e16: an instruction whose only printed ops were the add and the load, a subscript being a surround token with no op, upstream PrintLanguage::emitOp); variables[].addresses: 7 addresses in 3 functions drop out; nothing gained"
  },
  "soundness": {
   "construction": "k * sizeof(T) == K exactly (K signed, divisibility required); base converted pointer to pointer; element size == access width; alignment unchanged",
-  "round_trip": "20 functions x (gcc -O0, clang -O0, gcc -O2) x (on, off): printed C recompiled and run prints exactly the binary's output in all 6 arms",
+  "round_trip": "23 functions x (gcc -O0, clang -O0, gcc -O2) x (on, off): printed C recompiled and run prints exactly the binary's output in all 6 arms; includes a byte widened for a signed compare and a word widened for an index (castimplied through the subscript) and an integer base (kept)",
   "refusals": [
    "non-whole or variable offset",
    "aggregate/padded element",
    "word-addressed space",
-   "sum read as an integer",
+   "sum read as an integer or assigned to a variable declared as an integer",
    "address shared by several accesses",
    "store of a value whose defining op the pass has not cast unless the opcode fixes its kind",
    "void * sum passed to a call or returned (calleevote would learn char *)",
    "constant naming a global, or address-like beside an integer cast to a pointer (table[i])"
-  ]
+  ],
+  "bases": "a variable declared as a pointer to T is used bare; an implied cast read only by the add is retargeted to T *; an implied cast other ops read too is left alone and the new (T *) cast reads its integer or pointer input (no cast stacked on a cast)",
+  "castimplied": "castimplied reads a converted load's C type from the subscript's cast base, as it reads *(T *)p: (int)((unsigned char *)a0)[0x11], not (int)(unsigned int)(...); byte-identical with castarith off on 201 binaries"
  },
  "castbench": {
   "set": "full, 4,815 shared functions (kuna x IDA x main)",
@@ -96,24 +121,25 @@
    "vs_ida": 1.155
   },
   "castarith": {
-   "casts": 38709,
+   "casts": 38703,
    "per_kloc": 203.1,
    "vs_ida": 1.023
   },
-  "delta": -4964,
-  "delta_pct": -11.37,
-  "functions_fewer": 946,
-  "casts_fewer": 4964,
+  "delta": -4970,
+  "delta_pct": -11.38,
+  "functions_fewer": 952,
+  "casts_fewer": 4970,
   "functions_more": 0,
-  "functions_unchanged": 3869,
+  "functions_unchanged": 3863,
   "per_level_vs_ida": {
    "O0": "1.198 -> 1.039",
    "O2": "1.168 -> 1.057",
    "O2-noinline": "1.096 -> 0.971"
   },
-  "before_rebase": "main dbe854ba3 45,126 (1.193x IDA) -> 40,138 (1.061x); 954 fewer, 0 more",
+  "before_rebase": "main dbe854ba3 45,126 (1.193x IDA) -> 40,138 (1.061x); 954 fewer, 0 more (first version)",
   "shape": "(i64) <var> -4,918; each (T*) <paren> becomes (T*) <var>",
-  "top_more_cast_functions": "none"
+  "top_more_cast_functions": "none",
+  "disjoint_156_binaries": "every function (not only IDA-shared): 400,905 -> 332,946 casts (-17.0%), 10,011 functions fewer, 0 more"
  },
  "benchmark": {
   "metric": "decbench type_match pinned to 625e892 (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same binary",
@@ -131,7 +157,7 @@
    "O2-noinline": "416 -> 416"
   },
   "before_rebase": "dbe854ba3: 1609 -> 1609, mean .3688 -> .3688, 0 improved, 0 worse",
-  "note": "presentation-only: runs after every type and variable is final"
+  "note": "presentation-only: runs after every type and variable is final; measured on the final build (bin-fix2), both arms"
  },
  "speed": {
   "method": "one pinned release binary, kuna decompile-all --json, --option castarith off vs default, arms interleaved and order-alternated, one warm-up discarded, min and median-of-ratios of 15; other lanes running on the box",
@@ -185,7 +211,7 @@
  "gates": {
   "measured_on": "feat/castarith rebased on origin/main 5458b7ab5",
   "make_test": "datatests: 675/675 assertions passed, PARITY OK (default on)",
-  "make_test_stages": "datatests: 1349/1349 assertions passed, PARITY OK (baseline re-recorded on 5458b7ab5: 8 new castarith keys; 4 keys renamed with their assertion, see default_on_evaluation.b_stages)",
+  "make_test_stages": "datatests: 1353/1353 assertions passed, PARITY OK (baseline re-recorded: 12 castarith keys; 4 keys renamed with their assertion, see default_on_evaluation.b_stages)",
   "make_test_cli": "tests/cli: 237/237 passed (6 probes updated, see default_on_evaluation.c_test_cli)",
   "check_spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
   "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
@@ -196,13 +222,13 @@
  "default_on_evaluation": {
   "verdict": "flipped: castarith ships on",
   "a_datatests": "675/675 PARITY OK with the default on; no assertion moved, no per-test opt-out",
-  "b_stages": "16 assertions of other options pinned the integer round trip and now read the pointer form, each value-identical: CALLEEVOTE #1, cspecprotos #5, EXCLUSIVEARGUSE #5, STRUCTSYNTH-NEST #1, FMTSTATIC #35, truncarg #8, truncarg #9, inputparamgap #4, FUNCPTRALIGN #2, PEBNAMES #8, LIBCTYPES #34, iteboolean #3, PEBNAMES-X86 #11, PEBNAMES-X86 #15, STRUCTSYNTH-LOCALS #1, ptrfromuse #6; the names of PEBNAMES #8, PEBNAMES-X86 #11/#15 ('stays an integer addition' -> 'stays an offset from it') and ptrfromuse #6 changed with them; the new kuna-castarith.xml sets `option castarith off` in pass 1",
-  "c_test_cli": "6 probes pinned the old spelling of a field access that another option's decision is about (a void * parameter left open, a wide store kept whole): calleevote-fields-reads-a-closed-getters-lone-field, calleevote-leaves-a-mips-callback-open, calleevote-leaves-a-relocatable-objects-callbacks-open, calleevote-reads-a-table-in-code-at-address-zero, calleevote-types-takes-what-every-caller-passes, protoorder-types-keeps-a-wide-store-whole; regexes follow the new rendering, probe ids re-derived; 236/236",
-  "d_typesweep": "444 slices on 5458b7ab5: 0 improved, 0 worse, perfect 1615 -> 1615, 0 on or off perfect (dbe854ba3: 1609 -> 1609)",
+  "b_stages": "16 assertions of other options pinned the integer round trip and now read the pointer form, each value-identical: CALLEEVOTE #1, cspecprotos #5, EXCLUSIVEARGUSE #5, STRUCTSYNTH-NEST #1, FMTSTATIC #35, truncarg #8, truncarg #9, inputparamgap #4, FUNCPTRALIGN #2, PEBNAMES #8, LIBCTYPES #34, iteboolean #3, PEBNAMES-X86 #11, PEBNAMES-X86 #15, STRUCTSYNTH-LOCALS #1, ptrfromuse #6; the names of PEBNAMES #8, PEBNAMES-X86 #11/#15 ('stays an integer addition' -> 'stays an offset from it') and ptrfromuse #6 changed with them; the new kuna-castarith.xml (12 assertions) sets `option castarith off` in pass 1",
+  "c_test_cli": "6 probes pinned the old spelling of a field access that another option's decision is about (a void * parameter left open, a wide store kept whole): calleevote-fields-reads-a-closed-getters-lone-field, calleevote-leaves-a-mips-callback-open, calleevote-leaves-a-relocatable-objects-callbacks-open, calleevote-reads-a-table-in-code-at-address-zero, calleevote-types-takes-what-every-caller-passes, protoorder-types-keeps-a-wide-store-whole; regexes follow the new rendering, probe ids re-derived; 237/237",
+  "d_typesweep": "444 slices on 5458b7ab5, final build: 0 improved, 0 worse, perfect 1615 -> 1615, mean .3697 -> .3697, 0 on or off perfect, every level and project unchanged (dbe854ba3: 1609 -> 1609); no variable or argument added or removed (json_surface)",
   "e_speed": "fmt -0.24%, ls -0.35%, sort +0.59%, bash +2.94% at load 20-41 and -0.16% re-measured alone at load 4-9 (min-of-15); worst +0.59% at a quiet moment; budget +5%",
-  "f_hunks": "45 binaries (castbench full), 2,344 functions, 13,341 lines: every line in the documented classes (hunks.py reverse-applies the rewrite; 44 read by hand); no signature, declaration, parameter or JSON variable type moves",
+  "f_hunks": "201 binaries (castbench full 45 + 156 disjoint incl. ARM32 and PE32), 12,358 functions and 72,208 lines changed: every line in the documented classes (hunks.py reverse-applies the rewrite; 138 read by hand), and 4 functions change control flow through taildup's op budget (documented, see corpus_sweep.structural); no signature, declaration, parameter or JSON variable type moves",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope; reliable is the defaults",
-  "h_castbench": "on 5458b7ab5: 43,673 -> 38,709 casts on 4,815 shared functions (-11.4%), 1.155x -> 1.023x IDA; 946 functions fewer, 0 more",
+  "h_castbench": "on 5458b7ab5: 43,673 -> 38,703 casts on 4,815 shared functions (-11.4%), 1.155x -> 1.023x IDA; 952 functions fewer, 0 more; 156 disjoint binaries 400,905 -> 332,946, 0 more",
   "workspace_tests": "4 workspace tests pinned the old spelling and follow it: decompile_all_cli a_load_is_not_printed_after_a_store_into_its_bytes (its compiled round trip passes on the new output) and verify_dwarfstructs nested_struct_members_resolve / union_keeps_every_member_not_just_the_first / same_name_different_size_aggregates_both_survive (gate-off raw reads)"
  }
 }
