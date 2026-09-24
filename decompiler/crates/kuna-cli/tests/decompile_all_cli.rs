@@ -4299,7 +4299,9 @@ fn castsign_function<'a>(listing: &'a str, name: &str) -> &'a str {
 /// -O2, and every build must print what the fixture binary prints.  The -O1
 /// build of the wrap source is checked on `sign_of` and `peek` only: its
 /// arithmetic shapes are register locals, which `signedness` decides and this
-/// option leaves alone.
+/// option leaves alone.  `castsign_eq_x86_64.c` also compares the value for
+/// equality with `3000000000` or `10000000000000000000`, decimal literals whose C
+/// type is wider than the declaration, so those declarations stay unsigned.
 #[test]
 fn a_signed_only_variable_round_trips_through_the_printed_c() {
     const WRAP_FUNCS: &str = "dec_neg,cnt_wrap,spin,count_down,dec_neg32,sign_of,sign_of32,peek";
@@ -4372,12 +4374,60 @@ int main(void) {
   return 0;
 }
 "#;
+    const EQ_FUNCS: &str = "d_eq32,c_eq64,c_ne64,c_or64,c_eq7";
+    const EQ_WANT: &str = "d_eq32   2 1 0\nc_eq64   2 1 0 1 0\nc_ne64   0 1 0 1 0\nc_or64   2 1 0 1 0\n\
+c_eq7    1 2 0 1 0\n";
+    const EQ_MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+static const char *const E[] = {"10000000000000000000", "0x8000000000000001", "5", "0xffffffffffffffff", "0"};
+int main(void) {
+  unsigned int a[2] = {htonl(3000000000u), 0}, b[2] = {htonl(0x80000001u), 0}, c[2] = {htonl(5), 0};
+  printf("d_eq32   %ld %ld %ld\n", F(long, d_eq32)(a, "y"), F(long, d_eq32)(b, "y"), F(long, d_eq32)(c, "y"));
+  printf("c_eq64  ");
+  for (int i = 0; i < 5; i++)
+    printf(" %ld", F(long, c_eq64)(E[i], "y"));
+  printf("\nc_ne64  ");
+  for (int i = 0; i < 5; i++)
+    printf(" %ld", F(long, c_ne64)(E[i], "y"));
+  printf("\nc_or64  ");
+  for (int i = 0; i < 5; i++)
+    printf(" %ld", F(long, c_or64)(E[i], "y"));
+  printf("\nc_eq7    %ld %ld %ld %ld %ld\n", F(long, c_eq7)("0x8000000000000000", "y"), F(long, c_eq7)("7", "y"),
+         F(long, c_eq7)("6", "y"), F(long, c_eq7)("x", "x0xffffffffffffffff"), F(long, c_eq7)("0", "y"));
+  return 0;
+}
+"#;
+    const WIDE: &[&str] = &["d_eq32", "c_eq64", "c_ne64", "c_or64"];
     const WRAPS: &[&str] = &["dec_neg", "cnt_wrap", "spin", "count_down", "dec_neg32"];
     const OLD: &[&str] = &["trim_right", "count_down", "run_len", "word_end", "zext_walk", "both_ways", "halved"];
     // (fixture, functions, main, output, the lines option off prints and what
     // option on prints instead, the functions option on must print unchanged)
     type Case<'a> = (&'a str, &'a str, &'a str, &'a str, &'a [(&'a str, &'a str)], &'a [&'a str]);
-    let cases: [Case; 7] = [
+    let cases: [Case; 9] = [
+        (
+            "castsign_eq_gcc_O0_x86_64",
+            EQ_FUNCS,
+            EQ_MAIN,
+            EQ_WANT,
+            &[
+                ("\n  unsigned long v1; // stack - 0x10\n  \n  v1 = strtoul(a0,NULL,0);\n  if (*a1 == 'x')\n    v1 = strtoul(&a1[1],NULL,0);\n  if (v1 == 7)",
+                 "\n  long v1; // stack - 0x10\n  \n  v1 = strtoul(a0,NULL,0);\n  if (*a1 == 'x')\n    v1 = strtoul(&a1[1],NULL,0);\n  if (v1 == 7)"),
+                ("if ((long)v1 <= -1)", "if (v1 <= -1)"),
+            ],
+            WIDE,
+        ),
+        (
+            "castsign_eq_clang_O0_x86_64",
+            EQ_FUNCS,
+            EQ_MAIN,
+            EQ_WANT,
+            &[
+                ("\n  unsigned long v1; // stack - 0x28\n  \n  v1 = strtoul(a0,NULL,0);\n  if (*a1 == 'x')\n    v1 = strtoul(&a1[1],NULL,0);\n  if (v1 == 7)",
+                 "\n  long v1; // stack - 0x28\n  \n  v1 = strtoul(a0,NULL,0);\n  if (*a1 == 'x')\n    v1 = strtoul(&a1[1],NULL,0);\n  if (v1 == 7)"),
+                ("if ((long)v1 <= -1)", "if (v1 <= -1)"),
+            ],
+            WIDE,
+        ),
         (
             "castsign_wrap_gcc_O0_x86_64",
             WRAP_FUNCS,
@@ -4469,7 +4519,7 @@ int main(void) {
                     std::fs::write(
                         &src,
                         format!(
-                            "#include <stdbool.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n{stdout}\n{main}"
+                            "#include <arpa/inet.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n{stdout}\n{main}"
                         ),
                     )
                     .unwrap();
