@@ -112,7 +112,7 @@
 <stringmatch name="PEBNAMES #5: the segment base is declared as the TEB pointer and keeps its storage comment (every GS reader under on)" min="6" max="6">TEB \*teb; // gs_offset</stringmatch>
 <stringmatch name="PEBNAMES #6: the magic-offset read of BeingDebugged, in the off pass and in the container-less auto pass" min="2" max="2">!\*\(char \*\)\(\*\(int8 \*\)\(v[0-9]+ \+ 0x60\) \+ 2\)</stringmatch>
 <stringmatch name="PEBNAMES #7: the register storage comment survives in every pass" min="9" max="9">; // gs_offset</stringmatch>
-<stringmatch name="PEBNAMES #8: a read past the largest TEB stays an integer addition, not a field of a phantom neighbour" min="1" max="1">\*\(unsigned long long \*\)\(\(int8\)teb \+ 0x18d8\)</stringmatch>
+<stringmatch name="PEBNAMES #8: a read past the largest TEB stays an offset from it, not a field of a phantom neighbour" min="1" max="1">\(\(unsigned long long \*\)teb\)\[0x31b\]</stringmatch>
 <stringmatch name="PEBNAMES #9: no read is split into an index of a neighbouring TEB or PEB" min="0" max="0">(teb|ProcessEnvironmentBlock|Self)\[</stringmatch>
 <stringmatch name="PEBNAMES #10: PEB+0x68 changed meaning between Windows releases and stays offset-named" min="1" max="1">\*\(unsigned long long \*\)&amp;teb-&gt;ProcessEnvironmentBlock-&gt;field_0x68;</stringmatch>
 <stringmatch name="PEBNAMES #11: no version-dependent PEB name is ever printed" min="0" max="0">ApiSetMap|CrossProcessFlags|FreeList</stringmatch>

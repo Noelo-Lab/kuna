@@ -189,7 +189,7 @@ fn union_keeps_every_member_not_just_the_first() {
         return;
     };
     assert!(
-        off.contains("*(float4 *)u") && off.contains("*(char *)((int8)u + 2)"),
+        off.contains("*(float4 *)u") && off.contains("((char *)u)[2]"),
         "gate off should reproduce the raw reads, got:\n{off}"
     );
     assert!(
@@ -207,7 +207,7 @@ fn nested_struct_members_resolve() {
         return;
     };
     assert!(
-        off.contains("*(int4 *)((int8)n + 4)"),
+        off.contains("((int4 *)n)[1]"),
         "gate off should reproduce the cast-and-offset, got:\n{off}"
     );
     assert!(
@@ -256,7 +256,7 @@ fn same_name_different_size_aggregates_both_survive() {
         return;
     };
     assert!(
-        off.contains("*(int4 *)((int8)s + 8)"),
+        off.contains("((int4 *)s)[2]"),
         "gate off should reproduce the cast-and-offset, got:\n{off}"
     );
     assert!(

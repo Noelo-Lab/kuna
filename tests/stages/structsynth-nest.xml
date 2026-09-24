@@ -28,7 +28,7 @@
 
     With option structsynth param (asserts 1 and 2): the parameter is a
     struct_N, but every read through a loaded field is raw offset arithmetic
-    again, (int8)*(int4 *)((int8)v1 + 0xc) and (unsigned long *)*v2.
+    again, (int8)((int4 *)v1)[3] and (unsigned long *)*v2.
 
     With option structsynth nest (asserts 3 to 8): the loads of o->in are
     measured as one record, {0: int8, 8: int4, 0xc: int4}, minted as struct_2,
@@ -79,7 +79,7 @@
   <com>print C types</com>
   <com>quit</com>
 </script>
-<stringmatch name="STRUCTSYNTH-NEST #1: param reads a loaded field as raw offsets" min="1" max="1">\(int8\)\*\(int4 \*\)\(\(int8\)v1 \+ 0xc\)</stringmatch>
+<stringmatch name="STRUCTSYNTH-NEST #1: param reads a loaded field as raw offsets" min="1" max="1">\(int8\)\(\(int4 \*\)v1\)\[3\]</stringmatch>
 <stringmatch name="STRUCTSYNTH-NEST #2: param loads a tree node through a cast" min="4" max="4">\(unsigned long \*\)\*v2</stringmatch>
 <stringmatch name="STRUCTSYNTH-NEST #3: nest reads the loaded record through its fields" min="1" max="1">\(int8\)v1-&gt;field_0x8 \+ v1-&gt;field_0x0 \+ \(int8\)v1-&gt;field_0xc</stringmatch>
 <stringmatch name="STRUCTSYNTH-NEST #4: the outer field points at the nested record" min="1" max="1">struct_2 \*field_0x0;</stringmatch>

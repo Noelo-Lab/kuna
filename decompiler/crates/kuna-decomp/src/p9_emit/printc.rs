@@ -10169,6 +10169,16 @@ pub(crate) fn decl_type_representative(
 /// type, or a local's declaration type. `None` for an expression.
 fn switch_variable_type(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
     let vid = fd.obank().get(op)?.get_in(0)?;
+    declared_variable_type(fd, arch.decl_high_type, vid)
+}
+
+/// The type the printed C declares the variable `vid` belongs to: a parameter's
+/// prototype type, or a local's declaration type. `None` for an expression.
+pub(crate) fn declared_variable_type(
+    fd: &Funcdata,
+    decl_high_type: bool,
+    vid: crate::context::VarnodeId,
+) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
     let vn = fd.vbank().get(vid)?;
     if vn.is_implied() {
         return None;
@@ -10189,7 +10199,7 @@ fn switch_variable_type(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<
             }
         }
     }
-    let type_rep = if arch.decl_high_type {
+    let type_rep = if decl_high_type {
         crate::kuna_declhightype::type_representative(fd, hid).filter(|_| crate::kuna_declhightype::declares_from_high(fd, hid))
     } else {
         None

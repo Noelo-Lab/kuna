@@ -675,7 +675,10 @@ tail ends in `return`, the duplicated call is reached on exactly one
 structured path — no convergence proof is needed. *Bounds/failure:* ≤ 3
 blocks, ≤ 12 printed ops, at most `kuna_taildup.rs (MAX_TAIL_CALLS)` = 2
 calls (angr `ReturnDuplicatorBase.max_calls_in_regions = 2` — the budget
-that defines this pass), `STORE` always declines. Flipped on by DIV-14.
+that defines this pass), `STORE` always declines. Flipped on by DIV-14. The
+op count includes the casts chapter 09's `ActionSetCasts` inserted, since that
+pass runs first, so a cast policy that prints fewer casts (`castarith`) can
+bring a tail within the bound.
 
 ### Releasing a label the duplication passes converted away
 

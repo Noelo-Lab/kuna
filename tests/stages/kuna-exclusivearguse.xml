@@ -72,5 +72,5 @@
 <stringmatch name="EXCLUSIVEARGUSE #2: on, the write cursor and the source byte both reach the call" min="1" max="1">append_slow\(a0,v[0-9]+,&amp;table\[a1\]\)</stringmatch>
 <stringmatch name="EXCLUSIVEARGUSE #3: the loop control keeps its one argument in BOTH passes, so a back edge still counts the dereference as competing" min="2" max="2">append_slow\(a0\)</stringmatch>
 <stringmatch name="EXCLUSIVEARGUSE #4: append's fast path still writes the byte it read in BOTH passes, so only the argument list moved" min="2" max="2">= table\[a1\];</stringmatch>
-<stringmatch name="EXCLUSIVEARGUSE #5: the loop control's fast path is untouched in BOTH passes" min="2" max="2">\*\*\(char \*\*\)\(\(int8\)a0 \+ 8\) = \*a1;</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #5: the loop control's fast path is untouched in BOTH passes" min="2" max="2">\*\(\(char \*\*\)a0\)\[1\] = \*a1;</stringmatch>
 </decompilertest>

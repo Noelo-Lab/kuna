@@ -501,7 +501,7 @@ c3
 <stringmatch name="FMTSTATIC #32: no switch call takes the va_list's slots" min="0" max="0">,v2,0x20,</stringmatch>
 <stringmatch name="FMTSTATIC #33: a scanf destination in the outgoing argument slot is read back after the call" min="3" max="3">return v1 \+ 1;</stringmatch>
 <stringmatch name="FMTSTATIC #34: both %c destinations are read back after the call" min="3" max="3">return \(int4\)v2\._6_1_ \+ v2\._7_1_ \* 3;</stringmatch>
-<stringmatch name="FMTSTATIC #35: the default and full type the %c destinations char *" min="2" max="2">__isoc99_sscanf\(a0,"%c %c",\(char \*\)\(\(int8\)&amp;v2 \+ 7\),\(char \*\)\(\(int8\)&amp;v2 \+ 6\)\);</stringmatch>
+<stringmatch name="FMTSTATIC #35: the default and full type the %c destinations char *" min="2" max="2">__isoc99_sscanf\(a0,"%c %c",&amp;\(\(char \*\)&amp;v2\)\[7\],&amp;\(\(char \*\)&amp;v2\)\[6\]\);</stringmatch>
 <stringmatch name="FMTSTATIC #36: read_int does not return the 5 it stored before the call, plus one" min="0" max="0">return 6;</stringmatch>
 <stringmatch name="FMTSTATIC #37: the default and full keep show9's ninth double, passed on the stack" min="2" max="2">printf\("%f %f %f %f %f %f %f %f %f %d\\n",a0,a1,a2,a3,a4,a5,a6,a7,v1,a8\);</stringmatch>
 <stringmatch name="FMTSTATIC #38: the default and full give show9 its doubles and int" min="2" max="2">void show9\(float8 a0,float8 a1,float8 a2,float8 a3,float8 a4,float8 a5,float8 a6,float8 a7,int4 a8\)</stringmatch>

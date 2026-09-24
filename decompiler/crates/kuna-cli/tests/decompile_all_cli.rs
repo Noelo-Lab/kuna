@@ -4655,6 +4655,260 @@ fn castsign_leaves_a_locked_declaration_alone() {
         }
     }
     let _ = std::fs::remove_dir_all(&dir);
+/// A pointer plus a constant that is a whole number of elements prints as
+/// pointer arithmetic under `castarith`, `((unsigned int *)a0)[0x2b]` with one
+/// cast, instead of the integer round trip `*(unsigned int *)((long)a0 +
+/// 0xac)`.  The round trip compiles every function between the `tested`
+/// markers of `castarith_x86_64.c` exactly as printed, between the fixture's
+/// own prelude and `main`, for the gcc -O0, clang -O0 and gcc -O2 builds with
+/// the option on and off, and checks the program prints what the binary does:
+/// loads and stores of 1, 2, 4 and 8 bytes signed and unsigned, a double, a
+/// negative offset, an offset that is not whole elements (kept), a pointer
+/// passed on, compared, and stepped in a loop, a base typed as another pointer,
+/// a record base, which keeps its fields, loaded bytes and words widened under
+/// the subscript, an integer base, which keeps the integer form, and negative
+/// indexes of 2^31 elements or more, which keep it too: C reads the literal
+/// `0x80000000` as an `unsigned int`, so `p[-0x80000000]` would point forward.
+/// `main` reads those through a 48 GiB `MAP_NORESERVE` map, and prints the same
+/// line in the binary and the round trip when the map is refused.
+#[test]
+fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
+    let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let src = std::fs::read_to_string(fx.join("castarith_x86_64.c")).unwrap();
+    let section = |from: &str, to: &str| -> String {
+        let tail = src.split(from).nth(1).unwrap();
+        tail.split(to).next().unwrap().to_string()
+    };
+    let prelude = section("/* prelude */", "/* tested */");
+    let tested_src = section("/* tested */", "/* main */");
+    let main = src.split("/* main */").nth(1).unwrap().to_string();
+    let tested: Vec<&str> = tested_src
+        .lines()
+        .filter_map(|l| l.strip_prefix("KEEP void "))
+        .filter_map(|l| l.split('(').next())
+        .collect();
+    assert!(tested.len() >= 24, "{tested:?}");
+    let sp = specs();
+    let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
+    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
+        let bin = fx.join(format!("castarith_{build}_x86_64"));
+        let bin = bin.to_str().unwrap();
+        for arm in ["on", "off"] {
+            let args = [
+                "decompile-all", bin, "--sleighpath", sp.as_str(),
+                "--option", "structdefs", "on", "--option", "castarith", arm,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("castarith round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            let mut body = String::new();
+            let mut seen = 0;
+            for part in stdout.split("// Function: ").skip(1) {
+                let name = part.split(' ').next().unwrap_or("");
+                if tested.contains(&name) {
+                    body.push_str(part.split_once('\n').map(|(_, b)| b).unwrap_or(""));
+                    seen += 1;
+                }
+            }
+            assert_eq!(seen, tested.len(), "{build} {arm}: missing a tested function\n{stdout}");
+            let want: &[&str] = if arm == "on" {
+                &[
+                    "((short *)a0)[-0xd]",
+                    "take(&((unsigned int *)a0)[4]);",
+                    "((long *)a0)[0x11] = a1 * 7;",
+                    "((unsigned int *)a0)[-1] = 0xfeed;",
+                    "((unsigned short *)a0)[3]",
+                    "&((char *)",
+                    "*(unsigned int *)((long)a0 + 0x6a)",
+                    "a1 <= (int)((unsigned char *)a0)[0x11]",
+                    "((unsigned short *)a0)[0x24] << 4",
+                    "long *)a0)[-0x7fffffff]",
+                    "long *)a0)[0x80000000]",
+                    "long *)((long)a0 + -0x400000000)",
+                    "long *)((long)a0 + -0x7fffffff8)",
+                    "*(int *)((long)a0 + -0x200000000)",
+                    "*(short *)((long)a0 + -0x100000000)",
+                ]
+            } else {
+                &["take((unsigned int *)((long)a0 + 0x10));", "*(unsigned int *)((long)a0 + 0x6a)"]
+            };
+            for w in want {
+                assert!(body.contains(w), "{build} castarith {arm}: expected `{w}`\n{body}");
+            }
+            for wide in ["[-0x80000000]", "[-0xffffffff]"] {
+                assert!(
+                    !body.contains(wide),
+                    "{build} castarith {arm}: C reads the index `{wide}` as unsigned, so it points forward\n{body}"
+                );
+            }
+            assert!(
+                !body.contains("(unsigned int)((unsigned char *)"),
+                "{build} castarith {arm}: a widening castimplied leaves out came back over a subscript\n{body}"
+            );
+            if !runs_here || !have_cc {
+                eprintln!("castarith round trip: no x86-64 host or no `cc`, spelling checked only");
+                continue;
+            }
+            let expected = Command::new(bin).output().expect("run the fixture");
+            let dir = std::env::temp_dir()
+                .join(format!("kuna-castarith-rt-{}-{build}-{arm}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let c = dir.join("rt.c");
+            let exe = dir.join("rt");
+            std::fs::write(
+                &c,
+                format!("#include <stdio.h>\n#include <string.h>\n#include <stdbool.h>\n{prelude}\n{body}\n{main}"),
+            )
+            .unwrap();
+            let cc = Command::new("cc")
+                .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), c.to_str().unwrap()])
+                .output()
+                .expect("spawn cc");
+            assert!(
+                cc.status.success(),
+                "{build} castarith {arm}: the printed functions did not compile:\n{}\n{body}",
+                String::from_utf8_lossy(&cc.stderr)
+            );
+            let got = Command::new(&exe).output().expect("run the round trip");
+            let _ = std::fs::remove_dir_all(&dir);
+            assert_eq!(
+                String::from_utf8_lossy(&got.stdout),
+                String::from_utf8_lossy(&expected.stdout),
+                "{build} castarith {arm}: the printed C computes something else\n{body}"
+            );
+        }
+    }
+}
+
+/// An enum element keeps the integer form under `castarith`.  kuna prints every
+/// enum as a plain `enum`, which C sizes as an `int`, while the fixture's
+/// packed enums are 1 and 2 bytes in the binary (as are `-fshort-enums` enums
+/// and a C++ `enum class : uint8_t`), so `((color *)p)[3]` would read 12 bytes
+/// past `p` instead of 3.  The round trip compiles kuna's own enum typedefs,
+/// the prelude of `castarith_enum_x86_64.c` (whose callees read the width the
+/// binary passes), the printed functions between its markers and its `main`,
+/// with the option on and off, and checks the program prints what the binary
+/// does.  The C++ build is checked for spelling only.
+#[test]
+fn an_enum_element_keeps_the_integer_form_and_round_trips() {
+    let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let src = std::fs::read_to_string(fx.join("castarith_enum_x86_64.c")).unwrap();
+    let section = |from: &str, to: &str| -> String {
+        let tail = src.split(from).nth(1).unwrap();
+        tail.split(to).next().unwrap().to_string()
+    };
+    let prelude = section("/* prelude */", "/* tested */");
+    let tested_src = section("/* tested */", "/* main */");
+    let main = src.split("/* main */").nth(1).unwrap().to_string();
+    let tested: Vec<&str> = tested_src
+        .lines()
+        .filter_map(|l| l.strip_prefix("KEEP void "))
+        .filter_map(|l| l.split('(').next())
+        .collect();
+    assert_eq!(tested.len(), 4, "{tested:?}");
+    let sp = specs();
+    let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
+    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    let decompile = |bin: &str, arm: &str| -> Option<String> {
+        let args = [
+            "decompile-all", bin, "--sleighpath", sp.as_str(),
+            "--option", "structdefs", "on", "--option", "castarith", arm,
+        ];
+        let (stdout, stderr, ok) = run_kuna(&args);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("castarith enum round trip: skipping (no `.sla`; run `make specs`)");
+            return None;
+        }
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        Some(stdout)
+    };
+    let cxx = fx.join("castarith_enumclass_gpp_O2_x86_64");
+    let Some(out) = decompile(cxx.to_str().unwrap(), "on") else { return };
+    let rd = out.split("// Function: rd_enum_class ").nth(1).expect("rd_enum_class printed");
+    let rd = rd.split("// Function: ").next().unwrap();
+    for w in ["use_kind(*(Kind *)((long)p + 5));", "use_op(*(Op *)((long)p + 6));"] {
+        assert!(rd.contains(w), "enum class: expected `{w}`\n{rd}");
+    }
+    for build in ["gcc_O0", "gcc_O2"] {
+        let bin = fx.join(format!("castarith_enum_{build}_x86_64"));
+        let bin = bin.to_str().unwrap();
+        for arm in ["on", "off"] {
+            let Some(stdout) = decompile(bin, arm) else { return };
+            let mut types: Vec<String> = Vec::new();
+            let mut body = String::new();
+            let mut seen = 0;
+            for part in stdout.split("// Function: ").skip(1) {
+                let name = part.split(' ').next().unwrap_or("");
+                if !tested.contains(&name) {
+                    continue;
+                }
+                seen += 1;
+                let mut block: Option<String> = None;
+                for line in part.lines().skip(1) {
+                    if let Some(b) = block.as_mut() {
+                        b.push_str(line);
+                        b.push('\n');
+                        if line.starts_with('}') && line.ends_with(';') {
+                            let b = block.take().unwrap();
+                            if !types.contains(&b) {
+                                types.push(b);
+                            }
+                        }
+                    } else if line.starts_with("typedef") && line.ends_with('{') {
+                        block = Some(format!("{line}\n"));
+                    } else {
+                        body.push_str(line);
+                        body.push('\n');
+                    }
+                }
+            }
+            assert_eq!(seen, tested.len(), "{build} {arm}: missing a tested function\n{stdout}");
+            assert_eq!(types.len(), 3, "{build} {arm}: expected kuna's color, mark and level\n{stdout}");
+            for w in [
+                "use_color(*(color *)((long)p + 3));",
+                "use_mark(*(mark *)((long)p + 6));",
+                "use_level(*(level *)((long)p + 8));",
+                "set_color((color *)((long)p + 5));",
+            ] {
+                assert!(body.contains(w), "{build} castarith {arm}: expected `{w}`\n{body}");
+            }
+            if !runs_here || !have_cc {
+                eprintln!("castarith enum round trip: no x86-64 host or no `cc`, spelling checked only");
+                continue;
+            }
+            let expected = Command::new(bin).output().expect("run the fixture");
+            let dir = std::env::temp_dir()
+                .join(format!("kuna-castarith-enum-rt-{}-{build}-{arm}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let c = dir.join("rt.c");
+            let exe = dir.join("rt");
+            std::fs::write(
+                &c,
+                format!("#include <stdio.h>\n#define KUNA_RT\n{}\n{prelude}\n{body}\n{main}", types.concat()),
+            )
+            .unwrap();
+            let cc = Command::new("cc")
+                .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), c.to_str().unwrap()])
+                .output()
+                .expect("spawn cc");
+            assert!(
+                cc.status.success(),
+                "{build} castarith {arm}: the printed functions did not compile:\n{}\n{body}",
+                String::from_utf8_lossy(&cc.stderr)
+            );
+            let got = Command::new(&exe).output().expect("run the round trip");
+            let _ = std::fs::remove_dir_all(&dir);
+            assert_eq!(
+                String::from_utf8_lossy(&got.stdout),
+                String::from_utf8_lossy(&expected.stdout),
+                "{build} castarith {arm}: the printed C computes something else\n{body}"
+            );
+        }
+    }
 }
 
 /// A call whose result meets a comparison through a non-short-circuit `&` is
@@ -4770,11 +5024,11 @@ fn a_load_is_not_printed_after_a_store_into_its_bytes() {
         rest[..rest.find("// Function:").unwrap_or(rest.len())].to_string()
     };
     let ordered = [
-        ("inside", "*(unsigned int *)((long)a0 + 7);", "*(char *)((long)a0 + 8) = "),
+        ("inside", "*(unsigned int *)((long)a0 + 7);", "((char *)a0)[8] = "),
         ("below", "*(unsigned int *)((long)a0 + 7);", "*(unsigned int *)((long)a0 + 5) = "),
         ("indexed", "*(unsigned long *)(a0 + a1 * 4);", "*(unsigned int *)(a0 + 4 + a1 * 4) = "),
-        ("after", "*(char *)((long)a0 + 0xb) = ", "return *(unsigned int *)((long)a0 + 7);"),
-        ("before", "*(char *)((long)a0 + 6) = ", "return *(unsigned int *)((long)a0 + 7);"),
+        ("after", "((char *)a0)[0xb] = ", "return *(unsigned int *)((long)a0 + 7);"),
+        ("before", "((char *)a0)[6] = ", "return *(unsigned int *)((long)a0 + 7);"),
         ("next", "*(unsigned int *)(a0 + 4 + a1 * 4) = ", "return *(unsigned int *)(a0 + a1 * 4);"),
     ];
     for (name, first, second) in ordered {

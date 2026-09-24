@@ -56,5 +56,5 @@
   <com>quit</com>
 </script>
 <stringmatch name="FUNCPTRALIGN #1: the SLEIGH ISA-mode bit-clear never reaches the emitted C" min="0" max="0">0xfffffffe</stringmatch>
-<stringmatch name="FUNCPTRALIGN #2: the callee field recovers as code ** and the call needs no cast" min="2" max="2">\(\*\*\(code \*\*\)</stringmatch>
+<stringmatch name="FUNCPTRALIGN #2: the callee field recovers as code ** and the call needs no cast" min="2" max="2">\(\*\(\(code \*\*\)a0\)\[1\]\)\(a0\)</stringmatch>
 </decompilertest>

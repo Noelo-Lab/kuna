@@ -340,7 +340,7 @@ c3
 <stringmatch name="LIBCTYPES #31: off, the IMPORTED obstack entry point says nothing either" min="1" max="1">void grow_import\(void\)</stringmatch>
 <stringmatch name="LIBCTYPES #32: on, an import takes glibc's own spelling -- `int`, where the linked-in gnulib copy of #28 takes `size_t`" min="1" max="1">void grow_import\(obstack \*a0,int4 a1\)</stringmatch>
 <stringmatch name="LIBCTYPES #33: an obstack at the head of a larger object -- the function reads past the obstack's 88 bytes, so the pointer is the object's" min="1" max="1">void kws_grow\(void \*a0,int4 a1\)</stringmatch>
-<stringmatch name="LIBCTYPES #34: and a member past the obstack is an offset from it, not an element of an obstack array" min="1" max="1">\*\(int8 \*\)\(\(int8\)a0 \+ 0x970\) = \(int8\)a1;</stringmatch>
+<stringmatch name="LIBCTYPES #34: and a member past the obstack is an offset from it, not an element of an obstack array" min="1" max="1">\(\(int8 \*\)a0\)\[0x12e\] = \(int8\)a1;</stringmatch>
 <stringmatch name="LIBCTYPES #35: the same with a pthread_mutex_t at the head of an instance record" min="1" max="1">unsigned int inst_refs\(void \*a0\)</stringmatch>
 <stringmatch name="LIBCTYPES #36: the control -- a pointer that stays inside the obstack keeps the name" min="1" max="1">void grow_in\(obstack \*a0,int4 a1\)</stringmatch>
 <stringmatch name="LIBCTYPES #37: on i386 the x86-64 widths are refused, so the timespec slot no longer swallows the local beside it" min="1" max="1">v4 = a0 \+ 2;</stringmatch>

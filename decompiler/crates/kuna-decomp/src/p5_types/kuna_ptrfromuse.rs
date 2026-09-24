@@ -397,6 +397,13 @@ pub(crate) fn constant_is_global_base(data: &Funcdata, op: OpId, cvn: VarnodeId)
     matches!(const_base_evidence(data, op, cvn), BaseEvidence::Object)
 }
 
+/// Could the constant `cvn` of `op` be the base of its `INT_ADD` -- a global
+/// object, or an address-like value that names nothing?  Shared with
+/// [`crate::kuna_castarith`], which keeps such a sum in its integer form.
+pub(crate) fn constant_may_be_global_base(data: &Funcdata, op: OpId, cvn: VarnodeId) -> bool {
+    !matches!(const_base_evidence(data, op, cvn), BaseEvidence::No)
+}
+
 /// Is `cand` more specific than `cur` in the `getLocalType` fold?  The seed is one
 /// more vote, never a replacement — a `FILE *` (`SUB_PTR_STRUCT`) keeps its place.
 pub fn folds_over(cand: &Rc<Datatype>, cur: &Rc<Datatype>) -> bool {

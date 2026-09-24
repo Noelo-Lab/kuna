@@ -30,12 +30,12 @@
       "long peek_used\\((struct_\\d+) \\*a0\\)\\n\\{\\n  return a0->field_0x8 \\* 3;[\\s\\S]*long report\\(\\1 \\*a0\\)",
       "bool same\\(char \\*a0,char \\*a1\\)",
       "unsigned long get_cap\\(struct_\\d+ \\*a0\\)\\n\\{\\n  return a0->field_0x18;",
-      "bool by_used\\(void \\*a0,void \\*a1\\)\\n\\{\\n  return \\*\\(long \\*\\)\\(\\(long\\)a0 \\+ 8\\) < \\*\\(long \\*\\)\\(\\(long\\)a1 \\+ 8\\);"
+      "bool by_used\\(void \\*a0,void \\*a1\\)\\n\\{\\n  return \\(\\(long \\*\\)a0\\)\\[1\\] < \\(\\(long \\*\\)a1\\)\\[1\\];"
     ],
     "stdout_absent": [
       "a0\\[4\\] = '"
     ]
   },
   "notes": "DEFAULT (`fields`): as `types`, and the directly-called getter `get_cap` reads its one field as a record field. `peek_used`'s own one-field record gives way to the one `report` passes. `by_used` reads one field of each argument exactly like a getter, but its address goes to qsort, so its callers are unknown and both parameters stay `void *`.",
-  "probe_id": "a-0b1811b2619f"
+  "probe_id": "a-1d916ed5d33b"
 }

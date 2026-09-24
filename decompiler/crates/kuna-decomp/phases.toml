@@ -4302,6 +4302,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "castarith"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "cast-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-castarith"
+summary = "Print a pointer plus a whole number of elements as pointer arithmetic instead of an integer round trip. A pointer plus a constant byte offset reaches `ActionSetCasts` as a plain `INT_ADD` whenever P5 could build no `PTRSUB` or `PTRADD` for it -- a `void *` base has no field at the offset and no element size -- and the ported rules price an `INT_ADD` as integer arithmetic: `getInputCast` converts the pointer to `long` on the way in and `castOutput` converts the sum back to a pointer on the way out, so a 4-byte read at +0xac prints `*(unsigned int *)((long)a0 + 0xac)`, two casts for one read. The cast census measured this as the largest single source of kuna's casts (3,771 on the 4,815 functions kuna and IDA share; IDA prints the shape 0 times). When on, `kuna_castarith::rewrite` runs inside the cast pass, right after the PTRADD/PTRSUB repairs, on every `INT_ADD` of a pointer-typed value and a constant whose result is used as a `T *`. `T` is the value a lone LOAD reads or a lone STORE writes through the sum (the sum's own pointee when that is the same type or an integer of the same width), otherwise the sum's own pointee, and a `void` pointee counts in bytes for a value that stays in the function. If the offset is a whole number of `T`s, the op becomes `PTRADD(base, #k, #sizeof T)` over a `(T *)` cast of the base -- no cast when the base is a variable whose printed declaration points at `T` or at an integer of its width, and a retargeted cast when the base is itself an implied cast read only here -- and the printer renders it the way it renders every `PTRADD`: `((unsigned int *)a0)[0x2b]` under a dereference, `&((T *)p)[k]` as a value (`(T *)p + k` with `arraynotation off`). The value is identical: `k * sizeof(T)` is the original offset, the base is converted pointer to pointer with no integer in between, the element is the access width, C's `sizeof` of the printed `T` is that same width, and the printed index reads back as `k`. The integer form stays wherever the printed C could convert a value instead: an enum element (kuna prints every enum as a plain `enum`, which C sizes as an `int`, while a packed enum, `-fshort-enums` or a C++ `enum class : uint8_t` is 1 or 2 bytes in the binary, so `((color *)p)[3]` would read 12 bytes past `p`), an element the target's C data model has no type of that exact width for (`long double`, a 16-byte integer), a negative index of 2^31 elements or more (C types the literal `0x80000000` as `unsigned int`, so `p[-0x80000000]` would index forward, while the integer form's byte offset is a `long`), an offset that is not a whole number of elements, a variable index, an aggregate or padded element, a word-addressed space, a sum read as an integer, an address several accesses share, a store of a value the pass has not typed yet (unless its opcode fixes the kind), a `void *` sum passed to a call or returned (its `char *` would reach the whole-program prototype votes), and a constant that names a global or is address-like beside an integer cast to a pointer (`table[i]`). Every output language but C is untouched. One structuring decision can follow: `taildup` counts casts in its return-tail budget and runs after the cast pass, so a tail the fewer casts bring within the budget is duplicated (`// return-dupe`) instead of reached by a `goto`."
+use_when = "On by default: a `void *` or wrongly-sized base read at constant offsets prints one cast per access (`((unsigned int *)a0)[0x2b]`) instead of two (`*(unsigned int *)((long)a0 + 0xac)`), and a base already declared as the accessed pointer prints none (`a0[0xf]`). Turn it off to see upstream Ghidra's spelling, which keeps the byte offset visible; the index shown by the default is the offset divided by the element size. It never fires on a record base, which already prints `p->field`, and a struct pointer read past its last field is indexed like any other base."
+example = "option castarith off"
+source_decompiler = "ida"
+inspiration = "IDA's Hex-Rays never converts a pointer to an integer to add an offset: it prints `*((unsigned int *)a1 + 43)` (one cast) for a typed base, and `a1[15]` when the pointee already has the access width (none). This rule reaches the same arithmetic through Ghidra's own `PTRADD`, rendered by the existing printer, so the choice between `((T *)p)[k]` and `(T *)p + k` stays with `arraynotation`. It does not copy IDA's way of avoiding the cast, which is to type 52% of parameters as a 64-bit integer: the `void *` declaration stays."
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "*(unsigned int *)((long)a0 + 0xac)|every read through one parameter is a cast to (long) and back|(char *)((long)v4 + 0x10) assigned to a pointer variable|(void *)((long)a0 + 8) passed to a callee|two casts for one field read where IDA prints one"
+live_field = "cast_arith"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "ptrfromuse"
 values = "off|byte|void"
 default = "void"
