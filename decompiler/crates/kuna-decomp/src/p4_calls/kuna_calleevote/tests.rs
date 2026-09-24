@@ -354,3 +354,16 @@ fn a_callers_argument_vector_replaces_a_headless_record_only_under_the_rule() {
     l.own.insert(CALLEE, vec![typed(&r, 0x38, &rec)]);
     assert!(decide_ledger_under(&l, 8, true, &all_calls(&l)).is_empty());
 }
+
+/// (kuna `structheadless`) A record another function synthesized is one more
+/// partial view: the callee's own headless record stands against it, while a
+/// `void *` parameter still takes it.
+#[test]
+fn a_callers_synthesized_record_does_not_replace_a_headless_record() {
+    let theirs = ptr_to(headless("struct_20"));
+    let mut l = ledger(&[(0x6600, Rc::clone(&theirs))]);
+    let r = reg();
+    assert_eq!(decide_ledger_under(&l, 8, true, &all_calls(&l)).len(), 1);
+    l.own.insert(CALLEE, vec![typed(&r, 0x38, &ptr_to(headless("struct_19")))]);
+    assert!(decide_ledger_under(&l, 8, true, &all_calls(&l)).is_empty());
+}

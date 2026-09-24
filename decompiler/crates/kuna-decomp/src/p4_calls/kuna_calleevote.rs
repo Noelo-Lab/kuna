@@ -246,8 +246,10 @@ pub fn uncommitted(ct: &Datatype, ptr_size: int4) -> bool {
 }
 
 /// [`uncommitted`], and with `headless` (`structheadless closed`) a record
-/// synthesized from reads past its start too: the callers' type replaces the
-/// callee's partial view, as it replaces a lone field's.
+/// synthesized from reads past its start too. What replaces that partial view
+/// is a type the callers state from outside the recovery -- a `char **`, a
+/// `char *`, a named record -- and never another function's synthesized record,
+/// which is one more partial view ([`decide_ledger_under`]).
 pub fn uncommitted_under(ct: &Datatype, ptr_size: int4, headless: bool) -> bool {
     match ct.get_metatype() {
         type_metatype::TYPE_PTR => {
@@ -463,7 +465,9 @@ pub fn decide_ledger_under(
                 eprintln!("[calleevote] 0x{:x} param {j} ({}@{:x}:{}) callers {:?} -> {}", key.1, spell(&p.ct), p.addr.get_offset(), p.size, seen, all && agreed.is_some());
             }
             if let (true, Some(ct)) = (all, agreed) {
-                inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame });
+                if uncommitted(&p.ct, ptr_size) || crate::kuna_structheadless::gives_a_pointee(&ct) {
+                    inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame });
+                }
             }
         }
         if inputs.is_empty() {
@@ -546,8 +550,10 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
     }
     let want = stated.at(v.get_addr(), v.get_size())?;
     let ptr_size = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
-    let headless = data.get_arch().struct_headless.fires();
-    if !uncommitted_under(ct, ptr_size, headless) || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
+    let open = uncommitted(ct, ptr_size)
+        || (uncommitted_under(ct, ptr_size, data.get_arch().struct_headless.fires())
+            && crate::kuna_structheadless::gives_a_pointee(&want.ct));
+    if !open || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
         return None;
     }
     if want.frame && crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct) {
