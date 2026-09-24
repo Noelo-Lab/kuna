@@ -103,68 +103,123 @@ view: no address formed at or past the end of every access (`points_past`); cp's
 the first access are `undefined1` filler. Such a function asks for the one extra
 propagation pass a closed lone field already asks for.
 
-Two call-site guards, both measured into the design:
+Four guards, all measured into the design:
 
-* **A declared named record outranks a callee's synthesized one.** shadow
-  `newgrp`'s `main` holds `getgrnam`'s `group *` and hands it to a function that
-  reads the group past its start; that callee's record retyped the variable
-  `struct_2 *` (type_match 0.8261 -> 0.7826 on the function) until the vote was
-  refused there.
+* **A type from outside the recovery outranks a headless record.** coreutils
+  `tail`'s `parse_obsolete_option (argc, argv, n_units)` reads only `argv[1]`
+  and `argv[2]`, so its first decompile under `closed` took a record, and
+  `calleevote` never voted on it: it votes only on a parameter the callee left
+  as `void *`, an integer or a one-field record. A headless record is now open to
+  the vote too, for a `char *`, a `char **` or a declared record every caller
+  passes, and a parameter that took its callers' type is never a headless record
+  (`admits`). A caller's synthesized record does not replace one: that is one
+  more partial view, and letting it in spent the vote's redo budget on
+  record-for-record swaps (tar -O2-noinline declined twelve redos against four
+  and lost `decode_timespec`'s `char **arg_lim`). Before the fix, with #719's
+  redo budget in, the option lost `parse_obsolete_option` at -O0 (1.0 -> .923).
+* **A declared pointer outranks a callee's synthesized record at a call site.**
+  shadow `newgrp`'s `main` holds `getgrnam`'s `group *` and hands it to a
+  function that reads the group past its start, and `tail`'s `main` hands
+  `getopt_long` the `argv` it passes to `parse_obsolete_option`; the callee's
+  record retyped the caller's variable (`struct_2 *`, `struct_19 *argv`) until
+  any declared pointer with a pointee refused the vote
+  (`yields_to_a_declared_pointer`).
+* **A headless record that types a dereferenced member as a word is refused as
+  a vote.** tar's `wsnode_remove` reads `struct wordsplit` only at `ws_head` and
+  `ws_tail` and copies them as words; `wordsplit_varexp` and `wordsplit_cmdexp`,
+  which walk the node list from `ws_head`, took that record at the calls they
+  make and declared their node pointer `int8`. Applied to every synthesized
+  record the refusal also refused offset-0 records a function was right to take
+  (grep -O2 `kwsprep` +8 casts, +35 over the 45 binaries), so it is kept to
+  headless records.
 * **A refused headless record falls back to `void *`.** A headless record is the
   callee's partial view; five of `fts_build`'s callees each read their own part of
   one `FTSENT`, the caller's reads disagree with every one, the votes were
   refused, and the caller's `v21 = a0->field_0x0` fell from `void *` to `long` --
   a cast removed by weakening a type. With the fallback, pointer-to-integer
-  declaration changes over the 45 binaries fall from 59 to 12. The first version
-  applied it to any synthesized record, which strengthened integers the
-  option-off arm never typed (`find`'s predicate walk became `void *` and gained
-  27 casts), so it stands in for headless records only.
+  declaration changes over the 45 binaries fell from 59 to 12 (8 now, one of them
+  a real loss). The first version applied it to any synthesized record, which
+  strengthened integers the option-off arm never typed (`find`'s predicate walk
+  became `void *` and gained 27 casts), so it stands in for headless records only.
 
-## Results (both arms of one build, e2071591f, on main dbe854ba3)
+## Results (both arms of one build, ce4e278b2, on main b3878d32e)
+
+main b3878d32e has castimplied, castarith and castsign on, so the option-off arm
+already prints a `void *` base's reads as one cast each (`((unsigned int
+*)a0)[0x2b]` where the first measurement, on dbe854ba3, had `*(unsigned int
+*)((long)a0 + 0xac)`); the option removes those casts, and the count it removes
+is about half what it was.
 
 | instrument | off | closed |
 |---|---|---|
-| castbench, 4,815 shared functions | 45,126 casts, 236.8/kloc, 1.193 x IDA | **42,008**, 220.4/kloc, **1.111 x IDA** (-3,118, -6.9%) |
-| castbench x IDA by opt | O0 1.234, O2 1.208, O2-noinline 1.135 | O0 1.115, O2 1.159, O2-noinline 1.053 |
-| castbench functions | -- | 221 fewer (-3,150), 20 more (+32) |
-| 444-slice typesweep (pinned metric) | 1,609 perfect, mean .3688 | 1,609 perfect, mean .3687; 1 improved, 2 worse, 0 perfect lost |
-| decbench#93 replay | 2,181 credited perfect, mean .4532 | **2,305** (+124), mean .4691; +607 credited variables |
-| layout, 8 builds, fields only (`structsynth param`) | P .8713 (880/1010), R .0932, F1 .1684 | P .8298 (1068/1287), R .1131, F1 .1991 |
-| layout at depth (`layoutdepth.py`) | P .9594 (969/1010) | P .9526 (1226/1287) |
-| nesting | 3/5, F1 .0036 | 6/9, F1 .0072 |
-| TRex Fig. 6, 8 builds | O0 4.4747, O2 1.9520 | O0 4.5027, O2 1.9594 |
+| castbench, 4,815 shared functions | 38,602 casts, 202.5/kloc, 1.021 x IDA | **37,049**, 194.4/kloc, **0.980 x IDA** (-1,553, -4.0%) |
+| castbench x IDA by opt | O0 1.032, O2 1.056, O2-noinline 0.970 | O0 0.973, O2 1.031, O2-noinline 0.929 |
+| castbench functions | -- | 219 fewer (-1,584), 22 more (+31) |
+| 444-slice typesweep (pinned metric) | 1,615 perfect, mean .3697 | 1,615 perfect, mean .3697; 1 improved, 2 worse, 0 perfect lost |
+| decbench#93 replay | 2,188 credited perfect, mean .4543 | **2,313** (+125), mean .4702 |
+| layout, 8 builds, fields only | P .8713 (880/1010), R .0932, F1 .1684 | P .8298 (1068/1287), R .1131, F1 .1991 |
+| layout, 14 builds (+ grep, tar -O0/-O2, find, diff -O2) | P .8592 (3300/3841), R .0780 | P .8283 (4695/5668), R .1110 |
+| layout at depth (`layoutdepth.py`, 8 builds) | P .9594 (969/1010) | P .9526 (1226/1287) |
+| nesting, 8 builds | 3/5, F1 .0036 | 6/9, F1 .0072 |
+| TRex Fig. 6, 8 builds | O0 4.4770, O2 1.9597 | O0 4.5050, O2 1.9671 |
+
+The option-off arm is byte-identical to castbench's main arm (0 files differ),
+and its typesweep rows equal main's.
 
 **Precision.** The published instrument scores a claimed field only against the
 top-level members of the DWARF record and keeps a named embedded record as one
 member (`struct stat stat`, 0x90 bytes at 0x18). A headless reader is very often
 one that reads inside such a member -- `f->stat.st_mode` claims 4 bytes at 0x30
--- so its correct claims are top-level misses. `layoutdepth.py` scores the same
-claims with named embedded records, arrays of records and unions flattened: the
-282 claims the option adds are real members at depth in 262 cases (92.9%),
-against 95.9% for the records `param` already makes. The residue is padding, a
-read at a member's offset with a different width, and four reads past the DWARF
-record's end (gnulib's `FTSENT` name array).
+-- so its correct claims are top-level misses. Of the 89 top-level misses the
+option adds, 69 are members of an embedded record, an array element or a union
+member at depth, 6 padding, 5 a member at the same offset read at another width,
+4 inside a member, 1 an array element and 4 past the record's end (gnulib's
+`FTSENT` name array). Removing every one of the 20 that are not members at depth
+would leave precision at .843, still under the .8713 gate; the gate cannot pass
+without declining records that are right.
+
+**Records over primitive pointers.** 122 declarations move from a primitive
+pointer (`int *` 44, `unsigned long *` 38, `int8 *` 16, `uint8 *` 15, `long *` 9)
+to a `struct_N *`. Joined to DWARF, the 102 parameters among them are struct
+pointers in 100 cases (find's `parser_table`, sdiff's `line_filter`, grep's `dfa`,
+tar's `tar_stat_info`, `wordsplit` and `argp_fmtstream`, du's `FTSENT`), the
+primitive pointer being a guess from one member's width; one is tar's
+`usage_argful_short_opt` `void *cookie`, an `argp_fmtstream` passed through a
+generic callback parameter, and one has no DWARF. No replaced primitive pointer is
+the ground truth; the `char **` class the round-I rebase exposed is gone.
 
 **The two worse typesweep rows** are one function at two optimization levels:
-bzip2's `BZ2_bzReadClose (int *bzerror, BZFILE *b)`. `BZFILE` is `typedef void`;
-the function casts `b` to its own `bzFile *` and reads it past the start. The
-record is the truer type and DWARF scores it a miss; nothing in a stripped binary
-tells an API's opaque handle from a record pointer. The improved row is grep's
-`bmexec_trans`.
+bzip2's `BZ2_bzReadClose (int *bzerror, BZFILE *b)`. `BZFILE` is `typedef
+void`; the function casts `b` to its own `bzFile *` and reads `writing` at
+0x1394, `lastErr` at 0x13e8, `initialisedOk` at 0x13ec, and hands `&strm` at
+0x1398 to `BZ2_bzDecompressEnd`. Of its five callers four pass a value they
+typed as an integer and one a record of its own, so there is no caller vote, and
+nothing in a stripped binary tells an exported API's opaque handle from a record
+parameter. The record is the type the body uses; DWARF, which records the
+declared `void *`, scores it a miss. It stays, as the one priced false positive
+of the kind, and it is one of the two criteria the flip fails. The improved row
+is grep's `bmexec_trans`. (The round-I rebase also showed find
+`check_path_safety` onto perfect; that was `calleevote`'s redo budget reaching
+the function in one arm and not the other, and both arms now decline it.)
 
-**The 20 functions with more casts** (+32): most are one or two casts where a
-local's pointer type changed and a read is respelled at the same address
-(`v6[1]` <-> `*(int8 *)(v6 + 8)`); `find` -O2 `sub_c9f0` (+4) and grep
-`sub_6350` (+2) receive a callee's partial record for a value whose own reads it
-lacks (right kind, missing members); tar -O2-noinline `sub_13140`/`sub_13240`
-(+4, +2) are answered by a one-member record where the option-off arm inherited
-the nine-function `struct_13` through `calleevote`, because their callees now mint
-their own partial views (the priced cost below); tar -O2 `sub_13570` spells three
-`return NULL` as `return (char *)0` while dropping 76 casts elsewhere.
+**The 22 functions with more casts** (+31): eleven are a call that now passes an
+address inside the caller's record to a callee that took a headless record
+(`sub_19f5a((struct_N *)&a2->field_0x39[7], ...)`, `(struct_N *)&a1[0x2d]`,
+`(struct_N *)(a0->field_0x18 + 0x168)`): the callee's type is right and the
+caller has no member to name there; tar -O2-noinline `sub_13140`/`sub_13240`
+(+4, +2) read `(char *)a0->field_0x8` where the option-off arm inherited the
+nine-function `struct_13` through `calleevote` and now a callee's partial view
+answers (the priced cost below); find -O2 `sub_c9f0` (+3) receives a callee's
+partial record for a value whose own reads it lacks; sdiff `lf_copy`/`lf_skip`
+(+1 each) respell `a0[1]` as a field with one cast at a `rawmemchr` result; the
+rest are one or two casts where a member a headless record types as a word is
+handed to a `void *` parameter (tar `(void *)a0->field_0x18`), a pointer local is
+split off an argument (find `v = (struct_N *)((long)a2 + 0x38)`), or locals are
+re-partitioned (grep -O2-noinline `sub_6350`).
 
-**Whole-corpus hunks** (`hunks.py`, 45 binaries, 20,230 functions): 3,450
-change; 2,308 only in `struct_N` numbering, 1,073 only in fields, declared types
-and casts, 8 skeleton deltas, 33 declaration-count deltas and 28 other, all read
+**Whole-corpus hunks** (`hunks.py`, 45 binaries, 20,230 functions): 3,447
+change; 2,318 only in `struct_N` numbering, 1,071 only in fields, declared types
+and casts, 0 skeleton deltas, 33 declaration-count deltas and 25 other, all read
 (`hunks.md`).
 
 ## The priced cost: one object, several names
@@ -183,4 +238,5 @@ unions agreeing readers; it is not flipped here.
 
 Off. Two flip criteria fail as written: fields-only precision on the published
 instrument falls below .8713 (.8298), and the typesweep has one improved row
-against two worse. `default-on-evaluation.md` lists every criterion.
+against two worse (bzip2's opaque handle). `default-on-evaluation.md` lists
+every criterion.
