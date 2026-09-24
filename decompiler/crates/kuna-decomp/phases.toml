@@ -4353,6 +4353,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "castindex"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "cast-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-castindex"
+summary = "Print a pointer plus a variable index as a subscript, and the difference of two byte pointers as `p - q`, instead of an integer round trip. `castarith` keeps a pointer plus a CONSTANT in pointer terms; a pointer plus a variable reaches `ActionSetCasts` as the same plain `INT_ADD` and is priced the same way, `(long)` on the pointer and a cast back on the sum: `*(long *)((long)v7 + v19 * 8)`. A pointer minus a pointer is an `INT_SUB`, whose operands the ported rules convert to `long`: `(long)v24 - (long)v14`. When on, `kuna_castarith::rewrite_index` runs at `castarith`'s seam, after it, on an `INT_ADD` of one pointer-typed value and one non-constant integer whose result is used as a `T *` (`T` chosen exactly as `castarith` chooses it). When the variable is an implied `x * sizeof(T)` (or `x << s`) the add alone reads, the op becomes `PTRADD(base, x, #sizeof T)` and the scaling op is dropped; when `T` is one byte the variable itself is the index. The base is cast to `T *` by `castarith`'s rules. The printer renders it as every `PTRADD`: `((long *)v7)[v19]` under a dereference, `&((T *)p)[i]` as a value. The value is unchanged: the element size is the scale, C scales the subscript by the same `sizeof`, and C converts an integer subscript to the pointer's width by its own type's signedness, which is the extension the cast pass already made consistent (an implied `SEXT`/`ZEXT` prints bare under a `PTRADD` in upstream too). `kuna_castarith::pointer_difference` accepts an `INT_SUB` of two pointers to the same one-byte integer type whose result is an integer of the pointer's width; the cast pass then leaves both operands uncast, so it prints `v24 - v14`: C's element difference of two `char *` is their byte difference, and its type, `ptrdiff_t`, is the signed pointer-width integer the two `(long)` casts produced. The integer form stays for a scale that is not the element's size (`p + i * 16` read at 8 bytes, a record stride with no record), an index that is a pointer, float, `bool`, enum or a value the pass already cast, a scaling op the pass has not reached, the difference of wider or of two different pointees (`long *` minus `long *` is an element count, not the byte count), and every refusal `castarith` makes for the element (enum, aggregate, padded, word-addressed, shared address, integer use, unsettled store, a `void *` sum that leaves the function). Every output language but C is untouched."
+use_when = "Turn it on to read an array walk through a `void *` or wrongly-typed base as `((long *)v7)[v19]` (one cast) instead of `*(long *)((long)v7 + v19 * 8)` (two), and a byte-pointer difference as `v24 - v14` (none) instead of `(long)v24 - (long)v14` (two). Leave it off to see upstream Ghidra's spelling, which keeps the byte arithmetic visible."
+example = "option castindex on"
+source_decompiler = "ida"
+inspiration = "IDA's Hex-Rays prints `v39[v27] = v48 - 32` and `sub_5453(v52, sa - v52)` at the same addresses where kuna printed `*(long *)((long)v7 + v19 * 8) = v10 + -0x20` and `sub_5453(v14,(long)v24 - (long)v14)`. This rule reaches the same arithmetic through Ghidra's own `PTRADD` and C's own pointer subtraction; it does not copy IDA's way of avoiding the cast elsewhere, which is to type the base as a 64-bit integer (`16LL * i + a1`)."
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "*(long *)((long)v7 + v19 * 8)|(long)v24 - (long)v14 passed as a length|free(*(void **)((long)v1 + (long)v2 * 8))|an array walk through a void * base prints two casts per element|a pointer difference of two char * is cast to long on both sides"
+live_field = "cast_index"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "ptrfromuse"
 values = "off|byte|void"
 default = "void"

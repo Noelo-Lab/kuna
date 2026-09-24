@@ -68,6 +68,22 @@ pub(crate) enum Leave {
     SharedAddress,
     WideNegativeIndex,
     EnumTarget,
+    /// `castindex`: both operands of the sum are pointers.
+    TwoPointers,
+    /// `castindex`: the index is not an integer the subscript converts as the
+    /// integer form does (a pointer, a float, a `bool`, an enum, or a cast the
+    /// pass inserted).
+    IndexNotInteger,
+    /// `castindex`: the scale is not the element's size.
+    ScaleMismatch,
+    /// `castindex`: the scaling op has not been cast yet.
+    ScaleUnsettled,
+    /// `castindex`: an operand of the difference is not a pointer.
+    DiffNotPointers,
+    /// `castindex`: the pointees differ, or are wider than a byte.
+    DiffPointee,
+    /// `castindex`: the difference is not an integer of the pointer's width.
+    DiffResult,
 }
 
 /// How the `PTRADD` reaches a `T *` base.
@@ -488,55 +504,18 @@ fn integer_result(code: OpCode) -> bool {
     )
 }
 
-/// Decide whether the `INT_ADD` `op` becomes pointer arithmetic.
-pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
-    let (out, ins) = {
-        let o = data.obank().get(op).ok_or(Leave::NoPointer)?;
-        if o.code() != OpCode::CPUI_INT_ADD || o.num_input() != 2 {
-            return Err(Leave::NoPointer);
-        }
-        let out = o.get_out().ok_or(Leave::NoPointer)?;
-        (
-            out,
-            [
-                o.get_in(0).ok_or(Leave::NoPointer)?,
-                o.get_in(1).ok_or(Leave::NoPointer)?,
-            ],
-        )
-    };
-    let mut found: Option<(int4, Rc<Datatype>)> = None;
-    let mut saw_pointer = false;
-    for slot in 0..2 {
-        let vn = ins[slot];
-        let other = ins[1 - slot];
-        if data
-            .vbank()
-            .get(vn)
-            .map(|v| v.is_constant() || v.is_annotation())
-            .unwrap_or(true)
-        {
-            continue;
-        }
-        let pt = data.vn_high_type_read_facing(vn, op);
-        if pt.get_metatype() != type_metatype::TYPE_PTR {
-            continue;
-        }
-        saw_pointer = true;
-        if data
-            .vbank()
-            .get(other)
-            .map(|v| v.is_constant())
-            .unwrap_or(false)
-        {
-            found = Some((slot as int4, pt));
-            break;
-        }
-    }
-    let (ptr_slot, ptype) = match found {
-        Some(f) => f,
-        None if saw_pointer => return Err(Leave::NonConstant),
-        None => return Err(Leave::NoPointer),
-    };
+/// The element `T` a sum of the pointer `ptype` and an offset steps in, and the
+/// `T *` it is printed as: the value a lone LOAD reads or a lone STORE writes
+/// through the sum (the sum's own pointee when that is the same type or an
+/// integer of the same width), else the sum's own pointee, a `void` pointee
+/// counting in bytes for a value that stays in the function.  `T` must be a
+/// scalar or pointer C sizes at exactly its width.
+fn element(
+    data: &mut Funcdata,
+    op: OpId,
+    out: VarnodeId,
+    ptype: &Rc<Datatype>,
+) -> Result<(Rc<Datatype>, Rc<Datatype>), Leave> {
     let out_size = data.vbank().get(out).map(|v| v.get_size()).unwrap_or(0);
     if ptype.get_word_size() != Some(1) || ptype.get_size() != out_size {
         return Err(Leave::WordAddressed);
@@ -607,6 +586,60 @@ pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
     if elem <= 0 || elem != target.get_align_size() || !c_sizeof_is_size(&tlst, &target) {
         return Err(Leave::Unsized);
     }
+    Ok((target, target_ptr))
+}
+
+/// Decide whether the `INT_ADD` `op` becomes pointer arithmetic.
+pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
+    let (out, ins) = {
+        let o = data.obank().get(op).ok_or(Leave::NoPointer)?;
+        if o.code() != OpCode::CPUI_INT_ADD || o.num_input() != 2 {
+            return Err(Leave::NoPointer);
+        }
+        let out = o.get_out().ok_or(Leave::NoPointer)?;
+        (
+            out,
+            [
+                o.get_in(0).ok_or(Leave::NoPointer)?,
+                o.get_in(1).ok_or(Leave::NoPointer)?,
+            ],
+        )
+    };
+    let mut found: Option<(int4, Rc<Datatype>)> = None;
+    let mut saw_pointer = false;
+    for slot in 0..2 {
+        let vn = ins[slot];
+        let other = ins[1 - slot];
+        if data
+            .vbank()
+            .get(vn)
+            .map(|v| v.is_constant() || v.is_annotation())
+            .unwrap_or(true)
+        {
+            continue;
+        }
+        let pt = data.vn_high_type_read_facing(vn, op);
+        if pt.get_metatype() != type_metatype::TYPE_PTR {
+            continue;
+        }
+        saw_pointer = true;
+        if data
+            .vbank()
+            .get(other)
+            .map(|v| v.is_constant())
+            .unwrap_or(false)
+        {
+            found = Some((slot as int4, pt));
+            break;
+        }
+    }
+    let (ptr_slot, ptype) = match found {
+        Some(f) => f,
+        None if saw_pointer => return Err(Leave::NonConstant),
+        None => return Err(Leave::NoPointer),
+    };
+    let (target, target_ptr) = element(data, op, out, &ptype)?;
+    let elem = target.get_size();
     let (koff, ksize) = {
         let c = data
             .vbank()
@@ -698,6 +731,274 @@ pub(crate) fn rewrite(data: &mut Funcdata, op: OpId) -> bool {
         Ok(p) => apply(data, op, &p).is_some(),
         Err(_) => false,
     }
+}
+
+/// The index an `INT_ADD`'s variable operand stands for: the operand itself
+/// counted in bytes, or, when the operand is an implied `x * S` (or `x << s`)
+/// read only by the add, `x` counted in `S`-byte steps.
+struct Scaled {
+    index: VarnodeId,
+    scale: i64,
+    by: Option<OpId>,
+}
+
+fn scaled_index(data: &Funcdata, vn: VarnodeId, op: OpId) -> Option<Scaled> {
+    let v = data.vbank().get(vn)?;
+    if v.is_explicit() || v.is_type_lock() || data.lone_descend(vn) != Some(op) {
+        return None;
+    }
+    let def = v.get_def()?;
+    let d = data.obank().get(def)?;
+    let konst = |slot: int4| {
+        d.get_in(slot)
+            .and_then(|k| data.vbank().get(k))
+            .filter(|k| k.is_constant())
+            .map(|k| signed_value(k.get_offset(), k.get_size()))
+    };
+    let (index, scale) = match d.code() {
+        OpCode::CPUI_INT_MULT => match (konst(0), konst(1)) {
+            (None, Some(k)) => (d.get_in(0)?, k),
+            (Some(k), None) => (d.get_in(1)?, k),
+            _ => return None,
+        },
+        OpCode::CPUI_INT_LEFT => match konst(1) {
+            Some(s) if (0..31).contains(&s) => (d.get_in(0)?, 1i64 << s),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    if !(1..=i32::MAX as i64).contains(&scale) || data.vbank().get(index)?.is_constant() {
+        return None;
+    }
+    Some(Scaled {
+        index,
+        scale,
+        by: Some(def),
+    })
+}
+
+/// Does the subscript `p[vn]`, read by `op`, index by exactly the value the
+/// integer form adds?  C converts an integer subscript to the pointer's width by
+/// its own type's signedness, which is the extension the pass made explicit (an
+/// implied `SEXT`/`ZEXT` prints bare under a `PTRADD` only when its input's
+/// type extends that way, and the pass casts the input where it does not); a
+/// pointer-width integer converts to itself.  A pointer, a float, a `bool`, an
+/// enum and a value the pass has already cast (`(long)p`) are not such indexes.
+fn integer_index(data: &mut Funcdata, vn: VarnodeId, op: OpId, width: int4) -> bool {
+    let Some(v) = data.vbank().get(vn) else {
+        return false;
+    };
+    if v.get_size() != width || v.is_constant() {
+        return false;
+    }
+    let cast_def = v
+        .get_def()
+        .and_then(|d| data.obank().get(d))
+        .is_some_and(|d| d.code() == OpCode::CPUI_CAST);
+    if cast_def {
+        return false;
+    }
+    let t = data.vn_high_type_read_facing(vn, op);
+    matches!(
+        t.get_metatype(),
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+    ) && !t.is_enum_type()
+}
+
+/// The `PTRADD` an `INT_ADD` of a pointer and a variable index becomes.
+#[derive(Debug, Clone)]
+pub(crate) struct IndexPlan {
+    ptr_slot: int4,
+    index: VarnodeId,
+    by: Option<OpId>,
+    elem: int4,
+    target: Rc<Datatype>,
+    base: Base,
+}
+
+/// Decide whether the `INT_ADD` `op` of a pointer and a variable becomes a
+/// subscript (`castindex`).  The element is chosen exactly as for a constant
+/// offset; the index is the variable when the element is one byte, or the `x`
+/// of an implied `x * sizeof(T)` the add alone reads.
+pub(crate) fn plan_index(data: &mut Funcdata, op: OpId) -> Result<IndexPlan, Leave> {
+    let (out, ins) = {
+        let o = data.obank().get(op).ok_or(Leave::NoPointer)?;
+        if o.code() != OpCode::CPUI_INT_ADD || o.num_input() != 2 {
+            return Err(Leave::NoPointer);
+        }
+        let out = o.get_out().ok_or(Leave::NoPointer)?;
+        (
+            out,
+            [
+                o.get_in(0).ok_or(Leave::NoPointer)?,
+                o.get_in(1).ok_or(Leave::NoPointer)?,
+            ],
+        )
+    };
+    let mut pointers = Vec::new();
+    for (slot, &vn) in ins.iter().enumerate() {
+        let v = data.vbank().get(vn).ok_or(Leave::NoPointer)?;
+        if v.is_constant() || v.is_annotation() {
+            return Err(Leave::NoPointer);
+        }
+        let t = data.vn_high_type_read_facing(vn, op);
+        if t.get_metatype() == type_metatype::TYPE_PTR {
+            pointers.push((slot as int4, t));
+        }
+    }
+    let (ptr_slot, ptype) = match pointers.len() {
+        0 => return Err(Leave::NoPointer),
+        1 => pointers.pop().ok_or(Leave::NoPointer)?,
+        _ => return Err(Leave::TwoPointers),
+    };
+    let other = ins[1 - ptr_slot as usize];
+    let (target, target_ptr) = element(data, op, out, &ptype)?;
+    let elem = target.get_size();
+    let width = ptype.get_size();
+    let scaled = scaled_index(data, other, op).filter(|s| s.scale == elem as i64);
+    let (index, by) = match scaled {
+        Some(s) => {
+            let by = s.by.ok_or(Leave::ScaleMismatch)?;
+            if !runs_before(data, by, op) {
+                return Err(Leave::ScaleUnsettled);
+            }
+            (s.index, Some(by))
+        }
+        None if elem == 1 => (other, None),
+        None => return Err(Leave::ScaleMismatch),
+    };
+    let reader = by.unwrap_or(op);
+    if !integer_index(data, index, reader, width) {
+        return Err(Leave::IndexNotInteger);
+    }
+    let base_vn = ins[ptr_slot as usize];
+    let pointee = ptype.get_ptr_to().map(strip_typedefs);
+    let base = if pointee.is_some_and(|p| same_element(&p, &target))
+        && declared_as(data, base_vn, op, &ptype)
+    {
+        Base::Direct
+    } else if cast_def_read_only_here(data, base_vn, op) {
+        Base::Retype
+    } else if let Some(src) = implied_cast_source(data, base_vn) {
+        Base::Recast(src)
+    } else {
+        Base::Cast
+    };
+    Ok(IndexPlan {
+        ptr_slot,
+        index,
+        by,
+        elem,
+        target: target_ptr,
+        base,
+    })
+}
+
+/// Rewrite the `INT_ADD` `op` as the subscript `plan` describes, dropping the
+/// scaling op it no longer reads.
+pub(crate) fn apply_index(data: &mut Funcdata, op: OpId, plan: &IndexPlan) -> Option<()> {
+    let (base_vn, addr, out) = {
+        let o = data.obank().get(op)?;
+        (o.get_in(plan.ptr_slot)?, o.get_addr().clone(), o.get_out()?)
+    };
+    let ptrsize = data.vbank().get(out)?.get_size();
+    let base = match plan.base {
+        Base::Direct => base_vn,
+        Base::Retype => {
+            let _ = data.vn_update_type(base_vn, Rc::clone(&plan.target));
+            base_vn
+        }
+        Base::Cast | Base::Recast(_) => {
+            let src = match plan.base {
+                Base::Recast(src) => src,
+                _ => base_vn,
+            };
+            let cast = data.new_op(1, addr);
+            let cvn = data.new_unique_out(ptrsize, cast).ok()?;
+            let _ = data.vn_update_type(cvn, Rc::clone(&plan.target));
+            if let Some(v) = data.vbank_mut().get_mut(cvn) {
+                v.set_implied();
+            }
+            data.op_set_opcode_code(cast, OpCode::CPUI_CAST);
+            data.op_set_input(cast, src, 0).ok()?;
+            data.op_insert_before(cast, op);
+            cvn
+        }
+    };
+    let elem = data.new_constant(ptrsize, plan.elem as uintb);
+    data.op_set_all_input(op, &[base, plan.index, elem]).ok()?;
+    data.op_set_opcode_code(op, OpCode::CPUI_PTRADD);
+    if let Some(by) = plan.by {
+        data.op_destroy(by);
+    }
+    Some(())
+}
+
+/// Turn a pointer plus a variable index into a subscript; `true` if it did.
+pub(crate) fn rewrite_index(data: &mut Funcdata, op: OpId) -> bool {
+    match plan_index(data, op) {
+        Ok(p) => apply_index(data, op, &p).is_some(),
+        Err(_) => false,
+    }
+}
+
+/// Is the `INT_SUB` `op` the difference of two pointers C subtracts to the same
+/// value (`castindex`)?  Both operands point at the same one-byte integer type,
+/// so the element difference `p - q` is the byte difference the integer form
+/// computes, and the result is an integer of the pointer's width, the width of
+/// the `ptrdiff_t` that `p - q` has and of the signed integer the pass would
+/// cast both operands to.  The cast pass then leaves both operands as they are,
+/// and casts the result from the returned token, that signed integer, exactly as
+/// it cast the integer form's.
+pub(crate) fn pointer_difference(data: &mut Funcdata, op: OpId) -> Result<Rc<Datatype>, Leave> {
+    let (out, a, b) = {
+        let o = data.obank().get(op).ok_or(Leave::DiffNotPointers)?;
+        if o.code() != OpCode::CPUI_INT_SUB || o.num_input() != 2 {
+            return Err(Leave::DiffNotPointers);
+        }
+        (
+            o.get_out().ok_or(Leave::DiffNotPointers)?,
+            o.get_in(0).ok_or(Leave::DiffNotPointers)?,
+            o.get_in(1).ok_or(Leave::DiffNotPointers)?,
+        )
+    };
+    let tlst = data.get_arch().types_rc().ok_or(Leave::DiffNotPointers)?;
+    let mut pointee: Option<Rc<Datatype>> = None;
+    let mut width = 0;
+    for vn in [a, b] {
+        if data.vbank().get(vn).is_none_or(|v| v.is_constant() || v.is_annotation()) {
+            return Err(Leave::DiffNotPointers);
+        }
+        let t = data.vn_high_type_read_facing(vn, op);
+        if t.get_metatype() != type_metatype::TYPE_PTR || t.get_word_size() != Some(1) {
+            return Err(Leave::DiffNotPointers);
+        }
+        width = t.get_size();
+        let p = t.get_ptr_to().map(strip_typedefs).ok_or(Leave::DiffPointee)?;
+        let byte = matches!(
+            p.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+        ) && !p.is_enum_type()
+            && p.get_size() == 1
+            && c_sizeof_is_size(&tlst, &p);
+        if !byte || pointee.as_ref().is_some_and(|q| !Rc::ptr_eq(q, &p)) {
+            return Err(Leave::DiffPointee);
+        }
+        pointee = Some(p);
+    }
+    let ot = data.vn_high_type_def_facing(out);
+    let osize = data.vbank().get(out).map(|v| v.get_size()).unwrap_or(0);
+    if osize != width
+        || !matches!(
+            ot.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+        )
+        || ot.is_enum_type()
+    {
+        return Err(Leave::DiffResult);
+    }
+    tlst.get_base(width, type_metatype::TYPE_INT)
+        .map_err(|_| Leave::DiffResult)
 }
 
 #[cfg(test)]
