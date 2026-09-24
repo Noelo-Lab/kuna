@@ -30,10 +30,10 @@
       "eq": 0
     },
     "stdout_matches": [
-      "unsigned int mode_of\\(void \\*a0\\)\\n\\{\\n  if \\(\\(\\*\\(char \\*\\)\\(\\(long\\)a0 \\+ 0x19\\)\\) && \\(1 <= \\*\\(long \\*\\)\\(\\(long\\)a0 \\+ 8\\)\\)\\)\\n    return \\*\\(unsigned int \\*\\)\\(\\(long\\)a0 \\+ 0x14\\);",
+      "unsigned int mode_of\\(void \\*a0\\)\\n\\{\\n  if \\(\\(\\(\\(char \\*\\)a0\\)\\[0x19\\]\\) && \\(1 <= \\(\\(long \\*\\)a0\\)\\[1\\]\\)\\)\\n    return \\(\\(unsigned int \\*\\)a0\\)\\[5\\];",
       "int by_link\\(void \\*a0,void \\*a1\\)"
     ]
   },
-  "notes": "OFF: `mode_of` reads its `struct entry` at 8, 0x10, 0x14 and 0x19 and never at 0, so structsynth declines it and every read is two casts over a `void *`.",
-  "probe_id": "a-e79e2c00dca3"
+  "notes": "OFF: `mode_of` reads its `struct entry` at 8, 0x10, 0x14 and 0x19 and never at 0, so structsynth declines it and every read is an element of a cast `void *`.",
+  "probe_id": "a-4126d7125526"
 }

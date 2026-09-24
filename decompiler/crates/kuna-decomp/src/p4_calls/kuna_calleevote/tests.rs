@@ -51,6 +51,22 @@ fn lone(name: &str) -> Rc<Datatype> {
     Rc::new(t)
 }
 
+/// A synthesized record read past its start, as `structheadless closed` mints
+/// it for `tail`'s `parse_obsolete_option`: `field_0x8` and `field_0x10`, nothing
+/// at 0.
+fn headless(name: &str) -> Rc<Datatype> {
+    let mut t = Datatype::new(0x18, type_metatype::TYPE_STRUCT);
+    t.name = name.to_string();
+    let field = |offset: int4| crate::dtype::TypeField {
+        ident: offset,
+        offset,
+        name: format!("field_0x{offset:x}"),
+        field_type: long8(),
+    };
+    t.kind = DatatypeKind::Struct { field: vec![field(8), field(0x10)], bitfield: Vec::new() };
+    Rc::new(t)
+}
+
 /// A libc shell as `libctypes` interns one without `glibc` layouts: a name, a
 /// size, and no fields.
 fn shell(name: &str) -> Rc<Datatype> {
@@ -312,4 +328,29 @@ fn a_frame_address_from_any_caller_marks_the_statement() {
         assert!(Rc::ptr_eq(&t.ct, &pp));
         assert_eq!(t.frame, marked);
     }
+}
+
+/// (kuna `structheadless`) `tail`'s `parse_obsolete_option` reads `argv[1]` and
+/// `argv[2]` only, and its first decompile under `closed` took them as a record
+/// read past its start. The `char **` its one caller passes replaces that record
+/// under the rule, and nowhere else; a record read at offset 0 stays the
+/// callee's own either way.
+#[test]
+fn a_callers_argument_vector_replaces_a_headless_record_only_under_the_rule() {
+    let mine = ptr_to(headless("struct_19"));
+    let argv = ptr_to(ptr_to(char1()));
+    let mut l = ledger(&[(0x6600, Rc::clone(&argv))]);
+    let r = reg();
+    l.own.insert(CALLEE, vec![typed(&r, 0x38, &mine)]);
+    assert!(!uncommitted(&mine, 8) && uncommitted_under(&mine, 8, true));
+    assert!(decide_ledger(&l, 8, &all_calls(&l)).is_empty());
+    assert!(decide_ledger_under(&l, 8, false, &all_calls(&l)).is_empty());
+    let got = decide_ledger_under(&l, 8, true, &all_calls(&l));
+    assert_eq!(got.len(), 1);
+    assert!(Rc::ptr_eq(&got[0].1.at(&at(&r, 0x38), 8).expect("stated for rsi's slot").ct, &argv));
+
+    let rec = ptr_to(record("struct_2"));
+    assert!(!uncommitted_under(&rec, 8, true));
+    l.own.insert(CALLEE, vec![typed(&r, 0x38, &rec)]);
+    assert!(decide_ledger_under(&l, 8, true, &all_calls(&l)).is_empty());
 }
