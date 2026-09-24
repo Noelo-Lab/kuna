@@ -106,3 +106,30 @@
    build needs its own directory: `kuna` resolves the `decomp_dbg` BESIDE IT, and an old `kuna` sharing a
    directory with a newer `decomp_dbg` printed the NEWER build's option defaults from `kuna catalog` —
    caught before any arm was swept, and every arm here ran from its own directory with its own pair.
+28. 2026-09-24 `structmerge siblings` (#715) lands default off although its option arm raises layout
+   precision and recall (.8713 → .8730, .0932 → .0960) and moves nothing else. Agreement between two
+   readers of a record is evidence about its shape, not its identity: records that begin with the same
+   words get fused, and on `e2fsck` -O0 the convergence sweep settles two `char *` parameters to
+   `unsigned long`. A struct lever that can make a correct scalar type worse stays opt-in.
+29. 2026-09-24 the cast campaign's rule, from the user: a cast goes only because the type became right,
+   the arithmetic is expressed in the pointer's own terms, or C's own conversion already performs it —
+   never by suppressing output, never by weakening a type (IDA's integer-typed parameters are how IDA
+   avoids casts, and copying that would cost the `type_match` lead), and never by copying IDA's
+   value-truncating casts. Each lever proves that its removed casts leave the computed value unchanged by
+   rebuilding the printed C with gcc and clang and running it against the binary. `castarith`,
+   `castimplied` and `castsign` go default on with 0 of 10,748 typesweep values moved and 0 functions
+   with more casts.
+30. 2026-09-24 the cast headline is the COUNT on the functions kuna and IDA both emit at the same address
+   (castbench, 4,815 functions over 45 binaries), stated beside casts per 1,000 lines and per statement.
+   The three disagree because kuna prints 22% fewer lines than IDA on those functions: the final build is
+   1.021× IDA by count, 1.19× per statement and 1.30× per line. No single ratio is quoted alone.
+31. 2026-09-24 `castarith` prints a converted access as a subscript, `((T *)p)[k]`, not `*((T *)p + k)`,
+   because `arraynotation` already chose subscripts for kuna's native pointer arithmetic; a converted
+   site should read like a native one. An enum element, a negative index of 2^31 elements or more, an
+   aggregate element and an address several accesses share keep the integer form, since the printed C
+   there could compute a different address.
+32. 2026-09-24 `calleevote`'s redo is bounded by a budget (5% of the lines the first pass printed,
+   shortest callee first), not by a flat 32-line refusal and not by an incremental redo. The budget
+   returns six perfect functions the refusal cost and holds kmod / dpkg-divert level with round G; an
+   incremental redo would need a checkpointed `Funcdata` re-entering the action tree, a substrate change
+   out of proportion to the remaining cost.

@@ -1,5 +1,10 @@
 # kuna type-recovery campaign — handoff state (2026-09-24, stopped mid-round-H)
 
+> **Historical.** This page records the state at the round-H stop. Everything it lists as in flight has
+> since been resolved or re-ranked: #719 landed, rounds H and I were re-measured, and three of the cast plan's
+> five levers landed. The current state, including the open PRs and the ranked levers, is the
+> campaign summary at the top of `results.md`.
+
 Everything below is measured, not assumed. Paths are on this machine. The repo is
 `/home/mahaloz/github/kuna`; **the main checkout is read-only for agents — the user commits there
 directly.** All campaign work happens in worktrees under `/home/mahaloz/kwt/<slug>`.
