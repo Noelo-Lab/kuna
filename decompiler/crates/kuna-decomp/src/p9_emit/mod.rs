@@ -14,6 +14,7 @@ pub mod stringmanage;
 pub mod kuna_naming;
 pub mod kuna_arraynotation;
 pub mod kuna_declhightype;
+pub mod kuna_castsign; // (kuna) signed declarations for frame locals and the readers signedness vetoes
 pub mod kuna_typeround; // (kuna) the declared-signedness rounding decision
 pub mod kuna_dedupvardecls;
 pub mod kuna_paramrefdecl;

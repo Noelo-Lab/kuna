@@ -420,6 +420,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "voidtailreturn",
     // (kuna) leave out a cast C's own conversion rules already perform.
     "castimplied",
+    // (kuna) declare a frame local signed when every signedness-sensitive use is.
+    "castsign",
     "ptrdepthcap",
     "codescalar",
     "boolbyte",

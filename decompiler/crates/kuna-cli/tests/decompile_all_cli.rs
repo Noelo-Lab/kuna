@@ -4279,6 +4279,385 @@ int main(void) {
     }
 }
 
+/// The text of one function in a `decompile-all` listing, from its `// Function:`
+/// header to the next.
+fn castsign_function<'a>(listing: &'a str, name: &str) -> &'a str {
+    let head = format!("// Function: {name} @");
+    let start = listing.find(&head).unwrap_or_else(|| panic!("{name} not printed:\n{listing}"));
+    let rest = &listing[start + head.len()..];
+    &listing[start..start + head.len() + rest.find("// Function: ").unwrap_or(rest.len())]
+}
+
+/// (kuna `castsign`) A variable the program only compares signed is declared
+/// signed, and the `(long)v` it cost at each comparison goes.  A variable that
+/// `+ - *` reads keeps its unsigned declaration: that arithmetic wraps, and the
+/// signed form would overflow at the edge of the range, which gcc and clang fold
+/// on.  `castsign_wrap_x86_64.c` passes its functions 2^63 - 1, 2^63, 2^63 + 1
+/// and the 32-bit edges; `castsign_x86_64.c` keeps lengths and indexes taken from
+/// `strlen` and from unsigned tables.  Each fixture is decompiled with the option
+/// off and on, the printed functions are compiled with gcc and clang at -O0 and
+/// -O2, and every build must print what the fixture binary prints.  The -O1
+/// build of the wrap source is checked on `sign_of` and `peek` only: its
+/// arithmetic shapes are register locals, which `signedness` decides and this
+/// option leaves alone.  `castsign_eq_x86_64.c` also compares the value for
+/// equality with `3000000000` or `10000000000000000000`, decimal literals whose C
+/// type is wider than the declaration, so those declarations stay unsigned.
+#[test]
+fn a_signed_only_variable_round_trips_through_the_printed_c() {
+    const WRAP_FUNCS: &str = "dec_neg,cnt_wrap,spin,count_down,dec_neg32,sign_of,sign_of32,peek";
+    const WRAP_WANT: &str = "dec_neg      0 1 1 5 5 0 0\ncnt_wrap     5 5 5 0 5 5 5\nspin         3 0 5\n\
+count_down   0 1 2 5 5 0 0\ndec_neg32    0 13 15 15 0\nsign_of      1 2 0 1\nsign_of32    5 6 4 5\n\
+peek         99 -1 -2 100\n";
+    const WRAP_MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+static const char *const W64[] = {"0", "1", "2", "0x7fffffffffffffff", "0x8000000000000000",
+                                  "0x8000000000000001", "0xffffffffffffffff"};
+static const char *const W32[] = {"0", "5", "0x7fffffff", "0x80000000", "0x80000001"};
+int main(void) {
+  printf("dec_neg     ");
+  for (int i = 0; i < 7; i++)
+    printf(" %ld", F(long, dec_neg)(W64[i]));
+  printf("\ncnt_wrap    ");
+  for (int i = 0; i < 7; i++)
+    printf(" %ld", F(long, cnt_wrap)(W64[i]));
+  printf("\nspin         %ld %ld %ld\ncount_down  ", F(long, spin)("0x7ffffffffffffffe", "0x8000000000000001"),
+         F(long, spin)("0x8000000000000001", "0x7ffffffffffffffe"), F(long, spin)("0xfffffffffffffffe", "0x10"));
+  for (int i = 0; i < 7; i++)
+    printf(" %ld", F(long, count_down)(W64[i]));
+  printf("\ndec_neg32   ");
+  for (int i = 0; i < 5; i++)
+    printf(" %ld", F(long, dec_neg32)(W32[i]));
+  printf("\nsign_of      %ld %ld %ld %ld\nsign_of32    %ld %ld %ld %ld", F(long, sign_of)(W64[3], W64[0]),
+         F(long, sign_of)(W64[4], "0xfffffffffffffffa"), F(long, sign_of)(W64[6], "0xfffffffffffffffe"),
+         F(long, sign_of)(W64[5], W64[3]), F(long, sign_of32)(W32[2], W32[0]),
+         F(long, sign_of32)(W32[3], "0xfffffffa"), F(long, sign_of32)("0xffffffff", "0xfffffffe"),
+         F(long, sign_of32)(W32[4], "0x7ffffff0"));
+  printf("\npeek         %ld %ld %ld %ld\n", F(long, peek)("abcd", "2"), F(long, peek)("abcd", W64[4]),
+         F(long, peek)("abcd", W64[3]), F(long, peek)("abcd", "3"));
+  return 0;
+}
+"#;
+    const REG_FUNCS: &str = "sign_of,peek";
+    const REG_WANT: &str = "sign_of      1 2 0 1\npeek         99 -1 -2 100\n";
+    const REG_MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+int main(void) {
+  printf("sign_of      %ld %ld %ld %ld\n", F(long, sign_of)("0x7fffffffffffffff", "0"),
+         F(long, sign_of)("0x8000000000000000", "0xfffffffffffffffa"),
+         F(long, sign_of)("0xffffffffffffffff", "0xfffffffffffffffe"),
+         F(long, sign_of)("0x8000000000000001", "0x7fffffffffffffff"));
+  printf("peek         %ld %ld %ld %ld\n", F(long, peek)("abcd", "2"), F(long, peek)("abcd", "0x8000000000000000"),
+         F(long, peek)("abcd", "0x7fffffffffffffff"), F(long, peek)("abcd", "3"));
+  return 0;
+}
+"#;
+    const FUNCS: &str = "trim_right,count_down,run_len,word_end,pick_len,zext_walk,both_ways,halved";
+    const WANT: &str = "-7 23 13\n2 7\n2 125\n-3 7 0\n-1 3\n6 9 3 0 -1\n";
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+int main(void) {
+  char a[] = "   ", b[] = "abc  ", c[] = "xy ";
+  static const int arr[] = {-4, 5, -6, 7, 0, -1};
+  static unsigned char tab[256];
+  for (int i = 0; i < 256; i++)
+    tab[i] = (unsigned char)(i % 7);
+  printf("%ld %ld %ld\n", F(long, trim_right)(a), F(long, trim_right)(b), F(long, trim_right)(c));
+  printf("%ld %ld\n", F(long, count_down)(arr, "abcd"), F(long, count_down)(arr, "abcdef"));
+  printf("%ld %ld\n", F(long, run_len)(tab, "hello world", 3L), F(long, run_len)(tab, "zzzzzzz", 100L));
+  printf("%ld %ld %ld\n", F(long, word_end)("ab cd", 0u), F(long, both_ways)("abcdefghij", 99UL),
+         F(long, both_ways)("abc", 1UL));
+  printf("%ld %ld\n", F(long, halved)("a"), F(long, halved)("abcdefgh"));
+  static const unsigned int lens[] = {0, 4, 9, 2};
+  static const unsigned int at[] = {6, 0};
+  printf("%ld %ld %ld %ld %ld\n", F(long, pick_len)(lens, "ab  ", 0), F(long, pick_len)(lens, "abc ", 1),
+         F(long, pick_len)(lens, "a ", 3), F(long, zext_walk)(at, "aqbbbbbb"), F(long, zext_walk)(at + 1, "q"));
+  return 0;
+}
+"#;
+    const EQ_FUNCS: &str = "d_eq32,c_eq64,c_ne64,c_or64,c_eq7";
+    const EQ_WANT: &str = "d_eq32   2 1 0\nc_eq64   2 1 0 1 0\nc_ne64   0 1 0 1 0\nc_or64   2 1 0 1 0\n\
+c_eq7    1 2 0 1 0\n";
+    const EQ_MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+static const char *const E[] = {"10000000000000000000", "0x8000000000000001", "5", "0xffffffffffffffff", "0"};
+int main(void) {
+  unsigned int a[2] = {htonl(3000000000u), 0}, b[2] = {htonl(0x80000001u), 0}, c[2] = {htonl(5), 0};
+  printf("d_eq32   %ld %ld %ld\n", F(long, d_eq32)(a, "y"), F(long, d_eq32)(b, "y"), F(long, d_eq32)(c, "y"));
+  printf("c_eq64  ");
+  for (int i = 0; i < 5; i++)
+    printf(" %ld", F(long, c_eq64)(E[i], "y"));
+  printf("\nc_ne64  ");
+  for (int i = 0; i < 5; i++)
+    printf(" %ld", F(long, c_ne64)(E[i], "y"));
+  printf("\nc_or64  ");
+  for (int i = 0; i < 5; i++)
+    printf(" %ld", F(long, c_or64)(E[i], "y"));
+  printf("\nc_eq7    %ld %ld %ld %ld %ld\n", F(long, c_eq7)("0x8000000000000000", "y"), F(long, c_eq7)("7", "y"),
+         F(long, c_eq7)("6", "y"), F(long, c_eq7)("x", "x0xffffffffffffffff"), F(long, c_eq7)("0", "y"));
+  return 0;
+}
+"#;
+    const WIDE: &[&str] = &["d_eq32", "c_eq64", "c_ne64", "c_or64"];
+    const WRAPS: &[&str] = &["dec_neg", "cnt_wrap", "spin", "count_down", "dec_neg32"];
+    const OLD: &[&str] = &["trim_right", "count_down", "run_len", "word_end", "zext_walk", "both_ways", "halved"];
+    // (fixture, functions, main, output, the lines option off prints and what
+    // option on prints instead, the functions option on must print unchanged)
+    type Case<'a> = (&'a str, &'a str, &'a str, &'a str, &'a [(&'a str, &'a str)], &'a [&'a str]);
+    let cases: [Case; 9] = [
+        (
+            "castsign_eq_gcc_O0_x86_64",
+            EQ_FUNCS,
+            EQ_MAIN,
+            EQ_WANT,
+            &[
+                ("\n  unsigned long v1; // stack - 0x10\n  \n  v1 = strtoul(a0,NULL,0);\n  if (*a1 == 'x')\n    v1 = strtoul(&a1[1],NULL,0);\n  if (v1 == 7)",
+                 "\n  long v1; // stack - 0x10\n  \n  v1 = strtoul(a0,NULL,0);\n  if (*a1 == 'x')\n    v1 = strtoul(&a1[1],NULL,0);\n  if (v1 == 7)"),
+                ("if ((long)v1 <= -1)", "if (v1 <= -1)"),
+            ],
+            WIDE,
+        ),
+        (
+            "castsign_eq_clang_O0_x86_64",
+            EQ_FUNCS,
+            EQ_MAIN,
+            EQ_WANT,
+            &[
+                ("\n  unsigned long v1; // stack - 0x28\n  \n  v1 = strtoul(a0,NULL,0);\n  if (*a1 == 'x')\n    v1 = strtoul(&a1[1],NULL,0);\n  if (v1 == 7)",
+                 "\n  long v1; // stack - 0x28\n  \n  v1 = strtoul(a0,NULL,0);\n  if (*a1 == 'x')\n    v1 = strtoul(&a1[1],NULL,0);\n  if (v1 == 7)"),
+                ("if ((long)v1 <= -1)", "if (v1 <= -1)"),
+            ],
+            WIDE,
+        ),
+        (
+            "castsign_wrap_gcc_O0_x86_64",
+            WRAP_FUNCS,
+            WRAP_MAIN,
+            WRAP_WANT,
+            &[
+                ("\n  unsigned long v1; // stack - 0x10", "\n  long v1; // stack - 0x10"),
+                ("if (0 <= (long)v1)\n    return 1;", "if (0 <= v1)\n    return 1;"),
+                ("\n  unsigned int v1; // stack - 0x14", "\n  int v1; // stack - 0x14"),
+                ("if (0 <= (int)v1)", "if (0 <= v1)"),
+                ("if ((long)strlen(a0) <= (long)v1)", "if ((long)strlen(a0) <= v1)"),
+            ],
+            WRAPS,
+        ),
+        (
+            "castsign_wrap_clang_O0_x86_64",
+            WRAP_FUNCS,
+            WRAP_MAIN,
+            WRAP_WANT,
+            &[
+                ("\n  unsigned long v1; // stack - 0x28", "\n  long v1; // stack - 0x28"),
+                ("\n  unsigned int v2; // stack - 0x1c", "\n  int v2; // stack - 0x1c"),
+                ("if (0 <= (int)v2)", "if (0 <= v2)"),
+                ("if ((long)strlen(a0) <= (long)v1) // branch-flip", "if ((long)strlen(a0) <= v1) // branch-flip"),
+            ],
+            WRAPS,
+        ),
+        (
+            "castsign_wrap_gcc_O1_x86_64",
+            REG_FUNCS,
+            REG_MAIN,
+            REG_WANT,
+            &[
+                ("\n  unsigned long v1; // rax", "\n  long v1; // rax"),
+                ("if ((long)v1 < (long)strlen(a0))", "if (v1 < (long)strlen(a0))"),
+            ],
+            &["sign_of"],
+        ),
+        ("castsign_gcc_O0_x86_64", FUNCS, MAIN, WANT, &[], OLD),
+        ("castsign_clang_O0_x86_64", FUNCS, MAIN, WANT, &[], OLD),
+        ("castsign_gcc_O1_x86_64", FUNCS, MAIN, WANT, &[], OLD),
+        (
+            "castsign_clang_O1_x86_64",
+            FUNCS,
+            MAIN,
+            WANT,
+            &[(
+                "v1 = (unsigned long)*(unsigned int *)(a0 + (long)a2 * 4);",
+                "v1 = *(unsigned int *)(a0 + (long)a2 * 4);",
+            )],
+            OLD,
+        ),
+    ];
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .collect();
+    for (fixture, funcs, main, want, lines, same) in cases {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let mut printed: Vec<String> = Vec::new();
+        for opt in ["off", "on"] {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", funcs, "--sleighpath", sp.as_str(),
+                "--option", "castsign", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("castsign round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            for (off, on) in lines {
+                let want = if opt == "on" { on } else { off };
+                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+            }
+            for cc in &compilers {
+                for level in ["-O0", "-O2"] {
+                    let dir = std::env::temp_dir()
+                        .join(format!("kuna-castsign-rt-{}-{fixture}-{opt}-{cc}{level}", std::process::id()));
+                    std::fs::create_dir_all(&dir).unwrap();
+                    let src = dir.join("rt.c");
+                    let exe = dir.join("rt");
+                    std::fs::write(
+                        &src,
+                        format!(
+                            "#include <arpa/inet.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n{stdout}\n{main}"
+                        ),
+                    )
+                    .unwrap();
+                    let out = Command::new(cc)
+                        .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                        .output()
+                        .expect("spawn the C compiler");
+                    assert!(
+                        out.status.success(),
+                        "{cc} {level} rejected the printed C ({fixture}, option {opt}):\n{}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let _ = std::fs::remove_dir_all(&dir);
+                    assert_eq!(
+                        String::from_utf8_lossy(&run.stdout),
+                        want,
+                        "{fixture} printed with option {opt} and built by {cc} {level} computes a different value:\n{stdout}"
+                    );
+                }
+            }
+            printed.push(stdout);
+        }
+        for name in same {
+            assert_eq!(
+                castsign_function(&printed[0], name),
+                castsign_function(&printed[1], name),
+                "{fixture}: option castsign changed {name}"
+            );
+        }
+    }
+    // Rust has no implicit integer conversions, so the option leaves Rust output alone.
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/castsign_wrap_gcc_O0_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let rust: Vec<String> = ["off", "on"]
+        .iter()
+        .map(|opt| {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", WRAP_FUNCS, "--sleighpath", sp.as_str(),
+                "--language", "rust", "--option", "castsign", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all --language rust failed: {stderr}");
+            stdout
+        })
+        .collect();
+    assert_eq!(rust[0], rust[1], "castsign changed Rust output");
+}
+
+/// (kuna `castsign`) A declaration whose type is locked is never re-signed.  A
+/// `--assert type` on a stack local and on a register local, and a DWARF local
+/// the source declares `unsigned long`, keep that type and the `(long)` their
+/// signed comparison needs, option on as off.  Unlocked, the same variables are
+/// declared `long`, so each case also checks that the option fires there.
+#[test]
+fn castsign_leaves_a_locked_declaration_alone() {
+    let sp = specs();
+    let fixture = |name: &str| {
+        repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(name)
+            .to_str()
+            .unwrap()
+            .to_string()
+    };
+    let unsigned_stack: &[&str] = &["\n  unsigned long v1; // stack - 0x10", "if (0 <= (long)v1)\n    return 1;"];
+    let signed_stack: &[&str] = &["\n  long v1; // stack - 0x10", "if (0 <= v1)\n    return 1;"];
+    let unsigned_reg: &[&str] = &["\n  unsigned long v1; // rax", "if ((long)v1 < (long)strlen(a0))"];
+    let signed_reg: &[&str] = &["\n  long v1; // rax", "if (v1 < (long)strlen(a0))"];
+    // (fixture, function, assertion, printed unlocked with the option on, printed locked)
+    let asserted = [
+        ("castsign_wrap_gcc_O0_x86_64", "sign_of", "type v1 unsigned long", signed_stack, unsigned_stack),
+        ("castsign_wrap_gcc_O1_x86_64", "peek", "type v1 unsigned long", signed_reg, unsigned_reg),
+    ];
+    for (name, func, assertion, unlocked, locked) in asserted {
+        let bin = fixture(name);
+        let (stdout, stderr, ok) =
+            run_kuna(&["decompile", &bin, func, "--sleighpath", &sp, "--option", "castsign", "on"]);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("castsign locked declaration: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile failed: {stderr}");
+        for want in unlocked {
+            assert!(stdout.contains(want), "{name} {func} unlocked does not print `{want}`:\n{stdout}");
+        }
+        for opt in ["on", "off"] {
+            let args = [
+                "decompile", bin.as_str(), func, "--sleighpath", sp.as_str(), "--assert", assertion,
+                "--option", "castsign", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile --assert failed: {stderr}");
+            for want in locked {
+                assert!(
+                    stdout.contains(want),
+                    "{name} {func} under `{assertion}`, option {opt}, does not print `{want}`:\n{stdout}"
+                );
+            }
+        }
+    }
+    let dwarf = fixture("castsign_dwarf_gcc_O0_x86_64");
+    let locked: &[&str] = &["\n  unsigned long n; // stack - 0x10", "if (0 <= (long)n)\n    return 1;"];
+    for opt in ["on", "off"] {
+        let args = [
+            "decompile-all", dwarf.as_str(), "--functions", "sign_of", "--sleighpath", sp.as_str(),
+            "--option", "castsign", opt,
+        ];
+        let (stdout, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        for want in locked {
+            assert!(stdout.contains(want), "the DWARF local, option {opt}, does not print `{want}`:\n{stdout}");
+        }
+    }
+    let dir = std::env::temp_dir().join(format!("kuna-castsign-lock-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stripped = dir.join("sign_of");
+    let strip = Command::new("objcopy")
+        .args(["--strip-debug", dwarf.as_str(), stripped.to_str().unwrap()])
+        .output();
+    if strip.is_ok_and(|o| o.status.success()) {
+        let args = [
+            "decompile-all", stripped.to_str().unwrap(), "--functions", "sign_of", "--sleighpath",
+            sp.as_str(), "--option", "castsign", "on",
+        ];
+        let (stdout, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-all (debug info stripped) failed: {stderr}");
+        for want in signed_stack {
+            assert!(stdout.contains(want), "stripped, the slot does not print `{want}`:\n{stdout}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A pointer plus a constant that is a whole number of elements prints as
 /// pointer arithmetic under `castarith`, `((unsigned int *)a0)[0x2b]` with one
 /// cast, instead of the integer round trip `*(unsigned int *)((long)a0 +

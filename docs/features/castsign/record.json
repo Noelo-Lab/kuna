@@ -1,0 +1,568 @@
+{
+ "option": "castsign",
+ "values": [
+  "on",
+  "off"
+ ],
+ "default_on": true,
+ "default_value": "on",
+ "phase": "P9",
+ "subphase": "cast-policy",
+ "change_kind": "presentation-default",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "2026-09-23 cast census (kwt/castcensus: measure 4b, engine 4.5), plan lever 5",
+ "witness": {
+  "repro": "gcc -O0 t.c (sign_of, see the PR body); kuna decompile-all t --functions sign_of",
+  "before": [
+   "unsigned long v1; // stack - 0x10",
+   "if ((long)v1 <= -6)",
+   "if (0 <= (long)v1)"
+  ],
+  "after": [
+   "long v1; // stack - 0x10",
+   "if (v1 <= -6)",
+   "if (0 <= v1)"
+  ],
+  "corpus": {
+   "ls O2 0xc980": [
+    "unsigned long v25; // stack - 0x1330",
+    "v24 = (long)v25 < dat_26378;",
+    "-> long v25; ... v24 = v25 < dat_26378;"
+   ],
+   "tar O0 0x67494": [
+    "*(char *)((int8)a2 + (int8)(int4)v15) = 1;",
+    "-> int4 v15; ... *(char *)((int8)a2 + (int8)v15) = 1;"
+   ]
+  },
+  "left_alone": {
+   "dec_neg (castsign_wrap_x86_64.c, gcc -O0)": [
+    "unsigned long v1; // stack - 0x18",
+    "for (v2 = 0; (0 <= (long)(v1 - 1) && (v2 <= 4)); v2 = v2 + 1) {",
+    "stays: `long v1` would make gcc read `0 <= v1 - 1` as `0 < v1`, wrong at v1 == 2^63"
+   ]
+  }
+ },
+ "castbench": {
+  "set": "full: 45 binaries (coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find) x O0/O2/O2-noinline; functions kuna and IDA both emit",
+  "base": "origin/main 52202840d (castarith landed), a fresh build; castsign off on the branch build is byte-identical to it on all 45 binaries",
+  "shared_functions": 4815,
+  "ida_casts": 37821,
+  "main_casts": 38703,
+  "branch_casts": 38602,
+  "main_per_kloc": 203.1,
+  "branch_per_kloc": 202.5,
+  "main_vs_ida": 1.023,
+  "branch_vs_ida": 1.021,
+  "by_level_vs_ida": {
+   "O0": [
+    1.039,
+    1.032
+   ],
+   "O2": [
+    1.057,
+    1.056
+   ],
+   "O2-noinline": [
+    0.971,
+    0.97
+   ]
+  },
+  "functions_fewer": 41,
+  "casts_fewer": 101,
+  "functions_more": 0,
+  "sign_only_casts_shared_set": {
+   "method": "castcount-based signall.py over the 4,815 shared functions: a cast whose target differs from the bare operand variable's declared type only in signedness",
+   "unsigned_to_signed_locals": [
+    669,
+    617
+   ],
+   "unsigned_to_signed_params": [
+    95,
+    95
+   ],
+   "signed_to_unsigned_locals": [
+    84,
+    84
+   ],
+   "signed_to_unsigned_params": [
+    93,
+    93
+   ],
+   "before_the_arithmetic_rule": "the first version took unsigned_to_signed_locals to 533; the 84 it took beyond this build sat on variables that + - * read"
+  },
+  "before_the_arithmetic_rule": {
+   "branch_casts": 43483,
+   "branch_vs_ida": 1.15,
+   "functions_fewer": 72,
+   "casts_fewer": 190
+  },
+  "before_the_wide_literal_rule": {
+   "on_base_5458b7ab5": {
+    "base": "main 5458b7ab5 arm (fresh, .scratch/cb-base; castsign off of the final build is byte-identical to it)",
+    "main_casts": 43673,
+    "branch_casts": 43567,
+    "main_per_kloc": 229.2,
+    "branch_per_kloc": 228.6,
+    "main_vs_ida": 1.155,
+    "branch_vs_ida": 1.152,
+    "by_level_vs_ida": {
+     "O0": [
+      1.198,
+      1.192
+     ],
+     "O2": [
+      1.168,
+      1.167
+     ],
+     "O2-noinline": [
+      1.096,
+      1.095
+     ]
+    },
+    "functions_fewer": 42,
+    "casts_fewer": 106,
+    "functions_more": 0
+   },
+   "on_base_52202840d_per_review": "38,703 -> 38,597 (42 fewer, 0 more)",
+   "cost_of_the_rule": "5 casts, ls O2 0xc980 (`(v17 & v25) != 0xffffffffffffffff`, a hex literal the rule vetoes too)"
+  }
+ },
+ "benchmark": {
+  "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow, each at O0, O2 and O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
+  "metric": "type_match",
+  "arms": "review round 3: a fresh build of origin/main 52202840d against the default-on branch build merged onto it (earlier rounds: on = default final build, off = --option castsign off, same binary)",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4173,
+    "mean_on": 0.4173,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 989,
+    "perfect_on": 989,
+    "mean_off": 0.359,
+    "mean_on": 0.359,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 64,
+    "mean_off": 0.4514,
+    "mean_on": 0.4514,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 61,
+    "perfect_on": 61,
+    "mean_off": 0.2508,
+    "mean_on": 0.2508,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 53,
+    "perfect_on": 53,
+    "mean_off": 0.4583,
+    "mean_on": 0.4583,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 112,
+    "mean_off": 0.5409,
+    "mean_on": 0.5409,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 89,
+    "perfect_on": 89,
+    "mean_off": 0.3604,
+    "mean_on": 0.3604,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 213,
+    "mean_off": 0.3938,
+    "mean_on": 0.3938,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "mean_off": 0.3697,
+   "mean_on": 0.3697,
+   "improved": 0,
+   "worse": 0
+  },
+  "control": "all 10,748 functions score identically in both arms; the off arm matches origin/main's sweep row for row; variables[] byte-identical off vs on over 6 more binaries (6,673 functions): no variable or argument added or removed",
+  "after_lock_check": "re-run on the build with the type-lock check (51f5e35ac): rows.json identical to the earlier default-on arm on all 444 slices (1,615 perfect)",
+  "after_arithmetic_rule": "re-run on the final build: rows.json identical to the off arm on all 444 slices (1,615 perfect, mean .3697)",
+  "after_wide_literal_rule": "merged onto 52202840d: 1,615 -> 1,615 perfect, mean .3697 -> .3697, 0 on/0 off/0 improved/0 worse; all 10,748 function values identical"
+ },
+ "corpus_sweep": {
+  "classifier": "docs/features/castsign/hunkclass.py (decl = `unsigned T vN;` -> `T vN;`; sign-cast = `(T)vN` dropped on a re-declared vN; def-widen = an integer cast dropped at the top of `vN = ...;` where vN is declared an integer of the cast's width; anything else is OTHER; a flip none of whose sign-casts appear is counted as a flip that removed no cast)",
+  "castbench_full": {
+   "arms": "origin/main 52202840d arm vs the default-on branch build merged onto it",
+   "binaries": "45: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find x O0/O2/O2-noinline",
+   "files": 45,
+   "functions_changed": 112,
+   "by_class": {
+    "decl": 93,
+    "sign-cast": 164,
+    "def-widen": 94
+   },
+   "other_lines": 0,
+   "flips_removing_no_cast": 0,
+   "before_the_arithmetic_rule": {
+    "functions_changed": 203,
+    "by_class": {
+     "decl": 234,
+     "sign-cast": 371,
+     "def-widen": 94
+    },
+    "flips_removing_no_cast": 23,
+    "flips_now_left_alone": 139,
+    "of_which_print_arithmetic_on_the_variable": 138,
+    "of_which_self_update": 69,
+    "flips_added_since": 0,
+    "note": "all 95 final flips are among the first version's 234",
+    "of_which_removed_no_cast": 1
+   },
+   "before_the_wide_literal_rule": {
+    "functions_changed": 114,
+    "by_class": {
+     "decl": 95,
+     "sign-cast": 171,
+     "def-widen": 94
+    },
+    "flips_now_left_alone": "ls O2 0xc980 v25, tar O0 0x6c7f5 v12 (both == or != with a hex top-bit literal)"
+   }
+  },
+  "extra_corpus": {
+   "arms": "--option castsign off vs the default, the branch build merged onto 52202840d",
+   "binaries": [
+    "O2 bash",
+    "O2-noinline dash",
+    "O2-noinline cf2.elf (ARM Cortex-M)",
+    "O2-noinline kmod",
+    "O0 bzip2",
+    "O0 crontab",
+    "O0 od",
+    "O0 numfmt",
+    "O0 pr",
+    "O2-noinline csplit",
+    "O2 minigzip",
+    "O2 xmlwf",
+    "O2 dpkg-query",
+    "O0 last",
+    "O0 chage"
+   ],
+   "functions": 8841,
+   "files": 15,
+   "functions_changed": 40,
+   "by_class": {
+    "decl": 14,
+    "sign-cast": 45,
+    "def-widen": 102
+   },
+   "other_lines": 0,
+   "flips_removing_no_cast": 0,
+   "variables_json_identical": "15/15 binaries byte-identical"
+  },
+  "assignment_recheck": "assigncheck.py: 27/27 (castbench), 16/16 (extra), 3/3 (third), 4/4 (DWARF), 0 flagged",
+  "dwarf_corpus": {
+   "arms": "--option castsign off vs the default, the branch build merged onto 52202840d (23 changed, 8 flips, unchanged from round 2)",
+   "script": "docs/features/castsign/corpus-dwarf.py (unstripped decbench 'compiled/' binaries: every DWARF stack local is mapped typelock|namelock)",
+   "binaries": [
+    "O0 wc",
+    "O0 fmt",
+    "O0 sort",
+    "O0 gzip",
+    "O0 find",
+    "O0 bzip2",
+    "O0 diff",
+    "O0 grep",
+    "O2 sort",
+    "O2-noinline ls"
+   ],
+   "functions": 4254,
+   "files": 10,
+   "functions_changed": 23,
+   "by_class": {
+    "decl": 8,
+    "sign-cast": 8,
+    "def-widen": 18
+   },
+   "other_lines": 1,
+   "hand_classified": "gzip O0 gen_codes @0xb76a `len = (unsigned int)tree[n].dl.freq;` -> `len = tree[n].dl.freq;`: def-widen on a register local named `len` (hunkclass.py only recognizes vN names). `len` is not type-locked (not in variables[]); `signedness` already declares it `int` in both arms, and an unsigned short converts to the same int either way",
+   "locked_declarations_re_signed": 0,
+   "variables_json_identical": "10/10 binaries byte-identical off vs on",
+   "assignment_recheck": "assigncheck.py: 4 `lhs = (T)rhs;` became `lhs = rhs;`, 0 flagged",
+   "flips_removing_no_cast": 0,
+   "history": "the build before the type-lock check re-signed 3 DWARF-locked declarations (wc `chars`, `words`; bzip2 fallbackQSort3 `med`); the lock check restores exactly those"
+  },
+  "arithmetic_scan": "every flipped variable's function was scanned for + - * << on the variable's name: the only matches (17 castbench, 3 extra) are arithmetic on its sign extension or truncation, `(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place, which computes the same value in both arms",
+  "third_corpus": {
+   "arms": "--option castsign off vs the default, the branch build merged onto 52202840d",
+   "script": "docs/features/castsign/corpus-third.py (the review's disjoint set)",
+   "binaries": [
+    "O0 factor",
+    "O2 factor",
+    "O0 dd",
+    "O0 date",
+    "O0 expr",
+    "O0 cksum",
+    "O0 stat",
+    "O0 seq",
+    "O0 init",
+    "O0 groupadd",
+    "O0 mirai",
+    "O0 certtool",
+    "O0 e2fsck",
+    "O2 ip"
+   ],
+   "functions": 6547,
+   "functions_changed": 39,
+   "by_class": {
+    "decl": 34,
+    "sign-cast": 58,
+    "def-widen": 18
+   },
+   "other_lines": 0,
+   "flips_removing_no_cast": 0,
+   "variables_json_identical": "14/14"
+  },
+  "wide_literal_scan": "widescan.py over all 149 flipped variables in the four corpora: 0 decimal literals of 2^(w-1) or more on their lines; the only top-bit literals are hex constants assigned to the variable"
+ },
+ "speed": {
+  "method": "docs/features/castsign/speed.py: kuna decompile-all <bin> --json --max-fn-seconds 120, --option castsign off vs the default (on), the same final build, arm order alternating, 15 rounds each; min is the cleaner figure on a shared box (loadavg recorded)",
+  "measurements": {
+   "fmt": {
+    "off_min_ms": 4200.8,
+    "on_min_ms": 4166.0,
+    "delta_min_pct": -0.83,
+    "delta_median_pct": -4.52,
+    "loadavg": [
+     11.35888671875,
+     16.71826171875,
+     20.14794921875
+    ]
+   },
+   "ls": {
+    "off_min_ms": 14284.5,
+    "on_min_ms": 14223.3,
+    "delta_min_pct": -0.43,
+    "delta_median_pct": 2.34,
+    "loadavg": [
+     20.7548828125,
+     16.5478515625,
+     18.27294921875
+    ]
+   },
+   "sort": {
+    "off_min_ms": 14950.3,
+    "on_min_ms": 15108.2,
+    "delta_min_pct": 1.06,
+    "delta_median_pct": 1.27,
+    "loadavg": [
+     9.7578125,
+     13.50341796875,
+     16.0791015625
+    ]
+   },
+   "bash": {
+    "off_min_ms": 91074.5,
+    "on_min_ms": 89487.6,
+    "delta_min_pct": -1.74,
+    "delta_median_pct": -2.47,
+    "loadavg": [
+     5.36865234375,
+     5.63134765625,
+     8.2119140625
+    ]
+   }
+  },
+  "worst_min_delta_pct": 0.35,
+  "budget_pct": 5,
+  "after_lock_check": {
+   "build": "51f5e35ac (the type-lock check), same method, 15 rounds, docs/features/castsign/speed-after-lock.json",
+   "measurements": {
+    "fmt": {
+     "off_min_ms": 4109.9,
+     "on_min_ms": 4179.1,
+     "delta_min_pct": 1.68,
+     "delta_median_pct": 4.0
+    },
+    "ls": {
+     "off_min_ms": 13687.6,
+     "on_min_ms": 13786.8,
+     "delta_min_pct": 0.72,
+     "delta_median_pct": 0.3
+    },
+    "sort": {
+     "off_min_ms": 14537.5,
+     "on_min_ms": 14500.2,
+     "delta_min_pct": -0.26,
+     "delta_median_pct": -0.06
+    },
+    "bash": {
+     "off_min_ms": 87738.2,
+     "on_min_ms": 87371.8,
+     "delta_min_pct": -0.42,
+     "delta_median_pct": 0.3
+    }
+   },
+   "worst_min_delta_pct": 1.68
+  },
+  "final": {
+   "build": "158df9544 (arithmetic rule + printed-cast rule), same method, 15 rounds, docs/features/castsign/speed-final.json",
+   "measurements": {
+    "fmt": {
+     "off_min_ms": 4147.8,
+     "on_min_ms": 4162.2,
+     "delta_min_pct": 0.35,
+     "delta_median_pct": -4.47,
+     "loadavg": [
+      3.798828125,
+      3.67041015625,
+      4.498046875
+     ]
+    },
+    "ls": {
+     "off_min_ms": 13616.2,
+     "on_min_ms": 13629.4,
+     "delta_min_pct": 0.1,
+     "delta_median_pct": -1.4,
+     "loadavg": [
+      1.67333984375,
+      2.75048828125,
+      3.8232421875
+     ]
+    },
+    "sort": {
+     "off_min_ms": 14260.6,
+     "on_min_ms": 14268.7,
+     "delta_min_pct": 0.06,
+     "delta_median_pct": 0.07,
+     "loadavg": [
+      1.212890625,
+      1.61474609375,
+      2.876953125
+     ]
+    },
+    "bash": {
+     "off_min_ms": 86628.9,
+     "on_min_ms": 86664.7,
+     "delta_min_pct": 0.04,
+     "delta_median_pct": 0.1,
+     "loadavg": [
+      1.12890625,
+      1.2666015625,
+      1.453125
+     ]
+    }
+   },
+   "worst_min_delta_pct": 0.35
+  },
+  "after_wide_literal_rule": {
+   "build": "the branch merged onto 52202840d (e120ab7df code), same method, 15 rounds, docs/features/castsign/speed-wideliteral.json",
+   "measurements": {
+    "fmt": {
+     "off_min_ms": 4131.4,
+     "on_min_ms": 4129.9,
+     "delta_min_pct": -0.04,
+     "delta_median_pct": 2.32,
+     "loadavg": [
+      4.60888671875,
+      6.412109375,
+      5.60693359375
+     ]
+    },
+    "ls": {
+     "off_min_ms": 13596.6,
+     "on_min_ms": 13625.9,
+     "delta_min_pct": 0.22,
+     "delta_median_pct": 0.43,
+     "loadavg": [
+      3.21435546875,
+      4.25146484375,
+      4.9814453125
+     ]
+    },
+    "sort": {
+     "off_min_ms": 14137.9,
+     "on_min_ms": 14338.6,
+     "delta_min_pct": 1.42,
+     "delta_median_pct": 1.33,
+     "loadavg": [
+      4.06494140625,
+      3.8583984375,
+      4.486328125
+     ]
+    },
+    "bash": {
+     "off_min_ms": 85521.9,
+     "on_min_ms": 86293.5,
+     "delta_min_pct": 0.9,
+     "delta_median_pct": 0.02,
+     "loadavg": [
+      1.19140625,
+      1.8779296875,
+      2.91943359375
+     ]
+    }
+   },
+   "worst_min_delta_pct": 1.42
+  }
+ },
+ "parity": {
+  "datatests": "675/675 PARITY OK, no assertion moved",
+  "stages": "1350/1350 PARITY OK; no assertion outside kuna-castsign.xml moved; that file now has 9 assertions (sign_of flips, a decremented index stays unsigned, a locked slot keeps its type) and baseline-stages.json changes only in its castsign keys and totals",
+  "test_cli": "237/237",
+  "rust_test": "RUST_TEST_RC=0, 7,484 passed, 0 failed, 38 ignored (commit 158df9544, lane 05:39:49Z-06:05:23Z)"
+ },
+ "soundness": {
+  "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_signed_only_variable_round_trips_through_the_printed_c: castsign_wrap_{gcc,clang}_O0_x86_64 (inputs 0, 1, 2, 2^63-1, 2^63, 2^63+1, 2^64-1 and 0, 5, 2^31-1, 2^31, 2^31+1), castsign_wrap_gcc_O1_x86_64 (sign_of, peek) and castsign_{gcc,clang}_O{0,1}_x86_64; option off and on; printed C built by gcc and clang at -O0 and -O2 (56 builds); every build prints the binary's output; the five arithmetic functions print unchanged with the option on. Fails on the first version (dec_neg, cnt_wrap, dec_neg32 wrong at gcc -O0; all five wrong at gcc -O2 and clang -O2), passes on this one",
+  "type_lock": "kuna-cli/tests/decompile_all_cli.rs castsign_leaves_a_locked_declaration_alone: `--assert type` on a stack local (castsign_wrap_gcc_O0_x86_64 sign_of) and a register local (castsign_wrap_gcc_O1_x86_64 peek), and a DWARF local declared `unsigned long` (castsign_dwarf_gcc_O0_x86_64 sign_of), keep the locked type and its `(long)` cast with the option on and off; unlocked (no assertion, debug info stripped) the same variables are declared `long`. Stage pass 3 checks a console `map addr` lock the same way",
+  "fwrapv": "castsign never re-declares a variable that + - * << or unary - reads, so its flips need no -fwrapv; `signedness auto`'s own register-local flips still do at the edge of the range (spec 9.3)"
+ },
+ "default_on_evaluation": "docs/features/castsign/default-on-evaluation.md",
+ "review_round_2": {
+  "finding": "re-declaring a frame local signed moved arithmetic under a signed compare from unsigned wraparound to signed-overflow UB (dec_neg, cnt_wrap, spin, count_down shapes; gcc -O0 and gcc/clang -O2 print a different value at 2^63); 23 flips removed no cast",
+  "response": [
+   "a high only castsign admits is left alone when + - * << or unary - reads it (kuna_castsign.rs can_overflow)",
+   "it is re-declared only when a cast the new declaration makes a no-op prints today (kuna_castsign.rs drops_printed_cast)",
+   "round trip extended to boundary inputs, gcc and clang at -O0 and -O2, and the reviewer's shapes; spec 9.3 states the -fwrapv caveat for signedness auto"
+  ]
+ },
+ "review_round_3": {
+  "finding": "an unchanged `v == 3000000000` (or 10000000000000000000) line computes a different value once `v` is re-declared signed: the decimal literal's C type is wider than the declaration, so a signed `v` is sign-extended",
+  "fix": "kuna_castsign.rs (wide_literal): a high only castsign admits is left alone when == != & | ^ meets it, or its printed expression, with a constant whose top bit is set (directly or inside the other operand's printed expression)",
+  "test": "castsign_eq_x86_64.c (gcc/clang -O0: d_eq32, c_eq64, c_ne64, c_or64, control c_eq7) in a_signed_only_variable_round_trips_through_the_printed_c; fails on the round-2 build (gcc -O0 option on: d_eq32 1 1 0 for 2 1 0), passes with the rule",
+  "review_repros": "cw.c/cz.c at gcc/clang -O0/-O1/-O2: option on prints byte-identical C to option off in all 12 builds",
+  "not_fixed_here": "signedness auto register locals have the same hazard on origin/main: clang -O0 `unsigned v = ntohl(*p); if (v == 3000000000u) return 2; return (int)v < 0;` prints `int v1; // eax` with `if (v1 != 3000000000)`, C returns 1 where the binary returns 2",
+  "variables_json": "a flipped frame local's variables[] entry keeps the frame Symbol's unsigned type (documented in spec 9.3); unchanged by design so variables[] and type_match stay byte-identical"
+ },
+ "gates_final": "on e120ab7df merged onto 52202840d: make test 675/675 PARITY OK; make test-stages 1362/1362 PARITY OK; make test-cli 237/237; make rust-test RC=0 (7,511 passed, 0 failed, lane 08:34:55Z after the code commit 08:34:43Z); check-spec lenient+strict OK; catalog --check OK; counters --check no drift; options.md and phase_catalog.json fresh"
+}
