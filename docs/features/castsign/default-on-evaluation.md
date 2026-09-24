@@ -31,29 +31,36 @@ castbench corpus also removed no cast at all.
 Now a high only `castsign` admits is left alone when `+ - * <<` or unary `-`
 reads it, directly or through the expression its value is printed into, and is
 re-declared only when a cast the new declaration makes a no-op prints today.
-Of the 234 flips, 162 are gone (148 print arithmetic on the variable, 69 of them
-updating the variable itself; the rest are arithmetic printed as `v4 -= v7` or
-flips that removed nothing), none was added, and 23 more come back through the
-second rule's cast-under-a-conversion case (`SEXT816((long)v34)`,
-`(long)(int)v8`). The arithmetic rule is what the lost 84 casts cost; each of
-them sat on a variable whose re-declared C is exact only under `-fwrapv`.
+Of the 234 flips, 139 are gone and none was added: 138 print arithmetic on the
+variable (69 of them update the variable itself, `v = v - 1`), and one
+(find -O2 `v84`, read only inside `(long)(v83 + v86 | v84 | v18)`) removed no
+cast. The 84 casts the first version removed beyond this one all sat on
+variables whose re-declared C is exact only under `-fwrapv`.
 
 ## What is left of the 596
 
-On the shared set, locals carried 526 unsigned-to-signed casts and now carry 390.
-The rest are not safe to take by re-declaring:
+Counted with the census counter over the 4,815 shared functions (a cast whose
+target differs from its bare operand variable's declared type only in
+signedness), unsigned-to-signed casts on locals go 669 -> 617. The first version
+took them to 533; the 84 between sat on variables that `+ - *` read, where the
+signed declaration would have changed what the C computes. The rest are not safe
+to take by re-declaring:
 
+- Variables the body also increments, decrements or offsets (the largest group
+  now).
 - -O0 register temporaries (`// eax`) that merge unrelated values, one read
   unsigned and another signed.
 - Values that leave through a zero-extension whose high bits are read: a 64-bit
   return from a function kuna types `unsigned long`, or a varargs slot.
 - Values really compared both ways.
 
-Parameters carry 70 more. Re-signing one is a prototype change: the signature,
-every caller and the `decompile-project` header spell it. That is a separate lever.
+Parameters carry 95 more (unchanged). Re-signing one is a prototype change: the
+signature, every caller and the `decompile-project` header spell it. That is a
+separate lever.
 
-The opposite direction (declared signed, read unsigned) is 20 casts on locals, so
-a mirror rule was not built.
+The opposite direction (declared signed, read unsigned) is 84 casts on locals
+(unchanged), and much of it is `char`/`unsigned char`, so a mirror rule was not
+built.
 
 ## Value preservation
 

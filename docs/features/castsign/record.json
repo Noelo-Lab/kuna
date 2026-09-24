@@ -13,24 +13,33 @@
  "source_decompiler": "kuna",
  "inspiration": "2026-09-23 cast census (kwt/castcensus: measure 4b, engine 4.5), plan lever 5",
  "witness": {
-  "repro": "gcc -O0 t.c (trim_right, see PR body); kuna decompile-all t --functions trim_right",
+  "repro": "gcc -O0 t.c (sign_of, see the PR body); kuna decompile-all t --functions sign_of",
   "before": [
    "unsigned long v1; // stack - 0x10",
-   "while ((v1 = v1 - 1, 0 <= (long)v1 && (a0[v1] == ' '))) {"
+   "if ((long)v1 <= -6)",
+   "if (0 <= (long)v1)"
   ],
   "after": [
    "long v1; // stack - 0x10",
-   "while ((v1 = v1 - 1, 0 <= v1 && (a0[v1] == ' '))) {"
+   "if (v1 <= -6)",
+   "if (0 <= v1)"
   ],
   "corpus": {
-   "gzip O0 0xb363": [
-    "unsigned int v12; // stack - 0x3c",
-    "for (v12 = 0; (int)v12 <= 0xf; v12 = v12 + 1) {",
-    "-> int v12; ... for (v12 = 0; v12 <= 0xf; v12 = v12 + 1) {"
+   "ls O2 0xc980": [
+    "unsigned long v25; // stack - 0x1330",
+    "v24 = (long)v25 < dat_26378;",
+    "-> long v25; ... v24 = v25 < dat_26378;"
    ],
-   "diff3 O0 0x3696": [
-    "v12 = v3[(int)v6];",
-    "-> v12 = v3[v6];"
+   "tar O0 0x67494": [
+    "*(char *)((int8)a2 + (int8)(int4)v15) = 1;",
+    "-> int4 v15; ... *(char *)((int8)a2 + (int8)v15) = 1;"
+   ]
+  },
+  "left_alone": {
+   "dec_neg (castsign_wrap_x86_64.c, gcc -O0)": [
+    "unsigned long v1; // stack - 0x18",
+    "for (v2 = 0; (0 <= (long)(v1 - 1) && (v2 <= 4)); v2 = v2 + 1) {",
+    "stays: `long v1` would make gcc read `0 <= v1 - 1` as `0 < v1`, wrong at v1 == 2^63"
    ]
   }
  },
@@ -40,47 +49,53 @@
   "shared_functions": 4815,
   "ida_casts": 37821,
   "main_casts": 43673,
-  "branch_casts": 43483,
+  "branch_casts": 43567,
   "main_per_kloc": 229.2,
-  "branch_per_kloc": 228.2,
+  "branch_per_kloc": 228.6,
   "main_vs_ida": 1.155,
-  "branch_vs_ida": 1.15,
+  "branch_vs_ida": 1.152,
   "by_level_vs_ida": {
    "O0": [
     1.198,
-    1.187
+    1.192
    ],
    "O2": [
     1.168,
-    1.166
+    1.167
    ],
    "O2-noinline": [
     1.096,
-    1.094
+    1.095
    ]
   },
-  "functions_fewer": 72,
-  "casts_fewer": 190,
+  "functions_fewer": 42,
+  "casts_fewer": 106,
   "functions_more": 0,
-  "sign_only_casts_on_locals_shared_set": {
-   "unsigned_to_signed": [
-    526,
-    390
+  "sign_only_casts_shared_set": {
+   "method": "castcount-based signall.py over the 4,815 shared functions: a cast whose target differs from the bare operand variable's declared type only in signedness",
+   "unsigned_to_signed_locals": [
+    669,
+    617
    ],
-   "signed_to_unsigned": [
-    20,
-    20
-   ]
+   "unsigned_to_signed_params": [
+    95,
+    95
+   ],
+   "signed_to_unsigned_locals": [
+    84,
+    84
+   ],
+   "signed_to_unsigned_params": [
+    93,
+    93
+   ],
+   "before_the_arithmetic_rule": "the first version took unsigned_to_signed_locals to 533; the 84 it took beyond this build sat on variables that + - * read"
   },
-  "sign_only_casts_on_params_shared_set": {
-   "unsigned_to_signed": [
-    70,
-    70
-   ],
-   "signed_to_unsigned": [
-    12,
-    12
-   ]
+  "before_the_arithmetic_rule": {
+   "branch_casts": 43483,
+   "branch_vs_ida": 1.15,
+   "functions_fewer": 72,
+   "casts_fewer": 190
   }
  },
  "benchmark": {
@@ -171,22 +186,38 @@
    "worse": 0
   },
   "control": "all 10,748 functions score identically in both arms; the off arm matches origin/main's sweep row for row; variables[] byte-identical off vs on over 6 more binaries (6,673 functions): no variable or argument added or removed",
-  "after_lock_check": "re-run on the build with the type-lock check (51f5e35ac): rows.json identical to the earlier default-on arm on all 444 slices (1,615 perfect)"
+  "after_lock_check": "re-run on the build with the type-lock check (51f5e35ac): rows.json identical to the earlier default-on arm on all 444 slices (1,615 perfect)",
+  "after_arithmetic_rule": "re-run on the final build: rows.json identical to the off arm on all 444 slices (1,615 perfect, mean .3697)"
  },
  "corpus_sweep": {
-  "classifier": "docs/features/castsign/hunkclass.py (decl = `unsigned T vN;` -> `T vN;`; sign-cast = `(T)vN` dropped on a re-declared vN; def-widen = an integer cast dropped at the top of `vN = ...;` where vN is declared an integer of the cast's width; anything else is OTHER)",
+  "classifier": "docs/features/castsign/hunkclass.py (decl = `unsigned T vN;` -> `T vN;`; sign-cast = `(T)vN` dropped on a re-declared vN; def-widen = an integer cast dropped at the top of `vN = ...;` where vN is declared an integer of the cast's width; anything else is OTHER; a flip none of whose sign-casts appear is counted as a flip that removed no cast)",
   "castbench_full": {
    "arms": "castbench main arm at 5458b7ab5 (== castsign off) vs the final default-on build",
    "binaries": "45: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find x O0/O2/O2-noinline",
    "files": 45,
-   "functions_changed": 203,
+   "functions_changed": 114,
    "by_class": {
-    "decl": 234,
-    "sign-cast": 371,
+    "decl": 95,
+    "sign-cast": 171,
     "def-widen": 94
    },
    "other_lines": 0,
-   "after_lock_check": "the 45 binaries' C output is byte-identical before and after the type-lock check (stripped binaries carry no locked Symbol)"
+   "flips_removing_no_cast": 0,
+   "before_the_arithmetic_rule": {
+    "functions_changed": 203,
+    "by_class": {
+     "decl": 234,
+     "sign-cast": 371,
+     "def-widen": 94
+    },
+    "flips_removing_no_cast": 23,
+    "flips_now_left_alone": 139,
+    "of_which_print_arithmetic_on_the_variable": 138,
+    "of_which_self_update": 69,
+    "flips_added_since": 0,
+    "note": "all 95 final flips are among the first version's 234",
+    "of_which_removed_no_cast": 1
+   }
   },
   "extra_corpus": {
    "arms": "--option castsign off vs the default, same final build",
@@ -196,23 +227,32 @@
     "O2-noinline cf2.elf (ARM Cortex-M)",
     "O2-noinline kmod",
     "O0 bzip2",
-    "O0 crontab"
+    "O0 crontab",
+    "O0 od",
+    "O0 numfmt",
+    "O0 pr",
+    "O2-noinline csplit",
+    "O2 minigzip",
+    "O2 xmlwf",
+    "O2 dpkg-query",
+    "O0 last",
+    "O0 chage"
    ],
-   "functions": 6673,
-   "files": 6,
-   "functions_changed": 55,
+   "functions": 8841,
+   "files": 15,
+   "functions_changed": 41,
    "by_class": {
-    "decl": 44,
-    "sign-cast": 176,
-    "def-widen": 94
+    "decl": 15,
+    "sign-cast": 50,
+    "def-widen": 102
    },
    "other_lines": 0,
-   "variables_json_identical": "6/6 binaries byte-identical",
-   "after_lock_check": "byte-identical before and after the type-lock check, both arms, C and variables[]"
+   "flips_removing_no_cast": 0,
+   "variables_json_identical": "15/15 binaries byte-identical"
   },
-  "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 11/11 (extra), 0 flagged",
+  "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 16/16 (extra), 4/4 (DWARF), 0 flagged",
   "dwarf_corpus": {
-   "arms": "--option castsign off vs the default, same build (commit 51f5e35ac); plus the build before the type-lock check as a third arm",
+   "arms": "--option castsign off vs the default, same final build",
    "script": "docs/features/castsign/corpus-dwarf.py (unstripped decbench 'compiled/' binaries: every DWARF stack local is mapped typelock|namelock)",
    "binaries": [
     "O0 wc",
@@ -228,19 +268,21 @@
    ],
    "functions": 4254,
    "files": 10,
-   "functions_changed": 40,
+   "functions_changed": 23,
    "by_class": {
-    "decl": 34,
-    "sign-cast": 52,
-    "def-widen": 19
+    "decl": 8,
+    "sign-cast": 8,
+    "def-widen": 18
    },
-   "other_lines": 0,
+   "other_lines": 1,
    "hand_classified": "gzip O0 gen_codes @0xb76a `len = (unsigned int)tree[n].dl.freq;` -> `len = tree[n].dl.freq;`: def-widen on a register local named `len` (hunkclass.py only recognizes vN names). `len` is not type-locked (not in variables[]); `signedness` already declares it `int` in both arms, and an unsigned short converts to the same int either way",
    "locked_declarations_re_signed": 0,
-   "before_the_lock_check": "42 functions changed, with 3 DWARF-locked declarations re-signed: wc `wc` @0x3591 `unsigned long chars;` and `unsigned long words;` (source `uintmax_t`) printed `long`, bzip2 fallbackQSort3 `unsigned int med;` (source `UInt32`) printed `int`. The type-lock check restores exactly those 3 lines; nothing else differs between the two builds",
    "variables_json_identical": "10/10 binaries byte-identical off vs on",
-   "assignment_recheck": "assigncheck.py: 5 `lhs = (T)rhs;` became `lhs = rhs;`, 0 flagged: 4 with lhs declared an integer of T's width, 1 (grep O0 `v17 = (int)v15;`, v17 `long`) whose rhs v15 is itself re-declared `int`, so `(int)v15` was the no-op sign-cast"
-  }
+   "assignment_recheck": "assigncheck.py: 4 `lhs = (T)rhs;` became `lhs = rhs;`, 0 flagged",
+   "flips_removing_no_cast": 0,
+   "history": "the build before the type-lock check re-signed 3 DWARF-locked declarations (wc `chars`, `words`; bzip2 fallbackQSort3 `med`); the lock check restores exactly those"
+  },
+  "arithmetic_scan": "every flipped variable's function was scanned for + - * << on the variable's name: the only matches (17 castbench, 3 extra) are arithmetic on its sign extension or truncation, `(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place, which computes the same value in both arms"
  },
  "speed": {
   "method": "docs/features/castsign/speed.py: kuna decompile-all <bin> --json --max-fn-seconds 120, --option castsign off vs the default (on), the same final build, arm order alternating, 15 rounds each; min is the cleaner figure on a shared box (loadavg recorded)",
@@ -325,13 +367,22 @@
  },
  "parity": {
   "datatests": "675/675 PARITY OK, no assertion moved",
-  "stages": "1349/1349 PARITY OK; 0 existing assertions moved, 8 new castsign keys (#7 and #8: a type-locked slot keeps its declaration and cast)",
+  "stages": "1350/1350 PARITY OK; no assertion outside kuna-castsign.xml moved; that file now has 9 assertions (sign_of flips, a decremented index stays unsigned, a locked slot keeps its type) and baseline-stages.json changes only in its castsign keys and totals",
   "test_cli": "237/237",
-  "rust_test": "RUST_TEST_RC=0, 7,484 passed, 0 failed (commit 5a063941e)"
+  "rust_test": "RUST_TEST_PLACEHOLDER"
  },
  "soundness": {
-  "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_signed_only_variable_round_trips_through_the_printed_c: castsign_{gcc,clang}_O{0,1}_x86_64 printed functions, option off and on, compiled by gcc and clang: all print the binary's output; both must-stay-unsigned functions keep `unsigned long v1;` and their casts",
-  "type_lock": "kuna-cli/tests/decompile_all_cli.rs castsign_leaves_a_locked_declaration_alone: `--assert type` on a stack local (castsign_gcc_O0_x86_64 trim_right) and a register local (castsign_gcc_O1_x86_64 run_len), and a DWARF local declared `unsigned long` (castsign_dwarf_gcc_O0_x86_64 tail_blanks), keep the locked type and its `(long)` cast with the option on and off; unlocked (no assertion, debug info stripped) the same variables are declared `long`. Stage pass 3 checks a console `map addr` lock the same way"
+  "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_signed_only_variable_round_trips_through_the_printed_c: castsign_wrap_{gcc,clang}_O0_x86_64 (inputs 0, 1, 2, 2^63-1, 2^63, 2^63+1, 2^64-1 and 0, 5, 2^31-1, 2^31, 2^31+1), castsign_wrap_gcc_O1_x86_64 (sign_of, peek) and castsign_{gcc,clang}_O{0,1}_x86_64; option off and on; printed C built by gcc and clang at -O0 and -O2 (56 builds); every build prints the binary's output; the five arithmetic functions print unchanged with the option on. Fails on the first version (dec_neg, cnt_wrap, dec_neg32 wrong at gcc -O0; all five wrong at gcc -O2 and clang -O2), passes on this one",
+  "type_lock": "kuna-cli/tests/decompile_all_cli.rs castsign_leaves_a_locked_declaration_alone: `--assert type` on a stack local (castsign_wrap_gcc_O0_x86_64 sign_of) and a register local (castsign_wrap_gcc_O1_x86_64 peek), and a DWARF local declared `unsigned long` (castsign_dwarf_gcc_O0_x86_64 sign_of), keep the locked type and its `(long)` cast with the option on and off; unlocked (no assertion, debug info stripped) the same variables are declared `long`. Stage pass 3 checks a console `map addr` lock the same way",
+  "fwrapv": "castsign never re-declares a variable that + - * << or unary - reads, so its flips need no -fwrapv; `signedness auto`'s own register-local flips still do at the edge of the range (spec 9.3)"
  },
- "default_on_evaluation": "docs/features/castsign/default-on-evaluation.md"
+ "default_on_evaluation": "docs/features/castsign/default-on-evaluation.md",
+ "review_round_2": {
+  "finding": "re-declaring a frame local signed moved arithmetic under a signed compare from unsigned wraparound to signed-overflow UB (dec_neg, cnt_wrap, spin, count_down shapes; gcc -O0 and gcc/clang -O2 print a different value at 2^63); 23 flips removed no cast",
+  "response": [
+   "a high only castsign admits is left alone when + - * << or unary - reads it (kuna_castsign.rs can_overflow)",
+   "it is re-declared only when a cast the new declaration makes a no-op prints today (kuna_castsign.rs drops_printed_cast)",
+   "round trip extended to boundary inputs, gcc and clang at -O0 and -O2, and the reviewer's shapes; spec 9.3 states the -fwrapv caveat for signedness auto"
+  ]
+ }
 }

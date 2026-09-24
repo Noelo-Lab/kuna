@@ -24,3 +24,10 @@ extra-corpus binaries, 6,673 functions).
 After the type-lock check (commit `51f5e35ac`) the default-on arm was re-run: its
 `rows.json` is identical to the arm above on all 444 slices. decbench scores
 stripped binaries, which carry no locked Symbol.
+
+After the arithmetic rule and the printed-cast rule (review round 2) the
+default-on arm was re-run on the final build: its `rows.json` is identical to the
+off arm on all 444 slices and all 10,748 functions (1,615 perfect, mean .3697).
+The option changes C declarations and casts only; `variables[]` is byte-identical
+off vs on over 15 disjoint binaries (8,841 functions) and 10 DWARF binaries, so
+no variable or argument is added or removed.

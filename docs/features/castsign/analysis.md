@@ -101,10 +101,9 @@ operators reads it, directly or through the expression its value is printed into
 (`kuna_castsign.rs (can_overflow)`). For `<<` only the shifted operand counts,
 not the count. `& | ^ ~`, comparisons, truncations, assignments, call arguments,
 stores and `return`s cannot overflow and keep a variable admissible. On the 45
-castbench binaries the earlier version flipped 234 declarations. 162 of them are
-now left alone: 148 print `+ - *` on the variable (69 of those update the
-variable itself, `v = v - 1`), and the rest are arithmetic the text shows as
-`v4 -= v7`, or a flip that removed no cast.
+castbench binaries the earlier version flipped 234 declarations. 139 of them are
+now left alone: 138 print arithmetic on the variable (69 of those update the
+variable itself, `v = v - 1`), and one removed no cast.
 
 The walk `signedness auto` runs for register locals still treats `+ - *` as
 neutral, so its own flips can compute differently at the edge unless the C is

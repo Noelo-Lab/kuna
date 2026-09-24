@@ -1,17 +1,32 @@
 {
- "classifier": "docs/features/castsign/hunkclass.py (decl = `unsigned T vN;` -> `T vN;`; sign-cast = `(T)vN` dropped on a re-declared vN; def-widen = an integer cast dropped at the top of `vN = ...;` where vN is declared an integer of the cast's width; anything else is OTHER)",
+ "classifier": "docs/features/castsign/hunkclass.py (decl = `unsigned T vN;` -> `T vN;`; sign-cast = `(T)vN` dropped on a re-declared vN; def-widen = an integer cast dropped at the top of `vN = ...;` where vN is declared an integer of the cast's width; anything else is OTHER; a flip none of whose sign-casts appear is counted as a flip that removed no cast)",
  "castbench_full": {
   "arms": "castbench main arm at 5458b7ab5 (== castsign off) vs the final default-on build",
   "binaries": "45: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find x O0/O2/O2-noinline",
   "files": 45,
-  "functions_changed": 203,
+  "functions_changed": 114,
   "by_class": {
-   "decl": 234,
-   "sign-cast": 371,
+   "decl": 95,
+   "sign-cast": 171,
    "def-widen": 94
   },
   "other_lines": 0,
-  "after_lock_check": "the 45 binaries' C output is byte-identical before and after the type-lock check (stripped binaries carry no locked Symbol)"
+  "flips_removing_no_cast": 0,
+  "before_the_arithmetic_rule": {
+   "functions_changed": 203,
+   "by_class": {
+    "decl": 234,
+    "sign-cast": 371,
+    "def-widen": 94
+   },
+   "flips_removing_no_cast": 23,
+   "flips_now_left_alone": 139,
+   "of_which_print_arithmetic_on_the_variable": 138,
+   "of_which_self_update": 69,
+   "flips_added_since": 0,
+   "note": "all 95 final flips are among the first version's 234",
+   "of_which_removed_no_cast": 1
+  }
  },
  "extra_corpus": {
   "arms": "--option castsign off vs the default, same final build",
@@ -21,23 +36,32 @@
    "O2-noinline cf2.elf (ARM Cortex-M)",
    "O2-noinline kmod",
    "O0 bzip2",
-   "O0 crontab"
+   "O0 crontab",
+   "O0 od",
+   "O0 numfmt",
+   "O0 pr",
+   "O2-noinline csplit",
+   "O2 minigzip",
+   "O2 xmlwf",
+   "O2 dpkg-query",
+   "O0 last",
+   "O0 chage"
   ],
-  "functions": 6673,
-  "files": 6,
-  "functions_changed": 55,
+  "functions": 8841,
+  "files": 15,
+  "functions_changed": 41,
   "by_class": {
-   "decl": 44,
-   "sign-cast": 176,
-   "def-widen": 94
+   "decl": 15,
+   "sign-cast": 50,
+   "def-widen": 102
   },
   "other_lines": 0,
-  "variables_json_identical": "6/6 binaries byte-identical",
-  "after_lock_check": "byte-identical before and after the type-lock check, both arms, C and variables[]"
+  "flips_removing_no_cast": 0,
+  "variables_json_identical": "15/15 binaries byte-identical"
  },
- "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 11/11 (extra), 0 flagged",
+ "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 16/16 (extra), 4/4 (DWARF), 0 flagged",
  "dwarf_corpus": {
-  "arms": "--option castsign off vs the default, same build (commit 51f5e35ac); plus the build before the type-lock check as a third arm",
+  "arms": "--option castsign off vs the default, same final build",
   "script": "docs/features/castsign/corpus-dwarf.py (unstripped decbench 'compiled/' binaries: every DWARF stack local is mapped typelock|namelock)",
   "binaries": [
    "O0 wc",
@@ -53,17 +77,19 @@
   ],
   "functions": 4254,
   "files": 10,
-  "functions_changed": 40,
+  "functions_changed": 23,
   "by_class": {
-   "decl": 34,
-   "sign-cast": 52,
-   "def-widen": 19
+   "decl": 8,
+   "sign-cast": 8,
+   "def-widen": 18
   },
-  "other_lines": 0,
+  "other_lines": 1,
   "hand_classified": "gzip O0 gen_codes @0xb76a `len = (unsigned int)tree[n].dl.freq;` -> `len = tree[n].dl.freq;`: def-widen on a register local named `len` (hunkclass.py only recognizes vN names). `len` is not type-locked (not in variables[]); `signedness` already declares it `int` in both arms, and an unsigned short converts to the same int either way",
   "locked_declarations_re_signed": 0,
-  "before_the_lock_check": "42 functions changed, with 3 DWARF-locked declarations re-signed: wc `wc` @0x3591 `unsigned long chars;` and `unsigned long words;` (source `uintmax_t`) printed `long`, bzip2 fallbackQSort3 `unsigned int med;` (source `UInt32`) printed `int`. The type-lock check restores exactly those 3 lines; nothing else differs between the two builds",
   "variables_json_identical": "10/10 binaries byte-identical off vs on",
-  "assignment_recheck": "assigncheck.py: 5 `lhs = (T)rhs;` became `lhs = rhs;`, 0 flagged: 4 with lhs declared an integer of T's width, 1 (grep O0 `v17 = (int)v15;`, v17 `long`) whose rhs v15 is itself re-declared `int`, so `(int)v15` was the no-op sign-cast"
- }
+  "assignment_recheck": "assigncheck.py: 4 `lhs = (T)rhs;` became `lhs = rhs;`, 0 flagged",
+  "flips_removing_no_cast": 0,
+  "history": "the build before the type-lock check re-signed 3 DWARF-locked declarations (wc `chars`, `words`; bzip2 fallbackQSort3 `med`); the lock check restores exactly those"
+ },
+ "arithmetic_scan": "every flipped variable's function was scanned for + - * << on the variable's name: the only matches (17 castbench, 3 extra) are arithmetic on its sign extension or truncation, `(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place, which computes the same value in both arms"
 }
