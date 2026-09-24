@@ -7,11 +7,11 @@
     register local signed when every signedness-sensitive reader of it is
     signed, but it skips every high mapped onto a Symbol, and a stack local is
     mapped onto its frame Symbol; it also vetoes a variable used as a pointer
-    index.  So a frame-resident index that the program only compares signed
+    index.  So a frame-resident value that the program only compares signed
     stays `uint8` and every comparison carries `(int8)v1`.
 
-    gcc -O0 -fno-pie -fno-stack-protector, linked at 0x1000 (the bytes below
-    are .text), with ulen and fill declared below:
+    gcc -O0 -fno-pie -fno-stack-protector -fcf-protection=none, linked at
+    0x1000 (the bytes below are .text), with ulen and fill declared below:
 
       ulen(s)          declared below: extern uint8 ulen(char *s)
       fill(p)          declared below: extern void fill(uint8 *p)
@@ -22,17 +22,23 @@
                          if ((long)n < 0) return -1; return (long)(n >> 1); }
       through_ptr()    { unsigned long n; fill(&n);
                          if ((long)n < 0) return -3; return (long)n; }
+      sign_of(s, t)    { unsigned long n = ulen(s);
+                         if ((long)n < 0) n = ulen(t);
+                         if ((long)n < -1) return 2;
+                         if ((long)n >= 0) return s[n]; return 0; }
 
-    Pass 1 (option castsign off) reproduces the defect: trim_right's stack
-    index is declared uint8 and its signed comparison casts it back (#1, #2).
-    Pass 2 (option castsign on) declares it int8 and the cast, now a no-op, is
+    Pass 1 (option castsign off) reproduces the defect: sign_of's stack value
+    is declared uint8 and each signed comparison casts it back (#1, #2).  Pass 2
+    (option castsign on) declares it int8 and the casts, now no-ops, are
     dropped (#3, #4); the `a0[v1]` pointer index is signedness-neutral at
-    pointer width.  Both passes keep halved's register value unsigned, since it
-    is shifted right logically (#5), and through_ptr's stack value unsigned,
-    since its address is passed as a uint8 * (#6).  Pass 3 (option castsign
-    still on) maps trim_right's slot as `uint8 idx`, which locks its type the
-    way a DWARF local or a type assertion does: the declaration and its cast
-    stay (#7, #8).
+    pointer width.  Both passes keep trim_right's index unsigned: the body
+    computes `v1 - 1`, which wraps at 2^63 as uint8 and would overflow as int8
+    (#2, #5).  Both passes keep halved's register value unsigned, since it is
+    shifted right logically (#6), and through_ptr's stack value unsigned, since
+    its address is passed as a uint8 * (#2, #7).  Pass 3 (option castsign still
+    on) maps sign_of's slot as `uint8 idx`, which locks its type the way a
+    DWARF local or a type assertion does: the declaration and its casts stay
+    (#8, #9).
 -->
 <bytechunk space="ram" offset="0x1000">
 554889e548897de848c745f800000000eb05488345f801488b55e8488b45f848
@@ -43,18 +49,25 @@
 d04801c04883c003c9c3554889e54883ec1848897de8488b45e84889c7e83eff
 ffff4883e802488945f8488b45f84885c0790948c7c0ffffffffeb07488b45f8
 48d1e8c9c3554889e54883ec10488d45f84889c7e836ffffff488b45f84885c0
-790948c7c0fdffffffeb04488b45f8c9c3
+790948c7c0fdffffffeb04488b45f8c9c3554889e54883ec2048897de8488975
+e0488b45e84889c7e8d3feffff488945f8488b45f84885c07910488b45e04889
+c7e8bafeffff488945f8488b45f84883f8ff7d07b802000000eb22488b45f848
+85c07814488b55e8488b45f84801d00fb600480fbec0eb05b800000000c9c3
 </bytechunk>
 <symbol space="ram" offset="0x1000" name="ulen"/>
 <symbol space="ram" offset="0x102f" name="fill"/>
 <symbol space="ram" offset="0x1045" name="trim_right"/>
 <symbol space="ram" offset="0x10aa" name="halved"/>
 <symbol space="ram" offset="0x10e5" name="through_ptr"/>
+<symbol space="ram" offset="0x1111" name="sign_of"/>
 </binaryimage>
 <script>
   <com>parse line extern uint8 ulen(char *s);</com>
   <com>parse line extern void fill(uint8 *p);</com>
   <com>option castsign off</com>
+  <com>lo fu sign_of</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>lo fu trim_right</com>
   <com>decompile</com>
   <com>print C</com>
@@ -65,6 +78,9 @@ ffff4883e802488945f8488b45f84885c0790948c7c0ffffffffeb07488b45f8
   <com>decompile</com>
   <com>print C</com>
   <com>option castsign on</com>
+  <com>lo fu sign_of</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>lo fu trim_right</com>
   <com>decompile</com>
   <com>print C</com>
@@ -74,18 +90,19 @@ ffff4883e802488945f8488b45f84885c0790948c7c0ffffffffeb07488b45f8
   <com>lo fu through_ptr</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>lo fu trim_right</com>
+  <com>lo fu sign_of</com>
   <com>map addr s0xfffffffffffffff0 uint8 idx</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="castsign #1: a stack index the body only compares signed is declared uint8 under option castsign off, beside through_ptr's uint8 in both passes (bug reproduces, three times)" min="3" max="3">^  uint8 v1; // stack - 0x10$</stringmatch>
-<stringmatch name="castsign #2: and its signed comparison casts it back (bug reproduces, once)" min="1" max="1">0 &lt;= \(int8\)v1 &amp;&amp; \(a0\[v1\] == ' '\)</stringmatch>
+<stringmatch name="castsign #1: under option castsign off a stack value the body only compares signed casts each comparison back (bug reproduces, once)" min="1" max="1">^  if \(\(int8\)v1 &lt;= -2\)$</stringmatch>
+<stringmatch name="castsign #2: and is declared uint8, beside trim_right's and through_ptr's in both passes (bug reproduces, five times)" min="5" max="5">^  uint8 v1; // stack - 0x10$</stringmatch>
 <stringmatch name="castsign #3: option castsign on declares it int8 (fix, once)" min="1" max="1">^  int8 v1; // stack - 0x10$</stringmatch>
-<stringmatch name="castsign #4: and the cast the declaration makes a no-op is dropped (fix, once)" min="1" max="1">0 &lt;= v1 &amp;&amp; \(a0\[v1\] == ' '\)</stringmatch>
-<stringmatch name="castsign #5: a value shifted right logically stays unsigned in both passes (twice)" min="2" max="2">^  return v1 &gt;&gt; 1;$</stringmatch>
-<stringmatch name="castsign #6: the stack value whose address is passed as a uint8 * keeps its cast in both passes, as does halved's shifted value (four times)" min="4" max="4">\(int8\)v1 &lt;= -1\)</stringmatch>
-<stringmatch name="castsign #7: a stack slot whose type is locked keeps uint8 under option castsign on (lock, once)" min="1" max="1">^  uint8 idx; // stack - 0x10$</stringmatch>
-<stringmatch name="castsign #8: and keeps the cast its signed comparison needs (lock, once)" min="1" max="1">0 &lt;= \(int8\)idx &amp;&amp; \(a0\[idx\] == ' '\)</stringmatch>
+<stringmatch name="castsign #4: and the casts the declaration makes no-ops are dropped (fix, once)" min="1" max="1">^  if \(0 &lt;= v1\)$</stringmatch>
+<stringmatch name="castsign #5: an index the body decrements keeps its cast in both passes, since v1 - 1 would overflow as int8 (twice)" min="2" max="2">0 &lt;= \(int8\)v1 &amp;&amp; \(a0\[v1\] == ' '\)</stringmatch>
+<stringmatch name="castsign #6: a value shifted right logically stays unsigned in both passes (twice)" min="2" max="2">^  return v1 &gt;&gt; 1;$</stringmatch>
+<stringmatch name="castsign #7: halved's and through_ptr's values keep their cast in both passes, as does sign_of's under option castsign off (five times)" min="5" max="5">\(int8\)v1 &lt;= -1\)</stringmatch>
+<stringmatch name="castsign #8: a stack slot whose type is locked keeps uint8 under option castsign on (lock, once)" min="1" max="1">^  uint8 idx; // stack - 0x10$</stringmatch>
+<stringmatch name="castsign #9: and keeps the casts its signed comparisons need (lock, once)" min="1" max="1">^  if \(0 &lt;= \(int8\)idx\)$</stringmatch>
 </decompilertest>
