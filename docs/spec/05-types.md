@@ -1173,7 +1173,9 @@ has a second exception, off by default. Under `closed` a parameter read at two
 or more constant offsets, none of them zero, is a record in the same closed
 functions the lone field is (`kuna_structheadless.rs (admits)`), when nothing
 outside the function gave the parameter its pointee (`pointee_is_given`, as
-above). Everything else a parameter is held to still applies -- already a
+above) and the parameter did not take the type its callers state for it: a
+`char **` read only at `argv[1]` and `argv[2]` is the vector its callers pass,
+not a record past its start. Everything else a parameter is held to still applies -- already a
 pointer, no named pointee, no index, integer use or phi, inside `0x8000`, not an
 array run -- and so does the condition `locals` adds for a view it knows is
 partial: no address may be formed at or past the end of every access
@@ -1193,7 +1195,10 @@ reason alone, against 1,716 accepted. The closed condition is what keeps the
 callbacks out, for the reason it keeps them out of the lone field: joined to DWARF,
 the headless parameters of closed functions are 883 struct pointers, no `void *`,
 two `char **` and three integers (75 more are `-O2` parameters DWARF gives only
-through an abstract origin), while those of functions whose address is stored are
+through an abstract origin); the two `char **` are coreutils `tail`'s
+`parse_obsolete_option (argc, argv, ...)`, whose callers state `char **` through
+`calleevote` (chapter [04](04-calls-and-prototypes.md)), and the vote keeps
+them. Those of functions whose address is stored are
 202 struct pointers and 53 `void *` -- the `qsort` comparators and hash callbacks
 whose contracts declare `void *`. What the closed condition cannot see is a
 `void *` in an API the program calls directly: bzip2's `BZ2_bzReadClose` takes a
@@ -1208,11 +1213,14 @@ typed them. A headless record is a partial view: it declares the members its
 reader measured and nothing before them, so a record another function reads whole
 is not the same `struct_N` unless the ledger's containment rule answers one with
 the other, and one program object can be given several names. At a call site a
-callee's headless or any other synthesized record does not replace a named record
-the caller's value is declared as (chapter [04](04-calls-and-prototypes.md),
-`kuna_structheadless.rs (yields_to_a_declared_record)`), and a headless record
-the caller's own reads refuse falls back to the `void *` the callee states
-without it (`kuna_structheadless.rs (bare_pointer_for)`).
+callee's headless or any other synthesized record does not replace a pointer a
+declared call gives the caller's value -- a named record, a `char **` (chapter
+[04](04-calls-and-prototypes.md), `kuna_structheadless.rs
+(yields_to_a_declared_pointer)`) -- nor is a headless record taken where it types
+as a word a member the function reads through (`kuna_structheadless.rs
+(types_a_pointer_as_a_word)`), and a headless record the caller's own reads
+refuse falls back to the `void *` the callee states without it
+(`kuna_structheadless.rs (bare_pointer_for)`).
 
 At a conflicting offset the **widest** access wins. A field wider than an access
 renders as a cast of the field (`(uint4)w->b`); a field narrower than an access
