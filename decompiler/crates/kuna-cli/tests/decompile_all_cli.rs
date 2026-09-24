@@ -4787,6 +4787,115 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
     }
 }
 
+/// `castindex`: a pointer plus a variable index of whole elements prints as a
+/// subscript, and the difference of two `char *` as `p - q`.  The round trip
+/// compiles the prelude of `castindex_x86_64.c`, kuna's printing of every
+/// function between its markers and its `main`, with the option on and off, and
+/// checks the program prints what the binary does.  The indexes are `int`,
+/// `unsigned int`, `short`, `signed char`, `unsigned char` and `long`, negative
+/// where signed, and `main` reads an `unsigned int` index with its top bit set
+/// through a 24 GiB `MAP_NORESERVE` map, which a sign extension would read 2^31
+/// elements backward; the differences are divided, shifted, compared signed and
+/// unsigned, and passed as a length.  A scale that is not the element's size, a
+/// byte offset read at 8 bytes and a `long *` difference keep the integer form.
+#[test]
+fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c() {
+    let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let src = std::fs::read_to_string(fx.join("castindex_x86_64.c")).unwrap();
+    let section = |from: &str, to: &str| -> String {
+        let tail = src.split(from).nth(1).unwrap();
+        tail.split(to).next().unwrap().to_string()
+    };
+    let prelude = section("/* prelude */", "/* tested */");
+    let tested_src = section("/* tested */", "/* main */");
+    let main = src.split("/* main */").nth(1).unwrap().to_string();
+    let tested: Vec<&str> = tested_src
+        .lines()
+        .filter_map(|l| l.strip_prefix("KEEP void "))
+        .filter_map(|l| l.split('(').next())
+        .collect();
+    assert!(tested.len() >= 20, "{tested:?}");
+    let sp = specs();
+    let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
+    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
+        let bin = fx.join(format!("castindex_{build}_x86_64"));
+        let bin = bin.to_str().unwrap();
+        for arm in ["on", "off"] {
+            let args = ["decompile-all", bin, "--sleighpath", sp.as_str(), "--option", "castindex", arm];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("castindex round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            let mut body = String::new();
+            let mut seen = 0;
+            for part in stdout.split("// Function: ").skip(1) {
+                let name = part.split(' ').next().unwrap_or("");
+                if tested.contains(&name) {
+                    body.push_str(part.split_once('\n').map(|(_, b)| b).unwrap_or(""));
+                    seen += 1;
+                }
+            }
+            assert_eq!(seen, tested.len(), "{build} {arm}: missing a tested function\n{stdout}");
+            let kept: &[&str] = &[
+                "*(long *)((long)a0 + (long)a1 * 0x10 + 8)",
+                "*(int *)((long)a0 + (long)a1 * 0xc)",
+                "*(long *)((long)a0 + a1)",
+                "(long)a1 - (long)a0 >> 3",
+            ];
+            let want: &[&str] = if arm == "on" {
+                &[
+                    "((char *)a0)[a1]",
+                    "((short *)a0)[a1]",
+                    "((unsigned short *)a0)[a1]",
+                    "((unsigned int *)a0)[a1]",
+                    "((unsigned long *)a0)[a1]",
+                    "((double *)a0)[a1]",
+                    "strchr(a0,a1) - a0",
+                ]
+            } else {
+                &["(long)strchr(a0,a1) - (long)a0", "*(short *)((long)a0 + (long)a1 * 2)"]
+            };
+            for w in want.iter().chain(kept) {
+                assert!(body.contains(w), "{build} castindex {arm}: expected `{w}`\n{body}");
+            }
+            if !runs_here || !have_cc {
+                eprintln!("castindex round trip: no x86-64 host or no `cc`, spelling checked only");
+                continue;
+            }
+            let expected = Command::new(bin).output().expect("run the fixture");
+            let dir = std::env::temp_dir()
+                .join(format!("kuna-castindex-rt-{}-{build}-{arm}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let c = dir.join("rt.c");
+            let exe = dir.join("rt");
+            std::fs::write(
+                &c,
+                format!("#include <stdio.h>\n#include <string.h>\n#include <stdbool.h>\n{prelude}\n{body}\n{main}"),
+            )
+            .unwrap();
+            let cc = Command::new("cc")
+                .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), c.to_str().unwrap()])
+                .output()
+                .expect("spawn cc");
+            assert!(
+                cc.status.success(),
+                "{build} castindex {arm}: the printed functions did not compile:\n{}\n{body}",
+                String::from_utf8_lossy(&cc.stderr)
+            );
+            let got = Command::new(&exe).output().expect("run the round trip");
+            let _ = std::fs::remove_dir_all(&dir);
+            assert_eq!(
+                String::from_utf8_lossy(&got.stdout),
+                String::from_utf8_lossy(&expected.stdout),
+                "{build} castindex {arm}: the printed C computes something else\n{body}"
+            );
+        }
+    }
+}
+
 /// An enum element keeps the integer form under `castarith`.  kuna prints every
 /// enum as a plain `enum`, which C sizes as an `int`, while the fixture's
 /// packed enums are 1 and 2 bytes in the binary (as are `-fshort-enums` enums
