@@ -176,6 +176,14 @@ elements (`((char (**)[16])v3)[10]` is `+ 0x50`), 10 assigned pointers or stores
 an expression whose element differs in sign only, 11 assignments whose outer cast
 differs, and 2 offsets with a `U` suffix.
 
+Two spellings are value-identical but not minimal. A store's element can differ from the
+old cast in sign only (`*(short *)((long)a0 + 0x32) = (short)a1` becomes `((unsigned
+short *)a0)[0x19] = (short)a1`): the element is the sum's own pointee when that is an
+integer of the access width, and the store writes the same bytes. And a base cast can
+repeat the declaration (coreutils stat -O2 `sub_5900`, `char **v4`: `v4 = (char *)((long)v4
++ 0x10)` becomes `v4 = &((char **)v4)[2]`), because the variable's type where it is read
+is not the type its declaration prints; the integer form cast it at the same place.
+
 **One structuring decision moves.** The rewrite only removes ops (the integer form's two
 casts become one or none), and three P8 passes run after the cast pass and bound the tail
 they duplicate by its op count, `CAST`s included: `gotoreduce` (8 ops, all counted),
