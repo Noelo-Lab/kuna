@@ -1902,7 +1902,9 @@ mod tests {
         // path argument as an integer
         // and kuna-callplaceholder / a call to a declared callee stops taking
         // the return-address slot as a trailing argument
-        assert_eq!(count, 336, "corpus file count drifted");
+        // and kuna-castsign / a stack index the body only compares signed is
+        // declared signed
+        assert_eq!(count, 337, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
