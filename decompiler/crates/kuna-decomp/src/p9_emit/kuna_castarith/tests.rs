@@ -680,3 +680,110 @@ fn a_store_of_a_value_computed_before_the_address_is_rewritten() {
     fx.high();
     rewritten(&mut fx, add, 8, 4, 2);
 }
+
+/// kuna prints every enum as a plain `enum`, which C sizes by its own rules,
+/// while a packed enum, `-fshort-enums` or a C++ `enum class : uint8_t` is 1 or
+/// 2 bytes in the binary: `((color *)p)[3]` would scale by C's `sizeof`, not by
+/// the width the offset was measured in.  An enum element keeps the integer
+/// form at every width, whether the access or the sum's own pointee names it.
+#[test]
+fn an_enum_element_keeps_the_integer_form() {
+    for (size, k) in [(1, 3i64), (2, 6), (4, 0xc), (8, 0x10)] {
+        for via in ["load-void-sum", "load-enum-sum", "compare", "call"] {
+            let mut fx = Fx::new();
+            let e = fx
+                .tf
+                .get_type_enum_sized(&format!("e{size}"), size, type_metatype::TYPE_ENUM_UINT)
+                .unwrap();
+            let ep = fx.ptr(Rc::clone(&e));
+            let vp = fx.void_ptr();
+            let p = fx.var(8, Rc::clone(&vp));
+            match via {
+                "load-void-sum" => {
+                    let (add, out) = fx.add(p, k, vp);
+                    fx.load(out, e);
+                    fx.high();
+                    assert_refused(&mut fx, add, Leave::EnumTarget, size, via);
+                }
+                "load-enum-sum" => {
+                    let (add, out) = fx.add(p, k, ep);
+                    fx.load(out, e);
+                    fx.high();
+                    assert_refused(&mut fx, add, Leave::EnumTarget, size, via);
+                }
+                "compare" => {
+                    let q = fx.var(8, Rc::clone(&ep));
+                    let boolt = fx.base(1, type_metatype::TYPE_BOOL);
+                    let (add, out) = fx.add(p, k, ep);
+                    fx.binary(OpCode::CPUI_INT_EQUAL, out, q, boolt);
+                    fx.high();
+                    assert_refused(&mut fx, add, Leave::EnumTarget, size, via);
+                }
+                _ => {
+                    let (add, out) = fx.add(p, k, ep);
+                    let call = fx.op(2, OpCode::CPUI_CALL);
+                    let target = fx
+                        .fd
+                        .new_code_ref(&Address::new(Rc::clone(&fx.ram), 0x9000));
+                    fx.fd.op_set_input(call, target, 0).unwrap();
+                    fx.fd.op_set_input(call, out, 1).unwrap();
+                    fx.high();
+                    assert_refused(&mut fx, add, Leave::EnumTarget, size, via);
+                }
+            }
+        }
+    }
+}
+
+fn assert_refused(fx: &mut Fx, add: OpId, why: Leave, size: int4, via: &str) {
+    let got = plan(&mut fx.fd, add).map(|_| ());
+    assert_eq!(got, Err(why), "size {size} via {via}");
+    assert!(!rewrite(&mut fx.fd, add));
+    assert_eq!(fx.fd.obank().get(add).unwrap().code(), OpCode::CPUI_INT_ADD);
+}
+
+/// The printed index is scaled by C's `sizeof` of the printed element, so an
+/// element C sizes differently keeps the integer form: a pointer narrower than
+/// the target's pointers (C's `T *` is 8 bytes here), and a 16-byte float
+/// (spelled `long double`, whose `sizeof` is 16, 12 or 8 by target).  A
+/// one-byte `bool` and a pointer of the model's size are elements C sizes
+/// exactly.
+#[test]
+fn an_element_c_sizes_differently_keeps_the_integer_form() {
+    let mut fx = Fx::new();
+    let u = fx.base(4, type_metatype::TYPE_UINT);
+    let narrow = fx.tf.get_type_pointer(4, u, 1).unwrap();
+    let vp = fx.void_ptr();
+    let p = fx.var(8, Rc::clone(&vp));
+    let (add, out) = fx.add(p, 0x10, vp);
+    fx.load(out, narrow);
+    fx.high();
+    assert_refused(&mut fx, add, Leave::Unsized, 4, "4-byte pointer");
+
+    let mut fx = Fx::new();
+    fx.tf.set_max_basetype_size(16);
+    let f16 = fx.base(16, type_metatype::TYPE_FLOAT);
+    assert_eq!(f16.get_size(), 16);
+    let vp = fx.void_ptr();
+    let p = fx.var(8, Rc::clone(&vp));
+    let (add, out) = fx.add(p, 0x20, vp);
+    fx.load(out, f16);
+    fx.high();
+    assert_refused(&mut fx, add, Leave::Unsized, 16, "16-byte float");
+
+    for (size, meta) in [(1, type_metatype::TYPE_BOOL), (8, type_metatype::TYPE_PTR)] {
+        let mut fx = Fx::new();
+        let t = if meta == type_metatype::TYPE_PTR {
+            let u = fx.base(4, type_metatype::TYPE_UINT);
+            fx.ptr(u)
+        } else {
+            fx.base(size, meta)
+        };
+        let vp = fx.void_ptr();
+        let p = fx.var(8, Rc::clone(&vp));
+        let (add, out) = fx.add(p, 0x18, vp);
+        fx.load(out, t);
+        fx.high();
+        rewritten(&mut fx, add, 0x18, size as u64, 0x18 / size as i64);
+    }
+}

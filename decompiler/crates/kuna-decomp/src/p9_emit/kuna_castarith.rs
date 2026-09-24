@@ -20,20 +20,25 @@
 //! every `PTRADD`: `((unsigned int *)a0)[0x2b]` under a dereference and
 //! `&((T *)p)[k]` (or `(T *)p + k` with `arraynotation off`) as a value.
 //!
-//! The value is unchanged: the element size is the access width,
-//! `k * sizeof(T)` is the original offset exactly, the base is converted
-//! pointer-to-pointer (no integer round trip), the result carries the same
-//! pointer type the sum had, and the printed index reads back as `k`.  That
-//! last one is why a negative index of 2^31 elements or more is refused: C
-//! types the literal `0x80000000` through `0xffffffff` as `unsigned int`, so
-//! `p[-0x80000000]` would index forward, while the integer form's byte offset
-//! is then a `long` literal.  The integer form stays wherever the printed C
-//! could convert a value or cost a cast instead: an offset that is not a
-//! multiple of `sizeof(T)`, an index that is not a constant, an aggregate
-//! target, a word-addressed space, a sum read as an integer or assigned to a
-//! variable declared as one, an address several accesses share, a store of a
-//! value the pass has not typed yet, a `void *` sum that leaves the function,
-//! and a constant that names a global or is
+//! The value is unchanged: the element size is the access width, C's `sizeof`
+//! of the printed `T` is that same size, `k * sizeof(T)` is the original
+//! offset exactly, the base is converted pointer-to-pointer (no integer round
+//! trip), the result carries the same pointer type the sum had, and the printed
+//! index reads back as `k`.  The `sizeof` condition is why an enum element is
+//! refused: kuna prints every enum as a plain `enum`, which C sizes by its own
+//! rules, while a packed enum, `-fshort-enums` or a C++ `enum class : uint8_t`
+//! is 1 or 2 bytes in the binary; the same holds for `long double` and for an
+//! integer of a width C names no type for.  The index condition is why a
+//! negative index of 2^31 elements or more is refused: C types the literal
+//! `0x80000000` through `0xffffffff` as `unsigned int`, so `p[-0x80000000]`
+//! would index forward, while the integer form's byte offset is then a `long`
+//! literal.  The integer form stays wherever the printed C could convert a
+//! value or cost a cast instead: an offset that is not a multiple of
+//! `sizeof(T)`, an index that is not a constant, an aggregate or enum target,
+//! a word-addressed space, a sum read as an integer or assigned to a variable
+//! declared as one, an address several accesses share, a store of a value the
+//! pass has not typed yet, a `void *` sum that leaves the function, and a
+//! constant that names a global or is
 //! address-like beside an integer cast to a pointer (`table[i]` compiles to the
 //! same `INT_ADD`, with the table as the constant).
 
@@ -62,6 +67,7 @@ pub(crate) enum Leave {
     IntegerUse,
     SharedAddress,
     WideNegativeIndex,
+    EnumTarget,
 }
 
 /// How the `PTRADD` reaches a `T *` base.
@@ -166,6 +172,27 @@ fn same_element(pointee: &Rc<Datatype>, target: &Rc<Datatype>) -> bool {
         ) && !t.is_enum_type()
     };
     int(pointee) && int(target) && pointee.get_size() == target.get_size()
+}
+
+/// Is `target`'s size the `sizeof` C gives it as printed?  The printed index is
+/// scaled by that `sizeof`, so the element must be a type the target's data
+/// model names at exactly the width the rewrite measured: an integer of a width
+/// the model has, a one-byte `bool`, a `float` or `double`, or a pointer of the
+/// model's pointer size.  `long double` is not one (its `sizeof` is 16, 12 or 8
+/// by target, never the 10 bytes of the value), and neither is an integer of a
+/// width C names no type for.
+fn c_sizeof_is_size(types: &crate::dtype::TypeFactoryImpl, target: &Rc<Datatype>) -> bool {
+    let size = target.get_size();
+    let model = crate::kuna_ctypes::CDataModel::from_types(types);
+    match target.get_metatype() {
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN => {
+            model.integer_spelling(size, false).is_some()
+        }
+        type_metatype::TYPE_BOOL => size == 1,
+        type_metatype::TYPE_FLOAT => size == model.float_size || size == model.double_size,
+        type_metatype::TYPE_PTR => size == types.get_size_of_pointer(),
+        _ => false,
+    }
 }
 
 /// Is `vn` a variable the printed C declares as `ptype`?  Only then does a bare
@@ -563,6 +590,9 @@ pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
             }
         }
     };
+    if target.is_enum_type() {
+        return Err(Leave::EnumTarget);
+    }
     match target.get_metatype() {
         type_metatype::TYPE_INT
         | type_metatype::TYPE_UINT
@@ -574,7 +604,7 @@ pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
         _ => return Err(Leave::AggregateTarget),
     }
     let elem = target.get_size();
-    if elem <= 0 || elem != target.get_align_size() {
+    if elem <= 0 || elem != target.get_align_size() || !c_sizeof_is_size(&tlst, &target) {
         return Err(Leave::Unsized);
     }
     let (koff, ksize) = {
