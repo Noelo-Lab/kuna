@@ -44,6 +44,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEEVOTE #1: the lone field stays raw offset arithmetic in both passes" min="2" max="2">return \*\(unsigned long \*\)\(\(int8\)a0 \+ 0x18\);</stringmatch>
+<stringmatch name="CALLEEVOTE #1: the lone field stays raw offset arithmetic in both passes" min="2" max="2">return \(\(unsigned long \*\)a0\)\[3\];</stringmatch>
 <stringmatch name="CALLEEVOTE #2: no record is synthesized without a closed caller set" min="0" max="0">struct_</stringmatch>
 </decompilertest>

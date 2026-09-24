@@ -27,7 +27,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "unsigned int get_c\\(void \\*a0\\)\\n\\{\\n  return \\*\\(unsigned int \\*\\)\\(\\(int\\)a0 \\+ 8\\);",
+      "unsigned int get_c\\(void \\*a0\\)\\n\\{\\n  return \\(\\(unsigned int \\*\\)a0\\)\\[2\\];",
       "void run\\(void \\*a0,unsigned int a1\\)"
     ],
     "stdout_absent": [
@@ -36,5 +36,5 @@
     ]
   },
   "notes": "DEFAULT on MIPS32: get_c is called directly with a struct node * and its address, built by lui+addiu, goes to run, which calls it on a char buffer. The reference walk reads one instruction at a time, so off x86-64 no function has every caller known: get_c keeps void * and run keeps its integer second parameter.",
-  "probe_id": "a-2b536e594ad1"
+  "probe_id": "a-2fd1d32b08f2"
 }

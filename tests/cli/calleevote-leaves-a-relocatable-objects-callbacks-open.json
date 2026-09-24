@@ -27,7 +27,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "unsigned long get_c\\(void \\*a0\\)\\n\\{\\n  return \\*\\(unsigned long \\*\\)\\(\\(long\\)a0 \\+ 0x10\\);",
+      "unsigned long get_c\\(void \\*a0\\)\\n\\{\\n  return \\(\\(unsigned long \\*\\)a0\\)\\[2\\];",
       "unsigned long get_b\\(void \\*a0\\)",
       "long fwd\\(unsigned long a0\\)"
     ],
@@ -37,5 +37,5 @@
     ]
   },
   "notes": "DEFAULT on a relocatable object: get_c, get_b and fwd are each called directly (direct passes its record, use_str a string) and also sit in the const table OPS, whose words are zero in the file and filled by R_X86_64_64 relocations. No function of a .o counts as having every caller known, so the getters keep void * and fwd keeps its integer parameter.",
-  "probe_id": "a-8dc7940e5510"
+  "probe_id": "a-ddad286fdbdf"
 }

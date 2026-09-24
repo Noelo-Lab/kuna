@@ -871,6 +871,10 @@ pub struct ArchContext {
     /// Mirror of [`Architecture::char_byte`](crate::architecture::Architecture);
     /// the rule lives in [`kuna_charbyte`](crate::p5_types::kuna_charbyte).
     pub char_byte: bool,
+    /// (kuna `castarith`) Mirror of
+    /// [`Architecture::cast_arith`](crate::architecture::Architecture), on only for
+    /// C output; read by [`kuna_castarith`](crate::p9_emit::kuna_castarith).
+    pub cast_arith: bool,
 
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be a
     /// LOAD/STORE base as a pointer; mirrors
@@ -1598,6 +1602,7 @@ impl ArchContext {
             unknown_byte_is_char: false, // (kuna) realtypes + C output
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
             char_byte: true, // (kuna) option charbyte
+            cast_arith: false, // (kuna) option castarith
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
             slot_ptr: true, // (kuna) option slotptr (default on), copied from Architecture

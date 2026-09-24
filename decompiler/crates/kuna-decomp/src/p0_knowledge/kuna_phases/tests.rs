@@ -78,7 +78,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_230() {
+fn settable_count_is_231() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -164,12 +164,12 @@ fn settable_count_is_230() {
     // +1 for `slotptr` (P6 frame-slot pointer typing on the JSON variables surface).
     // +1 for `calleevote` (P4 caller-to-callee parameter types).
     // +1 for `structmerge` (P5 sibling layout union).
-    assert_eq!(kuna_num_settables(), 230);
-    assert_eq!(SETTABLE_TABLE.len(), 230);
+    assert_eq!(kuna_num_settables(), 231);
+    assert_eq!(SETTABLE_TABLE.len(), 231);
 }
 
 #[test]
-fn tier_counts_are_73_core_93_transform_64_analysis() {
+fn tier_counts_are_74_core_93_transform_64_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -318,7 +318,7 @@ fn tier_counts_are_73_core_93_transform_64_analysis() {
     // transform 91 -> 92: +1 for `calleevote` (P4 caller-to-callee parameter
     // types).
     // transform 92 -> 93: +1 for `structmerge` (P5 sibling layout union).
-    assert_eq!((core, transform, analysis), (73, 93, 64));
+    assert_eq!((core, transform, analysis), (74, 93, 64));
 }
 
 #[test]
@@ -508,7 +508,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_96() {
+fn option_values_live_value_present_for_97() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -957,7 +957,7 @@ fn option_values_live_value_present_for_96() {
     // 93 -> 94: +1 for `slotptr` (live_field = slot_ptr, default-on).
     // 94 -> 95: +1 for `passthrough` (live_field = pass_through).
     // 95 -> 96: +1 for `castimplied` (live_field = cast_implied).
-    assert_eq!(with_live, 96);
+    assert_eq!(with_live, 97);
 }
 
 #[test]
@@ -1129,7 +1129,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 224 -> 225: +1 for `slotptr`; its P6 row sits mid-table.
     // 225 -> 226: +1 for `calleevote`.
     // 226 -> 227: +1 for `structmerge`; its P5 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 229);
+    assert_eq!(json.matches("},\n").count(), 230);
 }
 
 #[test]

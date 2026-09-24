@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-2af692806f65",
+  "probe_id": "a-85dd44893ca1",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -28,7 +28,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "\\*\\(unsigned long \\*\\)\\(\\(long\\)a0 \\+ 0x10\\) = 0x2020726174737575;"
+      "\\(\\(unsigned long \\*\\)a0\\)\\[2\\] = 0x2020726174737575;"
     ],
     "stdout_absent": [
       "a0\\[0x10\\] = 0x75;",

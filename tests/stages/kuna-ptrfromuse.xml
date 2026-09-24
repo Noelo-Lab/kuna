@@ -49,7 +49,9 @@
 
     Pass 1 (`option ptrfromuse off`) reproduces the bug; pass 2 (`byte`) and
     pass 3 (`void`) are the two shipped pointees.  All three controls are
-    identical in all three passes.
+    identical in all three passes.  Under `void` each field read is an element
+    of the pointer, `((int4 *)a0)[2]`, because the default `castarith` keeps a
+    pointer plus whole elements in pointer terms instead of `(int8)a0 + 8`.
 -->
 <bytechunk space="ram" offset="0x100000">
 8b4708034710c300000000000000000048c1e7028b4708c300000000000000008b07c3000000000000000000000000000fbe8700002000c300000000000000000fbe8700003000c30000000000000000
@@ -117,7 +119,7 @@
 <stringmatch name="ptrfromuse #3: with byte the same parameter is a byte pointer" min="1" max="1">int4 sumfields\(char \*a0\)</stringmatch>
 <stringmatch name="ptrfromuse #4: and the field reads become indexing, which is what makes this body-changing" min="1" max="1">\*\(int4 \*\)&amp;a0\[8\] \+ \*\(int4 \*\)&amp;a0\[0x10\]</stringmatch>
 <stringmatch name="ptrfromuse #5: with void the parameter is a void pointer instead" min="1" max="1">int4 sumfields\(void \*a0\)</stringmatch>
-<stringmatch name="ptrfromuse #6: and the arithmetic stays, carrying a cast" min="1" max="1">\*\(int4 \*\)\(\(int8\)a0 \+ 8\)</stringmatch>
+<stringmatch name="ptrfromuse #6: and each field read is an element of the pointer, carrying one cast (castarith)" min="1" max="1">return \(\(int4 \*\)a0\)\[2\] \+ \(\(int4 \*\)a0\)\[4\];</stringmatch>
 <stringmatch name="ptrfromuse #7: a parameter that is shifted before it is dereferenced is refused in all three passes" min="3" max="3">unsigned int scaledbase\(int8 a0\)</stringmatch>
 <stringmatch name="ptrfromuse #8: and a parameter that upstream already typed is untouched in all three" min="3" max="3">unsigned int derefzero\(unsigned int \*a0\)</stringmatch>
 <stringmatch name="ptrfromuse #9: a parameter that subscripts a global byte table is refused in all three passes" min="3" max="3">int4 globalindex\(int8 a0\)</stringmatch>

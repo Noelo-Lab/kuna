@@ -424,6 +424,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "codescalar",
     "boolbyte",
     "charbyte",
+    "castarith",
     "ptrfromuse",
     "charptr",
     "protoorder",

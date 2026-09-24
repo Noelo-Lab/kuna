@@ -34,12 +34,12 @@
       "bool same\\(char \\*a0,char \\*a1\\)",
       "unsigned long get_cap\\(void \\*a0\\)",
       "bool by_used\\(void \\*a0,void \\*a1\\)",
-      "void mark\\(void \\*a0\\)\\n\\{\\n  \\*\\(unsigned int \\*\\)\\(\\(long\\)a0 \\+ 4\\) = 0xffffffff;"
+      "void mark\\(void \\*a0\\)\\n\\{\\n  \\(\\(unsigned int \\*\\)a0\\)\\[1\\] = 0xffffffff;"
     ],
     "stdout_absent": [
       "a0\\[4\\] = '"
     ]
   },
   "notes": "TYPES: `peek_used` takes the record its one caller passes, `report`'s own struct_N, and `same` takes `char *`. The getter keeps `void *` (a lone field needs `fields`), and so does the qsort callback, whose address escapes. `mark` is passed a string too, but stores a four-byte constant through it, which a `char *` would print as four char stores, so it stays `void *`.",
-  "probe_id": "a-62b258ab3756"
+  "probe_id": "a-ce46aeb79953"
 }

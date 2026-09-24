@@ -63,8 +63,9 @@
 //! type is only taken as known when the printed text states it: a variable (its
 //! declaration), a cast that stays (its target), a conversion this rule leaves
 //! out (its own operand's type, which it preserves), a truncation printed as a
-//! cast, and a load `*(T *)p` through a pointer printed with that cast or
-//! declared `T *`.  An implied `COPY` prints as its operand, so it is looked
+//! cast, a load `*(T *)p` through a pointer printed with that cast or
+//! declared `T *`, and a subscript `((T *)p)[k]` whose base is printed with that
+//! cast.  An implied `COPY` prints as its operand, so it is looked
 //! through.  Anything else is unknown, and an unknown operand never lets a
 //! conversion below the top go.  For the top, an unknown operand falls back to
 //! the IR type to judge "widening", which is safe because the destination then
@@ -302,12 +303,23 @@ impl ImpliedCasts {
                         CType::Known(pt) => pt,
                         _ => return CType::Unknown,
                     }
-                } else if pv
-                    .get_def()
-                    .and_then(|c| fd.obank().get(c))
-                    .is_some_and(|c| c.code() == OpCode::CPUI_CAST)
-                {
-                    pv.get_type_def_facing().clone()
+                } else if let Some(c) = pv.get_def().and_then(|c| fd.obank().get(c)) {
+                    match c.code() {
+                        OpCode::CPUI_CAST => pv.get_type_def_facing().clone(),
+                        OpCode::CPUI_PTRADD => match c
+                            .get_in(0)
+                            .and_then(|b| fd.vbank().get(b))
+                            .filter(|b| !b.is_explicit())
+                            .filter(|b| {
+                                b.get_def()
+                                    .and_then(|d| fd.obank().get(d))
+                                    .is_some_and(|d| d.code() == OpCode::CPUI_CAST)
+                            }) {
+                            Some(b) => b.get_type_def_facing().clone(),
+                            None => return CType::Unknown,
+                        },
+                        _ => return CType::Unknown,
+                    }
                 } else {
                     return CType::Unknown;
                 };

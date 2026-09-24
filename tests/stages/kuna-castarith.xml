@@ -1,0 +1,118 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Cast campaign, lever 1 `castarith`: a pointer plus a constant byte offset is
+    printed as an integer round trip.  coreutils ls -O0 `file_or_link_mode`
+    (sub_53e7) prints
+
+        v1 = *(unsigned int *)((long)a0 + 0xac);
+
+    two casts for one 4-byte read, where the same address is element 0x2b of an
+    `unsigned int *`.  Root cause (P9, ActionSetCasts).  The address reaches the
+    cast pass as a plain INT_ADD, because P5 can build no PTRSUB or PTRADD for a
+    `void *` base: it has no field at 0xac and no element size.  The ported
+    rules price an INT_ADD as integer arithmetic, so `getInputCast` converts the
+    pointer to `long` on the way in and `castOutput` converts the sum back to a
+    pointer on the way out.
+
+    Stage / sub-stage: P9 "casts".  The P0 assertion `option castarith on|off`
+    decides whether such a sum, when it is used as a `T *` and the offset is a
+    whole number of `T`s, becomes pointer arithmetic on `(T *)base` instead.
+
+    The fixture (SysV x86-64):
+
+        rd32:  mov eax,[rdi+0xac]; ret           the witness shape
+        rdneg: movsx eax,word [rdi-0x1a]; ret    a negative offset, index -0xd
+        rdodd: mov eax,[rdi+0x6a]; ret           a control - 0x6a is not a whole
+                                                 number of 4-byte elements, so
+                                                 the integer form stays
+        wr16:  mov [rdi+0x82],si; ret            a store, element 0x41
+        pass:  ebx = [rdi+4]; take(rdi + 0x10)   a pointer that is passed on,
+                                                 not dereferenced here
+        rdbyte: movzx eax,byte [rdi+0x11];       a byte widened for a signed
+                cmp esi,eax; setle al            compare, and a word widened
+        rdidx:  movzx eax,word [rdi+0x48];       twice for an index: castimplied
+                cdqe; shl rax,4                  must still see the loaded type
+                                                 through the subscript
+
+    Pass 1 (`option castarith off`) reproduces the bug; pass 2 is the default;
+    pass 3 turns `arraynotation off`, which spells the passed pointer as
+    `(uint4 *)a0 + 4` instead of `&((uint4 *)a0)[4]`.
+-->
+<bytechunk space="ram" offset="0x100000">
+8b87ac000000c30000000000000000000fbf47e6c300000000000000000000008b476ac30000000000000000000000006689b782000000c30000000000000000538b5f044883c710e81300000089d85bc3000000000000000000000000000000c30000000000000000000000000000000fb6471139c60f9ec00fb6c0c30000000fb74748489848c1e004c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="rd32"/>
+<symbol space="ram" offset="0x100010" name="rdneg"/>
+<symbol space="ram" offset="0x100020" name="rdodd"/>
+<symbol space="ram" offset="0x100030" name="wr16"/>
+<symbol space="ram" offset="0x100040" name="pass"/>
+<symbol space="ram" offset="0x100060" name="take"/>
+<symbol space="ram" offset="0x100070" name="rdbyte"/>
+<symbol space="ram" offset="0x100080" name="rdidx"/>
+</binaryimage>
+<script>
+  <com>parse line extern void take(uint4 *p);</com>
+  <com>option castarith off</com>
+  <com>lo fu rd32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdneg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdodd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wr16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pass</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdidx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option castarith on</com>
+  <com>lo fu rd32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdneg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdodd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wr16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pass</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rdidx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraynotation off</com>
+  <com>lo fu pass</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="castarith #1: with the option off a 4-byte read through a void pointer is an integer round trip -- the bug" min="1" max="1">return \*\(unsigned int \*\)\(\(int8\)a0 \+ 0xac\);</stringmatch>
+<stringmatch name="castarith #2: and a pointer passed on is converted to an integer and back" min="1" max="1">take\(\(uint4 \*\)\(\(int8\)a0 \+ 0x10\)\);</stringmatch>
+<stringmatch name="castarith #3: by default the read is element 0x2b of an unsigned int pointer, one cast" min="1" max="1">return \(\(unsigned int \*\)a0\)\[0x2b\];</stringmatch>
+<stringmatch name="castarith #4: a negative offset is a negative index" min="1" max="1">return \(\(int2 \*\)a0\)\[-0xd\];</stringmatch>
+<stringmatch name="castarith #5: a store indexes the stored width" min="1" max="1">\(\(unsigned short \*\)a0\)\[0x41\] = a1;</stringmatch>
+<stringmatch name="castarith #6: a pointer passed on stays a pointer, spelled the arraynotation way" min="1" max="1">take\(&amp;\(\(uint4 \*\)a0\)\[4\]\);</stringmatch>
+<stringmatch name="castarith #7: with arraynotation off the same pointer is base plus index" min="1" max="1">take\(\(uint4 \*\)a0 \+ 4\);</stringmatch>
+<stringmatch name="castarith #8: an offset that is not a whole number of elements keeps the integer form in both passes" min="2" max="2">return \*\(unsigned int \*\)\(\(int8\)a0 \+ 0x6a\);</stringmatch>
+<stringmatch name="castarith #9: with the option off a widened byte reads through the integer round trip" min="1" max="1">return a1 &lt;= \(int4\)\*\(uint1 \*\)\(\(int8\)a0 \+ 0x11\);</stringmatch>
+<stringmatch name="castarith #10: by default the byte is a subscript and its one widening cast stays alone" min="1" max="1">return a1 &lt;= \(int4\)\(\(uint1 \*\)a0\)\[0x11\];</stringmatch>
+<stringmatch name="castarith #11: a word widened twice keeps only the outer cast, as in the integer form" min="1" max="1">return \(int8\)\(\(uint2 \*\)a0\)\[0x24\] &lt;&lt; 4;</stringmatch>
+<stringmatch name="castarith #12: no widening below the outer one is printed over a subscript" min="0" max="0">\(uint4\)\(\(uint[12] \*\)a0\)</stringmatch>
+</decompilertest>

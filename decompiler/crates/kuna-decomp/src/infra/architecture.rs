@@ -369,6 +369,10 @@ pub struct Architecture {
     /// the only unsigned vote on it is a zero-extension.  Implementation:
     /// [`kuna_charbyte`](crate::p5_types::kuna_charbyte).
     pub char_byte: bool,
+    /// (kuna `castarith`) Print a pointer plus a whole number of `T`s, used as a
+    /// `T *`, as pointer arithmetic on `(T *)p` instead of an integer round
+    /// trip.  Implementation: [`kuna_castarith`](crate::p9_emit::kuna_castarith).
+    pub cast_arith: bool,
 
     /// (kuna `charptr`) Commit a pointer-width parameter or stack local the
     /// program only ever uses on characters to `char *`; option
@@ -2310,6 +2314,7 @@ impl Architecture {
             ptrdepthcap: false, // (kuna) option ptrdepthcap; reset_defaults sets the shipped default
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
+            cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
             char_ptr: false, // (kuna) option charptr; shipped off
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
@@ -2736,6 +2741,7 @@ impl Architecture {
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
+        self.cast_arith = true; // (kuna) option castarith default-on: a pointer plus whole elements prints as ((T *)p)[k] instead of *(T *)((long)p + K); 0/675 datatest assertions moved, 16 stage assertions moved to the new form, 444-slice typesweep identical, speed within budget; docs/features/castarith/record.json
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
@@ -3423,6 +3429,7 @@ impl Architecture {
             "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
             "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
             "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
+            "castarith" => on_off!(cast_arith, "pointer arithmetic in pointer terms"),
             "calleevote" => {
                 let (mode, msg) = crate::kuna_calleevote::OptionCalleeVote.apply(p1)?;
                 self.calleevote = mode;
@@ -4247,6 +4254,7 @@ impl Architecture {
             self.realtypes && self.print.out_lang() == crate::kuna_lang::OutLang::C;
         ctx.int_promotion = self.print.out_lang().profile().caps.integer_promotion;
         ctx.char_byte = self.char_byte; // (kuna) charbyte
+        ctx.cast_arith = self.cast_arith && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castarith
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
         ctx.slot_ptr = self.slot_ptr; // (kuna) slotptr
