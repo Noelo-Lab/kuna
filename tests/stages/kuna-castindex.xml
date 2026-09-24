@@ -1,0 +1,94 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Cast campaign, the (long)v residue `castindex`: a pointer plus a VARIABLE
+    index, and the difference of two byte pointers, are printed as integer
+    round trips.  coreutils sort -O0 `mergefps` (sub_a5c0) prints
+
+        *(long *)((long)v7 + v19 * 8) = v10 + -0x20;
+
+    and ls -O0 `print_long_format` (sub_c6c8) prints
+
+        sub_5453(v14,(long)v24 - (long)v14);
+
+    where the same arithmetic is element v19 of a `long *` and the byte
+    difference of two `char *`.  Root cause (P9, ActionSetCasts): castarith
+    keeps only a pointer plus a CONSTANT in pointer terms; a variable addend
+    reaches the cast pass as the same INT_ADD, priced as integer arithmetic
+    (`(long)` in, a cast back out), and an INT_SUB's operands are converted to
+    `long` by the default input-cast rule.
+
+    Stage / sub-stage: P9 "casts".  The P0 assertion `option castindex on|off`
+    decides whether such a sum, used as a `T *` with a scale of sizeof(T),
+    becomes PTRADD(base, i, #sizeof T), and whether a difference of two
+    pointers to the same byte type keeps its operands uncast.
+
+    The fixture (SysV x86-64):
+
+        ldidx:  movsxd rsi,esi; mov eax,[rdi+rsi*4]     an int index, 4-byte
+                add eax,[rdi+8]                          elements (the constant
+                                                         read makes rdi void *)
+        ld64:   mov rax,[rdi+rsi*8]; add rax,[rdi+0x10]  a long index
+        ldbyte: movzx eax,byte [rdi+rsi]; add eax,[rdi+4] a byte index
+        rec16:  movsxd; shl rsi,4; mov rax,[rdi+rsi+8]   a 16-byte record read at
+                                                         8 bytes: the scale is not
+                                                         the element, so the
+                                                         integer form stays
+        diff:   call strchr; sub rax,rbx                 strchr(s,c) - s
+
+    Pass 1 (`option castindex off`) reproduces the bug; pass 2 turns it on.
+-->
+<bytechunk space="ram" offset="0x100000">
+4863f68b04b7034708c300000000000000000000000000000000000000000000488b04f748034710c300000000000000000000000000000000000000000000000fb60437034704c30000000000000000000000000000000000000000000000004863f648c1e604488b44370848034710c3000000000000000000000000000000534889fbe8370000004829d85bc30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="ldidx"/>
+<symbol space="ram" offset="0x100020" name="ld64"/>
+<symbol space="ram" offset="0x100040" name="ldbyte"/>
+<symbol space="ram" offset="0x100060" name="rec16"/>
+<symbol space="ram" offset="0x100080" name="diff"/>
+<symbol space="ram" offset="0x1000c0" name="strchr"/>
+</binaryimage>
+<script>
+  <com>parse line extern char *strchr(char *s,int4 c);</com>
+  <com>option castindex off</com>
+  <com>lo fu ldidx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ld64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ldbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rec16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu diff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option castindex on</com>
+  <com>lo fu ldidx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ld64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ldbyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rec16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu diff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="castindex #1: with the option off an int-indexed read through a void pointer is an integer round trip -- the bug" min="1" max="1">return \*\(int4 \*\)\(\(int8\)a0 \+ \(int8\)a1 \* 4\) \+ \(\(int4 \*\)a0\)\[2\];</stringmatch>
+<stringmatch name="castindex #2: and a byte-pointer difference converts both pointers to integers" min="1" max="1">return \(int8\)strchr\(a0,a1\) - \(int8\)a0;</stringmatch>
+<stringmatch name="castindex #3: on, the int index is a subscript of the 4-byte element, and its extension is C's own" min="1" max="1">return \(\(int4 \*\)a0\)\[a1\] \+ \(\(int4 \*\)a0\)\[2\];</stringmatch>
+<stringmatch name="castindex #4: a long index is a subscript of the 8-byte element" min="1" max="1">return \(\(int8 \*\)a0\)\[a1\] \+ \(\(int8 \*\)a0\)\[2\];</stringmatch>
+<stringmatch name="castindex #5: a byte read takes the variable itself as the index" min="1" max="1">return \(uint4\)\(\(uint1 \*\)a0\)\[a1\] \+ \(\(int4 \*\)a0\)\[1\];</stringmatch>
+<stringmatch name="castindex #6: a 16-byte stride read at 8 bytes keeps the integer form in both passes" min="2" max="2">return \*\(int8 \*\)\(\(int8\)a0 \+ \(int8\)a1 \* 0x10 \+ 8\) \+ \(\(int8 \*\)a0\)\[2\];</stringmatch>
+<stringmatch name="castindex #7: on, the difference of two char pointers is C's own pointer subtraction" min="1" max="1">return strchr\(a0,a1\) - a0;</stringmatch>
+</decompilertest>
