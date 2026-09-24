@@ -4355,7 +4355,7 @@ live_false = "off"
 [[settable]]
 option = "castindex"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 phase = "P9"
 subphase = "cast-policy"
