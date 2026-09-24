@@ -1,6 +1,6 @@
 {
  "opportunity": "kuna prints a pointer plus a constant byte offset as an integer round trip, *(T *)((long)p + K): two casts per access where IDA prints one (or none). The cast census measured 3,771 such casts on the 4,815 functions kuna and IDA share (IDA: 0), 99.8% with sizeof(T) dividing K. The ops are INT_ADD from the start (PTRSUB->INT_ADD demotion fires 0 times): a void * base has no field and no element size, so P5 builds neither PTRSUB nor PTRADD.",
- "test_name": "tests/stages/kuna-castarith.xml (12 assertions, pass 1 option castarith off, pass 2 on, pass 3 arraynotation off) + 23 unit tests (p9_emit/kuna_castarith/tests.rs) + compiled round trip decompile_all_cli.rs a_pointer_plus_whole_elements_round_trips_through_the_printed_c (fixture castarith_x86_64.c, 24 functions, gcc -O0 / clang -O0 / gcc -O2, option on and off)",
+ "test_name": "tests/stages/kuna-castarith.xml (12 assertions, pass 1 option castarith off, pass 2 on, pass 3 arraynotation off) + 25 unit tests (p9_emit/kuna_castarith/tests.rs) + compiled round trip decompile_all_cli.rs a_pointer_plus_whole_elements_round_trips_through_the_printed_c (fixture castarith_x86_64.c, 24 functions, gcc -O0 / clang -O0 / gcc -O2, option on and off) + compiled round trip decompile_all_cli.rs an_enum_element_keeps_the_integer_form_and_round_trips (fixture castarith_enum_x86_64.c, packed 1- and 2-byte enums, a plain enum and an enum pointer passed on, gcc -O0 / gcc -O2 with -g, option on and off; spelling check of the g++ -O2 enum class : uint8_t / uint16_t build castarith_enum_x86_64.cc)",
  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/ls",
  "selector": "0x53e7",
  "func_addr": "0x53e7",
@@ -94,10 +94,13 @@
   "json_surface": "13 binaries (fmt ls sort du O0+O2, bash O2, kmod O2-noinline, bzip2 O0, gzip O2, dash O2), 6,690 functions (surface.py): signatures 0 differ, variables (name, kind, type) 0 differ, 41,302 variables in both arms; line_mappings: 4 of 175,526 mapped instructions in 3 functions map to no line (dash -O2 sub_12b50 0x12e16: an instruction whose only printed ops were the add and the load, a subscript being a surround token with no op, upstream PrintLanguage::emitOp); variables[].addresses: 7 addresses in 3 functions drop out; nothing gained"
  },
  "soundness": {
-  "construction": "k * sizeof(T) == K exactly (K signed, divisibility required); base converted pointer to pointer; element size == access width; alignment unchanged",
-  "round_trip": "24 functions x (gcc -O0, clang -O0, gcc -O2) x (on, off): printed C recompiled and run prints exactly the binary's output in all 6 arms; includes a byte widened for a signed compare and a word widened for an index (castimplied through the subscript), an integer base (kept), and far_idx: 8/4/2-byte reads at indexes -2^31 and -(2^32-1) (kept: C reads 0x80000000..0xffffffff as unsigned int) and -(2^31-1), +2^31 (converted), through a 48 GiB MAP_NORESERVE map",
+  "construction": "k * sizeof(T) == K exactly (K signed, divisibility required); base converted pointer to pointer; element size == access width == C's sizeof of the printed element (enums refused; only widths the target's C data model names); alignment unchanged",
+  "round_trip": "24 functions x (gcc -O0, clang -O0, gcc -O2) x (on, off): printed C recompiled and run prints exactly the binary's output in all 6 arms; includes a byte widened for a signed compare and a word widened for an index (castimplied through the subscript), an integer base (kept), and far_idx: 8/4/2-byte reads at indexes -2^31 and -(2^32-1) (kept: C reads 0x80000000..0xffffffff as unsigned int) and -(2^31-1), +2^31 (converted), through a 48 GiB MAP_NORESERVE map; enum round trip: 4 functions x (gcc -O0, gcc -O2, -g) x (on, off) compiled with kuna's own enum typedefs print exactly the binary's output in all 4 arms (before the enum refusal both on arms printed color 85 | mark 23637 | set 141 | 36 200 where the binary prints color 22 | mark 12843 | set 36 | 200 141)",
   "refusals": [
    "non-whole or variable offset",
+   "enum element: kuna prints every enum as a plain enum, which C sizes as an int, while a packed enum, -fshort-enums or a C++ enum class : uint8_t is 1 or 2 bytes in the binary (((color *)p)[3] would read p + 12); all enums, since C fixes no enum's size",
+   "element whose C sizeof is not its width in the target's data model (long double, 16-byte integers, a pointer narrower than the model's pointers)",
+   "negative index of 2^31 elements or more (C types 0x80000000..0xffffffff as unsigned int, so p[-0x80000000] would index forward)",
    "aggregate/padded element",
    "word-addressed space",
    "sum read as an integer or assigned to a variable declared as an integer",
@@ -107,7 +110,8 @@
    "constant naming a global, or address-like beside an integer cast to a pointer (table[i])"
   ],
   "bases": "a variable declared as a pointer to T is used bare; an implied cast read only by the add is retargeted to T *; an implied cast other ops read too is left alone and the new (T *) cast reads its integer or pointer input (no cast stacked on a cast)",
-  "castimplied": "castimplied reads a converted load's C type from the subscript's cast base, as it reads *(T *)p: (int)((unsigned char *)a0)[0x11], not (int)(unsigned int)(...); byte-identical with castarith off on 201 binaries"
+  "castimplied": "castimplied reads a converted load's C type from the subscript's cast base, as it reads *(T *)p: (int)((unsigned char *)a0)[0x11], not (int)(unsigned int)(...); byte-identical with castarith off on 201 binaries",
+  "enum_refusal_effect": "0 printed lines change on castbench full (45/45 outputs byte-identical to the build without it) and on the 156 disjoint binaries (156/156): the stripped corpora carry no enum-typed values"
  },
  "castbench": {
   "set": "full, 4,815 shared functions (kuna x IDA x main)",
