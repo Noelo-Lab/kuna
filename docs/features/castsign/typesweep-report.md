@@ -1,5 +1,15 @@
 # typesweep castsign=off vs on (default)
 
+## Review round 3, on the branch merged onto 52202840d
+
+Arms: a fresh build of origin/main `52202840d` (castarith landed) against the
+default-on build of this branch merged onto it, same instrument and pin as below.
+1,615 -> 1,615 perfect (15.03%), mean .3697 -> .3697; 0 moved on, 0 moved off,
+0 improved, 0 worse; per level O0 1110 -> 1110, O2 89 -> 89, O2-noinline
+416 -> 416. All 10,748 functions have identical values in both arms.
+
+## Earlier rounds, on base 5458b7ab5
+
 slices scored: 444 (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline)
 functions scored: 10748
 metric: decbench type_match pinned at 625e892 (DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1

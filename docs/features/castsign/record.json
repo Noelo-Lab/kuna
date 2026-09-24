@@ -45,31 +45,31 @@
  },
  "castbench": {
   "set": "full: 45 binaries (coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find) x O0/O2/O2-noinline; functions kuna and IDA both emit",
-  "base": "main 5458b7ab5 arm (fresh, .scratch/cb-base; castsign off of the final build is byte-identical to it)",
+  "base": "origin/main 52202840d (castarith landed), a fresh build; castsign off on the branch build is byte-identical to it on all 45 binaries",
   "shared_functions": 4815,
   "ida_casts": 37821,
-  "main_casts": 43673,
-  "branch_casts": 43567,
-  "main_per_kloc": 229.2,
-  "branch_per_kloc": 228.6,
-  "main_vs_ida": 1.155,
-  "branch_vs_ida": 1.152,
+  "main_casts": 38703,
+  "branch_casts": 38602,
+  "main_per_kloc": 203.1,
+  "branch_per_kloc": 202.5,
+  "main_vs_ida": 1.023,
+  "branch_vs_ida": 1.021,
   "by_level_vs_ida": {
    "O0": [
-    1.198,
-    1.192
+    1.039,
+    1.032
    ],
    "O2": [
-    1.168,
-    1.167
+    1.057,
+    1.056
    ],
    "O2-noinline": [
-    1.096,
-    1.095
+    0.971,
+    0.97
    ]
   },
-  "functions_fewer": 42,
-  "casts_fewer": 106,
+  "functions_fewer": 41,
+  "casts_fewer": 101,
   "functions_more": 0,
   "sign_only_casts_shared_set": {
    "method": "castcount-based signall.py over the 4,815 shared functions: a cast whose target differs from the bare operand variable's declared type only in signedness",
@@ -96,12 +96,42 @@
    "branch_vs_ida": 1.15,
    "functions_fewer": 72,
    "casts_fewer": 190
+  },
+  "before_the_wide_literal_rule": {
+   "on_base_5458b7ab5": {
+    "base": "main 5458b7ab5 arm (fresh, .scratch/cb-base; castsign off of the final build is byte-identical to it)",
+    "main_casts": 43673,
+    "branch_casts": 43567,
+    "main_per_kloc": 229.2,
+    "branch_per_kloc": 228.6,
+    "main_vs_ida": 1.155,
+    "branch_vs_ida": 1.152,
+    "by_level_vs_ida": {
+     "O0": [
+      1.198,
+      1.192
+     ],
+     "O2": [
+      1.168,
+      1.167
+     ],
+     "O2-noinline": [
+      1.096,
+      1.095
+     ]
+    },
+    "functions_fewer": 42,
+    "casts_fewer": 106,
+    "functions_more": 0
+   },
+   "on_base_52202840d_per_review": "38,703 -> 38,597 (42 fewer, 0 more)",
+   "cost_of_the_rule": "5 casts, ls O2 0xc980 (`(v17 & v25) != 0xffffffffffffffff`, a hex literal the rule vetoes too)"
   }
  },
  "benchmark": {
   "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow, each at O0, O2 and O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
   "metric": "type_match",
-  "arms": "on = default final build, off = --option castsign off, same binary",
+  "arms": "review round 3: a fresh build of origin/main 52202840d against the default-on branch build merged onto it (earlier rounds: on = default final build, off = --option castsign off, same binary)",
   "projects": {
    "bzip2": {
     "n": 267,
@@ -187,18 +217,19 @@
   },
   "control": "all 10,748 functions score identically in both arms; the off arm matches origin/main's sweep row for row; variables[] byte-identical off vs on over 6 more binaries (6,673 functions): no variable or argument added or removed",
   "after_lock_check": "re-run on the build with the type-lock check (51f5e35ac): rows.json identical to the earlier default-on arm on all 444 slices (1,615 perfect)",
-  "after_arithmetic_rule": "re-run on the final build: rows.json identical to the off arm on all 444 slices (1,615 perfect, mean .3697)"
+  "after_arithmetic_rule": "re-run on the final build: rows.json identical to the off arm on all 444 slices (1,615 perfect, mean .3697)",
+  "after_wide_literal_rule": "merged onto 52202840d: 1,615 -> 1,615 perfect, mean .3697 -> .3697, 0 on/0 off/0 improved/0 worse; all 10,748 function values identical"
  },
  "corpus_sweep": {
   "classifier": "docs/features/castsign/hunkclass.py (decl = `unsigned T vN;` -> `T vN;`; sign-cast = `(T)vN` dropped on a re-declared vN; def-widen = an integer cast dropped at the top of `vN = ...;` where vN is declared an integer of the cast's width; anything else is OTHER; a flip none of whose sign-casts appear is counted as a flip that removed no cast)",
   "castbench_full": {
-   "arms": "castbench main arm at 5458b7ab5 (== castsign off) vs the final default-on build",
+   "arms": "origin/main 52202840d arm vs the default-on branch build merged onto it",
    "binaries": "45: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find x O0/O2/O2-noinline",
    "files": 45,
-   "functions_changed": 114,
+   "functions_changed": 112,
    "by_class": {
-    "decl": 95,
-    "sign-cast": 171,
+    "decl": 93,
+    "sign-cast": 164,
     "def-widen": 94
    },
    "other_lines": 0,
@@ -217,10 +248,19 @@
     "flips_added_since": 0,
     "note": "all 95 final flips are among the first version's 234",
     "of_which_removed_no_cast": 1
+   },
+   "before_the_wide_literal_rule": {
+    "functions_changed": 114,
+    "by_class": {
+     "decl": 95,
+     "sign-cast": 171,
+     "def-widen": 94
+    },
+    "flips_now_left_alone": "ls O2 0xc980 v25, tar O0 0x6c7f5 v12 (both == or != with a hex top-bit literal)"
    }
   },
   "extra_corpus": {
-   "arms": "--option castsign off vs the default, same final build",
+   "arms": "--option castsign off vs the default, the branch build merged onto 52202840d",
    "binaries": [
     "O2 bash",
     "O2-noinline dash",
@@ -240,19 +280,19 @@
    ],
    "functions": 8841,
    "files": 15,
-   "functions_changed": 41,
+   "functions_changed": 40,
    "by_class": {
-    "decl": 15,
-    "sign-cast": 50,
+    "decl": 14,
+    "sign-cast": 45,
     "def-widen": 102
    },
    "other_lines": 0,
    "flips_removing_no_cast": 0,
    "variables_json_identical": "15/15 binaries byte-identical"
   },
-  "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 16/16 (extra), 4/4 (DWARF), 0 flagged",
+  "assignment_recheck": "assigncheck.py: 27/27 (castbench), 16/16 (extra), 3/3 (third), 4/4 (DWARF), 0 flagged",
   "dwarf_corpus": {
-   "arms": "--option castsign off vs the default, same final build",
+   "arms": "--option castsign off vs the default, the branch build merged onto 52202840d (23 changed, 8 flips, unchanged from round 2)",
    "script": "docs/features/castsign/corpus-dwarf.py (unstripped decbench 'compiled/' binaries: every DWARF stack local is mapped typelock|namelock)",
    "binaries": [
     "O0 wc",
@@ -282,7 +322,38 @@
    "flips_removing_no_cast": 0,
    "history": "the build before the type-lock check re-signed 3 DWARF-locked declarations (wc `chars`, `words`; bzip2 fallbackQSort3 `med`); the lock check restores exactly those"
   },
-  "arithmetic_scan": "every flipped variable's function was scanned for + - * << on the variable's name: the only matches (17 castbench, 3 extra) are arithmetic on its sign extension or truncation, `(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place, which computes the same value in both arms"
+  "arithmetic_scan": "every flipped variable's function was scanned for + - * << on the variable's name: the only matches (17 castbench, 3 extra) are arithmetic on its sign extension or truncation, `(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place, which computes the same value in both arms",
+  "third_corpus": {
+   "arms": "--option castsign off vs the default, the branch build merged onto 52202840d",
+   "script": "docs/features/castsign/corpus-third.py (the review's disjoint set)",
+   "binaries": [
+    "O0 factor",
+    "O2 factor",
+    "O0 dd",
+    "O0 date",
+    "O0 expr",
+    "O0 cksum",
+    "O0 stat",
+    "O0 seq",
+    "O0 init",
+    "O0 groupadd",
+    "O0 mirai",
+    "O0 certtool",
+    "O0 e2fsck",
+    "O2 ip"
+   ],
+   "functions": 6547,
+   "functions_changed": 39,
+   "by_class": {
+    "decl": 34,
+    "sign-cast": 58,
+    "def-widen": 18
+   },
+   "other_lines": 0,
+   "flips_removing_no_cast": 0,
+   "variables_json_identical": "14/14"
+  },
+  "wide_literal_scan": "widescan.py over all 149 flipped variables in the four corpora: 0 decimal literals of 2^(w-1) or more on their lines; the only top-bit literals are hex constants assigned to the variable"
  },
  "speed": {
   "method": "docs/features/castsign/speed.py: kuna decompile-all <bin> --json --max-fn-seconds 120, --option castsign off vs the default (on), the same final build, arm order alternating, 15 rounds each; min is the cleaner figure on a shared box (loadavg recorded)",
@@ -434,5 +505,13 @@
    "it is re-declared only when a cast the new declaration makes a no-op prints today (kuna_castsign.rs drops_printed_cast)",
    "round trip extended to boundary inputs, gcc and clang at -O0 and -O2, and the reviewer's shapes; spec 9.3 states the -fwrapv caveat for signedness auto"
   ]
+ },
+ "review_round_3": {
+  "finding": "an unchanged `v == 3000000000` (or 10000000000000000000) line computes a different value once `v` is re-declared signed: the decimal literal's C type is wider than the declaration, so a signed `v` is sign-extended",
+  "fix": "kuna_castsign.rs (wide_literal): a high only castsign admits is left alone when == != & | ^ meets it, or its printed expression, with a constant whose top bit is set (directly or inside the other operand's printed expression)",
+  "test": "castsign_eq_x86_64.c (gcc/clang -O0: d_eq32, c_eq64, c_ne64, c_or64, control c_eq7) in a_signed_only_variable_round_trips_through_the_printed_c; fails on the round-2 build (gcc -O0 option on: d_eq32 1 1 0 for 2 1 0), passes with the rule",
+  "review_repros": "cw.c/cz.c at gcc/clang -O0/-O1/-O2: option on prints byte-identical C to option off in all 12 builds",
+  "not_fixed_here": "signedness auto register locals have the same hazard on origin/main: clang -O0 `unsigned v = ntohl(*p); if (v == 3000000000u) return 2; return (int)v < 0;` prints `int v1; // eax` with `if (v1 != 3000000000)`, C returns 1 where the binary returns 2",
+  "variables_json": "a flipped frame local's variables[] entry keeps the frame Symbol's unsigned type (documented in spec 9.3); unchanged by design so variables[] and type_match stay byte-identical"
  }
 }

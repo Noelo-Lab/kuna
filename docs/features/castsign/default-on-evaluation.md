@@ -1,20 +1,62 @@
 # castsign: default-on evaluation
 
-Measured on base `5458b7ab5` (origin/main when measured, castimplied #721 and
-calleevoteperf #719 landed). Both arms come from the same final build: the
-default-on binary, with `--option castsign off` as the old default. For castbench
-the base arm is main's own binary, and `off` is byte-identical to it (see (h)).
+Measured on the branch merged onto `52202840d` (origin/main when measured,
+castarith #722 landed). castbench's base arm is a fresh build of `52202840d`
+itself; `--option castsign off` on the branch build is byte-identical to it on
+all 45 castbench binaries. The other criteria compare `--option castsign off`
+with the default on the same branch build.
 
 | | criterion | result |
 |---|---|---|
 | (a) | `make test` with the new default | 675/675 PARITY OK. No assertion moved; `docs/baseline.json` untouched. |
-| (b) | `make test-stages` | 1350/1350 PARITY OK. No assertion outside `kuna-castsign.xml` moved. That file's assertions were rewritten for the arithmetic rule (9 now, from 8), so `docs/baseline-stages.json` changes only in its `castsign #N` keys and the totals. |
+| (b) | `make test-stages` | 1362/1362 PARITY OK. Against main's baseline the only new keys are the 9 `castsign #N` assertions of `kuna-castsign.xml`; `docs/baseline-stages.json` was re-recorded for them (1353 + 9), nothing else moved. |
 | (c) | `make test-cli` | 237/237 with the new default; no probe moved. |
-| (d) | 444-slice typesweep (pinned metric, 8 projects x O0/O2/O2-noinline) | 1,615 -> 1,615 perfect; mean .3697 -> .3697; 0 moved on, 0 moved off, 0 improved, 0 worse. All 10,748 functions score identically to the off arm, row for row. `typesweep-report.md`. |
-| (e) | speed, interleaved min-of-15, `decompile-all --json` | On the final build (`158df9544`), loads 1 to 4: fmt -O2 +0.35% min / -4.47% median; ls -O2 +0.10% / -1.40%; sort -O2 +0.06% / +0.07%; bash -O2 +0.04% / +0.10%. Worst min +0.35% (within +5%). `speed-final.json`, `speed.py`. Earlier builds: `speed.json` (worst +1.06%), `speed-after-lock.json` (worst +1.68%). |
-| (f) | whole-corpus `decompile-all` before/after, every hunk classified | The 45 castbench binaries: 114 functions changed. 95 declaration flips, 171 sign casts dropped on a re-declared variable, 94 widening casts dropped on assignment. 0 other lines, and 0 flips that remove no cast. Fifteen more binaries, disjoint from castbench (bash O2, dash O2-noinline, cf2.elf O2-noinline on ARM Cortex-M, kmod O2-noinline, bzip2 O0, crontab O0, and od, numfmt, pr, last, chage O0, csplit O2-noinline, minigzip, xmlwf, dpkg-query O2; 8,841 functions): 41 changed. 15 flips, 50 sign casts, 102 widening casts, 0 other lines, 0 flips that remove no cast; `variables[]` byte-identical in all fifteen. Every dropped `lhs = (T)rhs;` was re-checked against the printed declarations: 27/27 and 16/16 have `lhs` an integer of `T`'s width and `rhs` an integer. Ten binaries WITH DWARF, where every stack local is type-locked (4,254 functions): 23 changed, 8 flips, 8 sign casts, 18 widening casts plus the known `len = (unsigned int)tree[n].dl.freq;` on a register local, classified by hand; 0 locked declarations re-signed, `variables[]` identical in all ten. Every flipped variable was also scanned for `+ - * <<` in its function's printed text: the only matches are arithmetic on its sign extension or truncation (`(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place), which computes the same value in both arms. `corpus-hunks.json`, `hunkclass.py`, `assigncheck.py`, `corpus-extra.py`, `corpus-dwarf.py`. |
+| (d) | 444-slice typesweep (pinned metric, 8 projects x O0/O2/O2-noinline) | origin/main arm 1,615 perfect, mean .3697; branch 1,615, mean .3697. 0 moved on, 0 moved off, 0 improved, 0 worse; all 10,748 functions score identically. `typesweep-report.md`. |
+| (e) | speed, interleaved min-of-15, `decompile-all --json` | SPEED_PLACEHOLDER |
+| (f) | whole-corpus `decompile-all` before/after, every hunk classified | The 45 castbench binaries: 112 functions changed, 93 declaration flips, 164 sign casts dropped on a re-declared variable, 94 widening casts dropped on assignment; 0 other lines, 0 flips that remove no cast. Fifteen disjoint binaries (`corpus-extra.py`, 8,841 functions): 40 changed, 14 flips, 45 sign casts, 102 widening casts, 0 other, 0 no-cast flips. The review's fourteen disjoint binaries (`corpus-third.py`: factor O0/O2, dd, date, expr, cksum, stat, seq, init, groupadd, mirai, certtool, e2fsck O0, ip O2; 6,547 functions): 39 changed, 34 flips, 58 sign casts, 18 widening casts, 0 other, 0 no-cast flips. Ten binaries WITH DWARF (4,254 functions): 23 changed, 8 flips, 8 sign casts, 18 widening casts plus the known `len = (unsigned int)tree[n].dl.freq;` on a register local, classified by hand; 0 locked declarations re-signed. `variables[]` is byte-identical off vs on in all 39 non-castbench binaries. Every dropped `lhs = (T)rhs;` re-checked: 27/27, 16/16, 3/3, 4/4. Every flipped variable scanned for `+ - * <<` (only arithmetic on its sign extension or truncation, the same value in both arms) and for top-bit literals on its lines (`widescan.py`: 0 decimal; the only hex ones are constants assigned to it). `corpus-hunks.json`. |
 | (g) | `modes.rs` | Coherent. The catalog default is on, so every preset inherits it. `aggressive_carries_every_default_off_option` needs no entry. |
-| (h) | castbench full (45 binaries, 4,815 functions shared with IDA) | 43,673 -> 43,567 casts (-106, -0.24%), 229.2 -> 228.6 per kloc, 1.155 -> 1.152 x IDA. 42 functions fewer, 0 functions more. By level: O0 1.198 -> 1.192, O2 1.168 -> 1.167, O2-noinline 1.096 -> 1.095. The off arm is byte-identical to main's castbench output. |
+| (h) | castbench full (45 binaries, 4,815 functions shared with IDA) | 38,703 -> 38,602 casts (-101, -0.26%), 203.1 -> 202.5 per kloc, 1.023 -> 1.021 x IDA. 41 functions fewer, 0 functions more. By level: O0 1.039 -> 1.032, O2 1.057 -> 1.056, O2-noinline 0.971 -> 0.970. |
+
+## Review round 3: a wide literal next to the variable
+
+The review found a line that does not change and still computes a different
+value. `ntohl(*p)` compared with `3000000000u` (gcc and clang `-O0`): main
+declares the frame local `unsigned int v2` and prints `if (v2 == 3000000000)`;
+the round-2 build declared it `int v2` and printed the same line. `3000000000`
+is a `long` literal in C, so the signed `v2` is sign-extended and the comparison
+is false for every `v2`: the binary returns 2, that C returns 1 under gcc and
+clang at `-O0` and `-O2`. `10000000000000000000` (a 128-bit literal in gcc) did
+the same to `long` locals.
+
+A high only `castsign` admits is now left alone when a `==`, `!=`, `&`, `|` or
+`^` meets it, or the expression its value is printed into, with a constant whose
+top bit is set (`kuna_castsign.rs (wide_literal)`). Hex literals count too, since
+the printer's choice of base is not visible to the rule. `castsign_eq_x86_64.c`
+(gcc and clang `-O0`: `d_eq32`, `c_eq64`, `c_ne64`, `c_or64` and the control
+`c_eq7`) joins the round trip; on the round-2 build it fails
+(`castsign_eq_gcc_O0_x86_64 printed with option on and built by gcc -O0 computes
+a different value`, `d_eq32 1 1 0` for `2 1 0`), and with the rule every build
+passes and only `c_eq7` is re-declared. The review's own repro sources
+(`cw.c`, `cz.c`, built with gcc and clang at `-O0`, `-O1` and `-O2`) now print
+the same C with the option on as off, byte for byte, in all twelve builds.
+
+Cost: two castbench declarations that the round-2 build re-signed stay unsigned,
+both beside hex literals (`ls` O2 `(v17 & v25) != 0xffffffffffffffff`, five
+casts; `tar` O0 `v12 != 0xffffffffffffffff`, outside the IDA-shared set), and one
+in the disjoint corpus (`bash` O2 `v23 != 0xffffffff`). Against the round-2
+build on the same merged base the review measured 38,703 -> 38,597; this build
+gives 38,602.
+
+Not fixed here, reported: `signedness auto` re-declares register locals by the
+same walk without this check. clang `-O0` of `unsigned v = ntohl(*p); if (v ==
+3000000000u) return 2; return (int)v < 0;` prints `int v1; // eax` beside
+`if (v1 != 3000000000)` on origin/main, and that C returns 1 where the binary
+returns 2. The spec (§9.3) states it.
+
+Also reported by the review and left as is: for a flipped frame local, the JSON
+`variables[]` keeps the frame Symbol's type (`unsigned long`) while the C
+declaration says `long`. The option changes C declarations only, which is what
+keeps `variables[]` and type_match byte-identical; the spec says so.
 
 ## Review round 2: arithmetic, and flips that removed no cast
 
