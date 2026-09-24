@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1341,
-    1341
+    1347,
+    1347
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -982,6 +982,12 @@
     "data:castimplied #7: with the option off an int4 returned from an int8 function carries an (int8)",
     "data:castimplied #8: with the option on the return converts",
     "data:castimplied #9: with the option off one byte is widened through three casts",
+    "data:castsign #1: a stack index the body only compares signed is declared uint8 under option castsign off, beside through_ptr's uint8 in both passes (bug reproduces, three times)",
+    "data:castsign #2: and its signed comparison casts it back (bug reproduces, once)",
+    "data:castsign #3: option castsign on declares it int8 (fix, once)",
+    "data:castsign #4: and the cast the declaration makes a no-op is dropped (fix, once)",
+    "data:castsign #5: a value shifted right logically stays unsigned in both passes (twice)",
+    "data:castsign #6: the stack value whose address is passed as a uint8 * keeps its cast in both passes, as does halved's shifted value (four times)",
     "data:charbyte #10: and the call needs a cast back (dashlen off; argbyte and sibling, whose pointers stay uint1 *, in both passes)",
     "data:charbyte #11: with the option on the pointer stays char *",
     "data:charbyte #12: and the call takes it as it is",

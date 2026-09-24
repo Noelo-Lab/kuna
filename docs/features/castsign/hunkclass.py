@@ -8,8 +8,10 @@ being one of
   sign-cast   `(T)vN` on a flipped vN, T its new declared type (the cast the new
               declaration makes a no-op),
   def-widen   an integer cast at the top of the right side of `vN = ...;` where
-              vN is declared a signed integer (flipped here, or by `signedness`):
-              the value-preserving widening C performs itself on assignment.
+              vN is a local declared an integer of the cast's own width (its
+              declaration re-signed here or by `signedness`): C's conversion on
+              assignment yields the same bits, since a conversion to an N-bit
+              integer depends only on the value modulo 2^N.
 Anything else is OTHER, and OTHER must be empty.
 
   python3 hunkclass.py <off-dir> <on-dir>
@@ -63,25 +65,34 @@ def flipped_decl(o, n):
     return mn.group(4).split(';')[0].strip(), now
 
 
-def classify(to, k, flips, signed):
+WIDTH = {'char': 1, 'short': 2, 'int': 4, 'long': 8}
+
+
+def width(t):
+    t = t.strip('()').replace('unsigned ', '').replace('signed ', '')
+    m = re.match(r'^u?int([1248])$', t)
+    return int(m.group(1)) if m else WIDTH.get(t)
+
+
+def classify(to, k, flips, widths):
     nxt = to[k + 1] if k + 1 < len(to) else ''
     if nxt in flips:
         return 'sign-cast'
     for j in range(k - 1, -1, -1):
         if ISCAST.match(to[j]) or to[j] == '(':
             continue
-        if to[j] == '=' and j >= 1 and (to[j - 1] in flips or to[j - 1] in signed):
+        if to[j] == '=' and j >= 1 and widths.get(to[j - 1]) == width(to[k]) and to[j - 1] in widths:
             return 'def-widen'
         break
     return None
 
 
-def signed_locals(lines):
-    out = set()
+def local_widths(lines):
+    out = {}
     for line in lines:
         m = DECL.match(line)
-        if m and not m.group(2) and not m.group(3).startswith('u'):
-            out.add(m.group(4).split(';')[0].strip())
+        if m:
+            out[m.group(4).split(';')[0].strip()] = width(m.group(3))
     return out
 
 
@@ -108,7 +119,7 @@ def main():
                 d = flipped_decl(o, n)
                 if d:
                     flips[d[0]] = d[1]
-            signed = signed_locals(bb)
+            widths = local_widths(bb)
             where = f'{f.relative_to(on)}@{addr}'
             for o, n in hunks:
                 if flipped_decl(o, n):
@@ -124,7 +135,7 @@ def main():
                         for k in range(i1, i2):
                             if to[k] in '()':
                                 continue
-                            c = classify(to, k, flips, signed) if ISCAST.match(to[k]) else None
+                            c = classify(to, k, flips, widths) if ISCAST.match(to[k]) else None
                             if c is None:
                                 ok = False
                             else:
