@@ -2380,10 +2380,11 @@ impl PrintC {
         // any declaration is written and consumed by
         // `local_decl_type_and_comment` (the declaration) and `op_type_cast_ir`
         // (the casts the new declaration makes redundant).
+        let cast_sign = arch.cast_sign && self.out_lang.profile().caps.integer_promotion;
         self.sign_plan = crate::kuna_typeround::plan(
             fd,
             arch.signedness,
-            arch.cast_sign,
+            cast_sign,
             arch.types_impl(),
             |high| {
                 decl_type_representative(fd, arch, high)
@@ -2395,7 +2396,7 @@ impl PrintC {
             arch.cast_implied
                 && !self.options.nocasts
                 && self.out_lang.profile().caps.integer_promotion,
-            arch.cast_sign,
+            cast_sign,
         );
         self.stmt_op = None;
         // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /

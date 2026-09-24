@@ -4412,6 +4412,25 @@ int main(void) {
             }
         }
     }
+    // Rust has no implicit integer conversions, so the option leaves Rust output alone.
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/castsign_gcc_O0_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let rust: Vec<String> = ["off", "on"]
+        .iter()
+        .map(|opt| {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
+                "--language", "rust", "--option", "castsign", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all --language rust failed: {stderr}");
+            stdout
+        })
+        .collect();
+    assert_eq!(rust[0], rust[1], "castsign changed Rust output");
 }
 
 /// A call whose result meets a comparison through a non-short-circuit `&` is

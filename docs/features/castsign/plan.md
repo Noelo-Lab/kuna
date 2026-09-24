@@ -25,7 +25,9 @@ wide as `T`.
 ## The option
 
 `castsign on|off`, P9 `cast-policy`, `live_field = cast_sign`. It is inert under
-`signedness upstream`, because `plan` returns an empty plan there. Off is
+`signedness upstream`, because `plan` returns an empty plan there, and for Rust
+output: `emit_function_document` passes it only when the language has C's
+implicit integer conversions (`integer_promotion`). Off is
 byte-identical to `signedness` alone: `plan`, the walk and `castimplied` check the
 flag before anything new.
 

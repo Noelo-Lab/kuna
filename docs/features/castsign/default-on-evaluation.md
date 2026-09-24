@@ -63,6 +63,14 @@ functions are also asserted to keep `unsigned long v1;` and their casts.
   on `dbe854ba3` too. An ARM firmware function prints `if (a3 - 1U <= (int)v2)`,
   where the `U` suffix makes C compare unsigned, with or without this option.
 
+## Output languages
+
+C only. Rust has no implicit integer conversions, so re-declaring `v1` as `i64`
+would leave `v1 = strlen(a0);` assigning a `u64`. The printer passes the option
+only when the language's `integer_promotion` capability is set (the gate
+`castimplied` uses). The round-trip test asserts that Rust output is identical
+with the option off and on.
+
 ## Decision
 
 Default ON.

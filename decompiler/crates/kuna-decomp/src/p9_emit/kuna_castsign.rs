@@ -35,8 +35,10 @@
 //! through an unsigned pointer are deliberately not unsigned evidence: a
 //! same-width conversion computes the same bits, gnulib's signed `idx_t` reaches
 //! `size_t` parameters everywhere, and a stored-through pointer's pointee is
-//! usually typed from the stored value itself.  With the option off,
-//! `signedness` is byte-identical to what it was.
+//! usually typed from the stored value itself.  C output only: Rust has no
+//! implicit integer conversions, so a re-declared local would not accept its
+//! unsigned definition.  With the option off, `signedness` is byte-identical to
+//! what it was.
 
 use std::collections::HashMap;
 

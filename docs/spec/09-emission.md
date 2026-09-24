@@ -1036,8 +1036,12 @@ whose pointee type inference usually took from the stored value itself. A
 same-width conversion computes the same bits in both cases, so neither changes
 what the C computes. Re-declaring the left side of an assignment would lose a
 widening `castimplied` dropped because the spellings matched, so that rule also
-accepts a re-signed declaration of the cast's width (§9.1). With the option off
-the output is byte-identical to `signedness` alone. Pinned by
+accepts a re-signed declaration of the cast's width (§9.1). The option acts on C
+output only. Rust has no implicit integer conversions, so `let mut v1: i64;` would
+not accept the `u64` that `strlen` returns (`printc.rs (emit_function_document)`
+passes it only when the language's `integer_promotion` capability is set, the gate
+`castimplied` uses). With the option off the output is byte-identical to
+`signedness` alone. Pinned by
 `tests/stages/kuna-castsign.xml` (pass 1 off, pass 2 on: a stack index
 compared signed and used as `a0[v1]`; a logically shifted value and an
 address-taken stack value stay unsigned in both passes) and by a compiled round
