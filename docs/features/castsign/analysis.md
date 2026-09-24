@@ -111,6 +111,38 @@ built with `-fwrapv` (on main, gcc -O1 `(long)(v1 + 1) <= v1` over a `long v1`).
 `castsign` does not change that walk for the highs it already covers; the spec
 (§9.3) states the caveat.
 
+## A wide literal next to the variable
+
+The printer may spell a constant whose top bit is set as an unsuffixed decimal,
+`3000000000` for 4 bytes and `10000000000000000000` for 8. In C such a literal's
+type is wider than the declaration: `long`, and a 128-bit type in gcc for the
+second. `v == 3000000000` converts `v` to that type, so declaring `v` signed turns
+a zero-extension into a sign-extension, and the comparison becomes false for every
+`v`. The line itself does not change, so the hunk classifier cannot see it. The
+review found it with `ntohl(*p)` compared with `3000000000u` (gcc and clang -O0:
+the binary returns 2, the re-declared C returns 1 under both compilers at -O0 and
+-O2) and with `strtoul` compared with `10000000000000000000UL`.
+
+A high only `castsign` admits is now left alone when a `==`, `!=`, `&`, `|` or `^`
+meets it, or the expression its value is printed into, with a constant whose top
+bit is set, either as the other operand or inside the expression the other operand
+is printed as (`kuna_castsign.rs (wide_literal)`). A hex literal of the same value
+has the unsigned type of the declaration's width and would be exact, but the
+printer's choice of base depends on the constant's display format and on
+`integerformat`, so every such constant counts. That leaves three declarations
+unsigned that would otherwise be re-signed, all beside hex literals: `ls` O2
+`0xc980` (`(v17 & v25) != 0xffffffffffffffff`, 5 of castbench's casts), `tar` O0
+`0x6c7f5` (`v12 != 0xffffffffffffffff`, outside the set IDA shares) and, on the
+disjoint corpus, `bash` O2 `0xac060` (`v23 != 0xffffffff`). A scan of every
+variable still flipped in all four corpora finds no top-bit literal on its lines
+except hex constants assigned to it (`v23 = 0xffffffffffffffff;`), which C
+converts to the same bits.
+
+`signedness auto` has the same hazard for register locals and this option does
+not change it: clang -O0 compiles `unsigned v = ntohl(*p); if (v == 3000000000u)
+return 2; return (int)v < 0;` so that main prints `int v1; // eax` beside
+`if (v1 != 3000000000)`, and the printed C returns 1 where the binary returns 2.
+
 ## A flip must remove a cast
 
 The first version also flipped declarations whose casts all stayed: in

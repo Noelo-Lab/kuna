@@ -1,13 +1,13 @@
 {
  "classifier": "docs/features/castsign/hunkclass.py (decl = `unsigned T vN;` -> `T vN;`; sign-cast = `(T)vN` dropped on a re-declared vN; def-widen = an integer cast dropped at the top of `vN = ...;` where vN is declared an integer of the cast's width; anything else is OTHER; a flip none of whose sign-casts appear is counted as a flip that removed no cast)",
  "castbench_full": {
-  "arms": "castbench main arm at 5458b7ab5 (== castsign off) vs the final default-on build",
+  "arms": "castbench arm of origin/main 52202840d (castarith landed; a fresh build of that commit) vs the default-on build of this branch merged onto it; castsign off on the same build is byte-identical to the origin/main arm on all 45 binaries",
   "binaries": "45: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find x O0/O2/O2-noinline",
   "files": 45,
-  "functions_changed": 114,
+  "functions_changed": 112,
   "by_class": {
-   "decl": 95,
-   "sign-cast": 171,
+   "decl": 93,
+   "sign-cast": 164,
    "def-widen": 94
   },
   "other_lines": 0,
@@ -26,10 +26,20 @@
    "flips_added_since": 0,
    "note": "all 95 final flips are among the first version's 234",
    "of_which_removed_no_cast": 1
+  },
+  "before_the_wide_literal_rule": {
+   "base": "5458b7ab5 (the round-2 build 158df9544 against main's arm)",
+   "functions_changed": 114,
+   "by_class": {
+    "decl": 95,
+    "sign-cast": 171,
+    "def-widen": 94
+   },
+   "flips_now_left_alone": "2 of 95, both read by == or != with a hex top-bit literal, which the rule vetoes too: ls O2 0xc980 v25 (`(v17 & v25) != 0xffffffffffffffff`, 5 castbench casts) and tar O0 0x6c7f5 v12 (`v12 != 0xffffffffffffffff`, not in the IDA-shared set). No flip was added"
   }
  },
  "extra_corpus": {
-  "arms": "--option castsign off vs the default, same final build",
+  "arms": "--option castsign off vs the default, the build merged onto 52202840d",
   "binaries": [
    "O2 bash",
    "O2-noinline dash",
@@ -49,19 +59,20 @@
   ],
   "functions": 8841,
   "files": 15,
-  "functions_changed": 41,
+  "functions_changed": 40,
   "by_class": {
-   "decl": 15,
-   "sign-cast": 50,
+   "decl": 14,
+   "sign-cast": 45,
    "def-widen": 102
   },
   "other_lines": 0,
   "flips_removing_no_cast": 0,
-  "variables_json_identical": "15/15 binaries byte-identical"
+  "variables_json_identical": "15/15 binaries byte-identical",
+  "before_the_wide_literal_rule": "41 changed, 15 flips on base 5458b7ab5; the flip now left alone is bash O2 0xac060 v23, read by `v23 != 0xffffffff`"
  },
- "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 16/16 (extra), 4/4 (DWARF), 0 flagged",
+ "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 16/16 (extra), 3/3 (third), 4/4 (DWARF), 0 flagged",
  "dwarf_corpus": {
-  "arms": "--option castsign off vs the default, same final build",
+  "arms": "--option castsign off vs the default, the build merged onto 52202840d",
   "script": "docs/features/castsign/corpus-dwarf.py (unstripped decbench 'compiled/' binaries: every DWARF stack local is mapped typelock|namelock)",
   "binaries": [
    "O0 wc",
@@ -91,5 +102,37 @@
   "flips_removing_no_cast": 0,
   "history": "the build before the type-lock check re-signed 3 DWARF-locked declarations (wc `chars`, `words`; bzip2 fallbackQSort3 `med`); the lock check restores exactly those"
  },
- "arithmetic_scan": "every flipped variable's function was scanned for + - * << on the variable's name: the only matches (17 castbench, 3 extra) are arithmetic on its sign extension or truncation, `(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place, which computes the same value in both arms"
+ "arithmetic_scan": "every flipped variable's function was scanned for + - * << on the variable's name: the only matches (17 castbench, 3 extra) are arithmetic on its sign extension or truncation, `(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place, which computes the same value in both arms Re-run on the merged build (.scratch/tools/flipscan.py): the matches are again all arithmetic on a sign extension or truncation of the flipped variable, e.g. e2fsck O0 0x86ba7 `v7 + v9 + (uint8)v6` with `int4 v7`, `int8 v9`, where off printed `(int4)v7 + v9` (the add is on INT_SEXT(v7), 64-bit, in both arms).",
+ "third_corpus": {
+  "arms": "--option castsign off vs the default, the build merged onto 52202840d",
+  "script": "docs/features/castsign/corpus-third.py (the review's disjoint set)",
+  "binaries": [
+   "O0 factor",
+   "O2 factor",
+   "O0 dd",
+   "O0 date",
+   "O0 expr",
+   "O0 cksum",
+   "O0 stat",
+   "O0 seq",
+   "O0 init (sysvinit)",
+   "O0 groupadd (shadow)",
+   "O0 mirai",
+   "O0 certtool (gnutls)",
+   "O0 e2fsck",
+   "O2 ip (iproute2)"
+  ],
+  "functions": 6547,
+  "files": 14,
+  "functions_changed": 39,
+  "by_class": {
+   "decl": 34,
+   "sign-cast": 58,
+   "def-widen": 18
+  },
+  "other_lines": 0,
+  "flips_removing_no_cast": 0,
+  "variables_json_identical": "14/14 binaries byte-identical off vs on"
+ },
+ "wide_literal_scan": "docs/features/castsign/widescan.py over every flipped variable in all four corpora (93 + 14 + 34 + 8 = 149 flips): 0 decimal literals of 2^(w-1) or more on a line that names the variable; the only top-bit literals are hex constants assigned to it (`v23 = 0xffffffffffffffff;` ls O0 0x70af, grep O0 0xd9b5 x2, cf2.elf 0x8039e58, e2fsck O0 0x1ad8a, DWARF ls O2-noinline 0xbda0), which C converts to the same bits"
 }

@@ -17,7 +17,9 @@ override and the cast drop (`SignPlan::drop_cast`) are unchanged.
 - Any decision one of these made (`frame_local || is_param || widened`) is kept
   only if it declares the value signed (`TYPE_INT`), no operator that overflows
   over a signed operand reads the value (`kuna_castsign.rs (can_overflow)`,
-  recorded by `evidence_walk` as `CastsignWalk::wraps`), and one of the casts the
+  recorded by `evidence_walk` as `CastsignWalk::wraps`), no `==` `!=` `&` `|` `^`
+  meets it with a constant whose top bit is set (`kuna_castsign.rs (wide_literal)`,
+  recorded as `CastsignWalk::wide`), and one of the casts the
   walk saw on a declared member prints today and becomes a no-op
   (`kuna_castsign.rs (drops_printed_cast)` over `CastsignWalk::casts`).
 
@@ -48,6 +50,10 @@ flag before anything new.
   2^63, 2^63 + 1 and the 32-bit edges, and the original four fixtures. The printed
   C, option off and on, is built with gcc and clang at -O0 and -O2 and must print
   what the binary prints; the arithmetic shapes must print unchanged with the
-  option on. It fails on the version before the arithmetic rule.
+  option on. It fails on the version before the arithmetic rule. The equality
+  fixtures (`castsign_eq_x86_64.c`, gcc and clang -O0) compare the value with
+  `3000000000u` and `10000000000000000000UL`, directly, through `!=` and after a
+  `|`, and must print unchanged with the option on; they fail on the version
+  before the wide-literal rule.
 - `castsign_leaves_a_locked_declaration_alone`: `--assert type` on a stack local
   and a register local, and a DWARF local, keep their type with the option on.

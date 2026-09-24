@@ -1183,8 +1183,10 @@ operand or inside the expression the other operand is printed as (through
 `+ - * / % & | ^ ~ << >>`). A hex literal of that value has the unsigned type of
 the declaration's width and would convert correctly, but whether the printer
 chooses hex depends on the constant's display format and on `integerformat`, so
-every such constant vetoes. On the castbench corpus this costs one function's
-five casts (`(v17 & v25) != 0xffffffffffffffff`, `ls` O2).
+every such constant vetoes. On the castbench corpus that leaves two
+declarations unsigned that would otherwise be re-signed, both beside hex
+literals: `ls` O2 `(v17 & v25) != 0xffffffffffffffff` (five casts) and `tar` O0
+`v12 != 0xffffffffffffffff`.
 
 **A flip must remove a cast** (`kuna_castsign.rs (drops_printed_cast)`). A high
 this option admits is re-declared only when one of its declared members is read
