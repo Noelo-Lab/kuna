@@ -235,9 +235,13 @@ impl ImpliedCasts {
         if !preserves(from, &target) {
             return false;
         }
+        // The operand's range, when it does not depend on how C types the
+        // printed operand: a type the text states, or a truth value (0 or 1 under
+        // any integer type).
+        let settled = src.known().or((ir_src.get_metatype() == type_metatype::TYPE_BOOL).then_some(&ir_src));
         let (reader, value) = through_copies(fd, read_op, outvn);
         match reader {
-            None => p.is_statement(op) && self.assigns_to(p, fd, outvn, &want, src.known()),
+            None => p.is_statement(op) && self.assigns_to(p, fd, outvn, &want, settled),
             Some(r) => {
                 let Some(ro) = fd.obank().get(r) else { return false };
                 match ro.code() {
@@ -248,7 +252,7 @@ impl ImpliedCasts {
                     }
                     OpCode::CPUI_COPY => p.is_statement(r) && ro.get_out().is_some_and(|lhs| {
                         fd.vbank().get(lhs).is_some_and(|v| v.is_explicit())
-                            && self.assigns_to(p, fd, lhs, &want, src.known())
+                            && self.assigns_to(p, fd, lhs, &want, settled)
                     }),
                     _ => false,
                 }
@@ -356,9 +360,10 @@ impl ImpliedCasts {
 
     /// May `lhs = (want)e;` print as `lhs = e;`?  When `lhs` is declared `want`,
     /// always (the caller has already checked the conversion preserves `e`).  When
-    /// `castsign` re-signed `lhs`'s declaration, also when the printed text states
-    /// `e`'s type (`known`) and the declared type holds every value of it: C then
-    /// converts `e` straight to the value the cast would have produced.
+    /// `castsign` re-signed `lhs`'s declaration, also when `e`'s range is settled
+    /// (`known`: a type the text states, or a truth value) and the declared type
+    /// holds every value of it: C then converts `e` straight to the value the cast
+    /// would have produced.
     fn assigns_to(
         &self,
         p: &dyn PrintedForms,

@@ -4279,6 +4279,141 @@ int main(void) {
     }
 }
 
+/// (kuna `castsign`) A variable the program only reads signed is declared
+/// signed, and the `(long)v` it cost at each comparison goes, as does a widening
+/// C performs itself on the way into the re-declared variable.  The fixture
+/// keeps lengths and indexes that start out unsigned (strlen's `size_t`, an
+/// unsigned char or unsigned int table) and compares them signed, including below
+/// zero; its last two functions compare a value both ways and shift it
+/// logically, and must stay unsigned.  The round trip compiles the printed functions, option off and on,
+/// with gcc and clang, and checks every build prints what the binary prints.
+#[test]
+fn a_signed_only_variable_round_trips_through_the_printed_c() {
+    const FUNCS: &str = "trim_right,count_down,run_len,word_end,pick_len,zext_walk,both_ways,halved";
+    const WANT: &str = "-7 23 13\n2 7\n2 125\n-3 7 0\n-1 3\n6 9 3 0 -1\n";
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+int main(void) {
+  char a[] = "   ", b[] = "abc  ", c[] = "xy ";
+  static const int arr[] = {-4, 5, -6, 7, 0, -1};
+  static unsigned char tab[256];
+  for (int i = 0; i < 256; i++)
+    tab[i] = (unsigned char)(i % 7);
+  printf("%ld %ld %ld\n", F(long, trim_right)(a), F(long, trim_right)(b), F(long, trim_right)(c));
+  printf("%ld %ld\n", F(long, count_down)(arr, "abcd"), F(long, count_down)(arr, "abcdef"));
+  printf("%ld %ld\n", F(long, run_len)(tab, "hello world", 3L), F(long, run_len)(tab, "zzzzzzz", 100L));
+  printf("%ld %ld %ld\n", F(long, word_end)("ab cd", 0u), F(long, both_ways)("abcdefghij", 99UL),
+         F(long, both_ways)("abc", 1UL));
+  printf("%ld %ld\n", F(long, halved)("a"), F(long, halved)("abcdefgh"));
+  static const unsigned int lens[] = {0, 4, 9, 2};
+  static const unsigned int at[] = {6, 0};
+  printf("%ld %ld %ld %ld %ld\n", F(long, pick_len)(lens, "ab  ", 0), F(long, pick_len)(lens, "abc ", 1),
+         F(long, pick_len)(lens, "a ", 3), F(long, zext_walk)(at, "aqbbbbbb"), F(long, zext_walk)(at + 1, "q"));
+  return 0;
+}
+"#;
+    // (fixture, the declarations and comparisons option off prints, what option on prints)
+    let changed: [(&str, &[(&str, &str)]); 4] = [
+        (
+            "castsign_gcc_O0_x86_64",
+            &[
+                ("\n  unsigned long v1; // stack - 0x10", "\n  long v1; // stack - 0x10"),
+                ("0 <= (long)v1 && (a0[v1] == ' ')", "0 <= v1 && (a0[v1] == ' ')"),
+                ("while (v1 = v1 - 1, 0 <= (long)v1) {", "while (v1 = v1 - 1, 0 <= v1) {"),
+                ("1 <= (long)v1 && (*(char *)(a1 + v1) != 'q')", "1 <= v1 && (*(char *)(a1 + v1) != 'q')"),
+            ],
+        ),
+        (
+            "castsign_clang_O0_x86_64",
+            &[
+                ("\n  unsigned long v2; // stack - 0x30", "\n  long v2; // stack - 0x30"),
+                ("if (0 <= (long)v2) // branch-flip", "if (0 <= v2) // branch-flip"),
+            ],
+        ),
+        (
+            "castsign_gcc_O1_x86_64",
+            &[
+                ("\n  unsigned long v3; // rcx", "\n  long v3; // rcx"),
+                ("0 <= (long)v1 && (a0[v1] == ' ')", "0 <= v1 && (a0[v1] == ' ')"),
+                ("if (a2 <= (long)v3) { // branch-flip", "if (a2 <= v3) { // branch-flip"),
+                ("v2 = (long)(char)a1[v3];", "v2 = (char)a1[v3];"),
+                ("if ((long)v2 <= -1)", "if (v2 <= -1)"),
+            ],
+        ),
+        (
+            "castsign_clang_O1_x86_64",
+            &[
+                ("return (long)v2 >> 0x3f & v2;", "return v2 >> 0x3f & v2;"),
+                (
+                    "v1 = (unsigned long)*(unsigned int *)(a0 + (long)a2 * 4);",
+                    "v1 = *(unsigned int *)(a0 + (long)a2 * 4);",
+                ),
+                ("v2 = 1 < (long)v3;", "v2 = 1 < v3;"),
+            ],
+        ),
+    ];
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .collect();
+    for (fixture, lines) in changed {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        for opt in ["off", "on"] {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
+                "--option", "castsign", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("castsign round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            for (off, on) in lines {
+                let want = if opt == "on" { on } else { off };
+                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+            }
+            let kept = &stdout[stdout.find("// Function: both_ways").expect("both_ways printed")..];
+            assert_eq!(kept.matches("unsigned long v1;").count(), 2, "{fixture} option {opt} re-signed a mixed value:\n{kept}");
+            assert!(kept.matches("(long)v1").count() >= 2, "{fixture} option {opt} lost a sign cast:\n{kept}");
+            for cc in &compilers {
+                let dir = std::env::temp_dir()
+                    .join(format!("kuna-castsign-rt-{}-{fixture}-{opt}-{cc}", std::process::id()));
+                std::fs::create_dir_all(&dir).unwrap();
+                let src = dir.join("rt.c");
+                let exe = dir.join("rt");
+                std::fs::write(
+                    &src,
+                    format!("#include <stdbool.h>\n#include <stdio.h>\n#include <string.h>\n{stdout}\n{MAIN}"),
+                )
+                .unwrap();
+                let out = Command::new(cc)
+                    .args(["-std=gnu11", "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .output()
+                    .expect("spawn the C compiler");
+                assert!(
+                    out.status.success(),
+                    "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                let run = Command::new(&exe).output().expect("run the round trip");
+                let _ = std::fs::remove_dir_all(&dir);
+                assert_eq!(
+                    String::from_utf8_lossy(&run.stdout),
+                    WANT,
+                    "{fixture} printed with option {opt} and built by {cc} computes a different value:\n{stdout}"
+                );
+            }
+        }
+    }
+}
+
 /// A call whose result meets a comparison through a non-short-circuit `&` is
 /// always made by the binary.  `foldcallret` used to fold it into the right-hand
 /// operand of the `&&`/`||` the printer emits, `if (a0 <= 5 || tick(a0))`, so
