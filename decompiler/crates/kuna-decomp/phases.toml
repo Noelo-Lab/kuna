@@ -4192,6 +4192,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "castsign"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "cast-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-castsign"
+summary = "PLACEHOLDER"
+use_when = "PLACEHOLDER"
+example = "option castsign on"
+source_decompiler = "kuna"
+inspiration = "The 2026-09-23 cast census: kuna declared about 600 locals unsigned that the program only compares signed, and printed `if (0 <= (long)v15)` over `unsigned long v15;` at each use (census measure.md 4b, engine.md 4.5)"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "a stack local is declared unsigned long and every comparison on it is written (long)v|if (0 <= (long)v15) with unsigned long v15; // stack - 0x60|the declared signedness of a frame local contradicts the casts in the body"
+live_field = "cast_sign"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "ptrdepthcap"
 values = "on|off"
 default = "off"
