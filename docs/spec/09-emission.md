@@ -1167,6 +1167,25 @@ the variable admissible. A same-width conversion from the old declaration's
 type into the new one (`v = strtoul(...)` into a `long v`) is defined by gcc
 and clang as the same bits.
 
+**A wide literal keeps an admitted variable unsigned**
+(`kuna_castsign.rs (wide_literal)`). The printer may spell a constant whose top
+bit is set as an unsuffixed decimal: `3000000000` for a 4-byte constant,
+`10000000000000000000` for an 8-byte one. In C that literal's type is wider than
+the declaration (`long`, and a 128-bit type in gcc), so `v == 3000000000`
+converts `v` to it. An `unsigned int v` is zero-extended, which is the 32-bit
+comparison the binary makes; an `int v` is sign-extended, and the comparison is
+false for every `v`. A `|` or `^` with such a literal, or whose result meets one
+(`(v | 0x80000) == 10000000000000000000`), goes wrong the same way, and `&` is
+treated alike. So a high this option admits is
+left alone when a `==`, `!=`, `&`, `|` or `^` meets it, or the expression its
+value is printed into, with a constant whose top bit is set, either as the other
+operand or inside the expression the other operand is printed as (through
+`+ - * / % & | ^ ~ << >>`). A hex literal of that value has the unsigned type of
+the declaration's width and would convert correctly, but whether the printer
+chooses hex depends on the constant's display format and on `integerformat`, so
+every such constant vetoes. On the castbench corpus this costs one function's
+five casts (`(v17 & v25) != 0xffffffffffffffff`, `ls` O2).
+
 **A flip must remove a cast** (`kuna_castsign.rs (drops_printed_cast)`). A high
 this option admits is re-declared only when one of its declared members is read
 by a `CPUI_CAST` to exactly the new declaration's type that prints today. A cast
@@ -1207,7 +1226,9 @@ locked declaration keeps its casts), by a compiled round trip
 `a_signed_only_variable_round_trips_through_the_printed_c`: the printed C is
 built with gcc and clang at `-O0` and `-O2` and fed `2^63 - 1`, `2^63`,
 `2^63 + 1` and the 32-bit edges, and every build must print what the fixture
-binary prints), and by `castsign_leaves_a_locked_declaration_alone` in the
+binary prints; `castsign_eq_x86_64.c` compares values with `3000000000u` and
+`10000000000000000000UL`, directly and after a `|`, and keeps them unsigned),
+and by `castsign_leaves_a_locked_declaration_alone` in the
 same file (a `--assert type` on a stack and a register local, and a DWARF local
 declared `unsigned long`, stay unsigned with the option on).
 
@@ -1219,8 +1240,10 @@ local it re-declares may be the operand of arithmetic the binary wraps: the
 emitted C then computes what the binary computes when it is compiled with
 `-fwrapv`, and may not without it at the edge of the range (gcc, and clang at
 `-O2`, fold `(long)(v1 + 1) <= v1` over a `long v1` to false, where the binary
-finds it true for `v1 == LONG_MAX`). `castsign` does not extend that trade to the highs it
-admits (above). `docs/features/signedness/analysis.md`
+finds it true for `v1 == LONG_MAX`). Nor does that walk check wide literals: clang
+`-O0` code that compares `ntohl(*p)` with `3000000000u` prints
+`int v1; // eax` beside `if (v1 != 3000000000)`, false for every `v1`.
+`castsign` does not extend either trade to the highs it admits (above). `docs/features/signedness/analysis.md`
 carries the measured agreement rate against DWARF on unstripped binaries, which
 is the number this option is judged on.
 
