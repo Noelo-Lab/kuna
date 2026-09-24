@@ -1,0 +1,37 @@
+{
+ "classifier": "docs/features/castsign/hunkclass.py (decl = `unsigned T vN;` -> `T vN;`; sign-cast = `(T)vN` dropped on a re-declared vN; def-widen = an integer cast dropped at the top of `vN = ...;` where vN is declared an integer of the cast's width; anything else is OTHER)",
+ "castbench_full": {
+  "arms": "castbench main arm at 5458b7ab5 (== castsign off) vs the final default-on build",
+  "binaries": "45: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find x O0/O2/O2-noinline",
+  "files": 45,
+  "functions_changed": 203,
+  "by_class": {
+   "decl": 234,
+   "sign-cast": 371,
+   "def-widen": 94
+  },
+  "other_lines": 0
+ },
+ "extra_corpus": {
+  "arms": "--option castsign off vs the default, same final build",
+  "binaries": [
+   "O2 bash",
+   "O2-noinline dash",
+   "O2-noinline cf2.elf (ARM Cortex-M)",
+   "O2-noinline kmod",
+   "O0 bzip2",
+   "O0 crontab"
+  ],
+  "functions": 6673,
+  "files": 6,
+  "functions_changed": 55,
+  "by_class": {
+   "decl": 44,
+   "sign-cast": 176,
+   "def-widen": 94
+  },
+  "other_lines": 0,
+  "variables_json_identical": "6/6 binaries byte-identical"
+ },
+ "assignment_recheck": "docs/features/castsign/assigncheck.py: every `lhs = (T)rhs;` that became `lhs = rhs;` has lhs declared an integer of T's width and rhs declared an integer: 27/27 (castbench), 11/11 (extra), 0 flagged"
+}
