@@ -588,6 +588,9 @@ struct CastsignWalk {
     widened: bool,
     /// An operator that overflows over a signed operand reads the value.
     wraps: bool,
+    /// A `==` `!=` `&` `|` `^` meets the value with an operand that may print
+    /// with a C type wider than its declaration.
+    wide: bool,
     /// The same-width integer casts that read a declared member.
     casts: Vec<OpId>,
 }
@@ -684,6 +687,22 @@ fn evidence_walk(fd: &Funcdata, high: HighVariableId, castsign: bool, cs: &mut C
                 }
                 if castsign && crate::kuna_castsign::can_overflow(opc, slot) {
                     cs.wraps = true;
+                }
+                if castsign
+                    && matches!(
+                        opc,
+                        OpCode::CPUI_INT_EQUAL
+                            | OpCode::CPUI_INT_NOTEQUAL
+                            | OpCode::CPUI_INT_AND
+                            | OpCode::CPUI_INT_OR
+                            | OpCode::CPUI_INT_XOR
+                    )
+                    && (0..o.num_input())
+                        .filter(|&s| s != slot)
+                        .filter_map(|s| o.get_in(s))
+                        .any(|other| other != vn && crate::kuna_castsign::wide_literal(fd, other))
+                {
+                    cs.wide = true;
                 }
                 match classify_reader(opc, slot) {
                     ReaderClass::Demands(ev) => verdict = verdict.join(ev),
@@ -812,7 +831,7 @@ pub fn plan(
             continue;
         }
         let castsign_only = frame_local || is_param || cs.widened;
-        if castsign_only && (want != type_metatype::TYPE_INT || cs.wraps) {
+        if castsign_only && (want != type_metatype::TYPE_INT || cs.wraps || cs.wide) {
             continue;
         }
         // `get_base_no_char` so a re-signed byte declares `int1`, never `char`:

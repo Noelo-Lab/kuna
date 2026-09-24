@@ -40,6 +40,15 @@
 //! into.  (The walk `signedness` runs for register locals accepts that trade; this
 //! option does not extend it.)
 //!
+//! **A wide literal keeps the declaration unsigned** ([`wide_literal`]).  kuna
+//! may print a constant whose top bit is set as an unsuffixed decimal, and
+//! `3000000000` is a `long` in C (`10000000000000000000` is wider than `long`).
+//! `v == 3000000000` converts `v` to that type, zero-extending an `unsigned int`,
+//! which is the comparison the binary makes, and sign-extending an `int`, which
+//! makes it false for every `v`.  So a high this option admits is left alone when
+//! a `==`, `!=`, `&`, `|` or `^` meets it, or the expression it is printed into,
+//! with such a constant, alone or inside the other operand's printed expression.
+//!
 //! **A flip must remove a cast** ([`drops_printed_cast`]).  A high this option
 //! admits is re-declared only when a `(T)v` the new declaration makes a no-op is
 //! printed today: its value lands in an expression, not in a call argument, an
@@ -62,7 +71,7 @@
 //! unsigned definition.  With the option off, `signedness` is byte-identical to
 //! what it was.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
@@ -162,6 +171,53 @@ pub(crate) fn can_overflow(opc: OpCode, slot: int4) -> bool {
         OpCode::CPUI_INT_LEFT => slot == 0,
         _ => false,
     }
+}
+
+/// Might `other`, the operand beside the walked value in a `==`, `!=`, `&`, `|`
+/// or `^`, print with a C type wider than the value's declaration?  A constant
+/// whose top bit is set may print as an unsuffixed decimal (`3000000000`,
+/// `10000000000000000000`), a `long` or a 128-bit literal, and C converts the
+/// other operand to that type: zero-extended while it is unsigned, sign-extended
+/// once re-declared signed.  Every such constant counts, printed in hex or not,
+/// and so does one inside the expression `other` is printed as.
+pub(crate) fn wide_literal(fd: &Funcdata, other: VarnodeId) -> bool {
+    let mut work = vec![other];
+    let mut seen: HashSet<VarnodeId> = HashSet::new();
+    while let Some(vn) = work.pop() {
+        if !seen.insert(vn) {
+            continue;
+        }
+        let Some(v) = fd.vbank().get(vn) else { continue };
+        if v.is_constant() {
+            let bits = v.get_size() * 8;
+            if (1..=64).contains(&bits) && (v.get_offset() >> (bits - 1)) & 1 == 1 {
+                return true;
+            }
+            continue;
+        }
+        if !v.is_implied() {
+            continue;
+        }
+        let Some(o) = v.get_def().and_then(|d| fd.obank().get(d)) else { continue };
+        let inputs = match o.code() {
+            OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_INT_MULT
+            | OpCode::CPUI_INT_DIV
+            | OpCode::CPUI_INT_SDIV
+            | OpCode::CPUI_INT_REM
+            | OpCode::CPUI_INT_SREM
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_2COMP => o.num_input(),
+            OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT => 1,
+            _ => 0,
+        };
+        work.extend((0..inputs).filter_map(|i| o.get_in(i)));
+    }
+    false
 }
 
 /// Is one of `casts` (each a `CPUI_CAST` reading a declared member of the high)
