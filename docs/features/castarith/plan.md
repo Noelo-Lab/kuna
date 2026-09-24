@@ -28,8 +28,8 @@ pointer into a byte-addressed space and the sum is used as a `T *`:
   a whole number of `T`s.
 
 It refuses: a variable index, an aggregate or padded element, a word-addressed
-space, a sum used as an integer (integer arithmetic or a store into an integer
-slot), an address shared by several accesses, a store of a value whose defining op
+space, a sum used as an integer (integer arithmetic, a store into an integer
+slot, or an assignment to a variable declared as an integer), an address shared by several accesses, a store of a value whose defining op
 the pass has not reached yet unless its opcode fixes the value's kind, a constant
 that names a global, and an address-like constant beside an integer cast to a
 pointer (`table[i]`).
@@ -38,7 +38,12 @@ pointer (`table[i]`).
 signed pointer-sized integer. The base is `p` itself when `p` is a variable whose
 printed declaration points at `T` (checked with the printer's own
 `printc::declared_variable_type`), a retargeted implied cast when `p` is an implied
-cast read only here, and a new implied `CPUI_CAST` to `T *` otherwise.
+cast read only here, a new implied `CPUI_CAST` to `T *` of that cast's input when `p`
+is an implied cast other ops share (so no cast stacks on it), and a new implied
+`CPUI_CAST` to `T *` of `p` otherwise.
+
+`castimplied` reads a converted load's C type from the subscript's cast base, the way
+it reads `*(T *)p`, so a widening it left out of the integer form stays out.
 
 ## 3. Rendering
 
@@ -56,9 +61,11 @@ Rust back-end never sees the rewrite.
 ## 5. Tests
 
 - `tests/stages/kuna-castarith.xml`: pass 1 `option castarith off` (the bug), pass 2
-  on, pass 3 `arraynotation off`; controls for a non-whole offset.
-- 21 unit tests in `p9_emit/kuna_castarith/tests.rs`: every width and sign, float,
+  on, pass 3 `arraynotation off`; controls for a non-whole offset; a byte and a word
+  widened under the subscript (castimplied).
+- 22 unit tests in `p9_emit/kuna_castarith/tests.rs`: every width and sign, float,
   negative offset, non-whole offset, direct base, other-width base, retargeted cast,
+  shared cast read through,
   stored/compared/subtracted sums, void in and out of the function, aggregate,
   integer sum, variable index, unsettled and settled stores, the pass gate both ways.
 - `decompile_all_cli.rs a_pointer_plus_whole_elements_round_trips_through_the_printed_c`:

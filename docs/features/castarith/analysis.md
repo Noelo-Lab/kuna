@@ -224,18 +224,16 @@ removed (section 5, JSON surface), so the arity and phantom counters cannot move
 The rewrite runs after every type and variable is final and changes no declaration, so
 this is the expected null result; the cast count is the target.
 
-**Speed** (one binary, `--option castarith off` vs default, `decompile-all --json`, arms
-interleaved and order-alternated, one warm-up discarded, min-of-15; `speed.py` beside this
-file; other lanes and a workspace test run shared the box, load 6-41):
+**Speed** (the final engine, `--option castarith off` vs default, `decompile-all --json`,
+arms interleaved and order-alternated, one warm-up discarded, min-of-15; `speed.py`
+beside this file, raw samples in `speed.json`; a workspace test run shared the box during
+fmt/ls/sort, load 4-20):
 
 | binary | off min ms | on min ms | delta (min) | median of ratios |
 |---|---:|---:|---:|---:|
-| fmt -O2 | 4,218.8 | 4,208.7 | -0.24% | -0.57% |
-| ls -O2 | 14,026.3 | 13,976.9 | -0.35% | -2.61% |
-| sort -O2 | 14,624.5 | 14,711.3 | +0.59% | +1.05% |
-| bash -O2 | 89,838.4 | 92,482.3 | +2.94% | +5.65% |
+| fmt -O2 | 4,140.2 | 4,150.2 | +0.24% | +0.64% |
+| ls -O2 | 13,598.5 | 13,729.3 | +0.96% | +0.96% |
+| sort -O2 | 14,382.8 | 14,296.2 | -0.60% | -2.75% |
+| bash -O2 | 86,531.6 | 86,923.1 | +0.45% | +0.38% |
 
-The bash -O2 run shared the box with a workspace test run (load 20-41); re-measured alone
-at load 4-9 (`speed-rerun.json`) it is **-0.16%** (min) and -0.17% (median of ratios). Worst
-min delta over the four binaries: +0.59% (sort -O2); budget +5%. Measured on the build
-before the rebase onto `5458b7ab5`; the rebase changed no line of the rewrite.
+Worst min delta +0.96% (ls -O2); budget +5%.

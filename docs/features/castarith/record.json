@@ -160,56 +160,67 @@
   "note": "presentation-only: runs after every type and variable is final; measured on the final build (bin-fix2), both arms"
  },
  "speed": {
-  "method": "one pinned release binary, kuna decompile-all --json, --option castarith off vs default, arms interleaved and order-alternated, one warm-up discarded, min and median-of-ratios of 15; other lanes running on the box",
+  "method": "one pinned release binary (final engine), kuna decompile-all --json, --option castarith off vs default, arms interleaved and order-alternated, one warm-up discarded, min and median-of-ratios of 15; a workspace test run shared the box during fmt/ls/sort",
   "measurements": [
    {
     "label": "fmt_O2",
     "n": 15,
-    "delta_min_pct": -0.24,
-    "delta_median_of_ratios_pct": -0.57,
-    "off_min": 4218.8,
-    "on_min": 4208.7
+    "delta_min_pct": 0.24,
+    "delta_median_of_ratios_pct": 0.64,
+    "off_min": 4140.2,
+    "on_min": 4150.2,
+    "loadavg": [
+     7.7,
+     8.8,
+     10.6
+    ]
    },
    {
     "label": "ls_O2",
     "n": 15,
-    "delta_min_pct": -0.35,
-    "delta_median_of_ratios_pct": -2.61,
-    "off_min": 14026.3,
-    "on_min": 13976.9
+    "delta_min_pct": 0.96,
+    "delta_median_of_ratios_pct": 0.96,
+    "off_min": 13598.5,
+    "on_min": 13729.3,
+    "loadavg": [
+     4.4,
+     6.0,
+     8.7
+    ]
    },
    {
     "label": "sort_O2",
     "n": 15,
-    "delta_min_pct": 0.59,
-    "delta_median_of_ratios_pct": 1.05,
-    "off_min": 14624.5,
-    "on_min": 14711.3
+    "delta_min_pct": -0.6,
+    "delta_median_of_ratios_pct": -2.75,
+    "off_min": 14382.8,
+    "on_min": 14296.2,
+    "loadavg": [
+     19.6,
+     14.0,
+     11.0
+    ]
    },
    {
     "label": "bash_O2",
     "n": 15,
-    "delta_min_pct": 2.94,
-    "delta_median_of_ratios_pct": 5.65,
-    "off_min": 89838.4,
-    "on_min": 92482.3
-   },
-   {
-    "label": "bash_O2 (re-measured alone, load 4-9)",
-    "n": 15,
-    "delta_min_pct": -0.16,
-    "delta_median_of_ratios_pct": -0.17,
-    "off_min": 85499.3,
-    "on_min": 85366.3
+    "delta_min_pct": 0.45,
+    "delta_median_of_ratios_pct": 0.38,
+    "off_min": 86531.6,
+    "on_min": 86923.1,
+    "loadavg": [
+     4.0,
+     4.2,
+     4.7
+    ]
    }
   ],
   "budget_pct": 5.0,
-  "note": "measured on the build before the rebase onto 5458b7ab5; the rebase changed no line of the rewrite",
-  "worst_delta_min_pct": 0.59,
+  "worst_delta_min_pct": 0.96,
   "within_budget": true
  },
  "gates": {
-  "measured_on": "feat/castarith rebased on origin/main 5458b7ab5",
+  "measured_on": "feat/castarith on origin/main 5458b7ab5 (final engine 7d2dfc716)",
   "make_test": "datatests: 675/675 assertions passed, PARITY OK (default on)",
   "make_test_stages": "datatests: 1353/1353 assertions passed, PARITY OK (baseline re-recorded: 12 castarith keys; 4 keys renamed with their assertion, see default_on_evaluation.b_stages)",
   "make_test_cli": "tests/cli: 237/237 passed (6 probes updated, see default_on_evaluation.c_test_cli)",
@@ -217,7 +228,7 @@
   "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "make_rust_test": "RUST_TEST_RC=0 (7,504 passed, 0 failed; 423 test binaries) on the tree rebased onto 5458b7ab5"
+  "make_rust_test": "RUST_TEST_RC=0 (7,505 passed, 0 failed; 422 test binaries); lane started 01:32:37Z after the last code change (7d2dfc716, 01:24:27Z)"
  },
  "default_on_evaluation": {
   "verdict": "flipped: castarith ships on",
@@ -225,7 +236,7 @@
   "b_stages": "16 assertions of other options pinned the integer round trip and now read the pointer form, each value-identical: CALLEEVOTE #1, cspecprotos #5, EXCLUSIVEARGUSE #5, STRUCTSYNTH-NEST #1, FMTSTATIC #35, truncarg #8, truncarg #9, inputparamgap #4, FUNCPTRALIGN #2, PEBNAMES #8, LIBCTYPES #34, iteboolean #3, PEBNAMES-X86 #11, PEBNAMES-X86 #15, STRUCTSYNTH-LOCALS #1, ptrfromuse #6; the names of PEBNAMES #8, PEBNAMES-X86 #11/#15 ('stays an integer addition' -> 'stays an offset from it') and ptrfromuse #6 changed with them; the new kuna-castarith.xml (12 assertions) sets `option castarith off` in pass 1",
   "c_test_cli": "6 probes pinned the old spelling of a field access that another option's decision is about (a void * parameter left open, a wide store kept whole): calleevote-fields-reads-a-closed-getters-lone-field, calleevote-leaves-a-mips-callback-open, calleevote-leaves-a-relocatable-objects-callbacks-open, calleevote-reads-a-table-in-code-at-address-zero, calleevote-types-takes-what-every-caller-passes, protoorder-types-keeps-a-wide-store-whole; regexes follow the new rendering, probe ids re-derived; 237/237",
   "d_typesweep": "444 slices on 5458b7ab5, final build: 0 improved, 0 worse, perfect 1615 -> 1615, mean .3697 -> .3697, 0 on or off perfect, every level and project unchanged (dbe854ba3: 1609 -> 1609); no variable or argument added or removed (json_surface)",
-  "e_speed": "fmt -0.24%, ls -0.35%, sort +0.59%, bash +2.94% at load 20-41 and -0.16% re-measured alone at load 4-9 (min-of-15); worst +0.59% at a quiet moment; budget +5%",
+  "e_speed": "final engine, min-of-15 interleaved: fmt +0.24%, ls +0.96%, sort -0.60%, bash +0.45%; worst +0.96%; budget +5%",
   "f_hunks": "201 binaries (castbench full 45 + 156 disjoint incl. ARM32 and PE32), 12,358 functions and 72,208 lines changed: every line in the documented classes (hunks.py reverse-applies the rewrite; 138 read by hand), and 4 functions change control flow through taildup's op budget (documented, see corpus_sweep.structural); no signature, declaration, parameter or JSON variable type moves",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope; reliable is the defaults",
   "h_castbench": "on 5458b7ab5: 43,673 -> 38,703 casts on 4,815 shared functions (-11.4%), 1.155x -> 1.023x IDA; 952 functions fewer, 0 more; 156 disjoint binaries 400,905 -> 332,946, 0 more",
