@@ -12,7 +12,7 @@ with the default on the same branch build.
 | (b) | `make test-stages` | 1362/1362 PARITY OK. Against main's baseline the only new keys are the 9 `castsign #N` assertions of `kuna-castsign.xml`; `docs/baseline-stages.json` was re-recorded for them (1353 + 9), nothing else moved. |
 | (c) | `make test-cli` | 237/237 with the new default; no probe moved. |
 | (d) | 444-slice typesweep (pinned metric, 8 projects x O0/O2/O2-noinline) | origin/main arm 1,615 perfect, mean .3697; branch 1,615, mean .3697. 0 moved on, 0 moved off, 0 improved, 0 worse; all 10,748 functions score identically. `typesweep-report.md`. |
-| (e) | speed, interleaved min-of-15, `decompile-all --json` | SPEED_PLACEHOLDER |
+| (e) | speed, interleaved min-of-15, `decompile-all --json` | On the final build merged onto `52202840d`, loads 1 to 7: fmt -O2 -0.04% min / +2.32% median; ls -O2 +0.22% / +0.43%; sort -O2 +1.42% / +1.33%; bash -O2 +0.90% / +0.02%. Worst min +1.42% (within +5%). `speed-wideliteral.json`, `speed.py`. Earlier builds: `speed-final.json` (worst +0.35%), `speed-after-lock.json` (+1.68%), `speed.json` (+1.06%). |
 | (f) | whole-corpus `decompile-all` before/after, every hunk classified | The 45 castbench binaries: 112 functions changed, 93 declaration flips, 164 sign casts dropped on a re-declared variable, 94 widening casts dropped on assignment; 0 other lines, 0 flips that remove no cast. Fifteen disjoint binaries (`corpus-extra.py`, 8,841 functions): 40 changed, 14 flips, 45 sign casts, 102 widening casts, 0 other, 0 no-cast flips. The review's fourteen disjoint binaries (`corpus-third.py`: factor O0/O2, dd, date, expr, cksum, stat, seq, init, groupadd, mirai, certtool, e2fsck O0, ip O2; 6,547 functions): 39 changed, 34 flips, 58 sign casts, 18 widening casts, 0 other, 0 no-cast flips. Ten binaries WITH DWARF (4,254 functions): 23 changed, 8 flips, 8 sign casts, 18 widening casts plus the known `len = (unsigned int)tree[n].dl.freq;` on a register local, classified by hand; 0 locked declarations re-signed. `variables[]` is byte-identical off vs on in all 39 non-castbench binaries. Every dropped `lhs = (T)rhs;` re-checked: 27/27, 16/16, 3/3, 4/4. Every flipped variable scanned for `+ - * <<` (only arithmetic on its sign extension or truncation, the same value in both arms) and for top-bit literals on its lines (`widescan.py`: 0 decimal; the only hex ones are constants assigned to it). `corpus-hunks.json`. |
 | (g) | `modes.rs` | Coherent. The catalog default is on, so every preset inherits it. `aggressive_carries_every_default_off_option` needs no entry. |
 | (h) | castbench full (45 binaries, 4,815 functions shared with IDA) | 38,703 -> 38,602 casts (-101, -0.26%), 203.1 -> 202.5 per kloc, 1.023 -> 1.021 x IDA. 41 functions fewer, 0 functions more. By level: O0 1.039 -> 1.032, O2 1.057 -> 1.056, O2-noinline 0.971 -> 0.970. |
@@ -158,12 +158,13 @@ Stage pass 3 checks the same with a console `map addr` lock.
 
 ## Final gates
 
-On the final code (commit `158df9544`; later commits are docs only):
-`make test` 675/675 PARITY OK; `make test-stages` 1350/1350 PARITY OK;
-`make test-cli` 237/237; `make rust-test` RC=0 (7,484 passed, 0 failed, lane
-started after the code commit); `make check-spec` and `--strict` OK;
-`kuna catalog --check` OK; `counters --check` no drift; `docs/options.md` and
-`phase_catalog.json` byte-fresh.
+On the final code (branch merged onto `52202840d`, last code commit `e120ab7df`;
+later commits are docs only): `make test` 675/675 PARITY OK; `make test-stages`
+1362/1362 PARITY OK; `make test-cli` 237/237; `make rust-test` RC=0 (7,511
+passed, 0 failed; the lane started 08:34:55Z, after `e120ab7df` at 08:34:43Z);
+`make check-spec` and `--strict` OK; `kuna catalog --check` OK;
+`counters --check` no drift; `docs/options.md` and `phase_catalog.json`
+byte-fresh.
 
 ## Output languages
 

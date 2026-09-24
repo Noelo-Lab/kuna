@@ -484,6 +484,56 @@
     }
    },
    "worst_min_delta_pct": 0.35
+  },
+  "after_wide_literal_rule": {
+   "build": "the branch merged onto 52202840d (e120ab7df code), same method, 15 rounds, docs/features/castsign/speed-wideliteral.json",
+   "measurements": {
+    "fmt": {
+     "off_min_ms": 4131.4,
+     "on_min_ms": 4129.9,
+     "delta_min_pct": -0.04,
+     "delta_median_pct": 2.32,
+     "loadavg": [
+      4.60888671875,
+      6.412109375,
+      5.60693359375
+     ]
+    },
+    "ls": {
+     "off_min_ms": 13596.6,
+     "on_min_ms": 13625.9,
+     "delta_min_pct": 0.22,
+     "delta_median_pct": 0.43,
+     "loadavg": [
+      3.21435546875,
+      4.25146484375,
+      4.9814453125
+     ]
+    },
+    "sort": {
+     "off_min_ms": 14137.9,
+     "on_min_ms": 14338.6,
+     "delta_min_pct": 1.42,
+     "delta_median_pct": 1.33,
+     "loadavg": [
+      4.06494140625,
+      3.8583984375,
+      4.486328125
+     ]
+    },
+    "bash": {
+     "off_min_ms": 85521.9,
+     "on_min_ms": 86293.5,
+     "delta_min_pct": 0.9,
+     "delta_median_pct": 0.02,
+     "loadavg": [
+      1.19140625,
+      1.8779296875,
+      2.91943359375
+     ]
+    }
+   },
+   "worst_min_delta_pct": 1.42
   }
  },
  "parity": {
@@ -513,5 +563,6 @@
   "review_repros": "cw.c/cz.c at gcc/clang -O0/-O1/-O2: option on prints byte-identical C to option off in all 12 builds",
   "not_fixed_here": "signedness auto register locals have the same hazard on origin/main: clang -O0 `unsigned v = ntohl(*p); if (v == 3000000000u) return 2; return (int)v < 0;` prints `int v1; // eax` with `if (v1 != 3000000000)`, C returns 1 where the binary returns 2",
   "variables_json": "a flipped frame local's variables[] entry keeps the frame Symbol's unsigned type (documented in spec 9.3); unchanged by design so variables[] and type_match stay byte-identical"
- }
+ },
+ "gates_final": "on e120ab7df merged onto 52202840d: make test 675/675 PARITY OK; make test-stages 1362/1362 PARITY OK; make test-cli 237/237; make rust-test RC=0 (7,511 passed, 0 failed, lane 08:34:55Z after the code commit 08:34:43Z); check-spec lenient+strict OK; catalog --check OK; counters --check no drift; options.md and phase_catalog.json fresh"
 }
