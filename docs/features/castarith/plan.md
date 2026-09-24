@@ -63,8 +63,10 @@ Rust back-end never sees the rewrite.
 - `tests/stages/kuna-castarith.xml`: pass 1 `option castarith off` (the bug), pass 2
   on, pass 3 `arraynotation off`; controls for a non-whole offset; a byte and a word
   widened under the subscript (castimplied).
-- 23 unit tests in `p9_emit/kuna_castarith/tests.rs`: every width and sign, float,
-  negative offset, a negative index of 2^31 elements or more (kept), non-whole offset, direct base, other-width base, retargeted cast,
+- 25 unit tests in `p9_emit/kuna_castarith/tests.rs`: every width and sign, float,
+  negative offset, a negative index of 2^31 elements or more (kept), an enum element of
+  every width through a load, a passed and a compared pointer (kept), an element C sizes
+  differently (a 4-byte pointer, a 16-byte float; kept), non-whole offset, direct base, other-width base, retargeted cast,
   shared cast read through,
   stored/compared/subtracted sums, void in and out of the function, aggregate,
   integer sum, variable index, unsettled and settled stores, the pass gate both ways.
@@ -73,3 +75,7 @@ Rust back-end never sees the rewrite.
   clang -O0, gcc -O2; option on and off) and checks the program prints what the
   binary prints, including `far_idx`, whose reads 2^31 elements back must keep the
   integer form.
+- `decompile_all_cli.rs an_enum_element_keeps_the_integer_form_and_round_trips`: the
+  same over `castarith_enum_x86_64.c` (packed 1- and 2-byte enums, a plain enum, an enum
+  pointer passed on; gcc -O0 and -O2 with `-g`), compiled with kuna's own enum
+  typedefs, plus a spelling check of the C++ `enum class` build.

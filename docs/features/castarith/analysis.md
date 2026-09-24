@@ -74,10 +74,28 @@ pointee, with a `void` pointee stepping in bytes for a value that stays in the f
 
 The address is unchanged: `k * sizeof(T) == K` exactly (the rule requires
 divisibility, `K` read as signed), the base is converted pointer to pointer with no
-integer in between, the element size is the access width, and the printed index reads
-back as `k`, so every load and store moves the same bytes. Alignment is unchanged too:
-`K` is a multiple of `sizeof T`, so `p` is `T`-aligned exactly when `p + K` is. The
-refusals exist where the printed C could otherwise convert a value or cost a cast:
+integer in between, the element size is the access width, C's `sizeof` of the printed
+element is that same width, and the printed index reads back as `k`, so every load and
+store moves the same bytes. Alignment is unchanged too: `K` is a multiple of `sizeof T`,
+so `p` is `T`-aligned exactly when `p + K` is. The refusals exist where the printed C
+could otherwise convert a value or cost a cast:
+
+- an enum element. kuna prints every enum as a plain `typedef enum X {...} X;`, whose
+  size C leaves to the implementation (4 bytes under gcc and clang), while a packed enum,
+  one compiled with `-fshort-enums`, or a C++ `enum class : uint8_t` / `: uint16_t` is 1
+  or 2 bytes in the binary. `use_color(*(enum color *)((char *)p + 3))` with a packed
+  `color` printed `use_color(((color *)p)[3])` before this refusal, which C reads at
+  `p + 12`: compiled with kuna's own typedef, the printed function passed 85 (`b[12]`)
+  where the binary passes 22 (`b[3]`), and the value form `&((color *)p)[3]` handed on
+  `p + 12`. Every enum is refused, not only the narrow ones, because C does not fix any
+  enum's size. For the same reason the element must be a type the target's data model
+  (`kuna_ctypes::CDataModel`) names at exactly its width: an integer of a width the
+  model has, a one-byte `bool`, `float` or `double`, or a pointer of the model's pointer
+  size (`kuna_castarith::c_sizeof_is_size`). A `long double` (`sizeof` 16, 12 or 8 by
+  target, never the value's 10 bytes) and a 16-byte integer keep the integer form. The
+  stripped corpora carry no enum-typed values, so both refusals change 0 printed lines
+  on castbench full and on the 156 disjoint binaries (byte-identical to the build
+  without them); `castarith_enum_x86_64.c` covers them with a compiled round trip;
 
 - a negative index of 2^31 elements or more. C types the literals `0x80000000` through
   `0xffffffff` as `unsigned int`, so `-0x80000000` is +2^31: `*(long *)((char *)p -
@@ -139,7 +157,17 @@ integer base (kept), and `far_idx`: 8-, 4- and 2-byte reads at indexes -2^31 and
 `MAP_NORESERVE` map (the binary and the round trip print the same fallback line if the map
 is refused). Before the refusal, the printed `far_idx` read `222 444 666 888` where the
 binary reads `111 333 555 777`. In all six arms the printed C, compiled and run, prints exactly
-what the binary prints. The shared-cast base has 1 unit test (a whole-program type
+what the binary prints.
+
+A second round trip (`an_enum_element_keeps_the_integer_form_and_round_trips`, fixture
+`castarith_enum_x86_64.c` built with `-g` at gcc -O0 and gcc -O2, option on and off)
+compiles kuna's own enum typedefs with the printed `rd_color`, `rd_mark`, `rd_level`
+(packed 1- and 2-byte enums and a plain 4-byte one) and `pass_color` (an enum pointer
+passed on). All four arms print what the binary prints; before the enum refusal both
+`on` arms printed `color 85 | mark 23637 | set 141 | 36 200` where the binary prints
+`color 22 | mark 12843 | set 36 | 200 141`. The C++ build of
+`castarith_enum_x86_64.cc` (`enum class : uint8_t` and `: uint16_t`, g++ -O2) is checked
+for spelling: `use_kind(*(Kind *)((long)p + 5))`, not `((Kind *)p)[5]`. The shared-cast base has 1 unit test (a whole-program type
 context produces it; a small program does not).
 
 ## 5. Whole-corpus hunks, both arms of one build

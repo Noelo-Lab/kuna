@@ -412,9 +412,19 @@ spelling decision stays with that option.
 The computed value is unchanged: `k * sizeof(T)` is the original offset, the
 base is converted pointer to pointer with no integer in between (or, under a
 shared cast, from the integer the integer form converted too), the element
-is the access width, and the printed index reads back as `k`. The last
-condition is why a negative index of 2^31 elements or more keeps the integer
-form (`kuna_castarith.rs (plan)`). C gives the literals `0x80000000` through
+is the access width, C's `sizeof` of the printed `T` is that same width, and
+the printed index reads back as `k`. The `sizeof` condition is why an enum
+element keeps the integer form (`kuna_castarith.rs (plan)`). kuna prints every
+enum as a plain `enum`, whose size C leaves to the implementation (an `int`
+under gcc and clang), while a packed enum, one compiled with `-fshort-enums`,
+or a C++ `enum class : uint8_t` is 1 or 2 bytes in the binary, so
+`((color *)p)[3]` would read 12 bytes past `p` instead of 3. For the same
+reason the element must be a type the target's data model names at exactly its
+width (`kuna_castarith.rs (c_sizeof_is_size)`): an integer of a width the model
+has, a one-byte `bool`, a `float` or `double`, or a pointer of the model's
+pointer size. A `long double`, whose `sizeof` is 16, 12 or 8 by target, and a
+16-byte integer keep the integer form. The index condition is why a negative
+index of 2^31 elements or more keeps the integer form too. C gives the literals `0x80000000` through
 `0xffffffff` the type `unsigned int`, so `-0x80000000` is +2^31 and
 `((long *)a0)[-0x80000000]` would index forward. The integer form's byte offset
 is then at least 2^32 in magnitude for any element wider than a byte, a `long`
@@ -423,8 +433,8 @@ gives the literal. A one-byte element's offset in the unsigned range is misread
 by the integer form as well; that is how the printer spells a negative constant,
 and this rule leaves it as it was. The integer form stays wherever the printed C could
 otherwise convert a value or cost a cast. An offset that is not a whole number of
-elements (`*(unsigned int *)((long)a0 + 0x6a)`), a variable index, an aggregate
-or padded element, and a word-addressed space keep it. So does a sum read as an
+elements (`*(unsigned int *)((long)a0 + 0x6a)`), a variable index, an aggregate,
+enum or padded element, and a word-addressed space keep it. So does a sum read as an
 integer (integer arithmetic on it, a store of it into an integer slot, or an
 assignment to a variable declared as an integer, where the pointer form costs
 more casts than the integer form), and an address several LOADs or
