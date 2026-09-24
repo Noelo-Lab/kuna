@@ -4655,6 +4655,8 @@ fn castsign_leaves_a_locked_declaration_alone() {
         }
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A pointer plus a constant that is a whole number of elements prints as
 /// pointer arithmetic under `castarith`, `((unsigned int *)a0)[0x2b]` with one
 /// cast, instead of the integer round trip `*(unsigned int *)((long)a0 +
