@@ -55,6 +55,16 @@ declaration change: the signature, the callers' arguments and the
 - **A body local with an input member.** The printer declares only body locals,
   and `retain_sole_named` drops every planned high it does not declare.
 
+None of them touches a declaration whose type is locked. A `--assert type`, a
+DWARF local (mapped `typelock|namelock` onto its frame Symbol) and a type committed
+from Ghidra lock the Symbol, not the member varnodes the walk checks, so
+`kuna_castsign.rs (symbol_type_locked)` reads the lock on the Symbol: the naming
+pass's bind, a dynamic Symbol, and the Symbol containing each address-tied member.
+The first build of this option missed it and re-declared DWARF locals the source
+declares unsigned: wc `-O0` `uintmax_t words, chars` and bzip2 `fallbackQSort3`'s
+`UInt32 med` printed as `long`/`int`, and an asserted `unsigned long idx` printed
+as `long idx`.
+
 These relaxations only ever declare a value signed. The mirror direction would buy
 at most 20 local casts and risks IDA's overshoot.
 

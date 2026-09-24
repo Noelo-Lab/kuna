@@ -4,7 +4,8 @@ castimplied drops that cast for a re-signed `lhs` only when `lhs` is declared an
 integer as wide as `T` and `rhs` is an integer: C's conversion of `rhs` to the
 declaration then yields the bits `(T)rhs` followed by the assignment did.  This
 reads the printed declarations and flags anything else (a pointer or float
-`rhs`, a width mismatch).
+`rhs`, a width mismatch).  A cast to `rhs`'s own new declaration is the
+sign-cast class instead (a no-op once `rhs` is re-declared) and is counted apart.
   python3 assigncheck.py <off-dir> <on-dir>
 """
 import collections
@@ -66,7 +67,9 @@ for f in sorted(on.rglob('*.c')):
             params, locs = fb.get(j1 + k) or ({}, {})
             dl, dr = locs.get(lhs) or params.get(lhs), locs.get(rhs) or params.get(rhs)
             stats['lhs = (T)rhs dropped'] += 1
-            if width(dl) != width(t):
+            if dr is not None and dr.strip() == t:
+                stats['ok (T is rhs\'s new declaration: a no-op cast)'] += 1
+            elif width(dl) != width(t):
                 flagged.append(('WIDTH', str(f.relative_to(on)), A[i1 + k].strip(), dl, dr))
             elif dr is not None and width(dr) is None:
                 flagged.append(('RHS-NONINT', str(f.relative_to(on)), A[i1 + k].strip(), dl, dr))
