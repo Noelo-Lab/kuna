@@ -11,7 +11,7 @@ the base arm is main's own binary, and `off` is byte-identical to it (see (h)).
 | (b) | `make test-stages` | 1350/1350 PARITY OK. No assertion outside `kuna-castsign.xml` moved. That file's assertions were rewritten for the arithmetic rule (9 now, from 8), so `docs/baseline-stages.json` changes only in its `castsign #N` keys and the totals. |
 | (c) | `make test-cli` | 237/237 with the new default; no probe moved. |
 | (d) | 444-slice typesweep (pinned metric, 8 projects x O0/O2/O2-noinline) | 1,615 -> 1,615 perfect; mean .3697 -> .3697; 0 moved on, 0 moved off, 0 improved, 0 worse. All 10,748 functions score identically to the off arm, row for row. `typesweep-report.md`. |
-| (e) | speed, interleaved min-of-15, `decompile-all --json` | SPEED_PLACEHOLDER |
+| (e) | speed, interleaved min-of-15, `decompile-all --json` | On the final build (`158df9544`), loads 1 to 4: fmt -O2 +0.35% min / -4.47% median; ls -O2 +0.10% / -1.40%; sort -O2 +0.06% / +0.07%; bash -O2 +0.04% / +0.10%. Worst min +0.35% (within +5%). `speed-final.json`, `speed.py`. Earlier builds: `speed.json` (worst +1.06%), `speed-after-lock.json` (worst +1.68%). |
 | (f) | whole-corpus `decompile-all` before/after, every hunk classified | The 45 castbench binaries: 114 functions changed. 95 declaration flips, 171 sign casts dropped on a re-declared variable, 94 widening casts dropped on assignment. 0 other lines, and 0 flips that remove no cast. Fifteen more binaries, disjoint from castbench (bash O2, dash O2-noinline, cf2.elf O2-noinline on ARM Cortex-M, kmod O2-noinline, bzip2 O0, crontab O0, and od, numfmt, pr, last, chage O0, csplit O2-noinline, minigzip, xmlwf, dpkg-query O2; 8,841 functions): 41 changed. 15 flips, 50 sign casts, 102 widening casts, 0 other lines, 0 flips that remove no cast; `variables[]` byte-identical in all fifteen. Every dropped `lhs = (T)rhs;` was re-checked against the printed declarations: 27/27 and 16/16 have `lhs` an integer of `T`'s width and `rhs` an integer. Ten binaries WITH DWARF, where every stack local is type-locked (4,254 functions): 23 changed, 8 flips, 8 sign casts, 18 widening casts plus the known `len = (unsigned int)tree[n].dl.freq;` on a register local, classified by hand; 0 locked declarations re-signed, `variables[]` identical in all ten. Every flipped variable was also scanned for `+ - * <<` in its function's printed text: the only matches are arithmetic on its sign extension or truncation (`(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place), which computes the same value in both arms. `corpus-hunks.json`, `hunkclass.py`, `assigncheck.py`, `corpus-extra.py`, `corpus-dwarf.py`. |
 | (g) | `modes.rs` | Coherent. The catalog default is on, so every preset inherits it. `aggressive_carries_every_default_off_option` needs no entry. |
 | (h) | castbench full (45 binaries, 4,815 functions shared with IDA) | 43,673 -> 43,567 casts (-106, -0.24%), 229.2 -> 228.6 per kloc, 1.155 -> 1.152 x IDA. 42 functions fewer, 0 functions more. By level: O0 1.198 -> 1.192, O2 1.168 -> 1.167, O2-noinline 1.096 -> 1.095. The off arm is byte-identical to main's castbench output. |
@@ -116,7 +116,12 @@ Stage pass 3 checks the same with a console `map addr` lock.
 
 ## Final gates
 
-GATES_PLACEHOLDER
+On the final code (commit `158df9544`; later commits are docs only):
+`make test` 675/675 PARITY OK; `make test-stages` 1350/1350 PARITY OK;
+`make test-cli` 237/237; `make rust-test` RC=0 (7,484 passed, 0 failed, lane
+started after the code commit); `make check-spec` and `--strict` OK;
+`kuna catalog --check` OK; `counters --check` no drift; `docs/options.md` and
+`phase_catalog.json` byte-fresh.
 
 ## Output languages
 

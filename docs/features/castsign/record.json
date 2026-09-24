@@ -332,7 +332,7 @@
     ]
    }
   },
-  "worst_min_delta_pct": 1.06,
+  "worst_min_delta_pct": 0.35,
   "budget_pct": 5,
   "after_lock_check": {
    "build": "51f5e35ac (the type-lock check), same method, 15 rounds, docs/features/castsign/speed-after-lock.json",
@@ -363,13 +363,63 @@
     }
    },
    "worst_min_delta_pct": 1.68
+  },
+  "final": {
+   "build": "158df9544 (arithmetic rule + printed-cast rule), same method, 15 rounds, docs/features/castsign/speed-final.json",
+   "measurements": {
+    "fmt": {
+     "off_min_ms": 4147.8,
+     "on_min_ms": 4162.2,
+     "delta_min_pct": 0.35,
+     "delta_median_pct": -4.47,
+     "loadavg": [
+      3.798828125,
+      3.67041015625,
+      4.498046875
+     ]
+    },
+    "ls": {
+     "off_min_ms": 13616.2,
+     "on_min_ms": 13629.4,
+     "delta_min_pct": 0.1,
+     "delta_median_pct": -1.4,
+     "loadavg": [
+      1.67333984375,
+      2.75048828125,
+      3.8232421875
+     ]
+    },
+    "sort": {
+     "off_min_ms": 14260.6,
+     "on_min_ms": 14268.7,
+     "delta_min_pct": 0.06,
+     "delta_median_pct": 0.07,
+     "loadavg": [
+      1.212890625,
+      1.61474609375,
+      2.876953125
+     ]
+    },
+    "bash": {
+     "off_min_ms": 86628.9,
+     "on_min_ms": 86664.7,
+     "delta_min_pct": 0.04,
+     "delta_median_pct": 0.1,
+     "loadavg": [
+      1.12890625,
+      1.2666015625,
+      1.453125
+     ]
+    }
+   },
+   "worst_min_delta_pct": 0.35
   }
  },
  "parity": {
   "datatests": "675/675 PARITY OK, no assertion moved",
   "stages": "1350/1350 PARITY OK; no assertion outside kuna-castsign.xml moved; that file now has 9 assertions (sign_of flips, a decremented index stays unsigned, a locked slot keeps its type) and baseline-stages.json changes only in its castsign keys and totals",
   "test_cli": "237/237",
-  "rust_test": "RUST_TEST_PLACEHOLDER"
+  "rust_test": "RUST_TEST_RC=0, 7,484 passed, 0 failed, 38 ignored (commit 158df9544, lane 05:39:49Z-06:05:23Z)"
  },
  "soundness": {
   "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_signed_only_variable_round_trips_through_the_printed_c: castsign_wrap_{gcc,clang}_O0_x86_64 (inputs 0, 1, 2, 2^63-1, 2^63, 2^63+1, 2^64-1 and 0, 5, 2^31-1, 2^31, 2^31+1), castsign_wrap_gcc_O1_x86_64 (sign_of, peek) and castsign_{gcc,clang}_O{0,1}_x86_64; option off and on; printed C built by gcc and clang at -O0 and -O2 (56 builds); every build prints the binary's output; the five arithmetic functions print unchanged with the option on. Fails on the first version (dec_neg, cnt_wrap, dec_neg32 wrong at gcc -O0; all five wrong at gcc -O2 and clang -O2), passes on this one",
