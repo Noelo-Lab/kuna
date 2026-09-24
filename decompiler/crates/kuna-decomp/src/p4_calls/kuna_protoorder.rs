@@ -1014,7 +1014,7 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
             Member::Exact(t)
                 if !a.store
                     && crate::kuna_structheadless::types_a_pointer_as_a_word(data, ct, &t)
-                    && accesses_through(data, &value_family(data, a.value)).is_none_or(|(acc, _)| !acc.is_empty()) =>
+                    && accesses_through(data, &value_family(data, a.value)).is_some_and(|(acc, _)| !acc.is_empty()) =>
             {
                 return true;
             }
