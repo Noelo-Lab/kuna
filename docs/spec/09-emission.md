@@ -999,7 +999,8 @@ write) is skipped as if it were a prototype parameter. With the option
 `castsign` on, the pass admits all three
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_castsign.rs`,
 consulted from `kuna_typeround.rs (plan)`), and the declaration and the casts
-it makes no-ops change exactly as they do for a register local.
+it makes no-ops change exactly as they do for a register local, under two
+further conditions described below.
 
 A frame local is admitted only when its high covers its Symbol whole: offset 0,
 a Symbol type (if any) that is a plain integer of the declaration's width, and
@@ -1028,6 +1029,34 @@ extension still constrains the variable. The input-member case needs no test
 of its own: the printer declares only body locals, and `retain_sole_named`
 drops every planned high it does not declare, signature parameters included.
 
+**Arithmetic keeps an admitted variable unsigned**
+(`kuna_castsign.rs (can_overflow)`). Re-declaring `v` signed does not only
+remove the casts at its comparisons: every `v + k`, `v - k`, `v * k`, `-v` and
+`v << k` the body prints then computes in the signed type, where it used to
+compute in the unsigned one. Unsigned arithmetic wraps, which is what the
+binary does; signed arithmetic is undefined on overflow, and gcc folds on that
+assumption even at `-O0`, clang at `-O2`. `0 <= (long)(v1 - 1)` over a
+`long v1` is treated as `0 < v1`, which is false at `v1 == LONG_MIN` where the
+binary's `v1 - 1` is `LONG_MAX`; `v1 = v1 - 1, 0 <= v1` over a `long v1` exits
+at once for the same `v1` under `-O2`, where the binary loops. So a high this option
+admits (a frame local, a body local with an input member, or a verdict a
+neutral reader decided) is left alone when any of those operators reads it,
+directly or through the expression its value is printed into (the walk follows
+implied values, as above). The operand position matters only for `<<`, whose
+count is not the value shifted. `& | ^ ~`, a comparison, a truncation, an
+assignment, a call argument, a store and a `return` cannot overflow and keep
+the variable admissible. A same-width conversion from the old declaration's
+type into the new one (`v = strtoul(...)` into a `long v`) is defined by gcc
+and clang as the same bits.
+
+**A flip must remove a cast** (`kuna_castsign.rs (drops_printed_cast)`). A high
+this option admits is re-declared only when one of its declared members is read
+by a `CPUI_CAST` to exactly the new declaration's type whose value lands in an
+expression: a comparison, arithmetic, a shift or a division. A cast whose value
+feeds only a call argument, an assignment, a store, a `return` or another
+conversion may already be left out by `castimplied` (§9.1), and a flip that
+removes nothing would change the declaration for no printed benefit.
+
 A decision any of these relaxations made may only declare the value **signed**.
 The census counts 20 signed-to-unsigned casts on locals against 526 the other
 way, and IDA's opposite bias costs it 587 casts, so a mirror rule would buy
@@ -1049,20 +1078,29 @@ not accept the `u64` that `strlen` returns (`printc.rs (emit_function_document)`
 passes it only when the language's `integer_promotion` capability is set, the gate
 `castimplied` uses). With the option off the output is byte-identical to
 `signedness` alone. Pinned by
-`tests/stages/kuna-castsign.xml` (pass 1 off, pass 2 on: a stack index
-compared signed and used as `a0[v1]`; a logically shifted value and an
-address-taken stack value stay unsigned in both passes; pass 3 maps the index's
-slot `uint8`, and the locked declaration keeps its cast), by a compiled round
-trip (`kuna-cli/tests/decompile_all_cli.rs`,
-`a_signed_only_variable_round_trips_through_the_printed_c`) over gcc and clang
-at `-O0` and `-O1`, and by `castsign_leaves_a_locked_declaration_alone` in the
+`tests/stages/kuna-castsign.xml` (pass 1 off, pass 2 on: a stack value
+compared signed and used as `a0[v1]` is declared `int8`; an index the body
+decrements, a logically shifted value and an address-taken stack value stay
+unsigned in both passes; pass 3 maps the first value's slot `uint8`, and the
+locked declaration keeps its casts), by a compiled round trip
+(`kuna-cli/tests/decompile_all_cli.rs`,
+`a_signed_only_variable_round_trips_through_the_printed_c`: the printed C is
+built with gcc and clang at `-O0` and `-O2` and fed `2^63 - 1`, `2^63`,
+`2^63 + 1` and the 32-bit edges, and every build must print what the fixture
+binary prints), and by `castsign_leaves_a_locked_declaration_alone` in the
 same file (a `--assert type` on a stack and a register local, and a DWARF local
 declared `unsigned long`, stay unsigned with the option on).
 
-What the rule reads is the compiler's instruction selection, not the source. The
-emitted C keeps computing what the binary computes, but where a compiler proved
-a `size_t` non-negative and emitted a signed compare on it, `auto` declares that
-local signed and the source said unsigned. `docs/features/signedness/analysis.md`
+What the rule reads is the compiler's instruction selection, not the source.
+Where a compiler proved a `size_t` non-negative and emitted a signed compare on
+it, `auto` declares that local signed and the source said unsigned. The walk
+`auto` runs for a register local also treats `+ - *` as neutral, so a register
+local it re-declares may be the operand of arithmetic the binary wraps: the
+emitted C then computes what the binary computes when it is compiled with
+`-fwrapv`, and may not without it at the edge of the range (gcc, and clang at
+`-O2`, fold `(long)(v1 + 1) <= v1` over a `long v1` to false, where the binary
+finds it true for `v1 == LONG_MAX`). `castsign` does not extend that trade to the highs it
+admits (above). `docs/features/signedness/analysis.md`
 carries the measured agreement rate against DWARF on unstripped binaries, which
 is the number this option is judged on.
 

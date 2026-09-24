@@ -33,9 +33,9 @@
 //! **Arithmetic keeps the declaration unsigned** ([`can_overflow`]).  Declaring
 //! `v` signed changes `v + 1`, `v - 1`, `v * k`, `-v` and `v << k` from unsigned
 //! arithmetic, which wraps, to signed arithmetic, which is undefined on overflow,
-//! and gcc and clang fold on that: `0 <= (long)(v - 1)` over a `long v` becomes
-//! `0 < v`, and `v = v - 1, 0 <= v` exits at once for `v == LONG_MIN`, where the
-//! binary loops.  So a high this option admits is left alone when any of those
+//! and gcc (even at `-O0`) and clang (at `-O2`) fold on that: `0 <= (long)(v - 1)`
+//! over a `long v` is read as `0 < v`, and `v = v - 1, 0 <= v` exits at once for
+//! `v == LONG_MIN`, where the binary loops.  So a high this option admits is left alone when any of those
 //! operators reads it, directly or through the expression its value is printed
 //! into.  (The walk `signedness` runs for register locals accepts that trade; this
 //! option does not extend it.)

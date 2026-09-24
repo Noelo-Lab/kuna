@@ -175,8 +175,11 @@
 //!
 //! The rule reads the compiler's instruction selection, not the source.  Where a
 //! compiler proved a `size_t` non-negative and emitted a signed compare on it,
-//! `auto` declares it signed and the source said unsigned; the emitted C still
-//! computes what the binary computes, but the declaration is not the programmer's.
+//! `auto` declares it signed and the source said unsigned; the declaration is not
+//! the programmer's.  Because `+ - *` are neutral here, a re-declared local may be
+//! the operand of arithmetic the binary wraps, and the emitted C computes what the
+//! binary computes only under `-fwrapv` at the edge of the range.  `castsign`
+//! does not extend that to the highs it admits ([`crate::kuna_castsign`]).
 //! `docs/features/signedness/analysis.md` carries the measured agreement rate
 //! against DWARF.
 

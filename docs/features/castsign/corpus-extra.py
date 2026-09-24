@@ -18,6 +18,15 @@ BINS = {
     "kmod_O2ni": f"{D}/O2-noinline/kmod/stripped/kmod",
     "bzip2_O0": f"{D}/O0/bzip2/stripped/bzip2",
     "crontab_O0": f"{D}/O0/cronie/stripped/crontab",
+    "od_O0": f"{D}/O0/coreutils/stripped/od",
+    "numfmt_O0": f"{D}/O0/coreutils/stripped/numfmt",
+    "pr_O0": f"{D}/O0/coreutils/stripped/pr",
+    "csplit_O2ni": f"{D}/O2-noinline/coreutils/stripped/csplit",
+    "minigzip_O2": f"{D}/O2/zlib/stripped/minigzip",
+    "xmlwf_O2": f"{D}/O2/libexpat/stripped/xmlwf",
+    "dpkg-query_O2": f"{D}/O2/dpkg/stripped/dpkg-query",
+    "last_O0": f"{D}/O0/sysvinit/stripped/last",
+    "chage_O0": f"{D}/O0/shadow/stripped/chage",
 }
 K, OUT = sys.argv[1], Path(sys.argv[2])
 
@@ -37,7 +46,7 @@ def one(job):
     return f"{name} {arm} ok {len(parts)} functions"
 
 
-with cf.ThreadPoolExecutor(4) as ex:
+with cf.ThreadPoolExecutor(8) as ex:
     for r in ex.map(one, [(n, a) for n in BINS for a in ("off", "on")]):
         print(r, flush=True)
 print("CORPUS_DONE")

@@ -1,12 +1,16 @@
-/* (kuna castsign) Variables the program only ever reads signed.  Each of the
- * first six functions keeps a length or an index in a variable whose value
+/* (kuna castsign) Variables the program only ever compares signed.  Each of
+ * the first six functions keeps a length or an index in a variable whose value
  * comes from somewhere unsigned (strlen's size_t, an unsigned char table) and
  * then compares it signed; kuna declares it unsigned and prints `(long)v` at
- * every comparison unless `castsign` re-declares it.  The last two must stay
- * unsigned: one compares the value both ways, one shifts it logically.  The
- * round-trip test in kuna-cli/tests/decompile_all_cli.rs compiles the functions
- * as kuna prints them, with the option off and on, and checks both print what
- * this program prints:
+ * every comparison.  Each of them also decrements, increments or offsets the
+ * variable, and that arithmetic wraps as unsigned where it would overflow as
+ * signed, so `castsign` leaves every one of these declarations alone
+ * (castsign_wrap_x86_64.c holds the shapes it does re-declare).  The last two
+ * must stay unsigned in any case: one compares the value both ways, one
+ * shifts it logically.  The round-trip test in
+ * kuna-cli/tests/decompile_all_cli.rs compiles the functions as kuna prints
+ * them, with the option off and on, and checks both print what this program
+ * prints:
  *
  *   -7 23 13
  *   2 7

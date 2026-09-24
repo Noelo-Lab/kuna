@@ -12,7 +12,9 @@ being one of
               declaration re-signed here or by `signedness`): C's conversion on
               assignment yields the same bits, since a conversion to an N-bit
               integer depends only on the value modulo 2^N.
-Anything else is OTHER, and OTHER must be empty.
+Anything else is OTHER, and OTHER must be empty.  A flip none of whose
+`sign-cast` deletions appear in its function is counted as a flip that removed
+no cast; that count must be 0 too.
 
   python3 hunkclass.py <off-dir> <on-dir>
 """
@@ -74,9 +76,11 @@ def width(t):
     return int(m.group(1)) if m else WIDTH.get(t)
 
 
-def classify(to, k, flips, widths):
+def classify(to, k, flips, widths, used=None):
     nxt = to[k + 1] if k + 1 < len(to) else ''
     if nxt in flips:
+        if used is not None:
+            used.add(nxt)
         return 'sign-cast'
     for j in range(k - 1, -1, -1):
         if ISCAST.match(to[j]) or to[j] == '(':
@@ -101,6 +105,7 @@ def main():
     cls = collections.Counter()
     ex = collections.defaultdict(list)
     other = []
+    bare = []
     nfiles = nfuncs = 0
     for f in sorted(on.rglob('*.c')):
         b = off / f.relative_to(on)
@@ -121,6 +126,7 @@ def main():
                     flips[d[0]] = d[1]
             widths = local_widths(bb)
             where = f'{f.relative_to(on)}@{addr}'
+            used = set()
             for o, n in hunks:
                 if flipped_decl(o, n):
                     cls['decl'] += 1
@@ -135,7 +141,7 @@ def main():
                         for k in range(i1, i2):
                             if to[k] in '()':
                                 continue
-                            c = classify(to, k, flips, widths) if ISCAST.match(to[k]) else None
+                            c = classify(to, k, flips, widths, used) if ISCAST.match(to[k]) else None
                             if c is None:
                                 ok = False
                             else:
@@ -151,7 +157,12 @@ def main():
                     cls[c] += 1
                     if len(ex[c]) < 3:
                         ex[c].append((where, o.strip()[:110], n.strip()[:110]))
-    print(f'files {nfiles}  functions changed {nfuncs}  by class {dict(cls)}  OTHER lines {len(other)}')
+            for v in sorted(set(flips) - used):
+                bare.append(f'{where} {v}')
+    print(f'files {nfiles}  functions changed {nfuncs}  by class {dict(cls)}  OTHER lines {len(other)}  '
+          f'flips removing no cast {len(bare)}')
+    for x in bare[:20]:
+        print('NO-CAST FLIP', x)
     for c, e in ex.items():
         print('==', c)
         for x in e:
