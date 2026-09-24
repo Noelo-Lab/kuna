@@ -96,27 +96,29 @@ impl OptionStructHeadless {
     }
 }
 
-/// May `base` be a record with no access at offset 0: a parameter of a function
-/// whose callers are all known direct calls, under `closed`?
-pub(crate) fn admits(data: &Funcdata, base: VarnodeId) -> bool {
+/// May `base`, carrying `ct`, be a record with no access at offset 0: a
+/// parameter of a function whose callers are all known direct calls, under
+/// `closed`, that did not take the type those callers pass?  A caller's `char **`
+/// read only at `argv[1]` and `argv[2]` is the vector, not a record past its start.
+pub(crate) fn admits(data: &Funcdata, base: VarnodeId, ct: &Datatype) -> bool {
     data.get_arch().struct_headless.fires()
         && data.kuna_calleevote_closed()
         && data.vbank().get(base).is_some_and(|v| v.is_input())
+        && !crate::kuna_calleevote::took_stated_type(data, base, ct)
 }
 
 /// Does a declared call in `vn`'s value family -- one that returns the value or
-/// takes it -- name the record the value points at, while `vote` is a callee's
-/// synthesized record?  The declaration then outranks the recovery at the call site: `newgrp`
+/// takes it -- give the value a pointee, while `vote` is a callee's synthesized
+/// record?  The declaration then outranks the recovery at the call site: `newgrp`
 /// holds `getgrnam`'s `struct group *` and hands it to a function that reads the
-/// group past its start, whose own record would otherwise retype the variable.
-pub(crate) fn yields_to_a_declared_record(data: &Funcdata, vn: VarnodeId, vote: &Datatype) -> bool {
+/// group past its start, and `tail`'s `main` hands `getopt_long` the `char **argv`
+/// it passes to a function reading only `argv[1]` and `argv[2]`; either callee's
+/// own record would otherwise retype the variable.
+pub(crate) fn yields_to_a_declared_pointer(data: &Funcdata, vn: VarnodeId, vote: &Datatype) -> bool {
     if !data.get_arch().struct_headless.fires() || !crate::kuna_structsynth::points_at_synthesized_record(vote) {
         return false;
     }
     let family = crate::kuna_protoorder::value_family(data, vn);
-    let names_a_record = |t: &Datatype| {
-        crate::kuna_structsynth::points_at_named_composite(t) && !crate::kuna_structsynth::points_at_synthesized_record(t)
-    };
     family.iter().filter_map(|&v| data.vbank().get(v).map(|n| (v, n))).any(|(v, node)| {
         let written = node.get_def().and_then(|d| {
             let fc = data.get_call_specs(data.get_call_specs_index(d)?);
@@ -125,14 +127,14 @@ pub(crate) fn yields_to_a_declared_record(data: &Funcdata, vn: VarnodeId, vote: 
                 .then(|| proto.get_output_type().cloned())
                 .flatten()
         });
-        written.is_some_and(|t| names_a_record(&t))
+        written.is_some_and(|t| gives_a_pointee(&t))
             || node.descend_iter().any(|r| {
                 let Some(o) = data.obank().get(r) else { return false };
                 let Some(i) = data.get_call_specs_index(r) else { return false };
                 let fc = data.get_call_specs(i);
                 (1..o.num_input()).filter(|&s| o.get_in(s) == Some(v)).any(|s| {
                     fc.proto().get_param(s - 1).is_some_and(|p| {
-                        p.is_type_locked() && p.get_type().is_some_and(|t| names_a_record(t))
+                        p.is_type_locked() && p.get_type().is_some_and(|t| gives_a_pointee(t))
                     })
                 })
             })
@@ -157,6 +159,14 @@ pub(crate) fn bare_pointer_for(data: &Funcdata, vote: &Datatype) -> Option<std::
     let types = data.get_arch().types()?;
     let void = types.get_type_void().ok()?;
     types.get_type_pointer(vote.get_size(), void, 1).ok()
+}
+
+/// Is `ct` a pointer to something -- a named record, a `char`, a `char *` --
+/// that no synthesized record may replace?
+pub(crate) fn gives_a_pointee(ct: &Datatype) -> bool {
+    ct.get_ptr_to().is_some_and(|p| {
+        !matches!(p.get_metatype(), crate::dtype::type_metatype::TYPE_VOID | crate::dtype::type_metatype::TYPE_UNKNOWN)
+    }) && !crate::kuna_structsynth::points_at_synthesized_record(ct)
 }
 
 /// Do these offsets read as a record past its start: two or more, none of them

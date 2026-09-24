@@ -239,7 +239,7 @@ fn vote_holds(
             || (class_of(ct) == Some(Class::Pointer) && points_into_code(data, op, vn))
             || (class_of(ct) == Some(Class::Float) && !prints_exactly_as_a_float(data, vn))
             || family_refuses(data, vn, Reading::Argument(op, slot), ct)
-            || crate::kuna_structheadless::yields_to_a_declared_record(data, vn, ct)),
+            || crate::kuna_structheadless::yields_to_a_declared_pointer(data, vn, ct)),
     )
 }
 
