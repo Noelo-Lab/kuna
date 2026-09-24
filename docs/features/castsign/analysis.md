@@ -8,8 +8,10 @@ kuna declared the variable unsigned and the program reads it signed:
 
 ```c
 unsigned long v1; // stack - 0x10
-v1 = strlen(a0);
-while ((v1 = v1 - 1, 0 <= (long)v1 && (a0[v1] == ' '))) {
+v1 = strtoul(a0,NULL,0);
+if ((long)v1 <= -1)
+  v1 = strtoul(a1,NULL,0);
+if (0 <= (long)v1)
 ```
 
 526 of the 596 are on locals and 70 on parameters. The other direction (declared
@@ -55,6 +57,9 @@ declaration change: the signature, the callers' arguments and the
 - **A body local with an input member.** The printer declares only body locals,
   and `retain_sole_named` drops every planned high it does not declare.
 
+Each of them is safe only for a variable that no `+ - * <<` and no unary `-`
+reads (next section), and each flip must remove a cast that prints today.
+
 None of them touches a declaration whose type is locked. A `--assert type`, a
 DWARF local (mapped `typelock|namelock` onto its frame Symbol) and a type committed
 from Ghidra lock the Symbol, not the member varnodes the walk checks, so
@@ -67,6 +72,59 @@ as `long idx`.
 
 These relaxations only ever declare a value signed. The mirror direction would buy
 at most 20 local casts and risks IDA's overshoot.
+
+## Arithmetic on the variable
+
+Re-declaring `v` signed changes more than the casts at its comparisons. Every
+`v + k`, `v - k`, `v * k`, `-v` and `v << k` the body prints then computes in the
+signed type. Unsigned arithmetic wraps, as the binary does; signed arithmetic is
+undefined on overflow, and gcc folds on that even at `-O0`, clang at `-O2`. An
+earlier version of this option took these as neutral, as `signedness auto` does
+for register locals, and printed C that computes a different value from the
+binary at the edge of the range. gcc -O0 on
+
+```c
+unsigned long v = strtoul(s, 0, 0);
+while ((long)(v - 1) >= 0 && n < 5) { v -= 2; n++; }
+```
+
+gives `unsigned long v1;` with `0 <= (long)(v1 - 1)` on main, and that earlier
+version printed `long v1;` with the same condition. For `v == 2^63` the binary
+loops 5 times; the printed C built with gcc -O0, gcc -O2 or clang -O2 loops 0
+times, because it reads `0 <= v1 - 1` as `0 < v1`. The headline shape,
+`v1 = v1 - 1, 0 <= v1`, fails the same way under gcc -O2 and clang -O2. No cast
+was removed by the first flip at all, only the declaration changed.
+
+So a high only `castsign` admits (a frame local, a body local with an input
+member, or a verdict a neutral reader decided) is left alone when any of those
+operators reads it, directly or through the expression its value is printed into
+(`kuna_castsign.rs (can_overflow)`). For `<<` only the shifted operand counts,
+not the count. `& | ^ ~`, comparisons, truncations, assignments, call arguments,
+stores and `return`s cannot overflow and keep a variable admissible. On the 45
+castbench binaries the earlier version flipped 234 declarations. 162 of them are
+now left alone: 148 print `+ - *` on the variable (69 of those update the
+variable itself, `v = v - 1`), and the rest are arithmetic the text shows as
+`v4 -= v7`, or a flip that removed no cast.
+
+The walk `signedness auto` runs for register locals still treats `+ - *` as
+neutral, so its own flips can compute differently at the edge unless the C is
+built with `-fwrapv` (on main, gcc -O1 `(long)(v1 + 1) <= v1` over a `long v1`).
+`castsign` does not change that walk for the highs it already covers; the spec
+(§9.3) states the caveat.
+
+## A flip must remove a cast
+
+The first version also flipped declarations whose casts all stayed: in
+`0 <= (long)(v1 - 1)` the cast is on the result of the subtraction, not on `v1`,
+and `(long)(0x7fffffffffffffff - v3) / 0x15180` in shadow's chage keeps its cast
+too. 23 of the 234 castbench flips removed nothing. Now a high only `castsign`
+admits is re-declared only when one of its declared members is read by a cast
+to exactly the new declaration's type that prints today
+(`kuna_castsign.rs (drops_printed_cast)`). A cast whose value is only a call
+argument, the right side of an assignment or a `return` can already be left out
+by `castimplied`, so it does not count. Under another conversion it does:
+`SEXT816((long)v34)`, `(long)(int)v8` and `p[(int)v16]` keep a same-width sign
+change that never preserves the value, and `castimplied` keeps those.
 
 ## Rejected: declared types as unsigned evidence
 

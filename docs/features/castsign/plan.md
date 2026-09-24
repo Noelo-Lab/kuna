@@ -15,7 +15,11 @@ override and the cast drop (`SignPlan::drop_cast`) are unchanged.
 - The `is_param` skip is lifted under `castsign`. `retain_sole_named` already keeps
   only highs the printer declares in the body.
 - Any decision one of these made (`frame_local || is_param || widened`) is kept
-  only if it declares the value signed (`TYPE_INT`).
+  only if it declares the value signed (`TYPE_INT`), no operator that overflows
+  over a signed operand reads the value (`kuna_castsign.rs (can_overflow)`,
+  recorded by `evidence_walk` as `CastsignWalk::wraps`), and one of the casts the
+  walk saw on a declared member prints today and becomes a no-op
+  (`kuna_castsign.rs (drops_printed_cast)` over `CastsignWalk::casts`).
 
 `castimplied` (`kuna_castimplied.rs (ImpliedCasts::assigns_to)`) accepts
 `lhs = (T)e` → `lhs = e` when `castsign` is on, the plan re-signed `lhs`'s
@@ -33,14 +37,17 @@ flag before anything new.
 
 ## Tests
 
-- `tests/stages/kuna-castsign.xml`: two passes over gcc -O0 bytes. Pass 1 (off)
-  pins the `uint8` stack index with `(int8)v1`; pass 2 (on) pins `int8` and the
-  dropped cast. A logically shifted value and an address-taken stack value stay
-  unsigned in both passes.
+- `tests/stages/kuna-castsign.xml`: pass 1 (off) pins a `uint8` stack value with
+  `(int8)v1` at each signed comparison; pass 2 (on) pins `int8` and the dropped
+  casts. An index the body decrements, a logically shifted value and an
+  address-taken stack value stay unsigned in both passes; pass 3 locks the first
+  slot with `map addr` and it keeps `uint8` and its casts.
 - `kuna-cli/tests/decompile_all_cli.rs`
-  `a_signed_only_variable_round_trips_through_the_printed_c`: four fixtures (gcc
-  and clang, -O0 and -O1). The printed C, option off and on, is compiled with gcc
-  and clang and must print what the binary prints, and the two must-stay-unsigned
-  functions keep `unsigned long v1;` and their casts.
-- `p9_emit/kuna_castsign/tests.rs`: the modular-conversion argument, the
-  pointer-index and pointer-conversion bit identities.
+  `a_signed_only_variable_round_trips_through_the_printed_c`: the wrap fixtures
+  (`castsign_wrap_x86_64.c`, gcc and clang -O0, gcc -O1) with inputs at 2^63 - 1,
+  2^63, 2^63 + 1 and the 32-bit edges, and the original four fixtures. The printed
+  C, option off and on, is built with gcc and clang at -O0 and -O2 and must print
+  what the binary prints; the arithmetic shapes must print unchanged with the
+  option on. It fails on the version before the arithmetic rule.
+- `castsign_leaves_a_locked_declaration_alone`: `--assert type` on a stack local
+  and a register local, and a DWARF local, keep their type with the option on.

@@ -8,13 +8,35 @@ the base arm is main's own binary, and `off` is byte-identical to it (see (h)).
 | | criterion | result |
 |---|---|---|
 | (a) | `make test` with the new default | 675/675 PARITY OK. No assertion moved; `docs/baseline.json` untouched. |
-| (b) | `make test-stages` | Before the new stage test: 1341/1341 PARITY OK, no assertion moved. With `kuna-castsign.xml`: 1349/1349 PARITY OK. `docs/baseline-stages.json` gains only its 8 `castsign #N` keys. |
-| (c) | `make test-cli` | 237/237 with the new default; no probe moved. One run during `make rust-test` failed only the `cold-load-xref-lookup` wall-clock probe (1,188 ms against 1,100); it passed on the re-run at load 3.6. |
-| (d) | 444-slice typesweep (pinned metric, 8 projects x O0/O2/O2-noinline) | 1,615 -> 1,615 perfect; mean .3697 -> .3697; 0 moved on, 0 moved off, 0 improved, 0 worse. All 10,748 functions score identically, and the off arm matches origin/main's sweep row for row. `typesweep-report.md`. Re-run after the type-lock check: identical on all 444 slices. |
-| (e) | speed, interleaved min-of-15, `decompile-all --json` | fmt -O2 -0.83% min / -4.52% median; ls -O2 -0.43% / +2.34%; sort -O2 +1.06% / +1.27%; bash -O2 -1.74% / -2.47%. Worst min +1.06% (within +5%). Loads 5 to 21 while other lanes ran. `speed.json`, `speed.py`. After the type-lock check (`speed-after-lock.json`): fmt +1.68% min / +4.0% median, ls +0.72% / +0.3%, sort -0.26% / -0.06%, bash -0.42% / +0.3%; worst min +1.68%, loads 3 to 6. |
-| (f) | whole-corpus `decompile-all` before/after, every hunk classified | The 45 castbench binaries: 203 functions changed. 234 declaration flips, 371 sign casts dropped on a re-declared variable, 94 widening casts dropped on assignment. 0 other lines. Six more binaries (bash O2, dash O2-noinline, cf2.elf O2-noinline on ARM Cortex-M, kmod O2-noinline, bzip2 O0, crontab O0; 6,673 functions): 55 changed. 44 flips, 176 sign casts, 94 widening casts, 0 other lines. `variables[]` is byte-identical in all six. Every dropped `lhs = (T)rhs;` was re-checked against the printed declarations: 38/38 have `lhs` an integer of `T`'s width and `rhs` an integer. Ten binaries WITH DWARF, where every stack local is type-locked (wc, fmt, sort, gzip, find, bzip2, diff, grep at O0; sort O2; ls O2-noinline; 4,254 functions): 40 changed, 34 flips, 52 sign casts, 19 widening casts (one on a register local named `len`, classified by hand), 0 locked declarations re-signed, `variables[]` identical in all ten. `corpus-hunks.json`, `hunkclass.py`, `assigncheck.py`, `corpus-dwarf.py`. |
+| (b) | `make test-stages` | 1350/1350 PARITY OK. No assertion outside `kuna-castsign.xml` moved. That file's assertions were rewritten for the arithmetic rule (9 now, from 8), so `docs/baseline-stages.json` changes only in its `castsign #N` keys and the totals. |
+| (c) | `make test-cli` | 237/237 with the new default; no probe moved. |
+| (d) | 444-slice typesweep (pinned metric, 8 projects x O0/O2/O2-noinline) | 1,615 -> 1,615 perfect; mean .3697 -> .3697; 0 moved on, 0 moved off, 0 improved, 0 worse. All 10,748 functions score identically to the off arm, row for row. `typesweep-report.md`. |
+| (e) | speed, interleaved min-of-15, `decompile-all --json` | SPEED_PLACEHOLDER |
+| (f) | whole-corpus `decompile-all` before/after, every hunk classified | The 45 castbench binaries: 114 functions changed. 95 declaration flips, 171 sign casts dropped on a re-declared variable, 94 widening casts dropped on assignment. 0 other lines, and 0 flips that remove no cast. Fifteen more binaries, disjoint from castbench (bash O2, dash O2-noinline, cf2.elf O2-noinline on ARM Cortex-M, kmod O2-noinline, bzip2 O0, crontab O0, and od, numfmt, pr, last, chage O0, csplit O2-noinline, minigzip, xmlwf, dpkg-query O2; 8,841 functions): 41 changed. 15 flips, 50 sign casts, 102 widening casts, 0 other lines, 0 flips that remove no cast; `variables[]` byte-identical in all fifteen. Every dropped `lhs = (T)rhs;` was re-checked against the printed declarations: 27/27 and 16/16 have `lhs` an integer of `T`'s width and `rhs` an integer. Ten binaries WITH DWARF, where every stack local is type-locked (4,254 functions): 23 changed, 8 flips, 8 sign casts, 18 widening casts plus the known `len = (unsigned int)tree[n].dl.freq;` on a register local, classified by hand; 0 locked declarations re-signed, `variables[]` identical in all ten. Every flipped variable was also scanned for `+ - * <<` in its function's printed text: the only matches are arithmetic on its sign extension or truncation (`(long)v4 + v5 * 0x1f` where main printed `(long)(int)v4 + v5 * 0x1f` at the same place), which computes the same value in both arms. `corpus-hunks.json`, `hunkclass.py`, `assigncheck.py`, `corpus-extra.py`, `corpus-dwarf.py`. |
 | (g) | `modes.rs` | Coherent. The catalog default is on, so every preset inherits it. `aggressive_carries_every_default_off_option` needs no entry. |
-| (h) | castbench full (45 binaries, 4,815 functions shared with IDA) | 43,673 -> 43,483 casts (-190, -0.44%), 229.2 -> 228.2 per kloc, 1.155 -> 1.150 x IDA. 72 functions fewer, 0 functions more. By level: O0 1.198 -> 1.187, O2 1.168 -> 1.166, O2-noinline 1.096 -> 1.094. The off arm is byte-identical to main's castbench output (`--option castsign off` over all 45 binaries: 0 files differ from main's own run). After the type-lock check the 45 binaries' C output is byte-identical (43,483). |
+| (h) | castbench full (45 binaries, 4,815 functions shared with IDA) | 43,673 -> 43,567 casts (-106, -0.24%), 229.2 -> 228.6 per kloc, 1.155 -> 1.152 x IDA. 42 functions fewer, 0 functions more. By level: O0 1.198 -> 1.192, O2 1.168 -> 1.167, O2-noinline 1.096 -> 1.095. The off arm is byte-identical to main's castbench output. |
+
+## Review round 2: arithmetic, and flips that removed no cast
+
+The version first opened removed 190 casts (1.150 x IDA). An adversarial review
+showed that it could print C that computes a different value from the binary:
+re-declaring `v` signed makes every `v + k`, `v - k`, `v * k` the body prints a
+signed operation, which is undefined on overflow, and gcc folds on that at
+`-O0`, clang at `-O2`. `dec_neg` (`while ((long)(v - 1) >= 0 && n < 5) { v -= 2;
+n++; }`, gcc -O0) with `v == 2^63` loops 5 times in the binary and 0 times in
+that version's C; `count_down` (`(long)--v >= 0`, printed `v1 = v1 - 1, 0 <= v1`)
+fails the same way under gcc -O2 and clang -O2. 23 of its 234 flips on the
+castbench corpus also removed no cast at all.
+
+Now a high only `castsign` admits is left alone when `+ - * <<` or unary `-`
+reads it, directly or through the expression its value is printed into, and is
+re-declared only when a cast the new declaration makes a no-op prints today.
+Of the 234 flips, 162 are gone (148 print arithmetic on the variable, 69 of them
+updating the variable itself; the rest are arithmetic printed as `v4 -= v7` or
+flips that removed nothing), none was added, and 23 more come back through the
+second rule's cast-under-a-conversion case (`SEXT816((long)v34)`,
+`(long)(int)v8`). The arithmetic rule is what the lost 84 casts cost; each of
+them sat on a variable whose re-declared C is exact only under `-fwrapv`.
 
 ## What is left of the 596
 
@@ -36,20 +58,31 @@ a mirror rule was not built.
 ## Value preservation
 
 `kuna-cli/tests/decompile_all_cli.rs`
-`a_signed_only_variable_round_trips_through_the_printed_c` compiles the printed
-functions of `castsign_{gcc,clang}_O{0,1}_x86_64` with the option off and on,
-using gcc and clang, and requires every build to print what the binary prints.
-The inputs cover indexes that run below zero, an all-space string, lengths from an
-`unsigned int` table, and a logically shifted value. The two must-stay-unsigned
-functions are also asserted to keep `unsigned long v1;` and their casts.
-`castsign_leaves_a_locked_declaration_alone` in the same file checks that a
-locked type is never re-declared: a `--assert type` on a stack local
-(`castsign_gcc_O0_x86_64` `trim_right`) and on a register local (`-O1`
-`run_len`), and a DWARF local the source declares `unsigned long`
-(`castsign_dwarf_gcc_O0_x86_64` `tail_blanks`), keep the type and its `(long)`
-with the option on and off, while the same variables unlocked (no assertion, or
-the debug info stripped) are declared `long`. Stage pass 3 checks the same with a
-console `map addr` lock.
+`a_signed_only_variable_round_trips_through_the_printed_c` decompiles
+`castsign_wrap_{gcc,clang}_O0_x86_64` and `castsign_wrap_gcc_O1_x86_64` (new;
+`castsign_wrap_x86_64.c`) and the original `castsign_{gcc,clang}_O{0,1}_x86_64`,
+option off and on, builds the printed functions with gcc and clang at `-O0` and
+`-O2`, and requires every build to print what the binary prints. The wrap
+fixture's inputs are `0`, `1`, `2`, `2^63 - 1`, `2^63`, `2^63 + 1`, `2^64 - 1`
+and the 32-bit edges `2^31 - 1`, `2^31`, `2^31 + 1`, over `dec_neg`
+(`(long)(v - 1) >= 0`), `cnt_wrap` (`(long)(v + 1) > (long)v`), `spin`
+(`(long)(deadline - now) > 0`), `count_down` (`(long)--v >= 0`), `dec_neg32`
+(`(int)(v - 1) >= 0`), and two compare-only functions, `sign_of` and
+`sign_of32`, plus `peek`, a register local also used as an index. The five
+arithmetic functions must print unchanged with the option on; the other three
+must be re-declared. On the build before the arithmetic rule the test fails
+(`castsign_wrap_gcc_O0_x86_64 printed with option on and built by gcc -O0
+computes a different value`: `dec_neg`, `cnt_wrap` and `dec_neg32` wrong at
+gcc -O0, all five wrong at gcc -O2 and clang -O2); with it every one of the 56
+builds passes. The -O1 build is checked on `sign_of` and `peek` only: its
+arithmetic shapes are register locals, which `signedness` decides and this
+option does not touch (main's own C for them is exact only under `-fwrapv`).
+`castsign_leaves_a_locked_declaration_alone` checks that a locked type is never
+re-declared: a `--assert type` on a stack local (`sign_of`) and on a register
+local (`-O1` `peek`), and a DWARF local the source declares `unsigned long`
+(`castsign_dwarf_gcc_O0_x86_64` `sign_of`), keep the type and its `(long)` with
+the option on and off, while the same variables unlocked are declared `long`.
+Stage pass 3 checks the same with a console `map addr` lock.
 
 ## Found during evaluation
 
@@ -74,14 +107,9 @@ console `map addr` lock.
   on `dbe854ba3` too. An ARM firmware function prints `if (a3 - 1U <= (int)v2)`,
   where the `U` suffix makes C compare unsigned, with or without this option.
 
-## Final gates (commit `5a063941e`, the type-lock check; later commits are docs only)
+## Final gates
 
-`make test` 675/675 PARITY OK; `make test-stages` 1349/1349 PARITY OK;
-`make test-cli` 237/237; `make rust-test` RC=0 (7,484 passed, 0 failed; the
-four arithmetic-only unit tests were replaced by the locked-declaration CLI
-test); `make check-spec` and `--strict` OK; `kuna catalog --check` OK;
-`counters --check` no drift; `docs/options.md` byte-fresh. The castbench C
-output is byte-identical to the arm measured above.
+GATES_PLACEHOLDER
 
 ## Output languages
 
