@@ -320,5 +320,77 @@
    ]
   },
   "hunks": "1,883 changed lines, 1,979 casts removed, 0 unexplained; --option globalref off byte-identical to the 22df4282c build on all 45 binaries"
+ },
+ "landing": {
+  "measured_on": "the branch rebased onto origin/main 003db2dd8 (code == b3878d32e: castimplied #721, castarith #722 and castsign #724 on), both arms of that build, against a build of b3878d32e",
+  "castbench": {
+   "shared_functions": 4815,
+   "casts_main": 38602,
+   "casts_branch": 37477,
+   "per_kloc_main": 202.5,
+   "per_kloc_branch": 196.6,
+   "ratio_to_ida_main": 1.021,
+   "ratio_to_ida_branch": 0.991,
+   "functions_fewer": 486,
+   "functions_more": 0,
+   "by_opt": {
+    "O0": [
+     12591,
+     12234
+    ],
+    "O2": [
+     14208,
+     13837
+    ],
+    "O2-noinline": [
+     11803,
+     11406
+    ]
+   },
+   "off_vs_main": "byte-identical on all 45 binaries and the 4-binary corpus"
+  },
+  "hunks": {
+   "castbench_45": "1,883 changed lines, 1,979 casts removed, 0 unexplained",
+   "corpus4": "bzip2 O0, kmod/dpkg-divert/crontab O2: 236 changed lines, 248 casts removed, 0 unexplained"
+  },
+  "typesweep": {
+   "slices": 444,
+   "functions": 10748,
+   "perfect_main": 1615,
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "mean_main": 0.3697,
+   "mean_off": 0.3697,
+   "mean_on": 0.3697,
+   "improved": 0,
+   "worse": 0,
+   "note": "variables[] scored identically in all 10,748 functions across origin/main, --option globalref off and the default"
+  },
+  "expectation_changes": [
+   {
+    "test": "kuna-cli decompile_all_cli a_constant_address_named_as_a_global_round_trips_through_the_printed_c",
+    "on": [
+     "(a0 == &dat_30004060)",
+     "a0 == &dat_30004060"
+    ],
+    "off": [
+     "(a0 == (long *)0x30004060)",
+     "a0 == (long *)0x30004060"
+    ],
+    "why": "castimplied (#721) drops the value-preserving (unsigned long) around w_compare's returned comparison, and its parentheses with it; the round trip still compiles with gcc and clang and prints the binary's output in both arms"
+   }
+  ],
+  "expectation_changes_castarith_castsign": "none: every round trip in decompile_all_cli, the stage test and the tests/cli probes pass unchanged on the rebased tree",
+  "gates": {
+   "make_test": "datatests: 675/675 assertions passed; PARITY OK",
+   "make_test_stages": "datatests: 1370/1370 assertions passed; PARITY OK (re-recorded: origin/main + 8 KUNA-GLOBALREF keys, none missing)",
+   "make_test_cli": "tests/cli: 237/237 passed",
+   "make_rust_test": "RUST_TEST_RC=0 on the rebased tree: 422 blocks, 7522 passed, 0 failed, 38 ignored (lane script)",
+   "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+   "catalog_check": "catalog OK: documents exactly the registered kuna options",
+   "counters_check": "no drift (233 settables, tiers 75/94/64, 339 corpus files)",
+   "options_md": "byte-fresh",
+   "phases_toml": "parses with tomllib"
+  }
  }
 }
