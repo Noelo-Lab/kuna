@@ -1051,11 +1051,13 @@ and clang as the same bits.
 
 **A flip must remove a cast** (`kuna_castsign.rs (drops_printed_cast)`). A high
 this option admits is re-declared only when one of its declared members is read
-by a `CPUI_CAST` to exactly the new declaration's type whose value lands in an
-expression: a comparison, arithmetic, a shift or a division. A cast whose value
-feeds only a call argument, an assignment, a store, a `return` or another
-conversion may already be left out by `castimplied` (§9.1), and a flip that
-removes nothing would change the declaration for no printed benefit.
+by a `CPUI_CAST` to exactly the new declaration's type that prints today. A cast
+whose value is only a call argument, the right side of an assignment or a
+`return` may already be left out by `castimplied` (§9.1), so it does not count.
+Anywhere else in an expression it prints, including under another conversion
+(`SEXT816((long)v34)`, `(long)(int)v8`, `p[(int)v16]`): a same-width sign change
+never preserves the value, so `castimplied` keeps it there. A flip that removes
+nothing would change the declaration for no printed benefit.
 
 A decision any of these relaxations made may only declare the value **signed**.
 The census counts 20 signed-to-unsigned casts on locals against 526 the other

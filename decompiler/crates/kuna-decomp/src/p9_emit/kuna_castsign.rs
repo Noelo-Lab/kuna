@@ -166,9 +166,10 @@ pub(crate) fn can_overflow(opc: OpCode, slot: int4) -> bool {
 
 /// Is one of `casts` (each a `CPUI_CAST` reading a declared member of the high)
 /// a `(newty)` cast that prints today and that declaring the high `newty` makes a
-/// no-op?  The cast prints when its value is inlined into an expression: a
-/// value that only feeds a call argument, an assignment, a `return`, a store or
-/// another conversion may already be left out by `castimplied`.
+/// no-op?  The cast prints when its value is inlined into an expression other than
+/// a call argument, an assignment or a `return`, where `castimplied` may already
+/// leave it out.  Under another conversion it prints too: a sign change never
+/// preserves the value, so `castimplied` keeps it there.
 pub(crate) fn drops_printed_cast(fd: &Funcdata, casts: &[OpId], newty: &Datatype) -> bool {
     casts.iter().any(|&op| {
         let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) else { return false };
@@ -191,11 +192,6 @@ pub(crate) fn drops_printed_cast(fd: &Funcdata, casts: &[OpId], newty: &Datatype
                         | OpCode::CPUI_CALLOTHER
                         | OpCode::CPUI_RETURN
                         | OpCode::CPUI_COPY
-                        | OpCode::CPUI_CAST
-                        | OpCode::CPUI_INT_SEXT
-                        | OpCode::CPUI_INT_ZEXT
-                        | OpCode::CPUI_SUBPIECE
-                        | OpCode::CPUI_STORE
                         | OpCode::CPUI_MULTIEQUAL
                         | OpCode::CPUI_INDIRECT
                 )
