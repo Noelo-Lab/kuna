@@ -63,12 +63,13 @@ Rust back-end never sees the rewrite.
 - `tests/stages/kuna-castarith.xml`: pass 1 `option castarith off` (the bug), pass 2
   on, pass 3 `arraynotation off`; controls for a non-whole offset; a byte and a word
   widened under the subscript (castimplied).
-- 22 unit tests in `p9_emit/kuna_castarith/tests.rs`: every width and sign, float,
-  negative offset, non-whole offset, direct base, other-width base, retargeted cast,
+- 23 unit tests in `p9_emit/kuna_castarith/tests.rs`: every width and sign, float,
+  negative offset, a negative index of 2^31 elements or more (kept), non-whole offset, direct base, other-width base, retargeted cast,
   shared cast read through,
   stored/compared/subtracted sums, void in and out of the function, aggregate,
   integer sum, variable index, unsettled and settled stores, the pass gate both ways.
 - `decompile_all_cli.rs a_pointer_plus_whole_elements_round_trips_through_the_printed_c`:
   compiles every tested function of `castarith_x86_64.c` as printed (gcc -O0,
   clang -O0, gcc -O2; option on and off) and checks the program prints what the
-  binary prints.
+  binary prints, including `far_idx`, whose reads 2^31 elements back must keep the
+  integer form.

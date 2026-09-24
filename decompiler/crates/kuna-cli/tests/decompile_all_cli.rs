@@ -4290,7 +4290,11 @@ int main(void) {
 /// negative offset, an offset that is not whole elements (kept), a pointer
 /// passed on, compared, and stepped in a loop, a base typed as another pointer,
 /// a record base, which keeps its fields, loaded bytes and words widened under
-/// the subscript, and an integer base, which keeps the integer form.
+/// the subscript, an integer base, which keeps the integer form, and negative
+/// indexes of 2^31 elements or more, which keep it too: C reads the literal
+/// `0x80000000` as an `unsigned int`, so `p[-0x80000000]` would point forward.
+/// `main` reads those through a 48 GiB `MAP_NORESERVE` map, and prints the same
+/// line in the binary and the round trip when the map is refused.
 #[test]
 fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
     let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
@@ -4307,7 +4311,7 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
         .filter_map(|l| l.strip_prefix("KEEP void "))
         .filter_map(|l| l.split('(').next())
         .collect();
-    assert!(tested.len() >= 18, "{tested:?}");
+    assert!(tested.len() >= 24, "{tested:?}");
     let sp = specs();
     let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
     let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
@@ -4346,12 +4350,24 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
                     "*(unsigned int *)((long)a0 + 0x6a)",
                     "a1 <= (int)((unsigned char *)a0)[0x11]",
                     "((unsigned short *)a0)[0x24] << 4",
+                    "long *)a0)[-0x7fffffff]",
+                    "long *)a0)[0x80000000]",
+                    "long *)((long)a0 + -0x400000000)",
+                    "long *)((long)a0 + -0x7fffffff8)",
+                    "*(int *)((long)a0 + -0x200000000)",
+                    "*(short *)((long)a0 + -0x100000000)",
                 ]
             } else {
                 &["take((unsigned int *)((long)a0 + 0x10));", "*(unsigned int *)((long)a0 + 0x6a)"]
             };
             for w in want {
                 assert!(body.contains(w), "{build} castarith {arm}: expected `{w}`\n{body}");
+            }
+            for wide in ["[-0x80000000]", "[-0xffffffff]"] {
+                assert!(
+                    !body.contains(wide),
+                    "{build} castarith {arm}: C reads the index `{wide}` as unsigned, so it points forward\n{body}"
+                );
             }
             assert!(
                 !body.contains("(unsigned int)((unsigned char *)"),

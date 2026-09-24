@@ -411,8 +411,17 @@ spelling decision stays with that option.
 
 The computed value is unchanged: `k * sizeof(T)` is the original offset, the
 base is converted pointer to pointer with no integer in between (or, under a
-shared cast, from the integer the integer form converted too), and the element
-is the access width. The integer form stays wherever the printed C could
+shared cast, from the integer the integer form converted too), the element
+is the access width, and the printed index reads back as `k`. The last
+condition is why a negative index of 2^31 elements or more keeps the integer
+form (`kuna_castarith.rs (plan)`). C gives the literals `0x80000000` through
+`0xffffffff` the type `unsigned int`, so `-0x80000000` is +2^31 and
+`((long *)a0)[-0x80000000]` would index forward. The integer form's byte offset
+is then at least 2^32 in magnitude for any element wider than a byte, a `long`
+literal that negates correctly. A positive index keeps its value whatever type C
+gives the literal. A one-byte element's offset in the unsigned range is misread
+by the integer form as well; that is how the printer spells a negative constant,
+and this rule leaves it as it was. The integer form stays wherever the printed C could
 otherwise convert a value or cost a cast. An offset that is not a whole number of
 elements (`*(unsigned int *)((long)a0 + 0x6a)`), a variable index, an aggregate
 or padded element, and a word-addressed space keep it. So does a sum read as an

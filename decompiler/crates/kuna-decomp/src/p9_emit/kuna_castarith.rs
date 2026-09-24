@@ -20,10 +20,14 @@
 //! every `PTRADD`: `((unsigned int *)a0)[0x2b]` under a dereference and
 //! `&((T *)p)[k]` (or `(T *)p + k` with `arraynotation off`) as a value.
 //!
-//! The value is unchanged by construction: the element size is the access
-//! width, `k * sizeof(T)` is the original offset exactly, the base is converted
-//! pointer-to-pointer (no integer round trip), and the result carries the same
-//! pointer type the sum had.  The integer form stays wherever the printed C
+//! The value is unchanged: the element size is the access width,
+//! `k * sizeof(T)` is the original offset exactly, the base is converted
+//! pointer-to-pointer (no integer round trip), the result carries the same
+//! pointer type the sum had, and the printed index reads back as `k`.  That
+//! last one is why a negative index of 2^31 elements or more is refused: C
+//! types the literal `0x80000000` through `0xffffffff` as `unsigned int`, so
+//! `p[-0x80000000]` would index forward, while the integer form's byte offset
+//! is then a `long` literal.  The integer form stays wherever the printed C
 //! could convert a value or cost a cast instead: an offset that is not a
 //! multiple of `sizeof(T)`, an index that is not a constant, an aggregate
 //! target, a word-addressed space, a sum read as an integer or assigned to a
@@ -57,6 +61,7 @@ pub(crate) enum Leave {
     UnsettledStore,
     IntegerUse,
     SharedAddress,
+    WideNegativeIndex,
 }
 
 /// How the `PTRADD` reaches a `T *` base.
@@ -583,6 +588,10 @@ pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
     if k % elem as i64 != 0 {
         return Err(Leave::NonDividing);
     }
+    let index = k / elem as i64;
+    if index < -(i32::MAX as i64) {
+        return Err(Leave::WideNegativeIndex);
+    }
     let cvn = ins[1 - ptr_slot as usize];
     let base_vn = ins[ptr_slot as usize];
     if crate::kuna_ptrfromuse::constant_is_global_base(data, op, cvn)
@@ -605,7 +614,7 @@ pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
     };
     Ok(Plan {
         ptr_slot,
-        index: k / elem as i64,
+        index,
         elem,
         target: target_ptr,
         base,

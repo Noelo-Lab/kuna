@@ -1,6 +1,6 @@
 {
  "opportunity": "kuna prints a pointer plus a constant byte offset as an integer round trip, *(T *)((long)p + K): two casts per access where IDA prints one (or none). The cast census measured 3,771 such casts on the 4,815 functions kuna and IDA share (IDA: 0), 99.8% with sizeof(T) dividing K. The ops are INT_ADD from the start (PTRSUB->INT_ADD demotion fires 0 times): a void * base has no field and no element size, so P5 builds neither PTRSUB nor PTRADD.",
- "test_name": "tests/stages/kuna-castarith.xml (12 assertions, pass 1 option castarith off, pass 2 on, pass 3 arraynotation off) + 22 unit tests (p9_emit/kuna_castarith/tests.rs) + compiled round trip decompile_all_cli.rs a_pointer_plus_whole_elements_round_trips_through_the_printed_c (fixture castarith_x86_64.c, 23 functions, gcc -O0 / clang -O0 / gcc -O2, option on and off)",
+ "test_name": "tests/stages/kuna-castarith.xml (12 assertions, pass 1 option castarith off, pass 2 on, pass 3 arraynotation off) + 23 unit tests (p9_emit/kuna_castarith/tests.rs) + compiled round trip decompile_all_cli.rs a_pointer_plus_whole_elements_round_trips_through_the_printed_c (fixture castarith_x86_64.c, 24 functions, gcc -O0 / clang -O0 / gcc -O2, option on and off)",
  "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/ls",
  "selector": "0x53e7",
  "func_addr": "0x53e7",
@@ -95,7 +95,7 @@
  },
  "soundness": {
   "construction": "k * sizeof(T) == K exactly (K signed, divisibility required); base converted pointer to pointer; element size == access width; alignment unchanged",
-  "round_trip": "23 functions x (gcc -O0, clang -O0, gcc -O2) x (on, off): printed C recompiled and run prints exactly the binary's output in all 6 arms; includes a byte widened for a signed compare and a word widened for an index (castimplied through the subscript) and an integer base (kept)",
+  "round_trip": "24 functions x (gcc -O0, clang -O0, gcc -O2) x (on, off): printed C recompiled and run prints exactly the binary's output in all 6 arms; includes a byte widened for a signed compare and a word widened for an index (castimplied through the subscript), an integer base (kept), and far_idx: 8/4/2-byte reads at indexes -2^31 and -(2^32-1) (kept: C reads 0x80000000..0xffffffff as unsigned int) and -(2^31-1), +2^31 (converted), through a 48 GiB MAP_NORESERVE map",
   "refusals": [
    "non-whole or variable offset",
    "aggregate/padded element",

@@ -6,6 +6,7 @@
 #include <string.h>
 
 /* prelude */
+#include <sys/mman.h>
 #if defined(__clang__)
 #define KEEP __attribute__((noinline))
 #else
@@ -71,6 +72,16 @@ KEEP void wide_idx(void *p)
     sink((long)(int)*(short *)((char *)p + 0x4a) * 3);
 }
 KEEP void via_int(struct hold *h) { sink(*(unsigned char *)(h->b + 10)); sink((long)*(unsigned long *)h->b); }
+KEEP void far_idx(void *p)
+{
+    sink(*(int *)((char *)p + 4));
+    sink(*(long *)((char *)p - 0x400000000L));
+    sink(*(long *)((char *)p - 0x7fffffff8L));
+    sink(*(int *)((char *)p - 0x200000000L));
+    sink(*(short *)((char *)p - 0x100000000L));
+    sink(*(long *)((char *)p - 0x3fffffff8L));
+    sink(*(long *)((char *)p + 0x400000000L));
+}
 /* main */
 KEEP void *getv(void) { return gbuf + 8; }
 int main(void)
@@ -107,5 +118,24 @@ int main(void)
     CALL(via_int, &h);
     for (int i = 0; i < 0x20; i += 4)
         sink(*(int *)(buf + i));
+    unsigned char *far = mmap(0, 0xc00002000UL, PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (far == MAP_FAILED) {
+        puts("no far map");
+        return 0;
+    }
+    unsigned char *a0 = far + 0x800001000UL;
+    *(long *)(a0 - 0x400000000L) = 111;
+    *(long *)(a0 + 0x400000000L) = 222;
+    *(long *)(a0 - 0x7fffffff8L) = 333;
+    *(int *)(a0 + 4) = 42;
+    *(long *)(a0 + 8) = 444;
+    *(int *)(a0 - 0x200000000L) = 555;
+    *(int *)(a0 + 0x200000000L) = 666;
+    *(short *)(a0 - 0x100000000L) = 777;
+    *(short *)(a0 + 0x100000000L) = 888;
+    *(long *)(a0 - 0x3fffffff8L) = 999;
+    *(long *)(a0 + 0x3fffffff8L) = 1111;
+    CALL(far_idx, a0);
     return 0;
 }

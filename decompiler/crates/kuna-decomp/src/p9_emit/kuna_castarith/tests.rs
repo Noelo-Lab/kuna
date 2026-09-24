@@ -254,6 +254,49 @@ fn a_negative_offset_is_a_negative_index() {
     rewritten(&mut fx, add, -0x1a, 2, -0xd);
 }
 
+/// C types the literal `0x80000000` through `0xffffffff` as `unsigned int`, so
+/// `((long *)a0)[-0x80000000]` indexes 2^31 elements FORWARD.  A negative index
+/// that wide keeps the integer form, whose byte offset is a `long` literal; one
+/// element short of it is still pointer arithmetic, as is a wide positive index.
+#[test]
+fn a_negative_index_c_would_read_as_unsigned_keeps_the_integer_form() {
+    for (width, k) in [
+        (8, -0x4_0000_0000i64),
+        (8, -0x7_ffff_fff8),
+        (8, -0x40_0000_0000),
+        (4, -0x2_0000_0000),
+        (4, -0x3_ffff_fffc),
+        (2, -0x1_0000_0000),
+        (1, -0x8000_0000),
+    ] {
+        let mut fx = Fx::new();
+        let vp = fx.void_ptr();
+        let t = fx.base(width, type_metatype::TYPE_INT);
+        let tp = fx.ptr(Rc::clone(&t));
+        let p = fx.var(8, vp);
+        let (add, out) = fx.add(p, k, tp);
+        fx.load(out, t);
+        fx.high();
+        assert!(
+            matches!(plan(&mut fx.fd, add), Err(Leave::WideNegativeIndex)),
+            "width {width} k {k:#x}"
+        );
+        assert!(!rewrite(&mut fx.fd, add));
+        assert_eq!(fx.fd.obank().get(add).unwrap().code(), OpCode::CPUI_INT_ADD);
+    }
+    for (width, k) in [(8, -0x3_ffff_fff8i64), (4, -0x1_ffff_fffc), (8, 0x4_0000_0000)] {
+        let mut fx = Fx::new();
+        let vp = fx.void_ptr();
+        let t = fx.base(width, type_metatype::TYPE_INT);
+        let tp = fx.ptr(Rc::clone(&t));
+        let p = fx.var(8, vp);
+        let (add, out) = fx.add(p, k, tp);
+        fx.load(out, t);
+        fx.high();
+        rewritten(&mut fx, add, k, width as u64, k / width as i64);
+    }
+}
+
 #[test]
 fn an_offset_that_is_not_whole_elements_keeps_the_integer_form() {
     let mut fx = Fx::new();

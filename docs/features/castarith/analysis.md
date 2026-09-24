@@ -39,6 +39,7 @@ Every printed `INT_ADD` the cast pass reaches, by the final rule's verdict:
 | kept: offset not whole elements | 14 | `*(unsigned int *)((long)a0 + 0x6a)` |
 | kept: `table[i]` | 3 | sort -O0 `*(char *)((long)v6 + 0x23260)` |
 | kept: sum read as an integer | 1 | |
+| kept: negative index of 2^31 or more | 0 | section 4 |
 
 Converted element sizes: 8 bytes 835, 1 byte 310, 4 bytes 308, 2 bytes 96. Retargeted
 casts and unsettled stores occur 0 times here; both have unit tests. Two cases section 4
@@ -71,12 +72,25 @@ pointee, with a `void` pointee stepping in bytes for a value that stays in the f
 
 ## 4. Value preservation
 
-The address is unchanged by construction: `k * sizeof(T) == K` exactly (the rule
-requires divisibility, `K` read as signed), the base is converted pointer to pointer with
-no integer in between, and the element size is the access width, so every load and store
-moves the same bytes. Alignment is unchanged too: `K` is a multiple of `sizeof T`, so
-`p` is `T`-aligned exactly when `p + K` is. The refusals exist where the printed C could
-otherwise convert a value or cost a cast:
+The address is unchanged: `k * sizeof(T) == K` exactly (the rule requires
+divisibility, `K` read as signed), the base is converted pointer to pointer with no
+integer in between, the element size is the access width, and the printed index reads
+back as `k`, so every load and store moves the same bytes. Alignment is unchanged too:
+`K` is a multiple of `sizeof T`, so `p` is `T`-aligned exactly when `p + K` is. The
+refusals exist where the printed C could otherwise convert a value or cost a cast:
+
+- a negative index of 2^31 elements or more. C types the literals `0x80000000` through
+  `0xffffffff` as `unsigned int`, so `-0x80000000` is +2^31: `*(long *)((char *)p -
+  0x400000000L)` would print `((unsigned long *)a0)[-0x80000000]` and read
+  `p + 0x400000000`. The integer form's byte offset is then at least 2^32 in magnitude
+  for any element wider than a byte (`*(unsigned long *)((long)a0 + -0x400000000)`), a
+  `long` literal that negates correctly. A positive index keeps its value whatever type C
+  gives the literal (`((unsigned long *)a0)[0x80000000]` is converted). A one-byte
+  element's offset in `-0xffffffff..-0x80000000` prints `(long)a0 + -0x80000000` and is
+  misread by the integer form too, with the option on or off and on the base: that is the
+  printer's spelling of a negative constant, left for its own fix. The refusal fires 0
+  times on castbench full and on the 156 disjoint binaries (the outputs are byte-identical
+  to the build without it); the round trip's `far_idx` covers it;
 
 - a bare base `p[k]` only when the printer's declaration of `p` points at `T` or at an
   integer of `T`'s width (`printc::declared_variable_type`); a float element never
@@ -114,13 +128,17 @@ binaries below, so the new reading changes nothing there.
 
 Compiled round trips (`decompile_all_cli.rs
 a_pointer_plus_whole_elements_round_trips_through_the_printed_c`, fixture
-`castarith_x86_64.c` built with gcc -O0, clang -O0 and gcc -O2, option on and off), 23
+`castarith_x86_64.c` built with gcc -O0, clang -O0 and gcc -O2, option on and off), 24
 functions: loads and stores of 1, 2, 4 and 8 bytes signed and unsigned, float and double
 loads and stores, a negative offset, a non-whole offset (kept), a pointer passed on,
 compared and stepped in a loop, a base typed as another pointer, a record base (keeps
 `->field`), a subtracted pointer (kuna types it an integer, kept), a byte widened for a
-signed compare and a word widened for an index (castimplied through the subscript), and
-an integer base (kept). In all six arms the printed C, compiled and run, prints exactly
+signed compare and a word widened for an index (castimplied through the subscript), an
+integer base (kept), and `far_idx`: 8-, 4- and 2-byte reads at indexes -2^31 and
+-(2^32-1) (kept), -(2^31-1) and +2^31 (converted), which `main` reads through a 48 GiB
+`MAP_NORESERVE` map (the binary and the round trip print the same fallback line if the map
+is refused). Before the refusal, the printed `far_idx` read `222 444 666 888` where the
+binary reads `111 333 555 777`. In all six arms the printed C, compiled and run, prints exactly
 what the binary prints. The shared-cast base has 1 unit test (a whole-program type
 context produces it; a small program does not).
 
