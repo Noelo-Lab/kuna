@@ -1011,6 +1011,13 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
                     return true;
                 }
             }
+            Member::Exact(t)
+                if !a.store
+                    && crate::kuna_structheadless::types_a_pointer_as_a_word(data, ct, &t)
+                    && accesses_through(data, &value_family(data, a.value)).is_none_or(|(acc, _)| !acc.is_empty()) =>
+            {
+                return true;
+            }
             Member::Exact(_) => {}
         }
     }

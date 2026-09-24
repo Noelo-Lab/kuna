@@ -169,6 +169,26 @@ pub(crate) fn gives_a_pointee(ct: &Datatype) -> bool {
     }) && !crate::kuna_structsynth::points_at_synthesized_record(ct)
 }
 
+/// Does `vote`, a record `structsynth` minted, type as a plain word the member
+/// `member` that a function loads and then reads through, under `closed`?  The
+/// record is then another reader's view of the object, one that only moved or
+/// compared the member, and taking it would declare the function's pointer an
+/// integer: `tar`'s `wsnode_remove` copies `ws_head` as a word, and
+/// `wordsplit_varexp`, which walks the list from it, lost `int8 *` for `int8`.
+pub(crate) fn types_a_pointer_as_a_word(data: &Funcdata, vote: &Datatype, member: &Datatype) -> bool {
+    data.get_arch().struct_headless.fires()
+        && data.get_arch().types().is_some_and(|t| minted_word(vote, member, t.get_size_of_pointer()))
+}
+
+/// Is `member` a pointer-width integer or undefined word of the record `vote`
+/// points at, one `structsynth` minted?
+fn minted_word(vote: &Datatype, member: &Datatype, ptr_size: kuna_base::types::int4) -> bool {
+    use crate::dtype::type_metatype;
+    crate::kuna_structsynth::points_at_synthesized_record(vote)
+        && matches!(member.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)
+        && member.get_size() == ptr_size
+}
+
 /// Do these offsets read as a record past its start: two or more, none of them
 /// zero?
 pub(crate) fn is_headless<'a>(mut offsets: impl Iterator<Item = &'a kuna_base::types::intb>) -> bool {
@@ -231,6 +251,17 @@ mod tests {
         assert!(!gives_a_pointee(&minted));
         assert!(crate::kuna_structsynth::points_at_headless_record(&minted));
         assert!(!gives_a_pointee(&Datatype::new(8, type_metatype::TYPE_INT)));
+
+        // `ws_head` copied as a word by one reader is no member for a function
+        // that walks the list from it; a declared record's word is its own.
+        let word = Datatype::new(8, type_metatype::TYPE_INT);
+        assert!(minted_word(&minted, &word, 8));
+        assert!(minted_word(&minted, &Datatype::new(8, type_metatype::TYPE_UNKNOWN), 8));
+        assert!(!minted_word(&minted, &Datatype::new(4, type_metatype::TYPE_INT), 8));
+        assert!(!minted_word(&minted, &charp, 8));
+        let mut group = Datatype::new(0x20, type_metatype::TYPE_STRUCT);
+        group.name = "group".to_string();
+        assert!(!minted_word(&ptr_to(Rc::new(group)), &word, 8));
     }
 
     #[test]
