@@ -2427,8 +2427,13 @@ binary and attempt recompilation:
   enumeration above, so data import slots are not rendered as functions and a
   function carrying several names cannot produce several identical definitions.
 - `<name>.h` — include guard + a generated recompile prelude (core scalar and
-  `undefined`-family typedefs), the recovered user-defined type definitions, and one
-  prototype per decompiled function, token-identical to the `.c` definition line.
+  `undefined`-family typedefs), the recovered user-defined type definitions, an
+  `extern` declaration for every global the `.c` names by address (`&dat_2b080`, from
+  `option globalref`) at the type the code uses it at, and one prototype per decompiled
+  function, token-identical to the `.c` definition line. A global two functions use at
+  two types is declared once, never as a scalar that disagrees with a direct `dat_<addr>`
+  read or write elsewhere in the program (a record wins; direct accesses at two types
+  leave it undeclared), with the other types listed in a comment on its line.
   These are recovered signatures, not source-language declarations invented by the
   exporter. In particular, a `main` whose return register is not recovered can appear
   as `void main(void)`, which strict C compilers reject because `main` is a reserved

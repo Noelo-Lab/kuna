@@ -463,6 +463,10 @@ pub struct PrintCOptions {
     /// function's C names ABOVE the function (`option structdefs`).  See
     /// [`crate::kuna_structdefs`].
     pub struct_defs: bool,
+    /// (kuna) A pointer-typed constant that addresses program data prints as
+    /// `&dat_<addr>` rather than `(T *)0x<addr>` (`option globalref`).  See
+    /// [`crate::kuna_globalref`].
+    pub global_ref: bool,
     /// How function-declaration braces are formatted (C++ `option_brace_func`).
     pub brace_func: BraceStyle,
     /// How if/else-block braces are formatted (C++ `option_brace_ifelse`).
@@ -506,6 +510,7 @@ impl PrintCOptions {
             array_cover_width: true, // (kuna) no upstream equivalent
             empty_str_const: true,   // (kuna) no upstream equivalent
             struct_defs: false,      // (kuna) no upstream equivalent; opt-in
+            global_ref: true,        // (kuna) no upstream equivalent
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
             brace_ifelse: BraceStyle::SameLine, // Emit::same_line
             brace_loop: BraceStyle::SameLine,   // Emit::same_line
@@ -584,6 +589,14 @@ impl PrintCOptions {
     /// (kuna `structdefs`) Is the per-function type-definition preamble on?
     pub fn struct_defs(&self) -> bool {
         self.struct_defs
+    }
+    /// (kuna `globalref`) Name constant addresses as the globals they point at.
+    pub fn set_global_ref(&mut self, val: bool) {
+        self.global_ref = val;
+    }
+    /// (kuna `globalref`) Current constant-address naming flag.
+    pub fn global_ref(&self) -> bool {
+        self.global_ref
     }
     /// (kuna) Toggle inline warning style (`option warnstyle`, DIV-39).
     pub fn set_warn_inline(&mut self, val: bool) {
@@ -1528,6 +1541,10 @@ pub struct PrintC {
     cast_implied: crate::kuna_castimplied::ImpliedCasts,
     /// (kuna `castimplied`) The op being printed as the statement `lhs = <op>;`.
     stmt_op: Option<OpId>,
+    /// (kuna `globalref`) This function's constant-address globals: the facts
+    /// the decision reads and the globals its C names. See
+    /// [`crate::kuna_globalref`].
+    globalref: crate::kuna_globalref::Plan,
 }
 
 impl Default for PrintC {
@@ -1561,6 +1578,7 @@ impl PrintC {
             sign_plan: crate::kuna_typeround::SignPlan::default(),
             cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
             stmt_op: None,
+            globalref: crate::kuna_globalref::Plan::default(),
         }
     }
 
@@ -2410,6 +2428,12 @@ impl PrintC {
         // the live architecture (the gate + the `long`-is-8 data-model fact); every
         // type-name chokepoint below reads `self.rt_ctx`.
         self.rt_ctx = RealTypeCtx::from_arch(arch, self.out_lang);
+        self.globalref = crate::kuna_globalref::plan(
+            fd,
+            arch,
+            self.options.global_ref,
+            self.out_lang == crate::kuna_lang::OutLang::C,
+        );
         // commsorter.setupFunctionList(...) (C++ printc.cc:2799): place this
         // function's comments into their basic blocks so the body emitters can
         // pick them up in order.
@@ -7679,6 +7703,10 @@ impl PrintC {
                     ));
                     return;
                 }
+                if let Some(addr) = self.globalref.decide(fd, arch, vn, op, off, &ct) {
+                    self.push_global_ref_ir(arch, addr, op, vn);
+                    return;
+                }
                 if !self.options.nocasts {
                     self.push_cast_open(&ct, op);
                 }
@@ -8083,6 +8111,26 @@ impl PrintC {
             crate::printlanguage::SyntaxHighlight::special_color,
             op_key(op),
         ));
+    }
+
+    /// (kuna `globalref`) `&dat_<addr>`: the address of the global a constant
+    /// pointer names, in place of the `(T *)0x<addr>` cast.
+    fn push_global_ref_ir(&mut self, arch: &Architecture, addr: u64, op: OpId, vn: VarnodeId) {
+        let tok = self.lang_token(&tokens::ADDRESSOF);
+        self.push_op(tok, Some(op_key(op)));
+        self.push_atom(&Atom::with_op_vn(
+            kuna_global_data_name(arch.kuna_name_style(), addr),
+            TagType::VarToken,
+            crate::printlanguage::SyntaxHighlight::special_color,
+            op_key(op),
+            vn_key(vn),
+        ));
+    }
+
+    /// (kuna `globalref`) The plan of the last function printed: the globals it
+    /// names by address and the unnamed data it reads directly.
+    pub fn globalref_plan(&self) -> &crate::kuna_globalref::Plan {
+        &self.globalref
     }
 
     fn op_ptrsub_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
@@ -9274,6 +9322,17 @@ fn comment_safe(raw: &str) -> std::borrow::Cow<'_, str> {
         }
     }
     std::borrow::Cow::Owned(out)
+}
+
+/// (kuna `globalref`) `T name` for a global of type `ct`, via the same
+/// declarator builder a structure member uses.
+pub fn declaration_text(ct: &std::rc::Rc<crate::dtype::Datatype>, name: &str, rt: RealTypeCtx) -> String {
+    field_decl_text(ct, name, rt)
+}
+
+/// (kuna `globalref`) The name the printer gives the unnamed global at `addr`.
+pub fn global_data_name(arch: &Architecture, addr: u64) -> String {
+    kuna_global_data_name(arch.kuna_name_style(), addr)
 }
 
 /// (kuna) One member declaration `<front><name><back>` via the C-declarator

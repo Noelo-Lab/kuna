@@ -249,6 +249,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "arraycoverwidth",
     "emptystrconst",
     "structdefs",
+    "globalref",
     "thumbfuncptr",
     "inferfuncentry",
     "returnpair",

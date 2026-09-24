@@ -40,8 +40,8 @@
       "ptrace\\(\\)"
     ],
     "stdout_matches": [
-      "ptrace\\(2,[^,)]+,NULL,\\(void \\*\\)0x804a004\\)"
+      "ptrace\\(2,[^,)]+,NULL,(?:\\(void \\*\\)0x804a004|&dat_804a004)\\)"
     ]
   },
-  "notes": "Naming a callee must also give it a prototype. Dataset witness: crackmes.one 5ab77f5c33c5d40ad448c615, a stripped static i386 crackme whose state machine emitted ptrace() with the four pushed slots as raw stores. Retargeted to the vendored reduction (source declaredlibcproto_i386.s) because CI has no dataset; the NULL/(void *) casts are what proves the declared name reached the signature tables."
+  "notes": "Naming a callee must also give it a prototype. Witness: crackmes.one 5ab77f5c33c5d40ad448c615, a stripped static i386 crackme whose ptrace() had its four pushed slots as raw stores; retargeted to the vendored reduction (declaredlibcproto_i386.s). NULL and the typed last argument ((void *)0x804a004, or &dat_804a004 under globalref) prove the declared name reached the signature tables."
 }

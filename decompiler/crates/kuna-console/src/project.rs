@@ -26,7 +26,7 @@ use std::path::Path;
 use kuna_base::address::Address;
 use kuna_decomp::decompile_drive::{
     extract_type_definitions, extract_variables, print_c, print_c_prototype,
-    print_c_with_provenance, LineMapping, TypeInfo, VarInfo,
+    print_c_with_provenance, GlobalInfo, LineMapping, TypeInfo, VarInfo,
 };
 use kuna_decomp::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
@@ -84,6 +84,10 @@ pub struct FuncResult {
     /// function's C names, in definition-before-use order. Empty unless the
     /// option is on — the same decision that prints them above the body.
     pub types: Vec<TypeInfo>,
+    /// (kuna `globalref`) The globals the C names by address (`&dat_2b080`),
+    /// with the declaration the project header gives each. Never serialized
+    /// into `decompile-all --json`; the `decompile-project` header declares them.
+    pub globals: Vec<GlobalInfo>,
     pub line_mappings: Vec<LineMapping>,
     /// (kuna, issue #197) Every OTHER name this entry carries — a generic
     /// `sub_<addr>` placeholder, an ELF weak/strong twin, a PE
@@ -341,6 +345,7 @@ pub fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
         || r.proto.as_deref().is_some_and(&mut hit)
         || r.variables.iter().any(|v| hit(&v.type_name))
         || r.types.iter().any(|t| hit(&t.name))
+        || r.globals.iter().any(|g| hit(&g.declaration))
 }
 
 /// Is `needle` in `hay` as a whole C identifier?
@@ -444,6 +449,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                globals: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -475,6 +481,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                globals: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -494,6 +501,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                globals: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -662,6 +670,7 @@ pub fn decompile_pulled(
                         (print_c(prog.arch_mut(), &fd), Default::default())
                     };
                     let code = untrimmed.trim_matches('\n').to_string();
+                    let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
                     // (kuna `structdefs`) The layout side of the same function:
@@ -692,10 +701,10 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, types, proto, line_mappings, callee_hints)
+                    (code, variables, types, globals, proto, line_mappings, callee_hints)
                 }));
                 match rendered {
-                    Ok((code, variables, types, proto, line_mappings, callee_hints)) => sink(FuncResult {
+                    Ok((code, variables, types, globals, proto, line_mappings, callee_hints)) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -705,6 +714,7 @@ pub fn decompile_pulled(
                         proto,
                         variables,
                         types,
+                        globals,
                         line_mappings,
                         aliases,
                         object_location,
@@ -721,6 +731,7 @@ pub fn decompile_pulled(
                         proto: None,
                         variables: Vec::new(),
                         types: Vec::new(),
+                        globals: Vec::new(),
                         line_mappings: Vec::new(),
                         aliases,
                         object_location,
@@ -739,6 +750,7 @@ pub fn decompile_pulled(
                 proto: None,
                 variables: Vec::new(),
                 types: Vec::new(),
+                globals: Vec::new(),
                 line_mappings: Vec::new(),
                 aliases,
                 object_location,
@@ -1010,6 +1022,11 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
         out.push_str("\n/* user-defined types */\n");
         out.push_str(types);
     }
+    let globals = global_declarations(results);
+    if !globals.is_empty() {
+        out.push_str("\n/* globals the code names by address */\n");
+        out.push_str(&globals);
+    }
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
@@ -1035,6 +1052,74 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
         }
     }
     out.push_str(&format!("\n#endif /* {guard} */\n"));
+    out
+}
+
+/// (kuna `globalref`) One `extern` line per global the functions name by address,
+/// in address order.
+///
+/// Each function declares the object at the type IT uses it at, so two
+/// functions can disagree, and a function that reads the same `dat_<addr>`
+/// directly reads it at the type IT printed. The declaration is what every
+/// direct read and write compiles against, so it must never be a scalar of
+/// another type than theirs: that would silently change what they compute (a
+/// signed compare turned unsigned, a store truncated), where a pointer of the
+/// wrong type in an address-taking body is a diagnosed mismatch. The choice:
+///
+/// * a record or union some function takes the address of, the larger one
+///   first: a scalar access of the name does not compile against it;
+/// * otherwise the one type the direct accesses agree on;
+/// * otherwise, with direct accesses at two types, nothing, and a comment says so;
+/// * with no direct access, a type over the unknown byte a `void *` use stands
+///   for, then the larger object, then the declaration more functions make,
+///   then the earlier function.
+///
+/// Every other type is listed in a comment on the line.
+fn global_declarations(results: &[FuncResult]) -> String {
+    let mut by_addr: BTreeMap<u64, (Vec<&GlobalInfo>, Vec<&GlobalInfo>)> = BTreeMap::new();
+    for g in results.iter().flat_map(|r| r.globals.iter()) {
+        let e = by_addr.entry(g.address).or_default();
+        if g.direct { e.1.push(g) } else { e.0.push(g) }
+    }
+    let quote = |d: &str| d.replace("/*", "/ *").replace("*/", "* /");
+    let mut out = String::new();
+    for (taken, direct) in by_addr.values() {
+        if taken.is_empty() {
+            continue;
+        }
+        let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
+        for g in taken.iter().chain(direct.iter()) {
+            match decls.iter_mut().find(|(d, _)| d.declaration == g.declaration) {
+                Some((_, n)) => *n += 1,
+                None => decls.push((g, 1)),
+            }
+        }
+        let best = |pool: &mut dyn Iterator<Item = &(&GlobalInfo, usize)>| -> Option<String> {
+            pool.max_by(|(a, an), (b, bn)| (!a.unknown, a.size, *an).cmp(&(!b.unknown, b.size, *bn)).then(std::cmp::Ordering::Greater))
+                .map(|(g, _)| g.declaration.clone())
+        };
+        let mut direct_decls: Vec<&str> = direct.iter().map(|g| g.declaration.as_str()).collect();
+        direct_decls.sort_unstable();
+        direct_decls.dedup();
+        let record = best(&mut decls.iter().filter(|(g, _)| !g.direct && g.aggregate));
+        let chosen = match (record, direct_decls.as_slice()) {
+            (Some(r), _) => r,
+            (None, [one]) => one.to_string(),
+            (None, []) => best(&mut decls.iter()).unwrap_or_default(),
+            (None, _) => {
+                let all: Vec<String> = decls.iter().map(|(g, _)| quote(&g.declaration)).collect();
+                let _ = writeln!(out, "/* {} is read at two types, so it is not declared: {} */", taken[0].name, all.join(", "));
+                continue;
+            }
+        };
+        let others: Vec<String> =
+            decls.iter().filter(|(g, _)| g.declaration != chosen).map(|(g, _)| quote(&g.declaration)).collect();
+        if others.is_empty() {
+            let _ = writeln!(out, "extern {chosen};");
+        } else {
+            let _ = writeln!(out, "extern {chosen}; /* also used as: {} */", others.join(", "));
+        }
+    }
     out
 }
 
@@ -1330,6 +1415,7 @@ mod tests {
                 addresses: vec![],
             }],
             types: vec![],
+            globals: vec![],
             line_mappings: vec![],
             aliases: vec![],
             object_location: None,

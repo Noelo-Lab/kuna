@@ -3845,6 +3845,7 @@ pub fn bootstrap_from_object_with_isa(
         &loader.section_snapshot(),
         &kuna_sleigh::loadimage::LoadImage::get_segments(&loader),
     );
+    let globalref_ranges: Vec<(u64, u64)> = loader.data_object_ranges().to_vec();
 
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let mut symbols = read_loader_symbols_generic(&loader);
@@ -3979,6 +3980,9 @@ pub fn bootstrap_from_object_with_isa(
     // `code_const_ranges`, so `GlobalContainer::litpool_const_contains` can
     // binary-search.
     prog.arch_mut().litpool_const = std::rc::Rc::new(litpool_const);
+
+    // (kuna `globalref`) ... and the sections a program's data objects live in.
+    prog.arch_mut().globalref_ranges = std::rc::Rc::new(globalref_ranges);
 
     // NB: the analysis-pass facts are committed later, gated, in
     // `commit_analysis_passes` (called from `IfcReadSymbols`), after the per-pass

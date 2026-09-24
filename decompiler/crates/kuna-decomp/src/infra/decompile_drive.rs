@@ -1793,6 +1793,62 @@ pub fn extract_type_definitions(arch: &Architecture, fd: &Funcdata) -> Vec<TypeI
         .collect()
 }
 
+/// (kuna `globalref`) A global the printed C names: by address (`&dat_2b080`),
+/// or, for the header to check its declaration against, directly (`dat_2b080`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalInfo {
+    /// The byte address the name stands for.
+    pub address: u64,
+    /// The printed name (`dat_2b080`, or `DAT_0002b080` in ghidra naming).
+    pub name: String,
+    /// The C declaration without `extern` or `;` (`struct_2 dat_2b080`).
+    pub declaration: String,
+    /// The declared object's size in bytes.
+    pub size: i64,
+    /// True when the function only ever used the address through `void *`, so
+    /// the declared type is the unknown byte.
+    pub unknown: bool,
+    /// True for storage the body reads or writes directly rather than takes the
+    /// address of; its declaration is the type it is accessed at.
+    pub direct: bool,
+    /// True when the declared type is a record or union: a scalar read or write
+    /// of the name does not compile against it. (An array decays to a pointer,
+    /// so a scalar compare against one would compile to something else.)
+    pub aggregate: bool,
+}
+
+/// The globals the C `print_c` just rendered for `fd` names
+/// ([`crate::kuna_globalref`]): every address it takes, and every piece of
+/// unnamed program data it accesses directly. Read from the printer, so it must
+/// follow the `print_c` of the same function. Empty with the option off.
+pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
+    let print = arch.print();
+    let plan = print.globalref_plan();
+    let rt = crate::printc::RealTypeCtx::from_arch(arch, print.out_lang());
+    let info = |address: u64, ty: &std::rc::Rc<crate::dtype::Datatype>, unknown: bool, direct: bool| {
+        let name = crate::printc::global_data_name(arch, address);
+        use crate::dtype::type_metatype::{TYPE_STRUCT, TYPE_UNION};
+        GlobalInfo {
+            address,
+            declaration: crate::printc::declaration_text(ty, &name, rt),
+            size: i64::from(ty.get_size()),
+            name,
+            unknown,
+            direct,
+            aggregate: matches!(ty.get_metatype(), TYPE_STRUCT | TYPE_UNION),
+        }
+    };
+    let mut out: Vec<GlobalInfo> =
+        plan.minted.iter().map(|(&address, m)| info(address, &m.decl_type, m.unknown, false)).collect();
+    for (address, ty) in plan.direct_objects() {
+        let g = info(address, ty, false, true);
+        if !out.contains(&g) {
+            out.push(g);
+        }
+    }
+    out
+}
+
 /// One 1-based pseudocode line and its associated machine instruction addresses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineMapping {

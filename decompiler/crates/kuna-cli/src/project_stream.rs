@@ -1251,6 +1251,7 @@ mod tests {
             proto: Some(format!("void sub_{addr:x}(void);")),
             variables: Vec::new(),
             types: Vec::new(),
+            globals: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,

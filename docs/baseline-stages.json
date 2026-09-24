@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1362,
-    1362
+    1370,
+    1370
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -430,6 +430,14 @@
     "data:KUNA-ENTRYMAINPROTO #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x <= 8 renders identically in all three passes",
     "data:KUNA-ENTRYMAINPROTO #2: the catalog documents it as a default-on P1 prototype-source correctness fix, live-toggled back on",
     "data:KUNA-ENTRYMAINPROTO #3: the catalog row names the CRT accessors an agent would grep for",
+    "data:KUNA-GLOBALREF #1: off, memset's buffer is a cast integer",
+    "data:KUNA-GLOBALREF #2: on, it is the address of the global",
+    "data:KUNA-GLOBALREF #3: off, the non-string char pointer is a cast integer",
+    "data:KUNA-GLOBALREF #4: on, it is the address of the global",
+    "data:KUNA-GLOBALREF #5: storage also read directly as a long keeps the cast in both passes",
+    "data:KUNA-GLOBALREF #6: a value the function also divides by keeps the cast in both passes",
+    "data:KUNA-GLOBALREF #7: the direct read beside the named buffer is unchanged",
+    "data:KUNA-GLOBALREF #8: the buffer the function also reads as a long is never named by address",
     "data:KUNA-LIBCWIDEN #1: off, the faccessat wrapper's path stays a width-only integer",
     "data:KUNA-LIBCWIDEN #2: on, faccessat's declaration types it",
     "data:KUNA-LIBCWIDEN #3: off, both of renameat's names stay integers",

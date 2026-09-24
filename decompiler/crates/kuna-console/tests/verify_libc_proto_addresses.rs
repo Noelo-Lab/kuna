@@ -81,8 +81,11 @@ fn memcmp_veneer_receives_the_imports_three_argument_prototype() {
     );
 
     let on = decompile("on").expect("the second bootstrap succeeds");
+    // The buffers are typed `void *` either way: as casts, or (`globalref`,
+    // default on) as the addresses of the globals they name.
     assert!(
-        on.contains("memcmp((void *)0x140002100,(void *)0x140002110,3)"),
+        on.contains("memcmp((void *)0x140002100,(void *)0x140002110,3)")
+            || on.contains("memcmp(&dat_140002100,&dat_140002110,3)"),
         "the veneer must receive both buffers and the byte count:\n{on}"
     );
 }

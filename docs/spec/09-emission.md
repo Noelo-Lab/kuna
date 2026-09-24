@@ -16,7 +16,7 @@ print-support ops (CAST, `PTRSUB #0`), never by changing computation. In the
 registry (`decompiler/crates/kuna-decomp/phases.toml`) P9 carries the
 sub-decisions `cast-policy`, `naming-policy`, `literal-format`,
 `pointer-notation`, `condition-form`, `brace-form`, `warning-style`,
-`type-definition-preamble`, and `external-refinement` — plus, via the `presentcompare` group row, the P9 half of the P3-declared `comparison-canonicalization` decision
+`type-definition-preamble`, `constant-address-global`, and `external-refinement` — plus, via the `presentcompare` group row, the P9 half of the P3-declared `comparison-canonicalization` decision
 (the console/`kassert` assertion writer — an output *consumer* that writes P0
 assertions for the next run, not an algorithm of this folder). One P9-registered
 pass lives outside the folder: the (kuna, GH-558) comparison canonicalizer
@@ -1465,6 +1465,12 @@ character-pointer type in the first place: it shared a merged live range with a
 genuine `char *` parameter (§6), and the probe is doing what it is supposed to do
 for a `char *` constant once that type is established.
 
+**A character pointer the probe declines is still an address.** When the bytes
+at a `char *` constant do not decode as a string — the GB18030 quote glyphs
+gnulib's `gettext_quote` returns (`a1 07 65 00`) are the common case — the
+constant falls through to the pointer arm's casted-hex print, and with
+`globalref` on (§9.9) to `&dat_<addr>` declared `char`.
+
 **Comments.** Comments reach the output through the P0 knowledge plane, never
 inline in the IR: analysis passes call `decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::warning, Funcdata::warning_header)` — buffered per function, then
@@ -2052,3 +2058,136 @@ already resolves by printing one forward declaration and one body;
 `kuna_structdefs.rs (dedup_by_name)` applies the same rule to the records, since
 two entries for `_IO_FILE` reporting size 0 and size 216 is a contradiction a
 JSON consumer has no way to resolve.
+
+## 9.9 Constant addresses named as globals (`globalref`)
+
+A pointer-typed constant that no global Symbol covers has exactly one spelling
+in the pointer arm of `printc.rs (PrintC::push_vn_explicit_ir)`: the forced-hex
+integer behind a typecast, `sub_e4ca((struct_2 *)0x2b080)`. Upstream reaches a
+name only through `coreaction_render.rs (ActionConstantPtr)`, which links a
+constant to a Symbol that already exists, and a stripped image has none for most
+of its data — while kuna prints `dat_2b080` two statements away for the same
+address, because *reading* an unnamed global goes through the unnamed-location
+leaf (§9.3), which names it. The type campaign made the cast commoner rather
+than rarer: once a callee's parameter is recovered as `struct_2 *`, the
+constant a caller passes it is typed `struct_2 *` too, so `sub_e4ca(0x2b080)` at
+the campaign baseline became `sub_e4ca((struct_2 *)0x2b080)` (572 such casts on
+the functions kuna and IDA both emit before the campaign, 1,118 after it). IDA
+prints `sub_E4CA(qword_2B080)` and no cast.
+
+`option globalref` (P9 sub-decision `constant-address-global`, default **on**)
+prints such a constant as `&dat_<addr>` — the name the unnamed-location leaf
+already uses, or `DAT_%08x` under `namestyle ghidra` — and records the global as
+an object of the pointed-to type. The expression then has exactly the constant's
+pointer type, so the cast is gone because the object is declared at that type,
+not because it was suppressed, and its value is the address it replaces
+wherever `dat_<addr>` is placed at `<addr>`. The decision is
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_globalref.rs (Plan::decide)`,
+consulted at the top of the pointer arm after the string probe (§9.4) and
+before the NULL token and the cast; `printc.rs (PrintC::push_global_ref_ir)`
+emits the `&` and the name, bound to the constant Varnode for markup.
+
+**Where a global can be.** The object loader classifies its sections once
+(`decompiler/crates/kuna-analysis/src/loader/kuna_globalref.rs
+(holds_program_objects)`): an allocated section of initialized, read-only or
+zero-filled data is a place a program object can live; code is not, a TLS
+template is not (its addresses are offsets, not run-time locations), and
+neither are the tables the toolchain and the run-time loader own even when
+their kind says data — `.got`, `.plt`, `.eh_frame`, `.gcc_except_table`,
+`.interp`, `.dynamic`, the PE import/export/exception/relocation directories,
+the Mach-O symbol-pointer and unwind sections. The merged ranges reach the
+engine as `infra/architecture.rs (Architecture::globalref_ranges)`, installed by
+the object bootstrap beside the `litpoolconst` ranges; every path without a
+section table leaves them empty, so the rule is inert for the XML datatest
+corpus.
+
+**What one function knows.** `kuna_globalref.rs (plan)` walks the function
+once when its document starts, and records three facts:
+
+- the constant values the function reads *as numbers* — a non-pointer constant
+  read by an ordering compare, a multiply, a divide, a remainder or a shift
+  (`kuna_inferfuncentry.rs (reads_as_integer)`, the question `inferfuncentry`
+  asks of a constant that lands on a function entry: coreutils `tail`'s
+  `BUFSIZ` is `0x2000`, which is that image's `_DT_INIT`);
+- every direct access to the default data space — the `dat_<addr>` the body
+  reads or writes — by start, width and type;
+- for each in-range constant address, the pointed-to types the function reads it
+  at: through `void *` only, at one other type (a `void *` use besides it is
+  fine), or at two (`Seen`).
+
+**What it refuses.** The constant keeps its cast when the address lies outside
+every range (a pointer-typed `0x1`, `0xffffffff` or `-1` is not an address, and
+is 21% of the corpus's constant casts); when a global Symbol already covers it
+(that is `ActionConstantPtr`'s case, and minting a second name would collide);
+when the same function reads the value as a number; when it uses the address at
+two different pointed-to types; when it also reads or writes the storage
+directly at another start, width or type — `sigemptyset((sigset_t
+*)0x2b460)` beside `v2[1] = (void *)dat_2b460;` in `ls` would declare a
+`sigset_t` the next statement reads as a pointer, and a direct `int` read beside
+an `unsigned int *` use would change what a compare on the direct read means once
+the header declares the global; and for a pointer to code. An `undefinedN` direct
+read is accepted against an unsigned integer of the same size, since that is the
+C type the export's prelude defines it as. A `void *` constant needs one more
+thing: the declared object's pointer must convert to `void *` exactly as the
+cast did, which C does for an argument, a returned value, a copy or store into
+`void *` storage and an equality test against another `void *`, and does not for
+a compare against a pointer of another type. An address the function only ever
+uses through `void *` is declared at the one type it reads the storage at
+directly (`Plan::direct_type_at`), or as the unknown byte.
+
+**The declaration.** `decompile_drive.rs (extract_global_objects)` reads back
+off the printer, after `print_c`, every address the function named and every
+piece of unnamed program data it read or wrote directly, each with the C
+declaration the structure-member declarator builds for it (`printc.rs
+(declaration_text)`), its size, and whether it stood for `void`, was a direct
+access, or is a record or union. They travel as `FuncResult::globals`, which
+the `--jobs` wire carries like the type records, and
+`decompiler/crates/kuna-console/src/project.rs (global_declarations)` turns
+them into one `extern` line per named address in the `decompile-project`
+header, in a block of its own between the type definitions and the
+prototypes. The header can hold one declaration per address, and every
+function declares the object at the type *it* uses it at, so the choice is
+constrained by what the declaration does to the other functions: it is what
+every direct `dat_<addr>` read and write compiles against, and a scalar of
+another type than theirs would silently change what they compute — a signed
+compare turned unsigned, a store truncated — where a pointer of the wrong
+type in a body that takes the address is a diagnosed mismatch. So a record or
+union some function takes the address of wins, the larger first (a scalar
+access of it does not compile at all); otherwise the one type the direct
+accesses agree on; otherwise, when the program reads the address directly at
+two types, nothing is declared and a comment says why; and with no direct
+access, a type is preferred to the unknown byte a `void *` use stands for,
+then the larger object, then the declaration more functions make. Every other
+type is listed in a comment on the line. Over the 45 exports of the cast
+corpus that is 891 declarations, 173 of them with such a comment and 60
+addresses left undeclared; `gcc -fsyntax-only` reports 36,471 errors against
+36,648 without the option, because direct reads of a now-declared name
+compile, and 15,348 warnings against 14,962, the difference being the
+incompatible-pointer warnings of those 173 addresses and pre-existing
+diagnostics a declared name lets the compiler reach. An array is not a record
+for this purpose: it decays to a pointer, so a scalar compare against it
+compiles to something else. `project.rs (names_any_type)` reads the
+declarations too, so a `struct_N` that only a global names is still redone by
+the `structsynth` convergence sweep and kept by the header's type pruning.
+The directly read `dat_<addr>` names are still not declared on their own
+account; only an address some function takes is.
+
+**The value is the binary's.** `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
+(a_constant_address_named_as_a_global_round_trips_through_the_printed_c)`
+exports a non-PIE fixture whose data has no symbols both ways, compiles each
+witness caller exactly as printed against the export's own header with gcc and
+clang, links it with every `dat_<addr>` placed at `<addr>` and the fixture's data
+mapped where the binary keeps it, and requires the printed callers to compute
+what the binary computes, with the option on and off: a record, two scalars, a
+table and its one-past-the-end, a `void *` libc argument, a pointer compare and
+a `char *` that is not a string, and four controls that keep the cast.
+
+**Measured.** Over the 45-binary cast corpus (coreutils `fmt`, `ls`, `sort`, `du`,
+`cp`, `tail`, `wc`, `grep`, `gzip`, the four diffutils, `tar` and `find`, each at
+O0, O2 and O2-noinline) every one of the 1,883 lines the option changes is the
+`(T *)0x<addr>` → `&dat_<addr>` substitution and nothing else, removing 1,979
+casts; with the option off the output is byte-identical to the build without it.
+On the 4,815 functions kuna and IDA both emit, casts fall from 45,126 to 44,001
+and no function gains one. Variables and types are untouched, so `type_match`
+cannot move (1,609 perfect functions in both arms of the 444-slice sweep).
+

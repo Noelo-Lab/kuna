@@ -27,6 +27,7 @@ pub mod kuna_truncarg;
 pub mod kuna_castimplied; // (kuna) casts C's own conversions already perform
 pub mod kuna_castarith; // (kuna) pointer arithmetic stays in pointer terms
 pub mod kuna_structdefs;
+pub mod kuna_globalref; // (kuna) a constant address used as a pointer prints as its global
 pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
 pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx)
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)

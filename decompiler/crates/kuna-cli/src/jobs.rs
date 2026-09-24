@@ -203,7 +203,7 @@ use std::time::{Duration, Instant};
 
 use kuna_console::engine::{EntryProvenance, ObjectLocation};
 use kuna_console::project::FuncResult;
-use kuna_decomp::decompile_drive::{LineMapping, TypeInfo, VarInfo};
+use kuna_decomp::decompile_drive::{GlobalInfo, LineMapping, TypeInfo, VarInfo};
 use kuna_decomp::kuna_structsynth::shard::{self, FunctionRecord, Replay, SynthRequest};
 
 /// Ceiling on an automatically planned chunk, when `--jobs-chunk` is omitted.
@@ -713,6 +713,16 @@ impl ResultWriter {
             put_str(&mut body, &t.definition);
             body.extend_from_slice(&t.size.to_le_bytes());
         }
+        // (kuna `globalref`) The globals the body names by address, for the
+        // project header the parent writes.
+        put_u32(&mut body, r.globals.len() as u32);
+        for g in &r.globals {
+            put_u64(&mut body, g.address);
+            put_str(&mut body, &g.name);
+            put_str(&mut body, &g.declaration);
+            body.extend_from_slice(&g.size.to_le_bytes());
+            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2);
+        }
         put_u64s(&mut body, &r.callee_hints);
         match &r.synth {
             Some(record) => {
@@ -821,6 +831,24 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         let tsize = r.i64()?;
         types.push(TypeInfo { name: tname, definition, size: tsize });
     }
+    let ng = r.u32()? as usize;
+    let mut globals = r.sized(ng);
+    for _ in 0..ng {
+        let address = r.u64()?;
+        let gname = r.string()?;
+        let declaration = r.string()?;
+        let gsize = r.i64()?;
+        let bits = r.u8()?;
+        globals.push(GlobalInfo {
+            address,
+            name: gname,
+            declaration,
+            size: gsize,
+            unknown: bits & 1 != 0,
+            direct: bits & 2 != 0,
+            aggregate: bits & 4 != 0,
+        });
+    }
     let callee_hints = r.u64s()?;
     let synth = match r.u8()? {
         0 => None,
@@ -841,6 +869,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         proto,
         variables,
         types,
+        globals,
         line_mappings,
         aliases,
         object_location,
@@ -2758,6 +2787,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         proto: None,
         variables: Vec::new(),
         types: Vec::new(),
+        globals: Vec::new(),
         line_mappings: Vec::new(),
         aliases: t.aliases.clone(),
         object_location: t.object_location.clone(),
@@ -3263,6 +3293,16 @@ mod tests {
                 definition: "struct mystruct {\n    int a;\n};\n".into(),
                 size: 4,
             }],
+            // (kuna `globalref`) One global, so the codec's flag byte is exercised.
+            globals: vec![GlobalInfo {
+                address: 0x404010,
+                name: "dat_404010".into(),
+                declaration: "struct_0 dat_404010".into(),
+                size: 16,
+                unknown: false,
+                direct: true,
+                aggregate: true,
+            }],
             line_mappings: vec![LineMapping { line_number: 3, addresses: vec![0x401004] }],
             aliases: vec!["_main".into()],
             object_location: Some(ObjectLocation {
@@ -3287,6 +3327,7 @@ mod tests {
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
             && a.line_mappings == b.line_mappings
+            && a.globals == b.globals
             && a.types.len() == b.types.len()
             && a.types.iter().zip(&b.types).all(|(x, y)| {
                 x.name == y.name && x.definition == y.definition && x.size == y.size
@@ -3336,6 +3377,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            globals: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,
@@ -3763,6 +3805,7 @@ mod tests {
             proto: None,
             variables: Vec::new(),
             types: Vec::new(),
+            globals: Vec::new(),
             line_mappings: Vec::new(),
             aliases: Vec::new(),
             object_location: None,

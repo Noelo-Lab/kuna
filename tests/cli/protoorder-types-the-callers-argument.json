@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-5f6158eb1e9d",
+  "probe_id": "a-e45f9f4bf3f8",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -30,14 +30,14 @@
     "stdout_matches": [
       "int callee\\(unsigned char \\*a0,int a1\\)",
       "unsigned long caller\\(unsigned char \\*a0,int a1\\)",
-      "caller\\(\\(unsigned char \\*\\)0x402000,3\\);",
-      "vfmt\\(\\(unsigned char \\*\\)0x402004\\);",
+      "caller\\((?:\\(unsigned char \\*\\)0x402000|&dat_402000),3\\);",
+      "vfmt\\((?:\\(unsigned char \\*\\)0x402004|&dat_402004)\\);",
       "thunk\\(a0,1,2,3,4\\);"
     ],
     "stdout_absent": [
       "unsigned long caller\\(unsigned long a0,int a1\\)",
       "caller\\(0x402000,3\\);",
-      "vfmt\\(\\(unsigned char \\*\\)0x402004,a1"
+      "vfmt\\((?:\\(unsigned char \\*\\)0x402004|&dat_402004),a1"
     ]
   },
   "notes": "The DEFAULT (`protoorder cycles`, the same as `types` on this acyclic fixture): `callee` is decompiled first and states the types it recovered, so the argument `caller` forwards to it is typed and `caller`'s own parameter becomes `unsigned char *a0`. Every call keeps exactly the arguments the OFF arm renders -- `thunk` recovers one parameter and its call still passes five."

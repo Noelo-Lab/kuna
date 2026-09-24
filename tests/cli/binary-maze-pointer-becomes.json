@@ -23,7 +23,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "strlen\\(\\(char \\*\\)0x402020\\)",
+      "strlen\\((?:\\(char \\*\\)0x402020|&dat_402020)\\)",
       "strlen\\(\"\"\\)"
     ],
     "stdout_absent": [

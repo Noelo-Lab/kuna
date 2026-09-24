@@ -1,0 +1,396 @@
+{
+ "opportunity": "kuna printed a cast on every constant address a pointer type reaches -- sub_e4ca((struct_2 *)0x2b080) where IDA prints sub_E4CA(qword_2B080) -- 1,118 casts on the 4,815 functions kuna and IDA both emit, up from 572 at the campaign baseline (protoorder stating recovered callee parameter types to callers is 44% of the growth).",
+ "test_name": "tests/stages/kuna-globalref.xml (8 two-pass assertions) + kuna-cli decompile_all_cli a_constant_address_named_as_a_global_round_trips_through_the_printed_c (gcc+clang, both arms) + 7 kuna-decomp and 3 kuna-analysis unit tests",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/globalref_x86_64",
+ "selector": "w_struct,w_scalar,w_range,w_buffer,w_compare,w_glyph,w_direct,w_numeric,w_width,w_count",
+ "option": "globalref",
+ "flag": "PrintCOptions::global_ref",
+ "element_id": null,
+ "change_kind": "presentation-default",
+ "tier": "core",
+ "source_decompiler": "ida",
+ "inspiration": "IDA Pro names every referenced static address (qword_2B080, &dword_21148, &unk_1AA40) and prints essentially no cast on one",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "parity": "OK (675/675 datatests; the XML corpus has no section table, so the rule cannot fire there)",
+ "castbench": {
+  "corpus": "castbench --set full: coreutils fmt/ls/sort/du/cp/tail/wc, grep, gzip, diffutils cmp/diff/diff3/sdiff, tar, find at O0/O2/O2-noinline (45 binaries)",
+  "shared_functions": 4815,
+  "casts_main": 45126,
+  "casts_branch": 44001,
+  "per_kloc_main": 236.8,
+  "per_kloc_branch": 230.9,
+  "ratio_to_ida_main": 1.193,
+  "ratio_to_ida_branch": 1.163,
+  "functions_fewer": 486,
+  "functions_more": 0,
+  "by_opt": {
+   "O0": [
+    15052,
+    14695
+   ],
+   "O2": [
+    16265,
+    15894
+   ],
+   "O2-noinline": [
+    13809,
+    13412
+   ]
+  },
+  "constant_address_casts_all_functions": [
+   3232,
+   1253
+  ],
+  "measured_on": "main dbe854ba3 (base arm /home/mahaloz/kwt/castbench/main-dbe854ba3)"
+ },
+ "hunks": {
+  "surface": "castbench decompile-all, same build, --option globalref off vs default, all 45 binaries, every function",
+  "changed_lines": 1883,
+  "casts_removed": 1979,
+  "unexplained_hunks": 0,
+  "lines_added_removed_or_moved": 0,
+  "off_vs_main_dbe854ba3": "byte-identical on all 45 binaries"
+ },
+ "refusals": {
+  "named": 1614,
+  "outside_data": 553,
+  "direct_access": 209,
+  "void_reader": 36,
+  "two_types": 21,
+  "code": 19,
+  "numeric": 1,
+  "note": "unique (function, address, type) events, KUNA_GLOBALREF_TRACE=1, 45 binaries"
+ },
+ "header": {
+  "surface": "kuna decompile-project, 45 binaries, both arms, gcc 11 -fsyntax-only",
+  "declared": 891,
+  "declared_with_conflict_comment": 173,
+  "left_undeclared_two_direct_types": 60,
+  "gcc_errors": [
+   36648,
+   36471
+  ],
+  "gcc_warnings": [
+   14962,
+   15348
+  ],
+  "new_diagnostics_on_changed_lines": "incompatible-pointer warnings where one declaration cannot match a body's use, and 56 undeclared-name errors for the 60 undeclared addresses; none silent"
+ },
+ "doubling_ablation": {
+  "surface": "fmt/ls/sort/du O0+O2, globalref off, in-data constant casts",
+  "default": 342,
+  "protoorder off": 193,
+  "ptrfromuse off": 315,
+  "libcsigs off": 316,
+  "structsynth off": 336,
+  "calleevote off": 336,
+  "passthrough off": 342,
+  "slotptr off": 342
+ },
+ "benchmark": {
+  "corpus": "444-slice typesweep (coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline), decbench metric pinned to 625e892, DECBENCH_NO_CACHE=1, base = default (on), test = globalref off",
+  "metric": "type_match",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4173,
+    "mean_on": 0.4173,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 985,
+    "perfect_on": 985,
+    "mean_off": 0.358,
+    "mean_on": 0.358,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 64,
+    "mean_off": 0.4499,
+    "mean_on": 0.4499,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 112,
+    "mean_off": 0.5409,
+    "mean_on": 0.5409,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 89,
+    "perfect_on": 89,
+    "mean_off": 0.3593,
+    "mean_on": 0.3593,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 52,
+    "perfect_on": 52,
+    "mean_off": 0.4547,
+    "mean_on": 0.4547,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 60,
+    "perfect_on": 60,
+    "mean_off": 0.2495,
+    "mean_on": 0.2495,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 213,
+    "mean_off": 0.3934,
+    "mean_on": 0.3934,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1609,
+   "perfect_on": 1609,
+   "mean_off": 0.3688,
+   "mean_on": 0.3688,
+   "improved": 0,
+   "worse": 0,
+   "slices": 444,
+   "slice_errors": 0
+  },
+  "note": "every slice's variables byte-identical in both arms: the rule changes only printed text",
+  "rebased": {
+   "measured_on": "the branch rebased onto origin/main 22df4282c, both arms of that build",
+   "slices": 444,
+   "functions": 10748,
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "aggregate_off": 3973.97,
+   "aggregate_on": 3973.97,
+   "improved": 0,
+   "worse": 0,
+   "note": "variables byte-identical in all 10,748 functions"
+  }
+ },
+ "speed": {
+  "method": "interleaved min-of-15 whole-binary decompile-all --json, O2, three arms (main dbe854ba3, branch default, branch --option globalref off)",
+  "binaries": {
+   "fmt": {
+    "min_ms": {
+     "main": 4253.4,
+     "on": 4298.8,
+     "off": 4307.0
+    },
+    "min_pct_on_vs_main": 1.07,
+    "min_pct_on_vs_off": -0.19,
+    "median_pct_on_vs_main": -4.31
+   },
+   "ls": {
+    "min_ms": {
+     "main": 14165.7,
+     "on": 14094.3,
+     "off": 14106.8
+    },
+    "min_pct_on_vs_main": -0.5,
+    "min_pct_on_vs_off": -0.09,
+    "median_pct_on_vs_main": 0.5
+   },
+   "sort": {
+    "min_ms": {
+     "main": 14840.2,
+     "on": 15139.1,
+     "off": 14967.1
+    },
+    "min_pct_on_vs_main": 2.01,
+    "min_pct_on_vs_off": 1.15,
+    "median_pct_on_vs_main": 5.6
+   },
+   "bash": {
+    "min_ms": {
+     "main": 90130.7,
+     "on": 89974.1,
+     "off": 90261.3
+    },
+    "min_pct_on_vs_main": -0.17,
+    "min_pct_on_vs_off": -0.32,
+    "median_pct_on_vs_main": 0.29
+   }
+  },
+  "budget_pct": 5.0,
+  "worst_min_pct_on_vs_main": 2.01,
+  "within_budget": true,
+  "measured_on": "main dbe854ba3 (the bash row and the first three)",
+  "rebased": {
+   "measured_on": "origin/main 22df4282c vs the rebased branch, interleaved min-of-15, O2",
+   "binaries": {
+    "fmt": {
+     "min_ms": {
+      "main": 4151.0,
+      "on": 4194.3,
+      "off": 4177.6
+     },
+     "min_pct_on_vs_main": 1.04,
+     "min_pct_on_vs_off": 0.4
+    },
+    "ls": {
+     "min_ms": {
+      "main": 13719.7,
+      "on": 13856.6,
+      "off": 14085.3
+     },
+     "min_pct_on_vs_main": 1.0,
+     "min_pct_on_vs_off": -1.62
+    },
+    "sort": {
+     "min_ms": {
+      "main": 14148.5,
+      "on": 14460.0,
+      "off": 14761.0
+     },
+     "min_pct_on_vs_main": 2.2,
+     "min_pct_on_vs_off": -2.04
+    }
+   },
+   "worst_min_pct_on_vs_main": 2.2
+  }
+ },
+ "gates": {
+  "make_test": "datatests: 675/675 assertions passed; PARITY OK",
+  "make_test_stages": "datatests: 1337/1337 assertions passed; PARITY OK (baseline re-recorded: +8 KUNA-GLOBALREF keys, no other key moved)",
+  "make_test_cli": "tests/cli: 237/237 passed on the rebased tree (four probes accept either spelling of a typed constant; ids re-derived)",
+  "make_rust_test": "RUST_TEST_RC=0 on the rebased tree: 7486 passed, 0 failed, 38 ignored (lane script)",
+  "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+  "catalog_check": "catalog OK: documents exactly the registered kuna options",
+  "counters_check": "no drift: every hard-coded site agrees with the derived truth",
+  "options_md": "byte-fresh",
+  "rebased_onto": "origin/main 22df4282c"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p9_emit/kuna_globalref.rs",
+  "decompiler/crates/kuna-decomp/src/p9_emit/kuna_globalref/tests.rs",
+  "decompiler/crates/kuna-analysis/src/loader/kuna_globalref.rs",
+  "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs",
+  "decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs",
+  "decompiler/crates/kuna-console/src/project.rs",
+  "decompiler/crates/kuna-analysis/tests/fixtures/globalref_x86_64.c",
+  "tests/stages/kuna-globalref.xml"
+ ],
+ "castbench_rebased": {
+  "measured_on": "origin/main 22df4282c (#719), a fresh base arm built from it; the branch rebased onto it",
+  "shared_functions": 4815,
+  "casts_main": 45039,
+  "casts_branch": 43914,
+  "per_kloc_main": 236.3,
+  "per_kloc_branch": 230.4,
+  "ratio_to_ida_main": 1.191,
+  "ratio_to_ida_branch": 1.161,
+  "functions_fewer": 486,
+  "functions_more": 0,
+  "by_opt": {
+   "O0": [
+    15011,
+    14654
+   ],
+   "O2": [
+    16250,
+    15879
+   ],
+   "O2-noinline": [
+    13778,
+    13381
+   ]
+  },
+  "hunks": "1,883 changed lines, 1,979 casts removed, 0 unexplained; --option globalref off byte-identical to the 22df4282c build on all 45 binaries"
+ },
+ "landing": {
+  "measured_on": "the branch rebased onto origin/main 003db2dd8 (code == b3878d32e: castimplied #721, castarith #722 and castsign #724 on), both arms of that build, against a build of b3878d32e",
+  "castbench": {
+   "shared_functions": 4815,
+   "casts_main": 38602,
+   "casts_branch": 37477,
+   "per_kloc_main": 202.5,
+   "per_kloc_branch": 196.6,
+   "ratio_to_ida_main": 1.021,
+   "ratio_to_ida_branch": 0.991,
+   "functions_fewer": 486,
+   "functions_more": 0,
+   "by_opt": {
+    "O0": [
+     12591,
+     12234
+    ],
+    "O2": [
+     14208,
+     13837
+    ],
+    "O2-noinline": [
+     11803,
+     11406
+    ]
+   },
+   "off_vs_main": "byte-identical on all 45 binaries and the 4-binary corpus"
+  },
+  "hunks": {
+   "castbench_45": "1,883 changed lines, 1,979 casts removed, 0 unexplained",
+   "corpus4": "bzip2 O0, kmod/dpkg-divert/crontab O2: 236 changed lines, 248 casts removed, 0 unexplained"
+  },
+  "typesweep": {
+   "slices": 444,
+   "functions": 10748,
+   "perfect_main": 1615,
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "mean_main": 0.3697,
+   "mean_off": 0.3697,
+   "mean_on": 0.3697,
+   "improved": 0,
+   "worse": 0,
+   "note": "variables[] scored identically in all 10,748 functions across origin/main, --option globalref off and the default"
+  },
+  "expectation_changes": [
+   {
+    "test": "kuna-cli decompile_all_cli a_constant_address_named_as_a_global_round_trips_through_the_printed_c",
+    "on": [
+     "(a0 == &dat_30004060)",
+     "a0 == &dat_30004060"
+    ],
+    "off": [
+     "(a0 == (long *)0x30004060)",
+     "a0 == (long *)0x30004060"
+    ],
+    "why": "castimplied (#721) drops the value-preserving (unsigned long) around w_compare's returned comparison, and its parentheses with it; the round trip still compiles with gcc and clang and prints the binary's output in both arms"
+   }
+  ],
+  "expectation_changes_castarith_castsign": "none: every round trip in decompile_all_cli, the stage test and the tests/cli probes pass unchanged on the rebased tree",
+  "gates": {
+   "make_test": "datatests: 675/675 assertions passed; PARITY OK",
+   "make_test_stages": "datatests: 1370/1370 assertions passed; PARITY OK (re-recorded: origin/main + 8 KUNA-GLOBALREF keys, none missing)",
+   "make_test_cli": "tests/cli: 237/237 passed",
+   "make_rust_test": "RUST_TEST_RC=0 on the rebased tree: 422 blocks, 7522 passed, 0 failed, 38 ignored (lane script)",
+   "check_spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
+   "catalog_check": "catalog OK: documents exactly the registered kuna options",
+   "counters_check": "no drift (233 settables, tiers 75/94/64, 339 corpus files)",
+   "options_md": "byte-fresh",
+   "phases_toml": "parses with tomllib"
+  }
+ }
+}

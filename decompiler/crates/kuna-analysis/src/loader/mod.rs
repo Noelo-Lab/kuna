@@ -36,6 +36,8 @@ pub mod arm_markers;
 // therefore invisible.
 pub mod elf_dynseg;
 pub mod elf_plt;
+// (kuna `globalref`) The sections a program's own data objects live in.
+pub mod kuna_globalref;
 pub mod elfv1;
 mod elfv1_imports;
 // (kuna) ELF section-table tolerance: an image whose section headers are
