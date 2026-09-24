@@ -4524,7 +4524,8 @@ int main(void) {
                     )
                     .unwrap();
                     let out = Command::new(cc)
-                        .args(["-std=gnu11", "-w", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                        .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                         .output()
                         .expect("spawn the C compiler");
                     assert!(
