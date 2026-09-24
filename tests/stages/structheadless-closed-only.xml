@@ -25,8 +25,8 @@
     NEGATIVE CONTROL. `closed` gives such a parameter a record only where a
     whole-binary `decompile-all` recorded every caller of the function as a
     direct call. This harness decompiles ONE function from a byte image, so
-    nothing marks it closed and it must read the same in both passes: raw
-    offsets over an untyped pointer and no synthesized record. A rule that took
+    nothing marks it closed and it must read the same in both passes: reads
+    through an untyped pointer and no synthesized record. A rule that took
     a headless record here would do the same to a qsort comparator, whose
     contract declares `void *`.
 
@@ -51,6 +51,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="STRUCTHEADLESS #1: the member at 0x14 stays raw offset arithmetic in both passes" min="2" max="2">return \*\(unsigned int \*\)\(\(int8\)a0 \+ 0x14\);</stringmatch>
+<stringmatch name="STRUCTHEADLESS #1: the member at 0x14 stays a read through the untyped pointer in both passes" min="2" max="2">return \(\(unsigned int \*\)a0\)\[5\];</stringmatch>
 <stringmatch name="STRUCTHEADLESS #2: no record is synthesized without a closed caller set" min="0" max="0">struct_</stringmatch>
 </decompilertest>
