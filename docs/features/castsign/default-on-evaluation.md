@@ -9,7 +9,7 @@ the base arm is main's own binary, and `off` is byte-identical to it (see (h)).
 |---|---|---|
 | (a) | `make test` with the new default | 675/675 PARITY OK. No assertion moved; `docs/baseline.json` untouched. |
 | (b) | `make test-stages` | Before the new stage test: 1341/1341 PARITY OK, no assertion moved. With `kuna-castsign.xml`: 1347/1347 PARITY OK. `docs/baseline-stages.json` gains only its 6 `castsign #N` keys. |
-| (c) | `make test-cli` | 237/237 with the new default; no probe moved. |
+| (c) | `make test-cli` | 237/237 with the new default; no probe moved. One run during `make rust-test` failed only the `cold-load-xref-lookup` wall-clock probe (1,188 ms against 1,100); it passed on the re-run at load 3.6. |
 | (d) | 444-slice typesweep (pinned metric, 8 projects x O0/O2/O2-noinline) | 1,615 -> 1,615 perfect; mean .3697 -> .3697; 0 moved on, 0 moved off, 0 improved, 0 worse. All 10,748 functions score identically, and the off arm matches origin/main's sweep row for row. `typesweep-report.md`. |
 | (e) | speed, interleaved min-of-15, `decompile-all --json` | fmt -O2 -0.83% min / -4.52% median; ls -O2 -0.43% / +2.34%; sort -O2 +1.06% / +1.27%; bash -O2 -1.74% / -2.47%. Worst min +1.06% (within +5%). Loads 5 to 21 while other lanes ran. `speed.json`, `speed.py`. |
 | (f) | whole-corpus `decompile-all` before/after, every hunk classified | The 45 castbench binaries: 203 functions changed. 234 declaration flips, 371 sign casts dropped on a re-declared variable, 94 widening casts dropped on assignment. 0 other lines. Six more binaries (bash O2, dash O2-noinline, cf2.elf O2-noinline on ARM Cortex-M, kmod O2-noinline, bzip2 O0, crontab O0; 6,673 functions): 55 changed. 44 flips, 176 sign casts, 94 widening casts, 0 other lines. `variables[]` is byte-identical in all six. Every dropped `lhs = (T)rhs;` was re-checked against the printed declarations: 38/38 have `lhs` an integer of `T`'s width and `rhs` an integer. `corpus-hunks.json`, `hunkclass.py`, `assigncheck.py`. |
@@ -62,6 +62,15 @@ functions are also asserted to keep `unsigned long v1;` and their casts.
   ... return i; }` is decompiled `void` (the counter is still in `rax` at `ret`),
   on `dbe854ba3` too. An ARM firmware function prints `if (a3 - 1U <= (int)v2)`,
   where the `U` suffix makes C compare unsigned, with or without this option.
+
+## Final gates (commit `9dc781bb0`)
+
+`make test` 675/675 PARITY OK; `make test-stages` 1347/1347 PARITY OK;
+`make test-cli` 237/237; `make rust-test` RC=0 (7,487 passed, 0 failed);
+`make check-spec` and `--strict` OK; `kuna catalog --check` OK; `counters
+--check` no drift; `docs/options.md` byte-fresh. The final build's castbench C
+output is byte-identical to the arm measured above, and its `--option castsign
+off` arm is byte-identical to main's.
 
 ## Output languages
 
