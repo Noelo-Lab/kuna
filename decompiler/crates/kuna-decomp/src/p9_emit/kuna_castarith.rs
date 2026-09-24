@@ -65,6 +65,9 @@ pub(crate) enum Base {
     Cast,
     /// The base is an implied cast read only here; it is retargeted to `T *`.
     Retype,
+    /// The base is an implied cast other ops read too; the new `(T *)` cast
+    /// reads that cast's input, so no cast stacks on it.
+    Recast(VarnodeId),
 }
 
 /// The `PTRADD` an `INT_ADD` becomes.
@@ -91,6 +94,36 @@ fn signed_value(off: uintb, size: int4) -> i64 {
     }
     let bits = (size * 8) as u32;
     ((off << (64 - bits)) as i64) >> (64 - bits)
+}
+
+/// The input of the implied cast `vn`, when it is an integer or a pointer a
+/// `(T *)` cast can read directly: converting it straight to `T *` keeps the
+/// bits the two casts would.
+fn implied_cast_source(data: &mut Funcdata, vn: VarnodeId) -> Option<VarnodeId> {
+    let (def, src) = {
+        let v = data.vbank().get(vn)?;
+        if !v.is_implied() || v.is_explicit() {
+            return None;
+        }
+        let def = v.get_def()?;
+        let d = data.obank().get(def)?;
+        if d.code() != OpCode::CPUI_CAST {
+            return None;
+        }
+        (def, d.get_in(0)?)
+    };
+    if data.vbank().get(src)?.is_constant() {
+        return None;
+    }
+    let t = data.vn_high_type_read_facing(src, def);
+    matches!(
+        t.get_metatype(),
+        type_metatype::TYPE_INT
+            | type_metatype::TYPE_UINT
+            | type_metatype::TYPE_UNKNOWN
+            | type_metatype::TYPE_PTR
+    )
+    .then_some(src)
 }
 
 fn cast_def_read_only_here(data: &Funcdata, vn: VarnodeId, op: OpId) -> bool {
@@ -553,6 +586,8 @@ pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
         Base::Direct
     } else if cast_def_read_only_here(data, base_vn, op) {
         Base::Retype
+    } else if let Some(src) = implied_cast_source(data, base_vn) {
+        Base::Recast(src)
     } else {
         Base::Cast
     };
@@ -580,7 +615,11 @@ pub(crate) fn apply(data: &mut Funcdata, op: OpId, plan: &Plan) -> Option<()> {
             let _ = data.vn_update_type(base_vn, Rc::clone(&plan.target));
             base_vn
         }
-        Base::Cast => {
+        Base::Cast | Base::Recast(_) => {
+            let src = match plan.base {
+                Base::Recast(src) => src,
+                _ => base_vn,
+            };
             let cast = data.new_op(1, addr);
             let cvn = data.new_unique_out(ptrsize, cast).ok()?;
             let _ = data.vn_update_type(cvn, Rc::clone(&plan.target));
@@ -588,7 +627,7 @@ pub(crate) fn apply(data: &mut Funcdata, op: OpId, plan: &Plan) -> Option<()> {
                 v.set_implied();
             }
             data.op_set_opcode_code(cast, OpCode::CPUI_CAST);
-            data.op_set_input(cast, base_vn, 0).ok()?;
+            data.op_set_input(cast, src, 0).ok()?;
             data.op_insert_before(cast, op);
             cvn
         }

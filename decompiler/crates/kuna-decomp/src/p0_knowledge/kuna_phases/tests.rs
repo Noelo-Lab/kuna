@@ -957,7 +957,6 @@ fn option_values_live_value_present_for_97() {
     // 93 -> 94: +1 for `slotptr` (live_field = slot_ptr, default-on).
     // 94 -> 95: +1 for `passthrough` (live_field = pass_through).
     // 95 -> 96: +1 for `castimplied` (live_field = cast_implied).
-    // 96 -> 97: +1 for `castarith` (live_field = cast_arith, default-on).
     assert_eq!(with_live, 97);
 }
 

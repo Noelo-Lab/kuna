@@ -330,6 +330,38 @@ fn a_base_that_is_itself_a_cast_read_only_here_is_retargeted() {
 }
 
 #[test]
+fn a_base_that_is_a_cast_other_ops_read_is_recast_from_its_input() {
+    let mut fx = Fx::new();
+    let long = fx.base(8, type_metatype::TYPE_INT);
+    let ulong = fx.base(8, type_metatype::TYPE_UINT);
+    let up = fx.ptr(ulong);
+    let t = fx.base(1, type_metatype::TYPE_UINT);
+    let tp = fx.ptr(Rc::clone(&t));
+    let x = fx.var(8, long);
+    let cast = fx.op(1, OpCode::CPUI_CAST);
+    fx.fd.op_set_input(cast, x, 0).unwrap();
+    let p = fx.fd.new_unique_out(8, cast).unwrap();
+    fx.fd.vn_update_type(p, Rc::clone(&up));
+    fx.fd.vbank_mut().get_mut(p).unwrap().set_implied();
+    let (add, out) = fx.add(p, 10, Rc::clone(&tp));
+    fx.load(out, t);
+    fx.load(p, fx.base(8, type_metatype::TYPE_UINT));
+    fx.high();
+    assert!(matches!(
+        plan(&mut fx.fd, add),
+        Ok(Plan {
+            base: Base::Recast(src),
+            ..
+        }) if src == x
+    ));
+    let base = rewritten(&mut fx, add, 10, 1, 10);
+    assert_ne!(base, p, "the shared cast is not retyped under its other reader");
+    assert_eq!(cast_input_of(&fx, base), Some(x), "no cast is stacked on the shared one");
+    assert!(Rc::ptr_eq(fx.fd.vbank().get(base).unwrap().get_type(), &tp));
+    assert!(Rc::ptr_eq(fx.fd.vbank().get(p).unwrap().get_type(), &up));
+}
+
+#[test]
 fn a_stored_address_indexes_the_stored_value_type() {
     let mut fx = Fx::new();
     let vp = fx.void_ptr();

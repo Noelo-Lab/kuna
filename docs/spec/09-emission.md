@@ -419,11 +419,31 @@ arithmetic for a non-`bool` integer one (`kuna_castarith.rs
 so does an address-like constant beside an integer that was cast to a pointer:
 `table[i]` compiles to the same `INT_ADD`, with the table as the constant and the
 subscript as the "pointer" (`decompiler/crates/kuna-decomp/src/p5_types/kuna_ptrfromuse.rs
-(constant_may_be_global_base)`). A record base is untouched because its accesses
-are already `PTRSUB`s printed as `p->field`. Upstream Ghidra prints the integer
-round trip. Pinned by `tests/stages/kuna-castarith.xml` and by the compiled
-round trip `a_pointer_plus_whole_elements_round_trips_through_the_printed_c` in
+(constant_may_be_global_base)`). A record base keeps `p->field` wherever the
+offset lands on a field, because chapter 05 already made that access a `PTRSUB`.
+An offset where the record has no field is still an `INT_ADD` here and is
+converted like any other: a read past the record's extent
+(`((unsigned int *)teb)[0x410]`, `0x1040` bytes into a TEB32 that ends before
+it) or inside a field (`((int *)&a0->field_0x10)[1]`, the upper half of an
+8-byte field). Upstream Ghidra prints the integer round trip. Pinned by
+`tests/stages/kuna-castarith.xml` and by the compiled round trip
+`a_pointer_plus_whole_elements_round_trips_through_the_printed_c` in
 `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs`.
+
+The rewrite only removes ops: a converted access costs one `CAST` or none where
+the integer form cost two. That can move one structuring decision. The tail
+duplication passes of chapter 08 (`gotoreduce`, `taildup`, `crossjumprevert`)
+run after this pass and bound the tail they copy by its op count, `CAST`s
+included, so a tail that was just over the bound can fit after the rewrite, and
+a `goto` to it becomes a duplicated `return` marked `// return-dupe`. The
+duplicate computes what the goto reached. It is rare: when this shipped, 4 of
+75,296 functions over 201 binaries changed their control flow, all of them this
+way and all through `taildup`, and with `option taildup off` both arms printed
+the same `goto`s.
+The JSON surface loses a little provenance: a subscript is a surround token and
+carries no op, as for every native subscript, so an instruction whose only
+printed ops were the add and the access through it maps to no line in
+`line_mappings` and drops out of its variable's `addresses`.
 
 **Repairs and failure mode.** Late type propagation can invalidate the pointer
 model a PTRADD/PTRSUB was built on; the driver demotes them back to raw

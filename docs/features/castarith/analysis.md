@@ -119,14 +119,57 @@ On the current base (`5458b7ab5`): 2,338 functions changed; 13,246 changed lines
 | parentheses only | 2 | `!(*(T *)(...))` vs `!((T *)p)[k]` |
 | read by hand | 48 | 12 stack-probe loop steps whose old outer cast was `(char *)` (same address), 19 stores whose element spelling differs in sign only (`int4` vs `unsigned int`) or whose old offset carried a `U` suffix, 5 assignments inside an expression (outer cast only), 4 pointer-to-array elements (`((char (**)[16])v3)[10]` is `+ 0x50`), 2 pointer compares, 1 nested subscript (`&(*(char **)(a1 + 8))[1] == &((char **)a1)[1][1]`), and 6 `(unsigned long)(long)((int *)a0)[2] % a1` where castimplied left out the inner `(long)` of the integer form (`(unsigned long)*(int *)((long)a0 + 8)`): the same conversion of an `int`, the same cast count |
 
-Nothing outside the documented effect.
+**One structuring decision moves.** The rewrite only removes ops (a converted access
+costs one `CAST` or none where the integer form cost two), and three P8 passes run
+after the cast pass and bound the tail they duplicate by its op count, `CAST`s
+included: `gotoreduce` (8 ops, all counted), `taildup` (12 printed ops,
+`kuna_taildup.rs:310`) and `crossjumprevert` (8 printed ops). A return tail just over
+the budget can fit once its casts go, and its `goto` becomes a duplicated `return`
+(`// return-dupe`). taildup preserves the value by design: the copy runs the same ops
+on the one path that reached the goto. `structural.py` (beside this file) compares
+each function's control-flow signature (gotos, labels, return-dupe tails, returns,
+`if`/`else`/loops/`switch`/`break`/`continue`) between the arms:
+
+| sweep | binaries | functions | control flow changed |
+|---|---:|---:|---:|
+| castbench full (the 45 above) | 45 | 20,230 | 0 |
+| disjoint: kmod dash bzip2 cronie dpkg libedit sysvinit zlib libbsd libacl libselinux nuttx freertos minipig mydoom x0r-usb libexpat base-passwd e2fsprogs rsyslog iproute2 bash, x O0/O2/O2-noinline | 156 | 55,066 | 4 |
+
+All four are this one shape (a `goto` and its label gone, one more duplicated
+`return`), and all four are taildup's: with `--option taildup off` both arms print the
+same gotos.
+
+| function | castarith off | castarith on | taildup off, either arm |
+|---|---|---|---|
+| kmod -O2-noinline `sub_b200` | 1 goto | 0 gotos, 1 return-dupe | 1 goto |
+| rsyslogd -O2 `sub_69b50` | 1 goto, 2 return-dupe | 0 gotos, 3 return-dupe | 3 gotos |
+| rsyslogd -O2-noinline `sub_69570` | 1 goto, 2 return-dupe | 0 gotos, 3 return-dupe | 3 gotos |
+| libedit -O0 `sub_1fe22` | 4 gotos, 1 return-dupe | 3 gotos, 2 return-dupe | 4 gotos, 1 return-dupe |
+
+kmod `sub_b200`, off: `if (v1 <= v3) goto label_b287;` ... `label_b287: ...`; on: `if
+(v1 <= v3) { v2 = sub_e920(((unsigned int **)a0)[8]); // return-dupe ... return 0; }`.
+Making the P8 budgets ignore `CAST` ops would remove this coupling, but that is a
+change to taildup's own policy, for its own PR.
+
+**castimplied sees less through a subscript.** castimplied (#721) drops a cast whose
+conversion C performs anyway, and it reads the C type of a LOAD from a pointer that is
+a `CAST` or an explicit variable. A converted load reads through a `PTRADD`, so a cast
+castimplied used to drop stays: kmod `0x7a90` `(int)*(unsigned char *)((long)a0 +
+0x11)` becomes `(int)(unsigned int)((unsigned char *)a0)[0x11]` (8 lines in kmod, 2 in
+nuttx), sort `0x486b` keeps `(unsigned long)(long)((int *)a0)[2]` (the 6 read-by-hand
+lines above). Each site stays cast-neutral, since its `(long)` goes too, and the value
+is the same. Follow-up: castimplied's `operand_type` can learn that `PTRADD(CAST(T *))`
+reads a `T`.
 
 No function signature, declaration, parameter or JSON variable type changes (12
 binaries, 6,355 functions: 39,262 variables and 11,219 parameters in both arms, 0
-signature differences). Three functions' JSON `variables[].addresses` lose one
-instruction: a load printed as a subscript carries no token of its own (upstream
-`PrintC::opLoad` under array notation), so an instruction that performs only that load
-drops out of the variable's use-address list. Types and names are unchanged.
+signature differences). The JSON surface loses a little provenance: a subscript is a
+surround token and carries no op (upstream `PrintLanguage::emitOp`, the same for every
+native subscript), so an instruction whose only printed ops were the add and the
+access through it drops out of `line_mappings` (it maps to no C line; dash -O2
+`sub_12b50` `0x12e16 mov 0x10(%rdi),%r15`, line 66 `[0x12e0f, 0x12e16, 0x12e1a]` ->
+`[0x12e0f, 0x12e1a]`) and out of its variable's `variables[].addresses`.
+SURFACE_TABLE Types and names are unchanged.
 
 ## 6. Measurements
 

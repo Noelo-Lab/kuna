@@ -59,6 +59,18 @@ KEEP void rd_rec(struct rec *r)
     sink(*(unsigned short *)((char *)r + 0x1a));
     sink(*(unsigned int *)((char *)r + 0x14));
 }
+KEEP void wide_cmp(void *p, int a)
+{
+    sink(a <= *(unsigned char *)((char *)p + 0x11));
+    sink(a > *(signed char *)((char *)p + 0x13));
+}
+KEEP void wide_idx(void *p)
+{
+    sink((long)(int)*(unsigned short *)((char *)p + 0x48) << 4);
+    sink((long)(int)*(short *)((char *)p + 0x4a) * 3);
+}
+struct hold { long a; long b; };
+KEEP void via_int(struct hold *h) { sink(*(unsigned char *)(h->b + 10)); sink((long)*(unsigned long *)h->b); }
 /* main */
 KEEP void *getv(void) { return gbuf + 8; }
 int main(void)
@@ -87,6 +99,12 @@ int main(void)
     CALL(span, buf, buf + 0x50);
     CALL(walk, buf, buf + 0xc8);
     CALL(rd_rec, buf);
+    CALL(wide_cmp, buf, 100);
+    CALL(wide_cmp, buf, -40);
+    CALL(wide_idx, buf);
+    static struct hold h;
+    h.b = (long)(buf + 0x30);
+    CALL(via_int, &h);
     for (int i = 0; i < 0x20; i += 4)
         sink(*(int *)(buf + i));
     return 0;
