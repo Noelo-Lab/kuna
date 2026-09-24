@@ -235,13 +235,9 @@ impl ImpliedCasts {
         if !preserves(from, &target) {
             return false;
         }
-        // The operand's range, when it does not depend on how C types the
-        // printed operand: a type the text states, or a truth value (0 or 1 under
-        // any integer type).
-        let settled = src.known().or((ir_src.get_metatype() == type_metatype::TYPE_BOOL).then_some(&ir_src));
         let (reader, value) = through_copies(fd, read_op, outvn);
         match reader {
-            None => p.is_statement(op) && self.assigns_to(p, fd, outvn, &want, settled),
+            None => p.is_statement(op) && self.assigns_to(p, fd, outvn, &want, &target),
             Some(r) => {
                 let Some(ro) = fd.obank().get(r) else { return false };
                 match ro.code() {
@@ -252,7 +248,7 @@ impl ImpliedCasts {
                     }
                     OpCode::CPUI_COPY => p.is_statement(r) && ro.get_out().is_some_and(|lhs| {
                         fd.vbank().get(lhs).is_some_and(|v| v.is_explicit())
-                            && self.assigns_to(p, fd, lhs, &want, settled)
+                            && self.assigns_to(p, fd, lhs, &want, &target)
                     }),
                     _ => false,
                 }
@@ -360,22 +356,16 @@ impl ImpliedCasts {
 
     /// May `lhs = (want)e;` print as `lhs = e;`?  When `lhs` is declared `want`,
     /// always (the caller has already checked the conversion preserves `e`).  When
-    /// `castsign` re-signed `lhs`'s declaration, also when `e`'s range is settled
-    /// (`known`: a type the text states, or a truth value) and the declared type
-    /// holds every value of it: C then converts `e` straight to the value the cast
-    /// would have produced.
-    fn assigns_to(
-        &self,
-        p: &dyn PrintedForms,
-        fd: &Funcdata,
-        lhs: VarnodeId,
-        want: &str,
-        known: Option<&Rc<Datatype>>,
-    ) -> bool {
+    /// `castsign` re-signed `lhs`'s declaration, also when the declared type is as
+    /// wide as the cast's: a conversion to an N-bit integer depends only on the
+    /// value modulo 2^N (C11 6.3.1.3, and gcc and clang define the signed case
+    /// that way), so converting `e` straight to the declaration yields the bits
+    /// the cast followed by the assignment's conversion would.
+    fn assigns_to(&self, p: &dyn PrintedForms, fd: &Funcdata, lhs: VarnodeId, want: &str, target: &Datatype) -> bool {
         if self.declared_spelling(p, fd, lhs).as_deref() == Some(want) {
             return true;
         }
-        known.is_some_and(|s| self.resigned_type(p, fd, lhs).is_some_and(|d| preserves(s, &d)))
+        self.resigned_type(p, fd, lhs).is_some_and(|d| d.get_size() == target.get_size())
     }
 
     /// The type `castsign` re-declared `vn`'s variable as, when that is the

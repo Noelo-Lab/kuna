@@ -317,7 +317,16 @@ spelling. The arms of `c ? a : b` do not count: their type is the two arms'
 common type, not the destination's. The third is `return` from a function whose
 printed return type is that spelling. The declarations are recorded as the
 printer writes them (the header's return type and parameters, each local's
-declaration line), so the comparison is on the text C will see. An implied
+declaration line), so the comparison is on the text C will see. One more
+destination counts when `castsign` is on (§9.3): the left side of `lhs = e;`
+whose declaration `signedness` re-signed, when the declared type is as wide as
+the cast's target (`kuna_castimplied.rs (ImpliedCasts::assigns_to)`). A
+conversion to an N-bit integer depends only on the value modulo 2^N (C11
+6.3.1.3 for the unsigned case; gcc and clang define the signed case the same
+way), so `lhs = e;` stores the bits `lhs = (T)e;` stored whatever `e`'s C type
+is. Without it, re-declaring `unsigned long v18;` as `long v18;` would bring
+back the `(unsigned long)` this rule dropped from `v18 = dat_dd86c << 3;`
+because the spellings used to match. An implied
 COPY prints as its operand and is looked through (`kuna_castimplied.rs
 (through_copies)`). `truncarg`'s argument casts and `boolbyte`'s
 `(bool)(unsigned char)` are never candidates, and nothing is dropped for an
@@ -977,6 +986,64 @@ type now declared is a no-op token and is dropped, which is the visible half of
 the change: `if (0 <= (int)v1)` becomes `if (0 <= v1)`. The drop is authorized
 only by the declaration the emitter actually wrote, so a mapped-symbol, array or
 collapse override that takes the declared type back also takes the cast back.
+
+**(kuna) castsign — the same rule for frame locals and pointer indexes.**
+`signedness` leaves three places alone where the program compares a value only
+signed, and those account for a quarter of the unsigned-to-signed casts kuna
+printed in the 2026-09-23 cast census: `unsigned long v15; // stack - 0x60` …
+`if (0 <= (long)v15)`. First, every high mapped onto a Symbol is skipped, and a
+stack local *is* mapped onto its frame Symbol, at offset 0. Second, a
+`PTRADD` index and a conversion to a pointer veto the variable. Third, a body
+local one of whose members is an input (a slot or register read before any
+write) is skipped as if it were a prototype parameter. With the option
+`castsign` on, the pass admits all three
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_castsign.rs`,
+consulted from `kuna_typeround.rs (plan)`), and the declaration and the casts
+it makes no-ops change exactly as they do for a register local.
+
+A frame local is admitted only when its high covers its Symbol whole: offset 0,
+a Symbol type (if any) that is a plain integer of the declaration's width, and
+no other high in the function printing the same name
+(`kuna_castsign.rs (whole_slot_local)`). The last condition is what keeps an
+address-taken local out. `&v15` is a high of its own bound to the same name,
+and re-declaring `v15` would change the C type of `&v15` under a pointer that
+was typed for the old declaration. A split slot is kept out by the same test.
+The declaration line is the one the printer writes from that high. The frame
+Symbol's type is not changed, so the `variables` JSON surface still reports the
+type inference chose for the slot. A `PTRADD` index at pointer width and a
+conversion to a pointer of the value's own width are neutral readers
+(`kuna_castsign.rs (neutral_reader)`). `p[v]` computes `p + v * size` modulo
+the address width under either declaration, and the signed reading is the one
+that keeps a negative index inside C's defined behaviour. gcc and clang convert
+a same-width integer to a pointer by keeping its bits. A narrower index is
+widened by an explicit `INT_SEXT`/`INT_ZEXT` before the `PTRADD`, and that
+extension still constrains the variable. The input-member case needs no test
+of its own: the printer declares only body locals, and `retain_sole_named`
+drops every planned high it does not declare, signature parameters included.
+
+A decision any of these relaxations made may only declare the value **signed**.
+The census counts 20 signed-to-unsigned casts on locals against 526 the other
+way, and IDA's opposite bias costs it 587 casts, so a mirror rule would buy
+little and could overshoot. A value some reader needs unsigned keeps its
+declaration: an unsigned comparison, a logical shift right, unsigned `/` or `%`,
+or a zero-extension. That includes a zero-extension into a 64-bit return or a
+varargs slot, where the high bits are read. Two uses were measured as unsigned
+evidence and rejected. One is an argument to a type-locked `size_t` parameter:
+gnulib's `idx_t` is signed and is passed to `realloc` and `memcpy` everywhere,
+and counting such arguments cost 46 casts over the census corpus while getting
+`xpalloc`'s `nbytes` wrong. The other is a store through an unsigned pointer,
+whose pointee type inference usually took from the stored value itself. A
+same-width conversion computes the same bits in both cases, so neither changes
+what the C computes. Re-declaring the left side of an assignment would lose a
+widening `castimplied` dropped because the spellings matched, so that rule also
+accepts a re-signed declaration of the cast's width (§9.1). With the option off
+the output is byte-identical to `signedness` alone. Pinned by
+`tests/stages/kuna-castsign.xml` (pass 1 off, pass 2 on: a stack index
+compared signed and used as `a0[v1]`; a logically shifted value and an
+address-taken stack value stay unsigned in both passes) and by a compiled round
+trip (`kuna-cli/tests/decompile_all_cli.rs`,
+`a_signed_only_variable_round_trips_through_the_printed_c`) over gcc and clang
+at `-O0` and `-O1`.
 
 What the rule reads is the compiler's instruction selection, not the source. The
 emitted C keeps computing what the binary computes, but where a compiler proved
