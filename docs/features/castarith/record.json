@@ -228,7 +228,7 @@
   "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "make_rust_test": "RUST_TEST_RC=0 (7,505 passed, 0 failed; 422 test binaries); lane started 01:32:37Z after the last code change (7d2dfc716, 01:24:27Z)"
+  "make_rust_test": "RUST_TEST_RC=0 (7,506 passed, 0 failed; 423 test results); lane started 03:17:28Z after the last code change (4554ae4a6, 03:17:14Z)"
  },
  "default_on_evaluation": {
   "verdict": "flipped: castarith ships on",
