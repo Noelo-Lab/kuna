@@ -296,7 +296,8 @@
  "parity": {
   "datatests": "675/675 PARITY OK, no assertion moved",
   "stages": "1349/1349 PARITY OK; 0 existing assertions moved, 8 new castsign keys (#7 and #8: a type-locked slot keeps its declaration and cast)",
-  "test_cli": "237/237"
+  "test_cli": "237/237",
+  "rust_test": "RUST_TEST_RC=0, 7,484 passed, 0 failed (commit 5a063941e)"
  },
  "soundness": {
   "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_signed_only_variable_round_trips_through_the_printed_c: castsign_{gcc,clang}_O{0,1}_x86_64 printed functions, option off and on, compiled by gcc and clang: all print the binary's output; both must-stay-unsigned functions keep `unsigned long v1;` and their casts",

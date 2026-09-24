@@ -74,14 +74,14 @@ console `map addr` lock.
   on `dbe854ba3` too. An ARM firmware function prints `if (a3 - 1U <= (int)v2)`,
   where the `U` suffix makes C compare unsigned, with or without this option.
 
-## Final gates (commit `9dc781bb0`)
+## Final gates (commit `5a063941e`, the type-lock check; later commits are docs only)
 
-`make test` 675/675 PARITY OK; `make test-stages` 1347/1347 PARITY OK;
-`make test-cli` 237/237; `make rust-test` RC=0 (7,487 passed, 0 failed);
-`make check-spec` and `--strict` OK; `kuna catalog --check` OK; `counters
---check` no drift; `docs/options.md` byte-fresh. The final build's castbench C
-output is byte-identical to the arm measured above, and its `--option castsign
-off` arm is byte-identical to main's.
+`make test` 675/675 PARITY OK; `make test-stages` 1349/1349 PARITY OK;
+`make test-cli` 237/237; `make rust-test` RC=0 (7,484 passed, 0 failed; the
+four arithmetic-only unit tests were replaced by the locked-declaration CLI
+test); `make check-spec` and `--strict` OK; `kuna catalog --check` OK;
+`counters --check` no drift; `docs/options.md` byte-fresh. The castbench C
+output is byte-identical to the arm measured above.
 
 ## Output languages
 
