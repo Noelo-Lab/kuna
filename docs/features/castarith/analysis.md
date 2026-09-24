@@ -107,17 +107,17 @@ line (`((T *)X)[k] -> *(T *)((long)X + k*sizeof T)`, `&((T *)X)[k] -> (T *)((lon
 K)`, a bare `X[k]` checked against `X`'s printed declaration) and requires the old line
 back:
 
-2,344 functions changed; 13,341 changed lines.
+On the current base (`5458b7ab5`): 2,338 functions changed; 13,246 changed lines.
 
 | class | lines | reading |
 |---|---:|---|
-| exact reverse | 13,084 | the rewrite, undone, gives the old line |
-| assignment, outer cast | 131 | `v = (A *)((long)p + K)` vs `v = &((B *)p)[k]`: same address, only the assigned expression's pointer type |
+| exact reverse | 12,986 | the rewrite, undone, gives the old line |
+| assignment, outer cast | 130 | `v = (A *)((long)p + K)` vs `v = &((B *)p)[k]`: same address, only the assigned expression's pointer type |
 | element signedness | 63 | `*(short *)(...) = x` vs `((unsigned short *)p)[k] = x`: a store of the same bytes |
 | bare base, checked against its declaration | 12 | `v27[4]` for `unsigned long *v27`, `&v7[2]` for `char *v7` |
 | void, in bytes | 5 | `(void *)((long)v + 1)` vs `&((char *)v)[1]` |
 | parentheses only | 2 | `!(*(T *)(...))` vs `!((T *)p)[k]` |
-| read by hand | 44 | 12 stack-probe loop steps whose old outer cast was `(char *)` (same address), 20 stores whose element spelling differs in sign only (`int4` vs `unsigned int`), 5 assignments inside an expression (outer cast only), 4 pointer-to-array elements (`((char (**)[16])v3)[10]` is `+ 0x50`), 2 pointer compares, 1 nested subscript (`&(*(char **)(a1 + 8))[1] == &((char **)a1)[1][1]`) |
+| read by hand | 48 | 12 stack-probe loop steps whose old outer cast was `(char *)` (same address), 19 stores whose element spelling differs in sign only (`int4` vs `unsigned int`) or whose old offset carried a `U` suffix, 5 assignments inside an expression (outer cast only), 4 pointer-to-array elements (`((char (**)[16])v3)[10]` is `+ 0x50`), 2 pointer compares, 1 nested subscript (`&(*(char **)(a1 + 8))[1] == &((char **)a1)[1][1]`), and 6 `(unsigned long)(long)((int *)a0)[2] % a1` where castimplied left out the inner `(long)` of the integer form (`(unsigned long)*(int *)((long)a0 + 8)`): the same conversion of an `int`, the same cast count |
 
 Nothing outside the documented effect.
 
@@ -131,23 +131,28 @@ drops out of the variable's use-address list. Types and names are unchanged.
 ## 6. Measurements
 
 **castbench full** (45 binaries x O0/O2/O2-noinline, the 4,815 functions kuna and IDA
-both emit; main `dbe854ba3` arm vs this build):
+both emit; both arms of this build, `--option castarith off` vs default; the off arm is
+byte-identical to a build of the base):
 
 | | casts | /kloc | vs IDA |
 |---|---:|---:|---:|
 | IDA | 37,821 | 155.4 | 1.000 |
-| main | 45,126 | 236.8 | 1.193 |
-| **castarith** | **40,138** | **210.6** | **1.061** |
+| main `5458b7ab5` (castimplied landed) | 43,673 | 229.2 | 1.155 |
+| **castarith on `5458b7ab5`** | **38,709** | **203.1** | **1.023** |
+| main `dbe854ba3` (measured before the rebase) | 45,126 | 236.8 | 1.193 |
+| castarith on `dbe854ba3` | 40,138 | 210.6 | 1.061 |
 
--4,988 casts (-11.1%), lines unchanged (190,590). 954 functions have fewer casts, **0
-have more**, 3,861 unchanged. Per level: O0 1.234 -> 1.074, O2 1.208 -> 1.097,
-O2-noinline 1.135 -> 1.009. The shape moved is exactly the census's: `(i64) <var>`
--4,918, and each `(T*) <paren>` becomes a `(T*) <var>`.
+On the current base: -4,964 casts (-11.4%), lines unchanged (190,585). 946 functions
+have fewer casts, **0 have more**, 3,869 unchanged. Per level against IDA: O0 1.198 ->
+1.039, O2 1.168 -> 1.057, O2-noinline 1.096 -> 0.971 (below IDA). The shape moved is
+exactly the census's: `(i64) <var>` about -4,900, and each `(T*) <paren>` becomes a
+`(T*) <var>`.
 
 **444-slice typesweep** (coreutils grep gzip diffutils bzip2 findutils tar shadow x
 O0/O2/O2-noinline, metric pinned to decbench `625e892` via `final-c/pindb.py`, both arms
-the same binary, `--option castarith off` vs default): 10,748/10,748 functions, **1,609 ->
-1,609 perfect (14.97%), mean .3688 -> .3688, 0 improved, 0 worse, 0 on or off perfect**.
+the same binary, `--option castarith off` vs default): on `5458b7ab5`, 10,748/10,748
+functions, **1,615 -> 1,615 perfect (15.03%), mean .3697 -> .3697, 0 improved, 0 worse, 0
+on or off perfect** (before the rebase, on `dbe854ba3`: 1,609 -> 1,609, the same zeros).
 The rewrite runs after every type and variable is final and changes no declaration, so
 this is the expected null result; the cast count is the target.
 
@@ -162,4 +167,7 @@ file; other lanes and a workspace test run shared the box, load 6-41):
 | sort -O2 | 14,624.5 | 14,711.3 | +0.59% | +1.05% |
 | bash -O2 | 89,838.4 | 92,482.3 | +2.94% | +5.65% |
 
-Worst min delta +2.94% (bash -O2, measured at load 20-41), within the +5% budget.
+The bash -O2 run shared the box with a workspace test run (load 20-41); re-measured alone
+at load 4-9 (`speed-rerun.json`) it is **-0.16%** (min) and -0.17% (median of ratios). Worst
+min delta over the four binaries: +0.59% (sort -O2); budget +5%. Measured on the build
+before the rebase onto `5458b7ab5`; the rebase changed no line of the rewrite.

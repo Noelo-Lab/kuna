@@ -53,19 +53,19 @@
  },
  "corpus_sweep": {
   "method": "castbench full (45 binaries: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find x O0/O2/O2-noinline), kuna decompile-all both arms of one build (--option castarith off vs default); every changed line classified by docs/features/castarith/hunks.py",
-  "off_arm_vs_main_dbe854ba3": "byte-identical (45/45 files)",
-  "functions_changed": 2344,
-  "lines_changed": 13341,
+  "base": "origin/main 5458b7ab5 (after castimplied #721); the off arm is byte-identical to a build of the base (45/45 files); also measured on dbe854ba3 before the rebase (2,344 functions, 13,341 lines, same classes)",
+  "functions_changed": 2338,
+  "lines_changed": 13246,
   "classes": {
-   "exact_reverse": 13084,
-   "assignment_outer_cast": 131,
+   "exact_reverse": 12986,
+   "assignment_outer_cast": 130,
    "element_signedness_store": 63,
    "bare_base_checked_against_declaration": 12,
    "void_in_bytes": 5,
    "parentheses_only": 2,
-   "read_by_hand": 44
+   "read_by_hand": 48
   },
-  "read_by_hand": "12 stack-probe loop steps (old outer cast (char *), same address); 20 stores whose element spelling differs in sign only (int4 vs unsigned int); 5 assignments inside an expression (outer cast only); 4 pointer-to-array elements ((char (**)[16])v3)[10] == +0x50; 2 pointer compares; 1 nested subscript",
+  "read_by_hand": "12 stack-probe loop steps (old outer cast (char *), same address); 19 stores whose element spelling differs in sign only (int4 vs unsigned int) or whose old offset carried a U suffix; 5 assignments inside an expression (outer cast only); 4 pointer-to-array elements ((char (**)[16])v3)[10] == +0x50; 2 pointer compares; 1 nested subscript; 6 (unsigned long)(long)((int *)a0)[2] % a1 where castimplied left out the inner (long) of the integer form (same conversion, same cast count)",
   "hunks_outside_documented_effect": 0,
   "json_variables": "12 binaries (fmt ls sort du O0+O2, bash O2, kmod O2-noinline, bzip2 O0, gzip O2), 6,355 functions: variables 39,262 -> 39,262, parameters 11,219 -> 11,219, signatures 0 differ, variable types 0 differ; 3 functions' variables[].addresses lose one instruction (a load printed as a subscript carries no token of its own, upstream PrintC::opLoad under array notation)",
   "rust_output": "identical on/off (C output only)"
@@ -90,44 +90,47 @@
    "casts": 37821,
    "per_kloc": 155.4
   },
-  "main_dbe854ba3": {
-   "casts": 45126,
-   "per_kloc": 236.8,
-   "vs_ida": 1.193
+  "main_5458b7ab5": {
+   "casts": 43673,
+   "per_kloc": 229.2,
+   "vs_ida": 1.155
   },
   "castarith": {
-   "casts": 40138,
-   "per_kloc": 210.6,
-   "vs_ida": 1.061
+   "casts": 38709,
+   "per_kloc": 203.1,
+   "vs_ida": 1.023
   },
-  "delta": -4988,
-  "delta_pct": -11.05,
-  "functions_fewer": 954,
-  "casts_fewer": 4988,
+  "delta": -4964,
+  "delta_pct": -11.37,
+  "functions_fewer": 946,
+  "casts_fewer": 4964,
   "functions_more": 0,
-  "functions_unchanged": 3861,
+  "functions_unchanged": 3869,
   "per_level_vs_ida": {
-   "O0": "1.234 -> 1.074",
-   "O2": "1.208 -> 1.097",
-   "O2-noinline": "1.135 -> 1.009"
+   "O0": "1.198 -> 1.039",
+   "O2": "1.168 -> 1.057",
+   "O2-noinline": "1.096 -> 0.971"
   },
+  "before_rebase": "main dbe854ba3 45,126 (1.193x IDA) -> 40,138 (1.061x); 954 fewer, 0 more",
   "shape": "(i64) <var> -4,918; each (T*) <paren> becomes (T*) <var>",
   "top_more_cast_functions": "none"
  },
  "benchmark": {
   "metric": "decbench type_match pinned to 625e892 (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same binary",
   "slice_set": "coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline (444 slices, 10,748 functions)",
-  "perfect": "1609 -> 1609",
-  "mean": ".3688 -> .3688",
+  "base": "origin/main 5458b7ab5",
+  "perfect": "1615 -> 1615",
+  "mean": ".3697 -> .3697",
   "improved": 0,
   "worse": 0,
   "onto_perfect": 0,
   "off_perfect": 0,
   "per_level": {
-   "O0": "1104 -> 1104",
+   "O0": "1110 -> 1110",
    "O2": "89 -> 89",
    "O2-noinline": "416 -> 416"
   },
+  "before_rebase": "dbe854ba3: 1609 -> 1609, mean .3688 -> .3688, 0 improved, 0 worse",
   "note": "presentation-only: runs after every type and variable is final"
  },
  "speed": {
@@ -164,33 +167,42 @@
     "delta_median_of_ratios_pct": 5.65,
     "off_min": 89838.4,
     "on_min": 92482.3
+   },
+   {
+    "label": "bash_O2 (re-measured alone, load 4-9)",
+    "n": 15,
+    "delta_min_pct": -0.16,
+    "delta_median_of_ratios_pct": -0.17,
+    "off_min": 85499.3,
+    "on_min": 85366.3
    }
   ],
   "budget_pct": 5.0,
-  "worst_delta_min_pct": 2.94,
+  "note": "measured on the build before the rebase onto 5458b7ab5; the rebase changed no line of the rewrite",
+  "worst_delta_min_pct": 0.59,
   "within_budget": true
  },
  "gates": {
-  "measured_on": "feat/castarith on origin/main dbe854ba3",
+  "measured_on": "feat/castarith rebased on origin/main 5458b7ab5",
   "make_test": "datatests: 675/675 assertions passed, PARITY OK (default on)",
-  "make_test_stages": "datatests: 1337/1337 assertions passed, PARITY OK (baseline re-recorded: 8 new castarith keys; 4 keys renamed with their assertion, see default_on_evaluation.b_stages)",
-  "make_test_cli": "tests/cli: 236/236 passed (6 probes updated, see default_on_evaluation.c_test_cli)",
+  "make_test_stages": "datatests: 1349/1349 assertions passed, PARITY OK (baseline re-recorded on 5458b7ab5: 8 new castarith keys; 4 keys renamed with their assertion, see default_on_evaluation.b_stages)",
+  "make_test_cli": "tests/cli: 237/237 passed (6 probes updated, see default_on_evaluation.c_test_cli)",
   "check_spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
   "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "make_rust_test": "RUST_TEST_RC=0 (7,489 passed, 0 failed; 423 test binaries) on the final tree"
+  "make_rust_test": "RUST_TEST_RC=0 (7,504 passed, 0 failed; 423 test binaries) on the tree rebased onto 5458b7ab5"
  },
  "default_on_evaluation": {
   "verdict": "flipped: castarith ships on",
   "a_datatests": "675/675 PARITY OK with the default on; no assertion moved, no per-test opt-out",
   "b_stages": "16 assertions of other options pinned the integer round trip and now read the pointer form, each value-identical: CALLEEVOTE #1, cspecprotos #5, EXCLUSIVEARGUSE #5, STRUCTSYNTH-NEST #1, FMTSTATIC #35, truncarg #8, truncarg #9, inputparamgap #4, FUNCPTRALIGN #2, PEBNAMES #8, LIBCTYPES #34, iteboolean #3, PEBNAMES-X86 #11, PEBNAMES-X86 #15, STRUCTSYNTH-LOCALS #1, ptrfromuse #6; the names of PEBNAMES #8, PEBNAMES-X86 #11/#15 ('stays an integer addition' -> 'stays an offset from it') and ptrfromuse #6 changed with them; the new kuna-castarith.xml sets `option castarith off` in pass 1",
   "c_test_cli": "6 probes pinned the old spelling of a field access that another option's decision is about (a void * parameter left open, a wide store kept whole): calleevote-fields-reads-a-closed-getters-lone-field, calleevote-leaves-a-mips-callback-open, calleevote-leaves-a-relocatable-objects-callbacks-open, calleevote-reads-a-table-in-code-at-address-zero, calleevote-types-takes-what-every-caller-passes, protoorder-types-keeps-a-wide-store-whole; regexes follow the new rendering, probe ids re-derived; 236/236",
-  "d_typesweep": "444 slices: 0 improved, 0 worse, perfect 1609 -> 1609, 0 on or off perfect",
-  "e_speed": "worst min delta +2.94% (bash -O2, min-of-15 at load 20-41; fmt -0.24%, ls -0.35%, sort +0.59%); budget +5%",
+  "d_typesweep": "444 slices on 5458b7ab5: 0 improved, 0 worse, perfect 1615 -> 1615, 0 on or off perfect (dbe854ba3: 1609 -> 1609)",
+  "e_speed": "fmt -0.24%, ls -0.35%, sort +0.59%, bash +2.94% at load 20-41 and -0.16% re-measured alone at load 4-9 (min-of-15); worst +0.59% at a quiet moment; budget +5%",
   "f_hunks": "45 binaries (castbench full), 2,344 functions, 13,341 lines: every line in the documented classes (hunks.py reverse-applies the rewrite; 44 read by hand); no signature, declaration, parameter or JSON variable type moves",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope; reliable is the defaults",
-  "h_castbench": "45,126 -> 40,138 casts on 4,815 shared functions (-11.1%), 1.193x -> 1.061x IDA; 954 functions fewer, 0 more",
+  "h_castbench": "on 5458b7ab5: 43,673 -> 38,709 casts on 4,815 shared functions (-11.4%), 1.155x -> 1.023x IDA; 946 functions fewer, 0 more",
   "workspace_tests": "4 workspace tests pinned the old spelling and follow it: decompile_all_cli a_load_is_not_printed_after_a_store_into_its_bytes (its compiled round trip passes on the new output) and verify_dwarfstructs nested_struct_members_resolve / union_keeps_every_member_not_just_the_first / same_name_different_size_aggregates_both_survive (gate-off raw reads)"
  }
 }
