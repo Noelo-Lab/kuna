@@ -1,7 +1,9 @@
 //! The token source map ([`kuna_console::inspect::FuncDetail`]) over every
 //! function of the browser and loader fixtures, in C and in Rust: the tokens
 //! rebuild the code exactly, asking for them leaves the code byte-identical,
-//! and every instruction a token names is one its line maps to.
+//! every instruction a token names is one its line maps to, and every mapped
+//! instruction inside the function's listing ([`kuna_console::inspect::function_rows`])
+//! starts a row of it.
 //!
 //! Needs the built `.sla` specs; without them each fixture prints a skip.
 
@@ -9,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use kuna_console::engine::{bootstrap_from_image, ConsoleProgram};
+use kuna_console::inspect::{function_rows, FUNCTION_ROW_CAP};
 use kuna_console::project::{decompile_targets_with, DecompileOptions, FuncResult};
 use kuna_decomp::kuna_srcmap::verify;
 use kuna_decomp::prettyprint::TokenKind;
@@ -51,7 +54,7 @@ fn batch(
 }
 
 fn check(binary: &str, language: Option<&str>) -> usize {
-    let (Some((_, plain)), Some((_, mapped))) =
+    let (Some((_, plain)), Some((prog, mapped))) =
         (batch(binary, language, false), batch(binary, language, true))
     else {
         return 0;
@@ -86,6 +89,14 @@ fn check(binary: &str, language: Option<&str>) -> usize {
                     t.line,
                     lines.get(&t.line)
                 );
+            }
+        }
+        let (rows, _) = function_rows(&prog, m.byte_address, m.size.max(0) as u64, FUNCTION_ROW_CAP);
+        if let (Some(first), Some(last)) = (rows.first(), rows.last()) {
+            let span = first.addr..last.addr + last.size;
+            let starts: BTreeSet<u64> = rows.iter().map(|r| r.addr).collect();
+            for address in lines.values().flatten().filter(|a| span.contains(a)) {
+                assert!(starts.contains(address), "{at}: 0x{address:x} starts no listed row");
             }
         }
         checked += 1;
