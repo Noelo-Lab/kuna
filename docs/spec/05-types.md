@@ -1186,8 +1186,8 @@ of a record array. The bytes before the first access become the same
 `undefined1` filler a hole becomes, so the exported header still puts every
 field at its own offset. It is the common shape of a record a function reads only partly: `ls`
 `-O0`'s `sub_53e7` reads `struct fileinfo`'s `stat.st_mode`, `linkmode` and
-`linkok` at 0x30, 0xac and 0xb9 and nothing at 0, and printed each read as two
-casts over a `void *` (`*(unsigned int *)((long)a0 + 0xac)`); `statx_to_stat`
+`linkok` at 0x30, 0xac and 0xb9 and nothing at 0, and prints each read as a
+cast of a `void *` (`((unsigned int *)a0)[0x2b]`); `statx_to_stat`
 reads eighteen members of a `struct statx` and not `stx_mask`. Over the 45
 castbench binaries (x86-64 coreutils, grep, gzip, diffutils, tar and findutils at
 `-O0`, `-O2` and `-O2 -fno-inline`) 1,238 parameters were declined for this
