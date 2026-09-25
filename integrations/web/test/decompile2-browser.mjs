@@ -101,6 +101,10 @@ try {
   if (engineHasInspect) {
     assert.match(await text('#asmcode .d2-as[data-line="5"]'), /^5v1 = sum_to\(add\(argc,3\)\);$/, 'each C line heads the instructions it became');
     assert.equal(await count('#asmcode .d2-as[data-role="prologue"]'), 1, 'the prologue has one "Function setup" heading');
+    assert.deepEqual(await page.call(() => {
+      const row = document.getElementById('a-0x11a4');
+      return [row.querySelector('.am').textContent, row.querySelector('.ao').textContent, row.title];
+    }), ['mov', 'dword ptr [rbp - 0x14], edi', 'MOV dword ptr [RBP + -0x14],EDI'], 'easy spelling on screen, the exact text in the title');
     assert.match(card, /Line 5 → 2 instructions \+6 that set it up/, 'the card counts the inferred set-up');
     assert.ok(await count('#asmcode .d2-ar[data-inferred="1"][data-band="5"]') === 6, 'the argument set-up rows share line 5\'s band, dashed');
     assert.ok(await count('#asmcode .d2-ar[data-role="prologue"]') === 6);

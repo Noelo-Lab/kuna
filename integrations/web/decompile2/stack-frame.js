@@ -175,11 +175,12 @@ export function renderFrame(frame, { selectedSym = null } = {}) {
       `<td class="off" title="${escapeHtml(entryOffset(s.offset))}">${escapeHtml(belowText(s.offset))}</td>` +
       `<td class="slot"><div class="sl"><span class="sn">${escapeHtml(name)}</span>` +
       `${named && s.type ? `<span class="st">${escapeHtml(s.type)}</span>` : ''}` +
-      `${note ? `<span class="sa">${escapeHtml(note)}</span>` : ''}` +
+      `${note ? `<span class="sa" title="${escapeHtml(note)}">${escapeHtml(note)}</span>` : ''}` +
       `<span class="sz">${s.size} byte${s.size === 1 ? '' : 's'}</span></div></td></tr>`;
   }
   const notes = callouts(frame).map((n) => `<div class="d2callout">${escapeHtml(n)}</div>`).join('');
   return '<p class="d2-stacklede">Higher addresses are at the top. Each box is one thing the function keeps on the stack.</p>' +
-    '<table class="d2frame"><thead><tr><th class="off">Bytes below the return address</th><th>What is stored there</th></tr></thead>' +
+    '<table class="d2frame"><colgroup><col class="off"><col></colgroup>' +
+    '<thead><tr><th class="off">Bytes below the return address</th><th>What is stored there</th></tr></thead>' +
     `<tbody>${rows}</tbody></table>${notes}`;
 }

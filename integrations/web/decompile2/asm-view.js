@@ -10,6 +10,49 @@ import { bare, signedHex } from './addr.js';
 export { bandOf };
 
 const CHUNK = 256;
+
+const REGISTER = new RegExp('^(?:' + [
+  '[re]?(?:ax|bx|cx|dx|si|di|sp|bp|ip)', '[abcd][lh]', '(?:si|di|sp|bp)l', 'r(?:[89]|1[0-5])[dwb]?',
+  '[xyz]mm(?:[0-9]|[12][0-9]|3[01])', '[cdefgs]s', 'st[0-7]?', 'cr[0-8]', 'dr[0-7]', 'k[0-7]', '[re]?flags', 'mm[0-7]',
+  '[xw](?:[0-9]|[12][0-9]|30)', '[xw]zr', 'w?sp', 'lr', 'fp', 'pc', '[bhsdqv](?:[0-9]|[12][0-9]|3[01])', 'nzcv',
+  'r(?:[0-9]|1[0-5])', 'ip', 'sb', 'sl', '[acs]psr',
+].join('|') + ')$', 'i');
+const PROTECTED = /<[^>]*>|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g;
+
+function easyPlain(text) {
+  return text
+    .replace(/\s*\+\s*-\s*(?=0x|\d)/g, ' - ')
+    .replace(/,(?! )/g, ', ')
+    .replace(/\b[A-Za-z_]\w*\b/g, (word) => (REGISTER.test(word) ? word.toLowerCase() : word));
+}
+
+/**
+ * Operands spelled the way objdump and gdb print them: register names in lower
+ * case, a space after each comma, `+ -0x14` as `- 0x14`. Symbols in `<…>` and
+ * string or character literals are left exactly as they are. Display only:
+ * every lookup (links, stack slots, notes) reads the engine's own text.
+ */
+export function easyOperands(ops) {
+  if (!ops) return ops || '';
+  let out = '';
+  let at = 0;
+  for (const m of ops.matchAll(PROTECTED)) {
+    out += easyPlain(ops.slice(at, m.index)) + m[0];
+    at = m.index + m[0].length;
+  }
+  return out + easyPlain(ops.slice(at));
+}
+
+/** One instruction in the chosen spelling: `easy` (the default) or `exact`. Data rows stay as decoded. */
+export function spellInsn(insn, spelling = 'easy') {
+  const mnemonic = insn.mnemonic || '';
+  if (spelling === 'exact' || mnemonic.startsWith('.')) {
+    return { mnemonic, operands: insn.operands || '', text: insn.text || [mnemonic, insn.operands].filter(Boolean).join(' ') };
+  }
+  const m = mnemonic.toLowerCase();
+  const operands = easyOperands(insn.operands || '');
+  return { mnemonic: m, operands, text: operands ? `${m} ${operands}` : m };
+}
 const LANE_W = 8;
 const MAX_LANES = 6;
 
@@ -141,16 +184,18 @@ export function stackOperand(ops) {
 export function linkOperands(insn, ctx = {}) {
   const ops = insn.operands || '';
   const linkable = isBranch(insn.mnemonic) || isCall(insn.mnemonic) || /^(LEA|ADR|ADRP)$/i.test(insn.mnemonic);
+  const easy = ctx.spelling !== 'exact' && !(insn.mnemonic || '').startsWith('.');
+  const spell = (text) => escapeHtml(easy ? easyOperands(text) : text);
   const piece = (text) => {
-    if (!linkable) return escapeHtml(text);
+    if (!linkable) return spell(text);
     return text.replace(/[^]*?\b(0x[0-9a-f]+)\b|[^]+/gi, (chunk, lit) => {
-      if (!lit) return escapeHtml(chunk);
+      if (!lit) return spell(chunk);
       const pre = chunk.slice(0, chunk.length - lit.length);
       const hex = '0x' + BigInt(lit).toString(16);
       const fn = ctx.fnByAddr?.get(hex);
-      if (!fn && !ctx.insnIndex?.has(hex)) return escapeHtml(chunk);
+      if (!fn && !ctx.insnIndex?.has(hex)) return spell(chunk);
       const label = fn && ctx.nameOf ? ` <span class="d2muted">&lt;${escapeHtml(ctx.nameOf(fn))}&gt;</span>` : '';
-      return `${escapeHtml(pre)}<a class="xt" data-goto="${hex}">${escapeHtml(lit)}</a>${label}`;
+      return `${spell(pre)}<a class="xt" data-goto="${hex}">${escapeHtml(lit)}</a>${label}`;
     });
   };
   const so = stackOperand(ops);
@@ -158,7 +203,7 @@ export function linkOperands(insn, ctx = {}) {
   const slot = ctx.slotOf ? ctx.slotOf(so.reg, so.disp, insn) : null;
   const slotAttr = slot === null || slot === undefined ? '' : ` data-slot="${slot}"`;
   return piece(ops.slice(0, so.start)) +
-    `<span class="so"${slotAttr}>${escapeHtml(ops.slice(so.start, so.end))}</span>` +
+    `<span class="so"${slotAttr}>${spell(ops.slice(so.start, so.end))}</span>` +
     piece(ops.slice(so.end));
 }
 
@@ -229,9 +274,10 @@ export function renderInsnRows(insns, { startHex, prefs = {}, max = 12, inferred
   const mode = prefs.asmAddr || 'abs';
   let out = '';
   for (const insn of shown) {
+    const sp = spellInsn(insn, prefs.asmSpelling);
     out += `<div class="cr${inferred.has(insn.address_hex) ? ' inf' : ''}"><span class="aa">${escapeHtml(formatAddr(insn.address_hex, startHex, mode))}</span>` +
       (prefs.asmBytes === false ? '' : `<span class="ab">${escapeHtml(spacedBytes(insn.bytes))}</span>`) +
-      `<span class="am">${escapeHtml(insn.mnemonic)}</span><span class="ao">${escapeHtml(insn.operands)}</span></div>`;
+      `<span class="am">${escapeHtml(sp.mnemonic)}</span><span class="ao">${escapeHtml(sp.operands)}</span></div>`;
   }
   return out;
 }
@@ -253,7 +299,7 @@ export function renderAsm(fnData, ctx = {}) {
   if (!insns.length) return '';
   const start = fnData.address_hex;
   const insnIndex = new Map(insns.map((insn, i) => [insn.address_hex, i]));
-  const opCtx = { ...ctx, insnIndex };
+  const opCtx = { ...ctx, insnIndex, spelling: prefs.asmSpelling };
   const arrows = prefs.asmArrows === false ? { lanes: 0, rows: [] } : branchArrows(insns);
   const codeLines = ctx.codeLines || (fnData.code || '').split('\n');
   const inferred = ctx.inferred || null;
@@ -289,12 +335,12 @@ export function renderAsm(fnData, ctx = {}) {
       const cls = ['d2-ar', run.line ? '' : 'nomap', patched.has(insn.address_hex) ? 'pa' : ''].filter(Boolean).join(' ');
       out += `<div class="${cls}" id="a-${insn.address_hex}" role="option" data-i="${i}"` +
         `${attr('data-addr', insn.address_hex)}${attr('data-lines', run.lines.join(' '))}${attr('data-band', band)}` +
-        `${inf?.inferred ? ' data-inferred="1"' : ''}${attr('data-role', inf?.role)}>` +
+        `${inf?.inferred ? ' data-inferred="1"' : ''}${attr('data-role', inf?.role)}${attr('title', insn.text)}>` +
         `<span class="ag">${arrowSvg(arrows.rows[i] || [], arrows.lanes)}</span>` +
         `<span class="aa"><span class="abs">${escapeHtml(formatAddr(insn.address_hex, start, 'abs'))}</span>` +
         `<span class="rel">${escapeHtml(formatAddr(insn.address_hex, start, 'rel'))}</span></span>` +
         `<span class="ab" title="${escapeHtml(spacedBytes(insn.bytes))}">${escapeHtml(spacedBytes(insn.bytes))}</span>` +
-        `<span class="am"${attr('data-mn', insn.mnemonic)}>${escapeHtml(insn.mnemonic)}</span>` +
+        `<span class="am"${attr('data-mn', insn.mnemonic)}>${escapeHtml(spellInsn(insn, prefs.asmSpelling).mnemonic)}</span>` +
         `<span class="ao"${attr('title', insn.operands)}>${linkOperands(insn, opCtx)}</span>` +
         `<span class="ac">${escapeHtml(comment)}${hint && prefs.asmHints !== false ? `<span class="ah">${escapeHtml(hint)}</span>` : ''}</span></div>`;
     }

@@ -13,7 +13,7 @@ import { addrHex, signedHex } from '../decompile2/addr.js';
 import { normalizePrefs, cycle, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile2/prefs.js';
 import {
   formatAddr, groupRuns, linkOperands, branchArrows, renderAsm, renderInsnRows, stackOperand,
-  isBranch, isCall, spacedBytes, inferLines,
+  isBranch, isCall, spacedBytes, inferLines, easyOperands, spellInsn,
 } from '../decompile2/asm-view.js';
 import { entryOffset } from '../decompile2/addr.js';
 import { parseRustSignature } from '../decompile2/ctype.js';
@@ -226,14 +226,15 @@ const call = linkOperands({ mnemonic: 'CALL', operands: '0x1161' }, { fnByAddr, 
 assert.equal(call, '<a class="xt" data-goto="0x1161">0x1161</a> <span class="d2muted">&lt;sum&lt;to&gt;&gt;</span>', 'callee names are escaped');
 const jump = linkOperands({ mnemonic: 'JLE', operands: '0x117d' }, { insnIndex: new Map([['0x117d', 7]]) });
 assert.equal(jump, '<a class="xt" data-goto="0x117d">0x117d</a>', 'in-function targets link');
-assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'ESI,0x1149' }, { fnByAddr }), 'ESI,0x1149', 'immediates are not guessed to be code');
+assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'ESI,0x1149' }, { fnByAddr, spelling: 'exact' }), 'ESI,0x1149', 'immediates are not guessed to be code');
 assert.equal(
-  linkOperands({ mnemonic: 'MOV', operands: 'dword ptr [RBP + -0x14],EDI' }, { slotOf: (reg, disp) => disp - 8 }),
+  linkOperands({ mnemonic: 'MOV', operands: 'dword ptr [RBP + -0x14],EDI' }, { slotOf: (reg, disp) => disp - 8, spelling: 'exact' }),
   '<span class="so" data-slot="-28">dword ptr [RBP + -0x14]</span>,EDI',
 );
-assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'EAX,<b>' }), 'EAX,&lt;b&gt;', 'operands are escaped');
+assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'EAX,<b>' }, { spelling: 'exact' }), 'EAX,&lt;b&gt;', 'operands are escaped');
+assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'EAX,<b>' }), 'eax, &lt;b&gt;', 'and escaped when spelled for reading');
 const asmHtml = renderAsm(sumTo, { prefs: { asmCMode: 'comment' }, fnByAddr });
-assert.match(asmHtml, /<div class="d2-ar" id="a-0x116c" role="option" data-i="4" data-addr="0x116c" data-lines="6" data-band="0">/);
+assert.match(asmHtml, /<div class="d2-ar" id="a-0x116c" role="option" data-i="4" data-addr="0x116c" data-lines="6" data-band="0"[^>]*>/);
 assert.match(asmHtml, /<span class="ac">; L6: acc = 0;<\/span>/);
 assert.match(asmHtml, /id="a-0x1161"[^>]*>/);
 assert.match(asmHtml, /class="d2-ar nomap" id="a-0x1161"/);
@@ -247,7 +248,7 @@ assert.match(headed, /^<div class="d2-chunk"[^>]*><div class="d2-as role" data-r
 assert.equal((headed.match(/Function setup/g) || []).length, 1);
 assert.ok(!/; prologue/.test(headed), 'no per-row role note under headings');
 assert.equal(renderAsm(plain, {}), '', 'no instructions, no rows');
-const cardRows = renderInsnRows(sumTo.instructions, { startHex: sumTo.address_hex, prefs: { asmAddr: 'rel', asmBytes: false }, max: 2 });
+const cardRows = renderInsnRows(sumTo.instructions, { startHex: sumTo.address_hex, prefs: { asmAddr: 'rel', asmBytes: false, asmSpelling: 'exact' }, max: 2 });
 assert.equal(cardRows, '<div class="cr"><span class="aa">+0x0</span><span class="am">ENDBR64</span><span class="ao"></span></div>' +
   '<div class="cr"><span class="aa">+0x4</span><span class="am">PUSH</span><span class="ao">RBP</span></div>');
 checks.push('formatAddr/groupRuns/branchArrows/linkOperands/renderAsm');
@@ -287,14 +288,47 @@ assert.equal(inferredIndex.inferredLine.get('0x11ae'), 5);
 assert.deepEqual([...expand({ line: 5 }, inferredIndex).addrs].length, 8, 'selecting a line marks its inferred rows too');
 assert.ok(expand({ addr: '0x11ae' }, inferredIndex).lines.has(5));
 const inferredHtml = renderAsm(inspectMain, { prefs: { asmCMode: 'comment' }, inferred: mainInf });
-assert.match(inferredHtml, /id="a-0x11ab" role="option" data-i="6" data-addr="0x11ab" data-lines="5" data-band="5" data-inferred="1">/);
-assert.match(inferredHtml, /id="a-0x1198"[^>]*data-role="prologue">/);
+assert.match(inferredHtml, /id="a-0x11ab" role="option" data-i="6" data-addr="0x11ab" data-lines="5" data-band="5" data-inferred="1"[^>]*>/);
+assert.match(inferredHtml, /id="a-0x1198"[^>]*data-role="prologue"[^>]*>/);
 assert.match(inferredHtml, /id="a-0x11ab"[\s\S]*?<span class="ac">; L5: v1 = sum_to\(add\(argc,3\)\);<\/span>/, 'the C comment moves to the first row of the line, inferred or not');
 assert.match(inferredHtml, /id="a-0x1198"[\s\S]*?<span class="ac">; prologue<\/span>/);
 assert.match(inferredHtml, /<span class="ao" title="dword ptr \[RBP \+ -0x14\],EDI">/, 'operands carry their full text as a title');
 assert.ok(!/data-inferred/.test(renderAsm(inspectMain, { prefs: {} })), 'off: no inferred rows');
 assert.match(renderInsnRows(inspectMain.instructions.slice(6, 10), { inferred: new Set(['0x11ab']) }), /^<div class="cr inf">/);
 checks.push('inferLines/inferred index/rows');
+
+// ── easy assembly spelling (display only) ──────────────────────────────────
+assert.equal(easyOperands('dword ptr [RBP + -0x14],EDI'), 'dword ptr [rbp - 0x14], edi', 'x86-64: registers, comma space, negative displacement');
+assert.equal(easyOperands('EAX,dword ptr [RBP + 0x8]'), 'eax, dword ptr [rbp + 0x8]', 'a positive displacement keeps its +');
+assert.equal(easyOperands('RAX,qword ptr FS:[0x28]'), 'rax, qword ptr fs:[0x28]');
+assert.equal(easyOperands('XMM0,xmmword ptr [RIP + 0x2e5c]'), 'xmm0, xmmword ptr [rip + 0x2e5c]');
+assert.equal(easyOperands('R8D,R9W,R10B,AL,SIL'), 'r8d, r9w, r10b, al, sil', 'several commas, every register width');
+assert.equal(easyOperands('x29, x30, [sp, #-0x20]!'), 'x29, x30, [sp, #-0x20]!', 'AArch64 is already spelled that way');
+assert.equal(easyOperands('W0,WZR,[X1, #0x10]'), 'w0, wzr, [x1, #0x10]', 'AArch64 in upper case');
+assert.equal(easyOperands('{R4,R5,LR}'), '{r4, r5, lr}', 'ARM register lists');
+assert.equal(easyOperands('R0,[PC, #0x4]'), 'r0, [pc, #0x4]');
+assert.equal(easyOperands('RDI,<RAX>'), 'rdi, <RAX>', 'a symbol that looks like a register inside <…> is untouched');
+assert.equal(easyOperands('RSI,"RAX,x"'), 'rsi, "RAX,x"', 'string literals are untouched');
+assert.equal(easyOperands("AL,'R'"), "al, 'R'", 'char literals are untouched');
+assert.equal(easyOperands('0x1149'), '0x1149', 'hex is not a register');
+assert.equal(easyOperands('LAB_00401234,MY_TABLE'), 'LAB_00401234, MY_TABLE', 'names that are not registers keep their case');
+assert.deepEqual(spellInsn({ mnemonic: '.byte', operands: '0xFF,0xAB', text: '.byte 0xFF,0xAB' }),
+  { mnemonic: '.byte', operands: '0xFF,0xAB', text: '.byte 0xFF,0xAB' }, '.byte rows are unchanged');
+assert.equal(spellInsn({ mnemonic: '.word', operands: '0x1234,R0', text: '.word 0x1234,R0' }).text, '.word 0x1234,R0', '.word rows are unchanged');
+assert.equal(spellInsn({ mnemonic: 'MOV', operands: 'dword ptr [RBP + -0x14],EDI', text: 'MOV dword ptr [RBP + -0x14],EDI' }).text, 'mov dword ptr [rbp - 0x14], edi');
+assert.equal(spellInsn({ mnemonic: 'MOV', operands: 'RBP,RSP', text: 'MOV RBP,RSP' }, 'exact').text, 'MOV RBP,RSP', 'exact spelling is the engine text');
+assert.equal(spellInsn({ mnemonic: 'LEAVE', operands: '', text: 'LEAVE' }).text, 'leave');
+const spelled = renderAsm(inspectMain, { prefs: { asmCMode: 'heading' }, fnByAddr, nameOf: (f) => f.name });
+assert.match(spelled, /<div class="d2-ar[^"]*" id="a-0x11a4"[^>]*title="MOV dword ptr \[RBP \+ -0x14\],EDI">/, 'the row keeps the exact engine text in its title');
+assert.match(spelled, /<span class="am" data-mn="MOV">mov<\/span>/, 'lowercase mnemonic; the raw one stays in data-mn');
+assert.match(spelled, /<span class="ao" title="dword ptr \[RBP \+ -0x14\],EDI"><span class="so">dword ptr \[rbp - 0x14\]<\/span>, edi<\/span>/);
+assert.match(spelled, /<span class="am" data-mn="CALL">call<\/span><span class="ao" title="0x1161"><a class="xt" data-goto="0x1161">0x1161<\/a> <span class="d2muted">&lt;sum&lt;to&gt;&gt;<\/span>/,
+  'links and callee labels still work');
+assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'dword ptr [RBP + -0x14],EDI' }, { slotOf: (reg, disp) => disp - 8 }),
+  '<span class="so" data-slot="-28">dword ptr [rbp - 0x14]</span>, edi', 'the stack slot is found on the raw operand');
+assert.match(renderAsm(inspectMain, { prefs: { asmCMode: 'heading', asmSpelling: 'exact' }, fnByAddr }), /<span class="am" data-mn="MOV">MOV<\/span>/);
+assert.match(renderInsnRows(inspectMain.instructions.slice(4, 5), {}), /<span class="am">mov<\/span><span class="ao">dword ptr \[rbp - 0x14\], edi<\/span>/, 'the hover card spells it the same way');
+checks.push('easy assembly spelling');
 
 // ── the Rust view ──────────────────────────────────────────────────────────
 const rustProto = '#[allow(non_snake_case, unused_mut)]\nunsafe fn main(mut argc: i32, mut argv: *mut *mut u8) -> i32;';

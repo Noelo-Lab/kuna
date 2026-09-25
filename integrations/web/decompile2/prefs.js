@@ -15,6 +15,7 @@ export const DEFAULT_PREFS = Object.freeze({
   asmCMode: 'heading',
   asmArrows: true,
   asmInfer: true,
+  asmSpelling: 'easy',
   cLineNumbers: true,
   cLineAddrs: false,
   hoverDelay: 450,
@@ -27,6 +28,7 @@ const CHOICES = {
   view: ['c', 'split', 'asm', 'bytes', 'stack'],
   asmAddr: ['abs', 'rel', 'both'],
   asmCMode: ['heading', 'comment', 'off'],
+  asmSpelling: ['easy', 'exact'],
   hoverDelay: [0, 250, 450, 800, -1],
   theme: ['system', 'light', 'dark'],
 };

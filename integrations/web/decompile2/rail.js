@@ -28,7 +28,7 @@ function functionPart(fn) {
     ? `<details class="x-types"><summary>Types (${fn.types.length})</summary>` +
       fn.types.map((t) => `<pre>${escapeHtml(t.definition || t.name)}</pre>`).join('') + '</details>' : '';
   return '<section class="x-sec" id="railfn"><h3>This function</h3>' + summary +
-    `<div id="railrefsbody">${fn.refsHtml || ''}</div>` +
+    `<h4>Calls and callers</h4><div id="railrefsbody">${fn.refsHtml || ''}</div>` +
     `<h4>Variables</h4>${vars}${debug}${types}</section>`;
 }
 

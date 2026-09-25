@@ -98,7 +98,8 @@ assert.match(note, /buf \(char\[16\]\) ends 8 bytes below the return address/);
 assert.match(note, /saved RBP, then return address/);
 assert.match(renderFrame(arr), /<tr class="var arr" data-sym="buf" data-slot="-24">/);
 assert.match(renderFrame(f), /<td class="off" title="entry−0x14">20<\/td>/, 'offsets read as bytes below the return address; the raw one is the tooltip');
-assert.match(renderFrame(f), /<span class="sn">return address<\/span><span class="sa">put there by the CALL that ran this function<\/span>/);
+assert.match(renderFrame(f), /<div class="sl"><span class="sn">return address<\/span><span class="sa" title="put there by the CALL that ran this function">put there by the CALL that ran this function<\/span><span class="sz">8 bytes<\/span><\/div>/,
+  'each slot is one row: name, description (full text in its title), size last');
 assert.match(renderFrame(f), /^<p class="d2-stacklede">Higher addresses are at the top\. Each box is one thing the function keeps on the stack\.<\/p>/);
 assert.deepEqual([belowText(-28), belowText(0), belowText(16)], ['28', '0', '16 above']);
 assert.equal(frameModel(sumTo, { family: 'aarch64' }).supported, false);

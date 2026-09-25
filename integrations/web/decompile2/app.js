@@ -19,7 +19,7 @@ import {
 } from './render-c.js';
 import { loadPrefs, savePrefs, cycle, DEFAULT_PREFS } from './prefs.js';
 import { groupFunctions, groupOf, firstFunction } from './groups.js';
-import { renderAsm, renderInsnRows, formatAddr, spacedBytes, inferLines } from './asm-view.js';
+import { renderAsm, renderInsnRows, formatAddr, spacedBytes, inferLines, spellInsn } from './asm-view.js';
 import { createHover } from './hover.js';
 import { createSync } from './sync.js';
 import { Session, cliCommand } from './session.js';
@@ -476,6 +476,7 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
   state.binary.format = inventory.format;
   state.inventory = inventory;
   session.recordOutcomes(inventory.assertions);
+  syncPatchButton();
   state.byAddr.clear();
   state.byName.clear();
   for (const fn of inventory.functions) {
@@ -979,6 +980,16 @@ els.stackframe.addEventListener('click', (e) => {
 });
 
 /** Describe a variable from every source the engine gives. */
+/** An instruction as the student reads it (easy spelling unless they chose the decoder's exact text). */
+const asmText = (insn) => spellInsn(insn, state.prefs.asmSpelling).text;
+
+/** `29 bytes into main` (or `before main` for code above the entry); the raw offset goes in a title. */
+function intoWords(addrHex) {
+  const { data, fn } = state.current;
+  const d = Number(BigInt(addrHex) - BigInt(data.address_hex));
+  return d >= 0 ? `${d} byte${d === 1 ? '' : 's'} into ${displayName(fn)}` : `${-d} bytes before ${displayName(fn)}`;
+}
+
 const INVENTED = /^(?:v\d+|a\d+|param_\d+|local_[0-9a-f]+|[a-z]{1,3}Var\d+|dat_[0-9a-f]+|DAT_[0-9a-f]+|sub_[0-9a-f]+|FUN_[0-9a-f]+)$/i;
 
 /** `undefined8` → `8 bytes of unknown type`; other types as written. */
@@ -1011,14 +1022,14 @@ function describeVar(name) {
   const global = !isParam && !decl && !stack && /^dat_|^g_/.test(name);
   const kind = isParam ? 'parameter' : global ? 'global' : 'local variable';
   const type = decl?.type || param?.type || stack?.type || shownSignature()?.params[sigIndex]?.type || '';
-  const where = [];
   const index = param?.arg_index ?? (sigIndex >= 0 ? sigIndex : null);
-  if (isParam && Number.isInteger(index)) where.push(`input ${index + 1}`);
-  if (decl?.storage) where.push(whereWords(decl.storage));
-  else if (stack) where.push(whereWords('', stack.stack_offset));
+  const input = isParam && Number.isInteger(index) ? index + 1 : null;
+  const where = decl?.storage ? whereWords(decl.storage) : stack ? whereWords('', stack.stack_offset) : '';
   const raw = decl?.storage ? decl.storage : stack ? entryOffset(stack.stack_offset) : '';
-  return { name, kind, type, where: where.join(', '), raw };
+  return { name, kind, type, input, where, raw };
 }
+
+const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
 
 function varSummary(name) {
   const v = describeVar(name);
@@ -1100,8 +1111,8 @@ function insnCard(addrHex) {
   const insn = index.addrToInsn.get(addrHex);
   if (!insn) return null;
   const lines = index.insnToLines.get(addrHex) || [];
-  let html = `<div class="ch">${escapeHtml(insn.text)}</div>` +
-    `<div class="cm">${insn.size} byte${insn.size === 1 ? '' : 's'} at ${escapeHtml(formatAddr(addrHex, data.address_hex, 'both'))}` +
+  let html = `<div class="ch">${escapeHtml(asmText(insn))}</div>` +
+    `<div class="cm">${insn.size} byte${insn.size === 1 ? '' : 's'} at ${escapeHtml(bare(addrHex))}, ${escapeHtml(intoWords(addrHex))}` +
     `${state.prefs.asmBytes ? ` · ${escapeHtml(spacedBytes(insn.bytes))}` : ''}</div>`;
   const note = explain(insn.mnemonic, arch?.family || 'x86');
   if (note) html += `<div class="cx">${escapeHtml(note[0].toUpperCase() + note.slice(1))}.</div>`;
@@ -1153,6 +1164,7 @@ function varSelectedCard(name) {
   let html = `<div class="x-card"><div><span class="x-name">${escapeHtml(name)}</span><span class="x-chip">${escapeHtml(v.kind)}</span></div>` +
     '<dl class="x-dl">' +
     (v.type ? `<dt>Type</dt><dd><code>${escapeHtml(v.type)}</code>${/^undefined/.test(v.type) ? ` <span class="d2muted">(${escapeHtml(typeWords(v.type))})</span>` : ''}</dd>` : '') +
+    (v.input ? `<dt>Input</dt><dd>${ordinal(v.input)} input of ${escapeHtml(displayName(state.current.fn))}</dd>` : '') +
     (v.where ? `<dt>Lives in</dt><dd title="${escapeHtml(v.raw)}">${escapeHtml(v.where)}</dd>` : '') +
     (lines.length ? `<dt>Used on lines</dt><dd class="x-lines">${lines.map(lineLink).join(', ')}</dd>` : '') +
     '</dl>';
@@ -1170,9 +1182,10 @@ function insnSelectedCard(addrHex) {
   const note = explain(insn.mnemonic, arch?.family || 'x86');
   const idiom = hints.get(addrHex);
   const inferredText = lines.length ? null : inferredNote(addrHex);
-  let html = `<div class="x-card"><div class="x-code">${escapeHtml(insn.text)}</div>` +
-    `<p class="x-note">${insn.size} byte${insn.size === 1 ? '' : 's'} at ${escapeHtml(formatAddr(addrHex, data.address_hex, 'both'))}</p>`;
-  if (note) html += `<p class="x-note" style="color:var(--text)">${escapeHtml(insn.mnemonic)}: ${escapeHtml(note)}.</p>`;
+  const sp = spellInsn(insn, state.prefs.asmSpelling);
+  let html = `<div class="x-card"><div class="x-code" title="${escapeHtml(insn.text)}">${escapeHtml(sp.text)}</div>` +
+    `<p class="x-note" title="${escapeHtml(formatAddr(addrHex, data.address_hex, 'both'))}">${insn.size} byte${insn.size === 1 ? '' : 's'} at ${escapeHtml(bare(addrHex))}, ${escapeHtml(intoWords(addrHex))}</p>`;
+  if (note) html += `<p class="x-note" style="color:var(--text)"><code>${escapeHtml(sp.mnemonic)}</code>: ${escapeHtml(note)}.</p>`;
   if (idiom) html += `<p class="x-note">${escapeHtml(idiom[0].toUpperCase() + idiom.slice(1))}.</p>`;
   if (lines.length) html += `<p class="x-note">From line ${lines.map(lineLink).join(', ')}: <code>${escapeHtml((codeLines[lines[0] - 1] || '').trim())}</code></p>`;
   else if (inferredText) html += `<p class="x-note">${escapeHtml(inferredText)}</p>`;
@@ -1192,7 +1205,8 @@ function lineSelectedCard(n) {
     const insn = index.addrToInsn.get(a);
     if (!insn) continue;
     html += `<li data-act="sel-insn" data-addr="${a}"${inferred.has(a) ? ' class="inf"' : ''} title="Show it in the assembly">` +
-      `<span class="xa">${escapeHtml(bare(a))}</span><span class="xm">${escapeHtml(insn.mnemonic)}</span><span>${escapeHtml(insn.operands)}</span></li>`;
+      `<span class="xa">${escapeHtml(bare(a))}</span><span class="xm">${escapeHtml(spellInsn(insn, state.prefs.asmSpelling).mnemonic)}</span>` +
+      `<span>${escapeHtml(spellInsn(insn, state.prefs.asmSpelling).operands)}</span></li>`;
   }
   return html + '</ul></div>';
 }
@@ -1275,7 +1289,7 @@ function selectTarget(target, from, tokEl = null) {
     setHint(`${escapeHtml(target.sym)} — ${editKeysHint(target.sym)}`);
   } else if (target?.addr) {
     const insn = state.current.index.addrToInsn.get(target.addr);
-    setHint(insn ? `${escapeHtml(insn.text)} — press <kbd>;</kbd> to add a note` : null);
+    setHint(insn ? `${escapeHtml(asmText(insn))} — press <kbd>;</kbd> to add a note` : null);
   } else if (Number.isInteger(target?.line)) {
     setHint(`Line ${target.line} — see its instructions in the Explain panel`);
   } else {
@@ -1488,6 +1502,7 @@ function toggleSplit() {
 
 const ADDR_WORDS = { abs: 'Full address', rel: 'Offset from function start', both: 'Both' };
 const CMODE_WORDS = { heading: 'As headings', comment: 'As comments', off: 'Off' };
+const SPELL_WORDS = { easy: 'Easy to read', exact: 'Exactly as decoded' };
 const DELAY_WORDS = [[0, 'Instant'], [250, 'Short'], [450, 'Normal'], [800, 'Slow'], [-1, 'Off']];
 
 function radios(name, words, value) {
@@ -1505,6 +1520,7 @@ function renderViewMenu() {
   const bytesKey = inSplit() ? 'asmBytesSplit' : 'asmBytes';
   els.viewMenu.innerHTML = '<div class="d2-vo">' +
     `<fieldset><legend>Addresses</legend><div class="opts">${radios('asmAddr', ADDR_WORDS, p.asmAddr)}</div></fieldset>` +
+    `<fieldset><legend>Assembly spelling</legend><div class="opts">${radios('asmSpelling', SPELL_WORDS, p.asmSpelling)}</div></fieldset>` +
     `<fieldset><legend>Show C next to the assembly</legend><div class="opts">${radios('asmCMode', CMODE_WORDS, p.asmCMode)}</div></fieldset>` +
     `<fieldset><legend>Assembly</legend><div class="opts" style="flex-direction:column;align-items:flex-start">` +
     check(bytesKey, 'Show instruction bytes', p[bytesKey]) +
@@ -1540,6 +1556,10 @@ els.viewMenu.addEventListener('change', (e) => {
   applyPaneClasses();
   if (key === 'asmInfer' && state.current) showFunction(state.current.fn, state.current.data, { keep: true });
   else if (['asmCMode', 'asmArrows', 'cLineAddrs'].includes(key)) rerender('asm', 'c');
+  else if (key === 'asmSpelling') {
+    rerender('asm');
+    rail.setSelected(selectedCard());
+  }
 });
 els.viewMenu.addEventListener('click', (e) => {
   if (!e.target.closest('[data-act=reset]')) return;
@@ -2534,7 +2554,7 @@ async function patchAction(kind, addrHex) {
   }).join(' ');
   const res = await dialogs.openPopover({
     anchorEl: $('a-' + addrHex),
-    title: `Edit the bytes of ${insn.text}`,
+    title: `Edit the bytes of ${asmText(insn)}`,
     note: `This instruction is ${insn.size} byte${insn.size === 1 ? '' : 's'}: ${current}`,
     fields: [{ name: 'hex', label: 'New bytes (hex)', value: current, validate: (v) => (parseHex(v) ? null : 'Type hex digits in pairs, like 90 90') }],
     warn: (v) => {
@@ -2651,7 +2671,7 @@ els.hexdump.addEventListener('pointerover', (e) => {
   const cell = e.target.closest('.hb[data-a]');
   if (!cell || !state.current || state.dataView) return;
   const insn = cell.dataset.i !== undefined ? state.current.data.instructions[Number(cell.dataset.i)] : null;
-  setHint(insn ? `Byte at ${escapeHtml(bare(cell.dataset.a))} belongs to <b>${escapeHtml(insn.text)}</b>` : `Byte at ${escapeHtml(bare(cell.dataset.a))}`);
+  setHint(insn ? `Byte at ${escapeHtml(bare(cell.dataset.a))} belongs to <b>${escapeHtml(asmText(insn))}</b>` : `Byte at ${escapeHtml(bare(cell.dataset.a))}`);
   sync.hover(insn ? { addr: insn.address_hex } : null);
 });
 els.hexdump.addEventListener('pointerleave', () => {
