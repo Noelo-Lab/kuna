@@ -1905,7 +1905,7 @@ mod tests {
         // the return-address slot as a trailing argument
         // and kuna-castsign / a stack index the body only compares signed is
         // declared signed
-        assert_eq!(count, 343, "corpus file count drifted");
+        assert_eq!(count, 344, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
