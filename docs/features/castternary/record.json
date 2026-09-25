@@ -139,6 +139,12 @@
     "on_min_ms": 15669.4,
     "delta_min_pct": 2.98,
     "delta_median_pct": -0.96
+   },
+   "bash": {
+    "off_min_ms": 92867.5,
+    "on_min_ms": 94268.7,
+    "delta_min_pct": 1.51,
+    "delta_median_pct": -1.57
    }
   },
   "worst_delta_min_pct": 2.98
