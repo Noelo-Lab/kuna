@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_forward_x86_64",
+    "binary_sha256": "787d263a084a29b716350907e1f78735fa755de2d468c3b3deb41739c632414b",
+    "binary_size": 16464,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_forward_x86_64",
+    "selector": "search_g",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int compare_g\\(void \\*a0,void \\*a1\\)",
+      "int compare_c\\(void \\*a0,void \\*a1\\)",
+      "int compare_z\\(void \\*a0,void \\*a1\\)",
+      "search_g\\(struct_\\d+ \\*a0,",
+      "search_c\\(struct_\\d+ \\*a0,",
+      "search_z\\(struct_\\d+ \\*a0,",
+      "v1 = compare_z\\(a0,\\(struct_\\d+ \\*\\)&a1\\[v2 \\* 2\\]\\);"
+    ],
+    "stdout_absent": [
+      "search_[gcz]\\(void \\*a0",
+      "compare_z\\(a0,[^;\\n]*% 2\\)"
+    ]
+  },
+  "notes": "search_g (gcc -O0), search_c (clang -O2) and search_z (clang -O0) forward their own WORD * to a qsort comparator the slot declares void *. Decompiled again after the park, each took the void * and lost the struct pointer the comparator's reads gave it; they keep it. search_z's call drops the idiv remainder clang leaves in rdx, a third argument the declared list does not pass.",
+  "probe_id": "p-0a96493c2d4b"
+}
