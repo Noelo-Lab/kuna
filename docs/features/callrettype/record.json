@@ -1,0 +1,265 @@
+{
+ "option": "callrettype",
+ "values": [
+  "on",
+  "off"
+ ],
+ "default_on": true,
+ "default_value": "on",
+ "phase": "P4",
+ "subphase": "output-prototype",
+ "change_kind": "type-inference",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "2026-09-24 cast census (kwt/castcensus measure.md shape #4: `(char *)<call>` 1,994 kuna vs 1,172 IDA on the shared functions)",
+ "witness": {
+  "repro": "kuna decompile-all decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64 (source callrettype_x86_64.c beside it)",
+  "before": [
+   "FILE * pick_stream(int a0)",
+   "v1 = (FILE *)pick_stream(a0);"
+  ],
+  "after": [
+   "FILE * pick_stream(int a0)",
+   "v1 = pick_stream(a0);"
+  ],
+  "corpus": {
+   "coreutils tail -O0 recheck @0x5a69": [
+    "v7 = (char *)sub_e8ca(4,(char *)sub_43ee(a0));",
+    "-> v7 = (char *)sub_e8ca(4,sub_43ee(a0));",
+    "IDA: v9 = sub_43EE((const char **)a1); v10 = sub_E8CA(4, v9);"
+   ]
+  },
+  "audit": {
+   "coreutils du -O0 map_inode_number @0x6b45 (vote alone)": [
+    "long * sub_6b45(struct_12 *a0,unsigned long a1)",
+    "v1 = (long *)0xffffffffffffffff;",
+    "v1 = (unsigned long)sub_10624((unsigned long *)a0->field_0x8,a1);",
+    "-> with the audit: identical to option off (`unsigned long sub_6b45`)"
+   ]
+  }
+ },
+ "castbench": {
+  "set": "full: 45 binaries (coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find) x O0/O2/O2-noinline; functions kuna and IDA both emit",
+  "base": "/home/mahaloz/kwt/castbench/main-c960fb18d (origin/main c960fb18d); --option callrettype off on the branch prints the same bytes",
+  "shared_functions": 4815,
+  "ida_casts": 37821,
+  "main_casts": 37477,
+  "branch_casts": 36703,
+  "main_per_kloc": 196.6,
+  "branch_per_kloc": 192.6,
+  "main_per_100_statements": 31.2,
+  "branch_per_100_statements": 30.5,
+  "main_vs_ida": 0.991,
+  "branch_vs_ida": 0.97,
+  "by_level_vs_ida": {
+   "O0": [
+    1.003,
+    0.983
+   ],
+   "O2": [
+    1.028,
+    1.011
+   ],
+   "O2-noinline": [
+    0.937,
+    0.913
+   ]
+  },
+  "functions_fewer": 391,
+  "casts_fewer": 804,
+  "functions_more": 25,
+  "casts_more": 30,
+  "more_classified": {
+   "a callee's pointer kept in an integer lvalue (C requires the conversion)": 15,
+   "a difference of two pointers printed as integers": 3,
+   "a callee's pointer became the function's own return type": 3,
+   "a parameter's pointee re-signed by a callee's unsigned char *": 1,
+   "a callee's unsigned int in a variable read as int": 1,
+   "variable renumbering": 1,
+   "a vote a later inference pass refused, the result keeps the type (not audited)": 1
+  },
+  "pointer_variable_assigned_an_integer_lines": {
+   "main": 985,
+   "branch": 960
+  }
+ },
+ "benchmark": {
+  "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
+  "metric": "type_match",
+  "arms": "same final build: default (on) vs --option callrettype off",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4173,
+    "mean_on": 0.4173,
+    "improved": 0,
+    "worse": 0,
+    "decomp_vars_off": 2636,
+    "decomp_vars_on": 2636
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 989,
+    "perfect_on": 992,
+    "mean_off": 0.359,
+    "mean_on": 0.3593,
+    "improved": 8,
+    "worse": 2,
+    "decomp_vars_off": 58552,
+    "decomp_vars_on": 58552
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 64,
+    "mean_off": 0.4514,
+    "mean_on": 0.4514,
+    "improved": 1,
+    "worse": 0,
+    "decomp_vars_off": 4411,
+    "decomp_vars_on": 4411
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 61,
+    "perfect_on": 61,
+    "mean_off": 0.2508,
+    "mean_on": 0.2508,
+    "improved": 0,
+    "worse": 0,
+    "decomp_vars_off": 5789,
+    "decomp_vars_on": 5789
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 53,
+    "perfect_on": 53,
+    "mean_off": 0.4583,
+    "mean_on": 0.4583,
+    "improved": 0,
+    "worse": 0,
+    "decomp_vars_off": 2672,
+    "decomp_vars_on": 2672
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 112,
+    "mean_off": 0.5409,
+    "mean_on": 0.5412,
+    "improved": 1,
+    "worse": 0,
+    "decomp_vars_off": 3269,
+    "decomp_vars_on": 3269
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 89,
+    "perfect_on": 92,
+    "mean_off": 0.3604,
+    "mean_on": 0.363,
+    "improved": 5,
+    "worse": 0,
+    "decomp_vars_off": 6912,
+    "decomp_vars_on": 6912
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 213,
+    "mean_off": 0.3938,
+    "mean_on": 0.3942,
+    "improved": 2,
+    "worse": 0,
+    "decomp_vars_off": 12648,
+    "decomp_vars_on": 12648
+   },
+   "pooled": {
+    "n": 10748,
+    "perfect_off": 1615,
+    "perfect_on": 1621,
+    "mean_off": 0.3697,
+    "mean_on": 0.3701,
+    "improved": 17,
+    "worse": 2,
+    "decomp_vars_off": 96889,
+    "decomp_vars_on": 96889
+   }
+  },
+  "moved_onto_perfect": 6,
+  "moved_off_perfect": 0,
+  "worse_rows_read": {
+   "coreutils O2 who::who": "a reused stack slot typed char * (time_string's result is what is stored there); the DWARF variable at that offset is another one",
+   "coreutils O2-noinline pwd::file_name_prepend": "a calleevote vote through the dirent shell"
+  }
+ },
+ "corpus_sweep": {
+  "functions": 8878,
+  "changed": 1647,
+  "types_casts_names_only": 1526,
+  "expression_spelling_only": 53,
+  "statement_changes": 68,
+  "call_arity_moved": 0,
+  "return_voidness_moved": 0,
+  "variables_rows_moved": 0
+ },
+ "corpus_sweep_detail": "docs/features/callrettype/corpus-hunks.json",
+ "parity": {
+  "datatests": "675/675 PARITY OK",
+  "stages": "1373/1373 PARITY OK (+3 callrettype assertions)",
+  "test_cli": "239/239 (one protoorder probe moved to the intended form)"
+ },
+ "soundness": {
+  "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_call_result_typed_by_its_callee_round_trips_through_the_printed_c: gcc and clang at -O0 and -O2 compile every printed fixture function, option off and on; the output must equal the binary's. Classes: pointer result (char *, FILE *), signed long result, and the `cached` tie control. The float class (a declared float result) is covered by a_float_in_a_general_register_keeps_its_integer_uses_round_trip (cc)."
+ },
+ "speed": {
+  "method": "docs/features/callrettype/speed.py: interleaved min-of-15, decompile-all --json --max-fn-seconds 120, --option callrettype off vs on, same final build",
+  "results": {
+   "fmt": {
+    "off_min_ms": 4581.6,
+    "on_min_ms": 4647.8,
+    "delta_min_pct": 1.44,
+    "delta_median_pct": -0.25
+   },
+   "ls": {
+    "off_min_ms": 15215.8,
+    "on_min_ms": 15069.7,
+    "delta_min_pct": -0.96,
+    "delta_median_pct": -0.04
+   },
+   "sort": {
+    "off_min_ms": 14420.8,
+    "on_min_ms": 14809.2,
+    "delta_min_pct": 2.69,
+    "delta_median_pct": 0.03
+   },
+   "kmod_O2ni": {
+    "off_min_ms": 3961.0,
+    "on_min_ms": 4014.2,
+    "delta_min_pct": 1.34,
+    "delta_median_pct": 3.25
+   },
+   "dpkgdivert_O2": {
+    "off_min_ms": 3434.9,
+    "on_min_ms": 3463.6,
+    "delta_min_pct": 0.84,
+    "delta_median_pct": -0.19
+   },
+   "bash": {
+    "off_min_ms": 88936.8,
+    "on_min_ms": 88761.2,
+    "delta_min_pct": -0.2,
+    "delta_median_pct": 2.17
+   }
+  },
+  "worst_min_pct": 2.69,
+  "budget_pct": 5.0,
+  "file": "speed-final.json"
+ },
+ "audit": {
+  "rules": "high_contradicts (another call's result of the other class; beside a pointer a non-address number, a load through the pointer, a sum of integers) and a returned result beside a returned non-address number; only statements the variable's type carries; functions up to AUDIT_MAX_OPS = 1000 live p-code ops",
+  "history": "v1 audited every statement and also votes a later pass refused: fmt -O2 +76% (quotearg_buffer_restyled redone for no change), bash -O2 +55% (218 redos, 51.6 s); narrowed to the above; the 2,000-op cap still let a 1,992-op dpkg-divert function cost 10% of its run, so the cap is 1,000"
+ }
+}

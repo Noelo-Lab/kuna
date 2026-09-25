@@ -478,6 +478,13 @@ pub(crate) fn input_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bo
         || splits_a_wide_constant(data, &value_family(data, vn), ct, 0)
 }
 
+/// (kuna `callrettype`) Does anything the caller does with the call result
+/// `vn` outrank the callee's stated return type `ct` for it?  The refusals a
+/// callee's vote meets at a call argument, asked of the result's own uses.
+pub(crate) fn output_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    class_of(ct).is_none() || family_refuses(data, vn, Reading::Input, ct)
+}
+
 /// Is the value `vn` the index of a pointer addition (`((char *)0x1018)[a0]`,
 /// a constant the recovery took for the pointer)?  The function then adds it
 /// to an address as a number, and a pointer type for it prints as a cast at

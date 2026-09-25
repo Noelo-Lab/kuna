@@ -2054,6 +2054,7 @@ fn converge_callee_first(
     }
     kuna_decomp::kuna_protoorder::forget_statements_naming(prog.arch_mut(), &stale);
     kuna_decomp::kuna_calleevote::forget_statements_naming(prog.arch_mut(), &stale);
+    kuna_decomp::kuna_callrettype::forget_statements_naming(prog.arch_mut(), &stale);
     for &(index, park) in plan {
         if !slots[index].as_ref().is_some_and(|r| kuna_console::project::names_any_type(r, &stale)) {
             continue;

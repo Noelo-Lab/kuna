@@ -277,6 +277,8 @@ pub fn decompile_one_prefollowed(
             }
         }
     }
+    let redo_entry = entry.clone();
+    let mut last_overrides: Vec<(Address, PrototypePieces)> = proto_overrides.to_vec();
     if !dropped.is_empty() || !discovered.is_empty() {
         let mut merged: Vec<(Address, PrototypePieces)> = proto_overrides
             .iter()
@@ -284,6 +286,7 @@ pub fn decompile_one_prefollowed(
             .cloned()
             .collect();
         merged.extend(discovered.iter().cloned());
+        last_overrides.clone_from(&merged);
         arch.format_override_callpoints.retain(|at| !dropped.contains(at));
         arch.format_override_callpoints.extend(discovered.iter().map(|(a, _)| a.get_offset()));
         result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
@@ -297,6 +300,29 @@ pub fn decompile_one_prefollowed(
             seed.pending_proto,
             &flow_overrides,
             &merged,
+            seed.mapped_params,
+        );
+    }
+    // (kuna `callrettype`) A callee's stated return type that the finished
+    // function's own variables contradict is withdrawn for this caller, and the
+    // function is driven again without it.
+    let contradicted = match &mut result {
+        Ok(fd) => kuna_decomp::kuna_callrettype::contradicted(fd),
+        Err(_) => Vec::new(),
+    };
+    if !contradicted.is_empty() {
+        kuna_decomp::kuna_callrettype::refuse(arch, &redo_entry, &contradicted);
+        result = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
+            arch,
+            name,
+            redo_entry,
+            size,
+            seed.mapped_symbols,
+            seed.usepoint_symbols,
+            seed.dynamic_symbols,
+            seed.pending_proto,
+            &flow_overrides,
+            &last_overrides,
             seed.mapped_params,
         );
     }

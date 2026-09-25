@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Cast campaign, the `(char *)<call>` residue.  kuna printed
+
+        v1 = (char *)skip_blanks(a0);
+
+    under its own `char * skip_blanks(char *a0)` declaration in the same
+    listing: the callee's recovered return type never reached the call, so a
+    caller that keeps the result as a `char *` converted it from a type the
+    call does not have.  On coreutils tail -O0 the same shape is
+    `sub_e8ca(4,(char *)sub_43ee(a0))` beside `char * sub_43ee(unsigned long *a0)`.
+
+    Root cause (P4 output prototype).  Upstream's `TypeOpCall::getOutputLocal`
+    answers only for a LOCKED output; a recovered callee's return type is never
+    locked, so the call produces an unknown of its width, and ActionSetCasts
+    casts it to whatever the caller keeps it as.
+
+    THIS FIXTURE IS THE NEGATIVE CONTROL.  `option callrettype on` types a call's
+    result with the return type its callee stated, and a callee states it only
+    after its own decompile in a whole-binary `decompile-all`, which decompiles
+    callees before callers (`protoorder`).  This harness decompiles ONE function
+    from a byte image: `skip_blanks` states nothing when the console decompiles
+    it, so the option must add nothing and both passes print `upper_of_rest`
+    byte for byte alike.  (Here the call prints no cast in either pass: without
+    `protoorder`'s argument types the caller keeps the result as the integer
+    the call produces.)  The statement is recorded only where
+    `park_recovered_proto` is true, which only
+    decompiler/crates/kuna-cli/src/decompile_all.rs sets.
+
+    The POSITIVE witness is the same code as a real program,
+    decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64
+    (source beside it), under `make test-cli`:
+    tests/cli/callrettype-types-a-call-by-its-callees-return.json prints
+    `v1 = skip_blanks(a0);` and tests/cli/callrettype-off-keeps-the-conversion.json
+    is its option-off arm; kuna-cli/tests/decompile_all_cli.rs
+    `a_call_result_typed_by_its_callee_round_trips_through_the_printed_c`
+    compiles both arms and checks they compute what the binary computes.
+
+    Stage / sub-stage: P4 "output-prototype".  Pass 1 pins `off`; pass 2 pins
+    that `on` alone, with nothing stated, adds nothing.
+-->
+<bytechunk space="ram" offset="0x11e9">
+f30f1efa554889e548897df8eb05488345f801488b45f80fb6003c2074f0488b
+45f85dc3f30f1efa554889e548897de848c745f800000000eb2d488b45e80fb6
+003c407e12488b45e80fb6003c5a7f07b801000000eb05b80000000048984801
+45f8488345e801488b45e80fb60084c075c8488b45f85dc3f30f1efa554889e5
+4883ec1848897de8488b45e84889c7e86cffffff488945f8488b45f84889c7e8
+80ffffff4889c24889d048c1e0024801d0488d1485000000004801d048c1e002
+4889c2488b45f8482b45e84801d0c9c3f30f1efa554889e54883ec0848897df8
+488b45f84889c7e814ffffff4889c7e830ffffff4889c24889d048c1e0024801
+d0488d1485000000004801d048c1e0024883c005c9c3
+</bytechunk>
+<symbol space="ram" offset="0x11e9" name="skip_blanks"/>
+<symbol space="ram" offset="0x120d" name="count_upper"/>
+<symbol space="ram" offset="0x1261" name="upper_after_blanks"/>
+<symbol space="ram" offset="0x12b9" name="upper_of_rest"/>
+</binaryimage>
+<script>
+  <com>option callrettype off</com>
+  <com>lo fu skip_blanks</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu upper_of_rest</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callrettype on</com>
+  <com>lo fu skip_blanks</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu upper_of_rest</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="callrettype #1: skip_blanks recovers its char * return in both passes" min="2" max="2">char \* skip_blanks\(char \*a0\)</stringmatch>
+<stringmatch name="callrettype #2: with nothing stated, the call reads the same in both passes" min="2" max="2">v1 = skip_blanks\(a0\);</stringmatch>
+<stringmatch name="callrettype #3: the caller's own parameter is untouched by the option" min="2" max="2">upper_of_rest\(unsigned long a0\)</stringmatch>
+</decompilertest>

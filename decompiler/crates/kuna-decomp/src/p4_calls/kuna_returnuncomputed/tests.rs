@@ -161,7 +161,7 @@ fn the_strict_walk_refuses_a_phi_one_arm_of_which_is_leftover() {
         "the pair repair's question: one real arm is enough",
     );
     assert!(
-        !computes_everywhere(&fd, phi, None),
+        !computes_everywhere(&fd, phi, None, false),
         "a caller adopting the whole value needs every path to produce one",
     );
 }
@@ -173,7 +173,7 @@ fn the_strict_walk_refuses_a_piece_whose_high_half_is_leftover() {
     let k = fd.new_constant(4, 7);
     let joined = mk_def(&mut fd, OpCode::CPUI_PIECE, &[leftover, k], 0x2100);
     assert!(
-        !computes_everywhere(&fd, joined, None),
+        !computes_everywhere(&fd, joined, None, false),
         "version_etc_arn's CONCAT44(<leftover>, call result) is not a return value",
     );
 }
@@ -186,7 +186,7 @@ fn the_strict_walk_keeps_a_value_every_byte_of_which_is_computed() {
     let joined = mk_def(&mut fd, OpCode::CPUI_PIECE, &[k1, k2], 0x2100);
     let copy = mk_def(&mut fd, OpCode::CPUI_COPY, &[joined], 0x2200);
     assert!(
-        computes_everywhere(&fd, copy, None),
+        computes_everywhere(&fd, copy, None, false),
         "a value built from constants is a return value in every byte",
     );
 }
@@ -197,7 +197,7 @@ fn the_strict_walk_stops_at_an_operation_that_produces_a_value() {
     let leftover = unwritten(&mut fd, 0x2000, 8);
     let sum = mk_def(&mut fd, OpCode::CPUI_INT_ADD, &[leftover, leftover], 0x2100);
     assert!(
-        computes_everywhere(&fd, sum, None),
+        computes_everywhere(&fd, sum, None, false),
         "arithmetic over leftover is still a value the function computed",
     );
 }
