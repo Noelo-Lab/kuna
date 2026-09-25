@@ -273,10 +273,10 @@ impl Plan {
             (byte, true)
         };
         let size = decl_type.get_size().max(1) as u64;
-        let array = self.indexed.contains(&off);
-        if array && (unknown || self.direct.iter().any(|d| overlaps(d, off, size))) {
-            return Err(Refusal::DirectAccess);
-        }
+        // (kuna `elemptr`) An indexed address is an array only where the function
+        // does not also read or write its first element by name: that name would
+        // be the array. It is then the scalar's address, `(&dat_5c000)[i]`.
+        let array = self.indexed.contains(&off) && !unknown && !self.direct.iter().any(|d| overlaps(d, off, size));
         if let Some(d) = self.direct.iter().find(|d| overlaps(d, off, size) && !same_object(d, off, size, &decl_type)) {
             if self.trace {
                 eprintln!(

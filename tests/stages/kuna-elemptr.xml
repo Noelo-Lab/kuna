@@ -1,0 +1,101 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Cast campaign, lever `elemptr`: a pointer the program uses only as an array
+    of one element type is declared as a pointer to that element.
+
+    A table lookup `t[i]` lowers to INT_ADD(t, i) feeding a LOAD, and
+    TypeOpIntAdd votes an integer for both operands and will not carry the
+    element's pointer back over the add (typeop.cc:1217), so a textbook base64
+    decoder reads, with the option off,
+
+        void * w_decode(int8 a0,uint8 a1,uint8 *a2)
+        *(char *)((uint8)*(uint1 *)((int8)v2 + 0x30004060) + (int8)dat_300040e0) = (char)v2;
+
+    its input `long`, its output buffer `void *`, the table it allocated and
+    keeps in a global an integer, and the constant alphabet in .data an address
+    behind two casts.
+
+    Stage / sub-stage: P5 "type-propagation". The P0 assertion
+    `option elemptr on|off` decides whether a pointer-width value whose every
+    access is one element width through an index the program computes gets a
+    `T *` vote in the getLocalType fold.
+
+    The fixture is decompiler/crates/kuna-analysis/tests/fixtures/elemptr_x86_64.c
+    built by gcc -O0 non-PIE at 0x30000000 with its data symbols dropped:
+
+        w_decode: the witness - input, output buffer and global table indexed
+        w_build:  fills the global table through an index read from the .data
+                  alphabet, a constant indexed by a computed value
+        w_sidx:   a byte array whose signed elements index an int array
+        w_table:  a .data table of ints read with a computed index
+        w_record: a control - `p[2 * i] * p[2 * i + 1]` walks 16-byte records,
+                  so no element width is claimed
+        w_mixed:  a control - `p[i] + *(int *)(p + 4)` reads one pointer at
+                  two widths, a record and not an array
+
+    Pass 1 (`option elemptr off`) reproduces the casts and pass 2 (`on`) is the
+    fix. The two controls are identical in both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64</com>
+  <com>option elemptr off</com>
+  <com>read symbols</com>
+  <com>lo fu w_decode</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_build</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_sidx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_record</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64</com>
+  <com>option elemptr on</com>
+  <com>read symbols</com>
+  <com>lo fu w_decode</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_build</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_sidx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_record</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="elemptr #1: with the option off the decoder's input is an integer and its buffer void * - the bug" min="1" max="1">void \* w_decode\(int8 a0,uint8 a1,uint8 \*a2\)</stringmatch>
+<stringmatch name="elemptr #2: with the option off the table build indexes two addresses through integer sums" min="1" max="1">\*\(char \*\)\(\(uint8\)\*\(uint1 \*\)\(\(int8\)v2 \+ 0x30004060\) \+ \(int8\)dat_300040e0\) = \(char\)v2;</stringmatch>
+<stringmatch name="elemptr #3: with the option on the input and the returned buffer are char *" min="1" max="1">char \* w_decode\(char \*a0,uint8 a1,uint8 \*a2\)</stringmatch>
+<stringmatch name="elemptr #4: with the option on a store into the allocated buffer is a subscript" min="1" max="1">v6\[v8\] = \(char\)\(v5 >> 0x10\);</stringmatch>
+<stringmatch name="elemptr #5: with the option on the global table and the .data alphabet are arrays" min="1" max="1">dat_300040e0\[dat_30004060\[v2\]\] = \(char\)v2;</stringmatch>
+<stringmatch name="elemptr #6: with the option on a signed byte indexes an int array" min="1" max="1">int8 w_sidx\(char \*a0,int4 a1,int4 \*a2\)</stringmatch>
+<stringmatch name="elemptr #7: with the option on a .data table of ints is read by subscript" min="1" max="1">v2 = \(int8\)dat_300040a0\[v1\] \+ v2 \* 0xb;</stringmatch>
+<stringmatch name="elemptr #8: a record walked by a stride keeps its integer form in both passes" min="2" max="2">int8 w_record\(int8 a0,int4 a1\)</stringmatch>
+<stringmatch name="elemptr #9: a pointer read at two widths is not an array in either pass" min="2" max="2">int8 w_mixed\(void \*a0,int4 a1\)</stringmatch>
+</decompilertest>

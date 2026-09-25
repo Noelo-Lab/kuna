@@ -219,6 +219,7 @@ fn may_replace(cur: &Datatype) -> bool {
 #[derive(Default)]
 pub struct Cache {
     globals: HashMap<(u64, int4), Option<Rc<Datatype>>>,
+    constants: HashMap<(u64, int4), Option<Rc<Datatype>>>,
 }
 
 /// The candidate `T *` for `vn`, or `None` when the rule declines.  `cur` is the
@@ -244,16 +245,37 @@ pub fn element_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>, cache
         }
         return None;
     }
-    if kind == Kind::Global {
-        let key = (v.get_offset(), v.get_size());
-        if let Some(hit) = cache.globals.get(&key) {
-            return hit.clone();
+    let memo = match kind {
+        Kind::Global => &mut cache.globals,
+        // A constant is one Varnode per reader: the ones naming the same address
+        // decide it together, so its reads and its writes get one element type.
+        Kind::Constant => {
+            if !only_indexed(data, vn) {
+                return None;
+            }
+            &mut cache.constants
         }
-        let got = decide(data, vn, cur, kind, &copies, ptrsize);
-        cache.globals.insert(key, got.clone());
-        return got;
+        _ => return decide(data, vn, cur, kind, &copies, ptrsize),
+    };
+    let key = (v.get_offset(), v.get_size());
+    if let Some(hit) = memo.get(&key) {
+        return hit.clone();
     }
-    decide(data, vn, cur, kind, &copies, ptrsize)
+    let got = decide(data, vn, cur, kind, &copies, ptrsize);
+    memo.insert(key, got.clone());
+    got
+}
+
+/// Is every reader of the constant `cvn` an add or a `PTRADD` it is a base of?
+/// A constant also passed, compared or stored is `globalref`'s to name.
+fn only_indexed(data: &Funcdata, cvn: VarnodeId) -> bool {
+    data.vbank().get(cvn).is_some_and(|v| {
+        v.descend_iter().all(|op| {
+            data.obank()
+                .get(op)
+                .is_some_and(|o| matches!(o.code(), OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD))
+        })
+    })
 }
 
 /// Walk `vn` (for a global: every Varnode holding it) and commit or decline.
@@ -283,7 +305,17 @@ fn decide(
     let mut ev = Evidence::default();
     ev.base_is_ptr = cur.get_metatype() == type_metatype::TYPE_PTR;
     match kind {
-        Kind::Constant => walk_constant(data, vn, &mut ev),
+        Kind::Constant => {
+            for c in same_constant(data, vn) {
+                walk_constant(data, c, &mut ev);
+            }
+            // The same address used as another pointer -- passed, stored, copied
+            // into a typed local -- says what is there too, and the name
+            // `globalref` gives it can have only one type.
+            for p in other_pointer_uses(data, vn) {
+                ev.pointees.push(p);
+            }
+        }
         Kind::Global => walk(data, &same_storage(data, vn), &mut ev),
         _ => walk(data, &[vn], &mut ev),
     }
@@ -364,10 +396,12 @@ fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<(Kind, Vec<VarnodeId
     if v.is_input() && data.get_func_proto().possible_input_param(&addr, v.get_size()) {
         return Some((Kind::Param, Vec::new()));
     }
-    if crate::kuna_structsynth::is_call_return(data, vn) {
+    if crate::kuna_structsynth::is_call_return(data, vn) && (std::env::var_os("KUNA_ELEMPTR_LOCKEDRET").is_none() || declared_open_return(data, vn)) {
         let copies = copies_alone(data, vn)?;
         let rets = crate::kuna_structsynth::returned_values(data);
-        if crate::kuna_structsynth::returned_beside_others(data, &copies, &rets) {
+        if crate::kuna_structsynth::returned_beside_others(data, &copies, &rets)
+            || returns_another_value_in_place(data, vn, &copies, &rets)
+        {
             return None;
         }
         return Some((Kind::CallReturn, copies));
@@ -381,6 +415,30 @@ fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<(Kind, Vec<VarnodeId
         return Some((Kind::Global, Vec::new()));
     }
     None
+}
+
+/// Did the callee DECLARE the value `vn` returns as a pointer at nothing?
+fn declared_open_return(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(def) = data.vbank().get(vn).and_then(|v| v.get_def()) else { return false };
+    let Some(i) = data.get_call_specs_index(def) else { return false };
+    let proto = data.get_call_specs(i).proto();
+    proto.is_output_locked() && proto.get_output_type().is_some_and(|t| points_at_nothing(&t))
+}
+
+/// Does the function return, in the register the call's value arrives in, some
+/// value that is not a copy of it?  A register holding two values the function
+/// computes is one variable once merging starts (`tar`'s `sub_135e3` returns
+/// the record it builds in the `rax` its `char *` scratch name arrived in), and
+/// a `char *` vote there would retype the other value too.
+fn returns_another_value_in_place(data: &Funcdata, vn: VarnodeId, copies: &[VarnodeId], rets: &[VarnodeId]) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return true };
+    let (off, size) = (v.get_offset(), v.get_size() as u64);
+    let Some(spc) = v.get_addr().get_space().map(|s| s.get_index()) else { return true };
+    rets.iter().filter(|&&r| !copies.contains(&r) && !is_null(data, r)).filter_map(|&r| data.vbank().get(r)).any(|r| {
+        r.get_addr().get_space().is_some_and(|s| s.get_index() == spc)
+            && r.get_offset() < off + size
+            && off < r.get_offset() + r.get_size() as u64
+    })
 }
 
 /// The most copies of one returned value [`copies_alone`] follows.
@@ -487,27 +545,51 @@ fn walk(data: &Funcdata, starts: &[VarnodeId], ev: &mut Evidence) {
     }
 }
 
-/// A constant candidate's evidence: it must be the base of an indexed access.
+/// Every constant of the function naming the same address as `cvn`, at its
+/// width, that is only ever the base of an add.
+fn same_constant(data: &Funcdata, cvn: VarnodeId) -> Vec<VarnodeId> {
+    let Some(v) = data.vbank().get(cvn) else { return vec![cvn] };
+    let (addr, size) = (v.get_addr().clone(), v.get_size());
+    let Some(spc) = addr.get_space().cloned() else { return vec![cvn] };
+    let end = Address::new(spc, addr.get_offset().wrapping_add(1));
+    let mut out: Vec<VarnodeId> = data
+        .vbank()
+        .iter_loc_addr_range(&addr, &end)
+        .filter(|&id| data.vbank().get(id).is_some_and(|w| w.get_size() == size && w.is_constant()))
+        .filter(|&id| only_indexed(data, id))
+        .collect();
+    if !out.contains(&cvn) {
+        out.push(cvn);
+    }
+    out
+}
+
+/// The pointees of every other constant of the function naming the same
+/// address, where one is typed a pointer at something.
+fn other_pointer_uses(data: &Funcdata, cvn: VarnodeId) -> Vec<Rc<Datatype>> {
+    let Some(v) = data.vbank().get(cvn) else { return Vec::new() };
+    let (addr, size) = (v.get_addr().clone(), v.get_size());
+    let Some(spc) = addr.get_space().cloned() else { return Vec::new() };
+    let end = Address::new(spc, addr.get_offset().wrapping_add(1));
+    data.vbank()
+        .iter_loc_addr_range(&addr, &end)
+        .filter_map(|id| data.vbank().get(id).map(|w| (id, w)))
+        .filter(|(id, w)| w.get_size() == size && w.is_constant() && !only_indexed(data, *id))
+        .filter_map(|(_, w)| {
+            let t = w.get_type();
+            (t.get_metatype() == type_metatype::TYPE_PTR && !points_at_nothing(t)).then(|| t.get_ptr_to()).flatten()
+        })
+        .collect()
+}
+
+/// A constant candidate's evidence: the accesses it is the base of.
 fn walk_constant(data: &Funcdata, cvn: VarnodeId, ev: &mut Evidence) {
     let descend: Vec<OpId> = match data.vbank().get(cvn) {
         Some(v) => v.descend_iter().collect(),
         None => return,
     };
     for op in descend {
-        let Some(o) = data.obank().get(op) else { continue };
-        let slot = o.get_slot(cvn);
-        match o.code() {
-            OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD => {
-                let _ = base_use(data, op, cvn, 0, ev);
-            }
-            // Any other reader of the address -- a call argument, a compare, a
-            // store of the address itself -- is not an indexed access, and the
-            // name is `globalref`'s to decide.
-            _ => {
-                let _ = slot;
-                ev.refuse("const-other-use");
-            }
-        }
+        let _ = base_use(data, op, cvn, 0, ev);
         if ev.refused.is_some() {
             return;
         }
@@ -597,12 +679,19 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
                 return None;
             }
             let other_vn = o.get_in(other)?;
-            // An operand already known to be a pointer is the base, whatever
-            // else the program does with it, and this value is its index.
-            if data.vn_type_read_facing(other_vn, op).get_metatype() == type_metatype::TYPE_PTR {
+            // An operand already known to be a pointer -- by its type, or by a
+            // use only a pointer has -- is the base, whatever else the program
+            // does with it, and this value is its index.
+            if data.vn_type_read_facing(other_vn, op).get_metatype() == type_metatype::TYPE_PTR
+                || has_pointer_use(data, other_vn)
+            {
                 return None;
             }
             let scale = index_scale(data, other_vn, INDEX_DEPTH).or_else(|| ev.base_is_ptr.then_some((1, 0)));
+            if trace_on() && scale.is_some() {
+                let d = data.vbank().get(other_vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)).map(|o| format!("{:?}", o.code())).unwrap_or_else(|| "input".into());
+                eprintln!("[elemptr-index] op@{:#x} other def={d} scale={scale:?} base_is_ptr={}", o.get_addr().get_offset(), ev.base_is_ptr);
+            }
             match scale {
                 Some((scale, k)) => {
                     indexed(data, out?, scale, off + k, ev);
@@ -1067,6 +1156,24 @@ fn is_counter(data: &Funcdata, x: VarnodeId) -> bool {
     start
 }
 
+/// Is `x` dereferenced, or passed where a callee declares a pointer?  A value
+/// used that way is an address, and cannot be the index of the add it is in.
+fn has_pointer_use(data: &Funcdata, x: VarnodeId) -> bool {
+    let Some(v) = data.vbank().get(x) else { return false };
+    v.descend_iter().any(|op| {
+        let Some(o) = data.obank().get(op) else { return false };
+        let slot = o.get_slot(x);
+        match o.code() {
+            OpCode::CPUI_LOAD | OpCode::CPUI_STORE => slot == 1,
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if slot > 0 => {
+                crate::coreaction_infertypes::declared_input_type_local(data, op, slot).get_metatype()
+                    == type_metatype::TYPE_PTR
+            }
+            _ => false,
+        }
+    })
+}
+
 /// Does the program read `x` as a number somewhere -- multiply, divide, shift
 /// or mask it, or order it against a non-zero literal?  Such a value is not the
 /// base of the add it also appears in.
@@ -1117,6 +1224,8 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
     // record, a float, another width -- is not this array.
     let mut named: Option<Rc<Datatype>> = None;
     let mut named_agree = true;
+    let mut declared_int: Option<Rc<Datatype>> = None;
+    let mut declared_agree = true;
     for t in &ev.elem_types {
         match &named {
             None => named = Some(Rc::clone(t)),
@@ -1132,8 +1241,15 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
         }
         match p.get_metatype() {
             type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN => {
-                if w == ptrsize && p.get_metatype() != type_metatype::TYPE_UNKNOWN {
-                    ev.number += 1;
+                if p.get_metatype() != type_metatype::TYPE_UNKNOWN {
+                    if w == ptrsize {
+                        ev.number += 1;
+                    }
+                    match &declared_int {
+                        None => declared_int = Some(Rc::clone(p)),
+                        Some(d) if d.type_order(p).map(|o| o == 0).unwrap_or(false) => {}
+                        Some(_) => declared_agree = false,
+                    }
                 }
             }
             type_metatype::TYPE_PTR if w == ptrsize => {
@@ -1177,6 +1293,11 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
     } else if ev.address > 0 {
         ev.refuse("narrow-address");
         return None;
+    }
+    // A callee that declares the element (`strftime`'s `char *`) says what its
+    // sign is; the loads only guess.
+    if let Some(d) = declared_int.filter(|_| declared_agree) {
+        return Some(d);
     }
     let unsigned = ev.unsigned > 0 && ev.signed == 0 && ev.charlit == 0;
     let meta = if unsigned { type_metatype::TYPE_UINT } else { type_metatype::TYPE_INT };
@@ -1278,47 +1399,63 @@ pub fn record(arch: &mut crate::architecture::Architecture, data: &Funcdata) {
     if !arch.kuna_elemptr.recording {
         return;
     }
-    let me = data.get_address().get_offset();
-    let ledger = &mut arch.kuna_elemptr;
-    for per in ledger.verdicts.values_mut() {
-        per.remove(&me);
-    }
-    for (g, v) in data.kuna_elemptr_verdicts() {
-        ledger.verdicts.entry(g).or_default().insert(me, v);
-    }
+    arch.kuna_elemptr.file(data.get_address().get_offset(), data.kuna_elemptr_verdicts());
 }
 
 /// The functions to decompile again: every one that typed a global some other
 /// function disagrees about -- refuses it, or types it at another width --
 /// with that global now blocked for it.
 pub fn disagreements(arch: &mut crate::architecture::Architecture) -> BTreeSet<u64> {
-    let ledger = &mut arch.kuna_elemptr;
-    let mut redo = BTreeSet::new();
-    for (&g, per) in &ledger.verdicts {
-        let typed: BTreeSet<&GlobalVerdict> =
-            per.values().filter(|v| matches!(v, GlobalVerdict::Typed { .. })).collect();
-        if typed.is_empty() {
-            continue;
-        }
-        let refused = per.values().any(|v| *v == GlobalVerdict::Refused);
-        if !refused && typed.len() == 1 {
-            continue;
-        }
-        for (&f, v) in per {
-            if !matches!(v, GlobalVerdict::Typed { .. }) {
-                continue;
-            }
-            let entry = ledger.blocked.entry(f).or_default();
-            if !entry.contains(&g) {
-                Rc::make_mut(entry).insert(g);
-                redo.insert(f);
-            }
-        }
-    }
+    let redo = arch.kuna_elemptr.disagreements();
     if trace_on() {
         eprintln!("[elemptr] batch disagreements: {} functions to redo", redo.len());
     }
     redo
+}
+
+impl Ledger {
+    /// Replace what the function entered at `me` said about every global.
+    pub(crate) fn file(&mut self, me: u64, said: BTreeMap<u64, GlobalVerdict>) {
+        for per in self.verdicts.values_mut() {
+            per.remove(&me);
+        }
+        for (g, v) in said {
+            self.verdicts.entry(g).or_default().insert(me, v);
+        }
+    }
+
+    /// Block every disagreed global for the functions that typed it, and return
+    /// the functions whose blocked set grew.
+    pub(crate) fn disagreements(&mut self) -> BTreeSet<u64> {
+        let mut redo = BTreeSet::new();
+        for (&g, per) in &self.verdicts {
+            let typed: BTreeSet<&GlobalVerdict> =
+                per.values().filter(|v| matches!(v, GlobalVerdict::Typed { .. })).collect();
+            if typed.is_empty() {
+                continue;
+            }
+            let refused = per.values().any(|v| *v == GlobalVerdict::Refused);
+            if !refused && typed.len() == 1 {
+                continue;
+            }
+            for (&f, v) in per {
+                if !matches!(v, GlobalVerdict::Typed { .. }) {
+                    continue;
+                }
+                let entry = self.blocked.entry(f).or_default();
+                if !entry.contains(&g) {
+                    Rc::make_mut(entry).insert(g);
+                    redo.insert(f);
+                }
+            }
+        }
+        redo
+    }
+
+    /// Is `global` blocked for the function entered at `me`?
+    pub(crate) fn is_blocked(&self, me: u64, global: u64) -> bool {
+        self.blocked.get(&me).is_some_and(|b| b.contains(&global))
+    }
 }
 
 fn sign_extend(v: uintb, size: int4) -> intb {

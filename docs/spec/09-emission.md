@@ -1583,6 +1583,24 @@ character-pointer type in the first place: it shared a merged live range with a
 genuine `char *` parameter (§6), and the probe is doing what it is supposed to do
 for a `char *` constant once that type is established.
 
+**An indexed table is a literal only when the index stays inside it.** With
+`elemptr` on (05-types §5.2), a character-pointer constant that is the base of a
+`PTRADD` indexed by a computed value is probed with the index's largest value
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs
+(literal_index_bound)`): a zero-extended byte is at most 255, a mask is at most
+its mask, an unsigned remainder is less than its divisor, and anything else is
+unbounded. `push_ptr_char_constant_ir` declines the literal when a known bound
+exceeds the literal's character count — its NUL is the last byte still inside
+it — because the C `"..."[x]` reads the literal, not the image; and it declines
+an *empty* literal under any index but a provable zero: coreutils `sort` indexes
+a 256-byte table whose first byte is zero, which printed `""[*v15._0_8_]`. An
+unbounded index into a literal with characters of its own keeps upstream's
+spelling (`"CCc"[v21]`, the base64 alphabet `tar` reads), since the string probe
+found text there and nothing says the index leaves it. A declined literal falls
+through to the address, and so to the array name `globalref` gives it (§9.9).
+The upstream symbol path (a read-only character-array symbol) does not consult
+the bound.
+
 **A character pointer the probe declines is still an address.** When the bytes
 at a `char *` constant do not decode as a string — the GB18030 quote glyphs
 gnulib's `gettext_quote` returns (`a1 07 65 00`) are the common case — the
@@ -2289,6 +2307,20 @@ declarations too, so a `struct_N` that only a global names is still redone by
 the `structsynth` convergence sweep and kept by the header's type pruning.
 The directly read `dat_<addr>` names are still not declared on their own
 account; only an address some function takes is.
+
+**An indexed table is an array (`elemptr`).** With `elemptr` on (05-types
+§5.2), a constant address that is the base of a `PTRADD` indexed by a computed
+value is an array's first element, and `plan` records it (`Plan::indexed`). The
+name then prints without the `&` (`printc.rs (PrintC::push_global_ref_ir)` asks
+`Plan::is_array`): `dat_4020` already has exactly the constant's pointer type in
+C, so `dat_4020[v1]` is the same address and the same element as
+`*(unsigned char *)(v1 + 0x4020)`. `extract_global_objects` declares it `T
+dat_4020[]`, an array of unknown length, and `global_declarations` prefers that
+declaration over a scalar one another function makes when no function reads the
+name directly: an indexed body does not compile against a scalar, and a direct
+read does not compile against an array, so with both present the address is left
+undeclared with a comment, like two direct types. An array whose storage this
+function also reads or writes directly keeps its cast (`DirectAccess`).
 
 **The value is the binary's.** `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
 (a_constant_address_named_as_a_global_round_trips_through_the_printed_c)`

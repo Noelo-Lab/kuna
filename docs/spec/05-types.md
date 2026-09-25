@@ -616,6 +616,115 @@ character literal, against 23 lines that move forward and four `strcmp` casts
 that disappear. `docs/features/charptr/` carries the census, the per-function
 moves and that corpus classification.
 
+**A pointer used only as an array (`elemptr`).** `charptr` names a pointee from
+what the program *passes*; the commonest evidence of an element type is simpler
+than that, and every earlier rule misses it for the same reason. A table lookup
+`t[i]` lowers to `INT_ADD(t, i)` feeding a `LOAD`, and `TypeOpIntAdd` votes an
+integer for *both* operands and refuses to carry the loaded element's pointer
+back over the add (the refusal `ptrfromuse` documents). With no constant-offset
+dereference to go on, `ptrfromuse` has nothing to say either, so a textbook
+base64 decoder's input string is declared `long`, the table it allocated and
+keeps in a global is `long` where it is read and `void *` where `malloc` returned
+it, its output buffer is `void *`, and the constant alphabet in `.data` it builds
+the table from has no declaration at all. Every access prints as an integer sum
+behind two casts: `*(char *)((unsigned long)*(unsigned char *)((long)v1 +
+0x4020) + (long)dat_4070) = (char)v1;`.
+
+When `elemptr` is on, `decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs
+(element_pointer)` adds a `T *` vote to the `getLocalType` fold for four kinds of
+value: a function input the prototype model could place a parameter in; the
+value a `CALL` returns when the callee left the pointee open (a `void *` or an
+unlocked output — an allocator), provided no phi joins it with anything but a
+copy of itself or a null; a global the image names nothing at, decided once per
+pass from every Varnode of the function that holds its storage; and a constant
+address inside a section of program data that is the base of an indexed access.
+The vote replaces an integer or unknown vote, or a pointer at nothing (`void *`,
+`undefined1 *`); a type-locked Varnode, one seeded from a locked symbol, and a
+vote that already names a pointee — a declared, DWARF, libc, asserted or
+`calleevote` type — keep what they have.
+
+The walk is the bounded breadth-first worklist of `ptrfromuse` — `COPY`, `CAST`,
+`MULTIEQUAL` and `INDIRECT` identity, literal offsets carried as a displacement
+from the base, a ten-hop cap — and it asks of every use whether it is an
+*element access*: a `LOAD` or `STORE` of width W (1, 2, 4 or 8 bytes) through the
+base plus an index scaled by W. It commits when every access through the value,
+at any literal offset, is one width landing on a whole element, and at least one
+index is a value the program computes. Constant offsets alone never commit —
+those are a record's fields, and `ptrfromuse`'s `void` and `structsynth`'s
+records keep them (a qsort comparator's `void const *` parameters are why). An
+index is recognised by how it was made, never by its declared type, which for
+the other operand of the same add is the very integer vote the rule overrules: a
+scaling by a constant (`x * W`, `x << log2 W`), an extension from a narrower
+integer, a mask under 0x10000, a shift, a division or remainder, a loop counter
+that starts at a literal and steps by one (`for (i = 0; ...; i++)` keeps `i` in
+an eight-byte frame slot at `-O0`), a value the program also multiplies, shifts,
+masks or orders against a literal, and — when the candidate is already a pointer,
+`malloc`'s `void *` — the other operand of any add, since C adds no two pointers.
+An operand already typed as a pointer is the base, and an add whose operands
+could each be the base says nothing about either: `f(char *p, long i) { return
+p[i]; }` at `-O2` stays `long` for both. The index scale must be the element
+width, and an index that is itself a multiple of elements (`p[2 * i]`, `p[2 * i
++ 1]`, through any extension) walks records of that many elements, so a pair of
+`long`s and a `{char *; struct *}` record are both declined rather than guessed.
+
+The element is the integer of width W, signed or unsigned when every extension
+and ordering of a loaded element agrees and plain (`char`, `int`) otherwise; a
+byte compared against a printable character literal is plain `char`, which is
+what makes the decoder's input `char *` although one of its reads is
+zero-extended into an index. An element as wide as a pointer is a pointer or a
+number, and only its uses say which. It commits to an integer when the elements
+are only ever arithmetic, and to a pointer only when something names the pointee
+— a loaded element already typed `char *` by the callee it is passed to, a stored
+`FILE *`, a pointee a callee declares for the base — because an unnamed `void **`
+would pre-empt the `char **` argv `calleevote` states on a later decompile of the
+same function; used both ways, or neither, it declines.
+
+The refusals: a second access width (a record, not an array), a scale that is not
+the element, a record stride, a non-zero `PTRSUB` field, integer arithmetic on the
+pointer itself (multiply, divide, shift, mask, `PIECE`, `SUBPIECE`), a float, a
+comparison against a non-zero literal, a call argument the callee declares as a
+scalar or as a pointer to something of another width or kind, and a comparison
+or difference with a pointer at something of another width. A constant is a
+candidate only when every reader indexes through it.
+
+**Globals are typed only where the program agrees.** A global's element type is
+a program-wide claim, and one function's evidence is not enough to make it: one
+function can index a buffer by bytes that another reads four bytes at a time. So
+`decompile-all` and `decompile-project` keep a ledger
+(`kuna_elemptr.rs (Ledger)`, on the `Architecture` beside `calleevote`'s): every
+function of the batch files what its walks said about each global it touches —
+an array of which width and kind, or a refusal, and a read of the global at
+another width than a pointer's is a refusal too — and a function that typed a
+global by way of an allocator's result copied into it files the same. After the
+batch, `kuna_elemptr.rs (disagreements)` finds every global some function typed
+and another refused or typed at another width, blocks it for each function that
+typed it, and those functions are decompiled again
+(`decompiler/crates/kuna-console/src/project.rs (converge_element_globals)`, and
+its callee-first twin in `decompile_all.rs`); a function that said nothing about
+the global is not a disagreement. A single-function `decompile`, a sharded
+`--jobs` worker and the streaming export have no batch to consult and decide each
+function on its own evidence.
+
+The constant candidate is the fourth piece: typed `unsigned char *`, the
+constant becomes the base of a `PTRADD`, and `globalref` (09-emission §9.9)
+prints it as the array it names, `dat_4020[v1]`, which the export header declares
+`unsigned char dat_4020[]`. A constant that points at bytes the printer would
+otherwise render as a string literal keeps the literal only when the index
+provably stays inside it (09-emission §9.4): `""[x]` reads bytes the literal does
+not have.
+
+The round trip in `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
+(an_element_pointer_round_trips_through_the_printed_c)` compiles the witnesses of
+`decompiler/crates/kuna-analysis/tests/fixtures/elemptr_x86_64.c` exactly as
+printed — its gcc `-O0`, clang `-O0` and gcc `-O2` builds, with the option on and
+off, with gcc and clang — and requires them to compute what the binary computes:
+bytes at and above 0x80 read signed and unsigned and used as indexes both ways,
+an `int` array read backwards from its end, a `.data` table of `int`s, a table
+filled through a global the program allocated, and an allocated buffer returned
+to the caller. `tests/stages/kuna-elemptr.xml` pins the witnesses and the two
+controls (a record walked by a stride, a pointer read at two widths) in both
+passes.
+
 **The truth-valued byte (`boolbyte`).** `TYPE_BOOL` only ever enters the
 lattice as an op's *output*: every `booloutput` opcode's `get_output_local` is
 `get_base(size, TYPE_BOOL)`, and `CBRANCH`'s slot-1 `get_input_local` is the
