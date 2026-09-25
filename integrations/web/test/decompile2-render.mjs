@@ -133,7 +133,7 @@ checks.push('buildIndex');
 assert.deepEqual(localDecls(sumTo.code).map((d) => [d.name, d.type, d.storage]), [['acc', 'long', 'stack - 0x10'], ['v1', 'int', 'stack - 0x14']]);
 assert.deepEqual(localDecls('void f(void)\n{\n  char v2 [16]; // stack - 0x18\n  \n}').map((d) => d.type), ['char [16]']);
 assert.equal(storageLabel('rax'), 'register RAX');
-assert.equal(storageLabel('stack - 0x14'), 'stack −0x14');
+assert.equal(storageLabel('stack - 0x14'), 'stack entry−0x14');
 assert.equal(bandOf(5), 5);
 assert.equal(bandOf(6), 0);
 assert.deepEqual([...changedLines('a\nb\nc', 'a\nB\nc\nd')], [2, 4]);

@@ -194,11 +194,11 @@ export function localDecls(code) {
   return out;
 }
 
-/** `rax` → `register RAX`; `stack - 0x14` → `stack −0x14`. */
+/** `rax` → `register RAX`; `stack - 0x14` → `stack entry−0x14` (from the stack pointer at entry). */
 export function storageLabel(storage) {
   if (!storage) return '';
   const stack = /^stack\s*([-+])\s*(0x[0-9a-f]+|\d+)$/i.exec(storage.trim());
-  if (stack) return `stack ${stack[1] === '-' ? '−' : '+'}${stack[2]}`;
+  if (stack) return `stack entry${stack[1] === '-' ? '−' : '+'}${stack[2]}`;
   if (/^[a-z][a-z0-9]*$/i.test(storage.trim())) return `register ${storage.trim().toUpperCase()}`;
   return storage;
 }
