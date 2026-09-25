@@ -1,0 +1,16 @@
+{
+  "slug": "rthints",
+  "need_id": "rthints",
+  "track": "tooling",
+  "scope": "small",
+  "option": null,
+  "module": "decompiler/crates/kuna-cli/src/runtime_hints.rs",
+  "decisions": [
+    "Tooling track: the hint changes no emitted C, so no phases.toml option; it adds a summary.runtime field and a stderr note.",
+    "The note goes to stderr before dispatch so JSON stdout is untouched; --summary carries the rows itself and prints a note only when its load fails.",
+    "The PE walk skips the MZ check so a damaged DOS header (Flare-On 12 UnholyDragon) is still named; repairing it is out of scope.",
+    "Go/Rust come from the existing sourcelang verdict and are informational (actionable false), so they never add a stderr line."
+  ],
+  "covered_by_existing_option": false,
+  "acceptance_passes": true
+}

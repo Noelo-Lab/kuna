@@ -30,7 +30,9 @@ worker startup outweighs the benefit. A sub-1 MB file is only a rough size guide
 
 When scale is unknown, `kuna functions ./challenge --summary --json` reports counts,
 entry point, reachability, and code bytes. It still loads and analyzes the image, so
-skip this extra call if scope is clear.
+skip this extra call if scope is clear. Its `summary.runtime` array names a PyInstaller
+or Nuitka bundle, a .NET assembly, a UPX stub, AutoIt, VB6 or twinBASIC with the tool to
+use instead; other subcommands print the same hint as a `note:` line on stderr.
 
 For a few dozen short functions, `kuna decompile-all ./challenge` is manageable to
 read directly; use a project when assembly or repeated navigation is needed.

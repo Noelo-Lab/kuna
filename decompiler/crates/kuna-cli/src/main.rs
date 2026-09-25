@@ -36,6 +36,7 @@ mod optname;
 mod output;
 mod paths;
 mod project_stream;
+mod runtime_hints;
 mod skill;
 mod specs;
 mod strings;
@@ -55,6 +56,7 @@ fn main() -> ExitCode {
     }
     let sub = args[1].as_str();
     let rest = &args[2..];
+    runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
         "decompile" => decompile::main(rest),
         "decompile-all" => decompile_all::run(rest),
