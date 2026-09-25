@@ -65,14 +65,14 @@ const storage = (() => {
 const state = {
   kuna: null,
   prefs: loadPrefs(storage),
-  binary: null,          // {name, bytes, format, example}
-  inventory: null,       // the `list` document
-  rows: [],              // sidebar rows [{row, fn, key, stub}]
+  binary: null,
+  inventory: null,
+  rows: [],
   stubDiv: null,
   byAddr: new Map(),
   byName: new Map(),
-  current: null,         // {fn, data, segs, index}
-  cache: new Map(),      // address_hex -> normalized function (LRU)
+  current: null,
+  cache: new Map(),
   caps: { inspect: null, assert: null },
   exampleSource: null,
   hist: { index: 0, max: 0 },
@@ -1231,6 +1231,7 @@ const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA
   el.tagName === 'SELECT' || el.isContentEditable);
 
 document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented) return;
   if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     e.preventDefault();
     if (e.key === 'ArrowLeft' && !els.back.disabled) history.back();
@@ -1658,13 +1659,13 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
 }
 
 function undo() {
-  if (!session.undo()) return;
+  if (active?.kind === 'edit' || !session.undo()) return;
   sessionChanged();
   if (state.current && state.caps.assert !== false) reinspect({ label: 'undo' });
 }
 
 function redo() {
-  if (!session.redo()) return;
+  if (active?.kind === 'edit' || !session.redo()) return;
   sessionChanged();
   if (state.current && state.caps.assert !== false) reinspect({ label: 'redo' });
 }
@@ -2196,5 +2197,3 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Exposed for the browser smoke test and for debugging from the console.
-window.kunaStudy = { state, openFunction, setTab, showFunction, normalizeInspect };
