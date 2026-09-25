@@ -24,7 +24,7 @@
   "difference": "ls -O0 print_long_format (sub_c6c8): sub_5453(v14,(long)v24 - (long)v14) -> sub_5453(v14,v24 - v14); IDA sub_5453(v52, sa - v52)"
  },
  "census": {
-  "set": "castbench full, 4,815 shared functions, main b3878d32e",
+  "set": "castbench full, 4,815 shared functions, main b3878d32e (the census predates the #723 rebase; the castbench block is on c960fb18d)",
   "text_i64_var_casts": {
    "main": 6081,
    "castindex": 5253,
@@ -46,38 +46,38 @@
  },
  "castbench": {
   "set": "full, 45 binaries x O0/O2/O2-noinline, 4,815 shared functions (kuna x IDA x main)",
-  "base": "/home/mahaloz/kwt/castbench/main-b3878d32e",
+  "base": "/home/mahaloz/kwt/castbench/main-c960fb18d (origin/main c960fb18d, castimplied/castarith/castsign/globalref on)",
   "casts": {
    "ida": 37821,
-   "main": 38602,
-   "castindex": 37742
+   "main": 37477,
+   "castindex": 36617
   },
   "per_kloc": {
    "ida": 155.4,
-   "main": 202.5,
-   "castindex": 198.0
+   "main": 196.6,
+   "castindex": 192.1
   },
   "per_100_statements": {
    "ida": 27.0,
-   "main": 32.1,
-   "castindex": 31.4
+   "main": 31.2,
+   "castindex": 30.5
   },
   "vs_ida": {
-   "main": 1.021,
-   "castindex": 0.998
+   "main": 0.991,
+   "castindex": 0.968
   },
   "per_opt_vs_ida": {
    "O0": [
-    1.032,
-    1.008
+    1.003,
+    0.979
    ],
    "O2": [
-    1.056,
-    1.034
+    1.028,
+    1.006
    ],
    "O2-noinline": [
-    0.97,
-    0.948
+    0.937,
+    0.915
    ]
   },
   "functions_fewer": 220,
@@ -85,20 +85,28 @@
   "functions_more": 0,
   "functions_vs_ida": {
    "main": {
-    "fewer": 1873,
-    "equal": 1403,
-    "more": 1539
+    "fewer": 1946,
+    "equal": 1457,
+    "more": 1412
    },
    "castindex": {
-    "fewer": 1897,
-    "equal": 1406,
-    "more": 1512
+    "fewer": 1970,
+    "equal": 1461,
+    "more": 1384
    }
+  },
+  "shape_deltas": {
+   "(i64) <var>": -827,
+   "(char*) <paren>": -197,
+   "(void*) <paren>": -59,
+   "(uchar*) <paren>": -36,
+   "(i64*) <paren>": -21,
+   "(u64*) <paren>": -17
   }
  },
  "corpus_sweep": {
   "method": "kuna decompile-all both arms of one build (--option castindex off vs on) over the 45 castbench binaries, every function; hunkclass.py checks each changed hunk keeps its identifier multiset, gains no constant, loses only an element-size scale, and drops casts; structcheck.py compares per-function lines, statements, gotos, labels, loops and returns",
-  "off_arm": "byte-identical to main b3878d32e on 45/45 binaries",
+  "off_arm": "byte-identical to main c960fb18d on 45/45 binaries",
   "functions_changed": 776,
   "structural_changes": 0,
   "hunks": 1487,
@@ -110,7 +118,7 @@
   "hunks_outside_documented_effect": 0
  },
  "soundness": {
-  "round_trip": "castindex_x86_64.c, 24 functions x (gcc -O0, clang -O0, gcc -O2) x (on, off): printed C recompiled and run prints exactly what the binary prints; also by hand with gcc 11 and clang 14 under -Werror=int-conversion -Werror=incompatible-pointer-types",
+  "round_trip": "castindex_x86_64.c, 25 functions (incl. a textbook base64 decoder whose malloc'ed global table is indexed by input bytes >= 0x80 into a sign-bit filler, checksummed per quad) x (gcc -O0, clang -O0, gcc -O2) x (on, off): printed C recompiled and run prints exactly what the binary prints; also by hand with gcc 11 and clang 14 under -Werror=int-conversion -Werror=incompatible-pointer-types; hand mutants (a sign-extended table index, an unsigned element) print a different checksum",
   "unit_tests": 12
  },
  "benchmark": {

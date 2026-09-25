@@ -106,7 +106,7 @@ beside `castarith`, at the same seam. A separate option rather than a value of
   compare, a length argument) computes the same.
 - Compiled round trips (`decompile_all_cli.rs
   a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c`,
-  fixture `castindex_x86_64.c`, 24 functions, gcc -O0 / clang -O0 / gcc -O2 builds,
+  fixture `castindex_x86_64.c`, 25 functions, gcc -O0 / clang -O0 / gcc -O2 builds,
   option on and off; also compiled by hand with gcc 11 and clang 14 under
   `-Werror=int-conversion -Werror=incompatible-pointer-types`): loads of widths
   1/2/4/8 and a double, stores, a loop, `int`/`unsigned int`/`short`/`signed char`/
@@ -114,27 +114,51 @@ beside `castarith`, at the same seam. A separate option rather than a value of
   `0x80000001` read through a 24 GiB `MAP_NORESERVE` map (a sign extension would read
   2^31 elements backward), `strchr`/`strrchr` differences divided by 3, shifted,
   compared signed and unsigned, and passed to `strnlen`; controls: a 16-byte stride read
-  at 8, a 12-byte stride read at 4, a byte offset read at 8, a `long *` difference.
-  Every program prints what its binary prints.
+  at 8, a 12-byte stride read at 4, a byte offset read at 8, a `long *` difference;
+  and a base64 decoder whose `malloc`ed global `char *` table is indexed by input
+  bytes of 0x80 and up (`'\xff'`, `'\x80'`, `'*'`) into a filler with the sign bit set,
+  each quad folded into a checksum. Every program prints what its binary prints, and
+  a hand-made mutant of the printed decoder with a sign-extended index, or with an
+  `unsigned char` element, prints a different checksum.
 - 12 unit tests in `p9_emit/kuna_castarith/tests.rs`; the stage test
   `tests/stages/kuna-castindex.xml` (7 assertions, two passes).
 
 ## 5. Measurements
 
-castbench full (4,815 shared functions; base = the main `b3878d32e` arm):
+castbench full (4,815 shared functions; base = the main `c960fb18d` arm, with
+`castimplied`, `castarith`, `castsign` and `globalref` on):
 
 | arm | casts | /kloc | /100 stmts | vs IDA |
 |---|---:|---:|---:|---:|
 | IDA | 37,821 | 155.4 | 27.0 | 1.000 |
-| main | 38,602 | 202.5 | 32.1 | 1.021 |
-| **castindex** | **37,742** | **198.0** | **31.4** | **0.998** |
+| main | 37,477 | 196.6 | 31.2 | 0.991 |
+| **castindex** | **36,617** | **192.1** | **30.5** | **0.968** |
 
-Per level: O0 12,591 -> 12,298 (1.032 -> 1.008), O2 14,208 -> 13,910 (1.056 -> 1.034),
-O2-noinline 11,803 -> 11,533 (0.970 -> 0.948). 220 functions fewer casts (860 casts),
-**0 more**. Against IDA per function: fewer than IDA 1,873 -> 1,897, more 1,539 -> 1,512.
+Per level: O0 12,234 -> 11,942 (1.003 -> 0.979), O2 13,837 -> 13,539 (1.028 -> 1.006),
+O2-noinline 11,406 -> 11,136 (0.937 -> 0.915). 220 functions fewer casts (860 casts),
+**0 more**. Against IDA per function: fewer than IDA 1,946 -> 1,970, more 1,412 -> 1,384.
+By shape: `(long)<var>` -827, `(char *)(...)` -197, `(void *)(...)` -59,
+`(unsigned char *)(...)` -36, `(long *)(...)` -21, `(unsigned long *)(...)` -17.
 
 Whole corpus (every function of the 45 binaries, both arms of one build): 776
 functions change, none with any structural difference (lines, statements, gotos,
 labels, loops, returns); 1,487 hunks, every one with fewer casts, the same variable
 references and only an element-size scale lost: 998 subscript, 481 difference, 8 both
-(`hunkclass.py`, `structcheck.py`). The flip: `default-on-evaluation.md`.
+(`hunkclass.py`, `structcheck.py`). `castindex off` is byte-identical to main
+`c960fb18d` on all 45 binaries. The flip: `default-on-evaluation.md`.
+
+A textbook base64 decoder shows the table-lookup shape
+(`gcc -O0`, the decoder's `malloc`ed `char *decoding_table` indexed by input bytes):
+
+```c
+// castindex off
+v2 = (*(char *)(v8 + a0) != '=') ? (int)*(char *)((unsigned long)*(unsigned char *)(v8 + a0) + (long)decoding_table) : 0;
+*(char *)(v9 + (long)v6) = (char)(v5 >> 0x10);
+// castindex on
+v2 = (*(char *)(v8 + a0) != '=') ? (int)((char *)decoding_table)[*(unsigned char *)(v8 + a0)] : 0;
+((char *)v6)[v9] = (char)(v5 >> 0x10);
+```
+
+The `(int)` on the element and `*(char *)(v8 + a0)` (an integer `long a0` plus an
+integer) are other cast classes; this option does not touch them. The round-trip
+fixture carries the same decoder (section 4).
