@@ -480,10 +480,18 @@ function listAssertions() {
   return session.globalAssertions().filter((d) => !d.startsWith('function '));
 }
 
-els.file.addEventListener('change', () => {
+// Read before clearing the input: current Chrome returns an empty buffer for a read still pending when its input is cleared.
+els.file.addEventListener('change', async () => {
   const f = els.file.files[0];
-  if (f) indexBinary(f);
-  els.file.value = '';
+  if (!f) return;
+  try {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    indexBinary({ name: f.name, bytes });
+  } catch (e) {
+    setStatus(`could not read ${f.name}: ${e.message}`, 'err');
+  } finally {
+    els.file.value = '';
+  }
 });
 
 const reindex = () => {
@@ -1884,9 +1892,9 @@ function resolveFunc(name) {
 
 importEl.addEventListener('change', async () => {
   const file = importEl.files[0];
-  importEl.value = '';
-  if (!file || !state.binary) return;
-  const text = await file.text();
+  if (!file || !state.binary) { importEl.value = ''; return; }
+  let text;
+  try { text = await file.text(); } finally { importEl.value = ''; }
   let counts = null;
   const bindTo = state.current?.data.address_hex ?? null;
   const ok = await applyEdit(() => {
