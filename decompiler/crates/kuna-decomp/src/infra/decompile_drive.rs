@@ -1825,12 +1825,15 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
     let print = arch.print();
     let plan = print.globalref_plan();
     let rt = crate::printc::RealTypeCtx::from_arch(arch, print.out_lang());
-    let info = |address: u64, ty: &std::rc::Rc<crate::dtype::Datatype>, unknown: bool, direct: bool| {
+    let info = |address: u64, ty: &std::rc::Rc<crate::dtype::Datatype>, unknown: bool, direct: bool, array: bool| {
         let name = crate::printc::global_data_name(arch, address);
         use crate::dtype::type_metatype::{TYPE_STRUCT, TYPE_UNION};
+        // (kuna `elemptr`) An indexed global is declared as an array of unknown
+        // length, `T dat_4020[]`, which the header recognises by its suffix.
+        let declarator = if array { format!("{name}[]") } else { name.clone() };
         GlobalInfo {
             address,
-            declaration: crate::printc::declaration_text(ty, &name, rt),
+            declaration: crate::printc::declaration_text(ty, &declarator, rt),
             size: i64::from(ty.get_size()),
             name,
             unknown,
@@ -1839,9 +1842,9 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
         }
     };
     let mut out: Vec<GlobalInfo> =
-        plan.minted.iter().map(|(&address, m)| info(address, &m.decl_type, m.unknown, false)).collect();
+        plan.minted.iter().map(|(&address, m)| info(address, &m.decl_type, m.unknown, false, m.array)).collect();
     for (address, ty) in plan.direct_objects() {
-        let g = info(address, ty, false, true);
+        let g = info(address, ty, false, true, false);
         if !out.contains(&g) {
             out.push(g);
         }

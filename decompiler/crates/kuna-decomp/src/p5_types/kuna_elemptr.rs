@@ -122,6 +122,11 @@ struct Evidence {
     unsigned: u32,
     /// A loaded byte compared against a character literal.
     charlit: u32,
+    /// Uses of an element as an address: dereferenced, passed where a pointer
+    /// is expected, or stored from a pointer.
+    address: u32,
+    /// Uses of an element as a number: arithmetic, ordering, a non-zero literal.
+    number: u32,
     /// Pointees something else declares or compares this value against.
     pointees: Vec<Rc<Datatype>>,
     /// The use that refused the candidate.
@@ -152,8 +157,9 @@ impl Evidence {
         match self.refused {
             Some(r) => format!("refuse:{r}"),
             None => format!(
-                "w={:?} var={} const={} s={} u={} chr={}",
-                self.width, self.variable, self.constant, self.signed, self.unsigned, self.charlit
+                "w={:?} var={} const={} s={} u={} chr={} adr={} num={}",
+                self.width, self.variable, self.constant, self.signed, self.unsigned, self.charlit, self.address,
+                self.number
             ),
         }
     }
@@ -330,13 +336,31 @@ fn copies_alone(data: &Funcdata, vn: VarnodeId) -> Option<Vec<VarnodeId>> {
             if seen.contains(&x) {
                 continue;
             }
-            let xv = data.vbank().get(x)?;
-            if !(xv.is_constant() && xv.get_offset() == 0) {
+            if !is_null(data, x) {
                 return None;
             }
         }
     }
     Some(seen)
+}
+
+/// Is `x` the constant zero, perhaps through a few copies (`v8 = NULL;` on a
+/// path that reaches the phi through a frame slot)?
+fn is_null(data: &Funcdata, x: VarnodeId) -> bool {
+    let mut cur = x;
+    for _ in 0..4 {
+        let Some(v) = data.vbank().get(cur) else { return false };
+        if v.is_constant() {
+            return v.get_offset() == 0;
+        }
+        let Some(o) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
+        if o.code() != OpCode::CPUI_COPY {
+            return false;
+        }
+        let Some(src) = o.get_in(0) else { return false };
+        cur = src;
+    }
+    false
 }
 
 /// The breadth-first walk from a non-constant candidate.  The second component
@@ -611,7 +635,9 @@ fn indexed(data: &Funcdata, sum: VarnodeId, scale: intb, off: intb, ev: &mut Evi
 }
 
 /// One access of `w` bytes at literal offset `off` from the base, through the
-/// `LOAD`/`STORE` `op`.  Reads how a loaded element is used, for the sign.
+/// `LOAD`/`STORE` `op`.  Reads what the element is: how a loaded value is
+/// extended or ordered (its sign), compared (a character), and, for an element
+/// as wide as a pointer, whether it is used as an address or as a number.
 fn element_access(data: &Funcdata, op: OpId, w: int4, off: intb, variable: bool, ev: &mut Evidence) {
     if !matches!(w, 1 | 2 | 4 | 8) {
         ev.refuse("width");
@@ -624,13 +650,8 @@ fn element_access(data: &Funcdata, op: OpId, w: int4, off: intb, variable: bool,
     ev.access(w, variable);
     let Some(o) = data.obank().get(op) else { return };
     if o.code() == OpCode::CPUI_STORE {
-        if let Some(val) = o.get_in(2).and_then(|x| data.vbank().get(x)) {
-            let t = val.get_type();
-            if t.get_metatype() == type_metatype::TYPE_FLOAT {
-                ev.refuse("float-elem");
-            } else if t.get_metatype() == type_metatype::TYPE_PTR && w > 1 {
-                ev.refuse("pointer-elem");
-            }
+        if let Some(val) = o.get_in(2) {
+            stored_value(data, val, ev);
         }
         return;
     }
@@ -639,29 +660,119 @@ fn element_access(data: &Funcdata, op: OpId, w: int4, off: intb, variable: bool,
     for r in readers {
         let Some(ro) = data.obank().get(r) else { continue };
         let rslot = ro.get_slot(val);
+        let other_const = || {
+            ro.get_in(if rslot == 0 { 1 } else { 0 })
+                .and_then(|x| data.vbank().get(x))
+                .filter(|x| x.is_constant())
+                .map(|x| x.get_offset())
+        };
         match ro.code() {
             OpCode::CPUI_INT_SEXT
             | OpCode::CPUI_INT_SLESS
             | OpCode::CPUI_INT_SLESSEQUAL
             | OpCode::CPUI_INT_SRIGHT
             | OpCode::CPUI_INT_SDIV
-            | OpCode::CPUI_INT_SREM => ev.signed += 1,
-            OpCode::CPUI_INT_ZEXT
-            | OpCode::CPUI_INT_LESS
-            | OpCode::CPUI_INT_LESSEQUAL
-            | OpCode::CPUI_INT_RIGHT
-            | OpCode::CPUI_INT_DIV
-            | OpCode::CPUI_INT_REM => ev.unsigned += 1,
-            OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL if w == 1 => {
-                let other = ro.get_in(if rslot == 0 { 1 } else { 0 }).and_then(|x| data.vbank().get(x));
-                if other.is_some_and(|x| x.is_constant() && is_char_literal(x.get_offset())) {
-                    ev.charlit += 1;
+            | OpCode::CPUI_INT_SREM => {
+                ev.signed += 1;
+                ev.number += 1;
+            }
+            OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_DIV | OpCode::CPUI_INT_REM => {
+                ev.unsigned += 1;
+                ev.number += 1;
+            }
+            // Two pointers are ordered unsigned too: only a literal, or another
+            // operand already typed, says which this is.
+            OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL => {
+                ev.unsigned += 1;
+                let other = ro.get_in(if rslot == 0 { 1 } else { 0 });
+                match other_const() {
+                    Some(0) => {}
+                    Some(_) => ev.number += 1,
+                    None => {
+                        if other.is_some_and(|x| data.vn_type_read_facing(x, r).get_metatype() == type_metatype::TYPE_PTR) {
+                            ev.address += 1;
+                        }
+                    }
                 }
             }
-            OpCode::CPUI_LOAD | OpCode::CPUI_STORE if rslot == 1 => ev.refuse("pointer-elem"),
+            OpCode::CPUI_INT_MULT
+            | OpCode::CPUI_INT_LEFT
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_2COMP => ev.number += 1,
+            OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => match other_const() {
+                Some(c) if w == 1 && is_char_literal(c) => ev.charlit += 1,
+                Some(0) => {}
+                Some(_) => ev.number += 1,
+                None => {
+                    let other = ro.get_in(if rslot == 0 { 1 } else { 0 });
+                    if other.is_some_and(|x| data.vn_type_read_facing(x, r).get_metatype() == type_metatype::TYPE_PTR) {
+                        ev.address += 1;
+                    }
+                }
+            },
+            OpCode::CPUI_LOAD | OpCode::CPUI_STORE if rslot == 1 => ev.address += 1,
+            OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB if rslot == 0 => ev.address += 1,
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if rslot > 0 => {
+                let t = crate::coreaction_infertypes::input_type_local(data, r, rslot);
+                match t.get_metatype() {
+                    type_metatype::TYPE_PTR => ev.address += 1,
+                    type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_BOOL => ev.number += 1,
+                    type_metatype::TYPE_FLOAT => ev.refuse("float-elem"),
+                    _ => {}
+                }
+            }
             code if crate::kuna_ptrfromuse::is_float_op(code) => ev.refuse("float-elem"),
             _ => {}
         }
+    }
+}
+
+/// What the value a `STORE` writes into an element says about the element.
+fn stored_value(data: &Funcdata, val: VarnodeId, ev: &mut Evidence) {
+    let Some(v) = data.vbank().get(val) else { return };
+    match v.get_type().get_metatype() {
+        type_metatype::TYPE_FLOAT => {
+            ev.refuse("float-elem");
+            return;
+        }
+        type_metatype::TYPE_PTR => {
+            ev.address += 1;
+            return;
+        }
+        _ => {}
+    }
+    if v.is_constant() {
+        if v.get_offset() != 0 {
+            ev.number += 1;
+        }
+        return;
+    }
+    let Some(o) = v.get_def().and_then(|d| data.obank().get(d)) else { return };
+    match o.code() {
+        OpCode::CPUI_INT_MULT
+        | OpCode::CPUI_INT_DIV
+        | OpCode::CPUI_INT_SDIV
+        | OpCode::CPUI_INT_REM
+        | OpCode::CPUI_INT_SREM
+        | OpCode::CPUI_INT_LEFT
+        | OpCode::CPUI_INT_RIGHT
+        | OpCode::CPUI_INT_SRIGHT
+        | OpCode::CPUI_INT_AND
+        | OpCode::CPUI_INT_OR
+        | OpCode::CPUI_INT_XOR
+        | OpCode::CPUI_INT_SEXT
+        | OpCode::CPUI_INT_ZEXT
+        | OpCode::CPUI_SUBPIECE
+        | OpCode::CPUI_INT_EQUAL
+        | OpCode::CPUI_INT_NOTEQUAL
+        | OpCode::CPUI_INT_LESS
+        | OpCode::CPUI_INT_SLESS => ev.number += 1,
+        OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB => ev.address += 1,
+        code if crate::kuna_ptrfromuse::is_float_op(code) => ev.refuse("float-elem"),
+        _ => {}
     }
 }
 
@@ -773,16 +884,103 @@ fn used_as_number(data: &Funcdata, x: VarnodeId) -> bool {
 /// The element type the evidence commits to, or `None` (a refusal it recorded).
 fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
     let w = ev.width?;
-    for p in &ev.pointees {
-        if p.get_size() != w || !matches!(p.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN) {
+    let arch = data.get_arch();
+    let tlst = arch.types()?;
+    let ptrsize = arch.manage().get_default_data_space()?.get_addr_size() as int4;
+    // What another pointer at this object says the element is.  An integer of
+    // the element's width agrees; a pointer is a pointer element, whose type it
+    // names when every such pointee names the same one; anything else -- a
+    // record, a float, another width -- is not this array.
+    let mut named: Option<Rc<Datatype>> = None;
+    let mut named_agree = true;
+    let pointees = std::mem::take(&mut ev.pointees);
+    for p in &pointees {
+        if p.get_size() != w {
             ev.refuse("other-pointee");
             return None;
         }
+        match p.get_metatype() {
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN => {
+                if w == ptrsize && p.get_metatype() != type_metatype::TYPE_UNKNOWN {
+                    ev.number += 1;
+                }
+            }
+            type_metatype::TYPE_PTR if w == ptrsize => {
+                ev.address += 1;
+                match &named {
+                    None => named = Some(Rc::clone(p)),
+                    Some(n) if n.type_order(p).map(|o| o == 0).unwrap_or(false) => {}
+                    Some(_) => named_agree = false,
+                }
+            }
+            _ => {
+                ev.refuse("other-pointee");
+                return None;
+            }
+        }
     }
-    let tlst = data.get_arch().types()?;
+    // An element as wide as a pointer is a pointer or a number, and only its
+    // uses say which: both, or neither, declines.
+    if w == ptrsize {
+        match (ev.address > 0, ev.number > 0) {
+            (true, false) => {
+                if let Some(n) = named.filter(|_| named_agree) {
+                    return Some(n);
+                }
+                let wordsize = arch.manage().get_default_data_space()?.get_word_size();
+                return tlst.get_type_pointer(w, tlst.get_type_void().ok()?, wordsize).ok();
+            }
+            (false, true) => {}
+            (true, true) => {
+                ev.refuse("pointer-or-number");
+                return None;
+            }
+            (false, false) => {
+                ev.refuse("elem-unknown");
+                return None;
+            }
+        }
+    } else if ev.address > 0 {
+        ev.refuse("narrow-address");
+        return None;
+    }
     let unsigned = ev.unsigned > 0 && ev.signed == 0 && ev.charlit == 0;
     let meta = if unsigned { type_metatype::TYPE_UINT } else { type_metatype::TYPE_INT };
     tlst.get_base(w, meta).ok()
+}
+
+/// (printer) When the constant `vn` is the base of the `PTRADD` `op` indexed
+/// by a computed value: `Some` of the largest index it can take, `None` inside
+/// when nothing bounds it.  The outer `None` means `vn` is not such a base.
+pub fn literal_index_bound(data: &Funcdata, op: OpId, vn: VarnodeId) -> Option<Option<uintb>> {
+    let o = data.obank().get(op)?;
+    if o.code() != OpCode::CPUI_PTRADD || o.get_in(0) != Some(vn) {
+        return None;
+    }
+    let idx = o.get_in(1)?;
+    if data.vbank().get(idx)?.is_constant() {
+        return None;
+    }
+    Some(index_bound(data, idx, INDEX_DEPTH))
+}
+
+/// The largest value the index `x` can hold, when its definition says: a
+/// zero-extended narrower value, a mask, an unsigned remainder.
+fn index_bound(data: &Funcdata, x: VarnodeId, depth: usize) -> Option<uintb> {
+    let o = data.vbank().get(x)?.get_def().and_then(|d| data.obank().get(d))?;
+    let konst = |i: int4| -> Option<uintb> {
+        o.get_in(i).and_then(|v| data.vbank().get(v)).filter(|v| v.is_constant()).map(|v| v.get_offset())
+    };
+    match o.code() {
+        OpCode::CPUI_INT_ZEXT => {
+            let s = data.vbank().get(o.get_in(0)?)?.get_size();
+            (s < 8).then(|| (1u64 << (8 * s as u32)) - 1)
+        }
+        OpCode::CPUI_INT_AND => konst(1).or_else(|| konst(0)),
+        OpCode::CPUI_INT_REM => konst(1).filter(|&m| m > 0).map(|m| m - 1),
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST if depth > 0 => index_bound(data, o.get_in(0)?, depth - 1),
+        _ => None,
+    }
 }
 
 fn sign_extend(v: uintb, size: int4) -> intb {

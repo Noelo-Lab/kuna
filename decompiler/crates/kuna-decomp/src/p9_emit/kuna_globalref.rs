@@ -67,6 +67,10 @@ pub struct Minted {
     /// True when `decl_type` is the unknown byte: the function only ever used
     /// the address through `void *` and never reads the storage there directly.
     pub unknown: bool,
+    /// (kuna `elemptr`) True when the function indexes the address with a value
+    /// it computes: the global is an array of `decl_type`, named without `&`
+    /// (`dat_4020[v1]`), and declared `T dat_4020[]`.
+    pub array: bool,
 }
 
 /// A direct access this function makes to global storage.
@@ -119,6 +123,9 @@ pub struct Plan {
     direct: Vec<Direct>,
     /// The pointed-to types each in-range constant address is read at.
     pointees: BTreeMap<u64, Seen>,
+    /// (kuna `elemptr`) The addresses this function indexes with a computed
+    /// value: a constant that is the base of a `PTRADD` whose index is not.
+    indexed: HashSet<u64>,
     /// Every global this function's C names, by address.
     pub minted: BTreeMap<u64, Minted>,
 }
@@ -133,6 +140,7 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
     let mut numeric = HashSet::new();
     let mut direct = Vec::new();
     let mut pointees: BTreeMap<u64, Seen> = BTreeMap::new();
+    let mut indexed = HashSet::new();
     for vn in fd.vbank().iter_loc() {
         let Some(v) = fd.vbank().get(vn) else { continue };
         if v.is_constant() {
@@ -150,6 +158,9 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
                     continue;
                 }
                 let Some(to) = ct.get_ptr_to() else { continue };
+                if arch.elem_ptr && is_indexed_base(fd, op, vn) {
+                    indexed.insert(off);
+                }
                 let seen = pointees.remove(&off);
                 pointees.insert(off, Seen::merge(seen, to));
             }
@@ -165,7 +176,17 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
         }
     }
     let trace = std::env::var_os("KUNA_GLOBALREF_TRACE").is_some();
-    Plan { on: true, trace, numeric, direct, pointees, minted: BTreeMap::new() }
+    Plan { on: true, trace, numeric, direct, pointees, indexed, minted: BTreeMap::new() }
+}
+
+/// (kuna `elemptr`) Is `vn` the base of the `PTRADD` `op`, indexed by a value
+/// the program computes?
+fn is_indexed_base(fd: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+    fd.obank().get(op).is_some_and(|o| {
+        o.code() == OpCode::CPUI_PTRADD
+            && o.get_in(0) == Some(vn)
+            && o.get_in(1).and_then(|i| fd.vbank().get(i)).is_some_and(|i| !i.is_constant())
+    })
 }
 
 /// Does `opcode` read its operand as a number rather than as an address?
@@ -252,6 +273,10 @@ impl Plan {
             (byte, true)
         };
         let size = decl_type.get_size().max(1) as u64;
+        let array = self.indexed.contains(&off);
+        if array && (unknown || self.direct.iter().any(|d| overlaps(d, off, size))) {
+            return Err(Refusal::DirectAccess);
+        }
         if let Some(d) = self.direct.iter().find(|d| overlaps(d, off, size) && !same_object(d, off, size, &decl_type)) {
             if self.trace {
                 eprintln!(
@@ -266,8 +291,14 @@ impl Plan {
             }
             return Err(Refusal::DirectAccess);
         }
-        self.minted.entry(off).or_insert(Minted { decl_type, unknown });
+        self.minted.entry(off).or_insert(Minted { decl_type, unknown, array });
         Ok(())
+    }
+
+    /// (kuna `elemptr`) Is the global this function names at `addr` an array,
+    /// printed by its name alone?
+    pub fn is_array(&self, addr: u64) -> bool {
+        self.minted.get(&addr).is_some_and(|m| m.array)
     }
 }
 

@@ -1068,6 +1068,9 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///
 /// * a record or union some function takes the address of, the larger one
 ///   first: a scalar access of the name does not compile against it;
+/// * (kuna `elemptr`) an array some function indexes (`T dat_4020[]`), when no
+///   function reads the name directly: an indexed body does not compile
+///   against a scalar, and a direct read does not compile against an array;
 /// * otherwise the one type the direct accesses agree on;
 /// * otherwise, with direct accesses at two types, nothing, and a comment says so;
 /// * with no direct access, a type over the unknown byte a `void *` use stands
@@ -1102,9 +1105,11 @@ fn global_declarations(results: &[FuncResult]) -> String {
         direct_decls.sort_unstable();
         direct_decls.dedup();
         let record = best(&mut decls.iter().filter(|(g, _)| !g.direct && g.aggregate));
+        let array = best(&mut decls.iter().filter(|(g, _)| !g.direct && g.declaration.ends_with("[]")));
         let chosen = match (record, direct_decls.as_slice()) {
             (Some(r), _) => r,
-            (None, [one]) => one.to_string(),
+            (None, []) if array.is_some() => array.unwrap_or_default(),
+            (None, [one]) if array.is_none() => one.to_string(),
             (None, []) => best(&mut decls.iter()).unwrap_or_default(),
             (None, _) => {
                 let all: Vec<String> = decls.iter().map(|(g, _)| quote(&g.declaration)).collect();

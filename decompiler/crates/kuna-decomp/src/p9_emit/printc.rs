@@ -7690,6 +7690,14 @@ impl PrintC {
                                 .get(op)
                                 .map(|o| o.get_addr().clone())
                                 .unwrap_or_default();
+                            // (kuna `elemptr`) A table indexed by a computed value
+                            // prints as a literal only when the index cannot run
+                            // past it.
+                            let bound = if arch.elem_ptr {
+                                crate::kuna_elemptr::literal_index_bound(fd, op, vn)
+                            } else {
+                                None
+                            };
                             if self.push_ptr_char_constant_ir(
                                 arch,
                                 off,
@@ -7698,6 +7706,7 @@ impl PrintC {
                                 &point,
                                 op,
                                 vn,
+                                bound,
                             ) {
                                 return;
                             }
@@ -8096,8 +8105,12 @@ impl PrintC {
     /// (kuna `globalref`) `&dat_<addr>`: the address of the global a constant
     /// pointer names, in place of the `(T *)0x<addr>` cast.
     fn push_global_ref_ir(&mut self, arch: &Architecture, addr: u64, op: OpId, vn: VarnodeId) {
-        let tok = self.lang_token(&tokens::ADDRESSOF);
-        self.push_op(tok, Some(op_key(op)));
+        // (kuna `elemptr`) An array's name is already the address of its first
+        // element, of exactly the pointer type the constant had.
+        if !self.globalref.is_array(addr) {
+            let tok = self.lang_token(&tokens::ADDRESSOF);
+            self.push_op(tok, Some(op_key(op)));
+        }
         self.push_atom(&Atom::with_op_vn(
             kuna_global_data_name(arch.kuna_name_style(), addr),
             TagType::VarToken,
@@ -8419,6 +8432,7 @@ impl PrintC {
                                     &point,
                                     op,
                                     in1.unwrap_or_default(),
+                                    None,
                                 ) {
                                     return;
                                 }
@@ -8925,6 +8939,7 @@ impl PrintC {
         point: &Address,
         op: OpId,
         vn: VarnodeId,
+        indexed: Option<Option<uintb>>,
     ) -> bool {
         let spc = match arch.manage().get_default_data_space() {
             Some(s) => std::rc::Rc::clone(s),
@@ -8953,6 +8968,15 @@ impl PrintC {
         let mut chars_emitted: int4 = 0;
         if !self.print_character_constant(arch, &mut s, &stringaddr, subct, &mut chars_emitted) {
             return false;
+        }
+        // (kuna `elemptr`) `indexed` is `Some(bound)` for the base of an access
+        // indexed by a computed value, `bound` the largest index it can take. The
+        // literal holds `chars_emitted` characters and its NUL; an index that can
+        // reach past them would read bytes the literal does not have.
+        if let Some(bound) = indexed {
+            if bound.is_none_or(|b| b > chars_emitted as uintb) {
+                return false;
+            }
         }
         // (kuna emptystrconst) A zero-character literal names no byte of the
         // image, so it is strictly less informative than the address it would
