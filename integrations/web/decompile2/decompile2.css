@@ -154,7 +154,9 @@ a.xt:hover{color:var(--red);text-decoration-color:var(--red);}
 .hb{display:inline-block;width:3ch;text-align:center;cursor:pointer;}
 .hb:nth-child(8){margin-right:1ch;}
 .hb.gap{color:var(--rule-2);cursor:default;}
-.hb.in{background:var(--hl-line);}
+.hb.in,.hb.hl-sel{background:var(--hl-line);}
+.hb.hl-hover{background:var(--hl-hover);}
+.hb.pa.hl-sel,.hb.pa.in{background:var(--patch-bg);box-shadow:inset 0 -2px 0 var(--red);}
 .hb.ed{outline:1px solid var(--red);background:var(--paper);}
 .d2-hr .ha{margin-left:2ch;color:var(--muted);}
 .d2-hr .ha i{font-style:normal;}
