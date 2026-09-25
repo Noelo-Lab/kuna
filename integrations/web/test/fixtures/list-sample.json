@@ -15,6 +15,7 @@
    "address_hex": "0x318",
    "size": 28,
    "file_offset": 792,
+   "file_size": 28,
    "executable": false,
    "writable": false
   },
@@ -24,6 +25,7 @@
    "address_hex": "0x338",
    "size": 48,
    "file_offset": 824,
+   "file_size": 48,
    "executable": false,
    "writable": false
   },
@@ -33,6 +35,7 @@
    "address_hex": "0x368",
    "size": 36,
    "file_offset": 872,
+   "file_size": 36,
    "executable": false,
    "writable": false
   },
@@ -42,6 +45,7 @@
    "address_hex": "0x38c",
    "size": 32,
    "file_offset": 908,
+   "file_size": 32,
    "executable": false,
    "writable": false
   },
@@ -51,6 +55,7 @@
    "address_hex": "0x3b0",
    "size": 36,
    "file_offset": 944,
+   "file_size": 36,
    "executable": false,
    "writable": false
   },
@@ -60,6 +65,7 @@
    "address_hex": "0x3d8",
    "size": 168,
    "file_offset": 984,
+   "file_size": 168,
    "executable": false,
    "writable": false
   },
@@ -69,6 +75,7 @@
    "address_hex": "0x480",
    "size": 143,
    "file_offset": 1152,
+   "file_size": 143,
    "executable": false,
    "writable": false
   },
@@ -78,6 +85,7 @@
    "address_hex": "0x510",
    "size": 14,
    "file_offset": 1296,
+   "file_size": 14,
    "executable": false,
    "writable": false
   },
@@ -87,6 +95,7 @@
    "address_hex": "0x520",
    "size": 48,
    "file_offset": 1312,
+   "file_size": 48,
    "executable": false,
    "writable": false
   },
@@ -96,6 +105,7 @@
    "address_hex": "0x550",
    "size": 192,
    "file_offset": 1360,
+   "file_size": 192,
    "executable": false,
    "writable": false
   },
@@ -105,6 +115,7 @@
    "address_hex": "0x610",
    "size": 24,
    "file_offset": 1552,
+   "file_size": 24,
    "executable": false,
    "writable": false
   },
@@ -114,6 +125,7 @@
    "address_hex": "0x1000",
    "size": 27,
    "file_offset": 4096,
+   "file_size": 27,
    "executable": true,
    "writable": false
   },
@@ -123,6 +135,7 @@
    "address_hex": "0x1020",
    "size": 32,
    "file_offset": 4128,
+   "file_size": 32,
    "executable": true,
    "writable": false
   },
@@ -132,6 +145,7 @@
    "address_hex": "0x1040",
    "size": 16,
    "file_offset": 4160,
+   "file_size": 16,
    "executable": true,
    "writable": false
   },
@@ -141,6 +155,7 @@
    "address_hex": "0x1050",
    "size": 16,
    "file_offset": 4176,
+   "file_size": 16,
    "executable": true,
    "writable": false
   },
@@ -150,6 +165,7 @@
    "address_hex": "0x1060",
    "size": 396,
    "file_offset": 4192,
+   "file_size": 396,
    "executable": true,
    "writable": false
   },
@@ -159,6 +175,7 @@
    "address_hex": "0x11ec",
    "size": 13,
    "file_offset": 4588,
+   "file_size": 13,
    "executable": true,
    "writable": false
   },
@@ -168,6 +185,7 @@
    "address_hex": "0x2000",
    "size": 9,
    "file_offset": 8192,
+   "file_size": 9,
    "executable": false,
    "writable": false
   },
@@ -177,6 +195,7 @@
    "address_hex": "0x200c",
    "size": 68,
    "file_offset": 8204,
+   "file_size": 68,
    "executable": false,
    "writable": false
   },
@@ -186,6 +205,7 @@
    "address_hex": "0x2050",
    "size": 236,
    "file_offset": 8272,
+   "file_size": 236,
    "executable": false,
    "writable": false
   },
@@ -195,6 +215,7 @@
    "address_hex": "0x3db8",
    "size": 8,
    "file_offset": 11704,
+   "file_size": 8,
    "executable": false,
    "writable": true
   },
@@ -204,6 +225,7 @@
    "address_hex": "0x3dc0",
    "size": 8,
    "file_offset": 11712,
+   "file_size": 8,
    "executable": false,
    "writable": true
   },
@@ -213,6 +235,7 @@
    "address_hex": "0x3dc8",
    "size": 496,
    "file_offset": 11720,
+   "file_size": 496,
    "executable": false,
    "writable": true
   },
@@ -222,6 +245,7 @@
    "address_hex": "0x3fb8",
    "size": 72,
    "file_offset": 12216,
+   "file_size": 72,
    "executable": false,
    "writable": true
   },
@@ -231,6 +255,7 @@
    "address_hex": "0x4000",
    "size": 16,
    "file_offset": 12288,
+   "file_size": 16,
    "executable": false,
    "writable": true
   },
@@ -240,6 +265,7 @@
    "address_hex": "0x4010",
    "size": 8,
    "file_offset": null,
+   "file_size": null,
    "executable": false,
    "writable": true
   }

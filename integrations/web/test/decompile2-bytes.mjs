@@ -23,6 +23,12 @@ assert.equal(fileOffsetFor('0x4000', list.sections), 0x3000, '.data sits 0x1000 
 assert.equal(fileOffsetFor('0x4010', list.sections), null, '.bss has no file bytes');
 assert.equal(fileOffsetFor('0x999999', list.sections), null, 'unmapped');
 assert.equal(fileOffsetFor('0x1198', []), null, 'no section table, no offset');
+const pe = [{ name: '.data', address_hex: '0x403000', size: 0x2000, file_offset: 0x1600, file_size: 0x200 },
+  { name: '.rsrc', address_hex: '0x405000', size: 0x100, file_offset: 0x1800, file_size: 0x100 }];
+assert.equal(fileOffsetFor('0x4031ff', pe), 0x17ff, 'inside the raw data');
+assert.equal(fileOffsetFor('0x403200', pe), null, 'the zero-filled tail past file_size has no file bytes');
+assert.equal(fileOffsetFor('0x405000', pe), 0x1800);
+assert.ok(list.sections.every((s) => s.file_offset === null || s.file_size >= 0), 'the engine reports file_size');
 for (const insn of main.instructions) {
   const off = fileOffsetFor(insn.address_hex, list.sections);
   assert.equal(off, insn.file_offset, `${insn.address_hex} offset agrees with the fixture`);

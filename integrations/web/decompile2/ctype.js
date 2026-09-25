@@ -135,6 +135,24 @@ export function parseSignature(proto) {
   return { ret, conv, name: nm[1], params, varargs };
 }
 
+/**
+ * A Rust signature as kuna prints it (`unsafe fn main(mut argc: i32, mut argv:
+ * *mut *mut u8) -> i32`, attribute lines allowed) → `{ret, name, params}`, for
+ * display only: edits are C declarations.
+ */
+export function parseRustSignature(proto) {
+  const text = (proto || '').replace(/^#\[[^\n]*\]\s*$/gm, '').replace(/;\s*$/, '').trim();
+  const m = /\bfn\s+([A-Za-z_]\w*)\s*\(([\s\S]*)\)\s*(?:->\s*(.+))?$/.exec(text);
+  if (!m) return null;
+  const params = m[2].trim()
+    ? splitTop(m[2]).map((p) => {
+      const pm = /^(?:mut\s+)?([A-Za-z_]\w*)\s*:\s*(.+)$/.exec(p);
+      return pm ? { name: pm[1], type: pm[2].trim() } : { name: '', type: p };
+    })
+    : [];
+  return { ret: (m[3] || '()').trim(), conv: null, name: m[1], params, varargs: false };
+}
+
 /** The declaration `parseSignature` would read back. */
 export function buildPrototype(sig) {
   const params = sig.params.map((p, i) => (p.name ? cDeclare(p.type, p.name) : p.type || `undefined${i}`));

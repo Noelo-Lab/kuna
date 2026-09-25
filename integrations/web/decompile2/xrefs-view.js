@@ -16,16 +16,30 @@ function list(title, rows) {
  * The engine's `xrefs` document as HTML. `nameOf(addrHex, fallback)` gives
  * the student's name for a function.
  */
+const KIND = { call: '', jump: 'jumps to', data: 'takes the address', read: 'reads', write: 'writes' };
+
+function kindNote(kind) {
+  const note = KIND[kind] ?? kind;
+  return note ? ` <span class="d2muted">${escapeHtml(note)}</span>` : '';
+}
+
+const insnNote = (text) => (text ? ` <span class="d2muted">${escapeHtml(text)}</span>` : '');
+
+/**
+ * The engine's `xrefs` document as HTML: callers link to the calling
+ * function and the calling instruction, callees and data to the target and
+ * the instruction that references it. `nameOf(addrHex, name)` gives the
+ * student's name for a function (the engine's `name` may be null).
+ */
 export function renderXrefs(result, { nameOf = (a, n) => n || a } = {}) {
-  const callers = (result.callers || []).map((c) => `<li><span class="tx">${link(c.address_hex, nameOf(c.address_hex, c.name))} ` +
-    `<span class="d2muted">at</span> ${link(c.from_hex, c.from_hex)}${c.instruction ? ` <span class="d2muted">${escapeHtml(c.instruction)}</span>` : ''}</span></li>`);
-  const callees = (result.callees || []).map((c) => `<li><span class="tx">${link(c.address_hex, nameOf(c.address_hex, c.name))} ` +
-    `<span class="d2muted">from</span> ${link(c.at_hex, c.at_hex)}${c.kind && c.kind !== 'call' ? ` <span class="d2muted">${escapeHtml(c.kind)}</span>` : ''}</span></li>`);
+  const callers = (result.callers || []).map((c) => `<li><span class="tx">${link(c.address_hex, nameOf(c.address_hex, c.name))}` +
+    `${kindNote(c.kind)} <span class="d2muted">at</span> ${link(c.from_hex, c.from_hex)}${insnNote(c.instruction)}</span></li>`);
+  const callees = (result.callees || []).map((c) => `<li><span class="tx">${link(c.address_hex, nameOf(c.address_hex, c.name))}` +
+    `${kindNote(c.kind)} <span class="d2muted">from</span> ${link(c.at_hex, c.at_hex)}${insnNote(c.instruction)}</span></li>`);
   const data = (result.data_refs || []).map((d) => {
-    const target = d.address_hex || d.to_hex || '';
-    const at = d.at_hex || d.from_hex || '';
-    return `<li><span class="tx">${escapeHtml(d.name || target)} <span class="d2muted">${escapeHtml(d.kind || 'data')}</span>` +
-      `${at ? ` <span class="d2muted">at</span> ${link(at, at)}` : ''}</span></li>`;
+    const target = d.address_hex || '';
+    return `<li><span class="tx">${escapeHtml(d.name || target)} <span class="d2muted">${escapeHtml(target)}</span>` +
+      `${kindNote(d.kind)} <span class="d2muted">at</span> ${link(d.at_hex, d.at_hex)}${insnNote(d.instruction)}</span></li>`;
   });
   return list('callers', callers) + list('callees', callees) + list('data', data);
 }

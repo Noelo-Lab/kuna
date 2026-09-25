@@ -65,7 +65,7 @@ export function normalizeInspect(result) {
     size: fn.size ?? 0,
     code,
     error: fn.error ?? null,
-    proto: (fn.proto ?? signatureLine(code))?.replace(/;\s*$/, '') ?? null,
+    proto: (fn.proto ?? signatureLine(code))?.replace(/^#\[[^\n]*\]\s*\n/gm, '').replace(/;\s*$/, '').trim() ?? null,
     language: result.language || (/^#\[allow\(|\blet mut\b/m.test(code) ? 'rust-language' : 'c-language'),
     target: result.target || null,
     unstructured_gotos: fn.unstructured_gotos ?? 0,
@@ -171,10 +171,15 @@ export function lineSegments(fnData) {
   return { segs, fallbackCount, tokenCount: fnData.tokens.length };
 }
 
+const STATEMENT = /^\s*(return|if|for|while|do|switch|goto|break|continue|case|default|else)\b|=|^\s*[{}]/;
+const C_DECL = /^\s+(.+?)\s*\b([A-Za-z_]\w*)\s*((?:\[[^\]]*\]\s*)*);\s*(?:\/\/\s*(.+?)\s*)?$/;
+const FNPTR_DECL = /^\s+(.+?)\s*\(\s*(\*+)\s*([A-Za-z_]\w*)\s*\)\s*\(([^()]*)\)\s*;\s*(?:\/\/\s*(.+?)\s*)?$/;
+const RUST_DECL = /^\s+let\s+(?:mut\s+)?([A-Za-z_]\w*)\s*:\s*(.+?);\s*(?:\/\/\s*(.+?)\s*)?$/;
+
 /**
- * Local declarations kuna prints with a storage comment
- * (`  long v1; // rax`, `  int v1; // stack - 0x14`), from the block that
- * opens the body. Register locals appear nowhere else.
+ * The declarations that open the body (`  long v1; // rax`, `  let mut v1: i64;
+ * // stack - 0x14`), up to the first line that is not one. Register locals
+ * appear nowhere else. A declaration without a storage comment has `storage` ''.
  */
 export function localDecls(code) {
   const lines = (code || '').split('\n');
@@ -187,9 +192,20 @@ export function localDecls(code) {
       continue;
     }
     if (text.trim() === '') break;
-    const m = /^\s+(.+?)\s*\b([A-Za-z_]\w*)\s*((?:\[[^\]]*\]\s*)*);\s*\/\/\s*(.+?)\s*$/.exec(text);
-    if (!m) continue;
-    out.push({ name: m[2], type: (m[1] + (m[3] ? ' ' + m[3].replace(/\s+/g, '') : '')).trim(), storage: m[4], line: i + 1 });
+    const rust = RUST_DECL.exec(text);
+    if (rust) {
+      out.push({ name: rust[1], type: rust[2].trim(), storage: rust[3] || '', line: i + 1 });
+      continue;
+    }
+    if (STATEMENT.test(text.replace(/\/\/.*$/, ''))) break;
+    const fp = FNPTR_DECL.exec(text);
+    if (fp) {
+      out.push({ name: fp[3], type: `${fp[1]} (${fp[2]})(${fp[4]})`, storage: fp[5] || '', line: i + 1 });
+      continue;
+    }
+    const m = C_DECL.exec(text);
+    if (!m) break;
+    out.push({ name: m[2], type: (m[1] + (m[3] ? ' ' + m[3].replace(/\s+/g, '') : '')).trim(), storage: m[4] || '', line: i + 1 });
   }
   return out;
 }
@@ -216,7 +232,7 @@ const addToMap = (map, key, value) => {
  * engine gives — instruction `lines`, `line_mappings`, token addresses — since
  * each alone can be sparse.
  */
-export function buildIndex(fnData, segs = lineSegments(fnData).segs) {
+export function buildIndex(fnData, segs = lineSegments(fnData).segs, { inferred = null } = {}) {
   const lineToInsns = new Map();
   const insnToLines = new Map();
   const addrToInsn = new Map();
@@ -256,12 +272,26 @@ export function buildIndex(fnData, segs = lineSegments(fnData).segs) {
     if (ia != null && ib != null) return ia - ib;
     return BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0;
   });
+  const lineToInferred = new Map();
+  const inferredLine = new Map();
+  (inferred || []).forEach((row, i) => {
+    const insn = fnData.instructions[i];
+    if (!row?.inferred || !insn) return;
+    for (const line of row.lines) {
+      addToMap(lineToInferred, line, insn.address_hex);
+      inferredLine.set(insn.address_hex, line);
+    }
+  });
   const sorted = new Map();
   for (const [line, set] of lineToInsns) sorted.set(line, order(set));
+  const sortedInferred = new Map();
+  for (const [line, set] of lineToInferred) sortedInferred.set(line, order(set));
   const lines = new Map();
   for (const [hex, set] of insnToLines) lines.set(hex, [...set].sort((a, b) => a - b));
   return {
     lineToInsns: sorted,
+    lineToInferred: sortedInferred,
+    inferredLine,
     insnToLines: lines,
     addrToInsn,
     insnIndex,

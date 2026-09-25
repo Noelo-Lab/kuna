@@ -5,7 +5,12 @@
 // per-directive outcomes and actions. The rail renders; app.js acts.
 import { escapeHtml } from '../assets/js/highlight-c.js';
 
-const MARK = { applied: ['ok', '✓', 'applied'], rejected: ['rej', '✗', 'rejected'], pending: ['pend', '·', 'not yet sent'] };
+const MARK = {
+  applied: ['ok', '✓', 'applied'],
+  rejected: ['rej', '✗', 'rejected'],
+  refused: ['rej', '✗', 'the engine could not read it; it is not sent until you edit it'],
+  pending: ['pend', '·', 'not yet sent'],
+};
 
 function section(label, inner, extra = '') {
   return `<section class="d2sec"><p class="label"><span>${escapeHtml(label)}</span>${extra}</p>${inner}</section>`;
@@ -23,7 +28,7 @@ function editsList(model) {
   const items = model.edits.map((e) => {
     const [cls, sym, title] = MARK[e.status] || MARK.pending;
     return `<li data-key="${escapeHtml(e.key)}"><span class="mk ${cls}" title="${title}">${sym}</span>` +
-      `<span class="tx">${escapeHtml(e.text)}${e.status === 'rejected' && e.detail ? `<small>${escapeHtml(e.detail)}</small>` : ''}` +
+      `<span class="tx">${escapeHtml(e.text)}${(e.status === 'rejected' || e.status === 'refused') && e.detail ? `<small>${escapeHtml(e.detail)}</small>` : ''}` +
       `${e.fatal ? '<small>the C shown was produced without this directive</small>' : ''}</span>` +
       `<button data-act="edit-edit" title="edit">edit</button><button data-act="edit-remove" title="remove" aria-label="remove">×</button></li>`;
   }).join('');

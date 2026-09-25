@@ -10,8 +10,10 @@
 //
 // Usage:  integrations/web/build.sh && node integrations/web/test/decompile2-browser.mjs
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { findChrome, launchChrome, openPage } from './cdp-client.mjs';
-import { requireDist, serveStatic } from './worker-harness.mjs';
+import { requireDist, serveStatic, fixture } from './worker-harness.mjs';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
@@ -46,6 +48,10 @@ const LOAD_EXAMPLE = `(async () => {
 
 const text = (sel) => page.evaluate(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ''`);
 const count = (sel) => page.evaluate(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
+const idle = (what) => page.waitFor(`document.getElementById('cancelbtn').disabled`, { what, timeout: 60000 });
+const toasts = () => page.evaluate(`[...document.querySelectorAll('.d2-toast')].map((t) => t.textContent)`);
+const setSelect = (id, value) => page.evaluate(`(() => { const s = document.getElementById(${JSON.stringify(id)}); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change')); return true; })()`);
+const sampleHash = 'sha256:' + createHash('sha256').update(readFileSync(fixture('sample.elf'))).digest('hex');
 
 try {
   page = await openPage(chrome.port);
@@ -66,6 +72,7 @@ try {
   await sleep(700);
   assert.equal(await page.evaluate(`!document.getElementById('d2card').hidden`), true, 'the hover card shows');
   assert.match(await text('#d2card'), /^L5/);
+  const card = await text('#d2card');
   await page.key('Escape');
   await noExceptions('hover a line');
 
@@ -76,7 +83,10 @@ try {
   if (engineHasInspect) {
     const comments = await page.evaluate(`[...document.querySelectorAll('.d2-ar .ac')].map((e) => e.textContent).join('\\n')`);
     assert.match(comments, /L\d/, 'assembly rows name their C line');
-    await noExceptions('Space to Assembly');
+    assert.match(card, /L5 → 2 instructions \(\+6 preceding setup, inferred\)/, 'the card counts the inferred set-up');
+    assert.ok(await count('#asmcode .d2-ar[data-inferred="1"][data-band="5"]') === 6, 'the argument set-up rows share line 5\'s band, dashed');
+    assert.ok(await count('#asmcode .d2-ar[data-role="prologue"]') === 6);
+    await noExceptions('Space to Assembly (inferred attribution)');
   } else {
     assert.match(await text('#asmcode'), /inspect/, 'the Assembly tab explains what it waits for');
     skipped.push('Assembly rows (the built wasm has no inspect)');
@@ -95,6 +105,46 @@ try {
   if (engineHasInspect && mark === 'applied') {
     assert.match(await text('#ccode'), /\btotal\b/, 'the renamed local is in the C');
     await noExceptions('rename v1 to total (applied)');
+
+    await page.click('#c-L5 .t[data-sym="total"]');
+    await page.key('ArrowDown');
+    assert.equal(await count('#c-L6.hl-sel'), 1, 'ArrowDown from a selected variable steps to the next line');
+    assert.equal(await count('#c-L1.hl-sel'), 0);
+    await noExceptions('ArrowDown steps from the selected variable');
+
+    await page.click('#c-L6 .ct');
+    await page.key(';');
+    await page.waitFor(`!document.getElementById('d2pop').hidden`, { what: 'comment popover' });
+    await page.type('calls printf');
+    await page.key('Enter');
+    await page.waitFor(`/calls printf/.test(document.getElementById('ccode').textContent)`, { what: 'comment rendered', timeout: 60000 });
+    await idle('comment applied');
+    await page.click('#sesslist li:last-child [data-act=edit-edit]');
+    await page.waitFor(`!document.getElementById('d2pop').hidden`, { what: 'rail edit popover' });
+    await page.type('prints the sum');
+    await page.key('Enter');
+    await page.waitFor(`/prints the sum/.test(document.getElementById('ccode').textContent)`, { what: 'edited comment rendered', timeout: 60000 });
+    await idle('rail edit applied');
+    const rows = await page.evaluate(`[...document.querySelectorAll('#sesslist li')].map((li) => li.querySelector('.mk').title + ' ' + li.querySelector('.tx').textContent)`);
+    assert.deepEqual(rows.filter((r) => /comment/.test(r)), ['applied comment main::0x11e1 prints the sum'], 'editing a comment from the rail keeps one typed, applied record');
+    await noExceptions('edit a comment from the rail');
+
+    await page.key('x');
+    await page.waitFor(`/callees \\(3\\)/.test(document.getElementById('railrefsbody')?.textContent || '')`, { what: 'references', timeout: 60000 });
+    assert.match(await text('#railrefsbody'), /callers \(1\)[\s\S]*takes the address/, 'main is referenced from _start');
+    await noExceptions('references from the engine');
+
+    await page.key('s');
+    await sleep(200);
+    assert.equal(await count('#panes.split #asmcode.no-bytes'), 1, 'split view hides the bytes column by default');
+    assert.ok(await count('#asmcode .ao[title]') > 0, 'operands keep their full text as a title');
+    await page.key('b');
+    assert.equal(await count('#asmcode.no-bytes'), 0, 'b shows it in split view');
+    await page.key('b');
+    await page.key('s');
+    await sleep(150);
+    assert.equal(await count('#asmcode.no-bytes'), 0, 'the single view keeps its own setting');
+    await noExceptions('split view bytes column');
   } else {
     assert.match(await text('#sesslist'), /name main::v1 total/, 'the edit is kept in the session');
     assert.equal(mark, engineHasInspect ? 'applied' : 'not yet sent', 'the rail is honest about the outcome');
@@ -132,6 +182,39 @@ try {
   await page.waitFor(`document.querySelector('.d2banner')`, { what: 'restored-session banner', timeout: 60000 });
   assert.match(await text('.d2banner'), /Restored \d+ edit/);
   await noExceptions('reload restores the session');
+
+  if (engineHasInspect) {
+    await page.waitFor(`document.querySelector('#fnlist .fn.sel') && document.getElementById('cancelbtn').disabled`, { what: 'restored main', timeout: 60000 });
+    await page.key('1');
+    await page.waitFor(`/add\\(argc,3\\)/.test(document.getElementById('ccode').textContent)`, { what: 'restored main in C', timeout: 60000 });
+    await setSelect('lang', 'rust');
+    await page.waitFor(`/unsafe fn main/.test(document.getElementById('ccode').textContent)`, { what: 'Rust view', timeout: 60000 });
+    await idle('Rust view idle');
+    assert.equal((await toasts()).filter((t) => /Restored/.test(t)).length, 1, 'a re-index does not toast the restore again');
+    assert.equal(await count('.d2banner'), 0, 'nor show its banner');
+    assert.match(await text('#railvars'), /argc\s*i32/, 'the rail reads the Rust signature');
+    await page.click('#ccode .t[data-sym="argc"]');
+    await page.key('y');
+    await sleep(200);
+    assert.ok((await toasts()).some((t) => /Retyping needs the C view/.test(t)), 'retyping in the Rust view says it needs C');
+    assert.equal(await page.evaluate(`document.getElementById('d2pop').hidden`), true, 'and opens no dialog');
+    await noExceptions('Rust view: no re-toast, C-only edits refused with a hint');
+  }
+
+  await page.navigate(`${server.base}/decompile2/`);
+  await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: 'reload ready', timeout: 60000 });
+  await page.evaluate(`(() => { localStorage.clear(); localStorage.setItem('kuna.d2.prefs', JSON.stringify({ v: 1, tab: 'c' }));
+    localStorage.setItem(${JSON.stringify('kuna.d2.session.' + sampleHash)}, JSON.stringify({ v: 1, rawSeq: 1,
+      records: [['raw:1', { kind: 'raw', text: 'bytes 0x10 zz' }]], bytes: [] })); return true; })()`);
+  await page.evaluate(LOAD_EXAMPLE);
+  await page.waitFor(`document.querySelectorAll('#fnlist .fn').length > 5`, { what: 'inventory despite a bad stored directive', timeout: 60000 });
+  if (engineHasInspect) {
+    await page.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'main despite a bad stored directive', timeout: 60000 });
+    assert.match(await page.evaluate(`document.querySelector('#sesslist .mk')?.title || ''`), /could not read it/, 'the rail marks the refused directive');
+    await page.click('#sesslist [data-act=edit-remove]');
+    await page.waitFor(`document.querySelectorAll('#sesslist li').length === 0`, { what: 'refused directive removed', timeout: 60000 });
+    await noExceptions('a stored directive the engine refuses does not lock the binary out');
+  }
 
   await page.navigate(`${server.base}/decompile/`);
   await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: '/decompile ready', timeout: 60000 });

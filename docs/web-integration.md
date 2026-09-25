@@ -469,6 +469,23 @@ arrow-key navigation show it too. It lists a C line's instructions (up to 12), a
 callee and signature, an instruction's C line with a note on its mnemonic and any idiom,
 a stack operand's slot.
 
+**Inferred attribution.** The engine maps a line only to the instructions whose p-code
+reached the printed statement, so `v1 = sum_to(add(argc,3));` maps to its two CALLs and
+the MOVs that set up their arguments to nothing. `asm-view.js` `inferLines` fills the gaps
+the way `objdump -S` reads them: an unmapped instruction between a mapped one on line a
+and the next on line b belongs to b when b ≥ a (it sets b up), else to a (it finishes a);
+an unconditional jump in the gap, and what precedes it, finishes a. Before the first
+mapped instruction the frame set-up (x86/AArch64: `endbr64`, pushes, `mov rbp,rsp`,
+`sub rsp`, argument-register spills, the canary load) is the prologue and the rest sets
+up the first line; after the last one is the epilogue. Inferred rows are marked, not
+passed off as the engine's: a dashed band, `data-inferred="1"`, and the card reads
+`L5 → 2 instructions (+6 preceding setup, inferred)` with those rows dimmed. The view
+menu's "Attribute unmapped instructions" (pref `asmInfer`, default on) turns it off.
+
+In split view the Assembly pane hides the bytes column by default so the operands fit
+(`b` toggles it for the current layout; each layout keeps its own setting), and every
+operand cell carries its full text as a `title`.
+
 **Keys** (none fire while typing in a field): `/` filter · `Space` C ⇄ assembly · `1-4`
 tabs · `s` split · `o` address format · `b` bytes column · `↑↓` lines/rows · `←→` names on
 a line · `Enter` open the callee · `n` rename · `y` retype (on a function name: prototype)
@@ -499,7 +516,23 @@ changed, and records every `assertions[]` row against the record that produced i
 rail marks it applied (✓) or rejected (✗, with the engine's reason, also toasted). A
 rejected directive stays in the session; a request that fails or is cancelled restores
 the snapshot. The engine refuses a retype that changes a local's storage size (`Storage
-is 8 bytes, the stated type is 4`), so the retype dialog warns before sending one.
+is 8 bytes, the stated type is 4`), so the retype dialog warns before sending one, sizing
+`long` by the target's data model (4 bytes on Windows). A directive the engine cannot
+parse fails the whole request (`error: --assert "<directive>": …`, exit 1): the page
+matches that against the directives it sent, marks the record refused (✗ with the
+reason; it is no longer sent, and exported only as a comment), and retries without it,
+so a bad stored or imported directive never locks a binary out. A failed `list` with no
+directive to blame retries with none and says which were dropped. Editing any record
+clears its old outcome until the engine answers again, and a rail edit changes the
+record in place (a comment stays a comment of its function). The inspect cache is keyed
+by the function's address and the directives it was inspected with, so an edit
+re-decompiles only what it affects.
+
+**The Rust view.** With Lang = Rust the engine prints Rust, but directives are C: local
+renames, function renames, comments and patches work as in C; retypes, prototypes,
+parameter renames and globals need a C declaration the Rust view does not show, so they
+say "needs the C view: set Lang to C" instead of opening a dialog. The rail reads the
+parameters from the Rust signature.
 
 **Export and persistence.** "export" downloads `<binary>.kuna`: a `#` header (binary,
 hash, time, and the replay command `kuna decompile <binary> <function> --assert
@@ -522,7 +555,10 @@ else — or longer), NOP and Revert. NOP fills are exact or absent: x86 `90`, AA
 offset into a copy of the file and downloads `<name>.patched.<ext>`; bytes no file byte
 backs (`.bss`, an image without a section table) are reported and nothing is downloaded.
 A Mach-O needs re-signing (`codesign -f -s -`); a PE's checksum no longer matches. `g` to
-an address outside every function shows the bytes there (from the file, else `read`).
+an address outside every function shows the bytes there (from the file, else a `read`
+without directives, so a byte's original is the file's even when it is patched). A
+section whose file data is shorter than its size (`file_size`, a PE section's
+zero-filled tail) has no file offset past it.
 
 **Learning aids.** The Stack tab draws the frame from the prologue and the engine's
 variables with offsets from the stack pointer at entry (`[RBP - 0xc]` is entry − 0x14
@@ -530,14 +566,17 @@ after `PUSH RBP; MOV RBP,RSP`): return address, saved registers, locals, padding
 debug-info-only variables dimmed; a stack array gets a callout naming what an overflow
 reaches, a leaf without `SUB RSP` the red-zone note (x86 only). Instruction hints label
 prologues, epilogues, canary loads and checks, `xor r,r`, `test r,r`, `cdqe`, `endbr64`
-and the variadic `mov eax,0`. References (`x`) come from an `xrefs` command when the
-engine has one; this build does not, so the rail lists the callees read from the
-function's own CALL rows and says callers need it. `?` holds a glossary of the names a
+and the variadic `mov eax,0`. References (`x`) come from the engine's `xrefs`: callers
+(linked to the calling instruction, with how they refer — a call, a jump, an address
+taken), callees and data references; if the request fails, the rail lists the callees
+read from the function's own CALL rows and says why. `?` holds a glossary of the names a
 decompiler invents.
 
-**Older engines.** On a wasm without `inspect` the page opens functions through
-`decompile`: the C view works (regex-highlighted, names still selectable) and the other
-tabs say what they need. On one without `--assert`, edits are kept, exported and marked
+**Older engines.** What the engine can do is read off each `list` document: the
+study-view engine's carries `sections` and `target`, and the same build answers
+`inspect`, `read` and `--assert` (no stderr text is parsed for this). On an older wasm the
+page opens functions through `decompile`: the C view works (regex-highlighted, names still
+selectable) and the other tabs say what they need; edits are kept, exported and marked
 "not yet sent" rather than reported as applied.
 
 ## 5. Testing
@@ -584,15 +623,21 @@ formats and architectures**:
    for every fixture mnemonic, idioms, the `sum_to` frame, the overflow callout,
    references, the glossary). They read contract fixtures generated from the native CLI
    by `test/make-inspect-fixtures.mjs` (`test/fixtures/inspect-{main,sum_to,add}.json`,
-   `list-sample.json`). **`test/decompile2-worker.mjs`** drives `inspect`, `read` and
-   `--assert` (and `xrefs` when the wasm has it) through the real Worker, skipping with a
-   message on a wasm without `inspect`.
+   `list-sample.json`). **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
+   `xrefs` and `--assert` through the real Worker, and pins the refusal error the page
+   relies on (exit code plus the quoted directive); it skips with a message on a wasm
+   without `inspect`.
 5. **`test/decompile2-browser.mjs`** — the real page in headless Chrome over the DevTools
    protocol (Node's built-in `WebSocket`, no `puppeteer`; skips when there is no Chrome or
    the Node has no `WebSocket`): it loads the example through the file input with a
-   `DataTransfer`, opens `main`, hovers line 5 and waits for the card, switches to
-   Assembly, renames `v1` to `total`, types `90` into the Bytes tab, checks 1024 and 820 px
-   for horizontal overflow, reloads to see the session restored, and checks that
+   `DataTransfer`, opens `main`, hovers line 5 and checks the card counts the inferred
+   set-up, switches to Assembly (inferred rows dashed, prologue labelled), renames `v1` to
+   `total`, steps down a line from the selected variable, comments a line and edits the
+   comment from the rail (one typed, applied record), opens references, checks the split
+   view's bytes column, types `90` into the Bytes tab, checks 1024 and 820 px for
+   horizontal overflow, reloads to see the session restored (and not re-announced when the
+   Rust view re-indexes, where a retype says it needs C), loads with a stored directive the
+   engine cannot parse (the binary still opens, the directive is marked), and checks that
    `/decompile` still renders and its Language control switches to Rust. Any uncaught page
    exception fails it; steps an older engine cannot serve assert the page's fallback and
    are listed as skipped. CI runs it when the runner has `google-chrome`.

@@ -5,8 +5,7 @@
 // (entry = RBP displacement − 8). x86 only; other targets get a note. DOM-free.
 import { escapeHtml } from '../assets/js/highlight-c.js';
 import { stackOperand } from './asm-view.js';
-
-const hexOff = (n) => `${n < 0 ? '−' : '+'}0x${Math.abs(n).toString(16)}`;
+import { entryOffset } from './addr.js';
 
 /**
  * The prologue's effect: pushes (in order), where RBP points (entry offset),
@@ -161,13 +160,13 @@ export function renderFrame(frame, { selectedSym = null } = {}) {
     const overlap = s.overlap ? ` <span class="d2muted">overlaps ${escapeHtml(s.overlap)}</span>` : '';
     const dim = s.dim ? ' <span class="d2muted">— debug info only, not in the C</span>' : '';
     rows += `<tr class="${cls}"${s.kind === 'var' || s.kind === 'arg' ? ` data-sym="${escapeHtml(s.name)}"` : ''} data-slot="${s.offset}">` +
-      `<td class="off">entry${escapeHtml(hexOff(s.offset))}</td>` +
+      `<td class="off">${escapeHtml(entryOffset(s.offset))}</td>` +
       `<td class="slot"><b>${escapeHtml(s.name)}</b>${alias} <span class="sz">${s.size} B</span><br>` +
       `<span class="d2muted">${escapeHtml(s.type || '')}</span>${dim}${overlap}</td></tr>`;
   }
   const notes = callouts(frame).map((n) => `<div class="d2callout">${escapeHtml(n)}</div>`).join('');
   const fpNote = frame.fp !== null
-    ? `RBP points at entry${hexOff(frame.fp)}, so an operand [RBP − d] is entry${hexOff(frame.fp)} − d.`
+    ? `RBP points at ${entryOffset(frame.fp)}, so an operand [RBP − d] is ${entryOffset(frame.fp)} − d.`
     : 'This function does not set up RBP as a frame pointer; operands are relative to RSP.';
   return '<p class="d2muted" style="margin:0 0 10px;max-width:74ch">Offsets are from the stack pointer at entry, where it points at the ' +
     `return address; the stack grows down the page. ${escapeHtml(fpNote)}${frame.reserve ? ` SUB RSP reserves ${frame.reserve} bytes.` : ''}</p>` +

@@ -13,8 +13,10 @@ import { addrHex, signedHex } from '../decompile2/addr.js';
 import { normalizePrefs, cycle, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile2/prefs.js';
 import {
   formatAddr, groupRuns, linkOperands, branchArrows, renderAsm, renderInsnRows, stackOperand,
-  isBranch, isCall, spacedBytes,
+  isBranch, isCall, spacedBytes, inferLines,
 } from '../decompile2/asm-view.js';
+import { entryOffset } from '../decompile2/addr.js';
+import { parseRustSignature } from '../decompile2/ctype.js';
 import { placeOverlay } from '../decompile2/hover.js';
 import { expand } from '../decompile2/sync.js';
 
@@ -142,6 +144,15 @@ checks.push('buildIndex');
 // ── declarations, storage, bands, diff, addresses, prefs ──────────────────
 assert.deepEqual(localDecls(sumTo.code).map((d) => [d.name, d.type, d.storage]), [['acc', 'long', 'stack - 0x10'], ['v1', 'int', 'stack - 0x14']]);
 assert.deepEqual(localDecls('void f(void)\n{\n  char v2 [16]; // stack - 0x18\n  \n}').map((d) => d.type), ['char [16]']);
+assert.deepEqual(localDecls('void f(void)\n{\n  x = y; // note\n  g(x); // y\n}'), [], 'a body with no declarations has none (no blank line needed)');
+assert.deepEqual(
+  localDecls('void f(void)\n{\n  long v1; // rax\n  undefined8 uVar2;\n  code (*v3)(int); // rdx\n  foo(v1);\n  int late;\n}').map((d) => [d.name, d.type, d.storage]),
+  [['v1', 'long', 'rax'], ['uVar2', 'undefined8', ''], ['v3', 'code (*)(int)', 'rdx']],
+  'declarations stop at the first statement; temporaries and function pointers count',
+);
+assert.deepEqual(localDecls('unsafe fn f()\n{\n  let mut v1: i64; // rax\n  \n}').map((d) => [d.name, d.type, d.storage]), [['v1', 'i64', 'rax']], 'Rust let declarations');
+assert.equal(entryOffset(-20), 'entry−0x14');
+assert.equal(entryOffset(0), 'entry+0x0');
 assert.equal(storageLabel('rax'), 'register RAX');
 assert.equal(storageLabel('stack - 0x14'), 'stack entry−0x14');
 assert.equal(bandOf(5), 5);
@@ -211,6 +222,60 @@ const cardRows = renderInsnRows(sumTo.instructions, { startHex: sumTo.address_he
 assert.equal(cardRows, '<div class="cr"><span class="aa">+0x0</span><span class="am">ENDBR64</span><span class="ao"></span></div>' +
   '<div class="cr"><span class="aa">+0x4</span><span class="am">PUSH</span><span class="ao">RBP</span></div>');
 checks.push('formatAddr/groupRuns/branchArrows/linkOperands/renderAsm');
+
+// ── inferred line attribution for unmapped instructions ────────────────────
+const at = (fn, inf) => Object.fromEntries(fn.instructions.map((insn, i) => [insn.address_hex,
+  inf[i].role || (inf[i].inferred ? `~${inf[i].lines}` : String(inf[i].lines))]));
+const mainInf = inferLines(inspectMain.instructions);
+assert.deepEqual(at(inspectMain, mainInf), {
+  '0x1198': 'prologue', '0x119c': 'prologue', '0x119d': 'prologue', '0x11a0': 'prologue', '0x11a4': 'prologue', '0x11a7': 'prologue',
+  '0x11ab': '~5', '0x11ae': '~5', '0x11b3': '~5', '0x11b5': '5', '0x11ba': '~5', '0x11bd': '~5', '0x11c0': '~5', '0x11c2': '5',
+  '0x11c7': '~6', '0x11cb': '~6', '0x11cf': '~6', '0x11d2': '~6', '0x11d9': '~6', '0x11dc': '~6', '0x11e1': '6',
+  '0x11e6': '~7', '0x11ea': '~7', '0x11eb': '7',
+}, 'main: the argument set-up belongs to the call it precedes; the frame set-up and argument spills are the prologue');
+assert.deepEqual(at(sumTo, inferLines(sumTo.instructions)), {
+  '0x1161': 'prologue', '0x1165': 'prologue', '0x1166': 'prologue', '0x1169': 'prologue', '0x116c': '6', '0x1174': '7',
+  '0x117b': '~7', '0x117d': '~8', '0x1180': '8', '0x1182': '8', '0x1186': '7', '0x118a': '~7', '0x118d': '~7', '0x1190': '7',
+  '0x1192': '10', '0x1196': '~10', '0x1197': '10',
+}, 'sum_to: the loop\'s jump to its test finishes the init, the load after it sets up the body, the test belongs to the for line');
+const tail = inferLines([
+  { address_hex: '0x0', mnemonic: 'PUSH', operands: 'RBP', lines: [] },
+  { address_hex: '0x1', mnemonic: 'MOV', operands: 'EAX,0x1', lines: [3] },
+  { address_hex: '0x6', mnemonic: 'MOV', operands: 'EBX,EAX', lines: [2] },
+  { address_hex: '0x8', mnemonic: 'ADD', operands: 'EBX,0x1', lines: [] },
+  { address_hex: '0xb', mnemonic: 'MOV', operands: 'ECX,EBX', lines: [2] },
+  { address_hex: '0xd', mnemonic: 'MOV', operands: 'EDX,ECX', lines: [] },
+  { address_hex: '0xf', mnemonic: 'POP', operands: 'RBP', lines: [] },
+  { address_hex: '0x10', mnemonic: 'RET', operands: '', lines: [] },
+]);
+assert.deepEqual(tail.map((r) => r.role || (r.inferred ? `~${r.lines}` : String(r.lines))), ['prologue', '3', '2', '~2', '2', 'epilogue', 'epilogue', 'epilogue'],
+  'a gap between two instructions of one line is that line; after the last mapped one is the epilogue');
+assert.deepEqual(inferLines([{ address_hex: '0x0', mnemonic: 'RET', operands: '', lines: [] }]), [{ lines: [], inferred: false, role: null }], 'nothing mapped: nothing inferred');
+const inferredIndex = buildIndex(inspectMain, mainSeg.segs, { inferred: mainInf });
+assert.deepEqual(inferredIndex.lineToInsns.get(5), ['0x11b5', '0x11c2'], 'the exact map is unchanged');
+assert.deepEqual(inferredIndex.lineToInferred.get(5), ['0x11ab', '0x11ae', '0x11b3', '0x11ba', '0x11bd', '0x11c0']);
+assert.equal(inferredIndex.inferredLine.get('0x11ae'), 5);
+assert.deepEqual([...expand({ line: 5 }, inferredIndex).addrs].length, 8, 'selecting a line marks its inferred rows too');
+assert.ok(expand({ addr: '0x11ae' }, inferredIndex).lines.has(5));
+const inferredHtml = renderAsm(inspectMain, { prefs: { asmCMode: 'comment' }, inferred: mainInf });
+assert.match(inferredHtml, /id="a-0x11ab" role="option" data-i="6" data-addr="0x11ab" data-lines="5" data-band="5" data-inferred="1">/);
+assert.match(inferredHtml, /id="a-0x1198"[^>]*data-role="prologue">/);
+assert.match(inferredHtml, /id="a-0x11ab"[\s\S]*?<span class="ac">; L5: v1 = sum_to\(add\(argc,3\)\);<\/span>/, 'the C comment moves to the first row of the line, inferred or not');
+assert.match(inferredHtml, /id="a-0x1198"[\s\S]*?<span class="ac">; prologue<\/span>/);
+assert.match(inferredHtml, /<span class="ao" title="dword ptr \[RBP \+ -0x14\],EDI">/, 'operands carry their full text as a title');
+assert.ok(!/data-inferred/.test(renderAsm(inspectMain, { prefs: {} })), 'off: no inferred rows');
+assert.match(renderInsnRows(inspectMain.instructions.slice(6, 10), { inferred: new Set(['0x11ab']) }), /^<div class="cr inf">/);
+checks.push('inferLines/inferred index/rows');
+
+// ── the Rust view ──────────────────────────────────────────────────────────
+const rustProto = '#[allow(non_snake_case, unused_mut)]\nunsafe fn main(mut argc: i32, mut argv: *mut *mut u8) -> i32;';
+assert.deepEqual(parseRustSignature(rustProto), {
+  ret: 'i32', conv: null, name: 'main', varargs: false,
+  params: [{ name: 'argc', type: 'i32' }, { name: 'argv', type: '*mut *mut u8' }],
+});
+assert.equal(normalizeInspect({ language: 'rust-language', function: { name: 'main', address_hex: '0x1198', code: '', proto: rustProto } }).proto,
+  'unsafe fn main(mut argc: i32, mut argv: *mut *mut u8) -> i32', 'the attribute line and the ; are not part of the signature');
+checks.push('Rust signature');
 
 // ── hover placement and sync expansion ─────────────────────────────────────
 const vp = { width: 1000, height: 800 };

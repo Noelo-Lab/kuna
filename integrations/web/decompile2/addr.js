@@ -25,8 +25,13 @@ export function bare(hex) {
   return hex ? hex.replace(/^0x/, '') : '';
 }
 
-/** A signed offset as `+0x13` / `-0x4`. */
-export function signedHex(delta) {
+/** A signed offset as `+0x13` / `-0x4` (`minus` picks the sign glyph). */
+export function signedHex(delta, minus = '-') {
   const d = BigInt(delta);
-  return (d < 0n ? '-0x' + (-d).toString(16) : '+0x' + d.toString(16));
+  return (d < 0n ? `${minus}0x` + (-d).toString(16) : '+0x' + d.toString(16));
+}
+
+/** A stack offset from the stack pointer at entry: `entry−0x14`, `entry+0x0`. */
+export function entryOffset(n) {
+  return `entry${signedHex(n, '−')}`;
 }
