@@ -1220,6 +1220,10 @@ pub struct Architecture {
     /// type itself (its type under the usual arithmetic conversions is the cast's
     /// target with and without the cast).  See [`crate::kuna_castternary`].
     pub cast_ternary: bool,
+    /// (kuna `callrettype`) A call's output takes the return type its callee's
+    /// own recovery stated earlier in a callee-first run.  See
+    /// [`crate::kuna_callrettype`].
+    pub call_ret_type: bool,
     /// (kuna `cortexmpriv`) Assume the Cortex-M core is privileged, folding away
     /// the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around
     /// every VERSION_7M MRS/MSR (`kuna_cortexmpriv`).
@@ -1297,6 +1301,13 @@ pub struct Architecture {
     /// (kuna `calleevote`) The whole-binary run's record of call arguments and
     /// what the callers stated.
     pub kuna_calleevote: crate::kuna_calleevote::Ledger,
+    /// (kuna `callrettype`) The recovered return value each callee stated for
+    /// the callers decompiled after it.  Copied per function by
+    /// [`crate::kuna_callrettype::seed`].
+    pub kuna_callret_types: crate::kuna_callrettype::StatedReturns,
+    /// (kuna `callrettype`) The (caller, callee) pairs whose statement the
+    /// caller's finished variables contradicted ([`crate::kuna_callrettype::refuse`]).
+    pub kuna_callret_refused: std::collections::HashSet<crate::kuna_callrettype::Refusal>,
     /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
     /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
     /// cleared) by `decompile_func_full_with_override_dyn` and seeded into the
@@ -2493,6 +2504,7 @@ impl Architecture {
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
             cast_ternary: false, // (kuna) option castternary; reset_defaults sets the shipped default
+            call_ret_type: false, // (kuna) option callrettype; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2504,6 +2516,8 @@ impl Architecture {
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
+            kuna_callret_types: std::collections::HashMap::new(),
+            kuna_callret_refused: std::collections::HashSet::new(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive
@@ -2774,6 +2788,7 @@ impl Architecture {
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
         self.cast_ternary = true; // (kuna) option castternary default-on (provisional; see docs/features/castternary)
+        self.call_ret_type = true; // (kuna) option callrettype default-on: a call's result takes the return type its callee stated earlier in a callee-first run; 0/675 datatest assertions and 0 stage assertions moved (single-function surfaces state nothing), one test-cli probe moved to the intended form, the 444-slice typesweep +6 perfect and 0 lost, casts 35,588 -> 34,808 on the census corpus (393 functions fewer, 25 more); docs/features/callrettype/default-on-evaluation.md
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
@@ -3478,6 +3493,7 @@ impl Architecture {
             "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
             "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),
             "castternary" => on_off!(cast_ternary, "conditional-arm cast elision"),
+            "callrettype" => on_off!(call_ret_type, "callee-stated call return types"),
             "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
             "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
             "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),

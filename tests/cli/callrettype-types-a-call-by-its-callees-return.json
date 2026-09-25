@@ -1,0 +1,52 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-d8610b4207a4",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callrettype",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
+    "binary_sha256": "6111d5d07b701950275efe3c7348cc6791f654bee9e75b33324ba57c3ab21623",
+    "binary_size": 17360,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
+    "selector": "upper_of_rest",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "char \\* skip_blanks\\(char \\*a0\\)",
+      "v1 = skip_blanks\\(a0\\);",
+      "FILE \\* pick_stream\\(int a0\\)",
+      "v1 = pick_stream\\(a0\\);",
+      "v1 = after_colon\\(a0\\);",
+      "v1 = fallback_name\\(\\);",
+      "return \\(unsigned long\\)signed_delta\\(a0,a1\\) >> 0x3f;",
+      "\\(unsigned int\\)hash_of\\(a0\\) % 7",
+      "  mark\\(a0\\);\\n"
+    ],
+    "stdout_absent": [
+      "\\(char \\*\\)skip_blanks\\(",
+      "\\(FILE \\*\\)pick_stream\\(",
+      "\\(char \\*\\)after_colon\\(",
+      "\\(char \\*\\)fallback_name\\("
+    ]
+  },
+  "notes": "ON: callees are decompiled first and state their recovered return type, so skip_blanks (char *), pick_stream (FILE * from a global) and after_colon/fallback_name (char * from strchr) print without a conversion. Controls keep theirs: signed_delta read through a logical shift, hash_of beside strcmp, the void mark()."
+}

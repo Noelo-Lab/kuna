@@ -656,6 +656,10 @@ pub fn decompile_pulled(
                         }
                     }
                 }
+                // (kuna `callrettype`) State what this function returns for its callers.
+                if opts.park_recovered_proto {
+                    kuna_decomp::kuna_callrettype::record(prog.arch_mut(), &park_entry, &fd);
+                }
                 // (kuna `calleevote`) Record what this function passes at each call.
                 if prog.arch().kuna_calleevote.recording {
                     kuna_decomp::kuna_calleevote::record(prog.arch_mut(), &park_entry, &mut fd);

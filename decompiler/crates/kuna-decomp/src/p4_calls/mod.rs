@@ -42,3 +42,4 @@ pub mod kuna_formattail; // (kuna) a resolved format call keeps an open tail thr
 pub mod kuna_protoorder; // (kuna) a callee's recovered prototype, parked for the callers decompiled after it
 pub mod kuna_calleevote; // (kuna) a callee parameter takes the type every caller passes
 pub mod kuna_callpush; // (kuna) a call's own return-address push is part of the call
+pub mod kuna_callrettype; // (kuna) a call returns the type its callee's recovery gave it

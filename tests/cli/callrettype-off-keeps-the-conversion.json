@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-7f80d0338f1d",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callrettype",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
+    "binary_sha256": "6111d5d07b701950275efe3c7348cc6791f654bee9e75b33324ba57c3ab21623",
+    "binary_size": 17360,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
+    "selector": "upper_of_rest",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "char \\* skip_blanks\\(char \\*a0\\)",
+      "v1 = \\(char \\*\\)skip_blanks\\(a0\\);",
+      "FILE \\* pick_stream\\(int a0\\)",
+      "v1 = \\(FILE \\*\\)pick_stream\\(a0\\);",
+      "v1 = \\(a0\\) \\? \\(char \\*\\)after_colon\\(a0\\) : \\(char \\*\\)fallback_name\\(\\);"
+    ]
+  },
+  "notes": "OFF: the callee's own listing declares char * skip_blanks and FILE * pick_stream, but a call's result has no type of its own, so every caller that keeps it prints (char *)skip_blanks(a0) and (FILE *)pick_stream(a0)."
+}

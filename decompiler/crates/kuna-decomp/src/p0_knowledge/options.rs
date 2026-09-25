@@ -429,6 +429,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "castsign",
     // (kuna) leave out a widening an arm of `c ? a : b` gets from the conditional itself.
     "castternary",
+    // (kuna) a call's result takes the return type its callee's recovery stated.
+    "callrettype",
     "ptrdepthcap",
     "codescalar",
     "boolbyte",

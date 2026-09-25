@@ -2941,3 +2941,190 @@ triage filter, `--jobs N`, `decompile-project --stream`, a raw image and
 `--option protoorder off`. The
 variable rows a function exports keep their number; only their types move.
 `KUNA_CALLEEVOTE_TRACE=1` prints every decision and its reason on stderr.
+
+### (kuna) `callrettype` — a call returns the type its callee declares
+
+`protoorder` carries a callee's recovered PARAMETER types to its call sites;
+nothing carried its return. Upstream's `TypeOpCall::getOutputLocal` answers
+only for a locked output, and a recovered prototype is never locked, so a call
+to a function the same listing declares `char * sub_43ee(unsigned long *a0)`
+produced an unknown of its width. Every caller that kept the result as a
+`char *` then printed `v7 = (char *)sub_43ee(a0);`, a conversion from a type
+the call does not have. `callrettype` (values `on|off`;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callrettype.rs`) carries the
+return on the same callee-first surface (`decompile-all`, `decompile-project`).
+
+**Recording.** After each function's final decompile in the callee-first order
+(the same hook that parks `protoorder`'s statement, where
+`park_recovered_proto` is set), `record` keeps the function's recovered return
+value — storage, width and type — on `Architecture::kuna_callret_types`, keyed
+by its entry, and a later decompile of the same function replaces it. Nothing
+is kept for a function with a declared prototype (libc, `libctypes`, DWARF,
+`--assert`: its callers already hold a locked output), for a `void` or
+storage-less return, for a type other than a pointer, an integer wider than a
+byte or a float (an unknown of its width is not a statement, and whether a byte
+is a `bool` or a character is the caller's own call, `boolbyte` and `charbyte`),
+for a pointer deeper than the inferred pointer cap, or when some live RETURN hands back a value the function never
+computed (`kuna_returnuncomputed::every_return_computes_with`: a caller's
+register left in place, a callee's clobber). A value read out of global
+memory counts as computed here (`return stdout;` hands back the program's own
+data), which the default walk does not grant. The `structsynth` convergence
+sweep forgets a statement naming a superseded structure, as it does for
+`protoorder`'s.
+
+A function the run decompiles again after its callers (the `calleevote` redo,
+the convergence sweep) records again, and its callers decompiled before that
+keep the statement they read: nothing redoes a caller because its callee's
+statement moved. A redo the run then discards (one that moves the arity, or
+fails where the first decompile did not) puts the earlier statement back
+(`kuna_callrettype::restore`), so the statement on record always describes the
+body the run prints.
+
+**The vote.** `seed` copies the statements for every callee a function calls
+onto its `Funcdata` at the two seams `protoorder` seeds from; a function never
+reads its own. `call_output_type_local` (the locked-output arm of
+`TypeOpCall::getOutputLocal`) then answers for an unlocked CALL whose output
+sits in exactly the storage and width the callee returns in
+(`stated_return_type`), after `passthrough`'s tail-call arm. That one type is
+the def-side vote of `Varnode::getLocalType`'s fold, so the caller's readers
+still outrank it where their type is more specific, and it is the output token
+`ActionSetCasts` compares the result's variable with: a caller that keeps the
+result at the type the callee returns prints it without a cast, and one that
+keeps it at another type prints the conversion from the callee's declared
+type. Nothing is locked and no trial is touched, so the call keeps exactly the
+arguments and the result it has with the option off; a `void` callee states
+nothing and none of its calls starts being read.
+
+The vote is refused where the caller holds evidence the fold cannot weigh:
+
+- the family refusals `protoorder` applies to an argument vote, asked of the
+  result's own uses (`kuna_protoorder::output_refuses`): a type-locked,
+  global or frame-memory member, an integer operation on a pointer, a class
+  conflict at another call, a float that is computed with as an integer, and a
+  record the caller reads outside its members;
+- a declaration the caller holds about the value (`declared_contradicts`). For
+  an integer: an ordered comparison, a shift right, a division or remainder, an
+  extension or a declared parameter that reads the value at the other sign, or
+  another call writing the same variable whose declared or stated result has
+  the other sign (`strcmp`'s `int` beside a recovered `unsigned int`); the vote
+  would re-sign the variable and print a conversion at each of them. For a
+  pointer: a declared parameter it is passed to, or another call writing the
+  same variable whose declared or stated result is a pointer to a different
+  known pointee. A declaration outranks a recovery (`getgrnam`'s `group *`
+  beside a wrapper's synthesized `struct_8 *`), and two recoveries that
+  disagree leave the variable to the caller's own fold: bash -O2 keeps one
+  variable for `array_value`'s `struct_1 *` and `dequote_string`'s `char *`,
+  and a vote for either one types the other's uses through the wrong pointee.
+  A `void *` or a pointer to unknown bytes, on either side, says nothing about
+  the pointee. Another call writing the same variable whose declared or stated
+  result is of the other class at the same width, an integer beside a pointer,
+  refuses the vote whatever the pointee: each would print the other as a
+  conversion;
+- for an integer the function returns, a widening of the returned value at
+  the other sign that the return trimming has already removed. The trimming
+  (`RuleSubvarZext`, `RuleSubvarSext`) narrows a RETURN that reads a register
+  through an extension back to the extension's input before any type is
+  inferred, leaving a plain copy, so the extension is no longer a reader the
+  rule above can see; it records instead the sign and the width it narrowed
+  from (`note_returned_extension`), and a statement of that width at the other
+  sign is refused for every call whose result the function returns. On x86-64
+  every 32-bit write zero-extends into the whole register, so the widening is
+  not only the conversion a compiler spells in place (`return (unsigned
+  short)s16(x)` in a function returning `long`: `call s16; movzwl %ax,%eax;
+  ret`) but any last write of the returned value: the -O0 reload of the local
+  holding the result, or the move back from the register it was kept in
+  across another call (`unsigned int r = neg32(x); other(); return r;` in a
+  function returning `unsigned long`: `mov %eax,%ebx; call other; mov
+  %ebx,%eax`). An `int` statement would become the function's own return
+  type, and `int f(...)` hands a caller that reads the whole register the
+  value sign-extended where the binary hands it zero-extended. The same bytes
+  are what `int f(x) { int r = neg32(x); other(); return r; }` compiles to, so
+  that function keeps the unsigned return its own recovery gives it: from the
+  function alone the two cannot be told apart, and only the unsigned spelling
+  is right for both. A result the function returns with no write in between
+  (`return neg32(x);`, `call neg32; ret`) is not widened here, and its
+  statement stands. A conversion spelled as a mask (AArch64 `and
+  x0,x0,#0xffff`) is not recognized: an `INT_AND` is not a widening, and
+  `RuleSubvarAnd` reports nothing;
+- a pointer whose pointee the caller does not use as that pointee
+  (`accesses_disagree`): a primitive pointee of N bytes read or written other
+  than N bytes at a time, or offset or stepped by other than a multiple of N,
+  and a `void *` offset at all. When the function returns the result, the other
+  values it returns are counted too, since an undeclared return type follows
+  the value to every RETURN (a word-at-a-time scanner stated `unsigned long *`
+  must not become the return type of a function that steps its other result a
+  byte at a time). A value the caller loads through the pointer that flows back
+  into the pointer's own variable (`p = p[2]`) refuses it too: the variable
+  would be both the pointer and what it points to.
+
+**The audit.** The vote is taken while types are inferred, on the IR of that
+moment, and the merge ties the return register whole-function after it in a
+function that joins its returned values there (`mark_output_storage_addr_tied`,
+`ActionMergeRequired`), so a call result the vote saw on its own can end up in
+one variable with the function's own return. Whether the merge ties it is
+decided on the IR propagation leaves, which does not exist yet when the vote is
+taken (asked at inference time, the same predicate answered "no tie" for grep
+`bmexec_trans`, which the merge then tied). After the caller's decompile,
+`kuna-console`'s decompile step asks `kuna_callrettype::contradicted` for the
+statements the finished function contradicts, withdraws them for that caller
+(`Architecture::kuna_callret_refused`, read by `seed`) and decompiles the
+caller once more. Only a statement that took is audited: the variable the
+result ended up in carries the stated type, or, for a returned result, the
+function's own return type became a pointer. A statement is contradicted when:
+
+- the variable the result ended up in also holds another call's result of the
+  other class, and beside a pointer a number that is not an address (a nonzero
+  constant outside every data section the loader reported: `-1`, an error
+  code), a value loaded through the pointer itself, or a sum or product of
+  integers;
+- the function hands back the result, directly or offset, and also hands back
+  such a number, which would make its own return type the pointer and print
+  every one of those numbers as one (`bmexec_trans` returns `-1` beside
+  `p - buf`, and returns `ptrdiff_t`).
+
+The second decompile costs what the first did, so a function over
+`AUDIT_MAX_OPS` (1,000 live p-code ops) is not audited and keeps its first
+decompile: on bash -O2 the audit redoes 26 functions for under a second of a
+90-second run, where auditing every function would have cost 25 seconds, 24 of
+them in twelve functions over that size, and dpkg-divert's one function of
+1,992 ops alone cost 10% of its run. A vote a later inference pass refuses
+while the result keeps the type (tar `sub_2ba80` shifts the result for a
+`CONCAT71`) is left as it is: it costs a conversion, not a wrong type, and
+auditing it redid 218 bash functions.
+
+The witness is coreutils `du -O0` `map_inode_number`
+(`uintmax_t map_inode_number (struct inode_map *, ino_t)`): its return register
+holds `a1`, the `-1` sentinel, `ino_map_alloc`'s pointer on its way to a
+field and `ino_map_insert`'s number, the merge ties all four, and a vote for
+the pointer printed `long * sub_6b45(...)`, `v1 = (long *)0xffffffffffffffff;` and
+`v1 = (unsigned long)sub_10624(...);` into the pointer. The audit withdraws
+it, and the function prints exactly what it prints with the option off. The
+fixture's `cached` is the same shape; its round trip asserts
+`unsigned long cached(long *a0,unsigned long a1)` with the option on.
+
+A caller whose other evidence types the result differently keeps a cast, now
+from the callee's declared type: a pointer result stored into a field some
+other access typed `long` prints `a0->field_0x48 = (long)sub_1563d(...)` (C
+requires that conversion: the option-off `a0->field_0x48 = sub_1563d(...)`
+beside `long * sub_1563d(...)` in the same listing assigns a pointer to an
+integer without one), and a pointer result subtracted from
+another pointer prints `(long)sub_10369(a0) - (long)a0`. Both compute what the
+integer did. A function that returns a callee's result takes the callee's type
+as its own return type.
+
+Measured on the 45-binary cast corpus (coreutils fmt/ls/sort/du/cp/tail/wc,
+grep, gzip, diffutils cmp/diff/diff3/sdiff, tar, find at -O0, -O2 and
+-O2-noinline), casts on the 4,815 functions kuna and IDA both emit go from
+35,588 to 34,808 (0.941x to 0.920x IDA's count; 188.2 to 184.0 per thousand
+lines, 29.9 to 29.3 per hundred statements): 393 functions fewer, 25 more.
+The residue this leaves in `(char *)<call>` is dominated by callees kuna
+recovers as `void` whose callers read the result (a wrapper ending in
+`call; leave; ret` whose return is its callee's, `void sub_e8ca(...) {
+sub_e7fc(0,a0,a1); }`): a `void` callee states nothing, and recovering such a
+return is the callee's own prototype question, not this vote's.
+
+Everything is inert where there is no callee-first pass: `kuna decompile`, a run
+narrowed by `--addr`, `--functions` or a triage filter, `--jobs N`, a raw image
+and `--option protoorder off`. A single-function decompile therefore still
+prints the conversion that the whole-binary listing leaves out, the same
+property `protoorder`'s argument types have.

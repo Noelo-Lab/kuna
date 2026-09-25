@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1394,
-    1394
+    1397,
+    1397
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -983,6 +983,9 @@
     "data:callretmulti #1: one helper assignment in each pass",
     "data:callretmulti #2: helper is never duplicated into the low-word sinks",
     "data:callretmulti #3: same-block fan-out evaluates helper2 once per pass",
+    "data:callrettype #1: skip_blanks recovers its char * return in both passes",
+    "data:callrettype #2: with nothing stated, the call reads the same in both passes",
+    "data:callrettype #3: the caller's own parameter is untouched by the option",
     "data:callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)",
     "data:callsitestackargs #2: option on recovers both stack-passed arguments",
     "data:castarith #10: by default the byte is a subscript and its one widening cast stays alone",
