@@ -148,5 +148,41 @@
    }
   },
   "worst_delta_min_pct": 2.98
+ },
+ "landing": {
+  "base": "origin/main 04f693d82 (castindex #727 default on, structheadless #720 opt-in)",
+  "castbench": {
+   "main_casts": 36617,
+   "branch_casts": 36614,
+   "main_vs_ida": 0.968,
+   "branch_vs_ida": 0.968,
+   "functions_fewer": 2,
+   "casts_fewer": 3,
+   "functions_more": 0,
+   "fewer": {
+    "O0/diff 0xe2f8": -2,
+    "O0/tail 0x5a69": -1
+   },
+   "off_vs_main": "byte-identical on all 45 binaries"
+  },
+  "typesweep": {
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "mean_off": 0.3697,
+   "mean_on": 0.3697,
+   "values_differ": 0,
+   "meta_differ": 0
+  },
+  "corpus": {
+   "binaries": 418,
+   "functions": 144159,
+   "changed_functions": 23,
+   "binaries_changed": 13,
+   "classes": [
+    "arm-cast"
+   ],
+   "same_as_c960fb18d": "the same 23 functions, with the same removed and added lines as corpus-hunks.json",
+   "off_vs_main": "byte-identical on the 17-binary hunk corpus (bzip2 O0, kmod/dpkg-divert/crontab O2 and the 13 changed binaries)"
+  }
  }
 }

@@ -17,3 +17,14 @@ binaries, so the refactor of the printer's integer-literal path is inert.
 | (h) | castbench full, both directions | 37,477 -> 37,474 casts on the 4,815 functions kuna and IDA both emit (0.991x IDA either way, 196.6 per kloc, 31.2 per 100 statements): 2 functions fewer (diff O0 0xe2f8 -2, tail O0 0x5a69 -1), **0 functions with more casts**. The shape the option targets, a promoted byte against an `int` arm, does not occur in that corpus; see `analysis.md` for the census of the 176 arm casts there and why the rest stay. |
 
 All criteria pass; the option ships default on.
+
+## Landing base
+
+Re-measured on origin/main `04f693d82`, where `castindex` (#727) prints table
+lookups by a variable index as subscripts. Every criterion above holds. castbench:
+36,617 -> 36,614 casts (0.968x IDA either way), 2 functions fewer (the same
+diff and tail sites), 0 more; `castternary off` is byte-identical to main on
+all 45 binaries. The 444-slice typesweep is 1,615 perfect in both arms with
+every value and variables[] row identical. The 418-binary corpus changes the
+same 23 functions with the same lines as `corpus-hunks.json`, each only by an
+arm cast.
