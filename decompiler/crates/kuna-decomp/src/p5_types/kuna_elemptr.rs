@@ -236,32 +236,41 @@ pub fn element_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>, cache
     let arch = Rc::clone(data.get_arch());
     let spc = Rc::clone(arch.manage().get_default_data_space()?);
     let ptrsize = spc.get_addr_size() as int4;
-    let (kind, copies) = candidate_kind(data, vn)?;
-    if v.get_size() != ptrsize {
-        // A global read at another width than a pointer's is not an array's base
-        // in this function, and says so to every other function of the batch.
-        if kind == Kind::Global {
-            data.kuna_elemptr_note(v.get_offset(), GlobalVerdict::Refused);
+    // Storage a function holds in many Varnodes -- a global is read before each
+    // call and written back after it, a constant is one Varnode per reader --
+    // is decided once per address and pass.
+    let memo = if v.is_constant() {
+        if !only_indexed(data, vn) {
+            return None;
         }
-        return None;
-    }
-    let memo = match kind {
-        Kind::Global => &mut cache.globals,
-        // A constant is one Varnode per reader: the ones naming the same address
-        // decide it together, so its reads and its writes get one element type.
-        Kind::Constant => {
-            if !only_indexed(data, vn) {
-                return None;
-            }
-            &mut cache.constants
+        Some(&mut cache.constants)
+    } else if v.get_addr().get_space().is_some_and(|s| Rc::ptr_eq(s, &spc)) {
+        Some(&mut cache.globals)
+    } else {
+        None
+    };
+    let Some(memo) = memo else {
+        if v.get_size() != ptrsize {
+            return None;
         }
-        _ => return decide(data, vn, cur, kind, &copies, ptrsize),
+        let (kind, copies) = candidate_kind(data, vn)?;
+        return decide(data, vn, cur, kind, &copies, ptrsize);
     };
     let key = (v.get_offset(), v.get_size());
     if let Some(hit) = memo.get(&key) {
         return hit.clone();
     }
-    let got = decide(data, vn, cur, kind, &copies, ptrsize);
+    let got = candidate_kind(data, vn).and_then(|(kind, copies)| {
+        if v.get_size() != ptrsize {
+            // A global read at another width than a pointer's is not an array's
+            // base in this function, and says so to every other function of the batch.
+            if kind == Kind::Global {
+                data.kuna_elemptr_note(v.get_offset(), GlobalVerdict::Refused);
+            }
+            return None;
+        }
+        decide(data, vn, cur, kind, &copies, ptrsize)
+    });
     memo.insert(key, got.clone());
     got
 }
@@ -1395,6 +1404,10 @@ pub struct Ledger {
     pub recording: bool,
     verdicts: BTreeMap<u64, BTreeMap<u64, GlobalVerdict>>,
     blocked: BTreeMap<u64, Rc<BTreeSet<u64>>>,
+    /// Globals some function of the batch has already disagreed about: every
+    /// function decompiled after that leaves them alone, so only the ones
+    /// decompiled before it are decided again.
+    disputed: BTreeSet<u64>,
 }
 
 /// Start a batch: forget the previous one, and record while the option is on.
@@ -1413,9 +1426,19 @@ pub fn seed(arch: &crate::architecture::Architecture, data: &mut Funcdata) {
         return;
     }
     let me = data.get_address().get_offset();
-    if let Some(b) = arch.kuna_elemptr.blocked.get(&me) {
-        data.kuna_set_elemptr_blocked(Some(Rc::clone(b)));
+    let ledger = &arch.kuna_elemptr;
+    let own = ledger.blocked.get(&me);
+    if ledger.disputed.is_empty() {
+        if let Some(b) = own {
+            data.kuna_set_elemptr_blocked(Some(Rc::clone(b)));
+        }
+        return;
     }
+    let mut all = ledger.disputed.clone();
+    if let Some(b) = own {
+        all.extend(b.iter().copied());
+    }
+    data.kuna_set_elemptr_blocked(Some(Rc::new(all)));
 }
 
 /// File what a decompiled function said about each global, replacing what an
@@ -1445,7 +1468,14 @@ impl Ledger {
             per.remove(&me);
         }
         for (g, v) in said {
-            self.verdicts.entry(g).or_default().insert(me, v);
+            let per = self.verdicts.entry(g).or_default();
+            per.insert(me, v);
+            let mut typed = per.values().filter(|x| matches!(x, GlobalVerdict::Typed { .. }));
+            let first = typed.next();
+            let split = first.is_some_and(|f| typed.any(|x| x != f));
+            if split || per.values().any(|x| *x == GlobalVerdict::Refused) {
+                self.disputed.insert(g);
+            }
         }
     }
 
