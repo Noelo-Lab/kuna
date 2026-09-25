@@ -431,12 +431,12 @@ Four front-ends drive one engine assembly:
   that deliberately, and the resulting listing is not merely short a row — it
   spells calls and out-of-image jumps the bytes do not contain. So every code
   listing reports the addresses its own instructions branch or call to that no
-  row of it starts at (`decompiler/crates/kuna-cli/src/disassemble.rs
+  row of it starts at (`decompiler/crates/kuna-console/src/disasm.rs
   (skipped_targets)`), on stderr and in the JSON `notes`. The evidence is the
   listing's own: the fixed flow targets already harvested for the literal-pool
   fold (`decompiler/crates/kuna-console/src/engine.rs (FixedRefs)`), restricted to
   the listed span, because a branch out of the range says nothing about the range.
-  `--follow` (`decompiler/crates/kuna-cli/src/disassemble.rs (follow_rows)`) then
+  `--follow` (`decompiler/crates/kuna-console/src/disasm.rs (follow_rows)`) then
   decodes from those addresses as well as from the start, to a fixpoint over
   whatever the newly decoded rows themselves name: one re-anchor is not enough,
   because the instruction at a jumped-to address is commonly another jump over
@@ -1449,7 +1449,9 @@ vocabulary (`option`, `read symbols`, `load`, `kassert`, `function bounds`,
 
 A **directive** is one line of an intent-keyed vocabulary — an agent does not have
 to know that renaming is P9 to rename something — parsed by
-`decompiler/crates/kuna-cli/src/assertdecl.rs` and applied by
+`decompiler/crates/kuna-console/src/assertsyntax.rs` (shared with the in-browser
+front-end; `decompiler/crates/kuna-cli/src/assertdecl.rs` keeps the console-script
+lowering) and applied by
 `decompiler/crates/kuna-console/src/assertions.rs`:
 
 | directive | lowers to | writes at |

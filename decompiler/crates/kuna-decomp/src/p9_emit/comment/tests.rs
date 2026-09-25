@@ -334,7 +334,7 @@ impl FakeFd {
     fn op_index_at_or_after(&self, addr: &Address) -> OpProbe {
         for (i, (a, _, _)) in self.ops.iter().enumerate() {
             if a >= addr {
-                return OpProbe::At(OpCursor(i));
+                return OpProbe::At(OpCursor(i as u64));
             }
         }
         OpProbe::AtEnd
@@ -355,7 +355,7 @@ impl SorterFuncdata for FakeFd {
         // The C++ `--opiter`, guarded by `opiter != beginOpAll()`.
         let lower = match probe {
             OpProbe::At(c) => c.0,
-            OpProbe::AtEnd => self.ops.len(),
+            OpProbe::AtEnd => self.ops.len() as u64,
         };
         if lower == 0 {
             None // opiter == beginOpAll()
@@ -364,7 +364,7 @@ impl SorterFuncdata for FakeFd {
         }
     }
     fn op_block_info(&self, cursor: &OpCursor, addr: &Address) -> KunaResult<OpBlockInfo> {
-        let (_, idx, order) = self.ops[cursor.0];
+        let (_, idx, order) = self.ops[cursor.0 as usize];
         let off = addr.get_offset();
         let mut contains = false;
         for (bidx, lo, hi) in &self.block_spans {
@@ -376,7 +376,7 @@ impl SorterFuncdata for FakeFd {
         Ok(OpBlockInfo { block_index: idx, order, block_contains_comment: contains })
     }
     fn op_addr(&self, cursor: &OpCursor) -> Address {
-        self.ops[cursor.0].0.clone()
+        self.ops[cursor.0 as usize].0.clone()
     }
 }
 

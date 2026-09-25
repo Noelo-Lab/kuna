@@ -1,63 +1,70 @@
 //! `kuna_wasm` — the in-browser decompiler entry point.
 //!
 //! Usage (argv is supplied by the WASI host / shell):
-//!   kuna_wasm <binary> <spec-root> list [--mode MODE]
-//!   kuna_wasm <binary> <spec-root> decompile [<name>|0x<addr>] [--mode MODE]
-//!   kuna_wasm <binary> <spec-root> project [<display-name>] [--mode MODE]
+//!   kuna_wasm <binary> <spec-root> list [OPTIONS]
+//!   kuna_wasm <binary> <spec-root> decompile [<name>|0x<addr>] [OPTIONS]
+//!   kuna_wasm <binary> <spec-root> inspect <name>|0x<addr> [OPTIONS]
+//!   kuna_wasm <binary> <spec-root> read 0x<addr> <len> [OPTIONS]
+//!   kuna_wasm <binary> <spec-root> xrefs <name>|0x<addr> [OPTIONS]
+//!   kuna_wasm <binary> <spec-root> project [<display-name>] [OPTIONS]
+//! OPTIONS: --mode MODE, --language LANG, and repeatable --assert DIRECTIVE.
 //!
 //! `<binary>` and `<spec-root>` are paths in the (virtual) filesystem. Writes a
 //! JSON document to stdout (`list`/`decompile`: the shape of
-//! `kuna decompile-all --json` plus a per-function `"kind"`; `project`: the
-//! whole-binary `.c`/`.h`/`.asm`/`README.md` artifacts — named after
-//! `<display-name>`, default the binary's basename — as one document); errors
-//! go to stderr with a nonzero exit code. See `kuna_wasm::run` and
+//! `kuna decompile-all --json` plus a per-function `"kind"`; `inspect`/`read`/`xrefs`:
+//! the study view's documents; `project`: the whole-binary
+//! `.c`/`.h`/`.asm`/`README.md` artifacts — named after `<display-name>`,
+//! default the binary's basename — as one document); errors go to stderr with a
+//! nonzero exit code. See `kuna_wasm::run_request` and
 //! `docs/web-integration.md`.
 
 use std::process::ExitCode;
 
-type Tail = (Option<String>, Option<String>, Option<String>);
+/// The arguments after `<binary> <spec-root> <command>`.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Tail {
+    positionals: Vec<String>,
+    mode: Option<String>,
+    language: Option<String>,
+    asserts: Vec<String>,
+}
 
 fn parse_tail(argv: &[String]) -> Result<Tail, String> {
-    let mut arg = None;
-    let mut mode = None;
-    let mut language = None;
+    let mut tail = Tail::default();
     let mut i = 4;
     while i < argv.len() {
-        match argv[i].as_str() {
-            "--mode" => {
+        let flag = argv[i].as_str();
+        match flag {
+            "--mode" | "--language" | "--assert" => {
                 i += 1;
-                let value = argv.get(i).ok_or("--mode requires a value")?;
-                mode = Some(value.clone());
-            }
-            "--language" => {
-                i += 1;
-                let value = argv.get(i).ok_or("--language requires a value")?;
-                language = Some(value.clone());
+                let value = argv.get(i).cloned().ok_or_else(|| format!("{flag} requires a value"))?;
+                match flag {
+                    "--mode" => tail.mode = Some(value),
+                    "--language" => tail.language = Some(value),
+                    _ => tail.asserts.push(value),
+                }
             }
             flag if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
-            value if arg.is_none() => arg = Some(value.to_string()),
+            value if tail.positionals.len() < 2 => tail.positionals.push(value.to_string()),
             value => return Err(format!("unexpected argument {value:?}")),
         }
         i += 1;
     }
-    Ok((arg, mode, language))
+    Ok(tail)
 }
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
     if argv.len() < 4 {
         eprintln!(
-            "usage: {} <binary> <spec-root> <list|decompile|project> \
-             [name|0xaddr|display-name] [--mode auto|reliable|aggressive|fast] \
-             [--language auto|c|rust]",
+            "usage: {} <binary> <spec-root> <list|decompile|inspect|read|xrefs|project> \
+             [name|0xaddr|0xaddr len|display-name] [--mode auto|reliable|aggressive|fast] \
+             [--language auto|c|rust] [--assert DIRECTIVE]...",
             argv[0]
         );
         return ExitCode::from(64);
     }
-    let binary = &argv[1];
-    let spec_root = &argv[2];
-    let cmd = &argv[3];
-    let (arg, mode, language) = match parse_tail(&argv) {
+    let tail = match parse_tail(&argv) {
         Ok(parsed) => parsed,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -65,14 +72,15 @@ fn main() -> ExitCode {
         }
     };
 
-    match kuna_wasm::run_with(
-        binary,
-        spec_root,
-        cmd,
-        arg.as_deref(),
-        mode.as_deref(),
-        language.as_deref(),
-    ) {
+    match kuna_wasm::run_request(&kuna_wasm::Request {
+        binary: &argv[1],
+        spec_root: &argv[2],
+        cmd: &argv[3],
+        args: &tail.positionals,
+        mode: tail.mode.as_deref(),
+        language: tail.language.as_deref(),
+        asserts: &tail.asserts,
+    }) {
         Ok(payload) => {
             println!("{payload}");
             ExitCode::SUCCESS
@@ -86,7 +94,7 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_tail;
+    use super::{parse_tail, Tail};
 
     fn argv(tail: &[&str]) -> Vec<String> {
         ["kuna_wasm", "binary", "specs", "decompile"]
@@ -96,22 +104,32 @@ mod tests {
             .collect()
     }
 
+    fn tail(positionals: &[&str], mode: Option<&str>, language: Option<&str>) -> Tail {
+        Tail {
+            positionals: positionals.iter().map(|s| s.to_string()).collect(),
+            mode: mode.map(str::to_string),
+            language: language.map(str::to_string),
+            asserts: Vec::new(),
+        }
+    }
+
     #[test]
     fn mode_and_positional_can_appear_in_either_order() {
         assert_eq!(
             parse_tail(&argv(&["main", "--mode", "fast"])).unwrap(),
-            (Some("main".into()), Some("fast".into()), None)
+            tail(&["main"], Some("fast"), None)
         );
         assert_eq!(
             parse_tail(&argv(&["--mode", "auto", "main"])).unwrap(),
-            (Some("main".into()), Some("auto".into()), None)
+            tail(&["main"], Some("auto"), None)
         );
     }
 
     #[test]
-    fn mode_requires_a_value_and_only_one_positional_is_allowed() {
+    fn mode_requires_a_value_and_at_most_two_positionals_are_allowed() {
         assert!(parse_tail(&argv(&["--mode"])).is_err());
-        assert!(parse_tail(&argv(&["main", "other"])).is_err());
+        assert_eq!(parse_tail(&argv(&["0x10", "16"])).unwrap(), tail(&["0x10", "16"], None, None));
+        assert!(parse_tail(&argv(&["0x10", "16", "third"])).is_err());
     }
 
     /// (kuna outlang) The language rides beside the mode, in any order, and an
@@ -120,12 +138,35 @@ mod tests {
     fn language_parses_beside_the_mode_in_either_order() {
         assert_eq!(
             parse_tail(&argv(&["main", "--language", "rust"])).unwrap(),
-            (Some("main".into()), None, Some("rust".into()))
+            tail(&["main"], None, Some("rust"))
         );
         assert_eq!(
             parse_tail(&argv(&["--language", "rust", "--mode", "fast", "main"])).unwrap(),
-            (Some("main".into()), Some("fast".into()), Some("rust".into()))
+            tail(&["main"], Some("fast"), Some("rust"))
         );
         assert!(parse_tail(&argv(&["--language"])).is_err());
+    }
+
+    /// `--assert` repeats, keeps its order, may sit anywhere, and carries a
+    /// whole directive (spaces included) as one value.
+    #[test]
+    fn asserts_repeat_in_order_and_keep_their_spaces() {
+        let parsed = parse_tail(&argv(&[
+            "--assert",
+            "name v1 total",
+            "main",
+            "--mode",
+            "fast",
+            "--assert",
+            "prototype 0x1161 long sum_to(int count)",
+        ]))
+        .unwrap();
+        assert_eq!(parsed.positionals, vec!["main".to_string()]);
+        assert_eq!(parsed.mode.as_deref(), Some("fast"));
+        assert_eq!(
+            parsed.asserts,
+            vec!["name v1 total".to_string(), "prototype 0x1161 long sum_to(int count)".to_string()]
+        );
+        assert!(parse_tail(&argv(&["main", "--assert"])).unwrap_err().contains("--assert"));
     }
 }

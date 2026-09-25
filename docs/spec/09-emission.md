@@ -901,6 +901,58 @@ ghidra-mode front-end) `<variable>` elements carry `varref`/`opref` (declaration
 construction, which is how the Ghidra client maps a clicked token back to
 p-code, and how statement groups map to addresses.
 
+**Token source map** (kuna). A front-end that links the C to the machine code
+needs every token of the *plain* text with its place in it, and the plain
+emitter keeps no references. `EmitMarkup` therefore optionally records each
+token as it encodes it (`decompiler/crates/kuna-decomp/src/p9_emit/prettyprint.rs
+(EmitToken)`): its line, its column in UTF-16 code units, its kind (syntax,
+variable, value, op, funcname, type, field, comment, label), its colour and
+the `opref`/`varref` it carries. The column model is `EmitNoMarkup`'s,
+replayed: a line break fires any pending brace first and then moves to the
+current indent (or to the explicit indent of `tag_line_indent`), and every
+emitted text advances the column by its length, so a token lands exactly where
+the plain back-end printed the same characters; blank tokens are dropped and
+surrounding spaces trimmed. A `tag_type` records one token for the whole
+declarator front (`unsigned long *`) and mutes the per-word split the packed
+encoding makes for the Ghidra client. Anything printed in the constant colour
+(a `tag_variable` literal or a plain `print`) and case labels are `value`
+tokens. Declaration context rides along: tokens inside the return type, the
+prototype, and a local declaration are marked, and a comment or label keeps the
+space and offset it is attached to. `printc.rs (PrintC::doc_function_tokens)` runs the same
+`emit_function_document` sequence with capture on. `option indentincrement`
+lives on the emitter leaf, so `printc.rs (PrintC::set_markup)` carries it into
+the leaf it swaps in: without that, the markup leaf would indent by the default
+2 (shifting every column) and the plain printer restored after it would print
+every later function of the batch at 2 as well.
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
+(print_c_with_srcmap)` renders the plain text first and the captured markup
+second — the text is byte-identical to `print_c_with_provenance` — and the
+MSVC cookie-return presentation rewrite reports each line pair it edits so the
+tokens follow it (`kuna_srcmap.rs (apply_cookie_rewrites)`: the blanked
+assignment loses its tokens and the return line becomes `return`, the literal
+carried from the assignment, `;`).
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_srcmap.rs (resolve)` then
+places the tokens in the trimmed `code` (lines shift by the number of leading
+breaks the trim removed), resolves `opref` to the instruction address (a
+comment's or label's own address only when it lies in the function's code
+space — a `// stack - 0x10` note names a frame slot, not an instruction), a
+call's function name to its callee's entry, and a variable token to its row in
+the reported variables (by the varrefs that row's line evidence came from, else
+by a unique name, among the parameters for a token in the prototype), and names
+the declaration a token sits in (`local`, `param`, `return`, `function`). The
+line mappings of both provenance renders are numbered the same way — against
+the trimmed text — which matters for Rust output, whose attribute line makes
+the render open with two breaks rather than one. `kuna_srcmap.rs (verify)` is the contract: the tokens are
+in order and inside their lines, each slice of the code equals its text, and
+every code unit between them is a space — so joining a line's tokens with the
+gaps as spaces rebuilds that line exactly. A caller ships the tokens only when
+the check passes and otherwise reports an empty list with the reason, never a
+drifted map. The RPN stack carries each op and Varnode reference as the arena
+key's whole 64-bit form (`decompiler/crates/kuna-decomp/src/p9_emit/printlanguage.rs
+(IrKey)`), and the comment sorter's op cursor likewise: on a 32-bit target — the
+browser build — a `usize` would drop the key's version half and every reference
+resolved from it would dangle.
+
 **Literal format.** The remaining P9/`literal-format` knobs all act at the
 constant/type-name chokepoints of this walk: `option integerformat`
 (hex/dec/best — "best" scores which base makes the constant's digit pattern

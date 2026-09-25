@@ -23,6 +23,9 @@ mod entry_selector;
 pub mod engine;
 pub mod decompile_step;
 pub mod project;
+pub mod inspect;
+pub mod disasm;
+pub mod litpool;
 pub mod project_stream;
 pub mod classify;
 pub mod funcextent;
@@ -34,6 +37,7 @@ pub mod kuna_buildstamp;
 #[cfg(test)]
 mod kuna_buildstamp_fingerprint;
 pub mod assertions;
+pub mod assertsyntax;
 pub mod grammar;
 pub mod rulecompile;
 pub mod unify;

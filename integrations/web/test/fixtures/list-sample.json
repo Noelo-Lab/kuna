@@ -1,0 +1,418 @@
+{
+ "binary": "sample.elf",
+ "language": "c-language",
+ "target": {
+  "archid": "x86:LE:64:default:gcc",
+  "processor": "x86",
+  "endian": "little",
+  "bits": 64
+ },
+ "count": 13,
+ "sections": [
+  {
+   "name": ".interp",
+   "address": 792,
+   "address_hex": "0x318",
+   "size": 28,
+   "file_offset": 792,
+   "file_size": 28,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".note.gnu.property",
+   "address": 824,
+   "address_hex": "0x338",
+   "size": 48,
+   "file_offset": 824,
+   "file_size": 48,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".note.gnu.build-id",
+   "address": 872,
+   "address_hex": "0x368",
+   "size": 36,
+   "file_offset": 872,
+   "file_size": 36,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".note.ABI-tag",
+   "address": 908,
+   "address_hex": "0x38c",
+   "size": 32,
+   "file_offset": 908,
+   "file_size": 32,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".gnu.hash",
+   "address": 944,
+   "address_hex": "0x3b0",
+   "size": 36,
+   "file_offset": 944,
+   "file_size": 36,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".dynsym",
+   "address": 984,
+   "address_hex": "0x3d8",
+   "size": 168,
+   "file_offset": 984,
+   "file_size": 168,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".dynstr",
+   "address": 1152,
+   "address_hex": "0x480",
+   "size": 143,
+   "file_offset": 1152,
+   "file_size": 143,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".gnu.version",
+   "address": 1296,
+   "address_hex": "0x510",
+   "size": 14,
+   "file_offset": 1296,
+   "file_size": 14,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".gnu.version_r",
+   "address": 1312,
+   "address_hex": "0x520",
+   "size": 48,
+   "file_offset": 1312,
+   "file_size": 48,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".rela.dyn",
+   "address": 1360,
+   "address_hex": "0x550",
+   "size": 192,
+   "file_offset": 1360,
+   "file_size": 192,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".rela.plt",
+   "address": 1552,
+   "address_hex": "0x610",
+   "size": 24,
+   "file_offset": 1552,
+   "file_size": 24,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".init",
+   "address": 4096,
+   "address_hex": "0x1000",
+   "size": 27,
+   "file_offset": 4096,
+   "file_size": 27,
+   "executable": true,
+   "writable": false
+  },
+  {
+   "name": ".plt",
+   "address": 4128,
+   "address_hex": "0x1020",
+   "size": 32,
+   "file_offset": 4128,
+   "file_size": 32,
+   "executable": true,
+   "writable": false
+  },
+  {
+   "name": ".plt.got",
+   "address": 4160,
+   "address_hex": "0x1040",
+   "size": 16,
+   "file_offset": 4160,
+   "file_size": 16,
+   "executable": true,
+   "writable": false
+  },
+  {
+   "name": ".plt.sec",
+   "address": 4176,
+   "address_hex": "0x1050",
+   "size": 16,
+   "file_offset": 4176,
+   "file_size": 16,
+   "executable": true,
+   "writable": false
+  },
+  {
+   "name": ".text",
+   "address": 4192,
+   "address_hex": "0x1060",
+   "size": 396,
+   "file_offset": 4192,
+   "file_size": 396,
+   "executable": true,
+   "writable": false
+  },
+  {
+   "name": ".fini",
+   "address": 4588,
+   "address_hex": "0x11ec",
+   "size": 13,
+   "file_offset": 4588,
+   "file_size": 13,
+   "executable": true,
+   "writable": false
+  },
+  {
+   "name": ".rodata",
+   "address": 8192,
+   "address_hex": "0x2000",
+   "size": 9,
+   "file_offset": 8192,
+   "file_size": 9,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".eh_frame_hdr",
+   "address": 8204,
+   "address_hex": "0x200c",
+   "size": 68,
+   "file_offset": 8204,
+   "file_size": 68,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".eh_frame",
+   "address": 8272,
+   "address_hex": "0x2050",
+   "size": 236,
+   "file_offset": 8272,
+   "file_size": 236,
+   "executable": false,
+   "writable": false
+  },
+  {
+   "name": ".init_array",
+   "address": 15800,
+   "address_hex": "0x3db8",
+   "size": 8,
+   "file_offset": 11704,
+   "file_size": 8,
+   "executable": false,
+   "writable": true
+  },
+  {
+   "name": ".fini_array",
+   "address": 15808,
+   "address_hex": "0x3dc0",
+   "size": 8,
+   "file_offset": 11712,
+   "file_size": 8,
+   "executable": false,
+   "writable": true
+  },
+  {
+   "name": ".dynamic",
+   "address": 15816,
+   "address_hex": "0x3dc8",
+   "size": 496,
+   "file_offset": 11720,
+   "file_size": 496,
+   "executable": false,
+   "writable": true
+  },
+  {
+   "name": ".got",
+   "address": 16312,
+   "address_hex": "0x3fb8",
+   "size": 72,
+   "file_offset": 12216,
+   "file_size": 72,
+   "executable": false,
+   "writable": true
+  },
+  {
+   "name": ".data",
+   "address": 16384,
+   "address_hex": "0x4000",
+   "size": 16,
+   "file_offset": 12288,
+   "file_size": 16,
+   "executable": false,
+   "writable": true
+  },
+  {
+   "name": ".bss",
+   "address": 16400,
+   "address_hex": "0x4010",
+   "size": 8,
+   "file_offset": null,
+   "file_size": null,
+   "executable": false,
+   "writable": true
+  }
+ ],
+ "known_types": [],
+ "assertions": [],
+ "functions": [
+  {
+   "name": "_init",
+   "address": 4096,
+   "address_hex": "0x1000",
+   "aliases": [
+    "sub_1000"
+   ],
+   "object_location": null,
+   "size": 27,
+   "kind": "func"
+  },
+  {
+   "name": "sub_1020",
+   "address": 4128,
+   "address_hex": "0x1020",
+   "aliases": [],
+   "object_location": null,
+   "size": 32,
+   "kind": "plt"
+  },
+  {
+   "name": "__cxa_finalize",
+   "address": 4160,
+   "address_hex": "0x1040",
+   "aliases": [
+    "sub_1040"
+   ],
+   "object_location": null,
+   "size": 16,
+   "kind": "plt"
+  },
+  {
+   "name": "printf",
+   "address": 4176,
+   "address_hex": "0x1050",
+   "aliases": [
+    "sub_1050"
+   ],
+   "object_location": null,
+   "size": 16,
+   "kind": "plt"
+  },
+  {
+   "name": "_start",
+   "address": 4192,
+   "address_hex": "0x1060",
+   "aliases": [
+    "sub_1060"
+   ],
+   "object_location": null,
+   "size": 48,
+   "kind": "func"
+  },
+  {
+   "name": "deregister_tm_clones",
+   "address": 4240,
+   "address_hex": "0x1090",
+   "aliases": [
+    "sub_1090"
+   ],
+   "object_location": null,
+   "size": 48,
+   "kind": "func"
+  },
+  {
+   "name": "register_tm_clones",
+   "address": 4288,
+   "address_hex": "0x10c0",
+   "aliases": [
+    "sub_10c0"
+   ],
+   "object_location": null,
+   "size": 64,
+   "kind": "func"
+  },
+  {
+   "name": "__do_global_dtors_aux",
+   "address": 4352,
+   "address_hex": "0x1100",
+   "aliases": [
+    "sub_1100"
+   ],
+   "object_location": null,
+   "size": 64,
+   "kind": "func"
+  },
+  {
+   "name": "frame_dummy",
+   "address": 4416,
+   "address_hex": "0x1140",
+   "aliases": [
+    "sub_1140"
+   ],
+   "object_location": null,
+   "size": 9,
+   "kind": "func"
+  },
+  {
+   "name": "add",
+   "address": 4425,
+   "address_hex": "0x1149",
+   "aliases": [
+    "sub_1149"
+   ],
+   "object_location": null,
+   "size": 24,
+   "kind": "func"
+  },
+  {
+   "name": "sum_to",
+   "address": 4449,
+   "address_hex": "0x1161",
+   "aliases": [
+    "sub_1161"
+   ],
+   "object_location": null,
+   "size": 55,
+   "kind": "func"
+  },
+  {
+   "name": "main",
+   "address": 4504,
+   "address_hex": "0x1198",
+   "aliases": [
+    "sub_1198"
+   ],
+   "object_location": null,
+   "size": 84,
+   "kind": "func"
+  },
+  {
+   "name": "_fini",
+   "address": 4588,
+   "address_hex": "0x11ec",
+   "aliases": [
+    "sub_11ec"
+   ],
+   "object_location": null,
+   "size": 13,
+   "kind": "func"
+  }
+ ]
+}

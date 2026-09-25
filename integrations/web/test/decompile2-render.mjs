@@ -1,0 +1,359 @@
+// decompile2-render.mjs — the study view's pure renderers, from the source
+// tree with no build: the shared highlighter's scan, the C pane (token stream
+// and regex fallback), the line/instruction/symbol index, and the diff that
+// flashes edited lines.
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { highlight, highlightC, highlightRust, scan, escapeHtml } from '../assets/js/highlight-c.js';
+import {
+  normalizeInspect, tokenLines, fallbackLines, lineSegments, buildIndex, renderC,
+  changedLines, localDecls, storageLabel, bandOf,
+} from '../decompile2/render-c.js';
+import { addrHex, signedHex } from '../decompile2/addr.js';
+import { normalizePrefs, cycle, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile2/prefs.js';
+import {
+  formatAddr, groupRuns, linkOperands, branchArrows, renderAsm, renderInsnRows, stackOperand,
+  isBranch, isCall, spacedBytes, inferLines, easyOperands, spellInsn,
+} from '../decompile2/asm-view.js';
+import { entryOffset } from '../decompile2/addr.js';
+import { parseRustSignature } from '../decompile2/ctype.js';
+import { placeOverlay } from '../decompile2/hover.js';
+import { expand } from '../decompile2/sync.js';
+
+/** The text a browser would show for our own renderer's markup: tags dropped, the five escapes decoded. */
+function visibleText(markup) {
+  let out = '';
+  let inTag = false;
+  for (const ch of markup) {
+    if (ch === '<') inTag = true;
+    else if (ch === '>' && inTag) inTag = false;
+    else if (!inTag) out += ch;
+  }
+  const entities = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&amp;': '&' };
+  return out.replace(/&(?:lt|gt|quot|#39|amp);/g, (e) => entities[e]);
+}
+
+const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
+const checks = [];
+
+// ── the shared highlighter: scan() is what highlight() renders ─────────────
+const MAIN = 'int main(int argc,char **argv)\n{\n  long v1; // rax\n  v1 = sum_to(add(argc,3));\n  printf("%ld\\n",v1);\n  return (int)v1;\n}';
+assert.equal(
+  highlight(MAIN),
+  '<span class="tok-type">int</span> <span class="tok-fn">main</span>(<span class="tok-type">int</span> argc,' +
+  '<span class="tok-type">char</span> **argv)\n{\n  <span class="tok-type">long</span> v1; <span class="tok-com">// rax</span>\n' +
+  '  v1 = <span class="tok-fn">sum_to</span>(<span class="tok-fn">add</span>(argc,<span class="tok-num">3</span>));\n' +
+  '  <span class="tok-fn">printf</span>(<span class="tok-str">&quot;%ld\\n&quot;</span>,v1);\n' +
+  '  <span class="tok-kw">return</span> (<span class="tok-type">int</span>)v1;\n}',
+  'highlight() output is pinned byte for byte',
+);
+assert.equal(
+  highlightRust('let mut x: u32 = 0x1f; /* c */'),
+  '<span class="tok-kw">let</span> <span class="tok-kw">mut</span> x: <span class="tok-type">u32</span> = ' +
+  '<span class="tok-num">0x1f</span>; <span class="tok-com">/* c */</span>',
+);
+const join = (pieces) => pieces.map((p) => (p.cls ? `<span class="${p.cls}">${escapeHtml(p.text)}</span>` : escapeHtml(p.text))).join('');
+for (const code of [MAIN, readFileSync(new URL('./fixtures/sample.c', import.meta.url), 'utf8'), '"<&>"', '/* open', '']) {
+  assert.equal(scan(code).map((p) => p.text).join(''), code, 'scan pieces cover the input exactly');
+  assert.equal(join(scan(code)), highlight(code), 'highlight == join(scan)');
+  assert.equal(join(scan(code, 'c')), highlightC(code), 'highlightC == join(scan c)');
+}
+checks.push('highlight pinned, == scan join');
+
+// ── normalizeInspect: an inspect document and a plain decompile document ───
+const inspectMain = normalizeInspect(fixture('inspect-main.json'));
+assert.equal(inspectMain.source, 'inspect');
+assert.equal(inspectMain.address_hex, '0x1198');
+assert.equal(inspectMain.proto, 'int main(int argc,char **argv)', 'the declaration\'s trailing ; is dropped');
+assert.equal(inspectMain.hasInstructions, true);
+assert.equal(inspectMain.instructions[9].address_hex, '0x11b5');
+assert.deepEqual(inspectMain.instructions[9].lines, [5]);
+const plain = normalizeInspect({
+  binary: 'x', count: 1,
+  functions: [{ name: 'main', address: 4504, address_hex: '0x1198', code: MAIN, error: null, variables: [] }],
+});
+assert.equal(plain.source, 'decompile');
+assert.equal(plain.hasInstructions, false);
+assert.match(plain.tokens_error, /inspect/);
+assert.equal(plain.proto, 'int main(int argc,char **argv)');
+checks.push('normalizeInspect (inspect + decompile)');
+
+// ── token stream: round trip, per-line fallback, no-token path ─────────────
+/** A synthetic engine token stream for `code` (what the engine lane emits). */
+function tokensFor(code) {
+  const out = [];
+  code.split('\n').forEach((text, i) => {
+    let col = 0;
+    for (const p of scan(text)) {
+      if (p.text.trim()) {
+        const kind = p.cls === 'tok-type' ? 'type' : p.cls === 'tok-fn' ? 'funcname' : p.word && !p.cls ? 'variable' : 'syntax';
+        out.push({ line: i + 1, col, len: p.text.length, kind, color: 'no_color', text: p.text });
+      }
+      col += p.text.length;
+    }
+  });
+  return out;
+}
+const toks = tokensFor(MAIN);
+const exact = tokenLines(MAIN, toks);
+exact.forEach((segs, i) => {
+  assert.ok(segs, `line ${i + 1} verifies`);
+  assert.equal(segs.map((s) => s.text).join(''), MAIN.split('\n')[i], `line ${i + 1} segments rebuild it`);
+});
+const drift = toks.map((t) => (t.line === 4 && t.text === 'sum_to' ? { ...t, col: t.col + 1 } : t));
+const partly = tokenLines(MAIN, drift);
+assert.equal(partly[3], null, 'a drifted token fails its line');
+assert.ok(partly[4], 'other lines keep their tokens');
+const withTokens = { ...plain, tokens: drift, tokens_error: null };
+const seg = lineSegments(withTokens);
+assert.equal(seg.fallbackCount, 1, 'exactly the drifted line falls back');
+const html = renderC(withTokens, { segs: seg.segs });
+const text = visibleText(html);
+assert.ok(text.includes('v1 = sum_to(add(argc,3));'), 'the fallback line still renders its text');
+const fb = fallbackLines(MAIN);
+assert.equal(fb.length, 7);
+assert.ok(fb[3].some((s) => s.tok?.kind === 'variable' && s.text === 'v1'), 'fallback names variables');
+assert.ok(fb[3].some((s) => s.tok?.kind === 'funcname' && s.text === 'sum_to'), 'fallback names callees');
+assert.ok(fallbackLines('p->len = s.x;')[0].filter((s) => s.tok?.kind === 'field').length === 2, 'fields after -> and .');
+checks.push('tokenLines round trip + per-line fallback');
+
+// ── the engine's real token streams verify on every line ───────────────────
+for (const name of ['main', 'sum_to', 'add']) {
+  const fn = normalizeInspect(fixture(`inspect-${name}.json`));
+  const seg = lineSegments(fn);
+  assert.ok(seg.tokenCount > 0, `${name} has tokens`);
+  assert.equal(seg.fallbackCount, 0, `${name}: every line rebuilds from its tokens`);
+}
+checks.push('real token streams verify');
+
+// ── renderC: rows, gutters, attributes, escaping ───────────────────────────
+const mainSeg = lineSegments(inspectMain);
+const mainIndex = buildIndex(inspectMain, mainSeg.segs);
+const fnByName = new Map([['sum_to', { address_hex: '0x1161' }], ['add', { address_hex: '0x1149' }]]);
+const mainHtml = renderC(inspectMain, { segs: mainSeg.segs, index: mainIndex, fnByName });
+assert.match(mainHtml, /<div class="d2-cl" id="c-L5" role="option" data-line="5" data-addrs="0x11b5 0x11c2" data-band="5">/);
+assert.match(mainHtml, /<span class="la">11b5<\/span>/);
+assert.match(mainHtml, /data-kind="funcname"[^>]*data-callee="0x1161"[^>]*>sum_to</);
+assert.match(mainHtml, /data-kind="variable" data-sym="v1"/);
+const evil = normalizeInspect({ functions: [{ name: '<x>', address_hex: '0x1', code: 'int f(void)\n{\n  g("<img src=x onerror=alert(1)>");\n}' }] });
+const evilHtml = renderC(evil);
+assert.ok(!evilHtml.includes('<img'), 'engine strings are escaped');
+assert.ok(evilHtml.includes('&lt;img'), 'escaped text survives');
+const errored = renderC(normalizeInspect({ functions: [{ name: 'f', address_hex: '0x1', code: null, error: 'boom <b>' }] }));
+assert.match(errored, /decompile error:\n   boom &lt;b&gt;/);
+checks.push('renderC rows/attributes/escaping');
+
+// ── buildIndex: every source of line mappings is merged ────────────────────
+assert.deepEqual(mainIndex.lineToInsns.get(5), ['0x11b5', '0x11c2']);
+assert.deepEqual(mainIndex.insnToLines.get('0x11e1'), [6]);
+assert.equal(mainIndex.addrToInsn.get('0x11b5').mnemonic, 'CALL');
+assert.deepEqual([...mainIndex.symToLines.get('v1')].sort(), [3, 5, 6, 7]);
+const sumTo = normalizeInspect(fixture('inspect-sum_to.json'));
+const sumIndex = buildIndex(sumTo);
+assert.deepEqual(sumIndex.lineToInsns.get(7), ['0x1174', '0x1186', '0x1190']);
+assert.ok(sumIndex.symToAddrs.get('acc').has('0x116c'), 'variable addresses join the symbol index');
+checks.push('buildIndex');
+
+// ── declarations, storage, bands, diff, addresses, prefs ──────────────────
+assert.deepEqual(localDecls(sumTo.code).map((d) => [d.name, d.type, d.storage]), [['acc', 'long', 'stack - 0x10'], ['v1', 'int', 'stack - 0x14']]);
+assert.deepEqual(localDecls('void f(void)\n{\n  char v2 [16]; // stack - 0x18\n  \n}').map((d) => d.type), ['char [16]']);
+assert.deepEqual(localDecls('void f(void)\n{\n  x = y; // note\n  g(x); // y\n}'), [], 'a body with no declarations has none (no blank line needed)');
+assert.deepEqual(
+  localDecls('void f(void)\n{\n  long v1; // rax\n  undefined8 uVar2;\n  code (*v3)(int); // rdx\n  foo(v1);\n  int late;\n}').map((d) => [d.name, d.type, d.storage]),
+  [['v1', 'long', 'rax'], ['uVar2', 'undefined8', ''], ['v3', 'code (*)(int)', 'rdx']],
+  'declarations stop at the first statement; temporaries and function pointers count',
+);
+assert.deepEqual(localDecls('unsafe fn f()\n{\n  let mut v1: i64; // rax\n  \n}').map((d) => [d.name, d.type, d.storage]), [['v1', 'i64', 'rax']], 'Rust let declarations');
+assert.equal(entryOffset(-20), 'entry−0x14');
+assert.equal(entryOffset(0), 'entry+0x0');
+assert.equal(storageLabel('rax'), 'register RAX');
+assert.equal(storageLabel('stack - 0x14'), 'stack entry−0x14');
+assert.equal(bandOf(5), 5);
+assert.equal(bandOf(6), 0);
+assert.deepEqual([...changedLines('a\nb\nc', 'a\nB\nc\nd')], [2, 4]);
+assert.deepEqual([...changedLines(MAIN, MAIN.replace(/v1/g, 'total'))], [3, 4, 5, 6]);
+assert.equal(changedLines('', 'x').size, 0, 'nothing flashes on a first render');
+assert.equal(addrHex(4504), '0x1198');
+assert.equal(addrHex('0X11AB'), '0x11ab');
+assert.equal(addrHex('0xffffffff81000000'), '0xffffffff81000000');
+assert.equal(addrHex(2 ** 60), null, 'an unsafe number is refused, not rounded');
+assert.equal(signedHex(-4n), '-0x4');
+assert.deepEqual(normalizePrefs({ v: 1, asmAddr: 'nope', hoverDelay: 250, split: 'yes' }), { ...DEFAULT_PREFS, hoverDelay: 250 });
+assert.deepEqual(
+  normalizePrefs({ v: 1, tab: 'asm', split: true, asmBytes: true, asmCMode: 'interleave', cLineAddrs: true, asmAddr: 'rel', rail: false }),
+  { ...DEFAULT_PREFS, view: 'split', asmAddr: 'rel', rail: false },
+  'a first-layout record keeps its view and choices; the changed defaults (bytes, C headings, line addresses) are new',
+);
+assert.equal(normalizePrefs({ v: 1, tab: 'bytes', split: true }).view, 'bytes');
+assert.equal(normalizePrefs({ v: 1, tab: 'src' }).view, 'c', 'the example-only source view is not restored');
+assert.equal(normalizePrefs({ v: 2, asmCMode: 'interleave' }).asmCMode, 'heading', 'the old name of the headings mode still reads');
+assert.deepEqual(normalizePrefs({ v: 2, theme: 'light', tipSeen: true, view: 'nope' }), { ...DEFAULT_PREFS, theme: 'light', tipSeen: true });
+assert.equal(normalizePrefs({ v: 2, theme: 'system' }).theme, 'dark', 'the retired "system" theme reads as the dark default');
+assert.deepEqual([DEFAULT_PREFS.asmBytes, DEFAULT_PREFS.asmBytesSplit, DEFAULT_PREFS.asmCMode, DEFAULT_PREFS.cLineAddrs, DEFAULT_PREFS.theme],
+  [false, false, 'heading', false, 'dark'], 'the beginner defaults');
+assert.equal(cycle(DEFAULT_PREFS, 'asmAddr').asmAddr, 'rel');
+assert.equal(cycle({ ...DEFAULT_PREFS, asmAddr: 'both' }, 'asmAddr').asmAddr, 'abs');
+const mem = new Map();
+const store = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
+savePrefs(store, { ...DEFAULT_PREFS, asmBytes: true });
+assert.equal(loadPrefs(store).asmBytes, true);
+assert.deepEqual(loadPrefs({ getItem: () => { throw new Error('denied'); } }), DEFAULT_PREFS, 'a throwing store gives defaults');
+checks.push('decls/storage/bands/diff/addr/prefs');
+
+// ── the assembly pane ──────────────────────────────────────────────────────
+assert.equal(formatAddr('0x11ab', '0x1198', 'abs'), '11ab');
+assert.equal(formatAddr('0x11ab', '0x1198', 'rel'), '+0x13');
+assert.equal(formatAddr('0x1190', '0x1198', 'rel'), '-0x8', 'offsets may be negative');
+assert.equal(formatAddr('0x11ab', '0x1198', 'both'), '11ab +0x13');
+assert.equal(
+  formatAddr('0xffffffff81000010', '0xffffffff81000000', 'both'),
+  'ffffffff81000010 +0x10',
+  'addresses above 2^53 stay exact (BigInt)',
+);
+assert.equal(spacedBytes('8b45ec'), '8b 45 ec');
+assert.ok(isBranch('JLE') && isBranch('JMP') && isBranch('b.ne') && !isBranch('CALL') && !isBranch('BL') && isCall('CALL') && isCall('bl'));
+assert.deepEqual(groupRuns(sumTo.instructions).map((r) => [r.line, r.start, r.end]), [
+  [null, 0, 4], [6, 4, 5], [7, 5, 6], [null, 6, 8], [8, 8, 10], [7, 10, 11], [null, 11, 13], [7, 13, 14], [10, 14, 15], [null, 15, 16], [10, 16, 17],
+]);
+const arrows = branchArrows(sumTo.instructions);
+assert.deepEqual(arrows.edges, [{ from: 6, to: 11, lane: 0 }, { from: 13, to: 7, lane: 1 }], 'JMP forward, JLE back, nested lanes');
+assert.deepEqual(arrows.rows[6], [{ lane: 0, kind: 'from', up: false }]);
+assert.deepEqual(arrows.rows[9].map((s) => s.kind), ['pass', 'pass']);
+assert.equal(branchArrows(inspectMain.instructions).lanes, 0, 'straight-line code has no arrows');
+assert.deepEqual(stackOperand('dword ptr [RBP + -0x14],EDI'), { reg: 'RBP', disp: -20, start: 0, end: 23 });
+assert.equal(stackOperand('RAX,[0x2004]'), null);
+const fnByAddr = new Map([['0x1149', { name: 'add' }], ['0x1161', { name: 'sum<to>' }]]);
+const call = linkOperands({ mnemonic: 'CALL', operands: '0x1161' }, { fnByAddr, nameOf: (f) => f.name });
+assert.equal(call, '<a class="xt" data-goto="0x1161">0x1161</a> <span class="d2muted">&lt;sum&lt;to&gt;&gt;</span>', 'callee names are escaped');
+const jump = linkOperands({ mnemonic: 'JLE', operands: '0x117d' }, { insnIndex: new Map([['0x117d', 7]]) });
+assert.equal(jump, '<a class="xt" data-goto="0x117d">0x117d</a>', 'in-function targets link');
+assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'ESI,0x1149' }, { fnByAddr, spelling: 'exact' }), 'ESI,0x1149', 'immediates are not guessed to be code');
+assert.equal(
+  linkOperands({ mnemonic: 'MOV', operands: 'dword ptr [RBP + -0x14],EDI' }, { slotOf: (reg, disp) => disp - 8, spelling: 'exact' }),
+  '<span class="so" data-slot="-28">dword ptr [RBP + -0x14]</span>,EDI',
+);
+assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'EAX,<b>' }, { spelling: 'exact' }), 'EAX,&lt;b&gt;', 'operands are escaped');
+assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'EAX,<b>' }), 'eax, &lt;b&gt;', 'and escaped when spelled for reading');
+const asmHtml = renderAsm(sumTo, { prefs: { asmCMode: 'comment' }, fnByAddr });
+assert.match(asmHtml, /<div class="d2-ar" id="a-0x116c" role="option" data-i="4" data-addr="0x116c" data-lines="6" data-band="0"[^>]*>/);
+assert.match(asmHtml, /<span class="ac">; L6: acc = 0;<\/span>/);
+assert.match(asmHtml, /id="a-0x1161"[^>]*>/);
+assert.match(asmHtml, /class="d2-ar nomap" id="a-0x1161"/);
+assert.equal((asmHtml.match(/class="d2-ar/g) || []).length, 17);
+const inter = renderAsm(sumTo, { prefs: { asmCMode: 'heading' } });
+assert.match(inter, /<div class="d2-as" data-line="6"><span class="asn">6<\/span><span class="ast">acc = 0;<\/span><\/div>/, 'headings put the C line above its run');
+assert.ok(!/; L6/.test(inter), 'headings drop the comment column text');
+assert.equal(renderAsm(sumTo, { prefs: { asmCMode: 'interleave' } }), inter, 'the old mode name renders the same');
+const headed = renderAsm(sumTo, { prefs: { asmCMode: 'heading' }, inferred: inferLines(sumTo.instructions) });
+assert.match(headed, /^<div class="d2-chunk"[^>]*><div class="d2-as role" data-role="prologue">Function setup<\/div><div class="d2-ar/, 'the prologue gets one heading');
+assert.equal((headed.match(/Function setup/g) || []).length, 1);
+assert.ok(!/; prologue/.test(headed), 'no per-row role note under headings');
+assert.equal(renderAsm(plain, {}), '', 'no instructions, no rows');
+const cardRows = renderInsnRows(sumTo.instructions, { startHex: sumTo.address_hex, prefs: { asmAddr: 'rel', asmBytes: false, asmSpelling: 'exact' }, max: 2 });
+assert.equal(cardRows, '<div class="cr"><span class="aa">+0x0</span><span class="am">ENDBR64</span><span class="ao"></span></div>' +
+  '<div class="cr"><span class="aa">+0x4</span><span class="am">PUSH</span><span class="ao">RBP</span></div>');
+checks.push('formatAddr/groupRuns/branchArrows/linkOperands/renderAsm');
+
+// ── inferred line attribution for unmapped instructions ────────────────────
+const at = (fn, inf) => Object.fromEntries(fn.instructions.map((insn, i) => [insn.address_hex,
+  inf[i].role || (inf[i].inferred ? `~${inf[i].lines}` : String(inf[i].lines))]));
+const mainInf = inferLines(inspectMain.instructions);
+assert.deepEqual(at(inspectMain, mainInf), {
+  '0x1198': 'prologue', '0x119c': 'prologue', '0x119d': 'prologue', '0x11a0': 'prologue', '0x11a4': 'prologue', '0x11a7': 'prologue',
+  '0x11ab': '~5', '0x11ae': '~5', '0x11b3': '~5', '0x11b5': '5', '0x11ba': '~5', '0x11bd': '~5', '0x11c0': '~5', '0x11c2': '5',
+  '0x11c7': '~6', '0x11cb': '~6', '0x11cf': '~6', '0x11d2': '~6', '0x11d9': '~6', '0x11dc': '~6', '0x11e1': '6',
+  '0x11e6': '~7', '0x11ea': '~7', '0x11eb': '7',
+}, 'main: the argument set-up belongs to the call it precedes; the frame set-up and argument spills are the prologue');
+assert.deepEqual(at(sumTo, inferLines(sumTo.instructions)), {
+  '0x1161': 'prologue', '0x1165': 'prologue', '0x1166': 'prologue', '0x1169': 'prologue', '0x116c': '6', '0x1174': '7',
+  '0x117b': '~7', '0x117d': '~8', '0x1180': '8', '0x1182': '8', '0x1186': '7', '0x118a': '~7', '0x118d': '~7', '0x1190': '7',
+  '0x1192': '10', '0x1196': '~10', '0x1197': '10',
+}, 'sum_to: the loop\'s jump to its test finishes the init, the load after it sets up the body, the test belongs to the for line');
+const tail = inferLines([
+  { address_hex: '0x0', mnemonic: 'PUSH', operands: 'RBP', lines: [] },
+  { address_hex: '0x1', mnemonic: 'MOV', operands: 'EAX,0x1', lines: [3] },
+  { address_hex: '0x6', mnemonic: 'MOV', operands: 'EBX,EAX', lines: [2] },
+  { address_hex: '0x8', mnemonic: 'ADD', operands: 'EBX,0x1', lines: [] },
+  { address_hex: '0xb', mnemonic: 'MOV', operands: 'ECX,EBX', lines: [2] },
+  { address_hex: '0xd', mnemonic: 'MOV', operands: 'EDX,ECX', lines: [] },
+  { address_hex: '0xf', mnemonic: 'POP', operands: 'RBP', lines: [] },
+  { address_hex: '0x10', mnemonic: 'RET', operands: '', lines: [] },
+]);
+assert.deepEqual(tail.map((r) => r.role || (r.inferred ? `~${r.lines}` : String(r.lines))), ['prologue', '3', '2', '~2', '2', 'epilogue', 'epilogue', 'epilogue'],
+  'a gap between two instructions of one line is that line; after the last mapped one is the epilogue');
+assert.deepEqual(inferLines([{ address_hex: '0x0', mnemonic: 'RET', operands: '', lines: [] }]), [{ lines: [], inferred: false, role: null }], 'nothing mapped: nothing inferred');
+const inferredIndex = buildIndex(inspectMain, mainSeg.segs, { inferred: mainInf });
+assert.deepEqual(inferredIndex.lineToInsns.get(5), ['0x11b5', '0x11c2'], 'the exact map is unchanged');
+assert.deepEqual(inferredIndex.lineToInferred.get(5), ['0x11ab', '0x11ae', '0x11b3', '0x11ba', '0x11bd', '0x11c0']);
+assert.equal(inferredIndex.inferredLine.get('0x11ae'), 5);
+assert.deepEqual([...expand({ line: 5 }, inferredIndex).addrs].length, 8, 'selecting a line marks its inferred rows too');
+assert.ok(expand({ addr: '0x11ae' }, inferredIndex).lines.has(5));
+const inferredHtml = renderAsm(inspectMain, { prefs: { asmCMode: 'comment' }, inferred: mainInf });
+assert.match(inferredHtml, /id="a-0x11ab" role="option" data-i="6" data-addr="0x11ab" data-lines="5" data-band="5" data-inferred="1"[^>]*>/);
+assert.match(inferredHtml, /id="a-0x1198"[^>]*data-role="prologue"[^>]*>/);
+assert.match(inferredHtml, /id="a-0x11ab"[\s\S]*?<span class="ac">; L5: v1 = sum_to\(add\(argc,3\)\);<\/span>/, 'the C comment moves to the first row of the line, inferred or not');
+assert.match(inferredHtml, /id="a-0x1198"[\s\S]*?<span class="ac">; prologue<\/span>/);
+assert.match(inferredHtml, /<span class="ao" title="dword ptr \[RBP \+ -0x14\],EDI">/, 'operands carry their full text as a title');
+assert.ok(!/data-inferred/.test(renderAsm(inspectMain, { prefs: {} })), 'off: no inferred rows');
+assert.match(renderInsnRows(inspectMain.instructions.slice(6, 10), { inferred: new Set(['0x11ab']) }), /^<div class="cr inf">/);
+checks.push('inferLines/inferred index/rows');
+
+// ── easy assembly spelling (display only) ──────────────────────────────────
+assert.equal(easyOperands('dword ptr [RBP + -0x14],EDI'), 'dword ptr [rbp - 0x14], edi', 'x86-64: registers, comma space, negative displacement');
+assert.equal(easyOperands('EAX,dword ptr [RBP + 0x8]'), 'eax, dword ptr [rbp + 0x8]', 'a positive displacement keeps its +');
+assert.equal(easyOperands('RAX,qword ptr FS:[0x28]'), 'rax, qword ptr fs:[0x28]');
+assert.equal(easyOperands('XMM0,xmmword ptr [RIP + 0x2e5c]'), 'xmm0, xmmword ptr [rip + 0x2e5c]');
+assert.equal(easyOperands('R8D,R9W,R10B,AL,SIL'), 'r8d, r9w, r10b, al, sil', 'several commas, every register width');
+assert.equal(easyOperands('x29, x30, [sp, #-0x20]!'), 'x29, x30, [sp, #-0x20]!', 'AArch64 is already spelled that way');
+assert.equal(easyOperands('W0,WZR,[X1, #0x10]'), 'w0, wzr, [x1, #0x10]', 'AArch64 in upper case');
+assert.equal(easyOperands('{R4,R5,LR}'), '{r4, r5, lr}', 'ARM register lists');
+assert.equal(easyOperands('R0,[PC, #0x4]'), 'r0, [pc, #0x4]');
+assert.equal(easyOperands('RDI,<RAX>'), 'rdi, <RAX>', 'a symbol that looks like a register inside <…> is untouched');
+assert.equal(easyOperands('RSI,"RAX,x"'), 'rsi, "RAX,x"', 'string literals are untouched');
+assert.equal(easyOperands("AL,'R'"), "al, 'R'", 'char literals are untouched');
+assert.equal(easyOperands('0x1149'), '0x1149', 'hex is not a register');
+assert.equal(easyOperands('LAB_00401234,MY_TABLE'), 'LAB_00401234, MY_TABLE', 'names that are not registers keep their case');
+assert.deepEqual(spellInsn({ mnemonic: '.byte', operands: '0xFF,0xAB', text: '.byte 0xFF,0xAB' }),
+  { mnemonic: '.byte', operands: '0xFF,0xAB', text: '.byte 0xFF,0xAB' }, '.byte rows are unchanged');
+assert.equal(spellInsn({ mnemonic: '.word', operands: '0x1234,R0', text: '.word 0x1234,R0' }).text, '.word 0x1234,R0', '.word rows are unchanged');
+assert.equal(spellInsn({ mnemonic: 'MOV', operands: 'dword ptr [RBP + -0x14],EDI', text: 'MOV dword ptr [RBP + -0x14],EDI' }).text, 'mov dword ptr [rbp - 0x14], edi');
+assert.equal(spellInsn({ mnemonic: 'MOV', operands: 'RBP,RSP', text: 'MOV RBP,RSP' }, 'exact').text, 'MOV RBP,RSP', 'exact spelling is the engine text');
+assert.equal(spellInsn({ mnemonic: 'LEAVE', operands: '', text: 'LEAVE' }).text, 'leave');
+const spelled = renderAsm(inspectMain, { prefs: { asmCMode: 'heading' }, fnByAddr, nameOf: (f) => f.name });
+assert.match(spelled, /<div class="d2-ar[^"]*" id="a-0x11a4"[^>]*title="MOV dword ptr \[RBP \+ -0x14\],EDI">/, 'the row keeps the exact engine text in its title');
+assert.match(spelled, /<span class="am" data-mn="MOV">mov<\/span>/, 'lowercase mnemonic; the raw one stays in data-mn');
+assert.match(spelled, /<span class="ao" title="dword ptr \[RBP \+ -0x14\],EDI"><span class="so">dword ptr \[rbp - 0x14\]<\/span>, edi<\/span>/);
+assert.match(spelled, /<span class="am" data-mn="CALL">call<\/span><span class="ao" title="0x1161"><a class="xt" data-goto="0x1161">0x1161<\/a> <span class="d2muted">&lt;sum&lt;to&gt;&gt;<\/span>/,
+  'links and callee labels still work');
+assert.equal(linkOperands({ mnemonic: 'MOV', operands: 'dword ptr [RBP + -0x14],EDI' }, { slotOf: (reg, disp) => disp - 8 }),
+  '<span class="so" data-slot="-28">dword ptr [rbp - 0x14]</span>, edi', 'the stack slot is found on the raw operand');
+assert.match(renderAsm(inspectMain, { prefs: { asmCMode: 'heading', asmSpelling: 'exact' }, fnByAddr }), /<span class="am" data-mn="MOV">MOV<\/span>/);
+assert.match(renderInsnRows(inspectMain.instructions.slice(4, 5), {}), /<span class="am">mov<\/span><span class="ao">dword ptr \[rbp - 0x14\], edi<\/span>/, 'the hover card spells it the same way');
+checks.push('easy assembly spelling');
+
+// ── the Rust view ──────────────────────────────────────────────────────────
+const rustProto = '#[allow(non_snake_case, unused_mut)]\nunsafe fn main(mut argc: i32, mut argv: *mut *mut u8) -> i32;';
+assert.deepEqual(parseRustSignature(rustProto), {
+  ret: 'i32', conv: null, name: 'main', varargs: false,
+  params: [{ name: 'argc', type: 'i32' }, { name: 'argv', type: '*mut *mut u8' }],
+});
+assert.equal(normalizeInspect({ language: 'rust-language', function: { name: 'main', address_hex: '0x1198', code: '', proto: rustProto } }).proto,
+  'unsafe fn main(mut argc: i32, mut argv: *mut *mut u8) -> i32', 'the attribute line and the ; are not part of the signature');
+checks.push('Rust signature');
+
+// ── hover placement and sync expansion ─────────────────────────────────────
+const vp = { width: 1000, height: 800 };
+assert.deepEqual(placeOverlay({ left: 100, top: 100, right: 300, bottom: 120 }, { width: 200, height: 100 }, vp), { left: 100, top: 124, placement: 'below' });
+assert.deepEqual(placeOverlay({ left: 100, top: 700, right: 300, bottom: 720 }, { width: 200, height: 100 }, vp), { left: 100, top: 596, placement: 'above' });
+assert.equal(placeOverlay({ left: 950, top: 10, right: 990, bottom: 30 }, { width: 200, height: 100 }, vp).left, 792, 'clamped inside the right edge');
+assert.equal(placeOverlay({ left: -40, top: 10, right: 0, bottom: 30 }, { width: 200, height: 100 }, vp).left, 8, 'clamped inside the left edge');
+const tall = placeOverlay({ left: 10, top: 300, right: 50, bottom: 320 }, { width: 100, height: 700 }, vp);
+assert.ok(tall.top >= 8 && tall.top + 700 <= 800 - 8 + 700, 'a card taller than both sides is clamped');
+const sets = expand({ line: 5 }, mainIndex);
+assert.deepEqual([...sets.addrs], ['0x11b5', '0x11c2']);
+assert.deepEqual([...expand({ addr: '0x11e1' }, mainIndex).lines], [6]);
+assert.ok(expand({ sym: 'v1' }, mainIndex).lines.has(7));
+assert.equal(expand(null, mainIndex).lines.size, 0);
+checks.push('placeOverlay/expand');
+
+console.log(`DECOMPILE2 RENDER OK — ${checks.join('; ')}`);

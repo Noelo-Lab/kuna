@@ -36,3 +36,4 @@ pub mod kuna_langrust; // (kuna) the rust-language policy objects (profile + cap
 pub mod kuna_rusttypes; // (kuna) the rust-language type speller
 pub mod kuna_ctypes; // (kuna) valid per-architecture C spelling of the core types
 pub mod coreaction_render;
+pub mod kuna_srcmap; // (kuna) the token-level source map of a rendered function

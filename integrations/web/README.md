@@ -2,13 +2,14 @@
 
 **kuna.noelo.org** — the project site, its public development visualization, and the
 decompiler that runs **entirely client-side in a web browser**: no server, no backend, no
-upload. Three pages, one static bundle:
+upload. Four pages, one static bundle:
 
 | URL | Page |
 |---|---|
 | `/` | **Landing** — what kuna is, a side-by-side compare section, the three project goals. Inert: no wasm, no network. |
 | `/dev-viz/` | **Development record** — phase activity, commit cadence, option provenance, DecBench evidence, and the autonomous improvement loop. Generated from tracked repository evidence at build time. |
 | `/decompile/` | **The decompiler** — load an ELF/PE/Mach-O and read its C, decompiled in the tab. |
+| `/decompile2/` | **The study view** (unlisted for now: no other page links to it) — the same engine for students, full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: C, assembly, bytes and the stack frame linked line by line, a hover card showing the instructions behind a C line, an Explain panel for whatever is selected, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. "Try an example" loads a small program and its source; a file can also be dropped anywhere on the page. |
 
 The engine (Ghidra's decompiler, ported to Rust) compiles to `wasm32-wasip1` and runs in
 the page under a pure-JS WASI shim; the SLEIGH specs and the binary you decompile live in
@@ -48,6 +49,10 @@ architecture kuna has a `.sla` for — with no per-format configuration (the eng
 each binary; the Worker fetches only the one `.sla` it needs). See
 `docs/web-integration.md` §3.
 
+For the study view, open `/decompile2/` and press **Try an example**: `main` opens by
+itself; hover a C line to see its instructions, press `Space` for the assembly or `s` for
+side by side, double-click a name to rename it, and `?` for help.
+
 WASI execution is synchronous once `wasi.start()` enters the WebAssembly module. The page
 therefore cancels an inventory, function, or project operation by terminating the Worker,
 not by sending it a message that cannot be processed until decompilation finishes. The RPC
@@ -80,6 +85,7 @@ asset path is relative, so a project subpath just works.
 | `index.html` | The landing page: hero, the compare section, the three goals. Static — its only script wires the two dropdowns. |
 | `dev-viz/` | The development record. `generate.py` exports full git history plus tracked option, triage, feature, and baseline evidence to `data.json`; `app.js` renders the interactive charts. The generated JSON is ignored in source and assembled into `dist/` by `build.sh`. |
 | `decompile/index.html` | The decompiler application (upload → inventory → lazy highlighted C, stubs grouped, filterable list, cancellable project-zip download). Reaches the worker and shared assets at the bundle root with `../`. |
+| `decompile2/` | The study view: `index.html` + `decompile2.css` (Noelo's palette as dark and light tokens, its own type and layout, no `site.css`) + `app.js` and DOM-free modules for the C and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, instruction notes and help. `docs/web-integration.md` §4.2 has the layout and the module table. |
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
 | `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), `js/highlight-c.js` — the one C highlighter both pages use — and `js/fnfilter.js`, the DOM-free matcher/counters behind the /decompile sidebar filter. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
@@ -107,7 +113,7 @@ python3 integrations/web/dev-viz/generate.py
 node integrations/web/test/dev-viz.mjs ../
 python3 -m http.server 8000 --directory integrations/web
 ```
-| `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + both pages + `assets/` into `dist/`, and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
+| `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + the pages + `assets/` into `dist/` (plus `sample.elf`/`sample.c` as `/decompile2/examples/`), and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
 | `test/` | Automated gates (below) + committed ELF/Mach-O fixtures. |
 | `dist/` | Assembled output (gitignored — regenerate with `build.sh`). |
 
@@ -146,6 +152,19 @@ node integrations/web/test/worker-errors.mjs
 
 # F. Sidebar filter query semantics — no build needed.
 node integrations/web/test/fnfilter.mjs
+
+# G. The study view's modules — no build needed.
+node integrations/web/test/decompile2-render.mjs
+node integrations/web/test/decompile2-session.mjs
+node integrations/web/test/decompile2-bytes.mjs
+node integrations/web/test/decompile2-learn.mjs
+node integrations/web/test/decompile2-groups.mjs
+
+# H. The study view's commands through the real Worker (inspect, read, --assert).
+node integrations/web/test/decompile2-worker.mjs
+
+# I. The study view in headless Chrome over the DevTools protocol (skips without Chrome).
+node integrations/web/test/decompile2-browser.mjs
 ```
 
 - **`auto-mode.mjs`** pins the argv the glue builds: both `--mode auto` and `--language
@@ -177,23 +196,33 @@ node integrations/web/test/fnfilter.mjs
   `Enter`/`Escape`/arrows) needs a browser — see the optional Chrome check below.
 - **`run-wasm.mjs`** is a small reusable CLI runner (used by `parity.mjs`; also handy for
   driving the wasm by hand under `node:wasi`).
+- **`decompile2-render/session/bytes/learn/groups.mjs`** pin the study view's pure
+  modules from the source tree: the shared highlighter (`highlight*` output byte for
+  byte), the token stream and its per-line fallback, the index and the assembly rows (as
+  comments and as headings, easy and exact spelling), the settings and their migration,
+  the function list's groups, the edit session's
+  directives (merging, pinning, qualification, the `.kuna` file, undo), the stored
+  sessions, file offsets and the patched file, no-op fills, the stack frame and the
+  instruction notes. Their fixtures (`fixtures/inspect-*.json`, `list-sample.json`) are
+  what the native `kuna_wasm` prints; regenerate them with
+  `node integrations/web/test/make-inspect-fixtures.mjs`.
+- **`decompile2-worker.mjs`** runs `inspect`, `read` and `--assert` through the shipped
+  Worker (a rename applies, a size-changing retype and an unknown symbol are rejected with
+  a body, a `bytes` overlay shows in `read`, a function rename reaches `list`, a qualified
+  rename reaches the project export).
 
-### Optional: full-UI check in real Chrome
+### Full-UI check in real Chrome
 
-A headless-browser smoke test (drives `decompile/index.html` in Chrome, uploads the
-fixture, reads the rendered C) needs `puppeteer-core` + a local Chrome/Chromium and so is
-not committed. A ready-to-run script:
-
-```bash
-npm i -g puppeteer-core   # or local; needs a Chrome on PATH
-# then a ~40-line script: serve dist/, launch chrome, uploadFile(sample.elf),
-# waitForFunction(code contains 'return'), assert. See docs/web-integration.md §Testing.
-```
-
-No `puppeteer` at hand? Plain headless Chrome can drive the real page too: copy
-`dist/decompile/index.html` to a scratch page with a module script appended that sets
-`#file`'s `files` from a `DataTransfer` and dispatches `change`, then run
-`--headless --virtual-time-budget=60000 --dump-dom` (or `--screenshot`) against it.
+**`decompile2-browser.mjs`** drives the real pages in headless Chrome through the
+DevTools protocol, with Node's built-in `WebSocket` (Node 22+) and no `puppeteer`
+(`test/cdp-client.mjs` is the small driver): it checks the welcome screen, loads the
+example through the file input, checks `main` opens by itself and the theme toggle,
+hovers a line, switches to Assembly, renames a variable, patches a byte, checks 1024 and 820 px for horizontal overflow, reloads to see the session
+restored, checks that `/decompile` still renders and its Language control switches
+to Rust, and checks that no other page links to `/decompile2/`. It fails on any uncaught page exception and skips when there is no Chrome (set
+`CHROME=` to point at one). CI runs it when the runner has `google-chrome`. Plain
+`--headless --virtual-time-budget=… --dump-dom` does not work for these pages: the dump
+happens while the status still reads `loading decompiler…`.
 
 ## Scope
 

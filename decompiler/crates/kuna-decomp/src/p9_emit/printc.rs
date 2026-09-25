@@ -1330,6 +1330,19 @@ impl PrintEmit {
             e.set_capture_statement_provenance(val);
         }
     }
+    /// Enable or disable token capture on the markup leaf.
+    pub fn set_capture_tokens(&mut self, val: bool) {
+        if let PrintEmit::Markup(e) = self {
+            e.set_capture_tokens(val);
+        }
+    }
+    /// Take the tokens captured by the markup leaf.
+    pub fn take_markup_tokens(&mut self) -> Vec<crate::prettyprint::EmitToken> {
+        match self {
+            PrintEmit::NoMarkup(_) => Vec::new(),
+            PrintEmit::Markup(e) => e.take_tokens(),
+        }
+    }
     /// Whether the plain-text statement-root sidecar is active.
     pub fn captures_plain_statement_provenance(&self) -> bool {
         match self {
@@ -1886,7 +1899,7 @@ impl PrintC {
     /// C++ `PrintLanguage::pushOp` (printlanguage.cc:129).  Push an operator
     /// token onto the RPN stack, emitting any front part of the enclosing
     /// operator and opening the right group/paren.
-    pub fn push_op(&mut self, tok: &'static OpToken, op: Option<usize>) {
+    pub fn push_op(&mut self, tok: &'static OpToken, op: Option<crate::printlanguage::IrKey>) {
         if self.pending < self.nodepend.len() {
             self.recurse(); // Pending varnode pushes before op
         }
@@ -1949,7 +1962,7 @@ impl PrintC {
     /// C++ `PrintLanguage::pushVn` (printlanguage.cc:197).  Queue an implied
     /// Varnode whose producing expression will be recursed.  Inputs of one op
     /// are pushed in reverse order (C++ comment).
-    pub fn push_vn(&mut self, vn: usize, op: usize, m: uint4) {
+    pub fn push_vn(&mut self, vn: crate::printlanguage::IrKey, op: crate::printlanguage::IrKey, m: uint4) {
         self.nodepend.push(crate::printlanguage::NodePending::new(vn, op, m));
     }
 
@@ -1985,7 +1998,7 @@ impl PrintC {
     /// C++ `PrintLanguage::opBinary` (printlanguage.cc:553) — the data-flow-free
     /// scaffold: push the operator, then its two operand atoms (supplied by the
     /// caller as the IR-leaf hook).  The negate-token flip is applied.
-    pub fn op_binary(&mut self, tok: &'static OpToken, op: Option<usize>, lhs: &Atom, rhs: &Atom) {
+    pub fn op_binary(&mut self, tok: &'static OpToken, op: Option<crate::printlanguage::IrKey>, lhs: &Atom, rhs: &Atom) {
         let tok = if self.context.is_set(modifiers::NEGATETOKEN) {
             self.context.unset_mod(modifiers::NEGATETOKEN);
             token_negate(tok).unwrap_or(tok)
@@ -2000,7 +2013,7 @@ impl PrintC {
     }
 
     /// C++ `PrintLanguage::opUnary` (printlanguage.cc:573) — the scaffold form.
-    pub fn op_unary(&mut self, tok: &'static OpToken, op: Option<usize>, operand: &Atom) {
+    pub fn op_unary(&mut self, tok: &'static OpToken, op: Option<crate::printlanguage::IrKey>, operand: &Atom) {
         self.push_op(tok, op);
         self.push_atom(operand);
     }
@@ -2021,7 +2034,7 @@ impl PrintC {
     /// `PcodeOp::encode` writes into the `<ast>`, so the token resolves by
     /// construction.  Returns `none()` (no deref) unless the markup back-end is
     /// active and `fd` is in scope — a no-op on the byte-exact plain-text path.
-    fn markup_for_op_key(&self, op_key: Option<usize>) -> MarkupRef {
+    fn markup_for_op_key(&self, op_key: Option<crate::printlanguage::IrKey>) -> MarkupRef {
         if !self.emit.emits_markup() {
             return MarkupRef::none();
         }
@@ -2274,14 +2287,19 @@ impl PrintC {
     /// `EmitPrettyPrint::setMarkup`, prettyprint.cc:2531, driven from
     /// `ArchitectureGhidra`'s ctor `print->setMarkup(true)`, ghidra_arch.cc:917).
     /// Swaps the concrete [`PrintEmit`] variant; a fresh buffer either way (each
-    /// leaf owns its own sink).  The standalone datatest path NEVER calls this, so
-    /// `emit` stays `NoMarkup` and the 675-assertion byte output is untouched.
+    /// leaf owns its own sink). The indent increment (`option indentincrement`)
+    /// lives on the leaf and is carried into the new one, so a markup render and
+    /// the plain renders after it keep the printer's setting. The standalone
+    /// datatest path NEVER calls this, so `emit` stays `NoMarkup` and the
+    /// 675-assertion byte output is untouched.
     pub fn set_markup(&mut self, val: bool) {
+        let increment = self.emit.get_indent_increment();
         self.emit = if val {
             PrintEmit::Markup(EmitMarkup::new())
         } else {
             PrintEmit::NoMarkup(EmitNoMarkup::new())
         };
+        self.emit.set_indent_increment(increment);
     }
 
     /// Emit the ghidra-mode `decompileAt` clang token-markup `<function>` document
@@ -2304,6 +2322,23 @@ impl PrintC {
         arch: &Architecture,
     ) -> MarkupProvenance {
         self.doc_function_markup_data(fd, arch).1
+    }
+
+    /// The markup pass of [`Self::doc_function_provenance`] with every token
+    /// captured at its plain-text position ([`crate::prettyprint::EmitToken`]).
+    pub fn doc_function_tokens(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+    ) -> (MarkupProvenance, Vec<crate::prettyprint::EmitToken>) {
+        self.set_markup(true);
+        self.emit.set_capture_tokens(true);
+        self.emit_function_document(fd, arch);
+        let _ = self.emit.flush();
+        let provenance = self.emit.take_markup_provenance();
+        let tokens = self.emit.take_markup_tokens();
+        self.set_markup(false);
+        (provenance, tokens)
     }
 
     fn doc_function_markup_data(
@@ -6515,7 +6550,7 @@ impl PrintC {
     /// over an explicit dereference of the operand that follows. The
     /// parenthesizer supplies the parens on its own: `*` binds looser than `.`,
     /// so the deref lands in a group.
-    fn push_member_through_pointer(&mut self, key: Option<usize>) {
+    fn push_member_through_pointer(&mut self, key: Option<crate::printlanguage::IrKey>) {
         match self.lang().forms.member {
             crate::kuna_lang::MemberForm::CArrow => {
                 self.push_op(&tokens::POINTER_MEMBER, key);
@@ -9851,15 +9886,15 @@ fn kuna_storage_location_name(loc: &kuna_base::address::Address) -> Option<Strin
 /// A stable per-op key for the `Atom.op` / `ReversePolish.op` slot (the C++
 /// `PcodeOp *`).  The driver only needs a non-null marker here; use the op's
 /// slotmap index bits.  (Round-trips through `usize`; only identity matters.)
-fn op_key(op: OpId) -> usize {
+fn op_key(op: OpId) -> crate::printlanguage::IrKey {
     use slotmap::Key;
-    op.data().as_ffi() as usize
+    op.data().as_ffi()
 }
 
 /// A stable per-varnode key for the `Atom` varnode slot (the C++ `Varnode *`).
-fn vn_key(vn: VarnodeId) -> usize {
+fn vn_key(vn: VarnodeId) -> crate::printlanguage::IrKey {
     use slotmap::Key;
-    vn.data().as_ffi() as usize
+    vn.data().as_ffi()
 }
 
 /// (kuna) Invert [`op_key`]: reconstruct the `OpId` from the arena key an
@@ -9869,9 +9904,9 @@ fn vn_key(vn: VarnodeId) -> usize {
 /// (op.rs:589; `funcdata_encode.rs`).  `None` when the key is null or the op is
 /// no longer live (defensive — the emitted `opref` set stays a subset of the
 /// AST's op times).
-fn resolve_op_ref(fd: &Funcdata, op_key: Option<usize>) -> Option<uintb> {
+fn resolve_op_ref(fd: &Funcdata, op_key: Option<crate::printlanguage::IrKey>) -> Option<uintb> {
     let key = op_key?;
-    let op = OpId::from(slotmap::KeyData::from_ffi(key as u64));
+    let op = OpId::from(slotmap::KeyData::from_ffi(key));
     Some(fd.obank().get(op)?.get_time() as uintb)
 }
 
@@ -9882,8 +9917,8 @@ fn resolve_op_ref(fd: &Funcdata, op_key: Option<usize>) -> Option<uintb> {
 /// `funcdata_encode.rs`).  `IPTR_IOP` annotation Varnodes are excluded exactly as
 /// `encode_tree` filters them out of `<varnodes>` — a `varref` to one would
 /// dangle.  `None` when null / not live / iop-space.
-fn resolve_var_ref(fd: &Funcdata, vn_key: usize) -> Option<uintb> {
-    let vn = VarnodeId::from(slotmap::KeyData::from_ffi(vn_key as u64));
+fn resolve_var_ref(fd: &Funcdata, vn_key: crate::printlanguage::IrKey) -> Option<uintb> {
+    let vn = VarnodeId::from(slotmap::KeyData::from_ffi(vn_key));
     let v = fd.vbank().get(vn)?;
     if v.get_space().get_type() == kuna_base::space::spacetype::IPTR_IOP {
         return None;

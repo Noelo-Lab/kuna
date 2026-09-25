@@ -1222,6 +1222,7 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                 header_carries_types: args.jobs_types,
                 park_recovered_proto: false,
                 single_target: false,
+                want_tokens: false,
             };
             let mut pending = entries.into_iter();
             let mut pulled = 0usize;
@@ -1827,6 +1828,7 @@ fn decompile_entries_callee_first(
         header_carries_types: false,
         park_recovered_proto: false,
         single_target: targets.len() == 1,
+        want_tokens: false,
     };
     decompile_callee_first(prog, args, targets, explicit, base)
 }
@@ -3532,6 +3534,7 @@ mod provenance_json_tests {
             object_location: None,
             callee_hints: Vec::new(),
             synth: None,
+            detail: None,
         };
 
         let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[]));

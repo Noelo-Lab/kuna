@@ -598,3 +598,133 @@ mod markup {
         assert!(colored_len > plain_len, "color attribute adds bytes");
     }
 }
+
+// ===========================================================================
+// EmitMarkup token capture — positions replay the EmitNoMarkup column model
+// ===========================================================================
+
+mod capture {
+    use super::*;
+
+    /// One synthetic document: pending braces of both styles, an explicit
+    /// indent, a multi-word type, parens, spaces, a comment and a label.
+    fn drive(e: &mut dyn Emit, spc: &Rc<AddrSpace>) {
+        e.set_indent_increment(4);
+        e.tag_line();
+        let p = e.begin_func_proto();
+        let r = e.begin_return_type(&MarkupRef::none());
+        e.tag_type("unsigned long *", SyntaxHighlight::TypeColor, &MarkupRef::none());
+        e.end_return_type(r);
+        e.spaces(1, 0);
+        e.tag_func_name("f", SyntaxHighlight::FuncnameColor, &MarkupRef::op(Some(1)));
+        let paren = e.open_paren("(", 0);
+        e.tag_type("int", SyntaxHighlight::TypeColor, &MarkupRef::none());
+        e.spaces(1, 0);
+        e.tag_variable("a0", SyntaxHighlight::ParamColor, &MarkupRef::none());
+        e.close_paren(")", paren);
+        e.end_func_proto(p);
+        let body = e.open_brace_indent("{", BraceStyle::NextLine);
+        e.tag_line();
+        let d = e.begin_var_decl(&MarkupRef::none());
+        e.tag_type("char", SyntaxHighlight::TypeColor, &MarkupRef::none());
+        e.spaces(1, 0);
+        e.tag_variable("\u{e9}t\u{e9}", SyntaxHighlight::VarColor, &MarkupRef::none());
+        e.print(";", SyntaxHighlight::NoColor);
+        e.end_var_decl(d);
+        e.tag_line();
+        e.print("if", SyntaxHighlight::KeywordColor);
+        e.spaces(1, 0);
+        let c = e.open_paren("(", 0);
+        e.tag_variable("a0", SyntaxHighlight::ParamColor, &MarkupRef::op(Some(2)));
+        e.tag_op(" != ", SyntaxHighlight::NoColor, &MarkupRef::op(Some(2)));
+        e.tag_variable("0", SyntaxHighlight::ConstColor, &MarkupRef::op(Some(2)));
+        e.close_paren(")", c);
+        e.set_pending_brace(BraceStyle::SameLine);
+        e.tag_line();
+        e.tag_variable("x", SyntaxHighlight::VarColor, &MarkupRef::none());
+        e.print(" = \"\u{1f600}\";", SyntaxHighlight::NoColor);
+        e.tag_comment(" // note", SyntaxHighlight::CommentColor, spc, 0x40);
+        let inner = e.pending_brace_indent_id();
+        e.close_brace_indent("}", inner);
+        e.set_pending_brace(BraceStyle::NextLine);
+        e.tag_line_indent(0);
+        e.tag_label("LAB_0040", SyntaxHighlight::NoColor, spc, 0x40);
+        e.print(":", SyntaxHighlight::NoColor);
+        let inner = e.pending_brace_indent_id();
+        if inner >= 0 {
+            e.close_brace_indent("}", inner);
+        }
+        e.close_brace_indent("}", body);
+        e.tag_line();
+    }
+
+    fn rebuild(tokens: &[EmitToken]) -> String {
+        let mut lines: Vec<String> = Vec::new();
+        for t in tokens {
+            while lines.len() <= t.line {
+                lines.push(String::new());
+            }
+            let line = &mut lines[t.line];
+            let have = line.encode_utf16().count();
+            assert!(t.col >= have, "token {:?} overlaps: col {} < {have}", t.text, t.col);
+            line.push_str(&" ".repeat(t.col - have));
+            line.push_str(&t.text);
+        }
+        lines.join("\n")
+    }
+
+    fn trimmed_lines(text: &str) -> String {
+        text.split('\n').map(|l| l.trim_end_matches(' ')).collect::<Vec<_>>().join("\n")
+    }
+
+    #[test]
+    fn tokens_rebuild_the_plain_text() {
+        let spc: Rc<AddrSpace> = Rc::new(ConstantSpace::new());
+        let mut plain = EmitNoMarkup::new();
+        drive(&mut plain, &spc);
+        let mut markup = EmitMarkup::new();
+        markup.set_capture_tokens(true);
+        drive(&mut markup, &spc);
+        let tokens = markup.take_tokens();
+        let want = trimmed_lines(plain.output());
+        assert_eq!(rebuild(&tokens), want.trim_end_matches('\n'));
+        assert!(tokens.iter().all(|t| !t.text.trim().is_empty() && t.text.trim() == t.text));
+    }
+
+    #[test]
+    fn a_split_type_is_one_token_and_declarations_are_marked() {
+        let spc: Rc<AddrSpace> = Rc::new(ConstantSpace::new());
+        let mut markup = EmitMarkup::new();
+        markup.set_capture_tokens(true);
+        drive(&mut markup, &spc);
+        let tokens = markup.take_tokens();
+        let ret = tokens.iter().find(|t| t.text == "unsigned long *").expect("one type token");
+        assert_eq!((ret.kind, ret.in_return_type, ret.in_proto), (TokenKind::Type, true, true));
+        let param = tokens.iter().find(|t| t.text == "a0").expect("param");
+        assert!(param.in_proto && !param.in_return_type);
+        let local = tokens.iter().find(|t| t.text == "\u{e9}t\u{e9}").expect("local");
+        assert!(local.in_var_decl && !local.in_proto);
+        let zero = tokens.iter().find(|t| t.text == "0").expect("constant");
+        assert_eq!((zero.kind, zero.opref), (TokenKind::Value, Some(2)));
+        let op = tokens.iter().find(|t| t.text == "!=").expect("operator trimmed");
+        assert_eq!(op.kind, TokenKind::Op);
+        let note = tokens.iter().find(|t| t.kind == TokenKind::Comment).expect("comment");
+        assert_eq!((note.text.as_str(), note.at), ("// note", Some((spc.get_index(), 0x40))));
+        let string = tokens.iter().find(|t| t.text.contains('\u{1f600}')).expect("string");
+        let x = tokens.iter().find(|t| t.text == "x").expect("x");
+        assert_eq!(string.line, x.line);
+        assert_eq!(note.col, string.col + string.text.encode_utf16().count() + 1);
+    }
+
+    #[test]
+    fn capture_is_off_by_default_and_reset_by_set_output_stream() {
+        let spc: Rc<AddrSpace> = Rc::new(ConstantSpace::new());
+        let mut markup = EmitMarkup::new();
+        drive(&mut markup, &spc);
+        assert!(markup.take_tokens().is_empty());
+        markup.set_capture_tokens(true);
+        drive(&mut markup, &spc);
+        markup.set_output_stream();
+        assert!(markup.take_tokens().is_empty());
+    }
+}

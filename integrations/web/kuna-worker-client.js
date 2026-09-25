@@ -57,8 +57,11 @@ export class KunaWorkerClient {
       if (data.ok) {
         starting = false;
         pending.resolve(data.result);
+      } else {
+        const error = new Error(data.error || 'decompiler worker request failed');
+        if (data.detail) error.detail = data.detail;
+        pending.reject(error);
       }
-      else pending.reject(new Error(data.error || 'decompiler worker request failed'));
     };
     worker.onerror = (event) => {
       if (generation !== this.generation) return;
@@ -144,7 +147,9 @@ export class KunaWorkerClient {
     this.workerSession = session;
   }
 
-  async load(binaryBytes, { fileName = 'binary', mode = 'auto', language = 'auto' } = {}) {
+  async load(binaryBytes, {
+    fileName = 'binary', mode = 'auto', language = 'auto', assertions = [],
+  } = {}) {
     const generation = this.generation;
     const bytes = binaryBytes instanceof Uint8Array
       ? binaryBytes
@@ -153,7 +158,7 @@ export class KunaWorkerClient {
     this.session = session;
     this.workerSession = null;
     await this.setWorkerSession(generation);
-    const inventory = await this.request('list');
+    const inventory = await this.request('list', { assertions });
     this.checkGeneration(generation);
     if (this.session !== session) {
       throw new KunaWorkerCancelledError('binary session superseded');
@@ -170,27 +175,37 @@ export class KunaWorkerClient {
     return this.session.format;
   }
 
-  async list() {
+  /** One request against the current binary session; stale answers are cancelled. */
+  async #call(method, params) {
     const generation = this.generation;
     await this.setWorkerSession(generation);
-    const result = await this.request('list');
+    const result = await this.request(method, params);
     this.checkGeneration(generation);
     return result;
   }
 
-  async decompile(target) {
-    const generation = this.generation;
-    await this.setWorkerSession(generation);
-    const result = await this.request('decompile', { target });
-    this.checkGeneration(generation);
-    return result;
+  async list({ assertions = [] } = {}) {
+    return this.#call('list', { assertions });
   }
 
-  async project(displayName) {
-    const generation = this.generation;
-    await this.setWorkerSession(generation);
-    const result = await this.request('project', { displayName });
-    this.checkGeneration(generation);
+  async decompile(target, { assertions = [] } = {}) {
+    return this.#call('decompile', { target, assertions });
+  }
+
+  async inspect(target, { assertions = [] } = {}) {
+    return this.#call('inspect', { target, assertions });
+  }
+
+  async read(address, length, { assertions = [] } = {}) {
+    return this.#call('read', { address, length, assertions });
+  }
+
+  async xrefs(target, { assertions = [] } = {}) {
+    return this.#call('xrefs', { target, assertions });
+  }
+
+  async project(displayName, { assertions = [] } = {}) {
+    const result = await this.#call('project', { displayName, assertions });
     return { ...result, bytes: new Uint8Array(result.bytes) };
   }
 

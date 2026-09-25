@@ -89,68 +89,14 @@ impl FuncDecl {
 /// Parse one `--define-function` value: either a declaration or `@FILE`.
 ///
 /// A file holds one declaration per line; blank lines and `#` comments are
-/// skipped, so an agent can annotate what it worked out.
+/// skipped, so an agent can annotate what it worked out. The grammar is
+/// [`kuna_console::assertsyntax::parse_function_flag`], shared with the
+/// `--assert function` directive.
 pub(crate) fn parse_flag(value: &str) -> Result<Vec<FuncDecl>, String> {
-    let Some(path) = value.strip_prefix('@') else {
-        return Ok(vec![parse_one(value)?]);
-    };
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("--define-function @{path}: {e}"))?;
-    let mut out = Vec::new();
-    for (n, line) in text.lines().enumerate() {
-        let line = line.split('#').next().unwrap_or("").trim();
-        if line.is_empty() {
-            continue;
-        }
-        out.push(parse_one(line).map_err(|e| format!("{path}:{}: {e}", n + 1))?);
-    }
-    Ok(out)
-}
-
-/// Parse `START[-END][=NAME]`, hex with or without a `0x` prefix.
-fn parse_one(spec: &str) -> Result<FuncDecl, String> {
-    let spec = spec.trim();
-    let (range, name) = match spec.split_once('=') {
-        Some((range, name)) if !name.trim().is_empty() => (range.trim(), Some(name.trim())),
-        Some((range, _)) => (range.trim(), None),
-        None => (spec, None),
-    };
-    // Split on the LAST '-': a range separator can never be the first character
-    // of a hex literal, but `0x-` cannot occur either, so the last one is the
-    // separator whenever there is a non-empty tail after it.
-    let (start, end) = match range.rsplit_once('-') {
-        Some((start, end)) if !start.trim().is_empty() && !end.trim().is_empty() => {
-            (start.trim(), Some(end.trim()))
-        }
-        _ => (range, None),
-    };
-    let start = parse_vma(start)
-        .ok_or_else(|| format!("--define-function {spec:?}: {start:?} is not a hex address"))?;
-    let end = match end {
-        None => None,
-        Some(end) => Some(
-            parse_vma(end)
-                .ok_or_else(|| format!("--define-function {spec:?}: {end:?} is not a hex address"))?,
-        ),
-    };
-    if let Some(end) = end {
-        if end <= start {
-            return Err(format!(
-                "--define-function {spec:?}: end {end:#x} must be above start {start:#x}"
-            ));
-        }
-    }
-    Ok(FuncDecl { start, end, name: name.map(str::to_string) })
-}
-
-/// A bare or `0x`-prefixed hexadecimal VMA.
-fn parse_vma(tok: &str) -> Option<u64> {
-    let tok = tok.trim();
-    let body = tok.strip_prefix("0x").or_else(|| tok.strip_prefix("0X")).unwrap_or(tok);
-    if body.is_empty() || !body.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    u64::from_str_radix(body, 16).ok()
+    Ok(kuna_console::assertsyntax::parse_function_flag(value)?
+        .into_iter()
+        .map(|spec| FuncDecl { start: spec.start, end: spec.end, name: spec.name })
+        .collect())
 }
 
 /// Apply the declarations to a loaded program (the in-process surfaces).

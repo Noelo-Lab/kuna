@@ -511,7 +511,7 @@ impl Subsort {
 /// the full `Funcdata` API; the integration point implements this trait for the
 /// real `Funcdata`.
 ///
-/// All op references are the abstract index `usize` returned by the cursor
+/// All op references are the abstract index `u64` returned by the cursor
 /// methods; the trait never exposes a concrete op type.
 ///
 /// The C++ uses a single `PcodeOpTree::const_iterator opiter` and tests it
@@ -552,7 +552,7 @@ pub trait SorterFuncdata {
 /// An opaque cursor into a [`SorterFuncdata`]'s op-tree (the C++
 /// `PcodeOpTree::const_iterator`).  // STUB(W5)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OpCursor(pub usize);
+pub struct OpCursor(pub u64);
 
 /// The result of `beginOp(addr)`: either a real [`OpCursor`] or the at-end
 /// sentinel (`opiter == endOpAll()`).  Carries enough to run the C++

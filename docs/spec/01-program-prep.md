@@ -4491,7 +4491,7 @@ straight-line disassembly of `main` walks off the end of the code and decodes th
 constant: `1337ARM`'s `main` ended `ldmia sp,{r4,r11,sp,pc}` and then
 `0x8458 39050000 andeq r0,r0,r9, lsr r5` — four bytes nothing executes, listed as
 an instruction, in place of the success constant `0x539` the program is about.
-**Pool-word folding** (`decompiler/crates/kuna-cli/src/litpool.rs`, fed by
+**Pool-word folding** (`decompiler/crates/kuna-console/src/litpool.rs`, fed by
 `ConsoleProgram::add_fixed_refs_at`) lists such a word as the constant it holds
 (`.word 0x00000539`) instead. The evidence is the listing's own and nothing
 wider: as each row is decoded, the fixed addresses it names are harvested from
@@ -4524,7 +4524,7 @@ pool word is only foldable if it **starts a decoded row**, so anything that puts
 the listing off the instruction grid vetoes every word after it. A byte the
 translator refuses is listed as a `.byte` row rather than ending the listing, and
 where the walk resumes from one is architecture-dependent
-(`decompiler/crates/kuna-cli/src/disassemble.rs (resume_grid, recovery_span)`).
+(`decompiler/crates/kuna-console/src/disasm.rs (resume_grid, recovery_span)`).
 Advancing one byte is right where any address can start an instruction and wrong
 where they must be aligned: on ARM a refused pool word cost one byte, and the
 four rows after it started at `main+0xd5`, `+0xd9`, `+0xdd` and `+0xe1` —
@@ -4552,7 +4552,7 @@ with the next segment a page and a half above it, `kuna disassemble 0x80d18b0
 out of bytes that are not in the file — while `kuna disassemble 0x80d190b`, an
 address inside the same hole, correctly refused. The listing clips its own length
 to the **contiguous mapped run** holding the start
-(`decompiler/crates/kuna-cli/src/disassemble.rs (mapped_run)`, over
+(`decompiler/crates/kuna-console/src/disasm.rs (mapped_run)`, over
 `LoadImage::get_segments`): adjacent and overlapping segments are one run, since
 a listing crossing from one `PT_LOAD` into the next at the byte the first ends
 has crossed no hole, and a loader that publishes no segments at all (the XML

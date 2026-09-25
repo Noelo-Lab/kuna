@@ -1,0 +1,833 @@
+{
+ "binary": "sample.elf",
+ "language": "c-language",
+ "target": {
+  "archid": "x86:LE:64:default:gcc",
+  "processor": "x86",
+  "endian": "little",
+  "bits": 64
+ },
+ "function": {
+  "name": "main",
+  "address": 4504,
+  "address_hex": "0x1198",
+  "aliases": [
+   "sub_1198"
+  ],
+  "object_location": null,
+  "kind": "func",
+  "size": 84,
+  "code": "int main(int argc,char **argv)\n{\n  long v1; // rax\n  \n  v1 = sum_to(add(argc,3));\n  printf(\"%ld\\n\",v1);\n  return (int)v1;\n}",
+  "error": null,
+  "proto": "int main(int argc,char **argv);",
+  "unstructured_gotos": 0,
+  "line_mappings": [
+   {
+    "line_number": 5,
+    "addresses": [
+     4533,
+     4546
+    ],
+    "addresses_hex": [
+     "0x11b5",
+     "0x11c2"
+    ]
+   },
+   {
+    "line_number": 6,
+    "addresses": [
+     4577
+    ],
+    "addresses_hex": [
+     "0x11e1"
+    ]
+   },
+   {
+    "line_number": 7,
+    "addresses": [
+     4587
+    ],
+    "addresses_hex": [
+     "0x11eb"
+    ]
+   }
+  ],
+  "variables": [
+   {
+    "name": "argc",
+    "type": "int",
+    "kind": "arg",
+    "arg_index": 0,
+    "stack_offset": null,
+    "size": 4,
+    "line_numbers": [
+     5
+    ],
+    "addresses": [
+     4533,
+     4546
+    ],
+    "addresses_hex": [
+     "0x11b5",
+     "0x11c2"
+    ]
+   },
+   {
+    "name": "argv",
+    "type": "char **",
+    "kind": "arg",
+    "arg_index": 1,
+    "stack_offset": null,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "argv",
+    "type": "char **",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -40,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "argc",
+    "type": "int",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -28,
+    "size": 4,
+    "line_numbers": [
+     5
+    ],
+    "addresses": [
+     4533,
+     4546
+    ],
+    "addresses_hex": [
+     "0x11b5",
+     "0x11c2"
+    ]
+   },
+   {
+    "name": "x",
+    "type": "int",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -20,
+    "size": 4,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "s",
+    "type": "long",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -16,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "local_30",
+    "type": "undefined8",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -48,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "local_8",
+    "type": "undefined8",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -8,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   }
+  ],
+  "types": [],
+  "globals": [],
+  "tokens": [
+   {
+    "line": 1,
+    "col": 0,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "decl": "return",
+    "type": "int"
+   },
+   {
+    "line": 1,
+    "col": 4,
+    "len": 4,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "main",
+    "decl": "function"
+   },
+   {
+    "line": 1,
+    "col": 8,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 1,
+    "col": 9,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "decl": "param",
+    "type": "int"
+   },
+   {
+    "line": 1,
+    "col": 13,
+    "len": 4,
+    "kind": "variable",
+    "color": "var",
+    "text": "argc",
+    "var": 0,
+    "decl": "param"
+   },
+   {
+    "line": 1,
+    "col": 17,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ","
+   },
+   {
+    "line": 1,
+    "col": 18,
+    "len": 7,
+    "kind": "type",
+    "color": "type",
+    "text": "char **",
+    "decl": "param",
+    "type": "char **"
+   },
+   {
+    "line": 1,
+    "col": 25,
+    "len": 4,
+    "kind": "variable",
+    "color": "var",
+    "text": "argv",
+    "var": 1,
+    "decl": "param"
+   },
+   {
+    "line": 1,
+    "col": 29,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 2,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "{"
+   },
+   {
+    "line": 3,
+    "col": 2,
+    "len": 4,
+    "kind": "type",
+    "color": "type",
+    "text": "long",
+    "decl": "local",
+    "type": "long"
+   },
+   {
+    "line": 3,
+    "col": 7,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "decl": "local"
+   },
+   {
+    "line": 3,
+    "col": 9,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 3,
+    "col": 11,
+    "len": 6,
+    "kind": "comment",
+    "color": "comment",
+    "text": "// rax"
+   },
+   {
+    "line": 5,
+    "col": 2,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4546,
+    "address_hex": "0x11c2"
+   },
+   {
+    "line": 5,
+    "col": 5,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4546,
+    "address_hex": "0x11c2"
+   },
+   {
+    "line": 5,
+    "col": 7,
+    "len": 6,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "sum_to",
+    "address": 4546,
+    "address_hex": "0x11c2",
+    "callee": 4449,
+    "callee_hex": "0x1161"
+   },
+   {
+    "line": 5,
+    "col": 13,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 5,
+    "col": 14,
+    "len": 3,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "add",
+    "address": 4533,
+    "address_hex": "0x11b5",
+    "callee": 4425,
+    "callee_hex": "0x1149"
+   },
+   {
+    "line": 5,
+    "col": 17,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 5,
+    "col": 18,
+    "len": 4,
+    "kind": "variable",
+    "color": "var",
+    "text": "argc",
+    "address": 4533,
+    "address_hex": "0x11b5",
+    "var": 0
+   },
+   {
+    "line": 5,
+    "col": 22,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": ",",
+    "address": 4533,
+    "address_hex": "0x11b5"
+   },
+   {
+    "line": 5,
+    "col": 23,
+    "len": 1,
+    "kind": "value",
+    "color": "const",
+    "text": "3"
+   },
+   {
+    "line": 5,
+    "col": 24,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 5,
+    "col": 25,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 5,
+    "col": 26,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 6,
+    "col": 2,
+    "len": 6,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "printf",
+    "address": 4577,
+    "address_hex": "0x11e1",
+    "callee": 4176,
+    "callee_hex": "0x1050"
+   },
+   {
+    "line": 6,
+    "col": 8,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 6,
+    "col": 9,
+    "len": 7,
+    "kind": "value",
+    "color": "const",
+    "text": "\"%ld\\n\"",
+    "address": 4577,
+    "address_hex": "0x11e1"
+   },
+   {
+    "line": 6,
+    "col": 16,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": ",",
+    "address": 4577,
+    "address_hex": "0x11e1"
+   },
+   {
+    "line": 6,
+    "col": 17,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4577,
+    "address_hex": "0x11e1"
+   },
+   {
+    "line": 6,
+    "col": 19,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 6,
+    "col": 20,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 7,
+    "col": 2,
+    "len": 6,
+    "kind": "op",
+    "color": "keyword",
+    "text": "return",
+    "address": 4587,
+    "address_hex": "0x11eb"
+   },
+   {
+    "line": 7,
+    "col": 9,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 7,
+    "col": 10,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "type": "int"
+   },
+   {
+    "line": 7,
+    "col": 13,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 7,
+    "col": 14,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4587,
+    "address_hex": "0x11eb"
+   },
+   {
+    "line": 7,
+    "col": 16,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 8,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "}"
+   }
+  ],
+  "tokens_error": null,
+  "instructions": [
+   {
+    "address": 4504,
+    "address_hex": "0x1198",
+    "offset": 0,
+    "size": 4,
+    "bytes": "f30f1efa",
+    "mnemonic": "ENDBR64",
+    "operands": "",
+    "text": "ENDBR64",
+    "file_offset": 4504,
+    "lines": []
+   },
+   {
+    "address": 4508,
+    "address_hex": "0x119c",
+    "offset": 4,
+    "size": 1,
+    "bytes": "55",
+    "mnemonic": "PUSH",
+    "operands": "RBP",
+    "text": "PUSH RBP",
+    "file_offset": 4508,
+    "lines": []
+   },
+   {
+    "address": 4509,
+    "address_hex": "0x119d",
+    "offset": 5,
+    "size": 3,
+    "bytes": "4889e5",
+    "mnemonic": "MOV",
+    "operands": "RBP,RSP",
+    "text": "MOV RBP,RSP",
+    "file_offset": 4509,
+    "lines": []
+   },
+   {
+    "address": 4512,
+    "address_hex": "0x11a0",
+    "offset": 8,
+    "size": 4,
+    "bytes": "4883ec20",
+    "mnemonic": "SUB",
+    "operands": "RSP,0x20",
+    "text": "SUB RSP,0x20",
+    "file_offset": 4512,
+    "lines": []
+   },
+   {
+    "address": 4516,
+    "address_hex": "0x11a4",
+    "offset": 12,
+    "size": 3,
+    "bytes": "897dec",
+    "mnemonic": "MOV",
+    "operands": "dword ptr [RBP + -0x14],EDI",
+    "text": "MOV dword ptr [RBP + -0x14],EDI",
+    "file_offset": 4516,
+    "lines": []
+   },
+   {
+    "address": 4519,
+    "address_hex": "0x11a7",
+    "offset": 15,
+    "size": 4,
+    "bytes": "488975e0",
+    "mnemonic": "MOV",
+    "operands": "qword ptr [RBP + -0x20],RSI",
+    "text": "MOV qword ptr [RBP + -0x20],RSI",
+    "file_offset": 4519,
+    "lines": []
+   },
+   {
+    "address": 4523,
+    "address_hex": "0x11ab",
+    "offset": 19,
+    "size": 3,
+    "bytes": "8b45ec",
+    "mnemonic": "MOV",
+    "operands": "EAX,dword ptr [RBP + -0x14]",
+    "text": "MOV EAX,dword ptr [RBP + -0x14]",
+    "file_offset": 4523,
+    "lines": []
+   },
+   {
+    "address": 4526,
+    "address_hex": "0x11ae",
+    "offset": 22,
+    "size": 5,
+    "bytes": "be03000000",
+    "mnemonic": "MOV",
+    "operands": "ESI,0x3",
+    "text": "MOV ESI,0x3",
+    "file_offset": 4526,
+    "lines": []
+   },
+   {
+    "address": 4531,
+    "address_hex": "0x11b3",
+    "offset": 27,
+    "size": 2,
+    "bytes": "89c7",
+    "mnemonic": "MOV",
+    "operands": "EDI,EAX",
+    "text": "MOV EDI,EAX",
+    "file_offset": 4531,
+    "lines": []
+   },
+   {
+    "address": 4533,
+    "address_hex": "0x11b5",
+    "offset": 29,
+    "size": 5,
+    "bytes": "e88fffffff",
+    "mnemonic": "CALL",
+    "operands": "0x1149",
+    "text": "CALL 0x1149",
+    "file_offset": 4533,
+    "lines": [
+     5
+    ]
+   },
+   {
+    "address": 4538,
+    "address_hex": "0x11ba",
+    "offset": 34,
+    "size": 3,
+    "bytes": "8945f4",
+    "mnemonic": "MOV",
+    "operands": "dword ptr [RBP + -0xc],EAX",
+    "text": "MOV dword ptr [RBP + -0xc],EAX",
+    "file_offset": 4538,
+    "lines": []
+   },
+   {
+    "address": 4541,
+    "address_hex": "0x11bd",
+    "offset": 37,
+    "size": 3,
+    "bytes": "8b45f4",
+    "mnemonic": "MOV",
+    "operands": "EAX,dword ptr [RBP + -0xc]",
+    "text": "MOV EAX,dword ptr [RBP + -0xc]",
+    "file_offset": 4541,
+    "lines": []
+   },
+   {
+    "address": 4544,
+    "address_hex": "0x11c0",
+    "offset": 40,
+    "size": 2,
+    "bytes": "89c7",
+    "mnemonic": "MOV",
+    "operands": "EDI,EAX",
+    "text": "MOV EDI,EAX",
+    "file_offset": 4544,
+    "lines": []
+   },
+   {
+    "address": 4546,
+    "address_hex": "0x11c2",
+    "offset": 42,
+    "size": 5,
+    "bytes": "e89affffff",
+    "mnemonic": "CALL",
+    "operands": "0x1161",
+    "text": "CALL 0x1161",
+    "file_offset": 4546,
+    "lines": [
+     5
+    ]
+   },
+   {
+    "address": 4551,
+    "address_hex": "0x11c7",
+    "offset": 47,
+    "size": 4,
+    "bytes": "488945f8",
+    "mnemonic": "MOV",
+    "operands": "qword ptr [RBP + -0x8],RAX",
+    "text": "MOV qword ptr [RBP + -0x8],RAX",
+    "file_offset": 4551,
+    "lines": []
+   },
+   {
+    "address": 4555,
+    "address_hex": "0x11cb",
+    "offset": 51,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4555,
+    "lines": []
+   },
+   {
+    "address": 4559,
+    "address_hex": "0x11cf",
+    "offset": 55,
+    "size": 3,
+    "bytes": "4889c6",
+    "mnemonic": "MOV",
+    "operands": "RSI,RAX",
+    "text": "MOV RSI,RAX",
+    "file_offset": 4559,
+    "lines": []
+   },
+   {
+    "address": 4562,
+    "address_hex": "0x11d2",
+    "offset": 58,
+    "size": 7,
+    "bytes": "488d052b0e0000",
+    "mnemonic": "LEA",
+    "operands": "RAX,[0x2004]",
+    "text": "LEA RAX,[0x2004]",
+    "file_offset": 4562,
+    "lines": []
+   },
+   {
+    "address": 4569,
+    "address_hex": "0x11d9",
+    "offset": 65,
+    "size": 3,
+    "bytes": "4889c7",
+    "mnemonic": "MOV",
+    "operands": "RDI,RAX",
+    "text": "MOV RDI,RAX",
+    "file_offset": 4569,
+    "lines": []
+   },
+   {
+    "address": 4572,
+    "address_hex": "0x11dc",
+    "offset": 68,
+    "size": 5,
+    "bytes": "b800000000",
+    "mnemonic": "MOV",
+    "operands": "EAX,0x0",
+    "text": "MOV EAX,0x0",
+    "file_offset": 4572,
+    "lines": []
+   },
+   {
+    "address": 4577,
+    "address_hex": "0x11e1",
+    "offset": 73,
+    "size": 5,
+    "bytes": "e86afeffff",
+    "mnemonic": "CALL",
+    "operands": "0x1050",
+    "text": "CALL 0x1050",
+    "file_offset": 4577,
+    "lines": [
+     6
+    ]
+   },
+   {
+    "address": 4582,
+    "address_hex": "0x11e6",
+    "offset": 78,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4582,
+    "lines": []
+   },
+   {
+    "address": 4586,
+    "address_hex": "0x11ea",
+    "offset": 82,
+    "size": 1,
+    "bytes": "c9",
+    "mnemonic": "LEAVE",
+    "operands": "",
+    "text": "LEAVE",
+    "file_offset": 4586,
+    "lines": []
+   },
+   {
+    "address": 4587,
+    "address_hex": "0x11eb",
+    "offset": 83,
+    "size": 1,
+    "bytes": "c3",
+    "mnemonic": "RET",
+    "operands": "",
+    "text": "RET",
+    "file_offset": 4587,
+    "lines": [
+     7
+    ]
+   }
+  ],
+  "instructions_truncated": false
+ },
+ "assertions": []
+}

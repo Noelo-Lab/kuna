@@ -15,6 +15,12 @@
 //! (`"func"` | `"plt"` | `"thunk"` — [`kuna_console::classify`], shared with
 //! `kuna decompile-graph`) on every function entry.
 //!
+//! Every command takes repeatable `--assert <directive>` — the CLI's override
+//! plane ([`kuna_console::assertsyntax`] / [`kuna_console::assertions`]), applied
+//! in the CLI's order — and reports what became of each directive in an
+//! `assertions` array. `inspect` and `read` are the study view's documents
+//! ([`inspect`]).
+//!
 //! # Why WASI
 //! The decompiler touches the outside world only through plain `std::fs` path
 //! reads (the binary via `LoadImage`, the SLEIGH `.sla`/`.pspec`/`.cspec`/
@@ -22,19 +28,45 @@
 //! filesystem, so this front-end runs in the browser with **zero** engine
 //! changes. See `docs/web-integration.md`.
 
+mod inspect;
+mod json;
+
+use kuna_console::assertions::{Directive, Outcome};
 use kuna_console::engine::{
-    bootstrap_from_image, ConsoleProgram, EntrySelector, FunctionEntry, ObjectLocation,
+    bootstrap_from_image, ConsoleProgram, EntrySelector, FunctionEntry,
 };
 use kuna_console::project::{
     build_asm, build_c, build_header, build_readme, collect_dat_addrs,
-    decompile_export_targets, decompile_targets,
+    decompile_export_targets, decompile_targets_with, DecompileOptions,
     FuncResult, FAST_WHOLE_BINARY_FN_BUDGET_SECONDS,
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 // The per-function `kind` annotation, shared with `kuna decompile-graph`.
 use kuna_console::classify::Classifier;
 
+use json::{
+    arr, assertions_json, json_object_location, json_opt_num, json_opt_str, json_str,
+    json_str_array, Obj,
+};
+
+/// How a command names its function.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Selector {
+    Name(String),
+    Addr(u64),
+}
+
+impl Selector {
+    fn parse(arg: &str) -> Self {
+        match parse_addr(arg) {
+            Some(vma) => Selector::Addr(vma),
+            None => Selector::Name(arg.to_string()),
+        }
+    }
+}
+
 /// Parsed command.
+#[derive(Debug)]
 enum Cmd {
     /// Enumerate functions only (no per-function decompile; analysis follows
     /// the selected concrete mode).
@@ -49,6 +81,26 @@ enum Cmd {
     /// document); the payload is the display name the artifacts are named
     /// after. Whole binary only — no `--functions` subset on this surface.
     Project(String),
+    /// One function with its token source map and instruction listing.
+    Inspect(Selector),
+    /// Raw image bytes (discovery off).
+    Read { addr: u64, len: u64 },
+    /// One function's callers, callees and data references.
+    Xrefs(Selector),
+}
+
+/// One front-end invocation: the argv of `kuna_wasm` as data.
+#[derive(Debug, Clone, Copy)]
+pub struct Request<'a> {
+    pub binary: &'a str,
+    pub spec_root: &'a str,
+    pub cmd: &'a str,
+    /// The command's positional arguments (at most two).
+    pub args: &'a [String],
+    pub mode: Option<&'a str>,
+    pub language: Option<&'a str>,
+    /// `--assert` values, in order: directives or `@FILE`s of them.
+    pub asserts: &'a [String],
 }
 
 /// Run the front-end with the automatic size-based mode policy.
@@ -71,16 +123,8 @@ pub fn run_with_mode(
     run_with(binary, spec_root, cmd, arg, requested_mode, None)
 }
 
-/// Run the front-end with an optional explicit mode and output language.
-///
-/// For the mode, `None` and `Some("auto")` select `aggressive` below 500 KiB,
-/// `reliable` from 500 KiB through just below 2 MiB, and `fast` at 2 MiB and
-/// above.
-///
-/// (kuna outlang) For the language, `None` and `Some("auto")` follow the binary:
-/// a Rust binary renders as Rust. `project` is excluded from that policy -- its
-/// `.c`/`.h`/`.asm` export is C-shaped end to end -- so an explicit non-C
-/// language is an error there rather than a broken export.
+/// Run the front-end with an optional explicit mode and output language, and
+/// no assertions ([`run_request`]).
 pub fn run_with(
     binary: &str,
     spec_root: &str,
@@ -89,16 +133,58 @@ pub fn run_with(
     requested_mode: Option<&str>,
     requested_language: Option<&str>,
 ) -> Result<String, String> {
-    let command = match cmd {
-        "list" => Cmd::List,
-        "decompile" => match arg {
-            None => Cmd::DecompileAll,
-            Some(a) => match parse_addr(a) {
-                Some(vma) => Cmd::DecompileAddr(vma),
-                None => Cmd::DecompileName(a.to_string()),
-            },
-        },
+    let args: Vec<String> = arg.map(str::to_string).into_iter().collect();
+    run_request(&Request {
+        binary,
+        spec_root,
+        cmd,
+        args: &args,
+        mode: requested_mode,
+        language: requested_language,
+        asserts: &[],
+    })
+}
+
+/// Parse the `--assert` values into directives. A directive is one line; a
+/// value that does not parse is the whole run's error, spelled as the CLI
+/// spells it (`--assert "<directive>": <why>`).
+fn parse_asserts(values: &[String]) -> Result<Vec<Directive>, String> {
+    let mut out = Vec::new();
+    for value in values {
+        if value.contains('\n') || value.contains('\r') {
+            return Err(format!("--assert {value:?}: a directive is one line"));
+        }
+        out.extend(kuna_console::assertsyntax::parse_directive_flag(value)?);
+    }
+    Ok(out)
+}
+
+fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String> {
+    let at_most = |n: usize| {
+        if args.len() > n {
+            Err(format!("`{cmd}` takes at most {n} argument(s), got {}", args.len()))
+        } else {
+            Ok(())
+        }
+    };
+    let arg = args.first().map(String::as_str);
+    Ok(match cmd {
+        "list" => {
+            at_most(0)?;
+            Cmd::List
+        }
+        "decompile" => {
+            at_most(1)?;
+            match arg {
+                None => Cmd::DecompileAll,
+                Some(a) => match Selector::parse(a) {
+                    Selector::Addr(vma) => Cmd::DecompileAddr(vma),
+                    Selector::Name(name) => Cmd::DecompileName(name),
+                },
+            }
+        }
         "project" => {
+            at_most(1)?;
             // Display name defaults to the binary's basename (the CLI's
             // `<binary-filename>.kuna/` convention).
             let display = arg.map(str::to_string).unwrap_or_else(|| {
@@ -109,15 +195,52 @@ pub fn run_with(
             });
             Cmd::Project(display)
         }
+        "inspect" => {
+            at_most(1)?;
+            Cmd::Inspect(Selector::parse(arg.ok_or("`inspect` needs a function name or 0x address")?))
+        }
+        "xrefs" => {
+            at_most(1)?;
+            Cmd::Xrefs(Selector::parse(arg.ok_or("`xrefs` needs a function name or 0x address")?))
+        }
+        "read" => {
+            let [addr, len] = args else {
+                return Err("`read` needs <0xADDR> <LEN>".to_string());
+            };
+            let addr = parse_addr(addr)
+                .ok_or_else(|| format!("`read`: {addr:?} is not a 0x-prefixed address"))?;
+            let len = parse_len(len)
+                .filter(|&n| n > 0 && n <= inspect::READ_MAX)
+                .ok_or_else(|| {
+                    format!("`read`: length {len:?} must be 1..={} bytes", inspect::READ_MAX)
+                })?;
+            Cmd::Read { addr, len }
+        }
         other => {
             return Err(format!(
-                "unknown command: {other:?} (want `list`, `decompile` or `project`)"
+                "unknown command: {other:?} (want `list`, `decompile`, `project`, `inspect`, `read` or `xrefs`)"
             ))
         }
-    };
+    })
+}
+
+/// Run one request.
+///
+/// For the mode, `None` and `Some("auto")` select `aggressive` below 500 KiB,
+/// `reliable` from 500 KiB through just below 2 MiB, and `fast` at 2 MiB and
+/// above.
+///
+/// (kuna outlang) For the language, `None` and `Some("auto")` follow the binary:
+/// a Rust binary renders as Rust. `project` is excluded from that policy -- its
+/// `.c`/`.h`/`.asm` export is C-shaped end to end -- so an explicit non-C
+/// language is an error there rather than a broken export.
+pub fn run_request(req: &Request) -> Result<String, String> {
+    let binary = req.binary;
+    let command = parse_command(req.cmd, req.args, binary)?;
+    let directives = parse_asserts(req.asserts)?;
 
     let want_fast_funcdisc = command_wants_fast_funcdisc(&command);
-    let requested = requested_mode.unwrap_or("auto");
+    let requested = req.mode.unwrap_or("auto");
     let binary_size = if kuna_decomp::modes::mode_is_automatic(requested) {
         std::fs::metadata(binary)
             .map_err(|e| format!("could not read binary metadata for {binary}: {e}"))?
@@ -125,12 +248,22 @@ pub fn run_with(
     } else {
         0
     };
-    let mode = resolve_mode(requested_mode, binary_size)?;
-    let language = resolve_language(binary, requested_language, &command)?;
-    let mut prog = load_program(binary, spec_root, mode, want_fast_funcdisc, language)?;
+    let mode = resolve_mode(req.mode, binary_size)?;
+    let language = resolve_language(binary, req.language, &command)?;
+    let discovery = !matches!(command, Cmd::Read { .. });
+    let mut prog = load_program(
+        binary,
+        req.spec_root,
+        mode,
+        want_fast_funcdisc,
+        language,
+        &directives,
+        discovery,
+    )?;
     if let Some(seconds) = command_fn_budget_seconds(&command, mode) {
         prog.arch_mut().kuna_fn_budget = Some(std::time::Duration::from_secs(seconds));
     }
+    let language = prog.arch().print().out_lang().print_name();
 
     match command {
         Cmd::List => {
@@ -144,9 +277,44 @@ pub fn run_with(
                 .iter()
                 .map(|e| classifier.kind(&prog, &e.name, e.addr.get_offset()))
                 .collect();
-            Ok(list_json(binary, &entries, &kinds))
+            Ok(list_json(binary, &prog, language, &entries, &kinds))
         }
         Cmd::Project(display) => project(binary, &mut prog, &display),
+        Cmd::Read { addr, len } => {
+            Ok(inspect::read_json(binary, &prog, addr, len, &prog.assertion_outcomes()))
+        }
+        Cmd::Xrefs(_) => {
+            let target = resolve_targets(&prog, &command)?
+                .into_iter()
+                .next()
+                .ok_or_else(|| "no function selected".to_string())?;
+            let bytes = kuna_analysis::loader::elf_shdr::read_image(binary)
+                .map_err(|e| format!("could not read {binary}: {e}"))?;
+            let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
+                .map_err(|e| format!("could not parse {binary}: {e}"))?;
+            Ok(inspect::xrefs_json(binary, &prog, &file, &target, &prog.assertion_outcomes()))
+        }
+        Cmd::Inspect(ref selector) => {
+            let targets = resolve_targets(&prog, &command)?;
+            let classifier = Classifier::new(
+                &prog,
+                binary,
+                prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()),
+            );
+            let opts = DecompileOptions {
+                want_proto: true,
+                want_provenance: true,
+                want_tokens: true,
+                single_target: true,
+                ..DecompileOptions::default()
+            };
+            let out = decompile_targets_with(&mut prog, targets, &opts);
+            let f = out
+                .first()
+                .ok_or_else(|| format!("no function selected by {selector:?}"))?;
+            let kind = classifier.kind(&prog, &f.name, f.byte_address);
+            Ok(inspect::inspect_json(binary, language, &prog, f, kind, &prog.assertion_outcomes()))
+        }
         _ => {
             let targets = resolve_targets(&prog, &command)?;
             // Classify against the FULL deduped entry set (a single-function
@@ -156,24 +324,31 @@ pub fn run_with(
                 binary,
                 prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()),
             );
-            let out = decompile_targets(
-                &mut prog,
-                targets,
-                /* no_vars= */ false,
-                /* want_proto= */ false,
-                /* want_provenance= */ false,
-            );
+            // One function carries its line mappings; a whole-binary run does
+            // not pay a second render per function for them.
+            let opts = DecompileOptions {
+                want_provenance: targets.len() == 1,
+                single_target: targets.len() == 1,
+                ..DecompileOptions::default()
+            };
+            let out = decompile_targets_with(&mut prog, targets, &opts);
             let kinds: Vec<&'static str> =
                 out.iter()
                     .map(|f| classifier.kind(&prog, &f.name, f.byte_address))
                     .collect();
-            Ok(result_json(binary, &out, &kinds))
+            Ok(result_json(binary, language, &out, &kinds, &prog.assertion_outcomes()))
         }
     }
 }
 
 fn command_wants_fast_funcdisc(command: &Cmd) -> bool {
-    !matches!(command, Cmd::DecompileAddr(_))
+    !matches!(
+        command,
+        Cmd::DecompileAddr(_)
+            | Cmd::Inspect(Selector::Addr(_))
+            | Cmd::Xrefs(Selector::Addr(_))
+            | Cmd::Read { .. }
+    )
 }
 
 fn command_fn_budget_seconds(command: &Cmd, mode: &str) -> Option<u64> {
@@ -232,20 +407,10 @@ fn project(binary: &str, prog: &mut ConsoleProgram, display: &str) -> Result<Str
             (format!("{display}.asm"), &asm),
             ("README.md".to_string(), &readme),
         ],
+        &prog.assertion_outcomes(),
     ))
 }
 
-/// Bootstrap the architecture from the binary and run the analysis commit — the
-/// in-process `load file` + `read symbols`, then inject the `decompile-all`
-/// surface's discovery defaults unless the selected mode owns those options
-/// (matching the CLI's mode-then-explicit-default ordering).
-///
-/// EVERY command gets the injections, `list` included: in the browser the
-/// inventory is a *product surface* (the sidebar is the only way to reach a
-/// function), so an inventory that disagrees with the `project` export is a
-/// missing-function bug, not a saved analysis. `kuna functions` makes the
-/// opposite trade — cheap enumeration — because a native caller can always ask
-/// `decompile-all` for the full set (DIV-53, `docs/web-integration.md` §2).
 /// The output language for this run: an explicit name, or the auto policy.
 ///
 /// The auto policy follows the binary through `sourcelang::detect_compiler`, the
@@ -296,12 +461,32 @@ fn resolve_language(
     })
 }
 
+/// Bootstrap the architecture from the binary and run the analysis commit — the
+/// in-process `load file` + `read symbols`, then inject the `decompile-all`
+/// surface's discovery defaults unless the selected mode owns those options
+/// (matching the CLI's mode-then-explicit-default ordering).
+///
+/// EVERY command but `read` gets the injections, `list` included: in the
+/// browser the inventory is a *product surface* (the sidebar is the only way to
+/// reach a function), so an inventory that disagrees with the `project` export
+/// is a missing-function bug, not a saved analysis. `kuna functions` makes the
+/// opposite trade — cheap enumeration — because a native caller can always ask
+/// `decompile-all` for the full set (DIV-53, `docs/web-integration.md` §2).
+/// `read` (`discovery` false) needs no inventory at all, so it turns the
+/// discovery walk off, as the CLI's caller-bounded listing does.
+///
+/// The directives land in the CLI's order: read-only propagation when a
+/// `readonly` range implies it, the image-scoped ones (byte overlays) before
+/// the analysis commit, the program-scoped ones after it; the function- and
+/// symbol-scoped ones are dispatched by the decompile loop.
 fn load_program(
     binary: &str,
     spec_root: &str,
     mode: &str,
     want_fast_funcdisc: bool,
     language: Option<&str>,
+    directives: &[Directive],
+    discovery: bool,
 ) -> Result<ConsoleProgram, String> {
     let overrides = kuna_decomp::modes::mode_overrides(mode)
         .ok_or_else(|| format!("unknown mode {mode:?}"))?;
@@ -333,17 +518,20 @@ fn load_program(
     prog.arch_mut()
         .apply_mode(mode)
         .map_err(|e| format!("mode {mode}: {}", e.explain()))?;
-    if !want_fast_funcdisc {
+    let set = |prog: &mut ConsoleProgram, name: &str, value: &str| {
         prog.arch_mut()
-            .set_kuna_option("fast_funcdisc", "off")
-            .map_err(|e| format!("option fast_funcdisc: {}", e.explain()))?;
+            .set_kuna_option(name, value)
+            .map_err(|e| format!("option {name}: {}", e.explain()))
+    };
+    if !want_fast_funcdisc {
+        set(&mut prog, "fast_funcdisc", "off")?;
     }
     let mode_owns = |name: &str| overrides.iter().any(|(option, _)| *option == name);
 
-    if !mode_owns("listing") {
-        prog.arch_mut()
-            .set_kuna_option("listing", "on")
-            .map_err(|e| format!("option listing: {}", e.explain()))?;
+    if !discovery {
+        set(&mut prog, "listing", "off")?;
+    } else if !mode_owns("listing") {
+        set(&mut prog, "listing", "on")?;
     }
     if let Some(name) = language {
         prog.arch_mut()
@@ -352,7 +540,7 @@ fn load_program(
     }
 
     use object::Object;
-    let non_x86_64 = if !mode_owns("funcstart_patterns") || !mode_owns("aif") {
+    let non_x86_64 = if discovery && (!mode_owns("funcstart_patterns") || !mode_owns("aif")) {
         kuna_analysis::loader::elf_shdr::read_image(binary)
             .ok()
             .and_then(|bytes| {
@@ -365,18 +553,24 @@ fn load_program(
         false
     };
     if non_x86_64 && !mode_owns("funcstart_patterns") {
-        prog.arch_mut()
-            .set_kuna_option("funcstart_patterns", "on")
-            .map_err(|e| format!("option funcstart_patterns: {}", e.explain()))?;
+        set(&mut prog, "funcstart_patterns", "on")?;
     }
     if non_x86_64 && !mode_owns("aif") {
-        prog.arch_mut()
-            .set_kuna_option("aif", "on")
-            .map_err(|e| format!("option aif: {}", e.explain()))?;
+        set(&mut prog, "aif", "on")?;
     }
 
+    if kuna_console::assertions::implies_readonly_propagation(directives) {
+        prog.arch_mut().readonlypropagate = true;
+    }
+    if !directives.is_empty() {
+        prog.set_assertions(directives.to_vec());
+        kuna_console::assertions::apply_image_scoped(&mut prog);
+    }
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
+    if !directives.is_empty() {
+        kuna_console::assertions::apply_program_scoped(&mut prog);
+    }
     Ok(prog)
 }
 
@@ -385,20 +579,25 @@ fn resolve_targets(
     prog: &ConsoleProgram,
     command: &Cmd,
 ) -> Result<Vec<FunctionEntry>, String> {
+    let one = |selector: &EntrySelector| {
+        prog.resolve_body_entry(selector)
+            .map(|entry| vec![entry])
+            .map_err(|error| error.to_string())
+    };
     match command {
         // Automatic whole-binary runs target code, not import pointer slots.
         Cmd::DecompileAll => Ok(prog.function_entries_executable()),
         // An ALIAS resolves too — collapsing the enumeration must not make a
         // name that used to select a function stop working.
-        Cmd::DecompileName(want) => prog
-            .resolve_body_entry(&EntrySelector::parse(want))
-            .map(|entry| vec![entry])
-            .map_err(|error| error.to_string()),
-        Cmd::DecompileAddr(vma) => prog
-            .resolve_body_entry(&EntrySelector::Numeric(*vma))
-            .map(|entry| vec![entry])
-            .map_err(|error| error.to_string()),
-        Cmd::List | Cmd::Project(_) => unreachable!("List/Project handled by caller"),
+        Cmd::DecompileName(want)
+        | Cmd::Inspect(Selector::Name(want))
+        | Cmd::Xrefs(Selector::Name(want)) => one(&EntrySelector::parse(want)),
+        Cmd::DecompileAddr(vma) | Cmd::Inspect(Selector::Addr(vma)) | Cmd::Xrefs(Selector::Addr(vma)) => {
+            one(&EntrySelector::Numeric(*vma))
+        }
+        Cmd::List | Cmd::Project(_) | Cmd::Read { .. } => {
+            Err("this command selects no decompile targets".to_string())
+        }
     }
 }
 
@@ -408,18 +607,41 @@ fn parse_addr(s: &str) -> Option<u64> {
     u64::from_str_radix(t, 16).ok()
 }
 
+/// A byte count: decimal, or `0x` hex.
+fn parse_len(s: &str) -> Option<u64> {
+    match s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        Some(hex) => u64::from_str_radix(hex, 16).ok(),
+        None => s.parse().ok(),
+    }
+}
+
 // --- JSON (self-contained; the `decompile-all --json` fields + `kind`) ------
 
 /// The `list` document:
-/// `{binary, count, functions:[{name, address, address_hex, aliases, size, kind}]}`.
+/// `{binary, language, target, count, sections, known_types, assertions,
+/// functions:[{name, address, address_hex, aliases, object_location, size, kind}]}`.
 /// `size` is the entry's byte extent (`kuna_console::funcextent` — an upper
 /// bound), so the browser inventory can rank its rows by weight without
 /// decompiling every function.
 /// `kinds` is parallel to `entries` (the classifier's verdict per entry).
-fn list_json(binary: &str, entries: &[FunctionEntry], kinds: &[&'static str]) -> String {
+fn list_json(
+    binary: &str,
+    prog: &ConsoleProgram,
+    language: &str,
+    entries: &[FunctionEntry],
+    kinds: &[&'static str],
+) -> String {
     let mut s = String::from("{\n");
     s.push_str(&format!("  \"binary\": {},\n", json_str(binary)));
+    s.push_str(&format!("  \"language\": {},\n", json_str(language)));
+    s.push_str(&format!("  \"target\": {},\n", inspect::target_json(prog)));
     s.push_str(&format!("  \"count\": {},\n", entries.len()));
+    s.push_str(&format!(
+        "  \"sections\": {},\n",
+        inspect::sections_json(&kuna_console::inspect::section_rows(prog))
+    ));
+    s.push_str(&format!("  \"known_types\": {},\n", inspect::known_types_json(prog)));
+    s.push_str(&format!("  \"assertions\": {},\n", assertions_json(&prog.assertion_outcomes())));
     s.push_str("  \"functions\": [");
     for (i, e) in entries.iter().enumerate() {
         let addr = e.addr.get_offset();
@@ -443,10 +665,18 @@ fn list_json(binary: &str, entries: &[FunctionEntry], kinds: &[&'static str]) ->
 
 /// The `decompile` document (`decompile_all.rs::result_json`'s fields with
 /// `kind` after `address_hex`). `kinds` is parallel to `funcs`.
-fn result_json(binary: &str, funcs: &[FuncResult], kinds: &[&'static str]) -> String {
+fn result_json(
+    binary: &str,
+    language: &str,
+    funcs: &[FuncResult],
+    kinds: &[&'static str],
+    assertions: &[Outcome],
+) -> String {
     let mut s = String::from("{\n");
     s.push_str(&format!("  \"binary\": {},\n", json_str(binary)));
+    s.push_str(&format!("  \"language\": {},\n", json_str(language)));
     s.push_str(&format!("  \"count\": {},\n", funcs.len()));
+    s.push_str(&format!("  \"assertions\": {},\n", assertions_json(assertions)));
     s.push_str("  \"functions\": [");
     for (i, f) in funcs.iter().enumerate() {
         s.push_str(if i == 0 { "\n" } else { ",\n" });
@@ -464,6 +694,21 @@ fn result_json(binary: &str, funcs: &[FuncResult], kinds: &[&'static str]) -> St
         s.push_str(&format!("      \"code\": {},\n", json_opt_str(f.code.as_deref())));
         s.push_str(&format!("      \"error\": {},\n", json_opt_str(f.error.as_deref())));
         s.push_str(&format!("      \"unstructured_gotos\": {},\n", f.unstructured_gotos()));
+        s.push_str(&format!(
+            "      \"line_mappings\": {},\n",
+            arr(f.line_mappings.iter().map(|m| {
+                Obj::new()
+                    .num("line_number", m.line_number)
+                    .raw("addresses", &arr(m.addresses.iter().map(u64::to_string)))
+                    .end()
+            }))
+        ));
+        s.push_str(&format!(
+            "      \"types\": {},\n",
+            arr(f.types.iter().map(|t| {
+                Obj::new().str("name", &t.name).str("definition", &t.definition).num("size", t.size).end()
+            }))
+        ));
         s.push_str("      \"variables\": [");
         for (j, v) in f.variables.iter().enumerate() {
             s.push_str(if j == 0 { "\n" } else { ",\n" });
@@ -473,7 +718,12 @@ fn result_json(binary: &str, funcs: &[FuncResult], kinds: &[&'static str]) -> St
             s.push_str(&format!("\"kind\": {}, ", json_str(if v.is_param { "arg" } else { "stack" })));
             s.push_str(&format!("\"arg_index\": {}, ", json_opt_num(v.arg_index.map(|i| i as i64))));
             s.push_str(&format!("\"stack_offset\": {}, ", json_opt_num(v.stack_offset)));
-            s.push_str(&format!("\"size\": {}", v.size));
+            s.push_str(&format!("\"size\": {}, ", v.size));
+            s.push_str(&format!(
+                "\"line_numbers\": {}, ",
+                arr(v.line_numbers.iter().map(usize::to_string))
+            ));
+            s.push_str(&format!("\"addresses\": {}", arr(v.addresses.iter().map(u64::to_string))));
             s.push('}');
         }
         s.push_str(if f.variables.is_empty() { "]\n" } else { "\n      ]\n" });
@@ -484,15 +734,16 @@ fn result_json(binary: &str, funcs: &[FuncResult], kinds: &[&'static str]) -> St
 }
 
 /// The `project` document:
-/// `{binary, name, count, ok, failed, files:{"<display>.c":…, "<display>.h":…,
-/// "<display>.asm":…, "README.md":…}}` — the four artifact bodies as (large)
-/// JSON strings, `json_str`-escaped.
+/// `{binary, name, count, ok, failed, assertions, files:{"<display>.c":…,
+/// "<display>.h":…, "<display>.asm":…, "README.md":…}}` — the four artifact
+/// bodies as (large) JSON strings, `json_str`-escaped.
 fn project_json(
     binary: &str,
     display: &str,
     count: usize,
     ok: usize,
     files: &[(String, &String)],
+    assertions: &[Outcome],
 ) -> String {
     let mut s = String::from("{\n");
     s.push_str(&format!("  \"binary\": {},\n", json_str(binary)));
@@ -500,6 +751,7 @@ fn project_json(
     s.push_str(&format!("  \"count\": {},\n", count));
     s.push_str(&format!("  \"ok\": {},\n", ok));
     s.push_str(&format!("  \"failed\": {},\n", count - ok));
+    s.push_str(&format!("  \"assertions\": {},\n", assertions_json(assertions)));
     s.push_str("  \"files\": {");
     for (i, (name, text)) in files.iter().enumerate() {
         s.push_str(if i == 0 { "\n" } else { ",\n" });
@@ -509,72 +761,12 @@ fn project_json(
     s
 }
 
-fn json_opt_str(v: Option<&str>) -> String {
-    match v {
-        Some(s) => json_str(s),
-        None => "null".to_string(),
-    }
-}
-
-fn json_opt_num(v: Option<i64>) -> String {
-    match v {
-        Some(n) => n.to_string(),
-        None => "null".to_string(),
-    }
-}
-
-/// (kuna, issue #197) A JSON array of strings — the `aliases` field: every
-/// OTHER name the reported entry carries.  Always present (`[]` when the entry
-/// has exactly one name).
-fn json_str_array(items: &[String]) -> String {
-    let mut out = String::from("[");
-    for (i, s) in items.iter().enumerate() {
-        if i > 0 {
-            out.push_str(", ");
-        }
-        out.push_str(&json_str(s));
-    }
-    out.push(']');
-    out
-}
-
-fn json_object_location(location: Option<&ObjectLocation>) -> String {
-    match location {
-        Some(location) => format!(
-            "{{\"section_index\": {}, \"section\": {}, \"offset\": {}, \"offset_hex\": {}}}",
-            location.section_index,
-            json_str(&location.section),
-            location.offset,
-            json_str(&format!("0x{:x}", location.offset))
-        ),
-        None => "null".to_string(),
-    }
-}
-
-/// Encode a Rust string as a JSON string literal (RFC 8259 escaping).
-fn json_str(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{08}' => out.push_str("\\b"),
-            '\u{0c}' => out.push_str("\\f"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
+#[cfg(test)]
+mod study_tests;
 
 #[cfg(test)]
 mod tests {
-    use super::{command_fn_budget_seconds, command_wants_fast_funcdisc, resolve_mode, Cmd};
+    use super::{command_fn_budget_seconds, command_wants_fast_funcdisc, resolve_mode, Cmd, Selector};
     use kuna_console::project::FAST_WHOLE_BINARY_FN_BUDGET_SECONDS;
     use kuna_decomp::modes::{AUTO_FAST_MIN_BYTES, AUTO_RELIABLE_MIN_BYTES};
     use std::path::PathBuf;
@@ -604,12 +796,35 @@ mod tests {
     }
 
     #[test]
+    fn each_command_takes_only_its_own_positionals() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let parse = |cmd: &str, a: &[&str]| super::parse_command(cmd, &args(a), "bin");
+        assert!(matches!(parse("list", &[]), Ok(Cmd::List)));
+        assert!(parse("list", &["main"]).unwrap_err().contains("at most 0"));
+        assert!(matches!(parse("decompile", &[]), Ok(Cmd::DecompileAll)));
+        assert!(matches!(parse("decompile", &["0x1198"]), Ok(Cmd::DecompileAddr(0x1198))));
+        assert!(parse("decompile", &["main", "x"]).is_err());
+        assert!(matches!(parse("inspect", &["main"]), Ok(Cmd::Inspect(Selector::Name(_)))));
+        assert!(parse("inspect", &[]).is_err());
+        assert!(matches!(parse("read", &["0x10", "16"]), Ok(Cmd::Read { addr: 0x10, len: 16 })));
+        assert!(matches!(parse("read", &["0x10", "0x10"]), Ok(Cmd::Read { addr: 0x10, len: 16 })));
+        assert!(parse("read", &["0x10"]).is_err());
+        assert!(parse("read", &["16", "16"]).is_err());
+        assert!(matches!(parse("xrefs", &["0x1161"]), Ok(Cmd::Xrefs(Selector::Addr(0x1161)))));
+        assert!(matches!(parse("project", &[]), Ok(Cmd::Project(name)) if name == "bin"));
+        assert!(parse("frobnicate", &[]).is_err());
+    }
+
+    #[test]
     fn only_address_selection_skips_fast_discovery() {
         assert!(!command_wants_fast_funcdisc(&Cmd::DecompileAddr(0x1234)));
         assert!(command_wants_fast_funcdisc(&Cmd::DecompileName("sub_1234".into())));
         assert!(command_wants_fast_funcdisc(&Cmd::DecompileAll));
         assert!(command_wants_fast_funcdisc(&Cmd::Project("binary".into())));
         assert!(command_wants_fast_funcdisc(&Cmd::List));
+        assert!(!command_wants_fast_funcdisc(&Cmd::Inspect(Selector::Addr(0x1234))));
+        assert!(command_wants_fast_funcdisc(&Cmd::Inspect(Selector::Name("main".into()))));
+        assert!(!command_wants_fast_funcdisc(&Cmd::Read { addr: 0x1234, len: 4 }));
     }
 
     #[test]

@@ -61,9 +61,6 @@ mod decompile_all;
 #[allow(dead_code)]
 #[path = "../src/disassemble.rs"]
 mod disassemble;
-#[allow(dead_code)]
-#[path = "../src/litpool.rs"]
-mod litpool;
 
 use jsonfmt::Json;
 

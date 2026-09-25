@@ -21,7 +21,7 @@
 //!
 //! A pool word is not guessed at here, it is **proved by the range's own
 //! instructions**: some instruction in the listed range spells the address out
-//! and reads it ([`ConsoleProgram::fixed_refs_at`](kuna_console::engine::ConsoleProgram::fixed_refs_at)),
+//! and reads it ([`ConsoleProgram::fixed_refs_at`](crate::engine::ConsoleProgram::fixed_refs_at)),
 //! and no instruction in the range names it as a branch target. That makes the
 //! rule self-limiting in a way a caller can predict and steer: listing
 //! `0x8458-0x845c` on its own contains no such load, so the word decodes as it

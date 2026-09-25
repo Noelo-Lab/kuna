@@ -22,6 +22,15 @@ function safeName(name) {
   return String(name || 'binary').replace(/[^A-Za-z0-9._-]/g, '_') || 'binary';
 }
 
+/** The `--assert` directives of one request: strings only, in order. */
+function directives(list) {
+  return Array.isArray(list) ? list.filter((d) => typeof d === 'string' && d.trim() !== '') : [];
+}
+
+function session(params) {
+  return { mode, language, assertions: directives(params.assertions) };
+}
+
 async function dispatch(method, params) {
   switch (method) {
     case 'init':
@@ -32,6 +41,7 @@ async function dispatch(method, params) {
       binary = params.bytes instanceof Uint8Array ? params.bytes : new Uint8Array(params.bytes);
       fileName = params.fileName || 'binary';
       mode = params.mode || 'auto';
+      language = params.language || 'auto';
       return {
         result: {
           format: kuna.formatName(binary),
@@ -39,16 +49,31 @@ async function dispatch(method, params) {
         },
       };
     case 'list':
-      return {
-        result: await requireKuna().list(requireBinary(), { mode, language }),
-      };
+      return { result: await requireKuna().list(requireBinary(), session(params)) };
     case 'decompile':
       return {
-        result: await requireKuna().decompile(requireBinary(), params.target, { mode, language }),
+        result: await requireKuna().decompile(requireBinary(), params.target, session(params)),
+      };
+    case 'inspect':
+      return {
+        result: await requireKuna().inspect(requireBinary(), params.target, session(params)),
+      };
+    case 'read':
+      return {
+        result: await requireKuna().read(
+          requireBinary(), params.address, params.length, session(params),
+        ),
+      };
+    case 'xrefs':
+      return {
+        result: await requireKuna().xrefs(requireBinary(), params.target, session(params)),
       };
     case 'project': {
       const name = safeName(params.displayName || fileName);
-      const project = await requireKuna().project(requireBinary(), name, { mode });
+      const project = await requireKuna().project(requireBinary(), name, {
+        mode,
+        assertions: directives(params.assertions),
+      });
       const entries = Object.entries(project.files)
         .map(([entryName, data]) => ({ name: `${name}.kuna/${entryName}`, data }));
       const zip = makeZip(entries);
@@ -68,6 +93,16 @@ async function dispatch(method, params) {
   }
 }
 
+/** What a failed request carried besides its message, in a cloneable shape. */
+function detailOf(error) {
+  if (!error || typeof error !== 'object') return null;
+  const detail = {};
+  if (typeof error.exitCode === 'number') detail.exitCode = error.exitCode;
+  if (typeof error.stderr === 'string') detail.stderr = error.stderr;
+  if (error.payload !== undefined) detail.payload = error.payload;
+  return Object.keys(detail).length ? detail : null;
+}
+
 self.onmessage = async ({ data }) => {
   const { id, method, params = {} } = data || {};
   if (!Number.isSafeInteger(id) || typeof method !== 'string') return;
@@ -79,6 +114,7 @@ self.onmessage = async ({ data }) => {
       id,
       ok: false,
       error: error instanceof Error ? error.message : String(error),
+      detail: detailOf(error),
     });
   }
 };

@@ -37,6 +37,18 @@ fn ordinary_and_default_case_labels_are_unchanged() {
     assert_eq!(print.emit_mut().output_str(), "\ncase 0xff:\ndefault:");
 }
 
+/// `option indentincrement` lives on the emitter leaf, and a markup render
+/// swaps the leaf twice: the setting must survive both swaps.
+#[test]
+fn switching_markup_keeps_the_indent_increment() {
+    let mut print = PrintC::new();
+    print.set_indent_increment(4);
+    print.set_markup(true);
+    assert_eq!(print.emit_mut().get_indent_increment(), 4);
+    print.set_markup(false);
+    assert_eq!(print.emit_mut().get_indent_increment(), 4);
+}
+
 #[test]
 fn case_label_without_an_op_survives_markup_without_fabricated_provenance() {
     let mut print = PrintC::new();

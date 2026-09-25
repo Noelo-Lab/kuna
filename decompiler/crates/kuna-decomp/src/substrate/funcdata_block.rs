@@ -59,15 +59,15 @@ enum SplitPoint {
     Condition(BlockId),
 }
 
-/// Encode an [`OpId`] into the opaque `usize` cursor the [`SorterFuncdata`]
-/// trait carries (the C++ `PcodeOpTree::const_iterator`), and back.  OpId is a
-/// slotmap key whose 64-bit ffi form fits a 64-bit `usize`.
-fn op_to_cursor(op: OpId) -> usize {
+/// Encode an [`OpId`] into the opaque `u64` cursor the [`SorterFuncdata`]
+/// trait carries (the C++ `PcodeOpTree::const_iterator`), and back: the slotmap
+/// key's whole 64-bit ffi form, which a 32-bit `usize` would truncate.
+fn op_to_cursor(op: OpId) -> u64 {
     use slotmap::Key;
-    op.data().as_ffi() as usize
+    op.data().as_ffi()
 }
-fn cursor_to_op(c: usize) -> OpId {
-    OpId::from(slotmap::KeyData::from_ffi(c as u64))
+fn cursor_to_op(c: u64) -> OpId {
+    OpId::from(slotmap::KeyData::from_ffi(c))
 }
 
 impl crate::comment::SorterFuncdata for Funcdata {

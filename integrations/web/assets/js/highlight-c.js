@@ -10,6 +10,10 @@
 // between C and Rust, so `highlight()` picks a dialect and the rest is shared.
 // The file keeps its name (and the `highlightC` export) because the landing
 // page's compare panes are C-only and import it by path.
+//
+// `scan()` exposes the same pass as pieces (`{text, cls, word}` covering the
+// input exactly) for renderers that need per-token structure (the study view);
+// the `highlight*` functions are that scan joined back into HTML.
 
 const C = {
   keywords: new Set(('if else while do for return break continue goto switch case default ' +
@@ -48,32 +52,50 @@ function classify(tok, next, dialect) {
   return '';
 }
 
-function run(code, dialect) {
+const DIALECTS = { c: C, rust: RUST };
+
+function pieces(code, dialect) {
   TOK_RE.lastIndex = 0;
-  let out = '', last = 0, m;
+  const out = [];
+  let last = 0, m;
   while ((m = TOK_RE.exec(code))) {
     const tok = m[0], end = m.index + tok.length;
-    if (m.index > last) out += escapeHtml(code.slice(last, m.index));
-    const cls = classify(tok, code[end], dialect);
-    out += cls ? `<span class="${cls}">${escapeHtml(tok)}</span>` : escapeHtml(tok);
+    if (m.index > last) out.push({ text: code.slice(last, m.index), cls: '', word: false });
+    out.push({ text: tok, cls: classify(tok, code[end], dialect), word: true });
     last = end;
   }
-  return out + escapeHtml(code.slice(last));
+  if (last < code.length) out.push({ text: code.slice(last), cls: '', word: false });
+  return out;
+}
+
+/**
+ * Split `code` into highlight pieces `{text, cls, word}` whose texts concatenate
+ * back to `code`. `word` marks a scanned token (identifier, number, string,
+ * comment); `cls` is its `tok-*` class or ''. `dialect` is 'auto', 'c' or 'rust'.
+ */
+export function scan(code, dialect = 'auto') {
+  return pieces(code, DIALECTS[dialect] || dialectFor(code));
+}
+
+function render(list) {
+  let out = '';
+  for (const p of list) out += p.cls ? `<span class="${p.cls}">${escapeHtml(p.text)}</span>` : escapeHtml(p.text);
+  return out;
 }
 
 /** Highlight decompiler output, picking the dialect from the text itself. */
 export function highlight(code) {
-  return run(code, dialectFor(code));
+  return render(scan(code));
 }
 
 /** Highlight as C regardless of content (the landing page's compare panes). */
 export function highlightC(code) {
-  return run(code, C);
+  return render(scan(code, 'c'));
 }
 
 /** Highlight as Rust regardless of content. */
 export function highlightRust(code) {
-  return run(code, RUST);
+  return render(scan(code, 'rust'));
 }
 
 export function escapeHtml(s) {

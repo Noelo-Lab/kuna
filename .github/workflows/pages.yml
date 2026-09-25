@@ -78,6 +78,14 @@ jobs:
       - name: Test the development evidence snapshot
         run: node integrations/web/test/dev-viz.mjs
 
+      - name: Test the /decompile2 study view modules
+        run: |
+          node integrations/web/test/decompile2-render.mjs
+          node integrations/web/test/decompile2-session.mjs
+          node integrations/web/test/decompile2-bytes.mjs
+          node integrations/web/test/decompile2-learn.mjs
+          node integrations/web/test/decompile2-groups.mjs
+
       # Serve every file verbatim (belt-and-suspenders; the artifact path skips Jekyll).
       - name: Disable Jekyll
         run: touch integrations/web/dist/.nojekyll

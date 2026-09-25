@@ -334,12 +334,35 @@ pub struct ObjectSectionMetadata {
     pub vma: u64,
     pub size: u64,
     pub kind: String,
+    /// Where the section's bytes start in the input file; `None` for a section
+    /// with no file bytes (`.bss`) or a format that does not say.
+    pub file_offset: Option<u64>,
+    /// How many of the section's bytes the file holds from `file_offset` (a PE
+    /// section's virtual size can exceed its raw data).
+    pub file_size: Option<u64>,
+    /// The loader's [`section_flags`] bits for the section.
+    pub flags: u32,
 }
 
 impl ObjectSectionMetadata {
     /// The one place the `SectionKind` is rendered for export.
-    pub fn new(name: &str, vma: u64, size: u64, kind: object::SectionKind) -> Self {
-        Self { name: name.to_string(), vma, size, kind: format!("{kind:?}") }
+    pub fn new(
+        name: &str,
+        vma: u64,
+        size: u64,
+        kind: object::SectionKind,
+        file_range: Option<(u64, u64)>,
+        flags: u32,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            vma,
+            size,
+            kind: format!("{kind:?}"),
+            file_offset: file_range.map(|(offset, _)| offset),
+            file_size: file_range.map(|(_, size)| size),
+            flags,
+        }
     }
 }
 
@@ -773,6 +796,8 @@ impl ObjectLoadImage {
                     sec.address(),
                     sec.size(),
                     sec.kind(),
+                    sec.file_range(),
+                    flags,
                 ));
             }
         }
@@ -1002,7 +1027,15 @@ impl ObjectLoadImage {
             .sections()
             .filter_map(|sec| {
                 let vma = *layout.section_vma.get(&sec.index())?;
-                Some(ObjectSectionMetadata::new(sec.name().ok()?, vma, sec.size(), sec.kind()))
+                let name = sec.name().ok()?;
+                Some(ObjectSectionMetadata::new(
+                    name,
+                    vma,
+                    sec.size(),
+                    sec.kind(),
+                    sec.file_range(),
+                    fmt.section_bits(name, sec.kind(), sec.flags()),
+                ))
             })
             .collect();
         let data_objects = crate::loader::kuna_globalref::merged_ranges(file.sections().filter_map(|sec| {
