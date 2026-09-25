@@ -127,10 +127,16 @@ struct Evidence {
     address: u32,
     /// Uses of an element as a number: arithmetic, ordering, a non-zero literal.
     number: u32,
+    /// The pointer types elements are already known to have: a loaded value's
+    /// type, a stored value's type.
+    elem_types: Vec<Rc<Datatype>>,
     /// Pointees something else declares or compares this value against.
     pointees: Vec<Rc<Datatype>>,
     /// The use that refused the candidate.
     refused: Option<&'static str>,
+    /// The candidate is already a pointer (`malloc`'s `void *`): the other
+    /// operand of an add through it is an index, since C adds no two pointers.
+    base_is_ptr: bool,
 }
 
 impl Evidence {
@@ -229,7 +235,10 @@ pub fn element_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>) -> Op
     let mut ev = Evidence::default();
     match kind {
         Kind::Constant => walk_constant(data, vn, &mut ev),
-        _ => walk(data, vn, &mut ev),
+        _ => {
+            ev.base_is_ptr = cur.get_metatype() == type_metatype::TYPE_PTR;
+            walk(data, vn, &mut ev)
+        }
     }
     let elem = if ev.refused.is_none() && ev.variable > 0 { element_type(data, &mut ev) } else { None };
     if trace_on() {
@@ -473,7 +482,8 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
             match konst(1) {
                 Some(i) => out.map(|x| (x, off + i * elem)),
                 None => {
-                    indexed(data, out?, elem, off, ev);
+                    let (t, c) = inner_stride(data, o.get_in(1)?);
+                    indexed(data, out?, elem * t, off + elem * c, ev);
                     None
                 }
             }
@@ -500,7 +510,11 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
                 return None;
             }
             let other_vn = o.get_in(other)?;
-            match index_scale(data, other_vn, INDEX_DEPTH) {
+            let scale = index_scale(data, other_vn, INDEX_DEPTH).or_else(|| {
+                (ev.base_is_ptr && data.vn_type_read_facing(other_vn, op).get_metatype() != type_metatype::TYPE_PTR)
+                    .then_some((1, 0))
+            });
+            match scale {
                 Some((scale, k)) => {
                     indexed(data, out?, scale, off + k, ev);
                     None
@@ -656,6 +670,11 @@ fn element_access(data: &Funcdata, op: OpId, w: int4, off: intb, variable: bool,
         return;
     }
     let Some(val) = o.get_out() else { return };
+    if let Some(t) = data.vbank().get(val).map(|v| Rc::clone(v.get_type())) {
+        if t.get_metatype() == type_metatype::TYPE_PTR && !points_at_nothing(&t) {
+            ev.elem_types.push(t);
+        }
+    }
     let readers: Vec<OpId> = data.vbank().get(val).map(|v| v.descend_iter().collect()).unwrap_or_default();
     for r in readers {
         let Some(ro) = data.obank().get(r) else { continue };
@@ -740,6 +759,9 @@ fn stored_value(data: &Funcdata, val: VarnodeId, ev: &mut Evidence) {
         }
         type_metatype::TYPE_PTR => {
             ev.address += 1;
+            if !points_at_nothing(v.get_type()) {
+                ev.elem_types.push(Rc::clone(v.get_type()));
+            }
             return;
         }
         _ => {}
@@ -819,6 +841,9 @@ fn index_scale(data: &Funcdata, x: VarnodeId, depth: usize) -> Option<(intb, int
     let Some(def) = v.get_def() else {
         return used_as_number(data, x).then_some((1, 0));
     };
+    if is_counter(data, x) {
+        return Some((1, 0));
+    }
     let o = data.obank().get(def)?;
     let konst = |i: int4| -> Option<intb> {
         o.get_in(i)
@@ -828,12 +853,21 @@ fn index_scale(data: &Funcdata, x: VarnodeId, depth: usize) -> Option<(intb, int
     };
     match o.code() {
         OpCode::CPUI_INT_MULT => {
-            let s = konst(1).or_else(|| konst(0))?;
-            (s > 0).then_some((s, 0))
+            let (s, inner) = match (konst(1), konst(0)) {
+                (Some(s), _) => (s, o.get_in(0)?),
+                (None, Some(s)) => (s, o.get_in(1)?),
+                _ => return None,
+            };
+            let (t, c) = inner_stride(data, inner);
+            (s > 0).then_some((s * t, s * c))
         }
         OpCode::CPUI_INT_LEFT => {
             let s = konst(1)?;
-            (0..6).contains(&s).then_some((1 << s, 0))
+            if !(0..6).contains(&s) {
+                return None;
+            }
+            let (t, c) = inner_stride(data, o.get_in(0)?);
+            Some(((1 << s) * t, (1 << s) * c))
         }
         OpCode::CPUI_INT_SEXT
         | OpCode::CPUI_INT_ZEXT
@@ -859,6 +893,85 @@ fn index_scale(data: &Funcdata, x: VarnodeId, depth: usize) -> Option<(intb, int
     }
 }
 
+/// `x` as `atom * t + c`, when `x` is itself scaled: `i * 2` is `(2, 0)` and
+/// `i * 2 + 1` is `(2, 1)`.  An index `i * 2` scaled again by an 8-byte element
+/// walks 16-byte records, and `(i * 2 + 1) * 8` is the second field of one.
+fn inner_stride(data: &Funcdata, x: VarnodeId) -> (intb, intb) {
+    let Some(o) = data.vbank().get(x).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+        return (1, 0);
+    };
+    let konst = |i: int4| -> Option<intb> {
+        o.get_in(i)
+            .and_then(|v| data.vbank().get(v))
+            .filter(|v| v.is_constant())
+            .map(|v| sign_extend(v.get_offset(), v.get_size()))
+    };
+    match o.code() {
+        OpCode::CPUI_INT_MULT => match konst(1).or_else(|| konst(0)) {
+            Some(t) if t > 1 => (t, 0),
+            _ => (1, 0),
+        },
+        OpCode::CPUI_INT_LEFT => match konst(1) {
+            Some(k) if (1..6).contains(&k) => (1 << k, 0),
+            _ => (1, 0),
+        },
+        OpCode::CPUI_INT_ADD => {
+            let (Some(c), Some(inner)) = (konst(1), o.get_in(0)) else { return (1, 0) };
+            match inner_stride(data, inner) {
+                (1, _) => (1, 0),
+                (t, c2) => (t, c + c2),
+            }
+        }
+        _ => (1, 0),
+    }
+}
+
+/// Is `x` a loop counter: a phi that starts at a small literal and is
+/// otherwise only ever itself plus a literal?  `for (i = 0; ...; i++)` at -O0
+/// keeps `i` in a frame slot, so the add that indexes with it has two 8-byte
+/// operands and nothing else to say which is the base.
+fn is_counter(data: &Funcdata, x: VarnodeId) -> bool {
+    let through_copies = |mut v: VarnodeId| -> VarnodeId {
+        for _ in 0..3 {
+            match data.vbank().get(v).and_then(|w| w.get_def()).and_then(|d| data.obank().get(d)) {
+                Some(o) if o.code() == OpCode::CPUI_COPY => match o.get_in(0) {
+                    Some(src) => v = src,
+                    None => break,
+                },
+                _ => break,
+            }
+        }
+        v
+    };
+    let phi = through_copies(x);
+    let Some(o) = data.vbank().get(phi).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+        return false;
+    };
+    if o.code() != OpCode::CPUI_MULTIEQUAL {
+        return false;
+    }
+    let mut start = false;
+    for k in 0..o.num_input() {
+        let Some(input) = o.get_in(k).map(through_copies) else { return false };
+        let Some(iv) = data.vbank().get(input) else { return false };
+        if iv.is_constant() {
+            if iv.get_offset() >= 0x10000 {
+                return false;
+            }
+            start = true;
+            continue;
+        }
+        let Some(step) = iv.get_def().and_then(|d| data.obank().get(d)) else { return false };
+        let steps_self = matches!(step.code(), OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB)
+            && step.get_in(1).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant())
+            && step.get_in(0).map(through_copies) == Some(phi);
+        if !steps_self {
+            return false;
+        }
+    }
+    start
+}
+
 /// Does the program read `x` as a number somewhere -- multiply, divide, shift
 /// or mask it, or order it against a non-zero literal?  Such a value is not the
 /// base of the add it also appears in.
@@ -876,6 +989,16 @@ fn used_as_number(data: &Funcdata, x: VarnodeId) -> bool {
             | OpCode::CPUI_INT_RIGHT
             | OpCode::CPUI_INT_SRIGHT
             | OpCode::CPUI_INT_AND => true,
+            // Ordered against a literal other than zero: a count, not an address.
+            OpCode::CPUI_INT_LESS
+            | OpCode::CPUI_INT_LESSEQUAL
+            | OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_SLESSEQUAL => (0..2).any(|i| {
+                o.get_in(i)
+                    .filter(|&c| c != x)
+                    .and_then(|c| data.vbank().get(c))
+                    .is_some_and(|c| c.is_constant() && c.get_offset() != 0 && c.get_offset() < 0x10000)
+            }),
             _ => false,
         }
     })
@@ -893,6 +1016,13 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
     // record, a float, another width -- is not this array.
     let mut named: Option<Rc<Datatype>> = None;
     let mut named_agree = true;
+    for t in &ev.elem_types {
+        match &named {
+            None => named = Some(Rc::clone(t)),
+            Some(n) if n.type_order(t).map(|o| o == 0).unwrap_or(false) => {}
+            Some(_) => named_agree = false,
+        }
+    }
     let pointees = std::mem::take(&mut ev.pointees);
     for p in &pointees {
         if p.get_size() != w {
@@ -923,12 +1053,15 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
     // uses say which: both, or neither, declines.
     if w == ptrsize {
         match (ev.address > 0, ev.number > 0) {
+            // A pointer element is committed only to a pointee something else
+            // names: `void **` would say less than a caller's `char **` argv,
+            // which `calleevote` states on a later decompile.
             (true, false) => {
                 if let Some(n) = named.filter(|_| named_agree) {
                     return Some(n);
                 }
-                let wordsize = arch.manage().get_default_data_space()?.get_word_size();
-                return tlst.get_type_pointer(w, tlst.get_type_void().ok()?, wordsize).ok();
+                ev.refuse("pointer-unnamed");
+                return None;
             }
             (false, true) => {}
             (true, true) => {
