@@ -272,8 +272,8 @@ export function buildIndex(fnData, segs = lineSegments(fnData).segs) {
 }
 
 const COLOR_CLASS = [
-  [/keyword/, 'tok-kw'], [/comment/, 'tok-com'], [/type/, 'tok-type'], [/funcname/, 'tok-fn'],
-  [/global/, 'tok-glob'], [/param/, 'tk-param'], [/error/, 'tk-err'], [/special/, 'tok-kw'],
+  [/keyword/i, 'tok-kw'], [/comment/i, 'tok-com'], [/type/i, 'tok-type'], [/func/i, 'tok-fn'],
+  [/global/i, 'tok-glob'], [/param/i, 'tk-param'], [/error/i, 'tk-err'], [/special/i, 'tok-kw'],
 ];
 
 /** The CSS class of one token: its `tok-*` colour plus `t` and `tk-<kind>`. */
@@ -281,7 +281,7 @@ function tokenClass(t) {
   let color = t.cls || '';
   if (!color && t.color) {
     for (const [re, cls] of COLOR_CLASS) if (re.test(t.color)) { color = cls; break; }
-    if (!color && /const/.test(t.color)) {
+    if (!color && /const/i.test(t.color)) {
       color = t.text.startsWith('"') ? 'tok-str' : t.text.startsWith("'") ? 'tok-chr' : 'tok-num';
     }
   }

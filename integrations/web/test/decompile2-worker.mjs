@@ -93,8 +93,12 @@ try {
   const renamed = await client.inspect('main', { assertions: [`name ${local} total`] });
   assert.equal(renamed.assertions[0].status, 'applied', 'rename applied');
   assert.match(renamed.function.code, /\btotal\b/, 'renamed local in the code');
-  const retyped = await client.inspect('main', { assertions: [`type ${local} unsigned int ${local}`] });
+  // main's local lives in RAX (8 bytes): a same-size retype applies, a narrowing one is refused.
+  const retyped = await client.inspect('main', { assertions: [`type ${local} unsigned long ${local}`] });
   assert.equal(retyped.assertions[0].status, 'applied', 'pinned retype applied');
+  assert.match(retyped.function.code, new RegExp(`unsigned long ${local}\\b`), 'retyped local in the code');
+  const narrowed = await client.inspect('main', { assertions: [`type ${local} unsigned int ${local}`] });
+  assert.equal(narrowed.assertions[0].status, 'rejected', 'a size-changing retype is rejected, with a body');
   const rejected = await client.inspect('main', { assertions: ['name v999 nope'] });
   assert.equal(rejected.assertions[0].status, 'rejected', 'unknown symbol is rejected');
   assert.ok(rejected.function.code, 'a rejected directive still returns a body');

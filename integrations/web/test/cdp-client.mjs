@@ -133,7 +133,7 @@ export async function openPage(port, { onException } = {}) {
   }
 
   async function key(keyName, { code = keyName, text, modifiers = 0 } = {}) {
-    const printable = text ?? (keyName.length === 1 ? keyName : undefined);
+    const printable = text ?? (keyName === 'Enter' ? '\r' : keyName.length === 1 ? keyName : undefined);
     await send('Input.dispatchKeyEvent', {
       type: printable ? 'keyDown' : 'rawKeyDown', key: keyName, code, text: printable, modifiers,
       windowsVirtualKeyCode: VK[keyName] ?? (keyName.length === 1 ? keyName.toUpperCase().charCodeAt(0) : 0),
