@@ -112,7 +112,7 @@ body.dc2 .bar .status{flex:1 1 200px;}
 
 .hl-hover{background:var(--hl-hover);}
 .hl-sel{background:var(--hl-line);}
-.t.hl-sym{background:var(--hl-sym);box-shadow:0 0 0 1px var(--hl-sym);}
+.t.hl-sym,.t.hl-sel{background:var(--hl-sym);box-shadow:0 0 0 1px var(--hl-sym);}
 .t.cur{outline:1px solid var(--red);outline-offset:0;}
 .t[data-kind=variable],.t[data-kind=funcname],.t[data-kind=field],.t[data-kind=type]{cursor:pointer;}
 .t[data-callee]:hover{text-decoration:underline;text-decoration-color:var(--red);}
