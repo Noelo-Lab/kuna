@@ -16,6 +16,7 @@
  *   7 6 6
  *   10 21 9
  *   5 507 18446744073709551615
+ *   50000 4294967293 -12
  *
  * Built with:
  *   gcc   -O0 -o callrettype_gcc_O0_x86_64   callrettype_x86_64.c
@@ -109,6 +110,17 @@ NI unsigned long cached(long *c, unsigned long k) {
   return lookup((long *)c[0], k);
 }
 
+/* control: a caller that converts a callee's result to a wider unsigned type
+   before handing it back, so the binary zero-extends the result in place
+   (movzwl %ax,%eax; mov %eax,%eax) and the caller's own return type stays
+   unsigned whatever sign the callee states; widen_signed's sign extension
+   agrees with neg32's int */
+NI short s16(int x) { return (short)(x * 1000); }
+NI long use_s16_as_u(int x) { return (unsigned short)s16(x); }
+NI int neg32(int x) { return -x * 3; }
+NI unsigned long use_neg_as_unsigned(int x) { return (unsigned int)neg32(x); }
+NI long widen_signed(int x) { return neg32(x); }
+
 /* control: a void callee; its caller reads no result */
 NI void mark(char *s) { s[0] = '#'; }
 NI long marked_len(char *s) {
@@ -128,5 +140,6 @@ int main(void) {
   printf("%d %d %ld\n", stream_no(0), stream_no(1), marked_len(buf3));
   long c1[4] = {0, 1, 7, 0}, c2[4] = {0, 0, 0, 0};
   printf("%lu %lu %lu\n", cached(c1, 5), cached(c1, 500), cached(c2, 500));
+  printf("%ld %lu %ld\n", use_s16_as_u(50), use_neg_as_unsigned(1), widen_signed(4));
   return 0;
 }
