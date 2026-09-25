@@ -315,8 +315,9 @@ string closes its varargs into ordinary parameters that way), and an argument
 `truncarg` narrowed on purpose are all refused (`kuna_castimplied.rs
 (trusted_param)`). The second is the right side of a `lhs = e;` statement whose
 left side is a local or parameter the printer declared with exactly that
-spelling. The arms of `c ? a : b` do not count: their type is the two arms'
-common type, not the destination's. The third is `return` from a function whose
+spelling. The arms of `c ? a : b` do not count here: their type is the two
+arms' common type, not the destination's (`castternary`, below, handles them).
+The third is `return` from a function whose
 printed return type is that spelling. The declarations are recorded as the
 printer writes them (the header's return type and parameters, each local's
 declaration line), so the comparison is on the text C will see. One more
@@ -338,6 +339,55 @@ output language without implicit integer conversions (Rust). The ported
 (`kuna-cli/tests/decompile_all_cli.rs`, `an_implied_cast_round_trips_through_the_printed_c`)
 whose functions print the same values with the option off and on, under gcc and
 clang.
+
+**Casts the conditional performs (kuna `castternary`).** `iteregion` prints an
+assignment diamond as `dest = c ? a : b;`, and each arm keeps the cast the IR
+put on it: a table-driven decoder reads `v2 = (s[i] != '=') ? (int)*(char *)(t +
+s[i]) : 0;`. The same diamond printed as if/else has no cast, because
+`castimplied` leaves the widening out of `v2 = *(char *)(t + s[i]);`. The second
+and third operands of `?:` undergo the usual arithmetic conversions (C11
+6.5.15p5, integer promotion first), so the conditional converts the `char` arm
+to `int` by itself. Leaving one arm's cast out can change the type of the whole
+conditional, though: `c ? (long)i : u` is a `long`, while `c ? i : u` is an
+`unsigned int` for an `int i` and an `unsigned int u`, and a negative `i` then
+reaches the destination as a large positive value. With the option
+`castternary` on (the default; `off` keeps every arm cast), the printer asks,
+once per conditional, which arm casts to leave out
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_castternary.rs (arm_drops)`,
+from `printc.rs (PrintC::conditional_arm_drops)` in `emit_block_if_ite`); the
+chosen ops are then left out wherever `printc.rs (PrintC::implied_cast_drops)`
+is asked about them. An arm's cast goes when it is an integer widening that
+keeps its operand's value (never a narrowing, a sign change, a conversion from
+or to `bool`, an enum, a float or a pointer), when the usual arithmetic
+conversions of the two arms give the cast's target type both as printed today
+and with the cast left out, and when the conditional is assigned to a variable
+declared with an integer type. The conditional then converts the arm to the
+target itself, which is the conversion the cast spelled, and keeps its own type
+and value, so the assignment stores what it stored before, whatever integer type
+the destination has. A destination declared as a pointer (a merged variable
+whose other pieces are addresses) keeps its casts. Each arm's C type is carried
+as the set of promoted types (`int`, `unsigned int`, and the 8-byte signed and
+unsigned integers) it may have (`kuna_castternary.rs (value_set)`): exactly one
+for what `castimplied` knows the type of (a declared variable, a cast that
+stays, a load through a pointer printed with its pointee type), every promotion
+its width allows for any other expression, and for a literal the type C gives
+the token the printer writes for it (`kuna_castternary.rs (literal_type)`, from
+`printc.rs (PrintC::integer_constant_token)`, which shares the formatting of
+`push_vn_explicit_ir`): the base, the suffix, and the first candidate type that
+holds the magnitude, so `0xffffffff` is an `unsigned int` and an unsuffixed
+`3000000000` a `long`. The conversions must give the target for every
+combination of the two sets (`kuna_castternary.rs (common)`). When both arms
+carry a cast, both go only when the conditional over the two bare operands still
+has the target type, else one of them (`kuna_castternary.rs (choose)`):
+`c ? (unsigned long)a0 : (unsigned long)a1` over `int a0` and `unsigned int a1`
+keeps the sign-changing first cast and prints `c ? (unsigned long)a0 : a1`. Only
+where `int` is 4 bytes, and only for C output. Pinned by
+`tests/stages/kuna-castternary.xml` and by a compiled round trip
+(`kuna-cli/tests/decompile_all_cli.rs`,
+`a_conditional_arm_cast_round_trips_through_the_printed_c`) over a textbook
+base64 decoder and arms of `char`, `unsigned char`, `short` and `int` against
+`int`, unsigned, `long` and negative arms, built with gcc and clang at -O0 and
+-O2, printing the binary's values with the option off and on.
 
 **Casting an output.** `coreaction_casts.rs (Funcdata::cast_output)` compares
 the *token* type the operator naturally produces — `coreaction_casts.rs
