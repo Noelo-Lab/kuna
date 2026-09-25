@@ -131,7 +131,8 @@ byte-identical variables in both arms: 10710 functions, 0 scored differently (mu
 ```
 
 Read as the flip: **1,615 -> 1,625 perfect (+10), mean .3697 -> .3713, 29 improved, 0 worse** —
-there is no worse row to read. By level: O0 1,110 -> 1,114, O2 89 -> 92, O2-noinline 416 -> 419.
+there is no worse row to read. Run on 99f849ef6 (the kept statement carrying an unknown pointee), and
+its `rows.json` is identical to the run on c83b6121d, every arm of every row. By level: O0 1,110 -> 1,114, O2 89 -> 92, O2-noinline 416 -> 419.
 By project: coreutils 989 -> 993, shadow 89 -> 95, bzip2 and tar improve without a new perfect.
 The 29 moved rows are the same 29, function for function, as on every base since round 5
 (850e8c692, f434b6a60, c960fb18d, 003db2dd8, 5458b7ab5), before the redo was bounded and before the
@@ -179,10 +180,10 @@ does not cross.
 **Arity counters beside the metric**, over the 76 slices that hold a callback argument
 (`arity-counters.py`): **13 functions gain a parameter, 0 lose one, all 13 DWARF-confirmed,
 0 phantom**, and no direct call site to one of those 13 changes its argument count (re-run on
-bfa1d32e0, d10b3586c, 1d38ab44c and d9af28b9b: the same 13 rows). A call to a parked function
+99f849ef6, bfa1d32e0, d10b3586c, 1d38ab44c and d9af28b9b: the same 13 rows). A call to a parked function
 whose own count does NOT move can change, and it is the one place the declaration removes an
 argument: a call that passed more than the declared list now passes the list. None does in the
-59 binaries of (f); the clang -O0 build of the round-7 review's bsearch helper is one. Before
+70 binaries of (f); the clang -O0 build of the round-7 review's bsearch helper is one. Before
 calling the comparator its `mid = (lo + hi) / 2` leaves the `idiv` remainder in `rdx`, recovery
 printed `compare_z(a0,(struct_0 *)&a1[v2 * 2],(v4 + v3) % 2)`, and the declared two-parameter list
 prints `compare_z(a0,(struct_0 *)&a1[v2 * 2])`, which is the call the source makes
@@ -293,9 +294,10 @@ enumerates `on|off` options whose shipped default is `off`), so no `AGGRESSIVE_O
 
 ## (h) castbench (full set, 4,815 functions shared with IDA)
 
-Measured on c83b6121d (bfa1d32e0 changes only docs and the catalog text), this PR rebased onto 850e8c692 (#726 callpush, on by
-default), against main's own arm at that commit (the callpush lander's arm, built from the tree main
-now has); the `off` arm of the same build is byte-identical to it on all 45 binaries.
+Measured on 99f849ef6, this PR rebased onto 850e8c692 (#726 callpush, on by default), against
+main's own arm at that commit (the callpush lander's arm, built from the tree main now has); the
+`off` arm of the same build is byte-identical to it on all 45 binaries. The numbers are those of
+c83b6121d, before the unknown-pointee fix.
 
 ```
 ida    casts  37,821  /kloc 155.4  /100stmt 27.0  vs ida 1.000
@@ -306,8 +308,8 @@ functions: fewer casts 0, more casts 3 (+21), unchanged 4,812
 
 The same +21 in the same three functions on every base since round 5: 36,614 -> 36,635 on
 f434b6a60, 36,617 -> 36,638 on 04f693d82, 37,477 -> 37,498 on c960fb18d, 38,602 -> 38,623 on
-003db2dd8. The fix for the caller's parameter changes no castbench function: the forwarding shape
-is not in the shared set.
+003db2dd8. Neither fix for a caller's parameter changes a castbench function: neither shape is in
+the shared set.
 
 **+21 casts (+0.06%), in three functions, all the same one:** `sort`'s `pthread_create` start
 routine at -O0, -O2 and -O2-noinline (+7 each; +13 each before castarith). The source is
@@ -319,26 +321,33 @@ parameter it is passed to (`*(long *)a0`, `((unsigned long *)a0)[1]`, `((FILE **
 Main prints the same call with no cast only because it reads the `void *` as an
 `unsigned long *`. No cast is removed, so no computed value can change,
 and no type is weakened: the three functions move from a wrong type to the declared one. Outside
-castbench's shared set the same effect adds more (+198 over the 91 changed functions of (f)), for
+castbench's shared set the same effect adds more (+216 over the 115 changed functions of (f)), for
 the same reason.
 
 ## Verdict
 
 **All criteria pass, so the option ships `on`.** Against main (850e8c692): +10 perfect and 29
-improved with 0 worse, 13 gained parameters all DWARF-confirmed and none fabricated, 91 changed
-functions of 35,291 over 59 binaries (all parked callbacks; no caller changes, and no function that
-is not a callback changes its own parameter types), no function that gains a `CONCAT`, speed within
-budget on every binary measured (worst +2.01%, `libselinux-O2-noinline`), and +21 casts on castbench in the one
-function whose declared type is `void *`. Outside castbench the parked `void *` parameters add casts
-where the body's own guess was a record or typed pointer (+198 over the 91 changed functions, DWARF
-agreeing with the slot in all 31 functions that gain one): the declared type is the true one, and
-each field read then spells its own conversion, as IDA's output does. A caller never loses a type:
-where the slot says only `void *`, what the callback's body read through the pointer still types
-what the caller passes, and the one call-site change the declaration can make is to drop an
-argument a call passed past the declared list. The claim is the program's own declaration rather
-than an inference, and it is refused wherever the body or a direct caller shows a different width,
-including a computed return whose upper bytes the machine code leaves as the caller left them. The
-one place it takes something away is inside the callback itself: a synthesized `struct_N *` on a
-`void *` parameter (`tar`, `e2fsck`, `gnutls`, `ptx`), where the declaration and the ground truth
-agree against the synthesizer; `--option callbacktype off` is there for an operator who wants the
-pointee guess back.
+improved with 0 worse, 13 gained parameters all DWARF-confirmed and none fabricated, 124 changed
+functions of 40,613 over 70 binaries and the forwarding fixture (in the 70 decbench binaries only
+the 115 parked callbacks; no function that is not parked changes a parameter type it had or its
+return type), no function that gains a `CONCAT`, speed within budget on every binary measured
+(SPEED_WORST), and +21 casts on castbench in the one function whose declared type is `void *`.
+Outside castbench the parked `void *` parameters add casts where the body's own guess was a record
+or typed pointer (+216 over the 115 changed functions, DWARF agreeing with the slot in all 37 that
+gain one): the declared type is the true one, and each field read then spells its own conversion,
+as IDA's output does.
+
+A direct caller keeps the types it had: where the slot says only `void *`, the pointer type the
+callback's first decompile gave the parameter, whatever it points at except `void`, still types
+what the caller passes, so a forwarding or array-scanning caller prints the `struct_N *` or
+`unsigned long *` and the indexing it printed before. What the declaration changes in a caller is
+the call it rebuilds, and the fixture shows each kind: the call passes the declared arguments, so a
+call that passed more drops the extra one and a caller that forwarded registers its first decompile
+never read gains them as parameters after the ones it had; and the result is the declared `int`, so
+an `(int)` cast on it goes, and a caller that returns it straight on can return `int`. The claim is
+the program's own declaration rather than an inference, and it is refused wherever the body or a
+direct caller shows a different width, including a computed return whose upper bytes the machine
+code leaves as the caller left them. The one place it takes something away is inside the callback
+itself: a synthesized `struct_N *` on a `void *` parameter (`tar`, `e2fsck`, `gnutls`, `ptx`),
+where the declaration and the ground truth agree against the synthesizer; `--option callbacktype
+off` is there for an operator who wants the pointee guess back.
