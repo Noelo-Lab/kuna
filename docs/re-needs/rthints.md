@@ -17,9 +17,9 @@ covered_by_option: null
 touches: [decompiler/crates/kuna-cli]
 scope: small
 regression_of: null
-pr: null
+pr: 734
 closed_in_round: null
-closing_pr: null
+closing_pr: "734"
 reject_reason: null
 ---
 
