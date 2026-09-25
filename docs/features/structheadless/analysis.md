@@ -142,20 +142,24 @@ Four guards, all measured into the design:
   strengthened integers the option-off arm never typed (`find`'s predicate walk
   became `void *` and gained 27 casts), so it stands in for headless records only.
 
-## Results (both arms of one build, ce4e278b2, on main b3878d32e)
+## Results (both arms of one build, a54805cab, on main c960fb18d)
 
-main b3878d32e has castimplied, castarith and castsign on, so the option-off arm
-already prints a `void *` base's reads as one cast each (`((unsigned int
-*)a0)[0x2b]` where the first measurement, on dbe854ba3, had `*(unsigned int
-*)((long)a0 + 0xac)`); the option removes those casts, and the count it removes
-is about half what it was.
+main c960fb18d has castimplied, castarith, castsign and globalref on, so the
+option-off arm already prints a `void *` base's reads as one cast each
+(`((unsigned int *)a0)[0x2b]` where the first measurement, on dbe854ba3, had
+`*(unsigned int *)((long)a0 + 0xac)`) and a constant address as `&dat_<addr>`;
+the option removes the member casts, and the count it removes is about half what
+it was before castarith. The code under measurement is the code measured on
+b3878d32e (build ce4e278b2); only the base moved.
 
 | instrument | off | closed |
 |---|---|---|
-| castbench, 4,815 shared functions | 38,602 casts, 202.5/kloc, 1.021 x IDA | **37,049**, 194.4/kloc, **0.980 x IDA** (-1,553, -4.0%) |
-| castbench x IDA by opt | O0 1.032, O2 1.056, O2-noinline 0.970 | O0 0.973, O2 1.031, O2-noinline 0.929 |
-| castbench functions | -- | 219 fewer (-1,584), 22 more (+31) |
+| castbench, 4,815 shared functions | 37,477 casts, 196.6/kloc, 0.991 x IDA | **36,040**, 189.1/kloc, **0.953 x IDA** (-1,437, -3.8%) |
+| castbench x IDA by opt | O0 1.003, O2 1.028, O2-noinline 0.937 | O0 0.945, O2 1.008, O2-noinline 0.900 |
+| castbench per 100 statements | 31.2 (IDA 27.0) | 30.0 |
+| castbench functions | -- | 219 fewer (-1,584), 57 more (+147) |
 | 444-slice typesweep (pinned metric) | 1,615 perfect, mean .3697 | 1,615 perfect, mean .3697; 1 improved, 2 worse, 0 perfect lost |
+| arity and phantoms, 20,230 functions | 32,810 parameters, 2,362 phantom locals, 621 phantom arguments | the same in every function; declarations 82,620 -> 82,630 (21 functions +, 12 -) |
 | decbench#93 replay | 2,188 credited perfect, mean .4543 | **2,313** (+125), mean .4702 |
 | layout, 8 builds, fields only | P .8713 (880/1010), R .0932, F1 .1684 | P .8298 (1068/1287), R .1131, F1 .1991 |
 | layout, 14 builds (+ grep, tar -O0/-O2, find, diff -O2) | P .8592 (3300/3841), R .0780 | P .8283 (4695/5668), R .1110 |
@@ -163,8 +167,9 @@ is about half what it was.
 | nesting, 8 builds | 3/5, F1 .0036 | 6/9, F1 .0072 |
 | TRex Fig. 6, 8 builds | O0 4.4770, O2 1.9597 | O0 4.5050, O2 1.9671 |
 
-The option-off arm is byte-identical to castbench's main arm (0 files differ),
-and its typesweep rows equal main's.
+The option-off arm is byte-identical to castbench's main c960fb18d arm (0 files
+differ), and its typesweep rows equal main's. Every number but the cast counts is
+what it was on b3878d32e: globalref changes no variable and no type.
 
 **Precision.** The published instrument scores a claimed field only against the
 top-level members of the DWARF record and keeps a named embedded record as one
@@ -202,7 +207,22 @@ is grep's `bmexec_trans`. (The round-I rebase also showed find
 `check_path_safety` onto perfect; that was `calleevote`'s redo budget reaching
 the function in one arm and not the other, and both arms now decline it.)
 
-**The 22 functions with more casts** (+31): eleven are a call that now passes an
+**The 57 functions with more casts** (+147). 36 of them (+117) are globalref
+declining where it named the address in the option-off arm. A constant address
+stays `(T *)0x<addr>` when the function uses it at two pointed-to types, or when
+it also reads the storage directly at another start, width or type. A headless
+record meets both: tar -O2 `0x23e80` passes `0x82840` (tar's `current_stat_info`)
+to `sub_22c60`, whose parameter is now `struct_17 *`, and to `sub_2fc00` and
+`sub_22570`, whose parameters are `unsigned long *` in both arms (a guess from
+one member's width), so all 17 uses keep a cast (+16). tar -O0 `0x1b745` passes
+`0x9fa20` as the 264-byte `struct_231 *` its callee now takes and reads
+`dat_9fa90` inside that record directly, which the option-off arm's unsized
+`void *` object never overlapped (+1). The record is the right kind in every one
+of these; the casts come back because globalref declares one object per address
+and refuses rather than print the other uses as casts of it, and because kuna
+cannot yet print a direct read inside a named record as its member. They are
+priced here, not fixed: the rule that would remove them belongs to globalref.
+The other 21 (+30) are the functions the b3878d32e measurement listed: eleven are a call that now passes an
 address inside the caller's record to a callee that took a headless record
 (`sub_19f5a((struct_N *)&a2->field_0x39[7], ...)`, `(struct_N *)&a1[0x2d]`,
 `(struct_N *)(a0->field_0x18 + 0x168)`): the callee's type is right and the
@@ -217,10 +237,11 @@ handed to a `void *` parameter (tar `(void *)a0->field_0x18`), a pointer local i
 split off an argument (find `v = (struct_N *)((long)a2 + 0x38)`), or locals are
 re-partitioned (grep -O2-noinline `sub_6350`).
 
-**Whole-corpus hunks** (`hunks.py`, 45 binaries, 20,230 functions): 3,447
-change; 2,318 only in `struct_N` numbering, 1,071 only in fields, declared types
-and casts, 0 skeleton deltas, 33 declaration-count deltas and 25 other, all read
-(`hunks.md`).
+**Whole-corpus hunks** (`hunks.py`, 45 binaries, 20,230 functions): 3,378
+change; 2,252 only in `struct_N` numbering, 1,050 only in fields, declared types
+and casts, 18 only where globalref names a constant address in one arm and not
+the other, 0 skeleton deltas, 33 declaration-count deltas and 25 other, all read
+(`hunks.md`). The 33 and the 25 are the functions the b3878d32e measurement read.
 
 ## The priced cost: one object, several names
 

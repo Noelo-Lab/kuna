@@ -1,11 +1,13 @@
 # structheadless -- the default-on evaluation
 
-The option ships `off`. Everything below was measured on build ce4e278b2 (main
-b3878d32e, with castimplied, castarith and castsign on, plus this branch), both
-arms of the same build. The first evaluation (build e2071591f on main dbe854ba3)
-reached the same verdict; a round-I rebase onto #719 then exposed a new false
-positive -- a caller-voted `char **argv` retyped as a record, which lost coreutils
-`tail`'s `parse_obsolete_option` at -O0 (1.0 -> .923) -- and this build fixes it.
+The option ships `off`. Everything below was measured on build a54805cab (main
+c960fb18d, with castimplied, castarith, castsign and globalref on, plus this
+branch), both arms of the same build. The code is the code measured on main
+b3878d32e (build ce4e278b2), which reached the same verdict, as did the first
+evaluation (build e2071591f on main dbe854ba3); a round-I rebase onto #719 had
+exposed a false positive -- a caller-voted `char **argv` retyped as a record,
+which lost coreutils `tail`'s `parse_obsolete_option` at -O0 (1.0 -> .923) --
+and this code fixes it.
 
 ## The criteria that hold it
 
@@ -19,12 +21,12 @@ positive -- a caller-voted `char **argv` retyped as a record, which lost coreuti
 | criterion | result |
 |---|---|
 | (a) `make test` with the rule on | inert by construction: the console harness never marks a function closed, so no datatest can reach the rule (675/675 either way) |
-| (b) `make test-stages` | inert for the same reason; the stage test pins both passes (1364/1364 with the option off) |
+| (b) `make test-stages` | inert for the same reason; the stage test pins both passes (1372/1372 with the option off) |
 | (c) `make test-cli` | 240/240 with the option off; three probes pin both values, one of them the `argv` shape the rebase exposed |
 | (e) speed, interleaved min-of-15, `decompile-all --json`, -O2 | see `record.json` `speed` (fmt, ls, sort, bash) |
-| (f) whole-corpus hunks, 45 binaries | 3,447 of 20,230 functions change; 0 skeleton deltas; every other hunk read and classified (`hunks.md`) |
+| (f) whole-corpus hunks, 45 binaries | 3,378 of 20,230 functions change; 0 skeleton deltas; every other hunk read and classified (`hunks.md`); no function changes its parameter count or its phantom locals and arguments |
 | (g) `p0_knowledge/modes.rs` | nothing to do: the option is `off|closed`, not in any preset, as `structmerge` is |
-| (h) castbench full, both directions | 38,602 -> 37,049 casts (1.021 -> 0.980 times IDA); 219 functions fewer (-1,584), 22 more (+31), every one read (`analysis.md`) |
+| (h) castbench full, both directions | 37,477 -> 36,040 casts (0.991 -> 0.953 times IDA); 219 functions fewer (-1,584), 57 more (+147), every one read (`analysis.md`): 36 (+117) are globalref declining to name a constant address the function now uses as a record and as another pointer, or whose record a direct read overlaps |
 
 ## The false-positive classes the review named
 
@@ -36,8 +38,26 @@ positive -- a caller-voted `char **argv` retyped as a record, which lost coreuti
 
 ## What flipping it would buy and cost
 
-On top of castarith it removes 4.0% of all casts on the shared set, taking
-every opt level but -O2 under IDA's count (O0 0.973, O2 1.031, O2-noinline
-0.929), and under decbench#93's crediting it is +125 perfect functions. A flip
-needs the precision gate restated at depth, or the member-at-depth claims to be
-modelled as embedded records, and an answer for an exported API's opaque handle.
+On top of castarith and globalref it removes 3.8% of all casts on the shared
+set (O0 0.945, O2 1.008, O2-noinline 0.900 times IDA's count), and under
+decbench#93's crediting it is +125 perfect functions. A flip needs the precision
+gate restated at depth, or the member-at-depth claims to be modelled as
+embedded records, and an answer for an exported API's opaque handle. The 117
+casts globalref gives back would go if globalref declared the address at the
+record and spelled its other uses as casts of it, or printed a direct read
+inside a named record as its member; that is globalref's rule, not this one's.
+
+## The opaque handle, decided
+
+bzip2's `BZ2_bzReadClose (int *bzerror, BZFILE *b)` is the only worse row, at
+-O0 and -O2-noinline. `BZFILE` is `typedef void`, so by the rule that a
+`struct_N *` over a ground-truth `void *` is a false positive, both rows are
+real misses. The record is not wrong about the object: the function casts `b`
+to its own `bzFile *` first and reads `writing`, `lastErr` and `initialisedOk`
+and passes `&strm`, all past the start. Nothing in a stripped, statically linked
+binary separates an exported API's opaque handle from a record parameter (every
+caller is a direct call, no caller states a type), so the only way to lose the
+two rows is to decline the shape, and with it the 883 headless parameters of
+closed functions DWARF describes as struct pointers.
+They stay, as a priced false positive, stated in the catalog row's `use_when`,
+and they are one of the two reasons the option ships off.

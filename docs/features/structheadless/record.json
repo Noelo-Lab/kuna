@@ -15,8 +15,8 @@
  "inspiration": "The cast census (kuna 1.19x IDA's casts on 4,815 shared functions; 1,080 sites over a void * base). angr's simple_solver struct branch takes any set of constant offsets as a record; kuna keeps its own gates and adds the closed-caller condition calleevote fields introduced for lone fields.",
  "default_on": false,
  "default_value": "off",
- "default_decision": "off: fields-only layout precision on the published instrument falls .8713 -> .8298 (gate >= .8713; 69 of the 89 added top-level misses are members at depth, and removing the other 20 would leave .843), and the typesweep has 1 improved row against 2 worse (bzip2 BZ2_bzReadClose, an opaque void * handle; criterion d). See default-on-evaluation.md.",
- "base": "main b3878d32e / 003db2dd8 (castimplied, castarith, castsign on); measured on build ce4e278b2, both arms of one build. First evaluation: build e2071591f on dbe854ba3 (45,126 -> 42,008 casts, 1.193 -> 1.111 x IDA, before castarith)",
+ "default_decision": "off: fields-only layout precision on the published instrument falls .8713 -> .8298 on the final code (gate >= .8713; 69 of the 89 added top-level misses are members at depth, and removing the other 20 would leave .843), and the typesweep has 1 improved row against 2 worse (bzip2 BZ2_bzReadClose, an opaque void * handle, kept as a priced false positive; criterion d). See default-on-evaluation.md.",
+ "base": "main c960fb18d (castimplied, castarith, castsign, globalref on); measured on build a54805cab, both arms of one build. The same code measured on b3878d32e (build ce4e278b2) gave 38,602 -> 37,049 casts; first evaluation: build e2071591f on dbe854ba3 (45,126 -> 42,008, before castarith)",
  "census": {
   "instrument": "docs/features/structheadless/census.patch (a census build of the pass, never committed) over the 45 castbench binaries",
   "functions": 20230,
@@ -103,34 +103,51 @@
   "instrument": "/home/mahaloz/kwt/castbench/castbench.py (full set, 45 binaries, 4,815 functions kuna and IDA share)",
   "ida": {
    "casts": 37821,
-   "per_kloc": 155.4
+   "per_kloc": 155.4,
+   "per_100_statements": 27.0
   },
   "off": {
-   "casts": 38602,
-   "per_kloc": 202.5,
-   "vs_ida": 1.021,
-   "O0": 1.032,
-   "O2": 1.056,
-   "O2_noinline": 0.97
+   "casts": 37477,
+   "per_kloc": 196.6,
+   "per_100_statements": 31.2,
+   "vs_ida": 0.991,
+   "O0": 1.003,
+   "O2": 1.028,
+   "O2_noinline": 0.937
   },
   "closed": {
-   "casts": 37049,
-   "per_kloc": 194.4,
-   "vs_ida": 0.98,
-   "O0": 0.973,
-   "O2": 1.031,
-   "O2_noinline": 0.929
+   "casts": 36040,
+   "per_kloc": 189.1,
+   "per_100_statements": 30.0,
+   "vs_ida": 0.953,
+   "O0": 0.945,
+   "O2": 1.008,
+   "O2_noinline": 0.9
   },
-  "delta": -1553,
+  "delta": -1437,
   "functions_fewer": [
    219,
    -1584
   ],
   "functions_more": [
-   22,
-   31
+   57,
+   147
   ],
-  "off_arm_equals_main": "cb-off is byte-identical to /home/mahaloz/kwt/castbench/main-b3878d32e (0 files differ)",
+  "more_classes": {
+   "globalref_declines": [
+    36,
+    117
+   ],
+   "measured_on_b3878d32e": [
+    21,
+    30
+   ]
+  },
+  "off_arm_equals_main": "cb-off is byte-identical to /home/mahaloz/kwt/castbench/main-c960fb18d (0 files differ)",
+  "on_b3878d32e": {
+   "off": 38602,
+   "closed": 37049
+  },
   "first_evaluation_before_castarith": {
    "off": 45126,
    "closed": 42008
@@ -233,7 +250,8 @@
   "improved_rows": [
    "grep O0 bmexec_trans .4667 -> .5333"
   ],
-  "fixed_since_round_i": "coreutils tail parse_obsolete_option O0 1.0 (was .923 under closed after #719) and O2-noinline .231 (was .154): argv stays char **"
+  "fixed_since_round_i": "coreutils tail parse_obsolete_option O0 1.0 (was .923 under closed after #719) and O2-noinline .231 (was .154): argv stays char **",
+  "measured_on": "build a54805cab on c960fb18d; identical per-project rows to the b3878d32e measurement"
  },
  "credit93": {
   "instrument": "/home/mahaloz/kwt/_final-g/tools/credit93.py over the typesweep rows",
@@ -297,9 +315,10 @@
   "doc": "docs/features/structheadless/hunks.md",
   "binaries": 45,
   "functions": 20230,
-  "changed": 3447,
-  "record_name_only": 2318,
-  "fields_types_casts": 1071,
+  "changed": 3378,
+  "record_name_only": 2252,
+  "fields_types_casts": 1050,
+  "globalref_naming": 18,
   "skeleton_deltas": 0,
   "declaration_count_deltas": 33,
   "read": 25,
@@ -381,5 +400,28 @@
   "docs/options.md": "byte-fresh from `kuna catalog --markdown`",
   "make rust-test": "RUST_TEST_RC=0 via the lane script, 422 test-result blocks, none failed (2026-09-23 20:12:38Z -> 20:38:49Z, after the last source and catalog write)"
  },
- "counters": "settables 229 -> 230; tiers 72 core / 93 -> 94 transform / 64 analysis; kuna-catalog.xml #7 structure-recovery 32 -> 33; phases-tests catalog-json-records 228 -> 229; catalog_bytecompat fixture recaptured (230 options); tests/stages corpus 335 -> 336; docs/baseline-stages.json re-recorded"
+ "counters": "settables 233 -> 234; tiers 75 core / 94 -> 95 transform / 64 analysis; kuna-catalog.xml #7 structure-recovery 32 -> 33; phases-tests catalog-json-records 232 -> 233; catalog_bytecompat fixture recaptured (234 options); tests/stages corpus 339 -> 340; docs/baseline-stages.json re-recorded on c960fb18d (1372 keys)",
+ "arity": {
+  "instrument": ".scratch arity.py over the castbench arms (signature parameter count, callsite_metrics unassigned locals and the call arguments they reach)",
+  "functions": 20230,
+  "parameters": [
+   32810,
+   32810
+  ],
+  "functions_arity_changed": 0,
+  "phantom_locals": [
+   2362,
+   2362
+  ],
+  "phantom_args": [
+   621,
+   621
+  ],
+  "declarations": [
+   82620,
+   82630
+  ],
+  "functions_declarations_up": 21,
+  "functions_declarations_down": 12
+ }
 }

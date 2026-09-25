@@ -1,66 +1,88 @@
 # structheadless: whole-corpus hunks
 
 `hunks.py cb-off cb-on` over the 45 castbench binaries (`kuna decompile-all`,
-x86-64, -O0/-O2/-O2-noinline), both arms of build ce4e278b2 on main b3878d32e
-(`--option structheadless off` against `closed`; castimplied, castarith and
-castsign on in both). A function is `record name
+x86-64, -O0/-O2/-O2-noinline), both arms of build a54805cab on main c960fb18d
+(`--option structheadless off` against `closed`; castimplied, castarith,
+castsign and globalref on in both). A function is `record name
 only` when it is identical once every `struct_N` number and `vN`/`aN` name is
 spelled alike; `fields, declared types and casts` when every differing line
 names a field or a record, is a declaration or signature, or is the same line
-with its casts removed. Everything else was read.
+with its casts removed; `globalref naming` when every other differing line is
+the same once globalref's `&dat_<addr>` is spelled back as the constant
+`0x<addr>`. Everything else was read. The 25 read and the 33 declaration-count
+deltas are the same functions the measurement on main b3878d32e (build
+ce4e278b2, the same code) read; globalref added only the `globalref naming`
+bucket.
 
-| binary | functions | changed | record name only | fields, declared types and casts | skeleton delta | declaration-count delta | read |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| O0/coreutils/cp.c | 530 | 71 | 40 | 29 | 0 | 1 | 1 |
-| O0/coreutils/du.c | 441 | 79 | 51 | 26 | 0 | 1 | 1 |
-| O0/coreutils/fmt.c | 191 | 7 | 6 | 1 | 0 | 0 | 0 |
-| O0/coreutils/ls.c | 589 | 96 | 76 | 19 | 0 | 0 | 1 |
-| O0/coreutils/sort.c | 479 | 57 | 44 | 12 | 0 | 0 | 1 |
-| O0/coreutils/tail.c | 316 | 36 | 28 | 7 | 0 | 0 | 1 |
-| O0/coreutils/wc.c | 227 | 8 | 5 | 3 | 0 | 0 | 0 |
-| O0/diffutils/cmp.c | 214 | 11 | 10 | 1 | 0 | 0 | 0 |
-| O0/diffutils/diff.c | 507 | 94 | 77 | 16 | 0 | 0 | 1 |
-| O0/diffutils/diff3.c | 271 | 15 | 14 | 1 | 0 | 0 | 0 |
-| O0/diffutils/sdiff.c | 249 | 22 | 16 | 6 | 0 | 0 | 0 |
-| O0/findutils/find.c | 862 | 232 | 163 | 66 | 0 | 2 | 1 |
-| O0/grep/grep.c | 642 | 137 | 81 | 53 | 0 | 1 | 2 |
-| O0/gzip/gzip.c | 248 | 0 | 0 | 0 | 0 | 0 | 0 |
-| O0/tar/tar.c | 1570 | 478 | 281 | 194 | 0 | 2 | 1 |
-| O2/coreutils/cp.c | 409 | 47 | 31 | 15 | 0 | 1 | 0 |
-| O2/coreutils/du.c | 320 | 37 | 25 | 11 | 0 | 1 | 0 |
-| O2/coreutils/fmt.c | 151 | 0 | 0 | 0 | 0 | 0 | 0 |
-| O2/coreutils/ls.c | 404 | 91 | 87 | 4 | 0 | 0 | 0 |
-| O2/coreutils/sort.c | 343 | 42 | 37 | 5 | 0 | 0 | 0 |
-| O2/coreutils/tail.c | 225 | 0 | 0 | 0 | 0 | 0 | 0 |
-| O2/coreutils/wc.c | 182 | 4 | 3 | 1 | 0 | 0 | 0 |
-| O2/diffutils/cmp.c | 167 | 0 | 0 | 0 | 0 | 0 | 0 |
-| O2/diffutils/diff.c | 398 | 70 | 64 | 6 | 0 | 0 | 0 |
-| O2/diffutils/diff3.c | 212 | 0 | 0 | 0 | 0 | 0 | 0 |
-| O2/diffutils/sdiff.c | 197 | 0 | 0 | 0 | 0 | 0 | 0 |
-| O2/findutils/find.c | 658 | 179 | 92 | 84 | 0 | 2 | 1 |
-| O2/grep/grep.c | 449 | 79 | 53 | 20 | 0 | 4 | 2 |
-| O2/gzip/gzip.c | 204 | 0 | 0 | 0 | 0 | 0 | 0 |
-| O2/tar/tar.c | 1125 | 311 | 175 | 120 | 0 | 7 | 9 |
-| O2-noinline/coreutils/cp.c | 540 | 91 | 69 | 21 | 0 | 1 | 0 |
-| O2-noinline/coreutils/du.c | 451 | 55 | 36 | 18 | 0 | 1 | 0 |
-| O2-noinline/coreutils/fmt.c | 201 | 7 | 6 | 1 | 0 | 0 | 0 |
-| O2-noinline/coreutils/ls.c | 598 | 78 | 61 | 17 | 0 | 0 | 0 |
-| O2-noinline/coreutils/sort.c | 490 | 49 | 43 | 6 | 0 | 0 | 0 |
-| O2-noinline/coreutils/tail.c | 322 | 29 | 28 | 1 | 0 | 0 | 0 |
-| O2-noinline/coreutils/wc.c | 233 | 8 | 5 | 3 | 0 | 0 | 0 |
-| O2-noinline/diffutils/cmp.c | 214 | 8 | 7 | 1 | 0 | 0 | 0 |
-| O2-noinline/diffutils/diff.c | 517 | 81 | 72 | 9 | 0 | 0 | 0 |
-| O2-noinline/diffutils/diff3.c | 280 | 10 | 9 | 1 | 0 | 0 | 0 |
-| O2-noinline/diffutils/sdiff.c | 249 | 19 | 13 | 6 | 0 | 0 | 0 |
-| O2-noinline/findutils/find.c | 874 | 220 | 168 | 50 | 0 | 2 | 0 |
-| O2-noinline/grep/grep.c | 634 | 126 | 80 | 40 | 0 | 4 | 2 |
-| O2-noinline/gzip/gzip.c | 262 | 0 | 0 | 0 | 0 | 0 | 0 |
-| O2-noinline/tar/tar.c | 1585 | 463 | 262 | 197 | 0 | 3 | 1 |
-| **total** | 20230 | 3447 | 2318 | 1071 | 0 | 33 | 25 |
+| binary | functions | changed | record name only | fields, declared types and casts | globalref naming | skeleton delta | declaration-count delta | read |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| O0/coreutils/cp.c | 530 | 71 | 40 | 29 | 0 | 0 | 1 | 1 |
+| O0/coreutils/du.c | 441 | 79 | 51 | 26 | 0 | 0 | 1 | 1 |
+| O0/coreutils/fmt.c | 191 | 4 | 3 | 1 | 0 | 0 | 0 | 0 |
+| O0/coreutils/ls.c | 589 | 91 | 71 | 18 | 1 | 0 | 0 | 1 |
+| O0/coreutils/sort.c | 479 | 57 | 44 | 12 | 0 | 0 | 0 | 1 |
+| O0/coreutils/tail.c | 316 | 36 | 28 | 7 | 0 | 0 | 0 | 1 |
+| O0/coreutils/wc.c | 227 | 8 | 5 | 3 | 0 | 0 | 0 | 0 |
+| O0/diffutils/cmp.c | 214 | 11 | 10 | 1 | 0 | 0 | 0 | 0 |
+| O0/diffutils/diff.c | 507 | 90 | 73 | 16 | 0 | 0 | 0 | 1 |
+| O0/diffutils/diff3.c | 271 | 12 | 11 | 1 | 0 | 0 | 0 | 0 |
+| O0/diffutils/sdiff.c | 249 | 22 | 16 | 6 | 0 | 0 | 0 | 0 |
+| O0/findutils/find.c | 862 | 232 | 163 | 66 | 0 | 0 | 2 | 1 |
+| O0/grep/grep.c | 642 | 134 | 78 | 53 | 0 | 0 | 1 | 2 |
+| O0/gzip/gzip.c | 248 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| O0/tar/tar.c | 1570 | 471 | 274 | 193 | 1 | 0 | 2 | 1 |
+| O2/coreutils/cp.c | 409 | 47 | 31 | 15 | 0 | 0 | 1 | 0 |
+| O2/coreutils/du.c | 320 | 37 | 25 | 11 | 0 | 0 | 1 | 0 |
+| O2/coreutils/fmt.c | 151 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| O2/coreutils/ls.c | 404 | 83 | 79 | 3 | 1 | 0 | 0 | 0 |
+| O2/coreutils/sort.c | 343 | 36 | 31 | 5 | 0 | 0 | 0 | 0 |
+| O2/coreutils/tail.c | 225 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| O2/coreutils/wc.c | 182 | 4 | 3 | 1 | 0 | 0 | 0 | 0 |
+| O2/diffutils/cmp.c | 167 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| O2/diffutils/diff.c | 398 | 61 | 55 | 6 | 0 | 0 | 0 | 0 |
+| O2/diffutils/diff3.c | 212 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| O2/diffutils/sdiff.c | 197 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| O2/findutils/find.c | 658 | 179 | 92 | 84 | 0 | 0 | 2 | 1 |
+| O2/grep/grep.c | 449 | 79 | 53 | 20 | 0 | 0 | 4 | 2 |
+| O2/gzip/gzip.c | 204 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| O2/tar/tar.c | 1125 | 302 | 168 | 111 | 7 | 0 | 7 | 9 |
+| O2-noinline/coreutils/cp.c | 540 | 90 | 68 | 21 | 0 | 0 | 1 | 0 |
+| O2-noinline/coreutils/du.c | 451 | 55 | 36 | 18 | 0 | 0 | 1 | 0 |
+| O2-noinline/coreutils/fmt.c | 201 | 6 | 5 | 1 | 0 | 0 | 0 | 0 |
+| O2-noinline/coreutils/ls.c | 598 | 78 | 61 | 16 | 1 | 0 | 0 | 0 |
+| O2-noinline/coreutils/sort.c | 490 | 48 | 42 | 6 | 0 | 0 | 0 | 0 |
+| O2-noinline/coreutils/tail.c | 322 | 29 | 28 | 1 | 0 | 0 | 0 | 0 |
+| O2-noinline/coreutils/wc.c | 233 | 8 | 5 | 3 | 0 | 0 | 0 | 0 |
+| O2-noinline/diffutils/cmp.c | 214 | 8 | 7 | 1 | 0 | 0 | 0 | 0 |
+| O2-noinline/diffutils/diff.c | 517 | 79 | 70 | 9 | 0 | 0 | 0 | 0 |
+| O2-noinline/diffutils/diff3.c | 280 | 9 | 8 | 1 | 0 | 0 | 0 | 0 |
+| O2-noinline/diffutils/sdiff.c | 249 | 19 | 13 | 6 | 0 | 0 | 0 | 0 |
+| O2-noinline/findutils/find.c | 874 | 220 | 168 | 50 | 0 | 0 | 2 | 0 |
+| O2-noinline/grep/grep.c | 634 | 126 | 80 | 40 | 0 | 0 | 4 | 2 |
+| O2-noinline/gzip/gzip.c | 262 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| O2-noinline/tar/tar.c | 1585 | 457 | 257 | 189 | 7 | 0 | 3 | 1 |
+| **total** | 20230 | 3378 | 2252 | 1050 | 18 | 0 | 33 | 25 |
 
 No skeleton delta: no control-flow keyword or call moved anywhere. (The first
 count showed 8, all in tar at -O2: the cast spelling `(char (*)[16])` reads as a
 call token, and it became `(struct_42 *)`.)
+
+## The 18 `globalref naming` functions
+
+globalref names a constant address `&dat_<addr>` only when one object
+declaration agrees with every use of the address in the function. In these
+functions the option-off arm passed the address to a `void *` parameter, which
+agrees with anything, and a callee now takes it as a headless record, so either
+another use in the function types it differently (tar -O2 `0x23e80`: `0x82840`
+goes to `sub_22c60` as `struct_17 *` and to `sub_2fc00`/`sub_22570` as
+`unsigned long *`, so all 17 uses print `(T *)0x82840`) or a direct read lies
+inside the now-sized record (tar -O0 `0x1b745` reads `dat_9fa90` inside the
+264-byte `struct_231` it passes `0x9fa20` as). The addresses and values are the
+same in both arms; only the spelling of the constant differs. On castbench's
+shared set the class is 36 functions and +117 casts: 15 of them are in this
+bucket, and 21 also change a field or a declared type and count in the column
+before. The other 3 in this bucket (tar -O2 `0xec80`, `0x16780`, -O2-noinline
+`0x15dc0`) are functions IDA does not emit.
 
 ## The 25 read by hand
 
