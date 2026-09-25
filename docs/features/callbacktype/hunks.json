@@ -6,6 +6,14 @@
   "kind": "parked",
   "casts_off": 4,
   "casts_on": 9,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 9,
   "diff": [
    "-unsigned long sub_3a72(unsigned long *a0,unsigned long *a1) // early-return",
@@ -26,6 +34,10 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [],
+  "params_on": [
+   "int"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_3b72(void)",
@@ -39,6 +51,10 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [],
+  "params_on": [
+   "int"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_3bb0(void)",
@@ -52,6 +68,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 9,
   "diff": [
    "-void sub_7300(unsigned long *a0,unsigned long *a1)",
@@ -72,6 +96,12 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 7,
+  "params_off": [
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 6,
   "diff": [
    "-unsigned long sub_ba80(unsigned long *a0)",
@@ -89,6 +119,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 10,
   "diff": [
    "-void sub_20a2b(unsigned long *a0,unsigned long *a1)",
@@ -110,6 +148,12 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [
+   "unsigned int"
+  ],
+  "params_on": [
+   "int4"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_3550c(unsigned int a0)",
@@ -123,6 +167,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 6,
+  "params_off": [
+   "long *",
+   "long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 4,
   "diff": [
    "-int sub_161d8(long *a0,long *a1)",
@@ -138,6 +190,10 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [],
+  "params_on": [
+   "int"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_52f0(void)",
@@ -151,6 +207,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 9,
   "diff": [
    "-void sub_590b(unsigned long *a0,unsigned long *a1)",
@@ -171,6 +235,12 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 7,
+  "params_off": [
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 6,
   "diff": [
    "-unsigned long sub_c481(unsigned long *a0)",
@@ -188,6 +258,10 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [],
+  "params_on": [
+   "int"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_33d0(void)",
@@ -201,6 +275,10 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [],
+  "params_on": [
+   "int"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_34c0(void)",
@@ -214,6 +292,14 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 4,
+  "params_off": [
+   "int *",
+   "int *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 11,
   "diff": [
    "-unsigned long sub_38d0(int *a0,int *a1) // early-return",
@@ -236,6 +322,14 @@
   "kind": "parked",
   "casts_off": 4,
   "casts_on": 4,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 10,
   "diff": [
    "-int sub_15a90(unsigned long *a0,unsigned long *a1)",
@@ -257,6 +351,10 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_17f70(void) // return-dupe",
@@ -270,6 +368,10 @@
   "kind": "parked",
   "casts_off": 10,
   "casts_on": 10,
+  "params_off": [],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_18f70(void)",
@@ -283,6 +385,10 @@
   "kind": "parked",
   "casts_off": 6,
   "casts_on": 6,
+  "params_off": [],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_1f7c0(void)",
@@ -296,6 +402,12 @@
   "kind": "parked",
   "casts_off": 3,
   "casts_on": 3,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 13,
   "diff": [
    "-bool sub_c6d0(void *a0) // early-return",
@@ -320,6 +432,12 @@
   "kind": "parked",
   "casts_off": 3,
   "casts_on": 3,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-unsigned long sub_8090(void *a0) // return-dupe x2",
@@ -333,6 +451,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 9,
   "diff": [
    "-void sub_1196d(unsigned long *a0,unsigned long *a1)",
@@ -353,6 +479,10 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [],
+  "params_on": [
+   "int"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_4920(void)",
@@ -366,6 +496,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 9,
   "diff": [
    "-void sub_12bf4(unsigned long *a0,unsigned long *a1)",
@@ -386,6 +524,12 @@
   "kind": "parked",
   "casts_off": 5,
   "casts_on": 5,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-unsigned long sub_7a10(void *a0)",
@@ -399,6 +543,12 @@
   "kind": "parked",
   "casts_off": 3,
   "casts_on": 3,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-unsigned long sub_e2c0(void *a0) // return-dupe x2",
@@ -412,6 +562,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 9,
   "diff": [
    "-void sub_5930(unsigned long *a0,unsigned long *a1)",
@@ -432,6 +590,12 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 7,
+  "params_off": [
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 6,
   "diff": [
    "-unsigned long sub_a710(unsigned long *a0)",
@@ -449,6 +613,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 6,
   "diff": [
    "-int sub_15fd0(unsigned long *a0,unsigned long *a1)",
@@ -466,6 +638,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 9,
   "diff": [
    "-void sub_ed90(unsigned long *a0,unsigned long *a1)",
@@ -486,6 +666,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 10,
   "diff": [
    "-void sub_1e2b0(unsigned long *a0,unsigned long *a1)",
@@ -507,6 +695,12 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [
+   "unsigned int"
+  ],
+  "params_on": [
+   "int4"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_2d500(unsigned int a0)",
@@ -520,6 +714,14 @@
   "kind": "parked",
   "casts_off": 58,
   "casts_on": 73,
+  "params_off": [
+   "struct_70 *",
+   "struct_70 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 223,
   "diff": [
    "-uint8 sub_3ac00(struct_70 *a0,struct_70 *a1)",
@@ -571,6 +773,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 10,
   "diff": [
    "-void sub_46af0(unsigned long *a0,unsigned long *a1)",
@@ -592,6 +802,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 4,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 4,
   "diff": [
    "-int4 sub_707a6(unsigned long *a0,unsigned long *a1)",
@@ -607,6 +825,12 @@
   "kind": "parked",
   "casts_off": 55,
   "casts_on": 55,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 6,
   "diff": [
    "-unsigned long sub_75298(void *a0) // return-dupe",
@@ -624,6 +848,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 10,
   "diff": [
    "-void sub_893fc(unsigned long *a0,unsigned long *a1)",
@@ -645,6 +877,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 10,
   "diff": [
    "-void sub_8942b(unsigned long *a0,unsigned long *a1)",
@@ -666,6 +906,14 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 4,
+  "params_off": [
+   "uint4 *",
+   "uint4 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 13,
   "diff": [
    "-int4 sub_8945a(uint4 *a0,uint4 *a1) // early-return",
@@ -690,6 +938,14 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 4,
+  "params_off": [
+   "uint4 *",
+   "uint4 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 13,
   "diff": [
    "-int4 sub_89493(uint4 *a0,uint4 *a1) // early-return",
@@ -714,6 +970,14 @@
   "kind": "parked",
   "casts_off": 1,
   "casts_on": 1,
+  "params_off": [
+   "char *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 8,
   "diff": [
    "-void sub_894cc(char *a0,unsigned long *a1)",
@@ -733,6 +997,14 @@
   "kind": "parked",
   "casts_off": 1,
   "casts_on": 1,
+  "params_off": [
+   "char *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 8,
   "diff": [
    "-void sub_894f8(char *a0,unsigned long *a1)",
@@ -752,6 +1024,12 @@
   "kind": "parked",
   "casts_off": 11,
   "casts_on": 11,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 4,
   "diff": [
    "-unsigned long sub_8acbf(void *a0)",
@@ -767,6 +1045,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 10,
   "diff": [
    "-void sub_9ef8e(unsigned long *a0,unsigned long *a1)",
@@ -788,6 +1074,14 @@
   "kind": "parked",
   "casts_off": 1,
   "casts_on": 1,
+  "params_off": [
+   "char *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 8,
   "diff": [
    "-void sub_9f0f3(char *a0,unsigned long *a1)",
@@ -807,6 +1101,10 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_17d90(void)",
@@ -820,6 +1118,10 @@
   "kind": "parked",
   "casts_off": 10,
   "casts_on": 10,
+  "params_off": [],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_18d90(void)",
@@ -833,6 +1135,12 @@
   "kind": "parked",
   "casts_off": 37,
   "casts_on": 58,
+  "params_off": [
+   "char *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 80,
   "diff": [
    "-unsigned long sub_1c7e0(char *a0) // return-dupe",
@@ -884,6 +1192,10 @@
   "kind": "parked",
   "casts_off": 6,
   "casts_on": 6,
+  "params_off": [],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_1e8d0(void)",
@@ -897,6 +1209,12 @@
   "kind": "parked",
   "casts_off": 3,
   "casts_on": 3,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 13,
   "diff": [
    "-bool sub_c5b0(void *a0) // early-return",
@@ -921,6 +1239,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 9,
   "diff": [
    "-void sub_e3a0(unsigned long *a0,unsigned long *a1)",
@@ -941,6 +1267,12 @@
   "kind": "parked",
   "casts_off": 5,
   "casts_on": 5,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-unsigned long sub_7750(void *a0)",
@@ -954,6 +1286,12 @@
   "kind": "parked",
   "casts_off": 3,
   "casts_on": 3,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-unsigned long sub_e150(void *a0) // return-dupe x2",
@@ -967,6 +1305,14 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 8,
+  "params_off": [
+   "struct_126 *",
+   "struct_126 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 10,
   "diff": [
    "-int4 sub_1de20(struct_126 *a0,struct_126 *a1)",
@@ -988,6 +1334,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 10,
   "diff": [
    "-void sub_40200(unsigned long *a0,unsigned long *a1)",
@@ -1009,6 +1363,14 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 4,
+  "params_off": [
+   "uint4 *",
+   "uint4 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 11,
   "diff": [
    "-uint8 sub_60260(uint4 *a0,uint4 *a1) // early-return",
@@ -1031,6 +1393,12 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 7,
+  "params_off": [
+   "struct_42 *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 16,
   "diff": [
    "-unsigned long sub_66060(struct_42 *a0)",
@@ -1058,6 +1426,10 @@
   "kind": "parked",
   "casts_off": 0,
   "casts_on": 0,
+  "params_off": [],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_1ddc7(void)",
@@ -1071,6 +1443,10 @@
   "kind": "parked",
   "casts_off": 10,
   "casts_on": 10,
+  "params_off": [],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_1e961(void) // return-dupe",
@@ -1084,6 +1460,12 @@
   "kind": "parked",
   "casts_off": 39,
   "casts_on": 57,
+  "params_off": [
+   "char *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 82,
   "diff": [
    "-unsigned long sub_2399c(char *a0) // return-dupe",
@@ -1135,6 +1517,10 @@
   "kind": "parked",
   "casts_off": 6,
   "casts_on": 6,
+  "params_off": [],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 2,
   "diff": [
    "-void sub_26db8(void)",
@@ -1148,6 +1534,12 @@
   "kind": "parked",
   "casts_off": 4,
   "casts_on": 4,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
   "hunk_lines": 9,
   "diff": [
    "-unsigned long sub_d127(void *a0) // early-return",
@@ -1168,6 +1560,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 6,
+  "params_off": [
+   "long *",
+   "long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 4,
   "diff": [
    "-int sub_f930(long *a0,long *a1)",
@@ -1183,6 +1583,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 5,
+  "params_off": [
+   "struct_15 *",
+   "struct_15 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 15,
   "diff": [
    "-int sub_26620(struct_15 *a0,struct_15 *a1) // early-return",
@@ -1209,6 +1617,14 @@
   "kind": "parked",
   "casts_off": 2,
   "casts_on": 5,
+  "params_off": [
+   "struct_3 *",
+   "struct_3 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
   "hunk_lines": 15,
   "diff": [
    "-int sub_1f290(struct_3 *a0,struct_3 *a1) // early-return",
@@ -1226,6 +1642,777 @@
    "+  v4 = memcmp(*(void **)a0,*(void **)a1,v3);",
    "+  if (((!v4) && (v1 != v2)) && (v4 = 1, v2 <= v1))",
    "+    return -(unsigned int)(v2 <= v1);"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2-noinline/tar/stripped/tar",
+  "fn": "sub_1d420",
+  "addr": "0x1d420",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 10,
+  "diff": [
+   "-void sub_1d420(unsigned long *a0,unsigned long *a1)",
+   "+int4 sub_1d420(void *a0,void *a1)",
+   "-  strcmp((char *)*a0,(char *)*a1); // tail-call",
+   "-  return;",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a1;",
+   "+  v2 = *(char **)a0;",
+   "+  return strcmp(v2,v1); // tail-call"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2-noinline/tar/stripped/tar",
+  "fn": "sub_2be90",
+  "addr": "0x2be90",
+  "kind": "parked",
+  "casts_off": 0,
+  "casts_on": 0,
+  "params_off": [
+   "unsigned int"
+  ],
+  "params_on": [
+   "int4"
+  ],
+  "hunk_lines": 2,
+  "diff": [
+   "-void sub_2be90(unsigned int a0)",
+   "+void sub_2be90(int4 a0)"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/rsyslog/stripped/rsyslogd",
+  "fn": "sub_39bd0",
+  "addr": "0x39bd0",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 10,
+  "diff": [
+   "-void sub_39bd0(unsigned long *a0,unsigned long *a1)",
+   "+int4 sub_39bd0(void *a0,void *a1)",
+   "-  strcmp((char *)*a0,(char *)*a1); // tail-call",
+   "-  return;",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a1;",
+   "+  v2 = *(char **)a0;",
+   "+  return strcmp(v2,v1); // tail-call"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/rsyslog/stripped/rsyslogd",
+  "fn": "sub_57640",
+  "addr": "0x57640",
+  "kind": "parked",
+  "casts_off": 1,
+  "casts_on": 3,
+  "params_off": [
+   "unsigned long *",
+   "int4 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 4,
+  "diff": [
+   "-int4 sub_57640(unsigned long *a0,int4 *a1)",
+   "+int4 sub_57640(void *a0,void *a1)",
+   "-  return (int4)*a0 - *a1;",
+   "+  return (int4)*(unsigned long *)a0 - *(int4 *)a1;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/rsyslog/stripped/rsyslogd",
+  "fn": "sub_5bae0",
+  "addr": "0x5bae0",
+  "kind": "parked",
+  "casts_off": 50,
+  "casts_on": 50,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
+  "hunk_lines": 6,
+  "diff": [
+   "-unsigned long sub_5bae0(void *a0) // return-dupe",
+   "+void * sub_5bae0(void *a0) // return-dupe",
+   "-          return 0;",
+   "+          return NULL;",
+   "-        return 0;",
+   "+        return NULL;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/rsyslog/stripped/rsyslogd",
+  "fn": "sub_68c00",
+  "addr": "0x68c00",
+  "kind": "parked",
+  "casts_off": 0,
+  "casts_on": 4,
+  "params_off": [
+   "uint4 *",
+   "uint4 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 6,
+  "diff": [
+   "-int4 sub_68c00(uint4 *a0,uint4 *a1)",
+   "+int4 sub_68c00(void *a0,void *a1)",
+   "-  if (*a1 <= *a0)",
+   "-    return *a0 - *a1;",
+   "+  if (*(uint4 *)a1 <= *(uint4 *)a0)",
+   "+    return *(uint4 *)a0 - *(uint4 *)a1;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/rsyslog/stripped/rsyslogd",
+  "fn": "sub_68c20",
+  "addr": "0x68c20",
+  "kind": "parked",
+  "casts_off": 0,
+  "casts_on": 4,
+  "params_off": [
+   "uint4 *",
+   "uint4 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 6,
+  "diff": [
+   "-int4 sub_68c20(uint4 *a0,uint4 *a1)",
+   "+int4 sub_68c20(void *a0,void *a1)",
+   "-  if (*a1 <= *a0)",
+   "-    return *a0 - *a1;",
+   "+  if (*(uint4 *)a1 <= *(uint4 *)a0)",
+   "+    return *(uint4 *)a0 - *(uint4 *)a1;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/rsyslog/stripped/rsyslogd",
+  "fn": "sub_68d30",
+  "addr": "0x68d30",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 10,
+  "diff": [
+   "-void sub_68d30(unsigned long *a0,unsigned long *a1)",
+   "+int4 sub_68d30(void *a0,void *a1)",
+   "-  strcmp((char *)*a0,(char *)*a1); // tail-call",
+   "-  return;",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a1;",
+   "+  v2 = *(char **)a0;",
+   "+  return strcmp(v2,v1); // tail-call"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/rsyslog/stripped/rsyslogd",
+  "fn": "sub_68d40",
+  "addr": "0x68d40",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 10,
+  "diff": [
+   "-void sub_68d40(unsigned long *a0,unsigned long *a1)",
+   "+int4 sub_68d40(void *a0,void *a1)",
+   "-  strcmp((char *)*a0,(char *)*a1); // tail-call",
+   "-  return;",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a1;",
+   "+  v2 = *(char **)a0;",
+   "+  return strcmp(v2,v1); // tail-call"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/rsyslog/stripped/rsyslogd",
+  "fn": "sub_69cf0",
+  "addr": "0x69cf0",
+  "kind": "parked",
+  "casts_off": 19,
+  "casts_on": 19,
+  "params_off": [
+   "void *"
+  ],
+  "params_on": [
+   "void *"
+  ],
+  "hunk_lines": 6,
+  "diff": [
+   "-unsigned long sub_69cf0(void *a0)",
+   "+void * sub_69cf0(void *a0)",
+   "-          return 0;",
+   "+          return NULL;",
+   "-  return 0;",
+   "+  return NULL;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/rsyslog/stripped/rsyslogd",
+  "fn": "sub_781f0",
+  "addr": "0x781f0",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 10,
+  "diff": [
+   "-void sub_781f0(unsigned long *a0,unsigned long *a1)",
+   "+int4 sub_781f0(void *a0,void *a1)",
+   "-  strcmp((char *)*a0,(char *)*a1); // tail-call",
+   "-  return;",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a1;",
+   "+  v2 = *(char **)a0;",
+   "+  return strcmp(v2,v1); // tail-call"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/ptx",
+  "fn": "sub_34f6",
+  "addr": "0x34f6",
+  "kind": "parked",
+  "casts_off": 19,
+  "casts_on": 32,
+  "params_off": [
+   "struct_2 *",
+   "struct_2 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 32,
+  "diff": [
+   "-unsigned int sub_34f6(struct_2 *a0,struct_2 *a1) // early-return",
+   "+int sub_34f6(void *a0,void *a1) // early-return, ternary",
+   "-  unsigned int v3; // eax",
+   "-  long v4;",
+   "-  long v5; // stack - 0x20",
+   "+  int v3; // eax",
+   "+  unsigned int v4; // eax",
+   "+  long v5;",
+   "+  long v6; // stack - 0x20",
+   "-  v4 = a0->field_0x8;",
+   "-  if (a1->field_0x8 <= a0->field_0x8)",
+   "-    v4 = a1->field_0x8;",
+   "+  v5 = ((long *)a0)[1];",
+   "+  if (((long *)a1)[1] <= ((long *)a0)[1])",
+   "+    v5 = ((long *)a1)[1];",
+   "-    for (v5 = 0; v5 < v4; v5 = v5 + 1) {",
+   "-      v1 = *(char *)(v5 + a0->field_0x0);",
+   "+    for (v6 = 0; v6 < v5; v6 = v6 + 1) {",
+   "+      v1 = *(char *)(v6 + *(long *)a0);",
+   "-      v1 = *(char *)(v5 + a1->field_0x0);",
+   "+      v1 = *(char *)(v6 + *(long *)a1);",
+   "-    for (v5 = 0; v5 < v4; v5 = v5 + 1) {",
+   "-      v2 = sub_2ae9((int)*(char *)(v5 + a0->field_0x0));",
+   "-      v1 = *(char *)(v5 + a1->field_0x0);",
+   "+    for (v6 = 0; v6 < v5; v6 = v6 + 1) {",
+   "+      v2 = sub_2ae9((int)*(char *)(v6 + *(long *)a0));",
+   "+      v1 = *(char *)(v6 + *(long *)a1);",
+   "-  if (a1->field_0x8 <= a0->field_0x8)",
+   "-    return a1->field_0x8 < a0->field_0x8;",
+   "-  return 0xffffffff;",
+   "+  v4 = (((long *)a1)[1] <= ((long *)a0)[1]) ? (unsigned int)(((long *)a1)[1] < ((long *)a0)[1]) : 0xffffffff; // branch-flip",
+   "+  return v4;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/ptx",
+  "fn": "sub_3663",
+  "addr": "0x3663",
+  "kind": "parked",
+  "casts_off": 4,
+  "casts_on": 5,
+  "params_off": [
+   "struct_2 *",
+   "struct_2 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 8,
+  "diff": [
+   "-unsigned int sub_3663(struct_2 *a0,struct_2 *a1) // early-return",
+   "+int sub_3663(void *a0,void *a1) // early-return, ternary",
+   "-    if ((unsigned long)a0->field_0x0 < (unsigned long)a1->field_0x0) {",
+   "-      v1 = 0xffffffff;",
+   "-      return v1;",
+   "-    }",
+   "-    v1 = (unsigned long)a1->field_0x0 < (unsigned long)a0->field_0x0;",
+   "+    v1 = (*(unsigned long *)a1 <= *(unsigned long *)a0) ? (unsigned int)(*(unsigned long *)a1 < *(unsigned long *)a0) : 0xffffffff; // branch-flip"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/e2fsprogs/stripped/e2fsck",
+  "fn": "sub_2780c",
+  "addr": "0x2780c",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 8,
+  "params_off": [
+   "struct_166 *",
+   "struct_166 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 10,
+  "diff": [
+   "-int4 sub_2780c(struct_166 *a0,struct_166 *a1)",
+   "+int4 sub_2780c(void *a0,void *a1)",
+   "-  v2 = a0->field_0x70 - a1->field_0x70;",
+   "+  v2 = ((int4 *)a0)[0x1c] - ((int4 *)a1)[0x1c];",
+   "-    v2 = ext2fs_file_acl_block(NULL,(void *)ext2fs_const_inode(&a0->field_0x4[0x14]));",
+   "-    v1 = (void *)ext2fs_const_inode(&a1->field_0x4[0x14]);",
+   "+    v2 = ext2fs_file_acl_block(NULL,(void *)ext2fs_const_inode((int8)a0 + 0x18));",
+   "+    v1 = (void *)ext2fs_const_inode((int8)a1 + 0x18);",
+   "-    v2 = a0->field_0x0 - a1->field_0x0;",
+   "+    v2 = *(int4 *)a0 - *(int4 *)a1;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/e2fsprogs/stripped/e2fsck",
+  "fn": "sub_3d7a3",
+  "addr": "0x3d7a3",
+  "kind": "parked",
+  "casts_off": 4,
+  "casts_on": 4,
+  "params_off": [
+   "void *",
+   "void *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 4,
+  "diff": [
+   "-unsigned long sub_3d7a3(void *a0,void *a1) // return-dupe x2",
+   "+int4 sub_3d7a3(void *a0,void *a1) // return-dupe x2",
+   "-    return 0xffffffff;",
+   "+    return -1;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/e2fsprogs/stripped/e2fsck",
+  "fn": "sub_5448d",
+  "addr": "0x5448d",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 10,
+  "diff": [
+   "-void sub_5448d(unsigned long *a0,unsigned long *a1)",
+   "+int4 sub_5448d(void *a0,void *a1)",
+   "-  strcmp((char *)*a0,(char *)*a1);",
+   "-  return;",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a0;",
+   "+  v2 = *(char **)a1;",
+   "+  return strcmp(v1,v2);"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/e2fsprogs/stripped/e2fsck",
+  "fn": "sub_8218b",
+  "addr": "0x8218b",
+  "kind": "parked",
+  "casts_off": 0,
+  "casts_on": 4,
+  "params_off": [
+   "uint4 *",
+   "uint4 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 8,
+  "diff": [
+   "-unsigned long sub_8218b(uint4 *a0,uint4 *a1) // return-dupe x2",
+   "+int4 sub_8218b(void *a0,void *a1) // return-dupe x2",
+   "-  if (*a0 < *a1)",
+   "-    return 0xffffffff;",
+   "-  if (*a1 < *a0)",
+   "+  if (*(uint4 *)a0 < *(uint4 *)a1)",
+   "+    return -1;",
+   "+  if (*(uint4 *)a1 < *(uint4 *)a0)"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/e2fsprogs/stripped/e2fsck",
+  "fn": "sub_8adcf",
+  "addr": "0x8adcf",
+  "kind": "parked",
+  "casts_off": 0,
+  "casts_on": 7,
+  "params_off": [
+   "struct_62 *"
+  ],
+  "params_on": [
+   "void *"
+  ],
+  "hunk_lines": 16,
+  "diff": [
+   "-unsigned long sub_8adcf(struct_62 *a0)",
+   "+void * sub_8adcf(void *a0)",
+   "-  v4 = a0->field_0x20;",
+   "-  v1 = a0->field_0x10;",
+   "-  v2 = a0->field_0xc;",
+   "-  v3 = a0->field_0x8;",
+   "-  v5 = a0->field_0x0;",
+   "-  a0->field_0x18 = sub_8a563(v5,v3,v2,v1,v4,&a0[1]);",
+   "-  return 0;",
+   "+  v4 = ((pthread_mutex_t **)a0)[4];",
+   "+  v1 = ((unsigned int *)a0)[4];",
+   "+  v2 = ((unsigned int *)a0)[3];",
+   "+  v3 = ((unsigned int *)a0)[2];",
+   "+  v5 = *(void **)a0;",
+   "+  ((unsigned long *)a0)[3] = sub_8a563(v5,v3,v2,v1,v4,&((uint4 *)a0)[10]);",
+   "+  return NULL;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2-noinline/e2fsprogs/stripped/e2fsck",
+  "fn": "sub_1e780",
+  "addr": "0x1e780",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 8,
+  "params_off": [
+   "struct_155 *",
+   "struct_155 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 10,
+  "diff": [
+   "-int4 sub_1e780(struct_155 *a0,struct_155 *a1)",
+   "+int4 sub_1e780(void *a0,void *a1)",
+   "-  v1 = a0->field_0x70 - a1->field_0x70;",
+   "+  v1 = ((int4 *)a0)[0x1c] - ((int4 *)a1)[0x1c];",
+   "-  v1 = ext2fs_file_acl_block(NULL,(void *)ext2fs_const_inode(&a0->field_0x4[0x14]));",
+   "-  v2 = (void *)ext2fs_const_inode(&a1->field_0x4[0x14]);",
+   "+  v1 = ext2fs_file_acl_block(NULL,(void *)ext2fs_const_inode((int8)a0 + 0x18));",
+   "+  v2 = (void *)ext2fs_const_inode((int8)a1 + 0x18);",
+   "-    v1 = a0->field_0x0 - a1->field_0x0;",
+   "+    v1 = *(int4 *)a0 - *(int4 *)a1;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2-noinline/e2fsprogs/stripped/e2fsck",
+  "fn": "sub_414e0",
+  "addr": "0x414e0",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 10,
+  "diff": [
+   "-void sub_414e0(unsigned long *a0,unsigned long *a1)",
+   "+int4 sub_414e0(void *a0,void *a1)",
+   "-  strcmp((char *)*a0,(char *)*a1); // tail-call",
+   "-  return;",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a1;",
+   "+  v2 = *(char **)a0;",
+   "+  return strcmp(v2,v1); // tail-call"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2-noinline/e2fsprogs/stripped/e2fsck",
+  "fn": "sub_605e0",
+  "addr": "0x605e0",
+  "kind": "parked",
+  "casts_off": 0,
+  "casts_on": 4,
+  "params_off": [
+   "uint4 *",
+   "uint4 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 11,
+  "diff": [
+   "-uint8 sub_605e0(uint4 *a0,uint4 *a1) // early-return",
+   "+int4 sub_605e0(void *a0,void *a1) // early-return",
+   "-  if (*a1 <= *a0)",
+   "-    return *a1 < *a0;",
+   "-  return 0xffffffff;",
+   "+  uint4 v1; // eax",
+   "+  ",
+   "+  v1 = *(uint4 *)a1 < *(uint4 *)a0;",
+   "+  if (*(uint4 *)a0 < *(uint4 *)a1)",
+   "+    v1 = 0xffffffff;",
+   "+  return v1;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2-noinline/e2fsprogs/stripped/e2fsck",
+  "fn": "sub_66e40",
+  "addr": "0x66e40",
+  "kind": "parked",
+  "casts_off": 0,
+  "casts_on": 7,
+  "params_off": [
+   "struct_46 *"
+  ],
+  "params_on": [
+   "void *"
+  ],
+  "hunk_lines": 16,
+  "diff": [
+   "-unsigned long sub_66e40(struct_46 *a0)",
+   "+void * sub_66e40(void *a0)",
+   "-  v1 = a0->field_0x10;",
+   "-  v2 = a0->field_0xc;",
+   "-  v3 = a0->field_0x8;",
+   "-  v4 = a0->field_0x20;",
+   "-  v5 = a0->field_0x0;",
+   "-  a0->field_0x18 = sub_66860(v5,v3,v2,v1,v4,&a0[1]);",
+   "-  return 0;",
+   "+  v1 = ((unsigned int *)a0)[4];",
+   "+  v2 = ((unsigned int *)a0)[3];",
+   "+  v3 = ((unsigned int *)a0)[2];",
+   "+  v4 = ((pthread_mutex_t **)a0)[4];",
+   "+  v5 = *(void **)a0;",
+   "+  ((unsigned long *)a0)[3] = sub_66860(v5,v3,v2,v1,v4,&((uint4 *)a0)[10]);",
+   "+  return NULL;"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/libedit/stripped/libedit.so.0.0.70",
+  "fn": "sub_1fc80",
+  "addr": "0x1fc80",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 9,
+  "diff": [
+   "-void sub_1fc80(unsigned long *a0,unsigned long *a1)",
+   "+int sub_1fc80(void *a0,void *a1)",
+   "-  strcasecmp((char *)*a0,(char *)*a1); // tail-call",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a1;",
+   "+  v2 = *(char **)a0;",
+   "+  return strcasecmp(v2,v1); // tail-call"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/gnutls/stripped/certtool",
+  "fn": "sub_37e6f",
+  "addr": "0x37e6f",
+  "kind": "parked",
+  "casts_off": 6,
+  "casts_on": 15,
+  "params_off": [
+   "struct_24 *",
+   "struct_24 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 18,
+  "diff": [
+   "-unsigned int sub_37e6f(struct_24 *a0,struct_24 *a1)",
+   "+int sub_37e6f(void *a0,void *a1)",
+   "-  unsigned int v1; // eax",
+   "+  int v1; // eax",
+   "-  v1 = a0->field_0x8;",
+   "-  if ((int)a1->field_0x8 <= (int)a0->field_0x8)",
+   "-    v1 = a1->field_0x8;",
+   "-  v1 = memcmp(a0->field_0x0,a1->field_0x0,v1);",
+   "+  v1 = ((unsigned int *)a0)[2];",
+   "+  if ((int)((unsigned int *)a1)[2] <= (int)((unsigned int *)a0)[2])",
+   "+    v1 = ((unsigned int *)a1)[2];",
+   "+  v1 = memcmp(*(void **)a0,*(void **)a1,(unsigned int)v1);",
+   "-  if ((!v1) && (a0->field_0x8 != a1->field_0x8)) {",
+   "-    if ((int)a0->field_0x8 <= (int)a1->field_0x8) { // branch-flip",
+   "-      if ((int)a0->field_0x8 < (int)a1->field_0x8)",
+   "+  if ((!v1) && (((int *)a0)[2] != ((int *)a1)[2])) {",
+   "+    if (((int *)a0)[2] <= ((int *)a1)[2]) { // branch-flip",
+   "+      if (((int *)a0)[2] < ((int *)a1)[2])"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/openssh-portable/stripped/scp",
+  "fn": "sub_30a20",
+  "addr": "0x30a20",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 9,
+  "diff": [
+   "-void sub_30a20(unsigned long *a0,unsigned long *a1)",
+   "+int sub_30a20(void *a0,void *a1)",
+   "-  strcmp((char *)*a0,(char *)*a1); // tail-call",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a1;",
+   "+  v2 = *(char **)a0;",
+   "+  return strcmp(v2,v1); // tail-call"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O2/openssh-portable/stripped/scp",
+  "fn": "sub_30a30",
+  "addr": "0x30a30",
+  "kind": "parked",
+  "casts_off": 2,
+  "casts_on": 2,
+  "params_off": [
+   "unsigned long *",
+   "unsigned long *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 9,
+  "diff": [
+   "-void sub_30a30(unsigned long *a0,unsigned long *a1)",
+   "+int sub_30a30(void *a0,void *a1)",
+   "-  strcmp((char *)*a0,(char *)*a1); // tail-call",
+   "+  char *v1;",
+   "+  char *v2;",
+   "+  ",
+   "+  v1 = *(char **)a1;",
+   "+  v2 = *(char **)a0;",
+   "+  return strcmp(v2,v1); // tail-call"
+  ]
+ },
+ {
+  "bin": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/iproute2/stripped/ip",
+  "fn": "sub_8c84d",
+  "addr": "0x8c84d",
+  "kind": "parked",
+  "casts_off": 0,
+  "casts_on": 4,
+  "params_off": [
+   "uint8 *",
+   "uint8 *"
+  ],
+  "params_on": [
+   "void *",
+   "void *"
+  ],
+  "hunk_lines": 8,
+  "diff": [
+   "-unsigned long sub_8c84d(uint8 *a0,uint8 *a1) // return-dupe x2",
+   "+int4 sub_8c84d(void *a0,void *a1) // return-dupe x2",
+   "-  if (*a0 < *a1)",
+   "-    return 0xffffffff;",
+   "-  if (*a1 < *a0)",
+   "+  if (*(uint8 *)a0 < *(uint8 *)a1)",
+   "+    return -1;",
+   "+  if (*(uint8 *)a1 < *(uint8 *)a0)"
   ]
  }
 ]
