@@ -276,7 +276,9 @@ The page and Worker communicate through `kuna-worker-client.js`:
 
 ```
 upload bytes → Worker `list` → address-only rows
-click row    → Worker `decompile 0xADDR` → one C body
+click row    → Worker `decompile 0xADDR` → one C body                    (/decompile)
+open fn      → Worker `inspect 0xADDR --assert …` → C, tokens, rows      (/decompile2)
+edit         → one more directive → Worker `inspect` again, old render kept up
 download     → Worker `project` → Worker `makeZip` → transferred ArrayBuffer
 cancel       → terminate Worker → create Worker → rehydrate binary on next request
 ```
@@ -284,6 +286,22 @@ cancel       → terminate Worker → create Worker → rehydrate binary on next
 Function bodies are cached by address in the page after the first click. Inventory,
 one-function decompilation, and project export all retain `--mode auto`, so the Rust
 front-end remains the source of truth for the 500 KiB and 2 MiB thresholds.
+
+The Worker session carries the binary, the mode **and the output language** to every
+request. Until the study view was added, `setBinary` stored only the mode, so the
+`/decompile` page's Language control never reached the engine; `test/worker.mjs` now
+loads with `rust` and asserts Rust comes back. Every Worker method (`list`, `decompile`,
+`inspect`, `read`, `xrefs`, `project`) also takes an `assertions` list, which
+`wasmCommandArgs` appends as one `--assert <directive>` pair each, after the mode and
+language; an empty list produces exactly the argv the flag's absence always did
+(`test/auto-mode.mjs` pins both). A failed request keeps what the engine said: the error
+reply carries `detail` (`exitCode`, `stderr`, and the stdout JSON when it parses), which
+the client exposes as `error.detail`.
+
+**The session is the directive list.** Each wasm call is a fresh process, so nothing the
+engine learns survives it. The study view therefore holds a student's edits as the
+`--assert` directives the native CLI takes, resends them on every request, and re-runs
+the function after each edit (§4.2).
 
 Termination is intentional. WASI execution is synchronous after `wasi.start()` enters
 WebAssembly, so an ordinary cancel message cannot be handled until that call returns.
@@ -334,6 +352,8 @@ the `specs-small.json` preload bundle. Serve `dist/` with any static file server
 /                     index.html          landing page: hero, compare, goals
 /dev-viz/             dev-viz/index.html development record: cadence, phases, provenance, evidence
 /decompile/           decompile/index.html the decompiler application (loads the wasm)
+/decompile2/          decompile2/          the study view: linked C/assembly/bytes, edits (loads the wasm)
+/decompile2/examples/ sample.elf, sample.c the "Try the example" program and its source (copied by build.sh)
 /assets/              css/site.css · fonts/ · img/ · js/highlight-c.js · js/fnfilter.js
 /compare-samples.js   the compare section's data (samples + rival outputs)
 /CNAME                kuna.noelo.org — the custom domain, copied into the bundle
@@ -341,7 +361,7 @@ the `specs-small.json` preload bundle. Serve `dist/` with any static file server
 /kuna_wasm.wasm /specs/ /specs-small.json /vendor/
 ```
 
-The engine-facing files stay at the **root** — `/decompile/` reaches them with `../`, so
+The engine-facing files stay at the **root** — `/decompile/` and `/decompile2/` reach them with `../`, so
 the Worker is a sibling of `kuna-web.js`/`zip.js`, the existing tests can import the glue
 directly, and a project subpath still works. The RPC client resolves the wasm/spec URLs
 against the document before sending them to the Worker; resolving those `../` paths in
@@ -406,10 +426,123 @@ Payload: **~1.7 MB** wasm (gzipped, shared) + a **~180 KB** gzipped spec bundle 
 of a small binary is sub-second (≈0.45 s measured in Node `node:wasi` and in headless
 Chrome on the committed fixtures).
 
+### 4.2 The study view (`/decompile2/`)
+
+A second application page for students: one function as **C, assembly, bytes and its
+stack frame, linked**, with renames, retypes, prototypes, comments and byte patches that
+the engine applies. `/decompile/` is unchanged.
+
+```
+| status · Cancel · Source zip · Patched binary · Mode · Lang · Try the example · Load · ? |
+| functions  | ‹ › main 0x1198 · 84 B · 24 insns          [rename] [proto] | DETAILS      |
+| [filter]   | C | ASSEMBLY | BYTES | STACK | (SOURCE)         [split] [view] | signature  |
+| add        |  5 11b5 ▌ v1 = sum_to(add(argc,3));   ┌ L5 → 2 instructions ┐ | variables  |
+| sum_to     |  6 11e1 ▌ printf("%ld\n",v1);          │ 11b5 CALL 0x1149  │ | types      |
+| main       |                                        └──────────────────────┘ | references |
+|            | v1 · local · long · register RAX — n rename · y retype      | session edits |
+```
+
+**Modules** (`integrations/web/decompile2/`; all but `app.js`, `hover.js`'s controller,
+`sync.js`, `dialogs.js` and `rail.js` are DOM-free, so Node tests import them from the
+source tree):
+
+| Module | Role |
+|---|---|
+| `app.js` | operation model (one engine request at a time; references load only when idle), inventory sidebar, `openFunction` with an LRU(32) cache, tabs/split/history (`#0x…`), applyEdit, keyboard |
+| `render-c.js` | `normalizeInspect` (an `inspect` or a plain `decompile` document), the C pane from the token stream with a per-line regex fallback, the shared index, `changedLines` |
+| `asm-view.js` | instruction rows: addresses abs/rel/both, bytes, the C line per run (comment or interleaved), bands, linked targets, stack operands, branch arrows |
+| `hover.js` / `sync.js` | the hover card; one selection/hover model across panes |
+| `session.js` / `ctype.js` / `persist.js` | edits as directives; C declarators and signatures; per-binary storage |
+| `dialogs.js` / `rail.js` | popovers and toasts; the details rail |
+| `bytes-view.js` / `arch.js` | the hex dump and the patched file; no-op fills |
+| `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; references; the help dialog |
+| `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`); addresses as hex strings and BigInt |
+
+**Linking.** Every pane shares one index: a C line's instructions are the union of the
+engine's `instructions[].lines`, `line_mappings` and the addresses on that line's tokens
+(each alone can be sparse — the provenance maps calls and returns, not every move). A
+line and its instructions share a colour band. Hovering marks the other panes without
+scrolling them; selecting (a line, an instruction, a variable, a stack slot) marks every
+pane and scrolls the others to it. The hover card waits 450 ms by default (view menu:
+instant, 250, 800, off), switches instantly while open, and hides on pointer-out (120 ms
+grace), scroll, wheel, blur, mousedown and `Escape`; a touch long-press (500 ms) and
+arrow-key navigation show it too. It lists a C line's instructions (up to 12), a call's
+callee and signature, an instruction's C line with a note on its mnemonic and any idiom,
+a stack operand's slot.
+
+**Keys** (none fire while typing in a field): `/` filter · `Space` C ⇄ assembly · `1-4`
+tabs · `s` split · `o` address format · `b` bytes column · `↑↓` lines/rows · `←→` names on
+a line · `Enter` open the callee · `n` rename · `y` retype (on a function name: prototype)
+· `;` comment · `g` go to · `x` references · `u`/Ctrl+Z undo · Ctrl+Shift+Z redo ·
+Alt+←/→ history · `?` help · `Esc` closes the card, then a dialog, then the selection.
+
+**Edits are directives.** Each edit is one record in `session.js`, keyed by what it
+describes:
+
+| Edit | Directive |
+|---|---|
+| rename a local | `name v1 total` |
+| retype a local (and/or rename it) | `type v1 unsigned long total` — one directive, the name pinned so a retype cannot renumber `vN` |
+| rename/retype a parameter | `prototype 0x1161 long sum_to(int count)` — `name`/`type` on a parameter hits `More than one symbol named` on a DWARF binary |
+| rename a function | `function 0x1161=summation` |
+| name/type a global | `data 0x4010 int counter` |
+| comment an instruction | `comment 0x11b5 calls add first` |
+| patch bytes | `bytes 0x11e1 9090909090` (contiguous bytes form one run; writing the original byte back removes it) |
+
+`inspect` gets the global directives plus the open function's, **unqualified** (the engine
+rejects an address qualifier, and a name qualifier must be the function's current name).
+`project` and the exported file qualify every function-scoped directive with the
+function's **current** name (`name summation::v1 i` after `function 0x1161=summation`).
+`list` gets the global directives minus function renames; the sidebar overlays the
+session's names itself. Each edit snapshots the session, re-inspects with the previous
+render still up (a thin progress bar; scroll and selection kept), flashes the lines that
+changed, and records every `assertions[]` row against the record that produced it: the
+rail marks it applied (✓) or rejected (✗, with the engine's reason, also toasted). A
+rejected directive stays in the session; a request that fails or is cancelled restores
+the snapshot. The engine refuses a retype that changes a local's storage size (`Storage
+is 8 bytes, the stated type is 4`), so the retype dialog warns before sending one.
+
+**Export and persistence.** "export" downloads `<binary>.kuna`: a `#` header (binary,
+hash, time, and the replay command `kuna decompile <binary> <function> --assert
+@<binary>.kuna`) then one directive per line, which the native CLI replays verbatim.
+Import reads the same format; an unqualified function-scoped line binds to the open
+function, and a directive the page does not model is kept verbatim. The session is also
+saved in `localStorage` per binary — `kuna.d2.session.<hash>`, the SHA-256 of the bytes
+(two FNV-1a passes outside a secure context), at most 20 binaries (`kuna.d2.index`,
+least recently used evicted; a full or throwing store never breaks the page) — and loading
+the same file again restores it with a "Restored N edits · discard" banner.
+
+**Patching.** The Bytes tab is the function's bytes: instruction bytes from the engine,
+the gaps from the page's own copy of the file through `sections[].file_offset`, patched
+bytes marked (hover shows the original). Click a byte and type hex; a burst of typing is
+one edit, sent 700 ms after the last key. A selected instruction offers Patch (warns when
+the new bytes are shorter than the instruction — the CPU decodes the rest as something
+else — or longer), NOP and Revert. NOP fills are exact or absent: x86 `90`, AArch64
+`1f2003d5`, A32 `0000a0e1`, Thumb `00bf`, MIPS `00000000`, PowerPC `60000000` (big-endian) /
+`00000060`, RISC-V `13000000` or `0100`. "Patched binary" writes each run at its file
+offset into a copy of the file and downloads `<name>.patched.<ext>`; bytes no file byte
+backs (`.bss`, an image without a section table) are reported and nothing is downloaded.
+A Mach-O needs re-signing (`codesign -f -s -`); a PE's checksum no longer matches. `g` to
+an address outside every function shows the bytes there (from the file, else `read`).
+
+**Learning aids.** The Stack tab draws the frame from the prologue and the engine's
+variables with offsets from the stack pointer at entry (`[RBP - 0xc]` is entry − 0x14
+after `PUSH RBP; MOV RBP,RSP`): return address, saved registers, locals, padding,
+debug-info-only variables dimmed; a stack array gets a callout naming what an overflow
+reaches, a leaf without `SUB RSP` the red-zone note (x86 only). Instruction hints label
+prologues, epilogues, canary loads and checks, `xor r,r`, `test r,r`, `cdqe`, `endbr64`
+and the variadic `mov eax,0`. References come from `xrefs`. `?` holds a glossary of the
+names a decompiler invents.
+
+**Older engines.** On a wasm without `inspect` the page opens functions through
+`decompile`: the C view works (regex-highlighted, names still selectable) and the other
+tabs say what they need. On one without `--assert`, edits are kept, exported and marked
+"not yet sent" rather than reported as applied.
+
 ## 5. Testing
 
-Four layers, all runnable without a browser in CI, spanning **multiple formats and
-architectures**:
+Five layers, all but the last runnable without a browser in CI, spanning **multiple
+formats and architectures**:
 
 1. **`test/parity.mjs`** — runs the wasm under `node:wasi` (the same WASI preview1 ABI the
    browser shim implements) and asserts its output is **byte-identical to the native
@@ -435,19 +568,41 @@ architectures**:
    no eager C, a selected address produces one body, cancellation terminates/recreates the
    Worker and rehydrates the session, and project export transfers a structurally complete
    ZIP rather than the four-artifact JSON object. The Pages build runs this test.
-4. **Full UI (optional, not committed)** — a `puppeteer-core` script drives
-   `decompile/index.html` in real Chrome: uploads an ELF then a Mach-O, waits for the code
-   panel / status, asserts the rendered C and the detected format. Verified passing during
-   development; kept out of the committed suite to avoid a browser/`puppeteer` dependency.
-   The filter's DOM half was verified the same way (raw CDP over Node's built-in
-   `WebSocket`, no `puppeteer`): 16 checks on `sample.elf` — row hiding is
-   `display:none` and not the `.fn` flex rule, header and stub-divider counts, the
-   invalid-regex report, `/`-to-focus, `Escape`, `Enter`-opens-first-match, arrow
-   walking — plus a scale run on a 1.1 MiB PE (3,158 rows: 8.4 s to inventory, 1.8–3.0 ms
-   per keystroke).
-   (Headless Chrome alone can do the same without `puppeteer`: copy the page into `dist/`
-   with an appended module script that sets `#file`'s `files` from a `DataTransfer` and
-   dispatches `change`, then run `--headless --virtual-time-budget=… --dump-dom`.)
+   It also loads a session with `language: 'rust'` and asserts Rust comes back (the
+   Worker used to drop the language).
+4. **The study view.** Four build-free suites import the page's modules from the source
+   tree: **`test/decompile2-render.mjs`** (the shared highlighter's `scan` — `highlight*`
+   output pinned byte for byte — token-stream rendering and the per-line fallback,
+   escaping, the index, the diff, assembly rows, branch arrows, hover placement),
+   **`test/decompile2-session.mjs`** (directive merging and pinning, unqualified vs
+   qualified output after a function rename, parameters via `prototype`, byte runs, the
+   `.kuna` and JSON round trips, the CLI's `#`-comment rule, outcomes, undo/redo, the
+   store's LRU and quota handling, the hash vectors), **`test/decompile2-bytes.mjs`**
+   (every instruction's file offset and bytes against `sample.elf`, the patched file, the
+   `.data`/`.bss` boundary, every no-op fill) and **`test/decompile2-learn.mjs`** (a note
+   for every fixture mnemonic, idioms, the `sum_to` frame, the overflow callout,
+   references, the glossary). They read contract fixtures generated from the native CLI
+   by `test/make-inspect-fixtures.mjs` (`test/fixtures/inspect-{main,sum_to,add}.json`,
+   `list-sample.json`). **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
+   `xrefs` and `--assert` through the real Worker (skipping, with a message, on a wasm
+   without `inspect`).
+5. **`test/decompile2-browser.mjs`** — the real page in headless Chrome over the DevTools
+   protocol (Node's built-in `WebSocket`, no `puppeteer`; skips when there is no Chrome or
+   the Node has no `WebSocket`): it loads the example through the file input with a
+   `DataTransfer`, opens `main`, hovers line 5 and waits for the card, switches to
+   Assembly, renames `v1` to `total`, types `90` into the Bytes tab, checks 1024 and 820 px
+   for horizontal overflow, reloads to see the session restored, and checks that
+   `/decompile` still renders and its Language control switches to Rust. Any uncaught page
+   exception fails it; steps an older engine cannot serve assert the page's fallback and
+   are listed as skipped. CI runs it when the runner has `google-chrome`.
+   The filter's DOM half was verified the same way during development (raw CDP): 16
+   checks on `sample.elf` — row hiding is `display:none` and not the `.fn` flex rule,
+   header and stub-divider counts, the invalid-regex report, `/`-to-focus, `Escape`,
+   `Enter`-opens-first-match, arrow walking — plus a scale run on a 1.1 MiB PE (3,158
+   rows: 8.4 s to inventory, 1.8–3.0 ms per keystroke). (Plain `--headless
+   --virtual-time-budget=… --dump-dom` is not a substitute: tried on `/decompile`, the
+   dumped DOM still reads `loading decompiler…` — the budget runs out before the Worker
+   is ready.)
 
 Fixtures (all benign, small, reproducible from the committed source via the comment
 header): `sample.elf` (x86-64 ELF, rich body — call chain + `for`-loop), `sample_aarch64.o`
@@ -480,6 +635,22 @@ benign PE is committed because this environment has no PE linker.
 
 ## 7. Limitations & future work
 
+- **An edit costs a load and two decompiles.** Every study-view request re-bootstraps
+  the engine (a WASI command), and a `name`/`type` directive makes the engine decompile
+  the function twice (the local does not exist until the first pass). On the example that
+  is well under a second; on a large function it is seconds, so the page keeps the
+  previous render up and only a thin progress bar moves.
+- **One request at a time.** The Worker runs one synchronous WASI call; a new function,
+  edit or export cancels whatever is running (terminate + respawn + `.sla` refetch).
+  References load only when nothing else is running.
+- **A wasm panic aborts the call** (`panic = abort` on `wasm32-wasip1`): the request
+  fails and the client respawns the Worker; the page shows the error and keeps its state.
+- **Only file-backed patches download.** `bytes` directives can overlay any mapped
+  address and the C follows them, but the patched-binary download writes only bytes the
+  section table maps to a file offset. Relocated `.o` sections are laid out at synthetic
+  addresses, so their instruction bytes can differ from the file's.
+- **The frame diagram models x86 frames**; other architectures get a note.
+
 - Fast WASM whole-binary decompile/project arms the same cooperative 10-second
   per-function budget as the native fast batch policy. It isolates probed
   decompile-pipeline stalls as function errors, but it is not a hard timer over
@@ -510,6 +681,9 @@ benign PE is committed because this environment has no PE linker.
 
 - Harness & commands: `integrations/web/README.md`
 - Browser worker boundary: `integrations/web/{kuna-worker.js,kuna-worker-client.js}`
+- The study view: `integrations/web/decompile2/` (module table in §4.2); its tests
+  `integrations/web/test/decompile2-*.mjs`, the CDP driver `test/cdp-client.mjs`, the
+  fixture generator `test/make-inspect-fixtures.mjs`
 - The crate: `decompiler/crates/kuna-wasm/{Cargo.toml, src/lib.rs, src/main.rs}`
   (the per-function `kind` classifier lives in `kuna-console/src/classify.rs`)
 - The shared decompile loop + artifact builders: `decompiler/crates/kuna-console/src/project.rs`

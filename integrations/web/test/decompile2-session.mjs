@@ -249,7 +249,9 @@ assert.equal(cliCommand('a b.exe', 'sub_401000'), "kuna decompile 'a b.exe' sub_
 assert.equal(fnv1a32(new Uint8Array()), '811c9dc5');
 assert.equal(fnv1a32(new TextEncoder().encode('a')), 'e40c292c');
 assert.equal(fnv1a32(new TextEncoder().encode('foobar')), 'bf9cf968');
-assert.match(await hashBytes(new TextEncoder().encode('abc')), /^sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad$/);
+if (globalThis.crypto?.subtle) {
+  assert.match(await hashBytes(new TextEncoder().encode('abc')), /^sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad$/);
+}
 assert.match(await hashBytes(new TextEncoder().encode('abc'), null), /^fnv:[0-9a-f]{16}-3$/, 'no WebCrypto: FNV fallback');
 {
   const mem = new Map();
