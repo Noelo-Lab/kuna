@@ -253,15 +253,15 @@
   "history": "the first measurement (before the per-storage memo and the disputed-global blocking) read bash +12.86% min / +11.43% median-of-ratios: the batch redo decompiled 23 functions again (14.7 s, the parser's two largest among them); after the fix 17 functions and 3.6 s; an engine that decided a defaulted table sign only after the batch read sort +57% (its main decompiled again for one table): a function decompiled after evidence settled a sign now reads it at once (Ledger::settled), and sort reads -1.58%"
  },
  "gates": {
-  "measured_on": "feat/elemptr rebased on origin/main 850e8c692 (#726 callpush, #727 castindex, #728 castternary)",
+  "measured_on": "feat/elemptr on origin/main 850e8c692 (head 5552d1f73 for the lane)",
   "make_test": "datatests: 675/675 assertions passed, PARITY OK (default on)",
-  "make_test_stages": "datatests: 1403/1403 assertions passed, PARITY OK (baseline re-recorded on 850e8c692: +9 kuna-elemptr keys, no key removed)",
+  "make_test_stages": "datatests: 1405/1405 assertions passed, PARITY OK (baseline +2 kuna-elemptr keys, #10/#11; no key removed)",
   "make_test_cli": "tests/cli: 242/242 passed",
   "check_spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
   "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "make_rust_test": "RUST_TEST_RC=0 (7,561 passed, 0 failed; 422 test results); lane started 10:36:28Z after the last code change (c063a18bd)"
+  "make_rust_test": "RUST_TEST_RC=0 (7,564 passed, 0 failed; 423 test results); lane started 14:13:14Z after the last code and catalog-text commit (5552d1f73)"
  },
  "default_on_evaluation": {
   "verdict": "flipped: elemptr ships on",
