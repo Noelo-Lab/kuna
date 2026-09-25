@@ -21,11 +21,19 @@ import {
   renderC,
   localDecls,
   storageLabel,
+  changedLines,
 } from './render-c.js';
 import { loadPrefs, savePrefs, cycle, DEFAULT_PREFS } from './prefs.js';
 import { renderAsm, renderInsnRows, formatAddr, spacedBytes } from './asm-view.js';
 import { createHover } from './hover.js';
 import { createSync } from './sync.js';
+import { Session, cliCommand } from './session.js';
+import {
+  validateIdent, validateCType, parseSignature, buildPrototype, typeSize, knownTypes, normalizeType,
+} from './ctype.js';
+import { hashBytes, SessionStore } from './persist.js';
+import { createDialogs } from './dialogs.js';
+import { createRail } from './rail.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -72,16 +80,8 @@ function setStatus(msg, cls = 'busy') {
   els.status.innerHTML = '<span class="dot"></span>' + escapeHtml(msg);
 }
 
-function toast(message, { kind = 'ok', detail = '', ms = 6000 } = {}) {
-  const el = document.createElement('div');
-  el.className = 'd2-toast ' + kind;
-  el.setAttribute('role', kind === 'err' ? 'alert' : 'status');
-  el.innerHTML = escapeHtml(message) + (detail ? `<span class="dt">${escapeHtml(detail)}</span>` : '');
-  els.toasts.appendChild(el);
-  while (els.toasts.children.length > 4) els.toasts.firstChild.remove();
-  setTimeout(() => el.remove(), ms);
-  return el;
-}
+const dialogs = createDialogs({ pop: els.pop, toasts: els.toasts });
+const toast = dialogs.toast;
 
 // ── the operation model: one engine request at a time ──────────────────────
 
@@ -192,14 +192,24 @@ async function fetchFunction(fn, assertions) {
   }
 }
 
-// ── the session (edits). Replaced by session.js in the edit milestone. ─────
+// ── the session: the student's edits as --assert directives ───────────────
 
-const session = {
-  globalAssertions: () => [],
-  assertionsFor: () => [],
-  allAssertions: () => [],
-  displayName: (fn) => fn.name,
-};
+let session = new Session();
+const store = new SessionStore(storage);
+
+/** A function's name as the student sees it (their rename, else the engine's). */
+function displayName(fn) {
+  return session.functionName(fn.address_hex) || fn.name;
+}
+
+const nameOfAddr = (addrHex) => displayName(state.byAddr.get(addrHex) || { address_hex: addrHex, name: addrHex });
+
+function persist() {
+  const hash = state.binary?.hash;
+  if (!hash) return;
+  if (session.size) store.save(hash, state.binary.name, JSON.stringify(session.toJSON()));
+  else store.remove(hash);
+}
 
 // ── startup ────────────────────────────────────────────────────────────────
 
@@ -284,7 +294,7 @@ els.filter.addEventListener('keydown', (e) => {
 /** Sidebar rows show the session's names (a renamed function reads as renamed). */
 function refreshRowNames() {
   for (const entry of state.rows) {
-    const shown = session.displayName(entry.fn);
+    const shown = displayName(entry.fn);
     entry.row.querySelector('.nm').textContent = shown;
     entry.row.classList.toggle('renamed', shown !== entry.fn.name);
     entry.key = searchKey({ ...entry.fn, aliases: [...(entry.fn.aliases || []), shown] });
@@ -355,14 +365,19 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
   const t0 = performance.now();
   try {
     bytes = source.bytes || new Uint8Array(await source.arrayBuffer());
+    const hash = await hashBytes(bytes);
     if (!isCurrent(op)) return;
-    state.binary = { name, bytes, example, format: null };
+    if (hash !== state.binary?.hash) {
+      session = restoreSession(hash);
+      state.restored = session.size;
+    }
+    state.binary = { name, bytes, example, format: null, hash };
     setStatus(`indexing ${name} (${bytes.length.toLocaleString()} bytes)…`);
     inventory = await state.kuna.load(bytes, {
       fileName: name,
       mode: els.mode.value,
       language: els.lang.value,
-      assertions: state.caps.assert === false ? [] : session.globalAssertions(),
+      assertions: listAssertions(),
     });
   } catch (e) {
     if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return;
@@ -374,6 +389,7 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
   if (!isCurrent(op)) return;
   state.binary.format = inventory.format;
   state.inventory = inventory;
+  session.recordOutcomes(inventory.assertions);
   state.byAddr.clear();
   state.byName.clear();
   for (const fn of inventory.functions) {
@@ -384,6 +400,8 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
   }
   buildSidebar(inventory.functions);
   $('tab-src').hidden = !(example && state.exampleSource);
+  renderRail();
+  if (state.restored) toast(`Restored ${state.restored} edit${state.restored === 1 ? '' : 's'} for ${name}.`);
   const dt = Math.round(performance.now() - t0);
   setStatus(`${name} (${inventory.format}) — ${inventory.functions.length} functions indexed in ${dt} ms`, 'ok');
   finishOperation(op);
@@ -391,6 +409,24 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
   const first = (keep && state.byAddr.get(keep)) || fromHash || state.byName.get('main') ||
     state.rows.find((r) => !r.stub)?.fn || state.rows[0]?.fn;
   if (first) openFunction(first, { replace: true });
+}
+
+function restoreSession(hash) {
+  try {
+    const text = store.load(hash);
+    return text ? Session.fromJSON(JSON.parse(text)) : new Session();
+  } catch (_) {
+    return new Session();
+  }
+}
+
+/**
+ * The directives `list` gets: the global ones except function renames, which
+ * the sidebar overlays itself so the inventory keeps the engine's own names.
+ */
+function listAssertions() {
+  if (state.caps.assert === false) return [];
+  return session.globalAssertions().filter((d) => !d.startsWith('function '));
 }
 
 els.file.addEventListener('change', () => {
@@ -483,11 +519,11 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
       syncButtons();
     }
     showFunction(fn, cached, { focusAddr });
-    if (!active) setStatus(`${session.displayName(fn)} — ${fn.address_hex} from cache`, cached.error ? 'err' : 'ok');
+    if (!active) setStatus(`${displayName(fn)} — ${fn.address_hex} from cache`, cached.error ? 'err' : 'ok');
     return;
   }
   const op = beginOperation('function');
-  const label = session.displayName(fn);
+  const label = displayName(fn);
   setStatus(`decompiling ${label} @ ${fn.address_hex}…`);
   if (!keepView) {
     state.current = null;
@@ -527,21 +563,22 @@ function fnMeta(fn, data) {
   return tags.join(' · ');
 }
 
-function showFunction(fn, data, { focusAddr = null } = {}) {
+function showFunction(fn, data, { focusAddr = null, keep = false } = {}) {
   const { segs } = lineSegments(data);
   const index = buildIndex(data, segs);
   state.current = { fn, data, segs, index, decls: localDecls(data.code) };
   state.rendered.clear();
-  state.sel = null;
+  if (!keep) state.sel = null;
   state.cursor = null;
   hover.hide();
   sync.setIndex(index);
-  els.vname.textContent = session.displayName(fn);
+  els.vname.textContent = displayName(fn);
   els.vmeta.textContent = fnMeta(fn, data);
   const row = state.rows.find((r) => r.fn === fn)?.row;
   row?.classList.toggle('bad', !!data.error);
   renderVisible();
   setHint(null);
+  renderRail();
   if (focusAddr) selectTarget({ addr: focusAddr }, null);
 }
 
@@ -628,7 +665,7 @@ function asmContext(data) {
     prefs: state.prefs,
     codeLines: data.code.split('\n'),
     fnByAddr: state.byAddr,
-    nameOf: (fn) => session.displayName(fn),
+    nameOf: displayName,
   };
 }
 
@@ -738,7 +775,7 @@ function calleeCard(addrHex) {
   if (!fn) return `<div class="ch">${escapeHtml(addrHex)}</div><div class="cm">not a function in this binary's inventory</div>`;
   const cached = state.cache.get(addrHex);
   const kind = isStub(fn) ? ` · ${fn.kind}` : '';
-  let html = `<div class="ch">${escapeHtml(session.displayName(fn))} — ${escapeHtml(addrHex)}${fn.size ? ` · ${fn.size} B` : ''}${kind}</div>`;
+  let html = `<div class="ch">${escapeHtml(displayName(fn))} — ${escapeHtml(addrHex)}${fn.size ? ` · ${fn.size} B` : ''}${kind}</div>`;
   if (cached?.proto) html += `<pre>${escapeHtml(cached.proto)}</pre>`;
   html += '<div class="cm">double-click or <kbd>Enter</kbd> opens it</div>';
   return html;
@@ -818,6 +855,7 @@ function selectTarget(target, from, tokEl = null) {
   state.sel = target;
   const sets = sync.select(target, { from });
   setCursor(tokEl);
+  rail.markVars(sets ? sets.syms : new Set());
   const active = target?.addr ? 'a-' + target.addr : Number.isInteger(target?.line) ? 'c-L' + target.line : null;
   if (target?.line || target?.sym) {
     const line = target.line ?? (sets && sets.lines.size ? Math.min(...sets.lines) : null);
@@ -894,9 +932,15 @@ els.ccode.addEventListener('click', (e) => {
 els.ccode.addEventListener('dblclick', (e) => {
   const tok = e.target.closest('.t');
   if (!tok || !state.current) return;
-  if (tok.dataset.kind === 'funcname' && tok.dataset.callee && tok.dataset.callee !== state.current.data.address_hex) {
+  const target = tokenTarget(tok);
+  if (target?.kind === 'callee' && Number(tok.closest('.d2-cl').dataset.line) !== 1) {
     e.preventDefault();
     openCallee(tok);
+  } else if (target) {
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    if (tok.dataset.sym) selectTarget({ sym: tok.dataset.sym }, 'c', tok);
+    renameTarget(target);
   }
 });
 
@@ -1100,9 +1144,16 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight' && !els.fwd.disabled) history.forward();
     return;
   }
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z' || e.key === 'y') &&
+      !typing(document.activeElement) && state.current) {
+    e.preventDefault();
+    if (e.key === 'y' || e.shiftKey) redo(); else undo();
+    return;
+  }
   if (e.ctrlKey || e.metaKey || e.altKey || typing(document.activeElement)) return;
   if (e.key === 'Escape') {
     if (hover.hide()) return;
+    if (dialogs.close()) return;
     if (!els.viewMenu.hidden) { toggleViewMenu(false); els.viewBtn.focus(); return; }
     if (state.sel) selectTarget(null, null);
     return;
@@ -1139,6 +1190,25 @@ document.addEventListener('keydown', (e) => {
       applyPaneClasses();
       setHint(`bytes column ${state.prefs.asmBytes ? 'on' : 'off'}`);
       break;
+    case 'n':
+      e.preventDefault();
+      renameSelected();
+      break;
+    case 'y':
+      e.preventDefault();
+      retypeSelected();
+      break;
+    case ';':
+      e.preventDefault();
+      commentSelected();
+      break;
+    case 'g':
+      e.preventDefault();
+      goToDialog();
+      break;
+    case 'u':
+      undo();
+      break;
     default:
       return;
   }
@@ -1149,6 +1219,483 @@ applyPaneClasses();
 syncButtons();
 window.addEventListener('beforeunload', () => state.kuna?.close());
 
+// ── editing: dialogs, applyEdit, undo, the rail ────────────────────────────
+
+/** What a C token stands for, as an edit target. */
+function tokenTarget(tok) {
+  if (!tok || !state.current) return null;
+  const self = state.current.data.address_hex;
+  const line = Number(tok.closest('.d2-cl')?.dataset.line);
+  if (tok.dataset.kind === 'funcname') {
+    const callee = tok.dataset.callee || state.byName.get(tok.textContent)?.address_hex || null;
+    if (!callee || callee === self || (line === 1 && tok.dataset.decl !== 'param')) return { kind: 'self', addr: self, el: tok };
+    return { kind: 'callee', addr: callee, el: tok };
+  }
+  if (tok.dataset.kind === 'variable') {
+    if (tok.dataset.gaddr) return { kind: 'global', addr: tok.dataset.gaddr, name: tok.textContent, el: tok };
+    return { kind: 'var', name: tok.textContent, el: tok };
+  }
+  return null;
+}
+
+/** The edit target from the cursor or the selection. */
+function selectedTarget() {
+  if (state.cursor?.isConnected) {
+    const t = tokenTarget(state.cursor);
+    if (t) return t;
+  }
+  if (state.sel?.sym) {
+    const el = els.ccode.querySelector(`.t[data-sym="${CSS.escape(state.sel.sym)}"]`);
+    return el ? tokenTarget(el) : { kind: 'var', name: state.sel.sym, el: null };
+  }
+  return null;
+}
+
+function currentSignature(addr = state.current.data.address_hex) {
+  const cached = addr === state.current.data.address_hex ? state.current.data : state.cache.get(addr);
+  return parseSignature(session.proto(addr) || cached?.proto || '');
+}
+
+function paramIndex(name) {
+  const sig = currentSignature();
+  const i = sig ? sig.params.findIndex((p) => p.name === name) : -1;
+  return i >= 0 ? { sig, index: i } : null;
+}
+
+function typeOptions() {
+  const data = state.current?.data;
+  return knownTypes({ types: data?.types, known: state.inventory?.known_types, typedefs: session.typedefTags() });
+}
+
+function targetBits() {
+  return state.current?.data.target?.bits || state.inventory?.target?.bits || 64;
+}
+
+/** The storage size behind a displayed local, when the engine or the declaration says. */
+function currentSize(name) {
+  const v = state.current.data.variables.find((x) => x.name === name && x.size);
+  if (v) return v.size;
+  const decl = state.current.decls.find((d) => d.name === name);
+  return decl ? typeSize(decl.type, { bits: targetBits(), llp64: /PE/.test(state.binary?.format || '') }) : null;
+}
+
+const noHash = (v) => (/\s#/.test(v) || /[\r\n]/.test(v) ? 'a directive cannot hold a newline or " #" (the .kuna file reads that as a comment)' : null);
+
+async function renameSelected() {
+  const target = selectedTarget();
+  if (!target) {
+    if (state.current) return renameTarget({ kind: 'self', addr: state.current.data.address_hex, el: els.vname });
+    return;
+  }
+  renameTarget(target);
+}
+
+async function renameTarget(target) {
+  const addr = state.current.data.address_hex;
+  if (target.kind === 'self' || target.kind === 'callee') {
+    const fn = state.byAddr.get(target.addr) || { address_hex: target.addr, name: target.el?.textContent || target.addr };
+    const res = await dialogs.openPopover({
+      anchorEl: target.el, title: `Rename function ${displayName(fn)}`,
+      note: `function ${target.addr}=<name>`,
+      fields: [{ name: 'name', label: 'new name', value: displayName(fn), validate: validateIdent }],
+    });
+    if (!res || res.name === displayName(fn)) return;
+    return applyEdit(() => session.setFunctionName(target.addr, res.name === fn.name ? null : res.name), { label: 'rename' });
+  }
+  if (target.kind === 'global') return dataDialog(target);
+  const param = paramIndex(target.name);
+  const res = await dialogs.openPopover({
+    anchorEl: target.el,
+    title: `Rename ${param ? 'parameter' : 'local'} ${target.name}`,
+    note: param ? 'a parameter is renamed through the function\'s prototype' : varSummary(target.name),
+    fields: [{ name: 'name', label: 'new name', value: target.name, validate: validateIdent }],
+  });
+  if (!res || res.name === target.name) return;
+  if (param) {
+    param.sig.params[param.index].name = res.name;
+    return applyEdit(() => session.setProto(addr, buildPrototype(param.sig)), { label: 'rename', reselect: { sym: res.name } });
+  }
+  const sym = session.symbolOf(addr, target.name);
+  return applyEdit(() => session.setVar(addr, sym, { name: res.name }), { label: 'rename', reselect: { sym: res.name } });
+}
+
+async function retypeSelected() {
+  const target = selectedTarget();
+  if (!target) return state.current && protoDialog(state.current.data.address_hex, els.vname);
+  if (target.kind === 'self' || target.kind === 'callee') return protoDialog(target.addr, target.el);
+  if (target.kind === 'global') return dataDialog(target);
+  const addr = state.current.data.address_hex;
+  const param = paramIndex(target.name);
+  const current = param ? param.sig.params[param.index].type : describeVar(target.name).type;
+  const size = param ? null : currentSize(target.name);
+  const res = await dialogs.openPopover({
+    anchorEl: target.el,
+    title: `Retype ${param ? 'parameter' : 'local'} ${target.name}`,
+    note: param ? 'a parameter is retyped through the function\'s prototype' : varSummary(target.name),
+    fields: [{ name: 'type', label: 'C type', value: current, list: typeOptions(), validate: validateCType }],
+    warn: (v) => {
+      const next = typeSize(v.type, { bits: targetBits() });
+      return size && next && next !== size
+        ? `${target.name} is ${size} bytes; ${normalizeType(v.type)} is ${next}. The engine refuses a retype that changes the storage size.`
+        : '';
+    },
+  });
+  if (!res || normalizeType(res.type) === normalizeType(current)) return;
+  const type = normalizeType(res.type);
+  if (param) {
+    param.sig.params[param.index].type = type;
+    return applyEdit(() => session.setProto(addr, buildPrototype(param.sig)), { label: 'retype', reselect: { sym: target.name } });
+  }
+  const sym = session.symbolOf(addr, target.name);
+  const rec = session.varRecord(addr, target.name);
+  return applyEdit(() => session.setVar(addr, sym, { type, name: rec?.name ?? undefined }), { label: 'retype', reselect: { sym: target.name } });
+}
+
+async function protoDialog(addr, anchorEl) {
+  const fn = state.byAddr.get(addr) || { address_hex: addr, name: addr };
+  const cached = addr === state.current.data.address_hex ? state.current.data : state.cache.get(addr);
+  const value = session.proto(addr) || cached?.proto || `void ${displayName(fn)}(void)`;
+  const res = await dialogs.openPopover({
+    anchorEl, title: `Prototype of ${displayName(fn)}`,
+    note: `prototype ${addr} <declaration> — the name inside is ignored; types and parameter names apply`,
+    fields: [{
+      name: 'decl', label: 'C declaration', value, textarea: true,
+      validate: (v) => (parseSignature(v) ? noHash(v) : 'write a declaration like: long sum_to(int count)'),
+    }],
+  });
+  if (!res) return;
+  const decl = buildPrototype(parseSignature(res.decl));
+  if (decl === value) return;
+  return applyEdit(() => session.setProto(addr, decl), { label: 'prototype' });
+}
+
+async function dataDialog(target) {
+  const g = state.current.data.globals.find((x) => x.address_hex === target.addr || x.name === target.name);
+  const rec = session.records.get(`data:${target.addr}`);
+  const declType = g?.declaration ? g.declaration.replace(new RegExp(`\\b${target.name}\\b`), '').replace(/;\s*$/, '').trim() : '';
+  const res = await dialogs.openPopover({
+    anchorEl: target.el, title: `Global at ${target.addr}`,
+    note: `data ${target.addr} <type> <name>`,
+    fields: [
+      { name: 'name', label: 'name', value: rec?.name || target.name, validate: validateIdent },
+      { name: 'type', label: 'C type', value: rec?.type || declType || 'undefined4', list: typeOptions(), validate: validateCType },
+    ],
+  });
+  if (!res) return;
+  return applyEdit(() => session.setData(target.addr, normalizeType(res.type), res.name), { label: 'global' });
+}
+
+async function commentSelected() {
+  if (!state.current) return;
+  const { index, data } = state.current;
+  let addr = state.sel?.addr || null;
+  if (!addr && Number.isInteger(state.sel?.line)) addr = index.lineToInsns.get(state.sel.line)?.[0] || null;
+  if (!addr && state.cursor?.isConnected) addr = index.lineToInsns.get(Number(state.cursor.closest('.d2-cl').dataset.line))?.[0] || null;
+  if (!addr) {
+    toast('Select an instruction, or a C line that has one, to comment it.', { kind: 'warn' });
+    return;
+  }
+  const anchor = document.getElementById('a-' + addr) || els.ccode.querySelector(`.d2-cl[data-addrs~="${addr}"] .ct`);
+  const res = await dialogs.openPopover({
+    anchorEl: anchor, title: `Comment at ${addr}`,
+    note: 'rendered into the C at that instruction; leave empty to remove',
+    fields: [{ name: 'text', label: 'comment', value: session.comment(data.address_hex, addr) || '', validate: noHash }],
+  });
+  if (!res) return;
+  return applyEdit(() => session.setComment(data.address_hex, addr, res.text.trim() || null), { label: 'comment' });
+}
+
+async function goToDialog() {
+  if (!state.inventory) return;
+  const res = await dialogs.openPopover({
+    title: 'Go to', fields: [{
+      name: 'where', label: 'function name or address', value: '',
+      list: state.rows.map((r) => displayName(r.fn)),
+      validate: (v) => (v.trim() ? null : 'a name or an address'),
+    }],
+  });
+  if (!res) return;
+  const q = res.where.trim();
+  const byShown = state.rows.find((r) => displayName(r.fn) === q)?.fn || state.byName.get(q);
+  if (byShown) return openFunction(byShown);
+  if (/^(0x)?[0-9a-f]+$/i.test(q)) return gotoAddr('0x' + BigInt('0x' + q.replace(/^0x/i, '')).toString(16));
+  toast(`No function named ${q}.`, { kind: 'warn' });
+}
+
+/** After any change to the session: persist, drop caches, refresh names and the rail. */
+function sessionChanged() {
+  persist();
+  state.cache.clear();
+  state.xrefs?.clear();
+  refreshRowNames();
+  if (state.current) els.vname.textContent = displayName(state.current.fn);
+  renderRail();
+}
+
+function captureScroll() {
+  return [els.ccode, els.asmcode, els.hexdump, els.stackframe].map((el) => [el, el.scrollTop, el.scrollLeft]);
+}
+
+function restoreScroll(saved) {
+  for (const [el, top, left] of saved) { el.scrollTop = top; el.scrollLeft = left; }
+}
+
+function flash(lines) {
+  for (const n of lines) {
+    const el = document.getElementById('c-L' + n);
+    if (!el) continue;
+    el.classList.remove('d2-flash');
+    void el.offsetWidth;
+    el.classList.add('d2-flash');
+  }
+}
+
+/**
+ * Apply one edit: snapshot, `mutate` the session, save, drop caches, and
+ * re-inspect the open function while the old render stays up. A failed or
+ * cancelled request restores the snapshot; a rejected directive stays in the
+ * session, marked, with the engine's reason in a toast.
+ */
+async function applyEdit(mutate, { label = 'edit', reselect = null } = {}) {
+  if (!state.current) return false;
+  const addr = state.current.data.address_hex;
+  const before = new Set(session.assertionsFor(addr));
+  const snap = session.snapshot();
+  try {
+    mutate();
+  } catch (e) {
+    toast(e.message, { kind: 'err' });
+    return false;
+  }
+  const fresh = session.assertionsFor(addr).filter((d) => !before.has(d));
+  sessionChanged();
+  if (state.caps.assert === false) {
+    session.pushUndo(snap);
+    renderRail();
+    toast('Edit kept, not applied: this engine build has no --assert.', { kind: 'warn' });
+    return true;
+  }
+  return reinspect({ snap, fresh, label, reselect });
+}
+
+async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = null } = {}) {
+  const fn = state.current.fn;
+  const oldCode = state.current.data.code;
+  const scroll = captureScroll();
+  const keepSel = reselect || state.sel;
+  const op = beginOperation('edit');
+  op.onCancel = () => {
+    if (!snap) return;
+    session.restore(snap);
+    sessionChanged();
+    toast(`The ${label} was cancelled and undone.`, { kind: 'warn' });
+  };
+  setStatus(`applying ${label} to ${displayName(fn)}…`);
+  const t0 = performance.now();
+  try {
+    const doc = await fetchFunction(fn, directivesFor(fn.address_hex));
+    if (!isCurrent(op)) return false;
+    const data = normalizeInspect(doc);
+    session.recordOutcomes(data.assertions);
+    if (snap) session.pushUndo(snap);
+    persist();
+    cacheSet(fn.address_hex, data);
+    showFunction(fn, data, { keep: true });
+    restoreScroll(scroll);
+    if (keepSel) selectTarget(keepSel, null);
+    flash(changedLines(oldCode, data.code));
+    if (state.caps.assert === false) {
+      setStatus(`${displayName(fn)} — ${label} kept; this engine build cannot apply edits`, 'err');
+      renderRail();
+      return false;
+    }
+    const mine = data.assertions.filter((r) => fresh.includes(r.directive));
+    for (const row of mine.filter((r) => r.status === 'rejected')) {
+      toast(`Rejected: ${row.directive}`, { kind: 'err', detail: row.detail || '' });
+    }
+    if (data.assertions.some((r) => r.fatal)) {
+      toast('The C shown was produced without one of your directives.', { kind: 'err', detail: data.assertions.find((r) => r.fatal).detail || '' });
+    }
+    const dt = Math.round(performance.now() - t0);
+    const bad = mine.some((r) => r.status === 'rejected');
+    setStatus(`${displayName(fn)} — ${label} ${bad ? 'rejected' : 'applied'} in ${dt} ms`, bad ? 'err' : 'ok');
+    renderRail();
+    return !bad;
+  } catch (e) {
+    if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return false;
+    if (snap) {
+      session.restore(snap);
+      sessionChanged();
+    }
+    toast(`The engine could not apply the ${label}.`, { kind: 'err', detail: e.message });
+    setStatus(`${label} failed: ${e.message}`, 'err');
+    return false;
+  } finally {
+    finishOperation(op);
+  }
+}
+
+function undo() {
+  if (!session.undo()) return;
+  sessionChanged();
+  if (state.current && state.caps.assert !== false) reinspect({ label: 'undo' });
+}
+
+function redo() {
+  if (!session.redo()) return;
+  sessionChanged();
+  if (state.current && state.caps.assert !== false) reinspect({ label: 'redo' });
+}
+
+/** The rail's variables: parameters, printed locals, then what the engine knows but the C does not show. */
+function railVars() {
+  const { data, decls, index } = state.current;
+  const sig = parseSignature(data.proto || '');
+  const out = [];
+  const shown = new Set();
+  const entry = (off) => `stack entry${off < 0 ? '−' : '+'}0x${Math.abs(off).toString(16)}`;
+  const home = (name) => data.variables.find((v) => v.name === name && v.kind !== 'arg' && Number.isInteger(v.stack_offset));
+  (sig?.params || []).forEach((p, i) => {
+    const h = home(p.name);
+    out.push({ name: p.name || `(unnamed ${i})`, type: p.type, kind: 'param', where: `arg ${i}${h ? ' · ' + entry(h.stack_offset) : ''}` });
+    shown.add(p.name);
+  });
+  for (const d of decls) {
+    out.push({ name: d.name, type: d.type, kind: 'local', where: storageLabel(d.storage) });
+    shown.add(d.name);
+  }
+  for (const v of data.variables) {
+    if (shown.has(v.name) || v.kind === 'arg') continue;
+    shown.add(v.name);
+    out.push({
+      name: v.name, type: v.type, kind: v.kind,
+      where: Number.isInteger(v.stack_offset) ? entry(v.stack_offset) : v.kind,
+      dim: !index.symToLines.has(v.name),
+    });
+  }
+  return out;
+}
+
+function renderRail() {
+  const edits = session.entries(nameOfAddr);
+  const base = {
+    edits,
+    canUndo: session.canUndo,
+    canRedo: session.canRedo,
+    restored: state.restored || 0,
+    assertSupported: state.caps.assert,
+  };
+  if (!state.current) {
+    rail.render({ ...base, proto: null, vars: [], types: [], refsHtml: '' });
+    return;
+  }
+  const { data } = state.current;
+  rail.render({
+    ...base,
+    proto: data.proto,
+    vars: railVars(),
+    types: data.types,
+    refsOpen: state.refsOpen,
+    refsHtml: state.refsHtml?.(data.address_hex) || '',
+  });
+  if (state.sel?.sym) rail.markVars(new Set([state.sel.sym]));
+}
+
+const importEl = document.createElement('input');
+importEl.type = 'file';
+importEl.accept = '.kuna,.txt,text/plain';
+importEl.hidden = true;
+document.body.appendChild(importEl);
+importEl.addEventListener('change', async () => {
+  const file = importEl.files[0];
+  importEl.value = '';
+  if (!file || !state.current) return;
+  const text = await file.text();
+  const resolveFunc = (name) => (state.rows.find((r) => displayName(r.fn) === name)?.fn || state.byName.get(name))?.address_hex || null;
+  let counts = null;
+  const ok = await applyEdit(() => {
+    counts = session.importText(text, { resolveFunc, bindTo: state.current.data.address_hex });
+  }, { label: 'import' });
+  if (counts) {
+    toast(`Imported ${counts.added} directive${counts.added === 1 ? '' : 's'} from ${file.name}.`, {
+      kind: ok ? 'ok' : 'warn',
+      detail: counts.raw ? `${counts.raw} kept verbatim (the page does not model them).` : '',
+    });
+  }
+});
+
+function exportSession() {
+  if (!state.binary) return;
+  const target = state.current ? displayName(state.current.fn) : 'main';
+  const text = session.toFileText({ binary: state.binary.name, hash: state.binary.hash, target, nameOf: nameOfAddr });
+  download(new Blob([text], { type: 'text/plain' }), `${state.binary.name}.kuna`);
+}
+
+async function editEntry(key) {
+  const rec = session.records.get(key);
+  if (key.startsWith('bytes:')) {
+    setTab('bytes');
+    return;
+  }
+  if (!rec || !state.current) return;
+  if (rec.kind === 'var' && rec.func === state.current.data.address_hex) return renameTarget({ kind: 'var', name: rec.name || rec.sym, el: null });
+  if (rec.kind === 'fn') return renameTarget({ kind: rec.addr === state.current.data.address_hex ? 'self' : 'callee', addr: rec.addr, el: null });
+  if (rec.kind === 'proto') return protoDialog(rec.addr, null);
+  if (rec.kind === 'data') return dataDialog({ addr: rec.addr, name: rec.name, el: null });
+  const res = await dialogs.openPopover({
+    title: 'Edit directive', note: 'one --assert directive',
+    fields: [{ name: 'text', label: 'directive', value: session.entries(nameOfAddr).find((x) => x.key === key)?.text || '', validate: (v) => (v.trim() ? noHash(v) : 'empty') }],
+  });
+  if (!res) return;
+  return applyEdit(() => { session.remove(key); session.addRaw(res.text); }, { label: 'edit' });
+}
+
+const rail = createRail({
+  root: els.railBody,
+  on: async (act, data) => {
+    switch (act) {
+      case 'edit-proto': if (state.current) protoDialog(state.current.data.address_hex, els.railBody.querySelector('[data-act=edit-proto]')); break;
+      case 'var-select': {
+        const tok = els.ccode.querySelector(`.t[data-sym="${CSS.escape(data.sym)}"]`);
+        selectTarget({ sym: data.sym }, null, tok);
+        break;
+      }
+      case 'var-rename': renameTarget({ kind: 'var', name: data.sym, el: els.railBody.querySelector(`tr[data-sym="${CSS.escape(data.sym)}"]`) }); break;
+      case 'edit-remove': applyEdit(() => session.remove(data.key), { label: 'removal' }); break;
+      case 'edit-edit': editEntry(data.key); break;
+      case 'undo': undo(); break;
+      case 'redo': redo(); break;
+      case 'export': exportSession(); break;
+      case 'import': importEl.click(); break;
+      case 'copy-cli': {
+        const cmd = cliCommand(state.binary.name, state.current ? displayName(state.current.fn) : 'main');
+        try {
+          await navigator.clipboard.writeText(cmd);
+          toast('Copied the replay command.', { detail: cmd });
+        } catch (_) {
+          toast('Copy this command:', { kind: 'warn', detail: cmd, ms: 12000 });
+        }
+        break;
+      }
+      case 'clear':
+        if (await dialogs.confirmBox(`Remove all ${session.size} edits for ${state.binary.name}?`, { confirmLabel: 'Clear' })) {
+          applyEdit(() => session.clear(), { label: 'clear' });
+        }
+        break;
+      case 'discard-restored':
+        state.restored = 0;
+        applyEdit(() => session.clear(), { label: 'discard' });
+        break;
+      case 'refs-open': state.onRefsOpen?.(); break;
+      default: break;
+    }
+  },
+});
+renderRail();
+
+els.fnRename.addEventListener('click', () => state.current && renameTarget({ kind: 'self', addr: state.current.data.address_hex, el: els.fnRename }));
+els.proto.addEventListener('click', () => state.current && protoDialog(state.current.data.address_hex, els.proto));
+
 // ── project export ─────────────────────────────────────────────────────────
 
 els.dl.addEventListener('click', async () => {
@@ -1156,8 +1703,7 @@ els.dl.addEventListener('click', async () => {
   const op = beginOperation('project');
   setStatus('building project…');
   try {
-    const nameOf = (addrHex) => session.displayName(state.byAddr.get(addrHex) || { name: addrHex });
-    const assertions = state.caps.assert === false ? [] : session.allAssertions(nameOf);
+    const assertions = state.caps.assert === false ? [] : session.allAssertions(nameOfAddr);
     const project = await state.kuna.project(state.binary.name, { assertions });
     if (!isCurrent(op)) return;
     download(new Blob([project.bytes], { type: 'application/zip' }), project.downloadName);

@@ -212,12 +212,13 @@ a.xt:hover{color:var(--red);text-decoration-color:var(--red);}
 .d2sec details[open] > summary::before{content:"▾ ";}
 .d2sig{white-space:pre-wrap;word-break:break-word;}
 .d2tbl{width:100%;border-collapse:collapse;}
+.d2tbl{font-size:.6875rem;}
 .d2tbl td{padding:2px 6px 2px 0;vertical-align:top;border-bottom:1px solid var(--rule);}
 .d2tbl tr:last-child td{border-bottom:0;}
-.d2tbl td.nm{font-weight:700;cursor:pointer;word-break:break-all;}
+.d2tbl td.nm{font-weight:700;cursor:pointer;white-space:nowrap;}
 .d2tbl td.nm:hover{color:var(--red);}
-.d2tbl td.ty{color:var(--tok-type);word-break:break-word;}
-.d2tbl td.st{color:var(--muted);white-space:nowrap;}
+.d2tbl td.ty{color:var(--tok-type);white-space:nowrap;}
+.d2tbl td.st{color:var(--muted);}
 .d2tbl tr.dim td{opacity:.55;}
 .d2tbl tr.hl-sym td{background:var(--hl-sym);}
 .d2edits{list-style:none;margin:0;padding:0;}
