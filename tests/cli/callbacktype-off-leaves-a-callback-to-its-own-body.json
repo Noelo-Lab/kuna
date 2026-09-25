@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_x86_64",
+    "binary_sha256": "5832788491b29b10513da669765b36cc8b84aa3c67b50fee2e6cb7a8692a7df5",
+    "binary_size": 16544,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_x86_64",
+    "selector": "by_key",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int by_key\\(int \\*a0,int \\*a1\\)",
+      "int by_key_desc\\(int \\*a0,int \\*a1\\)",
+      "void on_int\\(void\\)",
+      "void by_name\\(",
+      "void warn_path\\(",
+      "void by_count\\("
+    ]
+  },
+  "notes": "OFF: a qsort comparator and a signal handler recover only what their own bodies show -- `by_key` reads four-byte fields so its parameters are `int *`, and `on_int` never reads `edi` so it takes nothing. `by_name`, `by_count` and `warn_path` keep the `void` their own recovery gives a call result nothing reads.",
+  "probe_id": "p-8b7d917f3305"
+}

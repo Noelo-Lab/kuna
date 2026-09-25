@@ -2727,6 +2727,314 @@ the project's style, not the optimisation level. The evidence is
 `docs/features/passthrough/dwarf-confirmation.md`; set `off` to get upstream's
 reading back, for the returns as much as the arguments.
 
+### (kuna) `callbacktype` — the prototype of the slot a callback is passed to
+
+`protoorder` carries a callee's types out to its callers and `calleevote`
+carries the callers' types back in. Neither reaches a function that no call
+site names. A `qsort` comparator, a `signal` handler, a `pthread_create` start
+routine is reached only through a pointer, so its own body is all it has, and
+the body of a comparator that never dereferences past the first word gives
+`int sub_3a72(unsigned long *a0, unsigned long *a1)` where the program declares
+`int (const void *, const void *)`; a handler that ignores the signal number
+gives `void sub_1100(void)` where the program declares `void (int)`.
+
+The library declares both, and kuna already resolves the library's own
+prototype at the call site — the call renders `qsort(dat_d148, dat_d150, 0x10,
+sub_3a72)`. `callbacktype` (values `on|off`, default `on`;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callbacktype.rs`) reads the
+argument in that fourth slot as what it is: a declaration of `sub_3a72`. The
+driver is `callback_park_round` in
+`decompiler/crates/kuna-cli/src/decompile_all.rs`, and like `protoorder` and
+`calleevote` it lives only on the callee-first whole-binary pass.
+
+**The slot table.** `SLOTS` names 23 library entry points that declare a
+function-pointer parameter (`qsort`, `bsearch`, `lfind`, `lsearch`,
+`signal`, `__sysv_signal`, `bsd_signal`, `sigset`, `atexit`, `on_exit`,
+`pthread_create`, `pthread_once`, `pthread_key_create`, `pthread_atfork`,
+`scandir`, `scandirat`, `ftw`, `nftw`, `tsearch`, `tfind`, `tdelete`,
+`tdestroy`, `glob`), each with its OWN parameter list and which of those
+parameters is the callback. The entry point's list is what the prototype model
+is asked for storage (`kuna_protoorder::model_storage`), so the argument
+register of the callback slot comes from the program's calling convention
+rather than from an architecture table. Three names are deliberately absent:
+`sigaction`, whose handler is a structure member and not an argument;
+`__cxa_atexit`, because glibc's `<stdlib.h>` rewrites `atexit(f)` into
+`__cxa_atexit(f, 0, __dso_handle)` with `f` cast from `void (*)(void)` — taking
+that slot's declared `void (*)(void *)` literally would give every `atexit`
+handler in a glibc program a parameter its source never wrote; and `qsort_r`,
+whose C libraries disagree about where the callback goes. glibc and musl pass
+the comparator fourth and its data pointer fifth, while macOS and FreeBSD
+before 14 pass an opaque `thunk` fourth and the comparator fifth. The imported
+name does not say which library the image links, and a declaration taken from
+the wrong one would land on whatever the caller passed as its data pointer.
+
+**Recording.** During the callee-first pass the driver sets
+`Ledger::recording`, and after each decompile `record` files, per caller, every
+constant a declared callback slot carried: the CALL's input at the slot's
+storage, resolved through the forms a global address takes on the way to a call
+(a plain constant, the `PTRSUB` off the constant spacebase a `&DAT_3a72` is
+built as, and the copies, casts and zero-extensions between them). Anything
+else — a load, a phi, arithmetic on a base — is not one address and is not
+recorded. Of the addresses it did record, `record` also files the ones this
+body used somewhere no callback argument accounts for: every operation that
+consumes the address is such a use unless it merely carries the value along (a
+copy, a cast, the `PTRSUB`, a phi, the `INDIRECT` a call leaves behind) or it is
+one of the callback arguments just filed. The same decompile files what the
+function's own body proved about ITSELF, once: whether it hands back a value it
+computed, the storage of every input its own recovery found and of the output
+it recovered, the low bytes of that output any returned value can set (from the
+non-zero masks of what its live RETURNs hand back), and — when it hands back
+nothing of its own — what the calls its RETURNs are reached from leave in the
+return register, and the parameter and return types its signature printed.
+Every decompile also files, for each direct call whose
+returned value it uses, the part of the return storage that call site reads
+(the low bytes holding every bit the body consumes of the call's output), and
+for every direct call, its callee, how many arguments it passes and whether
+anything consumes its result. Filing is
+per caller, so a caller decompiled again replaces what its first body said
+instead of counting its call twice.
+
+**Deciding.** `Ledger::decided` folds the run's facts per address: which slot
+declared it, how many distinct call instructions carried it, whether two slots
+disagreed, and whether any body that registered it also used it elsewhere. The driver then parks the declaration
+(`Architecture::set_function_prototype_pieces_at`, the seam `protoorder lock`
+uses and `ActionDefaultParams` reads a declared prototype from) and decompiles
+that function again. A function that CALLS it directly is decompiled again only
+where the declaration changes that call (`Ledger::caller_changes`): the call
+passes a different number of arguments than the declaration lists, or
+something consumes a result the declaration types differently from the return
+the callback's first body printed (`Ledger::printed_the_return`). A call that
+passes exactly the declared arguments and ignores the result, or reads the same
+`int` it read before, prints the same call under either prototype, so that
+caller keeps its first body. A caller whose call the declaration does change
+loses what the closed list does not pass: a clang -O0 bsearch helper that left
+the `idiv` remainder in `rdx` before calling its comparator printed that
+remainder as a third argument, and prints two. A declaration that is exactly the
+signature the body already printed — the same parameter types in the same
+order, the same return, no `...`, as a `pthread_once` routine recovered as
+`void f(void)` is — is not parked at all (trace token `body-agrees`): it would
+change nothing but the cost of decompiling the function and its callers again.
+This bounds the redo to the functions the option can change; on a
+shared library that registers a dozen `pthread_once` routines and has one
+large direct caller of its thread routine, the unbounded redo cost 13% of the
+run. Unlike
+`calleevote`, this moves the callback's ARITY, and it has to: a handler that
+never reads `edi` has no parameter for a vote to retype.
+
+The parked list is closed (`first_var_arg_slot = -1`), not the floor
+`protoorder` parks, because it is a declaration rather than a partial recovery;
+the function prints without a `...` and no call site recovers an argument past
+it.
+
+On a successful park the statements the first pass made about that function
+leave the tables every reader consults: `protoorder` filed the recovered
+parameter types for its own call sites and declines to file again once a
+prototype is parked, so its arity and storage would outlive the body they came
+from, and `calleevote` would keep voting on a function that now has a declared
+prototype. The redo files whatever is true of the new body.
+
+One part of the `protoorder` statement stays true after the park: what the body
+reads through a parameter the slot declares `void *`. A `qsort` comparator that
+reads two fields through its first parameter recovered `struct_0 *` for it, and
+a bsearch helper that calls the same comparator directly with its own `WORD *w`
+took `struct_0 *` for `w` from that statement, because it does nothing else with
+it. A comparator that hands only the first word of each record to `strcmp`
+recovered `undefined8 *` (printed `unsigned long *`), and a caller that forwards
+its own two pointers to it, or scans an array of 24-byte records with it, took
+that type the same way and indexes the array as `&a0[3]`. The declaration says
+only "a pointer", so a later decompile of such a caller — the park round's own
+redo, or a `calleevote` round that redoes it for another parameter — would type
+the pointer `void *`, take a type away, and index it as `&((char *)a0)[0x18]`.
+The statement therefore moves to `Ledger::stated`, is copied onto each function
+that calls the callback (`kuna_callbacktype::seed`, next to `protoorder`'s own
+seed), and at such a call a type-locked `void *` parameter offers the
+statement's type for the argument as a vote (`pointee_vote`, asked from the
+locked arm of `call_input_type_local`): a pointer to anything but `void` (an
+unknown pointee included, since that is what `protoorder` voted at the same
+call before the park), of the same size, recovered in the storage the
+declaration passes that parameter in, and only where `protoorder`'s own vote
+refusals hold at that call. It is asked only for the value's type: the
+declared `void *` stays the type the argument is converted to, and the caller
+types the argument, and the pointer it forwards, as it did before the park.
+What a caller's redo still changes is what the declaration itself says about
+the call: a call whose first decompile passed fewer arguments passes the
+declared list, so a caller that forwards its own two argument registers gains
+them as parameters (typed by the same vote) after the ones it had; a result
+that was untyped, and read through an `(int)` cast, is read as the declared
+`int` without it; and a caller that returns that result straight on returns
+the declared type. A superseded structure is forgotten here as it is
+in `protoorder`'s table (`kuna_callbacktype::forget_statements_naming`). The
+callback's own body is untouched: its parameters are the declaration's.
+
+**What is refused.** A declared prototype outranks this one and the park is
+declined for it — DWARF, a user `--assert`, the library tables, and, under
+`--option protoorder lock`, the callee's own recovered prototype, which the
+first pass parked in the same place. Two callback
+slots that disagree about the same address decline it. So does an address that
+reaches somewhere the recorded callback arguments do not explain. Two walks
+answer that, because neither is enough alone. The driver asks the image: the
+function must not be in `open_function_entries` (not exported, not the entry
+point, not a pointer-width word of a loaded section, not a Mach-O chained-fixup
+or dynamic-relocation target), every address-taking cross-reference
+(`CallGraph::address_taken_refs`) must sit in a function that handed it to a
+slot, and there must not be more of them than there were callback arguments — a
+comparator also stored in a dispatch table is not declared by the `qsort` call.
+That walk counts INSTRUCTIONS, and one hoisted `lea` can feed two registrations,
+so the recorded bodies answer for the uses: an address a registering body also
+used somewhere no slot accounts for is refused, which is what keeps
+`signal(SIGINT, f); atexit(f);` from declaring `void (int)` on an `f` that takes
+nothing. The value is followed from wherever it is materialized through
+whatever only carries it — copies, casts, the `PTRSUB` a global address is built
+as, a phi, the `INDIRECT` a call leaves behind — and every operation that then
+consumes it counts. So a handler registered with `signal` and then called
+through a phi that may also hold another function is refused, and so is one
+whose register is also written into a global or an address-taken local, even
+when that body never reads the copy back: memory the image walk cannot follow
+is somewhere else the address went.
+
+The body's own recovery is then held to the declaration in both directions
+(`body_contradicts`), because a closed list and a declared return are exactly
+right or they fabricate something.
+
+- A recovered input list LONGER than the declaration refuses it: an input the
+  body's own recovery found past the list would be dropped at every direct call
+  site and read uninitialized in the body — which is what a three-argument
+  function cast into `qsort`'s slot is. The one-sided entry walk `calleedeadarg`
+  caches (`kuna_protoorder::reads_past_the_list`) then asks whether the body
+  READS the argument register one past the declared list before writing it. That
+  walk sees reads, not liveness: a body that forwards its arguments — a tail
+  call, a jump — passes the register on without reading it and states nothing,
+  which is why the recovered-arity refusal is the one that holds a forwarder.
+- A recovered list SHORTER than the declaration refuses it when anything calls
+  or tail-jumps to the function directly (`CallGraph::called_directly`: any call
+  or jump cross-reference, from another function, the function itself, or code
+  no function owns). The closed list materializes the missing argument at every
+  such site out of whatever the register last held, so `signal(SIGALRM,
+  (void (*)(int))cleanup); ... cleanup();` on a `void cleanup(void)` would print
+  `cleanup(v2)` after an invented `v2 = 0x2006;`, and a one-pointer scorer cast
+  into `qsort`'s slot and also called directly would pass `qsort`'s element size
+  as a second argument.
+- With NO direct call site the shorter list is parked, by design. The declared
+  slot is then the only thing that ever calls the function, so it is the only
+  evidence of how it is called, and the binary cannot tell `void h(int unused)`
+  from `(void (*)(int))cleanup`: C handlers conventionally declare the parameter
+  and ignore it, and on the 444 decbench slices every parameter this shape adds
+  is one DWARF declares. The added parameter is read nowhere, so `--json`
+  exports it as an `arg` with empty `line_numbers` and `addresses`.
+- A recovered input that is not inside the storage the declaration gives its
+  position refuses it, whether or not anything calls the function directly. The
+  count can be right and the width wrong: a `struct ctx *` routine cast into
+  `signal`'s `void (*)(int)` reads all eight bytes of the register the slot
+  declares a four-byte `int` in. Declared, its body would rebuild the pointer as
+  `CONCAT44` of the declared half and a register nothing set, and a direct call
+  would print `cleanup((int)G)`; a `long` handler called directly with a value
+  that does not fit in 32 bits would pass a different number from the
+  program's. Each input is held to its own position, so a list whose registers
+  are out of the declaration's order is refused as well.
+- A `void` slot on a body whose every live RETURN hands back a value it computed
+  refuses it.
+- A value-returning slot on a body that computes no value refuses it: the
+  register's leftover would print as an invented return expression — the high
+  half of a `void *` that a tail-called `puts` never wrote reads as a global
+  that is not in the image, and a body that never writes the register returns
+  an unset local. What counts is the value, not the body's own recovered
+  prototype. A comparator ending `return strcmp(a, b);` recovers `void` on its
+  own because nothing in the program reads its result, yet `strcmp` leaves its
+  declared `int` in the register for `qsort` to read. So each live RETURN is
+  traced to the direct CALL it is reached from (`call_return`), and the machine
+  code from that CALL to the RETURN is read one instruction at a time
+  (`straight_to_return`) — from the image, because the p-code of a body that
+  returns nothing has already dropped any write to the return register as dead.
+  The path has to be a straight line (fall-through and unconditional jumps, no
+  other call) that writes no byte of the callee's DECLARED output, and that
+  output has to cover every byte of the storage the slot's return is given. A
+  `jmp` to another function is the empty path; `call strcmp; leave; ret` and
+  `call strcmp; addl $1, n(%rip); ret` are straight lines. `pthread_create`'s
+  `void *` over a tail-called `puts`'s four-byte `int` is not covered and is
+  refused. A value that reaches the RETURN through a join (`if (r) return r;`
+  over two calls) or past a conditional branch (a stack protector's check) is
+  not proved either, and is refused: the proof is kept to a shape that cannot
+  be wrong. The rule is about the machine, not the source: a `void` function
+  cast into `glob`'s `int` errfunc slot that ends in a tail-called `fprintf` is
+  parked `int` and returns that call's value, which is what `glob` receives and
+  what IDA prints for it.
+- A value-returning slot refuses a value wider than the storage its declared
+  return is given — the body's own computed output, or the declared output of
+  the call the proof above traced it to. The computed output is measured by the
+  bits its value can set, not by the storage its own recovery gave it: every
+  32-bit write on x86-64 zero-extends into the whole register, so an `int`
+  comparator ending `movzbl %al,%eax; cmovl %edx,%eax` (coreutils'
+  `compare_ranges`, which DWARF declares `int`) recovers an 8-byte `rax`
+  output whose upper half is provably zero, and it is parked. That exception
+  holds only when nothing calls the function directly. A `long` comparator cast into
+  `qsort`'s `int (*)(const void *, const void *)` would subtract in the low half
+  only, and a direct caller that prints the whole result would read its high
+  half back as `CONCAT44(dat_4, ...)`, a global that is not in the image. The
+  same holds when the `long` is what a tail-called `strtol` leaves. A narrower
+  value a CALL left is the case above: the callee's declared four bytes do not
+  cover a `void *`, and the park is refused.
+- A value-returning slot refuses a value the body COMPUTES that is narrower
+  than the declared return, unless the bytes above it are provably zero at
+  every RETURN. The declaration prints the whole declared return, so those
+  bytes stop being invisible, and a byte write says nothing about them: clang
+  compiles a `signed char` comparator to `mov (%rdi),%al; sub (%rsi),%al; ret`
+  and a `bool` start routine to `cmpq $0,(%rdi); setg %al; ret`, and declared
+  `int` and `void *` they printed
+  `CONCAT31((undefined3)((unsigned int)v1 >> 8), ...)` and
+  `(void *)CONCAT71(v1, ...)` with `v1` never set. gcc compiles the same
+  comparator to `movzbl (%rdi),%eax; sub (%rsi),%al; ret`, whose upper bytes
+  the `movzbl` cleared, and it is parked. The body's p-code cannot answer
+  this: its own recovery returns the narrow value, and the write that cleared
+  the rest was dead to it. So the machine code is walked from the entry over
+  every path (`zero_at_every_return`), each byte of the declared return held
+  zero only where every path into an instruction agrees: a constant with a
+  zero byte, a zero-extension, an `and` with a zero byte, an `xor` of a
+  register with itself, and every 32-bit write on x86-64, which the processor
+  specification writes as a zero-extension into the whole register. A call
+  clobbers the register, a call the body's own flow does not continue past
+  ends the path, a conditional move (whose p-code branches to the next
+  instruction) is walked both ways, a write inside an instruction whose p-code
+  branches within itself (a `rep` prefix) is held to what the byte already was,
+  and an indirect branch, an undecodable instruction or more than 4096
+  instructions refuse the park. So
+  an `int` routine cast into `pthread_create`'s slot is parked and prints
+  `return (void *)(unsigned long)(puts(a0) + 1);`, and `xor %eax,%eax` before
+  a `setg %al` is parked as well. Bytes above the value that the body sets to
+  something other than zero refuse it too, unless its own recovery already
+  returns them: `mov (%rdi),%eax; test %eax,%eax; setg %al` recovers a
+  four-byte return that prints the same `CONCAT31` with the option off, and a
+  `void *` slot adds only the upper half the 32-bit load cleared.
+- A direct call site that reads more of the return register than the declared
+  return holds refuses it, whatever the body says. A `long` comparator that
+  returns a zero-extended comparison writes only `eax`, so its body is no wider
+  than an `int`; the call that hands the whole `rax` to `printf("%ld")` is what
+  says otherwise, and declared `int` that call would print
+  `CONCAT44(dat_4,zcmp(..))`. The same read refuses a comparator whose result
+  another comparator returns straight through its own `ret` (ptx's
+  `compare_words` under `compare_occurs` at -O2): the outer one hands on the
+  whole register, and declaring the inner one alone would leave the outer one
+  returning a variable no path through the call sets. The outer one is refused
+  in turn, because the value it hands back on that path is a call's full
+  register, which nothing bounds.
+
+A function this run never decompiled has no body facts at all, and nothing is
+parked on it.
+
+Because the escape question is answered by a cross-reference walk that reads one
+instruction at a time, an architecture whose code builds an address from two
+(AArch64 `adrp`+`add`, MIPS `lui`+`addiu`, ARM `movw`+`movt`, i386 PIC) has no
+answer and nothing is parked. Everything is inert where there is no callee-first
+pass: `kuna decompile`, a run narrowed by `--addr` or `--functions`,
+`decompile-project --stream`, `--option protoorder off` and `--jobs N`. A
+`--jobs N` run that does not name the option parks nothing, and its stderr note
+says the run lacks the callee-first order this option rides; naming it
+(`--jobs N --option callbacktype on`) is refused, the way `--option protoorder`
+is. Of the other inert surfaces, two say so on stderr (`warn_protoorder_inert`,
+shared with `protoorder`): `decompile-project --stream` and `decompile-graph`. `kuna decompile` does not,
+and neither does `protoorder` there — it forks one `decomp_dbg` per function,
+which is a surface neither option has ever reached.
+`KUNA_CALLBACKTYPE_TRACE=1` prints every decision and its reason on stderr.
+
 ### (kuna) `calleevote` — the type every caller passes
 
 `protoorder` carries what a callee's own recovery found to its callers. Nothing

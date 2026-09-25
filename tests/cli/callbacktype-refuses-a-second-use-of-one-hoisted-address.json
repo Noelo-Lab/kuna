@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "binary_sha256": "b9e3aeab05dd089e299f03cb6b0135592771fe49cc73120da22127b41610799a",
+    "binary_size": 16800,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "selector": "cleanup",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void cleanup\\(void\\)",
+      "signal\\(2,cleanup\\)",
+      "set_hook\\(cleanup\\)"
+    ],
+    "stdout_absent": [
+      "void cleanup\\(int a0\\)"
+    ]
+  },
+  "notes": "One hoisted `lea` materializes `cleanup` for both the `signal` registration and the program's own `set_hook`, so the image shows ONE address-taking instruction for TWO uses and counting instructions cannot tell them apart. The body's second use of the same address is what refuses `signal`'s `void (*)(int)` on a routine that takes nothing.",
+  "probe_id": "p-d1dfcd1b94f5"
+}

@@ -216,6 +216,22 @@ pub fn call_argument_vote(
     vote_holds(data, op, fc, slot, arg_size, &bare)?.then_some(bare)
 }
 
+/// (kuna `callbacktype`) Would a callee's vote of `ct` for argument `slot` of
+/// the call `op`, passed in `storage`, hold? For a type from a statement the
+/// callee no longer files here, at a call whose declared prototype fixes the
+/// storage ([`crate::kuna_callbacktype::pointee_vote`]).
+pub(crate) fn argument_vote_holds(
+    data: &Funcdata,
+    op: OpId,
+    fc: &FuncCallSpecs,
+    slot: int4,
+    arg_size: int4,
+    ct: &Rc<Datatype>,
+    storage: &(Address, int4),
+) -> bool {
+    vote_holds_in(data, op, fc, slot, arg_size, ct, Some(storage)).unwrap_or(false)
+}
+
 /// [`call_argument_vote`]'s refusals for one candidate type `ct`.
 fn vote_holds(
     data: &Funcdata,
@@ -225,6 +241,19 @@ fn vote_holds(
     arg_size: int4,
     ct: &Rc<Datatype>,
 ) -> Option<bool> {
+    vote_holds_in(data, op, fc, slot, arg_size, ct, fc.final_input_storage().get((slot - 1) as usize))
+}
+
+/// [`vote_holds`] for the argument passed in `storage`.
+fn vote_holds_in(
+    data: &Funcdata,
+    op: OpId,
+    fc: &FuncCallSpecs,
+    slot: int4,
+    arg_size: int4,
+    ct: &Rc<Datatype>,
+    storage: Option<&(Address, int4)>,
+) -> Option<bool> {
     if class_of(ct).is_none()
         || ct.get_size() > arg_size
         || crate::p5_types::kuna_ptrdepth::pointer_depth(ct, 3) > crate::p5_types::kuna_ptrdepth::MAX_INFERRED_PTR_DEPTH
@@ -232,7 +261,7 @@ fn vote_holds(
         return Some(false);
     }
     let vn = data.obank().get(op)?.get_in(slot)?;
-    let (addr, size) = fc.final_input_storage().get((slot - 1) as usize)?;
+    let (addr, size) = storage?;
     Some(
         !(addresses_a_frame_object(data, vn)
             || storage_disagrees(fc.proto(), addr, *size, ct)
@@ -1578,6 +1607,29 @@ pub fn park_recovered(
     }
     arch.set_function_prototype_pieces_at(entry, pieces.clone());
     Ok(Recovered { pieces, trimmed })
+}
+
+/// (kuna `callbacktype`) Does the body of `entry` read the argument register
+/// ONE PAST a declared parameter list before writing it?
+///
+/// The same one-sided entry walk [`arity_claim_sound`] takes, asked of a list
+/// the program declared rather than one recovery built: a body that consumes a
+/// register the declaration does not pass is not the function that declaration
+/// describes, and locking it there would drop a live argument. A walk that
+/// cannot see the body answers `false`, so the declaration stands on the rest
+/// of the policy.
+pub fn reads_past_the_list(
+    arch: &mut Architecture,
+    entry: &Address,
+    pieces: &PrototypePieces,
+    storage: &[(Address, int4)],
+) -> bool {
+    if !storage.iter().all(|(a, _)| crate::kuna_calleearitybody::is_register(a)) {
+        return false;
+    }
+    let Some(next) = next_slot_storage(pieces, arch) else { return false };
+    let Some(facts) = entry_facts(arch, entry) else { return false };
+    facts.proves_input(&next.0, next.1)
 }
 
 /// Would [`park_recovered`]'s locking branch accept `storage` as a statement of

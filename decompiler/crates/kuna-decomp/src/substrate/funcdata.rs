@@ -433,6 +433,13 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna `callbacktype`) What each parked callback this function calls
+    /// stated about its parameters before its declaration replaced it, keyed by
+    /// `(space index, entry offset)`.
+    kuna_callback_stated: std::collections::HashMap<
+        (int4, kuna_base::types::uintb),
+        std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
+    >,
     /// (kuna `passthrough`) The register ranges `ActionFuncLink` made visible to
     /// heritage for a call whose callee states them, with the calls that own
     /// each ([`crate::p4_calls::kuna_passthrough`]).  Empty unless the option is
@@ -565,6 +572,7 @@ impl Funcdata {
             kuna_callee_entry_dead: std::collections::HashMap::new(),
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_callback_stated: std::collections::HashMap::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
@@ -836,6 +844,31 @@ impl Funcdata {
         }
         let sp = entry.get_space()?;
         self.kuna_protoorder_types.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `callbacktype`) Record what the parked callback entered at `entry`
+    /// stated about its parameters before its declaration replaced it.
+    pub fn kuna_set_callback_stated(
+        &mut self,
+        entry: &Address,
+        stated: std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
+    ) {
+        if let Some(sp) = entry.get_space() {
+            self.kuna_callback_stated.insert((sp.get_index(), entry.get_offset()), stated);
+        }
+    }
+
+    /// (kuna `callbacktype`) What the parked callback entered at `entry` stated
+    /// about its parameters, if it was parked over a statement.
+    pub fn kuna_callback_stated(
+        &self,
+        entry: &Address,
+    ) -> Option<&crate::kuna_protoorder::RecoveredTypes> {
+        if self.kuna_callback_stated.is_empty() {
+            return None;
+        }
+        let sp = entry.get_space()?;
+        self.kuna_callback_stated.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
     }
 
     /// (kuna `passthrough`) Record the register ranges claimed at `ActionFuncLink`.

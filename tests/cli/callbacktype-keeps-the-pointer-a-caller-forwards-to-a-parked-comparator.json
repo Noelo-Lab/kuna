@@ -1,0 +1,58 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_forward_x86_64",
+    "binary_sha256": "605d0d09f5de0567848f7831b49bea9d2e3e522be8563a3d7cdae52288872a83",
+    "binary_size": 17104,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_forward_x86_64",
+    "selector": "search_g",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int compare_g\\(void \\*a0,void \\*a1\\)",
+      "int compare_c\\(void \\*a0,void \\*a1\\)",
+      "int compare_z\\(void \\*a0,void \\*a1\\)",
+      "search_g\\(struct_\\d+ \\*a0,",
+      "search_c\\(struct_\\d+ \\*a0,",
+      "search_z\\(struct_\\d+ \\*a0,",
+      "v1 = compare_z\\(a0,\\(struct_\\d+ \\*\\)&a1\\[v2 \\* 2\\]\\);",
+      "int by_name_g2\\(void \\*a0,void \\*a1\\)",
+      "int by_name_c2\\(void \\*a0,void \\*a1\\)",
+      "unsigned int ent_before_g2\\(unsigned long \\*a0,unsigned long \\*a1\\)",
+      "unsigned int ent_before_c2\\(unsigned long \\*a0,unsigned long \\*a1\\)",
+      "unsigned long \\* minimum_g2\\(unsigned long \\*a0,int a1\\)",
+      "unsigned long \\* minimum_c2\\(unsigned long \\*a0,unsigned int a1\\)",
+      "v2 = &a0\\[3\\];",
+      "v1 = &v1\\[3\\];"
+    ],
+    "stdout_absent": [
+      "search_[gcz]\\(void \\*a0",
+      "compare_z\\(a0,[^;\\n]*% 2\\)",
+      "(ent_before|minimum)_[gc]2\\(void \\*a0",
+      "\\(char \\*\\)(a0|v1|v2)\\)\\["
+    ]
+  },
+  "notes": "Callers decompiled again after a qsort comparator is parked keep the pointer type its first decompile gave them. search_[gcz] (gcc -O0, clang -O2/-O0) keep struct_N *; search_z drops clang's idiv remainder in rdx. ent_before_* and minimum_* (gcc -O2, clang -O2; a strcmp-on-first-field comparator) keep unsigned long * and index &a0[3], not ((char *)a0)[0x18] off a void *.",
+  "probe_id": "p-ef1601633a1e"
+}

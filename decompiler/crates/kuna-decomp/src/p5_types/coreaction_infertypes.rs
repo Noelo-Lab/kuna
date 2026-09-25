@@ -233,6 +233,15 @@ fn call_input_type_local(
                 if recovered && crate::kuna_libcfit::overruns(data, op, slot, ct) {
                     return crate::kuna_libcfit::width_stable_vote(data, ct);
                 }
+                // (kuna `callbacktype`) A parked callback's `void *` keeps
+                // what its body read through the pointer, as a vote only.
+                if recovered {
+                    if let Some(vote) =
+                        crate::kuna_callbacktype::pointee_vote(data, op, fc, slot, arg_size, ct)
+                    {
+                        return Some(vote);
+                    }
+                }
                 return Some(Rc::clone(ct));
             }
             return None;
