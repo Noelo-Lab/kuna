@@ -440,6 +440,15 @@ fn build_localtypes(data: &mut Funcdata) {
                 }
             }
         };
+        // (kuna `elemptr`) A pointer-width value whose every access is an element
+        // of one width through an index the program computes is a pointer to that
+        // element.  Replaces only an integer vote or a pointer at nothing; never a
+        // seeded, locked or named type.  See `kuna_elemptr`.
+        let ct = if from_seed {
+            ct
+        } else {
+            crate::kuna_elemptr::element_pointer(data, vn, &ct).unwrap_or(ct)
+        };
         // (kuna `boolbyte`) A byte whose every read is a truth test has no `bool`
         // candidate in the fold above: `TYPE_BOOL` is only ever an op's OUTPUT type,
         // and `TypeOpEqual::getInputLocal` votes `getBase(1, TYPE_INT)` -- the ASCII

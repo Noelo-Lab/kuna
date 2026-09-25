@@ -22,6 +22,7 @@ pub mod kuna_codescalar;
 pub mod kuna_boolbyte; // (kuna) type a byte that is only ever a truth value as bool
 pub mod kuna_charbyte; // (kuna) keep char for a byte loaded through a char pointer
 pub mod kuna_charptr; // (kuna) commit a pointer used only on characters to char *
+pub mod kuna_elemptr; // (kuna) a pointer used only as an array of one element type is T *
 pub mod kuna_ptrfromuse; // (kuna) type a dereferenced-only function input as a pointer
 pub mod kuna_libcfit; // (kuna) a libc aggregate vote declines where the caller reads past its end
 pub mod kuna_pebnames; // (kuna) type the Windows TEB segment base so PEB/TEB field reads are named

@@ -391,6 +391,10 @@ pub struct Architecture {
     /// `charptr on|off`.  The rule lives in
     /// [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
+    /// (kuna `elemptr`) Declare a pointer-width value used only as an array of
+    /// one element type as a pointer to that element; option `elemptr on|off`.
+    /// The rule lives in [`kuna_elemptr`](crate::p5_types::kuna_elemptr).
+    pub elem_ptr: bool,
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be
     /// a LOAD/STORE base as a pointer, and what that pointer points at.  See
     /// [`kuna_ptrfromuse`](crate::p5_types::kuna_ptrfromuse).
@@ -2347,6 +2351,7 @@ impl Architecture {
             cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
             cast_index: false, // (kuna) option castindex; reset_defaults sets the shipped default
             char_ptr: false, // (kuna) option charptr; shipped off
+            elem_ptr: false, // (kuna) option elemptr; reset_defaults sets the shipped default
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
             calleevote: crate::kuna_calleevote::CalleeVoteMode::Off, // (kuna) option calleevote
@@ -2782,6 +2787,7 @@ impl Architecture {
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
         self.cast_arith = true; // (kuna) option castarith default-on: a pointer plus whole elements prints as ((T *)p)[k] instead of *(T *)((long)p + K); 0/675 datatest assertions moved, 16 stage assertions moved to the new form, 444-slice typesweep identical, speed within budget; docs/features/castarith/record.json
         self.cast_index = true; // (kuna) option castindex default-on: a pointer plus a variable index of whole elements prints as ((T *)p)[i], a char * difference as p - q; 0/675 datatest assertions moved, stages PARITY OK, 444-slice typesweep identical, speed within budget; docs/features/castindex/default-on-evaluation.md
+        self.elem_ptr = false; // (kuna) option elemptr; shipped off pending the default-on evaluation
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
@@ -3495,6 +3501,11 @@ impl Architecture {
                 Ok(msg)
             }
             "charptr" => on_off!(char_ptr, "character-pointer evidence"),
+            "elemptr" => {
+                let (val, msg) = crate::p5_types::kuna_elemptr::OptionElemPtr.apply(p1)?;
+                self.elem_ptr = val;
+                Ok(msg)
+            }
             "ptrfromuse" => {
                 let (val, msg) =
                     crate::p5_types::kuna_ptrfromuse::OptionPtrFromUse.apply(p1)?;
@@ -4313,6 +4324,8 @@ impl Architecture {
         ctx.cast_index = self.cast_index && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castindex
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
+        ctx.elem_ptr = self.elem_ptr; // (kuna) elemptr
+        ctx.elem_ptr_ranges = std::rc::Rc::clone(&self.globalref_ranges); // (kuna) elemptr
         ctx.slot_ptr = self.slot_ptr; // (kuna) slotptr
         ctx.libctypes = self.analysis_libctypes; // (kuna) libctypes (kuna_libcfit)
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
