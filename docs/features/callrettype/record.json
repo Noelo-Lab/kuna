@@ -40,33 +40,33 @@
  },
  "castbench": {
   "set": "full: 45 binaries (coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find) x O0/O2/O2-noinline; functions kuna and IDA both emit",
-  "base": "/home/mahaloz/kwt/castbench/main-c960fb18d (origin/main c960fb18d); --option callrettype off on the branch prints the same bytes",
+  "base": "fresh build of origin/main f434b6a60 (.scratch arm); --option callrettype off on the branch prints the same bytes on all 45 binaries",
   "shared_functions": 4815,
   "ida_casts": 37821,
-  "main_casts": 37477,
-  "branch_casts": 36703,
-  "main_per_kloc": 196.6,
-  "branch_per_kloc": 192.6,
-  "main_per_100_statements": 31.2,
-  "branch_per_100_statements": 30.5,
-  "main_vs_ida": 0.991,
-  "branch_vs_ida": 0.97,
+  "main_casts": 36614,
+  "branch_casts": 35832,
+  "main_per_kloc": 192.1,
+  "branch_per_kloc": 188.0,
+  "main_per_100_statements": 30.5,
+  "branch_per_100_statements": 29.8,
+  "main_vs_ida": 0.968,
+  "branch_vs_ida": 0.947,
   "by_level_vs_ida": {
    "O0": [
-    1.003,
-    0.983
+    0.979,
+    0.959
    ],
    "O2": [
-    1.028,
-    1.011
+    1.006,
+    0.988
    ],
    "O2-noinline": [
-    0.937,
-    0.913
+    0.915,
+    0.891
    ]
   },
-  "functions_fewer": 391,
-  "casts_fewer": 804,
+  "functions_fewer": 393,
+  "casts_fewer": 812,
   "functions_more": 25,
   "casts_more": 30,
   "more_classified": {
@@ -79,14 +79,21 @@
    "a vote a later inference pass refused, the result keeps the type (not audited)": 1
   },
   "pointer_variable_assigned_an_integer_lines": {
-   "main": 985,
-   "branch": 960
+   "main": 984,
+   "branch": 959
+  },
+  "before_rebase": {
+   "base": "main c960fb18d",
+   "main_casts": 37477,
+   "branch_casts": 36703,
+   "functions_fewer": 391,
+   "functions_more": 25
   }
  },
  "benchmark": {
   "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
   "metric": "type_match",
-  "arms": "same final build: default (on) vs --option callrettype off",
+  "arms": "same build rebased on origin/main f434b6a60: default (on) vs --option callrettype off; identical moved rows on the pre-rebase build",
   "projects": {
    "bzip2": {
     "n": 267,
@@ -199,8 +206,8 @@
   "functions": 8878,
   "changed": 1647,
   "types_casts_names_only": 1526,
-  "expression_spelling_only": 53,
-  "statement_changes": 68,
+  "expression_spelling_only": 54,
+  "statement_changes": 67,
   "call_arity_moved": 0,
   "return_voidness_moved": 0,
   "variables_rows_moved": 0

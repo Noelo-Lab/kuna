@@ -1,12 +1,12 @@
 {
- "method": "docs/features/callrettype/corpus.py (decompile-all --json, callrettype off vs on, same binary) + hunkclass.py; binaries disjoint from the castbench corpus",
+ "method": "docs/features/callrettype/corpus.py (decompile-all --json, callrettype off vs on, same binary) + hunkclass.py; binaries disjoint from the castbench corpus; branch rebased on origin/main f434b6a60",
  "binaries": {
   "O2_bash": {
    "functions": 2538,
    "changed": 679,
    "types_casts_names_only": 620,
-   "expression_spelling_only": 15,
-   "statement_changes": 44,
+   "expression_spelling_only": 16,
+   "statement_changes": 43,
    "statement_change_addrs": [
     "0x416f0",
     "0x43e90",
@@ -48,16 +48,13 @@
     "0xb3e80",
     "0xb56c0",
     "0xcd650",
-    "0xd2360",
     "0xd6520",
     "0xec910",
     "0xf41d0"
    ],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   },
   "O2-noinline_dash": {
    "functions": 442,
@@ -73,9 +70,7 @@
    ],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   },
   "O0_kmod": {
    "functions": 548,
@@ -88,9 +83,7 @@
    ],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   },
   "O2-noinline_crontab": {
    "functions": 160,
@@ -103,9 +96,7 @@
    ],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   },
   "O2_dpkg-divert": {
    "functions": 564,
@@ -122,9 +113,7 @@
    ],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   },
   "O0_minigzip": {
    "functions": 185,
@@ -135,9 +124,7 @@
    "statement_change_addrs": [],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   },
   "O2_xmlwf": {
    "functions": 126,
@@ -148,9 +135,7 @@
    "statement_change_addrs": [],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   },
   "O0_e2fsck": {
    "functions": 1908,
@@ -171,9 +156,7 @@
    ],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   },
   "O2_sftp": {
    "functions": 533,
@@ -184,9 +167,7 @@
    "statement_change_addrs": [],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   },
   "O0_ip": {
    "functions": 1874,
@@ -202,17 +183,15 @@
    ],
    "call_arity_moved": 0,
    "return_voidness_moved": 0,
-   "variables_rows_moved": 0,
-   "arity_addrs": [],
-   "varrow_addrs": []
+   "variables_rows_moved": 0
   }
  },
  "total": {
   "functions": 8878,
   "changed": 1647,
   "types_casts_names_only": 1526,
-  "expression_spelling_only": 53,
-  "statement_changes": 68,
+  "expression_spelling_only": 54,
+  "statement_changes": 67,
   "call_arity_moved": 0,
   "return_voidness_moved": 0,
   "variables_rows_moved": 0
