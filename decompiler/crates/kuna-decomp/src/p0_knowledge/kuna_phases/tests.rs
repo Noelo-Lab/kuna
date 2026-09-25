@@ -838,6 +838,9 @@ fn option_values_live_value_present_for_101() {
                             // same reason.  Its live value is
                             // `Architecture::calleevote`.
                             | "calleevote"
+                            // (kuna) `callbacktype` is an enum field the same
+                            // way; its live value is `Architecture::callbacktype`.
+                            | "callbacktype"
                             | "arraycoverwidth"
                             | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like

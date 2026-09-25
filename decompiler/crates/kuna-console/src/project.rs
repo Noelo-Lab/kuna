@@ -660,6 +660,11 @@ pub fn decompile_pulled(
                 if prog.arch().kuna_calleevote.recording {
                     kuna_decomp::kuna_calleevote::record(prog.arch_mut(), &park_entry, &mut fd);
                 }
+                // (kuna `callbacktype`) Record every constant it hands to a
+                // declared callback slot.
+                if prog.arch().kuna_callbacktype.recording {
+                    kuna_decomp::kuna_callbacktype::record(prog.arch_mut(), &park_entry, &fd);
+                }
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function

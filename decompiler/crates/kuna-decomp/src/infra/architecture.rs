@@ -398,6 +398,9 @@ pub struct Architecture {
     /// (kuna `protoorder`) Callee-first whole-binary order and what it states
     /// (`types` or `lock`); read by the `kuna-cli` driver.
     pub protoorder: crate::kuna_protoorder::ProtoOrderMode,
+    /// (kuna `callbacktype`) Does a callback take the prototype of the slot it
+    /// is passed to?
+    pub callbacktype: crate::kuna_callbacktype::CallbackTypeMode,
     /// (kuna `calleevote`) What the complete caller set of a function decides about it.
     pub calleevote: crate::kuna_calleevote::CalleeVoteMode,
     /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
@@ -1294,6 +1297,9 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna `callbacktype`) The whole-binary run's record of the constants
+    /// declared callback slots carried.
+    pub kuna_callbacktype: crate::kuna_callbacktype::Ledger,
     /// (kuna `calleevote`) The whole-binary run's record of call arguments and
     /// what the callers stated.
     pub kuna_calleevote: crate::kuna_calleevote::Ledger,
@@ -2349,6 +2355,7 @@ impl Architecture {
             char_ptr: false, // (kuna) option charptr; shipped off
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
+            callbacktype: crate::kuna_callbacktype::CallbackTypeMode::Off, // (kuna) option callbacktype
             calleevote: crate::kuna_calleevote::CalleeVoteMode::Off, // (kuna) option calleevote
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
@@ -2503,6 +2510,7 @@ impl Architecture {
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
@@ -2784,6 +2792,7 @@ impl Architecture {
         self.cast_index = true; // (kuna) option castindex default-on: a pointer plus a variable index of whole elements prints as ((T *)p)[i], a char * difference as p - q; 0/675 datatest assertions moved, stages PARITY OK, 444-slice typesweep identical, speed within budget; docs/features/castindex/default-on-evaluation.md
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
+        self.callbacktype = crate::kuna_callbacktype::CallbackTypeMode::On; // (kuna) option callbacktype default `on`: a function whose address reaches exactly one kind of declared callback slot takes that slot's prototype; evidence in docs/features/callbacktype/default-on-evaluation.md
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
@@ -3484,6 +3493,11 @@ impl Architecture {
             "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
             "castarith" => on_off!(cast_arith, "pointer arithmetic in pointer terms"),
             "castindex" => on_off!(cast_index, "variable indexes and pointer differences in pointer terms"),
+            "callbacktype" => {
+                let (mode, msg) = crate::kuna_callbacktype::OptionCallbackType.apply(p1)?;
+                self.callbacktype = mode;
+                Ok(msg)
+            }
             "calleevote" => {
                 let (mode, msg) = crate::kuna_calleevote::OptionCalleeVote.apply(p1)?;
                 self.calleevote = mode;

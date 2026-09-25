@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "binary_sha256": "b9e3aeab05dd089e299f03cb6b0135592771fe49cc73120da22127b41610799a",
+    "binary_size": 16800,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "selector": "wrap_up",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void wrap_up\\(void\\)",
+      "signal\\(10,wrap_up\\)",
+      "  wrap_up\\(\\);"
+    ],
+    "stdout_absent": [
+      "void wrap_up\\(int a0\\)",
+      "wrap_up\\(v\\d+\\)"
+    ]
+  },
+  "notes": "`wrap_up` takes nothing and is cast into `signal`'s `void (*)(int)` slot, and `main` also calls it directly. A declared prototype closes the parameter list, so parking it would materialize that argument at the direct call site out of whatever register was live -- an invented assignment and an invented argument, neither of which is in the program.",
+  "probe_id": "p-159b6045ce5b"
+}

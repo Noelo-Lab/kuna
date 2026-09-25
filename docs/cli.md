@@ -1168,6 +1168,51 @@ a narrowed or `--jobs` run, `decompile-project --stream` and under
 `--option protoorder off`.
 `KUNA_CALLEEVOTE_TRACE=1` prints each decision and its reason.
 
+### `--option callbacktype` — the prototype of the slot a callback is passed to (on by default)
+
+A function reached only through a function pointer has no call site of its own,
+so neither direction above reaches it. The library declares it anyway: `qsort`'s
+fourth parameter is `int (*)(const void *, const void *)` and `signal`'s second
+is `void (*)(int)`. When a function's address is handed to one of 23 such slots
+(`qsort`, `bsearch`, `signal`, `atexit`, `pthread_create`, `scandir`, `nftw`,
+`tsearch`, `glob` and the rest; the list is in `docs/spec/04-calls-and-prototypes.md`),
+the run parks that declaration on it and decompiles it again, together with each
+direct caller whose call the declaration changes (it passes another number of
+arguments, or uses the result). A declaration that is exactly the signature the
+body already printed is not parked:
+
+```bash
+kuna decompile-all ./callbacktype_x86_64 --option callbacktype off | grep -E '^(int|void).*(by_key|on_int)\('
+# int by_key(int *a0,int *a1)
+# void on_int(void)
+kuna decompile-all ./callbacktype_x86_64 | grep -E '^(int|void).*(by_key|on_int)\('
+# int by_key(void *a0,void *a1)
+# void on_int(int a0)
+```
+
+The declaration closes the parameter list, so it has to be exactly right. It is
+refused when a declared prototype already exists (DWARF, `--assert`, the library
+tables), when two slots disagree, when the address goes anywhere the slots do
+not explain (exported, stored in data, a relocation target, used a second time
+by the body that registered it), and when the function's own body contradicts
+the declaration: more inputs than it declares, fewer while something also calls
+the function directly, an input or a returned value wider than the declared
+storage (a `struct ctx *` routine cast into `signal`'s `int` slot, a `long`
+comparator cast into `qsort`'s), a `void` slot on a body that returns a value, a
+value-returning slot on a body that computes none, or a computed value narrower
+than the declared return whose upper bytes the machine code does not clear on
+every path (a `char` comparator that is `mov (%rdi),%al; sub (%rsi),%al` leaves
+the rest of `eax` as its caller left it). A direct call that reads
+more of the return register than the declared return holds refuses it too. A handler that never reads
+its signal number and that nothing calls directly does gain the parameter, as
+DWARF gives it; `--json` exports it with empty `line_numbers` and `addresses`.
+
+Only an x86-64 image qualifies, for the reason `calleevote` gives. Like
+`protoorder` it needs the callee-first pass, so it is inert on `kuna decompile`,
+a narrowed run, `decompile-project --stream`, under `--option protoorder off`,
+and on a `--jobs N` run that does not name it; naming it alongside `--jobs N` is
+refused. `KUNA_CALLBACKTYPE_TRACE=1` prints each park or refusal and its reason.
+
 ### `kuna functions --summary` — orientation in one call
 
 ```bash

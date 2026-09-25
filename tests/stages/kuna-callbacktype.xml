@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    callbacktype: a function whose address is handed to a declared library
+    callback slot takes that slot's prototype (`option callbacktype on|off`).
+
+    NEGATIVE CONTROL. The claim is made from a CALL SITE: a whole-binary
+    `decompile-all` records the constant every declared callback slot carries,
+    and only then parks the declaration on the function it names. This harness
+    loads the image but decompiles ONE function at a time, so no caller is ever
+    recorded and nothing may be said about `by_key`: both passes must print the
+    `int *` parameters its own body recovers, never the slot's `void *`. A rule
+    that declared a comparator from its shape rather than from a recorded call
+    would fire here, and would fire on any two-pointer function in any image.
+
+    The same control for the other half of the option: `on_int` is a signal
+    handler that never reads its argument, so with no recorded call it prints
+    `void on_int(void)` in both passes. The parameter appears only where the
+    `signal` call site was seen.
+
+    The two-pass coverage over the whole binary-to-decompile path is
+    tests/cli/callbacktype-off-leaves-a-callback-to-its-own-body.json (off) and
+    tests/cli/callbacktype-declares-a-callback-from-the-slot-it-is-passed-to.json
+    (on), which also pin the escape control `by_key_desc`.
+
+    The XML wrapper only supplies the harness architecture, which the `option`
+    command needs before the first `load file`.
+
+    Stage / sub-stage: P4 "prototype-source". Pass 1 pins `off`, pass 2 `on`.
+
+    Source: decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_x86_64.c
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_x86_64</com>
+  <com>option callbacktype off</com>
+  <com>read symbols</com>
+  <com>lo fu by_key</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu on_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_x86_64</com>
+  <com>option callbacktype on</com>
+  <com>read symbols</com>
+  <com>lo fu by_key</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu on_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLBACKTYPE #1: with no recorded call site the comparator keeps its own parameters in both passes" min="2" max="2">int4 by_key\(int4 \*a0,int4 \*a1\)</stringmatch>
+<stringmatch name="CALLBACKTYPE #2: the slot's void \* is never claimed from the function's shape" min="0" max="0">by_key\(void \*a0</stringmatch>
+<stringmatch name="CALLBACKTYPE #3: the handler gains no parameter without the signal call site" min="2" max="2">void on_int\(void\)</stringmatch>
+</decompilertest>

@@ -7,6 +7,9 @@
     "{{BIN}}",
     "--option",
     "calleevote",
+    "off",
+    "--option",
+    "callbacktype",
     "off"
   ],
   "cwd": "{{WORK}}",
@@ -37,6 +40,6 @@
       "bool by_used\\(void \\*a0,void \\*a1\\)"
     ]
   },
-  "notes": "OFF: `report` reads three fields of its record and passes it to `peek_used`, which stays `void *`; `same`'s one caller passes strings and it stays `long`; the one-field getter `get_cap` prints raw offset arithmetic. `by_used` is the qsort callback control.",
-  "probe_id": "a-47b94490eba1"
+  "notes": "OFF: `report` reads three fields of its record and passes it to `peek_used`, which stays `void *`; `same`'s one caller passes strings and it stays `long`; the one-field getter `get_cap` prints raw offset arithmetic. `by_used` is the qsort callback control, kept to calleevote alone by `callbacktype off`.",
+  "probe_id": "a-9cd2e1983e98"
 }

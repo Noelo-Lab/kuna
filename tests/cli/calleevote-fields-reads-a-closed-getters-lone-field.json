@@ -4,7 +4,10 @@
   "cmd": [
     "{{KUNA}}",
     "decompile-all",
-    "{{BIN}}"
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "off"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -36,6 +39,6 @@
       "a0\\[4\\] = '"
     ]
   },
-  "notes": "DEFAULT (`fields`): as `types`, and the directly-called getter `get_cap` reads its one field as a record field. `peek_used`'s own one-field record gives way to the one `report` passes. `by_used` reads one field of each argument exactly like a getter, but its address goes to qsort, so its callers are unknown and both parameters stay `void *`.",
-  "probe_id": "a-1d916ed5d33b"
+  "notes": "DEFAULT (`fields`): as `types`, and the directly-called getter `get_cap` reads its one field as a record field. `peek_used`'s own record gives way to the one `report` passes. `by_used` reads one field of each argument like a getter, but its address goes to qsort, so its callers are unknown and both stay `void *` (`callbacktype off` keeps it a calleevote control).",
+  "probe_id": "a-8a663770662c"
 }

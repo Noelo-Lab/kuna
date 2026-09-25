@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "binary_sha256": "b9e3aeab05dd089e299f03cb6b0135592771fe49cc73120da22127b41610799a",
+    "binary_size": 16800,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "selector": "cmp3",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void cmp3\\(void \\*a0,void \\*a1,unsigned long a2\\)",
+      "cmp3\\([^;]*,\\\"x\\\",\\(long\\)[^;]*a0\\);",
+      "qsort\\(v\\d+,4,4,cmp3\\)"
+    ],
+    "stdout_absent": [
+      "int cmp3\\(void \\*a0,void \\*a1\\)",
+      "\\\"x\\\"\\);"
+    ]
+  },
+  "notes": "`cmp3` takes three arguments and is cast into `qsort`'s two-argument slot. Its body forwards the third to `memcmp` in a tail call and never reads it, so the entry-fact walk states nothing about that register and only the arity its own recovery found refuses the declaration. Parking it drops the third argument at the direct call site and reads an uninitialized local in the body.",
+  "probe_id": "p-6ad9546b5e76"
+}

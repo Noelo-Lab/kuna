@@ -1,0 +1,616 @@
+{
+ "opportunity": "A function reached only through a function pointer has no call site of its own, so neither `protoorder` (callee to callers) nor `calleevote` (callers to callee) reaches it and its own body is all it has. The program declares it anyway: `qsort`'s fourth parameter is `int (*)(const void *, const void *)` and `signal`'s second is `void (*)(int)`. Over the campaign's 444 slices, 294 callback arguments name 114 distinct functions, 50 of which decbench scores; all 50 DWARF declarations are exactly the slot's signature, and 67 ground-truth parameters would move, 16 of them parameters kuna recovers no trace of.",
+ "test_name": "35 unit tests (slot table, run ledger, the redo bound (body-agrees, caller_changes), the arity/width/return refusals, the caller-read ledger, the narrow-return walk) + tests/stages/kuna-callbacktype.xml (two-pass negative control) + thirteen tests/cli probes over four fixtures (callbacktype_x86_64, callbacktype_refused_x86_64, callbacktype_width_x86_64, callbacktype_narrow_x86_64): the parks, off, --jobs, and ten refusals; see docs/features/callbacktype/default-on-evaluation.md (c)",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_x86_64",
+ "selector": "by_key",
+ "func_addr": null,
+ "angr_version": null,
+ "option": "callbacktype",
+ "flag": "callbacktype",
+ "element_id": null,
+ "change_kind": "type-inference",
+ "tier": "transform",
+ "source_decompiler": "IDA",
+ "inspiration": "IDA's Hex-Rays applies the prototype of a known callback parameter to the function whose address is passed there; its type libraries carry qsort's `int (__cdecl *)(const void *, const void *)` and the decompiler propagates it through the argument.",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "ablation_changed": 0,
+ "parity": "OK",
+ "table": {
+  "entry_points": 23,
+  "names": [
+   "qsort",
+   "bsearch",
+   "lfind",
+   "lsearch",
+   "signal",
+   "__sysv_signal",
+   "bsd_signal",
+   "sigset",
+   "atexit",
+   "on_exit",
+   "pthread_create",
+   "pthread_once",
+   "pthread_key_create",
+   "pthread_atfork",
+   "scandir",
+   "scandirat",
+   "ftw",
+   "nftw",
+   "tsearch",
+   "tfind",
+   "tdelete",
+   "tdestroy",
+   "glob"
+  ],
+  "deliberately_absent": {
+   "__cxa_atexit": "glibc's <stdlib.h> rewrites atexit(f) into __cxa_atexit(f, 0, __dso_handle) with f cast from void (*)(void), so the slot's declared void (*)(void *) would give every atexit handler a parameter its source never wrote",
+   "sigaction": "its handler is a structure member, not an argument",
+   "qsort_r": "glibc and musl pass the comparator fourth and its data pointer fifth; macOS and FreeBSD before 14 pass an opaque thunk fourth and the comparator fifth, and the imported name does not say which library the image links (0 of the 775 decbench binaries import it)"
+  }
+ },
+ "census": {
+  "slices": 444,
+  "callback_arguments": 294,
+  "distinct_targets": 114,
+  "scored_targets": 50,
+  "dwarf_agrees": 50,
+  "dwarf_contradicts": 0,
+  "gt_parameters_that_move": 67,
+  "of_which_absent_today": 16,
+  "parked_of_scored": 46,
+  "declined_escapes": 4,
+  "doc": "docs/features/callbacktype/census.md"
+ },
+ "benchmark": {
+  "corpus": "444-slice decbench typesweep (coreutils grep gzip diffutils bzip2 findutils tar shadow x at O0/O2/O2-noinline), metric pinned at decbench 625e892, DECBENCH_NO_CACHE=1",
+  "metric": "type_match",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "improved": 4,
+    "worse": 0,
+    "mean_off": 0.4173,
+    "mean_on": 0.4229
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 989,
+    "perfect_on": 993,
+    "improved": 17,
+    "worse": 0,
+    "mean_off": 0.359,
+    "mean_on": 0.3604
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 64,
+    "improved": 0,
+    "worse": 0,
+    "mean_off": 0.4514,
+    "mean_on": 0.4514
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 61,
+    "perfect_on": 61,
+    "improved": 0,
+    "worse": 0,
+    "mean_off": 0.2508,
+    "mean_on": 0.2508
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 53,
+    "perfect_on": 53,
+    "improved": 0,
+    "worse": 0,
+    "mean_off": 0.4583,
+    "mean_on": 0.4583
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 112,
+    "improved": 0,
+    "worse": 0,
+    "mean_off": 0.5409,
+    "mean_on": 0.5409
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 89,
+    "perfect_on": 95,
+    "improved": 6,
+    "worse": 0,
+    "mean_off": 0.3604,
+    "mean_on": 0.3692
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 213,
+    "improved": 2,
+    "worse": 0,
+    "mean_off": 0.3938,
+    "mean_on": 0.3944
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1615,
+   "perfect_on": 1625,
+   "improved": 29,
+   "worse": 0,
+   "mean_off": 0.3697,
+   "mean_on": 0.3713
+  },
+  "by_opt": {
+   "O0": {
+    "n": 4286,
+    "perfect_off": 1110,
+    "perfect_on": 1114,
+    "improved": 8,
+    "worse": 0,
+    "mean_off": 0.5496,
+    "mean_on": 0.5505
+   },
+   "O2": {
+    "n": 2394,
+    "perfect_off": 89,
+    "perfect_on": 92,
+    "improved": 10,
+    "worse": 0,
+    "mean_off": 0.1984,
+    "mean_on": 0.201
+   },
+   "O2-noinline": {
+    "n": 4068,
+    "perfect_off": 416,
+    "perfect_on": 419,
+    "improved": 11,
+    "worse": 0,
+    "mean_off": 0.2811,
+    "mean_on": 0.2828
+   }
+  },
+  "control": "byte-identical variables in both arms: 10710 functions, 0 scored differently",
+  "measured_on": "3f1077ef9 (rebased onto 5458b7ab5: #719 calleevoteperf, #721 castimplied), both arms of one build",
+  "against_previous_head": "the 29 moved rows are the same 29, function for function, as on f5d22a61c before the rebase (moved.csv identical); main's own baseline moved 1609 -> 1615 with #719/#721",
+  "build": "1d38ab44c (rebased onto c960fb18d: #723 globalref), base arm = default on, test arm = --option callbacktype off; moved rows (moved.csv) and the per-project block identical to the 003db2dd8 and 5458b7ab5 measurements",
+  "raw": "type_match PERFECT: base(on) 1625 -> test(off) 1615; aggregate 3991.04 -> 3973.97; moved OFF perfect 10, worsened 19",
+  "vs_reviewed_head": "a891245ac measured 1,609 -> 1,619 with 32 improved; three improved-not-perfect rows go back, all ptx: compare_words at -O2 and -O2-noinline (caller-reads-a-wider-return: compare_occurs passes its whole rax through its ret) and compare_occurs at -O2-noinline (recovered-wider-output: a call's full register on one path). DWARF declares both int, so they are misses",
+  "note_rebases": "re-run on d10b3586c (ef49332b2), fcf175aac (04f693d82) and fe6672881 (f434b6a60): 1,615 -> 1,625, 29 improved, 0 worse each time, the same moved rows and per-project block"
+ },
+ "gates": {
+  "make test": "datatests: 675/675 assertions passed / PARITY OK",
+  "make test-stages": "datatests: 1392/1392 assertions passed / PARITY OK",
+  "make test-cli": "tests/cli: 253/253 passed",
+  "make rust-test": "RUST_TEST_RC=0 (lane 2026-09-25T09:16:22Z -> 09:42:04Z on fe6672881, the last source/fixture commit, rebased onto f434b6a60; 422 suites, 7587 tests passed, 0 failed); also RC=0 on fcf175aac (04f693d82, 7577 passed) and d10b3586c (ef49332b2, 7563 passed)",
+  "make check-spec": "check-spec OK (lenient mode) / check-spec OK (strict mode)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh (kuna catalog --markdown | cmp)",
+  "phases.toml": "parses with python3.11 tomllib (CI's parser)",
+  "base": "f434b6a60"
+ },
+ "files": [
+  "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_narrow_x86_64.c",
+  "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64.c",
+  "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_x86_64.c",
+  "decompiler/crates/kuna-cli/src/decompile_all.rs",
+  "decompiler/crates/kuna-console/src/project.rs",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_callbacktype.rs",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_callbacktype/tests.rs",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_passthrough.rs",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs",
+  "docs/spec/04-calls-and-prototypes.md"
+ ],
+ "notes": "Inert without a callee-first whole-binary pass, like protoorder and calleevote: `kuna decompile`, a run narrowed by --addr/--functions, decompile-project --stream, --option protoorder off, and a --jobs N run that does not name the option state nothing; naming it alongside --jobs N is refused. On an architecture whose code builds an address from two instructions the escape question has no answer and nothing is parked.",
+ "default_evaluation": "docs/features/callbacktype/default-on-evaluation.md",
+ "arity": {
+  "slices": "the 76 slices that hold a callback argument",
+  "functions_whose_argument_count_moves": 13,
+  "gained": 13,
+  "gained_dwarf_confirmed": 13,
+  "lost": 0,
+  "phantom": 0,
+  "direct_call_sites_of_moved_functions": 0,
+  "call_site_argument_count_moved": 0,
+  "unread_parameters_exported": 13,
+  "driver": "docs/features/callbacktype/arity-counters.py",
+  "note": "every one is a void (int) signal handler (bzip2 x6, shadow login/sulogin/expiry x7) whose body never reads the register and that nothing calls directly; each exports the parameter with empty line_numbers/addresses (the by-design case). Re-measured on d9af28b9b and on 1d38ab44c (rebased onto c960fb18d): unchanged, rows identical. Re-measured on d10b3586c (the bounded redo): the same 13 rows."
+ },
+ "hunks": {
+  "binaries": 47,
+  "functions": 22749,
+  "parks": 64,
+  "changed": 64,
+  "parked": 64,
+  "caller_of_parked": 0,
+  "unexplained": 0,
+  "byte_identical_binaries": 19,
+  "callers": "none: the two libselinux -O2-noinline callers the unbounded redo changed (a1 narrowed, same values) are no longer decompiled again; their pthread_once callee agrees with its body (body-agrees) and their call to the pthread_create routine passes the declared one argument and ignores the result",
+  "caller_check": "a caller that grows its line count or changes the argument count of a call to a parked function, or any changed function that gains a CONCAT, is UNEXPLAINED; a caller that shrinks is read by hand",
+  "build": "fe6672881 on f434b6a60 (identical table on fcf175aac on 04f693d82 and on d10b3586c on ef49332b2)",
+  "table": "docs/features/callbacktype/hunks.md",
+  "raw": "docs/features/callbacktype/hunks.json",
+  "casts_changed_functions": {
+   "off": 330,
+   "on": 457,
+   "more": 18,
+   "fewer": 0,
+   "same": 46
+  },
+  "note": "changed set, every hunk size and every per-function cast delta identical to the 003db2dd8 and 5458b7ab5 measurements",
+  "body_agrees": 25,
+  "no_longer_changed": "e2fsck -O2 sub_2f400 (if/return through a temporary) and gnutls-serv -O2 terminate ((long)a0 / 10 for a0 / 10): both body-agrees, both now print what off prints"
+ },
+ "speed": {
+  "method": "interleaved whole-binary `kuna decompile-all --json --max-fn-seconds 120`, `--option callbacktype off` against the new default, same build (docs/features/callbacktype/speed.py), min-of-15, contended (other campaign lanes running); CPU time (user+sys, docs/features/callbacktype/speed-cpu.py) for libselinux as well",
+  "binaries": "O2 coreutils fmt/ls/sort + bash, and libselinux.so.1 at -O0 and -O2-noinline (the round-6 review's breach)",
+  "build": "wall: d10b3586c (the bounded redo, on ef49332b2; its code is fcf175aac's, which only re-derives count sites after the rebase onto 04f693d82); CPU: fcf175aac",
+  "results": {
+   "libselinux-O0": {
+    "off_min_ms": 5348.5,
+    "on_min_ms": 5408.3,
+    "delta_min_pct": 1.12,
+    "delta_median_pct": -2.02,
+    "samples_off": [
+     5669.7,
+     5348.5,
+     5371.7,
+     5653.9,
+     6101.4,
+     5863.8,
+     5870.3,
+     5854.6,
+     5892.7,
+     5393.9,
+     5380.6,
+     5839.2,
+     5659.8,
+     5985.9,
+     6206.9
+    ],
+    "samples_on": [
+     5807.9,
+     5791.2,
+     5426.1,
+     5408.3,
+     5721.3,
+     5649.1,
+     6047.2,
+     5900.7,
+     6135.2,
+     5559.0,
+     5887.8,
+     5512.5,
+     5654.8,
+     5644.3,
+     5837.7
+    ]
+   },
+   "libselinux-O2-noinline": {
+    "off_min_ms": 4860.0,
+    "on_min_ms": 4887.7,
+    "delta_min_pct": 0.57,
+    "delta_median_pct": 2.88,
+    "samples_off": [
+     5156.1,
+     5511.7,
+     5230.1,
+     5084.5,
+     4982.5,
+     4970.4,
+     4980.0,
+     5576.0,
+     5459.9,
+     5083.7,
+     4955.1,
+     5102.6,
+     5155.6,
+     4889.5,
+     4860.0
+    ],
+    "samples_on": [
+     5231.0,
+     5438.4,
+     5762.7,
+     4975.9,
+     5733.9,
+     5333.4,
+     4974.0,
+     5202.7,
+     5334.7,
+     5487.1,
+     5739.6,
+     4952.9,
+     4893.0,
+     4887.7,
+     4889.6
+    ]
+   },
+   "fmt-O2": {
+    "off_min_ms": 4198.8,
+    "on_min_ms": 4161.5,
+    "delta_min_pct": -0.89,
+    "delta_median_pct": -0.41,
+    "samples_off": [
+     4676.1,
+     4275.8,
+     4200.6,
+     4198.8,
+     4424.7,
+     4202.6,
+     4379.1,
+     4342.7,
+     4259.6,
+     4549.0,
+     4215.4,
+     4353.1,
+     4937.5,
+     4558.9,
+     4265.2
+    ],
+    "samples_on": [
+     4387.4,
+     4435.3,
+     4177.0,
+     4161.5,
+     4232.5,
+     4325.0,
+     4233.0,
+     4275.6,
+     4603.9,
+     4747.1,
+     4188.2,
+     4817.5,
+     4392.8,
+     4604.8,
+     4255.9
+    ]
+   },
+   "ls-O2": {
+    "off_min_ms": 14098.7,
+    "on_min_ms": 13853.2,
+    "delta_min_pct": -1.74,
+    "delta_median_pct": -0.06,
+    "samples_off": [
+     14805.9,
+     15307.5,
+     14103.8,
+     14574.4,
+     15804.4,
+     16201.8,
+     15628.6,
+     14463.5,
+     14357.0,
+     14229.3,
+     14120.1,
+     14175.8,
+     14098.7,
+     17351.9,
+     17515.6
+    ],
+    "samples_on": [
+     15851.4,
+     15472.9,
+     14978.1,
+     13853.2,
+     14376.7,
+     14566.2,
+     14547.0,
+     14250.4,
+     14015.9,
+     14336.1,
+     16392.4,
+     14159.4,
+     17072.8,
+     14873.4,
+     21826.4
+    ]
+   },
+   "sort-O2": {
+    "off_min_ms": 15782.5,
+    "on_min_ms": 15311.8,
+    "delta_min_pct": -2.98,
+    "delta_median_pct": -3.52,
+    "samples_off": [
+     17936.1,
+     18586.9,
+     16630.6,
+     16599.8,
+     17301.9,
+     16803.0,
+     16706.6,
+     18812.0,
+     19444.1,
+     15782.5,
+     17860.8,
+     18567.9,
+     19082.0,
+     18618.6,
+     22637.1
+    ],
+    "samples_on": [
+     17049.0,
+     20004.4,
+     18888.3,
+     16343.0,
+     18374.3,
+     19238.4,
+     16919.8,
+     16846.8,
+     18647.6,
+     16385.6,
+     15311.8,
+     16480.4,
+     17304.8,
+     17501.4,
+     18136.6
+    ]
+   },
+   "bash-O2": {
+    "off_min_ms": 88053.5,
+    "on_min_ms": 89467.3,
+    "delta_min_pct": 1.61,
+    "delta_median_pct": 0.11,
+    "samples_off": [
+     115775.7,
+     104545.3,
+     105637.3,
+     97142.6,
+     93877.1,
+     92461.4,
+     90302.7,
+     88053.5,
+     90020.3,
+     100578.8,
+     99481.9,
+     92413.3,
+     93421.4,
+     93788.8,
+     90400.7
+    ],
+    "samples_on": [
+     105997.6,
+     109608.5,
+     105692.2,
+     94009.8,
+     92873.7,
+     93895.8,
+     89750.3,
+     89981.1,
+     94129.0,
+     124053.0,
+     98743.0,
+     93387.2,
+     90541.3,
+     89467.3,
+     92348.9
+    ]
+   }
+  },
+  "worst": {
+   "binary": "bash-O2",
+   "delta_min_pct": 1.61
+  },
+  "cpu_libselinux": [
+   "O2-noinline/libselinux/stripped/libselinux.so.1 cpu min off 4.99 on 5.05 delta +1.12%  med +6.06% (6.01708984375, 6.38818359375, 9.2353515625)",
+   "O0/libselinux/stripped/libselinux.so.1 cpu min off 5.44 on 5.44 delta +0.17%  med -0.48% (4.8642578125, 5.8134765625, 8.53271484375)"
+  ],
+  "before_the_bound": {
+   "libselinux-O0": "+12.67% CPU min-of-11 (review round 6), +13.93% on a second run",
+   "libselinux-O2-noinline": "+13.17% CPU min-of-11 (review round 6), +12.09% on a second run",
+   "cause": "the pthread_create start routine's one large direct caller (sub_1ce10) and 6 parks that changed nothing were decompiled again"
+  }
+ },
+ "review_round_1": {
+  "findings_addressed": [
+   "blocker: a forwarding body (tail call) never READS the register past the declared list, so reads_past_the_list could not see it and a 3-argument function cast into qsort's slot was parked at arity 2 -- dropping a live argument at its direct call sites; the recovered input count its own first decompile found is now recorded in OwnFacts and a recovery longer than the declaration refuses the park (Decline::MoreInputsThanDeclared)",
+   "major: address_taken_refs counts address-taking INSTRUCTIONS, so one hoisted lea feeding two registrations passed the count test; record() now walks every USE of a registered address that no recorded slot argument accounts for, following the value from wherever it is materialized through the operations that only carry it (COPY/CAST/ZEXT/PTRSUB/MULTIEQUAL/INDIRECT) and counting a carrier that writes it into a global or an address-taken local as a use; any such use is an escape. The first fix read uses only through the same forms the argument is read through, so a handler registered and then called through a phi, or whose register was also written into a global, was still parked (void quit_either(int a0), void quit_kept(int a0) on the extended fixture); the walk now follows the value past the carrier",
+   "minor: the two truncated calleevote probe notes are restored (the 400-character notes cap is what truncated them) and the three moved probes keep their a- acceptance prefix",
+   "minor: make rust-test re-run on the shipped tree after the fixes",
+   "minor: the spec no longer presents the register walk as an arity guarantee, and says which inert surfaces print a warning"
+  ],
+  "cost_of_the_two_refusals": {
+   "typesweep": "base (default on) 1621 vs test (off) 1609: the same +12 perfect and 26 improved as the reviewed build, mirrored -- 0 lost",
+   "decision_trace": "identical on the 76 slices with a callback argument: 51 parks, 4 escapes, 10 not-a-target, 80 arguments that are not a code address, 0 firings of either new refusal",
+   "arity": "16 gained, 16 DWARF-confirmed, 0 lost, 0 phantom -- unchanged",
+   "note": "neither shape occurs in the 444-slice corpus, which is why both are pinned by probes over a fixture built for them"
+  },
+  "new_fixture": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64 (built with noipa: gcc's interprocedural register allocation otherwise hoists an argument register past a call and kuna's call-site recovery, which has only the convention, reads it as the wrong call's). Four refused shapes: cmp3 (forwarder cast into qsort's slot), cleanup (one lea -> signal + set_hook), quit_either (one lea -> signal + an indirect call through a phi), quit_kept (one lea -> signal + a write into a global nothing reads back)",
+  "pre_fix_verification": "the three refusal probes run against the reviewed build (c057c9e1c): all three FAIL -- int cmp3(void *a0,void *a1) with cmp3(v1,\"x\"), void cleanup(int a0), void quit_either(int a0) and void quit_kept(int a0); on the shipped build all three pass"
+ },
+ "casts": {
+  "instrument": "/home/mahaloz/kwt/castbench/castbench.py --set full (4,815 functions shared with IDA)",
+  "base_arm": "main at f434b6a60 (the castternary lander's arm /home/mahaloz/kwt/castternary-land/land-cb-on, built from the tree main has); the off arm of fe6672881 is byte-identical to it on all 45 binaries",
+  "ida": 37821,
+  "main": 36614,
+  "on": 36635,
+  "delta": 21,
+  "ratio_to_ida_main": 0.968,
+  "ratio_to_ida_on": 0.969,
+  "functions_fewer": 0,
+  "functions_more": 3,
+  "functions_unchanged": 4812,
+  "more_casts": "sort sortlines_thread (pthread_create start routine) at -O0/-O2/-O2-noinline, +7 each (+13 each before castarith): declared void * (DWARF and IDA agree) replaces a wrong unsigned long *; each of its 7 field reads casts off the void * to the type of the callee parameter it is passed to (*(long *)a0, ((unsigned long *)a0)[1], ((FILE **)a0)[5], ((char **)a0)[6], ...), one cast each, the same 7 IDA spends.",
+  "outside_castbench": "+127 over the 64 changed functions of the 47-binary hunk run (330 -> 457); see hunks.casts_changed_functions",
+  "build": "fe6672881",
+  "per_100_statements": {
+   "ida": 27.0,
+   "main": 30.5,
+   "on": 30.5
+  },
+  "previous_base_003db2dd8": "main 38,602 -> on 38,623 (+21, 1.021x IDA), the same three functions",
+  "previous_base_c960fb18d": "main 37,477 -> on 37,498 (+21, 0.991x IDA), the same three functions (also on d10b3586c, the bounded redo)",
+  "previous_base_04f693d82": "main 36,617 -> on 36,638 (+21, 0.968x -> 0.969x IDA), the same three functions"
+ },
+ "review_round_2": {
+  "findings_addressed": [
+   "blocker (x6/x7): a declaration longer than the recovered list is refused when anything calls or tail-jumps to the function directly (CallGraph::called_directly: any call/jump xref, incl. self or unowned code) -- Decline::FewerInputsThanDeclared",
+   "blocker (x2): a value-returning slot on a body that computes no value is refused -- Decline::ReturnsNoValue. The value is proved on the machine path from the producing call (call_return / straight_to_return), so return strcmp(...) comparators that recover void on their own still park",
+   "major (x4): parked by design with no direct caller; spec 04 + option row say the unread arg is exported with empty line_numbers/addresses",
+   "fixtures + probes: score1/wrap_up (fewer + direct), start_puts/warn_count (no value), by_name/by_count/warn_path (values that ARE computed); three new probes fail on 081fdd26d",
+   "rust-test green on the shipping head; flip evidence re-run on it; PR body rewritten",
+   "minor: calleevote probes pass --option callbacktype off with main expectations"
+  ],
+  "refuted": "x5 (a void errfunc tail-calling fprintf in glob int slot) is parked, not refused: glob receives __fprintf_chk int, IDA prints int oops(...) { return _fprintf_chk(...); }, and it is the same machine shape as x3 (return strcmp), which refusing would also refuse"
+ },
+ "review_round_3": {
+  "findings_addressed": [
+   "major (y7c/y7b): body_contradicts compared arity only. OwnFacts now records every recovered input's storage; an input not inside the declared storage at its position is refused (recovered-wider-input), with or without a direct caller. y7c/y7b at gcc/clang -O0/-O2: 8/8 refused, output byte-identical to off",
+   "major (y9): a return wider than the slot's is refused (recovered-wider-output), whether computed or left by the call the return proof traced (the tail twin y9t, a long left by strtol, printed CONCAT44(dat_4,..) on a891245ac too). y9/y9t/y9u at gcc/clang -O0/-O2: 12/12 refused, byte-identical to off",
+   "the storage rule alone refused coreutils compare_ranges (DWARF int) at six slices: an int result x86-64 zero-extends into an 8-byte rax output. The computed return is measured by the non-zero mask of what the live RETURNs hand back (OwnFacts.output_set) and parks again when nothing calls the function directly",
+   "found while fixing: a direct caller reading more of the return register than the declared return holds. y9z (a long returning a zero-extended comparison: own output a 1-byte bool, caller passes rax to %ld) printed CONCAT44(dat_4,zcmp(..)) on a891245ac; ptx compare_occurs, refused by the first width fix while compare_words stayed parked, returned an unset variable. Every decompile now files the consumed part of each direct call's output (CallerFacts.reads); a read outside the declared return refuses the park (caller-reads-a-wider-return)",
+   "fixture callbacktype_width_x86_64 (cleanup, add_total, lcmp, lcmp_tail, zcmp, cmp_inner/cmp_outer) + three tests/cli probes; all three fail on a891245ac, the caller-read probe also on 7092f2332",
+   "minor (--jobs): spec 04 no longer says --jobs N refuses the option; a run that does not name it parks nothing, naming it is refused. docs/cli.md gains a callbacktype section beside protoorder and calleevote",
+   "minor (qsort_r): dropped from the slot table; glibc and the BSDs put the callback in different positions and the name does not say which library the image links"
+  ],
+  "refuted": [],
+  "not_taken": [
+   "nit (--json names a0/a1 for parked functions vs param_N): JSON-only (the C text prints a0 either way) and left for a follow-up; renaming would move the measured variables[] rows this round did not re-derive"
+  ]
+ },
+ "review_round_4": {
+  "findings_addressed": [
+   "major (t5/t6): a computed return narrower than the declared one was parked even when the bytes above it were unset (clang -O2 ccmp `mov (%rdi),%al; sub (%rsi),%al`, gcc/clang -O2 bw `setg %al; ret`), printing CONCAT31/CONCAT71 of an unset v1. park now walks the machine code from the entry over every path (zero_at_every_return) and refuses unless every byte of the declared return above the value is provably zero at every RETURN (recovered-narrower-output). t5/t6 at gcc/clang -O2: bw, cw, ccmp refused; gcc ccmp (movzbl) and every 32-bit write stay parked. Fixture callbacktype_narrow_x86_64 + probe (fails on f5d22a61c, passes on 1d2522699); 6 unit tests",
+   "major: rebased onto 5458b7ab5, counts re-derived with counters --rederive/--fix (231 settables, tiers 73/94/64, 337 stage files), phase_catalog.json recaptured, baseline-stages.json re-recorded (1341 -> 1344); every measurement redone on the rebased build",
+   "minor: PR body says the stage test is a negative control and drops the internal-round wording",
+   "minor: a parked callback's parameters are unnamed, so --json and the decompile-project .asm export param_1/param_2 like every other function; the C text is byte-identical"
+  ]
+ },
+ "review_round_5": {
+  "findings_addressed": [
+   "blocker: phases.toml carried an unescaped quote (printf(\"%ld\")) in the callbacktype summary; build.rs reads only a value's first and last quote so every local gate passed, but CI's tomllib parse failed. Escaped; the file now parses with python3.11 tomllib, kuna catalog --markdown | cmp docs/options.md is unchanged and catalog --check is OK",
+   "rebased (squash) onto 003db2dd8 (#722 castarith, #724 castsign): counts re-derived (233 settables, tiers 74/95/64, 232 catalog records, 339 stage files), phase_catalog capture byte-identical, baseline-stages re-recorded 1362 -> 1365 (the 3 CALLBACKTYPE keys); no tests/cli expectation moved",
+   "minor: casts that grow outside castbench (a parked void * replacing a struct_N * or typed pointer) are counted per function in hunks.md and stated in default-on-evaluation.md (f)/(h) and the PR body; the PR body's fix section is cut to three bullets"
+  ]
+ },
+ "rebase_c960fb18d": {
+  "what": "rebased onto origin/main c960fb18d (#723 globalref, cast-affecting and on by default)",
+  "counts": "counters --rederive/--fix on a fresh build: 234 settables, tiers 75/95/64, 233 catalog JSON records, 340 stage-corpus files; phase_catalog.json capture and docs/options.md byte-identical after the merge",
+  "baseline_stages": "1370 -> 1373, the three CALLBACKTYPE keys only",
+  "tests_cli": "no probe moved"
+ },
+ "review_round_6": {
+  "findings_addressed": [
+   "major: libselinux.so.1 cost +12.67% (-O0) / +13.17% (-O2-noinline) CPU with the option on, unreported. Bounded the redo: a declaration that is exactly the signature the body already printed is not parked (Decline::Agrees, trace body-agrees; 25 of 89 parks over the 47 hunk binaries, 23 of which changed nothing and 2 only in rendering), and a direct caller is decompiled again only when a call to the parked function passes another number of arguments or consumes the result (Ledger::caller_changes). libselinux is now measured in (e): see speed.results and speed.cpu_libselinux",
+   "typesweep (1,615 -> 1,625, 29 improved, 0 worse; same moved rows and per-project block), arity (13/13 DWARF, same rows) and castbench (+21 in the same 3 functions) are unchanged by the bound; the hunk set loses the 2 libselinux callers and the 2 cosmetic body-agrees parks",
+   "minor (cast growth in parked bodies): the documented class, unchanged; stated in (f) and hunks.md",
+   "minor (qsort comparator argument dropped when rcx is also saved to a stack struct or merged through a cmov): pre-existing on main, not caused by this PR, left for its own issue",
+   "minor: the PR body's tests section is cut to three short bullets"
+  ]
+ },
+ "rebase_04f693d82": {
+  "what": "rebased onto ef49332b2 (#720 structheadless, opt-in), then 04f693d82 (#727 castindex, on by default), then f434b6a60 (#728 castternary, on by default)",
+  "counts": "counters --rederive/--fix on a fresh build after each rebase; on f434b6a60: 237 settables, tiers 76/97/64, 236 catalog JSON records, 343 stage-corpus files; phase_catalog.json capture and docs/options.md byte-identical after the merge",
+  "baseline_stages": "1389 -> 1392 on f434b6a60 (1379 -> 1382 on 04f693d82), the three CALLBACKTYPE keys only",
+  "tests_cli": "no probe moved"
+ }
+}

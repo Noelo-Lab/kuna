@@ -490,6 +490,42 @@ impl CallGraph {
         CallGraph { index, entries }
     }
 
+    /// (kuna `callbacktype`) The entries of the functions that CALL or tail-jump
+    /// to `entry`, whatever else takes its address.
+    pub(crate) fn callers_of(&self, entry: u64) -> BTreeSet<u64> {
+        let mut out = BTreeSet::new();
+        for r in self.index.refs_to(entry) {
+            if !matches!(r.kind, XrefKind::Call | XrefKind::Jump) {
+                continue;
+            }
+            if let Some(owner) = self.owner_of(r.from) {
+                if owner != entry {
+                    out.insert(owner);
+                }
+            }
+        }
+        out
+    }
+
+    /// (kuna `callbacktype`) Does anything call or tail-jump to `entry` --
+    /// another function, the function itself, or code no function owns?
+    pub(crate) fn called_directly(&self, entry: u64) -> bool {
+        self.index.refs_to(entry).iter().any(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
+    }
+
+    /// (kuna `callbacktype`) The instructions that materialize the address of
+    /// `entry` without calling it -- the `lea`/immediate a callback argument is
+    /// built by, and anything else that takes the same address -- each with the
+    /// function it sits in.
+    pub(crate) fn address_taken_refs(&self, entry: u64) -> Vec<(u64, Option<u64>)> {
+        self.index
+            .refs_to(entry)
+            .iter()
+            .filter(|r| matches!(r.kind, XrefKind::Data | XrefKind::Read | XrefKind::Write))
+            .map(|r| (r.from, self.owner_of(r.from)))
+            .collect()
+    }
+
     /// (kuna `calleevote`) Every direct call and tail jump to the function
     /// entered at `entry` from another function, by instruction address, or
     /// `None` when its callers cannot all be listed: it is in `open`
@@ -1732,7 +1768,8 @@ pub(crate) fn callee_first_decision(
     (on, explicit)
 }
 
-/// (kuna `protoorder`) Say so on a surface the option does not reach.
+/// (kuna `protoorder`, `callbacktype`) Say so on a surface the option does not
+/// reach.
 ///
 /// The callee-first order and the park live in a whole-program driver's own
 /// loop.  A streamed export writes its `.c` in decompile order as functions
@@ -1740,14 +1777,17 @@ pub(crate) fn callee_first_decision(
 /// parks anything: with `protoorder on` they produce exactly the output they
 /// produce with it off. That is a legitimate choice, but it must not be a
 /// silent one -- an option accepted with `rc=0` and no effect reads as "it did
-/// not help".
+/// not help". `callbacktype` rides the same driver loop and is inert in exactly
+/// the same places.
 pub fn warn_protoorder_inert(options: &[(String, String)], surface: &str) {
-    if options.iter().any(|(name, value)| name == "protoorder" && value != "off") {
-        eprintln!(
-            "warning: --option protoorder has no effect on `kuna {surface}`: the callee-first \
-             order belongs to a buffered whole-program run (`decompile-all`, `decompile-project`; \
-             see docs/cli.md)"
-        );
+    for name in ["protoorder", "callbacktype"] {
+        if options.iter().any(|(n, value)| n == name && value != "off") {
+            eprintln!(
+                "warning: --option {name} has no effect on `kuna {surface}`: the callee-first \
+                 order belongs to a buffered whole-program run (`decompile-all`, \
+                 `decompile-project`; see docs/cli.md)"
+            );
+        }
     }
 }
 
@@ -1810,12 +1850,27 @@ pub(crate) fn decompile_callee_first(
             (0..targets.len()).map(|i| (i, false)).collect()
         }
     };
-    let expected = match &graph {
-        Ok(graph) if prog.arch().calleevote.is_on() => {
-            Some(open_callee_votes(prog, graph, &targets, &args.binary, args.slice_pref()))
+    // (kuna `calleevote`, `callbacktype`) Both ask the image the same question
+    // -- whose address does it put somewhere nobody can list? -- so the walk is
+    // done once for whichever of them is on.
+    let wants_open = prog.arch().calleevote.is_on() || prog.arch().callbacktype.is_on();
+    let open = match &graph {
+        Ok(graph) if wants_open => {
+            Some(image_open_entries(graph, &args.binary, args.slice_pref()))
         }
         _ => None,
     };
+    let expected = match (&graph, &open) {
+        (Ok(graph), Some(open)) if prog.arch().calleevote.is_on() => {
+            Some(open_callee_votes(prog, graph, open, &targets))
+        }
+        _ => None,
+    };
+    if prog.arch().callbacktype.is_on() && open.is_some() {
+        let ledger = &mut prog.arch_mut().kuna_callbacktype;
+        *ledger = kuna_decomp::kuna_callbacktype::Ledger::default();
+        ledger.recording = true;
+    }
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
     for &(index, park) in &plan {
         let opts =
@@ -1823,6 +1878,12 @@ pub(crate) fn decompile_callee_first(
         slots[index] =
             Some(kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts));
     }
+    if let (Ok(graph), Some(open)) = (&graph, &open) {
+        if prog.arch().callbacktype.is_on() {
+            callback_park_round(prog, graph, open, &targets, &plan, &base, &mut slots);
+        }
+    }
+    prog.arch_mut().kuna_callbacktype.recording = false;
     if let Some(expected) = expected {
         callee_vote_rounds(prog, &targets, &plan, &base, &mut slots, &expected);
     }
@@ -1866,29 +1927,141 @@ fn vote_key(t: &FunctionEntry) -> Option<(i32, u64)> {
     Some((t.addr.get_space()?.get_index(), t.addr.get_offset()))
 }
 
+/// (kuna `calleevote`, `callbacktype`) The function entries whose address the
+/// image puts somewhere nobody can list ([`open_function_entries`]). An image
+/// that cannot be read again leaves every function open.
+fn image_open_entries(graph: &CallGraph, binary: &str, pref: SlicePref) -> BTreeSet<u64> {
+    let seeds: Vec<u64> = graph.entries.iter().map(|(entry, _)| *entry).collect();
+    image_bytes(binary, pref)
+        .ok()
+        .and_then(|bytes| {
+            let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
+            Some(open_function_entries(&file, &bytes, &seeds))
+        })
+        .unwrap_or_else(|| seeds.iter().copied().collect())
+}
+
+/// (kuna `callbacktype`) Park the declared prototype of every callback slot the
+/// first pass recorded, and decompile what it names again.
+///
+/// The address must reach nowhere the recorded callback arguments do not
+/// explain: not open in the image, and with exactly as many address-taking
+/// cross-references as there were callback arguments. The callback itself is
+/// decompiled again, and so is every function that CALLS it where the
+/// declaration changes that call: it passes another number of arguments or
+/// consumes the result ([`kuna_decomp::kuna_callbacktype::Ledger::caller_changes`]).
+fn callback_park_round(
+    prog: &mut ConsoleProgram,
+    graph: &CallGraph,
+    open: &BTreeSet<u64>,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut [Option<FuncResult>],
+) {
+    use kuna_decomp::kuna_callbacktype as cb;
+    let trace = cb::trace();
+    let decided = prog.arch().kuna_callbacktype.decided();
+    if decided.is_empty() {
+        return;
+    }
+    let index: BTreeMap<u64, usize> = targets
+        .iter()
+        .enumerate()
+        .filter_map(|(i, t)| vote_key(t).map(|k| (k.1, i)))
+        .collect();
+    let mut again: BTreeSet<u64> = BTreeSet::new();
+    for (value, seen) in decided {
+        let Some(&at) = index.get(&value) else {
+            if trace {
+                eprintln!("[callbacktype] decline 0x{value:x} not-a-target ({})", seen.declared_by);
+            }
+            continue;
+        };
+        // Every instruction the image shows taking the address has to be
+        // accounted for by a callback argument. The instruction itself cannot
+        // be matched -- by the time the argument is read, type propagation has
+        // rebuilt it as a `PTRSUB` sited at the call, not at the `lea` -- so
+        // the two halves of the question are asked separately: the reference
+        // must sit in a function that handed this address to a slot, and there
+        // must not be more references than there were arguments. A function
+        // holding one `lea` for a `qsort` call and another for a store fails
+        // the second. One hoisted `lea` feeding two registrations passes both
+        // -- it is ONE instruction -- which is why `park` also asks each body
+        // whether it used the address anywhere the slots do not account for.
+        let taken = graph.address_taken_refs(value);
+        let escapes = open.contains(&value)
+            || taken.len() > seen.args
+            || !taken.iter().all(|(_, owner)| owner.is_some_and(|o| seen.owners.contains(&o)));
+        let entry = targets[at].addr.clone();
+        let name = targets[at].name.clone();
+        let callers = graph.callers_of(value);
+        let image = cb::ImageFacts {
+            escapes,
+            is_target: true,
+            called_directly: graph.called_directly(value),
+        };
+        let outcome = cb::park(prog.arch_mut(), &entry, &name, image);
+        match outcome {
+            Ok(pieces) => {
+                let arity = pieces.intypes.len();
+                let ledger = &prog.arch().kuna_callbacktype;
+                let redo: Vec<u64> =
+                    callers.into_iter().filter(|c| ledger.caller_changes(*c, value, arity)).collect();
+                if trace {
+                    eprintln!(
+                        "[callbacktype] park {name} @0x{value:x} from {} params={arity} callers={redo:x?}",
+                        seen.declared_by,
+                    );
+                }
+                again.insert(value);
+                again.extend(redo);
+            }
+            Err(reason) => {
+                if trace {
+                    eprintln!(
+                        "[callbacktype] decline {name} @0x{value:x} {} ({}) taken={:x?} owners={:x?} args={}",
+                        reason.as_str(),
+                        seen.declared_by,
+                        taken,
+                        seen.owners,
+                        seen.args
+                    );
+                }
+            }
+        }
+    }
+    if again.is_empty() {
+        return;
+    }
+    for &(i, park) in plan {
+        let Some(key) = vote_key(&targets[i]) else { continue };
+        if !again.contains(&key.1) {
+            continue;
+        }
+        let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
+        let redone = kuna_console::project::decompile_entry(prog, targets[i].clone(), &opts);
+        if slots[i].as_ref().is_none_or(|first| kuna_console::project::redo_replaces(first, &redone))
+        {
+            slots[i] = Some(redone);
+        }
+    }
+}
+
 /// (kuna `calleevote`) Start recording, mark the functions whose callers are all
 /// known direct calls, and return every target's expected call sites. An image
 /// that cannot be read again leaves every function open.
 fn open_callee_votes(
     prog: &mut ConsoleProgram,
     graph: &CallGraph,
+    open: &BTreeSet<u64>,
     targets: &[FunctionEntry],
-    binary: &str,
-    pref: SlicePref,
 ) -> BTreeMap<(i32, u64), Vec<u64>> {
-    let seeds: Vec<u64> = graph.entries.iter().map(|(entry, _)| *entry).collect();
-    let open = image_bytes(binary, pref)
-        .ok()
-        .and_then(|bytes| {
-            let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
-            Some(open_function_entries(&file, &bytes, &seeds))
-        })
-        .unwrap_or_else(|| seeds.iter().copied().collect());
     let mut expected = BTreeMap::new();
     let mut closed = std::collections::HashSet::new();
     for t in targets {
         let Some(key) = vote_key(t) else { continue };
-        let Some(sites) = graph.direct_call_sites(key.1, &open) else { continue };
+        let Some(sites) = graph.direct_call_sites(key.1, open) else { continue };
         if !sites.is_empty() {
             closed.insert(key);
         }
@@ -3881,6 +4054,20 @@ pub(crate) fn parse_args_with_filters(
                  own types is per-load state that does not cross a worker process. Re-run with \
                  --jobs 1 (a run that does not ask for the option is not refused: it simply \
                  states nothing)."
+                    .into(),
+            );
+        }
+        // (kuna `callbacktype`) Neither does a parked declaration: it is read
+        // back by a later decompile of the same load.
+        if options
+            .iter()
+            .any(|(name, value)| name == "callbacktype" && value != "off")
+        {
+            return Err(
+                "--option callbacktype and --jobs are exclusive: the prototype a callback slot \
+                 declares is parked on the load a later decompile reads it back from, which does \
+                 not cross a worker process. Re-run with --jobs 1 (a run that does not ask for \
+                 the option is not refused: it simply parks nothing)."
                     .into(),
             );
         }
