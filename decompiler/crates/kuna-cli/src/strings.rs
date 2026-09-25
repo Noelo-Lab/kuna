@@ -260,13 +260,13 @@ fn attribute(
 
 /// The entry of the function `vma` lies in — the walk's own attribution first
 /// (it knows which descent reached the instruction), then the engine's inventory.
-fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<u64> {
+pub(crate) fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<u64> {
     index.function_containing(vma).or_else(|| prog.find_entry_at(vma).map(|e| e.addr.get_offset()))
 }
 
 /// The display name for a function entry, falling back to the engine's own
 /// placeholder (`sub_<addr>`) so a row is never nameless.
-fn function_name(prog: &ConsoleProgram, inventory: &BTreeMap<u64, String>, entry: u64) -> String {
+pub(crate) fn function_name(prog: &ConsoleProgram, inventory: &BTreeMap<u64, String>, entry: u64) -> String {
     inventory
         .get(&entry)
         .cloned()

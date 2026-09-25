@@ -24,6 +24,7 @@ const SURFACES: &[&[&str]] = &[
     &["read", "/nonexistent/kuna-binary", "main"],
     &["xrefs", "/nonexistent/kuna-binary", "--to", "0x0"],
     &["strings", "/nonexistent/kuna-binary"],
+    &["crypto", "/nonexistent/kuna-binary"],
 ];
 
 fn run(argv: &[String]) -> Output {

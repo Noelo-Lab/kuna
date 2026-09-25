@@ -18,6 +18,8 @@
 //! mirrors each module's argparse contract.
 
 mod catalog;
+mod crypto;
+mod cryptosig;
 mod decompile;
 mod docs;
 mod decompile_all;
@@ -68,6 +70,7 @@ fn main() -> ExitCode {
         "fid" => fid::run(rest),
         "unpack" => unpack::run(rest),
         "strings" => strings::run(rest),
+        "crypto" => crypto::run(rest),
         "disassemble" => disassemble::run(rest),
         "read" => disassemble::run_read(rest),
         "xrefs" => xrefs::run(rest),
@@ -97,7 +100,7 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!(
-        "usage: kuna <decompile|decompile-all|decompile-project|decompile-graph|functions|disassemble|read|xrefs|strings|unpack|docs|install-skill|test|catalog|modes|specs|fid> ...\n\
+        "usage: kuna <decompile|decompile-all|decompile-project|decompile-graph|functions|disassemble|read|xrefs|strings|crypto|unpack|docs|install-skill|test|catalog|modes|specs|fid> ...\n\
          \n\
          LLM agents: run `kuna install-skill` once.  It installs the kuna skill -- how to drive\n\
          this CLI well, embedded in the binary, no network -- for Claude Code, Codex and OpenCode\n\
@@ -109,6 +112,7 @@ fn usage() {
          kuna decompile-graph <binary> [--isa auto|arm|thumb] [-o FILE] [--label TEXT] [--max-fn-seconds N] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]...\n\
          kuna functions <binary> [--isa auto|arm|thumb] [--json] [--jobs N|auto] [--mode auto|reliable|aggressive|fast] [--define-function S[-E][=N]|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
          kuna xrefs <binary> [--isa auto|arm|thumb] (--to <name|0xaddr> | --from <name|0xaddr>) [--json] [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast]\n\
+         kuna crypto <binary> [--isa auto|arm|thumb] [--json] [--algorithm SUBSTR] [--section NAME] [--no-xrefs]\n\
          kuna unpack <binary> [-o OUT] [--json]\n\
          kuna strings <binary> [--isa auto|arm|thumb] [--json] [--min-length N] [--filter REGEX] [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]\n\
          kuna disassemble <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--as code|data|auto] [--count N] [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\

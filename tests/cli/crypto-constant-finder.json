@@ -1,0 +1,35 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "crypto",
+    "{{BIN}}",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stdout_matches": [
+      "\"address_hex\": \"0x402180\",\\s*\"algorithm\": \"AES\",\\s*\"name\": \"S-box\"",
+      "\"name\": \"S-box\"[\\s\\S]*?\"name\": \"sub_bytes\"",
+      "\"address_hex\": \"0x402080\",\\s*\"algorithm\": \"SHA-256\",\\s*\"name\": \"round constants K\"[\\s\\S]*?\"name\": \"sha256_round\"",
+      "\"algorithm\": \"CRC-32\",\\s*\"name\": \"polynomial 0xEDB88320 \\(reflected\\)\"[\\s\\S]*?\"name\": \"crc32_update\"",
+      "\"algorithm\": \"TEA[^\"]*\"[\\s\\S]*?\"name\": \"tea_encrypt\"",
+      "\"name\": \"alphabet \\(custom\\)\"[\\s\\S]*?\"name\": \"b64_char\""
+    ],
+    "stderr_absent": [
+      "unknown subcommand"
+    ]
+  },
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/cryptoconst_x86_64",
+    "binary_sha256": "623bacb1357d32db674e99d403bcfd42cd8f6c804b3596222ed5e040b09b7520",
+    "binary_size": 16120,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/cryptoconst_x86_64"
+  }
+}

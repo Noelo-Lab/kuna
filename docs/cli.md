@@ -2237,6 +2237,70 @@ A binary with no strings is exit `0` with `count: 0` — an answer, not a failur
 An unreadable or unparseable binary, or an unknown `--section`, is exit `1` with
 the reason on stderr; a malformed command line is exit `2` with the usage block.
 
+## `kuna crypto` — the crypto-constant inventory
+
+```bash
+kuna crypto ./crackme.exe                             # every recognized constant, with the functions that use it
+kuna crypto ./crackme.exe --json                      # machine-readable
+kuna crypto ./crackme.exe --algorithm aes             # keep rows whose algorithm contains "aes"
+kuna crypto ./crackme.exe --section .rdata --no-xrefs # one section, no reference walk
+```
+
+findcrypt's question: which well-known cipher and hash constants does this image
+carry, where, and **which function uses them**. The scan is a byte-signature
+search over the same loaded, initialized sections `kuna strings` walks (segments
+on an image with no section table); the owners come from the same reference index
+behind `kuna strings` and `kuna xrefs`. Nothing is committed, so no emitted C
+changes. Load flags (`--mode`, `--option`, `--isa`, `--slice`, `--target`,
+`--sleighpath`) are those of `kuna strings`.
+
+Three kinds of row:
+
+| `kind` | What | Where it is looked for |
+|---|---|---|
+| `table` | AES S-box, inverse S-box, Te0–Te3, Td0–Td3, rcon; DES S1, IP, PC-1; MD5 T; SHA-1 IV; MD5/SHA-1 A..D; SHA-224/256/384/512 IV; SHA-256/512 K; CRC-32 (reflected `0xEDB88320` and normal `0x04C11DB7`) and CRC-32C tables; Blowfish P-array and the first 16 words of each S-box; ChaCha/Salsa20 `"expand 32-byte k"` / `"expand 16-byte k"` | every section, at every byte offset, as bytes (`u8`), bytes widened to 32-bit words (`u8->u32le`/`be`), 32/64-bit words in either byte order (`u32le`, `u64be`, ...), and a 64-bit table as hi/lo 32-bit pairs (`u32x2le`/`be`) |
+| `immediate` | TEA/XTEA delta `0x9E3779B9` (also RC5/RC6 Q32), `0x61C88647`, `0xC6EF3720`; RC5/RC6 P32; CRC-32/CRC-32C polynomials; SHA-1 K0–K3; the first word of the MD5/SHA-1/SHA-2 IVs, MD5 T[0], SHA-256/512 K[0]; ChaCha `"expa"` | executable sections only, in the image's own byte order |
+| `alphabet` | a Base64 alphabet: a printable run of exactly 64 distinct characters (or 65 ending in a `=` pad), at least 48 alphanumeric; `name` says `standard`, `URL-safe` or `custom` and `text` carries it | every section |
+
+SHA-256's IV is also BLAKE2s's and SHA-512's is BLAKE2b's, so those rows say
+`SHA-256/BLAKE2s` / `SHA-512/BLAKE2b`. A match wholly inside a longer one is
+dropped: the SHA-1 IV is one row, not also the MD5 state it begins with, and
+the first word of a table is not also reported as an immediate.
+
+A `table` or `alphabet` row names every function with a reference into any byte
+of it (`xrefs_count` counts those references). An `immediate` row names the
+function whose decoded instruction encodes it, or, for a literal-pool word that
+is loaded by reference, the functions that load it. An immediate built from
+several instructions (ARM64 `movz`/`movk`, MIPS `lui`/`ori`) has no contiguous
+bytes and is not found.
+
+### Output
+
+```
+# 6 crypto constants in ./cryptoconst_x86_64 (scanned by sections)
+0x401184	TEA/XTEA	negated delta 0x61C88647	immediate	u32le	4	.text	0	tea_encrypt
+0x4011bb	TEA	decrypt sum 0xC6EF3720 (32 * delta)	immediate	u32le	4	.text	0	tea_encrypt
+0x4011f8	CRC-32	polynomial 0xEDB88320 (reflected)	immediate	u32le	4	.text	0	crc32_update
+0x402020	Base64	alphabet (custom) ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsrqponmlkjihgfedcba9876543210+/	alphabet	text	64	.rodata	1	b64_char
+0x402080	SHA-256	round constants K	table	u32le	256	.rodata	1	sha256_round
+0x402180	AES	S-box	table	u8	256	.rodata	1	sub_bytes
+```
+
+A `#` header, then one tab-separated row per constant: address, algorithm, name,
+kind, layout, byte length, section, reference count, functions.
+
+```json
+{"binary": "...", "algorithm": null, "section": null, "scanned": "sections",
+ "xrefs": true, "count": N,
+ "constants": [{"address","address_hex","algorithm","name","kind","layout",
+                "byte_length","section","text","xrefs_count",
+                "functions": [{"name","address","address_hex"}]}]}
+```
+
+A binary with no recognized constant is exit `0` with `count: 0`. An unreadable
+or unparseable binary, or an unknown `--section`, is exit `1` with the reason on
+stderr; a malformed command line is exit `2` with the usage block.
+
 ## `kuna unpack` — statically unpack a UPX- or NEOLite-packed executable
 
 ```bash

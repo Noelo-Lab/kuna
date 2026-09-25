@@ -26,6 +26,7 @@ const SUBCOMMANDS: &[&str] = &[
     "read",
     "xrefs",
     "strings",
+    "crypto",
     "unpack",
     "docs",
     "install-skill",
