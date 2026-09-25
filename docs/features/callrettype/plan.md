@@ -15,6 +15,15 @@
   CALL whose output sits in the stated storage and width answers the stated
   type (`stated_return_type`) after `passthrough`'s tail arm, unless
   `output_refuses`, `declared_contradicts` or `accesses_disagree` refuse it.
+- `p4_calls/kuna_callrettype.rs (in_place_extensions)` at `seed`, on the raw
+  p-code: the instructions that only widen a register into its own container;
+  `p3_dataflow/subflow.rs (RuleSubvarZext, RuleSubvarSext)` report when the
+  subvariable flow they start narrows the returned value back through one
+  (`note_returned_extension`); `declared_contradicts` refuses a statement of
+  that width at the other sign for a returned result.
+- `kuna-cli/src/decompile_all.rs (callee_vote_rounds, converge_callee_first)`:
+  a redo the run discards puts the callee's earlier statement back
+  (`statement`, `restore`).
 - `kuna-console/src/decompile_step.rs (decompile_one_prefollowed)`: after the
   drive (and the format-string redo), `contradicted` audits the finished
   function; contradicted statements are withdrawn for the caller (`refuse`,

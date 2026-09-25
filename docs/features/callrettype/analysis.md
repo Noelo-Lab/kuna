@@ -78,6 +78,41 @@ that took (the variable carries the stated type), only the tie
 contradictions, and only functions up to 1,000 live p-code ops (a
 1,992-op function in dpkg-divert still cost 10% of that run at 2,000).
 
+## The extension the trimming removes (review)
+
+A caller that converts a callee's result to a wider type before handing it
+back had its extension removed before the vote was taken:
+
+```c
+short s16(int x) { return (short)(x * 1000); }
+long use_s16_as_u(int x) { return (unsigned short)s16(x); }   /* call s16; movzwl %ax,%eax; ret */
+int neg32(int x) { return -x * 3; }
+unsigned long use_neg_as_unsigned(int x) { return (unsigned int)neg32(x); } /* call neg32; mov %eax,%eax; ret */
+```
+
+`RuleSubvarZext` narrows the RETURN back to the 16-bit (32-bit) value and
+leaves a copy where the `movzwl` (`mov`) was, so by inference time the
+zero-extension is not a reader the sign refusal can see, and the statement
+became the caller's own return type: `short use_s16_as_u`, `int
+use_neg_as_unsigned`. Called through those prototypes they return -15536 and
+18446744073709551613 where the binary returns 50000 and 4294967293 (option off
+prints `unsigned short` / `unsigned int`, an unknown of the width).
+
+Which extension is evidence is an instruction-level question: every 32-bit
+write on x86-64 zero-extends into the 64-bit register, so `mov %eax,%r12d`
+(a result kept across a call) or a -O0 reload of the local that holds the
+result narrows back into the return exactly like `mov %eax,%eax` does, and
+after copy propagation the two are the same IR. Only the raw p-code tells
+them apart, and it exists only before the first pass runs: `seed` records the
+instructions that do nothing but widen a register into its own container
+(COPY, ZEXT, SEXT, SUBPIECE only, every register read at the low end of the
+destination). `RuleSubvarZext` / `RuleSubvarSext` report when they narrow the
+returned value back through one of them, and the vote refuses a statement of
+that width at the other sign for any call whose result the function returns.
+On the probe (`keep_int`, `widen_signed`, the -O0 reload) the wins stand; the
+45-binary cast corpus prints the same bytes as before the fix (no function
+there converts a callee's result this way before returning it).
+
 ## Residue
 
 - `(char *)<call>` on callees kuna recovers as `void` whose callers read the

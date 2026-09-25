@@ -3031,7 +3031,7 @@ The vote is refused where the caller holds evidence the fold cannot weigh:
   `short f(...)` hands its callers the value sign-extended where the binary
   hands them 50000 zero-extended. `seed` therefore reads the raw p-code (no
   pass has run yet) for the instructions that do nothing but widen a register
-  into its own container, the only form a compiler emits to perform a
+  into its own container, the form an x86-64 compiler emits for the
   conversion (`movzwl %ax,%eax`, `mov %eax,%eax`, `cltq`); when
   `RuleSubvarZext` or `RuleSubvarSext` narrows the returned value back through
   one of them (`note_returned_extension`), a statement of that width at the
@@ -3039,7 +3039,10 @@ The vote is refused where the caller holds evidence the fold cannot weigh:
   Every 32-bit write on x86-64 widens its result too, so a move from another
   register (`mov %eax,%r12d` keeping a result across a call), a load (a -O0
   reload of the local that holds it) or arithmetic is not taken: those widen a
-  value whose type is still the callee's, and the statement stands;
+  value whose type is still the callee's, and the statement stands. A
+  conversion spelled as a mask (AArch64 `and x0,x0,#0xffff`) is not
+  recognized: an `INT_AND` is not a widening, and `RuleSubvarAnd` reports
+  nothing;
 - a pointer whose pointee the caller does not use as that pointee
   (`accesses_disagree`): a primitive pointee of N bytes read or written other
   than N bytes at a time, or offset or stepped by other than a multiple of N,
