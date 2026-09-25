@@ -576,6 +576,7 @@ pub struct ConsoleProgram {
     /// spelling without guessing at an underscore on every format. `false` on
     /// the XML datatest path and every other container.
     symbol_underscore_prefix: bool,
+    elf_functions: kuna_analysis::loadimage_object::ElfFunctionProvenance,
 }
 
 fn code_offset_in_target_units(value: u64, word_size: u64) -> u64 {
@@ -962,9 +963,10 @@ impl ConsoleProgram {
     /// name-narrowing the old `(name, offset)` dedup was keeping duplicate records
     /// for.
     ///
-    /// `None` also when the name identifies SEVERAL entries no
-    /// [`Self::lone_executable_candidate`] narrowing settles: a caller that can
-    /// only answer yes-or-no must not silently pick one of them. A caller that
+    /// `None` also when the name identifies several entries neither
+    /// [`Self::lone_elf_definition`] nor [`Self::lone_executable_candidate`]
+    /// settles: a caller that can only answer yes-or-no must not silently pick
+    /// one of them. A caller that
     /// can report the ambiguity asks [`Self::resolve_entry`] instead, which
     /// names every candidate. The narrowing is shared with `resolve_entry` so
     /// that the two name lookups cannot answer one name at two addresses —
@@ -988,7 +990,8 @@ impl ConsoleProgram {
         match matches.len() {
             0 => self.entry_by_placeholder_name(want),
             1 => Some(matches.remove(0)),
-            _ => self.lone_executable_candidate(&matches),
+            _ => self.lone_elf_definition(&matches)
+                .or_else(|| self.lone_executable_candidate(&matches)),
         }
     }
 
@@ -1249,6 +1252,11 @@ impl ConsoleProgram {
         candidates.sort_by_key(|entry| entry.addr.get_offset());
         candidates.dedup_by_key(|entry| entry.addr.get_offset());
         if candidates.len() > 1 {
+            if matches!(selector, EntrySelector::Name(_)) {
+                if let Some(entry) = self.lone_elf_definition(&candidates) {
+                    return Ok(entry);
+                }
+            }
             if let Some(entry) = self.lone_executable_candidate(&candidates) {
                 return Ok(entry);
             }
@@ -1294,6 +1302,25 @@ impl ConsoleProgram {
             .filter(|entry| self.entry_is_executable(entry.addr.get_offset(), &sections));
         let only = executable.next()?;
         executable.next().is_none().then(|| only.clone())
+    }
+
+    /// Prefer one symbol-defined body only when every other candidate is a
+    /// proven import stub. An analysis-generated name is not that proof.
+    fn lone_elf_definition(&self, candidates: &[FunctionEntry]) -> Option<FunctionEntry> {
+        let sections = self.sections();
+        let mut definition = None;
+        for entry in candidates {
+            let addr = entry.addr.get_offset();
+            if self.elf_functions.definitions.contains(&addr)
+                && !self.elf_functions.imports.contains(&addr)
+                && self.entry_is_executable(addr, &sections)
+            {
+                if definition.replace(entry).is_some() { return None; }
+            } else if !self.elf_functions.imports.contains(&addr) {
+                return None;
+            }
+        }
+        definition.cloned()
     }
 
     /// (kuna, RE-need `string-owner-function-name`) The address an ENGINE-MINTED
@@ -3342,6 +3369,7 @@ fn empty_program(
         raw_address_units: None,
         import_slots: Vec::new(),
         symbol_underscore_prefix: false,
+        elf_functions: Default::default(),
     }
 }
 
@@ -3835,6 +3863,7 @@ pub fn bootstrap_from_object_with_isa(
     // enumeration needs to know those addresses hold a pointer, not a body.
     let import_slots: Vec<(u64, u64)> = loader.import_slot_ranges().to_vec();
     let elfv1_tocs = loader.elfv1_descriptors().entry_tocs();
+    let elf_functions = loader.elf_function_provenance().clone();
 
     // (kuna `litpoolconst`) The image's executable read-only regions, read off the
     // same loader: `r-x` memory cannot be written, so the literal-pool words the
@@ -3958,6 +3987,7 @@ pub fn bootstrap_from_object_with_isa(
             }
         }
     }
+    prog.elf_functions = elf_functions;
     prog.pending_entry_thumb = entry_thumb_walk;
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
