@@ -43,17 +43,20 @@ pub fn sections_json(rows: &[SectionRow]) -> String {
             .addr("address", s.address)
             .num("size", s.size)
             .opt_num("file_offset", s.file_offset)
+            .opt_num("file_size", s.file_size)
             .bool("executable", s.executable)
             .bool("writable", s.writable)
             .end()
     }))
 }
 
-/// Where `addr` lies in the input file, when a file-backed section holds it.
+/// Where `addr` lies in the input file, when the file holds the section bytes
+/// there (a section's tail past its raw data, like `.bss`, has no file offset).
 pub fn file_offset(sections: &[SectionRow], addr: u64) -> Option<u64> {
     sections.iter().find_map(|s| {
         let delta = addr.checked_sub(s.address)?;
-        (delta < s.size).then_some(s.file_offset?.checked_add(delta)?)
+        let held = s.file_size.unwrap_or(0).min(s.size);
+        (delta < held).then_some(s.file_offset?.checked_add(delta)?)
     })
 }
 
@@ -294,7 +297,15 @@ mod tests {
     use super::*;
 
     fn section(name: &str, address: u64, size: u64, file_offset: Option<u64>) -> SectionRow {
-        SectionRow { name: name.into(), address, size, file_offset, executable: false, writable: false }
+        SectionRow {
+            name: name.into(),
+            address,
+            size,
+            file_offset,
+            file_size: file_offset.map(|_| size),
+            executable: false,
+            writable: false,
+        }
     }
 
     #[test]
@@ -309,5 +320,8 @@ mod tests {
         assert_eq!(file_offset(&sections, 0x3010), None);
         assert_eq!(file_offset(&sections, 0x4000), None);
         assert_eq!(file_offset(&sections, 0x10), None);
+        let short = [SectionRow { file_size: Some(0x10), ..section(".data", 0x5000, 0x40, Some(0x3000)) }];
+        assert_eq!(file_offset(&short, 0x500f), Some(0x300f));
+        assert_eq!(file_offset(&short, 0x5010), None);
     }
 }

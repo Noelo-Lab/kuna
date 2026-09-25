@@ -129,7 +129,7 @@ struct TeSection {
     data: Vec<u8>,
     flags: u32,
     kind: SectionKind,
-    file_offset: Option<u64>,
+    file_range: Option<(u64, u64)>,
 }
 
 /// A parsed TE container exposed through the decompiler's generic image API.
@@ -317,7 +317,7 @@ impl TeLoadImage {
                 ));
             }
 
-            let mut section_file_offset = None;
+            let mut section_file_range = None;
             let data = if raw_size == 0 {
                 Vec::new()
             } else {
@@ -350,7 +350,7 @@ impl TeLoadImage {
                     return Err(Self::invalid(filename, "section file ranges overlap"));
                 }
                 file_ranges.push((file_offset, file_end));
-                section_file_offset = Some(file_offset);
+                section_file_range = Some((file_offset, initialized_size as u64));
                 bytes[file_offset as usize..file_offset as usize + initialized_size as usize]
                     .to_vec()
             };
@@ -365,7 +365,7 @@ impl TeLoadImage {
                 data,
                 flags,
                 kind,
-                file_offset: section_file_offset,
+                file_range: section_file_range,
             });
             rva_ranges.push((virtual_address, rva_end, initialized_size, flags));
         }
@@ -445,7 +445,7 @@ impl TeLoadImage {
                 data: bytes[..header_file_size as usize].to_vec(),
                 flags: section_flags::DATA | section_flags::READONLY,
                 kind: SectionKind::ReadOnlyData,
-                file_offset: Some(0),
+                file_range: Some((0, header_file_size as u64)),
             },
         );
 
@@ -547,7 +547,7 @@ impl TeLoadImage {
                     section.vma,
                     section.size,
                     section.kind,
-                    section.file_offset,
+                    section.file_range,
                     section.flags,
                 ))
             })
@@ -1203,6 +1203,7 @@ mod tests {
                 size: 4,
                 kind: "Text".to_string(),
                 file_offset: code_offset,
+                file_size: code_offset.map(|_| 4),
                 flags: section_flags::CODE | section_flags::READONLY,
             }]
         );

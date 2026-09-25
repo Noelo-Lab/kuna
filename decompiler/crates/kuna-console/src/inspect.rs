@@ -57,6 +57,8 @@ pub struct SectionRow {
     pub size: u64,
     /// Where the section's bytes start in the input file, when they come from it.
     pub file_offset: Option<u64>,
+    /// How many bytes from `file_offset` the file holds.
+    pub file_size: Option<u64>,
     pub executable: bool,
     pub writable: bool,
 }
@@ -67,7 +69,7 @@ pub struct SectionRow {
 /// off the loader-owned tables on purpose), else when its own flags say so.
 pub fn section_rows(prog: &ConsoleProgram) -> Vec<SectionRow> {
     let segments = prog.segments();
-    let row = |name: String, address: u64, size: u64, file_offset, flags: u32| {
+    let row = |name: String, address: u64, size: u64, file: (Option<u64>, Option<u64>), flags: u32| {
         let mapping = segments
             .iter()
             .find(|&&(start, len, _)| address >= start && address - start < len)
@@ -76,7 +78,8 @@ pub fn section_rows(prog: &ConsoleProgram) -> Vec<SectionRow> {
             name,
             address,
             size,
-            file_offset,
+            file_offset: file.0,
+            file_size: file.1,
             executable: flags & section_flags::CODE != 0,
             writable: mapping.unwrap_or(flags) & section_flags::READONLY == 0,
         }
@@ -86,13 +89,13 @@ pub fn section_rows(prog: &ConsoleProgram) -> Vec<SectionRow> {
             .sections
             .iter()
             .filter(|s| s.flags & section_flags::UNALLOC == 0)
-            .map(|s| row(s.name.clone(), s.vma, s.size, s.file_offset, s.flags))
+            .map(|s| row(s.name.clone(), s.vma, s.size, (s.file_offset, s.file_size), s.flags))
             .collect(),
         _ => prog
             .sections()
             .into_iter()
             .filter(|&(_, _, flags)| flags & section_flags::UNALLOC == 0)
-            .map(|(vma, size, flags)| row(String::new(), vma, size, None, flags))
+            .map(|(vma, size, flags)| row(String::new(), vma, size, (None, None), flags))
             .collect(),
     };
     rows.sort_by(|a, b| a.address.cmp(&b.address).then_with(|| a.name.cmp(&b.name)));

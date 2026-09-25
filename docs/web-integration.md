@@ -244,8 +244,10 @@ kind, instruction}], data_refs:[…as callees…], assertions}` — a caller's `
 calling function's entry and `from` the calling instruction; callees are calls and jumps
 that leave the function (`kind` `call`/`jump`), data refs are `data` (address taken),
 `read` and `write`, both in instruction order. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
-file_offset, executable, writable}]` (allocated sections, in address order; `writable`
-follows the segment that maps the section) and `known_types:[{name, size, kind}]` (the
+file_offset, file_size, executable, writable}]` (allocated sections, in address order;
+`file_size` is how many of the section's bytes the file holds from `file_offset`, which a
+PE section's virtual size can exceed; `writable` follows the segment that maps the
+section) and `known_types:[{name, size, kind}]` (the
 factory's named non-core types: `struct`, `union`, `enum`, `typedef`, `scalar`), and
 `decompile` now renders with provenance, adding the top-level `language` and the
 per-function `line_mappings`, `types` and per-variable `line_numbers`/`addresses` of `kuna

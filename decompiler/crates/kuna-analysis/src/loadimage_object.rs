@@ -337,6 +337,9 @@ pub struct ObjectSectionMetadata {
     /// Where the section's bytes start in the input file; `None` for a section
     /// with no file bytes (`.bss`) or a format that does not say.
     pub file_offset: Option<u64>,
+    /// How many of the section's bytes the file holds from `file_offset` (a PE
+    /// section's virtual size can exceed its raw data).
+    pub file_size: Option<u64>,
     /// The loader's [`section_flags`] bits for the section.
     pub flags: u32,
 }
@@ -348,10 +351,18 @@ impl ObjectSectionMetadata {
         vma: u64,
         size: u64,
         kind: object::SectionKind,
-        file_offset: Option<u64>,
+        file_range: Option<(u64, u64)>,
         flags: u32,
     ) -> Self {
-        Self { name: name.to_string(), vma, size, kind: format!("{kind:?}"), file_offset, flags }
+        Self {
+            name: name.to_string(),
+            vma,
+            size,
+            kind: format!("{kind:?}"),
+            file_offset: file_range.map(|(offset, _)| offset),
+            file_size: file_range.map(|(_, size)| size),
+            flags,
+        }
     }
 }
 
@@ -785,7 +796,7 @@ impl ObjectLoadImage {
                     sec.address(),
                     sec.size(),
                     sec.kind(),
-                    sec.file_range().map(|(offset, _)| offset),
+                    sec.file_range(),
                     flags,
                 ));
             }
@@ -1022,7 +1033,7 @@ impl ObjectLoadImage {
                     vma,
                     sec.size(),
                     sec.kind(),
-                    sec.file_range().map(|(offset, _)| offset),
+                    sec.file_range(),
                     fmt.section_bits(name, sec.kind(), sec.flags()),
                 ))
             })
