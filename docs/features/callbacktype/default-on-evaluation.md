@@ -11,12 +11,20 @@ built from the tree main now has) on all 45 binaries.
 The round-7 review found a caller that lost a type. A bsearch helper that calls a parked comparator
 directly with its own pointer, and does nothing else with it, took that pointer's type from the
 comparator's recovered `struct_N *`; decompiled again after the park, it took the slot's `void *`
-instead (`ptx -O0`'s `search_table`, `struct_2 *` -> `void *`, DWARF `WORD *`). This build keeps
-the comparator's first-decompile statement for its call sites, so where the slot says only `void *`
-it still types what a caller passes, and redoes a caller that uses the result only when the declared
-return differs from the one the callback printed. Every number below is measured on it; (d), (h) and
-the arity counters are unchanged row for row, and (f) now covers 59 binaries with a column for
-callers whose own parameter types change.
+instead (`ptx -O0`'s `search_table`, `struct_2 *` -> `void *`, DWARF `WORD *`). The build after it
+kept the comparator's first-decompile statement for its call sites, so where the slot says only
+`void *` it still types what a caller passes, and redid a caller that uses the result only when the
+declared return differs from the one the callback printed.
+
+The round-8 review found the same loss where that statement is a pointer to an unknown 8-byte value
+(`undefined8 *`, printed `unsigned long *`): a comparator that hands only the first word of each
+record to `strcmp` prints `void` first, so its callers that use the result are redone, and the kept
+statement refused an unknown pointee, so a forwarding caller and an array-scanning caller took
+`void *` for their own parameters and return and printed `&((char *)a0)[0x18]` for `&a0[3]`. This
+build (99f849ef6) keeps any pointer but `void *`, which is what `protoorder` voted at the same call
+before the park. Every number below is measured on it; (d), (h) and the arity counters are
+unchanged row for row, and (f) now covers 70 binaries and the forwarding fixture, with columns for
+a caller's own parameter and return types.
 
 ## (a) `make test` — the datatest corpus
 
@@ -72,7 +80,7 @@ The fourteen callbacktype probes over five fixtures, and what each pins:
 | `refuses-a-return-wider-than-the-slot-declares` | `lcmp`, `lcmp_tail` | recovered-wider-output |
 | `refuses-a-callee-whose-direct-caller-reads-a-wider-return` | `zcmp`, `cmp_inner`/`cmp_outer` | caller-reads-a-wider-return |
 | `refuses-a-narrow-return-whose-upper-bytes-nothing-clears` | `ccmp`, `cw`, `bw` refused; `zcmp`, `zw`, `iw` parked | recovered-narrower-output |
-| `keeps-the-pointer-a-caller-forwards-to-a-parked-comparator` | `search_g`, `search_c`, `search_z` | a direct caller keeps its `struct_N *`; clang -O0's call drops the phantom `rdx` argument |
+| `keeps-the-pointer-a-caller-forwards-to-a-parked-comparator` | `search_g`, `search_c`, `search_z`, `ent_before_g2`/`_c2`, `minimum_g2`/`_c2` | direct callers keep their `struct_N *` or `unsigned long *` and print no `((char *)a0)[..]`; clang -O0's call drops the phantom `rdx` argument |
 
 The last three are the round-2 review's counterexamples (`x7`, `x6`, `x2` + a body that never
 writes the register) and **fail on 081fdd26d**: `wrap_up(v6)`, `score1(&v2[1],v5)`,
@@ -101,6 +109,13 @@ remainder left in `rdx` as a third argument). On the reviewed build (fe6672881's
 0949bca88) all three print `void *a0` where `off` prints `struct_0 *a0` / `struct_1 *a0`, and the
 probe's four caller clauses fail; on this build all three keep
 the record pointer and `search_z` calls `compare_z(a0,(struct_0 *)&a1[v2 * 2])` with two arguments.
+The same fixture carries the round-8 review's counterexample at gcc -O2 and clang -O2: `by_name_*`
+returns `strcmp(x->name, y->name)`, so its first decompile states `unsigned long *` for both
+parameters and prints `void`; `ent_before_*` forwards its own two pointers and uses the result, and
+`minimum_*` scans an array of 24-byte records with it. On the reviewed build (11206e5b5's code) all
+four callers print `void *a0` and `minimum_*` indexes `&((char *)a0)[0x18]`, and the probe's eight
+new clauses fail; on this build they print `unsigned long *` and `&a0[3]`, as `off` does, and the
+three original parts of the fixture decompile byte-identically in the relinked binary.
 
 ## (d) the 444-slice typesweep (new default vs old default)
 
@@ -210,35 +225,53 @@ The previous bases, unbounded and on the four canonical binaries only: fmt +1.15
 sort -0.29%, bash +4.06% (+0.23% on a second run) on c960fb18d; fmt +1.39%, ls +8.15% (median
 -3.21%, at load ~46, byte-identical output), sort -10.18%, bash +0.11% on 003db2dd8.
 
-## (f) whole-corpus `decompile-all`, 59 binaries / 35,291 functions
+## (f) whole-corpus `decompile-all`, 70 binaries + the fixture / 40,613 functions
 
-The implementer's 12 binaries, and the 9, 12, 14 and 12 the round-2, -3, -4 and -7 reviews chose to
-be disjoint from the ones before. **91 functions change, all of them parked callbacks. No caller
-changes, no function that is not itself parked changes its own parameter types, 0 unexplained.**
-The run parks 91 functions (64 in the first 47 binaries, as before, and the 27 the round-7 review
-found in its 12). Nothing else changed between the arms: no changed function gains a `CONCAT`, and
-no call to a parked function changes its argument count. Twenty-two binaries print no changed
-function. Per-function table, with each function's parameter types and casts in both arms:
+The implementer's 12 binaries, and the 9, 12, 14, 12 and 11 the round-2, -3, -4, -7 and -8 reviews
+chose to be disjoint from the ones before, plus `callbacktype_forward_x86_64`. **124 functions
+change: the 120 parked callbacks and 4 callers, all four in the fixture. In the 70 decbench
+binaries every changed function is a parked callback. No function that is not parked changes a
+parameter type it had or its return type, and nothing is unexplained.** The 59 binaries of the
+previous run give the same 91 rows, diff for diff; the round-8 review's 11 add 24 parks. No changed
+function gains a `CONCAT`, and 25 binaries print no changed function. Per-function table, with each
+function's parameter types, return types and casts in both arms:
 `docs/features/callbacktype/hunks.md`.
 
-`hunks-corpus.py` now also compares every changed function's own printed parameter types, and a
-function that is not parked whose own types move is `UNEXPLAINED-own-params`. On the reviewed build
-that column flags exactly the review's row, `ptx -O0`'s `search_table` (`struct_2 *, struct_3 *` ->
-`void *, struct_3 *`), and on the fixture it flags all three bsearch helpers; on this build it flags
-nothing. What closes it: the comparator's `protoorder` statement, which is what gave the helper
-`struct_2 *` in the first place, used to be dropped at the park. It is kept for the comparator's
-call sites, and at a call whose declared parameter is `void *` it offers its own pointer type as a
-vote on the argument (the value's type only; the argument is still converted to the declared
-`void *`). A caller decompiled again -- by the park round, or by a `calleevote` round for
-another parameter, which is what redoes gcc -O0's helper -- therefore types its forwarded pointer
-exactly as it did before the park. The park round also redoes fewer callers: one that uses the
-result only when the declared return differs from the return the callback printed (`compare_words`
-printed `unsigned int`, so `search_table` is still redone, and prints the same).
+`hunks-corpus.py` compares every changed function's own printed parameter and return types. A
+function that is not parked whose parameter types move is `UNEXPLAINED-own-params`, with one
+exception, `caller-gained-a-forwarded-parameter`: a caller that keeps every type it had and gains,
+after them, only parameters it hands straight to a parked function whose call grew to exactly the
+declared list. On the round-7 reviewed build the column flagged `ptx -O0`'s `search_table`
+(`struct_2 *, struct_3 *` -> `void *, struct_3 *`) and the fixture's three bsearch helpers; on the
+round-8 reviewed build it flags the fixture's `ent_before_*` and `minimum_*`; on this build it flags
+nothing. What closes both: the comparator's `protoorder` statement, which is what typed the caller
+in the first place, is kept for the comparator's call sites, and at a call whose declared parameter
+is `void *` it offers its own pointer type, whatever it points at except `void`, as a vote on the
+argument (the value's type only; the argument is still converted to the declared `void *`). A
+caller decompiled again -- by the park round, or by a `calleevote` round for another parameter,
+which is what redoes gcc -O0's helper -- therefore types its forwarded pointer as it did before the
+park. The park round also redoes fewer callers: one that uses the result only when the declared
+return differs from the return the callback printed.
 
-**Casts grow outside castbench, and that is the declared type.** Over the 91 changed functions the
-cast count goes from 457 to 655 (+198): 31 functions print more, none fewer. In all 31 the body's
-own guess for the parameter was a pointer to something (a synthesized `struct_N *`, `char *`,
-`unsigned long *`, `uint4 *`) and the slot declares `void *`, which DWARF confirms for every one.
+**What a caller still changes, and why.** The four fixture callers are the whole list. `minimum_g2`
+and `minimum_c2` read the comparator's result as the declared `int`, so `(int)by_name_g2(v2,a0)`
+loses its `(int)` (one cast fewer each). `ent_before_c2` (clang -O2) printed `(void)` and called the
+comparator with no arguments; the declared call passes the two registers it forwards, so it gains
+`unsigned long *a0,unsigned long *a1`, typed by the same vote. `search_z` drops the `idiv`
+remainder its call passed past the declared list. A caller that returns the result straight on can
+also take the declared return: none in the corpus does; a constructed
+`int next_cmp(struct ent *p) { return p->next ? by_name(p, p->next) : 0; }` at clang -O0 goes from
+`unsigned int` to `int`, the source's type and the same 32 bits. Over the review's constructed
+programs (fourteen builds of four sources, gcc and clang at -O0 to -O2) every caller keeps each
+parameter type `off` prints; the differences are the same three kinds: parameters gained that are
+forwarded, `(int)` casts gone from the result, and that one return.
+
+**Casts grow outside castbench, and that is the declared type.** Over the 115 changed functions of
+the 70 decbench binaries the cast count goes from 553 to 769 (+216): 37 functions print more, one
+fewer (`xmlwf`'s `nsattcmp`, whose `(unsigned long)` on the returned difference goes with the declared
+`int`). In all 37 the body's own guess for the parameter was a pointer to something (a synthesized
+`struct_N *`, `char *`, `unsigned long *`, `long *`, `int *`, `uint4 *`) and the slot declares
+`void *`, which DWARF confirms for every one.
 The program converts that `void *` to its record type inside the function, which a stripped binary
 does not show, so each field read prints its own cast off the `void *`, as IDA's output does. The
 largest: `libselinux`'s `selinux_restorecon_thread` (`char *` -> `void *`, +21 at -O2-noinline, +18
@@ -247,7 +280,7 @@ at -O0), `tar`'s `hol_entry_qcmp` (`struct_70 *`, +15), `ptx -O0`'s `compare_wor
 `read_bitmaps_thread` (0 -> 7 at each level). One of `process_inode_cmp`'s is an address handed to
 an import whose recovered parameter is an integer: `ext2fs_const_inode(&a0->field_0x4[0x14])`
 prints `ext2fs_const_inode((int8)a0 + 0x18)`, the same value, in the `(long)v` form castarith
-leaves as integer arithmetic. No caller's type moves at all. Inside the callbacks each parameter
+leaves as integer arithmetic. No caller's type moves. Inside the callbacks each parameter
 moves from an inferred pointee to the declared type, which DWARF gives, and each return from a wrong
 `unsigned long`/`uint8` to the declared `void *`/`int`; where the inferred pointee was a
 synthesized record, that record is what the declaration takes away (see the verdict).

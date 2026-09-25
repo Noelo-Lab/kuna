@@ -105,8 +105,8 @@ BINS = [
     f'{R}/O0/shadow/stripped/userdel',
     f'{R}/O2/shadow/stripped/userdel',
     f'{R}/O0/shadow/stripped/chfn',
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..',
-                 'decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_forward_x86_64'),
+    os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..',
+                     'decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_forward_x86_64')),
 ]
 
 def label(b):
