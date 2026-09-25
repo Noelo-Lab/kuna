@@ -33,6 +33,9 @@
                   so no element width is claimed
         w_mixed:  a control - `p[i] + *(int *)(p + 4)` reads one pointer at
                   two widths, a record and not an array
+        w_wu:     returns an element of an `unsigned short` .data table that
+                  nothing else reads: the element is unsigned (its callers
+                  widen it), never a signed default
 
     Pass 1 (`option elemptr off`) reproduces the casts and pass 2 (`on`) is the
     fix. The two controls are identical in both passes.
@@ -65,6 +68,9 @@ c3
   <com>lo fu w_mixed</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu w_wu</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64</com>
   <com>option elemptr on</com>
@@ -87,6 +93,9 @@ c3
   <com>lo fu w_mixed</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu w_wu</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="elemptr #1: with the option off the decoder's input is an integer and its buffer void * - the bug" min="1" max="1">void \* w_decode\(int8 a0,uint8 a1,uint8 \*a2\)</stringmatch>
@@ -98,4 +107,6 @@ c3
 <stringmatch name="elemptr #7: with the option on a .data table of ints is read by subscript" min="1" max="1">v2 = \(int8\)dat_300040a0\[v1\] \+ v2 \* 0xb;</stringmatch>
 <stringmatch name="elemptr #8: a record walked by a stride keeps its integer form in both passes" min="2" max="2">int8 w_record\(int8 a0,int4 a1\)</stringmatch>
 <stringmatch name="elemptr #9: a pointer read at two widths is not an array in either pass" min="2" max="2">int8 w_mixed\(void \*a0,int4 a1\)</stringmatch>
+<stringmatch name="elemptr #10: with the option on a returned word nothing shows the sign of is an unsigned element" min="1" max="1">uint2 w_wu\(uint4 a0\)</stringmatch>
+<stringmatch name="elemptr #11: the returned word is never declared signed in either pass" min="0" max="0">\bint2 w_wu\(|^short w_wu\(</stringmatch>
 </decompilertest>

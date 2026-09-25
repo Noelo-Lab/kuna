@@ -8,7 +8,7 @@ build of main on all 45 castbench binaries. Measured again after review round 1
 | step | criterion | result |
 |---|---|---|
 | (a) `make test` | no datatest assertion moves | 675/675, PARITY OK, no per-test opt-out |
-| (b) `make test-stages` | only the option's own effect moves | PARITY OK; 8 assertions of other options read the subscript for the same access (listed in `record.json`), `kuna-castindex.xml` turns `elemptr` off in both passes |
+| (b) `make test-stages` | only the option's own effect moves | PARITY OK (1,405/1,405); 8 assertions of other options read the subscript for the same access (listed in `record.json`), `kuna-castindex.xml` turns `elemptr` off in both passes |
 | (c) `make test-cli` | a moved probe has a reason | 2 probes of other options read the subscript for the same access; the two `elemptr` probes pin the rebuilt fixture |
 | (d) 444-slice typesweep | improved >= worse, no perfect function lost | 1,615 -> 1,645 perfect, 171 better, 0 worse; 223 scored variables gained, 0 lost; no function's variable count moved |
 | (e) speed | worst delta <= +5% | see `record.json` (`speed`) |
