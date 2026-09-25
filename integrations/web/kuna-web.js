@@ -1,8 +1,11 @@
 // kuna-web.js — run the kuna decompiler entirely in the browser, for WHATEVER
 // binary the CLI supports (ELF / PE / Mach-O / COFF, every architecture kuna
 // ships a `.sla` for). Exposes `list` (enumerate functions), `decompile` (one
-// function or all of them), and `project` (whole-binary .c/.h/.asm/README
-// export — the "Download Binary Source" zip).
+// function or all of them), `project` (whole-binary .c/.h/.asm/README
+// export — the "Download Binary Source" zip), and the study-view commands
+// `inspect` (one function with its token/line/instruction maps), `read` (raw
+// bytes) and `xrefs`. Every command takes the edit session as repeated
+// `--assert <directive>` arguments.
 //
 // It loads the `kuna_wasm` WebAssembly module (the engine's in-process decompile
 // path, compiled to wasm32-wasip1) and drives it through
@@ -45,16 +48,21 @@ export function formatName(bytes) {
 /**
  * Build one kuna_wasm command, delegating the byte-size policy to Rust.
  *
- * `language` is the output language: 'auto' (the default) follows the binary, so
- * a Rust binary renders as Rust. The engine owns that policy too -- passing
- * 'auto' through rather than resolving it here keeps the browser and the CLI on
- * one implementation.
+ * `arg` is one positional or an array of them (`read 0xADDR LEN`). `language`
+ * is the output language: 'auto' (the default) follows the binary, so a Rust
+ * binary renders as Rust. The engine owns that policy too -- passing 'auto'
+ * through rather than resolving it here keeps the browser and the CLI on one
+ * implementation. `assertions` are `--assert` directives, appended in order; an
+ * empty list leaves the argv exactly as it was before the flag existed.
  */
-export function wasmCommandArgs(command, arg, mode = 'auto', language = 'auto') {
+export function wasmCommandArgs(command, arg, mode = 'auto', language = 'auto', assertions = []) {
   const argv = ['/work/input.bin', '/specs', command];
-  if (arg) argv.push(arg);
+  for (const value of Array.isArray(arg) ? arg : [arg]) {
+    if (value !== undefined && value !== null && value !== '') argv.push(String(value));
+  }
   argv.push('--mode', mode);
   argv.push('--language', language);
+  for (const directive of assertions || []) argv.push('--assert', directive);
   return argv;
 }
 
@@ -110,7 +118,8 @@ function parseLdefs(text, dir, map) {
 /**
  * Load the decompiler once: compile the wasm and preload the small spec files.
  * `.sla` files are fetched lazily per binary. Returns `{ list, decompile,
- * project, formatName }`.
+ * project, inspect, read, xrefs, formatName }`; every command takes
+ * `{ mode, language, assertions }`.
  *
  * @param {object} opts
  * @param {string} opts.wasmUrl        URL of kuna_wasm.wasm
@@ -209,8 +218,18 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
     throw new Error('too many spec-fetch rounds (unexpected)');
   }
 
+  // A failed run keeps what it printed: `error.payload` is its stdout when that
+  // parses as JSON (a partial document), `error.stderr` the raw diagnostics.
   function parseOrThrow(res, what) {
-    if (res.exitCode !== 0) throw new Error(res.stderr || `${what} failed (exit ${res.exitCode})`);
+    if (res.exitCode !== 0) {
+      const error = new Error(res.stderr || `${what} failed (exit ${res.exitCode})`);
+      error.exitCode = res.exitCode;
+      error.stderr = res.stderr;
+      if (res.stdout) {
+        try { error.payload = JSON.parse(res.stdout); } catch (_) { /* not JSON */ }
+      }
+      throw error;
+    }
     try {
       return JSON.parse(res.stdout);
     } catch (e) {
@@ -218,25 +237,41 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
     }
   }
 
+  async function command(binaryBytes, name, arg, { mode = 'auto', language = 'auto', assertions = [] } = {}) {
+    return parseOrThrow(
+      await invoke(binaryBytes, wasmCommandArgs(name, arg, mode, language, assertions)),
+      name,
+    );
+  }
+
   return {
     /** Format label for the status line (ELF / PE / Mach-O / binary). */
     formatName,
     /** Enumerate functions: `{binary, count, functions:[{name, address, address_hex, size}]}`. */
-    async list(binaryBytes, { mode = 'auto', language = 'auto' } = {}) {
-      return parseOrThrow(
-        await invoke(binaryBytes, wasmCommandArgs('list', undefined, mode, language)),
-        'list',
-      );
+    async list(binaryBytes, options = {}) {
+      return command(binaryBytes, 'list', undefined, options);
     },
     /**
      * Decompile. With no `target`, decompiles ALL functions; otherwise a single
      * function by name or `0x`-address. Returns the `decompile-all --json` shape.
      */
-    async decompile(binaryBytes, target, { mode = 'auto', language = 'auto' } = {}) {
-      return parseOrThrow(
-        await invoke(binaryBytes, wasmCommandArgs('decompile', target, mode, language)),
-        'decompile',
-      );
+    async decompile(binaryBytes, target, options = {}) {
+      return command(binaryBytes, 'decompile', target, options);
+    },
+    /**
+     * One function with everything the study view links: code, tokens, line
+     * mappings, variables, types, globals and its instruction rows.
+     */
+    async inspect(binaryBytes, target, options = {}) {
+      return command(binaryBytes, 'inspect', target, options);
+    },
+    /** Raw bytes: `{binary, address, address_hex, size, bytes, file_offset}`. */
+    async read(binaryBytes, address, length, options = {}) {
+      return command(binaryBytes, 'read', [address, length], options);
+    },
+    /** Callers, callees and data references of one function. */
+    async xrefs(binaryBytes, target, options = {}) {
+      return command(binaryBytes, 'xrefs', target, options);
     },
     /**
      * Export the whole binary as a recompile-oriented project (every function,
@@ -244,12 +279,9 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
      * count, ok, failed, files: {"<name>.c", "<name>.h", "<name>.asm",
      * "README.md"}}`.
      */
-    async project(binaryBytes, displayName, { mode = 'auto' } = {}) {
+    async project(binaryBytes, displayName, { mode = 'auto', assertions = [] } = {}) {
       // The project export is C-only; no language is threaded here on purpose.
-      return parseOrThrow(
-        await invoke(binaryBytes, wasmCommandArgs('project', displayName, mode)),
-        'project',
-      );
+      return command(binaryBytes, 'project', displayName, { mode, assertions });
     },
   };
 }

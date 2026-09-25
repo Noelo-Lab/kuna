@@ -94,4 +94,32 @@ assert.strictEqual(
 assert.equal(runtimeWorker.terminations, 1, 'a runtime failure terminates once');
 runtime.close();
 
-console.log('WORKER ERROR OK — constructor, startup, decode, runtime, and duplicate failures are terminal');
+// A failed request keeps what the engine said besides its message: the
+// Worker's `detail` (exit code, stderr, a partial JSON payload) reaches the
+// caller as `error.detail`, so the page can show a rejected directive's reason.
+let detailWorker;
+const detailed = new KunaWorkerClient(options(() => {
+  detailWorker = new ControlledWorker();
+  return detailWorker;
+}));
+detailWorker.reply('init');
+await detailed.ready();
+const detail = {
+  exitCode: 1,
+  stderr: 'error: --assert "name": expected a symbol and a new name',
+  payload: { assertions: [{ directive: 'name', status: 'rejected' }] },
+};
+const failing = detailed.request('inspect', { target: 'main', assertions: ['name'] });
+const inspectMessage = detailWorker.messages.find((message) => message.method === 'inspect');
+assert.deepEqual(inspectMessage.params.assertions, ['name'], 'assertions ride in the request params');
+detailWorker.onmessage({ data: { id: inspectMessage.id, ok: false, error: detail.stderr, detail } });
+const failure = await failing.catch((error) => error);
+assert.equal(failure.message, detail.stderr, 'the message is the engine error');
+assert.deepEqual(failure.detail, detail, 'the Worker detail reaches the caller');
+const plain = detailed.request('list');
+const listMessage = detailWorker.messages.find((message) => message.method === 'list');
+detailWorker.onmessage({ data: { id: listMessage.id, ok: false, error: 'no binary is loaded' } });
+assert.equal((await plain.catch((error) => error)).detail, undefined, 'no detail stays absent');
+detailed.close();
+
+console.log('WORKER ERROR OK — constructor, startup, decode, runtime, and duplicate failures are terminal; error detail propagates');
