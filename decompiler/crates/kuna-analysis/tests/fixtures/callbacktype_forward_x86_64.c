@@ -16,6 +16,17 @@
  *   search_z (clang -O0): the call also passes the remainder `idiv` leaves in
  *   `rdx`, a third argument the declaration's closed list drops.
  *
+ * `by_name_*` reads only the first word through each parameter and hands it to
+ * `strcmp`, so its first decompile states `undefined8 *` for both (printed
+ * `unsigned long *`) and prints `void`. `ent_before_*` forwards its own two
+ * pointers and reads the result, and `minimum_*` scans an array of 24-byte
+ * records with it. The declared `int` return differs from the printed
+ * `void`, so both callers are decompiled again after the park; they keep the
+ * `unsigned long *` the statement gave them and index it as they did, not as
+ * `(char *)` byte offsets from a `void *`.
+ *
+ *   by_name_g2 (gcc -O2), by_name_c2 (clang -O2).
+ *
  * Build (symbols kept, no DWARF):
  *   gcc -O0 -DPART=1 -fno-stack-protector -fcf-protection=none \
  *       -c -o forward_g.o callbacktype_forward_x86_64.c
@@ -23,7 +34,12 @@
  *       -c -o forward_c.o callbacktype_forward_x86_64.c
  *   clang -O0 -DPART=3 -fno-stack-protector -fcf-protection=none \
  *       -c -o forward_z.o callbacktype_forward_x86_64.c
- *   gcc -o callbacktype_forward_x86_64 forward_g.o forward_c.o forward_z.o
+ *   gcc -O2 -DPART=4 -fno-stack-protector -fcf-protection=none \
+ *       -c -o forward_g2.o callbacktype_forward_x86_64.c
+ *   clang -O2 -DPART=5 -fno-stack-protector -fcf-protection=none \
+ *       -c -o forward_c2.o callbacktype_forward_x86_64.c
+ *   gcc -o callbacktype_forward_x86_64 forward_g.o forward_c.o forward_z.o \
+ *       forward_g2.o forward_c2.o
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +49,50 @@ typedef struct {
     char *start;
     long size;
 } WORD;
+
+#if PART == 4 || PART == 5
+#if PART == 4
+#define BY_NAME by_name_g2
+#define ENT_BEFORE ent_before_g2
+#define MINIMUM minimum_g2
+#define TAB tab_g2
+#define RUN2 run_g2
+#else
+#define BY_NAME by_name_c2
+#define ENT_BEFORE ent_before_c2
+#define MINIMUM minimum_c2
+#define TAB tab_c2
+#define RUN2 run_c2
+#endif
+
+struct ent {
+    const char *name;
+    long id;
+    struct ent *next;
+};
+
+static struct ent TAB[4] = {{"d", 4, 0}, {"b", 2, 0}, {"c", 3, 0}, {"a", 1, 0}};
+
+__attribute__((noinline)) static int BY_NAME(const void *a, const void *b) {
+    const struct ent *x = a, *y = b;
+    return strcmp(x->name, y->name);
+}
+
+__attribute__((noinline)) int ENT_BEFORE(struct ent *p, struct ent *q) { return BY_NAME(p, q) < 0; }
+
+__attribute__((noinline)) struct ent *MINIMUM(struct ent *v, int n) {
+    struct ent *m = v;
+    for (int i = 1; i < n; i++)
+        if (BY_NAME(&v[i], m) < 0)
+            m = &v[i];
+    return m;
+}
+
+int RUN2(int k) {
+    qsort(TAB, 4, sizeof TAB[0], BY_NAME);
+    return ENT_BEFORE(&TAB[k & 1], &TAB[2]) + (int)MINIMUM(TAB, 4)->id;
+}
+#else
 
 #if PART == 1
 #define COMPARE compare_g
@@ -82,9 +142,13 @@ int RUN(char *s) {
 #if PART == 1
 int run_c(char *s);
 int run_z(char *s);
+int run_g2(int k);
+int run_c2(int k);
 
 int main(int argc, char **argv) {
     printf("%d %d %d\n", run_g(argv[0]), run_c(argv[0]), run_z(argv[0]));
+    printf("%d %d\n", run_g2(argc), run_c2(argc));
     return argc > 5;
 }
+#endif
 #endif
