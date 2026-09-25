@@ -709,7 +709,7 @@ mod capture {
         let op = tokens.iter().find(|t| t.text == "!=").expect("operator trimmed");
         assert_eq!(op.kind, TokenKind::Op);
         let note = tokens.iter().find(|t| t.kind == TokenKind::Comment).expect("comment");
-        assert_eq!((note.text.as_str(), note.at), ("// note", Some(0x40)));
+        assert_eq!((note.text.as_str(), note.at), ("// note", Some((spc.get_index(), 0x40))));
         let string = tokens.iter().find(|t| t.text.contains('\u{1f600}')).expect("string");
         let x = tokens.iter().find(|t| t.text == "x").expect("x");
         assert_eq!(string.line, x.line);

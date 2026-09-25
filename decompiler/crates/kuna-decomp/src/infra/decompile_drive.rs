@@ -1609,10 +1609,25 @@ pub fn print_c_with_provenance(
     let mut markup = printer.doc_function_provenance(fd, arch);
     arch.put_print(printer);
     let out = rewrite_cookie_literal_returns(out, &cookie_calls, &mut markup);
+    align_markup_to_trimmed(&mut markup, &out);
     (
         out,
         resolve_markup_provenance(fd, &markup),
     )
+}
+
+/// Renumber markup lines to the text callers report, which is trimmed of its
+/// leading breaks: the emitter counts from the first break, so a render that
+/// opens with more than one (the Rust attribute line) numbers every line one
+/// past the one it lands on. A line the trim removed maps to 0 (dropped).
+fn align_markup_to_trimmed(markup: &mut crate::prettyprint::MarkupProvenance, untrimmed: &str) {
+    let skip = untrimmed.len() - untrimmed.trim_start_matches('\n').len();
+    if skip == 1 {
+        return;
+    }
+    for association in &mut markup.associations {
+        association.line_number = (association.line_number + 1).saturating_sub(skip);
+    }
 }
 
 /// [`print_c_with_provenance`] whose markup pass also captures every token at
@@ -1629,6 +1644,7 @@ pub fn print_c_with_srcmap(
     arch.put_print(printer);
     let (out, edits) = rewrite_cookie_literal_returns_with_edits(out, &cookie_calls, &mut markup);
     crate::kuna_srcmap::apply_cookie_rewrites(&mut tokens, &edits);
+    align_markup_to_trimmed(&mut markup, &out);
     (out, resolve_markup_provenance(fd, &markup), tokens)
 }
 

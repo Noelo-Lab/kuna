@@ -287,8 +287,9 @@ pub struct EmitToken {
     pub color: SyntaxHighlight,
     pub opref: Option<uintb>,
     pub varref: Option<uintb>,
-    /// The address offset a comment or label is attached to.
-    pub at: Option<uintb>,
+    /// The address a comment or label is attached to: its space's index and
+    /// offset.
+    pub at: Option<(int4, uintb)>,
     pub type_name: Option<String>,
     pub in_var_decl: bool,
     pub in_return_type: bool,
@@ -320,7 +321,7 @@ impl TokenCapture {
         kind: TokenKind,
         color: SyntaxHighlight,
         markup: Option<&MarkupRef>,
-        at: Option<uintb>,
+        at: Option<(int4, uintb)>,
     ) {
         if self.mute > 0 {
             return;
@@ -1000,7 +1001,7 @@ impl EmitMarkup {
         kind: TokenKind,
         color: SyntaxHighlight,
         markup: Option<&MarkupRef>,
-        at: Option<uintb>,
+        at: Option<(int4, uintb)>,
     ) {
         if let Some(c) = self.capture.as_mut() {
             c.push(text, kind, color, markup, at);
@@ -1387,7 +1388,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_comment(&mut self, name: &str, hl: SyntaxHighlight, spc: &Rc<AddrSpace>, off: uintb) {
-        self.capture(name, TokenKind::Comment, hl, None, Some(off));
+        self.capture(name, TokenKind::Comment, hl, None, Some((spc.get_index(), off)));
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_COMMENT);
             if hl != SyntaxHighlight::NoColor {
@@ -1400,7 +1401,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_label(&mut self, name: &str, hl: SyntaxHighlight, spc: &Rc<AddrSpace>, off: uintb) {
-        self.capture(name, TokenKind::Label, hl, None, Some(off));
+        self.capture(name, TokenKind::Label, hl, None, Some((spc.get_index(), off)));
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_LABEL);
             if hl != SyntaxHighlight::NoColor {
@@ -1430,7 +1431,8 @@ impl Emit for EmitMarkup {
         });
     }
     fn print(&mut self, data: &str, hl: SyntaxHighlight) {
-        self.capture(data, TokenKind::Syntax, hl, None, None);
+        let kind = if hl == SyntaxHighlight::ConstColor { TokenKind::Value } else { TokenKind::Syntax };
+        self.capture(data, kind, hl, None, None);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_SYNTAX);
             if hl != SyntaxHighlight::NoColor {

@@ -11,8 +11,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::prettyprint::{MarkupAssociation, MarkupProvenance};
 
 use super::{
-    panic_message, resolve_markup_provenance_with_addresses, rewrite_cookie_literal_returns,
-    stack_storage_contains,
+    align_markup_to_trimmed, panic_message, resolve_markup_provenance_with_addresses,
+    rewrite_cookie_literal_returns, stack_storage_contains,
 };
 
 #[test]
@@ -213,4 +213,20 @@ fn provenance_merges_sorted_line_and_variable_evidence() {
     assert_eq!(provenance.variable_uses[&11].line_numbers, vec![3]);
     assert_eq!(provenance.variable_uses[&11].addresses, vec![0x401008]);
     assert_eq!(provenance.variable_uses[&20].line_numbers, vec![2]);
+}
+
+/// A render that opens with two breaks (the Rust attribute line) numbers its
+/// first reported line 2; the provenance must follow the trimmed text.
+#[test]
+fn markup_lines_follow_the_trimmed_text() {
+    let association = |line_number| MarkupAssociation { line_number, opref: Some(1), varref: None };
+    let mut markup = MarkupProvenance { associations: vec![association(2), association(4)] };
+    align_markup_to_trimmed(&mut markup, "\n\n#[allow]\nfn f()\n{\n}");
+    let lines: Vec<usize> = markup.associations.iter().map(|a| a.line_number).collect();
+    assert_eq!(lines, vec![1, 3]);
+
+    let mut single = MarkupProvenance { associations: vec![association(1), association(3)] };
+    align_markup_to_trimmed(&mut single, "\nint f(void)\n{\n}");
+    let lines: Vec<usize> = single.associations.iter().map(|a| a.line_number).collect();
+    assert_eq!(lines, vec![1, 3]);
 }

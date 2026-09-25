@@ -119,13 +119,17 @@ pub fn resolve(
             by_ref.entry(r).or_insert(i);
         }
     }
-    let unique_name = |text: &str| {
-        let mut hits = variables.iter().enumerate().filter(|(_, v)| v.name == text);
+    let unique_name = |text: &str, params_only: bool| {
+        let mut hits = variables
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| v.name == text && (v.is_param || !params_only));
         match (hits.next(), hits.next()) {
             (Some((i, _)), None) => Some(i),
             _ => None,
         }
     };
+    let code_space = fd.get_address().get_space().map(|s| s.get_index());
     let skip = leading_breaks(untrimmed);
     raw.iter()
         .filter_map(|t| {
@@ -137,13 +141,16 @@ pub fn resolve(
                     .filter(|&i| variables[i].name == t.text)
                     .or_else(|| {
                         matches!(t.color, SyntaxHighlight::VarColor | SyntaxHighlight::ParamColor)
-                            .then(|| unique_name(&t.text))
+                            .then(|| unique_name(&t.text, t.in_proto && !t.in_return_type))
                             .flatten()
                     }),
                 _ => None,
             };
             let address = match t.kind {
-                TokenKind::Comment | TokenKind::Label => t.at,
+                TokenKind::Comment | TokenKind::Label => t
+                    .at
+                    .filter(|&(space, _)| Some(space) == code_space)
+                    .map(|(_, offset)| offset),
                 _ => t.opref.and_then(|o| op_addresses.get(&o).copied()),
             };
             let callee = match t.kind {

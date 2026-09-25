@@ -129,6 +129,7 @@ struct TeSection {
     data: Vec<u8>,
     flags: u32,
     kind: SectionKind,
+    file_offset: Option<u64>,
 }
 
 /// A parsed TE container exposed through the decompiler's generic image API.
@@ -316,6 +317,7 @@ impl TeLoadImage {
                 ));
             }
 
+            let mut section_file_offset = None;
             let data = if raw_size == 0 {
                 Vec::new()
             } else {
@@ -348,6 +350,7 @@ impl TeLoadImage {
                     return Err(Self::invalid(filename, "section file ranges overlap"));
                 }
                 file_ranges.push((file_offset, file_end));
+                section_file_offset = Some(file_offset);
                 bytes[file_offset as usize..file_offset as usize + initialized_size as usize]
                     .to_vec()
             };
@@ -362,6 +365,7 @@ impl TeLoadImage {
                 data,
                 flags,
                 kind,
+                file_offset: section_file_offset,
             });
             rva_ranges.push((virtual_address, rva_end, initialized_size, flags));
         }
@@ -441,6 +445,7 @@ impl TeLoadImage {
                 data: bytes[..header_file_size as usize].to_vec(),
                 flags: section_flags::DATA | section_flags::READONLY,
                 kind: SectionKind::ReadOnlyData,
+                file_offset: Some(0),
             },
         );
 
@@ -542,6 +547,8 @@ impl TeLoadImage {
                     section.vma,
                     section.size,
                     section.kind,
+                    section.file_offset,
+                    section.flags,
                 ))
             })
             .collect()
@@ -1184,6 +1191,10 @@ mod tests {
             ]
         );
         assert_eq!(image.file_backed_segments(), image.get_segments());
+        let code_offset = synthetic_thumb_te()
+            .windows(4)
+            .position(|w| w == [0x07, 0x20, 0x70, 0x47])
+            .map(|at| at as u64);
         assert_eq!(
             image.section_metadata(),
             vec![ObjectSectionMetadata {
@@ -1191,6 +1202,8 @@ mod tests {
                 vma: 0x401000,
                 size: 4,
                 kind: "Text".to_string(),
+                file_offset: code_offset,
+                flags: section_flags::CODE | section_flags::READONLY,
             }]
         );
         assert!(!image.whole_image_thumb());

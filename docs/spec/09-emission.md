@@ -914,10 +914,11 @@ emitted text advances the column by its length, so a token lands exactly where
 the plain back-end printed the same characters; blank tokens are dropped and
 surrounding spaces trimmed. A `tag_type` records one token for the whole
 declarator front (`unsigned long *`) and mutes the per-word split the packed
-encoding makes for the Ghidra client. Constants (`tag_variable` in the
-constant colour) and case labels are `value` tokens. Declaration context rides
-along: tokens inside the return type, the prototype, and a local declaration
-are marked. `printc.rs (PrintC::doc_function_tokens)` runs the same
+encoding makes for the Ghidra client. Anything printed in the constant colour
+(a `tag_variable` literal or a plain `print`) and case labels are `value`
+tokens. Declaration context rides along: tokens inside the return type, the
+prototype, and a local declaration are marked, and a comment or label keeps the
+space and offset it is attached to. `printc.rs (PrintC::doc_function_tokens)` runs the same
 `emit_function_document` sequence with capture on, and carries the printer's
 indent increment into the fresh markup leaf and back out — `set_markup`
 rebuilds the leaf with the default increment of 2, which would otherwise
@@ -932,11 +933,16 @@ assignment loses its tokens and the return line becomes `return`, the literal
 carried from the assignment, `;`).
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_srcmap.rs (resolve)` then
 places the tokens in the trimmed `code` (lines shift by the number of leading
-breaks the trim removed), resolves `opref` to the instruction address, a call's
-function name to its callee's entry, and a variable token to its row in the
-reported variables (by the varrefs that row's line evidence came from, else by
-a unique name), and names the declaration a token sits in (`local`, `param`,
-`return`, `function`). `kuna_srcmap.rs (verify)` is the contract: the tokens are
+breaks the trim removed), resolves `opref` to the instruction address (a
+comment's or label's own address only when it lies in the function's code
+space — a `// stack - 0x10` note names a frame slot, not an instruction), a
+call's function name to its callee's entry, and a variable token to its row in
+the reported variables (by the varrefs that row's line evidence came from, else
+by a unique name, among the parameters for a token in the prototype), and names
+the declaration a token sits in (`local`, `param`, `return`, `function`). The
+line mappings of both provenance renders are numbered the same way — against
+the trimmed text — which matters for Rust output, whose attribute line makes
+the render open with two breaks rather than one. `kuna_srcmap.rs (verify)` is the contract: the tokens are
 in order and inside their lines, each slice of the code equals its text, and
 every code unit between them is a space — so joining a line's tokens with the
 gaps as spaces rebuilds that line exactly. A caller ships the tokens only when

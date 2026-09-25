@@ -26,7 +26,7 @@ use std::path::Path;
 use kuna_base::address::Address;
 use kuna_decomp::decompile_drive::{
     extract_type_definitions, extract_variables, print_c, print_c_prototype,
-    print_c_with_provenance, GlobalInfo, LineMapping, TypeInfo, VarInfo,
+    print_c_with_provenance, print_c_with_srcmap, GlobalInfo, LineMapping, TypeInfo, VarInfo,
 };
 use kuna_decomp::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
@@ -117,6 +117,9 @@ pub struct FuncResult {
     /// shard hook, so the parent can name every `struct_N` as the serial run
     /// does. `None` everywhere else.
     pub synth: Option<kuna_decomp::kuna_structsynth::shard::FunctionRecord>,
+    /// The token source map, captured only when the caller asked for it
+    /// ([`DecompileOptions::want_tokens`]).
+    pub detail: Option<Box<crate::inspect::FuncDetail>>,
 }
 
 impl FuncResult {
@@ -196,6 +199,9 @@ pub struct DecompileOptions {
     /// cycle.
     pub park_recovered_proto: bool,
     pub single_target: bool,
+    /// Capture the token source map ([`FuncResult::detail`]); implies the
+    /// provenance render.
+    pub want_tokens: bool,
 }
 
 /// Decompile each `(name, entry)` target in turn against the already-loaded
@@ -224,8 +230,20 @@ pub fn decompile_targets(
         header_carries_types: false,
         park_recovered_proto: false,
         single_target: targets.len() == 1,
+        want_tokens: false,
     };
     decompile_batch(prog, targets, &opts)
+}
+
+/// [`decompile_targets`] with every option explicit: the same batch, including
+/// the synthesized-structure convergence sweep, so one target decompiled here
+/// prints exactly what it prints in a whole-program batch of one.
+pub fn decompile_targets_with(
+    prog: &mut ConsoleProgram,
+    targets: Vec<FunctionEntry>,
+    opts: &DecompileOptions,
+) -> Vec<FuncResult> {
+    decompile_batch(prog, targets, opts)
 }
 
 /// The project-export form of [`decompile_targets`]: prototypes for the `.h`,
@@ -254,6 +272,7 @@ pub fn export_options(single_target: bool) -> DecompileOptions {
         header_carries_types: true,
         park_recovered_proto: false,
         single_target,
+        want_tokens: false,
     }
 }
 
@@ -401,6 +420,7 @@ pub fn decompile_pulled(
         want_provenance,
         header_carries_types,
         single_target,
+        want_tokens,
         ..
     } = *opts;
     // (kuna `structdefs`) A project export's bodies do NOT carry the
@@ -455,6 +475,7 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
+                detail: None,
             });
             continue;
         }
@@ -487,6 +508,7 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
+                detail: None,
             });
             continue;
         }
@@ -507,6 +529,7 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
+                detail: None,
             });
             continue;
         }
@@ -664,10 +687,13 @@ pub fn decompile_pulled(
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
                     // `code` is byte-identical to the single-shot path.
-                    let (untrimmed, provenance) = if want_provenance {
-                        print_c_with_provenance(prog.arch_mut(), &fd)
+                    let (untrimmed, provenance, raw_tokens) = if want_tokens {
+                        print_c_with_srcmap(prog.arch_mut(), &fd)
+                    } else if want_provenance {
+                        let (text, provenance) = print_c_with_provenance(prog.arch_mut(), &fd);
+                        (text, provenance, Vec::new())
                     } else {
-                        (print_c(prog.arch_mut(), &fd), Default::default())
+                        (print_c(prog.arch_mut(), &fd), Default::default(), Vec::new())
                     };
                     let code = untrimmed.trim_matches('\n').to_string();
                     let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
@@ -678,6 +704,11 @@ pub fn decompile_pulled(
                     // as records. Empty unless the option is on.
                     let types = extract_type_definitions(prog.arch(), &fd);
                     provenance.apply_to_variables(&fd, &mut variables);
+                    let detail = want_tokens.then(|| {
+                        Box::new(crate::inspect::FuncDetail::resolve(
+                            prog, &fd, &provenance, &raw_tokens, &untrimmed, &code, &variables,
+                        ))
+                    });
                     for variable in &mut variables {
                         for address in &mut variable.addresses {
                             *address = prog.output_code_offset(*address);
@@ -701,10 +732,10 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, types, globals, proto, line_mappings, callee_hints)
+                    (code, variables, types, globals, proto, line_mappings, callee_hints, detail)
                 }));
                 match rendered {
-                    Ok((code, variables, types, globals, proto, line_mappings, callee_hints)) => sink(FuncResult {
+                    Ok((code, variables, types, globals, proto, line_mappings, callee_hints, detail)) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -720,6 +751,7 @@ pub fn decompile_pulled(
                         object_location,
                         callee_hints,
                         synth: None,
+                        detail,
                     }),
                     Err(_) => sink(FuncResult {
                         name,
@@ -737,6 +769,7 @@ pub fn decompile_pulled(
                         object_location,
                         callee_hints: Vec::new(),
                         synth: None,
+                        detail: None,
                     }),
                 }
             }
@@ -756,6 +789,7 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
+                detail: None,
             }),
         }
     }
@@ -1421,6 +1455,7 @@ mod tests {
             object_location: None,
             callee_hints: vec![],
             synth: None,
+            detail: None,
         }
     }
 
