@@ -432,6 +432,11 @@ A second application page for students: one function as **C, assembly, bytes and
 stack frame, linked**, with renames, retypes, prototypes, comments and byte patches that
 the engine applies. `/decompile/` is unchanged.
 
+For now it is an **unlisted** page, like `/dev-viz/`: nothing on the landing page,
+`/decompile/` or `/dev-viz/` links to it (no nav entry, button or footer link), and it
+asks search engines not to index it (`<meta name="robots" content="noindex">`). It is
+reached by typing `/decompile2/`.
+
 It is written for someone who has never used a decompiler, so it is laid out like an
 app: full screen, with its own stylesheet (`decompile2/decompile2.css`). The colours are
 the Noelo palette of the rest of the site, dark by default — Noelo's dark footer (warm
@@ -733,7 +738,8 @@ formats and architectures**:
    horizontal overflow, reloads to see the session restored (and not re-announced when the
    Rust view re-indexes, where a retype says it needs C), loads with a stored directive the
    engine cannot parse (the binary still opens, the directive is marked), and checks that
-   `/decompile` still renders and its Language control switches to Rust. Any uncaught page
+   `/decompile` still renders and its Language control switches to Rust and that `/`,
+   `/decompile/` and `/dev-viz/` do not link to `/decompile2/`. Any uncaught page
    exception fails it; steps an older engine cannot serve assert the page's fallback and
    are listed as skipped. CI runs it when the runner has `google-chrome`.
    The filter's DOM half was verified the same way during development (raw CDP): 16

@@ -9,7 +9,7 @@ upload. Four pages, one static bundle:
 | `/` | **Landing** — what kuna is, a side-by-side compare section, the three project goals. Inert: no wasm, no network. |
 | `/dev-viz/` | **Development record** — phase activity, commit cadence, option provenance, DecBench evidence, and the autonomous improvement loop. Generated from tracked repository evidence at build time. |
 | `/decompile/` | **The decompiler** — load an ELF/PE/Mach-O and read its C, decompiled in the tab. |
-| `/decompile2/` | **The study view** — the same engine for students, full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: C, assembly, bytes and the stack frame linked line by line, a hover card showing the instructions behind a C line, an Explain panel for whatever is selected, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. "Try an example" loads a small program and its source; a file can also be dropped anywhere on the page. |
+| `/decompile2/` | **The study view** (unlisted for now: no other page links to it) — the same engine for students, full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: C, assembly, bytes and the stack frame linked line by line, a hover card showing the instructions behind a C line, an Explain panel for whatever is selected, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. "Try an example" loads a small program and its source; a file can also be dropped anywhere on the page. |
 
 The engine (Ghidra's decompiler, ported to Rust) compiles to `wasm32-wasip1` and runs in
 the page under a pure-JS WASI shim; the SLEIGH specs and the binary you decompile live in
@@ -218,8 +218,8 @@ DevTools protocol, with Node's built-in `WebSocket` (Node 22+) and no `puppeteer
 (`test/cdp-client.mjs` is the small driver): it checks the welcome screen, loads the
 example through the file input, checks `main` opens by itself and the theme toggle,
 hovers a line, switches to Assembly, renames a variable, patches a byte, checks 1024 and 820 px for horizontal overflow, reloads to see the session
-restored, and checks that `/decompile` still renders and its Language control switches
-to Rust. It fails on any uncaught page exception and skips when there is no Chrome (set
+restored, checks that `/decompile` still renders and its Language control switches
+to Rust, and checks that no other page links to `/decompile2/`. It fails on any uncaught page exception and skips when there is no Chrome (set
 `CHROME=` to point at one). CI runs it when the runner has `google-chrome`. Plain
 `--headless --virtual-time-budget=… --dump-dom` does not work for these pages: the dump
 happens while the status still reads `loading decompiler…`.

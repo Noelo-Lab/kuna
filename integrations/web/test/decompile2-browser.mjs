@@ -260,6 +260,12 @@ try {
   await page.waitFor(`/fn main|let mut|unsafe/.test(document.getElementById('code').textContent)`, { what: '/decompile Language: Rust', timeout: 60000 });
   await noExceptions('/decompile still works and its Language control changes the output');
 
+  for (const path of ['/', '/decompile/', '/dev-viz/']) {
+    const html = await (await fetch(`${server.base}${path}`)).text();
+    assert.ok(!/decompile2/.test(html), `${path} does not link to the unlisted study view`);
+  }
+  done.push('no other page links to /decompile2');
+
   console.log(`DECOMPILE2 BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {
   clearTimeout(guard);

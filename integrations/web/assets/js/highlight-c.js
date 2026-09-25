@@ -12,7 +12,7 @@
 // page's compare panes are C-only and import it by path.
 //
 // `scan()` exposes the same pass as pieces (`{text, cls, word}` covering the
-// input exactly) for renderers that need per-token structure (/decompile2);
+// input exactly) for renderers that need per-token structure (the study view);
 // the `highlight*` functions are that scan joined back into HTML.
 
 const C = {
