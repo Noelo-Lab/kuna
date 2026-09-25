@@ -1178,8 +1178,10 @@ is `void (*)(int)`. When a function's address is handed to one of 23 such slots
 `tsearch`, `glob` and the rest; the list is in `docs/spec/04-calls-and-prototypes.md`),
 the run parks that declaration on it and decompiles it again, together with each
 direct caller whose call the declaration changes (it passes another number of
-arguments, or uses the result). A declaration that is exactly the signature the
-body already printed is not parked:
+arguments, or uses a result whose type the declaration changes). A caller keeps
+its own parameter types: where the slot says only `void *`, what the callback's
+body read through the pointer still types what the caller passes. A declaration
+that is exactly the signature the body already printed is not parked:
 
 ```bash
 kuna decompile-all ./callbacktype_x86_64 --option callbacktype off | grep -E '^(int|void).*(by_key|on_int)\('

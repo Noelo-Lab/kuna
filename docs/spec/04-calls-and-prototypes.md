@@ -2802,9 +2802,14 @@ uses and `ActionDefaultParams` reads a declared prototype from) and decompiles
 that function again. A function that CALLS it directly is decompiled again only
 where the declaration changes that call (`Ledger::caller_changes`): the call
 passes a different number of arguments than the declaration lists, or
-something consumes its result. A call that passes exactly the declared
-arguments and ignores the result prints the same call under either prototype,
-so that caller keeps its first body. A declaration that is exactly the
+something consumes a result the declaration types differently from the return
+the callback's first body printed (`Ledger::printed_the_return`). A call that
+passes exactly the declared arguments and ignores the result, or reads the same
+`int` it read before, prints the same call under either prototype, so that
+caller keeps its first body. A caller whose call the declaration does change
+loses what the closed list does not pass: a clang -O0 bsearch helper that left
+the `idiv` remainder in `rdx` before calling its comparator printed that
+remainder as a third argument, and prints two. A declaration that is exactly the
 signature the body already printed — the same parameter types in the same
 order, the same return, no `...`, as a `pthread_once` routine recovered as
 `void f(void)` is — is not parked at all (trace token `body-agrees`): it would
@@ -2821,12 +2826,33 @@ The parked list is closed (`first_var_arg_slot = -1`), not the floor
 the function prints without a `...` and no call site recovers an argument past
 it.
 
-On a successful park the statements the first pass made about that function are
-dropped: `protoorder` filed the recovered parameter types for its own call sites
-and declines to file again once a prototype is parked, so the statement would
-outlive the body it came from, and `calleevote` would keep voting on a function
-that now has a declared prototype. The redo files whatever is true of the new
-body.
+On a successful park the statements the first pass made about that function
+leave the tables every reader consults: `protoorder` filed the recovered
+parameter types for its own call sites and declines to file again once a
+prototype is parked, so its arity and storage would outlive the body they came
+from, and `calleevote` would keep voting on a function that now has a declared
+prototype. The redo files whatever is true of the new body.
+
+One part of the `protoorder` statement stays true after the park: what the body
+reads through a parameter the slot declares `void *`. A `qsort` comparator that
+reads two fields through its first parameter recovered `struct_0 *` for it, and
+a bsearch helper that calls the same comparator directly with its own `WORD *w`
+took `struct_0 *` for `w` from that statement, because it does nothing else with
+it. The declaration says only "a pointer", so a later decompile of the helper
+— the park round's own redo, or a `calleevote` round that redoes it for another
+parameter — would type `w` as `void *` and take a correct type away. The
+statement therefore moves to `Ledger::stated`, is copied onto each function
+that calls the callback (`kuna_callbacktype::seed`, next to `protoorder`'s own
+seed), and at such a call a type-locked `void *` parameter offers the
+statement's type for the argument as a vote (`pointee_vote`, asked from the
+locked arm of `call_input_type_local`): only a pointer to something (not `void
+*` or `undefined *`), of the same size, recovered in the storage the
+declaration passes that parameter in, and only where `protoorder`'s own vote
+refusals hold at that call. It is asked only for the value's type, never for
+the type the argument is converted to, so the declared `void *` still decides
+every cast and none is added. A superseded structure is forgotten here as it is
+in `protoorder`'s table (`kuna_callbacktype::forget_statements_naming`). The
+callback's own body is untouched: its parameters are the declaration's.
 
 **What is refused.** A declared prototype outranks this one and the park is
 declined for it — DWARF, a user `--assert`, the library tables, and, under

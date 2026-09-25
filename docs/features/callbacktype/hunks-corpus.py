@@ -9,8 +9,10 @@ invents, and a caller that grows a local is what a declared return narrower than
 the caller's read of it splits the register into. A caller that prints fewer
 lines is in scope and is read by hand. A changed function of either kind
 that gains a `CONCAT` has had half a register invented for it. Anything else is
-a bug. Each changed function also carries its cast count in both arms, counted
-by the castbench counter over the whole file's vocabulary.
+a bug, and so is a function that is not itself parked whose own parameter types
+change: the declaration rebuilds a call, never what the caller was handed. Each
+changed function also carries its parameter types and its cast count in both
+arms, counted by the castbench counter over the whole file's vocabulary.
 """
 import json, os, re, subprocess, sys, collections, difflib
 sys.path.insert(0, os.environ.get('CASTBENCH', '/home/mahaloz/kwt/castbench'))
@@ -70,6 +72,19 @@ BINS = [
     f'{R}/O0/libselinux/stripped/libselinux.so.1',
     f'{R}/O2-noinline/gnutls/stripped/systemkey',
     f'{R}/O2/coreutils/stripped/ginstall',
+    # the round-7 review's disjoint set
+    f'{R}/O2/rsyslog/stripped/rsyslogd',
+    f'{R}/O2-noinline/tar/stripped/tar',
+    f'{R}/O0/e2fsprogs/stripped/e2fsck',
+    f'{R}/O2-noinline/e2fsprogs/stripped/e2fsck',
+    f'{R}/O0/gnutls/stripped/certtool',
+    f'{R}/O0/coreutils/stripped/ptx',
+    f'{R}/O0/iproute2/stripped/ip',
+    f'{R}/O2/libedit/stripped/libedit.so.0.0.70',
+    f'{R}/O0/openssh-portable/stripped/sftp',
+    f'{R}/O2/openssh-portable/stripped/scp',
+    f'{R}/O0/coreutils/stripped/ls',
+    f'{R}/O2/coreutils/stripped/du',
 ]
 
 def run(b, value, trace=False):
@@ -116,6 +131,20 @@ def call_args(lines, callee):
             out.append(0 if empty else n)
     return sorted(out)
 
+SIG = re.compile(r'^(?!//)(?![ \t])[^(;]*?\b(\w+)\((.*)\)\s*(//.*)?$')
+
+def param_types(lines):
+    """The parameter types of the signature line `lines` prints, or None."""
+    for line in lines[1:6]:
+        m = SIG.match(line)
+        if not m:
+            continue
+        params = m.group(2).strip()
+        if params in ('', 'void'):
+            return []
+        return [re.sub(r'\s*\ba\d+$', '', q.strip()) for q in params.split(',')]
+    return None
+
 def work(b):
     off, _ = run(b, 'off')
     on, err = run(b, 'on', trace=True)
@@ -154,10 +183,17 @@ def work(b):
                 kind = 'UNEXPLAINED-caller-grew'
         if sum('CONCAT' in l for l in new) > sum('CONCAT' in l for l in old):
             kind = 'UNEXPLAINED-concat'
+        # A function that is not itself parked keeps its own parameter types:
+        # the declaration changes a call, never what the caller is handed.
+        pt_off, pt_on = param_types(old), param_types(new)
+        params_moved = a_ not in parked and pt_off != pt_on
+        if params_moved:
+            kind = 'UNEXPLAINED-own-params'
         diff = [l for l in difflib.unified_diff(old, new, lineterm='', n=0)
                 if l.startswith(('+', '-')) and not l.startswith(('+++', '---'))]
         rows.append({'bin': b, 'fn': name, 'addr': addr, 'kind': kind,
                      'casts_off': casts(old, va), 'casts_on': casts(new, vc),
+                     'params_off': pt_off, 'params_on': pt_on,
                      'hunk_lines': len(diff), 'diff': diff[:40]})
     return b, len(parked), len(a), rows
 
@@ -176,6 +212,8 @@ if __name__ == '__main__':
                   f'{np} parked, {len(rows)} changed')
     json.dump(out, open(sys.argv[1] if len(sys.argv) > 1 else '.scratch/hunks.json', 'w'), indent=1)
     print('TOTAL', dict(tot))
+    print('NON-PARKED functions whose own parameter types change: %d' % sum(
+        r['kind'] == 'UNEXPLAINED-own-params' for r in out))
     co, cn = sum(r['casts_off'] for r in out), sum(r['casts_on'] for r in out)
     print('CASTS changed functions: off %d -> on %d; more %d, fewer %d, same %d' % (
         co, cn, sum(r['casts_on'] > r['casts_off'] for r in out),
