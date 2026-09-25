@@ -72,6 +72,8 @@ pub mod format;
 pub mod kuna_peimportcall;
 // (kuna) `rexthunk`: an x86-64 `REX FF 25` tail jump is not an import thunk.
 pub(crate) mod kuna_rexthunk;
+// (kuna) `peordinal`: name a PE import-by-ordinal from a built-in export table.
+pub(crate) mod kuna_peordinal;
 pub mod macho_fat;
 pub mod macho_stubs;
 pub mod mips_markers;

@@ -1632,6 +1632,12 @@ pub struct Architecture {
     /// `load file`, upstream of `option`); this bool exists only for catalog
     /// visibility and the `phase catalog` live `current` field.
     pub analysis_rexthunk: bool,
+    /// (kuna) Gate PE import-by-ordinal naming from built-in export tables
+    /// (`peordinal`); default **on**. Read through the [`crate::kuna_peordinal`]
+    /// **env var** (import names are resolved inside `load file`, upstream of
+    /// `option`); this bool exists only for catalog visibility and the `phase
+    /// catalog` live `current` field.
+    pub analysis_peordinal: bool,
     /// (kuna) Gate degenerate-symbol-name repair (`symbolnamerepair`); default
     /// **on**. An empty `::` component in a loader symbol name is rejected by
     /// `Database::attach_scope`, and because the symbol table is installed inside
@@ -2547,6 +2553,7 @@ impl Architecture {
             analysis_dynrelocs: false,
             analysis_pdatachained: false,
             analysis_rexthunk: false,
+            analysis_peordinal: false,
             analysis_symbolnamerepair: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_symbolnamebound: None,
@@ -2865,6 +2872,7 @@ impl Architecture {
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
         self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
         self.analysis_pdatachained = true; // (kuna) DIV-117 GH-403: a chained-UNWIND_INFO .pdata record is an interior chunk, not a function
+        self.analysis_peordinal = true; // (kuna) an OLEAUT32/WS2_32/WSOCK32/MSVBVM60 import-by-ordinal is named from the built-in export table
         self.analysis_rexthunk = true; // (kuna) DIV-179: the `FF 25` one byte into a REX-prefixed tail jump through an import slot is not an import thunk
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
@@ -3665,6 +3673,15 @@ impl Architecture {
                 crate::kuna_pdatachained::set_pdatachained_env(val);
                 Ok(format!(
                     "PE chained-UNWIND_INFO .pdata entry suppression turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
+            "peordinal" => {
+                let val = on_or_off(p1)?;
+                self.analysis_peordinal = val;
+                crate::kuna_peordinal::set_peordinal_env(val);
+                Ok(format!(
+                    "PE import-by-ordinal naming turned {}",
                     if val { "on" } else { "off" }
                 ))
             }

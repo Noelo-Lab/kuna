@@ -197,6 +197,31 @@ pub(super) const WIN32: &[(&str, Sig)] = &[
     // --- thread context (kernel32) ---
     ("GetThreadContext", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
     ("SetThreadContext", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    // --- OLE Automation BSTR / VARIANT / SAFEARRAY (oleaut32).  Usually
+    //     imported by ordinal; `peordinal` names those slots.  `SafeArrayCreate`
+    //     and `VariantChangeType` take a by-value `VARTYPE`/`USHORT` and are absent.
+    ("SafeArrayAccessData", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("SafeArrayDestroy", Sig { ret: Ty::Int, params: &[Ty::VoidPtr], vararg: -1 }),
+    ("SafeArrayUnaccessData", Sig { ret: Ty::Int, params: &[Ty::VoidPtr], vararg: -1 }),
+    ("SysAllocString", Sig { ret: Ty::WCharPtr, params: &[Ty::WCharPtr], vararg: -1 }),
+    ("SysAllocStringByteLen", Sig { ret: Ty::WCharPtr, params: &[Ty::CharPtr, Ty::UInt], vararg: -1 }),
+    ("SysAllocStringLen", Sig { ret: Ty::WCharPtr, params: &[Ty::WCharPtr, Ty::UInt], vararg: -1 }),
+    ("SysFreeString", Sig { ret: Ty::Void, params: &[Ty::WCharPtr], vararg: -1 }),
+    ("SysReAllocString", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::WCharPtr], vararg: -1 }),
+    ("SysReAllocStringLen", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::WCharPtr, Ty::UInt], vararg: -1 }),
+    ("SysStringByteLen", Sig { ret: Ty::UInt, params: &[Ty::WCharPtr], vararg: -1 }),
+    ("SysStringLen", Sig { ret: Ty::UInt, params: &[Ty::WCharPtr], vararg: -1 }),
+    ("VariantClear", Sig { ret: Ty::Int, params: &[Ty::VoidPtr], vararg: -1 }),
+    ("VariantCopy", Sig { ret: Ty::Int, params: &[Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("VariantInit", Sig { ret: Ty::Void, params: &[Ty::VoidPtr], vararg: -1 }),
+    // --- WinSock-only exports (ws2_32 / wsock32, `WSAAPI` = callee-cleans).
+    //     The BSD spellings (`socket`, `recv`, ...) belong to the libc tables;
+    //     `WSAStartup` takes a by-value `WORD` and is absent.
+    ("WSACleanup", Sig { ret: Ty::Int, params: &[], vararg: -1 }),
+    ("WSAGetLastError", Sig { ret: Ty::Int, params: &[], vararg: -1 }),
+    ("WSASetLastError", Sig { ret: Ty::Void, params: &[Ty::Int], vararg: -1 }),
+    ("closesocket", Sig { ret: Ty::Int, params: &[Ty::Size], vararg: -1 }),
+    ("ioctlsocket", Sig { ret: Ty::Int, params: &[Ty::Size, Ty::Int, Ty::UIntPtr], vararg: -1 }),
     // --- user32 / gdi32 / advapi32 ---
     ("CryptReleaseContext", Sig { ret: Ty::Int, params: &[Ty::Size, Ty::UInt], vararg: -1 }),
     ("GetDC", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr], vararg: -1 }),
@@ -290,6 +315,18 @@ mod tests {
         assert_eq!(get("LoadResource").params.len(), 2, "hModule, hResInfo");
         assert_eq!(get("SizeofResource").params.len(), 2, "hModule, hResInfo");
         assert_eq!(get("FreeLibrary").params.len(), 1, "hLibModule");
+    }
+
+    #[test]
+    fn the_ordinal_imported_oleaut32_family_carries_its_documented_arity() {
+        let get = |want: &str| &WIN32.iter().find(|(n, _)| *n == want).expect(want).1;
+        assert_eq!(get("SysAllocString").params.len(), 1, "psz");
+        assert!(matches!(get("SysAllocString").ret, Ty::WCharPtr), "returns a BSTR");
+        assert_eq!(get("SysAllocStringLen").params.len(), 2, "strIn, ui");
+        assert_eq!(get("SysFreeString").params.len(), 1, "bstrString");
+        assert_eq!(get("VariantInit").params.len(), 1, "pvarg");
+        assert_eq!(get("VariantCopy").params.len(), 2, "pvargDest, pvargSrc");
+        assert_eq!(get("ioctlsocket").params.len(), 3, "s, cmd, argp");
     }
 
     #[test]

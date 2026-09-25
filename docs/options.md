@@ -612,6 +612,10 @@ Three tiers:
 | kuna functions lists a sub_<addr> named after an import in the middle of another function | [`rexthunk`](#rexthunk) |
 | a one-line sub_<addr> wrapper around an import appears right after a function that tail-calls the same import | [`rexthunk`](#rexthunk) |
 | kuna functions reports a pe function's size as ending one byte into its own last jump | [`rexthunk`](#rexthunk) |
+| a pe call renders as OLEAUT32_Ordinal_<n> or WS2_32_Ordinal_<n> instead of the api name | [`peordinal`](#peordinal) |
+| kuna functions lists <dll>_Ordinal_<n> imports | [`peordinal`](#peordinal) |
+| a BSTR or VARIANT api call has no prototype because its import is ordinal-only | [`peordinal`](#peordinal) |
+| a winsock program shows socket, connect and recv as ordinal placeholders | [`peordinal`](#peordinal) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
@@ -2222,6 +2226,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) on any x86-64 PE. The tell-tale of the defect is kuna functions listing an import-named sub_<addr> one byte past the start of a JMP qword ptr [import] instruction, which kuna disassemble shows as 48ff25..., whose decompile is a one-line call of the import, while the function that ends in that jump reports a size ending at the phantom. Flip off to restore the previous inventory exactly, e.g. to compare an older function list.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-rexthunk
 - **Example:** `--option rexthunk off`
+
+### `peordinal` -- on | off, default `on`
+
+- **Symptoms:** a pe call renders as OLEAUT32_Ordinal_<n> or WS2_32_Ordinal_<n> instead of the api name; kuna functions lists <dll>_Ordinal_<n> imports; a BSTR or VARIANT api call has no prototype because its import is ordinal-only; a winsock program shows socket, connect and recv as ordinal placeholders.
+- **What it does:** Name a PE import-by-ordinal from a built-in export table when the imported DLL is OLEAUT32, WS2_32, WSOCK32 or MSVBVM60. An ordinal-only import has no name in the Import Name Table, so the PE import resolver synthesized <DLL>_Ordinal_<n> for its IAT slot and thunk, and every call, xref, function list entry and signature lookup saw that placeholder. These DLLs fix their ordinals in their .def files and are routinely imported by ordinal (OLEAUT32 almost always is: the BSTR, VARIANT and SAFEARRAY API), so the mapping is public and stable. The tables are the consensus of independent export listings (RetDec's and radare2's Windows ordinal databases, Wine's built DLLs and pefile's ordlookup); an ordinal is admitted only when every listing that has it agrees. WS2_32 is limited to the WinSock 1.1 ordinals (1-23, 51-57, 101-116, 151, 500), the only ones stable across Windows releases, and WSOCK32 has its own table because it swaps inet_addr, inet_ntoa and ioctlsocket relative to WS2_32. An ordinal outside the tables, or a DLL not covered, keeps the synthesized name. The resolved name is an ordinary import name, so win32sigs seeds its prototype when the table carries one (SysAllocString, SysFreeString, VariantInit, VariantClear, closesocket, ...).
+- **When to flip:** On (default) on any PE. The tell-tale of the gap is OLEAUT32_Ordinal_2, WS2_32_Ordinal_23 or MSVBVM60_Ordinal_595 in decompile output, kuna functions or kuna xrefs. Flip off to get back the synthesized <DLL>_Ordinal_<n> names, e.g. to compare against a tool that prints ordinals, or if a target ships a private DLL under one of these names with a different export layout.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-peordinal
+- **Example:** `--option peordinal off`
 
 ## Core rendering defaults
 

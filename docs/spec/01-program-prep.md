@@ -96,7 +96,7 @@ bridged across the process by environment variables the CLI exports:
 `KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
 `KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
 `KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_PDATACHAINED` (`pdatachained`),
-`KUNA_REXTHUNK` (`rexthunk`),
+`KUNA_REXTHUNK` (`rexthunk`), `KUNA_PEORDINAL` (`peordinal`),
 `KUNA_MACHO_ARM64E` (`macho-arm64e`),
 `KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
@@ -1032,8 +1032,22 @@ funcsym stream:
   IAT (slots) in lockstep — the i-th name belongs to the slot at
   `image_base + first_thunk_rva + i*ptr` — naming the slot (the GOT analog, folded
   through the read-only `.idata` page) and additionally decoding the MinGW `FF 25`
-  thunk veneers so a direct `call thunk` also resolves. Import-by-ordinal
-  synthesizes `<DLL>_Ordinal_<n>`.
+  thunk veneers so a direct `call thunk` also resolves. An import-by-ordinal has
+  no name in the INT. (kuna) `peordinal` (default-on, env-bridged,
+  `decompiler/crates/kuna-analysis/src/loader/kuna_peordinal.rs (ordinal_name)`)
+  names it from a built-in export table when the DLL is `OLEAUT32`, `WS2_32`,
+  `WSOCK32` or `MSVBVM60`, whose ordinals are fixed by their `.def` files and which
+  toolchains routinely import by ordinal (`OLEAUT32` #2 is `SysAllocString`, #6
+  `SysFreeString`; `WS2_32` #23 is `socket`, #115 `WSAStartup`). Each table is the
+  consensus of independent export listings: an ordinal is admitted only when every
+  listing that has it agrees on the name. `WS2_32` is limited to the WinSock 1.1
+  ordinals (1-23, 51-57, 101-116, 151, 500), the only ones stable across Windows
+  releases, and `WSOCK32` has its own table because it swaps `inet_addr`,
+  `inet_ntoa` and `ioctlsocket` relative to `WS2_32`. Any other ordinal, and every
+  ordinal of any other DLL, synthesizes `<DLL>_Ordinal_<n>`, which is also what
+  `option peordinal off` restores. The resolved name is the import's name
+  everywhere downstream (slot and thunk symbols, `kuna functions`, `kuna xrefs`),
+  so `win32sigs` seeds its prototype when its table carries one.
   (kuna) `rexthunk` (default-on, env-bridged,
   `decompiler/crates/kuna-analysis/src/loader/kuna_rexthunk.rs (is_rex_tail)`)
   keeps that thunk decode off compiler-emitted tail jumps. The decode is a byte
@@ -1844,7 +1858,10 @@ moves.
   was measured the same way the libc one was: an import histogram over the PE images
   of the RE arena corpus, admitting a name at five or more images, plus the
   resource/loader family below that bar because it is the family the defect was
-  reported against. The reduction rule is the one above, with the Windows spellings
+  reported against, plus the OLE Automation `BSTR`/`VARIANT`/`SAFEARRAY` calls and the
+  WinSock-only exports (`WSACleanup`, `WSAGetLastError`, `closesocket`, ...), which
+  are nearly always imported by ordinal and reach this table through `peordinal`'s
+  names; the BSD socket spellings stay in the libc tables. The reduction rule is the one above, with the Windows spellings
   named — handles and `LPVOID` are `void *`, `DWORD`/`UINT`/`LCID` are unsigned
   4-byte, `BOOL`/`LONG` signed 4-byte, `SIZE_T` pointer-width, `LPCSTR` a `char *`,
   `LPCWSTR` a `wchar_t *` at the compiler spec's `wchar_size`, `LPDWORD` an
