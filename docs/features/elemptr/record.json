@@ -53,7 +53,8 @@
   "casts_more": 22,
   "off_arm": "byte-identical to main c960fb18d on all 45 files",
   "shape_deltas": "(char *)(...) -429, (long)v -321, (unsigned char *)(...) -312, (unsigned long)v -254, (int *)(...) -189, (unsigned short *)(...) -115, (char **)(...) -95; gained (char *)0x... +94 (a table globalref cannot name, one cast where main printed two), (unsigned int) on a subscript +48 (the same conversion, now on a subscript)",
-  "more_casts_read": "all 17: a callee parameter now declared char * / char ** makes an integer caller argument print its conversion (tar O2-noinline 0x132d0, O0 0x1381d, 0x15a63, 0x135e3, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant used at two pointee types across a callee keeps globalref's two-type cast (gzip O2 0xb700, O2-noinline 0xbb40, 0x67e0, O2 0x63e0); a call result kept in a char * slot where the callee's recovered return is long (diff O0 0x8710, 0x818f); a buffer typed unsigned char * from its zero-extended reads also passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); a pointer-array global also stepped by a byte offset (diff O2 0x8590, O2-noinline 0x8320); grep O2-noinline 0xbfa0"
+  "more_casts_read": "all 17: a callee parameter now declared char * / char ** makes an integer caller argument print its conversion (tar O2-noinline 0x132d0, O0 0x1381d, 0x15a63, 0x135e3, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant used at two pointee types across a callee keeps globalref's two-type cast (gzip O2 0xb700, O2-noinline 0xbb40, 0x67e0, O2 0x63e0); a call result kept in a char * slot where the callee's recovered return is long (diff O0 0x8710, 0x818f); a buffer typed unsigned char * from its zero-extended reads also passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); a pointer-array global also stepped by a byte offset (diff O2 0x8590, O2-noinline 0x8320); grep O2-noinline 0xbfa0",
+  "rebased": "fresh base arm on origin/main ef49332b2 (.scratch/cb-main-ef4): the off arm is byte-identical to it on all 45 files, and the final build (56d9554ef) reads the same 37,477 -> 35,327, 350 fewer / 17 more; its output differs from the pre-fix build only in struct_N numbering in tar -O2 (fewer redos mint records in another order)"
  },
  "benchmark": {
   "metric": "decbench type_match pinned to 625e892 (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same binary (default on vs --option elemptr off)",
@@ -149,7 +150,8 @@
    }
   },
   "variables": "227 scored variables gained, 1 lost: 61 char** args (argv), 55 char* args, 26 char* stack slots, 20 UInt32* / 13 Int32* / 10 UChar* / 8 UInt16* args (bzip2), 8 int*, 7 short int*, 5 long int*, 2 FILE**; the loss is grep O0 print_line_tail's idx_t stack slot, credited undefined8 before and char * after, a register shared with the char * lim; no void * ground-truth parameter lost",
-  "arity": "no function's scored argument or variable count moved"
+  "arity": "no function's scored argument or variable count moved",
+  "rebased": "re-run on the rebased build (ef49332b2 + this branch): identical, 1615 -> 1645, 173 better, 0 worse"
  },
  "corpus_sweep": {
   "method": "castbench full, both arms of one build (--option elemptr off vs default): docs/features/elemptr/structural.py (callees, strings, control keywords, program data, statement counts per changed function) and hunks.py (line hunks with canonical variable names)",
@@ -163,15 +165,85 @@
   "round_trip": "elemptr_x86_64.c: 11 witnesses x 3 builds x 2 arms x 2 compilers print the binary's line; bytes >= 0x80 read signed and unsigned and used as indexes both ways, a negative index into an int array, a .data int table, a table filled through an allocated global, an allocated buffer returned to the caller; gcc -O2 w_rev's string excluded (void in both arms: a return-recovery gap outside this option)",
   "strict_c": "the printed witnesses compile with -Werror=int-conversion -Werror=incompatible-pointer-types (gcc 11, clang 14)"
  },
- "speed": null,
- "gates": null,
+ "speed": {
+  "method": "one pinned release binary (final engine), kuna decompile-all --json --max-fn-seconds 120, --option elemptr off vs default, arms interleaved and order-alternated, one warm-up discarded, min and median-of-ratios of 15 (docs/features/elemptr/speed.py)",
+  "measurements": [
+   {
+    "label": "fmt_O2",
+    "n": 15,
+    "delta_min_pct": 0.1,
+    "delta_median_of_ratios_pct": -0.09,
+    "off_min": 4200.8,
+    "on_min": 4204.8,
+    "loadavg": [
+     6.2,
+     9.5,
+     14.7
+    ]
+   },
+   {
+    "label": "ls_O2",
+    "n": 15,
+    "delta_min_pct": -0.02,
+    "delta_median_of_ratios_pct": 0.64,
+    "off_min": 13812.5,
+    "on_min": 13810.1,
+    "loadavg": [
+     6.8,
+     6.2,
+     11.1
+    ]
+   },
+   {
+    "label": "sort_O2",
+    "n": 15,
+    "delta_min_pct": 1.19,
+    "delta_median_of_ratios_pct": -0.9,
+    "off_min": 14884.8,
+    "on_min": 15062.1,
+    "loadavg": [
+     9.5,
+     14.7,
+     14.2
+    ]
+   },
+   {
+    "label": "bash_O2",
+    "n": 15,
+    "delta_min_pct": 1.37,
+    "delta_median_of_ratios_pct": 3.4,
+    "off_min": 89443.7,
+    "on_min": 90671.4,
+    "loadavg": [
+     3.8,
+     6.5,
+     8.7
+    ]
+   }
+  ],
+  "budget_pct": 5.0,
+  "worst_delta_min_pct": 1.37,
+  "within_budget": true,
+  "history": "the first measurement (before the per-storage memo and the disputed-global blocking) read bash +12.86% min / +11.43% median-of-ratios: the batch redo decompiled 23 functions again (14.7 s, the parser's two largest among them); after the fix 17 functions and 3.6 s"
+ },
+ "gates": {
+  "measured_on": "feat/elemptr rebased on origin/main ef49332b2 (#720), final engine 56d9554ef",
+  "make_test": "datatests: 675/675 assertions passed, PARITY OK (default on)",
+  "make_test_stages": "datatests: 1381/1381 assertions passed, PARITY OK (baseline re-recorded on ef49332b2: +9 kuna-elemptr keys; 8 assertions of other options re-pinned to the subscript spelling, keys unchanged)",
+  "make_test_cli": "tests/cli: 242/242 passed (2 probes re-pinned; a first run under the rust-test lane hit the known wall_ms flake and passed on a re-run)",
+  "check_spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
+  "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
+  "counters_check": "no drift: every hard-coded site agrees with the derived truth",
+  "options_md": "byte-fresh",
+  "make_rust_test": "PENDING"
+ },
  "default_on_evaluation": {
   "verdict": "flipped: elemptr ships on",
   "a_datatests": "675/675 PARITY OK with the default on; no assertion moved, no per-test opt-out",
   "b_stages": "8 assertions of other options pinned the integer spelling and now read the subscript for the same access: ALIASOVERLAP #4, oxidizer-SecurityCheck #3, regionstructure-loop #3 (the while loop now a for loop absorbing its iterator, same semantics), castimplied #5/#6/#10, charptr #1/#2 (the malloc'd return is char *); regexes follow, keys unchanged; kuna-elemptr.xml (9 keys) added, pass 1 sets option elemptr off",
   "c_test_cli": "2 probes pinned the integer spelling: bytecode-append-call-loses (now &dat_402000[a1]) and passthrough-gives-a-forwarding-function-its-parameter (a control's parameter type left open; probe id re-derived); 239/239",
   "d_typesweep": "1615 -> 1645 perfect, 173 better, 0 worse, 0 off perfect",
-  "e_speed": null,
+  "e_speed": "fmt +0.10%, ls -0.02%, sort +1.19%, bash +1.37%; worst +1.37%; budget +5%",
   "f_hunks": "1,196 functions over 45 binaries, every flagged function read and classified (corpus_sweep)",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope",
   "h_castbench": "37,477 -> 35,327 (0.991x -> 0.934x IDA), 350 fewer, 17 more (read)",
