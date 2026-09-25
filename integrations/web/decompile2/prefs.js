@@ -21,6 +21,7 @@ export const DEFAULT_PREFS = Object.freeze({
   hoverDelay: 450,
   rail: true,
   theme: 'dark',
+  hints: true,
   tipSeen: false,
 });
 

@@ -108,6 +108,11 @@ code{font-family:var(--font-code);font-size:.92em;}
 .d2-crumbname{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .d2-crumbcount{color:var(--text-muted);white-space:nowrap;}
 .d2-top .d2-btn{flex:none;}
+.d2-hintsbox{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px 0 4px;color:var(--text-muted);
+  font-size:13px;cursor:pointer;white-space:nowrap;user-select:none;flex:none;}
+.d2-hintsbox:hover{color:var(--text);}
+.d2-hintsbox input{margin:0;accent-color:var(--accent-emph);cursor:pointer;}
+:root[data-hints=off] :is(.d2-teach,#tip,.d2-hint,.d2-info,.d2-stacklede,.d2callout,.ah){display:none!important;}
 .d2-moon,.d2-sun{display:none;}
 :root:not([data-theme=light]) #themebtn .d2-sun{display:block;}
 :root[data-theme=light] #themebtn .d2-moon{display:block;}

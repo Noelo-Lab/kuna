@@ -12,8 +12,10 @@
 <script>
   document.documentElement.dataset.theme = 'dark';
   try {
-    if (JSON.parse(localStorage.getItem('kuna.d2.prefs') || '{}').theme === 'light') document.documentElement.dataset.theme = 'light';
-  } catch (_) { /* no storage: the default dark theme */ }
+    const prefs = JSON.parse(localStorage.getItem('kuna.d2.prefs') || '{}');
+    if (prefs.theme === 'light') document.documentElement.dataset.theme = 'light';
+    if (prefs.hints === false) document.documentElement.dataset.hints = 'off';
+  } catch (_) { /* no storage: the default dark theme, hints on */ }
 </script>
 </head>
 <body class="d2">
@@ -30,6 +32,7 @@
       <span class="d2-crumbcount" id="crumbcount"></span>
     </span>
     <span class="d2-grow"></span>
+    <label class="d2-hintsbox" title="Tips on using the page, and what instructions and stack slots mean. Turn them off once you know your way around."><input type="checkbox" id="hintsbox" checked>Show hints</label>
     <label class="d2-btn primary" id="pick" aria-disabled="true">Open file<input type="file" id="file"></label>
     <button class="d2-btn" id="examplebtn" disabled>Try an example</button>
     <div class="d2-menuwrap">
@@ -94,7 +97,7 @@
             <p class="d2-dropor"><button class="d2-btn primary" id="welcomeopen" disabled>Open file</button>
               <span>or <button class="d2-link" id="welcomeexample" disabled>try an example program</button></span></p>
           </div>
-          <ol class="d2-steps">
+          <ol class="d2-steps d2-teach">
             <li><span class="d2-stepn">1</span><span>Pick a function on the left</span></li>
             <li><span class="d2-stepn">2</span><span>Hover over a line of C to see its assembly</span></li>
             <li><span class="d2-stepn">3</span><span>Double-click a name to rename it</span></li>

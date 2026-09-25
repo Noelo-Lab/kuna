@@ -189,6 +189,9 @@ assert.equal(normalizePrefs({ v: 1, tab: 'src' }).view, 'c', 'the example-only s
 assert.equal(normalizePrefs({ v: 2, asmCMode: 'interleave' }).asmCMode, 'heading', 'the old name of the headings mode still reads');
 assert.deepEqual(normalizePrefs({ v: 2, theme: 'light', tipSeen: true, view: 'nope' }), { ...DEFAULT_PREFS, theme: 'light', tipSeen: true });
 assert.equal(normalizePrefs({ v: 2, theme: 'system' }).theme, 'dark', 'the retired "system" theme reads as the dark default');
+assert.equal(DEFAULT_PREFS.hints, true, 'hints start on');
+assert.equal(normalizePrefs({ v: 2, hints: false }).hints, false, 'turning hints off is kept');
+assert.equal(normalizePrefs({ v: 2, hints: 'no' }).hints, true, 'a malformed value falls back to on');
 assert.deepEqual([DEFAULT_PREFS.asmBytes, DEFAULT_PREFS.asmBytesSplit, DEFAULT_PREFS.asmCMode, DEFAULT_PREFS.cLineAddrs, DEFAULT_PREFS.theme],
   [false, false, 'heading', false, 'dark'], 'the beginner defaults');
 assert.equal(cycle(DEFAULT_PREFS, 'asmAddr').asmAddr, 'rel');

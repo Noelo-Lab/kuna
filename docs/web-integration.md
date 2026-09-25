@@ -466,7 +466,7 @@ at first sight is off by default or one click away.
 ![The study view at 1440×900 in its default dark theme: C and assembly side by side, linked by colour bands, with the Explain panel on the right](img/decompile2-split.png)
 
 **Layout.** A top bar, the body and a status bar. The top bar holds the file name and its
-function count, *Open file*, *Try an example*, a ⋯ menu (*Download C code (.zip)*,
+function count, the *Show hints* checkbox, *Open file*, *Try an example*, a ⋯ menu (*Download C code (.zip)*,
 *Download patched program*, *Decompiler effort* — Automatic, Fast, Reliable, Thorough for
 `--mode` auto/fast/reliable/aggressive —, *Show code as* — Automatic, C, Rust —,
 *Keyboard shortcuts*, a link home), help, and the light/dark toggle (dark until it is
@@ -508,6 +508,17 @@ and every lookup (notes, idioms, stack operands, links) reads the engine's text,
 one-time tip (*Got it*). Settings are `kuna.d2.prefs` version 2; a version-1 record keeps
 its view and its choices and takes the new defaults for the settings whose default
 changed.
+
+**Show hints.** On by default. Unticking it (kept as the `hints` setting) hides what is
+there to teach rather than to inform, for a student who no longer needs it: the one-time
+tip, the key hints in the status bar, what a mnemonic does and the idiom notes (in the
+hover card, the Explain panel and the assembly rows), "v1 is a name the decompiler made
+up", the hover card's "Click the line…" footer, the Bytes view's how-to line, the Stack
+view's explanation, its notes on the return address and saved registers and its
+overflow/red-zone callouts, and the welcome screen's steps. Facts stay: sizes, offsets,
+types, where a variable lives, which line an instruction came from. Each teaching element
+carries `d2-teach` (or is one of a few named elements), and one CSS rule under
+`:root[data-hints=off]` hides them all, so nothing re-renders.
 
 **The Explain panel.** Three parts. *What is selected*: a variable (its kind, type,
 which input it is, where it lives in words — "the stack, 28 bytes below the return
@@ -738,7 +749,8 @@ formats and architectures**:
    horizontal overflow, reloads to see the session restored (and not re-announced when the
    Rust view re-indexes, where a retype says it needs C), loads with a stored directive the
    engine cannot parse (the binary still opens, the directive is marked), and checks that
-   `/decompile` still renders and its Language control switches to Rust and that `/`,
+   `/decompile` still renders and its Language control switches to Rust, that *Show
+   hints* hides the teaching notes and brings them back, and that `/`,
    `/decompile/` and `/dev-viz/` do not link to `/decompile2/`. Any uncaught page
    exception fails it; steps an older engine cannot serve assert the page's fallback and
    are listed as skipped. CI runs it when the runner has `google-chrome`.
