@@ -9,7 +9,7 @@ upload. Four pages, one static bundle:
 | `/` | **Landing** — what kuna is, a side-by-side compare section, the three project goals. Inert: no wasm, no network. |
 | `/dev-viz/` | **Development record** — phase activity, commit cadence, option provenance, DecBench evidence, and the autonomous improvement loop. Generated from tracked repository evidence at build time. |
 | `/decompile/` | **The decompiler** — load an ELF/PE/Mach-O and read its C, decompiled in the tab. |
-| `/decompile2/` | **The study view** — the same engine for students: C, assembly, bytes and the stack frame linked line by line, a hover card showing the instructions behind a C line, renames/retypes/prototypes/comments and byte patches the engine applies, a patched-binary download, and a session file the CLI replays. "Try the example" loads a small program and its source. |
+| `/decompile2/` | **The study view** — the same engine for students, full screen, in plain words and its own light and dark look (not the site theme): C, assembly, bytes and the stack frame linked line by line, a hover card showing the instructions behind a C line, an Explain panel for whatever is selected, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. "Try an example" loads a small program and its source; a file can also be dropped anywhere on the page. |
 
 The engine (Ghidra's decompiler, ported to Rust) compiles to `wasm32-wasip1` and runs in
 the page under a pure-JS WASI shim; the SLEIGH specs and the binary you decompile live in
@@ -49,9 +49,9 @@ architecture kuna has a `.sla` for — with no per-format configuration (the eng
 each binary; the Worker fetches only the one `.sla` it needs). See
 `docs/web-integration.md` §3.
 
-For the study view, open `/decompile2/` and press **Try the example**: hover a C line to
-see its instructions, press `Space` for the assembly, double-click a name to rename it,
-and `?` for every shortcut.
+For the study view, open `/decompile2/` and press **Try an example**: `main` opens by
+itself; hover a C line to see its instructions, press `Space` for the assembly or `s` for
+side by side, double-click a name to rename it, and `?` for help.
 
 WASI execution is synchronous once `wasi.start()` enters the WebAssembly module. The page
 therefore cancels an inventory, function, or project operation by terminating the Worker,
@@ -85,7 +85,7 @@ asset path is relative, so a project subpath just works.
 | `index.html` | The landing page: hero, the compare section, the three goals. Static — its only script wires the two dropdowns. |
 | `dev-viz/` | The development record. `generate.py` exports full git history plus tracked option, triage, feature, and baseline evidence to `data.json`; `app.js` renders the interactive charts. The generated JSON is ignored in source and assembled into `dist/` by `build.sh`. |
 | `decompile/index.html` | The decompiler application (upload → inventory → lazy highlighted C, stubs grouped, filterable list, cancellable project-zip download). Reaches the worker and shared assets at the bundle root with `../`. |
-| `decompile2/` | The study view: `index.html` + `decompile2.css` + `app.js` and DOM-free modules for the C and assembly panes, the hover card, the edit session (`--assert` directives), bytes and patching, the stack frame, instruction notes and help. `docs/web-integration.md` §4.2 has the module table. |
+| `decompile2/` | The study view: `index.html` + `decompile2.css` (its own tokens and layout, no `site.css`) + `app.js` and DOM-free modules for the C and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, instruction notes and help. `docs/web-integration.md` §4.2 has the layout and the module table. |
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
 | `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), `js/highlight-c.js` — the one C highlighter both pages use — and `js/fnfilter.js`, the DOM-free matcher/counters behind the /decompile sidebar filter. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
@@ -158,6 +158,7 @@ node integrations/web/test/decompile2-render.mjs
 node integrations/web/test/decompile2-session.mjs
 node integrations/web/test/decompile2-bytes.mjs
 node integrations/web/test/decompile2-learn.mjs
+node integrations/web/test/decompile2-groups.mjs
 
 # H. The study view's commands through the real Worker (inspect, read, --assert).
 node integrations/web/test/decompile2-worker.mjs
@@ -195,9 +196,11 @@ node integrations/web/test/decompile2-browser.mjs
   `Enter`/`Escape`/arrows) needs a browser — see the optional Chrome check below.
 - **`run-wasm.mjs`** is a small reusable CLI runner (used by `parity.mjs`; also handy for
   driving the wasm by hand under `node:wasi`).
-- **`decompile2-render/session/bytes/learn.mjs`** pin the study view's pure modules from
-  the source tree: the shared highlighter (`highlight*` output byte for byte), the token
-  stream and its per-line fallback, the index and the assembly rows, the edit session's
+- **`decompile2-render/session/bytes/learn/groups.mjs`** pin the study view's pure
+  modules from the source tree: the shared highlighter (`highlight*` output byte for
+  byte), the token stream and its per-line fallback, the index and the assembly rows (as
+  comments and as headings, easy and exact spelling), the settings and their migration,
+  the function list's groups, the edit session's
   directives (merging, pinning, qualification, the `.kuna` file, undo), the stored
   sessions, file offsets and the patched file, no-op fills, the stack frame and the
   instruction notes. Their fixtures (`fixtures/inspect-*.json`, `list-sample.json`) are
@@ -212,9 +215,9 @@ node integrations/web/test/decompile2-browser.mjs
 
 **`decompile2-browser.mjs`** drives the real pages in headless Chrome through the
 DevTools protocol, with Node's built-in `WebSocket` (Node 22+) and no `puppeteer`
-(`test/cdp-client.mjs` is the small driver): it loads the example through the file
-input, opens `main`, hovers a line, switches to Assembly, renames a variable, patches a
-byte, checks 1024 and 820 px for horizontal overflow, reloads to see the session
+(`test/cdp-client.mjs` is the small driver): it checks the welcome screen, loads the
+example through the file input, checks `main` opens by itself and the theme toggle,
+hovers a line, switches to Assembly, renames a variable, patches a byte, checks 1024 and 820 px for horizontal overflow, reloads to see the session
 restored, and checks that `/decompile` still renders and its Language control switches
 to Rust. It fails on any uncaught page exception and skips when there is no Chrome (set
 `CHROME=` to point at one). CI runs it when the runner has `google-chrome`. Plain
