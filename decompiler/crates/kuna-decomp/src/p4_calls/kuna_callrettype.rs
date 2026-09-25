@@ -161,6 +161,26 @@ fn states(ct: &Rc<Datatype>) -> bool {
             <= crate::p5_types::kuna_ptrdepth::MAX_INFERRED_PTR_DEPTH
 }
 
+/// What the function filed under `k` states it returns, for [`restore`].
+pub fn statement(arch: &Architecture, k: (int4, uintb)) -> Option<Rc<StatedReturn>> {
+    arch.kuna_callret_types.get(&k).cloned()
+}
+
+/// Put back `stated`, what the function filed under `k` stated before a
+/// decompile the run then discarded (a `calleevote` or convergence redo that
+/// moved the arity or failed), so the statement keeps describing the body the
+/// run prints.
+pub fn restore(arch: &mut Architecture, k: (int4, uintb), stated: Option<Rc<StatedReturn>>) {
+    match stated {
+        Some(s) => {
+            arch.kuna_callret_types.insert(k, s);
+        }
+        None => {
+            arch.kuna_callret_types.remove(&k);
+        }
+    }
+}
+
 /// Forget every statement whose type names one of `names`, through any depth
 /// of pointer: the `structsynth` convergence sweep's superseded structures.
 pub fn forget_statements_naming(arch: &mut Architecture, names: &[String]) {

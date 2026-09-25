@@ -2972,6 +2972,14 @@ data), which the default walk does not grant. The `structsynth` convergence
 sweep forgets a statement naming a superseded structure, as it does for
 `protoorder`'s.
 
+A function the run decompiles again after its callers (the `calleevote` redo,
+the convergence sweep) records again, and its callers decompiled before that
+keep the statement they read: nothing redoes a caller because its callee's
+statement moved. A redo the run then discards (one that moves the arity, or
+fails where the first decompile did not) puts the earlier statement back
+(`kuna_callrettype::restore`), so the statement on record always describes the
+body the run prints.
+
 **The vote.** `seed` copies the statements for every callee a function calls
 onto its `Funcdata` at the two seams `protoorder` seeds from; a function never
 reads its own. `call_output_type_local` (the locked-output arm of
@@ -3012,6 +3020,26 @@ The vote is refused where the caller holds evidence the fold cannot weigh:
   result is of the other class at the same width, an integer beside a pointer,
   refuses the vote whatever the pointee: each would print the other as a
   conversion;
+- for an integer the function returns, an extension of the returned value at
+  the other sign that the return trimming has already removed. A caller that
+  converts the result to a wider type before handing it back
+  (`return (unsigned short)s16(x)` in a function returning `long`: `call s16;
+  movzwl %ax,%eax; ret`) has its RETURN narrowed back to the 16-bit value by
+  `RuleSubvarZext` before any type is inferred, leaving a plain copy where the
+  extension was, so the extension is no longer a reader the rule above can see.
+  A `short` statement would then become the function's own return type, and
+  `short f(...)` hands its callers the value sign-extended where the binary
+  hands them 50000 zero-extended. `seed` therefore reads the raw p-code (no
+  pass has run yet) for the instructions that do nothing but widen a register
+  into its own container, the only form a compiler emits to perform a
+  conversion (`movzwl %ax,%eax`, `mov %eax,%eax`, `cltq`); when
+  `RuleSubvarZext` or `RuleSubvarSext` narrows the returned value back through
+  one of them (`note_returned_extension`), a statement of that width at the
+  other sign is refused for every call whose result the function returns.
+  Every 32-bit write on x86-64 widens its result too, so a move from another
+  register (`mov %eax,%r12d` keeping a result across a call), a load (a -O0
+  reload of the local that holds it) or arithmetic is not taken: those widen a
+  value whose type is still the callee's, and the statement stands;
 - a pointer whose pointee the caller does not use as that pointee
   (`accesses_disagree`): a primitive pointee of N bytes read or written other
   than N bytes at a time, or offset or stepped by other than a multiple of N,

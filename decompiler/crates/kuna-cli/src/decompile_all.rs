@@ -1961,11 +1961,17 @@ fn callee_vote_rounds(
         for &(index, park) in plan {
             let Some(key) = vote_key(&targets[index]).filter(|k| admitted.contains(k)) else { continue };
             let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
+            let stated = kuna_decomp::kuna_callrettype::statement(prog.arch(), key);
             let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
             redone += 1;
             match slots[index].as_ref() {
-                Some(first) if !same_arity(first, &again) => prog.arch_mut().kuna_calleevote.forget(key),
-                Some(first) if !kuna_console::project::redo_replaces(first, &again) => {}
+                Some(first) if !same_arity(first, &again) => {
+                    prog.arch_mut().kuna_calleevote.forget(key);
+                    kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), key, stated);
+                }
+                Some(first) if !kuna_console::project::redo_replaces(first, &again) => {
+                    kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), key, stated);
+                }
                 _ => {
                     prog.arch_mut().kuna_calleevote.keep(key);
                     slots[index] = Some(again);
@@ -2060,9 +2066,13 @@ fn converge_callee_first(
             continue;
         }
         let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
+        let key = vote_key(&targets[index]);
+        let stated = key.and_then(|k| kuna_decomp::kuna_callrettype::statement(prog.arch(), k));
         let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
         if slots[index].as_ref().is_none_or(|first| kuna_console::project::redo_replaces(first, &again)) {
             slots[index] = Some(again);
+        } else if let Some(k) = key {
+            kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated);
         }
     }
 }
