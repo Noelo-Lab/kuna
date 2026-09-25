@@ -1525,11 +1525,11 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
 /// argument of the call `op` is passed in, offered to `Varnode::getLocalType`'s
 /// fold where the declaration that replaced it says only `void *`.
 ///
-/// It is a vote about the value, never the type the argument is converted
-/// to, so it prints no cast: `declared` stays the parameter's type. Only a
-/// pointer to something is offered, only where the statement put that
-/// parameter in the storage the declaration passes it in, and only where
-/// `protoorder`'s vote would hold at any call site.
+/// It is a vote about the value, not a declaration: `declared` stays the type
+/// the argument is converted to, and the argument is typed as it was before
+/// the park. Only a pointer to something is offered, only where the statement
+/// put that parameter in the storage the declaration passes it in, and only
+/// where `protoorder`'s vote would hold at any call site.
 pub(crate) fn pointee_vote(
     data: &Funcdata,
     op: OpId,

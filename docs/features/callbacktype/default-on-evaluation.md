@@ -227,8 +227,8 @@ that column flags exactly the review's row, `ptx -O0`'s `search_table` (`struct_
 nothing. What closes it: the comparator's `protoorder` statement, which is what gave the helper
 `struct_2 *` in the first place, used to be dropped at the park. It is kept for the comparator's
 call sites, and at a call whose declared parameter is `void *` it offers its own pointer type as a
-vote on the argument (the value's type only, never the type the argument is converted to, so no
-cast is added). A caller decompiled again -- by the park round, or by a `calleevote` round for
+vote on the argument (the value's type only; the argument is still converted to the declared
+`void *`). A caller decompiled again -- by the park round, or by a `calleevote` round for
 another parameter, which is what redoes gcc -O0's helper -- therefore types its forwarded pointer
 exactly as it did before the park. The park round also redoes fewer callers: one that uses the
 result only when the declared return differs from the return the callback printed (`compare_words`

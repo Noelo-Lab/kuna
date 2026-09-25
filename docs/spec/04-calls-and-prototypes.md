@@ -2848,9 +2848,10 @@ statement's type for the argument as a vote (`pointee_vote`, asked from the
 locked arm of `call_input_type_local`): only a pointer to something (not `void
 *` or `undefined *`), of the same size, recovered in the storage the
 declaration passes that parameter in, and only where `protoorder`'s own vote
-refusals hold at that call. It is asked only for the value's type, never for
-the type the argument is converted to, so the declared `void *` still decides
-every cast and none is added. A superseded structure is forgotten here as it is
+refusals hold at that call. It is asked only for the value's type: the
+declared `void *` stays the type the argument is converted to, and the caller
+types the argument, and the pointer it forwards, exactly as it did before the
+park, so its call prints the casts it printed then. A superseded structure is forgotten here as it is
 in `protoorder`'s table (`kuna_callbacktype::forget_statements_naming`). The
 callback's own body is untouched: its parameters are the declaration's.
 
