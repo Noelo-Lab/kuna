@@ -1301,6 +1301,9 @@ pub struct Architecture {
     /// (kuna `calleevote`) The whole-binary run's record of call arguments and
     /// what the callers stated.
     pub kuna_calleevote: crate::kuna_calleevote::Ledger,
+    /// (kuna `elemptr`) What each function of a batch said about each global,
+    /// and the globals each must not type because another disagrees.
+    pub kuna_elemptr: crate::kuna_elemptr::Ledger,
     /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
     /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
     /// cleared) by `decompile_func_full_with_override_dyn` and seeded into the
@@ -2509,6 +2512,7 @@ impl Architecture {
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
+            kuna_elemptr: crate::kuna_elemptr::Ledger::default(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive

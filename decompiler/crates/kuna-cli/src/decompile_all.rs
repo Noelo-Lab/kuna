@@ -1817,6 +1817,7 @@ pub(crate) fn decompile_callee_first(
         _ => None,
     };
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
+    kuna_decomp::kuna_elemptr::start(prog.arch_mut());
     for &(index, park) in &plan {
         let opts =
             kuna_console::project::DecompileOptions { park_recovered_proto: park, ..base };
@@ -1827,7 +1828,37 @@ pub(crate) fn decompile_callee_first(
         callee_vote_rounds(prog, &targets, &plan, &base, &mut slots, &expected);
     }
     converge_callee_first(prog, &targets, &plan, &base, &mut slots);
+    converge_element_globals_callee_first(prog, &targets, &plan, &base, &mut slots);
+    kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     slots.into_iter().flatten().collect()
+}
+
+/// (kuna `elemptr`) [`kuna_console::project::converge_element_globals`] in plan
+/// order, each target with its own park decision.
+fn converge_element_globals_callee_first(
+    prog: &mut ConsoleProgram,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut [Option<FuncResult>],
+) {
+    for _ in 0..2 {
+        let redo = kuna_decomp::kuna_elemptr::disagreements(prog.arch_mut());
+        if redo.is_empty() {
+            return;
+        }
+        for &(index, park) in plan {
+            if !redo.contains(&targets[index].addr.get_offset()) {
+                continue;
+            }
+            let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
+            let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
+            match slots[index].as_ref() {
+                Some(first) if !kuna_console::project::redo_replaces(first, &again) => {}
+                _ => slots[index] = Some(again),
+            }
+        }
+    }
 }
 
 /// (kuna `calleevote`) How many times the callers' statements are decided and

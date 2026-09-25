@@ -349,6 +349,7 @@ fn get_local_type(data: &Funcdata, vn: VarnodeId) -> (Rc<Datatype>, bool) {
 /// is a W4 surface — absent symbols fall through to the plain `getLocalType`.)
 fn build_localtypes(data: &mut Funcdata) {
     let order: Vec<VarnodeId> = data.vbank().iter_loc().collect();
+    let mut elem_cache = crate::kuna_elemptr::Cache::default();
     for vn in order {
         let (vn_addr, vn_size, vn_type_lock);
         {
@@ -447,7 +448,7 @@ fn build_localtypes(data: &mut Funcdata) {
         let ct = if from_seed {
             ct
         } else {
-            crate::kuna_elemptr::element_pointer(data, vn, &ct).unwrap_or(ct)
+            crate::kuna_elemptr::element_pointer(data, vn, &ct, &mut elem_cache).unwrap_or(ct)
         };
         // (kuna `boolbyte`) A byte whose every read is a truth test has no `bool`
         // candidate in the fold above: `TYPE_BOOL` is only ever an op's OUTPUT type,

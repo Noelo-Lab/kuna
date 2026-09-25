@@ -263,13 +263,49 @@ fn decompile_batch(
     opts: &DecompileOptions,
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
-    // Only the surface that can supersede a name pays for the replay list.
-    let replay =
-        if prog.arch().struct_synth.fires() { targets.clone() } else { Vec::new() };
+    // Only the surfaces that can decide a function again pay for the replay list.
+    let replay = if prog.arch().struct_synth.fires() || prog.arch().elem_ptr {
+        targets.clone()
+    } else {
+        Vec::new()
+    };
+    kuna_decomp::kuna_elemptr::start(prog.arch_mut());
     let mut pending = targets.into_iter();
     decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| out.push(r));
     converge_synthesized_structs(prog, opts, &replay, &mut out);
+    converge_element_globals(prog, opts, &replay, &mut out);
+    kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     out
+}
+
+/// (kuna `elemptr`) Decide again the functions that typed a global some other
+/// function of the batch disagrees about, with that global blocked for them: a
+/// global is an array of `T` only where every function that says something
+/// about it agrees. Two rounds at most: a redo that blocks a global can only
+/// withdraw a type, so a second round is needed only where one function typed
+/// two globals and the first redo moved the other. A redo that fails keeps the
+/// first body.
+pub fn converge_element_globals(
+    prog: &mut ConsoleProgram,
+    opts: &DecompileOptions,
+    targets: &[FunctionEntry],
+    out: &mut [FuncResult],
+) {
+    for _ in 0..2 {
+        let redo = kuna_decomp::kuna_elemptr::disagreements(prog.arch_mut());
+        if redo.is_empty() {
+            return;
+        }
+        for (i, t) in targets.iter().enumerate() {
+            if i >= out.len() || !redo.contains(&t.addr.get_offset()) {
+                continue;
+            }
+            let again = decompile_entry(prog, t.clone(), opts);
+            if redo_replaces(&out[i], &again) {
+                out[i] = again;
+            }
+        }
+    }
 }
 
 /// (kuna `structsynth`) Decide again the functions that named a synthesized
@@ -660,6 +696,8 @@ pub fn decompile_pulled(
                 if prog.arch().kuna_calleevote.recording {
                     kuna_decomp::kuna_calleevote::record(prog.arch_mut(), &park_entry, &mut fd);
                 }
+                // (kuna `elemptr`) Record what this function said about each global.
+                kuna_decomp::kuna_elemptr::record(prog.arch_mut(), &fd);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function

@@ -64,7 +64,7 @@
 //! Gated by [`ArchContext::elem_ptr`](crate::context::ArchContext) (option
 //! `elemptr on|off`); with the option off nothing here is reachable.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -214,10 +214,17 @@ fn may_replace(cur: &Datatype) -> bool {
     }
 }
 
+/// One `ActionInferTypes` pass's memo: a global is decided once per pass from
+/// every Varnode that holds it, and each of those Varnodes asks.
+#[derive(Default)]
+pub struct Cache {
+    globals: HashMap<(u64, int4), Option<Rc<Datatype>>>,
+}
+
 /// The candidate `T *` for `vn`, or `None` when the rule declines.  `cur` is the
 /// vote the ordinary fold produced; the candidate replaces it outright, which is
 /// why a vote that already names a pointee is never offered.
-pub fn element_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>) -> Option<Rc<Datatype>> {
+pub fn element_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>, cache: &mut Cache) -> Option<Rc<Datatype>> {
     if !data.get_arch().elem_ptr || !may_replace(cur) {
         return None;
     }
@@ -228,17 +235,57 @@ pub fn element_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>) -> Op
     let arch = Rc::clone(data.get_arch());
     let spc = Rc::clone(arch.manage().get_default_data_space()?);
     let ptrsize = spc.get_addr_size() as int4;
+    let (kind, copies) = candidate_kind(data, vn)?;
     if v.get_size() != ptrsize {
+        // A global read at another width than a pointer's is not an array's base
+        // in this function, and says so to every other function of the batch.
+        if kind == Kind::Global {
+            data.kuna_elemptr_note(v.get_offset(), GlobalVerdict::Refused);
+        }
         return None;
     }
-    let kind = candidate_kind(data, vn)?;
+    if kind == Kind::Global {
+        let key = (v.get_offset(), v.get_size());
+        if let Some(hit) = cache.globals.get(&key) {
+            return hit.clone();
+        }
+        let got = decide(data, vn, cur, kind, &copies, ptrsize);
+        cache.globals.insert(key, got.clone());
+        return got;
+    }
+    decide(data, vn, cur, kind, &copies, ptrsize)
+}
+
+/// Walk `vn` (for a global: every Varnode holding it) and commit or decline.
+fn decide(
+    data: &Funcdata,
+    vn: VarnodeId,
+    cur: &Rc<Datatype>,
+    kind: Kind,
+    copies: &[VarnodeId],
+    ptrsize: int4,
+) -> Option<Rc<Datatype>> {
+    let v = data.vbank().get(vn)?;
+    let arch = Rc::clone(data.get_arch());
+    let spc = Rc::clone(arch.manage().get_default_data_space()?);
+    if kind == Kind::Global && data.kuna_elemptr_blocked(v.get_offset()) {
+        return None;
+    }
+    let globals_held: Vec<u64> = copies
+        .iter()
+        .filter_map(|&c| data.vbank().get(c))
+        .filter(|c| c.get_addr().get_space().is_some_and(|s| Rc::ptr_eq(s, &spc)))
+        .map(|c| c.get_offset())
+        .collect();
+    if globals_held.iter().any(|&g| data.kuna_elemptr_blocked(g)) {
+        return None;
+    }
     let mut ev = Evidence::default();
+    ev.base_is_ptr = cur.get_metatype() == type_metatype::TYPE_PTR;
     match kind {
         Kind::Constant => walk_constant(data, vn, &mut ev),
-        _ => {
-            ev.base_is_ptr = cur.get_metatype() == type_metatype::TYPE_PTR;
-            walk(data, vn, &mut ev)
-        }
+        Kind::Global => walk(data, &same_storage(data, vn), &mut ev),
+        _ => walk(data, &[vn], &mut ev),
     }
     let elem = if ev.refused.is_none() && ev.variable > 0 { element_type(data, &mut ev) } else { None };
     if trace_on() {
@@ -253,13 +300,52 @@ pub fn element_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>) -> Op
             elem.as_ref().map(|e| e.get_name().to_string()).unwrap_or_else(|| "-".into())
         );
     }
+    let verdict = match (&elem, ev.refused) {
+        (Some(e), _) => Some(GlobalVerdict::Typed {
+            width: e.get_size(),
+            pointer: e.get_metatype() == type_metatype::TYPE_PTR,
+        }),
+        (None, Some(why)) if !matches!(why, "pointer-unnamed" | "elem-unknown" | "pointer-or-number") => {
+            Some(GlobalVerdict::Refused)
+        }
+        _ => None,
+    };
+    if let Some(verdict) = verdict {
+        if kind == Kind::Global {
+            data.kuna_elemptr_note(v.get_offset(), verdict.clone());
+        }
+        if elem.is_some() {
+            for &g in &globals_held {
+                data.kuna_elemptr_note(g, verdict.clone());
+            }
+        }
+    }
     let elem = elem?;
     arch.types()?.get_type_pointer(ptrsize, elem, spc.get_word_size()).ok()
 }
 
-/// Which kind of candidate `vn` is, or `None` when the rule does not speak
-/// about it.
-fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<Kind> {
+/// Every Varnode of the function that holds the same storage as `vn`: a
+/// global is read before a call, written back after it, and joined at a phi,
+/// and the walk has to see all of them to know what the function does with it.
+fn same_storage(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
+    let Some(v) = data.vbank().get(vn) else { return vec![vn] };
+    let (addr, size) = (v.get_addr().clone(), v.get_size());
+    let Some(spc) = addr.get_space().cloned() else { return vec![vn] };
+    let end = Address::new(spc, addr.get_offset().wrapping_add(1));
+    let mut out: Vec<VarnodeId> = data
+        .vbank()
+        .iter_loc_addr_range(&addr, &end)
+        .filter(|&id| data.vbank().get(id).is_some_and(|w| w.get_size() == size && !w.is_constant()))
+        .collect();
+    if !out.contains(&vn) {
+        out.push(vn);
+    }
+    out
+}
+
+/// Which kind of candidate `vn` is, with the copies of a call's returned value,
+/// or `None` when the rule does not speak about it.
+fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<(Kind, Vec<VarnodeId>)> {
     let v = data.vbank().get(vn)?;
     let arch = data.get_arch();
     if v.is_constant() {
@@ -272,13 +358,11 @@ fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<Kind> {
         if arch.query_container_global(&addr, 1, &Address::new_invalid()).is_some() {
             return None;
         }
-        return Some(Kind::Constant);
+        return Some((Kind::Constant, Vec::new()));
     }
     let addr = v.get_addr().clone();
-    if v.is_input() {
-        if data.get_func_proto().possible_input_param(&addr, v.get_size()) {
-            return Some(Kind::Param);
-        }
+    if v.is_input() && data.get_func_proto().possible_input_param(&addr, v.get_size()) {
+        return Some((Kind::Param, Vec::new()));
     }
     if crate::kuna_structsynth::is_call_return(data, vn) {
         let copies = copies_alone(data, vn)?;
@@ -286,7 +370,7 @@ fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<Kind> {
         if crate::kuna_structsynth::returned_beside_others(data, &copies, &rets) {
             return None;
         }
-        return Some(Kind::CallReturn);
+        return Some((Kind::CallReturn, copies));
     }
     let data_space = arch.manage().get_default_data_space()?;
     let in_data = addr.get_space().is_some_and(|s| Rc::ptr_eq(s, data_space));
@@ -294,7 +378,7 @@ fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<Kind> {
         && crate::kuna_globalref::in_ranges(&arch.elem_ptr_ranges, v.get_offset())
         && arch.query_container_global(&addr, v.get_size(), &Address::new_invalid()).is_none()
     {
-        return Some(Kind::Global);
+        return Some((Kind::Global, Vec::new()));
     }
     None
 }
@@ -374,11 +458,14 @@ fn is_null(data: &Funcdata, x: VarnodeId) -> bool {
 
 /// The breadth-first walk from a non-constant candidate.  The second component
 /// of a work item is the literal byte offset of that Varnode from the base.
-fn walk(data: &Funcdata, start: VarnodeId, ev: &mut Evidence) {
+fn walk(data: &Funcdata, starts: &[VarnodeId], ev: &mut Evidence) {
     let mut seen: HashSet<VarnodeId> = HashSet::new();
     let mut work: VecDeque<(VarnodeId, intb, usize)> = VecDeque::new();
-    seen.insert(start);
-    work.push_back((start, 0, 0));
+    for &start in starts {
+        if seen.insert(start) {
+            work.push_back((start, 0, 0));
+        }
+    }
     while let Some((vn, off, hops)) = work.pop_front() {
         if ev.refused.is_some() {
             return;
@@ -510,10 +597,12 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
                 return None;
             }
             let other_vn = o.get_in(other)?;
-            let scale = index_scale(data, other_vn, INDEX_DEPTH).or_else(|| {
-                (ev.base_is_ptr && data.vn_type_read_facing(other_vn, op).get_metatype() != type_metatype::TYPE_PTR)
-                    .then_some((1, 0))
-            });
+            // An operand already known to be a pointer is the base, whatever
+            // else the program does with it, and this value is its index.
+            if data.vn_type_read_facing(other_vn, op).get_metatype() == type_metatype::TYPE_PTR {
+                return None;
+            }
+            let scale = index_scale(data, other_vn, INDEX_DEPTH).or_else(|| ev.base_is_ptr.then_some((1, 0)));
             match scale {
                 Some((scale, k)) => {
                     indexed(data, out?, scale, off + k, ev);
@@ -871,11 +960,12 @@ fn index_scale(data: &Funcdata, x: VarnodeId, depth: usize) -> Option<(intb, int
         }
         OpCode::CPUI_INT_SEXT
         | OpCode::CPUI_INT_ZEXT
-        | OpCode::CPUI_INT_AND
         | OpCode::CPUI_INT_RIGHT
         | OpCode::CPUI_INT_SRIGHT
         | OpCode::CPUI_INT_DIV
         | OpCode::CPUI_INT_REM => Some((1, 0)),
+        // A small mask bounds an index; a wide one (`& ~0xf`) aligns a pointer.
+        OpCode::CPUI_INT_AND => konst(1).or_else(|| konst(0)).filter(|&m| (0..0x10000).contains(&m)).map(|_| (1, 0)),
         OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB if depth > 0 => {
             let (inner, k) = if let Some(k) = konst(1) {
                 (o.get_in(0)?, k)
@@ -922,6 +1012,11 @@ fn inner_stride(data: &Funcdata, x: VarnodeId) -> (intb, intb) {
                 (t, c2) => (t, c + c2),
             }
         }
+        // `(long)(i * 2)`: the widening keeps the stride.
+        OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_COPY | OpCode::CPUI_CAST => match o.get_in(0) {
+            Some(inner) => inner_stride(data, inner),
+            None => (1, 0),
+        },
         _ => (1, 0),
     }
 }
@@ -987,8 +1082,14 @@ fn used_as_number(data: &Funcdata, x: VarnodeId) -> bool {
             | OpCode::CPUI_INT_SREM
             | OpCode::CPUI_INT_LEFT
             | OpCode::CPUI_INT_RIGHT
-            | OpCode::CPUI_INT_SRIGHT
-            | OpCode::CPUI_INT_AND => true,
+            | OpCode::CPUI_INT_SRIGHT => true,
+            // A small mask reads a number's low bits; a wide one aligns a pointer.
+            OpCode::CPUI_INT_AND => (0..2).any(|i| {
+                o.get_in(i)
+                    .filter(|&c| c != x)
+                    .and_then(|c| data.vbank().get(c))
+                    .is_some_and(|c| c.is_constant() && c.get_offset() < 0x10000)
+            }),
             // Ordered against a literal other than zero: a count, not an address.
             OpCode::CPUI_INT_LESS
             | OpCode::CPUI_INT_LESSEQUAL
@@ -1114,6 +1215,110 @@ fn index_bound(data: &Funcdata, x: VarnodeId, depth: usize) -> Option<uintb> {
         OpCode::CPUI_COPY | OpCode::CPUI_CAST if depth > 0 => index_bound(data, o.get_in(0)?, depth - 1),
         _ => None,
     }
+}
+
+/// What one function's walks said about one global it holds a pointer in.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlobalVerdict {
+    /// An array of `width`-byte elements, pointers or not.
+    Typed { width: int4, pointer: bool },
+    /// Not an array this function agrees with: another width, a record, a
+    /// number.
+    Refused,
+}
+
+impl GlobalVerdict {
+    /// Two verdicts of one function: the same array, or a disagreement.
+    pub fn merge(self, other: GlobalVerdict) -> GlobalVerdict {
+        if self == other {
+            self
+        } else {
+            GlobalVerdict::Refused
+        }
+    }
+}
+
+/// (kuna `elemptr`) The batch's record of what every function said about every
+/// global, and the globals each function must not type.  A global is typed only
+/// where every function of the batch that says something about it agrees; the
+/// ones that typed a global another function disagrees about are decompiled
+/// again with it blocked.
+#[derive(Debug, Default)]
+pub struct Ledger {
+    /// A batch is running and recording.
+    pub recording: bool,
+    verdicts: BTreeMap<u64, BTreeMap<u64, GlobalVerdict>>,
+    blocked: BTreeMap<u64, Rc<BTreeSet<u64>>>,
+}
+
+/// Start a batch: forget the previous one, and record while the option is on.
+pub fn start(arch: &mut crate::architecture::Architecture) {
+    arch.kuna_elemptr = Ledger { recording: arch.elem_ptr, ..Ledger::default() };
+}
+
+/// End a batch's recording; the blocked sets stay for any later redo.
+pub fn stop(arch: &mut crate::architecture::Architecture) {
+    arch.kuna_elemptr.recording = false;
+}
+
+/// Hand a function the globals it must not type.
+pub fn seed(arch: &crate::architecture::Architecture, data: &mut Funcdata) {
+    if !arch.elem_ptr {
+        return;
+    }
+    let me = data.get_address().get_offset();
+    if let Some(b) = arch.kuna_elemptr.blocked.get(&me) {
+        data.kuna_set_elemptr_blocked(Some(Rc::clone(b)));
+    }
+}
+
+/// File what a decompiled function said about each global, replacing what an
+/// earlier decompile of the same function said.
+pub fn record(arch: &mut crate::architecture::Architecture, data: &Funcdata) {
+    if !arch.kuna_elemptr.recording {
+        return;
+    }
+    let me = data.get_address().get_offset();
+    let ledger = &mut arch.kuna_elemptr;
+    for per in ledger.verdicts.values_mut() {
+        per.remove(&me);
+    }
+    for (g, v) in data.kuna_elemptr_verdicts() {
+        ledger.verdicts.entry(g).or_default().insert(me, v);
+    }
+}
+
+/// The functions to decompile again: every one that typed a global some other
+/// function disagrees about -- refuses it, or types it at another width --
+/// with that global now blocked for it.
+pub fn disagreements(arch: &mut crate::architecture::Architecture) -> BTreeSet<u64> {
+    let ledger = &mut arch.kuna_elemptr;
+    let mut redo = BTreeSet::new();
+    for (&g, per) in &ledger.verdicts {
+        let typed: BTreeSet<&GlobalVerdict> =
+            per.values().filter(|v| matches!(v, GlobalVerdict::Typed { .. })).collect();
+        if typed.is_empty() {
+            continue;
+        }
+        let refused = per.values().any(|v| *v == GlobalVerdict::Refused);
+        if !refused && typed.len() == 1 {
+            continue;
+        }
+        for (&f, v) in per {
+            if !matches!(v, GlobalVerdict::Typed { .. }) {
+                continue;
+            }
+            let entry = ledger.blocked.entry(f).or_default();
+            if !entry.contains(&g) {
+                Rc::make_mut(entry).insert(g);
+                redo.insert(f);
+            }
+        }
+    }
+    if trace_on() {
+        eprintln!("[elemptr] batch disagreements: {} functions to redo", redo.len());
+    }
+    redo
 }
 
 fn sign_extend(v: uintb, size: int4) -> intb {

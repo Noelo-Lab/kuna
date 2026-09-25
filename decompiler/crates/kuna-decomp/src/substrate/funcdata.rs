@@ -451,6 +451,11 @@ pub struct Funcdata {
     kuna_calleevote_inputs: Option<std::rc::Rc<crate::kuna_calleevote::CallerTypes>>,
     /// (kuna `calleevote fields`) Every caller of this function is a known direct call.
     kuna_calleevote_closed: bool,
+    /// (kuna `elemptr`) The globals this function must not type as element
+    /// pointers: another function of the batch disagrees about them.
+    kuna_elemptr_blocked: Option<std::rc::Rc<std::collections::BTreeSet<u64>>>,
+    /// (kuna `elemptr`) What this function's walks said about each global.
+    kuna_elemptr_verdicts: std::cell::RefCell<std::collections::BTreeMap<u64, crate::kuna_elemptr::GlobalVerdict>>,
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
@@ -570,6 +575,8 @@ impl Funcdata {
             kuna_passthrough_variadic: false,
             kuna_calleevote_inputs: None,
             kuna_calleevote_closed: false,
+            kuna_elemptr_blocked: None,
+            kuna_elemptr_verdicts: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
         })
     }
@@ -823,6 +830,31 @@ impl Funcdata {
     /// (kuna `calleevote fields`) Are all of this function's callers known direct calls?
     pub fn kuna_calleevote_closed(&self) -> bool {
         self.kuna_calleevote_closed
+    }
+
+    /// (kuna `elemptr`) Set the globals this function must not type.
+    pub fn kuna_set_elemptr_blocked(&mut self, blocked: Option<std::rc::Rc<std::collections::BTreeSet<u64>>>) {
+        self.kuna_elemptr_blocked = blocked;
+    }
+
+    /// (kuna `elemptr`) Is the global at `addr` one this function must not type?
+    pub fn kuna_elemptr_blocked(&self, addr: u64) -> bool {
+        self.kuna_elemptr_blocked.as_ref().is_some_and(|b| b.contains(&addr))
+    }
+
+    /// (kuna `elemptr`) Fold one walk's verdict about the global at `addr` in.
+    pub fn kuna_elemptr_note(&self, addr: u64, verdict: crate::kuna_elemptr::GlobalVerdict) {
+        let mut m = self.kuna_elemptr_verdicts.borrow_mut();
+        let merged = match m.remove(&addr) {
+            Some(prev) => prev.merge(verdict),
+            None => verdict,
+        };
+        m.insert(addr, merged);
+    }
+
+    /// (kuna `elemptr`) What this function's walks said about each global.
+    pub fn kuna_elemptr_verdicts(&self) -> std::collections::BTreeMap<u64, crate::kuna_elemptr::GlobalVerdict> {
+        self.kuna_elemptr_verdicts.borrow().clone()
     }
 
     /// (kuna `protoorder types`) The types a callee's own recovery stated for
