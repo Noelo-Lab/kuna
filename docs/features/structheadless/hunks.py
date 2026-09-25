@@ -9,9 +9,11 @@ order: a skeleton delta (a control-flow keyword or a call token moved), a
 declaration-count delta, `record name only` (identical once every `struct_N`
 number and every `vN`/`aN` is spelled the same way), `fields, declared types
 and casts` (every differing line names a field or a record, is a declaration or
-a signature, or is the same line once its casts are removed), and `read` for the
-rest. Everything outside the
-last two buckets is printed for reading.
+a signature, or is the same line once its casts are removed), `globalref naming`
+(every other differing line is the same once `&dat_<addr>` is spelled back as the
+constant `0x<addr>` and casts are removed), and `read` for the rest. Everything
+outside the `record name only`, `fields, declared types and casts` and
+`globalref naming` buckets is printed for reading.
 """
 import collections, difflib, pathlib, re, sys
 
@@ -87,7 +89,11 @@ def classify(a, b):
             d = (add[t] if t < len(add) else "").strip()
             if r != d and not accounted(r, d):
                 diffs.append((r, d))
-    return ("fields, declared types and casts", []) if not diffs else ("read", diffs)
+    if not diffs:
+        return "fields, declared types and casts", []
+    if all(strip_global(r) == strip_global(d) for r, d in diffs):
+        return "globalref naming", []
+    return "read", diffs
 
 
 CAST = re.compile(r"\((?:unsigned |signed |const |struct )*[A-Za-z_]\w*\s*\**\s*\)")
@@ -106,6 +112,16 @@ def accounted(r, d):
     return strip(r) == strip(d)
 
 
+GLOBAL = re.compile(r"&dat_([0-9a-f]+)\b")
+
+
+def strip_global(t):
+    """The line with `globalref`'s `&dat_<addr>` spelled back as the constant
+    `0x<addr>` and every cast removed: the same address, named in one arm and
+    printed as a cast constant in the other."""
+    return re.sub(r"\s+", "", CAST.sub("", GLOBAL.sub(r"0x\1", t)))
+
+
 def main():
     off, on = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
     rows, total, reads = [], collections.Counter(), []
@@ -118,11 +134,12 @@ def main():
                 continue
             c, diffs = classify(a.get(k, []), b.get(k, []))
             per[c] += 1
-            if c not in ("record name only", "fields, declared types and casts"):
+            if c not in ("record name only", "fields, declared types and casts", "globalref naming"):
                 reads.append((str(rel), k, c, diffs[:3]))
         rows.append((str(rel), len(set(a) | set(b)), sum(per.values()), per))
         total.update(per)
-    cols = ["record name only", "fields, declared types and casts", "skeleton delta", "declaration-count delta", "read"]
+    cols = ["record name only", "fields, declared types and casts", "globalref naming", "skeleton delta",
+            "declaration-count delta", "read"]
     print("| binary | functions | changed | " + " | ".join(cols) + " |")
     print("|---|---:|---:|" + "---:|" * len(cols))
     for name, n, ch, per in rows:
