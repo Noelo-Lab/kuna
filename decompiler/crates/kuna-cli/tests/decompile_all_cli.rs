@@ -4205,7 +4205,7 @@ int main(void) {
     let changed: [(&str, &str); 6] = [
         ("memchr(a0,(int)a1,(unsigned long)a2);", "memchr(a0,a1,a2);"),
         ("strchr(a0,(int)a1);", "strchr(a0,a1);"),
-        ("v1 = (long)*(char *)(a0 + v2);", "v1 = *(char *)(a0 + v2);"),
+        ("v1 = (long)a0[v2];", "v1 = a0[v2];"),
         (
             "(int)(unsigned int)(unsigned char)to_uchar((int)a1)",
             "(int)(unsigned char)to_uchar((int)a1)",
@@ -4632,10 +4632,7 @@ int main(void) {
             FUNCS,
             MAIN,
             WANT,
-            &[(
-                "v1 = (unsigned long)*(unsigned int *)(a0 + (long)a2 * 4);",
-                "v1 = *(unsigned int *)(a0 + (long)a2 * 4);",
-            )],
+            &[("v1 = (unsigned long)a0[a2];", "v1 = a0[a2];")],
             OLD,
         ),
     ];
@@ -5492,7 +5489,7 @@ fn a_load_is_not_printed_after_a_store_into_its_bytes() {
         ("indexed", "*(unsigned long *)(a0 + a1 * 4);", "*(unsigned int *)(a0 + 4 + a1 * 4) = "),
         ("after", "((char *)a0)[0xb] = ", "return *(unsigned int *)((long)a0 + 7);"),
         ("before", "((char *)a0)[6] = ", "return *(unsigned int *)((long)a0 + 7);"),
-        ("next", "*(unsigned int *)(a0 + 4 + a1 * 4) = ", "return *(unsigned int *)(a0 + a1 * 4);"),
+        ("next", "a0[a1 + 1] = ", "return a0[a1];"),
     ];
     for (name, first, second) in ordered {
         let b = body(name);
