@@ -169,13 +169,14 @@ export function renderFrame(frame, { selectedSym = null } = {}) {
     const named = s.kind === 'var' || s.kind === 'arg';
     const cls = [named ? 'var' : s.kind, s.dim ? 'dim' : '', s.array ? 'arr' : '',
       selectedSym && s.name === selectedSym ? 'hl-sym' : ''].filter(Boolean).join(' ');
+    const teach = !!SLOT_NOTE[s.kind];
     const note = SLOT_NOTE[s.kind] || (s.dim ? 'only in the debug info' : '');
     const name = s.kind === 'pad' ? 'unused space' : s.name;
     rows += `<tr class="${cls}"${named ? ` data-sym="${escapeHtml(s.name)}"` : ''} data-slot="${s.offset}">` +
       `<td class="off" title="${escapeHtml(entryOffset(s.offset))}">${escapeHtml(belowText(s.offset))}</td>` +
       `<td class="slot"><div class="sl"><span class="sn">${escapeHtml(name)}</span>` +
       `${named && s.type ? `<span class="st">${escapeHtml(s.type)}</span>` : ''}` +
-      `${note ? `<span class="sa" title="${escapeHtml(note)}">${escapeHtml(note)}</span>` : ''}` +
+      `${note ? `<span class="sa${teach ? ' d2-teach' : ''}" title="${escapeHtml(note)}">${escapeHtml(note)}</span>` : ''}` +
       `<span class="sz">${s.size} byte${s.size === 1 ? '' : 's'}</span></div></td></tr>`;
   }
   const notes = callouts(frame).map((n) => `<div class="d2callout">${escapeHtml(n)}</div>`).join('');

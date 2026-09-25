@@ -189,6 +189,28 @@ try {
     skipped.push('byte patching (the built wasm has no inspect)');
   }
 
+  const shown = (sel) => page.call((s) => { const el = document.querySelector(s); return !!el && el.getClientRects().length > 0; }, sel);
+  assert.ok(await page.call(() => document.getElementById('hintsbox').checked), '"Show hints" starts on');
+  assert.ok(await shown('#hint'), 'the status bar hint shows');
+  await page.click('#hintsbox');
+  assert.equal(await page.call(() => document.documentElement.dataset.hints), 'off', 'unticking turns hints off');
+  assert.ok(!(await shown('#hint')), 'the status bar hint is hidden');
+  assert.equal(await page.call(() => JSON.parse(localStorage.getItem('kuna.d2.prefs')).hints), false, 'and the choice is kept');
+  await page.key('4');
+  await sleep(200);
+  if (await count('#stackframe .d2frame') > 0) {
+    assert.ok(!(await shown('.d2-stacklede')), 'the stack view drops its explanation');
+    assert.ok(!(await shown('#stackframe tr.ret .sa')), 'and the slot notes that teach');
+    assert.ok(await shown('#stackframe tr.ret .sz'), 'but keeps the facts');
+  }
+  await page.click('#hintsbox');
+  assert.equal(await page.call(() => document.documentElement.dataset.hints), 'on', 'ticking turns them back on');
+  assert.ok(await shown('#hint'), 'the status bar hint is back');
+  if (await count('#stackframe .d2frame') > 0) assert.ok(await shown('.d2-stacklede'), 'so is the stack explanation');
+  await page.key('3');
+  await sleep(150);
+  await noExceptions('"Show hints" hides and restores the teaching notes');
+
   for (const width of [1024, 820]) {
     await page.viewport(width, 860);
     await sleep(250);

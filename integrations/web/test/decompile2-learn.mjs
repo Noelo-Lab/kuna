@@ -89,6 +89,8 @@ assert.equal(mf.reserve, 32);
 assert.equal(mf.redZone, false);
 assert.ok(mf.slots.find((s) => s.name === 'x').dim, 'DWARF-only locals are dimmed');
 assert.ok(!mf.slots.find((s) => s.name === 'argc').dim);
+assert.match(renderFrame(mf), /<span class="sn">x<\/span><span class="st">int<\/span><span class="sa" title="only in the debug info">/,
+  'a debug-info note is a fact, so "Show hints" does not hide it');
 const arr = frameModel({
   ...main, code: 'void f(void)\n{\n  char buf[16];\n  gets(buf);\n}',
   variables: [{ name: 'buf', type: 'char[16]', kind: 'stack', stack_offset: -24, size: 16 }],
@@ -98,8 +100,8 @@ assert.match(note, /buf \(char\[16\]\) ends 8 bytes below the return address/);
 assert.match(note, /saved RBP, then return address/);
 assert.match(renderFrame(arr), /<tr class="var arr" data-sym="buf" data-slot="-24">/);
 assert.match(renderFrame(f), /<td class="off" title="entry−0x14">20<\/td>/, 'offsets read as bytes below the return address; the raw one is the tooltip');
-assert.match(renderFrame(f), /<div class="sl"><span class="sn">return address<\/span><span class="sa" title="put there by the CALL that ran this function">put there by the CALL that ran this function<\/span><span class="sz">8 bytes<\/span><\/div>/,
-  'each slot is one row: name, description (full text in its title), size last');
+assert.match(renderFrame(f), /<div class="sl"><span class="sn">return address<\/span><span class="sa d2-teach" title="put there by the CALL that ran this function">put there by the CALL that ran this function<\/span><span class="sz">8 bytes<\/span><\/div>/,
+  'each slot is one row: name, description (full text in its title, and a teaching note "Show hints" can hide), size last');
 assert.match(renderFrame(f), /^<p class="d2-stacklede">Higher addresses are at the top\. Each box is one thing the function keeps on the stack\.<\/p>/);
 assert.deepEqual([belowText(-28), belowText(0), belowText(16)], ['28', '0', '16 above']);
 assert.equal(frameModel(sumTo, { family: 'aarch64' }).supported, false);

@@ -43,7 +43,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   status: $('status'), cancel: $('cancelbtn'), dl: $('dlbtn'), patch: $('patchbtn'), patchWhy: $('patchwhy'),
   mode: $('mode'), lang: $('lang'), example: $('examplebtn'), pick: $('pick'), file: $('file'),
-  help: $('helpbtn'), keys: $('keysbtn'), more: $('morebtn'), moreMenu: $('moremenu'), theme: $('themebtn'),
+  help: $('helpbtn'), keys: $('keysbtn'), more: $('morebtn'), moreMenu: $('moremenu'), theme: $('themebtn'), hintsBox: $('hintsbox'),
   crumb: $('crumb'), crumbName: $('crumbname'), crumbCount: $('crumbcount'), fnsBtn: $('fnsbtn'),
   progress: $('progress'), work: $('work'), codearea: $('codearea'), tip: $('tip'), tipBtn: $('tipbtn'),
   narrow: $('narrownote'), list: $('fnlist'), filter: $('fnfilter'), none: $('fnnone'),
@@ -1063,7 +1063,7 @@ function lineCard(n, varTok) {
     if (insns.length) {
       html += renderInsnRows(insns, { startHex: data.address_hex, prefs: state.prefs, max: MAX_CARD_ROWS, inferred });
       if (insns.length > MAX_CARD_ROWS) html += `<div class="cm">and ${insns.length - MAX_CARD_ROWS} more</div>`;
-      html += '<div class="cf">Click the line to keep it highlighted</div>';
+      html += '<div class="cf d2-teach">Click the line to keep it highlighted</div>';
     } else {
       html += `<div class="cm">at ${escapeHtml(exact.map(bare).join(', '))}</div>`;
     }
@@ -1115,9 +1115,9 @@ function insnCard(addrHex) {
     `<div class="cm">${insn.size} byte${insn.size === 1 ? '' : 's'} at ${escapeHtml(bare(addrHex))}, ${escapeHtml(intoWords(addrHex))}` +
     `${state.prefs.asmBytes ? ` · ${escapeHtml(spacedBytes(insn.bytes))}` : ''}</div>`;
   const note = explain(insn.mnemonic, arch?.family || 'x86');
-  if (note) html += `<div class="cx">${escapeHtml(note[0].toUpperCase() + note.slice(1))}.</div>`;
+  if (note) html += `<div class="cx d2-teach">${escapeHtml(note[0].toUpperCase() + note.slice(1))}.</div>`;
   const idiom = hints.get(addrHex);
-  if (idiom) html += `<div class="cx cm">${escapeHtml(idiom[0].toUpperCase() + idiom.slice(1))}.</div>`;
+  if (idiom) html += `<div class="cx cm d2-teach">${escapeHtml(idiom[0].toUpperCase() + idiom.slice(1))}.</div>`;
   const inferredText = lines.length ? null : inferredNote(addrHex);
   if (lines.length) html += `<div class="cx">From line ${lines.join(', ')}: <code>${escapeHtml((codeLines[lines[0] - 1] || '').trim())}</code></div>`;
   else if (inferredText) html += `<div class="cx">${escapeHtml(inferredText)}</div>`;
@@ -1168,7 +1168,7 @@ function varSelectedCard(name) {
     (v.where ? `<dt>Lives in</dt><dd title="${escapeHtml(v.raw)}">${escapeHtml(v.where)}</dd>` : '') +
     (lines.length ? `<dt>Used on lines</dt><dd class="x-lines">${lines.map(lineLink).join(', ')}</dd>` : '') +
     '</dl>';
-  if (INVENTED.test(name)) html += `<p class="x-note">${escapeHtml(name)} is a name the decompiler made up; rename it to what it means.</p>`;
+  if (INVENTED.test(name)) html += `<p class="x-note d2-teach">${escapeHtml(name)} is a name the decompiler made up; rename it to what it means.</p>`;
   html += '<div class="x-acts"><button class="d2-btn small" data-act="sel-rename">Rename</button>' +
     `<button class="d2-btn small" data-act="sel-retype"${canRetype ? '' : ' disabled title="Changing a type needs the C view: set Show code as to C"'}>Change type</button></div></div>`;
   return html;
@@ -1185,8 +1185,8 @@ function insnSelectedCard(addrHex) {
   const sp = spellInsn(insn, state.prefs.asmSpelling);
   let html = `<div class="x-card"><div class="x-code" title="${escapeHtml(insn.text)}">${escapeHtml(sp.text)}</div>` +
     `<p class="x-note" title="${escapeHtml(formatAddr(addrHex, data.address_hex, 'both'))}">${insn.size} byte${insn.size === 1 ? '' : 's'} at ${escapeHtml(bare(addrHex))}, ${escapeHtml(intoWords(addrHex))}</p>`;
-  if (note) html += `<p class="x-note" style="color:var(--text)"><code>${escapeHtml(sp.mnemonic)}</code>: ${escapeHtml(note)}.</p>`;
-  if (idiom) html += `<p class="x-note">${escapeHtml(idiom[0].toUpperCase() + idiom.slice(1))}.</p>`;
+  if (note) html += `<p class="x-note d2-teach" style="color:var(--text)"><code>${escapeHtml(sp.mnemonic)}</code>: ${escapeHtml(note)}.</p>`;
+  if (idiom) html += `<p class="x-note d2-teach">${escapeHtml(idiom[0].toUpperCase() + idiom.slice(1))}.</p>`;
   if (lines.length) html += `<p class="x-note">From line ${lines.map(lineLink).join(', ')}: <code>${escapeHtml((codeLines[lines[0] - 1] || '').trim())}</code></p>`;
   else if (inferredText) html += `<p class="x-note">${escapeHtml(inferredText)}</p>`;
   html += `<div class="x-acts">${patchButtons(insn)}<button class="d2-btn small" data-act="sel-comment">Add a note</button></div></div>`;
@@ -1224,7 +1224,7 @@ function slotSelectedCard(off) {
     html += `<p class="x-note">${escapeHtml(pos[0].toUpperCase() + pos.slice(1))}.</p>`;
   }
   const fp = state.current.frame?.fp;
-  if (fp !== null && fp !== undefined) html += `<p class="x-note">The frame pointer RBP points ${-fp} bytes below the return address, so <code>[RBP - d]</code> is d bytes further down.</p>`;
+  if (fp !== null && fp !== undefined) html += `<p class="x-note d2-teach">The frame pointer RBP points ${-fp} bytes below the return address, so <code>[RBP - d]</code> is d bytes further down.</p>`;
   return html + '</div>';
 }
 
@@ -1563,7 +1563,7 @@ els.viewMenu.addEventListener('change', (e) => {
 });
 els.viewMenu.addEventListener('click', (e) => {
   if (!e.target.closest('[data-act=reset]')) return;
-  updatePrefs({ ...DEFAULT_PREFS, view: state.view, theme: state.prefs.theme, tipSeen: state.prefs.tipSeen, rail: state.prefs.rail });
+  updatePrefs({ ...DEFAULT_PREFS, view: state.view, theme: state.prefs.theme, hints: state.prefs.hints, tipSeen: state.prefs.tipSeen, rail: state.prefs.rail });
   applyPaneClasses();
   if (state.current) showFunction(state.current.fn, state.current.data, { keep: true });
   renderViewMenu();
@@ -1606,6 +1606,17 @@ els.theme.addEventListener('click', () => {
   applyTheme();
 });
 applyTheme();
+
+/** "Show hints": tips, key hints and the notes that teach; the facts stay. */
+function applyHints() {
+  document.documentElement.dataset.hints = state.prefs.hints ? 'on' : 'off';
+  els.hintsBox.checked = state.prefs.hints;
+}
+els.hintsBox.addEventListener('change', () => {
+  updatePrefs({ hints: els.hintsBox.checked });
+  applyHints();
+});
+applyHints();
 
 const mediumView = window.matchMedia('(max-width: 1279px)');
 

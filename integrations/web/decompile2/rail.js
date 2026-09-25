@@ -46,7 +46,7 @@ function changesPart(model) {
       '<button class="d2-link" data-act="discard-restored">Discard them</button></div>' : '';
   const unsupported = model.assertSupported === false
     ? '<p class="x-empty">This version of the decompiler cannot apply changes; they are kept and can be exported.</p>' : '';
-  const empty = items ? '' : '<p class="x-empty">Nothing yet. Double-click a name to rename it.</p>';
+  const empty = items ? '' : '<p class="x-empty">Nothing yet.<span class="d2-teach"> Double-click a name to rename it.</span></p>';
   const n = model.edits.length;
   return `<section class="x-sec" id="railchanges"><h3>Your changes${n ? ` <span class="x-count">(${n})</span>` : ''}</h3>` +
     banner + unsupported + `<ul class="d2edits" id="sesslist">${items}</ul>` + empty +
