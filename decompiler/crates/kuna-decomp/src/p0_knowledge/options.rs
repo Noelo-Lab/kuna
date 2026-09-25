@@ -509,6 +509,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // slots.  Default-ON; off restores the `void(void)` form exactly.
     "entrymainproto",
     "machomain",
+    // (kuna) PE user-entry naming: the function the in-image CRT startup calls is
+    // named `main`/`wmain`/`WinMain`/`wWinMain`.  Default-ON; off restores the
+    // `sub_<addr>` inventory exactly.
+    "pemain",
     // (kuna) non-PIE ARM crt1 `_start`->`main` recovery: entry oracle 4's ARM path
     // identifies the GOT slot crt1 loads `main` from by the `R_ARM_RELATIVE` that
     // relocates it, and a non-PIE executable carries no such relocation, so `main`

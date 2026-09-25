@@ -143,6 +143,13 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // consults the `entry_names` overlay this pass writes and installs the
         // function the prototype is parked on.
         Box::new(crate::entry::kuna_machomain::MachoMainPass),
+        // (kuna `pemain`) S1 PE user-entry naming: the function the in-image C
+        // runtime startup calls (MSVC `invoke_main`, MinGW `__tmainCRTStartup`) is
+        // named `main`/`wmain`/`WinMain`/`wWinMain`, so a stripped PE stops
+        // reporting its program entry as one more `sub_<addr>`. Registered always
+        // (the pass self-gates on a PE whose recovered entry is unnamed), COMMIT
+        // gated by `--option pemain on|off` via `engine.rs::analysis_pass_enabled`.
+        Box::new(crate::entry::kuna_pemain::PeMainPass),
         // (kuna `armlibcmain`) S1 non-PIE ARM `_start`->`main`: the arm of entry
         // oracle 4 that reads the value crt1 hands `__libc_start_main` out of the
         // image (a literal-pool word, or a statically filled `.got` slot) instead

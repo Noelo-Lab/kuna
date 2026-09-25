@@ -3176,8 +3176,10 @@ typed `int` / `char **`, which would assert the C library's declaration of `main
 and the pass has no evidence for that (the same shape carries `wmain`'s
 `wchar_t **`, and a hand-rolled entry point need not be `main` at all). The address
 rides out with the prototype as a discovered entry, because the prototype is parked
-by NAME and on an obfuscated image whose prologue no oracle recognises the callee is
-not a registered function, so the park would be a silent no-op.
+by ENTRY ADDRESS (`prototypes_at`) and on an obfuscated image whose prologue no
+oracle recognises the callee is not a registered function, so the park would be a
+silent no-op. Keying it by address rather than by the `sub_<addr>` name minted at
+load is what lets it compose with `pemain`, which renames the same callee `main`.
 
 One consequence is worth naming, because it is the price of the recovery rather
 than a defect in it. Declaring `argc` makes the first ABI argument register live at
@@ -3207,6 +3209,49 @@ accessor test alone matches inside it and the following call is `_set_new_mode`,
 `main`. Seven crackmes images have that shape. The unnamed-callee guard happens to
 reject all seven — every candidate the shim produces is a named import — but that is
 luck rather than reasoning, so the shim's own accessors are named and bailed on.
+
+(kuna) **The PE user entry** (`pemain`, default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pemain.rs`). A PE's
+`AddressOfEntryPoint` is the C runtime's startup, not the program, so on a stripped
+Windows image the function the startup eventually calls is one more `sub_<addr>`.
+The runtime is inside the image, and each toolchain calls the user entry from a
+site the pass recognises by bytes, in this order:
+
+1. MSVC with the dynamic UCRT, console: the accessor cluster `entrymainproto`
+   already scans (`__p___argc`/`__p___argv`/`_get_initial_*_environment`
+   immediately before the call). The wide accessors name the callee `wmain`,
+   otherwise `main`.
+2. MSVC with the dynamic UCRT, GUI: a call to the imported
+   `_get_narrow_winmain_command_line` (`_get_wide_winmain_command_line`), then the
+   first direct call into the image within 96 bytes whose argument setup references
+   the image base, which is `invoke_main` passing `&__ImageBase` as `hInstance`.
+   That callee is `WinMain` (`wWinMain`).
+3. MinGW: `__tmainCRTStartup` stores `envp` into msvcrt's `__initenv`
+   (`__winitenv`) data import immediately before `main(argc, argv, envp)`. The
+   store reaches the IAT slot directly or through a `.refptr` word holding the
+   slot's address, so both are markers; the next direct call into the image within
+   96 bytes is `main` (`wmain`). A GUI MinGW image reaches `WinMain` through
+   libmingw32's own `main`, so the name is still the honest one.
+4. MSVC with the static CRT, x86-64 only: four consecutive direct calls within 64
+   bytes, the second's result dereferenced as a qword, the third's as a dword, all
+   four targets local and distinct. That is `invoke_main` with the accessors linked
+   in. No name vouches for it, so it is tried only when shapes 1-3 found nothing and
+   used only when exactly one site in the image has it.
+
+Shapes 2 and 3 also refuse when two different callees match. An incremental-link
+`E9` thunk at the recovered target is followed to the body, which is how a debug
+static-CRT image resolves. The name is applied through the `entry_names` overlay
+(§1.6) together with the address as an entry. The pass refuses anything that is
+not a PE, a callee outside every executable section or at an import thunk or slot,
+a callee that already carries a function symbol (a COFF symbol or an export names
+it better), and an image that already defines a symbol spelled with the
+chosen name. `kuna functions --summary` reports the result as its `main` field.
+
+On the three Flare-On 12 PE samples it names `main` at the address the
+challenge's own symbols give: `hopeanddreams.exe` (dynamic UCRT, shape 1),
+`FlareAuthenticator.exe` (shape 1) and `ntfsm.exe` (debug static CRT with
+incremental linking, shape 4 through the ILT thunk). Neither parity corpus can
+observe it, because both are symbol-less bytechunks with no PE container.
 
 (kuna) **The Mach-O `LC_MAIN` entry** (`machomain`, default-on, DIV-111;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_machomain.rs

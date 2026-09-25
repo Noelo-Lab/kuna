@@ -92,6 +92,7 @@ pub mod kuna_entrymainproto;
 pub mod kuna_armlibcmain;
 pub mod kuna_elfmain;
 pub mod kuna_machomain;
+pub mod kuna_pemain;
 pub mod kuna_cortexmvectors;
 pub mod kuna_fdeinterior;
 pub mod kuna_pdatainterior;

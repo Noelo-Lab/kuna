@@ -1180,6 +1180,7 @@ without emitting a function list at all, let alone pseudocode.
 ```json
 {"binary":"…","count":1150,"total":1150,"error":null,
  "summary":{"entry":{"name","address","address_hex"},
+            "main":{"name","address","address_hex"},
             "reachable_from_entry":334,"no_callers":714,"code_bytes":171971,
             "size_buckets":[{"bucket":"0","min_size":0,"max_size":0,"count":114}, …],
             "largest":[{name,address,address_hex,aliases,size}, …]}}
@@ -1190,6 +1191,12 @@ without emitting a function list at all, let alone pseudocode.
   when the format declares none. Always a virtual address: a Mach-O `LC_MAIN`
   states its entry as a `__TEXT`-relative file offset, and it is rebased here
   (`0x1000005b0`, not `0x5b0`).
+- `main` is the program's own entry function: the first of `main`, `wmain`,
+  `WinMain`, `wWinMain` the inventory names (as a name or an alias), or `null`.
+  On a stripped PE that name comes from `--option pemain` (default on), which
+  follows the in-image CRT startup to the function it calls, so `entry` and
+  `main` together answer both "where does the image start" and "where does the
+  program start". The text form prints it as `main\t0x<addr>\t<name>`.
 - `reachable_from_entry` counts *discovered* functions the entry point reaches,
   and is `null` when there is no entry point or nothing was decoded at it (a
   packed image); `no_callers` counts *selected* functions that no CALL site

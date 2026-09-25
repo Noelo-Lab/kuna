@@ -222,6 +222,37 @@ fn reachable_from_walks_the_call_graph() {
     assert!(err.contains("no function named"), "{err}");
 }
 
+/// `--summary` names the program's own entry function beside the image entry:
+/// on a stripped MinGW PE the entry is the CRT startup and `main` is the function
+/// `pemain` recovers from `__tmainCRTStartup`; `--option pemain off` leaves the
+/// inventory without one, and the field is `null`.
+#[test]
+fn summary_reports_the_pe_user_entry() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/pe_imports_stripped.exe")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let (out, err, code) = run_kuna(&["functions", &bin, "--summary", "--json"]);
+    if no_specs(&err, code) {
+        eprintln!("skipping: no .sla under {} ({err})", specs());
+        return;
+    }
+    assert_eq!(code, 0, "{err}");
+    let main = out.split("\"main\":").nth(1).expect("a main field");
+    assert!(main.contains("\"name\": \"main\""), "{out}");
+    assert!(main.contains("\"address_hex\": \"0x140001592\""), "{out}");
+
+    let (off, err, code) =
+        run_kuna(&["functions", &bin, "--summary", "--json", "--option", "pemain", "off"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(off.contains("\"main\": null"), "{off}");
+
+    let (text, _, code) = run_kuna(&["functions", &bin, "--summary"]);
+    assert_eq!(code, 0);
+    assert!(text.contains("main\t0x140001592\tmain"), "{text}");
+}
+
 /// `--summary` answers "where do I start" in a few hundred bytes: the entry
 /// point, its reach, the unreferenced count, the size histogram, and the largest
 /// functions — without emitting an inventory at all.
@@ -262,7 +293,7 @@ fn summary_orients_without_emitting_the_inventory() {
     let (capped, _, code) =
         run_kuna(&["functions", &fauxware(), "--summary", "--json", "--limit", "2"]);
     assert_eq!(code, 0);
-    assert_eq!(capped.matches("\"address_hex\":").count(), 3, "entry + 2 largest: {capped}");
+    assert_eq!(capped.matches("\"address_hex\":").count(), 4, "entry + main + 2 largest: {capped}");
 
     let (text, _, code) = run_kuna(&["functions", &fauxware(), "--summary"]);
     assert_eq!(code, 0);

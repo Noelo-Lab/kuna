@@ -1433,6 +1433,13 @@ pub struct Architecture {
     /// entry already carries a function symbol. Off restores the `sub_<addr>` /
     /// `void(void)` form exactly.
     pub analysis_machomain: bool,
+    /// (kuna) Name the function a PE's in-image C runtime startup calls `main`,
+    /// `wmain`, `WinMain` or `wWinMain` (`pemain`); default **on**. Recognizes
+    /// the MSVC dynamic-UCRT console and GUI `invoke_main` call sites, MinGW's
+    /// `__initenv = envp; main(...)`, and (x86-64, unique match only) the MSVC
+    /// static-CRT `invoke_main` shape. Skipped whenever the callee already carries
+    /// a function symbol. Off restores the `sub_<addr>` inventory exactly.
+    pub analysis_pemain: bool,
     /// (kuna) Recover `main` from the crt1 `_start` of a non-PIE ARM32 ELF
     /// (`armlibcmain`); default **on**. Entry oracle 4 reads the
     /// `_start` → `__libc_start_main(main, …)` idiom on x86-64, AArch64, RISC-V
@@ -2525,6 +2532,7 @@ impl Architecture {
             analysis_picbase: false,
             analysis_entrymainproto: false,
             analysis_machomain: false,
+            analysis_pemain: false,
             analysis_armlibcmain: false,
             analysis_elfmain: false,
             analysis_strings: false,
@@ -2841,6 +2849,8 @@ impl Architecture {
         self.analysis_entrymainproto = true;
         // (kuna) Mach-O `LC_MAIN` entry naming + prototype -- default-ON (DIV-111).
         self.analysis_machomain = true;
+        // (kuna) PE user-entry naming -- default-ON.
+        self.analysis_pemain = true;
         // (kuna) non-PIE ARM crt1 `_start`->`main` recovery -- default-ON (DIV-132).
         self.analysis_armlibcmain = true;
         // (kuna) ELF libc-start `main` naming + prototype -- default-ON.
@@ -3578,6 +3588,9 @@ impl Architecture {
             }
             "machomain" => {
                 on_off!(analysis_machomain, "Mach-O LC_MAIN entry naming + prototype")
+            }
+            "pemain" => {
+                on_off!(analysis_pemain, "PE CRT user-entry naming")
             }
             "armlibcmain" => {
                 on_off!(analysis_armlibcmain, "non-PIE ARM crt1 _start->main recovery")

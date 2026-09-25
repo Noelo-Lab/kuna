@@ -40,9 +40,10 @@
 //! stay at the level of what was observed, which is also how every other kuna
 //! prototype recovered from code reads.
 //!
-//! The prototype is parked by NAME on the callee, through the ordinary
-//! `AnalysisOutput::prototypes` seam the libc-signature pass uses, so the commit
-//! boundary applies it exactly like any other recovered signature.
+//! The prototype is parked by ENTRY ADDRESS on the callee, through the
+//! `AnalysisOutput::prototypes_at` seam, so the commit boundary applies it like
+//! any other recovered signature whatever the callee ends up being called
+//! (`pemain` names it `main`; `--option namestyle` respells `sub_<addr>`).
 //!
 //! ## Guards
 //!
@@ -79,14 +80,6 @@
 //! on 37 images, the guards reject 7, and of the 30 that fire 4 gain one such
 //! argument.
 //!
-//! One interaction is worth stating, because it is silent. The prototype is
-//! parked by NAME, and the name is minted here, at LOAD, from the naming policy
-//! in force then (`sub_<addr>`). `--option namestyle` is applied AFTER the load,
-//! so under a non-default naming policy the commit registers the callee under a
-//! different spelling and the park finds nothing. That is a no-op, never a wrong
-//! prototype — the alternative, minting a `sub_<addr>` name that contradicts the
-//! policy the user asked for, is worse.
-//!
 //! Default-**on**; the facts are computed at load and COMMITTED only when the
 //! gate is on, so `--option entrymainproto off` restores the `void(void)` form
 //! exactly.
@@ -119,7 +112,7 @@ impl AnalysisPass for EntryMainProtoPass {
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
         if let Some((addr, pieces)) = entry_main_prototype(ctx) {
-            // The prototype is parked BY NAME, so the entry function has to be a
+            // The prototype is parked BY ADDRESS, so the entry function has to be a
             // registered function for it to land. It usually already is (it is a
             // direct CALL target from code the walk reaches), but on an obfuscated
             // image whose prologue no oracle recognizes it is not, and the park
@@ -127,7 +120,7 @@ impl AnalysisPass for EntryMainProtoPass {
             // evidence the prototype rests on -- the C runtime calls it -- so the
             // two travel together.
             out.entries.push(addr);
-            out.prototypes.push(pieces);
+            out.prototypes_at.push((addr, pieces));
         }
         out
     }
@@ -166,7 +159,7 @@ const REJECTORS: &[&str] = &["__p__environ", "__p__wenviron", "__getmainargs", "
 
 /// Which `main` parameter an accessor call supplies.
 #[derive(Copy, Clone, PartialEq, Eq)]
-enum Slot {
+pub(super) enum Slot {
     Argc,
     Argv,
     Envp,
@@ -189,11 +182,7 @@ fn entry_main_prototype(ctx: &AnalysisCtx) -> Option<(u64, PrototypePieces)> {
         return None;
     }
     let execs = executable_sections(ctx.file);
-    let (accessors, rejectors) = accessor_addrs(ctx);
-    if accessors.is_empty() {
-        return None;
-    }
-    let (main, slots) = find_main_call(&execs, &accessors, &rejectors)?;
+    let (main, slots) = ucrt_main_call(ctx.file, ctx.bytes, &execs)?;
     if !in_executable_section(&execs, main) {
         return None;
     }
@@ -204,13 +193,28 @@ fn entry_main_prototype(ctx: &AnalysisCtx) -> Option<(u64, PrototypePieces)> {
     Some((main, prototype_for(ctx.arch, main, &slots)?))
 }
 
+/// The callee of the UCRT startup's accessor-cluster call and the slots the
+/// cluster established, or `None` when the image imports no accessor or no
+/// cluster is followed by a call into the image. Shared with `pemain`.
+pub(super) fn ucrt_main_call(
+    file: &object::File,
+    bytes: &[u8],
+    execs: &[(u64, u64, Vec<u8>)],
+) -> Option<(u64, Vec<Slot>)> {
+    let (accessors, rejectors) = accessor_addrs(file, bytes);
+    if accessors.is_empty() {
+        return None;
+    }
+    find_main_call(execs, &accessors, &rejectors)
+}
+
 /// `(vma, slot)` for every CRT argument accessor the image imports, and the bare
 /// VMAs of the [`REJECTORS`], at every address a direct CALL can reach either by
 /// (the import thunk and the IAT slot both carry the name).
-fn accessor_addrs(ctx: &AnalysisCtx) -> (Vec<(u64, Slot)>, Vec<u64>) {
+fn accessor_addrs(file: &object::File, bytes: &[u8]) -> (Vec<(u64, Slot)>, Vec<u64>) {
     let mut out: Vec<(u64, Slot)> = Vec::new();
     let mut reject: Vec<u64> = Vec::new();
-    for sym in crate::loader::format::resolve_imports(ctx.file, ctx.bytes) {
+    for sym in crate::loader::format::resolve_imports(file, bytes) {
         let name = String::from_utf8_lossy(&sym.name).into_owned();
         if let Some((_, slot)) = ACCESSORS.iter().find(|(n, _)| *n == name) {
             out.push((sym.addr, *slot));

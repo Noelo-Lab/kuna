@@ -12,7 +12,7 @@
 //! - **PE** (`pe_imports_stripped.exe`, fully stripped) — the entry point and
 //!   the **`.pdata`** RUNTIME_FUNCTION table (97 records — the `.eh_frame`
 //!   analog) recover the functions. `main`@`0x140001592` is `.pdata`-covered, so
-//!   `sub_140001592` registers and decompiles **without `--addr`**.
+//!   `main` (0x140001592) registers and decompiles **without `--addr`**.
 //!
 //! - **Mach-O** (`macho_func_starts_stripped`, `helper` stripped) — the
 //!   **`LC_FUNCTION_STARTS`** delta table recovers `helper`@`0x100000590`, whose
@@ -21,7 +21,7 @@
 //!
 //! ```text
 //!   before (bare load):  lookup_symbol("sub_140001592") -> None  (no --addr, no function)
-//!   after  (PR-12/13):   lookup_symbol("sub_140001592") -> Some  (decompiles by name)
+//!   after  (PR-12/13):   lookup_symbol("main") -> Some  (decompiles by name; `pemain`)
 //! ```
 //!
 //! ## Multi-format is the default (ELF stays byte-identical)
@@ -100,17 +100,18 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
 }
 
 /// PR-12: a **stripped PE** finds `main` via the entry + `.pdata` oracles, so
-/// `sub_140001592` resolves and decompiles with NO supplied address.
+/// it resolves and decompiles with NO supplied address. `pemain` names it `main`
+/// (the CRT startup's `__initenv` store precedes the call).
 #[test]
 fn pe_stripped_discovers_main_without_addr() {
     let Some(prog) = boot_committed("pe_imports_stripped.exe") else { return };
 
-    // `main`@0x140001592 is `.pdata`-covered; the angr-style name is `sub_140001592`.
+    // `main`@0x140001592 is `.pdata`-covered and named by `pemain`.
     // (No `.symtab` symbol exists in this stripped PE — discovery is the ONLY source.)
     assert!(
-        prog.lookup_symbol("sub_140001592").is_some(),
-        "stripped PE: discovered `main` (sub_140001592) not registered — \
-         `.pdata` entry discovery failed"
+        prog.lookup_symbol("main").is_some(),
+        "stripped PE: discovered `main` (0x140001592) not registered — \
+         `.pdata` entry discovery or `pemain` failed"
     );
     // The entry point (oracle 1) is discovered too.
     assert!(
@@ -118,15 +119,15 @@ fn pe_stripped_discovers_main_without_addr() {
         "stripped PE: discovered entry (sub_1400014f0) not registered"
     );
 
-    let out = decompile_func(prog, "load function sub_140001592");
+    let out = decompile_func(prog, "load function main");
 
     // A real decompilation of a discovered, never-symboled function: it names the
     // function and emits a C body — not the "no function" error.
-    assert!(out.contains("sub_140001592"), "expected a body for sub_140001592, got:\n{out}");
+    assert!(out.contains("main("), "expected a body for main, got:\n{out}");
     assert!(out.contains('{') && out.contains('}'), "expected a C body, got:\n{out}");
     assert!(
         !out.contains("Unknown function") && !out.contains("no function"),
-        "sub_140001592 should resolve to a function, got:\n{out}"
+        "main should resolve to a function, got:\n{out}"
     );
     // Bonus: the discovered `main` calls the IAT-named `puts` (PR-4) — a stripped
     // PE recovers BOTH the function (PR-12) and its import name (PR-4).

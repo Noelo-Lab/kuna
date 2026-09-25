@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1394,
-    1394
+    1397,
+    1397
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -733,6 +733,9 @@
     "data:PEIMPORTCALL #6: off leaves a Mach-O non-lazy import slot anonymous",
     "data:PEIMPORTCALL #7: on binds the Mach-O import slot to objc_msgSend",
     "data:PEIMPORTCALL #8: ordinary ObjC message-reference data stays anonymous in both arms",
+    "data:PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub",
+    "data:PEMAIN #2: default, the same call site names main",
+    "data:PEMAIN #3: default, main is defined under its name",
     "data:PUSHIMMEDIATERET #1: both arms preserve the unpacker call",
     "data:PUSHIMMEDIATERET #2: only option on emits the complete tail-transfer statement",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",

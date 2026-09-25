@@ -446,6 +446,11 @@ Three tiers:
 | a Mach-O program routine decompiles as unsigned long sub_<addr>(void) | [`machomain`](#machomain) |
 | argc and argv are invisible in the decompiled main of a stripped mach-o binary | [`machomain`](#machomain) |
 | there is no way to tell which of a stripped Mach-O's functions the program starts in | [`machomain`](#machomain) |
+| kuna functions on a windows binary lists no main at all | [`pemain`](#pemain) |
+| the entry of a stripped PE is reported only as the CRT startup sub_<addr> | [`pemain`](#pemain) |
+| there is no way to tell which of a stripped PE's functions the program starts in | [`pemain`](#pemain) |
+| functions --summary gives the entry as mainCRTStartup and never names main | [`pemain`](#pemain) |
+| WinMain of a stripped GUI exe is reported only as sub_<addr> | [`pemain`](#pemain) |
 | kuna strings reports xrefs_count 0 and functions [] for every literal in a stripped ARM binary | [`armlibcmain`](#armlibcmain) |
 | kuna functions on an ARM ELF lists no main and one entry covering most of .text | [`armlibcmain`](#armlibcmain) |
 | a prompt an ARM binary plainly prints has no owning function | [`armlibcmain`](#armlibcmain) |
@@ -1846,6 +1851,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default (DIV-111). Makes a stripped Mach-O report its program entry as `main` instead of one more `sub_<addr>`, with argc and argv named: the tell-tale is `kuna functions` on a macOS binary listing no `main` at all, and `kuna decompile --addr <the LC_MAIN entry>` rendering `unsigned long sub_100003a80(void)`. Flip off to restore the `sub_<addr>` / `void(void)` form exactly - e.g. on an image whose `LC_MAIN` entry is not really a C `main` (a hand-rolled entry point, a repurposed startup, a packer stub), where the name and the two slots would both be misleading, or to see the parameters body-driven recovery finds on its own.
 - **Where / provenance:** P1/prototype-source · kuna · correctness-fix · kuna-analysis-machomain
 - **Example:** `--option machomain off`
+
+### `pemain` -- on | off, default `on`
+
+- **Symptoms:** kuna functions on a windows binary lists no main at all; the entry of a stripped PE is reported only as the CRT startup sub_<addr>; there is no way to tell which of a stripped PE's functions the program starts in; functions --summary gives the entry as mainCRTStartup and never names main; WinMain of a stripped GUI exe is reported only as sub_<addr>.
+- **What it does:** Name the function a PE's in-image C runtime startup calls `main`, `wmain`, `WinMain` or `wWinMain`. A PE's `AddressOfEntryPoint` is the CRT startup (`mainCRTStartup`, `WinMainCRTStartup`, MinGW's `__tmainCRTStartup`), not the program, so on a stripped Windows binary the function an agent needs first is one more `sub_<addr>` in an inventory of thousands and is found only by walking `entry -> __scrt_common_main_seh -> invoke_main` by hand. The runtime is inside the image and calls the user entry from a recognizable site, so the pass reads that site: the MSVC dynamic-UCRT console `invoke_main` fetches argc/argv/envp through the imported `__p___argc`/`__p___argv`/`_get_initial_narrow_environment` accessors right before the call (the scan `entrymainproto` already uses; the wide accessors name it `wmain`); the MSVC GUI `invoke_main` fetches `_get_narrow_winmain_command_line` (or the wide spelling) and passes `&__ImageBase` as hInstance, so the next direct call into the image whose argument setup references the image base is `WinMain` (`wWinMain`); MinGW's `__tmainCRTStartup` stores envp into msvcrt's `__initenv` (`__winitenv`) data import - directly or through a `.refptr` word - immediately before `main(argc, argv, envp)`; and on x86-64 the MSVC static-CRT `invoke_main` shape (three local calls whose results are consumed as a pointer, a dereferenced pointer and a dereferenced 32-bit count, then the call) is used only when no import-anchored shape matched and only when exactly one site in the image has it. An incremental-link `jmp` thunk at the call target is followed to the body. Only the name is applied: `entrymainproto` parks the call site's argument widths by address, so the two compose. Refuses on anything that is not a PE, on a callee outside every executable section or at an import thunk, on a callee that already carries a function symbol (a COFF symbol table, an export, or a PDB names it better), on an image that already defines a symbol with the chosen name, and on an ambiguous image where the same shape yields two different callees.
+- **When to flip:** On by default. Makes a stripped PE report its program entry as `main`/`WinMain` in `kuna functions`, `kuna functions --summary` (the `main` field), `kuna decompile` output and `kuna xrefs`, instead of one more `sub_<addr>`: the tell-tale is `kuna functions --summary` on a Windows binary giving `entry` as the CRT startup and no function named `main` anywhere in the inventory. Flip off to restore the `sub_<addr>` inventory exactly - e.g. on an image whose CRT startup calls something that is not a C `main` (a packer stub or a hand-rolled startup), where the name would mislead.
+- **Where / provenance:** P1/prototype-source · kuna · correctness-fix · kuna-analysis-pemain
+- **Example:** `--option pemain off`
 
 ### `armlibcmain` -- on | off, default `on`
 
