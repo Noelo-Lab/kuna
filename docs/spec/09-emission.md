@@ -297,7 +297,12 @@ that still prints (its target), a conversion this rule leaves out (its own
 operand's type, which it preserved), a truncation printed as a cast, a load
 `*(T *)p` through a pointer printed with that cast or declared `T *`, and a
 subscript `((T *)p)[k]` whose base prints with that cast (the form `castarith`
-below gives a load). An
+below gives a load). With `elemptr` on (05-types §5.2), whose declarations
+produce subscripts of declared pointers, a subscript `p[k]` of a variable the text
+declares `T *`, or of a constant printed as an array name or behind its own cast,
+reads a `T` as well (`ImpliedCasts::subscript_base_type`), so the `(int)` a `?:`
+arm of `a0[i]` carries is the conversion C performs; an unnamed global base has
+no declaration in scope and stays unknown. An
 arithmetic operand is not known, because C promotes `a - b` over two
 `unsigned char`s to a negative `int` where the p-code wraps; neither is a
 constant or a call. Under that rule `(long)(int)(unsigned int)(unsigned char)c`

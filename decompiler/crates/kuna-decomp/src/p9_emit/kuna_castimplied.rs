@@ -356,7 +356,12 @@ impl ImpliedCasts {
                                     .is_some_and(|d| d.code() == OpCode::CPUI_CAST)
                             }) {
                             Some(b) => b.get_type_def_facing().clone(),
-                            None => return CType::Unknown,
+                            // (kuna `elemptr`) A subscript of a variable declared
+                            // `T *` -- the base `elemptr` typed -- reads a `T`.
+                            None => match self.subscript_base_type(p, fd, c.get_in(0), pv.get_def()) {
+                                Some(t) => t,
+                                None => return CType::Unknown,
+                            },
                         },
                         _ => return CType::Unknown,
                     }
@@ -373,6 +378,36 @@ impl ImpliedCasts {
             }
             _ => CType::Unknown,
         }
+    }
+
+    /// (kuna `elemptr`) The pointer type C gives the base of a subscript
+    /// `base[k]` whose base is a variable the text declares, or a constant
+    /// address printed as an array name or behind its own cast: its declaration
+    /// or its type is what C indexes. `None` without `elemptr`, which is what
+    /// produces such subscripts.
+    fn subscript_base_type(
+        &self,
+        p: &dyn PrintedForms,
+        fd: &Funcdata,
+        base: Option<VarnodeId>,
+        ptradd: Option<OpId>,
+    ) -> Option<Rc<Datatype>> {
+        if !fd.get_arch().elem_ptr {
+            return None;
+        }
+        let (base, ptradd) = (base?, ptradd?);
+        let b = fd.vbank().get(base)?;
+        if b.is_explicit() {
+            return match self.explicit_type(p, fd, base, ptradd) {
+                CType::Known(t) if t.get_metatype() == type_metatype::TYPE_PTR => Some(t),
+                _ => None,
+            };
+        }
+        if b.is_constant() {
+            let t = b.get_type_read_facing(ptradd).clone();
+            return (t.get_metatype() == type_metatype::TYPE_PTR).then_some(t);
+        }
+        None
     }
 
     /// The C type of an explicit `vn`: the type its declaration line (or the
