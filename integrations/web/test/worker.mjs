@@ -179,11 +179,25 @@ try {
     'session rehydration preserves automatic mode selection',
   );
 
+  // The session's output language reaches every request: loading with `rust`
+  // renders the same function as Rust, where the Worker once dropped it.
+  const rustInventory = await client.load(binary, {
+    fileName: 'sample.elf',
+    mode: 'auto',
+    language: 'rust',
+  });
+  assert.ok(rustInventory.functions.some((fn) => fn.name === 'main'), 'rust session inventories main');
+  const rust = await client.decompile('main');
+  assert.match(rust.functions[0].code, /fn main|let mut|unsafe/, 'the language control changes the output');
+  const backToC = await client.load(binary, { fileName: 'sample.elf', language: 'c' });
+  assert.ok(backToC.functions.length > 0);
+  assert.doesNotMatch((await client.decompile('main')).functions[0].code, /let mut/, 'C session renders C');
+
   console.log(
     `WORKER OK — ${inventory.functions.length} functions inventoried, ` +
     `one address decompiled lazily (${inventoryMs} ms inventory + ${bodyMs} ms body), ` +
     'cancellation restarted the Worker, the host event loop stayed live, ' +
-    `${project.bytes.length} ZIP bytes transferred`,
+    `${project.bytes.length} ZIP bytes transferred, the session language reached the engine`,
   );
 } finally {
   client.close();

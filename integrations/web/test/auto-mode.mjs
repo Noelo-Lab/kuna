@@ -35,6 +35,35 @@ assertArgs(
   'explicit language override',
 );
 
+// The study-view commands: every directive rides as its own `--assert` pair,
+// after the mode and language, in session order; `read` takes two positionals;
+// and an empty directive list is the argv the flag's absence always produced.
+assertArgs(
+  wasmCommandArgs('inspect', 'main', 'auto', 'auto', ['name v1 total', 'type v2 unsigned int']),
+  ['/work/input.bin', '/specs', 'inspect', 'main', '--mode', 'auto', '--language', 'auto',
+    '--assert', 'name v1 total', '--assert', 'type v2 unsigned int'],
+  'inspect + two assertions',
+);
+assertArgs(
+  wasmCommandArgs('read', ['0x1149', 16]),
+  ['/work/input.bin', '/specs', 'read', '0x1149', '16', '--mode', 'auto', '--language', 'auto'],
+  'read positionals',
+);
+assertArgs(
+  wasmCommandArgs('xrefs', '0x1161', 'fast', 'c', ['function 0x1161=summation']),
+  ['/work/input.bin', '/specs', 'xrefs', '0x1161', '--mode', 'fast', '--language', 'c',
+    '--assert', 'function 0x1161=summation'],
+  'xrefs with a function rename',
+);
+for (const [command, arg] of [['list', undefined], ['decompile', 'main'], ['project', 'sample.elf']]) {
+  assertArgs(
+    wasmCommandArgs(command, arg, 'auto', 'auto', []),
+    wasmCommandArgs(command, arg),
+    `${command}: empty assertions == the old argv`,
+  );
+}
+
 console.log(
-  'AUTO MODE GLUE OK — list/decompile/project pass an explicit WASM mode and output language',
+  'AUTO MODE GLUE OK — list/decompile/project pass an explicit WASM mode and output language; ' +
+  'inspect/read/xrefs argv and --assert ordering pinned',
 );
