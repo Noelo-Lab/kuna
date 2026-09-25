@@ -32,6 +32,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
+use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
@@ -191,6 +192,95 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
         }
     }
     data.kuna_set_callret_data(Rc::clone(&arch.globalref_ranges));
+    if data.kuna_has_integer_callret_types() {
+        let extensions = in_place_extensions(data);
+        data.kuna_set_callret_extensions(extensions);
+    }
+}
+
+/// Where an instruction widens a value in place, keyed like [`StatedReturns`]
+/// by the instruction's address: whether it extends at the sign, and the width
+/// it extends from.
+pub type Extensions = HashMap<(int4, uintb), (bool, int4)>;
+
+/// The instructions of the not yet analyzed `data` that do nothing but widen a
+/// register into its own container: `movzwl %ax,%eax`, `mov %eax,%eax`,
+/// `cltq`.  Such an instruction is how a compiler converts a value to a wider
+/// type at a sign, and it is only evidence while it is recognizable: the
+/// return trimming later narrows the returned value back to the width the
+/// extension started from and leaves a plain copy where it was.  Every other
+/// 32-bit write on x86-64 widens its result too, so a move from another
+/// register, a load, or arithmetic is not taken; nor is an instruction that
+/// writes anything outside the widened register.
+fn in_place_extensions(data: &Funcdata) -> Extensions {
+    let mut out = Extensions::new();
+    let ops: Vec<OpId> = data.obank().iter_all().map(|(_, op)| op).collect();
+    let mut at = 0;
+    while at < ops.len() {
+        let Some(addr) = data.obank().get(ops[at]).map(|o| o.get_addr().clone()) else {
+            at += 1;
+            continue;
+        };
+        let mut end = at + 1;
+        while end < ops.len() && data.obank().get(ops[end]).is_some_and(|o| o.get_addr() == &addr) {
+            end += 1;
+        }
+        if let (Some(k), Some(ext)) = (key(&addr), widens_in_place(data, &ops[at..end])) {
+            out.insert(k, ext);
+        }
+        at = end;
+    }
+    out
+}
+
+/// Does the one instruction whose raw p-code is `ops` only widen a register in
+/// place?  The sign and source width of its innermost extension when it does.
+fn widens_in_place(data: &Funcdata, ops: &[OpId]) -> Option<(bool, int4)> {
+    let last = data.obank().get(*ops.last()?)?;
+    let dest = data.vbank().get(last.get_out()?)?;
+    let space = dest.get_addr().get_space()?.clone();
+    if space.get_type() != spacetype::IPTR_PROCESSOR {
+        return None;
+    }
+    let (lo, size) = (dest.get_addr().get_offset(), dest.get_size());
+    let low_end = |n: &crate::varnode::Varnode| {
+        let (o, z) = (n.get_addr().get_offset(), n.get_size());
+        n.get_addr().get_space().is_some_and(|s| Rc::ptr_eq(s, &space))
+            && z <= size
+            && if space.is_big_endian() { o + z as uintb == lo + size as uintb } else { o == lo }
+    };
+    let temp = |n: &crate::varnode::Varnode| {
+        n.get_addr().get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL)
+    };
+    let mut inner: Option<(bool, int4)> = None;
+    for &id in ops {
+        let o = data.obank().get(id)?;
+        if !matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_SUBPIECE) {
+            return None;
+        }
+        let out = data.vbank().get(o.get_out()?)?;
+        if !temp(out) && !low_end(out) {
+            return None;
+        }
+        for i in 0..o.num_input() {
+            let n = data.vbank().get(o.get_in(i)?)?;
+            let ok = if i == 1 {
+                n.is_constant() && n.get_offset() == 0
+            } else {
+                temp(n) || low_end(n)
+            };
+            if !ok {
+                return None;
+            }
+        }
+        if matches!(o.code(), OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT) {
+            let from = data.vbank().get(o.get_in(0)?)?.get_size();
+            if inner.is_none_or(|(_, w)| from < w) {
+                inner = Some((o.code() == OpCode::CPUI_INT_SEXT, from));
+            }
+        }
+    }
+    inner
 }
 
 /// The callees whose stated return type the finished `data` contradicts.
@@ -458,8 +548,12 @@ fn declared_contradicts(data: &Funcdata, op: OpId, outvn: VarnodeId, ct: &Dataty
                 && !crate::kuna_calleevote::same_type(t, ct)
         }
     };
+    let extended = integer && returned_at_other_sign(data, ct);
     for v in crate::kuna_protoorder::value_family(data, outvn) {
         let Some(node) = data.vbank().get(v) else { continue };
+        if extended && is_returned(data, v) {
+            return true;
+        }
         if let Some(def) = node.get_def().filter(|&d| d != op) {
             if data.obank().get(def).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
                 && result_type(data, def).is_some_and(|t| other(&t) || other_class(&t, ct))
@@ -503,6 +597,40 @@ fn declared_contradicts(data: &Funcdata, op: OpId, outvn: VarnodeId, ct: &Dataty
         }
     }
     false
+}
+
+/// Did the function widen what it returns in place at the other sign than
+/// the statement `ct`, before the return trimming narrowed the returned value
+/// back ([`note_returned_extension`])?  `call s16; movzwl %ax,%eax; ret` hands
+/// its callers the 16-bit result zero-extended, and once the trimming has
+/// replaced the extension by a copy of the result, a `short` statement for the
+/// call would become the function's own return type: `short f(...)`, whose
+/// callers sign-extend what the binary's callers see zero-extended.
+fn returned_at_other_sign(data: &Funcdata, ct: &Datatype) -> bool {
+    let signed = ct.get_metatype() == type_metatype::TYPE_INT;
+    data.kuna_callret_returned().iter().any(|&(s, from)| from == ct.get_size() && s != signed)
+}
+
+/// Is `v` handed back by a RETURN?
+fn is_returned(data: &Funcdata, v: VarnodeId) -> bool {
+    data.vbank().get(v).is_some_and(|n| {
+        n.descend_iter().any(|r| {
+            data.obank().get(r).is_some_and(|o| {
+                o.code() == OpCode::CPUI_RETURN && (1..o.num_input()).any(|i| o.get_in(i) == Some(v))
+            })
+        })
+    })
+}
+
+/// (Called by `RuleSubvarZext` and `RuleSubvarSext`.)  The extension at `at`
+/// was just narrowed back and, with it, the function's returned value: when
+/// the instruction there widens a register in place ([`in_place_extensions`]),
+/// the value the function returns was converted at that sign.
+pub fn note_returned_extension(data: &mut Funcdata, at: &Address) {
+    let Some(k) = key(at) else { return };
+    if let Some(ext) = data.kuna_callret_extension(k) {
+        data.kuna_note_callret_returned(ext);
+    }
 }
 
 /// Does the caller use a stated pointer as something other than a pointer to
@@ -589,4 +717,3 @@ fn declared_param_type(data: &Funcdata, call: OpId, slot: int4) -> Option<Rc<Dat
     }
     param.get_type().cloned()
 }
-
