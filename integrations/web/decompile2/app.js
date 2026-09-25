@@ -34,6 +34,10 @@ import {
 import { hashBytes, SessionStore } from './persist.js';
 import { createDialogs } from './dialogs.js';
 import { createRail } from './rail.js';
+import {
+  functionCells, hexRows, renderHex, applyPatches, parseHex, patchedName, fileOffsetFor, originalByteAt,
+} from './bytes-view.js';
+import { archFrom, nopFill } from './arch.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -507,6 +511,9 @@ els.fwd.addEventListener('click', () => history.forward());
  */
 async function openFunction(fn, { push = true, replace = false, keepView = false, focusAddr = null } = {}) {
   if (!fn || !state.inventory) return;
+  if (bytesState.burst) flushBytes({ send: false });
+  bytesState.edit = null;
+  state.dataView = null;
   if (push || replace) pushHistory(fn.address_hex, replace);
   markSelectedRow(fn.address_hex);
   showEmpty(false);
@@ -639,8 +646,13 @@ const RENDER = {
     sync.refresh('asm');
   },
   bytes() {
-    els.bytesbar.innerHTML = '';
-    els.hexdump.innerHTML = needsInspect('The bytes view');
+    const { data } = state.current;
+    if (!data.hasInstructions && !state.dataView) {
+      els.bytesbar.innerHTML = '';
+      els.hexdump.innerHTML = needsInspect('The bytes view');
+      return;
+    }
+    renderBytes();
   },
   stack() {
     els.stackframe.innerHTML = needsInspect('The stack-frame diagram');
@@ -666,7 +678,21 @@ function asmContext(data) {
     codeLines: data.code.split('\n'),
     fnByAddr: state.byAddr,
     nameOf: displayName,
+    patched: patchedInsns(data),
   };
+}
+
+/** Instruction addresses with at least one patched byte. */
+function patchedInsns(data) {
+  const out = new Set();
+  if (!session.bytes.size) return out;
+  for (const insn of data.instructions) {
+    const base = BigInt(insn.address_hex);
+    for (let k = 0; k < insn.size; k++) {
+      if (session.bytes.has(base + BigInt(k))) { out.add(insn.address_hex); break; }
+    }
+  }
+  return out;
 }
 
 /** Re-render panes whose HTML depends on `prefs` (not just their classes). */
@@ -719,6 +745,21 @@ sync.register('asm', markerView((sets) => {
   const index = state.current?.index;
   const first = [...sets.addrs].sort((a, b) => (index?.insnIndex.get(a) ?? 0) - (index?.insnIndex.get(b) ?? 0))[0];
   byId('a-' + first)?.scrollIntoView({ block: 'nearest' });
+}));
+
+sync.register('bytes', markerView((sets) => {
+  const index = state.current?.index;
+  if (!index || !isShown('bytes')) return [];
+  const out = [];
+  for (const a of sets.addrs) {
+    const i = index.insnIndex.get(a);
+    if (i !== undefined) out.push(...els.hexdump.querySelectorAll(`.hb[data-i="${i}"]`));
+  }
+  return out;
+}, (target, sets) => {
+  if (!isShown('bytes') || !sets.addrs.size) return;
+  const i = state.current.index.insnIndex.get([...sets.addrs][0]);
+  els.hexdump.querySelector(`.hb[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' });
 }));
 
 /** Describe a variable from every source the engine gives. */
@@ -866,7 +907,7 @@ function selectTarget(target, from, tokEl = null) {
     setHint(`<b>${escapeHtml(varSummary(target.sym))}</b> — <kbd>n</kbd> rename · <kbd>y</kbd> retype · <kbd>Esc</kbd> clears`);
   } else if (target?.addr) {
     const insn = state.current.index.addrToInsn.get(target.addr);
-    setHint(insn ? `${escapeHtml(insn.address_hex)} <b>${escapeHtml(insn.text)}</b> — <kbd>;</kbd> comment · <kbd>x</kbd> references` : null);
+    setHint(insn ? `${escapeHtml(insn.address_hex)} <b>${escapeHtml(insn.text)}</b> ${patchButtons(insn)} · <kbd>;</kbd> comment · <kbd>x</kbd> references` : null);
   } else if (Number.isInteger(target?.line)) {
     const n = (state.current.index.lineToInsns.get(target.line) || []).length;
     setHint(`L${target.line} — ${n} instruction${n === 1 ? '' : 's'} · click the address gutter to open them in Assembly`);
@@ -897,7 +938,7 @@ function gotoAddr(hex) {
   }
   const fn = state.byAddr.get(hex) || containingFunction(hex);
   if (fn) openFunction(fn, { focusAddr: fn.address_hex === hex ? null : hex });
-  else toast(`${hex} is not inside a known function.`, { kind: 'warn' });
+  else showDataAt(hex);
 }
 
 function containingFunction(hex) {
@@ -1154,11 +1195,21 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (hover.hide()) return;
     if (dialogs.close()) return;
+    if (bytesState.edit !== null) {
+      bytesState.edit = null;
+      flushBytes();
+      if (state.current?.data.hasInstructions && state.rendered.has('bytes')) renderBytes();
+      return;
+    }
     if (!els.viewMenu.hidden) { toggleViewMenu(false); els.viewBtn.focus(); return; }
     if (state.sel) selectTarget(null, null);
     return;
   }
   if (!state.current && e.key !== '/' && e.key !== '?') return;
+  if (hexKey(e)) {
+    e.preventDefault();
+    return;
+  }
   if (paneKey(e)) {
     e.preventDefault();
     return;
@@ -1425,6 +1476,7 @@ async function goToDialog() {
 /** After any change to the session: persist, drop caches, refresh names and the rail. */
 function sessionChanged() {
   persist();
+  els.patch.disabled = !canDownloadPatched();
   state.cache.clear();
   state.xrefs?.clear();
   refreshRowNames();
@@ -1695,6 +1747,274 @@ renderRail();
 
 els.fnRename.addEventListener('click', () => state.current && renameTarget({ kind: 'self', addr: state.current.data.address_hex, el: els.fnRename }));
 els.proto.addEventListener('click', () => state.current && protoDialog(state.current.data.address_hex, els.proto));
+
+// ── bytes: the hex dump, typed patches, Patch/NOP/Revert, the patched file ─
+
+const bytesState = { edit: null, digits: '', burst: null, timer: 0 };
+
+function sections() {
+  return state.inventory?.sections || [];
+}
+
+function currentArch() {
+  const data = state.current?.data;
+  return archFrom(data?.target || state.inventory?.target, data?.instructions || []);
+}
+
+/** The byte the file (or, lacking sections, the engine's first answer) holds at `a`. */
+function origByte(a) {
+  const fromFile = originalByteAt(a, { fileBytes: state.binary?.bytes, sections: sections() });
+  if (fromFile !== null) return fromFile;
+  for (const insn of state.current?.data.instructions || []) {
+    const base = BigInt(insn.address_hex);
+    if (a >= base && a < base + BigInt(insn.size)) {
+      const k = Number(a - base);
+      return parseInt(insn.bytes.slice(k * 2, k * 2 + 2), 16);
+    }
+  }
+  return null;
+}
+
+function bytesCells() {
+  if (state.dataView) return dataCells();
+  const { data } = state.current;
+  return functionCells(data.instructions, {
+    entry: data.address_hex, size: data.size, fileBytes: state.binary?.bytes, sections: sections(), patches: session.bytes,
+  });
+}
+
+function renderBytes() {
+  if (state.dataView) return renderData();
+  const { data, index } = state.current;
+  const cells = bytesCells();
+  const selected = new Set();
+  if (state.sel?.addr) selected.add(index.insnIndex.get(state.sel.addr));
+  const off = fileOffsetFor(data.address_hex, sections());
+  const patched = cells.filter((c) => c.patched).length;
+  const where = off === null
+    ? (sections().length ? 'not backed by the file (patches cannot be downloaded)' : 'file offsets arrive with the engine\'s section table')
+    : `file offset 0x${off.toString(16)}`;
+  els.bytesbar.innerHTML = `<span><b>${escapeHtml(displayName(state.current.fn))}</b> ${escapeHtml(data.address_hex)} · ${cells.length} bytes · ${escapeHtml(where)}</span>` +
+    `<span>${patched ? `${patched} patched` : 'click a byte and type hex to patch it'}</span>` +
+    (state.sel?.addr ? `<span>${patchButtons(index.addrToInsn.get(state.sel.addr))}</span>` : '');
+  els.hexdump.innerHTML = renderHex(hexRows(cells), { sections: sections(), selected, editAddr: bytesState.edit });
+  sync.refresh('bytes');
+}
+
+const DATA_SPAN = 256;
+
+/** Cells for the data view: the page's file copy (or the engine's read) plus patches. */
+function dataCells() {
+  const { start, bytes } = state.dataView;
+  return [...bytes].map((b, i) => {
+    const a = start + BigInt(i);
+    const patched = session.bytes.has(a);
+    return { addr: a, hex: '0x' + a.toString(16), value: patched ? session.bytes.get(a) : b, orig: b, patched, insn: null, first: false, gap: false };
+  });
+}
+
+function renderData() {
+  const { focus, source } = state.dataView;
+  const cells = dataCells();
+  els.bytesbar.innerHTML = `<span><b>data</b> at ${escapeHtml('0x' + focus.toString(16))} · ${cells.length} bytes from ${escapeHtml(source)}</span>` +
+    `<button class="d2-lb" data-act="data-back">back to ${escapeHtml(state.current ? displayName(state.current.fn) : 'the function')}</button>`;
+  els.hexdump.innerHTML = renderHex(hexRows(cells), { sections: sections(), editAddr: bytesState.edit ?? focus });
+}
+
+/** Show the bytes at a non-code address: from the file when it backs them, else `read`. */
+async function showDataAt(hex) {
+  const focus = BigInt(hex);
+  const start = focus - (focus % 16n);
+  const off = fileOffsetFor(start, sections());
+  if (off !== null && state.binary) {
+    state.dataView = { start, focus, bytes: state.binary.bytes.subarray(off, off + DATA_SPAN), source: 'the file' };
+  } else {
+    const op = beginOperation('read');
+    try {
+      const res = await state.kuna.read('0x' + start.toString(16), DATA_SPAN, { assertions: state.caps.assert === false ? [] : session.globalAssertions() });
+      if (!isCurrent(op)) return;
+      state.dataView = { start, focus, bytes: parseHex(res.bytes) || new Uint8Array(), source: 'the engine' };
+    } catch (e) {
+      if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return;
+      const old = isUnknownCommand(e) || /unexpected argument/.test(e.message || '');
+      toast(old ? `${hex} is not in a function, and this engine build cannot read raw bytes.` : `Could not read ${hex}.`, { kind: 'warn', detail: old ? '' : e.message });
+      return;
+    } finally {
+      finishOperation(op);
+    }
+  }
+  bytesState.edit = null;
+  setTab('bytes');
+  state.rendered.delete('bytes');
+  renderVisible();
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-act=data-back]')) return;
+  state.dataView = null;
+  bytesState.edit = null;
+  if (state.current) {
+    state.rendered.delete('bytes');
+    renderVisible();
+  }
+});
+
+function patchButtons(insn) {
+  if (!insn || !state.current?.data.hasInstructions) return '';
+  const nop = nopFill(currentArch(), insn.size);
+  const base = BigInt(insn.address_hex);
+  let any = false;
+  for (let k = 0; k < insn.size; k++) if (session.bytes.has(base + BigInt(k))) any = true;
+  return `<button class="d2-lb" data-patch="patch" data-addr="${insn.address_hex}">patch</button> ` +
+    `<button class="d2-lb" data-patch="nop" data-addr="${insn.address_hex}"${nop ? '' : ' disabled title="no exact no-op fill for this size"'}>nop</button> ` +
+    `<button class="d2-lb" data-patch="revert" data-addr="${insn.address_hex}"${any ? '' : ' disabled'}>revert</button>`;
+}
+
+/** Write `values` at `addr` as one edit (a byte equal to the file's is no patch). */
+function patchBytes(addr, values, label) {
+  const base = BigInt(addr);
+  return applyEdit(() => {
+    values.forEach((v, i) => session.setByte(base + BigInt(i), v, origByte(base + BigInt(i))));
+  }, { label, reselect: state.sel });
+}
+
+async function patchAction(kind, addrHex) {
+  const insn = state.current?.index.addrToInsn.get(addrHex);
+  if (!insn) return;
+  if (kind === 'nop') {
+    const fill = nopFill(currentArch(), insn.size);
+    if (fill) patchBytes(addrHex, [...parseHex(fill)], 'NOP');
+    return;
+  }
+  if (kind === 'revert') {
+    const base = BigInt(addrHex);
+    applyEdit(() => {
+      for (let k = 0; k < insn.size; k++) session.bytes.delete(base + BigInt(k));
+    }, { label: 'revert', reselect: state.sel });
+    return;
+  }
+  const current = [...Array(insn.size).keys()].map((k) => {
+    const a = BigInt(addrHex) + BigInt(k);
+    return (session.bytes.get(a) ?? parseInt(insn.bytes.slice(k * 2, k * 2 + 2), 16)).toString(16).padStart(2, '0');
+  }).join(' ');
+  const res = await dialogs.openPopover({
+    anchorEl: document.getElementById('a-' + addrHex),
+    title: `Patch ${insn.address_hex} (${insn.text})`,
+    note: `${insn.size} byte${insn.size === 1 ? '' : 's'}: ${current}`,
+    fields: [{ name: 'hex', label: 'new bytes (hex)', value: current, validate: (v) => (parseHex(v) ? null : 'hex digits in pairs, like 90 90') }],
+    warn: (v) => {
+      const n = parseHex(v.hex)?.length || 0;
+      if (!n || n === insn.size) return '';
+      return n < insn.size
+        ? `${n} of ${insn.size} bytes: the rest of this instruction stays, and the CPU decodes what is left as something else.`
+        : `${n} bytes run past this ${insn.size}-byte instruction into the next one.`;
+    },
+  });
+  if (res) patchBytes(addrHex, [...parseHex(res.hex)], 'patch');
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-patch]');
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+  patchAction(btn.dataset.patch, btn.dataset.addr);
+});
+
+els.hexdump.addEventListener('click', (e) => {
+  const cell = e.target.closest('.hb[data-a]');
+  if (!cell || !state.current) return;
+  bytesState.edit = BigInt(cell.dataset.a);
+  bytesState.digits = '';
+  if (cell.dataset.i !== undefined) {
+    const insn = state.current.data.instructions[Number(cell.dataset.i)];
+    if (insn) selectTarget({ addr: insn.address_hex }, 'bytes');
+  }
+  renderBytes();
+  els.hexdump.focus({ preventScroll: true });
+});
+
+/** Typing in the hex dump: two hex digits write a byte and move on. */
+function hexKey(e) {
+  if (bytesState.edit === null || document.activeElement !== els.hexdump) return false;
+  const cells = bytesCells();
+  const at = cells.findIndex((c) => c.addr === bytesState.edit);
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    const next = cells[at + (e.key === 'ArrowRight' ? 1 : -1)];
+    if (next) { bytesState.edit = next.addr; bytesState.digits = ''; renderBytes(); }
+    return true;
+  }
+  if (e.key === 'Backspace') {
+    const cell = cells[at];
+    if (cell?.patched) { startBurst(); session.setByte(cell.addr, cell.orig, cell.orig); byteWritten(); }
+    return true;
+  }
+  if (!/^[0-9a-f]$/i.test(e.key)) return false;
+  bytesState.digits += e.key.toLowerCase();
+  if (bytesState.digits.length < 2) {
+    els.hexdump.querySelector('.hb.ed')?.replaceChildren(document.createTextNode(bytesState.digits + '_'));
+    return true;
+  }
+  const value = parseInt(bytesState.digits, 16);
+  bytesState.digits = '';
+  startBurst();
+  session.setByte(bytesState.edit, value, origByte(bytesState.edit));
+  const next = cells[at + 1];
+  if (next) bytesState.edit = next.addr;
+  byteWritten();
+  return true;
+}
+
+function startBurst() {
+  if (!bytesState.burst) bytesState.burst = { snap: session.snapshot(), before: new Set(session.globalAssertions()) };
+}
+
+/** One burst of typed bytes becomes one edit, sent 700 ms after the last key. */
+function byteWritten() {
+  persist();
+  renderBytes();
+  renderRail();
+  els.patch.disabled = !canDownloadPatched();
+  clearTimeout(bytesState.timer);
+  bytesState.timer = setTimeout(flushBytes, 700);
+}
+
+function flushBytes({ send = true } = {}) {
+  clearTimeout(bytesState.timer);
+  const burst = bytesState.burst;
+  bytesState.burst = null;
+  if (!burst || !state.current) return;
+  const fresh = session.globalAssertions().filter((d) => !burst.before.has(d));
+  sessionChanged();
+  if (!send || state.caps.assert === false) {
+    session.pushUndo(burst.snap);
+    renderRail();
+    return;
+  }
+  reinspect({ snap: burst.snap, fresh, label: 'patch', reselect: state.sel });
+}
+
+function canDownloadPatched() {
+  return !!(state.binary && session.byteRuns().length && sections().length);
+}
+
+els.patch.addEventListener('click', () => {
+  if (!canDownloadPatched()) return;
+  const { bytes, unmapped } = applyPatches(state.binary.bytes, sections(), session.byteRuns());
+  if (unmapped.length) {
+    toast('Some patched bytes are not in the file, so they cannot be written.', {
+      kind: 'err', detail: unmapped.map((u) => `${u.count} byte${u.count === 1 ? '' : 's'} at ${u.addr}`).join(', '),
+    });
+    return;
+  }
+  const name = patchedName(state.binary.name);
+  download(new Blob([bytes], { type: 'application/octet-stream' }), name);
+  const fmt = state.binary.format || '';
+  let detail = `${session.byteRuns().reduce((n, r) => n + r.values.length, 0)} bytes changed; nothing else in the file moved.`;
+  if (/Mach-O/.test(fmt)) detail += ` macOS refuses a modified signed binary: re-sign it with  codesign -f -s - ${name}`;
+  else if (/PE/.test(fmt)) detail += ' The PE checksum no longer matches; Windows checks it only for drivers.';
+  else if (/ELF/.test(fmt)) detail += ` Run it with  chmod +x ${name} && ./${name}`;
+  toast(`Downloaded ${name}.`, { detail, ms: 10000 });
+});
 
 // ── project export ─────────────────────────────────────────────────────────
 
