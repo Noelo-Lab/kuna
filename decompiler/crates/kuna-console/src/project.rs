@@ -1094,7 +1094,9 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 }
 
 /// (kuna `globalref`) One `extern` line per global the functions name by address,
-/// in address order.
+/// in address order, and (kuna `elemptr`) per global a function reads directly
+/// and `elemptr` typed an element pointer: a subscript `dat_5068[i]` reads the
+/// element its declaration names.
 ///
 /// Each function declares the object at the type IT uses it at, so two
 /// functions can disagree, and a function that reads the same `dat_<addr>`
@@ -1129,9 +1131,10 @@ fn global_declarations(results: &[FuncResult]) -> String {
     let quote = |d: &str| d.replace("/*", "/ *").replace("*/", "* /");
     let mut out = String::new();
     for (taken, direct) in by_addr.values() {
-        if taken.is_empty() {
+        if taken.is_empty() && !direct.iter().any(|g| g.elem) {
             continue;
         }
+        let name = taken.iter().chain(direct.iter()).next().map_or("", |g| g.name.as_str());
         let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
         for g in taken.iter().chain(direct.iter()) {
             match decls.iter_mut().find(|(d, _)| d.declaration == g.declaration) {
@@ -1154,7 +1157,7 @@ fn global_declarations(results: &[FuncResult]) -> String {
             let _ = writeln!(
                 out,
                 "/* {} is indexed at two element types, so it is not declared: {} */",
-                taken[0].name,
+                name,
                 arrays.join(", ")
             );
             continue;
@@ -1166,7 +1169,7 @@ fn global_declarations(results: &[FuncResult]) -> String {
             (None, []) => best(&mut decls.iter()).unwrap_or_default(),
             (None, _) => {
                 let all: Vec<String> = decls.iter().map(|(g, _)| quote(&g.declaration)).collect();
-                let _ = writeln!(out, "/* {} is read at two types, so it is not declared: {} */", taken[0].name, all.join(", "));
+                let _ = writeln!(out, "/* {} is read at two types, so it is not declared: {} */", name, all.join(", "));
                 continue;
             }
         };

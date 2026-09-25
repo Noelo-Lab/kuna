@@ -40,6 +40,7 @@ use crate::architecture::Architecture;
 use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
+use crate::kuna_elemptr::{GlobalVerdict, Obj};
 use crate::options::on_or_off;
 
 /// `globalref on|off`.
@@ -81,6 +82,9 @@ struct Direct {
     ty: Rc<Datatype>,
     /// No global Symbol covers it, so the body prints it as `dat_<start>`.
     unnamed: bool,
+    /// (kuna `elemptr`) The rule typed it an element pointer: the header
+    /// declares it, since a subscript of it reads the declared element.
+    elem: bool,
 }
 
 /// What one function reads an address at.
@@ -153,6 +157,7 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
     let mut direct = Vec::new();
     let mut pointees: BTreeMap<u64, Seen> = BTreeMap::new();
     let mut indexed = HashSet::new();
+    let elem_held = if arch.elem_ptr { fd.kuna_elemptr_verdicts() } else { BTreeMap::new() };
     for vn in fd.vbank().iter_loc() {
         let Some(v) = fd.vbank().get(vn) else { continue };
         if v.is_constant() {
@@ -179,11 +184,21 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
         } else if data_space.is_some() && v.get_addr().get_space().map(|s| s.get_index()) == data_space {
             let unnamed = in_ranges(&arch.globalref_ranges, v.get_offset())
                 && fd.get_arch().query_container_global(v.get_addr(), v.get_size(), &Address::new_invalid()).is_none();
+            // (kuna `elemptr`) A global the rule typed is used only as that
+            // pointer: every walk over the Varnodes holding it agreed, so one of
+            // another type (its value before a call, which nothing prints) is
+            // not a read of it at that type.
+            let elem = arch.elem_ptr
+                && matches!(elem_held.get(&Obj::Held(v.get_offset())), Some(GlobalVerdict::Typed { .. }));
+            if elem && v.get_type().get_metatype() != type_metatype::TYPE_PTR {
+                continue;
+            }
             direct.push(Direct {
                 start: v.get_offset(),
                 size: v.get_size().max(1) as u64,
                 ty: Rc::clone(v.get_type()),
                 unnamed,
+                elem,
             });
         }
     }
@@ -317,15 +332,15 @@ impl Plan {
 impl Plan {
     /// The unnamed program data this function reads or writes directly, by
     /// start and type: the `dat_<addr>` it prints that are not addresses taken.
-    pub fn direct_objects(&self) -> impl Iterator<Item = (u64, &Rc<Datatype>)> + '_ {
-        self.direct.iter().filter(|d| d.unnamed).map(|d| (d.start, &d.ty))
+    pub fn direct_objects(&self) -> impl Iterator<Item = (u64, &Rc<Datatype>, bool)> + '_ {
+        self.direct.iter().filter(|d| d.unnamed).map(|d| (d.start, &d.ty, d.elem))
     }
 
     /// (kuna `elemptr`) The type a project header declares the global at `off`
-    /// as, when no symbol names it: the one type this function reads and
-    /// writes it at.
+    /// as, when no symbol names it and the rule typed it an element pointer:
+    /// the one type this function reads and writes it at.
     pub fn declared_type(&self, off: u64) -> Option<Rc<Datatype>> {
-        if !self.direct.iter().filter(|d| overlaps(d, off, 1)).all(|d| d.unnamed) {
+        if !self.direct.iter().filter(|d| overlaps(d, off, 1)).all(|d| d.unnamed && d.elem) {
             return None;
         }
         self.direct_type_at(off)

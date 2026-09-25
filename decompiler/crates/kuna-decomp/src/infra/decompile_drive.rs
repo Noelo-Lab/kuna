@@ -1818,6 +1818,10 @@ pub struct GlobalInfo {
     /// of the name does not compile against it. (An array decays to a pointer,
     /// so a scalar compare against one would compile to something else.)
     pub aggregate: bool,
+    /// (kuna `elemptr`) Direct storage the rule typed an element pointer
+    /// (`char *dat_5068`): declared although no function takes its address,
+    /// since a subscript of it reads the element its declaration names.
+    pub elem: bool,
 }
 
 /// The globals the C `print_c` just rendered for `fd` names
@@ -1828,7 +1832,12 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
     let print = arch.print();
     let plan = print.globalref_plan();
     let rt = crate::printc::RealTypeCtx::from_arch(arch, print.out_lang());
-    let info = |address: u64, ty: &std::rc::Rc<crate::dtype::Datatype>, unknown: bool, direct: bool, array: bool| {
+    let info = |address: u64,
+                ty: &std::rc::Rc<crate::dtype::Datatype>,
+                unknown: bool,
+                direct: bool,
+                array: bool,
+                elem: bool| {
         let name = crate::printc::global_data_name(arch, address);
         use crate::dtype::type_metatype::{TYPE_STRUCT, TYPE_UNION};
         // (kuna `elemptr`) An indexed global is declared as an array of unknown
@@ -1842,12 +1851,13 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
             unknown,
             direct,
             aggregate: matches!(ty.get_metatype(), TYPE_STRUCT | TYPE_UNION),
+            elem,
         }
     };
     let mut out: Vec<GlobalInfo> =
-        plan.minted.iter().map(|(&address, m)| info(address, &m.decl_type, m.unknown, false, m.array)).collect();
-    for (address, ty) in plan.direct_objects() {
-        let g = info(address, ty, false, true, false);
+        plan.minted.iter().map(|(&address, m)| info(address, &m.decl_type, m.unknown, false, m.array, false)).collect();
+    for (address, ty, elem) in plan.direct_objects() {
+        let g = info(address, ty, false, true, false, elem);
         if !out.contains(&g) {
             out.push(g);
         }

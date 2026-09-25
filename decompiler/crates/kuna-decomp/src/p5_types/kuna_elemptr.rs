@@ -37,7 +37,9 @@
 //! narrower integer, masked, shifted, or offset from a value the program also
 //! uses as a number -- never by its declared type, which for the other operand
 //! of the same add is the same integer vote this rule exists to overrule.  An
-//! add whose other operand could as well be the base says nothing.
+//! add whose other operand could as well be the base says nothing; an operand
+//! dereferenced through its copies is the base, and the right-hand side of a
+//! difference of two pointers is not a number.
 //!
 //! `T` is signed or unsigned when every extension and ordering of a loaded
 //! element agrees, and plain (`char`, `int`) otherwise; a byte compared against
@@ -59,7 +61,10 @@
 //! difference with a pointer to something of another width.  A declared, DWARF,
 //! libc or asserted type is never touched: a type-locked Varnode, one seeded
 //! from a locked symbol, and a vote that already points at something named or
-//! sized all keep what they have.
+//! sized all keep what they have.  A parameter or call return an earlier type
+//! pass typed and a later one finds indexing another base is blocked and the
+//! function restarted, and a value stored through a typed pointer keeps its own
+//! sign ([`keeps_stored_sign`]).
 //!
 //! Gated by [`ArchContext::elem_ptr`](crate::context::ArchContext) (option
 //! `elemptr on|off`); with the option off nothing here is reachable.
@@ -120,6 +125,11 @@ struct Evidence {
     signed: u32,
     /// ... and unsigned.
     unsigned: u32,
+    /// Values stored into an element already typed signed, and unsigned.  The
+    /// store writes the same bits either way, so this only breaks the tie
+    /// where nothing reads the element.
+    stored_signed: u32,
+    stored_unsigned: u32,
     /// A loaded byte compared against a character literal.
     charlit: u32,
     /// Loaded elements the function returns where its recovered return type
@@ -179,12 +189,14 @@ impl Evidence {
         match self.refused {
             Some(r) => format!("refuse:{r}"),
             None => format!(
-                "w={:?} var={} const={} s={} u={} chr={} ret={}/{}/{} own={}/{} adr={} num={}",
+                "w={:?} var={} const={} s={} u={} st={}/{} chr={} ret={}/{}/{} own={}/{} adr={} num={}",
                 self.width,
                 self.variable,
                 self.constant,
                 self.signed,
                 self.unsigned,
+                self.stored_signed,
+                self.stored_unsigned,
                 self.charlit,
                 self.ret_signed,
                 self.ret_unsigned,
@@ -934,7 +946,7 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
             }
             None
         }
-        OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_2COMP if is_negation(data, op) => {
+        OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_2COMP if is_pointer_difference(data, op) => {
             difference_of(data, op, ev);
             None
         }
@@ -1247,8 +1259,8 @@ fn stored_value(data: &Funcdata, val: VarnodeId, ev: &mut Evidence) {
     // plain `char` whatever it is typed.
     if v.get_size() > 1 && !v.is_constant() {
         match v.get_type().get_metatype() {
-            type_metatype::TYPE_UINT => ev.unsigned += 1,
-            type_metatype::TYPE_INT => ev.signed += 1,
+            type_metatype::TYPE_UINT => ev.stored_unsigned += 1,
+            type_metatype::TYPE_INT => ev.stored_signed += 1,
             _ => {}
         }
     }
@@ -1330,11 +1342,13 @@ fn pointee_of(data: &Funcdata, vn: VarnodeId, op: OpId) -> Option<Rc<Datatype>> 
     t.get_ptr_to()
 }
 
-/// Is `op` a negation, `x * -1` or `-x`?  `p - q` lowers to `p + q * -1`, so a
-/// negated value is the right-hand side of a difference, not a number.
-fn is_negation(data: &Funcdata, op: OpId) -> bool {
+/// Is `op` the right-hand side of a difference of two pointers, `x * -1` or
+/// `-x` added to a pointer, where the sum is a number rather than an address?
+/// `b - buf` lowers to `b + buf * -1`, and `buf` is the pointer it always was;
+/// `end - n`, whose sum is dereferenced, subtracts a number.
+fn is_pointer_difference(data: &Funcdata, op: OpId) -> bool {
     let Some(o) = data.obank().get(op) else { return false };
-    match o.code() {
+    let negation = match o.code() {
         OpCode::CPUI_INT_2COMP => true,
         OpCode::CPUI_INT_MULT => (0..2).any(|i| {
             o.get_in(i)
@@ -1342,21 +1356,29 @@ fn is_negation(data: &Funcdata, op: OpId) -> bool {
                 .is_some_and(|c| c.is_constant() && sign_extend(c.get_offset(), c.get_size()) == -1)
         }),
         _ => false,
+    };
+    let Some(neg) = o.get_out().filter(|_| negation) else { return false };
+    let Some(v) = data.vbank().get(neg) else { return false };
+    let mut any = false;
+    for r in v.descend_iter() {
+        let Some(ro) = data.obank().get(r).filter(|ro| ro.code() == OpCode::CPUI_INT_ADD) else { return false };
+        let Some(q) = ro.get_in(if ro.get_slot(neg) == 0 { 1 } else { 0 }) else { return false };
+        let pointer = data.vn_type_read_facing(q, r).get_metatype() == type_metatype::TYPE_PTR || has_pointer_use(data, q);
+        if !pointer || ro.get_out().is_none_or(|sum| has_pointer_use(data, sum)) {
+            return false;
+        }
+        any = true;
     }
+    any
 }
 
-/// The candidate negated by `op` is subtracted from whatever each reader adds
-/// the negation to: a difference of two pointers, which says the other side
-/// points at the same elements.  A negation used any other way is arithmetic.
+/// The candidate negated by the pointer difference `op` is subtracted from a
+/// pointer at the same elements, whose pointee, when it has one, says so.
 fn difference_of(data: &Funcdata, op: OpId, ev: &mut Evidence) {
     let Some(neg) = data.obank().get(op).and_then(|o| o.get_out()) else { return };
     let Some(v) = data.vbank().get(neg) else { return };
     for r in v.descend_iter() {
         let Some(ro) = data.obank().get(r) else { continue };
-        if ro.code() != OpCode::CPUI_INT_ADD {
-            ev.refuse("arithmetic");
-            return;
-        }
         let other = ro.get_in(if ro.get_slot(neg) == 0 { 1 } else { 0 });
         if let Some(p) = other.and_then(|x| pointee_of(data, x, r)) {
             ev.pointees.push(p);
@@ -1561,14 +1583,14 @@ fn has_pointer_use(data: &Funcdata, x: VarnodeId) -> bool {
 /// Does the program read `x` as a number somewhere -- multiply, divide or shift
 /// it, or order it against a non-zero literal?  Such a value is not the base of
 /// the add it also appears in.  A mask is not such a use: `p & 7` is how a
-/// program tests a pointer's alignment; nor is a negation, the right-hand side
-/// of a pointer difference.
+/// program tests a pointer's alignment; nor is the right-hand side of a
+/// difference of two pointers.
 fn used_as_number(data: &Funcdata, x: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(x) else { return false };
     v.descend_iter().any(|op| {
         let Some(o) = data.obank().get(op) else { return false };
         match o.code() {
-            OpCode::CPUI_INT_MULT => !is_negation(data, op),
+            OpCode::CPUI_INT_MULT => !is_pointer_difference(data, op),
             OpCode::CPUI_INT_DIV
             | OpCode::CPUI_INT_SDIV
             | OpCode::CPUI_INT_REM
@@ -1691,6 +1713,8 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
 /// callers read it; then how the program extends, orders, shifts or divides a
 /// loaded element, when every such use agrees; a byte compared against a
 /// character is the plain `char`.  Without any of that the element takes the
+/// sign of the values the program stores into it, when they agree (the store
+/// writes the same bits either way, so that is only a tie-break), else the
 /// type the load has without this rule -- its readers' fold -- and a wider
 /// element nothing votes for is unsigned, which is how an undefined word
 /// prints.  Such a default is not evidence, and a batch lets a function whose
@@ -1718,7 +1742,10 @@ fn element_signed(w: int4, ev: &Evidence) -> (bool, bool) {
     }
     match one(ev.signed, ev.unsigned) {
         Some(signed) => (signed, true),
-        None => (one(ev.own_signed, ev.own_unsigned).unwrap_or(false), ev.returned > 0),
+        None => (
+            one(ev.stored_signed, ev.stored_unsigned).or(one(ev.own_signed, ev.own_unsigned)).unwrap_or(false),
+            ev.returned > 0,
+        ),
     }
 }
 

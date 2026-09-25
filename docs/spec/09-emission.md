@@ -301,8 +301,11 @@ below gives a load). With `elemptr` on (05-types §5.2), whose declarations
 produce subscripts of declared pointers, a subscript `p[k]` of a variable the text
 declares `T *`, or of a constant printed as an array name or behind its own cast,
 reads a `T` as well (`ImpliedCasts::subscript_base_type`), so the `(int)` a `?:`
-arm of `a0[i]` carries is the conversion C performs; an unnamed global base has
-no declaration in scope and stays unknown. An
+arm of `a0[i]` carries is the conversion C performs. So does a subscript of a
+global no symbol names, `dat_5068[k]`: the export header declares it at the one
+type the function reads and writes it at (`kuna_globalref.rs
+(Plan::declared_type)`, what `extract_global_objects` writes), and a subscript
+reads that type's pointee when it is the pointer the base is read at. An
 arithmetic operand is not known, because C promotes `a - b` over two
 `unsigned char`s to a negative `int` where the p-code wraps; neither is a
 constant or a call. Under that rule `(long)(int)(unsigned int)(unsigned char)c`

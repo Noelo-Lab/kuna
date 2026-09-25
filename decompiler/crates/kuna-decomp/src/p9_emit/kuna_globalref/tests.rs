@@ -19,7 +19,7 @@ fn void() -> Rc<Datatype> {
 }
 
 fn direct(start: u64, size: u64, ty: Rc<Datatype>) -> Direct {
-    Direct { start, size, ty, unnamed: true }
+    Direct { start, size, ty, unnamed: true, elem: false }
 }
 
 #[test]

@@ -666,7 +666,16 @@ shifts or orders against a literal, and — when the candidate is already a poin
 `malloc`'s `void *` — the other operand of any add, since C adds no two pointers.
 A mask elsewhere is not such a use: `(unsigned long)p & 7` is how a program tests
 a pointer's alignment, and taking it for an index's would declare the real index
-`char *` and leave the real pointer an integer. An operand already typed as a
+`char *` and leave the real pointer an integer. Nor is the right-hand side of a
+difference of two pointers (`kuna_elemptr.rs (is_pointer_difference)`): `b - buf`
+lowers to `b + buf * -1`, and when `b` is a pointer and the sum is compared or
+returned rather than dereferenced, `buf` is the pointer it always was, where
+`end - n`, whose sum is dereferenced, subtracts a number. An operand dereferenced
+itself, through a copy or a phi, or at a small literal offset (`b = buf; *b++`,
+`buf[1]`) is the base of the add it is in (`has_pointer_use`), so
+`put(char *buf, size_t len, const char *s)`'s `buf + len` indexes `buf` by `len`
+and never the other way round; a literal that is itself the address of program
+data is a table and the operand its index. An operand already typed as a
 pointer is the base, and an add whose operands could each be the base says
 nothing about either: `f(char *p, long i) { return p[i]; }` at `-O2` stays `long`
 for both. The index scale must be the element
@@ -682,11 +691,20 @@ the element; then the extensions, orderings, shifts and divisions of a loaded
 element, when they all agree; a byte compared against a printable character
 literal is plain `char`, which is what makes the decoder's input `char *`
 although one of its reads is zero-extended into an index. With none of that the
-element takes the type the load has without this rule — the fold of what its
-readers vote — and a wider element nothing votes for is unsigned, which is how an
+element takes the sign of the values the program stores into it, when they agree
+— only a tie-break, since a store writes the same bits at either sign — and then
+the type the load has without this rule — the fold of what its readers vote —
+and a wider element nothing votes for is unsigned, which is how an
 undefined word prints: `unsigned short f(unsigned i) { return tab[i & 63]; }`
 keeps its `unsigned short`, where a signed default would have its caller's
 `f(i) + 0x10000` sign-extend 0x8000. A byte with no evidence is the plain `char`.
+A value the program stores into an element keeps its own sign:
+`propagate_type_edge` does not carry the element's type from a `STORE` whose
+pointer this rule typed onto a stored value of the same width and the other sign
+(`kuna_elemptr.rs (keeps_stored_sign)`). C converts the value to the element bit
+for bit on the store, so an `int` counter stored into an `unsigned` table
+(`bzip2`'s `fmap[j] = i`) stays `int`, where it would otherwise be declared
+`unsigned int` and cast back at each of its signed compares and indexes.
 Such a default is marked as one, and a batch may replace it (below) — except in a
 function that returns the element, whose sign is what its callers read. An element as wide as a pointer is a pointer or a
 number, and only its uses say which. It commits to an integer when the elements
@@ -712,6 +730,15 @@ register is one variable once merging starts, and the pointer type would become
 the function's return type (`libbsd`'s `user_from_uid` reads its hash table into
 the `rax` it returns a record in). A constant is a candidate only when every
 reader indexes through it.
+
+A pass does not undo what an earlier pass typed: the earlier pass's `T *` has
+already turned the candidate's add into a `PTRADD` with the candidate as its
+base, and that op keeps the type whatever a later pass concludes. So a parameter
+or call return an earlier pass typed that a later pass finds indexing another
+base is disputed (`Funcdata::kuna_elemptr_dispute_input`, a record that survives
+`Funcdata::clear`), and the function restarts without it
+(`set_restart_pending`, the restart jump-table recovery uses); every later
+pass, and the restarted decompile, leaves that candidate alone.
 
 **Globals and tables are typed only where the program agrees.** A global's
 element type is a program-wide claim, and one function's evidence is not enough
@@ -772,9 +799,13 @@ filled through a global the program allocated, and an allocated buffer returned
 to the caller, plus tables whose elements have the top bit set: a `unsigned
 short` and a `unsigned int` element returned to a caller that widens them, one
 shifted, one only compared, and a byte table one function zero-extends and
-another sign-extends (declared at neither sign, each keeps its own cast).
-`tests/stages/kuna-elemptr.xml` pins the witnesses and the two controls (a record
-walked by a stride, a pointer read at two widths) in both passes.
+another sign-extends (declared at neither sign, each keeps its own cast); a
+string copied into buffers bounded by a length the function compares a pointer
+difference against (the length stays a number), and an `int` counter stored into
+an `unsigned` table whose elements index a second one (the counter stays `int`).
+`tests/stages/kuna-elemptr.xml` pins the witnesses and the three controls (a
+record walked by a stride, a pointer read at two widths, the length) in both
+passes.
 
 Shipped on: with it, the 444-slice decbench sweep has 1,645 perfect functions
 against 1,615 (171 better, none worse, no function's variable count moved), and
