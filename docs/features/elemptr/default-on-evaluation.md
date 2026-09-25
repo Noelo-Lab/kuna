@@ -14,7 +14,7 @@ evidence, the table ledger, the index-of-other refusals).
 | (e) speed | worst delta <= +5% | see `record.json` (`speed`) |
 | (f) whole-corpus hunks | every hunk in the documented effect | 1,077 functions over 45 binaries, the 25 `structural.py` flags read; a disjoint 11-binary sweep read (analysis.md section 4) |
 | (g) `modes.rs` | coherent | nothing to do: a default-on option is outside the `aggressive` preset's default-off scope |
-| (h) castbench full | casts removed, every function with more read | 35,588 -> 33,588 (0.941x -> 0.888x IDA), 339 fewer (-2,019), 16 more (+19), all read (analysis.md section 3) |
+| (h) castbench full | casts removed, every function with more read | 35,588 -> 33,553 (0.941x -> 0.887x IDA), 339 fewer (-2,054), 16 more (+19), all read (analysis.md section 3) |
 
 Value preservation (analysis.md section 7): the compiled round trip in
 `decompile_all_cli.rs` and two further fixtures of returned and shared tables print, with the

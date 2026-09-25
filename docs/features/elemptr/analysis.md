@@ -63,12 +63,12 @@ included.
 
 castbench (45 binaries x O0/O2/O2-noinline, 4,815 functions kuna, IDA and main
 share), on main `850e8c692`, which already has `castindex` and `castternary`:
-35,588 -> 33,588 casts (0.941x -> 0.888x IDA; 188.2 -> 177.7 per 1,000 lines, 29.9 ->
-28.3 per 100 statements), 339 functions with fewer (-2,019) and 16 with more (+19).
-The first version of this PR reached 33,472; the difference is casts it removed by
-declaring a sign it had no evidence for, or a table two functions read at two
-signs (section 7). By shape: `(char *)(...)` -382, `(unsigned char *)(...)` -280,
-`(unsigned long)v` -248, `(long)v` -244, `(int *)(...)` -168, `(unsigned short
+35,588 -> 33,553 casts (0.941x -> 0.887x IDA; 188.2 -> 177.5 per 1,000 lines, 29.9 ->
+28.2 per 100 statements), 339 functions with fewer (-2,054) and 16 with more (+19).
+An earlier engine reached 33,472; the difference is casts it removed by declaring
+a sign it had no evidence for, or a table two functions read at two signs
+(section 7). By shape: `(char *)(...)` -388, `(unsigned char *)(...)` -282,
+`(long)v` -254, `(unsigned long)v` -250, `(int *)(...)` -181, `(unsigned short
 *)(...)` -115, `(char **)(...)` -91. Gained: `(char *)0x...`,
 a table `globalref` cannot name (the function also writes its first byte by name,
 a symbol covers it, or it is read at two pointee types), which prints
@@ -100,9 +100,9 @@ Every one of the 16 functions with more casts (+19 in all) was read:
 `structural.py` checks every changed function (1,077 over the 45 binaries) for the
 same callees, string literals, control keywords and program data (a constant
 address may become the `dat_<addr>` it names), with statement counts within four.
-25 functions break a check; each was read and falls in a documented class:
+25 functions break a check (the same 25 on the final engine); each was read and falls in a documented class:
 
-- constant named (425 functions): `*(int *)(x * 4 + 0x20980)` -> `dat_20980[x]`,
+- constant named (426 functions): `*(int *)(x * 4 + 0x20980)` -> `dat_20980[x]`,
   the name `globalref` gives the array (IDA: `dword_205E0[...]` at the same
   address). The check flags the ones whose constant was printed in decimal or
   biased by a literal offset.

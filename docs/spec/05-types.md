@@ -741,7 +741,11 @@ compiles against any declaration, so for a table only two types disagree. The
 functions blocked or given a sign are decompiled again
 (`decompiler/crates/kuna-console/src/project.rs (converge_element_globals)`, and
 its callee-first twin in `decompile_all.rs`); a function that said nothing about
-the object is not a disagreement. Once some function has disagreed about an object,
+the object is not a disagreement. A sign evidence has settled is handed to every
+function decompiled after it (`Ledger::settled`, through `seed`), which reads the
+object at that sign at once where its own is only the default, so only the
+functions decompiled before the evidence are decided twice: without it, `sort`
+-O2's `main` was decompiled again for one table, +57% on the whole binary. Once some function has disagreed about an object,
 every function decompiled after it leaves that object alone (`Ledger::disputed`,
 handed out by `seed`), so only the functions decompiled before the first
 disagreement are decided again: on bash -O2 that is 17 functions instead of 23,
@@ -774,7 +778,7 @@ walked by a stride, a pointer read at two widths) in both passes.
 
 Shipped on: with it, the 444-slice decbench sweep has 1,645 perfect functions
 against 1,615 (171 better, none worse, no function's variable count moved), and
-the 45-binary cast corpus prints 33,588 casts against 35,588 on the functions kuna
+the 45-binary cast corpus prints 33,553 casts against 35,588 on the functions kuna
 and IDA both emit (on a main that already has `castindex` and `castternary`). The price is a
 knock-on the rule cannot see from one function: a callee parameter it now declares
 `char *` or `char **` makes an integer-typed argument in a caller print its

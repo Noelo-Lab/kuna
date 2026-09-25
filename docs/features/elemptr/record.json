@@ -62,24 +62,24 @@
    "vs_ida": 0.941
   },
   "elemptr_on_850e8c692": {
-   "casts": 33588,
-   "per_kloc": 177.7,
-   "per_100_statements": 28.3,
-   "vs_ida": 0.888,
-   "delta": -2000,
+   "casts": 33553,
+   "per_kloc": 177.5,
+   "per_100_statements": 28.2,
+   "vs_ida": 0.887,
+   "delta": -2035,
    "functions_fewer": 339,
-   "casts_fewer": 2019,
+   "casts_fewer": 2054,
    "functions_more": 16,
    "casts_more": 19,
    "per_level_vs_ida": {
-    "O0": "0.952 -> 0.869",
+    "O0": "0.952 -> 0.868",
     "O2": "0.976 -> 0.938",
-    "O2-noinline": "0.891 -> 0.852"
+    "O2-noinline": "0.891 -> 0.850"
    },
    "off_arm": "byte-identical to a build of main 850e8c692 on all 45 files",
    "note": "measured on the final engine (sign on evidence, table ledger, index-of-other refusals); an earlier engine reached 33,472 by removing casts on a sign it had no evidence for; the 16 functions with more casts are the classes read in analysis.md section 3 (a callee now declaring char * / char ** making a caller's integer argument print its conversion, a constant used at two pointee types, a call result kept in a char * slot)"
   },
-  "shape_deltas_850e8c692": "(char *)(...) -382, (unsigned char *)(...) -280, (unsigned long)v -248, (long)v -244, (int *)(...) -168, (unsigned long)(...) -134, (unsigned short *)(...) -115, (char **)(...) -91"
+  "shape_deltas_850e8c692": "(char *)(...) -388, (unsigned char *)(...) -282, (long)v -254, (unsigned long)v -250, (int *)(...) -181, (unsigned long)(...) -134, (unsigned short *)(...) -115, (char **)(...) -91"
  },
  "benchmark": {
   "metric": "decbench type_match pinned to 625e892 (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same binary (default on vs --option elemptr off)",
@@ -180,7 +180,7 @@
  "corpus_sweep": {
   "method": "castbench full, both arms of one build (--option elemptr off vs default): docs/features/elemptr/structural.py (callees, strings, control keywords, program data, statement counts per changed function) and hunks.py (line hunks with canonical variable names)",
   "functions_changed": 1077,
-  "constant_named": 425,
+  "constant_named": 426,
   "structural_flags": 25,
   "classes": "constant named as the array globalref gives it; caller constant unnamed when a callee declares another pointee; register variable split (find O0 0x160f6 93 -> 54 statements, 0xdd20); tail duplicated by returndup under its budget (find O0 0x173d3); stores split / merged through a now-char * header (tar O2-noinline 0x12990, 0x12cb0: an 8-byte zero store as 8 byte stores, 'ustar' as builtin_strncpy, the same bytes); a read printed at each of its uses (upstream's expression-duplication bound, no intervening store in any case read); one while loop absorbing its iterator",
   "read_by_hand": "all 25 flagged functions and the 16 with more casts; the classes are the ones analysis.md section 4 lists",
@@ -272,7 +272,7 @@
   "e_speed": "fmt +0.10%, ls -0.02%, sort +1.19%, bash +1.37%; worst +1.37%; budget +5%",
   "f_hunks": "1,077 functions over 45 binaries, 25 flagged by structural.py, every one read and classified; plus a disjoint 11-binary sweep (113 functions, 6 with more casts, read)",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope",
-  "h_castbench": "on 850e8c692: 35,588 -> 33,588 (0.941x -> 0.888x IDA), 339 fewer (-2,019), 16 more (+19, read)",
+  "h_castbench": "on 850e8c692: 35,588 -> 33,553 (0.941x -> 0.887x IDA), 339 fewer (-2,054), 16 more (+19, read)",
   "workspace_tests": "5 kuna-cli tests pinned the integer spelling: a_load_is_not_printed_after_a_store_into_its_bytes, an_implied_cast_round_trips_through_the_printed_c, a_signed_only_variable_round_trips_through_the_printed_c follow the subscript; a_conditional_arm_cast_round_trips_through_the_printed_c (castternary) and a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c (castindex) keep their pins with elemptr off and also compile and run the elemptr-on output, which computes the same values"
  }
 }
