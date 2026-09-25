@@ -176,12 +176,33 @@ jobs:
             exit 1
           fi
 
+      # Node 22 for its global WebSocket, which the /decompile2 browser smoke
+      # drives headless Chrome with (the runner image ships google-chrome).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The study view's pure modules need no build; run them before the
+      # wasm build so a renderer or session regression answers in seconds.
+      - name: Test the /decompile2 study view modules
+        run: |
+          node integrations/web/test/decompile2-render.mjs
+          node integrations/web/test/decompile2-session.mjs
+          node integrations/web/test/decompile2-bytes.mjs
+          node integrations/web/test/decompile2-learn.mjs
+
       - name: Assemble and test the browser Worker boundary
         run: |
           bash integrations/web/build.sh
           node integrations/web/test/worker.mjs
           node integrations/web/test/worker-errors.mjs
           node integrations/web/test/dev-viz.mjs
+          node integrations/web/test/decompile2-worker.mjs
+          if command -v google-chrome >/dev/null; then
+            node integrations/web/test/decompile2-browser.mjs
+          else
+            echo "decompile2-browser skipped: no google-chrome on this runner"
+          fi
 
   rust-test:
     name: cargo workspace suite
