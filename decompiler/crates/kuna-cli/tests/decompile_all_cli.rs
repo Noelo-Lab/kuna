@@ -4798,6 +4798,8 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
 /// elements backward; the differences are divided, shifted, compared signed and
 /// unsigned, and passed as a length.  A scale that is not the element's size, a
 /// byte offset read at 8 bytes and a `long *` difference keep the integer form.
+/// A base64 decoder indexes its `malloc`ed global table by input bytes of 0x80
+/// and up, into a filler with the sign bit set, and checksums every quad.
 #[test]
 fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c() {
     let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
@@ -4854,12 +4856,20 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
                     "((unsigned long *)a0)[a1]",
                     "((double *)a0)[a1]",
                     "strchr(a0,a1) - a0",
+                    "((char *)b64_table)[",
                 ]
             } else {
-                &["(long)strchr(a0,a1) - (long)a0", "*(short *)((long)a0 + (long)a1 * 2)"]
+                &[
+                    "(long)strchr(a0,a1) - (long)a0",
+                    "*(short *)((long)a0 + (long)a1 * 2)",
+                    "(long)b64_table",
+                ]
             };
             for w in want.iter().chain(kept) {
                 assert!(body.contains(w), "{build} castindex {arm}: expected `{w}`\n{body}");
+            }
+            if arm == "on" {
+                assert!(!body.contains("(long)b64_table"), "{build}: the table lookup kept its round trip\n{body}");
             }
             if !runs_here || !have_cc {
                 eprintln!("castindex round trip: no x86-64 host or no `cc`, spelling checked only");

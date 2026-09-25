@@ -7,6 +7,7 @@
 #include <string.h>
 
 /* prelude */
+#include <stdlib.h>
 #include <sys/mman.h>
 #if defined(__clang__)
 #define KEEP __attribute__((noinline))
@@ -15,7 +16,10 @@
 #endif
 KEEP void sink(long x) { printf("%ld\n", x); }
 KEEP void sinku(unsigned long x) { printf("%lu\n", x); }
+KEEP void fill(void *p, int c, unsigned long n) { memset(p, c, n); }
 #define HEAD(p) sink(*(unsigned int *)((char *)(p) + 4) + *(long *)((char *)(p) + 8))
+#define CALL(f, ...) ((void (*)())(f))(__VA_ARGS__)
+char *b64_table;
 /* tested */
 KEEP void ld_s8(void *p, int i) { HEAD(p); sink(*(signed char *)((char *)p + i)); }
 KEEP void ld_u8(void *p, unsigned int i) { HEAD(p); sink(*(unsigned char *)((char *)p + i)); }
@@ -60,6 +64,34 @@ KEEP void diff_len(char *a, char *b, unsigned long n)
     sink(e - a < (long)n);
     sink(strnlen(a, e - a));
 }
+KEEP void b64_decode(long data, unsigned long len)
+{
+    const char *in = (const char *)data;
+    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    b64_table = malloc(256);
+    fill(b64_table, 0xa5, 256);
+    for (unsigned long i = 0; i < 64; i++)
+        b64_table[(unsigned char)alphabet[i]] = i;
+    unsigned char *out = malloc(len / 4 * 3);
+    unsigned long j = 0, h = 0;
+    for (unsigned long i = 0; i + 3 < len; i += 4) {
+        unsigned int a = in[i] == '=' ? 0 : b64_table[(unsigned char)in[i]];
+        unsigned int b = in[i + 1] == '=' ? 0 : b64_table[(unsigned char)in[i + 1]];
+        unsigned int c = in[i + 2] == '=' ? 0 : b64_table[(unsigned char)in[i + 2]];
+        unsigned int d = in[i + 3] == '=' ? 0 : b64_table[(unsigned char)in[i + 3]];
+        unsigned int t = (a << 18) + (b << 12) + (c << 6) + d;
+        h = h * 131 + t;
+        out[j++] = t >> 16;
+        if (in[i + 2] != '=') out[j++] = t >> 8;
+        if (in[i + 3] != '=') out[j++] = t;
+    }
+    for (unsigned long k = 0; k < j; k++)
+        h = h * 131 + out[k];
+    sinku(j);
+    sinku(h);
+    free(out);
+    free(b64_table);
+}
 KEEP void diff_wide(long *a, long *b) { sink(*a + *b); sink(b - a); }
 /* main */
 int main(void)
@@ -87,6 +119,11 @@ int main(void)
     diff_back(s, 'a'); diff_back(s + 6, 'e');
     diff_len(s, s + 2, 9); diff_len(s + 19, s, 5);
     diff_wide((long *)buf, (long *)buf + 11);
+    /* A table indexed by an input byte: '\xff' and '*' read the 0xa5 filler
+       (a sign-extended index would read before the table). */
+    const char *enc[] = { "aGVsbG8sIHdvcmxkIQ==", "/+/+Zm9vYg==", "\xff*Zm9v\x80" "A==" };
+    for (unsigned t = 0; t < 3; t++)
+        CALL(b64_decode, enc[t], strlen(enc[t]));
     /* An unsigned index with its top bit set: zero-extended it reads 2^31 and
        more elements forward, sign-extended it would read backward. */
     size_t big = (size_t)24 << 30;
