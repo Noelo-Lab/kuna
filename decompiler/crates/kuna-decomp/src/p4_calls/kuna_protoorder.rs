@@ -216,6 +216,22 @@ pub fn call_argument_vote(
     vote_holds(data, op, fc, slot, arg_size, &bare)?.then_some(bare)
 }
 
+/// (kuna `callbacktype`) Would a callee's vote of `ct` for argument `slot` of
+/// the call `op`, passed in `storage`, hold? For a type from a statement the
+/// callee no longer files here, at a call whose declared prototype fixes the
+/// storage ([`crate::kuna_callbacktype::pointee_vote`]).
+pub(crate) fn argument_vote_holds(
+    data: &Funcdata,
+    op: OpId,
+    fc: &FuncCallSpecs,
+    slot: int4,
+    arg_size: int4,
+    ct: &Rc<Datatype>,
+    storage: &(Address, int4),
+) -> bool {
+    vote_holds_in(data, op, fc, slot, arg_size, ct, Some(storage)).unwrap_or(false)
+}
+
 /// [`call_argument_vote`]'s refusals for one candidate type `ct`.
 fn vote_holds(
     data: &Funcdata,
@@ -225,6 +241,19 @@ fn vote_holds(
     arg_size: int4,
     ct: &Rc<Datatype>,
 ) -> Option<bool> {
+    vote_holds_in(data, op, fc, slot, arg_size, ct, fc.final_input_storage().get((slot - 1) as usize))
+}
+
+/// [`vote_holds`] for the argument passed in `storage`.
+fn vote_holds_in(
+    data: &Funcdata,
+    op: OpId,
+    fc: &FuncCallSpecs,
+    slot: int4,
+    arg_size: int4,
+    ct: &Rc<Datatype>,
+    storage: Option<&(Address, int4)>,
+) -> Option<bool> {
     if class_of(ct).is_none()
         || ct.get_size() > arg_size
         || crate::p5_types::kuna_ptrdepth::pointer_depth(ct, 3) > crate::p5_types::kuna_ptrdepth::MAX_INFERRED_PTR_DEPTH
@@ -232,7 +261,7 @@ fn vote_holds(
         return Some(false);
     }
     let vn = data.obank().get(op)?.get_in(slot)?;
-    let (addr, size) = fc.final_input_storage().get((slot - 1) as usize)?;
+    let (addr, size) = storage?;
     Some(
         !(addresses_a_frame_object(data, vn)
             || storage_disagrees(fc.proto(), addr, *size, ct)

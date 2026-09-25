@@ -18,6 +18,13 @@
 //! ([`Ledger::caller_changes`]). A declaration that is exactly what the body
 //! already printed is not parked ([`Decline::Agrees`]).
 //!
+//! A declared `void *` says the parameter is a pointer and nothing about what
+//! it points at, while the first decompile of the body still knows what it
+//! read through it. That knowledge is kept for the callback's call sites
+//! ([`pointee_vote`]): a caller that only forwards its own pointer to the
+//! callback keeps the `struct_0 *` it had before the declaration, instead of
+//! taking the slot's `void *`.
+//!
 //! # What is refused
 //!
 //! A declared prototype input-locks the parameters, so the claim has to be
@@ -106,11 +113,12 @@ use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
-use crate::context::VarnodeId;
+use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::infra::architecture::Architecture;
-use crate::p4_calls::fspec::{FuncProto, PrototypePieces};
+use crate::p4_calls::fspec::{FuncCallSpecs, FuncProto, PrototypePieces};
+use crate::p4_calls::kuna_protoorder::RecoveredTypes;
 
 /// Whether a callback is declared by the slot it is passed to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -389,6 +397,9 @@ pub struct Ledger {
     pub by_caller: HashMap<(int4, uintb), CallerFacts>,
     /// Function key -> what its own first decompile proved.
     pub own: HashMap<(int4, uintb), OwnFacts>,
+    /// Parked function key -> the parameter types its first decompile stated
+    /// (`protoorder`), which the declaration replaced ([`pointee_vote`]).
+    pub stated: HashMap<(int4, uintb), Rc<RecoveredTypes>>,
 }
 
 /// Why a declared callback prototype was not parked.
@@ -787,18 +798,37 @@ impl Ledger {
     /// takes a declaration of `arity` parameters?
     ///
     /// Only a call site that the declaration changes: one that passes a
-    /// different number of arguments, or that consumes the returned value. A
-    /// call that passes `arity` arguments and ignores the result prints the
+    /// different number of arguments, or that consumes a returned value the
+    /// declaration types differently from what the callee's first decompile
+    /// printed (`same_return` false). A call that passes `arity` arguments and
+    /// ignores the result, or reads the same `int` it read before, prints the
     /// same call under either prototype. A caller the run never recorded is
     /// decompiled again.
-    pub fn caller_changes(&self, caller: uintb, callee: uintb, arity: usize) -> bool {
+    pub fn caller_changes(&self, caller: uintb, callee: uintb, arity: usize, same_return: bool) -> bool {
         let mut rows = self.by_caller.iter().filter(|(k, _)| k.1 == caller).peekable();
         if rows.peek().is_none() {
             return true;
         }
         rows.any(|(_, c)| {
-            c.calls.iter().any(|(to, n, consumed)| *to == callee && (*n != arity || *consumed))
+            c.calls
+                .iter()
+                .any(|(to, n, consumed)| *to == callee && (*n != arity || (*consumed && !same_return)))
         })
+    }
+
+    /// Did the first decompile of the function at `entry` print the return
+    /// type `pieces` declares? `false` when it printed a signature with an
+    /// untyped part.
+    pub fn printed_the_return(&self, entry: &Address, pieces: &PrototypePieces) -> bool {
+        let Some(sig) = key_of(entry).and_then(|k| self.own.get(&k)).and_then(|o| o.printed.as_ref())
+        else {
+            return false;
+        };
+        match (&sig.output, &pieces.outtype) {
+            (None, None) => true,
+            (Some(a), Some(b)) => same_type(a, b),
+            _ => false,
+        }
     }
 
     /// What each recorded direct call to `callee` reads of its return.
@@ -1454,16 +1484,93 @@ pub fn park(
     arch.set_function_prototype_pieces_at(entry, pieces.clone());
     // The declaration replaces what the first pass recovered. `protoorder`
     // filed the recovered types for the callback's own call sites and
-    // declines to file again once a prototype is parked, so the stale
-    // statement would outlive the body it came from; `calleevote` would keep
-    // voting on a function that now has a declared prototype. Both are
-    // dropped here, and the redo files whatever is true of the new body.
+    // declines to file again once a prototype is parked, so the statement
+    // leaves its table, where every reader would take its arity and storage
+    // for the function's; `calleevote` would keep voting on a function that
+    // now has a declared prototype. The statement's pointer types still say
+    // what the body reads through a `void *`, so they move to
+    // [`Ledger::stated`] for [`pointee_vote`].
     if let Some(key) = crate::kuna_protoorder::stated_key(entry) {
-        arch.kuna_protoorder_types.remove(&key);
+        if let Some(stated) = arch.kuna_protoorder_types.remove(&key) {
+            arch.kuna_callbacktype.stated.insert(key, stated);
+        }
         arch.kuna_calleevote.forget(key);
         arch.kuna_calleevote.own.remove(&key);
     }
     Ok(pieces)
+}
+
+/// Copy onto `data` what every parked callback it calls stated about its
+/// parameters before the declaration replaced it ([`pointee_vote`]). A
+/// function never reads its own.
+pub fn seed(arch: &Architecture, data: &mut Funcdata) {
+    let stated = &arch.kuna_callbacktype.stated;
+    if stated.is_empty() {
+        return;
+    }
+    let own = key_of(data.get_address());
+    let entries: Vec<Address> = (0..data.num_calls())
+        .map(|i| data.get_call_specs(i).get_entry_address().clone())
+        .filter(|e| !e.is_invalid())
+        .collect();
+    for e in entries {
+        let Some(key) = key_of(&e).filter(|k| Some(*k) != own) else { continue };
+        if let Some(s) = stated.get(&key) {
+            data.kuna_set_callback_stated(&e, Rc::clone(s));
+        }
+    }
+}
+
+/// The type a parked callback's first decompile gave the parameter an
+/// argument of the call `op` is passed in, offered to `Varnode::getLocalType`'s
+/// fold where the declaration that replaced it says only `void *`.
+///
+/// It is a vote about the value, never the type the argument is converted
+/// to, so it prints no cast: `declared` stays the parameter's type. Only a
+/// pointer to something is offered, only where the statement put that
+/// parameter in the storage the declaration passes it in, and only where
+/// `protoorder`'s vote would hold at any call site.
+pub(crate) fn pointee_vote(
+    data: &Funcdata,
+    op: OpId,
+    fc: &FuncCallSpecs,
+    slot: int4,
+    arg_size: int4,
+    declared: &Datatype,
+) -> Option<Rc<Datatype>> {
+    let stated = data.kuna_callback_stated(fc.get_entry_address())?;
+    let index = usize::try_from(slot - 1).ok()?;
+    let param = fc.proto().get_param(slot - 1)?;
+    let storage = (param.get_address(), param.get_size());
+    let vote = stated.param_type_at(index, &storage.0, storage.1)?;
+    if !narrows_a_void_pointer(declared, vote) {
+        return None;
+    }
+    crate::kuna_protoorder::argument_vote_holds(data, op, fc, slot, arg_size, vote, &storage)
+        .then(|| Rc::clone(vote))
+}
+
+/// Is `declared` a `void *` and `vote` a pointer of the same size to
+/// something?
+fn narrows_a_void_pointer(declared: &Datatype, vote: &Datatype) -> bool {
+    let points_at = |t: &Datatype| {
+        (t.get_metatype() == type_metatype::TYPE_PTR).then(|| t.get_ptr_to()).flatten().map(|p| p.get_metatype())
+    };
+    points_at(declared) == Some(type_metatype::TYPE_VOID)
+        && vote.get_size() == declared.get_size()
+        && points_at(vote).is_some_and(|m| !matches!(m, type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN))
+}
+
+/// Forget every kept statement with a parameter type that names one of
+/// `names` ([`crate::kuna_protoorder::forget_statements_naming`] for
+/// [`Ledger::stated`]).
+pub fn forget_statements_naming(arch: &mut Architecture, names: &[String]) {
+    if names.is_empty() {
+        return;
+    }
+    arch.kuna_callbacktype.stated.retain(|_, stated| {
+        !stated.inputs.iter().any(|(_, _, ct)| crate::kuna_protoorder::names_type(ct, names))
+    });
 }
 
 #[cfg(test)]

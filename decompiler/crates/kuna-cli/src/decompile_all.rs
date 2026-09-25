@@ -1949,7 +1949,8 @@ fn image_open_entries(graph: &CallGraph, binary: &str, pref: SlicePref) -> BTree
 /// cross-references as there were callback arguments. The callback itself is
 /// decompiled again, and so is every function that CALLS it where the
 /// declaration changes that call: it passes another number of arguments or
-/// consumes the result ([`kuna_decomp::kuna_callbacktype::Ledger::caller_changes`]).
+/// consumes a result the declaration types differently from what the callback
+/// printed ([`kuna_decomp::kuna_callbacktype::Ledger::caller_changes`]).
 fn callback_park_round(
     prog: &mut ConsoleProgram,
     graph: &CallGraph,
@@ -2006,8 +2007,11 @@ fn callback_park_round(
             Ok(pieces) => {
                 let arity = pieces.intypes.len();
                 let ledger = &prog.arch().kuna_callbacktype;
-                let redo: Vec<u64> =
-                    callers.into_iter().filter(|c| ledger.caller_changes(*c, value, arity)).collect();
+                let same_return = ledger.printed_the_return(&entry, &pieces);
+                let redo: Vec<u64> = callers
+                    .into_iter()
+                    .filter(|c| ledger.caller_changes(*c, value, arity, same_return))
+                    .collect();
                 if trace {
                     eprintln!(
                         "[callbacktype] park {name} @0x{value:x} from {} params={arity} callers={redo:x?}",
@@ -2226,6 +2230,7 @@ fn converge_callee_first(
         return;
     }
     kuna_decomp::kuna_protoorder::forget_statements_naming(prog.arch_mut(), &stale);
+    kuna_decomp::kuna_callbacktype::forget_statements_naming(prog.arch_mut(), &stale);
     kuna_decomp::kuna_calleevote::forget_statements_naming(prog.arch_mut(), &stale);
     for &(index, park) in plan {
         if !slots[index].as_ref().is_some_and(|r| kuna_console::project::names_any_type(r, &stale)) {

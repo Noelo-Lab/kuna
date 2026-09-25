@@ -616,7 +616,8 @@ fn a_declaration_the_body_already_printed_is_not_parked() {
 
 /// A function that calls a parked callback directly is decompiled again only
 /// where the declaration changes that call: it passes another number of
-/// arguments, or it consumes the returned value. A caller the run never
+/// arguments, or it consumes a returned value the declaration types
+/// differently from what the callback printed. A caller the run never
 /// recorded is decompiled again.
 #[test]
 fn a_caller_is_decompiled_again_only_where_the_declaration_changes_its_call() {
@@ -625,10 +626,87 @@ fn a_caller_is_decompiled_again_only_where_the_declaration_changes_its_call() {
     l.by_caller.insert((1, 0x1000), calls(vec![(0x3a72, 1, false), (0x4000, 2, true)]));
     l.by_caller.insert((1, 0x2000), calls(vec![(0x3a72, 1, true)]));
     l.by_caller.insert((1, 0x3000), calls(vec![(0x3a72, 0, false)]));
-    assert!(!l.caller_changes(0x1000, 0x3a72, 1), "same count, result ignored");
-    assert!(l.caller_changes(0x1000, 0x3a72, 2), "the declaration passes one more");
-    assert!(l.caller_changes(0x2000, 0x3a72, 1), "the caller consumes the result");
-    assert!(l.caller_changes(0x3000, 0x3a72, 1), "the call passed fewer");
-    assert!(!l.caller_changes(0x1000, 0x5000, 1), "no call to it in the body");
-    assert!(l.caller_changes(0x9000, 0x3a72, 1), "never recorded");
+    for same_return in [false, true] {
+        assert!(!l.caller_changes(0x1000, 0x3a72, 1, same_return), "same count, result ignored");
+        assert!(l.caller_changes(0x1000, 0x3a72, 2, same_return), "the declaration passes one more");
+        assert!(l.caller_changes(0x3000, 0x3a72, 1, same_return), "the call passed fewer");
+        assert!(!l.caller_changes(0x1000, 0x5000, 1, same_return), "no call to it in the body");
+        assert!(l.caller_changes(0x9000, 0x3a72, 1, same_return), "never recorded");
+    }
+    assert!(l.caller_changes(0x2000, 0x3a72, 1, false), "the result it consumes is typed anew");
+    assert!(!l.caller_changes(0x2000, 0x3a72, 1, true), "it consumes the same return as before");
+}
+
+thread_local! {
+    static RAM: Rc<kuna_base::space::AddrSpace> = Rc::new(kuna_base::space::AddrSpace::new(
+        kuna_base::space::spacetype::IPTR_PROCESSOR,
+        "ram",
+        false,
+        8,
+        1,
+        1,
+        0,
+        0,
+        0,
+    ));
+}
+
+fn ram(off: uintb) -> Address {
+    RAM.with(|sp| Address::new(Rc::clone(sp), off))
+}
+
+/// The return a consuming caller reads is typed anew only when the declared
+/// return is not the one the callback's first decompile printed. A callback
+/// whose printed signature has an untyped part is not known to agree.
+#[test]
+fn the_return_is_the_printed_one_only_when_the_types_agree() {
+    let int = base(4, type_metatype::TYPE_INT);
+    let long = base(8, type_metatype::TYPE_INT);
+    let entry = ram(0x3a72);
+    let key = key_of(&entry).unwrap();
+    let mut l = Ledger::default();
+    assert!(!l.printed_the_return(&entry, &declared(&[], Some(Rc::clone(&int)))), "never decompiled");
+    let printed = |output: Option<Rc<Datatype>>| OwnFacts {
+        printed: Some(PrintedSig { inputs: vec![], output, dotdotdot: false }),
+        ..Default::default()
+    };
+    l.own.insert(key, printed(Some(Rc::clone(&int))));
+    assert!(l.printed_the_return(&entry, &declared(&[Rc::clone(&long)], Some(Rc::clone(&int)))));
+    assert!(!l.printed_the_return(&entry, &declared(&[], Some(Rc::clone(&long)))), "another width");
+    assert!(!l.printed_the_return(&entry, &declared(&[], None)), "the declaration returns nothing");
+    l.own.insert(key, printed(None));
+    assert!(l.printed_the_return(&entry, &declared(&[], None)));
+    l.own.insert(key, OwnFacts::default());
+    assert!(!l.printed_the_return(&entry, &declared(&[], None)), "an untyped signature");
+}
+
+fn ptr_to(to: Rc<Datatype>, size: int4) -> Rc<Datatype> {
+    let mut p = Datatype::new(size, type_metatype::TYPE_PTR);
+    p.submeta = crate::dtype::sub_metatype::SUB_PTR;
+    p.kind = crate::dtype::DatatypeKind::Pointer { ptrto: to, spaceid: None, truncate: None, wordsize: 1 };
+    Rc::new(p)
+}
+
+/// A caller keeps what the callback's body read through a parameter the
+/// declaration calls `void *`: a pointer to something, of the same size.
+/// Nothing narrows a declared `char *` or `int`, and a `void *` or
+/// `undefined *` vote says no more than the declaration.
+#[test]
+fn only_a_pointer_to_something_narrows_a_declared_void_pointer() {
+    let void_ptr = ptr_to(base(0, type_metatype::TYPE_VOID), 8);
+    let record = {
+        let mut t = Datatype::new(0x10, type_metatype::TYPE_STRUCT);
+        t.name = "struct_0".to_string();
+        Rc::new(t)
+    };
+    let record_ptr = ptr_to(Rc::clone(&record), 8);
+    assert!(narrows_a_void_pointer(&void_ptr, &record_ptr));
+    assert!(narrows_a_void_pointer(&void_ptr, &ptr_to(base(8, type_metatype::TYPE_UINT), 8)));
+    assert!(!narrows_a_void_pointer(&void_ptr, &void_ptr), "void * says nothing more");
+    assert!(!narrows_a_void_pointer(&void_ptr, &ptr_to(base(1, type_metatype::TYPE_UNKNOWN), 8)));
+    assert!(!narrows_a_void_pointer(&void_ptr, &base(8, type_metatype::TYPE_INT)), "not a pointer");
+    assert!(!narrows_a_void_pointer(&void_ptr, &ptr_to(Rc::clone(&record), 4)), "another size");
+    let char_ptr = ptr_to(base(1, type_metatype::TYPE_INT), 8);
+    assert!(!narrows_a_void_pointer(&char_ptr, &record_ptr), "the declaration is not void *");
+    assert!(!narrows_a_void_pointer(&base(4, type_metatype::TYPE_INT), &record_ptr));
 }
