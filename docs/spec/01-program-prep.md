@@ -219,8 +219,8 @@ parse, so an image whose table is usable is passed on byte for byte; the rewrite
 kept only if the rewritten copy actually parses, so corruption elsewhere still
 reports `object`'s own error rather than a misleading one about the section table.
 What was dropped, and what survived it, is reported on stderr. The CLI surfaces
-that parse the image themselves rather than through the loader (`strings`, `xrefs`,
-`decompile-graph`, the call graph) read it through the same normalization
+that parse the image themselves rather than through the loader (`strings`, `crypto`,
+`xrefs`, `decompile-graph`, the call graph) read it through the same normalization
 (`elf_shdr (read_image)`), so a recovered image is recovered everywhere.
 
 (kuna) **A PE data-directory count larger than its own header is clamped, not
@@ -728,7 +728,7 @@ re-parses the input and reports the entry through the inventory on every path.
 A TE image has no `object::File`, so the Listing discovery tier cannot run over
 it: the deferred consumers are skipped and the load says so once on stderr —
 unconditionally, because it is a property of the container rather than of a
-run's options — and the object-view consumers (`strings`, `xrefs`, `decompile-graph`,
+run's options — and the object-view consumers (`strings`, `crypto`, `xrefs`, `decompile-graph`,
 and the graph-backed `functions`/`decompile-all` filters) report one capability
 error from the shared image read rather than the object crate's parse failure.
 
