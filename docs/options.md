@@ -280,6 +280,9 @@ Three tiers:
 | a stack local is declared unsigned long and every comparison on it is written (long)v | [`castsign`](#castsign) |
 | if (0 <= (long)v15) with unsigned long v15; // stack - 0x60 | [`castsign`](#castsign) |
 | the declared signedness of a frame local contradicts the casts in the body | [`castsign`](#castsign) |
+| a conditional arm is cast to the type the conditional already has, v = c ? (int)*(char *)p : 0; | [`castternary`](#castternary) |
+| every arm of a ?: over bytes carries an (int) cast | [`castternary`](#castternary) |
+| (unsigned long)v1 on one arm of a ?: whose other arm is already unsigned long | [`castternary`](#castternary) |
 | a local is declared with three or more levels of pointer indirection | [`ptrdepthcap`](#ptrdepthcap) |
 | unsigned long long ***** or char ***** appears in the output | [`ptrdepthcap`](#ptrdepthcap) |
 | C++ std::string / ostringstream locals get absurd pointer types | [`ptrdepthcap`](#ptrdepthcap) |
@@ -1524,6 +1527,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default: a stack local or a pointer index the body only compares signed is declared `long`/`int` rather than `unsigned long`/`unsigned int` with `(long)v` at each comparison. Set it off to get exactly what `signedness` alone declares (the frame locals keep the type inference chose), for example when diffing against output from before the option existed. It never declares anything unsigned, and it only acts when `signedness` is not `upstream`. A readability option: decbench type_match normalizes signedness away and scores it zero either way.
 - **Where / provenance:** P9/cast-policy · kuna · presentation-default · kuna-castsign
 - **Example:** `option castsign off`
+
+### `castternary` -- on | off, default `on`
+
+- **Symptoms:** a conditional arm is cast to the type the conditional already has, v = c ? (int)*(char *)p : 0;; every arm of a ?: over bytes carries an (int) cast; (unsigned long)v1 on one arm of a ?: whose other arm is already unsigned long.
+- **What it does:** Leave out an integer widening on an arm of the conditional `iteregion` prints, `dest = c ? (int)*(char *)p : 0;`, when the conditional operator performs that conversion itself. The second and third operands of `?:` undergo the usual arithmetic conversions (C11 6.5.15p5), integer promotion first, so the `char` arm above is converted to `int` whether or not the cast is written, and the same diamond printed as if/else already has no cast (`castimplied`). `castimplied` refuses the arms because leaving one arm's cast out can change the type of the whole conditional (`c ? (long)i : u` is a `long`, `c ? i : u` an `unsigned int` for `int i` and `unsigned int u`). When on, `kuna_castternary` leaves the cast out only when it is a value-preserving integer widening (never a narrowing, a sign change, a conversion from or to bool, an enum, a float or a pointer), when the usual arithmetic conversions of the two arms give the cast's target type both with the cast and without it, and when the conditional is assigned to a variable declared with an integer type. The conditional then converts the arm to that type itself and keeps its own type and value, so the assignment stores what it stored before (a pointer-declared destination, a merged variable, keeps its casts). Each arm's C type is carried as the set of promoted types (`int`, `unsigned int`, the signed and unsigned 8-byte integers) it may have: one type for a declared variable, a cast that stays or a load through a pointer printed with its pointee; every promotion its width allows for an expression nothing states the type of; for a literal, the type C gives the token the printer writes (base, suffix and magnitude: `0xffffffff` is `unsigned int`, `3000000000` is `long`). The conversions must give the target for every combination. When both arms carry a cast, both go only when the conditional over both bare operands still has that type, else one of them. Only where `int` is 4 bytes, and C output only (Rust's `if c { a } else { b }` needs both arms of one type). On the 45-binary cast corpus casts on the 4,815 functions kuna and IDA both emit go 37,477 -> 37,474 (2 functions fewer, 0 more; gcc -O0 conditionals over a byte are rare there); 0/675 datatest assertions and no existing stage assertion move, and the 444-slice typesweep is identical on all 10,748 functions.
+- **When to flip:** On by default: `v2 = c ? *(char *)p : 0;` rather than `v2 = c ? (int)*(char *)p : 0;`. Set it off to get every arm cast `iteregion` printed before the option existed, for example when diffing against older output. It never changes the conditional's type, so the value assigned, passed or compared is the same bit for bit.
+- **Where / provenance:** P9/cast-policy · kuna · presentation-default · kuna-castternary
+- **Example:** `option castternary off`
 
 ### `ptrdepthcap` -- on | off, default `off`
 

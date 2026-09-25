@@ -42,7 +42,8 @@
 //! # The arms' C types
 //!
 //! Types are compared the way the conversions see them: after integer promotion
-//! every arm is one of `int`, `unsigned int`, `long`, `unsigned long`, and each
+//! every arm is one of `int`, `unsigned int` or a signed or unsigned 8-byte
+//! integer (`long` on LP64, `long long` where `long` is 4 bytes), and each
 //! arm's C type is carried as the SET of those it may be.  A declared variable,
 //! a cast that stays, a load through a pointer printed with its pointee type
 //! (what `castimplied` knows of an operand) is exactly one.  An expression
@@ -66,7 +67,9 @@ use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::kuna_castimplied::{int_range, preserves, CType, ImpliedCasts, PrintedForms};
 
-/// Promoted C integer types, as bits of a set.
+/// Promoted C integer types, as bits of a set: `int`, `unsigned int`, and the
+/// signed and unsigned 8-byte integers (`long` where it is 8 bytes, else
+/// `long long`).  Only size and signedness decide a conversion's value.
 const INT: u8 = 1;
 const UINT: u8 = 2;
 const LONG: u8 = 4;
