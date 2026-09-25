@@ -47,6 +47,7 @@ use std::rc::Rc;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
+use crate::cast::{CastStrategy, CastStrategyC};
 use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
@@ -68,6 +69,24 @@ pub(crate) enum Leave {
     SharedAddress,
     WideNegativeIndex,
     EnumTarget,
+    /// `castindex`: both operands of the sum are pointers.
+    TwoPointers,
+    /// `castindex`: the index is not an integer the subscript converts as the
+    /// integer form does (a pointer, a float, a `bool`, an enum, or a cast the
+    /// pass inserted).
+    IndexNotInteger,
+    /// `castindex`: the scale is not the element's size.
+    ScaleMismatch,
+    /// `castindex`: the scaling op has not been cast yet.
+    ScaleUnsettled,
+    /// `castindex`: an operand of the difference is not a pointer.
+    DiffNotPointers,
+    /// `castindex`: the pointees differ, or are wider than a byte.
+    DiffPointee,
+    /// `castindex`: the difference is not an integer of the pointer's width.
+    DiffResult,
+    /// `castindex`: the subscript would spell as many casts as the integer form.
+    NoCastSaved,
 }
 
 /// How the `PTRADD` reaches a `T *` base.
@@ -488,6 +507,102 @@ fn integer_result(code: OpCode) -> bool {
     )
 }
 
+/// The element `T` a sum of the pointer `ptype` and an offset steps in, and the
+/// `T *` it is printed as: the value a lone LOAD reads or a lone STORE writes
+/// through the sum (the sum's own pointee when that is the same type or an
+/// integer of the same width), else the sum's own pointee, a `void` pointee
+/// counting in bytes for a value that stays in the function.  `T` must be a
+/// scalar or pointer C sizes at exactly its width.
+fn element(
+    data: &mut Funcdata,
+    op: OpId,
+    out: VarnodeId,
+    ptype: &Rc<Datatype>,
+) -> Result<(Rc<Datatype>, Rc<Datatype>, SumUse), Leave> {
+    let out_size = data.vbank().get(out).map(|v| v.get_size()).unwrap_or(0);
+    if ptype.get_word_size() != Some(1) || ptype.get_size() != out_size {
+        return Err(Leave::WordAddressed);
+    }
+    let tlst = data.get_arch().types_rc().ok_or(Leave::WordAddressed)?;
+    let outty = data.vn_high_type_def_facing(out);
+    let out_pointee = (outty.get_metatype() == type_metatype::TYPE_PTR
+        && outty.get_word_size() == Some(1)
+        && outty.get_size() == out_size)
+        .then(|| outty.get_ptr_to().map(strip_typedefs))
+        .flatten();
+    let (target, target_ptr, used) = match access_type(data, out, op) {
+        Access::Unsettled => return Err(Leave::UnsettledStore),
+        Access::Value(a) => {
+            let a_elem = strip_typedefs(Rc::clone(&a));
+            match out_pointee {
+                Some(p) if p.get_size() == a_elem.get_size() && same_element(&p, &a_elem) => {
+                    (p, outty, SumUse::Access)
+                }
+                _ => {
+                    let ptr = tlst
+                        .get_type_pointer(out_size, a, 1)
+                        .map_err(|_| Leave::Unsized)?;
+                    (a_elem, ptr, SumUse::Access)
+                }
+            }
+        }
+        Access::None => {
+            if outty.get_metatype() != type_metatype::TYPE_PTR {
+                return Err(Leave::OutNotPointer);
+            }
+            if read_as_integer(data, out) || declared_non_pointer(data, out) {
+                return Err(Leave::IntegerUse);
+            }
+            if shared_address(data, out) {
+                return Err(Leave::SharedAddress);
+            }
+            let pointee = out_pointee.ok_or(Leave::WordAddressed)?;
+            if pointee.get_metatype() != type_metatype::TYPE_VOID {
+                (pointee, outty, SumUse::Own)
+            } else if stays_in_function(data, out) {
+                let byte = tlst
+                    .get_base(1, type_metatype::TYPE_INT)
+                    .map_err(|_| Leave::VoidTarget)?;
+                let ptr = tlst
+                    .get_type_pointer(out_size, Rc::clone(&byte), 1)
+                    .map_err(|_| Leave::VoidTarget)?;
+                (byte, ptr, SumUse::Bytes)
+            } else {
+                return Err(Leave::VoidTarget);
+            }
+        }
+    };
+    if target.is_enum_type() {
+        return Err(Leave::EnumTarget);
+    }
+    match target.get_metatype() {
+        type_metatype::TYPE_INT
+        | type_metatype::TYPE_UINT
+        | type_metatype::TYPE_BOOL
+        | type_metatype::TYPE_FLOAT
+        | type_metatype::TYPE_PTR
+        | type_metatype::TYPE_UNKNOWN => {}
+        type_metatype::TYPE_VOID => return Err(Leave::VoidTarget),
+        _ => return Err(Leave::AggregateTarget),
+    }
+    let elem = target.get_size();
+    if elem <= 0 || elem != target.get_align_size() || !c_sizeof_is_size(&tlst, &target) {
+        return Err(Leave::Unsized);
+    }
+    Ok((target, target_ptr, used))
+}
+
+/// How the sum is used as a `T *`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SumUse {
+    /// The address of a lone LOAD or STORE of a `T`.
+    Access,
+    /// A value of its own pointer type, `T *`.
+    Own,
+    /// A `void *` value, stepped in bytes as a `char *`.
+    Bytes,
+}
+
 /// Decide whether the `INT_ADD` `op` becomes pointer arithmetic.
 pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
     let (out, ins) = {
@@ -537,76 +652,8 @@ pub(crate) fn plan(data: &mut Funcdata, op: OpId) -> Result<Plan, Leave> {
         None if saw_pointer => return Err(Leave::NonConstant),
         None => return Err(Leave::NoPointer),
     };
-    let out_size = data.vbank().get(out).map(|v| v.get_size()).unwrap_or(0);
-    if ptype.get_word_size() != Some(1) || ptype.get_size() != out_size {
-        return Err(Leave::WordAddressed);
-    }
-    let tlst = data.get_arch().types_rc().ok_or(Leave::WordAddressed)?;
-    let outty = data.vn_high_type_def_facing(out);
-    let out_pointee = (outty.get_metatype() == type_metatype::TYPE_PTR
-        && outty.get_word_size() == Some(1)
-        && outty.get_size() == out_size)
-        .then(|| outty.get_ptr_to().map(strip_typedefs))
-        .flatten();
-    let (target, target_ptr) = match access_type(data, out, op) {
-        Access::Unsettled => return Err(Leave::UnsettledStore),
-        Access::Value(a) => {
-            let a_elem = strip_typedefs(Rc::clone(&a));
-            match out_pointee {
-                Some(p) if p.get_size() == a_elem.get_size() && same_element(&p, &a_elem) => {
-                    (p, outty)
-                }
-                _ => {
-                    let ptr = tlst
-                        .get_type_pointer(out_size, a, 1)
-                        .map_err(|_| Leave::Unsized)?;
-                    (a_elem, ptr)
-                }
-            }
-        }
-        Access::None => {
-            if outty.get_metatype() != type_metatype::TYPE_PTR {
-                return Err(Leave::OutNotPointer);
-            }
-            if read_as_integer(data, out) || declared_non_pointer(data, out) {
-                return Err(Leave::IntegerUse);
-            }
-            if shared_address(data, out) {
-                return Err(Leave::SharedAddress);
-            }
-            let pointee = out_pointee.ok_or(Leave::WordAddressed)?;
-            if pointee.get_metatype() != type_metatype::TYPE_VOID {
-                (pointee, outty)
-            } else if stays_in_function(data, out) {
-                let byte = tlst
-                    .get_base(1, type_metatype::TYPE_INT)
-                    .map_err(|_| Leave::VoidTarget)?;
-                let ptr = tlst
-                    .get_type_pointer(out_size, Rc::clone(&byte), 1)
-                    .map_err(|_| Leave::VoidTarget)?;
-                (byte, ptr)
-            } else {
-                return Err(Leave::VoidTarget);
-            }
-        }
-    };
-    if target.is_enum_type() {
-        return Err(Leave::EnumTarget);
-    }
-    match target.get_metatype() {
-        type_metatype::TYPE_INT
-        | type_metatype::TYPE_UINT
-        | type_metatype::TYPE_BOOL
-        | type_metatype::TYPE_FLOAT
-        | type_metatype::TYPE_PTR
-        | type_metatype::TYPE_UNKNOWN => {}
-        type_metatype::TYPE_VOID => return Err(Leave::VoidTarget),
-        _ => return Err(Leave::AggregateTarget),
-    }
+    let (target, target_ptr, _) = element(data, op, out, &ptype)?;
     let elem = target.get_size();
-    if elem <= 0 || elem != target.get_align_size() || !c_sizeof_is_size(&tlst, &target) {
-        return Err(Leave::Unsized);
-    }
     let (koff, ksize) = {
         let c = data
             .vbank()
@@ -698,6 +745,464 @@ pub(crate) fn rewrite(data: &mut Funcdata, op: OpId) -> bool {
         Ok(p) => apply(data, op, &p).is_some(),
         Err(_) => false,
     }
+}
+
+/// The index an `INT_ADD`'s variable operand stands for: the operand itself
+/// counted in bytes, or, when the operand is an implied `x * S` (or `x << s`)
+/// read only by the add, `x` counted in `S`-byte steps.
+struct Scaled {
+    index: VarnodeId,
+    scale: i64,
+    by: Option<OpId>,
+}
+
+fn scaled_index(data: &Funcdata, vn: VarnodeId, op: OpId) -> Option<Scaled> {
+    let v = data.vbank().get(vn)?;
+    if v.is_explicit() || v.is_type_lock() || data.lone_descend(vn) != Some(op) {
+        return None;
+    }
+    let def = v.get_def()?;
+    let d = data.obank().get(def)?;
+    let konst = |slot: int4| {
+        d.get_in(slot)
+            .and_then(|k| data.vbank().get(k))
+            .filter(|k| k.is_constant())
+            .map(|k| signed_value(k.get_offset(), k.get_size()))
+    };
+    let (index, scale) = match d.code() {
+        OpCode::CPUI_INT_MULT => match (konst(0), konst(1)) {
+            (None, Some(k)) => (d.get_in(0)?, k),
+            (Some(k), None) => (d.get_in(1)?, k),
+            _ => return None,
+        },
+        OpCode::CPUI_INT_LEFT => match konst(1) {
+            Some(s) if (0..31).contains(&s) => (d.get_in(0)?, 1i64 << s),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    if !(1..=i32::MAX as i64).contains(&scale) || data.vbank().get(index)?.is_constant() {
+        return None;
+    }
+    Some(Scaled {
+        index,
+        scale,
+        by: Some(def),
+    })
+}
+
+/// Does the subscript `p[vn]`, read by `op`, index by exactly the value the
+/// integer form adds?  C converts an integer subscript to the pointer's width by
+/// its own type's signedness, which is the extension the pass made explicit (an
+/// implied `SEXT`/`ZEXT` prints bare under a `PTRADD` only when its input's
+/// type extends that way, and the pass casts the input where it does not); a
+/// pointer-width integer converts to itself.  A pointer, a float, a `bool`, an
+/// enum and a value the pass has already cast (`(long)p`) are not such indexes.
+fn integer_index(data: &mut Funcdata, vn: VarnodeId, op: OpId, width: int4) -> bool {
+    let Some(v) = data.vbank().get(vn) else {
+        return false;
+    };
+    if v.get_size() != width || v.is_constant() {
+        return false;
+    }
+    let cast_def = v
+        .get_def()
+        .and_then(|d| data.obank().get(d))
+        .is_some_and(|d| d.code() == OpCode::CPUI_CAST);
+    if cast_def {
+        return false;
+    }
+    let t = data.vn_high_type_read_facing(vn, op);
+    matches!(
+        t.get_metatype(),
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+    ) && !t.is_enum_type()
+}
+
+/// Is the sum `out` itself a subscript of another pointer?  It is then an
+/// integer, which the integer form spells with one outer cast and a subscript of
+/// the sum would spell with that cast and another inside it.
+fn subscripts_another(data: &Funcdata, out: VarnodeId) -> bool {
+    data.vbank().get(out).is_some_and(|v| {
+        !v.is_explicit()
+            && v.descend_iter().any(|r| {
+                data.obank().get(r).is_some_and(|o| {
+                    matches!(o.code(), OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB)
+                        && o.get_slot(out) != 0
+                })
+            })
+    })
+}
+
+/// The casts the integer form spells that a subscript does not, for each part of
+/// the sum.  The index: an implied extension prints as an explicit `(long)i`
+/// beside a pointer or under a scale wider than an `int`, and bare as a
+/// subscript.
+fn extension_saved(data: &Funcdata, index: VarnodeId) -> i32 {
+    let ext = data.vbank().get(index).is_some_and(|v| {
+        !v.is_explicit()
+            && v.get_def().and_then(|d| data.obank().get(d)).is_some_and(|d| {
+                matches!(d.code(), OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT)
+            })
+    });
+    i32::from(ext)
+}
+
+/// The base: `(long)p` becomes nothing for a base declared as a `T *`, and
+/// `(T *)p` otherwise; but a base that is an integer the pass already cast to a
+/// pointer costs the integer form nothing (its cast is retyped to the integer
+/// and vanishes) and the subscript one.
+fn base_saved(data: &mut Funcdata, base_vn: VarnodeId, op: OpId, base: &Base) -> i32 {
+    let integer = |data: &mut Funcdata, vn: VarnodeId, reader: OpId| {
+        data.vn_high_type_read_facing(vn, reader).get_metatype() != type_metatype::TYPE_PTR
+    };
+    match *base {
+        Base::Direct => 1,
+        Base::Cast => 0,
+        Base::Retype => {
+            let src = data
+                .vbank()
+                .get(base_vn)
+                .and_then(|v| v.get_def())
+                .and_then(|d| Some((d, data.obank().get(d)?.get_in(0)?)));
+            match src {
+                Some((def, s)) if integer(data, s, def) => -1,
+                _ => 0,
+            }
+        }
+        Base::Recast(src) => {
+            if integer(data, src, op) {
+                -1
+            } else {
+                0
+            }
+        }
+    }
+}
+
+/// The sum: the integer form converts it back to a pointer (a cast a consumer
+/// needing yet another pointer type retypes rather than adds to), and the
+/// subscript already is one.  A lone access reads it with no cast; a variable
+/// the op writes takes it when its type accepts the subscript's; otherwise every
+/// reader must take it with no cast of its own, which the pass's own input-cast
+/// rule answers for a sum that keeps its type, and the `void *` rule
+/// (`castStandard` never casts to or from one) for a `void *` stepped in bytes.
+fn sum_saved(
+    data: &mut Funcdata,
+    strat: &CastStrategyC,
+    out: VarnodeId,
+    target_ptr: &Rc<Datatype>,
+    used: SumUse,
+) -> i32 {
+    if used == SumUse::Access {
+        return 1;
+    }
+    let (explicit, readers): (bool, Vec<OpId>) = match data.vbank().get(out) {
+        Some(v) => (v.is_explicit(), v.descend_iter().collect()),
+        None => return 0,
+    };
+    if explicit {
+        let decl = data.vn_high_type_def_facing(out);
+        return i32::from(strat.cast_standard(&decl, target_ptr, false, true).is_none());
+    }
+    if readers.is_empty() {
+        return 0;
+    }
+    for r in readers {
+        let Some(slot) = data.obank().get(r).map(|o| o.get_slot(out)) else {
+            return 0;
+        };
+        let takes = match used {
+            SumUse::Own => crate::coreaction_casts::get_input_cast(data, strat, r, slot).is_none(),
+            _ => bytes_taken(data, strat, r, slot, target_ptr),
+        };
+        if !takes {
+            return 0;
+        }
+    }
+    1
+}
+
+/// Does the reader `r` take a `char *` in `slot` with no cast: a copy into, a
+/// store into, or an equality test against a pointer that `castStandard`
+/// converts from a `char *` for free?
+fn bytes_taken(
+    data: &mut Funcdata,
+    strat: &CastStrategyC,
+    r: OpId,
+    slot: int4,
+    byte_ptr: &Rc<Datatype>,
+) -> bool {
+    let Some((code, out, other, addr)) = data.obank().get(r).map(|o| {
+        (
+            o.code(),
+            o.get_out(),
+            o.get_in(1 - slot.min(1)),
+            o.get_in(1),
+        )
+    }) else {
+        return false;
+    };
+    let req = match code {
+        OpCode::CPUI_COPY => match out {
+            Some(o) => data.vn_high_type_def_facing(o),
+            None => return false,
+        },
+        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => match other {
+            Some(o) => data.vn_high_type_read_facing(o, r),
+            None => return false,
+        },
+        OpCode::CPUI_STORE if slot == 2 => {
+            let Some(a) = addr else { return false };
+            match data.vn_high_type_read_facing(a, r).get_ptr_to() {
+                Some(p) => strip_typedefs(p),
+                None => return false,
+            }
+        }
+        _ => return false,
+    };
+    req.get_metatype() == type_metatype::TYPE_PTR
+        && strat.cast_standard(&req, byte_ptr, false, true).is_none()
+}
+
+/// The `PTRADD` an `INT_ADD` of a pointer and a variable index becomes.
+#[derive(Debug, Clone)]
+pub(crate) struct IndexPlan {
+    ptr_slot: int4,
+    index: VarnodeId,
+    by: Option<OpId>,
+    elem: int4,
+    target: Rc<Datatype>,
+    base: Base,
+}
+
+/// Decide whether the `INT_ADD` `op` of a pointer and a variable becomes a
+/// subscript (`castindex`).  The element is chosen exactly as for a constant
+/// offset; the index is the variable when the element is one byte, or the `x`
+/// of an implied `x * sizeof(T)` the add alone reads.
+pub(crate) fn plan_index(
+    data: &mut Funcdata,
+    strat: &CastStrategyC,
+    op: OpId,
+) -> Result<IndexPlan, Leave> {
+    let (out, ins) = {
+        let o = data.obank().get(op).ok_or(Leave::NoPointer)?;
+        if o.code() != OpCode::CPUI_INT_ADD || o.num_input() != 2 {
+            return Err(Leave::NoPointer);
+        }
+        let out = o.get_out().ok_or(Leave::NoPointer)?;
+        (
+            out,
+            [
+                o.get_in(0).ok_or(Leave::NoPointer)?,
+                o.get_in(1).ok_or(Leave::NoPointer)?,
+            ],
+        )
+    };
+    let mut pointers = Vec::new();
+    for (slot, &vn) in ins.iter().enumerate() {
+        let v = data.vbank().get(vn).ok_or(Leave::NoPointer)?;
+        if v.is_constant() || v.is_annotation() {
+            return Err(Leave::NoPointer);
+        }
+        let t = data.vn_high_type_read_facing(vn, op);
+        if t.get_metatype() == type_metatype::TYPE_PTR {
+            pointers.push((slot as int4, t));
+        }
+    }
+    let (ptr_slot, ptype) = match pointers.len() {
+        0 => return Err(Leave::NoPointer),
+        1 => pointers.pop().ok_or(Leave::NoPointer)?,
+        _ => return Err(Leave::TwoPointers),
+    };
+    let other = ins[1 - ptr_slot as usize];
+    if subscripts_another(data, out) {
+        return Err(Leave::IntegerUse);
+    }
+    let (target, target_ptr, used) = element(data, op, out, &ptype)?;
+    let elem = target.get_size();
+    let width = ptype.get_size();
+    let scaled = scaled_index(data, other, op).filter(|s| s.scale == elem as i64);
+    let (index, by) = match scaled {
+        Some(s) => {
+            let by = s.by.ok_or(Leave::ScaleMismatch)?;
+            if !runs_before(data, by, op) {
+                return Err(Leave::ScaleUnsettled);
+            }
+            (s.index, Some(by))
+        }
+        None if elem == 1 => (other, None),
+        None => return Err(Leave::ScaleMismatch),
+    };
+    let reader = by.unwrap_or(op);
+    if !integer_index(data, index, reader, width) {
+        return Err(Leave::IndexNotInteger);
+    }
+    let base_vn = ins[ptr_slot as usize];
+    let pointee = ptype.get_ptr_to().map(strip_typedefs);
+    let base = if pointee.is_some_and(|p| same_element(&p, &target))
+        && declared_as(data, base_vn, op, &ptype)
+    {
+        Base::Direct
+    } else if cast_def_read_only_here(data, base_vn, op) {
+        Base::Retype
+    } else if let Some(src) = implied_cast_source(data, base_vn) {
+        Base::Recast(src)
+    } else {
+        Base::Cast
+    };
+    let saved = extension_saved(data, index)
+        + base_saved(data, base_vn, op, &base)
+        + sum_saved(data, strat, out, &target_ptr, used);
+    if saved < 1 {
+        return Err(Leave::NoCastSaved);
+    }
+    Ok(IndexPlan {
+        ptr_slot,
+        index,
+        by,
+        elem,
+        target: target_ptr,
+        base,
+    })
+}
+
+/// Rewrite the `INT_ADD` `op` as the subscript `plan` describes, dropping the
+/// scaling op it no longer reads.
+pub(crate) fn apply_index(data: &mut Funcdata, op: OpId, plan: &IndexPlan) -> Option<()> {
+    let (base_vn, addr, out) = {
+        let o = data.obank().get(op)?;
+        (o.get_in(plan.ptr_slot)?, o.get_addr().clone(), o.get_out()?)
+    };
+    let ptrsize = data.vbank().get(out)?.get_size();
+    let base = match plan.base {
+        Base::Direct => base_vn,
+        Base::Retype => {
+            let _ = data.vn_update_type(base_vn, Rc::clone(&plan.target));
+            base_vn
+        }
+        Base::Cast | Base::Recast(_) => {
+            let src = match plan.base {
+                Base::Recast(src) => src,
+                _ => base_vn,
+            };
+            let cast = data.new_op(1, addr);
+            let cvn = data.new_unique_out(ptrsize, cast).ok()?;
+            let _ = data.vn_update_type(cvn, Rc::clone(&plan.target));
+            if let Some(v) = data.vbank_mut().get_mut(cvn) {
+                v.set_implied();
+            }
+            data.op_set_opcode_code(cast, OpCode::CPUI_CAST);
+            data.op_set_input(cast, src, 0).ok()?;
+            data.op_insert_before(cast, op);
+            cvn
+        }
+    };
+    let elem = data.new_constant(ptrsize, plan.elem as uintb);
+    data.op_set_all_input(op, &[base, plan.index, elem]).ok()?;
+    data.op_set_opcode_code(op, OpCode::CPUI_PTRADD);
+    if let Some(by) = plan.by {
+        data.op_destroy(by);
+    }
+    Some(())
+}
+
+/// Turn a pointer plus a variable index into a subscript; `true` if it did.
+pub(crate) fn rewrite_index(data: &mut Funcdata, strat: &CastStrategyC, op: OpId) -> bool {
+    match plan_index(data, strat, op) {
+        Ok(p) => apply_index(data, op, &p).is_some(),
+        Err(_) => false,
+    }
+}
+
+/// The casts the integer form spends on the operand `vn` of the difference
+/// that the pointer form does not, mirroring `castInput`: the integer form casts
+/// a plain operand to `long` (one), and the pointer form leaves it (none).  An
+/// operand the pass already cast is kept by the pointer form (one); the integer
+/// form retypes that cast when only `op` reads it (one), reads the cast's own
+/// input when that is already the `long` it wants (none), and otherwise casts
+/// the cast (two).
+fn operand_saved(data: &mut Funcdata, vn: VarnodeId, op: OpId, long: &Rc<Datatype>) -> i32 {
+    let Some(v) = data.vbank().get(vn) else { return 0 };
+    let cast_in = v
+        .get_def()
+        .and_then(|d| data.obank().get(d))
+        .filter(|d| d.code() == OpCode::CPUI_CAST)
+        .and_then(|d| d.get_in(0));
+    let Some(src) = cast_in.filter(|_| v.is_implied()) else {
+        return 1;
+    };
+    if data.lone_descend(vn) == Some(op) {
+        0
+    } else if data.vbank().get(src).is_some_and(|s| Rc::ptr_eq(s.get_type(), long)) {
+        -1
+    } else {
+        1
+    }
+}
+
+/// Is the `INT_SUB` `op` the difference of two pointers C subtracts to the same
+/// value (`castindex`)?  Both operands point at the same one-byte integer type,
+/// so the element difference `p - q` is the byte difference the integer form
+/// computes, and the result is an integer of the pointer's width, the width of
+/// the `ptrdiff_t` that `p - q` has and of the signed integer the pass would
+/// cast both operands to.  The cast pass then leaves both operands as they are,
+/// and casts the result from the returned token, that signed integer, exactly as
+/// it cast the integer form's.
+pub(crate) fn pointer_difference(data: &mut Funcdata, op: OpId) -> Result<Rc<Datatype>, Leave> {
+    let (out, a, b) = {
+        let o = data.obank().get(op).ok_or(Leave::DiffNotPointers)?;
+        if o.code() != OpCode::CPUI_INT_SUB || o.num_input() != 2 {
+            return Err(Leave::DiffNotPointers);
+        }
+        (
+            o.get_out().ok_or(Leave::DiffNotPointers)?,
+            o.get_in(0).ok_or(Leave::DiffNotPointers)?,
+            o.get_in(1).ok_or(Leave::DiffNotPointers)?,
+        )
+    };
+    let tlst = data.get_arch().types_rc().ok_or(Leave::DiffNotPointers)?;
+    let mut pointee: Option<Rc<Datatype>> = None;
+    let mut width = 0;
+    for vn in [a, b] {
+        if data.vbank().get(vn).is_none_or(|v| v.is_constant() || v.is_annotation()) {
+            return Err(Leave::DiffNotPointers);
+        }
+        let t = data.vn_high_type_read_facing(vn, op);
+        if t.get_metatype() != type_metatype::TYPE_PTR || t.get_word_size() != Some(1) {
+            return Err(Leave::DiffNotPointers);
+        }
+        width = t.get_size();
+        let p = t.get_ptr_to().map(strip_typedefs).ok_or(Leave::DiffPointee)?;
+        let byte = matches!(
+            p.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+        ) && !p.is_enum_type()
+            && p.get_size() == 1
+            && c_sizeof_is_size(&tlst, &p);
+        if !byte || pointee.as_ref().is_some_and(|q| !Rc::ptr_eq(q, &p)) {
+            return Err(Leave::DiffPointee);
+        }
+        pointee = Some(p);
+    }
+    let ot = data.vn_high_type_def_facing(out);
+    let osize = data.vbank().get(out).map(|v| v.get_size()).unwrap_or(0);
+    if osize != width
+        || !matches!(
+            ot.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+        )
+        || ot.is_enum_type()
+    {
+        return Err(Leave::DiffResult);
+    }
+    let long = tlst
+        .get_base(width, type_metatype::TYPE_INT)
+        .map_err(|_| Leave::DiffResult)?;
+    if operand_saved(data, a, op, &long) + operand_saved(data, b, op, &long) < 1 {
+        return Err(Leave::NoCastSaved);
+    }
+    Ok(long)
 }
 
 #[cfg(test)]

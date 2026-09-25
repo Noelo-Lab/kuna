@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1372,
-    1372
+    1379,
+    1379
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1004,6 +1004,13 @@
     "data:castimplied #7: with the option off an int4 returned from an int8 function carries an (int8)",
     "data:castimplied #8: with the option on the return converts",
     "data:castimplied #9: with the option off one byte is widened through three casts",
+    "data:castindex #1: with the option off an int-indexed read through a void pointer is an integer round trip -- the bug",
+    "data:castindex #2: and a byte-pointer difference converts both pointers to integers",
+    "data:castindex #3: on, the int index is a subscript of the 4-byte element, and its extension is C's own",
+    "data:castindex #4: a long index is a subscript of the 8-byte element",
+    "data:castindex #5: a byte read takes the variable itself as the index",
+    "data:castindex #6: a 16-byte stride read at 8 bytes keeps the integer form in both passes",
+    "data:castindex #7: on, the difference of two char pointers is C's own pointer subtraction",
     "data:castsign #1: under option castsign off a stack value the body only compares signed casts each comparison back (bug reproduces, once)",
     "data:castsign #2: and is declared uint8, beside trim_right's and through_ptr's in both passes (bug reproduces, five times)",
     "data:castsign #3: option castsign on declares it int8 (fix, once)",

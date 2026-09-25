@@ -484,6 +484,74 @@ carries no op, as for every native subscript, so an instruction whose only
 printed ops were the add and the access through it maps to no line in
 `line_mappings` and drops out of its variable's `addresses`.
 
+**A variable index and a byte-pointer difference (kuna, `castindex`).** The
+same `INT_ADD` reaches this pass when the addend is a variable, and an `INT_SUB`
+of two pointers reaches it as integer arithmetic too: the default input arm
+converts both operands to the signed integer of their width. An array walk
+through a `void *` base prints `*(long *)((long)v7 + v19 * 8)` and the length of
+a `char *` span prints `(long)v24 - (long)v14`. With `option castindex` on (the
+default, C output only), the driver hands each `INT_ADD` that `castarith` left
+alone to `decompiler/crates/kuna-decomp/src/p9_emit/kuna_castarith.rs
+(rewrite_index)`, and asks `kuna_castarith.rs (pointer_difference)` about each
+`INT_SUB`; the two options act on disjoint ops (a constant addend or a
+variable one), so either can be flipped alone.
+
+`kuna_castarith.rs (plan_index)` accepts an `INT_ADD` of exactly one
+pointer-typed operand and one non-constant, and chooses the element `T` exactly
+as `castarith` does (`kuna_castarith.rs (element)`), with every refusal that
+choice makes. The addend is taken apart by `kuna_castarith.rs (scaled_index)`:
+when it is an implied `x * S` or `x << s` that only this add reads and `S` is
+`sizeof(T)`, the op becomes `PTRADD(base, x, #S)` and the scaling op is
+destroyed; when `T` is one byte, the addend itself is the index, whatever it
+computes. Any other scale keeps the integer form (a 16-byte record read at 8
+bytes, `p + i * 16 + 8`, has no element that divides it, and a record is not
+invented here). The scaling op must already have been cast, and the index must
+be an integer of the pointer's width that is not an enum and not a cast the
+pass inserted (`kuna_castarith.rs (integer_index)`). An implied `SEXT`/`ZEXT`
+as the index prints bare under the `PTRADD` (`is_extension_cast_implied` has
+always treated a `PTRADD` reader so), which is C's own conversion of the
+subscript: the extension-input rule above has already cast the input to the
+signedness the extension needs, so `p[i]` of an `int` sign-extends and of an
+`unsigned int` zero-extends, as the binary does. A sum that is itself another
+pointer's subscript is an integer and keeps the form
+(`kuna_castarith.rs (subscripts_another)`). The base is chosen by `castarith`'s
+rules.
+
+The rewrite happens only where it saves a cast, counted part by part against
+the integer form: the index's extension (`kuna_castarith.rs (extension_saved)`),
+the base (`kuna_castarith.rs (base_saved)`: a base declared as a `T *` saves its
+`(long)`, a cast base costs what `(long)` cost, and a base that is an integer
+the pass already cast to a pointer cost the integer form nothing), and the sum
+(`kuna_castarith.rs (sum_saved)`): a lone LOAD or STORE through it always saves
+the conversion back to a pointer, while a value is counted only when every
+reader takes it with no cast of its own. That question is the pass's own
+input-cast rule for a sum that keeps its type, and `castStandard`'s `void *`
+rule for a `void *` stepped in bytes. So `(unsigned long *)((long)v4 + v1)`
+copied into an `unsigned long *` keeps its form, where the subscript would only
+trade one cast for another.
+
+`kuna_castarith.rs (pointer_difference)` accepts an `INT_SUB` whose operands
+are both pointers to the same one-byte integer type (after typedefs), neither a
+constant, and whose result is an integer of the pointer's width. The pass then
+leaves both operands uncast, and casts the result against the signed integer of
+that width, which is the token the two `(long)` operands produced and the type
+`ptrdiff_t` that C gives `p - q`, so the result's own cast (`(unsigned
+long)(v8 - v18)` where it is compared unsigned) is decided exactly as before.
+C's `p - q` of two `char *` is their byte difference, the value the integer
+form computes. Wider pointees keep the form, because their element difference
+is not the byte difference (`((long)v28 - (long)v30) >> 3` stays); so do two
+different byte types and `void *`, which C does not subtract. An operand the
+pass already cast is counted as `castInput` would have spent it
+(`kuna_castarith.rs (operand_saved)`), and the difference keeps the integer
+form unless the two operands together save a cast. Every printed value is
+unchanged: the index is the element count the integer form scaled, C scales it
+by the same `sizeof`, and the difference and its type are C's own. Upstream
+Ghidra prints the integer round trips. Pinned by `tests/stages/kuna-castindex.xml`
+and by the compiled round trip
+`a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c`
+in `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs`; `castindex off`
+prints byte-for-byte what the build without it prints.
+
 **Repairs and failure mode.** Late type propagation can invalidate the pointer
 model a PTRADD/PTRSUB was built on; the driver demotes them back to raw
 arithmetic (`cast_fixup_ptradd` undoes the scaling; `cast_fixup_ptrsub`

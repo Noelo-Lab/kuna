@@ -380,6 +380,11 @@ pub struct Architecture {
     /// `T *`, as pointer arithmetic on `(T *)p` instead of an integer round
     /// trip.  Implementation: [`kuna_castarith`](crate::p9_emit::kuna_castarith).
     pub cast_arith: bool,
+    /// (kuna `castindex`) Print a pointer plus a variable index of whole `T`s as
+    /// a subscript on `(T *)p`, and the difference of two `char`-width pointers
+    /// as `p - q`, instead of an integer round trip.  Implementation:
+    /// [`kuna_castarith`](crate::p9_emit::kuna_castarith).
+    pub cast_index: bool,
 
     /// (kuna `charptr`) Commit a pointer-width parameter or stack local the
     /// program only ever uses on characters to `char *`; option
@@ -2331,6 +2336,7 @@ impl Architecture {
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
             cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
+            cast_index: false, // (kuna) option castindex; reset_defaults sets the shipped default
             char_ptr: false, // (kuna) option charptr; shipped off
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
@@ -2762,6 +2768,7 @@ impl Architecture {
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
         self.cast_arith = true; // (kuna) option castarith default-on: a pointer plus whole elements prints as ((T *)p)[k] instead of *(T *)((long)p + K); 0/675 datatest assertions moved, 16 stage assertions moved to the new form, 444-slice typesweep identical, speed within budget; docs/features/castarith/record.json
+        self.cast_index = true; // (kuna) option castindex default-on: a pointer plus a variable index of whole elements prints as ((T *)p)[i], a char * difference as p - q; 0/675 datatest assertions moved, stages PARITY OK, 444-slice typesweep identical, speed within budget; docs/features/castindex/default-on-evaluation.md
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
@@ -3461,6 +3468,7 @@ impl Architecture {
             "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
             "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
             "castarith" => on_off!(cast_arith, "pointer arithmetic in pointer terms"),
+            "castindex" => on_off!(cast_index, "variable indexes and pointer differences in pointer terms"),
             "calleevote" => {
                 let (mode, msg) = crate::kuna_calleevote::OptionCalleeVote.apply(p1)?;
                 self.calleevote = mode;
@@ -4286,6 +4294,7 @@ impl Architecture {
         ctx.int_promotion = self.print.out_lang().profile().caps.integer_promotion;
         ctx.char_byte = self.char_byte; // (kuna) charbyte
         ctx.cast_arith = self.cast_arith && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castarith
+        ctx.cast_index = self.cast_index && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castindex
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
         ctx.slot_ptr = self.slot_ptr; // (kuna) slotptr

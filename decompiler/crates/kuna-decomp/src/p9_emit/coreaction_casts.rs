@@ -1161,6 +1161,20 @@ impl Funcdata {
                 {
                     crate::kuna_castarith::rewrite(self, op);
                 }
+                // (kuna `castindex`) So does a variable index, and a byte-pointer difference.
+                let mut diff_token = None;
+                if self.get_arch().cast_index {
+                    match self.obank().get(op).map(|o| o.code()) {
+                        Some(OpCode::CPUI_INT_ADD) => {
+                            crate::kuna_castarith::rewrite_index(self, &strat, op);
+                        }
+                        Some(OpCode::CPUI_INT_SUB) => {
+                            diff_token = crate::kuna_castarith::pointer_difference(self, op).ok();
+                        }
+                        _ => {}
+                    }
+                }
+                let keep_inputs = diff_token.is_some();
                 // Allow unresolved high data-types to resolve.
                 let numin = self.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
                 for i in 0..numin {
@@ -1180,7 +1194,9 @@ impl Funcdata {
                 // Do input casts first, as output may depend on input.
                 let numin = self.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
                 for i in 0..numin {
-                    count += self.cast_input(op, i, &strat);
+                    if !keep_inputs {
+                        count += self.cast_input(op, i, &strat);
+                    }
                 }
                 if opc == OpCode::CPUI_LOAD {
                     if let Some(outvn) = self.obank().get(op).and_then(|o| o.get_out()) {
@@ -1192,7 +1208,10 @@ impl Funcdata {
                     }
                 }
                 if self.obank().get(op).and_then(|o| o.get_out()).is_some() {
-                    count += self.cast_output(op, &strat);
+                    count += match &diff_token {
+                        Some(t) => self.cast_output_token(op, &strat, Rc::clone(t)),
+                        None => self.cast_output(op, &strat),
+                    };
                 }
             }
         }
@@ -1463,6 +1482,11 @@ impl Funcdata {
     /// `ActionSetCasts::castOutput` (coreaction.cc:2624-2704).
     fn cast_output(&mut self, op: OpId, strat: &CastStrategyC) -> int4 {
         let tokenct = get_output_token(self, strat, op);
+        self.cast_output_token(op, strat, tokenct)
+    }
+
+    /// [`Self::cast_output`] against a given output token.
+    fn cast_output_token(&mut self, op: OpId, strat: &CastStrategyC, tokenct: Rc<Datatype>) -> int4 {
         let outvn = match self.obank().get(op).and_then(|o| o.get_out()) {
             Some(v) => v,
             None => return 0,
