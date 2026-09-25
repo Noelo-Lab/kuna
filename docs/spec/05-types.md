@@ -705,7 +705,11 @@ and another refused or typed at another width, blocks it for each function that
 typed it, and those functions are decompiled again
 (`decompiler/crates/kuna-console/src/project.rs (converge_element_globals)`, and
 its callee-first twin in `decompile_all.rs`); a function that said nothing about
-the global is not a disagreement. A single-function `decompile`, a sharded
+the global is not a disagreement. Once some function has disagreed about a global,
+every function decompiled after it leaves that global alone (`Ledger::disputed`,
+handed out by `seed`), so only the functions decompiled before the first
+disagreement are decided again: on bash -O2 that is 17 functions instead of 23,
+and 3.6 s of redo instead of 14.7 s. A single-function `decompile`, a sharded
 `--jobs` worker and the streaming export have no batch to consult and decide each
 function on its own evidence.
 

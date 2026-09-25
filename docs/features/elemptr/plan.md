@@ -39,7 +39,12 @@ printer prints a subscript. No new `Action` is scheduled.
 verdicts after its decompile; `disagreements` blocks a global for the functions that
 typed it when another function refused it or typed another width; the batch drivers
 (`project::converge_element_globals`, `decompile_all::converge_element_globals_callee_first`)
-decompile those functions again. `seed` hands a function its blocked set.
+decompile those functions again. `seed` hands a function its blocked set, plus
+every global some earlier function of the batch already disagreed about
+(`disputed`), so only the functions decompiled before the first disagreement are
+redone. Each storage (a global's address, a constant's value) is decided once per
+`ActionInferTypes` pass, before it is classified, because a global has a Varnode
+per call it lives across.
 
 ## 4. Printing
 
