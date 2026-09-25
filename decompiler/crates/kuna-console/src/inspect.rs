@@ -1,7 +1,9 @@
 //! What a single-function study view needs beyond the batch record: the token
 //! source map of the rendered C ([`FuncDetail`]), the function's instruction
-//! listing ([`function_rows`]) and the image's section table with file offsets
-//! ([`section_rows`]).
+//! listing ([`function_rows`]), its references ([`function_xrefs`]) and the
+//! image's section table with file offsets ([`section_rows`]).
+
+use std::collections::BTreeMap;
 
 use kuna_decomp::decompile_drive::{CodeProvenance, VarInfo};
 use kuna_decomp::funcdata::Funcdata;
@@ -116,4 +118,76 @@ pub fn function_rows(prog: &ConsoleProgram, entry: u64, size: u64, cap: usize) -
     let listed_to = walk.rows.last().map_or(entry, |r| r.addr.saturating_add(r.size));
     let short = window.stop().is_none_or(|stop| listed_to < stop) && walk.rows.len() >= cap;
     (walk.rows, walk.truncated || short)
+}
+
+/// One reference row: the other end's name and address, the instruction that
+/// makes the reference, its kind (`call`, `jump`, `data`, `read`, `write`), and
+/// that instruction's text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XrefRow {
+    /// The caller for a caller row, the target for a callee or data row.
+    pub name: Option<String>,
+    pub address: u64,
+    /// The referencing instruction.
+    pub site: u64,
+    pub kind: &'static str,
+    pub instruction: String,
+}
+
+/// Who calls or jumps to a function, what it calls or jumps to, and the data it
+/// reads, writes or takes the address of.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FunctionXrefs {
+    pub callers: Vec<XrefRow>,
+    pub callees: Vec<XrefRow>,
+    pub data_refs: Vec<XrefRow>,
+}
+
+/// The references of the function at `entry`, from the `kuna xrefs` walk
+/// (`kuna_analysis::listing::xrefs`) seeded with the program's inventory and
+/// focused on `entry`. Callers are named by the function holding the call
+/// site; targets by the function or global data symbol at them; a jump that
+/// stays inside the function is control flow, not a callee. Addresses are the
+/// program's byte addresses.
+pub fn function_xrefs(prog: &ConsoleProgram, file: &object::File, entry: u64) -> FunctionXrefs {
+    use kuna_analysis::listing::xrefs::{self as xr, XrefKind};
+    let entries = prog.function_entries_canonical();
+    let names: BTreeMap<u64, String> =
+        entries.iter().map(|e| (e.addr.get_offset(), e.name.clone())).collect();
+    let data: BTreeMap<u64, String> =
+        prog.global_data_symbols().into_iter().map(|(name, vma, _)| (vma, name)).collect();
+    let inventory: Vec<u64> = names.keys().copied().collect();
+    let seeds = xr::discovery_seeds(file, &inventory, prog.arch().analysis_funcstart_patterns);
+    let index = xr::build_with_focus(file, prog.arch(), prog.arch().translate(), &seeds, &[entry]);
+    let name_of = |vma: u64| names.get(&vma).or_else(|| data.get(&vma)).cloned();
+    let mut out = FunctionXrefs::default();
+    for r in index.refs_to_unified(entry) {
+        let caller = index.function_containing(r.from);
+        out.callers.push(XrefRow {
+            name: caller.and_then(name_of),
+            address: caller.unwrap_or(r.from),
+            site: r.from,
+            kind: r.kind.as_str(),
+            instruction: r.instruction.clone(),
+        });
+    }
+    for r in index.refs_from_function(entry) {
+        if r.kind == XrefKind::Jump && index.function_containing(r.to) == Some(entry) {
+            continue;
+        }
+        let row = XrefRow {
+            name: name_of(r.to),
+            address: r.to,
+            site: r.from,
+            kind: r.kind.as_str(),
+            instruction: r.instruction.clone(),
+        };
+        match r.kind {
+            XrefKind::Call | XrefKind::Jump => out.callees.push(row),
+            XrefKind::Data | XrefKind::Read | XrefKind::Write => out.data_refs.push(row),
+        }
+    }
+    out.callees.sort_by_key(|r| (r.site, r.address));
+    out.data_refs.sort_by_key(|r| (r.site, r.address));
+    out
 }

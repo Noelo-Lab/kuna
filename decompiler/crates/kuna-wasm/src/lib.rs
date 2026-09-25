@@ -85,6 +85,8 @@ enum Cmd {
     Inspect(Selector),
     /// Raw image bytes (discovery off).
     Read { addr: u64, len: u64 },
+    /// One function's callers, callees and data references.
+    Xrefs(Selector),
 }
 
 /// One front-end invocation: the argv of `kuna_wasm` as data.
@@ -197,6 +199,10 @@ fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String
             at_most(1)?;
             Cmd::Inspect(Selector::parse(arg.ok_or("`inspect` needs a function name or 0x address")?))
         }
+        "xrefs" => {
+            at_most(1)?;
+            Cmd::Xrefs(Selector::parse(arg.ok_or("`xrefs` needs a function name or 0x address")?))
+        }
         "read" => {
             let [addr, len] = args else {
                 return Err("`read` needs <0xADDR> <LEN>".to_string());
@@ -212,7 +218,7 @@ fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String
         }
         other => {
             return Err(format!(
-                "unknown command: {other:?} (want `list`, `decompile`, `project`, `inspect` or `read`)"
+                "unknown command: {other:?} (want `list`, `decompile`, `project`, `inspect`, `read` or `xrefs`)"
             ))
         }
     })
@@ -277,6 +283,17 @@ pub fn run_request(req: &Request) -> Result<String, String> {
         Cmd::Read { addr, len } => {
             Ok(inspect::read_json(binary, &prog, addr, len, &prog.assertion_outcomes()))
         }
+        Cmd::Xrefs(_) => {
+            let target = resolve_targets(&prog, &command)?
+                .into_iter()
+                .next()
+                .ok_or_else(|| "no function selected".to_string())?;
+            let bytes = kuna_analysis::loader::elf_shdr::read_image(binary)
+                .map_err(|e| format!("could not read {binary}: {e}"))?;
+            let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
+                .map_err(|e| format!("could not parse {binary}: {e}"))?;
+            Ok(inspect::xrefs_json(binary, &prog, &file, &target, &prog.assertion_outcomes()))
+        }
         Cmd::Inspect(ref selector) => {
             let targets = resolve_targets(&prog, &command)?;
             let classifier = Classifier::new(
@@ -325,7 +342,10 @@ pub fn run_request(req: &Request) -> Result<String, String> {
 fn command_wants_fast_funcdisc(command: &Cmd) -> bool {
     !matches!(
         command,
-        Cmd::DecompileAddr(_) | Cmd::Inspect(Selector::Addr(_)) | Cmd::Read { .. }
+        Cmd::DecompileAddr(_)
+            | Cmd::Inspect(Selector::Addr(_))
+            | Cmd::Xrefs(Selector::Addr(_))
+            | Cmd::Read { .. }
     )
 }
 
@@ -567,10 +587,10 @@ fn resolve_targets(
         Cmd::DecompileAll => Ok(prog.function_entries_executable()),
         // An ALIAS resolves too — collapsing the enumeration must not make a
         // name that used to select a function stop working.
-        Cmd::DecompileName(want) | Cmd::Inspect(Selector::Name(want)) => {
-            one(&EntrySelector::parse(want))
-        }
-        Cmd::DecompileAddr(vma) | Cmd::Inspect(Selector::Addr(vma)) => {
+        Cmd::DecompileName(want)
+        | Cmd::Inspect(Selector::Name(want))
+        | Cmd::Xrefs(Selector::Name(want)) => one(&EntrySelector::parse(want)),
+        Cmd::DecompileAddr(vma) | Cmd::Inspect(Selector::Addr(vma)) | Cmd::Xrefs(Selector::Addr(vma)) => {
             one(&EntrySelector::Numeric(*vma))
         }
         Cmd::List | Cmd::Project(_) | Cmd::Read { .. } => {

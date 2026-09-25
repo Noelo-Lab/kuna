@@ -8,7 +8,7 @@
 //      wasm port is a faithful decompiler, not a degraded one.
 //
 // It runs `list` + several `decompile` cases + a whole-binary `project` export
-// + the study view's `inspect`/`read` (with `--assert` directives) over each
+// + the study view's `inspect`/`read`/`xrefs` (with `--assert` directives) over each
 // committed fixture (x86-64 ELF + AArch64 object) and diffs native vs
 // wasm (normalizing only the absolute `binary` path, which legitimately differs
 // between the host FS and the guest's virtual FS; `project` gets the same
@@ -53,13 +53,14 @@ const FIXTURES = [
       ['inspect', 'main', '--assert', 'name v1 total', '--assert', 'bytes 0x11e1 9090909090'],
       ['decompile', 'main', '--assert', 'function 0x1198=entry_main'],
       ['list', '--assert', 'function 0x1161=summation'],
-      ['read', '0x1198', '4', '--assert', 'bytes 0x1198 90909090']],
+      ['read', '0x1198', '4', '--assert', 'bytes 0x1198 90909090'],
+      ['xrefs', 'main'], ['xrefs', 'sum_to']],
   },
   {
     fixture: join(here, 'fixtures/sample_aarch64.o'),
     arch: 'aarch64',
     cases: [['list'], ['decompile'], ['decompile', 'sum_to'], ['decompile', 'add'],
-      ['project', 'sample_aarch64.o'], ['inspect', 'sum_to']],
+      ['project', 'sample_aarch64.o'], ['inspect', 'sum_to'], ['xrefs', 'sum_to']],
   },
   {
     fixture: join(here, 'fixtures/sample_macho.o'),
@@ -98,7 +99,8 @@ for (const { fixture, arch, cases } of FIXTURES) {
       fail(`native != wasm for \`${label}\``);
     }
     // project emits a files map, inspect one function, read the bytes
-    const want = { project: '"files"', inspect: '"function"', read: '"bytes"' }[c[0]] || '"functions"';
+    const want = { project: '"files"', inspect: '"function"', read: '"bytes"', xrefs: '"callers"' }[c[0]]
+      || '"functions"';
     if (!n.includes(want)) fail(`\`${label}\` produced no ${want} payload`);
     console.log(`\x1b[32mOK\x1b[0m   ${label}  (${w.length} bytes, native==wasm)`);
     passed++;

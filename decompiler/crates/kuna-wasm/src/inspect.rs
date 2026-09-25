@@ -1,12 +1,14 @@
 //! The study view's documents: `inspect` (one function with its token source
-//! map and instruction listing), `read` (raw bytes), and the target, section
-//! and type facts `list` adds for it.
+//! map and instruction listing), `read` (raw bytes), `xrefs` (one function's
+//! references), and the target, section and type facts `list` adds for it.
 
 use std::collections::BTreeMap;
 
 use kuna_console::assertions::Outcome;
-use kuna_console::engine::ConsoleProgram;
-use kuna_console::inspect::{function_rows, section_rows, SectionRow, FUNCTION_ROW_CAP};
+use kuna_console::engine::{ConsoleProgram, FunctionEntry};
+use kuna_console::inspect::{
+    function_rows, function_xrefs, section_rows, SectionRow, XrefRow, FUNCTION_ROW_CAP,
+};
 use kuna_console::project::FuncResult;
 
 use crate::json::{arr, assertions_json, json_object_location, json_str, json_str_array, Obj};
@@ -242,6 +244,47 @@ pub fn read_json(binary: &str, prog: &ConsoleProgram, addr: u64, len: u64, asser
         .num("size", got)
         .str("bytes", &hex)
         .opt_num("file_offset", offset)
+        .raw("assertions", &assertions_json(assertions))
+        .end()
+}
+
+/// The `xrefs` document: `{binary, function:{name, address, address_hex},
+/// callers:[{name, address, address_hex, from, from_hex, kind, instruction}],
+/// callees:[{name, address, address_hex, at, at_hex, kind, instruction}],
+/// data_refs:[…same as callees…], assertions}`. A caller's `address` is the
+/// calling function's entry and `from` the calling instruction.
+pub fn xrefs_json(
+    binary: &str,
+    prog: &ConsoleProgram,
+    file: &object::File,
+    target: &FunctionEntry,
+    assertions: &[Outcome],
+) -> String {
+    let entry = target.addr.get_offset();
+    let refs = function_xrefs(prog, file, entry);
+    let rows = |rows: &[XrefRow], site: &str| {
+        arr(rows.iter().map(|r| {
+            Obj::new()
+                .opt_str("name", r.name.as_deref())
+                .addr("address", prog.output_code_offset(r.address))
+                .addr(site, prog.output_code_offset(r.site))
+                .str("kind", r.kind)
+                .str("instruction", &r.instruction)
+                .end()
+        }))
+    };
+    Obj::new()
+        .str("binary", binary)
+        .raw(
+            "function",
+            &Obj::new()
+                .str("name", &target.name)
+                .addr("address", prog.output_code_offset(entry))
+                .end(),
+        )
+        .raw("callers", &rows(&refs.callers, "from"))
+        .raw("callees", &rows(&refs.callees, "at"))
+        .raw("data_refs", &rows(&refs.data_refs, "at"))
         .raw("assertions", &assertions_json(assertions))
         .end()
 }

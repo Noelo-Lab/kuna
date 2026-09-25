@@ -178,3 +178,26 @@ fn read_bounds_its_length_and_stops_at_unmapped_memory() {
     assert_eq!(nowhere.get("bytes").str(), Some(""));
     assert_eq!(*nowhere.get("file_offset"), Value::Null);
 }
+
+/// `xrefs` answers from the CLI's reference walk: `main` calls `add`,
+/// `sum_to` and `printf` in that order and loads the format string, and
+/// `sum_to`'s one caller is `main`.
+#[test]
+fn xrefs_names_both_ends_of_every_reference() {
+    let Some(main) = run("xrefs", &["main"], &[]) else { return };
+    let main = main.expect("xrefs main");
+    let callees: Vec<&str> =
+        main.get("callees").arr().iter().filter_map(|r| r.get("name").str()).collect();
+    assert_eq!(callees, vec!["add", "sum_to", "printf"]);
+    assert!(main.get("callees").arr().iter().all(|r| r.get("kind").str() == Some("call")));
+    let data = main.get("data_refs").arr();
+    assert!(data.iter().any(|r| r.get("address_hex").str() == Some("0x2004")), "{data:?}");
+    let Some(sum_to) = run("xrefs", &["sum_to"], &[]) else { return };
+    let sum_to = sum_to.expect("xrefs sum_to");
+    let callers = sum_to.get("callers").arr();
+    assert_eq!(callers.len(), 1);
+    assert_eq!(callers[0].get("name").str(), Some("main"));
+    assert_eq!(callers[0].get("address_hex").str(), Some("0x1198"));
+    assert_eq!(callers[0].get("instruction").str(), Some("CALL 0x1161"));
+    assert!(callers[0].has("from_hex"));
+}

@@ -160,17 +160,18 @@ driver (`--option protoorder`, `docs/cli.md`), while this command calls the shar
 batch directly, so the browser's call-argument types and `struct_N` numbering are the
 ones `--option protoorder off` produces.
 
-**The study view's commands: `inspect`, `read`, and `--assert`.** Every command also
+**The study view's commands: `inspect`, `read`, `xrefs`, and `--assert`.** Every command also
 takes a repeatable `--assert <directive>` — the CLI's override plane, parsed by the same
 grammar (`kuna_console::assertsyntax`, one directive per value; a value with a line break
 is refused) and applied in the CLI's order (read-only propagation when a `readonly` range
 implies it, `set_assertions` + the image-scoped directives before the analysis commit, the
 program-scoped ones after it, the function- and symbol-scoped ones inside the decompile
-loop). Two more commands serve the study view:
+loop). Three more commands serve the study view:
 
 ```
 kuna_wasm <binary> <spec-root> inspect <name|0xADDR> [--mode M] [--language L] [--assert D]...
 kuna_wasm <binary> <spec-root> read <0xADDR> <LEN> [--assert D]...
+kuna_wasm <binary> <spec-root> xrefs <name|0xADDR> [--mode M] [--assert D]...
 ```
 
 Because every request is a fresh process, the page's edit session IS its directive list: it
@@ -235,7 +236,14 @@ argument set-up that was folded away maps to nothing.
 `read <0xADDR> <LEN>` returns `{binary, address, address_hex, size, bytes, file_offset,
 assertions}`: up to 64 KiB, stopping at the first byte the image does not map (an
 unmapped start is `size: 0`, not an error), overlays applied, loaded with the discovery
-walk off. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
+walk off. `xrefs <name|0xADDR>` answers from `kuna xrefs`' reference walk
+(`kuna_analysis::listing::xrefs`, seeded with the inventory and focused on the function):
+`{binary, function:{name, address, address_hex}, callers:[{name, address, address_hex,
+from, from_hex, kind, instruction}], callees:[{name, address, address_hex, at, at_hex,
+kind, instruction}], data_refs:[…as callees…], assertions}` — a caller's `address` is the
+calling function's entry and `from` the calling instruction; callees are calls and jumps
+that leave the function (`kind` `call`/`jump`), data refs are `data` (address taken),
+`read` and `write`, both in instruction order. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
 file_offset, executable, writable}]` (allocated sections, in address order; `writable`
 follows the segment that maps the section) and `known_types:[{name, size, kind}]` (the
 factory's named non-core types: `struct`, `union`, `enum`, `typedef`, `scalar`), and
