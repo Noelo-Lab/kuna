@@ -350,6 +350,9 @@ fn get_local_type(data: &Funcdata, vn: VarnodeId) -> (Rc<Datatype>, bool) {
 fn build_localtypes(data: &mut Funcdata) {
     let order: Vec<VarnodeId> = data.vbank().iter_loc().collect();
     let mut elem_cache = crate::kuna_elemptr::Cache::default();
+    if data.get_arch().elem_ptr {
+        data.kuna_elemptr_begin_pass();
+    }
     for vn in order {
         let (vn_addr, vn_size, vn_type_lock);
         {

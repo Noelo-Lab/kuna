@@ -1108,7 +1108,11 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///   first: a scalar access of the name does not compile against it;
 /// * (kuna `elemptr`) an array some function indexes (`T dat_4020[]`), when no
 ///   function reads the name directly: an indexed body does not compile
-///   against a scalar, and a direct read does not compile against an array;
+///   against a scalar, and a direct read does not compile against an array.
+///   Functions that index it at two element types get nothing, and a comment:
+///   a body reads `dat_4020[i]` at the declared element, so either one would
+///   change what the other computes (the batch's agreement pass keeps this
+///   from happening; a `--jobs` worker cannot see the other functions);
 /// * otherwise the one type the direct accesses agree on;
 /// * otherwise, with direct accesses at two types, nothing, and a comment says so;
 /// * with no direct access, a type over the unknown byte a `void *` use stands
@@ -1144,6 +1148,17 @@ fn global_declarations(results: &[FuncResult]) -> String {
         direct_decls.dedup();
         let record = best(&mut decls.iter().filter(|(g, _)| !g.direct && g.aggregate));
         let array = best(&mut decls.iter().filter(|(g, _)| !g.direct && g.declaration.ends_with("[]")));
+        let arrays: Vec<String> =
+            decls.iter().filter(|(g, _)| g.declaration.ends_with("[]")).map(|(g, _)| quote(&g.declaration)).collect();
+        if record.is_none() && direct_decls.is_empty() && arrays.len() > 1 {
+            let _ = writeln!(
+                out,
+                "/* {} is indexed at two element types, so it is not declared: {} */",
+                taken[0].name,
+                arrays.join(", ")
+            );
+            continue;
+        }
         let chosen = match (record, direct_decls.as_slice()) {
             (Some(r), _) => r,
             (None, []) if array.is_some() => array.unwrap_or_default(),

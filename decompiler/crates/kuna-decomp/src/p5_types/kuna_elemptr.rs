@@ -122,6 +122,15 @@ struct Evidence {
     unsigned: u32,
     /// A loaded byte compared against a character literal.
     charlit: u32,
+    /// Loaded elements the function returns where its recovered return type
+    /// is signed, and unsigned: the callers read the element at that type.
+    ret_signed: u32,
+    ret_unsigned: u32,
+    /// Loaded elements whose readers, folded the way `getLocalType` folds them,
+    /// vote a signed integer of the element's width, and an unsigned one: the
+    /// type the load has without this rule.
+    own_signed: u32,
+    own_unsigned: u32,
     /// Uses of an element as an address: dereferenced, passed where a pointer
     /// is expected, or stored from a pointer.
     address: u32,
@@ -137,6 +146,10 @@ struct Evidence {
     /// The candidate is already a pointer (`malloc`'s `void *`): the other
     /// operand of an add through it is an index, since C adds no two pointers.
     base_is_ptr: bool,
+    /// The committed element's sign rests on evidence -- a return type, an
+    /// extension or ordering, a character compare, a declaration -- rather than
+    /// on the default (see [`element_signed`]).
+    firm: bool,
 }
 
 impl Evidence {
@@ -163,8 +176,18 @@ impl Evidence {
         match self.refused {
             Some(r) => format!("refuse:{r}"),
             None => format!(
-                "w={:?} var={} const={} s={} u={} chr={} adr={} num={}",
-                self.width, self.variable, self.constant, self.signed, self.unsigned, self.charlit, self.address,
+                "w={:?} var={} const={} s={} u={} chr={} ret={}/{} own={}/{} adr={} num={}",
+                self.width,
+                self.variable,
+                self.constant,
+                self.signed,
+                self.unsigned,
+                self.charlit,
+                self.ret_signed,
+                self.ret_unsigned,
+                self.own_signed,
+                self.own_unsigned,
+                self.address,
                 self.number
             ),
         }
@@ -265,7 +288,7 @@ pub fn element_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>, cache
             // A global read at another width than a pointer's is not an array's
             // base in this function, and says so to every other function of the batch.
             if kind == Kind::Global {
-                data.kuna_elemptr_note(v.get_offset(), GlobalVerdict::Refused);
+                data.kuna_elemptr_note(Obj::Held(v.get_offset()), GlobalVerdict::Refused);
             }
             return None;
         }
@@ -299,7 +322,12 @@ fn decide(
     let v = data.vbank().get(vn)?;
     let arch = Rc::clone(data.get_arch());
     let spc = Rc::clone(arch.manage().get_default_data_space()?);
-    if kind == Kind::Global && data.kuna_elemptr_blocked(v.get_offset()) {
+    let own = match kind {
+        Kind::Global => Some(Obj::Held(v.get_offset())),
+        Kind::Constant => Some(Obj::Table(v.get_offset())),
+        _ => None,
+    };
+    if own.is_some_and(|o| data.kuna_elemptr_blocked(o)) {
         return None;
     }
     let globals_held: Vec<u64> = copies
@@ -308,7 +336,7 @@ fn decide(
         .filter(|c| c.get_addr().get_space().is_some_and(|s| Rc::ptr_eq(s, &spc)))
         .map(|c| c.get_offset())
         .collect();
-    if globals_held.iter().any(|&g| data.kuna_elemptr_blocked(g)) {
+    if globals_held.iter().any(|&g| data.kuna_elemptr_blocked(Obj::Held(g))) {
         return None;
     }
     let mut ev = Evidence::default();
@@ -342,22 +370,21 @@ fn decide(
         );
     }
     let verdict = match (&elem, ev.refused) {
-        (Some(e), _) => Some(GlobalVerdict::Typed {
-            width: e.get_size(),
-            pointer: e.get_metatype() == type_metatype::TYPE_PTR,
-        }),
+        (Some(e), _) => Some(GlobalVerdict::Typed { elem: elem_key(e), firm: ev.firm }),
         (None, Some(why)) if !matches!(why, "pointer-unnamed" | "elem-unknown" | "pointer-or-number") => {
             Some(GlobalVerdict::Refused)
         }
         _ => None,
     };
     if let Some(verdict) = verdict {
-        if kind == Kind::Global {
-            data.kuna_elemptr_note(v.get_offset(), verdict.clone());
+        match kind {
+            Kind::Global => data.kuna_elemptr_note(Obj::Held(v.get_offset()), verdict.clone()),
+            Kind::Constant => data.kuna_elemptr_note(Obj::Table(v.get_offset()), verdict.clone()),
+            _ => {}
         }
         if elem.is_some() {
             for &g in &globals_held {
-                data.kuna_elemptr_note(g, verdict.clone());
+                data.kuna_elemptr_note(Obj::Held(g), verdict.clone());
             }
         }
     }
@@ -657,6 +684,8 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
         }
         OpCode::CPUI_PTRADD => {
             if slot != 0 {
+                // The candidate is the index into something else's base.
+                ev.refuse("index-of-other");
                 return None;
             }
             let elem = konst(2)?;
@@ -675,6 +704,16 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
             if let Some(k) = konst(other) {
                 if is_sub && slot == 1 {
                     ev.refuse("negated");
+                    return None;
+                }
+                // A constant already typed a pointer is the base, and the
+                // candidate the offset into it.
+                if !is_sub
+                    && o.get_in(other).is_some_and(|c| {
+                        data.vn_type_read_facing(c, op).get_metatype() == type_metatype::TYPE_PTR
+                    })
+                {
+                    ev.refuse("index-of-other");
                     return None;
                 }
                 if data.vbank().get(vn).is_some_and(|v| v.is_constant()) {
@@ -808,8 +847,30 @@ fn indexed(data: &Funcdata, sum: VarnodeId, scale: intb, off: intb, ev: &mut Evi
                         .and_then(|x| data.vbank().get(x))
                         .filter(|x| x.is_constant())
                         .map(|x| sign_extend(x.get_offset(), x.get_size()));
-                    if let Some(k) = k {
-                        next = out.map(|x| (x, off + k));
+                    let pointer_other = o
+                        .get_in(other)
+                        .is_some_and(|x| data.vn_type_read_facing(x, op).get_metatype() == type_metatype::TYPE_PTR);
+                    match k {
+                        Some(_) if pointer_other => ev.refuse("index-of-other"),
+                        Some(k) => next = out.map(|x| (x, off + k)),
+                        // A second index of the same scale is one more term of
+                        // the element's index (`p + i + j`); anything else is a
+                        // record's stride or another object's base.
+                        None => match o.get_in(other).and_then(|x| index_scale(data, x, INDEX_DEPTH)) {
+                            Some((s, k)) if s == scale => next = out.map(|x| (x, off + k)),
+                            _ => ev.refuse("sum-plus-unknown"),
+                        },
+                    }
+                }
+                OpCode::CPUI_PTRADD => {
+                    let elem = o.get_in(2).and_then(|x| data.vbank().get(x)).filter(|x| x.is_constant());
+                    let idx = o.get_in(1).and_then(|x| data.vbank().get(x)).filter(|x| x.is_constant());
+                    match (slot, elem, idx) {
+                        (0, Some(e), Some(i)) => {
+                            let d = sign_extend(i.get_offset(), i.get_size()) * sign_extend(e.get_offset(), e.get_size());
+                            next = out.map(|x| (x, off + d));
+                        }
+                        _ => ev.refuse("index-of-other"),
                     }
                 }
                 OpCode::CPUI_PTRSUB => {
@@ -872,6 +933,7 @@ fn element_access(data: &Funcdata, op: OpId, w: int4, off: intb, variable: bool,
             ev.elem_types.push(t);
         }
     }
+    loaded_sign(data, val, w, ev);
     let readers: Vec<OpId> = data.vbank().get(val).map(|v| v.descend_iter().collect()).unwrap_or_default();
     for r in readers {
         let Some(ro) = data.obank().get(r) else { continue };
@@ -942,6 +1004,69 @@ fn element_access(data: &Funcdata, op: OpId, w: int4, off: intb, variable: bool,
             }
             code if crate::kuna_ptrfromuse::is_float_op(code) => ev.refuse("float-elem"),
             _ => {}
+        }
+    }
+}
+
+/// The sign the loaded element `val` has without this rule: the fold of what
+/// its readers vote, and the function's recovered return type where the
+/// element is what the function returns.  The return is the one reader whose
+/// type C carries past the function: a callee that zero-extends a `short`
+/// into `rax` is read as `unsigned short` by every caller, and an element
+/// declared signed would make those callers sign-extend it.
+fn loaded_sign(data: &Funcdata, val: VarnodeId, w: int4, ev: &mut Evidence) {
+    let sign = |t: &Datatype| -> Option<bool> {
+        (t.get_size() == w).then_some(()).and_then(|_| match t.get_metatype() {
+            type_metatype::TYPE_INT => Some(true),
+            type_metatype::TYPE_UINT => Some(false),
+            _ => None,
+        })
+    };
+    let Some(v) = data.vbank().get(val) else { return };
+    let mut own: Option<Rc<Datatype>> = None;
+    for r in v.descend_iter() {
+        let slot = data.obank().get(r).map(|o| o.get_slot(val)).unwrap_or(0);
+        let t = crate::coreaction_infertypes::input_type_local(data, r, slot);
+        own = Some(match own {
+            Some(cur) if t.type_order(&cur).unwrap_or(0) >= 0 => cur,
+            _ => t,
+        });
+    }
+    match own.as_deref().and_then(sign) {
+        Some(true) => ev.own_signed += 1,
+        Some(false) => ev.own_unsigned += 1,
+        None => {}
+    }
+    // The element's copies, a few hops on, and the returns they reach.
+    let mut seen = vec![val];
+    let mut i = 0;
+    while i < seen.len() && seen.len() <= 8 {
+        let cur = seen[i];
+        i += 1;
+        let Some(cv) = data.vbank().get(cur) else { continue };
+        for r in cv.descend_iter() {
+            let Some(o) = data.obank().get(r) else { continue };
+            let slot = o.get_slot(cur);
+            match o.code() {
+                OpCode::CPUI_RETURN if slot >= 1 => {
+                    match sign(&crate::coreaction_infertypes::input_type_local(data, r, slot)) {
+                        Some(true) => ev.ret_signed += 1,
+                        Some(false) => ev.ret_unsigned += 1,
+                        None => {}
+                    }
+                }
+                OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_CAST => {
+                    if let Some(out) = o.get_out().filter(|x| !seen.contains(x)) {
+                        seen.push(out);
+                    }
+                }
+                OpCode::CPUI_INDIRECT if slot == 0 => {
+                    if let Some(out) = o.get_out().filter(|x| !seen.contains(x)) {
+                        seen.push(out);
+                    }
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -1202,9 +1327,10 @@ fn has_pointer_use(data: &Funcdata, x: VarnodeId) -> bool {
     })
 }
 
-/// Does the program read `x` as a number somewhere -- multiply, divide, shift
-/// or mask it, or order it against a non-zero literal?  Such a value is not the
-/// base of the add it also appears in.
+/// Does the program read `x` as a number somewhere -- multiply, divide or shift
+/// it, or order it against a non-zero literal?  Such a value is not the base of
+/// the add it also appears in.  A mask is not such a use: `p & 7` is how a
+/// program tests a pointer's alignment.
 fn used_as_number(data: &Funcdata, x: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(x) else { return false };
     v.descend_iter().any(|op| {
@@ -1218,13 +1344,6 @@ fn used_as_number(data: &Funcdata, x: VarnodeId) -> bool {
             | OpCode::CPUI_INT_LEFT
             | OpCode::CPUI_INT_RIGHT
             | OpCode::CPUI_INT_SRIGHT => true,
-            // A small mask reads a number's low bits; a wide one aligns a pointer.
-            OpCode::CPUI_INT_AND => (0..2).any(|i| {
-                o.get_in(i)
-                    .filter(|&c| c != x)
-                    .and_then(|c| data.vbank().get(c))
-                    .is_some_and(|c| c.is_constant() && c.get_offset() < 0x10000)
-            }),
             // Ordered against a literal other than zero: a count, not an address.
             OpCode::CPUI_INT_LESS
             | OpCode::CPUI_INT_LESSEQUAL
@@ -1303,6 +1422,7 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
             // which `calleevote` states on a later decompile.
             (true, false) => {
                 if let Some(n) = named.filter(|_| named_agree) {
+                    ev.firm = true;
                     return Some(n);
                 }
                 ev.refuse("pointer-unnamed");
@@ -1325,11 +1445,48 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
     // A callee that declares the element (`strftime`'s `char *`) says what its
     // sign is; the loads only guess.
     if let Some(d) = declared_int.filter(|_| declared_agree) {
+        ev.firm = true;
         return Some(d);
     }
-    let unsigned = ev.unsigned > 0 && ev.signed == 0 && ev.charlit == 0;
-    let meta = if unsigned { type_metatype::TYPE_UINT } else { type_metatype::TYPE_INT };
+    let (signed, firm) = element_signed(w, ev);
+    ev.firm = firm;
+    let meta = if signed { type_metatype::TYPE_INT } else { type_metatype::TYPE_UINT };
     tlst.get_base(w, meta).ok()
+}
+
+/// Is the `w`-byte integer element signed, and does that rest on evidence?
+/// Only where something says so.  The function's return type comes first,
+/// since callers read it; then how the program extends, orders, shifts or
+/// divides a loaded element, when every such use agrees; a byte compared
+/// against a character is the plain `char`.  Without any of that the element
+/// takes the type the load has without this rule -- its readers' fold -- and
+/// a wider element nothing votes for is unsigned, the one reading that never
+/// widens a value past what its bits hold.  Such a default is not evidence: a
+/// batch lets a function with evidence decide a table's sign over it.
+fn element_signed(w: int4, ev: &Evidence) -> (bool, bool) {
+    let one = |s: u32, u: u32| -> Option<bool> {
+        match (s > 0, u > 0) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            _ => None,
+        }
+    };
+    if let Some(signed) = one(ev.ret_signed, ev.ret_unsigned) {
+        return (signed, true);
+    }
+    if w == 1 {
+        if ev.charlit > 0 {
+            return (true, true);
+        }
+        return match one(ev.signed, ev.unsigned) {
+            Some(signed) => (signed, true),
+            None => (true, false),
+        };
+    }
+    match one(ev.signed, ev.unsigned) {
+        Some(signed) => (signed, true),
+        None => (one(ev.own_signed, ev.own_unsigned).unwrap_or(false), false),
+    }
 }
 
 /// (printer) When the constant `vn` is the base of the `PTRADD` `op` indexed
@@ -1372,42 +1529,67 @@ fn index_bound(data: &Funcdata, x: VarnodeId, depth: usize) -> Option<uintb> {
     }
 }
 
-/// What one function's walks said about one global it holds a pointer in.
+/// What a verdict is about: the pointer a global holds (`dat_5068`, typed
+/// `char *`), or the table at a constant address (`dat_5020[v7]`, declared
+/// `unsigned char dat_5020[]`).  Both end up as one declaration in a project's
+/// header, which every function's body is compiled against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Obj {
+    Held(u64),
+    Table(u64),
+}
+
+/// What one function's walks said about one global or table.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum GlobalVerdict {
-    /// An array of `width`-byte elements, pointers or not.
-    Typed { width: int4, pointer: bool },
+    /// An array of `elem`, spelled by [`elem_key`]: signedness included, since
+    /// a body reading the element at the other sign computes another value.
+    /// `firm` when evidence decided the sign, not the default.
+    Typed { elem: String, firm: bool },
     /// Not an array this function agrees with: another width, a record, a
     /// number.
     Refused,
 }
 
+/// The element type `e` as a verdict compares it: width, kind, sign, and a
+/// pointer's pointee.
+pub fn elem_key(e: &Datatype) -> String {
+    match e.get_ptr_to() {
+        Some(p) if e.get_metatype() == type_metatype::TYPE_PTR => format!("*{}", elem_key(&p)),
+        _ => format!("{}:{:?}:{}", e.get_size(), e.get_metatype(), e.get_name()),
+    }
+}
+
 impl GlobalVerdict {
     /// Two verdicts of one function: the same array, or a disagreement.
     pub fn merge(self, other: GlobalVerdict) -> GlobalVerdict {
-        if self == other {
-            self
-        } else {
-            GlobalVerdict::Refused
+        match (self, other) {
+            (GlobalVerdict::Typed { elem: a, firm: fa }, GlobalVerdict::Typed { elem: b, firm: fb }) if a == b => {
+                GlobalVerdict::Typed { elem: a, firm: fa || fb }
+            }
+            _ => GlobalVerdict::Refused,
         }
     }
 }
 
 /// (kuna `elemptr`) The batch's record of what every function said about every
-/// global, and the globals each function must not type.  A global is typed only
-/// where every function of the batch that says something about it agrees; the
-/// ones that typed a global another function disagrees about are decompiled
-/// again with it blocked.
+/// global and table, and the ones each function must not type.  A global is
+/// typed only where every function of the batch that says something about it
+/// agrees -- on the element, sign included; a table only where every function
+/// that types it types the same element (a function that reads it another way
+/// prints its own cast, and compiles against any declaration).  The functions
+/// that typed an object another function disagrees about are decompiled again
+/// with it blocked.
 #[derive(Debug, Default)]
 pub struct Ledger {
     /// A batch is running and recording.
     pub recording: bool,
-    verdicts: BTreeMap<u64, BTreeMap<u64, GlobalVerdict>>,
-    blocked: BTreeMap<u64, Rc<BTreeSet<u64>>>,
-    /// Globals some function of the batch has already disagreed about: every
+    verdicts: BTreeMap<Obj, BTreeMap<u64, GlobalVerdict>>,
+    blocked: BTreeMap<u64, Rc<BTreeSet<Obj>>>,
+    /// Objects some function of the batch has already disagreed about: every
     /// function decompiled after that leaves them alone, so only the ones
     /// decompiled before it are decided again.
-    disputed: BTreeSet<u64>,
+    disputed: BTreeSet<Obj>,
 }
 
 /// Start a batch: forget the previous one, and record while the option is on.
@@ -1420,7 +1602,7 @@ pub fn stop(arch: &mut crate::architecture::Architecture) {
     arch.kuna_elemptr.recording = false;
 }
 
-/// Hand a function the globals it must not type.
+/// Hand a function the objects it must not type.
 pub fn seed(arch: &crate::architecture::Architecture, data: &mut Funcdata) {
     if !arch.elem_ptr {
         return;
@@ -1441,7 +1623,7 @@ pub fn seed(arch: &crate::architecture::Architecture, data: &mut Funcdata) {
     data.kuna_set_elemptr_blocked(Some(Rc::new(all)));
 }
 
-/// File what a decompiled function said about each global, replacing what an
+/// File what a decompiled function said about each object, replacing what an
 /// earlier decompile of the same function said.
 pub fn record(arch: &mut crate::architecture::Architecture, data: &Funcdata) {
     if !arch.kuna_elemptr.recording {
@@ -1450,9 +1632,8 @@ pub fn record(arch: &mut crate::architecture::Architecture, data: &Funcdata) {
     arch.kuna_elemptr.file(data.get_address().get_offset(), data.kuna_elemptr_verdicts());
 }
 
-/// The functions to decompile again: every one that typed a global some other
-/// function disagrees about -- refuses it, or types it at another width --
-/// with that global now blocked for it.
+/// The functions to decompile again: every one that typed an object some other
+/// function disagrees about, with that object now blocked for it.
 pub fn disagreements(arch: &mut crate::architecture::Architecture) -> BTreeSet<u64> {
     let redo = arch.kuna_elemptr.disagreements();
     if trace_on() {
@@ -1461,42 +1642,70 @@ pub fn disagreements(arch: &mut crate::architecture::Architecture) -> BTreeSet<u
     redo
 }
 
+/// The functions among `per` that must not type `obj`, or none when they
+/// agree.  Two elements decided by evidence that differ block every function
+/// that typed one; so do two defaulted ones, and, for a global, a refusal beside
+/// a type.  Where evidence decided one element, only the functions that
+/// defaulted to another are blocked: a default is what the load reads without
+/// this rule, and it gives way.
+fn to_block(obj: Obj, per: &BTreeMap<u64, GlobalVerdict>) -> Vec<u64> {
+    let typed: Vec<(u64, &str, bool)> = per
+        .iter()
+        .filter_map(|(&f, v)| match v {
+            GlobalVerdict::Typed { elem, firm } => Some((f, elem.as_str(), *firm)),
+            GlobalVerdict::Refused => None,
+        })
+        .collect();
+    let all = || typed.iter().map(|t| t.0).collect::<Vec<u64>>();
+    if typed.is_empty() {
+        return Vec::new();
+    }
+    if matches!(obj, Obj::Held(_)) && per.values().any(|x| *x == GlobalVerdict::Refused) {
+        return all();
+    }
+    let firm: BTreeSet<&str> = typed.iter().filter(|t| t.2).map(|t| t.1).collect();
+    match firm.len() {
+        0 => {
+            let weak: BTreeSet<&str> = typed.iter().map(|t| t.1).collect();
+            if weak.len() > 1 {
+                all()
+            } else {
+                Vec::new()
+            }
+        }
+        1 => {
+            let decided = firm.first().copied().unwrap_or_default();
+            typed.iter().filter(|t| t.1 != decided).map(|t| t.0).collect()
+        }
+        _ => all(),
+    }
+}
+
 impl Ledger {
-    /// Replace what the function entered at `me` said about every global.
-    pub(crate) fn file(&mut self, me: u64, said: BTreeMap<u64, GlobalVerdict>) {
+    /// Replace what the function entered at `me` said about every object.
+    pub(crate) fn file(&mut self, me: u64, said: BTreeMap<Obj, GlobalVerdict>) {
         for per in self.verdicts.values_mut() {
             per.remove(&me);
         }
         for (g, v) in said {
             let per = self.verdicts.entry(g).or_default();
             per.insert(me, v);
-            let mut typed = per.values().filter(|x| matches!(x, GlobalVerdict::Typed { .. }));
-            let first = typed.next();
-            let split = first.is_some_and(|f| typed.any(|x| x != f));
-            if split || per.values().any(|x| *x == GlobalVerdict::Refused) {
+            // A function decompiled after a dispute leaves the object alone;
+            // only a dispute that blocks everyone who typed it is one.
+            let refused_global = matches!(g, Obj::Held(_)) && per.values().any(|x| *x == GlobalVerdict::Refused);
+            let typed = per.values().filter(|x| matches!(x, GlobalVerdict::Typed { .. })).count();
+            if refused_global || (typed > 0 && to_block(g, per).len() == typed) {
                 self.disputed.insert(g);
             }
         }
     }
 
-    /// Block every disagreed global for the functions that typed it, and return
+    /// Block every disagreed object for the functions that typed it, and return
     /// the functions whose blocked set grew.
     pub(crate) fn disagreements(&mut self) -> BTreeSet<u64> {
         let mut redo = BTreeSet::new();
         for (&g, per) in &self.verdicts {
-            let typed: BTreeSet<&GlobalVerdict> =
-                per.values().filter(|v| matches!(v, GlobalVerdict::Typed { .. })).collect();
-            if typed.is_empty() {
-                continue;
-            }
-            let refused = per.values().any(|v| *v == GlobalVerdict::Refused);
-            if !refused && typed.len() == 1 {
-                continue;
-            }
-            for (&f, v) in per {
-                if !matches!(v, GlobalVerdict::Typed { .. }) {
-                    continue;
-                }
+            for f in to_block(g, per) {
                 let entry = self.blocked.entry(f).or_default();
                 if !entry.contains(&g) {
                     Rc::make_mut(entry).insert(g);
@@ -1507,9 +1716,10 @@ impl Ledger {
         redo
     }
 
-    /// Is `global` blocked for the function entered at `me`?
-    pub(crate) fn is_blocked(&self, me: u64, global: u64) -> bool {
-        self.blocked.get(&me).is_some_and(|b| b.contains(&global))
+    /// Is `obj` blocked for the function entered at `me`?
+    #[cfg(test)]
+    pub(crate) fn is_blocked(&self, me: u64, obj: Obj) -> bool {
+        self.blocked.get(&me).is_some_and(|b| b.contains(&obj))
     }
 }
 

@@ -453,9 +453,11 @@ pub struct Funcdata {
     kuna_calleevote_closed: bool,
     /// (kuna `elemptr`) The globals this function must not type as element
     /// pointers: another function of the batch disagrees about them.
-    kuna_elemptr_blocked: Option<std::rc::Rc<std::collections::BTreeSet<u64>>>,
-    /// (kuna `elemptr`) What this function's walks said about each global.
-    kuna_elemptr_verdicts: std::cell::RefCell<std::collections::BTreeMap<u64, crate::kuna_elemptr::GlobalVerdict>>,
+    kuna_elemptr_blocked: Option<std::rc::Rc<std::collections::BTreeSet<crate::kuna_elemptr::Obj>>>,
+    /// (kuna `elemptr`) What this function's last type pass said about each
+    /// global and table.
+    kuna_elemptr_verdicts:
+        std::cell::RefCell<std::collections::BTreeMap<crate::kuna_elemptr::Obj, crate::kuna_elemptr::GlobalVerdict>>,
     /// (kuna `elemptr`) The constant addresses this function's walks typed as an
     /// element pointer.
     kuna_elemptr_constants: std::cell::RefCell<std::collections::BTreeSet<u64>>,
@@ -836,24 +838,34 @@ impl Funcdata {
         self.kuna_calleevote_closed
     }
 
-    /// (kuna `elemptr`) Set the globals this function must not type.
-    pub fn kuna_set_elemptr_blocked(&mut self, blocked: Option<std::rc::Rc<std::collections::BTreeSet<u64>>>) {
+    /// (kuna `elemptr`) Set the globals and tables this function must not type.
+    pub fn kuna_set_elemptr_blocked(
+        &mut self,
+        blocked: Option<std::rc::Rc<std::collections::BTreeSet<crate::kuna_elemptr::Obj>>>,
+    ) {
         self.kuna_elemptr_blocked = blocked;
     }
 
-    /// (kuna `elemptr`) Is the global at `addr` one this function must not type?
-    pub fn kuna_elemptr_blocked(&self, addr: u64) -> bool {
-        self.kuna_elemptr_blocked.as_ref().is_some_and(|b| b.contains(&addr))
+    /// (kuna `elemptr`) Is `obj` one this function must not type?
+    pub fn kuna_elemptr_blocked(&self, obj: crate::kuna_elemptr::Obj) -> bool {
+        self.kuna_elemptr_blocked.as_ref().is_some_and(|b| b.contains(&obj))
     }
 
-    /// (kuna `elemptr`) Fold one walk's verdict about the global at `addr` in.
-    pub fn kuna_elemptr_note(&self, addr: u64, verdict: crate::kuna_elemptr::GlobalVerdict) {
+    /// (kuna `elemptr`) Forget what the previous type pass said: the verdicts
+    /// and typed tables describe the pass whose types the function keeps.
+    pub fn kuna_elemptr_begin_pass(&self) {
+        self.kuna_elemptr_verdicts.borrow_mut().clear();
+        self.kuna_elemptr_constants.borrow_mut().clear();
+    }
+
+    /// (kuna `elemptr`) Fold one walk's verdict about `obj` in.
+    pub fn kuna_elemptr_note(&self, obj: crate::kuna_elemptr::Obj, verdict: crate::kuna_elemptr::GlobalVerdict) {
         let mut m = self.kuna_elemptr_verdicts.borrow_mut();
-        let merged = match m.remove(&addr) {
+        let merged = match m.remove(&obj) {
             Some(prev) => prev.merge(verdict),
             None => verdict,
         };
-        m.insert(addr, merged);
+        m.insert(obj, merged);
     }
 
     /// (kuna `elemptr`) Note a constant address a walk typed as an element pointer.
@@ -867,7 +879,9 @@ impl Funcdata {
     }
 
     /// (kuna `elemptr`) What this function's walks said about each global.
-    pub fn kuna_elemptr_verdicts(&self) -> std::collections::BTreeMap<u64, crate::kuna_elemptr::GlobalVerdict> {
+    pub fn kuna_elemptr_verdicts(
+        &self,
+    ) -> std::collections::BTreeMap<crate::kuna_elemptr::Obj, crate::kuna_elemptr::GlobalVerdict> {
         self.kuna_elemptr_verdicts.borrow().clone()
     }
 
