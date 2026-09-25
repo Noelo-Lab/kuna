@@ -935,6 +935,7 @@ fn summary_json(
     summary: &Summary,
     selected: usize,
     error: Option<&str>,
+    warnings: &[String],
     display_address: &dyn Fn(u64) -> u64,
 ) -> String {
     let named = |f: &Option<(u64, String)>| match f {
@@ -980,6 +981,10 @@ fn summary_json(
             ("total".into(), Json::Number(summary.total.to_string())),
             ("error".into(), error_json(error)),
             (
+                "warnings".into(),
+                Json::Array(warnings.iter().map(|w| Json::Str(w.clone())).collect()),
+            ),
+            (
                 "summary".into(),
                 Json::Object(vec![
                     ("entry".into(), entry),
@@ -1006,10 +1011,14 @@ fn summary_text(
     binary: &str,
     summary: &Summary,
     selected: usize,
+    warnings: &[String],
     display_address: &dyn Fn(u64) -> u64,
 ) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "binary\t{binary}");
+    for warning in warnings {
+        let _ = writeln!(out, "warning\t{warning}");
+    }
     let _ = writeln!(out, "functions\t{selected} selected / {} discovered", summary.total);
     match &summary.entry {
         Some((vma, name)) => {
@@ -1633,6 +1642,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
             &summary,
             selected.len(),
             discovery_error.as_deref(),
+            prog.load_notes(),
             &|address| prog.output_code_offset(address),
         )
     } else {
@@ -1640,6 +1650,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
             &args.binary,
             &summary,
             selected.len(),
+            prog.load_notes(),
             &|address| prog.output_code_offset(address),
         )
     };
@@ -4064,7 +4075,9 @@ fn usage_functions() {
          --summary answers `where do I start` in a few hundred bytes instead of a\n\
          function list: the image entry point, how many functions it reaches, how\n\
          many have no call site, the size histogram, and the --limit largest\n\
-         functions (10 by default).\n\
+         functions (10 by default). Its `warnings` array repeats the loader's\n\
+         header repairs (a dropped ELF section table, a repaired PE DOS magic, a\n\
+         clamped data-directory count) that the run also printed on stderr.\n\
          Shares decompile-all's discovery policy, so the inventory always contains\n\
          every function a whole-binary run would decompile; on a non-x86-64 binary\n\
          that means a full prologue-pattern + gap-walk discovery pass.\n\

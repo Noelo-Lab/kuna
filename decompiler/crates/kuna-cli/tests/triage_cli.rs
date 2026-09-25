@@ -447,14 +447,16 @@ fn a_universal_macho_summarizes_the_slice_the_inventory_loaded() {
 
 /// The summary's entry came from a raw `std::fs::read`, so an image that only
 /// parses after the loader's header repairs — a corrupt ELF section table, an
-/// oversized PE data-directory count — reported `entry: null` and
-/// `reachable_from_entry: null` while the inventory beside it listed functions.
-/// Read through the same repaired view the loader uses and the field is answered.
+/// oversized PE data-directory count, a trashed DOS `e_magic` — reported
+/// `entry: null` and `reachable_from_entry: null` while the inventory beside it
+/// listed functions. Read through the same repaired view the loader uses and the
+/// field is answered, and the repair is named in `warnings`.
 #[test]
 fn a_repaired_header_still_reports_the_summary_entry() {
-    for (name, entry) in [
-        ("corruptshdr_i386", "0x8048054"),
-        ("pe_datadircount_i386.exe", "0x401000"),
+    for (name, entry, warning) in [
+        ("corruptshdr_i386", "0x8048054", "ELF section table unusable"),
+        ("pe_datadircount_i386.exe", "0x401000", "PE NumberOfRvaAndSizes is 1531532893"),
+        ("pe_dosmagic_i386.exe", "0x401000", "PE DOS header e_magic is 0x5a15, not MZ"),
     ] {
         let image = repo_root()
             .join("decompiler/crates/kuna-analysis/tests/fixtures")
@@ -463,7 +465,7 @@ fn a_repaired_header_still_reports_the_summary_entry() {
             .unwrap()
             .to_string();
         let (out, err, code) = run_kuna(&["functions", &image, "--summary", "--json"]);
-        if no_specs(&err, code) {
+        if no_specs(&err, code) && !err.contains("Unknown file magic") {
             eprintln!("skipping: no .sla under {} ({err})", specs());
             return;
         }
@@ -473,7 +475,25 @@ fn a_repaired_header_still_reports_the_summary_entry() {
             json_field(&out, "reachable_from_entry").is_some_and(|n| n > 0),
             "{name}: and it must reach something: {out}"
         );
+        let warnings = out.split("\"warnings\": [").nth(1).and_then(|w| w.split(']').next());
+        assert!(
+            warnings.is_some_and(|w| w.contains(warning)),
+            "{name}: the repair must be named in `warnings`: {out}"
+        );
+        assert!(err.contains(&format!("[kuna] {warning}")), "{name}: and on stderr: {err}");
     }
+}
+
+/// A well-formed image has nothing to warn about, and says so with an empty array.
+#[test]
+fn a_well_formed_image_summarizes_with_no_warnings() {
+    let (out, err, code) = run_kuna(&["functions", &fauxware(), "--summary", "--json"]);
+    if no_specs(&err, code) {
+        eprintln!("skipping: no .sla under {} ({err})", specs());
+        return;
+    }
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("\"warnings\": []"), "{out}");
 }
 
 /// The zero-discovery verdict belongs to DISCOVERY. A narrowed run on an image

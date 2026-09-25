@@ -223,6 +223,27 @@ that parse the image themselves rather than through the loader (`strings`, `cryp
 `xrefs`, `decompile-graph`, the call graph) read it through the same normalization
 (`elf_shdr (read_image)`), so a recovered image is recovered everywhere.
 
+(kuna) **A PE DOS header whose `e_magic` is not `MZ` is repaired, not fatal**
+(`decompiler/crates/kuna-analysis/src/loader/pe_dosmagic.rs
+(tolerate_corrupt_dos_magic)`). The DOS header's only load-bearing fields are
+`e_magic` and `e_lfanew`, the file offset of the NT headers; every header the loader
+reads — the `PE\0\0` signature, the COFF and optional headers, the section table —
+lives behind that pointer. `object` identifies the format from the leading bytes
+alone, so an image whose first byte was overwritten (a CTF image ships `0x15 'Z'`,
+`e_magic` `0x5a15`) was "Unknown file magic" on every surface although `e_lfanew`
+still led to an intact PE. When the file is no format `object` recognizes and
+`e_lfanew` points at `PE\0\0` clear of the magic itself, `MZ` is written over
+`e_magic` in the loaded copy, at the same canonical read point and before the
+data-directory clamp below, which reads the headers behind it; the file on disk is
+never modified. Any other file, including every image that already parses, is passed
+on byte for byte with no parse performed, and the format sniff that routes `load
+file` to the object loader admits the same images. Like the clamp, the repair is kept
+even when the copy still does not parse: the signature settles which format the
+file is, so the caller reports what is actually unreadable in it. The repair is
+reported once on stderr and, with the other two header repairs, recorded on the
+loaded program (`ConsoleProgram::load_notes`), which `functions --summary --json`
+publishes as its `warnings` array.
+
 (kuna) **A PE data-directory count larger than its own header is clamped, not
 fatal** (`decompiler/crates/kuna-analysis/src/loader/pe_datadirs.rs
 (tolerate_oversized_data_directories)`). A PE's optional header ends with an array

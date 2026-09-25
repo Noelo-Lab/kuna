@@ -54,6 +54,26 @@ $ kuna functions ./packed.exe --json
 224-byte optional header; clamped to 16 (entry 0x40908e, 8 section(s))
 ```
 
+A PE whose **DOS header `e_magic` is not `MZ`** is loaded anyway when `e_lfanew`
+(offset `0x3c`) still points at a `PE\0\0` signature. The format used to be sniffed
+from the first two bytes alone, so an image whose first byte was overwritten exited
+`1` on every command with `not in recognized object file format: Unknown file magic`
+(or `unrecognized input format` from `kuna decompile`) although its NT headers and
+section table were intact. `MZ` is restored in the loaded copy only (the file is
+never modified), and the run continues, printing one line on stderr:
+
+```
+$ kuna functions ./UnholyDragon-150.exe --summary --json
+[kuna] PE DOS header e_magic is 0x5a15, not MZ (0x5a4d); loaded via e_lfanew 0xe8
+-> PE signature (repaired in memory; the file is unchanged)
+```
+
+Each of these header repairs is also listed, verbatim and without the `[kuna] `
+prefix, in the `warnings` array of `kuna functions --summary --json` (and as
+`warning<TAB>…` lines in its text form), so a caller that reads only stdout still
+learns that the image it is orienting in was repaired. A well-formed image has
+`"warnings": []`.
+
 ## Where kuna finds the engine and the specs
 
 `kuna` drives two sibling binaries — `decomp_dbg` (the engine behind `decompile`
@@ -1178,7 +1198,7 @@ The first call to make on an unknown binary: it answers *where do I start*
 without emitting a function list at all, let alone pseudocode.
 
 ```json
-{"binary":"…","count":1150,"total":1150,"error":null,
+{"binary":"…","count":1150,"total":1150,"error":null,"warnings":[],
  "summary":{"entry":{"name","address","address_hex"},
             "main":{"name","address","address_hex"},
             "reachable_from_entry":334,"no_callers":714,"code_bytes":171971,
@@ -1207,6 +1227,10 @@ without emitting a function list at all, let alone pseudocode.
   `64-255`, `256-1023`, `1024-4095`, `4096+`), so nothing falls between buckets;
   `max_size` is `null` on the open-ended one.
 - `largest` holds the `--limit` biggest functions, 10 by default.
+- `warnings` lists the loader's header repairs for this image (a dropped ELF
+  section table, a repaired PE DOS `e_magic`, a clamped PE data-directory count),
+  one string each, in the order they were applied — the same lines the run prints
+  on stderr, without the `[kuna] ` prefix. Empty for a well-formed image.
 - The triage flags apply: `--summary --reachable-from main` summarizes just that
   subgraph. `count` is what was selected, `total` what discovery found.
 - `runtime` names what wrapped or built the image when native decompilation is
