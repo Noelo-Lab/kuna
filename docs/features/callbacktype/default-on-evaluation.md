@@ -195,20 +195,21 @@ parameter with empty `line_numbers`/`addresses`, the by-design case in spec 04.
 
 | binary | off (min ms) | on (min ms) | delta min | delta median |
 |---|---|---|---|---|
-| `libselinux-O0` | 5401.8 | 5460.2 | +1.08% | +1.85% |
-| `libselinux-O2-noinline` | 4859.4 | 4957.3 | +2.01% | +2.09% |
-| `fmt-O2` | 4180.8 | 4172.2 | -0.21% | +0.62% |
-| `ls-O2` | 13774.4 | 13779.3 | +0.04% | -0.35% |
-| `sort-O2` | 14649.5 | 14672.0 | +0.15% | +2.65% |
-| `bash-O2` | 88378.2 | 87401.9 | -1.10% | -1.12% |
+| `libselinux-O0` | 5455.2 | 5519.2 | +1.17% | +2.62% |
+| `libselinux-O2-noinline` | 4838.0 | 4923.2 | +1.76% | +0.20% |
+| `fmt-O2` | 4169.9 | 4181.4 | +0.28% | -0.23% |
+| `ls-O2` | 14003.4 | 13796.3 | -1.48% | -1.81% |
+| `sort-O2` | 14274.2 | 14350.9 | +0.54% | -2.11% |
+| `bash-O2` | 89983.0 | 89559.7 | -0.47% | -0.66% |
 
-Same build (bfa1d32e0, whose engine code 95dbe4d23 shares), both arms, `kuna decompile-all --json
+Same build (fc47b3561, whose engine code 99f849ef6 shares), both arms, `kuna decompile-all --json
 --max-fn-seconds 120`, the arms alternated per iteration and the minimum of 15 taken (`speed.py`,
-raw samples in `record.json`), while this PR's `make rust-test` lane and other campaign lanes ran.
-**Worst delta +2.01% (`libselinux-O2-noinline`), inside the +5% budget.** The previous base (f434b6a60, before the
-kept statement): libselinux -O0 +1.12%, -O2-noinline +0.57%, fmt -0.89%, ls -1.74%, sort
--2.98%, bash +1.61%. The kept statement costs one map lookup per call at the seed and one per
-argument of a call to a parked callback; the consumed-result bound removes redos.
+raw samples in `record.json`), while other campaign lanes ran. **Worst delta +1.76%
+(`libselinux-O2-noinline`), inside the +5% budget.** The previous build (bfa1d32e0, whose kept
+statement refused an unknown pointee): libselinux -O0 +1.08%, libselinux -O2-noinline +2.01%, fmt-O2
+-0.21%, ls-O2 +0.04%, sort-O2 +0.15%, bash-O2 -1.10%. The kept statement costs one map lookup per
+call at the seed and one per argument of a call to a parked callback; the consumed-result bound
+removes redos.
 
 **`libselinux` is the binary the round-6 review measured over budget**: +12.67% at -O0 and +13.17%
 at -O2-noinline (CPU, min-of-11), confirmed on two more runs. Almost all of it was the redo. With
@@ -331,7 +332,7 @@ improved with 0 worse, 13 gained parameters all DWARF-confirmed and none fabrica
 functions of 40,613 over 70 binaries and the forwarding fixture (in the 70 decbench binaries only
 the 115 parked callbacks; no function that is not parked changes a parameter type it had or its
 return type), no function that gains a `CONCAT`, speed within budget on every binary measured
-(SPEED_WORST), and +21 casts on castbench in the one function whose declared type is `void *`.
+(worst +1.76%, `libselinux-O2-noinline`), and +21 casts on castbench in the one function whose declared type is `void *`.
 Outside castbench the parked `void *` parameters add casts where the body's own guess was a record
 or typed pointer (+216 over the 115 changed functions, DWARF agreeing with the slot in all 37 that
 gain one): the declared type is the true one, and each field read then spells its own conversion,
