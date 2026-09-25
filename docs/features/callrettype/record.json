@@ -13,14 +13,14 @@
  "source_decompiler": "kuna",
  "inspiration": "2026-09-24 cast census (kwt/castcensus measure.md shape #4: `(char *)<call>` 1,994 kuna vs 1,172 IDA on the shared functions)",
  "witness": {
-  "repro": "kuna decompile-all decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64 (source callrettype_x86_64.c beside it)",
+  "repro": "gcc -O0 -o demo demo.c && kuna decompile-all demo, with demo.c = '#include <stdio.h>\\n__attribute__((noinline)) FILE *pick(int e) { return e ? stderr : stdout; }\\nint stream_no(int e) { return fileno(pick(e)) * 10 + e; }\\nint main(int argc, char **argv) { return stream_no(argc > 1); }'; the in-repo fixture callrettype_gcc_O0_x86_64 (pick_stream/stream_no) is the same shape",
   "before": [
-   "FILE * pick_stream(int a0)",
-   "v1 = (FILE *)pick_stream(a0);"
+   "FILE * pick(int a0)",
+   "v1 = (FILE *)pick(a0);"
   ],
   "after": [
-   "FILE * pick_stream(int a0)",
-   "v1 = pick_stream(a0);"
+   "FILE * pick(int a0)",
+   "v1 = pick(a0);"
   ],
   "corpus": {
    "coreutils tail -O0 recheck @0x5a69": [
@@ -36,6 +36,19 @@
     "v1 = (unsigned long)sub_10624((unsigned long *)a0->field_0x8,a1);",
     "-> with the audit: identical to option off (`unsigned long sub_6b45`)"
    ]
+  },
+  "review_extension": {
+   "shape": "long use_s16_as_u(int x) { return (unsigned short)s16(x); } / unsigned long use_neg_as_unsigned(int x) { return (unsigned int)neg32(x); }: call; movzwl %ax,%eax (mov %eax,%eax); ret",
+   "before_fix": [
+    "short use_s16_as_u(short a0) { return s16(a0); }  -> -15536 through its prototype (binary 50000)",
+    "int use_neg_as_unsigned(int a0)  -> 18446744073709551613 (binary 4294967293)"
+   ],
+   "after_fix": [
+    "unsigned short use_s16_as_u(...)",
+    "unsigned int use_neg_as_unsigned(...)  (as with the option off)"
+   ],
+   "mechanism": "seed reads the raw p-code for instructions that only widen a register in place; RuleSubvarZext/RuleSubvarSext report narrowing the returned value back through one; declared_contradicts refuses a statement of that width at the other sign for a returned result",
+   "effect_on_corpora": "castbench 45 binaries, the 10-binary corpus sweep and the 444-slice typesweep: byte-identical to the build before the fix"
   }
  },
  "castbench": {
@@ -92,7 +105,8 @@
   "earlier_bases": {
    "c960fb18d": "37,477 -> 36,703 (391 fewer, 25 more)",
    "f434b6a60": "36,614 -> 35,832 (393 fewer, 25 more)"
-  }
+  },
+  "review_fix": "the in-place extension refusal and the discarded-redo restore leave all 45 binaries byte-identical (35,588 -> 34,808 unchanged); option off still prints main's bytes on all 45"
  },
  "benchmark": {
   "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
@@ -220,11 +234,11 @@
  "parity": {
   "datatests": "675/675 PARITY OK",
   "stages": "1397/1397 PARITY OK (+3 callrettype assertions)",
-  "test_cli": "242/242 (one protoorder probe moved to the intended form)",
-  "rust_test": "7554 passed, 0 failed (lane on 86d55b260)"
+  "test_cli": "242/242 (one protoorder probe moved to the intended form; the two callrettype probes carry the rebuilt fixture's hash)",
+  "rust_test": "7554 passed, 0 failed (lane on 989c63bf5, the review fix; docs-only commits after it)"
  },
  "soundness": {
-  "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_call_result_typed_by_its_callee_round_trips_through_the_printed_c: gcc and clang at -O0 and -O2 compile every printed fixture function, option off and on; the output must equal the binary's. Classes: pointer result (char *, FILE *), signed long result, and the `cached` tie control. The float class (a declared float result) is covered by a_float_in_a_general_register_keeps_its_integer_uses_round_trip (cc)."
+  "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_call_result_typed_by_its_callee_round_trips_through_the_printed_c: gcc and clang at -O0 and -O2 compile every printed fixture function, option off and on; the output must equal the binary's. Classes: pointer result (char *, FILE *), signed long result, the `cached` tie control, and two callers that zero-extend a callee's short / int result in place before returning it (use_s16_as_u, use_neg_as_unsigned; called through their printed prototypes, 50000 4294967293) beside widen_signed, whose sign extension agrees with neg32's int. The float class (a declared float result) is covered by a_float_in_a_general_register_keeps_its_integer_uses_round_trip (cc)."
  },
  "speed": {
   "method": "docs/features/callrettype/speed.py: interleaved min-of-15, decompile-all --json --max-fn-seconds 120, --option callrettype off vs on, same final build",
@@ -294,10 +308,27 @@
     "delta_min_pct": 2.25,
     "delta_median_pct": -1.19
    }
+  },
+  "review_fix": {
+   "file": "docs/features/callrettype/speed-review.json",
+   "build": "989c63bf5 (base 850e8c692), interleaved min-of-15, option off vs on",
+   "delta_min_pct": {
+    "fmt": -0.05,
+    "ls": 0.32,
+    "sort": 0.02,
+    "bash": -0.47
+   },
+   "delta_median_pct": {
+    "fmt": 0.33,
+    "ls": 0.15,
+    "sort": 1.76,
+    "bash": 2.94
+   }
   }
  },
  "audit": {
   "rules": "high_contradicts (another call's result of the other class; beside a pointer a non-address number, a load through the pointer, a sum of integers) and a returned result beside a returned non-address number; only statements the variable's type carries; functions up to AUDIT_MAX_OPS = 1000 live p-code ops",
   "history": "v1 audited every statement and also votes a later pass refused: fmt -O2 +76% (quotearg_buffer_restyled redone for no change), bash -O2 +55% (218 redos, 51.6 s); narrowed to the above; the 2,000-op cap still let a 1,992-op dpkg-divert function cost 10% of its run, so the cap is 1,000"
- }
+ },
+ "stale_statements": "A callee decompiled again after its callers (calleevote redo, convergence sweep) records again; callers decompiled before keep the statement they read. A redo the run discards (arity moved, or failed) restores the earlier statement (kuna_callrettype::restore), so the record describes the printed body."
 }

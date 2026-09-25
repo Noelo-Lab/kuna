@@ -21,3 +21,21 @@ sort, bash); the option's cost is its own second decompile.
 | (h) | castbench full (45 binaries, 4,815 functions shared with IDA) | 35,588 -> 34,808 casts (-780), 188.2 -> 184.0 per kloc, 29.9 -> 29.3 per 100 statements, 0.941x -> 0.920x IDA. By level: O0 0.952 -> 0.932, O2 0.976 -> 0.958, O2-noinline 0.891 -> 0.867. 393 functions fewer (810 casts), 25 more (+30). The 25, read one by one: 15 keep a callee's pointer in an integer lvalue (`*a0 = (int8)sub_60b5b(0x58);` beside `void * sub_60b5b(uint8 a0)`, `a0->field_0x48 = (long)sub_1563d(...)`; option off assigns a pointer to an integer with no conversion), 3 subtract two pointers as integers (`(long)sub_10369(a0) - (long)a0`), 3 take a callee's pointer as their own return type (find -O2 `ctime_format` then prints its static buffer as `(unsigned char *)0x38700`; sdiff `interact` returns `edit`'s recovered `FILE *`; tar `write_long_name` keeps one refused call's `(void *)`), 1 re-signs a parameter's pointee from a callee's `unsigned char *` (diff -O2-noinline `sub_b040`), 1 keeps a callee's `unsigned int` in a variable the caller reads as `int` (tar -O2 `sub_30000`, `v = (int4)v`), 1 renumbers variables (tar -O2 `sub_27340`), and 1 keeps a vote a later inference pass refused (tar -O0 `sub_2ba80`: `v1 = (int8 *)sub_2b9f2(a0);` and `(uint8)v1 >> 8` for a `CONCAT71`; the audit leaves that case alone, see (e)). No new line assigns an integer to a pointer variable (984 on main, 959 on the branch). |
 
 All criteria pass; the option ships default on.
+
+## After review (2026-09-25)
+
+Review found a wrong-output class that none of the corpora contain: a caller
+that zero-extends a callee's result in place before returning it
+(`return (unsigned short)s16(x)` in a function returning `long`) printed the
+callee's `short` as its own return type, because the return trimming had
+removed the `movzwl` before the vote. The statement is now refused in that
+case (spec 04), and a redo the run discards restores the callee's earlier
+statement. Re-measured on the same base (`850e8c692`) with the fixed build:
+castbench prints byte-identical C to the reviewed head on all 45 binaries
+(35,588 -> 34,808 unchanged) and option off still prints main's bytes on all
+45; the typesweep rows are identical (1,615 -> 1,621, 0 lost); the corpus
+sweep's option-on arm is byte-identical on all ten binaries (0 arity, void or
+`variables[]` moves). `make test` 675/675 and `make test-stages` 1397/1397
+PARITY OK, `make test-cli` 242/242 (the two `callrettype` probes re-hashed for
+the rebuilt fixture), `make rust-test` 7,554 passed and 0 failed. Speed
+(interleaved min-of-15, option off vs on): fmt -0.05%, ls +0.32%, sort +0.02%, bash -0.47% (medians +0.33%, +0.15%, +1.76%, +2.94%); `speed-review.json`.
