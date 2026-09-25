@@ -411,11 +411,19 @@ fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<(Kind, Vec<VarnodeId
     }
     let data_space = arch.manage().get_default_data_space()?;
     let in_data = addr.get_space().is_some_and(|s| Rc::ptr_eq(s, data_space));
-    if in_data
-        && crate::kuna_globalref::in_ranges(&arch.elem_ptr_ranges, v.get_offset())
-        && arch.query_container_global(&addr, v.get_size(), &Address::new_invalid()).is_none()
-    {
-        return Some((Kind::Global, Vec::new()));
+    if in_data && crate::kuna_globalref::in_ranges(&arch.elem_ptr_ranges, v.get_offset()) {
+        // A global the image names only by a symbol with no type (an ELF symtab
+        // entry) is as open as one it does not name at all.
+        let open = match arch.query_container_global(&addr, v.get_size(), &Address::new_invalid()) {
+            None => true,
+            Some(g) => {
+                g.entry_addr.get_offset() == v.get_offset()
+                    && g.symbol_type.as_ref().is_none_or(|t| t.get_metatype() == type_metatype::TYPE_UNKNOWN)
+            }
+        };
+        if open {
+            return Some((Kind::Global, Vec::new()));
+        }
     }
     None
 }

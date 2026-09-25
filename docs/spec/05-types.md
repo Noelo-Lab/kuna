@@ -639,6 +639,9 @@ unlocked output — an allocator), provided no phi joins it with anything but a
 copy of itself or a null; a global the image names nothing at, decided once per
 pass from every Varnode of the function that holds its storage; and a constant
 address inside a section of program data that is the base of an indexed access.
+A global counts as unnamed when no symbol covers it or the one that starts there
+carries no type (an ELF symtab entry), so an unstripped image's `table` is decided
+the same way a stripped image's `dat_4088` is.
 The vote replaces an integer or unknown vote, or a pointer at nothing (`void *`,
 `undefined1 *`); a type-locked Varnode, one seeded from a locked symbol, and a
 vote that already names a pointee — a declared, DWARF, libc, asserted or
