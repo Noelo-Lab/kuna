@@ -1905,7 +1905,9 @@ mod tests {
         // the return-address slot as a trailing argument
         // and kuna-castsign / a stack index the body only compares signed is
         // declared signed
-        assert_eq!(count, 340, "corpus file count drifted");
+        // and cortus-aps3-constructors / inv with an immediate negates, extb.cc
+        // sign-extends, and an indirect call keeps its target
+        assert_eq!(count, 341, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
