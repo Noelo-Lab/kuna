@@ -101,6 +101,10 @@ pub(crate) trait PrintedForms {
     /// Is `op` being printed as the statement `lhs = <op>;` (not, say, as one arm
     /// of a `c ? a : b`, whose type is the arms' common type)?
     fn is_statement(&self, op: OpId) -> bool;
+    /// The token an integer constant prints as where `op` reads it (`castternary`).
+    fn literal_token(&self, vn: VarnodeId, op: OpId) -> Option<String>;
+    /// The size of the target's `long` (`castternary`).
+    fn long_size(&self) -> i32;
 }
 
 /// What is known about the C type of a printed operand.

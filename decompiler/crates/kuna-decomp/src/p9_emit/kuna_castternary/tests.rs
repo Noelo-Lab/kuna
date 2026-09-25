@@ -90,3 +90,31 @@ fn both_casts_go_only_when_the_bare_pair_keeps_the_type() {
 fn an_ambiguous_conditional_is_left_alone() {
     assert!(choose(arm(INT, Some((1, INT, INT))), arm(INT | UINT, None)).is_empty());
 }
+
+#[test]
+fn a_literal_has_the_type_c_gives_its_token() {
+    assert_eq!(literal_type("0", 8), Some(INT));
+    assert_eq!(literal_type("-1", 8), Some(INT));
+    assert_eq!(literal_type("'='", 8), Some(INT));
+    assert_eq!(literal_type("0x7fffffff", 8), Some(INT));
+    assert_eq!(literal_type("0x80000000", 8), Some(UINT));
+    assert_eq!(literal_type("-0x80000000", 8), Some(UINT));
+    assert_eq!(literal_type("0xffffffff", 8), Some(UINT));
+    assert_eq!(literal_type("2147483648", 8), Some(LONG));
+    assert_eq!(literal_type("3000000000", 8), Some(LONG));
+    assert_eq!(literal_type("0x100000000", 8), Some(LONG));
+    assert_eq!(literal_type("0xffffffffffffffff", 8), Some(ULONG));
+    assert_eq!(literal_type("18446744073709551615", 8), None);
+    assert_eq!(literal_type("5U", 8), Some(UINT));
+    assert_eq!(literal_type("5L", 8), Some(LONG));
+    assert_eq!(literal_type("0xffffffffffffffffL", 8), Some(ULONG));
+    assert_eq!(literal_type("017777777777", 8), Some(INT));
+    assert_eq!(literal_type("020000000000", 8), Some(UINT));
+    assert_eq!(literal_type("0b11", 8), Some(INT));
+    // ILP32 / LLP64: `long` is 4 bytes, `LL` is the 8-byte suffix
+    assert_eq!(literal_type("3000000000", 4), Some(LONG));
+    assert_eq!(literal_type("0x80000000", 4), Some(UINT));
+    assert_eq!(literal_type("5L", 4), Some(INT));
+    assert_eq!(literal_type("5LL", 4), Some(LONG));
+    assert_eq!(literal_type("5ULL", 4), Some(ULONG));
+}

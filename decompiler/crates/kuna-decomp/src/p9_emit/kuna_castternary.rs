@@ -42,12 +42,11 @@
 //! a cast that stays, a load through a pointer printed with its pointee type
 //! (what `castimplied` knows of an operand) is exactly one.  An expression
 //! nothing states the type of may be any promotion its width allows: `int` or
-//! `unsigned int` up to 4 bytes, any of the four at 8.  A literal is typed by
-//! C's rules for an unsuffixed constant of its printed magnitude: `int` up to
-//! 0x7fffffff, `unsigned int` or `long` up to 0xffffffff (hexadecimal or
-//! decimal), `long` or `unsigned long` beyond (a type that forces a display
-//! format may print a character literal, an `int`); one with a `U`/`L` suffix,
-//! an equate, or a magnitude above `LONG_MAX` is not typed.  The conversions must give the one
+//! `unsigned int` up to 4 bytes, any of the four at 8.  A literal has the type
+//! C gives the token the printer writes for it (C11 6.4.4.1: its base, its
+//! suffix, and the first candidate type that holds its magnitude, so
+//! `0xffffffff` is an `unsigned int` and `3000000000` a `long`); an equate is
+//! not typed.  The conversions must give the one
 //! type `T` for every combination of the two sets.  An arm of any other type
 //! (a pointer, a float, an enum) leaves the conditional alone.
 //!
@@ -177,39 +176,67 @@ fn value_set(c: &CType, ir: &Datatype) -> Option<u8> {
 }
 
 /// The C type of the literal the constant `vn` prints as where `op` reads it.
-fn literal(fd: &Funcdata, vn: VarnodeId, op: OpId) -> Option<u8> {
+fn literal(p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, op: OpId) -> Option<u8> {
     let v = fd.vbank().get(vn)?;
     let ct = v.get_type_read_facing(op);
-    if ct.is_enum_type()
-        || !matches!(ct.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT)
-        || v.is_unsigned_print()
-        || v.is_long_print()
-    {
-        return None;
-    }
-    let size = v.get_size();
-    if ct.is_char_print() {
-        return (size == 1).then_some(INT);
-    }
-    if !(1..=8).contains(&size) {
-        return None;
-    }
-    let bits = 8 * size as u32;
-    let mask = if bits == 64 { u64::MAX } else { (1u64 << bits) - 1 };
-    let val = v.get_offset() & mask;
-    let negative = ct.get_metatype() == type_metatype::TYPE_INT && (val >> (bits - 1)) & 1 == 1;
-    let magnitude = if negative { (mask - val) as u128 + 1 } else { val as u128 };
     if fd.vn_high_equate_symbol(vn).is_some() {
         return None;
     }
-    let custom = ct.get_display_format() != 0;
-    let set = match magnitude {
-        0..=0x7fff_ffff => INT,
-        0x8000_0000..=0xffff_ffff => UINT | LONG,
-        0x1_0000_0000..=0x7fff_ffff_ffff_ffff => LONG | ULONG,
+    if ct.is_char_print() && !ct.is_enum_type() && v.get_size() == 1 {
+        return Some(INT);
+    }
+    literal_type(&p.literal_token(vn, op)?, p.long_size())
+}
+
+/// The type C gives the integer literal `tok` (C11 6.4.4.1) on a target whose
+/// `long` is `long_size` bytes: the first of the candidate types its suffix and
+/// base allow that holds its value.  A leading `-` is an operator and does not
+/// change the type; a character literal is an `int`.
+fn literal_type(tok: &str, long_size: i32) -> Option<u8> {
+    let t = tok.strip_prefix('-').unwrap_or(tok);
+    if t.ends_with('\'') {
+        return Some(INT);
+    }
+    let t = t.to_ascii_lowercase();
+    let num = t.trim_end_matches(['u', 'l']);
+    let suffix = &t[num.len()..];
+    let unsigned = suffix.contains('u');
+    let longs = suffix.matches('l').count();
+    let (radix, digits) = if let Some(h) = num.strip_prefix("0x") {
+        (16, h)
+    } else if let Some(b) = num.strip_prefix("0b") {
+        (2, b)
+    } else if num.len() > 1 && num.starts_with('0') {
+        (8, &num[1..])
+    } else {
+        (10, num)
+    };
+    let value = u128::from_str_radix(digits, radix).ok()?;
+    let (int, uint, long, ulong, llong, ullong) =
+        ((4, true), (4, false), (long_size, true), (long_size, false), (8, true), (8, false));
+    let candidates: &[(i32, bool)] = match (unsigned, longs, radix == 10) {
+        (false, 0, true) => &[int, long, llong],
+        (false, 0, false) => &[int, uint, long, ulong, llong, ullong],
+        (true, 0, _) => &[uint, ulong, ullong],
+        (false, 1, true) => &[long, llong],
+        (false, 1, false) => &[long, ulong, llong, ullong],
+        (true, 1, _) => &[ulong, ullong],
+        (false, 2, true) => &[llong],
+        (false, 2, false) => &[llong, ullong],
+        (true, 2, _) => &[ullong],
         _ => return None,
     };
-    Some(if custom { set | INT } else { set })
+    let holds = |&(size, signed): &(i32, bool)| {
+        let bits = 8 * size as u32;
+        value <= if signed { (1u128 << (bits - 1)) - 1 } else { (1u128 << bits) - 1 }
+    };
+    match candidates.iter().find(|c| holds(c))? {
+        (4, true) => Some(INT),
+        (4, false) => Some(UINT),
+        (8, true) => Some(LONG),
+        (8, false) => Some(ULONG),
+        _ => None,
+    }
 }
 
 /// Is `op` a conversion `castimplied` weighs?
@@ -228,7 +255,7 @@ fn arm(implied: &ImpliedCasts, p: &dyn PrintedForms, fd: &Funcdata, op: OpId) ->
             let vn = o.get_in(0)?;
             let v = fd.vbank().get(vn)?;
             if v.is_constant() {
-                return Some(Arm { kept: literal(fd, vn, op)?, conv: None });
+                return Some(Arm { kept: literal(p, fd, vn, op)?, conv: None });
             }
             if !v.is_explicit() && !v.is_annotation() {
                 if let Some(def) = v.get_def().filter(|&d| is_conversion(fd, d)) {
