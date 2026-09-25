@@ -62,17 +62,20 @@ included.
 ## 3. Where the casts went, and the functions with more
 
 castbench (45 binaries x O0/O2/O2-noinline, 4,815 functions kuna, IDA and main
-share): 37,477 -> 35,327 casts on main `c960fb18d`, and 35,588 -> 33,472 (0.941x ->
-0.885x IDA) on main `850e8c692`, which already has `castindex` and `castternary`;
-the same 17 functions have more casts on both. By shape: `(char *)(...)` -429, `(long)v` -321,
-`(unsigned char *)(...)` -312, `(unsigned long)v` -254, `(int *)(...)` -189,
-`(unsigned short *)(...)` -115, `(char **)(...)` -95. Gained: `(char *)0x...` +94,
+share), on main `850e8c692`, which already has `castindex` and `castternary`:
+35,588 -> 33,588 casts (0.941x -> 0.888x IDA; 188.2 -> 177.7 per 1,000 lines, 29.9 ->
+28.3 per 100 statements), 339 functions with fewer (-2,019) and 16 with more (+19).
+The first version of this PR reached 33,472; the difference is casts it removed by
+declaring a sign it had no evidence for, or a table two functions read at two
+signs (section 7). By shape: `(char *)(...)` -382, `(unsigned char *)(...)` -280,
+`(unsigned long)v` -248, `(long)v` -244, `(int *)(...)` -168, `(unsigned short
+*)(...)` -115, `(char **)(...)` -91. Gained: `(char *)0x...`,
 a table `globalref` cannot name (the function also writes its first byte by name,
 a symbol covers it, or it is read at two pointee types), which prints
 `((char *)0x5c000)[i]` with one cast where main printed two; and `(unsigned int)`
 on a subscript +48, the same conversion as before now applied to a subscript.
 
-Every one of the 17 functions with more casts (+22 in all) was read:
+Every one of the 16 functions with more casts (+19 in all) was read:
 
 - A callee's parameter is now a declared `char *` / `char **` (correctly: `tar`'s
   `to_chars(char *where)`, `argmatch`'s arglist), so an integer-typed argument in
@@ -82,7 +85,8 @@ Every one of the 17 functions with more casts (+22 in all) was read:
 - A constant address the caller used at one pointee type is now also passed where
   a callee declares another (`short *` against `unsigned short *` in gzip's
   `make_table`), so `globalref` declines two types and both uses keep a cast (gzip
-  O2 0xb700, O2-noinline 0xbb40, 0x67e0, O2 0x63e0).
+  O2-noinline 0x67e0, O2 0x63e0; gzip O2 0xb700 is named again, since an undefined
+  word and the unsigned word of its size are one object to `globalref` now).
 - A call's result kept in a `char *` stack slot where the callee's recovered return
   type is `long` (`v6 = (char *)sub_8d30(...)`, diff O0 0x8710 / 0x818f), and a
   buffer typed `unsigned char *` from its zero-extended reads that is also passed
@@ -93,12 +97,12 @@ Every one of the 17 functions with more casts (+22 in all) was read:
 
 ## 4. Whole-corpus hunks
 
-`structural.py` checks every changed function (1,196 over the 45 binaries) for the
+`structural.py` checks every changed function (1,077 over the 45 binaries) for the
 same callees, string literals, control keywords and program data (a constant
 address may become the `dat_<addr>` it names), with statement counts within four.
-27 functions break a check; each was read and falls in a documented class:
+25 functions break a check; each was read and falls in a documented class:
 
-- constant named (428 functions): `*(int *)(x * 4 + 0x20980)` -> `dat_20980[x]`,
+- constant named (425 functions): `*(int *)(x * 4 + 0x20980)` -> `dat_20980[x]`,
   the name `globalref` gives the array (IDA: `dword_205E0[...]` at the same
   address). The check flags the ones whose constant was printed in decimal or
   biased by a literal offset.
@@ -121,6 +125,16 @@ address may become the `dat_<addr>` it names), with statement counts within four
 - while to for: one loop absorbs its iterator (regionstructure-loop's stage test
   has the same shape).
 
+A second, disjoint sweep over the eleven binaries the review chose (coreutils
+`cksum` and `od` at O0, `tr`, `ptx` and `shuf` at O2, zlib, `xmlwf`, `dash`,
+`mirai`, `libbsd`, `init`) changes 113 functions, 11,384 -> 11,030 casts, 91 with
+fewer and 6 with more, each read: a constant used at two pointee types (`tr` main's
+translation table and buffer, `cksum` 0x461a), a call result kept in a `char *`
+slot whose callee returns `long` (`mirai` 0x7efb, 0xa015), a `char **` parameter
+whose elements a callee with an unrecovered return type fills (`init` 0x6ad0), and
+`strlen((char *)v)` on a buffer typed `unsigned char *` from its zero-extended
+reads (`ptx` 0x6c40).
+
 `hunks.py` classifies the line-level hunks (declarations, subscripts, casts, reads
 printed at their uses, the loop); its unclassified remainder is the same classes
 with renamed variables, which `structural.py` covers function by function.
@@ -141,8 +155,9 @@ function decompiled after the first disagreement, brings that to 17 functions an
   export have no batch ledger: they type a global on the function's own evidence.
 - A table read at two pointee types in one function keeps its casts
   (`globalref`'s two-type refusal).
-- The sign of an element with no evidence is plain (`short`), which can disagree
-  with a callee's `unsigned short *` and cost the caller's name (section 3).
+- A sharded `--jobs` export cannot adopt a batch's sign: where two workers type a
+  table at two elements the header declares neither (a compile error, never a
+  silent value change).
 - A pre-existing return-recovery gap, not this option: gcc -O2 `char *f(n) { o =
   malloc(n + 1); ...; return o; }` decompiles as `void f` (rax never copied), in
   every mode.
