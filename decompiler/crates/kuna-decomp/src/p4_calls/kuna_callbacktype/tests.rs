@@ -688,9 +688,9 @@ fn ptr_to(to: Rc<Datatype>, size: int4) -> Rc<Datatype> {
 }
 
 /// A caller keeps what the callback's body read through a parameter the
-/// declaration calls `void *`: a pointer to something, of the same size.
-/// Nothing narrows a declared `char *` or `int`, and a `void *` or
-/// `undefined *` vote says no more than the declaration.
+/// declaration calls `void *`: a pointer to anything but `void`, of the same
+/// size, an unknown pointee included. Nothing narrows a declared `char *` or
+/// `int`, and a `void *` vote says no more than the declaration.
 #[test]
 fn only_a_pointer_to_something_narrows_a_declared_void_pointer() {
     let void_ptr = ptr_to(base(0, type_metatype::TYPE_VOID), 8);
@@ -703,7 +703,8 @@ fn only_a_pointer_to_something_narrows_a_declared_void_pointer() {
     assert!(narrows_a_void_pointer(&void_ptr, &record_ptr));
     assert!(narrows_a_void_pointer(&void_ptr, &ptr_to(base(8, type_metatype::TYPE_UINT), 8)));
     assert!(!narrows_a_void_pointer(&void_ptr, &void_ptr), "void * says nothing more");
-    assert!(!narrows_a_void_pointer(&void_ptr, &ptr_to(base(1, type_metatype::TYPE_UNKNOWN), 8)));
+    assert!(narrows_a_void_pointer(&void_ptr, &ptr_to(base(8, type_metatype::TYPE_UNKNOWN), 8)));
+    assert!(narrows_a_void_pointer(&void_ptr, &ptr_to(base(1, type_metatype::TYPE_UNKNOWN), 8)));
     assert!(!narrows_a_void_pointer(&void_ptr, &base(8, type_metatype::TYPE_INT)), "not a pointer");
     assert!(!narrows_a_void_pointer(&void_ptr, &ptr_to(Rc::clone(&record), 4)), "another size");
     let char_ptr = ptr_to(base(1, type_metatype::TYPE_INT), 8);

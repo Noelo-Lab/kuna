@@ -1551,14 +1551,16 @@ pub(crate) fn pointee_vote(
 }
 
 /// Is `declared` a `void *` and `vote` a pointer of the same size to
-/// something?
+/// something other than `void`? An unknown pointee (`undefined8 *`, printed
+/// `unsigned long *`) is what `protoorder` voted before the park, so it is
+/// kept like any other.
 fn narrows_a_void_pointer(declared: &Datatype, vote: &Datatype) -> bool {
     let points_at = |t: &Datatype| {
         (t.get_metatype() == type_metatype::TYPE_PTR).then(|| t.get_ptr_to()).flatten().map(|p| p.get_metatype())
     };
     points_at(declared) == Some(type_metatype::TYPE_VOID)
         && vote.get_size() == declared.get_size()
-        && points_at(vote).is_some_and(|m| !matches!(m, type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN))
+        && points_at(vote).is_some_and(|m| m != type_metatype::TYPE_VOID)
 }
 
 /// Forget every kept statement with a parameter type that names one of
