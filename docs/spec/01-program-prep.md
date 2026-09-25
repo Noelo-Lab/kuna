@@ -464,7 +464,15 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   selector first means a mapped synthetic VMA, then falls back to a raw function
   offset only when exactly one definition matches. Name and raw-offset collisions
   report every candidate instead of taking symbol-table order, and only a symbol
-  marked undefined is classified as external. Loaders that publish no section
+  marked undefined is classified as external. Linked ELF inputs retain the
+  symbol-table definition addresses separately from resolved import-stub
+  addresses, using ELFv1 code entries rather than descriptor addresses and
+  folding the ARM Thumb state bit. These addresses follow loader VMA shifts.
+  A name matching one executable definition and only import stubs selects the
+  definition in both selector resolution and canonical name lookup; both entries
+  remain in the inventory. Multiple executable definitions or unclassified
+  executable competitors remain ambiguous, and explicit address selection
+  remains literal. Loaders that publish no section
   records, including the XML corpus loader, prove a numeric VMA by probing one
   byte from the load image instead. Which sections are memory-resident
   is the one question that stays per-format — ELF's `SHF_ALLOC` bit and COFF's
