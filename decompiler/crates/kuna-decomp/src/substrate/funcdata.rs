@@ -457,7 +457,10 @@ pub struct Funcdata {
     /// (kuna `elemptr`) The sign this function reads an object's elements at,
     /// where its own choice was only the default and another function's rests
     /// on evidence.
-    kuna_elemptr_adopt: Option<std::rc::Rc<std::collections::BTreeMap<crate::kuna_elemptr::Obj, bool>>>,
+    kuna_elemptr_adopt: Option<std::rc::Rc<crate::kuna_elemptr::Signs>>,
+    /// (kuna `elemptr`) The element signs evidence has settled in the batch so
+    /// far; this function reads them where its own sign is only the default.
+    kuna_elemptr_settled: Option<std::rc::Rc<crate::kuna_elemptr::Signs>>,
     /// (kuna `elemptr`) What this function's last type pass said about each
     /// global and table.
     kuna_elemptr_verdicts:
@@ -586,6 +589,7 @@ impl Funcdata {
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
             kuna_elemptr_adopt: None,
+            kuna_elemptr_settled: None,
             kuna_elemptr_verdicts: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             kuna_elemptr_constants: std::cell::RefCell::new(std::collections::BTreeSet::new()),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
@@ -851,18 +855,23 @@ impl Funcdata {
         self.kuna_elemptr_blocked = blocked;
     }
 
-    /// (kuna `elemptr`) Set the element signs this function adopts.
+    /// (kuna `elemptr`) Set the element signs this function adopts: the ones
+    /// the batch decided for it, and the ones evidence has settled so far.
     pub fn kuna_set_elemptr_adopt(
         &mut self,
-        adopt: Option<std::rc::Rc<std::collections::BTreeMap<crate::kuna_elemptr::Obj, bool>>>,
+        adopt: Option<std::rc::Rc<crate::kuna_elemptr::Signs>>,
+        settled: Option<std::rc::Rc<crate::kuna_elemptr::Signs>>,
     ) {
         self.kuna_elemptr_adopt = adopt;
+        self.kuna_elemptr_settled = settled;
     }
 
-    /// (kuna `elemptr`) The sign (`true` signed) this function reads `obj`'s
-    /// elements at, when the batch decided it.
-    pub fn kuna_elemptr_adopted(&self, obj: crate::kuna_elemptr::Obj) -> Option<bool> {
-        self.kuna_elemptr_adopt.as_ref().and_then(|a| a.get(&obj).copied())
+    /// (kuna `elemptr`) The element shape and sign (`true` signed) this
+    /// function reads `obj`'s elements at, when the batch decided it.
+    pub fn kuna_elemptr_adopted(&self, obj: crate::kuna_elemptr::Obj) -> Option<(String, bool)> {
+        [&self.kuna_elemptr_adopt, &self.kuna_elemptr_settled]
+            .into_iter()
+            .find_map(|m| m.as_ref().and_then(|a| a.get(&obj).cloned()))
     }
 
     /// (kuna `elemptr`) Is `obj` one this function must not type?

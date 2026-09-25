@@ -370,8 +370,8 @@ fn decide(
     let mut elem = if ev.refused.is_none() && ev.variable > 0 { element_type(data, &mut ev) } else { None };
     // The sign the batch decided, where this function's own was the default.
     let adopted = own.into_iter().chain(globals_held.iter().map(|&g| Obj::Held(g))).find_map(|o| data.kuna_elemptr_adopted(o));
-    if let (Some(signed), Some(e)) = (adopted, elem.as_ref()) {
-        if !ev.firm && matches!(e.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT) {
+    if let (Some((shape, signed)), Some(e)) = (adopted, elem.as_ref()) {
+        if !ev.firm && elem_key(e).0 == shape {
             let meta = if signed { type_metatype::TYPE_INT } else { type_metatype::TYPE_UINT };
             elem = arch.types().and_then(|t| t.get_base(e.get_size(), meta).ok()).or(elem);
         }
@@ -1651,7 +1651,11 @@ pub struct Ledger {
     pub recording: bool,
     verdicts: BTreeMap<Obj, BTreeMap<u64, GlobalVerdict>>,
     blocked: BTreeMap<u64, Rc<BTreeSet<Obj>>>,
-    adopt: BTreeMap<u64, Rc<BTreeMap<Obj, bool>>>,
+    adopt: BTreeMap<u64, Rc<Signs>>,
+    /// The integer elements evidence has settled so far: a function decompiled
+    /// after that reads them at that sign where its own is only the default, so
+    /// it is not decompiled twice.
+    settled: Rc<Signs>,
     /// Objects some function of the batch has already disagreed about: every
     /// function decompiled after that leaves them alone, so only the ones
     /// decompiled before it are decided again.
@@ -1675,9 +1679,8 @@ pub fn seed(arch: &crate::architecture::Architecture, data: &mut Funcdata) {
     }
     let me = data.get_address().get_offset();
     let ledger = &arch.kuna_elemptr;
-    if let Some(a) = ledger.adopt.get(&me) {
-        data.kuna_set_elemptr_adopt(Some(Rc::clone(a)));
-    }
+    let settled = (!ledger.settled.is_empty()).then(|| Rc::clone(&ledger.settled));
+    data.kuna_set_elemptr_adopt(ledger.adopt.get(&me).cloned(), settled);
     let own = ledger.blocked.get(&me);
     if ledger.disputed.is_empty() {
         if let Some(b) = own {
@@ -1711,13 +1714,20 @@ pub fn disagreements(arch: &mut crate::architecture::Architecture) -> BTreeSet<u
     redo
 }
 
+/// Element signs by object: the element's shape (see [`elem_key`]) and whether
+/// it is signed.
+pub type Signs = BTreeMap<Obj, (String, bool)>;
+
 /// What the batch decides about one object from what each function said.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Decision {
     /// The functions that must not type it.
     block: Vec<u64>,
-    /// The functions that read it at this sign instead of their default.
-    adopt: Vec<(u64, bool)>,
+    /// The functions that read it at this element and sign instead of their
+    /// default.
+    adopt: Vec<(u64, String, bool)>,
+    /// The integer element evidence settled, when exactly one did.
+    settled: Option<(String, bool)>,
 }
 
 /// Decide `obj` from the verdicts `per`.  Two elements decided by evidence
@@ -1734,7 +1744,7 @@ fn decide_object(obj: Obj, per: &BTreeMap<u64, GlobalVerdict>) -> Decision {
             GlobalVerdict::Refused => None,
         })
         .collect();
-    let all = || Decision { block: typed.iter().map(|t| t.0).collect(), adopt: Vec::new() };
+    let all = || Decision { block: typed.iter().map(|t| t.0).collect(), ..Decision::default() };
     if typed.is_empty() {
         return Decision::default();
     }
@@ -1742,6 +1752,10 @@ fn decide_object(obj: Obj, per: &BTreeMap<u64, GlobalVerdict>) -> Decision {
         return all();
     }
     let firm: BTreeSet<(&str, Option<bool>)> = typed.iter().filter(|t| t.3).map(|t| (t.1, t.2)).collect();
+    let settled = match firm.first() {
+        Some(&(elem, Some(signed))) if firm.len() == 1 => Some((elem.to_string(), signed)),
+        _ => None,
+    };
     let decided = match firm.len() {
         0 => {
             let shapes: BTreeSet<&str> = typed.iter().map(|t| t.1).collect();
@@ -1755,13 +1769,13 @@ fn decide_object(obj: Obj, per: &BTreeMap<u64, GlobalVerdict>) -> Decision {
         1 => firm.first().copied().unwrap_or_default(),
         _ => return all(),
     };
-    let mut d = Decision::default();
+    let mut d = Decision { settled, ..Decision::default() };
     for &(f, elem, signed, firm) in &typed {
         if (elem, signed) == decided {
             continue;
         }
         match decided.1 {
-            Some(s) if !firm && elem == decided.0 => d.adopt.push((f, s)),
+            Some(s) if !firm && elem == decided.0 => d.adopt.push((f, elem.to_string(), s)),
             _ => d.block.push(f),
         }
     }
@@ -1781,8 +1795,21 @@ impl Ledger {
             // only a dispute that blocks everyone who typed it is one.
             let refused_global = matches!(g, Obj::Held(_)) && per.values().any(|x| *x == GlobalVerdict::Refused);
             let typed = per.values().filter(|x| matches!(x, GlobalVerdict::Typed { .. })).count();
-            if refused_global || (typed > 0 && decide_object(g, per).block.len() == typed) {
+            let d = decide_object(g, per);
+            if refused_global || (typed > 0 && d.block.len() == typed) {
                 self.disputed.insert(g);
+            }
+            match d.settled {
+                Some(s) => {
+                    if self.settled.get(&g) != Some(&s) {
+                        Rc::make_mut(&mut self.settled).insert(g, s);
+                    }
+                }
+                None => {
+                    if self.settled.contains_key(&g) {
+                        Rc::make_mut(&mut self.settled).remove(&g);
+                    }
+                }
             }
         }
     }
@@ -1794,10 +1821,11 @@ impl Ledger {
         let mut redo = BTreeSet::new();
         for (&g, per) in &self.verdicts {
             let d = decide_object(g, per);
-            for (f, signed) in d.adopt {
+            for (f, shape, signed) in d.adopt {
                 let entry = self.adopt.entry(f).or_default();
-                if entry.get(&g) != Some(&signed) {
-                    Rc::make_mut(entry).insert(g, signed);
+                let want = (shape, signed);
+                if entry.get(&g) != Some(&want) {
+                    Rc::make_mut(entry).insert(g, want);
                     redo.insert(f);
                 }
             }
@@ -1815,7 +1843,13 @@ impl Ledger {
     /// The sign the function entered at `me` adopts for `obj`.
     #[cfg(test)]
     pub(crate) fn adopted(&self, me: u64, obj: Obj) -> Option<bool> {
-        self.adopt.get(&me).and_then(|a| a.get(&obj).copied())
+        self.adopt.get(&me).and_then(|a| a.get(&obj).map(|x| x.1))
+    }
+
+    /// The sign evidence has settled for `obj` so far.
+    #[cfg(test)]
+    pub(crate) fn settled(&self, obj: Obj) -> Option<bool> {
+        self.settled.get(&obj).map(|x| x.1)
     }
 
     /// Is `obj` blocked for the function entered at `me`?

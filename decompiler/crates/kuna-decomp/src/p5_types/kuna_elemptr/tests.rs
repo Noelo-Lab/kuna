@@ -94,6 +94,7 @@ fn a_table_evidence_reads_at_two_signs_is_blocked() {
     let mut l = Ledger::default();
     l.file(0x100, said(&[(t, typed("1:int", Some(false), true))]));
     l.file(0x200, said(&[(t, typed("1:int", Some(true), true))]));
+    assert_eq!(l.settled(t), None, "two signs settle nothing");
     assert_eq!(l.disagreements().into_iter().collect::<Vec<_>>(), vec![0x100, 0x200]);
     assert!(l.is_blocked(0x100, t) && l.is_blocked(0x200, t));
 }
@@ -109,6 +110,7 @@ fn a_defaulted_sign_takes_the_evidenced_one() {
     l.file(0x200, said(&[(t, typed("4:int", Some(true), false))]));
     l.file(0x300, said(&[(t, typed("4:int", Some(false), false))]));
     l.file(0x400, said(&[(t, typed("2:int", Some(false), false))]));
+    assert_eq!(l.settled(t), Some(false), "a function decompiled next reads it unsigned at once");
     assert_eq!(l.disagreements().into_iter().collect::<Vec<_>>(), vec![0x200, 0x400]);
     assert_eq!(l.adopted(0x200, t), Some(false));
     assert!(l.is_blocked(0x400, t) && !l.is_blocked(0x200, t));
