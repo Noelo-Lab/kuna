@@ -4379,10 +4379,13 @@ int main(void) {
             .unwrap()
             .to_string();
         let gcc = fixture.contains("gcc");
-        for opt in ["off", "on"] {
+        // The spellings are pinned with `elemptr` off, which leaves the table
+        // bases integers; with it on (the default) they are subscripts of
+        // declared pointers, and the printed C must still compute the same values.
+        for (elem, opt) in [("off", "off"), ("off", "on"), ("on", "off"), ("on", "on")] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
-                "--option", "castternary", opt,
+                "--option", "castternary", opt, "--option", "elemptr", elem,
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             if !ok && is_specs_skip(&stderr) {
@@ -4392,19 +4395,21 @@ int main(void) {
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let changed: Vec<(&str, &str)> =
                 both.iter().chain(if gcc { gcc_only.iter() } else { [].iter() }).copied().collect();
-            for (off, on) in changed {
-                let want = if opt == "on" { on } else { off };
-                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
-            }
-            if gcc {
-                for want in gcc_kept {
-                    assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
+            if elem == "off" {
+                for (off, on) in changed {
+                    let want = if opt == "on" { on } else { off };
+                    assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+                }
+                if gcc {
+                    for want in gcc_kept {
+                        assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
+                    }
                 }
             }
             for cc in &compilers {
                 for level in ["-O0", "-O2"] {
                     let dir = std::env::temp_dir().join(format!(
-                        "kuna-castternary-rt-{}-{fixture}-{opt}-{cc}{level}",
+                        "kuna-castternary-rt-{}-{fixture}-{elem}-{opt}-{cc}{level}",
                         std::process::id()
                     ));
                     std::fs::create_dir_all(&dir).unwrap();
@@ -4978,8 +4983,14 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
     for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
         let bin = fx.join(format!("castindex_{build}_x86_64"));
         let bin = bin.to_str().unwrap();
-        for arm in ["on", "off"] {
-            let args = ["decompile-all", bin, "--sleighpath", sp.as_str(), "--option", "castindex", arm];
+        // The spellings are pinned with `elemptr` off, which leaves the bases
+        // `void *` for this option to rewrite; with it on (the default) P5 types
+        // them first, and the printed C must still compute the same values.
+        for (elem, arm) in [("off", "on"), ("off", "off"), ("on", "on"), ("on", "off")] {
+            let args = [
+                "decompile-all", bin, "--sleighpath", sp.as_str(), "--option", "castindex", arm, "--option",
+                "elemptr", elem,
+            ];
             let (stdout, stderr, ok) = run_kuna(&args);
             if !ok && is_specs_skip(&stderr) {
                 eprintln!("castindex round trip: skipping (no `.sla`; run `make specs`)");
@@ -5020,11 +5031,13 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
                     "(long)b64_table",
                 ]
             };
-            for w in want.iter().chain(kept) {
-                assert!(body.contains(w), "{build} castindex {arm}: expected `{w}`\n{body}");
-            }
-            if arm == "on" {
-                assert!(!body.contains("(long)b64_table"), "{build}: the table lookup kept its round trip\n{body}");
+            if elem == "off" {
+                for w in want.iter().chain(kept) {
+                    assert!(body.contains(w), "{build} castindex {arm}: expected `{w}`\n{body}");
+                }
+                if arm == "on" {
+                    assert!(!body.contains("(long)b64_table"), "{build}: the table lookup kept its round trip\n{body}");
+                }
             }
             if !runs_here || !have_cc {
                 eprintln!("castindex round trip: no x86-64 host or no `cc`, spelling checked only");
@@ -5032,7 +5045,7 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
             }
             let expected = Command::new(bin).output().expect("run the fixture");
             let dir = std::env::temp_dir()
-                .join(format!("kuna-castindex-rt-{}-{build}-{arm}", std::process::id()));
+                .join(format!("kuna-castindex-rt-{}-{build}-{elem}-{arm}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             let c = dir.join("rt.c");
             let exe = dir.join("rt");
