@@ -2410,11 +2410,11 @@ impl PrintC {
                     .map(|v| v.get_type().clone())
             },
         );
+        let promotes = !self.options.nocasts && self.out_lang.profile().caps.integer_promotion;
         self.cast_implied.begin(
-            arch.cast_implied
-                && !self.options.nocasts
-                && self.out_lang.profile().caps.integer_promotion,
+            arch.cast_implied && promotes,
             cast_sign,
+            arch.cast_ternary && promotes && arch.types().get_size_of_int() == 4,
         );
         self.stmt_op = None;
         // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /
@@ -4505,6 +4505,8 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.emit.tag_op(if ternary { "?" } else { "{" }, SyntaxHighlight::NoColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
+        let arm_drops = self.conditional_arm_drops(fd, arch, &m);
+        self.cast_implied.set_arm_drops(arm_drops);
         self.op_push_ir(fd, arch, m.true_op, None);
         if !ternary {
             // The arm has to be fully drained before the `}` token, which is
@@ -4520,6 +4522,7 @@ impl PrintC {
         );
         self.emit.spaces(1, 0);
         self.op_push_ir(fd, arch, m.else_op, None);
+        self.cast_implied.set_arm_drops(Vec::new());
         if !ternary {
             self.recurse();
             self.emit.spaces(1, 0);
@@ -6459,12 +6462,31 @@ impl PrintC {
         op: OpId,
         read_op: Option<OpId>,
     ) -> bool {
+        if self.cast_implied.arm_dropped(op) {
+            return true;
+        }
         if !self.cast_implied.is_enabled() {
             return false;
         }
         let Some(strat) = cast_strategy_for(arch) else { return false };
         let view = ImpliedView { pc: self, fd, arch, strat };
         self.cast_implied.drops(&view, fd, op, read_op)
+    }
+
+    /// (kuna `castternary`) The casts to leave out of the arms of the conditional
+    /// `iteregion` prints for `m`.  See [`crate::kuna_castternary`].
+    fn conditional_arm_drops(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        m: &crate::p8_structure::kuna_iteregion::IteAssignMatch,
+    ) -> Vec<OpId> {
+        if !self.cast_implied.arms_enabled() || !self.lang().caps.ternary {
+            return Vec::new();
+        }
+        let Some(strat) = cast_strategy_for(arch) else { return Vec::new() };
+        let view = ImpliedView { pc: self, fd, arch, strat };
+        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, m.else_op], m.dest)
     }
 
     /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the
@@ -7726,58 +7748,16 @@ impl PrintC {
             // when present.  So: equate-Symbol format wins; otherwise the
             // read-facing type format (e.g. `force datatype octint4 oct` ->
             // `globaloct = 05555`).
-            let sym_fmt = fd.vn_high_display_format(vn);
-            let display_fmt = if sym_fmt != display_format::NONE {
-                sym_fmt
-            } else {
-                ct.get_display_format()
-            };
-            // C++ `pushConstant` (printc.cc:1817-1835) selects the `push_integer`
-            // `sign` from the read-facing metatype: TYPE_INT -> signed
-            // (printc.cc:1832), TYPE_UINT/TYPE_UNKNOWN -> unsigned (1824/1835).
-            // The float/enum/char arms were already dispatched above, so a plain
-            // integer constant rendered here is signed exactly when its type is
-            // TYPE_INT — which is what makes a negative `recv_signed(int4)` convert
-            // constant print `-512` instead of its unsigned bit pattern.
-            let sign = ct.get_metatype() == crate::dtype::type_metatype::TYPE_INT;
-            // C++ `push_integer` (printc.cc:1378-1379) reads the explicit-print
-            // flags off the Varnode: `isUnsignedPrint()` -> a `U` suffix,
-            // `isLongPrint()` -> the `sizeSuffix` ("LL"/"L").  These are set by
-            // `CastStrategy::markExplicitUnsigned`/`markExplicitLongSize` during
-            // ActionSetCasts; without threading them here the `(val & 1U)` /
-            // `<long>L` literals lose their suffix.
-            // (kuna outlang) The `U`/`L`/`LL` suffixes are C's way of pinning a
-            // literal's type in an expression. A language that infers the literal
-            // type has no spelling for them, and inventing one (Rust `u32`) would
-            // assert a width this site does not know. Suppressed, not translated.
-            let (force_unsigned, force_sized) = if self.lang().caps.integer_suffixes {
-                fd.vbank()
-                    .get(vn)
-                    .map(|v| (v.is_unsigned_print(), v.is_long_print()))
-                    .unwrap_or((false, false))
-            } else {
-                (false, false)
-            };
-            // C++ `sizeSuffix` (printc.cc:2412-2415): "LL" when long and int are
-            // the same width, otherwise "L".
-            let size_suffix = if force_sized {
-                if arch.types().get_size_of_long() == arch.types().get_size_of_int() {
-                    "LL"
-                } else {
-                    "L"
-                }
-            } else {
-                ""
-            };
+            let lit = self.integer_literal(fd, arch, vn, &ct);
             self.push_constant_ir_fmt_sign_flags(
                 off,
                 sz,
                 op,
-                display_fmt,
-                sign,
-                force_unsigned,
-                force_sized,
-                size_suffix,
+                lit.display_fmt,
+                lit.sign,
+                lit.force_unsigned,
+                lit.force_sized,
+                lit.size_suffix,
             );
             return;
         }
@@ -8702,6 +8682,115 @@ impl PrintC {
         force_sized: bool,
         size_suffix: &str,
     ) {
+        let tok = self.integer_token(val, sz, display_fmt_in, sign, force_unsigned, force_sized, size_suffix);
+        self.push_atom(&Atom::with_op(
+            tok,
+            TagType::Syntax,
+            crate::printlanguage::SyntaxHighlight::const_color,
+            op_key(op),
+        ));
+    }
+
+    /// The format, sign and suffixes the integer path of
+    /// [`push_vn_explicit_ir`](Self::push_vn_explicit_ir) prints the constant `vn`
+    /// with, whose read-facing type is `ct`.
+    fn integer_literal(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        vn: VarnodeId,
+        ct: &crate::dtype::Datatype,
+    ) -> IntegerLiteral {
+        let sym_fmt = fd.vn_high_display_format(vn);
+        let display_fmt = if sym_fmt != display_format::NONE {
+            sym_fmt
+        } else {
+            ct.get_display_format()
+        };
+        // C++ `pushConstant` (printc.cc:1817-1835) selects the `push_integer`
+        // `sign` from the read-facing metatype: TYPE_INT -> signed
+        // (printc.cc:1832), TYPE_UINT/TYPE_UNKNOWN -> unsigned (1824/1835).
+        // The float/enum/char arms are dispatched before this path, so a plain
+        // integer constant rendered here is signed exactly when its type is
+        // TYPE_INT — which is what makes a negative `recv_signed(int4)` convert
+        // constant print `-512` instead of its unsigned bit pattern.
+        let sign = ct.get_metatype() == crate::dtype::type_metatype::TYPE_INT;
+        // C++ `push_integer` (printc.cc:1378-1379) reads the explicit-print
+        // flags off the Varnode: `isUnsignedPrint()` -> a `U` suffix,
+        // `isLongPrint()` -> the `sizeSuffix` ("LL"/"L").  These are set by
+        // `CastStrategy::markExplicitUnsigned`/`markExplicitLongSize` during
+        // ActionSetCasts; without threading them here the `(val & 1U)` /
+        // `<long>L` literals lose their suffix.
+        // (kuna outlang) The `U`/`L`/`LL` suffixes are C's way of pinning a
+        // literal's type in an expression. A language that infers the literal
+        // type has no spelling for them, and inventing one (Rust `u32`) would
+        // assert a width this site does not know. Suppressed, not translated.
+        let (force_unsigned, force_sized) = if self.lang().caps.integer_suffixes {
+            fd.vbank()
+                .get(vn)
+                .map(|v| (v.is_unsigned_print(), v.is_long_print()))
+                .unwrap_or((false, false))
+        } else {
+            (false, false)
+        };
+        // C++ `sizeSuffix` (printc.cc:2412-2415): "LL" when long and int are
+        // the same width, otherwise "L".
+        let size_suffix = if force_sized {
+            if arch.types().get_size_of_long() == arch.types().get_size_of_int() {
+                "LL"
+            } else {
+                "L"
+            }
+        } else {
+            ""
+        };
+        IntegerLiteral { display_fmt, sign, force_unsigned, force_sized, size_suffix }
+    }
+
+    /// (kuna `castternary`) The token the constant `vn` prints as where `op`
+    /// reads it, when it takes the integer path of
+    /// [`push_vn_explicit_ir`](Self::push_vn_explicit_ir).
+    fn integer_constant_token(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        vn: VarnodeId,
+        op: OpId,
+    ) -> Option<String> {
+        use crate::dtype::type_metatype::{TYPE_INT, TYPE_UINT};
+        let v = fd.vbank().get(vn)?;
+        if !v.is_constant() || v.is_annotation() {
+            return None;
+        }
+        let ct = v.get_type_read_facing(op).clone();
+        if ct.is_enum_type() || ct.is_char_print() || !matches!(ct.get_metatype(), TYPE_INT | TYPE_UINT) {
+            return None;
+        }
+        let lit = self.integer_literal(fd, arch, vn, &ct);
+        Some(self.integer_token(
+            v.get_offset(),
+            v.get_size(),
+            lit.display_fmt,
+            lit.sign,
+            lit.force_unsigned,
+            lit.force_sized,
+            lit.size_suffix,
+        ))
+    }
+
+    /// The token [`push_constant_ir_fmt_sign_flags`](Self::push_constant_ir_fmt_sign_flags)
+    /// prints for an integer constant under the current modifiers.
+    #[allow(clippy::too_many_arguments)]
+    fn integer_token(
+        &self,
+        val: uintb,
+        sz: int4,
+        display_fmt_in: u32,
+        sign: bool,
+        force_unsigned: bool,
+        force_sized: bool,
+        size_suffix: &str,
+    ) -> String {
         let force_dec = self.context.is_set(modifiers::FORCE_DEC);
         let force_hex = self.context.is_set(modifiers::FORCE_HEX);
         // C++ `push_integer` (printc.cc:1387): the `U` suffix is suppressed when
@@ -8737,19 +8826,13 @@ impl PrintC {
             true, // doEmitWideCharPrefix() — PrintC
             size_suffix,
         );
-        let tok = if display_fmt == display_format::FORCE_CHAR
+        if display_fmt == display_format::FORCE_CHAR
             && self.lang().forms.char_lit == crate::kuna_lang::CharForm::RustByte
         {
             format!("b{tok}")
         } else {
             tok
-        };
-        self.push_atom(&Atom::with_op(
-            tok,
-            TagType::Syntax,
-            crate::printlanguage::SyntaxHighlight::const_color,
-            op_key(op),
-        ));
+        }
     }
 
     /// Render a constant whose data-type prints as a character — C++
@@ -9825,6 +9908,15 @@ fn absorb_zext(fd: &Funcdata, op: OpId) -> Option<OpId> {
     None
 }
 
+/// How the integer path of `push_vn_explicit_ir` prints one constant.
+struct IntegerLiteral {
+    display_fmt: u32,
+    sign: bool,
+    force_unsigned: bool,
+    force_sized: bool,
+    size_suffix: &'static str,
+}
+
 /// C++ `castStrategy = data.getArch()->print->getCastStrategy()` (the
 /// `CastStrategyC` the C printer holds).  Rebuilt here from the bound type
 /// factory each time it is needed (the strategy is stateless apart from the
@@ -9887,6 +9979,14 @@ impl crate::kuna_castimplied::PrintedForms for ImpliedView<'_> {
 
     fn is_statement(&self, op: OpId) -> bool {
         self.pc.stmt_op == Some(op)
+    }
+
+    fn literal_token(&self, vn: VarnodeId, op: OpId) -> Option<String> {
+        self.pc.integer_constant_token(self.fd, self.arch, vn, op)
+    }
+
+    fn long_size(&self) -> i32 {
+        self.arch.types().get_size_of_long()
     }
 }
 

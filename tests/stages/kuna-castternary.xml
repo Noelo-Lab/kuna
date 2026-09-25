@@ -1,0 +1,109 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna castternary (P9, sub-stage cast-policy; option castternary on|off).
+
+    Source: a base64 decoder whose four table lookups `iteregion` prints as
+    `a = (c != '=') ? (int4)*(char *)(t + c) : 0;`.  Each conditional arm keeps
+    the cast the IR put on it, although the conditional operator converts both
+    arms to their common type itself (the usual arithmetic conversions, C11
+    6.5.15p5), and the same diamond printed as if/else already has no cast.
+
+    gcc -O0 -fno-pie of these static functions (the bytes below are .text):
+
+      quantum(t, in)  four `in[i] != '=' ? t[(unsigned char)in[i]] : 0`
+      ones(p, k)      unsigned int v = k ? p[k] : 0xffffffffu   (unsigned char p)
+      both(i, u, k)   long v = k ? (long)i : (long)u            (int i, unsigned int u)
+      wide(p, k)      long v = k ? p[k] : 3000000000L           (int p)
+      narrow(p, k)    long v = k ? p[k] : -5L                   (int p)
+      less(a, b, k)   unsigned int v = k ? (unsigned int)(a < b) : 0xffffffffu
+
+    iteexpr is on in both passes (it is in the aggressive preset kuna selects for
+    binaries under 500 KiB) so the load arms print as conditionals.  Pass 1
+    (option castternary off) keeps every arm cast: #1, #3, #5, #7.  Pass 2
+    (option castternary on) leaves out the widenings the conditional performs
+    (#2, #4, #6, #8): the char and unsigned char arms against an int4 or uint4
+    constant, the unsigned int arm against an int8 arm whose (int8) stays (#6:
+    both bare, int4 and uint4 would meet as uint4), and the int4 arm against a
+    decimal literal too wide for int4 (its C type is int8).  Both passes keep
+    the (int8) against -5, whose bare conditional would be an int4 (#9), and the
+    (uint4) on a comparison (#10).
+-->
+<bytechunk space="ram" offset="0x1000">
+554889e548897de8488975e0488b45e00fb6003c3d7419488b45e00fb6000fb6
+d0488b45e84801d00fb6000fbec0eb05b8000000008945f0488b45e04883c001
+0fb6003c3d741d488b45e04883c0010fb6000fb6d0488b45e84801d00fb6000f
+bec0eb05b8000000008945f4488b45e04883c0020fb6003c3d741d488b45e048
+83c0020fb6000fb6d0488b45e84801d00fb6000fbec0eb05b8000000008945f8
+488b45e04883c0030fb6003c3d741d488b45e04883c0030fb6000fb6d0488b45
+e84801d00fb6000fbec0eb05b8000000008945fc8b45f0c1e00689c28b45f401
+d0c1e00689c28b45f801d0c1e00689c28b45fc01d05dc3554889e548897de889
+75e4837de40074158b45e44863d0488b45e84801d00fb6000fb6c0eb05b8ffff
+ffff8945fc8b45fc5dc3554889e5897dec8975e88955e4837de40074078b45ec
+4898eb038b45e8488945f8488b45f85dc3554889e548897de88975e4837de400
+741a8b45e44898488d148500000000488b45e84801d08b004898eb05b8005ed0
+b2488945f8488b45f85dc3554889e548897de88975e4837de400741a8b45e448
+98488d148500000000488b45e84801d08b004898eb0748c7c0fbffffff488945
+f8488b45f85dc3554889e5897dec8975e88955e4837de400740e8b45ec3b45e8
+0f9cc00fb6c0eb05b8ffffffff8945fc8b45fc5dc3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="quantum"/>
+<symbol space="ram" offset="0x10f7" name="ones"/>
+<symbol space="ram" offset="0x112a" name="both"/>
+<symbol space="ram" offset="0x1151" name="wide"/>
+<symbol space="ram" offset="0x118b" name="narrow"/>
+<symbol space="ram" offset="0x11c7" name="less"/>
+</binaryimage>
+<script>
+  <com>option iteexpr on</com>
+  <com>option castternary off</com>
+  <com>lo fu quantum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ones</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu both</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu narrow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu less</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option castternary on</com>
+  <com>lo fu quantum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ones</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu both</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu narrow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu less</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="castternary #1: with the option off each table lookup carries the (int4) the conditional applies itself" min="4" max="4">\? \(int4\)\*\(char \*\)\(a0 \+ \(uint8\)\(uint1\)[^;]*\) : 0;</stringmatch>
+<stringmatch name="castternary #2: with the option on the char arm is bare" min="4" max="4">\? \*\(char \*\)\(a0 \+ \(uint8\)\(uint1\)[^;]*\) : 0;</stringmatch>
+<stringmatch name="castternary #3: with the option off the unsigned byte arm carries a (uint4)" min="1" max="1">v1 = \(a1\) \? \(uint4\)\*\(uint1 \*\)\(a0 \+ a1\) : 0xffffffff;</stringmatch>
+<stringmatch name="castternary #4: with the option on the byte meets the uint4 literal bare" min="1" max="1">v1 = \(a1\) \? \*\(uint1 \*\)\(a0 \+ a1\) : 0xffffffff;</stringmatch>
+<stringmatch name="castternary #5: with the option off both arms carry a (uint8)" min="1" max="1">v1 = \(a2\) \? \(uint8\)a0 : \(uint8\)a1;</stringmatch>
+<stringmatch name="castternary #6: with the option on the zero-extended arm goes and the sign-changing (uint8) stays" min="1" max="1">v1 = \(a2\) \? \(uint8\)a0 : a1;</stringmatch>
+<stringmatch name="castternary #7: with the option off the int4 arm against a long literal carries an (int8)" min="1" max="1">v1 = \(a1\) \? \(int8\)\*\(int4 \*\)\(a0 \+ \(int8\)a1 \* 4\) : 3000000000;</stringmatch>
+<stringmatch name="castternary #8: with the option on the decimal literal makes the conditional an int8 by itself" min="1" max="1">v1 = \(a1\) \? \*\(int4 \*\)\(a0 \+ \(int8\)a1 \* 4\) : 3000000000;</stringmatch>
+<stringmatch name="castternary #9: both passes keep the (int8) against -5, whose bare conditional is an int4" min="2" max="2">v1 = \(a1\) \? \(int8\)\*\(int4 \*\)\(a0 \+ \(int8\)a1 \* 4\) : -5;</stringmatch>
+<stringmatch name="castternary #10: both passes keep the (uint4) on a comparison" min="2" max="2">v1 = \(a2\) \? \(uint4\)\(a0 &lt; a1\) : 0xffffffff;</stringmatch>
+</decompilertest>

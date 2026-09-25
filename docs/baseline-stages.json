@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1379,
-    1379
+    1389,
+    1389
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1020,6 +1020,16 @@
     "data:castsign #7: halved's and through_ptr's values keep their cast in both passes, as does sign_of's under option castsign off (five times)",
     "data:castsign #8: a stack slot whose type is locked keeps uint8 under option castsign on (lock, once)",
     "data:castsign #9: and keeps the casts its signed comparisons need (lock, once)",
+    "data:castternary #10: both passes keep the (uint4) on a comparison",
+    "data:castternary #1: with the option off each table lookup carries the (int4) the conditional applies itself",
+    "data:castternary #2: with the option on the char arm is bare",
+    "data:castternary #3: with the option off the unsigned byte arm carries a (uint4)",
+    "data:castternary #4: with the option on the byte meets the uint4 literal bare",
+    "data:castternary #5: with the option off both arms carry a (uint8)",
+    "data:castternary #6: with the option on the zero-extended arm goes and the sign-changing (uint8) stays",
+    "data:castternary #7: with the option off the int4 arm against a long literal carries an (int8)",
+    "data:castternary #8: with the option on the decimal literal makes the conditional an int8 by itself",
+    "data:castternary #9: both passes keep the (int8) against -5, whose bare conditional is an int4",
     "data:charbyte #10: and the call needs a cast back (dashlen off; argbyte and sibling, whose pointers stay uint1 *, in both passes)",
     "data:charbyte #11: with the option on the pointer stays char *",
     "data:charbyte #12: and the call takes it as it is",

@@ -426,6 +426,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "castimplied",
     // (kuna) declare a frame local signed when every signedness-sensitive use is.
     "castsign",
+    // (kuna) leave out a widening an arm of `c ? a : b` gets from the conditional itself.
+    "castternary",
     "ptrdepthcap",
     "codescalar",
     "boolbyte",

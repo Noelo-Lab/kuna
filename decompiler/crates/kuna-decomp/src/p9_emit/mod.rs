@@ -25,6 +25,7 @@ pub mod kuna_arraycoverwidth;
 pub mod kuna_emptystrconst;
 pub mod kuna_truncarg;
 pub mod kuna_castimplied; // (kuna) casts C's own conversions already perform
+pub mod kuna_castternary; // (kuna) a conditional arm keeps no cast the conditional performs
 pub mod kuna_castarith; // (kuna) pointer arithmetic stays in pointer terms
 pub mod kuna_structdefs;
 pub mod kuna_globalref; // (kuna) a constant address used as a pointer prints as its global

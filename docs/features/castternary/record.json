@@ -1,0 +1,188 @@
+{
+ "option": "castternary",
+ "values": [
+  "on",
+  "off"
+ ],
+ "default_on": true,
+ "default_value": "on",
+ "phase": "P9",
+ "subphase": "cast-policy",
+ "change_kind": "presentation-default",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "a table-driven base64 decoder printed (int) on every lookup arm of its conditionals; the census of arm casts in docs/features/castternary/analysis.md",
+ "witness": {
+  "repro": "gcc -O0 b64.c (quantum, see the PR body); kuna decompile-all b64 --functions quantum",
+  "before": [
+   "v1 = (*a1 != '=') ? (int)*(char *)(a0 + (unsigned long)(unsigned char)*a1) : 0;",
+   "v4 = (a1[3] != '=') ? (unsigned int)*(char *)(a0 + (unsigned long)(unsigned char)a1[3]) : 0;"
+  ],
+  "after": [
+   "v1 = (*a1 != '=') ? *(char *)(a0 + (unsigned long)(unsigned char)*a1) : 0;",
+   "v4 = (a1[3] != '=') ? (unsigned int)*(char *)(a0 + (unsigned long)(unsigned char)a1[3]) : 0;  (a sign change: kept)"
+  ],
+  "ida": {
+   "cleanflight O0 0x803533c": "if ( sub_8015ED4() ) v2 = (short)sub_8015EE4(); else v2 = -1;  kuna: (int)(short)sub_8015ee4() : -1 -> (short)sub_8015ee4() : -1",
+   "crazyflie O0 0x804edf0": "return (short)(int)v0;  kuna: (int)(short)(int)a0 : -0x7fff -> (short)(int)a0 : -0x7fff",
+   "diffutils diff O0 0xe2f8": "if ( v17 ) v1 = tolower(v14); else v1 = v14;  kuna: ... : (unsigned long)v1 -> ... : v1"
+  }
+ },
+ "castbench": {
+  "set": "full: 45 binaries (coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find) x O0/O2/O2-noinline; functions kuna and IDA both emit",
+  "base": "origin/main c960fb18d (castbench arm main-c960fb18d); castternary off on the branch build is byte-identical to it on all 45 binaries",
+  "shared_functions": 4815,
+  "ida_casts": 37821,
+  "main_casts": 37477,
+  "branch_casts": 37474,
+  "main_per_kloc": 196.6,
+  "branch_per_kloc": 196.6,
+  "main_per_100_statements": 31.2,
+  "branch_per_100_statements": 31.2,
+  "main_vs_ida": 0.991,
+  "branch_vs_ida": 0.991,
+  "by_level_vs_ida": {
+   "O0": [
+    1.003,
+    1.003
+   ],
+   "O2": [
+    1.028,
+    1.028
+   ],
+   "O2-noinline": [
+    0.937,
+    0.937
+   ]
+  },
+  "functions_fewer": 2,
+  "casts_fewer": 3,
+  "functions_more": 0,
+  "fewer": {
+   "O0/diff 0xe2f8": -2,
+   "O0/tail 0x5a69": -1
+  },
+  "arm_cast_census": "176 whole-arm casts on main: 64 pointer, 76 float-to-unsigned-long idiom, 36 integer (3 dropped; the rest a pointer destination 10, a comparison source 8, a sign change 5, a narrowing 4, a conditional of another type 1, an untyped expression 2, a pointer arm 1, and the sign-changing twin arms of the dropped diff pair 2)"
+ },
+ "typesweep": {
+  "slices": 444,
+  "functions": 10748,
+  "metric": "decbench type_match pinned at 625e892 (DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
+  "arms": "the same build, --option castternary off vs the default",
+  "perfect_off": 1615,
+  "perfect_on": 1615,
+  "mean_off": 0.3697,
+  "mean_on": 0.3697,
+  "improved": 0,
+  "worse": 0,
+  "moved_on": 0,
+  "moved_off": 0,
+  "per_level": {
+   "O0": [
+    1110,
+    1110
+   ],
+   "O2": [
+    89,
+    89
+   ],
+   "O2-noinline": [
+    416,
+    416
+   ]
+  },
+  "variables_rows_identical": "every function's tp/fp/fn/gt_vars/decomp_vars row is identical in both arms"
+ },
+ "corpus": {
+  "binaries": 418,
+  "functions": 144159,
+  "changed_functions": 23,
+  "binaries_changed": [
+   "O0_cleanflight_cleanflight_DALRCF405.elf",
+   "O0_coreutils_tail",
+   "O0_crazyflie_cf2.elf",
+   "O0_crazyflie_firmware.elf",
+   "O0_diffutils_diff",
+   "O0_openssh-portable_scp",
+   "O0_openssh-portable_sftp",
+   "O0_openssh-portable_sftp-server",
+   "O0_openssh-portable_ssh-pkcs11-helper",
+   "O0_openssh-portable_ssh-sk-helper",
+   "O2_cleanflight_cleanflight_DALRCF405.elf",
+   "O2_crazyflie_cf2.elf",
+   "O2_crazyflie_firmware.elf"
+  ],
+  "classification": "every changed line is a conditional `dest = c ? a : b;` whose only difference is one arm's integer widening cast left out (with its parentheses where the cast wrapped a parenthesized operand); line counts per function are unchanged and no other line moves"
+ },
+ "gates_on_default": {
+  "make_test": "675/675 PARITY OK",
+  "make_test_stages": "1380/1380 PARITY OK (10 new keys only)",
+  "make_test_cli": "237/237"
+ },
+ "speed": {
+  "method": "interleaved min-of-15 kuna decompile-all --json, castternary off vs the default (docs/features/castternary/speed.py)",
+  "per_binary": {
+   "fmt": {
+    "off_min_ms": 4895.3,
+    "on_min_ms": 4793.1,
+    "delta_min_pct": -2.09,
+    "delta_median_pct": -2.04
+   },
+   "ls": {
+    "off_min_ms": 14906.9,
+    "on_min_ms": 14623.4,
+    "delta_min_pct": -1.9,
+    "delta_median_pct": 1.47
+   },
+   "sort": {
+    "off_min_ms": 15216.2,
+    "on_min_ms": 15669.4,
+    "delta_min_pct": 2.98,
+    "delta_median_pct": -0.96
+   },
+   "bash": {
+    "off_min_ms": 92867.5,
+    "on_min_ms": 94268.7,
+    "delta_min_pct": 1.51,
+    "delta_median_pct": -1.57
+   }
+  },
+  "worst_delta_min_pct": 2.98
+ },
+ "landing": {
+  "base": "origin/main 04f693d82 (castindex #727 default on, structheadless #720 opt-in)",
+  "castbench": {
+   "main_casts": 36617,
+   "branch_casts": 36614,
+   "main_vs_ida": 0.968,
+   "branch_vs_ida": 0.968,
+   "functions_fewer": 2,
+   "casts_fewer": 3,
+   "functions_more": 0,
+   "fewer": {
+    "O0/diff 0xe2f8": -2,
+    "O0/tail 0x5a69": -1
+   },
+   "off_vs_main": "byte-identical on all 45 binaries"
+  },
+  "typesweep": {
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "mean_off": 0.3697,
+   "mean_on": 0.3697,
+   "values_differ": 0,
+   "meta_differ": 0
+  },
+  "corpus": {
+   "binaries": 418,
+   "functions": 144159,
+   "changed_functions": 23,
+   "binaries_changed": 13,
+   "classes": [
+    "arm-cast"
+   ],
+   "same_as_c960fb18d": "the same 23 functions, with the same removed and added lines as corpus-hunks.json",
+   "off_vs_main": "byte-identical on the 17-binary hunk corpus (bzip2 O0, kmod/dpkg-divert/crontab O2 and the 13 changed binaries)"
+  }
+ }
+}

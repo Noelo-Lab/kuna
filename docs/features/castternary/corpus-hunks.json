@@ -1,0 +1,286 @@
+{
+ "method": "kuna decompile-all (default mode) of every binary, --option castternary off vs the default; a binary whose off output prints no conditional is skipped as unchanged (the option only acts inside one). Hunks are the function's removed/added lines.",
+ "binaries": 418,
+ "functions": 144159,
+ "changed_functions": 23,
+ "binaries_changed": [
+  "O0_cleanflight_cleanflight_DALRCF405.elf",
+  "O0_coreutils_tail",
+  "O0_crazyflie_cf2.elf",
+  "O0_crazyflie_firmware.elf",
+  "O0_diffutils_diff",
+  "O0_openssh-portable_scp",
+  "O0_openssh-portable_sftp",
+  "O0_openssh-portable_sftp-server",
+  "O0_openssh-portable_ssh-pkcs11-helper",
+  "O0_openssh-portable_ssh-sk-helper",
+  "O2_cleanflight_cleanflight_DALRCF405.elf",
+  "O2_crazyflie_cf2.elf",
+  "O2_crazyflie_firmware.elf"
+ ],
+ "classification": "every changed line is a conditional `dest = c ? a : b;` whose only difference is one arm's integer widening cast left out (with its parentheses where the cast wrapped a parenthesized operand); line counts per function are unchanged and no other line moves",
+ "hunks": {
+  "O0_coreutils_tail": [
+   {
+    "addr": "0x5a69",
+    "name": "sub_5a69",
+    "off": [
+     "v9 = (v12) ? 0xffffffff : (unsigned int)a1;"
+    ],
+    "on": [
+     "v9 = (v12) ? 0xffffffff : a1;"
+    ]
+   }
+  ],
+  "O0_cleanflight_cleanflight_DALRCF405.elf": [
+   {
+    "addr": "0x80108dc",
+    "name": "sub_80108dc",
+    "off": [
+     "v2 = (6 <= v1) ? 0 : (int)*(char *)(v1 + 0x8053dcc); // branch-flip"
+    ],
+    "on": [
+     "v2 = (6 <= v1) ? 0 : *(char *)(v1 + 0x8053dcc); // branch-flip"
+    ]
+   },
+   {
+    "addr": "0x8018fe8",
+    "name": "sub_8018fe8",
+    "off": [
+     "v1 = (sub_800f4b0(0x1000,a1,a2,a0 * 0x10624dd3)) ? (unsigned int)(*(unsigned short *)(dat_2000a680 + 0x32) >> 1) : (unsigned int)*(short *)(dat_2000a680 + 0x32); // branch-flip"
+    ],
+    "on": [
+     "v1 = (sub_800f4b0(0x1000,a1,a2,a0 * 0x10624dd3)) ? *(unsigned short *)(dat_2000a680 + 0x32) >> 1 : (unsigned int)*(short *)(dat_2000a680 + 0x32); // branch-flip"
+    ]
+   },
+   {
+    "addr": "0x801c214",
+    "name": "sub_801c214",
+    "off": [
+     "a0 = (0x5dc <= v1) ? (unsigned int)(unsigned short)sub_800e418(a0,0x5dd,2000,0x418,0x7ff) : (unsigned int)(unsigned short)sub_800e418(a0,1000,0x5db,0x417,0x30); // branch-flip"
+    ],
+    "on": [
+     "a0 = (0x5dc <= v1) ? (unsigned short)sub_800e418(a0,0x5dd,2000,0x418,0x7ff) : (unsigned int)(unsigned short)sub_800e418(a0,1000,0x5db,0x417,0x30); // branch-flip"
+    ]
+   },
+   {
+    "addr": "0x801c2bc",
+    "name": "sub_801c2bc",
+    "off": [
+     "v1 = (1047.0 < a0) ? (unsigned int)(unsigned short)sub_800e418((int)a0,0x418,0x7ff,0x5dd,2000) : (unsigned int)(unsigned short)sub_800e418((int)a0,0x30,0x417,0x5db,1000);"
+    ],
+    "on": [
+     "v1 = (1047.0 < a0) ? (unsigned short)sub_800e418((int)a0,0x418,0x7ff,0x5dd,2000) : (unsigned int)(unsigned short)sub_800e418((int)a0,0x30,0x417,0x5db,1000);"
+    ]
+   },
+   {
+    "addr": "0x803138e",
+    "name": "sub_803138e",
+    "off": [
+     "v6 = (dat_200079cc) ? (int)*(short *)(dat_200079cc + 8) : 0; // branch-flip"
+    ],
+    "on": [
+     "v6 = (dat_200079cc) ? *(short *)(dat_200079cc + 8) : 0; // branch-flip"
+    ]
+   },
+   {
+    "addr": "0x803533c",
+    "name": "sub_803533c",
+    "off": [
+     "v4 = (sub_8015ed4()) ? (int)(short)sub_8015ee4() : -1; // branch-flip",
+     "v1 = (sub_8015e88()) ? (int)(char)sub_8015d60() : 100; // branch-flip"
+    ],
+    "on": [
+     "v4 = (sub_8015ed4()) ? (short)sub_8015ee4() : -1; // branch-flip",
+     "v1 = (sub_8015e88()) ? (char)sub_8015d60() : 100; // branch-flip"
+    ]
+   }
+  ],
+  "O0_crazyflie_cf2.elf": [
+   {
+    "addr": "0x804edf0",
+    "name": "sub_804edf0",
+    "off": [
+     "v1 = (0 <= (int)((unsigned int)(a0 < -32767.0) << 0x1f)) ? (int)(short)(int)a0 : -0x7fff; // branch-flip"
+    ],
+    "on": [
+     "v1 = (0 <= (int)((unsigned int)(a0 < -32767.0) << 0x1f)) ? (short)(int)a0 : -0x7fff; // branch-flip"
+    ]
+   }
+  ],
+  "O0_crazyflie_firmware.elf": [
+   {
+    "addr": "0x804edf0",
+    "name": "sub_804edf0",
+    "off": [
+     "v1 = (0 <= (int)((unsigned int)(a0 < -32767.0) << 0x1f)) ? (int)(short)(int)a0 : -0x7fff; // branch-flip"
+    ],
+    "on": [
+     "v1 = (0 <= (int)((unsigned int)(a0 < -32767.0) << 0x1f)) ? (short)(int)a0 : -0x7fff; // branch-flip"
+    ]
+   }
+  ],
+  "O0_diffutils_diff": [
+   {
+    "addr": "0xe2f8",
+    "name": "sub_e2f8",
+    "off": [
+     "v11 = (v8) ? (unsigned long)tolower((unsigned int)v1) : (unsigned long)v1; // branch-flip",
+     "v11 = (v8) ? (unsigned long)tolower((unsigned int)v15) : (unsigned long)v15; // branch-flip"
+    ],
+    "on": [
+     "v11 = (v8) ? (unsigned long)tolower((unsigned int)v1) : v1; // branch-flip",
+     "v11 = (v8) ? (unsigned long)tolower((unsigned int)v15) : v15; // branch-flip"
+    ]
+   }
+  ],
+  "O0_openssh-portable_scp": [
+   {
+    "addr": "0x26e4a",
+    "name": "sub_26e4a",
+    "off": [
+     "v2 = (*a1 != 0x7ffffffe) ? (unsigned long)v1 : (unsigned long)*a1; // branch-flip"
+    ],
+    "on": [
+     "v2 = (*a1 != 0x7ffffffe) ? v1 : (unsigned long)*a1; // branch-flip"
+    ]
+   }
+  ],
+  "O0_openssh-portable_sftp": [
+   {
+    "addr": "0x29349",
+    "name": "sub_29349",
+    "off": [
+     "v2 = (*a1 != 0x7ffffffe) ? (unsigned long)v1 : (unsigned long)*a1; // branch-flip"
+    ],
+    "on": [
+     "v2 = (*a1 != 0x7ffffffe) ? v1 : (unsigned long)*a1; // branch-flip"
+    ]
+   }
+  ],
+  "O0_openssh-portable_sftp-server": [
+   {
+    "addr": "0x1a258",
+    "name": "sub_1a258",
+    "off": [
+     "v2 = (*a1 != 0x7ffffffe) ? (unsigned long)v1 : (unsigned long)*a1; // branch-flip"
+    ],
+    "on": [
+     "v2 = (*a1 != 0x7ffffffe) ? v1 : (unsigned long)*a1; // branch-flip"
+    ]
+   }
+  ],
+  "O0_openssh-portable_ssh-pkcs11-helper": [
+   {
+    "addr": "0x2f02a",
+    "name": "sub_2f02a",
+    "off": [
+     "v2 = (*a1 != 0x7ffffffe) ? (unsigned long)v1 : (unsigned long)*a1; // branch-flip"
+    ],
+    "on": [
+     "v2 = (*a1 != 0x7ffffffe) ? v1 : (unsigned long)*a1; // branch-flip"
+    ]
+   }
+  ],
+  "O0_openssh-portable_ssh-sk-helper": [
+   {
+    "addr": "0x27977",
+    "name": "sub_27977",
+    "off": [
+     "v2 = (*a1 != 0x7ffffffe) ? (unsigned long)v1 : (unsigned long)*a1; // branch-flip"
+    ],
+    "on": [
+     "v2 = (*a1 != 0x7ffffffe) ? v1 : (unsigned long)*a1; // branch-flip"
+    ]
+   }
+  ],
+  "O2_cleanflight_cleanflight_DALRCF405.elf": [
+   {
+    "addr": "0x80108dc",
+    "name": "sub_80108dc",
+    "off": [
+     "v2 = (6 <= v1) ? 0 : (int)*(char *)(v1 + 0x8053dcc); // branch-flip"
+    ],
+    "on": [
+     "v2 = (6 <= v1) ? 0 : *(char *)(v1 + 0x8053dcc); // branch-flip"
+    ]
+   },
+   {
+    "addr": "0x8018fe8",
+    "name": "sub_8018fe8",
+    "off": [
+     "v1 = (sub_800f4b0(0x1000,a1,a2,a0 * 0x10624dd3)) ? (unsigned int)(*(unsigned short *)(dat_2000a680 + 0x32) >> 1) : (unsigned int)*(short *)(dat_2000a680 + 0x32); // branch-flip"
+    ],
+    "on": [
+     "v1 = (sub_800f4b0(0x1000,a1,a2,a0 * 0x10624dd3)) ? *(unsigned short *)(dat_2000a680 + 0x32) >> 1 : (unsigned int)*(short *)(dat_2000a680 + 0x32); // branch-flip"
+    ]
+   },
+   {
+    "addr": "0x801c214",
+    "name": "sub_801c214",
+    "off": [
+     "a0 = (0x5dc <= v1) ? (unsigned int)(unsigned short)sub_800e418(a0,0x5dd,2000,0x418,0x7ff) : (unsigned int)(unsigned short)sub_800e418(a0,1000,0x5db,0x417,0x30); // branch-flip"
+    ],
+    "on": [
+     "a0 = (0x5dc <= v1) ? (unsigned short)sub_800e418(a0,0x5dd,2000,0x418,0x7ff) : (unsigned int)(unsigned short)sub_800e418(a0,1000,0x5db,0x417,0x30); // branch-flip"
+    ]
+   },
+   {
+    "addr": "0x801c2bc",
+    "name": "sub_801c2bc",
+    "off": [
+     "v1 = (1047.0 < a0) ? (unsigned int)(unsigned short)sub_800e418((int)a0,0x418,0x7ff,0x5dd,2000) : (unsigned int)(unsigned short)sub_800e418((int)a0,0x30,0x417,0x5db,1000);"
+    ],
+    "on": [
+     "v1 = (1047.0 < a0) ? (unsigned short)sub_800e418((int)a0,0x418,0x7ff,0x5dd,2000) : (unsigned int)(unsigned short)sub_800e418((int)a0,0x30,0x417,0x5db,1000);"
+    ]
+   },
+   {
+    "addr": "0x803138e",
+    "name": "sub_803138e",
+    "off": [
+     "v6 = (dat_200079cc) ? (int)*(short *)(dat_200079cc + 8) : 0; // branch-flip"
+    ],
+    "on": [
+     "v6 = (dat_200079cc) ? *(short *)(dat_200079cc + 8) : 0; // branch-flip"
+    ]
+   },
+   {
+    "addr": "0x803533c",
+    "name": "sub_803533c",
+    "off": [
+     "v4 = (sub_8015ed4()) ? (int)(short)sub_8015ee4() : -1; // branch-flip",
+     "v1 = (sub_8015e88()) ? (int)(char)sub_8015d60() : 100; // branch-flip"
+    ],
+    "on": [
+     "v4 = (sub_8015ed4()) ? (short)sub_8015ee4() : -1; // branch-flip",
+     "v1 = (sub_8015e88()) ? (char)sub_8015d60() : 100; // branch-flip"
+    ]
+   }
+  ],
+  "O2_crazyflie_cf2.elf": [
+   {
+    "addr": "0x8020a18",
+    "name": "sub_8020a18",
+    "off": [
+     "v2 = (0 <= a1) ? 0 : (int)(short)-(short)a1; // branch-flip"
+    ],
+    "on": [
+     "v2 = (0 <= a1) ? 0 : (short)-(short)a1; // branch-flip"
+    ]
+   }
+  ],
+  "O2_crazyflie_firmware.elf": [
+   {
+    "addr": "0x8020a18",
+    "name": "sub_8020a18",
+    "off": [
+     "v2 = (0 <= a1) ? 0 : (int)(short)-(short)a1; // branch-flip"
+    ],
+    "on": [
+     "v2 = (0 <= a1) ? 0 : (short)-(short)a1; // branch-flip"
+    ]
+   }
+  ]
+ }
+}

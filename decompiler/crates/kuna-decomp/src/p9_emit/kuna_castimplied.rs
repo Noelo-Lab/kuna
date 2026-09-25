@@ -101,11 +101,15 @@ pub(crate) trait PrintedForms {
     /// Is `op` being printed as the statement `lhs = <op>;` (not, say, as one arm
     /// of a `c ? a : b`, whose type is the arms' common type)?
     fn is_statement(&self, op: OpId) -> bool;
+    /// The token an integer constant prints as where `op` reads it (`castternary`).
+    fn literal_token(&self, vn: VarnodeId, op: OpId) -> Option<String>;
+    /// The size of the target's `long` (`castternary`).
+    fn long_size(&self) -> i32;
 }
 
 /// What is known about the C type of a printed operand.
 #[derive(Debug)]
-enum CType {
+pub(crate) enum CType {
     /// The printed text states this type.
     Known(Rc<Datatype>),
     /// Nothing states it; C's type is at most a promotion of the IR's.
@@ -129,16 +133,21 @@ impl CType {
 pub(crate) struct ImpliedCasts {
     enabled: bool,
     resigned: bool,
+    arms: bool,
+    arm_drops: Vec<OpId>,
     locals: HashMap<HighVariableId, String>,
     params: HashMap<String, String>,
     ret: Option<String>,
 }
 
 impl ImpliedCasts {
-    /// Start a function: forget the previous one's declarations.
-    pub(crate) fn begin(&mut self, enabled: bool, resigned: bool) {
+    /// Start a function: forget the previous one's declarations.  `arms` turns on
+    /// `castternary` ([`crate::kuna_castternary`]).
+    pub(crate) fn begin(&mut self, enabled: bool, resigned: bool, arms: bool) {
         self.enabled = enabled;
         self.resigned = enabled && resigned;
+        self.arms = arms;
+        self.arm_drops.clear();
         self.locals.clear();
         self.params.clear();
         self.ret = None;
@@ -148,23 +157,41 @@ impl ImpliedCasts {
         self.enabled
     }
 
+    pub(crate) fn arms_enabled(&self) -> bool {
+        self.arms
+    }
+
+    /// The conversions `castternary` leaves out of the conditional being printed.
+    pub(crate) fn set_arm_drops(&mut self, ops: Vec<OpId>) {
+        self.arm_drops = ops;
+    }
+
+    /// Does `castternary` leave out the conversion `op` prints?
+    pub(crate) fn arm_dropped(&self, op: OpId) -> bool {
+        self.arm_drops.contains(&op)
+    }
+
+    fn tracking(&self) -> bool {
+        self.enabled || self.arms
+    }
+
     /// The printer declared local `high` as `spelling`.
     pub(crate) fn record_local(&mut self, high: HighVariableId, spelling: String) {
-        if self.enabled {
+        if self.tracking() {
             self.locals.insert(high, spelling);
         }
     }
 
     /// The printer declared parameter `name` as `spelling`.
     pub(crate) fn record_param(&mut self, name: &str, spelling: String) {
-        if self.enabled {
+        if self.tracking() {
             self.params.insert(name.to_string(), spelling);
         }
     }
 
     /// The printer declared the function's return type as `spelling`.
     pub(crate) fn record_return(&mut self, spelling: String) {
-        if self.enabled {
+        if self.tracking() {
             self.ret = Some(spelling);
         }
     }
@@ -258,7 +285,7 @@ impl ImpliedCasts {
     }
 
     /// The C type of `vn` as printed where `reader` reads it.
-    fn operand_type(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId) -> CType {
+    pub(crate) fn operand_type(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId) -> CType {
         let Some(v) = fd.vbank().get(vn) else { return CType::Opaque };
         if v.is_annotation() {
             return CType::Opaque;
@@ -270,21 +297,36 @@ impl ImpliedCasts {
             return self.explicit_type(p, fd, vn, reader);
         }
         let Some(def) = v.get_def() else { return CType::Unknown };
-        let Some(d) = fd.obank().get(def) else { return CType::Unknown };
         let t = v.get_type_def_facing().clone();
+        self.def_type(p, fd, def, t, Some(reader))
+    }
+
+    /// The C type of the expression the op `def` prints, whose output has the IR
+    /// type `t`, where `reader` (if any) reads it.
+    pub(crate) fn def_type(
+        &self,
+        p: &dyn PrintedForms,
+        fd: &Funcdata,
+        def: OpId,
+        t: Rc<Datatype>,
+        reader: Option<OpId>,
+    ) -> CType {
+        let Some(d) = fd.obank().get(def) else { return CType::Unknown };
         let int = int_range(&t).is_some();
+        let dropped_below =
+            |r: Option<OpId>| self.enabled && r.is_some() && self.decide(p, fd, def, r, true);
         match d.code() {
             OpCode::CPUI_CAST if int => {
-                if p.sign_dropped(def) || !self.decide(p, fd, def, Some(reader), true) {
+                if p.sign_dropped(def) || !dropped_below(reader) {
                     return CType::Known(t);
                 }
                 d.get_in(0).map_or(CType::Unknown, |i| self.operand_type(p, fd, i, def))
             }
             OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT if int => {
-                if !p.extension_is_cast(def) || p.extension_hidden(def, Some(reader)) {
+                if !p.extension_is_cast(def) || p.extension_hidden(def, reader) {
                     return CType::Unknown;
                 }
-                if !self.decide(p, fd, def, Some(reader), true) {
+                if !dropped_below(reader) {
                     return CType::Known(t);
                 }
                 d.get_in(0).map_or(CType::Unknown, |i| self.operand_type(p, fd, i, def))
@@ -338,7 +380,7 @@ impl ImpliedCasts {
     /// spells none of the types kuna holds for `vn` -- a merged variable declared
     /// `int *` whose member here reads as a `long` -- is `Opaque`: the text C
     /// sees is not the IR's type, so nothing can be concluded from the IR.
-    fn explicit_type(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId) -> CType {
+    pub(crate) fn explicit_type(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId) -> CType {
         let Some(v) = fd.vbank().get(vn) else { return CType::Opaque };
         let Some(high) = v.get_high() else { return CType::Opaque };
         if let Some(spelling) = self.declared_spelling(p, fd, vn) {
