@@ -3081,8 +3081,8 @@ as its own return type.
 Measured on the 45-binary cast corpus (coreutils fmt/ls/sort/du/cp/tail/wc,
 grep, gzip, diffutils cmp/diff/diff3/sdiff, tar, find at -O0, -O2 and
 -O2-noinline), casts on the 4,815 functions kuna and IDA both emit go from
-36,614 to 35,832 (0.968x to 0.947x IDA's count; 192.1 to 188.0 per thousand
-lines, 30.5 to 29.8 per hundred statements): 393 functions fewer, 25 more.
+35,588 to 34,808 (0.941x to 0.920x IDA's count; 188.2 to 184.0 per thousand
+lines, 29.9 to 29.3 per hundred statements): 393 functions fewer, 25 more.
 The residue this leaves in `(char *)<call>` is dominated by callees kuna
 recovers as `void` whose callers read the result (a wrapper ending in
 `call; leave; ret` whose return is its callee's, `void sub_e8ca(...) {

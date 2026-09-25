@@ -1,5 +1,5 @@
 {
- "method": "docs/features/callrettype/corpus.py (decompile-all --json, callrettype off vs on, same binary) + hunkclass.py; binaries disjoint from the castbench corpus; branch rebased on origin/main f434b6a60",
+ "method": "docs/features/callrettype/corpus.py (decompile-all --json, callrettype off vs on, same binary) + hunkclass.py; binaries disjoint from the castbench corpus; branch rebased on origin/main 850e8c692",
  "binaries": {
   "O2_bash": {
    "functions": 2538,

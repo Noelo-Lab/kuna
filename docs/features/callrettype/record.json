@@ -40,33 +40,33 @@
  },
  "castbench": {
   "set": "full: 45 binaries (coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find) x O0/O2/O2-noinline; functions kuna and IDA both emit",
-  "base": "fresh build of origin/main f434b6a60 (.scratch arm); --option callrettype off on the branch prints the same bytes on all 45 binaries",
+  "base": "fresh build of origin/main 850e8c692; --option callrettype off on the branch prints the same bytes on all 45 binaries",
   "shared_functions": 4815,
   "ida_casts": 37821,
-  "main_casts": 36614,
-  "branch_casts": 35832,
-  "main_per_kloc": 192.1,
-  "branch_per_kloc": 188.0,
-  "main_per_100_statements": 30.5,
-  "branch_per_100_statements": 29.8,
-  "main_vs_ida": 0.968,
-  "branch_vs_ida": 0.947,
+  "main_casts": 35588,
+  "branch_casts": 34808,
+  "main_per_kloc": 188.2,
+  "branch_per_kloc": 184.0,
+  "main_per_100_statements": 29.9,
+  "branch_per_100_statements": 29.3,
+  "main_vs_ida": 0.941,
+  "branch_vs_ida": 0.92,
   "by_level_vs_ida": {
    "O0": [
-    0.979,
-    0.959
+    0.952,
+    0.932
    ],
    "O2": [
-    1.006,
-    0.988
+    0.976,
+    0.958
    ],
    "O2-noinline": [
-    0.915,
-    0.891
+    0.891,
+    0.867
    ]
   },
   "functions_fewer": 393,
-  "casts_fewer": 812,
+  "casts_fewer": 810,
   "functions_more": 25,
   "casts_more": 30,
   "more_classified": {
@@ -88,12 +88,16 @@
    "branch_casts": 36703,
    "functions_fewer": 391,
    "functions_more": 25
+  },
+  "earlier_bases": {
+   "c960fb18d": "37,477 -> 36,703 (391 fewer, 25 more)",
+   "f434b6a60": "36,614 -> 35,832 (393 fewer, 25 more)"
   }
  },
  "benchmark": {
   "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
   "metric": "type_match",
-  "arms": "same build rebased on origin/main f434b6a60: default (on) vs --option callrettype off; identical moved rows on the pre-rebase build",
+  "arms": "same build rebased on origin/main 850e8c692: default (on) vs --option callrettype off; identical moved rows on the c960fb18d and f434b6a60 bases",
   "projects": {
    "bzip2": {
     "n": 267,
@@ -215,8 +219,9 @@
  "corpus_sweep_detail": "docs/features/callrettype/corpus-hunks.json",
  "parity": {
   "datatests": "675/675 PARITY OK",
-  "stages": "1373/1373 PARITY OK (+3 callrettype assertions)",
-  "test_cli": "239/239 (one protoorder probe moved to the intended form)"
+  "stages": "1397/1397 PARITY OK (+3 callrettype assertions)",
+  "test_cli": "242/242 (one protoorder probe moved to the intended form)",
+  "rust_test": "7554 passed, 0 failed (lane on 86d55b260)"
  },
  "soundness": {
   "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_call_result_typed_by_its_callee_round_trips_through_the_printed_c: gcc and clang at -O0 and -O2 compile every printed fixture function, option off and on; the output must equal the binary's. Classes: pointer result (char *, FILE *), signed long result, and the `cached` tie control. The float class (a declared float result) is covered by a_float_in_a_general_register_keeps_its_integer_uses_round_trip (cc)."
