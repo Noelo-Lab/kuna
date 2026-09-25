@@ -4462,7 +4462,7 @@ live_false = "off"
 [[settable]]
 option = "elemptr"
 values = "on|off"
-default = "off"
+default = "on"
 destructive = false
 phase = "P5"
 subphase = "type-propagation"

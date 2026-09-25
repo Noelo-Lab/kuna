@@ -353,6 +353,9 @@ fn decide(
         }
     }
     let elem = elem?;
+    if kind == Kind::Constant {
+        data.kuna_elemptr_note_constant(v.get_offset());
+    }
     arch.types()?.get_type_pointer(ptrsize, elem, spc.get_word_size()).ok()
 }
 
@@ -396,7 +399,7 @@ fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<(Kind, Vec<VarnodeId
     if v.is_input() && data.get_func_proto().possible_input_param(&addr, v.get_size()) {
         return Some((Kind::Param, Vec::new()));
     }
-    if crate::kuna_structsynth::is_call_return(data, vn) && (std::env::var_os("KUNA_ELEMPTR_LOCKEDRET").is_none() || declared_open_return(data, vn)) {
+    if crate::kuna_structsynth::is_call_return(data, vn) {
         let copies = copies_alone(data, vn)?;
         let rets = crate::kuna_structsynth::returned_values(data);
         if crate::kuna_structsynth::returned_beside_others(data, &copies, &rets)
@@ -415,14 +418,6 @@ fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<(Kind, Vec<VarnodeId
         return Some((Kind::Global, Vec::new()));
     }
     None
-}
-
-/// Did the callee DECLARE the value `vn` returns as a pointer at nothing?
-fn declared_open_return(data: &Funcdata, vn: VarnodeId) -> bool {
-    let Some(def) = data.vbank().get(vn).and_then(|v| v.get_def()) else { return false };
-    let Some(i) = data.get_call_specs_index(def) else { return false };
-    let proto = data.get_call_specs(i).proto();
-    proto.is_output_locked() && proto.get_output_type().is_some_and(|t| points_at_nothing(&t))
 }
 
 /// Does the function return, in the register the call's value arrives in, some
@@ -688,10 +683,6 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
                 return None;
             }
             let scale = index_scale(data, other_vn, INDEX_DEPTH).or_else(|| ev.base_is_ptr.then_some((1, 0)));
-            if trace_on() && scale.is_some() {
-                let d = data.vbank().get(other_vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)).map(|o| format!("{:?}", o.code())).unwrap_or_else(|| "input".into());
-                eprintln!("[elemptr-index] op@{:#x} other def={d} scale={scale:?} base_is_ptr={}", o.get_addr().get_offset(), ev.base_is_ptr);
-            }
             match scale {
                 Some((scale, k)) => {
                     indexed(data, out?, scale, off + k, ev);
@@ -767,6 +758,17 @@ fn indexed(data: &Funcdata, sum: VarnodeId, scale: intb, off: intb, ev: &mut Evi
             let slot = o.get_slot(vn);
             let out = o.get_out();
             let mut next = None;
+            // An element's address kept in a variable already typed a pointer at
+            // something (`v9 = &a3[v13]` with `unsigned short *v9`) names the element.
+            if matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL) {
+                if let Some(t) = out.and_then(|x| data.vbank().get(x)).map(|x| Rc::clone(x.get_type())) {
+                    if t.get_metatype() == type_metatype::TYPE_PTR && !points_at_nothing(&t) {
+                        if let Some(p) = t.get_ptr_to() {
+                            ev.pointees.push(p);
+                        }
+                    }
+                }
+            }
             match o.code() {
                 OpCode::CPUI_LOAD | OpCode::CPUI_STORE if slot == 1 => {
                     let w = if o.code() == OpCode::CPUI_LOAD {
@@ -930,6 +932,15 @@ fn element_access(data: &Funcdata, op: OpId, w: int4, off: intb, variable: bool,
 /// What the value a `STORE` writes into an element says about the element.
 fn stored_value(data: &Funcdata, val: VarnodeId, ev: &mut Evidence) {
     let Some(v) = data.vbank().get(val) else { return };
+    // A value already typed says what sign its element holds; a byte is the
+    // plain `char` whatever it is typed.
+    if v.get_size() > 1 && !v.is_constant() {
+        match v.get_type().get_metatype() {
+            type_metatype::TYPE_UINT => ev.unsigned += 1,
+            type_metatype::TYPE_INT => ev.signed += 1,
+            _ => {}
+        }
+    }
     match v.get_type().get_metatype() {
         type_metatype::TYPE_FLOAT => {
             ev.refuse("float-elem");
@@ -1305,11 +1316,17 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
 }
 
 /// (printer) When the constant `vn` is the base of the `PTRADD` `op` indexed
-/// by a computed value: `Some` of the largest index it can take, `None` inside
-/// when nothing bounds it.  The outer `None` means `vn` is not such a base.
+/// by a computed value, and this rule typed it: `Some` of the largest index it
+/// can take, `None` inside when nothing bounds it.  The outer `None` means `vn`
+/// is not such a base.
 pub fn literal_index_bound(data: &Funcdata, op: OpId, vn: VarnodeId) -> Option<Option<uintb>> {
     let o = data.obank().get(op)?;
     if o.code() != OpCode::CPUI_PTRADD || o.get_in(0) != Some(vn) {
+        return None;
+    }
+    // Only a table this rule typed: a character-array constant another pass
+    // recovered keeps the spelling it had.
+    if !data.kuna_elemptr_typed_constant(data.vbank().get(vn)?.get_offset()) {
         return None;
     }
     let idx = o.get_in(1)?;

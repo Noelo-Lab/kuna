@@ -191,8 +191,8 @@ f30f1efa554889e54883ec3048897dd8488b45d84889c7e8e4b9ffff488945f048837df000750ab8
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="charptr #1: with the option off a string parameter passed to strlen reads as uint1 * - the bug" min="1" max="1">void \* dropsuffix\(uint1 \*a0\)</stringmatch>
-<stringmatch name="charptr #2: with the option on the callee declaration names the element type" min="1" max="1">void \* dropsuffix\(char \*a0\)</stringmatch>
+<stringmatch name="charptr #1: with the option off a string parameter passed to strlen reads as uint1 * - the bug" min="1" max="1">char \* dropsuffix\(uint1 \*a0\)</stringmatch>
+<stringmatch name="charptr #2: with the option on the callee declaration names the element type" min="1" max="1">char \* dropsuffix\(char \*a0\)</stringmatch>
 <stringmatch name="charptr #3: a parameter shifted before it reaches the declaration is refused in both passes" min="2" max="2">void scaled\(int8 a0\)</stringmatch>
 <stringmatch name="charptr #4: a one-byte read at a fixed offset is a struct field, so the pointer keeps its placeholder in both passes" min="2" max="2">char fieldbyte\(void \*a0\)</stringmatch>
 <stringmatch name="charptr #5: a value also read four bytes wide is not a character pointer in either pass" min="2" max="2">int4 mixedwidth\(struct_0 \*a0\)</stringmatch>

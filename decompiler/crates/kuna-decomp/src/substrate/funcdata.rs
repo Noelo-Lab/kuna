@@ -456,6 +456,9 @@ pub struct Funcdata {
     kuna_elemptr_blocked: Option<std::rc::Rc<std::collections::BTreeSet<u64>>>,
     /// (kuna `elemptr`) What this function's walks said about each global.
     kuna_elemptr_verdicts: std::cell::RefCell<std::collections::BTreeMap<u64, crate::kuna_elemptr::GlobalVerdict>>,
+    /// (kuna `elemptr`) The constant addresses this function's walks typed as an
+    /// element pointer.
+    kuna_elemptr_constants: std::cell::RefCell<std::collections::BTreeSet<u64>>,
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
@@ -577,6 +580,7 @@ impl Funcdata {
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
             kuna_elemptr_verdicts: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            kuna_elemptr_constants: std::cell::RefCell::new(std::collections::BTreeSet::new()),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
         })
     }
@@ -850,6 +854,16 @@ impl Funcdata {
             None => verdict,
         };
         m.insert(addr, merged);
+    }
+
+    /// (kuna `elemptr`) Note a constant address a walk typed as an element pointer.
+    pub fn kuna_elemptr_note_constant(&self, addr: u64) {
+        self.kuna_elemptr_constants.borrow_mut().insert(addr);
+    }
+
+    /// (kuna `elemptr`) Did a walk type the constant address `addr`?
+    pub fn kuna_elemptr_typed_constant(&self, addr: u64) -> bool {
+        self.kuna_elemptr_constants.borrow().contains(&addr)
     }
 
     /// (kuna `elemptr`) What this function's walks said about each global.

@@ -8972,15 +8972,11 @@ impl PrintC {
         // (kuna `elemptr`) `indexed` is `Some(bound)` for the base of an access
         // indexed by a computed value, `bound` the largest index it can take when
         // something bounds it. The literal holds `chars_emitted` characters and
-        // its NUL, and an index known to reach past them reads bytes the literal
-        // does not have. An empty literal indexed by anything but zero is always
-        // that: a table whose first byte is zero, not a string.
+        // its NUL; an index that can reach past them -- or that nothing bounds --
+        // reads bytes the literal does not have. A parser table whose bytes happen
+        // to escape as text ends at its first zero byte, and the table does not.
         if let Some(bound) = indexed {
-            let past = match bound {
-                Some(b) => b > chars_emitted as uintb,
-                None => chars_emitted == 0,
-            };
-            if past {
+            if bound.is_none_or(|b| b > chars_emitted as uintb) {
                 return false;
             }
         }

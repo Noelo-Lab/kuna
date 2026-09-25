@@ -1589,17 +1589,20 @@ for a `char *` constant once that type is established.
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs
 (literal_index_bound)`): a zero-extended byte is at most 255, a mask is at most
 its mask, an unsigned remainder is less than its divisor, and anything else is
-unbounded. `push_ptr_char_constant_ir` declines the literal when a known bound
-exceeds the literal's character count — its NUL is the last byte still inside
-it — because the C `"..."[x]` reads the literal, not the image; and it declines
-an *empty* literal under any index but a provable zero: coreutils `sort` indexes
-a 256-byte table whose first byte is zero, which printed `""[*v15._0_8_]`. An
-unbounded index into a literal with characters of its own keeps upstream's
-spelling (`"CCc"[v21]`, the base64 alphabet `tar` reads), since the string probe
-found text there and nothing says the index leaves it. A declined literal falls
-through to the address, and so to the array name `globalref` gives it (§9.9).
-The upstream symbol path (a read-only character-array symbol) does not consult
-the bound.
+unbounded. `push_ptr_char_constant_ir` keeps the literal only when that bound is
+at most the literal's character count — its NUL is the last byte still inside it
+— because the C `"..."[x]` reads the literal, not the image. A table the string
+probe accepts as text ends at its first zero byte and the table does not: findutils'
+and tar's `get_date` parsers index bison tables (`yycheck`, `yytable`) that printed as `"\x05"[v0]` and a 110-byte
+escape string indexed by the parser state, and coreutils `sort` indexes a
+256-byte table whose first byte is zero, which printed `""[*v15._0_8_]`. So an
+unbounded index declines the literal too. The bound is consulted only for a
+constant `elemptr` itself typed (`Funcdata::kuna_elemptr_typed_constant`): a
+character array another pass already recovered keeps the spelling it had
+(`sort`'s `"CCc"[v21]`, `tar`'s base64 alphabet, `&" %s"[v0]`). A declined
+literal falls through to the address, and so to the array name `globalref` gives
+it (§9.9). The upstream symbol path (a read-only character-array symbol) does
+not consult the bound.
 
 **A character pointer the probe declines is still an address.** When the bytes
 at a `char *` constant do not decode as a string — the GB18030 quote glyphs
