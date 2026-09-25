@@ -1,0 +1,224 @@
+{
+ "opportunity": "kuna prints a pointer plus a variable index, and the difference of two byte pointers, as integer round trips: *(long *)((long)v7 + v19 * 8) (two casts) where IDA prints v39[v27] (none), and (long)v24 - (long)v14 (two) where IDA prints sa - v52 (none).",
+ "test_name": "tests/stages/kuna-castindex.xml (7 assertions, pass 1 option castindex off, pass 2 on)",
+ "binary": "/home/mahaloz/github/decbench/results/full_run_address_2026-09-11/O0/coreutils/stripped/sort",
+ "selector": "0xa5c0",
+ "func_addr": "0xa5c0",
+ "angr_version": null,
+ "option": "castindex",
+ "flag": "cast_index",
+ "element_id": null,
+ "change_kind": "presentation-default",
+ "tier": "core",
+ "source_decompiler": "ida",
+ "inspiration": "Hex-Rays prints v39[v27] = v48 - 32 and sub_5453(v52, sa - v52) at the addresses where kuna printed *(long *)((long)v7 + v19 * 8) = v10 + -0x20 and sub_5453(v14,(long)v24 - (long)v14); this reaches the same arithmetic through Ghidra's PTRADD and C's own pointer subtraction, without IDA's way of avoiding the cast elsewhere (typing the base a 64-bit integer, 16LL * i + a1).",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "parity": "OK",
+ "witness": {
+  "function": "coreutils sort -O0 mergefps (sub_a5c0 @0xa5c0): 18 fewer casts",
+  "before": "*(long *)((long)v7 + v19 * 8) = v10 + -0x20;  v3 = *(unsigned long *)((long)a5 + v19 * 8);",
+  "after": "((long *)v7)[v19] = v10 + -0x20;  v3 = ((unsigned long *)a5)[v19];",
+  "ida": "v39[v27] = v48 - 32;  a6[v27]",
+  "difference": "ls -O0 print_long_format (sub_c6c8): sub_5453(v14,(long)v24 - (long)v14) -> sub_5453(v14,v24 - v14); IDA sub_5453(v52, sa - v52)"
+ },
+ "census": {
+  "set": "castbench full, 4,815 shared functions, main b3878d32e",
+  "text_i64_var_casts": {
+   "main": 6081,
+   "castindex": 5253,
+   "ida": 2761
+  },
+  "engine_verdicts_shared": {
+   "index_converted": 366,
+   "difference_converted": 223,
+   "scale_not_element": 384,
+   "difference_other_pointees": 255,
+   "sum_used_as_integer": 155,
+   "void_sum_leaves_function": 48,
+   "shared_address": 41,
+   "two_pointers": 16,
+   "unsettled_or_not_ptrdiff": 12,
+   "saves_no_cast": 4
+  },
+  "script": "docs/features/castindex/census.py (text); an env-instrumented build for the engine verdicts"
+ },
+ "castbench": {
+  "set": "full, 45 binaries x O0/O2/O2-noinline, 4,815 shared functions (kuna x IDA x main)",
+  "base": "/home/mahaloz/kwt/castbench/main-b3878d32e",
+  "casts": {
+   "ida": 37821,
+   "main": 38602,
+   "castindex": 37742
+  },
+  "per_kloc": {
+   "ida": 155.4,
+   "main": 202.5,
+   "castindex": 198.0
+  },
+  "per_100_statements": {
+   "ida": 27.0,
+   "main": 32.1,
+   "castindex": 31.4
+  },
+  "vs_ida": {
+   "main": 1.021,
+   "castindex": 0.998
+  },
+  "per_opt_vs_ida": {
+   "O0": [
+    1.032,
+    1.008
+   ],
+   "O2": [
+    1.056,
+    1.034
+   ],
+   "O2-noinline": [
+    0.97,
+    0.948
+   ]
+  },
+  "functions_fewer": 220,
+  "casts_removed": 860,
+  "functions_more": 0,
+  "functions_vs_ida": {
+   "main": {
+    "fewer": 1873,
+    "equal": 1403,
+    "more": 1539
+   },
+   "castindex": {
+    "fewer": 1897,
+    "equal": 1406,
+    "more": 1512
+   }
+  }
+ },
+ "corpus_sweep": {
+  "method": "kuna decompile-all both arms of one build (--option castindex off vs on) over the 45 castbench binaries, every function; hunkclass.py checks each changed hunk keeps its identifier multiset, gains no constant, loses only an element-size scale, and drops casts; structcheck.py compares per-function lines, statements, gotos, labels, loops and returns",
+  "off_arm": "byte-identical to main b3878d32e on 45/45 binaries",
+  "functions_changed": 776,
+  "structural_changes": 0,
+  "hunks": 1487,
+  "classes": {
+   "subscript": 998,
+   "difference": 481,
+   "both": 8
+  },
+  "hunks_outside_documented_effect": 0
+ },
+ "soundness": {
+  "round_trip": "castindex_x86_64.c, 24 functions x (gcc -O0, clang -O0, gcc -O2) x (on, off): printed C recompiled and run prints exactly what the binary prints; also by hand with gcc 11 and clang 14 under -Werror=int-conversion -Werror=incompatible-pointer-types",
+  "unit_tests": 12
+ },
+ "benchmark": {
+  "corpus": "the campaign's 444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline, 10,748 functions",
+  "metric": "type_match, decbench pinned at 625e892 (DECBENCH_PIN=_final-d/db625, final-c/pindb.py), DECBENCH_NO_CACHE=1",
+  "arms": "one build: --option castindex off vs the default (on); scripts.decbench.typesweep",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4173,
+    "mean_on": 0.4173,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 989,
+    "perfect_on": 989,
+    "mean_off": 0.359,
+    "mean_on": 0.359,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 64,
+    "mean_off": 0.4514,
+    "mean_on": 0.4514,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 61,
+    "perfect_on": 61,
+    "mean_off": 0.2508,
+    "mean_on": 0.2508,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 53,
+    "perfect_on": 53,
+    "mean_off": 0.4583,
+    "mean_on": 0.4583,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 112,
+    "mean_off": 0.5409,
+    "mean_on": 0.5409,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 89,
+    "perfect_on": 89,
+    "mean_off": 0.3604,
+    "mean_on": 0.3604,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 213,
+    "mean_off": 0.3938,
+    "mean_on": 0.3938,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "mean_off": 0.3697,
+   "mean_on": 0.3697,
+   "improved": 0,
+   "worse": 0
+  },
+  "per_level": {
+   "O0": {
+    "n": 4286,
+    "perfect_off": 1110,
+    "perfect_on": 1110
+   },
+   "O2": {
+    "n": 2394,
+    "perfect_off": 89,
+    "perfect_on": 89
+   },
+   "O2-noinline": {
+    "n": 4068,
+    "perfect_off": 416,
+    "perfect_on": 416
+   }
+  },
+  "control": "byte-identical variables[] in both arms for all 10,748 functions (0 scored differently); castindex changes only the C text, never variables[], so arity and phantom-variable counts cannot move",
+  "moved_onto_perfect": 0,
+  "moved_off_perfect": 0
+ }
+}
