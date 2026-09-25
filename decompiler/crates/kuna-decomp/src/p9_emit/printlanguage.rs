@@ -234,6 +234,10 @@ pub enum NamespaceStrategy {
     AllNamespaces = 2,
 }
 
+/// An opaque arena key for a PcodeOp or Varnode carried on the RPN stack: the
+/// slotmap key's full 64-bit ffi form, so it round-trips on 32-bit targets too.
+pub type IrKey = u64;
+
 /// An entry on the reverse polish notation (RPN) stack (C++
 /// `PrintLanguage::ReversePolish`, printlanguage.hh:183-190).
 ///
@@ -250,7 +254,7 @@ pub struct ReversePolish {
     pub paren: bool,
     /// The PcodeOp associated with the token (C++ `op`).
     /// STUB(printc): opaque op index; `None` where the C++ holds a null op.
-    pub op: Option<usize>,
+    pub op: Option<IrKey>,
     /// The id of the token group this belongs to (C++ `id`).
     pub id: int4,
     /// The id of the token group this surrounds (C++ `id2`, `mutable`).
@@ -262,16 +266,16 @@ pub struct ReversePolish {
 #[derive(Debug, Clone)]
 pub struct NodePending {
     /// The implied Varnode (C++ `vn`).  STUB(printc): opaque varnode index.
-    pub vn: usize,
+    pub vn: IrKey,
     /// The single operator consuming the implied Varnode (C++ `op`).
-    pub op: usize,
+    pub op: IrKey,
     /// Printing modifications to enforce on the expression (C++ `vnmod`).
     pub vnmod: uint4,
 }
 
 impl NodePending {
     /// Construct a pending data-flow node (C++ `NodePending(v,o,m)`).
-    pub fn new(vn: usize, op: usize, vnmod: uint4) -> NodePending {
+    pub fn new(vn: IrKey, op: IrKey, vnmod: uint4) -> NodePending {
         NodePending { vn, op, vnmod }
     }
 }
@@ -285,7 +289,7 @@ pub enum AtomData {
     /// No associated data-flow annotation.
     None,
     /// A Varnode associated with the token (C++ `vn`).
-    Vn(usize),
+    Vn(IrKey),
     /// A function associated with the token (C++ `fd`).
     Fd(usize),
     /// A type associated with the token (C++ `ct`).
@@ -311,7 +315,7 @@ pub struct Atom {
     /// The highlighting to use when emitting (C++ `highlight`).
     pub highlight: SyntaxHighlight,
     /// A p-code operation associated with the token (C++ `op`).  STUB(printc).
-    pub op: Option<usize>,
+    pub op: Option<IrKey>,
     /// Other meta-data associated with the token (C++ union `ptr_second`).
     pub data: AtomData,
     /// The offset (within the parent structure) for a field token (C++ `offset`).
@@ -339,7 +343,7 @@ impl Atom {
         hl: SyntaxHighlight,
         ct: usize,
         off: int4,
-        op: usize,
+        op: IrKey,
     ) -> Atom {
         Atom {
             name: name.into(),
@@ -353,7 +357,7 @@ impl Atom {
 
     /// Construct a token with an associated PcodeOp (C++ `Atom(nm,t,hl,o)`,
     /// printlanguage.hh:237-238).
-    pub fn with_op(name: impl Into<String>, tag: TagType, hl: SyntaxHighlight, op: usize) -> Atom {
+    pub fn with_op(name: impl Into<String>, tag: TagType, hl: SyntaxHighlight, op: IrKey) -> Atom {
         Atom {
             name: name.into(),
             tag,
@@ -370,8 +374,8 @@ impl Atom {
         name: impl Into<String>,
         tag: TagType,
         hl: SyntaxHighlight,
-        op: usize,
-        vn: usize,
+        op: IrKey,
+        vn: IrKey,
     ) -> Atom {
         Atom {
             name: name.into(),
@@ -389,7 +393,7 @@ impl Atom {
         name: impl Into<String>,
         tag: TagType,
         hl: SyntaxHighlight,
-        op: usize,
+        op: IrKey,
         fd: usize,
     ) -> Atom {
         Atom {
@@ -409,8 +413,8 @@ impl Atom {
         name: impl Into<String>,
         tag: TagType,
         hl: SyntaxHighlight,
-        op: usize,
-        vn: usize,
+        op: IrKey,
+        vn: IrKey,
         int_value: uintb,
     ) -> Atom {
         let data =

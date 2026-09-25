@@ -467,7 +467,12 @@ kuna decompile ./rage.exe sub_1400055e0 \
 ```
 
 The declaration supplies the types and the parameter names; `sha256` names
-nothing (`--assert` cannot rename a function today — `name` renames a local).
+nothing — a prototype does not rename the function (`name` renames a local).
+The `function` directive does: add `--assert 'function 0x1400055e0=sha256'` and
+the function is `sha256` everywhere, its old name kept as an alias (`kuna
+decompile` prints the new name when you select the function by it; the
+in-process surfaces — `decompile-all`, `decompile-project`, the browser — print
+it however you selected it).
 The console spelling is `map prototype <func> <C declaration>`, which is why
 `<func>` survives into a hand-driven `decomp_dbg` session too; `parse line
 extern <decl>` binds by the declared name and can only confirm a signature for

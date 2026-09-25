@@ -8,7 +8,8 @@
 //      wasm port is a faithful decompiler, not a degraded one.
 //
 // It runs `list` + several `decompile` cases + a whole-binary `project` export
-// over each committed fixture (x86-64 ELF + AArch64 object) and diffs native vs
+// + the study view's `inspect`/`read` (with `--assert` directives) over each
+// committed fixture (x86-64 ELF + AArch64 object) and diffs native vs
 // wasm (normalizing only the absolute `binary` path, which legitimately differs
 // between the host FS and the guest's virtual FS; `project` gets the same
 // explicit display name on both sides, so its artifacts match as-is). Specs
@@ -44,18 +45,27 @@ const FIXTURES = [
       // is the one that proves the second language crosses the wasm boundary
       // byte-identically, not just the first.
       ['decompile', 'main', '--language', 'rust'],
-      ['project', 'sample.elf', '--mode', 'fast']],
+      ['project', 'sample.elf', '--mode', 'fast'],
+      // The study view: one function with its token map and listing, by name
+      // and by address; raw bytes; and the `--assert` plane (a function
+      // rename, a local rename, a byte patch) on every command that takes it.
+      ['inspect', 'main'], ['inspect', '0x1161'], ['read', '0x1198', '64'],
+      ['inspect', 'main', '--assert', 'name v1 total', '--assert', 'bytes 0x11e1 9090909090'],
+      ['decompile', 'main', '--assert', 'function 0x1198=entry_main'],
+      ['list', '--assert', 'function 0x1161=summation'],
+      ['read', '0x1198', '4', '--assert', 'bytes 0x1198 90909090']],
   },
   {
     fixture: join(here, 'fixtures/sample_aarch64.o'),
     arch: 'aarch64',
     cases: [['list'], ['decompile'], ['decompile', 'sum_to'], ['decompile', 'add'],
-      ['project', 'sample_aarch64.o']],
+      ['project', 'sample_aarch64.o'], ['inspect', 'sum_to']],
   },
   {
     fixture: join(here, 'fixtures/sample_macho.o'),
     arch: 'macho-x86-64',
-    cases: [['list'], ['decompile'], ['decompile', '_add'], ['project', 'sample_macho.o']],
+    cases: [['list'], ['decompile'], ['decompile', '_add'], ['project', 'sample_macho.o'],
+      ['inspect', '_add']],
   },
 ];
 
@@ -87,7 +97,8 @@ for (const { fixture, arch, cases } of FIXTURES) {
       console.error(`+++ wasm   (${label})\n${w.slice(0, 800)}`);
       fail(`native != wasm for \`${label}\``);
     }
-    const want = c[0] === 'project' ? '"files"' : '"functions"'; // project emits a files map
+    // project emits a files map, inspect one function, read the bytes
+    const want = { project: '"files"', inspect: '"function"', read: '"bytes"' }[c[0]] || '"functions"';
     if (!n.includes(want)) fail(`\`${label}\` produced no ${want} payload`);
     console.log(`\x1b[32mOK\x1b[0m   ${label}  (${w.length} bytes, native==wasm)`);
     passed++;

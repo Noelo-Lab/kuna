@@ -160,6 +160,89 @@ driver (`--option protoorder`, `docs/cli.md`), while this command calls the shar
 batch directly, so the browser's call-argument types and `struct_N` numbering are the
 ones `--option protoorder off` produces.
 
+**The study view's commands: `inspect`, `read`, and `--assert`.** Every command also
+takes a repeatable `--assert <directive>` — the CLI's override plane, parsed by the same
+grammar (`kuna_console::assertsyntax`, one directive per value; a value with a line break
+is refused) and applied in the CLI's order (read-only propagation when a `readonly` range
+implies it, `set_assertions` + the image-scoped directives before the analysis commit, the
+program-scoped ones after it, the function- and symbol-scoped ones inside the decompile
+loop). Two more commands serve the study view:
+
+```
+kuna_wasm <binary> <spec-root> inspect <name|0xADDR> [--mode M] [--language L] [--assert D]...
+kuna_wasm <binary> <spec-root> read <0xADDR> <LEN> [--assert D]...
+```
+
+Because every request is a fresh process, the page's edit session IS its directive list: it
+resends the list on every call, and the same list replays natively as `kuna decompile
+<bin> <fn> --assert @file`. What becomes of each directive is an `assertions` row —
+`{directive, kind, phase, subphase, status, detail, fatal}`, the `decompile-all --json`
+report — on every document (`list`, `decompile`, `inspect`, `read`, `project`). A directive
+that binds to nothing is a `rejected` row and the command still exits 0 with its payload;
+a directive that does not parse is the run's error (`error: --assert "<directive>": <why>`
+on stderr, nonzero exit). What the page sends: for `inspect`, the program-wide directives
+plus that function's own **unqualified** (`name v1 total`); qualify with the function's
+*current* name (`name entry_main::v1 total`), never an address. A function rename is
+`function 0xENTRY=<name>` — the inventory then lists `<name>` with the old names in
+`aliases`, the new name selects it, and directives may be qualified with it. Parameters
+retype and rename through `prototype 0xENTRY <C declaration>`; a global is `data 0xADDR
+<type> <name>`; a byte patch is `bytes 0xADDR <hex>` (every later decode and `read` sees it).
+
+`inspect` is one load and one function — the same batch `decompile <selector>` runs (with
+its structure-naming convergence), so its `code` is `decompile`'s byte for byte; like
+`decompile`, a name keeps the discovery walk on and an address skips `fast_funcdisc`.
+Compact JSON, every address a number plus an `_hex` twin:
+
+```
+{binary, language, target:{archid, processor, endian, bits},
+ function:{name, address, address_hex, aliases, object_location, kind, size,
+   code, error, proto, unstructured_gotos,
+   line_mappings:[{line_number, addresses, addresses_hex}],
+   variables:[{name, type, kind:"arg"|"stack", arg_index, stack_offset, size,
+               line_numbers, addresses, addresses_hex}],
+   types:[{name, definition, size}],
+   globals:[{name, address, address_hex, declaration, size}],
+   tokens:[{line, col, len, kind, color, text,
+            address?, address_hex?, callee?, callee_hex?, var?, decl?, type?}],
+   tokens_error: null | string,
+   instructions:[{address, address_hex, offset, size, bytes, mnemonic, operands, text,
+                  file_offset, lines}],
+   instructions_truncated},
+ assertions:[…]}
+```
+
+`tokens` is the token source map (`docs/spec/09-emission.md` §9.2): `line` is 1-based in
+`code`, `col`/`len` are UTF-16 code units, and on each line the tokens' texts joined with
+the gaps as spaces rebuild that line exactly (the engine verifies it before shipping; on
+failure `tokens` is `[]` and `tokens_error` says why). `kind` is `syntax`, `variable`,
+`value` (literals and case labels), `op`, `funcname`, `type`, `field`, `comment` or
+`label`; `color` is the printer's highlight class (`keyword`, `comment`, `type`,
+`funcname`, `var`, `const`, `param`, `global`, `none`, `error`, `special`). Optional
+members appear only when known: `address` is the instruction the token stands for (a
+comment's or label's own address in the code space), `callee` the entry a call's name
+names, `var` an index into `variables` (register-only locals have no row), `decl` is
+`local`, `param`, `return` or `function` inside a declaration, and `type` names the type
+of a `type` token or the aggregate of a `field`. `instructions` is the `kuna disassemble
+--follow` walk over the function's extent (`kuna_console::disasm`, the CLI's own walker:
+branch targets start rows, literal pools fold to `.word`, undecodable bytes are `.byte`),
+at most 4096 rows (`instructions_truncated`); `bytes` is lowercase hex and honours `bytes`
+overlays, `offset` is `address − entry`, `file_offset` is where the instruction sits in the
+input file (`null` outside file-backed sections), and `lines` (always present, `[]` when
+none) are the `code` lines whose `line_mappings` name the instruction. The line mappings
+are sparse — a line maps to the instructions whose p-code its tokens were printed from, so
+argument set-up that was folded away maps to nothing.
+
+`read <0xADDR> <LEN>` returns `{binary, address, address_hex, size, bytes, file_offset,
+assertions}`: up to 64 KiB, stopping at the first byte the image does not map (an
+unmapped start is `size: 0`, not an error), overlays applied, loaded with the discovery
+walk off. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
+file_offset, executable, writable}]` (allocated sections, in address order; `writable`
+follows the segment that maps the section) and `known_types:[{name, size, kind}]` (the
+factory's named non-core types: `struct`, `union`, `enum`, `typedef`, `scalar`), and
+`decompile` now renders with provenance, adding the top-level `language` and the
+per-function `line_mappings`, `types` and per-variable `line_numbers`/`addresses` of `kuna
+decompile-all --json`.
+
 ## 3. The virtual filesystem (the whole trick)
 
 `integrations/web/kuna-worker.js` calls `integrations/web/kuna-web.js`, which drives

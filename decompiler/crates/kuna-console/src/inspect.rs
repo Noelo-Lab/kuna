@@ -60,15 +60,24 @@ pub struct SectionRow {
 }
 
 /// The program's loaded sections in address order: the loader's named table
-/// where it publishes one, else its unnamed section spans.
+/// where it publishes one, else its unnamed section spans. A section is
+/// writable when the segment mapping it is (the loader leaves the READONLY bit
+/// off the loader-owned tables on purpose), else when its own flags say so.
 pub fn section_rows(prog: &ConsoleProgram) -> Vec<SectionRow> {
-    let row = |name: String, address: u64, size: u64, file_offset, flags: u32| SectionRow {
-        name,
-        address,
-        size,
-        file_offset,
-        executable: flags & section_flags::CODE != 0,
-        writable: flags & section_flags::READONLY == 0,
+    let segments = prog.segments();
+    let row = |name: String, address: u64, size: u64, file_offset, flags: u32| {
+        let mapping = segments
+            .iter()
+            .find(|&&(start, len, _)| address >= start && address - start < len)
+            .map(|&(_, _, seg)| seg);
+        SectionRow {
+            name,
+            address,
+            size,
+            file_offset,
+            executable: flags & section_flags::CODE != 0,
+            writable: mapping.unwrap_or(flags) & section_flags::READONLY == 0,
+        }
     };
     let mut rows: Vec<SectionRow> = match prog.image_metadata() {
         Some(meta) if !meta.sections.is_empty() => meta

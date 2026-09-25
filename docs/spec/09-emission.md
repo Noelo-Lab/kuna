@@ -947,7 +947,11 @@ in order and inside their lines, each slice of the code equals its text, and
 every code unit between them is a space — so joining a line's tokens with the
 gaps as spaces rebuilds that line exactly. A caller ships the tokens only when
 the check passes and otherwise reports an empty list with the reason, never a
-drifted map.
+drifted map. The RPN stack carries each op and Varnode reference as the arena
+key's whole 64-bit form (`decompiler/crates/kuna-decomp/src/p9_emit/printlanguage.rs
+(IrKey)`), and the comment sorter's op cursor likewise: on a 32-bit target — the
+browser build — a `usize` would drop the key's version half and every reference
+resolved from it would dangle.
 
 **Literal format.** The remaining P9/`literal-format` knobs all act at the
 constant/type-name chokepoints of this walk: `option integerformat`
