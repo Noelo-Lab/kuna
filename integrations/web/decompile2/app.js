@@ -1594,22 +1594,17 @@ document.addEventListener('mousedown', (e) => {
   if (!e.target.closest('.d2-menuwrap')) closeMenus();
 });
 
-const darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
-const effectiveTheme = () => (state.prefs.theme === 'system' ? (darkScheme.matches ? 'dark' : 'light') : state.prefs.theme);
 
 function applyTheme() {
-  const root = document.documentElement;
-  if (state.prefs.theme === 'system') delete root.dataset.theme;
-  else root.dataset.theme = state.prefs.theme;
-  const dark = effectiveTheme() === 'dark';
+  const dark = state.prefs.theme !== 'light';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   els.theme.setAttribute('aria-pressed', String(dark));
   els.theme.title = dark ? 'Switch to the light theme' : 'Switch to the dark theme';
 }
 els.theme.addEventListener('click', () => {
-  updatePrefs({ theme: effectiveTheme() === 'dark' ? 'light' : 'dark' });
+  updatePrefs({ theme: state.prefs.theme === 'light' ? 'dark' : 'light' });
   applyTheme();
 });
-darkScheme.addEventListener('change', applyTheme);
 applyTheme();
 
 const mediumView = window.matchMedia('(max-width: 1279px)');

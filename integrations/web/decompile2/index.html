@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kuna — see how a program looks to the computer</title>
 <meta name="description" content="Open a compiled program to read its C code, its assembly, and how they connect. Rename and retype what you read, patch bytes, and download the result. It runs in your browser; nothing is uploaded.">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="dark light">
 <link rel="icon" type="image/png" href="../assets/img/favicon.png">
 <link rel="stylesheet" href="./decompile2.css">
 <script>
+  document.documentElement.dataset.theme = 'dark';
   try {
-    const theme = JSON.parse(localStorage.getItem('kuna.d2.prefs') || '{}').theme;
-    if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
-  } catch (_) { /* no storage: follow the system */ }
+    if (JSON.parse(localStorage.getItem('kuna.d2.prefs') || '{}').theme === 'light') document.documentElement.dataset.theme = 'light';
+  } catch (_) { /* no storage: the default dark theme */ }
 </script>
 </head>
 <body class="d2">

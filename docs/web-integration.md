@@ -385,7 +385,7 @@ The landing page and `/decompile/` share the Noelo Lab site's palette and typefa
 (`noelo.org`, BSD-2-Clause; provenance note at the top of `assets/css/site.css`) but not
 its layout: they are tool pages — one display line, then monospace throughout, small
 red-ticked section labels instead of a lab-page rail. One stylesheet serves those two
-(`/decompile2/` has its own, §4.2); `assets/js/highlight-c.js` is
+(`/decompile2/` has its own stylesheet on the same palette, dark by default, §4.2); `assets/js/highlight-c.js` is
 the single C highlighter shared by the compare panes and the function view. The landing
 page is otherwise inert — no wasm, no network — and `compare-samples.js` is pure data, so
 adding a comparison is a data edit (its header documents the schema; every pane must be
@@ -432,10 +432,14 @@ A second application page for students: one function as **C, assembly, bytes and
 stack frame, linked**, with renames, retypes, prototypes, comments and byte patches that
 the engine applies. `/decompile/` is unchanged.
 
-It is written for someone who has never used a decompiler, so it looks like an app, not
-like the rest of the site: full screen, its own stylesheet (`decompile2/decompile2.css` —
-a system UI font, monospace only for code, light and dark colour tokens that all pass
-WCAG AA 4.5:1), and none of the Noelo theme. Labels are plain sentence-case words ("C
+It is written for someone who has never used a decompiler, so it is laid out like an
+app: full screen, with its own stylesheet (`decompile2/decompile2.css`). The colours are
+the Noelo palette of the rest of the site, dark by default — Noelo's dark footer (warm
+near-black ink, warm greys, the mark's red for the accent and the primary button, flat
+1px rules, near-square corners) stretched to a whole app — and the toggle switches to
+Noelo's light paper, where the primary button is ink. The type is the app's own: a
+system UI font, monospace only for code, no uppercase labels. Every text colour passes
+WCAG AA 4.5:1 on each background it sits on. Labels are plain sentence-case words ("C
 code", "Side by side", "Explain", "Your changes"), and whatever a beginner does not need
 at first sight is off by default or one click away.
 
@@ -454,14 +458,15 @@ at first sight is off by default or one click away.
 | ● Showing main                      total — press N to rename, Y to change type       |
 ```
 
-![The study view at 1440×900: C and assembly side by side, linked by colour bands, with the Explain panel on the right](img/decompile2-split.png)
+![The study view at 1440×900 in its default dark theme: C and assembly side by side, linked by colour bands, with the Explain panel on the right](img/decompile2-split.png)
 
 **Layout.** A top bar, the body and a status bar. The top bar holds the file name and its
 function count, *Open file*, *Try an example*, a ⋯ menu (*Download C code (.zip)*,
 *Download patched program*, *Decompiler effort* — Automatic, Fast, Reliable, Thorough for
 `--mode` auto/fast/reliable/aggressive —, *Show code as* — Automatic, C, Rust —,
-*Keyboard shortcuts*, a link home), help, and a light/dark toggle (the page follows the
-system until the toggle picks one). Before a file is open the body is a welcome screen:
+*Keyboard shortcuts*, a link home), help, and the light/dark toggle (dark until it is
+pressed; the choice is kept, and a stored "system" from an earlier build reads as
+dark). Before a file is open the body is a welcome screen:
 one sentence on what the page does, a drop zone, the same two buttons, three steps. A
 file dropped anywhere on the page opens too; the page reads the bytes before it clears
 the input, so picking the same file again works. With a file open the body is three

@@ -1,8 +1,10 @@
 /* =========================================================================
-   /decompile2 — Kuna's study view. A full-screen app with its own look:
-   a system UI font, monospace only for code, neutral greys with one blue
-   accent, GitHub-style syntax colours, light and dark themes. It does not
-   use ../assets/css/site.css (the landing page and /decompile keep that).
+   /decompile2 — Kuna's study view. A full-screen app in the Noelo palette
+   (noelo.org, BSD-2-Clause; see ../assets/css/site.css): warm near-black
+   ink, warm greys, flat 1px rules, and the red out of the mark. Dark is the
+   default (Noelo's dark footer palette, stretched to a whole app); the
+   toggle switches to Noelo's light paper. The type is the app's own: a
+   system UI font, monospace only for code. It does not load site.css.
    Text colours are chosen for at least 4.5:1 contrast on every background
    they appear on (plain, hovered, linked, selected and patched rows).
    ========================================================================= */
@@ -11,53 +13,42 @@
   src:url('../assets/fonts/RobotoMono-Regular.woff2') format('woff2');}
 
 :root{
-  color-scheme:light;
+  color-scheme:dark;
   --font-ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
   --font-code:ui-monospace,SFMono-Regular,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,
     "DejaVu Sans Mono","Roboto Mono",monospace;
   --fs-ui:14px;--fs-small:12.5px;--fs-code:14px;--fs-asm:13.5px;--row:24px;
-  --radius:6px;--radius-lg:10px;
-  --shadow:0 8px 24px rgba(31,35,40,.12),0 1px 3px rgba(31,35,40,.08);
+  --radius:3px;--radius-lg:4px;
+  --shadow:0 10px 28px rgba(0,0,0,.55),0 1px 3px rgba(0,0,0,.4);
+  --lift:rgba(0,0,0,.35);
 
-  --bg:#ffffff;--bg-subtle:#f6f8fa;--bg-muted:#eef1f4;
-  --border:#d0d7de;--border-subtle:#e6eaef;
-  --text:#1f2328;--text-muted:#57606a;--text-faint:#59636e;
-  --accent:#0969da;--accent-fg:#ffffff;--accent-bg:#ddf4ff;--accent-emph:#0969da;--accent-hover:#0860ca;
-  --select-bg:#fff8c5;--select-ring:#d4a72c;--hover-bg:#f3f6f9;
-  --ok:#116329;--danger:#cf222e;--warn-bg:#fff8c5;--warn-border:#d4a72c;
-  --patch-bg:#ffebe9;--patch-fg:#82071e;
-  --syn-kw:#cf222e;--syn-type:#0550ae;--syn-fn:#6f42c1;--syn-num:#953800;
-  --syn-str:#0a3069;--syn-com:#59636e;--syn-global:#116329;--syn-var:var(--text);
+  --bg:#141110;--bg-subtle:#1b1716;--bg-muted:#2a2321;
+  --border:#3a3230;--border-subtle:#2a2321;
+  --text:#ede7e5;--text-muted:#c9c0bd;--text-faint:#a39894;
+  --accent:#f26d77;--accent-fg:#ffffff;--accent-bg:rgba(232,64,78,.14);--accent-emph:#b80d1e;--accent-hover:#d0172a;
+  --select-bg:rgba(224,165,83,.18);--select-ring:#c8912e;--hover-bg:#211c1a;
+  --ok:#8cc58e;--danger:#f26d77;--warn-bg:rgba(224,165,83,.14);--warn-border:#a87417;
+  --patch-bg:rgba(232,64,78,.24);--patch-fg:#ffb3b9;
+  --syn-kw:#f26d77;--syn-type:#6cc3c3;--syn-fn:#f6f1ef;--syn-num:#e6ae5c;
+  --syn-str:#a9cc82;--syn-com:#a39894;--syn-global:#c7b1ea;--syn-var:var(--text);
+  --mark-red:#e8404e;
+  --band-0:#6cc3c3;--band-1:#e6ae5c;--band-2:#b39ddb;--band-3:#a9cc82;--band-4:#e8404e;--band-5:#7fc4a0;
+}
+:root[data-theme=light]{
+  color-scheme:light;
+  --shadow:0 10px 28px rgba(20,17,16,.14),0 1px 3px rgba(20,17,16,.1);
+  --lift:rgba(20,17,16,.1);
+  --bg:#ffffff;--bg-subtle:#f7f4f3;--bg-muted:#efe9e7;
+  --border:#cec5c2;--border-subtle:#e4dddb;
+  --text:#141110;--text-muted:#3a3230;--text-faint:#6e6663;
+  --accent:#b80d1e;--accent-fg:#ffffff;--accent-bg:#f3e4e4;--accent-emph:#141110;--accent-hover:#b80d1e;
+  --select-bg:#fbefd6;--select-ring:#b07d1a;--hover-bg:#f7f4f3;
+  --ok:#2f6b3a;--danger:#b80d1e;--warn-bg:#fbefd6;--warn-border:#b07d1a;
+  --patch-bg:#f9e3e5;--patch-fg:#8f0a17;
+  --syn-kw:#b80d1e;--syn-type:#0f5e63;--syn-fn:#141110;--syn-num:#8a5a00;
+  --syn-str:#4b6a2f;--syn-com:#6e6663;--syn-global:#6b4e9e;
   --mark-red:#b80d1e;
-  --band-0:#54aeff;--band-1:#4ac26b;--band-2:#d4a72c;--band-3:#c297ff;--band-4:#ff8182;--band-5:#3fb5c9;
-}
-:root[data-theme=dark]{
-  color-scheme:dark;
-  --shadow:0 8px 24px rgba(1,4,9,.55),0 1px 3px rgba(1,4,9,.4);
-  --bg:#0d1117;--bg-subtle:#161b22;--bg-muted:#21262d;
-  --border:#30363d;--border-subtle:#21262d;
-  --text:#e6edf3;--text-muted:#9198a1;--text-faint:#8b949e;
-  --accent:#4493f8;--accent-fg:#ffffff;--accent-bg:rgba(56,139,253,.15);--accent-emph:#1f6feb;--accent-hover:#1a5ccf;
-  --select-bg:rgba(187,128,9,.2);--select-ring:#bb8009;--hover-bg:#1c2128;
-  --ok:#3fb950;--danger:#f85149;--warn-bg:rgba(187,128,9,.15);--warn-border:#9e6a03;
-  --patch-bg:rgba(248,81,73,.2);--patch-fg:#ffa198;
-  --syn-kw:#ff7b72;--syn-type:#79c0ff;--syn-fn:#d2a8ff;--syn-num:#ffa657;
-  --syn-str:#a5d6ff;--syn-com:#8b949e;--syn-global:#7ee787;--mark-red:#f85149;
-}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme]){
-    color-scheme:dark;
-    --shadow:0 8px 24px rgba(1,4,9,.55),0 1px 3px rgba(1,4,9,.4);
-    --bg:#0d1117;--bg-subtle:#161b22;--bg-muted:#21262d;
-    --border:#30363d;--border-subtle:#21262d;
-    --text:#e6edf3;--text-muted:#9198a1;--text-faint:#8b949e;
-    --accent:#4493f8;--accent-fg:#ffffff;--accent-bg:rgba(56,139,253,.15);--accent-emph:#1f6feb;--accent-hover:#1a5ccf;
-    --select-bg:rgba(187,128,9,.2);--select-ring:#bb8009;--hover-bg:#1c2128;
-    --ok:#3fb950;--danger:#f85149;--warn-bg:rgba(187,128,9,.15);--warn-border:#9e6a03;
-    --patch-bg:rgba(248,81,73,.2);--patch-fg:#ffa198;
-    --syn-kw:#ff7b72;--syn-type:#79c0ff;--syn-fn:#d2a8ff;--syn-num:#ffa657;
-    --syn-str:#a5d6ff;--syn-com:#8b949e;--syn-global:#7ee787;--mark-red:#f85149;
-  }
+  --band-0:#0f5e63;--band-1:#8a5a00;--band-2:#6b4e9e;--band-3:#4b6a2f;--band-4:#b80d1e;--band-5:#3f6b54;
 }
 
 /* ── base ───────────────────────────────────────────────────────────────── */
@@ -118,12 +109,8 @@ code{font-family:var(--font-code);font-size:.92em;}
 .d2-crumbcount{color:var(--text-muted);white-space:nowrap;}
 .d2-top .d2-btn{flex:none;}
 .d2-moon,.d2-sun{display:none;}
-:root:not([data-theme=dark]) #themebtn .d2-moon{display:block;}
-:root[data-theme=dark] #themebtn .d2-sun{display:block;}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme]) #themebtn .d2-moon{display:none;}
-  :root:not([data-theme]) #themebtn .d2-sun{display:block;}
-}
+:root:not([data-theme=light]) #themebtn .d2-sun{display:block;}
+:root[data-theme=light] #themebtn .d2-moon{display:block;}
 
 .d2-statusbar{display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--bg-subtle);
   border-top:1px solid var(--border);font-size:var(--fs-small);color:var(--text-muted);min-width:0;}
@@ -174,18 +161,18 @@ code{font-family:var(--font-code);font-size:.92em;}
 #vmeta{color:var(--text-muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #vmeta code{font-size:12.5px;color:var(--text);}
 .d2-viewbar{display:flex;align-items:center;gap:8px;padding:0 20px 10px;border-bottom:1px solid var(--border-subtle);min-width:0;}
-.d2-seg{display:inline-flex;gap:2px;padding:3px;background:var(--bg-muted);border-radius:8px;overflow-x:auto;max-width:100%;}
+.d2-seg{display:inline-flex;gap:2px;padding:3px;background:var(--bg-muted);border-radius:var(--radius-lg);overflow-x:auto;max-width:100%;}
 .d2-seg [role=tab]{height:28px;padding:0 12px;border:0;border-radius:var(--radius);background:transparent;
   color:var(--text-muted);font-size:13.5px;font-weight:500;cursor:pointer;white-space:nowrap;}
 .d2-seg [role=tab]:hover{color:var(--text);}
-.d2-seg [role=tab][aria-selected=true]{background:var(--bg);color:var(--text);box-shadow:0 1px 2px rgba(31,35,40,.12),0 0 0 1px var(--border-subtle);}
+.d2-seg [role=tab][aria-selected=true]{background:var(--bg);color:var(--text);box-shadow:0 0 0 1px var(--border),inset 0 -2px 0 var(--mark-red);}
 
 .d2-codearea{position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;}
 .d2-progress{position:absolute;left:0;right:0;top:0;height:2px;overflow:hidden;z-index:3;}
 .d2-progress span{position:absolute;top:0;bottom:0;width:30%;background:var(--accent);animation:d2slide 1.1s linear infinite;}
 @keyframes d2slide{from{left:-30%;}to{left:100%;}}
 .d2-tip{display:flex;align-items:center;gap:12px;margin:10px 20px 0;padding:8px 8px 8px 14px;border-radius:var(--radius);
-  background:var(--accent-bg);color:var(--text);font-size:13px;}
+  background:var(--bg-subtle);border-left:2px solid var(--mark-red);color:var(--text);font-size:13px;}
 .d2-tip span{flex:1 1 auto;}
 .d2-narrownote{margin:8px 20px 0;color:var(--text-muted);font-size:var(--fs-small);}
 
@@ -224,7 +211,7 @@ code{font-family:var(--font-code);font-size:.92em;}
 /* syntax */
 .tok-kw{color:var(--syn-kw);}
 .tok-type{color:var(--syn-type);}
-.tok-fn{color:var(--syn-fn);}
+.tok-fn{color:var(--syn-fn);font-weight:600;}
 .tok-num{color:var(--syn-num);}
 .tok-str,.tok-chr{color:var(--syn-str);}
 .tok-com{color:var(--syn-com);font-style:italic;}
@@ -343,7 +330,7 @@ a.xt:hover{color:var(--accent);text-decoration:underline;}
 .d2-stepn{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--accent-bg);
   color:var(--accent);font-weight:600;font-size:13px;}
 .d2-formats{margin-top:24px;color:var(--text-faint);font-size:var(--fs-small);}
-.d2-dropveil{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:rgba(9,105,218,.12);
+.d2-dropveil{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:var(--accent-bg);
   border:3px dashed var(--accent);pointer-events:none;}
 .d2-dropveil div{padding:14px 22px;border-radius:var(--radius-lg);background:var(--bg);box-shadow:var(--shadow);font-size:17px;font-weight:600;}
 
@@ -472,7 +459,7 @@ a.xt:hover{color:var(--accent);text-decoration:underline;}
 
 #help{width:min(720px,94vw);max-height:88vh;padding:0;border:1px solid var(--border);border-radius:var(--radius-lg);
   background:var(--bg);color:var(--text);box-shadow:var(--shadow);font:400 var(--fs-ui)/1.5 var(--font-ui);}
-#help::backdrop{background:rgba(1,4,9,.4);}
+#help::backdrop{background:var(--lift);}
 #help .hh{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;padding:16px 20px 10px;background:var(--bg);}
 #help .hh h2{font-size:18px;font-weight:600;}
 #help .hb2{padding:0 20px 20px;}

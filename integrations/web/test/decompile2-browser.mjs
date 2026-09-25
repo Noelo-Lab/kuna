@@ -78,12 +78,11 @@ try {
   assert.ok(await count('#ccode .t[data-kind=variable]') > 0, 'variables are tokens');
   await noExceptions('load the example; main opens by itself');
 
-  const lightTheme = await page.call(() => document.documentElement.dataset.theme || 'system');
+  assert.equal(await page.call(() => document.documentElement.dataset.theme), 'dark', 'the page opens in the dark theme');
   await page.click('#themebtn');
-  const toggled = await page.call(() => document.documentElement.dataset.theme);
-  assert.ok(toggled === 'dark' || (lightTheme === 'system' && toggled === 'light'), `the theme toggle sets data-theme (got ${toggled})`);
+  assert.equal(await page.call(() => document.documentElement.dataset.theme), 'light', 'the toggle switches to light');
   await page.click('#themebtn');
-  assert.notEqual(await page.call(() => document.documentElement.dataset.theme), toggled, 'and toggles back');
+  assert.equal(await page.call(() => document.documentElement.dataset.theme), 'dark', 'and back to dark');
   await noExceptions('the theme toggle sets data-theme');
 
   await page.hover('#c-L5 .ct');

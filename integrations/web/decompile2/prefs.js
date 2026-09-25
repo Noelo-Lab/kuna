@@ -20,7 +20,7 @@ export const DEFAULT_PREFS = Object.freeze({
   cLineAddrs: false,
   hoverDelay: 450,
   rail: true,
-  theme: 'system',
+  theme: 'dark',
   tipSeen: false,
 });
 
@@ -30,7 +30,7 @@ const CHOICES = {
   asmCMode: ['heading', 'comment', 'off'],
   asmSpelling: ['easy', 'exact'],
   hoverDelay: [0, 250, 450, 800, -1],
-  theme: ['system', 'light', 'dark'],
+  theme: ['dark', 'light'],
 };
 
 function pick(out, raw, key) {

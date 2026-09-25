@@ -187,9 +187,10 @@ assert.deepEqual(
 assert.equal(normalizePrefs({ v: 1, tab: 'bytes', split: true }).view, 'bytes');
 assert.equal(normalizePrefs({ v: 1, tab: 'src' }).view, 'c', 'the example-only source view is not restored');
 assert.equal(normalizePrefs({ v: 2, asmCMode: 'interleave' }).asmCMode, 'heading', 'the old name of the headings mode still reads');
-assert.deepEqual(normalizePrefs({ v: 2, theme: 'dark', tipSeen: true, view: 'nope' }), { ...DEFAULT_PREFS, theme: 'dark', tipSeen: true });
+assert.deepEqual(normalizePrefs({ v: 2, theme: 'light', tipSeen: true, view: 'nope' }), { ...DEFAULT_PREFS, theme: 'light', tipSeen: true });
+assert.equal(normalizePrefs({ v: 2, theme: 'system' }).theme, 'dark', 'the retired "system" theme reads as the dark default');
 assert.deepEqual([DEFAULT_PREFS.asmBytes, DEFAULT_PREFS.asmBytesSplit, DEFAULT_PREFS.asmCMode, DEFAULT_PREFS.cLineAddrs, DEFAULT_PREFS.theme],
-  [false, false, 'heading', false, 'system'], 'the beginner defaults');
+  [false, false, 'heading', false, 'dark'], 'the beginner defaults');
 assert.equal(cycle(DEFAULT_PREFS, 'asmAddr').asmAddr, 'rel');
 assert.equal(cycle({ ...DEFAULT_PREFS, asmAddr: 'both' }, 'asmAddr').asmAddr, 'abs');
 const mem = new Map();
