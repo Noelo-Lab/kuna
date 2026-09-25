@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>decompile2 — Kuna study view</title>
+<meta name="description" content="A student-oriented decompiler that runs in your browser: C, assembly and bytes linked line by line, with renames, retypes and patches. No server, no upload.">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/png" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="../assets/css/site.css">
+<link rel="stylesheet" href="./decompile2.css">
+</head>
+<body class="app dc2">
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="../">
+      <img src="../assets/img/kuna-mark.svg" alt="">
+      <span class="wordmark">Kuna</span>
+      <span class="at">study view &middot; webassembly &middot; no server</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="../decompile/">/decompile</a>
+      <a href="./" class="here" aria-current="page">/decompile2</a>
+      <a href="https://noelo.org">/noelo</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="bar">
+    <div class="wrap">
+      <p class="status busy" id="status" role="status" aria-live="polite"><span class="dot"></span>loading decompiler&hellip;</p>
+      <button class="tinybtn" id="cancelbtn" disabled>Cancel</button>
+      <button class="tinybtn" id="dlbtn" disabled title="Export the whole binary as a .c/.h/.asm project zip, with your edits applied">Source zip</button>
+      <button class="tinybtn" id="patchbtn" disabled title="Download the binary with your byte patches written into it">Patched binary</button>
+      <label class="tinybtn modepick" title="How hard the engine works: auto picks by binary size">
+        Mode
+        <select id="mode">
+          <option value="auto" selected>auto</option>
+          <option value="fast">fast</option>
+          <option value="reliable">reliable</option>
+          <option value="aggressive">aggressive</option>
+        </select>
+      </label>
+      <label class="tinybtn modepick" title="Output language: auto follows the binary">
+        Lang
+        <select id="lang">
+          <option value="auto" selected>auto</option>
+          <option value="c">C</option>
+          <option value="rust">Rust</option>
+        </select>
+      </label>
+      <button class="tinybtn" id="examplebtn" disabled title="Load a small example program and its original C source">Try the example</button>
+      <label class="tinybtn primary" id="pick" aria-disabled="true">
+        Load binary <input type="file" id="file">
+      </label>
+      <button class="tinybtn" id="helpbtn" title="Shortcuts and a glossary of decompiler names (?)" aria-haspopup="dialog">?</button>
+    </div>
+    <div class="d2-progress" id="progress" hidden><span></span></div>
+  </div>
+
+  <div class="d2work" id="work">
+    <aside id="sidebar" aria-label="Functions">
+      <div id="fntop">
+        <p class="lhead label" id="fnhead">functions</p>
+        <input class="fnq" id="fnfilter" type="search" disabled
+               placeholder="filter &mdash; name, address, /regex/" autocomplete="off"
+               autocapitalize="off" spellcheck="false"
+               aria-label="Filter functions by name or address" aria-controls="fnlist">
+      </div>
+      <div id="fnlist"></div>
+      <p class="fnnone label" id="fnnone" hidden>no matches</p>
+    </aside>
+
+    <section class="d2view" id="view" aria-label="Function">
+      <div id="empty">
+        <div class="inner">
+          <p class="eyebrow label">
+            <svg class="tick" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+              <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/>
+              <circle cx="6" cy="6" r="2" fill="currentColor"/>
+            </svg>
+            Study view
+          </p>
+          <h2>See how the C came from the machine code.</h2>
+          <p>
+            Load an <b>ELF</b>, <b>PE</b> or <b>Mach&#8209;O</b> file &mdash; or press
+            <b>Try the example</b> &mdash; and read each function as C beside the assembly it
+            was recovered from. Hover a line to see its instructions; rename and retype
+            variables; patch bytes and download the result. Everything runs in this tab.
+          </p>
+          <p class="hint">
+            <code>Space</code> switches C and assembly, <code>n</code> renames,
+            <code>y</code> retypes, <code>/</code> filters functions, <code>?</code> lists
+            every shortcut.
+          </p>
+        </div>
+      </div>
+
+      <div class="d2vhead" id="vhead" hidden>
+        <button class="d2-ib" id="backbtn" disabled title="Back (Alt+&larr;)" aria-label="Back">&lsaquo;</button>
+        <button class="d2-ib" id="fwdbtn" disabled title="Forward (Alt+&rarr;)" aria-label="Forward">&rsaquo;</button>
+        <span class="fname" id="vname"></span>
+        <span class="fmeta" id="vmeta"></span>
+        <span class="d2-grow"></span>
+        <button class="d2-lb" id="fnrenamebtn" title="Rename this function">rename</button>
+        <button class="d2-lb" id="protobtn" title="Edit this function's signature">proto</button>
+      </div>
+
+      <div class="d2tabbar" id="tabbar" hidden>
+        <div id="tabs" role="tablist" aria-label="Views">
+          <button role="tab" id="tab-c" data-tab="c" aria-controls="pane-c" aria-selected="true">C</button>
+          <button role="tab" id="tab-asm" data-tab="asm" aria-controls="pane-asm" aria-selected="false">Assembly</button>
+          <button role="tab" id="tab-bytes" data-tab="bytes" aria-controls="pane-bytes" aria-selected="false">Bytes</button>
+          <button role="tab" id="tab-stack" data-tab="stack" aria-controls="pane-stack" aria-selected="false">Stack</button>
+          <button role="tab" id="tab-src" data-tab="src" aria-controls="pane-src" aria-selected="false" hidden>Source</button>
+        </div>
+        <span class="d2-grow"></span>
+        <button class="d2-lb" id="splitbtn" aria-pressed="false" title="C beside assembly (s)">split</button>
+        <div class="d2-menuwrap">
+          <button class="d2-lb" id="viewbtn" aria-haspopup="true" aria-expanded="false" aria-controls="viewmenu">view &#9662;</button>
+          <div class="d2-menu" id="viewmenu" role="menu" hidden></div>
+        </div>
+      </div>
+
+      <div class="d2panes" id="panes" hidden>
+        <div class="d2pane" id="pane-c" role="tabpanel" aria-labelledby="tab-c">
+          <div class="d2code" id="ccode" role="listbox" tabindex="0" aria-label="Decompiled C"></div>
+        </div>
+        <div class="d2pane" id="pane-asm" role="tabpanel" aria-labelledby="tab-asm" hidden>
+          <div class="d2code" id="asmcode" role="listbox" tabindex="0" aria-label="Assembly"></div>
+        </div>
+        <div class="d2pane" id="pane-bytes" role="tabpanel" aria-labelledby="tab-bytes" hidden>
+          <div class="d2bar" id="bytesbar"></div>
+          <div class="d2code" id="hexdump" tabindex="0" aria-label="Bytes"></div>
+        </div>
+        <div class="d2pane" id="pane-stack" role="tabpanel" aria-labelledby="tab-stack" hidden>
+          <div class="d2code d2prose" id="stackframe" tabindex="0" aria-label="Stack frame"></div>
+        </div>
+        <div class="d2pane" id="pane-src" role="tabpanel" aria-labelledby="tab-src" hidden>
+          <pre class="d2code d2src" id="srccode" tabindex="0" aria-label="Original C source"></pre>
+        </div>
+      </div>
+      <p class="d2hint" id="hint" hidden aria-live="polite"></p>
+    </section>
+
+    <aside id="rail" aria-label="Details">
+      <div class="d2railhead">
+        <span class="label">details</span>
+        <button class="d2-ib" id="railbtn" title="Collapse details" aria-expanded="true" aria-controls="railbody">&rsaquo;</button>
+      </div>
+      <div id="railbody"></div>
+    </aside>
+  </div>
+</main>
+
+<div id="d2card" role="tooltip" hidden></div>
+<div id="d2pop" hidden></div>
+<div id="d2toasts" aria-live="polite"></div>
+<dialog id="help" aria-labelledby="helptitle"></dialog>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
