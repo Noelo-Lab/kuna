@@ -95,13 +95,18 @@ enum Seen {
 }
 
 impl Seen {
-    /// `sized` (kuna `elemptr`): an unknown pointee is the same object as a
-    /// typed one of its size -- the undefined bytes a copy reads where a callee's
+    /// `sized` (kuna `elemptr`): an unknown pointee wider than a byte is the
+    /// same object as an unsigned one of its size, as [`same_object`] reads a
+    /// direct access -- the undefined words a copy reads where a callee's
     /// parameter reads the elements `elemptr` gave it -- and the typed one names it.
     fn merge(prev: Option<Seen>, to: Rc<Datatype>, sized: bool) -> Seen {
         let is_void = to.get_metatype() == type_metatype::TYPE_VOID;
         let unknown_of = |a: &Datatype, b: &Datatype| {
-            sized && a.get_metatype() == type_metatype::TYPE_UNKNOWN && a.get_size() == b.get_size()
+            sized
+                && a.get_metatype() == type_metatype::TYPE_UNKNOWN
+                && b.get_metatype() == type_metatype::TYPE_UINT
+                && a.get_size() == b.get_size()
+                && a.get_size() > 1
         };
         match prev {
             None | Some(Seen::Void(_)) if is_void => Seen::Void(to),

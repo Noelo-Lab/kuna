@@ -10,7 +10,7 @@
     decoder reads, with the option off,
 
         void * w_decode(int8 a0,uint8 a1,uint8 *a2)
-        *(char *)((uint8)*(uint1 *)((int8)v2 + 0x30004060) + (int8)dat_300040e0) = (char)v2;
+        *(char *)((uint8)*(uint1 *)((int8)v2 + 0x30004060) + (int8)dat_30004360) = (char)v2;
 
     its input `long`, its output buffer `void *`, the table it allocated and
     keeps in a global an integer, and the constant alphabet in .data an address
@@ -90,10 +90,10 @@ c3
   <com>quit</com>
 </script>
 <stringmatch name="elemptr #1: with the option off the decoder's input is an integer and its buffer void * - the bug" min="1" max="1">void \* w_decode\(int8 a0,uint8 a1,uint8 \*a2\)</stringmatch>
-<stringmatch name="elemptr #2: with the option off the table build casts the global table and reads the .data alphabet through an integer sum" min="1" max="1">\(\(char \*\)dat_300040e0\)\[\*\(uint1 \*\)\(\(int8\)v2 \+ 0x30004060\)\] = \(char\)v2;</stringmatch>
+<stringmatch name="elemptr #2: with the option off the table build casts the global table and reads the .data alphabet through an integer sum" min="1" max="1">\(\(char \*\)dat_30004360\)\[\*\(uint1 \*\)\(\(int8\)v2 \+ 0x30004060\)\] = \(char\)v2;</stringmatch>
 <stringmatch name="elemptr #3: with the option on the input and the returned buffer are char *" min="1" max="1">char \* w_decode\(char \*a0,uint8 a1,uint8 \*a2\)</stringmatch>
 <stringmatch name="elemptr #4: with the option on a store into the allocated buffer is a subscript" min="1" max="1">v6\[v8\] = \(char\)\(v5 >> 0x10\);</stringmatch>
-<stringmatch name="elemptr #5: with the option on the global table and the .data alphabet are arrays" min="1" max="1">dat_300040e0\[dat_30004060\[v2\]\] = \(char\)v2;</stringmatch>
+<stringmatch name="elemptr #5: with the option on the global table and the .data alphabet are arrays" min="1" max="1">dat_30004360\[dat_30004060\[v2\]\] = \(char\)v2;</stringmatch>
 <stringmatch name="elemptr #6: with the option on a signed byte indexes an int array" min="1" max="1">int8 w_sidx\(char \*a0,int4 a1,int4 \*a2\)</stringmatch>
 <stringmatch name="elemptr #7: with the option on a .data table of ints is read by subscript" min="1" max="1">v2 = \(int8\)dat_300040a0\[v1\] \+ v2 \* 0xb;</stringmatch>
 <stringmatch name="elemptr #8: a record walked by a stride keeps its integer form in both passes" min="2" max="2">int8 w_record\(int8 a0,int4 a1\)</stringmatch>

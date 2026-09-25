@@ -44,18 +44,19 @@ fn only_an_integer_or_a_pointer_at_nothing_is_replaced() {
     assert!(!may_replace(&f.get_type_pointer(8, charp, 1).unwrap()), "char ** is a claim");
 }
 
-fn typed(elem: &str, firm: bool) -> GlobalVerdict {
-    GlobalVerdict::Typed { elem: elem.to_string(), firm }
+fn typed(elem: &str, signed: Option<bool>, firm: bool) -> GlobalVerdict {
+    GlobalVerdict::Typed { elem: elem.to_string(), signed, firm }
 }
 
 /// Two walks of one function agree only when they found the same array; any
 /// difference is the function disagreeing with itself.
 #[test]
 fn a_function_that_says_two_things_about_a_global_refuses_it() {
-    let bytes = typed("char", true);
-    let words = typed("int", true);
+    let bytes = typed("1:int", Some(true), true);
+    let words = typed("4:int", Some(true), true);
     assert_eq!(bytes.clone().merge(bytes.clone()), bytes);
-    assert_eq!(typed("char", false).merge(bytes.clone()), bytes, "evidence in either walk is evidence");
+    assert_eq!(typed("1:int", Some(true), false).merge(bytes.clone()), bytes, "evidence in either walk is evidence");
+    assert_eq!(bytes.clone().merge(typed("1:int", Some(false), true)), GlobalVerdict::Refused);
     assert_eq!(bytes.clone().merge(words), GlobalVerdict::Refused);
     assert_eq!(bytes.merge(GlobalVerdict::Refused), GlobalVerdict::Refused);
     assert_eq!(GlobalVerdict::Refused.merge(GlobalVerdict::Refused), GlobalVerdict::Refused);
@@ -71,10 +72,10 @@ fn said(pairs: &[(Obj, GlobalVerdict)]) -> BTreeMap<Obj, GlobalVerdict> {
 #[test]
 fn a_disagreed_global_is_blocked_where_it_was_typed() {
     let (a, b) = (Obj::Held(0x4018), Obj::Held(0x4020));
-    let bytes = typed("char", true);
+    let bytes = typed("1:int", Some(true), true);
     let mut l = Ledger::default();
     l.file(0x100, said(&[(a, bytes.clone()), (b, bytes.clone())]));
-    l.file(0x200, said(&[(a, typed("int", true))]));
+    l.file(0x200, said(&[(a, typed("4:int", Some(true), true))]));
     l.file(0x300, said(&[(b, bytes)]));
     let redo = l.disagreements();
     assert_eq!(redo.into_iter().collect::<Vec<_>>(), vec![0x100, 0x200]);
@@ -84,32 +85,42 @@ fn a_disagreed_global_is_blocked_where_it_was_typed() {
     assert!(l.disagreements().is_empty());
 }
 
-/// The same width at two signs is a disagreement: a body reading the element
-/// at the other sign would compute another value against the one declaration.
+/// The same width at two signs that evidence decided is a disagreement: a body
+/// reading the element at the other sign would compute another value against
+/// the one declaration.
 #[test]
-fn a_global_typed_at_two_signs_is_blocked() {
+fn a_table_evidence_reads_at_two_signs_is_blocked() {
     let t = Obj::Table(0x339e0);
     let mut l = Ledger::default();
-    l.file(0x100, said(&[(t, typed("unsigned char", true))]));
-    l.file(0x200, said(&[(t, typed("char", true))]));
+    l.file(0x100, said(&[(t, typed("1:int", Some(false), true))]));
+    l.file(0x200, said(&[(t, typed("1:int", Some(true), true))]));
     assert_eq!(l.disagreements().into_iter().collect::<Vec<_>>(), vec![0x100, 0x200]);
+    assert!(l.is_blocked(0x100, t) && l.is_blocked(0x200, t));
 }
 
-/// A sign only the default chose gives way to one evidence chose: only the
-/// defaulted function is blocked.  Two defaults that differ block both.
+/// A sign only the default chose takes the one evidence chose: the defaulted
+/// function is decided again at that sign.  Defaults that differ take the
+/// majority, unsigned on a tie; a default of another width is blocked.
 #[test]
-fn a_defaulted_sign_gives_way_to_evidence() {
+fn a_defaulted_sign_takes_the_evidenced_one() {
     let t = Obj::Table(0x40c0);
     let mut l = Ledger::default();
-    l.file(0x100, said(&[(t, typed("unsigned int", true))]));
-    l.file(0x200, said(&[(t, typed("int", false))]));
-    l.file(0x300, said(&[(t, typed("unsigned int", false))]));
-    assert_eq!(l.disagreements().into_iter().collect::<Vec<_>>(), vec![0x200]);
+    l.file(0x100, said(&[(t, typed("4:int", Some(false), true))]));
+    l.file(0x200, said(&[(t, typed("4:int", Some(true), false))]));
+    l.file(0x300, said(&[(t, typed("4:int", Some(false), false))]));
+    l.file(0x400, said(&[(t, typed("2:int", Some(false), false))]));
+    assert_eq!(l.disagreements().into_iter().collect::<Vec<_>>(), vec![0x200, 0x400]);
+    assert_eq!(l.adopted(0x200, t), Some(false));
+    assert!(l.is_blocked(0x400, t) && !l.is_blocked(0x200, t));
+    // The redone function now reads it unsigned: nothing more to do.
+    l.file(0x200, said(&[(t, typed("4:int", Some(false), false))]));
+    assert!(l.disagreements().is_empty());
     let u = Obj::Table(0x5000);
     let mut l = Ledger::default();
-    l.file(0x100, said(&[(u, typed("int", false))]));
-    l.file(0x200, said(&[(u, typed("unsigned int", false))]));
-    assert_eq!(l.disagreements().into_iter().collect::<Vec<_>>(), vec![0x100, 0x200]);
+    l.file(0x100, said(&[(u, typed("4:int", Some(true), false))]));
+    l.file(0x200, said(&[(u, typed("4:int", Some(false), false))]));
+    assert_eq!(l.disagreements().into_iter().collect::<Vec<_>>(), vec![0x100]);
+    assert_eq!(l.adopted(0x100, u), Some(false));
 }
 
 /// A refusal disagrees with a type about a global; saying nothing does not.
@@ -118,7 +129,7 @@ fn a_defaulted_sign_gives_way_to_evidence() {
 #[test]
 fn a_refusal_disagrees_and_silence_does_not() {
     let g = Obj::Held(0x4018);
-    let bytes = typed("char", true);
+    let bytes = typed("1:int", Some(true), true);
     let mut l = Ledger::default();
     l.file(0x100, said(&[(g, bytes.clone())]));
     l.file(0x200, said(&[]));
@@ -136,7 +147,7 @@ fn a_refusal_disagrees_and_silence_does_not() {
 #[test]
 fn a_redo_replaces_what_the_function_said() {
     let g = Obj::Held(0x4018);
-    let bytes = typed("char", true);
+    let bytes = typed("1:int", Some(true), true);
     let mut l = Ledger::default();
     l.file(0x100, said(&[(g, bytes.clone())]));
     l.file(0x200, said(&[(g, GlobalVerdict::Refused)]));

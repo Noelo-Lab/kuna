@@ -15,7 +15,10 @@
  *
  * The witnesses are the functions named `w_*`; `main` runs them over inputs
  * that include bytes at or above 0x80 (read signed and unsigned, and used as
- * indexes both ways) and negative indexes, and prints one line.
+ * indexes both ways) and negative indexes, and prints two lines.  The second
+ * line reads `.data` tables whose elements have their top bit set: 2- and
+ * 4-byte elements returned to a caller that widens them, one read shifted and
+ * one only compared, and a byte table two functions read at two signs.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +31,9 @@ static char encoding_table[64] = {
     'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
 static char *decoding_table;
 static int weights[8] = {3, -5, 7, 11, -13, 17, 0x7f80, -0x7f80};
+static unsigned short wtab[64] = {1, 0x8000, 0xffff, 0x7fff, 0x8001, 3, 0x9abc};
+static unsigned int itab[64] = {1, 0x80000000u, 0xffffffffu, 7};
+static unsigned char xlat[256] = {0x41, 0x80, 0xff, 0x7f, 0xc3, 0x10};
 
 void w_build(void)
 {
@@ -139,6 +145,56 @@ long w_mixed(const char *p, int i)
     return p[i] + *(const int *)(p + 4);
 }
 
+unsigned long w_wu(unsigned int i)
+{
+    return wtab[i & 63];
+}
+
+unsigned long w_wucall(unsigned int i)
+{
+    return w_wu(i) + 0x10000;
+}
+
+unsigned long w_iu(unsigned int i)
+{
+    return itab[i & 63];
+}
+
+unsigned long w_iucall(unsigned int i)
+{
+    return w_iu(i) + 1;
+}
+
+unsigned long w_iu2(unsigned int i)
+{
+    unsigned int v = itab[i & 63];
+    return v / 2 + v;
+}
+
+long w_srch(unsigned int k)
+{
+    for (int i = 0; i < 4; i++)
+        if (itab[i] == k)
+            return i;
+    return -1;
+}
+
+unsigned long w_xu(const unsigned char *p, int n)
+{
+    unsigned long s = 0;
+    for (int i = 0; i < n; i++)
+        s = s * 257 + xlat[p[i]];
+    return s;
+}
+
+long w_xs(const unsigned char *p, int n)
+{
+    long s = 0;
+    for (int i = 0; i < n; i++)
+        s = s * 257 + (signed char)xlat[p[i]];
+    return s;
+}
+
 int main(void)
 {
     static const char hi[] = "\x81\x7f\xfe\x01\x80\x10";
@@ -159,5 +215,8 @@ int main(void)
     long g = w_record(recs, 3);
     long h = w_mixed("abcdefgh", 2);
     printf("%s %zu %s %ld %ld %ld %ld %ld %ld %ld %ld\n", (char *)dec, n, rev, a, b, c, d, e, f, g, h);
+    static const unsigned char ix[] = {0, 1, 2, 3, 4, 5};
+    printf("%lu %lu %lu %lu %lu %lu %ld %ld %lu %ld\n", w_wucall(1), w_wucall(6), w_iucall(1), w_iucall(3), w_iu2(1),
+           w_iu2(2), w_srch(0xffffffffu), w_srch(5), w_xu(ix, 6), w_xs(ix, 6));
     return 0;
 }

@@ -19,8 +19,8 @@
   "timeout_s": 120,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
-    "binary_sha256": "9317a948bb47723d33defbe4a4e4ea729b655e6561fbdb3a6c74c13df55f8ecc",
-    "binary_size": 15960,
+    "binary_sha256": "e486abac55d8e5fe9a10eb077df80565991030b4c3f704816498d479f4de6ae1",
+    "binary_size": 16840,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
     "selector": "w_decode",

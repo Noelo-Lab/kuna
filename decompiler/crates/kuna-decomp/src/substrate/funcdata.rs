@@ -454,6 +454,10 @@ pub struct Funcdata {
     /// (kuna `elemptr`) The globals this function must not type as element
     /// pointers: another function of the batch disagrees about them.
     kuna_elemptr_blocked: Option<std::rc::Rc<std::collections::BTreeSet<crate::kuna_elemptr::Obj>>>,
+    /// (kuna `elemptr`) The sign this function reads an object's elements at,
+    /// where its own choice was only the default and another function's rests
+    /// on evidence.
+    kuna_elemptr_adopt: Option<std::rc::Rc<std::collections::BTreeMap<crate::kuna_elemptr::Obj, bool>>>,
     /// (kuna `elemptr`) What this function's last type pass said about each
     /// global and table.
     kuna_elemptr_verdicts:
@@ -581,6 +585,7 @@ impl Funcdata {
             kuna_calleevote_inputs: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
+            kuna_elemptr_adopt: None,
             kuna_elemptr_verdicts: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             kuna_elemptr_constants: std::cell::RefCell::new(std::collections::BTreeSet::new()),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
@@ -844,6 +849,20 @@ impl Funcdata {
         blocked: Option<std::rc::Rc<std::collections::BTreeSet<crate::kuna_elemptr::Obj>>>,
     ) {
         self.kuna_elemptr_blocked = blocked;
+    }
+
+    /// (kuna `elemptr`) Set the element signs this function adopts.
+    pub fn kuna_set_elemptr_adopt(
+        &mut self,
+        adopt: Option<std::rc::Rc<std::collections::BTreeMap<crate::kuna_elemptr::Obj, bool>>>,
+    ) {
+        self.kuna_elemptr_adopt = adopt;
+    }
+
+    /// (kuna `elemptr`) The sign (`true` signed) this function reads `obj`'s
+    /// elements at, when the batch decided it.
+    pub fn kuna_elemptr_adopted(&self, obj: crate::kuna_elemptr::Obj) -> Option<bool> {
+        self.kuna_elemptr_adopt.as_ref().and_then(|a| a.get(&obj).copied())
     }
 
     /// (kuna `elemptr`) Is `obj` one this function must not type?

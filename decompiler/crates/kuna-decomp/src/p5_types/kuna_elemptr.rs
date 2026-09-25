@@ -126,6 +126,9 @@ struct Evidence {
     /// is signed, and unsigned: the callers read the element at that type.
     ret_signed: u32,
     ret_unsigned: u32,
+    /// Loaded elements the function returns, whatever its return type says:
+    /// the element's sign is what every caller reads.
+    returned: u32,
     /// Loaded elements whose readers, folded the way `getLocalType` folds them,
     /// vote a signed integer of the element's width, and an unsigned one: the
     /// type the load has without this rule.
@@ -176,7 +179,7 @@ impl Evidence {
         match self.refused {
             Some(r) => format!("refuse:{r}"),
             None => format!(
-                "w={:?} var={} const={} s={} u={} chr={} ret={}/{} own={}/{} adr={} num={}",
+                "w={:?} var={} const={} s={} u={} chr={} ret={}/{}/{} own={}/{} adr={} num={}",
                 self.width,
                 self.variable,
                 self.constant,
@@ -185,6 +188,7 @@ impl Evidence {
                 self.charlit,
                 self.ret_signed,
                 self.ret_unsigned,
+                self.returned,
                 self.own_signed,
                 self.own_unsigned,
                 self.address,
@@ -363,7 +367,15 @@ fn decide(
         }
         _ => walk(data, &[vn], &mut ev),
     }
-    let elem = if ev.refused.is_none() && ev.variable > 0 { element_type(data, &mut ev) } else { None };
+    let mut elem = if ev.refused.is_none() && ev.variable > 0 { element_type(data, &mut ev) } else { None };
+    // The sign the batch decided, where this function's own was the default.
+    let adopted = own.into_iter().chain(globals_held.iter().map(|&g| Obj::Held(g))).find_map(|o| data.kuna_elemptr_adopted(o));
+    if let (Some(signed), Some(e)) = (adopted, elem.as_ref()) {
+        if !ev.firm && matches!(e.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT) {
+            let meta = if signed { type_metatype::TYPE_INT } else { type_metatype::TYPE_UINT };
+            elem = arch.types().and_then(|t| t.get_base(e.get_size(), meta).ok()).or(elem);
+        }
+    }
     if trace_on() {
         eprintln!(
             "[elemptr] fn={:#x} {} {}@{:#x} cur={} {} -> {}",
@@ -377,7 +389,10 @@ fn decide(
         );
     }
     let verdict = match (&elem, ev.refused) {
-        (Some(e), _) => Some(GlobalVerdict::Typed { elem: elem_key(e), firm: ev.firm }),
+        (Some(e), _) => {
+            let (elem, signed) = elem_key(e);
+            Some(GlobalVerdict::Typed { elem, signed, firm: ev.firm })
+        }
         (None, Some(why)) if !matches!(why, "pointer-unnamed" | "elem-unknown" | "pointer-or-number") => {
             Some(GlobalVerdict::Refused)
         }
@@ -1089,6 +1104,7 @@ fn loaded_sign(data: &Funcdata, val: VarnodeId, w: int4, ev: &mut Evidence) {
             let slot = o.get_slot(cur);
             match o.code() {
                 OpCode::CPUI_RETURN if slot >= 1 => {
+                    ev.returned += 1;
                     match sign(&crate::coreaction_infertypes::input_type_local(data, r, slot)) {
                         Some(true) => ev.ret_signed += 1,
                         Some(false) => ev.ret_unsigned += 1,
@@ -1494,15 +1510,16 @@ fn element_type(data: &Funcdata, ev: &mut Evidence) -> Option<Rc<Datatype>> {
     tlst.get_base(w, meta).ok()
 }
 
-/// Is the `w`-byte integer element signed, and does that rest on evidence?
-/// Only where something says so.  The function's return type comes first,
-/// since callers read it; then how the program extends, orders, shifts or
-/// divides a loaded element, when every such use agrees; a byte compared
-/// against a character is the plain `char`.  Without any of that the element
-/// takes the type the load has without this rule -- its readers' fold -- and
-/// a wider element nothing votes for is unsigned, the one reading that never
-/// widens a value past what its bits hold.  Such a default is not evidence: a
-/// batch lets a function with evidence decide a table's sign over it.
+/// Is the `w`-byte integer element signed, and is that fixed?  Only where
+/// something says so.  The function's recovered return type comes first, since
+/// callers read it; then how the program extends, orders, shifts or divides a
+/// loaded element, when every such use agrees; a byte compared against a
+/// character is the plain `char`.  Without any of that the element takes the
+/// type the load has without this rule -- its readers' fold -- and a wider
+/// element nothing votes for is unsigned, which is how an undefined word
+/// prints.  Such a default is not evidence, and a batch lets a function whose
+/// sign rests on evidence decide a table's sign over it -- unless the function
+/// returns the element: its sign is then what its callers read.
 fn element_signed(w: int4, ev: &Evidence) -> (bool, bool) {
     let one = |s: u32, u: u32| -> Option<bool> {
         match (s > 0, u > 0) {
@@ -1520,12 +1537,12 @@ fn element_signed(w: int4, ev: &Evidence) -> (bool, bool) {
         }
         return match one(ev.signed, ev.unsigned) {
             Some(signed) => (signed, true),
-            None => (true, false),
+            None => (true, ev.returned > 0),
         };
     }
     match one(ev.signed, ev.unsigned) {
         Some(signed) => (signed, true),
-        None => (one(ev.own_signed, ev.own_unsigned).unwrap_or(false), false),
+        None => (one(ev.own_signed, ev.own_unsigned).unwrap_or(false), ev.returned > 0),
     }
 }
 
@@ -1582,21 +1599,28 @@ pub enum Obj {
 /// What one function's walks said about one global or table.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum GlobalVerdict {
-    /// An array of `elem`, spelled by [`elem_key`]: signedness included, since
-    /// a body reading the element at the other sign computes another value.
-    /// `firm` when evidence decided the sign, not the default.
-    Typed { elem: String, firm: bool },
+    /// An array of `elem` (spelled by [`elem_key`]) read at `signed`, for an
+    /// integer element: a body reading the element at the other sign computes
+    /// another value.  `firm` when evidence decided the sign, not the default.
+    Typed { elem: String, signed: Option<bool>, firm: bool },
     /// Not an array this function agrees with: another width, a record, a
     /// number.
     Refused,
 }
 
-/// The element type `e` as a verdict compares it: width, kind, sign, and a
-/// pointer's pointee.
-pub fn elem_key(e: &Datatype) -> String {
-    match e.get_ptr_to() {
-        Some(p) if e.get_metatype() == type_metatype::TYPE_PTR => format!("*{}", elem_key(&p)),
-        _ => format!("{}:{:?}:{}", e.get_size(), e.get_metatype(), e.get_name()),
+/// The element type `e` as a verdict compares it: its shape (width and kind,
+/// and a pointer's pointee) and, for an integer, its sign.
+pub fn elem_key(e: &Datatype) -> (String, Option<bool>) {
+    fn shape(e: &Datatype) -> String {
+        match e.get_ptr_to() {
+            Some(p) if e.get_metatype() == type_metatype::TYPE_PTR => format!("*{}", shape(&p)),
+            _ => format!("{}:{:?}:{}", e.get_size(), e.get_metatype(), e.get_name()),
+        }
+    }
+    match e.get_metatype() {
+        type_metatype::TYPE_INT => (format!("{}:int", e.get_size()), Some(true)),
+        type_metatype::TYPE_UINT => (format!("{}:int", e.get_size()), Some(false)),
+        _ => (shape(e), None),
     }
 }
 
@@ -1604,9 +1628,10 @@ impl GlobalVerdict {
     /// Two verdicts of one function: the same array, or a disagreement.
     pub fn merge(self, other: GlobalVerdict) -> GlobalVerdict {
         match (self, other) {
-            (GlobalVerdict::Typed { elem: a, firm: fa }, GlobalVerdict::Typed { elem: b, firm: fb }) if a == b => {
-                GlobalVerdict::Typed { elem: a, firm: fa || fb }
-            }
+            (
+                GlobalVerdict::Typed { elem: a, signed: sa, firm: fa },
+                GlobalVerdict::Typed { elem: b, signed: sb, firm: fb },
+            ) if a == b && sa == sb => GlobalVerdict::Typed { elem: a, signed: sa, firm: fa || fb },
             _ => GlobalVerdict::Refused,
         }
     }
@@ -1626,6 +1651,7 @@ pub struct Ledger {
     pub recording: bool,
     verdicts: BTreeMap<Obj, BTreeMap<u64, GlobalVerdict>>,
     blocked: BTreeMap<u64, Rc<BTreeSet<Obj>>>,
+    adopt: BTreeMap<u64, Rc<BTreeMap<Obj, bool>>>,
     /// Objects some function of the batch has already disagreed about: every
     /// function decompiled after that leaves them alone, so only the ones
     /// decompiled before it are decided again.
@@ -1649,6 +1675,9 @@ pub fn seed(arch: &crate::architecture::Architecture, data: &mut Funcdata) {
     }
     let me = data.get_address().get_offset();
     let ledger = &arch.kuna_elemptr;
+    if let Some(a) = ledger.adopt.get(&me) {
+        data.kuna_set_elemptr_adopt(Some(Rc::clone(a)));
+    }
     let own = ledger.blocked.get(&me);
     if ledger.disputed.is_empty() {
         if let Some(b) = own {
@@ -1682,43 +1711,61 @@ pub fn disagreements(arch: &mut crate::architecture::Architecture) -> BTreeSet<u
     redo
 }
 
-/// The functions among `per` that must not type `obj`, or none when they
-/// agree.  Two elements decided by evidence that differ block every function
-/// that typed one; so do two defaulted ones, and, for a global, a refusal beside
-/// a type.  Where evidence decided one element, only the functions that
-/// defaulted to another are blocked: a default is what the load reads without
-/// this rule, and it gives way.
-fn to_block(obj: Obj, per: &BTreeMap<u64, GlobalVerdict>) -> Vec<u64> {
-    let typed: Vec<(u64, &str, bool)> = per
+/// What the batch decides about one object from what each function said.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Decision {
+    /// The functions that must not type it.
+    block: Vec<u64>,
+    /// The functions that read it at this sign instead of their default.
+    adopt: Vec<(u64, bool)>,
+}
+
+/// Decide `obj` from the verdicts `per`.  Two elements decided by evidence
+/// that differ block every function that typed one, and so, for a global, does
+/// a refusal beside a type.  A function whose sign was only the default takes
+/// the sign evidence decided, or the one most defaults chose (unsigned on a
+/// tie) when nothing decided it; a function whose element has another shape is
+/// blocked.
+fn decide_object(obj: Obj, per: &BTreeMap<u64, GlobalVerdict>) -> Decision {
+    let typed: Vec<(u64, &str, Option<bool>, bool)> = per
         .iter()
         .filter_map(|(&f, v)| match v {
-            GlobalVerdict::Typed { elem, firm } => Some((f, elem.as_str(), *firm)),
+            GlobalVerdict::Typed { elem, signed, firm } => Some((f, elem.as_str(), *signed, *firm)),
             GlobalVerdict::Refused => None,
         })
         .collect();
-    let all = || typed.iter().map(|t| t.0).collect::<Vec<u64>>();
+    let all = || Decision { block: typed.iter().map(|t| t.0).collect(), adopt: Vec::new() };
     if typed.is_empty() {
-        return Vec::new();
+        return Decision::default();
     }
     if matches!(obj, Obj::Held(_)) && per.values().any(|x| *x == GlobalVerdict::Refused) {
         return all();
     }
-    let firm: BTreeSet<&str> = typed.iter().filter(|t| t.2).map(|t| t.1).collect();
-    match firm.len() {
+    let firm: BTreeSet<(&str, Option<bool>)> = typed.iter().filter(|t| t.3).map(|t| (t.1, t.2)).collect();
+    let decided = match firm.len() {
         0 => {
-            let weak: BTreeSet<&str> = typed.iter().map(|t| t.1).collect();
-            if weak.len() > 1 {
-                all()
-            } else {
-                Vec::new()
+            let shapes: BTreeSet<&str> = typed.iter().map(|t| t.1).collect();
+            if shapes.len() > 1 {
+                return all();
             }
+            let signed = typed.iter().filter(|t| t.2 == Some(true)).count();
+            let unsigned = typed.iter().filter(|t| t.2 == Some(false)).count();
+            (typed[0].1, typed[0].2.map(|_| signed > unsigned))
         }
-        1 => {
-            let decided = firm.first().copied().unwrap_or_default();
-            typed.iter().filter(|t| t.1 != decided).map(|t| t.0).collect()
+        1 => firm.first().copied().unwrap_or_default(),
+        _ => return all(),
+    };
+    let mut d = Decision::default();
+    for &(f, elem, signed, firm) in &typed {
+        if (elem, signed) == decided {
+            continue;
         }
-        _ => all(),
+        match decided.1 {
+            Some(s) if !firm && elem == decided.0 => d.adopt.push((f, s)),
+            _ => d.block.push(f),
+        }
     }
+    d
 }
 
 impl Ledger {
@@ -1734,18 +1781,27 @@ impl Ledger {
             // only a dispute that blocks everyone who typed it is one.
             let refused_global = matches!(g, Obj::Held(_)) && per.values().any(|x| *x == GlobalVerdict::Refused);
             let typed = per.values().filter(|x| matches!(x, GlobalVerdict::Typed { .. })).count();
-            if refused_global || (typed > 0 && to_block(g, per).len() == typed) {
+            if refused_global || (typed > 0 && decide_object(g, per).block.len() == typed) {
                 self.disputed.insert(g);
             }
         }
     }
 
-    /// Block every disagreed object for the functions that typed it, and return
-    /// the functions whose blocked set grew.
+    /// Block every disagreed object for the functions that typed it, hand the
+    /// batch's sign to the functions that defaulted to another, and return the
+    /// functions whose blocked or adopted set grew.
     pub(crate) fn disagreements(&mut self) -> BTreeSet<u64> {
         let mut redo = BTreeSet::new();
         for (&g, per) in &self.verdicts {
-            for f in to_block(g, per) {
+            let d = decide_object(g, per);
+            for (f, signed) in d.adopt {
+                let entry = self.adopt.entry(f).or_default();
+                if entry.get(&g) != Some(&signed) {
+                    Rc::make_mut(entry).insert(g, signed);
+                    redo.insert(f);
+                }
+            }
+            for f in d.block {
                 let entry = self.blocked.entry(f).or_default();
                 if !entry.contains(&g) {
                     Rc::make_mut(entry).insert(g);
@@ -1754,6 +1810,12 @@ impl Ledger {
             }
         }
         redo
+    }
+
+    /// The sign the function entered at `me` adopts for `obj`.
+    #[cfg(test)]
+    pub(crate) fn adopted(&self, me: u64, obj: Obj) -> Option<bool> {
+        self.adopt.get(&me).and_then(|a| a.get(&obj).copied())
     }
 
     /// Is `obj` blocked for the function entered at `me`?
