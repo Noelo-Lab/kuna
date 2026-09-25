@@ -228,5 +228,36 @@
   "control": "byte-identical variables[] in both arms for all 10,748 functions (0 scored differently); castindex changes only the C text, never variables[], so arity and phantom-variable counts cannot move",
   "moved_onto_perfect": 0,
   "moved_off_perfect": 0
+ },
+ "speed": {
+  "method": "docs/features/castindex/speed.py: kuna decompile-all <bin> --json, --option castindex off vs the default (on), interleaved, one warm-up, min-of-15, same build, base c960fb18d",
+  "binaries": {
+   "fmt_O2": {
+    "off_min_ms": 4387.6,
+    "on_min_ms": 4391.6,
+    "delta_min_pct": 0.09,
+    "delta_median_of_ratios_pct": -0.85
+   },
+   "ls_O2": {
+    "off_min_ms": 15188.4,
+    "on_min_ms": 15149.5,
+    "delta_min_pct": -0.26,
+    "delta_median_of_ratios_pct": -0.07
+   },
+   "sort_O2": {
+    "off_min_ms": 15504.3,
+    "on_min_ms": 15246.2,
+    "delta_min_pct": -1.66,
+    "delta_median_of_ratios_pct": -0.93
+   },
+   "bash_O2": {
+    "off_min_ms": 97303.8,
+    "on_min_ms": 97368.6,
+    "delta_min_pct": 0.07,
+    "delta_median_of_ratios_pct": -3.57
+   }
+  },
+  "worst_delta_min_pct": 0.09,
+  "budget_pct": 5
  }
 }
