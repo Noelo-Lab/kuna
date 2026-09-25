@@ -734,8 +734,9 @@ controls (a record walked by a stride, a pointer read at two widths) in both
 passes.
 
 Shipped on: with it, the 444-slice decbench sweep has 1,645 perfect functions
-against 1,615 (173 better, none worse), and the 45-binary cast corpus prints 35,327
-casts against 37,477 on the functions kuna and IDA both emit. The price is a
+against 1,615 (173 better, none worse), and the 45-binary cast corpus prints 33,472
+casts against 35,588 on the functions kuna and IDA both emit (on a main that
+already has `castindex` and `castternary`). The price is a
 knock-on the rule cannot see from one function: a callee parameter it now declares
 `char *` or `char **` makes an integer-typed argument in a caller print its
 conversion, and a constant a caller uses at one pointee type while a callee

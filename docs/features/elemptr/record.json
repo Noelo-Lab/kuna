@@ -54,7 +54,31 @@
   "off_arm": "byte-identical to main c960fb18d on all 45 files",
   "shape_deltas": "(char *)(...) -429, (long)v -321, (unsigned char *)(...) -312, (unsigned long)v -254, (int *)(...) -189, (unsigned short *)(...) -115, (char **)(...) -95; gained (char *)0x... +94 (a table globalref cannot name, one cast where main printed two), (unsigned int) on a subscript +48 (the same conversion, now on a subscript)",
   "more_casts_read": "all 17: a callee parameter now declared char * / char ** makes an integer caller argument print its conversion (tar O2-noinline 0x132d0, O0 0x1381d, 0x15a63, 0x135e3, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant used at two pointee types across a callee keeps globalref's two-type cast (gzip O2 0xb700, O2-noinline 0xbb40, 0x67e0, O2 0x63e0); a call result kept in a char * slot where the callee's recovered return is long (diff O0 0x8710, 0x818f); a buffer typed unsigned char * from its zero-extended reads also passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); a pointer-array global also stepped by a byte offset (diff O2 0x8590, O2-noinline 0x8320); grep O2-noinline 0xbfa0",
-  "rebased": "fresh base arm on origin/main ef49332b2 (.scratch/cb-main-ef4): the off arm is byte-identical to it on all 45 files, and the final build (56d9554ef) reads the same 37,477 -> 35,327, 350 fewer / 17 more; its output differs from the pre-fix build only in struct_N numbering in tar -O2 (fewer redos mint records in another order)"
+  "rebased": "measured on main c960fb18d (above), ef49332b2 (identical) and 850e8c692 (castindex + castternary landed: main 35,588 -> 33,472)",
+  "main_850e8c692": {
+   "casts": 35588,
+   "per_kloc": 188.2,
+   "per_100_statements": 29.9,
+   "vs_ida": 0.941
+  },
+  "elemptr_on_850e8c692": {
+   "casts": 33472,
+   "per_kloc": 177.1,
+   "per_100_statements": 28.2,
+   "vs_ida": 0.885,
+   "delta": -2116,
+   "functions_fewer": 352,
+   "casts_fewer": 2138,
+   "functions_more": 17,
+   "casts_more": 22,
+   "per_level_vs_ida": {
+    "O0": "0.952 -> 0.867",
+    "O2": "0.976 -> 0.935",
+    "O2-noinline": "0.891 -> 0.849"
+   },
+   "off_arm": "byte-identical to a build of main 850e8c692 on all 45 files",
+   "note": "main 850e8c692 has castindex (#727) and castternary (#728); the same 17 functions have more casts"
+  }
  },
  "benchmark": {
   "metric": "decbench type_match pinned to 625e892 (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same binary (default on vs --option elemptr off)",
@@ -240,13 +264,13 @@
  "default_on_evaluation": {
   "verdict": "flipped: elemptr ships on",
   "a_datatests": "675/675 PARITY OK with the default on; no assertion moved, no per-test opt-out",
-  "b_stages": "8 assertions of other options pinned the integer spelling and now read the subscript for the same access: ALIASOVERLAP #4, oxidizer-SecurityCheck #3, regionstructure-loop #3 (the while loop now a for loop absorbing its iterator, same semantics), castimplied #5/#6/#10, charptr #1/#2 (the malloc'd return is char *); regexes follow, keys unchanged; kuna-elemptr.xml (9 keys) added, pass 1 sets option elemptr off",
+  "b_stages": "8 assertions of other options pinned the integer spelling and now read the subscript for the same access: ALIASOVERLAP #4, oxidizer-SecurityCheck #3, regionstructure-loop #3 (the while loop now a for loop absorbing its iterator, same semantics), castimplied #5/#6/#10, charptr #1/#2 (the malloc'd return is char *); regexes follow, keys unchanged; kuna-elemptr.xml (9 keys) added, pass 1 sets option elemptr off; on 850e8c692 kuna-castindex.xml sets option elemptr off in both passes (P5 already types ldidx's parameter, so its witness no longer shows castindex's rewrite), kuna-castternary.xml #1/#2/#3/#4/#7/#8/#9 follow the subscript spelling (castternary's effect unchanged, with castimplied reading a subscript's element from its declared base under elemptr), elemptr #2's off arm is castindex's cast base",
   "c_test_cli": "2 probes pinned the integer spelling: bytecode-append-call-loses (now &dat_402000[a1]) and passthrough-gives-a-forwarding-function-its-parameter (a control's parameter type left open; probe id re-derived); 239/239",
   "d_typesweep": "1615 -> 1645 perfect, 173 better, 0 worse, 0 off perfect",
   "e_speed": "fmt +0.10%, ls -0.02%, sort +1.19%, bash +1.37%; worst +1.37%; budget +5%",
   "f_hunks": "1,196 functions over 45 binaries, every flagged function read and classified (corpus_sweep)",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope",
-  "h_castbench": "37,477 -> 35,327 (0.991x -> 0.934x IDA), 350 fewer, 17 more (read)",
+  "h_castbench": "on 850e8c692: 35,588 -> 33,472 (0.941x -> 0.885x IDA), 352 fewer, 17 more (read); on c960fb18d: 37,477 -> 35,327 (0.991x -> 0.934x)",
   "workspace_tests": "3 kuna-cli tests pinned the integer spelling and follow it: a_load_is_not_printed_after_a_store_into_its_bytes, an_implied_cast_round_trips_through_the_printed_c, a_signed_only_variable_round_trips_through_the_printed_c (their compiled round trips pass on the new output)"
  }
 }

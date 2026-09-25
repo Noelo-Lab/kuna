@@ -38,9 +38,12 @@ void sub_11e9(void)
 ```
 
 The decoder goes from 38 casts to 15 and the table build from 6 to 1 (castcount).
-What remains is the four `(int)` arms of the `?:` (a `castimplied` question: C's
-usual arithmetic conversions already make `cond ? char : 0` an `int`), the
-`(unsigned char)` index conversions the value needs, and the truncating stores.
+What remains is the four `(int)` arms of the `?:`, the `(unsigned char)` index
+conversions the value needs, and the truncating stores. `castternary` leaves out
+such an `(int)` when it knows the arm's C type; with `elemptr` on, `castimplied`
+reads a subscript's element from its declared base (a parameter `char *a0`), but
+the decoder's table is an unnamed global, which no declaration in the function's
+text types, so its arms keep the cast.
 
 ## 2. The rule
 
@@ -55,7 +58,9 @@ where every function of a batch agrees.
 ## 3. Where the casts went, and the functions with more
 
 castbench (45 binaries x O0/O2/O2-noinline, 4,815 functions kuna, IDA and main
-share): 37,477 -> 35,327 casts. By shape: `(char *)(...)` -429, `(long)v` -321,
+share): 37,477 -> 35,327 casts on main `c960fb18d`, and 35,588 -> 33,472 (0.941x ->
+0.885x IDA) on main `850e8c692`, which already has `castindex` and `castternary`;
+the same 17 functions have more casts on both. By shape: `(char *)(...)` -429, `(long)v` -321,
 `(unsigned char *)(...)` -312, `(unsigned long)v` -254, `(int *)(...)` -189,
 `(unsigned short *)(...)` -115, `(char **)(...)` -95. Gained: `(char *)0x...` +94,
 a table `globalref` cannot name (the function also writes its first byte by name,
@@ -116,7 +121,17 @@ address may become the `dat_<addr>` it names), with statement counts within four
 printed at their uses, the loop); its unclassified remainder is the same classes
 with renamed variables, which `structural.py` covers function by function.
 
-## 5. Known limits
+## 5. Speed
+
+Interleaved min-of-15 whole-binary `decompile-all --json`, `--option elemptr off`
+against the default on one build: fmt +0.10%, ls -0.02%, sort +1.19%, bash
++1.37%. The first measurement read bash +12.86%: the batch redo decompiled 23
+functions again (14.7 s, the parser's largest among them). Deciding each global
+once per pass before classifying it, and blocking a disputed global for every
+function decompiled after the first disagreement, brings that to 17 functions and
+3.6 s.
+
+## 6. Known limits
 
 - A single-function `decompile`, a sharded `--jobs` worker and the streaming
   export have no batch ledger: they type a global on the function's own evidence.
