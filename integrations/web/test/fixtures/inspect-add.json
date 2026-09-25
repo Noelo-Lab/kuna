@@ -1,0 +1,238 @@
+{
+ "binary": "sample.elf",
+ "language": "c-language",
+ "target": {
+  "archid": "x86:LE:64:default:gcc",
+  "processor": "x86",
+  "endian": "little",
+  "bits": 64
+ },
+ "function": {
+  "name": "add",
+  "address": 4425,
+  "address_hex": "0x1149",
+  "aliases": [
+   "sub_1149"
+  ],
+  "object_location": null,
+  "kind": "func",
+  "size": 24,
+  "code": "int add(int a,int b)\n{\n  return b + a;\n}",
+  "error": null,
+  "proto": "int add(int a,int b)",
+  "unstructured_gotos": 0,
+  "line_mappings": [
+   {
+    "line_number": 3,
+    "addresses": [
+     4445,
+     4448
+    ]
+   }
+  ],
+  "variables": [
+   {
+    "name": "a",
+    "type": "int",
+    "kind": "arg",
+    "arg_index": 0,
+    "stack_offset": null,
+    "size": 4,
+    "line_numbers": [
+     3
+    ],
+    "addresses": [
+     4445,
+     4448
+    ]
+   },
+   {
+    "name": "b",
+    "type": "int",
+    "kind": "arg",
+    "arg_index": 1,
+    "stack_offset": null,
+    "size": 4,
+    "line_numbers": [
+     3
+    ],
+    "addresses": [
+     4445,
+     4448
+    ]
+   },
+   {
+    "name": "b",
+    "type": "int",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -16,
+    "size": 4,
+    "line_numbers": [
+     3
+    ],
+    "addresses": [
+     4445,
+     4448
+    ]
+   },
+   {
+    "name": "a",
+    "type": "int",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -12,
+    "size": 4,
+    "line_numbers": [
+     3
+    ],
+    "addresses": [
+     4445,
+     4448
+    ]
+   },
+   {
+    "name": "local_8",
+    "type": "undefined8",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -8,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": []
+   }
+  ],
+  "types": [],
+  "globals": [],
+  "tokens": [],
+  "tokens_error": "fixture assembled from the native CLI, which has no token stream",
+  "instructions": [
+   {
+    "address": 4425,
+    "address_hex": "0x1149",
+    "offset": 0,
+    "size": 4,
+    "bytes": "f30f1efa",
+    "mnemonic": "ENDBR64",
+    "operands": "",
+    "text": "ENDBR64",
+    "file_offset": 4425,
+    "lines": []
+   },
+   {
+    "address": 4429,
+    "address_hex": "0x114d",
+    "offset": 4,
+    "size": 1,
+    "bytes": "55",
+    "mnemonic": "PUSH",
+    "operands": "RBP",
+    "text": "PUSH RBP",
+    "file_offset": 4429,
+    "lines": []
+   },
+   {
+    "address": 4430,
+    "address_hex": "0x114e",
+    "offset": 5,
+    "size": 3,
+    "bytes": "4889e5",
+    "mnemonic": "MOV",
+    "operands": "RBP,RSP",
+    "text": "MOV RBP,RSP",
+    "file_offset": 4430,
+    "lines": []
+   },
+   {
+    "address": 4433,
+    "address_hex": "0x1151",
+    "offset": 8,
+    "size": 3,
+    "bytes": "897dfc",
+    "mnemonic": "MOV",
+    "operands": "dword ptr [RBP + -0x4],EDI",
+    "text": "MOV dword ptr [RBP + -0x4],EDI",
+    "file_offset": 4433,
+    "lines": []
+   },
+   {
+    "address": 4436,
+    "address_hex": "0x1154",
+    "offset": 11,
+    "size": 3,
+    "bytes": "8975f8",
+    "mnemonic": "MOV",
+    "operands": "dword ptr [RBP + -0x8],ESI",
+    "text": "MOV dword ptr [RBP + -0x8],ESI",
+    "file_offset": 4436,
+    "lines": []
+   },
+   {
+    "address": 4439,
+    "address_hex": "0x1157",
+    "offset": 14,
+    "size": 3,
+    "bytes": "8b55fc",
+    "mnemonic": "MOV",
+    "operands": "EDX,dword ptr [RBP + -0x4]",
+    "text": "MOV EDX,dword ptr [RBP + -0x4]",
+    "file_offset": 4439,
+    "lines": []
+   },
+   {
+    "address": 4442,
+    "address_hex": "0x115a",
+    "offset": 17,
+    "size": 3,
+    "bytes": "8b45f8",
+    "mnemonic": "MOV",
+    "operands": "EAX,dword ptr [RBP + -0x8]",
+    "text": "MOV EAX,dword ptr [RBP + -0x8]",
+    "file_offset": 4442,
+    "lines": []
+   },
+   {
+    "address": 4445,
+    "address_hex": "0x115d",
+    "offset": 20,
+    "size": 2,
+    "bytes": "01d0",
+    "mnemonic": "ADD",
+    "operands": "EAX,EDX",
+    "text": "ADD EAX,EDX",
+    "file_offset": 4445,
+    "lines": [
+     3
+    ]
+   },
+   {
+    "address": 4447,
+    "address_hex": "0x115f",
+    "offset": 22,
+    "size": 1,
+    "bytes": "5d",
+    "mnemonic": "POP",
+    "operands": "RBP",
+    "text": "POP RBP",
+    "file_offset": 4447,
+    "lines": []
+   },
+   {
+    "address": 4448,
+    "address_hex": "0x1160",
+    "offset": 23,
+    "size": 1,
+    "bytes": "c3",
+    "mnemonic": "RET",
+    "operands": "",
+    "text": "RET",
+    "file_offset": 4448,
+    "lines": [
+     3
+    ]
+   }
+  ],
+  "instructions_truncated": false
+ },
+ "assertions": []
+}

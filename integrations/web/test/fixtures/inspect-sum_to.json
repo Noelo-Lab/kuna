@@ -1,0 +1,366 @@
+{
+ "binary": "sample.elf",
+ "language": "c-language",
+ "target": {
+  "archid": "x86:LE:64:default:gcc",
+  "processor": "x86",
+  "endian": "little",
+  "bits": 64
+ },
+ "function": {
+  "name": "sum_to",
+  "address": 4449,
+  "address_hex": "0x1161",
+  "aliases": [
+   "sub_1161"
+  ],
+  "object_location": null,
+  "kind": "func",
+  "size": 55,
+  "code": "long sum_to(int n)\n{\n  long acc; // stack - 0x10\n  int v1; // stack - 0x14\n  \n  acc = 0;\n  for (v1 = 1; v1 <= n; v1 = v1 + 1) {\n    acc += v1;\n  }\n  return acc;\n}",
+  "error": null,
+  "proto": "long sum_to(int n)",
+  "unstructured_gotos": 0,
+  "line_mappings": [
+   {
+    "line_number": 6,
+    "addresses": [
+     4460
+    ]
+   },
+   {
+    "line_number": 7,
+    "addresses": [
+     4468,
+     4486,
+     4496
+    ]
+   },
+   {
+    "line_number": 8,
+    "addresses": [
+     4480,
+     4482
+    ]
+   },
+   {
+    "line_number": 10,
+    "addresses": [
+     4498,
+     4503
+    ]
+   }
+  ],
+  "variables": [
+   {
+    "name": "n",
+    "type": "int",
+    "kind": "arg",
+    "arg_index": 0,
+    "stack_offset": null,
+    "size": 4,
+    "line_numbers": [
+     7
+    ],
+    "addresses": [
+     4468,
+     4486,
+     4496
+    ]
+   },
+   {
+    "name": "n",
+    "type": "int",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -28,
+    "size": 4,
+    "line_numbers": [
+     7
+    ],
+    "addresses": [
+     4468,
+     4486,
+     4496
+    ]
+   },
+   {
+    "name": "v1",
+    "type": "int",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -20,
+    "size": 4,
+    "line_numbers": [
+     7,
+     8
+    ],
+    "addresses": [
+     4468,
+     4480,
+     4482,
+     4486,
+     4496
+    ]
+   },
+   {
+    "name": "acc",
+    "type": "long",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -16,
+    "size": 8,
+    "line_numbers": [
+     6,
+     8,
+     10
+    ],
+    "addresses": [
+     4460,
+     4480,
+     4482,
+     4498,
+     4503
+    ]
+   },
+   {
+    "name": "local_8",
+    "type": "undefined8",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -8,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": []
+   }
+  ],
+  "types": [],
+  "globals": [],
+  "tokens": [],
+  "tokens_error": "fixture assembled from the native CLI, which has no token stream",
+  "instructions": [
+   {
+    "address": 4449,
+    "address_hex": "0x1161",
+    "offset": 0,
+    "size": 4,
+    "bytes": "f30f1efa",
+    "mnemonic": "ENDBR64",
+    "operands": "",
+    "text": "ENDBR64",
+    "file_offset": 4449,
+    "lines": []
+   },
+   {
+    "address": 4453,
+    "address_hex": "0x1165",
+    "offset": 4,
+    "size": 1,
+    "bytes": "55",
+    "mnemonic": "PUSH",
+    "operands": "RBP",
+    "text": "PUSH RBP",
+    "file_offset": 4453,
+    "lines": []
+   },
+   {
+    "address": 4454,
+    "address_hex": "0x1166",
+    "offset": 5,
+    "size": 3,
+    "bytes": "4889e5",
+    "mnemonic": "MOV",
+    "operands": "RBP,RSP",
+    "text": "MOV RBP,RSP",
+    "file_offset": 4454,
+    "lines": []
+   },
+   {
+    "address": 4457,
+    "address_hex": "0x1169",
+    "offset": 8,
+    "size": 3,
+    "bytes": "897dec",
+    "mnemonic": "MOV",
+    "operands": "dword ptr [RBP + -0x14],EDI",
+    "text": "MOV dword ptr [RBP + -0x14],EDI",
+    "file_offset": 4457,
+    "lines": []
+   },
+   {
+    "address": 4460,
+    "address_hex": "0x116c",
+    "offset": 11,
+    "size": 8,
+    "bytes": "48c745f800000000",
+    "mnemonic": "MOV",
+    "operands": "qword ptr [RBP + -0x8],0x0",
+    "text": "MOV qword ptr [RBP + -0x8],0x0",
+    "file_offset": 4460,
+    "lines": [
+     6
+    ]
+   },
+   {
+    "address": 4468,
+    "address_hex": "0x1174",
+    "offset": 19,
+    "size": 7,
+    "bytes": "c745f401000000",
+    "mnemonic": "MOV",
+    "operands": "dword ptr [RBP + -0xc],0x1",
+    "text": "MOV dword ptr [RBP + -0xc],0x1",
+    "file_offset": 4468,
+    "lines": [
+     7
+    ]
+   },
+   {
+    "address": 4475,
+    "address_hex": "0x117b",
+    "offset": 26,
+    "size": 2,
+    "bytes": "eb0d",
+    "mnemonic": "JMP",
+    "operands": "0x118a",
+    "text": "JMP 0x118a",
+    "file_offset": 4475,
+    "lines": []
+   },
+   {
+    "address": 4477,
+    "address_hex": "0x117d",
+    "offset": 28,
+    "size": 3,
+    "bytes": "8b45f4",
+    "mnemonic": "MOV",
+    "operands": "EAX,dword ptr [RBP + -0xc]",
+    "text": "MOV EAX,dword ptr [RBP + -0xc]",
+    "file_offset": 4477,
+    "lines": []
+   },
+   {
+    "address": 4480,
+    "address_hex": "0x1180",
+    "offset": 31,
+    "size": 2,
+    "bytes": "4898",
+    "mnemonic": "CDQE",
+    "operands": "",
+    "text": "CDQE",
+    "file_offset": 4480,
+    "lines": [
+     8
+    ]
+   },
+   {
+    "address": 4482,
+    "address_hex": "0x1182",
+    "offset": 33,
+    "size": 4,
+    "bytes": "480145f8",
+    "mnemonic": "ADD",
+    "operands": "qword ptr [RBP + -0x8],RAX",
+    "text": "ADD qword ptr [RBP + -0x8],RAX",
+    "file_offset": 4482,
+    "lines": [
+     8
+    ]
+   },
+   {
+    "address": 4486,
+    "address_hex": "0x1186",
+    "offset": 37,
+    "size": 4,
+    "bytes": "8345f401",
+    "mnemonic": "ADD",
+    "operands": "dword ptr [RBP + -0xc],0x1",
+    "text": "ADD dword ptr [RBP + -0xc],0x1",
+    "file_offset": 4486,
+    "lines": [
+     7
+    ]
+   },
+   {
+    "address": 4490,
+    "address_hex": "0x118a",
+    "offset": 41,
+    "size": 3,
+    "bytes": "8b45f4",
+    "mnemonic": "MOV",
+    "operands": "EAX,dword ptr [RBP + -0xc]",
+    "text": "MOV EAX,dword ptr [RBP + -0xc]",
+    "file_offset": 4490,
+    "lines": []
+   },
+   {
+    "address": 4493,
+    "address_hex": "0x118d",
+    "offset": 44,
+    "size": 3,
+    "bytes": "3b45ec",
+    "mnemonic": "CMP",
+    "operands": "EAX,dword ptr [RBP + -0x14]",
+    "text": "CMP EAX,dword ptr [RBP + -0x14]",
+    "file_offset": 4493,
+    "lines": []
+   },
+   {
+    "address": 4496,
+    "address_hex": "0x1190",
+    "offset": 47,
+    "size": 2,
+    "bytes": "7eeb",
+    "mnemonic": "JLE",
+    "operands": "0x117d",
+    "text": "JLE 0x117d",
+    "file_offset": 4496,
+    "lines": [
+     7
+    ]
+   },
+   {
+    "address": 4498,
+    "address_hex": "0x1192",
+    "offset": 49,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4498,
+    "lines": [
+     10
+    ]
+   },
+   {
+    "address": 4502,
+    "address_hex": "0x1196",
+    "offset": 53,
+    "size": 1,
+    "bytes": "5d",
+    "mnemonic": "POP",
+    "operands": "RBP",
+    "text": "POP RBP",
+    "file_offset": 4502,
+    "lines": []
+   },
+   {
+    "address": 4503,
+    "address_hex": "0x1197",
+    "offset": 54,
+    "size": 1,
+    "bytes": "c3",
+    "mnemonic": "RET",
+    "operands": "",
+    "text": "RET",
+    "file_offset": 4503,
+    "lines": [
+     10
+    ]
+   }
+  ],
+  "instructions_truncated": false
+ },
+ "assertions": []
+}
