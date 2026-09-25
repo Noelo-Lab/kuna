@@ -22,7 +22,8 @@ use object::read::Object;
 
 /// Read an image file as the loader sees it: a fat / universal Mach-O peeled to
 /// one arch slice ([`super::macho_fat::peel_fat_image`]) and the header-tolerance
-/// repairs applied -- [`tolerate_unusable_section_table`] for ELF and
+/// repairs applied -- [`tolerate_unusable_section_table`] for ELF,
+/// [`super::pe_dosmagic::tolerate_corrupt_dos_magic`] and
 /// [`super::pe_datadirs::tolerate_oversized_data_directories`] for PE -- so a
 /// surface that parses the bytes itself sees the same recovered view the loader
 /// does instead of rejecting the file outright.
@@ -50,6 +51,7 @@ pub fn read_image_sliced(
     let bytes = std::fs::read(path)?;
     let bytes = super::macho_fat::peel_fat_image(bytes, pref);
     let bytes = tolerate_unusable_section_table(bytes).0;
+    let bytes = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes).0;
     Ok(super::pe_datadirs::tolerate_oversized_data_directories(bytes).0)
 }
 

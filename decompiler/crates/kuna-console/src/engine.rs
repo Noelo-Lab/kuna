@@ -576,6 +576,9 @@ pub struct ConsoleProgram {
     /// spelling without guessing at an underscore on every format. `false` on
     /// the XML datatest path and every other container.
     symbol_underscore_prefix: bool,
+    /// (kuna) The header-tolerance notes the object bootstrap printed for this
+    /// image; see [`ConsoleProgram::load_notes`].
+    load_notes: Vec<String>,
 }
 
 fn code_offset_in_target_units(value: u64, word_size: u64) -> u64 {
@@ -619,6 +622,13 @@ impl ConsoleProgram {
 
     pub fn image_metadata(&self) -> Option<&ProgramImageMetadata> {
         self.image_metadata.as_ref()
+    }
+
+    /// The loader's header-tolerance notes for this image (a section table it
+    /// dropped, a DOS magic it repaired, a data-directory count it clamped), in
+    /// the order they were applied. Empty for a well-formed image.
+    pub fn load_notes(&self) -> &[String] {
+        &self.load_notes
     }
 
     /// The loaded image's file name, as the loader reports it.
@@ -3346,6 +3356,7 @@ fn empty_program(
         raw_address_units: None,
         import_slots: Vec::new(),
         symbol_underscore_prefix: false,
+        load_notes: Vec::new(),
     }
 }
 
@@ -3706,9 +3717,10 @@ pub fn bootstrap_from_object_with_isa(
     // here (and only here) means the loader AND the analysis passes below see the
     // same recovered view. A file with a usable section table is untouched.
     let (bytes, shdr_note) = kuna_analysis::loader::elf_shdr::tolerate_unusable_section_table(bytes);
-    if let Some(note) = shdr_note {
-        kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
-    }
+    // (kuna) PE DOS-magic tolerance: an `e_magic` that is not `MZ` in front of an
+    // `e_lfanew` that still reaches `PE\0\0` is rewritten in the loaded copy only,
+    // before the data-directory clamp, which reads the headers behind it.
+    let (bytes, dosmagic_note) = kuna_analysis::loader::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);
     // (kuna) PE data-directory tolerance: the same normalization one format over.
     // A PE's `NumberOfRvaAndSizes` is declared separately from the room its own
     // optional header gives the directory array, and packers overwrite it; Windows
@@ -3718,7 +3730,9 @@ pub fn bootstrap_from_object_with_isa(
     // imports from the real table rather than fabricating one.
     let (bytes, datadir_note) =
         kuna_analysis::loader::pe_datadirs::tolerate_oversized_data_directories(bytes);
-    if let Some(note) = datadir_note {
+    let load_notes: Vec<String> =
+        [shdr_note, dosmagic_note, datadir_note].into_iter().flatten().collect();
+    for note in &load_notes {
         kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
     let explicit_isa = isa.is_some();
@@ -3937,6 +3951,7 @@ pub fn bootstrap_from_object_with_isa(
     let description = sleigh.base().unwrap().get_description().to_string();
 
     let mut prog = empty_program(sleigh, registry, ProgramContainer::Object, description);
+    prog.load_notes = load_notes;
     prog.symbols = SymbolStream::from_loader(symbols);
     prog.object_sections = object_sections;
     prog.image_metadata = Some(image_metadata);
@@ -4783,7 +4798,7 @@ fn is_object_binary(bytes: &[u8]) -> bool {
     // PE: the `MZ` DOS stub. `object`'s typed PE parser validates the `PE\0\0`
     // header at the e_lfanew offset; a bare `MZ` that isn't a real PE will be
     // rejected there with a clean error (not silently mis-loaded).
-    if &bytes[..2] == b"MZ" {
+    if &bytes[..2] == b"MZ" || kuna_analysis::loader::pe_dosmagic::is_pe_with_corrupt_dos_magic(bytes) {
         return true;
     }
     // Bare COFF object: a leading little-endian `IMAGE_FILE_MACHINE_*` machine
