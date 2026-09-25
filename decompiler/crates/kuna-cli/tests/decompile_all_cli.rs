@@ -5760,6 +5760,8 @@ fn a_calls_own_return_address_push_is_part_of_the_call() {
             stores(&stacked(on), pushes),
             "{build}: a store other than a push changed in `stacked`\n{off}\n{on}"
         );
+    }
+}
 
 /// The printed text of the functions `names` in a `decompile-all` listing, in
 /// listing order, each from its `// Function:` header to the next.
