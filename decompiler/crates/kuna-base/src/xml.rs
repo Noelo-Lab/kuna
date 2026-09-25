@@ -1909,7 +1909,9 @@ mod tests {
         // calls `main`
         // and powerpc-isa-hint / a failed generic PowerPC64 isel decode
         // suggests an explicit ISA target
-        assert_eq!(count, 345, "corpus file count drifted");
+        // and cortus-aps3-constructors / inv with an immediate negates, extb.cc
+        // sign-extends, and an indirect call keeps its target
+        assert_eq!(count, 346, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -36,7 +36,7 @@ define pcodeop aps3_unknown_op_imm;
 :movhi rd,imm16 is op8=0x08 & rd ; imm16 { rd = imm16 << 16; }                 # PROVEN
 :ret            is op8=0xE1 & rd=15 & rs=0 { return [r15]; }                   # PROVEN
 :jmp [rd]       is op8=0xE1 & rd { goto [rd]; }                                # PROVEN
-:call [rd]      is op8=0xF1 & rd { r15 = inst_next; call [rd]; }              # PROVEN indirect call (257 sites; ret is jmp [r15], so without this there is no return edge)
+:call [rd]      is op8=0xF1 & rd { local tgt:4 = rd; r15 = inst_next; call [tgt]; }   # PROVEN indirect call; tgt is snapshotted because rd is often r15 itself, which the link write would clobber
 :ble relS is op8=0x02 & relS { if ((ZF!=0)||(NF!=VF)) goto relS; }   # PROVEN short branch (disp8)
 lb0a: reloc is op8=0x0a & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 256) + disp8u) ^ 0x800000) - 0x800000); ] { export *:4 reloc; }
 :ble lb0a is lb0a { if ((ZF!=0)||(NF!=VF)) goto lb0a; }   # PROVEN long branch (disp24)
@@ -126,8 +126,8 @@ lbfa: reloc is op8=0xfa & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 25
 :mov rd, imm4 is op8=0x04 & rd & imm4 { rd = imm4; }   # PROVEN
 :mov rd, imm16 is op8=0x0c & rd ; imm16 { rd = imm16; }   # PROVEN
 :mov rd, rs is op8=0x06 & rd & rs { rd = rs; }   # PROVEN
-:inv rd, imm4 is op8=0x14 & rd & imm4 { rd = ~imm4; }   # PROVEN
-:inv rd, imm16 is op8=0x1c & rd ; imm16 { rd = ~imm16; }   # PROVEN
+:inv rd, imm4 is op8=0x14 & rd & imm4 { rd = -imm4; }   # PROVEN negate, not bitwise NOT - the register forms 0x15/0x16 are the NOT
+:inv rd, imm16 is op8=0x1c & rd ; imm16 { rd = -imm16; }   # PROVEN negate; protocol-header and checksum-seed constants only resolve under -imm
 :inv rd, rs is op8=0x16 & rd & rs { rd = ~rs; }   # PROVEN
 :add rd, imm4 is op8=0x24 & rd & imm4 { rd = rd + imm4; }   # PROVEN
 :add rd, imm16 is op8=0x2c & rd ; imm16 { rd = rd + imm16; }   # PROVEN
@@ -150,8 +150,8 @@ lbfa: reloc is op8=0xfa & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 25
 :mov.cc rd, imm4 is op8=0x84 & rd & imm4 { rd = imm4; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
 :mov.cc rd, imm16 is op8=0x8c & rd ; imm16 { rd = imm16; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
 :mov.cc rd, rs is op8=0x86 & rd & rs { rd = rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
-:inv.cc rd, imm4 is op8=0x94 & rd & imm4 { rd = ~imm4; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
-:inv.cc rd, imm16 is op8=0x9c & rd ; imm16 { rd = ~imm16; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
+:inv.cc rd, imm4 is op8=0x94 & rd & imm4 { rd = -imm4; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN .cc form of 0x14
+:inv.cc rd, imm16 is op8=0x9c & rd ; imm16 { rd = -imm16; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN .cc form of 0x1c
 :inv.cc rd, rs is op8=0x96 & rd & rs { rd = ~rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # PROVEN
 :add.cc rd, imm4 is op8=0xa4 & rd & imm4 { CF = carry(rd, imm4); VF = scarry(rd, imm4); rd = rd + imm4; ZF=(rd==0); NF=(rd s< 0); }   # PROVEN
 :add.cc rd, imm16 is op8=0xac & rd ; imm16 { CF = carry(rd, imm16); VF = scarry(rd, imm16); rd = rd + imm16; ZF=(rd==0); NF=(rd s< 0); }   # PROVEN
@@ -182,8 +182,8 @@ lbfa: reloc is op8=0xfa & disp8u ; imm16 [ reloc = inst_start + 2*((((imm16 * 25
 :un_x03.cc rd, rs is op8=0x83 & rd & rs { rd = aps3_unknown_op(rd, rs); }   # GUESS .cc form of 0x03 - zero sites in any image
 :sextb.cc rd, rs is op8=0x93 & rd & rs { rd = sext(rs:1); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x13; rd=r0 in 75/128 sites makes it a byte test
 :sexth.cc rd, rs is op8=0xa3 & rd & rs { rd = sext(rs:2); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x23; rd=r0 in 33/48 sites makes it a halfword test
-:extb.cc rd, rs is op8=0xb3 & rd & rs { rd = zext(rs:1); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x33; rd is never r0 in 30 sites, so it is a value, not a test
-:exth.cc rd, rs is op8=0xc3 & rd & rs { rd = zext(rs:2); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x43; rd=r0 in 5/15 sites makes it a halfword test
+:extb.cc rd, rs is op8=0xb3 & rd & rs { rd = sext(rs:1); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x33, SIGN-extending: 15 of its sites are followed by a signed branch and none by an unsigned one
+:exth.cc rd, rs is op8=0xc3 & rd & rs { rd = sext(rs:2); ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG .cc form of 0x43, SIGN-extending: 6 of its sites are followed by a signed branch and none by an unsigned one
 :shl.cc rd, rs is op8=0xd3 & rd & rs { rd = rd << rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG register shift (measured)
 :lshr.cc rd, rs is op8=0xe3 & rd & rs { rd = rd >> rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # STRONG register shift (measured)
 :ashr.cc rd, rs is op8=0xf3 & rd & rs { rd = rd s>> rs; ZF=(rd==0); NF=(rd s< 0); VF = 0; }   # INFERRED register shift - lshr/ashr assignment NOT settled
