@@ -126,7 +126,9 @@ body.dc2 .bar .status{flex:1 1 200px;}
 .d2-ar > span{flex:none;}
 .d2-ar .ag{width:var(--ag-w,0px);height:var(--d2-row);overflow:visible;}
 .d2-ar .ag svg{display:block;overflow:visible;}
-.d2-ar .aa{width:var(--aa-w,11ch);padding:0 1ch 0 1.2ch;color:var(--muted);user-select:none;}
+.d2-ar .aa{width:var(--aw-abs,11ch);padding:0 1ch 0 1.2ch;color:var(--muted);user-select:none;white-space:nowrap;}
+#asmcode.addr-rel .d2-ar .aa{width:var(--aw-rel,11ch);}
+#asmcode.addr-both .d2-ar .aa{width:var(--aw-both,18ch);}
 .d2-ar .aa .rel{display:none;}
 #asmcode.addr-rel .aa .abs{display:none;}
 #asmcode.addr-rel .aa .rel,#asmcode.addr-both .aa .rel{display:inline;}
@@ -135,11 +137,14 @@ body.dc2 .bar .status{flex:1 1 200px;}
 #asmcode.no-bytes .ab,#asmcode.no-ccom .ac{display:none;}
 .d2-ar .am{width:9ch;font-weight:700;color:var(--ink);}
 .d2-ar .am[data-mn^="J"],.d2-ar .am[data-mn^="B"],.d2-ar .am[data-mn="RET"],.d2-ar .am[data-mn^="CALL"]{color:var(--red);}
-.d2-ar .ao{flex:0 1 auto;min-width:18ch;padding-right:2ch;}
-.d2-ar .ac{flex:1 1 auto;color:var(--tok-com);font-style:italic;overflow:hidden;text-overflow:ellipsis;}
+.d2-ar .ao{flex:0 1 auto;min-width:12ch;padding-right:2ch;overflow:hidden;text-overflow:ellipsis;}
+.d2-ar .ac{flex:1 1 0;min-width:0;color:var(--tok-com);font-style:italic;overflow:hidden;text-overflow:ellipsis;}
 .d2-ar .ah{color:var(--stub);font-style:normal;margin-left:1ch;font-size:.6875rem;}
 .d2-ar.pa .ab,.hb.pa{color:var(--patch);background:var(--patch-bg);}
 .d2-ar.nomap .aa{opacity:.7;}
+.d2-ar[data-inferred="1"]{border-left-style:dashed;}
+.d2-ar[data-inferred="1"] .aa,.d2-ar[data-role] .aa{opacity:.75;}
+#d2card .cr.inf{opacity:.62;font-style:italic;}
 a.xt{color:inherit;text-decoration:underline;text-decoration-color:var(--rule-2);cursor:pointer;}
 a.xt:hover{color:var(--red);text-decoration-color:var(--red);}
 .so{border-bottom:1px dotted var(--band-0);cursor:help;}
@@ -168,6 +173,7 @@ a.xt:hover{color:var(--red);text-decoration-color:var(--red);}
   padding:8px 10px 9px;font:400 .75rem/1.55 var(--mono);color:var(--ink);}
 #d2card .ch{font-weight:700;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #d2card .cm{color:var(--muted);}
+#d2card .ch .cm{font-weight:400;}
 #d2card .cr{display:flex;white-space:pre;gap:1.4ch;}
 #d2card .cr .aa{color:var(--muted);}
 #d2card .cr .ab{color:var(--muted);min-width:0;}

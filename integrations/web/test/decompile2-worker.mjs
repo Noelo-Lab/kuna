@@ -134,14 +134,25 @@ try {
   assert.ok(Buffer.from(project.bytes).includes('total'), 'qualified rename reaches the project export');
   checks.push('list function rename, project qualified rename');
 
-  try {
-    const refs = await client.xrefs('sum_to');
-    assert.ok(refs.callers.some((c) => c.name === 'main'), 'main calls sum_to');
-    checks.push('xrefs');
-  } catch (error) {
-    if (!unknownCommand(error, 'xrefs')) throw error;
-    checks.push('xrefs skipped (no xrefs command in this wasm)');
-  }
+  // xrefs: callers link to the calling instruction, callees to the call site.
+  const refs = await client.xrefs('sum_to');
+  assert.equal(refs.function.address_hex, sumTo.address_hex);
+  const caller = refs.callers.find((c) => c.address_hex === '0x1198');
+  assert.ok(caller && caller.from_hex === '0x11c2' && caller.kind === 'call', 'main calls sum_to at 0x11c2');
+  const mainRefs = await client.xrefs('main');
+  assert.deepEqual(mainRefs.callees.map((c) => [c.name, c.at_hex]), [['add', '0x11b5'], ['sum_to', '0x11c2'], ['printf', '0x11e1']]);
+  assert.ok(mainRefs.data_refs.some((d) => d.address_hex === '0x2004' && d.at_hex === '0x11d2'), 'the format string');
+  const renamedRefs = await client.xrefs('main', { assertions: [`function ${sumTo.address_hex}=summation`] });
+  assert.ok(renamedRefs.callees.some((c) => c.name === 'summation'), 'a function rename reaches xrefs');
+  checks.push('xrefs callers/callees/data + rename');
+
+  // The page names a refused directive from this error: exit code, and the directive quoted.
+  await assert.rejects(
+    client.list({ assertions: ['bytes 0x10 zz'] }),
+    (error) => error.detail?.exitCode === 1 && error.detail.stderr.includes(`--assert ${JSON.stringify('bytes 0x10 zz')}:`),
+    'an unparseable directive fails the request and names itself',
+  );
+  checks.push('refusal error contract');
 
   console.log(`DECOMPILE2 WORKER OK — ${checks.join('; ')}`);
 } finally {

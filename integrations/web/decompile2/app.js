@@ -24,14 +24,15 @@ import {
   changedLines,
 } from './render-c.js';
 import { loadPrefs, savePrefs, cycle, DEFAULT_PREFS } from './prefs.js';
-import { renderAsm, renderInsnRows, formatAddr, spacedBytes } from './asm-view.js';
+import { renderAsm, renderInsnRows, formatAddr, spacedBytes, inferLines } from './asm-view.js';
 import { createHover } from './hover.js';
 import { createSync } from './sync.js';
 import { Session, cliCommand } from './session.js';
 import {
-  validateIdent, validateCType, parseSignature, buildPrototype, typeSize, knownTypes, normalizeType,
+  validateIdent, validateCType, parseSignature, parseRustSignature, buildPrototype, typeSize, knownTypes, normalizeType,
 } from './ctype.js';
 import { hashBytes, SessionStore } from './persist.js';
+import { entryOffset } from './addr.js';
 import { createDialogs } from './dialogs.js';
 import { createRail } from './rail.js';
 import {
@@ -110,6 +111,7 @@ function beginOperation(kind, { clearSession = false } = {}) {
     if (clearSession) state.kuna.clear('superseded by a new binary');
     else state.kuna.cancel('superseded by another operation');
     prev.onCancel?.();
+    if (prev.kind === 'project' && kind !== 'project') toast('The source zip export was cancelled; start it again when you are done.', { kind: 'warn' });
   }
   active = { id: ++opSeq, kind };
   syncButtons();
@@ -158,46 +160,66 @@ els.cancel.addEventListener('click', () => {
 
 // ── engine calls with graceful degradation ─────────────────────────────────
 
-const isUnknownCommand = (e) => /unknown command/.test(e?.message || '');
-const isUnknownAssert = (e) => /unknown option --assert/.test(e?.message || '');
+/**
+ * What the engine can do, read off the inventory document itself: the
+ * study-view engine's `list` carries `sections` and `target`, and the same
+ * build answers `inspect`, `read` and `--assert`.
+ */
+function capsFrom(doc) {
+  const modern = Array.isArray(doc?.sections) && !!doc?.target;
+  return { inspect: modern, assert: modern };
+}
 
-/** Directives for one function; empty when the engine cannot take them. */
-function directivesFor(addrHex) {
-  if (state.caps.assert === false) return [];
-  return session.assertionsFor(addrHex);
+/** The first line of what a failed request said. */
+function errorLine(e) {
+  return String(e?.detail?.stderr || e?.message || e).split('\n')[0].replace(/^error:\s*/, '');
 }
 
 /**
- * Inspect one function, falling back to `decompile` on an engine without
- * `inspect`, and to no directives on one without `--assert`.
+ * The sent directive a failed request names as unparseable, or null: the
+ * engine's documented `error: --assert "<directive>": <why>`, matched against
+ * the exact directives this request carried.
  */
-async function fetchFunction(fn, assertions) {
-  const call = async (list) => {
-    if (state.caps.inspect !== false) {
-      try {
-        const doc = await state.kuna.inspect(fn.address_hex, { assertions: list });
-        state.caps.inspect = true;
-        return doc;
-      } catch (e) {
-        if (!isUnknownCommand(e)) throw e;
-        state.caps.inspect = false;
-      }
+function refusedDirective(e, sent) {
+  if (!(e?.detail?.exitCode > 0)) return null;
+  const text = e.detail.stderr || '';
+  return sent.find((d) => text.includes(`--assert ${JSON.stringify(d)}:`)) || null;
+}
+
+/**
+ * Run `call(directives)`; a directive the engine cannot parse is marked
+ * refused (the rail says why and it is no longer sent) and the call is
+ * retried without it.
+ */
+async function withDirectives(call, directives) {
+  let list = directives;
+  for (;;) {
+    try {
+      return await call(list);
+    } catch (e) {
+      const bad = e instanceof KunaWorkerCancelledError ? null : refusedDirective(e, list);
+      if (!bad) throw e;
+      session.markRefused(bad, errorLine(e));
+      toast(`The engine could not read a directive; it is no longer sent: ${bad}`, { kind: 'err', detail: errorLine(e) });
+      list = list.filter((d) => d !== bad);
+      renderRail();
     }
-    return state.kuna.decompile(fn.address_hex, { assertions: list });
-  };
-  try {
-    const doc = await call(assertions);
-    if (assertions.length) state.caps.assert = true;
-    return doc;
-  } catch (e) {
-    if (!assertions.length || !isUnknownAssert(e)) throw e;
-    state.caps.assert = false;
-    toast('This engine build cannot apply edits yet.', {
-      kind: 'warn',
-      detail: 'Your edits are kept in the session and apply once the engine supports --assert.',
-    });
-    return call([]);
   }
+}
+
+/** Directives for one function; empty when the engine cannot take them. */
+function directivesFor(addrHex) {
+  return state.caps.assert ? session.assertionsFor(addrHex) : [];
+}
+
+/** Inspect one function, or plainly decompile it on an engine without `inspect`. */
+async function fetchFunction(fn) {
+  return withDirectives(
+    (list) => (state.caps.inspect
+      ? state.kuna.inspect(fn.address_hex, { assertions: list })
+      : state.kuna.decompile(fn.address_hex, { assertions: list })),
+    directivesFor(fn.address_hex),
+  );
 }
 
 // ── the session: the student's edits as --assert directives ───────────────
@@ -377,24 +399,42 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
     if (!isCurrent(op)) return;
     if (hash !== state.binary?.hash) {
       session = restoreSession(hash);
-      state.restored = session.size;
+      state.restored = session.size ? { count: session.size, mark: session.mark(), toasted: false } : null;
+    } else {
+      state.restored = null;
     }
     state.binary = { name, bytes, example, format: null, hash };
     setStatus(`indexing ${name} (${bytes.length.toLocaleString()} bytes)…`);
-    inventory = await state.kuna.load(bytes, {
-      fileName: name,
-      mode: els.mode.value,
-      language: els.lang.value,
-      assertions: listAssertions(),
+    const load = (assertions) => state.kuna.load(bytes, {
+      fileName: name, mode: els.mode.value, language: els.lang.value, assertions,
     });
+    const globals = listAssertions();
+    try {
+      inventory = await withDirectives(load, globals);
+    } catch (e) {
+      if (!globals.length || e instanceof KunaWorkerCancelledError || !isCurrent(op)) throw e;
+      inventory = await load([]);
+      if (capsFrom(inventory).assert) {
+        toast(`Loaded ${name} without your ${globals.length} program-wide directive${globals.length === 1 ? '' : 's'}.`, {
+          kind: 'warn', detail: `${errorLine(e)} — ${globals.join(' · ')}`,
+        });
+      }
+    }
   } catch (e) {
     if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return;
     setStatus('function inventory failed: ' + e.message, 'err');
     console.error(e);
+    renderRail();
     finishOperation(op);
     return;
   }
   if (!isCurrent(op)) return;
+  state.caps = capsFrom(inventory);
+  if (!state.caps.assert && session.size) {
+    toast('This engine build cannot apply edits.', {
+      kind: 'warn', detail: 'Your edits are kept in the session and exported; they apply on an engine with --assert.',
+    });
+  }
   state.binary.format = inventory.format;
   state.inventory = inventory;
   session.recordOutcomes(inventory.assertions);
@@ -409,7 +449,10 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
   buildSidebar(inventory.functions);
   $('tab-src').hidden = !(example && state.exampleSource);
   renderRail();
-  if (state.restored) toast(`Restored ${state.restored} edit${state.restored === 1 ? '' : 's'} for ${name}.`);
+  if (state.restored && !state.restored.toasted) {
+    state.restored.toasted = true;
+    toast(`Restored ${state.restored.count} edit${state.restored.count === 1 ? '' : 's'} for ${name}.`);
+  }
   const dt = Math.round(performance.now() - t0);
   setStatus(`${name} (${inventory.format}) — ${inventory.functions.length} functions indexed in ${dt} ms`, 'ok');
   finishOperation(op);
@@ -433,7 +476,7 @@ function restoreSession(hash) {
  * the sidebar overlays itself so the inventory keeps the engine's own names.
  */
 function listAssertions() {
-  if (state.caps.assert === false) return [];
+  if (state.caps.assert === false || !session.size) return [];
   return session.globalAssertions().filter((d) => !d.startsWith('function '));
 }
 
@@ -470,15 +513,27 @@ els.example.addEventListener('click', async () => {
 
 // ── opening a function ─────────────────────────────────────────────────────
 
+/** A function's body depends on its own directives and the global ones, so they are the cache key. */
+function cacheKey(addrHex) {
+  return `${addrHex}\n${directivesFor(addrHex).join('\n')}`;
+}
+
+/** The cached body for the session as it is now, without touching the LRU order. */
+function cachedBody(addrHex) {
+  return state.cache.get(cacheKey(addrHex)) || null;
+}
+
 function cacheGet(addrHex) {
-  const hit = state.cache.get(addrHex);
-  if (hit) { state.cache.delete(addrHex); state.cache.set(addrHex, hit); }
+  const key = cacheKey(addrHex);
+  const hit = state.cache.get(key);
+  if (hit) { state.cache.delete(key); state.cache.set(key, hit); }
   return hit;
 }
 
 function cacheSet(addrHex, data) {
-  state.cache.delete(addrHex);
-  state.cache.set(addrHex, data);
+  const key = cacheKey(addrHex);
+  state.cache.delete(key);
+  state.cache.set(key, data);
   while (state.cache.size > CACHE_MAX) state.cache.delete(state.cache.keys().next().value);
 }
 
@@ -545,9 +600,10 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
   }
   const t0 = performance.now();
   try {
-    const doc = await fetchFunction(fn, directivesFor(fn.address_hex));
+    const doc = await fetchFunction(fn);
     if (!isCurrent(op)) return;
     const data = normalizeInspect(doc);
+    session.recordOutcomes(data.assertions);
     cacheSet(fn.address_hex, data);
     showFunction(fn, data, { focusAddr });
     const dt = Math.round(performance.now() - t0);
@@ -576,11 +632,18 @@ function fnMeta(fn, data) {
 
 function showFunction(fn, data, { focusAddr = null, keep = false } = {}) {
   const { segs } = lineSegments(data);
-  const index = buildIndex(data, segs);
   const arch = archFrom(data.target || state.inventory?.target, data.instructions);
+  const inferred = state.prefs.asmInfer && data.hasInstructions ? inferLines(data.instructions, arch.family || 'x86') : null;
+  const index = buildIndex(data, segs, { inferred });
   const frame = data.hasInstructions ? frameModel(data, arch) : null;
   if (frame?.supported) Object.assign(index, slotIndex(frame));
-  state.current = { fn, data, segs, index, decls: localDecls(data.code), arch, frame };
+  state.current = {
+    fn, data, segs, index, arch, frame, inferred,
+    decls: localDecls(data.code),
+    codeLines: data.code.split('\n'),
+    rust: /rust/i.test(data.language || ''),
+    hints: idioms(data.instructions, arch.family || 'x86', { nameAt: (hex) => state.byAddr.get(hex)?.name || null }),
+  };
   state.rendered.clear();
   if (!keep) state.sel = null;
   state.cursor = null;
@@ -682,19 +745,25 @@ function applyPaneClasses() {
   els.ccode.classList.toggle('no-la', !p.cLineAddrs);
   els.asmcode.classList.toggle('addr-rel', p.asmAddr === 'rel');
   els.asmcode.classList.toggle('addr-both', p.asmAddr === 'both');
-  els.asmcode.classList.toggle('no-bytes', !p.asmBytes);
+  els.asmcode.classList.toggle('no-bytes', inSplit() ? !p.asmBytesSplit : !p.asmBytes);
   els.asmcode.classList.toggle('no-ccom', p.asmCMode === 'off');
 }
 
+function inSplit() {
+  return visibleTabs().length > 1;
+}
+
 function asmContext(data) {
+  const cur = state.current;
   return {
     prefs: state.prefs,
-    codeLines: data.code.split('\n'),
+    codeLines: cur.codeLines,
     fnByAddr: state.byAddr,
     nameOf: displayName,
     patched: patchedInsns(data),
-    slotOf: state.current?.frame?.supported ? (reg, disp) => state.current.frame.slotOf(reg, disp) : null,
-    hints: idioms(data.instructions, state.current?.arch?.family || 'x86', { nameAt: (hex) => state.byAddr.get(hex)?.name || null }),
+    slotOf: cur.frame?.supported ? (reg, disp) => cur.frame.slotOf(reg, disp) : null,
+    hints: cur.hints,
+    inferred: cur.inferred,
   };
 }
 
@@ -736,12 +805,10 @@ function markerView(elementsFor, reveal) {
   };
 }
 
-const byId = (id) => document.getElementById(id);
-
 sync.register('c', markerView((sets, cls, target) => {
   const out = [];
   if (!target?.sym || cls === 'hl-hover') {
-    for (const line of sets.lines) { const el = byId('c-L' + line); if (el) out.push(el); }
+    for (const line of sets.lines) { const el = $('c-L' + line); if (el) out.push(el); }
   }
   if (cls === 'hl-sel') {
     for (const sym of sets.syms) out.push(...els.ccode.querySelectorAll(`.t[data-sym="${CSS.escape(sym)}"]`));
@@ -749,18 +816,18 @@ sync.register('c', markerView((sets, cls, target) => {
   return out;
 }, (target, sets) => {
   if (!isShown('c') || !sets.lines.size) return;
-  byId('c-L' + Math.min(...sets.lines))?.scrollIntoView({ block: 'nearest' });
+  $('c-L' + Math.min(...sets.lines))?.scrollIntoView({ block: 'nearest' });
 }));
 
 sync.register('asm', markerView((sets) => {
   const out = [];
-  for (const a of sets.addrs) { const el = byId('a-' + a); if (el) out.push(el); }
+  for (const a of sets.addrs) { const el = $('a-' + a); if (el) out.push(el); }
   return out;
 }, (target, sets) => {
   if (!isShown('asm') || !sets.addrs.size) return;
   const index = state.current?.index;
   const first = [...sets.addrs].sort((a, b) => (index?.insnIndex.get(a) ?? 0) - (index?.insnIndex.get(b) ?? 0))[0];
-  byId('a-' + first)?.scrollIntoView({ block: 'nearest' });
+  $('a-' + first)?.scrollIntoView({ block: 'nearest' });
 }));
 
 sync.register('bytes', markerView((sets) => {
@@ -810,8 +877,8 @@ function describeVar(name) {
   const type = decl?.type || param?.type || stack?.type || '';
   const where = [];
   if (param && Number.isInteger(param.arg_index)) where.push(`argument ${param.arg_index}`);
-  if (decl) where.push(storageLabel(decl.storage));
-  else if (stack) where.push(`stack entry${stack.stack_offset < 0 ? '−' : '+'}0x${Math.abs(stack.stack_offset).toString(16)}`);
+  if (decl?.storage) where.push(storageLabel(decl.storage));
+  else if (stack) where.push(`stack ${entryOffset(stack.stack_offset)}`);
   return { name, kind, type, where: where.join(' · ') };
 }
 
@@ -820,38 +887,53 @@ function varSummary(name) {
   return [v.name, v.kind, v.type, v.where].filter(Boolean).join(' · ');
 }
 
+/** A C line's instructions in address order: exact ones, then (when on) the inferred ones. */
+function lineInsns(n) {
+  const { index } = state.current;
+  const exact = index.lineToInsns.get(n) || [];
+  const inferred = index.lineToInferred?.get(n) || [];
+  const at = (a) => index.insnIndex.get(a) ?? -1;
+  const lastExact = Math.max(-1, ...exact.map(at));
+  const setup = inferred.filter((a) => at(a) < lastExact).length;
+  const all = [...exact, ...inferred].sort((a, b) => at(a) - at(b));
+  return { exact, inferred: new Set(inferred), all, setup, after: inferred.length - setup };
+}
+
 function lineCard(n, varTok) {
-  const { data, index, decls } = state.current;
-  const addrs = index.lineToInsns.get(n) || [];
-  const text = data.code.split('\n')[n - 1] || '';
+  const { data, index, decls, codeLines } = state.current;
+  const { exact, inferred, all, setup, after } = lineInsns(n);
+  const text = codeLines[n - 1] || '';
   let html;
-  if (addrs.length) {
-    const insns = addrs.map((a) => index.addrToInsn.get(a)).filter(Boolean);
-    html = `<div class="ch">L${n} → ${addrs.length} instruction${addrs.length === 1 ? '' : 's'}</div>`;
+  if (exact.length) {
+    const insns = all.map((a) => index.addrToInsn.get(a)).filter(Boolean);
+    const extra = [setup ? `+${setup} preceding setup` : '', after ? `+${after} following` : ''].filter(Boolean);
+    html = `<div class="ch">L${n} → ${exact.length} instruction${exact.length === 1 ? '' : 's'}` +
+      `${extra.length ? ` <span class="cm">(${extra.join(', ')}, inferred)</span>` : ''}</div>`;
     if (insns.length) {
-      html += renderInsnRows(insns, { startHex: data.address_hex, prefs: state.prefs, max: 12 });
+      html += renderInsnRows(insns, { startHex: data.address_hex, prefs: state.prefs, max: 12, inferred });
       if (insns.length > 12) html += `<div class="cm">… ${insns.length - 12} more — click the address gutter to open them in Assembly</div>`;
     } else {
-      html += `<div class="cm">at ${escapeHtml(addrs.join(', '))} — the instruction listing needs the engine's inspect surface</div>`;
+      html += `<div class="cm">at ${escapeHtml(exact.join(', '))} — the instruction listing needs the engine's inspect surface</div>`;
     }
   } else {
     const decl = decls.find((d) => d.line === n);
     let why;
-    if (decl) why = `declares ${decl.name} (${decl.type}, ${storageLabel(decl.storage)}). A declaration emits no instructions: the name is the decompiler's, the storage is the program's.`;
-    else if (n === 1) why = `is the signature: the decompiler's reading of how ${data.name} is called.`;
+    if (decl) why = `declares ${decl.name} (${decl.type}${decl.storage ? `, ${storageLabel(decl.storage)}` : ''}). A declaration emits no instructions: the name is the decompiler's, the storage is the program's.`;
+    else if (data.proto && text.trim().replace(/;$/, '') === data.proto) why = `is the signature: the decompiler's reading of how ${data.name} is called.`;
+    else if (/^\s*#\[/.test(text)) why = 'is a Rust attribute the printer adds; no instruction belongs to it.';
     else if (/^\s*[{}]?\s*$/.test(text)) why = 'is structure the decompiler prints; no instruction belongs to it.';
     else if (!data.hasInstructions && !data.line_mappings.length) why = 'has no instruction map from this engine build (it needs the inspect surface).';
     else why = 'has no instruction of its own — its work was folded into a neighbouring line\'s instructions.';
     html = `<div class="ch">L${n}</div><div class="cx">This line ${escapeHtml(why)}</div>`;
   }
-  if (varTok) html += `<div class="cx"><b>${escapeHtml(varSummary(varTok.textContent))}</b> — <kbd>n</kbd> rename · <kbd>y</kbd> retype</div>`;
+  if (varTok) html += `<div class="cx"><b>${escapeHtml(varSummary(varTok.textContent))}</b> — ${editKeysHint(varTok.textContent)}</div>`;
   return html;
 }
 
 function calleeCard(addrHex) {
   const fn = state.byAddr.get(addrHex);
   if (!fn) return `<div class="ch">${escapeHtml(addrHex)}</div><div class="cm">not a function in this binary's inventory</div>`;
-  const cached = state.cache.get(addrHex);
+  const cached = cachedBody(addrHex);
   const kind = isStub(fn) ? ` · ${fn.kind}` : '';
   let html = `<div class="ch">${escapeHtml(displayName(fn))} — ${escapeHtml(addrHex)}${fn.size ? ` · ${fn.size} B` : ''}${kind}</div>`;
   if (cached?.proto) html += `<pre>${escapeHtml(cached.proto)}</pre>`;
@@ -859,23 +941,38 @@ function calleeCard(addrHex) {
   return html;
 }
 
+/** Why an unmapped instruction is shown under a line (or as prologue/epilogue). */
+function inferredNote(addrHex) {
+  const { index, inferred, codeLines } = state.current;
+  const i = index.insnIndex.get(addrHex);
+  const row = inferred?.[i];
+  if (row?.role === 'prologue') return 'Prologue (inferred): the function setting up its frame before the first line\'s code.';
+  if (row?.role === 'epilogue') return 'Epilogue (inferred): after the last line\'s code.';
+  if (!row?.inferred) return null;
+  const line = row.lines[0];
+  const laterExact = (index.lineToInsns.get(line) || []).some((a) => index.insnIndex.get(a) > i);
+  return `L${line} (inferred — ${laterExact ? 'sets up an instruction of this line' : 'finishes this line'}): ` +
+    `${(codeLines[line - 1] || '').trim()}`;
+}
+
 function insnCard(addrHex) {
-  const { data, index } = state.current;
+  const { data, index, codeLines, hints, arch } = state.current;
   const insn = index.addrToInsn.get(addrHex);
   if (!insn) return null;
   const lines = index.insnToLines.get(addrHex) || [];
-  const code = data.code.split('\n');
   let html = `<div class="ch">${escapeHtml(formatAddr(addrHex, data.address_hex, 'both'))} · ${escapeHtml(insn.mnemonic)} · ${insn.size} byte${insn.size === 1 ? '' : 's'}</div>`;
   html += `<div class="cm">${escapeHtml(spacedBytes(insn.bytes))}${insn.file_offset !== null ? ` · file offset 0x${insn.file_offset.toString(16)}` : ''}</div>`;
+  const inferredText = lines.length ? null : inferredNote(addrHex);
   if (lines.length) {
-    html += `<pre>${lines.map((l) => `L${l}  ${escapeHtml((code[l - 1] || '').trim())}`).join('\n')}</pre>`;
+    html += `<pre>${lines.map((l) => `L${l}  ${escapeHtml((codeLines[l - 1] || '').trim())}`).join('\n')}</pre>`;
+  } else if (inferredText) {
+    html += `<div class="cx">${escapeHtml(inferredText)}</div>`;
   } else {
     html += '<div class="cx">Not mapped to a C line: frame setup, a value the decompiler folded into another statement, or code it proved dead.</div>';
   }
-  const family = state.current.arch?.family || 'x86';
-  const note = explain(insn.mnemonic, family);
+  const note = explain(insn.mnemonic, arch?.family || 'x86');
   if (note) html += `<div class="cx"><b>${escapeHtml(insn.mnemonic)}</b>: ${escapeHtml(note)}</div>`;
-  const idiom = idioms(data.instructions, family, { nameAt: (hex) => state.byAddr.get(hex)?.name || null }).get(addrHex);
+  const idiom = hints.get(addrHex);
   if (idiom) html += `<div class="cx">idiom: ${escapeHtml(idiom)}</div>`;
   return html;
 }
@@ -893,7 +990,7 @@ function slotCard(so) {
   let html = `<div class="ch">stack slot ${escapeHtml(so.textContent)}</div>`;
   if (slot !== undefined) {
     const off = Number(slot);
-    html += `<div class="cm">entry${off < 0 ? '−' : '+'}0x${Math.abs(off).toString(16)} — measured from the stack pointer at the function's entry</div>`;
+    html += `<div class="cm">${entryOffset(off)} — measured from the stack pointer at the function's entry</div>`;
     const hit = state.current.frame?.slots.find((s) => off >= s.offset && off < s.offset + s.size);
     if (hit) html += `<div class="cx"><b>${escapeHtml(hit.name)}</b> ${escapeHtml(hit.type || '')} · ${hit.size} B${hit.offset !== off ? ` (byte ${off - hit.offset} of it)` : ''}</div>`;
   }
@@ -948,13 +1045,14 @@ function selectTarget(target, from, tokEl = null) {
   }
   if (target?.addr) els.asmcode.setAttribute('aria-activedescendant', active);
   if (target?.sym) {
-    setHint(`<b>${escapeHtml(varSummary(target.sym))}</b> — <kbd>n</kbd> rename · <kbd>y</kbd> retype · <kbd>Esc</kbd> clears`);
+    setHint(`<b>${escapeHtml(varSummary(target.sym))}</b> — ${editKeysHint(target.sym)} · <kbd>Esc</kbd> clears`);
   } else if (target?.addr) {
     const insn = state.current.index.addrToInsn.get(target.addr);
     setHint(insn ? `${escapeHtml(insn.address_hex)} <b>${escapeHtml(insn.text)}</b> ${patchButtons(insn)} · <kbd>;</kbd> comment · <kbd>x</kbd> references` : null);
   } else if (Number.isInteger(target?.line)) {
-    const n = (state.current.index.lineToInsns.get(target.line) || []).length;
-    setHint(`L${target.line} — ${n} instruction${n === 1 ? '' : 's'} · click the address gutter to open them in Assembly`);
+    const { exact, inferred } = lineInsns(target.line);
+    const extra = inferred.size ? ` (+${inferred.size} inferred)` : '';
+    setHint(`L${target.line} — ${exact.length} instruction${exact.length === 1 ? '' : 's'}${extra} · click the address gutter to open them in Assembly`);
   } else {
     setHint(null);
   }
@@ -1018,7 +1116,7 @@ els.ccode.addEventListener('dblclick', (e) => {
   const tok = e.target.closest('.t');
   if (!tok || !state.current) return;
   const target = tokenTarget(tok);
-  if (target?.kind === 'callee' && Number(tok.closest('.d2-cl').dataset.line) !== 1) {
+  if (target?.kind === 'callee') {
     e.preventDefault();
     openCallee(tok);
   } else if (target) {
@@ -1074,19 +1172,21 @@ function paneKey(e) {
   if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
     const step = e.key === 'ArrowDown' ? 1 : -1;
     if (inC) {
-      const cur = state.sel?.line ?? (state.sel?.sym ? null : 0) ?? 0;
-      const next = Math.min(Math.max((cur || 0) + step, 1), index.lineCount);
+      const cursorLine = state.cursor?.isConnected ? Number(state.cursor.closest('.d2-cl')?.dataset.line) : null;
+      const symLines = state.sel?.sym ? [...(index.symToLines.get(state.sel.sym) || [])] : [];
+      const cur = state.sel?.line ?? cursorLine ?? (symLines.length ? Math.min(...symLines) : 0);
+      const next = Math.min(Math.max(cur + step, 1), index.lineCount);
       selectTarget({ line: next }, null);
-      byId('c-L' + next)?.scrollIntoView({ block: 'nearest' });
-      hover.showFor(byId('c-L' + next)?.querySelector('.ct'));
+      $('c-L' + next)?.scrollIntoView({ block: 'nearest' });
+      hover.showFor($('c-L' + next)?.querySelector('.ct'));
     } else {
       const insns = state.current.data.instructions;
       const at = state.sel?.addr ? index.insnIndex.get(state.sel.addr) : -1;
       const next = insns[Math.min(Math.max(at + step, 0), insns.length - 1)];
       if (next) {
         selectTarget({ addr: next.address_hex }, null);
-        byId('a-' + next.address_hex)?.scrollIntoView({ block: 'nearest' });
-        hover.showFor(byId('a-' + next.address_hex));
+        $('a-' + next.address_hex)?.scrollIntoView({ block: 'nearest' });
+        hover.showFor($('a-' + next.address_hex));
       }
     }
     return true;
@@ -1126,6 +1226,7 @@ function setTab(tab) {
   for (const t of ['c', 'asm', 'bytes', 'stack', 'src']) $(paneFor(t)).hidden = !shown.includes(t);
   els.panes.classList.toggle('split', shown.length > 1);
   els.split.setAttribute('aria-pressed', String(state.prefs.split));
+  applyPaneClasses();
   renderVisible();
 }
 
@@ -1156,6 +1257,8 @@ function toggleSplit() {
 const VIEW_ITEMS = [
   { key: 'asmAddr', label: 'Instruction addresses', kbd: 'o' },
   { key: 'asmBytes', label: 'Bytes column', kbd: 'b' },
+  { key: 'asmBytesSplit', label: 'Bytes column in split view', kbd: 'b' },
+  { key: 'asmInfer', label: 'Attribute unmapped instructions' },
   { key: 'asmCMode', label: 'C in the assembly' },
   { key: 'asmArrows', label: 'Branch arrows' },
   { key: 'asmHints', label: 'Idiom hints' },
@@ -1200,7 +1303,8 @@ els.viewMenu.addEventListener('click', (e) => {
   else if (typeof state.prefs[key] === 'boolean') updatePrefs({ [key]: !state.prefs[key] });
   else updatePrefs(cycle(state.prefs, key));
   applyPaneClasses();
-  if (['asmCMode', 'asmArrows', 'asmHints', 'reset'].includes(key)) rerender('asm');
+  if ((key === 'asmInfer' || key === 'reset') && state.current) showFunction(state.current.fn, state.current.data, { keep: true });
+  else if (['asmCMode', 'asmArrows', 'asmHints'].includes(key)) rerender('asm');
   renderViewMenu();
   els.viewMenu.querySelector(`[data-pref="${key}"]`)?.focus();
 });
@@ -1294,11 +1398,13 @@ document.addEventListener('keydown', (e) => {
       applyPaneClasses();
       setHint(`instruction addresses: ${VALUE_LABEL.asmAddr[state.prefs.asmAddr]}`);
       break;
-    case 'b':
-      updatePrefs({ asmBytes: !state.prefs.asmBytes });
+    case 'b': {
+      const key = inSplit() ? 'asmBytesSplit' : 'asmBytes';
+      updatePrefs({ [key]: !state.prefs[key] });
       applyPaneClasses();
-      setHint(`bytes column ${state.prefs.asmBytes ? 'on' : 'off'}`);
+      setHint(`bytes column ${state.prefs[key] ? 'on' : 'off'}${inSplit() ? ' in split view' : ''}`);
       break;
+    }
     case 'n':
       e.preventDefault();
       renameSelected();
@@ -1338,10 +1444,9 @@ window.addEventListener('beforeunload', () => state.kuna?.close());
 function tokenTarget(tok) {
   if (!tok || !state.current) return null;
   const self = state.current.data.address_hex;
-  const line = Number(tok.closest('.d2-cl')?.dataset.line);
   if (tok.dataset.kind === 'funcname') {
     const callee = tok.dataset.callee || state.byName.get(tok.textContent)?.address_hex || null;
-    if (!callee || callee === self || (line === 1 && tok.dataset.decl !== 'param')) return { kind: 'self', addr: self, el: tok };
+    if (!callee || callee === self || tok.dataset.decl === 'function') return { kind: 'self', addr: self, el: tok };
     return { kind: 'callee', addr: callee, el: tok };
   }
   if (tok.dataset.kind === 'variable') {
@@ -1364,9 +1469,19 @@ function selectedTarget() {
   return null;
 }
 
+/** A function's C signature: the student's prototype, else the engine's (null in the Rust view). */
 function currentSignature(addr = state.current.data.address_hex) {
-  const cached = addr === state.current.data.address_hex ? state.current.data : state.cache.get(addr);
-  return parseSignature(session.proto(addr) || cached?.proto || '');
+  const own = addr === state.current.data.address_hex;
+  const cached = own ? state.current.data : cachedBody(addr);
+  if (session.proto(addr)) return parseSignature(session.proto(addr));
+  if ((own ? state.current.rust : /rust/i.test(cached?.language || '')) || !cached?.proto) return null;
+  return parseSignature(cached.proto);
+}
+
+/** The signature the open function shows, for display (Rust or C). */
+function shownSignature() {
+  const { data, rust } = state.current;
+  return rust ? parseRustSignature(data.proto || '') : parseSignature(data.proto || '');
 }
 
 function paramIndex(name) {
@@ -1375,13 +1490,41 @@ function paramIndex(name) {
   return i >= 0 ? { sig, index: i } : null;
 }
 
+function isParam(name) {
+  return !!shownSignature()?.params.some((p) => p.name === name);
+}
+
+/**
+ * Edits written as C declarations (retypes, prototypes, parameters, globals)
+ * are refused in the Rust view: its signature is not C, and a declaration
+ * built from it would be wrong. Local and function renames, comments and
+ * patches do not depend on the language.
+ */
+function needsC(what) {
+  if (!state.current?.rust) return false;
+  toast(`${what} needs the C view: set Lang to C.`, {
+    kind: 'warn', detail: 'Edits to types and signatures are C declarations; the Rust view does not show them.',
+  });
+  return true;
+}
+
+function editKeysHint(name) {
+  if (!state.current?.rust) return '<kbd>n</kbd> rename · <kbd>y</kbd> retype';
+  return isParam(name) ? 'parameter edits need the C view (Lang: C)' : '<kbd>n</kbd> rename · retyping needs the C view (Lang: C)';
+}
+
 function typeOptions() {
   const data = state.current?.data;
   return knownTypes({ types: data?.types, known: state.inventory?.known_types, typedefs: session.typedefTags() });
 }
 
-function targetBits() {
-  return state.current?.data.target?.bits || state.inventory?.target?.bits || 64;
+/** How wide pointers and `long` are on this target (LLP64 on Windows). */
+function sizeModel() {
+  const target = state.current?.data.target || state.inventory?.target;
+  return {
+    bits: target?.bits || 64,
+    llp64: /:windows\b/i.test(target?.archid || '') || /PE/.test(state.binary?.format || ''),
+  };
 }
 
 /** The storage size behind a displayed local, when the engine or the declaration says. */
@@ -1389,7 +1532,7 @@ function currentSize(name) {
   const v = state.current.data.variables.find((x) => x.name === name && x.size);
   if (v) return v.size;
   const decl = state.current.decls.find((d) => d.name === name);
-  return decl ? typeSize(decl.type, { bits: targetBits(), llp64: /PE/.test(state.binary?.format || '') }) : null;
+  return decl ? typeSize(decl.type, sizeModel()) : null;
 }
 
 const noHash = (v) => (/\s#/.test(v) || /[\r\n]/.test(v) ? 'a directive cannot hold a newline or " #" (the .kuna file reads that as a comment)' : null);
@@ -1416,6 +1559,7 @@ async function renameTarget(target) {
     return applyEdit(() => session.setFunctionName(target.addr, res.name === fn.name ? null : res.name), { label: 'rename' });
   }
   if (target.kind === 'global') return dataDialog(target);
+  if (isParam(target.name) && needsC('Renaming a parameter')) return;
   const param = paramIndex(target.name);
   const res = await dialogs.openPopover({
     anchorEl: target.el,
@@ -1433,8 +1577,9 @@ async function renameTarget(target) {
 }
 
 async function retypeSelected() {
+  if (!state.current || needsC('Retyping')) return;
   const target = selectedTarget();
-  if (!target) return state.current && protoDialog(state.current.data.address_hex, els.vname);
+  if (!target) return protoDialog(state.current.data.address_hex, els.vname);
   if (target.kind === 'self' || target.kind === 'callee') return protoDialog(target.addr, target.el);
   if (target.kind === 'global') return dataDialog(target);
   const addr = state.current.data.address_hex;
@@ -1447,7 +1592,7 @@ async function retypeSelected() {
     note: param ? 'a parameter is retyped through the function\'s prototype' : varSummary(target.name),
     fields: [{ name: 'type', label: 'C type', value: current, list: typeOptions(), validate: validateCType }],
     warn: (v) => {
-      const next = typeSize(v.type, { bits: targetBits() });
+      const next = typeSize(v.type, sizeModel());
       return size && next && next !== size
         ? `${target.name} is ${size} bytes; ${normalizeType(v.type)} is ${next}. The engine refuses a retype that changes the storage size.`
         : '';
@@ -1465,9 +1610,10 @@ async function retypeSelected() {
 }
 
 async function protoDialog(addr, anchorEl) {
+  if (needsC('Editing a prototype')) return;
   const fn = state.byAddr.get(addr) || { address_hex: addr, name: addr };
-  const cached = addr === state.current.data.address_hex ? state.current.data : state.cache.get(addr);
-  const value = session.proto(addr) || cached?.proto || `void ${displayName(fn)}(void)`;
+  const sig = currentSignature(addr);
+  const value = session.proto(addr) || (sig ? buildPrototype(sig) : `void ${displayName(fn)}(void)`);
   const res = await dialogs.openPopover({
     anchorEl, title: `Prototype of ${displayName(fn)}`,
     note: `prototype ${addr} <declaration> — the name inside is ignored; types and parameter names apply`,
@@ -1483,6 +1629,7 @@ async function protoDialog(addr, anchorEl) {
 }
 
 async function dataDialog(target) {
+  if (needsC('Typing a global')) return;
   const g = state.current.data.globals.find((x) => x.address_hex === target.addr || x.name === target.name);
   const rec = session.records.get(`data:${target.addr}`);
   const declType = g?.declaration ? g.declaration.replace(new RegExp(`\\b${target.name}\\b`), '').replace(/;\s*$/, '').trim() : '';
@@ -1508,7 +1655,7 @@ async function commentSelected() {
     toast('Select an instruction, or a C line that has one, to comment it.', { kind: 'warn' });
     return;
   }
-  const anchor = document.getElementById('a-' + addr) || els.ccode.querySelector(`.d2-cl[data-addrs~="${addr}"] .ct`);
+  const anchor = $('a-' + addr) || els.ccode.querySelector(`.d2-cl[data-addrs~="${addr}"] .ct`);
   const res = await dialogs.openPopover({
     anchorEl: anchor, title: `Comment at ${addr}`,
     note: 'rendered into the C at that instruction; leave empty to remove',
@@ -1535,12 +1682,14 @@ async function goToDialog() {
   toast(`No function named ${q}.`, { kind: 'warn' });
 }
 
-/** After any change to the session: persist, drop caches, refresh names and the rail. */
+/**
+ * After any change to the session: persist, refresh names and the rail. The
+ * caches need no flush: their keys carry the directives a body depends on.
+ */
 function sessionChanged() {
   persist();
+  bytesState.version++;
   els.patch.disabled = !canDownloadPatched();
-  state.cache.clear();
-  state.xrefs?.clear();
   refreshRowNames();
   if (state.current) els.vname.textContent = displayName(state.current.fn);
   renderRail();
@@ -1556,7 +1705,7 @@ function restoreScroll(saved) {
 
 function flash(lines) {
   for (const n of lines) {
-    const el = document.getElementById('c-L' + n);
+    const el = $('c-L' + n);
     if (!el) continue;
     el.classList.remove('d2-flash');
     void el.offsetWidth;
@@ -1571,9 +1720,8 @@ function flash(lines) {
  * session, marked, with the engine's reason in a toast.
  */
 async function applyEdit(mutate, { label = 'edit', reselect = null } = {}) {
-  if (!state.current) return false;
-  const addr = state.current.data.address_hex;
-  const before = new Set(session.assertionsFor(addr));
+  const addr = state.current?.data.address_hex ?? null;
+  const before = new Set(addr ? session.assertionsFor(addr) : []);
   const snap = session.snapshot();
   try {
     mutate();
@@ -1581,12 +1729,12 @@ async function applyEdit(mutate, { label = 'edit', reselect = null } = {}) {
     toast(e.message, { kind: 'err' });
     return false;
   }
-  const fresh = session.assertionsFor(addr).filter((d) => !before.has(d));
+  const fresh = addr ? session.assertionsFor(addr).filter((d) => !before.has(d)) : [];
   sessionChanged();
-  if (state.caps.assert === false) {
+  if (!state.current || !state.caps.assert) {
     session.pushUndo(snap);
     renderRail();
-    toast('Edit kept, not applied: this engine build has no --assert.', { kind: 'warn' });
+    if (state.current && session.size) toast('Edit kept, not applied: this engine build has no --assert.', { kind: 'warn' });
     return true;
   }
   return reinspect({ snap, fresh, label, reselect });
@@ -1607,7 +1755,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
   setStatus(`applying ${label} to ${displayName(fn)}…`);
   const t0 = performance.now();
   try {
-    const doc = await fetchFunction(fn, directivesFor(fn.address_hex));
+    const doc = await fetchFunction(fn);
     if (!isCurrent(op)) return false;
     const data = normalizeInspect(doc);
     const wasApplied = new Set([...session.outcomes].filter(([, o]) => o.status === 'applied').map(([k]) => k));
@@ -1619,7 +1767,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     restoreScroll(scroll);
     if (keepSel) selectTarget(keepSel, null);
     flash(changedLines(oldCode, data.code));
-    if (state.caps.assert === false) {
+    if (!state.caps.assert) {
       setStatus(`${displayName(fn)} — ${label} kept; this engine build cannot apply edits`, 'err');
       renderRail();
       return false;
@@ -1661,22 +1809,22 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
 function undo() {
   if (active?.kind === 'edit' || !session.undo()) return;
   sessionChanged();
-  if (state.current && state.caps.assert !== false) reinspect({ label: 'undo' });
+  if (state.current && state.caps.assert) reinspect({ label: 'undo' });
 }
 
 function redo() {
   if (active?.kind === 'edit' || !session.redo()) return;
   sessionChanged();
-  if (state.current && state.caps.assert !== false) reinspect({ label: 'redo' });
+  if (state.current && state.caps.assert) reinspect({ label: 'redo' });
 }
 
 /** The rail's variables: parameters, printed locals, then what the engine knows but the C does not show. */
 function railVars() {
   const { data, decls, index } = state.current;
-  const sig = parseSignature(data.proto || '');
+  const sig = shownSignature();
   const out = [];
   const shown = new Set();
-  const entry = (off) => `stack entry${off < 0 ? '−' : '+'}0x${Math.abs(off).toString(16)}`;
+  const entry = (off) => `stack ${entryOffset(off)}`;
   const home = (name) => data.variables.find((v) => v.name === name && v.kind !== 'arg' && Number.isInteger(v.stack_offset));
   (sig?.params || []).forEach((p, i) => {
     const h = home(p.name);
@@ -1684,7 +1832,7 @@ function railVars() {
     shown.add(p.name);
   });
   for (const d of decls) {
-    out.push({ name: d.name, type: d.type, kind: 'local', where: storageLabel(d.storage) });
+    out.push({ name: d.name, type: d.type, kind: 'local', where: d.storage ? storageLabel(d.storage) : 'temporary' });
     shown.add(d.name);
   }
   for (const v of data.variables) {
@@ -1705,7 +1853,7 @@ function renderRail() {
     edits,
     canUndo: session.canUndo,
     canRedo: session.canRedo,
-    restored: state.restored || 0,
+    restored: state.restored?.count || 0,
     assertSupported: state.caps.assert,
   };
   if (!state.current) {
@@ -1729,15 +1877,20 @@ importEl.type = 'file';
 importEl.accept = '.kuna,.txt,text/plain';
 importEl.hidden = true;
 document.body.appendChild(importEl);
+/** A qualifier in a directive (a function's current or engine name) → its entry. */
+function resolveFunc(name) {
+  return (state.rows.find((r) => displayName(r.fn) === name)?.fn || state.byName.get(name))?.address_hex || null;
+}
+
 importEl.addEventListener('change', async () => {
   const file = importEl.files[0];
   importEl.value = '';
-  if (!file || !state.current) return;
+  if (!file || !state.binary) return;
   const text = await file.text();
-  const resolveFunc = (name) => (state.rows.find((r) => displayName(r.fn) === name)?.fn || state.byName.get(name))?.address_hex || null;
   let counts = null;
+  const bindTo = state.current?.data.address_hex ?? null;
   const ok = await applyEdit(() => {
-    counts = session.importText(text, { resolveFunc, bindTo: state.current.data.address_hex });
+    counts = session.importText(text, { resolveFunc, bindTo });
   }, { label: 'import' });
   if (counts) {
     toast(`Imported ${counts.added} directive${counts.added === 1 ? '' : 's'} from ${file.name}.`, {
@@ -1754,23 +1907,54 @@ function exportSession() {
   download(new Blob([text], { type: 'text/plain' }), `${state.binary.name}.kuna`);
 }
 
+/** Edit one session record from the rail, in place: its kind and its function stay. */
 async function editEntry(key) {
   const rec = session.records.get(key);
   if (key.startsWith('bytes:')) {
-    setTab('bytes');
+    if (state.current) setTab('bytes');
     return;
   }
-  if (!rec || !state.current) return;
-  if (rec.kind === 'var' && rec.func === state.current.data.address_hex) return renameTarget({ kind: 'var', name: rec.name || rec.sym, el: null });
-  if (rec.kind === 'fn') return renameTarget({ kind: rec.addr === state.current.data.address_hex ? 'self' : 'callee', addr: rec.addr, el: null });
-  if (rec.kind === 'proto') return protoDialog(rec.addr, null);
-  if (rec.kind === 'data') return dataDialog({ addr: rec.addr, name: rec.name, el: null });
+  if (!rec) return;
+  const anchorEl = els.railBody.querySelector(`li[data-key="${CSS.escape(key)}"]`);
+  const where = rec.func ? ` in ${nameOfAddr(rec.func)}` : '';
+  if (rec.kind === 'var') {
+    const fields = [{ name: 'name', label: 'name', value: rec.name || rec.sym, validate: validateIdent }];
+    if (!state.current?.rust) {
+      fields.push({ name: 'type', label: 'C type (empty keeps the engine\'s)', value: rec.type || '', list: typeOptions(), validate: (v) => (v.trim() ? validateCType(v) : null) });
+    }
+    const res = await dialogs.openPopover({ anchorEl, title: `Edit ${rec.sym}${where}`, note: `the engine's symbol is ${rec.sym}`, fields });
+    if (!res) return;
+    const patch = { name: res.name };
+    if ('type' in res) patch.type = res.type.trim() ? normalizeType(res.type) : null;
+    return applyEdit(() => session.setVar(rec.func, rec.sym, patch), { label: 'edit' });
+  }
+  if (rec.kind === 'comment') {
+    const res = await dialogs.openPopover({
+      anchorEl, title: `Comment at ${rec.addr}${where}`, note: 'leave empty to remove',
+      fields: [{ name: 'text', label: 'comment', value: rec.text, validate: noHash }],
+    });
+    if (!res) return;
+    return applyEdit(() => session.setComment(rec.func, rec.addr, res.text.trim() || null), { label: 'comment' });
+  }
+  if (rec.kind === 'fn') {
+    const fn = state.byAddr.get(rec.addr) || { address_hex: rec.addr, name: rec.addr };
+    const res = await dialogs.openPopover({
+      anchorEl, title: `Rename function at ${rec.addr}`, note: `the engine calls it ${fn.name}`,
+      fields: [{ name: 'name', label: 'new name', value: rec.name, validate: validateIdent }],
+    });
+    if (!res) return;
+    return applyEdit(() => session.setFunctionName(rec.addr, res.name === fn.name ? null : res.name), { label: 'rename' });
+  }
+  if (rec.kind === 'proto') return protoDialog(rec.addr, anchorEl);
+  if (rec.kind === 'data') return dataDialog({ addr: rec.addr, name: rec.name, el: anchorEl });
+  const text = session.entries(nameOfAddr).find((x) => x.key === key)?.text || '';
   const res = await dialogs.openPopover({
-    title: 'Edit directive', note: 'one --assert directive',
-    fields: [{ name: 'text', label: 'directive', value: session.entries(nameOfAddr).find((x) => x.key === key)?.text || '', validate: (v) => (v.trim() ? noHash(v) : 'empty') }],
+    anchorEl, title: 'Edit directive', note: 'one --assert directive',
+    fields: [{ name: 'text', label: 'directive', value: text, validate: (v) => (v.trim() ? noHash(v) : 'empty') }],
   });
   if (!res) return;
-  return applyEdit(() => { session.remove(key); session.addRaw(res.text); }, { label: 'edit' });
+  const bindTo = rec.func ?? state.current?.data.address_hex ?? null;
+  return applyEdit(() => session.replaceWith(key, res.text, { resolveFunc, bindTo }), { label: 'edit' });
 }
 
 const rail = createRail({
@@ -1805,10 +1989,12 @@ const rail = createRail({
           applyEdit(() => session.clear(), { label: 'clear' });
         }
         break;
-      case 'discard-restored':
-        state.restored = 0;
-        applyEdit(() => session.clear(), { label: 'discard' });
+      case 'discard-restored': {
+        const mark = state.restored?.mark;
+        state.restored = null;
+        if (mark) applyEdit(() => session.discardMarked(mark), { label: 'discard' });
         break;
+      }
       case 'refs-open': state.onRefsOpen?.(); break;
       default: break;
     }
@@ -1821,15 +2007,10 @@ els.proto.addEventListener('click', () => state.current && protoDialog(state.cur
 
 // ── bytes: the hex dump, typed patches, Patch/NOP/Revert, the patched file ─
 
-const bytesState = { edit: null, digits: '', burst: null, timer: 0 };
+const bytesState = { edit: null, digits: '', burst: null, timer: 0, version: 0, memo: null };
 
 function sections() {
   return state.inventory?.sections || [];
-}
-
-function currentArch() {
-  const data = state.current?.data;
-  return archFrom(data?.target || state.inventory?.target, data?.instructions || []);
 }
 
 /** The byte the file (or, lacking sections, the engine's first answer) holds at `a`. */
@@ -1846,12 +2027,22 @@ function origByte(a) {
   return null;
 }
 
+/** The hex dump's cells, rebuilt only when the function, the data view or the patches change. */
 function bytesCells() {
-  if (state.dataView) return dataCells();
-  const { data } = state.current;
-  return functionCells(data.instructions, {
-    entry: data.address_hex, size: data.size, fileBytes: state.binary?.bytes, sections: sections(), patches: session.bytes,
-  });
+  const key = { data: state.current?.data, view: state.dataView, version: bytesState.version };
+  const memo = bytesState.memo;
+  if (memo && memo.data === key.data && memo.view === key.view && memo.version === key.version) return memo.cells;
+  let cells;
+  if (state.dataView) {
+    cells = dataCells();
+  } else {
+    const { data } = state.current;
+    cells = functionCells(data.instructions, {
+      entry: data.address_hex, size: data.size, fileBytes: state.binary?.bytes, sections: sections(), patches: session.bytes,
+    });
+  }
+  bytesState.memo = { ...key, cells };
+  return cells;
 }
 
 function renderBytes() {
@@ -1886,29 +2077,35 @@ function dataCells() {
 
 function renderData() {
   const { focus, source } = state.dataView;
-  const cells = dataCells();
+  const cells = bytesCells();
   els.bytesbar.innerHTML = `<span><b>data</b> at ${escapeHtml('0x' + focus.toString(16))} · ${cells.length} bytes from ${escapeHtml(source)}</span>` +
     `<button class="d2-lb" data-act="data-back">back to ${escapeHtml(state.current ? displayName(state.current.fn) : 'the function')}</button>`;
   els.hexdump.innerHTML = renderHex(hexRows(cells), { sections: sections(), editAddr: bytesState.edit ?? focus });
 }
 
-/** Show the bytes at a non-code address: from the file when it backs them, else `read`. */
+/**
+ * Show the bytes at a non-code address: from the file when it backs them, else
+ * `read` without directives — the cells overlay the session's patches, and
+ * Backspace restores the byte this read reports.
+ */
 async function showDataAt(hex) {
   const focus = BigInt(hex);
   const start = focus - (focus % 16n);
   const off = fileOffsetFor(start, sections());
   if (off !== null && state.binary) {
     state.dataView = { start, focus, bytes: state.binary.bytes.subarray(off, off + DATA_SPAN), source: 'the file' };
+  } else if (!state.caps.inspect) {
+    toast(`${hex} is not in a function, and this engine build cannot read raw bytes.`, { kind: 'warn' });
+    return;
   } else {
     const op = beginOperation('read');
     try {
-      const res = await state.kuna.read('0x' + start.toString(16), DATA_SPAN, { assertions: state.caps.assert === false ? [] : session.globalAssertions() });
+      const res = await state.kuna.read('0x' + start.toString(16), DATA_SPAN, { assertions: [] });
       if (!isCurrent(op)) return;
       state.dataView = { start, focus, bytes: parseHex(res.bytes) || new Uint8Array(), source: 'the engine' };
     } catch (e) {
       if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return;
-      const old = isUnknownCommand(e) || /unexpected argument/.test(e.message || '');
-      toast(old ? `${hex} is not in a function, and this engine build cannot read raw bytes.` : `Could not read ${hex}.`, { kind: 'warn', detail: old ? '' : e.message });
+      toast(`Could not read ${hex}.`, { kind: 'warn', detail: errorLine(e) });
       return;
     } finally {
       finishOperation(op);
@@ -1932,7 +2129,7 @@ document.addEventListener('click', (e) => {
 
 function patchButtons(insn) {
   if (!insn || !state.current?.data.hasInstructions) return '';
-  const nop = nopFill(currentArch(), insn.size);
+  const nop = nopFill(state.current.arch, insn.size);
   const base = BigInt(insn.address_hex);
   let any = false;
   for (let k = 0; k < insn.size; k++) if (session.bytes.has(base + BigInt(k))) any = true;
@@ -1953,7 +2150,7 @@ async function patchAction(kind, addrHex) {
   const insn = state.current?.index.addrToInsn.get(addrHex);
   if (!insn) return;
   if (kind === 'nop') {
-    const fill = nopFill(currentArch(), insn.size);
+    const fill = nopFill(state.current.arch, insn.size);
     if (fill) patchBytes(addrHex, [...parseHex(fill)], 'NOP');
     return;
   }
@@ -1969,7 +2166,7 @@ async function patchAction(kind, addrHex) {
     return (session.bytes.get(a) ?? parseInt(insn.bytes.slice(k * 2, k * 2 + 2), 16)).toString(16).padStart(2, '0');
   }).join(' ');
   const res = await dialogs.openPopover({
-    anchorEl: document.getElementById('a-' + addrHex),
+    anchorEl: $('a-' + addrHex),
     title: `Patch ${insn.address_hex} (${insn.text})`,
     note: `${insn.size} byte${insn.size === 1 ? '' : 's'}: ${current}`,
     fields: [{ name: 'hex', label: 'new bytes (hex)', value: current, validate: (v) => (parseHex(v) ? null : 'hex digits in pairs, like 90 90') }],
@@ -2042,6 +2239,7 @@ function startBurst() {
 /** One burst of typed bytes becomes one edit, sent 700 ms after the last key. */
 function byteWritten() {
   persist();
+  bytesState.version++;
   renderBytes();
   renderRail();
   els.patch.disabled = !canDownloadPatched();
@@ -2049,19 +2247,23 @@ function byteWritten() {
   bytesState.timer = setTimeout(flushBytes, 700);
 }
 
+/**
+ * Close a burst of typed bytes: one undo step now, and a re-inspect once no
+ * other request is running (a flush never cancels what the student started).
+ */
 function flushBytes({ send = true } = {}) {
   clearTimeout(bytesState.timer);
   const burst = bytesState.burst;
   bytesState.burst = null;
   if (!burst || !state.current) return;
   const fresh = session.globalAssertions().filter((d) => !burst.before.has(d));
+  session.pushUndo(burst.snap);
   sessionChanged();
-  if (!send || state.caps.assert === false) {
-    session.pushUndo(burst.snap);
-    renderRail();
-    return;
-  }
-  reinspect({ snap: burst.snap, fresh, label: 'patch', reselect: state.sel });
+  if (!send || !state.caps.assert) return;
+  const fn = state.current.fn;
+  whenIdle(() => {
+    if (state.current?.fn === fn) reinspect({ fresh, label: 'patch', reselect: state.sel });
+  });
 }
 
 function canDownloadPatched() {
@@ -2091,40 +2293,52 @@ els.patch.addEventListener('click', () => {
 
 state.xrefs = new Map();
 
-function refsHtmlFor(addrHex) {
-  return state.xrefs.get(addrHex) || '';
+/** References depend on the program-wide directives (renames, patches), so they key the cache. */
+function refsKey(addrHex) {
+  return `${addrHex}\n${state.caps.assert ? session.globalAssertions().join('\n') : ''}`;
 }
-state.refsHtml = refsHtmlFor;
+
+state.refsHtml = (addrHex) => state.xrefs.get(refsKey(addrHex)) || '';
+
+/** What the page can say without the engine's reference walk: this function's own calls. */
+function localRefsHtml(why, nameOf) {
+  return `<p class="d2muted">${escapeHtml(why)} Callees below are read from this function's CALL instructions.</p>` +
+    renderXrefs({ callers: [], callees: localCallees(state.current.data, state.byAddr), data_refs: [] }, { nameOf });
+}
 
 /** Load (once per session state) and show the open function's references. */
 function loadRefs() {
   if (!state.current) return;
   const addr = state.current.data.address_hex;
-  if (state.xrefs.has(addr)) {
-    rail.setRefs(state.xrefs.get(addr));
+  const key = refsKey(addr);
+  const nameOf = (a, n) => (state.byAddr.has(a) ? displayName(state.byAddr.get(a)) : n || a);
+  if (state.xrefs.has(key)) {
+    rail.setRefs(state.xrefs.get(key));
+    return;
+  }
+  if (!state.caps.inspect) {
+    rail.setRefs(localRefsHtml('Callers need an engine with the xrefs command.', nameOf));
     return;
   }
   rail.setRefs('<p class="d2muted">loading…</p>');
   whenIdle(async () => {
     if (state.current?.data.address_hex !== addr) return;
-    const nameOf = (a, n) => (state.byAddr.has(a) ? displayName(state.byAddr.get(a)) : n || a);
     const op = beginOperation('xrefs');
     let html;
     try {
-      const res = await state.kuna.xrefs(addr, { assertions: state.caps.assert === false ? [] : session.globalAssertions() });
+      const res = await withDirectives(
+        (list) => state.kuna.xrefs(addr, { assertions: list }),
+        state.caps.assert ? session.globalAssertions() : [],
+      );
       if (!isCurrent(op)) return;
       html = renderXrefs(res, { nameOf });
     } catch (e) {
       if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return;
-      const callees = localCallees(state.current.data, state.byAddr);
-      html = (isUnknownCommand(e)
-        ? '<p class="d2muted">Callers need the engine\'s <code>xrefs</code> command, which this build does not have. Callees below are read from this function\'s CALL instructions.</p>'
-        : `<p class="d2muted">${escapeHtml(e.message)}</p>`) +
-        renderXrefs({ callers: [], callees, data_refs: [] }, { nameOf });
+      html = localRefsHtml(`The engine could not list references: ${errorLine(e)}.`, nameOf);
     } finally {
       finishOperation(op);
     }
-    state.xrefs.set(addr, html);
+    state.xrefs.set(key, html);
     if (state.current?.data.address_hex === addr) rail.setRefs(html);
   });
 }
@@ -2172,8 +2386,10 @@ els.dl.addEventListener('click', async () => {
   const op = beginOperation('project');
   setStatus('building project…');
   try {
-    const assertions = state.caps.assert === false ? [] : session.allAssertions(nameOfAddr);
-    const project = await state.kuna.project(state.binary.name, { assertions });
+    const project = await withDirectives(
+      (list) => state.kuna.project(state.binary.name, { assertions: list }),
+      state.caps.assert ? session.allAssertions(nameOfAddr) : [],
+    );
     if (!isCurrent(op)) return;
     download(new Blob([project.bytes], { type: 'application/zip' }), project.downloadName);
     setStatus(`${project.downloadName} downloaded (${project.bytes.length.toLocaleString()} bytes)`, 'ok');

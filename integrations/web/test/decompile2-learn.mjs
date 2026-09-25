@@ -106,6 +106,17 @@ checks.push('frameModel (sum_to, main, array callout, red zone, escaping)');
 // ── references ─────────────────────────────────────────────────────────────
 const fnByAddr = new Map([['0x1149', { name: 'add' }], ['0x1161', { name: 'sum_to' }], ['0x1050', { name: 'printf' }]]);
 assert.deepEqual(localCallees(main, fnByAddr).map((c) => [c.name, c.at_hex]), [['add', '0x11b5'], ['sum_to', '0x11c2'], ['printf', '0x11e1']]);
+const real = renderXrefs({
+  binary: 'sample.elf', function: { name: 'main', address: 4504, address_hex: '0x1198' },
+  callers: [{ name: null, address: 4192, address_hex: '0x1060', from: 4216, from_hex: '0x1078', kind: 'data', instruction: 'LEA RDI,[0x1198]' }],
+  callees: [{ name: 'add', address: 4425, address_hex: '0x1149', at: 4533, at_hex: '0x11b5', kind: 'call', instruction: 'CALL 0x1149' }],
+  data_refs: [{ name: 's_2004', address: 8196, address_hex: '0x2004', at: 4562, at_hex: '0x11d2', kind: 'data', instruction: 'LEA RAX,[0x2004]' }],
+  assertions: [],
+});
+assert.match(real, /<a class="xt" data-goto="0x1060">0x1060<\/a> <span class="d2muted">takes the address<\/span> <span class="d2muted">at<\/span> <a class="xt" data-goto="0x1078">0x1078<\/a> <span class="d2muted">LEA RDI,\[0x1198\]<\/span>/,
+  'a caller with no name falls back to its address and says how it refers');
+assert.match(real, /<a class="xt" data-goto="0x1149">add<\/a> <span class="d2muted">from<\/span> <a class="xt" data-goto="0x11b5">0x11b5<\/a> <span class="d2muted">CALL 0x1149<\/span>/);
+assert.match(real, /s_2004 <span class="d2muted">0x2004<\/span> <span class="d2muted">takes the address<\/span> <span class="d2muted">at<\/span> <a class="xt" data-goto="0x11d2">/);
 const refs = renderXrefs({
   callers: [{ name: 'main', address_hex: '0x1198', from_hex: '0x11c2', kind: 'call', instruction: 'CALL 0x1161' }],
   callees: [],

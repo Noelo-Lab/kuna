@@ -42,6 +42,7 @@ const GLOSSARY = [
 
 const LEGEND = [
   ['var(--band-0)', 'colour band: a C line and the instructions it came from share a colour'],
+  ['repeating-linear-gradient(var(--band-0) 0 3px, transparent 3px 5px)', 'dashed band: an instruction the engine did not map, attributed to the line it sets up or finishes (inferred; view ▾ turns it off)'],
   ['var(--hl-sym)', 'the selected name, everywhere it is used'],
   ['var(--patch-bg)', 'a byte you patched (hover it for the original)'],
   ['var(--red)', 'jumps, calls and returns; a rejected edit (✗)'],

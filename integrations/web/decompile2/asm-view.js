@@ -162,13 +162,74 @@ export function linkOperands(insn, ctx = {}) {
     piece(ops.slice(so.end));
 }
 
+const ARG_REG = /^(?:[RE]?(?:DI|SI|DX|CX)|DIL|SIL|DL|CL|R[89][DWB]?|XMM[0-7]|[WX][0-7]|[DSQ][0-7])$/i;
+const FRAME_MEM = /\[\s*(?:[RE]BP|[RE]SP|SP|X29)\b/i;
+
+/** Does `insn` belong to the function's opening frame setup (x86 / AArch64)? */
+function isPrologueInsn(insn, family) {
+  const m = (insn.mnemonic || '').toUpperCase();
+  const ops = (insn.operands || '').replace(/\s+/g, '');
+  const [dst, src] = ops.split(/,(?![^[]*\])/);
+  if (family === 'x86') {
+    if (/^ENDBR(32|64)$/.test(m) || m === 'NOP') return true;
+    if (m === 'PUSH') return /^[RE]?[A-Z0-9]+$/i.test(ops);
+    if (m === 'MOV' && /^[RE]BP,[RE]SP$/i.test(ops)) return true;
+    if ((m === 'SUB' || m === 'AND') && /^[RE]SP,/i.test(ops)) return true;
+    if (/^MOV/.test(m) && /FS:\[0x28\]/i.test(ops)) return true;
+    if (/^(MOV|MOVSS|MOVSD|MOVAPS|MOVUPS|MOVQ|MOVD)$/.test(m) && FRAME_MEM.test(dst || '') && ARG_REG.test(src || '')) return true;
+    return false;
+  }
+  if (family === 'aarch64') {
+    const lm = m.toLowerCase();
+    if (lm === 'bti' || lm === 'paciasp' || lm === 'nop') return true;
+    if ((lm === 'stp' || lm === 'str' || lm === 'stur') && FRAME_MEM.test(ops)) return /^[wxqds]\d/i.test(ops);
+    if (lm === 'mov' && /^x29,sp$/i.test(ops)) return true;
+    if (lm === 'sub' && /^sp,sp/i.test(ops)) return true;
+    return false;
+  }
+  return true;
+}
+
+const JUMP = /^(JMP|B|B\.AL)$/i;
+
+/**
+ * Attribute the instructions the engine left unmapped (`lines: []`) to a C
+ * line, the way objdump -S reads them: an instruction between a mapped A (line
+ * a) and the next mapped B (line b) belongs to b when b >= a (it sets up B),
+ * else to a (it finishes A); an unconditional jump in that gap, and anything
+ * before it, finishes A. Before the first mapped instruction the frame setup is
+ * `prologue` and the rest sets up the first line; after the last one is
+ * `epilogue`. Returns one `{lines, inferred, role}` per instruction.
+ */
+export function inferLines(instructions, family = 'x86') {
+  const out = instructions.map((insn) => ({ lines: insn.lines || [], inferred: false, role: null }));
+  const mapped = [];
+  instructions.forEach((insn, i) => { if ((insn.lines || []).length) mapped.push(i); });
+  if (!mapped.length) return out;
+  const lo = (i) => Math.min(...instructions[i].lines);
+  const hi = (i) => Math.max(...instructions[i].lines);
+  const infer = (i, line) => { out[i] = { lines: [line], inferred: true, role: null }; };
+  let p = 0;
+  while (p < mapped[0] && isPrologueInsn(instructions[p], family)) out[p++].role = 'prologue';
+  for (let i = p; i < mapped[0]; i++) infer(i, lo(mapped[0]));
+  for (let k = 0; k + 1 < mapped.length; k++) {
+    const a = mapped[k], b = mapped[k + 1];
+    const la = hi(a), lb = lo(b);
+    let cut = a;
+    for (let i = a + 1; i < b; i++) if (JUMP.test(instructions[i].mnemonic || '')) cut = i;
+    for (let i = a + 1; i < b; i++) infer(i, i <= cut || lb < la ? la : lb);
+  }
+  for (let i = mapped[mapped.length - 1] + 1; i < instructions.length; i++) out[i].role = 'epilogue';
+  return out;
+}
+
 /** Compact instruction rows for the hover card. */
-export function renderInsnRows(insns, { startHex, prefs = {}, max = 12 } = {}) {
+export function renderInsnRows(insns, { startHex, prefs = {}, max = 12, inferred = new Set() } = {}) {
   const shown = insns.slice(0, max);
   const mode = prefs.asmAddr || 'abs';
   let out = '';
   for (const insn of shown) {
-    out += `<div class="cr"><span class="aa">${escapeHtml(formatAddr(insn.address_hex, startHex, mode))}</span>` +
+    out += `<div class="cr${inferred.has(insn.address_hex) ? ' inf' : ''}"><span class="aa">${escapeHtml(formatAddr(insn.address_hex, startHex, mode))}</span>` +
       (prefs.asmBytes === false ? '' : `<span class="ab">${escapeHtml(spacedBytes(insn.bytes))}</span>`) +
       `<span class="am">${escapeHtml(insn.mnemonic)}</span><span class="ao">${escapeHtml(insn.operands)}</span></div>`;
   }
@@ -195,10 +256,15 @@ export function renderAsm(fnData, ctx = {}) {
   const opCtx = { ...ctx, insnIndex };
   const arrows = prefs.asmArrows === false ? { lanes: 0, rows: [] } : branchArrows(insns);
   const codeLines = ctx.codeLines || (fnData.code || '').split('\n');
-  const runs = groupRuns(insns);
+  const inferred = ctx.inferred || null;
+  const effective = inferred ? insns.map((insn, i) => ({ ...insn, lines: inferred[i].lines })) : insns;
+  const runs = groupRuns(effective);
   const hints = ctx.hints || new Map();
   const patched = ctx.patched || new Set();
-  let out = `<div class="d2-chunk" style="--ag-w:${arrows.lanes ? arrows.lanes * LANE_W + 6 : 0}px">`;
+  const widest = (mode) => Math.max(...insns.map((insn) => formatAddr(insn.address_hex, start, mode).length));
+  const chunkStyle = `--ag-w:${arrows.lanes ? arrows.lanes * LANE_W + 6 : 0}px;` +
+    `--aw-abs:${widest('abs') + 3}ch;--aw-rel:${widest('rel') + 3}ch;--aw-both:${widest('both') + 3}ch`;
+  let out = `<div class="d2-chunk" style="${chunkStyle}">`;
   let row = 0;
   for (const run of runs) {
     const lineText = run.line ? codeLines[run.line - 1] : null;
@@ -206,21 +272,24 @@ export function renderAsm(fnData, ctx = {}) {
       out += `<div class="d2-as" data-line="${run.line}"><b>L${run.lines.join(',')}</b>  ${escapeHtml(clip(lineText, 140))}</div>`;
     }
     for (let i = run.start; i < run.end; i++, row++) {
-      if (row && row % CHUNK === 0) out += `</div><div class="d2-chunk" style="--ag-w:${arrows.lanes ? arrows.lanes * LANE_W + 6 : 0}px">`;
+      if (row && row % CHUNK === 0) out += `</div><div class="d2-chunk" style="${chunkStyle}">`;
       const insn = insns[i];
+      const inf = inferred?.[i];
       const band = run.line ? bandOf(run.line) : null;
+      const role = inf?.role && (i === 0 || inferred[i - 1].role !== inf.role) ? `; ${inf.role}` : '';
       const comment = i === run.start && run.line && prefs.asmCMode !== 'interleave'
-        ? `; L${run.lines.join(',')}: ${clip(lineText)}` : '';
+        ? `; L${run.lines.join(',')}: ${clip(lineText)}` : role;
       const hint = hints.get(insn.address_hex);
       const cls = ['d2-ar', run.line ? '' : 'nomap', patched.has(insn.address_hex) ? 'pa' : ''].filter(Boolean).join(' ');
       out += `<div class="${cls}" id="a-${insn.address_hex}" role="option" data-i="${i}"` +
-        `${attr('data-addr', insn.address_hex)}${attr('data-lines', (insn.lines || []).join(' '))}${attr('data-band', band)}>` +
+        `${attr('data-addr', insn.address_hex)}${attr('data-lines', run.lines.join(' '))}${attr('data-band', band)}` +
+        `${inf?.inferred ? ' data-inferred="1"' : ''}${attr('data-role', inf?.role)}>` +
         `<span class="ag">${arrowSvg(arrows.rows[i] || [], arrows.lanes)}</span>` +
         `<span class="aa"><span class="abs">${escapeHtml(formatAddr(insn.address_hex, start, 'abs'))}</span>` +
         `<span class="rel">${escapeHtml(formatAddr(insn.address_hex, start, 'rel'))}</span></span>` +
         `<span class="ab" title="${escapeHtml(spacedBytes(insn.bytes))}">${escapeHtml(spacedBytes(insn.bytes))}</span>` +
         `<span class="am"${attr('data-mn', insn.mnemonic)}>${escapeHtml(insn.mnemonic)}</span>` +
-        `<span class="ao">${linkOperands(insn, opCtx)}</span>` +
+        `<span class="ao"${attr('title', insn.operands)}>${linkOperands(insn, opCtx)}</span>` +
         `<span class="ac">${escapeHtml(comment)}${hint && prefs.asmHints !== false ? `<span class="ah">${escapeHtml(hint)}</span>` : ''}</span></div>`;
     }
   }

@@ -40,6 +40,14 @@ function varDirective(rec, qualifier) {
   return `name ${sym} ${rec.name}`;
 }
 
+const SCOPED = new Set(['name', 'type', 'comment', 'flow']);
+
+/** `flow 0x10 return` qualified with `f` → `flow f::0x10 return`. */
+function qualifyRaw(text, qualifier) {
+  const m = /^(\S+)\s+(\S+)(.*)$/.exec(text);
+  return m && qualifier ? `${m[1]} ${qualifier}::${m[2]}${m[3]}` : text;
+}
+
 function recordDirective(rec, qualifier) {
   switch (rec.kind) {
     case 'var': return varDirective(rec, qualifier);
@@ -48,7 +56,7 @@ function recordDirective(rec, qualifier) {
     case 'fn': return `function ${rec.addr}=${rec.name}`;
     case 'data': return `data ${rec.addr} ${cDeclare(rec.type, rec.name)}`;
     case 'typedef': return `typedef ${rec.decl}`;
-    case 'raw': return rec.text;
+    case 'raw': return rec.func ? qualifyRaw(rec.text, qualifier) : rec.text;
     default: throw new Error(`unknown record kind ${rec.kind}`);
   }
 }
@@ -58,6 +66,7 @@ export class Session {
     this.records = new Map();
     this.bytes = new Map();
     this.outcomes = new Map();
+    this.refused = new Set();
     this.sent = new Map();
     this.undoStack = [];
     this.redoStack = [];
@@ -78,6 +87,7 @@ export class Session {
     if (type !== undefined) rec.type = type || null;
     if (!rec.name && !rec.type) this.records.delete(key);
     else this.records.set(key, rec);
+    this.#touch(key);
     return key;
   }
 
@@ -101,10 +111,17 @@ export class Session {
     return this.#set(`comment:${func}:${addr}`, text ? { kind: 'comment', func, addr, text } : null);
   }
 
-  addRaw(text) {
+  /** A directive the page does not model; `func` binds a function-scoped one (sent unqualified). */
+  addRaw(text, func = null) {
     const key = `raw:${++this.rawSeq}`;
-    this.records.set(key, { kind: 'raw', text: text.trim() });
+    this.records.set(key, func ? { kind: 'raw', text: text.trim(), func } : { kind: 'raw', text: text.trim() });
     return key;
+  }
+
+  /** Replace a record with whatever `text` parses to (a rail edit of one directive). */
+  replaceWith(key, text, options = {}) {
+    this.remove(key);
+    return this.importText(text, options);
   }
 
   /** Patch one byte; writing the `original` back removes the patch. */
@@ -112,28 +129,44 @@ export class Session {
     const a = BigInt(addr);
     if (value === original) this.bytes.delete(a);
     else this.bytes.set(a, value & 0xff);
+    this.#touchBytes();
   }
 
   remove(key) {
     if (key.startsWith('bytes:')) {
       const run = this.byteRuns().find((r) => `bytes:${hex(r.addr)}` === key);
       for (let i = 0; i < (run?.values.length || 0); i++) this.bytes.delete(run.addr + BigInt(i));
+      this.#touchBytes();
       return;
     }
     this.records.delete(key);
-    this.outcomes.delete(key);
+    this.#touch(key);
   }
 
   clear() {
     this.records.clear();
     this.bytes.clear();
     this.outcomes.clear();
+    this.refused.clear();
   }
 
   #set(key, rec) {
     if (rec) this.records.set(key, rec);
     else this.records.delete(key);
+    this.#touch(key);
     return key;
+  }
+
+  /** A changed or deleted record's old outcome no longer describes it. */
+  #touch(key) {
+    this.outcomes.delete(key);
+    this.refused.delete(key);
+  }
+
+  #touchBytes() {
+    for (const key of [...this.outcomes.keys(), ...this.refused]) {
+      if (key.startsWith('bytes:')) this.#touch(key);
+    }
   }
 
   // ── queries ──────────────────────────────────────────────────────────────
@@ -186,11 +219,17 @@ export class Session {
     }));
   }
 
-  /** Every directive in replay order; `qualify(rec)` names var/comment records' function. */
-  #directives({ func = null, qualify = null } = {}) {
+  /**
+   * Every directive in replay order; `qualify(addr)` names the function of the
+   * function-scoped ones. Directives the engine refused to parse are left out
+   * unless `includeRefused` (the rail still lists them).
+   */
+  #directives({ func = null, qualify = null, includeRefused = false } = {}) {
     const groups = new Map(ORDER.map((k) => [k, []]));
     for (const [key, rec] of this.records) {
-      if (rec.kind === 'var' || rec.kind === 'comment') {
+      if (!includeRefused && this.refused.has(key)) continue;
+      const scoped = rec.kind === 'var' || rec.kind === 'comment' || (rec.kind === 'raw' && rec.func);
+      if (scoped) {
         if (qualify) groups.get(rec.kind).push({ key, text: recordDirective(rec, qualify(rec.func)) });
         else if (rec.func === func) groups.get(rec.kind).push({ key, text: recordDirective(rec, null) });
       } else if (rec.kind === 'raw') {
@@ -199,7 +238,7 @@ export class Session {
         groups.get(rec.kind).push({ key, text: recordDirective(rec, null) });
       }
     }
-    groups.set('bytes', this.#bytesDirectives());
+    groups.set('bytes', this.#bytesDirectives().filter((d) => includeRefused || !this.refused.has(d.key)));
     const out = ORDER.flatMap((k) => groups.get(k));
     for (const d of out) this.sent.set(d.text, d.key);
     return out;
@@ -232,9 +271,21 @@ export class Session {
     return this.outcomes.get(key)?.status || 'pending';
   }
 
+  /**
+   * The engine could not parse `directive` (the request failed on it): stop
+   * sending it until it is edited, and show why. Returns its key, or null.
+   */
+  markRefused(directive, detail) {
+    const key = this.sent.get(directive.trim());
+    if (!key) return null;
+    this.refused.add(key);
+    this.outcomes.set(key, { status: 'refused', detail: detail || null, fatal: false });
+    return key;
+  }
+
   /** The session as rail rows: `[{key, kind, text, status, detail}]`, in replay order. */
   entries(nameOf) {
-    return this.#directives({ qualify: nameOf }).map((d) => ({
+    return this.#directives({ qualify: nameOf, includeRefused: true }).map((d) => ({
       key: d.key,
       kind: d.key.split(':')[0],
       text: d.text,
@@ -255,9 +306,37 @@ export class Session {
   }
 
   restore(snap) {
+    const before = new Map([...this.records].map(([k, v]) => [k, JSON.stringify(v)]));
+    const bytesBefore = JSON.stringify([...this.bytes].map(([a, v]) => [a.toString(16), v]));
     this.records = new Map(snap.records.map(([k, v]) => [k, { ...v }]));
     this.bytes = new Map(snap.bytes);
     this.rawSeq = snap.rawSeq;
+    for (const key of new Set([...before.keys(), ...this.records.keys()])) {
+      if (before.get(key) !== JSON.stringify(this.records.get(key))) this.#touch(key);
+    }
+    if (bytesBefore !== JSON.stringify([...this.bytes].map(([a, v]) => [a.toString(16), v]))) this.#touchBytes();
+  }
+
+  /** What is in the session now, to discard later if it is still unchanged. */
+  mark() {
+    return {
+      records: new Map([...this.records].map(([k, v]) => [k, JSON.stringify(v)])),
+      bytes: new Map(this.bytes),
+    };
+  }
+
+  /** Remove the records and bytes of `mark` that nobody has edited since; returns how many. */
+  discardMarked(mark) {
+    let n = 0;
+    for (const [key, json] of mark.records) {
+      if (JSON.stringify(this.records.get(key)) === json) { this.remove(key); n++; }
+    }
+    let bytes = 0;
+    for (const [a, v] of mark.bytes) {
+      if (this.bytes.get(a) === v) { this.bytes.delete(a); bytes++; }
+    }
+    if (bytes) this.#touchBytes();
+    return n + bytes;
   }
 
   /** Record `snap` (the state before a successful edit) as one undo step. */
@@ -316,7 +395,9 @@ export class Session {
       `# replay: ${cliCommand(binary, target, file)}`,
       `#     or: kuna decompile-all ${shellQuote(binary)} --assert @${shellQuote(file)}`,
     ].filter(Boolean);
-    return [...head, ...this.allAssertions(nameOf)].join('\n') + '\n';
+    const refused = this.entries(nameOf).filter((e) => e.status === 'refused')
+      .map((e) => `# refused by the engine, not replayed: ${e.text}`);
+    return [...head, ...this.allAssertions(nameOf), ...refused].join('\n') + '\n';
   }
 
   /**
@@ -394,6 +475,15 @@ export class Session {
         this.setData('0x' + BigInt('0x' + m[1].replace(/^0x/i, '')).toString(16), decl.type, decl.name);
         return 'data';
       }
+    }
+    if (SCOPED.has(keyword) && (m = /^(\S+)(.*)$/.exec(rest))) {
+      const s = scope(m[1]);
+      if (s.bound) {
+        this.addRaw(`${keyword} ${s.operand}${m[2]}`, s.func);
+        return 'raw';
+      }
+      this.addRaw(d);
+      return m[1].includes('::') ? 'raw' : 'unbound';
     }
     this.addRaw(d);
     return 'raw';

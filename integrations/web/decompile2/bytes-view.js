@@ -8,13 +8,19 @@ import { bare } from './addr.js';
 const big = (a) => (typeof a === 'bigint' ? a : BigInt(a));
 const hex = (a) => '0x' + big(a).toString(16);
 
-/** The file offset that holds virtual address `addr`, or null (not file-backed). */
+/**
+ * The file offset that holds virtual address `addr`, or null (not
+ * file-backed). A section's file bytes may be fewer than its size (`file_size`:
+ * a PE section's zero-filled tail), and the tail has no offset.
+ */
 export function fileOffsetFor(addr, sections = []) {
   const a = big(addr);
   for (const s of sections) {
-    if (s.file_offset === null || s.file_offset === undefined) continue;
     const start = BigInt(s.address_hex ?? s.address);
-    if (a >= start && a < start + BigInt(s.size)) return Number(BigInt(s.file_offset) + (a - start));
+    if (a < start || a >= start + BigInt(s.size)) continue;
+    if (s.file_offset === null || s.file_offset === undefined) return null;
+    const held = BigInt(s.file_size ?? s.size);
+    return a - start < held ? Number(BigInt(s.file_offset) + (a - start)) : null;
   }
   return null;
 }
