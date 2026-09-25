@@ -77,7 +77,7 @@
     "O2-noinline": "0.891 -> 0.852"
    },
    "off_arm": "byte-identical to a build of main 850e8c692 on all 45 files",
-   "note": "re-measured after review round 1 (sign on evidence, table ledger, index-of-other refusals): the first version's 33,472 kept casts it should not have removed; the 16 functions with more casts are the classes read in analysis.md section 3 (a callee now declaring char * / char ** making a caller's integer argument print its conversion, a constant used at two pointee types, a call result kept in a char * slot)"
+   "note": "measured on the final engine (sign on evidence, table ledger, index-of-other refusals); an earlier engine reached 33,472 by removing casts on a sign it had no evidence for; the 16 functions with more casts are the classes read in analysis.md section 3 (a callee now declaring char * / char ** making a caller's integer argument print its conversion, a constant used at two pointee types, a call result kept in a char * slot)"
   },
   "shape_deltas_850e8c692": "(char *)(...) -382, (unsigned char *)(...) -280, (unsigned long)v -248, (long)v -244, (int *)(...) -168, (unsigned long)(...) -134, (unsigned short *)(...) -115, (char **)(...) -91"
  },
@@ -184,12 +184,12 @@
   "structural_flags": 25,
   "classes": "constant named as the array globalref gives it; caller constant unnamed when a callee declares another pointee; register variable split (find O0 0x160f6 93 -> 54 statements, 0xdd20); tail duplicated by returndup under its budget (find O0 0x173d3); stores split / merged through a now-char * header (tar O2-noinline 0x12990, 0x12cb0: an 8-byte zero store as 8 byte stores, 'ustar' as builtin_strncpy, the same bytes); a read printed at each of its uses (upstream's expression-duplication bound, no intervening store in any case read); one while loop absorbing its iterator",
   "read_by_hand": "all 25 flagged functions and the 16 with more casts; the classes are the ones analysis.md section 4 lists",
-  "disjoint_sweep": "the review's 11 binaries (coreutils cksum/od O0, tr/ptx/shuf O2, zlib, xmlwf, dash, mirai, libbsd, init): 113 functions changed, casts 11,384 -> 11,030, 91 fewer and 6 more (read: two-type constants, a call result kept in a char * slot, a char ** parameter whose callee returns long, strlen((char *)v) on an unsigned char * buffer)"
+  "disjoint_sweep": "11 further binaries (coreutils cksum/od O0, tr/ptx/shuf O2, zlib, xmlwf, dash, mirai, libbsd, init): 113 functions changed, casts 11,384 -> 11,030, 91 fewer and 6 more (read: two-type constants, a call result kept in a char * slot, a char ** parameter whose callee returns long, strlen((char *)v) on an unsigned char * buffer)"
  },
  "soundness": {
   "round_trip": "elemptr_x86_64.c: 19 witnesses x 3 builds (gcc -O0, clang -O0, gcc -O2) x 2 arms x 2 compilers print the binary's two lines: bytes >= 0x80 read signed and unsigned and used as indexes both ways, a negative index, a .data table of ints, a table filled through an allocated global, a returned buffer, 2- and 4-byte elements with the top bit set returned to callers that widen them, one shifted, one only compared, and a byte table read at two signs",
   "strict_c": "the printed witnesses compile with -Werror=int-conversion -Werror=incompatible-pointer-types (gcc 11, clang 14)",
-  "review_fixtures": "the review's cy.c / cx.c, exported with decompile-project, compiled with gcc and clang and run: the option on prints exactly what the option off prints on gcc -O0, clang -O0, gcc -O2 and clang -O2 builds (where off already differs from the binary, a gap in main, on differs identically)"
+  "more_fixtures": "two further fixtures of returned and shared tables (cy.c, cx.c), exported with decompile-project, compiled with gcc and clang and run: the option on prints exactly what the option off prints on gcc -O0, clang -O0, gcc -O2 and clang -O2 builds (where off already differs from the binary, a gap in main, on differs identically)"
  },
  "speed": {
   "method": "one pinned release binary (final engine), kuna decompile-all --json --max-fn-seconds 120, --option elemptr off vs default, arms interleaved and order-alternated, one warm-up discarded, min and median-of-ratios of 15 (docs/features/elemptr/speed.py)",
@@ -270,7 +270,7 @@
   "c_test_cli": "2 probes pinned the integer spelling: bytecode-append-call-loses (now &dat_402000[a1]) and passthrough-gives-a-forwarding-function-its-parameter (a control's parameter type left open; probe id re-derived); 239/239",
   "d_typesweep": "1615 -> 1645 perfect, 171 better, 0 worse, 0 off perfect; 223 scored variables gained, 0 lost; no variable count moved",
   "e_speed": "fmt +0.10%, ls -0.02%, sort +1.19%, bash +1.37%; worst +1.37%; budget +5%",
-  "f_hunks": "1,077 functions over 45 binaries, 25 flagged by structural.py, every one read and classified; plus the review's disjoint 11-binary sweep (113 functions, 6 with more casts, read)",
+  "f_hunks": "1,077 functions over 45 binaries, 25 flagged by structural.py, every one read and classified; plus a disjoint 11-binary sweep (113 functions, 6 with more casts, read)",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope",
   "h_castbench": "on 850e8c692: 35,588 -> 33,588 (0.941x -> 0.888x IDA), 339 fewer (-2,019), 16 more (+19, read)",
   "workspace_tests": "5 kuna-cli tests pinned the integer spelling: a_load_is_not_printed_after_a_store_into_its_bytes, an_implied_cast_round_trips_through_the_printed_c, a_signed_only_variable_round_trips_through_the_printed_c follow the subscript; a_conditional_arm_cast_round_trips_through_the_printed_c (castternary) and a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c (castindex) keep their pins with elemptr off and also compile and run the elemptr-on output, which computes the same values"

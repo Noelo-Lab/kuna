@@ -125,7 +125,7 @@ address may become the `dat_<addr>` it names), with statement counts within four
 - while to for: one loop absorbs its iterator (regionstructure-loop's stage test
   has the same shape).
 
-A second, disjoint sweep over the eleven binaries the review chose (coreutils
+A second, disjoint sweep over eleven more binaries (coreutils
 `cksum` and `od` at O0, `tr`, `ptx` and `shuf` at O2, zlib, `xmlwf`, `dash`,
 `mirai`, `libbsd`, `init`) changes 113 functions, 11,384 -> 11,030 casts, 91 with
 fewer and 6 with more, each read: a constant used at two pointee types (`tr` main's
@@ -199,7 +199,7 @@ printed C computes were found by compiled round trips and closed:
 The round trip in `decompile_all_cli.rs` now also reads tables whose elements have
 the top bit set: `unsigned short` and `unsigned int` elements returned to callers
 that widen them, one shifted, one only compared, and a byte table read at two
-signs. The review's own fixtures (`cy.c`, `cx.c`), exported, compiled with gcc and
+signs. Two further fixtures of the same shapes, exported, compiled with gcc and
 clang and run, print with the option on exactly what they print with it off on
 gcc -O0, clang -O0, gcc -O2 and clang -O2 builds (where the off arm itself differs
 from the binary, a pre-existing gap in main, the on arm differs identically).

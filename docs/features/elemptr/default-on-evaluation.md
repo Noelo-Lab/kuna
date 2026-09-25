@@ -2,8 +2,8 @@
 
 `elemptr` ships on. Both arms are one build of this branch on main `850e8c692`
 (`--option elemptr off` against the default); the `off` arm is byte-identical to a
-build of main on all 45 castbench binaries. Measured again after review round 1
-(sign on evidence, the table ledger, the index-of-other refusals).
+build of main on all 45 castbench binaries. Measured on the final engine (sign on
+evidence, the table ledger, the index-of-other refusals).
 
 | step | criterion | result |
 |---|---|---|
@@ -12,11 +12,11 @@ build of main on all 45 castbench binaries. Measured again after review round 1
 | (c) `make test-cli` | a moved probe has a reason | 2 probes of other options read the subscript for the same access; the two `elemptr` probes pin the rebuilt fixture |
 | (d) 444-slice typesweep | improved >= worse, no perfect function lost | 1,615 -> 1,645 perfect, 171 better, 0 worse; 223 scored variables gained, 0 lost; no function's variable count moved |
 | (e) speed | worst delta <= +5% | see `record.json` (`speed`) |
-| (f) whole-corpus hunks | every hunk in the documented effect | 1,077 functions over 45 binaries, the 25 `structural.py` flags read; the review's disjoint 11-binary sweep read (analysis.md section 4) |
+| (f) whole-corpus hunks | every hunk in the documented effect | 1,077 functions over 45 binaries, the 25 `structural.py` flags read; a disjoint 11-binary sweep read (analysis.md section 4) |
 | (g) `modes.rs` | coherent | nothing to do: a default-on option is outside the `aggressive` preset's default-off scope |
 | (h) castbench full | casts removed, every function with more read | 35,588 -> 33,588 (0.941x -> 0.888x IDA), 339 fewer (-2,019), 16 more (+19), all read (analysis.md section 3) |
 
 Value preservation (analysis.md section 7): the compiled round trip in
-`decompile_all_cli.rs` and the review's `cy.c` / `cx.c` fixtures print, with the
+`decompile_all_cli.rs` and two further fixtures of returned and shared tables print, with the
 option on, exactly what the binary (or, where main already differs, the option
 off) prints, compiled with gcc and clang.
