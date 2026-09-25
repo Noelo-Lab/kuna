@@ -113,12 +113,12 @@ d1e889c2488b45f089108b45fc48985dc3
 <stringmatch name="castimplied #2: with the option on the argument is passed bare" min="1" max="1">sinki\(a0\);</stringmatch>
 <stringmatch name="castimplied #3: a callee with no declared prototype keeps the cast in both passes" min="2" max="2">sinkl\(\(int8\)a0\);</stringmatch>
 <stringmatch name="castimplied #4: a varargs argument keeps the cast in both passes" min="2" max="2">prf\(a0,\(int8\)a1\);</stringmatch>
-<stringmatch name="castimplied #5: with the option off a widening assigned to a local declared int8 carries an (int8)" min="1" max="1">v1 = \(int8\)\*\(char \*\)\(a0 \+ v2\);</stringmatch>
-<stringmatch name="castimplied #6: with the option on the assignment converts" min="1" max="1">v1 = \*\(char \*\)\(a0 \+ v2\);</stringmatch>
+<stringmatch name="castimplied #5: with the option off a widening assigned to a local declared int8 carries an (int8)" min="1" max="1">v1 = \(int8\)a0\[v2\];</stringmatch>
+<stringmatch name="castimplied #6: with the option on the assignment converts" min="1" max="1">v1 = a0\[v2\];</stringmatch>
 <stringmatch name="castimplied #7: with the option off an int4 returned from an int8 function carries an (int8)" min="1" max="1">return \(int8\)a0;</stringmatch>
 <stringmatch name="castimplied #8: with the option on the return converts" min="1" max="1">return a0;</stringmatch>
 <stringmatch name="castimplied #9: with the option off one byte is widened through three casts" min="1" max="1">\(int4\)\(uint4\)\(uint1\)to_uchar\(\(int4\)a1\)</stringmatch>
-<stringmatch name="castimplied #10: with the option on the widening under (int4) goes and the (uint1) sign change stays" min="1" max="1">a0 \+ \(int4\)\(uint1\)to_uchar\(\(int4\)a1\)</stringmatch>
+<stringmatch name="castimplied #10: with the option on the widening under (int4) goes and the (uint1) sign change stays" min="1" max="1">a0\[\(int4\)\(uint1\)to_uchar\(\(int4\)a1\)\]</stringmatch>
 <stringmatch name="castimplied #11: with the option off the return widens a sign-changed value" min="1" max="1">return \(int8\)\(int4\)a0;</stringmatch>
 <stringmatch name="castimplied #12: with the option on the widening goes and the (int4) sign change stays" min="1" max="1">return \(int4\)a0;</stringmatch>
 </decompilertest>

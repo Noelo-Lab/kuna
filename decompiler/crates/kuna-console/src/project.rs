@@ -263,13 +263,49 @@ fn decompile_batch(
     opts: &DecompileOptions,
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
-    // Only the surface that can supersede a name pays for the replay list.
-    let replay =
-        if prog.arch().struct_synth.fires() { targets.clone() } else { Vec::new() };
+    // Only the surfaces that can decide a function again pay for the replay list.
+    let replay = if prog.arch().struct_synth.fires() || prog.arch().elem_ptr {
+        targets.clone()
+    } else {
+        Vec::new()
+    };
+    kuna_decomp::kuna_elemptr::start(prog.arch_mut());
     let mut pending = targets.into_iter();
     decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| out.push(r));
     converge_synthesized_structs(prog, opts, &replay, &mut out);
+    converge_element_globals(prog, opts, &replay, &mut out);
+    kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     out
+}
+
+/// (kuna `elemptr`) Decide again the functions that typed a global some other
+/// function of the batch disagrees about, with that global blocked for them: a
+/// global is an array of `T` only where every function that says something
+/// about it agrees. Two rounds at most: a redo that blocks a global can only
+/// withdraw a type, so a second round is needed only where one function typed
+/// two globals and the first redo moved the other. A redo that fails keeps the
+/// first body.
+pub fn converge_element_globals(
+    prog: &mut ConsoleProgram,
+    opts: &DecompileOptions,
+    targets: &[FunctionEntry],
+    out: &mut [FuncResult],
+) {
+    for _ in 0..2 {
+        let redo = kuna_decomp::kuna_elemptr::disagreements(prog.arch_mut());
+        if redo.is_empty() {
+            return;
+        }
+        for (i, t) in targets.iter().enumerate() {
+            if i >= out.len() || !redo.contains(&t.addr.get_offset()) {
+                continue;
+            }
+            let again = decompile_entry(prog, t.clone(), opts);
+            if redo_replaces(&out[i], &again) {
+                out[i] = again;
+            }
+        }
+    }
 }
 
 /// (kuna `structsynth`) Decide again the functions that named a synthesized
@@ -660,6 +696,8 @@ pub fn decompile_pulled(
                 if prog.arch().kuna_calleevote.recording {
                     kuna_decomp::kuna_calleevote::record(prog.arch_mut(), &park_entry, &mut fd);
                 }
+                // (kuna `elemptr`) Record what this function said about each global.
+                kuna_decomp::kuna_elemptr::record(prog.arch_mut(), &fd);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
@@ -1056,7 +1094,9 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 }
 
 /// (kuna `globalref`) One `extern` line per global the functions name by address,
-/// in address order.
+/// in address order, and (kuna `elemptr`) per global a function reads directly
+/// and `elemptr` typed an element pointer: a subscript `dat_5068[i]` reads the
+/// element its declaration names.
 ///
 /// Each function declares the object at the type IT uses it at, so two
 /// functions can disagree, and a function that reads the same `dat_<addr>`
@@ -1068,6 +1108,13 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///
 /// * a record or union some function takes the address of, the larger one
 ///   first: a scalar access of the name does not compile against it;
+/// * (kuna `elemptr`) an array some function indexes (`T dat_4020[]`), when no
+///   function reads the name directly: an indexed body does not compile
+///   against a scalar, and a direct read does not compile against an array.
+///   Functions that index it at two element types get nothing, and a comment:
+///   a body reads `dat_4020[i]` at the declared element, so either one would
+///   change what the other computes (the batch's agreement pass keeps this
+///   from happening; a `--jobs` worker cannot see the other functions);
 /// * otherwise the one type the direct accesses agree on;
 /// * otherwise, with direct accesses at two types, nothing, and a comment says so;
 /// * with no direct access, a type over the unknown byte a `void *` use stands
@@ -1084,9 +1131,10 @@ fn global_declarations(results: &[FuncResult]) -> String {
     let quote = |d: &str| d.replace("/*", "/ *").replace("*/", "* /");
     let mut out = String::new();
     for (taken, direct) in by_addr.values() {
-        if taken.is_empty() {
+        if taken.is_empty() && !direct.iter().any(|g| g.elem) {
             continue;
         }
+        let name = taken.iter().chain(direct.iter()).next().map_or("", |g| g.name.as_str());
         let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
         for g in taken.iter().chain(direct.iter()) {
             match decls.iter_mut().find(|(d, _)| d.declaration == g.declaration) {
@@ -1102,13 +1150,26 @@ fn global_declarations(results: &[FuncResult]) -> String {
         direct_decls.sort_unstable();
         direct_decls.dedup();
         let record = best(&mut decls.iter().filter(|(g, _)| !g.direct && g.aggregate));
+        let array = best(&mut decls.iter().filter(|(g, _)| !g.direct && g.declaration.ends_with("[]")));
+        let arrays: Vec<String> =
+            decls.iter().filter(|(g, _)| g.declaration.ends_with("[]")).map(|(g, _)| quote(&g.declaration)).collect();
+        if record.is_none() && direct_decls.is_empty() && arrays.len() > 1 {
+            let _ = writeln!(
+                out,
+                "/* {} is indexed at two element types, so it is not declared: {} */",
+                name,
+                arrays.join(", ")
+            );
+            continue;
+        }
         let chosen = match (record, direct_decls.as_slice()) {
             (Some(r), _) => r,
-            (None, [one]) => one.to_string(),
+            (None, []) if array.is_some() => array.unwrap_or_default(),
+            (None, [one]) if array.is_none() => one.to_string(),
             (None, []) => best(&mut decls.iter()).unwrap_or_default(),
             (None, _) => {
                 let all: Vec<String> = decls.iter().map(|(g, _)| quote(&g.declaration)).collect();
-                let _ = writeln!(out, "/* {} is read at two types, so it is not declared: {} */", taken[0].name, all.join(", "));
+                let _ = writeln!(out, "/* {} is read at two types, so it is not declared: {} */", name, all.join(", "));
                 continue;
             }
         };

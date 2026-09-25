@@ -721,7 +721,7 @@ impl ResultWriter {
             put_str(&mut body, &g.name);
             put_str(&mut body, &g.declaration);
             body.extend_from_slice(&g.size.to_le_bytes());
-            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2);
+            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2 | u8::from(g.elem) << 3);
         }
         put_u64s(&mut body, &r.callee_hints);
         match &r.synth {
@@ -847,6 +847,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             unknown: bits & 1 != 0,
             direct: bits & 2 != 0,
             aggregate: bits & 4 != 0,
+            elem: bits & 8 != 0,
         });
     }
     let callee_hints = r.u64s()?;
@@ -3302,6 +3303,7 @@ mod tests {
                 unknown: false,
                 direct: true,
                 aggregate: true,
+                elem: true,
             }],
             line_mappings: vec![LineMapping { line_number: 3, addresses: vec![0x401004] }],
             aliases: vec!["_main".into()],

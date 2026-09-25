@@ -437,6 +437,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "castindex",
     "ptrfromuse",
     "charptr",
+    "elemptr",
     "protoorder",
     "calleevote",
     "cortexmpriv",

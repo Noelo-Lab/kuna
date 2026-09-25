@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1394,
-    1394
+    1410,
+    1410
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1110,6 +1110,22 @@
     "data:cspecprotos #6: the stack argument shifts to the second slot behind the this-pointer",
     "data:earlyreturn #1: OFF keeps the diamond's else-arm, ON hoists it away (else appears once, in the OFF pass only)",
     "data:earlyreturn #2: ON logs the const-guard hoist exactly once",
+    "data:elemptr #10: with the option on a returned word nothing shows the sign of is an unsigned element",
+    "data:elemptr #11: the returned word is never declared signed in either pass",
+    "data:elemptr #12: with the option on a lookup in the global table is a char the conditional widens itself",
+    "data:elemptr #13: a buffer's length compared against a pointer difference stays a number in both passes",
+    "data:elemptr #14: with the option on the table a counter is stored into is unsigned and the counter stays int",
+    "data:elemptr #15: the stored counter is compared and used as an index with no cast",
+    "data:elemptr #16: the counter is never re-declared unsigned and cast back",
+    "data:elemptr #1: with the option off the decoder's input is an integer and its buffer void * - the bug",
+    "data:elemptr #2: with the option off the table build casts the global table and reads the .data alphabet through an integer sum",
+    "data:elemptr #3: with the option on the input and the returned buffer are char *",
+    "data:elemptr #4: with the option on a store into the allocated buffer is a subscript",
+    "data:elemptr #5: with the option on the global table and the .data alphabet are arrays",
+    "data:elemptr #6: with the option on a signed byte indexes an int array",
+    "data:elemptr #7: with the option on a .data table of ints is read by subscript",
+    "data:elemptr #8: a record walked by a stride keeps its integer form in both passes",
+    "data:elemptr #9: a pointer read at two widths is not an array in either pass",
     "data:finalorder #1: no statement is emitted after an unconditional goto",
     "data:finalorder #2: the body does not open with a label",
     "data:finalorder #3: the body opens with an indented statement",

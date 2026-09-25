@@ -297,7 +297,15 @@ that still prints (its target), a conversion this rule leaves out (its own
 operand's type, which it preserved), a truncation printed as a cast, a load
 `*(T *)p` through a pointer printed with that cast or declared `T *`, and a
 subscript `((T *)p)[k]` whose base prints with that cast (the form `castarith`
-below gives a load). An
+below gives a load). With `elemptr` on (05-types §5.2), whose declarations
+produce subscripts of declared pointers, a subscript `p[k]` of a variable the text
+declares `T *`, or of a constant printed as an array name or behind its own cast,
+reads a `T` as well (`ImpliedCasts::subscript_base_type`), so the `(int)` a `?:`
+arm of `a0[i]` carries is the conversion C performs. So does a subscript of a
+global no symbol names that `elemptr` typed, `dat_5068[k]`: the export header
+declares it at the one type the function reads and writes it at (`kuna_globalref.rs
+(Plan::declared_type)`, what `extract_global_objects` writes, §9.9), and a
+subscript reads that type's pointee when it is the pointer the base is read at. An
 arithmetic operand is not known, because C promotes `a - b` over two
 `unsigned char`s to a negative `int` where the p-code wraps; neither is a
 constant or a call. Under that rule `(long)(int)(unsigned int)(unsigned char)c`
@@ -1583,6 +1591,27 @@ character-pointer type in the first place: it shared a merged live range with a
 genuine `char *` parameter (§6), and the probe is doing what it is supposed to do
 for a `char *` constant once that type is established.
 
+**An indexed table is a literal only when the index stays inside it.** With
+`elemptr` on (05-types §5.2), a character-pointer constant that is the base of a
+`PTRADD` indexed by a computed value is probed with the index's largest value
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs
+(literal_index_bound)`): a zero-extended byte is at most 255, a mask is at most
+its mask, an unsigned remainder is less than its divisor, and anything else is
+unbounded. `push_ptr_char_constant_ir` keeps the literal only when that bound is
+at most the literal's character count — its NUL is the last byte still inside it
+— because the C `"..."[x]` reads the literal, not the image. A table the string
+probe accepts as text ends at its first zero byte and the table does not: findutils'
+and tar's `get_date` parsers index bison tables (`yycheck`, `yytable`) that printed as `"\x05"[v0]` and a 110-byte
+escape string indexed by the parser state, and coreutils `sort` indexes a
+256-byte table whose first byte is zero, which printed `""[*v15._0_8_]`. So an
+unbounded index declines the literal too. The bound is consulted only for a
+constant `elemptr` itself typed (`Funcdata::kuna_elemptr_typed_constant`): a
+character array another pass already recovered keeps the spelling it had
+(`sort`'s `"CCc"[v21]`, `tar`'s base64 alphabet, `&" %s"[v0]`). A declined
+literal falls through to the address, and so to the array name `globalref` gives
+it (§9.9). The upstream symbol path (a read-only character-array symbol) does
+not consult the bound.
+
 **A character pointer the probe declines is still an address.** When the bytes
 at a `char *` constant do not decode as a string — the GB18030 quote glyphs
 gnulib's `gettext_quote` returns (`a1 07 65 00`) are the common case — the
@@ -2289,6 +2318,38 @@ declarations too, so a `struct_N` that only a global names is still redone by
 the `structsynth` convergence sweep and kept by the header's type pruning.
 The directly read `dat_<addr>` names are still not declared on their own
 account; only an address some function takes is.
+
+**An indexed table is an array (`elemptr`).** With `elemptr` on (05-types
+§5.2), a constant address that is the base of a `PTRADD` indexed by a computed
+value is an array's first element, and `plan` records it (`Plan::indexed`). The
+name then prints without the `&` (`printc.rs (PrintC::push_global_ref_ir)` asks
+`Plan::is_array`): `dat_4020` already has exactly the constant's pointer type in
+C, so `dat_4020[v1]` is the same address and the same element as
+`*(unsigned char *)(v1 + 0x4020)`. `extract_global_objects` declares it `T
+dat_4020[]`, an array of unknown length, and `global_declarations` prefers that
+declaration over a scalar one another function makes when no function reads the
+name directly: an indexed body does not compile against a scalar, and a direct
+read does not compile against an array, so with both present the address is left
+undeclared with a comment, like two direct types. Two functions that index the
+address at different elements (`char dat_4020[]` and `unsigned char dat_4020[]`)
+leave it undeclared with a comment too: a body reads `dat_4020[i]` at whatever
+element the header declares, so either declaration would change what the other
+body computes. The batch's agreement pass (05-types §5.2) keeps that from arising
+within one process; a sharded `--jobs` worker cannot see the other functions. An
+array whose storage this function also reads or writes directly keeps its cast
+(`DirectAccess`). With `elemptr` on, `plan` also takes an undefined word
+(`undefined2 *`) and an unsigned word of the same size read at one address as
+one object, named by the unsigned one, the way `same_object` already reads a
+direct access (`Seen::merge`): a caller that copies `0x4b000` into a pointer
+variable and passes it to a callee whose parameter `elemptr` declared `unsigned
+short *` reads the address both ways, and would otherwise lose the name to the
+two-type refusal. A global no symbol names that a function reads directly and
+`elemptr` typed an element pointer (`dat_5068 = malloc(0x100)`, `dat_5068[i]`)
+is declared in the header too, `extern char *dat_5068;`, although no function
+takes its address (`GlobalInfo::elem`): its subscripts read the element that
+declaration names. A Varnode of that storage at another type, such as its value
+before a call, which nothing prints, is not a read of it at that type, because
+every walk over the Varnodes holding it agreed on the pointer.
 
 **The value is the binary's.** `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
 (a_constant_address_named_as_a_global_round_trips_through_the_printed_c)`

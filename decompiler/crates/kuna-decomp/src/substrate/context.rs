@@ -895,6 +895,14 @@ pub struct ArchContext {
     /// [`Architecture::char_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
+    /// (kuna `elemptr`) Declare a pointer used only as an array of one element
+    /// type as that pointer; option `elemptr on|off`.  Copied from
+    /// [`Architecture::elem_ptr`](crate::architecture::Architecture).  The rule
+    /// lives in [`kuna_elemptr`](crate::p5_types::kuna_elemptr).
+    pub elem_ptr: bool,
+    /// (kuna `elemptr`) The sections a program's data objects live in, sorted and
+    /// inclusive; the `globalref` ranges, copied from the Architecture.
+    pub elem_ptr_ranges: std::rc::Rc<Vec<(u64, u64)>>,
     /// (kuna `slotptr`) Record what each `restructure_varnode` pass sees stored
     /// into the stack frame; mirrors
     /// [`Architecture::slot_ptr`](crate::architecture::Architecture).
@@ -1619,6 +1627,8 @@ impl ArchContext {
             cast_index: false, // (kuna) option castindex
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
+            elem_ptr: false, // (kuna) option elemptr, copied from Architecture
+            elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
             slot_ptr: true, // (kuna) option slotptr (default on), copied from Architecture
             libctypes: false, // (kuna) option libctypes, copied from Architecture
             model_stack_probe_loop: false, // GH-8017 stackprobeloop

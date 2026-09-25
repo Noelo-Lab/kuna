@@ -349,6 +349,10 @@ fn get_local_type(data: &Funcdata, vn: VarnodeId) -> (Rc<Datatype>, bool) {
 /// is a W4 surface — absent symbols fall through to the plain `getLocalType`.)
 fn build_localtypes(data: &mut Funcdata) {
     let order: Vec<VarnodeId> = data.vbank().iter_loc().collect();
+    let mut elem_cache = crate::kuna_elemptr::Cache::default();
+    if data.get_arch().elem_ptr {
+        data.kuna_elemptr_begin_pass();
+    }
     for vn in order {
         let (vn_addr, vn_size, vn_type_lock);
         {
@@ -440,6 +444,15 @@ fn build_localtypes(data: &mut Funcdata) {
                 }
             }
         };
+        // (kuna `elemptr`) A pointer-width value whose every access is an element
+        // of one width through an index the program computes is a pointer to that
+        // element.  Replaces only an integer vote or a pointer at nothing; never a
+        // seeded, locked or named type.  See `kuna_elemptr`.
+        let ct = if from_seed {
+            ct
+        } else {
+            crate::kuna_elemptr::element_pointer(data, vn, &ct, &mut elem_cache).unwrap_or(ct)
+        };
         // (kuna `boolbyte`) A byte whose every read is a truth test has no `bool`
         // candidate in the fold above: `TYPE_BOOL` is only ever an op's OUTPUT type,
         // and `TypeOpEqual::getInputLocal` votes `getBase(1, TYPE_INT)` -- the ASCII
@@ -460,6 +473,12 @@ fn build_localtypes(data: &mut Funcdata) {
             v.set_stop_up_propagation();
         }
         v.set_temp_type(ct);
+    }
+    // (kuna `elemptr`) A candidate an earlier pass typed is now the index of
+    // another base: the IR that pass built around it stays, so start over
+    // without it.
+    if data.kuna_elemptr_take_disputed() {
+        data.set_restart_pending(true);
     }
 }
 
@@ -605,6 +624,11 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         None => return false,
     };
     crate::kuna_charbyte::note_edge(data, op, inslot, outslot, invn, outvn, &newtype, &cur); // (kuna `charbyte`)
+    // (kuna `elemptr`) A value stored through a pointer `elemptr` typed keeps
+    // its own sign; see `kuna_elemptr::keeps_stored_sign`.
+    if crate::kuna_elemptr::keeps_stored_sign(data, op, inslot, outslot, &newtype, &cur) {
+        return false;
+    }
     if 0 > newtype.type_order(&cur).unwrap_or(0) {
         // (kuna `libctypes`) A libc aggregate pointer is not carried onto a Varnode
         // the function reads past that aggregate's end. See `kuna_libcfit`.

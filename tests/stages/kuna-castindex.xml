@@ -37,6 +37,8 @@
         diff:   call strchr; sub rax,rbx                 strchr(s,c) - s
 
     Pass 1 (`option castindex off`) reproduces the bug; pass 2 turns it on.
+    Both run with `option elemptr off`: with it on, P5 already types `ldidx`'s
+    parameter `int4 *`, so both passes print `a0[a1]` before this option runs.
 -->
 <bytechunk space="ram" offset="0x100000">
 4863f68b04b7034708c300000000000000000000000000000000000000000000488b04f748034710c300000000000000000000000000000000000000000000000fb60437034704c30000000000000000000000000000000000000000000000004863f648c1e604488b44370848034710c3000000000000000000000000000000534889fbe8370000004829d85bc30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c3
@@ -50,6 +52,7 @@
 </binaryimage>
 <script>
   <com>parse line extern char *strchr(char *s,int4 c);</com>
+  <com>option elemptr off</com>
   <com>option castindex off</com>
   <com>lo fu ldidx</com>
   <com>decompile</com>

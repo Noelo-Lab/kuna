@@ -980,6 +980,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, fd);
         crate::p4_calls::kuna_calleevote::seed(arch, fd);
+        crate::kuna_elemptr::seed(arch, fd);
         // (kuna `calleepreserves`) And for the call-guard seam's view of the
         // callee's writes; shares rustabi's cache, so this is a map lookup.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, fd);
@@ -1286,6 +1287,8 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, &mut fd);
         // (kuna `calleevote`) What every caller of this function passes.
         crate::p4_calls::kuna_calleevote::seed(arch, &mut fd);
+        // (kuna `elemptr`) The globals another function of the batch disagrees about.
+        crate::kuna_elemptr::seed(arch, &mut fd);
         // (kuna `calleepreserves`) The call-guard seam's view of the same
         // decode: the registers the callee is proven NOT to write; inert unless
         // `option calleepreserves` is live.
@@ -1815,6 +1818,10 @@ pub struct GlobalInfo {
     /// of the name does not compile against it. (An array decays to a pointer,
     /// so a scalar compare against one would compile to something else.)
     pub aggregate: bool,
+    /// (kuna `elemptr`) Direct storage the rule typed an element pointer
+    /// (`char *dat_5068`): declared although no function takes its address,
+    /// since a subscript of it reads the element its declaration names.
+    pub elem: bool,
 }
 
 /// The globals the C `print_c` just rendered for `fd` names
@@ -1825,23 +1832,32 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
     let print = arch.print();
     let plan = print.globalref_plan();
     let rt = crate::printc::RealTypeCtx::from_arch(arch, print.out_lang());
-    let info = |address: u64, ty: &std::rc::Rc<crate::dtype::Datatype>, unknown: bool, direct: bool| {
+    let info = |address: u64,
+                ty: &std::rc::Rc<crate::dtype::Datatype>,
+                unknown: bool,
+                direct: bool,
+                array: bool,
+                elem: bool| {
         let name = crate::printc::global_data_name(arch, address);
         use crate::dtype::type_metatype::{TYPE_STRUCT, TYPE_UNION};
+        // (kuna `elemptr`) An indexed global is declared as an array of unknown
+        // length, `T dat_4020[]`, which the header recognises by its suffix.
+        let declarator = if array { format!("{name}[]") } else { name.clone() };
         GlobalInfo {
             address,
-            declaration: crate::printc::declaration_text(ty, &name, rt),
+            declaration: crate::printc::declaration_text(ty, &declarator, rt),
             size: i64::from(ty.get_size()),
             name,
             unknown,
             direct,
             aggregate: matches!(ty.get_metatype(), TYPE_STRUCT | TYPE_UNION),
+            elem,
         }
     };
     let mut out: Vec<GlobalInfo> =
-        plan.minted.iter().map(|(&address, m)| info(address, &m.decl_type, m.unknown, false)).collect();
-    for (address, ty) in plan.direct_objects() {
-        let g = info(address, ty, false, true);
+        plan.minted.iter().map(|(&address, m)| info(address, &m.decl_type, m.unknown, false, m.array, false)).collect();
+    for (address, ty, elem) in plan.direct_objects() {
+        let g = info(address, ty, false, true, false, elem);
         if !out.contains(&g) {
             out.push(g);
         }
