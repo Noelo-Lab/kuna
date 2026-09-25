@@ -630,8 +630,9 @@ the table from has no declaration at all. Every access prints as an integer sum
 behind two casts: `*(char *)((unsigned long)*(unsigned char *)((long)v1 +
 0x4020) + (long)dat_4070) = (char)v1;`.
 
-When `elemptr` is on, `decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs
-(element_pointer)` adds a `T *` vote to the `getLocalType` fold for four kinds of
+When `elemptr` is on (the default),
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs (element_pointer)` adds a
+`T *` vote to the `getLocalType` fold for four kinds of
 value: a function input the prototype model could place a parameter in; the
 value a `CALL` returns when the callee left the pointee open (a `void *` or an
 unlocked output — an allocator), provided no phi joins it with anything but a
@@ -724,6 +725,17 @@ filled through a global the program allocated, and an allocated buffer returned
 to the caller. `tests/stages/kuna-elemptr.xml` pins the witnesses and the two
 controls (a record walked by a stride, a pointer read at two widths) in both
 passes.
+
+Shipped on: with it, the 444-slice decbench sweep has 1,645 perfect functions
+against 1,615 (173 better, none worse), and the 45-binary cast corpus prints 35,327
+casts against 37,477 on the functions kuna and IDA both emit. The price is a
+knock-on the rule cannot see from one function: a callee parameter it now declares
+`char *` or `char **` makes an integer-typed argument in a caller print its
+conversion, and a constant a caller uses at one pointee type while a callee
+declares another keeps `globalref`'s two-type cast; and an integer computed
+through a pointer it typed (`lim + (-beg - k)`) prints as pointer arithmetic
+until a pointer difference is recognised. `docs/features/elemptr/` carries the
+census, the functions with more casts and the whole-corpus classification.
 
 **The truth-valued byte (`boolbyte`).** `TYPE_BOOL` only ever enters the
 lattice as an op's *output*: every `booloutput` opcode's `get_output_local` is
