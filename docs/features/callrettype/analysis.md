@@ -98,20 +98,28 @@ use_neg_as_unsigned`. Called through those prototypes they return -15536 and
 18446744073709551613 where the binary returns 50000 and 4294967293 (option off
 prints `unsigned short` / `unsigned int`, an unknown of the width).
 
-Which extension is evidence is an instruction-level question: every 32-bit
-write on x86-64 zero-extends into the 64-bit register, so `mov %eax,%r12d`
-(a result kept across a call) or a -O0 reload of the local that holds the
-result narrows back into the return exactly like `mov %eax,%eax` does, and
-after copy propagation the two are the same IR. Only the raw p-code tells
-them apart, and it exists only before the first pass runs: `seed` records the
-instructions that do nothing but widen a register into its own container
-(COPY, ZEXT, SEXT, SUBPIECE only, every register read at the low end of the
-destination). `RuleSubvarZext` / `RuleSubvarSext` report when they narrow the
-returned value back through one of them, and the vote refuses a statement of
-that width at the other sign for any call whose result the function returns.
-On the probe (`keep_int`, `widen_signed`, the -O0 reload) the wins stand; the
-45-binary cast corpus prints the same bytes as before the fix (no function
-there converts a callee's result this way before returning it).
+The first fix took only the extensions an instruction does in place
+(`mov %eax,%eax`, `movzwl %ax,%eax`, `cltq`), on the reasoning that every
+other 32-bit write zero-extends too and says nothing about the source type.
+That was wrong about the value (second review): the last 32-bit write of the
+returned value IS the widening a caller reading the whole register sees.
+
+```c
+unsigned long keep_widened(int x) { unsigned int r = neg32(x); return r; }            /* -O0: reload */
+unsigned long keep_across(int x) { unsigned int r = neg32(x); tick(); return r; }     /* mov %eax,%ebx; call tick; mov %ebx,%eax */
+```
+
+Both printed `int keep_...` with the option on, and `(unsigned long)keep_widened(1) >> 1`
+gave 9223372036854775806 where the binary gives 2147483646, at gcc -O0,
+gcc -O2 (-fno-ipa-ra, or an opaque callee), clang -O0 and clang -O2.
+`RuleSubvarZext` / `RuleSubvarSext` now report the sign and source width of
+whatever extension they narrow the returned value back through, and the vote
+refuses a statement of that width at the other sign for any call whose result
+the function returns; the raw-p-code scan is gone. The cost is the functions
+whose source returns `int` through the same bytes (`int r = neg32(x); other();
+return r;`): they keep the unsigned return their own recovery gives them, since
+from the function alone the two are indistinguishable. A result returned with
+no write in between (`return neg32(x);`, `call; ret`) keeps its statement.
 
 ## Residue
 

@@ -3020,29 +3020,32 @@ The vote is refused where the caller holds evidence the fold cannot weigh:
   result is of the other class at the same width, an integer beside a pointer,
   refuses the vote whatever the pointee: each would print the other as a
   conversion;
-- for an integer the function returns, an extension of the returned value at
-  the other sign that the return trimming has already removed. A caller that
-  converts the result to a wider type before handing it back
-  (`return (unsigned short)s16(x)` in a function returning `long`: `call s16;
-  movzwl %ax,%eax; ret`) has its RETURN narrowed back to the 16-bit value by
-  `RuleSubvarZext` before any type is inferred, leaving a plain copy where the
-  extension was, so the extension is no longer a reader the rule above can see.
-  A `short` statement would then become the function's own return type, and
-  `short f(...)` hands its callers the value sign-extended where the binary
-  hands them 50000 zero-extended. `seed` therefore reads the raw p-code (no
-  pass has run yet) for the instructions that do nothing but widen a register
-  into its own container, the form an x86-64 compiler emits for the
-  conversion (`movzwl %ax,%eax`, `mov %eax,%eax`, `cltq`); when
-  `RuleSubvarZext` or `RuleSubvarSext` narrows the returned value back through
-  one of them (`note_returned_extension`), a statement of that width at the
-  other sign is refused for every call whose result the function returns.
-  Every 32-bit write on x86-64 widens its result too, so a move from another
-  register (`mov %eax,%r12d` keeping a result across a call), a load (a -O0
-  reload of the local that holds it) or arithmetic is not taken: those widen a
-  value whose type is still the callee's, and the statement stands. A
-  conversion spelled as a mask (AArch64 `and x0,x0,#0xffff`) is not
-  recognized: an `INT_AND` is not a widening, and `RuleSubvarAnd` reports
-  nothing;
+- for an integer the function returns, a widening of the returned value at
+  the other sign that the return trimming has already removed. The trimming
+  (`RuleSubvarZext`, `RuleSubvarSext`) narrows a RETURN that reads a register
+  through an extension back to the extension's input before any type is
+  inferred, leaving a plain copy, so the extension is no longer a reader the
+  rule above can see; it records instead the sign and the width it narrowed
+  from (`note_returned_extension`), and a statement of that width at the other
+  sign is refused for every call whose result the function returns. On x86-64
+  every 32-bit write zero-extends into the whole register, so the widening is
+  not only the conversion a compiler spells in place (`return (unsigned
+  short)s16(x)` in a function returning `long`: `call s16; movzwl %ax,%eax;
+  ret`) but any last write of the returned value: the -O0 reload of the local
+  holding the result, or the move back from the register it was kept in
+  across another call (`unsigned int r = neg32(x); other(); return r;` in a
+  function returning `unsigned long`: `mov %eax,%ebx; call other; mov
+  %ebx,%eax`). An `int` statement would become the function's own return
+  type, and `int f(...)` hands a caller that reads the whole register the
+  value sign-extended where the binary hands it zero-extended. The same bytes
+  are what `int f(x) { int r = neg32(x); other(); return r; }` compiles to, so
+  that function keeps the unsigned return its own recovery gives it: from the
+  function alone the two cannot be told apart, and only the unsigned spelling
+  is right for both. A result the function returns with no write in between
+  (`return neg32(x);`, `call neg32; ret`) is not widened here, and its
+  statement stands. A conversion spelled as a mask (AArch64 `and
+  x0,x0,#0xffff`) is not recognized: an `INT_AND` is not a widening, and
+  `RuleSubvarAnd` reports nothing;
 - a pointer whose pointee the caller does not use as that pointee
   (`accesses_disagree`): a primitive pointee of N bytes read or written other
   than N bytes at a time, or offset or stepped by other than a multiple of N,
