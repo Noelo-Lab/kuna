@@ -353,7 +353,14 @@ fn decide(
                 ev.pointees.push(p);
             }
         }
-        Kind::Global => walk(data, &same_storage(data, vn), &mut ev),
+        Kind::Global => {
+            let held = same_storage(data, vn);
+            if shares_a_returned_register(data, &held) {
+                ev.refuse("return-register");
+            } else {
+                walk(data, &held, &mut ev);
+            }
+        }
         _ => walk(data, &[vn], &mut ev),
     }
     let elem = if ev.refused.is_none() && ev.variable > 0 { element_type(data, &mut ev) } else { None };
@@ -478,6 +485,39 @@ fn returns_another_value_in_place(data: &Funcdata, vn: VarnodeId, copies: &[Varn
             && r.get_offset() < off + size
             && off < r.get_offset() + r.get_size() as u64
     })
+}
+
+/// Does a copy of the global `held` holds sit in a register some other returned
+/// value is also returned in?  Such a register is one variable once merging
+/// starts, and the pointer type would reach the function's return (`libbsd`'s
+/// `user_from_uid` reads its table into the `rax` it returns a record in).
+fn shares_a_returned_register(data: &Funcdata, held: &[VarnodeId]) -> bool {
+    let rets = crate::kuna_structsynth::returned_values(data);
+    if rets.is_empty() {
+        return false;
+    }
+    let mut seen: Vec<VarnodeId> = held.to_vec();
+    let mut i = 0;
+    while i < seen.len() {
+        let cur = seen[i];
+        i += 1;
+        let Some(v) = data.vbank().get(cur) else { continue };
+        for u in v.descend_iter() {
+            let Some(op) = data.obank().get(u) else { continue };
+            let follows = match op.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => true,
+                OpCode::CPUI_INDIRECT => op.get_in(0) == Some(cur),
+                _ => false,
+            };
+            let Some(out) = op.get_out().filter(|o| follows && !seen.contains(o)) else { continue };
+            if seen.len() >= MAX_COPIES {
+                return true;
+            }
+            seen.push(out);
+        }
+    }
+    crate::kuna_structsynth::returned_beside_others(data, &seen, &rets)
+        || seen[held.len()..].iter().any(|&c| returns_another_value_in_place(data, c, &seen, &rets))
 }
 
 /// The most copies of one returned value [`copies_alone`] follows.

@@ -95,12 +95,19 @@ enum Seen {
 }
 
 impl Seen {
-    fn merge(prev: Option<Seen>, to: Rc<Datatype>) -> Seen {
+    /// `sized` (kuna `elemptr`): an unknown pointee is the same object as a
+    /// typed one of its size -- the undefined bytes a copy reads where a callee's
+    /// parameter reads the elements `elemptr` gave it -- and the typed one names it.
+    fn merge(prev: Option<Seen>, to: Rc<Datatype>, sized: bool) -> Seen {
         let is_void = to.get_metatype() == type_metatype::TYPE_VOID;
+        let unknown_of = |a: &Datatype, b: &Datatype| {
+            sized && a.get_metatype() == type_metatype::TYPE_UNKNOWN && a.get_size() == b.get_size()
+        };
         match prev {
             None | Some(Seen::Void(_)) if is_void => Seen::Void(to),
             None | Some(Seen::Void(_)) => Seen::One(to),
-            Some(Seen::One(t)) if is_void || same_type(&t, &to) => Seen::One(t),
+            Some(Seen::One(t)) if is_void || same_type(&t, &to) || unknown_of(&to, &t) => Seen::One(t),
+            Some(Seen::One(t)) if unknown_of(&t, &to) => Seen::One(to),
             _ => Seen::Conflict,
         }
     }
@@ -162,7 +169,7 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
                     indexed.insert(off);
                 }
                 let seen = pointees.remove(&off);
-                pointees.insert(off, Seen::merge(seen, to));
+                pointees.insert(off, Seen::merge(seen, to, arch.elem_ptr));
             }
         } else if data_space.is_some() && v.get_addr().get_space().map(|s| s.get_index()) == data_space {
             let unnamed = in_ranges(&arch.globalref_ranges, v.get_offset())
