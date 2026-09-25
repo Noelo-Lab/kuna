@@ -1221,7 +1221,9 @@ els.railBtn.addEventListener('click', () => {
   setRail(open);
   if (!window.matchMedia('(max-width: 1180px)').matches) updatePrefs({ rail: open });
 });
-setRail(state.prefs.rail && !window.matchMedia('(max-width: 1180px)').matches);
+const narrowRail = window.matchMedia('(max-width: 1180px)');
+setRail(state.prefs.rail && !narrowRail.matches);
+narrowRail.addEventListener('change', () => setRail(state.prefs.rail && !narrowRail.matches));
 
 // ── the keyboard ───────────────────────────────────────────────────────────
 
@@ -1607,6 +1609,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     const doc = await fetchFunction(fn, directivesFor(fn.address_hex));
     if (!isCurrent(op)) return false;
     const data = normalizeInspect(doc);
+    const wasApplied = new Set([...session.outcomes].filter(([, o]) => o.status === 'applied').map(([k]) => k));
     session.recordOutcomes(data.assertions);
     if (snap) session.pushUndo(snap);
     persist();
@@ -1623,6 +1626,14 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     const mine = data.assertions.filter((r) => fresh.includes(r.directive));
     for (const row of mine.filter((r) => r.status === 'rejected')) {
       toast(`Rejected: ${row.directive}`, { kind: 'err', detail: row.detail || '' });
+    }
+    const broke = data.assertions.filter((r) => r.status === 'rejected' && !fresh.includes(r.directive) &&
+      wasApplied.has(session.sent.get(r.directive)));
+    for (const row of broke) {
+      toast(`An earlier edit no longer applies: ${row.directive}`, {
+        kind: 'warn',
+        detail: `${row.detail || ''} — the code changed under it; edit or remove it in the rail.`.replace(/^ — /, ''),
+      });
     }
     if (data.assertions.some((r) => r.fatal)) {
       toast('The C shown was produced without one of your directives.', { kind: 'err', detail: data.assertions.find((r) => r.fatal).detail || '' });

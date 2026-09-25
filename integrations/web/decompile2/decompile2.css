@@ -283,9 +283,9 @@ a.xt:hover{color:var(--red);text-decoration-color:var(--red);}
     z-index:30;border-left:1px solid var(--ink);}
 }
 @media (max-width:820px){
-  .d2work,.d2work.norail{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,28vh) minmax(0,1fr) auto;}
+  .d2work,.d2work.norail{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,24vh) minmax(0,1fr) auto;}
   .dc2 #sidebar{border-right:0;border-bottom:1px solid var(--rule);}
-  .d2work:not(.norail) #rail,.d2work #rail{position:static;width:auto;border-left:0;border-top:1px solid var(--rule);max-height:40vh;}
+  .d2work:not(.norail) #rail,.d2work #rail{position:static;width:auto;border-left:0;border-top:1px solid var(--rule);max-height:34vh;}
   .d2work.norail .d2railhead{flex-direction:row;padding:6px 14px;}
   .d2work.norail .d2railhead .label{writing-mode:horizontal-tb;}
   .d2panes.split{grid-template-columns:minmax(0,1fr);}

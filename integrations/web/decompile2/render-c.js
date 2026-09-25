@@ -65,7 +65,7 @@ export function normalizeInspect(result) {
     size: fn.size ?? 0,
     code,
     error: fn.error ?? null,
-    proto: fn.proto ?? signatureLine(code),
+    proto: (fn.proto ?? signatureLine(code))?.replace(/;\s*$/, '') ?? null,
     language: result.language || (/^#\[allow\(|\blet mut\b/m.test(code) ? 'rust-language' : 'c-language'),
     target: result.target || null,
     unstructured_gotos: fn.unstructured_gotos ?? 0,
@@ -234,7 +234,7 @@ export function buildIndex(fnData, segs = lineSegments(fnData).segs) {
     for (const line of insn.lines) link(line, insn.address_hex);
   });
   for (const m of fnData.line_mappings) {
-    for (const a of m.addresses || []) link(m.line_number, addrHex(a));
+    for (const a of m.addresses_hex || m.addresses || []) link(m.line_number, addrHex(a));
   }
   segs.forEach((line, i) => {
     for (const s of line) {
@@ -249,7 +249,7 @@ export function buildIndex(fnData, segs = lineSegments(fnData).segs) {
     }
   });
   for (const v of fnData.variables) {
-    for (const a of v.addresses || []) addToMap(symToAddrs, v.name, addrHex(a));
+    for (const a of v.addresses_hex || v.addresses || []) addToMap(symToAddrs, v.name, addrHex(a));
   }
   const order = (set) => [...set].sort((a, b) => {
     const ia = insnIndex.get(a), ib = insnIndex.get(b);

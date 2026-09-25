@@ -19,7 +19,7 @@
   "size": 24,
   "code": "int add(int a,int b)\n{\n  return b + a;\n}",
   "error": null,
-  "proto": "int add(int a,int b)",
+  "proto": "int add(int a,int b);",
   "unstructured_gotos": 0,
   "line_mappings": [
    {
@@ -27,6 +27,10 @@
     "addresses": [
      4445,
      4448
+    ],
+    "addresses_hex": [
+     "0x115d",
+     "0x1160"
     ]
    }
   ],
@@ -44,6 +48,10 @@
     "addresses": [
      4445,
      4448
+    ],
+    "addresses_hex": [
+     "0x115d",
+     "0x1160"
     ]
    },
    {
@@ -59,6 +67,10 @@
     "addresses": [
      4445,
      4448
+    ],
+    "addresses_hex": [
+     "0x115d",
+     "0x1160"
     ]
    },
    {
@@ -74,6 +86,10 @@
     "addresses": [
      4445,
      4448
+    ],
+    "addresses_hex": [
+     "0x115d",
+     "0x1160"
     ]
    },
    {
@@ -89,6 +105,10 @@
     "addresses": [
      4445,
      4448
+    ],
+    "addresses_hex": [
+     "0x115d",
+     "0x1160"
     ]
    },
    {
@@ -99,13 +119,164 @@
     "stack_offset": -8,
     "size": 8,
     "line_numbers": [],
-    "addresses": []
+    "addresses": [],
+    "addresses_hex": []
    }
   ],
   "types": [],
   "globals": [],
-  "tokens": [],
-  "tokens_error": "fixture assembled from the native CLI, which has no token stream",
+  "tokens": [
+   {
+    "line": 1,
+    "col": 0,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "decl": "return",
+    "type": "int"
+   },
+   {
+    "line": 1,
+    "col": 4,
+    "len": 3,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "add",
+    "decl": "function"
+   },
+   {
+    "line": 1,
+    "col": 7,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 1,
+    "col": 8,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "decl": "param",
+    "type": "int"
+   },
+   {
+    "line": 1,
+    "col": 12,
+    "len": 1,
+    "kind": "variable",
+    "color": "var",
+    "text": "a",
+    "var": 0,
+    "decl": "param"
+   },
+   {
+    "line": 1,
+    "col": 13,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ","
+   },
+   {
+    "line": 1,
+    "col": 14,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "decl": "param",
+    "type": "int"
+   },
+   {
+    "line": 1,
+    "col": 18,
+    "len": 1,
+    "kind": "variable",
+    "color": "var",
+    "text": "b",
+    "var": 1,
+    "decl": "param"
+   },
+   {
+    "line": 1,
+    "col": 19,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 2,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "{"
+   },
+   {
+    "line": 3,
+    "col": 2,
+    "len": 6,
+    "kind": "op",
+    "color": "keyword",
+    "text": "return",
+    "address": 4448,
+    "address_hex": "0x1160"
+   },
+   {
+    "line": 3,
+    "col": 9,
+    "len": 1,
+    "kind": "variable",
+    "color": "var",
+    "text": "b",
+    "address": 4445,
+    "address_hex": "0x115d",
+    "var": 1
+   },
+   {
+    "line": 3,
+    "col": 11,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "+",
+    "address": 4445,
+    "address_hex": "0x115d"
+   },
+   {
+    "line": 3,
+    "col": 13,
+    "len": 1,
+    "kind": "variable",
+    "color": "var",
+    "text": "a",
+    "address": 4445,
+    "address_hex": "0x115d",
+    "var": 0
+   },
+   {
+    "line": 3,
+    "col": 14,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 4,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "}"
+   }
+  ],
+  "tokens_error": null,
   "instructions": [
    {
     "address": 4425,
