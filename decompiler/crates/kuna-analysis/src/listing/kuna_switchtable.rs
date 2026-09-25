@@ -94,10 +94,10 @@ use super::xrefs::{decode, in_range, FullCapture, FullOp};
 /// does not lower a one-case switch through a jump table.
 const MIN_ENTRIES: usize = 2;
 
-/// The largest table read, the same ceiling the engine's own switch recovery
-/// takes (`Architecture::max_jumptable_size`, 1024). A scan that runs this far
-/// has stopped describing a switch and is walking whatever follows it.
-const MAX_ENTRIES: usize = 1024;
+/// The largest table read when the caller names no ceiling: the engine's own
+/// default (`Architecture::max_jumptable_size`, 1024). The walk passes the live
+/// `jumptablemax` instead, so raising it for a giant switch reaches this tier too.
+pub(super) const DEFAULT_MAX_ENTRIES: usize = 1024;
 
 /// The case bodies the computed jump at `from` dispatches to through a table at
 /// `base`, or empty when `base` does not front one.
@@ -111,13 +111,14 @@ pub(super) fn targets(
     pool: &PoolImage,
     exec: &[(u64, u64)],
     cases: Option<usize>,
+    max_entries: usize,
 ) -> Vec<u64> {
     let Some(&section) = exec.iter().find(|&&(lo, hi)| from >= lo && from < hi) else {
         return Vec::new();
     };
     let stride = u64::from(pool.ptr_width());
     let mut out = Vec::new();
-    for i in 0..cases.unwrap_or(MAX_ENTRIES).min(MAX_ENTRIES) as u64 {
+    for i in 0..cases.unwrap_or(max_entries).min(max_entries) as u64 {
         let Some(at) = base.checked_add(i * stride) else { break };
         let Some(word) = pool.word_at(at) else { break };
         if !in_range(&[section], word) {
@@ -150,12 +151,13 @@ pub(super) fn delta_targets(
     pool: &PoolImage,
     exec: &[(u64, u64)],
     cases: Option<usize>,
+    max_entries: usize,
 ) -> Vec<u64> {
     let Some(&section) = exec.iter().find(|&&(lo, hi)| from >= lo && from < hi) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    for i in 0..cases.unwrap_or(MAX_ENTRIES).min(MAX_ENTRIES) as u64 {
+    for i in 0..cases.unwrap_or(max_entries).min(max_entries) as u64 {
         let Some(at) = table.checked_add(i * 4) else { break };
         let Some(delta) = pool.word32_at(at) else { break };
         let word = base.wrapping_add(delta as i64 as u64);
@@ -187,6 +189,11 @@ const MAX_INSN_BYTES: u64 = 16;
 /// a table only where the `BRANCHIND`'s input is a word drawn from a
 /// constant-based array, so a jump through a plain pointer, a virtual call and a
 /// returned function pointer all decline before any memory is read.
+///
+/// The second half of the answer is the case count the range check states,
+/// which can exceed `max_entries`: the table is then read only that far, and the
+/// caller reports the switch as over the cap.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn register_targets(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
@@ -196,11 +203,12 @@ pub(super) fn register_targets(
     branch: &VarnodeData,
     pool: &PoolImage,
     exec: &[(u64, u64)],
-) -> Vec<u64> {
+    max_entries: usize,
+) -> (Vec<u64>, Option<usize>) {
     // Nothing is read for a jump whose target is not in a register or a
     // temporary: `jmp qword ptr [__imp_X]` branches on a data-space varnode and
     // is a forwarding veneer, which is the shape this must never walk back from.
-    let Some(want) = key_of(branch, data_space) else { return Vec::new() };
+    let Some(want) = key_of(branch, data_space) else { return (Vec::new(), None) };
     let slice = dispatch_slice(translate, code_space, data_space, decoded, from, want);
 
     let mut vals: Vec<(Key, Val)> = Vec::new();
@@ -225,18 +233,21 @@ pub(super) fn register_targets(
     let table = match dispatch {
         Some(Val::Case { table, base }) => (table, Some(base)),
         Some(Val::Entry { table, width }) if width == pool.ptr_width() => (table, None),
-        _ => return Vec::new(),
+        _ => return (Vec::new(), None),
     };
     // Read only now, on a jump that really does index a table: without the
     // switch's own case count there is nothing to stop the scan at the end of
     // it, and a delta table's neighbour reads as more cases.
     let Some(limit) = guard_limit(translate, code_space, decoded, from) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
-    match table {
-        (table, Some(base)) => delta_targets(table, base, from, pool, exec, Some(limit)),
-        (table, None) => targets(table, from, pool, exec, Some(limit)),
-    }
+    let read = match table {
+        (table, Some(base)) => {
+            delta_targets(table, base, from, pool, exec, Some(limit), max_entries)
+        }
+        (table, None) => targets(table, from, pool, exec, Some(limit), max_entries),
+    };
+    (read, Some(limit))
 }
 
 /// How many cases the range check ahead of the dispatch admits, or `None` when
@@ -596,7 +607,7 @@ mod tests {
     #[test]
     fn a_table_of_code_addresses_yields_every_case_body() {
         assert_eq!(
-            targets(0x2000, 0x1008, &image(), &EXEC, None),
+            targets(0x2000, 0x1008, &image(), &EXEC, None, DEFAULT_MAX_ENTRIES),
             vec![0x1010, 0x1020, 0x1030]
         );
     }
@@ -605,14 +616,14 @@ mod tests {
     /// so the entry past the padding is not taken up.
     #[test]
     fn the_scan_stops_at_the_first_word_that_is_not_code() {
-        let t = targets(0x2000, 0x1008, &image(), &EXEC, None);
+        let t = targets(0x2000, 0x1008, &image(), &EXEC, None, DEFAULT_MAX_ENTRIES);
         assert!(!t.contains(&0x1040));
     }
 
     /// A single plausible word after a constant is a coincidence, not a switch.
     #[test]
     fn a_run_shorter_than_two_entries_is_not_a_table() {
-        assert!(targets(0x2008, 0x1008, &image(), &EXEC, None).is_empty());
+        assert!(targets(0x2008, 0x1008, &image(), &EXEC, None, DEFAULT_MAX_ENTRIES).is_empty());
     }
 
     /// A case body is the dispatcher's own code: a word landing in another
@@ -620,14 +631,14 @@ mod tests {
     #[test]
     fn a_word_outside_the_dispatchers_own_section_ends_the_table() {
         let exec = [(0x1000, 0x1015), (0x1020, 0x1100)];
-        assert!(targets(0x2000, 0x1008, &image(), &exec, None).is_empty());
+        assert!(targets(0x2000, 0x1008, &image(), &exec, None, DEFAULT_MAX_ENTRIES).is_empty());
     }
 
     /// Nothing is read for an instruction the executable partition does not
     /// contain (a relocatable object, whose sections are not the runtime ones).
     #[test]
     fn a_dispatch_in_no_executable_section_reads_no_table() {
-        assert!(targets(0x2000, 0x9000, &image(), &EXEC, None).is_empty());
+        assert!(targets(0x2000, 0x9000, &image(), &EXEC, None, DEFAULT_MAX_ENTRIES).is_empty());
     }
 
     /// The gcc form: 4-byte displacements measured from the table itself.
@@ -647,7 +658,7 @@ mod tests {
     #[test]
     fn a_delta_table_composes_every_entry_with_its_base() {
         assert_eq!(
-            delta_targets(0x3000, 0x3000, 0x2008, &delta_image(), &DELTA_EXEC, Some(3)),
+            delta_targets(0x3000, 0x3000, 0x2008, &delta_image(), &DELTA_EXEC, Some(3), DEFAULT_MAX_ENTRIES),
             vec![0x2010, 0x2020, 0x2030]
         );
     }
@@ -664,7 +675,7 @@ mod tests {
         ];
         let image = PoolImage::from_ranges(vec![(0x5000, 0x500c, &RVA[..])], 8, true).unwrap();
         assert_eq!(
-            delta_targets(0x5000, 0x1000, 0x3020, &image, &[(0x3000, 0x3100)], Some(3)),
+            delta_targets(0x5000, 0x1000, 0x3020, &image, &[(0x3000, 0x3100)], Some(3), DEFAULT_MAX_ENTRIES),
             vec![0x3010, 0x3020, 0x3030]
         );
     }
@@ -674,7 +685,7 @@ mod tests {
     /// whose entries are equally good code addresses.
     #[test]
     fn the_case_count_stops_the_scan_at_the_end_of_the_table() {
-        let t = delta_targets(0x3000, 0x3000, 0x2008, &delta_image(), &DELTA_EXEC, Some(3));
+        let t = delta_targets(0x3000, 0x3000, 0x2008, &delta_image(), &DELTA_EXEC, Some(3), DEFAULT_MAX_ENTRIES);
         assert!(!t.contains(&0x2040));
         assert_eq!(t.len(), 3);
     }
@@ -683,7 +694,7 @@ mod tests {
     /// is not one.
     #[test]
     fn a_base_that_is_not_a_readable_word_reads_no_table() {
-        assert!(targets(0x2001, 0x1008, &image(), &EXEC, None).is_empty());
-        assert!(targets(0x8000, 0x1008, &image(), &EXEC, None).is_empty());
+        assert!(targets(0x2001, 0x1008, &image(), &EXEC, None, DEFAULT_MAX_ENTRIES).is_empty());
+        assert!(targets(0x8000, 0x1008, &image(), &EXEC, None, DEFAULT_MAX_ENTRIES).is_empty());
     }
 }

@@ -3452,6 +3452,13 @@ impl Architecture {
                 self.max_term_duplication = val;
                 Ok(msg)
             }
+            "jumptablemax" => crate::options::ArchOption::apply(
+                &crate::options::OptionJumpTableMax,
+                self,
+                p1,
+                "",
+                "",
+            ),
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
             "msvcstackguard" => {
                 on_off!(strip_msvc_stack_guard, "MSVC /GS frame-cookie stripping")
