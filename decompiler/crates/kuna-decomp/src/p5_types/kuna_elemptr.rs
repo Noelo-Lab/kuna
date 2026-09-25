@@ -861,6 +861,7 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
         OpCode::CPUI_PTRADD => {
             if slot != 0 {
                 // The candidate is the index into something else's base.
+                if trace_on() { eprintln!("[elemptr-dbg] ioo@864 op={:?} {}", data.obank().get(op).map(|o| o.get_addr().get_offset()), dbg_op(data, op)); }
                 ev.refuse("index-of-other");
                 return None;
             }
@@ -889,6 +890,7 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
                         data.vn_type_read_facing(c, op).get_metatype() == type_metatype::TYPE_PTR
                     })
                 {
+                    if trace_on() { eprintln!("[elemptr-dbg] ioo@892 {}", dbg_op(data, op)); }
                     ev.refuse("index-of-other");
                     return None;
                 }
@@ -909,8 +911,10 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
             // An operand already known to be a pointer -- by its type, or by a
             // use only a pointer has -- is the base, whatever else the program
             // does with it, and this value is its index.
+            // So is one that subtracts a pointer: the sum is a difference, a number.
             if data.vn_type_read_facing(other_vn, op).get_metatype() == type_metatype::TYPE_PTR
                 || has_pointer_use(data, other_vn)
+                || subtracts_a_pointer(data, other_vn, INDEX_DEPTH)
             {
                 return None;
             }
@@ -1031,11 +1035,14 @@ fn indexed(data: &Funcdata, sum: VarnodeId, scale: intb, off: intb, ev: &mut Evi
                         .get_in(other)
                         .is_some_and(|x| data.vn_type_read_facing(x, op).get_metatype() == type_metatype::TYPE_PTR);
                     match k {
-                        Some(_) if pointer_other => ev.refuse("index-of-other"),
+                        Some(_) if pointer_other => { if trace_on() { eprintln!("[elemptr-dbg] ioo@1034 {}", dbg_op(data, op)); } ev.refuse("index-of-other") }
                         Some(k) => next = out.map(|x| (x, off + k)),
                         // A second index of the same scale is one more term of
                         // the element's index (`p + i + j`); anything else is a
                         // record's stride or another object's base.
+                        // One that subtracts a pointer makes the address a
+                        // difference: a number, no longer an element's address.
+                        None if o.get_in(other).is_some_and(|x| subtracts_a_pointer(data, x, INDEX_DEPTH)) => {}
                         None => match o.get_in(other).and_then(|x| index_scale(data, x, INDEX_DEPTH)) {
                             Some((s, k)) if s == scale => next = out.map(|x| (x, off + k)),
                             _ => ev.refuse("sum-plus-unknown"),
@@ -1050,7 +1057,17 @@ fn indexed(data: &Funcdata, sum: VarnodeId, scale: intb, off: intb, ev: &mut Evi
                             let d = sign_extend(i.get_offset(), i.get_size()) * sign_extend(e.get_offset(), e.get_size());
                             next = out.map(|x| (x, off + d));
                         }
-                        _ => ev.refuse("index-of-other"),
+                        // A computed term added to the element's address, in
+                        // elements of the same size, is one more term of its
+                        // index (`&p[i][j]` over bytes); another size is a stride.
+                        (0, Some(e), None) => {
+                            let e = sign_extend(e.get_offset(), e.get_size());
+                            match o.get_in(1).map(|x| inner_stride(data, x)) {
+                                Some((t, c)) if e * t == scale => next = out.map(|x| (x, off + e * c)),
+                                _ => ev.refuse("sum-plus-unknown"),
+                            }
+                        }
+                        _ => { if trace_on() { eprintln!("[elemptr-dbg] ioo@1053 slot={} {}", slot, dbg_op(data, op)); } ev.refuse("index-of-other") }
                     }
                 }
                 OpCode::CPUI_PTRSUB => {
@@ -1372,6 +1389,36 @@ fn is_pointer_difference(data: &Funcdata, op: OpId) -> bool {
     any
 }
 
+/// Is `x` a sum with a negated pointer among its terms (`-beg - n`)?  Adding it
+/// to a pointer subtracts one pointer from another: the result is a number.
+fn subtracts_a_pointer(data: &Funcdata, x: VarnodeId, depth: usize) -> bool {
+    let Some(o) = data.vbank().get(x).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+        return false;
+    };
+    let pointer = |p: VarnodeId, op: OpId| {
+        data.vn_type_read_facing(p, op).get_metatype() == type_metatype::TYPE_PTR || has_pointer_use(data, p)
+    };
+    let Some(def) = data.vbank().get(x).and_then(|v| v.get_def()) else { return false };
+    match o.code() {
+        OpCode::CPUI_INT_2COMP => o.get_in(0).is_some_and(|p| pointer(p, def)),
+        OpCode::CPUI_INT_MULT => {
+            let minus_one = |i: int4| {
+                o.get_in(i)
+                    .and_then(|c| data.vbank().get(c))
+                    .is_some_and(|c| c.is_constant() && sign_extend(c.get_offset(), c.get_size()) == -1)
+            };
+            (minus_one(1) && o.get_in(0).is_some_and(|p| pointer(p, def)))
+                || (minus_one(0) && o.get_in(1).is_some_and(|p| pointer(p, def)))
+        }
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB if depth > 0 => {
+            o.get_in(0).is_some_and(|a| subtracts_a_pointer(data, a, depth - 1))
+                || (o.code() == OpCode::CPUI_INT_ADD && o.get_in(1).is_some_and(|b| subtracts_a_pointer(data, b, depth - 1)))
+                || (o.code() == OpCode::CPUI_INT_SUB && o.get_in(1).is_some_and(|b| pointer(b, def)))
+        }
+        _ => false,
+    }
+}
+
 /// The candidate negated by the pointer difference `op` is subtracted from a
 /// pointer at the same elements, whose pointee, when it has one, says so.
 fn difference_of(data: &Funcdata, op: OpId, ev: &mut Evidence) {
@@ -1535,7 +1582,8 @@ fn is_counter(data: &Funcdata, x: VarnodeId) -> bool {
 }
 
 /// Is `x` -- or a copy of it, or it plus a small literal (`b = buf; *b++`,
-/// `buf[1]`) -- dereferenced, or passed where a callee declares a pointer?  A
+/// `buf[1]`) -- dereferenced, the base of pointer arithmetic, or passed where a
+/// callee declares a pointer?  A
 /// value used that way is an address, and cannot be the index of the add it is
 /// in.  A literal that is itself the address of program data is the base, and
 /// `x` its index.
@@ -1551,6 +1599,7 @@ fn has_pointer_use(data: &Funcdata, x: VarnodeId) -> bool {
             let slot = o.get_slot(cur);
             let follows = match o.code() {
                 OpCode::CPUI_LOAD | OpCode::CPUI_STORE if slot == 1 => return true,
+                OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB if slot == 0 => return true,
                 OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if slot > 0 => {
                     if crate::coreaction_infertypes::declared_input_type_local(data, op, slot).get_metatype()
                         == type_metatype::TYPE_PTR
@@ -2074,3 +2123,14 @@ fn sign_extend(v: uintb, size: int4) -> intb {
 #[cfg(test)]
 #[path = "kuna_elemptr/tests.rs"]
 mod tests;
+
+pub fn dbg_op(data: &Funcdata, op: OpId) -> String {
+    let Some(o) = data.obank().get(op) else { return String::new() };
+    let mut out = format!("{:#x} {:?}", o.get_addr().get_offset(), o.code());
+    for i in 0..o.num_input() {
+        if let Some(v) = o.get_in(i).and_then(|x| data.vbank().get(x)) {
+            out += &format!(" [{}:{:#x}:{} {}]", v.get_addr().get_space().map(|s| s.get_name().to_string()).unwrap_or_default(), v.get_offset(), v.get_size(), v.get_type().get_name());
+        }
+    }
+    out
+}

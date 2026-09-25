@@ -176,3 +176,17 @@ fn a_character_literal_is_printable_ascii() {
     assert!(!is_char_literal(0x7f));
     assert!(!is_char_literal(0x80));
 }
+
+/// A value stored into an element writes the same bits at either sign, so its
+/// sign only breaks a tie where nothing reads the element, and never fixes the
+/// sign a batch may replace.
+#[test]
+fn a_stored_value_sign_only_breaks_a_tie() {
+    let mut ev = Evidence { stored_signed: 1, unsigned: 1, ..Evidence::default() };
+    assert_eq!(element_signed(4, &ev), (false, true), "a load read unsigned decides");
+    ev.unsigned = 0;
+    assert_eq!(element_signed(4, &ev), (true, false), "the store alone is a default");
+    ev.stored_unsigned = 1;
+    ev.own_unsigned = 1;
+    assert_eq!(element_signed(4, &ev), (false, false), "stores that disagree fall to the load's own type");
+}

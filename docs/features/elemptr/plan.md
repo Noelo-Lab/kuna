@@ -25,11 +25,18 @@ printer prints a subscript. No new `Action` is scheduled.
   An add with a non-constant addend is an indexed access when the addend is an
   index by construction (scaled, extended, small mask, shift, division, loop counter,
   used as a number) or the candidate is already a pointer; never when the addend is
-  itself a pointer by type or by a pointer-only use.
+  itself a pointer by type or by a pointer-only use, through its copies and small
+  literal offsets. The right-hand side of a pointer difference (`b + buf * -1`,
+  the sum not dereferenced) is not a number use.
+- A later `ActionInferTypes` pass that finds a parameter or call return an earlier
+  pass typed indexing another base disputes it (`Funcdata`, surviving `clear`) and
+  restarts the function without it.
 - Commit: one access width W, whole elements, at least one computed index.
-- Element: integer of width W, sign from extensions/orderings/typed stored values,
-  a declared integer pointee wins; pointer-width elements need a named pointee or
-  arithmetic-only uses.
+- Element: integer of width W, sign from extensions/orderings of loads, a declared
+  integer pointee wins, typed stored values only break a tie; pointer-width
+  elements need a named pointee or arithmetic-only uses.
+- Propagation: a value stored through a pointer the rule typed keeps its own sign
+  (`keeps_stored_sign`, in `propagate_type_edge`).
 - Refusals: second width, scale mismatch or record stride, non-zero PTRSUB, pointer
   arithmetic, floats, literal compares, declared scalar or other-width pointees.
 
@@ -53,6 +60,10 @@ per call it lives across.
   prefers the array declaration when no function reads the name directly.
 - The string probe declines a literal the index can provably run past, and an empty
   literal under any non-zero index.
+- A held global the rule typed (`dat_5068`) is declared in the header
+  (`GlobalInfo::elem`), and `castimplied` reads a subscript of it at the declared
+  element (`Plan::declared_type`), so `castternary` drops the `(int)` a `?:` arm
+  of `dat_5068[i]` carries.
 
 ## 5. Tests
 

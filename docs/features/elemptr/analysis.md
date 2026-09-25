@@ -167,7 +167,8 @@ function decompiled after the first disagreement, brings that to 17 functions an
 ## 7. Value preservation
 
 A type this rule commits is not only spelling. Three ways it could change what the
-printed C computes were found by compiled round trips and closed:
+printed C computes were found by compiled round trips and closed, and two ways
+it declared a wrong type without changing a value:
 
 - **A defaulted sign reaching a return.** The first version declared a 2- or
   4-byte element with no sign evidence signed (`short`, `int`). A function that
@@ -197,6 +198,27 @@ printed C computes were found by compiled round trips and closed:
   typed a pointer, a second index of another scale) refuses, which keeps zlib's
   `deflate_state` a record, and a global copied into a register the function
   returns another value in refuses (`libbsd`'s `user_from_uid`).
+- **A length taken for the base.** `put(char *buf, size_t len, const char *s)`
+  compares `(size_t)(b - buf)` against `len`. The difference lowers to
+  `b + buf * -1`, and the multiply by -1 made `buf` look like a number, so the
+  first type pass declared `len` the `char *` base of `buf + len` (gcc and clang,
+  -O0 to -O2; libedit's `keymacro__decode_str`, whose callers then passed
+  `(char *)0x400`). The right-hand side of a difference of two pointers (the sum
+  compared or returned, not dereferenced) is no longer a number use, and an add
+  operand dereferenced through a copy or phi (`b = buf; *b++`) is the base. As a
+  net under both, a later pass that finds a parameter or call return an earlier
+  pass typed indexing another base blocks it and restarts the function, since
+  the `PTRADD` the earlier pass built keeps its type otherwise (it fires on
+  grep O0 `print_line_tail`, which then prints what main prints). The values
+  round-tripped before; the declaration was wrong.
+- **A counter re-signed by its table.** `fmap[i] = i` with `unsigned *fmap` and
+  `int i` propagated the element's `unsigned int` onto the counter, which then
+  needed `(int)` at every signed compare and index (bzip2 O0 `fallbackSort`:
+  +45 casts). A value stored through a pointer the rule typed now keeps its own
+  sign when the two differ only in sign (C converts it bit for bit on the
+  store), and a stored value's sign only breaks a tie for a table nothing reads
+  in that function, so a write-only function no longer blocks the sign its
+  reader established (gzip O0's `huft` tables).
 
 The round trip in `decompile_all_cli.rs` now also reads tables whose elements have
 the top bit set: `unsigned short` and `unsigned int` elements returned to callers

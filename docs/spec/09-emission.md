@@ -302,10 +302,10 @@ produce subscripts of declared pointers, a subscript `p[k]` of a variable the te
 declares `T *`, or of a constant printed as an array name or behind its own cast,
 reads a `T` as well (`ImpliedCasts::subscript_base_type`), so the `(int)` a `?:`
 arm of `a0[i]` carries is the conversion C performs. So does a subscript of a
-global no symbol names, `dat_5068[k]`: the export header declares it at the one
-type the function reads and writes it at (`kuna_globalref.rs
-(Plan::declared_type)`, what `extract_global_objects` writes), and a subscript
-reads that type's pointee when it is the pointer the base is read at. An
+global no symbol names that `elemptr` typed, `dat_5068[k]`: the export header
+declares it at the one type the function reads and writes it at (`kuna_globalref.rs
+(Plan::declared_type)`, what `extract_global_objects` writes, §9.9), and a
+subscript reads that type's pointee when it is the pointer the base is read at. An
 arithmetic operand is not known, because C promotes `a - b` over two
 `unsigned char`s to a negative `int` where the p-code wraps; neither is a
 constant or a call. Under that rule `(long)(int)(unsigned int)(unsigned char)c`
@@ -2343,7 +2343,13 @@ one object, named by the unsigned one, the way `same_object` already reads a
 direct access (`Seen::merge`): a caller that copies `0x4b000` into a pointer
 variable and passes it to a callee whose parameter `elemptr` declared `unsigned
 short *` reads the address both ways, and would otherwise lose the name to the
-two-type refusal.
+two-type refusal. A global no symbol names that a function reads directly and
+`elemptr` typed an element pointer (`dat_5068 = malloc(0x100)`, `dat_5068[i]`)
+is declared in the header too, `extern char *dat_5068;`, although no function
+takes its address (`GlobalInfo::elem`): its subscripts read the element that
+declaration names. A Varnode of that storage at another type, such as its value
+before a call, which nothing prints, is not a read of it at that type, because
+every walk over the Varnodes holding it agreed on the pointer.
 
 **The value is the binary's.** `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
 (a_constant_address_named_as_a_global_round_trips_through_the_printed_c)`
