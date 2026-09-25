@@ -919,11 +919,11 @@ encoding makes for the Ghidra client. Anything printed in the constant colour
 tokens. Declaration context rides along: tokens inside the return type, the
 prototype, and a local declaration are marked, and a comment or label keeps the
 space and offset it is attached to. `printc.rs (PrintC::doc_function_tokens)` runs the same
-`emit_function_document` sequence with capture on, and carries the printer's
-indent increment into the fresh markup leaf and back out — `set_markup`
-rebuilds the leaf with the default increment of 2, which would otherwise
-shift every column under `option indentincrement` and reset the plain
-printer's setting for the next function.
+`emit_function_document` sequence with capture on. `option indentincrement`
+lives on the emitter leaf, so `printc.rs (PrintC::set_markup)` carries it into
+the leaf it swaps in: without that, the markup leaf would indent by the default
+2 (shifting every column) and the plain printer restored after it would print
+every later function of the batch at 2 as well.
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
 (print_c_with_srcmap)` renders the plain text first and the captured markup
 second — the text is byte-identical to `print_c_with_provenance` — and the

@@ -170,7 +170,7 @@ fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String
     let arg = args.first().map(String::as_str);
     Ok(match cmd {
         "list" => {
-            at_most(1)?;
+            at_most(0)?;
             Cmd::List
         }
         "decompile" => {
@@ -324,8 +324,10 @@ pub fn run_request(req: &Request) -> Result<String, String> {
                 binary,
                 prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()),
             );
+            // One function carries its line mappings; a whole-binary run does
+            // not pay a second render per function for them.
             let opts = DecompileOptions {
-                want_provenance: true,
+                want_provenance: targets.len() == 1,
                 single_target: targets.len() == 1,
                 ..DecompileOptions::default()
             };
@@ -791,6 +793,26 @@ mod tests {
             "aggressive"
         );
         assert!(resolve_mode(Some("turbo"), 1).unwrap_err().contains("unknown mode"));
+    }
+
+    #[test]
+    fn each_command_takes_only_its_own_positionals() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let parse = |cmd: &str, a: &[&str]| super::parse_command(cmd, &args(a), "bin");
+        assert!(matches!(parse("list", &[]), Ok(Cmd::List)));
+        assert!(parse("list", &["main"]).unwrap_err().contains("at most 0"));
+        assert!(matches!(parse("decompile", &[]), Ok(Cmd::DecompileAll)));
+        assert!(matches!(parse("decompile", &["0x1198"]), Ok(Cmd::DecompileAddr(0x1198))));
+        assert!(parse("decompile", &["main", "x"]).is_err());
+        assert!(matches!(parse("inspect", &["main"]), Ok(Cmd::Inspect(Selector::Name(_)))));
+        assert!(parse("inspect", &[]).is_err());
+        assert!(matches!(parse("read", &["0x10", "16"]), Ok(Cmd::Read { addr: 0x10, len: 16 })));
+        assert!(matches!(parse("read", &["0x10", "0x10"]), Ok(Cmd::Read { addr: 0x10, len: 16 })));
+        assert!(parse("read", &["0x10"]).is_err());
+        assert!(parse("read", &["16", "16"]).is_err());
+        assert!(matches!(parse("xrefs", &["0x1161"]), Ok(Cmd::Xrefs(Selector::Addr(0x1161)))));
+        assert!(matches!(parse("project", &[]), Ok(Cmd::Project(name)) if name == "bin"));
+        assert!(parse("frobnicate", &[]).is_err());
     }
 
     #[test]

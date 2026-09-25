@@ -1923,17 +1923,32 @@ pub struct CodeProvenance {
 impl CodeProvenance {
     /// Attach markup-backed use evidence to the corresponding reported variables.
     pub fn apply_to_variables(&self, fd: &Funcdata, variables: &mut [VarInfo]) {
-        for variable in variables {
-            let evidence = self.evidence_for_refs(&self.variable_varrefs(fd, variable));
-            variable.line_numbers = evidence.line_numbers;
-            variable.addresses = evidence.addresses;
-        }
+        self.apply_to_variables_with_refs(fd, variables);
+    }
+
+    /// [`Self::apply_to_variables`], returning for each variable the varrefs
+    /// its evidence came from (what a token map binds variable tokens by).
+    pub fn apply_to_variables_with_refs(
+        &self,
+        fd: &Funcdata,
+        variables: &mut [VarInfo],
+    ) -> Vec<BTreeSet<u64>> {
+        variables
+            .iter_mut()
+            .map(|variable| {
+                let refs = self.variable_varrefs(fd, variable);
+                let evidence = self.evidence_for_refs(&refs);
+                variable.line_numbers = evidence.line_numbers;
+                variable.addresses = evidence.addresses;
+                refs
+            })
+            .collect()
     }
 
     /// The varrefs whose uses are `variable`'s evidence: its storage, else the
     /// highs carrying its name, else its `&parameter` references -- the first
     /// set the rendered markup actually used.
-    pub fn variable_varrefs(&self, fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
+    fn variable_varrefs(&self, fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
         let storage_refs = variable_storage_varrefs(fd, variable);
         if !self.evidence_for_refs(&storage_refs).line_numbers.is_empty() {
             return storage_refs;

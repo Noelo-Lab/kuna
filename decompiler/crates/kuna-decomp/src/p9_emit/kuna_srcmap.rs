@@ -9,11 +9,11 @@
 //! placement against the text, so a caller ships tokens only when they rebuild
 //! the code exactly.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_num::opcodes::OpCode;
 
-use crate::decompile_drive::{CodeProvenance, VarInfo};
+use crate::decompile_drive::VarInfo;
 use crate::funcdata::Funcdata;
 use crate::prettyprint::{EmitToken, SyntaxHighlight, TokenKind};
 
@@ -52,28 +52,36 @@ pub struct CookieRewrite {
     pub literal: char,
 }
 
-/// Apply the text rewrites to the tokens of the same render.
+/// Apply the text rewrites to the tokens of the same render. The text rule
+/// fires only on a return line that reads exactly `return <v>;` and blanks the
+/// whole assignment line, so the return line's three tokens become `return`,
+/// the literal carried from the assignment, `;`, and the assignment's tokens
+/// go. A return line whose tokens are not exactly those three is left as it is
+/// (the text rule could not have fired on it; [`verify`] then says so).
 pub fn apply_cookie_rewrites(tokens: &mut Vec<EmitToken>, rewrites: &[CookieRewrite]) {
     for rw in rewrites {
+        let returned: Vec<&EmitToken> = tokens.iter().filter(|t| t.line == rw.return_line).collect();
+        let [keyword, _, semi] = returned.as_slice() else { continue };
+        if keyword.text != "return" || semi.text != ";" {
+            continue;
+        }
+        let (mut keyword, mut semi) = ((*keyword).clone(), (*semi).clone());
         let literal = rw.literal.to_string();
-        let value = tokens
+        let mut value = tokens
             .iter()
             .find(|t| t.line == rw.assignment_line && t.text == literal)
-            .cloned();
-        let keyword = tokens.iter().find(|t| t.line == rw.return_line && t.text == "return").cloned();
-        let semi = tokens.iter().rev().find(|t| t.line == rw.return_line && t.text == ";").cloned();
+            .cloned()
+            .unwrap_or_else(|| EmitToken {
+                text: literal.clone(),
+                kind: TokenKind::Value,
+                color: SyntaxHighlight::ConstColor,
+                opref: None,
+                varref: None,
+                at: None,
+                type_name: None,
+                ..keyword.clone()
+            });
         tokens.retain(|t| t.line != rw.assignment_line && t.line != rw.return_line);
-        let (Some(mut keyword), Some(mut semi)) = (keyword, semi) else { continue };
-        let mut value = value.unwrap_or_else(|| EmitToken {
-            text: literal.clone(),
-            kind: TokenKind::Value,
-            color: SyntaxHighlight::ConstColor,
-            opref: None,
-            varref: None,
-            at: None,
-            type_name: None,
-            ..keyword.clone()
-        });
         keyword.col = rw.indent;
         value.line = rw.return_line;
         value.col = rw.indent + 7;
@@ -85,11 +93,12 @@ pub fn apply_cookie_rewrites(tokens: &mut Vec<EmitToken>, rewrites: &[CookieRewr
 
 /// Place `raw` in `untrimmed.trim_matches('\n')` and bind each token's
 /// references against `fd`: `opref` to its instruction, a call's name to its
-/// callee, a variable to its row in `variables` (by the varrefs its evidence
-/// came from, else by a unique name).
+/// callee, a variable to its row in `variables` (by `var_refs`, the varrefs
+/// each row's evidence came from --
+/// `CodeProvenance::apply_to_variables_with_refs` -- else by a unique name).
 pub fn resolve(
     fd: &Funcdata,
-    provenance: &CodeProvenance,
+    var_refs: &[BTreeSet<u64>],
     raw: &[EmitToken],
     untrimmed: &str,
     variables: &[VarInfo],
@@ -114,8 +123,8 @@ pub fn resolve(
         }
     }
     let mut by_ref: BTreeMap<u64, usize> = BTreeMap::new();
-    for (i, v) in variables.iter().enumerate() {
-        for r in provenance.variable_varrefs(fd, v) {
+    for (i, refs) in var_refs.iter().enumerate().take(variables.len()) {
+        for &r in refs {
             by_ref.entry(r).or_insert(i);
         }
     }

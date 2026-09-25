@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 
 use kuna_console::assertions::Outcome;
+use kuna_console::disasm::{hex, mapped_run_end, read_upto};
 use kuna_console::engine::{ConsoleProgram, FunctionEntry};
 use kuna_console::inspect::{
     function_rows, function_xrefs, section_rows, SectionRow, XrefRow, FUNCTION_ROW_CAP,
@@ -229,23 +230,29 @@ pub fn inspect_json(
         .end()
 }
 
-/// The `read` document: up to `len` bytes at `addr`, stopping at the first
-/// byte the image does not map.
+/// The `read` document: up to `len` bytes at `addr`, stopping at the end of
+/// the mapped run that holds it.
 pub fn read_json(binary: &str, prog: &ConsoleProgram, addr: u64, len: u64, assertions: &[Outcome]) -> String {
     let mut bytes = Vec::new();
     let start = prog.input_address_offset(addr).ok();
     let got = start.map_or(0, |start| {
-        kuna_console::disasm::read_upto(prog, start, len as usize, &mut bytes)
+        // The loader zero-fills a read that runs off the end of a mapped run;
+        // those bytes are not in the image, so the read stops where the run does.
+        let len = match mapped_run_end(prog, start) {
+            Some((end, _)) => len.min(end.saturating_sub(start)),
+            None => len,
+        };
+        read_upto(prog, start, len as usize, &mut bytes)
     });
     bytes.truncate(got);
-    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    let text = hex(&bytes);
     let sections = section_rows(prog);
     let offset = start.filter(|_| got > 0).and_then(|start| file_offset(&sections, start));
     Obj::new()
         .str("binary", binary)
         .addr("address", addr)
         .num("size", got)
-        .str("bytes", &hex)
+        .str("bytes", &text)
         .opt_num("file_offset", offset)
         .raw("assertions", &assertions_json(assertions))
         .end()

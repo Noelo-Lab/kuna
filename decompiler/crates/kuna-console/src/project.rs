@@ -703,10 +703,10 @@ pub fn decompile_pulled(
                     // the definitions the preamble just printed above the body,
                     // as records. Empty unless the option is on.
                     let types = extract_type_definitions(prog.arch(), &fd);
-                    provenance.apply_to_variables(&fd, &mut variables);
+                    let var_refs = provenance.apply_to_variables_with_refs(&fd, &mut variables);
                     let detail = want_tokens.then(|| {
                         Box::new(crate::inspect::FuncDetail::resolve(
-                            prog, &fd, &provenance, &raw_tokens, &untrimmed, &code, &variables,
+                            prog, &fd, &var_refs, &raw_tokens, &untrimmed, &code, &variables,
                         ))
                     });
                     for variable in &mut variables {

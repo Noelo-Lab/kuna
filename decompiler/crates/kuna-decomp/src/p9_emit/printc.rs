@@ -2287,14 +2287,19 @@ impl PrintC {
     /// `EmitPrettyPrint::setMarkup`, prettyprint.cc:2531, driven from
     /// `ArchitectureGhidra`'s ctor `print->setMarkup(true)`, ghidra_arch.cc:917).
     /// Swaps the concrete [`PrintEmit`] variant; a fresh buffer either way (each
-    /// leaf owns its own sink).  The standalone datatest path NEVER calls this, so
-    /// `emit` stays `NoMarkup` and the 675-assertion byte output is untouched.
+    /// leaf owns its own sink). The indent increment (`option indentincrement`)
+    /// lives on the leaf and is carried into the new one, so a markup render and
+    /// the plain renders after it keep the printer's setting. The standalone
+    /// datatest path NEVER calls this, so `emit` stays `NoMarkup` and the
+    /// 675-assertion byte output is untouched.
     pub fn set_markup(&mut self, val: bool) {
+        let increment = self.emit.get_indent_increment();
         self.emit = if val {
             PrintEmit::Markup(EmitMarkup::new())
         } else {
             PrintEmit::NoMarkup(EmitNoMarkup::new())
         };
+        self.emit.set_indent_increment(increment);
     }
 
     /// Emit the ghidra-mode `decompileAt` clang token-markup `<function>` document
@@ -2321,23 +2326,18 @@ impl PrintC {
 
     /// The markup pass of [`Self::doc_function_provenance`] with every token
     /// captured at its plain-text position ([`crate::prettyprint::EmitToken`]).
-    /// The indent increment is carried into the markup leaf and back out, so
-    /// the columns match the plain render and the printer keeps its setting.
     pub fn doc_function_tokens(
         &mut self,
         fd: &Funcdata,
         arch: &Architecture,
     ) -> (MarkupProvenance, Vec<crate::prettyprint::EmitToken>) {
-        let increment = self.emit.get_indent_increment();
         self.set_markup(true);
-        self.emit.set_indent_increment(increment);
         self.emit.set_capture_tokens(true);
         self.emit_function_document(fd, arch);
         let _ = self.emit.flush();
         let provenance = self.emit.take_markup_provenance();
         let tokens = self.emit.take_markup_tokens();
         self.set_markup(false);
-        self.emit.set_indent_increment(increment);
         (provenance, tokens)
     }
 

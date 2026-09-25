@@ -4,6 +4,8 @@
 
 use std::path::PathBuf;
 
+use kuna_console::disasm::hex;
+
 use crate::json::read::{parse, Value};
 use crate::{run_request, Request};
 
@@ -40,9 +42,6 @@ fn fixture_bytes() -> Vec<u8> {
     std::fs::read(fixture().expect("fixture").0).expect("fixture bytes")
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
 
 #[test]
 fn inspect_is_decompile_plus_a_consistent_map_of_the_function() {
@@ -172,6 +171,13 @@ fn read_bounds_its_length_and_stops_at_unmapped_memory() {
     assert!(zero.is_err());
     let Some(huge) = run("read", &["0x1198", "65537"], &[]) else { return };
     assert!(huge.is_err());
+    // sample.elf's executable segment ends at 0x11f9 (`.fini`), and a hole
+    // follows: a read across the end returns the four mapped bytes only.
+    let Some(tail) = run("read", &["0x11f5", "64"], &[]) else { return };
+    let tail = tail.expect("a read across the end of the segment");
+    assert_eq!(tail.get("size").u64(), Some(4));
+    let offset = tail.get("file_offset").u64().expect("file-backed") as usize;
+    assert_eq!(tail.get("bytes").str(), Some(hex(&fixture_bytes()[offset..offset + 4]).as_str()));
     let Some(nowhere) = run("read", &["0x7fff0000", "16"], &[]) else { return };
     let nowhere = nowhere.expect("unmapped is an empty read, not an error");
     assert_eq!(nowhere.get("size").u64(), Some(0));

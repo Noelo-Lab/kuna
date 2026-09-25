@@ -234,24 +234,25 @@ are sparse — a line maps to the instructions whose p-code its tokens were prin
 argument set-up that was folded away maps to nothing.
 
 `read <0xADDR> <LEN>` returns `{binary, address, address_hex, size, bytes, file_offset,
-assertions}`: up to 64 KiB, stopping at the first byte the image does not map (an
-unmapped start is `size: 0`, not an error), overlays applied, loaded with the discovery
-walk off. `xrefs <name|0xADDR>` answers from `kuna xrefs`' reference walk
+assertions}`: up to 64 KiB, stopping where the mapped run holding the address ends (the
+loader would zero-fill past it; an unmapped start is `size: 0`, not an error), overlays
+applied, loaded with the discovery walk off. `xrefs <name|0xADDR>` answers from `kuna xrefs`' reference walk
 (`kuna_analysis::listing::xrefs`, seeded with the inventory and focused on the function):
 `{binary, function:{name, address, address_hex}, callers:[{name, address, address_hex,
 from, from_hex, kind, instruction}], callees:[{name, address, address_hex, at, at_hex,
 kind, instruction}], data_refs:[…as callees…], assertions}` — a caller's `address` is the
 calling function's entry and `from` the calling instruction; callees are calls and jumps
 that leave the function (`kind` `call`/`jump`), data refs are `data` (address taken),
-`read` and `write`, both in instruction order. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
+`read` and `write`; all three lists are in instruction order. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
 file_offset, file_size, executable, writable}]` (allocated sections, in address order;
 `file_size` is how many of the section's bytes the file holds from `file_offset`, which a
 PE section's virtual size can exceed; `writable` follows the segment that maps the
 section) and `known_types:[{name, size, kind}]` (the
 factory's named non-core types: `struct`, `union`, `enum`, `typedef`, `scalar`), and
-`decompile` now renders with provenance, adding the top-level `language` and the
-per-function `line_mappings`, `types` and per-variable `line_numbers`/`addresses` of `kuna
-decompile-all --json`.
+`decompile` adds the top-level `language` and the per-function `line_mappings`, `types`
+and per-variable `line_numbers`/`addresses` of `kuna decompile-all --json`. The line
+evidence costs a second render per function, so only a one-function `decompile` pays for
+it; the whole-binary `decompile` carries the fields empty (`inspect` always has them).
 
 ## 3. The virtual filesystem (the whole trick)
 

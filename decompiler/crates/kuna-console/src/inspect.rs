@@ -3,9 +3,9 @@
 //! listing ([`function_rows`]), its references ([`function_xrefs`]) and the
 //! image's section table with file offsets ([`section_rows`]).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use kuna_decomp::decompile_drive::{CodeProvenance, VarInfo};
+use kuna_decomp::decompile_drive::VarInfo;
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::kuna_srcmap::{self, CodeToken};
 use kuna_decomp::prettyprint::EmitToken;
@@ -31,13 +31,13 @@ impl FuncDetail {
     pub fn resolve(
         prog: &ConsoleProgram,
         fd: &Funcdata,
-        provenance: &CodeProvenance,
+        var_refs: &[BTreeSet<u64>],
         raw: &[EmitToken],
         untrimmed: &str,
         code: &str,
         variables: &[VarInfo],
     ) -> Self {
-        let mut tokens = kuna_srcmap::resolve(fd, provenance, raw, untrimmed, variables);
+        let mut tokens = kuna_srcmap::resolve(fd, var_refs, raw, untrimmed, variables);
         if let Err(error) = kuna_srcmap::verify(&tokens, code) {
             return FuncDetail { tokens: Vec::new(), tokens_error: Some(error) };
         }
@@ -64,7 +64,7 @@ pub struct SectionRow {
 }
 
 /// The program's loaded sections in address order: the loader's named table
-/// where it publishes one, else its unnamed section spans. A section is
+/// where it names any allocated section, else its unnamed section spans. A section is
 /// writable when the segment mapping it is (the loader leaves the READONLY bit
 /// off the loader-owned tables on purpose), else when its own flags say so.
 pub fn section_rows(prog: &ConsoleProgram) -> Vec<SectionRow> {
@@ -84,20 +84,24 @@ pub fn section_rows(prog: &ConsoleProgram) -> Vec<SectionRow> {
             writable: mapping.unwrap_or(flags) & section_flags::READONLY == 0,
         }
     };
-    let mut rows: Vec<SectionRow> = match prog.image_metadata() {
-        Some(meta) if !meta.sections.is_empty() => meta
-            .sections
-            .iter()
-            .filter(|s| s.flags & section_flags::UNALLOC == 0)
-            .map(|s| row(s.name.clone(), s.vma, s.size, (s.file_offset, s.file_size), s.flags))
-            .collect(),
-        _ => prog
+    let mut rows: Vec<SectionRow> = prog
+        .image_metadata()
+        .map(|meta| {
+            meta.sections
+                .iter()
+                .filter(|s| s.flags & section_flags::UNALLOC == 0)
+                .map(|s| row(s.name.clone(), s.vma, s.size, (s.file_offset, s.file_size), s.flags))
+                .collect()
+        })
+        .unwrap_or_default();
+    if rows.is_empty() {
+        rows = prog
             .sections()
             .into_iter()
             .filter(|&(_, _, flags)| flags & section_flags::UNALLOC == 0)
             .map(|(vma, size, flags)| row(String::new(), vma, size, (None, None), flags))
-            .collect(),
-    };
+            .collect();
+    }
     rows.sort_by(|a, b| a.address.cmp(&b.address).then_with(|| a.name.cmp(&b.name)));
     rows
 }
@@ -149,9 +153,10 @@ pub struct FunctionXrefs {
 /// The references of the function at `entry`, from the `kuna xrefs` walk
 /// (`kuna_analysis::listing::xrefs`) seeded with the program's inventory and
 /// focused on `entry`. Callers are named by the function holding the call
-/// site; targets by the function or global data symbol at them; a jump that
-/// stays inside the function is control flow, not a callee. Addresses are the
-/// program's byte addresses.
+/// site; targets by the function or global data symbol at them (a jump that
+/// stays inside the function is control flow, and
+/// `XrefIndex::refs_from_function` leaves it out). Every list is in
+/// instruction order. Addresses are the program's byte addresses.
 pub fn function_xrefs(prog: &ConsoleProgram, file: &object::File, entry: u64) -> FunctionXrefs {
     use kuna_analysis::listing::xrefs::{self as xr, XrefKind};
     let entries = prog.function_entries_canonical();
@@ -175,9 +180,6 @@ pub fn function_xrefs(prog: &ConsoleProgram, file: &object::File, entry: u64) ->
         });
     }
     for r in index.refs_from_function(entry) {
-        if r.kind == XrefKind::Jump && index.function_containing(r.to) == Some(entry) {
-            continue;
-        }
         let row = XrefRow {
             name: name_of(r.to),
             address: r.to,
@@ -190,6 +192,7 @@ pub fn function_xrefs(prog: &ConsoleProgram, file: &object::File, entry: u64) ->
             XrefKind::Data | XrefKind::Read | XrefKind::Write => out.data_refs.push(row),
         }
     }
+    out.callers.sort_by_key(|r| (r.site, r.address));
     out.callees.sort_by_key(|r| (r.site, r.address));
     out.data_refs.sort_by_key(|r| (r.site, r.address));
     out

@@ -117,3 +117,26 @@ fn a_cookie_rewrite_moves_the_literal_onto_the_return_line() {
     let literal = &tokens[4];
     assert_eq!((literal.kind, literal.opref), (TokenKind::Value, Some(9)));
 }
+
+/// The text rule rewrites only a return line reading exactly `return <v>;`, so
+/// a rewrite record whose return line carries anything else leaves every token
+/// where it was rather than deleting what it cannot rebuild.
+#[test]
+fn a_cookie_rewrite_leaves_a_return_line_it_does_not_recognise() {
+    let before = vec![
+        raw(4, 2, "v1", TokenKind::Variable),
+        raw(4, 5, "=", TokenKind::Op),
+        raw(4, 7, "0", TokenKind::Value),
+        raw(4, 8, ";", TokenKind::Syntax),
+        raw(6, 2, "return", TokenKind::Syntax),
+        raw(6, 9, "v1", TokenKind::Variable),
+        raw(6, 11, ";", TokenKind::Syntax),
+        raw(6, 13, "// rax", TokenKind::Comment),
+    ];
+    let mut tokens = before.clone();
+    apply_cookie_rewrites(
+        &mut tokens,
+        &[CookieRewrite { assignment_line: 4, return_line: 6, indent: 2, literal: '0' }],
+    );
+    assert_eq!(tokens, before);
+}

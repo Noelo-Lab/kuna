@@ -151,3 +151,40 @@ fn sample_tokens_name_callees_parameters_and_values() {
         assert_eq!(comment.address, None, "a stack comment names no instruction: {comment:?}");
     }
 }
+
+/// `option indentincrement` lives on the printer's emitter leaf, which a markup
+/// render swaps out and back. Every function of a batch keeps the setting
+/// whether or not the batch asks for line evidence or tokens.
+#[test]
+fn an_indent_increment_survives_every_render_of_a_batch() {
+    let root = repo_root();
+    let path = root.join("integrations/web/test/fixtures/sample.elf");
+    let render = |want_provenance: bool, want_tokens: bool| {
+        let mut prog = load(path.to_str()?, None)?;
+        prog.arch_mut().print_mut().set_indent_increment(4);
+        let targets = prog.function_entries_executable();
+        let opts = DecompileOptions { want_provenance, want_tokens, ..DecompileOptions::default() };
+        Some(decompile_targets_with(&mut prog, targets, &opts))
+    };
+    let (Some(plain), Some(provenance), Some(tokens)) =
+        (render(false, false), render(true, false), render(false, true))
+    else {
+        return;
+    };
+    let bodies = plain.iter().filter(|f| f.code.is_some()).count();
+    assert!(bodies >= 2, "the batch must hold more than one function");
+    for (p, (q, t)) in plain.iter().zip(provenance.iter().zip(&tokens)) {
+        let code = p.code.as_deref().unwrap_or("");
+        assert_eq!(Some(code), q.code.as_deref(), "{}: provenance changed the indent", p.name);
+        assert_eq!(Some(code), t.code.as_deref(), "{}: tokens changed the indent", p.name);
+        for line in code.lines().filter(|l| l.starts_with(' ')) {
+            let indent = line.len() - line.trim_start_matches(' ').len();
+            assert_eq!(indent % 4, 0, "{}: {line:?} is not indented by fours", p.name);
+        }
+        if let Some(detail) = t.detail.as_deref() {
+            assert_eq!(detail.tokens_error, None, "{}", t.name);
+        }
+    }
+    let main = plain.iter().find(|f| f.name == "main").and_then(|f| f.code.as_deref());
+    assert!(main.is_some_and(|c| c.contains("\n    long v1;")), "{main:?}");
+}
