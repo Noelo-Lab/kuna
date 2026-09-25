@@ -6,7 +6,9 @@ the declaration) without changing the number of arguments any call to a parked
 function passes or growing the number of lines the caller prints -- a caller
 that grows an argument or a statement is what a closed list longer than the body
 invents, and a caller that grows a local is what a declared return narrower than
-the caller's read of it splits the register into. A caller that prints fewer
+the caller's read of it splits the register into. A call that passed more than
+the declared list and now passes exactly the list dropped a phantom argument,
+and is in scope. A caller that prints fewer
 lines is in scope and is read by hand. A changed function of either kind
 that gains a `CONCAT` has had half a register invented for it. Anything else is
 a bug, and so is a function that is not itself parked whose own parameter types
@@ -148,11 +150,12 @@ def param_types(lines):
 def work(b):
     off, _ = run(b, 'off')
     on, err = run(b, 'on', trace=True)
-    parked = set()
+    parked, arity = set(), {}
     for l in err.splitlines():
-        m = re.match(r'\[callbacktype\] park (\S+) @0x([0-9a-f]+)', l)
+        m = re.match(r'\[callbacktype\] park (\S+) @0x([0-9a-f]+) .*params=(\d+)', l)
         if m:
             parked.add(int(m.group(2), 16))
+            arity[int(m.group(2), 16)] = int(m.group(3))
     a, c = by_function(off), by_function(on)
     va = CC.harvest_types(CC.tokenize(off), off)
     vc = CC.harvest_types(CC.tokenize(on), on)
@@ -176,11 +179,19 @@ def work(b):
         kind = ('parked' if a_ in parked else
                 'caller-of-parked' if (name, addr) in callers else 'UNEXPLAINED')
         if kind == 'caller-of-parked':
-            grew = len(new) > len(old) or any(
-                call_args(old, names[p]) != call_args(new, names[p])
-                for p in parked if p in names)
-            if grew:
+            moved = [(p, call_args(old, names[p]), call_args(new, names[p]))
+                     for p in parked if p in names]
+            moved = [m for m in moved if m[1] != m[2]]
+            # A call that passed more than the declared list and now passes
+            # exactly the list dropped an argument the closed list does not
+            # pass; anything else a call gains or loses is invented.
+            dropped = all(len(co) == len(cn) and all(y == arity[p] and x > y
+                                                     for x, y in zip(co, cn) if x != y)
+                          for p, co, cn in moved)
+            if len(new) > len(old) or not dropped:
                 kind = 'UNEXPLAINED-caller-grew'
+            elif moved:
+                kind = 'caller-dropped-an-argument'
         if sum('CONCAT' in l for l in new) > sum('CONCAT' in l for l in old):
             kind = 'UNEXPLAINED-concat'
         # A function that is not itself parked keeps its own parameter types:
