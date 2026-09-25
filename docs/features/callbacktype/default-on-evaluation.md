@@ -43,7 +43,7 @@ same thing. The off/on coverage is in the `tests/cli` probes below.
 ## (c) `make test-cli`
 
 ```
-tests/cli: 253/253 passed
+tests/cli: 254/254 passed
 ```
 
 Three `calleevote` probes use a `qsort` comparator, `by_used`, as calleevote's control. Under the
@@ -51,8 +51,9 @@ new default the slot declares it (`int by_used(void *a0,void *a1)` where its own
 `bool`), which is this option's effect, not calleevote's; the three probes now pass
 `--option callbacktype off` and keep main's expectations, so they test calleevote alone. The
 callbacktype probes pin the declared form. Nothing else moves, and nothing moved in the rebases onto
-castarith/castsign, globalref and structheadless: main's own castarith expectations for `by_used` and `mark` are
-kept as they are, and the callbacktype probes pass unchanged.
+castarith/castsign, globalref, structheadless, castindex, castternary and callpush: main's own
+castarith expectations for `by_used` and `mark` are kept as they are, and the callbacktype probes
+pass unchanged (254 = main's 240 + the fourteen).
 
 The fourteen callbacktype probes over five fixtures, and what each pins:
 
@@ -178,20 +179,20 @@ parameter with empty `line_numbers`/`addresses`, the by-design case in spec 04.
 
 | binary | off (min ms) | on (min ms) | delta min | delta median |
 |---|---|---|---|---|
-| `libselinux-O0` | 5348.5 | 5408.3 | +1.12% | -2.02% |
-| `libselinux-O2-noinline` | 4860.0 | 4887.7 | +0.57% | +2.88% |
-| `fmt-O2` | 4198.8 | 4161.5 | -0.89% | -0.41% |
-| `ls-O2` | 14098.7 | 13853.2 | -1.74% | -0.06% |
-| `sort-O2` | 15782.5 | 15311.8 | -2.98% | -3.52% |
-| `bash-O2` | 88053.5 | 89467.3 | +1.61% | +0.11% |
+| `libselinux-O0` | 5401.8 | 5460.2 | +1.08% | +1.85% |
+| `libselinux-O2-noinline` | 4859.4 | 4957.3 | +2.01% | +2.09% |
+| `fmt-O2` | 4180.8 | 4172.2 | -0.21% | +0.62% |
+| `ls-O2` | 13774.4 | 13779.3 | +0.04% | -0.35% |
+| `sort-O2` | 14649.5 | 14672.0 | +0.15% | +2.65% |
+| `bash-O2` | 88378.2 | 87401.9 | -1.10% | -1.12% |
 
-Same build (d10b3586c, the bounded redo; fcf175aac only re-derives count sites on top of it), both
-arms, `kuna decompile-all --json --max-fn-seconds 120`, the arms alternated per iteration and the
-minimum of 15 taken (`speed.py`, raw samples in `record.json`), while other campaign lanes and this
-PR's `make rust-test` lane ran. **Worst delta +1.61% (`bash-O2`), inside the +5% budget.** CPU time
-(user+sys, `speed-cpu.py`, interleaved min-of-15 on fcf175aac) agrees for `libselinux`: -O0 +0.17%
-(median -0.48%), -O2-noinline +1.12% (median +6.06% at load 6-9; the minimums of three separate runs
-of the bounded build are +0.57% wall, +3.01% and +1.12% CPU).
+Same build (bfa1d32e0, whose engine code 95dbe4d23 shares), both arms, `kuna decompile-all --json
+--max-fn-seconds 120`, the arms alternated per iteration and the minimum of 15 taken (`speed.py`,
+raw samples in `record.json`), while this PR's `make rust-test` lane and other campaign lanes ran.
+**Worst delta +2.01% (`libselinux-O2-noinline`), inside the +5% budget.** The previous base (f434b6a60, before the
+kept statement): libselinux -O0 +1.12%, -O2-noinline +0.57%, fmt -0.89%, ls -1.74%, sort
+-2.98%, bash +1.61%. The kept statement costs one map lookup per call at the seed and one per
+argument of a call to a parked callback; the consumed-result bound removes redos.
 
 **`libselinux` is the binary the round-6 review measured over budget**: +12.67% at -O0 and +13.17%
 at -O2-noinline (CPU, min-of-11), confirmed on two more runs. Almost all of it was the redo. With
@@ -246,9 +247,10 @@ at -O0), `tar`'s `hol_entry_qcmp` (`struct_70 *`, +15), `ptx -O0`'s `compare_wor
 `read_bitmaps_thread` (0 -> 7 at each level). One of `process_inode_cmp`'s is an address handed to
 an import whose recovered parameter is an integer: `ext2fs_const_inode(&a0->field_0x4[0x14])`
 prints `ext2fs_const_inode((int8)a0 + 0x18)`, the same value, in the `(long)v` form castarith
-leaves as integer arithmetic. No type is weakened: each parameter moves from an inferred pointee to
-the declared type, each return from a wrong `unsigned long`/`uint8` to the declared `void *`/`int`,
-and no caller's type moves at all.
+leaves as integer arithmetic. No caller's type moves at all. Inside the callbacks each parameter
+moves from an inferred pointee to the declared type, which DWARF gives, and each return from a wrong
+`unsigned long`/`uint8` to the declared `void *`/`int`; where the inferred pointee was a
+synthesized record, that record is what the declaration takes away (see the verdict).
 
 ## (g) `p0_knowledge/modes.rs`
 
@@ -284,22 +286,26 @@ parameter it is passed to (`*(long *)a0`, `((unsigned long *)a0)[1]`, `((FILE **
 Main prints the same call with no cast only because it reads the `void *` as an
 `unsigned long *`. No cast is removed, so no computed value can change,
 and no type is weakened: the three functions move from a wrong type to the declared one. Outside
-castbench's shared set the same effect adds more (+127 over the 64 changed functions of (f)), for
+castbench's shared set the same effect adds more (+198 over the 91 changed functions of (f)), for
 the same reason.
 
 ## Verdict
 
-**All criteria pass, so the option ships `on`.** Against main (f434b6a60): +10 perfect and 29
-improved with 0 worse, 13 gained parameters all DWARF-confirmed and none fabricated, no call site's
-argument count moved, 64 changed functions of 22,749 (all parked callbacks; no caller changes), no
-function that gains a `CONCAT`, speed within budget on every binary measured including the one the
-round-6 review found over it (worst +1.61%, `bash-O2`; `libselinux` +1.12% and +0.57%), and +21
-casts on castbench in the one function whose declared type is `void *`. Outside castbench the parked
-`void *` parameters add casts where the body's own guess was a record or typed pointer (+127 over
-the 64 changed functions): the declared type is the true one, and each field read then spells its
-own conversion, as IDA's output does. The claim is the program's own declaration rather than an
-inference, and it is refused wherever the body or a direct caller shows a different width,
+**All criteria pass, so the option ships `on`.** Against main (850e8c692): +10 perfect and 29
+improved with 0 worse, 13 gained parameters all DWARF-confirmed and none fabricated, 91 changed
+functions of 35,291 over 59 binaries (all parked callbacks; no caller changes, and no function that
+is not a callback changes its own parameter types), no function that gains a `CONCAT`, speed within
+budget on every binary measured (worst +2.01%, `libselinux-O2-noinline`), and +21 casts on castbench in the one
+function whose declared type is `void *`. Outside castbench the parked `void *` parameters add casts
+where the body's own guess was a record or typed pointer (+198 over the 91 changed functions, DWARF
+agreeing with the slot in all 31 functions that gain one): the declared type is the true one, and
+each field read then spells its own conversion, as IDA's output does. A caller never loses a type:
+where the slot says only `void *`, what the callback's body read through the pointer still types
+what the caller passes, and the one call-site change the declaration can make is to drop an
+argument a call passed past the declared list. The claim is the program's own declaration rather
+than an inference, and it is refused wherever the body or a direct caller shows a different width,
 including a computed return whose upper bytes the machine code leaves as the caller left them. The
-one place it takes something away is a synthesized `struct_N *` on a `void *` parameter (`tar`,
-`e2fsck`, `gnutls`), where the declaration and the ground truth agree against the synthesizer;
-`--option callbacktype off` is there for an operator who wants the pointee guess back.
+one place it takes something away is inside the callback itself: a synthesized `struct_N *` on a
+`void *` parameter (`tar`, `e2fsck`, `gnutls`, `ptx`), where the declaration and the ground truth
+agree against the synthesizer; `--option callbacktype off` is there for an operator who wants the
+pointee guess back.
