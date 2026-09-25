@@ -268,7 +268,33 @@
   },
   "worst_min_pct": 2.69,
   "budget_pct": 5.0,
-  "file": "speed-final.json"
+  "file": "speed-final.json",
+  "rebased_f434b6a60": {
+   "fmt": {
+    "off_min_ms": 4169.8,
+    "on_min_ms": 4160.4,
+    "delta_min_pct": -0.23,
+    "delta_median_pct": 0.13
+   },
+   "ls": {
+    "off_min_ms": 13863.0,
+    "on_min_ms": 13651.6,
+    "delta_min_pct": -1.52,
+    "delta_median_pct": -1.58
+   },
+   "sort": {
+    "off_min_ms": 14164.5,
+    "on_min_ms": 14395.1,
+    "delta_min_pct": 1.63,
+    "delta_median_pct": -2.31
+   },
+   "bash": {
+    "off_min_ms": 87349.2,
+    "on_min_ms": 89317.8,
+    "delta_min_pct": 2.25,
+    "delta_median_pct": -1.19
+   }
+  }
  },
  "audit": {
   "rules": "high_contradicts (another call's result of the other class; beside a pointer a non-address number, a load through the pointer, a sum of integers) and a returned result beside a returned non-address number; only statements the variable's type carries; functions up to AUDIT_MAX_OPS = 1000 live p-code ops",
