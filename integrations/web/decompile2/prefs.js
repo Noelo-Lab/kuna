@@ -1,20 +1,21 @@
 // prefs.js — the study view's display preferences, one versioned record in
 // localStorage (`kuna.d2.prefs`). DOM-free: the storage object is passed in.
+// The choices of the cycling ones are listed in CHOICES; `hoverDelay` -1 is off.
 
 export const PREFS_KEY = 'kuna.d2.prefs';
 
 export const DEFAULT_PREFS = Object.freeze({
   v: 1,
-  asmAddr: 'abs',        // abs | rel | both
+  asmAddr: 'abs',
   asmBytes: true,
-  asmCMode: 'comment',   // comment | interleave | off
+  asmCMode: 'comment',
   asmArrows: true,
   asmHints: true,
   cLineNumbers: true,
   cLineAddrs: true,
-  hoverDelay: 450,       // 0 | 250 | 450 | 800 | -1 (off)
+  hoverDelay: 450,
   split: false,
-  tab: 'c',              // c | asm | bytes | stack | src
+  tab: 'c',
   rail: true,
 });
 
