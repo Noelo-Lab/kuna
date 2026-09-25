@@ -25,14 +25,19 @@
 //!   from or to `bool`, an enum, a float or a pointer), and
 //! - the usual arithmetic conversions of the two arms give `T` whether or not
 //!   the cast is printed: `R` is `T`, and so is the type of the conditional
-//!   with the cast left out.
+//!   with the cast left out, and
+//! - the conditional is assigned to a variable declared with an integer type.
 //!
 //! The conditional then converts the arm to `T` itself, which is the conversion
 //! the cast spelled, and its own type and value are the ones it had with the
-//! cast; so is every value computed from it, whatever reads it.  When both arms
-//! carry a cast, the rule is applied to the pair: both casts go only when the
-//! conditional over both bare operands is still `T`, else the first arm's cast
-//! alone, else the second's.
+//! cast; so is the value the assignment converts, since an integer conversion
+//! depends only on the value converted (C11 6.3.1.3).  The destination may be
+//! declared with another integer type than `T` (`unsigned int v = c ? *p : 0;`
+//! over a `char *p` stores what `(int)*p` stored); a destination declared as a
+//! pointer (a merged variable whose other pieces are addresses) is left alone.
+//! When both arms carry a cast, the rule is applied to the pair: both casts go
+//! only when the conditional over both bare operands is still `T`, else the
+//! first arm's cast alone, else the second's.
 //!
 //! # The arms' C types
 //!
@@ -78,14 +83,22 @@ struct Arm {
 }
 
 /// The conversions to leave out of the arms `arms` (the ops `iteregion` prints
-/// as the `?` and `:` values) of one conditional.
+/// as the `?` and `:` values) of the conditional assigned to `dest`.
 pub(crate) fn arm_drops(
     implied: &ImpliedCasts,
     p: &dyn PrintedForms,
     fd: &Funcdata,
     arms: [OpId; 2],
+    dest: VarnodeId,
 ) -> Vec<OpId> {
     if !implied.arms_enabled() {
+        return Vec::new();
+    }
+    let integer_dest = match implied.explicit_type(p, fd, dest, arms[0]) {
+        CType::Known(t) => int_range(&t).is_some() && !t.is_enum_type(),
+        _ => false,
+    };
+    if !integer_dest {
         return Vec::new();
     }
     let (Some(a), Some(b)) = (arm(implied, p, fd, arms[0]), arm(implied, p, fd, arms[1])) else {

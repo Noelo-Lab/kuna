@@ -4279,6 +4279,164 @@ int main(void) {
     }
 }
 
+/// (kuna `castternary`) A widening on an arm of `c ? a : b` that the
+/// conditional performs itself is left out, and a cast whose removal would give
+/// the conditional another type stays.  The fixture holds a textbook base64
+/// decoder (`in[i] != '=' ? table[in[i]] : 0`, four times per quantum) and arms
+/// of char, unsigned char, short and int against int, unsigned, long and
+/// negative constants and a second cast, fed bytes 0x80..0xff and negative
+/// values.  The printed functions are compiled with the option off and on, with
+/// gcc and clang, and each build must print what the fixture binary prints.
+/// gcc -O0 keeps the result of each conditional in a register, so its build
+/// prints conditionals; clang -O0 spills it, and most of its diamonds print as
+/// if/else, where `castimplied` already leaves the widening out.
+#[test]
+fn a_conditional_arm_cast_round_trips_through_the_printed_c() {
+    const FUNCS: &str = "b64_decode,arm_char,arm_uchar,arm_short,arm_char_uint,arm_long,arm_char_long,\
+                         arm_ulong,arm_uint_long,arm_uint_max,arm_both,arm_wide_literal,arm_all_ones,\
+                         keep_narrow,keep_less,keep_float";
+    const WANT: &str = "13 72 101 108 108 111 32 119 111 114 108 100 63 251\n\
+                        -1 -128 127 -1 0 255 128 -1\n\
+                        -300 7 4294967295 4294967168 0\n\
+                        -1 -7 -9 -128 -1 -9\n\
+                        4294967295 5 4294967295 3000000000 -9 4294967295 18446744073709551615\n\
+                        -5 4294967291 -1 -5 -7 3000000000\n\
+                        4294967168 4294967295 1 4294967295 -3.5\n";
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+int main(void) {
+  signed char t[256];
+  static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  memset(t, -1, 256);
+  for (int i = 0; i < 64; i++) t[(unsigned char)alphabet[i]] = (signed char)i;
+  static const char txt[] = "SGVsbG8gd29ybGQ/+w==";
+  unsigned char out[16];
+  unsigned long n = F(unsigned long, b64_decode)(t, txt, strlen(txt), out);
+  static const char bytes[] = {0, -1, -128, 0x7f, (char)0xff, 'H'};
+  static const unsigned char ub[] = {0, 0xff, 0x80, 0xde};
+  static const short sh[] = {0, -300, 7};
+  static const int in[] = {0, -1, -7};
+  static const unsigned int ui[] = {0, 0xffffffffu, 3000000000u};
+  static const long lg[] = {-9, 5, -1};
+  static const unsigned long ul[] = {5, 0xfffffffffffffff0UL, 1};
+  printf("%lu", n);
+  for (unsigned long i = 0; i < n; i++) printf(" %u", out[i]);
+  printf("\n%d %d %d %d %d %d %d %d\n", F(int, arm_char)(bytes, 1), F(int, arm_char)(bytes, 2),
+         F(int, arm_char)(bytes, 3), F(int, arm_char)(bytes, 4), F(int, arm_char)(bytes, 0),
+         F(int, arm_uchar)(ub, 1), F(int, arm_uchar)(ub, 2), F(int, arm_uchar)(ub, 0));
+  printf("%d %d %u %u %u\n", F(int, arm_short)(sh, 1), F(int, arm_short)(sh, 0),
+         F(unsigned int, arm_char_uint)(bytes, 1), F(unsigned int, arm_char_uint)(bytes, 2),
+         F(unsigned int, arm_char_uint)(bytes, 0));
+  printf("%ld %ld %ld %ld %ld %ld\n", F(long, arm_long)(in, lg, 1), F(long, arm_long)(in, lg, 2),
+         F(long, arm_long)(in, lg, 0), F(long, arm_char_long)(bytes, lg, 2), F(long, arm_char_long)(bytes, lg, 4),
+         F(long, arm_char_long)(bytes, lg, 0));
+  printf("%lu %lu %ld %ld %ld %lu %lu\n", F(unsigned long, arm_ulong)(ui, ul, 1),
+         F(unsigned long, arm_ulong)(ui, ul, 0), F(long, arm_uint_long)(ui, lg, 1), F(long, arm_uint_long)(ui, lg, 2),
+         F(long, arm_uint_long)(ui, lg, 0), F(unsigned long, arm_uint_max)(ui, 1), F(unsigned long, arm_uint_max)(ui, 0));
+  printf("%ld %ld %ld %ld %ld %ld\n", F(long, arm_both)(-5, 7u, 1), F(long, arm_both)(-5, 0xfffffffbu, 0),
+         F(long, keep_narrow)(in, 1), F(long, keep_narrow)(in, 0), F(long, arm_wide_literal)(in, 2),
+         F(long, arm_wide_literal)(in, 0));
+  printf("%u %u %u %u %.1f\n", F(unsigned int, arm_all_ones)(bytes, 2), F(unsigned int, arm_all_ones)(bytes, 0),
+         F(unsigned int, keep_less)(1, 2, 1), F(unsigned int, keep_less)(1, 2, 0),
+         ((double (*)(float, double, int))(void (*)())keep_float)(-3.5f, 2.0, 1));
+  return 0;
+}
+"#;
+    let both = [("v1 = (a2) ? (unsigned long)a0 : (unsigned long)a1;", "v1 = (a2) ? (unsigned long)a0 : a1;")];
+    let gcc_only: [(&str, &str); 8] = [
+        (
+            "v2 = (*(char *)(v7 + a1) != '=') ? (int)*(char *)(a0 + (unsigned long)*(unsigned char *)(v7 + a1)) : 0;",
+            "v2 = (*(char *)(v7 + a1) != '=') ? *(char *)(a0 + (unsigned long)*(unsigned char *)(v7 + a1)) : 0;",
+        ),
+        ("v1 = (a1) ? (int)*(char *)(a0 + a1) : 0;", "v1 = (a1) ? *(char *)(a0 + a1) : 0;"),
+        (
+            "v1 = (a1) ? (unsigned int)*(unsigned char *)(a0 + a1) : 0xffffffff;",
+            "v1 = (a1) ? *(unsigned char *)(a0 + a1) : 0xffffffff;",
+        ),
+        ("v1 = (a1) ? (int)*(short *)(a0 + (long)a1 * 2) : 7;", "v1 = (a1) ? *(short *)(a0 + (long)a1 * 2) : 7;"),
+        (
+            "v1 = (a1) ? (unsigned long)*(unsigned int *)(a0 + (long)a1 * 4) : 0xffffffffffffffff;",
+            "v1 = (a1) ? *(unsigned int *)(a0 + (long)a1 * 4) : 0xffffffffffffffff;",
+        ),
+        (
+            "v1 = (a1) ? (long)*(int *)(a0 + (long)a1 * 4) : 3000000000;",
+            "v1 = (a1) ? *(int *)(a0 + (long)a1 * 4) : 3000000000;",
+        ),
+        ("v1 = (a1) ? (int)*(char *)(a0 + a1) : -1;", "v1 = (a1) ? *(char *)(a0 + a1) : -1;"),
+        ("v5 = (*(char *)(a1 + v7 + 3) != '=') ? (int)*(char", "v5 = (*(char *)(a1 + v7 + 3) != '=') ? *(char"),
+    ];
+    let gcc_kept = ["v1 = (a1) ? (long)*(int *)(a0 + (long)a1 * 4) : -5;", "v1 = (a2) ? (unsigned int)(a0 < a1) : 0xffffffff;"];
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .collect();
+    for fixture in ["castternary_gcc_O0_x86_64", "castternary_clang_O0_x86_64"] {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let gcc = fixture.contains("gcc");
+        for opt in ["off", "on"] {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
+                "--option", "castternary", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("castternary round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            let changed: Vec<(&str, &str)> =
+                both.iter().chain(if gcc { gcc_only.iter() } else { [].iter() }).copied().collect();
+            for (off, on) in changed {
+                let want = if opt == "on" { on } else { off };
+                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+            }
+            if gcc {
+                for want in gcc_kept {
+                    assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
+                }
+            }
+            for cc in &compilers {
+                for level in ["-O0", "-O2"] {
+                    let dir = std::env::temp_dir().join(format!(
+                        "kuna-castternary-rt-{}-{fixture}-{opt}-{cc}{level}",
+                        std::process::id()
+                    ));
+                    std::fs::create_dir_all(&dir).unwrap();
+                    let src = dir.join("rt.c");
+                    let exe = dir.join("rt");
+                    std::fs::write(
+                        &src,
+                        format!("#include <stdbool.h>\n#include <stdio.h>\n#include <string.h>\n{stdout}\n{MAIN}"),
+                    )
+                    .unwrap();
+                    let out = Command::new(cc)
+                        .args(["-std=gnu11", level, "-w", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                        .output()
+                        .expect("spawn the C compiler");
+                    assert!(
+                        out.status.success(),
+                        "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let _ = std::fs::remove_dir_all(&dir);
+                    assert_eq!(
+                        String::from_utf8_lossy(&run.stdout),
+                        WANT,
+                        "{fixture} printed with option {opt} and built by {cc} {level} computes a different value:\n{stdout}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// The text of one function in a `decompile-all` listing, from its `// Function:`
 /// header to the next.
 fn castsign_function<'a>(listing: &'a str, name: &str) -> &'a str {

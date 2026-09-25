@@ -6486,7 +6486,7 @@ impl PrintC {
         }
         let Some(strat) = cast_strategy_for(arch) else { return Vec::new() };
         let view = ImpliedView { pc: self, fd, arch, strat };
-        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, m.else_op])
+        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, m.else_op], m.dest)
     }
 
     /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the

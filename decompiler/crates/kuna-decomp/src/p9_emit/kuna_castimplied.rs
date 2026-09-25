@@ -380,7 +380,7 @@ impl ImpliedCasts {
     /// spells none of the types kuna holds for `vn` -- a merged variable declared
     /// `int *` whose member here reads as a `long` -- is `Opaque`: the text C
     /// sees is not the IR's type, so nothing can be concluded from the IR.
-    fn explicit_type(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId) -> CType {
+    pub(crate) fn explicit_type(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, reader: OpId) -> CType {
         let Some(v) = fd.vbank().get(vn) else { return CType::Opaque };
         let Some(high) = v.get_high() else { return CType::Opaque };
         if let Some(spelling) = self.declared_spelling(p, fd, vn) {

@@ -971,6 +971,7 @@ fn option_values_live_value_present_for_99() {
     // 95 -> 96: +1 for `castimplied` (live_field = cast_implied).
     // 97 -> 98: +1 for `castsign` (live_field = cast_sign).
     // 98 -> 99: +1 for `castindex` (live_field = cast_index).
+    // 98 -> 99: +1 for `castternary` (live_field = cast_ternary).
     assert_eq!(with_live, 99);
 }
 
