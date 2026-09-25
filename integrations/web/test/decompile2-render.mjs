@@ -179,13 +179,24 @@ assert.equal(addrHex('0xffffffff81000000'), '0xffffffff81000000');
 assert.equal(addrHex(2 ** 60), null, 'an unsafe number is refused, not rounded');
 assert.equal(signedHex(-4n), '-0x4');
 assert.deepEqual(normalizePrefs({ v: 1, asmAddr: 'nope', hoverDelay: 250, split: 'yes' }), { ...DEFAULT_PREFS, hoverDelay: 250 });
+assert.deepEqual(
+  normalizePrefs({ v: 1, tab: 'asm', split: true, asmBytes: true, asmCMode: 'interleave', cLineAddrs: true, asmAddr: 'rel', rail: false }),
+  { ...DEFAULT_PREFS, view: 'split', asmAddr: 'rel', rail: false },
+  'a first-layout record keeps its view and choices; the changed defaults (bytes, C headings, line addresses) are new',
+);
+assert.equal(normalizePrefs({ v: 1, tab: 'bytes', split: true }).view, 'bytes');
+assert.equal(normalizePrefs({ v: 1, tab: 'src' }).view, 'c', 'the example-only source view is not restored');
+assert.equal(normalizePrefs({ v: 2, asmCMode: 'interleave' }).asmCMode, 'heading', 'the old name of the headings mode still reads');
+assert.deepEqual(normalizePrefs({ v: 2, theme: 'dark', tipSeen: true, view: 'nope' }), { ...DEFAULT_PREFS, theme: 'dark', tipSeen: true });
+assert.deepEqual([DEFAULT_PREFS.asmBytes, DEFAULT_PREFS.asmBytesSplit, DEFAULT_PREFS.asmCMode, DEFAULT_PREFS.cLineAddrs, DEFAULT_PREFS.theme],
+  [false, false, 'heading', false, 'system'], 'the beginner defaults');
 assert.equal(cycle(DEFAULT_PREFS, 'asmAddr').asmAddr, 'rel');
 assert.equal(cycle({ ...DEFAULT_PREFS, asmAddr: 'both' }, 'asmAddr').asmAddr, 'abs');
 const mem = new Map();
 const store = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
-savePrefs(store, { ...DEFAULT_PREFS, asmBytes: false });
-assert.equal(loadPrefs(store).asmBytes, false);
-assert.equal(loadPrefs({ getItem: () => { throw new Error('denied'); } }).asmBytes, true, 'a throwing store gives defaults');
+savePrefs(store, { ...DEFAULT_PREFS, asmBytes: true });
+assert.equal(loadPrefs(store).asmBytes, true);
+assert.deepEqual(loadPrefs({ getItem: () => { throw new Error('denied'); } }), DEFAULT_PREFS, 'a throwing store gives defaults');
 checks.push('decls/storage/bands/diff/addr/prefs');
 
 // ── the assembly pane ──────────────────────────────────────────────────────
@@ -227,9 +238,14 @@ assert.match(asmHtml, /<span class="ac">; L6: acc = 0;<\/span>/);
 assert.match(asmHtml, /id="a-0x1161"[^>]*>/);
 assert.match(asmHtml, /class="d2-ar nomap" id="a-0x1161"/);
 assert.equal((asmHtml.match(/class="d2-ar/g) || []).length, 17);
-const inter = renderAsm(sumTo, { prefs: { asmCMode: 'interleave' } });
-assert.match(inter, /<div class="d2-as" data-line="6"><b>L6<\/b> {2}acc = 0;<\/div>/, 'interleave puts the C line above its run');
-assert.ok(!/; L6/.test(inter), 'interleave drops the comment column text');
+const inter = renderAsm(sumTo, { prefs: { asmCMode: 'heading' } });
+assert.match(inter, /<div class="d2-as" data-line="6"><span class="asn">6<\/span><span class="ast">acc = 0;<\/span><\/div>/, 'headings put the C line above its run');
+assert.ok(!/; L6/.test(inter), 'headings drop the comment column text');
+assert.equal(renderAsm(sumTo, { prefs: { asmCMode: 'interleave' } }), inter, 'the old mode name renders the same');
+const headed = renderAsm(sumTo, { prefs: { asmCMode: 'heading' }, inferred: inferLines(sumTo.instructions) });
+assert.match(headed, /^<div class="d2-chunk"[^>]*><div class="d2-as role" data-role="prologue">Function setup<\/div><div class="d2-ar/, 'the prologue gets one heading');
+assert.equal((headed.match(/Function setup/g) || []).length, 1);
+assert.ok(!/; prologue/.test(headed), 'no per-row role note under headings');
 assert.equal(renderAsm(plain, {}), '', 'no instructions, no rows');
 const cardRows = renderInsnRows(sumTo.instructions, { startHex: sumTo.address_hex, prefs: { asmAddr: 'rel', asmBytes: false }, max: 2 });
 assert.equal(cardRows, '<div class="cr"><span class="aa">+0x0</span><span class="am">ENDBR64</span><span class="ao"></span></div>' +

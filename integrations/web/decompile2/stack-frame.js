@@ -149,26 +149,37 @@ export function callouts(frame) {
   return notes;
 }
 
-/** The frame as an HTML table, highest address first. */
+/** Bytes below (or above) the return address, as the diagram's first column says it. */
+export function belowText(offset) {
+  if (offset < 0) return String(-offset);
+  return offset === 0 ? '0' : `${offset} above`;
+}
+
+const SLOT_NOTE = {
+  ret: 'put there by the CALL that ran this function',
+  fp: 'the caller\'s frame pointer, put back before returning',
+  saved: 'a register this function gives back unchanged',
+};
+
+/** The frame as an HTML table, highest address first: one line per slot. */
 export function renderFrame(frame, { selectedSym = null } = {}) {
   if (!frame.supported) return `<div class="d2note">${escapeHtml(frame.note)}</div>`;
   let rows = '';
   for (const s of frame.slots) {
-    const cls = [s.kind === 'var' || s.kind === 'arg' ? 'var' : s.kind, s.dim ? 'dim' : '', s.array ? 'arr' : '',
+    const named = s.kind === 'var' || s.kind === 'arg';
+    const cls = [named ? 'var' : s.kind, s.dim ? 'dim' : '', s.array ? 'arr' : '',
       selectedSym && s.name === selectedSym ? 'hl-sym' : ''].filter(Boolean).join(' ');
-    const alias = s.alias ? ` <span class="d2muted">(the engine calls it ${escapeHtml(s.alias)})</span>` : '';
-    const overlap = s.overlap ? ` <span class="d2muted">overlaps ${escapeHtml(s.overlap)}</span>` : '';
-    const dim = s.dim ? ' <span class="d2muted">— debug info only, not in the C</span>' : '';
-    rows += `<tr class="${cls}"${s.kind === 'var' || s.kind === 'arg' ? ` data-sym="${escapeHtml(s.name)}"` : ''} data-slot="${s.offset}">` +
-      `<td class="off">${escapeHtml(entryOffset(s.offset))}</td>` +
-      `<td class="slot"><b>${escapeHtml(s.name)}</b>${alias} <span class="sz">${s.size} B</span><br>` +
-      `<span class="d2muted">${escapeHtml(s.type || '')}</span>${dim}${overlap}</td></tr>`;
+    const note = SLOT_NOTE[s.kind] || (s.dim ? 'only in the debug info' : '');
+    const name = s.kind === 'pad' ? 'unused space' : s.name;
+    rows += `<tr class="${cls}"${named ? ` data-sym="${escapeHtml(s.name)}"` : ''} data-slot="${s.offset}">` +
+      `<td class="off" title="${escapeHtml(entryOffset(s.offset))}">${escapeHtml(belowText(s.offset))}</td>` +
+      `<td class="slot"><div class="sl"><span class="sn">${escapeHtml(name)}</span>` +
+      `${named && s.type ? `<span class="st">${escapeHtml(s.type)}</span>` : ''}` +
+      `${note ? `<span class="sa">${escapeHtml(note)}</span>` : ''}` +
+      `<span class="sz">${s.size} byte${s.size === 1 ? '' : 's'}</span></div></td></tr>`;
   }
   const notes = callouts(frame).map((n) => `<div class="d2callout">${escapeHtml(n)}</div>`).join('');
-  const fpNote = frame.fp !== null
-    ? `RBP points at ${entryOffset(frame.fp)}, so an operand [RBP − d] is ${entryOffset(frame.fp)} − d.`
-    : 'This function does not set up RBP as a frame pointer; operands are relative to RSP.';
-  return '<p class="d2muted" style="margin:0 0 10px;max-width:74ch">Offsets are from the stack pointer at entry, where it points at the ' +
-    `return address; the stack grows down the page. ${escapeHtml(fpNote)}${frame.reserve ? ` SUB RSP reserves ${frame.reserve} bytes.` : ''}</p>` +
-    `<table class="d2frame">${rows}</table>${notes}`;
+  return '<p class="d2-stacklede">Higher addresses are at the top. Each box is one thing the function keeps on the stack.</p>' +
+    '<table class="d2frame"><thead><tr><th class="off">Bytes below the return address</th><th>What is stored there</th></tr></thead>' +
+    `<tbody>${rows}</tbody></table>${notes}`;
 }

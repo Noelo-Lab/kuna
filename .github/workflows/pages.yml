@@ -84,6 +84,7 @@ jobs:
           node integrations/web/test/decompile2-session.mjs
           node integrations/web/test/decompile2-bytes.mjs
           node integrations/web/test/decompile2-learn.mjs
+          node integrations/web/test/decompile2-groups.mjs
 
       # Serve every file verbatim (belt-and-suspenders; the artifact path skips Jekyll).
       - name: Disable Jekyll

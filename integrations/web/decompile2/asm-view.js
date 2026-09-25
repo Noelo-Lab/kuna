@@ -238,7 +238,7 @@ export function renderInsnRows(insns, { startHex, prefs = {}, max = 12, inferred
 
 const attr = (name, value) => (value == null || value === '' ? '' : ` ${name}="${escapeHtml(String(value))}"`);
 
-function clip(text, n = 56) {
+function clip(text, n = 72) {
   const t = (text || '').trim();
   return t.length > n ? t.slice(0, n - 1) + '…' : t;
 }
@@ -265,19 +265,25 @@ export function renderAsm(fnData, ctx = {}) {
   const chunkStyle = `--ag-w:${arrows.lanes ? arrows.lanes * LANE_W + 6 : 0}px;` +
     `--aw-abs:${widest('abs') + 3}ch;--aw-rel:${widest('rel') + 3}ch;--aw-both:${widest('both') + 3}ch`;
   let out = `<div class="d2-chunk" style="${chunkStyle}">`;
+  const headings = prefs.asmCMode === 'heading' || prefs.asmCMode === 'interleave';
   let row = 0;
   for (const run of runs) {
     const lineText = run.line ? codeLines[run.line - 1] : null;
-    if (prefs.asmCMode === 'interleave' && run.line) {
-      out += `<div class="d2-as" data-line="${run.line}"><b>L${run.lines.join(',')}</b>  ${escapeHtml(clip(lineText, 140))}</div>`;
+    if (headings && run.line) {
+      out += `<div class="d2-as" data-line="${run.line}"><span class="asn">${run.lines.join(', ')}</span>` +
+        `<span class="ast">${escapeHtml(clip(lineText, 160))}</span></div>`;
     }
     for (let i = run.start; i < run.end; i++, row++) {
       if (row && row % CHUNK === 0) out += `</div><div class="d2-chunk" style="${chunkStyle}">`;
       const insn = insns[i];
       const inf = inferred?.[i];
       const band = run.line ? bandOf(run.line) : null;
-      const role = inf?.role && (i === 0 || inferred[i - 1].role !== inf.role) ? `; ${inf.role}` : '';
-      const comment = i === run.start && run.line && prefs.asmCMode !== 'interleave'
+      const roleStart = inf?.role && (i === 0 || inferred[i - 1].role !== inf.role);
+      if (headings && roleStart) {
+        out += `<div class="d2-as role" data-role="${inf.role}">${inf.role === 'prologue' ? 'Function setup' : 'Function cleanup'}</div>`;
+      }
+      const role = roleStart && !headings ? `; ${inf.role}` : '';
+      const comment = i === run.start && run.line && !headings
         ? `; L${run.lines.join(',')}: ${clip(lineText)}` : role;
       const hint = hints.get(insn.address_hex);
       const cls = ['d2-ar', run.line ? '' : 'nomap', patched.has(insn.address_hex) ? 'pa' : ''].filter(Boolean).join(' ');

@@ -5,8 +5,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { explain, idioms, TABLES } from '../decompile2/mnemonics.js';
-import { frameModel, operandSlot, callouts, renderFrame, slotIndex, prologue } from '../decompile2/stack-frame.js';
-import { renderXrefs, localCallees } from '../decompile2/xrefs-view.js';
+import { frameModel, operandSlot, callouts, renderFrame, slotIndex, prologue, belowText } from '../decompile2/stack-frame.js';
+import { renderXrefs, renderLocalCalls, localCallees, joinWords } from '../decompile2/xrefs-view.js';
 import { helpHtml, HELP_KEYS, HELP_GLOSSARY } from '../decompile2/help.js';
 import { normalizeInspect } from '../decompile2/render-c.js';
 
@@ -97,6 +97,10 @@ const note = callouts(arr).find((n) => /buf/.test(n));
 assert.match(note, /buf \(char\[16\]\) ends 8 bytes below the return address/);
 assert.match(note, /saved RBP, then return address/);
 assert.match(renderFrame(arr), /<tr class="var arr" data-sym="buf" data-slot="-24">/);
+assert.match(renderFrame(f), /<td class="off" title="entry−0x14">20<\/td>/, 'offsets read as bytes below the return address; the raw one is the tooltip');
+assert.match(renderFrame(f), /<span class="sn">return address<\/span><span class="sa">put there by the CALL that ran this function<\/span>/);
+assert.match(renderFrame(f), /^<p class="d2-stacklede">Higher addresses are at the top\. Each box is one thing the function keeps on the stack\.<\/p>/);
+assert.deepEqual([belowText(-28), belowText(0), belowText(16)], ['28', '0', '16 above']);
 assert.equal(frameModel(sumTo, { family: 'aarch64' }).supported, false);
 assert.match(renderFrame(frameModel(sumTo, { family: 'aarch64' })), /not x86/);
 const evil = frameModel({ ...sumTo, variables: [{ name: '<img src=x>', type: '"x"', kind: 'stack', stack_offset: -16, size: 8 }] }, X86);
@@ -113,19 +117,28 @@ const real = renderXrefs({
   data_refs: [{ name: 's_2004', address: 8196, address_hex: '0x2004', at: 4562, at_hex: '0x11d2', kind: 'data', instruction: 'LEA RAX,[0x2004]' }],
   assertions: [],
 });
-assert.match(real, /<a class="xt" data-goto="0x1060">0x1060<\/a> <span class="d2muted">takes the address<\/span> <span class="d2muted">at<\/span> <a class="xt" data-goto="0x1078">0x1078<\/a> <span class="d2muted">LEA RDI,\[0x1198\]<\/span>/,
-  'a caller with no name falls back to its address and says how it refers');
-assert.match(real, /<a class="xt" data-goto="0x1149">add<\/a> <span class="d2muted">from<\/span> <a class="xt" data-goto="0x11b5">0x11b5<\/a> <span class="d2muted">CALL 0x1149<\/span>/);
-assert.match(real, /s_2004 <span class="d2muted">0x2004<\/span> <span class="d2muted">takes the address<\/span> <span class="d2muted">at<\/span> <a class="xt" data-goto="0x11d2">/);
+assert.match(real, /<p class="x-sum">Called by <a class="xt" data-goto="0x1060" title="0x1078: LEA RDI,\[0x1198\]">0x1060<\/a> <span class="d2muted">\(uses its address\)<\/span><\/p>/,
+  'a caller with no name falls back to its address, says how it refers, and keeps the site in its tooltip');
+assert.match(real, /<p class="x-sum">Calls <a class="xt" data-goto="0x1149" title="0x11b5: CALL 0x1149">add<\/a><\/p>/);
+assert.match(real, /Uses data at <a class="xt" data-goto="0x2004" title="0x11d2: LEA RAX,\[0x2004\]">s_2004<\/a>/);
 const refs = renderXrefs({
-  callers: [{ name: 'main', address_hex: '0x1198', from_hex: '0x11c2', kind: 'call', instruction: 'CALL 0x1161' }],
+  callers: [{ name: 'main', address_hex: '0x1198', from_hex: '0x11c2', kind: 'call', instruction: 'CALL 0x1161' },
+    { name: 'main', address_hex: '0x1198', from_hex: '0x11d0', kind: 'call', instruction: 'CALL 0x1161' },
+    { name: 'other', address_hex: '0x1300', from_hex: '0x1310', kind: 'call' }],
   callees: [],
   data_refs: [{ name: '<s>', address_hex: '0x2004', at_hex: '0x11d2', kind: 'read' }],
 }, { nameOf: (a, n) => (a === '0x1198' ? 'entry_main' : n) });
-assert.match(refs, /<a class="xt" data-goto="0x1198">entry_main<\/a> <span class="d2muted">at<\/span> <a class="xt" data-goto="0x11c2">0x11c2<\/a>/);
-assert.match(refs, /callers \(1\)/);
+assert.match(refs, /Called by <a class="xt" data-goto="0x1198" title="0x11c2: CALL 0x1161\n0x11d0: CALL 0x1161">entry_main<\/a> and <a class="xt" data-goto="0x1300"/,
+  'one link per caller (the student\'s name), every call site in its tooltip, joined in words');
+assert.match(refs, /Calls no other functions/);
 assert.match(refs, /&lt;s&gt;/);
 assert.ok(!refs.includes('<s>'));
+assert.equal(joinWords(['a', 'b', 'c']), 'a, b and c');
+assert.equal(joinWords(['a']), 'a');
+const local = renderLocalCalls(localCallees(main, fnByAddr), { nameOf: (a, n) => n });
+assert.match(local, /Calls <a[^>]*>add<\/a>, <a[^>]*>sum_to<\/a> and <a[^>]*>printf<\/a>/);
+assert.match(local, /data-act="refs-load">Find who calls it</, 'callers are one click away');
+assert.match(renderLocalCalls([], { note: 'Finding callers needs a newer version.' }), /Calls no other functions.*Finding callers needs a newer version\./);
 checks.push('xrefs render + local callees');
 
 // ── help ───────────────────────────────────────────────────────────────────

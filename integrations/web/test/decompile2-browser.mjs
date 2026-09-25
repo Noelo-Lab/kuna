@@ -64,19 +64,32 @@ try {
   await page.navigate(`${server.base}/decompile2/`);
   await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: '#pick enabled', timeout: 60000 });
   await page.evaluate(`localStorage.clear(); true`);
-  await noExceptions('page ready');
+  assert.ok(await page.call(() => {
+    const zone = document.getElementById('dropzone');
+    return zone.offsetParent !== null && getComputedStyle(document.getElementById('sidebar')).display === 'none';
+  }), 'the welcome screen shows the drop zone, and no function list yet');
+  await noExceptions('page ready (welcome screen with a drop zone)');
 
   await page.evaluate(LOAD_EXAMPLE);
   await page.waitFor(`document.querySelectorAll('#fnlist .fn').length > 5`, { what: 'inventory', timeout: 60000 });
-  await page.click('#fnlist .fn[data-addr="0x1198"]');
-  await page.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'main decompiled', timeout: 60000 });
+  await page.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'main opened without a click', timeout: 60000 });
+  assert.equal(await text('#vname'), 'main', 'main is the open function without a click');
+  assert.equal(await count('#fnlist .fn.sel[data-addr="0x1198"]'), 1);
   assert.ok(await count('#ccode .t[data-kind=variable]') > 0, 'variables are tokens');
-  await noExceptions('load the example and open main');
+  await noExceptions('load the example; main opens by itself');
+
+  const lightTheme = await page.call(() => document.documentElement.dataset.theme || 'system');
+  await page.click('#themebtn');
+  const toggled = await page.call(() => document.documentElement.dataset.theme);
+  assert.ok(toggled === 'dark' || (lightTheme === 'system' && toggled === 'light'), `the theme toggle sets data-theme (got ${toggled})`);
+  await page.click('#themebtn');
+  assert.notEqual(await page.call(() => document.documentElement.dataset.theme), toggled, 'and toggles back');
+  await noExceptions('the theme toggle sets data-theme');
 
   await page.hover('#c-L5 .ct');
   await sleep(700);
   assert.equal(await page.evaluate(`!document.getElementById('d2card').hidden`), true, 'the hover card shows');
-  assert.match(await text('#d2card'), /^L5/);
+  assert.match(await text('#d2card'), /^Line 5/);
   const card = await text('#d2card');
   await page.key('Escape');
   await noExceptions('hover a line');
@@ -86,9 +99,9 @@ try {
   await sleep(300);
   const engineHasInspect = await count('#asmcode .d2-ar') > 0;
   if (engineHasInspect) {
-    const comments = await page.evaluate(`[...document.querySelectorAll('.d2-ar .ac')].map((e) => e.textContent).join('\\n')`);
-    assert.match(comments, /L\d/, 'assembly rows name their C line');
-    assert.match(card, /L5 → 2 instructions \(\+6 preceding setup, inferred\)/, 'the card counts the inferred set-up');
+    assert.match(await text('#asmcode .d2-as[data-line="5"]'), /^5v1 = sum_to\(add\(argc,3\)\);$/, 'each C line heads the instructions it became');
+    assert.equal(await count('#asmcode .d2-as[data-role="prologue"]'), 1, 'the prologue has one "Function setup" heading');
+    assert.match(card, /Line 5 → 2 instructions \+6 that set it up/, 'the card counts the inferred set-up');
     assert.ok(await count('#asmcode .d2-ar[data-inferred="1"][data-band="5"]') === 6, 'the argument set-up rows share line 5\'s band, dashed');
     assert.ok(await count('#asmcode .d2-ar[data-role="prologue"]') === 6);
     await noExceptions('Space to Assembly (inferred attribution)');
@@ -131,12 +144,13 @@ try {
     await page.waitFor(`/prints the sum/.test(document.getElementById('ccode').textContent)`, { what: 'edited comment rendered', timeout: 60000 });
     await idle('rail edit applied');
     const rows = await page.evaluate(`[...document.querySelectorAll('#sesslist li')].map((li) => li.querySelector('.mk').title + ' ' + li.querySelector('.tx').textContent)`);
-    assert.deepEqual(rows.filter((r) => /comment/.test(r)), ['applied comment main::0x11e1 prints the sum'], 'editing a comment from the rail keeps one typed, applied record');
+    assert.deepEqual(rows.filter((r) => /Note at/.test(r)), ['applied Note at 11e1: prints the sum'], 'editing a note from the panel keeps one typed, applied record');
     await noExceptions('edit a comment from the rail');
 
     await page.key('x');
-    await page.waitFor(`/callees \\(3\\)/.test(document.getElementById('railrefsbody')?.textContent || '')`, { what: 'references', timeout: 60000 });
-    assert.match(await text('#railrefsbody'), /callers \(1\)[\s\S]*takes the address/, 'main is referenced from _start');
+    await page.waitFor(`/Called by/.test(document.getElementById('railrefsbody')?.textContent || '')`, { what: 'references', timeout: 60000 });
+    assert.match(await text('#railrefsbody'), /Calls add, sum_to and printf/, 'what main calls');
+    assert.match(await text('#railrefsbody'), /Called by _start \(uses its address\)/, 'main is referenced from _start');
     await noExceptions('references from the engine');
 
     await page.key('s');
@@ -148,8 +162,8 @@ try {
     await page.key('b');
     await page.key('s');
     await sleep(150);
-    assert.equal(await count('#asmcode.no-bytes'), 0, 'the single view keeps its own setting');
-    await noExceptions('split view bytes column');
+    assert.equal(await count('#asmcode.no-bytes'), 1, 'the single view keeps its own setting (off by default)');
+    await noExceptions('side by side bytes column');
   } else {
     assert.match(await text('#sesslist'), /name main::v1 total/, 'the edit is kept in the session');
     assert.equal(mark, engineHasInspect ? 'applied' : 'not yet sent', 'the rail is honest about the outcome');
@@ -183,9 +197,16 @@ try {
 
   await page.navigate(`${server.base}/decompile2/`);
   await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: 'reload ready', timeout: 60000 });
+  await page.call(() => {
+    window.restoredToasts = 0;
+    new MutationObserver((changes) => {
+      for (const c of changes) for (const n of c.addedNodes) if (/Restored/.test(n.textContent)) window.restoredToasts++;
+    }).observe(document.getElementById('d2toasts'), { childList: true });
+    return true;
+  });
   await page.evaluate(LOAD_EXAMPLE);
   await page.waitFor(`document.querySelector('.d2banner')`, { what: 'restored-session banner', timeout: 60000 });
-  assert.match(await text('.d2banner'), /Restored \d+ edit/);
+  assert.match(await text('.d2banner'), /Restored \d+ changes? from last time/);
   await noExceptions('reload restores the session');
 
   if (engineHasInspect) {
@@ -195,7 +216,7 @@ try {
     await setSelect('lang', 'rust');
     await page.waitFor(`/unsafe fn main/.test(document.getElementById('ccode').textContent)`, { what: 'Rust view', timeout: 60000 });
     await idle('Rust view idle');
-    assert.equal((await toasts()).filter((t) => /Restored/.test(t)).length, 1, 'a re-index does not toast the restore again');
+    assert.equal(await page.call(() => window.restoredToasts), 1, 'a re-index does not toast the restore again');
     assert.equal(await count('.d2banner'), 0, 'nor show its banner');
     assert.match(await text('#railvars'), /argc\s*i32/, 'the rail reads the Rust signature');
     await page.click('#ccode .t[data-sym="argc"]');

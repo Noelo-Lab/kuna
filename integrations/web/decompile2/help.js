@@ -1,67 +1,77 @@
-// help.js — the study view's help dialog: every shortcut, a glossary of the
-// names a decompiler invents, and what the colours mean. DOM-free: returns
-// the dialog's HTML for app.js to mount.
+// help.js — "How to use Kuna": the keys worth knowing first, every shortcut
+// behind a disclosure, and the names a decompiler invents, each in one short
+// line. DOM-free: returns the dialog's HTML for app.js to mount.
+
+const TOP_KEYS = [
+  ['/', 'Search functions'],
+  ['Space', 'Switch between C code and assembly'],
+  ['1 – 4', 'C code · Assembly · Bytes · Stack'],
+  ['s', 'Side by side'],
+  ['n', 'Rename what is selected'],
+  ['y', 'Change its type'],
+  ['u', 'Undo'],
+  ['Esc', 'Close or clear the selection'],
+];
 
 const KEYS = [
-  ['/', 'filter the function list'],
-  ['Space', 'switch between C and assembly'],
-  ['1 2 3 4', 'C · Assembly · Bytes · Stack'],
-  ['s', 'split view: C beside the other pane'],
-  ['o', 'instruction addresses: absolute · offset · both'],
-  ['b', 'bytes column on/off'],
-  ['↑ ↓', 'move through lines or instructions (the hover card follows)'],
+  ['/', 'search functions'],
+  ['Space', 'switch between C code and assembly'],
+  ['1 2 3 4', 'C code · Assembly · Bytes · Stack'],
+  ['s', 'side by side (C next to the assembly)'],
+  ['o', 'addresses: full · offset from the function start · both'],
+  ['b', 'show or hide instruction bytes'],
+  ['↑ ↓', 'move through lines or instructions'],
   ['← →', 'move between names on a C line'],
-  ['Enter', 'open the called function under the cursor'],
+  ['Enter', 'open the function under the cursor'],
   ['n', 'rename the selected variable or function'],
-  ['y', 'retype it (on a function name: edit its prototype)'],
-  [';', 'comment the selected instruction'],
+  ['y', 'change its type (on a function name: its signature)'],
+  [';', 'add a note to the selected instruction'],
   ['g', 'go to a function or an address'],
-  ['x', 'references: callers, callees, data'],
+  ['x', 'find who calls this function'],
   ['u · Ctrl+Z', 'undo'],
   ['Ctrl+Shift+Z', 'redo'],
   ['Alt+← Alt+→', 'back and forward between functions'],
   ['?', 'this help'],
-  ['Esc', 'close the card, then the dialog, then clear the selection'],
+  ['Esc', 'close the card, then a dialog, then clear the selection'],
 ];
 
 const GLOSSARY = [
-  ['a0, a1 … / param_1', 'parameters the decompiler could not name; numbered in argument order'],
-  ['v1, v2 …', 'locals the decompiler introduced; the same register or slot can hold several over a function'],
-  ['local_28', 'a stack slot named by its offset (hex)'],
-  ['dat_4010', 'a global at that address with no symbol'],
-  ['sub_401000 / FUN_00401000', 'a function with no symbol, named by its entry address'],
-  ['LAB_00401234', 'a jump target the structurer could not turn into a loop or an if'],
-  ['undefined4 · int4 · uint8', 'a value of that many bytes whose type is unknown · signed · unsigned'],
-  ['// rax', 'the variable lives in that register'],
-  ['// stack - 0x14', 'the variable lives 0x14 bytes below the stack pointer at entry'],
-  ['CONCAT44(a,b)', 'two 4-byte values glued into an 8-byte one (a is the high half)'],
-  ['SEXT48(x) · ZEXT48(x)', 'sign- or zero-extend a 4-byte value to 8 bytes'],
-  ['x._4_8_', 'bytes 4 to 11 of x (offset 4, length 8)'],
-  ['(int)x', 'a cast: the program reinterprets or converts x'],
+  ['v1, v2 …', 'a local variable the decompiler named; rename it to what it means'],
+  ['a0, a1 … / param_1', 'an input (parameter) without a name, in order'],
+  ['local_28', 'a stack slot, named by its position'],
+  ['dat_4010', 'a global variable at that address'],
+  ['sub_401000 / FUN_00401000', 'a function without a name, at that address'],
+  ['LAB_00401234', 'a place the code jumps to'],
+  ['undefined4 · int4 · uint8', 'a value of that many bytes: type unknown · signed · unsigned'],
+  ['// rax', 'this variable lives in the register RAX'],
+  ['// stack - 0x14', 'it lives on the stack, 0x14 bytes below the return address'],
+  ['CONCAT44(a,b)', 'two 4-byte values joined into 8 bytes'],
+  ['SEXT48(x) · ZEXT48(x)', 'x widened from 4 to 8 bytes, keeping its sign · with zeros'],
+  ['x._4_8_', 'the 8 bytes of x that start at byte 4'],
+  ['(int)x', 'a cast: x read as an int'],
 ];
 
 const LEGEND = [
-  ['var(--band-0)', 'colour band: a C line and the instructions it came from share a colour'],
-  ['repeating-linear-gradient(var(--band-0) 0 3px, transparent 3px 5px)', 'dashed band: an instruction the engine did not map, attributed to the line it sets up or finishes (inferred; view ▾ turns it off)'],
-  ['var(--hl-sym)', 'the selected name, everywhere it is used'],
-  ['var(--patch-bg)', 'a byte you patched (hover it for the original)'],
-  ['var(--red)', 'jumps, calls and returns; a rejected edit (✗)'],
-  ['var(--ok)', 'an edit the engine applied (✓)'],
+  ['var(--accent-bg)', 'a line and the instructions it turns into'],
+  ['var(--select-bg)', 'the name you selected, everywhere it is used'],
+  ['var(--patch-bg)', 'a byte you changed'],
+  ['repeating-linear-gradient(var(--band-0) 0 3px, transparent 3px 5px)', 'side by side: a dashed bar marks an instruction the page grouped with the line it sets up (turn off in View options)'],
 ];
 
-function dl(rows) {
-  return `<dl>${rows.map(([k, v]) => `<dt>${k.split(' · ').map((x) => `<kbd>${x}</kbd>`).join(' ')}</dt><dd>${v}</dd>`).join('')}</dl>`;
-}
+const kbd = (k) => k.split(/ · | – /).map((x) => `<kbd>${x}</kbd>`).join(k.includes('–') ? ' – ' : ' ');
 
 export function helpHtml() {
-  return '<div class="hh"><b id="helptitle">Study view — help</b><button class="d2-ib" data-act="help-close" aria-label="Close">×</button></div>' +
-    '<div class="hb2"><div><h3>Keys</h3>' + dl(KEYS) +
-    '<h3>Colours</h3><dl>' + LEGEND.map(([c, v]) => `<dt><span class="d2sw" style="background:${c}"></span></dt><dd>${v}</dd>`).join('') + '</dl></div>' +
-    '<div><h3>Names the decompiler invents</h3><dl>' + GLOSSARY.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>' +
-    '<h3>How edits work</h3><p>Each rename, retype, comment or patch is one <code>--assert</code> directive. The page ' +
-    're-runs the decompiler with all of them after every edit, keeps them for this binary in your browser, and ' +
-    '<b>export</b> saves them as a <code>.kuna</code> file the command-line tool replays: ' +
-    '<code>kuna decompile prog main --assert @prog.kuna</code>.</p></div></div>';
+  const rows = (list) => list.map(([k, v]) => `<tr><td>${kbd(k)}</td><td>${v}</td></tr>`).join('');
+  return '<div class="hh"><h2 id="helptitle">How to use Kuna</h2>' +
+    '<button class="d2-iconbtn small" data-act="help-close" aria-label="Close" title="Close">×</button></div>' +
+    '<div class="hb2">' +
+    '<p>Pick a function on the left. Hover over a line of C to see the assembly it becomes; click a name to learn about it, and double-click to rename it. Your changes are kept in this browser.</p>' +
+    `<h3>Keyboard</h3><table>${rows(TOP_KEYS)}</table>` +
+    `<details id="helpall"><summary>All shortcuts</summary><table>${rows(KEYS)}</table></details>` +
+    '<h3>Words you\'ll see</h3><dl>' + GLOSSARY.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>' +
+    '<details><summary>What the colours mean</summary><dl>' +
+    LEGEND.map(([c, v]) => `<dt><span class="d2sw" style="background:${c}"></span></dt><dd>${v}</dd>`).join('') + '</dl></details>' +
+    '</div>';
 }
 
 export const HELP_KEYS = KEYS;

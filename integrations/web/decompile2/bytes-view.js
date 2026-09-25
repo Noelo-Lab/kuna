@@ -131,7 +131,7 @@ export function renderHex(rows, { sections = [], selected = new Set(), editAddr 
   let out = '';
   for (const row of rows) {
     const off = fileOffsetFor(row.base, sections);
-    out += `<div class="d2-hr"><span class="ho" title="${off === null ? 'not file-backed' : `file offset 0x${off.toString(16)}`}">${escapeHtml(bare(hex(row.base)))}</span><span class="hx">`;
+    out += `<div class="d2-hr"><span class="ho" title="${off === null ? 'not stored in the file' : `file offset 0x${off.toString(16)}`}">${escapeHtml(bare(hex(row.base)))}</span><span class="hx">`;
     let text = '';
     row.cells.forEach((c) => {
       if (!c) {
@@ -140,7 +140,7 @@ export function renderHex(rows, { sections = [], selected = new Set(), editAddr 
         return;
       }
       const cls = ['hb', c.patched ? 'pa' : '', c.gap ? 'gap' : '', c.insn !== null && selected.has(c.insn) ? 'in' : '',
-        editAddr !== null && c.addr === editAddr ? 'ed' : ''].filter(Boolean).join(' ');
+        editAddr !== null && c.addr === editAddr ? 'ed' : '', c.insn !== null && c.insn % 2 ? 'alt' : ''].filter(Boolean).join(' ');
       const title = c.patched ? ` title="was ${byteHex(c.orig)}"` : '';
       out += `<span class="${cls}" data-a="${c.hex}"${c.insn !== null ? ` data-i="${c.insn}"` : ''}${title}>${byteHex(c.value)}</span>`;
       text += c.value === null ? ' ' : (c.patched ? `\u0001${ascii(c.value)}\u0002` : ascii(c.value));

@@ -3,159 +3,189 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>decompile2 — Kuna study view</title>
-<meta name="description" content="A student-oriented decompiler that runs in your browser: C, assembly and bytes linked line by line, with renames, retypes and patches. No server, no upload.">
-<meta name="theme-color" content="#ffffff">
+<title>Kuna — see how a program looks to the computer</title>
+<meta name="description" content="Open a compiled program to read its C code, its assembly, and how they connect. Rename and retype what you read, patch bytes, and download the result. It runs in your browser; nothing is uploaded.">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" type="image/png" href="../assets/img/favicon.png">
-<link rel="stylesheet" href="../assets/css/site.css">
 <link rel="stylesheet" href="./decompile2.css">
+<script>
+  try {
+    const theme = JSON.parse(localStorage.getItem('kuna.d2.prefs') || '{}').theme;
+    if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  } catch (_) { /* no storage: follow the system */ }
+</script>
 </head>
-<body class="app dc2">
-<a class="skip" href="#main">Skip to content</a>
-
-<header class="top">
-  <div class="wrap">
-    <a class="brand" href="../">
-      <img src="../assets/img/kuna-mark.svg" alt="">
-      <span class="wordmark">Kuna</span>
-      <span class="at">study view &middot; webassembly &middot; no server</span>
+<body class="d2">
+<div class="d2-app" id="app">
+  <header class="d2-top">
+    <button class="d2-btn ghost d2-fnsbtn" id="fnsbtn" hidden aria-controls="sidebar" aria-expanded="false">Functions</button>
+    <a class="d2-brand" href="../" title="Kuna home">
+      <img src="../assets/img/kuna-mark.svg" alt="" width="22" height="22">
+      <span>Kuna</span>
     </a>
-    <nav class="nav" aria-label="Primary">
-      <a href="../decompile/">/decompile</a>
-      <a href="./" class="here" aria-current="page">/decompile2</a>
-      <a href="https://noelo.org">/noelo</a>
-    </nav>
-  </div>
-</header>
-
-<main id="main">
-  <div class="bar">
-    <div class="wrap">
-      <p class="status busy" id="status" role="status" aria-live="polite"><span class="dot"></span>loading decompiler&hellip;</p>
-      <button class="tinybtn" id="cancelbtn" disabled>Cancel</button>
-      <button class="tinybtn" id="dlbtn" disabled title="Export the whole binary as a .c/.h/.asm project zip, with your edits applied">Source zip</button>
-      <button class="tinybtn" id="patchbtn" disabled title="Download the binary with your byte patches written into it">Patched binary</button>
-      <label class="tinybtn modepick" title="How hard the engine works: auto picks by binary size">
-        Mode
-        <select id="mode">
-          <option value="auto" selected>auto</option>
-          <option value="fast">fast</option>
-          <option value="reliable">reliable</option>
-          <option value="aggressive">aggressive</option>
-        </select>
-      </label>
-      <label class="tinybtn modepick" title="Output language: auto follows the binary">
-        Lang
-        <select id="lang">
-          <option value="auto" selected>auto</option>
-          <option value="c">C</option>
-          <option value="rust">Rust</option>
-        </select>
-      </label>
-      <button class="tinybtn" id="examplebtn" disabled title="Load a small example program and its original C source">Try the example</button>
-      <label class="tinybtn primary" id="pick" aria-disabled="true">
-        Load binary <input type="file" id="file">
-      </label>
-      <button class="tinybtn" id="helpbtn" title="Shortcuts and a glossary of decompiler names (?)" aria-haspopup="dialog">?</button>
+    <span class="d2-crumb" id="crumb" hidden>
+      <span class="d2-crumbsep" aria-hidden="true">›</span>
+      <span class="d2-crumbname" id="crumbname"></span>
+      <span class="d2-crumbcount" id="crumbcount"></span>
+    </span>
+    <span class="d2-grow"></span>
+    <label class="d2-btn primary" id="pick" aria-disabled="true">Open file<input type="file" id="file"></label>
+    <button class="d2-btn" id="examplebtn" disabled>Try an example</button>
+    <div class="d2-menuwrap">
+      <button class="d2-iconbtn" id="morebtn" aria-haspopup="menu" aria-expanded="false" aria-controls="moremenu" title="More">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="3" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="13" cy="8" r="1.5"/></svg>
+        <span class="d2-sr">More</span>
+      </button>
+      <div class="d2-menu d2-moremenu" id="moremenu" role="menu" hidden>
+        <button class="d2-mi" id="dlbtn" role="menuitem" disabled>Download C code (.zip)</button>
+        <button class="d2-mi" id="patchbtn" role="menuitem" disabled>Download patched program<small id="patchwhy">Patch some bytes first</small></button>
+        <hr>
+        <label class="d2-mfield">Decompiler effort
+          <select id="mode">
+            <option value="auto" selected>Automatic</option>
+            <option value="fast">Fast</option>
+            <option value="reliable">Reliable</option>
+            <option value="aggressive">Thorough</option>
+          </select>
+        </label>
+        <label class="d2-mfield">Show code as
+          <select id="lang">
+            <option value="auto" selected>Automatic</option>
+            <option value="c">C</option>
+            <option value="rust">Rust</option>
+          </select>
+        </label>
+        <hr>
+        <button class="d2-mi" id="keysbtn" role="menuitem">Keyboard shortcuts</button>
+        <a class="d2-mi" href="../" role="menuitem">← Kuna home</a>
+      </div>
     </div>
-    <div class="d2-progress" id="progress" hidden><span></span></div>
-  </div>
+    <button class="d2-iconbtn" id="helpbtn" title="How to use Kuna" aria-haspopup="dialog">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.2 6.2a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".9"/></svg>
+      <span class="d2-sr">Help</span>
+    </button>
+    <button class="d2-iconbtn" id="themebtn" title="Switch to the dark theme" aria-pressed="false">
+      <svg class="d2-moon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 10.2A6 6 0 0 1 5.8 2.5a6 6 0 1 0 7.7 7.7Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      <svg class="d2-sun" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.1 1.1M11.9 11.9 13 13M3 13l1.1-1.1M11.9 4.1 13 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span class="d2-sr">Theme</span>
+    </button>
+  </header>
 
-  <div class="d2work" id="work">
+  <div class="d2-body welcome" id="work">
     <aside id="sidebar" aria-label="Functions">
-      <div id="fntop">
-        <p class="lhead label" id="fnhead">functions</p>
-        <input class="fnq" id="fnfilter" type="search" disabled
-               placeholder="filter &mdash; name, address, /regex/" autocomplete="off"
-               autocapitalize="off" spellcheck="false"
-               aria-label="Filter functions by name or address" aria-controls="fnlist">
+      <div class="d2-search">
+        <input class="d2-input" id="fnfilter" type="search" disabled placeholder="Search functions"
+               autocomplete="off" autocapitalize="off" spellcheck="false"
+               aria-label="Search functions" aria-controls="fnlist">
       </div>
       <div id="fnlist"></div>
-      <p class="fnnone label" id="fnnone" hidden>no matches</p>
+      <p class="d2-fnnone" id="fnnone" hidden>No functions match</p>
     </aside>
 
-    <section class="d2view" id="view" aria-label="Function">
-      <div id="empty">
-        <div class="inner">
-          <p class="eyebrow label">
-            <svg class="tick" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
-              <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/>
-              <circle cx="6" cy="6" r="2" fill="currentColor"/>
-            </svg>
-            Study view
-          </p>
-          <h2>See how the C came from the machine code.</h2>
-          <p>
-            Load an <b>ELF</b>, <b>PE</b> or <b>Mach&#8209;O</b> file &mdash; or press
-            <b>Try the example</b> &mdash; and read each function as C beside the assembly it
-            was recovered from. Hover a line to see its instructions; rename and retype
-            variables; patch bytes and download the result. Everything runs in this tab.
-          </p>
-          <p class="hint">
-            <code>Space</code> switches C and assembly, <code>n</code> renames,
-            <code>y</code> retypes, <code>/</code> filters functions, <code>?</code> lists
-            every shortcut.
-          </p>
+    <main class="d2-main" id="main">
+      <div class="d2-welcome" id="empty">
+        <div class="d2-welcomein">
+          <h1>See how a program looks to the computer</h1>
+          <p class="d2-lede">Open a compiled program to read its C code, its assembly, and how they connect. It runs in your browser — nothing is uploaded.</p>
+          <div class="d2-drop" id="dropzone">
+            <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 26V8m0 0-7 7m7-7 7 7M8 26v4a3 3 0 0 0 3 3h18a3 3 0 0 0 3-3v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <p class="d2-droptitle">Drop a program here</p>
+            <p class="d2-dropor"><button class="d2-btn primary" id="welcomeopen" disabled>Open file</button>
+              <span>or <button class="d2-link" id="welcomeexample" disabled>try an example program</button></span></p>
+          </div>
+          <ol class="d2-steps">
+            <li><span class="d2-stepn">1</span><span>Pick a function on the left</span></li>
+            <li><span class="d2-stepn">2</span><span>Hover over a line of C to see its assembly</span></li>
+            <li><span class="d2-stepn">3</span><span>Double-click a name to rename it</span></li>
+          </ol>
+          <p class="d2-formats">ELF, PE and Mach-O · x86, ARM, MIPS, PowerPC and more</p>
         </div>
       </div>
 
-      <div class="d2vhead" id="vhead" hidden>
-        <button class="d2-ib" id="backbtn" disabled title="Back (Alt+&larr;)" aria-label="Back">&lsaquo;</button>
-        <button class="d2-ib" id="fwdbtn" disabled title="Forward (Alt+&rarr;)" aria-label="Forward">&rsaquo;</button>
-        <span class="fname" id="vname"></span>
-        <span class="fmeta" id="vmeta"></span>
+      <div class="d2-fnhead" id="vhead" hidden>
+        <button class="d2-iconbtn small" id="backbtn" hidden title="Back (Alt+←)" aria-label="Back">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="d2-iconbtn small" id="fwdbtn" hidden title="Forward (Alt+→)" aria-label="Forward">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="d2-fntitle">
+          <h1 id="vname"></h1>
+          <p id="vmeta"></p>
+        </div>
         <span class="d2-grow"></span>
-        <button class="d2-lb" id="fnrenamebtn" title="Rename this function">rename</button>
-        <button class="d2-lb" id="protobtn" title="Edit this function's signature">proto</button>
+        <button class="d2-btn ghost" id="fnrenamebtn" title="Give this function a new name">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5 13.5 5 6 12.5 3 13l.5-3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Rename</button>
+        <button class="d2-btn ghost" id="protobtn" title="Change what the function takes and returns">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5 13.5 5 6 12.5 3 13l.5-3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Signature</button>
+        <button class="d2-btn ghost" id="explainbtn" hidden aria-controls="rail" aria-expanded="false">Explain</button>
       </div>
 
-      <div class="d2tabbar" id="tabbar" hidden>
-        <div id="tabs" role="tablist" aria-label="Views">
-          <button role="tab" id="tab-c" data-tab="c" aria-controls="pane-c" aria-selected="true">C</button>
+      <div class="d2-viewbar" id="tabbar" hidden>
+        <div class="d2-seg" id="tabs" role="tablist" aria-label="Views">
+          <button role="tab" id="tab-c" data-tab="c" aria-controls="pane-c" aria-selected="true">C code</button>
+          <button role="tab" id="splitbtn" data-tab="split" aria-controls="pane-c pane-asm" aria-selected="false">Side by side</button>
           <button role="tab" id="tab-asm" data-tab="asm" aria-controls="pane-asm" aria-selected="false">Assembly</button>
           <button role="tab" id="tab-bytes" data-tab="bytes" aria-controls="pane-bytes" aria-selected="false">Bytes</button>
           <button role="tab" id="tab-stack" data-tab="stack" aria-controls="pane-stack" aria-selected="false">Stack</button>
-          <button role="tab" id="tab-src" data-tab="src" aria-controls="pane-src" aria-selected="false" hidden>Source</button>
+          <button role="tab" id="tab-src" data-tab="src" aria-controls="pane-src" aria-selected="false" hidden>Original source</button>
         </div>
         <span class="d2-grow"></span>
-        <button class="d2-lb" id="splitbtn" aria-pressed="false" title="C beside assembly (s)">split</button>
         <div class="d2-menuwrap">
-          <button class="d2-lb" id="viewbtn" aria-haspopup="true" aria-expanded="false" aria-controls="viewmenu">view &#9662;</button>
-          <div class="d2-menu" id="viewmenu" role="menu" hidden></div>
+          <button class="d2-btn ghost" id="viewbtn" aria-haspopup="true" aria-expanded="false" aria-controls="viewmenu">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>View options</button>
+          <div class="d2-menu d2-viewmenu" id="viewmenu" role="dialog" aria-label="View options" hidden></div>
         </div>
       </div>
 
-      <div class="d2panes" id="panes" hidden>
-        <div class="d2pane" id="pane-c" role="tabpanel" aria-labelledby="tab-c">
-          <div class="d2code" id="ccode" role="listbox" tabindex="0" aria-label="Decompiled C"></div>
+      <div class="d2-codearea" id="codearea" hidden>
+        <div class="d2-progress" id="progress" hidden><span></span></div>
+        <div class="d2-tip" id="tip" hidden>
+          <span>Hover over a line to see the assembly it becomes. Double-click any name to rename it.</span>
+          <button class="d2-btn small" id="tipbtn">Got it</button>
         </div>
-        <div class="d2pane" id="pane-asm" role="tabpanel" aria-labelledby="tab-asm" hidden>
-          <div class="d2code" id="asmcode" role="listbox" tabindex="0" aria-label="Assembly"></div>
-        </div>
-        <div class="d2pane" id="pane-bytes" role="tabpanel" aria-labelledby="tab-bytes" hidden>
-          <div class="d2bar" id="bytesbar"></div>
-          <div class="d2code" id="hexdump" tabindex="0" aria-label="Bytes"></div>
-        </div>
-        <div class="d2pane" id="pane-stack" role="tabpanel" aria-labelledby="tab-stack" hidden>
-          <div class="d2code d2prose" id="stackframe" tabindex="0" aria-label="Stack frame"></div>
-        </div>
-        <div class="d2pane" id="pane-src" role="tabpanel" aria-labelledby="tab-src" hidden>
-          <pre class="d2code d2src" id="srccode" tabindex="0" aria-label="Original C source"></pre>
+        <p class="d2-narrownote" id="narrownote" hidden>Side by side needs a wider window, so the views are shown one at a time.</p>
+        <div class="d2panes" id="panes" hidden>
+          <div class="d2pane" id="pane-c" role="tabpanel" aria-labelledby="tab-c">
+            <div class="d2code" id="ccode" role="listbox" tabindex="0" aria-label="C code"></div>
+          </div>
+          <div class="d2pane" id="pane-asm" role="tabpanel" aria-labelledby="tab-asm" hidden>
+            <div class="d2code" id="asmcode" role="listbox" tabindex="0" aria-label="Assembly"></div>
+          </div>
+          <div class="d2pane" id="pane-bytes" role="tabpanel" aria-labelledby="tab-bytes" hidden>
+            <div class="d2bar" id="bytesbar"></div>
+            <div class="d2code" id="hexdump" tabindex="0" aria-label="Bytes"></div>
+          </div>
+          <div class="d2pane" id="pane-stack" role="tabpanel" aria-labelledby="tab-stack" hidden>
+            <div class="d2code d2prose" id="stackframe" tabindex="0" aria-label="Stack"></div>
+          </div>
+          <div class="d2pane" id="pane-src" role="tabpanel" aria-labelledby="tab-src" hidden>
+            <pre class="d2code d2src" id="srccode" tabindex="0" aria-label="Original C source"></pre>
+          </div>
         </div>
       </div>
-      <p class="d2hint" id="hint" hidden aria-live="polite"></p>
-    </section>
+    </main>
 
-    <aside id="rail" aria-label="Details">
-      <div class="d2railhead">
-        <span class="label">details</span>
-        <button class="d2-ib" id="railbtn" title="Collapse details" aria-expanded="true" aria-controls="railbody">&rsaquo;</button>
+    <aside id="rail" aria-label="Explain" hidden>
+      <div class="d2-railhead">
+        <h2>Explain</h2>
+        <button class="d2-iconbtn small" id="railbtn" title="Hide the explanations" aria-expanded="true" aria-controls="railbody">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>
       <div id="railbody"></div>
     </aside>
   </div>
-</main>
 
+  <footer class="d2-statusbar">
+    <p class="status busy" id="status" role="status" aria-live="polite"><span class="dot"></span>Starting the decompiler…</p>
+    <button class="d2-link" id="cancelbtn" disabled hidden>Cancel</button>
+    <span class="d2-grow"></span>
+    <p class="d2-hint" id="hint" aria-live="polite"></p>
+  </footer>
+</div>
+
+<div class="d2-dropveil" id="dropveil" hidden><div>Drop the program to open it</div></div>
 <div id="d2card" role="tooltip" hidden></div>
 <div id="d2pop" hidden></div>
 <div id="d2toasts" aria-live="polite"></div>

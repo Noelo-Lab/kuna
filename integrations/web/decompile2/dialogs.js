@@ -55,8 +55,8 @@ export function createDialogs({ pop, toasts }) {
       pop.innerHTML = `<form novalidate><h3>${escapeHtml(title)}</h3>` +
         (note ? `<div class="pre">${escapeHtml(note)}</div>` : '') + body + lists.join('') +
         '<p class="err" aria-live="polite"></p>' +
-        `<div class="row"><button type="button" class="tinybtn" data-act="cancel">Cancel</button>` +
-        `<button type="submit" class="tinybtn primary"${danger ? ' data-danger="1"' : ''}>${escapeHtml(submitLabel)}</button></div></form>`;
+        `<div class="row"><button type="button" class="d2-btn" data-act="cancel">Cancel</button>` +
+        `<button type="submit" class="d2-btn primary"${danger ? ' data-danger="1"' : ''}>${escapeHtml(submitLabel)}</button></div></form>`;
       pop.hidden = false;
       pop.setAttribute('role', 'dialog');
       pop.setAttribute('aria-label', title);
@@ -106,18 +106,23 @@ export function createDialogs({ pop, toasts }) {
     if (current && !pop.contains(e.target)) close(null);
   });
 
-  /** A toast in the corner: `kind` ok | warn | err, an optional `detail` line. */
-  function toast(message, { kind = 'ok', detail = '', ms = 6000, action = null } = {}) {
+  /**
+   * A toast in the corner: `kind` ok | warn | err, an optional muted `detail`
+   * line. It goes away after `ms` (4 s); an error stays until it is closed.
+   */
+  function toast(message, { kind = 'ok', detail = '', ms = kind === 'err' ? 0 : 4000, action = null } = {}) {
     const el = document.createElement('div');
     el.className = 'd2-toast ' + kind;
     el.setAttribute('role', kind === 'err' ? 'alert' : 'status');
-    el.innerHTML = escapeHtml(message) +
-      (action ? ` <button class="d2-lb" data-act="toast">${escapeHtml(action.label)}</button>` : '') +
-      (detail ? `<span class="dt">${escapeHtml(detail)}</span>` : '');
+    el.innerHTML = `<span class="tm">${escapeHtml(message)}` +
+      (action ? ` <button class="d2-link" data-act="toast">${escapeHtml(action.label)}</button>` : '') +
+      (detail ? `<span class="dt">${escapeHtml(detail)}</span>` : '') + '</span>' +
+      '<button class="tx" data-act="toast-close" title="Close" aria-label="Close">×</button>';
     if (action) el.querySelector('[data-act=toast]').addEventListener('click', () => { action.run(); el.remove(); });
+    el.querySelector('[data-act=toast-close]').addEventListener('click', () => el.remove());
     toasts.appendChild(el);
     while (toasts.children.length > 4) toasts.firstChild.remove();
-    setTimeout(() => el.remove(), ms);
+    if (ms > 0) setTimeout(() => el.remove(), ms);
     return el;
   }
 
