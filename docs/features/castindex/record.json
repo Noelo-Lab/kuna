@@ -124,7 +124,7 @@
  "benchmark": {
   "corpus": "the campaign's 444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline, 10,748 functions",
   "metric": "type_match, decbench pinned at 625e892 (DECBENCH_PIN=_final-d/db625, final-c/pindb.py), DECBENCH_NO_CACHE=1",
-  "arms": "one build: --option castindex off vs the default (on); scripts.decbench.typesweep",
+  "arms": "one build on origin/main c960fb18d: --option castindex off vs the default (on); scripts.decbench.typesweep",
   "projects": {
    "bzip2": {
     "n": 267,
