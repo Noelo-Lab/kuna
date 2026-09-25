@@ -299,10 +299,8 @@ language; an empty list produces exactly the argv the flag's absence always did
 reply carries `detail` (`exitCode`, `stderr`, and the stdout JSON when it parses), which
 the client exposes as `error.detail`.
 
-**The session is the directive list.** Each wasm call is a fresh process, so nothing the
-engine learns survives it. The study view therefore holds a student's edits as the
-`--assert` directives the native CLI takes, resends them on every request, and re-runs
-the function after each edit (§4.2).
+The study view holds a student's edits as that directive list (§2) and re-inspects the
+open function after each edit (§4.2).
 
 Termination is intentional. WASI execution is synchronous after `wasi.start()` enters
 WebAssembly, so an ordinary cancel message cannot be handled until that call returns.
@@ -532,8 +530,10 @@ after `PUSH RBP; MOV RBP,RSP`): return address, saved registers, locals, padding
 debug-info-only variables dimmed; a stack array gets a callout naming what an overflow
 reaches, a leaf without `SUB RSP` the red-zone note (x86 only). Instruction hints label
 prologues, epilogues, canary loads and checks, `xor r,r`, `test r,r`, `cdqe`, `endbr64`
-and the variadic `mov eax,0`. References come from `xrefs`. `?` holds a glossary of the
-names a decompiler invents.
+and the variadic `mov eax,0`. References (`x`) come from an `xrefs` command when the
+engine has one; this build does not, so the rail lists the callees read from the
+function's own CALL rows and says callers need it. `?` holds a glossary of the names a
+decompiler invents.
 
 **Older engines.** On a wasm without `inspect` the page opens functions through
 `decompile`: the C view works (regex-highlighted, names still selectable) and the other
@@ -584,9 +584,9 @@ formats and architectures**:
    for every fixture mnemonic, idioms, the `sum_to` frame, the overflow callout,
    references, the glossary). They read contract fixtures generated from the native CLI
    by `test/make-inspect-fixtures.mjs` (`test/fixtures/inspect-{main,sum_to,add}.json`,
-   `list-sample.json`). **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
-   `xrefs` and `--assert` through the real Worker (skipping, with a message, on a wasm
-   without `inspect`).
+   `list-sample.json`). **`test/decompile2-worker.mjs`** drives `inspect`, `read` and
+   `--assert` (and `xrefs` when the wasm has it) through the real Worker, skipping with a
+   message on a wasm without `inspect`.
 5. **`test/decompile2-browser.mjs`** — the real page in headless Chrome over the DevTools
    protocol (Node's built-in `WebSocket`, no `puppeteer`; skips when there is no Chrome or
    the Node has no `WebSocket`): it loads the example through the file input with a

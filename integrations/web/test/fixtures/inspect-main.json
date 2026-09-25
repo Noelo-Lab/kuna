@@ -19,7 +19,7 @@
   "size": 84,
   "code": "int main(int argc,char **argv)\n{\n  long v1; // rax\n  \n  v1 = sum_to(add(argc,3));\n  printf(\"%ld\\n\",v1);\n  return (int)v1;\n}",
   "error": null,
-  "proto": "int main(int argc,char **argv)",
+  "proto": "int main(int argc,char **argv);",
   "unstructured_gotos": 0,
   "line_mappings": [
    {
@@ -27,18 +27,28 @@
     "addresses": [
      4533,
      4546
+    ],
+    "addresses_hex": [
+     "0x11b5",
+     "0x11c2"
     ]
    },
    {
     "line_number": 6,
     "addresses": [
      4577
+    ],
+    "addresses_hex": [
+     "0x11e1"
     ]
    },
    {
     "line_number": 7,
     "addresses": [
      4587
+    ],
+    "addresses_hex": [
+     "0x11eb"
     ]
    }
   ],
@@ -56,6 +66,10 @@
     "addresses": [
      4533,
      4546
+    ],
+    "addresses_hex": [
+     "0x11b5",
+     "0x11c2"
     ]
    },
    {
@@ -66,7 +80,8 @@
     "stack_offset": null,
     "size": 8,
     "line_numbers": [],
-    "addresses": []
+    "addresses": [],
+    "addresses_hex": []
    },
    {
     "name": "argv",
@@ -76,7 +91,8 @@
     "stack_offset": -40,
     "size": 8,
     "line_numbers": [],
-    "addresses": []
+    "addresses": [],
+    "addresses_hex": []
    },
    {
     "name": "argc",
@@ -91,6 +107,10 @@
     "addresses": [
      4533,
      4546
+    ],
+    "addresses_hex": [
+     "0x11b5",
+     "0x11c2"
     ]
    },
    {
@@ -101,7 +121,8 @@
     "stack_offset": -20,
     "size": 4,
     "line_numbers": [],
-    "addresses": []
+    "addresses": [],
+    "addresses_hex": []
    },
    {
     "name": "s",
@@ -111,7 +132,8 @@
     "stack_offset": -16,
     "size": 8,
     "line_numbers": [],
-    "addresses": []
+    "addresses": [],
+    "addresses_hex": []
    },
    {
     "name": "local_30",
@@ -121,7 +143,8 @@
     "stack_offset": -48,
     "size": 8,
     "line_numbers": [],
-    "addresses": []
+    "addresses": [],
+    "addresses_hex": []
    },
    {
     "name": "local_8",
@@ -131,13 +154,381 @@
     "stack_offset": -8,
     "size": 8,
     "line_numbers": [],
-    "addresses": []
+    "addresses": [],
+    "addresses_hex": []
    }
   ],
   "types": [],
   "globals": [],
-  "tokens": [],
-  "tokens_error": "fixture assembled from the native CLI, which has no token stream",
+  "tokens": [
+   {
+    "line": 1,
+    "col": 0,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "decl": "return",
+    "type": "int"
+   },
+   {
+    "line": 1,
+    "col": 4,
+    "len": 4,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "main",
+    "decl": "function"
+   },
+   {
+    "line": 1,
+    "col": 8,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 1,
+    "col": 9,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "decl": "param",
+    "type": "int"
+   },
+   {
+    "line": 1,
+    "col": 13,
+    "len": 4,
+    "kind": "variable",
+    "color": "var",
+    "text": "argc",
+    "var": 0,
+    "decl": "param"
+   },
+   {
+    "line": 1,
+    "col": 17,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ","
+   },
+   {
+    "line": 1,
+    "col": 18,
+    "len": 7,
+    "kind": "type",
+    "color": "type",
+    "text": "char **",
+    "decl": "param",
+    "type": "char **"
+   },
+   {
+    "line": 1,
+    "col": 25,
+    "len": 4,
+    "kind": "variable",
+    "color": "var",
+    "text": "argv",
+    "var": 1,
+    "decl": "param"
+   },
+   {
+    "line": 1,
+    "col": 29,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 2,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "{"
+   },
+   {
+    "line": 3,
+    "col": 2,
+    "len": 4,
+    "kind": "type",
+    "color": "type",
+    "text": "long",
+    "decl": "local",
+    "type": "long"
+   },
+   {
+    "line": 3,
+    "col": 7,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "decl": "local"
+   },
+   {
+    "line": 3,
+    "col": 9,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 3,
+    "col": 11,
+    "len": 6,
+    "kind": "comment",
+    "color": "comment",
+    "text": "// rax"
+   },
+   {
+    "line": 5,
+    "col": 2,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4546,
+    "address_hex": "0x11c2"
+   },
+   {
+    "line": 5,
+    "col": 5,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4546,
+    "address_hex": "0x11c2"
+   },
+   {
+    "line": 5,
+    "col": 7,
+    "len": 6,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "sum_to",
+    "address": 4546,
+    "address_hex": "0x11c2",
+    "callee": 4449,
+    "callee_hex": "0x1161"
+   },
+   {
+    "line": 5,
+    "col": 13,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 5,
+    "col": 14,
+    "len": 3,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "add",
+    "address": 4533,
+    "address_hex": "0x11b5",
+    "callee": 4425,
+    "callee_hex": "0x1149"
+   },
+   {
+    "line": 5,
+    "col": 17,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 5,
+    "col": 18,
+    "len": 4,
+    "kind": "variable",
+    "color": "var",
+    "text": "argc",
+    "address": 4533,
+    "address_hex": "0x11b5",
+    "var": 0
+   },
+   {
+    "line": 5,
+    "col": 22,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": ",",
+    "address": 4533,
+    "address_hex": "0x11b5"
+   },
+   {
+    "line": 5,
+    "col": 23,
+    "len": 1,
+    "kind": "value",
+    "color": "const",
+    "text": "3"
+   },
+   {
+    "line": 5,
+    "col": 24,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 5,
+    "col": 25,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 5,
+    "col": 26,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 6,
+    "col": 2,
+    "len": 6,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "printf",
+    "address": 4577,
+    "address_hex": "0x11e1",
+    "callee": 4176,
+    "callee_hex": "0x1050"
+   },
+   {
+    "line": 6,
+    "col": 8,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 6,
+    "col": 9,
+    "len": 7,
+    "kind": "value",
+    "color": "const",
+    "text": "\"%ld\\n\"",
+    "address": 4577,
+    "address_hex": "0x11e1"
+   },
+   {
+    "line": 6,
+    "col": 16,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": ",",
+    "address": 4577,
+    "address_hex": "0x11e1"
+   },
+   {
+    "line": 6,
+    "col": 17,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4577,
+    "address_hex": "0x11e1"
+   },
+   {
+    "line": 6,
+    "col": 19,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 6,
+    "col": 20,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 7,
+    "col": 2,
+    "len": 6,
+    "kind": "op",
+    "color": "keyword",
+    "text": "return",
+    "address": 4587,
+    "address_hex": "0x11eb"
+   },
+   {
+    "line": 7,
+    "col": 9,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 7,
+    "col": 10,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "type": "int"
+   },
+   {
+    "line": 7,
+    "col": 13,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 7,
+    "col": 14,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4587,
+    "address_hex": "0x11eb"
+   },
+   {
+    "line": 7,
+    "col": 16,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 8,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "}"
+   }
+  ],
+  "tokens_error": null,
   "instructions": [
    {
     "address": 4504,

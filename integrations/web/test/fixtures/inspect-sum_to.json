@@ -19,13 +19,16 @@
   "size": 55,
   "code": "long sum_to(int n)\n{\n  long acc; // stack - 0x10\n  int v1; // stack - 0x14\n  \n  acc = 0;\n  for (v1 = 1; v1 <= n; v1 = v1 + 1) {\n    acc += v1;\n  }\n  return acc;\n}",
   "error": null,
-  "proto": "long sum_to(int n)",
+  "proto": "long sum_to(int n);",
   "unstructured_gotos": 0,
   "line_mappings": [
    {
     "line_number": 6,
     "addresses": [
      4460
+    ],
+    "addresses_hex": [
+     "0x116c"
     ]
    },
    {
@@ -34,6 +37,11 @@
      4468,
      4486,
      4496
+    ],
+    "addresses_hex": [
+     "0x1174",
+     "0x1186",
+     "0x1190"
     ]
    },
    {
@@ -41,6 +49,10 @@
     "addresses": [
      4480,
      4482
+    ],
+    "addresses_hex": [
+     "0x1180",
+     "0x1182"
     ]
    },
    {
@@ -48,6 +60,10 @@
     "addresses": [
      4498,
      4503
+    ],
+    "addresses_hex": [
+     "0x1192",
+     "0x1197"
     ]
    }
   ],
@@ -66,6 +82,11 @@
      4468,
      4486,
      4496
+    ],
+    "addresses_hex": [
+     "0x1174",
+     "0x1186",
+     "0x1190"
     ]
    },
    {
@@ -82,6 +103,11 @@
      4468,
      4486,
      4496
+    ],
+    "addresses_hex": [
+     "0x1174",
+     "0x1186",
+     "0x1190"
     ]
    },
    {
@@ -101,6 +127,13 @@
      4482,
      4486,
      4496
+    ],
+    "addresses_hex": [
+     "0x1174",
+     "0x1180",
+     "0x1182",
+     "0x1186",
+     "0x1190"
     ]
    },
    {
@@ -121,6 +154,13 @@
      4482,
      4498,
      4503
+    ],
+    "addresses_hex": [
+     "0x116c",
+     "0x1180",
+     "0x1182",
+     "0x1192",
+     "0x1197"
     ]
    },
    {
@@ -131,13 +171,431 @@
     "stack_offset": -8,
     "size": 8,
     "line_numbers": [],
-    "addresses": []
+    "addresses": [],
+    "addresses_hex": []
    }
   ],
   "types": [],
   "globals": [],
-  "tokens": [],
-  "tokens_error": "fixture assembled from the native CLI, which has no token stream",
+  "tokens": [
+   {
+    "line": 1,
+    "col": 0,
+    "len": 4,
+    "kind": "type",
+    "color": "type",
+    "text": "long",
+    "decl": "return",
+    "type": "long"
+   },
+   {
+    "line": 1,
+    "col": 5,
+    "len": 6,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "sum_to",
+    "decl": "function"
+   },
+   {
+    "line": 1,
+    "col": 11,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 1,
+    "col": 12,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "decl": "param",
+    "type": "int"
+   },
+   {
+    "line": 1,
+    "col": 16,
+    "len": 1,
+    "kind": "variable",
+    "color": "var",
+    "text": "n",
+    "var": 0,
+    "decl": "param"
+   },
+   {
+    "line": 1,
+    "col": 17,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 2,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "{"
+   },
+   {
+    "line": 3,
+    "col": 2,
+    "len": 4,
+    "kind": "type",
+    "color": "type",
+    "text": "long",
+    "decl": "local",
+    "type": "long"
+   },
+   {
+    "line": 3,
+    "col": 7,
+    "len": 3,
+    "kind": "variable",
+    "color": "var",
+    "text": "acc",
+    "var": 3,
+    "decl": "local"
+   },
+   {
+    "line": 3,
+    "col": 10,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 3,
+    "col": 12,
+    "len": 15,
+    "kind": "comment",
+    "color": "comment",
+    "text": "// stack - 0x10"
+   },
+   {
+    "line": 4,
+    "col": 2,
+    "len": 3,
+    "kind": "type",
+    "color": "type",
+    "text": "int",
+    "decl": "local",
+    "type": "int"
+   },
+   {
+    "line": 4,
+    "col": 6,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "var": 2,
+    "decl": "local"
+   },
+   {
+    "line": 4,
+    "col": 8,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 4,
+    "col": 10,
+    "len": 15,
+    "kind": "comment",
+    "color": "comment",
+    "text": "// stack - 0x14"
+   },
+   {
+    "line": 6,
+    "col": 2,
+    "len": 3,
+    "kind": "variable",
+    "color": "var",
+    "text": "acc",
+    "address": 4460,
+    "address_hex": "0x116c",
+    "var": 3
+   },
+   {
+    "line": 6,
+    "col": 6,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4460,
+    "address_hex": "0x116c"
+   },
+   {
+    "line": 6,
+    "col": 8,
+    "len": 1,
+    "kind": "value",
+    "color": "const",
+    "text": "0"
+   },
+   {
+    "line": 6,
+    "col": 9,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 7,
+    "col": 2,
+    "len": 3,
+    "kind": "op",
+    "color": "keyword",
+    "text": "for"
+   },
+   {
+    "line": 7,
+    "col": 6,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 7,
+    "col": 7,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4468,
+    "address_hex": "0x1174",
+    "var": 2
+   },
+   {
+    "line": 7,
+    "col": 10,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4468,
+    "address_hex": "0x1174"
+   },
+   {
+    "line": 7,
+    "col": 12,
+    "len": 1,
+    "kind": "value",
+    "color": "const",
+    "text": "1"
+   },
+   {
+    "line": 7,
+    "col": 13,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 7,
+    "col": 15,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4496,
+    "address_hex": "0x1190",
+    "var": 2
+   },
+   {
+    "line": 7,
+    "col": 18,
+    "len": 2,
+    "kind": "op",
+    "color": "none",
+    "text": "<=",
+    "address": 4496,
+    "address_hex": "0x1190"
+   },
+   {
+    "line": 7,
+    "col": 21,
+    "len": 1,
+    "kind": "variable",
+    "color": "var",
+    "text": "n",
+    "address": 4496,
+    "address_hex": "0x1190",
+    "var": 0
+   },
+   {
+    "line": 7,
+    "col": 22,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 7,
+    "col": 24,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4486,
+    "address_hex": "0x1186",
+    "var": 2
+   },
+   {
+    "line": 7,
+    "col": 27,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4486,
+    "address_hex": "0x1186"
+   },
+   {
+    "line": 7,
+    "col": 29,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4486,
+    "address_hex": "0x1186",
+    "var": 2
+   },
+   {
+    "line": 7,
+    "col": 32,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "+",
+    "address": 4486,
+    "address_hex": "0x1186"
+   },
+   {
+    "line": 7,
+    "col": 34,
+    "len": 1,
+    "kind": "value",
+    "color": "const",
+    "text": "1"
+   },
+   {
+    "line": 7,
+    "col": 35,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 7,
+    "col": 37,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "{"
+   },
+   {
+    "line": 8,
+    "col": 4,
+    "len": 3,
+    "kind": "variable",
+    "color": "var",
+    "text": "acc",
+    "address": 4482,
+    "address_hex": "0x1182",
+    "var": 3
+   },
+   {
+    "line": 8,
+    "col": 8,
+    "len": 2,
+    "kind": "op",
+    "color": "none",
+    "text": "+=",
+    "address": 4482,
+    "address_hex": "0x1182"
+   },
+   {
+    "line": 8,
+    "col": 11,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4480,
+    "address_hex": "0x1180",
+    "var": 2
+   },
+   {
+    "line": 8,
+    "col": 13,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 9,
+    "col": 2,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "}"
+   },
+   {
+    "line": 10,
+    "col": 2,
+    "len": 6,
+    "kind": "op",
+    "color": "keyword",
+    "text": "return",
+    "address": 4503,
+    "address_hex": "0x1197"
+   },
+   {
+    "line": 10,
+    "col": 9,
+    "len": 3,
+    "kind": "variable",
+    "color": "var",
+    "text": "acc",
+    "address": 4498,
+    "address_hex": "0x1192",
+    "var": 3
+   },
+   {
+    "line": 10,
+    "col": 12,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 11,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "}"
+   }
+  ],
+  "tokens_error": null,
   "instructions": [
    {
     "address": 4449,

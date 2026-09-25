@@ -8,149 +8,6 @@
   "bits": 64
  },
  "count": 13,
- "functions": [
-  {
-   "name": "_init",
-   "address": 4096,
-   "address_hex": "0x1000",
-   "aliases": [
-    "sub_1000"
-   ],
-   "object_location": null,
-   "size": 27,
-   "kind": "func"
-  },
-  {
-   "name": "sub_1020",
-   "address": 4128,
-   "address_hex": "0x1020",
-   "aliases": [],
-   "object_location": null,
-   "size": 32,
-   "kind": "plt"
-  },
-  {
-   "name": "__cxa_finalize",
-   "address": 4160,
-   "address_hex": "0x1040",
-   "aliases": [
-    "sub_1040"
-   ],
-   "object_location": null,
-   "size": 16,
-   "kind": "thunk"
-  },
-  {
-   "name": "printf",
-   "address": 4176,
-   "address_hex": "0x1050",
-   "aliases": [
-    "sub_1050"
-   ],
-   "object_location": null,
-   "size": 16,
-   "kind": "plt"
-  },
-  {
-   "name": "_start",
-   "address": 4192,
-   "address_hex": "0x1060",
-   "aliases": [
-    "sub_1060"
-   ],
-   "object_location": null,
-   "size": 48,
-   "kind": "func"
-  },
-  {
-   "name": "deregister_tm_clones",
-   "address": 4240,
-   "address_hex": "0x1090",
-   "aliases": [
-    "sub_1090"
-   ],
-   "object_location": null,
-   "size": 48,
-   "kind": "func"
-  },
-  {
-   "name": "register_tm_clones",
-   "address": 4288,
-   "address_hex": "0x10c0",
-   "aliases": [
-    "sub_10c0"
-   ],
-   "object_location": null,
-   "size": 64,
-   "kind": "func"
-  },
-  {
-   "name": "__do_global_dtors_aux",
-   "address": 4352,
-   "address_hex": "0x1100",
-   "aliases": [
-    "sub_1100"
-   ],
-   "object_location": null,
-   "size": 64,
-   "kind": "func"
-  },
-  {
-   "name": "frame_dummy",
-   "address": 4416,
-   "address_hex": "0x1140",
-   "aliases": [
-    "sub_1140"
-   ],
-   "object_location": null,
-   "size": 9,
-   "kind": "func"
-  },
-  {
-   "name": "add",
-   "address": 4425,
-   "address_hex": "0x1149",
-   "aliases": [
-    "sub_1149"
-   ],
-   "object_location": null,
-   "size": 24,
-   "kind": "func"
-  },
-  {
-   "name": "sum_to",
-   "address": 4449,
-   "address_hex": "0x1161",
-   "aliases": [
-    "sub_1161"
-   ],
-   "object_location": null,
-   "size": 55,
-   "kind": "func"
-  },
-  {
-   "name": "main",
-   "address": 4504,
-   "address_hex": "0x1198",
-   "aliases": [
-    "sub_1198"
-   ],
-   "object_location": null,
-   "size": 84,
-   "kind": "func"
-  },
-  {
-   "name": "_fini",
-   "address": 4588,
-   "address_hex": "0x11ec",
-   "aliases": [
-    "sub_11ec"
-   ],
-   "object_location": null,
-   "size": 13,
-   "kind": "func"
-  }
- ],
  "sections": [
   {
    "name": ".interp",
@@ -388,5 +245,148 @@
   }
  ],
  "known_types": [],
- "assertions": []
+ "assertions": [],
+ "functions": [
+  {
+   "name": "_init",
+   "address": 4096,
+   "address_hex": "0x1000",
+   "aliases": [
+    "sub_1000"
+   ],
+   "object_location": null,
+   "size": 27,
+   "kind": "func"
+  },
+  {
+   "name": "sub_1020",
+   "address": 4128,
+   "address_hex": "0x1020",
+   "aliases": [],
+   "object_location": null,
+   "size": 32,
+   "kind": "plt"
+  },
+  {
+   "name": "__cxa_finalize",
+   "address": 4160,
+   "address_hex": "0x1040",
+   "aliases": [
+    "sub_1040"
+   ],
+   "object_location": null,
+   "size": 16,
+   "kind": "plt"
+  },
+  {
+   "name": "printf",
+   "address": 4176,
+   "address_hex": "0x1050",
+   "aliases": [
+    "sub_1050"
+   ],
+   "object_location": null,
+   "size": 16,
+   "kind": "plt"
+  },
+  {
+   "name": "_start",
+   "address": 4192,
+   "address_hex": "0x1060",
+   "aliases": [
+    "sub_1060"
+   ],
+   "object_location": null,
+   "size": 48,
+   "kind": "func"
+  },
+  {
+   "name": "deregister_tm_clones",
+   "address": 4240,
+   "address_hex": "0x1090",
+   "aliases": [
+    "sub_1090"
+   ],
+   "object_location": null,
+   "size": 48,
+   "kind": "func"
+  },
+  {
+   "name": "register_tm_clones",
+   "address": 4288,
+   "address_hex": "0x10c0",
+   "aliases": [
+    "sub_10c0"
+   ],
+   "object_location": null,
+   "size": 64,
+   "kind": "func"
+  },
+  {
+   "name": "__do_global_dtors_aux",
+   "address": 4352,
+   "address_hex": "0x1100",
+   "aliases": [
+    "sub_1100"
+   ],
+   "object_location": null,
+   "size": 64,
+   "kind": "func"
+  },
+  {
+   "name": "frame_dummy",
+   "address": 4416,
+   "address_hex": "0x1140",
+   "aliases": [
+    "sub_1140"
+   ],
+   "object_location": null,
+   "size": 9,
+   "kind": "func"
+  },
+  {
+   "name": "add",
+   "address": 4425,
+   "address_hex": "0x1149",
+   "aliases": [
+    "sub_1149"
+   ],
+   "object_location": null,
+   "size": 24,
+   "kind": "func"
+  },
+  {
+   "name": "sum_to",
+   "address": 4449,
+   "address_hex": "0x1161",
+   "aliases": [
+    "sub_1161"
+   ],
+   "object_location": null,
+   "size": 55,
+   "kind": "func"
+  },
+  {
+   "name": "main",
+   "address": 4504,
+   "address_hex": "0x1198",
+   "aliases": [
+    "sub_1198"
+   ],
+   "object_location": null,
+   "size": 84,
+   "kind": "func"
+  },
+  {
+   "name": "_fini",
+   "address": 4588,
+   "address_hex": "0x11ec",
+   "aliases": [
+    "sub_11ec"
+   ],
+   "object_location": null,
+   "size": 13,
+   "kind": "func"
+  }
+ ]
 }

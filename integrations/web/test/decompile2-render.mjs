@@ -49,6 +49,7 @@ checks.push('highlight pinned, == scan join');
 const inspectMain = normalizeInspect(fixture('inspect-main.json'));
 assert.equal(inspectMain.source, 'inspect');
 assert.equal(inspectMain.address_hex, '0x1198');
+assert.equal(inspectMain.proto, 'int main(int argc,char **argv)', 'the declaration\'s trailing ; is dropped');
 assert.equal(inspectMain.hasInstructions, true);
 assert.equal(inspectMain.instructions[9].address_hex, '0x11b5');
 assert.deepEqual(inspectMain.instructions[9].lines, [5]);
@@ -100,6 +101,15 @@ assert.ok(fb[3].some((s) => s.tok?.kind === 'variable' && s.text === 'v1'), 'fal
 assert.ok(fb[3].some((s) => s.tok?.kind === 'funcname' && s.text === 'sum_to'), 'fallback names callees');
 assert.ok(fallbackLines('p->len = s.x;')[0].filter((s) => s.tok?.kind === 'field').length === 2, 'fields after -> and .');
 checks.push('tokenLines round trip + per-line fallback');
+
+// ── the engine's real token streams verify on every line ───────────────────
+for (const name of ['main', 'sum_to', 'add']) {
+  const fn = normalizeInspect(fixture(`inspect-${name}.json`));
+  const seg = lineSegments(fn);
+  assert.ok(seg.tokenCount > 0, `${name} has tokens`);
+  assert.equal(seg.fallbackCount, 0, `${name}: every line rebuilds from its tokens`);
+}
+checks.push('real token streams verify');
 
 // ── renderC: rows, gutters, attributes, escaping ───────────────────────────
 const mainSeg = lineSegments(inspectMain);
