@@ -22,8 +22,9 @@
 //! it points at, while the first decompile of the body still knows what it
 //! read through it. That knowledge is kept for the callback's call sites
 //! ([`pointee_vote`]): a caller that only forwards its own pointer to the
-//! callback keeps the `struct_0 *` it had before the declaration, instead of
-//! taking the slot's `void *`.
+//! callback keeps the `struct_0 *`, or the `unsigned long *` of a body that
+//! read only the first word, it had before the declaration, instead of taking
+//! the slot's `void *`.
 //!
 //! # What is refused
 //!
@@ -1527,9 +1528,10 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
 ///
 /// It is a vote about the value, not a declaration: `declared` stays the type
 /// the argument is converted to, and the argument is typed as it was before
-/// the park. Only a pointer to something is offered, only where the statement
-/// put that parameter in the storage the declaration passes it in, and only
-/// where `protoorder`'s vote would hold at any call site.
+/// the park. Only a pointer to something other than `void` is offered, only
+/// where the statement put that parameter in the storage the declaration
+/// passes it in, and only where `protoorder`'s vote would hold at any call
+/// site.
 pub(crate) fn pointee_vote(
     data: &Funcdata,
     op: OpId,

@@ -12,9 +12,15 @@ and is in scope. A caller that prints fewer
 lines is in scope and is read by hand. A changed function of either kind
 that gains a `CONCAT` has had half a register invented for it. Anything else is
 a bug, and so is a function that is not itself parked whose own parameter types
-change: the declaration rebuilds a call, never what the caller was handed. Each
-changed function also carries its parameter types and its cast count in both
-arms, counted by the castbench counter over the whole file's vocabulary.
+change: the declaration rebuilds a call, never what the caller was handed. The
+one exception is a caller whose first decompile saw fewer parameters than it
+passes on: it keeps every parameter type it had and gains, after them, only
+parameters it hands straight to a parked function, where the call grew to
+exactly the declared list (the caller forwards its own incoming registers, which
+the declaration proves are read). Each changed function also carries its
+parameter and return types and its cast count in both arms, counted by the
+castbench counter over the whole file's vocabulary; a non-parked function whose
+return type moves is listed to be read by hand.
 """
 import json, os, re, subprocess, sys, collections, difflib
 sys.path.insert(0, os.environ.get('CASTBENCH', '/home/mahaloz/kwt/castbench'))
@@ -87,7 +93,26 @@ BINS = [
     f'{R}/O2/openssh-portable/stripped/scp',
     f'{R}/O0/coreutils/stripped/ls',
     f'{R}/O2/coreutils/stripped/du',
+    # the round-8 review's disjoint set, and the forwarding fixture
+    f'{R}/O0/dpkg/stripped/dpkg-query',
+    f'{R}/O0/dpkg/stripped/dpkg-trigger',
+    f'{R}/O2/coreutils/stripped/numfmt',
+    f'{R}/O2/dpkg/stripped/dpkg',
+    f'{R}/O2/libexpat/stripped/xmlwf',
+    f'{R}/O2-noinline/rsyslog/stripped/rsyslogd',
+    f'{R}/O2-noinline/shadow/stripped/sulogin',
+    f'{R}/O2-noinline/sysvinit/stripped/sulogin',
+    f'{R}/O0/shadow/stripped/userdel',
+    f'{R}/O2/shadow/stripped/userdel',
+    f'{R}/O0/shadow/stripped/chfn',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..',
+                 'decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_forward_x86_64'),
 ]
+
+def label(b):
+    """`<opt>/<project>/stripped/<bin>` for a decbench binary, else the file name."""
+    parts = b.split('/full_run_address_2026-09-11/')
+    return parts[1] if len(parts) > 1 else os.path.basename(b)
 
 def run(b, value, trace=False):
     env = dict(os.environ)
@@ -113,39 +138,51 @@ def by_function(text):
         out[cur] = buf
     return out
 
-def call_args(lines, callee):
-    """Argument counts of every call to `callee` in `lines`, sorted."""
+def call_arglists(lines, callee):
+    """The argument texts of every call to `callee` in `lines`."""
     pat = re.compile(r'(?<![\w.>])' + re.escape(callee) + r'\(')
     out = []
     for line in lines:
         if re.match(r'^\S.*\b' + re.escape(callee) + r'\(', line):
             continue
         for m in pat.finditer(line):
-            i, depth, n, empty = m.end(), 1, 1, True
+            i, depth, args, cur = m.end(), 1, [], ''
             while i < len(line) and depth:
                 ch = line[i]
                 depth += (ch == '(') - (ch == ')')
                 if ch == ',' and depth == 1:
-                    n += 1
-                if depth and not ch.isspace():
-                    empty = False
+                    args.append(cur.strip())
+                    cur = ''
+                elif depth:
+                    cur += ch
                 i += 1
-            out.append(0 if empty else n)
-    return sorted(out)
+            if cur.strip() or args:
+                args.append(cur.strip())
+            out.append(args)
+    return out
 
-SIG = re.compile(r'^(?!//)(?![ \t])[^(;]*?\b(\w+)\((.*)\)\s*(//.*)?$')
+def call_args(lines, callee):
+    """Argument counts of every call to `callee` in `lines`, sorted."""
+    return sorted(len(a) for a in call_arglists(lines, callee))
 
-def param_types(lines):
-    """The parameter types of the signature line `lines` prints, or None."""
+SIG = re.compile(r'^(?!//)(?![ \t])([^(;]*?)\b(\w+)\((.*)\)\s*(//.*)?$')
+
+def signature(lines):
+    """`(return type, parameter types)` of the signature line `lines` prints,
+    or `(None, None)`."""
     for line in lines[1:6]:
         m = SIG.match(line)
         if not m:
             continue
-        params = m.group(2).strip()
+        ret, params = m.group(1).strip(), m.group(3).strip()
         if params in ('', 'void'):
-            return []
-        return [re.sub(r'\s*\ba\d+$', '', q.strip()) for q in params.split(',')]
-    return None
+            return ret, []
+        return ret, [re.sub(r'\s*\ba\d+$', '', q.strip()) for q in params.split(',')]
+    return None, None
+
+def param_types(lines):
+    """The parameter types of the signature line `lines` prints, or None."""
+    return signature(lines)[1]
 
 def work(b):
     off, _ = run(b, 'off')
@@ -176,6 +213,15 @@ def work(b):
     rows = []
     for (name, addr), old, new in changed:
         a_ = int(addr, 0)
+        (ret_off, pt_off), (ret_on, pt_on) = signature(old), signature(new)
+        # Parameters the caller gained after the ones it had, each handed
+        # straight to a parked function.
+        gained = (pt_off is not None and pt_on is not None and len(pt_on) > len(pt_off)
+                  and pt_on[:len(pt_off)] == pt_off)
+        forwarded = gained and all(
+            any(f'a{i}' in args for p in parked if p in names
+                for args in call_arglists(new, names[p]))
+            for i in range(len(pt_off), len(pt_on)))
         kind = ('parked' if a_ in parked else
                 'caller-of-parked' if (name, addr) in callers else 'UNEXPLAINED')
         if kind == 'caller-of-parked':
@@ -184,20 +230,27 @@ def work(b):
             moved = [m for m in moved if m[1] != m[2]]
             # A call that passed more than the declared list and now passes
             # exactly the list dropped an argument the closed list does not
-            # pass; anything else a call gains or loses is invented.
-            dropped = all(len(co) == len(cn) and all(y == arity[p] and x > y
-                                                     for x, y in zip(co, cn) if x != y)
-                          for p, co, cn in moved)
-            if len(new) > len(old) or not dropped:
+            # pass. One that passed fewer and now passes exactly the list is
+            # in scope only where the caller gained, as its own parameters,
+            # what it forwards. Anything else a call gains or loses is invented.
+            def settles(grow):
+                return all(len(co) == len(cn) and all(
+                    y == arity[p] and (x < y if grow else x > y)
+                    for x, y in zip(co, cn) if x != y) for p, co, cn in moved)
+            if len(new) > len(old):
                 kind = 'UNEXPLAINED-caller-grew'
-            elif moved:
+            elif moved and settles(False):
                 kind = 'caller-dropped-an-argument'
+            elif moved and forwarded and settles(True):
+                kind = 'caller-gained-a-forwarded-parameter'
+            elif moved:
+                kind = 'UNEXPLAINED-caller-grew'
         if sum('CONCAT' in l for l in new) > sum('CONCAT' in l for l in old):
             kind = 'UNEXPLAINED-concat'
         # A function that is not itself parked keeps its own parameter types:
         # the declaration changes a call, never what the caller is handed.
-        pt_off, pt_on = param_types(old), param_types(new)
-        params_moved = a_ not in parked and pt_off != pt_on
+        params_moved = (a_ not in parked and pt_off != pt_on
+                        and kind != 'caller-gained-a-forwarded-parameter')
         if params_moved:
             kind = 'UNEXPLAINED-own-params'
         diff = [l for l in difflib.unified_diff(old, new, lineterm='', n=0)
@@ -205,6 +258,8 @@ def work(b):
         rows.append({'bin': b, 'fn': name, 'addr': addr, 'kind': kind,
                      'casts_off': casts(old, va), 'casts_on': casts(new, vc),
                      'params_off': pt_off, 'params_on': pt_on,
+                     'return_off': ret_off, 'return_on': ret_on,
+                     'own_return_moved': a_ not in parked and ret_off != ret_on,
                      'hunk_lines': len(diff), 'diff': diff[:40]})
     return b, len(parked), len(a), rows
 
@@ -219,12 +274,23 @@ if __name__ == '__main__':
             for r in rows:
                 tot[r['kind']] += 1
             out.extend(rows)
-            print(f'{b.split("/full_run_address_2026-09-11/")[1]}: {nfn} functions, '
-                  f'{np} parked, {len(rows)} changed')
+            print(f'{label(b)}: {nfn} functions, {np} parked, {len(rows)} changed')
     json.dump(out, open(sys.argv[1] if len(sys.argv) > 1 else '.scratch/hunks.json', 'w'), indent=1)
     print('TOTAL', dict(tot))
     print('NON-PARKED functions whose own parameter types change: %d' % sum(
         r['kind'] == 'UNEXPLAINED-own-params' for r in out))
+    print('NON-PARKED functions that gain a parameter they forward: %d' % sum(
+        r['kind'] == 'caller-gained-a-forwarded-parameter' for r in out))
+    for r in out:
+        if r['kind'] == 'caller-gained-a-forwarded-parameter':
+            print('  gained %s %s %s: %s -> %s' % (label(r['bin']), r['fn'], r['addr'],
+                                                 r['params_off'], r['params_on']))
+    print('NON-PARKED functions whose own return type changes: %d' % sum(
+        r['own_return_moved'] for r in out))
+    for r in out:
+        if r['own_return_moved']:
+            print('  return %s %s %s: %s -> %s' % (label(r['bin']), r['fn'], r['addr'],
+                                                 r['return_off'], r['return_on']))
     co, cn = sum(r['casts_off'] for r in out), sum(r['casts_on'] for r in out)
     print('CASTS changed functions: off %d -> on %d; more %d, fewer %d, same %d' % (
         co, cn, sum(r['casts_on'] > r['casts_off'] for r in out),
@@ -233,7 +299,7 @@ if __name__ == '__main__':
     for r in sorted(out, key=lambda r: r['casts_off'] - r['casts_on'])[:25]:
         if r['casts_on'] != r['casts_off']:
             print('  casts %+d %s %s %s (%d -> %d)' % (r['casts_on'] - r['casts_off'],
-                  r['bin'].split('/full_run_address_2026-09-11/')[1], r['fn'], r['addr'],
+                  label(r['bin']), r['fn'], r['addr'],
                   r['casts_off'], r['casts_on']))
     for r in out:
         if r['kind'].startswith('UNEXPLAINED'):

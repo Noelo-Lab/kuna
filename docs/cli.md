@@ -1179,9 +1179,13 @@ is `void (*)(int)`. When a function's address is handed to one of 23 such slots
 the run parks that declaration on it and decompiles it again, together with each
 direct caller whose call the declaration changes (it passes another number of
 arguments, or uses a result whose type the declaration changes). A caller keeps
-its own parameter types: where the slot says only `void *`, what the callback's
-body read through the pointer still types what the caller passes. A declaration
-that is exactly the signature the body already printed is not parked:
+the parameter types it had: where the slot says only `void *`, what the
+callback's body read through the pointer (a `struct_0 *`, or the `unsigned long *`
+of a comparator that reads only the first word) still types what the caller
+passes. What the redo can change in a caller is the call itself: it passes the
+declared arguments (a caller that only forwards its own two pointers gains them
+as parameters) and reads the declared `int` result without an `(int)` cast. A
+declaration that is exactly the signature the body already printed is not parked:
 
 ```bash
 kuna decompile-all ./callbacktype_x86_64 --option callbacktype off | grep -E '^(int|void).*(by_key|on_int)\('

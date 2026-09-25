@@ -2838,20 +2838,31 @@ reads through a parameter the slot declares `void *`. A `qsort` comparator that
 reads two fields through its first parameter recovered `struct_0 *` for it, and
 a bsearch helper that calls the same comparator directly with its own `WORD *w`
 took `struct_0 *` for `w` from that statement, because it does nothing else with
-it. The declaration says only "a pointer", so a later decompile of the helper
-— the park round's own redo, or a `calleevote` round that redoes it for another
-parameter — would type `w` as `void *` and take a correct type away. The
-statement therefore moves to `Ledger::stated`, is copied onto each function
+it. A comparator that hands only the first word of each record to `strcmp`
+recovered `undefined8 *` (printed `unsigned long *`), and a caller that forwards
+its own two pointers to it, or scans an array of 24-byte records with it, took
+that type the same way and indexes the array as `&a0[3]`. The declaration says
+only "a pointer", so a later decompile of such a caller — the park round's own
+redo, or a `calleevote` round that redoes it for another parameter — would type
+the pointer `void *`, take a type away, and index it as `&((char *)a0)[0x18]`.
+The statement therefore moves to `Ledger::stated`, is copied onto each function
 that calls the callback (`kuna_callbacktype::seed`, next to `protoorder`'s own
 seed), and at such a call a type-locked `void *` parameter offers the
 statement's type for the argument as a vote (`pointee_vote`, asked from the
-locked arm of `call_input_type_local`): only a pointer to something (not `void
-*` or `undefined *`), of the same size, recovered in the storage the
+locked arm of `call_input_type_local`): a pointer to anything but `void` (an
+unknown pointee included, since that is what `protoorder` voted at the same
+call before the park), of the same size, recovered in the storage the
 declaration passes that parameter in, and only where `protoorder`'s own vote
 refusals hold at that call. It is asked only for the value's type: the
 declared `void *` stays the type the argument is converted to, and the caller
-types the argument, and the pointer it forwards, exactly as it did before the
-park, so its call prints the casts it printed then. A superseded structure is forgotten here as it is
+types the argument, and the pointer it forwards, as it did before the park.
+What a caller's redo still changes is what the declaration itself says about
+the call: a call whose first decompile passed fewer arguments passes the
+declared list, so a caller that forwards its own two argument registers gains
+them as parameters (typed by the same vote) after the ones it had; a result
+that was untyped, and read through an `(int)` cast, is read as the declared
+`int` without it; and a caller that returns that result straight on returns
+the declared type. A superseded structure is forgotten here as it is
 in `protoorder`'s table (`kuna_callbacktype::forget_statements_naming`). The
 callback's own body is untouched: its parameters are the declaration's.
 
