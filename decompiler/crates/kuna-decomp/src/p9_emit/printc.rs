@@ -1330,6 +1330,19 @@ impl PrintEmit {
             e.set_capture_statement_provenance(val);
         }
     }
+    /// Enable or disable token capture on the markup leaf.
+    pub fn set_capture_tokens(&mut self, val: bool) {
+        if let PrintEmit::Markup(e) = self {
+            e.set_capture_tokens(val);
+        }
+    }
+    /// Take the tokens captured by the markup leaf.
+    pub fn take_markup_tokens(&mut self) -> Vec<crate::prettyprint::EmitToken> {
+        match self {
+            PrintEmit::NoMarkup(_) => Vec::new(),
+            PrintEmit::Markup(e) => e.take_tokens(),
+        }
+    }
     /// Whether the plain-text statement-root sidecar is active.
     pub fn captures_plain_statement_provenance(&self) -> bool {
         match self {
@@ -2304,6 +2317,28 @@ impl PrintC {
         arch: &Architecture,
     ) -> MarkupProvenance {
         self.doc_function_markup_data(fd, arch).1
+    }
+
+    /// The markup pass of [`Self::doc_function_provenance`] with every token
+    /// captured at its plain-text position ([`crate::prettyprint::EmitToken`]).
+    /// The indent increment is carried into the markup leaf and back out, so
+    /// the columns match the plain render and the printer keeps its setting.
+    pub fn doc_function_tokens(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+    ) -> (MarkupProvenance, Vec<crate::prettyprint::EmitToken>) {
+        let increment = self.emit.get_indent_increment();
+        self.set_markup(true);
+        self.emit.set_indent_increment(increment);
+        self.emit.set_capture_tokens(true);
+        self.emit_function_document(fd, arch);
+        let _ = self.emit.flush();
+        let provenance = self.emit.take_markup_provenance();
+        let tokens = self.emit.take_markup_tokens();
+        self.set_markup(false);
+        self.emit.set_indent_increment(increment);
+        (provenance, tokens)
     }
 
     fn doc_function_markup_data(

@@ -173,6 +173,23 @@ impl SyntaxHighlight {
     fn value(self) -> u64 {
         self as i32 as u64
     }
+
+    /// The short name a token stream reports (`keyword`, `var`, `const`, ...).
+    pub fn name(self) -> &'static str {
+        match self {
+            SyntaxHighlight::KeywordColor => "keyword",
+            SyntaxHighlight::CommentColor => "comment",
+            SyntaxHighlight::TypeColor => "type",
+            SyntaxHighlight::FuncnameColor => "funcname",
+            SyntaxHighlight::VarColor => "var",
+            SyntaxHighlight::ConstColor => "const",
+            SyntaxHighlight::ParamColor => "param",
+            SyntaxHighlight::GlobalColor => "global",
+            SyntaxHighlight::NoColor => "none",
+            SyntaxHighlight::ErrorColor => "error",
+            SyntaxHighlight::SpecialColor => "special",
+        }
+    }
 }
 
 /// Different brace formatting styles (C++ `Emit::brace_style`).
@@ -226,6 +243,114 @@ pub struct MarkupAssociation {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MarkupProvenance {
     pub associations: Vec<MarkupAssociation>,
+}
+
+/// What a captured [`EmitToken`] is: which `Emit` call produced it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenKind {
+    Syntax,
+    Variable,
+    Op,
+    FuncName,
+    Type,
+    Field,
+    Comment,
+    Label,
+    Value,
+}
+
+impl TokenKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            TokenKind::Syntax => "syntax",
+            TokenKind::Variable => "variable",
+            TokenKind::Op => "op",
+            TokenKind::FuncName => "funcname",
+            TokenKind::Type => "type",
+            TokenKind::Field => "field",
+            TokenKind::Comment => "comment",
+            TokenKind::Label => "label",
+            TokenKind::Value => "value",
+        }
+    }
+}
+
+/// One non-blank token of the markup stream, placed where the plain-text
+/// emitter puts the same text: `line` counts line breaks from the start of the
+/// document, `col` is in UTF-16 code units, and surrounding spaces are trimmed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmitToken {
+    pub line: usize,
+    pub col: usize,
+    pub text: String,
+    pub kind: TokenKind,
+    pub color: SyntaxHighlight,
+    pub opref: Option<uintb>,
+    pub varref: Option<uintb>,
+    /// The address offset a comment or label is attached to.
+    pub at: Option<uintb>,
+    pub type_name: Option<String>,
+    pub in_var_decl: bool,
+    pub in_return_type: bool,
+    pub in_proto: bool,
+}
+
+/// The column model of [`EmitNoMarkup`] replayed beside [`EmitMarkup`]: a line
+/// break moves to the indent, and every emitted text advances the column.
+#[derive(Debug, Default)]
+struct TokenCapture {
+    line: usize,
+    col: usize,
+    var_decl: usize,
+    return_type: usize,
+    proto: usize,
+    mute: usize,
+    out: Vec<EmitToken>,
+}
+
+impl TokenCapture {
+    fn newline(&mut self, indent: int4) {
+        self.line += 1;
+        self.col = indent.max(0) as usize;
+    }
+
+    fn push(
+        &mut self,
+        text: &str,
+        kind: TokenKind,
+        color: SyntaxHighlight,
+        markup: Option<&MarkupRef>,
+        at: Option<uintb>,
+    ) {
+        if self.mute > 0 {
+            return;
+        }
+        for (i, seg) in text.split('\n').enumerate() {
+            if i > 0 {
+                self.line += 1;
+                self.col = 0;
+            }
+            let body = seg.trim_matches(' ');
+            if !body.is_empty() {
+                let lead = seg.len() - seg.trim_start_matches(' ').len();
+                self.out.push(EmitToken {
+                    line: self.line,
+                    col: self.col + lead,
+                    text: body.to_string(),
+                    kind,
+                    color,
+                    opref: markup.and_then(|m| m.opref),
+                    varref: markup.and_then(|m| m.varref),
+                    at,
+                    type_name: markup.and_then(|m| m.type_name.clone()),
+                    in_var_decl: self.var_decl > 0,
+                    in_return_type: self.return_type > 0,
+                    in_proto: self.proto > 0,
+                });
+            }
+            self.col += seg.encode_utf16().count();
+        }
+    }
 }
 
 impl MarkupRef {
@@ -836,6 +961,7 @@ pub struct EmitMarkup {
     packed: bool,
     line_number: usize,
     provenance: MarkupProvenance,
+    capture: Option<TokenCapture>,
 }
 
 impl Default for EmitMarkup {
@@ -854,6 +980,30 @@ impl EmitMarkup {
             packed: true,
             line_number: 0,
             provenance: MarkupProvenance::default(),
+            capture: None,
+        }
+    }
+
+    /// Record every token with its plain-text position ([`EmitToken`]) while
+    /// the packed document is written.
+    pub fn set_capture_tokens(&mut self, val: bool) {
+        self.capture = val.then(TokenCapture::default);
+    }
+    /// Take the tokens captured since the last reset.
+    pub fn take_tokens(&mut self) -> Vec<EmitToken> {
+        self.capture.as_mut().map(|c| std::mem::take(&mut c.out)).unwrap_or_default()
+    }
+
+    fn capture(
+        &mut self,
+        text: &str,
+        kind: TokenKind,
+        color: SyntaxHighlight,
+        markup: Option<&MarkupRef>,
+        at: Option<uintb>,
+    ) {
+        if let Some(c) = self.capture.as_mut() {
+            c.push(text, kind, color, markup, at);
         }
     }
 
@@ -877,6 +1027,9 @@ impl EmitMarkup {
         self.out.clear();
         self.line_number = 0;
         self.provenance.associations.clear();
+        if self.capture.is_some() {
+            self.capture = Some(TokenCapture::default());
+        }
     }
 
     fn record_association(&mut self, markup: &MarkupRef) {
@@ -899,6 +1052,45 @@ impl EmitMarkup {
         let _ = self.packed; // see type-level doc; XmlEncode path not wired
         let mut enc = PackedEncode::new(&mut self.out);
         f(&mut enc);
+    }
+
+    /// The `<type>` encoding of `tag_type`: one token, or identifier words as
+    /// `<type>` tokens and separator runs as `<syntax>` tokens.
+    fn tag_type_split(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) {
+        if markup_type_token_needs_split(name) {
+            let mut chunk = String::new();
+            let mut syn = String::new();
+            let mut depth = 0i32;
+            for c in name.chars() {
+                let ident = c.is_ascii_alphanumeric() || c == '_';
+                if ident || c == '<' || c == '>' || depth > 0 {
+                    if c == '<' {
+                        depth += 1;
+                    } else if c == '>' {
+                        depth = (depth - 1).max(0);
+                    }
+                    if !syn.is_empty() {
+                        self.print(&syn, SyntaxHighlight::NoColor);
+                        syn.clear();
+                    }
+                    chunk.push(c);
+                } else {
+                    if !chunk.is_empty() {
+                        self.tag_type_single(&chunk, hl, markup);
+                        chunk.clear();
+                    }
+                    syn.push(c);
+                }
+            }
+            if !chunk.is_empty() {
+                self.tag_type_single(&chunk, hl, markup);
+            }
+            if !syn.is_empty() {
+                self.print(&syn, SyntaxHighlight::NoColor);
+            }
+            return;
+        }
+        self.tag_type_single(name, hl, markup);
     }
 
     /// Write ONE `<type>` token (the pre-split body of `tag_type`; C++
@@ -979,6 +1171,9 @@ impl Emit for EmitMarkup {
         // before the break.  Cleared-before-callback, so no re-entry.
         self.emit_pending();
         let indent = self.base.indentlevel;
+        if let Some(c) = self.capture.as_mut() {
+            c.newline(indent);
+        }
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_BREAK);
             e.write_signed_integer(&ids::ATTRIB_INDENT, indent as i64);
@@ -988,6 +1183,9 @@ impl Emit for EmitMarkup {
     }
     fn tag_line_indent(&mut self, indent: int4) {
         self.emit_pending();
+        if let Some(c) = self.capture.as_mut() {
+            c.newline(indent);
+        }
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_BREAK);
             e.write_signed_integer(&ids::ATTRIB_INDENT, indent as i64);
@@ -997,6 +1195,9 @@ impl Emit for EmitMarkup {
     }
 
     fn begin_return_type(&mut self, markup: &MarkupRef) -> int4 {
+        if let Some(c) = self.capture.as_mut() {
+            c.return_type += 1;
+        }
         let vr = markup.return_varref;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_RETURN_TYPE);
@@ -1007,9 +1208,15 @@ impl Emit for EmitMarkup {
         0
     }
     fn end_return_type(&mut self, _id: int4) {
+        if let Some(c) = self.capture.as_mut() {
+            c.return_type = c.return_type.saturating_sub(1);
+        }
         self.with_encoder(|e| e.close_element(&ids::ELEM_RETURN_TYPE));
     }
     fn begin_var_decl(&mut self, markup: &MarkupRef) -> int4 {
+        if let Some(c) = self.capture.as_mut() {
+            c.var_decl += 1;
+        }
         let sr = markup.symref;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_VARDECL);
@@ -1020,6 +1227,9 @@ impl Emit for EmitMarkup {
         0
     }
     fn end_var_decl(&mut self, _id: int4) {
+        if let Some(c) = self.capture.as_mut() {
+            c.var_decl = c.var_decl.saturating_sub(1);
+        }
         self.with_encoder(|e| e.close_element(&ids::ELEM_VARDECL));
     }
     fn begin_statement(&mut self, markup: &MarkupRef) -> int4 {
@@ -1037,15 +1247,24 @@ impl Emit for EmitMarkup {
         self.with_encoder(|e| e.close_element(&ids::ELEM_STATEMENT));
     }
     fn begin_func_proto(&mut self) -> int4 {
+        if let Some(c) = self.capture.as_mut() {
+            c.proto += 1;
+        }
         self.with_encoder(|e| e.open_element(&ids::ELEM_FUNCPROTO));
         0
     }
     fn end_func_proto(&mut self, _id: int4) {
+        if let Some(c) = self.capture.as_mut() {
+            c.proto = c.proto.saturating_sub(1);
+        }
         self.with_encoder(|e| e.close_element(&ids::ELEM_FUNCPROTO));
     }
 
     fn tag_variable(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) {
         self.record_association(markup);
+        let kind =
+            if hl == SyntaxHighlight::ConstColor { TokenKind::Value } else { TokenKind::Variable };
+        self.capture(name, kind, hl, Some(markup), None);
         let (vr, op) = (markup.varref, markup.opref);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_VARIABLE);
@@ -1064,6 +1283,7 @@ impl Emit for EmitMarkup {
     }
     fn tag_op(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) {
         self.record_association(markup);
+        self.capture(name, TokenKind::Op, hl, Some(markup), None);
         let op = markup.opref;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_OP);
@@ -1079,6 +1299,7 @@ impl Emit for EmitMarkup {
     }
     fn tag_func_name(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef) {
         self.record_association(markup);
+        self.capture(name, TokenKind::FuncName, hl, Some(markup), None);
         let op = markup.opref;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_FUNCNAME);
@@ -1106,43 +1327,18 @@ impl Emit for EmitMarkup {
         // code): identifier words stay <type> tokens, separator runs become
         // <syntax> tokens.  Template payloads (`<…>`) stay inside their word
         // (the Java transformer accepts them verbatim).
-        if markup_type_token_needs_split(name) {
-            let mut chunk = String::new();
-            let mut syn = String::new();
-            let mut depth = 0i32;
-            for c in name.chars() {
-                let ident = c.is_ascii_alphanumeric() || c == '_';
-                if ident || c == '<' || c == '>' || depth > 0 {
-                    if c == '<' {
-                        depth += 1;
-                    } else if c == '>' {
-                        depth = (depth - 1).max(0);
-                    }
-                    if !syn.is_empty() {
-                        self.print(&syn, SyntaxHighlight::NoColor);
-                        syn.clear();
-                    }
-                    chunk.push(c);
-                } else {
-                    if !chunk.is_empty() {
-                        self.tag_type_single(&chunk, hl, markup);
-                        chunk.clear();
-                    }
-                    syn.push(c);
-                }
-            }
-            if !chunk.is_empty() {
-                self.tag_type_single(&chunk, hl, markup);
-            }
-            if !syn.is_empty() {
-                self.print(&syn, SyntaxHighlight::NoColor);
-            }
-            return;
+        self.capture(name, TokenKind::Type, hl, Some(markup), None);
+        if let Some(c) = self.capture.as_mut() {
+            c.mute += 1;
         }
-        self.tag_type_single(name, hl, markup);
+        self.tag_type_split(name, hl, markup);
+        if let Some(c) = self.capture.as_mut() {
+            c.mute -= 1;
+        }
     }
     fn tag_field(&mut self, name: &str, hl: SyntaxHighlight, off: int4, markup: &MarkupRef) {
         self.record_association(markup);
+        self.capture(name, TokenKind::Field, hl, Some(markup), None);
         let (tname, tid, op) = (markup.type_name.clone(), markup.type_id, markup.opref);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_FIELD);
@@ -1167,6 +1363,7 @@ impl Emit for EmitMarkup {
     }
     fn tag_bit_field(&mut self, name: &str, hl: SyntaxHighlight, id: int4, markup: &MarkupRef) {
         self.record_association(markup);
+        self.capture(name, TokenKind::Field, hl, Some(markup), None);
         let (tname, tid, op) = (markup.type_name.clone(), markup.type_id, markup.opref);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_BITFIELD);
@@ -1190,6 +1387,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_comment(&mut self, name: &str, hl: SyntaxHighlight, spc: &Rc<AddrSpace>, off: uintb) {
+        self.capture(name, TokenKind::Comment, hl, None, Some(off));
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_COMMENT);
             if hl != SyntaxHighlight::NoColor {
@@ -1202,6 +1400,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_label(&mut self, name: &str, hl: SyntaxHighlight, spc: &Rc<AddrSpace>, off: uintb) {
+        self.capture(name, TokenKind::Label, hl, None, Some(off));
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_LABEL);
             if hl != SyntaxHighlight::NoColor {
@@ -1215,6 +1414,7 @@ impl Emit for EmitMarkup {
     }
     fn tag_case_label(&mut self, name: &str, hl: SyntaxHighlight, markup: &MarkupRef, value: uintb) {
         self.record_association(markup);
+        self.capture(name, TokenKind::Value, hl, Some(markup), None);
         let op = markup.opref;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_VALUE);
@@ -1230,6 +1430,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn print(&mut self, data: &str, hl: SyntaxHighlight) {
+        self.capture(data, TokenKind::Syntax, hl, None, None);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_SYNTAX);
             if hl != SyntaxHighlight::NoColor {
@@ -1240,6 +1441,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn open_paren(&mut self, paren: &str, id: int4) -> int4 {
+        self.capture(paren, TokenKind::Syntax, SyntaxHighlight::NoColor, None, None);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_SYNTAX);
             e.write_signed_integer(&ids::ATTRIB_OPEN, id as i64);
@@ -1250,6 +1452,7 @@ impl Emit for EmitMarkup {
         0
     }
     fn close_paren(&mut self, paren: &str, id: int4) {
+        self.capture(paren, TokenKind::Syntax, SyntaxHighlight::NoColor, None, None);
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_SYNTAX);
             e.write_signed_integer(&ids::ATTRIB_CLOSE, id as i64);

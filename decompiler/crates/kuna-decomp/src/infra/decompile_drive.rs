@@ -1526,8 +1526,20 @@ fn rewrite_cookie_literal_returns(
     calls: &BTreeMap<u64, BTreeSet<String>>,
     markup: &mut crate::prettyprint::MarkupProvenance,
 ) -> String {
+    rewrite_cookie_literal_returns_with_edits(text, calls, markup).0
+}
+
+/// [`rewrite_cookie_literal_returns`], also returning each line pair it
+/// rewrote so a token stream of the same render can follow
+/// ([`crate::kuna_srcmap::apply_cookie_rewrites`]).
+fn rewrite_cookie_literal_returns_with_edits(
+    text: String,
+    calls: &BTreeMap<u64, BTreeSet<String>>,
+    markup: &mut crate::prettyprint::MarkupProvenance,
+) -> (String, Vec<crate::kuna_srcmap::CookieRewrite>) {
+    let mut edits = Vec::new();
     if calls.is_empty() {
-        return text;
+        return (text, edits);
     }
 
     let trailing_newline = text.ends_with('\n');
@@ -1571,12 +1583,18 @@ fn rewrite_cookie_literal_returns(
                 association.line_number = return_line_number;
             }
         }
+        edits.push(crate::kuna_srcmap::CookieRewrite {
+            assignment_line: assignment_line_number,
+            return_line: return_line_number,
+            indent: indent.encode_utf16().count(),
+            literal,
+        });
     }
     let mut out = lines.join("\n");
     if trailing_newline {
         out.push('\n');
     }
-    out
+    (out, edits)
 }
 
 /// Render the ordinary C text and independently collect the markup references
@@ -1595,6 +1613,23 @@ pub fn print_c_with_provenance(
         out,
         resolve_markup_provenance(fd, &markup),
     )
+}
+
+/// [`print_c_with_provenance`] whose markup pass also captures every token at
+/// its place in the returned text ([`crate::kuna_srcmap`]). The text is the
+/// plain render, byte for byte.
+pub fn print_c_with_srcmap(
+    arch: &mut Architecture,
+    fd: &Funcdata,
+) -> (String, CodeProvenance, Vec<crate::prettyprint::EmitToken>) {
+    let cookie_calls = exact_cookie_call_evidence(fd, arch);
+    let mut printer = arch.take_print();
+    let out = printer.doc_function_full(fd, arch);
+    let (mut markup, mut tokens) = printer.doc_function_tokens(fd, arch);
+    arch.put_print(printer);
+    let (out, edits) = rewrite_cookie_literal_returns_with_edits(out, &cookie_calls, &mut markup);
+    crate::kuna_srcmap::apply_cookie_rewrites(&mut tokens, &edits);
+    (out, resolve_markup_provenance(fd, &markup), tokens)
 }
 
 /// (kuna) Render every user-defined data-type in the architecture's type
@@ -1873,24 +1908,30 @@ impl CodeProvenance {
     /// Attach markup-backed use evidence to the corresponding reported variables.
     pub fn apply_to_variables(&self, fd: &Funcdata, variables: &mut [VarInfo]) {
         for variable in variables {
-            let storage_refs = variable_storage_varrefs(fd, variable);
-            let mut evidence = self.evidence_for_refs(&storage_refs);
-            if evidence.line_numbers.is_empty() {
-                let named_refs = named_high_varrefs(fd, variable);
-                evidence = self.evidence_for_refs(&named_refs);
-            }
-            // (kuna `paramrefdecl`) An ADDRESS-TAKEN parameter has no Varnode at its
-            // own storage and no high carrying its `param_N` JSON name -- its only
-            // appearance is the `&a0` reference, a PTRSUB offset constant bound to
-            // the parameter's Symbol.  Both queries above miss it, so the surface
-            // reported a parameter with no uses while the C showed one.
-            if evidence.line_numbers.is_empty() {
-                let reference_refs = parameter_reference_varrefs(fd, variable);
-                evidence = self.evidence_for_refs(&reference_refs);
-            }
+            let evidence = self.evidence_for_refs(&self.variable_varrefs(fd, variable));
             variable.line_numbers = evidence.line_numbers;
             variable.addresses = evidence.addresses;
         }
+    }
+
+    /// The varrefs whose uses are `variable`'s evidence: its storage, else the
+    /// highs carrying its name, else its `&parameter` references -- the first
+    /// set the rendered markup actually used.
+    pub fn variable_varrefs(&self, fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
+        let storage_refs = variable_storage_varrefs(fd, variable);
+        if !self.evidence_for_refs(&storage_refs).line_numbers.is_empty() {
+            return storage_refs;
+        }
+        let named_refs = named_high_varrefs(fd, variable);
+        if !self.evidence_for_refs(&named_refs).line_numbers.is_empty() {
+            return named_refs;
+        }
+        // (kuna `paramrefdecl`) An ADDRESS-TAKEN parameter has no Varnode at its
+        // own storage and no high carrying its `param_N` JSON name -- its only
+        // appearance is the `&a0` reference, a PTRSUB offset constant bound to
+        // the parameter's Symbol.  Both queries above miss it, so the surface
+        // reported a parameter with no uses while the C showed one.
+        parameter_reference_varrefs(fd, variable)
     }
 
     fn evidence_for_refs(&self, varrefs: &BTreeSet<u64>) -> VariableUseEvidence {
