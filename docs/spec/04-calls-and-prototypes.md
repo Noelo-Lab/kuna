@@ -1484,6 +1484,54 @@ through the pointer, the guard is what models that write, and it stays. The
 gather is deferred and cached for the length of one heritage pass, so a function
 that never reaches the locked branch never pays for it.
 
+### (kuna) `callpush` — a call's own return-address push
+
+An x86 `call` lifts as three p-code ops at one instruction address: the stack
+pointer steps down one word, the fall-through address is STOREd at the new
+stack pointer, and the CALL transfers. In a frame whose stack pointer stays a
+constant offset from its entry value, `RuleStoreVarnode` (chapters 03 and 06) turns that STORE
+into a COPY to a stack slot nothing reads, and dead-code elimination removes it,
+so no push is ever printed. After an `alloca` (`sub rsp, rax`) the stack pointer
+is the entry value minus a run-time size: the STORE keeps its pointer, and every
+later call in the function printed its push as a statement of its own,
+`*(unsigned long *)&v28[-8] = 0xbc79;` before `fstatat(...)`. Over the cast
+census's 45 binaries at three optimization levels these were 1,607 statements
+in 75 functions; on the functions kuna and IDA both emit they carried 856 of
+the 1,252 `(unsigned long *)&v` casts kuna printed, and IDA prints no statement
+for them.
+
+With `callpush on` (the default), `RuleCallPush`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callpush.rs (RuleCallPush)`)
+deletes such a STORE. It runs in `oppool2` directly after `RuleStoreVarnode`, so
+a push in a tracked frame is that rule's COPY before this one sees it, and it
+matches only when every one of these holds
+(`kuna_callpush.rs (is_call_push)`): the stored value is a constant one
+pointer word wide lying at most 15 bytes (the longest x86 instruction) past the
+instruction's own address; a CALL or CALLIND follows the STORE in the same
+basic block at the same instruction address, so both came from one `call`; that
+call's destination is not the stored address (`call 1f; 1: pop` reads the
+pushed word back, and is the one idiom whose caller does); the pointer, through
+COPY and CAST, is the stack pointer register as that same instruction wrote it;
+and `RuleLoadVarnode::check_spacebase` cannot place the pointer on the stack. A
+callee that pops its return address as data is lifted as a BRANCH by
+`callpopret` (chapter 02), so no CALL remains for the rule to match.
+
+The deleted store writes the slot below the stack pointer that only the
+callee's `ret` reads, which the C call already performs, so no value any printed
+statement computes changes. What follows from the deletion is the ordinary
+pipeline reacting to one fewer may-alias STORE, and each of these was read in
+the whole-corpus diff: the INDIRECT guards the STORE planted over the stack
+collapse (`RuleIndirectCollapse`, whose causing op is now dead), which also frees
+tracked return-address slots those guards alone kept alive; a load or call
+result held in a temporary across the push now prints at its use; a block that
+held only the push beside a condition merges into the condition; a tail block
+the push kept large is duplicated into its predecessors instead of reached by
+`goto`; and a stack array whose lowest slot was the push is declared from its
+next slot, with every reference shifted by the same amount. Stores of
+stack-passed arguments through the same pointer, and a stack probe's
+`*p = *p` touch, are not the call's push and stay. `callpush off` restores the
+upstream statement.
+
 ### (kuna) `returnpair` — the register-pair return split
 
 Provenance: upstream issue GH-6990, implemented kuna-side

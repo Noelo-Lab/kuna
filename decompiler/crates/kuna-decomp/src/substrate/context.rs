@@ -813,6 +813,10 @@ pub struct ArchContext {
     /// exports (`constspaceload`).  Read by
     /// [`RuleConstSpaceLoad`](crate::kuna_constspaceload::RuleConstSpaceLoad).
     pub const_space_load_fold: bool,
+    /// (kuna) Delete a call's own return-address push through an untracked
+    /// stack pointer (`callpush`).  Read by
+    /// [`RuleCallPush`](crate::kuna_callpush::RuleCallPush).
+    pub drop_call_push: bool,
     /// (kuna) CALLOTHER user-op ids the architecture registered under a byte
     /// shuffle name ([`SHUFFLE_USEROP_NAMES`](crate::kuna_simdlane::SHUFFLE_USEROP_NAMES)),
     /// resolved once per program in `Architecture::build_arch_handle` so
@@ -1593,6 +1597,7 @@ impl ArchContext {
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
             const_space_load_fold: false, // constspaceload (the ArchSeam carries the real default)
+            drop_call_push: false,        // callpush (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain

@@ -219,8 +219,8 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 283,
-        "full universal tree must render 252 C++ leaves + 24 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + pebnames + msvcstrappend + structsynth + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane + constspaceload) + 7 container headers"
+        nonblank, 284,
+        "full universal tree must render 252 C++ leaves + 25 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + pebnames + msvcstrappend + structsynth + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane + constspaceload + callpush) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note

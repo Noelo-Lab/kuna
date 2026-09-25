@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A call's own return-address push is part of the call (option callpush,
+    default on).
+
+    The XML wrapper only provides the harness architecture. Both passes clear
+    it and load callpush_gcc_O0_x86_64 (source beside it, gcc -O0). stacked()
+    calls alloca, so its stack pointer is the entry value minus a run-time
+    size and the frame cannot place it on the stack; pc_here() does the same
+    and then runs call 1f; 1: pop.
+
+    Pass 1 (callpush off) reproduces the defect: each call after the alloca
+    prints the store of its own return address through the stack pointer,
+    *(unsigned long *)&v9[v5 + -8] = 0x14e7; before weigh() in the loop and
+    *(unsigned long *)&v9[v5 + -0x18] = 0x1557; before spread().
+
+    Pass 2 (the shipped default) prints neither. What the same pointer stores
+    for spread()'s stack-passed arguments stays, and so does the push of
+    call 1f, whose destination is the stored address and which pc_here reads
+    back.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/callpush_gcc_O0_x86_64</com>
+  <com>option callpush off</com>
+  <com>read symbols</com>
+  <com>load function stacked</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pc_here</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/callpush_gcc_O0_x86_64</com>
+  <com>read symbols</com>
+  <com>load function stacked</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pc_here</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="Call push #1: off prints the push before the call in the loop" min="1" max="1">\*\(unsigned long \*\)&amp;v9\[v5 \+ -8\] = 0x14e7;</stringmatch>
+<stringmatch name="Call push #2: off prints the push before the call with stack arguments" min="1" max="1">\*\(unsigned long \*\)&amp;v9\[v5 \+ -0x18\] = 0x1557;</stringmatch>
+<stringmatch name="Call push #3: both passes keep the call in the loop" min="2" max="2">\*v1 = weigh\(0x2004,v7\);</stringmatch>
+<stringmatch name="Call push #4: both passes keep a stack-passed argument" min="2" max="2">\*\(unsigned long \*\)&amp;v9\[v5 \+ -0x10\] = v2;</stringmatch>
+<stringmatch name="Call push #5: both passes keep the push call 1f reads back" min="2" max="2">\*\(unsigned long \*\)&amp;v5\[v1 \+ -8\] = 0x1802;</stringmatch>
+</decompilertest>

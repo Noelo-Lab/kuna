@@ -1,0 +1,1071 @@
+{
+ "total": {
+  "functions": 75,
+  "pushes_off": 1729,
+  "pushes_on": 122,
+  "hunk:decl": 52,
+  "hunk:fold": 605,
+  "hunk:OTHER": 56,
+  "hunk:condmerge": 72,
+  "hunk:header": 10,
+  "hunk:taildup": 82
+ },
+ "functions": [
+  {
+   "fn": "O0/cp/sub_4793@0x4793",
+   "pushes_off": 21,
+   "pushes_on": 0,
+   "lines": [
+    129,
+    92
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 5,
+    "OTHER": 2,
+    "condmerge": 2
+   }
+  },
+  {
+   "fn": "O0/cp/sub_4b50@0x4b50",
+   "pushes_off": 36,
+   "pushes_on": 0,
+   "lines": [
+    262,
+    204
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 2,
+    "OTHER": 1,
+    "condmerge": 1
+   }
+  },
+  {
+   "fn": "O0/cp/sub_5522@0x5522",
+   "pushes_off": 16,
+   "pushes_on": 0,
+   "lines": [
+    236,
+    212
+   ],
+   "hunks": {
+    "decl": 1,
+    "OTHER": 2,
+    "fold": 6
+   }
+  },
+  {
+   "fn": "O0/cp/sub_abda@0xabda",
+   "pushes_off": 172,
+   "pushes_on": 0,
+   "lines": [
+    1252,
+    1002
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 22,
+    "condmerge": 14
+   }
+  },
+  {
+   "fn": "O0/ls/sub_9a40@0x9a40",
+   "pushes_off": 49,
+   "pushes_on": 0,
+   "lines": [
+    344,
+    255
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "condmerge": 3,
+    "fold": 19,
+    "OTHER": 1,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O0/cmp/sub_8876@0x8876",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    90,
+    85
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 6,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O0/cmp/sub_8b5d@0x8b5d",
+   "pushes_off": 13,
+   "pushes_on": 0,
+   "lines": [
+    216,
+    171
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "fold": 7,
+    "taildup": 4,
+    "OTHER": 1,
+    "condmerge": 1
+   }
+  },
+  {
+   "fn": "O0/diff/sub_da03@0xda03",
+   "pushes_off": 4,
+   "pushes_on": 0,
+   "lines": [
+    116,
+    107
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O0/diff/sub_1e5da@0x1e5da",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    90,
+    85
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 6,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O0/diff/sub_1e8c1@0x1e8c1",
+   "pushes_off": 13,
+   "pushes_on": 0,
+   "lines": [
+    216,
+    171
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "fold": 7,
+    "taildup": 4,
+    "OTHER": 1,
+    "condmerge": 1
+   }
+  },
+  {
+   "fn": "O0/diff3/sub_9caf@0x9caf",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    90,
+    85
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 6,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O0/diff3/sub_9f96@0x9f96",
+   "pushes_off": 13,
+   "pushes_on": 0,
+   "lines": [
+    216,
+    171
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "fold": 7,
+    "taildup": 4,
+    "OTHER": 1,
+    "condmerge": 1
+   }
+  },
+  {
+   "fn": "O0/sdiff/sub_99aa@0x99aa",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    90,
+    85
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 6,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O0/sdiff/sub_9c91@0x9c91",
+   "pushes_off": 13,
+   "pushes_on": 0,
+   "lines": [
+    216,
+    171
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "fold": 7,
+    "taildup": 4,
+    "OTHER": 1,
+    "condmerge": 1
+   }
+  },
+  {
+   "fn": "O0/find/sub_1b7b3@0x1b7b3",
+   "pushes_off": 13,
+   "pushes_on": 0,
+   "lines": [
+    302,
+    275
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 9,
+    "OTHER": 1,
+    "condmerge": 1
+   }
+  },
+  {
+   "fn": "O0/find/sub_24246@0x24246",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    90,
+    85
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 6,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O0/find/sub_2452d@0x2452d",
+   "pushes_off": 13,
+   "pushes_on": 0,
+   "lines": [
+    216,
+    171
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "fold": 7,
+    "taildup": 4,
+    "OTHER": 1,
+    "condmerge": 1
+   }
+  },
+  {
+   "fn": "O0/tar/sub_204f5@0x204f5",
+   "pushes_off": 5,
+   "pushes_on": 0,
+   "lines": [
+    51,
+    45
+   ],
+   "hunks": {
+    "OTHER": 2,
+    "fold": 1
+   }
+  },
+  {
+   "fn": "O0/tar/sub_26c90@0x26c90",
+   "pushes_off": 5,
+   "pushes_on": 0,
+   "lines": [
+    280,
+    234
+   ],
+   "hunks": {
+    "decl": 1,
+    "OTHER": 1,
+    "fold": 1
+   }
+  },
+  {
+   "fn": "O0/tar/sub_4a391@0x4a391",
+   "pushes_off": 4,
+   "pushes_on": 0,
+   "lines": [
+    86,
+    78
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 2
+   }
+  },
+  {
+   "fn": "O0/tar/sub_4ac0a@0x4ac0a",
+   "pushes_off": 26,
+   "pushes_on": 0,
+   "lines": [
+    166,
+    126
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 8,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O0/tar/argp_parse@0x4ce30",
+   "pushes_off": 5,
+   "pushes_on": 0,
+   "lines": [
+    79,
+    71
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 2
+   }
+  },
+  {
+   "fn": "O0/tar/sub_71fd3@0x71fd3",
+   "pushes_off": 18,
+   "pushes_on": 0,
+   "lines": [
+    144,
+    122
+   ],
+   "hunks": {
+    "fold": 1
+   }
+  },
+  {
+   "fn": "O0/tar/sub_76a83@0x76a83",
+   "pushes_off": 18,
+   "pushes_on": 0,
+   "lines": [
+    226,
+    194
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 7,
+    "condmerge": 1,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O2/cp/sub_4b10@0x4b10",
+   "pushes_off": 28,
+   "pushes_on": 0,
+   "lines": [
+    274,
+    234
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 6,
+    "condmerge": 2
+   }
+  },
+  {
+   "fn": "O2/cp/sub_5210@0x5210",
+   "pushes_off": 16,
+   "pushes_on": 0,
+   "lines": [
+    120,
+    94
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 6,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O2/cp/sub_5a50@0x5a50",
+   "pushes_off": 16,
+   "pushes_on": 0,
+   "lines": [
+    258,
+    241
+   ],
+   "hunks": {
+    "fold": 1
+   }
+  },
+  {
+   "fn": "O2/cp/sub_76f0@0x76f0",
+   "pushes_off": 270,
+   "pushes_on": 0,
+   "lines": [
+    2278,
+    1891
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "fold": 50,
+    "taildup": 5,
+    "condmerge": 18,
+    "OTHER": 3
+   }
+  },
+  {
+   "fn": "O2/cp/sub_17bd0@0x17bd0",
+   "pushes_off": 44,
+   "pushes_on": 0,
+   "lines": [
+    700,
+    645
+   ],
+   "hunks": {
+    "OTHER": 2,
+    "fold": 10,
+    "taildup": 5
+   }
+  },
+  {
+   "fn": "O2/ls/sub_96f0@0x96f0",
+   "pushes_off": 4,
+   "pushes_on": 0,
+   "lines": [
+    213,
+    208
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 7,
+    "taildup": 3
+   }
+  },
+  {
+   "fn": "O2/cmp/sub_72d0@0x72d0",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2/cmp/sub_75e0@0x75e0",
+   "pushes_off": 9,
+   "pushes_on": 0,
+   "lines": [
+    241,
+    217
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 8,
+    "condmerge": 1,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O2/diff/sub_ad70@0xad70",
+   "pushes_off": 3,
+   "pushes_on": 0,
+   "lines": [
+    163,
+    155
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2/diff/sub_17af0@0x17af0",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2/diff/sub_17e00@0x17e00",
+   "pushes_off": 9,
+   "pushes_on": 0,
+   "lines": [
+    241,
+    217
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 8,
+    "condmerge": 1,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O2/diff3/sub_7db0@0x7db0",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2/diff3/sub_80c0@0x80c0",
+   "pushes_off": 9,
+   "pushes_on": 0,
+   "lines": [
+    241,
+    217
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 8,
+    "condmerge": 1,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O2/sdiff/sub_8600@0x8600",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2/sdiff/sub_8910@0x8910",
+   "pushes_off": 9,
+   "pushes_on": 0,
+   "lines": [
+    241,
+    217
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 8,
+    "condmerge": 1,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O2/find/sub_165e0@0x165e0",
+   "pushes_off": 18,
+   "pushes_on": 0,
+   "lines": [
+    310,
+    265
+   ],
+   "hunks": {
+    "fold": 23,
+    "condmerge": 1
+   }
+  },
+  {
+   "fn": "O2/find/sub_1cdc0@0x1cdc0",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2/find/sub_1d0d0@0x1d0d0",
+   "pushes_off": 10,
+   "pushes_on": 0,
+   "lines": [
+    264,
+    238
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 8,
+    "condmerge": 1,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O2/gzip/sub_f900@0xf900",
+   "pushes_off": 44,
+   "pushes_on": 0,
+   "lines": [
+    700,
+    645
+   ],
+   "hunks": {
+    "OTHER": 2,
+    "fold": 10,
+    "taildup": 5
+   }
+  },
+  {
+   "fn": "O2/tar/sub_1d660@0x1d660",
+   "pushes_off": 4,
+   "pushes_on": 0,
+   "lines": [
+    91,
+    85
+   ],
+   "hunks": {
+    "fold": 2,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O2/tar/sub_21a20@0x21a20",
+   "pushes_off": 5,
+   "pushes_on": 0,
+   "lines": [
+    331,
+    323
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2/tar/sub_3a920@0x3a920",
+   "pushes_off": 7,
+   "pushes_on": 0,
+   "lines": [
+    126,
+    112
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 7,
+    "OTHER": 2
+   }
+  },
+  {
+   "fn": "O2/tar/sub_3c8f0@0x3c8f0",
+   "pushes_off": 77,
+   "pushes_on": 0,
+   "lines": [
+    1042,
+    799
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 30,
+    "OTHER": 3
+   }
+  },
+  {
+   "fn": "O2/tar/argp_parse@0x3e690",
+   "pushes_off": 28,
+   "pushes_on": 1,
+   "lines": [
+    680,
+    621
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 26,
+    "OTHER": 5,
+    "taildup": 4
+   }
+  },
+  {
+   "fn": "O2/tar/sub_58960@0x58960",
+   "pushes_off": 37,
+   "pushes_on": 0,
+   "lines": [
+    422,
+    363
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 11,
+    "taildup": 1,
+    "condmerge": 1
+   }
+  },
+  {
+   "fn": "O2/tar/sub_5aa30@0x5aa30",
+   "pushes_off": 127,
+   "pushes_on": 120,
+   "lines": [
+    2053,
+    2044
+   ],
+   "hunks": {
+    "OTHER": 2,
+    "fold": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/cp/sub_4bf0@0x4bf0",
+   "pushes_off": 28,
+   "pushes_on": 0,
+   "lines": [
+    274,
+    234
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 6,
+    "condmerge": 2
+   }
+  },
+  {
+   "fn": "O2-noinline/cp/sub_52e0@0x52e0",
+   "pushes_off": 18,
+   "pushes_on": 0,
+   "lines": [
+    124,
+    96
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 6,
+    "taildup": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/cp/sub_5ae0@0x5ae0",
+   "pushes_off": 16,
+   "pushes_on": 0,
+   "lines": [
+    260,
+    243
+   ],
+   "hunks": {
+    "fold": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/cp/sub_9470@0x9470",
+   "pushes_off": 152,
+   "pushes_on": 0,
+   "lines": [
+    1308,
+    1088
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "fold": 34,
+    "taildup": 5,
+    "condmerge": 8,
+    "OTHER": 6
+   }
+  },
+  {
+   "fn": "O2-noinline/cp/sub_18000@0x18000",
+   "pushes_off": 50,
+   "pushes_on": 0,
+   "lines": [
+    659,
+    599
+   ],
+   "hunks": {
+    "decl": 1,
+    "OTHER": 2,
+    "fold": 9,
+    "taildup": 5
+   }
+  },
+  {
+   "fn": "O2-noinline/ls/sub_a550@0xa550",
+   "pushes_off": 49,
+   "pushes_on": 0,
+   "lines": [
+    493,
+    386
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 35,
+    "condmerge": 3,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/cmp/sub_6e10@0x6e10",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2-noinline/cmp/sub_6fb0@0x6fb0",
+   "pushes_off": 9,
+   "pushes_on": 0,
+   "lines": [
+    198,
+    179
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 7,
+    "condmerge": 1,
+    "taildup": 2,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/diff/sub_abe0@0xabe0",
+   "pushes_off": 3,
+   "pushes_on": 0,
+   "lines": [
+    117,
+    109
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2-noinline/diff/sub_172b0@0x172b0",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2-noinline/diff/sub_17450@0x17450",
+   "pushes_off": 9,
+   "pushes_on": 0,
+   "lines": [
+    198,
+    179
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 7,
+    "condmerge": 1,
+    "taildup": 2,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/diff3/sub_8b70@0x8b70",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2-noinline/diff3/sub_8d10@0x8d10",
+   "pushes_off": 9,
+   "pushes_on": 0,
+   "lines": [
+    198,
+    179
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 7,
+    "condmerge": 1,
+    "taildup": 2,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/sdiff/sub_7fa0@0x7fa0",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2-noinline/sdiff/sub_8140@0x8140",
+   "pushes_off": 9,
+   "pushes_on": 0,
+   "lines": [
+    198,
+    179
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 7,
+    "condmerge": 1,
+    "taildup": 2,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/find/sub_16170@0x16170",
+   "pushes_off": 16,
+   "pushes_on": 0,
+   "lines": [
+    300,
+    259
+   ],
+   "hunks": {
+    "fold": 23
+   }
+  },
+  {
+   "fn": "O2-noinline/find/sub_1c540@0x1c540",
+   "pushes_off": 1,
+   "pushes_on": 0,
+   "lines": [
+    93,
+    89
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2-noinline/find/sub_1c6e0@0x1c6e0",
+   "pushes_off": 9,
+   "pushes_on": 0,
+   "lines": [
+    198,
+    179
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 7,
+    "condmerge": 1,
+    "taildup": 2,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/gzip/sub_f880@0xf880",
+   "pushes_off": 50,
+   "pushes_on": 0,
+   "lines": [
+    659,
+    599
+   ],
+   "hunks": {
+    "decl": 1,
+    "OTHER": 2,
+    "fold": 9,
+    "taildup": 5
+   }
+  },
+  {
+   "fn": "O2-noinline/tar/sub_1c6e0@0x1c6e0",
+   "pushes_off": 5,
+   "pushes_on": 0,
+   "lines": [
+    58,
+    51
+   ],
+   "hunks": {
+    "fold": 2,
+    "OTHER": 1
+   }
+  },
+  {
+   "fn": "O2-noinline/tar/sub_20890@0x20890",
+   "pushes_off": 5,
+   "pushes_on": 0,
+   "lines": [
+    327,
+    319
+   ],
+   "hunks": {
+    "fold": 3
+   }
+  },
+  {
+   "fn": "O2-noinline/tar/sub_3afa0@0x3afa0",
+   "pushes_off": 4,
+   "pushes_on": 0,
+   "lines": [
+    106,
+    94
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 5
+   }
+  },
+  {
+   "fn": "O2-noinline/tar/sub_3bed0@0x3bed0",
+   "pushes_off": 24,
+   "pushes_on": 0,
+   "lines": [
+    178,
+    137
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 9
+   }
+  },
+  {
+   "fn": "O2-noinline/tar/argp_parse@0x3d700",
+   "pushes_off": 4,
+   "pushes_on": 1,
+   "lines": [
+    77,
+    70
+   ],
+   "hunks": {
+    "header": 1,
+    "decl": 1,
+    "fold": 2
+   }
+  },
+  {
+   "fn": "O2-noinline/tar/sub_59300@0x59300",
+   "pushes_off": 14,
+   "pushes_on": 0,
+   "lines": [
+    144,
+    128
+   ],
+   "hunks": {
+    "decl": 1,
+    "fold": 4,
+    "OTHER": 2,
+    "taildup": 1
+   }
+  }
+ ]
+}

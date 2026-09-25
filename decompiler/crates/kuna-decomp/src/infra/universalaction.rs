@@ -543,6 +543,9 @@ pub fn universal_sched(
         // (kuna/upstream) RuleIndirectConcat("analysis") is commented out upstream.
         rrow!("loadvarnode", "stackvars", crate::ruleaction_4::RuleLoadVarnode),
         rrow!("storevarnode", "stackvars", crate::ruleaction_4::RuleStoreVarnode),
+        // (kuna) callpush: after storevarnode, so a push in a tracked frame is
+        // that rule's stack COPY first; gated by the live arch flag.
+        rrow!("callpush", "stackvars", crate::kuna_callpush::RuleCallPush::with_group(false, "stackvars")),
     ];
 
     // --- cleanup pool -----------------------------------------------------

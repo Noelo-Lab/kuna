@@ -473,7 +473,7 @@ c3
 <stringmatch name="FMTSTATIC #4: static on x86-64 and full on both targets recover the %d parameter as int" min="3" max="3">unsigned long main\(int4 a0,unsigned long \*a1\)</stringmatch>
 <stringmatch name="FMTSTATIC #5: a jump-table join keeps the parameter the %s argument came from" min="3" max="3">void report\(unsigned int a0,unsigned long a1,unsigned long a2\)</stringmatch>
 <stringmatch name="FMTSTATIC #6: a jump-table join keeps both varargs" min="3" max="3">__printf_chk\(1,v1,a1,a2\);</stringmatch>
-<stringmatch name="FMTSTATIC #7: an alloca frame gains no argument past the format's one" min="3" max="3">__printf_chk\(1,"got %s\\n",v3\);</stringmatch>
+<stringmatch name="FMTSTATIC #7: an alloca frame gains no argument past the format's one" min="3" max="3">__printf_chk\(1,"got %s\\n",v[0-9]+\);</stringmatch>
 <stringmatch name="FMTSTATIC #8: Apple arm64 prints the computed value" min="3" max="3">printf\("%d\\n",\(uint8\)\(a0 \* 3 \+ 7\)\);</stringmatch>
 <stringmatch name="FMTSTATIC #9: Apple arm64 gains no phantom parameter" min="3" max="3">unsigned long _main\(int4 a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #10: ARM hard-float keeps the int parameter a %f prints" min="3" max="3">void f_conv\(int4 a0\)</stringmatch>
