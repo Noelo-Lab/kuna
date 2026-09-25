@@ -260,6 +260,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "mulblob",
     "simdlane",
     "constspaceload",
+    "callpush",
     "declhightype",
     "signedness",
     "retsplitglobal",

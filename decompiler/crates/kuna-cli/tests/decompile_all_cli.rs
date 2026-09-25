@@ -5648,3 +5648,117 @@ int main(void) {
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got.lines().last(), Some("0"), "the printed functions read different bytes:\n{got}\n{printed}");
 }
+
+/// A call's own return-address push is part of the call under `callpush`.
+/// Every function between the `tested` markers of `callpush_x86_64.c` calls
+/// `alloca`, so its stack pointer is the entry value minus a run-time size and
+/// each later call stored its return address through that pointer as a
+/// statement, `*(unsigned long *)&v9[v5 + -8] = 0x14e7;`.  For the gcc -O0,
+/// gcc -O2, clang -O0 and clang -O2 builds, with the option on and off: off
+/// prints a store of every listed return address (each is the address after a
+/// `call` in the tested functions, from `objdump -d`), on prints none of them,
+/// both arms make the same calls, `stacked` keeps the same number of other
+/// stores (the stack-passed arguments of `spread` and the stack probes), and the
+/// push of `call 1f` in `pc_here`, whose destination is the stored address and
+/// which the function reads back, prints the same in both.  The printed alloca
+/// frames are not compilable C in either arm (the alloca itself prints as
+/// stack-pointer arithmetic, and `spread`'s stack arguments do not reach the
+/// call), so the round trip here is the statement set, not a run: the removed
+/// store writes the slot below the stack pointer that only the callee's `ret`
+/// reads.
+#[test]
+fn a_calls_own_return_address_push_is_part_of_the_call() {
+    let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let src = std::fs::read_to_string(fx.join("callpush_x86_64.c")).unwrap();
+    let tested_src = src.split("/* tested */").nth(1).unwrap().split("/* main */").next().unwrap();
+    let tested: Vec<&str> = tested_src
+        .lines()
+        .filter_map(|l| l.strip_prefix("KEEP long "))
+        .filter_map(|l| l.split('(').next())
+        .collect();
+    assert_eq!(tested, ["joined", "stacked", "twice", "pc_here"]);
+    let builds: [(&str, &[&str], Option<&str>); 4] = [
+        (
+            "gcc_O0",
+            &["0x139d", "0x13d1", "0x13ee", "0x14e7", "0x1557", "0x1637", "0x165c", "0x1708", "0x172d"],
+            Some("0x1802"),
+        ),
+        (
+            "gcc_O2",
+            &["0x1397", "0x13b1", "0x13bd", "0x148b", "0x14c4", "0x1583", "0x1593", "0x15f3", "0x1602"],
+            Some("0x16b0"),
+        ),
+        (
+            "clang_O0",
+            &[
+                "0x1249", "0x1256", "0x1289", "0x12b2", "0x12c3", "0x131b", "0x1390", "0x13d6", "0x13ef",
+                "0x1427", "0x144d",
+            ],
+            None,
+        ),
+        (
+            "clang_O2",
+            &[
+                "0x11f9", "0x1204", "0x1231", "0x124d", "0x1259", "0x12bb", "0x12f7", "0x133e", "0x134e",
+                "0x1378",
+            ],
+            Some("0x13c5"),
+        ),
+    ];
+    let sp = specs();
+    let calls = |body: &str| -> Vec<String> {
+        let mut v: Vec<String> = ["weigh(", "spread(", "memcpy(", "memset(", "strlen("]
+            .iter()
+            .flat_map(|c| std::iter::repeat(c.to_string()).take(body.matches(c).count()))
+            .collect();
+        v.sort();
+        v
+    };
+    let stores = |body: &str, pushes: &[&str]| -> usize {
+        body.lines()
+            .map(str::trim)
+            .filter(|l| (l.starts_with("*(") || l.starts_with("((")) && l.contains(" = "))
+            .filter(|l| !pushes.iter().any(|p| l.ends_with(&format!("= {p};"))))
+            .count()
+    };
+    for (build, pushes, call_next) in builds {
+        let bin = fx.join(format!("callpush_{build}_x86_64"));
+        let mut arms: Vec<String> = Vec::new();
+        for arm in ["off", "on"] {
+            let args = ["decompile-all", bin.to_str().unwrap(), "--sleighpath", sp.as_str(), "--option", "callpush", arm];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("callpush: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            let mut body = String::new();
+            for part in stdout.split("// Function: ").skip(1) {
+                if tested.contains(&part.split(' ').next().unwrap_or("")) {
+                    body.push_str(part);
+                }
+            }
+            for name in &tested {
+                assert!(body.starts_with(name) || body.contains(&format!("\n{name} ")), "{build} {arm}: no `{name}`\n{stdout}");
+            }
+            arms.push(body);
+        }
+        let (off, on) = (&arms[0], &arms[1]);
+        for p in pushes {
+            let stored = format!("= {p};");
+            assert!(off.contains(&stored), "{build} off: the push of return address {p} is not printed\n{off}");
+            assert!(!on.contains(&stored), "{build} on: the push of return address {p} is still printed\n{on}");
+        }
+        if let Some(p) = call_next {
+            let stored = format!("= {p};");
+            assert!(off.contains(&stored) && on.contains(&stored), "{build}: the push `call 1f` reads back is lost\n{on}");
+        }
+        assert_eq!(calls(off), calls(on), "{build}: a call was lost or gained\n{off}\n{on}");
+        let stacked = |b: &str| b.split("stacked").nth(1).unwrap().split("// Function: ").next().unwrap().to_string();
+        assert_eq!(
+            stores(&stacked(off), pushes),
+            stores(&stacked(on), pushes),
+            "{build}: a store other than a push changed in `stacked`\n{off}\n{on}"
+        );
+    }
+}

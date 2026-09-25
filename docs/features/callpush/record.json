@@ -1,0 +1,365 @@
+{
+ "option": "callpush",
+ "values": [
+  "on",
+  "off"
+ ],
+ "default_on": true,
+ "default_value": "on",
+ "phase": "P4",
+ "subphase": "call-return-address-push",
+ "change_kind": "correctness-fix",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "2026-09-24 cast census of the (unsigned long *)&v residue (results.md I.1): 990 of its 1,252 casts sit in alloca frames; IDA prints no statement for a call's push",
+ "witness": {
+  "repro": "gcc -O0 -o t t.c (the PR body's t.c); kuna decompile-all ./t --functions stacked",
+  "before": [
+   "*(unsigned long *)&v6[v2 + -8] = 0x129a;",
+   "*v1 = weigh(\"ab\",v4);"
+  ],
+  "after": [
+   "*v1 = weigh(\"ab\",v3);"
+  ],
+  "corpus": {
+   "cp O0 0xabda (copy_internal)": "1,252 -> 1,002 lines; 155 `*(unsigned long *)&v28[-8] = 0x...;` pushes -> 0; 14 (unsigned long *)&v28[..] left (stack arguments, probes)",
+   "IDA at the same address": "no push statement; `v50 = alloca(v49 & 0xFFF);`"
+  },
+  "left_alone": {
+   "pc_here (callpush_x86_64.c)": "call 1f; 1: pop reads the pushed word back: the store stays in both arms",
+   "stacked (callpush_x86_64.c)": "the two stack-passed arguments of spread stay",
+   "probe loops": "*(unsigned long *)&v6[-8] = *(unsigned long *)&v6[-8]; stays"
+  },
+  "i386": "a freestanding gcc -m32 -O0 alloca build: *(unsigned int *)&v5[v2 + -0x14] = 0x80490d7; is removed the same way"
+ },
+ "census": {
+  "instrument": "docs/features/callpush/addrcensus3.py over castbench main-c960fb18d (identical counts on main-b3878d32e), the 4,815 shared functions, every pointer cast whose operand is an & expression",
+  "total_addr_casts": [
+   3355,
+   2499
+  ],
+  "u64_addr_casts": [
+   1252,
+   396
+  ],
+  "classes_main": {
+   "alloca frame stack traffic": [
+    1070,
+    990
+   ],
+   "pointer local indexed at another width": [
+    992,
+    130
+   ],
+   "pointer parameter indexed at another width": [
+    325,
+    37
+   ],
+   "libc shell member": [
+    593,
+    87
+   ],
+   "global": [
+    228,
+    4
+   ],
+   "stack local at another width": [
+    63,
+    0
+   ],
+   "stack buffer read as words": [
+    27,
+    1
+   ],
+   "struct_N member": [
+    51,
+    3
+   ],
+   "index the census could not attribute": [
+    6,
+    0
+   ]
+  },
+  "alloca_row_split": {
+   "return-address push": 844,
+   "stack-argument store": 109,
+   "probe self-copy": 96,
+   "alloca pointer arithmetic": 21,
+   "functions": 22
+  },
+  "note": "pairs are [all widths, (unsigned long *)] on main",
+  "classes_after_callpush_u64": {
+   "alloca frame stack traffic": 142,
+   "pointer local indexed at another width": 122,
+   "pointer parameter indexed at another width": 37,
+   "libc shell member": 87,
+   "global": 4,
+   "stack local at another width": 0,
+   "stack buffer read as words": 1,
+   "struct_N member": 3
+  },
+  "owners_of_the_262_non_alloca_u64": {
+   "pointer local indexed at another width (130, 8 of them pushes through an untraced alias)": "a record for the base: structsynth / the structdeep lane",
+   "pointer parameter indexed at another width (37)": "the same",
+   "libc shell member (87: stat 49, tm 18, obstack 13, re_pattern_buffer 7)": "libctypes glibc (opt-in)",
+   "global (4)": "globalref / the global's declared type",
+   "struct_N member (3)": "structsynth field width (structmerge)",
+   "stack buffer read as words (1)": "frame-slot typing (framelayout / slotptr)",
+   "alloca row left after callpush (142)": "an alloca recognizer (stack arguments, probes); no lane yet"
+  }
+ },
+ "castbench": {
+  "set": "full: 45 binaries (coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find) x O0/O2/O2-noinline; functions kuna and IDA both emit",
+  "base": "castbench main-c960fb18d (origin/main c960fb18d, #723 globalref on); callpush off on the branch build compared against it on all 45 binary/level pairs (see off_arm_vs_main)",
+  "shared_functions": 4815,
+  "ida_casts": 37821,
+  "main_casts": 37477,
+  "branch_casts": 36451,
+  "main_per_kloc": 196.6,
+  "branch_per_kloc": 192.7,
+  "main_per_100_statements": 31.2,
+  "branch_per_100_statements": 30.7,
+  "main_vs_ida": 0.991,
+  "branch_vs_ida": 0.964,
+  "by_level_vs_ida": {
+   "O0": [
+    1.003,
+    0.976
+   ],
+   "O2": [
+    1.028,
+    0.998
+   ],
+   "O2-noinline": [
+    0.937,
+    0.913
+   ]
+  },
+  "lines": [
+   190585,
+   189131
+  ],
+  "statements": [
+   120199,
+   118883
+  ],
+  "functions_fewer": 24,
+  "casts_fewer": 1026,
+  "functions_more": 0,
+  "shape_deltas": {
+   "(u64*) <addr>": -856,
+   "(u64*) <var>": -72,
+   "(i64) <var>": -43,
+   "(u64*) <paren>": -38,
+   "(void*) <paren>": -8,
+   "(u64) <addr>": -7,
+   "(uchar) <var>": -6,
+   "(uchar) <paren>": 6,
+   "(u64) <var>": 3
+  },
+  "previous_base": "on main-b3878d32e (before globalref): 38,602 -> 37,576, 1.021x -> 0.994x IDA, 24 fewer / 0 more",
+  "off_arm_vs_main": "callpush off on the branch build is byte-identical to main-c960fb18d on all 45 binary/level pairs"
+ },
+ "benchmark": {
+  "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow, each at O0, O2 and O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
+  "metric": "type_match",
+  "arms": "on = the branch build's default, off = --option callpush off, same binary",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4173,
+    "mean_on": 0.4173,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 989,
+    "perfect_on": 989,
+    "mean_off": 0.359,
+    "mean_on": 0.359,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 64,
+    "mean_off": 0.4514,
+    "mean_on": 0.4514,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 112,
+    "mean_off": 0.5409,
+    "mean_on": 0.5409,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 89,
+    "perfect_on": 89,
+    "mean_off": 0.3604,
+    "mean_on": 0.3604,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 53,
+    "perfect_on": 53,
+    "mean_off": 0.4583,
+    "mean_on": 0.4583,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 61,
+    "perfect_on": 61,
+    "mean_off": 0.2508,
+    "mean_on": 0.2508,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 213,
+    "mean_off": 0.3938,
+    "mean_on": 0.3938,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "mean_off": 0.3697,
+   "mean_on": 0.3697,
+   "improved": 0,
+   "worse": 0
+  },
+  "decomp_vars_changed": 0,
+  "variables_json": "variables[] (args, stack symbols, framelayout slots) unchanged on every scored function; on cp O2 0x76f0 and O0 0xabda and gzip O2 0xf900 identical as a multiset of (kind, offset, size, type); a clang alloca frame (fixture) re-anchors one stack array by 8 bytes and loses the filler slot it overlapped"
+ },
+ "corpus_sweep": {
+  "method": "castbench arms main-c960fb18d vs the branch default (all 15 binaries x 3 levels, every function); docs/features/callpush/hunks2.py + sidefx.py; per-function results in corpus-hunks.json (identical on the b3878d32e and c960fb18d bases)",
+  "functions_changed": 75,
+  "pushes_removed": 1607,
+  "hunks": {
+   "fold": 605,
+   "taildup": 82,
+   "condmerge": 72,
+   "decl": 52,
+   "header": 10,
+   "hand_read": 56
+  },
+  "side_effect_multiset": "identical in 45 of 75 functions; in 30 only counts that grow in the on arm (tail duplication), except cp O2 copy_internal (one fewer duplicated return, three more duplicated no-return tails) and tar O2 argp_parse (a stack slot write-back v19[0] = v17 of the value just loaded from it), both read",
+  "outside_documented_effect": 0,
+  "signatures": "20,230 functions: arity changes in 0; one parameter type changes: tar O2-noinline argp_parse a5 unsigned long -> int8 (its spill slot was the word the pushes were stored through; neither is the program's void *; typesweep unmoved)",
+  "declared_locals_changed_functions": [
+   2407,
+   2302
+  ],
+  "functions_with_more_locals": "1: tar O2-noinline sub_59300 (+1, the stack-pointer alias split into two names; same address)"
+ },
+ "parity": {
+  "datatests": "675/675, PARITY OK (default on; 0 assertions moved)",
+  "stages": "PARITY OK after one legitimate move: FMTSTATIC #7 pinned v3 in __printf_chk(1,\"got %s\\n\",v3); the call keeps its one vararg and the variable is renumbered, so the pattern reads v[0-9]+; +5 kuna-callpush assertions re-recorded",
+  "test_cli": "237/237"
+ },
+ "soundness": "the deleted store writes the word below the stack pointer that only the callee's ret reads; call 1f;pop excluded (destination == stored address) and pinned by the stage and CLI tests; callpopret lifts a callee that pops its return address as a BRANCH, so no CALL to match; an alloca frame is not runnable C in either arm, so the round trip is the statement set (CLI test) and the whole-corpus classification",
+ "default_on_evaluation": {
+  "a_datatests": "0/675 moved (make test 675/675 PARITY OK)",
+  "b_stages": "1 assertion moved (FMTSTATIC #7, a renumbered variable), pattern loosened to v[0-9]+, intent kept; the new test's 5 assertions recorded (1375/1375 PARITY OK)",
+  "c_test_cli": "237/237, no probe moved",
+  "d_typesweep": "0 of 10,748 functions move, 1,615 = 1,615 perfect, mean .3697 = .3697, decomp_vars changed 0",
+  "f_hunks": "75 functions across 45 binary/level pairs, every hunk classified, none outside the documented effect; arity unchanged in all 20,230 functions; one parameter type (tar O2-noinline argp_parse a5) explained in analysis.md",
+  "g_modes": "default on: nothing to add to AGGRESSIVE_OVERRIDES",
+  "h_castbench": "37,477 -> 36,451 (0.991x -> 0.964x IDA), 24 fewer / 0 more; off arm byte-identical to main",
+  "base": "origin/main c960fb18d (re-measured after the rebase; the b3878d32e numbers were the same shape)",
+  "e_speed": "worst on/main +2.16% (ls O2); fmt +0.10, sort -2.94, bash -1.38, cp -0.86, gzip -0.56 (quiet re-run); budget +5%",
+  "decision": "default on: every criterion passes"
+ },
+ "speed": {
+  "method": "interleaved min-of-15 whole-binary `kuna decompile-all --json` (O2 stripped), three arms rotated per round: main = castbench bin-c960fb18d, on = branch default, off = branch with callpush off; script docs/features/callpush/speed.py; box shared with other lanes (load 16-69)",
+  "binaries": {
+   "fmt": {
+    "main_min_ms": 5274.0,
+    "on_min_ms": 5279.2,
+    "off_min_ms": 5797.0,
+    "delta_min_pct_on_vs_main": 0.1,
+    "delta_min_pct_on_vs_off": -8.93
+   },
+   "ls": {
+    "main_min_ms": 15120.1,
+    "on_min_ms": 15447.3,
+    "off_min_ms": 15454.8,
+    "delta_min_pct_on_vs_main": 2.16,
+    "delta_min_pct_on_vs_off": -0.05
+   },
+   "sort": {
+    "main_min_ms": 16855.9,
+    "on_min_ms": 16360.3,
+    "off_min_ms": 15999.0,
+    "delta_min_pct_on_vs_main": -2.94,
+    "delta_min_pct_on_vs_off": 2.26
+   },
+   "bash": {
+    "main_min_ms": 91194.1,
+    "on_min_ms": 89935.4,
+    "off_min_ms": 93840.2,
+    "delta_min_pct_on_vs_main": -1.38,
+    "delta_min_pct_on_vs_off": -4.16
+   },
+   "cp": {
+    "main_min_ms": 23362.6,
+    "on_min_ms": 23162.1,
+    "off_min_ms": 23440.5,
+    "delta_min_pct_on_vs_main": -0.86,
+    "delta_min_pct_on_vs_off": -1.19
+   },
+   "gzip": {
+    "main_min_ms": 5794.2,
+    "on_min_ms": 5762.0,
+    "off_min_ms": 5748.4,
+    "delta_min_pct_on_vs_main": -0.56,
+    "delta_min_pct_on_vs_off": 0.24,
+    "note": "re-run at a quieter moment (load 11); the first run under load 26 read +4.03% on/main and +3.97% on/off"
+   }
+  },
+  "worst_on_vs_main_pct": 2.16,
+  "budget_pct": 5
+ },
+ "landing_remeasure": {
+  "base": "origin/main f434b6a60 (#720 structheadless, #727 castindex and #728 castternary landed after c960fb18d); same build, callpush on vs off",
+  "castbench": {
+   "main_casts": 36614,
+   "branch_casts": 35588,
+   "main_vs_ida": 0.968,
+   "branch_vs_ida": 0.941,
+   "per_100_statements": [
+    30.5,
+    29.9
+   ],
+   "functions_fewer": 24,
+   "casts_fewer": 1026,
+   "functions_more": 0
+  },
+  "census_u64_addr_casts": [
+   1252,
+   396
+  ],
+  "typesweep": "444 slices, 10,748 functions: 1,615 = 1,615 perfect, 0 moved onto or off perfect, 0 improved, 0 worsened",
+  "corpus_sweep": "hunks2.py over the castbench arms: the same 75 functions with the same hunk classes and the same 56 hand-read hunks as corpus-hunks.json; the calls/stores/returns multiset differs in the same 30 functions by the same counts",
+  "four_binary_corpus": "bzip2 O0, kmod O2, dpkg-divert O2, crontab O2: one function changes (kmod O2 sub_ede0: 8 return-address stores removed, one decl and two fold hunks)"
+ }
+}

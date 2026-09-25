@@ -79,7 +79,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_236() {
+fn settable_count_is_237() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -166,12 +166,13 @@ fn settable_count_is_236() {
     // +1 for `calleevote` (P4 caller-to-callee parameter types).
     // +1 for `structmerge` (P5 sibling layout union).
     // +1 for `structheadless` (P5 a closed function's record read past its start).
-    assert_eq!(kuna_num_settables(), 236);
-    assert_eq!(SETTABLE_TABLE.len(), 236);
+    // +1 for `callpush` (P4 a call's own return-address push).
+    assert_eq!(kuna_num_settables(), 237);
+    assert_eq!(SETTABLE_TABLE.len(), 237);
 }
 
 #[test]
-fn tier_counts_are_76_core_96_transform_64_analysis() {
+fn tier_counts_are_76_core_97_transform_64_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -322,7 +323,8 @@ fn tier_counts_are_76_core_96_transform_64_analysis() {
     // transform 92 -> 93: +1 for `structmerge` (P5 sibling layout union).
     // transform 94 -> 95: +1 for `structheadless` (P5 a closed function's record
     // read past its start).
-    assert_eq!((core, transform, analysis), (76, 96, 64));
+    // transform 96 -> 97: +1 for `callpush` (P4 a call's own return-address push).
+    assert_eq!((core, transform, analysis), (76, 97, 64));
 }
 
 #[test]
@@ -512,7 +514,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_100() {
+fn option_values_live_value_present_for_101() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -972,7 +974,8 @@ fn option_values_live_value_present_for_100() {
     // 97 -> 98: +1 for `castsign` (live_field = cast_sign).
     // 98 -> 99: +1 for `castindex` (live_field = cast_index).
     // 99 -> 100: +1 for `castternary` (live_field = cast_ternary).
-    assert_eq!(with_live, 100);
+    // 100 -> 101: +1 for `callpush` (live_field = drop_call_push).
+    assert_eq!(with_live, 101);
 }
 
 #[test]
@@ -1145,7 +1148,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 225 -> 226: +1 for `calleevote`.
     // 226 -> 227: +1 for `structmerge`; its P5 row sits mid-table.
     // 232 -> 233: +1 for `structheadless`; its P5 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 235);
+    // 235 -> 236: +1 for `callpush`; its P4 row sits mid-table.
+    assert_eq!(json.matches("},\n").count(), 236);
 }
 
 #[test]

@@ -136,6 +136,9 @@ Three tiers:
 | dozens of garbage *v = *v + c; lines after a __stack_chk_fail call in a .o | [`noreturn_externmatch`](#noreturn_externmatch) |
 | inter-function alignment padding decoded as add [rax],al style instructions | [`noreturn_externmatch`](#noreturn_externmatch) |
 | flow runs past an undefined-extern abort or exit call in a relocatable object | [`noreturn_externmatch`](#noreturn_externmatch) |
+| *(unsigned long *)&v28[-8] = 0xbc79; before every call after an alloca | [`callpush`](#callpush) |
+| a constant code address stored through a char * that aliases the stack pointer | [`callpush`](#callpush) |
+| the return address of the next call printed as a statement | [`callpush`](#callpush) |
 | a stack char buffer is declared one element short, e.g. [63] where the source has [64] | [`nulterminator`](#nulterminator) |
 | the NUL terminator after strncpy renders as an assignment to a separate char local | [`nulterminator`](#nulterminator) |
 | a stack char local is assigned 0 and never read, right after the end of an array | [`nulterminator`](#nulterminator) |
@@ -1199,6 +1202,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-13): applies the SAME vendored name list and global/std namespace guard as the already-default-on noreturn_known, just at the flow query seam to reach the ET_REL `.o` undefined extern the address-keyed scan structurally misses; a no-op on a normal dynamically-linked ELF (the proto flag is already set). Set OFF to restore the prior byte-identical rendering (dead `add`-padding after a `__stack_chk_fail`/`abort`/`exit` call reappears).
 - **Where / provenance:** P2/flow-follow · angr · correctness-fix · angr-incorrect-duplication-chcon
 - **Example:** `option noreturn_externmatch off`
+
+### `callpush` -- on | off, default `on`
+
+- **Symptoms:** *(unsigned long *)&v28[-8] = 0xbc79; before every call after an alloca; a constant code address stored through a char * that aliases the stack pointer; the return address of the next call printed as a statement.
+- **What it does:** Delete the STORE an x86 `call` makes of its own return address when the stack pointer it stores through could not be placed on the stack. A `call` lifts as a stack-pointer decrement, a STORE of the fall-through address at the new stack pointer, and the CALL. In a frame whose stack pointer stays a constant offset from its entry value `RuleStoreVarnode` makes that STORE a COPY to a stack slot nothing reads and dead code removes it; after an `alloca` the stack pointer is the entry value minus a run-time size, the STORE keeps its pointer, and every later call prints its push as `*(unsigned long *)&v28[-8] = 0xbc79;`. The stored word is read only by the callee's `ret`, which the C call already performs. The rule matches a constant one pointer word wide, at most 15 bytes past the instruction's own address, stored through the stack pointer as the same instruction wrote it, with a CALL/CALLIND at the same instruction address after it whose destination is not that address, and runs after `RuleStoreVarnode` in the same pool so a tracked push is that rule's first. Stack-argument stores and stack-probe touches through the same pointer are kept.
+- **When to flip:** Set on to drop the `*(unsigned long *)&vN[-8] = 0x<return address>;` line kuna prints before every call in a function that calls `alloca` (or otherwise moves its stack pointer by a run-time amount). Inert in any frame whose stack pointer is tracked, where the push was already a dead stack store, and on architectures whose call does not push.
+- **Where / provenance:** P4/call-return-address-push · kuna · correctness-fix · kuna-callpush
+- **Example:** `option callpush on`
 
 ### `nulterminator` -- on | off, default `off`
 
