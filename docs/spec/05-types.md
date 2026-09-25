@@ -1168,6 +1168,60 @@ second pass runs, so without it the synthesizer is never offered the function at
 all. A one-field record answers only for its own shape in the ledger below, and
 it gives way to the record every caller passes (`points_at_lone_record`).
 
+**A record read past its start (`structheadless`).** "No access at offset 0"
+has a second exception, off by default. Under `closed` a parameter read at two
+or more constant offsets, none of them zero, is a record in the same closed
+functions the lone field is (`kuna_structheadless.rs (admits)`), when nothing
+outside the function gave the parameter its pointee (`pointee_is_given`, as
+above) and the parameter did not take the type its callers state for it: a
+`char **` read only at `argv[1]` and `argv[2]` is the vector its callers pass,
+not a record past its start. Everything else a parameter is held to still applies -- already a
+pointer, no named pointee, no index, integer use or phi, inside `0x8000`, not an
+array run -- and so does the condition `locals` adds for a view it knows is
+partial: no address may be formed at or past the end of every access
+(`points_past`). `cp`'s directory-entry code hands `(char *)a1 + 0x100`, the
+name member past everything it reads, to `strrchr` and `memmove`; typed on its
+accesses the record would print that address as `&a1[2].field_0x30`, an element
+of a record array. The bytes before the first access become the same
+`undefined1` filler a hole becomes, so the exported header still puts every
+field at its own offset. It is the common shape of a record a function reads only partly: `ls`
+`-O0`'s `sub_53e7` reads `struct fileinfo`'s `stat.st_mode`, `linkmode` and
+`linkok` at 0x30, 0xac and 0xb9 and nothing at 0, and prints each read as a
+cast of a `void *` (`((unsigned int *)a0)[0x2b]`); `statx_to_stat`
+reads eighteen members of a `struct statx` and not `stx_mask`. Over the 45
+castbench binaries (x86-64 coreutils, grep, gzip, diffutils, tar and findutils at
+`-O0`, `-O2` and `-O2 -fno-inline`) 1,238 parameters were declined for this
+reason alone, against 1,716 accepted. The closed condition is what keeps the
+callbacks out, for the reason it keeps them out of the lone field: joined to DWARF,
+the headless parameters of closed functions are 883 struct pointers, no `void *`,
+two `char **` and three integers (75 more are `-O2` parameters DWARF gives only
+through an abstract origin); the two `char **` are coreutils `tail`'s
+`parse_obsolete_option (argc, argv, ...)`, whose callers state `char **` through
+`calleevote` (chapter [04](04-calls-and-prototypes.md)), and the vote keeps
+them. Those of functions whose address is stored are
+202 struct pointers and 53 `void *` -- the `qsort` comparators and hash callbacks
+whose contracts declare `void *`. What the closed condition cannot see is a
+`void *` in an API the program calls directly: bzip2's `BZ2_bzReadClose` takes a
+`BZFILE *`, which is `void`, and casts it to its own `bzFile *` inside, so the
+record it is given is the truer type and DWARF scores it a miss. A headless
+candidate also asks for the one propagation pass a lone field does
+(`wants_settle_pass`): a record read at offset 0 gives the pointer-arithmetic
+rules a `*a0` to rewrite, so its function always iterates again and is offered to
+the synthesizer, but a headless record gives them nothing, and 287 of the
+declined parameters sat in functions whose main loop ended on the pass that first
+typed them. A headless record is a partial view: it declares the members its
+reader measured and nothing before them, so a record another function reads whole
+is not the same `struct_N` unless the ledger's containment rule answers one with
+the other, and one program object can be given several names. At a call site a
+callee's headless or any other synthesized record does not replace a pointer a
+declared call gives the caller's value -- a named record, a `char **` (chapter
+[04](04-calls-and-prototypes.md), `kuna_structheadless.rs
+(yields_to_a_declared_pointer)`) -- nor is a headless record taken where it types
+as a word a member the function reads through (`kuna_structheadless.rs
+(types_a_pointer_as_a_word)`), and a headless record the caller's own reads
+refuse falls back to the `void *` the callee states without it
+(`kuna_structheadless.rs (bare_pointer_for)`).
+
 At a conflicting offset the **widest** access wins. A field wider than an access
 renders as a cast of the field (`(uint4)w->b`); a field narrower than an access
 loses the field name altogether (`*(uint1 **)w`).
@@ -1452,8 +1506,10 @@ one may cover bytes the other claims at a different offset, because two fields
 over the same bytes belong to two different records. What the two agree on must
 itself be evidence: three shared claims, or two of which one is a pointer with a
 pointee, since two integer words at 0 and 8 are how `struct stat`, a `timespec`
-and a list node all begin. Every layout that reaches the ledger claims offset 0,
-so the anchor of the agreement is always the first word. The union is then held
+and a list node all begin. Every layout that reaches the ledger claims offset 0
+except a lone field's and a `structheadless` record's, and neither lowers the
+floor: a lone field has one claim to share, and a headless record agrees on its
+first claim the way any other agrees on offset 0. The union is then held
 to the containment rule (`Layout::answers_for`) against each side separately, so
 a reader is still never declared to hold more than twice the fields it measured
 or four times its bytes, a table of opaque slots is still answered only by its

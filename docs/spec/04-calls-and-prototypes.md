@@ -2058,6 +2058,39 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   same value `off_t`, and the pointer, had it won, would have reached
   `end_pos = stats.st_size`, split `struct stat` in two, and left the output
   reading an `st_blksize` local nothing writes.
+- **Under `structheadless`, the vote is a synthesized record and a declared call
+  gives the value a pointee.** When a call that returns the family's value, or
+  takes it, is declared with a pointer to anything but `void` that the
+  synthesizer did not mint -- a named record (`libctypes`' `group`, a DWARF
+  struct), a `char *`, a `char **` -- a callee's `struct_N *` is refused
+  (`kuna_structheadless::yields_to_a_declared_pointer`). shadow's `newgrp` holds
+  `getgrnam`'s `group *` and hands it to a function that reads the group past its
+  start, and coreutils `tail`'s `main` hands `getopt_long` the `char **argv` it
+  also passes to `parse_obsolete_option`, which reads only `argv[1]` and
+  `argv[2]`; either callee's own record otherwise retyped the caller's variable
+  (`struct_2 *group`, `struct_19 *argv`). The rule is gated on the option
+  because headless records are what made it reachable on the campaign corpus.
+- **Under `structheadless`, the vote is a headless record that types as a word
+  a member the caller reads through.** A load through the family at an offset
+  where a record synthesized from reads past its start has a pointer-width
+  integer or undefined word, whose value the function then loads or stores
+  through, refuses the record (`kuna_structheadless::types_a_pointer_as_a_word`,
+  checked where `pointee_refuses` walks the members). Such a record is another
+  reader's partial view that only moved or compared the member: `tar`'s
+  `wsnode_remove` copies `ws_head` as a word, and `wordsplit_varexp`, which walks
+  the node list from it, took that record at the call it makes and declared its
+  node pointer `int8`. The refusal is kept to headless records: applied to every
+  synthesized record it also refused offset-0 records a function was right to
+  take (grep `-O2` `kwsprep` printed eight more casts).
+  The same option adds the one fallback in this list: a callee's headless
+  record refused for any reason is offered again as `void *`, held to every
+  refusal above (`kuna_structheadless::bare_pointer_for`). A headless record is
+  the callee's partial view of what it was handed, and the caller's reads often
+  disagree with it -- five of `fts_build`'s callees each read their own part of
+  one `FTSENT` -- so refusing it outright left the caller's value, which the
+  same callees state as `void *` when the option is off, with no pointer
+  evidence at all: `v21 = a0->field_0x0` turned from `void *` into `long`. Any
+  other refused record is refused with the option off too, and says nothing.
 - **Float-ness disagrees**: the family is produced or read by a float op and the
   vote is not a float; a pointer vote on a value the caller multiplies, divides,
   shifts, masks or reads as a float; or an integer or pointer vote in a
@@ -2725,6 +2758,17 @@ refusals below that read the pointee's members have nothing to read, so a
 (`--option libctypes glibc`). Two types are the same when they are
 one factory entry or have the same name and shape down the pointer chain; a
 layout comparison alone would equate two records that merely have the same size.
+Under `structheadless closed` a record the callee synthesized from reads past
+its start is a candidate too, but only for a type the callers state from
+outside the recovery -- a `char *`, a `char **`, a record a program declares --
+and never for another function's synthesized record, which is one more partial
+view of the object (`decide_ledger_under`). `tail`'s `parse_obsolete_option`
+reads only `argv[1]` and `argv[2]`, so its first decompile under the option
+takes a record; its one caller passes `main`'s `char **argv`, which replaces it.
+Letting a caller's synthesized record replace a headless one too was measured
+to spend the redo budget below on record-for-record swaps (tar `-O2
+-fno-inline`: twelve declined redos against four) and cost `decode_timespec`
+its `char **`.
 
 **The vote.** Each function whose statement is new is decompiled again, in plan
 order, so a redone callee states its types again before a redone caller reads

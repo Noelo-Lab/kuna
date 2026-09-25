@@ -95,7 +95,7 @@ pub(super) fn nest_fields(
             continue;
         }
         let Some(inner) = loaded_record(data, cx, rec, intb::from(field.offset)) else { continue };
-        if !accepts_record(data, &field.field_type, &inner, false) {
+        if !accepts_record(data, &field.field_type, &inner, false, false) {
             continue;
         }
         let Some((mut inner_fields, inner_size)) = fields_for(cx.types, &inner) else { continue };

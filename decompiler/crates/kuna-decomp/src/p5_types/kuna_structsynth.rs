@@ -731,7 +731,7 @@ fn address_walks(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
 
 /// Is `ct` a pointer whose pointee is a named aggregate a person or a named-type
 /// pass supplied?  Such a type always wins over a synthesized one.
-fn points_at_named_composite(ct: &Datatype) -> bool {
+pub(crate) fn points_at_named_composite(ct: &Datatype) -> bool {
     let Some(pt) = ct.get_ptr_to() else { return false };
     matches!(
         pt.get_metatype(),
@@ -945,10 +945,12 @@ fn wants_settle_pass(data: &mut Funcdata) -> bool {
     {
         return false;
     }
+    let headless = data.get_arch().struct_headless.fires();
     let raw = collect(data);
     raw.iter().any(|(base, e)| {
         let e = e.pruned();
-        is_lone_field(&e) && accepts(data, *base, &e)
+        (is_lone_field(&e) || (headless && crate::kuna_structheadless::is_headless(e.slots.keys())))
+            && accepts(data, *base, &e)
     })
 }
 
@@ -996,7 +998,10 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     }
     let Some(ct) = vn_type(data, base) else { return false };
     let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct, e);
-    accepts_record(data, &ct, e, lone)
+    let headless = lone
+        && crate::kuna_structheadless::admits(data, base, &ct)
+        && !(crate::kuna_structheadless::is_headless(e.slots.keys()) && points_past(data, &[base], e.extent()));
+    accepts_record(data, &ct, e, lone, headless)
 }
 
 /// Does `locals` measure `base`: a value a call returned, alone in its
@@ -1193,8 +1198,10 @@ const MAX_OVERLAP_BACK: uintb = 16;
 
 /// The decline conditions every synthesized record shares, a parameter's or a
 /// nested field's: `ct` is the type the base already carries. `lone` admits a
-/// parameter read at one constant offset other than zero ([`is_lone_field`]).
-fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence, lone: bool) -> bool {
+/// parameter read at one constant offset other than zero ([`is_lone_field`]),
+/// `headless` one read at two or more with none of them zero
+/// ([`crate::kuna_structheadless`]).
+fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence, lone: bool, headless: bool) -> bool {
     // Pointer-ness is not invented here.
     if ct.get_metatype() != type_metatype::TYPE_PTR {
         return false;
@@ -1217,7 +1224,7 @@ fn accepts_record(data: &Funcdata, ct: &Datatype, e: &Evidence, lone: bool) -> b
     if e.slots.len() < 2 {
         return false;
     }
-    if !e.slots.contains_key(&0) {
+    if !e.slots.contains_key(&0) && !headless {
         return false;
     }
     let ptr_size = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
@@ -1276,6 +1283,19 @@ fn pointee_is_given(data: &Funcdata, base: VarnodeId, ct: &Datatype, e: &Evidenc
 pub fn points_at_lone_record(ct: &Datatype) -> bool {
     let Some(pt) = ct.get_ptr_to() else { return false };
     ledger::minted_number(&pt).is_some() && ledger::layout_of(&pt).is_some_and(|l| l.fields.len() == 1)
+}
+
+/// (kuna `structheadless`) Is `ct` a pointer to a record this pass minted?
+pub fn points_at_synthesized_record(ct: &Datatype) -> bool {
+    ct.get_ptr_to().is_some_and(|pt| ledger::minted_number(&pt).is_some())
+}
+
+/// (kuna `structheadless`) Is `ct` a pointer to a record this pass minted with
+/// two or more claims and none at offset 0 -- what only a headless read mints?
+pub fn points_at_headless_record(ct: &Datatype) -> bool {
+    let Some(pt) = ct.get_ptr_to() else { return false };
+    ledger::minted_number(&pt).is_some()
+        && ledger::layout_of(&pt).is_some_and(|l| l.fields.len() >= 2 && l.fields.first().is_some_and(|f| f.offset > 0))
 }
 
 /// (kuna `structsynth nest`) The completed record a pointer to its own shell

@@ -447,6 +447,9 @@ pub struct Architecture {
     /// sibling reader of the same record?  See
     /// [`kuna_structmerge`](crate::kuna_structmerge).
     pub struct_merge: crate::kuna_structmerge::StructMergeMode,
+    /// (kuna `structheadless`) May a closed function's parameter be a record read
+    /// only past its start?  See [`kuna_structheadless`](crate::kuna_structheadless).
+    pub struct_headless: crate::kuna_structheadless::StructHeadlessMode,
     /// (kuna) Did the loader identify the image as a Windows GUI/console PE?  A
     /// FACT, not an option: written once at `load file` and the thing `option
     /// pebnames auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
@@ -2342,6 +2345,7 @@ impl Architecture {
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
             struct_synth_shard: None,
             struct_merge: crate::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge; reset_defaults sets the shipped default
+            struct_headless: crate::kuna_structheadless::StructHeadlessMode::Off, // (kuna) option structheadless; reset_defaults sets the shipped default
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             decode_halt: false, // (kuna) option decodehalt; reset_defaults sets the shipped default
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
@@ -2633,6 +2637,7 @@ impl Architecture {
         self.peb_names = crate::kuna_pebnames::PebNamesMode::Auto; // (kuna) DIV-175 default `auto`: TYPES ONLY. Types the Windows TEB segment base (`GS_OFFSET`/`FS_OFFSET`) as `TEB *teb` so PEB/TEB field reads render by name. Gated on a Windows compiler spec AND the loader's user-mode-PE fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option pebnames on` trusts the compiler spec alone, `off` restores the untyped register
         self.struct_synth = crate::kuna_structsynth::StructSynthMode::Locals; // (kuna) structsynth default `locals`: a pointer parameter, or a pointer a call returned, read at two or more constant offsets is declared `struct_N *` and the reads render as fields. Moves 0/675 datatest assertions; `option structsynth param` restores parameters only, `off` the raw offset arithmetic
         self.struct_merge = crate::kuna_structmerge::StructMergeMode::Off; // (kuna) structmerge default `off`: a freshly measured layout that agrees with a held record is answered with the union of the two, so a field one reader proved is kept for the others. Off because at the agreement floor two records that merely begin alike are indistinguishable; `option structmerge siblings` turns it on
+        self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
         self.decode_halt = true; // (kuna) DIV-151 default-on: a `CPUI_RETURN` kuna planted because it could NOT decode the bytes renders as upstream `PrintC::opReturn`'s `halt_baddata()`/`halt_unimplemented()`/`halt_missing()` pseudo-call rather than a bare `return;`, and carries the upstream truncation + header warnings. Reachable only through the three decode-failure halt types, which no datatest function produces, so it is byte-identical there (0/675); `option decodehalt off` restores the silent `return;`
         self.fastfail_noreturn = true; // (kuna) DIV-119 default-on: REMOVES CODE. Ends the flow at a Windows `int 0x29` (`__fastfail`), whose SLEIGH lifting is a call with no matching push and so gains 8 bytes of stack pointer from the cspec's `extrapop` at every site. Windows-cspec-gated and shape-gated on `swi(0x29:1)`, so it is structurally inert on the datatest corpus and byte-identical there (0/675); restore the unbalanced fall-through with `option fastfailnoreturn off`
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
@@ -3025,6 +3030,11 @@ impl Architecture {
             "structmerge" => {
                 let (mode, msg) = crate::kuna_structmerge::OptionStructMerge.apply(p1)?;
                 self.struct_merge = mode;
+                Ok(msg)
+            }
+            "structheadless" => {
+                let (mode, msg) = crate::kuna_structheadless::OptionStructHeadless.apply(p1)?;
+                self.struct_headless = mode;
                 Ok(msg)
             }
             "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
@@ -4334,6 +4344,7 @@ impl Architecture {
         ctx.struct_synth = self.struct_synth; // (kuna) structsynth
         ctx.struct_synth_shard = self.struct_synth_shard.clone();
         ctx.struct_merge = self.struct_merge; // (kuna) structmerge
+        ctx.struct_headless = self.struct_headless; // (kuna) structheadless
         // (kuna) resolve the `SYSCALL` user-op ids ONCE per program, for the same
         // reason `simd_shuffle_userops` above is resolved here: the boundary
         // ArchContext carries no userop table.  An op a compiler spec has

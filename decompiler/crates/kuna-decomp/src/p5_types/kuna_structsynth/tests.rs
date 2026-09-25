@@ -665,3 +665,60 @@ fn extent_is_where_the_last_access_ends_dropped_or_not() {
     e.unclaimed.push((0x60, 8));
     assert_eq!(e.extent(), 0x68);
 }
+
+/// (kuna `structheadless`) `ls`'s `sub_53e7` reads `struct fileinfo` at 0x30,
+/// 0xac and 0xb9 and never at 0: a record only when the headless rule admits
+/// it, and still held to every other condition -- an index, or a uniform run of
+/// one width, declines it as it declines any record.
+#[test]
+fn a_record_read_only_past_its_start_needs_the_headless_rule() {
+    use kuna_base::address::Address;
+    use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace};
+    use std::rc::Rc;
+
+    use crate::context::ArchContext;
+    use crate::dtype::TypeFactory;
+
+    let mut manage = AddrSpaceManager::new();
+    manage.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+    manage.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+    manage
+        .insert_space(Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            2,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        )))
+        .unwrap();
+    let glb = Rc::new(ArchContext::new(manage));
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let fd = Funcdata::new("headless", "headless", glb, Address::new(ram, 0x53e7), 0x1000_0000, 0x40).unwrap();
+
+    let f = core_factory();
+    let voidp = f.get_type_pointer(8, f.get_type_void().unwrap(), 1).unwrap();
+    let mut e = Evidence::default();
+    e.record(0x30, 4, None);
+    e.record(0xac, 4, None);
+    e.record(0xb9, 1, None);
+    assert!(!accepts_record(&fd, &voidp, &e, true, false), "no access at offset 0");
+    assert!(accepts_record(&fd, &voidp, &e, true, true));
+
+    let mut indexed = e.clone();
+    indexed.dynamic_offset = true;
+    assert!(!accepts_record(&fd, &voidp, &indexed, true, true));
+
+    let mut run = Evidence::default();
+    for off in [8, 0x10, 0x18] {
+        run.record(off, 8, None);
+    }
+    assert!(!accepts_record(&fd, &voidp, &run, true, true), "a uniform run is an array");
+
+    let mut one = Evidence::default();
+    one.record(0x3c, 1, None);
+    assert!(!accepts_record(&fd, &voidp, &one, true, true), "one narrow field is no record");
+}

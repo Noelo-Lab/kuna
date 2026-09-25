@@ -209,23 +209,38 @@ pub fn call_argument_vote(
     arg_size: int4,
 ) -> Option<Rc<Datatype>> {
     let ct = stated_argument_type(data, fc, slot)?;
+    if vote_holds(data, op, fc, slot, arg_size, ct)? {
+        return Some(Rc::clone(ct));
+    }
+    let bare = crate::kuna_structheadless::bare_pointer_for(data, ct)?;
+    vote_holds(data, op, fc, slot, arg_size, &bare)?.then_some(bare)
+}
+
+/// [`call_argument_vote`]'s refusals for one candidate type `ct`.
+fn vote_holds(
+    data: &Funcdata,
+    op: OpId,
+    fc: &FuncCallSpecs,
+    slot: int4,
+    arg_size: int4,
+    ct: &Rc<Datatype>,
+) -> Option<bool> {
     if class_of(ct).is_none()
         || ct.get_size() > arg_size
         || crate::p5_types::kuna_ptrdepth::pointer_depth(ct, 3) > crate::p5_types::kuna_ptrdepth::MAX_INFERRED_PTR_DEPTH
     {
-        return None;
+        return Some(false);
     }
     let vn = data.obank().get(op)?.get_in(slot)?;
     let (addr, size) = fc.final_input_storage().get((slot - 1) as usize)?;
-    if addresses_a_frame_object(data, vn)
-        || storage_disagrees(fc.proto(), addr, *size, ct)
-        || (class_of(ct) == Some(Class::Pointer) && points_into_code(data, op, vn))
-        || (class_of(ct) == Some(Class::Float) && !prints_exactly_as_a_float(data, vn))
-        || family_refuses(data, vn, Reading::Argument(op, slot), ct)
-    {
-        return None;
-    }
-    Some(Rc::clone(ct))
+    Some(
+        !(addresses_a_frame_object(data, vn)
+            || storage_disagrees(fc.proto(), addr, *size, ct)
+            || (class_of(ct) == Some(Class::Pointer) && points_into_code(data, op, vn))
+            || (class_of(ct) == Some(Class::Float) && !prints_exactly_as_a_float(data, vn))
+            || family_refuses(data, vn, Reading::Argument(op, slot), ct)
+            || crate::kuna_structheadless::yields_to_a_declared_pointer(data, vn, ct)),
+    )
 }
 
 /// Does `vn`, if it is a constant, print as a float literal that compiles back
@@ -995,6 +1010,13 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
                 {
                     return true;
                 }
+            }
+            Member::Exact(t)
+                if !a.store
+                    && crate::kuna_structheadless::types_a_pointer_as_a_word(data, ct, &t)
+                    && accesses_through(data, &value_family(data, a.value)).is_some_and(|(acc, _)| !acc.is_empty()) =>
+            {
+                return true;
             }
             Member::Exact(_) => {}
         }

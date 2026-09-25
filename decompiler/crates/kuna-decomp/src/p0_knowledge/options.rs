@@ -275,6 +275,9 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (kuna) a synthesized record takes in the claims of a sibling reader of the
     // same record. Default OFF.
     "structmerge",
+    // (kuna) a closed function's parameter read only past its start is a record.
+    // Default OFF.
+    "structheadless",
     "decodehalt",
     "msvcftol",
     "tailcalljump",

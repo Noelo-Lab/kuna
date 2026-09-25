@@ -1897,14 +1897,15 @@ mod tests {
         // format constant the LOAD-TIME resolver read out of the image
         // and structsynth-locals / a record a call returned, and a text buffer
         // that is not one, and calleevote, and structmerge / the union of two
-        // readers' claims
+        // readers' claims, and structheadless / a record read past its start
+        // only in a closed function
         // and kuna-libcwiden / a wrapper around an *at import stops spelling its
         // path argument as an integer
         // and kuna-callplaceholder / a call to a declared callee stops taking
         // the return-address slot as a trailing argument
         // and kuna-castsign / a stack index the body only compares signed is
         // declared signed
-        assert_eq!(count, 339, "corpus file count drifted");
+        assert_eq!(count, 340, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

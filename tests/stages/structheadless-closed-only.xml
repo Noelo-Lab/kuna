@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    structheadless: a record read only past its start is synthesized only in a
+    function whose callers are all known direct calls.
+
+    The CLI fixture decompiler/crates/kuna-analysis/tests/fixtures/structheadless_x86_64
+    has a reader of three members of a record, none of them the first:
+
+        struct entry { char *name; long size; unsigned int mode;
+                       unsigned int link; char ok; char linkok; };
+        unsigned int mode_of(const struct entry *e)
+        { return (e->linkok && e->size > 0) ? e->link : e->mode; }
+
+        80 7f 19 00       cmp    byte [rdi+0x19],0
+        74 12             je     +0x12
+        48 83 7f 08 00    cmp    qword [rdi+0x8],0
+        7e 0b             jle    +0xb
+        8b 47 14          mov    eax,[rdi+0x14]
+        c3                ret
+        0f 1f 80 00 00 00 00
+        8b 47 10          mov    eax,[rdi+0x10]
+        c3                ret
+
+    NEGATIVE CONTROL. `closed` gives such a parameter a record only where a
+    whole-binary `decompile-all` recorded every caller of the function as a
+    direct call. This harness decompiles ONE function from a byte image, so
+    nothing marks it closed and it must read the same in both passes: reads
+    through an untyped pointer and no synthesized record. A rule that took
+    a headless record here would do the same to a qsort comparator, whose
+    contract declares `void *`.
+
+    The two-pass coverage over the whole binary-to-decompile path is
+    tests/cli/structheadless-off-leaves-a-headless-record-untyped.json (off)
+    and structheadless-closed-reads-a-record-past-its-start.json (closed).
+
+    Stage / sub-stage: P5 "aggregate-union". Pass 1 pins `off`, pass 2 `closed`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+807f1900741248837f08007e0b8b4714c30f1f80000000008b4710c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="mode_of"/>
+</binaryimage>
+<script>
+  <com>option structheadless off</com>
+  <com>lo fu mode_of</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option structheadless closed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STRUCTHEADLESS #1: the member at 0x14 stays a read through the untyped pointer in both passes" min="2" max="2">return \(\(unsigned int \*\)a0\)\[5\];</stringmatch>
+<stringmatch name="STRUCTHEADLESS #2: no record is synthesized without a closed caller set" min="0" max="0">struct_</stringmatch>
+</decompilertest>
