@@ -840,6 +840,9 @@ struct Summary {
     /// The image entry point as `(address, name)`, `None` when the format
     /// declares none.
     entry: Option<(u64, String)>,
+    /// The program's own entry function (`main`, `wmain`, `WinMain`,
+    /// `wWinMain`) as `(address, name)`, `None` when the inventory names none.
+    main: Option<(u64, String)>,
     /// How many DISCOVERED functions the entry point reaches.
     reachable_from_entry: Option<usize>,
     /// How many SELECTED functions no call site reaches.
@@ -884,6 +887,7 @@ fn summarize(
     Summary {
         total: all.len(),
         entry,
+        main: user_main(all),
         reachable_from_entry,
         no_callers: selected
             .iter()
@@ -911,6 +915,15 @@ fn image_entry(prog: &ConsoleProgram) -> Option<(u64, String)> {
     }
 }
 
+/// The user entry function by name, in the order a C runtime would call them.
+fn user_main(all: &[FunctionEntry]) -> Option<(u64, String)> {
+    ["main", "wmain", "WinMain", "wWinMain"].iter().find_map(|want| {
+        all.iter()
+            .find(|e| e.name == *want || e.aliases.iter().any(|a| a == want))
+            .map(|e| (e.addr.get_offset(), (*want).to_string()))
+    })
+}
+
 fn summary_json(
     binary: &str,
     summary: &Summary,
@@ -918,7 +931,7 @@ fn summary_json(
     error: Option<&str>,
     display_address: &dyn Fn(u64) -> u64,
 ) -> String {
-    let entry = match &summary.entry {
+    let named = |f: &Option<(u64, String)>| match f {
         Some((vma, name)) => {
             let address = display_address(*vma);
             Json::Object(vec![
@@ -929,6 +942,8 @@ fn summary_json(
         }
         None => Json::Null,
     };
+    let entry = named(&summary.entry);
+    let main = named(&summary.main);
     let buckets = Json::Array(
         summary
             .buckets
@@ -962,6 +977,7 @@ fn summary_json(
                 "summary".into(),
                 Json::Object(vec![
                     ("entry".into(), entry),
+                    ("main".into(), main),
                     (
                         "reachable_from_entry".into(),
                         summary
@@ -995,6 +1011,15 @@ fn summary_text(
         }
         None => {
             let _ = writeln!(out, "entry\t(none declared)");
+        }
+    }
+    match &summary.main {
+        Some((vma, name)) => {
+            let address = display_address(*vma);
+            let _ = writeln!(out, "main\t0x{address:x}\t{name}");
+        }
+        None => {
+            let _ = writeln!(out, "main\t(none named)");
         }
     }
     if let Some(n) = summary.reachable_from_entry {

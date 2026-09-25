@@ -2627,6 +2627,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // only when this gate is on. Default-ON; off renders the `sub_<addr>` /
         // `void(void)` form exactly.
         "machomain" => arch.analysis_machomain,
+        // (kuna) PE user-entry naming — a standalone stashed pass whose one entry
+        // and one name are computed at LOAD but COMMITTED only when this gate is
+        // on. Default-ON; off restores the `sub_<addr>` inventory exactly.
+        "pemain" => arch.analysis_pemain,
         // (kuna) non-PIE ARM crt1 `_start`->`main` recovery — a standalone stashed
         // pass whose one entry and one name are computed at LOAD but COMMITTED only
         // when this gate is on. Default-ON; off restores the previous inventory.

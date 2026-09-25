@@ -1,0 +1,46 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The PE user-entry naming (`option pemain on|off`, default on).
+
+    The XML wrapper only provides the harness architecture. Both passes clear
+    it and load the same stripped in-tree MinGW PE fixture through the CLI's own
+    loader. Its `__tmainCRTStartup` stores `envp` into msvcrt's `__initenv`
+    through `.refptr.__imp___initenv` and then calls `main(argc, argv, envp)`
+    at 0x140001592 (the unstripped twin `pe_imports.exe` names it there).
+
+    Pass 1 (`pemain off`) reproduces the defect: the CRT startup calls the
+    program's own entry as one more `sub_<addr>`, so nothing in the inventory
+    says where the program starts.
+
+    Pass 2 (the shipped default) names that callee `main`, at the call site and
+    at its own definition.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_imports_stripped.exe</com>
+  <com>option pemain off</com>
+  <com>read symbols</com>
+  <com>load function sub_1400011a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_imports_stripped.exe</com>
+  <com>read symbols</com>
+  <com>load function sub_1400011a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub" min="1" max="1">= sub_140001592\(dat_14000c028,dat_14000c020\);</stringmatch>
+<stringmatch name="PEMAIN #2: default, the same call site names main" min="1" max="1">= main\(dat_14000c028,dat_14000c020\);</stringmatch>
+<stringmatch name="PEMAIN #3: default, main is defined under its name" min="1" max="1">unsigned long long main\(unsigned int a0\)</stringmatch>
+</decompilertest>

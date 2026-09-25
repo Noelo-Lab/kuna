@@ -50,6 +50,12 @@ fn repo_root() -> PathBuf {
 }
 
 fn bootstrap(entrymainproto: bool, fast_funcdisc: bool) -> Option<ConsoleProgram> {
+    bootstrap_with(entrymainproto, fast_funcdisc, false)
+}
+
+/// `pemain` names the same callee `main`; the tests above isolate the prototype
+/// under the fixture's `sub_<addr>` name, so they run with it off.
+fn bootstrap_with(entrymainproto: bool, fast_funcdisc: bool, pemain: bool) -> Option<ConsoleProgram> {
     let bin =
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/crtmain_x86_64.exe");
     let specs = repo_root().join("specs");
@@ -71,6 +77,7 @@ fn bootstrap(entrymainproto: bool, fast_funcdisc: bool) -> Option<ConsoleProgram
     prog.arch_mut()
         .set_kuna_option("entrymainproto", if entrymainproto { "on" } else { "off" })
         .expect("entrymainproto flips");
+    prog.arch_mut().set_kuna_option("pemain", if pemain { "on" } else { "off" }).expect("pemain flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     Some(prog)
 }
@@ -182,4 +189,18 @@ fn the_entry_function_is_registered_even_with_no_recursive_discovery() {
     );
     let body = decompile(on, MAIN);
     assert!(body.contains("argc"), "and it must carry the recovered slots; got:\n{body}");
+}
+
+/// The prototype is parked by address, so it survives `pemain` renaming the
+/// callee `main`.
+#[test]
+fn the_prototype_composes_with_pemain() {
+    let Some(prog) = bootstrap_with(true, true, true) else {
+        return;
+    };
+    assert!(prog.lookup_symbol(MAIN).is_none(), "pemain renames the callee");
+    let body = decompile(prog, "main");
+    for want in ["main(", "argc", "argv", "envp"] {
+        assert!(body.contains(want), "{want} missing; got:\n{body}");
+    }
 }
