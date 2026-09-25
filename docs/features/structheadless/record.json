@@ -335,70 +335,71 @@
   }
  },
  "speed": {
-  "method": "interleaved whole-binary `kuna decompile-all --json --max-fn-seconds 120`, --option structheadless off against closed, arms alternating, min-of-15 (speed.py); box shared with other campaign lanes",
+  "method": "interleaved whole-binary `kuna decompile-all --json --max-fn-seconds 120`, --option structheadless off against closed, arms alternating, min-of-15 (speed.py), build a54805cab on c960fb18d; box shared with other campaign lanes",
   "per_binary": {
    "fmt": {
     "off": {
-     "min_ms": 4197.8,
-     "median_ms": 4465.3
+     "min_ms": 4344.6,
+     "median_ms": 4927.3
     },
     "closed": {
-     "min_ms": 4190.4,
-     "median_ms": 4491.1
+     "min_ms": 4405.4,
+     "median_ms": 4783.0
     },
-    "delta_min_pct": -0.18,
-    "delta_median_pct": 0.58
+    "delta_min_pct": 1.4,
+    "delta_median_pct": -2.93
    },
    "ls": {
     "off": {
-     "min_ms": 14635.3,
-     "median_ms": 15943.1
+     "min_ms": 14979.1,
+     "median_ms": 17296.8
     },
     "closed": {
-     "min_ms": 14255.3,
-     "median_ms": 15315.8
+     "min_ms": 15553.6,
+     "median_ms": 18026.9
     },
-    "delta_min_pct": -2.6,
-    "delta_median_pct": -3.93
+    "delta_min_pct": 3.84,
+    "delta_median_pct": 4.22
    },
    "sort": {
     "off": {
-     "min_ms": 14814.7,
-     "median_ms": 15739.5
+     "min_ms": 16694.2,
+     "median_ms": 19292.7
     },
     "closed": {
-     "min_ms": 14612.2,
-     "median_ms": 15998.0
+     "min_ms": 17154.9,
+     "median_ms": 18950.2
     },
-    "delta_min_pct": -1.37,
-    "delta_median_pct": 1.64
+    "delta_min_pct": 2.76,
+    "delta_median_pct": -1.78
    },
    "bash": {
     "off": {
-     "min_ms": 90256.2,
-     "median_ms": 95037.4
+     "min_ms": 97683.7,
+     "median_ms": 102902.2
     },
     "closed": {
-     "min_ms": 92944.9,
-     "median_ms": 99561.8
+     "min_ms": 95031.8,
+     "median_ms": 104778.3
     },
-    "delta_min_pct": 2.98,
-    "delta_median_pct": 4.76
+    "delta_min_pct": -2.71,
+    "delta_median_pct": 1.82
    }
   },
-  "worst_delta_min_pct": 2.98,
+  "worst_delta_min_pct": 3.84,
   "budget_pct": 5,
-  "verdict": "within budget: fmt -0.18%, ls -2.60%, sort -1.37%, bash +2.98% (min-of-15, -O2). An earlier fmt reading of +6.34% on a loaded box was noise: KUNA_ACTION_PROF shows both arms doing identical work there (154 decompiles, 802 main-loop runs)."
+  "verdict": "within budget: fmt +1.40%, ls +3.84%, sort +2.76%, bash -2.71% (min-of-15, -O2)"
  },
  "gates": {
-  "make test": "PARITY OK, datatests 675/675",
-  "make test-stages": "PARITY OK, datatests 1331/1331 (baseline re-recorded: +2 STRUCTHEADLESS assertions and the renamed KUNA-CATALOG #7 key, nothing moved)",
-  "make test-cli": "tests/cli 238/238 passed",
-  "make check-spec": "OK (lenient) + OK (strict)",
+  "make test": "PARITY OK, datatests: 675/675 assertions passed (build 1aa775c72 == 43e3957a3 code)",
+  "make test-stages": "PARITY OK, datatests: 1372/1372 assertions passed (baseline re-recorded on c960fb18d: +2 STRUCTHEADLESS assertions and the renamed KUNA-CATALOG #7 key, nothing moved)",
+  "make test-cli": "tests/cli: 240/240 passed (an earlier run under three rust-test lanes had the two known wall_ms probes over their limit)",
+  "make check-spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "byte-fresh from `kuna catalog --markdown`",
-  "make rust-test": "RUST_TEST_RC=0 via the lane script, 422 test-result blocks, none failed (2026-09-23 20:12:38Z -> 20:38:49Z, after the last source and catalog write)"
+  "phases.toml": "parses with python3.14 tomllib",
+  "make rust-test": "RUST_TEST_RC=0 via the lane script on 43e3957a3 (2026-09-25 03:49:21Z -> 04:16:49Z), 422 test-result blocks ok, none failed"
  },
  "counters": "settables 233 -> 234; tiers 75 core / 94 -> 95 transform / 64 analysis; kuna-catalog.xml #7 structure-recovery 32 -> 33; phases-tests catalog-json-records 232 -> 233; catalog_bytecompat fixture recaptured (234 options); tests/stages corpus 339 -> 340; docs/baseline-stages.json re-recorded on c960fb18d (1372 keys)",
  "arity": {

@@ -23,7 +23,7 @@ and this code fixes it.
 | (a) `make test` with the rule on | inert by construction: the console harness never marks a function closed, so no datatest can reach the rule (675/675 either way) |
 | (b) `make test-stages` | inert for the same reason; the stage test pins both passes (1372/1372 with the option off) |
 | (c) `make test-cli` | 240/240 with the option off; three probes pin both values, one of them the `argv` shape the rebase exposed |
-| (e) speed, interleaved min-of-15, `decompile-all --json`, -O2 | see `record.json` `speed` (fmt, ls, sort, bash) |
+| (e) speed, interleaved min-of-15, `decompile-all --json`, -O2 | within budget: fmt +1.40%, ls +3.84%, sort +2.76%, bash -2.71% (`record.json` `speed`) |
 | (f) whole-corpus hunks, 45 binaries | 3,378 of 20,230 functions change; 0 skeleton deltas; every other hunk read and classified (`hunks.md`); no function changes its parameter count or its phantom locals and arguments |
 | (g) `p0_knowledge/modes.rs` | nothing to do: the option is `off|closed`, not in any preset, as `structmerge` is |
 | (h) castbench full, both directions | 37,477 -> 36,040 casts (0.991 -> 0.953 times IDA); 219 functions fewer (-1,584), 57 more (+147), every one read (`analysis.md`): 36 (+117) are globalref declining to name a constant address the function now uses as a record and as another pointer, or whose record a direct read overlaps |
