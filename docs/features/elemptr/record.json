@@ -175,7 +175,7 @@
   },
   "variables": "227 scored variables gained, 1 lost: 61 char** args (argv), 55 char* args, 26 char* stack slots, 20 UInt32* / 13 Int32* / 10 UChar* / 8 UInt16* args (bzip2), 8 int*, 7 short int*, 5 long int*, 2 FILE**; the loss is grep O0 print_line_tail's idx_t stack slot, credited undefined8 before and char * after, a register shared with the char * lim; no void * ground-truth parameter lost",
   "arity": "no function's scored argument or variable count moved",
-  "rebased": "re-run on the rebased build (ef49332b2 + this branch): identical, 1615 -> 1645, 173 better, 0 worse"
+  "rebased": "re-run on 850e8c692 + this branch: identical, 1615 -> 1645, 173 better, 0 worse"
  },
  "corpus_sweep": {
   "method": "castbench full, both arms of one build (--option elemptr off vs default): docs/features/elemptr/structural.py (callees, strings, control keywords, program data, statement counts per changed function) and hunks.py (line hunks with canonical variable names)",
@@ -251,15 +251,15 @@
   "history": "the first measurement (before the per-storage memo and the disputed-global blocking) read bash +12.86% min / +11.43% median-of-ratios: the batch redo decompiled 23 functions again (14.7 s, the parser's two largest among them); after the fix 17 functions and 3.6 s"
  },
  "gates": {
-  "measured_on": "feat/elemptr rebased on origin/main ef49332b2 (#720), final engine 56d9554ef",
+  "measured_on": "feat/elemptr rebased on origin/main 850e8c692 (#726 callpush, #727 castindex, #728 castternary)",
   "make_test": "datatests: 675/675 assertions passed, PARITY OK (default on)",
-  "make_test_stages": "datatests: 1381/1381 assertions passed, PARITY OK (baseline re-recorded on ef49332b2: +9 kuna-elemptr keys; 8 assertions of other options re-pinned to the subscript spelling, keys unchanged)",
-  "make_test_cli": "tests/cli: 242/242 passed (2 probes re-pinned; a first run under the rust-test lane hit the known wall_ms flake and passed on a re-run)",
+  "make_test_stages": "datatests: 1403/1403 assertions passed, PARITY OK (baseline re-recorded on 850e8c692: +9 kuna-elemptr keys, no key removed)",
+  "make_test_cli": "tests/cli: 242/242 passed",
   "check_spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
   "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
-  "make_rust_test": "PENDING"
+  "make_rust_test": "RUST_TEST_RC=0 (7,561 passed, 0 failed; 422 test results); lane started 10:36:28Z after the last code change (c063a18bd)"
  },
  "default_on_evaluation": {
   "verdict": "flipped: elemptr ships on",
@@ -271,6 +271,6 @@
   "f_hunks": "1,196 functions over 45 binaries, every flagged function read and classified (corpus_sweep)",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope",
   "h_castbench": "on 850e8c692: 35,588 -> 33,472 (0.941x -> 0.885x IDA), 352 fewer, 17 more (read); on c960fb18d: 37,477 -> 35,327 (0.991x -> 0.934x)",
-  "workspace_tests": "3 kuna-cli tests pinned the integer spelling and follow it: a_load_is_not_printed_after_a_store_into_its_bytes, an_implied_cast_round_trips_through_the_printed_c, a_signed_only_variable_round_trips_through_the_printed_c (their compiled round trips pass on the new output)"
+  "workspace_tests": "5 kuna-cli tests pinned the integer spelling: a_load_is_not_printed_after_a_store_into_its_bytes, an_implied_cast_round_trips_through_the_printed_c, a_signed_only_variable_round_trips_through_the_printed_c follow the subscript; a_conditional_arm_cast_round_trips_through_the_printed_c (castternary) and a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c (castindex) keep their pins with elemptr off and also compile and run the elemptr-on output, which computes the same values"
  }
 }
