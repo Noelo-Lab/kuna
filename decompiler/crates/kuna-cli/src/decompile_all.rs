@@ -2638,6 +2638,7 @@ pub(crate) fn is_loadtime_gate(name: &str) -> bool {
             | "dynrelocs"
             | "pdatachained"
             | "rexthunk"
+            | "peordinal"
             | "macho-arm64e"
             | "typedepth"
             | "dwarfstructs"
@@ -2769,6 +2770,17 @@ fn apply_loadtime_env(
         );
         env.set(
             kuna_decomp::kuna_rexthunk::REXTHUNK_ENV,
+            if on { "on" } else { "off" },
+        );
+    }
+    // (kuna) Same timing for PE import-by-ordinal naming.
+    if let Some(value) = last_option_value(options, "peordinal") {
+        let on = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false"
+        );
+        env.set(
+            kuna_decomp::kuna_peordinal::PEORDINAL_ENV,
             if on { "on" } else { "off" },
         );
     }

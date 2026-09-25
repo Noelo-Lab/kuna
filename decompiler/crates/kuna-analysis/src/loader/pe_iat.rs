@@ -45,8 +45,10 @@
 //! For each import descriptor, walk the INT (Import Name Table — the names) and
 //! the IAT (the slot addresses) **in lockstep**: the `i`-th INT entry's name
 //! belongs to the IAT slot at `image_base + first_thunk_rva + i*ptr`.  Emit one
-//! [`ImportSym`] per slot.  An import-by-ordinal (no name) synthesizes
-//! `<DLL>_Ordinal_<n>` (named beats unresolved).
+//! [`ImportSym`] per slot.  An import-by-ordinal (no name) takes its name from
+//! the built-in export table of a covered system DLL ([`super::kuna_peordinal`],
+//! option `peordinal`), else synthesizes `<DLL>_Ordinal_<n>` (named beats
+//! unresolved).
 //!
 //! Everything degrades gracefully: a non-PE input, a missing import directory, or
 //! an unparsable descriptor yields fewer (or zero) entries.  This module never
@@ -214,7 +216,7 @@ fn walk_import_table<Pe: ImageNtHeaders>(
             let slot_va = image_base.wrapping_add(iat_rva).wrapping_add(i.wrapping_mul(ptr));
             let name: Vec<u8> = match it.import::<Pe>(thunk) {
                 Ok(object::read::pe::Import::Name(_hint, n)) => n.to_vec(),
-                Ok(object::read::pe::Import::Ordinal(ord)) => synth_ordinal_name(dll, ord),
+                Ok(object::read::pe::Import::Ordinal(ord)) => ordinal_import_name(dll, ord),
                 Err(_) => {
                     i += 1;
                     continue;
@@ -229,6 +231,17 @@ fn walk_import_table<Pe: ImageNtHeaders>(
             i += 1;
         }
     }
+}
+
+/// The name of an import-by-ordinal: the built-in export table's name for a
+/// covered system DLL when `peordinal` is on, else [`synth_ordinal_name`].
+fn ordinal_import_name(dll: &[u8], ord: u16) -> Vec<u8> {
+    if kuna_decomp::kuna_peordinal::peordinal_enabled() {
+        if let Some(name) = super::kuna_peordinal::ordinal_name(dll, ord) {
+            return name.as_bytes().to_vec();
+        }
+    }
+    synth_ordinal_name(dll, ord)
 }
 
 /// Synthesize a name for an import-by-ordinal: `<DLL-stem>_Ordinal_<n>` (the

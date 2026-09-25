@@ -598,6 +598,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // via the `kuna_rexthunk` env var (import names are resolved inside `load
     // file`). Default-ON.
     "rexthunk",
+    // (kuna) PE import-by-ordinal naming: a load-time gate read via the
+    // `kuna_peordinal` env var (import names are resolved inside `load file`).
+    // Default-ON.
+    "peordinal",
     // (kuna) Degenerate-symbol-name repair: a load-time gate read via the
     // `kuna_symbolnamerepair` env var (the symbol table is installed inside
     // `load file`). Default-ON.

@@ -1897,6 +1897,7 @@ variable exported first (`decompiler/crates/kuna-cli/src/decompile_all.rs
 | `KUNA_DWARFVARIANTS` | `dwarfvariants` | DWARF variant-part (discriminated-union) import (`DW_AT_discr` + `DW_TAG_variant` walk), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfvariants.rs (DWARFVARIANTS_ENV)` |
 | `KUNA_PDATACHAINED` | `pdatachained` | PE `.pdata` chained-`UNWIND_INFO` entry suppression, `decompiler/crates/kuna-analysis/src/analyzers/entry/pe_entry.rs (pdata_begins)` |
 | `KUNA_REXTHUNK` | `rexthunk` | x86-64 PE import-thunk decode drops the `FF 25` one byte into a REX-prefixed tail jump, `decompiler/crates/kuna-analysis/src/loader/kuna_rexthunk.rs (is_rex_tail)` |
+| `KUNA_PEORDINAL` | `peordinal` | PE import-by-ordinal naming from built-in `OLEAUT32`/`WS2_32`/`WSOCK32`/`MSVBVM60` export tables, `decompiler/crates/kuna-analysis/src/loader/kuna_peordinal.rs (ordinal_name)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
 | `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection, `decompiler/crates/kuna-analysis/src/loader/format/macho.rs (MACHO_ARM64E_ENV)` |
 | `KUNA_ARM_ISA` | `--isa` | explicit ARM/Thumb `TMode` selection over the mapped code ranges, `decompiler/crates/kuna-console/src/engine.rs (ARM_ISA_ENV)` |

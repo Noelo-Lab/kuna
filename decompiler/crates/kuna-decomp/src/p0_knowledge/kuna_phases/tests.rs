@@ -79,7 +79,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_237() {
+fn settable_count_is_238() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -167,12 +167,12 @@ fn settable_count_is_237() {
     // +1 for `structmerge` (P5 sibling layout union).
     // +1 for `structheadless` (P5 a closed function's record read past its start).
     // +1 for `callpush` (P4 a call's own return-address push).
-    assert_eq!(kuna_num_settables(), 237);
-    assert_eq!(SETTABLE_TABLE.len(), 237);
+    assert_eq!(kuna_num_settables(), 238);
+    assert_eq!(SETTABLE_TABLE.len(), 238);
 }
 
 #[test]
-fn tier_counts_are_76_core_97_transform_64_analysis() {
+fn tier_counts_are_76_core_97_transform_65_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -324,7 +324,7 @@ fn tier_counts_are_76_core_97_transform_64_analysis() {
     // transform 94 -> 95: +1 for `structheadless` (P5 a closed function's record
     // read past its start).
     // transform 96 -> 97: +1 for `callpush` (P4 a call's own return-address push).
-    assert_eq!((core, transform, analysis), (76, 97, 64));
+    assert_eq!((core, transform, analysis), (76, 97, 65));
 }
 
 #[test]
@@ -664,6 +664,9 @@ fn option_values_live_value_present_for_101() {
         // read from the `KUNA_REXTHUNK` env var, like `pdatachained` above.
         // Default-ON.
         "rexthunk",
+        // (kuna) PE import-by-ordinal naming -- a LOAD-time gate read from the
+        // `KUNA_PEORDINAL` env var, like `rexthunk` above. Default-ON.
+        "peordinal",
         "aif",
         // (kuna, GH-299) The AIF gap-cursor aligned slide — an analysis-tier gate
         // with no codegen live reader (read console-side via kuna_live_value), like
@@ -1149,7 +1152,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 226 -> 227: +1 for `structmerge`; its P5 row sits mid-table.
     // 232 -> 233: +1 for `structheadless`; its P5 row sits mid-table.
     // 235 -> 236: +1 for `callpush`; its P4 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 236);
+    assert_eq!(json.matches("},\n").count(), 237);
 }
 
 #[test]

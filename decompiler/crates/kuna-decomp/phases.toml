@@ -6121,6 +6121,25 @@ tier = "analysis"
 symptoms = "a pe function entry starts one byte into a jmp qword ptr [import] instruction|kuna functions lists a sub_<addr> named after an import in the middle of another function|a one-line sub_<addr> wrapper around an import appears right after a function that tail-calls the same import|kuna functions reports a pe function's size as ending one byte into its own last jump"
 
 [[settable]]
+option = "peordinal"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-peordinal"
+summary = "Name a PE import-by-ordinal from a built-in export table when the imported DLL is OLEAUT32, WS2_32, WSOCK32 or MSVBVM60. An ordinal-only import has no name in the Import Name Table, so the PE import resolver synthesized <DLL>_Ordinal_<n> for its IAT slot and thunk, and every call, xref, function list entry and signature lookup saw that placeholder. These DLLs fix their ordinals in their .def files and are routinely imported by ordinal (OLEAUT32 almost always is: the BSTR, VARIANT and SAFEARRAY API), so the mapping is public and stable. The tables are the consensus of independent export listings (RetDec's and radare2's Windows ordinal databases, Wine's built DLLs and pefile's ordlookup); an ordinal is admitted only when every listing that has it agrees. WS2_32 is limited to the WinSock 1.1 ordinals (1-23, 51-57, 101-116, 151, 500), the only ones stable across Windows releases, and WSOCK32 has its own table because it swaps inet_addr, inet_ntoa and ioctlsocket relative to WS2_32. An ordinal outside the tables, or a DLL not covered, keeps the synthesized name. The resolved name is an ordinary import name, so win32sigs seeds its prototype when the table carries one (SysAllocString, SysFreeString, VariantInit, VariantClear, closesocket, ...)."
+use_when = "On (default) on any PE. The tell-tale of the gap is OLEAUT32_Ordinal_2, WS2_32_Ordinal_23 or MSVBVM60_Ordinal_595 in decompile output, kuna functions or kuna xrefs. Flip off to get back the synthesized <DLL>_Ordinal_<n> names, e.g. to compare against a tool that prints ordinals, or if a target ships a private DLL under one of these names with a different export layout."
+example = "--option peordinal off"
+source_decompiler = "kuna"
+inspiration = "IDA Pro and Ghidra ordinal-to-name import libraries (.ids/.exports); Flare-On 12 challenge 4 (UnholyDragon), which imports 45 OLEAUT32 functions by ordinal only"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a pe call renders as OLEAUT32_Ordinal_<n> or WS2_32_Ordinal_<n> instead of the api name|kuna functions lists <dll>_Ordinal_<n> imports|a BSTR or VARIANT api call has no prototype because its import is ordinal-only|a winsock program shows socket, connect and recv as ordinal placeholders"
+
+[[settable]]
 option = "noreturnretuse"
 values = "on|off"
 default = "on"
