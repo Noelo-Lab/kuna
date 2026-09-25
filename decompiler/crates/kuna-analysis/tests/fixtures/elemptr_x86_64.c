@@ -97,7 +97,7 @@ long w_back(const int *end, int n)
 {
     long s = 0;
     for (int i = 0; i < n; i++)
-        s = s * 7 + end[-i - 1];
+        s = s * 7 + end[i - n];
     return s;
 }
 
@@ -158,7 +158,6 @@ int main(void)
     long f = w_table(8);
     long g = w_record(recs, 3);
     long h = w_mixed("abcdefgh", 2);
-    printf("%s %zu %s %ld %ld %ld %ld %ld %ld %ld %ld %d\n", (char *)dec, n, rev, a, b, c, d, e, f, g, h,
-           decoding_table['='] + decoding_table['/']);
+    printf("%s %zu %s %ld %ld %ld %ld %ld %ld %ld %ld\n", (char *)dec, n, rev, a, b, c, d, e, f, g, h);
     return 0;
 }
