@@ -50,10 +50,14 @@ text types, so its arms keep the cast.
 See `plan.md` and `docs/spec/05-types.md` ("A pointer used only as an array"). A
 pointer-width parameter, an open call return, an unnamed global or a data-section
 constant whose every access is one width W through an index the program computes
-(scaled by W) gets a `T *` vote; `T` is the integer of width W with the sign its
-extensions, orderings, stored values or a declared pointee say, or, for
-pointer-width elements, a pointer type something names. Globals are typed only
-where every function of a batch agrees.
+(scaled by W) gets a `T *` vote; `T` is the integer of width W, or, for
+pointer-width elements, a pointer type something names. The sign of `T` comes only
+from evidence (section 7): the function's return type where it returns the
+element, then extensions, orderings, shifts and divisions of a loaded element,
+then a character compare (plain `char`), then the type the load has without the
+rule; a wider element nothing votes for is unsigned. Globals and constant tables
+are typed only where every function of a batch agrees on the element, sign
+included.
 
 ## 3. Where the casts went, and the functions with more
 
@@ -142,3 +146,46 @@ function decompiled after the first disagreement, brings that to 17 functions an
 - A pre-existing return-recovery gap, not this option: gcc -O2 `char *f(n) { o =
   malloc(n + 1); ...; return o; }` decompiles as `void f` (rax never copied), in
   every mode.
+
+## 7. Value preservation
+
+A type this rule commits is not only spelling. Three ways it could change what the
+printed C computes were found by compiled round trips and closed:
+
+- **A defaulted sign reaching a return.** The first version declared a 2- or
+  4-byte element with no sign evidence signed (`short`, `int`). A function that
+  returns the element returns it at that type, so `unsigned long f(unsigned i) {
+  return wtab[i & 63]; }` (gcc zero-extends in the callee) printed as `short f`,
+  and its caller's `f(i) + 0x10000` sign-extended: 98304 became 32768, and
+  `itab[1] + 1` became 18446744071562067969. A wider element with no evidence is
+  now unsigned, which is how the undefined word main prints reads; the element's
+  own readers' fold (the type the load has without the rule) comes before that
+  default; and a function that returns the element never lets a batch change its
+  sign.
+- **One table, two signs, one header.** A constant table one function zero-extends
+  and another sign-extends was declared once (`extern char dat_339e0[];`, grep O0
+  0xfc0e reads it with `movzbl`), so the other body computed with the wrong
+  extension; an `unsigned int` table shifted in one function and declared `int`
+  from another made `>> 1` arithmetic (3221225472 became 1073741824). The ledger
+  now covers constant tables beside globals and compares the whole element, sign
+  included: two signs evidence chose block the table everywhere (each body keeps
+  its own `*(T *)` cast), and a function whose sign was only the default is
+  decided again at the evidenced sign, so it prints consistently with the one
+  declaration. The header declares no array two functions index at different
+  elements (a sharded `--jobs` worker cannot consult the ledger).
+- **Index and base swapped.** `char f(char *p, unsigned long i) { if ((unsigned
+  long)p & 7) return 0; return p[i]; }` declared `i` the `char *` because the mask
+  made `p` look like a number; a mask no longer counts as an index's use. A value
+  used as the index of another base (a `PTRADD` index, an add to a constant already
+  typed a pointer, a second index of another scale) refuses, which keeps zlib's
+  `deflate_state` a record, and a global copied into a register the function
+  returns another value in refuses (`libbsd`'s `user_from_uid`).
+
+The round trip in `decompile_all_cli.rs` now also reads tables whose elements have
+the top bit set: `unsigned short` and `unsigned int` elements returned to callers
+that widen them, one shifted, one only compared, and a byte table read at two
+signs. The review's own fixtures (`cy.c`, `cx.c`), exported, compiled with gcc and
+clang and run, print with the option on exactly what they print with it off on
+gcc -O0, clang -O0, gcc -O2 and clang -O2 builds (where the off arm itself differs
+from the binary, a pre-existing gap in main, the on arm differs identically).
+

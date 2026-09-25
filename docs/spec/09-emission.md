@@ -2327,8 +2327,20 @@ dat_4020[]`, an array of unknown length, and `global_declarations` prefers that
 declaration over a scalar one another function makes when no function reads the
 name directly: an indexed body does not compile against a scalar, and a direct
 read does not compile against an array, so with both present the address is left
-undeclared with a comment, like two direct types. An array whose storage this
-function also reads or writes directly keeps its cast (`DirectAccess`).
+undeclared with a comment, like two direct types. Two functions that index the
+address at different elements (`char dat_4020[]` and `unsigned char dat_4020[]`)
+leave it undeclared with a comment too: a body reads `dat_4020[i]` at whatever
+element the header declares, so either declaration would change what the other
+body computes. The batch's agreement pass (05-types §5.2) keeps that from arising
+within one process; a sharded `--jobs` worker cannot see the other functions. An
+array whose storage this function also reads or writes directly keeps its cast
+(`DirectAccess`). With `elemptr` on, `plan` also takes an undefined word
+(`undefined2 *`) and an unsigned word of the same size read at one address as
+one object, named by the unsigned one, the way `same_object` already reads a
+direct access (`Seen::merge`): a caller that copies `0x4b000` into a pointer
+variable and passes it to a callee whose parameter `elemptr` declared `unsigned
+short *` reads the address both ways, and would otherwise lose the name to the
+two-type refusal.
 
 **The value is the binary's.** `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
 (a_constant_address_named_as_a_global_round_trips_through_the_printed_c)`

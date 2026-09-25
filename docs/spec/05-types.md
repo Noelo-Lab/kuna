@@ -661,21 +661,34 @@ the other operand of the same add is the very integer vote the rule overrules: a
 scaling by a constant (`x * W`, `x << log2 W`), an extension from a narrower
 integer, a mask under 0x10000, a shift, a division or remainder, a loop counter
 that starts at a literal and steps by one (`for (i = 0; ...; i++)` keeps `i` in
-an eight-byte frame slot at `-O0`), a value the program also multiplies, shifts,
-masks or orders against a literal, and — when the candidate is already a pointer,
+an eight-byte frame slot at `-O0`), a value the program also multiplies, divides,
+shifts or orders against a literal, and — when the candidate is already a pointer,
 `malloc`'s `void *` — the other operand of any add, since C adds no two pointers.
-An operand already typed as a pointer is the base, and an add whose operands
-could each be the base says nothing about either: `f(char *p, long i) { return
-p[i]; }` at `-O2` stays `long` for both. The index scale must be the element
+A mask elsewhere is not such a use: `(unsigned long)p & 7` is how a program tests
+a pointer's alignment, and taking it for an index's would declare the real index
+`char *` and leave the real pointer an integer. An operand already typed as a
+pointer is the base, and an add whose operands could each be the base says
+nothing about either: `f(char *p, long i) { return p[i]; }` at `-O2` stays `long`
+for both. The index scale must be the element
 width, and an index that is itself a multiple of elements (`p[2 * i]`, `p[2 * i
 + 1]`, through any extension) walks records of that many elements, so a pair of
 `long`s and a `{char *; struct *}` record are both declined rather than guessed.
 
-The element is the integer of width W, signed or unsigned when every extension
-and ordering of a loaded element agrees and plain (`char`, `int`) otherwise; a
-byte compared against a printable character literal is plain `char`, which is
-what makes the decoder's input `char *` although one of its reads is
-zero-extended into an index. An element as wide as a pointer is a pointer or a
+The element is the integer of width W, and its sign comes only from evidence
+(`kuna_elemptr.rs (element_signed)`), because the sign is not only spelling: a
+function that returns the element returns it at that type, and its callers widen
+it accordingly. The recovered return type comes first where the function returns
+the element; then the extensions, orderings, shifts and divisions of a loaded
+element, when they all agree; a byte compared against a printable character
+literal is plain `char`, which is what makes the decoder's input `char *`
+although one of its reads is zero-extended into an index. With none of that the
+element takes the type the load has without this rule — the fold of what its
+readers vote — and a wider element nothing votes for is unsigned, which is how an
+undefined word prints: `unsigned short f(unsigned i) { return tab[i & 63]; }`
+keeps its `unsigned short`, where a signed default would have its caller's
+`f(i) + 0x10000` sign-extend 0x8000. A byte with no evidence is the plain `char`.
+Such a default is marked as one, and a batch may replace it (below) — except in a
+function that returns the element, whose sign is what its callers read. An element as wide as a pointer is a pointer or a
 number, and only its uses say which. It commits to an integer when the elements
 are only ever arithmetic, and to a pointer only when something names the pointee
 — a loaded element already typed `char *` by the callee it is passed to, a stored
@@ -688,25 +701,48 @@ the element, a record stride, a non-zero `PTRSUB` field, integer arithmetic on t
 pointer itself (multiply, divide, shift, mask, `PIECE`, `SUBPIECE`), a float, a
 comparison against a non-zero literal, a call argument the callee declares as a
 scalar or as a pointer to something of another width or kind, and a comparison
-or difference with a pointer at something of another width. A constant is a
-candidate only when every reader indexes through it.
+or difference with a pointer at something of another width. So does a use that
+makes the candidate the *index* of something else's base — the index slot of a
+`PTRADD`, an add to a constant already typed a pointer, or a second variable term
+of another scale added to an element's address: zlib reads its `deflate_state`
+fields through `(char *)0x14bc + (s + k)`, and following only the other uses of
+`s` would take the record for an `int` array. A global is refused where a copy of
+it sits in a register the function also returns some other value in: that
+register is one variable once merging starts, and the pointer type would become
+the function's return type (`libbsd`'s `user_from_uid` reads its hash table into
+the `rax` it returns a record in). A constant is a candidate only when every
+reader indexes through it.
 
-**Globals are typed only where the program agrees.** A global's element type is
-a program-wide claim, and one function's evidence is not enough to make it: one
-function can index a buffer by bytes that another reads four bytes at a time. So
+**Globals and tables are typed only where the program agrees.** A global's
+element type is a program-wide claim, and one function's evidence is not enough
+to make it: one function can index a buffer by bytes that another reads four
+bytes at a time, and a table one function zero-extends another sign-extends. The
+claim ends up as one declaration in an export's header, which every body is
+compiled against, and a body reads `dat_4020[i]` at the declared element. So
 `decompile-all` and `decompile-project` keep a ledger
-(`kuna_elemptr.rs (Ledger)`, on the `Architecture` beside `calleevote`'s): every
-function of the batch files what its walks said about each global it touches —
-an array of which width and kind, or a refusal, and a read of the global at
-another width than a pointer's is a refusal too — and a function that typed a
-global by way of an allocator's result copied into it files the same. After the
-batch, `kuna_elemptr.rs (disagreements)` finds every global some function typed
-and another refused or typed at another width, blocks it for each function that
-typed it, and those functions are decompiled again
+(`kuna_elemptr.rs (Ledger)`, on the `Architecture` beside `calleevote`'s) over two
+kinds of object (`Obj`): the pointer a global holds (`dat_5068`, typed `char *`)
+and the table at a constant address (`dat_5020`, declared `unsigned char
+dat_5020[]`). Every function of the batch files, for the last type pass of its
+decompile, what its walks said about each object it touches: an array of which
+element — shape and, for an integer, sign — and whether evidence decided that
+sign or the default did; or, for a global, a refusal (a read of the global at
+another width than a pointer's is one too). A function that typed a global by way
+of an allocator's result copied into it files the same. After the batch,
+`kuna_elemptr.rs (disagreements)` decides each object (`decide_object`): two
+elements evidence decided that differ, and a refusal beside a type for a global,
+block the object for every function that typed it; a function whose sign was only
+the default is decided again at the sign evidence chose (or, where nothing did,
+the sign most defaults chose, unsigned on a tie), so a function that only
+compares a table's elements for equality reads it at the sign the function that
+shifts them established; and a function whose element has another shape is
+blocked. A function that reads a table another way keeps its own casts and
+compiles against any declaration, so for a table only two types disagree. The
+functions blocked or given a sign are decompiled again
 (`decompiler/crates/kuna-console/src/project.rs (converge_element_globals)`, and
 its callee-first twin in `decompile_all.rs`); a function that said nothing about
-the global is not a disagreement. Once some function has disagreed about a global,
-every function decompiled after it leaves that global alone (`Ledger::disputed`,
+the object is not a disagreement. Once some function has disagreed about an object,
+every function decompiled after it leaves that object alone (`Ledger::disputed`,
 handed out by `seed`), so only the functions decompiled before the first
 disagreement are decided again: on bash -O2 that is 17 functions instead of 23,
 and 3.6 s of redo instead of 14.7 s. A single-function `decompile`, a sharded
@@ -729,9 +765,12 @@ off, with gcc and clang — and requires them to compute what the binary compute
 bytes at and above 0x80 read signed and unsigned and used as indexes both ways,
 an `int` array read backwards from its end, a `.data` table of `int`s, a table
 filled through a global the program allocated, and an allocated buffer returned
-to the caller. `tests/stages/kuna-elemptr.xml` pins the witnesses and the two
-controls (a record walked by a stride, a pointer read at two widths) in both
-passes.
+to the caller, plus tables whose elements have the top bit set: a `unsigned
+short` and a `unsigned int` element returned to a caller that widens them, one
+shifted, one only compared, and a byte table one function zero-extends and
+another sign-extends (declared at neither sign, each keeps its own cast).
+`tests/stages/kuna-elemptr.xml` pins the witnesses and the two controls (a record
+walked by a stride, a pointer read at two widths) in both passes.
 
 Shipped on: with it, the 444-slice decbench sweep has 1,645 perfect functions
 against 1,615 (173 better, none worse), and the 45-binary cast corpus prints 33,472
