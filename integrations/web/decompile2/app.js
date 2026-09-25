@@ -830,7 +830,7 @@ function lineCard(n, varTok) {
     html = `<div class="ch">L${n} → ${addrs.length} instruction${addrs.length === 1 ? '' : 's'}</div>`;
     if (insns.length) {
       html += renderInsnRows(insns, { startHex: data.address_hex, prefs: state.prefs, max: 12 });
-      if (insns.length > 12) html += `<div class="cm">… ${insns.length - 12} more, click to open in Assembly</div>`;
+      if (insns.length > 12) html += `<div class="cm">… ${insns.length - 12} more — click the address gutter to open them in Assembly</div>`;
     } else {
       html += `<div class="cm">at ${escapeHtml(addrs.join(', '))} — the instruction listing needs the engine's inspect surface</div>`;
     }
