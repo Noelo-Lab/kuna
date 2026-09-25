@@ -142,8 +142,10 @@ with renamed variables, which `structural.py` covers function by function.
 ## 5. Speed
 
 Interleaved min-of-15 whole-binary `decompile-all --json`, `--option elemptr off`
-against the default on one build: fmt +0.10%, ls -0.02%, sort +1.19%, bash
-+1.37%. The first measurement read bash +12.86%: the batch redo decompiled 23
+against the default on one build: fmt +0.35%, ls -0.10%, sort -1.58%, bash
++2.14%. An engine that decided a defaulted table sign only after the batch read
+sort +57%: its `main` was decompiled again for one table. A function decompiled
+after evidence has settled a sign now reads it at once (`Ledger::settled`). The first measurement read bash +12.86%: the batch redo decompiled 23
 functions again (14.7 s, the parser's largest among them). Deciding each global
 once per pass before classifying it, and blocking a disputed global for every
 function decompiled after the first disagreement, brings that to 17 functions and
