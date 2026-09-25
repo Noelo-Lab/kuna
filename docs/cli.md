@@ -1182,7 +1182,8 @@ without emitting a function list at all, let alone pseudocode.
  "summary":{"entry":{"name","address","address_hex"},
             "reachable_from_entry":334,"no_callers":714,"code_bytes":171971,
             "size_buckets":[{"bucket":"0","min_size":0,"max_size":0,"count":114}, …],
-            "largest":[{name,address,address_hex,aliases,size}, …]}}
+            "largest":[{name,address,address_hex,aliases,size}, …],
+            "runtime":[{id,version,hint,actionable}, …]}}
 ```
 
 - `entry` is the **image's declared entry point** (a PE `AddressOfEntryPoint` is
@@ -1201,6 +1202,33 @@ without emitting a function list at all, let alone pseudocode.
 - `largest` holds the `--limit` biggest functions, 10 by default.
 - The triage flags apply: `--summary --reachable-from main` summarizes just that
   subgraph. `count` is what was selected, `total` what discovery found.
+- `runtime` names what wrapped or built the image when native decompilation is
+  not the whole answer, one `{id,version,hint,actionable}` row each (`[]` for an
+  ordinary image):
+
+  | `id` | Recognized by | `hint` |
+  |---|---|---|
+  | `dotnet` | PE data directory 14 (CLR header) non-zero | `managed .NET assembly: native decompilation shows only the stub; use ilspycmd` |
+  | `pyinstaller` | the `MEI\x0c\x0b\x0a\x0b\x0e` CArchive cookie; `version` is its Python version | `PyInstaller bundle (Python 3.12): extract with pyinstxtractor-ng` |
+  | `nuitka` | `NUITKA_ONEFILE_PARENT` / `__nuitka_binary_dir` | `Nuitka-compiled Python: …; extract a onefile payload with nuitka-extractor` |
+  | `autoit` | `AU3!EA06`/`AU3!EA05` in a PE | `AutoIt compiled script: extract the script with autoit-ripper` |
+  | `upx` / `neolite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub | `UPX packed: run 'kuna unpack'` |
+  | `twinbasic` / `vb6` | `twinBASIC` / an `MSVBVM60.DLL` import name in a PE | the runtime model and what to use for P-Code |
+  | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`) |
+
+  The PE walk does not insist on the `MZ` magic, so an image whose DOS header
+  was damaged is still named even though it does not load. Every other
+  subcommand that takes a binary (`decompile`, `decompile-all`,
+  `decompile-project`, `decompile-graph`, `functions`, `disassemble`, `read`,
+  `xrefs`, `strings`) prints each *actionable* row as one line on stderr before
+  it runs, so a `--json` stdout stays the document:
+
+  ```
+  note: ./chat_client: PyInstaller bundle (Python 3.12): extract with pyinstxtractor-ng
+  ```
+
+  `--summary` prints no note unless the load itself fails; the text form lists
+  the rows as `runtime\t<id>\t<hint>` lines.
 
 Without `--json` the same measurements print as tab-separated lines. `--summary`
 is accepted on `decompile-all` too, where it short-circuits the decompile loop
