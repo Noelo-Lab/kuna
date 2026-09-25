@@ -23,6 +23,9 @@ import {
   storageLabel,
 } from './render-c.js';
 import { loadPrefs, savePrefs, cycle, DEFAULT_PREFS } from './prefs.js';
+import { renderAsm, renderInsnRows, formatAddr, spacedBytes } from './asm-view.js';
+import { createHover } from './hover.js';
+import { createSync } from './sync.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -529,13 +532,17 @@ function showFunction(fn, data, { focusAddr = null } = {}) {
   const index = buildIndex(data, segs);
   state.current = { fn, data, segs, index, decls: localDecls(data.code) };
   state.rendered.clear();
+  state.sel = null;
+  state.cursor = null;
+  hover.hide();
+  sync.setIndex(index);
   els.vname.textContent = session.displayName(fn);
   els.vmeta.textContent = fnMeta(fn, data);
   const row = state.rows.find((r) => r.fn === fn)?.row;
   row?.classList.toggle('bad', !!data.error);
   renderVisible();
-  if (focusAddr) revealAddr(focusAddr);
   setHint(null);
+  if (focusAddr) selectTarget({ addr: focusAddr }, null);
 }
 
 const DEFAULT_HINT = 'click a name to select it · double-click to rename · <kbd>Space</kbd> C ⇄ assembly · <kbd>?</kbd> shortcuts';
@@ -582,9 +589,17 @@ const RENDER = {
     });
     els.ccode.classList.toggle('no-addrs', index.lineToInsns.size === 0);
     applyPaneClasses();
+    sync.refresh('c');
   },
   asm() {
-    els.asmcode.innerHTML = needsInspect('The assembly view');
+    const { data } = state.current;
+    if (!data.hasInstructions) {
+      els.asmcode.innerHTML = needsInspect('The assembly view');
+      return;
+    }
+    els.asmcode.innerHTML = renderAsm(data, asmContext(data));
+    applyPaneClasses();
+    sync.refresh('asm');
   },
   bytes() {
     els.bytesbar.innerHTML = '';
@@ -608,9 +623,356 @@ function applyPaneClasses() {
   els.asmcode.classList.toggle('no-ccom', p.asmCMode === 'off');
 }
 
-function revealAddr(addrHex) {
-  const row = document.getElementById('a-' + addrHex);
-  row?.scrollIntoView({ block: 'nearest' });
+function asmContext(data) {
+  return {
+    prefs: state.prefs,
+    codeLines: data.code.split('\n'),
+    fnByAddr: state.byAddr,
+    nameOf: (fn) => session.displayName(fn),
+  };
+}
+
+/** Re-render panes whose HTML depends on `prefs` (not just their classes). */
+function rerender(...tabs) {
+  for (const tab of tabs) state.rendered.delete(tab);
+  renderVisible();
+}
+
+// ── linked selection and the hover card ────────────────────────────────────
+
+const sync = createSync();
+const isShown = (tab) => visibleTabs().includes(tab);
+
+/** A pane as sync sees it: which elements a target marks, and how to reveal it. */
+function markerView(elementsFor, reveal) {
+  const marked = new Map();
+  return {
+    mark(sets, cls, target) {
+      for (const el of marked.get(cls) || []) el.classList.remove(cls);
+      const list = sets ? elementsFor(sets, cls, target) : [];
+      for (const el of list) el.classList.add(cls);
+      marked.set(cls, list);
+    },
+    reveal,
+  };
+}
+
+const byId = (id) => document.getElementById(id);
+
+sync.register('c', markerView((sets, cls, target) => {
+  const out = [];
+  if (!target?.sym || cls === 'hl-hover') {
+    for (const line of sets.lines) { const el = byId('c-L' + line); if (el) out.push(el); }
+  }
+  if (cls === 'hl-sel') {
+    for (const sym of sets.syms) out.push(...els.ccode.querySelectorAll(`.t[data-sym="${CSS.escape(sym)}"]`));
+  }
+  return out;
+}, (target, sets) => {
+  if (!isShown('c') || !sets.lines.size) return;
+  byId('c-L' + Math.min(...sets.lines))?.scrollIntoView({ block: 'nearest' });
+}));
+
+sync.register('asm', markerView((sets) => {
+  const out = [];
+  for (const a of sets.addrs) { const el = byId('a-' + a); if (el) out.push(el); }
+  return out;
+}, (target, sets) => {
+  if (!isShown('asm') || !sets.addrs.size) return;
+  const index = state.current?.index;
+  const first = [...sets.addrs].sort((a, b) => (index?.insnIndex.get(a) ?? 0) - (index?.insnIndex.get(b) ?? 0))[0];
+  byId('a-' + first)?.scrollIntoView({ block: 'nearest' });
+}));
+
+/** Describe a variable from every source the engine gives. */
+function describeVar(name) {
+  const { data, decls } = state.current;
+  const decl = decls.find((d) => d.name === name);
+  const vars = data.variables.filter((v) => v.name === name);
+  const param = vars.find((v) => v.kind === 'arg');
+  const stack = vars.find((v) => Number.isInteger(v.stack_offset));
+  const kind = param ? 'parameter' : decl || stack ? 'local' : /^dat_|^g_/.test(name) ? 'global' : 'name';
+  const type = decl?.type || param?.type || stack?.type || '';
+  const where = [];
+  if (param && Number.isInteger(param.arg_index)) where.push(`argument ${param.arg_index}`);
+  if (decl) where.push(storageLabel(decl.storage));
+  else if (stack) where.push(`stack entry${stack.stack_offset < 0 ? '−' : '+'}0x${Math.abs(stack.stack_offset).toString(16)}`);
+  return { name, kind, type, where: where.join(' · ') };
+}
+
+function varSummary(name) {
+  const v = describeVar(name);
+  return [v.name, v.kind, v.type, v.where].filter(Boolean).join(' · ');
+}
+
+function lineCard(n, varTok) {
+  const { data, index, decls } = state.current;
+  const addrs = index.lineToInsns.get(n) || [];
+  const text = data.code.split('\n')[n - 1] || '';
+  let html;
+  if (addrs.length) {
+    const insns = addrs.map((a) => index.addrToInsn.get(a)).filter(Boolean);
+    html = `<div class="ch">L${n} → ${addrs.length} instruction${addrs.length === 1 ? '' : 's'}</div>`;
+    if (insns.length) {
+      html += renderInsnRows(insns, { startHex: data.address_hex, prefs: state.prefs, max: 12 });
+      if (insns.length > 12) html += `<div class="cm">… ${insns.length - 12} more, click to open in Assembly</div>`;
+    } else {
+      html += `<div class="cm">at ${escapeHtml(addrs.join(', '))} — the instruction listing needs the engine's inspect surface</div>`;
+    }
+  } else {
+    const decl = decls.find((d) => d.line === n);
+    let why;
+    if (decl) why = `declares ${decl.name} (${decl.type}, ${storageLabel(decl.storage)}). A declaration emits no instructions: the name is the decompiler's, the storage is the program's.`;
+    else if (n === 1) why = `is the signature: the decompiler's reading of how ${data.name} is called.`;
+    else if (/^\s*[{}]?\s*$/.test(text)) why = 'is structure the decompiler prints; no instruction belongs to it.';
+    else if (!data.hasInstructions && !data.line_mappings.length) why = 'has no instruction map from this engine build (it needs the inspect surface).';
+    else why = 'has no instruction of its own — its work was folded into a neighbouring line\'s instructions.';
+    html = `<div class="ch">L${n}</div><div class="cx">This line ${escapeHtml(why)}</div>`;
+  }
+  if (varTok) html += `<div class="cx"><b>${escapeHtml(varSummary(varTok.textContent))}</b> — <kbd>n</kbd> rename · <kbd>y</kbd> retype</div>`;
+  return html;
+}
+
+function calleeCard(addrHex) {
+  const fn = state.byAddr.get(addrHex);
+  if (!fn) return `<div class="ch">${escapeHtml(addrHex)}</div><div class="cm">not a function in this binary's inventory</div>`;
+  const cached = state.cache.get(addrHex);
+  const kind = isStub(fn) ? ` · ${fn.kind}` : '';
+  let html = `<div class="ch">${escapeHtml(session.displayName(fn))} — ${escapeHtml(addrHex)}${fn.size ? ` · ${fn.size} B` : ''}${kind}</div>`;
+  if (cached?.proto) html += `<pre>${escapeHtml(cached.proto)}</pre>`;
+  html += '<div class="cm">double-click or <kbd>Enter</kbd> opens it</div>';
+  return html;
+}
+
+function insnCard(addrHex) {
+  const { data, index } = state.current;
+  const insn = index.addrToInsn.get(addrHex);
+  if (!insn) return null;
+  const lines = index.insnToLines.get(addrHex) || [];
+  const code = data.code.split('\n');
+  let html = `<div class="ch">${escapeHtml(formatAddr(addrHex, data.address_hex, 'both'))} · ${escapeHtml(insn.mnemonic)} · ${insn.size} byte${insn.size === 1 ? '' : 's'}</div>`;
+  html += `<div class="cm">${escapeHtml(spacedBytes(insn.bytes))}${insn.file_offset !== null ? ` · file offset 0x${insn.file_offset.toString(16)}` : ''}</div>`;
+  if (lines.length) {
+    html += `<pre>${lines.map((l) => `L${l}  ${escapeHtml((code[l - 1] || '').trim())}`).join('\n')}</pre>`;
+  } else {
+    html += '<div class="cx">Not mapped to a C line: frame setup, a value the decompiler folded into another statement, or code it proved dead.</div>';
+  }
+  return html;
+}
+
+function targetCard(hex) {
+  const { data, index } = state.current;
+  if (index.addrToInsn.has(hex)) {
+    return `<div class="ch">${escapeHtml(hex)} · inside ${escapeHtml(data.name)} at ${escapeHtml(formatAddr(hex, data.address_hex, 'rel'))}</div><div class="cm">click to jump there</div>`;
+  }
+  return calleeCard(hex);
+}
+
+function slotCard(so) {
+  const slot = so.dataset.slot;
+  let html = `<div class="ch">stack slot ${escapeHtml(so.textContent)}</div>`;
+  if (slot !== undefined) {
+    const off = Number(slot);
+    html += `<div class="cm">entry${off < 0 ? '−' : '+'}0x${Math.abs(off).toString(16)} — measured from the stack pointer at the function's entry</div>`;
+  }
+  return html;
+}
+
+function resolveHover(el) {
+  if (!state.current || !el?.closest) return null;
+  if (els.ccode.contains(el)) {
+    const row = el.closest('.d2-cl');
+    if (!row) return null;
+    const n = Number(row.dataset.line);
+    const tok = el.closest('.t');
+    const callee = tok?.dataset.kind === 'funcname' ? tok.dataset.callee : null;
+    if (callee && callee !== state.current.data.address_hex) {
+      return { key: `callee:${callee}:${n}`, html: calleeCard(callee), anchor: tok };
+    }
+    const varTok = tok?.dataset.kind === 'variable' ? tok : null;
+    return { key: `L${n}:${varTok ? varTok.textContent : ''}`, html: lineCard(n, varTok), anchor: row.querySelector('.ct') || row };
+  }
+  if (els.asmcode.contains(el)) {
+    const xt = el.closest('a.xt');
+    if (xt) return { key: 'xt:' + xt.dataset.goto, html: targetCard(xt.dataset.goto), anchor: xt };
+    const so = el.closest('.so');
+    const row = el.closest('.d2-ar');
+    if (so && row) return { key: 'so:' + row.dataset.addr, html: slotCard(so), anchor: so };
+    if (row) {
+      const html = insnCard(row.dataset.addr);
+      return html ? { key: 'A' + row.dataset.addr, html, anchor: row.querySelector('.ao') || row } : null;
+    }
+  }
+  return null;
+}
+
+const hover = createHover({
+  roots: [els.ccode, els.asmcode],
+  card: els.card,
+  delay: () => state.prefs.hoverDelay,
+  resolve: resolveHover,
+});
+
+/** Select a target in every pane; `from` is the pane that asked (not scrolled). */
+function selectTarget(target, from, tokEl = null) {
+  state.sel = target;
+  const sets = sync.select(target, { from });
+  setCursor(tokEl);
+  const active = target?.addr ? 'a-' + target.addr : Number.isInteger(target?.line) ? 'c-L' + target.line : null;
+  if (target?.line || target?.sym) {
+    const line = target.line ?? (sets && sets.lines.size ? Math.min(...sets.lines) : null);
+    if (line) els.ccode.setAttribute('aria-activedescendant', 'c-L' + line);
+  }
+  if (target?.addr) els.asmcode.setAttribute('aria-activedescendant', active);
+  if (target?.sym) {
+    setHint(`<b>${escapeHtml(varSummary(target.sym))}</b> — <kbd>n</kbd> rename · <kbd>y</kbd> retype · <kbd>Esc</kbd> clears`);
+  } else if (target?.addr) {
+    const insn = state.current.index.addrToInsn.get(target.addr);
+    setHint(insn ? `${escapeHtml(insn.address_hex)} <b>${escapeHtml(insn.text)}</b> — <kbd>;</kbd> comment · <kbd>x</kbd> references` : null);
+  } else if (Number.isInteger(target?.line)) {
+    const n = (state.current.index.lineToInsns.get(target.line) || []).length;
+    setHint(`L${target.line} — ${n} instruction${n === 1 ? '' : 's'} · click the address gutter to open them in Assembly`);
+  } else {
+    setHint(null);
+  }
+  return sets;
+}
+
+function setCursor(tokEl) {
+  state.cursor?.classList.remove('cur');
+  state.cursor = tokEl || null;
+  tokEl?.classList.add('cur');
+}
+
+/** Show the Assembly pane (switching tabs unless split already shows it). */
+function ensureShown(tab) {
+  if (!isShown(tab)) setTab(tab);
+}
+
+/** Jump to an address: an instruction here, or the function that holds it. */
+function gotoAddr(hex) {
+  if (!state.current) return;
+  if (state.current.index.addrToInsn.has(hex)) {
+    ensureShown('asm');
+    selectTarget({ addr: hex }, null);
+    return;
+  }
+  const fn = state.byAddr.get(hex) || containingFunction(hex);
+  if (fn) openFunction(fn, { focusAddr: fn.address_hex === hex ? null : hex });
+  else toast(`${hex} is not inside a known function.`, { kind: 'warn' });
+}
+
+function containingFunction(hex) {
+  const a = BigInt(hex);
+  for (const fn of state.byAddr.values()) {
+    const start = BigInt(fn.address_hex);
+    if (a >= start && a < start + BigInt(fn.size || 0)) return fn;
+  }
+  return null;
+}
+
+function openCallee(tok) {
+  const fn = state.byAddr.get(tok.dataset.callee) || state.byName.get(tok.textContent);
+  if (fn && fn.address_hex !== state.current.data.address_hex) openFunction(fn);
+}
+
+els.ccode.addEventListener('click', (e) => {
+  if (!state.current) return;
+  const row = e.target.closest('.d2-cl');
+  if (!row) return;
+  const n = Number(row.dataset.line);
+  if (e.target.closest('.la')?.textContent) {
+    ensureShown('asm');
+    selectTarget({ line: n }, 'c');
+    return;
+  }
+  const tok = e.target.closest('.t');
+  if (tok?.dataset.sym) selectTarget({ sym: tok.dataset.sym }, 'c', tok);
+  else selectTarget({ line: n }, 'c', tok);
+});
+
+els.ccode.addEventListener('dblclick', (e) => {
+  const tok = e.target.closest('.t');
+  if (!tok || !state.current) return;
+  if (tok.dataset.kind === 'funcname' && tok.dataset.callee && tok.dataset.callee !== state.current.data.address_hex) {
+    e.preventDefault();
+    openCallee(tok);
+  }
+});
+
+els.asmcode.addEventListener('click', (e) => {
+  if (!state.current) return;
+  const xt = e.target.closest('a.xt');
+  if (xt) {
+    e.preventDefault();
+    gotoAddr(xt.dataset.goto);
+    return;
+  }
+  const row = e.target.closest('.d2-ar');
+  if (row) selectTarget({ addr: row.dataset.addr }, 'asm');
+});
+
+for (const [pane, selector, targetOf] of [
+  [els.ccode, '.d2-cl', (el) => ({ line: Number(el.dataset.line) })],
+  [els.asmcode, '.d2-ar', (el) => ({ addr: el.dataset.addr })],
+]) {
+  let last = null;
+  pane.addEventListener('pointerover', (e) => {
+    const el = e.target.closest(selector);
+    if (el === last) return;
+    last = el;
+    sync.hover(el ? targetOf(el) : null);
+  });
+  pane.addEventListener('pointerleave', () => {
+    last = null;
+    sync.hover(null);
+  });
+}
+
+/** Keyboard navigation inside the C and Assembly panes. */
+function paneKey(e) {
+  if (!state.current) return false;
+  const inC = els.ccode.contains(document.activeElement);
+  const inAsm = els.asmcode.contains(document.activeElement);
+  if (!inC && !inAsm) return false;
+  const { index } = state.current;
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    if (inC) {
+      const cur = state.sel?.line ?? (state.sel?.sym ? null : 0) ?? 0;
+      const next = Math.min(Math.max((cur || 0) + step, 1), index.lineCount);
+      selectTarget({ line: next }, null);
+      byId('c-L' + next)?.scrollIntoView({ block: 'nearest' });
+      hover.showFor(byId('c-L' + next)?.querySelector('.ct'));
+    } else {
+      const insns = state.current.data.instructions;
+      const at = state.sel?.addr ? index.insnIndex.get(state.sel.addr) : -1;
+      const next = insns[Math.min(Math.max(at + step, 0), insns.length - 1)];
+      if (next) {
+        selectTarget({ addr: next.address_hex }, null);
+        byId('a-' + next.address_hex)?.scrollIntoView({ block: 'nearest' });
+        hover.showFor(byId('a-' + next.address_hex));
+      }
+    }
+    return true;
+  }
+  if (inC && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    const toks = [...els.ccode.querySelectorAll('.t:not([data-kind=syntax]):not([data-kind=comment])')];
+    if (!toks.length) return true;
+    const at = state.cursor ? toks.indexOf(state.cursor) : -1;
+    const next = toks[Math.min(Math.max(at + (e.key === 'ArrowRight' ? 1 : -1), 0), toks.length - 1)];
+    const line = Number(next.closest('.d2-cl').dataset.line);
+    if (next.dataset.sym) selectTarget({ sym: next.dataset.sym }, null, next);
+    else selectTarget({ line }, null, next);
+    next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    hover.showFor(next);
+    return true;
+  }
+  if (e.key === 'Enter' && state.cursor?.dataset.kind === 'funcname' && state.cursor.dataset.callee) {
+    openCallee(state.cursor);
+    return true;
+  }
+  return false;
 }
 
 // ── tabs, split, view menu ─────────────────────────────────────────────────
@@ -657,15 +1019,28 @@ function toggleSplit() {
 }
 
 const VIEW_ITEMS = [
+  { key: 'asmAddr', label: 'Instruction addresses', kbd: 'o' },
+  { key: 'asmBytes', label: 'Bytes column', kbd: 'b' },
+  { key: 'asmCMode', label: 'C in the assembly' },
+  { key: 'asmArrows', label: 'Branch arrows' },
+  { key: 'asmHints', label: 'Idiom hints' },
   { key: 'cLineNumbers', label: 'C line numbers' },
   { key: 'cLineAddrs', label: 'C line addresses' },
+  { key: 'hoverDelay', label: 'Hover card' },
+  { key: 'split', label: 'Split view', kbd: 's' },
 ];
+
+const VALUE_LABEL = {
+  asmAddr: { abs: 'absolute', rel: 'offset', both: 'both' },
+  asmCMode: { comment: 'comments', interleave: 'interleaved', off: 'off' },
+  hoverDelay: { 0: 'instant', 250: '250 ms', 450: '450 ms', 800: '800 ms', '-1': 'off' },
+};
 
 function renderViewMenu() {
   const p = state.prefs;
   els.viewMenu.innerHTML = VIEW_ITEMS.map((item) => {
     const value = p[item.key];
-    const shown = typeof value === 'boolean' ? (value ? 'on' : 'off') : String(value);
+    const shown = VALUE_LABEL[item.key]?.[value] ?? (typeof value === 'boolean' ? (value ? 'on' : 'off') : String(value));
     return `<button class="d2-mi" role="menuitem" data-pref="${item.key}">${escapeHtml(item.label)}` +
       `<span class="v${value === true ? ' on' : ''}">${escapeHtml(shown)}${item.kbd ? ` <kbd>${item.kbd}</kbd>` : ''}</span></button>`;
   }).join('') + '<hr><button class="d2-mi" role="menuitem" data-pref="reset">Reset view settings</button>';
@@ -685,10 +1060,12 @@ els.viewMenu.addEventListener('click', (e) => {
   const item = e.target.closest('[data-pref]');
   if (!item) return;
   const key = item.dataset.pref;
-  if (key === 'reset') updatePrefs({ ...DEFAULT_PREFS, tab: state.tab, split: state.prefs.split });
+  if (key === 'split') toggleSplit();
+  else if (key === 'reset') updatePrefs({ ...DEFAULT_PREFS, tab: state.tab, split: state.prefs.split });
   else if (typeof state.prefs[key] === 'boolean') updatePrefs({ [key]: !state.prefs[key] });
   else updatePrefs(cycle(state.prefs, key));
   applyPaneClasses();
+  if (['asmCMode', 'asmArrows', 'asmHints', 'reset'].includes(key)) rerender('asm');
   renderViewMenu();
   els.viewMenu.querySelector(`[data-pref="${key}"]`)?.focus();
 });
@@ -725,10 +1102,16 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.ctrlKey || e.metaKey || e.altKey || typing(document.activeElement)) return;
   if (e.key === 'Escape') {
-    if (!els.viewMenu.hidden) { toggleViewMenu(false); els.viewBtn.focus(); }
+    if (hover.hide()) return;
+    if (!els.viewMenu.hidden) { toggleViewMenu(false); els.viewBtn.focus(); return; }
+    if (state.sel) selectTarget(null, null);
     return;
   }
   if (!state.current && e.key !== '/' && e.key !== '?') return;
+  if (paneKey(e)) {
+    e.preventDefault();
+    return;
+  }
   switch (e.key) {
     case '/':
       if (els.filter.disabled) return;
@@ -745,6 +1128,16 @@ document.addEventListener('keydown', (e) => {
       break;
     case 's':
       toggleSplit();
+      break;
+    case 'o':
+      updatePrefs(cycle(state.prefs, 'asmAddr'));
+      applyPaneClasses();
+      setHint(`instruction addresses: ${VALUE_LABEL.asmAddr[state.prefs.asmAddr]}`);
+      break;
+    case 'b':
+      updatePrefs({ asmBytes: !state.prefs.asmBytes });
+      applyPaneClasses();
+      setHint(`bytes column ${state.prefs.asmBytes ? 'on' : 'off'}`);
       break;
     default:
       return;
@@ -790,4 +1183,4 @@ function download(blob, name) {
 }
 
 // Exposed for the browser smoke test and for debugging from the console.
-window.kunaStudy = { state, openFunction, setTab };
+window.kunaStudy = { state, openFunction, setTab, showFunction, normalizeInspect };
