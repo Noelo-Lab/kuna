@@ -1,21 +1,22 @@
 # `callbacktype` default-ON evaluation
 
-Both arms of the SAME build — d10b3586c, this PR rebased onto ef49332b2 (#720 structheadless,
-opt-in, on top of #723 globalref, #719 calleevoteperf, #721 castimplied, #722 castarith, #724
-castsign) — measured on that commit, and (a)-(d), (f) and (h) measured again on fe6672881, the
-same code rebased onto f434b6a60 (#727 castindex and #728 castternary, both on by default), with
-the same results except (h)'s base count, which those two lower in both arms. `--option callbacktype off` is the old default; `on` is the
-shipped one. The `off` arm is main: 1,615 perfect on the typesweep, and its castbench output is
-byte-identical to main's own arm (`castbench/main-c960fb18d`) on all 45 binaries, so #720 moved
-nothing there either.
+Both arms of the SAME build -- bfa1d32e0, this PR rebased onto 850e8c692 (#726 callpush, on by
+default, after #728 castternary, #727 castindex, #720 structheadless opt-in, #723 globalref, #719
+calleevoteperf, #721 castimplied, #722 castarith and #724 castsign); the typesweep and castbench ran
+on c83b6121d, whose engine code bfa1d32e0 shares (it adds docs and the catalog text). `--option callbacktype off` is
+the old default; `on` is the shipped one. The `off` arm is main: 1,615 perfect on the typesweep, and
+its castbench output is byte-identical to main's own arm at 850e8c692 (the callpush lander's arm,
+built from the tree main now has) on all 45 binaries.
 
-The round-6 review measured `libselinux.so.1` at +12.67% (-O0) and +13.17% (-O2-noinline), over
-the +5% budget, almost all of it decompiling the `pthread_create` start routine's one large direct
-caller again, and six parks that changed nothing. This build bounds that redo: a declaration that
-is exactly the signature the body already printed is not parked (`body-agrees`), and a direct
-caller is decompiled again only when its call passes another number of arguments or uses the
-result. Every number below is re-measured on it; (d), (h) and the arity counters are unchanged
-row for row, (f) loses two callers and two cosmetic parks, and (e) now includes `libselinux`.
+The round-7 review found a caller that lost a type. A bsearch helper that calls a parked comparator
+directly with its own pointer, and does nothing else with it, took that pointer's type from the
+comparator's recovered `struct_N *`; decompiled again after the park, it took the slot's `void *`
+instead (`ptx -O0`'s `search_table`, `struct_2 *` -> `void *`, DWARF `WORD *`). This build keeps
+the comparator's first-decompile statement for its call sites, so where the slot says only `void *`
+it still types what a caller passes, and redoes a caller that uses the result only when the declared
+return differs from the one the callback printed. Every number below is measured on it; (d), (h) and
+the arity counters are unchanged row for row, and (f) now covers 59 binaries with a column for
+callers whose own parameter types change.
 
 ## (a) `make test` — the datatest corpus
 
@@ -30,12 +31,12 @@ option only ever speaks from a recorded call site, so nothing in it can reach th
 ## (b) `make test-stages`
 
 ```
-datatests: 1392/1392 assertions passed
+datatests: 1397/1397 assertions passed
 PARITY OK
 ```
 
 0 assertions move. `docs/baseline-stages.json` is re-recorded only for the three assertions this
-PR's own stage test adds (1,389 on main at f434b6a60 + 3; 1,372 + 3 on ef49332b2). That test is a negative control: the one-function
+PR's own stage test adds (1,394 on main at 850e8c692 + 3). That test is a negative control: the one-function
 path has no recorded call site, so pass 1 (`option callbacktype off`) and pass 2 (`on`) print the
 same thing. The off/on coverage is in the `tests/cli` probes below.
 
@@ -51,9 +52,9 @@ new default the slot declares it (`int by_used(void *a0,void *a1)` where its own
 `--option callbacktype off` and keep main's expectations, so they test calleevote alone. The
 callbacktype probes pin the declared form. Nothing else moves, and nothing moved in the rebases onto
 castarith/castsign, globalref and structheadless: main's own castarith expectations for `by_used` and `mark` are
-kept as they are, and the thirteen callbacktype probes pass unchanged.
+kept as they are, and the callbacktype probes pass unchanged.
 
-The thirteen callbacktype probes over four fixtures, and what each pins:
+The fourteen callbacktype probes over five fixtures, and what each pins:
 
 | probe | fixture function | pins |
 |---|---|---|
@@ -70,6 +71,7 @@ The thirteen callbacktype probes over four fixtures, and what each pins:
 | `refuses-a-return-wider-than-the-slot-declares` | `lcmp`, `lcmp_tail` | recovered-wider-output |
 | `refuses-a-callee-whose-direct-caller-reads-a-wider-return` | `zcmp`, `cmp_inner`/`cmp_outer` | caller-reads-a-wider-return |
 | `refuses-a-narrow-return-whose-upper-bytes-nothing-clears` | `ccmp`, `cw`, `bw` refused; `zcmp`, `zw`, `iw` parked | recovered-narrower-output |
+| `keeps-the-pointer-a-caller-forwards-to-a-parked-comparator` | `search_g`, `search_c`, `search_z` | a direct caller keeps its `struct_N *`; clang -O0's call drops the phantom `rdx` argument |
 
 The last three are the round-2 review's counterexamples (`x7`, `x6`, `x2` + a body that never
 writes the register) and **fail on 081fdd26d**: `wrap_up(v6)`, `score1(&v2[1],v5)`,
@@ -90,6 +92,15 @@ returned `CONCAT31((undefined3)((unsigned int)v1 >> 8),...)` and `void * bw(void
 `(void *)CONCAT71(v1,...)`, `v1` never set. Run, the fixture shows why: `bw`'s thread result comes
 back as `0x72fe5f7ff601`, the caller's leftover upper bytes over the `1`.
 
+The forwarding probe is the round-7 review's counterexample: one `WORD` comparator handed to `qsort`
+and called directly by a bsearch helper `search(WORD *w, WORD *tab, long n)`, built at gcc -O0
+(`search_g`, which `calleevote` decompiles again for its `tab`), clang -O2 -fno-inline (`search_c`,
+redone for the result it uses) and clang -O0 (`search_z`, redone because its call passes the `idiv`
+remainder left in `rdx` as a third argument). On the reviewed build (fe6672881's code, rebased as
+0949bca88) all three print `void *a0` where `off` prints `struct_0 *a0` / `struct_1 *a0`, and the
+probe's four caller clauses fail; on this build all three keep
+the record pointer and `search_z` calls `compare_z(a0,(struct_0 *)&a1[v2 * 2])` with two arguments.
+
 ## (d) the 444-slice typesweep (new default vs old default)
 
 Metric pinned at decbench 625e892 (`final-c/pindb.py`), `DECBENCH_NO_CACHE=1`, base arm = the
@@ -106,11 +117,21 @@ byte-identical variables in both arms: 10710 functions, 0 scored differently (mu
 Read as the flip: **1,615 -> 1,625 perfect (+10), mean .3697 -> .3713, 29 improved, 0 worse** —
 there is no worse row to read. By level: O0 1,110 -> 1,114, O2 89 -> 92, O2-noinline 416 -> 419.
 By project: coreutils 989 -> 993, shadow 89 -> 95, bzip2 and tar improve without a new perfect.
-The 29 moved rows are the same 29, function for function, as before the redo was bounded (on
-c960fb18d) and on the two bases before that (003db2dd8, 5458b7ab5), and before the narrow-return
-refusal (the same rows in `moved.csv`, the same per-project block): the refusal fires nowhere in
-the corpus, the `body-agrees` skip drops only parks that change no scored type, and
-castarith/castsign/globalref change how some of these bodies print but no scored type.
+The 29 moved rows are the same 29, function for function, as on every base since round 5
+(850e8c692, f434b6a60, c960fb18d, 003db2dd8, 5458b7ab5), before the redo was bounded and before the
+narrow-return refusal (the same rows in `moved.csv`, the same per-project block): the refusal fires
+nowhere in the corpus, the `body-agrees` skip drops only parks that change no scored type, and
+castarith/castsign/globalref/callpush change how some of these bodies print but no scored type.
+
+**Every row whose variables change, read.** `type_match` cannot see a caller that loses a type to
+a synthesized record it never scores (`struct_N` never equals `WORD`), so every row whose exported
+variables differ between the arms (`vars_sig`) is listed, scored or not. There are 37, and all 37
+are the callbacks themselves: the qsort comparators (`compare_ranges`, `compare_words`,
+`compare_occurs`, `struct_month_cmp`, `userid_compare`, `compare_dirnames`), the signal handlers
+(`mySignalCatcher`, `mySIGSEGVorSIGBUScatcher`, `catch_signals`, `alarm_handler`, `sigstat`) and
+`sort`'s `sortlines_thread`. The 38th row of the reviewed build, `ptx -O0`'s `search_table`, a
+bsearch helper that calls `compare_words` directly and printed `void *` for its `WORD *` there, is
+byte-identical between the arms now (byte-identical functions 10,710 -> 10,711).
 
 Against the head the round-3 review read (a891245ac: 32 improved), three rows go back, none of them
 perfect, and all are one pair of `ptx` comparators:
@@ -141,8 +162,15 @@ does not cross.
 
 **Arity counters beside the metric**, over the 76 slices that hold a callback argument
 (`arity-counters.py`): **13 functions gain a parameter, 0 lose one, all 13 DWARF-confirmed,
-0 phantom**, and **no direct call site to a moved function changes its argument count** in
-either arm (re-run on d9af28b9b, 1d38ab44c and d10b3586c: the same 13 rows). The 13 are `void (int)` signal handlers (bzip2 ×6, shadow `login`/`sulogin`/`expiry`
+0 phantom**, and no direct call site to one of those 13 changes its argument count (re-run on
+bfa1d32e0, d10b3586c, 1d38ab44c and d9af28b9b: the same 13 rows). A call to a parked function
+whose own count does NOT move can change, and it is the one place the declaration removes an
+argument: a call that passed more than the declared list now passes the list. None does in the
+59 binaries of (f); the clang -O0 build of the round-7 review's bsearch helper is one. Before
+calling the comparator its `mid = (lo + hi) / 2` leaves the `idiv` remainder in `rdx`, recovery
+printed `compare_z(a0,(struct_0 *)&a1[v2 * 2],(v4 + v3) % 2)`, and the declared two-parameter list
+prints `compare_z(a0,(struct_0 *)&a1[v2 * 2])`, which is the call the source makes
+(`callbacktype_forward_x86_64`, pinned by the forwarding probe). The 13 are `void (int)` signal handlers (bzip2 ×6, shadow `login`/`sulogin`/`expiry`
 ×7) whose bodies never read the register and that nothing calls directly; each exports the new
 parameter with empty `line_numbers`/`addresses`, the by-design case in spec 04.
 
@@ -181,33 +209,46 @@ The previous bases, unbounded and on the four canonical binaries only: fmt +1.15
 sort -0.29%, bash +4.06% (+0.23% on a second run) on c960fb18d; fmt +1.39%, ls +8.15% (median
 -3.21%, at load ~46, byte-identical output), sort -10.18%, bash +0.11% on 003db2dd8.
 
-## (f) whole-corpus `decompile-all`, 47 binaries / 22,749 functions
+## (f) whole-corpus `decompile-all`, 59 binaries / 35,291 functions
 
-The implementer's 12 binaries, and the 9, 12 and 14 the round-2, -3 and -4 reviews chose to be
-disjoint from the ones before. **64 functions change, all of them parked callbacks; no caller
-changes. 0 unexplained.** The run parks 64 functions and 25 more are `body-agrees`: the declaration
-is the signature the body already printed. Before the bound, 23 of those 25 printed the same text
-parked, and two changed only in rendering (`e2fsck -O2`'s `sub_2f400` moved one `if`/`return`
-through a temporary; `gnutls-serv -O2`'s `terminate` printed `(long)a0 / 10` for `a0 / 10`); both
-now print what `off` prints. The two callers the unbounded redo changed, `libselinux
--O2-noinline`'s `selinux_restorecon_xattr` and `sub_1ce10` (`a1` narrowed to `unsigned int`, the
-same values), are no longer decompiled again: the `pthread_once` routine they call agrees with its
-body, and their call to the `pthread_create` routine passes the declared one argument and ignores
-the result. No changed function gains a `CONCAT`, and no call to a parked function changes its
-argument count. Nineteen binaries print no changed function. Per-function table, with each
-function's casts in both arms: `docs/features/callbacktype/hunks.md`.
+The implementer's 12 binaries, and the 9, 12, 14 and 12 the round-2, -3, -4 and -7 reviews chose to
+be disjoint from the ones before. **91 functions change, all of them parked callbacks. No caller
+changes, no function that is not itself parked changes its own parameter types, 0 unexplained.**
+The run parks 91 functions (64 in the first 47 binaries, as before, and the 27 the round-7 review
+found in its 12). Nothing else changed between the arms: no changed function gains a `CONCAT`, and
+no call to a parked function changes its argument count. Twenty-two binaries print no changed
+function. Per-function table, with each function's parameter types and casts in both arms:
+`docs/features/callbacktype/hunks.md`.
 
-**Casts grow outside castbench, and that is the declared type.** Over the 64 changed functions the
-cast count goes from 330 to 457 (+127): 18 functions print more, none fewer. In all 18 the body's own guess for the parameter was a pointer to something (a
-synthesized `struct_N *`, `char *`, `unsigned long *`) and the slot declares `void *`, which DWARF
-confirms for every one. The program converts that `void *` to its record type inside the function,
-which a stripped binary does not show, so each field read prints its own cast off the `void *`, as
-IDA's output does. The largest: `libselinux`'s `selinux_restorecon_thread` (`char *` -> `void *`,
-+21 at -O2-noinline, +18 at -O0), `tar`'s `hol_entry_qcmp` (`struct_70 *`, +15), `e2fsck`'s
-`process_inode_cmp` (`struct_126 *`, +8) and `read_bitmaps_thread` (`struct_42 *`, 0 -> 7; it was
-0 -> 13 before castarith kept `void *` arithmetic in pointer terms). No type is weakened: each
-parameter moves from an inferred pointee to the declared type, and each return from a wrong
-`unsigned long`/`uint8` to the declared `void *`/`int`.
+`hunks-corpus.py` now also compares every changed function's own printed parameter types, and a
+function that is not parked whose own types move is `UNEXPLAINED-own-params`. On the reviewed build
+that column flags exactly the review's row, `ptx -O0`'s `search_table` (`struct_2 *, struct_3 *` ->
+`void *, struct_3 *`), and on the fixture it flags all three bsearch helpers; on this build it flags
+nothing. What closes it: the comparator's `protoorder` statement, which is what gave the helper
+`struct_2 *` in the first place, used to be dropped at the park. It is kept for the comparator's
+call sites, and at a call whose declared parameter is `void *` it offers its own pointer type as a
+vote on the argument (the value's type only, never the type the argument is converted to, so no
+cast is added). A caller decompiled again -- by the park round, or by a `calleevote` round for
+another parameter, which is what redoes gcc -O0's helper -- therefore types its forwarded pointer
+exactly as it did before the park. The park round also redoes fewer callers: one that uses the
+result only when the declared return differs from the return the callback printed (`compare_words`
+printed `unsigned int`, so `search_table` is still redone, and prints the same).
+
+**Casts grow outside castbench, and that is the declared type.** Over the 91 changed functions the
+cast count goes from 457 to 655 (+198): 31 functions print more, none fewer. In all 31 the body's
+own guess for the parameter was a pointer to something (a synthesized `struct_N *`, `char *`,
+`unsigned long *`, `uint4 *`) and the slot declares `void *`, which DWARF confirms for every one.
+The program converts that `void *` to its record type inside the function, which a stripped binary
+does not show, so each field read prints its own cast off the `void *`, as IDA's output does. The
+largest: `libselinux`'s `selinux_restorecon_thread` (`char *` -> `void *`, +21 at -O2-noinline, +18
+at -O0), `tar`'s `hol_entry_qcmp` (`struct_70 *`, +15), `ptx -O0`'s `compare_words` (+13),
+`certtool -O0`'s `setof_compar` (+9), `e2fsck`'s `process_inode_cmp` (+8, +6, +6) and
+`read_bitmaps_thread` (0 -> 7 at each level). One of `process_inode_cmp`'s is an address handed to
+an import whose recovered parameter is an integer: `ext2fs_const_inode(&a0->field_0x4[0x14])`
+prints `ext2fs_const_inode((int8)a0 + 0x18)`, the same value, in the `(long)v` form castarith
+leaves as integer arithmetic. No type is weakened: each parameter moves from an inferred pointee to
+the declared type, each return from a wrong `unsigned long`/`uint8` to the declared `void *`/`int`,
+and no caller's type moves at all.
 
 ## (g) `p0_knowledge/modes.rs`
 
@@ -217,21 +258,21 @@ enumerates `on|off` options whose shipped default is `off`), so no `AGGRESSIVE_O
 
 ## (h) castbench (full set, 4,815 functions shared with IDA)
 
-Measured on fe6672881, this PR rebased onto f434b6a60 (#727 castindex and #728 castternary, on
-by default), against main's own arm at that commit (the castternary lander's arm, built from the
-tree main now has); the `off` arm of the same build is byte-identical to it on all 45 binaries.
+Measured on c83b6121d (bfa1d32e0 changes only docs and the catalog text), this PR rebased onto 850e8c692 (#726 callpush, on by
+default), against main's own arm at that commit (the callpush lander's arm, built from the tree main
+now has); the `off` arm of the same build is byte-identical to it on all 45 binaries.
 
 ```
 ida    casts  37,821  /kloc 155.4  /100stmt 27.0  vs ida 1.000
-main   casts  36,614  /kloc 192.1  /100stmt 30.5  vs ida 0.968
-on     casts  36,635  /kloc 192.2  /100stmt 30.5  vs ida 0.969
+main   casts  35,588  /kloc 188.2  /100stmt 29.9  vs ida 0.941
+on     casts  35,609  /kloc 188.3  /100stmt 29.9  vs ida 0.942
 functions: fewer casts 0, more casts 3 (+21), unchanged 4,812
 ```
 
-The same +21 in the same three functions on every base since round 5: 36,617 -> 36,638 on
-04f693d82, 37,477 -> 37,498 on
-c960fb18d (and on ef49332b2 with the bounded redo, whose `off` arm is byte-identical to
-`castbench/main-c960fb18d`), 38,602 -> 38,623 on 003db2dd8.
+The same +21 in the same three functions on every base since round 5: 36,614 -> 36,635 on
+f434b6a60, 36,617 -> 36,638 on 04f693d82, 37,477 -> 37,498 on c960fb18d, 38,602 -> 38,623 on
+003db2dd8. The fix for the caller's parameter changes no castbench function: the forwarding shape
+is not in the shared set.
 
 **+21 casts (+0.06%), in three functions, all the same one:** `sort`'s `pthread_create` start
 routine at -O0, -O2 and -O2-noinline (+7 each; +13 each before castarith). The source is
