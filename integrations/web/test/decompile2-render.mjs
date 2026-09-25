@@ -20,6 +20,19 @@ import { parseRustSignature } from '../decompile2/ctype.js';
 import { placeOverlay } from '../decompile2/hover.js';
 import { expand } from '../decompile2/sync.js';
 
+/** The text a browser would show for our own renderer's markup: tags dropped, the five escapes decoded. */
+function visibleText(markup) {
+  let out = '';
+  let inTag = false;
+  for (const ch of markup) {
+    if (ch === '<') inTag = true;
+    else if (ch === '>' && inTag) inTag = false;
+    else if (!inTag) out += ch;
+  }
+  const entities = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&amp;': '&' };
+  return out.replace(/&(?:lt|gt|quot|#39|amp);/g, (e) => entities[e]);
+}
+
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
 const checks = [];
 
@@ -95,7 +108,7 @@ const withTokens = { ...plain, tokens: drift, tokens_error: null };
 const seg = lineSegments(withTokens);
 assert.equal(seg.fallbackCount, 1, 'exactly the drifted line falls back');
 const html = renderC(withTokens, { segs: seg.segs });
-const text = html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+const text = visibleText(html);
 assert.ok(text.includes('v1 = sum_to(add(argc,3));'), 'the fallback line still renders its text');
 const fb = fallbackLines(MAIN);
 assert.equal(fb.length, 7);

@@ -38,11 +38,10 @@ export function normalizeType(text) {
     .replace(/\s*\]/g, ']')
     .replace(/\(\s+/g, '(')
     .replace(/\s+\)/g, ')')
-    .replace(/ \*$/, ' *')
     .trim();
 }
 
-const TYPE_RE = /^(?:(?:const|volatile|signed|unsigned|struct|union|enum|long|short)\s+)*[A-Za-z_][A-Za-z0-9_]*(?:\s+(?:const|volatile|int|long|char|double))*(?:\s*\*+\s*(?:const\s*)?)*(?:\[\d*\])*$/;
+const TYPE_RE = /^(?:(?:const|volatile|signed|unsigned|struct|union|enum|long|short)\s+)*[A-Za-z_][A-Za-z0-9_]*(?:\s+(?:const|volatile|int|long|char|double))*(?:\s*\*(?:\s*const)?)*\s*(?:\[\d*\])*$/;
 const FNPTR_RE = /^[A-Za-z_][A-Za-z0-9_ ]*\**\s*\(\s*\*+\s*\)\s*\([^()]*\)$/;
 
 /**

@@ -89,6 +89,19 @@ export async function openPage(port, { onException } = {}) {
     return res.result.value;
   }
 
+  /** Run `fn` in the page with `args` passed as values, never spliced into source. */
+  async function call(fn, ...args) {
+    const { result: global } = await send('Runtime.evaluate', { expression: 'globalThis' });
+    const res = await send('Runtime.callFunctionOn', {
+      functionDeclaration: fn.toString(), objectId: global.objectId,
+      arguments: args.map((value) => ({ value })), awaitPromise: true, returnByValue: true,
+    });
+    if (res.exceptionDetails) {
+      throw new Error(res.exceptionDetails.exception?.description || res.exceptionDetails.text);
+    }
+    return res.result.value;
+  }
+
   async function waitFor(expression, { timeout = 30000, what = expression } = {}) {
     const end = Date.now() + timeout;
     while (Date.now() < end) {
@@ -105,9 +118,13 @@ export async function openPage(port, { onException } = {}) {
   }
 
   async function center(selector) {
-    const box = await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)});
-      if (!el) return null; el.scrollIntoView({block:'nearest'}); const r = el.getBoundingClientRect();
-      return {x: r.left + Math.min(r.width / 2, 12), y: r.top + r.height / 2}; })()`);
+    const box = await call((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      el.scrollIntoView({ block: 'nearest' });
+      const r = el.getBoundingClientRect();
+      return { x: r.left + Math.min(r.width / 2, 12), y: r.top + r.height / 2 };
+    }, selector);
     if (!box) throw new Error(`no element for ${selector}`);
     return box;
   }
@@ -154,7 +171,7 @@ export async function openPage(port, { onException } = {}) {
     return Buffer.from(data, 'base64');
   }
 
-  return { send, on, evaluate, waitFor, navigate, click, hover, key, type, viewport, screenshot, exceptions, close: () => ws.close() };
+  return { send, on, evaluate, call, waitFor, navigate, click, hover, key, type, viewport, screenshot, exceptions, close: () => ws.close() };
 }
 
 const VK = { Enter: 13, Escape: 27, ' ': 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Tab: 9, Backspace: 8 };

@@ -46,11 +46,16 @@ const LOAD_EXAMPLE = `(async () => {
   return true;
 })()`;
 
-const text = (sel) => page.evaluate(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ''`);
-const count = (sel) => page.evaluate(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
+const text = (sel) => page.call((s) => document.querySelector(s)?.textContent ?? '', sel);
+const count = (sel) => page.call((s) => document.querySelectorAll(s).length, sel);
 const idle = (what) => page.waitFor(`document.getElementById('cancelbtn').disabled`, { what, timeout: 60000 });
 const toasts = () => page.evaluate(`[...document.querySelectorAll('.d2-toast')].map((t) => t.textContent)`);
-const setSelect = (id, value) => page.evaluate(`(() => { const s = document.getElementById(${JSON.stringify(id)}); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change')); return true; })()`);
+const setSelect = (id, value) => page.call((i, v) => {
+  const sel = document.getElementById(i);
+  sel.value = v;
+  sel.dispatchEvent(new Event('change'));
+  return true;
+}, id, value);
 const sampleHash = 'sha256:' + createHash('sha256').update(readFileSync(fixture('sample.elf'))).digest('hex');
 
 try {
@@ -203,9 +208,13 @@ try {
 
   await page.navigate(`${server.base}/decompile2/`);
   await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: 'reload ready', timeout: 60000 });
-  await page.evaluate(`(() => { localStorage.clear(); localStorage.setItem('kuna.d2.prefs', JSON.stringify({ v: 1, tab: 'c' }));
-    localStorage.setItem(${JSON.stringify('kuna.d2.session.' + sampleHash)}, JSON.stringify({ v: 1, rawSeq: 1,
-      records: [['raw:1', { kind: 'raw', text: 'bytes 0x10 zz' }]], bytes: [] })); return true; })()`);
+  await page.call((key, stored) => {
+    localStorage.clear();
+    localStorage.setItem('kuna.d2.prefs', JSON.stringify({ v: 1, tab: 'c' }));
+    localStorage.setItem(key, stored);
+    return true;
+  }, 'kuna.d2.session.' + sampleHash, JSON.stringify({ v: 1, rawSeq: 1,
+    records: [['raw:1', { kind: 'raw', text: 'bytes 0x10 zz' }]], bytes: [] }));
   await page.evaluate(LOAD_EXAMPLE);
   await page.waitFor(`document.querySelectorAll('#fnlist .fn').length > 5`, { what: 'inventory despite a bad stored directive', timeout: 60000 });
   if (engineHasInspect) {

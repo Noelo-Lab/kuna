@@ -113,6 +113,14 @@ assert.equal(validateCType('unsigned int'), null);
 assert.equal(validateCType('struct pair *'), null);
 assert.match(validateCType('int; x'), /cannot contain/);
 assert.match(validateCType('int int int (('), /not a C type/);
+for (const t of ['char *', 'int **', 'char * const *', 'char *const', 'unsigned long long int', 'char[16]', 'struct foo *[4]', 'void (*)(int)']) {
+  assert.equal(validateCType(t), null, `${t} is a C type`);
+}
+{
+  const t0 = performance.now();
+  assert.match(validateCType('A' + '*'.repeat(5000) + '!'), /not a C type/);
+  assert.ok(performance.now() - t0 < 200, 'a long run of stars is rejected in linear time');
+}
 assert.equal(typeSize('unsigned int'), 4);
 assert.equal(typeSize('long'), 8);
 assert.equal(typeSize('long', { llp64: true }), 4);
