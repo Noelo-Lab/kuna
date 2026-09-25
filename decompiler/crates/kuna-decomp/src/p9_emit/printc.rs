@@ -2410,11 +2410,11 @@ impl PrintC {
                     .map(|v| v.get_type().clone())
             },
         );
+        let promotes = !self.options.nocasts && self.out_lang.profile().caps.integer_promotion;
         self.cast_implied.begin(
-            arch.cast_implied
-                && !self.options.nocasts
-                && self.out_lang.profile().caps.integer_promotion,
+            arch.cast_implied && promotes,
             cast_sign,
+            arch.cast_ternary && promotes && arch.types().get_size_of_int() == 4,
         );
         self.stmt_op = None;
         // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /
@@ -4505,6 +4505,8 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.emit.tag_op(if ternary { "?" } else { "{" }, SyntaxHighlight::NoColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
+        let arm_drops = self.conditional_arm_drops(fd, arch, &m);
+        self.cast_implied.set_arm_drops(arm_drops);
         self.op_push_ir(fd, arch, m.true_op, None);
         if !ternary {
             // The arm has to be fully drained before the `}` token, which is
@@ -4520,6 +4522,7 @@ impl PrintC {
         );
         self.emit.spaces(1, 0);
         self.op_push_ir(fd, arch, m.else_op, None);
+        self.cast_implied.set_arm_drops(Vec::new());
         if !ternary {
             self.recurse();
             self.emit.spaces(1, 0);
@@ -6459,12 +6462,31 @@ impl PrintC {
         op: OpId,
         read_op: Option<OpId>,
     ) -> bool {
+        if self.cast_implied.arm_dropped(op) {
+            return true;
+        }
         if !self.cast_implied.is_enabled() {
             return false;
         }
         let Some(strat) = cast_strategy_for(arch) else { return false };
         let view = ImpliedView { pc: self, fd, arch, strat };
         self.cast_implied.drops(&view, fd, op, read_op)
+    }
+
+    /// (kuna `castternary`) The casts to leave out of the arms of the conditional
+    /// `iteregion` prints for `m`.  See [`crate::kuna_castternary`].
+    fn conditional_arm_drops(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        m: &crate::p8_structure::kuna_iteregion::IteAssignMatch,
+    ) -> Vec<OpId> {
+        if !self.cast_implied.arms_enabled() || !self.lang().caps.ternary {
+            return Vec::new();
+        }
+        let Some(strat) = cast_strategy_for(arch) else { return Vec::new() };
+        let view = ImpliedView { pc: self, fd, arch, strat };
+        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, m.else_op])
     }
 
     /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the

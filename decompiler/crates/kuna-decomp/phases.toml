@@ -4243,6 +4243,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "castternary"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "cast-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-castternary"
+summary = "Leave out an integer widening on an arm of the conditional `iteregion` prints, `dest = c ? (int)*(char *)p : 0;`, when the conditional operator performs that conversion itself. The second and third operands of `?:` undergo the usual arithmetic conversions (C11 6.5.15p5), integer promotion first, so the `char` arm above is converted to `int` whether or not the cast is written. `castimplied` refuses these arms because leaving one arm's cast out can change the type of the whole conditional (`c ? (long)i : u` is a `long`, `c ? i : u` an `unsigned int` for `int i` and `unsigned int u`). When on, `kuna_castternary` leaves the cast out only when it is a value-preserving integer widening (never a narrowing, a sign change, a conversion from or to bool, an enum, a float or a pointer) AND the usual arithmetic conversions of the two arms give the cast's target type both with the cast and without it. The conditional then converts the arm to that type itself and keeps its own type and value, so nothing that reads it can tell. Each arm's C type is carried as the set of promoted types (`int`, `unsigned int`, `long`, `unsigned long`) it may have: one type for a declared variable, a cast that stays or a load through a pointer printed with its pointee; every promotion its width allows for an expression nothing states the type of; C's type for an unsuffixed literal of its printed magnitude (`int` to 0x7fffffff, `unsigned int` or `long` to 0xffffffff, `long` or `unsigned long` beyond; a suffixed or equate literal is not typed). The conversions must give the one target type for every combination. When both arms carry a cast, both go only when the conditional over both bare operands still has that type, else one. Only where `int` is 4 bytes, and C output only (Rust's `if c { a } else { b }` needs both arms of one type)."
+use_when = "On by default: `v2 = c ? *(char *)p : 0;` rather than `v2 = c ? (int)*(char *)p : 0;`. Set it off to get every arm cast `iteregion` printed before the option existed, for example when diffing against older output. It never changes the conditional's type, so the value assigned, passed or compared is the same bit for bit."
+example = "option castternary off"
+source_decompiler = "kuna"
+inspiration = "A base64 decoder's table lookup printed `v2 = (s[i] != '=') ? (int)*(char *)(t + s[i]) : 0;` four times in a row (2026-09-25 user report); IDA prints the same lookups as if/else assignments without the cast"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "a conditional arm is cast to the type the conditional already has, v = c ? (int)*(char *)p : 0;|every arm of a ?: over bytes carries an (int) cast|(unsigned long)v1 on one arm of a ?: whose other arm is already unsigned long"
+live_field = "cast_ternary"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "ptrdepthcap"
 values = "on|off"
 default = "off"
