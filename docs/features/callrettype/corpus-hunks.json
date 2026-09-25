@@ -1,11 +1,11 @@
 {
- "method": "docs/features/callrettype/corpus.py (decompile-all --json, callrettype off vs on, same binary) + hunkclass.py; binaries disjoint from the castbench corpus; branch rebased on origin/main 850e8c692",
+ "method": "docs/features/callrettype/corpus.py (decompile-all --json, callrettype off vs on, same binary) + hunkclass.py; binaries disjoint from the castbench corpus; branch rebased on origin/main 850e8c692; re-run on 6f7866c5c (the widened extension refusal)",
  "binaries": {
   "O2_bash": {
    "functions": 2538,
-   "changed": 679,
-   "types_casts_names_only": 620,
-   "expression_spelling_only": 16,
+   "changed": 677,
+   "types_casts_names_only": 619,
+   "expression_spelling_only": 15,
    "statement_changes": 43,
    "statement_change_addrs": [
     "0x416f0",
@@ -139,9 +139,9 @@
   },
   "O0_e2fsck": {
    "functions": 1908,
-   "changed": 293,
-   "types_casts_names_only": 271,
-   "expression_spelling_only": 13,
+   "changed": 288,
+   "types_casts_names_only": 270,
+   "expression_spelling_only": 9,
    "statement_changes": 9,
    "statement_change_addrs": [
     "0x4af1c",
@@ -160,8 +160,8 @@
   },
   "O2_sftp": {
    "functions": 533,
-   "changed": 124,
-   "types_casts_names_only": 119,
+   "changed": 123,
+   "types_casts_names_only": 118,
    "expression_spelling_only": 5,
    "statement_changes": 0,
    "statement_change_addrs": [],
@@ -171,9 +171,9 @@
   },
   "O0_ip": {
    "functions": 1874,
-   "changed": 113,
-   "types_casts_names_only": 104,
-   "expression_spelling_only": 5,
+   "changed": 110,
+   "types_casts_names_only": 103,
+   "expression_spelling_only": 3,
    "statement_changes": 4,
    "statement_change_addrs": [
     "0x376f3",
@@ -188,9 +188,9 @@
  },
  "total": {
   "functions": 8878,
-  "changed": 1647,
-  "types_casts_names_only": 1526,
-  "expression_spelling_only": 54,
+  "changed": 1636,
+  "types_casts_names_only": 1522,
+  "expression_spelling_only": 47,
   "statement_changes": 67,
   "call_arity_moved": 0,
   "return_voidness_moved": 0,

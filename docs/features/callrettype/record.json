@@ -49,6 +49,19 @@
    ],
    "mechanism": "seed reads the raw p-code for instructions that only widen a register in place; RuleSubvarZext/RuleSubvarSext report narrowing the returned value back through one; declared_contradicts refuses a statement of that width at the other sign for a returned result",
    "effect_on_corpora": "castbench 45 binaries, the 10-binary corpus sweep and the 444-slice typesweep: byte-identical to the build before the fix"
+  },
+  "review_widening": {
+   "shape": "unsigned long keep_widened(int x) { unsigned int r = neg32(x); return r; } / unsigned long keep_across(int x) { unsigned int r = neg32(x); tick(); return r; }: the last 32-bit write of the returned value (a -O0 reload, mov %ebx,%eax after a call) zero-extends it into %rax",
+   "before_fix": [
+    "int keep_widened(unsigned int a0) / int keep_across(unsigned int a0) at gcc -O0, clang -O0; int keep_across at gcc -O2 (%ebx) and clang -O2",
+    "(unsigned long)keep_widened(1) >> 1 -> 9223372036854775806 (binary 2147483646)"
+   ],
+   "after_fix": [
+    "unsigned int keep_widened(...) / unsigned int keep_across(...) (as with the option off)"
+   ],
+   "mechanism": "RuleSubvarZext/RuleSubvarSext note the sign and source width of any extension they narrow the returned value back through (note_returned_extension); declared_contradicts refuses a statement of that width at the other sign for a returned result; the raw-p-code in-place scan is removed",
+   "cost": "a function whose source returns int through the same bytes (int r = neg32(x); other(); return r;) keeps the unsigned return its own recovery gives it; in the castbench corpus 18 functions go back from int to unsigned int (grep -O2 sub_17290 prints return 0xffffffff again), none else moves",
+   "harness": ".scratch-only rt.py: 20 shapes x gcc -O0/-O2/-O2 -fno-ipa-ra/clang -O0/-O2, each function compiled in its own unit and read whole by a hand-written main: 13 option-on results differed from the binary before the fix, 0 after"
   }
  },
  "castbench": {
@@ -106,7 +119,8 @@
    "c960fb18d": "37,477 -> 36,703 (391 fewer, 25 more)",
    "f434b6a60": "36,614 -> 35,832 (393 fewer, 25 more)"
   },
-  "review_fix": "the in-place extension refusal and the discarded-redo restore leave all 45 binaries byte-identical (35,588 -> 34,808 unchanged); option off still prints main's bytes on all 45"
+  "review_fix": "the in-place extension refusal and the discarded-redo restore leave all 45 binaries byte-identical (35,588 -> 34,808 unchanged); option off still prints main's bytes on all 45",
+  "review_fix_2": "the widened extension refusal (6f7866c5c): totals unchanged (35,588 -> 34,808, 393 fewer / 25 more, the same 25), and exactly the 18 functions whose return type the previous head flipped from unsigned int to int go back to unsigned int; against main no return type changes from unsigned to signed"
  },
  "benchmark": {
   "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
@@ -222,13 +236,14 @@
  },
  "corpus_sweep": {
   "functions": 8878,
-  "changed": 1647,
-  "types_casts_names_only": 1526,
-  "expression_spelling_only": 54,
+  "changed": 1636,
+  "types_casts_names_only": 1522,
+  "expression_spelling_only": 47,
   "statement_changes": 67,
   "call_arity_moved": 0,
   "return_voidness_moved": 0,
-  "variables_rows_moved": 0
+  "variables_rows_moved": 0,
+  "review_fix_2": "13 functions (e2fsck 5, ip 4, bash 2, sftp 1, kmod 1) go back from int to unsigned int; 11 of them now print as with the option off; the same 67 statement-change functions as before, no new one"
  },
  "corpus_sweep_detail": "docs/features/callrettype/corpus-hunks.json",
  "parity": {
@@ -238,7 +253,7 @@
   "rust_test": "7554 passed, 0 failed (lane on 989c63bf5, the review fix; docs-only commits after it)"
  },
  "soundness": {
-  "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_call_result_typed_by_its_callee_round_trips_through_the_printed_c: gcc and clang at -O0 and -O2 compile every printed fixture function, option off and on; the output must equal the binary's. Classes: pointer result (char *, FILE *), signed long result, the `cached` tie control, and two callers that zero-extend a callee's short / int result in place before returning it (use_s16_as_u, use_neg_as_unsigned; called through their printed prototypes, 50000 4294967293) beside widen_signed, whose sign extension agrees with neg32's int. The float class (a declared float result) is covered by a_float_in_a_general_register_keeps_its_integer_uses_round_trip (cc)."
+  "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_call_result_typed_by_its_callee_round_trips_through_the_printed_c: gcc and clang at -O0 and -O2 compile every printed fixture function, option off and on; the output must equal the binary's. Classes: pointer result (char *, FILE *), signed long result, the `cached` tie control, and two callers that zero-extend a callee's short / int result in place before returning it (use_s16_as_u, use_neg_as_unsigned; called through their printed prototypes, 50000 4294967293) beside widen_signed, whose sign extension agrees with neg32's int, and two that keep neg32's int in an unsigned int and hand it back as unsigned long through the last 32-bit write (keep_widened: a -O0 reload or mov %eax,%eax; keep_across: kept in %ebx or a stack slot across an opaque call), read whole as (unsigned long)keep_widened(1) >> 1 (2147483646); the test fails on the previous head (gcc -O0 printed int keep_widened). The float class (a declared float result) is covered by a_float_in_a_general_register_keeps_its_integer_uses_round_trip (cc)."
  },
  "speed": {
   "method": "docs/features/callrettype/speed.py: interleaved min-of-15, decompile-all --json --max-fn-seconds 120, --option callrettype off vs on, same final build",
