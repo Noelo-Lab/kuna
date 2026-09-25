@@ -250,7 +250,10 @@ a.xt:hover{color:var(--red);text-decoration-color:var(--red);}
 .d2frame tr.var td.slot:hover{border-color:var(--ink);}
 .d2frame tr.dim td.slot{opacity:.55;}
 .d2frame tr.arr td.slot{border-left:3px solid var(--red);}
-.d2frame tr.hl-sym td.slot{background:var(--hl-sym);}
+.d2frame tr.hl-sym td.slot,.d2frame tr.hl-sel td.slot{background:var(--hl-sym);}
+.d2frame tr.hl-hover td.slot{background:var(--hl-hover);}
+.d2frame tr.pad td.slot{border-style:dashed;color:var(--muted);}
+.d2frame tr.saved td.slot{background:var(--hl-hover);}
 .d2frame .sz{color:var(--muted);}
 .d2callout{margin-top:14px;padding:10px 12px;border-left:3px solid var(--red);background:var(--paper);max-width:74ch;}
 

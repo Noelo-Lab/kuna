@@ -38,6 +38,10 @@ import {
   functionCells, hexRows, renderHex, applyPatches, parseHex, patchedName, fileOffsetFor, originalByteAt,
 } from './bytes-view.js';
 import { archFrom, nopFill } from './arch.js';
+import { explain, idioms } from './mnemonics.js';
+import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
+import { renderXrefs, localCallees } from './xrefs-view.js';
+import { helpHtml } from './help.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -573,7 +577,10 @@ function fnMeta(fn, data) {
 function showFunction(fn, data, { focusAddr = null, keep = false } = {}) {
   const { segs } = lineSegments(data);
   const index = buildIndex(data, segs);
-  state.current = { fn, data, segs, index, decls: localDecls(data.code) };
+  const arch = archFrom(data.target || state.inventory?.target, data.instructions);
+  const frame = data.hasInstructions ? frameModel(data, arch) : null;
+  if (frame?.supported) Object.assign(index, slotIndex(frame));
+  state.current = { fn, data, segs, index, decls: localDecls(data.code), arch, frame };
   state.rendered.clear();
   if (!keep) state.sel = null;
   state.cursor = null;
@@ -586,6 +593,7 @@ function showFunction(fn, data, { focusAddr = null, keep = false } = {}) {
   renderVisible();
   setHint(null);
   renderRail();
+  if (state.refsOpen && document.getElementById('railrefs')?.open) loadRefs();
   if (focusAddr) selectTarget({ addr: focusAddr }, null);
 }
 
@@ -655,7 +663,13 @@ const RENDER = {
     renderBytes();
   },
   stack() {
-    els.stackframe.innerHTML = needsInspect('The stack-frame diagram');
+    const { frame } = state.current;
+    if (!frame) {
+      els.stackframe.innerHTML = needsInspect('The stack-frame diagram');
+      return;
+    }
+    els.stackframe.innerHTML = renderFrame(frame, { selectedSym: state.sel?.sym || null });
+    sync.refresh('stack');
   },
   src() {
     els.srccode.innerHTML = state.exampleSource ? highlightC(state.exampleSource) : '';
@@ -679,6 +693,8 @@ function asmContext(data) {
     fnByAddr: state.byAddr,
     nameOf: displayName,
     patched: patchedInsns(data),
+    slotOf: state.current?.frame?.supported ? (reg, disp) => state.current.frame.slotOf(reg, disp) : null,
+    hints: idioms(data.instructions, state.current?.arch?.family || 'x86', { nameAt: (hex) => state.byAddr.get(hex)?.name || null }),
   };
 }
 
@@ -762,6 +778,27 @@ sync.register('bytes', markerView((sets) => {
   els.hexdump.querySelector(`.hb[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' });
 }));
 
+sync.register('stack', markerView((sets) => {
+  if (!isShown('stack')) return [];
+  return [...els.stackframe.querySelectorAll('tr[data-slot]')]
+    .filter((tr) => sets.syms.has(tr.dataset.sym) || sets.slots.has(Number(tr.dataset.slot)));
+}, (target, sets) => {
+  if (!isShown('stack')) return;
+  const tr = [...els.stackframe.querySelectorAll('tr[data-slot]')].find((r) => sets.syms.has(r.dataset.sym) || sets.slots.has(Number(r.dataset.slot)));
+  tr?.scrollIntoView({ block: 'nearest' });
+}));
+
+els.stackframe.addEventListener('click', (e) => {
+  const tr = e.target.closest('tr[data-slot]');
+  if (!tr || !state.current) return;
+  if (tr.dataset.sym) {
+    const tok = els.ccode.querySelector(`.t[data-sym="${CSS.escape(tr.dataset.sym)}"]`);
+    selectTarget({ sym: tr.dataset.sym }, 'stack', tok);
+  } else {
+    selectTarget({ slot: Number(tr.dataset.slot) }, 'stack');
+  }
+});
+
 /** Describe a variable from every source the engine gives. */
 function describeVar(name) {
   const { data, decls } = state.current;
@@ -835,6 +872,11 @@ function insnCard(addrHex) {
   } else {
     html += '<div class="cx">Not mapped to a C line: frame setup, a value the decompiler folded into another statement, or code it proved dead.</div>';
   }
+  const family = state.current.arch?.family || 'x86';
+  const note = explain(insn.mnemonic, family);
+  if (note) html += `<div class="cx"><b>${escapeHtml(insn.mnemonic)}</b>: ${escapeHtml(note)}</div>`;
+  const idiom = idioms(data.instructions, family, { nameAt: (hex) => state.byAddr.get(hex)?.name || null }).get(addrHex);
+  if (idiom) html += `<div class="cx">idiom: ${escapeHtml(idiom)}</div>`;
   return html;
 }
 
@@ -852,6 +894,8 @@ function slotCard(so) {
   if (slot !== undefined) {
     const off = Number(slot);
     html += `<div class="cm">entry${off < 0 ? '−' : '+'}0x${Math.abs(off).toString(16)} — measured from the stack pointer at the function's entry</div>`;
+    const hit = state.current.frame?.slots.find((s) => off >= s.offset && off < s.offset + s.size);
+    if (hit) html += `<div class="cx"><b>${escapeHtml(hit.name)}</b> ${escapeHtml(hit.type || '')} · ${hit.size} B${hit.offset !== off ? ` (byte ${off - hit.offset} of it)` : ''}</div>`;
   }
   return html;
 }
@@ -994,6 +1038,12 @@ els.asmcode.addEventListener('click', (e) => {
     return;
   }
   const row = e.target.closest('.d2-ar');
+  const so = e.target.closest('.so[data-slot]');
+  if (so && row) {
+    const sym = state.current.index.slotToSym?.get(Number(so.dataset.slot));
+    selectTarget(sym ? { sym, addr: row.dataset.addr } : { slot: Number(so.dataset.slot), addr: row.dataset.addr }, 'asm');
+    return;
+  }
   if (row) selectTarget({ addr: row.dataset.addr }, 'asm');
 });
 
@@ -1205,7 +1255,12 @@ document.addEventListener('keydown', (e) => {
     if (state.sel) selectTarget(null, null);
     return;
   }
-  if (!state.current && e.key !== '/' && e.key !== '?') return;
+  if (e.key === '?') {
+    e.preventDefault();
+    openHelp();
+    return;
+  }
+  if (!state.current && e.key !== '/') return;
   if (hexKey(e)) {
     e.preventDefault();
     return;
@@ -1259,6 +1314,10 @@ document.addEventListener('keydown', (e) => {
       break;
     case 'u':
       undo();
+      break;
+    case 'x':
+      e.preventDefault();
+      openRefs();
       break;
     default:
       return;
@@ -2014,6 +2073,84 @@ els.patch.addEventListener('click', () => {
   else if (/PE/.test(fmt)) detail += ' The PE checksum no longer matches; Windows checks it only for drivers.';
   else if (/ELF/.test(fmt)) detail += ` Run it with  chmod +x ${name} && ./${name}`;
   toast(`Downloaded ${name}.`, { detail, ms: 10000 });
+});
+
+// ── references and help ────────────────────────────────────────────────────
+
+state.xrefs = new Map();
+
+function refsHtmlFor(addrHex) {
+  return state.xrefs.get(addrHex) || '';
+}
+state.refsHtml = refsHtmlFor;
+
+/** Load (once per session state) and show the open function's references. */
+function loadRefs() {
+  if (!state.current) return;
+  const addr = state.current.data.address_hex;
+  if (state.xrefs.has(addr)) {
+    rail.setRefs(state.xrefs.get(addr));
+    return;
+  }
+  rail.setRefs('<p class="d2muted">loading…</p>');
+  whenIdle(async () => {
+    if (state.current?.data.address_hex !== addr) return;
+    const nameOf = (a, n) => (state.byAddr.has(a) ? displayName(state.byAddr.get(a)) : n || a);
+    const op = beginOperation('xrefs');
+    let html;
+    try {
+      const res = await state.kuna.xrefs(addr, { assertions: state.caps.assert === false ? [] : session.globalAssertions() });
+      if (!isCurrent(op)) return;
+      html = renderXrefs(res, { nameOf });
+    } catch (e) {
+      if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return;
+      const callees = localCallees(state.current.data, state.byAddr);
+      html = (isUnknownCommand(e)
+        ? '<p class="d2muted">Callers need the engine\'s <code>xrefs</code> command, which this build does not have. Callees below are read from this function\'s CALL instructions.</p>'
+        : `<p class="d2muted">${escapeHtml(e.message)}</p>`) +
+        renderXrefs({ callers: [], callees, data_refs: [] }, { nameOf });
+    } finally {
+      finishOperation(op);
+    }
+    state.xrefs.set(addr, html);
+    if (state.current?.data.address_hex === addr) rail.setRefs(html);
+  });
+}
+
+state.onRefsOpen = () => {
+  state.refsOpen = true;
+  loadRefs();
+};
+
+function openRefs() {
+  if (!state.current) return;
+  if (els.work.classList.contains('norail')) setRail(true);
+  state.refsOpen = true;
+  const det = document.getElementById('railrefs');
+  if (det && !det.open) det.open = true;
+  else loadRefs();
+  det?.scrollIntoView({ block: 'nearest' });
+}
+
+els.railBody.addEventListener('click', (e) => {
+  const a = e.target.closest('a.xt[data-goto]');
+  if (!a) return;
+  e.preventDefault();
+  gotoAddr(a.dataset.goto);
+});
+
+function openHelp() {
+  if (els.helpDialog.open) {
+    els.helpDialog.close();
+    return;
+  }
+  hover.hide();
+  els.helpDialog.innerHTML = helpHtml();
+  els.helpDialog.showModal();
+}
+els.help.addEventListener('click', openHelp);
+els.helpDialog.addEventListener('click', (e) => {
+  if (e.target === els.helpDialog || e.target.closest('[data-act=help-close]')) els.helpDialog.close();
 });
 
 // ── project export ─────────────────────────────────────────────────────────
