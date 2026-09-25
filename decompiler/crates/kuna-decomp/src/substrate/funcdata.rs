@@ -439,11 +439,8 @@ pub struct Funcdata {
     /// (kuna `callrettype`) The loader's data ranges, for telling an address
     /// from a number ([`crate::kuna_callrettype::contradicted`]).
     kuna_callret_data: std::rc::Rc<Vec<(u64, u64)>>,
-    /// (kuna `callrettype`) The instructions that widen a register in place,
-    /// read off the raw p-code ([`crate::kuna_callrettype::seed`]).
-    kuna_callret_extensions: crate::kuna_callrettype::Extensions,
-    /// (kuna `callrettype`) The in-place extensions the return trimming narrowed
-    /// the returned value back through ([`crate::kuna_callrettype::note_returned_extension`]).
+    /// (kuna `callrettype`) The extensions the return trimming narrowed the
+    /// returned value back through ([`crate::kuna_callrettype::note_returned_extension`]).
     kuna_callret_returned: Vec<(bool, int4)>,
     /// (kuna `passthrough`) The register ranges `ActionFuncLink` made visible to
     /// heritage for a call whose callee states them, with the calls that own
@@ -579,7 +576,6 @@ impl Funcdata {
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_callret_types: std::collections::HashMap::new(),
             kuna_callret_data: std::rc::Rc::new(Vec::new()),
-            kuna_callret_extensions: std::collections::HashMap::new(),
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
@@ -852,27 +848,16 @@ impl Funcdata {
         })
     }
 
-    /// (kuna `callrettype`) Record the instructions that widen a register in place.
-    pub fn kuna_set_callret_extensions(&mut self, extensions: crate::kuna_callrettype::Extensions) {
-        self.kuna_callret_extensions = extensions;
-    }
-
-    /// (kuna `callrettype`) The in-place extension at the instruction filed under
-    /// `key`: whether it extends at the sign, and the width it extends from.
-    pub fn kuna_callret_extension(&self, key: (int4, kuna_base::types::uintb)) -> Option<(bool, int4)> {
-        self.kuna_callret_extensions.get(&key).copied()
-    }
-
-    /// (kuna `callrettype`) Record an in-place extension the returned value was
-    /// narrowed back through.
+    /// (kuna `callrettype`) Record an extension the returned value was narrowed
+    /// back through.
     pub fn kuna_note_callret_returned(&mut self, ext: (bool, int4)) {
         if !self.kuna_callret_returned.contains(&ext) {
             self.kuna_callret_returned.push(ext);
         }
     }
 
-    /// (kuna `callrettype`) The in-place extensions the returned value was
-    /// narrowed back through: whether each extends at the sign, and from what width.
+    /// (kuna `callrettype`) The extensions the returned value was narrowed back
+    /// through: whether each extends at the sign, and from what width.
     pub fn kuna_callret_returned(&self) -> &[(bool, int4)] {
         &self.kuna_callret_returned
     }

@@ -5839,7 +5839,11 @@ fn callrettype_calls(listing: &str) -> std::collections::BTreeMap<String, Vec<(S
 /// returning it (`unsigned short use_s16_as_u`, `unsigned int
 /// use_neg_as_unsigned`, called through their printed prototypes, where a
 /// statement at the callee's sign would hand back -15536 and
-/// 18446744073709551613).  Every fixture is decompiled with the option
+/// 18446744073709551613), and two that keep an `int` result in an `unsigned
+/// int` and hand it back as `unsigned long` through a reload or a move from
+/// the register it was kept in across another call (`keep_widened`,
+/// `keep_across`, read whole and shifted, where `int` would print
+/// 9223372036854775806).  Every fixture is decompiled with the option
 /// off and on; every printed function compiled with gcc and clang at -O0 and
 /// -O2 must print what the binary prints, and no call in the whole listing may
 /// gain or lose an argument or a result.
@@ -5848,15 +5852,16 @@ fn a_call_result_typed_by_its_callee_round_trips_through_the_printed_c() {
     const ALL: &[&str] = &[
         "skip_blanks", "count_upper", "upper_after_blanks", "upper_of_rest", "first_of", "first_char",
         "signed_delta", "is_behind", "clamp_delta", "hash_of", "pick", "after_colon", "fallback_name", "name_len",
-        "pick_stream", "stream_no", "s16", "use_s16_as_u", "neg32", "use_neg_as_unsigned", "widen_signed", "mark",
-        "marked_len",
+        "pick_stream", "stream_no", "s16", "use_s16_as_u", "neg32", "use_neg_as_unsigned", "widen_signed", "tick",
+        "keep_widened", "keep_across", "mark", "marked_len",
     ];
     const O2: &[&str] = &[
         "first_of", "first_char", "signed_delta", "is_behind", "clamp_delta", "hash_of", "pick", "after_colon",
         "fallback_name", "name_len", "pick_stream", "stream_no", "s16", "use_s16_as_u", "neg32",
-        "use_neg_as_unsigned", "widen_signed", "mark", "marked_len",
+        "use_neg_as_unsigned", "widen_signed", "tick", "keep_widened", "keep_across", "mark", "marked_len",
     ];
-    const WANT: &str = "202 205 2\n104 -1\n1 0 -2\n1 -1 0\n7 6 6\n10 21 9\n50000 4294967293 -12\n";
+    const WANT: &str =
+        "202 205 2\n104 -1\n1 0 -2\n1 -1 0\n7 6 6\n10 21 9\n50000 4294967293 -12\n2147483646 2147483646\n";
     const MAIN: &str = r#"
 #define F(ret, f) ((ret (*)())(void (*)())f)
 int main(void) {
@@ -5871,10 +5876,11 @@ int main(void) {
   printf("%ld %ld %ld\n", F(long, name_len)(NULL), F(long, name_len)("key:value"), F(long, name_len)("plain"));
   printf("%d %d %ld\n", F(int, stream_no)(0), F(int, stream_no)(1), F(long, marked_len)(buf3));
   printf("%ld %lu %ld\n", (long)use_s16_as_u(50), (unsigned long)use_neg_as_unsigned(1), (long)widen_signed(4));
+  printf("%lu %lu\n", (unsigned long)keep_widened(1) >> 1, (unsigned long)keep_across(1) >> 1);
   return 0;
 }
 "#;
-    const O2_WANT: &str = "104 -1\n1 0 -2\n1 -1 0\n7 6 6\n10 21 9\n50000 4294967293 -12\n";
+    const O2_WANT: &str = "104 -1\n1 0 -2\n1 -1 0\n7 6 6\n10 21 9\n50000 4294967293 -12\n2147483646 2147483646\n";
     const O2_MAIN: &str = r#"
 #define F(ret, f) ((ret (*)())(void (*)())f)
 int main(void) {
@@ -5886,6 +5892,7 @@ int main(void) {
   printf("%ld %ld %ld\n", F(long, name_len)(NULL), F(long, name_len)("key:value"), F(long, name_len)("plain"));
   printf("%d %d %ld\n", F(int, stream_no)(0), F(int, stream_no)(1), F(long, marked_len)(buf3));
   printf("%ld %lu %ld\n", (long)use_s16_as_u(50), (unsigned long)use_neg_as_unsigned(1), (long)widen_signed(4));
+  printf("%lu %lu\n", (unsigned long)keep_widened(1) >> 1, (unsigned long)keep_across(1) >> 1);
   return 0;
 }
 "#;
@@ -5916,6 +5923,8 @@ int main(void) {
                 "    v1 = lookup((long *)*a0,a1);",
                 "unsigned short use_s16_as_u(",
                 "unsigned int use_neg_as_unsigned(",
+                "unsigned int keep_widened(",
+                "unsigned int keep_across(",
             ],
         ),
         (
@@ -5933,7 +5942,13 @@ int main(void) {
                 ),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
-            &["  mark(a0);\n", "unsigned short use_s16_as_u(", "unsigned int use_neg_as_unsigned("],
+            &[
+                "  mark(a0);\n",
+                "unsigned short use_s16_as_u(",
+                "unsigned int use_neg_as_unsigned(",
+                "unsigned int keep_widened(",
+                "unsigned int keep_across(",
+            ],
         ),
         (
             "callrettype_gcc_O2_x86_64",
@@ -5951,6 +5966,8 @@ int main(void) {
                 "return (unsigned long)signed_delta(a0,a1) >> 0x3f;",
                 "unsigned short use_s16_as_u(short a0)",
                 "unsigned int use_neg_as_unsigned(int a0)",
+                "unsigned int keep_widened(",
+                "unsigned int keep_across(",
             ],
         ),
     ];
@@ -5996,7 +6013,7 @@ int main(void) {
                             "#include <stdbool.h>\n#include <stdio.h>\n#include <string.h>\n\
                              #define stderr_ptr (&stderr)\n#define stdout_ptr (&stdout)\n\
                              #define CONCAT22(h, l) ((unsigned int)(unsigned short)(h) << 16 | (unsigned short)(l))\n\
-                             char *g_fallback = \"fallback\";\n{printed}\n{main}"
+                             char *g_fallback = \"fallback\";\nvolatile int g_ticks;\n{printed}\n{main}"
                         ),
                     )
                     .unwrap();

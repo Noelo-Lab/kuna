@@ -2656,11 +2656,10 @@ impl Rule for RuleSubvarZext {
         let invsize = data.vbank().get(invn).expect("vn").get_size();
         let mask = calc_mask(invsize);
         let ptrflow = data.vbank().get(invn).expect("vn").is_ptr_flow();
-        let at = o.get_addr().clone();
 
         let (applied, returned) = run_subflow_returning(data, vn, mask, ptrflow, false, false);
         if returned {
-            crate::kuna_callrettype::note_returned_extension(data, &at);
+            crate::kuna_callrettype::note_returned_extension(data, false, invsize);
         }
         applied
     }
@@ -2699,11 +2698,10 @@ impl Rule for RuleSubvarSext {
         let invn = o.get_in(0).expect("in0");
         let invsize = data.vbank().get(invn).expect("vn").get_size();
         let mask = calc_mask(invsize);
-        let at = o.get_addr().clone();
 
         let (applied, returned) = run_subflow_returning(data, vn, mask, self.isaggressive != 0, true, false);
         if returned {
-            crate::kuna_callrettype::note_returned_extension(data, &at);
+            crate::kuna_callrettype::note_returned_extension(data, true, invsize);
         }
         applied
     }

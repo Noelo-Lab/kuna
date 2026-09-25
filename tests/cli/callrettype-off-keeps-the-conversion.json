@@ -19,8 +19,8 @@
   "repeat": 1,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
-    "binary_sha256": "89760457747064f51c75036f4c232f0b4ad0c1a49030b78df9d94cc3f31cc5f3",
-    "binary_size": 17232,
+    "binary_sha256": "6111d5d07b701950275efe3c7348cc6791f654bee9e75b33324ba57c3ab21623",
+    "binary_size": 17360,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callrettype_gcc_O0_x86_64",
     "selector": "upper_of_rest",

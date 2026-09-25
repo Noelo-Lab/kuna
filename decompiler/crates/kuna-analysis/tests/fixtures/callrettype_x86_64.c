@@ -17,6 +17,7 @@
  *   10 21 9
  *   5 507 18446744073709551615
  *   50000 4294967293 -12
+ *   2147483646 2147483646
  *
  * Built with:
  *   gcc   -O0 -o callrettype_gcc_O0_x86_64   callrettype_x86_64.c
@@ -121,6 +122,30 @@ NI int neg32(int x) { return -x * 3; }
 NI unsigned long use_neg_as_unsigned(int x) { return (unsigned int)neg32(x); }
 NI long widen_signed(int x) { return neg32(x); }
 
+/* control: a caller that keeps a callee's int result in an unsigned int and
+   hands it back as unsigned long.  Every 32-bit write zero-extends into the
+   whole register, so the reload at -O0, and the move back from the register
+   the value was kept in across another call (tick is opaque to gcc, so
+   -O2 keeps it in %ebx), hand back the result zero-extended; the caller's
+   own return type stays unsigned whatever sign the callee states, or a
+   caller reading the whole register would see 18446744073709551613 */
+#ifdef __clang__
+#define OPAQUE __attribute__((noinline))
+#else
+#define OPAQUE __attribute__((noinline, noipa))
+#endif
+volatile int g_ticks;
+OPAQUE void tick(void) { g_ticks++; }
+NI unsigned long keep_widened(int x) {
+  unsigned int r = neg32(x);
+  return r;
+}
+NI unsigned long keep_across(int x) {
+  unsigned int r = neg32(x);
+  tick();
+  return r;
+}
+
 /* control: a void callee; its caller reads no result */
 NI void mark(char *s) { s[0] = '#'; }
 NI long marked_len(char *s) {
@@ -141,5 +166,6 @@ int main(void) {
   long c1[4] = {0, 1, 7, 0}, c2[4] = {0, 0, 0, 0};
   printf("%lu %lu %lu\n", cached(c1, 5), cached(c1, 500), cached(c2, 500));
   printf("%ld %lu %ld\n", use_s16_as_u(50), use_neg_as_unsigned(1), widen_signed(4));
+  printf("%lu %lu\n", keep_widened(1) >> 1, keep_across(1) >> 1);
   return 0;
 }
