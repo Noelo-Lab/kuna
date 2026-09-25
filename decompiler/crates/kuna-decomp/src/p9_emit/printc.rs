@@ -10014,6 +10014,10 @@ impl crate::kuna_castimplied::PrintedForms for ImpliedView<'_> {
     fn long_size(&self) -> i32 {
         self.arch.types().get_size_of_long()
     }
+
+    fn global_declared_type(&self, addr: u64) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        self.pc.globalref.declared_type(addr)
+    }
 }
 
 /// An immutable [`CastContext`] over `&Funcdata` for the print-time

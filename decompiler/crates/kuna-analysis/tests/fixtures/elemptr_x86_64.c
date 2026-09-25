@@ -18,7 +18,11 @@
  * indexes both ways) and negative indexes, and prints two lines.  The second
  * line reads `.data` tables whose elements have their top bit set: 2- and
  * 4-byte elements returned to a caller that widens them, one read shifted and
- * one only compared, and a byte table two functions read at two signs.
+ * one only compared, and a byte table two functions read at two signs.  The
+ * third line copies a string into a buffer bounded by a length the function
+ * also compares a pointer difference against (`w_put`: the length stays a
+ * number), and stores an `int` counter into an `unsigned` table (`w_ctr`: the
+ * counter stays `int`).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -195,6 +199,25 @@ long w_xs(const unsigned char *p, int n)
     return s;
 }
 
+void w_put(char *buf, size_t len, const char *s)
+{
+    char *b = buf, *eb = buf + len;
+    while (*s && b < eb)
+        *b++ = *s++;
+    if ((size_t)(b - buf) >= len)
+        buf[len - 1] = 0;
+    else
+        *b = 0;
+}
+
+void w_ctr(unsigned int *fmap, unsigned int *eclass, int n)
+{
+    for (int i = 0; i < n; i++)
+        fmap[i] = i;
+    for (int i = 0; i < n; i++)
+        eclass[fmap[i]] += fmap[i] >> 1;
+}
+
 int main(void)
 {
     static const char hi[] = "\x81\x7f\xfe\x01\x80\x10";
@@ -218,5 +241,11 @@ int main(void)
     static const unsigned char ix[] = {0, 1, 2, 3, 4, 5};
     printf("%lu %lu %lu %lu %lu %lu %ld %ld %lu %ld\n", w_wucall(1), w_wucall(6), w_iucall(1), w_iucall(3), w_iu2(1),
            w_iu2(2), w_srch(0xffffffffu), w_srch(5), w_xu(ix, 6), w_xs(ix, 6));
+    char put8[8], put4[4];
+    static unsigned int fmap[8], eclass[8] = {5, 6, 7};
+    w_put(put8, 8, "abc");
+    w_put(put4, 4, "abcdef");
+    w_ctr(fmap, eclass, 8);
+    printf("%s %s %u %u %u\n", put8, put4, eclass[0], eclass[3], eclass[7]);
     return 0;
 }

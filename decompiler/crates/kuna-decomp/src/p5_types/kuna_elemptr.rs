@@ -198,6 +198,32 @@ impl Evidence {
     }
 }
 
+/// A parameter (its storage) or a call's return (the call's address), the
+/// same across the type passes of one decompile and its restarts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct InputKey {
+    space: int4,
+    offset: u64,
+    size: int4,
+}
+
+/// The [`InputKey`] of the candidate `vn` of kind `kind`.
+fn input_key(data: &Funcdata, vn: VarnodeId, kind: Kind) -> Option<InputKey> {
+    let v = data.vbank().get(vn)?;
+    match kind {
+        Kind::Param => Some(InputKey {
+            space: v.get_addr().get_space()?.get_index(),
+            offset: v.get_offset(),
+            size: v.get_size(),
+        }),
+        Kind::CallReturn => {
+            let call = data.obank().get(v.get_def()?)?;
+            Some(InputKey { space: -1, offset: call.get_addr().get_offset(), size: v.get_size() })
+        }
+        _ => None,
+    }
+}
+
 /// What kind of candidate a Varnode is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -256,6 +282,15 @@ pub fn element_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>, cache
     if !data.get_arch().elem_ptr || !may_replace(cur) {
         return None;
     }
+    let got = candidate_pointer(data, vn, cur, cache);
+    if got.is_some() {
+        data.kuna_elemptr_note_typed(vn);
+    }
+    got
+}
+
+/// [`element_pointer`] once the option and the vote allow it.
+fn candidate_pointer(data: &Funcdata, vn: VarnodeId, cur: &Rc<Datatype>, cache: &mut Cache) -> Option<Rc<Datatype>> {
     let v = data.vbank().get(vn)?;
     if v.is_type_lock() || v.is_annotation() {
         return None;
@@ -314,6 +349,60 @@ fn only_indexed(data: &Funcdata, cvn: VarnodeId) -> bool {
     })
 }
 
+/// (propagation) Does the `STORE` `op` keep the value it stores from taking,
+/// along the edge from its pointer (`inslot` 1) to the value (`outslot` 2), an
+/// element type `newtype` that differs from the value's `cur` only in sign?  It
+/// does when the pointer is one this rule typed: C converts the stored value to
+/// the element bit for bit, and a counter stored into an unsigned table
+/// (`fmap[j] = i`) keeps the sign its own compares give it rather than taking
+/// the table's and a cast at every one of them.
+pub fn keeps_stored_sign(
+    data: &Funcdata,
+    op: OpId,
+    inslot: int4,
+    outslot: int4,
+    newtype: &Datatype,
+    cur: &Datatype,
+) -> bool {
+    if !data.get_arch().elem_ptr || inslot != 1 || outslot != 2 {
+        return false;
+    }
+    let int = |t: &Datatype| matches!(t.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT);
+    if !int(newtype) || !int(cur) || newtype.get_metatype() == cur.get_metatype() || newtype.get_size() != cur.get_size()
+    {
+        return false;
+    }
+    let Some(o) = data.obank().get(op).filter(|o| o.code() == OpCode::CPUI_STORE) else { return false };
+    if o.get_in(2).and_then(|v| data.vbank().get(v)).is_none_or(|v| v.is_constant()) {
+        return false;
+    }
+    let Some(ptr) = o.get_in(1) else { return false };
+    let mut seen = vec![ptr];
+    let mut i = 0;
+    while i < seen.len() && seen.len() <= 16 {
+        let cur = seen[i];
+        i += 1;
+        if data.kuna_elemptr_typed(cur) {
+            return true;
+        }
+        let Some(d) = data.vbank().get(cur).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+            continue;
+        };
+        let from: &[int4] = match d.code() {
+            OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_INDIRECT | OpCode::CPUI_COPY | OpCode::CPUI_CAST => &[0],
+            OpCode::CPUI_INT_ADD => &[0, 1],
+            OpCode::CPUI_MULTIEQUAL => &[0, 1, 2, 3],
+            _ => &[],
+        };
+        for &k in from {
+            if let Some(x) = d.get_in(k).filter(|x| !seen.contains(x)) {
+                seen.push(x);
+            }
+        }
+    }
+    false
+}
+
 /// Walk `vn` (for a global: every Varnode holding it) and commit or decline.
 fn decide(
     data: &Funcdata,
@@ -341,6 +430,10 @@ fn decide(
         .map(|c| c.get_offset())
         .collect();
     if globals_held.iter().any(|&g| data.kuna_elemptr_blocked(Obj::Held(g))) {
+        return None;
+    }
+    let input = input_key(data, vn, kind);
+    if input.is_some_and(|k| data.kuna_elemptr_input(k) == Some(true)) {
         return None;
     }
     let mut ev = Evidence::default();
@@ -387,6 +480,22 @@ fn decide(
             ev.label(),
             elem.as_ref().map(|e| e.get_name().to_string()).unwrap_or_else(|| "-".into())
         );
+    }
+    // A later pass that finds a candidate an earlier one typed indexing another
+    // base (the add partner it took for its index is the base after all) blocks
+    // it and restarts the function: the pointer arithmetic that earlier pass
+    // built keeps the type otherwise.
+    if let Some(k) = input {
+        match (&elem, ev.refused) {
+            (Some(_), _) => data.kuna_elemptr_note_input(k),
+            (None, Some("index-of-other")) if data.kuna_elemptr_input(k) == Some(false) => {
+                if trace_on() {
+                    eprintln!("[elemptr] fn={:#x} dispute {:?}", data.get_address().get_offset(), k);
+                }
+                data.kuna_elemptr_dispute_input(k);
+            }
+            _ => {}
+        }
     }
     let verdict = match (&elem, ev.refused) {
         (Some(e), _) => {
@@ -825,6 +934,10 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
             }
             None
         }
+        OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_2COMP if is_negation(data, op) => {
+            difference_of(data, op, ev);
+            None
+        }
         OpCode::CPUI_INT_MULT
         | OpCode::CPUI_INT_DIV
         | OpCode::CPUI_INT_SDIV
@@ -1217,6 +1330,40 @@ fn pointee_of(data: &Funcdata, vn: VarnodeId, op: OpId) -> Option<Rc<Datatype>> 
     t.get_ptr_to()
 }
 
+/// Is `op` a negation, `x * -1` or `-x`?  `p - q` lowers to `p + q * -1`, so a
+/// negated value is the right-hand side of a difference, not a number.
+fn is_negation(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else { return false };
+    match o.code() {
+        OpCode::CPUI_INT_2COMP => true,
+        OpCode::CPUI_INT_MULT => (0..2).any(|i| {
+            o.get_in(i)
+                .and_then(|c| data.vbank().get(c))
+                .is_some_and(|c| c.is_constant() && sign_extend(c.get_offset(), c.get_size()) == -1)
+        }),
+        _ => false,
+    }
+}
+
+/// The candidate negated by `op` is subtracted from whatever each reader adds
+/// the negation to: a difference of two pointers, which says the other side
+/// points at the same elements.  A negation used any other way is arithmetic.
+fn difference_of(data: &Funcdata, op: OpId, ev: &mut Evidence) {
+    let Some(neg) = data.obank().get(op).and_then(|o| o.get_out()) else { return };
+    let Some(v) = data.vbank().get(neg) else { return };
+    for r in v.descend_iter() {
+        let Some(ro) = data.obank().get(r) else { continue };
+        if ro.code() != OpCode::CPUI_INT_ADD {
+            ev.refuse("arithmetic");
+            return;
+        }
+        let other = ro.get_in(if ro.get_slot(neg) == 0 { 1 } else { 0 });
+        if let Some(p) = other.and_then(|x| pointee_of(data, x, r)) {
+            ev.pointees.push(p);
+        }
+    }
+}
+
 /// If `x` is an index, the element size it is scaled by and the literal offset
 /// folded into it: `i * 4` is `(4, 0)`, `(long)i + 1` is `(1, 1)`.  `None` when
 /// `x` could as well be the base.
@@ -1365,35 +1512,64 @@ fn is_counter(data: &Funcdata, x: VarnodeId) -> bool {
     start
 }
 
-/// Is `x` dereferenced, or passed where a callee declares a pointer?  A value
-/// used that way is an address, and cannot be the index of the add it is in.
+/// Is `x` -- or a copy of it, or it plus a small literal (`b = buf; *b++`,
+/// `buf[1]`) -- dereferenced, or passed where a callee declares a pointer?  A
+/// value used that way is an address, and cannot be the index of the add it is
+/// in.  A literal that is itself the address of program data is the base, and
+/// `x` its index.
 fn has_pointer_use(data: &Funcdata, x: VarnodeId) -> bool {
-    let Some(v) = data.vbank().get(x) else { return false };
-    v.descend_iter().any(|op| {
-        let Some(o) = data.obank().get(op) else { return false };
-        let slot = o.get_slot(x);
-        match o.code() {
-            OpCode::CPUI_LOAD | OpCode::CPUI_STORE => slot == 1,
-            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if slot > 0 => {
-                crate::coreaction_infertypes::declared_input_type_local(data, op, slot).get_metatype()
-                    == type_metatype::TYPE_PTR
+    let mut seen = vec![x];
+    let mut i = 0;
+    while i < seen.len() {
+        let cur = seen[i];
+        i += 1;
+        let Some(v) = data.vbank().get(cur) else { continue };
+        for op in v.descend_iter() {
+            let Some(o) = data.obank().get(op) else { continue };
+            let slot = o.get_slot(cur);
+            let follows = match o.code() {
+                OpCode::CPUI_LOAD | OpCode::CPUI_STORE if slot == 1 => return true,
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND if slot > 0 => {
+                    if crate::coreaction_infertypes::declared_input_type_local(data, op, slot).get_metatype()
+                        == type_metatype::TYPE_PTR
+                    {
+                        return true;
+                    }
+                    false
+                }
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => true,
+                OpCode::CPUI_INDIRECT => slot == 0,
+                // A literal offset, not a table's address the value indexes.
+                OpCode::CPUI_INT_ADD => o.get_in(1 - slot).and_then(|c| data.vbank().get(c)).is_some_and(|c| {
+                    c.is_constant()
+                        && sign_extend(c.get_offset(), c.get_size()).unsigned_abs() < 0x10000
+                        && !crate::kuna_globalref::in_ranges(&data.get_arch().elem_ptr_ranges, c.get_offset())
+                }),
+                _ => false,
+            };
+            if let Some(out) = o.get_out().filter(|out| follows && !seen.contains(out)) {
+                if seen.len() >= MAX_COPIES {
+                    return false;
+                }
+                seen.push(out);
             }
-            _ => false,
         }
-    })
+    }
+    false
 }
 
 /// Does the program read `x` as a number somewhere -- multiply, divide or shift
 /// it, or order it against a non-zero literal?  Such a value is not the base of
 /// the add it also appears in.  A mask is not such a use: `p & 7` is how a
-/// program tests a pointer's alignment.
+/// program tests a pointer's alignment; nor is a negation, the right-hand side
+/// of a pointer difference.
 fn used_as_number(data: &Funcdata, x: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(x) else { return false };
     v.descend_iter().any(|op| {
         let Some(o) = data.obank().get(op) else { return false };
         match o.code() {
-            OpCode::CPUI_INT_MULT
-            | OpCode::CPUI_INT_DIV
+            OpCode::CPUI_INT_MULT => !is_negation(data, op),
+            OpCode::CPUI_INT_DIV
             | OpCode::CPUI_INT_SDIV
             | OpCode::CPUI_INT_REM
             | OpCode::CPUI_INT_SREM

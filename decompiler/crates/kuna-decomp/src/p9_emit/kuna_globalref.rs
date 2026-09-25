@@ -321,6 +321,16 @@ impl Plan {
         self.direct.iter().filter(|d| d.unnamed).map(|d| (d.start, &d.ty))
     }
 
+    /// (kuna `elemptr`) The type a project header declares the global at `off`
+    /// as, when no symbol names it: the one type this function reads and
+    /// writes it at.
+    pub fn declared_type(&self, off: u64) -> Option<Rc<Datatype>> {
+        if !self.direct.iter().filter(|d| overlaps(d, off, 1)).all(|d| d.unnamed) {
+            return None;
+        }
+        self.direct_type_at(off)
+    }
+
     /// The one type this function reads or writes the storage at `off` at,
     /// when every direct access that touches it starts there at that type.
     fn direct_type_at(&self, off: u64) -> Option<Rc<Datatype>> {

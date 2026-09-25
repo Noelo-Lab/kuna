@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-26160253c915",
+  "probe_id": "p-9112e50feaf0",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -19,8 +19,8 @@
   "timeout_s": 120,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
-    "binary_sha256": "e486abac55d8e5fe9a10eb077df80565991030b4c3f704816498d479f4de6ae1",
-    "binary_size": 16840,
+    "binary_sha256": "87b0999b6a1f48596e55f027aa3328dfe22d6afbcc87169f8cb0f5be301c8a19",
+    "binary_size": 16936,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
     "selector": "w_decode",
@@ -33,12 +33,14 @@
     "stdout_matches": [
       "char \\* w_decode\\(char \\*a0,unsigned long a1,unsigned long \\*a2\\)",
       "v6\\[v8\\] = \\(char\\)\\(v5 >> 0x10\\);",
-      "\\(a0\\[v7\\] != '='\\)"
+      "\\(a0\\[v7\\] != '='\\)",
+      "\\? dat_30004380\\[\\(unsigned char\\)a0\\[v7\\]\\] : 0;"
     ],
     "stdout_absent": [
       "\\(long\\)v6 \\+",
-      "\\*\\(char \\*\\)\\(v7 \\+ a0\\)"
+      "\\*\\(char \\*\\)\\(v7 \\+ a0\\)",
+      "\\(int\\)dat_"
     ]
   },
-  "notes": "With elemptr on, a base64 decoder's input string, which the body only indexes one byte at a time, is char * rather than long, and the buffer malloc returned, which it only stores into by index, is char * with a subscript store instead of *(char *)((long)v6 + (long)v8)."
+  "notes": "With elemptr on, a base64 decoder's input string, which the body only indexes one byte at a time, is char * rather than long, and the buffer malloc returned, which it only stores into by index, is char * with a subscript store instead of *(char *)((long)v6 + (long)v8). A lookup in the global table the program allocated is a char, which the conditional it is an arm of widens to int itself, so it prints with no (int)."
 }

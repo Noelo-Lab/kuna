@@ -468,6 +468,15 @@ pub struct Funcdata {
     /// (kuna `elemptr`) The constant addresses this function's walks typed as an
     /// element pointer.
     kuna_elemptr_constants: std::cell::RefCell<std::collections::BTreeSet<u64>>,
+    /// (kuna `elemptr`) The parameters and call returns a type pass typed as
+    /// element pointers (`false`), and those a later pass found indexing
+    /// another base (`true`), never typed again.  Survives [`Funcdata::clear`],
+    /// so the restart that follows a dispute starts without the candidate.
+    kuna_elemptr_inputs: std::cell::RefCell<std::collections::BTreeMap<crate::kuna_elemptr::InputKey, bool>>,
+    /// (kuna `elemptr`) A later type pass disputed an earlier one's candidate.
+    kuna_elemptr_disputed: std::cell::Cell<bool>,
+    /// (kuna `elemptr`) The Varnodes this type pass gave an element pointer.
+    kuna_elemptr_typed: std::cell::RefCell<std::collections::HashSet<crate::context::VarnodeId>>,
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
@@ -592,6 +601,9 @@ impl Funcdata {
             kuna_elemptr_settled: None,
             kuna_elemptr_verdicts: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             kuna_elemptr_constants: std::cell::RefCell::new(std::collections::BTreeSet::new()),
+            kuna_elemptr_inputs: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            kuna_elemptr_disputed: std::cell::Cell::new(false),
+            kuna_elemptr_typed: std::cell::RefCell::new(std::collections::HashSet::new()),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
         })
     }
@@ -884,6 +896,17 @@ impl Funcdata {
     pub fn kuna_elemptr_begin_pass(&self) {
         self.kuna_elemptr_verdicts.borrow_mut().clear();
         self.kuna_elemptr_constants.borrow_mut().clear();
+        self.kuna_elemptr_typed.borrow_mut().clear();
+    }
+
+    /// (kuna `elemptr`) This pass gave `vn` an element pointer.
+    pub fn kuna_elemptr_note_typed(&self, vn: crate::context::VarnodeId) {
+        self.kuna_elemptr_typed.borrow_mut().insert(vn);
+    }
+
+    /// (kuna `elemptr`) Did this pass give `vn` an element pointer?
+    pub fn kuna_elemptr_typed(&self, vn: crate::context::VarnodeId) -> bool {
+        self.kuna_elemptr_typed.borrow().contains(&vn)
     }
 
     /// (kuna `elemptr`) Fold one walk's verdict about `obj` in.
@@ -904,6 +927,30 @@ impl Funcdata {
     /// (kuna `elemptr`) Did a walk type the constant address `addr`?
     pub fn kuna_elemptr_typed_constant(&self, addr: u64) -> bool {
         self.kuna_elemptr_constants.borrow().contains(&addr)
+    }
+
+    /// (kuna `elemptr`) What an earlier pass of this decompile did with the
+    /// parameter or call return `key`: `Some(false)` typed it, `Some(true)` it
+    /// is blocked.
+    pub fn kuna_elemptr_input(&self, key: crate::kuna_elemptr::InputKey) -> Option<bool> {
+        self.kuna_elemptr_inputs.borrow().get(&key).copied()
+    }
+
+    /// (kuna `elemptr`) A pass typed the parameter or call return `key`.
+    pub fn kuna_elemptr_note_input(&self, key: crate::kuna_elemptr::InputKey) {
+        self.kuna_elemptr_inputs.borrow_mut().entry(key).or_insert(false);
+    }
+
+    /// (kuna `elemptr`) A later pass found `key`, typed by an earlier one, to be
+    /// the index of another base: block it and ask for a restart.
+    pub fn kuna_elemptr_dispute_input(&self, key: crate::kuna_elemptr::InputKey) {
+        self.kuna_elemptr_inputs.borrow_mut().insert(key, true);
+        self.kuna_elemptr_disputed.set(true);
+    }
+
+    /// (kuna `elemptr`) Was a candidate disputed since the last call?
+    pub fn kuna_elemptr_take_disputed(&self) -> bool {
+        self.kuna_elemptr_disputed.replace(false)
     }
 
     /// (kuna `elemptr`) What this function's walks said about each global.

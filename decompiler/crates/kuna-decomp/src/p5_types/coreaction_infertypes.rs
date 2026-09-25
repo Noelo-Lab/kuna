@@ -474,6 +474,12 @@ fn build_localtypes(data: &mut Funcdata) {
         }
         v.set_temp_type(ct);
     }
+    // (kuna `elemptr`) A candidate an earlier pass typed is now the index of
+    // another base: the IR that pass built around it stays, so start over
+    // without it.
+    if data.kuna_elemptr_take_disputed() {
+        data.set_restart_pending(true);
+    }
 }
 
 /// C++ `ActionInferTypes::writeBack` (coreaction.cc:5297): copy each temp type to
@@ -618,6 +624,11 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         None => return false,
     };
     crate::kuna_charbyte::note_edge(data, op, inslot, outslot, invn, outvn, &newtype, &cur); // (kuna `charbyte`)
+    // (kuna `elemptr`) A value stored through a pointer `elemptr` typed keeps
+    // its own sign; see `kuna_elemptr::keeps_stored_sign`.
+    if crate::kuna_elemptr::keeps_stored_sign(data, op, inslot, outslot, &newtype, &cur) {
+        return false;
+    }
     if 0 > newtype.type_order(&cur).unwrap_or(0) {
         // (kuna `libctypes`) A libc aggregate pointer is not carried onto a Varnode
         // the function reads past that aggregate's end. See `kuna_libcfit`.

@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-c68bffadca27",
+  "probe_id": "p-a6a1d5dc0aef",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -19,8 +19,8 @@
   "timeout_s": 120,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
-    "binary_sha256": "e486abac55d8e5fe9a10eb077df80565991030b4c3f704816498d479f4de6ae1",
-    "binary_size": 16840,
+    "binary_sha256": "87b0999b6a1f48596e55f027aa3328dfe22d6afbcc87169f8cb0f5be301c8a19",
+    "binary_size": 16936,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
     "selector": "w_build",
@@ -31,11 +31,11 @@
       "eq": 0
     },
     "stdout_matches": [
-      "dat_30004360\\[dat_30004060\\[v2\\]\\] = \\(char\\)v2;"
+      "dat_30004380\\[dat_30004060\\[v2\\]\\] = \\(char\\)v2;"
     ],
     "stdout_absent": [
       "0x30004060\\)",
-      "\\(long\\)dat_30004360"
+      "\\(long\\)dat_30004380"
     ]
   },
   "notes": "With elemptr on, the decoding table the program allocated and keeps in a global is indexed as char *, and the alphabet in .data it is built from, a constant address read with a computed index, prints as the array globalref names (dat_30004060[v2]) instead of *(unsigned char *)((long)v2 + 0x30004060)."

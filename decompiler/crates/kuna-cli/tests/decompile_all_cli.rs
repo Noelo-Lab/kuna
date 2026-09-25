@@ -5792,14 +5792,19 @@ fn a_calls_own_return_address_push_is_part_of_the_call() {
 /// header can declare it at one sign only, so neither indexes it). At -O2, gcc's
 /// `w_rev` returns the `malloc` result it never copies out of `rax`, and kuna
 /// declares it `void` in both arms (a return-recovery gap outside this option),
-/// so that build's round trip does not compare the reversed string.
+/// so that build's round trip does not compare the reversed string. A third
+/// line copies a string into buffers bounded by a length the function compares
+/// a pointer difference against (the length stays `unsigned long`, never a
+/// `char *` base), and stores an `int` counter into an `unsigned` table and
+/// indexes a second table with its elements (the counter stays `int`).
 #[test]
 fn an_element_pointer_round_trips_through_the_printed_c() {
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let sp = specs();
     let witnesses = [
         "w_build", "w_decode", "w_sbytes", "w_ubytes", "w_words", "w_back", "w_sidx", "w_table", "w_rev",
-        "w_record", "w_mixed", "w_wu", "w_wucall", "w_iu", "w_iucall", "w_iu2", "w_srch", "w_xu", "w_xs",
+        "w_record", "w_mixed", "w_wu", "w_wucall", "w_iu", "w_iucall", "w_iu2", "w_srch", "w_xu", "w_xs", "w_put",
+        "w_ctr",
     ];
     let on: &[&str] = &[
         "char * w_decode(char *a0,unsigned long a1,unsigned long *a2)",
@@ -5809,6 +5814,8 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
         "long w_mixed(char *a0,int a1)",
         "unsigned short w_wu(unsigned int a0)",
         "unsigned int w_iu(unsigned int a0)",
+        "w_put(char *a0,unsigned long a1,char *a2)",
+        "w_ctr(unsigned int *a0,",
     ];
     let off: &[&str] = &["void * w_decode(long a0,unsigned long a1,unsigned long *a2)"];
     let dir = std::env::temp_dir().join(format!("kuna-elemptr-rt-{}", std::process::id()));
@@ -5858,6 +5865,7 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
                 assert!(code.contains(w), "{build} {arm}: missing `{w}`:\n{code}");
             }
             assert!(code.contains("long w_table(int a0)"), "{build} {arm}:\n{code}");
+            assert!(!code.contains("w_put(char *a0,char *a1"), "{build} {arm}: the length is a number:\n{code}");
             if arm == "on" {
                 assert!(header.contains("extern unsigned char dat_"), "{build}: the encoding table:\n{header}");
                 assert!(header.contains("extern int dat_"), "{build}: the weights table:\n{header}");
@@ -5938,6 +5946,7 @@ long w_sidx(const signed char *, int, const int *); long w_table(int); char *w_r
 long w_record(const long *, int); long w_mixed(const char *, int);
 unsigned long w_wucall(unsigned int); unsigned long w_iucall(unsigned int); unsigned long w_iu2(unsigned int);
 long w_srch(unsigned int); unsigned long w_xu(const unsigned char *, int); long w_xs(const unsigned char *, int);
+void w_put(char *, unsigned long, const char *); void w_ctr(unsigned int *, unsigned int *, int);
 int main(void) {
   int fd = open("@FIXTURE@", O_RDONLY);
   Elf64_Ehdr eh; pread(fd, &eh, sizeof eh, 0);
@@ -5969,6 +5978,12 @@ int main(void) {
   static const unsigned char ix[] = {0, 1, 2, 3, 4, 5};
   printf("%lu %lu %lu %lu %lu %lu %ld %ld %lu %ld\n", w_wucall(1), w_wucall(6), w_iucall(1), w_iucall(3), w_iu2(1),
          w_iu2(2), w_srch(0xffffffffu), w_srch(5), w_xu(ix, 6), w_xs(ix, 6));
+  char put8[8], put4[4];
+  static unsigned int fmap[8], eclass[8] = {5, 6, 7};
+  w_put(put8, 8, "abc");
+  w_put(put4, 4, "abcdef");
+  w_ctr(fmap, eclass, 8);
+  printf("%s %s %u %u %u\n", put8, put4, eclass[0], eclass[3], eclass[7]);
   return 0;
 }
 "#;

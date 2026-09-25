@@ -10,7 +10,7 @@
     decoder reads, with the option off,
 
         void * w_decode(int8 a0,uint8 a1,uint8 *a2)
-        *(char *)((uint8)*(uint1 *)((int8)v2 + 0x30004060) + (int8)dat_30004360) = (char)v2;
+        *(char *)((uint8)*(uint1 *)((int8)v2 + 0x30004060) + (int8)dat_30004380) = (char)v2;
 
     its input `long`, its output buffer `void *`, the table it allocated and
     keeps in a global an integer, and the constant alphabet in .data an address
@@ -36,6 +36,11 @@
         w_wu:     returns an element of an `unsigned short` .data table that
                   nothing else reads: the element is unsigned (its callers
                   widen it), never a signed default
+        w_put:    a control - copies into a buffer bounded by a length it
+                  also compares a pointer difference against: `buf + len`
+                  has the buffer as its base, so the length stays a number
+        w_ctr:    stores an `int` counter into an `unsigned` table: the
+                  counter keeps its own sign, so its compares need no cast
 
     Pass 1 (`option elemptr off`) reproduces the casts and pass 2 (`on`) is the
     fix. The two controls are identical in both passes.
@@ -49,6 +54,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64</com>
   <com>option elemptr off</com>
+  <com>option iteexpr on</com>
+  <com>option castternary on</com>
   <com>read symbols</com>
   <com>lo fu w_decode</com>
   <com>decompile</com>
@@ -69,11 +76,19 @@ c3
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu w_wu</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_put</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_ctr</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64</com>
   <com>option elemptr on</com>
+  <com>option iteexpr on</com>
+  <com>option castternary on</com>
   <com>read symbols</com>
   <com>lo fu w_decode</com>
   <com>decompile</com>
@@ -96,17 +111,28 @@ c3
   <com>lo fu w_wu</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu w_put</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_ctr</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="elemptr #1: with the option off the decoder's input is an integer and its buffer void * - the bug" min="1" max="1">void \* w_decode\(int8 a0,uint8 a1,uint8 \*a2\)</stringmatch>
-<stringmatch name="elemptr #2: with the option off the table build casts the global table and reads the .data alphabet through an integer sum" min="1" max="1">\(\(char \*\)dat_30004360\)\[\*\(uint1 \*\)\(\(int8\)v2 \+ 0x30004060\)\] = \(char\)v2;</stringmatch>
+<stringmatch name="elemptr #2: with the option off the table build casts the global table and reads the .data alphabet through an integer sum" min="1" max="1">\(\(char \*\)dat_30004380\)\[\*\(uint1 \*\)\(\(int8\)v2 \+ 0x30004060\)\] = \(char\)v2;</stringmatch>
 <stringmatch name="elemptr #3: with the option on the input and the returned buffer are char *" min="1" max="1">char \* w_decode\(char \*a0,uint8 a1,uint8 \*a2\)</stringmatch>
 <stringmatch name="elemptr #4: with the option on a store into the allocated buffer is a subscript" min="1" max="1">v6\[v8\] = \(char\)\(v5 >> 0x10\);</stringmatch>
-<stringmatch name="elemptr #5: with the option on the global table and the .data alphabet are arrays" min="1" max="1">dat_30004360\[dat_30004060\[v2\]\] = \(char\)v2;</stringmatch>
+<stringmatch name="elemptr #5: with the option on the global table and the .data alphabet are arrays" min="1" max="1">dat_30004380\[dat_30004060\[v2\]\] = \(char\)v2;</stringmatch>
 <stringmatch name="elemptr #6: with the option on a signed byte indexes an int array" min="1" max="1">int8 w_sidx\(char \*a0,int4 a1,int4 \*a2\)</stringmatch>
 <stringmatch name="elemptr #7: with the option on a .data table of ints is read by subscript" min="1" max="1">v2 = \(int8\)dat_300040a0\[v1\] \+ v2 \* 0xb;</stringmatch>
 <stringmatch name="elemptr #8: a record walked by a stride keeps its integer form in both passes" min="2" max="2">int8 w_record\(int8 a0,int4 a1\)</stringmatch>
 <stringmatch name="elemptr #9: a pointer read at two widths is not an array in either pass" min="2" max="2">int8 w_mixed\(void \*a0,int4 a1\)</stringmatch>
 <stringmatch name="elemptr #10: with the option on a returned word nothing shows the sign of is an unsigned element" min="1" max="1">uint2 w_wu\(uint4 a0\)</stringmatch>
 <stringmatch name="elemptr #11: the returned word is never declared signed in either pass" min="0" max="0">\bint2 w_wu\(|^short w_wu\(</stringmatch>
+<stringmatch name="elemptr #12: with the option on a lookup in the global table is a char the conditional widens itself" min="4" max="4">\? dat_30004380\[\(uint1\)a0\[v7\]\] : 0;</stringmatch>
+<stringmatch name="elemptr #13: a buffer's length compared against a pointer difference stays a number in both passes" min="2" max="2">void w_put\(char \*a0,uint8 a1,char \*a2\)</stringmatch>
+<stringmatch name="elemptr #14: with the option on the table a counter is stored into is unsigned and the counter stays int" min="1" max="1">void w_ctr\(uint4 \*a0,int4 \*a1,int4 a2\)</stringmatch>
+<stringmatch name="elemptr #15: the stored counter is compared and used as an index with no cast" min="1" max="1">a0\[v1\] = v1;</stringmatch>
+<stringmatch name="elemptr #16: the counter is never re-declared unsigned and cast back" min="0" max="0">\(int4\)v1</stringmatch>
 </decompilertest>
