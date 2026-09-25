@@ -441,6 +441,8 @@ the engine applies. `/decompile/` is unchanged.
 |            | v1 · local · long · register RAX — n rename · y retype      | session edits |
 ```
 
+![The study view at 1280px: C and assembly side by side, linked by colour bands, with the hover card on a call](img/decompile2-split.png)
+
 **Modules** (`integrations/web/decompile2/`; all but `app.js`, `hover.js`'s controller,
 `sync.js`, `dialogs.js` and `rail.js` are DOM-free, so Node tests import them from the
 source tree):
