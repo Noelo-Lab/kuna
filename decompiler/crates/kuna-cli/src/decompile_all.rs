@@ -850,11 +850,14 @@ struct Summary {
     buckets: Vec<(&'static str, usize)>,
     /// The largest selected functions, biggest first.
     largest: Vec<FunctionEntry>,
+    /// Recognized runtimes and packers, with what to do about each.
+    runtime: Vec<crate::runtime_hints::RuntimeHint>,
 }
 
 /// Measure the orientation document over `all` (the discovered inventory) and
 /// `selected` (what the triage filters kept — the same list when there are none).
 fn summarize(
+    binary: &str,
     prog: &ConsoleProgram,
     filters: &Filters,
     graph: &CallGraph,
@@ -892,6 +895,9 @@ fn summarize(
         code_bytes: selected.iter().map(|e| e.size).sum(),
         buckets,
         largest,
+        runtime: kuna_analysis::loader::elf_shdr::read_image(binary)
+            .map(|bytes| crate::runtime_hints::detect(&bytes, true))
+            .unwrap_or_default(),
     }
 }
 
@@ -973,6 +979,7 @@ fn summary_json(
                     ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
                     ("size_buckets".into(), buckets),
                     ("largest".into(), entries_json(&summary.largest, display_address)),
+                    ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
                 ])
             ),
         ]))
@@ -1010,6 +1017,9 @@ fn summary_text(
     for e in &summary.largest {
         let address = display_address(e.addr.get_offset());
         let _ = writeln!(out, "  0x{address:x}\t{}\t{}", e.size, e.name);
+    }
+    for h in &summary.runtime {
+        let _ = writeln!(out, "runtime\t{}\t{}", h.id, h.hint);
     }
     out
 }
@@ -1570,6 +1580,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
     let (prog, all) = match list_functions(args) {
         Ok(loaded) => loaded,
         Err(e) => {
+            crate::runtime_hints::note_to_stderr(&args.binary);
             eprintln!("error: {e}");
             return 1;
         }
@@ -1590,7 +1601,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         eprintln!("error: --summary could not build the program call graph");
         return 1;
     };
-    let summary = summarize(&prog, filters, &graph, &all, &selected);
+    let summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
     let text = if args.json {
         summary_json(
             &args.binary,
