@@ -8710,7 +8710,7 @@ impl PrintC {
         // C++ `pushConstant` (printc.cc:1817-1835) selects the `push_integer`
         // `sign` from the read-facing metatype: TYPE_INT -> signed
         // (printc.cc:1832), TYPE_UINT/TYPE_UNKNOWN -> unsigned (1824/1835).
-        // The float/enum/char arms were already dispatched above, so a plain
+        // The float/enum/char arms are dispatched before this path, so a plain
         // integer constant rendered here is signed exactly when its type is
         // TYPE_INT — which is what makes a negative `recv_signed(int4)` convert
         // constant print `-512` instead of its unsigned bit pattern.
