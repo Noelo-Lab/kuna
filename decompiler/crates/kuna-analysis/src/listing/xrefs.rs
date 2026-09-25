@@ -165,6 +165,26 @@ pub struct XrefIndex {
     /// How many distinct instructions the walk decoded (a coverage signal for a
     /// caller that wants to say "nothing decoded" rather than "no references").
     insns: usize,
+    /// Instructions decoded by each function entry's own descent.
+    insns_by_func: BTreeMap<u64, usize>,
+    /// Every jump table the walk read, in walk order.
+    switches: Vec<SwitchTable>,
+}
+
+/// One jump table the walk read at a computed jump.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchTable {
+    /// The dispatching instruction.
+    pub dispatch: u64,
+    /// The entry whose descent reached the dispatch.
+    pub function: u64,
+    /// The case count the switch's own range check states, when it has one.
+    pub cases: Option<usize>,
+    /// How many entries were read, at most the walk's `jumptablemax`.
+    pub read: usize,
+    /// The table is longer than `jumptablemax`: its range check states more
+    /// cases than that, or (with no range check) the read ran into the cap.
+    pub truncated: bool,
 }
 
 impl XrefIndex {
@@ -293,6 +313,18 @@ impl XrefIndex {
     /// How many distinct instructions the walk decoded.
     pub fn instruction_count(&self) -> usize {
         self.insns
+    }
+
+    /// How many instructions the descent from `entry` decoded: the body the
+    /// engine's flow follows, case bodies included, stopping at every other
+    /// known entry.
+    pub fn function_instruction_count(&self, entry: u64) -> usize {
+        self.insns_by_func.get(&entry).copied().unwrap_or(0)
+    }
+
+    /// Every jump table the walk read.
+    pub fn switch_tables(&self) -> &[SwitchTable] {
+        &self.switches
     }
 
     /// Does the walk of the function entered at `entry` decode a **computed
@@ -516,6 +548,10 @@ pub fn build_with_focus(
     // read-only mapped section, and every relocatable object, whose sections are
     // not the runtime ones) leaves every reference below exactly as it was.
     let pool = if mapped.is_empty() { None } else { PoolImage::new(file) };
+    let max_entries = match arch.max_jumptable_size {
+        0 => kuna_switchtable::DEFAULT_MAX_ENTRIES,
+        n => n as usize,
+    };
 
     let mut st = State {
         by_target: BTreeMap::new(),
@@ -523,6 +559,8 @@ pub fn build_with_focus(
         decoded: HashSet::new(),
         funcs: seed_set.clone(),
         indirect_call_sites: BTreeSet::new(),
+        insns_by_func: BTreeMap::new(),
+        switches: Vec::new(),
     };
 
     // Reused across every decode in the walk (see [`FullCapture`]).
@@ -593,6 +631,7 @@ pub fn build_with_focus(
         // `add` that turns each into an address. Per function, because the values
         // it tracks are live only inside one straight-line run.
         let mut picpool = PicPool::default();
+        let mut walked_insns = 0usize;
         while let Some(vma) = insn_queue.pop_front() {
             if st.decoded.contains(&vma) {
                 continue; // already decoded (the VisitStat dedup)
@@ -611,6 +650,7 @@ pub fn build_with_focus(
                 continue; // undecodable (or zero-length): stop this path
             };
             st.decoded.insert(vma);
+            walked_insns += 1;
             if gapwalk {
                 partition.push((vma, len));
             }
@@ -678,9 +718,17 @@ pub fn build_with_focus(
             if c.flows.is_empty() && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
                 if let Some(p) = pool.as_ref() {
                     let mut cases: Vec<u64> = Vec::new();
+                    let mut stated: Option<usize> = None;
                     for &(base, kind) in &drefs {
                         if kind == XrefKind::Data {
-                            cases.extend(kuna_switchtable::targets(base, vma, p, &exec, None));
+                            cases.extend(kuna_switchtable::targets(
+                                base,
+                                vma,
+                                p,
+                                &exec,
+                                None,
+                                max_entries,
+                            ));
                         }
                     }
                     // The base is on an instruction of its own and the entries
@@ -693,7 +741,7 @@ pub fn build_with_focus(
                             .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
                             .and_then(|o| o.ins.first());
                         if let Some(branch) = branch {
-                            cases = kuna_switchtable::register_targets(
+                            (cases, stated) = kuna_switchtable::register_targets(
                                 translate,
                                 &code_space,
                                 data_space.as_ref(),
@@ -702,8 +750,18 @@ pub fn build_with_focus(
                                 branch,
                                 p,
                                 &exec,
+                                max_entries,
                             );
                         }
+                    }
+                    if !cases.is_empty() {
+                        st.switches.push(SwitchTable {
+                            dispatch: vma,
+                            function: entry,
+                            cases: stated,
+                            read: cases.len(),
+                            truncated: stated.map_or(cases.len() >= max_entries, |n| n > max_entries),
+                        });
                     }
                     // A dispatch that names no address rendered nothing above,
                     // and a row whose instruction column is blank does not say
@@ -767,6 +825,9 @@ pub fn build_with_focus(
                 }
             }
             let _ = ctx;
+        }
+        if walked_insns > 0 {
+            st.insns_by_func.insert(entry, walked_insns);
         }
     }
     // A focus address that did not decode is not a function: recording it as one
@@ -965,6 +1026,8 @@ struct State {
     /// VMAs of the decoded `CALLIND` instructions; folded onto their containing
     /// function in [`State::finish`].
     indirect_call_sites: BTreeSet<u64>,
+    insns_by_func: BTreeMap<u64, usize>,
+    switches: Vec<SwitchTable>,
 }
 
 impl State {
@@ -1016,6 +1079,8 @@ impl State {
             veneers,
             veneers_of_slot,
             insns,
+            insns_by_func: self.insns_by_func,
+            switches: self.switches,
         }
     }
 }
@@ -1043,6 +1108,8 @@ fn empty() -> XrefIndex {
         veneers: BTreeMap::new(),
         veneers_of_slot: BTreeMap::new(),
         insns: 0,
+        insns_by_func: BTreeMap::new(),
+        switches: Vec::new(),
     }
 }
 
@@ -1613,6 +1680,8 @@ mod tests {
             decoded: HashSet::from([0x1030, 0x1102, 0x1200]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::new(),
+            insns_by_func: BTreeMap::new(),
+            switches: Vec::new(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
@@ -1668,6 +1737,8 @@ mod tests {
             decoded: HashSet::from([0x1188]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::from([0x1188]),
+            insns_by_func: BTreeMap::new(),
+            switches: Vec::new(),
         };
         st.file(0x1188, 0x4008, XrefKind::Read, "");
         let index = st.finish(BTreeMap::new());

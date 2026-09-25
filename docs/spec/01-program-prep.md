@@ -4463,6 +4463,24 @@ image has a delta switch — `mcount_x86_64` 495 to 508 functions reachable from
 entry, the gnulib image 89 to 100, the MSVC fixture 2 to 6. `kuna strings` over the
 896 KB `mcount_x86_64`, which holds 470 computed jumps, 676 ms to 704 ms.
 
+(kuna) Both reads stop at the engine's own jump-table ceiling,
+`Architecture::max_jumptable_size` — 1024 unless `option jumptablemax <n>` raises
+it — so one value decides how far a switch is followed in both tiers. A range
+check that states more cases than the ceiling is not a reason to decline: the
+first `jumptablemax` entries are still read and walked, and the walk records the
+switch as **truncated** (`SwitchTable`, with the case count the range check
+states and the number read). A table with no range check that reads up to the
+ceiling is recorded the same way, with no stated count. The walk also counts the
+instructions each entry's own descent decodes, case bodies included and stopping
+at every other known entry, which approximates the flow the engine's
+`maxinstruction` budget meters. `kuna functions --json` and `--summary` read both
+to flag, before any decompile, the functions whose body exceeds `maxinstruction`
+and the switches whose case count exceeds `jumptablemax`. On the MSVC state
+machine that motivated it (a 16.6 MB function dispatching through a 90,781-entry
+image-base-relative table), the default walk reports the switch and 36,110
+instructions; with `jumptablemax 100000` it reads the whole table and reports
+2,557,153 instructions, over the 100000 budget.
+
 
 (kuna) The same pool word is a second defect one surface over, in the **listing**
 rather than the reference walk. A function's extent contains its pool, so a

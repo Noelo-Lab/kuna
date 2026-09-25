@@ -95,7 +95,7 @@ use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 
 // The call-graph edges `--reachable-from` walks are `kuna xrefs`' own edges.
-use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
+use kuna_analysis::listing::xrefs::{SwitchTable, Xref, XrefIndex, XrefKind};
 use kuna_analysis::loader::macho_fat::SlicePref;
 use kuna_base::address::Address;
 use kuna_console::engine::{
@@ -853,6 +853,122 @@ struct Summary {
     buckets: Vec<(&'static str, usize)>,
     /// The largest selected functions, biggest first.
     largest: Vec<FunctionEntry>,
+    /// The selected functions a decompile would hit an engine budget on.
+    limits: Limits,
+}
+
+/// The two engine budgets a function can blow before anyone decompiles it, and
+/// the selected functions that do.
+struct Limits {
+    maxinstruction: u64,
+    jumptablemax: u64,
+    over: Vec<OverLimit>,
+}
+
+/// One function past a budget: its walked body is longer than `maxinstruction`,
+/// or it dispatches through a switch longer than `jumptablemax` (listed).
+struct OverLimit {
+    entry: FunctionEntry,
+    instructions: usize,
+    switches: Vec<SwitchTable>,
+}
+
+/// Measure `selected` against the live `maxinstruction` / `jumptablemax`, off
+/// the reference walk the call graph already ran: its per-entry instruction
+/// count is the body the engine's flow would follow, and its switch reads carry
+/// the case count each table's own range check states.
+fn measure_limits(prog: &ConsoleProgram, graph: &CallGraph, selected: &[FunctionEntry]) -> Limits {
+    let maxinstruction = u64::from(prog.arch().max_instructions);
+    let jumptablemax = u64::from(prog.arch().max_jumptable_size);
+    let mut switches: BTreeMap<u64, Vec<SwitchTable>> = BTreeMap::new();
+    for sw in graph.index.switch_tables().iter().filter(|sw| sw.truncated) {
+        let owner = if graph.entries.binary_search_by_key(&sw.function, |(a, _)| *a).is_ok() {
+            Some(sw.function)
+        } else {
+            graph.owner_of(sw.dispatch)
+        };
+        if let Some(owner) = owner {
+            switches.entry(owner).or_default().push(sw.clone());
+        }
+    }
+    let over = selected
+        .iter()
+        .filter_map(|e| {
+            let addr = e.addr.get_offset();
+            let instructions = graph.index.function_instruction_count(addr);
+            let switches = switches.remove(&addr).unwrap_or_default();
+            (instructions as u64 > maxinstruction || !switches.is_empty()).then(|| OverLimit {
+                entry: e.clone(),
+                instructions,
+                switches,
+            })
+        })
+        .collect();
+    Limits { maxinstruction, jumptablemax, over }
+}
+
+fn limits_json(limits: &Limits, display_address: &dyn Fn(u64) -> u64) -> Json {
+    let hex = |a: u64| {
+        let a = display_address(a);
+        (Json::Number(a.to_string()), Json::Str(format!("0x{a:x}")))
+    };
+    let over = limits
+        .over
+        .iter()
+        .map(|o| {
+            let (address, address_hex) = hex(o.entry.addr.get_offset());
+            let switches = o
+                .switches
+                .iter()
+                .map(|sw| {
+                    let (address, address_hex) = hex(sw.dispatch);
+                    Json::Object(vec![
+                        ("address".into(), address),
+                        ("address_hex".into(), address_hex),
+                        (
+                            "cases".into(),
+                            sw.cases.map_or(Json::Null, |n| Json::Number(n.to_string())),
+                        ),
+                        ("read".into(), Json::Number(sw.read.to_string())),
+                    ])
+                })
+                .collect();
+            Json::Object(vec![
+                ("name".into(), Json::Str(o.entry.name.clone())),
+                ("address".into(), address),
+                ("address_hex".into(), address_hex),
+                ("size".into(), Json::Number(o.entry.size.to_string())),
+                ("instructions".into(), Json::Number(o.instructions.to_string())),
+                (
+                    "over_maxinstruction".into(),
+                    Json::Bool(o.instructions as u64 > limits.maxinstruction),
+                ),
+                ("switches_over_jumptablemax".into(), Json::Array(switches)),
+            ])
+        })
+        .collect();
+    Json::Object(vec![
+        ("maxinstruction".into(), Json::Number(limits.maxinstruction.to_string())),
+        ("jumptablemax".into(), Json::Number(limits.jumptablemax.to_string())),
+        ("over".into(), Json::Array(over)),
+    ])
+}
+
+fn limits_text(out: &mut String, limits: &Limits, display_address: &dyn Fn(u64) -> u64) {
+    let _ = writeln!(
+        out,
+        "limits	maxinstruction {}	jumptablemax {}",
+        limits.maxinstruction, limits.jumptablemax
+    );
+    for o in &limits.over {
+        let address = display_address(o.entry.addr.get_offset());
+        let _ = writeln!(out, "  0x{address:x}	{} instructions	{}", o.instructions, o.entry.name);
+        for sw in &o.switches {
+            let at = display_address(sw.dispatch);
+            let cases = sw.cases.map_or_else(|| format!(">={}", sw.read), |n| n.to_string());
+            let _ = writeln!(out, "    switch 0x{at:x}	{cases} cases	{} read", sw.read);
+        }
+    }
 }
 
 /// Measure the orientation document over `all` (the discovered inventory) and
@@ -896,6 +1012,7 @@ fn summarize(
         code_bytes: selected.iter().map(|e| e.size).sum(),
         buckets,
         largest,
+        limits: measure_limits(prog, graph, selected),
     }
 }
 
@@ -989,6 +1106,7 @@ fn summary_json(
                     ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
                     ("size_buckets".into(), buckets),
                     ("largest".into(), entries_json(&summary.largest, display_address)),
+                    ("limits".into(), limits_json(&summary.limits, display_address)),
                 ])
             ),
         ]))
@@ -1036,6 +1154,7 @@ fn summary_text(
         let address = display_address(e.addr.get_offset());
         let _ = writeln!(out, "  0x{address:x}\t{}\t{}", e.size, e.name);
     }
+    limits_text(&mut out, &summary.limits, display_address);
     out
 }
 
@@ -1547,19 +1666,25 @@ pub fn run_functions(argv: &[String]) -> i32 {
                 .then(|| zero_discovery_error(&args.binary))
                 .flatten();
             let total = all.len();
-            let entries = match filters.select(&prog, &args.binary, args.slice_pref(), all) {
-                Ok((entries, _)) => entries,
+            let (entries, graph) = match filters.select(&prog, &args.binary, args.slice_pref(), all) {
+                Ok(pair) => pair,
                 Err(e) => {
                     eprintln!("error: {e}");
                     return 1;
                 }
             };
             let text = if args.json {
+                let graph = match graph {
+                    Some(graph) => Some(graph),
+                    None => CallGraph::build(&prog, &args.binary, args.slice_pref()).ok(),
+                };
+                let limits = graph.as_ref().map(|g| measure_limits(&prog, g, &entries));
                 functions_json(
                     &args.binary,
                     &entries,
                     total,
                     discovery_error.as_deref(),
+                    limits.as_ref(),
                     &|address| prog.output_code_offset(address),
                 )
             } else {
@@ -3182,6 +3307,7 @@ fn functions_json(
     entries: &[FunctionEntry],
     total: usize,
     error: Option<&str>,
+    limits: Option<&Limits>,
     display_address: &dyn Fn(u64) -> u64,
 ) -> String {
     format!(
@@ -3192,6 +3318,10 @@ fn functions_json(
             ("total".into(), Json::Number(total.to_string())),
             ("error".into(), error_json(error)),
             ("functions".into(), entries_json(entries, display_address)),
+            (
+                "limits".into(),
+                limits.map_or(Json::Null, |l| limits_json(l, display_address)),
+            ),
         ]))
     )
 }
@@ -4242,13 +4372,14 @@ mod discovery_tests {
     /// reads it unconditionally rather than inferring failure from `count`.
     #[test]
     fn the_run_level_error_field_is_always_present() {
-        let healthy = functions_json("fixture", &[], 0, None, &|address| address);
+        let healthy = functions_json("fixture", &[], 0, None, None, &|address| address);
         assert!(healthy.contains("\"error\": null"), "{healthy}");
         let failed = functions_json(
             "fixture",
             &[],
             0,
             Some("no functions discovered in fixture"),
+            None,
             &|address| address,
         );
         assert!(

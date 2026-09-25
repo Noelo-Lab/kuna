@@ -278,6 +278,20 @@ they are reachable through `--option` on every surface but do not appear in `kun
 catalog`. `--max-fn-seconds` (see `decompile-all` below) is the wall-clock half of
 the same budget.
 
+The jump-table ceiling is the other budget a giant function hits: a switch whose
+range check admits more than `jumptablemax` cases (1024 by default) is not
+recovered, and its dispatch prints as a computed call (`// jump-as-call`).
+`jumptablemax` is catalogued (`kuna catalog`), and the same value bounds how far
+`kuna functions`/`xrefs`/`strings` follow a switch table:
+
+```bash
+kuna decompile ./state_machine.exe 0x14000c0b0 --addr \
+    --option maxinstruction 4000000 --option jumptablemax 100000
+```
+
+`kuna functions --summary --json` (and `functions --json`) report which functions
+would hit either budget before anything is decompiled; see `limits` below.
+
 **`--define-function <start[-end][=name] | @file>`** (repeatable) tells kuna where a
 function starts and ends. Every boundary kuna knows is otherwise *derived* —
 discovery finds the entries, and the extent is the address-contiguous clip to the
@@ -1183,7 +1197,11 @@ without emitting a function list at all, let alone pseudocode.
             "main":{"name","address","address_hex"},
             "reachable_from_entry":334,"no_callers":714,"code_bytes":171971,
             "size_buckets":[{"bucket":"0","min_size":0,"max_size":0,"count":114}, …],
-            "largest":[{name,address,address_hex,aliases,size}, …]}}
+            "largest":[{name,address,address_hex,aliases,size}, …],
+            "limits":{"maxinstruction":100000,"jumptablemax":1024,
+                      "over":[{name,address,address_hex,size,instructions,
+                               over_maxinstruction,
+                               switches_over_jumptablemax:[{address,address_hex,cases,read}]}]}}}
 ```
 
 - `entry` is the **image's declared entry point** (a PE `AddressOfEntryPoint` is
@@ -1206,6 +1224,27 @@ without emitting a function list at all, let alone pseudocode.
   `64-255`, `256-1023`, `1024-4095`, `4096+`), so nothing falls between buckets;
   `max_size` is `null` on the open-ended one.
 - `largest` holds the `--limit` biggest functions, 10 by default.
+- `limits` names the selected functions a decompile would hit an engine budget
+  on, measured by the same reference walk and never by decompiling.
+  `instructions` is what the function's own descent decodes (case bodies
+  included, stopping at every other known entry), and `over_maxinstruction` is
+  whether that exceeds the live `maxinstruction`. `switches_over_jumptablemax`
+  lists each dispatch whose table is longer than the live `jumptablemax`: `cases`
+  is the count its range check states (`null` when there is none and the read ran
+  into the ceiling), `read` how many entries were followed. Both ceilings honour
+  `--option`, so re-running with `--option jumptablemax N` reads the whole table
+  and re-measures the body it reaches:
+
+  ```console
+  $ kuna functions ntfsm.exe --summary --json          # limits.over[0]:
+  {"name":"sub_14000c0b0","size":16657120,"instructions":36110,"over_maxinstruction":false,
+   "switches_over_jumptablemax":[{"address_hex":"0x14000ca5a","cases":90781,"read":1024}]}
+  $ kuna functions ntfsm.exe --summary --json --option jumptablemax 100000
+  {"name":"sub_14000c0b0","size":16657120,"instructions":2557153,"over_maxinstruction":true,
+   "switches_over_jumptablemax":[]}
+  ```
+
+  The text form prints the same under a `limits` line.
 - The triage flags apply: `--summary --reachable-from main` summarizes just that
   subgraph. `count` is what was selected, `total` what discovery found.
 
@@ -1221,7 +1260,9 @@ numbers a caller orients by are the ones `kuna functions` reports.
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
 unstructured_gotos,line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`kuna functions --json` emits
-`name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function).
+`name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function, plus a
+top-level `limits` object shaped like the `--summary` one over the listed functions;
+producing it walks the image once, which a plain text listing does not).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. `count` is what the
 `functions` array holds. `kuna functions --json` also carries `total`, the count

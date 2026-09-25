@@ -254,6 +254,10 @@ Three tiers:
 | a two-term expression is declared as a temporary instead of being inlined at its two uses | [`termdup`](#termdup) |
 | want to ablate the term-duplication threshold without rebuilding | [`termdup`](#termdup) |
 | raising impliedrefs did not inline an expression because the expression itself is too wide | [`termdup`](#termdup) |
+| switch with more than 1024 cases prints as a computed call (jump-as-call) | [`jumptablemax`](#jumptablemax) |
+| state-machine function with a giant jump table decompiles to a stub | [`jumptablemax`](#jumptablemax) |
+| functions --summary lists a switch over jumptablemax | [`jumptablemax`](#jumptablemax) |
+| xrefs miss references made from switch cases past the first 1024 | [`jumptablemax`](#jumptablemax) |
 | stack-protector canary compare against fs:0x28 and a __stack_chk_fail branch cluttering the epilogue | [`stackguard`](#stackguard) |
 | shared-return goto forced by the canary check block | [`stackguard`](#stackguard) |
 | flip off to keep the real canary instructions for auditing the protector | [`stackguard`](#stackguard) |
@@ -1479,6 +1483,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Raise to 3 or 4 together with (or instead of) `impliedrefs` when the listing is full of two-term temporaries whose expression is small enough to read at each use; leave at the shipped 2 for output that matches every other kuna run. It has no effect on a value with a single reader, so it is the finer of the two levers -- reach for `impliedrefs` first and use this one to let the slightly larger expressions through.
 - **Where / provenance:** P6/explicit-marking · ghidra-upstream · opt-in-tool · kuna-impliedrefs
 - **Example:** `option termdup 3`
+
+### `jumptablemax` -- 1024 | <n>, default `1024`
+
+- **Symptoms:** switch with more than 1024 cases prints as a computed call (jump-as-call); state-machine function with a giant jump table decompiles to a stub; functions --summary lists a switch over jumptablemax; xrefs miss references made from switch cases past the first 1024.
+- **What it does:** The most entries one jump table may have. Jump-table recovery refuses a switch whose range check admits more cases than this (the dispatch then prints as a computed call, `// jump-as-call`), and the analysis tier's reference walk reads at most this many entries of a table, so the case bodies past it are not decoded, attributed or counted. It is upstream's `OptionJumpTableMax` (default 1024), catalogued so it can be found and so one value bounds both tiers: `kuna functions --summary --json` reports every switch whose range check exceeds it under `summary.limits`.
+- **When to flip:** Raise it when `kuna functions --summary --json` lists a switch under `limits.over` (its `cases` exceeds `jumptablemax`), or when a dispatch prints as `// jump-as-call` behind a range check such as `if (idx <= 0x1629c)`. The cost is linear in the entries read; a giant switch usually also needs `--option maxinstruction N` for the bodies it reaches. Leave at 1024 for output that matches every other kuna run.
+- **Where / provenance:** P2/switch-model · ghidra-upstream · opt-in-tool · kuna-hugefn
+- **Example:** `option jumptablemax 100000`
 
 ### `stackguard` -- on | off, default `on` (destructive opt-in)
 

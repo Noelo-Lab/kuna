@@ -407,6 +407,9 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "hideshadow",
     "impliedrefs",
     "termdup",
+    // (kuna) the upstream `jumptablemax` cap, catalogued: routed here so the
+    // same integer also bounds the analysis tier's switch-table read.
+    "jumptablemax",
     "stackguard",
     "msvcstackguard",
     "securitycheck",

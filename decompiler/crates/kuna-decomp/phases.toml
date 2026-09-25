@@ -4022,6 +4022,25 @@ tier = "transform"
 symptoms = "a two-term expression is declared as a temporary instead of being inlined at its two uses|want to ablate the term-duplication threshold without rebuilding|raising impliedrefs did not inline an expression because the expression itself is too wide"
 
 [[settable]]
+option = "jumptablemax"
+values = "1024|<n>"
+default = "1024"
+destructive = false
+phase = "P2"
+subphase = "switch-model"
+rewind = "P2"
+strength = "HARD"
+issue = "kuna-hugefn"
+summary = "The most entries one jump table may have. Jump-table recovery refuses a switch whose range check admits more cases than this (the dispatch then prints as a computed call, `// jump-as-call`), and the analysis tier's reference walk reads at most this many entries of a table, so the case bodies past it are not decoded, attributed or counted. It is upstream's `OptionJumpTableMax` (default 1024), catalogued so it can be found and so one value bounds both tiers: `kuna functions --summary --json` reports every switch whose range check exceeds it under `summary.limits`."
+use_when = "Raise it when `kuna functions --summary --json` lists a switch under `limits.over` (its `cases` exceeds `jumptablemax`), or when a dispatch prints as `// jump-as-call` behind a range check such as `if (idx <= 0x1629c)`. The cost is linear in the entries read; a giant switch usually also needs `--option maxinstruction N` for the bodies it reaches. Leave at 1024 for output that matches every other kuna run."
+example = "option jumptablemax 100000"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra `OptionJumpTableMax` (`Architecture::max_jumptable_size`), reachable before only as an uncatalogued OptionDatabase name, and not at all by the analysis tier's switch-table read"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "switch with more than 1024 cases prints as a computed call (jump-as-call)|state-machine function with a giant jump table decompiles to a stub|functions --summary lists a switch over jumptablemax|xrefs miss references made from switch cases past the first 1024"
+
+[[settable]]
 option = "stackguard"
 values = "on|off"
 default = "on"
